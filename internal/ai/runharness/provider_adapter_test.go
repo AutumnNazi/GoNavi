@@ -124,6 +124,49 @@ func TestProviderModelTurnAdapterPassesHostImagePrompts(t *testing.T) {
 	}
 }
 
+func TestProviderModelTurnAdapterUsesFrozenProviderBindingOptions(t *testing.T) {
+	captured := &captureAdapterProvider{}
+	binding, err := NewProviderBinding("provider-a", ai.ProviderConfig{
+		ID: "provider-a", Temperature: 0.2, MaxTokens: 99,
+	})
+	if err != nil {
+		t.Fatalf("new provider binding: %v", err)
+	}
+	turnTemperature := 0.9
+	turnMaxTokens := 1000
+	adapter := NewProviderModelTurnAdapter(func(context.Context, ModelTurnRequest) (provider.Provider, error) {
+		return captured, nil
+	})
+
+	if _, err := adapter.Execute(context.Background(), ModelTurnRequest{
+		Provider: "provider-a", ProviderBinding: &binding,
+		Temperature: &turnTemperature, MaxTokens: &turnMaxTokens,
+	}, nil); err != nil {
+		t.Fatalf("execute adapter: %v", err)
+	}
+	if captured.request.Temperature != 0.2 || captured.request.MaxTokens != 99 {
+		t.Fatalf("provider options = temperature=%v maxTokens=%d, want frozen binding values", captured.request.Temperature, captured.request.MaxTokens)
+	}
+}
+
+func TestProviderModelTurnAdapterIgnoresUnboundTurnOptions(t *testing.T) {
+	captured := &captureAdapterProvider{}
+	turnTemperature := 0.9
+	turnMaxTokens := 1000
+	adapter := NewProviderModelTurnAdapter(func(context.Context, ModelTurnRequest) (provider.Provider, error) {
+		return captured, nil
+	})
+
+	if _, err := adapter.Execute(context.Background(), ModelTurnRequest{
+		Temperature: &turnTemperature, MaxTokens: &turnMaxTokens,
+	}, nil); err != nil {
+		t.Fatalf("execute adapter: %v", err)
+	}
+	if captured.request.Temperature != 0 || captured.request.MaxTokens != 0 {
+		t.Fatalf("provider options = temperature=%v maxTokens=%d, want zero values without a binding", captured.request.Temperature, captured.request.MaxTokens)
+	}
+}
+
 func TestProviderModelTurnAdapterRequiresLifecycleContext(t *testing.T) {
 	resolved := false
 	adapter := NewProviderModelTurnAdapter(func(context.Context, ModelTurnRequest) (provider.Provider, error) {

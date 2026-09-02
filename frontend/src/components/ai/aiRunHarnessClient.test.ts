@@ -8,6 +8,7 @@ import {
   serializeShortcutOptionsForWorkspace,
   submitAgentInput,
   toAIChatMessages,
+  mergeAIChatSessionMessages,
 } from './aiRunHarnessClient';
 
 describe('AI run harness client', () => {
@@ -91,5 +92,23 @@ describe('AI run harness client', () => {
       'runQuery.windows.combo': 'Ctrl+Enter',
       'runQuery.windows.enabled': 'false',
     });
+  });
+
+  it('clears settled local placeholders when the durable ledger returns an empty transcript', () => {
+    expect(mergeAIChatSessionMessages([], [{
+      id: 'local-error',
+      role: 'assistant',
+      content: 'Request failed',
+      timestamp: 1,
+      loading: false,
+      excludeFromAIContext: true,
+    }])).toEqual([]);
+    expect(mergeAIChatSessionMessages([], [{
+      id: 'local-loading',
+      role: 'assistant',
+      content: '',
+      timestamp: 1,
+      loading: true,
+    }])).toEqual([expect.objectContaining({ id: 'local-loading' })]);
   });
 });

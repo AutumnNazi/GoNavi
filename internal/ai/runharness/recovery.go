@@ -61,25 +61,21 @@ func (l *Ledger) ApplyRecoveryAction(ctx context.Context, request RecoveryAction
 	// Checking the command id before changing the run makes an idempotency-key
 	// collision fail closed: it cannot report a conflict after a side-effect
 	// recovery decision has already become visible.
-	command, commandAlreadyApplied, err := l.prepareRecoveryCommandTx(ctx, tx, request)
+	command, priorResult, err := l.prepareRecoveryCommandTx(ctx, tx, request)
 	if err != nil {
 		return RecoveryActionResult{}, err
 	}
-	if commandAlreadyApplied {
+	if priorResult != nil {
 		if err := tx.Commit(); err != nil {
 			return RecoveryActionResult{}, err
 		}
-		latest, err := l.getRunDB(ctx, request.RunID)
-		if err != nil {
-			return RecoveryActionResult{}, err
-		}
-		return RecoveryActionResult{Run: latest}, nil
+		return RecoveryActionResult{Run: *priorResult}, nil
 	}
 	// A repeated command after a terminal response is a successful no-op. The
 	// unique terminal-event index still guarantees that no second terminal can
 	// be written by a racing caller.
 	if run.State.Terminal() {
-		if err := l.insertRecoveryCommandTx(ctx, tx, command, run.Revision); err != nil {
+		if err := l.insertRecoveryCommandTx(ctx, tx, command, run); err != nil {
 			return RecoveryActionResult{}, err
 		}
 		if err := tx.Commit(); err != nil {
@@ -97,9 +93,9 @@ func (l *Ledger) ApplyRecoveryAction(ctx context.Context, request RecoveryAction
 	// released the run. If that owner is still alive, accepting the command here
 	// would race its callback and could turn a known result into a duplicate
 	// retry. The owner may explicitly act on its own token.
-	if strings.TrimSpace(run.OwnerToken) != "" && run.OwnerExpiresAt.After(now) {
+	if strings.TrimSpace(run.ownerToken) != "" && run.OwnerExpiresAt.After(now) {
 		if strings.TrimSpace(request.OwnerToken) == "" ||
-			!ConstantTimeEqual([]byte(run.OwnerToken), []byte(request.OwnerToken)) {
+			!ConstantTimeEqual([]byte(run.ownerToken), []byte(request.OwnerToken)) {
 			return RecoveryActionResult{}, ErrLeaseUnavailable
 		}
 	}
@@ -111,7 +107,7 @@ func (l *Ledger) ApplyRecoveryAction(ctx context.Context, request RecoveryAction
 	case ControlResume:
 		if run.State != RunStateInterrupted {
 			if run.State == RunStateRunningModel {
-				if err := l.insertRecoveryCommandTx(ctx, tx, command, run.Revision); err != nil {
+				if err := l.insertRecoveryCommandTx(ctx, tx, command, run); err != nil {
 					return RecoveryActionResult{}, err
 				}
 				if err := tx.Commit(); err != nil {
@@ -133,7 +129,7 @@ func (l *Ledger) ApplyRecoveryAction(ctx context.Context, request RecoveryAction
 	case ControlRecover:
 		if run.State != RunStateRecoveryRequired && run.State != RunStateInterrupted {
 			if run.State == RunStateRunningModel {
-				if err := l.insertRecoveryCommandTx(ctx, tx, command, run.Revision); err != nil {
+				if err := l.insertRecoveryCommandTx(ctx, tx, command, run); err != nil {
 					return RecoveryActionResult{}, err
 				}
 				if err := tx.Commit(); err != nil {
@@ -147,7 +143,7 @@ func (l *Ledger) ApplyRecoveryAction(ctx context.Context, request RecoveryAction
 	case ControlMarkCompleted:
 		if run.State != RunStateRecoveryRequired {
 			if run.State == RunStateRunningModel {
-				if err := l.insertRecoveryCommandTx(ctx, tx, command, run.Revision); err != nil {
+				if err := l.insertRecoveryCommandTx(ctx, tx, command, run); err != nil {
 					return RecoveryActionResult{}, err
 				}
 				if err := tx.Commit(); err != nil {
@@ -163,7 +159,7 @@ func (l *Ledger) ApplyRecoveryAction(ctx context.Context, request RecoveryAction
 	case ControlAbortRecovery:
 		if run.State != RunStateRecoveryRequired && run.State != RunStateInterrupted {
 			if run.State == RunStateFailed || run.State == RunStateCanceled {
-				if err := l.insertRecoveryCommandTx(ctx, tx, command, run.Revision); err != nil {
+				if err := l.insertRecoveryCommandTx(ctx, tx, command, run); err != nil {
 					return RecoveryActionResult{}, err
 				}
 				if err := tx.Commit(); err != nil {
@@ -261,21 +257,32 @@ func (l *Ledger) ApplyRecoveryAction(ctx context.Context, request RecoveryAction
 	if _, err := tx.ExecContext(ctx, `INSERT INTO events(run_id,sequence,schema_version,kind,resulting_state,run_revision,attempt,timestamp,payload) VALUES(?,?,?,?,?,?,?,?,?)`, request.RunID, sequence, CurrentSchemaVersion, kind, target, newRevision, attempt, nowNS, sealedEvent); err != nil {
 		return RecoveryActionResult{}, err
 	}
-	if err := l.insertRecoveryCommandTx(ctx, tx, command, newRevision); err != nil {
+	if terminal {
+		if err := l.discardPendingControlCommandsTx(ctx, tx, request.RunID, nowNS); err != nil {
+			return RecoveryActionResult{}, err
+		}
+	}
+	resulting := run
+	resulting.State = target
+	resulting.Revision = newRevision
+	resulting.NextSequence = sequence + 1
+	resulting.Attempt = attempt
+	resulting.CheckpointID = checkpointID
+	resulting.TerminalReason = terminalReason
+	resulting.ownerToken = ""
+	resulting.OwnerExpiresAt = time.Time{}
+	resulting.UpdatedAt = now
+	if err := l.insertRecoveryCommandTx(ctx, tx, command, resulting); err != nil {
 		return RecoveryActionResult{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return RecoveryActionResult{}, err
 	}
-	latest, err := l.getRunDB(ctx, request.RunID)
-	if err != nil {
-		return RecoveryActionResult{}, err
-	}
-	event := RunEvent{SchemaVersion: CurrentSchemaVersion, RunID: latest.ID, SessionID: latest.SessionID,
-		SessionGeneration: latest.SessionGeneration, Sequence: sequence, RunRevision: newRevision,
+	event := RunEvent{SchemaVersion: CurrentSchemaVersion, RunID: resulting.ID, SessionID: resulting.SessionID,
+		SessionGeneration: resulting.SessionGeneration, Sequence: sequence, RunRevision: newRevision,
 		Attempt: attempt, Timestamp: now, Kind: kind, ResultingState: target,
 		Payload: append(json.RawMessage(nil), eventPayload...)}
-	return RecoveryActionResult{Run: latest, Events: []RunEvent{event}}, nil
+	return RecoveryActionResult{Run: resulting, Events: []RunEvent{event}}, nil
 }
 
 // RecoveryActionRequest is intentionally separate from RunControlRequest so
@@ -286,13 +293,13 @@ type RecoveryActionRequest struct {
 	CallID           string
 	Action           RunControlAction
 	ExpectedRevision int64
-	OwnerToken       string
+	OwnerToken       string `json:"-"`
 	// CommandID and CommandPayload are set by the public Harness control path.
 	// They bind the audit/wake command to the recovery transition in the same
 	// transaction. Direct ledger callers can omit them when no cross-process
 	// command needs to be retained.
 	CommandID      string
-	CommandPayload json.RawMessage
+	CommandPayload json.RawMessage `json:"-"`
 }
 
 type recoveryCommandMarker struct {
@@ -307,42 +314,56 @@ type recoveryCommandMarker struct {
 // prepareRecoveryCommandTx validates an optional public-control marker before
 // any run mutation. If the idempotency key is already bound to this exact
 // request, the existing transition is authoritative and callers should return
-// the current run without emitting a second event.
-func (l *Ledger) prepareRecoveryCommandTx(ctx context.Context, tx *sql.Tx, request RecoveryActionRequest) (*recoveryCommandMarker, bool, error) {
+// its immutable receipt without emitting a second event.
+func (l *Ledger) prepareRecoveryCommandTx(ctx context.Context, tx *sql.Tx, request RecoveryActionRequest) (*recoveryCommandMarker, *RunSnapshot, error) {
 	id := strings.TrimSpace(request.CommandID)
 	if id == "" {
-		return nil, false, nil
+		return nil, nil, nil
 	}
 	payload := bytes.TrimSpace(request.CommandPayload)
 	if len(payload) == 0 {
 		payload = []byte(`{}`)
 	}
 	if !json.Valid(payload) {
-		return nil, false, errors.New("command payload must be valid JSON")
+		return nil, nil, errors.New("command payload must be valid JSON")
 	}
 
 	var existingRunID, existingAction string
-	var existingPayload []byte
-	err := tx.QueryRowContext(ctx, `SELECT run_id,action,payload FROM control_commands WHERE id=?`, id).
-		Scan(&existingRunID, &existingAction, &existingPayload)
+	var existingPayload, existingSnapshot []byte
+	err := tx.QueryRowContext(ctx, `SELECT run_id,action,payload,result_snapshot FROM control_commands WHERE id=?`, id).
+		Scan(&existingRunID, &existingAction, &existingPayload, &existingSnapshot)
 	if err == nil {
 		plain, openErr := l.openRaw("control_commands", id, "payload", existingPayload)
 		if openErr != nil {
-			return nil, false, openErr
+			return nil, nil, openErr
 		}
 		if existingRunID == request.RunID && RunControlAction(existingAction) == request.Action && bytes.Equal(bytes.TrimSpace(plain), payload) {
-			return nil, true, nil
+			if len(existingSnapshot) == 0 {
+				// Records produced before result_snapshot was introduced have no
+				// immutable receipt. Keep them operable during the additive schema
+				// migration, while all newly accepted commands use the stable path.
+				latest, getErr := l.getRunTx(ctx, tx, request.RunID)
+				if getErr != nil {
+					return nil, nil, getErr
+				}
+				return nil, &latest, nil
+			}
+			var receipt RunSnapshot
+			if openErr := l.openJSON("control_commands", id, "result_snapshot", existingSnapshot, &receipt); openErr != nil {
+				return nil, nil, fmt.Errorf("decode recovery control receipt: %w", openErr)
+			}
+			return nil, &receipt, nil
 		}
-		return nil, false, fmt.Errorf("%w: id %q is already bound to run %q/action %q", ErrControlCommandConflict, id, existingRunID, existingAction)
+		return nil, nil, fmt.Errorf("%w: id %q is already bound to run %q/action %q", ErrControlCommandConflict, id, existingRunID, existingAction)
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		return nil, false, err
+		return nil, nil, err
 	}
 	sealed, err := l.sealRaw("control_commands", id, "payload", payload)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, err
 	}
-	return &recoveryCommandMarker{id: id, runID: request.RunID, action: request.Action, payload: append([]byte(nil), payload...), sealed: sealed, created: nowUTC()}, false, nil
+	return &recoveryCommandMarker{id: id, runID: request.RunID, action: request.Action, payload: append([]byte(nil), payload...), sealed: sealed, created: nowUTC()}, nil, nil
 }
 
 // insertRecoveryCommandTx persists the public control marker after the target
@@ -351,12 +372,18 @@ func (l *Ledger) prepareRecoveryCommandTx(ctx context.Context, tx *sql.Tx, reque
 // transition itself is the durable action boundary, so the marker is inserted
 // already applied/consumed; workers must never replay it as a second state
 // transition after a process hand-off.
-func (l *Ledger) insertRecoveryCommandTx(ctx context.Context, tx *sql.Tx, command *recoveryCommandMarker, resultingRevision int64) error {
+func (l *Ledger) insertRecoveryCommandTx(ctx context.Context, tx *sql.Tx, command *recoveryCommandMarker, result RunSnapshot) error {
 	if command == nil {
 		return nil
 	}
+	// The receipt is encrypted because it carries the complete projection frozen
+	// at this command boundary. A retry must never observe a later worker state.
+	receipt, err := l.seal("control_commands", command.id, "result_snapshot", result)
+	if err != nil {
+		return err
+	}
 	appliedAt := toNano(nowUTC())
-	if _, err := tx.ExecContext(ctx, `INSERT INTO control_commands(id,run_id,action,payload,expected_revision,created_at,consumed_at,claimed_at,claim_expires_at,applied_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, command.id, command.runID, command.action, command.sealed, resultingRevision, toNano(command.created), appliedAt, appliedAt, appliedAt, appliedAt); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO control_commands(id,run_id,action,payload,expected_revision,result_snapshot,created_at,consumed_at,claimed_at,claim_expires_at,applied_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, command.id, command.runID, command.action, command.sealed, result.Revision, receipt, toNano(command.created), appliedAt, appliedAt, appliedAt, appliedAt); err != nil {
 		return err
 	}
 	return nil
@@ -416,7 +443,7 @@ func resumableCheckpointState(state RunState) RunState {
 }
 
 func recoveryOwnerCAS(run RunSnapshot, token string, now time.Time) (string, []any) {
-	if strings.TrimSpace(run.OwnerToken) == "" || run.OwnerExpiresAt.IsZero() || !run.OwnerExpiresAt.After(now) {
+	if strings.TrimSpace(run.ownerToken) == "" || run.OwnerExpiresAt.IsZero() || !run.OwnerExpiresAt.After(now) {
 		return " AND (owner_token IS NULL OR owner_token='' OR owner_expires_at<=?)", []any{toNano(now)}
 	}
 	return " AND owner_token=? AND owner_expires_at>?", []any{token, toNano(now)}

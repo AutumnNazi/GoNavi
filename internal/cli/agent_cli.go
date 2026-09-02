@@ -294,14 +294,6 @@ func (r *ledgerHarnessRuntime) Close() error {
 			resources.closeLedger = r.ledger.Close
 		}
 		r.err = closeAgentRuntimeResources(r.lifecycle, resources)
-		// Provider snapshots are only an in-process bridge until the durable
-		// ExecutionBinding is available. Clear them after workers stop so an
-		// in-flight cancellation cannot reload a mutable configuration midway
-		// through its final attempt, and so a long-lived CLI does not retain API
-		// keys after owner shutdown.
-		if r.providerResolver != nil {
-			r.providerResolver.ForgetAll()
-		}
 	})
 	return r.err
 }
@@ -309,25 +301,16 @@ func (r *ledgerHarnessRuntime) Close() error {
 // Forward the public harness interface to the concrete implementation.  A
 // small wrapper keeps Close ownership separate from the shared interface.
 func (r *ledgerHarnessRuntime) SubmitInput(ctx context.Context, request runharness.AgentInputRequest) (runharness.AgentInputReceipt, error) {
-	receipt, err := r.harness.SubmitInput(ctx, request)
-	if err == nil && receipt.State.Terminal() && r.providerResolver != nil {
-		r.providerResolver.ForgetRun(receipt.RunID)
+	if r == nil || r.harness == nil {
+		return runharness.AgentInputReceipt{}, errors.New("agent runtime is unavailable")
 	}
-	return receipt, err
+	return r.harness.SubmitInput(ctx, request)
 }
 func (r *ledgerHarnessRuntime) ControlRun(ctx context.Context, request runharness.RunControlRequest) (runharness.RunSnapshot, error) {
-	run, err := r.harness.ControlRun(ctx, request)
-	if err == nil && run.State.Terminal() && r.providerResolver != nil {
-		r.providerResolver.ForgetRun(run.ID)
-	}
-	return run, err
+	return r.harness.ControlRun(ctx, request)
 }
 func (r *ledgerHarnessRuntime) ReadRun(ctx context.Context, request runharness.RunReadRequest) (runharness.RunReadResult, error) {
-	result, err := r.harness.ReadRun(ctx, request)
-	if err == nil && result.Run.State.Terminal() && r.providerResolver != nil {
-		r.providerResolver.ForgetRun(result.Run.ID)
-	}
-	return result, err
+	return r.harness.ReadRun(ctx, request)
 }
 func (r *ledgerHarnessRuntime) ListSessions(ctx context.Context, request runharness.SessionListRequest) (runharness.SessionListResult, error) {
 	return r.harness.ListSessions(ctx, request)
@@ -396,8 +379,11 @@ func defaultAgentHarnessFactory(ctx context.Context, options AgentHarnessOptions
 	providerResolver := newCLIProviderResolverState(root)
 	model := runharness.NewProviderModelTurnAdapter(providerResolver.resolve)
 	config := runharness.HarnessConfig{
-		Ledger:                         ledger,
-		Model:                          model,
+		Ledger: ledger,
+		Model:  model,
+		InputBinder: func(_ context.Context, request *runharness.AgentInputRequest) error {
+			return providerResolver.bindInput(request)
+		},
 		Tools:                          newCLIAgentToolCatalog(backend, mcpService),
 		Approvals:                      newCLIAgentApprovalHandler(),
 		RootContext:                    ctx,
@@ -978,6 +964,15 @@ func runAgentRun(ctx context.Context, args []string, stdout io.Writer, stderr io
 	if err != nil {
 		return failAgentError(stderr, err)
 	}
+	// A queue submission targeting an existing session must carry the current
+	// session projection revision.  Resolve it here when the caller did not
+	// provide one; the harness then performs the actual atomic CAS alongside
+	// run creation.  Steer revisions belong to the active run, so never reuse a
+	// session revision for that distinct control path.
+	effectiveDispatchMode := dispatchMode
+	if effectiveDispatchMode == "" {
+		effectiveDispatchMode = policy.Normalize().DefaultDispatchMode
+	}
 	commandCtx, cancel, err := agentCommandContext(ctx, *timeout)
 	if err != nil {
 		return failAgentError(stderr, err)
@@ -1002,6 +997,21 @@ func runAgentRun(ctx context.Context, args []string, stdout io.Writer, stderr io
 		// error whose effect cannot be established from this adapter call.
 		lifetime.Detach()
 		return fail(stderr, ExitUsage, "context_invalid", err)
+	}
+	if strings.TrimSpace(*sessionID) != "" && effectiveDispatchMode == runharness.DispatchQueue && *expectedRevision == 0 {
+		projection, readErr := runtime.ReadSession(ctx, runharness.SessionReadRequest{SessionID: strings.TrimSpace(*sessionID)})
+		if readErr != nil {
+			// The runtime may already own/recover another durable run. A failed
+			// projection read does not establish that those workers are idle, so
+			// preserve the owner instead of closing it from this command's defer.
+			lifetime.Detach()
+			return failAgentError(stderr, fmt.Errorf("read session revision: %w", readErr))
+		}
+		if projection.Revision <= 0 {
+			lifetime.Detach()
+			return failAgentError(stderr, fmt.Errorf("read session revision: invalid revision %d for session %q", projection.Revision, projection.ID))
+		}
+		*expectedRevision = projection.Revision
 	}
 	renewal := startAgentWorkspaceSnapshotRenewal(ctx, runtime, binding, runtimeConfig.WorkspaceSnapshotRenewInterval)
 	defer renewal.Close()
@@ -1113,6 +1123,10 @@ func runAgentChat(ctx context.Context, args []string, stdout io.Writer, stderr i
 	if err != nil {
 		return failAgentError(stderr, err)
 	}
+	effectiveDispatchMode := dispatchMode
+	if effectiveDispatchMode == "" {
+		effectiveDispatchMode = policy.Normalize().DefaultDispatchMode
+	}
 	commandCtx, cancel, err := agentCommandContext(ctx, *timeout)
 	if err != nil {
 		return failAgentError(stderr, err)
@@ -1134,6 +1148,7 @@ func runAgentChat(ctx context.Context, args []string, stdout io.Writer, stderr i
 	defer renewal.Close()
 	firstRequestID := strings.TrimSpace(*requestIDFlag)
 	firstRevision := *expectedRevision
+	submittedInput := false
 	nextRequestID := func() string {
 		id := firstRequestID
 		firstRequestID = ""
@@ -1147,8 +1162,32 @@ func runAgentChat(ctx context.Context, args []string, stdout io.Writer, stderr i
 		firstRevision = 0
 		return revision
 	}
+	nextExpectedRevision := func() (int64, error) {
+		revision := nextRevision()
+		// An explicit revision belongs to the first input.  Once this
+		// interactive chat has created or joined a session, queue submissions
+		// must read the latest session projection before they mutate it.  A
+		// steer uses the active run's revision instead, so do not accidentally
+		// send a session revision down that distinct CAS path.
+		if !submittedInput || revision > 0 || effectiveDispatchMode != runharness.DispatchQueue || strings.TrimSpace(*sessionID) == "" {
+			return revision, nil
+		}
+		projection, err := runtime.ReadSession(ctx, runharness.SessionReadRequest{SessionID: strings.TrimSpace(*sessionID)})
+		if err != nil {
+			return 0, fmt.Errorf("read session revision: %w", err)
+		}
+		if projection.Revision <= 0 {
+			return 0, fmt.Errorf("read session revision: invalid revision %d for session %q", projection.Revision, projection.ID)
+		}
+		return projection.Revision, nil
+	}
 	if strings.TrimSpace(*prompt) != "" {
 		if err := binding.Publish(ctx, runtime); err != nil {
+			detachAgentCommandResources(lifetime, renewal)
+			return failAgentError(stderr, err)
+		}
+		revision, err := nextExpectedRevision()
+		if err != nil {
 			detachAgentCommandResources(lifetime, renewal)
 			return failAgentError(stderr, err)
 		}
@@ -1156,7 +1195,7 @@ func runAgentChat(ctx context.Context, args []string, stdout io.Writer, stderr i
 			RequestID: nextRequestID(), SessionID: strings.TrimSpace(*sessionID), Content: *prompt,
 			DispatchMode: dispatchMode, ContextSourceID: binding.SourceID, ContextSourceInstanceID: binding.SourceInstanceID,
 			Provider: strings.TrimSpace(*provider), Model: strings.TrimSpace(*model), Thinking: strings.TrimSpace(*thinking),
-			ExpectedRevision: nextRevision(),
+			ExpectedRevision: revision,
 		}
 		visited := visitedFlags(fs)
 		if visited["temperature"] {
@@ -1206,11 +1245,16 @@ func runAgentChat(ctx context.Context, args []string, stdout io.Writer, stderr i
 			detachAgentCommandResources(lifetime, renewal)
 			return failAgentError(stderr, err)
 		}
+		revision, err := nextExpectedRevision()
+		if err != nil {
+			detachAgentCommandResources(lifetime, renewal)
+			return failAgentError(stderr, err)
+		}
 		request := runharness.AgentInputRequest{
 			RequestID: nextRequestID(), SessionID: strings.TrimSpace(*sessionID), Content: content,
 			DispatchMode: dispatchMode, ContextSourceID: binding.SourceID, ContextSourceInstanceID: binding.SourceInstanceID,
 			Provider: strings.TrimSpace(*provider), Model: strings.TrimSpace(*model), Thinking: strings.TrimSpace(*thinking),
-			ExpectedRevision: nextRevision(),
+			ExpectedRevision: revision,
 		}
 		visited := visitedFlags(fs)
 		if visited["temperature"] {
@@ -1225,6 +1269,7 @@ func runAgentChat(ctx context.Context, args []string, stdout io.Writer, stderr i
 			// subsequent lines must stay on that same durable conversation.
 			*sessionID = receipt.SessionID
 		}
+		submittedInput = true
 		if code != ExitSuccess {
 			detachAgentCommandResources(lifetime, renewal)
 			return code
@@ -1409,8 +1454,8 @@ func runAgentControl(ctx context.Context, action string, args []string, stdout i
 		writeAgentControlUsage(stdout, action)
 		return ExitSuccess
 	}
-	if fs.NArg() != 1 || *expected < 0 {
-		return fail(stderr, ExitUsage, "usage", errors.New("command requires RUN_ID"))
+	if fs.NArg() != 1 || *expected <= 0 {
+		return fail(stderr, ExitUsage, "usage", errors.New("command requires RUN_ID and a positive --expected-revision"))
 	}
 	mode, err := parseAgentOutputMode(fs, stdout, common.jsonFlag, common.jsonlFlag, common.humanFlag)
 	if err != nil {
@@ -1447,6 +1492,7 @@ func runAgentApproval(ctx context.Context, action string, args []string, stdout 
 	bindAgentCommonFlags(fs, &common)
 	approvalID := fs.String("approval-id", "", "approval ID")
 	callID := fs.String("call-id", "", "tool call ID")
+	argsHash := fs.String("args-hash", "", "SHA-256 hash of the approved tool arguments")
 	expected := fs.Int64("expected-revision", 0, "expected run revision")
 	request := fs.String("request-id", "", "idempotency key")
 	wait := fs.Bool("wait", true, "wait for the approval decision to be consumed")
@@ -1461,8 +1507,8 @@ func runAgentApproval(ctx context.Context, action string, args []string, stdout 
 		writeAgentApprovalUsage(stdout, action)
 		return ExitSuccess
 	}
-	if fs.NArg() != 1 || *expected < 0 || strings.TrimSpace(*approvalID) == "" || strings.TrimSpace(*callID) == "" {
-		return fail(stderr, ExitUsage, "usage", errors.New("approval command requires RUN_ID, --approval-id, and --call-id"))
+	if fs.NArg() != 1 || *expected <= 0 || strings.TrimSpace(*approvalID) == "" || strings.TrimSpace(*callID) == "" || strings.TrimSpace(*argsHash) == "" {
+		return fail(stderr, ExitUsage, "usage", errors.New("approval command requires RUN_ID, --approval-id, --call-id, --args-hash, and a positive --expected-revision"))
 	}
 	if *noWait {
 		*wait = false
@@ -1498,7 +1544,7 @@ func runAgentApproval(ctx context.Context, action string, args []string, stdout 
 	// Recording an approval/denial is a durable control operation. Only the
 	// subsequent wait is bounded by --timeout; an expired command must not
 	// discard a decision that was already submitted.
-	run, err := runtime.ControlRun(ctx, runharness.RunControlRequest{RequestID: normalizedAgentRequestID(*request), RunID: fs.Arg(0), Action: controlAction, ApprovalID: strings.TrimSpace(*approvalID), CallID: strings.TrimSpace(*callID), ExpectedRevision: *expected})
+	run, err := runtime.ControlRun(ctx, runharness.RunControlRequest{RequestID: normalizedAgentRequestID(*request), RunID: fs.Arg(0), Action: controlAction, ApprovalID: strings.TrimSpace(*approvalID), CallID: strings.TrimSpace(*callID), ArgsHash: strings.TrimSpace(*argsHash), ExpectedRevision: *expected})
 	if err != nil {
 		// The approval decision can be committed even when the response cannot be
 		// read back. Preserve the owner/worker so another invocation can observe
@@ -1538,8 +1584,8 @@ func runAgentRecover(ctx context.Context, args []string, stdout io.Writer, stder
 		writeAgentRecoverUsage(stdout)
 		return ExitSuccess
 	}
-	if fs.NArg() != 1 || *expected < 0 || strings.TrimSpace(*action) == "" {
-		return fail(stderr, ExitUsage, "usage", errors.New("agent recover requires RUN_ID and --action"))
+	if fs.NArg() != 1 || *expected <= 0 || strings.TrimSpace(*action) == "" {
+		return fail(stderr, ExitUsage, "usage", errors.New("agent recover requires RUN_ID, --action, and a positive --expected-revision"))
 	}
 	controlAction, err := parseRecoveryAction(*action)
 	if err != nil {
@@ -2119,9 +2165,11 @@ func waitForAgentRunOptionsState(ctx context.Context, runtime AgentHarnessRuntim
 		result, err := runtime.ReadRun(ctx, runharness.RunReadRequest{RunID: runID, AfterSequence: after})
 		if err != nil {
 			if ctx != nil && errors.Is(ctx.Err(), context.Canceled) {
-				if terminal, terminalState := cancelAgentRun(ctx, runtime, runID); terminal {
+				if terminal, terminalState, cancelErr := cancelAgentRunWithError(ctx, runtime, runID); terminal {
 					lastState = terminalState
 					return exitCodeForRunState(terminalState), lastState
+				} else if cancelErr != nil {
+					return failAgentError(stderr, cancelErr), lastState
 				}
 				return fail(stderr, ExitCancelled, "cancelled", ctx.Err()), lastState
 			}
@@ -2144,7 +2192,7 @@ func waitForAgentRunOptionsState(ctx context.Context, runtime AgentHarnessRuntim
 				}
 			}
 		}
-		if result.Run.State.Terminal() || (isAgentActionRequired(result.Run.State) && !(ignoreAwaitingApproval && result.Run.State == runharness.RunStateAwaitingApproval)) {
+		if result.Run.State.Terminal() || (isAgentWaitActionRequired(result.Run.State) && !(ignoreAwaitingApproval && result.Run.State == runharness.RunStateAwaitingApproval)) {
 			if mode == agentOutputJSON {
 				if code := emitOutput(stdout, stderr, result); code != ExitSuccess {
 					return code, lastState
@@ -2157,9 +2205,11 @@ func waitForAgentRunOptionsState(ctx context.Context, runtime AgentHarnessRuntim
 		case <-ctx.Done():
 			timer.Stop()
 			if errors.Is(ctx.Err(), context.Canceled) {
-				if terminal, terminalState := cancelAgentRun(ctx, runtime, runID); terminal {
+				if terminal, terminalState, cancelErr := cancelAgentRunWithError(ctx, runtime, runID); terminal {
 					lastState = terminalState
 					return exitCodeForRunState(terminalState), lastState
+				} else if cancelErr != nil {
+					return failAgentError(stderr, cancelErr), lastState
 				}
 				return fail(stderr, ExitCancelled, "cancelled", ctx.Err()), lastState
 			}
@@ -2181,7 +2231,7 @@ func emitAgentActionNotice(stderr io.Writer, event runharness.RunEvent) {
 	if err := json.Unmarshal(event.Payload, &payload); err != nil || payload.Decision != "pending" {
 		return
 	}
-	_, _ = fmt.Fprintf(stderr, "approval required: runId=%s callId=%s approvalId=%s\n", event.RunID, payload.CallID, payload.ApprovalID)
+	_, _ = fmt.Fprintf(stderr, "approval required: runId=%s callId=%s approvalId=%s argsHash=%s\n", event.RunID, payload.CallID, payload.ApprovalID, payload.ArgsHash)
 }
 
 // cancelAgentRun persists cancellation with a short context detached from the
@@ -2190,32 +2240,83 @@ func emitAgentActionNotice(stderr io.Writer, event runharness.RunEvent) {
 // of constructing a second root context, while its timeout keeps SIGINT from
 // leaving the CLI process stuck behind an uncooperative external tool.
 func cancelAgentRun(parent context.Context, runtime AgentHarnessRuntime, runID string) (bool, runharness.RunState) {
+	terminal, state, _ := cancelAgentRunWithError(parent, runtime, runID)
+	return terminal, state
+}
+
+// cancelAgentRunWithError persists cancellation with a compare-and-swap guard
+// and reports errors instead of allowing a failed control command to look like
+// a successful cancellation. A run can advance between the initial read and
+// the command enqueue; in that case we refresh once and retry against the new
+// revision. More than one refresh would make SIGINT an unbounded mutating
+// operation and could race a legitimate steer/terminal transition.
+func cancelAgentRunWithError(parent context.Context, runtime AgentHarnessRuntime, runID string) (bool, runharness.RunState, error) {
 	if runtime == nil || strings.TrimSpace(runID) == "" {
-		return false, ""
+		return false, "", errors.New("agent cancellation runtime or run ID is unavailable")
 	}
 	if parent == nil {
-		return false, ""
+		return false, "", runharness.ErrRootContextRequired
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 2*time.Second)
 	defer cancel()
-	_, _ = runtime.ControlRun(ctx, runharness.RunControlRequest{
-		RequestID: normalizedAgentRequestID(""), RunID: runID, Action: runharness.ControlCancel,
-	})
+	// A cancellation is a durable mutation too. Read the current projection
+	// under the detached command context first so its CAS guard cannot silently
+	// overwrite a newer owner transition after SIGINT has canceled the waiter.
+	current, err := runtime.ReadRun(ctx, runharness.RunReadRequest{RunID: runID})
+	if err != nil {
+		return false, "", fmt.Errorf("read run before cancellation: %w", err)
+	}
+	if current.Run.State.Terminal() {
+		return true, current.Run.State, nil
+	}
+	if current.Run.Revision <= 0 {
+		return false, "", fmt.Errorf("read run before cancellation: invalid revision %d", current.Run.Revision)
+	}
+	commandID := normalizedAgentRequestID("")
+	for attempt := 0; attempt < 2; attempt++ {
+		_, err = runtime.ControlRun(ctx, runharness.RunControlRequest{
+			RequestID: commandID, RunID: runID, Action: runharness.ControlCancel,
+			ExpectedRevision: current.Run.Revision,
+		})
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, runharness.ErrRevisionConflict) || attempt == 1 {
+			return false, "", fmt.Errorf("persist cancellation: %w", err)
+		}
+		// Refresh the CAS value once. If the concurrent transition already
+		// reached a terminal state, report that state rather than claiming the
+		// canceled command won the race.
+		current, err = runtime.ReadRun(ctx, runharness.RunReadRequest{RunID: runID})
+		if err != nil {
+			return false, "", fmt.Errorf("refresh run before cancellation retry: %w", err)
+		}
+		if current.Run.State.Terminal() {
+			return true, current.Run.State, nil
+		}
+		if current.Run.Revision <= 0 {
+			return false, "", fmt.Errorf("refresh run before cancellation retry: invalid revision %d", current.Run.Revision)
+		}
+	}
 	deadlineCtx, deadlineCancel := context.WithTimeout(context.WithoutCancel(parent), 2*time.Second)
 	defer deadlineCancel()
 	for {
 		result, err := runtime.ReadRun(deadlineCtx, runharness.RunReadRequest{RunID: runID})
 		if err != nil {
-			return false, ""
+			return false, "", fmt.Errorf("read run after cancellation: %w", err)
 		}
 		if result.Run.State.Terminal() {
-			return true, result.Run.State
+			return true, result.Run.State, nil
 		}
 		timer := time.NewTimer(25 * time.Millisecond)
 		select {
 		case <-deadlineCtx.Done():
 			timer.Stop()
-			return false, ""
+			// The durable cancel command has already been accepted.  Preserve the
+			// historical SIGINT contract (the caller exits canceled while the
+			// owner finishes settling asynchronously); only failures to persist the
+			// command itself are surfaced as action-required errors above.
+			return false, "", nil
 		case <-timer.C:
 		}
 	}
@@ -2239,6 +2340,14 @@ func isAgentActionRequired(state runharness.RunState) bool {
 	default:
 		return false
 	}
+}
+
+// isAgentWaitActionRequired excludes queued runs. A queue entry is durable
+// work, not a prompt for the user: the local worker may be about to acquire
+// it, so `agent run --wait` must keep the adapter alive long enough to do so.
+// --no-wait intentionally still reports queued as a non-terminal receipt.
+func isAgentWaitActionRequired(state runharness.RunState) bool {
+	return state != runharness.RunStateQueued && isAgentActionRequired(state)
 }
 
 func exitCodeForRunState(state runharness.RunState) int {
@@ -2298,25 +2407,23 @@ func writeAgentSnapshot(writer io.Writer, run runharness.RunSnapshot) {
 
 func writeAgentEvent(writer io.Writer, event runharness.RunEvent) {
 	_, _ = fmt.Fprintf(writer, "[%d] %s state=%s\n", event.Sequence, event.Kind, event.ResultingState)
-	if len(event.Payload) > 0 {
-		var payload map[string]any
-		if json.Unmarshal(event.Payload, &payload) == nil {
-			if event.Kind == runharness.EventApproval {
-				_, _ = fmt.Fprintf(writer, "approval=%s call=%s decision=%s\n", payloadString(payload, "approvalId"), payloadString(payload, "callId"), payloadString(payload, "decision"))
-			}
-			if text, ok := payload["text"].(string); ok && text != "" {
-				_, _ = fmt.Fprint(writer, text)
-			}
+	if len(event.Payload) == 0 {
+		return
+	}
+	if event.Kind == runharness.EventApproval {
+		var approval runharness.ApprovalEvent
+		if json.Unmarshal(event.Payload, &approval) == nil {
+			_, _ = fmt.Fprintf(writer, "approval=%s call=%s args-hash=%s decision=%s\n", approval.ApprovalID, approval.CallID, approval.ArgsHash, approval.Decision)
 		}
+		return
 	}
-}
-
-func payloadString(payload map[string]any, key string) string {
-	if payload == nil {
-		return ""
+	var payload map[string]any
+	if json.Unmarshal(event.Payload, &payload) != nil {
+		return
 	}
-	value, _ := payload[key].(string)
-	return value
+	if text, ok := payload["text"].(string); ok && text != "" {
+		_, _ = fmt.Fprint(writer, text)
+	}
 }
 
 func writeAgentSessionList(writer io.Writer, result runharness.SessionListResult) {
@@ -2354,15 +2461,15 @@ func writeAgentShowUsage(writer io.Writer) {
 }
 
 func writeAgentControlUsage(writer io.Writer, action string) {
-	_, _ = fmt.Fprintf(writer, "Usage: gonavi agent %s RUN_ID [--expected-revision N]\n", action)
+	_, _ = fmt.Fprintf(writer, "Usage: gonavi agent %s RUN_ID --expected-revision N\n", action)
 }
 
 func writeAgentApprovalUsage(writer io.Writer, action string) {
-	_, _ = fmt.Fprintf(writer, "Usage: gonavi agent %s RUN_ID --approval-id APPROVAL_ID --call-id CALL_ID [--wait|--no-wait] [--poll DURATION] [--timeout DURATION]\n", action)
+	_, _ = fmt.Fprintf(writer, "Usage: gonavi agent %s RUN_ID --approval-id APPROVAL_ID --call-id CALL_ID --args-hash SHA256 --expected-revision N [--wait|--no-wait] [--poll DURATION] [--timeout DURATION]\n", action)
 }
 
 func writeAgentRecoverUsage(writer io.Writer) {
-	_, _ = io.WriteString(writer, "Usage: gonavi agent recover RUN_ID --action mark-completed|retry|abort [--call-id CALL_ID]\n")
+	_, _ = io.WriteString(writer, "Usage: gonavi agent recover RUN_ID --action mark-completed|retry|abort --expected-revision N [--call-id CALL_ID]\n")
 }
 
 func writeAgentConfigUsage(writer io.Writer) {

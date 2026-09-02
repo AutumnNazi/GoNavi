@@ -84,6 +84,83 @@ func (s *Service) AISubmitAgentInput(request runharness.AgentInputRequest) (runh
 	return harness.SubmitInput(ctx, request)
 }
 
+// bindAgentProviderInput resolves the current desktop provider configuration
+// exactly once, before the Ledger accepts a new run. The resulting binding is
+// encrypted with the run and is the sole provider source for later attempts or
+// process recovery. A providerless request is rejected before the Ledger sees
+// it: every accepted run must have an immutable provider execution contract.
+func (s *Service) bindAgentProviderInput(request *runharness.AgentInputRequest) error {
+	if s == nil {
+		return errors.New("AI Service is nil")
+	}
+	if request == nil {
+		return errors.New("agent input is required")
+	}
+
+	requestedID := strings.TrimSpace(request.Provider)
+	s.mu.RLock()
+	activeID := strings.TrimSpace(s.activeProvider)
+	if activeID == "" && len(s.providers) > 0 {
+		activeID = strings.TrimSpace(s.providers[0].ID)
+	}
+	var selected ai.ProviderConfig
+	for _, candidate := range s.providers {
+		candidateID := strings.TrimSpace(candidate.ID)
+		if requestedID != "" {
+			if candidateID != requestedID && !strings.EqualFold(candidateID, requestedID) && !strings.EqualFold(strings.TrimSpace(candidate.Name), requestedID) {
+				continue
+			}
+		} else if candidateID != activeID {
+			continue
+		}
+		selected = cloneAgentProviderConfig(candidate)
+		break
+	}
+	localizer := s.serviceLocalizerForLanguageLocked()
+	s.mu.RUnlock()
+
+	if strings.TrimSpace(selected.ID) == "" {
+		if requestedID == "" {
+			return serviceErrorFromLocalizer(
+				localizer,
+				"ai_service.backend.error.provider_not_configured",
+				nil,
+				errors.New("provider is not configured"),
+			)
+		}
+		return fmt.Errorf("agent provider %q is not configured", requestedID)
+	}
+	resolved, err := s.resolveProviderConfigSecrets(selected)
+	if err != nil {
+		return err
+	}
+	options := ai.ChatSendOptions{Model: request.Model, ThinkingIntensity: request.Thinking}
+	resolved = normalizeProviderConfig(applyChatSendOptionsToProviderConfig(resolved, options))
+	if request.Temperature != nil {
+		resolved.Temperature = *request.Temperature
+	}
+	if request.MaxTokens != nil {
+		resolved.MaxTokens = *request.MaxTokens
+	}
+	resolved = cloneAgentProviderConfig(resolved)
+	binding, err := runharness.NewProviderBinding(resolved.ID, resolved)
+	if err != nil {
+		return fmt.Errorf("bind agent provider: %w", err)
+	}
+	if strings.TrimSpace(binding.ProviderID) == "" {
+		return serviceErrorFromLocalizer(
+			localizer,
+			"ai_service.backend.error.provider_not_configured",
+			nil,
+			errors.New("provider is not configured"),
+		)
+	}
+	if err := request.SetProviderBinding(binding); err != nil {
+		return fmt.Errorf("attach agent provider binding: %w", err)
+	}
+	return nil
+}
+
 // AIControlAgentRun applies a durable cancel, steer, approval, resume or
 // recovery command to a run.
 func (s *Service) AIControlAgentRun(request runharness.RunControlRequest) (runharness.RunSnapshot, error) {
@@ -133,12 +210,92 @@ func (s *Service) AIMutateAgentSession(request runharness.SessionMutationRequest
 }
 
 // AIUpdateWorkspaceSnapshot stores a complete, source-owned workspace view.
+// Publishing workspace context is deliberately lightweight: the desktop sends
+// its first snapshot during startup, while opening the encrypted Agent ledger
+// should wait until an Agent feature is actually used. The latest snapshot is
+// therefore kept in memory until agentHarnessForCall initializes the ledger.
 func (s *Service) AIUpdateWorkspaceSnapshot(snapshot runharness.WorkspaceSnapshot) (runharness.SnapshotAck, error) {
-	harness, ctx, err := s.agentHarnessForCall()
+	if s == nil {
+		return runharness.SnapshotAck{}, errors.New("AI Service is nil")
+	}
+	ctx, err := s.agentRunLifecycleContext()
 	if err != nil {
 		return runharness.SnapshotAck{}, err
 	}
-	return harness.PutWorkspaceSnapshot(ctx, snapshot)
+	if err := snapshot.Normalize(); err != nil {
+		return runharness.SnapshotAck{}, err
+	}
+	return s.cacheOrPersistWorkspaceSnapshot(ctx, snapshot)
+}
+
+func workspaceSnapshotCacheKey(snapshot runharness.WorkspaceSnapshot) string {
+	return string(snapshot.SourceKind) + "\x00" + snapshot.SourceID + "\x00" + snapshot.SourceInstanceID
+}
+
+func (s *Service) cacheOrPersistWorkspaceSnapshot(ctx context.Context, snapshot runharness.WorkspaceSnapshot) (runharness.SnapshotAck, error) {
+	s.agentMu.Lock()
+	if s.agentHarnessShutdown {
+		s.agentMu.Unlock()
+		return runharness.SnapshotAck{}, runharness.ErrHarnessClosed
+	}
+	if harness := s.agentHarness; harness != nil {
+		s.agentMu.Unlock()
+		return harness.PutWorkspaceSnapshot(ctx, snapshot)
+	}
+	if s.agentPendingWorkspaceSnapshots == nil {
+		s.agentPendingWorkspaceSnapshots = make(map[string]runharness.WorkspaceSnapshot)
+	}
+	key := workspaceSnapshotCacheKey(snapshot)
+	if previous, ok := s.agentPendingWorkspaceSnapshots[key]; ok {
+		if snapshot.Revision < previous.Revision ||
+			(snapshot.Revision == previous.Revision && snapshot.ContentHash != previous.ContentHash) {
+			s.agentMu.Unlock()
+			return runharness.SnapshotAck{}, runharness.ErrSnapshotConflict
+		}
+	}
+	s.agentPendingWorkspaceSnapshots[key] = snapshot
+	s.agentMu.Unlock()
+	return runharness.SnapshotAck{
+		SourceID:         snapshot.SourceID,
+		SourceInstanceID: snapshot.SourceInstanceID,
+		Revision:         snapshot.Revision,
+		ContentHash:      snapshot.ContentHash,
+		Accepted:         true,
+	}, nil
+}
+
+// flushPendingWorkspaceSnapshots transfers startup snapshots to the durable
+// ledger after the Harness has been initialized. A failed transfer is put back
+// in the cache so a later heartbeat can retry with the same revision.
+func (s *Service) flushPendingWorkspaceSnapshots(ctx context.Context) error {
+	s.agentMu.Lock()
+	harness := s.agentHarness
+	if harness == nil || len(s.agentPendingWorkspaceSnapshots) == 0 {
+		s.agentMu.Unlock()
+		return nil
+	}
+	pending := make([]runharness.WorkspaceSnapshot, 0, len(s.agentPendingWorkspaceSnapshots))
+	for _, snapshot := range s.agentPendingWorkspaceSnapshots {
+		pending = append(pending, snapshot)
+	}
+	s.agentPendingWorkspaceSnapshots = nil
+	s.agentMu.Unlock()
+
+	for _, snapshot := range pending {
+		if _, err := harness.PutWorkspaceSnapshot(ctx, snapshot); err != nil {
+			s.agentMu.Lock()
+			if s.agentPendingWorkspaceSnapshots == nil {
+				s.agentPendingWorkspaceSnapshots = make(map[string]runharness.WorkspaceSnapshot)
+			}
+			key := workspaceSnapshotCacheKey(snapshot)
+			if previous, ok := s.agentPendingWorkspaceSnapshots[key]; !ok || snapshot.Revision > previous.Revision {
+				s.agentPendingWorkspaceSnapshots[key] = snapshot
+			}
+			s.agentMu.Unlock()
+			return fmt.Errorf("flush workspace snapshot: %w", err)
+		}
+	}
+	return nil
 }
 
 // AIGetRunPolicy reads the shared policy file.  Reading the policy does not
@@ -173,9 +330,6 @@ func (s *Service) AIGetAgentLedgerStatus() runharness.LedgerStatus {
 		return runharness.LedgerStatus{State: runharness.LedgerStatusReady}
 	}
 	if isAgentLedgerLocked(initializationErr) {
-		return runharness.LedgerStatus{State: runharness.LedgerStatusLocked}
-	}
-	if !initialized && s.secretStore != nil && secretstore.IsUnavailable(s.secretStore.HealthCheck()) {
 		return runharness.LedgerStatus{State: runharness.LedgerStatusLocked}
 	}
 	return runharness.LedgerStatus{State: runharness.LedgerStatusUnavailable}
@@ -342,8 +496,11 @@ func (s *Service) initializeAgentHarness(ctx context.Context) error {
 
 	adapter := runharness.NewProviderModelTurnAdapter(s.resolveAgentProvider, s.resolveAgentImagePrompts)
 	config := runharness.HarnessConfig{
-		Ledger:      ledger,
-		Model:       adapter,
+		Ledger: ledger,
+		Model:  adapter,
+		InputBinder: func(_ context.Context, request *runharness.AgentInputRequest) error {
+			return s.bindAgentProviderInput(request)
+		},
 		Tools:       s.agentToolCatalog,
 		Approvals:   s.agentApprovalHandler,
 		Runtime:     policySnapshot.Runtime,
@@ -413,6 +570,9 @@ func (s *Service) agentHarnessForCall() (runharness.Harness, context.Context, er
 	if harness == nil {
 		return nil, nil, errors.New("agent harness is unavailable")
 	}
+	if err := s.flushPendingWorkspaceSnapshots(ctx); err != nil {
+		return nil, nil, err
+	}
 	return harness, ctx, nil
 }
 
@@ -451,13 +611,6 @@ func (s *Service) agentLifecycleContext() context.Context {
 }
 
 func (s *Service) emitAgentRunEvent(event runharness.RunEvent) {
-	// Release the in-memory provider snapshot only after the terminal event has
-	// been durably appended. A late provider callback cannot create another
-	// model turn after this point, while a queued/paused run keeps its original
-	// credentials until it actually reaches a terminal state.
-	if event.Kind == runharness.EventTerminal {
-		s.forgetAgentProviderRun(event.RunID)
-	}
 	ctx, err := s.agentRunLifecycleContext()
 	if err != nil {
 		return
@@ -494,7 +647,6 @@ func (s *Service) detachAgentHarness() (*runharness.AgentRunHarness, *runharness
 // Ledger is closed.
 func (s *Service) shutdownAgentHarness() error {
 	harness, ledger := s.detachAgentHarness()
-	s.forgetAllAgentProviderRuns()
 	var result error
 	if harness != nil {
 		result = errors.Join(result, harness.Close())
@@ -503,31 +655,6 @@ func (s *Service) shutdownAgentHarness() error {
 		result = errors.Join(result, ledger.Close())
 	}
 	return result
-}
-
-// forgetAgentProviderRun removes a desktop provider snapshot after a run has
-// reached a durable terminal state. It is safe for a run that was owned by a
-// different process (there may simply be no local entry).
-func (s *Service) forgetAgentProviderRun(runID string) {
-	if s == nil {
-		return
-	}
-	runID = strings.TrimSpace(runID)
-	if runID == "" {
-		return
-	}
-	s.agentProviderMu.Lock()
-	delete(s.agentProviderSnapshots, runID)
-	s.agentProviderMu.Unlock()
-}
-
-func (s *Service) forgetAllAgentProviderRuns() {
-	if s == nil {
-		return
-	}
-	s.agentProviderMu.Lock()
-	s.agentProviderSnapshots = make(map[string]ai.ProviderConfig)
-	s.agentProviderMu.Unlock()
 }
 
 // cloneAgentProviderConfig keeps mutable slices/maps detached from the Service
@@ -555,75 +682,26 @@ func (s *Service) resolveAgentProvider(ctx context.Context, request runharness.M
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	// Keep the lock through the first resolution. The Harness serializes model
-	// turns for a run, but this also protects direct adapter calls and retries
-	// from observing two different settings revisions during a concurrent UI
-	// save. Different runs are still isolated by their own Service instance;
-	// the short critical section is limited to config/secret resolution and
-	// provider construction.
-	runID := strings.TrimSpace(request.RunID)
-	s.agentProviderMu.Lock()
-	defer s.agentProviderMu.Unlock()
-	if runID != "" {
-		if cached, ok := s.agentProviderSnapshots[runID]; ok {
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
-			return provider.NewProvider(cloneAgentProviderConfig(cached))
-		}
+	if request.ProviderBinding == nil {
+		return nil, runharness.ErrProviderBindingUnbound
 	}
-	requestedID := strings.TrimSpace(request.Provider)
-	s.mu.RLock()
-	activeID := strings.TrimSpace(s.activeProvider)
-	if activeID == "" && len(s.providers) > 0 {
-		activeID = s.providers[0].ID
-	}
-	var selected ai.ProviderConfig
-	for _, candidate := range s.providers {
-		if requestedID != "" && candidate.ID != requestedID && !strings.EqualFold(candidate.Name, requestedID) {
-			continue
-		}
-		if requestedID == "" && candidate.ID != activeID {
-			continue
-		}
-		selected = cloneAgentProviderConfig(candidate)
-		break
-	}
-	localizer := s.serviceLocalizerForLanguageLocked()
-	s.mu.RUnlock()
-	if strings.TrimSpace(selected.ID) == "" {
-		if requestedID != "" {
-			return nil, fmt.Errorf("agent provider %q is not configured", requestedID)
-		}
-		return nil, serviceErrorFromLocalizer(localizer, "ai_service.backend.error.provider_not_configured", nil, nil)
-	}
-	resolved, err := s.resolveProviderConfigSecrets(selected)
+	binding, err := request.ProviderBinding.Validate()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", runharness.ErrProviderBindingCorrupt, err)
 	}
-	options := ai.ChatSendOptions{Model: request.Model, ThinkingIntensity: request.Thinking}
-	resolved = normalizeProviderConfig(applyChatSendOptionsToProviderConfig(resolved, options))
-	// The adapter also carries these values in ModelTurnRequest, but freezing
-	// them on the resolved config keeps the desktop and CLI resolver contracts
-	// identical and protects providers that read their defaults directly.
-	if request.Temperature != nil {
-		resolved.Temperature = *request.Temperature
+	if requestedID := strings.TrimSpace(request.Provider); requestedID == "" || !strings.EqualFold(requestedID, binding.ProviderID) {
+		return nil, fmt.Errorf("%w: model request provider %q does not match binding %q", runharness.ErrProviderBindingCorrupt, request.Provider, binding.ProviderID)
 	}
-	if request.MaxTokens != nil {
-		resolved.MaxTokens = *request.MaxTokens
+	var resolved ai.ProviderConfig
+	if err := json.Unmarshal(binding.Config, &resolved); err != nil {
+		return nil, fmt.Errorf("%w: decode provider config: %v", runharness.ErrProviderBindingCorrupt, err)
 	}
-	resolved = cloneAgentProviderConfig(resolved)
+	resolved.ID = strings.TrimSpace(resolved.ID)
+	if resolved.ID == "" || resolved.ID != binding.ProviderID {
+		return nil, fmt.Errorf("%w: provider config ID %q does not match binding %q", runharness.ErrProviderBindingCorrupt, resolved.ID, binding.ProviderID)
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
-	}
-	if runID != "" {
-		if s.agentProviderSnapshots == nil {
-			s.agentProviderSnapshots = make(map[string]ai.ProviderConfig)
-		}
-		// Cache the fully resolved (secret-bearing) config before constructing
-		// the provider. A constructor failure is still bound to this run's
-		// accepted settings and must not silently switch credentials on retry.
-		s.agentProviderSnapshots[runID] = cloneAgentProviderConfig(resolved)
 	}
 	return provider.NewProvider(cloneAgentProviderConfig(resolved))
 }

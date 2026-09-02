@@ -3,12 +3,12 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
-	"sync"
 
 	"GoNavi-Wails/internal/ai"
 	"GoNavi-Wails/internal/ai/provider"
@@ -17,17 +17,11 @@ import (
 	"GoNavi-Wails/internal/mcpserver"
 )
 
-// cliProviderResolver freezes the fully-resolved provider configuration on the
-// first model attempt for each run.  A queued run can therefore outlive a
-// settings edit without silently switching endpoint, model, headers, or key
-// halfway through its lifecycle.  The durable ExecutionBinding path will
-// eventually move this cache into the Ledger; keeping the cache here preserves
-// the invariant for the current ProviderResolver-only seam as well.
+// cliProviderResolver owns only the current configuration lookup used while an
+// input is accepted. The immutable, secret-bearing result is persisted in the
+// Ledger's provider binding; model attempts never reload this configuration.
 type cliProviderResolver struct {
 	root string
-
-	mu        sync.Mutex
-	snapshots map[string]ai.ProviderConfig
 }
 
 // newCLIProviderInstance is a narrow test seam. Production code always uses
@@ -40,55 +34,55 @@ func newCLIProviderResolver(root string) runharness.ProviderResolver {
 }
 
 func newCLIProviderResolverState(root string) *cliProviderResolver {
-	return &cliProviderResolver{root: strings.TrimSpace(root), snapshots: make(map[string]ai.ProviderConfig)}
+	return &cliProviderResolver{root: strings.TrimSpace(root)}
 }
 
-// ForgetRun releases the in-memory provider snapshot after a run reaches a
-// terminal state. The durable run binding remains the source of truth for a
-// later process; this cache only bridges model attempts owned by this CLI
-// runtime. It is safe to call repeatedly and concurrently with resolve.
-func (r *cliProviderResolver) ForgetRun(runID string) {
+// bindInput resolves and freezes the selected provider before the Ledger
+// accepts a run. LoadRuntime returns the provider's secret-bearing runtime
+// configuration, while the Ledger encrypts the resulting binding at rest.
+func (r *cliProviderResolver) bindInput(request *runharness.AgentInputRequest) error {
 	if r == nil {
-		return
+		return errors.New("AI provider resolver is unavailable")
 	}
-	if runID = strings.TrimSpace(runID); runID == "" {
-		return
+	if request == nil {
+		return errors.New("agent input is required")
 	}
-	r.mu.Lock()
-	delete(r.snapshots, runID)
-	r.mu.Unlock()
-}
-
-// ForgetAll releases every in-memory snapshot when the owning runtime shuts
-// down. Do not use this for a live run: its next model attempt must continue
-// using the original frozen configuration.
-func (r *cliProviderResolver) ForgetAll() {
-	if r == nil {
-		return
+	store := aiservice.NewProviderConfigStore(r.root, nil)
+	snapshot, err := store.LoadRuntime()
+	if err != nil {
+		return fmt.Errorf("load AI provider configuration: %w", err)
 	}
-	r.mu.Lock()
-	r.snapshots = make(map[string]ai.ProviderConfig)
-	r.mu.Unlock()
-}
-
-func (r *cliProviderResolver) cachedRunCount() int {
-	if r == nil {
-		return 0
+	selected, err := selectCLIProvider(snapshot, request.Provider)
+	if err != nil {
+		return err
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return len(r.snapshots)
+	if value := strings.TrimSpace(request.Model); value != "" {
+		selected.Model = value
+	}
+	if value := strings.TrimSpace(request.Thinking); value != "" {
+		selected.ThinkingIntensity = value
+	}
+	if request.Temperature != nil {
+		selected.Temperature = *request.Temperature
+	}
+	if request.MaxTokens != nil {
+		selected.MaxTokens = *request.MaxTokens
+	}
+	selected = cloneCLIProviderConfig(selected)
+	binding, err := runharness.NewProviderBinding(selected.ID, selected)
+	if err != nil {
+		return fmt.Errorf("bind agent provider: %w", err)
+	}
+	if err := request.SetProviderBinding(binding); err != nil {
+		return fmt.Errorf("attach agent provider binding: %w", err)
+	}
+	return nil
 }
 
 func (r *cliProviderResolver) resolve(ctx context.Context, request runharness.ModelTurnRequest) (provider.Provider, error) {
 	if r == nil {
 		return nil, errors.New("AI provider resolver is unavailable")
 	}
-	// Serialize the first-load path per resolver. This both makes the cache
-	// deterministic when a provider callback retries concurrently and prevents
-	// two attempts for one run from observing different config file revisions.
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	if ctx == nil {
 		return nil, runharness.ErrRootContextRequired
 	}
@@ -96,38 +90,23 @@ func (r *cliProviderResolver) resolve(ctx context.Context, request runharness.Mo
 		return nil, err
 	}
 
-	cacheKey := strings.TrimSpace(request.RunID)
-	selected, cached := r.snapshots[cacheKey]
-	if !cached || cacheKey == "" {
-		store := aiservice.NewProviderConfigStore(r.root, nil)
-		snapshot, err := store.LoadRuntime()
-		if err != nil {
-			return nil, fmt.Errorf("load AI provider configuration: %w", err)
-		}
-		selected, err = selectCLIProvider(snapshot, request.Provider)
-		if err != nil {
-			return nil, err
-		}
-		// These values are turn-scoped overrides. Do not write them back to
-		// ai_config.json, because concurrent desktop runs may use the defaults.
-		if value := strings.TrimSpace(request.Model); value != "" {
-			selected.Model = value
-		}
-		if value := strings.TrimSpace(request.Thinking); value != "" {
-			selected.ThinkingIntensity = value
-		}
-		if request.Temperature != nil {
-			selected.Temperature = *request.Temperature
-		}
-		if request.MaxTokens != nil {
-			selected.MaxTokens = *request.MaxTokens
-		}
-		// Keep a deep copy so a provider implementation cannot mutate the cache
-		// through shared headers/models slices.
-		selected = cloneCLIProviderConfig(selected)
-		if cacheKey != "" {
-			r.snapshots[cacheKey] = cloneCLIProviderConfig(selected)
-		}
+	if request.ProviderBinding == nil {
+		return nil, runharness.ErrProviderBindingUnbound
+	}
+	binding, err := request.ProviderBinding.Validate()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", runharness.ErrProviderBindingCorrupt, err)
+	}
+	if requestedID := strings.TrimSpace(request.Provider); requestedID == "" || !strings.EqualFold(requestedID, binding.ProviderID) {
+		return nil, fmt.Errorf("%w: model request provider %q does not match binding %q", runharness.ErrProviderBindingCorrupt, request.Provider, binding.ProviderID)
+	}
+	var selected ai.ProviderConfig
+	if err := json.Unmarshal(binding.Config, &selected); err != nil {
+		return nil, fmt.Errorf("%w: decode provider config: %v", runharness.ErrProviderBindingCorrupt, err)
+	}
+	selected.ID = strings.TrimSpace(selected.ID)
+	if selected.ID == "" || selected.ID != binding.ProviderID {
+		return nil, fmt.Errorf("%w: provider config ID %q does not match binding %q", runharness.ErrProviderBindingCorrupt, selected.ID, binding.ProviderID)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err

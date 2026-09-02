@@ -68,6 +68,48 @@ describe('AI run event projection contract', () => {
     expect(parseAIRunEvent({ ...event(1), schemaVersion: 2 })).toBeNull();
     expect(parseAIRunEvent({ ...event(1), payload: '{' })).toBeNull();
     expect(parseAIRunEvent(event(0))).toBeNull();
+    // `interrupted` remains resumable. It must be communicated through a
+    // checkpoint/error event, never as the one terminal event for a run.
+    expect(parseAIRunEvent({
+      ...event(1),
+      kind: 'terminal',
+      resultingState: 'interrupted',
+      payload: { reason: 'shutdown' },
+    })).toBeNull();
+  });
+
+  it('accepts an interrupted state checkpoint with Go\'s empty checkpoint ID', () => {
+    expect(parseAIRunEvent({
+      ...event(1),
+      kind: 'checkpoint',
+      resultingState: 'interrupted',
+      payload: { checkpointId: '', sequence: 1 },
+    })).toMatchObject({
+      kind: 'checkpoint',
+      resultingState: 'interrupted',
+      payload: { checkpointId: '', sequence: 1 },
+    });
+  });
+
+  it('rejects coerced identifiers and unknown tool effects', () => {
+    expect(parseAIRunEvent({ ...event(1), runId: 42 })).toBeNull();
+    expect(parseAIRunEvent({ ...event(1), kind: ['model_delta'] })).toBeNull();
+    expect(parseAIRunEvent({
+      ...event(1),
+      payload: {
+        toolCalls: [{
+          callId: 'call-1',
+          toolName: 'execute_sql',
+          effect: 'write_everything',
+          arguments: {},
+        }],
+      },
+    })).toBeNull();
+    expect(normalizeAIRunToolIntent({
+      callId: 1,
+      toolName: 'execute_sql',
+      arguments: {},
+    })).toBeNull();
   });
 
   it('deduplicates, reports gaps without advancing, and drops terminal callbacks', () => {
@@ -105,7 +147,7 @@ describe('AI run event projection contract', () => {
     }]);
   });
 
-  it('drops invalid JSON arguments and duplicate call IDs', () => {
+  it('drops invalid JSON, duplicate IDs, and array-root arguments', () => {
     expect(toAIRunToolCalls({
       toolCalls: [
         { callId: 'bad-json', toolName: 'execute_sql', arguments: '{"sql":' },
@@ -119,11 +161,6 @@ describe('AI run event projection contract', () => {
         id: 'call-1',
         type: 'function',
         function: { name: 'execute_sql', arguments: '{"sql":"SELECT 1"}' },
-      },
-      {
-        id: 'call-2',
-        type: 'function',
-        function: { name: 'read_schema', arguments: '["public"]' },
       },
     ]);
   });

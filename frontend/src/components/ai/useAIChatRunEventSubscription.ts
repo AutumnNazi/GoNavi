@@ -79,6 +79,9 @@ interface ReplayRunProjection {
 const projectedRuns = new Map<string, ProjectedRun>();
 const claimedAssistantMessages = new Map<string, string>();
 
+export const AI_RUN_EVENT_RECOVERY_RETRY_BASE_MS = 100;
+export const AI_RUN_EVENT_RECOVERY_RETRY_MAX_MS = 5_000;
+
 const createProjectedRun = (): ProjectedRun => ({
   assistantMessageId: '',
   turn: 0,
@@ -239,23 +242,25 @@ const toolIntentFor = (run: ProjectedRun, callId: unknown): AIRunToolIntent | un
 const toApprovalState = (
   event: AIRunEvent,
   payload: AIRunApprovalPayload,
-  run: ProjectedRun,
 ): AIRunApprovalState | null => {
   const approvalId = String(payload.approvalId || '').trim();
   const callId = String(payload.callId || '').trim();
+  const toolName = String(payload.toolName || '').trim();
+  const effect = String(payload.effect || '').trim();
+  const argsHash = String(payload.argsHash || '').trim();
   const decision = String(payload.decision || '').trim().toLowerCase();
-  if (!approvalId || !callId || !decision) return null;
-  const intent = toolIntentFor(run, callId);
+  if (!approvalId || !callId || !toolName || !effect || !argsHash || !decision) return null;
+  const summary = String(payload.summary || '').trim();
   return {
     runId: event.runId,
     sessionId: event.sessionId,
     approvalId,
     callId,
+    toolName,
+    effect,
+    argsHash,
     decision,
-    ...(intent?.toolName ? { toolName: intent.toolName } : {}),
-    ...(intent?.effect ? { effect: String(intent.effect) } : {}),
-    ...(intent?.arguments !== undefined ? { arguments: intent.arguments } : {}),
-    ...(intent?.argsHash ? { argsHash: intent.argsHash } : {}),
+    ...(summary ? { summary } : {}),
     revision: event.runRevision,
   };
 };
@@ -429,7 +434,6 @@ const applyAIRunControlProjection = (
       const approval = toApprovalState(
         event,
         payloadObject<AIRunApprovalPayload>(event),
-        run,
       );
       options.onApprovalChange?.(
         event.runId,
@@ -461,6 +465,13 @@ const applyAIRunControlProjection = (
       if (event.sessionId === options.sid) options.setSending(false);
       notifyRunState(event, options, run);
       options.onRunTerminal?.(event.runId, event.sessionId);
+      return;
+    case 'usage':
+    case 'checkpoint':
+      // Checkpoints carry state-only transitions such as interrupted and
+      // awaiting_workspace. Replay must rebuild those controls even though
+      // they do not carry assistant text.
+      notifyRunState(event, options, run);
       return;
     default:
       return;
@@ -658,7 +669,7 @@ const applyAIRunEvent = (
         });
       }
       const payload = payloadObject<AIRunApprovalPayload>(event);
-      const approval = toApprovalState(event, payload, run);
+      const approval = toApprovalState(event, payload);
       if (approval && approval.decision === 'pending') {
         options.onApprovalChange?.(event.runId, approval);
       } else {
@@ -687,6 +698,7 @@ const applyAIRunEvent = (
       return;
     case 'usage':
     case 'checkpoint':
+      notifyRunState(event, options, run);
       return;
     default:
       return;
@@ -706,7 +718,33 @@ export const useAIChatRunEventSubscription = (options: UseAIChatRunEventSubscrip
     const tracker = sharedAIRunEventSequenceTracker;
     const pendingByRun = new Map<string, Map<number, AIRunEvent>>();
     const recoveryByRun = new Map<string, Promise<void>>();
+    const recoveryRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    const recoveryRetryAttempts = new Map<string, number>();
     const replayByRun = new Map<string, ReplayRunProjection>();
+
+    let recover: (runId: string, replay?: ReplayRunProjection) => void;
+
+    const clearRecoveryRetry = (runId: string): void => {
+      const timer = recoveryRetryTimers.get(runId);
+      if (timer !== undefined) clearTimeout(timer);
+      recoveryRetryTimers.delete(runId);
+      recoveryRetryAttempts.delete(runId);
+    };
+
+    const scheduleRecoveryRetry = (runId: string, replay?: ReplayRunProjection): void => {
+      if (disposed || recoveryRetryTimers.has(runId)) return;
+      const attempt = recoveryRetryAttempts.get(runId) || 0;
+      recoveryRetryAttempts.set(runId, attempt + 1);
+      const delay = Math.min(
+        AI_RUN_EVENT_RECOVERY_RETRY_MAX_MS,
+        AI_RUN_EVENT_RECOVERY_RETRY_BASE_MS * (2 ** Math.min(attempt, 10)),
+      );
+      const timer = setTimeout(() => {
+        recoveryRetryTimers.delete(runId);
+        recover(runId, replayByRun.get(runId) || replay);
+      }, delay);
+      recoveryRetryTimers.set(runId, timer);
+    };
 
     const bufferEvent = (event: AIRunEvent) => {
       let pending = pendingByRun.get(event.runId);
@@ -728,6 +766,10 @@ export const useAIChatRunEventSubscription = (options: UseAIChatRunEventSubscrip
             activeReplay.liveModelProjectionSeen = true;
           }
           applyAIRunEvent(event, optionsRef.current);
+        }
+        if (isAIRunTerminalState(event.resultingState)) {
+          clearRecoveryRetry(event.runId);
+          pendingByRun.delete(event.runId);
         }
       } else if (decision.disposition === 'gap') {
         bufferEvent(event);
@@ -755,13 +797,17 @@ export const useAIChatRunEventSubscription = (options: UseAIChatRunEventSubscrip
       if (pending.size === 0) pendingByRun.delete(runId);
     };
 
-    const recover = (runId: string, replay?: ReplayRunProjection): void => {
-      if (recoveryByRun.has(runId)) return;
+    recover = (runId: string, replay?: ReplayRunProjection): void => {
+      if (recoveryByRun.has(runId) || recoveryRetryTimers.has(runId)) return;
       const readRun = getAIRunHarnessService()?.AIReadAgentRun;
-      if (!readRun) return;
+      if (!readRun) {
+        scheduleRecoveryRetry(runId, replay);
+        return;
+      }
       const recovery = (async () => {
         let page = 0;
         let hasMore = true;
+        let readSucceeded = false;
         let replayAfter = replay ? 0 : tracker.lastSequence(runId);
         while (!disposed && hasMore && page < 20) {
           page += 1;
@@ -770,8 +816,10 @@ export const useAIChatRunEventSubscription = (options: UseAIChatRunEventSubscrip
           try {
             result = await readAgentRun({ runId, afterSequence: before, limit: 500 });
           } catch {
+            if (!disposed) scheduleRecoveryRetry(runId, replay);
             return;
           }
+          readSucceeded = true;
           // The component may have been unmounted while the Ledger read was
           // in flight. Do not project replayed events into a stale store view.
           if (disposed) return;
@@ -789,7 +837,14 @@ export const useAIChatRunEventSubscription = (options: UseAIChatRunEventSubscrip
           if (lastReadSequence === before) break;
         }
         if (!disposed && replay) flushAIRunReplayDeltas(replay, optionsRef.current, runId);
-        if (!disposed) drainPending(runId, replay);
+        if (!disposed) {
+          drainPending(runId, replay);
+          if (readSucceeded && !pendingByRun.has(runId)) {
+            clearRecoveryRetry(runId);
+          } else if (pendingByRun.has(runId)) {
+            scheduleRecoveryRetry(runId, replay);
+          }
+        }
       })().finally(() => {
         recoveryByRun.delete(runId);
       });
@@ -816,7 +871,9 @@ export const useAIChatRunEventSubscription = (options: UseAIChatRunEventSubscrip
           );
         }
         const durable = toAIChatMessages(projection);
-        if (durable.length > 0) {
+        // An explicit empty durable transcript is authoritative too: it must
+        // clear terminal/error placeholders left only in the local projection.
+        if (Array.isArray(projection.messages)) {
           useStore.setState((state) => ({
             aiChatHistory: {
               ...state.aiChatHistory,
@@ -867,6 +924,9 @@ export const useAIChatRunEventSubscription = (options: UseAIChatRunEventSubscrip
     void bootstrapSession();
     return () => {
       disposed = true;
+      for (const timer of recoveryRetryTimers.values()) clearTimeout(timer);
+      recoveryRetryTimers.clear();
+      recoveryRetryAttempts.clear();
       if (typeof unsubscribe === 'function') {
         unsubscribe();
       }

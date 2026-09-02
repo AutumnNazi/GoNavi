@@ -50,30 +50,6 @@ const copyWithFallback = (
   return translated && translated !== key ? translated : fallback;
 };
 
-const formatArguments = (value: unknown): string => {
-  if (value === undefined || value === null || value === '') return '';
-  if (typeof value === 'string') {
-    try {
-      return JSON.stringify(JSON.parse(value), null, 2);
-    } catch {
-      return value;
-    }
-  }
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-};
-
-const clippedArguments = (value: unknown): { text: string; clipped: boolean } => {
-  const text = formatArguments(value);
-  const maxLength = 4_000;
-  return text.length > maxLength
-    ? { text: `${text.slice(0, maxLength)}\n...`, clipped: true }
-    : { text, clipped: false };
-};
-
 const ControlMeta: React.FC<{
   toolName?: string;
   effect?: string;
@@ -117,7 +93,6 @@ const AIChatRunControls: React.FC<AIChatRunControlsProps> = ({
   return (
     <div className="ai-run-controls" aria-live="polite">
       {approvals.map((approval) => {
-        const argumentPreview = clippedArguments(approval.arguments);
         const approveKey = `${approval.runId}:approve:${approval.approvalId}`;
         const denyKey = `${approval.runId}:deny:${approval.approvalId}`;
         return (
@@ -148,15 +123,7 @@ const AIChatRunControls: React.FC<AIChatRunControlsProps> = ({
               mutedColor={mutedColor}
               copy={copy}
             />
-            {argumentPreview.text ? (
-              <details className="ai-run-control-arguments">
-                <summary>{copyWithFallback(copy, 'ai_chat.run.control.arguments', 'Arguments')}</summary>
-                <pre style={{ color: mutedColor }}>
-                  {argumentPreview.text}
-                  {argumentPreview.clipped ? `\n${copyWithFallback(copy, 'ai_chat.run.control.arguments_truncated', 'Arguments truncated')}` : ''}
-                </pre>
-              </details>
-            ) : null}
+            {approval.summary ? <div className="ai-run-control-detail" style={{ color: mutedColor }}>{approval.summary}</div> : null}
             <div className="ai-run-control-actions">
               <Button
                 size="small"

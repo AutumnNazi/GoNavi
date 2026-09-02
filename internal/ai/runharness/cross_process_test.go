@@ -148,7 +148,7 @@ func TestApprovalCanTransferFromLiveDesktopToCLIOwner(t *testing.T) {
 	// The original worker must have returned before a separate process can
 	// assume ownership. The desktop harness itself remains open throughout.
 	waitForRun(t, desktopLedger, receipt.RunID, func(run RunSnapshot) bool {
-		return run.State == RunStateAwaitingApproval && run.OwnerToken == ""
+		return run.State == RunStateAwaitingApproval && run.ownerToken == ""
 	})
 
 	release := make(chan struct{})
@@ -163,6 +163,7 @@ func TestApprovalCanTransferFromLiveDesktopToCLIOwner(t *testing.T) {
 	})
 	if _, err := cli.ControlRun(context.Background(), RunControlRequest{
 		RunID: receipt.RunID, Action: ControlApprove, ApprovalID: approval.ApprovalID,
+		CallID: approval.CallID, ArgsHash: approval.ArgsHash, ExpectedRevision: approval.RunRevision,
 	}); err != nil {
 		t.Fatalf("CLI approve: %v", err)
 	}
@@ -243,7 +244,7 @@ func TestReadOnlyObserverDoesNotMutateActiveDesktopRun(t *testing.T) {
 		t.Fatal("desktop model did not start")
 	}
 	before := waitForRun(t, desktopLedger, receipt.RunID, func(run RunSnapshot) bool {
-		return run.State == RunStateRunningModel && run.OwnerToken != ""
+		return run.State == RunStateRunningModel && run.ownerToken != ""
 	})
 
 	observerModel := &blockingObserverModel{started: make(chan struct{}, 1), release: make(chan struct{})}
@@ -265,7 +266,7 @@ func TestReadOnlyObserverDoesNotMutateActiveDesktopRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.State != before.State || after.Revision != before.Revision || after.OwnerToken != before.OwnerToken {
+	if after.State != before.State || after.Revision != before.Revision || after.ownerToken != before.ownerToken {
 		t.Fatalf("observer mutated run: before=%#v after=%#v", before, after)
 	}
 	if desktopModel.calls.Load() != 1 || observerModel.calls.Load() != 0 {

@@ -209,6 +209,12 @@ type AgentInputRequest struct {
 	// (tools enabled); false is persisted and enforced by the harness.
 	AllowTools       *bool `json:"allowTools,omitempty"`
 	ExpectedRevision int64 `json:"expectedRevision,omitempty"`
+
+	// providerBinding is intentionally unexported. Wails discovers exported Go
+	// fields even when they have json:"-", so an exported secret-bearing field
+	// would still create a browser-visible DTO. Host adapters attach this only
+	// after resolving local provider settings; the Ledger encrypts it at rest.
+	providerBinding *ProviderBinding
 }
 
 func (r AgentInputRequest) Validate() error {
@@ -228,6 +234,45 @@ func (r AgentInputRequest) Validate() error {
 		return errors.New("sessionId is required when branching from a message")
 	}
 	return nil
+}
+
+// SetProviderBinding freezes a host-resolved provider configuration on an
+// input before the Harness persists a run. It is deliberately a method rather
+// than an exported DTO field so browser-originated Wails payloads cannot set or
+// discover provider credentials and custom headers.
+func (r *AgentInputRequest) SetProviderBinding(binding ProviderBinding) error {
+	if r == nil {
+		return errors.New("agent input is required")
+	}
+	validated, err := binding.Validate()
+	if err != nil {
+		return fmt.Errorf("validate provider binding: %w", err)
+	}
+	r.Provider = validated.ProviderID
+	r.providerBinding = cloneProviderBinding(&validated)
+	return nil
+}
+
+// HasProviderBinding reports whether a host adapter has supplied the
+// immutable provider contract. It intentionally does not expose its secret
+// payload to Wails or other serialized callers.
+func (r AgentInputRequest) HasProviderBinding() bool {
+	return r.providerBinding != nil
+}
+
+// ProviderBindingForHost returns a detached binding for desktop/CLI host
+// adapters that need to construct a model turn in tests or host-only code.
+// It is not a field of the Wails DTO and cannot be populated by browser input.
+func (r AgentInputRequest) ProviderBindingForHost() (ProviderBinding, bool) {
+	binding := cloneProviderBinding(r.providerBinding)
+	if binding == nil {
+		return ProviderBinding{}, false
+	}
+	return *binding, true
+}
+
+func (r AgentInputRequest) providerBindingCopy() *ProviderBinding {
+	return cloneProviderBinding(r.providerBinding)
 }
 
 type Attachment struct {
@@ -269,9 +314,9 @@ type RunControlRequest struct {
 	Action           RunControlAction `json:"action"`
 	CallID           string           `json:"callId,omitempty"`
 	ApprovalID       string           `json:"approvalId,omitempty"`
+	ArgsHash         string           `json:"argsHash,omitempty"`
 	Content          string           `json:"content,omitempty"`
 	ExpectedRevision int64            `json:"expectedRevision,omitempty"`
-	OwnerToken       string           `json:"ownerToken,omitempty"`
 }
 
 type RunReadRequest struct {
@@ -301,15 +346,17 @@ type SessionMutationRequest struct {
 
 // RunSnapshot is the non-sensitive run projection returned to adapters.
 type RunSnapshot struct {
-	ID                      string        `json:"runId"`
-	SessionID               string        `json:"sessionId"`
-	RequestID               string        `json:"requestId,omitempty"`
-	SessionGeneration       int64         `json:"sessionGeneration"`
-	State                   RunState      `json:"state"`
-	Revision                int64         `json:"revision"`
-	Attempt                 int           `json:"attempt"`
-	NextSequence            int64         `json:"nextSequence"`
-	OwnerToken              string        `json:"ownerToken,omitempty"`
+	ID                string   `json:"runId"`
+	SessionID         string   `json:"sessionId"`
+	RequestID         string   `json:"requestId,omitempty"`
+	SessionGeneration int64    `json:"sessionGeneration"`
+	State             RunState `json:"state"`
+	Revision          int64    `json:"revision"`
+	Attempt           int      `json:"attempt"`
+	NextSequence      int64    `json:"nextSequence"`
+	// ownerToken is the local fencing token held by an active supervisor. It
+	// must never be returned through a Wails or CLI projection.
+	ownerToken              string        `json:"-"`
 	OwnerExpiresAt          time.Time     `json:"ownerExpiresAt,omitempty"`
 	CheckpointID            string        `json:"checkpointId,omitempty"`
 	TerminalReason          string        `json:"terminalReason,omitempty"`
@@ -550,9 +597,15 @@ type ToolEvent struct {
 }
 
 type ApprovalEvent struct {
-	ApprovalID string `json:"approvalId"`
-	CallID     string `json:"callId"`
-	Decision   string `json:"decision"`
+	ApprovalID string     `json:"approvalId"`
+	CallID     string     `json:"callId"`
+	ToolName   string     `json:"toolName"`
+	Effect     ToolEffect `json:"effect"`
+	ArgsHash   string     `json:"argsHash"`
+	Decision   string     `json:"decision"`
+	// Summary is a server-generated, redacted display string. It must never
+	// include raw tool arguments, SQL, or any other user-provided value.
+	Summary string `json:"summary,omitempty"`
 }
 
 type Usage struct {
@@ -584,7 +637,7 @@ type ReserveTokensRequest struct {
 	ReservationID    string `json:"reservationId,omitempty"`
 	Tokens           int    `json:"tokens"`
 	ExpectedRevision int64  `json:"expectedRevision,omitempty"`
-	OwnerToken       string `json:"ownerToken,omitempty"`
+	OwnerToken       string `json:"-"`
 }
 
 type ReconcileTokensRequest struct {
@@ -592,7 +645,7 @@ type ReconcileTokensRequest struct {
 	ReservationID    string `json:"reservationId"`
 	Usage            Usage  `json:"usage"`
 	ExpectedRevision int64  `json:"expectedRevision,omitempty"`
-	OwnerToken       string `json:"ownerToken,omitempty"`
+	OwnerToken       string `json:"-"`
 }
 
 type UsageEvent struct {
@@ -605,7 +658,7 @@ type UsageEvent struct {
 type CommitModelTurnRequest struct {
 	RunID              string              `json:"runId"`
 	ExpectedRevision   int64               `json:"expectedRevision,omitempty"`
-	OwnerToken         string              `json:"ownerToken,omitempty"`
+	OwnerToken         string              `json:"-"`
 	AssistantMessage   *Message            `json:"assistantMessage,omitempty"`
 	ModelCompleted     ModelCompletedEvent `json:"modelCompleted"`
 	Usage              Usage               `json:"usage,omitempty"`
@@ -970,14 +1023,15 @@ type ModelTurnRequest struct {
 	// ConversationCursor is the provider-facing cursor from the last durable
 	// checkpoint. Adapters may use it to continue a provider conversation; it is
 	// never inferred from an in-memory stream after a process boundary.
-	ConversationCursor string          `json:"conversationCursor,omitempty"`
-	Provider           string          `json:"provider,omitempty"`
-	Model              string          `json:"model,omitempty"`
-	Thinking           string          `json:"thinking,omitempty"`
-	Temperature        *float64        `json:"temperature,omitempty"`
-	MaxTokens          *int            `json:"maxTokens,omitempty"`
-	ProviderState      json.RawMessage `json:"providerState,omitempty"`
-	Policy             RunPolicy       `json:"policy"`
+	ConversationCursor string           `json:"conversationCursor,omitempty"`
+	Provider           string           `json:"provider,omitempty"`
+	ProviderBinding    *ProviderBinding `json:"-"`
+	Model              string           `json:"model,omitempty"`
+	Thinking           string           `json:"thinking,omitempty"`
+	Temperature        *float64         `json:"temperature,omitempty"`
+	MaxTokens          *int             `json:"maxTokens,omitempty"`
+	ProviderState      json.RawMessage  `json:"providerState,omitempty"`
+	Policy             RunPolicy        `json:"policy"`
 }
 
 type ToolDescriptor struct {
@@ -1027,7 +1081,7 @@ type ApprovalRecord struct {
 	ToolName    string          `json:"toolName"`
 	Effect      ToolEffect      `json:"effect"`
 	ArgsHash    string          `json:"argsHash"`
-	Arguments   json.RawMessage `json:"arguments,omitempty"`
+	Arguments   json.RawMessage `json:"-"`
 	Status      string          `json:"status"`
 	RunRevision int64           `json:"runRevision"`
 	CreatedAt   time.Time       `json:"createdAt"`
@@ -1065,7 +1119,7 @@ type RunResumeContext struct {
 type Lease struct {
 	RunID     string    `json:"runId"`
 	OwnerID   string    `json:"ownerId"`
-	Token     string    `json:"token"`
+	Token     string    `json:"-"`
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
@@ -1087,20 +1141,23 @@ type CreateSessionBranchRequest struct {
 }
 
 type CreateRunRequest struct {
-	RunID                   string        `json:"runId,omitempty"`
-	SessionID               string        `json:"sessionId"`
-	RequestID               string        `json:"requestId,omitempty"`
-	InitialMessage          *Message      `json:"initialMessage,omitempty"`
-	Policy                  RunPolicy     `json:"policy"`
-	Provider                string        `json:"provider,omitempty"`
-	Model                   string        `json:"model,omitempty"`
-	ContextSourceID         string        `json:"contextSourceId,omitempty"`
-	ContextSourceInstanceID string        `json:"contextSourceInstanceId,omitempty"`
-	Thinking                string        `json:"thinking,omitempty"`
-	Temperature             *float64      `json:"temperature,omitempty"`
-	MaxTokens               *int          `json:"maxTokens,omitempty"`
-	TaskKind                AgentTaskKind `json:"taskKind,omitempty"`
-	AllowTools              *bool         `json:"allowTools,omitempty"`
+	RunID          string    `json:"runId,omitempty"`
+	SessionID      string    `json:"sessionId"`
+	RequestID      string    `json:"requestId,omitempty"`
+	InitialMessage *Message  `json:"initialMessage,omitempty"`
+	Policy         RunPolicy `json:"policy"`
+	Provider       string    `json:"provider,omitempty"`
+	// ProviderBinding is internal-only and is encrypted by the Ledger. It must
+	// never cross Wails/CLI serialization boundaries.
+	ProviderBinding         *ProviderBinding `json:"-"`
+	Model                   string           `json:"model,omitempty"`
+	ContextSourceID         string           `json:"contextSourceId,omitempty"`
+	ContextSourceInstanceID string           `json:"contextSourceInstanceId,omitempty"`
+	Thinking                string           `json:"thinking,omitempty"`
+	Temperature             *float64         `json:"temperature,omitempty"`
+	MaxTokens               *int             `json:"maxTokens,omitempty"`
+	TaskKind                AgentTaskKind    `json:"taskKind,omitempty"`
+	AllowTools              *bool            `json:"allowTools,omitempty"`
 	// ExpectedSessionRevision is the CAS guard used when an input submission
 	// creates a new run. Zero means the caller intentionally does not provide a
 	// guard (used by internal recovery paths).
@@ -1120,8 +1177,12 @@ type AppendEventRequest struct {
 	Payload          any             `json:"payload,omitempty"`
 	PayloadJSON      json.RawMessage `json:"-"`
 	Attempt          int             `json:"attempt,omitempty"`
-	OwnerToken       string          `json:"ownerToken,omitempty"`
+	OwnerToken       string          `json:"-"`
 	TerminalReason   string          `json:"terminalReason,omitempty"`
+	// AppliedControlCommandID records the one command whose action is known to
+	// have produced this terminal transition. It is an internal ledger input,
+	// never part of the external event contract.
+	AppliedControlCommandID string `json:"-"`
 }
 
 type SaveCheckpointRequest struct {
@@ -1131,7 +1192,7 @@ type SaveCheckpointRequest struct {
 	ConversationCursor string                      `json:"conversationCursor,omitempty"`
 	ProviderState      json.RawMessage             `json:"providerState,omitempty"`
 	ExpectedRevision   int64                       `json:"expectedRevision,omitempty"`
-	OwnerToken         string                      `json:"ownerToken,omitempty"`
+	OwnerToken         string                      `json:"-"`
 	WorkspaceSnapshot  *WorkspaceSnapshotReference `json:"workspaceSnapshot,omitempty"`
 }
 
@@ -1143,7 +1204,7 @@ type StartToolRequest struct {
 	Effect            ToolEffect                  `json:"effect"`
 	Arguments         json.RawMessage             `json:"arguments"`
 	ExpectedRevision  int64                       `json:"expectedRevision,omitempty"`
-	OwnerToken        string                      `json:"ownerToken,omitempty"`
+	OwnerToken        string                      `json:"-"`
 	WorkspaceSnapshot *WorkspaceSnapshotReference `json:"workspaceSnapshot,omitempty"`
 }
 
@@ -1166,7 +1227,7 @@ type FinishToolRequest struct {
 	OriginalBytes    int64           `json:"originalBytes,omitempty"`
 	MaxResultBytes   int64           `json:"maxResultBytes,omitempty"`
 	ExpectedRevision int64           `json:"expectedRevision,omitempty"`
-	OwnerToken       string          `json:"ownerToken,omitempty"`
+	OwnerToken       string          `json:"-"`
 }
 
 type PutApprovalRequest struct {
@@ -1175,21 +1236,21 @@ type PutApprovalRequest struct {
 	CallID      string          `json:"callId"`
 	ToolName    string          `json:"toolName"`
 	Effect      ToolEffect      `json:"effect"`
-	Arguments   json.RawMessage `json:"arguments"`
+	Arguments   json.RawMessage `json:"-"`
 	RunRevision int64           `json:"runRevision"`
-	OwnerToken  string          `json:"ownerToken,omitempty"`
+	OwnerToken  string          `json:"-"`
 }
 
 type DecideApprovalRequest struct {
 	ApprovalID          string `json:"approvalId"`
 	Decision            string `json:"decision"`
 	ExpectedRunRevision int64  `json:"expectedRunRevision,omitempty"`
-	// ExpectedRunID and ExpectedCallID bind a decision to the exact run/tool
-	// invocation the caller displayed. They remain optional for low-level
-	// callers that predate the binding fields; harness control paths provide
-	// both values.
-	ExpectedRunID  string `json:"expectedRunId,omitempty"`
-	ExpectedCallID string `json:"expectedCallId,omitempty"`
+	// The full tuple binds a decision to the exact approval card rendered by
+	// an adapter. Missing or mismatched values must fail before the approval is
+	// expired or otherwise mutated.
+	ExpectedRunID    string `json:"expectedRunId,omitempty"`
+	ExpectedCallID   string `json:"expectedCallId,omitempty"`
+	ExpectedArgsHash string `json:"expectedArgsHash,omitempty"`
 }
 
 type QueueInputRequest struct {
@@ -1213,7 +1274,7 @@ type ControlCommand struct {
 	// Claim fields describe the crash-recoverable hand-off between a
 	// supervisor and the durable command queue. A claim is not an acknowledgement
 	// and therefore must never make a command disappear from a later owner.
-	ClaimedBy      string    `json:"claimedBy,omitempty"`
+	ClaimedBy      string    `json:"-"`
 	ClaimedAt      time.Time `json:"claimedAt,omitempty"`
 	ClaimExpiresAt time.Time `json:"claimExpiresAt,omitempty"`
 	AppliedAt      time.Time `json:"appliedAt,omitempty"`

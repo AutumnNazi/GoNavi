@@ -62,6 +62,10 @@ func (a *ProviderModelTurnAdapter) Execute(ctx context.Context, request ModelTur
 	if err != nil {
 		return ModelTurnResult{}, err
 	}
+	temperature, maxTokens, err := providerChatOptions(request)
+	if err != nil {
+		return ModelTurnResult{}, err
+	}
 	p, err := a.Resolve(ctx, request)
 	if err != nil {
 		return ModelTurnResult{}, err
@@ -70,8 +74,10 @@ func (a *ProviderModelTurnAdapter) Execute(ctx context.Context, request ModelTur
 		return ModelTurnResult{}, errors.New("model provider is unavailable")
 	}
 	chatRequest := ai.ChatRequest{
-		Messages: convertedMessages,
-		Tools:    toAITools(request.Tools),
+		Messages:    convertedMessages,
+		Tools:       toAITools(request.Tools),
+		Temperature: temperature,
+		MaxTokens:   maxTokens,
 	}
 	if a.ResolveImagePrompts != nil {
 		prompts, err := a.ResolveImagePrompts(ctx, request)
@@ -80,12 +86,6 @@ func (a *ProviderModelTurnAdapter) Execute(ctx context.Context, request ModelTur
 		}
 		chatRequest.ImageFallbackPrompt = prompts.FallbackPrompt
 		chatRequest.ImageOmittedNotice = prompts.OmittedNotice
-	}
-	if request.Temperature != nil {
-		chatRequest.Temperature = *request.Temperature
-	}
-	if request.MaxTokens != nil {
-		chatRequest.MaxTokens = *request.MaxTokens
 	}
 	var (
 		stateMu       sync.Mutex
@@ -259,6 +259,31 @@ func (a *ProviderModelTurnAdapter) Execute(ctx context.Context, request ModelTur
 		ToolCalls: convertedToolCalls, ProviderState: cloneRaw(stream.state), Completed: true,
 	}
 	return result, nil
+}
+
+// providerChatOptions derives provider-facing options only from the immutable
+// binding captured at run acceptance. ModelTurnRequest's legacy fields remain
+// available for durable budget accounting, but cannot override this contract.
+func providerChatOptions(request ModelTurnRequest) (float64, int, error) {
+	if request.ProviderBinding == nil {
+		return 0, 0, nil
+	}
+	binding, err := request.ProviderBinding.Validate()
+	if err != nil {
+		return 0, 0, fmt.Errorf("%w: %v", ErrProviderBindingCorrupt, err)
+	}
+	if requestedID := strings.TrimSpace(request.Provider); requestedID == "" || !strings.EqualFold(requestedID, binding.ProviderID) {
+		return 0, 0, fmt.Errorf("%w: model request provider %q does not match binding %q", ErrProviderBindingCorrupt, request.Provider, binding.ProviderID)
+	}
+	var config ai.ProviderConfig
+	if err := json.Unmarshal(binding.Config, &config); err != nil {
+		return 0, 0, fmt.Errorf("%w: decode provider config: %v", ErrProviderBindingCorrupt, err)
+	}
+	config.ID = strings.TrimSpace(config.ID)
+	if config.ID == "" || config.ID != binding.ProviderID {
+		return 0, 0, fmt.Errorf("%w: provider config ID %q does not match binding %q", ErrProviderBindingCorrupt, config.ID, binding.ProviderID)
+	}
+	return config.Temperature, config.MaxTokens, nil
 }
 
 func cloneRaw(raw json.RawMessage) json.RawMessage {

@@ -275,7 +275,7 @@ Elasticsearch 连接复用查询工作区，并按服务端版本提供受控 RE
 - [Wails CLI](https://wails.io/docs/gettingstarted/installation)
 
 ```bash
-go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
 ```
 
 ### 开发

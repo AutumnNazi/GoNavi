@@ -137,9 +137,14 @@ func TestHarnessContextCompressionDisablesProviderToolsAndPreservesLedgerTranscr
 			t.Fatalf("append history %q: %v", message.ID, err)
 		}
 	}
+	current, err := ledger.GetSession(context.Background(), session.ID, false)
+	if err != nil {
+		t.Fatalf("read session revision: %v", err)
+	}
 
 	receipt, err := harness.SubmitInput(context.Background(), AgentInputRequest{
 		RequestID: "context-compression-request", SessionID: session.ID, Content: "answer only the newest question",
+		ExpectedRevision: current.Revision,
 	})
 	if err != nil {
 		t.Fatalf("submit input: %v", err)

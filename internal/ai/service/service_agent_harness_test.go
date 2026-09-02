@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -20,8 +22,11 @@ import (
 )
 
 type agentHarnessTestSecretStore struct {
-	mu    sync.Mutex
-	items map[string][]byte
+	mu           sync.Mutex
+	items        map[string][]byte
+	gets         []string
+	puts         []string
+	healthChecks int
 }
 
 func newAgentHarnessTestSecretStore() *agentHarnessTestSecretStore {
@@ -31,6 +36,7 @@ func newAgentHarnessTestSecretStore() *agentHarnessTestSecretStore {
 func (s *agentHarnessTestSecretStore) Put(ref string, value []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.puts = append(s.puts, ref)
 	s.items[ref] = append([]byte(nil), value...)
 	return nil
 }
@@ -38,6 +44,7 @@ func (s *agentHarnessTestSecretStore) Put(ref string, value []byte) error {
 func (s *agentHarnessTestSecretStore) Get(ref string) ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.gets = append(s.gets, ref)
 	value, ok := s.items[ref]
 	if !ok {
 		return nil, os.ErrNotExist
@@ -52,7 +59,18 @@ func (s *agentHarnessTestSecretStore) Delete(ref string) error {
 	return nil
 }
 
-func (s *agentHarnessTestSecretStore) HealthCheck() error { return nil }
+func (s *agentHarnessTestSecretStore) HealthCheck() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.healthChecks++
+	return nil
+}
+
+func (s *agentHarnessTestSecretStore) accessCounts() (gets, puts, healthChecks int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.gets), len(s.puts), s.healthChecks
+}
 
 var _ secretstore.SecretStore = (*agentHarnessTestSecretStore)(nil)
 
@@ -162,6 +180,22 @@ func TestServiceRunPolicyRoundTripAndNormalization(t *testing.T) {
 
 func TestServiceAgentWailsMethodsUseSharedLedger(t *testing.T) {
 	service, emitter := newInitializedAgentHarnessService(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\ndata: [DONE]\n\n"))
+	}))
+	t.Cleanup(server.Close)
+	service.mu.Lock()
+	service.providers = []ai.ProviderConfig{{
+		ID: "service-test-provider", Type: "openai", APIFormat: "openai",
+		BaseURL: server.URL + "/v1", APIKey: "test-key", Model: "test-model",
+	}}
+	service.activeProvider = "service-test-provider"
+	service.mu.Unlock()
 
 	snapshot := runharness.WorkspaceSnapshot{
 		SourceKind:       runharness.WorkspaceCLI,
@@ -213,6 +247,191 @@ func TestServiceAgentWailsMethodsUseSharedLedger(t *testing.T) {
 	}
 	if emitter.count() == 0 {
 		t.Fatal("expected persisted run events to be emitted through uievents")
+	}
+}
+
+func TestServiceWorkspaceSnapshotDefersLedgerUntilAgentUse(t *testing.T) {
+	store := newAgentHarnessTestSecretStore()
+	service := NewServiceWithSecretStore(store)
+	service.configDir = t.TempDir()
+	service.agentContext = context.Background()
+	t.Cleanup(service.Shutdown)
+
+	snapshot := runharness.WorkspaceSnapshot{
+		SourceKind:       runharness.WorkspaceDesktop,
+		SourceID:         "desktop",
+		SourceInstanceID: "startup-instance",
+		Revision:         1,
+		CapturedAt:       time.Now(),
+	}
+	ack, err := service.AIUpdateWorkspaceSnapshot(snapshot)
+	if err != nil {
+		t.Fatalf("AIUpdateWorkspaceSnapshot: %v", err)
+	}
+	if !ack.Accepted || ack.ContentHash == "" {
+		t.Fatalf("unexpected deferred snapshot ack: %+v", ack)
+	}
+	gets, puts, _ := store.accessCounts()
+	if gets != 0 || puts != 0 {
+		t.Fatalf("snapshot publication touched keyring: gets=%d puts=%d", gets, puts)
+	}
+	if _, statErr := os.Stat(filepath.Join(service.configDir, "agent_runs.sqlite")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("snapshot publication created agent ledger: %v", statErr)
+	}
+	if status := service.AIGetAgentLedgerStatus(); status.State != runharness.LedgerStatusUnavailable {
+		t.Fatalf("ledger status after snapshot = %+v, want unavailable", status)
+	}
+	conflicting := snapshot
+	conflicting.ActiveContext = map[string]any{"changed": true}
+	if _, err := service.AIUpdateWorkspaceSnapshot(conflicting); !errors.Is(err, runharness.ErrSnapshotConflict) {
+		t.Fatalf("same-revision snapshot error = %v, want ErrSnapshotConflict", err)
+	}
+
+	if _, err := service.AIReadAgentSession(runharness.SessionReadRequest{SessionID: "not-created"}); !errors.Is(err, runharness.ErrNotFound) {
+		t.Fatalf("first Agent API error = %v, want ErrNotFound", err)
+	}
+	gets, puts, _ = store.accessCounts()
+	if gets != 1 || puts != 1 {
+		t.Fatalf("first Agent API keyring access = gets=%d puts=%d, want one read and one create", gets, puts)
+	}
+	if status := service.AIGetAgentLedgerStatus(); status.State != runharness.LedgerStatusReady {
+		t.Fatalf("ledger status after Agent API = %+v, want ready", status)
+	}
+}
+
+func TestServiceSubmitRejectsUnconfiguredProviderBeforePersistingRun(t *testing.T) {
+	service, _ := newInitializedAgentHarnessService(t)
+
+	_, err := service.AISubmitAgentInput(runharness.AgentInputRequest{
+		RequestID: "unconfigured-provider-request",
+		Content:   "hello",
+	})
+	if err == nil || !strings.Contains(err.Error(), "Provider is not configured") {
+		t.Fatalf("AISubmitAgentInput error = %v, want an unconfigured-provider error", err)
+	}
+
+	sessions, err := service.AIListAgentSessions(runharness.SessionListRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("AIListAgentSessions: %v", err)
+	}
+	if sessions.Total != 0 || len(sessions.Sessions) != 0 {
+		t.Fatalf("unconfigured provider created durable sessions: %+v", sessions)
+	}
+}
+
+func TestServiceAgentAPIsInitializeLedgerLazily(t *testing.T) {
+	service := NewServiceWithSecretStore(newAgentHarnessTestSecretStore())
+	service.configDir = t.TempDir()
+	service.agentContext = context.Background()
+	t.Cleanup(service.Shutdown)
+
+	if service.agentHarnessInitialized {
+		t.Fatal("agent harness initialized before an Agent API call")
+	}
+	if _, err := service.AIListAgentSessions(runharness.SessionListRequest{Limit: 1}); err != nil {
+		t.Fatalf("AIListAgentSessions: %v", err)
+	}
+	if !service.agentHarnessInitialized || service.agentHarness == nil || service.agentLedger == nil {
+		t.Fatal("Agent API call did not initialize the ledger")
+	}
+}
+
+func TestServiceStartupDoesNotOpenAgentLedger(t *testing.T) {
+	dataRoot := t.TempDir()
+	t.Setenv("GONAVI_DATA_ROOT", dataRoot)
+	store := newAgentHarnessTestSecretStore()
+	service := NewServiceWithSecretStore(store)
+	t.Cleanup(service.Shutdown)
+
+	service.startup(context.Background())
+	if service.agentHarnessInitialized || service.agentHarness != nil || service.agentLedger != nil {
+		t.Fatal("service startup initialized the Agent ledger")
+	}
+	gets, puts, healthChecks := store.accessCounts()
+	if gets != 0 || puts != 0 || healthChecks != 0 {
+		t.Fatalf("service startup accessed SecretStore: gets=%d puts=%d healthChecks=%d", gets, puts, healthChecks)
+	}
+}
+
+func TestServiceAgentLedgerStatusDoesNotProbeSecretStore(t *testing.T) {
+	store := newAgentHarnessTestSecretStore()
+	service := NewServiceWithSecretStore(store)
+	if status := service.AIGetAgentLedgerStatus(); status.State != runharness.LedgerStatusUnavailable {
+		t.Fatalf("uninitialized ledger status = %+v", status)
+	}
+	gets, puts, healthChecks := store.accessCounts()
+	if gets != 0 || puts != 0 || healthChecks != 0 {
+		t.Fatalf("ledger status accessed SecretStore: gets=%d puts=%d healthChecks=%d", gets, puts, healthChecks)
+	}
+}
+
+func TestServiceSubmitBindsActiveProviderToDurableRun(t *testing.T) {
+	service := NewServiceWithSecretStore(newAgentHarnessTestSecretStore())
+	service.configDir = t.TempDir()
+	base := ai.ProviderConfig{
+		ID: "provider-a", Type: "custom", APIFormat: "openai", Name: "Frozen Provider",
+		APIKey: "key-v1", BaseURL: "http://127.0.0.1:1/v1", Model: "provider-model",
+		Headers: map[string]string{"Authorization": "Bearer header-v1", "X-Revision": "one"},
+	}
+	service.providers = []ai.ProviderConfig{base}
+	service.activeProvider = "provider-a"
+	service.agentContext = context.Background()
+	if err := service.initializeAgentHarness(service.agentContext); err != nil {
+		t.Fatalf("initializeAgentHarness: %v", err)
+	}
+	t.Cleanup(service.Shutdown)
+
+	temperature := 0.42
+	maxTokens := 4096
+	receipt, err := service.AISubmitAgentInput(runharness.AgentInputRequest{
+		RequestID:   "provider-binding-request",
+		Content:     "hello",
+		Model:       "request-model",
+		Thinking:    "high",
+		Temperature: &temperature,
+		MaxTokens:   &maxTokens,
+	})
+	if err != nil {
+		t.Fatalf("AISubmitAgentInput: %v", err)
+	}
+	read, err := service.AIReadAgentRun(runharness.RunReadRequest{RunID: receipt.RunID})
+	if err != nil {
+		t.Fatalf("AIReadAgentRun: %v", err)
+	}
+	if read.Run.Provider != "provider-a" {
+		t.Fatalf("durable run provider = %q, want provider-a", read.Run.Provider)
+	}
+	binding, err := service.agentLedger.GetProviderBinding(context.Background(), receipt.RunID)
+	if err != nil {
+		t.Fatalf("get durable provider binding: %v", err)
+	}
+	var frozen ai.ProviderConfig
+	if err := json.Unmarshal(binding.Config, &frozen); err != nil {
+		t.Fatalf("decode durable provider binding: %v", err)
+	}
+	if frozen.APIKey != base.APIKey || frozen.Headers["Authorization"] != base.Headers["Authorization"] || frozen.Headers["X-Revision"] != "one" {
+		t.Fatalf("durable binding did not retain resolved secrets and headers: %#v", frozen)
+	}
+	if frozen.Model != "request-model" || frozen.ThinkingIntensity != "high" || frozen.Temperature != temperature || frozen.MaxTokens != maxTokens {
+		t.Fatalf("durable binding did not retain request overrides: %#v", frozen)
+	}
+
+	changed := base
+	changed.Name = "Changed Provider"
+	changed.APIKey = "key-v2"
+	changed.BaseURL = "http://127.0.0.1:2/v1"
+	changed.Headers = map[string]string{"Authorization": "Bearer header-v2", "X-Revision": "two"}
+	service.mu.Lock()
+	service.providers[0] = changed
+	service.mu.Unlock()
+	resolved, err := service.resolveAgentProvider(context.Background(), runharness.ModelTurnRequest{
+		RunID: receipt.RunID, Provider: binding.ProviderID, ProviderBinding: &binding,
+	})
+	if err != nil {
+		t.Fatalf("resolve frozen provider after settings edit: %v", err)
+	}
+	if resolved.Name() != base.Name {
+		t.Fatalf("resolved provider name = %q, want frozen %q", resolved.Name(), base.Name)
 	}
 }
 

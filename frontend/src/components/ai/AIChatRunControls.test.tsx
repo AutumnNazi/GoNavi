@@ -53,8 +53,8 @@ const approval: AIRunApprovalState = {
   decision: 'pending',
   toolName: 'execute_sql',
   effect: 'side_effect',
-  arguments: { sql: 'INSERT INTO audit_log VALUES (1)' },
   argsHash: 'hash-1',
+  summary: 'Add one audit entry',
   revision: 7,
 };
 
@@ -120,6 +120,7 @@ describe('AIChatRunControls', () => {
     expect(text).toContain('Approval required');
     expect(text).toContain('Recovery required');
     expect(text).toContain('execute_sql');
+    expect(text).toContain('Add one audit entry');
     expect(text).toContain('Approve');
     expect(text).toContain('Deny');
     expect(text).toContain('Retry');
@@ -153,12 +154,14 @@ describe('AIChatRunControls', () => {
     expect(onWorkspaceAction).toHaveBeenCalledWith(workspace, 'use_stale_workspace');
   });
 
-  it('keeps long argument previews bounded and renders no card for an empty state', () => {
-    const longArguments = { sql: 'x'.repeat(4_100) };
-    const renderer = renderControls({ approvals: [{ ...approval, arguments: longArguments }] });
+  it('renders only the server summary and never raw approval arguments', () => {
+    const rawArguments = { sql: 'INSERT INTO audit_log VALUES (super_secret)' };
+    const renderer = renderControls({
+      approvals: [{ ...approval, arguments: rawArguments } as unknown as AIRunApprovalState],
+    });
     const text = textContent(renderer.toJSON());
-    expect(text).toContain('Arguments truncated');
-    expect(text).not.toContain('x'.repeat(4_100));
+    expect(text).toContain('Add one audit entry');
+    expect(text).not.toContain('INSERT INTO audit_log');
 
     renderer.update(
       <AIChatRunControls

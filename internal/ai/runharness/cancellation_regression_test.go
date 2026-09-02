@@ -159,7 +159,7 @@ func TestHarnessSteerCancelsReadOnlyToolThenRunsNewModelTurn(t *testing.T) {
 		executor: executor,
 		effect:   ToolEffectReadOnly,
 	}
-	harness, _ := newContractHarness(t, model, catalog, nil)
+	harness, ledger := newContractHarness(t, model, catalog, nil)
 
 	receipt, err := harness.SubmitInput(context.Background(), AgentInputRequest{RequestID: "steer-read-request", Content: "read first"})
 	if err != nil {
@@ -170,9 +170,14 @@ func TestHarnessSteerCancelsReadOnlyToolThenRunsNewModelTurn(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("read-only tool did not start")
 	}
+	active, err := ledger.GetRun(context.Background(), receipt.RunID)
+	if err != nil {
+		t.Fatalf("read active run revision: %v", err)
+	}
 	steer, err := harness.SubmitInput(context.Background(), AgentInputRequest{
 		RequestID: "steer-read-command", SessionID: receipt.SessionID,
 		Content: "instead, answer without reading", DispatchMode: DispatchSteer,
+		ExpectedRevision: active.Revision,
 	})
 	if err != nil {
 		t.Fatalf("submit steer: %v", err)
@@ -334,9 +339,14 @@ func TestHarnessSteerSupersedesAllRemainingToolIntents(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("first tool did not start")
 	}
+	active, err := ledger.GetRun(context.Background(), receipt.RunID)
+	if err != nil {
+		t.Fatalf("read active run revision: %v", err)
+	}
 	steer, err := harness.SubmitInput(context.Background(), AgentInputRequest{
 		RequestID: "steer-batch-command", SessionID: receipt.SessionID,
 		Content: "stop and answer directly", DispatchMode: DispatchSteer,
+		ExpectedRevision: active.Revision,
 	})
 	if err != nil {
 		t.Fatalf("submit steer: %v", err)

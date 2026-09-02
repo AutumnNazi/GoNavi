@@ -1,6 +1,7 @@
 package runharness
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -41,6 +42,7 @@ const (
 type AgentRunHarness struct {
 	ledger         *Ledger
 	model          ModelTurnAdapter
+	inputBinder    AgentInputBinder
 	contextBuilder ContextBuilder
 	tools          ToolCatalog
 	approvals      ApprovalHandler
@@ -106,8 +108,22 @@ type runExecution struct {
 // id is propagated to the atomic Ledger boundary so a consumed command can be
 // replayed safely after an owner crash without appending a second user input.
 type steerRequest struct {
-	requestID string
-	content   string
+	requestID        string
+	content          string
+	expectedRevision int64
+	// prevalidated is set only after the claimed control command has passed
+	// its exact expectedRevision check under this run owner. A read-only/model
+	// step can then be canceled as part of that same steer; its resulting
+	// durable event is an owned, serial consequence rather than a reason to
+	// reinterpret a delayed command against a newer run revision.
+	prevalidated bool
+}
+
+func (s steerRequest) transitionExpectedRevision() int64 {
+	if s.prevalidated {
+		return 0
+	}
+	return s.expectedRevision
 }
 
 // NewAgentRunHarness creates a run harness. A ledger is mandatory; callers
@@ -158,7 +174,7 @@ func NewAgentRunHarness(config HarnessConfig, options ...HarnessOption) (*AgentR
 		contextBuilder = NewDeterministicContextBuilder()
 	}
 	return &AgentRunHarness{
-		ledger: config.Ledger, model: config.Model, contextBuilder: contextBuilder, tools: config.Tools,
+		ledger: config.Ledger, model: config.Model, inputBinder: config.InputBinder, contextBuilder: contextBuilder, tools: config.Tools,
 		approvals: config.Approvals, events: config.Events, root: root,
 		cancel: cancel, ownerID: ownerID, leaseTTL: leaseTTL,
 		shutdownGrace: shutdownGrace, defaultPolicy: DefaultRunPolicy(),
@@ -295,6 +311,21 @@ func (h *AgentRunHarness) SubmitInput(ctx context.Context, request AgentInputReq
 	} else if !errors.Is(existingErr, ErrNotFound) {
 		return AgentInputReceipt{}, existingErr
 	}
+	if receipt, replayed, replayErr := h.replayExistingSteer(ctx, request); replayed || replayErr != nil {
+		return receipt, replayErr
+	}
+	originalRequest := request
+	if h.inputBinder != nil {
+		if err := h.inputBinder(ctx, &request); err != nil {
+			// A second supervisor can accept the same steer while this host is
+			// resolving mutable provider settings. Recheck its durable command
+			// before surfacing a stale configuration failure to a retry.
+			if receipt, replayed, replayErr := h.replayExistingSteer(ctx, originalRequest); replayed || replayErr != nil {
+				return receipt, replayErr
+			}
+			return AgentInputReceipt{}, err
+		}
+	}
 	policy := h.DefaultPolicy()
 	mode := request.DispatchMode
 	if mode == "" {
@@ -307,6 +338,12 @@ func (h *AgentRunHarness) SubmitInput(ctx context.Context, request AgentInputReq
 	implicitSession := sessionID == ""
 	branchFromMessageID := strings.TrimSpace(request.BranchFromMessageID)
 	branched := branchFromMessageID != ""
+	// An explicit session is an update to an existing conversation projection.
+	// Keep the idempotency lookup above this guard so a transport retry can
+	// still return its original receipt after that projection has advanced.
+	if !implicitSession && request.ExpectedRevision <= 0 {
+		return AgentInputReceipt{}, fmt.Errorf("%w: expectedRevision must be positive for a session-bound input", ErrRevisionConflict)
+	}
 	if branched {
 		// A branch is always a new queued/run-able conversation. In particular it
 		// must never steer an active run in the source session: doing that would
@@ -382,15 +419,15 @@ revisionGuardDone:
 		ContextSourceID: request.ContextSourceID, ContextSourceInstanceID: request.ContextSourceInstanceID,
 		Thinking: request.Thinking, Temperature: request.Temperature, MaxTokens: request.MaxTokens,
 		TaskKind: request.TaskKind, AllowTools: request.AllowTools,
+		ProviderBinding:         request.providerBindingCopy(),
 		ToolCatalogBinding:      toolCatalogBinding,
 		ExpectedSessionRevision: expectedSessionRevision,
 	}
 	if mode == DispatchSteer && steerTarget.ID != "" {
-		payload, _ := json.Marshal(map[string]any{
-			"content":                 request.Content,
-			"contextSourceId":         request.ContextSourceID,
-			"contextSourceInstanceId": request.ContextSourceInstanceID,
-		})
+		payload, payloadErr := marshalSteerInputPayload(request)
+		if payloadErr != nil {
+			return AgentInputReceipt{}, payloadErr
+		}
 		atomicResult, atomicErr := h.ledger.EnqueueSteerOrCreateRun(ctx, SteerOrQueueRequest{
 			Command:   ControlCommand{ID: request.RequestID, RunID: steerTarget.ID, Action: ControlSteer, Payload: payload, ExpectedRevision: request.ExpectedRevision},
 			CreateRun: createRequest,
@@ -472,6 +509,62 @@ func isUniqueConstraint(err error) bool {
 	return strings.Contains(message, "unique") || strings.Contains(message, "constraint")
 }
 
+// replayExistingSteer resolves the second durable representation of an input
+// idempotency key. Steers live in control_commands rather than runs, so they
+// must be replayed before consulting host-owned mutable provider settings.
+func (h *AgentRunHarness) replayExistingSteer(ctx context.Context, request AgentInputRequest) (AgentInputReceipt, bool, error) {
+	command, err := h.ledger.GetControlCommand(ctx, request.RequestID)
+	if errors.Is(err, ErrNotFound) {
+		return AgentInputReceipt{}, false, nil
+	}
+	if err != nil {
+		return AgentInputReceipt{}, false, err
+	}
+	if command.Action != ControlSteer {
+		return AgentInputReceipt{}, true, fmt.Errorf("%w: id %q is already bound to action %q", ErrControlCommandConflict, command.ID, command.Action)
+	}
+	if request.DispatchMode != "" && request.DispatchMode != DispatchSteer {
+		return AgentInputReceipt{}, true, fmt.Errorf("%w: id %q is already bound to a steer", ErrControlCommandConflict, command.ID)
+	}
+	if strings.TrimSpace(request.BranchFromMessageID) != "" {
+		return AgentInputReceipt{}, true, fmt.Errorf("%w: id %q is already bound to a steer and cannot create a branch", ErrControlCommandConflict, command.ID)
+	}
+	run, err := h.ledger.GetRun(ctx, command.RunID)
+	if err != nil {
+		return AgentInputReceipt{}, true, err
+	}
+	if sessionID := strings.TrimSpace(request.SessionID); sessionID != "" && sessionID != run.SessionID {
+		return AgentInputReceipt{}, true, fmt.Errorf("%w: id %q is already bound to session %q", ErrControlCommandConflict, command.ID, run.SessionID)
+	}
+	if request.ExpectedRevision != command.ExpectedRevision {
+		return AgentInputReceipt{}, true, fmt.Errorf("%w: id %q is already bound to revision %d", ErrControlCommandConflict, command.ID, command.ExpectedRevision)
+	}
+	payload, err := marshalSteerInputPayload(request)
+	if err != nil {
+		return AgentInputReceipt{}, true, err
+	}
+	if !bytes.Equal(bytes.TrimSpace(command.Payload), bytes.TrimSpace(payload)) {
+		return AgentInputReceipt{}, true, fmt.Errorf("%w: id %q is already bound to another steer", ErrControlCommandConflict, command.ID)
+	}
+	h.signalSteer(run.ID)
+	return AgentInputReceipt{
+		RequestID: request.RequestID, SessionID: run.SessionID, RunID: run.ID,
+		Disposition: "steered", Revision: run.Revision, State: run.State,
+	}, true, nil
+}
+
+func marshalSteerInputPayload(request AgentInputRequest) (json.RawMessage, error) {
+	payload, err := json.Marshal(map[string]any{
+		"content":                 request.Content,
+		"contextSourceId":         request.ContextSourceID,
+		"contextSourceInstanceId": request.ContextSourceInstanceID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
 func (h *AgentRunHarness) findActiveRun(ctx context.Context, sessionID string) (RunSnapshot, error) {
 	projection, err := h.ledger.GetSession(ctx, sessionID, false)
 	if err != nil {
@@ -530,15 +623,16 @@ func (h *AgentRunHarness) signalSteer(runID string) {
 	if execution == nil {
 		return
 	}
-	// The command is already durable in control_commands. Keep only an
-	// in-memory wake marker here; appending the content a second time would
-	// duplicate a same-process steer when the worker dequeues the command.
-	execution.steerPending.Store(true)
-	// Cancellation is safe for model turns and read-only tools. A side-effect
-	// tool is allowed to settle; the worker checks the command before issuing
-	// the next external call.
+	// Validate and claim the durable command before interrupting a local step.
+	// Without this ordering, a canceled read-only tool can commit its result
+	// first and make a command that was current at receipt look falsely stale.
+	// A remote owner still validates at its own consume boundary; this fast path
+	// only exists for the owner that is about to cancel its local context.
 	if !execution.sideEffect.Load() {
-		execution.cancelStep()
+		h.consumeControlCommands(h.durableContext(), execution)
+		if execution.hasSteer() && !execution.sideEffect.Load() {
+			execution.cancelStep()
+		}
 	}
 	execution.wakeWorker()
 }
@@ -555,12 +649,24 @@ func (h *AgentRunHarness) ControlRun(ctx context.Context, request RunControlRequ
 	if request.Action == "" {
 		return RunSnapshot{}, errors.New("action is required")
 	}
+	// Every externally initiated state mutation is guarded by the caller's
+	// observed run revision. Without this, a delayed cancel or steer can target
+	// a later model/tool step after the UI has already moved on.
+	if request.ExpectedRevision <= 0 {
+		return RunSnapshot{}, fmt.Errorf("%w: expectedRevision must be positive", ErrRevisionConflict)
+	}
 	if ctx == nil {
 		ctx = h.root
 	}
 	run, err := h.ledger.GetRun(ctx, request.RunID)
 	if err != nil {
 		return RunSnapshot{}, err
+	}
+	// Cancellation is idempotent after a run is terminal. Do not enqueue a
+	// command that no worker can consume, but still require the caller to have
+	// observed this exact terminal projection.
+	if request.Action == ControlCancel && run.State.Terminal() && run.Revision == request.ExpectedRevision {
+		return run, nil
 	}
 	switch request.Action {
 	case ControlApprove, ControlDeny:
@@ -571,10 +677,20 @@ func (h *AgentRunHarness) ControlRun(ctx context.Context, request RunControlRequ
 		if request.ApprovalID == "" {
 			return RunSnapshot{}, errors.New("approvalId is required")
 		}
+		if strings.TrimSpace(request.CallID) == "" {
+			return RunSnapshot{}, errors.New("callId is required")
+		}
+		if strings.TrimSpace(request.ArgsHash) == "" {
+			return RunSnapshot{}, errors.New("argsHash is required")
+		}
+		if request.ExpectedRevision <= 0 {
+			return RunSnapshot{}, fmt.Errorf("%w: expectedRevision must be positive", ErrRevisionConflict)
+		}
 		if _, err := h.ledger.DecideApproval(ctx, DecideApprovalRequest{
 			ApprovalID: request.ApprovalID, Decision: decision,
 			ExpectedRunRevision: request.ExpectedRevision,
 			ExpectedRunID:       request.RunID, ExpectedCallID: request.CallID,
+			ExpectedArgsHash: request.ArgsHash,
 		}); err != nil {
 			return RunSnapshot{}, err
 		}
@@ -599,24 +715,23 @@ func (h *AgentRunHarness) ControlRun(ctx context.Context, request RunControlRequ
 		if err != nil {
 			return RunSnapshot{}, err
 		}
-		h.cancelRun(request.RunID)
 		if run.State == RunStateQueued {
 			// A queued, unleased run has not started a model or tool step. Finish it
 			// synchronously instead of launching a worker whose context is already
 			// canceled. If another process acquired the lease between the read and
 			// this attempt, the owner fence rejects the write and its durable cancel
 			// command remains available for that owner to consume.
-			if strings.TrimSpace(run.OwnerToken) == "" {
-				h.finishCanceled(h.durableContext(), run.ID, "canceled")
+			if strings.TrimSpace(run.ownerToken) == "" {
+				if _, cancelErr := h.applyUnownedQueuedCancel(h.durableContext(), run.ID, commandID); cancelErr != nil &&
+					!errors.Is(cancelErr, ErrControlCommandClaimLost) && !errors.Is(cancelErr, ErrLeaseLost) &&
+					!errors.Is(cancelErr, ErrRevisionConflict) {
+					return RunSnapshot{}, cancelErr
+				}
 				latest, latestErr := h.ledger.GetRun(ctx, request.RunID)
 				if latestErr != nil {
 					return RunSnapshot{}, latestErr
 				}
 				if latest.State.Terminal() {
-					// No worker owns this queued run anymore. FinishCanceled may have
-					// raced another supervisor, but the command itself is now settled
-					// either way; make it non-replayable when we still hold its claim.
-					h.ackUnownedControlCommand(run.ID, commandID)
 					return latest, nil
 				}
 				run = latest
@@ -648,8 +763,8 @@ func (h *AgentRunHarness) ControlRun(ctx context.Context, request RunControlRequ
 		}
 		transition, transitionErr := h.ledger.ApplyRecoveryAction(ctx, RecoveryActionRequest{
 			RunID: request.RunID, CallID: request.CallID, Action: request.Action,
-			ExpectedRevision: request.ExpectedRevision, OwnerToken: request.OwnerToken,
-			CommandID: commandID, CommandPayload: payload,
+			ExpectedRevision: request.ExpectedRevision,
+			CommandID:        commandID, CommandPayload: payload,
 		})
 		if transitionErr != nil {
 			return RunSnapshot{}, transitionErr
@@ -660,6 +775,11 @@ func (h *AgentRunHarness) ControlRun(ctx context.Context, request RunControlRequ
 		if runCanStartWorker(transition.Run) {
 			h.startWorker(transition.Run)
 		}
+		// Return the transaction's resulting projection. A worker may advance the
+		// live run immediately after startWorker; returning a fresh read here would
+		// make a transport retry appear non-idempotent even though the original
+		// recovery command has an immutable receipt in the Ledger.
+		return transition.Run, nil
 	case ControlUseStaleWorkspace:
 		payload, _ := json.Marshal(map[string]any{"content": request.Content, "expectedRevision": request.ExpectedRevision})
 		commandID := strings.TrimSpace(request.RequestID)
@@ -984,6 +1104,16 @@ func (h *AgentRunHarness) ackControlCommand(execution *runExecution, commandID s
 	return err
 }
 
+func (h *AgentRunHarness) tombstoneControlCommand(execution *runExecution, commandID string) error {
+	err := h.ledger.TombstoneCommand(h.durableContext(), commandID, h.controlOwnerToken(execution))
+	if err == nil || errors.Is(err, ErrNotFound) || errors.Is(err, ErrControlCommandClaimLost) {
+		if execution != nil {
+			execution.clearControlClaim(commandID)
+		}
+	}
+	return err
+}
+
 // ackStaleWorkspaceCommands completes explicit stale-snapshot approvals only
 // after the worker has committed the state transition that makes the snapshot
 // usable. A transient ledger failure leaves the IDs pending so the next poll
@@ -1024,6 +1154,43 @@ func (h *AgentRunHarness) ackUnownedControlCommand(runID, commandID string) {
 	}
 }
 
+// applyUnownedQueuedCancel handles the narrow window before a queued run has
+// acquired a worker lease. The command is still claimed and revision-checked
+// through the same Ledger boundary as an owned worker, so a stale queued
+// cancel cannot terminally transition work that has already moved on.
+func (h *AgentRunHarness) applyUnownedQueuedCancel(ctx context.Context, runID, commandID string) (RunSnapshot, error) {
+	if h == nil || h.ledger == nil {
+		return RunSnapshot{}, errors.New("agent harness ledger is required")
+	}
+	owner := h.controlOwnerToken(nil)
+	commands, err := h.ledger.ClaimCommands(ctx, runID, owner, 1, h.leaseTTL)
+	if err != nil {
+		return RunSnapshot{}, err
+	}
+	claimed := false
+	for _, command := range commands {
+		if command.ID == commandID {
+			claimed = true
+			break
+		}
+	}
+	if !claimed {
+		return h.ledger.GetRun(ctx, runID)
+	}
+
+	result, err := h.ledger.ApplyCancelControlCommand(ctx, commandID, owner)
+	if err != nil {
+		return RunSnapshot{}, err
+	}
+	if result.Event != nil {
+		h.publish(*result.Event)
+	}
+	if result.Stale || !result.Applied {
+		return h.ledger.GetRun(ctx, runID)
+	}
+	return h.finishTerminal(ctx, runID, RunStateCanceled, "canceled", "canceled")
+}
+
 // consumeControlCommands applies commands submitted by another process. A
 // command is first claimed with a short lease and acknowledged only after the
 // durable action boundary succeeds. This keeps a crash between dequeue and
@@ -1042,15 +1209,28 @@ func (h *AgentRunHarness) consumeControlCommands(ctx context.Context, execution 
 			// renews its lease, but the in-memory action must remain single-shot.
 			continue
 		}
-		if h.controlCommandRevisionConflict(ctx, execution, command) {
-			_ = h.ackControlCommand(execution, command.ID)
+
+		// expectedRevision is a command fence, not only an enqueue-time check.
+		// A callback may advance the run between enqueue and this poll, so every
+		// claimed command is revalidated in a transaction before it can alter
+		// in-memory cancellation, steering, or workspace state.
+		conflictEvent, stale, validationErr := h.ledger.RejectStaleControlCommand(h.durableContext(), command.ID, h.controlOwnerToken(execution))
+		if validationErr != nil {
+			execution.clearControlClaim(command.ID)
 			continue
 		}
+		if stale {
+			if conflictEvent.RunID != "" {
+				h.publish(conflictEvent)
+			}
+			execution.clearControlClaim(command.ID)
+			continue
+		}
+
 		applied := false
 		retryLater := false
 		switch command.Action {
 		case ControlCancel:
-			execution.cancelRequested.Store(true)
 			if execution.sideEffect.Load() {
 				// The external operation has crossed its start fence. Leave the
 				// command unapplied until it settles; otherwise a crash here could
@@ -1059,33 +1239,25 @@ func (h *AgentRunHarness) consumeControlCommands(ctx context.Context, execution 
 				execution.clearControlClaim(command.ID)
 				continue
 			}
-			latest, latestErr := h.ledger.GetRun(ctx, execution.runID)
-			if latestErr != nil {
+			result, cancelErr := h.ledger.ApplyCancelControlCommand(h.durableContext(), command.ID, h.controlOwnerToken(execution))
+			if cancelErr != nil {
 				retryLater = true
-			} else if latest.State.Terminal() || latest.State == RunStateCanceling {
-				applied = true
 			} else {
-				// Persist canceling before canceling in-memory contexts. If the
-				// worker crashes after context cancellation, recovery still has a
-				// durable state from which to emit exactly one terminal event.
-				_, transitionErr := h.appendState(h.durableContext(), latest, EventCheckpoint, RunStateCanceling,
-					CheckpointEvent{Sequence: latest.NextSequence - 1}, execution, "")
-				if transitionErr == nil || errors.Is(transitionErr, ErrTerminalRun) {
-					applied = true
-				} else if errors.Is(transitionErr, ErrRevisionConflict) {
-					refreshed, refreshErr := h.ledger.GetRun(ctx, execution.runID)
-					if refreshErr == nil && (refreshed.State.Terminal() || refreshed.State == RunStateCanceling) {
-						applied = true
-					} else {
-						retryLater = true
-					}
-				} else {
-					retryLater = true
+				if result.Event != nil {
+					h.publish(*result.Event)
 				}
-			}
-			if applied {
-				execution.cancel()
-				execution.cancelStep()
+				if result.Stale {
+					execution.clearControlClaim(command.ID)
+					continue
+				}
+				if result.Applied {
+					// The persistent canceling checkpoint and applied command are now
+					// one transaction behind us; only now may we interrupt local work.
+					applied = true
+					execution.cancelRequested.Store(true)
+					execution.cancel()
+					execution.cancelStep()
+				}
 			}
 		case ControlSteer:
 			var payload struct {
@@ -1094,7 +1266,7 @@ func (h *AgentRunHarness) consumeControlCommands(ctx context.Context, execution 
 			if json.Unmarshal(command.Payload, &payload) == nil && strings.TrimSpace(payload.Content) != "" {
 				execution.steerPending.Store(true)
 				execution.steerMu.Lock()
-				execution.steers = append(execution.steers, steerRequest{requestID: command.ID, content: payload.Content})
+				execution.steers = append(execution.steers, steerRequest{requestID: command.ID, content: payload.Content, expectedRevision: command.ExpectedRevision, prevalidated: true})
 				execution.steerMu.Unlock()
 				if !execution.sideEffect.Load() {
 					execution.cancelStep()
@@ -1130,63 +1302,15 @@ func (h *AgentRunHarness) consumeControlCommands(ctx context.Context, execution 
 			execution.clearControlClaim(command.ID)
 			continue
 		}
-		if applied {
+		if applied && command.Action != ControlCancel {
 			_ = h.ackControlCommand(execution, command.ID)
 		}
 	}
 	return len(commands) > 0
 }
 
-// controlCommandRevisionConflict rejects a command that was queued by another
-// process against an older run projection. Commands have only been claimed at
-// this point, not acknowledged; the caller must ack the rejected command so a
-// stale action cannot be replayed by a later owner. Record a typed event when
-// the run is still mutable so adapters can surface the same stable
-// revision_conflict code as the synchronous API.
-func (h *AgentRunHarness) controlCommandRevisionConflict(ctx context.Context, execution *runExecution, command ControlCommand) bool {
-	if command.ExpectedRevision <= 0 {
-		return false
-	}
-	run, err := h.ledger.GetRun(ctx, execution.runID)
-	if err != nil {
-		// The command was durably consumed, but a missing/unreadable run is not a
-		// safe condition in which to execute a control side effect.
-		return true
-	}
-	if run.Revision == command.ExpectedRevision {
-		return false
-	}
-	if run.State.Terminal() {
-		return true
-	}
-	h.publishControlCommandRevisionConflict(ctx, execution, command, run)
-	return true
-}
-
-func (h *AgentRunHarness) publishControlCommandRevisionConflict(ctx context.Context, execution *runExecution, command ControlCommand, run RunSnapshot) {
-	payload := RunErrorEvent{
-		Code:      "revision_conflict",
-		Message:   fmt.Sprintf("control command %q expected revision %d, got %d", command.Action, command.ExpectedRevision, run.Revision),
-		Retryable: true,
-	}
-	if _, err := h.appendEventOwned(ctx, run, EventRunError, run.State, payload, execution); err == nil {
-		return
-	} else if !errors.Is(err, ErrRevisionConflict) {
-		return
-	}
-	// A worker transition can win between the read above and the event write.
-	// Re-read once so the stale rejection remains observable without retrying
-	// the command or risking an unbounded event conflict loop.
-	latest, err := h.ledger.GetRun(ctx, execution.runID)
-	if err != nil || latest.State.Terminal() {
-		return
-	}
-	payload.Message = fmt.Sprintf("control command %q expected revision %d, got %d", command.Action, command.ExpectedRevision, latest.Revision)
-	_, _ = h.appendEventOwned(ctx, latest, EventRunError, latest.State, payload, execution)
-}
-
 func (h *AgentRunHarness) applySteer(ctx context.Context, run *RunSnapshot, messages *[]Message, content string, execution *runExecution) error {
-	return h.supersedeAndSteer(ctx, run, messages, nil, content, "", execution)
+	return h.supersedeAndSteer(ctx, run, messages, nil, content, "", 0, execution)
 }
 
 // supersedeAndSteer is the single interruption boundary used by model and
@@ -1195,7 +1319,7 @@ func (h *AgentRunHarness) applySteer(ctx context.Context, run *RunSnapshot, mess
 // as the interrupted checkpoint and the steer input. Keeping this operation
 // atomic prevents stale intents from being executed or projected into the next
 // provider request.
-func (h *AgentRunHarness) supersedeAndSteer(ctx context.Context, run *RunSnapshot, messages *[]Message, intents []ToolIntent, content, requestID string, execution *runExecution) error {
+func (h *AgentRunHarness) supersedeAndSteer(ctx context.Context, run *RunSnapshot, messages *[]Message, intents []ToolIntent, content, requestID string, expectedRevision int64, execution *runExecution) error {
 	if h == nil || run == nil {
 		return errors.New("steer requires a run")
 	}
@@ -1215,10 +1339,17 @@ func (h *AgentRunHarness) supersedeAndSteer(ctx context.Context, run *RunSnapsho
 			return refreshErr
 		}
 		*run = latest
+		expected := latest.Revision
+		if expectedRevision > 0 {
+			// A durable control command must keep the revision it was accepted
+			// against. Refreshing it here would silently turn a stale steer into
+			// a command against a later model/tool boundary.
+			expected = expectedRevision
+		}
 		result, steerErr := h.ledger.SupersedeToolIntentsAndSteer(durableCtx, SupersedeToolIntentsRequest{
 			RunID:            run.ID,
 			OwnerToken:       ownerToken,
-			ExpectedRevision: latest.Revision,
+			ExpectedRevision: expected,
 			Intents:          intents,
 			SteerContent:     content,
 			RequestID:        requestID,
@@ -1242,6 +1373,24 @@ func (h *AgentRunHarness) supersedeAndSteer(ctx context.Context, run *RunSnapsho
 		}
 		lastErr = steerErr
 		if !errors.Is(steerErr, ErrRevisionConflict) {
+			return steerErr
+		}
+		if requestID != "" && expectedRevision > 0 {
+			conflictEvent, stale, rejectErr := h.ledger.RejectStaleControlCommand(durableCtx, requestID, h.controlOwnerToken(execution))
+			if rejectErr != nil {
+				if errors.Is(rejectErr, ErrControlCommandClaimLost) || errors.Is(rejectErr, ErrLeaseLost) {
+					execution.clearControlClaim(requestID)
+					return nil
+				}
+				return rejectErr
+			}
+			if stale {
+				if conflictEvent.RunID != "" {
+					h.publish(conflictEvent)
+				}
+				execution.clearControlClaim(requestID)
+				return nil
+			}
 			return steerErr
 		}
 	}
@@ -1354,6 +1503,9 @@ func (h *AgentRunHarness) ReadSession(ctx context.Context, request SessionReadRe
 func (h *AgentRunHarness) MutateSession(ctx context.Context, request SessionMutationRequest) (SessionProjection, error) {
 	if err := h.ensureOpen(); err != nil {
 		return SessionProjection{}, err
+	}
+	if request.ExpectedRevision <= 0 {
+		return SessionProjection{}, fmt.Errorf("%w: expectedRevision must be positive", ErrRevisionConflict)
 	}
 	if ctx == nil {
 		ctx = h.root
@@ -1673,7 +1825,7 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 			}
 		}
 		if steer := execution.takeSteerRequest(); steer.content != "" {
-			if err := h.supersedeAndSteer(ctx, &run, &messages, nil, steer.content, steer.requestID, execution); err != nil {
+			if err := h.supersedeAndSteer(ctx, &run, &messages, nil, steer.content, steer.requestID, steer.transitionExpectedRevision(), execution); err != nil {
 				h.failRun(h.durableContext(), run, "steer", err, execution)
 				return
 			}
@@ -1755,6 +1907,17 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 			return
 		}
 		request := built.Request
+		// Provider configuration is accepted as an encrypted, immutable run
+		// contract. Reload it for every attempt so process recovery never falls
+		// back to mutable desktop/CLI provider settings.
+		if strings.TrimSpace(run.Provider) != "" {
+			binding, bindingErr := h.ledger.GetProviderBinding(ctx, run.ID)
+			if bindingErr != nil {
+				h.failRun(h.durableContext(), run, "provider_binding", bindingErr, execution)
+				return
+			}
+			request.ProviderBinding = cloneProviderBinding(&binding)
+		}
 		// Compression intentionally disables tools for this turn. A compressed
 		// projection may omit an earlier assistant/tool pairing, so allowing a
 		// fresh tool intent would violate provider protocol invariants.
@@ -1907,7 +2070,7 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 			h.consumeControlCommands(ctx, execution)
 			if execution.hasSteer() {
 				if steer := execution.takeSteerRequest(); steer.content != "" {
-					if steerErr := h.supersedeAndSteer(ctx, &run, &messages, result.ToolCalls[intentIndex:], steer.content, steer.requestID, execution); steerErr != nil {
+					if steerErr := h.supersedeAndSteer(ctx, &run, &messages, result.ToolCalls[intentIndex:], steer.content, steer.requestID, steer.transitionExpectedRevision(), execution); steerErr != nil {
 						h.failRun(h.durableContext(), run, "steer", steerErr, execution)
 						return
 					}
@@ -1979,7 +2142,7 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 					}
 					if errors.Is(approvalErr, ErrRunSteered) || execution.hasSteer() {
 						if steer := execution.takeSteerRequest(); steer.content != "" {
-							if steerErr := h.supersedeAndSteer(ctx, &run, &messages, result.ToolCalls[intentIndex:], steer.content, steer.requestID, execution); steerErr != nil {
+							if steerErr := h.supersedeAndSteer(ctx, &run, &messages, result.ToolCalls[intentIndex:], steer.content, steer.requestID, steer.transitionExpectedRevision(), execution); steerErr != nil {
 								h.failRun(h.durableContext(), run, "steer", steerErr, execution)
 								return
 							}
@@ -2005,7 +2168,7 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 				h.consumeControlCommands(ctx, execution)
 				if execution.hasSteer() {
 					if steer := execution.takeSteerRequest(); steer.content != "" {
-						if steerErr := h.supersedeAndSteer(ctx, &run, &messages, result.ToolCalls[intentIndex:], steer.content, steer.requestID, execution); steerErr != nil {
+						if steerErr := h.supersedeAndSteer(ctx, &run, &messages, result.ToolCalls[intentIndex:], steer.content, steer.requestID, steer.transitionExpectedRevision(), execution); steerErr != nil {
 							h.failRun(h.durableContext(), run, "steer", steerErr, execution)
 							return
 						}
@@ -2045,7 +2208,7 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 						// record/message. A completed tool is never relabeled here.
 						remaining = result.ToolCalls[intentIndex:]
 					}
-					if steerErr := h.supersedeAndSteer(ctx, &run, &messages, remaining, steer.content, steer.requestID, execution); steerErr != nil {
+					if steerErr := h.supersedeAndSteer(ctx, &run, &messages, remaining, steer.content, steer.requestID, steer.transitionExpectedRevision(), execution); steerErr != nil {
 						h.failRun(h.durableContext(), run, "steer", steerErr, execution)
 						return
 					}
@@ -2167,7 +2330,7 @@ func (h *AgentRunHarness) resumeAwaitingApproval(ctx context.Context, run *RunSn
 	if decision == "approved" {
 		nextState = RunStateRunningTool
 	}
-	if _, err := h.appendState(ctx, current, EventApproval, nextState, ApprovalEvent{ApprovalID: approval.ApprovalID, CallID: approval.CallID, Decision: decision}, execution, ""); err != nil {
+	if _, err := h.appendState(ctx, current, EventApproval, nextState, newApprovalEvent(approval.ApprovalID, approval.CallID, approval.ToolName, approval.Effect, approval.ArgsHash, decision), execution, ""); err != nil {
 		return false, err
 	}
 	*run, err = h.refreshRun(ctx, run.ID)
@@ -2588,6 +2751,10 @@ func (h *AgentRunHarness) finishExhausted(ctx context.Context, run RunSnapshot, 
 }
 
 func (h *AgentRunHarness) finishCanceled(ctx context.Context, runID, reason string, executions ...*runExecution) {
+	h.finishCanceledForControlCommand(ctx, runID, reason, "", executions...)
+}
+
+func (h *AgentRunHarness) finishCanceledForControlCommand(ctx context.Context, runID, reason, commandID string, executions ...*runExecution) {
 	h.mu.Lock()
 	execution := h.runs[runID]
 	h.mu.Unlock()
@@ -2597,10 +2764,14 @@ func (h *AgentRunHarness) finishCanceled(ctx context.Context, runID, reason stri
 	if execution != nil && execution.terminal.Swap(true) {
 		return
 	}
-	_, _ = h.finishTerminal(ctx, runID, RunStateCanceled, reason, reason, execution)
+	_, _ = h.finishTerminalForControlCommand(ctx, runID, RunStateCanceled, reason, reason, commandID, execution)
 }
 
 func (h *AgentRunHarness) finishTerminal(ctx context.Context, runID string, state RunState, reason, errorCode string, executions ...*runExecution) (RunSnapshot, error) {
+	return h.finishTerminalForControlCommand(ctx, runID, state, reason, errorCode, "", executions...)
+}
+
+func (h *AgentRunHarness) finishTerminalForControlCommand(ctx context.Context, runID string, state RunState, reason, errorCode, commandID string, executions ...*runExecution) (RunSnapshot, error) {
 	run, err := h.ledger.GetRun(ctx, runID)
 	if err != nil {
 		return RunSnapshot{}, err
@@ -2630,7 +2801,7 @@ func (h *AgentRunHarness) finishTerminal(ctx context.Context, runID string, stat
 			return RunSnapshot{}, err
 		}
 	}
-	event, err := h.ledger.AppendEvent(ctx, AppendEventRequest{RunID: runID, ExpectedRevision: run.Revision, Kind: EventTerminal, ResultingState: state, Payload: payload, TerminalReason: reason, OwnerToken: owner})
+	event, err := h.ledger.AppendEvent(ctx, AppendEventRequest{RunID: runID, ExpectedRevision: run.Revision, Kind: EventTerminal, ResultingState: state, Payload: payload, TerminalReason: reason, OwnerToken: owner, AppliedControlCommandID: commandID})
 	if err != nil {
 		if errors.Is(err, ErrTerminalRun) || errors.Is(err, ErrRevisionConflict) {
 			return h.ledger.GetRun(ctx, runID)
@@ -2650,9 +2821,14 @@ func (h *AgentRunHarness) awaitApproval(ctx context.Context, run RunSnapshot, in
 	// decision stale immediately.
 	current := run
 	approvalID := uuid.NewString()
+	approvalArgs := intent.Arguments
+	if len(approvalArgs) == 0 {
+		approvalArgs = json.RawMessage(`{}`)
+	}
+	argsHash := ArgsHash(approvalArgs)
 	var err error
 	if current.State != RunStateAwaitingApproval {
-		_, err = h.appendState(ctx, current, EventApproval, RunStateAwaitingApproval, ApprovalEvent{ApprovalID: approvalID, CallID: intent.CallID, Decision: "pending"}, execution, "")
+		_, err = h.appendState(ctx, current, EventApproval, RunStateAwaitingApproval, newApprovalEvent(approvalID, intent.CallID, intent.ToolName, intent.Effect, argsHash, "pending"), execution, "")
 		if err != nil {
 			return false, err
 		}
@@ -2661,7 +2837,7 @@ func (h *AgentRunHarness) awaitApproval(ctx context.Context, run RunSnapshot, in
 			return false, err
 		}
 	}
-	approval, err := h.ledger.CreateApproval(ctx, PutApprovalRequest{ApprovalID: approvalID, RunID: run.ID, CallID: intent.CallID, ToolName: intent.ToolName, Effect: intent.Effect, Arguments: intent.Arguments, RunRevision: current.Revision, OwnerToken: execution.ownerToken()})
+	approval, err := h.ledger.CreateApproval(ctx, PutApprovalRequest{ApprovalID: approvalID, RunID: run.ID, CallID: intent.CallID, ToolName: intent.ToolName, Effect: intent.Effect, Arguments: approvalArgs, RunRevision: current.Revision, OwnerToken: execution.ownerToken()})
 	if err != nil {
 		return false, err
 	}
@@ -2676,6 +2852,7 @@ func (h *AgentRunHarness) awaitApproval(ctx context.Context, run RunSnapshot, in
 				ApprovalID: approval.ApprovalID, Decision: decisionValue,
 				ExpectedRunRevision: current.Revision,
 				ExpectedRunID:       run.ID, ExpectedCallID: intent.CallID,
+				ExpectedArgsHash: approval.ArgsHash,
 			})
 			if handlerErr != nil {
 				return false, handlerErr
@@ -2700,6 +2877,7 @@ func (h *AgentRunHarness) awaitApproval(ctx context.Context, run RunSnapshot, in
 				ApprovalID: approval.ApprovalID, Decision: "expired",
 				ExpectedRunRevision: current.Revision,
 				ExpectedRunID:       run.ID, ExpectedCallID: intent.CallID,
+				ExpectedArgsHash: approval.ArgsHash,
 			})
 			return false, ErrRunSteered
 		}
@@ -2719,7 +2897,7 @@ func (h *AgentRunHarness) awaitApproval(ctx context.Context, run RunSnapshot, in
 			if decision.Status != "approved" {
 				nextState = RunStateRunningModel
 			}
-			_, transitionErr := h.appendState(ctx, latest, EventApproval, nextState, ApprovalEvent{ApprovalID: approval.ApprovalID, CallID: intent.CallID, Decision: decision.Status}, execution, "")
+			_, transitionErr := h.appendState(ctx, latest, EventApproval, nextState, newApprovalEvent(approval.ApprovalID, approval.CallID, approval.ToolName, approval.Effect, approval.ArgsHash, decision.Status), execution, "")
 			if transitionErr != nil && !errors.Is(transitionErr, ErrTerminalRun) {
 				return false, transitionErr
 			}
@@ -2734,6 +2912,33 @@ func (h *AgentRunHarness) awaitApproval(ctx context.Context, run RunSnapshot, in
 			timer.Stop()
 		case <-timer.C:
 		}
+	}
+}
+
+// newApprovalEvent keeps the adapter-facing approval projection deliberately
+// separate from encrypted approval arguments. Its summary only communicates
+// the effect class, so a SQL statement or any other tool parameter cannot
+// cross the Wails/CLI event boundary by accident.
+func newApprovalEvent(approvalID, callID, toolName string, effect ToolEffect, argsHash, decision string) ApprovalEvent {
+	return ApprovalEvent{
+		ApprovalID: approvalID,
+		CallID:     callID,
+		ToolName:   toolName,
+		Effect:     effect,
+		ArgsHash:   argsHash,
+		Decision:   decision,
+		Summary:    approvalDisplaySummary(effect),
+	}
+}
+
+func approvalDisplaySummary(effect ToolEffect) string {
+	switch effect {
+	case ToolEffectSideEffect:
+		return "This tool can change data or external state."
+	case ToolEffectSideEffectUnknown:
+		return "This tool may change data or external state."
+	default:
+		return "This tool requires approval before it can run."
 	}
 }
 

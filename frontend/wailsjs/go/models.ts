@@ -2164,11 +2164,11 @@ export namespace connection {
 	    currentConnectionId?: string;
 	    remainingConnectionIds: string[];
 	    cancelRequested: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ConnectionHealthRun(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.runId = source["runId"];
@@ -2180,7 +2180,7 @@ export namespace connection {
 	        this.remainingConnectionIds = source["remainingConnectionIds"];
 	        this.cancelRequested = source["cancelRequested"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -2199,7 +2199,7 @@ export namespace connection {
 		    return a;
 		}
 	}
-
+	
 	export class ConnectionTag {
 	    id: string;
 	    name: string;
@@ -2209,7 +2209,7 @@ export namespace connection {
 	    childOrder?: string[];
 	    sortMode?: string;
 	    connectionSortMode?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ConnectionTag(source);
 	    }
@@ -2233,7 +2233,7 @@ export namespace connection {
 	    sidebarRootOrder: string[];
 	    rootSortMode?: string;
 	    rootConnectionSortMode?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ConnectionSidebarLayout(source);
 	    }
@@ -2271,7 +2271,7 @@ export namespace connection {
 	    sidebarRootOrder: string[];
 	    rootSortMode?: string;
 	    rootConnectionSortMode?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ConnectionSidebarLayoutInput(source);
 	    }
@@ -2360,11 +2360,11 @@ export namespace connection {
 	export class DeleteConnectionGroupInput {
 	    tagId: string;
 	    expectedRevision: number;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new DeleteConnectionGroupInput(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.tagId = source["tagId"];
@@ -3152,9 +3152,9 @@ export namespace resultdiff {
 	}
 
 }
-	
-export namespace runharness {
 
+export namespace runharness {
+	
 	export class AgentInputReceipt {
 	    requestId: string;
 	    sessionId: string;
@@ -3234,7 +3234,7 @@ export namespace runharness {
 	        this.allowTools = source["allowTools"];
 	        this.expectedRevision = source["expectedRevision"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -3253,18 +3253,18 @@ export namespace runharness {
 		    return a;
 		}
 	}
-
+	
 	export class CLIWorkspaceContext {
 	    cwd?: string;
 	    contextFiles?: string[];
 	    connectionId?: string;
 	    database?: string;
 	    command?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new CLIWorkspaceContext(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.cwd = source["cwd"];
@@ -3277,11 +3277,11 @@ export namespace runharness {
 	export class LedgerStatus {
 	    state: string;
 	    message?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new LedgerStatus(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.state = source["state"];
@@ -3303,11 +3303,11 @@ export namespace runharness {
 	    metadata?: number[];
 	    // Go type: time
 	    createdAt: any;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new Message(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -3324,7 +3324,7 @@ export namespace runharness {
 	        this.metadata = source["metadata"];
 	        this.createdAt = this.convertValues(source["createdAt"], null);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -3350,14 +3350,14 @@ export namespace runharness {
 	    action: string;
 	    callId?: string;
 	    approvalId?: string;
+	    argsHash?: string;
 	    content?: string;
 	    expectedRevision?: number;
-	    ownerToken?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new RunControlRequest(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.requestId = source["requestId"];
@@ -3366,9 +3366,9 @@ export namespace runharness {
 	        this.action = source["action"];
 	        this.callId = source["callId"];
 	        this.approvalId = source["approvalId"];
+	        this.argsHash = source["argsHash"];
 	        this.content = source["content"];
 	        this.expectedRevision = source["expectedRevision"];
-	        this.ownerToken = source["ownerToken"];
 	    }
 	}
 	export class RunEvent {
@@ -3384,11 +3384,11 @@ export namespace runharness {
 	    kind: string;
 	    resultingState: string;
 	    payload?: number[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new RunEvent(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.schemaVersion = source["schemaVersion"];
@@ -3403,7 +3403,7 @@ export namespace runharness {
 	        this.resultingState = source["resultingState"];
 	        this.payload = source["payload"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -3435,11 +3435,11 @@ export namespace runharness {
 	    defaultToolTimeout: number;
 	    maxTotalTokens: number;
 	    maxToolResultBytes: number;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new RunPolicy(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.defaultDispatchMode = source["defaultDispatchMode"];
@@ -3461,11 +3461,11 @@ export namespace runharness {
 	    workspaceSnapshotRenewInterval: number;
 	    workspaceSnapshotLeaseDuration: number;
 	    policyWatchInterval: number;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new RunRuntimeConfig(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.controlPollInterval = source["controlPollInterval"];
@@ -3478,18 +3478,18 @@ export namespace runharness {
 	    expectedRevision: number;
 	    policy: RunPolicy;
 	    runtime: RunRuntimeConfig;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new RunPolicyMutationRequest(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.expectedRevision = source["expectedRevision"];
 	        this.policy = this.convertValues(source["policy"], RunPolicy);
 	        this.runtime = this.convertValues(source["runtime"], RunRuntimeConfig);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -3513,11 +3513,11 @@ export namespace runharness {
 	    revision: number;
 	    policy: RunPolicy;
 	    runtime: RunRuntimeConfig;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new RunPolicySnapshot(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.schemaVersion = source["schemaVersion"];
@@ -3525,7 +3525,7 @@ export namespace runharness {
 	        this.policy = this.convertValues(source["policy"], RunPolicy);
 	        this.runtime = this.convertValues(source["runtime"], RunRuntimeConfig);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -3548,11 +3548,11 @@ export namespace runharness {
 	    runId: string;
 	    afterSequence?: number;
 	    limit?: number;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new RunReadRequest(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.runId = source["runId"];
@@ -3569,7 +3569,6 @@ export namespace runharness {
 	    revision: number;
 	    attempt: number;
 	    nextSequence: number;
-	    ownerToken?: string;
 	    // Go type: time
 	    ownerExpiresAt?: any;
 	    checkpointId?: string;
@@ -3589,15 +3588,17 @@ export namespace runharness {
 	    allowTools: boolean;
 	    contextSourceId?: string;
 	    contextSourceInstanceId?: string;
+	    toolCatalogHash?: string;
+	    toolCatalogRevision?: number;
 	    promptTokens: number;
 	    completionTokens: number;
 	    totalTokens: number;
 	    reservedTokens: number;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new RunSnapshot(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.runId = source["runId"];
@@ -3608,7 +3609,6 @@ export namespace runharness {
 	        this.revision = source["revision"];
 	        this.attempt = source["attempt"];
 	        this.nextSequence = source["nextSequence"];
-	        this.ownerToken = source["ownerToken"];
 	        this.ownerExpiresAt = this.convertValues(source["ownerExpiresAt"], null);
 	        this.checkpointId = source["checkpointId"];
 	        this.terminalReason = source["terminalReason"];
@@ -3625,12 +3625,14 @@ export namespace runharness {
 	        this.allowTools = source["allowTools"];
 	        this.contextSourceId = source["contextSourceId"];
 	        this.contextSourceInstanceId = source["contextSourceInstanceId"];
+	        this.toolCatalogHash = source["toolCatalogHash"];
+	        this.toolCatalogRevision = source["toolCatalogRevision"];
 	        this.promptTokens = source["promptTokens"];
 	        this.completionTokens = source["completionTokens"];
 	        this.totalTokens = source["totalTokens"];
 	        this.reservedTokens = source["reservedTokens"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -3654,11 +3656,11 @@ export namespace runharness {
 	    events: RunEvent[];
 	    nextSequence: number;
 	    hasMore: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new RunReadResult(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.run = this.convertValues(source["run"], RunSnapshot);
@@ -3666,7 +3668,7 @@ export namespace runharness {
 	        this.nextSequence = source["nextSequence"];
 	        this.hasMore = source["hasMore"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -3685,17 +3687,17 @@ export namespace runharness {
 		    return a;
 		}
 	}
-
-
+	
+	
 	export class SessionListRequest {
 	    limit?: number;
 	    offset?: number;
 	    activeOnly?: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SessionListRequest(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.limit = source["limit"];
@@ -3718,11 +3720,11 @@ export namespace runharness {
 	    updatedAt: any;
 	    runs?: RunSnapshot[];
 	    messages?: Message[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SessionProjection(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.sessionId = source["sessionId"];
@@ -3738,7 +3740,7 @@ export namespace runharness {
 	        this.runs = this.convertValues(source["runs"], RunSnapshot);
 	        this.messages = this.convertValues(source["messages"], Message);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -3760,17 +3762,17 @@ export namespace runharness {
 	export class SessionListResult {
 	    sessions: SessionProjection[];
 	    total: number;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SessionListResult(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.sessions = this.convertValues(source["sessions"], SessionProjection);
 	        this.total = source["total"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -3794,11 +3796,11 @@ export namespace runharness {
 	    expectedRevision?: number;
 	    title?: string;
 	    archived?: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SessionMutationRequest(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.sessionId = source["sessionId"];
@@ -3807,16 +3809,16 @@ export namespace runharness {
 	        this.archived = source["archived"];
 	    }
 	}
-
+	
 	export class SessionReadRequest {
 	    sessionId: string;
 	    afterSequence?: number;
 	    limit?: number;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SessionReadRequest(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.sessionId = source["sessionId"];
@@ -3830,11 +3832,11 @@ export namespace runharness {
 	    revision: number;
 	    contentHash: string;
 	    accepted: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SnapshotAck(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.sourceId = source["sourceId"];
@@ -3848,11 +3850,11 @@ export namespace runharness {
 	    id?: string;
 	    name?: string;
 	    content?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new WorkspaceQuery(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -3866,11 +3868,11 @@ export namespace runharness {
 	    status?: string;
 	    // Go type: time
 	    createdAt?: any;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new WorkspaceSQLActivity(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -3878,7 +3880,7 @@ export namespace runharness {
 	        this.status = source["status"];
 	        this.createdAt = this.convertValues(source["createdAt"], null);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -3905,11 +3907,11 @@ export namespace runharness {
 	    database?: string;
 	    object?: string;
 	    draft?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new WorkspaceTab(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
@@ -3943,11 +3945,11 @@ export namespace runharness {
 	    cliContext?: CLIWorkspaceContext;
 	    capabilities?: Record<string, boolean>;
 	    availability?: Record<string, string>;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new WorkspaceSnapshot(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.schemaVersion = source["schemaVersion"];
@@ -3971,7 +3973,7 @@ export namespace runharness {
 	        this.capabilities = source["capabilities"];
 	        this.availability = source["availability"];
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;
@@ -3994,7 +3996,7 @@ export namespace runharness {
 }
 
 export namespace sqlaudit {
-
+	
 	export class Filter {
 	    search: string;
 	    connectionId: string;
@@ -4009,11 +4011,11 @@ export namespace sqlaudit {
 	    executionHistory: boolean;
 	    page: number;
 	    pageSize: number;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new Filter(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.search = source["search"];
@@ -4036,11 +4038,11 @@ export namespace sqlaudit {
 	    captureMode: string;
 	    retentionDays: number;
 	    maxRecords: number;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.enabled = source["enabled"];
@@ -4053,7 +4055,7 @@ export namespace sqlaudit {
 }
 
 export namespace sync {
-
+	
 	export class MigrationCapability {
 	    sourceType: string;
 	    targetType: string;
@@ -4066,11 +4068,11 @@ export namespace sync {
 	    supportsAutoAddColumns: boolean;
 	    requiresExistingTarget: boolean;
 	    supportsMutations: boolean;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new MigrationCapability(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.sourceType = source["sourceType"];
@@ -4089,11 +4091,11 @@ export namespace sync {
 	export class SyncValueTransform {
 	    type: string;
 	    args?: Record<string, string>;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SyncValueTransform(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.type = source["type"];
@@ -4650,3 +4652,4 @@ export namespace syncjob {
 	
 
 }
+

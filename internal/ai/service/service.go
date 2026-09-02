@@ -49,20 +49,17 @@ type Service struct {
 	agentContext context.Context
 	agentHarness *runharness.AgentRunHarness
 	agentLedger  *runharness.Ledger
-	// agentProviderSnapshots freezes the fully resolved provider configuration
-	// for each desktop-owned run. Provider settings are mutable from the
-	// settings UI, but a queued/running run must continue using the endpoint,
-	// credentials and headers it was accepted with. The cache is intentionally
-	// separate from agentMu so provider resolution never blocks lifecycle
-	// fencing; entries are removed when the terminal event is observed.
-	agentProviderMu            sync.Mutex
-	agentProviderSnapshots     map[string]ai.ProviderConfig
-	agentToolCatalog           runharness.ToolCatalog
-	agentApprovalHandler       runharness.ApprovalHandler
-	agentHarnessInitialized    bool
-	agentHarnessInitialization error
-	agentHarnessShutdown       bool
-	agentPolicyMu              sync.Mutex
+	// agentPendingWorkspaceSnapshots keeps desktop/CLI context in memory while
+	// the encrypted ledger is still unopened. Publishing workspace context is a
+	// startup concern; it must not force an OS keyring access before the user
+	// actually uses an Agent feature.
+	agentPendingWorkspaceSnapshots map[string]runharness.WorkspaceSnapshot
+	agentToolCatalog               runharness.ToolCatalog
+	agentApprovalHandler           runharness.ApprovalHandler
+	agentHarnessInitialized        bool
+	agentHarnessInitialization     error
+	agentHarnessShutdown           bool
+	agentPolicyMu                  sync.Mutex
 	// agentPolicyWatcherMu protects the lifecycle of the lightweight file
 	// watcher that keeps an already-running desktop Harness in sync with policy
 	// changes made by the standalone CLI or another process.
@@ -199,15 +196,14 @@ func NewServiceWithSecretStore(store secretstore.SecretStore) *Service {
 	// 外部客户端探测放在后台预热，避免这 1s 量级的代价落在设置页打开的同步路径上。
 	go prewarmLocalCLICommandCache()
 	return &Service{
-		providers:              make([]ai.ProviderConfig, 0),
-		safetyLevel:            ai.PermissionReadOnly,
-		contextLevel:           ai.ContextSchemaOnly,
-		mcpServers:             make([]ai.MCPServerConfig, 0),
-		skills:                 make([]ai.SkillConfig, 0),
-		guard:                  safety.NewGuard(ai.PermissionReadOnly),
-		secretStore:            store,
-		localizer:              newServiceLocalizer(),
-		agentProviderSnapshots: make(map[string]ai.ProviderConfig),
+		providers:    make([]ai.ProviderConfig, 0),
+		safetyLevel:  ai.PermissionReadOnly,
+		contextLevel: ai.ContextSchemaOnly,
+		mcpServers:   make([]ai.MCPServerConfig, 0),
+		skills:       make([]ai.SkillConfig, 0),
+		guard:        safety.NewGuard(ai.PermissionReadOnly),
+		secretStore:  store,
+		localizer:    newServiceLocalizer(),
 	}
 }
 
@@ -430,16 +426,12 @@ func (s *Service) startup(ctx context.Context) {
 	}
 	s.configDir = resolveConfigDir()
 	s.loadConfig()
-	if lifecycleCtx != nil {
-		if err := s.initializeAgentHarness(lifecycleCtx); err != nil {
-			// The AI settings surface remains usable when the keyring is locked or
-			// the ledger cannot be opened; agent commands return this stable error
-			// until the application is restarted with a usable key.
-			logger.Warnf("初始化 AI Agent Run Harness 失败：%v", err)
-		}
-	} else {
+	if lifecycleCtx == nil {
 		logger.Warnf("未提供应用生命周期上下文，AI Agent Run Harness 未启动")
 	}
+	// Opening the encrypted Agent ledger reads its Keychain key. Defer that
+	// operation until an Agent API is actually used, rather than prompting on
+	// every desktop startup or Wails development rebuild.
 	s.restoreMCPHTTPServer()
 	logger.Infof("AI Service 启动完成，已加载 %d 个 Provider", len(s.providers))
 }

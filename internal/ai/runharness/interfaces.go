@@ -73,6 +73,11 @@ type ModelTurnAdapter interface {
 	Execute(context.Context, ModelTurnRequest, ModelDeltaSink) (ModelTurnResult, error)
 }
 
+// AgentInputBinder resolves host-owned, mutable input settings into the
+// immutable execution contract persisted for a newly accepted run.
+// SubmitInput calls it only after the request-id idempotency lookup misses.
+type AgentInputBinder func(context.Context, *AgentInputRequest) error
+
 // ModelDeltaSink receives provider deltas.  It is a function type rather than
 // an interface so adapters can pass a plain callback without a wrapper; the
 // method keeps it usable anywhere an interface-style sink is expected.
@@ -171,7 +176,7 @@ type ApprovalRequest struct {
 	CallID      string
 	ToolName    string
 	Effect      ToolEffect
-	Arguments   json.RawMessage
+	Arguments   json.RawMessage `json:"-"`
 	ArgsHash    string
 	RunRevision int64
 }
@@ -197,6 +202,10 @@ type HarnessOption func(*HarnessConfig)
 type HarnessConfig struct {
 	Ledger *Ledger
 	Model  ModelTurnAdapter
+	// InputBinder resolves mutable host settings, such as the selected provider,
+	// before a new run is persisted. It is deliberately skipped for an existing
+	// request ID so accepted requests remain retryable during host reconfiguration.
+	InputBinder AgentInputBinder
 	// ContextBuilder owns the provider-facing projection of the durable
 	// transcript. The harness keeps the full transcript in the Ledger and only
 	// passes the builder's projection to a provider.
@@ -229,6 +238,9 @@ type HarnessConfig struct {
 
 func WithModelAdapter(adapter ModelTurnAdapter) HarnessOption {
 	return func(c *HarnessConfig) { c.Model = adapter }
+}
+func WithInputBinder(binder AgentInputBinder) HarnessOption {
+	return func(c *HarnessConfig) { c.InputBinder = binder }
 }
 func WithContextBuilder(builder ContextBuilder) HarnessOption {
 	return func(c *HarnessConfig) { c.ContextBuilder = builder }

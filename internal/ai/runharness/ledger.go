@@ -23,9 +23,12 @@ import (
 )
 
 var (
-	ErrClosed              = errors.New("agent ledger is closed")
-	ErrNotFound            = errors.New("agent ledger record not found")
-	ErrRevisionConflict    = errors.New("agent ledger revision conflict")
+	ErrClosed   = errors.New("agent ledger is closed")
+	ErrNotFound = errors.New("agent ledger record not found")
+	// ErrRevisionConflict is intentionally a stable adapter-visible error code.
+	// Callers use errors.Is for Go control flow and can reliably surface the
+	// same code over Wails/CLI when a revision guard rejects a stale mutation.
+	ErrRevisionConflict    = errors.New("revision_conflict")
 	ErrSequenceConflict    = errors.New("agent ledger event sequence conflict")
 	ErrRunAlreadyActive    = errors.New("agent session already has an active run")
 	ErrTerminalRun         = errors.New("agent run is terminal")
@@ -51,7 +54,7 @@ var (
 	ErrControlCommandClaimLost = errors.New("agent control command claim was lost")
 )
 
-const ledgerSchemaVersion = 10
+const ledgerSchemaVersion = 12
 
 type ledgerConfig struct {
 	keyProvider               KeyProvider
@@ -334,6 +337,7 @@ func (l *Ledger) initialize(ctx context.Context) error {
 			owner_expires_at INTEGER NOT NULL DEFAULT 0, checkpoint_id TEXT,
 			terminal_reason BLOB, policy BLOB NOT NULL, provider TEXT, model TEXT,
 			thinking TEXT, temperature REAL, max_tokens INTEGER,
+			provider_binding BLOB,
 			context_source_id TEXT, context_source_instance_id TEXT,
 			tool_catalog_binding BLOB, tool_catalog_hash TEXT,
 			tool_catalog_revision INTEGER NOT NULL DEFAULT 0,
@@ -386,6 +390,7 @@ func (l *Ledger) initialize(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS control_commands (
 			id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
 			action TEXT NOT NULL, payload BLOB, expected_revision INTEGER NOT NULL DEFAULT 0,
+			result_snapshot BLOB,
 			created_at INTEGER NOT NULL, consumed_at INTEGER NOT NULL DEFAULT 0,
 			claimed_by TEXT, claimed_at INTEGER NOT NULL DEFAULT 0,
 			claim_expires_at INTEGER NOT NULL DEFAULT 0,
@@ -431,6 +436,7 @@ func (l *Ledger) initialize(ctx context.Context) error {
 		{"task_kind", "TEXT NOT NULL DEFAULT 'chat'"},
 		{"allow_tools", "INTEGER NOT NULL DEFAULT 1"},
 		{"thinking", "TEXT"}, {"temperature", "REAL"}, {"max_tokens", "INTEGER"},
+		{"provider_binding", "BLOB"},
 		{"context_source_instance_id", "TEXT"},
 		{"prompt_tokens", "INTEGER NOT NULL DEFAULT 0"},
 		{"completion_tokens", "INTEGER NOT NULL DEFAULT 0"},
@@ -464,6 +470,10 @@ func (l *Ledger) initialize(ctx context.Context) error {
 		{"claimed_at", "INTEGER NOT NULL DEFAULT 0"},
 		{"claim_expires_at", "INTEGER NOT NULL DEFAULT 0"},
 		{"applied_at", "INTEGER NOT NULL DEFAULT 0"},
+		// result_snapshot is written only for synchronous recovery commands. It
+		// makes a retried idempotency key return the projection committed by the
+		// original command even after a worker has advanced the live run.
+		{"result_snapshot", "BLOB"},
 	} {
 		if err := ensureColumn(ctx, l.db, "control_commands", column.name, column.definition); err != nil {
 			return fmt.Errorf("migrate agent ledger: %w", err)
@@ -590,18 +600,18 @@ func scanRun(scanner interface{ Scan(...any) error }, l *Ledger) (RunSnapshot, e
 	var generation, revision, attempt, nextSequence, ownerExpires, activeNS, promptTokens, completionTokens, totalTokens, reservedTokens, created, updated int64
 	var toolCatalogRevision int64
 	var allowTools int
-	var terminalBlob, policyBlob, toolCatalogBindingBlob []byte
+	var terminalBlob, policyBlob, providerBindingBlob, toolCatalogBindingBlob []byte
 	var temperature sql.NullFloat64
 	var maxTokens sql.NullInt64
 	if err := scanner.Scan(&id, &sessionID, &requestID, &taskKind, &allowTools, &generation, &state, &revision, &attempt, &nextSequence,
 		&ownerID, &ownerToken, &ownerExpires, &checkpointID, &terminalBlob, &policyBlob,
-		&provider, &model, &thinking, &temperature, &maxTokens, &contextSource, &contextSourceInstance,
+		&provider, &model, &thinking, &temperature, &maxTokens, &providerBindingBlob, &contextSource, &contextSourceInstance,
 		&toolCatalogBindingBlob, &toolCatalogHash, &toolCatalogRevision,
 		&activeNS, &promptTokens, &completionTokens, &totalTokens, &reservedTokens, &created, &updated); err != nil {
 		return RunSnapshot{}, err
 	}
 	snapshot := RunSnapshot{ID: id, SessionID: sessionID, RequestID: requestID.String, TaskKind: AgentTaskKind(taskKind).Normalize(), AllowTools: allowTools != 0, SessionGeneration: generation, State: RunState(state), Revision: revision,
-		Attempt: int(attempt), NextSequence: nextSequence, OwnerToken: ownerToken.String, OwnerExpiresAt: fromNano(ownerExpires),
+		Attempt: int(attempt), NextSequence: nextSequence, ownerToken: ownerToken.String, OwnerExpiresAt: fromNano(ownerExpires),
 		CheckpointID: checkpointID.String, Provider: provider.String, Model: model.String, ContextSourceID: contextSource.String, ContextSourceInstanceID: contextSourceInstance.String,
 		ToolCatalogHash: toolCatalogHash.String, ToolCatalogRevision: toolCatalogRevision,
 		CreatedAt: fromNano(created), UpdatedAt: fromNano(updated), ActiveDurationMS: activeNS / 1e6,
@@ -630,7 +640,7 @@ func scanRun(scanner interface{ Scan(...any) error }, l *Ledger) (RunSnapshot, e
 
 const runColumns = `id, session_id, request_id, task_kind, allow_tools, session_generation, state, revision, attempt, next_sequence,
  owner_id, owner_token, owner_expires_at, checkpoint_id, terminal_reason, policy,
- provider, model, thinking, temperature, max_tokens, context_source_id, context_source_instance_id,
+ provider, model, thinking, temperature, max_tokens, provider_binding, context_source_id, context_source_instance_id,
  tool_catalog_binding, tool_catalog_hash, tool_catalog_revision,
  active_duration_ns, prompt_tokens, completion_tokens, total_tokens, reserved_tokens, created_at, updated_at`
 
@@ -676,6 +686,82 @@ func (l *Ledger) GetRunByRequestID(ctx context.Context, requestID string) (RunSn
 		return RunSnapshot{}, err
 	}
 	return l.getRunDB(ctx, runID)
+}
+
+// GetControlCommand returns the durable command associated with a control
+// idempotency key. Its payload is decrypted only within the Ledger boundary.
+func (l *Ledger) GetControlCommand(ctx context.Context, commandID string) (ControlCommand, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	if err := l.ensureOpen(); err != nil {
+		return ControlCommand{}, err
+	}
+	commandID = strings.TrimSpace(commandID)
+	if commandID == "" {
+		return ControlCommand{}, ErrNotFound
+	}
+	var runID, action string
+	var sealedPayload []byte
+	var expectedRevision, createdAt, consumedAt int64
+	err := l.db.QueryRowContext(ctx, `SELECT run_id,action,payload,expected_revision,created_at,consumed_at FROM control_commands WHERE id=?`, commandID).
+		Scan(&runID, &action, &sealedPayload, &expectedRevision, &createdAt, &consumedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ControlCommand{}, ErrNotFound
+	}
+	if err != nil {
+		return ControlCommand{}, err
+	}
+	payload, err := l.openRaw("control_commands", commandID, "payload", sealedPayload)
+	if err != nil {
+		return ControlCommand{}, err
+	}
+	return ControlCommand{
+		ID: commandID, RunID: runID, Action: RunControlAction(action),
+		Payload: append(json.RawMessage(nil), payload...), ExpectedRevision: expectedRevision,
+		CreatedAt: fromNano(createdAt), ConsumedAt: fromNano(consumedAt),
+	}, nil
+}
+
+// GetProviderBinding returns the immutable provider contract captured when a
+// run was accepted. The encrypted payload is decrypted only inside the
+// Ledger boundary and is never attached to RunSnapshot projections.
+func (l *Ledger) GetProviderBinding(ctx context.Context, runID string) (ProviderBinding, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	if err := l.ensureOpen(); err != nil {
+		return ProviderBinding{}, err
+	}
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return ProviderBinding{}, ErrNotFound
+	}
+	var blob []byte
+	var provider sql.NullString
+	if err := l.db.QueryRowContext(ctx, `SELECT provider, provider_binding FROM runs WHERE id=?`, runID).Scan(&provider, &blob); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ProviderBinding{}, ErrNotFound
+		}
+		return ProviderBinding{}, err
+	}
+	if len(blob) == 0 {
+		return ProviderBinding{}, ErrProviderBindingUnbound
+	}
+	var binding ProviderBinding
+	if err := l.openJSON("runs", runID, "provider_binding", blob, &binding); err != nil {
+		return ProviderBinding{}, fmt.Errorf("%w: decrypt provider binding: %v", ErrProviderBindingCorrupt, err)
+	}
+	validated, err := binding.Validate()
+	if err != nil {
+		return ProviderBinding{}, fmt.Errorf("%w: %v", ErrProviderBindingCorrupt, err)
+	}
+	indexedProvider := strings.TrimSpace(provider.String)
+	if !provider.Valid || indexedProvider == "" {
+		return ProviderBinding{}, fmt.Errorf("%w: indexed provider is empty", ErrProviderBindingCorrupt)
+	}
+	if !strings.EqualFold(indexedProvider, validated.ProviderID) {
+		return ProviderBinding{}, fmt.Errorf("%w: provider %q does not match binding %q", ErrProviderBindingCorrupt, provider.String, validated.ProviderID)
+	}
+	return validated, nil
 }
 
 // GetToolCatalogBinding returns the immutable catalog captured for a run. The
@@ -1111,8 +1197,27 @@ func (l *Ledger) CreateRun(ctx context.Context, request CreateRunRequest) (RunSn
 // transaction and must commit it after this function returns.
 func (l *Ledger) createRunTx(ctx context.Context, tx *sql.Tx, request CreateRunRequest) (RunSnapshot, error) {
 	request.SessionID = strings.TrimSpace(request.SessionID)
+	request.Provider = strings.TrimSpace(request.Provider)
 	if request.SessionID == "" {
 		return RunSnapshot{}, errors.New("sessionId is required")
+	}
+	if request.Provider != "" && request.ProviderBinding == nil {
+		return RunSnapshot{}, ErrProviderBindingUnbound
+	}
+	if request.Provider == "" && request.ProviderBinding != nil {
+		return RunSnapshot{}, ErrProviderBindingUnbound
+	}
+	var validatedProviderBinding *ProviderBinding
+	if request.ProviderBinding != nil {
+		binding, bindingErr := request.ProviderBinding.Validate()
+		if bindingErr != nil {
+			return RunSnapshot{}, fmt.Errorf("%w: %v", ErrProviderBindingCorrupt, bindingErr)
+		}
+		if !strings.EqualFold(request.Provider, binding.ProviderID) {
+			return RunSnapshot{}, fmt.Errorf("%w: provider %q does not match binding %q", ErrProviderBindingCorrupt, request.Provider, binding.ProviderID)
+		}
+		validatedProviderBinding = &binding
+		request.Provider = binding.ProviderID
 	}
 	policy := request.Policy.Normalize()
 	if err := policy.Validate(); err != nil {
@@ -1163,6 +1268,14 @@ func (l *Ledger) createRunTx(ctx context.Context, tx *sql.Tx, request CreateRunR
 	if err != nil {
 		return RunSnapshot{}, err
 	}
+	var providerBindingBlob []byte
+	if validatedProviderBinding != nil {
+		binding := *validatedProviderBinding
+		providerBindingBlob, err = l.seal("runs", runID, "provider_binding", binding)
+		if err != nil {
+			return RunSnapshot{}, err
+		}
+	}
 	var toolCatalogBindingBlob []byte
 	var toolCatalogHash any
 	var toolCatalogRevision int64
@@ -1186,7 +1299,7 @@ func (l *Ledger) createRunTx(ctx context.Context, tx *sql.Tx, request CreateRunR
 	if request.MaxTokens != nil {
 		maxTokens = *request.MaxTokens
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO runs(id,session_id,request_id,task_kind,allow_tools,session_generation,state,revision,attempt,next_sequence,policy,provider,model,thinking,temperature,max_tokens,context_source_id,context_source_instance_id,tool_catalog_binding,tool_catalog_hash,tool_catalog_revision,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, runID, request.SessionID, nullString(request.RequestID), taskKind, boolInt(allowTools), generation, RunStateQueued, 1, 1, 1, policyBlob, request.Provider, request.Model, request.Thinking, temperature, maxTokens, request.ContextSourceID, request.ContextSourceInstanceID, toolCatalogBindingBlob, toolCatalogHash, toolCatalogRevision, toNano(now), toNano(now)); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO runs(id,session_id,request_id,task_kind,allow_tools,session_generation,state,revision,attempt,next_sequence,policy,provider,model,thinking,temperature,max_tokens,provider_binding,context_source_id,context_source_instance_id,tool_catalog_binding,tool_catalog_hash,tool_catalog_revision,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, runID, request.SessionID, nullString(request.RequestID), taskKind, boolInt(allowTools), generation, RunStateQueued, 1, 1, 1, policyBlob, request.Provider, request.Model, request.Thinking, temperature, maxTokens, providerBindingBlob, request.ContextSourceID, request.ContextSourceInstanceID, toolCatalogBindingBlob, toolCatalogHash, toolCatalogRevision, toNano(now), toNano(now)); err != nil {
 		return RunSnapshot{}, err
 	}
 	if request.InitialMessage != nil {
@@ -1599,9 +1712,9 @@ func (l *Ledger) GetRunMessages(ctx context.Context, runID string, afterSequence
 	return result, rows.Err()
 }
 
-// TransitionRun performs a compare-and-swap state transition. Harnesses that
-// need an externally visible transition should prefer AppendEvent, which
-// persists the transition and event in one transaction.
+// TransitionRun performs a compare-and-swap non-terminal state transition.
+// Terminal state changes must use AppendEvent with EventTerminal so every run
+// has one durable terminal event written in the same transaction.
 func (l *Ledger) TransitionRun(ctx context.Context, runID string, from, to RunState, expectedRevision int64, ownerToken string) (RunSnapshot, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -1610,6 +1723,9 @@ func (l *Ledger) TransitionRun(ctx context.Context, runID string, from, to RunSt
 	}
 	if err := ValidateTransition(from, to); err != nil {
 		return RunSnapshot{}, err
+	}
+	if to.Terminal() {
+		return RunSnapshot{}, fmt.Errorf("%w: terminal state %s requires %s", ErrInvalidTransition, to, EventTerminal)
 	}
 	tx, err := beginTx(ctx, l.db)
 	if err != nil {
@@ -1631,16 +1747,8 @@ func (l *Ledger) TransitionRun(ctx context.Context, runID string, from, to RunSt
 	}
 	nextRevision := run.Revision + 1
 	now := nowUTC()
-	terminalBlob := any(nil)
-	if to.Terminal() {
-		blob, sealErr := l.seal("runs", runID, "terminal_reason", run.TerminalReason)
-		if sealErr != nil {
-			return RunSnapshot{}, sealErr
-		}
-		terminalBlob = blob
-	}
 	ownerPredicate, ownerArgs := ownerCAS(run, ownerToken, now)
-	args := []any{to, nextRevision, terminalBlob, toNano(now), runID, from, run.Revision}
+	args := []any{to, nextRevision, nil, toNano(now), runID, from, run.Revision}
 	args = append(args, ownerArgs...)
 	result, err := tx.ExecContext(ctx, `UPDATE runs SET state=?,revision=?,terminal_reason=?,updated_at=? WHERE id=? AND state=? AND revision=?`+ownerPredicate, args...)
 	if err != nil {
@@ -1660,14 +1768,14 @@ func verifyOwner(run RunSnapshot, token string) error {
 	// token. Once a lease exists, however, *every* mutating operation must carry
 	// the current fencing token, including an empty-token attempt. This prevents
 	// a stale owner or a second process from writing after ownership changes.
-	if strings.TrimSpace(run.OwnerToken) == "" {
+	if strings.TrimSpace(run.ownerToken) == "" {
 		if strings.TrimSpace(token) != "" {
 			return ErrLeaseLost
 		}
 		return nil
 	}
 	if strings.TrimSpace(token) == "" ||
-		!ConstantTimeEqual([]byte(run.OwnerToken), []byte(token)) ||
+		!ConstantTimeEqual([]byte(run.ownerToken), []byte(token)) ||
 		(!run.OwnerExpiresAt.IsZero() && !run.OwnerExpiresAt.After(nowUTC())) {
 		return ErrLeaseLost
 	}
@@ -1681,7 +1789,7 @@ func verifyOwner(run RunSnapshot, token string) error {
 // race.  Unleased runs deliberately require an empty owner token so a caller
 // cannot accidentally mutate a run after a lease was acquired.
 func ownerCAS(run RunSnapshot, token string, now time.Time) (string, []any) {
-	if strings.TrimSpace(run.OwnerToken) == "" {
+	if strings.TrimSpace(run.ownerToken) == "" {
 		return " AND (owner_token IS NULL OR owner_token='')", nil
 	}
 	return " AND owner_token=? AND owner_expires_at>?", []any{token, toNano(now)}
@@ -1797,6 +1905,14 @@ func (l *Ledger) AppendEvent(ctx context.Context, request AppendEventRequest) (R
 	if _, err := tx.ExecContext(ctx, `INSERT INTO events(run_id,sequence,schema_version,kind,resulting_state,run_revision,attempt,timestamp,payload) VALUES(?,?,?,?,?,?,?,?,?)`, request.RunID, sequence, CurrentSchemaVersion, request.Kind, state, newRevision, attempt, toNano(now), sealed); err != nil {
 		return RunEvent{}, err
 	}
+	if state.Terminal() {
+		if err := l.markTerminalControlCommandAppliedTx(ctx, tx, request.RunID, request.AppliedControlCommandID, toNano(now)); err != nil {
+			return RunEvent{}, err
+		}
+		if err := l.discardPendingControlCommandsTx(ctx, tx, request.RunID, toNano(now)); err != nil {
+			return RunEvent{}, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return RunEvent{}, err
 	}
@@ -1804,6 +1920,43 @@ func (l *Ledger) AppendEvent(ctx context.Context, request AppendEventRequest) (R
 		SessionGeneration: run.SessionGeneration, Sequence: sequence, RunRevision: newRevision,
 		Attempt: attempt, Timestamp: now, Kind: request.Kind, ResultingState: state,
 		Payload: append(json.RawMessage(nil), payload...)}, nil
+}
+
+// discardPendingControlCommandsTx makes commands that lost a terminal race
+// non-replayable without claiming that their actions executed. It runs in the
+// same transaction as the terminal state/event, so an enqueue either lands
+// before this boundary and is discarded or observes the terminal run and is
+// rejected.
+func (l *Ledger) discardPendingControlCommandsTx(ctx context.Context, tx *sql.Tx, runID string, consumedAt int64) error {
+	_, err := tx.ExecContext(ctx, `UPDATE control_commands
+		SET consumed_at=?,claimed_by=NULL,claimed_at=0,claim_expires_at=0
+		WHERE run_id=? AND consumed_at=0 AND applied_at=0`, consumedAt, runID)
+	return err
+}
+
+// markTerminalControlCommandAppliedTx records a synchronous control action
+// together with the terminal state it caused. Unlike a delayed command that
+// loses the terminal race, this command did execute and must remain auditable
+// as such. The run/action boundary is fenced by the surrounding transaction.
+func (l *Ledger) markTerminalControlCommandAppliedTx(ctx context.Context, tx *sql.Tx, runID, commandID string, appliedAt int64) error {
+	commandID = strings.TrimSpace(commandID)
+	if commandID == "" {
+		return nil
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE control_commands
+		SET applied_at=?,consumed_at=?,claimed_by=NULL,claimed_at=0,claim_expires_at=0
+		WHERE id=? AND run_id=? AND applied_at=0 AND consumed_at=0`, appliedAt, appliedAt, commandID, runID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf("%w: control command %q cannot be applied with terminal run", ErrControlCommandClaimLost, commandID)
+	}
+	return nil
 }
 
 // enrichCheckpointEventPayloadTx carries the last durable workspace
@@ -2516,15 +2669,20 @@ func (l *Ledger) DecideApproval(ctx context.Context, request DecideApprovalReque
 	if err != nil {
 		return ApprovalRecord{}, err
 	}
-	// Bind the decision to the run and (when supplied) the exact tool call.
-	// This check must happen before any status/revision handling: a caller that
-	// presents an approval from another run must never be able to expire or
-	// otherwise mutate that approval as a side effect of the failed request.
-	if expectedRunID := strings.TrimSpace(request.ExpectedRunID); expectedRunID != "" && expectedRunID != runID {
+	// Bind the decision to the exact approval card rendered by an adapter. This
+	// check must happen before any status/revision handling: a malformed or
+	// stale request must never expire or otherwise mutate a pending approval.
+	if expectedRunID := strings.TrimSpace(request.ExpectedRunID); expectedRunID == "" || expectedRunID != runID {
 		return ApprovalRecord{}, fmt.Errorf("%w: approval run mismatch", ErrApprovalConflict)
 	}
-	if expectedCallID := strings.TrimSpace(request.ExpectedCallID); expectedCallID != "" && expectedCallID != callID {
+	if expectedCallID := strings.TrimSpace(request.ExpectedCallID); expectedCallID == "" || expectedCallID != callID {
 		return ApprovalRecord{}, fmt.Errorf("%w: approval call mismatch", ErrApprovalConflict)
+	}
+	if expectedArgsHash := strings.TrimSpace(request.ExpectedArgsHash); expectedArgsHash == "" || !ConstantTimeEqual([]byte(expectedArgsHash), []byte(argsHash)) {
+		return ApprovalRecord{}, fmt.Errorf("%w: approval arguments mismatch", ErrApprovalConflict)
+	}
+	if request.ExpectedRunRevision <= 0 || request.ExpectedRunRevision != runRevision {
+		return ApprovalRecord{}, fmt.Errorf("%w: approval revision mismatch", ErrApprovalConflict)
 	}
 	if status != "pending" {
 		args, openErr := l.openRaw("approvals", request.ApprovalID, "arguments", argsBlob)
@@ -2540,7 +2698,7 @@ func (l *Ledger) DecideApproval(ctx context.Context, request DecideApprovalReque
 	} else if err != nil {
 		return ApprovalRecord{}, err
 	}
-	if RunState(currentState).Terminal() || currentRevision != runRevision || (request.ExpectedRunRevision > 0 && request.ExpectedRunRevision != currentRevision) {
+	if RunState(currentState).Terminal() || currentRevision != runRevision || request.ExpectedRunRevision != currentRevision {
 		// A revision change invalidates the pending approval. Mark it expired in
 		// the same transaction before returning the conflict so stale UI/CLI
 		// approval cards cannot remain actionable.
@@ -2699,18 +2857,23 @@ func (l *Ledger) EnqueueCommand(ctx context.Context, command ControlCommand) (Co
 	} else if !errors.Is(existingErr, sql.ErrNoRows) {
 		return ControlCommand{}, existingErr
 	}
-	if command.ExpectedRevision > 0 {
-		var currentRevision int64
-		err := tx.QueryRowContext(ctx, `SELECT revision FROM runs WHERE id=?`, command.RunID).Scan(&currentRevision)
-		if errors.Is(err, sql.ErrNoRows) {
-			return ControlCommand{}, ErrNotFound
-		}
-		if err != nil {
-			return ControlCommand{}, err
-		}
-		if currentRevision != command.ExpectedRevision {
-			return ControlCommand{}, fmt.Errorf("%w: expected %d, got %d", ErrRevisionConflict, command.ExpectedRevision, currentRevision)
-		}
+	if command.ExpectedRevision <= 0 {
+		return ControlCommand{}, fmt.Errorf("%w: expectedRevision must be positive", ErrRevisionConflict)
+	}
+	var currentRevision int64
+	var currentState string
+	err = tx.QueryRowContext(ctx, `SELECT revision,state FROM runs WHERE id=?`, command.RunID).Scan(&currentRevision, &currentState)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ControlCommand{}, ErrNotFound
+	}
+	if err != nil {
+		return ControlCommand{}, err
+	}
+	if currentRevision != command.ExpectedRevision {
+		return ControlCommand{}, fmt.Errorf("%w: expected %d, got %d", ErrRevisionConflict, command.ExpectedRevision, currentRevision)
+	}
+	if RunState(currentState).Terminal() {
+		return ControlCommand{}, fmt.Errorf("%w: run %q", ErrTerminalRun, command.RunID)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO control_commands(id,run_id,action,payload,expected_revision,created_at) VALUES(?,?,?,?,?,?)`, command.ID, command.RunID, command.Action, sealed, command.ExpectedRevision, toNano(command.CreatedAt)); err != nil {
 		return ControlCommand{}, err
@@ -2923,6 +3086,13 @@ func (l *Ledger) AckCommand(ctx context.Context, commandID, ownerToken string) e
 	if applied != 0 {
 		return nil
 	}
+	// A terminal transition can consume a previously claimed command before its
+	// worker reaches this acknowledgement. Leave applied_at at zero: the action
+	// was superseded by the terminal boundary and must not be recorded as having
+	// executed merely because a delayed callback arrived.
+	if consumed != 0 {
+		return nil
+	}
 	now := nowUTC()
 	if claimedBy != ownerToken || claimExpires <= toNano(now) {
 		return ErrControlCommandClaimLost
@@ -2951,6 +3121,392 @@ func (l *Ledger) AckCommand(ctx context.Context, commandID, ownerToken string) e
 		return ErrControlCommandClaimLost
 	}
 	return tx.Commit()
+}
+
+// TombstoneCommand consumes a claimed command without recording it as applied.
+// This is used when its expected revision lost a durable race, so the audit
+// trail distinguishes a rejected stale request from an executed action.
+func (l *Ledger) TombstoneCommand(ctx context.Context, commandID, ownerToken string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.ensureOpen(); err != nil {
+		return err
+	}
+	commandID = strings.TrimSpace(commandID)
+	ownerToken = strings.TrimSpace(ownerToken)
+	if commandID == "" {
+		return errors.New("commandId is required")
+	}
+	if ownerToken == "" {
+		return errors.New("ownerToken is required")
+	}
+	tx, err := beginTx(ctx, l.db)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var claimedBy string
+	var claimExpires, applied, consumed int64
+	err = tx.QueryRowContext(ctx, `SELECT COALESCE(claimed_by,''),claim_expires_at,applied_at,consumed_at FROM control_commands WHERE id=?`, commandID).
+		Scan(&claimedBy, &claimExpires, &applied, &consumed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if consumed != 0 || applied != 0 {
+		return nil
+	}
+	now := nowUTC()
+	if claimedBy != ownerToken || claimExpires <= toNano(now) {
+		return ErrControlCommandClaimLost
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE control_commands
+		SET consumed_at=?,claimed_by=NULL,claimed_at=0,claim_expires_at=0
+		WHERE id=? AND applied_at=0 AND consumed_at=0 AND claimed_by=? AND claim_expires_at>?`,
+		toNano(now), commandID, ownerToken, toNano(now))
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return err
+	} else if affected != 1 {
+		return ErrControlCommandClaimLost
+	}
+	return tx.Commit()
+}
+
+// ControlCancelCommandResult is the durable outcome of attempting to apply a
+// claimed cancel command.  A stale command is consumed without being applied;
+// when the run is still mutable Event contains the revision_conflict that was
+// committed in the same transaction as that tombstone.
+type ControlCancelCommandResult struct {
+	Run     RunSnapshot
+	Event   *RunEvent
+	Applied bool
+	Stale   bool
+}
+
+type claimedControlCommandState struct {
+	command ControlCommand
+	run     RunSnapshot
+}
+
+// loadClaimedControlCommandTx verifies the control-command claim and the run
+// owner fence together.  A command claim is intentionally distinct from the
+// run lease: an unleased queued run may still be processed by a local
+// supervisor, while a leased run requires the command claimant to be its
+// current owner.
+func (l *Ledger) loadClaimedControlCommandTx(ctx context.Context, tx *sql.Tx, commandID, ownerToken string, now time.Time) (claimedControlCommandState, bool, error) {
+	var state claimedControlCommandState
+	var action, claimedBy string
+	var expectedRevision, createdAt, claimedAt, claimExpiresAt, appliedAt, consumedAt int64
+	err := tx.QueryRowContext(ctx, `SELECT run_id,action,expected_revision,created_at,
+		COALESCE(claimed_by,''),claimed_at,claim_expires_at,applied_at,consumed_at
+		FROM control_commands WHERE id=?`, commandID).
+		Scan(&state.command.RunID, &action, &expectedRevision, &createdAt,
+			&claimedBy, &claimedAt, &claimExpiresAt, &appliedAt, &consumedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return claimedControlCommandState{}, false, ErrNotFound
+	}
+	if err != nil {
+		return claimedControlCommandState{}, false, err
+	}
+	state.command.ID = commandID
+	state.command.Action = RunControlAction(action)
+	state.command.ExpectedRevision = expectedRevision
+	state.command.CreatedAt = fromNano(createdAt)
+	state.command.ClaimedBy = claimedBy
+	state.command.ClaimedAt = fromNano(claimedAt)
+	state.command.ClaimExpiresAt = fromNano(claimExpiresAt)
+	state.command.AppliedAt = fromNano(appliedAt)
+	state.command.ConsumedAt = fromNano(consumedAt)
+	run, err := l.getRunTx(ctx, tx, state.command.RunID)
+	if err != nil {
+		return claimedControlCommandState{}, false, err
+	}
+	state.run = run
+	if appliedAt != 0 || consumedAt != 0 {
+		return state, true, nil
+	}
+	if claimedBy != ownerToken || claimExpiresAt <= toNano(now) {
+		return claimedControlCommandState{}, false, ErrControlCommandClaimLost
+	}
+	// A control claim by itself never authorizes mutation of a leased run.
+	// For unleased runs a local durable-command owner is allowed to resolve the
+	// command, and ownerCAS below prevents a lease acquired concurrently from
+	// being overwritten.
+	if strings.TrimSpace(run.ownerToken) != "" &&
+		(!ConstantTimeEqual([]byte(run.ownerToken), []byte(ownerToken)) || !run.OwnerExpiresAt.After(now)) {
+		return claimedControlCommandState{}, false, ErrLeaseLost
+	}
+	return state, false, nil
+}
+
+func staleControlCommandRevision(command ControlCommand, run RunSnapshot) bool {
+	return command.ExpectedRevision <= 0 || command.ExpectedRevision != run.Revision
+}
+
+func (l *Ledger) tombstoneClaimedControlCommandTx(ctx context.Context, tx *sql.Tx, command ControlCommand, ownerToken string, now time.Time) error {
+	result, err := tx.ExecContext(ctx, `UPDATE control_commands
+		SET consumed_at=?,claimed_by=NULL,claimed_at=0,claim_expires_at=0
+		WHERE id=? AND run_id=? AND applied_at=0 AND consumed_at=0
+		AND claimed_by=? AND claim_expires_at>?`,
+		toNano(now), command.ID, command.RunID, ownerToken, toNano(now))
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return ErrControlCommandClaimLost
+	}
+	return nil
+}
+
+func (l *Ledger) markClaimedControlCommandAppliedTx(ctx context.Context, tx *sql.Tx, command ControlCommand, ownerToken string, now time.Time) error {
+	result, err := tx.ExecContext(ctx, `UPDATE control_commands
+		SET applied_at=?,consumed_at=?,claimed_by=NULL,claimed_at=0,claim_expires_at=0
+		WHERE id=? AND run_id=? AND applied_at=0 AND consumed_at=0
+		AND claimed_by=? AND claim_expires_at>?`,
+		toNano(now), toNano(now), command.ID, command.RunID, ownerToken, toNano(now))
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return ErrControlCommandClaimLost
+	}
+	return nil
+}
+
+// rejectStaleControlCommandTx tombstones a command whose expected revision no
+// longer matches the run.  The error event and tombstone share one transaction
+// so a late AckCommand cannot convert the rejected action into an applied one.
+func (l *Ledger) rejectStaleControlCommandTx(ctx context.Context, tx *sql.Tx, state claimedControlCommandState, ownerToken string, now time.Time) (RunSnapshot, *RunEvent, error) {
+	run := state.run
+	if run.State.Terminal() {
+		if err := l.tombstoneClaimedControlCommandTx(ctx, tx, state.command, ownerToken, now); err != nil {
+			return RunSnapshot{}, nil, err
+		}
+		return run, nil, nil
+	}
+	sequence := run.NextSequence
+	if sequence < 1 {
+		sequence = 1
+	}
+	payload, err := json.Marshal(RunErrorEvent{
+		Code:      "revision_conflict",
+		Message:   fmt.Sprintf("control command revision conflict: expected %d, got %d", state.command.ExpectedRevision, run.Revision),
+		Retryable: true,
+	})
+	if err != nil {
+		return RunSnapshot{}, nil, err
+	}
+	sealed, err := l.sealRaw("events", run.ID, fmt.Sprintf("payload/%d", sequence), payload)
+	if err != nil {
+		return RunSnapshot{}, nil, err
+	}
+	if err := l.tombstoneClaimedControlCommandTx(ctx, tx, state.command, ownerToken, now); err != nil {
+		return RunSnapshot{}, nil, err
+	}
+	newRevision := run.Revision + 1
+	ownerPredicate, ownerArgs := ownerCAS(run, ownerToken, now)
+	args := []any{newRevision, sequence + 1, toNano(now), run.ID, run.Revision, sequence}
+	args = append(args, ownerArgs...)
+	updated, err := tx.ExecContext(ctx, `UPDATE runs SET revision=?,next_sequence=?,updated_at=?
+		WHERE id=? AND revision=? AND next_sequence=?`+ownerPredicate, args...)
+	if err != nil {
+		return RunSnapshot{}, nil, err
+	}
+	affected, err := updated.RowsAffected()
+	if err != nil {
+		return RunSnapshot{}, nil, err
+	}
+	if affected != 1 {
+		return RunSnapshot{}, nil, ErrRevisionConflict
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO events(run_id,sequence,schema_version,kind,resulting_state,run_revision,attempt,timestamp,payload) VALUES(?,?,?,?,?,?,?,?,?)`,
+		run.ID, sequence, CurrentSchemaVersion, EventRunError, run.State, newRevision, run.Attempt, toNano(now), sealed); err != nil {
+		return RunSnapshot{}, nil, err
+	}
+	run.Revision = newRevision
+	run.NextSequence = sequence + 1
+	run.UpdatedAt = now
+	event := RunEvent{
+		SchemaVersion: CurrentSchemaVersion, RunID: run.ID, SessionID: run.SessionID,
+		SessionGeneration: run.SessionGeneration, Sequence: sequence, RunRevision: newRevision,
+		Attempt: run.Attempt, Timestamp: now, Kind: EventRunError, ResultingState: run.State,
+		Payload: append(json.RawMessage(nil), payload...),
+	}
+	return run, &event, nil
+}
+
+// RejectStaleControlCommand checks a claimed command at the consumption
+// boundary.  It returns stale=false when the command still targets the exact
+// current run revision.  Stale commands are consumed without applying their
+// action and produce one typed revision_conflict event while the run remains
+// non-terminal.
+func (l *Ledger) RejectStaleControlCommand(ctx context.Context, commandID, ownerToken string) (RunEvent, bool, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.ensureOpen(); err != nil {
+		return RunEvent{}, false, err
+	}
+	commandID = strings.TrimSpace(commandID)
+	ownerToken = strings.TrimSpace(ownerToken)
+	if commandID == "" {
+		return RunEvent{}, false, errors.New("commandId is required")
+	}
+	if ownerToken == "" {
+		return RunEvent{}, false, errors.New("ownerToken is required")
+	}
+	tx, err := beginTx(ctx, l.db)
+	if err != nil {
+		return RunEvent{}, false, err
+	}
+	defer tx.Rollback()
+	now := nowUTC()
+	state, settled, err := l.loadClaimedControlCommandTx(ctx, tx, commandID, ownerToken, now)
+	if err != nil {
+		return RunEvent{}, false, err
+	}
+	if settled || !staleControlCommandRevision(state.command, state.run) {
+		if err := tx.Commit(); err != nil {
+			return RunEvent{}, false, err
+		}
+		return RunEvent{}, false, nil
+	}
+	_, event, err := l.rejectStaleControlCommandTx(ctx, tx, state, ownerToken, now)
+	if err != nil {
+		return RunEvent{}, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return RunEvent{}, false, err
+	}
+	if event == nil {
+		return RunEvent{}, true, nil
+	}
+	return *event, true, nil
+}
+
+// ApplyCancelControlCommand transitions a claimed, current-revision cancel
+// command to canceling and marks that exact command applied in the same
+// transaction.  A caller cancels in-memory work only after this method commits.
+func (l *Ledger) ApplyCancelControlCommand(ctx context.Context, commandID, ownerToken string) (ControlCancelCommandResult, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.ensureOpen(); err != nil {
+		return ControlCancelCommandResult{}, err
+	}
+	commandID = strings.TrimSpace(commandID)
+	ownerToken = strings.TrimSpace(ownerToken)
+	if commandID == "" {
+		return ControlCancelCommandResult{}, errors.New("commandId is required")
+	}
+	if ownerToken == "" {
+		return ControlCancelCommandResult{}, errors.New("ownerToken is required")
+	}
+	tx, err := beginTx(ctx, l.db)
+	if err != nil {
+		return ControlCancelCommandResult{}, err
+	}
+	defer tx.Rollback()
+	now := nowUTC()
+	state, settled, err := l.loadClaimedControlCommandTx(ctx, tx, commandID, ownerToken, now)
+	if err != nil {
+		return ControlCancelCommandResult{}, err
+	}
+	if settled {
+		if err := tx.Commit(); err != nil {
+			return ControlCancelCommandResult{}, err
+		}
+		return ControlCancelCommandResult{Run: state.run}, nil
+	}
+	if state.command.Action != ControlCancel {
+		return ControlCancelCommandResult{}, fmt.Errorf("control command %q is not a cancel", state.command.Action)
+	}
+	if staleControlCommandRevision(state.command, state.run) || state.run.State.Terminal() {
+		updated, event, rejectErr := l.rejectStaleControlCommandTx(ctx, tx, state, ownerToken, now)
+		if rejectErr != nil {
+			return ControlCancelCommandResult{}, rejectErr
+		}
+		if err := tx.Commit(); err != nil {
+			return ControlCancelCommandResult{}, err
+		}
+		return ControlCancelCommandResult{Run: updated, Event: event, Stale: true}, nil
+	}
+	if state.run.State == RunStateCanceling {
+		if err := l.markClaimedControlCommandAppliedTx(ctx, tx, state.command, ownerToken, now); err != nil {
+			return ControlCancelCommandResult{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return ControlCancelCommandResult{}, err
+		}
+		return ControlCancelCommandResult{Run: state.run, Applied: true}, nil
+	}
+	if err := ValidateTransition(state.run.State, RunStateCanceling); err != nil {
+		return ControlCancelCommandResult{}, err
+	}
+	sequence := state.run.NextSequence
+	if sequence < 1 {
+		sequence = 1
+	}
+	payload, err := json.Marshal(CheckpointEvent{Sequence: sequence - 1})
+	if err != nil {
+		return ControlCancelCommandResult{}, err
+	}
+	payload, err = l.enrichCheckpointEventPayloadTx(ctx, tx, state.run, payload)
+	if err != nil {
+		return ControlCancelCommandResult{}, err
+	}
+	sealed, err := l.sealRaw("events", state.run.ID, fmt.Sprintf("payload/%d", sequence), payload)
+	if err != nil {
+		return ControlCancelCommandResult{}, err
+	}
+	newRevision := state.run.Revision + 1
+	ownerPredicate, ownerArgs := ownerCAS(state.run, ownerToken, now)
+	args := []any{RunStateCanceling, newRevision, sequence + 1, toNano(now), state.run.ID, state.run.Revision, sequence}
+	args = append(args, ownerArgs...)
+	updated, err := tx.ExecContext(ctx, `UPDATE runs SET state=?,revision=?,next_sequence=?,updated_at=?
+		WHERE id=? AND revision=? AND next_sequence=?`+ownerPredicate, args...)
+	if err != nil {
+		return ControlCancelCommandResult{}, err
+	}
+	affected, err := updated.RowsAffected()
+	if err != nil {
+		return ControlCancelCommandResult{}, err
+	}
+	if affected != 1 {
+		return ControlCancelCommandResult{}, ErrRevisionConflict
+	}
+	if err := l.markClaimedControlCommandAppliedTx(ctx, tx, state.command, ownerToken, now); err != nil {
+		return ControlCancelCommandResult{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO events(run_id,sequence,schema_version,kind,resulting_state,run_revision,attempt,timestamp,payload) VALUES(?,?,?,?,?,?,?,?,?)`,
+		state.run.ID, sequence, CurrentSchemaVersion, EventCheckpoint, RunStateCanceling, newRevision, state.run.Attempt, toNano(now), sealed); err != nil {
+		return ControlCancelCommandResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return ControlCancelCommandResult{}, err
+	}
+	state.run.State = RunStateCanceling
+	state.run.Revision = newRevision
+	state.run.NextSequence = sequence + 1
+	state.run.UpdatedAt = now
+	event := RunEvent{
+		SchemaVersion: CurrentSchemaVersion, RunID: state.run.ID, SessionID: state.run.SessionID,
+		SessionGeneration: state.run.SessionGeneration, Sequence: sequence, RunRevision: newRevision,
+		Attempt: state.run.Attempt, Timestamp: now, Kind: EventCheckpoint, ResultingState: RunStateCanceling,
+		Payload: append(json.RawMessage(nil), payload...),
+	}
+	return ControlCancelCommandResult{Run: state.run, Event: &event, Applied: true}, nil
 }
 
 // PutWorkspaceSnapshot accepts only strictly newer revisions for a source

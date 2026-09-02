@@ -28,21 +28,26 @@ import (
 type fakeAgentRuntime struct {
 	mu sync.Mutex
 
-	submitRequests   []runharness.AgentInputRequest
-	submitContexts   []context.Context
-	submitReceipts   []runharness.AgentInputReceipt
-	submitErr        error
-	controlRequests  []runharness.RunControlRequest
-	controlContexts  []context.Context
-	controlSnapshot  runharness.RunSnapshot
-	controlErr       error
-	readResults      []runharness.RunReadResult
-	readErr          error
-	readBlock        <-chan struct{}
-	snapshots        []runharness.WorkspaceSnapshot
-	snapshotContexts []context.Context
-	snapshotErr      error
-	closeCalls       int
+	submitRequests      []runharness.AgentInputRequest
+	submitContexts      []context.Context
+	submitReceipts      []runharness.AgentInputReceipt
+	submitErr           error
+	controlRequests     []runharness.RunControlRequest
+	controlContexts     []context.Context
+	controlSnapshot     runharness.RunSnapshot
+	controlErr          error
+	readResults         []runharness.RunReadResult
+	advanceReadResults  bool
+	readErr             error
+	readBlock           <-chan struct{}
+	readSessionRequests []runharness.SessionReadRequest
+	readSessionContexts []context.Context
+	readSessionResults  []runharness.SessionProjection
+	readSessionErr      error
+	snapshots           []runharness.WorkspaceSnapshot
+	snapshotContexts    []context.Context
+	snapshotErr         error
+	closeCalls          int
 }
 
 type recordingAgentLedgerKeyringStore struct {
@@ -119,15 +124,33 @@ func (f *fakeAgentRuntime) ReadRun(ctx context.Context, _ runharness.RunReadRequ
 	if len(f.readResults) == 0 {
 		return runharness.RunReadResult{Run: runharness.RunSnapshot{ID: "run-1", State: runharness.RunStateCompleted}}, nil
 	}
-	return f.readResults[0], nil
+	result := f.readResults[0]
+	if f.advanceReadResults && len(f.readResults) > 1 {
+		f.readResults = f.readResults[1:]
+	}
+	return result, nil
 }
 
 func (f *fakeAgentRuntime) ListSessions(context.Context, runharness.SessionListRequest) (runharness.SessionListResult, error) {
 	return runharness.SessionListResult{}, nil
 }
 
-func (f *fakeAgentRuntime) ReadSession(context.Context, runharness.SessionReadRequest) (runharness.SessionProjection, error) {
-	return runharness.SessionProjection{}, nil
+func (f *fakeAgentRuntime) ReadSession(ctx context.Context, request runharness.SessionReadRequest) (runharness.SessionProjection, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.readSessionRequests = append(f.readSessionRequests, request)
+	f.readSessionContexts = append(f.readSessionContexts, ctx)
+	if f.readSessionErr != nil {
+		return runharness.SessionProjection{}, f.readSessionErr
+	}
+	if len(f.readSessionResults) == 0 {
+		return runharness.SessionProjection{ID: request.SessionID, Revision: 1}, nil
+	}
+	index := len(f.readSessionRequests) - 1
+	if index >= len(f.readSessionResults) {
+		index = len(f.readSessionResults) - 1
+	}
+	return f.readSessionResults[index], nil
 }
 
 func (f *fakeAgentRuntime) MutateSession(context.Context, runharness.SessionMutationRequest) (runharness.SessionProjection, error) {
@@ -288,7 +311,7 @@ func TestOpenAgentHarnessRejectsNilLifecycleBeforeFactory(t *testing.T) {
 	}
 }
 
-func TestCLIProviderResolverFreezesConfigPerRun(t *testing.T) {
+func TestCLIProviderResolverUsesBoundConfigAfterSettingsChange(t *testing.T) {
 	root := t.TempDir()
 	store := aiservice.NewProviderConfigStore(root, nil)
 	base := ai.ProviderConfig{
@@ -316,15 +339,22 @@ func TestCLIProviderResolverFreezesConfigPerRun(t *testing.T) {
 	}
 	t.Cleanup(func() { newCLIProviderInstance = previousFactory })
 
-	resolver := newCLIProviderResolver(root)
+	resolver := newCLIProviderResolverState(root)
 	temperature := 0.35
 	maxTokens := 2048
-	request := runharness.ModelTurnRequest{
-		RunID: "run-freeze-1", Provider: base.ID, Model: "turn-model", Thinking: "high",
+	input := runharness.AgentInputRequest{
+		RequestID: "run-freeze-1", Content: "hello", Model: "turn-model", Thinking: "high",
 		Temperature: &temperature, MaxTokens: &maxTokens,
 	}
-	if _, err := resolver(context.Background(), request); err != nil {
-		t.Fatalf("resolve initial provider: %v", err)
+	if err := resolver.bindInput(&input); err != nil {
+		t.Fatalf("bind input: %v", err)
+	}
+	if input.Provider != base.ID || !input.HasProviderBinding() {
+		t.Fatalf("bound input = %#v, want provider %q with binding", input, base.ID)
+	}
+	binding, ok := input.ProviderBindingForHost()
+	if !ok {
+		t.Fatal("bound input has no host provider binding")
 	}
 
 	updated := base
@@ -338,85 +368,69 @@ func TestCLIProviderResolverFreezesConfigPerRun(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("save updated provider config: %v", err)
 	}
-	if _, err := resolver(context.Background(), request); err != nil {
+	request := runharness.ModelTurnRequest{RunID: "run-freeze-1", Provider: input.Provider, ProviderBinding: &binding}
+	if _, err := resolver.resolve(context.Background(), request); err != nil {
 		t.Fatalf("resolve provider after config edit: %v", err)
 	}
+	if _, err := resolver.resolve(context.Background(), request); err != nil {
+		t.Fatalf("resolve provider for a later model attempt: %v", err)
+	}
 	if len(captured) != 2 {
-		t.Fatalf("provider factory calls = %d, want 2 (one per model attempt)", len(captured))
+		t.Fatalf("provider factory calls = %d, want 2", len(captured))
 	}
 	first, second := captured[0], captured[1]
 	for _, config := range []ai.ProviderConfig{first, second} {
 		if config.BaseURL != base.BaseURL || config.APIKey != base.APIKey || config.Headers["X-Revision"] != "one" {
 			t.Fatalf("resolver used mutable provider config: %#v", config)
 		}
-		if config.Model != request.Model || config.ThinkingIntensity != request.Thinking || config.Temperature != temperature || config.MaxTokens != maxTokens {
+		if config.Model != input.Model || config.ThinkingIntensity != input.Thinking || config.Temperature != temperature || config.MaxTokens != maxTokens {
 			t.Fatalf("turn overrides were not frozen: %#v", config)
 		}
 	}
 }
 
-func TestCLIProviderResolverReleasesRunSnapshot(t *testing.T) {
+func TestCLIProviderResolverBindsCurrentActiveProviderID(t *testing.T) {
 	root := t.TempDir()
 	store := aiservice.NewProviderConfigStore(root, nil)
-	base := ai.ProviderConfig{
-		ID: "provider-a", Type: "custom", APIFormat: "openai", Name: "Provider A",
-		APIKey: "key-v1", BaseURL: "https://old.example/v1", Model: "model-v1",
-	}
-	if err := store.Save(aiservice.ProviderConfigStoreSnapshot{Providers: []ai.ProviderConfig{base}, ActiveProvider: base.ID}); err != nil {
+	providerA := ai.ProviderConfig{ID: "provider-a", Type: "custom", APIFormat: "openai", Name: "Provider A", BaseURL: "https://a.example/v1"}
+	providerB := ai.ProviderConfig{ID: "provider-b", Type: "custom", APIFormat: "openai", Name: "Provider B", BaseURL: "https://b.example/v1"}
+	if err := store.Save(aiservice.ProviderConfigStoreSnapshot{Providers: []ai.ProviderConfig{providerA, providerB}, ActiveProvider: providerA.ID}); err != nil {
 		t.Fatalf("save initial provider config: %v", err)
 	}
-
-	var captured []ai.ProviderConfig
-	previousFactory := newCLIProviderInstance
-	newCLIProviderInstance = func(config ai.ProviderConfig) (provider.Provider, error) {
-		captured = append(captured, cloneCLIProviderConfig(config))
-		return nil, nil
-	}
-	t.Cleanup(func() { newCLIProviderInstance = previousFactory })
-
 	resolver := newCLIProviderResolverState(root)
-	request := runharness.ModelTurnRequest{RunID: "run-release-1", Provider: base.ID}
-	if _, err := resolver.resolve(context.Background(), request); err != nil {
-		t.Fatalf("resolve initial provider: %v", err)
+	first := runharness.AgentInputRequest{RequestID: "provider-a", Content: "hello"}
+	if err := resolver.bindInput(&first); err != nil {
+		t.Fatalf("bind input with first active provider: %v", err)
 	}
-	if got := resolver.cachedRunCount(); got != 1 {
-		t.Fatalf("cached run count = %d, want 1", got)
+	if first.Provider != providerA.ID || !first.HasProviderBinding() {
+		t.Fatalf("first binding = %#v, want provider %q", first, providerA.ID)
 	}
-
-	resolver.ForgetRun(request.RunID)
-	if got := resolver.cachedRunCount(); got != 0 {
-		t.Fatalf("cached run count after ForgetRun = %d, want 0", got)
-	}
-	// ForgetRun is idempotent and ignores blank IDs.
-	resolver.ForgetRun(request.RunID)
-	resolver.ForgetRun("")
-	resolver.ForgetAll()
-
-	updated := base
-	updated.APIKey = "key-v2"
-	updated.BaseURL = "https://new.example/v1"
-	if err := store.Save(aiservice.ProviderConfigStoreSnapshot{Providers: []ai.ProviderConfig{updated}, ActiveProvider: updated.ID}); err != nil {
+	if err := store.Save(aiservice.ProviderConfigStoreSnapshot{Providers: []ai.ProviderConfig{providerA, providerB}, ActiveProvider: providerB.ID}); err != nil {
 		t.Fatalf("save updated provider config: %v", err)
 	}
-	if _, err := resolver.resolve(context.Background(), request); err != nil {
-		t.Fatalf("resolve provider after release: %v", err)
+	second := runharness.AgentInputRequest{RequestID: "provider-b", Content: "hello"}
+	if err := resolver.bindInput(&second); err != nil {
+		t.Fatalf("bind input with updated active provider: %v", err)
 	}
-	if len(captured) != 2 || captured[1].BaseURL != updated.BaseURL || captured[1].APIKey != updated.APIKey {
-		t.Fatalf("provider config after release = %#v, want updated config", captured)
+	if second.Provider != providerB.ID || !second.HasProviderBinding() {
+		t.Fatalf("second binding = %#v, want provider %q", second, providerB.ID)
 	}
 }
 
-func TestLedgerHarnessRuntimeCloseClearsProviderSnapshotsAfterShutdown(t *testing.T) {
+func TestCLIProviderResolverRejectsUnboundModelTurn(t *testing.T) {
 	resolver := newCLIProviderResolverState(t.TempDir())
-	resolver.snapshots["run-close-1"] = ai.ProviderConfig{ID: "provider-a", APIKey: "secret"}
+	_, err := resolver.resolve(context.Background(), runharness.ModelTurnRequest{RunID: "unbound", Provider: "provider-a"})
+	if !errors.Is(err, runharness.ErrProviderBindingUnbound) {
+		t.Fatalf("resolve unbound model turn error = %v, want %v", err, runharness.ErrProviderBindingUnbound)
+	}
+}
+
+func TestLedgerHarnessRuntimeCloseIsIdempotentWithoutProviderSnapshotCache(t *testing.T) {
+	resolver := newCLIProviderResolverState(t.TempDir())
 	runtime := &ledgerHarnessRuntime{providerResolver: resolver}
 	if err := runtime.Close(); err != nil {
 		t.Fatalf("runtime close: %v", err)
 	}
-	if got := resolver.cachedRunCount(); got != 0 {
-		t.Fatalf("cached run count after runtime close = %d, want 0", got)
-	}
-	// Close is idempotent and must not repopulate or panic on a second call.
 	if err := runtime.Close(); err != nil {
 		t.Fatalf("second runtime close: %v", err)
 	}
@@ -554,6 +568,84 @@ func TestRunAgentForwardsInputOverridesAndContext(t *testing.T) {
 	}
 	if receipt.RunID != "run-1" {
 		t.Fatalf("receipt = %#v", receipt)
+	}
+}
+
+func TestRunAgentReadsExistingSessionRevisionForQueue(t *testing.T) {
+	runtime := &fakeAgentRuntime{
+		submitReceipts: []runharness.AgentInputReceipt{{
+			RequestID: "req-existing", SessionID: "existing-session", RunID: "run-existing",
+			Disposition: "queued", State: runharness.RunStateQueued,
+		}},
+		readSessionResults: []runharness.SessionProjection{{ID: "existing-session", Revision: 23}},
+	}
+	installFakeAgentRuntime(t, runtime)
+
+	var stdout, stderr bytes.Buffer
+	code := runAgentRun(context.Background(), []string{
+		"--session", "existing-session", "--request-id", "req-existing", "--prompt", "continue", "--no-wait", "--json",
+	}, &stdout, &stderr)
+	if code != ExitActionRequired {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if len(runtime.readSessionRequests) != 1 || runtime.readSessionRequests[0].SessionID != "existing-session" {
+		t.Fatalf("session reads=%#v, want one existing-session read", runtime.readSessionRequests)
+	}
+	if len(runtime.submitRequests) != 1 || runtime.submitRequests[0].ExpectedRevision != 23 {
+		t.Fatalf("submit requests=%#v, want revision 23", runtime.submitRequests)
+	}
+}
+
+func TestRunAgentStopsBeforeSubmittingWhenExistingSessionRevisionReadFails(t *testing.T) {
+	runtime := &fakeAgentRuntime{readSessionErr: errors.New("ledger unavailable")}
+	installFakeAgentRuntime(t, runtime)
+
+	var stdout, stderr bytes.Buffer
+	code := runAgentRun(context.Background(), []string{
+		"--session", "existing-session", "--prompt", "continue", "--no-wait", "--json",
+	}, &stdout, &stderr)
+	if code != ExitExecution {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "read session revision") {
+		t.Fatalf("stderr=%q, want session revision read failure", stderr.String())
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if len(runtime.readSessionRequests) != 1 || len(runtime.submitRequests) != 0 {
+		t.Fatalf("session reads=%#v submits=%#v, want read and no submit", runtime.readSessionRequests, runtime.submitRequests)
+	}
+	if runtime.closeCalls != 0 {
+		t.Fatalf("revision read failure closed runtime %d times", runtime.closeCalls)
+	}
+}
+
+func TestRunAgentSteerDoesNotReadExistingSessionRevision(t *testing.T) {
+	runtime := &fakeAgentRuntime{
+		submitReceipts: []runharness.AgentInputReceipt{{
+			RequestID: "req-steer", SessionID: "existing-session", RunID: "run-steer",
+			Disposition: "started", State: runharness.RunStateQueued,
+		}},
+		readSessionErr: errors.New("must not read session revision for steer"),
+	}
+	installFakeAgentRuntime(t, runtime)
+
+	var stdout, stderr bytes.Buffer
+	code := runAgentRun(context.Background(), []string{
+		"--session", "existing-session", "--request-id", "req-steer", "--prompt", "redirect", "--dispatch", "steer", "--no-wait", "--json",
+	}, &stdout, &stderr)
+	if code != ExitActionRequired {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if len(runtime.readSessionRequests) != 0 {
+		t.Fatalf("session reads=%#v, want none for steer", runtime.readSessionRequests)
+	}
+	if len(runtime.submitRequests) != 1 || runtime.submitRequests[0].ExpectedRevision != 0 {
+		t.Fatalf("submit requests=%#v, want steer revision unchanged", runtime.submitRequests)
 	}
 }
 
@@ -731,6 +823,32 @@ func TestRunAgentJSONEmitsOnlyStableRunProjection(t *testing.T) {
 	}
 }
 
+func TestRunAgentWaitsPastInitialQueuedState(t *testing.T) {
+	runtime := &fakeAgentRuntime{
+		submitReceipts: []runharness.AgentInputReceipt{{
+			RequestID: "queued-wait", SessionID: "queued-session", RunID: "queued-run", State: runharness.RunStateQueued,
+		}},
+		readResults: []runharness.RunReadResult{
+			{Run: runharness.RunSnapshot{ID: "queued-run", State: runharness.RunStateQueued}},
+			{Run: runharness.RunSnapshot{ID: "queued-run", State: runharness.RunStateCompleted}, NextSequence: 1},
+		},
+		advanceReadResults: true,
+	}
+	installFakeAgentRuntime(t, runtime)
+
+	var stdout, stderr bytes.Buffer
+	if code := runAgentRun(context.Background(), []string{"--prompt", "hello", "--json", "--poll", "1ms"}, &stdout, &stderr); code != ExitSuccess {
+		t.Fatalf("exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	var result runharness.RunReadResult
+	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &result); err != nil {
+		t.Fatalf("decode result: %v; output=%s", err, stdout.String())
+	}
+	if result.Run.State != runharness.RunStateCompleted {
+		t.Fatalf("result state = %s, want completed", result.Run.State)
+	}
+}
+
 func TestRunAgentJSONLContainsOnlyTypedRunEvents(t *testing.T) {
 	events := []runharness.RunEvent{
 		{
@@ -837,6 +955,7 @@ func TestAgentControlCommandsForwardTypedControlRequests(t *testing.T) {
 		wantAction   runharness.RunControlAction
 		wantApproval string
 		wantCall     string
+		wantArgsHash string
 	}{
 		{
 			name: "cancel",
@@ -861,20 +980,20 @@ func TestAgentControlCommandsForwardTypedControlRequests(t *testing.T) {
 			invoke: func(_ *fakeAgentRuntime, stdout, stderr *bytes.Buffer) int {
 				return runAgentApproval(context.Background(), "approve", []string{
 					"run-1", "--approval-id", "approval-1", "--call-id", "call-1",
-					"--request-id", "req-approve", "--expected-revision", "7", "--no-wait", "--json",
+					"--args-hash", "hash-approve", "--request-id", "req-approve", "--expected-revision", "7", "--no-wait", "--json",
 				}, stdout, stderr)
 			},
-			wantAction: runharness.ControlApprove, wantApproval: "approval-1", wantCall: "call-1",
+			wantAction: runharness.ControlApprove, wantApproval: "approval-1", wantCall: "call-1", wantArgsHash: "hash-approve",
 		},
 		{
 			name: "deny",
 			invoke: func(_ *fakeAgentRuntime, stdout, stderr *bytes.Buffer) int {
 				return runAgentApproval(context.Background(), "deny", []string{
 					"run-1", "--approval-id", "approval-2", "--call-id", "call-2",
-					"--request-id", "req-deny", "--expected-revision", "7", "--no-wait", "--json",
+					"--args-hash", "hash-deny", "--request-id", "req-deny", "--expected-revision", "7", "--no-wait", "--json",
 				}, stdout, stderr)
 			},
-			wantAction: runharness.ControlDeny, wantApproval: "approval-2", wantCall: "call-2",
+			wantAction: runharness.ControlDeny, wantApproval: "approval-2", wantCall: "call-2", wantArgsHash: "hash-deny",
 		},
 		{
 			name: "recover retry",
@@ -928,8 +1047,8 @@ func TestAgentControlCommandsForwardTypedControlRequests(t *testing.T) {
 			if request.RequestID == "" {
 				t.Fatalf("request has no idempotency key: %+v", request)
 			}
-			if request.ApprovalID != tc.wantApproval || request.CallID != tc.wantCall {
-				t.Fatalf("approval/call fields=%q/%q, want %q/%q", request.ApprovalID, request.CallID, tc.wantApproval, tc.wantCall)
+			if request.ApprovalID != tc.wantApproval || request.CallID != tc.wantCall || request.ArgsHash != tc.wantArgsHash {
+				t.Fatalf("approval/call/args-hash fields=%q/%q/%q, want %q/%q/%q", request.ApprovalID, request.CallID, request.ArgsHash, tc.wantApproval, tc.wantCall, tc.wantArgsHash)
 			}
 			if capture.Options.StartWorkers {
 				t.Fatal("control command started unrelated harness workers")
@@ -938,9 +1057,31 @@ func TestAgentControlCommandsForwardTypedControlRequests(t *testing.T) {
 	}
 }
 
-func TestRunAgentApprovalRequiresCallIDBeforeStartingHarness(t *testing.T) {
-	for _, action := range []string{"approve", "deny"} {
-		t.Run(action, func(t *testing.T) {
+func TestRunAgentApprovalRequiresCompleteBindingBeforeStartingHarness(t *testing.T) {
+	cases := []struct {
+		name      string
+		action    string
+		args      []string
+		wantError string
+	}{
+		{
+			name: "missing call ID", action: "approve",
+			args:      []string{"run-1", "--approval-id", "approval-1", "--args-hash", "hash-1", "--expected-revision", "1", "--json"},
+			wantError: "--call-id",
+		},
+		{
+			name: "missing args hash", action: "deny",
+			args:      []string{"run-1", "--approval-id", "approval-1", "--call-id", "call-1", "--expected-revision", "1", "--json"},
+			wantError: "--args-hash",
+		},
+		{
+			name: "zero revision", action: "approve",
+			args:      []string{"run-1", "--approval-id", "approval-1", "--call-id", "call-1", "--args-hash", "hash-1", "--expected-revision", "0", "--json"},
+			wantError: "positive --expected-revision",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
 			started := false
 			previous := newAgentHarness
 			newAgentHarness = func(context.Context, AgentHarnessOptions) (AgentHarnessRuntime, error) {
@@ -949,10 +1090,49 @@ func TestRunAgentApprovalRequiresCallIDBeforeStartingHarness(t *testing.T) {
 			}
 			t.Cleanup(func() { newAgentHarness = previous })
 			var stdout, stderr bytes.Buffer
-			code := runAgentApproval(context.Background(), action, []string{
-				"run-1", "--approval-id", "approval-1", "--json",
-			}, &stdout, &stderr)
-			if code != ExitUsage || started || !strings.Contains(stderr.String(), "--call-id") {
+			code := runAgentApproval(context.Background(), tc.action, tc.args, &stdout, &stderr)
+			if code != ExitUsage || started || !strings.Contains(stderr.String(), tc.wantError) {
+				t.Fatalf("exit=%d started=%t stdout=%q stderr=%q", code, started, stdout.String(), stderr.String())
+			}
+		})
+	}
+}
+
+func TestRunAgentControlCommandsRequirePositiveRevisionBeforeStartingHarness(t *testing.T) {
+	cases := []struct {
+		name string
+		call func(*bytes.Buffer, *bytes.Buffer) int
+	}{
+		{
+			name: "cancel",
+			call: func(stdout, stderr *bytes.Buffer) int {
+				return runAgentControl(context.Background(), "cancel", []string{"run-1", "--expected-revision", "0", "--json"}, stdout, stderr)
+			},
+		},
+		{
+			name: "resume",
+			call: func(stdout, stderr *bytes.Buffer) int {
+				return runAgentControl(context.Background(), "resume", []string{"run-1", "--expected-revision", "0", "--json"}, stdout, stderr)
+			},
+		},
+		{
+			name: "recover",
+			call: func(stdout, stderr *bytes.Buffer) int {
+				return runAgentRecover(context.Background(), []string{"run-1", "--action", "retry", "--expected-revision", "0", "--json"}, stdout, stderr)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			started := false
+			previous := newAgentHarness
+			newAgentHarness = func(context.Context, AgentHarnessOptions) (AgentHarnessRuntime, error) {
+				started = true
+				return nil, errors.New("harness must not start for zero revision")
+			}
+			t.Cleanup(func() { newAgentHarness = previous })
+			var stdout, stderr bytes.Buffer
+			if code := tc.call(&stdout, &stderr); code != ExitUsage || started || !strings.Contains(stderr.String(), "positive --expected-revision") {
 				t.Fatalf("exit=%d started=%t stdout=%q stderr=%q", code, started, stdout.String(), stderr.String())
 			}
 		})
@@ -1008,7 +1188,7 @@ func TestRunAgentChatReusesCreatedSessionAcrossLines(t *testing.T) {
 	runtime := &fakeAgentRuntime{submitReceipts: []runharness.AgentInputReceipt{
 		{RequestID: "one", SessionID: "created-session", RunID: "run-1", State: runharness.RunStateCompleted},
 		{RequestID: "two", SessionID: "created-session", RunID: "run-2", State: runharness.RunStateCompleted},
-	}}
+	}, readSessionResults: []runharness.SessionProjection{{ID: "created-session", Revision: 17}}}
 	installFakeAgentRuntime(t, runtime)
 	restoreInput := SetAgentCLIInput(strings.NewReader("one\ntwo\n"))
 	defer restoreInput()
@@ -1023,6 +1203,66 @@ func TestRunAgentChatReusesCreatedSessionAcrossLines(t *testing.T) {
 	}
 	if runtime.submitRequests[0].SessionID != "" || runtime.submitRequests[1].SessionID != "created-session" {
 		t.Fatalf("session propagation = %#v", runtime.submitRequests)
+	}
+	if runtime.submitRequests[0].ExpectedRevision != 0 || runtime.submitRequests[1].ExpectedRevision != 17 {
+		t.Fatalf("expected revisions = %#v", runtime.submitRequests)
+	}
+	if len(runtime.readSessionRequests) != 1 || runtime.readSessionRequests[0].SessionID != "created-session" {
+		t.Fatalf("session reads = %#v", runtime.readSessionRequests)
+	}
+}
+
+func TestRunAgentChatStopsBeforeSubmittingWhenSessionRevisionReadFails(t *testing.T) {
+	runtime := &fakeAgentRuntime{
+		submitReceipts: []runharness.AgentInputReceipt{{
+			RequestID: "one", SessionID: "created-session", RunID: "run-1", State: runharness.RunStateCompleted,
+		}},
+		readSessionErr: errors.New("ledger unavailable"),
+	}
+	installFakeAgentRuntime(t, runtime)
+	restoreInput := SetAgentCLIInput(strings.NewReader("one\ntwo\n"))
+	defer restoreInput()
+
+	var stdout, stderr bytes.Buffer
+	if code := runAgentChat(context.Background(), []string{"--jsonl", "--poll", "1ms"}, &stdout, &stderr); code != ExitExecution {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "read session revision") {
+		t.Fatalf("stderr=%q, want session revision read failure", stderr.String())
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if len(runtime.submitRequests) != 1 {
+		t.Fatalf("submit requests = %#v, want only first input", runtime.submitRequests)
+	}
+	if len(runtime.readSessionRequests) != 1 || runtime.readSessionRequests[0].SessionID != "created-session" {
+		t.Fatalf("session reads = %#v", runtime.readSessionRequests)
+	}
+}
+
+func TestRunAgentChatSteerDoesNotUseSessionRevisionAsRunRevision(t *testing.T) {
+	runtime := &fakeAgentRuntime{
+		submitReceipts: []runharness.AgentInputReceipt{
+			{RequestID: "one", SessionID: "created-session", RunID: "run-1", State: runharness.RunStateCompleted},
+			{RequestID: "two", SessionID: "created-session", RunID: "run-2", State: runharness.RunStateCompleted},
+		},
+		readSessionErr: errors.New("must not read session revision for steer"),
+	}
+	installFakeAgentRuntime(t, runtime)
+	restoreInput := SetAgentCLIInput(strings.NewReader("one\ntwo\n"))
+	defer restoreInput()
+
+	var stdout, stderr bytes.Buffer
+	if code := runAgentChat(context.Background(), []string{"--dispatch", "steer", "--jsonl", "--poll", "1ms"}, &stdout, &stderr); code != ExitSuccess {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if len(runtime.submitRequests) != 2 || runtime.submitRequests[1].ExpectedRevision != 0 {
+		t.Fatalf("steer requests = %#v", runtime.submitRequests)
+	}
+	if len(runtime.readSessionRequests) != 0 {
+		t.Fatalf("steer read session projection = %#v", runtime.readSessionRequests)
 	}
 }
 
@@ -1092,19 +1332,19 @@ func TestRunAgentControlErrorsDetachDurableRuntime(t *testing.T) {
 		{
 			name: "control",
 			call: func(stdout, stderr *bytes.Buffer) int {
-				return runAgentControl(context.Background(), "resume", []string{"run-1", "--json"}, stdout, stderr)
+				return runAgentControl(context.Background(), "resume", []string{"run-1", "--expected-revision", "1", "--json"}, stdout, stderr)
 			},
 		},
 		{
 			name: "approval",
 			call: func(stdout, stderr *bytes.Buffer) int {
-				return runAgentApproval(context.Background(), "approve", []string{"run-1", "--approval-id", "a", "--call-id", "c", "--json"}, stdout, stderr)
+				return runAgentApproval(context.Background(), "approve", []string{"run-1", "--approval-id", "a", "--call-id", "c", "--args-hash", "hash-1", "--expected-revision", "1", "--json"}, stdout, stderr)
 			},
 		},
 		{
 			name: "recovery",
 			call: func(stdout, stderr *bytes.Buffer) int {
-				return runAgentRecover(context.Background(), []string{"run-1", "--action", "retry", "--json"}, stdout, stderr)
+				return runAgentRecover(context.Background(), []string{"run-1", "--action", "retry", "--expected-revision", "1", "--json"}, stdout, stderr)
 			},
 		},
 	} {
@@ -1167,7 +1407,7 @@ func TestRunAgentApprovalTimeoutDoesNotCancelDurableDecision(t *testing.T) {
 	capture := installFakeAgentRuntime(t, runtime)
 	var stdout, stderr bytes.Buffer
 	code := runAgentApproval(context.Background(), "approve", []string{
-		"r", "--approval-id", "a", "--call-id", "call-1", "--timeout", "5ms", "--poll", "100ms", "--json",
+		"r", "--approval-id", "a", "--call-id", "call-1", "--args-hash", "hash-1", "--expected-revision", "1", "--timeout", "5ms", "--poll", "100ms", "--json",
 	}, &stdout, &stderr)
 	if code != ExitActionRequired {
 		t.Fatalf("exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
@@ -1193,7 +1433,7 @@ func TestRunAgentApprovalNoWaitDoesNotCloseActiveRuntime(t *testing.T) {
 	capture := installFakeAgentRuntime(t, runtime)
 	var stdout, stderr bytes.Buffer
 	code := runAgentApproval(context.Background(), "approve", []string{
-		"r", "--approval-id", "a", "--call-id", "call-1", "--no-wait", "--json",
+		"r", "--approval-id", "a", "--call-id", "call-1", "--args-hash", "hash-1", "--expected-revision", "1", "--no-wait", "--json",
 	}, &stdout, &stderr)
 	if code != ExitActionRequired {
 		t.Fatalf("exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
@@ -1248,7 +1488,7 @@ func TestRunAgentChatRecoveryRequiredDoesNotCloseRuntime(t *testing.T) {
 func TestRunAgentCancellationPersistsControlCommand(t *testing.T) {
 	runtime := &fakeAgentRuntime{
 		submitReceipts: []runharness.AgentInputReceipt{{RequestID: "req", SessionID: "s", RunID: "r", State: runharness.RunStateRunningModel}},
-		readResults:    []runharness.RunReadResult{{Run: runharness.RunSnapshot{ID: "r", State: runharness.RunStateRunningModel}}},
+		readResults:    []runharness.RunReadResult{{Run: runharness.RunSnapshot{ID: "r", State: runharness.RunStateRunningModel, Revision: 7}}},
 	}
 	installFakeAgentRuntime(t, runtime)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1266,13 +1506,68 @@ func TestRunAgentCancellationPersistsControlCommand(t *testing.T) {
 	if runtime.controlRequests[0].RequestID == "" {
 		t.Fatal("cancel control has no idempotency key")
 	}
+	if runtime.controlRequests[0].ExpectedRevision != 7 {
+		t.Fatalf("cancel expected revision = %d, want 7", runtime.controlRequests[0].ExpectedRevision)
+	}
+}
+
+func TestCancelAgentRunDoesNotMutateWhenCurrentRunCannotBeRead(t *testing.T) {
+	runtime := &fakeAgentRuntime{readErr: errors.New("ledger unavailable")}
+	terminal, state := cancelAgentRun(context.Background(), runtime, "run-1")
+	if terminal || state != "" {
+		t.Fatalf("result = terminal:%t state:%q", terminal, state)
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if len(runtime.controlRequests) != 0 {
+		t.Fatalf("controls = %#v, want none after failed read", runtime.controlRequests)
+	}
+}
+
+func TestCancelAgentRunDoesNotMutateAnAlreadyTerminalRun(t *testing.T) {
+	runtime := &fakeAgentRuntime{readResults: []runharness.RunReadResult{{
+		Run: runharness.RunSnapshot{ID: "run-1", State: runharness.RunStateCompleted, Revision: 4},
+	}}}
+	terminal, state := cancelAgentRun(context.Background(), runtime, "run-1")
+	if !terminal || state != runharness.RunStateCompleted {
+		t.Fatalf("result = terminal:%t state:%q", terminal, state)
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if len(runtime.controlRequests) != 0 {
+		t.Fatalf("controls = %#v, want none for terminal run", runtime.controlRequests)
+	}
+}
+
+func TestCancelAgentRunSurfacesRevisionConflictInsteadOfClaimingCanceled(t *testing.T) {
+	runtime := &fakeAgentRuntime{
+		controlErr: runharness.ErrRevisionConflict,
+		readResults: []runharness.RunReadResult{{
+			Run: runharness.RunSnapshot{ID: "run-1", State: runharness.RunStateRunningModel, Revision: 4},
+		}},
+	}
+	terminal, state, err := cancelAgentRunWithError(context.Background(), runtime, "run-1")
+	if terminal || state != "" {
+		t.Fatalf("result = terminal:%t state:%q", terminal, state)
+	}
+	if !errors.Is(err, runharness.ErrRevisionConflict) {
+		t.Fatalf("error = %v, want revision conflict", err)
+	}
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	if len(runtime.controlRequests) != 2 {
+		t.Fatalf("control requests = %d, want one refresh retry", len(runtime.controlRequests))
+	}
+	if runtime.controlRequests[0].ExpectedRevision != 4 || runtime.controlRequests[1].ExpectedRevision != 4 {
+		t.Fatalf("control revisions = %#v", runtime.controlRequests)
+	}
 }
 
 func TestRunAgentControlGeneratesRequestIDWhenOmitted(t *testing.T) {
 	runtime := &fakeAgentRuntime{controlSnapshot: runharness.RunSnapshot{ID: "r", State: runharness.RunStateInterrupted}}
 	capture := installFakeAgentRuntime(t, runtime)
 	var stdout, stderr bytes.Buffer
-	if code := runAgentControl(context.Background(), "resume", []string{"r", "--json"}, &stdout, &stderr); code != ExitActionRequired {
+	if code := runAgentControl(context.Background(), "resume", []string{"r", "--expected-revision", "1", "--json"}, &stdout, &stderr); code != ExitActionRequired {
 		t.Fatalf("exit=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
 	runtime.mu.Lock()
@@ -1312,7 +1607,7 @@ func TestRunAgentRecoverForwardsUnknownToolCallID(t *testing.T) {
 	capture := installFakeAgentRuntime(t, runtime)
 	var stdout, stderr bytes.Buffer
 	code := runAgentRecover(context.Background(), []string{
-		"run-1", "--action", "mark-completed", "--call-id", "call-7", "--json",
+		"run-1", "--action", "mark-completed", "--call-id", "call-7", "--expected-revision", "1", "--json",
 	}, &stdout, &stderr)
 	if code != ExitActionRequired {
 		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
@@ -1687,7 +1982,7 @@ func TestRunAgentApprovalRejectsNegativeRevision(t *testing.T) {
 	}
 	t.Cleanup(func() { newAgentHarness = previous })
 	var stdout, stderr bytes.Buffer
-	code := runAgentApproval(context.Background(), "approve", []string{"r", "--approval-id", "a", "--call-id", "call-1", "--expected-revision", "-1"}, &stdout, &stderr)
+	code := runAgentApproval(context.Background(), "approve", []string{"r", "--approval-id", "a", "--call-id", "call-1", "--args-hash", "hash-1", "--expected-revision", "-1"}, &stdout, &stderr)
 	if code != ExitUsage || started || !strings.Contains(stderr.String(), `"code":"usage"`) {
 		t.Fatalf("exit=%d started=%t stdout=%q stderr=%q", code, started, stdout.String(), stderr.String())
 	}
@@ -1752,7 +2047,7 @@ func TestRunAgentApprovalWaitsForWorkerAndReturnsTerminalResult(t *testing.T) {
 	installFakeAgentRuntime(t, runtime)
 	var stdout, stderr bytes.Buffer
 	code := runAgentApproval(context.Background(), "approve", []string{
-		"run-approval", "--approval-id", "approval-1", "--call-id", "call-1", "--json", "--poll", "1ms",
+		"run-approval", "--approval-id", "approval-1", "--call-id", "call-1", "--args-hash", "hash-1", "--expected-revision", "1", "--json", "--poll", "1ms",
 	}, &stdout, &stderr)
 	if code != ExitSuccess {
 		t.Fatalf("exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
@@ -1781,7 +2076,7 @@ func TestWaitForAgentRunJSONLReportsApprovalIdentifiersOnce(t *testing.T) {
 			Events: []runharness.RunEvent{{
 				RunID: "run-approval", Sequence: 1, Kind: runharness.EventApproval,
 				ResultingState: runharness.RunStateAwaitingApproval,
-				Payload:        mustJSON(runharness.ApprovalEvent{ApprovalID: "approval-1", CallID: "call-1", Decision: "pending"}),
+				Payload:        mustJSON(runharness.ApprovalEvent{ApprovalID: "approval-1", CallID: "call-1", ArgsHash: "hash-1", Decision: "pending"}),
 			}},
 		}},
 	}
@@ -1790,7 +2085,7 @@ func TestWaitForAgentRunJSONLReportsApprovalIdentifiersOnce(t *testing.T) {
 	if code != ExitActionRequired {
 		t.Fatalf("exit = %d", code)
 	}
-	if got := strings.Count(stderr.String(), "approvalId=approval-1"); got != 1 {
+	if got := strings.Count(stderr.String(), "approvalId=approval-1"); got != 1 || !strings.Contains(stderr.String(), "argsHash=hash-1") {
 		t.Fatalf("approval notice count = %d, stderr=%q", got, stderr.String())
 	}
 	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
@@ -1800,6 +2095,38 @@ func TestWaitForAgentRunJSONLReportsApprovalIdentifiersOnce(t *testing.T) {
 	var event runharness.RunEvent
 	if err := json.Unmarshal([]byte(lines[0]), &event); err != nil || event.Kind != runharness.EventApproval {
 		t.Fatalf("JSONL event = %#v err=%v", event, err)
+	}
+	var payload runharness.ApprovalEvent
+	if err := json.Unmarshal(event.Payload, &payload); err != nil || payload.ArgsHash != "hash-1" {
+		t.Fatalf("JSONL approval payload = %#v err=%v", payload, err)
+	}
+	if strings.Contains(stdout.String(), "approval required") {
+		t.Fatalf("JSONL stdout contains human approval notice: %q", stdout.String())
+	}
+}
+
+func TestWriteAgentEventApprovalDisplaysOnlyBoundIdentifiers(t *testing.T) {
+	event := runharness.RunEvent{
+		Sequence:       9,
+		Kind:           runharness.EventApproval,
+		ResultingState: runharness.RunStateAwaitingApproval,
+		Payload: mustJSON(map[string]any{
+			"approvalId": "approval-1",
+			"callId":     "call-1",
+			"argsHash":   "hash-1",
+			"decision":   "pending",
+			"arguments":  map[string]any{"sql": "SELECT secret_value"},
+			"text":       "SELECT secret_value",
+		}),
+	}
+	var output bytes.Buffer
+	writeAgentEvent(&output, event)
+	got := output.String()
+	if !strings.Contains(got, "approval=approval-1 call=call-1 args-hash=hash-1 decision=pending") {
+		t.Fatalf("approval event output=%q", got)
+	}
+	if strings.Contains(got, "secret_value") {
+		t.Fatalf("approval event exposed tool arguments: %q", got)
 	}
 }
 

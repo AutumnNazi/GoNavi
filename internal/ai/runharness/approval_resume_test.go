@@ -127,7 +127,10 @@ func TestApprovalSurvivesProcessBoundaryAndResumesExactlyOnce(t *testing.T) {
 		read, readErr := ledgerB.ReadRun(context.Background(), RunReadRequest{RunID: receipt.RunID})
 		t.Fatalf("startup changed pending state to %s: read=%#v err=%v", stillWaiting.State, read, readErr)
 	}
-	if _, err := harnessB.ControlRun(context.Background(), RunControlRequest{RunID: receipt.RunID, Action: ControlApprove, ApprovalID: approval.ApprovalID}); err != nil {
+	if _, err := harnessB.ControlRun(context.Background(), RunControlRequest{
+		RunID: receipt.RunID, Action: ControlApprove, ApprovalID: approval.ApprovalID,
+		CallID: approval.CallID, ArgsHash: approval.ArgsHash, ExpectedRevision: approval.RunRevision,
+	}); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
 	var completed RunSnapshot
@@ -148,7 +151,10 @@ func TestApprovalSurvivesProcessBoundaryAndResumesExactlyOnce(t *testing.T) {
 	if catalogB.executions.Load() != 1 {
 		t.Fatalf("tool executions = %d, want 1", catalogB.executions.Load())
 	}
-	if _, err := harnessB.ControlRun(context.Background(), RunControlRequest{RunID: receipt.RunID, Action: ControlApprove, ApprovalID: approval.ApprovalID}); !errors.Is(err, ErrApprovalConflict) {
+	if _, err := harnessB.ControlRun(context.Background(), RunControlRequest{
+		RunID: receipt.RunID, Action: ControlApprove, ApprovalID: approval.ApprovalID,
+		CallID: approval.CallID, ArgsHash: approval.ArgsHash, ExpectedRevision: approval.RunRevision,
+	}); !errors.Is(err, ErrApprovalConflict) {
 		t.Fatalf("duplicate approve error = %v", err)
 	}
 }

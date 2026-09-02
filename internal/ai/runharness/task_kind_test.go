@@ -229,12 +229,17 @@ func TestHarnessRejectsUnknownToolWhenCatalogIsEmpty(t *testing.T) {
 
 func TestHarnessQueryEditorGenerationProjectsOnlyItsOwnRunMessages(t *testing.T) {
 	model := &taskKindProjectionModel{}
-	harness, _ := newContractHarness(t, model, nil, nil)
+	harness, ledger := newContractHarness(t, model, nil, nil)
 	allowTools := false
+	session, err := ledger.CreateSession(context.Background(), CreateSessionRequest{SessionID: "shared-query-editor-session"})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	first, err := harness.SubmitInput(context.Background(), AgentInputRequest{
-		RequestID: "query-editor-isolation-first", SessionID: "shared-query-editor-session",
+		RequestID: "query-editor-isolation-first", SessionID: session.ID,
 		Content: "first editor draft", TaskKind: AgentTaskKindQueryEditorGeneration, AllowTools: &allowTools,
+		ExpectedRevision: session.Revision,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -244,9 +249,14 @@ func TestHarnessQueryEditorGenerationProjectsOnlyItsOwnRunMessages(t *testing.T)
 		t.Fatalf("first run state = %s, want completed", firstRead.Run.State)
 	}
 
+	current, err := ledger.GetSession(context.Background(), first.SessionID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
 	second, err := harness.SubmitInput(context.Background(), AgentInputRequest{
 		RequestID: "query-editor-isolation-second", SessionID: first.SessionID,
 		Content: "second editor draft", TaskKind: AgentTaskKindQueryEditorGeneration, AllowTools: &allowTools,
+		ExpectedRevision: current.Revision,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -270,10 +280,15 @@ func TestHarnessQueryEditorGenerationProjectsOnlyItsOwnRunMessages(t *testing.T)
 
 func TestHarnessChatKeepsSessionHistoryAcrossRuns(t *testing.T) {
 	model := &taskKindProjectionModel{}
-	harness, _ := newContractHarness(t, model, nil, nil)
+	harness, ledger := newContractHarness(t, model, nil, nil)
+	session, err := ledger.CreateSession(context.Background(), CreateSessionRequest{SessionID: "shared-chat-session"})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	first, err := harness.SubmitInput(context.Background(), AgentInputRequest{
-		RequestID: "chat-history-first", SessionID: "shared-chat-session", Content: "first chat input",
+		RequestID: "chat-history-first", SessionID: session.ID, Content: "first chat input",
+		ExpectedRevision: session.Revision,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -283,8 +298,13 @@ func TestHarnessChatKeepsSessionHistoryAcrossRuns(t *testing.T) {
 		t.Fatalf("first run state = %s, want completed", firstRead.Run.State)
 	}
 
+	current, err := ledger.GetSession(context.Background(), first.SessionID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
 	second, err := harness.SubmitInput(context.Background(), AgentInputRequest{
 		RequestID: "chat-history-second", SessionID: first.SessionID, Content: "second chat input",
+		ExpectedRevision: current.Revision,
 	})
 	if err != nil {
 		t.Fatal(err)

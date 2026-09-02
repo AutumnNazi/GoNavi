@@ -12,16 +12,22 @@ const harnessMock = vi.hoisted(() => {
   const getRunPolicy = vi.fn();
   const controlAgentRun = vi.fn();
   const readAgentRun = vi.fn();
+  const readAgentSession = vi.fn();
+  const mutateAgentSession = vi.fn();
   return {
     submitAgentInput,
     getRunPolicy,
     controlAgentRun,
     readAgentRun,
+    readAgentSession,
+    mutateAgentSession,
     service: {
       AISubmitAgentInput: submitAgentInput,
       AIGetRunPolicy: getRunPolicy,
       AIControlAgentRun: controlAgentRun,
       AIReadAgentRun: readAgentRun,
+      AIReadAgentSession: readAgentSession,
+      AIMutateAgentSession: mutateAgentSession,
     },
     inputProps: undefined as Record<string, any> | undefined,
     conversationProps: undefined as Record<string, any> | undefined,
@@ -71,9 +77,9 @@ vi.mock('./ai/aiRunHarnessClient', () => ({
   getRunPolicy: harnessMock.getRunPolicy,
   hasAIRunHarness: () => true,
   mergeAIChatSessionMessages: (durable: unknown[]) => durable,
-  mutateAgentSession: vi.fn(),
+  mutateAgentSession: harnessMock.mutateAgentSession,
   readAgentRun: harnessMock.readAgentRun,
-  readAgentSession: vi.fn(),
+  readAgentSession: harnessMock.readAgentSession,
   submitAgentInput: harnessMock.submitAgentInput,
   toAIChatMessages: () => [],
 }));
@@ -207,6 +213,10 @@ describe('AIChatPanel agent run branch submission', () => {
       events: [],
       hasMore: false,
     });
+    harnessMock.readAgentSession.mockReset();
+    harnessMock.readAgentSession.mockResolvedValue({ revision: 42, messages: [] });
+    harnessMock.mutateAgentSession.mockReset();
+    harnessMock.mutateAgentSession.mockResolvedValue({ revision: 43 });
     useStore.setState({
       aiActiveSessionId: 'source-session',
       aiChatHistory: { 'source-session': sourceMessages },
@@ -396,6 +406,137 @@ describe('AIChatPanel agent run branch submission', () => {
     }, harnessMock.service);
     expect(harnessMock.runControlsProps?.waitingWorkspaces?.[0]).toMatchObject({ revision: 13 });
 
+    await act(async () => renderer?.unmount());
+  });
+
+  it('reads a missing session revision before submitting a durable branch', async () => {
+    harnessMock.session = {
+      ...harnessMock.session,
+      orderedAISessions: [{
+        ...harnessMock.session.orderedAISessions[0],
+        revision: 0,
+      }],
+    };
+    harnessMock.readAgentSession.mockResolvedValueOnce({ revision: 84, messages: [] });
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = renderPanel();
+    });
+    await act(async () => {
+      harnessMock.conversationProps?.onEditMessage({
+        ...sourceMessages[0],
+        content: 'Edited with refreshed revision',
+      });
+    });
+    await act(async () => {
+      await harnessMock.inputProps?.onSend();
+    });
+
+    expect(harnessMock.readAgentSession).toHaveBeenCalledWith({
+      sessionId: 'source-session',
+      limit: 1,
+    }, harnessMock.service);
+    expect(harnessMock.submitAgentInput).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'source-session',
+      expectedRevision: 84,
+    }), harnessMock.service);
+    await act(async () => renderer?.unmount());
+  });
+
+  it('does not submit a durable session when its revision cannot be resolved', async () => {
+    harnessMock.session = {
+      ...harnessMock.session,
+      orderedAISessions: [{
+        ...harnessMock.session.orderedAISessions[0],
+        revision: 0,
+      }],
+    };
+    harnessMock.readAgentSession.mockResolvedValueOnce({ revision: 0, messages: [] });
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = renderPanel();
+    });
+    await act(async () => {
+      harnessMock.inputProps?.setInput('Cannot submit without a CAS revision');
+    });
+    await act(async () => {
+      await harnessMock.inputProps?.onSend();
+    });
+
+    expect(harnessMock.submitAgentInput).not.toHaveBeenCalled();
+    expect(useStore.getState().aiChatHistory['source-session']).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        excludeFromAIContext: true,
+        rawError: 'AI agent session revision is unavailable',
+      }),
+    ]));
+    await act(async () => renderer?.unmount());
+  });
+
+  it('reads a missing run revision before issuing a control command', async () => {
+    harnessMock.readAgentRun.mockResolvedValueOnce({
+      run: { state: 'awaiting_workspace', revision: 23, sessionId: 'source-session' },
+      events: [],
+      hasMore: false,
+    });
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = renderPanel();
+    });
+    await act(async () => {
+      harnessMock.runSubscriptionProps?.onRunStateChange('run-no-revision', 'awaiting_workspace', 0);
+    });
+    const workspace = harnessMock.runControlsProps?.waitingWorkspaces?.[0];
+    await act(async () => {
+      harnessMock.runControlsProps?.onWorkspaceAction(workspace, 'use_stale_workspace');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(harnessMock.readAgentRun).toHaveBeenCalledWith({
+      runId: 'run-no-revision',
+      afterSequence: 0,
+      limit: 1,
+    }, harnessMock.service);
+    expect(harnessMock.controlAgentRun).toHaveBeenCalledWith(expect.objectContaining({
+      runId: 'run-no-revision',
+      expectedRevision: 23,
+    }), harnessMock.service);
+    await act(async () => renderer?.unmount());
+  });
+
+  it('binds an approval decision to the exact arguments hash', async () => {
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = renderPanel();
+    });
+    await act(async () => {
+      harnessMock.runSubscriptionProps?.onRunStateChange('run-approval', 'awaiting_approval', 17);
+      harnessMock.runSubscriptionProps?.onApprovalChange('run-approval', {
+        runId: 'run-approval',
+        sessionId: 'source-session',
+        approvalId: 'approval-1',
+        callId: 'call-1',
+        argsHash: 'sha256:exact-args',
+        decision: 'pending',
+        revision: 17,
+      });
+    });
+    const approval = harnessMock.runControlsProps?.approvals?.[0];
+    await act(async () => {
+      harnessMock.runControlsProps?.onApprovalDecision(approval, 'approved');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(harnessMock.controlAgentRun).toHaveBeenCalledWith(expect.objectContaining({
+      runId: 'run-approval',
+      action: 'approve',
+      approvalId: 'approval-1',
+      callId: 'call-1',
+      argsHash: 'sha256:exact-args',
+      expectedRevision: 17,
+    }), harnessMock.service);
     await act(async () => renderer?.unmount());
   });
 });

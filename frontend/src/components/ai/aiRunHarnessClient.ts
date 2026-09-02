@@ -62,9 +62,10 @@ export interface RunControlRequest {
   action: AgentRunControlAction;
   callId?: string;
   approvalId?: string;
+  /** Exact approval argument digest; required for approve/deny decisions. */
+  argsHash?: string;
   content?: string;
   expectedRevision?: number;
-  ownerToken?: string;
 }
 
 export interface RunReadRequest {

@@ -18,7 +18,7 @@ import (
 // operation.
 type SupersedeToolIntentsRequest struct {
 	RunID              string
-	OwnerToken         string
+	OwnerToken         string `json:"-"`
 	ExpectedRevision   int64
 	Intents            []ToolIntent
 	SteerContent       string

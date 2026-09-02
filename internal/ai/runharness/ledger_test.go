@@ -338,6 +338,37 @@ func TestLedgerRunEventsAndEncryptedAtRest(t *testing.T) {
 	}
 }
 
+func TestTransitionRunRejectsTerminalStateWithoutTerminalEvent(t *testing.T) {
+	l := testLedger(t)
+	ctx := context.Background()
+	run, err := l.CreateRun(ctx, CreateRunRequest{SessionID: "session-1", RequestID: "request-1", Policy: DefaultRunPolicy()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err = l.TransitionRun(ctx, run.ID, RunStateQueued, RunStateRunningModel, run.Revision, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.TransitionRun(ctx, run.ID, RunStateRunningModel, RunStateCompleted, run.Revision, ""); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("terminal TransitionRun error = %v, want ErrInvalidTransition", err)
+	}
+
+	current, err := l.GetRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.State != RunStateRunningModel {
+		t.Fatalf("run state = %s, want %s", current.State, RunStateRunningModel)
+	}
+	read, err := l.ReadRun(ctx, RunReadRequest{RunID: run.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(read.Events) != 0 {
+		t.Fatalf("terminal bypass persisted events: %#v", read.Events)
+	}
+}
+
 func TestCheckpointToolApprovalSnapshotAndLease(t *testing.T) {
 	l := testLedger(t)
 	ctx := context.Background()
@@ -381,7 +412,11 @@ func TestCheckpointToolApprovalSnapshotAndLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := l.DecideApproval(ctx, DecideApprovalRequest{ApprovalID: approval.ApprovalID, Decision: "approved"}); err != nil {
+	if _, err := l.DecideApproval(ctx, DecideApprovalRequest{
+		ApprovalID: approval.ApprovalID, Decision: "approved",
+		ExpectedRunID: run.ID, ExpectedCallID: approval.CallID,
+		ExpectedArgsHash: approval.ArgsHash, ExpectedRunRevision: approval.RunRevision,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	run, _ = l.GetRun(ctx, run.ID)

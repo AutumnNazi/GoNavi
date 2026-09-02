@@ -404,6 +404,10 @@ func parsePostgresTableNames(data []map[string]interface{}) []string {
 		if schema != "" {
 			table = fmt.Sprintf("%s.%s", encodePGLikeQualifiedNamePart(schema), table)
 		}
+		// pg_catalog and information_schema return the identifier value itself;
+		// a quote in relname is therefore data, not a transport wrapper. Use the
+		// encoded qualified name as the fallback identity so legal names such as
+		// `"orders"` cannot collapse into the ordinary `orders` table.
 		key := table
 		if _, exists := seen[key]; exists {
 			continue

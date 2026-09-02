@@ -1345,8 +1345,9 @@ describe('QueryEditor external SQL save', () => {
       || props['aria-label'] === catalogs['zh-CN']['query_editor.object_info.label.schema']
     ));
     expect(latestSchemaSelect()).toMatchObject({
-      value: 'public',
+      value: 'removed_schema',
       options: [
+        { label: 'removed_schema', value: 'removed_schema', title: '', fullName: 'removed_schema' },
         { label: 'public', value: 'public', title: '', fullName: 'public' },
         { label: 'sales', value: 'sales', title: '', fullName: 'sales' },
       ],
@@ -10144,11 +10145,12 @@ describe('QueryEditor external SQL save', () => {
 
     expect(storeState.setActiveContext).not.toHaveBeenCalled();
     expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({
-      id: expect.stringMatching(/^query-edit-object-conn-1-main-reporting\.active_users-\d+$/),
+      id: expect.stringMatching(/^query-edit-object-conn-1-main-reporting-reporting\.active_users-\d+$/),
       title: '修改视图: reporting.active_users',
       type: 'query',
       connectionId: 'conn-1',
       dbName: 'main',
+      schemaName: 'reporting',
       queryMode: 'object-edit',
       returnToTabId: 'tab-1',
       query: expect.stringContaining('CREATE OR REPLACE VIEW reporting.active_users AS'),
@@ -10343,21 +10345,23 @@ END;`;
     });
 
     expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({
-      id: expect.stringMatching(/^query-edit-trigger-conn-1-main-audit\.users_bi-\d+$/),
+      id: expect.stringMatching(/^query-edit-trigger-conn-1-main-audit-audit\.users_bi-\d+$/),
       title: '修改触发器: audit.users_bi',
       type: 'query',
       connectionId: 'conn-1',
       dbName: 'main',
+      schemaName: 'audit',
       queryMode: 'object-edit',
       returnToTabId: 'tab-1',
       query: expect.stringContaining('CREATE TRIGGER audit.users_bi'),
     }));
     expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({
-      id: expect.stringMatching(/^query-edit-routine-conn-1-main-reporting\.refresh_stats-\d+$/),
+      id: expect.stringMatching(/^query-edit-routine-conn-1-main-reporting-reporting\.refresh_stats-\d+$/),
       title: '编辑 存储过程：reporting.refresh_stats',
       type: 'query',
       connectionId: 'conn-1',
       dbName: 'main',
+      schemaName: 'reporting',
       queryMode: 'object-edit',
       returnToTabId: 'tab-1',
       query: expect.stringContaining('CREATE OR REPLACE PROCEDURE reporting.refresh_stats()'),
@@ -10445,20 +10449,22 @@ END;`;
     });
 
     expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({
-      id: expect.stringMatching(/^query-edit-object-conn-1-main-BILLING\.ORDER_SEQ-\d+$/),
+      id: expect.stringMatching(/^query-edit-object-conn-1-main-BILLING-BILLING\.ORDER_SEQ-\d+$/),
       title: '修改序列: BILLING.ORDER_SEQ',
       type: 'query',
       connectionId: 'conn-1',
       dbName: 'main',
+      schemaName: 'BILLING',
       queryMode: 'object-edit',
       query: expect.stringContaining('CREATE SEQUENCE BILLING.ORDER_SEQ'),
     }));
     expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({
-      id: expect.stringMatching(/^query-edit-object-conn-1-main-billing\.pkg_order-\d+$/),
+      id: expect.stringMatching(/^query-edit-object-conn-1-main-billing-billing\.pkg_order-\d+$/),
       title: '修改存储包: billing.pkg_order',
       type: 'query',
       connectionId: 'conn-1',
       dbName: 'main',
+      schemaName: 'billing',
       queryMode: 'object-edit',
       query: expect.stringContaining('CREATE OR REPLACE PACKAGE pkg_order'),
     }));
@@ -10509,9 +10515,10 @@ END;`;
       });
 
       expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({
-        id: expect.stringMatching(/^query-edit-object-conn-1-main-reporting\.active_users-\d+$/),
+        id: expect.stringMatching(/^query-edit-object-conn-1-main-reporting-reporting\.active_users-\d+$/),
         title: 'Edit View: reporting.active_users',
         type: 'query',
+        schemaName: 'reporting',
         queryMode: 'object-edit',
       }));
     });
@@ -10579,15 +10586,17 @@ END;`;
       });
 
       expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({
-        id: expect.stringMatching(/^query-edit-trigger-conn-1-main-audit\.users_bi-\d+$/),
+        id: expect.stringMatching(/^query-edit-trigger-conn-1-main-audit-audit\.users_bi-\d+$/),
         title: 'Edit trigger: audit.users_bi',
         type: 'query',
+        schemaName: 'audit',
         queryMode: 'object-edit',
       }));
       expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({
-        id: expect.stringMatching(/^query-edit-routine-conn-1-main-reporting\.refresh_stats-\d+$/),
+        id: expect.stringMatching(/^query-edit-routine-conn-1-main-reporting-reporting\.refresh_stats-\d+$/),
         title: 'Edit Procedure: reporting.refresh_stats',
         type: 'query',
+        schemaName: 'reporting',
         queryMode: 'object-edit',
       }));
     });
@@ -10637,9 +10646,10 @@ END;`;
       });
 
       expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({
-        id: expect.stringMatching(/^query-edit-object-conn-1-analytics-analytics\.mv_daily_stats-\d+$/),
+        id: expect.stringMatching(/^query-edit-object-conn-1-analytics-analytics-analytics\.mv_daily_stats-\d+$/),
         title: 'Edit Materialized view: analytics.mv_daily_stats',
         type: 'query',
+        schemaName: 'analytics',
         queryMode: 'object-edit',
       }));
     });

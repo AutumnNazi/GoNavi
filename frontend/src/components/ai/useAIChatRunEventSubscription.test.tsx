@@ -203,7 +203,41 @@ describe('useAIChatRunEventSubscription', () => {
     await act(async () => renderer?.unmount());
   });
 
-  it.each(['canceled', 'interrupted'] as const)(
+  it('keeps an interrupted checkpoint resumable and leaves the selected session sending', async () => {
+    const onSendingChange = vi.fn();
+    const onRunStateChange = vi.fn();
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(<Harness onSendingChange={onSendingChange} onRunStateChange={onRunStateChange} />);
+    });
+    onSendingChange.mockClear();
+
+    await emit(makeEvent(1, {
+      kind: 'input',
+      resultingState: 'running_model',
+      payload: { requestId: 'input-interrupted' },
+    }));
+    await emit(makeEvent(2, {
+      kind: 'checkpoint',
+      resultingState: 'interrupted',
+      payload: { checkpointId: '', sequence: 1 },
+    }));
+
+    expect(onRunStateChange).toHaveBeenLastCalledWith('run-event-1', 'interrupted', 2);
+    expect(onSendingChange).toHaveBeenLastCalledWith(true);
+    expect(useStore.getState().aiChatHistory[SESSION_ID][0]).toMatchObject({
+      id: 'connecting',
+      loading: true,
+      phase: 'connecting',
+    });
+    await act(async () => renderer?.unmount());
+  });
+
+  // `interrupted` is deliberately non-terminal: recovery/resume must be able
+  // to continue the same run. A `terminal` event carrying it is invalid and
+  // rejected by the typed event contract, so only cancellation settles the
+  // transient assistant placeholder here.
+  it.each(['canceled'] as const)(
     'keeps an empty assistant placeholder in the projection when a run is %s',
     async (state) => {
       const deleteAIChatMessage = vi.fn();
@@ -232,6 +266,38 @@ describe('useAIChatRunEventSubscription', () => {
       await act(async () => renderer?.unmount());
     },
   );
+
+  it('clears a local terminal placeholder when bootstrap returns an explicit empty ledger transcript', async () => {
+    const AIReadAgentSession = vi.fn().mockResolvedValue({
+      messages: [],
+      runs: [],
+    });
+    vi.stubGlobal('window', { go: { aiservice: { Service: { AIReadAgentSession } } } });
+    useStore.setState({
+      aiChatHistory: {
+        [SESSION_ID]: [{
+          id: 'terminal-placeholder',
+          role: 'assistant',
+          content: '',
+          loading: false,
+          phase: 'idle',
+          excludeFromAIContext: true,
+          timestamp: 1,
+        }],
+      },
+    });
+
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(<Harness />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(AIReadAgentSession).toHaveBeenCalledWith({ sessionId: SESSION_ID, limit: 10_000 });
+    expect(useStore.getState().aiChatHistory[SESSION_ID]).toEqual([]);
+    await act(async () => renderer?.unmount());
+  });
 
   it('projects tracked background runs without marking the selected session as sending', async () => {
     const onSendingChange = vi.fn();
@@ -269,7 +335,7 @@ describe('useAIChatRunEventSubscription', () => {
   it('rebuilds a pending approval when the shared cursor was consumed by another view', async () => {
     const toolIntent = {
       callId: 'call-approval',
-      toolName: 'execute_sql',
+      toolName: 'wrong_tool_name',
       effect: 'side_effect',
       arguments: { sql: 'INSERT INTO audit_log VALUES (1)' },
     };
@@ -285,7 +351,11 @@ describe('useAIChatRunEventSubscription', () => {
         payload: {
           approvalId: 'approval-replay',
           callId: 'call-approval',
+          toolName: 'execute_sql',
+          effect: 'side_effect',
+          argsHash: 'sha256:approval-replay',
           decision: 'pending',
+          summary: 'Add one audit entry',
         },
       }),
     ];
@@ -320,14 +390,17 @@ describe('useAIChatRunEventSubscription', () => {
     });
 
     expect(AIReadAgentRun).toHaveBeenCalledWith({ runId: 'run-event-1', afterSequence: 0, limit: 500 });
-    expect(onApprovalChange).toHaveBeenCalledWith(
-      'run-event-1',
-      expect.objectContaining({
-        approvalId: 'approval-replay',
-        callId: 'call-approval',
-        toolName: 'execute_sql',
-      }),
-    );
+    const approval = onApprovalChange.mock.calls.find(([, value]) => value)?.[1];
+    expect(approval).toMatchObject({
+      approvalId: 'approval-replay',
+      callId: 'call-approval',
+      toolName: 'execute_sql',
+      effect: 'side_effect',
+      argsHash: 'sha256:approval-replay',
+      summary: 'Add one audit entry',
+    });
+    expect(approval).not.toHaveProperty('arguments');
+    expect(JSON.stringify(approval)).not.toContain('INSERT INTO audit_log');
     await act(async () => secondRenderer?.unmount());
   });
 

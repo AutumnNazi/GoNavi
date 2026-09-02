@@ -109,6 +109,11 @@ const isRevisionConflictError = (error: unknown): boolean =>
         .toLowerCase()
         .includes('revision_conflict');
 
+const positiveRevision = (value: unknown): number => {
+    const revision = Number(value);
+    return Number.isSafeInteger(revision) && revision > 0 ? revision : 0;
+};
+
 interface PendingConversationBranch {
     sourceSessionId: string;
     sourceRevision?: number;
@@ -528,12 +533,54 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         }
     }, [handleRunStateChange, hydrateSessionProjection]);
 
+    const resolveRunRevision = useCallback(async (
+        runId: string,
+        knownRevision: unknown,
+        service: AIRunHarnessService | undefined,
+    ): Promise<number> => {
+        const currentRevision = positiveRevision(knownRevision);
+        if (currentRevision > 0) return currentRevision;
+        if (!service?.AIReadAgentRun) {
+            throw new Error('AI agent run revision is unavailable');
+        }
+        const projection = await readAgentRun({ runId, afterSequence: 0, limit: 1 }, service);
+        const revision = positiveRevision(projection?.run?.revision);
+        if (revision <= 0) {
+            throw new Error('AI agent run revision is unavailable');
+        }
+        const previous = activeRunsRef.current.get(runId);
+        const state = String(projection?.run?.state || previous?.state || 'queued').trim() || 'queued';
+        const sessionId = String(projection?.run?.sessionId || previous?.sessionId || sid).trim() || undefined;
+        activeRunsRef.current.set(runId, { state, revision, sessionId });
+        setRunStateVersion((version) => version + 1);
+        return revision;
+    }, [sid]);
+
+    const resolveSessionRevision = useCallback(async (
+        sessionId: string,
+        knownRevision: unknown,
+        service: AIRunHarnessService | undefined,
+    ): Promise<number> => {
+        const currentRevision = positiveRevision(knownRevision);
+        if (currentRevision > 0) return currentRevision;
+        if (!service?.AIReadAgentSession) {
+            throw new Error('AI agent session revision is unavailable');
+        }
+        const projection = await readAgentSession({ sessionId, limit: 1 }, service);
+        const revision = positiveRevision(projection?.revision);
+        if (revision <= 0) {
+            throw new Error('AI agent session revision is unavailable');
+        }
+        return revision;
+    }, []);
+
     const handleRunControl = useCallback(async (
         runId: string,
         action: Parameters<typeof controlAgentRun>[0]['action'],
         extra: {
             approvalId?: string;
             callId?: string;
+            argsHash?: string;
             busyKey: string;
         },
     ): Promise<void> => {
@@ -544,6 +591,10 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         const sessionId = run.sessionId || sid;
         setRunControlBusyKey(extra.busyKey);
         try {
+            if ((action === 'approve' || action === 'deny') && !String(extra.argsHash || '').trim()) {
+                throw new Error('AI agent approval arguments hash is unavailable');
+            }
+            const expectedRevision = await resolveRunRevision(runId, run.revision, service);
             const snapshot = await controlAgentRun({
                 requestId: `agent-control-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
                 runId,
@@ -551,7 +602,8 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
                 action,
                 ...(extra.approvalId ? { approvalId: extra.approvalId } : {}),
                 ...(extra.callId ? { callId: extra.callId } : {}),
-                ...(run.revision > 0 ? { expectedRevision: run.revision } : {}),
+                ...(extra.argsHash ? { argsHash: extra.argsHash } : {}),
+                expectedRevision,
             }, service);
             const nextState = String(snapshot?.state || '').trim();
             const nextRevision = Number(snapshot?.revision || 0);
@@ -581,7 +633,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         } finally {
             setRunControlBusyKey(null);
         }
-    }, [addAIChatMessage, refreshRunAfterRevisionConflict, sid, t]);
+    }, [addAIChatMessage, refreshRunAfterRevisionConflict, resolveRunRevision, sid, t]);
 
     const handleApprovalDecision = useCallback((
         approval: AIRunApprovalState,
@@ -593,6 +645,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
             {
                 approvalId: approval.approvalId,
                 callId: approval.callId,
+                argsHash: approval.argsHash,
                 busyKey: `${approval.runId}:${decision === 'approved' ? 'approve' : 'deny'}:${approval.approvalId}`,
             },
         );
@@ -629,6 +682,9 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         if (!hasAIRunHarness(service)) {
             throw new Error('AISubmitAgentInput is unavailable');
         }
+        const resolvedRevision = sessionId
+            ? await resolveSessionRevision(sessionId, expectedRevision, service)
+            : undefined;
         const receipt = await submitAgentInput({
             requestId: `agent-input-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             ...(sessionId ? { sessionId } : {}),
@@ -641,9 +697,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
             provider: String(activeProvider?.id || '').trim() || undefined,
             model: String(activeProvider?.model || '').trim() || undefined,
             thinking: String(thinkingIntensity || '').trim() || undefined,
-            ...(Number.isFinite(expectedRevision) && Number(expectedRevision) > 0
-                ? { expectedRevision: Number(expectedRevision) }
-                : {}),
+            ...(resolvedRevision ? { expectedRevision: resolvedRevision } : {}),
         }, service);
         const receiptRunId = String(receipt.runId || '').trim();
         const receiptSessionId = String(receipt.sessionId || sessionId || '').trim();
@@ -680,7 +734,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
             setSending(false);
         }
         return receipt;
-    }, [activeProvider?.id, activeProvider?.model, addAIChatMessage, hydrateSessionProjection, setAIActiveSessionId, sid, thinkingIntensity]);
+    }, [activeProvider?.id, activeProvider?.model, addAIChatMessage, hydrateSessionProjection, resolveSessionRevision, setAIActiveSessionId, sid, thinkingIntensity]);
 
     const handleRetryMessage = useCallback(async (msg: AIChatMessage) => {
         if (sending || interactionDisabled || msg.excludeFromAIContext === true) return;
@@ -692,8 +746,8 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
             .find((message) => message.role === 'user');
         if (!userMessage) return;
         const durableSession = orderedAISessions.find((session) => session.id === sid);
-        if (!durableSession || !String(userMessage.id || '').trim()) return;
-        const expectedRevision = Number(durableSession?.revision || 0);
+        if (sid === 'session-fallback' || !String(userMessage.id || '').trim()) return;
+        const expectedRevision = positiveRevision(durableSession?.revision);
         setSending(true);
         try {
             await submitHarnessRun(
@@ -701,7 +755,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
                 userMessage.attachments || [],
                 sid,
                 'queue',
-                expectedRevision > 0 ? expectedRevision : undefined,
+                expectedRevision,
                 userMessage.id,
             );
         } catch (error) {
@@ -762,7 +816,10 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
             : orderedAISessions.find((session) => session.id === sid);
         const pendingBranch = pendingConversationBranchRef.current;
         const branch = pendingBranch?.sourceSessionId === sid ? pendingBranch : null;
-        const expectedRevision = branch?.sourceRevision ?? Number(durableSession?.revision || 0);
+        const targetSessionId = branch
+            ? branch.sourceSessionId
+            : (sid === 'session-fallback' ? undefined : sid);
+        const expectedRevision = branch?.sourceRevision ?? positiveRevision(durableSession?.revision);
         setInput('');
         setDraftAttachments([]);
         setSending(true);
@@ -771,9 +828,9 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
             await submitHarnessRun(
                 text,
                 currentAttachments,
-                branch ? branch.sourceSessionId : (durableSession ? sid : undefined),
+                targetSessionId,
                 branch ? 'queue' : dispatchMode,
-                expectedRevision > 0 ? expectedRevision : undefined,
+                expectedRevision,
                 branch?.branchFromMessageId,
             );
             if (branch && pendingConversationBranchRef.current === branch) {
@@ -829,19 +886,20 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
                 .find(([, run]) => run.sessionId === sid && !isTerminalRunState(run.state));
             if (!candidate) return;
             const [runId, run] = candidate;
+            const expectedRevision = await resolveRunRevision(runId, run.revision, service);
             setSending(true);
             await controlAgentRun({
                 requestId: `agent-control-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
                 runId,
                 sessionId: sid,
                 action: 'cancel',
-                ...(run.revision > 0 ? { expectedRevision: run.revision } : {}),
+                expectedRevision,
             }, service);
         } catch (error) {
             console.warn('Failed to stop chat stream', error);
             setSending(false);
         }
-    }, [sid]);
+    }, [resolveRunRevision, sid]);
 
     const handleCreateSession = useCallback(() => {
         if (sending || interactionDisabled) return;
@@ -864,14 +922,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         const service = harnessServiceRef.current || getAIRunHarnessService();
         harnessServiceRef.current = service;
         if (service?.AIMutateAgentSession) {
-            let expectedRevision = Number(session.revision) || 0;
-            if (expectedRevision <= 0) {
-                const projection = await readAgentSession({ sessionId, limit: 1 }, service);
-                expectedRevision = Number(projection.revision) || 0;
-            }
-            if (expectedRevision <= 0) {
-                throw new Error('AI agent session revision is unavailable');
-            }
+            const expectedRevision = await resolveSessionRevision(sessionId, session.revision, service);
             await mutateAgentSession({
                 sessionId,
                 expectedRevision,
@@ -879,7 +930,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
             }, service);
         }
         deleteAISession(sessionId);
-    }, [deleteAISession]);
+    }, [deleteAISession, resolveSessionRevision]);
 
     const prepareForTerminalAction = useCallback(async () => {
         const service = harnessServiceRef.current || getAIRunHarnessService();
@@ -888,15 +939,18 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         const activeRuns = Array.from(activeRunsRef.current.entries())
             .filter(([, run]) => !isTerminalRunState(run.state));
         if (activeRuns.length === 0) return true;
-        const results = await Promise.allSettled(activeRuns.map(([runId, run]) => controlAgentRun({
-            requestId: `agent-shutdown-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            runId,
-            sessionId: run.sessionId,
-            action: 'cancel',
-            ...(run.revision > 0 ? { expectedRevision: run.revision } : {}),
-        }, service)));
+        const results = await Promise.allSettled(activeRuns.map(async ([runId, run]) => {
+            const expectedRevision = await resolveRunRevision(runId, run.revision, service);
+            return controlAgentRun({
+                requestId: `agent-shutdown-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                runId,
+                sessionId: run.sessionId,
+                action: 'cancel',
+                expectedRevision,
+            }, service);
+        }));
         return results.every((result) => result.status === 'fulfilled');
-    }, []);
+    }, [resolveRunRevision]);
 
     useEffect(() => {
         onRegisterTerminalGuard?.(prepareForTerminalAction);
