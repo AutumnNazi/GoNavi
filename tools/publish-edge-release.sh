@@ -407,7 +407,9 @@ done
 
 cst_driver_tag="$(cat "${status_root}/cst.driver-tag")"
 bero_driver_tag="$(cat "${status_root}/bero.driver-tag")"
-if [[ "${cst_driver_tag}" != "${bero_driver_tag}" ]]; then
+# An app-only publication inherits each node's existing driver state. Those
+# states may legitimately differ when no driver payload was published.
+if [[ "${PUB_DRIVER_ENABLED}" == true && "${cst_driver_tag}" != "${bero_driver_tag}" ]]; then
   echo "Activated edge driver tags disagree: cst=${cst_driver_tag} bero=${bero_driver_tag}" >&2
   exit 1
 fi
@@ -415,6 +417,10 @@ if [[ "${PUB_DRIVER_ENABLED}" == true && "${cst_driver_tag}" != "${PUB_DRIVER_TA
   echo "Activated edge driver tag does not match the published driver tag" >&2
   exit 1
 fi
-effective_driver_tag="${cst_driver_tag}"
+if [[ "${PUB_DRIVER_ENABLED}" == true ]]; then
+  effective_driver_tag="${cst_driver_tag}"
+else
+  effective_driver_tag=""
+fi
 
 echo "Published generation ${PUB_GENERATION}: cst=true bero=true (static dispatcher)"
