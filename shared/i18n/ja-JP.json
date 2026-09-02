@@ -6988,6 +6988,8 @@
   "query_editor.action.resize_editor": "ドラッグして高さを変更",
   "query_editor.action.results": "結果",
   "query_editor.action.run": "実行",
+  "query_editor.action.run_all_sql": "すべての SQL を実行",
+  "query_editor.action.run_selected_sql": "選択した SQL を実行",
   "query_editor.action.save_as": "名前を付けて保存",
   "query_editor.action.run_with_shortcut": "実行（{{shortcut}}）",
   "query_editor.action.save": "保存",

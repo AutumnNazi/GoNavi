@@ -6988,6 +6988,8 @@
   "query_editor.action.resize_editor": "Перетащите, чтобы изменить высоту",
   "query_editor.action.results": "Результаты",
   "query_editor.action.run": "Выполнить",
+  "query_editor.action.run_all_sql": "Выполнить весь SQL",
+  "query_editor.action.run_selected_sql": "Выполнить выбранный SQL",
   "query_editor.action.save_as": "Сохранить как",
   "query_editor.action.run_with_shortcut": "Выполнить ({{shortcut}})",
   "query_editor.action.save": "Сохранить",

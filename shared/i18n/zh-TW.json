@@ -6988,6 +6988,8 @@
   "query_editor.action.resize_editor": "拖曳以調整高度",
   "query_editor.action.results": "結果",
   "query_editor.action.run": "執行",
+  "query_editor.action.run_all_sql": "執行所有 SQL",
+  "query_editor.action.run_selected_sql": "執行目前選取的 SQL",
   "query_editor.action.save_as": "另存為",
   "query_editor.action.run_with_shortcut": "執行（{{shortcut}}）",
   "query_editor.action.save": "儲存",

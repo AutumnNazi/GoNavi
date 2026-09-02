@@ -6988,6 +6988,8 @@
   "query_editor.action.resize_editor": "Drag to resize height",
   "query_editor.action.results": "Results",
   "query_editor.action.run": "Run",
+  "query_editor.action.run_all_sql": "Run All SQL",
+  "query_editor.action.run_selected_sql": "Run Selected SQL",
   "query_editor.action.save_as": "Save as",
   "query_editor.action.run_with_shortcut": "Run ({{shortcut}})",
   "query_editor.action.save": "Save",

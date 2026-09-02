@@ -298,6 +298,8 @@ export {
 const buildQueryEditorMonacoActionLabel = (key: string): string =>
     `GoNavi: ${translate(key)}`;
 
+type QueryEditorRunScope = 'default' | 'selection' | 'all';
+
 const QUERY_EDITOR_NATIVE_SELECT_CURRENT_LINE_EVENT = 'gonavi:native-select-current-line';
 const QUERY_EDITOR_MAC_FIND_WITH_SELECTION_COMBO = 'Meta+E';
 const QUERY_EDITOR_MAC_FIND_WITH_SELECTION_GUARD_ACTION_ID = 'gonavi.suppressMacFindWithSelection';
@@ -1903,10 +1905,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const editorShellRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
-  const handleRunRef = useRef<(() => Promise<void>) | null>(null);
+  const handleRunRef = useRef<((scope?: QueryEditorRunScope) => Promise<void>) | null>(null);
   const pendingRunAfterSchemaLoadRef = useRef(false);
   const deferredContextRunSeqRef = useRef(0);
   const runQueryActionRef = useRef<any>(null);
+  const sqlExecutionContextMenuActionDisposablesRef = useRef<any[]>([]);
   const selectCurrentStatementActionRef = useRef<any>(null);
   const macFindWithSelectionGuardActionRef = useRef<any>(null);
   const duplicateCurrentLineActionRef = useRef<any>(null);
@@ -2304,6 +2307,53 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           run: handleOpenSqlSnippetPicker,
       });
   }, [handleOpenSqlSnippetPicker, isElasticsearchMode]);
+
+  const disposeSqlExecutionContextMenuActions = useCallback(() => {
+      sqlExecutionContextMenuActionDisposablesRef.current.forEach((disposable) => disposable?.dispose?.());
+      sqlExecutionContextMenuActionDisposablesRef.current = [];
+  }, []);
+
+  const registerSqlExecutionContextMenuActions = useCallback((editor: any) => {
+      disposeSqlExecutionContextMenuActions();
+      if (!editor || isElasticsearchMode) {
+          return;
+      }
+
+      const actions: Array<{
+          id: string;
+          label: string;
+          scope: Exclude<QueryEditorRunScope, 'default'>;
+          contextMenuOrder: number;
+          precondition?: string;
+      }> = [
+          {
+              id: 'gonavi.runSelectedSql',
+              label: translate('query_editor.action.run_selected_sql'),
+              scope: 'selection',
+              contextMenuOrder: 1,
+              precondition: 'editorHasSelection',
+          },
+          {
+              id: 'gonavi.runAllSql',
+              label: translate('query_editor.action.run_all_sql'),
+              scope: 'all',
+              contextMenuOrder: 2,
+          },
+      ];
+
+      sqlExecutionContextMenuActionDisposablesRef.current = actions.map((action) => editor.addAction({
+          id: action.id,
+          label: action.label,
+          precondition: action.precondition,
+          contextMenuGroupId: '0_execution',
+          contextMenuOrder: action.contextMenuOrder,
+          run: () => {
+              window.dispatchEvent(new CustomEvent('gonavi:run-active-query', {
+                  detail: { scope: action.scope },
+              }));
+          },
+      }));
+  }, [disposeSqlExecutionContextMenuActions, isElasticsearchMode, languagePreference]);
 
   const disposeTransformCaseContextMenuActions = useCallback(() => {
       transformCaseActionDisposablesRef.current.forEach((disposable) => disposable?.dispose?.());
@@ -6629,6 +6679,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               sharedActiveEditorModelUri = '';
           }
           disposeQueryEditorAiContextMenuActions();
+          disposeSqlExecutionContextMenuActions();
           disposeTransformCaseContextMenuActions();
           window.removeEventListener('keydown', syncModifierState);
           window.removeEventListener('keyup', syncModifierState);
@@ -6646,6 +6697,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
       refreshObjectDecorations();
 
+      // 注册 SQL 执行右键菜单操作
+      registerSqlExecutionContextMenuActions(editor);
       // 注册 AI 右键菜单操作
       registerQueryEditorAiContextMenuActions(editor);
       registerInsertSqlSnippetContextMenuAction(editor);
@@ -9450,9 +9503,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       }
   };
 
-  const handleRun = async () => {
+  const handleRun = async (runScope: QueryEditorRunScope = 'default') => {
     if (isElasticsearchMode) {
-        await handleElasticsearchRun(false);
+        await handleElasticsearchRun(runScope === 'all');
         return;
     }
     if (canSelectQuerySchema && schemaLoading) {
@@ -9461,7 +9514,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
     }
     const currentQuery = getCurrentQuery();
     if (!currentQuery.trim()) return;
-    const executableSQL = getExecutableSQL();
+    const executableSQL = runScope === 'all'
+        ? currentQuery
+        : runScope === 'selection'
+            ? getSelectedSQL()
+            : getExecutableSQL();
     if (!executableSQL.trim()) {
         message.info(translate('query_editor.message.no_executable_sql'));
         clearUnpinnedResultSets();
@@ -10452,6 +10509,17 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const editor = editorRef.current;
       if (!editor) return;
 
+      registerSqlExecutionContextMenuActions(editor);
+
+      return () => {
+          disposeSqlExecutionContextMenuActions();
+      };
+  }, [disposeSqlExecutionContextMenuActions, languagePreference, registerSqlExecutionContextMenuActions]);
+
+  useEffect(() => {
+      const editor = editorRef.current;
+      if (!editor) return;
+
       registerTransformCaseContextMenuActions(editor);
 
       return () => {
@@ -10846,7 +10914,15 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           if (!isActive) {
               return;
           }
-          if ((event as CustomEvent<{ requireSelection?: boolean }>).detail?.requireSelection) {
+          const detail = (event as CustomEvent<{
+              requireSelection?: boolean;
+              scope?: QueryEditorRunScope;
+          }>).detail;
+          if (detail?.scope === 'selection' || detail?.scope === 'all') {
+              void handleRun(detail.scope);
+              return;
+          }
+          if (detail?.requireSelection) {
               void handleRunSelectedShortcut();
               return;
           }

@@ -7913,6 +7913,89 @@ describe('QueryEditor external SQL save', () => {
     expect(editorState.transformToLowercaseRun).toHaveBeenCalledOnce();
   });
 
+  it('registers SQL execution context-menu actions with selection and all scopes', async () => {
+    await act(async () => {
+      create(<QueryEditor tab={createTab()} />);
+    });
+
+    expect(findEditorAction('gonavi.runSelectedSql')).toMatchObject({
+      label: '执行当前选中 SQL',
+      precondition: 'editorHasSelection',
+      contextMenuGroupId: '0_execution',
+      contextMenuOrder: 1,
+    });
+    expect(findEditorAction('gonavi.runAllSql')).toMatchObject({
+      label: '执行所有 SQL',
+      contextMenuGroupId: '0_execution',
+      contextMenuOrder: 2,
+    });
+  });
+
+  it('executes selected or full editor SQL from the context-menu actions', async () => {
+    const listeners = new Map<string, Set<(event: Event) => void>>();
+    const addEventListener = window.addEventListener as any;
+    const removeEventListener = window.removeEventListener as any;
+    const dispatchEvent = window.dispatchEvent as any;
+    addEventListener.mockImplementation((type: string, listener: (event: Event) => void) => {
+      const current = listeners.get(type) ?? new Set<(event: Event) => void>();
+      current.add(listener);
+      listeners.set(type, current);
+    });
+    removeEventListener.mockImplementation((type: string, listener: (event: Event) => void) => {
+      listeners.get(type)?.delete(listener);
+    });
+    dispatchEvent.mockImplementation((event: Event) => {
+      listeners.get(event.type)?.forEach((listener) => listener(event));
+      return true;
+    });
+    backendApp.DBQueryMulti.mockResolvedValue({ success: true, data: [] });
+
+    await act(async () => {
+      create(<QueryEditor tab={createTab({
+        query: 'select 1;\nselect 2;',
+      })} />);
+    });
+
+    const selectedAction = findEditorAction('gonavi.runSelectedSql');
+    const allAction = findEditorAction('gonavi.runAllSql');
+    editorState.selection = {
+      startLineNumber: 2,
+      startColumn: 1,
+      endLineNumber: 2,
+      endColumn: 'select 2;'.length + 1,
+    };
+
+    await act(async () => {
+      selectedAction.run(editorState.editor);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(backendApp.DBQueryMulti).toHaveBeenCalledWith(
+      expect.anything(),
+      'main',
+      expect.stringContaining('select 2'),
+      'query-1',
+    );
+    expect(String(backendApp.DBQueryMulti.mock.calls[0][2])).not.toContain('select 1');
+
+    backendApp.DBQueryMulti.mockClear();
+    editorState.selection = null;
+    await act(async () => {
+      allAction.run(editorState.editor);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(backendApp.DBQueryMulti).toHaveBeenCalledWith(
+      expect.anything(),
+      'main',
+      expect.stringContaining('select 1'),
+      'query-1',
+    );
+    expect(String(backendApp.DBQueryMulti.mock.calls[0][2])).toContain('select 2');
+  });
+
   it('localizes Monaco action labels for the active language', async () => {
     setCurrentLanguage('en-US');
     storeState.shortcutOptions.runQuery.mac = { enabled: true, combo: 'Meta+Q' };

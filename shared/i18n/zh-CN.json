@@ -6988,6 +6988,8 @@
   "query_editor.action.resize_editor": "拖动调整高度",
   "query_editor.action.results": "结果",
   "query_editor.action.run": "运行",
+  "query_editor.action.run_all_sql": "执行所有 SQL",
+  "query_editor.action.run_selected_sql": "执行当前选中 SQL",
   "query_editor.action.save_as": "另存为",
   "query_editor.action.run_with_shortcut": "运行（{{shortcut}}）",
   "query_editor.action.save": "保存",

@@ -936,7 +936,7 @@ describe("i18n catalog", () => {
     const source = readQueryEditorSource();
     const handleRunSource = sliceBetween(
       source,
-      "const handleRun = async () => {",
+      "const handleRun = async (runScope: QueryEditorRunScope = 'default') => {",
       "  const handleCancel = async () => {",
     );
     const handleCancelSource = sliceBetween(
@@ -966,7 +966,7 @@ describe("i18n catalog", () => {
     const source = readQueryEditorSource();
     const handleRunSource = sliceBetween(
       source,
-      "const handleRun = async () => {",
+      "const handleRun = async (runScope: QueryEditorRunScope = 'default') => {",
       "  const handleCancel = async () => {",
     );
 
@@ -992,7 +992,7 @@ describe("i18n catalog", () => {
     const source = readQueryEditorSource();
     const handleRunSource = sliceBetween(
       source,
-      "const handleRun = async () => {",
+      "const handleRun = async (runScope: QueryEditorRunScope = 'default') => {",
       "  const handleCancel = async () => {",
     );
 
@@ -1013,7 +1013,7 @@ describe("i18n catalog", () => {
     const handleReloadSource = sliceBetween(
       source,
       "  const handleReloadResult = async (resultKey: string, sql: string) => {",
-      "  const handleRun = async () => {",
+      "  const handleRun = async (runScope: QueryEditorRunScope = 'default') => {",
     );
 
     for (const language of SUPPORTED_LANGUAGES) {
@@ -1814,6 +1814,8 @@ describe("i18n catalog", () => {
       "app.shortcuts.action.saveQuery.label",
       "app.shortcuts.action.saveQueryAs.label",
       "query_editor.action.show_object_info",
+      "query_editor.action.run_selected_sql",
+      "query_editor.action.run_all_sql",
     ] as const;
     const source = readQueryEditorSource();
     const actionLabelSource = [

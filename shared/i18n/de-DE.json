@@ -6988,6 +6988,8 @@
   "query_editor.action.resize_editor": "Höhe durch Ziehen ändern",
   "query_editor.action.results": "Ergebnisse",
   "query_editor.action.run": "Ausführen",
+  "query_editor.action.run_all_sql": "Gesamtes SQL ausführen",
+  "query_editor.action.run_selected_sql": "Ausgewähltes SQL ausführen",
   "query_editor.action.save_as": "Speichern unter",
   "query_editor.action.run_with_shortcut": "Ausführen ({{shortcut}})",
   "query_editor.action.save": "Speichern",
