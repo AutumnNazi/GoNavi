@@ -6,6 +6,7 @@ import {
     buildQueryEditorInlineCompletionContext,
     buildQueryEditorTextToElasticsearchMessages,
     buildQueryEditorTextToSqlMessages,
+    isQueryEditorInlineTableAliasPending,
     requestQueryEditorTextToElasticsearch,
     requestQueryEditorInlineCompletion,
     resolveInlineSqlGhostPreviewText,
@@ -850,6 +851,57 @@ describe('QueryEditorAiAssist', () => {
             },
         })).resolves.toBe('su');
         expect(service.AISubmitAgentInput).not.toHaveBeenCalled();
+    });
+
+    it('does not suggest aliases after DML targets but keeps INSERT SELECT aliases', async () => {
+        const service = readyService('SELECT * FROM system_user su;');
+        const request = {
+            service,
+            aiContext: {
+                connectionName: 'Local MySQL',
+                sourceType: 'mysql',
+                currentDb: 'shop',
+                tables: [{ dbName: 'shop', tableName: 'system_user' }],
+                columns: [],
+            },
+        };
+        const makeSnapshot = (prefix: string) => ({
+            prefix,
+            suffix: '',
+            currentLineBeforeCursor: prefix,
+            currentLineAfterCursor: '',
+        });
+
+        for (const prefix of [
+            'UPDATE system_user ',
+            'DELETE FROM system_user ',
+            'INSERT INTO system_user ',
+            'REPLACE INTO system_user ',
+            'MERGE INTO system_user ',
+        ]) {
+            const snapshot = makeSnapshot(prefix);
+            expect(isQueryEditorInlineTableAliasPending(snapshot)).toBe(false);
+            const insertText = await requestQueryEditorInlineCompletion({
+                ...request,
+                editorSnapshot: snapshot,
+            });
+            expect(insertText).not.toBe('AS su');
+            expect(insertText).not.toBe('su');
+        }
+
+        const insertSelectSnapshot = makeSnapshot('INSERT INTO audit_log SELECT * FROM system_user ');
+        expect(isQueryEditorInlineTableAliasPending(insertSelectSnapshot)).toBe(true);
+        await expect(requestQueryEditorInlineCompletion({
+            ...request,
+            editorSnapshot: insertSelectSnapshot,
+        })).resolves.toBe('AS su');
+
+        const functionSelectSnapshot = makeSnapshot("SELECT REPLACE(name, 'x', 'y') FROM system_user ");
+        expect(isQueryEditorInlineTableAliasPending(functionSelectSnapshot)).toBe(true);
+        await expect(requestQueryEditorInlineCompletion({
+            ...request,
+            editorSnapshot: functionSelectSnapshot,
+        })).resolves.toBe('AS su');
     });
 
     it('uses the resolved OceanBase Oracle dialect for table aliases', async () => {

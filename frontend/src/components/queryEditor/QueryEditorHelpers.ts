@@ -2120,11 +2120,16 @@ type QueryEditorSqlReferenceToken = {
     quoted: boolean;
 };
 
+type QueryEditorSqlStatementKind = 'select' | 'insert' | 'update' | 'delete' | 'replace' | 'merge';
+type QueryEditorSqlTableSourceKind = 'from' | 'join' | 'comma' | 'update' | 'into';
+
 type QueryEditorSqlReferenceDepthState = {
     fromListActive: boolean;
     queryStatementActive: boolean;
     sourceContextActive: boolean;
-    expectsSource?: 'from' | 'join' | 'comma' | 'update' | 'into';
+    statementKind?: QueryEditorSqlStatementKind;
+    sourceContextKind?: QueryEditorSqlTableSourceKind;
+    expectsSource?: QueryEditorSqlTableSourceKind;
 };
 
 const QUERY_EDITOR_SQL_REFERENCE_PUNCTUATION = new Set(['(', ')', '.', ',', ';']);
@@ -2170,6 +2175,7 @@ const isQueryEditorSqlIdentifierToken = (token: QueryEditorSqlReferenceToken | u
 const analyzeQueryEditorTableReferences = (source: string): {
     references: QueryEditorTableReference[];
     expectsTableSource: boolean;
+    allowsTableAlias: boolean;
 } => {
     const tokens = tokenizeQueryEditorSqlReferences(String(source || ''));
     const references: QueryEditorTableReference[] = [];
@@ -2186,6 +2192,8 @@ const analyzeQueryEditorTableReferences = (source: string): {
                 fromListActive: false,
                 queryStatementActive: false,
                 sourceContextActive: false,
+                statementKind: undefined,
+                sourceContextKind: undefined,
             };
         }
         return states[depth];
@@ -2205,6 +2213,8 @@ const analyzeQueryEditorTableReferences = (source: string): {
                 fromListActive: false,
                 queryStatementActive: false,
                 sourceContextActive: false,
+                statementKind: undefined,
+                sourceContextKind: undefined,
             };
             continue;
         }
@@ -2217,6 +2227,8 @@ const analyzeQueryEditorTableReferences = (source: string): {
             state.fromListActive = false;
             state.queryStatementActive = false;
             state.sourceContextActive = false;
+            state.statementKind = undefined;
+            state.sourceContextKind = undefined;
             state.expectsSource = undefined;
             continue;
         }
@@ -2224,6 +2236,7 @@ const analyzeQueryEditorTableReferences = (source: string): {
             if (state.fromListActive) {
                 state.expectsSource = 'comma';
                 state.sourceContextActive = true;
+                state.sourceContextKind = 'comma';
             }
             continue;
         }
@@ -2260,6 +2273,7 @@ const analyzeQueryEditorTableReferences = (source: string): {
                 && (sourceKind === 'from' || sourceKind === 'join' || sourceKind === 'comma')
             ) {
                 state.sourceContextActive = false;
+                state.sourceContextKind = undefined;
                 index = pathEnd;
                 continue;
             }
@@ -2303,47 +2317,82 @@ const analyzeQueryEditorTableReferences = (source: string): {
                 ...(alias ? { alias } : {}),
             });
             state.sourceContextActive = !alias;
+            state.sourceContextKind = sourceKind;
             index = consumedEnd;
             continue;
         }
 
-        if (keyword === 'select' || keyword === 'delete') {
+        if (keyword === 'select') {
             state.queryStatementActive = true;
+            // INSERT/REPLACE ... SELECT 会切换到内部查询；已识别的其它语句
+            // 类型不能被表达式或函数名中的同名标识符覆盖。
+            if (!state.statementKind || state.statementKind === 'insert' || state.statementKind === 'replace') {
+                state.statementKind = 'select';
+            }
             state.sourceContextActive = false;
+            state.sourceContextKind = undefined;
+            continue;
+        }
+        if (keyword === 'delete' || keyword === 'insert' || keyword === 'replace' || keyword === 'merge') {
+            if (!state.statementKind) {
+                state.queryStatementActive = true;
+                state.statementKind = keyword as QueryEditorSqlStatementKind;
+                state.sourceContextActive = false;
+                state.sourceContextKind = undefined;
+            }
+            continue;
+        }
+        if (keyword === 'update') {
+            if (!state.statementKind) {
+                state.queryStatementActive = true;
+                state.statementKind = 'update';
+                state.expectsSource = 'update';
+                state.sourceContextActive = true;
+                state.sourceContextKind = 'update';
+            }
             continue;
         }
         if (keyword === 'from' && state.queryStatementActive) {
             state.fromListActive = true;
             state.expectsSource = 'from';
             state.sourceContextActive = true;
+            state.sourceContextKind = 'from';
             continue;
         }
         if (keyword === 'join' || keyword === 'straight_join' || keyword === 'apply') {
             state.fromListActive = true;
             state.expectsSource = 'join';
             state.sourceContextActive = true;
+            state.sourceContextKind = 'join';
             continue;
         }
-        if (keyword === 'update' || keyword === 'into') {
+        if (keyword === 'into') {
             state.queryStatementActive = true;
             state.expectsSource = keyword;
             state.sourceContextActive = true;
+            state.sourceContextKind = keyword;
             continue;
         }
         if (QUERY_EDITOR_SQL_FROM_LIST_END_WORDS.has(keyword)) {
             state.fromListActive = false;
             state.sourceContextActive = false;
+            state.sourceContextKind = undefined;
             state.expectsSource = undefined;
             continue;
         }
         if (QUERY_EDITOR_SQL_TABLE_ALIAS_RESERVED_WORDS.has(keyword)) {
             state.sourceContextActive = false;
+            state.sourceContextKind = undefined;
         }
     }
 
+    const state = getState();
     return {
         references,
-        expectsTableSource: getState().sourceContextActive,
+        expectsTableSource: state.sourceContextActive,
+        allowsTableAlias: state.sourceContextActive
+            && state.statementKind === 'select'
+            && (state.sourceContextKind === 'from' || state.sourceContextKind === 'join' || state.sourceContextKind === 'comma'),
     };
 };
 
@@ -2355,13 +2404,9 @@ export const isQueryEditorTableSourceCompletionContext = (source: string): boole
     analyzeQueryEditorTableReferences(source).expectsTableSource
 );
 
-export const isQueryEditorTableAliasCompletionContext = (source: string): boolean => {
-    if (!isQueryEditorTableSourceCompletionContext(source)) {
-        return false;
-    }
-    return !/\b(?:INSERT|REPLACE)\s+INTO\s+(?:[`"\[]?[A-Za-z_][\w$]*[`"\]]?\s*\.\s*){0,2}[`"\[]?[A-Za-z_][\w$]*[`"\]]?\s*$/i
-        .test(source);
-};
+export const isQueryEditorTableAliasCompletionContext = (source: string): boolean => (
+    analyzeQueryEditorTableReferences(source).allowsTableAlias
+);
 
 export type QueryEditorAliasMap = Record<
     string,

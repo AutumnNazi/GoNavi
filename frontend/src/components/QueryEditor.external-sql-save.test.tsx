@@ -4092,6 +4092,32 @@ describe('QueryEditor external SQL save', () => {
     expect(insertResult.suggestions.find((item: any) => item.label === 'system_user')?.insertText)
       .toBe('system_user');
 
+    for (const sql of [
+      'UPDATE system',
+      'DELETE FROM system',
+      'INSERT INTO system',
+      'REPLACE INTO system',
+      'MERGE INTO system',
+    ]) {
+      editorState.value = sql;
+      editorState.latestOnChange?.(editorState.value);
+      const dmlResult = await sqlProvider.provideCompletionItems(
+        editorState.editor.getModel(),
+        { lineNumber: 1, column: editorState.value.length + 1 },
+      );
+      expect(dmlResult.suggestions.find((item: any) => item.label === 'system_user')?.insertText)
+        .toBe('system_user');
+    }
+
+    editorState.value = 'INSERT INTO audit_log SELECT * FROM system';
+    editorState.latestOnChange?.(editorState.value);
+    const insertSelectResult = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+    expect(insertSelectResult.suggestions.find((item: any) => item.label === 'system_user')?.insertText)
+      .toBe('system_user AS su');
+
     await act(async () => {
       renderer.unmount();
     });
