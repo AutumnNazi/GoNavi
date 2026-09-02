@@ -28,6 +28,10 @@
 </p>
 
 <p align="center">
+  <a href="https://mcpvault.io/servers/gonavi/health?utm_source=external_badge&utm_medium=referral&utm_campaign=mcp_health_report"><img src="https://mcpvault.io/badge/gonavi.svg" alt="MCPVault: claimed" /></a>
+</p>
+
+<p align="center">
   <b>语言</b>：<a href="README.md">English</a> · 简体中文
   &nbsp;·&nbsp;
   <a href="https://gonavi.org"><b>🌐 官网</b></a>
