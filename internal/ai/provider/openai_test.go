@@ -3,14 +3,51 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"GoNavi-Wails/internal/ai"
 )
+
+type openAIRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn openAIRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+func TestOpenAIHTTPClientSeparatesStreamBodyAndResponseHeaderTimeouts(t *testing.T) {
+	client := newOpenAIHTTPClient()
+	if client.Timeout != openAIHTTPTimeout {
+		t.Fatalf("non-stream client timeout = %s, want %s", client.Timeout, openAIHTTPTimeout)
+	}
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport type = %T, want *http.Transport", client.Transport)
+	}
+	if transport.ResponseHeaderTimeout != openAIHTTPTimeout {
+		t.Fatalf("response header timeout = %s, want %s", transport.ResponseHeaderTimeout, openAIHTTPTimeout)
+	}
+
+	streamClient := openAIHTTPClientForRequest(client, true)
+	if streamClient == client {
+		t.Fatal("stream client must be a shallow copy so its timeout cannot mutate non-stream requests")
+	}
+	if streamClient.Timeout != 0 {
+		t.Fatalf("stream client timeout = %s, want 0 to avoid bounding SSE body reads", streamClient.Timeout)
+	}
+	if streamClient.Transport != client.Transport {
+		t.Fatal("stream client must preserve the transport and its response-header/connect limits")
+	}
+
+	if got := openAIHTTPClientForRequest(client, false); got != client {
+		t.Fatal("non-stream request must retain the original client timeout")
+	}
+}
 
 func TestNormalizeOpenAICompatibleBaseURL(t *testing.T) {
 	tests := []struct {
@@ -444,6 +481,146 @@ func TestOpenAIProviderChatStreamMovesSystemMessagesToRequestPrefix(t *testing.T
 	}
 	if len(received.Messages) != 2 || received.Messages[0].Role != "system" || received.Messages[1].Role != "user" {
 		t.Fatalf("expected system message before user message, got %#v", received.Messages)
+	}
+}
+
+func TestOpenAIProviderChatStreamOutlivesHTTPClientTimeout(t *testing.T) {
+	const clientTimeout = 50 * time.Millisecond
+	attempts := 0
+	transport := openAIRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		attempts++
+		reader, writer := io.Pipe()
+		go func() {
+			defer writer.Close()
+			_, _ = io.WriteString(writer, "data: {\"choices\":[{\"delta\":{\"content\":\"slow \"}}]}\n\n")
+
+			timer := time.NewTimer(3 * clientTimeout)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+				_, _ = io.WriteString(writer, "data: {\"choices\":[{\"delta\":{\"content\":\"done\"},\"finish_reason\":\"stop\"}]}\n\n")
+			case <-req.Context().Done():
+				_ = writer.CloseWithError(req.Context().Err())
+			}
+		}()
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       reader,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Request:    req,
+		}, nil
+	})
+
+	providerInstance, err := NewOpenAIProvider(ai.ProviderConfig{
+		Type: "custom", APIKey: "sk-test", BaseURL: "https://provider.test/v1", Model: "glm-test",
+	})
+	if err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	provider := providerInstance.(*OpenAIProvider)
+	provider.client = &http.Client{Transport: transport, Timeout: clientTimeout}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	var content strings.Builder
+	done := false
+	err = provider.ChatStream(ctx, ai.ChatRequest{
+		Messages: []ai.Message{{Role: "user", Content: "ping"}},
+	}, func(chunk ai.StreamChunk) {
+		content.WriteString(chunk.Content)
+		done = done || chunk.Done
+	})
+	if err != nil {
+		t.Fatalf("slow stream: %v", err)
+	}
+	if content.String() != "slow done" || !done {
+		t.Fatalf("chunks content=%q done=%t", content.String(), done)
+	}
+	if attempts != 1 {
+		t.Fatalf("requests=%d, want 1 (no retry)", attempts)
+	}
+}
+
+func TestOpenAIProviderChatStreamRespectsContextCancellation(t *testing.T) {
+	transport := openAIRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		reader, writer := io.Pipe()
+		go func() {
+			_, _ = io.WriteString(writer, "data: {\"choices\":[{\"delta\":{\"content\":\"started\"}}]}\n\n")
+			<-req.Context().Done()
+			_ = writer.CloseWithError(req.Context().Err())
+		}()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       reader,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Request:    req,
+		}, nil
+	})
+
+	providerInstance, err := NewOpenAIProvider(ai.ProviderConfig{
+		Type: "custom", APIKey: "sk-test", BaseURL: "https://provider.test/v1", Model: "glm-test",
+	})
+	if err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	provider := providerInstance.(*OpenAIProvider)
+	provider.client = &http.Client{Transport: transport, Timeout: 50 * time.Millisecond}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err = provider.ChatStream(ctx, ai.ChatRequest{
+		Messages: []ai.Message{{Role: "user", Content: "ping"}},
+	}, func(chunk ai.StreamChunk) {
+		if chunk.Content == "started" {
+			cancel()
+		}
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("stream error=%v, want context canceled", err)
+	}
+}
+
+func TestOpenAIProviderChatStreamBoundsErrorBodyRead(t *testing.T) {
+	const clientTimeout = 40 * time.Millisecond
+	transport := openAIRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		reader, writer := io.Pipe()
+		go func() {
+			<-req.Context().Done()
+			_ = writer.CloseWithError(req.Context().Err())
+		}()
+		return &http.Response{
+			StatusCode:    http.StatusBadRequest,
+			Body:          reader,
+			ContentLength: -1,
+			Header:        http.Header{"Content-Type": []string{"application/json"}},
+			Request:       req,
+		}, nil
+	})
+
+	providerInstance, err := NewOpenAIProvider(ai.ProviderConfig{
+		Type: "custom", APIKey: "sk-test", BaseURL: "https://provider.test/v1", Model: "glm-test",
+	})
+	if err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	provider := providerInstance.(*OpenAIProvider)
+	provider.client = &http.Client{Transport: transport, Timeout: clientTimeout}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*clientTimeout)
+	defer cancel()
+	started := time.Now()
+	err = provider.ChatStream(ctx, ai.ChatRequest{
+		Messages: []ai.Message{{Role: "user", Content: "ping"}},
+	}, func(ai.StreamChunk) {})
+	if err == nil || !strings.Contains(err.Error(), "error response body read timed out") {
+		t.Fatalf("stream error=%v, want bounded error-body timeout", err)
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("outer context ended unexpectedly: %v", ctx.Err())
+	}
+	if elapsed := time.Since(started); elapsed > 5*clientTimeout {
+		t.Fatalf("error body read returned after %s, want timeout near %s", elapsed, clientTimeout)
 	}
 }
 

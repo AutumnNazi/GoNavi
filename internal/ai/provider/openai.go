@@ -28,6 +28,18 @@ type OpenAIProvider struct {
 	client  *http.Client
 }
 
+var openAIHTTPTransport = func() http.RoundTripper {
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return http.DefaultTransport
+	}
+	transport = transport.Clone()
+	// Streaming requests must not use Client.Timeout for the whole SSE body,
+	// but connecting and waiting for the response headers remains bounded.
+	transport.ResponseHeaderTimeout = openAIHTTPTimeout
+	return transport
+}()
+
 // NewOpenAIProvider 创建 OpenAI Provider 实例
 func NewOpenAIProvider(config ai.ProviderConfig) (Provider, error) {
 	baseURL := NormalizeOpenAICompatibleBaseURL(config.BaseURL)
@@ -55,10 +67,58 @@ func NewOpenAIProvider(config ai.ProviderConfig) (Provider, error) {
 	return &OpenAIProvider{
 		config:  normalized,
 		baseURL: baseURL,
-		client: &http.Client{
-			Timeout: openAIHTTPTimeout,
-		},
+		client:  newOpenAIHTTPClient(),
 	}, nil
+}
+
+func newOpenAIHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout:   openAIHTTPTimeout,
+		Transport: openAIHTTPTransport,
+	}
+}
+
+func openAIHTTPClientForRequest(client *http.Client, stream bool) *http.Client {
+	if !stream || client == nil || client.Timeout == 0 {
+		return client
+	}
+
+	// http.Client.Timeout includes reading the response body. Make a shallow
+	// copy for SSE so the request context, not the full-body timeout, owns its
+	// lifecycle while preserving the configured transport and redirect policy.
+	streamClient := *client
+	streamClient.Timeout = 0
+	return &streamClient
+}
+
+func openAIErrorBodyReadTimeout(client *http.Client) time.Duration {
+	if client != nil && client.Timeout > 0 {
+		return client.Timeout
+	}
+	return openAIHTTPTimeout
+}
+
+// readOpenAIStreamingErrorBody gives streamed requests an independently
+// bounded error-body read. The stream client intentionally has no whole-body
+// timeout, so a proxy that sends an error status then never finishes its body
+// must not leave the run stuck forever.
+func readOpenAIStreamingErrorBody(body io.ReadCloser, contentLength int64, timeout time.Duration) string {
+	if timeout <= 0 {
+		return readProviderErrorBody(body, contentLength)
+	}
+
+	timedOut := make(chan struct{})
+	timer := time.AfterFunc(timeout, func() {
+		_ = body.Close()
+		close(timedOut)
+	})
+	detail := readProviderErrorBody(body, contentLength)
+	if timer.Stop() {
+		return detail
+	}
+
+	<-timedOut
+	return fmt.Sprintf("[error response body read timed out after %s]", timeout)
 }
 
 func (p *OpenAIProvider) applyThinkingToRequest(body *openAIChatRequest) {
@@ -698,8 +758,16 @@ func (p *OpenAIProvider) doRequest(ctx context.Context, body interface{}) (io.Re
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+p.config.APIKey)
 
+	stream := false
+	switch request := body.(type) {
+	case openAIChatRequest:
+		stream = request.Stream
+	case *openAIChatRequest:
+		stream = request != nil && request.Stream
+	}
+
 	// 仅在流式请求时明确声明 SSE，防止代理缓冲
-	if strings.Contains(string(jsonBody), `"stream":true`) || strings.Contains(string(jsonBody), `"stream": true`) {
+	if stream {
 		httpReq.Header.Set("Accept", "text/event-stream")
 		httpReq.Header.Set("Cache-Control", "no-cache")
 		httpReq.Header.Set("Connection", "keep-alive")
@@ -710,7 +778,7 @@ func (p *OpenAIProvider) doRequest(ctx context.Context, body interface{}) (io.Re
 		httpReq.Header.Set(k, v)
 	}
 
-	resp, err := p.client.Do(httpReq)
+	resp, err := openAIHTTPClientForRequest(p.client, stream).Do(httpReq)
 	if err != nil {
 		logAIUpstreamRequestFinish(requestLog, 0, err)
 		return nil, fmt.Errorf("request to %s failed: %w", url, err)
@@ -718,7 +786,13 @@ func (p *OpenAIProvider) doRequest(ctx context.Context, body interface{}) (io.Re
 
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
-		statusErr := fmt.Errorf("OpenAI API returned error (HTTP %d): %s", resp.StatusCode, readProviderErrorBody(resp.Body, resp.ContentLength))
+		errorDetail := ""
+		if stream {
+			errorDetail = readOpenAIStreamingErrorBody(resp.Body, resp.ContentLength, openAIErrorBodyReadTimeout(p.client))
+		} else {
+			errorDetail = readProviderErrorBody(resp.Body, resp.ContentLength)
+		}
+		statusErr := fmt.Errorf("OpenAI API returned error (HTTP %d): %s", resp.StatusCode, errorDetail)
 		logAIUpstreamRequestFinish(requestLog, resp.StatusCode, statusErr)
 		return nil, statusErr
 	}

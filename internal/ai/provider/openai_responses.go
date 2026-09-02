@@ -585,6 +585,82 @@ func openAIResponsesIncompleteError(result openAIResponsesResponse) error {
 	return fmt.Errorf("OpenAI Responses response incomplete: %s", reason)
 }
 
+// openAIResponsesTerminalError validates the final response envelope before
+// its output can update the conversation cursor. Some OpenAI-compatible
+// Responses endpoints emit response.completed even when the embedded response
+// itself failed, so the event type alone is not a success signal. Empty status
+// remains accepted for compatibility with providers that omit it on a normal
+// terminal event.
+func openAIResponsesTerminalError(result openAIResponsesResponse) error {
+	return openAIResponsesTerminalErrorWithDetails(
+		result,
+		false,
+		responseErrorMessage(result.Error),
+		responseErrorCode(result.Error),
+	)
+}
+
+// openAIResponsesCompletedStreamEventError applies the same terminal status
+// validation to a streamed completion event. A few OpenAI-compatible
+// providers put the failure detail on the event rather than inside response,
+// so accepting response.completed based on its embedded status alone would
+// incorrectly advance the provider state.
+func openAIResponsesCompletedStreamEventError(event openAIResponsesStreamEvent) error {
+	eventError := decodeOpenAIResponsesStreamError(event.Error)
+	hasTopLevelError := len(bytes.TrimSpace(event.Error)) > 0 && !bytes.Equal(bytes.TrimSpace(event.Error), []byte("null"))
+	hasTopLevelError = hasTopLevelError || strings.TrimSpace(event.Message) != "" || strings.TrimSpace(event.Code) != ""
+	return openAIResponsesTerminalErrorWithDetails(
+		event.Response,
+		hasTopLevelError,
+		responseErrorMessage(event.Response.Error),
+		eventError.Message,
+		event.Message,
+		responseErrorCode(event.Response.Error),
+		eventError.Code,
+		event.Code,
+	)
+}
+
+func openAIResponsesTerminalErrorWithDetails(
+	result openAIResponsesResponse,
+	hasTopLevelError bool,
+	details ...string,
+) error {
+	status := strings.ToLower(strings.TrimSpace(result.Status))
+	if status == "incomplete" || result.IncompleteDetails != nil {
+		return openAIResponsesIncompleteError(result)
+	}
+
+	if status == "" || status == "completed" {
+		if result.Error == nil && !hasTopLevelError {
+			return nil
+		}
+		if detail := firstOpenAIResponsesErrorDetail(details...); detail != "" {
+			return fmt.Errorf("OpenAI Responses API error: %s", detail)
+		}
+		return fmt.Errorf("OpenAI Responses API error")
+	}
+
+	if detail := firstOpenAIResponsesErrorDetail(details...); detail != "" {
+		return fmt.Errorf("OpenAI Responses response %s: %s", status, detail)
+	}
+	return fmt.Errorf("OpenAI Responses response %s", status)
+}
+
+func responseErrorMessage(detail *openAIResponsesError) string {
+	if detail == nil {
+		return ""
+	}
+	return detail.Message
+}
+
+func responseErrorCode(detail *openAIResponsesError) string {
+	if detail == nil {
+		return ""
+	}
+	return detail.Code
+}
+
 func (p *OpenAIResponsesProvider) Chat(ctx context.Context, req ai.ChatRequest) (*ai.ChatResponse, error) {
 	response, _, err := p.ChatWithState(ctx, nil, req)
 	return response, err
@@ -630,10 +706,7 @@ func (p *OpenAIResponsesProvider) ChatWithState(
 	if err := json.NewDecoder(respBody).Decode(&result); err != nil {
 		return nil, state, fmt.Errorf("parse OpenAI Responses response failed: %w", err)
 	}
-	if result.Error != nil && result.Error.Message != "" {
-		return nil, state, fmt.Errorf("OpenAI Responses API error: %s", result.Error.Message)
-	}
-	if err := openAIResponsesIncompleteError(result); err != nil {
+	if err := openAIResponsesTerminalError(result); err != nil {
 		return nil, state, err
 	}
 	normalizedOutput, err := normalizeOpenAIResponsesOutputToolCallArguments(result.Output)
@@ -769,6 +842,9 @@ func (p *OpenAIResponsesProvider) ChatStreamWithState(
 			}
 			upsertToolCall(event.OutputIndex, item, "")
 		case "response.completed":
+			if err := openAIResponsesCompletedStreamEventError(event); err != nil {
+				return state, err
+			}
 			normalizedOutput, err := normalizeOpenAIResponsesOutputToolCallArguments(event.Response.Output)
 			if err != nil {
 				return state, err

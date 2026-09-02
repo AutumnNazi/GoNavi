@@ -787,6 +787,26 @@ func TestOpenAIResponsesProviderChatReportsAPIAndEmptyOutputErrors(t *testing.T)
 			body: `{"id":"resp_incomplete","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"partial"}]}]}`,
 			want: "max_output_tokens",
 		},
+		{
+			name: "failed_output_with_code_only",
+			body: `{"id":"resp_failed","status":"failed","error":{"code":"provider_overloaded"},"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"must not be accepted"}]}]}`,
+			want: "provider_overloaded",
+		},
+		{
+			name: "completed_output_with_code_only_error",
+			body: `{"id":"resp_failed","status":"completed","error":{"code":"provider_overloaded"},"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"must not be accepted"}]}]}`,
+			want: "provider_overloaded",
+		},
+		{
+			name: "cancelled_output",
+			body: `{"id":"resp_cancelled","status":"cancelled","error":{"code":"user_cancelled"},"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"must not be accepted"}]}]}`,
+			want: "user_cancelled",
+		},
+		{
+			name: "unexpected_terminal_status",
+			body: `{"id":"resp_in_progress","status":"in_progress","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"must not be accepted"}]}]}`,
+			want: "in_progress",
+		},
 	}
 
 	for _, tt := range tests {
@@ -809,6 +829,88 @@ func TestOpenAIResponsesProviderChatReportsAPIAndEmptyOutputErrors(t *testing.T)
 			})
 			if err == nil || !strings.Contains(strings.ToLower(err.Error()), strings.ToLower(tt.want)) {
 				t.Fatalf("expected error containing %q, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
+func TestOpenAIResponsesProviderChatStreamRejectsInvalidTerminalEvent(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "failed",
+			body: `{"type":"response.completed","response":{"id":"resp_failed","status":"failed","error":{"code":"provider_overloaded"},"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"must not be accepted"}]}]}}`,
+			want: "provider_overloaded",
+		},
+		{
+			name: "incomplete",
+			body: `{"type":"response.completed","response":{"id":"resp_incomplete","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"partial"}]}]}}`,
+			want: "max_output_tokens",
+		},
+		{
+			name: "cancelled",
+			body: `{"type":"response.completed","response":{"id":"resp_cancelled","status":"cancelled","error":{"code":"user_cancelled"},"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"must not be accepted"}]}]}}`,
+			want: "user_cancelled",
+		},
+		{
+			name: "canceled",
+			body: `{"type":"response.completed","response":{"id":"resp_canceled","status":"canceled","error":{"code":"user_canceled"},"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"must not be accepted"}]}]}}`,
+			want: "user_canceled",
+		},
+		{
+			name: "unexpected_terminal_status",
+			body: `{"type":"response.completed","response":{"id":"resp_in_progress","status":"in_progress","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"must not be accepted"}]}]}}`,
+			want: "in_progress",
+		},
+		{
+			name: "completed_with_top_level_message",
+			body: `{"type":"response.completed","message":"upstream response failed","response":{"id":"resp_completed","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"must not be accepted"}]}]}}`,
+			want: "upstream response failed",
+		},
+		{
+			name: "completed_with_top_level_code",
+			body: `{"type":"response.completed","code":"provider_overloaded","response":{"id":"resp_completed","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"must not be accepted"}]}]}}`,
+			want: "provider_overloaded",
+		},
+		{
+			name: "completed_with_top_level_error",
+			body: `{"type":"response.completed","error":{"message":"invalid tool output"},"response":{"id":"resp_completed","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"must not be accepted"}]}]}}`,
+			want: "invalid tool output",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = w.Write([]byte("data: " + tt.body + "\n\n"))
+			}))
+			defer server.Close()
+
+			providerInstance, err := NewOpenAIResponsesProvider(ai.ProviderConfig{
+				Type: "custom", APIFormat: "openai-responses", APIKey: "sk-test", BaseURL: server.URL + "/v1", Model: "gpt-test",
+			})
+			if err != nil {
+				t.Fatalf("create provider: %v", err)
+			}
+
+			oldState := json.RawMessage(`{"input":[{"type":"message","role":"user","content":"previous"}]}`)
+			done := false
+			nextState, err := providerInstance.(*OpenAIResponsesProvider).ChatStreamWithState(
+				context.Background(), oldState, ai.ChatRequest{Messages: []ai.Message{{Role: "user", Content: "ping"}}},
+				func(chunk ai.StreamChunk) { done = done || chunk.Done },
+			)
+			if err == nil || !strings.Contains(strings.ToLower(err.Error()), strings.ToLower(tt.want)) {
+				t.Fatalf("expected stream error containing %q, got %v", tt.want, err)
+			}
+			if done {
+				t.Fatal("non-completed terminal status emitted Done")
+			}
+			if string(nextState) != string(oldState) {
+				t.Fatalf("terminal failure advanced provider state: old=%s next=%s", oldState, nextState)
 			}
 		})
 	}
