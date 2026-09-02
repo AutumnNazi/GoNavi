@@ -4723,19 +4723,14 @@ const Sidebar: React.FC<{
         },
       ],
     },
+  ];
+  // 关于 GoNavi（在线更新入口）单独放在「更多」按钮右侧，减少操作层级
+  const v2TitlebarAboutActions: TitleBarQuickAction[] = [
     {
-      key: 'settings-about',
+      key: 'about-go-navi',
       label: t('app.settings.group.about.title'),
       icon: <InfoCircleOutlined aria-hidden="true" />,
-      priority: 'secondary',
-      menu: [
-        {
-          key: 'about-go-navi',
-          label: t('app.settings.entry.about.title'),
-          icon: <InfoCircleOutlined aria-hidden="true" />,
-          onClick: () => onOpenSettingsNavigation?.({ group: 'about', pane: 'about-go-navi' }),
-        },
-      ],
+      onClick: () => onOpenSettingsNavigation?.({ group: 'about', pane: 'about-go-navi' }),
     },
   ];
   const v2TitlebarQuickActionsTarget = isV2Ui && typeof document !== 'undefined'
@@ -5160,6 +5155,7 @@ const Sidebar: React.FC<{
             label={v2RailObjectActionsLabel}
             moreLabel={t('query_editor.action.more')}
             actions={v2TitlebarQuickActions}
+            trailingActions={v2TitlebarAboutActions}
           />,
           v2TitlebarQuickActionsTarget,
         )}
