@@ -621,6 +621,7 @@ LIMIT 1`];
 
     const triggerName = String(tab.triggerName || '').trim();
     const dbName = String(tab.dbName || '').trim();
+    const schemaName = String(tab.schemaName || '').trim();
     const openObjectEditQuery = async () => {
         if (!triggerName || openingObjectEdit) return;
         setOpeningObjectEdit(true);
@@ -648,13 +649,18 @@ LIMIT 1`];
                 : '';
             loadedDefinitionKeyRef.current = objectIdentityKey;
             setTriggerDefinition(latestDefinition);
-            setActiveContext({ connectionId: tab.connectionId, dbName });
+            setActiveContext({
+                connectionId: tab.connectionId,
+                dbName,
+                schemaName: schemaName || undefined,
+            });
             addTab({
                 id: `query-edit-trigger-${tab.connectionId}-${dbName}-${Date.now()}`,
                 title: t('trigger_viewer.tab.edit_trigger_title', { name: triggerName }),
                 type: 'query',
                 connectionId: tab.connectionId,
                 dbName,
+                schemaName: schemaName || undefined,
                 query: buildEditableTriggerSql(triggerName, latestDefinition, {
                     dropSql: triggerDropSql,
                     translate: t,

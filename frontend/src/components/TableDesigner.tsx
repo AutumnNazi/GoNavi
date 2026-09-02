@@ -1432,13 +1432,19 @@ END;`;
       : '';
 
     const dbName = String(tab.dbName || '').trim();
-    setActiveContext({ connectionId: tab.connectionId, dbName });
+    const schemaName = String(selectedSchema || tab.schemaName || '').trim();
+    setActiveContext({
+      connectionId: tab.connectionId,
+      dbName,
+      schemaName: schemaName || undefined,
+    });
     addTab({
       id: `query-edit-trigger-${tab.connectionId}-${dbName}-${tab.tableName || ''}-${selectedTrigger.name}-${Date.now()}`,
       title: t('table_designer.tab.edit_trigger_title', { name: selectedTrigger.name }, i18nLanguage),
       type: 'query',
       connectionId: tab.connectionId,
       dbName,
+      schemaName: schemaName || undefined,
       query: buildEditableTriggerSql(selectedTrigger.name, createSql, {
         dropSql: triggerDropSql,
       }),

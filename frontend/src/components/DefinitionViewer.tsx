@@ -186,6 +186,7 @@ const DefinitionViewer: React.FC<DefinitionViewerProps> = ({ tab }) => {
         tab.routineType,
         tab.sequenceName,
         tab.packageName,
+        tab.schemaName,
     ].map((item) => String(item || '')).join('||');
 
     const escapeSQLLiteral = (raw: string): string => String(raw || '').replace(/'/g, "''");
@@ -1015,11 +1016,16 @@ const DefinitionViewer: React.FC<DefinitionViewerProps> = ({ tab }) => {
 
     const openObjectEditTab = useCallback((sourceDefinition: string) => {
         const dbName = String(tab.dbName || '').trim();
+        const schemaName = String(tab.schemaName || '').trim();
         const latestDefinition = String(sourceDefinition || '');
         loadedDefinitionKeyRef.current = objectIdentityKey;
         setDefinition(latestDefinition);
         const query = buildEditableDefinitionSql(tab, latestDefinition, normalizedObjectName, editableDefinitionCopy);
-        setActiveContext({ connectionId: tab.connectionId, dbName });
+        setActiveContext({
+            connectionId: tab.connectionId,
+            dbName,
+            schemaName: schemaName || undefined,
+        });
         clearQueryTabDraft(tab.id);
         const isViewObject = tab.type === 'view-def' || Boolean(tab.viewName);
         addTab({
@@ -1041,7 +1047,7 @@ const DefinitionViewer: React.FC<DefinitionViewerProps> = ({ tab }) => {
             packageName: undefined,
             triggerName: undefined,
             triggerTableName: undefined,
-            schemaName: isViewObject ? tab.schemaName : undefined,
+            schemaName: schemaName || undefined,
             objectType: isViewObject
                 ? (tab.viewKind === 'materialized' ? 'materialized-view' : 'view')
                 : undefined,

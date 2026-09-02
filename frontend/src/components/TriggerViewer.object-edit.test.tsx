@@ -123,12 +123,17 @@ describe('TriggerViewer object edit entry', () => {
       button.props.onClick();
     });
 
-    expect(storeState.setActiveContext).toHaveBeenCalledWith({ connectionId: 'conn-1', dbName: 'main' });
+    expect(storeState.setActiveContext).toHaveBeenCalledWith({
+      connectionId: 'conn-1',
+      dbName: 'main',
+      schemaName: 'audit',
+    });
     expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({
       title: 'Edit trigger: audit.users_bi',
       type: 'query',
       connectionId: 'conn-1',
       dbName: 'main',
+      schemaName: 'audit',
       queryMode: 'object-edit',
       query: expect.stringContaining('CREATE TRIGGER users_bi BEFORE INSERT'),
     }));

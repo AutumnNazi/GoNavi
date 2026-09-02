@@ -1355,8 +1355,13 @@ const DataGrid: React.FC<DataGridProps> = ({
       const normalizedTableName = String(nextTableName || '').trim();
       if (!connectionId || !normalizedTableName || normalizedTableName === '-') return;
       const targetDbName = String(dbName || '').trim();
-      const tabId = `${connectionId}-${targetDbName}-table-${normalizedTableName}`;
-      setActiveContext({ connectionId, dbName: targetDbName });
+      const targetSchemaName = String(schemaName || '').trim();
+      const tabId = `${connectionId}-${targetDbName}${targetSchemaName ? `-${targetSchemaName}` : ''}-table-${normalizedTableName}`;
+      setActiveContext({
+          connectionId,
+          dbName: targetDbName,
+          schemaName: targetSchemaName || undefined,
+      });
       addTab({
           id: tabId,
           title: normalizedTableName,
@@ -1364,9 +1369,10 @@ const DataGrid: React.FC<DataGridProps> = ({
           connectionId,
           dbName: targetDbName,
           tableName: normalizedTableName,
+          schemaName: targetSchemaName || undefined,
           objectType: 'table',
       });
-  }, [addTab, connectionId, dbName, setActiveContext]);
+  }, [addTab, connectionId, dbName, schemaName, setActiveContext]);
 
   const openForeignKeyTarget = useCallback((target: ForeignKeyTarget) => {
       openTableByName(String(target?.refTableName || '').trim());
@@ -1941,6 +1947,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           const detail = (event as CustomEvent<any>)?.detail || {};
           if (String(detail.connectionId || '') !== String(connectionId || '')) return;
           if (String(detail.dbName || '') !== String(dbName || '')) return;
+          if (String(detail.schemaName || '').trim() !== String(schemaName || '').trim()) return;
           if (String(detail.tableName || '') !== String(tableName || '')) return;
           const nextMode = String(detail.viewMode || '').trim();
           if (!nextMode) return;
@@ -1950,7 +1957,7 @@ const DataGrid: React.FC<DataGridProps> = ({
 
       window.addEventListener('gonavi:data-grid:set-view-mode', handleExternalViewModeChange as EventListener);
       return () => window.removeEventListener('gonavi:data-grid:set-view-mode', handleExternalViewModeChange as EventListener);
-  }, [connectionId, dbName, handleViewModeChange, tableName]);
+  }, [connectionId, dbName, handleViewModeChange, schemaName, tableName]);
 
   useEffect(() => {
       if (!enableSqlLogEvent || !isV2Ui || !isActive) return;

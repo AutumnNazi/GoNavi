@@ -365,6 +365,11 @@ const NACOS_SERVICES_CHANGED_EVENT = 'gonavi:nacos-services-changed';
 const SIDEBAR_GROUP_HOVER_EXPAND_DELAY_MS = 500;
 const SIDEBAR_TREE_SCROLL_IDLE_DELAY_MS = 2000;
 
+const buildOptionalSchemaContext = (value: unknown): { schemaName?: string } => {
+  const schemaName = String(value ?? '').trim();
+  return schemaName ? { schemaName } : {};
+};
+
 type SidebarTreeDragEventLike = {
   dataTransfer?: DataTransfer | null;
   target?: EventTarget | null;
@@ -1125,7 +1130,7 @@ const Sidebar: React.FC<{
   const treeDragSelectionSnapshotRef = useRef<{
       selectedKeys: React.Key[];
       selectedNodes: any[];
-      activeContext: { connectionId: string; dbName: string; tableName?: string } | null;
+      activeContext: { connectionId: string; dbName: string; schemaName?: string; tableName?: string } | null;
   }>({
       selectedKeys: [],
       selectedNodes: [],
@@ -2126,6 +2131,7 @@ const Sidebar: React.FC<{
           connectionId: request.connectionId,
           dbName: request.dbName,
           tableName: resolveSidebarTitlebarObjectName(targetNode) || request.tableName,
+          ...buildOptionalSchemaContext(targetNode?.dataRef?.schemaName || request.schemaName),
       });
       publishTitlebarSelection(
           resolveSidebarSelectionContext(targetNode)
@@ -2367,7 +2373,7 @@ const Sidebar: React.FC<{
           return true;
       }
       if (node.type === 'routine') {
-          const { routineName, routineType, dbName, id } = node.dataRef;
+          const { routineName, routineType, dbName, id, schemaName } = node.dataRef;
           const typeLabel = t(routineType === 'PROCEDURE' ? 'sidebar.object.procedure' : 'sidebar.object.function');
           addTab({
               id: `routine-def-${node.key}`,
@@ -2376,7 +2382,8 @@ const Sidebar: React.FC<{
               connectionId: id,
               dbName,
               routineName,
-              routineType
+              routineType,
+              ...buildOptionalSchemaContext(schemaName),
           });
           return true;
       }
@@ -2459,6 +2466,12 @@ const Sidebar: React.FC<{
           setActiveContext({ connectionId: key, dbName: '' });
       } else if (type === 'database' || type === 'message-namespace') {
           setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: dataRef.dbName });
+      } else if (type === 'object-group' && dataRef?.groupKey === 'schema') {
+          setActiveContext({
+              connectionId: nodeConnectionId || dataRef.id,
+              dbName: dataRef.dbName,
+              ...buildOptionalSchemaContext(dataRef.schemaName),
+          });
       } else if (
           type === 'table'
           || type === 'message-object'
@@ -2474,6 +2487,7 @@ const Sidebar: React.FC<{
               connectionId: nodeConnectionId || dataRef.id,
               dbName: dataRef.dbName,
               tableName: resolveSidebarTitlebarObjectName(info.node),
+              ...buildOptionalSchemaContext(dataRef.schemaName),
           });
       } else if (type === 'jvm-mode' || type === 'jvm-resource' || type === 'jvm-diagnostic' || type === 'jvm-monitoring') {
           setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: '' });
@@ -2580,6 +2594,12 @@ const Sidebar: React.FC<{
           setActiveContext({ connectionId: nodeKey, dbName: '' });
       } else if (type === 'database' || type === 'message-namespace') {
           setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: dataRef.dbName });
+      } else if (type === 'object-group' && dataRef?.groupKey === 'schema') {
+          setActiveContext({
+              connectionId: nodeConnectionId || dataRef.id,
+              dbName: dataRef.dbName,
+              ...buildOptionalSchemaContext(dataRef.schemaName),
+          });
       } else if (type === 'jvm-mode' || type === 'jvm-resource' || type === 'jvm-diagnostic' || type === 'jvm-monitoring') {
           setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: '' });
       } else if (type === 'table' || type === 'message-object' || type === 'view' || type === 'materialized-view' || type === 'sequence' || type === 'package' || type === 'db-trigger' || type === 'db-event' || type === 'routine') {
@@ -2587,6 +2607,7 @@ const Sidebar: React.FC<{
               connectionId: nodeConnectionId || dataRef.id,
               dbName: dataRef.dbName,
               tableName: resolveSidebarTitlebarObjectName(node),
+              ...buildOptionalSchemaContext(dataRef.schemaName),
           });
       } else if (type === 'saved-query') {
           setActiveContext({ connectionId: dataRef.connectionId, dbName: dataRef.dbName });
@@ -2618,7 +2639,7 @@ const Sidebar: React.FC<{
       if (openMessageObjectNode(node)) {
           return;
       } else if (node.type === 'table') {
-          const { tableName, dbName, id } = node.dataRef;
+          const { tableName, dbName, id, schemaName } = node.dataRef;
           // 记录表访问
           recordTableAccess(id, dbName, tableName);
           addTab({
@@ -2628,6 +2649,7 @@ const Sidebar: React.FC<{
               connectionId: id,
               dbName,
               tableName,
+              ...buildOptionalSchemaContext(schemaName),
               initialViewMode: tableDoubleClickAction === 'open-design' ? 'fields' : undefined,
               initialViewModeRequestId: tableDoubleClickAction === 'open-design' ? String(Date.now()) : undefined,
               objectType: 'table',
@@ -2723,7 +2745,7 @@ const Sidebar: React.FC<{
           openEventDefinition(node);
           return;
       } else if (node.type === 'routine') {
-          const { routineName, routineType, dbName, id } = node.dataRef;
+          const { routineName, routineType, dbName, id, schemaName } = node.dataRef;
           const typeLabel = t(routineType === 'PROCEDURE' ? 'sidebar.object.procedure' : 'sidebar.object.function');
           addTab({
               id: `routine-def-${node.key}`,
@@ -2732,7 +2754,8 @@ const Sidebar: React.FC<{
               connectionId: id,
               dbName,
               routineName,
-              routineType
+              routineType,
+              ...buildOptionalSchemaContext(schemaName),
           });
           return;
       } else if (node.type === 'sequence') {
