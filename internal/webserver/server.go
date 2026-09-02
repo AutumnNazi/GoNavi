@@ -30,7 +30,12 @@ const (
 	internalRoutePrefix       = "/__gonavi"
 	detachedWindowIDHeader    = "X-GoNavi-Detached-Window-ID"
 	eventSubscriberQueueLimit = 128
-	eventStreamDataChunkBytes = 256 << 10
+	// Reliable events are allowed bounded headroom over the broadcast queue so
+	// a critical targeted event can still be delivered after broadcasts fill
+	// the soft limit. A subscriber that remains slower than this hard limit is
+	// closed and must reconnect instead of retaining an unbounded queue.
+	eventSubscriberReliableQueueLimit = eventSubscriberQueueLimit * 2
+	eventStreamDataChunkBytes         = 256 << 10
 )
 
 var errorType = reflect.TypeOf((*error)(nil)).Elem()
@@ -147,10 +152,27 @@ func (s *eventSubscriber) enqueue(msg eventMessage, reliable bool) {
 		}
 		return
 	}
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
+	queueLen := len(s.queue) - s.head
+	if reliable && queueLen >= eventSubscriberReliableQueueLimit {
+		// Reliable delivery cannot silently drop the event, but retaining it
+		// forever would make a stalled detached window an unbounded memory
+		// sink. Close this stream and release its pending payloads; the child
+		// runtime will reconnect and obtain fresh state.
+		s.closed = true
+		s.queue = nil
+		s.head = 0
+		close(s.done)
+		s.mu.Unlock()
+		return
+	}
 	// AI stream deltas are loss-sensitive. Once one delta is queued, later
 	// deltas for that session coalesce into it; the first delta and terminal
 	// events may therefore exceed the soft broadcast limit by a small amount.
-	if s.closed || (!reliable && !strings.HasPrefix(msg.Name, "ai:stream:") && len(s.queue)-s.head >= eventSubscriberQueueLimit) {
+	if !reliable && !strings.HasPrefix(msg.Name, "ai:stream:") && queueLen >= eventSubscriberQueueLimit {
 		s.mu.Unlock()
 		return
 	}
@@ -293,6 +315,8 @@ func (s *eventSubscriber) close() {
 		return
 	}
 	s.closed = true
+	s.queue = nil
+	s.head = 0
 	close(s.done)
 	s.mu.Unlock()
 }

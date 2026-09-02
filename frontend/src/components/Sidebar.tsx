@@ -4591,6 +4591,12 @@ const Sidebar: React.FC<{
           icon: <GlobalOutlined aria-hidden="true" />,
           onClick: () => onOpenSettingsNavigation?.({ group: 'services', pane: 'proxy' }),
         },
+        {
+          key: 'download-source',
+          label: t('app.settings.entry.download_source.title'),
+          icon: <CloudDownloadOutlined aria-hidden="true" />,
+          onClick: () => onOpenSettingsNavigation?.({ group: 'services', pane: 'download-source' }),
+        },
         ...(isWebRuntime ? [{
           key: 'web-auth',
           label: t('app.settings.entry.web_auth.title'),
@@ -4760,7 +4766,7 @@ const Sidebar: React.FC<{
     showObjectActions: false,
     showLocateAction: false,
     aiActive: aiPanelVisible,
-    sidebarExpandAction: onExpandSidebar && expandSidebarLabel ? {
+    sidebarExpandAction: !collapsedSidebarActionsTarget && onExpandSidebar && expandSidebarLabel ? {
       label: expandSidebarLabel,
       onClick: onExpandSidebar,
       buttonRef: expandSidebarButtonRef,

@@ -49,20 +49,21 @@ type cachedGitHubRelease struct {
 var updateReleaseCache sync.Map // apiURL -> cachedGitHubRelease
 
 var (
-	updateFetchLatestRelease           = fetchLatestRelease
-	updateFetchDevRelease              = fetchDevRelease
-	updateFetchReleaseSHA256           = fetchReleaseSHA256
-	updateLogCheckError                = func(err error) { logger.Error(err, "检查更新失败") }
-	updateResolveInstallTarget         = resolveUpdateInstallTarget
-	updateResolveInstallMode           = resolveCurrentUpdateInstallMode
-	updateLaunchInstallScript          = launchUpdateScript
-	updateFindOtherWindowsInstances    = findOtherWindowsUpdateInstances
-	updateCloseWindowsInstances        = closeWindowsUpdateInstances
-	updateAcquireWindowsMaintenance    = acquireWindowsUpdateMaintenance
-	updateQuitSleep                    = time.Sleep
-	updateCurrentDevAssetRetrySleep    = time.Sleep
-	updateExitProcess                  = os.Exit
-	updateDownloadFileWithExpectedSize = downloadFileWithHashWithExpectedSize
+	updateFetchLatestRelease                    = fetchLatestRelease
+	updateFetchDevRelease                       = fetchDevRelease
+	updateFetchReleaseSHA256                    = fetchReleaseSHA256
+	updateLogCheckError                         = func(err error) { logger.Error(err, "检查更新失败") }
+	updateResolveInstallTarget                  = resolveUpdateInstallTarget
+	updateResolveInstallMode                    = resolveCurrentUpdateInstallMode
+	updateLaunchInstallScript                   = launchUpdateScript
+	updateFindOtherWindowsInstances             = findOtherWindowsUpdateInstances
+	updateCloseWindowsInstances                 = closeWindowsUpdateInstances
+	updateAcquireWindowsMaintenance             = acquireWindowsUpdateMaintenance
+	updateQuitSleep                             = time.Sleep
+	updateCurrentDevAssetRetrySleep             = time.Sleep
+	updateExitProcess                           = os.Exit
+	updateDownloadFileWithExpectedSize          = downloadFileWithHashWithExpectedSize
+	updateDownloadFileWithExpectedSizePreferred = downloadFileWithHashWithExpectedSizePreferred
 )
 
 var errUpdateChecksumMismatch = errors.New("update package checksum mismatch")
@@ -706,6 +707,14 @@ func isExpiredUpdateAssetError(err error) bool {
 	if errors.As(err, &currentAssetMismatch) {
 		return true
 	}
+	// Only statuses observed directly from the gated Dispatcher identify a
+	// stale dev asset. A 404/410 from Cst, Bero, GitHub, or a joined fallback
+	// error is an ordinary source failure and must not trigger a manifest
+	// refresh loop.
+	var terminal downloadCurrentAssetTerminalError
+	if !errors.As(err, &terminal) {
+		return false
+	}
 	var localized localizedUpdateError
 	if !errors.As(err, &localized) {
 		return false
@@ -952,13 +961,26 @@ func (a *App) downloadAndStageUpdate(info UpdateInfo, expectedRevision uint64) (
 		return connection.QueryResult{Success: false, Message: message}, localizedUpdateError{key: "app.update.backend.message.checksum_missing"}
 	}
 
-	_, err := downloadUpdateAssetWithFallback(
-		[]string{info.AssetURL, info.AssetAPIURL},
-		assetPath,
-		info.SHA256,
-		info.AssetSize,
-		progressCB,
-	)
+	preferred := a.preferredDownloadSource()
+	var err error
+	if preferred == DownloadSourceCst {
+		_, err = downloadUpdateAssetWithFallback(
+			[]string{info.AssetURL, info.AssetAPIURL},
+			assetPath,
+			info.SHA256,
+			info.AssetSize,
+			progressCB,
+		)
+	} else {
+		_, err = downloadUpdateAssetWithFallbackPreferred(
+			[]string{info.AssetURL, info.AssetAPIURL},
+			assetPath,
+			info.SHA256,
+			info.AssetSize,
+			progressCB,
+			preferred,
+		)
+	}
 	if err != nil {
 		_ = os.Remove(assetPath)
 		_ = os.RemoveAll(stagedDir)
@@ -1008,6 +1030,45 @@ func downloadUpdateAssetWithFallback(
 	expectedSize int64,
 	onProgress func(downloaded, total int64),
 ) (string, error) {
+	return downloadUpdateAssetWithFallbackUsing(
+		candidates,
+		assetPath,
+		expectedSHA256,
+		expectedSize,
+		onProgress,
+		DownloadSourceCst,
+		false,
+	)
+}
+
+func downloadUpdateAssetWithFallbackPreferred(
+	candidates []string,
+	assetPath string,
+	expectedSHA256 string,
+	expectedSize int64,
+	onProgress func(downloaded, total int64),
+	preferred DownloadSource,
+) (string, error) {
+	return downloadUpdateAssetWithFallbackUsing(
+		candidates,
+		assetPath,
+		expectedSHA256,
+		expectedSize,
+		onProgress,
+		preferred,
+		true,
+	)
+}
+
+func downloadUpdateAssetWithFallbackUsing(
+	candidates []string,
+	assetPath string,
+	expectedSHA256 string,
+	expectedSize int64,
+	onProgress func(downloaded, total int64),
+	preferred DownloadSource,
+	usePreferredDownloader bool,
+) (string, error) {
 	seen := make(map[string]struct{}, len(candidates))
 	urls := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
@@ -1033,7 +1094,13 @@ func downloadUpdateAssetWithFallback(
 	for index, candidate := range urls {
 		candidate, requiresCurrentDevAsset := prepareUpdateDownloadCandidate(candidate, index == 0)
 		_ = os.Remove(assetPath)
-		actualHash, err := updateDownloadFileWithExpectedSize(candidate, assetPath, onProgress, expectedSize)
+		var actualHash string
+		var err error
+		if usePreferredDownloader {
+			actualHash, err = updateDownloadFileWithExpectedSizePreferred(candidate, assetPath, onProgress, expectedSize, preferred)
+		} else {
+			actualHash, err = updateDownloadFileWithExpectedSize(candidate, assetPath, onProgress, expectedSize)
+		}
 		if err == nil && expectedSize > 0 {
 			stat, statErr := os.Stat(assetPath)
 			if statErr != nil {
@@ -1048,8 +1115,8 @@ func downloadUpdateAssetWithFallback(
 		if err == nil {
 			return actualHash, nil
 		}
-		var currentAssetMismatch downloadCurrentAssetMismatchError
-		if requiresCurrentDevAsset || errors.As(err, &currentAssetMismatch) || errors.Is(err, errInvalidDownloadDispatcherURL) {
+		if errors.Is(err, errInvalidDownloadDispatcherURL) ||
+			(requiresCurrentDevAsset && isCurrentDevAssetTerminalError(err)) {
 			_ = os.Remove(assetPath)
 			return "", err
 		}
@@ -1146,9 +1213,11 @@ func fetchLatestUpdateInfoWithOptions(channel updateChannel, forceNetwork bool) 
 	if sha256Value == "" {
 		return UpdateInfo{}, localizedUpdateError{key: "app.update.backend.error.sha256_missing_current_package"}
 	}
-	assetURL := firstNonEmptyString(asset.BrowserDownloadURL, asset.URL)
-	if channel == updateChannelDev {
-		assetURL = devUpdateDispatcherAssetURL(assetVersion, asset.Name)
+	assetURL := updateDispatcherAssetURL(channel, assetVersion, asset.Name)
+	if assetURL == "" {
+		// Keep legacy release metadata usable if an unexpected asset coordinate
+		// cannot be represented by the Dispatcher path validator.
+		assetURL = firstNonEmptyString(asset.BrowserDownloadURL, asset.URL)
 	}
 	return UpdateInfo{
 		HasUpdate:          hasUpdate,
@@ -1171,12 +1240,23 @@ func fetchLatestUpdateInfoWithOptions(channel updateChannel, forceNetwork bool) 
 }
 
 func devUpdateDispatcherAssetURL(version string, assetName string) string {
+	return updateDispatcherAssetURL(updateChannelDev, version, assetName)
+}
+
+func updateDispatcherAssetURL(channel updateChannel, version string, assetName string) string {
 	version = strings.TrimSpace(version)
 	assetName = strings.TrimSpace(assetName)
 	if version == "" || assetName == "" {
 		return ""
 	}
-	assetPath := "/gonavi/dev/releases/download/" + urlpkg.PathEscape(version) + "/" + urlpkg.PathEscape(assetName)
+	prefix := "/gonavi/releases/download/"
+	if channel == updateChannelDev {
+		prefix = "/gonavi/dev/releases/download/"
+	}
+	assetPath := prefix + urlpkg.PathEscape(version) + "/" + urlpkg.PathEscape(assetName)
+	if err := validateDownloadDispatcherAssetPath(assetPath); err != nil {
+		return ""
+	}
 	return downloadDispatcherURLForPath(assetPath)
 }
 
@@ -1669,12 +1749,35 @@ func downloadFileWithHash(url, filePath string, onProgress func(downloaded, tota
 	return downloadFileWithHashWithTimeout(url, filePath, onProgress, 10*time.Minute)
 }
 
+func downloadFileWithHashPreferred(url, filePath string, onProgress func(downloaded, total int64), preferred DownloadSource) (string, error) {
+	return downloadFileWithHashWithTimeoutPreferred(url, filePath, onProgress, 10*time.Minute, preferred)
+}
+
 func downloadFileWithHashWithExpectedSize(url, filePath string, onProgress func(downloaded, total int64), expectedSize int64) (string, error) {
 	return downloadFileWithHashParallelAwareAndExpectedSize(url, filePath, onProgress, 10*time.Minute, expectedSize)
 }
 
+func downloadFileWithHashWithExpectedSizePreferred(url, filePath string, onProgress func(downloaded, total int64), expectedSize int64, preferred DownloadSource) (string, error) {
+	return downloadFileWithHashParallelAwareAndExpectedSizePreferred(url, filePath, onProgress, 10*time.Minute, expectedSize, preferred)
+}
+
 func downloadFileWithHashWithTimeout(url, filePath string, onProgress func(downloaded, total int64), timeout time.Duration) (string, error) {
 	return downloadFileWithHashParallelAware(url, filePath, onProgress, timeout)
+}
+
+func downloadFileWithHashWithTimeoutPreferred(url, filePath string, onProgress func(downloaded, total int64), timeout time.Duration, preferred DownloadSource) (string, error) {
+	return downloadFileWithHashParallelAwareAndExpectedSizePreferred(url, filePath, onProgress, timeout, 0, preferred)
+}
+
+func downloadFileWithHashPreferredForApp(a *App, url, filePath string, onProgress func(downloaded, total int64)) (string, error) {
+	preferred := DownloadSourceCst
+	if a != nil {
+		preferred = a.preferredDownloadSource()
+	}
+	if preferred == DownloadSourceCst {
+		return downloadFileWithHash(url, filePath, onProgress)
+	}
+	return downloadFileWithHashPreferred(url, filePath, onProgress, preferred)
 }
 
 func doUpdateRequest(client *http.Client, req *http.Request) (*http.Response, error) {

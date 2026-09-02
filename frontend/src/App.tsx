@@ -286,7 +286,13 @@ import {
 } from '../wailsjs/go/app/App';
 import { getAntdLocale } from './i18n/frameworkLocale';
 import { useI18n } from './i18n/provider';
-import { resolveTitleBarLayout } from './utils/titlebarLayout';
+import {
+  normalizeTitlebarRuntimePlatform,
+  resolveDocumentPlatform,
+  resolveTitleBarLayout,
+  resolveTitlebarRuntimePlatform,
+  shouldDockCollapsedSidebarActionsInTitlebar as resolveCollapsedSidebarDocking,
+} from './utils/titlebarLayout';
 import './App.css';
 import './v2-theme.css';
 import './styles/v2-theme-workbench.css';
@@ -598,6 +604,7 @@ type SettingsCenterPaneKey =
   | 'sidebar-metadata'
   | 'sidebar-objects'
   | 'proxy'
+  | 'download-source'
   | 'web-auth'
   | 'cloud-backup'
   | 'ai'
@@ -606,6 +613,13 @@ type SettingsCenterPaneKey =
 type SettingsCenterPaneState = {
   key: SettingsCenterPaneKey;
   group: SettingsCenterGroupKey;
+};
+
+type DownloadSourceId = 'cst' | 'bero' | 'github';
+
+const normalizeDownloadSourceId = (value: unknown): DownloadSourceId => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'bero' || normalized === 'github' ? normalized : 'cst';
 };
 
 const isToolCenterGroupKey = (group: SettingsCenterGroupKey): group is ToolCenterGroupKey => (
@@ -1108,6 +1122,8 @@ function App() {
   const savedQueriesBootstrapPromiseRef = useRef<Promise<void> | null>(null);
   const savedQueriesLoadedRef = useRef(false);
   const [hasLoadedSecureConfig, setHasLoadedSecureConfig] = useState(false);
+  const [downloadSource, setDownloadSource] = useState<DownloadSourceId>('cst');
+  const [downloadSourceSaving, setDownloadSourceSaving] = useState(false);
   const [hasLoadedConnectionSidebarLayout, setHasLoadedConnectionSidebarLayout] = useState(false);
   const connectionSidebarLayoutCoordinatorRef = useRef<ConnectionSidebarLayoutCoordinator | null>(null);
   const [viewportWidth, setViewportWidth] = useState(() => (typeof window === 'undefined' ? 1280 : window.innerWidth || 1280));
@@ -1146,14 +1162,34 @@ function App() {
   const setSidebarWidth = useStore(state => state.setSidebarWidth);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [collapsedSidebarActionsTarget, setCollapsedSidebarActionsTarget] = useState<HTMLDivElement | null>(null);
+  const sidebarContentRef = useRef<HTMLDivElement>(null);
   const sidebarCollapsedToggleRef = useRef<HTMLButtonElement>(null);
   const sidebarExplorerToggleRef = useRef<HTMLButtonElement>(null);
   const pendingSidebarToggleFocusRef = useRef<'collapsed' | 'explorer' | null>(null);
-  const shouldDockCollapsedSidebarActionsInTitlebar = isV2Ui && (
-      runtimePlatform === 'darwin'
-      || (runtimePlatform === '' && /mac/i.test(detectNavigatorPlatform()))
+  const navigatorPlatform = detectNavigatorPlatform();
+  const documentPlatform = resolveDocumentPlatform(runtimePlatform, navigatorPlatform);
+  const titlebarRuntimePlatform = resolveTitlebarRuntimePlatform(runtimePlatform, navigatorPlatform);
+  const isMacRuntime = titlebarRuntimePlatform === 'darwin';
+  const shouldDockCollapsedSidebarActionsInTitlebar = resolveCollapsedSidebarDocking(
+      isV2Ui,
+      runtimePlatform,
+      navigatorPlatform,
+      isWebRuntime,
   );
+  const isCollapsedSidebarActionsDocked = isSidebarCollapsed && shouldDockCollapsedSidebarActionsInTitlebar;
+  useLayoutEffect(() => {
+      const sidebarContent = sidebarContentRef.current;
+      if (!sidebarContent) return;
+      // aria-hidden alone does not remove focusable tree wrappers from the tab order.
+      sidebarContent.inert = isCollapsedSidebarActionsDocked;
+  }, [isCollapsedSidebarActionsDocked]);
   const handleCollapseSidebarPanel = useCallback(() => {
+      if (typeof document !== 'undefined') {
+          const activeElement = document.activeElement as HTMLElement | null;
+          if (activeElement?.closest?.('[data-sidebar-content="true"]')) {
+              activeElement.blur();
+          }
+      }
       pendingSidebarToggleFocusRef.current = 'collapsed';
       setIsSidebarCollapsed(true);
   }, []);
@@ -1164,22 +1200,21 @@ function App() {
   const handleTitlebarSidebarToggle = useCallback(() => {
       setIsSidebarCollapsed((collapsed) => !collapsed);
   }, []);
-  useEffect(() => {
+  useLayoutEffect(() => {
       const target = pendingSidebarToggleFocusRef.current;
       if (!target) return;
       if (
           target === 'collapsed'
-          && isSidebarCollapsed
-          && shouldDockCollapsedSidebarActionsInTitlebar
+          && isCollapsedSidebarActionsDocked
           && !collapsedSidebarActionsTarget
       ) return;
       pendingSidebarToggleFocusRef.current = null;
       (target === 'collapsed' ? sidebarCollapsedToggleRef : sidebarExplorerToggleRef).current?.focus();
-  }, [collapsedSidebarActionsTarget, isSidebarCollapsed, shouldDockCollapsedSidebarActionsInTitlebar]);
+  }, [collapsedSidebarActionsTarget, isCollapsedSidebarActionsDocked, isSidebarCollapsed]);
   const titleBarLayout = resolveTitleBarLayout(
       effectiveUiScale,
       isV2Ui,
-      isSidebarCollapsed && shouldDockCollapsedSidebarActionsInTitlebar,
+      isCollapsedSidebarActionsDocked,
   );
   const titleBarHeight = titleBarLayout.height;
   const sidebarCollapsedWidth = isV2Ui && !shouldDockCollapsedSidebarActionsInTitlebar
@@ -1315,26 +1350,20 @@ function App() {
           Environment()
               .then((env) => {
                   if (cancelled) return;
-                  const platform = String(env?.platform || '').toLowerCase();
+                  const platform = normalizeTitlebarRuntimePlatform(String(env?.platform || ''));
                   setRuntimePlatform(platform);
-                  setRuntimeBuildType(String(env?.buildType || '').toLowerCase());
+                  setRuntimeBuildType(String(env?.buildType || '').trim().toLowerCase());
                   setIsLinuxRuntime(platform === 'linux');
               })
               .catch(() => {
                   if (cancelled) return;
-                  const platform = detectNavigatorPlatform();
-                  const normalized = /linux/i.test(platform)
-                      ? 'linux'
-                      : (/mac/i.test(platform) ? 'darwin' : (/win/i.test(platform) ? 'windows' : ''));
+                  const normalized = resolveDocumentPlatform('', detectNavigatorPlatform());
                   setRuntimePlatform(normalized);
                   setIsLinuxRuntime(normalized === 'linux');
               });
       } catch(e) {
           if (cancelled) return;
-          const platform = detectNavigatorPlatform();
-          const normalized = /linux/i.test(platform)
-              ? 'linux'
-              : (/mac/i.test(platform) ? 'darwin' : (/win/i.test(platform) ? 'windows' : ''));
+          const normalized = resolveDocumentPlatform('', detectNavigatorPlatform());
           setRuntimePlatform(normalized);
           setIsLinuxRuntime(normalized === 'linux');
       }
@@ -1469,6 +1498,51 @@ function App() {
           cancelled = true;
       };
   }, [applySecurityUpdateStatus, isStoreHydrated, replaceConnections, replaceGlobalProxy, t]);
+
+  useEffect(() => {
+      let cancelled = false;
+      const backendApp = (window as any).go?.app?.App;
+      if (typeof backendApp?.GetDownloadSourceConfig !== 'function') {
+          return () => {
+              cancelled = true;
+          };
+      }
+      void backendApp.GetDownloadSourceConfig()
+          .then((result: { source?: string } | undefined) => {
+              if (!cancelled) {
+                  setDownloadSource(normalizeDownloadSourceId(result?.source));
+              }
+          })
+          .catch((error: unknown) => {
+              if (!cancelled) {
+                  console.warn('Failed to load download source preference', error);
+              }
+          });
+      return () => {
+          cancelled = true;
+      };
+  }, []);
+
+  const handleDownloadSourceChange = useCallback(async (value: DownloadSourceId) => {
+      const nextSource = normalizeDownloadSourceId(value);
+      const previousSource = downloadSource;
+      setDownloadSource(nextSource);
+      const backendApp = (window as any).go?.app?.App;
+      if (typeof backendApp?.SaveDownloadSourceConfig !== 'function') {
+          return;
+      }
+      setDownloadSourceSaving(true);
+      try {
+          const result = await backendApp.SaveDownloadSourceConfig(nextSource);
+          setDownloadSource(normalizeDownloadSourceId(result?.source ?? nextSource));
+          void message.success(t('app.download_source.message.saved'));
+      } catch (error: unknown) {
+          setDownloadSource(previousSource);
+          void message.error(error instanceof Error ? error.message : t('app.download_source.message.save_failed'));
+      } finally {
+          setDownloadSourceSaving(false);
+      }
+  }, [downloadSource, t]);
 
   useEffect(() => {
       if (!isStoreHydrated || !hasLoadedSecureConfig) {
@@ -2796,8 +2870,6 @@ function App() {
       setSecurityUpdateRepairSource(null);
       openSecurityUpdateSettings(repairEntry.focusTarget);
   }), [connections, openSecurityUpdateSettings, runSecurityUpdateRound, securityUpdateStatus, t]);
-  const isMacRuntime = runtimePlatform === 'darwin'
-      || (runtimePlatform === '' && /mac/i.test(detectNavigatorPlatform()));
   const useNativeMacWindowControls = isMacRuntime;
   const activeShortcutPlatform = getShortcutPlatform(isMacRuntime);
   const titleBarNewQueryShortcut = resolveTitleBarPrimaryActionShortcut(
@@ -4963,7 +5035,7 @@ function App() {
     document.documentElement.style.colorScheme = darkMode ? 'dark' : 'light';
     document.body.setAttribute('data-theme', darkMode ? 'dark' : 'light');
     document.body.setAttribute('data-ui-version', appearance.uiVersion);
-    document.body.setAttribute('data-platform', runtimePlatform || '');
+    document.body.setAttribute('data-platform', documentPlatform);
     document.body.style.fontSize = `${effectiveFontSize}px`;
     document.body.style.setProperty('--gn-font-sans', resolvedUiFontFamily);
     document.body.style.setProperty('--gn-font-mono', resolvedMonoFontFamily);
@@ -4987,7 +5059,7 @@ function App() {
     effectiveFontSize,
     resolvedMonoFontFamily,
     resolvedUiFontFamily,
-    runtimePlatform,
+    documentPlatform,
     effectiveSidebarRailScale,
     effectiveSidebarTreeFontSize,
     effectiveUiScale,
@@ -5718,6 +5790,31 @@ function App() {
       utilityPanelStyle,
       viewportWidth,
   ]);
+  const renderDownloadSourceSettingsContent = useCallback(() => (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '12px 0' }}>
+          <div style={utilityPanelStyle}>
+              <div style={{ fontWeight: 600, marginBottom: 8 }}>{t('app.download_source.title')}</div>
+              <div style={{ ...utilityMutedTextStyle, marginBottom: 14 }}>
+                  {t('app.download_source.description')}
+              </div>
+              <Segmented
+                  block={viewportWidth >= 640}
+                  vertical={viewportWidth < 640}
+                  disabled={downloadSourceSaving}
+                  value={downloadSource}
+                  options={[
+                      { label: t('app.download_source.option.cst'), value: 'cst' },
+                      { label: t('app.download_source.option.bero'), value: 'bero' },
+                      { label: t('app.download_source.option.github'), value: 'github' },
+                  ]}
+                  onChange={(value) => void handleDownloadSourceChange(normalizeDownloadSourceId(value))}
+              />
+              <div style={{ ...utilityMutedTextStyle, marginTop: 12 }}>
+                  {t('app.download_source.fallback_hint')}
+              </div>
+          </div>
+      </div>
+  ), [downloadSource, downloadSourceSaving, handleDownloadSourceChange, t, utilityMutedTextStyle, utilityPanelStyle]);
   const renderSidebarMetadataSettingsPane = useCallback(() => (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '12px 0' }}>
           <div style={utilityPanelStyle}>
@@ -8200,6 +8297,13 @@ function App() {
                   description: t('app.settings.entry.proxy.description'),
                   onClick: () => handleOpenSettingsCenterPane('services', 'proxy'),
               },
+              {
+                  key: 'download-source',
+                  icon: <CloudDownloadOutlined />,
+                  title: t('app.settings.entry.download_source.title'),
+                  description: t('app.settings.entry.download_source.description'),
+                  onClick: () => handleOpenSettingsCenterPane('services', 'download-source'),
+              },
               ...(isWebRuntime ? [{
                   key: 'web-auth' as const,
                   icon: <SafetyCertificateOutlined />,
@@ -8309,6 +8413,9 @@ function App() {
       if (activeSettingsCenterPane.key === 'proxy') {
           return renderProxySettingsContent();
       }
+      if (activeSettingsCenterPane.key === 'download-source') {
+          return renderDownloadSourceSettingsContent();
+      }
       if (activeSettingsCenterPane.key === 'web-auth') {
           return (
               <WebAuthSettingsPanel
@@ -8391,7 +8498,7 @@ function App() {
           data-gonavi-close-shortcut-scope="workspace"
           data-empty-workbench={isV2Ui && tabs.length === 0 ? 'true' : 'false'}
           data-collapsed-sidebar-actions-docked={
-              isSidebarCollapsed && shouldDockCollapsedSidebarActionsInTitlebar ? 'true' : 'false'
+              isCollapsedSidebarActionsDocked ? 'true' : 'false'
           }
           data-security-update-banner-visible={isSecurityUpdateBannerVisible ? 'true' : 'false'}
           style={{
@@ -8419,7 +8526,7 @@ function App() {
             className={[
               isV2Ui ? 'gn-v2-titlebar' : 'gonavi-titlebar',
               isV2Ui && useNativeMacWindowControls ? 'gn-v2-titlebar-native-mac' : '',
-              isSidebarCollapsed && shouldDockCollapsedSidebarActionsInTitlebar ? 'gn-v2-titlebar-collapsed-docked' : '',
+              isCollapsedSidebarActionsDocked ? 'gn-v2-titlebar-collapsed-docked' : '',
             ].filter(Boolean).join(' ')}
             onDoubleClick={handleTitleBarDoubleClick}
             style={{
@@ -8436,6 +8543,8 @@ function App() {
                 '--wails-draggable': isWebRuntime ? 'no-drag' : 'drag',
                 '--gn-titlebar-action-height': `${titleBarLayout.actionHeight}px`,
                 '--gn-titlebar-divider-height': `${titleBarLayout.dividerHeight}px`,
+                '--gn-titlebar-collapsed-upper-height': `${titleBarLayout.upperBandHeight}px`,
+                '--gn-titlebar-window-controls-width': `${isWebRuntime ? titleBarButtonWidth : (useNativeMacWindowControls ? 0 : titleBarButtonWidth * 3)}px`,
                 '--gn-titlebar-native-content-offset': `${getMacNativeTitlebarContentOffset(titleBarHeight, isV2Ui && useNativeMacWindowControls)}px`,
                 paddingLeft: getMacNativeTitlebarPaddingLeft(effectiveUiScale, useNativeMacWindowControls),
                 paddingRight: getMacNativeTitlebarPaddingRight(effectiveUiScale, useNativeMacWindowControls),
@@ -8483,7 +8592,7 @@ function App() {
                   />
                   {isV2Ui && <div id="gonavi-titlebar-quick-actions" className="gonavi-titlebar-quick-actions-slot" />}
               </div>
-              {isSidebarCollapsed && shouldDockCollapsedSidebarActionsInTitlebar && (
+              {isCollapsedSidebarActionsDocked && (
                   <div
                     ref={setCollapsedSidebarActionsTarget}
                     className="gn-v2-collapsed-sidebar-actions"
@@ -8565,7 +8674,7 @@ function App() {
             trigger={null}
             data-sidebar-panel="true"
             data-sidebar-collapsed={isSidebarCollapsed}
-            data-sidebar-actions-placement={shouldDockCollapsedSidebarActionsInTitlebar ? 'titlebar' : 'fixed-rail'}
+            data-sidebar-actions-placement={isCollapsedSidebarActionsDocked ? 'titlebar' : 'fixed-rail'}
             className={isV2Ui ? 'gn-v2-app-sider' : undefined}
             style={{
                 borderRight: isV2Ui ? 'none' : '1px solid rgba(128,128,128,0.2)',
@@ -8575,9 +8684,10 @@ function App() {
             }}
           >
             <div
+                ref={sidebarContentRef}
                 id={isV2Ui ? undefined : 'gonavi-sidebar-tree-panel'}
                 data-sidebar-content="true"
-                aria-hidden={!isV2Ui ? isSidebarCollapsed : undefined}
+                aria-hidden={isV2Ui ? (isCollapsedSidebarActionsDocked ? true : undefined) : isSidebarCollapsed}
                 style={{
                     height: '100%',
                     display: 'flex',

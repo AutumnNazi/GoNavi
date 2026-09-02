@@ -199,6 +199,9 @@ type App struct {
 	driverDownloadTaskRunner      func(string, string, string, string) connection.QueryResult
 	dataRootApplyMu               sync.Mutex
 	configDir                     string
+	downloadSourceMu              sync.RWMutex
+	downloadSource                DownloadSource
+	downloadSourceLoaded          bool
 	sqliteTableStatsMu            sync.Mutex
 	secretStore                   secretstore.SecretStore
 	runningQueries                map[string]queryContext // queryID -> cancelFunc and start time
@@ -307,6 +310,7 @@ func NewAppWithSecretStore(store secretstore.SecretStore) *App {
 		sqlTransactions:               make(map[string]*managedSQLTransaction),
 		requestTraceStore:             requesttrace.NewStore(requesttrace.DefaultCapacity),
 		configDir:                     resolveAppConfigDir(),
+		downloadSource:                DownloadSourceCst,
 		secretStore:                   store,
 		localizer:                     newAppLocalizer(),
 		jvmPreviewTokens:              make(map[string]jvmPreviewConfirmationToken),
@@ -464,6 +468,7 @@ func InitializeHeadlessLifecycle(a *App, ctx context.Context, configDir string) 
 		return fmt.Errorf("initialize SQL-file job store: %w", err)
 	}
 	a.loadPersistedGlobalProxy()
+	a.loadPersistedDownloadSource()
 	a.activateSQLAudit()
 	logger.Infof("无头运行时启动完成")
 	return nil
@@ -499,6 +504,7 @@ func (a *App) startup(ctx context.Context) {
 		logger.Warnf("恢复导入任务状态失败：%v", err)
 	}
 	a.loadPersistedGlobalProxy()
+	a.loadPersistedDownloadSource()
 	if err := migrateLegacyWebKitStorageIfNeeded(a); err != nil {
 		logger.Warnf("迁移旧 WebKit 连接存储失败：%v", err)
 	}
