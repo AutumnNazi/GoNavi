@@ -1,12 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { useStore } from '../store';
+import { useStore, type AIChatSessionSummary } from '../store';
 import type { OverlayWorkbenchTheme } from '../utils/overlayWorkbenchTheme';
 import type {
     AIChatAttachment,
     AIChatMessage,
-    JVMAIPlanContext,
-    JVMDiagnosticPlanContext,
 } from '../types';
 import './AIChatPanel.css';
 import '../styles/v2-theme-ai.css';
@@ -15,19 +13,41 @@ import { AIChatHeader } from './ai/AIChatHeader';
 import { AIChatInput } from './ai/AIChatInput';
 import { AIHistoryDrawer } from './ai/AIHistoryDrawer';
 import AIChatPanelConversationView from './ai/AIChatPanelConversationView';
+import AIChatRunControls, {
+    type AIRunRecoveryAction,
+} from './ai/AIChatRunControls';
+import { useAIChatRunEventSubscription } from './ai/useAIChatRunEventSubscription';
 import {
-    prepareAIChatStreamForTerminalAction,
-    useAIChatStreamSubscription,
-} from './ai/useAIChatStreamSubscription';
+    controlAgentRun,
+    getAIRunHarnessService,
+    getRunPolicy,
+    hasAIRunHarness,
+    mergeAIChatSessionMessages,
+    mutateAgentSession,
+    readAgentRun,
+    readAgentSession,
+    submitAgentInput,
+    toAIChatMessages,
+    type AgentAttachment,
+    type AIRunDispatchMode,
+    type AIRunHarnessService,
+} from './ai/aiRunHarnessClient';
+import { normalizeAIRunPolicy } from './ai/aiRunPolicy';
+import type {
+    AIRunApprovalState,
+    AIRunRecoveryState,
+    AIRunWorkspaceState,
+} from './ai/aiRunEventProjection';
+import {
+    getAIWorkspaceSourceInstanceID,
+} from './ai/useAIWorkspaceSnapshot';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import type { AIComposerNoticeDescriptor } from '../utils/aiComposerNotice';
 import { buildAIComposerNotice } from '../utils/aiComposerNotice';
 import { consumeAIChatSendShortcutOnKeyDown } from '../utils/aiChatSendShortcut';
-import { toAIRequestMessage, toAIRequestMessages } from '../utils/aiMessagePayload';
-import { compressContextIfNeeded, getDynamicMaxContextChars } from '../utils/aiChatRuntime';
+import { getDynamicMaxContextChars } from '../utils/aiChatRuntime';
 import { getShortcutPlatform, resolveShortcutBinding } from '../utils/shortcuts';
 import { isMacLikePlatform } from '../utils/appearance';
-import { buildAvailableAIChatTools } from '../utils/aiToolRegistry';
 import {
     buildAIChatInsights,
     buildAIChatInlineHistorySessions,
@@ -36,26 +56,12 @@ import {
     inferAIChatConnectionContext,
     resolveAIChatPanelMode,
 } from './ai/aiChatPanelDerivedState';
-import {
-    dispatchAIChatPayload,
-    type AIChatSendRequestOptions,
-} from './ai/aiChatPayloadDispatch';
 import { buildAIChatReadinessSnapshot } from './ai/aiChatReadiness';
-import { buildAISystemContextMessages } from './ai/aiSystemContextMessages';
 import { useAIChatRuntimeResources } from './ai/useAIChatRuntimeResources';
 import { useAIChatAutoContext } from './ai/useAIChatAutoContext';
 import { useAIChatPanelResize } from './ai/useAIChatPanelResize';
-import { useAIChatPlanContexts } from './ai/useAIChatPlanContexts';
 import { useAIChatSessionState } from './ai/useAIChatSessionState';
-import { useAIChatSessionTitleGenerator } from './ai/useAIChatSessionTitleGenerator';
-import { useAIChatLocalTools } from './ai/useAIChatLocalTools';
-import {
-    createAIChatSendAttemptCoordinator,
-    runAIChatSendAttemptStages,
-} from './ai/aiChatSendAttempt';
-import { resolveAIChatRetryPlan } from './ai/aiChatRetrySafety';
 import { useWorkbenchTabs } from '../hooks/useWorkbenchTabs';
-import { resolveLiveQueryTabs } from '../utils/liveQueryTabs';
 import { useI18n } from '../i18n/provider';
 import {
     coerceThinkingIntensityForProfile,
@@ -83,6 +89,32 @@ interface AIChatPanelProps {
 
 const genId = () => `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
+const toAgentAttachments = (attachments: AIChatAttachment[]): AgentAttachment[] =>
+    attachments
+        .map((attachment) => ({
+            name: String(attachment.name || '').trim(),
+            mediaType: String(attachment.mimeType || 'application/octet-stream'),
+            data: String(attachment.dataUrl || attachment.text || ''),
+        }))
+        .filter((attachment) => Boolean(attachment.name));
+
+const isTerminalRunState = (state: string | undefined): boolean =>
+    state === 'completed'
+    || state === 'failed'
+    || state === 'canceled'
+    || state === 'exhausted';
+
+const isRevisionConflictError = (error: unknown): boolean =>
+    String(error instanceof Error ? error.message : error || '')
+        .toLowerCase()
+        .includes('revision_conflict');
+
+interface PendingConversationBranch {
+    sourceSessionId: string;
+    sourceRevision?: number;
+    branchFromMessageId: string;
+}
+
 export const AIChatPanel: React.FC<AIChatPanelProps> = ({
     width = 380, darkMode, bgColor, onClose, onOpenSettings, onWidthChange, overlayTheme,
     presentation = 'dock', onDetach, onAttach, onRegisterTerminalGuard,
@@ -92,6 +124,12 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
     const [input, setInput] = useState('');
     const [draftAttachments, setDraftAttachments] = useState<AIChatAttachment[]>([]);
     const [sending, setSending] = useState(false);
+    const [dispatchMode, setDispatchMode] = useState<AIRunDispatchMode>('queue');
+    const [pendingApprovals, setPendingApprovals] = useState<Record<string, AIRunApprovalState>>({});
+    const [pendingRecoveries, setPendingRecoveries] = useState<Record<string, AIRunRecoveryState>>({});
+    const [waitingWorkspaces, setWaitingWorkspaces] = useState<Record<string, AIRunWorkspaceState>>({});
+    const [runStateVersion, setRunStateVersion] = useState(0);
+    const [runControlBusyKey, setRunControlBusyKey] = useState<string | null>(null);
     const [showScrollBottom, setShowScrollBottom] = useState(false);
     const [historyOpen, setHistoryOpen] = useState(false);
     const [activePanelMode, setActivePanelMode] = useState<'chat' | 'insights' | 'history'>('chat');
@@ -106,27 +144,14 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         handleModelChange,
         handleOpenSettingsFromPanel,
         loadingModels,
-        mcpTools,
-        skills,
-        userPromptSettings,
     } = useAIChatRuntimeResources({ onOpenSettings });
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const nudgeCountRef = useRef(0);
-    const sendOptionsRef = useRef<AIChatSendRequestOptions>({});
-    const sendAttemptCoordinatorRef = useRef<ReturnType<typeof createAIChatSendAttemptCoordinator> | null>(null);
-    if (!sendAttemptCoordinatorRef.current) {
-        sendAttemptCoordinatorRef.current = createAIChatSendAttemptCoordinator();
-    }
-    const sendAttemptCoordinator = sendAttemptCoordinatorRef.current;
-    useEffect(() => () => sendAttemptCoordinator.invalidate(), [sendAttemptCoordinator]);
-    const {
-        getCurrentJVMPlanContext,
-        getCurrentJVMDiagnosticPlanContext,
-        pendingJVMPlanContextRef,
-        pendingJVMDiagnosticPlanContextRef,
-    } = useAIChatPlanContexts();
+    const activeRunsRef = useRef(new Map<string, { state: string; revision: number; sessionId?: string }>());
+    const harnessServiceRef = useRef<AIRunHarnessService | undefined>(undefined);
+    const pendingConversationBranchRef = useRef<PendingConversationBranch | null>(null);
+    const dispatchModeDirtyRef = useRef(false);
 
     const aiActiveSessionId = useStore(state => state.aiActiveSessionId);
     const appearance = useStore(state => state.appearance);
@@ -134,8 +159,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
     const addAIChatMessage = useStore(state => state.addAIChatMessage);
     const updateAIChatMessage = useStore(state => state.updateAIChatMessage);
     const deleteAIChatMessage = useStore(state => state.deleteAIChatMessage);
-    const truncateAIChatMessages = useStore(state => state.truncateAIChatMessages);
-    const updateAISessionTitle = useStore(state => state.updateAISessionTitle);
+    const deleteAISession = useStore(state => state.deleteAISession);
 
     const activeContext = useStore(state => state.activeContext);
     const aiContexts = useStore(state => state.aiContexts);
@@ -159,10 +183,6 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         isV2Ui,
         onWidthChange,
     });
-    const availableTools = useMemo(
-        () => buildAvailableAIChatTools(mcpTools, t),
-        [mcpTools, t],
-    );
     const aiChatSendShortcutBinding = useStore(state => resolveShortcutBinding(
         state.shortcutOptions,
         'sendAIChatMessage',
@@ -174,11 +194,45 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         createNewAISession,
     });
 
+    // A draft created by editing a durable turn belongs only to the source
+    // session. Do not carry that immutable branch cursor into another
+    // session when the user navigates before sending it.
+    useEffect(() => {
+        pendingConversationBranchRef.current = null;
+    }, [sid]);
+
     useAIChatAutoContext({
         aiPanelVisible,
         activeTabId,
         tabs,
     });
+
+    // The persisted policy is the default for a fresh composer. A deliberate
+    // per-message choice remains local and must not be overwritten by an
+    // asynchronous policy read.
+    useEffect(() => {
+        if (!aiPanelVisible || dispatchModeDirtyRef.current) return;
+        const service = harnessServiceRef.current || getAIRunHarnessService();
+        harnessServiceRef.current = service;
+        if (!service?.AIGetRunPolicy) return;
+        let disposed = false;
+        void getRunPolicy(service).then((snapshot) => {
+            if (disposed || dispatchModeDirtyRef.current) return;
+            setDispatchMode(normalizeAIRunPolicy(snapshot.policy).defaultDispatchMode);
+        }).catch((error) => {
+            // A missing policy is intentionally non-fatal: the server-side
+            // default remains queue and the composer stays usable.
+            console.warn('Failed to load AI agent run policy', error);
+        });
+        return () => {
+            disposed = true;
+        };
+    }, [aiPanelVisible]);
+
+    const handleDispatchModeChange = useCallback((mode: AIRunDispatchMode) => {
+        dispatchModeDirtyRef.current = true;
+        setDispatchMode(mode === 'steer' ? 'steer' : 'queue');
+    }, []);
 
     useEffect(() => {
         if (runtimeComposerNotice) {
@@ -260,8 +314,6 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         return () => window.removeEventListener('gonavi:ai:inject-prompt', handler);
     }, []);
 
-    const generateTitleForSession = useAIChatSessionTitleGenerator({ updateAISessionTitle });
-
     const handleScrollMessages = useCallback((event: React.UIEvent<HTMLDivElement>) => {
         const { scrollTop, scrollHeight, clientHeight } = event.currentTarget;
         const isNearBottom = scrollHeight - scrollTop - clientHeight < 150;
@@ -273,160 +325,410 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
     }, []);
 
     const handleEditMessage = useCallback((msg: AIChatMessage) => {
-        truncateAIChatMessages(sid, msg.id);
-        deleteAIChatMessage(sid, msg.id);
+        const sourceSession = orderedAISessions.find((session) => session.id === sid);
+        const messageId = String(msg.id || '').trim();
+        // Editing a durable user turn never rewrites that transcript. Go will
+        // copy the prefix before this cursor into a new branch on send.
+        pendingConversationBranchRef.current = sourceSession && messageId
+            ? {
+                sourceSessionId: sid,
+                sourceRevision: Number(sourceSession.revision) || undefined,
+                branchFromMessageId: messageId,
+            }
+            : null;
         setInput(msg.content);
         setDraftAttachments(msg.attachments || []);
         setTimeout(() => textareaRef.current?.focus(), 50);
-    }, [sid, truncateAIChatMessages, deleteAIChatMessage]);
+    }, [orderedAISessions, sid]);
 
-    const buildSystemContextMessages = useCallback((
-        overrideJVMPlanContext?: JVMAIPlanContext,
-        overrideJVMDiagnosticPlanContext?: JVMDiagnosticPlanContext,
-    ) => {
-        const { activeContext, aiContexts, connections, tabs, activeTabId } = useStore.getState();
-        return buildAISystemContextMessages({
-            activeContext,
-            aiContexts,
-            connections,
-            tabs: resolveLiveQueryTabs(tabs),
-            activeTabId,
-            availableToolNames: availableTools.map((tool) => tool.function.name),
-            skills,
-            userPromptSettings,
-            overrideJVMPlanContext,
-            overrideJVMDiagnosticPlanContext,
-            translate: t,
+    const activeRunIdRef = useRef<string | null>(null);
+
+    const hydrateSessionProjection = useCallback(async (
+        sessionId: string,
+        service: AIRunHarnessService | undefined,
+    ): Promise<void> => {
+        if (!sessionId || sessionId === 'session-fallback' || !service?.AIReadAgentSession) return;
+        try {
+            const projection = await readAgentSession({ sessionId, limit: 10_000 }, service);
+            const durable = toAIChatMessages(projection);
+            useStore.setState((state) => {
+                const history = { ...state.aiChatHistory };
+                if (durable.length > 0 || Array.isArray(projection.messages)) {
+                    history[sessionId] = mergeAIChatSessionMessages(durable, history[sessionId] || []);
+                }
+                const title = String(projection.title || '').trim();
+                if (!title) return { aiChatHistory: history };
+                const updatedAtRaw = projection.updatedAt;
+                const parsedUpdatedAt = typeof updatedAtRaw === 'number'
+                    ? updatedAtRaw
+                    : Date.parse(String(updatedAtRaw || ''));
+                const updatedAt = Number.isFinite(parsedUpdatedAt) ? parsedUpdatedAt : Date.now();
+                const existing = state.aiChatSessions.find((session) => session.id === sessionId);
+                const session = {
+                    id: sessionId,
+                    title,
+                    updatedAt,
+                    revision: Number(projection.revision) || undefined,
+                    generation: Number(projection.generation) || undefined,
+                };
+                return {
+                    aiChatHistory: history,
+                    aiChatSessions: existing
+                        ? state.aiChatSessions.map((item) => item.id === sessionId ? { ...item, ...session } : item)
+                        : [session, ...state.aiChatSessions],
+                };
+            });
+        } catch (error) {
+            // A newly created run can finish before the projection read races
+            // with SQLite. The event stream remains authoritative and will
+            // replay the missing messages on the next mount.
+            console.warn('Failed to hydrate AI agent session', sessionId, error);
+        }
+    }, []);
+
+    const handleRunStateChange = useCallback((runId: string, state: string, revision: number) => {
+        const previous = activeRunsRef.current.get(runId);
+        const sessionId = previous?.sessionId || sid;
+        activeRunsRef.current.set(runId, {
+            state,
+            revision,
+            sessionId,
         });
-    }, [availableTools, skills, t, userPromptSettings]);
+        setRunStateVersion((version) => version + 1);
+        if (state !== 'awaiting_approval') {
+            setPendingApprovals((current) => {
+                if (!current[runId]) return current;
+                const next = { ...current };
+                delete next[runId];
+                return next;
+            });
+        }
+        if (state === 'recovery_required') {
+            setPendingRecoveries((current) => current[runId]
+                ? current
+                : {
+                    ...current,
+                    [runId]: {
+                        runId,
+                        sessionId,
+                        revision,
+                    },
+                });
+        } else {
+            setPendingRecoveries((current) => {
+                if (!current[runId]) return current;
+                const next = { ...current };
+                delete next[runId];
+                return next;
+            });
+        }
+        if (state === 'awaiting_workspace') {
+            setWaitingWorkspaces((current) => current[runId]?.revision === revision
+                ? current
+                : {
+                    ...current,
+                    [runId]: { runId, sessionId, revision },
+                });
+        } else {
+            setWaitingWorkspaces((current) => {
+                if (!current[runId]) return current;
+                const next = { ...current };
+                delete next[runId];
+                return next;
+            });
+        }
+        if (runId === activeRunIdRef.current && isTerminalRunState(state)) {
+            setSending(false);
+        }
+    }, [sid]);
 
-    const {
-        executeLocalTools,
-        resetToolCallState,
-        toolContextMapRef,
-    } = useAIChatLocalTools({
+    const handleApprovalChange = useCallback((runId: string, approval: AIRunApprovalState | null) => {
+        setPendingApprovals((current) => {
+            if (!approval || approval.decision !== 'pending') {
+                if (!current[runId]) return current;
+                const next = { ...current };
+                delete next[runId];
+                return next;
+            }
+            return { ...current, [runId]: approval };
+        });
+    }, []);
+
+    const handleRecoveryChange = useCallback((runId: string, recovery: AIRunRecoveryState | null) => {
+        setPendingRecoveries((current) => {
+            if (!recovery) {
+                if (!current[runId]) return current;
+                const next = { ...current };
+                delete next[runId];
+                return next;
+            }
+            return { ...current, [runId]: recovery };
+        });
+    }, []);
+
+    const isTrackedRun = useCallback((runId: string): boolean => activeRunsRef.current.has(runId), []);
+
+    const handleRunTerminal = useCallback((_runId: string, sessionId: string) => {
+        const service = harnessServiceRef.current || getAIRunHarnessService();
+        harnessServiceRef.current = service;
+        void hydrateSessionProjection(sessionId, service);
+    }, [hydrateSessionProjection]);
+
+    useAIChatRunEventSubscription({
         sid,
-        activeProviderModel: activeProvider?.model,
-        availableTools,
-        buildSystemContextMessages,
-        dynamicModels,
-        mcpTools,
-        nextMessageId: genId,
-        pendingJVMPlanContextRef,
-        pendingJVMDiagnosticPlanContextRef,
-        sendOptionsRef,
         setSending,
-        skills,
-        translate: t,
+        addAIChatMessage,
         updateAIChatMessage,
-        userPromptSettings,
+        deleteAIChatMessage,
+        nextMessageId: genId,
+        onRunStateChange: handleRunStateChange,
+        onApprovalChange: handleApprovalChange,
+        onRecoveryChange: handleRecoveryChange,
+        isRunTracked: isTrackedRun,
+        onRunTerminal: handleRunTerminal,
+        translate: t,
     });
+
+    const activeRuns = useMemo(
+        () => Array.from(activeRunsRef.current.entries())
+            .filter(([, run]) => run.sessionId === sid && !isTerminalRunState(run.state))
+            .map(([runId, run]) => ({ runId, ...run })),
+        [runStateVersion, sid],
+    );
+    const hasActiveRun = activeRuns.length > 0;
+    const visibleApprovals = useMemo(
+        () => Object.values(pendingApprovals).filter((approval) => approval.sessionId === sid),
+        [pendingApprovals, sid],
+    );
+    const visibleRecoveries = useMemo(
+        () => Object.values(pendingRecoveries).filter((recovery) => recovery.sessionId === sid),
+        [pendingRecoveries, sid],
+    );
+    const visibleWaitingWorkspaces = useMemo(
+        () => Object.values(waitingWorkspaces).filter((workspace) => workspace.sessionId === sid),
+        [waitingWorkspaces, sid],
+    );
+
+    const refreshRunAfterRevisionConflict = useCallback(async (
+        runId: string,
+        sessionId: string,
+        service: AIRunHarnessService | undefined,
+    ): Promise<void> => {
+        if (!service?.AIReadAgentRun) return;
+        try {
+            const projection = await readAgentRun({ runId, afterSequence: 0, limit: 1 }, service);
+            const state = String(projection?.run?.state || '').trim();
+            const revision = Number(projection?.run?.revision || 0);
+            if (state || revision > 0) {
+                handleRunStateChange(runId, state || 'queued', revision);
+            }
+            void hydrateSessionProjection(sessionId, service);
+        } catch (refreshError) {
+            console.warn('Failed to refresh stale AI agent run projection', runId, refreshError);
+        }
+    }, [handleRunStateChange, hydrateSessionProjection]);
+
+    const handleRunControl = useCallback(async (
+        runId: string,
+        action: Parameters<typeof controlAgentRun>[0]['action'],
+        extra: {
+            approvalId?: string;
+            callId?: string;
+            busyKey: string;
+        },
+    ): Promise<void> => {
+        const service = harnessServiceRef.current || getAIRunHarnessService();
+        harnessServiceRef.current = service;
+        const run = activeRunsRef.current.get(runId);
+        if (!service?.AIControlAgentRun || !run) return;
+        const sessionId = run.sessionId || sid;
+        setRunControlBusyKey(extra.busyKey);
+        try {
+            const snapshot = await controlAgentRun({
+                requestId: `agent-control-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                runId,
+                sessionId,
+                action,
+                ...(extra.approvalId ? { approvalId: extra.approvalId } : {}),
+                ...(extra.callId ? { callId: extra.callId } : {}),
+                ...(run.revision > 0 ? { expectedRevision: run.revision } : {}),
+            }, service);
+            const nextState = String(snapshot?.state || '').trim();
+            const nextRevision = Number(snapshot?.revision || 0);
+            if (nextState || nextRevision > 0) {
+                activeRunsRef.current.set(runId, {
+                    ...run,
+                    ...(nextState ? { state: nextState } : {}),
+                    ...(nextRevision > 0 ? { revision: nextRevision } : {}),
+                });
+                setRunStateVersion((version) => version + 1);
+            }
+        } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            if (isRevisionConflictError(error)) {
+                void refreshRunAfterRevisionConflict(runId, sessionId, service);
+            }
+            addAIChatMessage(sessionId, {
+                id: genId(),
+                role: 'assistant',
+                content: t('ai_chat.run.control.failed', { detail }),
+                rawError: detail,
+                timestamp: Date.now(),
+                loading: false,
+                phase: 'idle',
+                excludeFromAIContext: true,
+            });
+        } finally {
+            setRunControlBusyKey(null);
+        }
+    }, [addAIChatMessage, refreshRunAfterRevisionConflict, sid, t]);
+
+    const handleApprovalDecision = useCallback((
+        approval: AIRunApprovalState,
+        decision: 'approved' | 'denied',
+    ) => {
+        void handleRunControl(
+            approval.runId,
+            decision === 'approved' ? 'approve' : 'deny',
+            {
+                approvalId: approval.approvalId,
+                callId: approval.callId,
+                busyKey: `${approval.runId}:${decision === 'approved' ? 'approve' : 'deny'}:${approval.approvalId}`,
+            },
+        );
+    }, [handleRunControl]);
+
+    const handleRecoveryAction = useCallback((
+        recovery: AIRunRecoveryState,
+        action: AIRunRecoveryAction,
+    ) => {
+        void handleRunControl(recovery.runId, action, {
+            callId: recovery.callId,
+            busyKey: `${recovery.runId}:${action}`,
+        });
+    }, [handleRunControl]);
+
+    const handleWorkspaceAction = useCallback((
+        workspace: AIRunWorkspaceState,
+    ) => {
+        void handleRunControl(workspace.runId, 'use_stale_workspace', {
+            busyKey: `${workspace.runId}:use_stale_workspace`,
+        });
+    }, [handleRunControl]);
+
+    const submitHarnessRun = useCallback(async (
+        content: string,
+        attachments: AIChatAttachment[],
+        sessionId?: string,
+        mode: AIRunDispatchMode = 'queue',
+        expectedRevision?: number,
+        branchFromMessageId?: string,
+    ) => {
+        const service = getAIRunHarnessService();
+        harnessServiceRef.current = service;
+        if (!hasAIRunHarness(service)) {
+            throw new Error('AISubmitAgentInput is unavailable');
+        }
+        const receipt = await submitAgentInput({
+            requestId: `agent-input-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            ...(sessionId ? { sessionId } : {}),
+            ...(branchFromMessageId ? { branchFromMessageId } : {}),
+            content,
+            attachments: toAgentAttachments(attachments),
+            dispatchMode: mode,
+            contextSourceId: 'desktop',
+            contextSourceInstanceId: getAIWorkspaceSourceInstanceID(),
+            provider: String(activeProvider?.id || '').trim() || undefined,
+            model: String(activeProvider?.model || '').trim() || undefined,
+            thinking: String(thinkingIntensity || '').trim() || undefined,
+            ...(Number.isFinite(expectedRevision) && Number(expectedRevision) > 0
+                ? { expectedRevision: Number(expectedRevision) }
+                : {}),
+        }, service);
+        const receiptRunId = String(receipt.runId || '').trim();
+        const receiptSessionId = String(receipt.sessionId || sessionId || '').trim();
+        if (receiptRunId) {
+            activeRunsRef.current.set(receiptRunId, {
+                state: String(receipt.state || 'queued'),
+                revision: Number(receipt.revision || 0),
+                sessionId: receiptSessionId,
+            });
+            activeRunIdRef.current = receiptRunId;
+            setRunStateVersion((version) => version + 1);
+        }
+        if (receiptSessionId && receiptSessionId !== sid) {
+            setAIActiveSessionId(receiptSessionId);
+        }
+        if (receiptSessionId && receiptRunId) {
+            const hasPendingAssistant = (useStore.getState().aiChatHistory[receiptSessionId] || [])
+                .some((message) => message.role === 'assistant' && message.loading === true);
+            if (!hasPendingAssistant) {
+                addAIChatMessage(receiptSessionId, {
+                    id: `agent-run-${receiptRunId}-pending`,
+                    role: 'assistant',
+                    content: '',
+                    phase: 'connecting',
+                    timestamp: Date.now(),
+                    loading: true,
+                });
+            }
+        }
+        if (receiptSessionId) {
+            void hydrateSessionProjection(receiptSessionId, service);
+        }
+        if (isTerminalRunState(String(receipt.state || ''))) {
+            setSending(false);
+        }
+        return receipt;
+    }, [activeProvider?.id, activeProvider?.model, addAIChatMessage, hydrateSessionProjection, setAIActiveSessionId, sid, thinkingIntensity]);
 
     const handleRetryMessage = useCallback(async (msg: AIChatMessage) => {
         if (sending || interactionDisabled || msg.excludeFromAIContext === true) return;
-        const historyLocal = useStore.getState().aiChatHistory[sid] || [];
-        const retryPlan = resolveAIChatRetryPlan(historyLocal, msg.id);
-        if (retryPlan) {
-            const { userMessage: userMsg, requestHistory } = retryPlan;
-            resetToolCallState();
-            const sendAttempt = sendAttemptCoordinator.begin(sid);
-            nudgeCountRef.current = 0;
-            try {
-                const retryJVMPlanContext = msg.jvmPlanContext || getCurrentJVMPlanContext();
-                const retryJVMDiagnosticPlanContext =
-                    msg.jvmDiagnosticPlanContext || getCurrentJVMDiagnosticPlanContext();
-                pendingJVMPlanContextRef.current = retryJVMPlanContext;
-                pendingJVMDiagnosticPlanContextRef.current = retryJVMDiagnosticPlanContext;
-                const retrySendOptions: AIChatSendRequestOptions = {
-                    model: String(activeProvider?.model || '').trim() || undefined,
-                    thinkingIntensity: String(thinkingIntensity || '').trim() || undefined,
-                };
-                sendOptionsRef.current = retrySendOptions;
-
-                setSending(true);
-                const messagesPayload = toAIRequestMessages(requestHistory, t);
-                const sysMessages = await buildSystemContextMessages(
-                    retryJVMPlanContext,
-                    retryJVMDiagnosticPlanContext,
-                );
-                if (await sendAttempt.shouldAbort()) return;
-
-                truncateAIChatMessages(sid, userMsg.id);
-                const connectingMsg: AIChatMessage = {
-                    id: genId(),
-                    role: 'assistant',
-                    phase: 'connecting',
-                    content: '',
-                    timestamp: Date.now(),
-                    loading: true,
-                    jvmPlanContext: retryJVMPlanContext,
-                    jvmDiagnosticPlanContext: retryJVMDiagnosticPlanContext,
-                };
-                addAIChatMessage(sid, connectingMsg);
-
-                const allMessages = [...sysMessages, ...messagesPayload];
-                await dispatchAIChatPayload({
-                    sid,
-                    messages: allMessages,
-                    tools: availableTools,
-                    sendOptions: retrySendOptions,
-                    addAIChatMessage,
-                    updateAIChatMessage,
-                    setSending,
-                    nextMessageId: genId,
-                    pendingAssistantMessageId: connectingMsg.id,
-                    jvmPlanContext: retryJVMPlanContext,
-                    jvmDiagnosticPlanContext: retryJVMDiagnosticPlanContext,
-                    translate: t,
-                });
-            } catch (error) {
-                if (!await sendAttempt.shouldAbort()) {
-                    console.error('Failed to retry AI message', error);
-                    setSending(false);
-                }
-            } finally {
-                sendAttempt.finish();
-            }
+        const history = useStore.getState().aiChatHistory[sid] || [];
+        const messageIndex = history.findIndex((message) => message.id === msg.id);
+        if (messageIndex < 0) return;
+        const userMessage = [...history.slice(0, messageIndex)]
+            .reverse()
+            .find((message) => message.role === 'user');
+        if (!userMessage) return;
+        const durableSession = orderedAISessions.find((session) => session.id === sid);
+        if (!durableSession || !String(userMessage.id || '').trim()) return;
+        const expectedRevision = Number(durableSession?.revision || 0);
+        setSending(true);
+        try {
+            await submitHarnessRun(
+                userMessage.content,
+                userMessage.attachments || [],
+                sid,
+                'queue',
+                expectedRevision > 0 ? expectedRevision : undefined,
+                userMessage.id,
+            );
+        } catch (error) {
+            console.error('Failed to retry AI agent run', error);
+            setSending(false);
+            addAIChatMessage(sid, {
+                id: genId(),
+                role: 'assistant',
+                content: t('ai_chat.panel.message.send_failed', {
+                    detail: error instanceof Error ? error.message : String(error),
+                }),
+                rawError: error instanceof Error ? error.message : String(error),
+                timestamp: Date.now(),
+                loading: false,
+                phase: 'idle',
+                excludeFromAIContext: true,
+            });
         }
-    }, [
-        sid,
-        sending,
-        interactionDisabled,
-        availableTools,
-        activeProvider,
-        buildSystemContextMessages,
-        truncateAIChatMessages,
-        addAIChatMessage,
-        getCurrentJVMPlanContext,
-        getCurrentJVMDiagnosticPlanContext,
-        resetToolCallState,
-        sendAttemptCoordinator,
-        t,
-        thinkingIntensity,
-        updateAIChatMessage,
-    ]);
-
-    useAIChatStreamSubscription({
-        sid,
-        sending,
-        setSending,
-        availableTools,
-        addAIChatMessage,
-        updateAIChatMessage,
-        buildSystemContextMessages,
-        executeLocalTools,
-        generateTitleForSession,
-        nextMessageId: genId,
-        nudgeCountRef,
-        pendingJVMPlanContextRef,
-        pendingJVMDiagnosticPlanContextRef,
-        sendOptionsRef,
-        translate: t,
-    });
+    }, [addAIChatMessage, interactionDisabled, orderedAISessions, sending, sid, submitHarnessRun, t]);
 
     const handleSend = useCallback(async () => {
         const text = input.trim();
-        if ((!text && draftAttachments.length === 0) || sending || interactionDisabled) return;
+        if ((!text && draftAttachments.length === 0) || interactionDisabled) return;
+        // A running harness can still accept a durable queued input or a
+        // high-priority steer. Keep the old guard only for a stale local
+        // sending flag that has no active Ledger run behind it.
+        if (sending && !hasActiveRun) return;
 
         const connectionKey = activeContext?.connectionId ? `${activeContext.connectionId}:${activeContext.dbName || ''}` : 'default';
         const readiness = buildAIChatReadinessSnapshot({
@@ -451,123 +753,46 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         }
         setComposerNoticeState(null);
 
-        resetToolCallState();
-        const sendAttempt = sendAttemptCoordinator.begin(sid);
-        nudgeCountRef.current = 0;
-        let pendingAssistantMessageId = '';
+        const currentAttachments = [...draftAttachments];
+        // Existing sessions are addressed by their durable ID. A newly opened
+        // local session has no Ledger row yet; omitting the ID lets Go create
+        // one atomically and return the canonical session ID.
+        const durableSession = sid === 'session-fallback'
+            ? undefined
+            : orderedAISessions.find((session) => session.id === sid);
+        const pendingBranch = pendingConversationBranchRef.current;
+        const branch = pendingBranch?.sourceSessionId === sid ? pendingBranch : null;
+        const expectedRevision = branch?.sourceRevision ?? Number(durableSession?.revision || 0);
+        setInput('');
+        setDraftAttachments([]);
+        setSending(true);
+        textareaRef.current?.focus();
         try {
-            const currentJVMPlanContext = getCurrentJVMPlanContext();
-            const currentJVMDiagnosticPlanContext = getCurrentJVMDiagnosticPlanContext();
-            pendingJVMPlanContextRef.current = currentJVMPlanContext;
-            pendingJVMDiagnosticPlanContextRef.current = currentJVMDiagnosticPlanContext;
-            const requestSendOptions: AIChatSendRequestOptions = {
-                model: String(activeProvider?.model || '').trim() || undefined,
-                thinkingIntensity: String(thinkingIntensity || '').trim() || undefined,
-            };
-            sendOptionsRef.current = requestSendOptions;
-
-            const currentAttachments = [...draftAttachments];
-            const currentImages = currentAttachments
-                .filter((attachment) => attachment.kind === 'image' && attachment.dataUrl)
-                .map((attachment) => attachment.dataUrl as string);
-            const currentFileAttachments = currentAttachments.filter((attachment) => attachment.kind !== 'image');
-            setInput('');
-            setDraftAttachments([]);
-            setSending(true);
-
-            textareaRef.current?.focus();
-
-            const userMsg: AIChatMessage = {
-                id: genId(),
-                role: 'user',
-                content: text,
-                timestamp: Date.now(),
-                images: currentImages.length > 0 ? currentImages : undefined,
-                attachments: currentFileAttachments.length > 0 ? currentFileAttachments : undefined,
-            };
-            addAIChatMessage(sid, userMsg);
-
-            const connectingMsg: AIChatMessage = {
+            await submitHarnessRun(
+                text,
+                currentAttachments,
+                branch ? branch.sourceSessionId : (durableSession ? sid : undefined),
+                branch ? 'queue' : dispatchMode,
+                expectedRevision > 0 ? expectedRevision : undefined,
+                branch?.branchFromMessageId,
+            );
+            if (branch && pendingConversationBranchRef.current === branch) {
+                pendingConversationBranchRef.current = null;
+            }
+        } catch (error) {
+            console.error('Failed to submit AI agent input', error);
+            const detail = error instanceof Error ? error.message : String(error);
+            setSending(false);
+            addAIChatMessage(sid, {
                 id: genId(),
                 role: 'assistant',
-                phase: 'connecting',
-                content: '',
+                content: t('ai_chat.panel.message.send_failed', { detail }),
+                rawError: detail,
                 timestamp: Date.now(),
-                loading: true,
-                jvmPlanContext: currentJVMPlanContext,
-                jvmDiagnosticPlanContext: currentJVMDiagnosticPlanContext,
-            };
-            pendingAssistantMessageId = connectingMsg.id;
-            addAIChatMessage(sid, connectingMsg);
-            updateAIChatMessage(sid, connectingMsg.id, { content: t('ai_chat.panel.status.model_connecting') });
-
-            const chatMessages = toAIRequestMessages([...messages, userMsg], t);
-            const dynamicMaxLimit = getDynamicMaxContextChars(activeProvider?.model);
-
-            await runAIChatSendAttemptStages({
-                attempt: sendAttempt,
-                buildSystemContext: () => buildSystemContextMessages(
-                    currentJVMPlanContext,
-                    currentJVMDiagnosticPlanContext,
-                ),
-                compressContext: () => compressContextIfNeeded(sid, chatMessages, dynamicMaxLimit, t),
-                dispatch: async ({ systemContext: systemMessages, compression: summary }) => {
-                    let finalMessagesPayload = chatMessages;
-                    if (summary) {
-                        const compressedMsg: AIChatMessage = {
-                            id: genId(),
-                            role: 'assistant',
-                            content: t('ai_chat.panel.status.memory_summary', { summary }),
-                            timestamp: Date.now() - 1000,
-                        };
-                        useStore.getState().replaceAIChatHistory(sid, [compressedMsg, userMsg, connectingMsg]);
-                        finalMessagesPayload = [
-                            { role: 'assistant', content: compressedMsg.content },
-                            toAIRequestMessage(userMsg, t),
-                        ];
-                    }
-
-                    const allMessages = [...systemMessages, ...finalMessagesPayload];
-                    updateAIChatMessage(sid, connectingMsg.id, { content: t('ai_chat.panel.status.waking_engine') });
-                    updateAIChatMessage(sid, connectingMsg.id, { content: t('ai_chat.panel.status.waiting_response') });
-
-                    return dispatchAIChatPayload({
-                        sid,
-                        messages: allMessages,
-                        tools: availableTools,
-                        sendOptions: requestSendOptions,
-                        addAIChatMessage,
-                        updateAIChatMessage,
-                        setSending,
-                        nextMessageId: genId,
-                        pendingAssistantMessageId: connectingMsg.id,
-                        jvmPlanContext: currentJVMPlanContext,
-                        jvmDiagnosticPlanContext: currentJVMDiagnosticPlanContext,
-                        unavailableContent: t('ai_chat.panel.message.service_not_ready'),
-                        translate: t,
-                        onNonStreamSuccess: messages.length === 0
-                            ? () => generateTitleForSession(sid)
-                            : undefined,
-                    });
-                },
+                loading: false,
+                phase: 'idle',
+                excludeFromAIContext: true,
             });
-        } catch (error) {
-            if (!await sendAttempt.shouldAbort()) {
-                console.error('Failed to send AI message', error);
-                const detail = error instanceof Error ? error.message : String(error);
-                if (pendingAssistantMessageId) {
-                    updateAIChatMessage(sid, pendingAssistantMessageId, {
-                        content: t('ai_chat.panel.message.send_failed', { detail }),
-                        rawError: detail,
-                        excludeFromAIContext: true,
-                        loading: false,
-                        phase: 'idle',
-                    });
-                }
-                setSending(false);
-            }
-        } finally {
-            sendAttempt.finish();
         }
     }, [
         input,
@@ -575,23 +800,19 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         sending,
         interactionDisabled,
         messages,
+        orderedAISessions,
         addAIChatMessage,
         sid,
         activeContext,
         activeProvider,
         aiContexts,
-        availableTools,
-        buildSystemContextMessages,
         dynamicModels,
-        generateTitleForSession,
-        getCurrentJVMPlanContext,
-        getCurrentJVMDiagnosticPlanContext,
         loadingModels,
-        resetToolCallState,
-        sendAttemptCoordinator,
+        submitHarnessRun,
         t,
         thinkingIntensity,
-        updateAIChatMessage,
+        hasActiveRun,
+        dispatchMode,
     ]);
 
     const handleKeyDown = useCallback((event: React.KeyboardEvent) => {
@@ -600,42 +821,82 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
 
     const handleStop = useCallback(async () => {
         try {
-            const Service = (window as any).go?.aiservice?.Service;
-            const stopped = await prepareAIChatStreamForTerminalAction({
-                sid,
-                service: Service,
-                setSending,
-            });
-            if (!stopped) {
-                console.warn('Chat stream did not stop before the cancellation timeout');
-            }
+            const service = harnessServiceRef.current || getAIRunHarnessService();
+            harnessServiceRef.current = service;
+            if (!service?.AIControlAgentRun) throw new Error('AIControlAgentRun is unavailable');
+            const candidate = Array.from(activeRunsRef.current.entries())
+                .reverse()
+                .find(([, run]) => run.sessionId === sid && !isTerminalRunState(run.state));
+            if (!candidate) return;
+            const [runId, run] = candidate;
+            setSending(true);
+            await controlAgentRun({
+                requestId: `agent-control-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                runId,
+                sessionId: sid,
+                action: 'cancel',
+                ...(run.revision > 0 ? { expectedRevision: run.revision } : {}),
+            }, service);
         } catch (error) {
             console.warn('Failed to stop chat stream', error);
+            setSending(false);
         }
     }, [sid]);
 
     const handleCreateSession = useCallback(() => {
         if (sending || interactionDisabled) return;
+        pendingConversationBranchRef.current = null;
         createNewAISession();
         setActivePanelMode('chat');
     }, [createNewAISession, interactionDisabled, sending]);
 
     const handleSelectSession = useCallback((sessionId: string) => {
-        if (sending || interactionDisabled) return;
+        if (interactionDisabled) return;
+        pendingConversationBranchRef.current = null;
         setAIActiveSessionId(sessionId);
         setActivePanelMode('chat');
         setHistoryOpen(false);
-    }, [interactionDisabled, sending, setAIActiveSessionId]);
+    }, [interactionDisabled, setAIActiveSessionId]);
+
+    const handleArchiveSession = useCallback(async (session: AIChatSessionSummary) => {
+        const sessionId = String(session.id || '').trim();
+        if (!sessionId) return;
+        const service = harnessServiceRef.current || getAIRunHarnessService();
+        harnessServiceRef.current = service;
+        if (service?.AIMutateAgentSession) {
+            let expectedRevision = Number(session.revision) || 0;
+            if (expectedRevision <= 0) {
+                const projection = await readAgentSession({ sessionId, limit: 1 }, service);
+                expectedRevision = Number(projection.revision) || 0;
+            }
+            if (expectedRevision <= 0) {
+                throw new Error('AI agent session revision is unavailable');
+            }
+            await mutateAgentSession({
+                sessionId,
+                expectedRevision,
+                archived: true,
+            }, service);
+        }
+        deleteAISession(sessionId);
+    }, [deleteAISession]);
 
     const prepareForTerminalAction = useCallback(async () => {
-        const Service = (window as any).go?.aiservice?.Service;
-        return prepareAIChatStreamForTerminalAction({
-            sid,
-            service: Service,
-            setSending,
-            allSessions: true,
-        });
-    }, [sid]);
+        const service = harnessServiceRef.current || getAIRunHarnessService();
+        harnessServiceRef.current = service;
+        if (!service?.AIControlAgentRun) return true;
+        const activeRuns = Array.from(activeRunsRef.current.entries())
+            .filter(([, run]) => !isTerminalRunState(run.state));
+        if (activeRuns.length === 0) return true;
+        const results = await Promise.allSettled(activeRuns.map(([runId, run]) => controlAgentRun({
+            requestId: `agent-shutdown-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            runId,
+            sessionId: run.sessionId,
+            action: 'cancel',
+            ...(run.revision > 0 ? { expectedRevision: run.revision } : {}),
+        }, service)));
+        return results.every((result) => result.status === 'fulfilled');
+    }, []);
 
     useEffect(() => {
         onRegisterTerminalGuard?.(prepareForTerminalAction);
@@ -643,16 +904,13 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
     }, [onRegisterTerminalGuard, prepareForTerminalAction]);
 
     const { inferredConnectionId, inferredDbName } = useMemo(
-        () => inferAIChatConnectionContext({
+    () => inferAIChatConnectionContext({
             activeConnectionId: activeContext?.connectionId,
             activeDbName: activeContext?.dbName,
-            messages,
-            toolContextEntries: toolContextMapRef.current.values(),
         }),
-        [activeContext?.connectionId, activeContext?.dbName, messages],
+        [activeContext?.connectionId, activeContext?.dbName],
     );
 
-    const handleDeleteMessage = useCallback((id: string) => deleteAIChatMessage(sid, id), [sid, deleteAIChatMessage]);
     const handleMessageRenderError = useCallback((error: Error, errorInfo: React.ErrorInfo, msg: AIChatMessage) => {
         console.error('[AI Message Render Error]', msg.id, error, errorInfo);
         const renderErrorPayload = {
@@ -807,7 +1065,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
                 insights={aiInsights}
                 sessions={panelHistorySessions}
                 activeSessionId={sid}
-                sessionActionsDisabled={sending || interactionDisabled}
+                sessionActionsDisabled={interactionDisabled}
                 activeConnectionId={inferredConnectionId}
                 activeConnectionConfig={activeConnectionConfig}
                 activeDbName={inferredDbName}
@@ -824,9 +1082,22 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
                 onSelectSession={handleSelectSession}
                 onEditMessage={handleEditMessage}
                 onRetryMessage={handleRetryMessage}
-                onDeleteMessage={handleDeleteMessage}
                 onMessageRenderError={handleMessageRenderError}
                 onScrollBottom={scrollToMessagesBottom}
+            />
+
+            <AIChatRunControls
+                approvals={visibleApprovals}
+                recoveries={visibleRecoveries}
+                waitingWorkspaces={visibleWaitingWorkspaces}
+                darkMode={darkMode}
+                textColor={textColor}
+                mutedColor={mutedColor}
+                overlayTheme={overlayTheme}
+                busyKey={runControlBusyKey}
+                onApprovalDecision={handleApprovalDecision}
+                onRecoveryAction={handleRecoveryAction}
+                onWorkspaceAction={handleWorkspaceAction}
             />
 
             <AIChatInput
@@ -835,6 +1106,9 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
                 draftAttachments={draftAttachments}
                 setDraftAttachments={setDraftAttachments}
                 sending={sending}
+                dispatchMode={dispatchMode}
+                hasActiveRun={hasActiveRun}
+                onDispatchModeChange={handleDispatchModeChange}
                 onSend={handleSend}
                 onStop={handleStop}
                 handleKeyDown={handleKeyDown}
@@ -871,7 +1145,9 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
                 borderColor={borderColor}
                 onCreateNew={handleCreateSession}
                 onSelectSession={handleSelectSession}
+                onArchiveSession={handleArchiveSession}
                 disabled={sending || interactionDisabled}
+                navigationDisabled={interactionDisabled}
                 sessionId={sid}
             />
         </div>

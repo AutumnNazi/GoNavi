@@ -66,6 +66,16 @@ describe('editable targets', () => {
       });
     }
   });
+
+  it('treats SVG picker icons as interactive targets through their dropdown ancestor', () => {
+    const pickerPath = {
+      tagName: 'path',
+      isContentEditable: false,
+      closest: (selector: string) => selector.includes('.ant-picker-dropdown') ? {} : null,
+    };
+
+    expect(isEditableElement(pickerPath as unknown as EventTarget)).toBe(true);
+  });
 });
 
 // ─── findReservedConflict ────────────────────────────────────────────

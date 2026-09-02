@@ -15,6 +15,8 @@ const REQUIRED_NAV_KEYS = [
   'ai_settings.nav.safety.description',
   'ai_settings.nav.context.title',
   'ai_settings.nav.context.description',
+  'ai_settings.nav.run_policy.title',
+  'ai_settings.nav.run_policy.description',
   'ai_settings.nav.mcp.title',
   'ai_settings.nav.mcp.description',
   'ai_settings.nav.skills.title',
@@ -43,7 +45,7 @@ describe('AISettingsSidebar', () => {
     expect(markup).not.toContain('role="combobox"');
     expect(markup).toContain('role="tablist"');
     expect(markup).toContain('aria-orientation="vertical"');
-    expect(markup.match(/role="tab"/g)).toHaveLength(7);
+    expect(markup.match(/role="tab"/g)).toHaveLength(8);
     expect(markup).toContain('id="gonavi-ai-settings-tab-mcp" type="button" role="tab" aria-selected="true"');
     expect(markup).toContain('gonavi-ai-settings-sidebar');
   });

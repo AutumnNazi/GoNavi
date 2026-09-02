@@ -2,6 +2,7 @@ import React from 'react';
 import {
   ApiOutlined,
   AppstoreOutlined,
+  ControlOutlined,
   ExperimentOutlined,
   RobotOutlined,
   SafetyCertificateOutlined,
@@ -16,6 +17,7 @@ export type AISettingsSectionKey =
   | 'providers'
   | 'safety'
   | 'context'
+  | 'run_policy'
   | 'mcp'
   | 'skills'
   | 'prompts'
@@ -30,6 +32,7 @@ export const AI_SETTINGS_NAV_ITEMS: Array<{
   { key: 'providers', titleKey: 'ai_settings.nav.providers.title', descriptionKey: 'ai_settings.nav.providers.description', icon: <ApiOutlined /> },
   { key: 'safety', titleKey: 'ai_settings.nav.safety.title', descriptionKey: 'ai_settings.nav.safety.description', icon: <SafetyCertificateOutlined /> },
   { key: 'context', titleKey: 'ai_settings.nav.context.title', descriptionKey: 'ai_settings.nav.context.description', icon: <RobotOutlined /> },
+  { key: 'run_policy', titleKey: 'ai_settings.nav.run_policy.title', descriptionKey: 'ai_settings.nav.run_policy.description', icon: <ControlOutlined /> },
   { key: 'mcp', titleKey: 'ai_settings.nav.mcp.title', descriptionKey: 'ai_settings.nav.mcp.description', icon: <AppstoreOutlined /> },
   { key: 'skills', titleKey: 'ai_settings.nav.skills.title', descriptionKey: 'ai_settings.nav.skills.description', icon: <ExperimentOutlined /> },
   { key: 'tools', titleKey: 'ai_settings.nav.tools.title', descriptionKey: 'ai_settings.nav.tools.description', icon: <ToolOutlined /> },

@@ -238,7 +238,13 @@ import {
   resolveLegacyAIEdgeHandleDockStyle,
   resolveLegacyAIEdgeHandleStyle,
 } from './utils/aiEntryLayout';
-import { DEFAULT_AI_PANEL_WIDTH, resolveOverlayAIPanelWidth, shouldOverlayAIPanel } from './utils/aiPanelLayout';
+import {
+  DEFAULT_AI_PANEL_WIDTH,
+  resolveFullscreenAIPanelOverlayWidth,
+  resolveOverlayAIPanelWidth,
+  shouldOverlayAIPanel,
+  shouldUseFullscreenAIPanelOverlay,
+} from './utils/aiPanelLayout';
 import { safeWindowRuntimeCall } from './utils/wailsRuntime';
 import { waitForWindowCondition } from './utils/windowTransition';
 import {
@@ -265,6 +271,7 @@ import { useAppSidebarResize } from './hooks/useAppSidebarResize';
 import { canInheritNewQueryTableContext, resolveNewQueryContext } from './utils/newQueryContext';
 import { useAppUtilityStyles } from './hooks/useAppUtilityStyles';
 import { useWorkbenchTabs } from './hooks/useWorkbenchTabs';
+import { useAIWorkspaceSnapshot } from './components/ai/useAIWorkspaceSnapshot';
 import {
   ApplyDataRootDirectory,
   ApplyLogDirectory,
@@ -792,6 +799,10 @@ const SidebarMetadataSortableRow: React.FC<SidebarMetadataSortableRowProps> = ({
 
 function App() {
   const { language, t } = useI18n();
+  // The workspace source belongs to the application lifetime, not to the
+  // optional AI panel. This keeps a running harness supplied with a live
+  // snapshot while the panel is hidden, detached, or being remounted.
+  useAIWorkspaceSnapshot({ enabled: true });
   const [notificationApi, notificationContextHolder] = notification.useNotification();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isConnectionModalMounted, setIsConnectionModalMounted] = useState(false);
@@ -3843,13 +3854,16 @@ function App() {
       sidebarWidth: renderedSidebarWidth,
       panelWidth: DEFAULT_AI_PANEL_WIDTH,
   });
-  const aiPanelRenderWidth = aiPanelOverlayActive
-      ? resolveOverlayAIPanelWidth({
+  const aiPanelFullscreenOverlay = aiPanelOverlayActive && shouldUseFullscreenAIPanelOverlay(viewportWidth);
+  const aiPanelRenderWidth = aiPanelFullscreenOverlay
+      ? resolveFullscreenAIPanelOverlayWidth(viewportWidth)
+      : aiPanelOverlayActive
+          ? resolveOverlayAIPanelWidth({
           viewportWidth,
           sidebarWidth: renderedSidebarWidth,
           panelWidth: DEFAULT_AI_PANEL_WIDTH,
-      })
-      : DEFAULT_AI_PANEL_WIDTH;
+          })
+          : DEFAULT_AI_PANEL_WIDTH;
   const appliedGlobalProxyDraft = useMemo(() => (
       createGlobalProxyComparableDraft(globalProxy)
   ), [
@@ -8875,7 +8889,19 @@ function App() {
                   <div
                     className={aiPanelOverlayActive ? 'gn-v2-ai-panel-overlay' : undefined}
                     style={aiPanelOverlayActive
-                      ? { position: 'absolute', inset: 0, display: 'flex', justifyContent: 'flex-end', pointerEvents: 'none', zIndex: 14 }
+                      ? aiPanelFullscreenOverlay
+                        ? {
+                            position: 'fixed',
+                            top: titleBarHeight,
+                            right: 0,
+                            bottom: 0,
+                            left: 0,
+                            display: 'flex',
+                            justifyContent: 'flex-end',
+                            pointerEvents: 'none',
+                            zIndex: 14,
+                          }
+                        : { position: 'absolute', inset: 0, display: 'flex', justifyContent: 'flex-end', pointerEvents: 'none', zIndex: 14 }
                       : { position: 'relative', display: 'flex', flexShrink: 0, overflow: 'visible' }}
                   >
                       {aiPanelOverlayActive && (

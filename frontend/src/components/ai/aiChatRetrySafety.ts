@@ -1,9 +1,5 @@
 import type { AIChatMessage } from '../../types';
 
-const hasToolProtocol = (message: AIChatMessage): boolean => (
-  message.role === 'tool' || (message.tool_calls?.length || 0) > 0
-);
-
 const isSettledAssistantMessage = (message: AIChatMessage): boolean => (
   message.role === 'assistant'
   && message.excludeFromAIContext !== true
@@ -17,12 +13,6 @@ const isSettledAssistantMessage = (message: AIChatMessage): boolean => (
 export const collectRetryableAIChatAssistantMessageIds = (
   messages: AIChatMessage[],
 ): ReadonlySet<string> => {
-  const suffixContainsToolProtocol = new Array<boolean>(messages.length + 1).fill(false);
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    suffixContainsToolProtocol[index] = suffixContainsToolProtocol[index + 1]
-      || hasToolProtocol(messages[index]);
-  }
-
   const retryableMessageIds = new Set<string>();
   let lastUserMessageIndex = -1;
   for (let index = 0; index < messages.length; index += 1) {
@@ -34,7 +24,6 @@ export const collectRetryableAIChatAssistantMessageIds = (
     if (
       lastUserMessageIndex >= 0
       && isSettledAssistantMessage(message)
-      && !suffixContainsToolProtocol[lastUserMessageIndex + 1]
     ) {
       retryableMessageIds.add(message.id);
     }

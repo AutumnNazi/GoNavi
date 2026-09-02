@@ -15,11 +15,13 @@ const mocks = vi.hoisted(() => ({
     AIGetProviders: vi.fn(), AIGetActiveProvider: vi.fn(), AIGetEditableProvider: vi.fn(),
     AISetActiveProvider: vi.fn(), AISaveProvider: vi.fn(), AIDeleteProvider: vi.fn(), AITestProvider: vi.fn(),
     AIGetMCPClientInstallStatuses: vi.fn(), AIGetMCPServers: vi.fn(), AIListMCPTools: vi.fn(), AIGetMCPHTTPServerStatus: vi.fn(),
+    AIGetRunPolicy: vi.fn(), AISaveRunPolicy: vi.fn(), AIGetAgentLedgerStatus: vi.fn(),
   },
   resolve: vi.fn(),
   messages: { error: vi.fn(), success: vi.fn(), warning: vi.fn() },
   modal: { confirm: vi.fn() },
   providerProps: {} as any,
+  runPolicyProps: {} as any,
   sidebarProps: {} as any,
 }));
 
@@ -47,6 +49,7 @@ vi.mock('./ai/AIBuiltinToolsCatalog', () => ({ default: () => null }));
 vi.mock('./ai/AISettingsMCPSection', () => ({ default: () => null }));
 vi.mock('./ai/AISettingsSafetySection', () => ({ default: () => null }));
 vi.mock('./ai/AISettingsContextSection', () => ({ default: () => null }));
+vi.mock('./ai/AISettingsRunPolicySection', () => ({ default: (props: any) => { mocks.runPolicyProps = props; return null; } }));
 vi.mock('./ai/AISettingsPromptsSection', () => ({ default: () => null }));
 vi.mock('./ai/AISettingsSkillsSection', () => ({ default: () => null }));
 vi.mock('./common/ResizableDraggableModal', () => ({ default: Object.assign(() => null, { useModal: () => [mocks.modal, null] }) }));
@@ -92,6 +95,7 @@ describe('AISettingsContent provider async behavior', () => {
     vi.resetAllMocks();
     mocks.values = {};
     mocks.listeners.clear();
+    mocks.runPolicyProps = {};
     const publish = () => mocks.listeners.forEach((listener) => listener());
     mocks.form.resetFields.mockImplementation(() => { mocks.values = {}; publish(); });
     mocks.form.setFieldsValue.mockImplementation((patch) => { mocks.values = { ...mocks.values, ...patch }; publish(); });
@@ -109,6 +113,30 @@ describe('AISettingsContent provider async behavior', () => {
     mocks.service.AIGetMCPServers.mockResolvedValue([]);
     mocks.service.AIListMCPTools.mockResolvedValue([]);
     mocks.service.AIGetMCPHTTPServerStatus.mockResolvedValue({});
+    mocks.service.AIGetRunPolicy.mockResolvedValue({
+      schemaVersion: 1,
+      revision: 7,
+      policy: {
+        defaultDispatchMode: 'queue', softToolRoundLimit: 10, maxToolRounds: 15,
+        maxConsecutiveFailedToolRounds: 3, maxToolNudges: 2, maxModelRetriesPerTurn: 1,
+        maxActiveDuration: 30 * 60 * 1_000_000_000, modelTurnTimeout: 0,
+        modelIdleTimeout: 0, defaultToolTimeout: 0, maxTotalTokens: 0,
+        maxToolResultBytes: 1024 * 1024,
+      },
+      runtime: {
+        controlPollInterval: 200_000_000,
+        workspaceSnapshotRenewInterval: 5_000_000_000,
+        workspaceSnapshotLeaseDuration: 15_000_000_000,
+        policyWatchInterval: 500_000_000,
+      },
+    });
+    mocks.service.AIGetAgentLedgerStatus.mockResolvedValue({ state: 'ready' });
+    mocks.service.AISaveRunPolicy.mockImplementation(async (request) => ({
+      schemaVersion: 1,
+      revision: request.expectedRevision + 1,
+      policy: request.policy,
+      runtime: request.runtime,
+    }));
     vi.stubGlobal('window', { go: { aiservice: { Service: mocks.service } }, dispatchEvent: vi.fn() });
     vi.stubGlobal('CustomEvent', class { constructor(public type: string) {} });
   });
@@ -130,6 +158,61 @@ describe('AISettingsContent provider async behavior', () => {
     expect(mocks.providerProps.providers).toHaveLength(4);
     await act(async () => { mocks.sidebarProps.onSelectSection('providers'); });
     expect(mocks.service.AIGetMCPClientInstallStatuses).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads and saves the shared run policy lazily, retaining explicit zero limits', async () => {
+    await mount();
+    expect(mocks.service.AIGetRunPolicy).not.toHaveBeenCalled();
+    expect(mocks.service.AIGetAgentLedgerStatus).not.toHaveBeenCalled();
+
+    mocks.service.AIGetAgentLedgerStatus.mockResolvedValueOnce({ state: 'locked' });
+    await act(async () => { mocks.sidebarProps.onSelectSection('run_policy'); });
+    await flush();
+    expect(mocks.service.AIGetRunPolicy).toHaveBeenCalledTimes(1);
+    expect(mocks.service.AIGetAgentLedgerStatus).toHaveBeenCalledTimes(1);
+    expect(mocks.runPolicyProps.ledgerState).toBe('locked');
+    expect(mocks.runPolicyProps.policy).toMatchObject({
+      maxActiveDuration: 30 * 60 * 1_000_000_000,
+      modelTurnTimeout: 0,
+      modelIdleTimeout: 0,
+      defaultToolTimeout: 0,
+      maxTotalTokens: 0,
+    });
+    expect(mocks.runPolicyProps.runtime).toEqual({
+      controlPollInterval: 200_000_000,
+      workspaceSnapshotRenewInterval: 5_000_000_000,
+      workspaceSnapshotLeaseDuration: 15_000_000_000,
+      policyWatchInterval: 500_000_000,
+    });
+
+    await act(async () => {
+      mocks.runPolicyProps.onChange({
+        ...mocks.runPolicyProps.policy,
+        defaultDispatchMode: 'steer',
+        modelTurnTimeout: 0,
+        modelIdleTimeout: 0,
+        defaultToolTimeout: 0,
+        maxTotalTokens: 0,
+      });
+    });
+    await act(async () => { mocks.runPolicyProps.onSave(); await Promise.resolve(); await Promise.resolve(); });
+
+    expect(mocks.service.AISaveRunPolicy).toHaveBeenCalledWith({
+      expectedRevision: 7,
+      policy: expect.objectContaining({
+        defaultDispatchMode: 'steer',
+        modelTurnTimeout: 0,
+        modelIdleTimeout: 0,
+        defaultToolTimeout: 0,
+        maxTotalTokens: 0,
+      }),
+      runtime: {
+        controlPollInterval: 200_000_000,
+        workspaceSnapshotRenewInterval: 5_000_000_000,
+        workspaceSnapshotLeaseDuration: 15_000_000_000,
+        policyWatchInterval: 500_000_000,
+      },
+    });
   });
 
   it('serializes writes and coalesces B → C → D to B then D, marking only acknowledged state', async () => {

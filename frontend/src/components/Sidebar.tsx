@@ -259,6 +259,7 @@ import {
   resolveV2ActiveConnectionId,
   resolveNacosNamespaceDiscoveryModeFromTreeNode,
   resolveNacosServicesDoubleClickAction,
+  replaceSidebarTreeNodeChildren,
   shouldClearSidebarNodeChildrenOnCollapse,
   shouldSkipSidebarLoadOnExpandWhileDragging,
   shouldSkipSidebarSelectWhileDragging,
@@ -1580,30 +1581,6 @@ const Sidebar: React.FC<{
       message.error(error?.message || t('connection.sidebar.duplicate.failureFallback'));
     }
   };
-  const updateTreeData = (
-    list: TreeNode[],
-    key: React.Key,
-    children: TreeNode[] | undefined,
-    dataRef?: unknown,
-  ): TreeNode[] => {
-    return list.map(node => {
-      if (node.key === key) {
-        return {
-          ...node,
-          children,
-          ...(dataRef === undefined ? {} : { dataRef }),
-        };
-      }
-      if (node.children) {
-        return {
-          ...node,
-          children: updateTreeData(node.children, key, children, dataRef),
-        };
-      }
-      return node;
-    });
-  };
-
   const findTreeNodeByKey = (nodes: TreeNode[], targetKey: React.Key): TreeNode | null => {
     for (const node of nodes) {
       if (node.key === targetKey) {
@@ -1767,7 +1744,7 @@ const Sidebar: React.FC<{
     children: TreeNode[] | undefined,
     dataRef?: unknown,
   ): TreeNode[] => {
-      const nextTreeData = updateTreeData(treeDataRef.current, key, children, dataRef);
+      const nextTreeData = replaceSidebarTreeNodeChildren(treeDataRef.current, key, children, dataRef);
       treeDataRef.current = nextTreeData;
       setTreeData(nextTreeData);
       return nextTreeData;

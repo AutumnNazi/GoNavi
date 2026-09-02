@@ -18,7 +18,6 @@ const {
   detachedResultDataChangeHandlers,
   detachedResultGridProps,
   detachedResultRows,
-  flushAIChatSessionPersistence,
 } = vi.hoisted(() => ({
   aiTerminalGuard: vi.fn(async (): Promise<boolean> => true),
   aiChatRenderProps: {
@@ -39,7 +38,6 @@ const {
   detachedResultRows: {
     current: [{ id: 1, name: 'edited in detached result' }] as Array<Record<string, unknown>>,
   },
-  flushAIChatSessionPersistence: vi.fn(async () => undefined),
 }));
 const runtimeEventListeners = new Map<string, (payload: any) => void>();
 
@@ -91,14 +89,28 @@ const storeListeners = new Set<() => void>();
 vi.mock('../store', async () => {
   const { useSyncExternalStore } = await import('react');
   const useStore = Object.assign(
-    (selector: (state: Record<string, any>) => unknown) => useSyncExternalStore(
-      (listener) => {
-        storeListeners.add(listener);
-        return () => storeListeners.delete(listener);
-      },
-      () => selector(storeState),
-      () => selector(storeState),
-    ),
+    (
+      selector: (state: Record<string, any>) => unknown,
+      equalityFn: (left: unknown, right: unknown) => boolean = Object.is,
+    ) => {
+      // Keep the external-store snapshot itself stable. Zustand applies selectors
+      // after subscribing and reuses an equal selection, rather than returning a
+      // newly allocated selector result from getSnapshot on every read.
+      const state = useSyncExternalStore(
+        (listener) => {
+          storeListeners.add(listener);
+          return () => storeListeners.delete(listener);
+        },
+        () => storeState,
+        () => storeState,
+      );
+      const selected = selector(state);
+      const selectedRef = React.useRef<{ value: unknown } | null>(null);
+      if (!selectedRef.current || !equalityFn(selectedRef.current.value, selected)) {
+        selectedRef.current = { value: selected };
+      }
+      return selectedRef.current.value;
+    },
     {
       getState: () => storeState,
       setState: (nextState: Record<string, any> | ((state: Record<string, any>) => Record<string, any>)) => {
@@ -111,7 +123,7 @@ vi.mock('../store', async () => {
       },
     },
   );
-  return { flushAIChatSessionPersistence, useStore };
+  return { useStore };
 });
 
 vi.mock('../i18n/provider', () => ({
@@ -259,8 +271,6 @@ describe('NativeDetachedWindowApp', () => {
     clearQueryTabDraft(queryTab.id);
     storeListeners.clear();
     runtimeEventListeners.clear();
-    flushAIChatSessionPersistence.mockReset();
-    flushAIChatSessionPersistence.mockResolvedValue(undefined);
     aiTerminalGuard.mockReset();
     aiTerminalGuard.mockResolvedValue(true);
     aiChatRenderProps.current = null;
@@ -688,7 +698,6 @@ describe('NativeDetachedWindowApp', () => {
         }),
       }),
     }));
-    expect(flushAIChatSessionPersistence).toHaveBeenCalledOnce();
     expect(client.closeCurrentWindow).toHaveBeenCalledOnce();
 
     expect(client.openAISettings).not.toHaveBeenCalled();
@@ -1530,7 +1539,7 @@ describe('NativeDetachedWindowApp', () => {
     }
   });
 
-  it('flushes the latest AI session before a graceful native close request', async () => {
+  it('waits for the Harness terminal guard before a graceful native close request', async () => {
     const previousWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
     const eventTarget = new EventTarget();
     Object.defineProperty(globalThis, 'window', {
@@ -1555,9 +1564,6 @@ describe('NativeDetachedWindowApp', () => {
     aiTerminalGuard.mockImplementationOnce(async () => {
       callOrder.push('guard');
       return true;
-    });
-    flushAIChatSessionPersistence.mockImplementationOnce(async () => {
-      callOrder.push('flush');
     });
     const client = {
       load: vi.fn(async () => bootstrap),
@@ -1585,7 +1591,7 @@ describe('NativeDetachedWindowApp', () => {
         await flushEffects();
       });
 
-      expect(callOrder).toEqual(['guard', 'flush', 'close', 'close-window']);
+      expect(callOrder).toEqual(['guard', 'close', 'close-window']);
       expect(client.close).toHaveBeenCalledWith(expect.objectContaining({
         id: 'ai-chat',
         kind: 'ai-chat',
@@ -1629,9 +1635,6 @@ describe('NativeDetachedWindowApp', () => {
       callOrder.push('guard');
       return true;
     });
-    flushAIChatSessionPersistence.mockImplementationOnce(async () => {
-      callOrder.push('flush');
-    });
     const client = {
       load: vi.fn(async () => bootstrap),
       ready: vi.fn(async () => undefined),
@@ -1662,7 +1665,7 @@ describe('NativeDetachedWindowApp', () => {
         await flushEffects();
       });
 
-      expect(callOrder).toEqual(['guard', 'flush', 'hide', 'hide-window:9']);
+      expect(callOrder).toEqual(['guard', 'hide', 'hide-window:9']);
       expect(client.close).not.toHaveBeenCalled();
       expect(client.closeCurrentWindow).not.toHaveBeenCalled();
       expect(renderer!.root.findByProps({ 'data-ai-chat-presentation': 'detached' })).toBeTruthy();
@@ -2163,69 +2166,6 @@ describe('NativeDetachedWindowApp', () => {
     }
   });
 
-  it('cancels the native close fallback when AI session persistence fails', async () => {
-    const previousWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
-    const eventTarget = new EventTarget();
-    Object.defineProperty(globalThis, 'window', {
-      configurable: true,
-      value: Object.assign(eventTarget, {
-        clearTimeout: globalThis.clearTimeout,
-        innerWidth: 440,
-        setTimeout: globalThis.setTimeout,
-      }),
-    });
-    const bootstrap: NativeDetachedWindowBootstrap = {
-      id: 'ai-chat',
-      kind: 'ai-chat',
-      title: 'GoNavi AI',
-      payload: { storeState: { appearance: { uiVersion: 'v2' }, theme: 'light' } },
-    };
-    flushAIChatSessionPersistence.mockRejectedValueOnce(new Error('disk full'));
-    const client = {
-      load: vi.fn(async () => bootstrap),
-      ready: vi.fn(async () => undefined),
-      sync: vi.fn(async () => undefined),
-      attach: vi.fn(async () => undefined),
-      close: vi.fn(async () => undefined),
-      cancelCloseRequest: vi.fn(async () => undefined),
-      openAISettings: vi.fn(async () => undefined),
-      closeCurrentWindow: vi.fn(async () => undefined),
-      cancelClose: vi.fn(async () => undefined),
-    };
-
-    try {
-      let renderer: TestRenderer.ReactTestRenderer;
-      await act(async () => {
-        renderer = TestRenderer.create(<NativeDetachedWindowApp client={client} />);
-        await flushEffects();
-      });
-      await act(async () => {
-        eventTarget.dispatchEvent(new Event('gonavi:native-detached-request-close'));
-        await flushEffects();
-        await flushEffects();
-      });
-
-      expect(client.cancelCloseRequest).toHaveBeenCalledWith(expect.objectContaining({
-        id: 'ai-chat',
-        kind: 'ai-chat',
-        revision: expect.any(Number),
-        rollbackAction: 'close',
-      }));
-      expect(client.cancelClose).toHaveBeenCalledOnce();
-      expect(client.close).not.toHaveBeenCalled();
-      expect(client.closeCurrentWindow).not.toHaveBeenCalled();
-      expect(renderer!.root.findByProps({ 'data-ai-chat-presentation': 'detached' })).toBeTruthy();
-      await act(async () => {
-        renderer!.unmount();
-      });
-    } finally {
-      if (previousWindowDescriptor) {
-        Object.defineProperty(globalThis, 'window', previousWindowDescriptor);
-      } else {
-        Reflect.deleteProperty(globalThis, 'window');
-      }
-    }
-  });
 
   it('recovers the AI child when the local close fails and allows a second attach', async () => {
     const bootstrap: NativeDetachedWindowBootstrap = {

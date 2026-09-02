@@ -31,9 +31,19 @@ import type { AIMCPHTTPServerDraft } from './ai/AIMCPHTTPServerPanel';
 import AISettingsSidebar, { AI_SETTINGS_NAV_ITEMS, type AISettingsSectionKey } from './ai/AISettingsSidebar';
 import AISettingsSafetySection from './ai/AISettingsSafetySection';
 import AISettingsContextSection from './ai/AISettingsContextSection';
+import AISettingsRunPolicySection from './ai/AISettingsRunPolicySection';
 import AISettingsProvidersSection from './ai/AISettingsProvidersSection';
 import AISettingsPromptsSection from './ai/AISettingsPromptsSection';
 import AISettingsSkillsSection from './ai/AISettingsSkillsSection';
+import {
+    DEFAULT_AI_RUN_POLICY,
+    DEFAULT_AI_RUN_RUNTIME_CONFIG,
+    isValidAIRunRuntimeConfig,
+    normalizeAIRunPolicySnapshot,
+    type AIRunPolicy,
+    type AIRunRuntimeConfig,
+} from './ai/aiRunPolicy';
+import { normalizeAgentLedgerState, type AgentLedgerState } from './ai/aiRunHarnessClient';
 import { useAIMCPClientInstaller } from './ai/useAIMCPClientInstaller';
 import {
     EMPTY_AI_USER_PROMPT_SETTINGS,
@@ -122,6 +132,13 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
     const [providersLoadError, setProvidersLoadError] = useState('');
     const [safetyLevel, setSafetyLevel] = useState<AISafetyLevel>('readonly');
     const [contextLevel, setContextLevel] = useState<AIContextLevel>('schema_only');
+    const [runPolicy, setRunPolicy] = useState<AIRunPolicy>(DEFAULT_AI_RUN_POLICY);
+    const [runRuntime, setRunRuntime] = useState<AIRunRuntimeConfig>(DEFAULT_AI_RUN_RUNTIME_CONFIG);
+    const [runPolicyRevision, setRunPolicyRevision] = useState<number>(0);
+    const [runPolicyLoading, setRunPolicyLoading] = useState(false);
+    const [runPolicySaving, setRunPolicySaving] = useState(false);
+    const [runPolicyError, setRunPolicyError] = useState('');
+    const [ledgerState, setLedgerState] = useState<AgentLedgerState>('unavailable');
     const [mcpServers, setMCPServers] = useState<AIMCPServerConfig[]>([]);
     const [mcpTools, setMCPTools] = useState<AIMCPToolDescriptor[]>([]);
     const [mcpHTTPServerStatus, setMCPHTTPServerStatus] = useState<AIMCPHTTPServerStatus>(() => defaultMCPHTTPServerStatus);
@@ -340,6 +357,45 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
             case 'context': {
                 const value = await callOrFallback<AIContextLevel>(() => Service.AIGetContextLevel?.(), 'schema_only');
                 if (isCurrent()) setContextLevel(value);
+                break;
+            }
+            case 'run_policy': {
+                // Keep the health projection independent from policy loading:
+                // a locked ledger must still be visible when policy reads fail.
+                void (async () => {
+                    try {
+                        const status = typeof Service.AIGetAgentLedgerStatus === 'function'
+                            ? await Service.AIGetAgentLedgerStatus()
+                            : undefined;
+                        if (isCurrent()) setLedgerState(normalizeAgentLedgerState(status));
+                    } catch {
+                        if (isCurrent()) setLedgerState('unavailable');
+                    }
+                })();
+                if (typeof Service.AIGetRunPolicy !== 'function') {
+                    if (isCurrent()) setRunPolicyError(t('ai_settings.run_policy.error.unavailable'));
+                    break;
+                }
+                if (isCurrent()) {
+                    setRunPolicyLoading(true);
+                    setRunPolicyError('');
+                }
+                try {
+                    const value = await Service.AIGetRunPolicy();
+                    const snapshot = normalizeAIRunPolicySnapshot(value);
+                    if (snapshot.revision < 1) {
+                        throw new Error('run policy snapshot is missing a revision');
+                    }
+                    if (isCurrent()) {
+                        setRunPolicy(snapshot.policy);
+                        setRunRuntime(snapshot.runtime);
+                        setRunPolicyRevision(snapshot.revision);
+                    }
+                } catch (error: any) {
+                    if (isCurrent()) setRunPolicyError(error?.message || t('ai_settings.run_policy.error.load_failed'));
+                } finally {
+                    if (isCurrent()) setRunPolicyLoading(false);
+                }
                 break;
             }
             case 'prompts': {
@@ -756,6 +812,52 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
         } catch (e) { /* ignore */ }
     };
 
+    const handleReloadRunPolicy = () => {
+        setRunPolicyError('');
+        void loadConfig();
+    };
+
+    const handleSaveRunPolicy = async () => {
+        if (runPolicySaving) return;
+        setRunPolicySaving(true);
+        setRunPolicyError('');
+        try {
+            const Service = await resolveAIService();
+            if (typeof Service?.AISaveRunPolicy !== 'function') {
+                throw new Error(t('ai_settings.run_policy.error.unavailable'));
+            }
+            if (runPolicyRevision < 1) {
+                throw new Error('run policy snapshot is missing a revision');
+            }
+            if (!isValidAIRunRuntimeConfig(runRuntime)) {
+                throw new Error(t('ai_settings.run_policy.runtime.invalid'));
+            }
+            const saved = await Service.AISaveRunPolicy({
+                expectedRevision: runPolicyRevision,
+                policy: runPolicy,
+                runtime: runRuntime,
+            });
+            const snapshot = normalizeAIRunPolicySnapshot(saved);
+            if (snapshot.revision < 1) {
+                throw new Error('run policy save returned an invalid revision');
+            }
+            if (!mountedRef.current || !activeRef.current) return;
+            setRunPolicy(snapshot.policy);
+            setRunRuntime(snapshot.runtime);
+            setRunPolicyRevision(snapshot.revision);
+            void messageApi.success(t('ai_settings.run_policy.message.saved'));
+            window.dispatchEvent(new CustomEvent('gonavi:ai:config-changed'));
+        } catch (error: any) {
+            const detail = error?.message || t('ai_settings.run_policy.error.save_failed');
+            if (mountedRef.current) {
+                setRunPolicyError(detail);
+                void messageApi.error(detail);
+            }
+        } finally {
+            if (mountedRef.current) setRunPolicySaving(false);
+        }
+    };
+
     const handleSaveUserPromptSettings = async () => {
         try {
             setLoading(true);
@@ -1148,6 +1250,22 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
                                     : t('ai_settings.open_mode.message.dock'),
                             );
                         }}
+                    />
+                ))}
+                {renderSectionPanel('run_policy', (
+                    <AISettingsRunPolicySection
+                        policy={runPolicy}
+                        runtime={runRuntime}
+                        loading={runPolicyLoading}
+                        saving={runPolicySaving}
+                        error={runPolicyError}
+                        ledgerState={ledgerState}
+                        overlayTheme={overlayTheme}
+                        inputBg={inputBg}
+                        onChange={setRunPolicy}
+                        onRuntimeChange={setRunRuntime}
+                        onReload={handleReloadRunPolicy}
+                        onSave={() => void handleSaveRunPolicy()}
                     />
                 ))}
                 {renderSectionPanel('mcp', (

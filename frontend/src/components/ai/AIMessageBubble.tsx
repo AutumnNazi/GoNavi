@@ -36,7 +36,7 @@ interface AIMessageBubbleProps {
   textColor: string;
   onEdit: (msg: AIChatMessage) => void;
   onRetry: (msg: AIChatMessage) => void;
-  onDelete: (id: string) => void;
+  onDelete?: (id: string) => void;
   activeConnectionId?: string;
   activeConnectionConfig?: any;
   activeDbName?: string;
@@ -52,7 +52,7 @@ interface AIMessageActionBarProps {
   mutedText: string;
   onEdit: (msg: AIChatMessage) => void;
   onRetry: (msg: AIChatMessage) => void;
-  onDelete: (id: string) => void;
+  onDelete?: (id: string) => void;
   onCopy: () => void;
   copy: (key: string, params?: I18nParams) => string;
 }
@@ -142,15 +142,17 @@ const AIMessageActionBar: React.FC<AIMessageActionBarProps> = ({
         />
       </Tooltip>
     ) : null}
-    <Tooltip title={copy('ai_chat.message.action.delete')}>
-      <DeleteOutlined
-        className="ai-action-icon"
-        onClick={() => onDelete(msg.id)}
-        style={{ cursor: 'pointer', color: mutedText }}
-        onMouseEnter={(event) => { event.currentTarget.style.color = '#ef4444'; }}
-        onMouseLeave={(event) => { event.currentTarget.style.color = mutedText; }}
-      />
-    </Tooltip>
+    {onDelete ? (
+      <Tooltip title={copy('ai_chat.message.action.delete')}>
+        <DeleteOutlined
+          className="ai-action-icon"
+          onClick={() => onDelete(msg.id)}
+          style={{ cursor: 'pointer', color: mutedText }}
+          onMouseEnter={(event) => { event.currentTarget.style.color = '#ef4444'; }}
+          onMouseLeave={(event) => { event.currentTarget.style.color = mutedText; }}
+        />
+      </Tooltip>
+    ) : null}
   </div>
 );
 

@@ -41,7 +41,7 @@ describe('aiChatRetrySafety', () => {
     expect(resolveAIChatRetryPlan(messages, 'timeout')).toBeNull();
   });
 
-  it('rejects every retry that would truncate a completed tool round', () => {
+  it('allows a retry after a completed tool round because it creates a branch', () => {
     const messages = [
       message({ id: 'user-1', role: 'user', content: '插入测试数据' }),
       message({ id: 'assistant-before-tool', content: '准备执行' }),
@@ -63,11 +63,19 @@ describe('aiChatRetrySafety', () => {
       message({ id: 'assistant-after-tool', content: '已插入 1 行' }),
     ];
 
-    expect(collectRetryableAIChatAssistantMessageIds(messages)).toEqual(new Set());
-    expect(resolveAIChatRetryPlan(messages, 'assistant-after-tool')).toBeNull();
+    expect(collectRetryableAIChatAssistantMessageIds(messages)).toEqual(new Set([
+      'assistant-before-tool',
+      'assistant-tool-call',
+      'assistant-after-tool',
+    ]));
+    expect(resolveAIChatRetryPlan(messages, 'assistant-after-tool')).toMatchObject({
+      targetMessageIndex: 4,
+      userMessageIndex: 0,
+      userMessage: expect.objectContaining({ id: 'user-1' }),
+    });
   });
 
-  it('scans the entire suffix that retry would delete, including later user turns', () => {
+  it('allows a retry before later user turns because the source transcript is immutable', () => {
     const messages = [
       message({ id: 'user-1', role: 'user', content: '先解释' }),
       message({ id: 'assistant-plain', content: '解释完成' }),
@@ -89,7 +97,7 @@ describe('aiChatRetrySafety', () => {
       }),
     ];
 
-    expect(canRetryAIChatAssistantMessage(messages, 'assistant-plain')).toBe(false);
+    expect(canRetryAIChatAssistantMessage(messages, 'assistant-plain')).toBe(true);
   });
 
   it('keeps a later plain-text turn retryable when prior tool history stays before its user boundary', () => {

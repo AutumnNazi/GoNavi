@@ -32,6 +32,72 @@ const create = (...args: Parameters<typeof createRenderer>): ReactTestRenderer =
   return renderer;
 };
 
+const createInlineAiHarnessService = (content = 'videos') => {
+  const runId = 'query-editor-inline-run';
+  const events = [
+    {
+      schemaVersion: 1,
+      runId,
+      sessionId: 'query-editor-inline-session',
+      sessionGeneration: 1,
+      sequence: 1,
+      runRevision: 1,
+      attempt: 1,
+      timestamp: 1,
+      kind: 'model_completed',
+      resultingState: 'running_model',
+      payload: { text: content },
+    },
+    {
+      schemaVersion: 1,
+      runId,
+      sessionId: 'query-editor-inline-session',
+      sessionGeneration: 1,
+      sequence: 2,
+      runRevision: 2,
+      attempt: 1,
+      timestamp: 2,
+      kind: 'terminal',
+      resultingState: 'completed',
+      payload: { reason: 'completed' },
+    },
+  ];
+
+  return {
+    AIGetProviders: vi.fn(async () => [{
+      id: 'openai-main',
+      type: 'openai',
+      name: 'OpenAI',
+      apiKey: '',
+      hasSecret: true,
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-5-mini',
+      maxTokens: 2048,
+      temperature: 0.2,
+    }]),
+    AIGetActiveProvider: vi.fn(async () => 'openai-main'),
+    AIGetUserPromptSettings: vi.fn(async () => ({
+      global: '',
+      database: '',
+      jvm: '',
+      jvmDiagnostic: '',
+    })),
+    AISubmitAgentInput: vi.fn(async (request: { requestId: string }) => ({
+      requestId: request.requestId,
+      sessionId: 'query-editor-inline-session',
+      runId,
+      disposition: 'started',
+      revision: 1,
+      state: 'running_model',
+    })),
+    AIReadAgentRun: vi.fn(async (request: { afterSequence?: number }) => ({
+      run: { id: runId, state: 'completed' },
+      events: events.filter((event) => event.sequence > Number(request.afterSequence || 0)),
+      hasMore: false,
+    })),
+  };
+};
+
 const storeState = vi.hoisted(() => ({
   connections: [
     {
@@ -2049,27 +2115,7 @@ describe('QueryEditor external SQL save', () => {
   });
 
   it('uses grounded AI inline ghost when manual completion is triggered in table-name context and inline AI is available', async () => {
-    const inlineAiService = {
-      AIGetProviders: vi.fn(async () => [{
-        id: 'openai-main',
-        type: 'openai',
-        name: 'OpenAI',
-        apiKey: '',
-        hasSecret: true,
-        baseUrl: 'https://api.openai.com/v1',
-        model: 'gpt-5-mini',
-        maxTokens: 2048,
-        temperature: 0.2,
-      }]),
-      AIGetActiveProvider: vi.fn(async () => 'openai-main'),
-      AIGetUserPromptSettings: vi.fn(async () => ({
-        global: '',
-        database: '',
-        jvm: '',
-        jvmDiagnostic: '',
-      })),
-      AIChatSend: vi.fn(async () => ({ success: true, content: 'videos' })),
-    };
+    const inlineAiService = createInlineAiHarnessService();
     backendApp.DBGetTables.mockResolvedValueOnce({
       success: true,
       data: [
@@ -2143,7 +2189,7 @@ describe('QueryEditor external SQL save', () => {
       }
     });
 
-    expect(inlineAiService.AIChatSend).toHaveBeenCalledTimes(1);
+    expect(inlineAiService.AISubmitAgentInput).toHaveBeenCalledTimes(1);
     expect(editorState.domNode.appendChild).toHaveBeenCalled();
     const ghostOverlay = editorState.domNode.appendChild.mock.calls[
       editorState.domNode.appendChild.mock.calls.length - 1
@@ -2355,27 +2401,7 @@ describe('QueryEditor external SQL save', () => {
         dbName: 'main',
       } as any];
 
-      const inlineAiService = {
-        AIGetProviders: vi.fn(async () => [{
-          id: 'openai-main',
-          type: 'openai',
-          name: 'OpenAI',
-          apiKey: '',
-          hasSecret: true,
-          baseUrl: 'https://api.openai.com/v1',
-          model: 'gpt-5-mini',
-          maxTokens: 2048,
-          temperature: 0.2,
-        }]),
-        AIGetActiveProvider: vi.fn(async () => 'openai-main'),
-        AIGetUserPromptSettings: vi.fn(async () => ({
-          global: '',
-          database: '',
-          jvm: '',
-          jvmDiagnostic: '',
-        })),
-        AIChatSend: vi.fn(async () => ({ success: true, content: 'videos' })),
-      };
+      const inlineAiService = createInlineAiHarnessService();
       backendApp.DBGetTables.mockResolvedValueOnce({
         success: true,
         data: [
@@ -2470,7 +2496,7 @@ describe('QueryEditor external SQL save', () => {
         })],
       );
       expect(editorState.value).toBe('SELECT * FROM a_cninfo_announcement WHERE id = 1;');
-      expect(inlineAiService.AIChatSend).not.toHaveBeenCalled();
+      expect(inlineAiService.AISubmitAgentInput).not.toHaveBeenCalled();
       expect(monacoShortcutEvent.preventDefault).toHaveBeenCalled();
       expect(monacoShortcutEvent.stopPropagation).toHaveBeenCalled();
       expect(shortcutEvent.preventDefault).toHaveBeenCalled();
@@ -2544,27 +2570,7 @@ describe('QueryEditor external SQL save', () => {
   it('does not consume Tab when the AI inline ghost is stale (cursor moved)', async () => {
     vi.useFakeTimers();
     try {
-      const inlineAiService = {
-        AIGetProviders: vi.fn(async () => [{
-          id: 'openai-main',
-          type: 'openai',
-          name: 'OpenAI',
-          apiKey: '',
-          hasSecret: true,
-          baseUrl: 'https://api.openai.com/v1',
-          model: 'gpt-5-mini',
-          maxTokens: 2048,
-          temperature: 0.2,
-        }]),
-        AIGetActiveProvider: vi.fn(async () => 'openai-main'),
-        AIGetUserPromptSettings: vi.fn(async () => ({
-          global: '',
-          database: '',
-          jvm: '',
-          jvmDiagnostic: '',
-        })),
-        AIChatSend: vi.fn(async () => ({ success: true, content: 'videos' })),
-      };
+      const inlineAiService = createInlineAiHarnessService();
       backendApp.DBGetTables.mockResolvedValueOnce({
         success: true,
         data: [
@@ -2662,27 +2668,7 @@ describe('QueryEditor external SQL save', () => {
         windows: { enabled: true, combo: 'Right' },
       };
 
-      const inlineAiService = {
-        AIGetProviders: vi.fn(async () => [{
-          id: 'openai-main',
-          type: 'openai',
-          name: 'OpenAI',
-          apiKey: '',
-          hasSecret: true,
-          baseUrl: 'https://api.openai.com/v1',
-          model: 'gpt-5-mini',
-          maxTokens: 2048,
-          temperature: 0.2,
-        }]),
-        AIGetActiveProvider: vi.fn(async () => 'openai-main'),
-        AIGetUserPromptSettings: vi.fn(async () => ({
-          global: '',
-          database: '',
-          jvm: '',
-          jvmDiagnostic: '',
-        })),
-        AIChatSend: vi.fn(async () => ({ success: true, content: 'videos' })),
-      };
+      const inlineAiService = createInlineAiHarnessService();
       backendApp.DBGetTables.mockResolvedValueOnce({
         success: true,
         data: [
@@ -2779,27 +2765,7 @@ describe('QueryEditor external SQL save', () => {
         windows: { enabled: true, combo: 'Shift+Tab' },
       };
 
-      const inlineAiService = {
-        AIGetProviders: vi.fn(async () => [{
-          id: 'openai-main',
-          type: 'openai',
-          name: 'OpenAI',
-          apiKey: '',
-          hasSecret: true,
-          baseUrl: 'https://api.openai.com/v1',
-          model: 'gpt-5-mini',
-          maxTokens: 2048,
-          temperature: 0.2,
-        }]),
-        AIGetActiveProvider: vi.fn(async () => 'openai-main'),
-        AIGetUserPromptSettings: vi.fn(async () => ({
-          global: '',
-          database: '',
-          jvm: '',
-          jvmDiagnostic: '',
-        })),
-        AIChatSend: vi.fn(async () => ({ success: true, content: 'videos' })),
-      };
+      const inlineAiService = createInlineAiHarnessService();
       backendApp.DBGetTables.mockResolvedValueOnce({
         success: true,
         data: [
@@ -2895,27 +2861,7 @@ describe('QueryEditor external SQL save', () => {
   it('continues accepted inline SQL ghost with grounded table AI completion', async () => {
     vi.useFakeTimers();
     try {
-      const inlineAiService = {
-        AIGetProviders: vi.fn(async () => [{
-          id: 'openai-main',
-          type: 'openai',
-          name: 'OpenAI',
-          apiKey: '',
-          hasSecret: true,
-          baseUrl: 'https://api.openai.com/v1',
-          model: 'gpt-5-mini',
-          maxTokens: 2048,
-          temperature: 0.2,
-        }]),
-        AIGetActiveProvider: vi.fn(async () => 'openai-main'),
-        AIGetUserPromptSettings: vi.fn(async () => ({
-          global: '',
-          database: '',
-          jvm: '',
-          jvmDiagnostic: '',
-        })),
-        AIChatSend: vi.fn(async () => ({ success: true, content: 'videos' })),
-      };
+      const inlineAiService = createInlineAiHarnessService();
       backendApp.DBGetTables.mockResolvedValueOnce({
         success: true,
         data: [
@@ -3009,7 +2955,7 @@ describe('QueryEditor external SQL save', () => {
         })],
       );
       expect(editorState.value).toBe('SELECT * FROM ');
-      expect(inlineAiService.AIChatSend).toHaveBeenCalledTimes(1);
+      expect(inlineAiService.AISubmitAgentInput).toHaveBeenCalledTimes(1);
       expect(editorState.domNode.appendChild).toHaveBeenCalled();
       const ghostOverlay = editorState.domNode.appendChild.mock.calls[
         editorState.domNode.appendChild.mock.calls.length - 1
@@ -3040,7 +2986,7 @@ describe('QueryEditor external SQL save', () => {
         })],
       );
       expect(editorState.value).toBe('SELECT * FROM videos');
-      expect(inlineAiService.AIChatSend).toHaveBeenCalledTimes(1);
+      expect(inlineAiService.AISubmitAgentInput).toHaveBeenCalledTimes(1);
       expect(editorState.editor.trigger).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();

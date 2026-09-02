@@ -44,7 +44,7 @@ interface AIChatPanelConversationViewProps {
   onSelectSession: (sessionId: string) => void;
   onEditMessage: (message: AIChatMessage) => void;
   onRetryMessage: (message: AIChatMessage) => void;
-  onDeleteMessage: (id: string) => void;
+  onDeleteMessage?: (id: string) => void;
   onMessageRenderError: (error: Error, errorInfo: React.ErrorInfo, message: AIChatMessage) => void;
   onScrollBottom: () => void;
 }
@@ -61,7 +61,7 @@ interface AIChatMessageRowProps {
   activeDbName?: string;
   onEditMessage: (message: AIChatMessage) => void;
   onRetryMessage: (message: AIChatMessage) => void;
-  onDeleteMessage: (id: string) => void;
+  onDeleteMessage?: (id: string) => void;
   onMessageRenderError: (error: Error, errorInfo: React.ErrorInfo, message: AIChatMessage) => void;
 }
 

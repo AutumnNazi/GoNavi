@@ -112,12 +112,12 @@ export const dedupeSidebarTreeNodesByKey = (
     if (objectRecord) return objectRecord;
 
     const key = getNodeKey(node);
-    const record = (key && recordsByKey.get(key)) || {
+    const record = recordsByKey.get(key) || {
       source: node,
       children: [],
     };
     recordsByObject.set(node, record);
-    if (key && !recordsByKey.has(key)) recordsByKey.set(key, record);
+    if (!recordsByKey.has(key)) recordsByKey.set(key, record);
     return record;
   };
 
@@ -208,6 +208,60 @@ export const dedupeSidebarTreeNodesByKey = (
   }
 
   return result;
+};
+
+/**
+ * Replaces one node's children while preserving the tree's global key
+ * invariant. Canonicalize before the replacement so stale children from a
+ * duplicate target cannot be merged back after a metadata refresh.
+ */
+export const replaceSidebarTreeNodeChildren = (
+  nodes: SidebarTreeNode[],
+  targetKey: Key,
+  children: SidebarTreeNode[] | undefined,
+  dataRef?: unknown,
+): SidebarTreeNode[] => {
+  const canonicalTree = dedupeSidebarTreeNodesByKey(nodes);
+  const result: SidebarTreeNode[] = [];
+  const normalizedTargetKey = targetKey == null ? '' : String(targetKey).trim();
+  let replaced = false;
+  type CopyFrame = {
+    source: SidebarTreeNode;
+    output: SidebarTreeNode[];
+  };
+  const pending: CopyFrame[] = [];
+
+  for (let index = canonicalTree.length - 1; index >= 0; index -= 1) {
+    pending.push({ source: canonicalTree[index], output: result });
+  }
+
+  while (pending.length > 0) {
+    const frame = pending.pop();
+    if (!frame) continue;
+
+    const { source, output } = frame;
+    if (!replaced && String(source.key == null ? '' : source.key).trim() === normalizedTargetKey) {
+      replaced = true;
+      output.push({
+        ...source,
+        children,
+        ...(dataRef === undefined ? {} : { dataRef }),
+      });
+      continue;
+    }
+
+    const clonedNode: SidebarTreeNode = { ...source };
+    output.push(clonedNode);
+    if (!Array.isArray(source.children) || source.children.length === 0) continue;
+
+    const childOutput: SidebarTreeNode[] = [];
+    clonedNode.children = childOutput;
+    for (let index = source.children.length - 1; index >= 0; index -= 1) {
+      pending.push({ source: source.children[index], output: childOutput });
+    }
+  }
+
+  return dedupeSidebarTreeNodesByKey(result);
 };
 
 // Keep these values aligned with the V2 explorer tree layout in v2-theme.css.
