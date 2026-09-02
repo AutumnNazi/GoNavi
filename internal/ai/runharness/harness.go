@@ -80,7 +80,34 @@ type runExecution struct {
 	started             atomic.Bool
 	done                chan struct{}
 	steerMu             sync.Mutex
-	steers              []string
+	steers              []steerRequest
+	// controlClaims prevents a polling worker from applying the same leased
+	// command repeatedly while its durable action is waiting for the next run
+	// phase (notably steer and side-effect cancellation). The claim itself
+	// remains durable and can be reclaimed after a process crash.
+	controlMu     sync.Mutex
+	controlClaims map[string]struct{}
+	// staleWorkspaceCommands are explicit use-stale approvals that have been
+	// claimed but cannot be acknowledged until the worker has successfully
+	// crossed the workspace recovery boundary. Keeping the IDs durable in the
+	// command table and pending here closes the crash window between that
+	// boundary and the acknowledgement write.
+	staleWorkspaceCommands map[string]struct{}
+	// toolCatalog is loaded once after the durable run boundary is acquired.
+	// The worker keeps this immutable projection for every model/tool turn;
+	// Resolve may still consult the live catalog for an executor, but never for
+	// the contract used to validate or execute a call.
+	toolCatalogMu     sync.RWMutex
+	toolCatalog       []ToolDescriptor
+	toolCatalogLoaded bool
+}
+
+// steerRequest keeps the durable control-command id alongside the text.  The
+// id is propagated to the atomic Ledger boundary so a consumed command can be
+// replayed safely after an owner crash without appending a second user input.
+type steerRequest struct {
+	requestID string
+	content   string
 }
 
 // NewAgentRunHarness creates a run harness. A ledger is mandatory; callers
@@ -253,6 +280,21 @@ func (h *AgentRunHarness) SubmitInput(ctx context.Context, request AgentInputReq
 	if ctx == nil {
 		ctx = h.root
 	}
+	// requestId is the idempotency boundary. Resolve an already durable run
+	// before consulting mutable catalogs or provider configuration so a retry
+	// remains successful even if the host is temporarily reconfiguring tools.
+	if existing, existingErr := h.ledger.GetRunByRequestID(ctx, request.RequestID); existingErr == nil {
+		if !existing.State.Terminal() {
+			h.startWorker(existing)
+		}
+		disposition := "started"
+		if existing.State != RunStateQueued {
+			disposition = "queued"
+		}
+		return AgentInputReceipt{RequestID: request.RequestID, SessionID: existing.SessionID, RunID: existing.ID, Disposition: disposition, Revision: existing.Revision, State: existing.State}, nil
+	} else if !errors.Is(existingErr, ErrNotFound) {
+		return AgentInputReceipt{}, existingErr
+	}
 	policy := h.DefaultPolicy()
 	mode := request.DispatchMode
 	if mode == "" {
@@ -294,31 +336,13 @@ func (h *AgentRunHarness) SubmitInput(ctx context.Context, request AgentInputReq
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return AgentInputReceipt{}, err
 	}
-	if mode == DispatchSteer && active.ID != "" {
-		if request.ExpectedRevision > 0 && request.ExpectedRevision != active.Revision {
-			return AgentInputReceipt{}, fmt.Errorf("%w: expected %d, got %d", ErrRevisionConflict, request.ExpectedRevision, active.Revision)
-		}
-		// A steer is a durable command, never a second run. The worker observes
-		// it through its cancellation context and resumes from a clean cursor.
-		payload, _ := json.Marshal(map[string]any{
-			"content":                 request.Content,
-			"contextSourceId":         request.ContextSourceID,
-			"contextSourceInstanceId": request.ContextSourceInstanceID,
-		})
-		_, enqueueErr := h.ledger.EnqueueCommand(ctx, ControlCommand{ID: request.RequestID, RunID: active.ID, Action: ControlSteer, Payload: payload, ExpectedRevision: request.ExpectedRevision})
-		if enqueueErr != nil {
-			// Duplicate request IDs are intentionally idempotent. If another
-			// process already persisted this command, report the same disposition.
-			if !isUniqueConstraint(enqueueErr) {
-				return AgentInputReceipt{}, enqueueErr
-			}
-		}
-		h.signalSteer(active.ID)
-		return AgentInputReceipt{RequestID: request.RequestID, SessionID: sessionID, RunID: active.ID, Disposition: "steered", Revision: active.Revision, State: active.State}, nil
-	}
+	// Do not persist a steer until the message/catalog envelope is ready. The
+	// final decision (steer versus queued fallback) is made atomically by the
+	// Ledger after that envelope is built, closing the terminal-race window.
+	steerTarget := active
 
 	var expectedSessionRevision int64
-	if request.ExpectedRevision > 0 && !branched {
+	if request.ExpectedRevision > 0 && !branched && steerTarget.ID == "" {
 		expectedSessionRevision = request.ExpectedRevision
 		if implicitSession {
 			// CreateRun performs this check after it has provisionally created the
@@ -327,8 +351,8 @@ func (h *AgentRunHarness) SubmitInput(ctx context.Context, request AgentInputReq
 			goto revisionGuardDone
 		}
 		// SubmitInput's revision guard applies to the session projection when a
-		// new queued run is created. The active-run revision guard above is used
-		// for steer, so never silently reinterpret a caller's stale revision.
+		// new queued run is created. The active-run guard for a steer is evaluated
+		// atomically with command insertion below.
 		projection, projectionErr := h.ledger.GetSession(ctx, sessionID, false)
 		if projectionErr != nil {
 			return AgentInputReceipt{}, projectionErr
@@ -339,16 +363,68 @@ func (h *AgentRunHarness) SubmitInput(ctx context.Context, request AgentInputReq
 	}
 
 revisionGuardDone:
+	var toolCatalogBinding *ToolCatalogBinding
+	allowTools := true
+	if request.AllowTools != nil {
+		allowTools = *request.AllowTools
+	}
+	if allowTools && h.tools != nil {
+		binding, bindingErr := FreezeToolCatalog(ctx, h.tools)
+		if bindingErr != nil {
+			return AgentInputReceipt{}, fmt.Errorf("freeze tool catalog: %w", bindingErr)
+		}
+		toolCatalogBinding = &binding
+	}
 	message := &Message{ID: uuid.NewString(), SessionID: sessionID, Role: "user", Content: request.Content, Attachments: append([]Attachment(nil), request.Attachments...), CreatedAt: time.Now().UTC()}
-	run, err := h.ledger.CreateRun(ctx, CreateRunRequest{
+	createRequest := CreateRunRequest{
 		SessionID: sessionID, RequestID: request.RequestID, InitialMessage: message,
 		Policy: policy, Provider: request.Provider, Model: request.Model,
 		ContextSourceID: request.ContextSourceID, ContextSourceInstanceID: request.ContextSourceInstanceID,
 		Thinking: request.Thinking, Temperature: request.Temperature, MaxTokens: request.MaxTokens,
 		TaskKind: request.TaskKind, AllowTools: request.AllowTools,
+		ToolCatalogBinding:      toolCatalogBinding,
 		ExpectedSessionRevision: expectedSessionRevision,
-	})
+	}
+	if mode == DispatchSteer && steerTarget.ID != "" {
+		payload, _ := json.Marshal(map[string]any{
+			"content":                 request.Content,
+			"contextSourceId":         request.ContextSourceID,
+			"contextSourceInstanceId": request.ContextSourceInstanceID,
+		})
+		atomicResult, atomicErr := h.ledger.EnqueueSteerOrCreateRun(ctx, SteerOrQueueRequest{
+			Command:   ControlCommand{ID: request.RequestID, RunID: steerTarget.ID, Action: ControlSteer, Payload: payload, ExpectedRevision: request.ExpectedRevision},
+			CreateRun: createRequest,
+		})
+		if atomicErr != nil {
+			return AgentInputReceipt{}, atomicErr
+		}
+		run := atomicResult.Run
+		if atomicResult.Disposition == "steered" {
+			h.signalSteer(run.ID)
+		} else if !run.State.Terminal() {
+			h.startWorker(run)
+		}
+		return AgentInputReceipt{RequestID: request.RequestID, SessionID: run.SessionID, RunID: run.ID,
+			Disposition: atomicResult.Disposition, Revision: run.Revision, State: run.State}, nil
+	}
+	run, err := h.ledger.CreateRun(ctx, createRequest)
 	if err != nil {
+		// Two supervisors can pass the initial request lookup concurrently. The
+		// unique request_id constraint is the durable winner; recover its run and
+		// return the same receipt instead of surfacing a spurious database error.
+		if isUniqueConstraint(err) {
+			if existing, lookupErr := h.ledger.GetRunByRequestID(ctx, request.RequestID); lookupErr == nil {
+				if !existing.State.Terminal() {
+					h.startWorker(existing)
+				}
+				disposition := "started"
+				if existing.State == RunStateQueued {
+					disposition = "queued"
+				}
+				return AgentInputReceipt{RequestID: request.RequestID, SessionID: existing.SessionID, RunID: existing.ID,
+					Disposition: disposition, Revision: existing.Revision, State: existing.State}, nil
+			}
+		}
 		return AgentInputReceipt{}, err
 	}
 	// CreateRun is the idempotency boundary.  In particular, a retry may have
@@ -430,7 +506,7 @@ func (h *AgentRunHarness) startWorker(run RunSnapshot) {
 		return
 	}
 	ctx, cancel := context.WithCancel(h.root)
-	execution := &runExecution{runID: run.ID, sessionID: run.SessionID, ctx: ctx, cancel: cancel, done: make(chan struct{}), wake: make(chan struct{}, 1)}
+	execution := &runExecution{runID: run.ID, sessionID: run.SessionID, ctx: ctx, cancel: cancel, done: make(chan struct{}), wake: make(chan struct{}, 1), controlClaims: make(map[string]struct{}), staleWorkspaceCommands: make(map[string]struct{})}
 	h.runs[run.ID] = execution
 	h.wg.Add(1)
 	h.mu.Unlock()
@@ -486,9 +562,6 @@ func (h *AgentRunHarness) ControlRun(ctx context.Context, request RunControlRequ
 	if err != nil {
 		return RunSnapshot{}, err
 	}
-	if request.ExpectedRevision > 0 && request.ExpectedRevision != run.Revision {
-		return RunSnapshot{}, fmt.Errorf("%w: expected %d, got %d", ErrRevisionConflict, request.ExpectedRevision, run.Revision)
-	}
 	switch request.Action {
 	case ControlApprove, ControlDeny:
 		decision := "approved"
@@ -523,7 +596,7 @@ func (h *AgentRunHarness) ControlRun(ctx context.Context, request RunControlRequ
 		}
 		payload, _ := json.Marshal(map[string]any{"expectedRevision": request.ExpectedRevision})
 		_, err = h.ledger.EnqueueCommand(ctx, ControlCommand{ID: commandID, RunID: request.RunID, Action: ControlCancel, Payload: payload, ExpectedRevision: request.ExpectedRevision})
-		if err != nil && !isUniqueConstraint(err) {
+		if err != nil {
 			return RunSnapshot{}, err
 		}
 		h.cancelRun(request.RunID)
@@ -540,6 +613,10 @@ func (h *AgentRunHarness) ControlRun(ctx context.Context, request RunControlRequ
 					return RunSnapshot{}, latestErr
 				}
 				if latest.State.Terminal() {
+					// No worker owns this queued run anymore. FinishCanceled may have
+					// raced another supervisor, but the command itself is now settled
+					// either way; make it non-replayable when we still hold its claim.
+					h.ackUnownedControlCommand(run.ID, commandID)
 					return latest, nil
 				}
 				run = latest
@@ -556,12 +633,15 @@ func (h *AgentRunHarness) ControlRun(ctx context.Context, request RunControlRequ
 			commandID = uuid.NewString()
 		}
 		_, err = h.ledger.EnqueueCommand(ctx, ControlCommand{ID: commandID, RunID: request.RunID, Action: ControlSteer, Payload: payload, ExpectedRevision: request.ExpectedRevision})
-		if err != nil && !isUniqueConstraint(err) {
+		if err != nil {
 			return RunSnapshot{}, err
 		}
 		h.signalSteer(request.RunID)
 	case ControlResume, ControlRecover, ControlMarkCompleted, ControlAbortRecovery:
-		payload, _ := json.Marshal(map[string]any{"content": request.Content, "expectedRevision": request.ExpectedRevision})
+		// Include the targeted call in the encrypted idempotency payload. A
+		// recovery request that reuses a request ID for a different unknown call
+		// must be rejected before the run transition is applied.
+		payload, _ := json.Marshal(map[string]any{"callId": request.CallID, "content": request.Content, "expectedRevision": request.ExpectedRevision})
 		commandID := strings.TrimSpace(request.RequestID)
 		if commandID == "" {
 			commandID = uuid.NewString()
@@ -569,17 +649,10 @@ func (h *AgentRunHarness) ControlRun(ctx context.Context, request RunControlRequ
 		transition, transitionErr := h.ledger.ApplyRecoveryAction(ctx, RecoveryActionRequest{
 			RunID: request.RunID, CallID: request.CallID, Action: request.Action,
 			ExpectedRevision: request.ExpectedRevision, OwnerToken: request.OwnerToken,
+			CommandID: commandID, CommandPayload: payload,
 		})
 		if transitionErr != nil {
 			return RunSnapshot{}, transitionErr
-		}
-		// Apply the recovery transition first. A failed action must not leave a
-		// still-consumable command that a later owner could apply unexpectedly.
-		// The command is retained as an audit/wake marker only after the CAS has
-		// succeeded; recovery actions themselves are idempotent on repeat.
-		_, err = h.ledger.EnqueueCommand(ctx, ControlCommand{ID: commandID, RunID: request.RunID, Action: request.Action, Payload: payload, ExpectedRevision: transition.Run.Revision})
-		if err != nil && !isUniqueConstraint(err) {
-			return RunSnapshot{}, err
 		}
 		for _, event := range transition.Events {
 			h.publish(event)
@@ -594,7 +667,7 @@ func (h *AgentRunHarness) ControlRun(ctx context.Context, request RunControlRequ
 			commandID = uuid.NewString()
 		}
 		_, err = h.ledger.EnqueueCommand(ctx, ControlCommand{ID: commandID, RunID: request.RunID, Action: request.Action, Payload: payload, ExpectedRevision: request.ExpectedRevision})
-		if err != nil && !isUniqueConstraint(err) {
+		if err != nil {
 			return RunSnapshot{}, err
 		}
 		// The worker will consume this marker while waiting for a source. It is
@@ -722,6 +795,28 @@ func (e *runExecution) ownerToken() string {
 	return e.lease.Token
 }
 
+func (e *runExecution) setToolCatalog(descriptors []ToolDescriptor) {
+	if e == nil {
+		return
+	}
+	e.toolCatalogMu.Lock()
+	e.toolCatalog = cloneToolDescriptors(descriptors)
+	e.toolCatalogLoaded = true
+	e.toolCatalogMu.Unlock()
+}
+
+func (e *runExecution) frozenToolCatalog() ([]ToolDescriptor, bool) {
+	if e == nil {
+		return nil, false
+	}
+	e.toolCatalogMu.RLock()
+	defer e.toolCatalogMu.RUnlock()
+	if !e.toolCatalogLoaded {
+		return nil, false
+	}
+	return cloneToolDescriptors(e.toolCatalog), true
+}
+
 // durableContext is used for the final ledger write after a step has been
 // canceled. It preserves the harness lifetime values while intentionally
 // detaching from the canceled model/tool context; a short deadline prevents a
@@ -781,14 +876,14 @@ func (e *runExecution) hasSteer() bool {
 	return len(e.steers) > 0
 }
 
-func (e *runExecution) takeSteer() string {
+func (e *runExecution) takeSteerRequest() steerRequest {
 	if e == nil {
-		return ""
+		return steerRequest{}
 	}
 	e.steerMu.Lock()
 	defer e.steerMu.Unlock()
 	if len(e.steers) == 0 {
-		return ""
+		return steerRequest{}
 	}
 	value := e.steers[0]
 	e.steers = e.steers[1:]
@@ -798,22 +893,197 @@ func (e *runExecution) takeSteer() string {
 	return value
 }
 
-// consumeControlCommands applies commands submitted by another process. The
-// ledger marks them consumed transactionally, so duplicate owners cannot apply
-// the same command twice.
+// takeSteer is retained as a small compatibility helper for low-level tests
+// and callers that only need the text. Harness execution uses
+// takeSteerRequest so the idempotency key is never discarded.
+func (e *runExecution) takeSteer() string {
+	return e.takeSteerRequest().content
+}
+
+func (e *runExecution) markControlClaim(id string) bool {
+	if e == nil || strings.TrimSpace(id) == "" {
+		return false
+	}
+	e.controlMu.Lock()
+	defer e.controlMu.Unlock()
+	if e.controlClaims == nil {
+		e.controlClaims = make(map[string]struct{})
+	}
+	if _, exists := e.controlClaims[id]; exists {
+		return false
+	}
+	e.controlClaims[id] = struct{}{}
+	return true
+}
+
+func (e *runExecution) clearControlClaim(id string) {
+	if e == nil || strings.TrimSpace(id) == "" {
+		return
+	}
+	e.controlMu.Lock()
+	delete(e.controlClaims, id)
+	e.controlMu.Unlock()
+}
+
+func (e *runExecution) markStaleWorkspaceCommand(id string) {
+	if e == nil || strings.TrimSpace(id) == "" {
+		return
+	}
+	e.controlMu.Lock()
+	if e.staleWorkspaceCommands == nil {
+		e.staleWorkspaceCommands = make(map[string]struct{})
+	}
+	e.staleWorkspaceCommands[id] = struct{}{}
+	e.controlMu.Unlock()
+}
+
+func (e *runExecution) staleWorkspaceCommandIDs() []string {
+	if e == nil {
+		return nil
+	}
+	e.controlMu.Lock()
+	defer e.controlMu.Unlock()
+	if len(e.staleWorkspaceCommands) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(e.staleWorkspaceCommands))
+	for id := range e.staleWorkspaceCommands {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func (e *runExecution) clearStaleWorkspaceCommand(id string) {
+	if e == nil || strings.TrimSpace(id) == "" {
+		return
+	}
+	e.controlMu.Lock()
+	delete(e.staleWorkspaceCommands, id)
+	e.controlMu.Unlock()
+}
+
+func (h *AgentRunHarness) controlOwnerToken(execution *runExecution) string {
+	if execution != nil {
+		if token := strings.TrimSpace(execution.ownerToken()); token != "" {
+			return token
+		}
+	}
+	// Low-level tests and unleased runs do not have a fencing token. A stable
+	// Harness owner still gives their command claims a durable identity; leased
+	// workers always take the stronger run lease token above.
+	return strings.TrimSpace(h.ownerID)
+}
+
+func (h *AgentRunHarness) ackControlCommand(execution *runExecution, commandID string) error {
+	err := h.ledger.AckCommand(h.durableContext(), commandID, h.controlOwnerToken(execution))
+	if err == nil || errors.Is(err, ErrNotFound) || errors.Is(err, ErrControlCommandClaimLost) {
+		if execution != nil {
+			execution.clearControlClaim(commandID)
+		}
+	}
+	return err
+}
+
+// ackStaleWorkspaceCommands completes explicit stale-snapshot approvals only
+// after the worker has committed the state transition that makes the snapshot
+// usable. A transient ledger failure leaves the IDs pending so the next poll
+// can retry; a claim loss is safe to forget because another owner can reclaim
+// the durable command.
+func (h *AgentRunHarness) ackStaleWorkspaceCommands(execution *runExecution) {
+	if h == nil || execution == nil {
+		return
+	}
+	for _, commandID := range execution.staleWorkspaceCommandIDs() {
+		err := h.ackControlCommand(execution, commandID)
+		if err == nil || errors.Is(err, ErrNotFound) || errors.Is(err, ErrControlCommandClaimLost) {
+			execution.clearStaleWorkspaceCommand(commandID)
+		}
+	}
+}
+
+// ackUnownedControlCommand is used for a queued run that is canceled before a
+// worker can acquire a lease. Claiming and acknowledging in two durable steps
+// preserves the same crash-recovery semantics as the normal worker path while
+// avoiding a permanently replayable command on a terminal run.
+func (h *AgentRunHarness) ackUnownedControlCommand(runID, commandID string) {
+	if h == nil || h.ledger == nil || strings.TrimSpace(runID) == "" || strings.TrimSpace(commandID) == "" {
+		return
+	}
+	ctx := h.durableContext()
+	owner := h.controlOwnerToken(nil)
+	commands, err := h.ledger.ClaimCommands(ctx, runID, owner, 32, h.leaseTTL)
+	if err != nil {
+		return
+	}
+	for _, command := range commands {
+		if command.ID != commandID {
+			continue
+		}
+		_ = h.ledger.AckCommand(ctx, commandID, owner)
+		return
+	}
+}
+
+// consumeControlCommands applies commands submitted by another process. A
+// command is first claimed with a short lease and acknowledged only after the
+// durable action boundary succeeds. This keeps a crash between dequeue and
+// application recoverable.
 func (h *AgentRunHarness) consumeControlCommands(ctx context.Context, execution *runExecution) bool {
-	commands, err := h.ledger.DequeueCommands(ctx, execution.runID, 32)
+	if execution == nil {
+		return false
+	}
+	commands, err := h.ledger.ClaimCommands(ctx, execution.runID, h.controlOwnerToken(execution), 32, h.leaseTTL)
 	if err != nil {
 		return false
 	}
 	for _, command := range commands {
-		if h.controlCommandRevisionConflict(ctx, execution, command) {
+		if !execution.markControlClaim(command.ID) {
+			// The previous poll is still applying this command. ClaimCommands
+			// renews its lease, but the in-memory action must remain single-shot.
 			continue
 		}
+		if h.controlCommandRevisionConflict(ctx, execution, command) {
+			_ = h.ackControlCommand(execution, command.ID)
+			continue
+		}
+		applied := false
+		retryLater := false
 		switch command.Action {
 		case ControlCancel:
 			execution.cancelRequested.Store(true)
-			if !execution.sideEffect.Load() {
+			if execution.sideEffect.Load() {
+				// The external operation has crossed its start fence. Leave the
+				// command unapplied until it settles; otherwise a crash here could
+				// lose the cancellation request.
+				execution.wakeWorker()
+				execution.clearControlClaim(command.ID)
+				continue
+			}
+			latest, latestErr := h.ledger.GetRun(ctx, execution.runID)
+			if latestErr != nil {
+				retryLater = true
+			} else if latest.State.Terminal() || latest.State == RunStateCanceling {
+				applied = true
+			} else {
+				// Persist canceling before canceling in-memory contexts. If the
+				// worker crashes after context cancellation, recovery still has a
+				// durable state from which to emit exactly one terminal event.
+				_, transitionErr := h.appendState(h.durableContext(), latest, EventCheckpoint, RunStateCanceling,
+					CheckpointEvent{Sequence: latest.NextSequence - 1}, execution, "")
+				if transitionErr == nil || errors.Is(transitionErr, ErrTerminalRun) {
+					applied = true
+				} else if errors.Is(transitionErr, ErrRevisionConflict) {
+					refreshed, refreshErr := h.ledger.GetRun(ctx, execution.runID)
+					if refreshErr == nil && (refreshed.State.Terminal() || refreshed.State == RunStateCanceling) {
+						applied = true
+					} else {
+						retryLater = true
+					}
+				} else {
+					retryLater = true
+				}
+			}
+			if applied {
 				execution.cancel()
 				execution.cancelStep()
 			}
@@ -824,34 +1094,55 @@ func (h *AgentRunHarness) consumeControlCommands(ctx context.Context, execution 
 			if json.Unmarshal(command.Payload, &payload) == nil && strings.TrimSpace(payload.Content) != "" {
 				execution.steerPending.Store(true)
 				execution.steerMu.Lock()
-				execution.steers = append(execution.steers, payload.Content)
+				execution.steers = append(execution.steers, steerRequest{requestID: command.ID, content: payload.Content})
 				execution.steerMu.Unlock()
 				if !execution.sideEffect.Load() {
 					execution.cancelStep()
 				}
+				// supersedeAndSteer acknowledges this command only after it has
+				// committed the interrupted checkpoint and new user message.
+				continue
 			}
+			// A malformed control payload cannot be executed. Emit a typed error
+			// and ack it so an invalid command does not spin forever.
+			if run, runErr := h.ledger.GetRun(h.durableContext(), execution.runID); runErr == nil {
+				h.emitError(h.durableContext(), run, "malformed_control_command", "steer content is required", execution)
+			}
+			applied = true
 		case ControlResume, ControlRecover:
 			// The public control method starts a worker for an interrupted run;
 			// this command is retained for audit and is otherwise already handled.
+			applied = true
 		case ControlAbortRecovery:
 			execution.cancel()
+			applied = true
 		case ControlUseStaleWorkspace:
-			// Wake a worker blocked on a source lease. The explicit command is
-			// consumed for audit; workspace waiting code decides whether the
-			// cached snapshot may be used.
+			// Wake a worker blocked on a source lease. Keep the command claimed
+			// until workspace waiting code has actually selected the encrypted
+			// snapshot and committed the resume transition. If the process dies
+			// before that point, a new owner can reclaim and reapply the command.
 			execution.allowStaleWorkspace.Store(true)
+			execution.markStaleWorkspaceCommand(command.ID)
 			execution.wakeWorker()
+			continue
+		}
+		if retryLater {
+			execution.clearControlClaim(command.ID)
+			continue
+		}
+		if applied {
+			_ = h.ackControlCommand(execution, command.ID)
 		}
 	}
 	return len(commands) > 0
 }
 
 // controlCommandRevisionConflict rejects a command that was queued by another
-// process against an older run projection. Commands are already marked
-// consumed by the Ledger before they reach this point, so a stale command can
-// neither be replayed by a later owner nor trigger an in-memory cancellation
-// or steer. Record a typed event when the run is still mutable so adapters
-// can surface the same stable revision_conflict code as the synchronous API.
+// process against an older run projection. Commands have only been claimed at
+// this point, not acknowledged; the caller must ack the rejected command so a
+// stale action cannot be replayed by a later owner. Record a typed event when
+// the run is still mutable so adapters can surface the same stable
+// revision_conflict code as the synchronous API.
 func (h *AgentRunHarness) controlCommandRevisionConflict(ctx context.Context, execution *runExecution, command ControlCommand) bool {
 	if command.ExpectedRevision <= 0 {
 		return false
@@ -895,41 +1186,66 @@ func (h *AgentRunHarness) publishControlCommandRevisionConflict(ctx context.Cont
 }
 
 func (h *AgentRunHarness) applySteer(ctx context.Context, run *RunSnapshot, messages *[]Message, content string, execution *runExecution) error {
-	content = strings.TrimSpace(content)
-	if content == "" {
-		return nil
+	return h.supersedeAndSteer(ctx, run, messages, nil, content, "", execution)
+}
+
+// supersedeAndSteer is the single interruption boundary used by model and
+// tool phases. Any intents supplied by the caller have not crossed the durable
+// start fence and are therefore recorded as canceled in the same transaction
+// as the interrupted checkpoint and the steer input. Keeping this operation
+// atomic prevents stale intents from being executed or projected into the next
+// provider request.
+func (h *AgentRunHarness) supersedeAndSteer(ctx context.Context, run *RunSnapshot, messages *[]Message, intents []ToolIntent, content, requestID string, execution *runExecution) error {
+	if h == nil || run == nil {
+		return errors.New("steer requires a run")
 	}
-	// Tool start/finish and an approval decision each advance the durable run
-	// revision. A steer can arrive exactly while one of those boundaries is
-	// committing, so the caller's in-memory projection is not a valid CAS base.
-	// Refresh here rather than requiring every steering call site to remember
-	// that rule; this keeps the control seam correct for model, tool and
-	// approval interruptions alike.
-	latest, err := h.refreshRun(ctx, run.ID)
-	if err != nil {
-		return err
+	ownerToken := ""
+	if execution != nil {
+		ownerToken = execution.ownerToken()
 	}
-	*run = latest
-	if run.State.Terminal() {
-		return ErrTerminalRun
-	}
-	// Preserve the interrupted model output as an event-only delta. It is not
-	// appended to the next model projection, so a partial JSON tool intent can
-	// never leak into the following request.
-	if run.State != RunStateInterrupted {
-		*run, err = h.appendState(ctx, *run, EventCheckpoint, RunStateInterrupted, CheckpointEvent{CheckpointID: run.CheckpointID, Sequence: run.NextSequence - 1}, execution, "")
-		if err != nil {
-			return err
+	// The caller's projection can lag a durable tool completion (executeTool
+	// intentionally refreshes its own copy). Refresh immediately before the
+	// atomic write so the CAS protects the actual boundary instead of rejecting
+	// a valid steer because of a stale in-memory revision.
+	durableCtx := h.durableContext()
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		latest, refreshErr := h.ledger.GetRun(durableCtx, run.ID)
+		if refreshErr != nil {
+			return refreshErr
+		}
+		*run = latest
+		result, steerErr := h.ledger.SupersedeToolIntentsAndSteer(durableCtx, SupersedeToolIntentsRequest{
+			RunID:            run.ID,
+			OwnerToken:       ownerToken,
+			ExpectedRevision: latest.Revision,
+			Intents:          intents,
+			SteerContent:     content,
+			RequestID:        requestID,
+		})
+		if steerErr == nil {
+			*run = result.Run
+			if messages != nil {
+				*messages = append(*messages, result.Messages...)
+			}
+			for _, event := range result.Events {
+				h.publish(event)
+			}
+			// The command claim is acknowledged only after the atomic
+			// supersede/checkpoint/message transaction has committed. If the ack
+			// itself races with a lease hand-off, steer_requests makes a later
+			// replay idempotent and the new owner can acknowledge it.
+			if requestID != "" {
+				_ = h.ackControlCommand(execution, requestID)
+			}
+			return nil
+		}
+		lastErr = steerErr
+		if !errors.Is(steerErr, ErrRevisionConflict) {
+			return steerErr
 		}
 	}
-	message := Message{ID: uuid.NewString(), SessionID: run.SessionID, RunID: run.ID, Role: "user", Content: content, CreatedAt: time.Now().UTC()}
-	appended, err := h.ledger.AppendMessage(h.durableContext(), message)
-	if err != nil {
-		return err
-	}
-	*messages = append(*messages, appended)
-	*run, err = h.appendState(ctx, *run, EventInput, RunStateRunningModel, InputEvent{ContentHash: hashString(content), DispatchMode: DispatchSteer}, execution, "")
-	return err
+	return lastErr
 }
 
 func hashString(value string) string {
@@ -1222,6 +1538,15 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 	}
 	run = resume.Run
 	policy := run.Policy.Normalize()
+	// Load the immutable tool projection once for this worker. Every model turn
+	// and recovery path below reuses this snapshot; only the executable lookup
+	// is allowed to touch the live catalog, and it is fenced against drift.
+	frozenToolDescriptors, toolsErr := h.toolDescriptorsForRun(ctx, run)
+	if toolsErr != nil {
+		h.failRun(h.durableContext(), run, "tool_catalog", toolsErr, execution)
+		return
+	}
+	execution.setToolCatalog(frozenToolDescriptors)
 	toolRounds, failedToolRounds := h.resumeToolCounters(ctx, run.ID)
 	modelRetries, malformedRetries := 0, 0
 	providerState := json.RawMessage(nil)
@@ -1277,6 +1602,10 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 				execution.sideEffect.Store(true)
 				toolResult, toolErr := h.executeToolWithRecord(ctx, run, intent, execution, execution.ownerToken(), pending, true)
 				execution.sideEffect.Store(false)
+				if toolErr != nil && isToolCatalogContractError(toolErr) {
+					h.failRun(h.durableContext(), run, toolCatalogErrorCode(toolErr), toolErr, execution)
+					return
+				}
 				if toolResult.Message != nil {
 					messages = append(messages, *toolResult.Message)
 				} else if !toolResult.MessagePersisted {
@@ -1310,6 +1639,10 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 			}
 			intent := toolIntentFromRecord(*pending)
 			toolResult, toolErr := h.executeToolWithRecord(ctx, run, intent, execution, execution.ownerToken(), pending, false)
+			if toolErr != nil && isToolCatalogContractError(toolErr) {
+				h.failRun(h.durableContext(), run, toolCatalogErrorCode(toolErr), toolErr, execution)
+				return
+			}
 			if toolResult.Message != nil {
 				messages = append(messages, *toolResult.Message)
 			} else if !toolResult.MessagePersisted {
@@ -1339,8 +1672,8 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 				return
 			}
 		}
-		if steer := execution.takeSteer(); steer != "" {
-			if err := h.applySteer(ctx, &run, &messages, steer, execution); err != nil {
+		if steer := execution.takeSteerRequest(); steer.content != "" {
+			if err := h.supersedeAndSteer(ctx, &run, &messages, nil, steer.content, steer.requestID, execution); err != nil {
 				h.failRun(h.durableContext(), run, "steer", err, execution)
 				return
 			}
@@ -1374,15 +1707,7 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 			h.failRun(h.durableContext(), run, "ledger", err, execution)
 			return
 		}
-		var descriptors []ToolDescriptor
-		if run.AllowTools {
-			var toolsErr error
-			descriptors, toolsErr = h.listTools(ctx)
-			if toolsErr != nil {
-				h.failRun(h.durableContext(), run, "tool_catalog", toolsErr, execution)
-				return
-			}
-		}
+		descriptors := frozenToolDescriptors
 		// A bound workspace source is required for every model turn, even when the
 		// selected tool set happens not to need workspace capabilities. This keeps
 		// the model projection tied to the same live desktop/CLI context as tools.
@@ -1505,6 +1830,12 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 			return
 		}
 		malformedRetries = 0
+		// Provider adapters intentionally leave effect unset: the catalog, rather
+		// than model output, is the authority for side-effect classification. Fill
+		// the baseline into every intent before the model completion is committed
+		// so an immediate steer can durably supersede a whole batch without first
+		// visiting each intent's normal execution path.
+		normalizeToolIntentEffects(result.ToolCalls, descriptors)
 		providerState = cloneRaw(result.ProviderState)
 		run, err = h.refreshRun(ctx, run.ID)
 		if err != nil {
@@ -1560,7 +1891,8 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 		}
 		toolRounds++
 		allToolsOK := true
-		for _, intent := range result.ToolCalls {
+		steeredBatch := false
+		for intentIndex, intent := range result.ToolCalls {
 			if execution.leaseLost.Load() {
 				return
 			}
@@ -1574,11 +1906,13 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 			}
 			h.consumeControlCommands(ctx, execution)
 			if execution.hasSteer() {
-				if steer := execution.takeSteer(); steer != "" {
-					if steerErr := h.applySteer(ctx, &run, &messages, steer, execution); steerErr != nil {
+				if steer := execution.takeSteerRequest(); steer.content != "" {
+					if steerErr := h.supersedeAndSteer(ctx, &run, &messages, result.ToolCalls[intentIndex:], steer.content, steer.requestID, execution); steerErr != nil {
 						h.failRun(h.durableContext(), run, "steer", steerErr, execution)
 						return
 					}
+					steeredBatch = true
+					break
 				}
 				continue
 			}
@@ -1594,16 +1928,44 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 			if err != nil {
 				return
 			}
-			if intent.Effect == "" {
-				intent.Effect = descriptorEffect(descriptors, intent.ToolName)
+			// Validate the live executable contract against the immutable binding
+			// before deriving an approval effect. This keeps an approval tied to
+			// the same schema/effect that was presented to the model at run start.
+			var frozenDescriptor ToolDescriptor
+			if run.AllowTools {
+				var toolErr error
+				frozenDescriptor, toolErr = h.validateToolForRunWithDescriptors(ctx, run, frozenToolDescriptors, intent.ToolName)
+				if toolErr != nil {
+					// Report a contract failure as a tool result so the model can recover
+					// or choose another tool. The live implementation is never invoked
+					// when its descriptor has drifted from the frozen binding.
+					allToolsOK = false
+					h.emitError(h.durableContext(), run, toolCatalogErrorCode(toolErr), toolErr.Error(), execution)
+					failure := ToolExecutionResult{Status: "failed", ErrorCode: toolCatalogErrorCode(toolErr)}
+					if appendErr := h.appendToolResultMessage(&run, &messages, intent.CallID, failure, toolErr); appendErr != nil {
+						h.failRun(h.durableContext(), run, "ledger", appendErr, execution)
+						return
+					}
+					continue
+				}
+				// The model cannot override the catalog's static effect. Dynamic
+				// resolution below may refine a conservative descriptor (for example
+				// execute_sql SELECT versus INSERT), but an intent-provided effect is
+				// never trusted as an approval bypass.
+				intent.Effect = frozenDescriptor.Effect
 			}
 			if resolver, ok := h.tools.(ToolEffectResolver); ok {
 				if resolvedEffect, resolveErr := resolver.ResolveEffect(ctx, intent.ToolName, intent.Arguments); resolveErr != nil {
 					allToolsOK = false
 					h.emitError(h.durableContext(), run, "tool_effect", resolveErr.Error(), execution)
+					failure := ToolExecutionResult{Status: "failed", ErrorCode: "tool_effect"}
+					if appendErr := h.appendToolResultMessage(&run, &messages, intent.CallID, failure, resolveErr); appendErr != nil {
+						h.failRun(h.durableContext(), run, "ledger", appendErr, execution)
+						return
+					}
 					continue
 				} else if resolvedEffect.Valid() {
-					intent.Effect = resolvedEffect
+					intent.Effect = refineToolEffect(intent.Effect, resolvedEffect)
 				}
 			}
 			if intent.Effect == ToolEffectSideEffect || intent.Effect == ToolEffectSideEffectUnknown {
@@ -1616,8 +1978,13 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 						return
 					}
 					if errors.Is(approvalErr, ErrRunSteered) || execution.hasSteer() {
-						if steer := execution.takeSteer(); steer != "" {
-							_ = h.applySteer(ctx, &run, &messages, steer, execution)
+						if steer := execution.takeSteerRequest(); steer.content != "" {
+							if steerErr := h.supersedeAndSteer(ctx, &run, &messages, result.ToolCalls[intentIndex:], steer.content, steer.requestID, execution); steerErr != nil {
+								h.failRun(h.durableContext(), run, "steer", steerErr, execution)
+								return
+							}
+							steeredBatch = true
+							break
 						}
 						continue
 					}
@@ -1637,11 +2004,13 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 				// here so an approved, stale call cannot issue an external effect.
 				h.consumeControlCommands(ctx, execution)
 				if execution.hasSteer() {
-					if steer := execution.takeSteer(); steer != "" {
-						if steerErr := h.applySteer(ctx, &run, &messages, steer, execution); steerErr != nil {
+					if steer := execution.takeSteerRequest(); steer.content != "" {
+						if steerErr := h.supersedeAndSteer(ctx, &run, &messages, result.ToolCalls[intentIndex:], steer.content, steer.requestID, execution); steerErr != nil {
 							h.failRun(h.durableContext(), run, "steer", steerErr, execution)
 							return
 						}
+						steeredBatch = true
+						break
 					}
 					continue
 				}
@@ -1662,8 +2031,39 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 				return
 			}
 			h.addActiveDuration(h.durableContext(), run.ID, time.Since(toolStartedAt), execution.ownerToken())
+			// A steer may cancel a read-only/pure invocation while the executor is
+			// returning, or may be observed immediately before its start fence. In
+			// either case the remaining intents from this provider response must be
+			// superseded as one batch; never fall through to the next intent.
+			if errors.Is(toolErr, ErrRunSteered) || execution.hasSteer() {
+				steer := execution.takeSteerRequest()
+				if steer.content != "" {
+					remaining := result.ToolCalls[intentIndex+1:]
+					if toolResult.Message == nil && !toolResult.MessagePersisted {
+						// No durable completion crossed the boundary, so include the
+						// current intent as well and let the Ledger create its canceled
+						// record/message. A completed tool is never relabeled here.
+						remaining = result.ToolCalls[intentIndex:]
+					}
+					if steerErr := h.supersedeAndSteer(ctx, &run, &messages, remaining, steer.content, steer.requestID, execution); steerErr != nil {
+						h.failRun(h.durableContext(), run, "steer", steerErr, execution)
+						return
+					}
+					if toolResult.Message != nil {
+						messages = append(messages, *toolResult.Message)
+					}
+					steeredBatch = true
+					break
+				}
+			}
 			if toolErr != nil {
 				allToolsOK = false
+				if isToolCatalogContractError(toolErr) {
+					// A live catalog may reload between model projection and execution.
+					// Keep the run alive and expose a structured tool failure to the next
+					// model turn, but never execute the drifted implementation.
+					h.emitError(h.durableContext(), run, toolCatalogErrorCode(toolErr), toolErr.Error(), execution)
+				}
 			}
 			if toolResult.Message != nil {
 				// FinishToolAndEvent already appended this message in the same
@@ -1685,6 +2085,9 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 			if toolResult.UnknownOutcome && (intent.Effect == ToolEffectSideEffect || intent.Effect == ToolEffectSideEffectUnknown) {
 				return
 			}
+		}
+		if steeredBatch {
+			continue
 		}
 		if !allToolsOK {
 			failedToolRounds++
@@ -2376,26 +2779,48 @@ func (h *AgentRunHarness) executeToolWithRecord(ctx context.Context, run RunSnap
 			return ToolExecutionResult{Status: "failed", ErrorCode: "tool_conflict"}, fmt.Errorf("%w: pending tool effect changed", ErrToolConflict)
 		}
 	}
-	descriptor, executor, err := h.tools.Resolve(ctx, intent.ToolName)
+	var (
+		descriptor    ToolDescriptor
+		executor      ToolExecutor
+		catalogErr    error
+		err           error
+		frozenCatalog []ToolDescriptor
+		catalogLoaded bool
+	)
+	if execution != nil {
+		frozenCatalog, catalogLoaded = execution.frozenToolCatalog()
+	}
+	if catalogLoaded {
+		descriptor, executor, catalogErr = h.resolveToolForRunWithDescriptors(ctx, run, frozenCatalog, intent.ToolName)
+	} else {
+		descriptor, executor, catalogErr = h.resolveToolForRun(ctx, run, intent.ToolName)
+	}
+	err = catalogErr
 	if err != nil || executor == nil {
 		if err == nil {
 			err = ErrToolNotFound
 		}
-		return ToolExecutionResult{Status: "failed", ErrorCode: "tool_not_found"}, err
+		return ToolExecutionResult{Status: "failed", ErrorCode: toolCatalogErrorCode(err)}, err
 	}
 	if err := validateToolArguments(descriptor.InputSchema, intent.Arguments); err != nil {
 		return ToolExecutionResult{Status: "failed", ErrorCode: "malformed_tool_call"}, err
 	}
+	resolvedEffect := ToolEffect("")
 	if resolver, ok := h.tools.(ToolEffectResolver); ok {
 		if effect, resolveErr := resolver.ResolveEffect(ctx, intent.ToolName, intent.Arguments); resolveErr != nil {
 			return ToolExecutionResult{Status: "failed", ErrorCode: "tool_effect"}, resolveErr
 		} else if effect.Valid() {
-			intent.Effect = effect
+			resolvedEffect = effect
+			intent.Effect = refineToolEffect(descriptor.Effect, effect)
 		}
 	}
+	// The immutable descriptor is authoritative for the baseline effect. The
+	// model-provided intent effect is untrusted and must not downgrade a call;
+	// ResolveEffect may refine the conservative baseline for argument-dependent
+	// tools such as execute_sql.
 	effectiveEffect := descriptor.Effect
-	if intent.Effect.Valid() {
-		effectiveEffect = intent.Effect
+	if resolvedEffect.Valid() {
+		effectiveEffect = refineToolEffect(descriptor.Effect, resolvedEffect)
 	}
 	if pending != nil && pending.Effect.Valid() {
 		// The durable effect is authoritative for a resumed invocation. Dynamic
@@ -2630,6 +3055,9 @@ func (h *AgentRunHarness) workspaceForPhase(ctx context.Context, run RunSnapshot
 				}
 				run = latest
 			}
+			// A live snapshot also satisfies an explicit stale-workspace
+			// approval. Ack only after the optional resume transition commits.
+			h.ackStaleWorkspaceCommands(execution)
 			return snapshot, run, nil
 		}
 		if errors.Is(snapshotErr, ErrSnapshotExpired) && execution.allowStaleWorkspace.Load() {
@@ -2642,6 +3070,10 @@ func (h *AgentRunHarness) workspaceForPhase(ctx context.Context, run RunSnapshot
 					}
 					run = latest
 				}
+				// The stale snapshot is now the actual workspace input for this
+				// phase. The durable state transition above is the acknowledgement
+				// boundary for the control command.
+				h.ackStaleWorkspaceCommands(execution)
 				return stale, run, nil
 			}
 			snapshotErr = staleErr
@@ -2714,6 +3146,7 @@ func (h *AgentRunHarness) workspaceForPendingTool(ctx context.Context, run RunSn
 				}
 				run = latest
 			}
+			h.ackStaleWorkspaceCommands(execution)
 			return snapshot, run, nil
 		}
 		if run.State != RunStateAwaitingWorkspace {
@@ -2774,6 +3207,7 @@ func (h *AgentRunHarness) waitForWorkspaceSource(ctx context.Context, run RunSna
 				}
 				run = latest
 			}
+			h.ackStaleWorkspaceCommands(execution)
 			return run, nil
 		}
 		if !errors.Is(snapshotErr, ErrNotFound) && !errors.Is(snapshotErr, ErrSnapshotExpired) {
@@ -2933,6 +3367,15 @@ func descriptorEffect(descriptors []ToolDescriptor, name string) ToolEffect {
 	return ToolEffectSideEffectUnknown
 }
 
+func normalizeToolIntentEffects(intents []ToolIntent, descriptors []ToolDescriptor) {
+	for index := range intents {
+		if strings.TrimSpace(string(intents[index].Effect)) != "" {
+			continue
+		}
+		intents[index].Effect = descriptorEffect(descriptors, intents[index].ToolName)
+	}
+}
+
 func validateToolIntents(intents []ToolIntent, descriptors []ToolDescriptor) error {
 	seen := make(map[string]struct{}, len(intents))
 	for _, intent := range intents {
@@ -2940,6 +3383,14 @@ func validateToolIntents(intents []ToolIntent, descriptors []ToolDescriptor) err
 		name := strings.TrimSpace(intent.ToolName)
 		if callID == "" || name == "" {
 			return fmt.Errorf("%w: callId and toolName are required", ErrMalformedToolCall)
+		}
+		// Providers are allowed to omit effect (the immutable Go catalog fills it
+		// in below), but an explicit value must still be a known enum.  Silently
+		// accepting an unknown value would let malformed model output cross the
+		// approval/start boundary and would make the durable tool contract
+		// ambiguous on replay.
+		if strings.TrimSpace(string(intent.Effect)) != "" && !intent.Effect.Valid() {
+			return fmt.Errorf("%w: invalid effect %q for %s", ErrMalformedToolCall, intent.Effect, name)
 		}
 		if _, exists := seen[callID]; exists {
 			return fmt.Errorf("%w: duplicate callId %q", ErrMalformedToolCall, callID)

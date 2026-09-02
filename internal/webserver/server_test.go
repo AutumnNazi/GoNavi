@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -564,82 +563,27 @@ func TestEventHubReliableQueueDisconnectsSlowDetachedWindowAtHardLimit(t *testin
 	}
 }
 
-func TestEventHubAIStreamCoalescesWithoutLosingChunksOrTerminalEvents(t *testing.T) {
+func TestEventHubRunEventsUseTheNormalBestEffortQueueLimit(t *testing.T) {
 	hub := newEventHub()
 	target := hub.subscribe("window-1")
 	t.Cleanup(func() { hub.unsubscribe(target) })
 
-	// Fill the queue with unrelated broadcasts, leaving one slot for this AI
-	// session. Every later token must merge into that slot instead of dropping.
-	for index := 0; index < eventSubscriberQueueLimit-1; index++ {
+	// Run events are persisted in the Ledger and consumers fill sequence gaps
+	// through AIReadAgentRun. The bridge therefore treats them as normal
+	// best-effort notifications instead of retaining the old AI stream merger.
+	for index := 0; index < eventSubscriberQueueLimit; index++ {
 		hub.Emit("gonavi:progress", index)
 	}
-	var expectedContent strings.Builder
-	var expectedThinking strings.Builder
-	for index := 0; index < eventSubscriberQueueLimit+8; index++ {
-		content := fmt.Sprintf("<%d>", index)
-		thinking := fmt.Sprintf("[%d]", index)
-		expectedContent.WriteString(content)
-		expectedThinking.WriteString(thinking)
-		hub.EmitToBestEffort("window-1", "ai:stream:session-1", map[string]any{
-			"content":  content,
-			"thinking": thinking,
-			"done":     false,
-		})
-	}
-	hub.EmitToBestEffort("window-1", "ai:stream:session-1", map[string]any{
-		"tool_calls": []map[string]any{{"id": "tool-1"}},
-	})
-	hub.EmitToBestEffort("window-1", "ai:stream:session-1", map[string]any{"done": true})
-	hub.EmitToBestEffort("window-1", "ai:stream:session-1", map[string]any{
-		"error": "upstream closed",
-		"done":  true,
-	})
+	hub.EmitToBestEffort("window-1", "ai:run:event", map[string]any{"runId": "run-1", "sequence": 1})
 
-	for index := 0; index < eventSubscriberQueueLimit-1; index++ {
+	for index := 0; index < eventSubscriberQueueLimit; index++ {
 		message, ok := target.dequeue()
 		if !ok || message.Name != "gonavi:progress" {
 			t.Fatalf("broadcast %d = %#v, %v", index, message, ok)
 		}
 	}
-
-	var actualContent strings.Builder
-	var actualThinking strings.Builder
-	var sawToolCalls bool
-	var sawDone bool
-	var sawError bool
-	for {
-		message, ok := target.dequeue()
-		if !ok {
-			break
-		}
-		if message.Name != "ai:stream:session-1" || len(message.Args) != 1 {
-			t.Fatalf("unexpected AI event: %#v", message)
-		}
-		payload, ok := message.Args[0].(map[string]any)
-		if !ok {
-			t.Fatalf("AI payload = %#v", message.Args[0])
-		}
-		actualContent.WriteString(stringValue(payload["content"]))
-		actualThinking.WriteString(stringValue(payload["thinking"]))
-		if toolCalls := reflect.ValueOf(payload["tool_calls"]); toolCalls.IsValid() && toolCalls.Kind() == reflect.Slice && toolCalls.Len() > 0 {
-			sawToolCalls = true
-		}
-		if done, _ := payload["done"].(bool); done {
-			sawDone = true
-		}
-		if stringValue(payload["error"]) == "upstream closed" {
-			sawError = true
-		}
-	}
-	if actualContent.String() != expectedContent.String() {
-		t.Fatalf("coalesced content length = %d, want %d", actualContent.Len(), expectedContent.Len())
-	}
-	if actualThinking.String() != expectedThinking.String() {
-		t.Fatalf("coalesced thinking length = %d, want %d", actualThinking.Len(), expectedThinking.Len())
-	}
-	if !sawToolCalls || !sawDone || !sawError {
-		t.Fatalf("terminal delivery tool=%v done=%v error=%v", sawToolCalls, sawDone, sawError)
+	if _, ok := target.dequeue(); ok {
+		t.Fatal("run event should be dropped at the normal best-effort queue limit")
 	}
 }
 

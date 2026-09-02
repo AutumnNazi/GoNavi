@@ -1,6 +1,7 @@
 package runharness
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -41,9 +42,16 @@ var (
 	ErrTokenReservation    = errors.New("agent token reservation is invalid")
 	ErrInvalidBranchCursor = errors.New("agent session branch cursor must be a user message")
 	ErrBranchConflict      = errors.New("agent session branch conflicts with an existing session")
+	// ErrControlCommandConflict means an idempotency key was reused for a
+	// different control command.  Treating this as a successful duplicate can
+	// silently apply the wrong cancel/steer/approval action across processes.
+	ErrControlCommandConflict = errors.New("agent control command conflicts with existing command")
+	// ErrControlCommandClaimLost means an owner tried to acknowledge a command
+	// after its claim expired or was replaced by another owner.
+	ErrControlCommandClaimLost = errors.New("agent control command claim was lost")
 )
 
-const ledgerSchemaVersion = 7
+const ledgerSchemaVersion = 10
 
 type ledgerConfig struct {
 	keyProvider               KeyProvider
@@ -327,6 +335,8 @@ func (l *Ledger) initialize(ctx context.Context) error {
 			terminal_reason BLOB, policy BLOB NOT NULL, provider TEXT, model TEXT,
 			thinking TEXT, temperature REAL, max_tokens INTEGER,
 			context_source_id TEXT, context_source_instance_id TEXT,
+			tool_catalog_binding BLOB, tool_catalog_hash TEXT,
+			tool_catalog_revision INTEGER NOT NULL DEFAULT 0,
 			active_duration_ns INTEGER NOT NULL DEFAULT 0,
 			prompt_tokens INTEGER NOT NULL DEFAULT 0,
 			completion_tokens INTEGER NOT NULL DEFAULT 0,
@@ -376,8 +386,18 @@ func (l *Ledger) initialize(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS control_commands (
 			id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
 			action TEXT NOT NULL, payload BLOB, expected_revision INTEGER NOT NULL DEFAULT 0,
-			created_at INTEGER NOT NULL, consumed_at INTEGER NOT NULL DEFAULT 0)`,
+			created_at INTEGER NOT NULL, consumed_at INTEGER NOT NULL DEFAULT 0,
+			claimed_by TEXT, claimed_at INTEGER NOT NULL DEFAULT 0,
+			claim_expires_at INTEGER NOT NULL DEFAULT 0,
+			applied_at INTEGER NOT NULL DEFAULT 0)`,
+		// Keep this first-pass index compatible with ledgers created before the
+		// claim/ack columns; the extended index is added after ensureColumn below.
 		`CREATE INDEX IF NOT EXISTS idx_control_commands_run ON control_commands(run_id, consumed_at, created_at)`,
+		`CREATE TABLE IF NOT EXISTS steer_requests (
+			id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+			content_hash TEXT NOT NULL, resulting_revision INTEGER NOT NULL,
+			created_at INTEGER NOT NULL)`,
+		`CREATE INDEX IF NOT EXISTS idx_steer_requests_run ON steer_requests(run_id, created_at)`,
 		`CREATE TABLE IF NOT EXISTS workspace_snapshots (
 			source_id TEXT NOT NULL, source_instance_id TEXT NOT NULL, revision INTEGER NOT NULL,
 			content_hash TEXT NOT NULL, captured_at INTEGER NOT NULL, payload BLOB NOT NULL,
@@ -416,6 +436,9 @@ func (l *Ledger) initialize(ctx context.Context) error {
 		{"completion_tokens", "INTEGER NOT NULL DEFAULT 0"},
 		{"total_tokens", "INTEGER NOT NULL DEFAULT 0"},
 		{"reserved_tokens", "INTEGER NOT NULL DEFAULT 0"},
+		{"tool_catalog_binding", "BLOB"},
+		{"tool_catalog_hash", "TEXT"},
+		{"tool_catalog_revision", "INTEGER NOT NULL DEFAULT 0"},
 	} {
 		if err := ensureColumn(ctx, l.db, "runs", column.name, column.definition); err != nil {
 			return fmt.Errorf("migrate agent ledger: %w", err)
@@ -434,6 +457,19 @@ func (l *Ledger) initialize(ctx context.Context) error {
 		return fmt.Errorf("migrate agent ledger: %w", err)
 	}
 	if err := ensureColumn(ctx, l.db, "control_commands", "expected_revision", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return fmt.Errorf("migrate agent ledger: %w", err)
+	}
+	for _, column := range []struct{ name, definition string }{
+		{"claimed_by", "TEXT"},
+		{"claimed_at", "INTEGER NOT NULL DEFAULT 0"},
+		{"claim_expires_at", "INTEGER NOT NULL DEFAULT 0"},
+		{"applied_at", "INTEGER NOT NULL DEFAULT 0"},
+	} {
+		if err := ensureColumn(ctx, l.db, "control_commands", column.name, column.definition); err != nil {
+			return fmt.Errorf("migrate agent ledger: %w", err)
+		}
+	}
+	if _, err := l.db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_control_commands_claim ON control_commands(run_id, consumed_at, applied_at, created_at)`); err != nil {
 		return fmt.Errorf("migrate agent ledger: %w", err)
 	}
 	if err := ensureColumn(ctx, l.db, "migration_records", "payload", "BLOB"); err != nil {
@@ -550,20 +586,24 @@ func (l *Ledger) openJSON(table, id, field string, data []byte, out any) error {
 
 func scanRun(scanner interface{ Scan(...any) error }, l *Ledger) (RunSnapshot, error) {
 	var id, sessionID, state, taskKind string
-	var requestID, ownerID, ownerToken, checkpointID, provider, model, thinking, contextSource, contextSourceInstance sql.NullString
+	var requestID, ownerID, ownerToken, checkpointID, provider, model, thinking, contextSource, contextSourceInstance, toolCatalogHash sql.NullString
 	var generation, revision, attempt, nextSequence, ownerExpires, activeNS, promptTokens, completionTokens, totalTokens, reservedTokens, created, updated int64
+	var toolCatalogRevision int64
 	var allowTools int
-	var terminalBlob, policyBlob []byte
+	var terminalBlob, policyBlob, toolCatalogBindingBlob []byte
 	var temperature sql.NullFloat64
 	var maxTokens sql.NullInt64
 	if err := scanner.Scan(&id, &sessionID, &requestID, &taskKind, &allowTools, &generation, &state, &revision, &attempt, &nextSequence,
 		&ownerID, &ownerToken, &ownerExpires, &checkpointID, &terminalBlob, &policyBlob,
-		&provider, &model, &thinking, &temperature, &maxTokens, &contextSource, &contextSourceInstance, &activeNS, &promptTokens, &completionTokens, &totalTokens, &reservedTokens, &created, &updated); err != nil {
+		&provider, &model, &thinking, &temperature, &maxTokens, &contextSource, &contextSourceInstance,
+		&toolCatalogBindingBlob, &toolCatalogHash, &toolCatalogRevision,
+		&activeNS, &promptTokens, &completionTokens, &totalTokens, &reservedTokens, &created, &updated); err != nil {
 		return RunSnapshot{}, err
 	}
 	snapshot := RunSnapshot{ID: id, SessionID: sessionID, RequestID: requestID.String, TaskKind: AgentTaskKind(taskKind).Normalize(), AllowTools: allowTools != 0, SessionGeneration: generation, State: RunState(state), Revision: revision,
 		Attempt: int(attempt), NextSequence: nextSequence, OwnerToken: ownerToken.String, OwnerExpiresAt: fromNano(ownerExpires),
 		CheckpointID: checkpointID.String, Provider: provider.String, Model: model.String, ContextSourceID: contextSource.String, ContextSourceInstanceID: contextSourceInstance.String,
+		ToolCatalogHash: toolCatalogHash.String, ToolCatalogRevision: toolCatalogRevision,
 		CreatedAt: fromNano(created), UpdatedAt: fromNano(updated), ActiveDurationMS: activeNS / 1e6,
 		PromptTokens: int(promptTokens), CompletionTokens: int(completionTokens), TotalTokens: int(totalTokens), ReservedTokens: int(reservedTokens),
 		Thinking: thinking.String}
@@ -591,6 +631,7 @@ func scanRun(scanner interface{ Scan(...any) error }, l *Ledger) (RunSnapshot, e
 const runColumns = `id, session_id, request_id, task_kind, allow_tools, session_generation, state, revision, attempt, next_sequence,
  owner_id, owner_token, owner_expires_at, checkpoint_id, terminal_reason, policy,
  provider, model, thinking, temperature, max_tokens, context_source_id, context_source_instance_id,
+ tool_catalog_binding, tool_catalog_hash, tool_catalog_revision,
  active_duration_ns, prompt_tokens, completion_tokens, total_tokens, reserved_tokens, created_at, updated_at`
 
 func (l *Ledger) getRunTx(ctx context.Context, tx *sql.Tx, runID string) (RunSnapshot, error) {
@@ -609,6 +650,92 @@ func (l *Ledger) GetRun(ctx context.Context, runID string) (RunSnapshot, error) 
 		return RunSnapshot{}, err
 	}
 	return l.getRunDB(ctx, runID)
+}
+
+// GetRunByRequestID returns the run durably associated with an input
+// idempotency key.  Request IDs are unique across the ledger, so looking up
+// the existing run before validating mutable provider/tool state lets a
+// retried submission return the original receipt even while the host is
+// reconfiguring.  Keep this lookup read-only and map SQL's no-row result to
+// the ledger's stable ErrNotFound sentinel.
+func (l *Ledger) GetRunByRequestID(ctx context.Context, requestID string) (RunSnapshot, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	if err := l.ensureOpen(); err != nil {
+		return RunSnapshot{}, err
+	}
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" {
+		return RunSnapshot{}, ErrNotFound
+	}
+	var runID string
+	if err := l.db.QueryRowContext(ctx, `SELECT id FROM runs WHERE request_id=?`, requestID).Scan(&runID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return RunSnapshot{}, ErrNotFound
+		}
+		return RunSnapshot{}, err
+	}
+	return l.getRunDB(ctx, runID)
+}
+
+// GetToolCatalogBinding returns the immutable catalog captured for a run. The
+// descriptor payload is decrypted only inside the Ledger boundary; callers
+// should use it for validation/execution and must not expose it as a run
+// snapshot. Runs created by older ledger versions have no binding and return
+// ErrToolCatalogUnbound.
+func (l *Ledger) GetToolCatalogBinding(ctx context.Context, runID string) (ToolCatalogBinding, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	if err := l.ensureOpen(); err != nil {
+		return ToolCatalogBinding{}, err
+	}
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return ToolCatalogBinding{}, ErrNotFound
+	}
+	var (
+		blob      []byte
+		indexHash sql.NullString
+		indexRev  sql.NullInt64
+	)
+	if err := l.db.QueryRowContext(ctx, `SELECT tool_catalog_binding, tool_catalog_hash, tool_catalog_revision FROM runs WHERE id=?`, runID).Scan(&blob, &indexHash, &indexRev); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ToolCatalogBinding{}, ErrNotFound
+		}
+		return ToolCatalogBinding{}, err
+	}
+	if len(blob) == 0 {
+		// A legacy/unbound run has no indexed identity either.  If only one side
+		// exists, fail closed instead of silently treating an incomplete binding
+		// as a valid legacy run.
+		if strings.TrimSpace(indexHash.String) != "" || (indexRev.Valid && indexRev.Int64 != 0) {
+			return ToolCatalogBinding{}, fmt.Errorf("%w: indexed metadata exists without encrypted descriptor", ErrToolCatalogBindingCorrupt)
+		}
+		return ToolCatalogBinding{}, ErrToolCatalogUnbound
+	}
+	var binding ToolCatalogBinding
+	if err := l.openJSON("runs", runID, "tool_catalog_binding", blob, &binding); err != nil {
+		return ToolCatalogBinding{}, err
+	}
+	validated, err := binding.Validate()
+	if err != nil {
+		return ToolCatalogBinding{}, err
+	}
+	// The hash and revision columns are an index/projection of the encrypted
+	// binding.  They are not trusted merely because the ciphertext decrypted:
+	// compare both values before handing descriptors to the harness.  A missing
+	// index is corruption for a bound run, while hash comparison remains
+	// case-insensitive to tolerate canonical hex casing from older ledgers.
+	if !indexHash.Valid || strings.TrimSpace(indexHash.String) == "" {
+		return ToolCatalogBinding{}, fmt.Errorf("%w: encrypted descriptor has no indexed hash", ErrToolCatalogBindingCorrupt)
+	}
+	if !strings.EqualFold(strings.TrimSpace(indexHash.String), validated.Hash) {
+		return ToolCatalogBinding{}, fmt.Errorf("%w: indexed hash %q does not match binding hash %q", ErrToolCatalogBindingCorrupt, indexHash.String, validated.Hash)
+	}
+	if !indexRev.Valid || indexRev.Int64 != validated.Revision {
+		return ToolCatalogBinding{}, fmt.Errorf("%w: indexed revision %d does not match binding revision %d", ErrToolCatalogBindingCorrupt, indexRev.Int64, validated.Revision)
+	}
+	return validated, nil
 }
 
 func (l *Ledger) getRunDB(ctx context.Context, runID string) (RunSnapshot, error) {
@@ -964,6 +1091,25 @@ func (l *Ledger) CreateRun(ctx context.Context, request CreateRunRequest) (RunSn
 	if err := l.ensureOpen(); err != nil {
 		return RunSnapshot{}, err
 	}
+	tx, err := beginTx(ctx, l.db)
+	if err != nil {
+		return RunSnapshot{}, err
+	}
+	defer tx.Rollback()
+	run, err := l.createRunTx(ctx, tx, request)
+	if err != nil {
+		return RunSnapshot{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return RunSnapshot{}, err
+	}
+	return l.getRunDB(ctx, run.ID)
+}
+
+// createRunTx is the transaction-scoped implementation shared by ordinary
+// queue submissions and the steer/terminal race boundary. The caller owns the
+// transaction and must commit it after this function returns.
+func (l *Ledger) createRunTx(ctx context.Context, tx *sql.Tx, request CreateRunRequest) (RunSnapshot, error) {
 	request.SessionID = strings.TrimSpace(request.SessionID)
 	if request.SessionID == "" {
 		return RunSnapshot{}, errors.New("sessionId is required")
@@ -984,11 +1130,6 @@ func (l *Ledger) CreateRun(ctx context.Context, request CreateRunRequest) (RunSn
 	if runID == "" {
 		runID = uuid.NewString()
 	}
-	tx, err := beginTx(ctx, l.db)
-	if err != nil {
-		return RunSnapshot{}, err
-	}
-	defer tx.Rollback()
 	if request.RequestID != "" {
 		var existing string
 		if err := tx.QueryRowContext(ctx, `SELECT id FROM runs WHERE request_id=?`, request.RequestID).Scan(&existing); err == nil {
@@ -1022,6 +1163,21 @@ func (l *Ledger) CreateRun(ctx context.Context, request CreateRunRequest) (RunSn
 	if err != nil {
 		return RunSnapshot{}, err
 	}
+	var toolCatalogBindingBlob []byte
+	var toolCatalogHash any
+	var toolCatalogRevision int64
+	if request.ToolCatalogBinding != nil {
+		binding, bindingErr := request.ToolCatalogBinding.Validate()
+		if bindingErr != nil {
+			return RunSnapshot{}, bindingErr
+		}
+		toolCatalogBindingBlob, err = l.seal("runs", runID, "tool_catalog_binding", binding)
+		if err != nil {
+			return RunSnapshot{}, err
+		}
+		toolCatalogHash = binding.Hash
+		toolCatalogRevision = binding.Revision
+	}
 	var temperature any
 	if request.Temperature != nil {
 		temperature = *request.Temperature
@@ -1030,7 +1186,7 @@ func (l *Ledger) CreateRun(ctx context.Context, request CreateRunRequest) (RunSn
 	if request.MaxTokens != nil {
 		maxTokens = *request.MaxTokens
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO runs(id,session_id,request_id,task_kind,allow_tools,session_generation,state,revision,attempt,next_sequence,policy,provider,model,thinking,temperature,max_tokens,context_source_id,context_source_instance_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, runID, request.SessionID, nullString(request.RequestID), taskKind, boolInt(allowTools), generation, RunStateQueued, 1, 1, 1, policyBlob, request.Provider, request.Model, request.Thinking, temperature, maxTokens, request.ContextSourceID, request.ContextSourceInstanceID, toNano(now), toNano(now)); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO runs(id,session_id,request_id,task_kind,allow_tools,session_generation,state,revision,attempt,next_sequence,policy,provider,model,thinking,temperature,max_tokens,context_source_id,context_source_instance_id,tool_catalog_binding,tool_catalog_hash,tool_catalog_revision,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, runID, request.SessionID, nullString(request.RequestID), taskKind, boolInt(allowTools), generation, RunStateQueued, 1, 1, 1, policyBlob, request.Provider, request.Model, request.Thinking, temperature, maxTokens, request.ContextSourceID, request.ContextSourceInstanceID, toolCatalogBindingBlob, toolCatalogHash, toolCatalogRevision, toNano(now), toNano(now)); err != nil {
 		return RunSnapshot{}, err
 	}
 	if request.InitialMessage != nil {
@@ -1041,10 +1197,156 @@ func (l *Ledger) CreateRun(ctx context.Context, request CreateRunRequest) (RunSn
 			return RunSnapshot{}, err
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return RunSnapshot{}, err
+	return l.getRunTx(ctx, tx, runID)
+}
+
+// EnqueueSteerOrCreateRun closes the small but important race between finding
+// an active run and persisting a steer command. The target run and the command
+// are inspected in the same SQLite transaction. If the target has reached a
+// terminal/non-steerable state, the exact request id is instead used to create
+// one queued run, so callers never receive a "steered" receipt for a command
+// that can no longer be consumed.
+func (l *Ledger) EnqueueSteerOrCreateRun(ctx context.Context, request SteerOrQueueRequest) (SteerOrQueueResult, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.ensureOpen(); err != nil {
+		return SteerOrQueueResult{}, err
 	}
-	return l.getRunDB(ctx, runID)
+	command := request.Command
+	command.ID = strings.TrimSpace(command.ID)
+	command.RunID = strings.TrimSpace(command.RunID)
+	command.Action = RunControlAction(strings.TrimSpace(string(command.Action)))
+	if command.ID == "" {
+		return SteerOrQueueResult{}, errors.New("commandId is required")
+	}
+	if command.RunID == "" {
+		return SteerOrQueueResult{}, errors.New("runId is required")
+	}
+	if command.Action != ControlSteer {
+		return SteerOrQueueResult{}, fmt.Errorf("unsupported steer action %q", command.Action)
+	}
+	if command.CreatedAt.IsZero() {
+		command.CreatedAt = nowUTC()
+	}
+	payload := command.Payload
+	if len(payload) == 0 {
+		payload = []byte(`{}`)
+	}
+	if !json.Valid(payload) {
+		return SteerOrQueueResult{}, errors.New("command payload must be valid JSON")
+	}
+	create := request.CreateRun
+	if strings.TrimSpace(create.RequestID) == "" {
+		create.RequestID = command.ID
+	}
+	if create.RequestID != command.ID {
+		return SteerOrQueueResult{}, fmt.Errorf("steer and queued request ids must match")
+	}
+	if strings.TrimSpace(create.SessionID) == "" {
+		return SteerOrQueueResult{}, errors.New("sessionId is required for queued fallback")
+	}
+	sealed, err := l.sealRaw("control_commands", command.ID, "payload", payload)
+	if err != nil {
+		return SteerOrQueueResult{}, err
+	}
+	tx, err := beginTx(ctx, l.db)
+	if err != nil {
+		return SteerOrQueueResult{}, err
+	}
+	defer tx.Rollback()
+
+	// Resolve either durable idempotency representation before reading mutable
+	// run state. A retry after the command was applied may observe a terminal
+	// target, but it must still return the original steered run.
+	var existingRunID, existingAction string
+	var existingPayload []byte
+	var existingExpected, existingCreated int64
+	existingErr := tx.QueryRowContext(ctx, `SELECT run_id,action,payload,expected_revision,created_at FROM control_commands WHERE id=?`, command.ID).
+		Scan(&existingRunID, &existingAction, &existingPayload, &existingExpected, &existingCreated)
+	if existingErr == nil {
+		plain, openErr := l.openRaw("control_commands", command.ID, "payload", existingPayload)
+		if openErr != nil {
+			return SteerOrQueueResult{}, openErr
+		}
+		if existingRunID != command.RunID || RunControlAction(existingAction) != command.Action || existingExpected != command.ExpectedRevision ||
+			!bytes.Equal(bytes.TrimSpace(plain), bytes.TrimSpace(payload)) {
+			return SteerOrQueueResult{}, fmt.Errorf("%w: id %q is already bound to another steer", ErrControlCommandConflict, command.ID)
+		}
+		run, runErr := l.getRunTx(ctx, tx, existingRunID)
+		if runErr != nil {
+			return SteerOrQueueResult{}, runErr
+		}
+		if err := tx.Commit(); err != nil {
+			return SteerOrQueueResult{}, err
+		}
+		return SteerOrQueueResult{Run: run, Disposition: "steered"}, nil
+	} else if !errors.Is(existingErr, sql.ErrNoRows) {
+		return SteerOrQueueResult{}, existingErr
+	}
+	// A prior terminal-race fallback is represented by the ordinary run
+	// request_id rather than a control command.
+	var existingQueuedID string
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM runs WHERE request_id=?`, command.ID).Scan(&existingQueuedID); err == nil {
+		run, runErr := l.getRunTx(ctx, tx, existingQueuedID)
+		if runErr != nil {
+			return SteerOrQueueResult{}, runErr
+		}
+		if err := tx.Commit(); err != nil {
+			return SteerOrQueueResult{}, err
+		}
+		return SteerOrQueueResult{Run: run, Disposition: "queued"}, nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return SteerOrQueueResult{}, err
+	}
+
+	target, targetErr := l.getRunTx(ctx, tx, command.RunID)
+	if targetErr == nil {
+		steerable := false
+		switch target.State {
+		case RunStateQueued, RunStateRunningModel, RunStateRunningTool,
+			RunStateAwaitingApproval, RunStateAwaitingWorkspace:
+			steerable = true
+		}
+		if steerable {
+			if command.ExpectedRevision > 0 && command.ExpectedRevision != target.Revision {
+				return SteerOrQueueResult{}, fmt.Errorf("%w: expected %d, got %d", ErrRevisionConflict, command.ExpectedRevision, target.Revision)
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO control_commands(id,run_id,action,payload,expected_revision,created_at) VALUES(?,?,?,?,?,?)`, command.ID, command.RunID, command.Action, sealed, command.ExpectedRevision, toNano(command.CreatedAt)); err != nil {
+				return SteerOrQueueResult{}, err
+			}
+			if err := tx.Commit(); err != nil {
+				return SteerOrQueueResult{}, err
+			}
+			command.Payload = append(json.RawMessage(nil), payload...)
+			return SteerOrQueueResult{Run: target, Disposition: "steered"}, nil
+		}
+	} else if !errors.Is(targetErr, ErrNotFound) {
+		return SteerOrQueueResult{}, targetErr
+	}
+
+	// The target was terminal (or disappeared). Do not persist a command that
+	// no worker can consume; createRunTx records the same request id atomically.
+	create.InitialMessage = cloneMessagePointer(create.InitialMessage)
+	run, createErr := l.createRunTx(ctx, tx, create)
+	if createErr != nil {
+		return SteerOrQueueResult{}, createErr
+	}
+	if err := tx.Commit(); err != nil {
+		return SteerOrQueueResult{}, err
+	}
+	return SteerOrQueueResult{Run: run, Disposition: "queued"}, nil
+}
+
+func cloneMessagePointer(message *Message) *Message {
+	if message == nil {
+		return nil
+	}
+	copy := *message
+	copy.Attachments = append([]Attachment(nil), message.Attachments...)
+	copy.ToolCalls = cloneRaw(message.ToolCalls)
+	copy.Images = append([]string(nil), message.Images...)
+	copy.Metadata = cloneRaw(message.Metadata)
+	return &copy
 }
 
 func nullString(value string) any {
@@ -2342,6 +2644,15 @@ func (l *Ledger) EnqueueCommand(ctx context.Context, command ControlCommand) (Co
 	if err := l.ensureOpen(); err != nil {
 		return ControlCommand{}, err
 	}
+	command.ID = strings.TrimSpace(command.ID)
+	command.RunID = strings.TrimSpace(command.RunID)
+	command.Action = RunControlAction(strings.TrimSpace(string(command.Action)))
+	if command.RunID == "" {
+		return ControlCommand{}, errors.New("runId is required")
+	}
+	if command.Action == "" {
+		return ControlCommand{}, errors.New("action is required")
+	}
 	if command.ID == "" {
 		command.ID = uuid.NewString()
 	}
@@ -2364,6 +2675,30 @@ func (l *Ledger) EnqueueCommand(ctx context.Context, command ControlCommand) (Co
 		return ControlCommand{}, err
 	}
 	defer tx.Rollback()
+	// Resolve an existing idempotency key before checking the mutable run
+	// revision. A retry must return the original command even if the run has
+	// advanced since it was first accepted; a different payload/action must be
+	// rejected rather than silently swallowed as a SQLite UNIQUE error.
+	var existingRunID, existingAction string
+	var existingPayload []byte
+	var existingExpected, existingCreated, existingConsumed int64
+	existingErr := tx.QueryRowContext(ctx, `SELECT run_id,action,payload,expected_revision,created_at,consumed_at FROM control_commands WHERE id=?`, command.ID).
+		Scan(&existingRunID, &existingAction, &existingPayload, &existingExpected, &existingCreated, &existingConsumed)
+	if existingErr == nil {
+		plain, openErr := l.openRaw("control_commands", command.ID, "payload", existingPayload)
+		if openErr != nil {
+			return ControlCommand{}, openErr
+		}
+		existing := ControlCommand{ID: command.ID, RunID: existingRunID, Action: RunControlAction(existingAction),
+			Payload: plain, ExpectedRevision: existingExpected, CreatedAt: fromNano(existingCreated), ConsumedAt: fromNano(existingConsumed)}
+		if existing.RunID == command.RunID && existing.Action == command.Action && existing.ExpectedRevision == command.ExpectedRevision &&
+			bytes.Equal(bytes.TrimSpace(existing.Payload), bytes.TrimSpace(payload)) {
+			return existing, nil
+		}
+		return ControlCommand{}, fmt.Errorf("%w: id %q is already bound to run %q/action %q", ErrControlCommandConflict, command.ID, existing.RunID, existing.Action)
+	} else if !errors.Is(existingErr, sql.ErrNoRows) {
+		return ControlCommand{}, existingErr
+	}
 	if command.ExpectedRevision > 0 {
 		var currentRevision int64
 		err := tx.QueryRowContext(ctx, `SELECT revision FROM runs WHERE id=?`, command.RunID).Scan(&currentRevision)
@@ -2427,8 +2762,17 @@ func (l *Ledger) DequeueCommands(ctx context.Context, runID string, limit int) (
 		if err != nil {
 			return nil, err
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE control_commands SET consumed_at=? WHERE id=? AND consumed_at=0`, now, x.id); err != nil {
+		result, err := tx.ExecContext(ctx, `UPDATE control_commands SET consumed_at=? WHERE id=? AND consumed_at=0`, now, x.id)
+		if err != nil {
 			return nil, err
+		}
+		// A second supervisor may have selected the same row before the write
+		// lock was acquired (for example when using a legacy/non-immediate
+		// SQLite DSN). Only return commands this transaction actually claimed.
+		if affected, err := result.RowsAffected(); err != nil {
+			return nil, err
+		} else if affected != 1 {
+			continue
 		}
 		out = append(out, ControlCommand{ID: x.id, RunID: runID, Action: RunControlAction(x.action), Payload: payload, ExpectedRevision: x.expected, CreatedAt: fromNano(x.created), ConsumedAt: fromNano(now)})
 	}
@@ -2436,6 +2780,177 @@ func (l *Ledger) DequeueCommands(ctx context.Context, runID string, limit int) (
 		return nil, err
 	}
 	return out, nil
+}
+
+// ClaimCommands leases control commands to one supervisor without marking
+// them consumed. The lease is deliberately separate from application: if a
+// worker crashes after this method returns, a later owner can reclaim the row
+// once the claim expires and safely decide whether the durable action already
+// happened. Commands claimed by the same owner are returned again (with a
+// renewed lease), which lets a long-running action survive a polling cycle.
+func (l *Ledger) ClaimCommands(ctx context.Context, runID, ownerToken string, limit int, leaseTTL time.Duration) ([]ControlCommand, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.ensureOpen(); err != nil {
+		return nil, err
+	}
+	runID = strings.TrimSpace(runID)
+	ownerToken = strings.TrimSpace(ownerToken)
+	if runID == "" {
+		return nil, errors.New("runId is required")
+	}
+	if ownerToken == "" {
+		return nil, errors.New("ownerToken is required")
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	if leaseTTL <= 0 {
+		leaseTTL = defaultLeaseDuration
+	}
+	now := nowUTC()
+	nowNS := toNano(now)
+	expires := now.Add(leaseTTL)
+	tx, err := beginTx(ctx, l.db)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, `SELECT id,action,payload,expected_revision,created_at,
+		COALESCE(claimed_by,''),claimed_at,claim_expires_at,applied_at,consumed_at
+		FROM control_commands
+		WHERE run_id=? AND consumed_at=0 AND applied_at=0
+		AND (COALESCE(claimed_by,'')='' OR claim_expires_at<=? OR claimed_by=?)
+		ORDER BY created_at,id LIMIT ?`, runID, nowNS, ownerToken, limit)
+	if err != nil {
+		return nil, err
+	}
+	type commandRow struct {
+		id, action, claimedBy string
+		payload               []byte
+		expected, created     int64
+		claimedAt, expires    int64
+		applied, consumed     int64
+	}
+	rowsData := make([]commandRow, 0, limit)
+	for rows.Next() {
+		var row commandRow
+		if err := rows.Scan(&row.id, &row.action, &row.payload, &row.expected, &row.created,
+			&row.claimedBy, &row.claimedAt, &row.expires, &row.applied, &row.consumed); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rowsData = append(rowsData, row)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	out := make([]ControlCommand, 0, len(rowsData))
+	for _, row := range rowsData {
+		// The conditional update is the fencing point. It protects against a
+		// second supervisor that selected the same expired row before this
+		// transaction acquired SQLite's write lock.
+		result, err := tx.ExecContext(ctx, `UPDATE control_commands
+			SET claimed_by=?,claimed_at=?,claim_expires_at=?
+			WHERE id=? AND consumed_at=0 AND applied_at=0
+			AND (COALESCE(claimed_by,'')='' OR claim_expires_at<=? OR claimed_by=?)`,
+			ownerToken, nowNS, toNano(expires), row.id, nowNS, ownerToken)
+		if err != nil {
+			return nil, err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return nil, err
+		}
+		if affected != 1 {
+			continue
+		}
+		payload, err := l.openRaw("control_commands", row.id, "payload", row.payload)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ControlCommand{
+			ID: row.id, RunID: runID, Action: RunControlAction(row.action), Payload: payload,
+			ExpectedRevision: row.expected, CreatedAt: fromNano(row.created),
+			ClaimedBy: ownerToken, ClaimedAt: now, ClaimExpiresAt: expires,
+			AppliedAt: fromNano(row.applied), ConsumedAt: fromNano(row.consumed),
+		})
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// AckCommand durably marks a claimed command as applied. Only the current
+// claim owner may acknowledge an unapplied row; an expired/fenced owner gets a
+// stable claim-loss error and must not report the command as completed.
+func (l *Ledger) AckCommand(ctx context.Context, commandID, ownerToken string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.ensureOpen(); err != nil {
+		return err
+	}
+	commandID = strings.TrimSpace(commandID)
+	ownerToken = strings.TrimSpace(ownerToken)
+	if commandID == "" {
+		return errors.New("commandId is required")
+	}
+	if ownerToken == "" {
+		return errors.New("ownerToken is required")
+	}
+	tx, err := beginTx(ctx, l.db)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var claimedBy string
+	var claimExpires, applied, consumed int64
+	err = tx.QueryRowContext(ctx, `SELECT COALESCE(claimed_by,''),claim_expires_at,applied_at,consumed_at FROM control_commands WHERE id=?`, commandID).
+		Scan(&claimedBy, &claimExpires, &applied, &consumed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	// A duplicate acknowledgement is intentionally idempotent, even if it is
+	// received by a process that no longer owns the (already applied) claim.
+	if applied != 0 {
+		return nil
+	}
+	now := nowUTC()
+	if claimedBy != ownerToken || claimExpires <= toNano(now) {
+		return ErrControlCommandClaimLost
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE control_commands
+		SET applied_at=?,consumed_at=?
+		WHERE id=? AND applied_at=0 AND claimed_by=? AND claim_expires_at>?`,
+		toNano(now), toNano(now), commandID, ownerToken, toNano(now))
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		// If another owner applied it between the read and update, the operation
+		// is still an idempotent success. Otherwise the fence was lost.
+		var appliedAfter int64
+		if scanErr := tx.QueryRowContext(ctx, `SELECT applied_at FROM control_commands WHERE id=?`, commandID).Scan(&appliedAfter); scanErr == nil && appliedAfter != 0 {
+			if commitErr := tx.Commit(); commitErr != nil {
+				return commitErr
+			}
+			return nil
+		}
+		return ErrControlCommandClaimLost
+	}
+	return tx.Commit()
 }
 
 // PutWorkspaceSnapshot accepts only strictly newer revisions for a source

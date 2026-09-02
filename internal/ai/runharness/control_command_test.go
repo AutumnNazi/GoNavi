@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestLedgerControlCommandPersistsExpectedRevision(t *testing.T) {
@@ -77,6 +78,59 @@ func TestLedgerControlCommandRejectsStaleExpectedRevision(t *testing.T) {
 	}
 }
 
+func TestLedgerControlCommandIdempotencyBindsActionAndPayload(t *testing.T) {
+	ledger := testLedger(t)
+	ctx := context.Background()
+	run, err := ledger.CreateRun(ctx, CreateRunRequest{
+		SessionID: "control-command-idempotency-session",
+		RequestID: "control-command-idempotency-run",
+		Policy:    DefaultRunPolicy(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := ControlCommand{
+		ID:               "control-command-idempotency",
+		RunID:            run.ID,
+		Action:           ControlCancel,
+		Payload:          json.RawMessage(`{"reason":"first"}`),
+		ExpectedRevision: run.Revision,
+	}
+	if _, err := ledger.EnqueueCommand(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	// A transport retry with the exact same command is a successful no-op and
+	// returns the original durable command (including its creation timestamp).
+	replay, err := ledger.EnqueueCommand(ctx, first)
+	if err != nil {
+		t.Fatalf("exact command replay: %v", err)
+	}
+	if replay.ID != first.ID || replay.Action != first.Action || string(replay.Payload) != string(first.Payload) {
+		t.Fatalf("replayed command = %#v, want %#v", replay, first)
+	}
+
+	// Reusing the idempotency key for a different action or payload must never be
+	// treated as a swallowed UNIQUE constraint: doing so could execute a stale
+	// cancel/steer request under the caller's new intent.
+	_, err = ledger.EnqueueCommand(ctx, ControlCommand{
+		ID:               first.ID,
+		RunID:            run.ID,
+		Action:           ControlSteer,
+		Payload:          json.RawMessage(`{"content":"different"}`),
+		ExpectedRevision: run.Revision,
+	})
+	if !errors.Is(err, ErrControlCommandConflict) {
+		t.Fatalf("different command error = %v, want ErrControlCommandConflict", err)
+	}
+	commands, err := ledger.DequeueCommands(ctx, run.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(commands) != 1 || commands[0].Action != ControlCancel {
+		t.Fatalf("durable commands after conflict = %#v", commands)
+	}
+}
+
 func TestControlCancelTerminatesUnleasedQueuedRunWithoutWorker(t *testing.T) {
 	ledger := testLedger(t)
 	ctx := context.Background()
@@ -123,6 +177,20 @@ func TestControlCancelTerminatesUnleasedQueuedRunWithoutWorker(t *testing.T) {
 	}
 	if terminalCount != 1 {
 		t.Fatalf("terminal event count = %d, want 1", terminalCount)
+	}
+	var applied, consumed int64
+	if err := ledger.db.QueryRowContext(ctx, `SELECT applied_at,consumed_at FROM control_commands WHERE id=?`, "queued-cancel-command").Scan(&applied, &consumed); err != nil {
+		t.Fatal(err)
+	}
+	if applied == 0 || consumed == 0 {
+		t.Fatalf("queued cancel command was not durably acknowledged: applied=%d consumed=%d", applied, consumed)
+	}
+	claimed, err := ledger.ClaimCommands(ctx, run.ID, "queued-cancel-owner", 10, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claimed) != 0 {
+		t.Fatalf("terminal queued cancel remained replayable: %#v", claimed)
 	}
 }
 

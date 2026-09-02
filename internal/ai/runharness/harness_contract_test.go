@@ -394,7 +394,8 @@ func TestHarnessExpiredWorkspaceRequiresExplicitStaleControl(t *testing.T) {
 	if _, ok := executor.lastRequest(); ok {
 		t.Fatal("executor ran before stale workspace was explicitly approved")
 	}
-	if _, err := harness.ControlRun(context.Background(), RunControlRequest{RunID: receipt.RunID, Action: ControlUseStaleWorkspace, ExpectedRevision: waiting.Run.Revision}); err != nil {
+	const staleCommandID = "expired-workspace-stale-command"
+	if _, err := harness.ControlRun(context.Background(), RunControlRequest{RequestID: staleCommandID, RunID: receipt.RunID, Action: ControlUseStaleWorkspace, ExpectedRevision: waiting.Run.Revision}); err != nil {
 		t.Fatalf("allow stale workspace: %v", err)
 	}
 	read := waitContractRun(t, harness, receipt.RunID, func(run RunSnapshot) bool { return run.State.Terminal() })
@@ -416,6 +417,13 @@ func TestHarnessExpiredWorkspaceRequiresExplicitStaleControl(t *testing.T) {
 	}
 	if !sameWorkspaceSnapshotReference(toolEvent.WorkspaceSnapshot, want) {
 		t.Fatalf("stale tool workspace reference = %#v, want %#v", toolEvent.WorkspaceSnapshot, want)
+	}
+	var applied, consumed int64
+	if err := ledger.db.QueryRow(`SELECT applied_at,consumed_at FROM control_commands WHERE id=?`, staleCommandID).Scan(&applied, &consumed); err != nil {
+		t.Fatal(err)
+	}
+	if applied == 0 || consumed == 0 {
+		t.Fatalf("stale workspace command was acknowledged before/after recovery incorrectly: applied=%d consumed=%d", applied, consumed)
 	}
 }
 

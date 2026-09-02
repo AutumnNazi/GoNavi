@@ -227,3 +227,222 @@ func requestContainsContent(messages []Message, content string) bool {
 	}
 	return false
 }
+
+// multiIntentCatalog deliberately does not implement ToolEffectResolver. The
+// provider response leaves Effect empty, so the harness must fill it from the
+// frozen descriptors before the steer boundary records canceled intents.
+type multiIntentCatalog struct {
+	descriptors []ToolDescriptor
+	executors   map[string]ToolExecutor
+}
+
+func (c *multiIntentCatalog) List(context.Context) ([]ToolDescriptor, error) {
+	return append([]ToolDescriptor(nil), c.descriptors...), nil
+}
+
+func (c *multiIntentCatalog) Resolve(_ context.Context, name string) (ToolDescriptor, ToolExecutor, error) {
+	for _, descriptor := range c.descriptors {
+		if descriptor.Name == name {
+			executor := c.executors[name]
+			if executor == nil {
+				return ToolDescriptor{}, nil, ErrToolNotFound
+			}
+			return descriptor, executor, nil
+		}
+	}
+	return ToolDescriptor{}, nil, ErrToolNotFound
+}
+
+type multiIntentSteeringModel struct {
+	mu       sync.Mutex
+	requests []ModelTurnRequest
+}
+
+func (m *multiIntentSteeringModel) Execute(_ context.Context, request ModelTurnRequest, _ ModelDeltaSink) (ModelTurnResult, error) {
+	m.mu.Lock()
+	m.requests = append(m.requests, request)
+	call := len(m.requests)
+	m.mu.Unlock()
+	if call == 1 {
+		// Effect is intentionally omitted for both calls. The first tool blocks,
+		// allowing the steer to arrive while the second call is still pending.
+		return ModelTurnResult{ToolCalls: []ToolIntent{
+			{CallID: "slow-read", ToolName: "slow-read", Arguments: json.RawMessage(`{}`)},
+			{CallID: "must-not-run", ToolName: "must-not-run", Arguments: json.RawMessage(`{}`)},
+		}, Completed: true}, nil
+	}
+	return ModelTurnResult{Text: "steered result", Completed: true}, nil
+}
+
+func (m *multiIntentSteeringModel) requestsSnapshot() []ModelTurnRequest {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]ModelTurnRequest(nil), m.requests...)
+}
+
+type blockingReadExecutor struct {
+	started  chan struct{}
+	canceled chan error
+	once     sync.Once
+}
+
+func (e *blockingReadExecutor) Execute(ctx context.Context, _ ToolExecutionRequest) (ToolExecutionResult, error) {
+	e.once.Do(func() { close(e.started) })
+	<-ctx.Done()
+	err := ctx.Err()
+	e.canceled <- err
+	return ToolExecutionResult{Status: "failed", ErrorCode: "canceled"}, err
+}
+
+type countingToolExecutor struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (e *countingToolExecutor) Execute(context.Context, ToolExecutionRequest) (ToolExecutionResult, error) {
+	e.mu.Lock()
+	e.calls++
+	e.mu.Unlock()
+	return ToolExecutionResult{Status: "completed", Value: map[string]any{"unexpected": true}}, nil
+}
+
+func (e *countingToolExecutor) callCount() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.calls
+}
+
+func TestHarnessSteerSupersedesAllRemainingToolIntents(t *testing.T) {
+	model := &multiIntentSteeringModel{}
+	first := &blockingReadExecutor{started: make(chan struct{}), canceled: make(chan error, 1)}
+	second := &countingToolExecutor{}
+	catalog := &multiIntentCatalog{
+		descriptors: []ToolDescriptor{
+			{Name: "slow-read", Effect: ToolEffectReadOnly, InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`)},
+			{Name: "must-not-run", Effect: ToolEffectReadOnly, InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false}`)},
+		},
+		executors: map[string]ToolExecutor{"slow-read": first, "must-not-run": second},
+	}
+	harness, ledger := newContractHarness(t, model, catalog, nil)
+
+	receipt, err := harness.SubmitInput(context.Background(), AgentInputRequest{RequestID: "steer-batch-request", Content: "read both"})
+	if err != nil {
+		t.Fatalf("submit input: %v", err)
+	}
+	select {
+	case <-first.started:
+	case <-time.After(time.Second):
+		t.Fatal("first tool did not start")
+	}
+	steer, err := harness.SubmitInput(context.Background(), AgentInputRequest{
+		RequestID: "steer-batch-command", SessionID: receipt.SessionID,
+		Content: "stop and answer directly", DispatchMode: DispatchSteer,
+	})
+	if err != nil {
+		t.Fatalf("submit steer: %v", err)
+	}
+	if steer.Disposition != "steered" || steer.RunID != receipt.RunID {
+		t.Fatalf("steer receipt = %#v, want active run %q", steer, receipt.RunID)
+	}
+	select {
+	case cancelErr := <-first.canceled:
+		if !errors.Is(cancelErr, context.Canceled) {
+			t.Fatalf("first tool cancellation = %v, want context.Canceled", cancelErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("steer did not cancel the first tool")
+	}
+
+	read := waitContractRun(t, harness, receipt.RunID, func(run RunSnapshot) bool { return run.State.Terminal() })
+	if read.Run.State != RunStateCompleted {
+		t.Fatalf("steered run state = %s, want %s", read.Run.State, RunStateCompleted)
+	}
+	if got := second.callCount(); got != 0 {
+		t.Fatalf("second tool calls = %d, want 0", got)
+	}
+	requests := model.requestsSnapshot()
+	if len(requests) != 2 {
+		t.Fatalf("model calls = %d, want 2", len(requests))
+	}
+	if !requestContainsContent(requests[1].Messages, "stop and answer directly") {
+		t.Fatalf("second model turn missing steer input: %#v", requests[1].Messages)
+	}
+	if requestContainsContent(requests[1].Messages, "steered result") {
+		t.Fatalf("second model request contains its future result: %#v", requests[1].Messages)
+	}
+
+	toolEvents := map[string]ToolEvent{}
+	for _, event := range read.Events {
+		if event.Kind != EventTool {
+			continue
+		}
+		payload, decodeErr := DecodeEventPayload[ToolEvent](event)
+		if decodeErr != nil {
+			t.Fatalf("decode tool event: %v", decodeErr)
+		}
+		if payload.Status == "failed" || payload.Status == "canceled" {
+			toolEvents[payload.CallID] = payload
+		}
+	}
+	firstEvent, firstOK := toolEvents["slow-read"]
+	if !firstOK || firstEvent.Status != "failed" || firstEvent.ErrorCode != "canceled" {
+		t.Fatalf("started read-only tool outcome = %#v, want canceled failure", firstEvent)
+	}
+	secondEvent, secondOK := toolEvents["must-not-run"]
+	if !secondOK || secondEvent.Status != "canceled" || secondEvent.ErrorCode != "superseded_by_steer" {
+		t.Fatalf("unstarted tool outcome = %#v, want superseded cancellation", secondEvent)
+	}
+	for _, event := range []ToolEvent{firstEvent, secondEvent} {
+		if event.Effect != ToolEffectReadOnly {
+			t.Fatalf("tool %q effect = %q, want read_only", event.CallID, event.Effect)
+		}
+	}
+
+	persisted := map[string]struct {
+		status    string
+		errorCode string
+	}{}
+	rows, queryErr := ledger.db.Query(`SELECT call_id,status,error_code FROM tool_calls WHERE run_id=? ORDER BY call_id`, receipt.RunID)
+	if queryErr != nil {
+		t.Fatalf("read tool calls: %v", queryErr)
+	}
+	defer rows.Close()
+	rowsSeen := 0
+	for rows.Next() {
+		var callID, status, errorCode string
+		if scanErr := rows.Scan(&callID, &status, &errorCode); scanErr != nil {
+			t.Fatalf("scan tool call: %v", scanErr)
+		}
+		rowsSeen++
+		persisted[callID] = struct{ status, errorCode string }{status: status, errorCode: errorCode}
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		t.Fatalf("iterate tool calls: %v", rowsErr)
+	}
+	if rowsSeen != 2 {
+		t.Fatalf("tool call rows = %d, want 2", rowsSeen)
+	}
+	if record := persisted["slow-read"]; record.status != "failed" || record.errorCode != "canceled" {
+		t.Fatalf("started read-only record = %#v, want canceled failure", record)
+	}
+	if record := persisted["must-not-run"]; record.status != "canceled" || record.errorCode != "superseded_by_steer" {
+		t.Fatalf("unstarted record = %#v, want superseded cancellation", record)
+	}
+
+	messages, err := ledger.GetRunMessages(context.Background(), receipt.RunID, 0, 100)
+	if err != nil {
+		t.Fatalf("read run messages: %v", err)
+	}
+	toolMessages := make(map[string]Message)
+	for _, message := range messages {
+		if message.Role == "tool" {
+			toolMessages[message.ToolCallID] = message
+		}
+	}
+	if message, ok := toolMessages["slow-read"]; !ok || !json.Valid([]byte(message.Content)) {
+		t.Fatalf("started tool message = %#v, want valid JSON", message)
+	}
+	if message, ok := toolMessages["must-not-run"]; !ok || message.Content != `{"error":"superseded_by_steer"}` {
+		t.Fatalf("unstarted tool message = %#v, want superseded JSON", message)
+	}
+}

@@ -326,6 +326,11 @@ type RunSnapshot struct {
 	AllowTools              bool          `json:"allowTools"`
 	ContextSourceID         string        `json:"contextSourceId,omitempty"`
 	ContextSourceInstanceID string        `json:"contextSourceInstanceId,omitempty"`
+	// ToolCatalogHash and ToolCatalogRevision identify the immutable tool
+	// contract captured when this run was accepted.  The descriptor payload is
+	// encrypted in the Ledger and is intentionally never exposed in snapshots.
+	ToolCatalogHash     string `json:"toolCatalogHash,omitempty"`
+	ToolCatalogRevision int64  `json:"toolCatalogRevision,omitempty"`
 	// Token counters are durable run metadata. ReservedTokens is the amount
 	// currently held by in-flight model turns; the other counters are
 	// reconciled usage and survive process recovery.
@@ -783,12 +788,17 @@ type RunRuntimeConfig struct {
 	ControlPollInterval            time.Duration `json:"controlPollInterval"`
 	WorkspaceSnapshotRenewInterval time.Duration `json:"workspaceSnapshotRenewInterval"`
 	WorkspaceSnapshotLeaseDuration time.Duration `json:"workspaceSnapshotLeaseDuration"`
+	// PolicyWatchInterval controls how often the desktop adapter checks the
+	// shared policy file for a newer revision.  It lives in the shared runtime
+	// projection so CLI edits and a running desktop owner use the same cadence.
+	PolicyWatchInterval time.Duration `json:"policyWatchInterval"`
 }
 
 const (
 	DefaultControlPollInterval       = 200 * time.Millisecond
 	DefaultRunWorkspaceRenewInterval = 5 * time.Second
 	DefaultRunWorkspaceLeaseDuration = 15 * time.Second
+	DefaultRunPolicyWatchInterval    = 500 * time.Millisecond
 )
 
 func DefaultRunRuntimeConfig() RunRuntimeConfig {
@@ -796,6 +806,7 @@ func DefaultRunRuntimeConfig() RunRuntimeConfig {
 		ControlPollInterval:            DefaultControlPollInterval,
 		WorkspaceSnapshotRenewInterval: DefaultRunWorkspaceRenewInterval,
 		WorkspaceSnapshotLeaseDuration: DefaultRunWorkspaceLeaseDuration,
+		PolicyWatchInterval:            DefaultRunPolicyWatchInterval,
 	}
 }
 
@@ -809,12 +820,15 @@ func (c RunRuntimeConfig) Normalize() RunRuntimeConfig {
 	if c.WorkspaceSnapshotLeaseDuration == 0 {
 		c.WorkspaceSnapshotLeaseDuration = DefaultRunWorkspaceLeaseDuration
 	}
+	if c.PolicyWatchInterval == 0 {
+		c.PolicyWatchInterval = DefaultRunPolicyWatchInterval
+	}
 	return c
 }
 
 func (c RunRuntimeConfig) Validate() error {
 	c = c.Normalize()
-	if c.ControlPollInterval <= 0 || c.WorkspaceSnapshotRenewInterval <= 0 || c.WorkspaceSnapshotLeaseDuration <= 0 {
+	if c.ControlPollInterval <= 0 || c.WorkspaceSnapshotRenewInterval <= 0 || c.WorkspaceSnapshotLeaseDuration <= 0 || c.PolicyWatchInterval <= 0 {
 		return errors.New("run runtime durations must be positive")
 	}
 	if c.WorkspaceSnapshotRenewInterval >= c.WorkspaceSnapshotLeaseDuration {
@@ -976,6 +990,16 @@ type ToolDescriptor struct {
 	MaxResultBytes int64           `json:"maxResultBytes,omitempty"`
 }
 
+// ToolCatalogBinding is the immutable tool contract attached to a run.  The
+// descriptor list is canonicalized before hashing and persisted encrypted;
+// adapters only receive the hash/revision through RunSnapshot.
+type ToolCatalogBinding struct {
+	SchemaVersion int              `json:"schemaVersion"`
+	Revision      int64            `json:"revision"`
+	Hash          string           `json:"hash"`
+	Descriptors   []ToolDescriptor `json:"descriptors"`
+}
+
 type ToolCallRecord struct {
 	RunID             string                      `json:"runId"`
 	CallID            string                      `json:"callId"`
@@ -1081,6 +1105,10 @@ type CreateRunRequest struct {
 	// creates a new run. Zero means the caller intentionally does not provide a
 	// guard (used by internal recovery paths).
 	ExpectedSessionRevision int64 `json:"expectedSessionRevision,omitempty"`
+	// ToolCatalogBinding is an internal persistence input. It is deliberately
+	// excluded from the Wails/CLI JSON surface because descriptors may contain
+	// sensitive implementation details and are encrypted by the Ledger.
+	ToolCatalogBinding *ToolCatalogBinding `json:"-"`
 }
 
 type AppendEventRequest struct {
@@ -1182,4 +1210,25 @@ type ControlCommand struct {
 	ExpectedRevision int64            `json:"expectedRevision,omitempty"`
 	CreatedAt        time.Time        `json:"createdAt"`
 	ConsumedAt       time.Time        `json:"consumedAt,omitempty"`
+	// Claim fields describe the crash-recoverable hand-off between a
+	// supervisor and the durable command queue. A claim is not an acknowledgement
+	// and therefore must never make a command disappear from a later owner.
+	ClaimedBy      string    `json:"claimedBy,omitempty"`
+	ClaimedAt      time.Time `json:"claimedAt,omitempty"`
+	ClaimExpiresAt time.Time `json:"claimExpiresAt,omitempty"`
+	AppliedAt      time.Time `json:"appliedAt,omitempty"`
+}
+
+// SteerOrQueueRequest is the atomic submission envelope used when a caller
+// asks to steer the currently active run. The Ledger decides in one SQLite
+// transaction whether the target is still steerable; if it reached a terminal
+// state meanwhile, the embedded CreateRun request is persisted instead.
+type SteerOrQueueRequest struct {
+	Command   ControlCommand
+	CreateRun CreateRunRequest
+}
+
+type SteerOrQueueResult struct {
+	Run         RunSnapshot
+	Disposition string // steered | queued
 }

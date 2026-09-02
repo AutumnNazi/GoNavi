@@ -96,3 +96,81 @@ func TestFailedRecoveryControlDoesNotLeaveConsumableCommand(t *testing.T) {
 		t.Fatalf("failed recovery left %d consumable commands", commands)
 	}
 }
+
+func TestRecoveryControlCommandConflictDoesNotApplyTransition(t *testing.T) {
+	ledger, run, _ := recoveryRunWithUnknownTool(t)
+	ctx := context.Background()
+	defer ledger.Close()
+	harness, err := NewAgentRunHarness(HarnessConfig{Ledger: ledger, RootContext: context.Background()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer harness.Close()
+
+	// Occupy the request ID with a different command before the recovery call.
+	// The recovery transition must be rejected in the same transaction boundary,
+	// leaving both the unknown tool and run revision untouched.
+	requestID := "recovery-command-collision"
+	if _, err := ledger.EnqueueCommand(ctx, ControlCommand{
+		ID: requestID, RunID: run.ID, Action: ControlCancel,
+		Payload: json.RawMessage(`{"reason":"other-intent"}`), ExpectedRevision: run.Revision,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = harness.ControlRun(ctx, RunControlRequest{
+		RequestID: requestID, RunID: run.ID, CallID: "write-1",
+		Action: ControlMarkCompleted, ExpectedRevision: run.Revision,
+	})
+	if !errors.Is(err, ErrControlCommandConflict) {
+		t.Fatalf("recovery command collision error = %v", err)
+	}
+	latest, err := ledger.GetRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest.State != RunStateRecoveryRequired || latest.Revision != run.Revision {
+		t.Fatalf("run changed after command collision: before=%#v after=%#v", run, latest)
+	}
+	var status string
+	var unknown int
+	if err := ledger.db.QueryRowContext(ctx, `SELECT status,unknown_outcome FROM tool_calls WHERE run_id=? AND call_id=?`, run.ID, "write-1").Scan(&status, &unknown); err != nil {
+		t.Fatal(err)
+	}
+	if status != "unknown" || unknown != 1 {
+		t.Fatalf("unknown tool changed after command collision: status=%q unknown=%d", status, unknown)
+	}
+}
+
+func TestRecoveryControlRetryWithSameRequestIDIsIdempotent(t *testing.T) {
+	ledger, run, _ := recoveryRunWithUnknownTool(t)
+	ctx := context.Background()
+	defer ledger.Close()
+	harness, err := NewAgentRunHarness(HarnessConfig{Ledger: ledger, RootContext: context.Background()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer harness.Close()
+
+	request := RunControlRequest{
+		RequestID: "recovery-idempotent-request", RunID: run.ID, CallID: "write-1",
+		Action: ControlMarkCompleted, ExpectedRevision: run.Revision,
+	}
+	first, err := harness.ControlRun(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := harness.ControlRun(ctx, request)
+	if err != nil {
+		t.Fatalf("retrying recovery control: %v", err)
+	}
+	if second.Revision != first.Revision || second.State != first.State {
+		t.Fatalf("retry changed run: first=%#v second=%#v", first, second)
+	}
+	var events int
+	if err := ledger.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM events WHERE run_id=?`, run.ID).Scan(&events); err != nil {
+		t.Fatal(err)
+	}
+	if events != 2 { // the original tool event plus one recovery checkpoint
+		t.Fatalf("recovery retry emitted %d events, want 2", events)
+	}
+}

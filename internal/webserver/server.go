@@ -169,10 +169,7 @@ func (s *eventSubscriber) enqueue(msg eventMessage, reliable bool) {
 		s.mu.Unlock()
 		return
 	}
-	// AI stream deltas are loss-sensitive. Once one delta is queued, later
-	// deltas for that session coalesce into it; the first delta and terminal
-	// events may therefore exceed the soft broadcast limit by a small amount.
-	if !reliable && !strings.HasPrefix(msg.Name, "ai:stream:") && queueLen >= eventSubscriberQueueLimit {
+	if !reliable && queueLen >= eventSubscriberQueueLimit {
 		s.mu.Unlock()
 		return
 	}
@@ -189,14 +186,6 @@ func (s *eventSubscriber) coalesceQueuedEventLocked(incoming eventMessage) bool 
 	if s == nil || s.closed {
 		return false
 	}
-	if strings.HasPrefix(incoming.Name, "ai:stream:") {
-		for index := len(s.queue) - 1; index >= s.head; index-- {
-			if s.queue[index].Name == incoming.Name {
-				return mergeQueuedAIStreamEvent(&s.queue[index], incoming)
-			}
-		}
-		return false
-	}
 	key := detachedSyncEventKey(incoming)
 	if key == "" {
 		return false
@@ -208,48 +197,6 @@ func (s *eventSubscriber) coalesceQueuedEventLocked(incoming eventMessage) bool 
 		}
 	}
 	return false
-}
-
-func mergeQueuedAIStreamEvent(existing *eventMessage, incoming eventMessage) bool {
-	if existing == nil || existing.Name != incoming.Name || len(existing.Args) != 1 || len(incoming.Args) != 1 {
-		return false
-	}
-	current, currentOK := existing.Args[0].(map[string]any)
-	next, nextOK := incoming.Args[0].(map[string]any)
-	if !currentOK || !nextOK || aiStreamPayloadIsTerminal(current) || aiStreamPayloadIsTerminal(next) {
-		return false
-	}
-	merged := make(map[string]any, len(current)+len(next))
-	for key, value := range current {
-		merged[key] = value
-	}
-	for key, value := range next {
-		merged[key] = value
-	}
-	for _, key := range []string{"content", "thinking", "reasoning_content"} {
-		merged[key] = stringValue(current[key]) + stringValue(next[key])
-	}
-	existing.Args = []any{merged}
-	return true
-}
-
-func aiStreamPayloadIsTerminal(payload map[string]any) bool {
-	if payload == nil {
-		return true
-	}
-	if done, _ := payload["done"].(bool); done {
-		return true
-	}
-	if strings.TrimSpace(stringValue(payload["error"])) != "" {
-		return true
-	}
-	toolCalls := reflect.ValueOf(payload["tool_calls"])
-	return toolCalls.IsValid() && (toolCalls.Kind() == reflect.Array || toolCalls.Kind() == reflect.Slice) && toolCalls.Len() > 0
-}
-
-func stringValue(value any) string {
-	text, _ := value.(string)
-	return text
 }
 
 func detachedSyncEventKey(msg eventMessage) string {

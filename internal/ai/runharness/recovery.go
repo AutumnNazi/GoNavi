@@ -1,6 +1,7 @@
 package runharness
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -56,10 +57,34 @@ func (l *Ledger) ApplyRecoveryAction(ctx context.Context, request RecoveryAction
 	if err != nil {
 		return RecoveryActionResult{}, err
 	}
+	// A public recovery control must be durable together with its transition.
+	// Checking the command id before changing the run makes an idempotency-key
+	// collision fail closed: it cannot report a conflict after a side-effect
+	// recovery decision has already become visible.
+	command, commandAlreadyApplied, err := l.prepareRecoveryCommandTx(ctx, tx, request)
+	if err != nil {
+		return RecoveryActionResult{}, err
+	}
+	if commandAlreadyApplied {
+		if err := tx.Commit(); err != nil {
+			return RecoveryActionResult{}, err
+		}
+		latest, err := l.getRunDB(ctx, request.RunID)
+		if err != nil {
+			return RecoveryActionResult{}, err
+		}
+		return RecoveryActionResult{Run: latest}, nil
+	}
 	// A repeated command after a terminal response is a successful no-op. The
 	// unique terminal-event index still guarantees that no second terminal can
 	// be written by a racing caller.
 	if run.State.Terminal() {
+		if err := l.insertRecoveryCommandTx(ctx, tx, command, run.Revision); err != nil {
+			return RecoveryActionResult{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return RecoveryActionResult{}, err
+		}
 		return RecoveryActionResult{Run: run}, nil
 	}
 	if request.ExpectedRevision > 0 && request.ExpectedRevision != run.Revision {
@@ -86,6 +111,12 @@ func (l *Ledger) ApplyRecoveryAction(ctx context.Context, request RecoveryAction
 	case ControlResume:
 		if run.State != RunStateInterrupted {
 			if run.State == RunStateRunningModel {
+				if err := l.insertRecoveryCommandTx(ctx, tx, command, run.Revision); err != nil {
+					return RecoveryActionResult{}, err
+				}
+				if err := tx.Commit(); err != nil {
+					return RecoveryActionResult{}, err
+				}
 				return RecoveryActionResult{Run: run}, nil
 			}
 			return RecoveryActionResult{}, fmt.Errorf("%w: resume requires interrupted, got %s", ErrRecoveryUnavailable, run.State)
@@ -102,6 +133,12 @@ func (l *Ledger) ApplyRecoveryAction(ctx context.Context, request RecoveryAction
 	case ControlRecover:
 		if run.State != RunStateRecoveryRequired && run.State != RunStateInterrupted {
 			if run.State == RunStateRunningModel {
+				if err := l.insertRecoveryCommandTx(ctx, tx, command, run.Revision); err != nil {
+					return RecoveryActionResult{}, err
+				}
+				if err := tx.Commit(); err != nil {
+					return RecoveryActionResult{}, err
+				}
 				return RecoveryActionResult{Run: run}, nil
 			}
 			return RecoveryActionResult{}, fmt.Errorf("%w: retry requires recovery_required or interrupted, got %s", ErrRecoveryUnavailable, run.State)
@@ -110,6 +147,12 @@ func (l *Ledger) ApplyRecoveryAction(ctx context.Context, request RecoveryAction
 	case ControlMarkCompleted:
 		if run.State != RunStateRecoveryRequired {
 			if run.State == RunStateRunningModel {
+				if err := l.insertRecoveryCommandTx(ctx, tx, command, run.Revision); err != nil {
+					return RecoveryActionResult{}, err
+				}
+				if err := tx.Commit(); err != nil {
+					return RecoveryActionResult{}, err
+				}
 				return RecoveryActionResult{Run: run}, nil
 			}
 			return RecoveryActionResult{}, fmt.Errorf("%w: mark_completed requires recovery_required, got %s", ErrRecoveryUnavailable, run.State)
@@ -120,6 +163,12 @@ func (l *Ledger) ApplyRecoveryAction(ctx context.Context, request RecoveryAction
 	case ControlAbortRecovery:
 		if run.State != RunStateRecoveryRequired && run.State != RunStateInterrupted {
 			if run.State == RunStateFailed || run.State == RunStateCanceled {
+				if err := l.insertRecoveryCommandTx(ctx, tx, command, run.Revision); err != nil {
+					return RecoveryActionResult{}, err
+				}
+				if err := tx.Commit(); err != nil {
+					return RecoveryActionResult{}, err
+				}
 				return RecoveryActionResult{Run: run}, nil
 			}
 			return RecoveryActionResult{}, fmt.Errorf("%w: abort requires recovery_required or interrupted, got %s", ErrRecoveryUnavailable, run.State)
@@ -212,6 +261,9 @@ func (l *Ledger) ApplyRecoveryAction(ctx context.Context, request RecoveryAction
 	if _, err := tx.ExecContext(ctx, `INSERT INTO events(run_id,sequence,schema_version,kind,resulting_state,run_revision,attempt,timestamp,payload) VALUES(?,?,?,?,?,?,?,?,?)`, request.RunID, sequence, CurrentSchemaVersion, kind, target, newRevision, attempt, nowNS, sealedEvent); err != nil {
 		return RecoveryActionResult{}, err
 	}
+	if err := l.insertRecoveryCommandTx(ctx, tx, command, newRevision); err != nil {
+		return RecoveryActionResult{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return RecoveryActionResult{}, err
 	}
@@ -235,6 +287,79 @@ type RecoveryActionRequest struct {
 	Action           RunControlAction
 	ExpectedRevision int64
 	OwnerToken       string
+	// CommandID and CommandPayload are set by the public Harness control path.
+	// They bind the audit/wake command to the recovery transition in the same
+	// transaction. Direct ledger callers can omit them when no cross-process
+	// command needs to be retained.
+	CommandID      string
+	CommandPayload json.RawMessage
+}
+
+type recoveryCommandMarker struct {
+	id      string
+	runID   string
+	action  RunControlAction
+	payload []byte
+	sealed  []byte
+	created time.Time
+}
+
+// prepareRecoveryCommandTx validates an optional public-control marker before
+// any run mutation. If the idempotency key is already bound to this exact
+// request, the existing transition is authoritative and callers should return
+// the current run without emitting a second event.
+func (l *Ledger) prepareRecoveryCommandTx(ctx context.Context, tx *sql.Tx, request RecoveryActionRequest) (*recoveryCommandMarker, bool, error) {
+	id := strings.TrimSpace(request.CommandID)
+	if id == "" {
+		return nil, false, nil
+	}
+	payload := bytes.TrimSpace(request.CommandPayload)
+	if len(payload) == 0 {
+		payload = []byte(`{}`)
+	}
+	if !json.Valid(payload) {
+		return nil, false, errors.New("command payload must be valid JSON")
+	}
+
+	var existingRunID, existingAction string
+	var existingPayload []byte
+	err := tx.QueryRowContext(ctx, `SELECT run_id,action,payload FROM control_commands WHERE id=?`, id).
+		Scan(&existingRunID, &existingAction, &existingPayload)
+	if err == nil {
+		plain, openErr := l.openRaw("control_commands", id, "payload", existingPayload)
+		if openErr != nil {
+			return nil, false, openErr
+		}
+		if existingRunID == request.RunID && RunControlAction(existingAction) == request.Action && bytes.Equal(bytes.TrimSpace(plain), payload) {
+			return nil, true, nil
+		}
+		return nil, false, fmt.Errorf("%w: id %q is already bound to run %q/action %q", ErrControlCommandConflict, id, existingRunID, existingAction)
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, false, err
+	}
+	sealed, err := l.sealRaw("control_commands", id, "payload", payload)
+	if err != nil {
+		return nil, false, err
+	}
+	return &recoveryCommandMarker{id: id, runID: request.RunID, action: request.Action, payload: append([]byte(nil), payload...), sealed: sealed, created: nowUTC()}, false, nil
+}
+
+// insertRecoveryCommandTx persists the public control marker after the target
+// run revision is known but before the enclosing recovery transaction commits.
+// Its revision intentionally points at the resulting run state. The recovery
+// transition itself is the durable action boundary, so the marker is inserted
+// already applied/consumed; workers must never replay it as a second state
+// transition after a process hand-off.
+func (l *Ledger) insertRecoveryCommandTx(ctx context.Context, tx *sql.Tx, command *recoveryCommandMarker, resultingRevision int64) error {
+	if command == nil {
+		return nil
+	}
+	appliedAt := toNano(nowUTC())
+	if _, err := tx.ExecContext(ctx, `INSERT INTO control_commands(id,run_id,action,payload,expected_revision,created_at,consumed_at,claimed_at,claim_expires_at,applied_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, command.id, command.runID, command.action, command.sealed, resultingRevision, toNano(command.created), appliedAt, appliedAt, appliedAt, appliedAt); err != nil {
+		return err
+	}
+	return nil
 }
 
 // resumeCheckpointStateTx resolves the execution state represented by the
