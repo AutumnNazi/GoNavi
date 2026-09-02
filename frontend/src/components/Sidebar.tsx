@@ -892,6 +892,8 @@ const Sidebar: React.FC<{
   onFocusCommandSearch?: () => void;
   onCollapseSidebar?: () => void;
   onExpandSidebar?: () => void;
+  /** Expands a collapsed explorer before a locate request changes its selection. */
+  onEnsureSidebarExpanded?: () => void;
   collapseSidebarLabel?: string;
   collapseSidebarButtonRef?: React.Ref<HTMLButtonElement>;
   expandSidebarLabel?: string;
@@ -913,6 +915,7 @@ const Sidebar: React.FC<{
   onFocusCommandSearch,
   onCollapseSidebar,
   onExpandSidebar,
+  onEnsureSidebarExpanded,
   collapseSidebarLabel,
   collapseSidebarButtonRef,
   expandSidebarLabel,
@@ -2028,6 +2031,8 @@ const Sidebar: React.FC<{
           message.warning(t('sidebar.message.locate_current_table_unavailable'));
           return;
       }
+
+      onEnsureSidebarExpanded?.();
 
       if (request.objectGroup === 'externalSqlFiles') {
           await refreshGlobalExternalSQLRootNode(false);
@@ -3839,7 +3844,7 @@ const Sidebar: React.FC<{
       const connection = connections.find((item) => item.id === request.connectionId);
       if (!connection) return;
 
-      onExpandSidebar?.();
+      onEnsureSidebarExpanded?.();
       setSearchValue('');
       await selectConnectionFromRail(connection);
 
@@ -3864,7 +3869,7 @@ const Sidebar: React.FC<{
       setActiveContext({ connectionId: connection.id, dbName });
       publishTitlebarSelectionForNode(databaseNode);
       scrollSidebarTreeToKey(databaseNode.key);
-  }, [connections, findTreeNodeByKeyRef, onExpandSidebar, publishTitlebarSelectionForNode, scrollSidebarTreeToKey, selectConnectionFromRail, selectedNodesRef, setActiveContext, setSearchValue, setSidebarSelectedKeys, treeDataRef]);
+  }, [connections, findTreeNodeByKeyRef, onEnsureSidebarExpanded, publishTitlebarSelectionForNode, scrollSidebarTreeToKey, selectConnectionFromRail, selectedNodesRef, setActiveContext, setSearchValue, setSidebarSelectedKeys, treeDataRef]);
 
   useEffect(() => {
       const handleLocateSidebarConnection = (event: Event) => {
@@ -5099,7 +5104,6 @@ const Sidebar: React.FC<{
           <V2ExplorerToolbarActions
             {...v2ExplorerToolbarActionProps}
             onLocateCurrentTable={() => {
-              onExpandSidebar?.();
               handleLocateActiveTabInSidebar();
             }}
             onScrollToTop={() => {

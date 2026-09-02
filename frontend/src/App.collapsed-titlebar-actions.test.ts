@@ -122,6 +122,7 @@ describe('collapsed V2 sidebar actions', () => {
     expect(appSource).toContain('ref={setCollapsedSidebarActionsTarget}');
     expect(appSource).toContain('collapsedSidebarActionsTarget={collapsedSidebarActionsTarget}');
     expect(appSource).toContain('onExpandSidebar={isV2Ui ? handleExpandSidebarPanel : undefined}');
+    expect(appSource).toContain('onEnsureSidebarExpanded={isSidebarCollapsed ? handleExpandSidebarPanel : undefined}');
     expect(sidebarSource).toContain('collapsedSidebarActionsTarget && createPortal(');
     expect(sidebarSource).toContain("placement: 'collapsed-titlebar'");
 
@@ -146,6 +147,8 @@ describe('collapsed V2 sidebar actions', () => {
       "data-sidebar-actions-placement={isCollapsedSidebarActionsDocked ? 'titlebar' : 'fixed-rail'}",
     );
     expect(appSource).toContain('isV2Ui && !shouldDockCollapsedSidebarActionsInTitlebar');
+    expect(appSource).toContain('onExpandSidebar={isV2Ui ? handleExpandSidebarPanel : undefined}');
+    expect(appSource).toContain('onEnsureSidebarExpanded={isSidebarCollapsed ? handleExpandSidebarPanel : undefined}');
     expect(appSource).toContain('data-collapsed-sidebar-actions-docked');
     expect(v2ThemeCss).toMatch(
       /\.ant-layout-sider\[data-sidebar-actions-placement='titlebar'\]\s+\.gn-v2-connection-rail\s*\{[^}]*display:\s*none;/s,

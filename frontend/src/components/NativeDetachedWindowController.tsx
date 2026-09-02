@@ -811,6 +811,7 @@ const NativeDetachedWindowController = ({
         'gonavi:insert-sql-to-tab',
         'gonavi:jvm-apply-ai-plan',
         'gonavi:jvm-apply-diagnostic-plan',
+        'gonavi:locate-sidebar-object',
       ] as const) {
         window.addEventListener(eventName, forwardTargetedWorkbenchEvent);
         removeWindowEventListeners.push(

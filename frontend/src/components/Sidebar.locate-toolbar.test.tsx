@@ -882,6 +882,26 @@ describe('Sidebar locate toolbar', () => {
     expect(locateActionIndex).toBeGreaterThan(externalSqlActionIndex);
   });
 
+  it('expands a collapsed sidebar before resolving a locate request', () => {
+    const source = readSourceFile('./Sidebar.tsx');
+    const locateStart = source.indexOf('const locateObjectInSidebar = async');
+    const locateEnd = source.indexOf('\n  const handleLocateActiveTabInSidebar', locateStart);
+    const locateSource = source.slice(locateStart, locateEnd);
+    const connectionLocateStart = source.indexOf('const locateConnectionInSidebar = useCallback');
+    const connectionLocateEnd = source.indexOf('  useEffect(() => {', connectionLocateStart);
+    const connectionLocateSource = source.slice(connectionLocateStart, connectionLocateEnd);
+
+    expect(locateStart).toBeGreaterThanOrEqual(0);
+    expect(locateEnd).toBeGreaterThan(locateStart);
+    expect(locateSource).toMatch(
+      /if \(!request\)\s*\{[\s\S]*?return;\s*\}\s*onEnsureSidebarExpanded\?\.\(\);/s,
+    );
+    expect(connectionLocateStart).toBeGreaterThanOrEqual(0);
+    expect(connectionLocateEnd).toBeGreaterThan(connectionLocateStart);
+    expect(connectionLocateSource).toContain('onEnsureSidebarExpanded?.();');
+    expect(connectionLocateSource).not.toContain('onExpandSidebar?.();');
+  });
+
   it('keeps the legacy sidebar toolbar on a stable six-column grid layout', () => {
     const source = readSidebarSource();
     const markup = renderSidebarMarkup();

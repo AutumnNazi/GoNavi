@@ -1170,6 +1170,86 @@ describe('NativeDetachedWindowApp', () => {
     }
   });
 
+  it('forwards sidebar locate actions from a detached workbench to the main process', async () => {
+    const previousWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    const eventTarget = new EventTarget();
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: Object.assign(eventTarget, {
+        clearTimeout: globalThis.clearTimeout,
+        innerWidth: 1200,
+        outerHeight: 800,
+        outerWidth: 1200,
+        screenX: 80,
+        screenY: 80,
+        setTimeout: globalThis.setTimeout,
+      }),
+    });
+    const bootstrap: NativeDetachedWindowBootstrap = {
+      id: 'workbench:query-native-1',
+      kind: 'workbench',
+      title: queryTab.title,
+      payload: {
+        storeState: { appearance: { uiVersion: 'v2' }, theme: 'light' },
+        tab: queryTab,
+      },
+    };
+    const client = {
+      load: vi.fn(async () => bootstrap),
+      ready: vi.fn(async () => undefined),
+      sync: vi.fn(async () => undefined),
+      attach: vi.fn(async () => undefined),
+      close: vi.fn(async () => undefined),
+      openAISettings: vi.fn(async () => undefined),
+      hostEvent: vi.fn(async () => undefined),
+      closeCurrentWindow: vi.fn(async () => undefined),
+    };
+    let renderer: TestRenderer.ReactTestRenderer | undefined;
+
+    try {
+      await act(async () => {
+        renderer = TestRenderer.create(<NativeDetachedWindowApp client={client} />);
+        await flushEffects();
+      });
+      const event = new Event('gonavi:locate-sidebar-object');
+      Object.defineProperty(event, 'detail', {
+        value: {
+          connectionId: 'connection-1',
+          dbName: 'main',
+          tableName: 'users',
+          objectGroup: 'tables',
+        },
+      });
+      await act(async () => {
+        eventTarget.dispatchEvent(event);
+        await flushEffects();
+      });
+
+      expect(client.hostEvent).toHaveBeenCalledWith(expect.objectContaining({
+        id: bootstrap.id,
+        kind: 'workbench',
+        hostEvent: expect.objectContaining({
+          name: 'gonavi:locate-sidebar-object',
+          detail: {
+            connectionId: 'connection-1',
+            dbName: 'main',
+            tableName: 'users',
+            objectGroup: 'tables',
+          },
+        }),
+      }));
+    } finally {
+      await act(async () => {
+        renderer?.unmount();
+      });
+      if (previousWindowDescriptor) {
+        Object.defineProperty(globalThis, 'window', previousWindowDescriptor);
+      } else {
+        Reflect.deleteProperty(globalThis, 'window');
+      }
+    }
+  });
+
   it.each([
     ['workbench', 'workbench:query-native-1', 'Meta+K', 'k', 'KeyK', true, false, false, false],
     ['query-result', 'query-result:query-native-1:r1', 'Meta+J', 'j', 'KeyJ', true, false, false, false],

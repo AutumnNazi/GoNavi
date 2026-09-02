@@ -645,7 +645,10 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
           'gonavi:jvm-apply-ai-plan',
           'gonavi:jvm-apply-diagnostic-plan',
         ]
-      : ['gonavi:ai:inject-prompt'];
+      : [
+          'gonavi:ai:inject-prompt',
+          ...(bootstrap.kind === 'workbench' ? ['gonavi:locate-sidebar-object' as const] : []),
+        ];
     const forwardToHost = (event: Event) => {
       hostEventSequenceRef.current += 1;
       const hostEvent: NativeDetachedHostEvent = {

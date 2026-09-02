@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { getCurrentLanguage, setCurrentLanguage } from '../../i18n';
+
 import {
     buildBoundedQueryEditorCompletionSuggestions,
     buildQueryEditorAliasMap,
@@ -1108,6 +1110,35 @@ describe('QueryEditorHelpers cross-line qualified identifier resolution', () => 
         expect(decorations).toMatchObject([
             { startColumn: 15, endColumn: 20 },
         ]);
+    });
+
+    it('uses the sidebar locate hint when table ctrl-click is configured for locating', () => {
+        const previousLanguage = getCurrentLanguage();
+        setCurrentLanguage('en-US');
+        try {
+            const decorations = resolveQueryEditorNavigationDecorations(
+                'SELECT * FROM users',
+                15,
+                'main',
+                ['main'],
+                [{ dbName: 'main', tableName: 'users' }],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                'Ctrl',
+                false,
+                undefined,
+                '',
+                'locate',
+            );
+
+            expect(decorations[0]?.hoverMessage).toBe('Ctrl + click to locate this table in the left schema tree');
+        } finally {
+            setCurrentLanguage(previousLanguage);
+        }
     });
 
     it('strips a stale SQL keyword tail from a hover identifier', () => {
