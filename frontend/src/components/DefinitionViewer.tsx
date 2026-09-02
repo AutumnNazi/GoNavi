@@ -1028,6 +1028,11 @@ const DefinitionViewer: React.FC<DefinitionViewerProps> = ({ tab }) => {
         });
         clearQueryTabDraft(tab.id);
         const isViewObject = tab.type === 'view-def' || Boolean(tab.viewName);
+        const isRoutineObject = tab.type === 'routine-def' || Boolean(tab.routineName);
+        const isSequenceObject = tab.type === 'sequence-def' || Boolean(tab.sequenceName);
+        const isPackageObject = tab.type === 'package-def' || Boolean(tab.packageName);
+        const isEventObject = tab.type === 'event-def' || Boolean(tab.eventName);
+        const isTriggerObject = tab.type === 'trigger' || Boolean(tab.triggerName);
         addTab({
             id: tab.id,
             title: editTabTitle,
@@ -1037,22 +1042,22 @@ const DefinitionViewer: React.FC<DefinitionViewerProps> = ({ tab }) => {
             query,
             queryMode: 'object-edit',
             returnToTabId: undefined,
-            // 保留视图名，供「验证数据变化」解析；其它对象编辑仍清空无关字段
+            // 保留当前对象身份，供侧栏定位与「验证数据变化」解析；无关字段显式清空避免串对象
             viewName: isViewObject ? (tab.viewName || normalizedObjectName) : undefined,
             viewKind: isViewObject ? tab.viewKind : undefined,
-            eventName: undefined,
-            routineName: undefined,
-            routineType: undefined,
-            sequenceName: undefined,
-            packageName: undefined,
-            triggerName: undefined,
-            triggerTableName: undefined,
+            eventName: isEventObject ? (tab.eventName || normalizedObjectName) : undefined,
+            routineName: isRoutineObject ? (tab.routineName || normalizedObjectName) : undefined,
+            routineType: isRoutineObject ? tab.routineType : undefined,
+            sequenceName: isSequenceObject ? (tab.sequenceName || normalizedObjectName) : undefined,
+            packageName: isPackageObject ? (tab.packageName || normalizedObjectName) : undefined,
+            triggerName: isTriggerObject ? (tab.triggerName || normalizedObjectName) : undefined,
+            triggerTableName: isTriggerObject ? tab.triggerTableName : undefined,
             schemaName: schemaName || undefined,
             objectType: isViewObject
                 ? (tab.viewKind === 'materialized' ? 'materialized-view' : 'view')
                 : undefined,
             tableName: undefined,
-            sidebarLocateKey: undefined,
+            sidebarLocateKey: String(tab.sidebarLocateKey || '').trim() || undefined,
         });
     }, [
         addTab,

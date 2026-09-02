@@ -8147,6 +8147,7 @@
   "sidebar.message.locate_external_sql_file_not_found": "未在外部 SQL 目录中找到 SQL 文件：{{path}}",
   "sidebar.message.locate_object_loading": "{{object}}所在数据库对象仍在加载中：{{database}}，请稍后再试",
   "sidebar.message.locate_object_not_found": "{{object}}未在左侧树中找到：{{name}}，请刷新数据库节点后重试",
+  "sidebar.message.locate_saved_query_not_found": "未在全部已存查询中找到保存查询：{{name}}，请刷新后重试",
   "sidebar.message.message_queue_workbench_unsupported": "当前数据源不支持消息队列工作台",
   "sidebar.message_queue.search_placeholder": "搜索主题、队列、连接或动作...",
   "sidebar.message.message_publish_success": "测试消息已发送到 {{destination}}",

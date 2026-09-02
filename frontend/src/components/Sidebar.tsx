@@ -2049,6 +2049,40 @@ const Sidebar: React.FC<{
           return;
       }
 
+      if (request.objectGroup === 'savedQueries') {
+          const target = resolveSidebarLocateTarget(request, { groupBySchema: false });
+          const path = findSidebarNodePathForLocate(treeDataRef.current as SidebarLocateTreeNodeLike[], target);
+          if (!path) {
+              message.warning(t('sidebar.message.locate_saved_query_not_found', {
+                  name: request.savedQueryName || request.savedQueryId,
+              }));
+              return;
+          }
+          const targetKey = path[path.length - 1];
+          const targetNode = findTreeNodeByKey(treeDataRef.current, targetKey);
+          setSearchValue('');
+          setV2ExplorerFilter('all');
+          mergeExpandedTreeKeys(path.slice(0, -1));
+          setSidebarSelectedKeys([targetKey]);
+          selectedNodesRef.current = targetNode ? [targetNode] : [];
+          const connectionId = String(request.connectionId || activeContext?.connectionId || activeTab?.connectionId || '').trim();
+          const dbName = String(request.dbName || activeContext?.dbName || activeTab?.dbName || '').trim();
+          if (connectionId) {
+              setActiveContext({ connectionId, dbName });
+              publishTitlebarSelection(
+                  resolveSidebarSelectionContext(targetNode)
+                  || {
+                      connectionId,
+                      dbName,
+                      sidebarStateKey: connectionId,
+                  },
+                  targetKey,
+              );
+          }
+          scrollSidebarTreeToKey(targetKey, 'center');
+          return;
+      }
+
       const conn = connections.find(item => item.id === request.connectionId);
       if (!conn) {
           message.warning(t('sidebar.message.locate_connection_not_found_for_object'));

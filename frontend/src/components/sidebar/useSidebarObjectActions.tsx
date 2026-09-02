@@ -1004,6 +1004,7 @@ export const useSidebarObjectActions = ({
       viewName,
       schemaName,
       objectType: 'view',
+      sidebarLocateKey: String(node.key || ''),
     });
   };
 
@@ -1352,7 +1353,9 @@ export const useSidebarObjectActions = ({
       dbName,
       query: template,
       queryMode: 'object-edit',
+      eventName,
       schemaName,
+      sidebarLocateKey: String(node.key || ''),
     });
   };
 
@@ -1475,7 +1478,10 @@ export const useSidebarObjectActions = ({
       dbName,
       query: template,
       queryMode: 'object-edit',
+      routineName,
+      routineType,
       schemaName,
+      sidebarLocateKey: String(node.key || ''),
     });
   };
 

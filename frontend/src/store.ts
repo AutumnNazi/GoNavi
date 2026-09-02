@@ -2618,6 +2618,35 @@ const sanitizeQueryTabs = (value: unknown): TabData[] => {
     }
     seenIds.add(id);
 
+    // object-edit 身份字段必须随 tab 持久化，否则重启/刷新后
+    // 侧栏定位按钮会因解析不到对象身份而禁用。
+    const isObjectEditTab = raw.queryMode === "object-edit";
+    const asViewKind = (value: unknown): TabData["viewKind"] =>
+      value === "view" || value === "materialized" ? value : undefined;
+    const asObjectType = (value: unknown): TabData["objectType"] =>
+      value === "view" || value === "materialized-view" || value === "table"
+        ? value
+        : undefined;
+    const objectEditIdentity = isObjectEditTab
+      ? {
+          routineName: toTrimmedString(raw.routineName).slice(0, 256) || undefined,
+          routineType: toTrimmedString(raw.routineType).slice(0, 64) || undefined,
+          viewName: toTrimmedString(raw.viewName).slice(0, 256) || undefined,
+          viewKind: asViewKind(raw.viewKind),
+          objectType: asObjectType(raw.objectType),
+          sequenceName: toTrimmedString(raw.sequenceName).slice(0, 256) || undefined,
+          packageName: toTrimmedString(raw.packageName).slice(0, 256) || undefined,
+          triggerName: toTrimmedString(raw.triggerName).slice(0, 256) || undefined,
+          triggerTableName:
+            toTrimmedString(raw.triggerTableName).slice(0, 256) || undefined,
+          eventName: toTrimmedString(raw.eventName).slice(0, 256) || undefined,
+          sidebarLocateKey:
+            toTrimmedString(raw.sidebarLocateKey).slice(0, 512) || undefined,
+          returnToTabId:
+            toTrimmedString(raw.returnToTabId).slice(0, 256) || undefined,
+        }
+      : undefined;
+
     result.push({
       id,
       title:
@@ -2641,6 +2670,8 @@ const sanitizeQueryTabs = (value: unknown): TabData[] => {
         typeof raw.resultPanelVisible === "boolean"
           ? raw.resultPanelVisible
           : undefined,
+      queryMode: isObjectEditTab ? "object-edit" : undefined,
+      ...(objectEditIdentity || {}),
       filePath: filePath || undefined,
       savedQueryId: savedQueryId || undefined,
       readOnly: raw.readOnly === true || persistedDraft?.readOnly === true,

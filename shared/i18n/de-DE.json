@@ -8147,6 +8147,7 @@
   "sidebar.message.locate_external_sql_file_not_found": "SQL-Datei wurde in den externen SQL-Verzeichnissen nicht gefunden: {{path}}",
   "sidebar.message.locate_object_loading": "Die Datenbankobjekte für {{object}} in {{database}} werden noch geladen. Bitte später erneut versuchen",
   "sidebar.message.locate_object_not_found": "{{object}} wurde im linken Baum nicht gefunden: {{name}}. Bitte den Datenbankknoten aktualisieren und erneut versuchen",
+  "sidebar.message.locate_saved_query_not_found": "Gespeicherte Abfrage wurde nicht in Allen gespeicherten Abfragen gefunden: {{name}}. Bitte aktualisieren und erneut versuchen",
   "sidebar.message.message_queue_workbench_unsupported": "Diese Datenquelle unterstützt den Nachrichtenwarteschlangen-Arbeitsbereich nicht",
   "sidebar.message_queue.search_placeholder": "Topics, Warteschlangen, Verbindungen oder Aktionen suchen...",
   "sidebar.message.message_publish_success": "Testnachricht an {{destination}} gesendet",

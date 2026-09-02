@@ -8147,6 +8147,7 @@
   "sidebar.message.locate_external_sql_file_not_found": "外部 SQL ディレクトリで SQL ファイルが見つかりません: {{path}}",
   "sidebar.message.locate_object_loading": "{{database}} の {{object}} オブジェクトはまだ読み込み中です。しばらくしてから再試行してください",
   "sidebar.message.locate_object_not_found": "左側ツリーで {{object}} が見つかりません: {{name}}。データベースノードを更新して再試行してください",
+  "sidebar.message.locate_saved_query_not_found": "すべての保存済みクエリで保存クエリが見つかりません: {{name}}。更新して再試行してください",
   "sidebar.message.message_queue_workbench_unsupported": "このデータソースはメッセージキューワークベンチに対応していません",
   "sidebar.message_queue.search_placeholder": "トピック、キュー、接続、操作を検索...",
   "sidebar.message.message_publish_success": "テストメッセージを {{destination}} に送信しました",

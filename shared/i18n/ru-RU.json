@@ -8147,6 +8147,7 @@
   "sidebar.message.locate_external_sql_file_not_found": "SQL-файл не найден во внешних SQL-каталогах: {{path}}",
   "sidebar.message.locate_object_loading": "Объекты базы данных для {{object}} в {{database}} ещё загружаются. Повторите попытку позже",
   "sidebar.message.locate_object_not_found": "{{object}} не найден в левом дереве: {{name}}. Обновите узел базы данных и повторите попытку",
+  "sidebar.message.locate_saved_query_not_found": "Сохранённый запрос не найден в разделе всех сохранённых запросов: {{name}}. Обновите и повторите попытку",
   "sidebar.message.message_queue_workbench_unsupported": "Этот источник данных не поддерживает рабочее пространство очередей сообщений",
   "sidebar.message_queue.search_placeholder": "Поиск топиков, очередей, подключений или действий...",
   "sidebar.message.message_publish_success": "Тестовое сообщение отправлено в {{destination}}",

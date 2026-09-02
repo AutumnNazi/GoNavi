@@ -242,6 +242,8 @@ describe('DefinitionViewer object edit entry', () => {
       title: 'Edit Function/procedure: reporting.refresh_stats',
       type: 'query',
       queryMode: 'object-edit',
+      routineName: 'reporting.refresh_stats',
+      routineType: 'FUNCTION',
       query: expect.stringContaining('CREATE OR REPLACE FUNCTION reporting.refresh_stats()'),
     }));
   });
@@ -282,6 +284,8 @@ describe('DefinitionViewer object edit entry', () => {
       title: 'Edit Function/procedure: reporting.refresh_stats',
       type: 'query',
       queryMode: 'object-edit',
+      routineName: 'reporting.refresh_stats',
+      routineType: 'FUNCTION',
       query: expect.stringContaining('CREATE OR REPLACE FUNCTION reporting.refresh_stats()'),
     }));
   });

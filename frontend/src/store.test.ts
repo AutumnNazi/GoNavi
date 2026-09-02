@@ -3154,6 +3154,77 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().activeTabId).toBe('query-other');
   });
 
+  it('restores object-edit identity fields so sidebar locating survives a reload', async () => {
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: {
+        tabs: [
+          {
+            id: 'query-edit-routine-1',
+            title: '修改函数/存储过程: main.func_name',
+            type: 'query',
+            connectionId: 'conn-1',
+            dbName: 'example',
+            schemaName: 'main',
+            query: 'CREATE OR REPLACE MACRO main.func_name(param1) AS (param1 * 3);',
+            queryMode: 'object-edit',
+            routineName: 'main.func_name',
+            routineType: 'MACRO',
+            sidebarLocateKey: 'conn-1-example-routine-func-main.func_name',
+            returnToTabId: 'query-source',
+          },
+          {
+            id: 'query-edit-mview-1',
+            title: '修改物化视图: analytics.mv_daily',
+            type: 'query',
+            connectionId: 'conn-1',
+            dbName: 'example',
+            query: 'SELECT 1;',
+            queryMode: 'object-edit',
+            viewName: 'analytics.mv_daily',
+            viewKind: 'materialized',
+            objectType: 'materialized-view',
+          },
+          {
+            id: 'query-plain-1',
+            title: '普通查询',
+            type: 'query',
+            connectionId: 'conn-1',
+            dbName: 'main',
+            query: 'SELECT 1;',
+            routineName: 'should.not.leak',
+            queryMode: 'standard',
+          },
+        ],
+      },
+      version: 21,
+    }));
+
+    const { useStore } = await importStore();
+    const tabs = useStore.getState().tabs;
+
+    const routineTab = tabs.find((tab) => tab.id === 'query-edit-routine-1');
+    expect(routineTab).toEqual(expect.objectContaining({
+      queryMode: 'object-edit',
+      routineName: 'main.func_name',
+      routineType: 'MACRO',
+      schemaName: 'main',
+      sidebarLocateKey: 'conn-1-example-routine-func-main.func_name',
+      returnToTabId: 'query-source',
+    }));
+
+    const materializedViewTab = tabs.find((tab) => tab.id === 'query-edit-mview-1');
+    expect(materializedViewTab).toEqual(expect.objectContaining({
+      queryMode: 'object-edit',
+      viewName: 'analytics.mv_daily',
+      viewKind: 'materialized',
+      objectType: 'materialized-view',
+    }));
+
+    const plainTab = tabs.find((tab) => tab.id === 'query-plain-1');
+    expect(plainTab?.queryMode).toBeUndefined();
+    expect(plainTab?.routineName).toBeUndefined();
+  });
+
   it('reuses the current tab when the same id is reopened as an object-edit query', async () => {
     const { useStore } = await importStore();
 

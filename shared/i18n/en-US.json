@@ -8147,6 +8147,7 @@
   "sidebar.message.locate_external_sql_file_not_found": "SQL file was not found in external SQL directories: {{path}}",
   "sidebar.message.locate_object_loading": "Database objects for {{object}} are still loading in {{database}}. Try again later",
   "sidebar.message.locate_object_not_found": "{{object}} was not found in the left tree: {{name}}. Refresh the database node and try again",
+  "sidebar.message.locate_saved_query_not_found": "Saved query was not found in All Saved Queries: {{name}}. Refresh and try again",
   "sidebar.message.message_queue_workbench_unsupported": "This data source does not support the message queue workbench",
   "sidebar.message_queue.search_placeholder": "Search Topics, Queues, connections, or actions...",
   "sidebar.message.message_publish_success": "Test message sent to {{destination}}",

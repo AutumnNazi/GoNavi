@@ -8147,6 +8147,7 @@
   "sidebar.message.locate_external_sql_file_not_found": "未在外部 SQL 目錄中找到 SQL 檔案：{{path}}",
   "sidebar.message.locate_object_loading": "{{object}} 所在的資料庫物件仍在載入中：{{database}}，請稍後再試",
   "sidebar.message.locate_object_not_found": "未在左側樹中找到 {{object}}：{{name}}，請重新整理資料庫節點後再試",
+  "sidebar.message.locate_saved_query_not_found": "未在全部已存查詢中找到保存查詢：{{name}}，請重新整理後再試",
   "sidebar.message.message_queue_workbench_unsupported": "目前資料來源不支援訊息佇列工作台",
   "sidebar.message_queue.search_placeholder": "搜尋主題、佇列、連線或動作...",
   "sidebar.message.message_publish_success": "測試訊息已傳送到 {{destination}}",

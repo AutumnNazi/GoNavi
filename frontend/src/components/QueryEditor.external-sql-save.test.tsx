@@ -6078,6 +6078,8 @@ describe('QueryEditor external SQL save', () => {
       connectionId: 'conn-1',
       dbName: 'main',
       queryMode: 'object-edit',
+      routineName: 'reporting.refresh_stats',
+      routineType: 'PROCEDURE',
       returnToTabId: 'tab-1',
       query: expect.stringContaining('CREATE OR REPLACE PROCEDURE reporting.refresh_stats()'),
     }));
@@ -10152,6 +10154,10 @@ describe('QueryEditor external SQL save', () => {
       dbName: 'main',
       schemaName: 'reporting',
       queryMode: 'object-edit',
+      viewName: 'active_users',
+      viewKind: 'view',
+      objectType: 'view',
+      schemaName: 'reporting',
       returnToTabId: 'tab-1',
       query: expect.stringContaining('CREATE OR REPLACE VIEW reporting.active_users AS'),
     }));
@@ -10363,6 +10369,9 @@ END;`;
       dbName: 'main',
       schemaName: 'reporting',
       queryMode: 'object-edit',
+      routineName: 'reporting.refresh_stats',
+      routineType: 'PROCEDURE',
+      schemaName: 'reporting',
       returnToTabId: 'tab-1',
       query: expect.stringContaining('CREATE OR REPLACE PROCEDURE reporting.refresh_stats()'),
     }));
@@ -10456,6 +10465,8 @@ END;`;
       dbName: 'main',
       schemaName: 'BILLING',
       queryMode: 'object-edit',
+      sequenceName: 'BILLING.ORDER_SEQ',
+      schemaName: 'BILLING',
       query: expect.stringContaining('CREATE SEQUENCE BILLING.ORDER_SEQ'),
     }));
     expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({
@@ -10466,6 +10477,8 @@ END;`;
       dbName: 'main',
       schemaName: 'billing',
       queryMode: 'object-edit',
+      packageName: 'billing.pkg_order',
+      schemaName: 'billing',
       query: expect.stringContaining('CREATE OR REPLACE PACKAGE pkg_order'),
     }));
     expect((window as any).dispatchEvent).not.toHaveBeenCalledWith(expect.objectContaining({

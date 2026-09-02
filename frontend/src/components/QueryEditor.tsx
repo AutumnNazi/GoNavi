@@ -5192,6 +5192,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           schemaName: targetSchemaName || undefined,
           query: editSql,
           queryMode: 'object-edit',
+          routineName: targetRoutineName,
+          routineType: normalizedRoutineType,
           returnToTabId: tab.id || undefined,
       });
   }, [addTab, tab.id]);
@@ -5292,6 +5294,17 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               objectLabel,
           ),
           queryMode: 'object-edit',
+          ...(navigationTarget.type === 'view' || navigationTarget.type === 'materialized-view'
+              ? {
+                  viewName: targetObjectName,
+                  viewKind: (navigationTarget.type === 'materialized-view' ? 'materialized' : 'view') as 'view' | 'materialized',
+                  objectType: (navigationTarget.type === 'materialized-view' ? 'materialized-view' : 'view') as 'view' | 'materialized-view',
+              }
+              : navigationTarget.type === 'sequence'
+                  ? { sequenceName: targetObjectName }
+                  : navigationTarget.type === 'package'
+                      ? { packageName: targetObjectName }
+                      : {}),
           returnToTabId: tab.id || undefined,
       });
   }, [addTab, tab.id]);
