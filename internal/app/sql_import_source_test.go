@@ -168,9 +168,9 @@ func TestOpenSQLImportSourceRejectsExcessiveCompressionRatio(t *testing.T) {
 
 func TestOpenSQLImportSourceDefaultCompressionRatioProtectsSmallGzipBomb(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dump.sql.gz")
-	// BestSpeed keeps this compact fixture just above the production 1000:1
-	// ratio threshold; the default gzip level is only about 510:1.
-	writeGzipSQLLevel(t, path, []byte(strings.Repeat("A", 8<<20)), gzip.BestSpeed)
+	// BestCompression keeps this compact fixture well above the production
+	// 1000:1 ratio threshold across supported Go versions.
+	writeGzipSQLLevel(t, path, []byte(strings.Repeat("A", 8<<20)), gzip.BestCompression)
 
 	source, err := OpenSQLImportSource(path, SQLImportSourceOptions{})
 	if err != nil {
