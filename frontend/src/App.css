@@ -330,6 +330,17 @@ body[data-theme='light'] ::-webkit-scrollbar-thumb:hover {
     white-space: nowrap;
 }
 
+/* 字段候选的备注跟随加宽后的弹层使用剩余空间，避免被默认 48% 列宽提前截断。 */
+.gn-query-monaco-stage .monaco-editor .suggest-widget .monaco-list .monaco-list-row.string-label > .contents > .main > .left {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.gn-query-monaco-stage .monaco-editor .suggest-widget .monaco-list .monaco-list-row.string-label > .contents > .main > .right {
+    flex: 1 1 auto;
+    max-width: none;
+}
+
 /* 表候选使用 Monaco 原生 CompletionItemLabel：第一行表名，第二行注释。 */
 .gn-query-monaco-stage .monaco-editor .suggest-widget .monaco-list .monaco-list-row:not(.string-label) {
     height: var(--gn-query-suggest-row-height, 36px) !important;

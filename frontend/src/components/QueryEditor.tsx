@@ -134,6 +134,7 @@ import {
     getColumnDefinitionName,
     getColumnDefinitionType,
 } from '../utils/columnDefinition';
+import { installQueryEditorSuggestWidgetWidth } from './queryEditor/queryEditorSuggestionLayout';
 import QueryEditorResultsPanel, {
     QUERY_EDITOR_SQL_LOG_TAB_KEY,
     resolveEffectiveActiveResultKey,
@@ -5348,6 +5349,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const suggestController = editor.getContribution?.('editor.contrib.suggestController') as {
           widget?: { value?: { _details?: { widget?: { layout?: (width: number, height: number) => void } } } };
       } | null;
+      installQueryEditorSuggestWidgetWidth(editor);
       const suggestDetailsWidget = suggestController?.widget?.value?._details?.widget;
       if (suggestDetailsWidget?.layout) {
           const originalSuggestDetailsLayout = suggestDetailsWidget.layout.bind(suggestDetailsWidget);
