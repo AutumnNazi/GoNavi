@@ -4401,6 +4401,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   requestSeq,
                   currentRequestSeq: schemaLoadSeqRef.current,
                   latestSelectedSchema: latestSelectedSchemaRef.current,
+                  explicitSchema: String(tab.schemaName || ''),
                   rememberedSchema: String(tab.schemaName || ''),
                   currentSchema: databaseDefaultSchema,
                   schemaNames: Array.isArray(result.schemas) ? result.schemas : [],
@@ -5065,11 +5066,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       let editSql = `${sqlTemplateHeader}\n-- ${translate('sidebar.sql_template.modify_then_execute')}\n${buildQueryEditorRoutineEditFallbackSql(targetRoutineName, normalizedRoutineType)}`;
 
       const conn = connectionsRef.current.find((item) => item.id === connectionId);
+      const parsedRoutine = splitSidebarQualifiedName(targetRoutineName);
+      const targetSchemaName = String(navigationTarget.schemaName || parsedRoutine.schemaName || '').trim();
       if (conn) {
           const dialect = normalizeMetadataDialect(conn);
-          const parsedRoutine = splitSidebarQualifiedName(targetRoutineName);
           const routineObjectName = parsedRoutine.objectName || targetRoutineName;
-          const routineSchemaName = String(navigationTarget.schemaName || parsedRoutine.schemaName || '').trim();
+          const routineSchemaName = targetSchemaName;
           const safeName = escapeQueryEditorObjectEditSqlLiteral(routineObjectName);
           const safeSchema = escapeQueryEditorObjectEditSqlLiteral(routineSchemaName);
           const safeDbName = escapeQueryEditorObjectEditSqlLiteral(targetDbName);
@@ -5179,7 +5181,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       }
 
       addTab({
-          id: `query-edit-routine-${connectionId}-${targetDbName}-${targetRoutineName}-${Date.now()}`,
+          id: `query-edit-routine-${connectionId}-${targetDbName}${targetSchemaName ? `-${targetSchemaName}` : ''}-${targetRoutineName}-${Date.now()}`,
           title: translate('sidebar.tab.edit_routine', {
               type: routineTypeLabel,
               name: targetRoutineName,
@@ -5187,6 +5189,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           type: 'query',
           connectionId,
           dbName: targetDbName,
+          schemaName: targetSchemaName || undefined,
           query: editSql,
           queryMode: 'object-edit',
           returnToTabId: tab.id || undefined,
@@ -5273,7 +5276,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       }
 
       addTab({
-          id: `query-edit-object-${connectionId}-${targetDbName}-${objectEditName}-${Date.now()}`,
+          id: `query-edit-object-${connectionId}-${targetDbName}${targetSchemaName ? `-${targetSchemaName}` : ''}-${objectEditName}-${Date.now()}`,
           title: translate('definition_viewer.edit.tab_title', {
               object: objectLabel,
               name: objectEditName,
@@ -5281,6 +5284,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           type: 'query',
           connectionId,
           dbName: targetDbName,
+          schemaName: targetSchemaName || undefined,
           query: buildQueryEditorEditableDefinitionSql(
               definitionTabType,
               latestDefinition,
@@ -5303,6 +5307,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const conn = connectionsRef.current.find((item) => item.id === connectionId);
       const dialect = conn ? normalizeMetadataDialect(conn) : '';
       const triggerTableName = String(navigationTarget.tableName || '').trim();
+      const targetSchemaName = String(navigationTarget.schemaName || '').trim();
       let latestDefinition = '';
       if (conn) {
           const connectionConfig = buildQueryEditorObjectDefinitionConnectionConfig(conn);
@@ -5342,11 +5347,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           : '';
 
       addTab({
-          id: `query-edit-trigger-${connectionId}-${targetDbName}-${targetTriggerName}-${Date.now()}`,
+          id: `query-edit-trigger-${connectionId}-${targetDbName}${targetSchemaName ? `-${targetSchemaName}` : ''}-${targetTriggerName}-${Date.now()}`,
           title: translate('trigger_viewer.tab.edit_trigger_title', { name: targetTriggerName }),
           type: 'query',
           connectionId,
           dbName: targetDbName,
+          schemaName: targetSchemaName || undefined,
           query: buildEditableTriggerSql(targetTriggerName, latestDefinition, {
               dropSql: triggerDropSql,
               translate,
@@ -6549,13 +6555,15 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               }
 
               const openTableTab = () => {
+                  const targetSchemaName = String(navigationTarget.schemaName || '').trim();
                   addTab({
-                      id: `${connectionId}-${targetDbName}-table-${targetTableName}`,
+                      id: `${connectionId}-${targetDbName}${targetSchemaName ? `-${targetSchemaName}` : ''}-table-${targetTableName}`,
                       title: targetTableName,
                       type: 'table',
                       connectionId,
                       dbName: targetDbName,
                       tableName: targetTableName,
+                      schemaName: targetSchemaName || undefined,
                       initialViewMode: 'fields',
                       initialViewModeRequestId: String(Date.now()),
                       objectType: 'table',
@@ -6566,6 +6574,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               const navigationActionKey = [
                   connectionId,
                   targetDbName,
+                  String(navigationTarget.schemaName || '').trim(),
                   normalizeCompletionQualifiedName(targetTableName),
                   navigationContextVersion,
               ].join('\u0000');

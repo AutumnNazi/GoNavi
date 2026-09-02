@@ -2835,6 +2835,47 @@ describe('store appearance persistence', () => {
     });
   });
 
+  it('keeps query schema in activeContext and does not let an inactive draft overwrite it', async () => {
+    const { useStore } = await importStore();
+
+    useStore.getState().addTab({
+      id: 'query-anno',
+      title: '新建查询',
+      type: 'query',
+      connectionId: 'conn-1',
+      dbName: 'sys',
+      schemaName: 'anno',
+      query: 'select 1;',
+    });
+
+    expect(useStore.getState().activeContext).toEqual({
+      connectionId: 'conn-1',
+      dbName: 'sys',
+      schemaName: 'anno',
+    });
+
+    useStore.getState().addTab({
+      id: 'query-old-schema',
+      title: '旧查询',
+      type: 'query',
+      connectionId: 'conn-1',
+      dbName: 'sys',
+      schemaName: 'dbms_job',
+      query: 'select 2;',
+    });
+    useStore.getState().setActiveTab('query-anno');
+
+    useStore.getState().updateQueryTabDraft('query-old-schema', {
+      schemaName: 'dbms_job_v2',
+    });
+
+    expect(useStore.getState().activeContext).toEqual({
+      connectionId: 'conn-1',
+      dbName: 'sys',
+      schemaName: 'anno',
+    });
+  });
+
   it('falls back activeContext to the new active tab after closing the current tab', async () => {
     const { useStore } = await importStore();
 

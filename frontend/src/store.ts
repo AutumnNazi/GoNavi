@@ -58,6 +58,13 @@ export interface AIChatSessionSummary {
   archived?: boolean;
 }
 
+type ActiveContext = {
+  connectionId: string;
+  dbName: string;
+  schemaName?: string;
+  tableName?: string;
+};
+
 const sanitizeBrandIconIdLocal = (value: unknown): string =>
   sanitizeBrandIconId(value) || DEFAULT_BRAND_ICON_ID;
 import { toPersistedGlobalProxy } from "./utils/globalProxyDraft";
@@ -1867,7 +1874,7 @@ interface AppState {
   /** AI 独立窗上次尺寸/位置（持久化，再次打开时复用） */
   aiChatDetachedBoundsMemory: AIChatDetachedBoundsMemory | null;
   activeTabId: string | null;
-  activeContext: { connectionId: string; dbName: string; tableName?: string } | null;
+  activeContext: ActiveContext | null;
   savedQueries: SavedQuery[];
   savedQueryGroups: SavedQueryGroup[];
   externalSQLDirectories: ExternalSQLDirectory[];
@@ -2010,7 +2017,7 @@ interface AppState {
   closeAllTabs: () => void;
   setActiveTab: (id: string) => void;
   setActiveContext: (
-    context: { connectionId: string; dbName: string; tableName?: string } | null,
+    context: ActiveContext | null,
   ) => void;
   detachWorkbenchTab: (
     tabId: string,
@@ -2697,10 +2704,11 @@ const resolveCloseTabActiveTabId = (
 
 const resolveActiveContextFromTab = (
   tab: TabData | null | undefined,
-): { connectionId: string; dbName: string; tableName?: string } | null => {
+): ActiveContext | null => {
   if (!tab) return null;
   const connectionId = toTrimmedString(tab.connectionId);
   if (!connectionId) return null;
+  const schemaName = toTrimmedString(tab.schemaName);
   const tableName = toTrimmedString(
     tab.tableName
     || tab.viewName
@@ -2713,15 +2721,30 @@ const resolveActiveContextFromTab = (
   return {
     connectionId,
     dbName: toTrimmedString(tab.dbName),
+    ...(schemaName ? { schemaName } : {}),
     ...(tableName ? { tableName } : {}),
   };
+};
+
+const activeContextMatchesTab = (
+  context: ActiveContext | null | undefined,
+  tab: TabData | null | undefined,
+): boolean => {
+  const tabContext = resolveActiveContextFromTab(tab);
+  if (!context || !tabContext) return false;
+  return (
+    context.connectionId === tabContext.connectionId
+    && context.dbName === tabContext.dbName
+    && toTrimmedString(context.schemaName) === toTrimmedString(tabContext.schemaName)
+    && toTrimmedString(context.tableName) === toTrimmedString(tabContext.tableName)
+  );
 };
 
 const resolveActiveContextForTabId = (
   tabs: TabData[],
   activeTabId: string | null | undefined,
-  fallbackContext: { connectionId: string; dbName: string; tableName?: string } | null,
-): { connectionId: string; dbName: string; tableName?: string } | null => {
+  fallbackContext: ActiveContext | null,
+): ActiveContext | null => {
   const normalizedActiveTabId = toTrimmedString(activeTabId);
   if (normalizedActiveTabId) {
     const activeTab = tabs.find((tab) => tab.id === normalizedActiveTabId);
@@ -4356,6 +4379,7 @@ export const useStore = create<AppState>()(
                 t.type === incomingTab.type &&
                 t.connectionId === incomingTab.connectionId &&
                 t.dbName === incomingTab.dbName &&
+                toTrimmedString(t.schemaName) === toTrimmedString(incomingTab.schemaName) &&
                 t.tableName === incomingTab.tableName,
             );
             if (semanticIndex !== -1) {
@@ -4424,6 +4448,7 @@ export const useStore = create<AppState>()(
           const tabId = toTrimmedString(id);
           if (!tabId) return state;
 
+          const previousTab = state.tabs.find((tab) => tab.id === tabId);
           let changed = false;
           let contextChangedTab: TabData | null = null;
           const nextTabs = state.tabs.map((tab) => {
@@ -4507,10 +4532,20 @@ export const useStore = create<AppState>()(
           });
 
           if (!changed) return state;
+          const nextActiveTab = nextTabs.find((tab) => tab.id === tabId);
+          const shouldSyncActiveContext = state.activeTabId === tabId
+            && Boolean(nextActiveTab)
+            && (
+              !state.activeContext
+              || activeContextMatchesTab(state.activeContext, previousTab)
+            );
           return {
             tabs: nextTabs,
             ...(contextChangedTab
               ? resolveRecentWorkbenchEntries(state, contextChangedTab)
+              : {}),
+            ...(shouldSyncActiveContext
+              ? { activeContext: resolveActiveContextFromTab(nextActiveTab) }
               : {}),
           };
         }),

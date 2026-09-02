@@ -3205,6 +3205,7 @@ function App() {
           type: 'query',
           connectionId: targetContext.connectionId,
           dbName: targetContext.dbName,
+          schemaName: targetContext.schemaName,
           query: contextualQuery ?? '',
       });
   }, [activeTabId, tabs, connections, activeContext, addTab, appearance.newQuerySqlTemplate, t]);
