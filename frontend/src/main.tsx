@@ -216,6 +216,7 @@ if (
     };
     let mockSkills: any[] = [];
     let mockGlobalProxy: any = { enabled: false, type: 'socks5', host: '', port: 1080, user: '', password: '', hasPassword: false };
+    let mockDownloadSource: 'cst' | 'bero' | 'github' = 'cst';
     let mockUpdateChannel: 'latest' | 'dev' = 'latest';
     const mockReleasePublishedAt = '2026-07-08T11:15:00Z';
     const buildMockUpdateInfo = () => ({
@@ -870,6 +871,12 @@ if (
                 }) => ({ success: false, message: t('app.browser_mock.export_connection_package_unsupported') }),
                 ExportData: async () => ({ success: false }),
                 GetGlobalProxyConfig: async () => ({ success: true, data: cloneBrowserMockValue(mockGlobalProxy) }),
+                GetDownloadSourceConfig: async () => ({ source: mockDownloadSource }),
+                SaveDownloadSourceConfig: async (source: string) => {
+                    const normalized = String(source || '').trim().toLowerCase();
+                    mockDownloadSource = normalized === 'bero' || normalized === 'github' ? normalized : 'cst';
+                    return { source: mockDownloadSource };
+                },
                 SetUpdateChannel: async (channel: string) => {
                     mockUpdateChannel = String(channel || '').trim().toLowerCase() === 'dev' ? 'dev' : 'latest';
                     return { success: true, data: { channel: mockUpdateChannel } };

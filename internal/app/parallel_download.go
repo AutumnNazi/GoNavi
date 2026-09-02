@@ -1052,11 +1052,22 @@ func downloadFileWithHashParallelAwareAndExpectedSize(
 	timeout time.Duration,
 	expectedSize int64,
 ) (string, error) {
+	return downloadFileWithHashParallelAwareAndExpectedSizePreferred(rawURL, filePath, onProgress, timeout, expectedSize, DownloadSourceCst)
+}
+
+func downloadFileWithHashParallelAwareAndExpectedSizePreferred(
+	rawURL string,
+	filePath string,
+	onProgress func(downloaded, total int64),
+	timeout time.Duration,
+	expectedSize int64,
+	preferred DownloadSource,
+) (string, error) {
 	if timeout <= 0 {
 		timeout = 10 * time.Minute
 	}
 	client := newStrictHTTPClientWithGlobalProxy(timeout)
-	return downloadFileWithHashParallelAwareAndExpectedSizeWithClient(client, rawURL, filePath, onProgress, expectedSize)
+	return downloadFileWithHashParallelAwareAndExpectedSizeWithClientPreferred(client, rawURL, filePath, onProgress, expectedSize, preferred)
 }
 
 // downloadFileWithHashParallelAwareAndExpectedSizeWithClient keeps the
@@ -1069,19 +1080,46 @@ func downloadFileWithHashParallelAwareAndExpectedSizeWithClient(
 	onProgress func(downloaded, total int64),
 	expectedSize int64,
 ) (string, error) {
+	return downloadFileWithHashParallelAwareAndExpectedSizeWithClientPreferred(client, rawURL, filePath, onProgress, expectedSize, DownloadSourceCst)
+}
+
+func downloadFileWithHashParallelAwareAndExpectedSizeWithClientPreferred(
+	client *http.Client,
+	rawURL string,
+	filePath string,
+	onProgress func(downloaded, total int64),
+	expectedSize int64,
+	preferred DownloadSource,
+) (string, error) {
 	if client == nil {
 		return "", errors.New("download HTTP client is nil")
 	}
+	preferred = normalizeDownloadSource(string(preferred))
 	var candidates []string
 	var dispatcherErr error
 	if expectedSize > 0 && func() bool {
 		_, ok := downloadDispatcherAssetPath(rawURL)
 		return ok
 	}() {
-		// The manifest already authenticates the asset size. Resolve the dispatcher
-		// redirect only after the Range path starts, avoiding JSON resolution and a
-		// separate 256 KiB probe on the healthy path.
-		candidates = []string{strings.TrimSpace(rawURL)}
+		if preferred == DownloadSourceCst {
+			// Cst remains the zero-latency default: the manifest already authenticates
+			// the asset size, so start the real Range requests through the Dispatcher.
+			candidates = []string{strings.TrimSpace(rawURL)}
+		} else {
+			// A non-Cst preference must resolve through the same Dispatcher gate first.
+			// This preserves require-current=1 for dev assets while allowing the user
+			// to select Bero or GitHub before any bytes are downloaded.
+			resolved, resolveErr := resolveDispatcherDownloadCandidates(client, rawURL)
+			if resolveErr != nil {
+				if errors.Is(resolveErr, errInvalidDownloadDispatcherURL) || isCurrentDevAssetTerminalError(resolveErr) {
+					return "", resolveErr
+				}
+				candidates = []string{strings.TrimSpace(rawURL)}
+				dispatcherErr = resolveErr
+			} else {
+				candidates = reorderDownloadCandidates(resolved, preferred)
+			}
+		}
 	} else {
 		candidates, dispatcherErr = resolveDispatcherDownloadCandidates(client, rawURL)
 		if dispatcherErr != nil {
@@ -1095,6 +1133,7 @@ func downloadFileWithHashParallelAwareAndExpectedSizeWithClient(
 			// is temporarily unavailable. It still uses normal TLS.
 			candidates = []string{strings.TrimSpace(rawURL)}
 		}
+		candidates = reorderDownloadCandidates(candidates, preferred)
 	}
 	result, err := downloadFileWithHashFromCandidatesWithExpectedSize(client, candidates, filePath, onProgress, dispatcherErr, expectedSize)
 	if err == nil || len(candidates) != 1 || expectedSize <= 0 {
@@ -1110,6 +1149,7 @@ func downloadFileWithHashParallelAwareAndExpectedSizeWithClient(
 	if resolveErr != nil {
 		return result, errors.Join(err, resolveErr)
 	}
+	fallbackCandidates = reorderDownloadCandidates(fallbackCandidates, preferred)
 	return downloadFileWithHashFromCandidatesWithExpectedSize(client, fallbackCandidates, filePath, onProgress, err, expectedSize)
 }
 

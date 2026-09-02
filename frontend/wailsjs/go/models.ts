@@ -985,6 +985,18 @@ export namespace app {
 	
 	
 	
+	export class DownloadSourceConfig {
+	    source: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DownloadSourceConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.source = source["source"];
+	    }
+	}
 	export class ElasticsearchConsoleRequestResult {
 	    index: number;
 	    method: string;

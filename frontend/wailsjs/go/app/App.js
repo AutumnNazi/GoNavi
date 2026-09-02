@@ -614,6 +614,10 @@ export function GetDatabaseDiagnosticPackagePreview() {
   return window['go']['app']['App']['GetDatabaseDiagnosticPackagePreview']();
 }
 
+export function GetDownloadSourceConfig() {
+  return window['go']['app']['App']['GetDownloadSourceConfig']();
+}
+
 export function GetDriverStatusList(arg1, arg2) {
   return window['go']['app']['App']['GetDriverStatusList'](arg1, arg2);
 }
@@ -1292,6 +1296,10 @@ export function SaveConnection(arg1) {
 
 export function SaveConnectionSidebarLayout(arg1) {
   return window['go']['app']['App']['SaveConnectionSidebarLayout'](arg1);
+}
+
+export function SaveDownloadSourceConfig(arg1) {
+  return window['go']['app']['App']['SaveDownloadSourceConfig'](arg1);
 }
 
 export function SaveGlobalProxy(arg1) {

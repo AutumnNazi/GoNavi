@@ -603,6 +603,7 @@ type SettingsCenterPaneKey =
   | 'sidebar-metadata'
   | 'sidebar-objects'
   | 'proxy'
+  | 'download-source'
   | 'web-auth'
   | 'cloud-backup'
   | 'ai'
@@ -611,6 +612,13 @@ type SettingsCenterPaneKey =
 type SettingsCenterPaneState = {
   key: SettingsCenterPaneKey;
   group: SettingsCenterGroupKey;
+};
+
+type DownloadSourceId = 'cst' | 'bero' | 'github';
+
+const normalizeDownloadSourceId = (value: unknown): DownloadSourceId => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'bero' || normalized === 'github' ? normalized : 'cst';
 };
 
 const isToolCenterGroupKey = (group: SettingsCenterGroupKey): group is ToolCenterGroupKey => (
@@ -1110,6 +1118,8 @@ function App() {
   const savedQueriesBootstrapPromiseRef = useRef<Promise<void> | null>(null);
   const savedQueriesLoadedRef = useRef(false);
   const [hasLoadedSecureConfig, setHasLoadedSecureConfig] = useState(false);
+  const [downloadSource, setDownloadSource] = useState<DownloadSourceId>('cst');
+  const [downloadSourceSaving, setDownloadSourceSaving] = useState(false);
   const [hasLoadedConnectionSidebarLayout, setHasLoadedConnectionSidebarLayout] = useState(false);
   const connectionSidebarLayoutCoordinatorRef = useRef<ConnectionSidebarLayoutCoordinator | null>(null);
   const [viewportWidth, setViewportWidth] = useState(() => (typeof window === 'undefined' ? 1280 : window.innerWidth || 1280));
@@ -1484,6 +1494,51 @@ function App() {
           cancelled = true;
       };
   }, [applySecurityUpdateStatus, isStoreHydrated, replaceConnections, replaceGlobalProxy, t]);
+
+  useEffect(() => {
+      let cancelled = false;
+      const backendApp = (window as any).go?.app?.App;
+      if (typeof backendApp?.GetDownloadSourceConfig !== 'function') {
+          return () => {
+              cancelled = true;
+          };
+      }
+      void backendApp.GetDownloadSourceConfig()
+          .then((result: { source?: string } | undefined) => {
+              if (!cancelled) {
+                  setDownloadSource(normalizeDownloadSourceId(result?.source));
+              }
+          })
+          .catch((error: unknown) => {
+              if (!cancelled) {
+                  console.warn('Failed to load download source preference', error);
+              }
+          });
+      return () => {
+          cancelled = true;
+      };
+  }, []);
+
+  const handleDownloadSourceChange = useCallback(async (value: DownloadSourceId) => {
+      const nextSource = normalizeDownloadSourceId(value);
+      const previousSource = downloadSource;
+      setDownloadSource(nextSource);
+      const backendApp = (window as any).go?.app?.App;
+      if (typeof backendApp?.SaveDownloadSourceConfig !== 'function') {
+          return;
+      }
+      setDownloadSourceSaving(true);
+      try {
+          const result = await backendApp.SaveDownloadSourceConfig(nextSource);
+          setDownloadSource(normalizeDownloadSourceId(result?.source ?? nextSource));
+          void message.success(t('app.download_source.message.saved'));
+      } catch (error: unknown) {
+          setDownloadSource(previousSource);
+          void message.error(error instanceof Error ? error.message : t('app.download_source.message.save_failed'));
+      } finally {
+          setDownloadSourceSaving(false);
+      }
+  }, [downloadSource, t]);
 
   useEffect(() => {
       if (!isStoreHydrated || !hasLoadedSecureConfig) {
@@ -5731,6 +5786,31 @@ function App() {
       utilityPanelStyle,
       viewportWidth,
   ]);
+  const renderDownloadSourceSettingsContent = useCallback(() => (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '12px 0' }}>
+          <div style={utilityPanelStyle}>
+              <div style={{ fontWeight: 600, marginBottom: 8 }}>{t('app.download_source.title')}</div>
+              <div style={{ ...utilityMutedTextStyle, marginBottom: 14 }}>
+                  {t('app.download_source.description')}
+              </div>
+              <Segmented
+                  block={viewportWidth >= 640}
+                  vertical={viewportWidth < 640}
+                  disabled={downloadSourceSaving}
+                  value={downloadSource}
+                  options={[
+                      { label: t('app.download_source.option.cst'), value: 'cst' },
+                      { label: t('app.download_source.option.bero'), value: 'bero' },
+                      { label: t('app.download_source.option.github'), value: 'github' },
+                  ]}
+                  onChange={(value) => void handleDownloadSourceChange(normalizeDownloadSourceId(value))}
+              />
+              <div style={{ ...utilityMutedTextStyle, marginTop: 12 }}>
+                  {t('app.download_source.fallback_hint')}
+              </div>
+          </div>
+      </div>
+  ), [downloadSource, downloadSourceSaving, handleDownloadSourceChange, t, utilityMutedTextStyle, utilityPanelStyle]);
   const renderSidebarMetadataSettingsPane = useCallback(() => (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '12px 0' }}>
           <div style={utilityPanelStyle}>
@@ -8181,6 +8261,13 @@ function App() {
                   description: t('app.settings.entry.proxy.description'),
                   onClick: () => handleOpenSettingsCenterPane('services', 'proxy'),
               },
+              {
+                  key: 'download-source',
+                  icon: <CloudDownloadOutlined />,
+                  title: t('app.settings.entry.download_source.title'),
+                  description: t('app.settings.entry.download_source.description'),
+                  onClick: () => handleOpenSettingsCenterPane('services', 'download-source'),
+              },
               ...(isWebRuntime ? [{
                   key: 'web-auth' as const,
                   icon: <SafetyCertificateOutlined />,
@@ -8289,6 +8376,9 @@ function App() {
       }
       if (activeSettingsCenterPane.key === 'proxy') {
           return renderProxySettingsContent();
+      }
+      if (activeSettingsCenterPane.key === 'download-source') {
+          return renderDownloadSourceSettingsContent();
       }
       if (activeSettingsCenterPane.key === 'web-auth') {
           return (

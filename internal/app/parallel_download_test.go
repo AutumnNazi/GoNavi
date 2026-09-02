@@ -538,6 +538,81 @@ func TestDownloadFileWithHashParallelAwareResolvesGatedDevFallbackAfterNetworkFa
 	}
 }
 
+func TestDownloadFileWithHashParallelAwarePreferredBeroKeepsGatedResolverAndReordersCandidates(t *testing.T) {
+	payload := []byte("preferred Bero fallback payload")
+	expectedSize := int64(len(payload))
+	expectedHash := fmt.Sprintf("%x", sha256.Sum256(payload))
+	assetPath := "/gonavi/dev/releases/download/dev-current/GoNavi.zip"
+	gated := downloadDispatcherURLRequiringCurrentDevAsset(downloadDispatcherURLForPath(assetPath))
+	cstURL := "https://download.syngnat.top" + assetPath
+	beroURL := "https://origin-download.syngnat.top:8443" + assetPath
+	githubURL := "https://github.com/Syngnat/GoNavi/releases/download/dev-latest/GoNavi.zip"
+
+	var requests []string
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+			requests = append(requests, request.URL.String())
+			response := func(status int, body io.Reader) *http.Response {
+				return &http.Response{
+					StatusCode: status,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(body),
+					Request:    request,
+				}
+			}
+			switch request.URL.Hostname() {
+			case downloadDispatcherHostname:
+				query := request.URL.Query()
+				if query.Get("require-current") != "1" || query.Get("format") != "json" {
+					return response(http.StatusBadRequest, strings.NewReader("missing gated resolver query")), nil
+				}
+				// Return canonical Cst-first data to verify the user preference is applied
+				// after the Dispatcher gate resolves the immutable asset.
+				return response(http.StatusOK, strings.NewReader(fmt.Sprintf(`{"candidates":[{"source":"cst","url":%q},{"source":"bero","url":%q},{"source":"github","url":%q}]}`, cstURL, beroURL, githubURL))), nil
+			case "origin-download.syngnat.top":
+				return response(http.StatusServiceUnavailable, strings.NewReader("Bero unavailable")), nil
+			case "download.syngnat.top":
+				response := response(http.StatusOK, bytes.NewReader(payload))
+				response.Header.Set("Content-Length", strconv.FormatInt(expectedSize, 10))
+				return response, nil
+			default:
+				return response(http.StatusNotFound, strings.NewReader("unexpected candidate")), nil
+			}
+		}),
+	}
+
+	target := filepath.Join(t.TempDir(), "GoNavi.zip")
+	gotHash, err := downloadFileWithHashParallelAwareAndExpectedSizeWithClientPreferred(
+		client,
+		gated,
+		target,
+		nil,
+		expectedSize,
+		DownloadSourceBero,
+	)
+	if err != nil {
+		t.Fatalf("preferred Bero fallback failed: %v", err)
+	}
+	if gotHash != expectedHash {
+		t.Fatalf("hash = %q, want %q", gotHash, expectedHash)
+	}
+	if len(requests) != 3 {
+		t.Fatalf("request count = %d, want 3 (JSON, Bero, Cst): %#v", len(requests), requests)
+	}
+	// Query.Encode may place format before require-current; inspect parsed values.
+	parsed, parseErr := url.Parse(requests[0])
+	if parseErr != nil || parsed.Query().Get("require-current") != "1" || parsed.Query().Get("format") != "json" {
+		t.Fatalf("first request was not the gated JSON resolver: %q", requests[0])
+	}
+	if requests[0] == beroURL || requests[0] == cstURL || requests[0] == githubURL {
+		t.Fatalf("preferred download bypassed Dispatcher JSON resolution: %#v", requests)
+	}
+	if requests[1] != beroURL || requests[2] != cstURL {
+		t.Fatalf("preferred fallback request order = %#v, want JSON -> Bero -> Cst", requests)
+	}
+}
+
 func TestDownloadFileWithHashParallelAwareFallsBackToCstWhenApplicationDispatcherAndJSONAreUnavailable(t *testing.T) {
 	payload := []byte("application update package from Cst")
 	expectedSize := int64(len(payload))
