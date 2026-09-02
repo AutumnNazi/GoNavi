@@ -494,6 +494,12 @@ describe('shortcut defaults', () => {
     });
   });
 
+  it('allows the new query tab shortcut from editable targets', () => {
+    expect(SHORTCUT_ACTION_META.newQueryTab).toMatchObject({
+      allowInEditable: true,
+    });
+  });
+
   it('registers select current statement as a query editor shortcut', () => {
     expect(DEFAULT_SHORTCUT_OPTIONS.selectCurrentStatement).toEqual({
       mac: { combo: 'Meta+E', enabled: true },

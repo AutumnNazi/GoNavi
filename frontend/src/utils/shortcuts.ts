@@ -224,6 +224,7 @@ const SHORTCUT_ACTION_META_DEFINITIONS: Record<ShortcutAction, ShortcutActionMet
   newQueryTab: {
     labelKey: 'app.shortcuts.action.newQueryTab.label',
     descriptionKey: 'app.shortcuts.action.newQueryTab.description',
+    allowInEditable: true,
   },
   closeActiveTab: {
     labelKey: 'app.shortcuts.action.closeActiveTab.label',
