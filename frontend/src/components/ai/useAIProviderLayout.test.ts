@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  isNarrowWorkspace, maxCatalogWidth, workspaceClassName,
-  MAX_CATALOG_WIDTH, MIN_CATALOG_WIDTH, MIN_EDITOR_WIDTH, NARROW_BREAKPOINT, RESIZER_WIDTH,
+  isNarrowWorkspace, maxCatalogWidth, snapHiddenPaneHeight, workspaceClassName,
+  MAX_CATALOG_WIDTH, MIN_CATALOG_WIDTH, MIN_EDITOR_WIDTH, MIN_HIDDEN_PANE_HEIGHT,
+  NARROW_BREAKPOINT, RESIZER_WIDTH,
 } from './useAIProviderLayout';
 
 // Regression: the settings centre workspace measured 633px on a 1440x900 desktop.
@@ -12,9 +13,9 @@ const OBSERVED_DESKTOP_WORKSPACE = 633;
 describe('provider workspace geometry', () => {
   it('derives the drawer breakpoint from the two-column budget', () => {
     expect(NARROW_BREAKPOINT).toBe(MIN_CATALOG_WIDTH + RESIZER_WIDTH + MIN_EDITOR_WIDTH);
-    expect(MIN_CATALOG_WIDTH).toBe(168);
+    expect(MIN_CATALOG_WIDTH).toBe(128);
     expect(MIN_EDITOR_WIDTH).toBe(200);
-    expect(NARROW_BREAKPOINT).toBe(385);
+    expect(NARROW_BREAKPOINT).toBe(345);
   });
 
   it('keeps the observed desktop workspace in two-column mode', () => {
@@ -33,6 +34,13 @@ describe('provider workspace geometry', () => {
     expect(maxCatalogWidth(0)).toBe(MAX_CATALOG_WIDTH);
   });
 
+  it('unpins the hidden pane when it is dragged to the floor so the collapsed bar can dock', () => {
+    expect(snapHiddenPaneHeight(null, 400)).toBeNull();
+    expect(snapHiddenPaneHeight(MIN_HIDDEN_PANE_HEIGHT, 400)).toBeNull();
+    expect(snapHiddenPaneHeight(MIN_HIDDEN_PANE_HEIGHT - 8, 400)).toBeNull();
+    expect(snapHiddenPaneHeight(120, 400)).toBe(120);
+  });
+
   it('never lets the catalog squeeze the editor below its minimum', () => {
     for (let width = NARROW_BREAKPOINT; width <= 1600; width += 1) {
       const catalog = maxCatalogWidth(width);
@@ -41,6 +49,7 @@ describe('provider workspace geometry', () => {
       expect(width - catalog - RESIZER_WIDTH).toBeGreaterThanOrEqual(MIN_EDITOR_WIDTH);
     }
   });
+
 });
 
 describe('workspace class name', () => {

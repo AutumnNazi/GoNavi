@@ -19,3 +19,14 @@ export const hintTooltipTiming = {
   mouseEnterDelay: HINT_TOOLTIP_ENTER_DELAY,
   mouseLeaveDelay: HINT_TOOLTIP_LEAVE_DELAY,
 } as const;
+
+// Provider-settings cards sit in a tight grid. If the bubble keeps pointer
+// events, moving onto a neighbour that the bubble covers cannot update the
+// hint. Leave delay is 0 and the overlay ignores the pointer, so leaving the
+// trigger hides the bubble immediately.
+export const HINT_TOOLTIP_OVERLAY_CLASS = 'gonavi-ai-provider-hint-overlay';
+export const passThroughHintTooltip = {
+  mouseEnterDelay: HINT_TOOLTIP_ENTER_DELAY,
+  mouseLeaveDelay: 0,
+  overlayClassName: HINT_TOOLTIP_OVERLAY_CLASS,
+} as const;

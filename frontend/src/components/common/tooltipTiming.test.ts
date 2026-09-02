@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { HINT_TOOLTIP_ENTER_DELAY, HINT_TOOLTIP_LEAVE_DELAY, hintTooltipTiming } from './tooltipTiming';
+import {
+  HINT_TOOLTIP_ENTER_DELAY, HINT_TOOLTIP_LEAVE_DELAY, HINT_TOOLTIP_OVERLAY_CLASS,
+  hintTooltipTiming, passThroughHintTooltip,
+} from './tooltipTiming';
 
 /** antd Tooltip ships 0.1s in and 0.1s out; both felt twitchy on dense button rows. */
 const ANTD_DEFAULT_DELAY = 0.1;
@@ -20,6 +23,14 @@ describe('hover hint timing', () => {
     expect(hintTooltipTiming).toEqual({
       mouseEnterDelay: HINT_TOOLTIP_ENTER_DELAY,
       mouseLeaveDelay: HINT_TOOLTIP_LEAVE_DELAY,
+    });
+  });
+
+  it('lets provider-settings hints close as soon as the pointer leaves the trigger', () => {
+    expect(passThroughHintTooltip).toEqual({
+      mouseEnterDelay: HINT_TOOLTIP_ENTER_DELAY,
+      mouseLeaveDelay: 0,
+      overlayClassName: HINT_TOOLTIP_OVERLAY_CLASS,
     });
   });
 });

@@ -214,6 +214,8 @@ describe('provider settings mounted controls', () => {
 
     const main = renderer!.root.findByProps({ 'data-dropdown-main': 'true' });
     expect(renderedText(main.props.children)).toContain('Save changes');
+    expect(main.props.placement).toBe('topRight');
+    expect(main.props.overlayClassName).toBe('gonavi-ai-provider-save-as-menu');
     const saveAs = renderer!.root.findByProps({ 'data-dropdown-item': 'save-as' });
     const saveAsText = saveAs.findAll((node) => typeof node.props.children === 'string').map((node) => node.props.children as string);
     expect(saveAsText).toContain('Save as');
@@ -285,16 +287,16 @@ describe('provider settings mounted controls', () => {
     expect(props.onAddProvider).not.toHaveBeenCalled();
   });
 
-  it('folds the hidden folder after another hide and can recover every API in its original order', async () => {
+  it('keeps the hidden drawer open after another hide and can recover every API in its original order', async () => {
     const apis = ['openai', 'deepseek'].map((key) => ({ key, label: key, backendType: 'openai', defaultBaseUrl: '', desc: '', icon: null }));
     await render({ providerPresets: apis, providers: [] });
     await act(async () => visibilityAction('Hide provider: openai').props.onClick());
     await act(async () => hiddenFolder().props.onClick());
     await act(async () => visibilityAction('Hide provider: deepseek').props.onClick());
-    expect(hiddenFolder().props['aria-expanded']).toBe(false);
+    expect(hiddenFolder().props['aria-expanded']).toBe(true);
+    expect(renderer!.root.findAllByProps({ className: 'gonavi-ai-provider-hidden-row' })).toHaveLength(2);
     expect(addSelector().props.options).toEqual([]);
     expect(addSelector().props.notFoundContent).toContain('Hidden');
-    await act(async () => hiddenFolder().props.onClick());
     await act(async () => visibilityAction('Restore: deepseek').props.onClick());
     await act(async () => visibilityAction('Restore: openai').props.onClick());
     expect(addSelector().props.options.map((option: any) => option.value)).toEqual(['openai', 'deepseek']);
@@ -420,6 +422,28 @@ describe('provider settings mounted controls', () => {
     expect(actions.findAllByType('button').every((button) => button.props.disabled)).toBe(true);
     expect(bridge.capabilities).not.toHaveBeenCalled();
     expect(bridge.models).not.toHaveBeenCalled();
+  });
+
+  it('toggles editor disclosures from the whole header and keeps the caret beside the title', async () => {
+    await render({ isEditing: true, editingProvider: { id: 'a' } });
+    const more = () => renderer!.root.findByProps({ className: 'gonavi-ai-provider-more' });
+    const click = () => ({ preventDefault: vi.fn() });
+    expect(connectionDetails().props.open).toBe(false);
+    expect(more().props.open).toBe(false);
+    expect(connectionDetails().findAllByProps({ className: 'gonavi-ai-provider-disclosure-lead' })).toHaveLength(1);
+    expect(more().findAllByProps({ className: 'gonavi-ai-provider-disclosure-lead' })).toHaveLength(1);
+    expect(connectionDetails().findByProps({ className: 'gonavi-ai-provider-disclosure-lead' }).findAllByProps({ className: 'gonavi-ai-provider-caret' })).toHaveLength(1);
+    expect(more().findByProps({ className: 'gonavi-ai-provider-disclosure-lead' }).findAllByProps({ className: 'gonavi-ai-provider-caret' })).toHaveLength(1);
+    expect(connectionDetails().findByType('summary').props['aria-expanded']).toBe(false);
+    expect(more().findByType('summary').props['aria-expanded']).toBe(false);
+    await act(async () => connectionDetails().findByType('summary').props.onClick(click()));
+    expect(connectionDetails().props.open).toBe(true);
+    expect(connectionDetails().findByType('summary').props['aria-expanded']).toBe(true);
+    await act(async () => more().findByType('summary').props.onClick(click()));
+    expect(more().props.open).toBe(true);
+    expect(more().findByType('summary').props['aria-expanded']).toBe(true);
+    await act(async () => connectionDetails().findByType('summary').props.onClick(click()));
+    expect(connectionDetails().props.open).toBe(false);
   });
 
   it('keeps configured CLI details collapsed while model and effort controls remain visible', async () => {
@@ -570,11 +594,45 @@ describe('provider settings mounted controls', () => {
     expect(props.onAddProvider).not.toHaveBeenCalled();
   });
 
-  it('keeps catalog search on the catalog toolbar and hides it when the catalog is collapsed', async () => {
+  it('keeps the hidden drawer collapsed after hiding and still exposes the height splitter', async () => {
+    await render({ providers: [] });
+    await act(async () => visibilityAction('Hide provider: Codex Subscription').props.onClick());
+    expect(renderer!.root.findAllByProps({ className: 'gonavi-ai-provider-hidden-split' })).toHaveLength(1);
+    expect(hiddenFolder().props['aria-expanded']).toBe(false);
+    expect(renderer!.root.findAllByProps({ className: 'gonavi-ai-provider-hidden-row' })).toHaveLength(0);
+    expect(JSON.parse(stored.get(layoutKey)!).hiddenPresetKeys).toEqual(['codex']);
+    await act(async () => hiddenFolder().props.onClick());
+    expect(renderer!.root.findAllByProps({ className: 'gonavi-ai-provider-hidden-row' })).toHaveLength(1);
+  });
+
+  it('adds a hidden candidate from the hidden row without restoring it', async () => {
+    await render({ providers: [] });
+    await act(async () => visibilityAction('Hide provider: Codex Subscription').props.onClick());
+    await act(async () => hiddenFolder().props.onClick());
+    await act(async () => renderer!.root.findByProps({ className: 'gonavi-ai-provider-hidden-choose' }).props.onClick());
+    expect(props.onAddProvider).toHaveBeenCalledWith('codex');
+    expect(props.onEditProvider).not.toHaveBeenCalled();
+    expect(JSON.parse(stored.get(layoutKey)!).hiddenPresetKeys).toEqual(['codex']);
+  });
+
+  it('edits a hidden configured CLI from the hidden row without adding a second copy', async () => {
+    await render({ isEditing: true, editingProvider: { id: 'b' } });
+    await act(async () => visibilityAction('Hide provider: Grok Subscription').props.onClick());
+    await act(async () => hiddenFolder().props.onClick());
+    await act(async () => renderer!.root.findByProps({ className: 'gonavi-ai-provider-hidden-choose' }).props.onClick());
+    expect(props.onEditProvider).toHaveBeenCalledWith(props.providers[1]);
+    expect(props.onAddProvider).not.toHaveBeenCalled();
+    expect(JSON.parse(stored.get(layoutKey)!).hiddenPresetKeys).toEqual(['grok']);
+  });
+
+  it('keeps catalog search beside the catalog title and hides it when the catalog is collapsed', async () => {
     await render();
     const catalogSearches = () => renderer!.root.findAll((node) => node.type === 'input' && node.props['aria-label'] === 'Find a provider');
     const catalogToggle = () => renderer!.root.findByProps({ className: 'gonavi-ai-provider-catalog-toggle' });
+    const toolbar = renderer!.root.findByProps({ className: 'gonavi-ai-provider-workspace-toolbar' });
     expect(catalogSearches()).toHaveLength(1);
+    expect(toolbar.findByProps({ className: 'gonavi-ai-provider-catalog-toggle' })).toBe(catalogToggle());
+    expect(toolbar.findByProps({ className: 'gonavi-ai-provider-catalog-search' })).toBeTruthy();
     expect(catalogToggle().props['aria-expanded']).toBe(true);
     await act(async () => catalogToggle().props.onClick());
     expect(catalogToggle().props['aria-expanded']).toBe(false);
