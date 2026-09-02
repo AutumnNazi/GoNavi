@@ -323,16 +323,26 @@ func (e *postgresSessionExecer) QueryContextWithMessages(ctx context.Context, qu
 }
 
 func queryPostgresConnWithMessages(ctx context.Context, conn *sql.Conn, query string) ([]map[string]interface{}, []string, []string, error) {
-	return querySQLConnWithTextNotices(ctx, conn, query, func(driverConn driver.Conn, addNotice func(string)) {
-		if addNotice == nil {
-			pq.SetNoticeHandler(driverConn, nil)
-			return
+	return querySQLConnWithTextNotices(ctx, conn, query, setPostgresNoticeHandler)
+}
+
+// lib/pq's notice setter accepts only its private *pq.conn and panics for
+// other PostgreSQL-compatible drivers. Message capture is optional, so a
+// driver such as GaussDB's *stdlib.Conn must still be allowed to execute the
+// query without a notice handler.
+func setPostgresNoticeHandler(driverConn driver.Conn, addNotice func(string)) {
+	defer func() {
+		_ = recover()
+	}()
+
+	if addNotice == nil {
+		pq.SetNoticeHandler(driverConn, nil)
+		return
+	}
+	pq.SetNoticeHandler(driverConn, func(notice *pq.Error) {
+		if notice != nil {
+			addNotice(notice.Message)
 		}
-		pq.SetNoticeHandler(driverConn, func(notice *pq.Error) {
-			if notice != nil {
-				addNotice(notice.Message)
-			}
-		})
 	})
 }
 
