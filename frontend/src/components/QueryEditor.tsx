@@ -6087,6 +6087,93 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           setQueryEditorMouseCursor(editor, '');
       };
       const editorDomNode = editor.getDomNode?.();
+      const isQueryEditorFindWidgetFocused = (): boolean => {
+          const activeElement = editorDomNode?.ownerDocument?.activeElement
+              || (typeof document !== 'undefined' ? document.activeElement : null);
+          try {
+              return Boolean(activeElement?.closest?.(
+                  '.find-widget, .monaco-inputbox, .find-part, .replace-part',
+              ));
+          } catch {
+              return false;
+          }
+      };
+      const isQueryEditorImeInputEvent = (rawEvent: Event): boolean => {
+          // Monaco keeps the SQL editor's text-focus state separate from focus in its find/replace widget.
+          // Wails can occasionally retarget IME events to the hidden SQL textarea after that focus moved.
+          if (editor.hasTextFocus?.() === false || isQueryEditorFindWidgetFocused()) {
+              return false;
+          }
+          const target = (rawEvent as any)?.target;
+          // Keep synthetic/test events and older WebView events without a target on the existing path.
+          if (!target) {
+              return true;
+          }
+
+          const safeClosest = (node: any, selector: string): any => {
+              try {
+                  return node?.closest?.(selector) || null;
+              } catch {
+                  return null;
+              }
+          };
+          const hasClass = (node: any, className: string): boolean => {
+              try {
+                  if (node?.classList?.contains?.(className)) {
+                      return true;
+                  }
+              } catch {
+                  // Fall through to className for lightweight DOM shims.
+              }
+              const rawClassName = typeof node?.className === 'string'
+                  ? node.className
+                  : String(node?.className?.baseVal || '');
+              return new RegExp(`(?:^|\\s)${className}(?:\\s|$)`).test(rawClassName);
+          };
+          let eventPath: any[] = [target];
+          try {
+              const composedPath = (rawEvent as any)?.composedPath?.();
+              if (Array.isArray(composedPath) && composedPath.length > 0) {
+                  eventPath = composedPath;
+              }
+          } catch {
+              // Some WebView event shims expose composedPath but throw when it is unavailable.
+          }
+
+          const isFindWidgetEvent = eventPath.some((node) => (
+              hasClass(node, 'find-widget')
+              || hasClass(node, 'monaco-inputbox')
+              || hasClass(node, 'find-part')
+              || hasClass(node, 'replace-part')
+          )) || Boolean(safeClosest(
+              target,
+              '.find-widget, .monaco-inputbox, .find-part, .replace-part',
+          ));
+          if (isFindWidgetEvent) {
+              return false;
+          }
+
+          const inputArea = eventPath.find((node) => hasClass(node, 'inputarea'))
+              || safeClosest(target, '.monaco-editor .inputarea, .inputarea');
+          if (!inputArea) {
+              return false;
+          }
+
+          const owningEditor = safeClosest(inputArea, '.monaco-editor');
+          if (owningEditor && editorDomNode && owningEditor !== editorDomNode) {
+              return false;
+          }
+          if (editorDomNode && typeof editorDomNode.contains === 'function') {
+              try {
+                  if (!editorDomNode.contains(inputArea)) {
+                      return false;
+                  }
+              } catch {
+                  // Keep the class-based check when a lightweight DOM shim lacks contains().
+              }
+          }
+          return true;
+      };
       const clearImeCompositionFallbackTimer = () => {
           if (imeCompositionFallbackTimerRef.current !== null) {
               clearTimeout(imeCompositionFallbackTimerRef.current);
@@ -6121,7 +6208,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               endPosition.column,
           );
       };
-      const handleImeCompositionStart = () => {
+      const handleImeCompositionStart = (rawEvent: Event) => {
+          if (!isQueryEditorImeInputEvent(rawEvent)) {
+              return;
+          }
           clearImeCompositionFallbackTimer();
           imeCompositionFallbackRef.current = {
               editor,
@@ -6132,6 +6222,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           };
       };
       const handleImeBeforeInput = (rawEvent: Event) => {
+          if (!isQueryEditorImeInputEvent(rawEvent)) {
+              return;
+          }
           const snapshot = imeCompositionFallbackRef.current;
           if (!snapshot || snapshot.editor !== editor) {
               return;
@@ -6143,6 +6236,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           }
       };
       const handleImeCompositionEnd = (rawEvent: Event) => {
+          if (!isQueryEditorImeInputEvent(rawEvent)) {
+              return;
+          }
           const snapshot = imeCompositionFallbackRef.current;
           imeCompositionFallbackRef.current = null;
           const committedText = String((rawEvent as CompositionEvent).data ?? '') || snapshot?.committedText || '';
@@ -6154,7 +6250,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           clearImeCompositionFallbackTimer();
           imeCompositionFallbackTimerRef.current = setTimeout(() => {
               imeCompositionFallbackTimerRef.current = null;
-              if (editorRef.current !== editor) {
+              if (
+                  editorRef.current !== editor
+                  || editor.hasTextFocus?.() === false
+                  || isQueryEditorFindWidgetFocused()
+              ) {
                   return;
               }
               const currentValue = getEditorText();

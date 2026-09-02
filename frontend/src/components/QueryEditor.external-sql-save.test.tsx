@@ -11120,6 +11120,12 @@ END;`;
   it('waits for the native IME commit before applying the composition fallback', async () => {
     vi.useFakeTimers();
     const domListeners: Record<string, ((event?: any) => void)[]> = {};
+    const editorInput = {
+      className: 'inputarea',
+      closest: vi.fn((selector: string) => (
+        selector === '.monaco-editor' ? editorState.domNode : null
+      )),
+    };
     editorState.domNode.addEventListener.mockImplementation((type: string, listener: (event?: any) => void) => {
       domListeners[type] ||= [];
       domListeners[type].push(listener);
@@ -11137,8 +11143,8 @@ END;`;
       editorState.editor.executeEdits.mockClear();
 
       await act(async () => {
-        domListeners.compositionstart?.forEach((listener) => listener({ data: '' }));
-        domListeners.compositionend?.forEach((listener) => listener({ data: '我' }));
+        domListeners.compositionstart?.forEach((listener) => listener({ target: editorInput, data: '' }));
+        domListeners.compositionend?.forEach((listener) => listener({ target: editorInput, data: '我' }));
       });
       await act(async () => {
         vi.advanceTimersByTime(79);
@@ -11156,6 +11162,133 @@ END;`;
         'gonavi-ime-composition-fallback',
         expect.anything(),
       );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not apply the SQL IME fallback to a composition committed in the find replace input', async () => {
+    vi.useFakeTimers();
+    const domListeners: Record<string, ((event?: any) => void)[]> = {};
+    const findReplaceInput = {
+      className: 'input',
+      closest: vi.fn((selector: string) => (
+        selector.includes('.find-widget') || selector.includes('.monaco-inputbox')
+          ? { className: 'monaco-inputbox' }
+          : null
+      )),
+    };
+    editorState.domNode.addEventListener.mockImplementation((type: string, listener: (event?: any) => void) => {
+      domListeners[type] ||= [];
+      domListeners[type].push(listener);
+    });
+    editorState.editor.getValue.mockReset();
+    editorState.editor.getValue.mockImplementation(() => editorState.value);
+
+    try {
+      await act(async () => {
+        create(<QueryEditor tab={createTab({ query: 'select abc from table1;' })} />);
+      });
+
+      editorState.position = { lineNumber: 1, column: 11 };
+      editorState.selection = {
+        startLineNumber: 1,
+        startColumn: 8,
+        endLineNumber: 1,
+        endColumn: 11,
+      };
+      editorState.editor.executeEdits.mockClear();
+
+      await act(async () => {
+        domListeners.compositionstart?.forEach((listener) => listener({
+          target: findReplaceInput,
+          data: '',
+        }));
+        domListeners.compositionend?.forEach((listener) => listener({
+          target: findReplaceInput,
+          data: 'replacement',
+        }));
+      });
+      await act(async () => {
+        vi.runOnlyPendingTimers();
+      });
+
+      expect(editorState.editor.executeEdits).not.toHaveBeenCalledWith(
+        'gonavi-ime-composition-fallback',
+        expect.anything(),
+      );
+      expect(editorState.value).toBe('select abc from table1;');
+      expect(editorState.selection).toEqual({
+        startLineNumber: 1,
+        startColumn: 8,
+        endLineNumber: 1,
+        endColumn: 11,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not apply the SQL IME fallback when the find widget owns the active element', async () => {
+    vi.useFakeTimers();
+    const domListeners: Record<string, ((event?: any) => void)[]> = {};
+    const findReplaceInput = {
+      className: 'input',
+      tagName: 'INPUT',
+      closest: vi.fn((selector: string) => (
+        selector.includes('.find-widget') || selector.includes('.monaco-inputbox')
+          ? { className: 'monaco-inputbox' }
+          : null
+      )),
+    };
+    const editorInput = {
+      className: 'inputarea',
+      closest: vi.fn((selector: string) => (
+        selector === '.monaco-editor' ? editorState.domNode : null
+      )),
+    };
+    editorState.domNode.addEventListener.mockImplementation((type: string, listener: (event?: any) => void) => {
+      domListeners[type] ||= [];
+      domListeners[type].push(listener);
+    });
+    editorState.editor.getValue.mockReset();
+    editorState.editor.getValue.mockImplementation(() => editorState.value);
+
+    try {
+      await act(async () => {
+        create(<QueryEditor tab={createTab({ query: 'select abc from table1;' })} />);
+      });
+
+      editorState.hasTextFocus = true;
+      (document as any).activeElement = findReplaceInput;
+      editorState.position = { lineNumber: 1, column: 11 };
+      editorState.selection = {
+        startLineNumber: 1,
+        startColumn: 8,
+        endLineNumber: 1,
+        endColumn: 11,
+      };
+      editorState.editor.executeEdits.mockClear();
+
+      await act(async () => {
+        domListeners.compositionstart?.forEach((listener) => listener({
+          target: editorInput,
+          data: '',
+        }));
+        domListeners.compositionend?.forEach((listener) => listener({
+          target: editorInput,
+          data: 'test',
+        }));
+      });
+      await act(async () => {
+        vi.runOnlyPendingTimers();
+      });
+
+      expect(editorState.editor.executeEdits).not.toHaveBeenCalledWith(
+        'gonavi-ime-composition-fallback',
+        expect.anything(),
+      );
+      expect(editorState.value).toBe('select abc from table1;');
     } finally {
       vi.useRealTimers();
     }
