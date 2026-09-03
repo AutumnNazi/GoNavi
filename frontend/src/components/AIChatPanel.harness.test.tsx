@@ -369,6 +369,37 @@ describe('AIChatPanel agent run branch submission', () => {
     await act(async () => renderer?.unmount());
   });
 
+  it('lets the Ledger create a newly opened local session atomically', async () => {
+    harnessMock.session = {
+      sid: 'session-local-only',
+      messages: [],
+      orderedAISessions: [],
+    };
+    harnessMock.submitAgentInput.mockResolvedValueOnce(submitReceipt('durable-session'));
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = renderPanel();
+    });
+    await act(async () => {
+      harnessMock.inputProps?.setInput('First message in a new session');
+    });
+    await act(async () => {
+      await harnessMock.inputProps?.onSend();
+    });
+
+    expect(harnessMock.readAgentSession).not.toHaveBeenCalledWith({
+      sessionId: 'session-local-only',
+      limit: 1,
+    }, harnessMock.service);
+    expect(harnessMock.submitAgentInput).toHaveBeenCalledWith(expect.objectContaining({
+      content: 'First message in a new session',
+    }), harnessMock.service);
+    expect(harnessMock.submitAgentInput.mock.calls[0][0]).not.toHaveProperty('sessionId');
+    expect(harnessMock.submitAgentInput.mock.calls[0][0]).not.toHaveProperty('expectedRevision');
+
+    await act(async () => renderer?.unmount());
+  });
+
   it('uses the exact run revision for a stale-workspace control and refreshes a conflict', async () => {
     harnessMock.controlAgentRun.mockRejectedValueOnce(new Error('revision_conflict: expected 12, got 13'));
     harnessMock.readAgentRun.mockResolvedValueOnce({

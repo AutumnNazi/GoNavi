@@ -818,7 +818,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         const branch = pendingBranch?.sourceSessionId === sid ? pendingBranch : null;
         const targetSessionId = branch
             ? branch.sourceSessionId
-            : (sid === 'session-fallback' ? undefined : sid);
+            : durableSession?.id;
         const expectedRevision = branch?.sourceRevision ?? positiveRevision(durableSession?.revision);
         setInput('');
         setDraftAttachments([]);

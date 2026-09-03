@@ -391,6 +391,17 @@ func (h *AgentRunHarness) SubmitInput(ctx context.Context, request AgentInputReq
 		// new queued run is created. The active-run guard for a steer is evaluated
 		// atomically with command insertion below.
 		projection, projectionErr := h.ledger.GetSession(ctx, sessionID, false)
+		if errors.Is(projectionErr, ErrNotFound) {
+			// The caller binds the input to a conversation this ledger no longer
+			// contains — UI state can outlive the ledger when the data root or
+			// the ledger file is replaced. Failing the send would strand the
+			// panel on an unfixable error, so fall back to a fresh implicit
+			// conversation; the receipt's SessionID lets the adapter rebuild its
+			// projection, mirroring the implicit path above.
+			sessionID = deterministicInputSessionID(request.RequestID)
+			expectedSessionRevision = 0
+			goto revisionGuardDone
+		}
 		if projectionErr != nil {
 			return AgentInputReceipt{}, projectionErr
 		}

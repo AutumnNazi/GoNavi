@@ -299,6 +299,55 @@ func TestServiceWorkspaceSnapshotDefersLedgerUntilAgentUse(t *testing.T) {
 	}
 }
 
+func TestServiceInitializationFlushesPendingWorkspaceSnapshotsBeforeExposure(t *testing.T) {
+	service := NewServiceWithSecretStore(newAgentHarnessTestSecretStore())
+	service.configDir = t.TempDir()
+	service.agentContext = context.Background()
+	t.Cleanup(service.Shutdown)
+
+	pending := runharness.WorkspaceSnapshot{
+		SourceKind:       runharness.WorkspaceDesktop,
+		SourceID:         "desktop",
+		SourceInstanceID: "startup-instance",
+		Revision:         6,
+		CapturedAt:       time.Now(),
+	}
+	if _, err := service.AIUpdateWorkspaceSnapshot(pending); err != nil {
+		t.Fatalf("cache startup workspace snapshot: %v", err)
+	}
+	if err := service.initializeAgentHarness(service.agentContext); err != nil {
+		t.Fatalf("initializeAgentHarness: %v", err)
+	}
+
+	newer := pending
+	newer.Revision = 7
+	newer.CapturedAt = time.Now()
+	if _, err := service.AIUpdateWorkspaceSnapshot(newer); err != nil {
+		t.Fatalf("persist snapshot after initialization: %v", err)
+	}
+	if _, err := service.AIReadAgentSession(runharness.SessionReadRequest{SessionID: "not-created"}); !errors.Is(err, runharness.ErrNotFound) {
+		t.Fatalf("Agent API after workspace update = %v, want ErrNotFound without a snapshot conflict", err)
+	}
+
+	service.agentMu.RLock()
+	ledger := service.agentLedger
+	pendingCount := len(service.agentPendingWorkspaceSnapshots)
+	service.agentMu.RUnlock()
+	if ledger == nil {
+		t.Fatal("expected initialized ledger")
+	}
+	if pendingCount != 0 {
+		t.Fatalf("pending snapshots after initialization = %d, want 0", pendingCount)
+	}
+	stored, err := ledger.LatestWorkspaceSnapshot(context.Background(), newer.SourceID, newer.SourceInstanceID)
+	if err != nil {
+		t.Fatalf("read persisted workspace snapshot: %v", err)
+	}
+	if stored.Revision != newer.Revision {
+		t.Fatalf("workspace snapshot revision = %d, want %d", stored.Revision, newer.Revision)
+	}
+}
+
 func TestServiceSubmitRejectsUnconfiguredProviderBeforePersistingRun(t *testing.T) {
 	service, _ := newInitializedAgentHarnessService(t)
 
