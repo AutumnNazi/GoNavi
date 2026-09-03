@@ -8869,6 +8869,7 @@
   "table_designer.message.trigger_restored_after_failure": "{{detail}}；原触发器已自动恢复",
   "table_designer.message.trigger_restore_failed": "{{detail}}；原触发器自动恢复失败：{{restoreDetail}}，请立即检查",
   "table_designer.message.trigger_restore_unavailable": "{{detail}}；无法自动恢复原触发器定义，请立即检查",
+  "table_designer.message.trigger_outcome_unknown": "{{detail}}；触发器状态无法确认，未自动恢复，请立即检查",
   "table_designer.message.no_copyable_columns": "未选择可复制字段",
   "table_designer.message.no_index_changes": "没有检测到索引变更",
   "table_designer.message.only_normal_unique_index_supported": "当前数据库仅支持普通索引与唯一索引维护",

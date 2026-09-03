@@ -8869,6 +8869,7 @@
   "table_designer.message.trigger_restored_after_failure": "{{detail}}; der ursprüngliche Trigger wurde automatisch wiederhergestellt",
   "table_designer.message.trigger_restore_failed": "{{detail}}; automatische Trigger-Wiederherstellung fehlgeschlagen: {{restoreDetail}}. Prüfen Sie den Trigger sofort",
   "table_designer.message.trigger_restore_unavailable": "{{detail}}; der ursprüngliche Trigger konnte nicht automatisch wiederhergestellt werden. Prüfen Sie ihn sofort",
+  "table_designer.message.trigger_outcome_unknown": "{{detail}}; der Triggerstatus ist unbekannt und wurde nicht automatisch wiederhergestellt. Prüfen Sie ihn sofort",
   "table_designer.message.no_copyable_columns": "Keine kopierbaren Spalten ausgewählt",
   "table_designer.message.no_index_changes": "Keine Indexänderungen erkannt",
   "table_designer.message.only_normal_unique_index_supported": "Diese Datenbank unterstützt nur die Pflege normaler und eindeutiger Indizes",

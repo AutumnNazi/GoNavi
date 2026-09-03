@@ -8869,6 +8869,7 @@
   "table_designer.message.trigger_restored_after_failure": "{{detail}}；元のトリガーを自動的に復元しました",
   "table_designer.message.trigger_restore_failed": "{{detail}}；トリガーの自動復元に失敗しました：{{restoreDetail}}。直ちに確認してください",
   "table_designer.message.trigger_restore_unavailable": "{{detail}}；元のトリガーを自動的に復元できませんでした。直ちに確認してください",
+  "table_designer.message.trigger_outcome_unknown": "{{detail}}；トリガーの状態を確認できないため、自動復元していません。直ちに確認してください",
   "table_designer.message.no_copyable_columns": "コピーできる列が選択されていません",
   "table_designer.message.no_index_changes": "インデックスの変更は検出されませんでした",
   "table_designer.message.only_normal_unique_index_supported": "このデータベースでは通常インデックスと一意インデックスのみ管理できます",
