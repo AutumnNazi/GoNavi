@@ -90,6 +90,40 @@ const hasExecutableSqlStatementContent = (sql: string, dbType = ''): boolean => 
   return false;
 };
 
+/**
+ * Remove only non-executable trivia before a statement keyword. Statement
+ * ranges intentionally retain comments for editor navigation, but the SQL
+ * sent to the driver should not include detached documentation comments.
+ */
+export const stripLeadingSqlTrivia = (sql: string, dbType = ''): string => {
+  const text = String(sql || '');
+  let index = 0;
+  while (index < text.length) {
+    const ch = text[index];
+    const next = text[index + 1] || '';
+    if (isWhitespace(ch)) {
+      index += 1;
+      continue;
+    }
+    if ((ch === '#' && supportsSqlHashLineComment(dbType))
+      || (ch === '-' && next === '-' && isSqlDashLineCommentStart(dbType, text[index + 2] || ''))) {
+      const lineEnd = text.indexOf('\n', index + (ch === '#' ? 1 : 2));
+      index = lineEnd < 0 ? text.length : lineEnd + 1;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      if (isExecutableSqlBlockComment(text, index, dbType) || text.startsWith('/*+', index)) {
+        break;
+      }
+      const blockEnd = text.indexOf('*/', index + 2);
+      index = blockEnd < 0 ? text.length : blockEnd + 2;
+      continue;
+    }
+    break;
+  }
+  return text.slice(index).replace(/\s+$/, '');
+};
+
 const skipSqlWhitespaceAndComments = (text: string, position: number): number => {
   let index = position;
   while (index < text.length) {
@@ -524,14 +558,14 @@ export const resolveExecutableSql = (
   }
   const statement = ranges.find((range) => offset >= range.start && offset <= range.end);
   if (statement?.text.trim()) {
-    return { sql: statement.text, source: 'statement' };
+    return { sql: stripLeadingSqlTrivia(statement.text, dbType), source: 'statement' };
   }
 
   const slashLine = resolveStandaloneSqlSlashLineAtOffset(text, offset);
   if (slashLine) {
     const previousStatement = findPreviousSqlStatementRange(ranges, slashLine.lineStart);
     return previousStatement?.text.trim()
-      ? { sql: previousStatement.text, source: 'statement' }
+      ? { sql: stripLeadingSqlTrivia(previousStatement.text, dbType), source: 'statement' }
       : null;
   }
 
@@ -542,7 +576,7 @@ export const resolveExecutableSql = (
   if (line) {
     const lineStatement = [...ranges].reverse().find((range) => range.start < lineEnd && range.end >= lineStart);
     if (lineStatement?.text.trim()) {
-      return { sql: lineStatement.text, source: 'statement' };
+      return { sql: stripLeadingSqlTrivia(lineStatement.text, dbType), source: 'statement' };
     }
   }
   if (line) {

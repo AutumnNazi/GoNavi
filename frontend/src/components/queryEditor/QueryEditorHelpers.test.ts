@@ -4,6 +4,7 @@ import { getCurrentLanguage, setCurrentLanguage } from '../../i18n';
 
 import {
     buildBoundedQueryEditorCompletionSuggestions,
+    appendQuerySelectExpressions,
     buildQueryEditorAliasMap,
     buildQueryEditorTableSourceAlias,
     buildQueryEditorResultSetMergeKey,
@@ -29,10 +30,37 @@ import {
     resolveQueryEditorMonacoLanguage,
     resolveQueryEditorNavigationTarget,
     resolveQueryEditorNavigationDecorations,
+    rewriteOracleSelectAllWithExpressions,
     selectUnqualifiedCompletionSynonyms,
     shouldHandleQueryEditorRunShortcutFallback,
     splitCompletionSchemaAndTable,
+    splitTopLevelComma,
 } from './QueryEditorHelpers';
+
+describe('QueryEditor SELECT structure parsing', () => {
+    it.each([
+        ['leading line comment', '-- exported row\nSELECT * FROM users'],
+        ['leading block comment', '/* exported row */\nSELECT * FROM users'],
+        ['comment in select list', 'SELECT * -- keep all columns\nFROM users'],
+        ['comment before FROM table', 'SELECT * FROM /* source table */ users'],
+    ])('recognizes a writable SELECT with %s', (_label, sql) => {
+        const appended = appendQuerySelectExpressions(sql, ['id AS __gonavi_locator_1_id']);
+        expect(appended).toContain('id AS __gonavi_locator_1_id');
+        expect(appended).toMatch(/SELECT[\s\S]+FROM[\s\S]+users/i);
+        expect(appended).not.toMatch(/--[^\n]*id AS __gonavi_locator_1_id/i);
+    });
+
+    it('does not split select items on commas inside comments or bracket identifiers', () => {
+        expect(splitTopLevelComma('id /* historical, retained */, [name, legacy], code -- source, legacy\n'))
+            .toEqual(['id /* historical, retained */', '[name, legacy]', 'code -- source, legacy']);
+    });
+
+    it('preserves comments when Oracle adds a hidden row locator to SELECT *', () => {
+        const sql = '-- exported row\nSELECT * /* current fields */\nFROM /* live source */ users';
+        expect(rewriteOracleSelectAllWithExpressions(sql, ['ROWID AS "__gonavi_oracle_rowid__"']))
+            .toBe('-- exported row\nSELECT gonavi_query_source.*, gonavi_query_source.ROWID AS "__gonavi_oracle_rowid__" /* current fields */\nFROM /* live source */ users gonavi_query_source');
+    });
+});
 
 describe('QueryEditor connection timeout', () => {
     it('keeps the configured MySQL timeout instead of forcing a 120 second minimum', () => {

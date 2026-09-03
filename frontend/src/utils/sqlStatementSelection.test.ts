@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { findSqlStatementRanges, resolveCurrentSqlStatementRange, resolveExecutableSql } from './sqlStatementSelection';
+import { findSqlStatementRanges, resolveCurrentSqlStatementRange, resolveExecutableSql, stripLeadingSqlTrivia } from './sqlStatementSelection';
 
 describe('sqlStatementSelection', () => {
   it('resolves the statement containing the cursor', () => {
@@ -320,14 +320,9 @@ describe('sqlStatementSelection', () => {
       ].join('\n'),
       'SELECT 1 FROM dual',
     ]);
-    expect(resolveExecutableSql(sql, sql.indexOf('CREATE OR REPLACE'))).toEqual({
-      sql: ranges[0],
-      source: 'statement',
-    });
-    expect(resolveExecutableSql(sql, sql.indexOf('p_msg_out := SQLERRM'))).toEqual({
-      sql: ranges[0],
-      source: 'statement',
-    });
+    expect(resolveExecutableSql(sql, sql.indexOf('CREATE OR REPLACE'))).toMatchObject({ source: 'statement' });
+    expect(resolveExecutableSql(sql, sql.indexOf('CREATE OR REPLACE'))?.sql).toBe(ranges[0].replace(/^--[^\n]*\n--[^\n]*\n/, ''));
+    expect(resolveExecutableSql(sql, sql.indexOf('p_msg_out := SQLERRM'))?.sql).toBe(ranges[0].replace(/^--[^\n]*\n--[^\n]*\n/, ''));
   });
 
   it('keeps large Oracle procedures intact when the cursor is in the exception tail', () => {
@@ -379,12 +374,10 @@ describe('sqlStatementSelection', () => {
     expect(ranges[0]).toContain('EXCEPTION');
     expect(ranges[0]).toContain('END cproc_tzhssr_order2sale_A1;');
     expect(ranges[1]).toBe('SELECT 1 FROM dual');
-    expect(resolveExecutableSql(sql, sql.indexOf('p_msg_out := substr'))).toEqual({
-      sql: ranges[0],
-      source: 'statement',
-    });
+    expect(resolveExecutableSql(sql, sql.indexOf('p_msg_out := substr'))).toMatchObject({ source: 'statement' });
+    expect(resolveExecutableSql(sql, sql.indexOf('p_msg_out := substr'))?.sql).toBe(ranges[0].replace(/^--[^\n]*\n--[^\n]*\n/, ''));
     expect(resolveExecutableSql(sql, sql.indexOf('/ -- SQLPlus delimiter'))).toEqual({
-      sql: ranges[0],
+      sql: ranges[0].replace(/^--[^\n]*\n--[^\n]*\n/, ''),
       source: 'statement',
     });
     expect(resolveCurrentSqlStatementRange(sql, sql.indexOf('/ -- SQLPlus delimiter'))?.text).toBe(ranges[0]);
@@ -575,5 +568,23 @@ describe('sqlStatementSelection', () => {
   it('returns null for empty or comment-only SQL', () => {
     expect(resolveExecutableSql('  \n\t  ', 0)).toBeNull();
     expect(resolveExecutableSql('-- nothing to execute\n\n/* still nothing */', 3)).toBeNull();
+  });
+
+  it('does not send detached leading comments when executing the cursor statement', () => {
+    const sql = '-- exported row\n-- exported batch\nSELECT * FROM contract WHERE contract_code = \'YEC202608039\';';
+    const cursorAtSemicolon = sql.length - 1;
+    expect(resolveExecutableSql(sql, cursorAtSemicolon)).toEqual({
+      sql: "SELECT * FROM contract WHERE contract_code = 'YEC202608039'",
+      source: 'statement',
+    });
+    expect(stripLeadingSqlTrivia('/* documentation */\n# mysql note\nSELECT * FROM users', 'mysql'))
+      .toBe('SELECT * FROM users');
+  });
+
+  it('keeps executable and optimizer hint comments at the start of a statement', () => {
+    expect(stripLeadingSqlTrivia('/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE */ SELECT * FROM users', 'mysql'))
+      .toBe('/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE */ SELECT * FROM users');
+    expect(stripLeadingSqlTrivia('/*+ parallel(4) */ SELECT * FROM users', 'oracle'))
+      .toBe('/*+ parallel(4) */ SELECT * FROM users');
   });
 });
