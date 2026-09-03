@@ -3428,8 +3428,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           return;
       }
 
-      const intent = resolveQueryEditorInlineCompletionIntentDetails(editorSnapshot);
       const metadataDialect = normalizeMetadataDialect(contextConnection);
+      const intent = resolveQueryEditorInlineCompletionIntentDetails(editorSnapshot, metadataDialect);
       const normalizedDbName = buildQueryEditorMetadataIdentityKey(metadataDialect, dbName);
       const needsTables = intent.intent === 'table_name'
           || !tablesRef.current.some((table) => (
@@ -6123,7 +6123,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               currentLineBeforeCursor: lineBeforeCursor.slice(0, -1),
               currentLineAfterCursor: String(snapshot.currentLineAfterCursor || ''),
           };
-          const intent = resolveQueryEditorInlineCompletionIntentDetails(sanitizedSnapshot);
+          const markerDialect = normalizeMetadataDialect(connectionsRef.current.find(
+              (item) => item.id === currentConnectionIdRef.current,
+          ));
+          const intent = resolveQueryEditorInlineCompletionIntentDetails(sanitizedSnapshot, markerDialect);
           if (intent.intent !== 'table_name' && intent.intent !== 'column_name') {
               return { position, snapshot, recovered: false };
           }
@@ -6313,7 +6316,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           if (!autoAddTableAlias && isQueryEditorInlineTableAliasPending(editorSnapshot, inlineDialect)) {
               return;
           }
-          const intent = resolveQueryEditorInlineCompletionIntentDetails(editorSnapshot);
+          const intent = resolveQueryEditorInlineCompletionIntentDetails(editorSnapshot, inlineDialect);
           const shouldUseInlineMemory = manualTrigger || intent.intent !== 'general_sql';
           let memoryInsertText = '';
           if (shouldUseInlineMemory) {
@@ -6322,6 +6325,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   editorSnapshot,
                   memoryEntries: inlineSqlMemoryEntries,
                   sourceType: initialAiContext.sourceType,
+                  sqlDialect: initialAiContext.sqlDialect,
               });
               // Empty fragments do not need metadata-based case correction and retain
               // the previous immediate memory-completion behavior.
@@ -6355,6 +6359,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                                   editorSnapshot,
                                   memoryEntries: inlineSqlMemoryEntries,
                                   sourceType: initialAiContext.sourceType,
+                                  sqlDialect: initialAiContext.sqlDialect,
                               });
                           }
                           if (memoryInsertText.trim()) {
@@ -6380,7 +6385,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                               return;
                           }
                       }
-                      if (!shouldRequestQueryEditorInlineCompletion(editorSnapshot)) {
+                      if (!shouldRequestQueryEditorInlineCompletion(editorSnapshot, inlineDialect)) {
                           return;
                       }
                       const aiContext = buildQueryEditorAiContext();
@@ -6986,8 +6991,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               markerOffset,
               1,
           );
+          const fallbackDialect = normalizeMetadataDialect(connectionsRef.current.find(
+              (item) => item.id === currentConnectionIdRef.current,
+          ));
           const fallbackIntent = fallbackSnapshot
-              ? resolveQueryEditorInlineCompletionIntentDetails(fallbackSnapshot)
+              ? resolveQueryEditorInlineCompletionIntentDetails(fallbackSnapshot, fallbackDialect)
               : null;
           const hasStructuredSqlCompletionContext = fallbackIntent?.intent === 'table_name'
               || fallbackIntent?.intent === 'column_name';

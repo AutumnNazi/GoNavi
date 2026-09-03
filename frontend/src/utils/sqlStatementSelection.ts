@@ -567,6 +567,19 @@ export const findSqlStatementRanges = (sql: string, dbType = ''): SqlStatementRa
   return ranges;
 };
 
+/**
+ * Returns the executable statement currently being edited at the end of sql.
+ * Unlike cursor navigation, a completed statement followed by only trivia has
+ * no active statement and must not inherit the previous statement's context.
+ */
+export const resolveSqlStatementPrefix = (sql: string, dbType = ''): string => {
+  const text = String(sql || '').replace(/\r\n/g, '\n');
+  const ranges = findSqlStatementRanges(text, dbType);
+  const currentRange = ranges[ranges.length - 1];
+  const trimmedEnd = text.trimEnd().length;
+  return currentRange && currentRange.end === trimmedEnd ? text.slice(currentRange.start) : '';
+};
+
 export const resolveCurrentSqlStatementRange = (sql: string, cursorOffset: number, dbType = ''): SqlStatementRange | null => {
   const text = String(sql || '').replace(/\r\n/g, '\n');
   const offset = Math.max(0, Math.min(text.length, Number.isFinite(cursorOffset) ? cursorOffset : 0));
