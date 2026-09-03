@@ -64,7 +64,7 @@ import {
     isSqlEditorSchemaChangingStatement,
     shouldUseSqlEditorManagedTransactionForType,
 } from '../utils/sqlEditorTransaction';
-import { findSqlStatementRanges, resolveCurrentSqlStatementRange, resolveExecutableSql } from '../utils/sqlStatementSelection';
+import { findSqlStatementRanges, resolveCurrentSqlStatementRange, resolveExecutableSql, stripLeadingSqlTrivia } from '../utils/sqlStatementSelection';
 import { isMacLikePlatform } from '../utils/appearance';
 import { splitSidebarQualifiedName } from '../utils/sidebarLocate';
 import { buildMySQLCompatibleViewMetadataSqls, isSidebarViewTableType, normalizeSidebarViewName } from '../utils/sidebarMetadata';
@@ -8619,6 +8619,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
     return findSqlStatementRanges(sql, dbType).map((range) => range.text);
   };
 
+  const normalizeExecutableStatementList = (statements: string[], dbType = ''): string[] => (
+      statements.map((statement) => stripLeadingSqlTrivia(statement, dbType))
+  );
+
   const containsOraclePlsqlDefinition = (statements: string[]): boolean => (
       statements.some((statement) => /^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:EDITIONABLE\s+|NONEDITIONABLE\s+)?(?:PROCEDURE|FUNCTION|PACKAGE|TRIGGER)\b/i.test(
           maskQueryEditorSqlLiteralsAndComments(statement),
@@ -9745,7 +9749,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 && currentQuery.startsWith(lastExecutedEditorQueryRef.current)
                 && normalizedRawSQL.trim() === currentQuery.slice(lastExecutedEditorQueryRef.current.length).replace(/；/g, ';').trim();
             const didExecuteWholeEditor = areSqlStatementListsEqual(
-                splitSQLStatements(currentQuery.replace(/；/g, ';'), normalizedDbType),
+                normalizeExecutableStatementList(
+                    splitSQLStatements(currentQuery.replace(/；/g, ';'), normalizedDbType),
+                    normalizedDbType,
+                ),
                 statements,
             );
             if (statements.length === 0) {
@@ -9915,7 +9922,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 && currentQuery.startsWith(lastExecutedEditorQueryRef.current)
                 && normalizedRawSQL.trim() === currentQuery.slice(lastExecutedEditorQueryRef.current.length).replace(/；/g, ';').trim();
             const didExecuteWholeEditor = areSqlStatementListsEqual(
-                splitSQLStatements(currentQuery.replace(/；/g, ';'), normalizedDbType),
+                normalizeExecutableStatementList(
+                    splitSQLStatements(currentQuery.replace(/；/g, ';'), normalizedDbType),
+                    normalizedDbType,
+                ),
                 sourceStatements,
             );
             if (sourceStatements.length === 0) {
