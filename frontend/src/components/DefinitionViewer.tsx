@@ -827,7 +827,9 @@ const DefinitionViewer: React.FC<DefinitionViewerProps> = ({ tab }) => {
                     );
                     return {
                         success: true,
-                        definition: formatDdlForDisplay(displayDefinition, dialect),
+                        definition: formatDdlForDisplay(displayDefinition, dialect, {
+                            oceanBaseProtocol: conn?.config?.oceanBaseProtocol,
+                        }),
                     };
                 }
                 return {

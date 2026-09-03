@@ -28,6 +28,58 @@ describe('sqlStatementSelection', () => {
     ]);
   });
 
+  it('ignores semicolons inside escaped delimited identifiers', () => {
+    const sql = [
+      'SELECT * FROM "a"";b";',
+      'SELECT * FROM `a``;b`;',
+      'SELECT * FROM [a]];b];',
+      'SELECT 1;',
+    ].join('\n');
+
+    expect(findSqlStatementRanges(sql, 'sqlserver').map((range) => range.text)).toEqual([
+      'SELECT * FROM "a"";b"',
+      'SELECT * FROM `a``;b`',
+      'SELECT * FROM [a]];b]',
+      'SELECT 1',
+    ]);
+  });
+
+  it('ignores semicolons inside SQLite bracket identifiers without SQL Server escaping', () => {
+    const sql = 'SELECT * FROM [a;b]; SELECT 2;';
+
+    expect(findSqlStatementRanges(sql, 'sqlite').map((range) => range.text)).toEqual([
+      'SELECT * FROM [a;b]',
+      'SELECT 2',
+    ]);
+  });
+
+  it.each([
+    ['postgres', 'SELECT ARRAY[[1,2],[3,4]]; DROP TABLE users;'],
+    ['clickhouse', 'SELECT [[1],[2]]; DROP TABLE users;'],
+    ['duckdb', 'SELECT [[1],[2]]; DROP TABLE users;'],
+  ])('splits array brackets as syntax for %s', (dbType, sql) => {
+    expect(findSqlStatementRanges(sql, dbType).map((range) => range.text)).toEqual([
+      sql.slice(0, sql.indexOf(';')),
+      'DROP TABLE users',
+    ]);
+  });
+
+  it('does not let a backslash in a MySQL backtick identifier swallow the next statement', () => {
+    const sql = 'SELECT `C:\\temp\\` FROM t;\nDROP TABLE t;';
+    expect(findSqlStatementRanges(sql, 'mysql').map((range) => range.text)).toEqual([
+      'SELECT `C:\\temp\\` FROM t',
+      'DROP TABLE t',
+    ]);
+  });
+
+  it('keeps backslash-escaped double-quoted MySQL strings intact', () => {
+    const sql = 'SELECT "a\\\";b" AS value; SELECT 1;';
+    expect(findSqlStatementRanges(sql, 'mysql').map((range) => range.text)).toEqual([
+      'SELECT "a\\\";b" AS value',
+      'SELECT 1',
+    ]);
+  });
+
   it('drops comment-only ranges after a terminated statement', () => {
     const sql = [
       'DELETE FROM users WHERE id = 1; -- keep this operation pending',

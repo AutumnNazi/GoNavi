@@ -96,7 +96,9 @@ const buildActiveSqlTabSnapshot = (params: {
     { oceanBaseProtocol: connection?.config?.oceanBaseProtocol },
   );
   const statements = splitStatements(sql, dbType);
-  const hasExplicitTransactionControl = statements.some(isSqlEditorTransactionControlStatement);
+  const hasExplicitTransactionControl = statements.some((statement) => (
+    isSqlEditorTransactionControlStatement(statement)
+  ));
   const usesManagedTransaction = shouldUseSqlEditorManagedTransactionForType(
     dbType,
     statements,
@@ -151,7 +153,7 @@ const isRelevantSqlEditorTransactionLog = (log: SqlLog): boolean => {
   const sql = String(log.sql || '');
   const statements = splitStatements(sql);
   if (shouldUseSqlEditorManagedTransaction(statements)) return true;
-  if (statements.some(isSqlEditorTransactionControlStatement)) return true;
+  if (statements.some((statement) => isSqlEditorTransactionControlStatement(statement))) return true;
   return /\b(transaction|commit|rollback)\b/i.test(sql)
     || LOG_TRANSACTION_KEYWORD_PATTERN.test(String(log.message || ''));
 };

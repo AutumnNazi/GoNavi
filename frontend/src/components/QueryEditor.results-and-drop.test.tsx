@@ -368,6 +368,11 @@ vi.mock('@monaco-editor/react', () => ({
           }),
           registerHoverProvider: vi.fn((_language: string, provider: any) => {
             editorState.hoverProviders.push(provider);
+            editorState.hoverProviders.sort((left, right) => {
+              const leftRank = left?.__gonaviHoverProviderKind === 'metadata' ? 0 : 1;
+              const rightRank = right?.__gonaviHoverProviderKind === 'metadata' ? 0 : 1;
+              return leftRank - rightRank;
+            });
             return { dispose: vi.fn() };
           }),
         },
@@ -1064,6 +1069,34 @@ describe('QueryEditor external SQL save', () => {
       status: 'success',
     }));
     renderer?.unmount();
+  });
+
+  it('runs a connection-scoped SQLite query without requiring a database name', async () => {
+    storeState.connections[0].config.type = 'sqlite';
+    storeState.connections[0].config.database = '';
+    const sql = 'SELECT id FROM users';
+    editorState.value = sql;
+    backendApp.DBQueryMulti.mockResolvedValueOnce({
+      success: true,
+      data: [{ columns: ['id'], rows: [{ id: 1 }] }],
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ dbName: '', query: sql })} />);
+    });
+    await act(async () => {
+      await findButton(renderer, '运行').props.onClick();
+      for (let i = 0; i < 8; i += 1) await Promise.resolve();
+    });
+
+    expect(backendApp.DBQueryMulti).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'sqlite' }),
+      '',
+      `${sql} LIMIT 5000`,
+      'query-1',
+    );
+    renderer.unmount();
   });
 
   it('executes a long commented Oracle anonymous block without blocking the UI thread', async () => {
