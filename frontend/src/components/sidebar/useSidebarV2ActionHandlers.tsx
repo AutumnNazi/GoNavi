@@ -394,13 +394,15 @@ export const useSidebarV2ActionHandlers = ({
 
   const openDatabaseQuery = (node: any) => {
     const dbName = String(node.dataRef?.dbName || node.title || '').trim();
+    const schemaName = String(node.dataRef?.schemaName || '').trim();
     const dbType = getMetadataDialect(node.dataRef as SavedConnection);
     addTab({
       id: `query-${Date.now()}`,
-      title: t('sidebar.tab.new_query_database', { database: node.title }),
+      title: t('sidebar.tab.new_query_database', { database: dbName }),
       type: 'query',
       connectionId: node.dataRef.id,
       dbName,
+      schemaName: schemaName || undefined,
       query: isElasticsearchDbType(dbType)
         ? buildTableSelectQuery(dbType, dbName)
         : '',

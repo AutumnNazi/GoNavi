@@ -420,6 +420,9 @@ export const useSidebarV2ContextMenu = ({
 
   const handleV2SchemaContextMenuAction = (node: any, action: V2SchemaContextMenuActionKey) => {
       switch (action) {
+          case 'new-query':
+              handleV2DatabaseContextMenuAction(node, 'new-query');
+              return;
           case 'rename-schema':
               openRenameSchemaModal(node);
               return;

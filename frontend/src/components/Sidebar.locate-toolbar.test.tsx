@@ -2784,6 +2784,7 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).toContain('SCHEMA');
     expect(markup).toContain('app_db · Schema actions');
     expect(markup).toContain('Maintenance');
+    expect(markup).toContain('New query');
     expect(markup).toContain('Edit schema');
     expect(markup).toContain('Refresh object tree');
     expect(markup).toContain('Export and backup');
