@@ -78,6 +78,7 @@ describe('store appearance persistence', () => {
     expect(appearance.blur).toBe(6);
     expect(appearance).not.toHaveProperty('useNativeMacWindowControls');
     expect(appearance.tableDoubleClickAction).toBe('open-data');
+    expect(appearance.queryTableCtrlClickAction).toBe('open-design');
     expect(appearance.v2SidebarSearchMode).toBe('command');
     expect(appearance).not.toHaveProperty('v2CommandSearchPersistentFilterEnabled');
     expect(appearance.v2SidebarPersistedFilter).toBe('');
@@ -224,6 +225,7 @@ describe('store appearance persistence', () => {
       showDataTableRowNumber: false,
       dataTableDensity: 'compact',
       tableDoubleClickAction: 'open-design',
+      queryTableCtrlClickAction: 'locate',
       v2SidebarRailScale: 1.55,
       tabEnvironmentAccentThickness: 5,
       sidebarSingleDatabaseExpansion: true,
@@ -234,6 +236,7 @@ describe('store appearance persistence', () => {
     expect(persisted.state.appearance.showDataTableRowNumber).toBe(false);
     expect(persisted.state.appearance.dataTableDensity).toBe('compact');
     expect(persisted.state.appearance.tableDoubleClickAction).toBe('open-design');
+    expect(persisted.state.appearance.queryTableCtrlClickAction).toBe('locate');
     expect(persisted.state.appearance.v2SidebarRailScale).toBe(1.55);
     expect(persisted.state.appearance.tabEnvironmentAccentThickness).toBe(5);
     expect(persisted.state.appearance.sidebarSingleDatabaseExpansion).toBe(true);
@@ -246,6 +249,7 @@ describe('store appearance persistence', () => {
     expect(appearance.showDataTableRowNumber).toBe(false);
     expect(appearance.dataTableDensity).toBe('compact');
     expect(appearance.tableDoubleClickAction).toBe('open-design');
+    expect(appearance.queryTableCtrlClickAction).toBe('locate');
     expect(appearance.v2SidebarRailScale).toBe(1.55);
     expect(appearance.tabEnvironmentAccentThickness).toBe(5);
     expect(appearance.sidebarSingleDatabaseExpansion).toBe(true);
@@ -525,6 +529,7 @@ describe('store appearance persistence', () => {
       state: {
         appearance: {
           tableDoubleClickAction: 'open-random',
+          queryTableCtrlClickAction: 'open-random',
         },
       },
       version: 10,
@@ -532,6 +537,7 @@ describe('store appearance persistence', () => {
 
     const { useStore } = await importStore();
     expect(useStore.getState().appearance.tableDoubleClickAction).toBe('open-data');
+    expect(useStore.getState().appearance.queryTableCtrlClickAction).toBe('open-design');
   });
 
   it('sanitizes persisted v2 sidebar rail scale settings into the supported range', async () => {
@@ -2829,6 +2835,47 @@ describe('store appearance persistence', () => {
     });
   });
 
+  it('keeps query schema in activeContext and does not let an inactive draft overwrite it', async () => {
+    const { useStore } = await importStore();
+
+    useStore.getState().addTab({
+      id: 'query-anno',
+      title: '新建查询',
+      type: 'query',
+      connectionId: 'conn-1',
+      dbName: 'sys',
+      schemaName: 'anno',
+      query: 'select 1;',
+    });
+
+    expect(useStore.getState().activeContext).toEqual({
+      connectionId: 'conn-1',
+      dbName: 'sys',
+      schemaName: 'anno',
+    });
+
+    useStore.getState().addTab({
+      id: 'query-old-schema',
+      title: '旧查询',
+      type: 'query',
+      connectionId: 'conn-1',
+      dbName: 'sys',
+      schemaName: 'dbms_job',
+      query: 'select 2;',
+    });
+    useStore.getState().setActiveTab('query-anno');
+
+    useStore.getState().updateQueryTabDraft('query-old-schema', {
+      schemaName: 'dbms_job_v2',
+    });
+
+    expect(useStore.getState().activeContext).toEqual({
+      connectionId: 'conn-1',
+      dbName: 'sys',
+      schemaName: 'anno',
+    });
+  });
+
   it('falls back activeContext to the new active tab after closing the current tab', async () => {
     const { useStore } = await importStore();
 
@@ -3105,6 +3152,77 @@ describe('store appearance persistence', () => {
     useStore.getState().closeTab('query-edit-object');
 
     expect(useStore.getState().activeTabId).toBe('query-other');
+  });
+
+  it('restores object-edit identity fields so sidebar locating survives a reload', async () => {
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: {
+        tabs: [
+          {
+            id: 'query-edit-routine-1',
+            title: '修改函数/存储过程: main.func_name',
+            type: 'query',
+            connectionId: 'conn-1',
+            dbName: 'example',
+            schemaName: 'main',
+            query: 'CREATE OR REPLACE MACRO main.func_name(param1) AS (param1 * 3);',
+            queryMode: 'object-edit',
+            routineName: 'main.func_name',
+            routineType: 'MACRO',
+            sidebarLocateKey: 'conn-1-example-routine-func-main.func_name',
+            returnToTabId: 'query-source',
+          },
+          {
+            id: 'query-edit-mview-1',
+            title: '修改物化视图: analytics.mv_daily',
+            type: 'query',
+            connectionId: 'conn-1',
+            dbName: 'example',
+            query: 'SELECT 1;',
+            queryMode: 'object-edit',
+            viewName: 'analytics.mv_daily',
+            viewKind: 'materialized',
+            objectType: 'materialized-view',
+          },
+          {
+            id: 'query-plain-1',
+            title: '普通查询',
+            type: 'query',
+            connectionId: 'conn-1',
+            dbName: 'main',
+            query: 'SELECT 1;',
+            routineName: 'should.not.leak',
+            queryMode: 'standard',
+          },
+        ],
+      },
+      version: 21,
+    }));
+
+    const { useStore } = await importStore();
+    const tabs = useStore.getState().tabs;
+
+    const routineTab = tabs.find((tab) => tab.id === 'query-edit-routine-1');
+    expect(routineTab).toEqual(expect.objectContaining({
+      queryMode: 'object-edit',
+      routineName: 'main.func_name',
+      routineType: 'MACRO',
+      schemaName: 'main',
+      sidebarLocateKey: 'conn-1-example-routine-func-main.func_name',
+      returnToTabId: 'query-source',
+    }));
+
+    const materializedViewTab = tabs.find((tab) => tab.id === 'query-edit-mview-1');
+    expect(materializedViewTab).toEqual(expect.objectContaining({
+      queryMode: 'object-edit',
+      viewName: 'analytics.mv_daily',
+      viewKind: 'materialized',
+      objectType: 'materialized-view',
+    }));
+
+    const plainTab = tabs.find((tab) => tab.id === 'query-plain-1');
+    expect(plainTab?.queryMode).toBeUndefined();
+    expect(plainTab?.routineName).toBeUndefined();
   });
 
   it('reuses the current tab when the same id is reopened as an object-edit query', async () => {

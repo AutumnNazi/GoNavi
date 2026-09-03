@@ -62,6 +62,75 @@ describe('groupSidebarPartitionTableEntries', () => {
     ])).toHaveLength(2);
   });
 
+  it('deduplicates transport-quoted lowercase identifiers with their bare form', () => {
+    const deduped = dedupeSidebarTableEntries([
+      {
+        tableName: 'public.orders',
+        schemaName: 'public',
+        displayName: 'orders',
+      },
+      {
+        tableName: '"public"."orders"',
+        schemaName: 'public',
+        displayName: 'orders',
+      },
+      {
+        tableName: 'public."orders"',
+        schemaName: '"public"',
+        displayName: 'orders',
+      },
+    ]);
+
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0].tableName).toBe('public.orders');
+  });
+
+  it('keeps quoted whitespace and mixed-case identifiers distinct', () => {
+    const deduped = dedupeSidebarTableEntries([
+      { tableName: 'public.orders', schemaName: 'public', displayName: 'orders' },
+      { tableName: 'public." orders "', schemaName: 'public', displayName: ' orders ' },
+      { tableName: 'public."Orders"', schemaName: 'public', displayName: 'Orders' },
+    ]);
+
+    expect(deduped.map((entry) => entry.tableName)).toEqual([
+      'public.orders',
+      'public." orders "',
+      'public."Orders"',
+    ]);
+  });
+
+  it('keeps SQL-escaped quote characters distinct from a bare identifier', () => {
+    const deduped = dedupeSidebarTableEntries([
+      { tableName: 'public.orders', schemaName: 'public', displayName: 'orders' },
+      { tableName: 'public."""orders"""', schemaName: 'public', displayName: 'orders' },
+    ]);
+
+    expect(deduped).toHaveLength(2);
+    expect(deduped.map((entry) => entry.tableName)).toEqual([
+      'public.orders',
+      'public."""orders"""',
+    ]);
+  });
+
+  it('does not merge backtick or bracket delimiters with bare identifiers', () => {
+    const deduped = dedupeSidebarTableEntries([
+      { tableName: 'public.orders', schemaName: 'public', displayName: 'orders' },
+      { tableName: 'public.`orders`', schemaName: 'public', displayName: 'orders' },
+      { tableName: 'public.[orders]', schemaName: 'public', displayName: 'orders' },
+    ]);
+
+    expect(deduped).toHaveLength(3);
+  });
+
+  it('deduplicates Unicode lowercase identifiers when transport quotes are added', () => {
+    const deduped = dedupeSidebarTableEntries([
+      { tableName: 'public.订单', schemaName: 'public', displayName: '订单' },
+      { tableName: 'public."订单"', schemaName: 'public', displayName: '订单' },
+    ]);
+
+    expect(deduped).toHaveLength(1);
+  });
+
   it('nests PostgreSQL partitions under their parent and hides the parent row estimate', () => {
     const grouped = groupSidebarPartitionTableEntries([
       {

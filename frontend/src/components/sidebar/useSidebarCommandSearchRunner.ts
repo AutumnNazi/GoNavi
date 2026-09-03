@@ -23,7 +23,7 @@ type UseSidebarCommandSearchRunnerArgs = {
   revealCommandSearchNode: (node: TreeNode) => void;
   scrollSidebarTreeToKey: (key: React.Key, scrollBlock?: 'nearest' | 'center') => void;
   selectedNodesRef: MutableRefObject<any[]>;
-  setActiveContext: (context: { connectionId: string; dbName: string; tableName?: string } | null) => void;
+  setActiveContext: (context: { connectionId: string; dbName: string; schemaName?: string; tableName?: string } | null) => void;
   setSelectedKeys: Dispatch<SetStateAction<React.Key[]>>;
   setV2CommandActiveIndex: Dispatch<SetStateAction<number>>;
   treeDataRef: MutableRefObject<TreeNode[]>;
@@ -121,6 +121,7 @@ export const useSidebarCommandSearchRunner = ({
         type: 'query',
         connectionId: recentConnectionId,
         dbName: item.dbName || activeContext?.dbName || activeTab?.dbName || '',
+        schemaName: activeContext?.schemaName || activeTab?.schemaName || undefined,
         query: item.sql,
       });
       return;
@@ -136,6 +137,21 @@ export const useSidebarCommandSearchRunner = ({
     if (node.type === 'database') {
       publishTitlebarSelectionForNode?.(node);
       setActiveContext({ connectionId: resolveSidebarNodeConnectionId(node, connectionIds) || dataRef.id, dbName: dataRef.dbName });
+      mergeExpandedTreeKeys([dataRef.id, node.key]);
+      setSelectedKeys([node.key]);
+      selectedNodesRef.current = [node];
+      scrollSidebarTreeToKey(node.key, 'center');
+      return;
+    }
+    if (node.type === 'object-group' && dataRef.groupKey === 'schema') {
+      publishTitlebarSelectionForNode?.(node);
+      setActiveContext({
+        connectionId: resolveSidebarNodeConnectionId(node, connectionIds) || dataRef.id,
+        dbName: dataRef.dbName,
+        ...(String(dataRef.schemaName || '').trim()
+          ? { schemaName: String(dataRef.schemaName).trim() }
+          : {}),
+      });
       mergeExpandedTreeKeys([dataRef.id, node.key]);
       setSelectedKeys([node.key]);
       selectedNodesRef.current = [node];
@@ -161,6 +177,9 @@ export const useSidebarCommandSearchRunner = ({
         connectionId: resolveSidebarNodeConnectionId(node, connectionIds) || dataRef.id,
         dbName: dataRef.dbName,
         tableName: resolveSidebarTitlebarObjectName(node),
+        ...(String(dataRef.schemaName || '').trim()
+          ? { schemaName: String(dataRef.schemaName).trim() }
+          : {}),
       });
       setSelectedKeys([node.key]);
       selectedNodesRef.current = [node];
@@ -175,8 +194,9 @@ export const useSidebarCommandSearchRunner = ({
     addTab,
     closeV2CommandSearch,
     connectionIds,
-    locateObjectInSidebar,
+    queryCapableConnectionIds,
     mergeExpandedTreeKeys,
+    locateObjectInSidebar,
     onDoubleClick,
     publishTitlebarSelectionForNode,
     revealCommandSearchNode,

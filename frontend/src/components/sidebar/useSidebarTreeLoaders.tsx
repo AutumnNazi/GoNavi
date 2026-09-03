@@ -70,16 +70,14 @@ import {
 import {
   dedupeSidebarTableEntries,
   getSidebarTableEntryIdentity,
+  getSidebarTableObjectIdentity,
   groupSidebarPartitionTableEntries,
 } from './sidebarPartitions';
 import { DBGetDatabases, DBGetObjects, DBGetTables, DBQuery, DBRefreshTableStats, GetDriverStatusList, JVMProbeCapabilities } from '../../../wailsjs/go/app/App';
 import type { SidebarTableMetadataSnapshot } from '../../utils/sidebarTableMetadata';
 import { collectNacosServiceGroupsByPage } from '../nacosServiceName';
 import { isPostgresSchemaDialect } from '../sidebarCoreUtils';
-import {
-  splitMetadataQualifiedName,
-  splitQualifiedNameSegmentsDetailed,
-} from '../../utils/qualifiedName';
+import { splitMetadataQualifiedName } from '../../utils/qualifiedName';
 
 type DriverStatusSnapshot = {
   type: string;
@@ -1349,10 +1347,7 @@ export const useSidebarTreeLoaders = ({
                             tableName,
                             schemaName: String(rawSchemaName || '').trim(),
                         });
-                        const segments = splitQualifiedNameSegmentsDetailed(tableName);
-                        const objectName = String(
-                            segments[segments.length - 1]?.raw || tableName,
-                        ).trim();
+                        const objectName = getSidebarTableObjectIdentity(tableName);
                         const keys = new Set<string>();
                         if (identity) keys.add(`pg-exact:${identity}`);
                         // Catalog/status queries can disagree on whether the schema is

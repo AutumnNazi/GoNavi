@@ -4143,7 +4143,7 @@ body[data-ui-version="v2"] .gn-v2-empty-resource-empty .ant-btn {
   }
 }
 
-/* The native macOS collapsed toolbar needs a second titlebar band. The empty
+/* The docked collapsed toolbar needs a second titlebar band. The empty
    workbench already has clear space above its heading, so let that one screen
    reclaim the band instead of shifting every landing-page element downward. */
 body[data-ui-version="v2"]
@@ -4181,18 +4181,19 @@ body[data-ui-version="v2"] .gn-v2-titlebar {
   box-shadow: none !important;
 }
 
-/* Native macOS keeps its traffic lights in the upper titlebar band. When the
-   explorer is collapsed, reuse the otherwise empty lower-left band for the
-   same six theme-scaled actions shown by the expanded explorer toolbar. */
-body[data-ui-version="v2"] .gn-v2-titlebar-native-mac .gn-v2-collapsed-sidebar-actions {
+/* When the V2 explorer is collapsed on macOS or Windows, reuse the otherwise
+   empty lower titlebar band for the same six scaled actions shown by the
+   expanded explorer toolbar. Keep the Windows window controls out of its way. */
+body[data-ui-version="v2"] .gn-v2-titlebar-collapsed-docked .gn-v2-collapsed-sidebar-actions {
   --gn-v2-explorer-scale: var(--gn-ui-scale, 1);
   position: absolute;
   left: calc(6px * var(--gn-ui-scale, 1));
+  right: calc(var(--gn-titlebar-window-controls-width, 0px) + 6px);
   bottom: 1px;
   z-index: 4;
   display: flex;
   min-width: 0;
-  max-width: calc(100% - 12px);
+  max-width: none;
   height: calc(26px * var(--gn-v2-explorer-scale));
   flex-wrap: nowrap;
   align-items: center;
@@ -4205,13 +4206,13 @@ body[data-ui-version="v2"] .gn-v2-titlebar-native-mac .gn-v2-collapsed-sidebar-a
   --wails-draggable: no-drag;
 }
 
-body[data-ui-version="v2"] .gn-v2-titlebar-native-mac .gn-v2-collapsed-sidebar-actions::-webkit-scrollbar {
+body[data-ui-version="v2"] .gn-v2-titlebar-collapsed-docked .gn-v2-collapsed-sidebar-actions::-webkit-scrollbar {
   display: none;
 }
 
 /* Keep the shared focus ring inside the scrolling titlebar host. */
-body[data-ui-version="v2"] .gn-v2-titlebar-native-mac .gn-v2-collapsed-sidebar-actions .gn-v2-explorer-tool.ant-btn:focus-visible,
-body[data-ui-version="v2"] .gn-v2-titlebar-native-mac .gn-v2-collapsed-sidebar-actions .gn-v2-explorer-action-wrap:focus-visible {
+body[data-ui-version="v2"] .gn-v2-titlebar-collapsed-docked .gn-v2-collapsed-sidebar-actions .gn-v2-explorer-tool.ant-btn:focus-visible,
+body[data-ui-version="v2"] .gn-v2-titlebar-collapsed-docked .gn-v2-collapsed-sidebar-actions .gn-v2-explorer-action-wrap:focus-visible {
   outline-offset: -3px;
 }
 

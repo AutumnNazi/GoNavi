@@ -213,4 +213,68 @@ describe('useSidebarCommandSearchRunner title bar context', () => {
     expect(revealCommandSearchNode.mock.invocationCallOrder[0])
       .toBeLessThan(onDoubleClick.mock.invocationCallOrder[0]);
   });
+
+  it('keeps the selected schema in the active context', () => {
+    const setActiveContext = vi.fn();
+    let runCommandSearchItem: ReturnType<typeof useSidebarCommandSearchRunner>['runCommandSearchItem'] | undefined;
+    const schemaNode = {
+      key: 'conn-1-main-schema-anno',
+      title: 'anno',
+      type: 'object-group' as const,
+      dataRef: {
+        id: 'conn-1',
+        dbName: 'main',
+        groupKey: 'schema',
+        schemaName: 'anno',
+      },
+    };
+    const item: V2CommandSearchItem = {
+      key: `node-${schemaNode.key}`,
+      kind: 'node',
+      title: schemaNode.title,
+      meta: 'Local · main',
+      icon: null,
+      node: schemaNode,
+    };
+
+    const Harness = () => {
+      ({ runCommandSearchItem } = useSidebarCommandSearchRunner({
+        activeContext: null,
+        activeTab: null,
+        addTab: vi.fn(),
+        clearStaleHostStateOnSelection: vi.fn(),
+        closeV2CommandSearch: vi.fn(),
+        commandSearchFlatItems: [],
+        connectionIds: ['conn-1'],
+        queryCapableConnectionIds: new Set(),
+        findTreeNodeByKeyRef: { current: () => schemaNode },
+        locateObjectInSidebar: vi.fn(),
+        loadDatabases: vi.fn(),
+        mergeExpandedTreeKeys: vi.fn(),
+        onDoubleClick: vi.fn(),
+        revealCommandSearchNode: vi.fn(),
+        scrollSidebarTreeToKey: vi.fn(),
+        selectedNodesRef: { current: [] },
+        setActiveContext,
+        setSelectedKeys: vi.fn(),
+        setV2CommandActiveIndex: vi.fn(),
+        treeDataRef: { current: [schemaNode] },
+        v2CommandActiveIndex: 0,
+      }));
+      return null;
+    };
+
+    act(() => {
+      renderer = create(<Harness />);
+    });
+    act(() => {
+      runCommandSearchItem?.(item);
+    });
+
+    expect(setActiveContext).toHaveBeenCalledWith({
+      connectionId: 'conn-1',
+      dbName: 'main',
+      schemaName: 'anno',
+    });
+  });
 });

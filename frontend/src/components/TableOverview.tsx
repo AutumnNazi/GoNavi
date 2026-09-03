@@ -502,24 +502,25 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
 
     const openTable = useCallback((tableName: string) => {
         if (!connection) return;
-        setActiveContext({ connectionId: connection.id, dbName: tab.dbName || '' });
+        setActiveContext({ connectionId: connection.id, dbName: tab.dbName || '', schemaName: schemaName || undefined });
         addTab({
-            id: `${connection.id}-${tab.dbName}-${tableName}`,
+            id: `${connection.id}-${tab.dbName}${schemaName ? `-${schemaName}` : ''}-${tableName}`,
             title: tableName,
             type: 'table',
             connectionId: connection.id,
             dbName: tab.dbName,
             tableName,
+            schemaName: schemaName || undefined,
             objectType: 'table',
         });
-    }, [connection, tab.dbName, addTab, setActiveContext]);
+    }, [connection, schemaName, tab.dbName, addTab, setActiveContext]);
 
     const openDesign = useCallback((tableName: string) => {
         if (!connection) return;
-        setActiveContext({ connectionId: connection.id, dbName: tab.dbName || '' });
+        setActiveContext({ connectionId: connection.id, dbName: tab.dbName || '', schemaName: schemaName || undefined });
         const structureOnly = !supportsDesignWrite;
         addTab({
-            id: `design-${connection.id}-${tab.dbName}-${tableName}`,
+            id: `design-${connection.id}-${tab.dbName}${schemaName ? `-${schemaName}` : ''}-${tableName}`,
             title: t(
                 structureOnly ? 'table_overview.tab.table_structure_title' : 'table_overview.tab.design_table_title',
                 { table: tableName },
@@ -528,26 +529,28 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
             connectionId: connection.id,
             dbName: tab.dbName,
             tableName,
+            schemaName: schemaName || undefined,
             initialTab: 'columns',
             readOnly: structureOnly,
         });
-    }, [connection, tab.dbName, addTab, setActiveContext, supportsDesignWrite, t]);
+    }, [connection, schemaName, tab.dbName, addTab, setActiveContext, supportsDesignWrite, t]);
 
     const openTableObjectDesigner = useCallback((tableName: string) => {
         if (!connection) return;
-        setActiveContext({ connectionId: connection.id, dbName: tab.dbName || '' });
+        setActiveContext({ connectionId: connection.id, dbName: tab.dbName || '', schemaName: schemaName || undefined });
         addTab({
-            id: `${connection.id}-${tab.dbName}-${tableName}`,
+            id: `${connection.id}-${tab.dbName}${schemaName ? `-${schemaName}` : ''}-${tableName}`,
             title: tableName,
             type: 'table',
             connectionId: connection.id,
             dbName: tab.dbName,
             tableName,
+            schemaName: schemaName || undefined,
             initialViewMode: 'fields',
             initialViewModeRequestId: String(Date.now()),
             objectType: 'table',
         });
-    }, [connection, tab.dbName, addTab, setActiveContext]);
+    }, [connection, schemaName, tab.dbName, addTab, setActiveContext]);
 
     const openTableByDefaultAction = useCallback((tableName: string) => {
         if (tableDoubleClickAction === 'open-design') {
@@ -559,23 +562,24 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
 
     const openTableDdl = useCallback((tableName: string) => {
         if (!connection) return;
-        setActiveContext({ connectionId: connection.id, dbName: tab.dbName || '' });
+        setActiveContext({ connectionId: connection.id, dbName: tab.dbName || '', schemaName: schemaName || undefined });
         addTab({
-            id: `design-${connection.id}-${tab.dbName}-${tableName}`,
+            id: `design-${connection.id}-${tab.dbName}${schemaName ? `-${schemaName}` : ''}-${tableName}`,
             title: t('table_overview.tab.table_structure_title', { table: tableName }),
             type: 'design',
             connectionId: connection.id,
             dbName: tab.dbName,
             tableName,
+            schemaName: schemaName || undefined,
             initialTab: 'ddl',
             readOnly: true,
         });
-    }, [connection, tab.dbName, addTab, setActiveContext, t]);
+    }, [connection, schemaName, tab.dbName, addTab, setActiveContext, t]);
 
     const openQueryForTable = useCallback((tableName: string) => {
         if (!connection) return;
         void (async () => {
-            setActiveContext({ connectionId: connection.id, dbName: tab.dbName || '' });
+            setActiveContext({ connectionId: connection.id, dbName: tab.dbName || '', schemaName: schemaName || undefined });
             const queryTemplate = await resolveTableSelectQuery({
                 dbType: metadataDialect,
                 tableName,
@@ -588,10 +592,11 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
                 type: 'query',
                 connectionId: connection.id,
                 dbName: tab.dbName,
+                schemaName: schemaName || undefined,
                 query: queryTemplate,
             });
         })();
-    }, [addTab, connection, metadataDialect, setActiveContext, t, tab.dbName]);
+    }, [addTab, connection, metadataDialect, schemaName, setActiveContext, t, tab.dbName]);
 
     const openTableInER = useCallback((tableName: string) => {
         if (!connection) return;
@@ -601,12 +606,13 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
                 detail: {
                     connectionId: connection.id,
                     dbName: tab.dbName,
+                    schemaName: schemaName || undefined,
                     tableName,
                     viewMode: 'er',
                 },
             }));
         }, 0);
-    }, [connection, openTable, tab.dbName]);
+    }, [connection, openTable, schemaName, tab.dbName]);
 
     const buildConfig = useCallback(() => {
         if (!connection) return null;
@@ -694,13 +700,14 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
             connectionId: tab.connectionId,
             dbName: tab.dbName,
             tableName,
+            schemaName: schemaName || undefined,
             title: t('file.backend.dialog.export_table', { table: tableName }),
             objectType: 'table',
             rowCountByScope: Number.isFinite(Number(totalRows)) && Number(totalRows) > 0
                 ? { all: Math.trunc(Number(totalRows)) }
                 : undefined,
         }));
-    }, [addTab, tab.connectionId, tab.dbName]);
+    }, [addTab, schemaName, tab.connectionId, tab.dbName]);
 
     const handleCopyTableAsInsert = useCallback(async (tableName: string) => {
         await openTableSQLExportWorkbench(tableName, 'dataOnly');
@@ -846,9 +853,10 @@ const TableOverview: React.FC<TableOverviewProps> = ({ tab }) => {
             type: 'query',
             connectionId: connection.id,
             dbName: tab.dbName,
+            schemaName: schemaName || undefined,
             query: `ALTER TABLE ${quotedTable}\nADD ROLLUP rollup_name (column1, column2);`,
         });
-    }, [addTab, connection, t, tab.dbName]);
+    }, [addTab, connection, schemaName, t, tab.dbName]);
 
     const injectTablePromptToAI = useCallback(async (tableName: string, promptKind: 'explain' | 'query') => {
         const dbName = tab.dbName || '';

@@ -38,6 +38,18 @@ const deferred = <T,>(): Deferred<T> => {
   return { promise, resolve };
 };
 
+const flattenTreeNodes = (nodes: any[]): any[] => {
+  const result: any[] = [];
+  const pending = [...(nodes || [])];
+  while (pending.length > 0) {
+    const node = pending.shift();
+    if (!node) continue;
+    result.push(node);
+    if (Array.isArray(node.children)) pending.push(...node.children);
+  }
+  return result;
+};
+
 vi.mock('antd', () => ({
   Button: ({ children }: { children: React.ReactNode }) => <button>{children}</button>,
   message: {
@@ -628,6 +640,122 @@ describe('useSidebarTreeLoaders PostgreSQL partitions', () => {
     expect(archiveNodes[0].dataRef.tableName).toBe('archive.ldf_application_type');
     expect(ldfNodes[0].key).not.toBe(archiveNodes[0].key);
     expect(ldfNodes[0].key).not.toBe(upperLdfNodes[0].key);
+  });
+
+  it('keeps every key unique across a complete Kingbase object fixture', async () => {
+    const connection = {
+      id: 'conn-kingbase-complete',
+      name: 'Kingbase complete fixture',
+      dbName: 'analytics',
+      config: {
+        type: 'kingbase',
+        host: '127.0.0.1',
+        port: 54321,
+        user: 'system',
+        database: 'analytics',
+      },
+    } as SavedConnection & { dbName: string };
+    mocks.storeState.connections = [connection];
+    mocks.dbGetTables.mockResolvedValue({
+      success: true,
+      data: [
+        { Table: 'public.orders' },
+        { Table: 'public.orders' },
+        { Table: 'public.customers' },
+      ],
+    });
+    mocks.dbQuery.mockImplementation(async (_config, _dbName, sql: string) => {
+      if (sql.includes('obj_description(c.oid')) {
+        return {
+          success: true,
+          data: [
+            { table_name: 'public.orders', table_rows: 12 },
+            { table_name: 'public.customers', table_rows: 4 },
+          ],
+        };
+      }
+      if (sql.includes('FROM pg_namespace')) {
+        return { success: true, data: [{ schema_name: 'public' }, { schema_name: 'public' }] };
+      }
+      if (sql.includes('pg_catalog.pg_views')) {
+        return {
+          success: true,
+          data: [
+            { schema_name: 'public', view_name: 'orders_view' },
+            { schema_name: 'public', view_name: 'orders_view' },
+          ],
+        };
+      }
+      if (sql.includes('FROM pg_proc')) {
+        return {
+          success: true,
+          data: [
+            { schema_name: 'public', routine_name: 'refresh_orders', routine_type: 'FUNCTION' },
+            { schema_name: 'public', routine_name: 'refresh_orders', routine_type: 'FUNCTION' },
+          ],
+        };
+      }
+      if (sql.includes('information_schema.triggers')) {
+        return {
+          success: true,
+          data: [
+            { schema_name: 'public', table_name: 'orders', trigger_name: 'orders_audit' },
+            { schema_name: 'public', table_name: 'orders', trigger_name: 'orders_audit' },
+          ],
+        };
+      }
+      if (sql.includes('information_schema.sequences')) {
+        return {
+          success: true,
+          data: [
+            { schema_name: 'public', sequence_name: 'orders_id_seq' },
+            { schema_name: 'public', sequence_name: 'orders_id_seq' },
+          ],
+        };
+      }
+      return { success: true, data: [] };
+    });
+
+    let loaders: ReturnType<typeof useSidebarTreeLoaders> | undefined;
+    const Harness = () => {
+      loaders = useSidebarTreeLoaders({
+        savedQueries: [],
+        tableSortPreference: {},
+        tableAccessCount: {},
+        pinnedSidebarTables: [],
+        pinnedSidebarDatabases: [],
+        isV2Ui: true,
+        loadingNodesRef: { current: new Set<string>() },
+        setConnectionStates: vi.fn(),
+        setLoadedKeys: vi.fn(),
+        replaceTreeNodeChildren: mocks.replaceTreeNodeChildren,
+        buildRuntimeConfig: (conn) => conn.config,
+        buildJVMRuntimeConfig: (conn) => conn.config,
+        buildJVMDiagnosticTreeNodes: () => [],
+        resolveSavedQueryDisplayName: (name) => String(name || ''),
+      });
+      return null;
+    };
+
+    act(() => {
+      renderer = create(<Harness />);
+    });
+    await act(async () => {
+      await loaders?.loadTables({
+        key: 'conn-kingbase-complete-analytics',
+        dataRef: connection,
+      });
+    });
+
+    const [, databaseChildren] = mocks.replaceTreeNodeChildren.mock.calls[0];
+    const nodes = flattenTreeNodes(databaseChildren);
+    const keys = nodes.map((node) => String(node.key));
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(nodes.filter((node) => node.type === 'table')).toHaveLength(2);
+    expect(nodes.filter((node) => node.type === 'view')).toHaveLength(1);
+    expect(nodes.filter((node) => node.type === 'routine')).toHaveLength(1);
+    expect(nodes.filter((node) => node.type === 'db-trigger')).toHaveLength(1);
+    expect(nodes.filter((node) => node.type === 'sequence')).toHaveLength(1);
   });
 
   it('keeps an empty schema bucket distinct from a schema literally named default', async () => {

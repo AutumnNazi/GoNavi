@@ -6,7 +6,7 @@ import { EventsOn } from '../../wailsjs/runtime';
 import { t as defaultTranslate } from '../i18n';
 import { getAntdLocale } from '../i18n/frameworkLocale';
 import { useOptionalI18n } from '../i18n/provider';
-import { flushAIChatSessionPersistence, type SqlLog, useStore } from '../store';
+import { type SqlLog, useStore } from '../store';
 import type { TabData } from '../types';
 import type { DetachedQueryResultWindow } from '../utils/detachedWindow';
 import {
@@ -62,6 +62,7 @@ import {
   isShortcutMatch,
   resolveShortcutBinding,
 } from '../utils/shortcuts';
+import { useAIWorkspaceSnapshot } from './ai/useAIWorkspaceSnapshot';
 const AIChatPanel = React.lazy(() => import('./AIChatPanel'));
 const DataGrid = React.lazy(() => import('./DataGrid'));
 const WorkbenchTabContent = React.lazy(() => import('./WorkbenchTabContent'));
@@ -437,6 +438,10 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
   const [contentMounted, setContentMounted] = useState(true);
   const [contentReady, setContentReady] = useState(false);
   const [controllerEnabled, setControllerEnabled] = useState(false);
+  // A detached AI WebView is its own desktop snapshot source. Keep its lease
+  // alive for the lifetime of the detached window, independent of panel UI
+  // visibility or terminal actions.
+  useAIWorkspaceSnapshot({ enabled: bootstrap?.kind === 'ai-chat' });
   // A detached WebView has an independent custom-theme store. The host sends
   // the resolved definition so it cannot fall back to a different local copy.
   const [customThemeOverride, setCustomThemeOverride] = useState<
@@ -645,7 +650,10 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
           'gonavi:jvm-apply-ai-plan',
           'gonavi:jvm-apply-diagnostic-plan',
         ]
-      : ['gonavi:ai:inject-prompt'];
+      : [
+          'gonavi:ai:inject-prompt',
+          ...(bootstrap.kind === 'workbench' ? ['gonavi:locate-sidebar-object' as const] : []),
+        ];
     const forwardToHost = (event: Event) => {
       hostEventSequenceRef.current += 1;
       const hostEvent: NativeDetachedHostEvent = {
@@ -1121,8 +1129,6 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
           if (canTerminate === false) {
             throw new Error('AI stream did not stop before the detached window handoff');
           }
-          await flushAIChatSessionPersistence();
-          if (!isCurrentTerminalAction()) return;
         }
         actionToRun = closePreemptionRequestedRef.current ? 'close' : terminalAction;
         if (actionToRun === 'attach' && bootstrap.kind === 'workbench') {

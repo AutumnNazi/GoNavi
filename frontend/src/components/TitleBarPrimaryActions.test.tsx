@@ -82,7 +82,6 @@ describe('TitleBarPrimaryActions', () => {
     expect(narrowPrimaryRule?.groups?.body).toContain('gap: 0 !important;');
     expect(narrowPrimaryRule?.groups?.body).toContain('font-size: 0 !important;');
 
-    const v2ThemeCss = readFileSync(new URL('../v2-theme.css', import.meta.url), 'utf8');
     const titlebarMatch = v2ThemeCss.match(
       /body\[data-ui-version="v2"\] \.gn-v2-titlebar\s*\{(?<body>[^}]*)\}/s,
     );
@@ -109,9 +108,9 @@ describe('TitleBarPrimaryActions', () => {
     expect(appSource).toMatch(
       /--gn-titlebar-native-content-offset[^\n]*getMacNativeTitlebarContentOffset\(titleBarHeight, isV2Ui && useNativeMacWindowControls\)/,
     );
-    expect(appSource).toContain("isSidebarCollapsed && shouldDockCollapsedSidebarActionsInTitlebar ? 'gn-v2-titlebar-collapsed-docked' : ''");
+    expect(appSource).toContain("isCollapsedSidebarActionsDocked ? 'gn-v2-titlebar-collapsed-docked' : ''");
     const collapsedActionBandRule = v2ThemeCss.match(
-      /\.gn-v2-titlebar-native-mac \.gn-v2-collapsed-sidebar-actions\s*\{(?<body>[^}]*)\}/s,
+      /\.gn-v2-titlebar-collapsed-docked \.gn-v2-collapsed-sidebar-actions\s*\{(?<body>[^}]*)\}/s,
     );
     expect(collapsedActionBandRule).not.toBeNull();
     expect(collapsedActionBandRule?.groups?.body).toContain('bottom: 1px;');

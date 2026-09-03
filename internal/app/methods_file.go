@@ -3141,6 +3141,22 @@ func (a *App) ImportDatabaseSQLWithOptions(config connection.ConnectionConfig, d
 }
 
 func (a *App) importDatabaseSQLWithGTIDMode(config connection.ConnectionConfig, dbName string, filePath string, jobID string, continueOnError bool, mode mysqlGTIDImportMode) (result connection.QueryResult) {
+	return a.importDatabaseSQLWithGTIDModeContext(context.Background(), config, dbName, filePath, jobID, continueOnError, mode)
+}
+
+func (a *App) importDatabaseSQLContext(ctx context.Context, config connection.ConnectionConfig, dbName string, filePath string, jobID string, continueOnError bool, mysqlGTIDMode string) connection.QueryResult {
+	mode := mysqlGTIDImportModeReject
+	if strings.TrimSpace(mysqlGTIDMode) != "" {
+		var err error
+		mode, err = normalizeMySQLGTIDImportMode(mysqlGTIDMode)
+		if err != nil {
+			return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.mysql_gtid_mode_invalid", nil)}
+		}
+	}
+	return a.importDatabaseSQLWithGTIDModeContext(ctx, config, dbName, filePath, jobID, continueOnError, mode)
+}
+
+func (a *App) importDatabaseSQLWithGTIDModeContext(ctx context.Context, config connection.ConnectionConfig, dbName string, filePath string, jobID string, continueOnError bool, mode mysqlGTIDImportMode) (result connection.QueryResult) {
 	if err := a.validateDatabaseSQLImportAccess(config); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
@@ -3156,7 +3172,7 @@ func (a *App) importDatabaseSQLWithGTIDMode(config connection.ConnectionConfig, 
 		mode = ""
 	}
 	return a.executeSQLFileWithStatementLimitPolicyContextWithPolicy(
-		context.Background(),
+		ctx,
 		config,
 		dbName,
 		filePath,
@@ -3173,6 +3189,10 @@ func (a *App) importDatabaseSQLWithGTIDMode(config connection.ConnectionConfig, 
 }
 
 func (a *App) ExecuteSQLFile(config connection.ConnectionConfig, dbName string, filePath string, jobID string) connection.QueryResult {
+	return a.executeSQLFileContext(context.Background(), config, dbName, filePath, jobID)
+}
+
+func (a *App) executeSQLFileContext(ctx context.Context, config connection.ConnectionConfig, dbName string, filePath string, jobID string) connection.QueryResult {
 	// The generic SQL-file runner retains its established compatibility
 	// behavior. Database restore calls ImportDatabaseSQL and chooses the policy
 	// explicitly, defaulting to fail-fast in the UI.
@@ -3184,7 +3204,7 @@ func (a *App) ExecuteSQLFile(config connection.ConnectionConfig, dbName string, 
 	); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	return a.executeSQLFile(config, dbName, filePath, jobID, true)
+	return a.executeSQLFileWithStatementLimitPolicyContext(ctx, config, dbName, filePath, jobID, true, DefaultSQLImportMaxStatementBytes, false, "sql_file")
 }
 
 func (a *App) executeSQLFile(config connection.ConnectionConfig, dbName string, filePath string, jobID string, continueOnError bool) (result connection.QueryResult) {
@@ -4033,12 +4053,22 @@ func (a *App) SelectDatabaseFile(currentPath string, driverType string) connecti
 
 // PreviewImportFile 解析导入文件，返回字段列表、总行数、前 5 行预览数据
 func (a *App) PreviewImportFile(filePath string) connection.QueryResult {
-	return a.PreviewImportFileWithOptions(filePath, ImportFileOptions{})
+	return a.previewImportFileContext(context.Background(), filePath, ImportFileOptions{})
 }
 
 // PreviewImportFileWithOptions previews a file with the same parser settings
 // that will be used by ImportDataWithProgressOptions.
 func (a *App) PreviewImportFileWithOptions(filePath string, options ImportFileOptions) (queryResult connection.QueryResult) {
+	return a.previewImportFileContext(context.Background(), filePath, options)
+}
+
+func (a *App) previewImportFileContext(ctx context.Context, filePath string, options ImportFileOptions) (queryResult connection.QueryResult) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
 	if strings.TrimSpace(filePath) == "" {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.import_file_empty", nil)}
 	}
@@ -4059,7 +4089,7 @@ func (a *App) PreviewImportFileWithOptions(filePath string, options ImportFileOp
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
-	preview, err := buildImportPreviewWithOptions(filePath, defaultImportPreviewLimit, options)
+	preview, err := buildImportPreviewWithOptionsContext(ctx, filePath, defaultImportPreviewLimit, options)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
@@ -4543,6 +4573,10 @@ func (a *App) stoppedImportResult(resultData importExecutionResult, detail strin
 // ImportDataWithProgressOptions executes a streamed import with optional source-header
 // to database-column mappings. ImportDataWithProgress remains the compatibility entrypoint.
 func (a *App) ImportDataWithProgressOptions(config connection.ConnectionConfig, dbName, tableName, filePath string, options ImportFileOptions) (result connection.QueryResult) {
+	return a.importDataWithProgressContext(context.Background(), config, dbName, tableName, filePath, options)
+}
+
+func (a *App) importDataWithProgressContext(parent context.Context, config connection.ConnectionConfig, dbName, tableName, filePath string, options ImportFileOptions) (result connection.QueryResult) {
 	resolvedPath, err := a.resolveWebUploadReference(filePath, webUploadPurposeDataImport)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -4551,7 +4585,7 @@ func (a *App) ImportDataWithProgressOptions(config connection.ConnectionConfig, 
 	if a.webRuntime {
 		defer func() { result = sanitizeWebManagedResult(result, filePath) }()
 	}
-	return a.importDataWithProgressOptions(config, dbName, tableName, filePath, options, nil)
+	return a.importDataWithProgressOptionsContext(parent, config, dbName, tableName, filePath, options, nil)
 }
 
 func (a *App) importDataWithProgressOptions(
@@ -4560,6 +4594,19 @@ func (a *App) importDataWithProgressOptions(
 	options ImportFileOptions,
 	recovery *tableImportRecoveryPlan,
 ) (result connection.QueryResult) {
+	return a.importDataWithProgressOptionsContext(context.Background(), config, dbName, tableName, filePath, options, recovery)
+}
+
+func (a *App) importDataWithProgressOptionsContext(
+	parent context.Context,
+	config connection.ConnectionConfig,
+	dbName, tableName, filePath string,
+	options ImportFileOptions,
+	recovery *tableImportRecoveryPlan,
+) (result connection.QueryResult) {
+	if parent == nil {
+		parent = context.Background()
+	}
 	if strings.TrimSpace(filePath) == "" {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.import_file_empty", nil)}
 	}
@@ -4601,9 +4648,7 @@ func (a *App) importDataWithProgressOptions(
 			return connection.QueryResult{Success: false, Message: importJobRecoveryErrorMessage(a, err)}
 		}
 	}
-	metadataSchemaName, metadataTableName := normalizeMetadataSchemaAndTable(config, dbName, tableName)
-
-	importCtx, importCancel := context.WithCancel(context.Background())
+	importCtx, importCancel := context.WithCancel(parent)
 	defer importCancel()
 	jobID := strings.TrimSpace(options.JobID)
 	if recovery != nil && jobID == "" {
@@ -4688,7 +4733,7 @@ func (a *App) importDataWithProgressOptions(
 		return a.cancelledImportResult(importExecutionResult{})
 	}
 	runConfig := normalizeRunConfig(config, dbName)
-	dbInst, err := a.getDatabase(runConfig)
+	dbInst, err := a.getDatabaseSynchronouslyWithContext(importCtx, runConfig, false)
 	if err != nil {
 		if errors.Is(importCtx.Err(), context.Canceled) {
 			return a.cancelledImportResult(importExecutionResult{})
@@ -4710,7 +4755,7 @@ func (a *App) importDataWithProgressOptions(
 		}
 	}
 
-	targetColumns, colErr := getColumnsWithMetadataFallback(dbInst, config, metadataSchemaName, metadataTableName, a.appText)
+	targetColumns, colErr := a.importTargetColumnsContext(importCtx, dbInst, config, dbName, tableName)
 	if errors.Is(importCtx.Err(), context.Canceled) {
 		return a.cancelledImportResult(importExecutionResult{})
 	}
@@ -4776,7 +4821,7 @@ func (a *App) importDataWithProgressOptions(
 		}
 		return managedArtifact.finish(resultData)
 	}
-	if err := streamImportFileWithOptions(filePath, consumer, options); err != nil {
+	if err := streamImportFileWithOptionsContext(importCtx, filePath, consumer, options); err != nil {
 		resultData := batchConsumer.Result()
 		if jobPersistErr != nil {
 			if artifactErr := finishArtifact(&resultData); artifactErr != nil {
@@ -4868,6 +4913,34 @@ func (a *App) importDataWithProgressOptions(
 
 	maybeReleaseFileTransferMemory("import-finished", int64(resultData.Total), filePath)
 	return connection.QueryResult{Success: true, Data: resultPayload, Message: summary}
+}
+
+func (a *App) importTargetColumnsContext(
+	ctx context.Context,
+	dbInst db.Database,
+	config connection.ConnectionConfig,
+	dbName, tableName string,
+) ([]connection.ColumnDefinition, error) {
+	// A second connection to :memory: is a different SQLite or DuckDB database.
+	// Prefer a same-instance Context API for file-local engines so cancellation
+	// does not regress their in-memory import path. Other databases retain the
+	// isolated metadata session, which avoids binding request Context to a shared
+	// cached driver instance.
+	dbType := resolveDDLDBType(config)
+	if dbType == "sqlite" || dbType == "duckdb" {
+		if getter, ok := dbInst.(db.ColumnDefinitionContexter); ok {
+			schemaName, pureTableName := normalizeMetadataSchemaAndTable(config, dbName, tableName)
+			return getter.GetColumnsContext(ctx, schemaName, pureTableName)
+		}
+	}
+	metadataResult := a.runWebMetadataWithContext(ctx, func(session *App) connection.QueryResult {
+		return session.DBGetColumns(config, dbName, tableName)
+	})
+	if !metadataResult.Success {
+		return nil, errors.New(metadataResult.Message)
+	}
+	targetColumns, _ := metadataResult.Data.([]connection.ColumnDefinition)
+	return targetColumns, nil
 }
 
 func (a *App) ApplyChanges(config connection.ConnectionConfig, dbName, tableName string, changes connection.ChangeSet) (result connection.QueryResult) {

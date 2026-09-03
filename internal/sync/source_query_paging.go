@@ -333,12 +333,16 @@ func buildSourceQueryPKInSelectSQL(dbType, sourceQuery string, cols []connection
 }
 
 func countSourceQueryRowsForSync(database db.Database, dbType, sourceQuery string) (int, bool, error) {
+	return countSourceQueryRowsForSyncContext(context.Background(), database, dbType, sourceQuery)
+}
+
+func countSourceQueryRowsForSyncContext(ctx context.Context, database db.Database, dbType, sourceQuery string) (int, bool, error) {
 	subquery, ok := normalizeSourceQueryForPaging(sourceQuery)
 	if !ok {
 		return 0, false, nil
 	}
 	query := fmt.Sprintf("SELECT COUNT(*) AS __gonavi_count__ FROM (%s) AS __gonavi_source_query__", subquery)
-	rows, _, err := database.Query(query)
+	rows, _, err := querySyncDatabaseContext(ctx, database, query)
 	if err != nil {
 		return 0, true, err
 	}

@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -22,6 +23,50 @@ import (
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/secretstore"
 )
+
+type startupSecretStoreProbe struct {
+	gets         atomic.Int32
+	healthChecks atomic.Int32
+}
+
+func (s *startupSecretStoreProbe) Put(string, []byte) error { return nil }
+
+func (s *startupSecretStoreProbe) Get(string) ([]byte, error) {
+	s.gets.Add(1)
+	return nil, os.ErrNotExist
+}
+
+func (s *startupSecretStoreProbe) Delete(string) error { return nil }
+
+func (s *startupSecretStoreProbe) HealthCheck() error {
+	s.healthChecks.Add(1)
+	return nil
+}
+
+var _ secretstore.SecretStore = (*startupSecretStoreProbe)(nil)
+
+func TestInitializeCloudBackupDoesNotReadSecretStore(t *testing.T) {
+	probe := &startupSecretStoreProbe{}
+	application := NewAppWithSecretStore(probe)
+	application.configDir = t.TempDir()
+	if err := application.saveCloudBackupState(CloudBackupConfig{
+		Enabled:          true,
+		Provider:         CloudBackupProviderWebDAV,
+		Schedule:         CloudBackupScheduleManual,
+		BackupCategories: defaultCloudBackupCategories(),
+	}); err != nil {
+		t.Fatalf("save cloud backup metadata: %v", err)
+	}
+
+	application.initializeCloudBackup(context.Background())
+	t.Cleanup(application.shutdownCloudBackup)
+	if got := probe.gets.Load(); got != 0 {
+		t.Fatalf("startup read %d secrets from the OS store", got)
+	}
+	if got := probe.healthChecks.Load(); got != 0 {
+		t.Fatalf("startup performed %d OS store health checks", got)
+	}
+}
 
 const cloudBackupRestoreTestPassword = "cloud-backup-layout-test-password"
 

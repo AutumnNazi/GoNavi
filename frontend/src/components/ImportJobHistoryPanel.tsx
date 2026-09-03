@@ -22,6 +22,7 @@ import {
 import { t as defaultTranslate } from '../i18n';
 import { useOptionalI18n } from '../i18n/provider';
 import { downloadBrowserFileFromResult } from '../utils/browserFileTransfer';
+import { invokeAppWithSignal, isWebRPCAbortError } from '../utils/webRpc';
 import Modal from './common/ResizableDraggableModal';
 
 const { Text } = Typography;
@@ -153,6 +154,7 @@ const ImportJobHistoryPanel: React.FC<ImportJobHistoryPanelProps> = ({ refreshTo
   const [error, setError] = useState('');
   const [pendingAction, setPendingAction] = useState('');
   const requestRef = useRef(0);
+  const recoveryRPCAbortRef = useRef<AbortController | null>(null);
 
   const loadJobs = useCallback(async () => {
     const requestID = requestRef.current + 1;
@@ -185,6 +187,11 @@ const ImportJobHistoryPanel: React.FC<ImportJobHistoryPanelProps> = ({ refreshTo
       requestRef.current += 1;
     };
   }, [loadJobs, refreshToken]);
+
+  useEffect(() => () => {
+    recoveryRPCAbortRef.current?.abort();
+    recoveryRPCAbortRef.current = null;
+  }, []);
 
   useEffect(() => {
     const hasRunningJob = jobs.some((job) => pollingStatuses.has(job.status as ImportJobStatus));
@@ -298,8 +305,16 @@ const ImportJobHistoryPanel: React.FC<ImportJobHistoryPanelProps> = ({ refreshTo
       cancelText: t('common.cancel'),
       onOk: async () => {
         setPendingAction(`resume:${job.id}`);
+        recoveryRPCAbortRef.current?.abort();
+        const controller = new AbortController();
+        recoveryRPCAbortRef.current = controller;
         try {
-          const result = await ResumeImportJob(job.id);
+          const result = await invokeAppWithSignal(
+            'ResumeImportJob',
+            [job.id],
+            controller.signal,
+            () => ResumeImportJob(job.id),
+          );
           if (!result?.success) {
             throw new Error(result?.message || t('data_import.history.error.resume_failed'));
           }
@@ -307,11 +322,15 @@ const ImportJobHistoryPanel: React.FC<ImportJobHistoryPanelProps> = ({ refreshTo
           await loadJobs();
           void message.success(t('data_import.history.message.resumed'));
         } catch (resumeError: any) {
+          if (isWebRPCAbortError(resumeError)) return;
           void message.error(t('data_import.history.error.resume_failed_detail', {
             detail: resumeError?.message || String(resumeError),
           }));
           throw resumeError;
         } finally {
+          if (recoveryRPCAbortRef.current === controller) {
+            recoveryRPCAbortRef.current = null;
+          }
           setPendingAction('');
         }
       },
@@ -326,8 +345,16 @@ const ImportJobHistoryPanel: React.FC<ImportJobHistoryPanelProps> = ({ refreshTo
       cancelText: t('common.cancel'),
       onOk: async () => {
         setPendingAction(`retry:${job.id}`);
+        recoveryRPCAbortRef.current?.abort();
+        const controller = new AbortController();
+        recoveryRPCAbortRef.current = controller;
         try {
-          const result = await RetryImportJobFailedRows(job.id);
+          const result = await invokeAppWithSignal(
+            'RetryImportJobFailedRows',
+            [job.id],
+            controller.signal,
+            () => RetryImportJobFailedRows(job.id),
+          );
           if (!result?.success) {
             throw new Error(result?.message || t('data_import.history.error.retry_failed_rows_failed'));
           }
@@ -335,11 +362,15 @@ const ImportJobHistoryPanel: React.FC<ImportJobHistoryPanelProps> = ({ refreshTo
           await loadJobs();
           void message.success(t('data_import.history.message.retry_failed_rows_started'));
         } catch (retryError: any) {
+          if (isWebRPCAbortError(retryError)) return;
           void message.error(t('data_import.history.error.retry_failed_rows_failed_detail', {
             detail: retryError?.message || String(retryError),
           }));
           throw retryError;
         } finally {
+          if (recoveryRPCAbortRef.current === controller) {
+            recoveryRPCAbortRef.current = null;
+          }
           setPendingAction('');
         }
       },

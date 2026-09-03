@@ -1147,20 +1147,22 @@ func (a *App) MySQLShowCreateTable(config connection.ConnectionConfig, dbName st
 }
 
 type dbQueryAuditOptions struct {
-	trackHistory             bool
-	auditAll                 bool
-	auditWrites              bool
-	source                   string
-	executionContext         context.Context
-	classifyConnectionErrors bool
+	trackHistory              bool
+	auditAll                  bool
+	auditWrites               bool
+	source                    string
+	executionContext          context.Context
+	synchronousConnectionWait bool
+	classifyConnectionErrors  bool
 }
 
 type dbQueryMultiAuditOptions struct {
-	auditAll                 bool
-	auditWrites              bool
-	source                   string
-	executionContext         context.Context
-	classifyConnectionErrors bool
+	auditAll                  bool
+	auditWrites               bool
+	source                    string
+	executionContext          context.Context
+	synchronousConnectionWait bool
+	classifyConnectionErrors  bool
 }
 
 func buildQueryConnectionFailure(err error, queryID string, classify bool) connection.QueryResult {
@@ -1415,7 +1417,13 @@ func (a *App) dbQueryWithCancel(
 		cleanupRunningQuery()
 	}()
 
-	dbInst, err := a.getDatabaseWithContext(ctx, runConfig, false)
+	var dbInst db.Database
+	var err error
+	if auditOptions.synchronousConnectionWait {
+		dbInst, err = a.getDatabaseSynchronouslyWithContext(ctx, runConfig, false)
+	} else {
+		dbInst, err = a.getDatabaseWithContext(ctx, runConfig, false)
+	}
 	if err != nil {
 		logger.Error(err, "DBQuery 获取连接失败：%s", formatConnSummary(runConfig))
 		return buildQueryConnectionFailure(err, queryID, auditOptions.classifyConnectionErrors)
@@ -1488,7 +1496,13 @@ func (a *App) dbQueryWithCancel(
 			if a.invalidateCachedDatabase(runConfig, err) {
 				requestTrace.MarkRetry("cached connection refresh")
 				setRunningQueryCancellable(true)
-				retryInst, retryErr := a.getDatabaseWithContext(ctx, runConfig, true)
+				var retryInst db.Database
+				var retryErr error
+				if auditOptions.synchronousConnectionWait {
+					retryInst, retryErr = a.getDatabaseSynchronouslyWithContext(ctx, runConfig, true)
+				} else {
+					retryInst, retryErr = a.getDatabaseWithContext(ctx, runConfig, true)
+				}
 				if retryErr != nil {
 					logger.Error(retryErr, "DBQuery 重建连接失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
 					return buildQueryConnectionFailure(retryErr, queryID, auditOptions.classifyConnectionErrors)
@@ -1655,7 +1669,13 @@ func (a *App) dbQueryMulti(
 		cleanupRunningQuery()
 	}()
 
-	dbInst, err := a.getDatabaseWithContext(ctx, runConfig, false)
+	var dbInst db.Database
+	var err error
+	if auditOptions.synchronousConnectionWait {
+		dbInst, err = a.getDatabaseSynchronouslyWithContext(ctx, runConfig, false)
+	} else {
+		dbInst, err = a.getDatabaseWithContext(ctx, runConfig, false)
+	}
 	if err != nil {
 		logger.Error(err, "DBQueryMulti 获取连接失败：%s", formatConnSummary(runConfig))
 		return buildQueryConnectionFailure(err, queryID, auditOptions.classifyConnectionErrors)
@@ -1782,7 +1802,13 @@ func (a *App) dbQueryMulti(
 		if a.invalidateCachedDatabase(runConfig, err) {
 			requestTrace.MarkRetry("cached connection refresh")
 			setRunningQueryCancellable(true)
-			retryInst, retryErr := a.getDatabaseWithContext(ctx, runConfig, true)
+			var retryInst db.Database
+			var retryErr error
+			if auditOptions.synchronousConnectionWait {
+				retryInst, retryErr = a.getDatabaseSynchronouslyWithContext(ctx, runConfig, true)
+			} else {
+				retryInst, retryErr = a.getDatabaseWithContext(ctx, runConfig, true)
+			}
 			if retryErr != nil {
 				logger.Error(retryErr, "DBQueryMulti 重建连接失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
 				return buildQueryConnectionFailure(retryErr, queryID, auditOptions.classifyConnectionErrors)
@@ -2445,6 +2471,16 @@ func looksLikeSQLServerProcedureInvocation(query string) bool {
 }
 
 func (a *App) DBQueryIsolated(config connection.ConnectionConfig, dbName string, query string) connection.QueryResult {
+	return a.dbQueryIsolatedContext(context.Background(), config, dbName, query)
+}
+
+func (a *App) dbQueryIsolatedContext(parent context.Context, config connection.ConnectionConfig, dbName string, query string) connection.QueryResult {
+	if parent == nil {
+		parent = context.Background()
+	}
+	if err := parent.Err(); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error(), Data: map[string]any{"cancelled": true}}
+	}
 	runConfig := normalizeRunConfig(config, dbName)
 
 	query = sanitizeSQLForPgLike(resolveDDLDBType(config), query)
@@ -2465,8 +2501,11 @@ func (a *App) DBQueryIsolated(config connection.ConnectionConfig, dbName string,
 			logger.Error(closeErr, "DBQueryIsolated 关闭临时连接失败：%s", formatConnSummary(runConfig))
 		}
 	}()
+	if err := parent.Err(); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error(), Data: map[string]any{"cancelled": true}}
+	}
 
-	ctx, cancel := newQueryExecutionContext(runConfig)
+	ctx, cancel := newQueryExecutionContextWithParent(parent, runConfig)
 	defer cancel()
 
 	isReadQuery := isReadOnlySQLQuery(runConfig.Type, query)
@@ -2485,7 +2524,15 @@ func (a *App) DBQueryIsolated(config connection.ConnectionConfig, dbName string,
 		}); ok {
 			data, columns, err = q.QueryContext(ctx, query)
 		} else {
+			if contextErr := ctx.Err(); contextErr != nil {
+				return buildQueryExecutionFailure(ctx, contextErr, contextErr.Error(), "")
+			}
 			data, columns, err = dbInst.Query(query)
+			if ctx.Err() != nil {
+				return a.buildCancellationUnsupportedExecutionResult(connection.QueryResult{
+					Data: data, Fields: columns, Messages: messages,
+				}, err)
+			}
 		}
 		if err == nil {
 			return connection.QueryResult{Success: true, Data: data, Fields: columns, Messages: messages}
@@ -2505,7 +2552,15 @@ func (a *App) DBQueryIsolated(config connection.ConnectionConfig, dbName string,
 	}); ok {
 		affected, err = e.ExecContext(ctx, query)
 	} else {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return buildQueryExecutionFailure(ctx, contextErr, contextErr.Error(), "")
+		}
 		affected, err = dbInst.Exec(query)
+		if ctx.Err() != nil {
+			return a.buildCancellationUnsupportedExecutionResult(connection.QueryResult{
+				Data: map[string]int64{"affectedRows": affected},
+			}, err)
+		}
 	}
 	if err != nil {
 		err = classifyDispatchedWriteError(err)

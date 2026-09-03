@@ -1,5 +1,36 @@
 import { splitQualifiedNameSegmentsDetailed } from '../../utils/qualifiedName';
 
+const LOWERCASE_IDENTIFIER_PATTERN = /^[\p{L}_][\p{L}\p{N}_$]*$/u;
+
+// A single pair of double quotes around a lowercase identifier is equivalent
+// to the unquoted PostgreSQL form. Preserve any doubled quote inside the raw
+// segment: it is SQL escaping for a literal quote in the identifier itself.
+const canonicalizeSidebarIdentitySegment = (segment: {
+  raw: string;
+  value: string;
+  quoted: boolean;
+}): string => {
+  const raw = String(segment.raw || '').trim();
+  if (!raw) return '';
+  const value = raw[0] === '"' && raw[raw.length - 1] === '"'
+    ? raw.slice(1, -1)
+    : String(segment.value || '').trim();
+  if (
+    segment.quoted
+    && raw[0] === '"'
+    && raw[raw.length - 1] === '"'
+    && !raw.includes('""')
+    && LOWERCASE_IDENTIFIER_PATTERN.test(value)
+    && value === value.toLowerCase()
+  ) return value;
+  return raw;
+};
+
+const canonicalizeSidebarIdentityPart = (value: unknown): string => {
+  const segments = splitQualifiedNameSegmentsDetailed(String(value || '').trim());
+  return segments.map(canonicalizeSidebarIdentitySegment).filter(Boolean).join('.');
+};
+
 export interface SidebarPartitionTableEntry {
   tableName: string;
   schemaName?: string;
@@ -22,21 +53,38 @@ export const getSidebarTableEntryIdentity = (
   const tableName = String(entry.tableName || '').trim();
   if (!tableName) return '';
   const segments = splitQualifiedNameSegmentsDetailed(tableName);
-  const qualifiedSchemaName = segments.slice(0, -1).map((segment) => segment.raw).join('.');
+  const qualifiedSchemaName = segments
+    .slice(0, -1)
+    .map(canonicalizeSidebarIdentitySegment)
+    .filter(Boolean)
+    .join('.');
   const schemaName = String(
-    qualifiedSchemaName || entry.schemaName,
+    qualifiedSchemaName || canonicalizeSidebarIdentityPart(entry.schemaName),
   ).trim();
   // Keep raw segments so quoted identifiers are not merged with differently
-  // cased unquoted identifiers on PostgreSQL-compatible sources.
-  const objectName = String(segments[segments.length - 1]?.raw || tableName).trim();
+  // cased or special unquoted identifiers; the helper only folds transport
+  // quotes around ordinary lowercase names.
+  const objectName = String(
+    canonicalizeSidebarIdentitySegment(segments[segments.length - 1] || {
+      raw: tableName,
+      value: tableName,
+      quoted: false,
+    }) || canonicalizeSidebarIdentityPart(tableName),
+  ).trim();
   return `${schemaName}\u0000${objectName}`;
 };
 
-const getSidebarTableObjectIdentity = (tableName: unknown): string => {
+export const getSidebarTableObjectIdentity = (tableName: unknown): string => {
   const text = String(tableName || '').trim();
   if (!text) return '';
   const segments = splitQualifiedNameSegmentsDetailed(text);
-  return String(segments[segments.length - 1]?.raw || text).trim();
+  return String(
+    canonicalizeSidebarIdentitySegment(segments[segments.length - 1] || {
+      raw: text,
+      value: text,
+      quoted: false,
+    }) || text,
+  ).trim();
 };
 
 // Catalog metadata can contain the same relation more than once. Keep the

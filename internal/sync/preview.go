@@ -3,6 +3,7 @@ package sync
 import (
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/db"
+	"context"
 	"fmt"
 	"strings"
 )
@@ -41,8 +42,24 @@ type TableDiffPreview struct {
 }
 
 func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (TableDiffPreview, error) {
+	runner := &SyncEngine{reporter: s.reporter, ctx: context.Background()}
+	return runner.preview(config, tableName, limit)
+}
+
+func (s *SyncEngine) PreviewContext(ctx context.Context, config SyncConfig, tableName string, limit int) (TableDiffPreview, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	runner := &SyncEngine{reporter: s.reporter, ctx: markSyncDriverContext(ctx)}
+	return runner.preview(config, tableName, limit)
+}
+
+func (s *SyncEngine) preview(config SyncConfig, tableName string, limit int) (TableDiffPreview, error) {
 	config = normalizeSyncConnectionDatabases(config)
 	config = normalizeMappedSyncTables(config)
+	if err := s.contextError(); err != nil {
+		return TableDiffPreview{}, err
+	}
 	if limit <= 0 {
 		limit = 200
 	}
@@ -77,12 +94,24 @@ func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (Ta
 	if err := sourceDB.Connect(config.SourceConfig); err != nil {
 		return TableDiffPreview{}, syncWrapDetailError("data_sync.backend.error.connect_source_failed", err)
 	}
+	if err := s.contextError(); err != nil {
+		_ = sourceDB.Close()
+		return TableDiffPreview{}, err
+	}
 	defer sourceDB.Close()
+	db.BindMetadataContext(sourceDB, s.context())
+	defer db.ClearMetadataContext(sourceDB)
 
 	if err := targetDB.Connect(config.TargetConfig); err != nil {
 		return TableDiffPreview{}, syncWrapDetailError("data_sync.backend.error.connect_target_failed", err)
 	}
+	if err := s.contextError(); err != nil {
+		_ = targetDB.Close()
+		return TableDiffPreview{}, err
+	}
 	defer targetDB.Close()
+	db.BindMetadataContext(targetDB, s.context())
+	defer db.ClearMetadataContext(targetDB)
 
 	plan, cols, targetCols, err := buildSchemaMigrationPlan(config, tableName, sourceDB, targetDB)
 	if err != nil {
@@ -192,7 +221,7 @@ func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (Ta
 
 	handled := false
 	if !hasExplicitSyncMappings(config) && len(pkCols) == 1 {
-		handled, _, err = scanTableDiffInPages(sourceDB, targetDB, sourceType, targetType, plan, cols, nil, sourcePKCol, targetColSet, true, func(page pagedDiffPage) error {
+		handled, _, err = scanTableDiffInPagesContext(s.context(), sourceDB, targetDB, sourceType, targetType, plan, cols, nil, sourcePKCol, targetColSet, true, func(page pagedDiffPage) error {
 			out.TotalInserts += len(page.Inserts)
 			out.TotalUpdates += len(page.Updates)
 			out.TotalDeletes += len(page.Deletes)
@@ -242,7 +271,7 @@ func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (Ta
 		return out, nil
 	}
 
-	sourceRows, _, err := sourceDB.Query(fmt.Sprintf("SELECT * FROM %s", quoteQualifiedIdentByType(sourceType, plan.SourceQueryTable)))
+	sourceRows, _, err := querySyncDatabaseContext(s.context(), sourceDB, fmt.Sprintf("SELECT * FROM %s", quoteQualifiedIdentByType(sourceType, plan.SourceQueryTable)))
 	if err != nil {
 		return TableDiffPreview{}, fmt.Errorf("读取源表失败: %w", err)
 	}
@@ -255,7 +284,7 @@ func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (Ta
 
 	targetRows := make([]map[string]interface{}, 0)
 	if plan.TargetTableExists {
-		targetRows, _, err = targetDB.Query(fmt.Sprintf("SELECT * FROM %s", quoteQualifiedIdentByType(targetType, plan.TargetQueryTable)))
+		targetRows, _, err = querySyncDatabaseContext(s.context(), targetDB, fmt.Sprintf("SELECT * FROM %s", quoteQualifiedIdentByType(targetType, plan.TargetQueryTable)))
 		if err != nil {
 			return TableDiffPreview{}, fmt.Errorf("读取目标表失败: %w", err)
 		}
@@ -312,7 +341,7 @@ func (s *SyncEngine) Preview(config SyncConfig, tableName string, limit int) (Ta
 // therefore must not require or manufacture a stable key.
 func (s *SyncEngine) previewInsertOnlyTable(config SyncConfig, tableName string, limit int, sourceDB db.Database, plan SchemaMigrationPlan, cols, targetCols []connection.ColumnDefinition, projection *CompiledProjection, schemaStatements, selectionKeyCols []string) (TableDiffPreview, error) {
 	sourceType := resolveMigrationDBType(config.SourceConfig)
-	sourceCount, counted, err := countTableRowsForSync(sourceDB, sourceType, plan.SourceQueryTable)
+	sourceCount, counted, err := countTableRowsForSyncContext(s.context(), sourceDB, sourceType, plan.SourceQueryTable)
 	if err != nil {
 		return TableDiffPreview{}, fmt.Errorf("读取源表数量失败: %w", err)
 	}
@@ -320,7 +349,7 @@ func (s *SyncEngine) previewInsertOnlyTable(config SyncConfig, tableName string,
 	if strings.TrimSpace(query) == "" {
 		return TableDiffPreview{}, fmt.Errorf("当前数据源不支持分页预览")
 	}
-	sourceRows, _, err := sourceDB.Query(query)
+	sourceRows, _, err := querySyncDatabaseContext(s.context(), sourceDB, query)
 	if err != nil {
 		return TableDiffPreview{}, fmt.Errorf("读取源表失败: %w", err)
 	}

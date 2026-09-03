@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { getCurrentLanguage, setCurrentLanguage } from '../../i18n';
+
 import {
     buildBoundedQueryEditorCompletionSuggestions,
     buildQueryEditorAliasMap,
@@ -400,9 +402,30 @@ describe('QueryEditorHelpers qualified navigation (MySQL db.table + PG schema.ta
         expect(buildQueryEditorTableSourceAlias('system_user', 'SELECT * FROM system_user su JOIN service_user su2')).toBe('su3');
     });
 
-    it('only permits table aliases for non-insert table sources', () => {
-        expect(isQueryEditorTableAliasCompletionContext('SELECT * FROM system_user ')).toBe(true);
-        expect(isQueryEditorTableAliasCompletionContext('INSERT INTO system_user ')).toBe(false);
+    it('only permits table aliases for SELECT table sources', () => {
+        for (const sql of [
+            'UPDATE system_user ',
+            'DELETE FROM system_user ',
+            'INSERT INTO system_user ',
+            'REPLACE INTO system_user ',
+            'MERGE INTO system_user ',
+        ]) {
+            expect(isQueryEditorTableSourceCompletionContext(sql)).toBe(true);
+            expect(isQueryEditorTableAliasCompletionContext(sql)).toBe(false);
+        }
+
+        for (const sql of [
+            'SELECT * FROM system_user ',
+            "SELECT REPLACE(name, 'x', 'y') FROM system_user ",
+            'SELECT INSERT(name, 1, 0, \'x\') FROM system_user ',
+            'SELECT * FROM system_user su JOIN service_user ',
+            'SELECT * FROM system_user su, service_user ',
+            'INSERT INTO audit_log SELECT * FROM system_user ',
+            'INSERT INTO audit_log SELECT * FROM (SELECT * FROM system_user ',
+        ]) {
+            expect(isQueryEditorTableSourceCompletionContext(sql)).toBe(true);
+            expect(isQueryEditorTableAliasCompletionContext(sql)).toBe(true);
+        }
     });
 
     it('keeps a dotted Dameng owner intact when metadata already identifies it', () => {
@@ -2059,6 +2082,35 @@ describe('QueryEditorHelpers cross-line qualified identifier resolution', () => 
         expect(decorations).toMatchObject([
             { startColumn: 15, endColumn: 20 },
         ]);
+    });
+
+    it('uses the sidebar locate hint when table ctrl-click is configured for locating', () => {
+        const previousLanguage = getCurrentLanguage();
+        setCurrentLanguage('en-US');
+        try {
+            const decorations = resolveQueryEditorNavigationDecorations(
+                'SELECT * FROM users',
+                15,
+                'main',
+                ['main'],
+                [{ dbName: 'main', tableName: 'users' }],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                'Ctrl',
+                false,
+                undefined,
+                '',
+                'locate',
+            );
+
+            expect(decorations[0]?.hoverMessage).toBe('Ctrl + click to locate this table in the left schema tree');
+        } finally {
+            setCurrentLanguage(previousLanguage);
+        }
     });
 
     it('strips a stale SQL keyword tail from a hover identifier', () => {

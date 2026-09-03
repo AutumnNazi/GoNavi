@@ -185,6 +185,7 @@ type executeSQLResult struct {
 	QueryID           string                `json:"queryId,omitempty"`
 	CancellationState string                `json:"cancellationState,omitempty"`
 	Message           string                `json:"message,omitempty"`
+	OutcomeUnknown    bool                  `json:"outcomeUnknown,omitempty"`
 	Truncated         bool                  `json:"truncated,omitempty"`
 	Statements        []sqlStatementSummary `json:"statements"`
 	Results           []sqlResultSet        `json:"results"`
@@ -624,10 +625,22 @@ func (s *Service) ExecuteSQL(ctx context.Context, req *mcp.CallToolRequest, args
 	dbName := effectiveDBName(args.DBName, view.Config)
 	queryResult := s.executeAuthorizedSQL(ctx, view, dbName, sqlText, args.AllowMutating)
 	if !queryResult.Success {
-		if queryResult.CancellationState != "" {
-			return toolError("SQL 执行失败（cancellationState=%s）: %s", queryResult.CancellationState, strings.TrimSpace(queryResult.Message)), executeSQLResult{}, nil
+		failure := executeSQLResult{
+			RequestID:         mcpRequestID(ctx),
+			ConnectionID:      view.ID,
+			DBName:            dbName,
+			StatementCount:    inspection.StatementCount,
+			ReadOnly:          inspection.ReadOnly,
+			QueryID:           strings.TrimSpace(queryResult.QueryID),
+			CancellationState: strings.TrimSpace(queryResult.CancellationState),
+			Message:           strings.TrimSpace(queryResult.Message),
+			OutcomeUnknown:    queryResult.OutcomeUnknown,
+			Statements:        toStatementSummaries(inspection.Statements),
 		}
-		return toolError("SQL 执行失败: %s", strings.TrimSpace(queryResult.Message)), executeSQLResult{}, nil
+		if queryResult.CancellationState != "" {
+			return toolError("SQL 执行失败（cancellationState=%s）: %s", queryResult.CancellationState, strings.TrimSpace(queryResult.Message)), failure, nil
+		}
+		return toolError("SQL 执行失败: %s", strings.TrimSpace(queryResult.Message)), failure, nil
 	}
 
 	resultSets, err := decodeResultSets(queryResult.Data)
@@ -645,6 +658,7 @@ func (s *Service) ExecuteSQL(ctx context.Context, req *mcp.CallToolRequest, args
 		QueryID:           strings.TrimSpace(queryResult.QueryID),
 		CancellationState: strings.TrimSpace(queryResult.CancellationState),
 		Message:           strings.TrimSpace(queryResult.Message),
+		OutcomeUnknown:    queryResult.OutcomeUnknown,
 		Truncated:         truncated,
 		Statements:        toStatementSummaries(inspection.Statements),
 		Results:           normalizedResults,

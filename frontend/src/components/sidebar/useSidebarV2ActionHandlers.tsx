@@ -213,6 +213,7 @@ export const useSidebarV2ActionHandlers = ({
             type: 'query',
             connectionId: node.dataRef.id,
             dbName: node.dataRef.dbName,
+            schemaName: String(node.dataRef?.schemaName || '').trim() || undefined,
             query: queryTemplate,
           });
         })();

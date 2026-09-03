@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import dayjs from 'dayjs';
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -3612,6 +3613,159 @@ describe('DataGrid DDL interactions', () => {
     const currentCell = create(<div>{currentColumn.render(currentRecord.created_at, currentRecord, 0)}</div>);
     expect(currentCell.root.findByProps({ 'data-date-picker': 'true' })).toBeTruthy();
     currentCell.unmount();
+    renderer!.unmount();
+  });
+
+  it('keeps a virtual datetime editor open while the picker briefly blurs during panel navigation', async () => {
+    vi.useFakeTimers();
+    storeState.appearance.uiVersion = 'v2';
+    backendApp.DBGetColumns.mockResolvedValue({
+      success: true,
+      data: [
+        { name: 'id', type: 'bigint' },
+        { name: 'created_at', type: 'datetime' },
+      ],
+    });
+    const rows = [{ __gonavi_row_key__: 'row-1', id: 1, created_at: '2026-07-22 12:34:56' }];
+    const props = {
+      data: rows,
+      columnNames: ['id', 'created_at'],
+      loading: false,
+      tableName: 'users',
+      dbName: 'main',
+      connectionId: 'conn-1',
+      pkColumns: ['id'],
+    };
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<DataGrid {...props} />);
+    });
+    await waitForEffects();
+
+    const doubleClickSurface = renderer!.root.findAll(
+      (node) => typeof node.props.onDoubleClickCapture === 'function',
+    )[0];
+    await act(async () => {
+      doubleClickSurface.props.onDoubleClickCapture({
+        target: createRenderedCellTarget('row-1', 'created_at'),
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      });
+    });
+
+    const renderDateCell = () => {
+      const record = testRenderState.latestTableProps.dataSource[0];
+      const column = testRenderState.latestColumns.find((item) => item.key === 'created_at');
+      return create(<div>{column.render(record.created_at, record, 0)}</div>);
+    };
+    const cell = renderDateCell();
+    const pickerProps = testRenderState.latestDatePickerProps;
+    expect(pickerProps).toBeTruthy();
+
+    // rc-picker can emit input blur/open=false before the panel receives focus.
+    act(() => {
+      pickerProps.onBlur();
+      pickerProps.onOpenChange(false);
+      vi.advanceTimersByTime(0);
+    });
+    const stillEditing = renderDateCell();
+    expect(stillEditing.root.findByProps({ 'data-date-picker': 'true' })).toBeTruthy();
+
+    // Once the panel regains focus, the delayed blur guard must not close it.
+    act(() => {
+      pickerProps.onOpenChange(true);
+      vi.advanceTimersByTime(200);
+    });
+    const afterPanelFocus = renderDateCell();
+    expect(afterPanelFocus.root.findByProps({ 'data-date-picker': 'true' })).toBeTruthy();
+
+    // Confirm still receives the complete datetime value.
+    testRenderState.formGetFieldValue.mockReturnValue(undefined);
+    act(() => {
+      pickerProps.onOk(dayjs('2026-07-22 13:45:12'));
+      vi.runAllTimers();
+    });
+    await waitForEffects();
+    expect(testRenderState.latestTableProps.dataSource[0].created_at).toBe('2026-07-22 13:45:12');
+
+    cell.unmount();
+    stillEditing.unmount();
+    afterPanelFocus.unmount();
+    renderer!.unmount();
+  });
+
+  it('keeps a virtual date editor open during panel navigation and preserves its original time on save', async () => {
+    vi.useFakeTimers();
+    storeState.appearance.uiVersion = 'v2';
+    backendApp.DBGetColumns.mockResolvedValue({
+      success: true,
+      data: [
+        { name: 'id', type: 'bigint' },
+        { name: 'register_date', type: 'date' },
+      ],
+    });
+    const rows = [{ __gonavi_row_key__: 'row-1', id: 1, register_date: '2020-01-05 12:34:56' }];
+    const props = {
+      data: rows,
+      columnNames: ['id', 'register_date'],
+      loading: false,
+      tableName: 'users',
+      dbName: 'main',
+      connectionId: 'conn-1',
+      pkColumns: ['id'],
+    };
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<DataGrid {...props} />);
+    });
+    await waitForEffects();
+
+    const doubleClickSurface = renderer!.root.findAll(
+      (node) => typeof node.props.onDoubleClickCapture === 'function',
+    )[0];
+    await act(async () => {
+      doubleClickSurface.props.onDoubleClickCapture({
+        target: createRenderedCellTarget('row-1', 'register_date'),
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      });
+    });
+
+    const renderDateCell = () => {
+      const record = testRenderState.latestTableProps.dataSource[0];
+      const column = testRenderState.latestColumns.find((item) => item.key === 'register_date');
+      return create(<div>{column.render(record.register_date, record, 0)}</div>);
+    };
+    const cell = renderDateCell();
+    const pickerProps = testRenderState.latestDatePickerProps;
+    expect(pickerProps).toBeTruthy();
+    expect(pickerProps.picker).toBe('date');
+
+    // Navigating the portal panel must not commit or dismiss the cell editor.
+    act(() => {
+      pickerProps.onBlur();
+      pickerProps.onOpenChange(false);
+      vi.advanceTimersByTime(0);
+      pickerProps.onOpenChange(true);
+      vi.advanceTimersByTime(200);
+    });
+    const afterPanelNavigation = renderDateCell();
+    expect(afterPanelNavigation.root.findByProps({ 'data-date-picker': 'true' })).toBeTruthy();
+
+    // Selecting a day submits the new date but keeps the source HH:mm:ss portion.
+    testRenderState.formGetFieldValue.mockReturnValue(undefined);
+    act(() => {
+      pickerProps.onChange(dayjs('2020-01-06'));
+      pickerProps.onOpenChange(false);
+      vi.advanceTimersByTime(200);
+    });
+    await waitForEffects();
+    expect(testRenderState.latestTableProps.dataSource[0].register_date).toBe('2020-01-06 12:34:56');
+
+    cell.unmount();
+    afterPanelNavigation.unmount();
     renderer!.unmount();
   });
 

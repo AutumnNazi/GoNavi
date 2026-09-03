@@ -474,8 +474,12 @@ func buildKeysetPagedTableQuery(dbType, queryTable string, cols []connection.Col
 }
 
 func countTableRowsForSync(database db.Database, dbType, queryTable string) (int, bool, error) {
+	return countTableRowsForSyncContext(context.Background(), database, dbType, queryTable)
+}
+
+func countTableRowsForSyncContext(ctx context.Context, database db.Database, dbType, queryTable string) (int, bool, error) {
 	query := fmt.Sprintf("SELECT COUNT(*) AS __gonavi_count__ FROM %s", quoteQualifiedIdentByType(dbType, queryTable))
-	rows, _, err := database.Query(query)
+	rows, _, err := querySyncDatabaseContext(ctx, database, query)
 	if err != nil {
 		return 0, true, err
 	}

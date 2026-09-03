@@ -32,6 +32,72 @@ const create = (...args: Parameters<typeof createRenderer>): ReactTestRenderer =
   return renderer;
 };
 
+const createInlineAiHarnessService = (content = 'videos') => {
+  const runId = 'query-editor-inline-run';
+  const events = [
+    {
+      schemaVersion: 1,
+      runId,
+      sessionId: 'query-editor-inline-session',
+      sessionGeneration: 1,
+      sequence: 1,
+      runRevision: 1,
+      attempt: 1,
+      timestamp: 1,
+      kind: 'model_completed',
+      resultingState: 'running_model',
+      payload: { text: content },
+    },
+    {
+      schemaVersion: 1,
+      runId,
+      sessionId: 'query-editor-inline-session',
+      sessionGeneration: 1,
+      sequence: 2,
+      runRevision: 2,
+      attempt: 1,
+      timestamp: 2,
+      kind: 'terminal',
+      resultingState: 'completed',
+      payload: { reason: 'completed' },
+    },
+  ];
+
+  return {
+    AIGetProviders: vi.fn(async () => [{
+      id: 'openai-main',
+      type: 'openai',
+      name: 'OpenAI',
+      apiKey: '',
+      hasSecret: true,
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-5-mini',
+      maxTokens: 2048,
+      temperature: 0.2,
+    }]),
+    AIGetActiveProvider: vi.fn(async () => 'openai-main'),
+    AIGetUserPromptSettings: vi.fn(async () => ({
+      global: '',
+      database: '',
+      jvm: '',
+      jvmDiagnostic: '',
+    })),
+    AISubmitAgentInput: vi.fn(async (request: { requestId: string }) => ({
+      requestId: request.requestId,
+      sessionId: 'query-editor-inline-session',
+      runId,
+      disposition: 'started',
+      revision: 1,
+      state: 'running_model',
+    })),
+    AIReadAgentRun: vi.fn(async (request: { afterSequence?: number }) => ({
+      run: { id: runId, state: 'completed' },
+      events: events.filter((event) => event.sequence > Number(request.afterSequence || 0)),
+      hasMore: false,
+    })),
+  };
+};
+
 const storeState = vi.hoisted(() => ({
   connections: [
     {
@@ -68,6 +134,7 @@ const storeState = vi.hoisted(() => ({
     uiVersion: 'legacy' as 'legacy' | 'v2',
     newQuerySqlTemplate: null as string | null,
     autoAddTableAlias: true,
+    queryTableCtrlClickAction: 'open-design' as 'open-design' | 'locate',
   },
   sqlFormatOptions: { keywordCase: 'upper' as const },
   setSqlFormatOptions: vi.fn(),
@@ -914,6 +981,7 @@ describe('QueryEditor external SQL save', () => {
     storeState.appearance.uiVersion = 'legacy';
     storeState.appearance.newQuerySqlTemplate = null;
     storeState.appearance.autoAddTableAlias = true;
+    storeState.appearance.queryTableCtrlClickAction = 'open-design';
     storeState.queryOptions = {
       maxRows: 5000,
       wordWrap: false,
@@ -1288,8 +1356,9 @@ describe('QueryEditor external SQL save', () => {
       || props['aria-label'] === catalogs['zh-CN']['query_editor.object_info.label.schema']
     ));
     expect(latestSchemaSelect()).toMatchObject({
-      value: 'public',
+      value: 'removed_schema',
       options: [
+        { label: 'removed_schema', value: 'removed_schema', title: '', fullName: 'removed_schema' },
         { label: 'public', value: 'public', title: '', fullName: 'public' },
         { label: 'sales', value: 'sales', title: '', fullName: 'sales' },
       ],
@@ -2058,27 +2127,7 @@ describe('QueryEditor external SQL save', () => {
   });
 
   it('uses grounded AI inline ghost when manual completion is triggered in table-name context and inline AI is available', async () => {
-    const inlineAiService = {
-      AIGetProviders: vi.fn(async () => [{
-        id: 'openai-main',
-        type: 'openai',
-        name: 'OpenAI',
-        apiKey: '',
-        hasSecret: true,
-        baseUrl: 'https://api.openai.com/v1',
-        model: 'gpt-5-mini',
-        maxTokens: 2048,
-        temperature: 0.2,
-      }]),
-      AIGetActiveProvider: vi.fn(async () => 'openai-main'),
-      AIGetUserPromptSettings: vi.fn(async () => ({
-        global: '',
-        database: '',
-        jvm: '',
-        jvmDiagnostic: '',
-      })),
-      AIChatSend: vi.fn(async () => ({ success: true, content: 'videos' })),
-    };
+    const inlineAiService = createInlineAiHarnessService();
     backendApp.DBGetTables.mockResolvedValueOnce({
       success: true,
       data: [
@@ -2152,7 +2201,7 @@ describe('QueryEditor external SQL save', () => {
       }
     });
 
-    expect(inlineAiService.AIChatSend).toHaveBeenCalledTimes(1);
+    expect(inlineAiService.AISubmitAgentInput).toHaveBeenCalledTimes(1);
     expect(editorState.domNode.appendChild).toHaveBeenCalled();
     const ghostOverlay = editorState.domNode.appendChild.mock.calls[
       editorState.domNode.appendChild.mock.calls.length - 1
@@ -2364,27 +2413,7 @@ describe('QueryEditor external SQL save', () => {
         dbName: 'main',
       } as any];
 
-      const inlineAiService = {
-        AIGetProviders: vi.fn(async () => [{
-          id: 'openai-main',
-          type: 'openai',
-          name: 'OpenAI',
-          apiKey: '',
-          hasSecret: true,
-          baseUrl: 'https://api.openai.com/v1',
-          model: 'gpt-5-mini',
-          maxTokens: 2048,
-          temperature: 0.2,
-        }]),
-        AIGetActiveProvider: vi.fn(async () => 'openai-main'),
-        AIGetUserPromptSettings: vi.fn(async () => ({
-          global: '',
-          database: '',
-          jvm: '',
-          jvmDiagnostic: '',
-        })),
-        AIChatSend: vi.fn(async () => ({ success: true, content: 'videos' })),
-      };
+      const inlineAiService = createInlineAiHarnessService();
       backendApp.DBGetTables.mockResolvedValueOnce({
         success: true,
         data: [
@@ -2479,7 +2508,7 @@ describe('QueryEditor external SQL save', () => {
         })],
       );
       expect(editorState.value).toBe('SELECT * FROM a_cninfo_announcement WHERE id = 1;');
-      expect(inlineAiService.AIChatSend).not.toHaveBeenCalled();
+      expect(inlineAiService.AISubmitAgentInput).not.toHaveBeenCalled();
       expect(monacoShortcutEvent.preventDefault).toHaveBeenCalled();
       expect(monacoShortcutEvent.stopPropagation).toHaveBeenCalled();
       expect(shortcutEvent.preventDefault).toHaveBeenCalled();
@@ -2553,27 +2582,7 @@ describe('QueryEditor external SQL save', () => {
   it('does not consume Tab when the AI inline ghost is stale (cursor moved)', async () => {
     vi.useFakeTimers();
     try {
-      const inlineAiService = {
-        AIGetProviders: vi.fn(async () => [{
-          id: 'openai-main',
-          type: 'openai',
-          name: 'OpenAI',
-          apiKey: '',
-          hasSecret: true,
-          baseUrl: 'https://api.openai.com/v1',
-          model: 'gpt-5-mini',
-          maxTokens: 2048,
-          temperature: 0.2,
-        }]),
-        AIGetActiveProvider: vi.fn(async () => 'openai-main'),
-        AIGetUserPromptSettings: vi.fn(async () => ({
-          global: '',
-          database: '',
-          jvm: '',
-          jvmDiagnostic: '',
-        })),
-        AIChatSend: vi.fn(async () => ({ success: true, content: 'videos' })),
-      };
+      const inlineAiService = createInlineAiHarnessService();
       backendApp.DBGetTables.mockResolvedValueOnce({
         success: true,
         data: [
@@ -2671,27 +2680,7 @@ describe('QueryEditor external SQL save', () => {
         windows: { enabled: true, combo: 'Right' },
       };
 
-      const inlineAiService = {
-        AIGetProviders: vi.fn(async () => [{
-          id: 'openai-main',
-          type: 'openai',
-          name: 'OpenAI',
-          apiKey: '',
-          hasSecret: true,
-          baseUrl: 'https://api.openai.com/v1',
-          model: 'gpt-5-mini',
-          maxTokens: 2048,
-          temperature: 0.2,
-        }]),
-        AIGetActiveProvider: vi.fn(async () => 'openai-main'),
-        AIGetUserPromptSettings: vi.fn(async () => ({
-          global: '',
-          database: '',
-          jvm: '',
-          jvmDiagnostic: '',
-        })),
-        AIChatSend: vi.fn(async () => ({ success: true, content: 'videos' })),
-      };
+      const inlineAiService = createInlineAiHarnessService();
       backendApp.DBGetTables.mockResolvedValueOnce({
         success: true,
         data: [
@@ -2788,27 +2777,7 @@ describe('QueryEditor external SQL save', () => {
         windows: { enabled: true, combo: 'Shift+Tab' },
       };
 
-      const inlineAiService = {
-        AIGetProviders: vi.fn(async () => [{
-          id: 'openai-main',
-          type: 'openai',
-          name: 'OpenAI',
-          apiKey: '',
-          hasSecret: true,
-          baseUrl: 'https://api.openai.com/v1',
-          model: 'gpt-5-mini',
-          maxTokens: 2048,
-          temperature: 0.2,
-        }]),
-        AIGetActiveProvider: vi.fn(async () => 'openai-main'),
-        AIGetUserPromptSettings: vi.fn(async () => ({
-          global: '',
-          database: '',
-          jvm: '',
-          jvmDiagnostic: '',
-        })),
-        AIChatSend: vi.fn(async () => ({ success: true, content: 'videos' })),
-      };
+      const inlineAiService = createInlineAiHarnessService();
       backendApp.DBGetTables.mockResolvedValueOnce({
         success: true,
         data: [
@@ -2904,27 +2873,7 @@ describe('QueryEditor external SQL save', () => {
   it('continues accepted inline SQL ghost with grounded table AI completion', async () => {
     vi.useFakeTimers();
     try {
-      const inlineAiService = {
-        AIGetProviders: vi.fn(async () => [{
-          id: 'openai-main',
-          type: 'openai',
-          name: 'OpenAI',
-          apiKey: '',
-          hasSecret: true,
-          baseUrl: 'https://api.openai.com/v1',
-          model: 'gpt-5-mini',
-          maxTokens: 2048,
-          temperature: 0.2,
-        }]),
-        AIGetActiveProvider: vi.fn(async () => 'openai-main'),
-        AIGetUserPromptSettings: vi.fn(async () => ({
-          global: '',
-          database: '',
-          jvm: '',
-          jvmDiagnostic: '',
-        })),
-        AIChatSend: vi.fn(async () => ({ success: true, content: 'videos' })),
-      };
+      const inlineAiService = createInlineAiHarnessService();
       backendApp.DBGetTables.mockResolvedValueOnce({
         success: true,
         data: [
@@ -3018,7 +2967,7 @@ describe('QueryEditor external SQL save', () => {
         })],
       );
       expect(editorState.value).toBe('SELECT * FROM ');
-      expect(inlineAiService.AIChatSend).toHaveBeenCalledTimes(1);
+      expect(inlineAiService.AISubmitAgentInput).toHaveBeenCalledTimes(1);
       expect(editorState.domNode.appendChild).toHaveBeenCalled();
       const ghostOverlay = editorState.domNode.appendChild.mock.calls[
         editorState.domNode.appendChild.mock.calls.length - 1
@@ -3049,7 +2998,7 @@ describe('QueryEditor external SQL save', () => {
         })],
       );
       expect(editorState.value).toBe('SELECT * FROM videos');
-      expect(inlineAiService.AIChatSend).toHaveBeenCalledTimes(1);
+      expect(inlineAiService.AISubmitAgentInput).toHaveBeenCalledTimes(1);
       expect(editorState.editor.trigger).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
@@ -4278,6 +4227,32 @@ describe('QueryEditor external SQL save', () => {
     );
     expect(insertResult.suggestions.find((item: any) => item.label === 'system_user')?.insertText)
       .toBe('system_user');
+
+    for (const sql of [
+      'UPDATE system',
+      'DELETE FROM system',
+      'INSERT INTO system',
+      'REPLACE INTO system',
+      'MERGE INTO system',
+    ]) {
+      editorState.value = sql;
+      editorState.latestOnChange?.(editorState.value);
+      const dmlResult = await sqlProvider.provideCompletionItems(
+        editorState.editor.getModel(),
+        { lineNumber: 1, column: editorState.value.length + 1 },
+      );
+      expect(dmlResult.suggestions.find((item: any) => item.label === 'system_user')?.insertText)
+        .toBe('system_user');
+    }
+
+    editorState.value = 'INSERT INTO audit_log SELECT * FROM system';
+    editorState.latestOnChange?.(editorState.value);
+    const insertSelectResult = await sqlProvider.provideCompletionItems(
+      editorState.editor.getModel(),
+      { lineNumber: 1, column: editorState.value.length + 1 },
+    );
+    expect(insertSelectResult.suggestions.find((item: any) => item.label === 'system_user')?.insertText)
+      .toBe('system_user AS su');
 
     await act(async () => {
       renderer.unmount();
@@ -5776,6 +5751,60 @@ describe('QueryEditor external SQL save', () => {
     expect(stopPropagation).toHaveBeenCalled();
   });
 
+  it('locates a table in the sidebar on ctrl/cmd click when configured', async () => {
+    storeState.appearance.queryTableCtrlClickAction = 'locate';
+    editorState.value = 'select * from analytics.events where id = 1';
+    autoFetchState.visible = true;
+    backendApp.DBGetDatabases.mockResolvedValueOnce({ success: true, data: [{ Database: 'main' }, { Database: 'analytics' }] });
+    backendApp.DBGetTables
+      .mockResolvedValueOnce({ success: true, data: [{ Tables_in_main: 'users' }] })
+      .mockResolvedValueOnce({ success: true, data: [{ Tables_in_analytics: 'events' }] });
+    backendApp.DBGetAllColumns
+      .mockResolvedValueOnce({ success: true, data: [] })
+      .mockResolvedValueOnce({ success: true, data: [] });
+
+    await act(async () => {
+      create(<QueryEditor tab={createTab({ query: editorState.value, dbName: 'main' })} />);
+    });
+    await act(async () => {
+      for (let i = 0; i < 4; i += 1) await Promise.resolve();
+    });
+
+    const preventDefault = vi.fn();
+    const stopPropagation = vi.fn();
+    await act(async () => {
+      editorState.mouseDownListeners[0]?.({
+        target: { position: { lineNumber: 1, column: 27 } },
+        event: {
+          leftButton: true,
+          ctrlKey: true,
+          metaKey: false,
+          preventDefault,
+          stopPropagation,
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(storeState.addTab).not.toHaveBeenCalled();
+    expect(backendApp.DBTableExists).not.toHaveBeenCalled();
+    expect(window.dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'gonavi:locate-sidebar-object',
+      detail: expect.objectContaining({
+        connectionId: 'conn-1',
+        dbName: 'analytics',
+        tableName: 'events',
+        objectGroup: 'tables',
+      }),
+    }));
+    const locateEvent = (window.dispatchEvent as any).mock.calls
+      .map(([event]: [CustomEvent]) => event)
+      .find((event: CustomEvent) => event?.type === 'gonavi:locate-sidebar-object');
+    expect(locateEvent?.detail).not.toHaveProperty('tabId');
+    expect(preventDefault).toHaveBeenCalled();
+    expect(stopPropagation).toHaveBeenCalled();
+  });
+
   it('revalidates fresh table metadata and ignores a stale cmd-click table link', async () => {
     editorState.value = 'select * from customr;';
     autoFetchState.visible = true;
@@ -6491,6 +6520,8 @@ describe('QueryEditor external SQL save', () => {
       connectionId: 'conn-1',
       dbName: 'main',
       queryMode: 'object-edit',
+      routineName: 'reporting.refresh_stats',
+      routineType: 'PROCEDURE',
       returnToTabId: 'tab-1',
       query: expect.stringContaining('CREATE OR REPLACE PROCEDURE reporting.refresh_stats()'),
     }));
@@ -8864,6 +8895,89 @@ describe('QueryEditor external SQL save', () => {
     expect(editorState.transformToLowercaseRun).toHaveBeenCalledOnce();
   });
 
+  it('registers SQL execution context-menu actions with selection and all scopes', async () => {
+    await act(async () => {
+      create(<QueryEditor tab={createTab()} />);
+    });
+
+    expect(findEditorAction('gonavi.runSelectedSql')).toMatchObject({
+      label: '执行当前选中 SQL',
+      precondition: 'editorHasSelection',
+      contextMenuGroupId: '0_execution',
+      contextMenuOrder: 1,
+    });
+    expect(findEditorAction('gonavi.runAllSql')).toMatchObject({
+      label: '执行所有 SQL',
+      contextMenuGroupId: '0_execution',
+      contextMenuOrder: 2,
+    });
+  });
+
+  it('executes selected or full editor SQL from the context-menu actions', async () => {
+    const listeners = new Map<string, Set<(event: Event) => void>>();
+    const addEventListener = window.addEventListener as any;
+    const removeEventListener = window.removeEventListener as any;
+    const dispatchEvent = window.dispatchEvent as any;
+    addEventListener.mockImplementation((type: string, listener: (event: Event) => void) => {
+      const current = listeners.get(type) ?? new Set<(event: Event) => void>();
+      current.add(listener);
+      listeners.set(type, current);
+    });
+    removeEventListener.mockImplementation((type: string, listener: (event: Event) => void) => {
+      listeners.get(type)?.delete(listener);
+    });
+    dispatchEvent.mockImplementation((event: Event) => {
+      listeners.get(event.type)?.forEach((listener) => listener(event));
+      return true;
+    });
+    backendApp.DBQueryMulti.mockResolvedValue({ success: true, data: [] });
+
+    await act(async () => {
+      create(<QueryEditor tab={createTab({
+        query: 'select 1;\nselect 2;',
+      })} />);
+    });
+
+    const selectedAction = findEditorAction('gonavi.runSelectedSql');
+    const allAction = findEditorAction('gonavi.runAllSql');
+    editorState.selection = {
+      startLineNumber: 2,
+      startColumn: 1,
+      endLineNumber: 2,
+      endColumn: 'select 2;'.length + 1,
+    };
+
+    await act(async () => {
+      selectedAction.run(editorState.editor);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(backendApp.DBQueryMulti).toHaveBeenCalledWith(
+      expect.anything(),
+      'main',
+      expect.stringContaining('select 2'),
+      'query-1',
+    );
+    expect(String(backendApp.DBQueryMulti.mock.calls[0][2])).not.toContain('select 1');
+
+    backendApp.DBQueryMulti.mockClear();
+    editorState.selection = null;
+    await act(async () => {
+      allAction.run(editorState.editor);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(backendApp.DBQueryMulti).toHaveBeenCalledWith(
+      expect.anything(),
+      'main',
+      expect.stringContaining('select 1'),
+      'query-1',
+    );
+    expect(String(backendApp.DBQueryMulti.mock.calls[0][2])).toContain('select 2');
+  });
+
   it('localizes Monaco action labels for the active language', async () => {
     setCurrentLanguage('en-US');
     storeState.shortcutOptions.runQuery.mac = { enabled: true, combo: 'Meta+Q' };
@@ -11012,12 +11126,16 @@ describe('QueryEditor external SQL save', () => {
 
     expect(storeState.setActiveContext).not.toHaveBeenCalled();
     expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({
-      id: expect.stringMatching(/^query-edit-object-conn-1-main-reporting\.active_users-\d+$/),
+      id: expect.stringMatching(/^query-edit-object-conn-1-main-reporting-reporting\.active_users-\d+$/),
       title: '修改视图: reporting.active_users',
       type: 'query',
       connectionId: 'conn-1',
       dbName: 'main',
+      schemaName: 'reporting',
       queryMode: 'object-edit',
+      viewName: 'active_users',
+      viewKind: 'view',
+      objectType: 'view',
       returnToTabId: 'tab-1',
       query: expect.stringContaining('CREATE OR REPLACE VIEW reporting.active_users AS'),
     }));
@@ -11211,22 +11329,26 @@ END;`;
     });
 
     expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({
-      id: expect.stringMatching(/^query-edit-trigger-conn-1-main-audit\.users_bi-\d+$/),
+      id: expect.stringMatching(/^query-edit-trigger-conn-1-main-audit-audit\.users_bi-\d+$/),
       title: '修改触发器: audit.users_bi',
       type: 'query',
       connectionId: 'conn-1',
       dbName: 'main',
+      schemaName: 'audit',
       queryMode: 'object-edit',
       returnToTabId: 'tab-1',
       query: expect.stringContaining('CREATE TRIGGER audit.users_bi'),
     }));
     expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({
-      id: expect.stringMatching(/^query-edit-routine-conn-1-main-reporting\.refresh_stats-\d+$/),
+      id: expect.stringMatching(/^query-edit-routine-conn-1-main-reporting-reporting\.refresh_stats-\d+$/),
       title: '编辑 存储过程：reporting.refresh_stats',
       type: 'query',
       connectionId: 'conn-1',
       dbName: 'main',
+      schemaName: 'reporting',
       queryMode: 'object-edit',
+      routineName: 'reporting.refresh_stats',
+      routineType: 'PROCEDURE',
       returnToTabId: 'tab-1',
       query: expect.stringContaining('CREATE OR REPLACE PROCEDURE reporting.refresh_stats()'),
     }));
@@ -11369,21 +11491,25 @@ END;`;
     });
 
     expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({
-      id: expect.stringMatching(/^query-edit-object-conn-1-main-BILLING\.ORDER_SEQ-\d+$/),
+      id: expect.stringMatching(/^query-edit-object-conn-1-main-BILLING-BILLING\.ORDER_SEQ-\d+$/),
       title: '修改序列: BILLING.ORDER_SEQ',
       type: 'query',
       connectionId: 'conn-1',
       dbName: 'main',
+      schemaName: 'BILLING',
       queryMode: 'object-edit',
+      sequenceName: 'BILLING.ORDER_SEQ',
       query: expect.stringContaining('CREATE SEQUENCE BILLING.ORDER_SEQ'),
     }));
     expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({
-      id: expect.stringMatching(/^query-edit-object-conn-1-main-billing\.pkg_order-\d+$/),
+      id: expect.stringMatching(/^query-edit-object-conn-1-main-billing-billing\.pkg_order-\d+$/),
       title: '修改存储包: billing.pkg_order',
       type: 'query',
       connectionId: 'conn-1',
       dbName: 'main',
+      schemaName: 'billing',
       queryMode: 'object-edit',
+      packageName: 'billing.pkg_order',
       query: expect.stringContaining('CREATE OR REPLACE PACKAGE pkg_order'),
     }));
     expect((window as any).dispatchEvent).not.toHaveBeenCalledWith(expect.objectContaining({
@@ -11433,9 +11559,10 @@ END;`;
       });
 
       expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({
-        id: expect.stringMatching(/^query-edit-object-conn-1-main-reporting\.active_users-\d+$/),
+        id: expect.stringMatching(/^query-edit-object-conn-1-main-reporting-reporting\.active_users-\d+$/),
         title: 'Edit View: reporting.active_users',
         type: 'query',
+        schemaName: 'reporting',
         queryMode: 'object-edit',
       }));
     });
@@ -11503,15 +11630,17 @@ END;`;
       });
 
       expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({
-        id: expect.stringMatching(/^query-edit-trigger-conn-1-main-audit\.users_bi-\d+$/),
+        id: expect.stringMatching(/^query-edit-trigger-conn-1-main-audit-audit\.users_bi-\d+$/),
         title: 'Edit trigger: audit.users_bi',
         type: 'query',
+        schemaName: 'audit',
         queryMode: 'object-edit',
       }));
       expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({
-        id: expect.stringMatching(/^query-edit-routine-conn-1-main-reporting\.refresh_stats-\d+$/),
+        id: expect.stringMatching(/^query-edit-routine-conn-1-main-reporting-reporting\.refresh_stats-\d+$/),
         title: 'Edit Procedure: reporting.refresh_stats',
         type: 'query',
+        schemaName: 'reporting',
         queryMode: 'object-edit',
       }));
     });
@@ -11561,9 +11690,10 @@ END;`;
       });
 
       expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({
-        id: expect.stringMatching(/^query-edit-object-conn-1-analytics-analytics\.mv_daily_stats-\d+$/),
+        id: expect.stringMatching(/^query-edit-object-conn-1-analytics-analytics-analytics\.mv_daily_stats-\d+$/),
         title: 'Edit Materialized view: analytics.mv_daily_stats',
         type: 'query',
+        schemaName: 'analytics',
         queryMode: 'object-edit',
       }));
     });
@@ -12044,6 +12174,12 @@ END;`;
   it('waits for the native IME commit before applying the composition fallback', async () => {
     vi.useFakeTimers();
     const domListeners: Record<string, ((event?: any) => void)[]> = {};
+    const editorInput = {
+      className: 'inputarea',
+      closest: vi.fn((selector: string) => (
+        selector === '.monaco-editor' ? editorState.domNode : null
+      )),
+    };
     editorState.domNode.addEventListener.mockImplementation((type: string, listener: (event?: any) => void) => {
       domListeners[type] ||= [];
       domListeners[type].push(listener);
@@ -12061,8 +12197,8 @@ END;`;
       editorState.editor.executeEdits.mockClear();
 
       await act(async () => {
-        domListeners.compositionstart?.forEach((listener) => listener({ data: '' }));
-        domListeners.compositionend?.forEach((listener) => listener({ data: '我' }));
+        domListeners.compositionstart?.forEach((listener) => listener({ target: editorInput, data: '' }));
+        domListeners.compositionend?.forEach((listener) => listener({ target: editorInput, data: '我' }));
       });
       await act(async () => {
         vi.advanceTimersByTime(79);
@@ -12080,6 +12216,133 @@ END;`;
         'gonavi-ime-composition-fallback',
         expect.anything(),
       );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not apply the SQL IME fallback to a composition committed in the find replace input', async () => {
+    vi.useFakeTimers();
+    const domListeners: Record<string, ((event?: any) => void)[]> = {};
+    const findReplaceInput = {
+      className: 'input',
+      closest: vi.fn((selector: string) => (
+        selector.includes('.find-widget') || selector.includes('.monaco-inputbox')
+          ? { className: 'monaco-inputbox' }
+          : null
+      )),
+    };
+    editorState.domNode.addEventListener.mockImplementation((type: string, listener: (event?: any) => void) => {
+      domListeners[type] ||= [];
+      domListeners[type].push(listener);
+    });
+    editorState.editor.getValue.mockReset();
+    editorState.editor.getValue.mockImplementation(() => editorState.value);
+
+    try {
+      await act(async () => {
+        create(<QueryEditor tab={createTab({ query: 'select abc from table1;' })} />);
+      });
+
+      editorState.position = { lineNumber: 1, column: 11 };
+      editorState.selection = {
+        startLineNumber: 1,
+        startColumn: 8,
+        endLineNumber: 1,
+        endColumn: 11,
+      };
+      editorState.editor.executeEdits.mockClear();
+
+      await act(async () => {
+        domListeners.compositionstart?.forEach((listener) => listener({
+          target: findReplaceInput,
+          data: '',
+        }));
+        domListeners.compositionend?.forEach((listener) => listener({
+          target: findReplaceInput,
+          data: 'replacement',
+        }));
+      });
+      await act(async () => {
+        vi.runOnlyPendingTimers();
+      });
+
+      expect(editorState.editor.executeEdits).not.toHaveBeenCalledWith(
+        'gonavi-ime-composition-fallback',
+        expect.anything(),
+      );
+      expect(editorState.value).toBe('select abc from table1;');
+      expect(editorState.selection).toEqual({
+        startLineNumber: 1,
+        startColumn: 8,
+        endLineNumber: 1,
+        endColumn: 11,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not apply the SQL IME fallback when the find widget owns the active element', async () => {
+    vi.useFakeTimers();
+    const domListeners: Record<string, ((event?: any) => void)[]> = {};
+    const findReplaceInput = {
+      className: 'input',
+      tagName: 'INPUT',
+      closest: vi.fn((selector: string) => (
+        selector.includes('.find-widget') || selector.includes('.monaco-inputbox')
+          ? { className: 'monaco-inputbox' }
+          : null
+      )),
+    };
+    const editorInput = {
+      className: 'inputarea',
+      closest: vi.fn((selector: string) => (
+        selector === '.monaco-editor' ? editorState.domNode : null
+      )),
+    };
+    editorState.domNode.addEventListener.mockImplementation((type: string, listener: (event?: any) => void) => {
+      domListeners[type] ||= [];
+      domListeners[type].push(listener);
+    });
+    editorState.editor.getValue.mockReset();
+    editorState.editor.getValue.mockImplementation(() => editorState.value);
+
+    try {
+      await act(async () => {
+        create(<QueryEditor tab={createTab({ query: 'select abc from table1;' })} />);
+      });
+
+      editorState.hasTextFocus = true;
+      (document as any).activeElement = findReplaceInput;
+      editorState.position = { lineNumber: 1, column: 11 };
+      editorState.selection = {
+        startLineNumber: 1,
+        startColumn: 8,
+        endLineNumber: 1,
+        endColumn: 11,
+      };
+      editorState.editor.executeEdits.mockClear();
+
+      await act(async () => {
+        domListeners.compositionstart?.forEach((listener) => listener({
+          target: editorInput,
+          data: '',
+        }));
+        domListeners.compositionend?.forEach((listener) => listener({
+          target: editorInput,
+          data: 'test',
+        }));
+      });
+      await act(async () => {
+        vi.runOnlyPendingTimers();
+      });
+
+      expect(editorState.editor.executeEdits).not.toHaveBeenCalledWith(
+        'gonavi-ime-composition-fallback',
+        expect.anything(),
+      );
+      expect(editorState.value).toBe('select abc from table1;');
     } finally {
       vi.useRealTimers();
     }

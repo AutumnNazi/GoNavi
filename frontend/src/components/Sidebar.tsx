@@ -259,6 +259,7 @@ import {
   resolveV2ActiveConnectionId,
   resolveNacosNamespaceDiscoveryModeFromTreeNode,
   resolveNacosServicesDoubleClickAction,
+  replaceSidebarTreeNodeChildren,
   shouldClearSidebarNodeChildrenOnCollapse,
   shouldSkipSidebarLoadOnExpandWhileDragging,
   shouldSkipSidebarSelectWhileDragging,
@@ -363,6 +364,11 @@ const SIDEBAR_CACHED_DATABASE_TREE_LIMIT = 12;
 const NACOS_SERVICES_CHANGED_EVENT = 'gonavi:nacos-services-changed';
 const SIDEBAR_GROUP_HOVER_EXPAND_DELAY_MS = 500;
 const SIDEBAR_TREE_SCROLL_IDLE_DELAY_MS = 2000;
+
+const buildOptionalSchemaContext = (value: unknown): { schemaName?: string } => {
+  const schemaName = String(value ?? '').trim();
+  return schemaName ? { schemaName } : {};
+};
 
 type SidebarTreeDragEventLike = {
   dataTransfer?: DataTransfer | null;
@@ -892,6 +898,8 @@ const Sidebar: React.FC<{
   onFocusCommandSearch?: () => void;
   onCollapseSidebar?: () => void;
   onExpandSidebar?: () => void;
+  /** Expands a collapsed explorer before a locate request changes its selection. */
+  onEnsureSidebarExpanded?: () => void;
   collapseSidebarLabel?: string;
   collapseSidebarButtonRef?: React.Ref<HTMLButtonElement>;
   expandSidebarLabel?: string;
@@ -913,6 +921,7 @@ const Sidebar: React.FC<{
   onFocusCommandSearch,
   onCollapseSidebar,
   onExpandSidebar,
+  onEnsureSidebarExpanded,
   collapseSidebarLabel,
   collapseSidebarButtonRef,
   expandSidebarLabel,
@@ -1121,7 +1130,7 @@ const Sidebar: React.FC<{
   const treeDragSelectionSnapshotRef = useRef<{
       selectedKeys: React.Key[];
       selectedNodes: any[];
-      activeContext: { connectionId: string; dbName: string; tableName?: string } | null;
+      activeContext: { connectionId: string; dbName: string; schemaName?: string; tableName?: string } | null;
   }>({
       selectedKeys: [],
       selectedNodes: [],
@@ -1577,30 +1586,6 @@ const Sidebar: React.FC<{
       message.error(error?.message || t('connection.sidebar.duplicate.failureFallback'));
     }
   };
-  const updateTreeData = (
-    list: TreeNode[],
-    key: React.Key,
-    children: TreeNode[] | undefined,
-    dataRef?: unknown,
-  ): TreeNode[] => {
-    return list.map(node => {
-      if (node.key === key) {
-        return {
-          ...node,
-          children,
-          ...(dataRef === undefined ? {} : { dataRef }),
-        };
-      }
-      if (node.children) {
-        return {
-          ...node,
-          children: updateTreeData(node.children, key, children, dataRef),
-        };
-      }
-      return node;
-    });
-  };
-
   const findTreeNodeByKey = (nodes: TreeNode[], targetKey: React.Key): TreeNode | null => {
     for (const node of nodes) {
       if (node.key === targetKey) {
@@ -1764,7 +1749,7 @@ const Sidebar: React.FC<{
     children: TreeNode[] | undefined,
     dataRef?: unknown,
   ): TreeNode[] => {
-      const nextTreeData = updateTreeData(treeDataRef.current, key, children, dataRef);
+      const nextTreeData = replaceSidebarTreeNodeChildren(treeDataRef.current, key, children, dataRef);
       treeDataRef.current = nextTreeData;
       setTreeData(nextTreeData);
       return nextTreeData;
@@ -2029,12 +2014,48 @@ const Sidebar: React.FC<{
           return;
       }
 
+      onEnsureSidebarExpanded?.();
+
       if (request.objectGroup === 'externalSqlFiles') {
           await refreshGlobalExternalSQLRootNode(false);
           const target = resolveSidebarLocateTarget(request, { groupBySchema: false });
           const path = findSidebarNodePathForLocate(treeDataRef.current as SidebarLocateTreeNodeLike[], target);
           if (!path) {
               message.warning(t('sidebar.message.locate_external_sql_file_not_found', { path: request.filePath }));
+              return;
+          }
+          const targetKey = path[path.length - 1];
+          const targetNode = findTreeNodeByKey(treeDataRef.current, targetKey);
+          setSearchValue('');
+          setV2ExplorerFilter('all');
+          mergeExpandedTreeKeys(path.slice(0, -1));
+          setSidebarSelectedKeys([targetKey]);
+          selectedNodesRef.current = targetNode ? [targetNode] : [];
+          const connectionId = String(request.connectionId || activeContext?.connectionId || activeTab?.connectionId || '').trim();
+          const dbName = String(request.dbName || activeContext?.dbName || activeTab?.dbName || '').trim();
+          if (connectionId) {
+              setActiveContext({ connectionId, dbName });
+              publishTitlebarSelection(
+                  resolveSidebarSelectionContext(targetNode)
+                  || {
+                      connectionId,
+                      dbName,
+                      sidebarStateKey: connectionId,
+                  },
+                  targetKey,
+              );
+          }
+          scrollSidebarTreeToKey(targetKey, 'center');
+          return;
+      }
+
+      if (request.objectGroup === 'savedQueries') {
+          const target = resolveSidebarLocateTarget(request, { groupBySchema: false });
+          const path = findSidebarNodePathForLocate(treeDataRef.current as SidebarLocateTreeNodeLike[], target);
+          if (!path) {
+              message.warning(t('sidebar.message.locate_saved_query_not_found', {
+                  name: request.savedQueryName || request.savedQueryId,
+              }));
               return;
           }
           const targetKey = path[path.length - 1];
@@ -2144,6 +2165,7 @@ const Sidebar: React.FC<{
           connectionId: request.connectionId,
           dbName: request.dbName,
           tableName: resolveSidebarTitlebarObjectName(targetNode) || request.tableName,
+          ...buildOptionalSchemaContext(targetNode?.dataRef?.schemaName || request.schemaName),
       });
       publishTitlebarSelection(
           resolveSidebarSelectionContext(targetNode)
@@ -2385,7 +2407,7 @@ const Sidebar: React.FC<{
           return true;
       }
       if (node.type === 'routine') {
-          const { routineName, routineType, dbName, id } = node.dataRef;
+          const { routineName, routineType, dbName, id, schemaName } = node.dataRef;
           const typeLabel = t(routineType === 'PROCEDURE' ? 'sidebar.object.procedure' : 'sidebar.object.function');
           addTab({
               id: `routine-def-${node.key}`,
@@ -2394,7 +2416,8 @@ const Sidebar: React.FC<{
               connectionId: id,
               dbName,
               routineName,
-              routineType
+              routineType,
+              ...buildOptionalSchemaContext(schemaName),
           });
           return true;
       }
@@ -2477,6 +2500,12 @@ const Sidebar: React.FC<{
           setActiveContext({ connectionId: key, dbName: '' });
       } else if (type === 'database' || type === 'message-namespace') {
           setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: dataRef.dbName });
+      } else if (type === 'object-group' && dataRef?.groupKey === 'schema') {
+          setActiveContext({
+              connectionId: nodeConnectionId || dataRef.id,
+              dbName: dataRef.dbName,
+              ...buildOptionalSchemaContext(dataRef.schemaName),
+          });
       } else if (
           type === 'table'
           || type === 'message-object'
@@ -2492,6 +2521,7 @@ const Sidebar: React.FC<{
               connectionId: nodeConnectionId || dataRef.id,
               dbName: dataRef.dbName,
               tableName: resolveSidebarTitlebarObjectName(info.node),
+              ...buildOptionalSchemaContext(dataRef.schemaName),
           });
       } else if (type === 'jvm-mode' || type === 'jvm-resource' || type === 'jvm-diagnostic' || type === 'jvm-monitoring') {
           setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: '' });
@@ -2598,6 +2628,12 @@ const Sidebar: React.FC<{
           setActiveContext({ connectionId: nodeKey, dbName: '' });
       } else if (type === 'database' || type === 'message-namespace') {
           setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: dataRef.dbName });
+      } else if (type === 'object-group' && dataRef?.groupKey === 'schema') {
+          setActiveContext({
+              connectionId: nodeConnectionId || dataRef.id,
+              dbName: dataRef.dbName,
+              ...buildOptionalSchemaContext(dataRef.schemaName),
+          });
       } else if (type === 'jvm-mode' || type === 'jvm-resource' || type === 'jvm-diagnostic' || type === 'jvm-monitoring') {
           setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: '' });
       } else if (type === 'table' || type === 'message-object' || type === 'view' || type === 'materialized-view' || type === 'sequence' || type === 'package' || type === 'db-trigger' || type === 'db-event' || type === 'routine') {
@@ -2605,6 +2641,7 @@ const Sidebar: React.FC<{
               connectionId: nodeConnectionId || dataRef.id,
               dbName: dataRef.dbName,
               tableName: resolveSidebarTitlebarObjectName(node),
+              ...buildOptionalSchemaContext(dataRef.schemaName),
           });
       } else if (type === 'saved-query') {
           setActiveContext({ connectionId: dataRef.connectionId, dbName: dataRef.dbName });
@@ -2636,7 +2673,7 @@ const Sidebar: React.FC<{
       if (openMessageObjectNode(node)) {
           return;
       } else if (node.type === 'table') {
-          const { tableName, dbName, id } = node.dataRef;
+          const { tableName, dbName, id, schemaName } = node.dataRef;
           // 记录表访问
           recordTableAccess(id, dbName, tableName);
           addTab({
@@ -2646,6 +2683,7 @@ const Sidebar: React.FC<{
               connectionId: id,
               dbName,
               tableName,
+              ...buildOptionalSchemaContext(schemaName),
               initialViewMode: tableDoubleClickAction === 'open-design' ? 'fields' : undefined,
               initialViewModeRequestId: tableDoubleClickAction === 'open-design' ? String(Date.now()) : undefined,
               objectType: 'table',
@@ -2741,7 +2779,7 @@ const Sidebar: React.FC<{
           openEventDefinition(node);
           return;
       } else if (node.type === 'routine') {
-          const { routineName, routineType, dbName, id } = node.dataRef;
+          const { routineName, routineType, dbName, id, schemaName } = node.dataRef;
           const typeLabel = t(routineType === 'PROCEDURE' ? 'sidebar.object.procedure' : 'sidebar.object.function');
           addTab({
               id: `routine-def-${node.key}`,
@@ -2750,7 +2788,8 @@ const Sidebar: React.FC<{
               connectionId: id,
               dbName,
               routineName,
-              routineType
+              routineType,
+              ...buildOptionalSchemaContext(schemaName),
           });
           return;
       } else if (node.type === 'sequence') {
@@ -3839,7 +3878,7 @@ const Sidebar: React.FC<{
       const connection = connections.find((item) => item.id === request.connectionId);
       if (!connection) return;
 
-      onExpandSidebar?.();
+      onEnsureSidebarExpanded?.();
       setSearchValue('');
       await selectConnectionFromRail(connection);
 
@@ -3864,7 +3903,7 @@ const Sidebar: React.FC<{
       setActiveContext({ connectionId: connection.id, dbName });
       publishTitlebarSelectionForNode(databaseNode);
       scrollSidebarTreeToKey(databaseNode.key);
-  }, [connections, findTreeNodeByKeyRef, onExpandSidebar, publishTitlebarSelectionForNode, scrollSidebarTreeToKey, selectConnectionFromRail, selectedNodesRef, setActiveContext, setSearchValue, setSidebarSelectedKeys, treeDataRef]);
+  }, [connections, findTreeNodeByKeyRef, onEnsureSidebarExpanded, publishTitlebarSelectionForNode, scrollSidebarTreeToKey, selectConnectionFromRail, selectedNodesRef, setActiveContext, setSearchValue, setSidebarSelectedKeys, treeDataRef]);
 
   useEffect(() => {
       const handleLocateSidebarConnection = (event: Event) => {
@@ -4586,6 +4625,12 @@ const Sidebar: React.FC<{
           icon: <GlobalOutlined aria-hidden="true" />,
           onClick: () => onOpenSettingsNavigation?.({ group: 'services', pane: 'proxy' }),
         },
+        {
+          key: 'download-source',
+          label: t('app.settings.entry.download_source.title'),
+          icon: <CloudDownloadOutlined aria-hidden="true" />,
+          onClick: () => onOpenSettingsNavigation?.({ group: 'services', pane: 'download-source' }),
+        },
         ...(isWebRuntime ? [{
           key: 'web-auth',
           label: t('app.settings.entry.web_auth.title'),
@@ -4678,19 +4723,14 @@ const Sidebar: React.FC<{
         },
       ],
     },
+  ];
+  // 关于 GoNavi（在线更新入口）单独放在「更多」按钮右侧，减少操作层级
+  const v2TitlebarAboutActions: TitleBarQuickAction[] = [
     {
-      key: 'settings-about',
+      key: 'about-go-navi',
       label: t('app.settings.group.about.title'),
       icon: <InfoCircleOutlined aria-hidden="true" />,
-      priority: 'secondary',
-      menu: [
-        {
-          key: 'about-go-navi',
-          label: t('app.settings.entry.about.title'),
-          icon: <InfoCircleOutlined aria-hidden="true" />,
-          onClick: () => onOpenSettingsNavigation?.({ group: 'about', pane: 'about-go-navi' }),
-        },
-      ],
+      onClick: () => onOpenSettingsNavigation?.({ group: 'about', pane: 'about-go-navi' }),
     },
   ];
   const v2TitlebarQuickActionsTarget = isV2Ui && typeof document !== 'undefined'
@@ -4755,7 +4795,7 @@ const Sidebar: React.FC<{
     showObjectActions: false,
     showLocateAction: false,
     aiActive: aiPanelVisible,
-    sidebarExpandAction: onExpandSidebar && expandSidebarLabel ? {
+    sidebarExpandAction: !collapsedSidebarActionsTarget && onExpandSidebar && expandSidebarLabel ? {
       label: expandSidebarLabel,
       onClick: onExpandSidebar,
       buttonRef: expandSidebarButtonRef,
@@ -5093,7 +5133,6 @@ const Sidebar: React.FC<{
           <V2ExplorerToolbarActions
             {...v2ExplorerToolbarActionProps}
             onLocateCurrentTable={() => {
-              onExpandSidebar?.();
               handleLocateActiveTabInSidebar();
             }}
             onScrollToTop={() => {
@@ -5116,6 +5155,7 @@ const Sidebar: React.FC<{
             label={v2RailObjectActionsLabel}
             moreLabel={t('query_editor.action.more')}
             actions={v2TitlebarQuickActions}
+            trailingActions={v2TitlebarAboutActions}
           />,
           v2TitlebarQuickActionsTarget,
         )}

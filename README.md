@@ -29,6 +29,10 @@
 </p>
 
 <p align="center">
+  <a href="https://mcpvault.io/servers/gonavi/health?utm_source=external_badge&utm_medium=referral&utm_campaign=mcp_health_report"><img src="https://mcpvault.io/badge/gonavi.svg" alt="MCPVault: claimed" /></a>
+</p>
+
+<p align="center">
   <b>Language</b>: English · <a href="README.zh-CN.md">简体中文</a>
   &nbsp;·&nbsp;
   <a href="https://gonavi.org"><b>🌐 Website</b></a>
@@ -272,7 +276,7 @@ Elasticsearch connections reuse the query workspace as a version-aware REST cons
 - [Wails CLI](https://wails.io/docs/gettingstarted/installation)
 
 ```bash
-go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
 ```
 
 ### Develop

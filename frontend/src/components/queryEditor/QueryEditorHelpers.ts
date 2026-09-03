@@ -1551,6 +1551,8 @@ export type QueryEditorNavigationTarget =
     | { type: 'sequence'; dbName: string; sequenceName: string; schemaName?: string }
     | { type: 'package'; dbName: string; packageName: string; schemaName?: string };
 
+export type QueryEditorTableCtrlClickAction = 'open-design' | 'locate';
+
 export type QueryEditorHoverTarget =
     | { kind: 'database'; dbName: string; range: { startColumn: number; endColumn: number } }
     | { kind: 'table'; dbName: string; tableName: string; schemaName?: string; comment?: string; lookupTableName?: string; range: { startColumn: number; endColumn: number } }
@@ -2531,11 +2533,16 @@ type QueryEditorSqlReferenceToken = {
     quoted: boolean;
 };
 
+type QueryEditorSqlStatementKind = 'select' | 'insert' | 'update' | 'delete' | 'replace' | 'merge';
+type QueryEditorSqlTableSourceKind = 'from' | 'join' | 'comma' | 'update' | 'into';
+
 type QueryEditorSqlReferenceDepthState = {
     fromListActive: boolean;
     queryStatementActive: boolean;
     sourceContextActive: boolean;
-    expectsSource?: 'from' | 'join' | 'comma' | 'update' | 'into';
+    statementKind?: QueryEditorSqlStatementKind;
+    sourceContextKind?: QueryEditorSqlTableSourceKind;
+    expectsSource?: QueryEditorSqlTableSourceKind;
 };
 
 const QUERY_EDITOR_SQL_REFERENCE_PUNCTUATION = new Set(['(', ')', '.', ',', ';']);
@@ -2593,6 +2600,7 @@ const isQueryEditorSqlIdentifierToken = (token: QueryEditorSqlReferenceToken | u
 const analyzeQueryEditorTableReferences = (source: string, dbType = ''): {
     references: QueryEditorTableReference[];
     expectsTableSource: boolean;
+    allowsTableAlias: boolean;
 } => {
     const tokens = tokenizeQueryEditorSqlReferences(String(source || ''), dbType);
     const references: QueryEditorTableReference[] = [];
@@ -2609,6 +2617,8 @@ const analyzeQueryEditorTableReferences = (source: string, dbType = ''): {
                 fromListActive: false,
                 queryStatementActive: false,
                 sourceContextActive: false,
+                statementKind: undefined,
+                sourceContextKind: undefined,
             };
         }
         return states[depth];
@@ -2628,6 +2638,8 @@ const analyzeQueryEditorTableReferences = (source: string, dbType = ''): {
                 fromListActive: false,
                 queryStatementActive: false,
                 sourceContextActive: false,
+                statementKind: undefined,
+                sourceContextKind: undefined,
             };
             continue;
         }
@@ -2640,6 +2652,8 @@ const analyzeQueryEditorTableReferences = (source: string, dbType = ''): {
             state.fromListActive = false;
             state.queryStatementActive = false;
             state.sourceContextActive = false;
+            state.statementKind = undefined;
+            state.sourceContextKind = undefined;
             state.expectsSource = undefined;
             continue;
         }
@@ -2647,6 +2661,7 @@ const analyzeQueryEditorTableReferences = (source: string, dbType = ''): {
             if (state.fromListActive) {
                 state.expectsSource = 'comma';
                 state.sourceContextActive = true;
+                state.sourceContextKind = 'comma';
             }
             continue;
         }
@@ -2683,6 +2698,7 @@ const analyzeQueryEditorTableReferences = (source: string, dbType = ''): {
                 && (sourceKind === 'from' || sourceKind === 'join' || sourceKind === 'comma')
             ) {
                 state.sourceContextActive = false;
+                state.sourceContextKind = undefined;
                 index = pathEnd;
                 continue;
             }
@@ -2738,45 +2754,77 @@ const analyzeQueryEditorTableReferences = (source: string, dbType = ''): {
                 }
             }
             state.sourceContextActive = !alias;
+            state.sourceContextKind = sourceKind;
             index = consumedEnd;
             continue;
         }
 
-        if (keyword === 'select' || keyword === 'delete') {
+        if (keyword === 'select') {
             state.queryStatementActive = true;
+            // INSERT/REPLACE ... SELECT 会切换到内部查询；已识别的其它语句
+            // 类型不能被表达式或函数名中的同名标识符覆盖。
+            if (!state.statementKind || state.statementKind === 'insert' || state.statementKind === 'replace') {
+                state.statementKind = 'select';
+            }
             state.sourceContextActive = false;
+            state.sourceContextKind = undefined;
+            continue;
+        }
+        if (keyword === 'delete' || keyword === 'insert' || keyword === 'replace' || keyword === 'merge') {
+            if (!state.statementKind) {
+                state.queryStatementActive = true;
+                state.statementKind = keyword as QueryEditorSqlStatementKind;
+                state.sourceContextActive = false;
+                state.sourceContextKind = undefined;
+            }
+            continue;
+        }
+        if (keyword === 'update') {
+            if (!state.statementKind) {
+                state.queryStatementActive = true;
+                state.statementKind = 'update';
+                state.expectsSource = 'update';
+                state.sourceContextActive = true;
+                state.sourceContextKind = 'update';
+            }
             continue;
         }
         if (keyword === 'from' && state.queryStatementActive) {
             state.fromListActive = true;
             state.expectsSource = 'from';
             state.sourceContextActive = true;
+            state.sourceContextKind = 'from';
             continue;
         }
         if (keyword === 'join' || keyword === 'straight_join' || keyword === 'apply') {
             state.fromListActive = true;
             state.expectsSource = 'join';
             state.sourceContextActive = true;
+            state.sourceContextKind = 'join';
             continue;
         }
-        if (keyword === 'update' || keyword === 'into') {
+        if (keyword === 'into') {
             state.queryStatementActive = true;
             state.expectsSource = keyword;
             state.sourceContextActive = true;
+            state.sourceContextKind = keyword;
             continue;
         }
         if (QUERY_EDITOR_SQL_FROM_LIST_END_WORDS.has(keyword)) {
             state.fromListActive = false;
             state.sourceContextActive = false;
+            state.sourceContextKind = undefined;
             state.expectsSource = undefined;
             continue;
         }
         if (QUERY_EDITOR_SQL_TABLE_ALIAS_RESERVED_WORDS.has(keyword)) {
             state.sourceContextActive = false;
+            state.sourceContextKind = undefined;
         }
     }
 
-    let expectsTableSource = getState().sourceContextActive;
+    const state = getState();
+    let expectsTableSource = state.sourceContextActive;
     // Once a physical source has been parsed, a trailing dot is normally the
     // start of a column qualification (`FROM users.`), not another table
     // source. Qualified table completion has its own dot-aware path below;
@@ -2785,7 +2833,13 @@ const analyzeQueryEditorTableReferences = (source: string, dbType = ''): {
     if (expectsTableSource && String(source || '').replace(/\s+$/, '').endsWith('.')) {
         expectsTableSource = false;
     }
-    return { references, expectsTableSource };
+    return {
+        references,
+        expectsTableSource,
+        allowsTableAlias: state.sourceContextActive
+            && state.statementKind === 'select'
+            && (state.sourceContextKind === 'from' || state.sourceContextKind === 'join' || state.sourceContextKind === 'comma'),
+    };
 };
 
 const defineHiddenReferenceProperty = <T extends object, K extends PropertyKey, V>(
@@ -2810,20 +2864,9 @@ export const isQueryEditorTableSourceCompletionContext = (source: string, dbType
     analyzeQueryEditorTableReferences(source, dbType).expectsTableSource
 );
 
-export const isQueryEditorTableAliasCompletionContext = (source: string, dbType = ''): boolean => {
-    const normalizedSource = String(source || '');
-    const sourceWithoutTrailingQualifierDot = normalizedSource.replace(/\.\s*$/, '');
-    const isTableSourceCompletion = isQueryEditorTableSourceCompletionContext(normalizedSource, dbType)
-        || (
-            sourceWithoutTrailingQualifierDot !== normalizedSource
-            && isQueryEditorTableSourceCompletionContext(sourceWithoutTrailingQualifierDot, dbType)
-        );
-    if (!isTableSourceCompletion) {
-        return false;
-    }
-    return !/\b(?:INSERT|REPLACE)\s+INTO\s+(?:[`"\[]?[A-Za-z_][\w$]*[`"\]]?\s*\.\s*){0,2}[`"\[]?[A-Za-z_][\w$]*[`"\]]?(?:\s*\.\s*)?\s*$/i
-        .test(normalizedSource);
-};
+export const isQueryEditorTableAliasCompletionContext = (source: string, dbType = ''): boolean => (
+    analyzeQueryEditorTableReferences(source, dbType).allowsTableAlias
+);
 
 export type QueryEditorAliasMap = Record<
     string,
@@ -4114,8 +4157,25 @@ export const resolveQueryEditorNavigationDecorations = (
     tableSourceContext = false,
     documentContext?: { text: string; offset: number },
     currentSchema = '',
-    dialect = '',
+    tableCtrlClickActionOrDialect: QueryEditorTableCtrlClickAction | string = 'open-design',
+    dialectOrTableCtrlClickAction: QueryEditorTableCtrlClickAction | string = '',
 ): Array<{ startColumn: number; endColumn: number; hoverMessage: string }> => {
+    const isTableCtrlClickAction = (value: string): value is QueryEditorTableCtrlClickAction => (
+        value === 'open-design' || value === 'locate'
+    );
+    const firstOptionalArgument = String(tableCtrlClickActionOrDialect || '').trim();
+    const secondOptionalArgument = String(dialectOrTableCtrlClickAction || '').trim();
+    // Keep both pre-merge call shapes working: this PR previously passed the
+    // dialect immediately after currentSchema, while dev added the click action
+    // in that position.
+    const tableCtrlClickAction = isTableCtrlClickAction(firstOptionalArgument)
+        ? firstOptionalArgument
+        : isTableCtrlClickAction(secondOptionalArgument)
+            ? secondOptionalArgument
+            : 'open-design';
+    const dialect = isTableCtrlClickAction(firstOptionalArgument)
+        ? secondOptionalArgument
+        : firstOptionalArgument;
     const text = String(lineContent || '');
     if (!text) return [];
     const offset = Math.max(0, Number(column || 1) - 2);
@@ -4148,9 +4208,14 @@ export const resolveQueryEditorNavigationDecorations = (
             });
         }
         if (navigationTarget.type === 'table') {
-            return translate('query_editor.hover.open_table_with_shortcut', {
-                shortcut: shortcutModifierLabel,
-            });
+            return translate(
+                tableCtrlClickAction === 'locate'
+                    ? 'query_editor.hover.locate_table_with_shortcut'
+                    : 'query_editor.hover.open_table_with_shortcut',
+                {
+                    shortcut: shortcutModifierLabel,
+                },
+            );
         }
         if (navigationTarget.type === 'view') {
             return translate('query_editor.hover.open_view_with_shortcut', {

@@ -882,6 +882,26 @@ describe('Sidebar locate toolbar', () => {
     expect(locateActionIndex).toBeGreaterThan(externalSqlActionIndex);
   });
 
+  it('expands a collapsed sidebar before resolving a locate request', () => {
+    const source = readSourceFile('./Sidebar.tsx');
+    const locateStart = source.indexOf('const locateObjectInSidebar = async');
+    const locateEnd = source.indexOf('\n  const handleLocateActiveTabInSidebar', locateStart);
+    const locateSource = source.slice(locateStart, locateEnd);
+    const connectionLocateStart = source.indexOf('const locateConnectionInSidebar = useCallback');
+    const connectionLocateEnd = source.indexOf('  useEffect(() => {', connectionLocateStart);
+    const connectionLocateSource = source.slice(connectionLocateStart, connectionLocateEnd);
+
+    expect(locateStart).toBeGreaterThanOrEqual(0);
+    expect(locateEnd).toBeGreaterThan(locateStart);
+    expect(locateSource).toMatch(
+      /if \(!request\)\s*\{[\s\S]*?return;\s*\}\s*onEnsureSidebarExpanded\?\.\(\);/s,
+    );
+    expect(connectionLocateStart).toBeGreaterThanOrEqual(0);
+    expect(connectionLocateEnd).toBeGreaterThan(connectionLocateStart);
+    expect(connectionLocateSource).toContain('onEnsureSidebarExpanded?.();');
+    expect(connectionLocateSource).not.toContain('onExpandSidebar?.();');
+  });
+
   it('keeps the legacy sidebar toolbar on a stable six-column grid layout', () => {
     const source = readSidebarSource();
     const markup = renderSidebarMarkup();
@@ -1127,24 +1147,37 @@ describe('Sidebar locate toolbar', () => {
     const connectionPackageIndex = actionsSource.indexOf("key: 'connection-package'");
     const driverIndex = actionsSource.indexOf("key: 'drivers'");
     const workspaceIndex = actionsSource.indexOf("key: 'settings-workspace'");
-    const aboutIndex = actionsSource.indexOf("key: 'settings-about'", workspaceIndex);
 
     expect(connectionPackageIndex).toBeGreaterThanOrEqual(0);
     expect(driverIndex).toBeGreaterThan(connectionPackageIndex);
     expect(workspaceIndex).toBeGreaterThan(connectionPackageIndex);
-    expect(aboutIndex).toBeGreaterThan(workspaceIndex);
+    // 关于 GoNavi 已拎出「更多」菜单，作为标题栏独立按钮
+    expect(actionsSource).not.toContain("key: 'settings-about'");
 
     const driverSource = actionsSource.slice(driverIndex, actionsSource.indexOf("key: 'open-external-sql-file'", driverIndex));
     expect(driverSource).not.toContain("priority: 'secondary'");
     expect(driverSource).toContain("label: t('app.tools.entry.drivers.title')");
     expect(driverSource).toContain("pane: 'drivers'");
 
-    const workspaceSource = actionsSource.slice(workspaceIndex, aboutIndex);
+    const workspaceSource = actionsSource.slice(workspaceIndex);
     expect(workspaceSource).toContain("priority: 'secondary'");
     expect(workspaceSource).not.toContain("key: 'drivers'");
     expect(workspaceSource).toContain("key: 'snippet-settings'");
     expect(workspaceSource).toContain("key: 'shortcut-settings'");
     expect(workspaceSource).toContain("key: 'sql-audit'");
+
+    const aboutActionsStart = source.indexOf('const v2TitlebarAboutActions: TitleBarQuickAction[] = [');
+    const aboutActionsEnd = source.indexOf('\n  ];', aboutActionsStart);
+    expect(aboutActionsStart).toBeGreaterThan(actionsEnd);
+    expect(aboutActionsEnd).toBeGreaterThan(aboutActionsStart);
+
+    const aboutActionsSource = source.slice(aboutActionsStart, aboutActionsEnd);
+    expect(aboutActionsSource).toContain("key: 'about-go-navi'");
+    expect(aboutActionsSource).toContain("label: t('app.settings.group.about.title')");
+    expect(aboutActionsSource).toContain("{ group: 'about', pane: 'about-go-navi' }");
+
+    const renderSource = source.slice(aboutActionsEnd);
+    expect(renderSource).toContain('trailingActions={v2TitlebarAboutActions}');
   });
 
   it('renders the fixed v2 rail, titlebar quick actions, explorer filters and workbench actions', () => {

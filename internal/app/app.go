@@ -199,6 +199,9 @@ type App struct {
 	driverDownloadTaskRunner      func(string, string, string, string) connection.QueryResult
 	dataRootApplyMu               sync.Mutex
 	configDir                     string
+	downloadSourceMu              sync.RWMutex
+	downloadSource                DownloadSource
+	downloadSourceLoaded          bool
 	sqliteTableStatsMu            sync.Mutex
 	secretStore                   secretstore.SecretStore
 	runningQueries                map[string]queryContext // queryID -> cancelFunc and start time
@@ -307,6 +310,7 @@ func NewAppWithSecretStore(store secretstore.SecretStore) *App {
 		sqlTransactions:               make(map[string]*managedSQLTransaction),
 		requestTraceStore:             requesttrace.NewStore(requesttrace.DefaultCapacity),
 		configDir:                     resolveAppConfigDir(),
+		downloadSource:                DownloadSourceCst,
 		secretStore:                   store,
 		localizer:                     newAppLocalizer(),
 		jvmPreviewTokens:              make(map[string]jvmPreviewConfirmationToken),
@@ -464,6 +468,7 @@ func InitializeHeadlessLifecycle(a *App, ctx context.Context, configDir string) 
 		return fmt.Errorf("initialize SQL-file job store: %w", err)
 	}
 	a.loadPersistedGlobalProxy()
+	a.loadPersistedDownloadSource()
 	a.activateSQLAudit()
 	logger.Infof("无头运行时启动完成")
 	return nil
@@ -499,6 +504,7 @@ func (a *App) startup(ctx context.Context) {
 		logger.Warnf("恢复导入任务状态失败：%v", err)
 	}
 	a.loadPersistedGlobalProxy()
+	a.loadPersistedDownloadSource()
 	if err := migrateLegacyWebKitStorageIfNeeded(a); err != nil {
 		logger.Warnf("迁移旧 WebKit 连接存储失败：%v", err)
 	}
@@ -1300,7 +1306,13 @@ func formatConnSummary(config connection.ConnectionConfig) string {
 
 func (a *App) getDatabaseForcePing(config connection.ConnectionConfig) (db.Database, error) {
 	if a != nil && a.metadataSession != nil {
-		instance, err := a.getDatabaseWithContext(a.metadataSession.ctx, config, true)
+		var instance db.Database
+		var err error
+		if a.metadataSession.synchronous {
+			instance, err = a.getDatabaseSynchronouslyWithContext(a.metadataSession.ctx, config, true)
+		} else {
+			instance, err = a.getDatabaseWithContext(a.metadataSession.ctx, config, true)
+		}
 		a.bindMetadataDatabase(instance)
 		return instance, err
 	}
@@ -1312,7 +1324,13 @@ func (a *App) getDatabaseForcePing(config connection.ConnectionConfig) (db.Datab
 // Helper: Get or create a database connection
 func (a *App) getDatabase(config connection.ConnectionConfig) (db.Database, error) {
 	if a != nil && a.metadataSession != nil {
-		instance, err := a.getDatabaseWithContext(a.metadataSession.ctx, config, false)
+		var instance db.Database
+		var err error
+		if a.metadataSession.synchronous {
+			instance, err = a.getDatabaseSynchronouslyWithContext(a.metadataSession.ctx, config, false)
+		} else {
+			instance, err = a.getDatabaseWithContext(a.metadataSession.ctx, config, false)
+		}
 		a.bindMetadataDatabase(instance)
 		return instance, err
 	}
@@ -1359,6 +1377,27 @@ func (a *App) getDatabaseWithContext(ctx context.Context, config connection.Conn
 		}
 		return result.instance, result.err
 	}
+}
+
+// getDatabaseSynchronouslyWithContext keeps non-context-aware Connect work in
+// the current request goroutine. It cannot interrupt Connect, but it guarantees
+// that a canceled Web RPC does not return while a detached connection worker is
+// still running. The context is checked again before any SQL is dispatched.
+func (a *App) getDatabaseSynchronouslyWithContext(ctx context.Context, config connection.ConnectionConfig, forcePing bool) (db.Database, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	instance, err := a.getDatabaseWithPing(config, forcePing)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return instance, nil
 }
 
 func (a *App) openDatabaseIsolated(config connection.ConnectionConfig) (db.Database, error) {
