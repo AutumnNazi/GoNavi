@@ -8869,6 +8869,7 @@
   "table_designer.message.trigger_restored_after_failure": "{{detail}}; исходный триггер автоматически восстановлен",
   "table_designer.message.trigger_restore_failed": "{{detail}}; автоматическое восстановление триггера не удалось: {{restoreDetail}}. Немедленно проверьте триггер",
   "table_designer.message.trigger_restore_unavailable": "{{detail}}; исходный триггер не удалось автоматически восстановить. Немедленно проверьте его",
+  "table_designer.message.trigger_outcome_unknown": "{{detail}}; состояние триггера неизвестно, автоматическое восстановление не выполнялось. Немедленно проверьте его",
   "table_designer.message.no_copyable_columns": "Не выбраны столбцы для копирования",
   "table_designer.message.no_index_changes": "Изменения индекса не обнаружены",
   "table_designer.message.only_normal_unique_index_supported": "Эта база данных поддерживает управление только обычными и уникальными индексами",

@@ -27,8 +27,17 @@ const normalizeSqlLexicalDbType = (dbType: string): string => {
   const normalized = String(dbType || '').trim().toLowerCase();
   if (normalized === 'doris') return 'diros';
   if (normalized === 'greatdb' || normalized === 'gdb') return 'goldendb';
+  if (normalized === 'mssql' || normalized === 'sql_server' || normalized === 'sql-server') return 'sqlserver';
   return normalized;
 };
+
+export const supportsSqlBracketIdentifier = (dbType: string): boolean => (
+  ['sqlserver', 'sqlite'].includes(normalizeSqlLexicalDbType(dbType))
+);
+
+export const supportsSqlEscapedBracketIdentifier = (dbType: string): boolean => (
+  normalizeSqlLexicalDbType(dbType) === 'sqlserver'
+);
 
 const MYSQL_DASH_COMMENT_DIALECTS = new Set([
   'mysql', 'mariadb', 'oceanbase', 'diros', 'starrocks', 'goldendb', 'sphinx', 'tidb',
@@ -336,11 +345,14 @@ const trimStatementRange = (sql: string, start: number, end: number, dbType = ''
 export const findSqlStatementRanges = (sql: string, dbType = ''): SqlStatementRange[] => {
   const text = String(sql || '').replace(/\r\n/g, '\n');
   const ranges: SqlStatementRange[] = [];
+  const bracketIdentifiers = supportsSqlBracketIdentifier(dbType);
+  const escapedBracketIdentifiers = supportsSqlEscapedBracketIdentifier(dbType);
 
   let statementStart = 0;
   let inSingle = false;
   let inDouble = false;
   let inBacktick = false;
+  let inBracket = false;
   let escaped = false;
   let inLineComment = false;
   let inBlockComment = false;
@@ -386,7 +398,45 @@ export const findSqlStatementRanges = (sql: string, dbType = ''): SqlStatementRa
       continue;
     }
 
-    if (!inSingle && !inDouble && !inBacktick) {
+    if (inDouble) {
+      // SQL delimited identifiers escape a double quote by doubling it.
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"' && next === '"') {
+        index++;
+        continue;
+      }
+      if (ch === '"') inDouble = false;
+      continue;
+    }
+
+    if (inBacktick) {
+      // MySQL-style identifiers escape a backtick by doubling it.
+      if (ch === '`' && next === '`') {
+        index++;
+        continue;
+      }
+      if (ch === '`') inBacktick = false;
+      continue;
+    }
+
+    if (bracketIdentifiers && inBracket) {
+      // SQL Server identifiers escape a closing bracket as `]]`.
+      if (escapedBracketIdentifiers && ch === ']' && next === ']') {
+        index++;
+        continue;
+      }
+      if (ch === ']') inBracket = false;
+      continue;
+    }
+
+    if (!inSingle && !inDouble && !inBacktick && !inBracket) {
       if (ch === '/' && next === '*') {
         index++;
         inBlockComment = true;
@@ -443,6 +493,10 @@ export const findSqlStatementRanges = (sql: string, dbType = ''): SqlStatementRa
     }
     if (!inSingle && !inDouble && ch === '`') {
       inBacktick = !inBacktick;
+      continue;
+    }
+    if (bracketIdentifiers && !inSingle && !inDouble && !inBacktick && ch === '[') {
+      inBracket = true;
       continue;
     }
 

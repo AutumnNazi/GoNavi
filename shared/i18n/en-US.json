@@ -8869,6 +8869,7 @@
   "table_designer.message.trigger_restored_after_failure": "{{detail}}; the original trigger was restored automatically",
   "table_designer.message.trigger_restore_failed": "{{detail}}; automatic trigger restoration failed: {{restoreDetail}}. Check the trigger immediately",
   "table_designer.message.trigger_restore_unavailable": "{{detail}}; the original trigger could not be restored automatically. Check it immediately",
+  "table_designer.message.trigger_outcome_unknown": "{{detail}}; the trigger state is unknown and was not restored automatically. Check it immediately",
   "table_designer.message.no_copyable_columns": "No copyable columns selected",
   "table_designer.message.no_index_changes": "No index changes detected",
   "table_designer.message.only_normal_unique_index_supported": "This database only supports maintaining normal and unique indexes",
