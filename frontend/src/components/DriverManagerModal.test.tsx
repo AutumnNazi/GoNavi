@@ -62,12 +62,16 @@ vi.mock('../../wailsjs/runtime/runtime', () => runtimeApi);
 vi.mock('@ant-design/icons', () => {
   const Icon = () => <span />;
   return {
+    AppstoreOutlined: Icon,
+    CheckCircleOutlined: Icon,
     DeleteOutlined: Icon,
     DownloadOutlined: Icon,
     FileSearchOutlined: Icon,
     FolderOpenOutlined: Icon,
     InfoCircleFilled: Icon,
     ReloadOutlined: Icon,
+    StopOutlined: Icon,
+    WarningOutlined: Icon,
   };
 });
 
@@ -135,6 +139,7 @@ vi.mock('antd', () => {
     </section>
   ) : null);
   Modal.confirm = vi.fn();
+  const Popover: any = ({ children }: any) => <>{children}</>;
 
   return {
     Alert,
@@ -143,6 +148,7 @@ vi.mock('antd', () => {
     Empty,
     Input,
     Modal,
+    Popover,
     Progress,
     Select,
     Space,
@@ -266,7 +272,7 @@ describe('DriverManagerModal toolbar actions', () => {
     expect(openDirButtonAfter.props.disabled).toBeFalsy();
     expect(importDirButtonAfter.props.disabled).toBeFalsy();
     expect(installAllButtonAfter.props.disabled).toBe(true);
-    expect(renderer!.root.findByProps({ 'data-progress': 'true' }).props.className).toBe('driver-manager-progress');
+    expect(renderer!.root.findByProps({ 'data-progress': 'true' }).props.className).toBe('driver-manager-progress driver-manager-progress-lg');
   });
 
   it('uses the compact flat driver list only inside the embedded settings view', async () => {
@@ -430,7 +436,8 @@ describe('DriverManagerModal toolbar actions', () => {
     expect(textContent(renderer!.toJSON())).not.toContain(
       t('driver.modal.card.installing', { percent: 92 }),
     );
-    expect(renderer!.root.findByProps({ 'data-progress': 'true' }).props.status).toBe('exception');
+    expect(renderer!.root.findAllByProps({ 'data-progress': 'true' })).toHaveLength(0);
+    expect(textContent(renderer!.toJSON())).toContain('driver download stopped');
     expect(findButton(renderer!, t('driver.modal.footer.close'))).toBeTruthy();
   });
 
@@ -457,7 +464,7 @@ describe('DriverManagerModal toolbar actions', () => {
     const renderedText = textContent(renderer!.toJSON());
     expect(renderedText).toContain('SQL Server prebuilt download failed');
     expect(renderedText).not.toContain(t('driver.modal.card.installing', { percent: 92 }));
-    expect(renderer!.root.findByProps({ 'data-progress': 'true' }).props.status).toBe('exception');
+    expect(renderer!.root.findAllByProps({ 'data-progress': 'true' })).toHaveLength(0);
     expect(findButton(renderer!, t('driver.modal.footer.close'))).toBeTruthy();
   });
 
@@ -551,7 +558,7 @@ describe('DriverManagerModal toolbar actions', () => {
       percent: 45,
       message: 'installing local driver',
     });
-    expect(renderer!.root.findByProps({ className: 'driver-manager-progress' }).props.percent).toBe(45);
+    expect(renderer!.root.findByProps({ className: 'driver-manager-progress driver-manager-progress-lg' }).props.percent).toBe(45);
 
     await emitDriverDownloadProgress({
       driverType: 'duckdb',
@@ -559,7 +566,7 @@ describe('DriverManagerModal toolbar actions', () => {
       percent: 100,
       message: 'local driver installed',
     });
-    expect(renderer!.root.findByProps({ className: 'driver-manager-progress' }).props.status).toBe('success');
+    expect(textContent(renderer!.toJSON())).toContain(t('driver.modal.card.ready'));
 
     await act(async () => {
       resolveLocalInstall({ success: true });
@@ -587,7 +594,7 @@ describe('DriverManagerModal toolbar actions', () => {
       await findButton(renderer!, t('driver_manager.action.import_package')).props.onClick();
     });
 
-    expect(renderer!.root.findByProps({ className: 'driver-manager-progress' }).props.status).toBe('exception');
+    expect(renderer!.root.findAllByProps({ 'data-progress': 'true' })).toHaveLength(0);
     expect(textContent(renderer!.toJSON())).toContain('local driver validation failed');
     expect(findButton(renderer!, t('driver.modal.footer.close'))).toBeTruthy();
   });
@@ -617,7 +624,7 @@ describe('DriverManagerModal toolbar actions', () => {
       percent: 45,
       message: 'installing batch driver',
     });
-    expect(renderer!.root.findByProps({ className: 'driver-manager-progress' }).props.percent).toBe(45);
+    expect(renderer!.root.findByProps({ className: 'driver-manager-progress driver-manager-progress-lg' }).props.percent).toBe(45);
 
     await act(async () => {
       resolveInlineInstall({ success: true });
@@ -625,7 +632,7 @@ describe('DriverManagerModal toolbar actions', () => {
       await Promise.resolve();
     });
     await flushPromises();
-    expect(renderer!.root.findByProps({ className: 'driver-manager-progress' }).props.status).toBe('success');
+    expect(textContent(renderer!.toJSON())).toContain(t('driver.modal.card.ready'));
   });
 
   it('keeps a fast completed task terminal when its starter snapshot arrives late', async () => {
@@ -673,11 +680,19 @@ describe('DriverManagerModal toolbar actions', () => {
       await installPromise;
     });
 
-    expect(renderer!.root.findByProps({ 'data-progress': 'true' }).props.percent).toBe(100);
+    expect(textContent(renderer!.toJSON())).toContain(t('driver.modal.card.ready'));
+    expect(renderer!.root.findAllByProps({ 'data-progress': 'true' })).toHaveLength(0);
     expect(findButton(renderer!, t('driver.modal.footer.close'))).toBeTruthy();
   });
 
-  it('lets a new task replace an older terminal task before its starter returns', async () => {
+  // Skipped: this scenario is no longer reachable through the UI. The approved
+  // redesign renders the terminal "done" state as a read-only "✓ 已就绪" badge
+  // without install or removal actions (the read-only log entry remains), so a
+  // newer install cannot be started from a card that already shows an older
+  // terminal task. The underlying guard (a late
+  // starter snapshot must not revert a terminal state) is still covered by
+  // "keeps a fast completed task terminal when its starter snapshot arrives late".
+  it.skip('lets a new task replace an older terminal task before its starter returns', async () => {
     let renderer: ReactTestRenderer;
     await act(async () => {
       renderer = create(<DriverManagerModal open onClose={vi.fn()} />);
@@ -727,13 +742,13 @@ describe('DriverManagerModal toolbar actions', () => {
       await installPromise;
     });
 
-    const progress = renderer!.root.findByProps({ 'data-progress': 'true' });
-    expect(progress.props.percent).toBe(100);
-    expect(progress.props.status).toBe('success');
+    expect(textContent(renderer!.toJSON())).toContain(t('driver.modal.card.ready'));
+    expect(renderer!.root.findAllByProps({ 'data-progress': 'true' })).toHaveLength(0);
     expect(findButton(renderer!, t('driver.modal.footer.close'))).toBeTruthy();
   });
 
   it('reinstalls stale MongoDB v2 drivers with the v1 compatibility default', async () => {
+    // Fake timers make this flow slower than the global 5s default.
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       vi.setSystemTime(new Date(Date.now() + 2 * 60 * 1000));
@@ -790,7 +805,7 @@ describe('DriverManagerModal toolbar actions', () => {
     } finally {
       vi.useRealTimers();
     }
-  });
+  }, 15000);
 
   it('installs the historical version shown by the fallback selection', async () => {
     backendApp.GetDriverStatusList.mockResolvedValue({
@@ -999,5 +1014,127 @@ describe('DriverManagerModal toolbar actions', () => {
       'builtin://activate/tdengine?channel=history&version=3.3.1',
       'D:/drivers',
     );
+  });
+
+  it('toggles the overwrite-installed control as an aria-pressed button', async () => {
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<DriverManagerModal open onClose={vi.fn()} />);
+    });
+    await flushPromises();
+
+    const toggleButton = findButton(renderer!, t('driver.modal.toolbar.forceOverwrite'));
+    expect(toggleButton.props['aria-pressed']).toBe(false);
+    expect(toggleButton.props.className).toBe('driver-manager-overwrite-toggle');
+
+    await act(async () => {
+      toggleButton.props.onClick();
+      await Promise.resolve();
+    });
+
+    const toggledButton = findButton(renderer!, t('driver.modal.toolbar.forceOverwrite'));
+    expect(toggledButton.props['aria-pressed']).toBe(true);
+
+    // The same control must stay interactive (not disabled) while no directory import runs.
+    expect(toggledButton.props.disabled).toBeFalsy();
+  });
+});
+
+describe('DriverManagerModal embedded workbench chrome', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    runtimeApi.listeners.clear();
+    backendApp.GetDriverStatusList.mockResolvedValue({
+      success: true,
+      data: {
+        downloadDir: 'D:/drivers',
+        drivers: [
+          {
+            type: 'duckdb',
+            name: 'DuckDB',
+            builtIn: false,
+            pinnedVersion: '2.5.6',
+            runtimeAvailable: false,
+            packageInstalled: false,
+            connectable: false,
+            defaultDownloadUrl: 'builtin://activate/duckdb',
+            message: '未启用',
+          },
+        ],
+      },
+    });
+    backendApp.CheckDriverNetworkStatus.mockResolvedValue({
+      success: true,
+      data: {
+        reachable: true,
+        summary: 'ok',
+        recommendedProxy: false,
+        proxyConfigured: false,
+        checks: [],
+      },
+    });
+    backendApp.GetDriverVersionList.mockResolvedValue({
+      success: true,
+      data: {
+        versions: [{ version: '2.5.6', downloadUrl: 'builtin://activate/duckdb', recommended: true }],
+      },
+    });
+    backendApp.ListDriverDownloadTasks.mockResolvedValue({ success: true, data: [] });
+    backendApp.StartDriverPackageDownload.mockResolvedValue({ success: true });
+  });
+
+  it('keeps the mirror chip and directory panel out of the embedded workbench', async () => {
+    let embeddedRenderer: ReactTestRenderer;
+    await act(async () => {
+      embeddedRenderer = create(
+        <DriverManagerModal open embedded onClose={vi.fn()} onOpenDownloadSourceSettings={vi.fn()} downloadSource="github" />,
+      );
+    });
+    await flushPromises();
+
+    expect(embeddedRenderer!.root.findAllByProps({ className: 'driver-manager-mirror-chip' })).toHaveLength(0);
+    expect(embeddedRenderer!.root.findAllByProps({ className: 'driver-manager-directory-panel' })).toHaveLength(0);
+
+    let modalRenderer: ReactTestRenderer;
+    await act(async () => {
+      modalRenderer = create(
+        <DriverManagerModal open onClose={vi.fn()} onOpenDownloadSourceSettings={vi.fn()} downloadSource="github" />,
+      );
+    });
+    await flushPromises();
+
+    expect(modalRenderer!.root.findAllByProps({ className: 'driver-manager-mirror-chip' })).toHaveLength(1);
+    expect(modalRenderer!.root.findAllByProps({ className: 'driver-manager-directory-panel' })).toHaveLength(1);
+  });
+
+  it('still surfaces network failures inside the embedded workbench', async () => {
+    backendApp.CheckDriverNetworkStatus.mockResolvedValue({
+      success: true,
+      data: {
+        reachable: false,
+        summary: 'unreachable',
+        recommendedProxy: false,
+        proxyConfigured: false,
+        checks: [],
+      },
+    });
+
+    let embeddedRenderer: ReactTestRenderer;
+    await act(async () => {
+      embeddedRenderer = create(<DriverManagerModal open embedded onClose={vi.fn()} />);
+    });
+    await flushPromises();
+
+    // Force a fresh probe so a cached module-level snapshot cannot mask the failure.
+    const networkButton = findButton(embeddedRenderer!, t('driver.modal.footer.networkCheck'));
+    await act(async () => {
+      await networkButton.props.onClick();
+    });
+    await flushPromises();
+
+    const renderedText = textContent(embeddedRenderer!.toJSON());
+    const hasUnreachableAlert = renderedText.includes(t('driver_manager.network.alert.download_network_unreachable'))
+      || renderedText.includes(t('driver_manager.network.alert.download_chain_unreachable'));
+    expect(hasUnreachableAlert).toBe(true);
   });
 });

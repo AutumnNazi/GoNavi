@@ -1157,7 +1157,7 @@ describe('Sidebar locate toolbar', () => {
     const driverSource = actionsSource.slice(driverIndex, actionsSource.indexOf("key: 'open-external-sql-file'", driverIndex));
     expect(driverSource).not.toContain("priority: 'secondary'");
     expect(driverSource).toContain("label: t('app.tools.entry.drivers.title')");
-    expect(driverSource).toContain("pane: 'drivers'");
+    expect(driverSource).toContain("action: 'drivers'");
 
     const workspaceSource = actionsSource.slice(workspaceIndex);
     expect(workspaceSource).toContain("priority: 'secondary'");
@@ -2784,6 +2784,7 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).toContain('SCHEMA');
     expect(markup).toContain('app_db · Schema actions');
     expect(markup).toContain('Maintenance');
+    expect(markup).toContain('New query');
     expect(markup).toContain('Edit schema');
     expect(markup).toContain('Refresh object tree');
     expect(markup).toContain('Export and backup');

@@ -2,7 +2,7 @@ import Modal from './components/common/ResizableDraggableModal';
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import { withAISettingsLeaveGuard, type AISettingsLeaveGuard } from './utils/aiSettingsLeaveGuard';
 import { Layout, Button, ConfigProvider, theme, message, notification, Spin, Slider, Switch, Input, InputNumber, Select, Segmented, Tooltip, Alert } from 'antd';
-import { UploadOutlined, DownloadOutlined, CloudDownloadOutlined, BugOutlined, GlobalOutlined, InfoCircleOutlined, GithubOutlined, SkinOutlined, CheckOutlined, MinusOutlined, BorderOutlined, CloseOutlined, SettingOutlined, LinkOutlined, BgColorsOutlined, AppstoreOutlined, RobotOutlined, FolderOpenOutlined, HddOutlined, SafetyCertificateOutlined, SwitcherOutlined, CodeOutlined, RightOutlined, TableOutlined, MenuOutlined, MenuFoldOutlined, MenuUnfoldOutlined, PoweroffOutlined, TagOutlined, UserOutlined, UpCircleOutlined, MessageOutlined, FileTextOutlined, SyncOutlined, SendOutlined, AuditOutlined } from '@ant-design/icons';
+import { UploadOutlined, DownloadOutlined, CloudDownloadOutlined, BugOutlined, GlobalOutlined, InfoCircleOutlined, GithubOutlined, SkinOutlined, CheckOutlined, MinusOutlined, BorderOutlined, CloseOutlined, SettingOutlined, LinkOutlined, BgColorsOutlined, AppstoreOutlined, RobotOutlined, FolderOpenOutlined, HddOutlined, SafetyCertificateOutlined, SwitcherOutlined, CodeOutlined, RightOutlined, TableOutlined, MenuOutlined, MenuFoldOutlined, MenuUnfoldOutlined, PoweroffOutlined, TagOutlined, UserOutlined, UpCircleOutlined, MessageOutlined, FileTextOutlined, SyncOutlined, SendOutlined, AuditOutlined, ThunderboltOutlined, ApiOutlined } from '@ant-design/icons';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -32,7 +32,6 @@ import {
   type AboutUpdateActionsSurface,
 } from './utils/aboutUpdateActions';
 import { type DataSyncEntryMode } from './components/dataSyncEntryMode';
-import DriverManagerModal from './components/DriverManagerModal';
 import LinuxCJKFontBanner from './components/LinuxCJKFontBanner';
 import LogPanel from './components/LogPanel';
 import AIPanelErrorBoundary from './components/ai/AIPanelErrorBoundary';
@@ -118,6 +117,12 @@ import {
 } from './utils/connectionExport';
 import { downloadBrowserTextFile } from './utils/browserFileTransfer';
 import { buildDataSyncWorkbenchTab } from './utils/dataSyncTab';
+import {
+  buildDriverManagerWorkbenchTab,
+  notifyDownloadSourceChanged,
+  OPEN_DOWNLOAD_SOURCE_SETTINGS_EVENT,
+  OPEN_GLOBAL_PROXY_SETTINGS_EVENT,
+} from './utils/driverManagerTab';
 import { buildSqlAuditWorkbenchTab } from './utils/sqlAuditTab';
 import { buildRequestDiagnosticsWorkbenchTab } from './utils/requestDiagnosticsTab';
 import {
@@ -250,6 +255,7 @@ import { waitForWindowCondition } from './utils/windowTransition';
 import {
   hasNativeDetachedWindowManager,
   openNativeAIChatWindow,
+  openNativeWorkbenchTabWindow,
   toggleOrFocusNativeAIChatFromMainWindow,
 } from './utils/nativeDetachedWindowHost';
 import {
@@ -599,7 +605,6 @@ type ToolCenterPaneKey =
   | 'connection-package'
   | 'data-root'
   | 'security-update'
-  | 'drivers'
   | 'snippet-settings'
   | 'shortcut-settings';
 
@@ -806,7 +811,6 @@ function App() {
   const [notificationApi, notificationContextHolder] = notification.useNotification();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isConnectionModalMounted, setIsConnectionModalMounted] = useState(false);
-  const [isDriverModalOpen, setIsDriverModalOpen] = useState(false);
   const [editingConnection, setEditingConnection] = useState<SavedConnection | null>(null);
   const [isConnectionHealthModalOpen, setIsConnectionHealthModalOpen] = useState(false);
   const [connectionHealthTargetIds, setConnectionHealthTargetIds] = useState<string[]>([]);
@@ -1538,6 +1542,7 @@ function App() {
       const nextSource = normalizeDownloadSourceId(value);
       const previousSource = downloadSource;
       setDownloadSource(nextSource);
+      notifyDownloadSourceChanged(nextSource);
       const backendApp = (window as any).go?.app?.App;
       if (typeof backendApp?.SaveDownloadSourceConfig !== 'function') {
           return;
@@ -1545,10 +1550,13 @@ function App() {
       setDownloadSourceSaving(true);
       try {
           const result = await backendApp.SaveDownloadSourceConfig(nextSource);
-          setDownloadSource(normalizeDownloadSourceId(result?.source ?? nextSource));
+          const savedSource = normalizeDownloadSourceId(result?.source ?? nextSource);
+          setDownloadSource(savedSource);
+          notifyDownloadSourceChanged(savedSource);
           void message.success(t('app.download_source.message.saved'));
       } catch (error: unknown) {
           setDownloadSource(previousSource);
+          notifyDownloadSourceChanged(previousSource);
           void message.error(error instanceof Error ? error.message : t('app.download_source.message.save_failed'));
       } finally {
           setDownloadSourceSaving(false);
@@ -2586,6 +2594,15 @@ function App() {
   });
 
   const addTab = useStore(state => state.addTab);
+  const handleOpenDriverManagerWorkbench = useCallback(() => {
+      const tab = buildDriverManagerWorkbenchTab();
+      const wasDetached = useStore.getState().isWorkbenchTabDetached(tab.id);
+      addTab(tab);
+      if (!wasDetached) return;
+      void openNativeWorkbenchTabWindow(tab.id).catch((error) => {
+          message.error(error instanceof Error ? error.message : String(error));
+      });
+  }, [addTab]);
   const activeContext = useStore(state => state.activeContext);
   const connections = useStore(state => state.connections);
   const [sidebarTitlebarSnapshot, setSidebarTitlebarSnapshot] = useState<TitlebarSidebarSnapshot>({
@@ -4213,7 +4230,7 @@ function App() {
   const handleTitleBarSettingsNavigation = useCallback((spec: {
     group: 'preferences' | 'services' | 'config' | 'workflow' | 'workspace' | 'about';
     pane?: string;
-    action?: 'import-connections' | 'export-connections' | 'schema-compare' | 'data-compare' | 'sync' | 'sql-audit';
+    action?: 'import-connections' | 'export-connections' | 'schema-compare' | 'data-compare' | 'sync' | 'drivers' | 'sql-audit';
   }) => withAISettingsLeaveGuard(aiSettingsLeaveGuardRef.current, () => {
       if (spec.action === 'import-connections') {
           void handleImportConnections('config');
@@ -4233,6 +4250,11 @@ function App() {
       }
       if (spec.action === 'sync') {
           handleOpenDataSyncWorkbench('sync');
+          return;
+      }
+      if (spec.action === 'drivers') {
+          handleCancelSettingsCenterPane();
+          handleOpenDriverManagerWorkbench();
           return;
       }
       if (spec.action === 'sql-audit') {
@@ -4270,6 +4292,7 @@ function App() {
       handleExportConnections,
       handleImportConnections,
       handleOpenDataSyncWorkbench,
+      handleOpenDriverManagerWorkbench,
       handleOpenSettingsCenterPane,
       handleOpenSettingsModal,
       handleOpenToolCenterPane,
@@ -4846,28 +4869,34 @@ function App() {
       setIsConnectionHealthModalOpen(true);
   }, []);
 
-  const handleOpenDriverManagerFromConnection = () => {
+  const handleOpenDriverManagerFromConnection = useCallback(() => {
       pendingConnectionTagIdRef.current = null;
       setIsModalOpen(false);
       setEditingConnection(null);
       setToolCenterBackGroupKey(null);
-      setIsDriverModalOpen(true);
-  };
-
-  const handleCloseDriverManager = useCallback(() => {
-      const reopenSecurityUpdateDetails = shouldReopenSecurityUpdateDetails(securityUpdateRepairSource);
-      setIsDriverModalOpen(false);
-      setToolCenterBackGroupKey(null);
-      setSecurityUpdateRepairSource(null);
-      if (reopenSecurityUpdateDetails) {
-          openSecurityUpdateSettings();
-      }
-  }, [openSecurityUpdateSettings, securityUpdateRepairSource]);
+      handleOpenDriverManagerWorkbench();
+  }, [handleOpenDriverManagerWorkbench]);
 
   const handleOpenGlobalProxySettings = useCallback(() => {
       setSecurityUpdateRepairSource(null);
       setIsProxyModalOpen(true);
   }, []);
+
+  useEffect(() => {
+      const openGlobalProxySettings = () => handleOpenGlobalProxySettings();
+      window.addEventListener(OPEN_GLOBAL_PROXY_SETTINGS_EVENT, openGlobalProxySettings);
+      return () => window.removeEventListener(OPEN_GLOBAL_PROXY_SETTINGS_EVENT, openGlobalProxySettings);
+  }, [handleOpenGlobalProxySettings]);
+
+  const handleOpenDownloadSourceSettings = useCallback(() => {
+      handleOpenSettingsCenterPane('services', 'download-source');
+  }, [handleOpenSettingsCenterPane]);
+
+  useEffect(() => {
+      const openDownloadSourceSettings = () => handleOpenDownloadSourceSettings();
+      window.addEventListener(OPEN_DOWNLOAD_SOURCE_SETTINGS_EVENT, openDownloadSourceSettings);
+      return () => window.removeEventListener(OPEN_DOWNLOAD_SOURCE_SETTINGS_EVENT, openDownloadSourceSettings);
+  }, [handleOpenDownloadSourceSettings]);
 
   const handleCloseGlobalProxySettings = useCallback(() => {
       const reopenSecurityUpdateDetails = shouldReopenSecurityUpdateDetails(securityUpdateRepairSource);
@@ -5805,31 +5834,234 @@ function App() {
       utilityPanelStyle,
       viewportWidth,
   ]);
-  const renderDownloadSourceSettingsContent = useCallback(() => (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '12px 0' }}>
-          <div style={utilityPanelStyle}>
-              <div style={{ fontWeight: 600, marginBottom: 8 }}>{t('app.download_source.title')}</div>
-              <div style={{ ...utilityMutedTextStyle, marginBottom: 14 }}>
-                  {t('app.download_source.description')}
-              </div>
-              <Segmented
-                  block={viewportWidth >= 640}
-                  vertical={viewportWidth < 640}
-                  disabled={downloadSourceSaving}
-                  value={downloadSource}
-                  options={[
-                      { label: t('app.download_source.option.cst'), value: 'cst' },
-                      { label: t('app.download_source.option.bero'), value: 'bero' },
-                      { label: t('app.download_source.option.github'), value: 'github' },
-                  ]}
-                  onChange={(value) => void handleDownloadSourceChange(normalizeDownloadSourceId(value))}
-              />
-              <div style={{ ...utilityMutedTextStyle, marginTop: 12 }}>
-                  {t('app.download_source.fallback_hint')}
+  const downloadSourceItems: ReadonlyArray<{
+      id: DownloadSourceId;
+      labelKey: string;
+      descKey: string;
+      tagKey: string;
+      icon: React.ReactNode;
+      iconColor: string;
+      iconBg: string;
+      tagColor: string;
+      tagBg: string;
+  }> = [
+      {
+          id: 'cst',
+          labelKey: 'app.download_source.option.cst',
+          descKey: 'app.download_source.option.cst.desc',
+          tagKey: 'app.download_source.option.cst.tag',
+          icon: <ThunderboltOutlined />,
+          iconColor: '#f59e0b',
+          iconBg: 'rgba(245, 158, 11, 0.14)',
+          tagColor: '#b45309',
+          tagBg: 'rgba(245, 158, 11, 0.12)',
+      },
+      {
+          id: 'bero',
+          labelKey: 'app.download_source.option.bero',
+          descKey: 'app.download_source.option.bero.desc',
+          tagKey: 'app.download_source.option.bero.tag',
+          icon: <ApiOutlined />,
+          iconColor: '#0ea5e9',
+          iconBg: 'rgba(14, 165, 233, 0.14)',
+          tagColor: '#0369a1',
+          tagBg: 'rgba(14, 165, 233, 0.12)',
+      },
+      {
+          id: 'github',
+          labelKey: 'app.download_source.option.github',
+          descKey: 'app.download_source.option.github.desc',
+          tagKey: 'app.download_source.option.github.tag',
+          icon: <GithubOutlined />,
+          iconColor: darkMode ? '#cbd5e1' : '#475569',
+          iconBg: darkMode ? 'rgba(203, 213, 225, 0.14)' : 'rgba(71, 85, 105, 0.14)',
+          tagColor: darkMode ? '#e2e8f0' : '#1f2937',
+          tagBg: darkMode ? 'rgba(203, 213, 225, 0.12)' : 'rgba(71, 85, 105, 0.12)',
+      },
+  ];
+
+  const renderDownloadSourceSettingsContent = useCallback(() => {
+      const cardColumns = viewportWidth < 720 ? 1 : 3;
+      return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '12px 0' }}>
+              <div style={utilityPanelStyle}>
+                  <div style={{ ...utilityMutedTextStyle, marginBottom: 14, lineHeight: 1.7 }}>
+                      {t('app.download_source.description')}
+                  </div>
+                  <div
+                      role="radiogroup"
+                      aria-label={t('app.download_source.title')}
+                      style={{
+                          display: 'grid',
+                          gridTemplateColumns: `repeat(${cardColumns}, minmax(0, 1fr))`,
+                          gap: 12,
+                      }}
+                  >
+                      {downloadSourceItems.map((source) => {
+                          const isSelected = downloadSource === source.id;
+                          const isDisabled = downloadSourceSaving;
+                          const baseBorderColor = isSelected
+                              ? overlayTheme.selectedText
+                              : overlayTheme.divider;
+                          const hoverBorderColor = overlayTheme.selectedText;
+                          const selectedBackground = darkMode
+                              ? 'rgba(255, 255, 255, 0.05)'
+                              : 'rgba(22, 119, 255, 0.05)';
+                          return (
+                              <button
+                                  key={source.id}
+                                  type="button"
+                                  role="radio"
+                                  aria-checked={isSelected}
+                                  disabled={isDisabled}
+                                  onClick={() => void handleDownloadSourceChange(source.id)}
+                                  data-download-source-card={source.id}
+                                  data-selected={isSelected ? 'true' : 'false'}
+                                  className="gonavi-download-source-card"
+                                  style={{
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      gap: 12,
+                                      padding: 14,
+                                      borderRadius: 12,
+                                      border: `2px solid ${baseBorderColor}`,
+                                      background: isSelected ? selectedBackground : 'transparent',
+                                      cursor: isDisabled ? 'not-allowed' : 'pointer',
+                                      textAlign: 'left',
+                                      transition: 'border-color 160ms ease, background 160ms ease, box-shadow 160ms ease',
+                                      opacity: isDisabled ? 0.6 : 1,
+                                      fontFamily: 'inherit',
+                                      outline: 'none',
+                                      minHeight: 132,
+                                      boxShadow: isSelected
+                                          ? `0 0 0 4px ${darkMode ? 'rgba(22,119,255,0.18)' : 'rgba(22,119,255,0.10)'}`
+                                          : 'none',
+                                      color: overlayTheme.titleText,
+                                  }}
+                                  onMouseEnter={(event) => {
+                                      if (!isSelected && !isDisabled) {
+                                          event.currentTarget.style.borderColor = hoverBorderColor;
+                                          event.currentTarget.style.background = selectedBackground;
+                                      }
+                                  }}
+                                  onMouseLeave={(event) => {
+                                      if (!isSelected && !isDisabled) {
+                                          event.currentTarget.style.borderColor = baseBorderColor;
+                                          event.currentTarget.style.background = 'transparent';
+                                      }
+                                  }}
+                                  onFocus={(event) => {
+                                      if (!isSelected && !isDisabled) {
+                                          event.currentTarget.style.borderColor = hoverBorderColor;
+                                      }
+                                  }}
+                                  onBlur={(event) => {
+                                      if (!isSelected && !isDisabled) {
+                                          event.currentTarget.style.borderColor = baseBorderColor;
+                                      }
+                                  }}
+                              >
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                      <div
+                                          style={{
+                                              width: 36,
+                                              height: 36,
+                                              borderRadius: 10,
+                                              display: 'grid',
+                                              placeItems: 'center',
+                                              background: source.iconBg,
+                                              color: source.iconColor,
+                                              fontSize: 18,
+                                          }}
+                                      >
+                                          {source.icon}
+                                      </div>
+                                      {isSelected ? (
+                                          <span
+                                              style={{
+                                                  display: 'inline-flex',
+                                                  alignItems: 'center',
+                                                  gap: 4,
+                                                  padding: '3px 9px',
+                                                  borderRadius: 999,
+                                                  background: overlayTheme.selectedText,
+                                                  color: '#fff',
+                                                  fontSize: 11,
+                                                  fontWeight: 600,
+                                              }}
+                                          >
+                                              <CheckOutlined style={{ fontSize: 10 }} />
+                                              {t('app.download_source.selected_badge')}
+                                          </span>
+                                      ) : null}
+                                  </div>
+                                  <div style={{ minWidth: 0 }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                          <span style={{ fontSize: 14, fontWeight: 700, color: overlayTheme.titleText }}>
+                                              {t(source.labelKey)}
+                                          </span>
+                                          <span
+                                              style={{
+                                                  fontSize: 11,
+                                                  fontWeight: 600,
+                                                  padding: '1px 8px',
+                                                  borderRadius: 999,
+                                                  background: source.tagBg,
+                                                  color: source.tagColor,
+                                              }}
+                                          >
+                                              {t(source.tagKey)}
+                                          </span>
+                                      </div>
+                                      <div
+                                          style={{
+                                              marginTop: 6,
+                                              fontSize: 12,
+                                              color: overlayTheme.mutedText,
+                                              lineHeight: 1.6,
+                                          }}
+                                      >
+                                          {t(source.descKey)}
+                                      </div>
+                                  </div>
+                              </button>
+                          );
+                      })}
+                  </div>
+                  <div
+                      style={{
+                          marginTop: 14,
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: 8,
+                          padding: '10px 12px',
+                          borderRadius: 10,
+                          background: darkMode ? 'rgba(255,255,255,0.04)' : 'rgba(22,119,255,0.06)',
+                          color: overlayTheme.mutedText,
+                          fontSize: 12,
+                          lineHeight: 1.7,
+                      }}
+                  >
+                      <InfoCircleOutlined style={{ color: overlayTheme.selectedText, marginTop: 2, flexShrink: 0 }} />
+                      <span>{t('app.download_source.fallback_hint')}</span>
+                  </div>
               </div>
           </div>
-      </div>
-  ), [downloadSource, downloadSourceSaving, handleDownloadSourceChange, t, utilityMutedTextStyle, utilityPanelStyle]);
+      );
+  }, [
+      darkMode,
+      downloadSource,
+      downloadSourceSaving,
+      handleDownloadSourceChange,
+      overlayTheme.divider,
+      overlayTheme.mutedText,
+      overlayTheme.selectedText,
+      overlayTheme.titleText,
+      t,
+      utilityMutedTextStyle,
+      utilityPanelStyle,
+      viewportWidth,
+  ]);
   const renderSidebarMetadataSettingsPane = useCallback(() => (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '12px 0' }}>
           <div style={utilityPanelStyle}>
@@ -6220,6 +6452,10 @@ function App() {
               : []),
       ];
 
+      const aboutDownloadSourceDot = (darkMode
+          ? { cst: '#f59e0b', bero: '#38bdf8', github: '#cbd5e1' }
+          : { cst: '#d97706', bero: '#0284c7', github: '#475569' })[downloadSource] || '#94a3b8';
+
       return (
           <div className="gonavi-about-pane" style={{ display: 'flex', flexDirection: 'column' }}>
               <section
@@ -6354,6 +6590,49 @@ function App() {
                                       </div>
                                   </div>
                               ))}
+                          </div>
+                          <div
+                            className="gonavi-about-download-source"
+                            data-download-source={downloadSource}
+                            style={{
+                                marginTop: 18,
+                                padding: '12px 14px',
+                                borderRadius: 12,
+                                border: `1px solid ${dividerColor}`,
+                                background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: 12,
+                                flexWrap: 'wrap',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                                <span
+                                  aria-hidden="true"
+                                  style={{
+                                      width: 8,
+                                      height: 8,
+                                      borderRadius: 999,
+                                      background: aboutDownloadSourceDot,
+                                      flexShrink: 0,
+                                  }}
+                                />
+                                <span style={{ color: mutedText, fontSize: 13, whiteSpace: 'nowrap' }}>
+                                    {t('driver_manager.mirror_source.label')}
+                                </span>
+                                <span style={{ color: overlayTheme.titleText, fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                    {t(`app.download_source.option.${downloadSource}`)}
+                                </span>
+                            </div>
+                            <Button
+                              type="link"
+                              size="small"
+                              onClick={handleOpenDownloadSourceSettings}
+                              style={{ padding: 0, height: 'auto', fontWeight: 600 }}
+                            >
+                                {t('driver_manager.mirror_source.switch')}
+                            </Button>
                           </div>
                       </div>
                   </section>
@@ -9182,7 +9461,8 @@ function App() {
                     title: t('app.tools.entry.drivers.title'),
                     description: t('app.tools.entry.drivers.description'),
                     onClick: () => {
-                      handleOpenToolCenterPane('workspace', 'drivers');
+                      handleCancelSettingsCenterPane();
+                      handleOpenDriverManagerWorkbench();
                     },
                   },
                   {
@@ -9469,18 +9749,6 @@ function App() {
                     onRetry={handleRetrySecurityUpdate}
                     onRestart={handleRestartSecurityUpdate}
                     onIssueAction={handleSecurityUpdateIssueAction}
-                  />
-                );
-              }
-
-              if (activeSettingsCenterPane.key === 'drivers') {
-                return (
-                  <DriverManagerModal
-                    embedded
-                    open
-                    onClose={handleCancelSettingsCenterPane}
-                    onBack={closeToolCenterPane}
-                    onOpenGlobalProxySettings={handleOpenGlobalProxySettings}
                   />
                 );
               }
@@ -9939,14 +10207,6 @@ function App() {
               </div>
             )}
           </Modal>
-          )}
-          {isDriverModalOpen && (
-          <DriverManagerModal
-            open={isDriverModalOpen}
-            onClose={handleCloseDriverManager}
-            onBack={toolCenterBackGroupKey === 'workspace' ? () => handleReturnToToolCenter(() => setIsDriverModalOpen(false)) : undefined}
-            onOpenGlobalProxySettings={handleOpenGlobalProxySettings}
-          />
           )}
           <SecurityUpdateIntroModal
             open={isSecurityUpdateIntroOpen}

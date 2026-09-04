@@ -669,8 +669,7 @@ func TestClaudeCLIProvider_ChatTimesOutWhenCommandDoesNotFinish(t *testing.T) {
 }
 
 func TestClaudeCLIProvider_ChatStreamUsesRequestTimeoutWhenNoMeaningfulResponseArrives(t *testing.T) {
-	fakeClaude := writeFakeClaudeScript(t, "#!/bin/sh\necho '{\"type\":\"system\",\"subtype\":\"init\"}'\nexec sleep 5\n")
-	restore := overrideClaudeCLIForTest(t, fakeClaude)
+	restore := overrideClaudeCLIWithTestProcess(t, "hang-after-init")
 	defer restore()
 
 	originalRequestTimeout := claudeCLIRequestTimeout
@@ -1017,6 +1016,10 @@ func TestClaudeCLIHelperProcess(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 		_, _ = os.Stdout.WriteString("{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"OK\"}]}}\n")
 		_, _ = os.Stdout.WriteString("{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"OK\"}\n")
+		os.Exit(0)
+	case "hang-after-init":
+		_, _ = os.Stdout.WriteString("{\"type\":\"system\",\"subtype\":\"init\"}\n")
+		time.Sleep(5 * time.Second)
 		os.Exit(0)
 	case "sleep":
 		time.Sleep(5 * time.Second)

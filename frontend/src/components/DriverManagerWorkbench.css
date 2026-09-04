@@ -1,0 +1,107 @@
+.gn-driver-manager-workbench {
+  box-sizing: border-box;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+  padding: 16px;
+  background: var(--driver-manager-workbench-bg);
+  color: var(--driver-manager-workbench-text);
+}
+
+.gn-driver-manager-workbench-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.gn-driver-manager-workbench-title-group,
+.gn-driver-manager-workbench-title-copy {
+  min-width: 0;
+}
+
+.gn-driver-manager-workbench-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.gn-driver-manager-workbench-source {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.gn-driver-manager-workbench-source-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #d97706;
+}
+
+.gn-driver-manager-workbench-source-dot[data-download-source='bero'] {
+  background: #0284c7;
+}
+
+.gn-driver-manager-workbench-source-dot[data-download-source='github'] {
+  background: #64748b;
+}
+
+.gn-driver-manager-workbench-title-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--gn-accent-soft, var(--driver-manager-workbench-subtle));
+  color: var(--gn-accent-2, var(--driver-manager-workbench-primary));
+  font-size: 20px;
+}
+
+.gn-driver-manager-workbench-title-copy .ant-typography {
+  margin: 0;
+}
+
+.gn-driver-manager-workbench-content {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.gn-driver-manager-workbench-content > .driver-manager-embedded-layout {
+  height: 100%;
+}
+
+@media (max-width: 820px) {
+  .gn-driver-manager-workbench {
+    padding: 12px;
+  }
+
+  .gn-driver-manager-workbench-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .gn-driver-manager-workbench-source {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gn-driver-manager-workbench *,
+  .gn-driver-manager-workbench *::before,
+  .gn-driver-manager-workbench *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

@@ -299,7 +299,7 @@ const NativeDetachedQueryResult: React.FC<{
             readOnly
             connectionId={result.executionConnectionId || windowState.connectionId}
             connectionParamsOverride={result.executionConnectionParams}
-            dbName={result.metadataDbName || result.executionDbName || windowState.dbName || ''}
+            dbName={result.metadataDbName ?? result.executionDbName ?? windowState.dbName ?? ''}
             resultSql={result.sql}
             exportScope="queryResult"
             isActive
@@ -335,7 +335,7 @@ const NativeDetachedQueryResult: React.FC<{
       readOnly={result.readOnly !== false}
       connectionId={result.executionConnectionId || windowState.connectionId}
       connectionParamsOverride={result.executionConnectionParams}
-      dbName={result.metadataDbName || result.executionDbName || windowState.dbName || ''}
+      dbName={result.metadataDbName ?? result.executionDbName ?? windowState.dbName ?? ''}
       ddlDbName={result.ddlDbName}
       ddlTableName={result.ddlTableName}
       resultSql={result.exportSql || result.sql}
@@ -378,7 +378,14 @@ const NativeDetachedWindowContent: React.FC<{
 
   if (bootstrap.kind === 'workbench') {
     return tab
-      ? <WorkbenchTabContent tab={tab} isActive onContentReady={onContentReady} />
+      ? (
+          <WorkbenchTabContent
+            tab={tab}
+            isActive
+            onContentReady={onContentReady}
+            onRequestClose={onClose}
+          />
+        )
       : null;
   }
   if (bootstrap.kind === 'query-result') {
@@ -652,6 +659,8 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
         ]
       : [
           'gonavi:ai:inject-prompt',
+          'gonavi:open-download-source-settings',
+          'gonavi:open-global-proxy-settings',
           ...(bootstrap.kind === 'workbench' ? ['gonavi:locate-sidebar-object' as const] : []),
         ];
     const forwardToHost = (event: Event) => {

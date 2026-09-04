@@ -672,6 +672,44 @@ describe('QueryEditorAiAssist', () => {
         expect(focused.columns).toEqual([{ dbName: 'shop', tableName: 'videos', name: 'code', type: 'varchar' }]);
     });
 
+    it('keeps PostgreSQL quoted table references separate from folded unquoted names', () => {
+        const context = {
+            sourceType: 'postgres',
+            currentDb: 'appdb',
+            visibleDbs: ['appdb'],
+            tables: [
+                { dbName: 'appdb', tableName: 'public.Users' },
+                { dbName: 'appdb', tableName: 'public.users' },
+            ],
+            columns: [
+                { dbName: 'appdb', tableName: 'public.Users', name: 'QuotedId', type: 'bigint' },
+                { dbName: 'appdb', tableName: 'public.users', name: 'id', type: 'bigint' },
+            ],
+        };
+
+        const quoted = buildQueryEditorInlineCompletionContext(context, {
+            prefix: 'select * from public."Users" u where u.',
+            suffix: '',
+            currentLineBeforeCursor: 'select * from public."Users" u where u.',
+            currentLineAfterCursor: '',
+        });
+        expect(quoted.tables).toEqual([{ dbName: 'appdb', tableName: 'public.Users' }]);
+        expect(quoted.columns).toEqual([
+            { dbName: 'appdb', tableName: 'public.Users', name: 'QuotedId', type: 'bigint' },
+        ]);
+
+        const unquoted = buildQueryEditorInlineCompletionContext(context, {
+            prefix: 'select * from public.users u where u.',
+            suffix: '',
+            currentLineBeforeCursor: 'select * from public.users u where u.',
+            currentLineAfterCursor: '',
+        });
+        expect(unquoted.tables).toEqual([{ dbName: 'appdb', tableName: 'public.users' }]);
+        expect(unquoted.columns).toEqual([
+            { dbName: 'appdb', tableName: 'public.users', name: 'id', type: 'bigint' },
+        ]);
+    });
+
     it('matches schema-qualified table metadata columns by table name last part', () => {
         const focused = buildQueryEditorInlineCompletionContext({
             connectionName: 'Local Oracle',
@@ -832,6 +870,79 @@ describe('QueryEditorAiAssist', () => {
         expect(service.AIGetActiveProvider).not.toHaveBeenCalled();
     });
 
+    it('keeps manual table-alias context across semicolons in strings and comments', async () => {
+        const service = readyService('SELECT * FROM system_user su;');
+        const request = {
+            service,
+            aiContext: {
+                connectionName: 'Local MySQL',
+                sourceType: 'mysql',
+                currentDb: 'shop',
+                tables: [
+                    { dbName: 'shop', tableName: 'system_user' },
+                    { dbName: 'shop', tableName: 'service_user' },
+                ],
+                columns: [],
+            },
+        };
+        const makeSnapshot = (prefix: string) => ({
+            prefix,
+            suffix: '',
+            currentLineBeforeCursor: prefix.split(/\r?\n/).pop() || '',
+            currentLineAfterCursor: '',
+        });
+
+        for (const prefix of [
+            "SELECT * FROM system_user su WHERE note = ';' JOIN service_user ",
+            'SELECT * FROM system_user su -- ;\r\nJOIN service_user ',
+            'SELECT * FROM system_user su # ;\r\nJOIN service_user ',
+            'SELECT * FROM shop.system_user su /* ; */ JOIN shop.service_user ',
+        ]) {
+            await expect(requestQueryEditorInlineCompletion({
+                ...request,
+                editorSnapshot: makeSnapshot(prefix),
+            })).resolves.toBe('AS su2');
+            expect(isQueryEditorInlineTableAliasPending(makeSnapshot(prefix), 'mysql')).toBe(true);
+        }
+        expect(service.AISubmitAgentInput).not.toHaveBeenCalled();
+    });
+
+    it('starts manual alias generation from the new statement after a real separator', async () => {
+        const service = readyService('SELECT * FROM system_user su;');
+        const prefix = 'SELECT * FROM system_user su; SELECT * FROM service_user ';
+        const editorSnapshot = {
+            prefix,
+            suffix: '',
+            currentLineBeforeCursor: prefix,
+            currentLineAfterCursor: '',
+        };
+
+        await expect(requestQueryEditorInlineCompletion({
+            service,
+            aiContext: {
+                connectionName: 'Local MySQL',
+                sourceType: 'mysql',
+                currentDb: 'shop',
+                tables: [
+                    { dbName: 'shop', tableName: 'system_user' },
+                    { dbName: 'shop', tableName: 'service_user' },
+                ],
+                columns: [],
+            },
+            editorSnapshot,
+        })).resolves.toBe('AS su');
+        expect(resolveQueryEditorInlineCompletionIntentDetails({
+            ...editorSnapshot,
+            prefix: 'SELECT * FROM system_user su; SELECT * FROM ser',
+            currentLineBeforeCursor: 'SELECT * FROM system_user su; SELECT * FROM ser',
+        }, 'mysql')).toEqual({
+            intent: 'table_name',
+            fragment: 'ser',
+            qualifier: '',
+        });
+        expect(service.AISubmitAgentInput).not.toHaveBeenCalled();
+    });
+
     it('uses an alias without AS after a manually entered Oracle table name', async () => {
         const service = readyService('SELECT * FROM system_user su;');
         await expect(requestQueryEditorInlineCompletion({
@@ -851,6 +962,42 @@ describe('QueryEditorAiAssist', () => {
             },
         })).resolves.toBe('su');
         expect(service.AISubmitAgentInput).not.toHaveBeenCalled();
+    });
+
+    it('keeps Oracle alias syntax after a comment semicolon, including OceanBase Oracle mode', async () => {
+        const prefix = 'SELECT * FROM system_user su /* ; */ JOIN service_user ';
+        const editorSnapshot = {
+            prefix,
+            suffix: '',
+            currentLineBeforeCursor: prefix,
+            currentLineAfterCursor: '',
+        };
+        for (const aiContext of [
+            {
+                connectionName: 'Local Oracle',
+                sourceType: 'oracle',
+                currentDb: 'ORCL',
+            },
+            {
+                connectionName: 'OceanBase Oracle',
+                sourceType: 'oceanbase',
+                sqlDialect: 'oracle',
+                currentDb: 'ORCL',
+            },
+        ]) {
+            await expect(requestQueryEditorInlineCompletion({
+                service: readyService('SELECT * FROM system_user su;'),
+                aiContext: {
+                    ...aiContext,
+                    tables: [
+                        { dbName: 'ORCL', tableName: 'system_user' },
+                        { dbName: 'ORCL', tableName: 'service_user' },
+                    ],
+                    columns: [],
+                },
+                editorSnapshot,
+            })).resolves.toBe('su2');
+        }
     });
 
     it('does not suggest aliases after DML targets but keeps INSERT SELECT aliases', async () => {

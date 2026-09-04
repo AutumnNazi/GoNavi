@@ -1196,6 +1196,66 @@ func TestDBQueryMultiTransactionalKeepsDMLTransactionOpenUntilCommit(t *testing.
 	}
 }
 
+func TestDBQueryMultiTransactionalCancellationRollsBackWithoutLeavingPendingTransaction(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() {
+		newDatabaseFunc = originalNewDatabaseFunc
+	})
+
+	statement := "UPDATE users SET active = 0 WHERE id = 1"
+	execStarted := make(chan string, 2)
+	fakeDB := &fakeBatchWriteDB{
+		execDelay: map[string]time.Duration{statement: 10 * time.Second},
+		execStarted: execStarted,
+	}
+	newDatabaseFunc = func(dbType string) (db.Database, error) {
+		return fakeDB, nil
+	}
+
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	config := connection.ConnectionConfig{Type: "mysql", Host: "127.0.0.1", Port: 3306, User: "root"}
+	resultCh := make(chan connection.QueryResult, 1)
+	go func() {
+		resultCh <- app.DBQueryMultiTransactional(config, "main", statement, "tx-close-before-result")
+	}()
+
+	for _, expected := range []string{"START TRANSACTION", statement} {
+		select {
+		case executed := <-execStarted:
+			if executed != expected {
+				t.Fatalf("executed statement = %q, want %q", executed, expected)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for %q", expected)
+		}
+	}
+
+	if cancelled := app.CancelQuery("tx-close-before-result"); !cancelled.Success {
+		t.Fatalf("CancelQuery failed: %#v", cancelled)
+	}
+	select {
+	case result := <-resultCh:
+		if result.Success || result.TransactionID != "" || result.TransactionPending {
+			t.Fatalf("cancelled transaction must not become pending: %#v", result)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("managed transaction did not stop after cancellation")
+	}
+
+	app.sqlTransactionMu.Lock()
+	pendingCount := len(app.sqlTransactions)
+	app.sqlTransactionMu.Unlock()
+	if pendingCount != 0 {
+		t.Fatalf("cancelled transaction left %d pending entries", pendingCount)
+	}
+	if fakeDB.session == nil || !fakeDB.session.closed {
+		t.Fatal("cancelled transaction session was not closed")
+	}
+	if got := fakeDB.execQueries[len(fakeDB.execQueries)-1]; got != "ROLLBACK" {
+		t.Fatalf("final transaction statement = %q, want ROLLBACK", got)
+	}
+}
+
 func TestDBQueryMultiTransactionalKeepsSQLServerBeginEndBlockOpenUntilRollback(t *testing.T) {
 	installFakeOptionalDriverRuntime(t)
 	originalNewDatabaseFunc := newDatabaseFunc

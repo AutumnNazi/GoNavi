@@ -370,6 +370,7 @@ export type V2DatabaseContextMenuActionKey =
   | 'drop-db';
 
 export type V2SchemaContextMenuActionKey =
+  | 'new-query'
   | 'rename-schema'
   | 'refresh-schema'
   | 'export-schema'
@@ -492,6 +493,7 @@ export const V2SchemaContextMenuView: React.FC<{
       <div className="gn-v2-context-menu-body">
         <div className="gn-v2-context-menu-section-title">{t('sidebar.v2_table_menu.maintenance_section')}</div>
         {renderItems([
+          { action: 'new-query', icon: <ConsoleSqlOutlined />, title: t('sidebar.menu.new_query'), featured: true },
           { action: 'rename-schema', icon: <EditOutlined />, title: t('sidebar.v2_schema_menu.edit_schema'), kbd: 'F2', featured: true },
           { action: 'refresh-schema', icon: <ReloadOutlined />, title: t('sidebar.v2_database_menu.refresh_object_tree'), kbd: primaryShortcut('R', shortcutPlatform) },
         ])}
