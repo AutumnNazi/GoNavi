@@ -18,7 +18,7 @@ import { format } from 'sql-formatter';
 import { v4 as uuidv4 } from 'uuid';
 import { TabData, ColumnDefinition, type ConnectionConfig, type SavedQuery, type SqlSnippet } from '../types';
 import { type SqlLog, useStore } from '../store';
-import { DBQuery, DBQueryWithCancel, DBQueryMulti, DBQueryMultiInTransaction, DBQueryMultiTransactional, DBQueryAudited, DBGetTables, DBTableExists, DBGetAllColumns, DBGetDatabases, DBGetColumns, DBGetTriggers, DBShowCreateTable, CancelQuery, GenerateQueryID, WriteSQLFile, ExportSQLFile, InspectElasticsearchConsole, ExecuteElasticsearchConsole } from '../../wailsjs/go/app/App';
+import { DBQuery, DBQueryWithCancel, DBQueryMulti, DBQueryMultiInTransaction, DBQueryMultiTransactional, DBQueryAudited, DBGetTables, DBTableExists, DBGetAllColumns, DBGetDatabases, DBGetColumns, DBGetTriggers, DBShowCreateTable, CancelQuery, DBRollbackTransactionWithTrigger, GenerateQueryID, WriteSQLFile, ExportSQLFile, InspectElasticsearchConsole, ExecuteElasticsearchConsole } from '../../wailsjs/go/app/App';
 import { GONAVI_ROW_KEY } from './DataGrid';
 import { EventsOn, LogError, LogInfo } from '../../wailsjs/runtime';
 import {
@@ -2141,6 +2141,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const [sqlSnippetPickerKeyword, setSqlSnippetPickerKeyword] = useState('');
   const runSeqRef = useRef(0);
   const currentQueryIdRef = useRef('');
+  const queryEditorUnmountedRef = useRef(false);
   const requestScopedRPCControllersRef = useRef(new Set<AbortController>());
   const invokeRequestScopedApp = useCallback(<T,>(
       method: string,
@@ -2155,6 +2156,21 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   useEffect(() => () => {
       requestScopedRPCControllersRef.current.forEach((controller) => controller.abort());
       requestScopedRPCControllersRef.current.clear();
+  }, []);
+  useEffect(() => {
+      queryEditorUnmountedRef.current = false;
+      return () => {
+          queryEditorUnmountedRef.current = true;
+          // A managed DML run receives its query ID before the RPC can expose a
+          // transaction ID. Cancel by that ID when the tab disappears so the
+          // backend can stop the in-flight statement and roll it back.
+          runSeqRef.current += 1;
+          const queryId = currentQueryIdRef.current;
+          currentQueryIdRef.current = '';
+          if (queryId) {
+              void Promise.resolve(CancelQuery(queryId)).catch(() => undefined);
+          }
+      };
   }, []);
   const resultTotalCountSeqRef = useRef(0);
   const resultTotalCountRequestsRef = useRef<Record<string, { sequence: number; queryId: string }>>({});
@@ -10908,6 +10924,17 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                     data: Array.isArray(res?.data) ? res.data : [],
                     outcomeUnknown: true,
                 };
+            }
+            if (queryEditorUnmountedRef.current) {
+                // The tab may have closed after the backend created the
+                // transaction but before this RPC response reached React.
+                // It was never registered in the transaction controller, so
+                // roll it back directly instead of leaving an orphaned lock.
+                if (res?.transactionPending && res?.transactionId) {
+                    void Promise.resolve(DBRollbackTransactionWithTrigger(String(res.transactionId), 'tab_close'))
+                        .catch(() => undefined);
+                }
+                return;
             }
             if (!isCurrentRun()) return;
             const duration = Date.now() - startTime;
