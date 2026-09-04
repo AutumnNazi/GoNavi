@@ -14287,6 +14287,55 @@ END;`;
     expect(textContent(renderer!.root)).not.toContain('未提交');
   });
 
+  it('cancels and rolls back a managed transaction that returns after the SQL tab closes', async () => {
+    let resolveTransaction!: (result: any) => void;
+    backendApp.DBQueryMultiTransactional.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveTransaction = resolve;
+    }));
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <React.StrictMode>
+          <QueryEditor tab={createTab({ query: 'UPDATE users SET active = 0 WHERE id = 1' })} />
+        </React.StrictMode>,
+      );
+    });
+    let runPromise!: Promise<void>;
+    act(() => {
+      runPromise = Promise.resolve(findButton(renderer!, '运行').props.onClick());
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(backendApp.DBQueryMultiTransactional).toHaveBeenCalledWith(
+      expect.anything(),
+      'main',
+      'UPDATE users SET active = 0 WHERE id = 1',
+      'query-1',
+    );
+
+    await act(async () => {
+      renderer.unmount();
+    });
+    expect(backendApp.CancelQuery).toHaveBeenCalledWith('query-1');
+
+    await act(async () => {
+      resolveTransaction({
+        success: true,
+        transactionId: 'tx-tab-close',
+        transactionPending: true,
+        data: [],
+      });
+      await runPromise;
+    });
+
+    expect(backendApp.DBRollbackTransactionWithTrigger).toHaveBeenCalledWith('tx-tab-close', 'tab_close');
+    expect(storeState.sqlEditorPendingTransactions['tab-1']).toBeUndefined();
+  });
+
   it('auto commits SQL editor DML transactions after the configured delay', async () => {
     vi.useFakeTimers();
     storeState.sqlEditorTransactionOptions = {

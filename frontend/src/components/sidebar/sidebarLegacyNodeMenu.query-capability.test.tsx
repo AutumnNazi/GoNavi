@@ -26,6 +26,26 @@ const buildConnectionRootItems = (
 const itemKeys = (items: any[]) => items.map((item) => item?.key);
 
 describe('connection root menu query entry gating', () => {
+  it('offers new query from a PostgreSQL-compatible schema node', () => {
+    const items = buildSidebarLegacyNodeMenuItems({
+      key: 'conn-1-app-schema-sales',
+      type: 'object-group',
+      dataRef: {
+        id: 'conn-1',
+        dbName: 'app',
+        schemaName: 'sales',
+        groupKey: 'schema',
+        config: { type: 'kingbase' },
+      },
+    }, {
+      getMetadataDialect: () => 'kingbase',
+      isPostgresSchemaDialect: () => true,
+      handleV2DatabaseContextMenuAction: vi.fn(),
+    }) as any[];
+
+    expect(itemKeys(items)).toContain('new-query');
+  });
+
   it('hides new query and run SQL file for JVM connections', () => {
     const items = buildConnectionRootItems({
       id: 'jvm-1',

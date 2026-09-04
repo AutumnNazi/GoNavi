@@ -414,6 +414,12 @@ export const buildSidebarLegacyNodeMenuItems = (
         }
         return [
             {
+                key: 'new-query',
+                label: t('sidebar.menu.new_query'),
+                icon: <ConsoleSqlOutlined />,
+                onClick: () => handleV2DatabaseContextMenuAction(node, 'new-query'),
+            },
+            {
                 key: 'rename-schema',
                 label: t('sidebar.menu.edit_schema'),
                 icon: <EditOutlined />,

@@ -20,6 +20,11 @@ const REQUIRED_PROVIDER_KEYS = [
   'ai_settings.provider.confirm_delete',
   'ai_settings.provider.editor.add_title',
   'ai_settings.provider.editor.edit_title',
+  'ai_settings.provider.connection_layout',
+  'ai_settings.provider.connection_layout.stacked',
+  'ai_settings.provider.connection_layout.inline',
+  'ai_settings.provider.connection_layout.inline_hint',
+  'ai_settings.provider.connection_layout.stacked_hint',
   'common.cancel',
 ] as const;
 
@@ -27,6 +32,7 @@ const REQUIRED_PROVIDER_FORM_KEYS = [
   'ai_settings.form.section.service_type',
   'ai_settings.form.section.basic',
   'ai_settings.form.section.auth_connection',
+  'ai_settings.form.auth_connection.hint',
   'ai_settings.form.provider_name',
   'ai_settings.form.provider_name_required',
   'ai_settings.form.provider_name_placeholder',
@@ -185,6 +191,10 @@ describe('AISettingsProvidersSection', () => {
     expect(markup).toContain('aria-label="API format"');
     expect(markup).toContain('gonavi-ai-provider-actions');
     expect(markup).toContain('gonavi-ai-provider-save-actions');
+    expect(markup).toContain('gonavi-ai-provider-connection-fields');
+    expect(markup).not.toContain('gonavi-ai-provider-connection-fields is-inline');
+    expect(markup).not.toContain('When wide, format, URL and key can sit side by side.');
+    expect(markup).toContain('Connection field layout');
   });
 
   it('renders the Responses protocol selector for the built-in OpenAI preset', () => {

@@ -8,7 +8,7 @@ vi.mock('../../../wailsjs/go/aiservice/Service', () => ({ AIGetCLICapabilities: 
 vi.mock('@ant-design/icons', () => Object.fromEntries([
   'ApiOutlined', 'AppstoreOutlined', 'CheckOutlined', 'DeleteOutlined', 'EditOutlined', 'EyeInvisibleOutlined', 'EyeOutlined', 'KeyOutlined', 'LinkOutlined',
   'LoadingOutlined', 'PlusOutlined', 'RobotOutlined', 'SearchOutlined', 'CloudOutlined', 'ExperimentOutlined', 'ThunderboltOutlined', 'InfoCircleOutlined',
-  'DownOutlined', 'RightOutlined', 'LeftOutlined', 'CloseOutlined',
+  'DownOutlined', 'RightOutlined', 'LeftOutlined', 'CloseOutlined', 'QuestionCircleOutlined',
 ].map((name) => [name, () => <i aria-hidden="true" />])));
 vi.mock('antd', () => {
   const Input = Object.assign((props: any) => <input {...props} />, { Password: (props: any) => <input {...props} /> });
@@ -76,8 +76,10 @@ describe('provider settings mounted controls', () => {
   const addSelector = () => renderer!.root.findAll((node) => node.type === 'select' && node.props.className?.includes('gonavi-ai-provider-add-preset-select'))[0];
   const endpointSelector = () => renderer!.root.findAll((node) => node.type === 'select' && node.props.className === 'gonavi-ai-provider-endpoint-select')[0];
   const chooseEndpoint = async (endpoint: string) => { await act(async () => endpointSelector().props.onChange(endpoint)); };
-  const connectionDetails = () => renderer!.root.findByProps({ className: 'gonavi-ai-cli-details' });
+  const connectionDetails = () => renderer!.root.findAllByProps({ className: 'gonavi-ai-cli-details' });
   const hiddenFolder = () => renderer!.root.findByProps({ className: 'gonavi-ai-provider-hidden-toggle' });
+  // Sortable rows pass their className through a wrapper component; count host nodes only.
+  const hiddenRows = () => renderer!.root.findAll((node) => node.type === 'div' && node.props.className?.startsWith('gonavi-ai-provider-hidden-row'));
   const visibilityAction = (label: string) => renderer!.root.findByProps({ 'aria-label': label });
   const hintText = () => renderer!.root.findAll((node) => node.props?.title?.props?.className === 'gonavi-ai-provider-hint-body')
     .map((node) => elementText(node.props.title)).join(' ');
@@ -243,7 +245,7 @@ describe('provider settings mounted controls', () => {
     await act(async () => visibilityAction('Hide provider: Codex Subscription').props.onClick());
     expect(hiddenFolder().props['aria-expanded']).toBe(false);
     expect(renderer!.root.findAllByProps({ 'aria-label': 'Restore: Codex Subscription' })).toHaveLength(0);
-    expect(renderer!.root.findAllByProps({ className: 'gonavi-ai-provider-hidden-row' })).toHaveLength(0);
+    expect(hiddenRows()).toHaveLength(0);
     expect(renderer!.root.findAllByProps({ 'aria-label': 'Hide provider: Codex Subscription' })).toHaveLength(0);
     expect(rows()).toHaveLength(2);
     expect(rows()[0].props['aria-checked']).toBe(true);
@@ -294,7 +296,7 @@ describe('provider settings mounted controls', () => {
     await act(async () => hiddenFolder().props.onClick());
     await act(async () => visibilityAction('Hide provider: deepseek').props.onClick());
     expect(hiddenFolder().props['aria-expanded']).toBe(true);
-    expect(renderer!.root.findAllByProps({ className: 'gonavi-ai-provider-hidden-row' })).toHaveLength(2);
+    expect(hiddenRows()).toHaveLength(2);
     expect(addSelector().props.options).toEqual([]);
     expect(addSelector().props.notFoundContent).toContain('Hidden');
     await act(async () => visibilityAction('Restore: deepseek').props.onClick());
@@ -428,27 +430,19 @@ describe('provider settings mounted controls', () => {
     await render({ isEditing: true, editingProvider: { id: 'a' } });
     const more = () => renderer!.root.findByProps({ className: 'gonavi-ai-provider-more' });
     const click = () => ({ preventDefault: vi.fn() });
-    expect(connectionDetails().props.open).toBe(false);
+    expect(connectionDetails()).toHaveLength(0);
     expect(more().props.open).toBe(false);
-    expect(connectionDetails().findAllByProps({ className: 'gonavi-ai-provider-disclosure-lead' })).toHaveLength(1);
     expect(more().findAllByProps({ className: 'gonavi-ai-provider-disclosure-lead' })).toHaveLength(1);
-    expect(connectionDetails().findByProps({ className: 'gonavi-ai-provider-disclosure-lead' }).findAllByProps({ className: 'gonavi-ai-provider-caret' })).toHaveLength(1);
     expect(more().findByProps({ className: 'gonavi-ai-provider-disclosure-lead' }).findAllByProps({ className: 'gonavi-ai-provider-caret' })).toHaveLength(1);
-    expect(connectionDetails().findByType('summary').props['aria-expanded']).toBe(false);
     expect(more().findByType('summary').props['aria-expanded']).toBe(false);
-    await act(async () => connectionDetails().findByType('summary').props.onClick(click()));
-    expect(connectionDetails().props.open).toBe(true);
-    expect(connectionDetails().findByType('summary').props['aria-expanded']).toBe(true);
     await act(async () => more().findByType('summary').props.onClick(click()));
     expect(more().props.open).toBe(true);
     expect(more().findByType('summary').props['aria-expanded']).toBe(true);
-    await act(async () => connectionDetails().findByType('summary').props.onClick(click()));
-    expect(connectionDetails().props.open).toBe(false);
   });
 
   it('keeps configured CLI details collapsed while model and effort controls remain visible', async () => {
     await render({ isEditing: true, editingProvider: { id: 'a' } });
-    expect(connectionDetails().props.open).toBe(false);
+    expect(connectionDetails()).toHaveLength(0);
     expect(modelPickers()[0].props.options).toContainEqual({ label: 'discovered-model', value: 'discovered-model' });
     expect(renderer!.root.findAllByProps({ 'data-field': 'effort' })).toHaveLength(1);
     expect(renderer!.root.findAllByProps({ 'data-field': 'name' })).toHaveLength(1);
@@ -456,13 +450,13 @@ describe('provider settings mounted controls', () => {
     expect(props.form.setFieldsValue).not.toHaveBeenCalled();
   });
 
-  it('expands CLI details for new configurations or a failed check', async () => {
+  it('does not render an empty CLI connection disclosure', async () => {
     await render({ isEditing: true, providers: [], editingProvider: { id: '' } });
-    expect(connectionDetails().props.open).toBe(true);
+    expect(connectionDetails()).toHaveLength(0);
     await render({ editingProvider: { id: 'saved' } });
-    expect(connectionDetails().props.open).toBe(false);
+    expect(connectionDetails()).toHaveLength(0);
     await render({ testStatus: 'error' });
-    expect(connectionDetails().props.open).toBe(true);
+    expect(connectionDetails()).toHaveLength(0);
   });
 
   it('keeps manual model input and existing values when model discovery fails', async () => {
@@ -482,6 +476,19 @@ describe('provider settings mounted controls', () => {
     await render({ watchedPresetKey: 'codex', watchedApiFormat: 'codex-cli' });
     await act(async () => { old.resolve({ models: ['stale-grok-model'], source: 'cli', stale: false }); });
     expect(modelPickers()[0].props.options).not.toContainEqual({ value: 'stale-grok-model', label: 'stale-grok-model' });
+  });
+
+  it('reuses the cached CLI catalog on entry and only refetches from the enabled count', async () => {
+    stored.set('gonavi.ai.providers.modelCatalog.v1', JSON.stringify({ 'grok-cli': { catalog: { models: ['cached-grok'], source: 'cli', stale: false }, fetchedAt: 1 } }));
+    await render({ isEditing: true, providers: [], editingProvider: { id: '' } });
+    expect(bridge.models).not.toHaveBeenCalled();
+    expect(modelPickers()[0].props.options).toContainEqual({ value: 'cached-grok', label: 'cached-grok' });
+    const count = renderer!.root.findAll((node) => node.type === 'button' && node.props['aria-haspopup'] === 'dialog')[0];
+    await act(async () => count.props.onClick({ preventDefault() {}, stopPropagation() {} }));
+    expect(bridge.models).toHaveBeenCalledTimes(1);
+    expect(bridge.models).toHaveBeenCalledWith('grok-cli');
+    expect(modelPickers()[0].props.options).toContainEqual({ value: 'discovered-model', label: 'discovered-model' });
+    expect(JSON.parse(stored.get('gonavi.ai.providers.modelCatalog.v1')!)['grok-cli'].catalog.models).toEqual(['discovered-model']);
   });
 
   it('does not reuse the prior editor session defaults while fresh capabilities are loading', async () => {
@@ -510,7 +517,7 @@ describe('provider settings mounted controls', () => {
     expect(values.model).toBe('typed-model');
     expect(props.form.setFieldsValue).not.toHaveBeenCalled();
     expect(hintText()).toContain('local Codex cache');
-    expect(connectionDetails().props.open).toBe(false);
+    expect(connectionDetails()).toHaveLength(0);
   });
 
   it('discards stale cache candidates without clearing saved settings', async () => {
@@ -543,7 +550,7 @@ describe('provider settings mounted controls', () => {
     }
         expect(hintText()).toContain('Common Claude aliases');
     expect(modelPickers()[0].props.placeholder).toContain('CLI default');
-    expect(connectionDetails().props.open).toBe(false);
+    expect(connectionDetails()).toHaveLength(0);
     expect(values.model).toBe(savedModel);
     expect(props.form.setFieldsValue).not.toHaveBeenCalled();
     expect(props.onSaveProvider).not.toHaveBeenCalled();
@@ -571,7 +578,7 @@ describe('provider settings mounted controls', () => {
     expect(effort.props.disabled).toBe(true);
     expect(effort.props.placeholder).toBe('This CLI has no effort selector');
     expect(hintText()).toContain('Native Cursor hooks and plugins can still run');
-    expect(connectionDetails().props.open).toBe(false);
+    expect(connectionDetails()).toHaveLength(0);
     expect(values.model).toBe('my-custom-model');
     expect(props.form.setFieldsValue).not.toHaveBeenCalled();
     expect(props.onSaveProvider).not.toHaveBeenCalled();
@@ -586,9 +593,9 @@ describe('provider settings mounted controls', () => {
     expect(addSelector().props.showSearch).toBe(true);
     await act(async () => visibilityAction('Hide provider: Codex Subscription').props.onClick());
     await act(async () => hiddenFolder().props.onClick());
-    const hiddenRows = renderer!.root.findAllByProps({ className: 'gonavi-ai-provider-hidden-row' });
-    expect(hiddenRows).toHaveLength(1);
-    expect(renderedText(hiddenRows[0])).toContain('Codex Subscription');
+    const rows = hiddenRows();
+    expect(rows).toHaveLength(1);
+    expect(renderedText(rows[0])).toContain('Codex Subscription');
     expect(renderer!.root.findAll((node) => node.type === 'button' && node.props.className?.includes('gonavi-ai-provider-catalog-card')).filter((button) => renderedText(button).includes('Codex Subscription'))).toHaveLength(0);
     expect(hiddenFolder().props.title).toContain('Hidden candidates do not affect saved configurations');
     expect(props.onAddProvider).not.toHaveBeenCalled();
@@ -599,10 +606,10 @@ describe('provider settings mounted controls', () => {
     await act(async () => visibilityAction('Hide provider: Codex Subscription').props.onClick());
     expect(renderer!.root.findAllByProps({ className: 'gonavi-ai-provider-hidden-split' })).toHaveLength(1);
     expect(hiddenFolder().props['aria-expanded']).toBe(false);
-    expect(renderer!.root.findAllByProps({ className: 'gonavi-ai-provider-hidden-row' })).toHaveLength(0);
+    expect(hiddenRows()).toHaveLength(0);
     expect(JSON.parse(stored.get(layoutKey)!).hiddenPresetKeys).toEqual(['codex']);
     await act(async () => hiddenFolder().props.onClick());
-    expect(renderer!.root.findAllByProps({ className: 'gonavi-ai-provider-hidden-row' })).toHaveLength(1);
+    expect(hiddenRows()).toHaveLength(1);
   });
 
   it('adds a hidden candidate from the hidden row without restoring it', async () => {
@@ -711,6 +718,37 @@ describe('provider settings mounted controls', () => {
     expect(props.onPresetChange).toHaveBeenCalledWith('minimax', 'anthropic');
   });
 
+  it('defaults connection fields to stacked and switches to side-by-side from the heading hint', async () => {
+    await render({
+      providerPresets: [...presets, apiPreset],
+      providers: [...props.providers, apiProvider],
+      resolveProviderPreset: (provider: any) => ({ key: provider.apiFormat === 'openai' ? 'openai' : 'grok', label: provider.apiFormat === 'openai' ? 'OpenAI' : 'Grok Subscription', icon: null }),
+      isEditing: true, editingProvider: { ...apiProvider },
+      watchedPresetKey: 'openai', watchedApiFormat: 'openai',
+    });
+    expect(renderer!.root.findByProps({ className: 'gonavi-ai-provider-field-grid gonavi-ai-provider-connection-fields' })).toBeTruthy();
+    const findChoice = (node: any): any => {
+      if (!node || typeof node !== 'object') return null;
+      if (node.props?.groupLabel === 'Connection field layout') return node;
+      if (node.props?.title) {
+        const nested = findChoice(node.props.title);
+        if (nested) return nested;
+      }
+      const children = node.props?.children;
+      if (Array.isArray(children)) return children.map(findChoice).find(Boolean) || null;
+      return findChoice(children);
+    };
+    const headingTitle = renderer!.root.findAll((node) => String(node.props?.title?.props?.className || '').includes('gonavi-ai-provider-hint-body'))
+      .map((node) => node.props.title)
+      .find((title) => findChoice(title) || elementText(title).includes('search'));
+    const choice = findChoice(headingTitle);
+    expect(choice.props.value).toBe('stacked');
+    expect(choice.props.options.map((option: any) => option.value)).toEqual(['inline', 'stacked']);
+    await act(async () => choice.props.onChange('inline'));
+    expect(renderer!.root.findByProps({ className: 'gonavi-ai-provider-field-grid gonavi-ai-provider-connection-fields is-inline' })).toBeTruthy();
+    expect(JSON.parse(stored.get(layoutKey) || '{}').connectionLayout).toBe('inline');
+  });
+
   it('collapses saved providers and restores the chosen compact or normal density', async () => {
     await render();
     const collapse = () => renderer!.root.findByProps({ 'aria-controls': 'gonavi-ai-provider-chips' });
@@ -740,6 +778,28 @@ describe('provider settings mounted controls', () => {
     expect(values).toEqual(original);
     expect(props.form.setFieldValue).not.toHaveBeenCalled();
     expect(props.form.setFieldsValue).not.toHaveBeenCalled();
+  });
+
+  it('reorders catalog cards by drag, persists the order and applies it to the hidden folder too', async () => {
+    await render({ isEditing: true, editingProvider: { id: 'a' }, providerPresets: PROVIDER_PRESETS });
+    const catalog = () => renderer!.root.findByProps({ className: 'gonavi-ai-provider-catalog-grid' });
+    const cardLabels = () => catalog().findAll((node) => node.type === 'button' && node.props.className?.includes('gonavi-ai-provider-catalog-card')).map((card) => card.props['aria-label']);
+    const before = cardLabels();
+    const grid = catalog().findAll((node) => typeof node.type === 'function' && node.props.layout === 'grid')[0];
+    expect(grid.props.disabled).toBe(false);
+    const [first, second, third] = PROVIDER_PRESETS.map((preset) => preset.key);
+    await act(async () => grid.props.onMove(third, first));
+    expect(cardLabels().slice(0, 3)).toEqual([before[2], before[0], before[1]]);
+    expect(JSON.parse(stored.get(layoutKey)!).presetOrder.slice(0, 3)).toEqual([third, first, second]);
+    // Hiding keeps the dragged order inside the hidden folder.
+    await act(async () => visibilityAction(`Hide provider: ${PROVIDER_PRESETS[0].label}`).props.onClick());
+    await act(async () => visibilityAction(`Hide provider: ${PROVIDER_PRESETS[2].label}`).props.onClick());
+    await act(async () => hiddenFolder().props.onClick());
+    expect(hiddenRows().map((row) => renderedText(row))).toEqual([expect.stringContaining(PROVIDER_PRESETS[2].label), expect.stringContaining(PROVIDER_PRESETS[0].label)]);
+    // Searching narrows the list to a subsequence, so dragging is paused.
+    const search = renderer!.root.findAll((node) => node.type === 'input' && node.props['aria-label'] === 'Find a provider')[0];
+    await act(async () => search.props.onChange({ target: { value: 'a' } }));
+    expect(catalog().findAll((node) => typeof node.type === 'function' && node.props.layout === 'grid')[0].props.disabled).toBe(true);
   });
 
   it('filters disabled suggestions in both model pickers and preserves their management entries', async () => {
