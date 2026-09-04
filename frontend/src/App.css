@@ -2887,51 +2887,170 @@ body[data-ui-version="v2"] .gn-v2-titlebar .titlebar-web-logout-btn {
     gap: 14px;
 }
 
-.driver-manager-header {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+.driver-manager-hero {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     gap: 16px;
-    align-items: stretch;
-    padding: 14px 16px;
+    flex-wrap: wrap;
+    padding: 16px 18px;
     border: 1px solid rgba(5, 5, 5, 0.08);
-    border-radius: 8px;
-    background: var(--ant-color-bg-container, #fff);
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--ant-color-bg-container, #fff), rgba(22, 119, 255, 0.05));
 }
 
-.driver-manager-heading {
+.driver-manager-hero-main {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
     min-width: 0;
+}
+
+.driver-manager-hero-title {
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.driver-manager-hero-subtitle {
+    font-size: 12px;
+    line-height: 1.5;
+    max-width: 660px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.driver-manager-hero-side {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
 }
 
 .driver-manager-stats {
     display: grid;
-    grid-template-columns: repeat(4, minmax(64px, 1fr));
-    gap: 8px;
-    min-width: 360px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
 }
 
 .driver-manager-stat {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 6px;
     justify-content: center;
-    min-height: 58px;
-    padding: 8px 10px;
+    min-height: 78px;
+    padding: 12px 14px;
     border: 1px solid rgba(5, 5, 5, 0.08);
-    border-radius: 8px;
+    border-radius: 10px;
     background: rgba(5, 5, 5, 0.02);
+    transition: box-shadow 0.14s ease, transform 0.14s ease, border-color 0.14s ease;
 }
 
-.driver-manager-stat span:first-child {
-    font-size: 20px;
+.driver-manager-stat:hover {
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+    transform: translateY(-1px);
+}
+
+.driver-manager-stat-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    font-size: 16px;
+    line-height: 1;
+}
+
+.driver-manager-stat-value {
+    font-size: 22px;
     font-weight: 700;
-    line-height: 1.2;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
 }
 
-.driver-manager-stat-warning span:first-child {
+.driver-manager-stat-label {
+    font-size: 12px;
+    color: var(--ant-color-text-secondary, rgba(0, 0, 0, 0.55));
+}
+
+.driver-manager-stat-default .driver-manager-stat-icon {
+    background: rgba(22, 119, 255, 0.12);
+    color: #1677ff;
+}
+
+.driver-manager-stat-success .driver-manager-stat-icon {
+    background: rgba(82, 196, 26, 0.14);
+    color: #52c41a;
+}
+
+.driver-manager-stat-warning {
+    border-color: rgba(250, 173, 20, 0.4);
+}
+
+.driver-manager-stat-warning .driver-manager-stat-icon {
+    background: rgba(250, 173, 20, 0.16);
     color: #d48806;
+}
+
+.driver-manager-stat-warning .driver-manager-stat-value {
+    color: #d48806;
+}
+
+.driver-manager-stat-muted .driver-manager-stat-icon {
+    background: rgba(140, 140, 140, 0.14);
+    color: #8c8c8c;
+}
+
+/* Mirror-source chip (Driver Manager + About) — accent bar + hover */
+.driver-manager-mirror-chip,
+.gonavi-about-download-source {
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.driver-manager-mirror-chip::before,
+.gonavi-about-download-source::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: #94a3b8;
+}
+
+.driver-manager-mirror-chip[data-download-source='cst']::before,
+.gonavi-about-download-source[data-download-source='cst']::before {
+    background: #f59e0b;
+}
+
+.driver-manager-mirror-chip[data-download-source='bero']::before,
+.gonavi-about-download-source[data-download-source='bero']::before {
+    background: #0ea5e9;
+}
+
+.driver-manager-mirror-chip[data-download-source='github']::before,
+.gonavi-about-download-source[data-download-source='github']::before {
+    background: #64748b;
+}
+
+.driver-manager-mirror-chip:hover,
+.gonavi-about-download-source:hover {
+    box-shadow: 0 3px 14px rgba(15, 23, 42, 0.09);
+}
+
+body[data-theme='dark'] .driver-manager-mirror-chip:hover,
+body[data-theme='dark'] .gonavi-about-download-source:hover {
+    box-shadow: 0 3px 16px rgba(0, 0, 0, 0.4);
+}
+
+.driver-manager-mirror-chip .ant-btn,
+.gonavi-about-download-source .ant-btn {
+    color: var(--ant-color-primary, #1677ff);
 }
 
 .driver-manager-directory-panel {
@@ -2940,21 +3059,129 @@ body[data-ui-version="v2"] .gn-v2-titlebar .titlebar-web-logout-btn {
     background: var(--ant-color-bg-container, #fff);
 }
 
+.driver-manager-filterbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    padding: 10px 12px;
+}
+
+.driver-manager-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border: 1px solid rgba(5, 5, 5, 0.12);
+    border-radius: 999px;
+    background: var(--ant-color-bg-container, #fff);
+    color: var(--ant-color-text, rgba(0, 0, 0, 0.88));
+    font-size: 13px;
+    line-height: 1.4;
+    cursor: pointer;
+    transition: border-color 0.14s ease, background-color 0.14s ease, color 0.14s ease;
+}
+
+.driver-manager-filter-chip:hover {
+    border-color: #1677ff;
+    color: #1677ff;
+}
+
+.driver-manager-filter-chip.is-active {
+    border-color: #1677ff;
+    background: rgba(22, 119, 255, 0.12);
+    color: #1677ff;
+    font-weight: 600;
+}
+
+.driver-manager-filter-chip-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: rgba(5, 5, 5, 0.06);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+
+.driver-manager-filter-chip.is-active .driver-manager-filter-chip-count {
+    background: rgba(22, 119, 255, 0.18);
+}
+
 .driver-manager-toolbar {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 10px 14px;
     align-items: center;
-    justify-content: space-between;
+}
+
+.driver-manager-toolbar-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.driver-manager-toolbar-search {
+    flex: 1 1 320px;
+    min-width: 240px;
+}
+
+.driver-manager-toolbar-network {
+    margin-left: auto;
 }
 
 .driver-manager-search {
-    min-width: 280px;
-    flex: 1 1 360px;
+    width: 100%;
 }
 
-.driver-manager-toolbar-actions {
-    justify-content: flex-end;
+.driver-manager-net-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    flex: 0 0 auto;
+    background: #bfbfbf;
+}
+
+.driver-manager-net-dot-ok {
+    background: #52c41a;
+    box-shadow: 0 0 0 3px rgba(82, 196, 26, 0.18);
+}
+
+.driver-manager-net-dot-warning {
+    background: #faad14;
+    box-shadow: 0 0 0 3px rgba(250, 173, 20, 0.18);
+}
+
+.driver-manager-net-dot-error {
+    background: #ff4d4f;
+    box-shadow: 0 0 0 3px rgba(255, 77, 79, 0.18);
+}
+
+.driver-manager-net-dot-checking {
+    background: #1677ff;
+    animation: driver-net-pulse 1.1s ease-in-out infinite;
+}
+
+.driver-manager-net-dot-idle {
+    background: #bfbfbf;
+}
+
+@keyframes driver-net-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
+
+.driver-manager-net-text {
+    font-size: 12px;
+    color: var(--ant-color-text-secondary, rgba(0, 0, 0, 0.55));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 220px;
 }
 
 .driver-manager-batch-progress-panel {
@@ -2994,28 +3221,67 @@ body[data-ui-version="v2"] .gn-v2-titlebar .titlebar-web-logout-btn {
 }
 
 .driver-manager-card {
+    display: flex;
+    gap: 14px;
+    align-items: stretch;
+    padding: 16px;
     border: 1px solid rgba(5, 5, 5, 0.08);
-    border-radius: 8px;
+    border-radius: 12px;
     background: var(--ant-color-bg-container, #fff);
     overflow: hidden;
     container-name: driver-card;
     container-type: inline-size;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.driver-manager-card:hover {
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.07);
 }
 
 .driver-manager-card-warning {
-    border-color: rgba(250, 173, 20, 0.35);
+    border-color: rgba(250, 173, 20, 0.45);
 }
 
 .driver-manager-card-ready {
-    border-color: rgba(82, 196, 26, 0.22);
+    border-color: rgba(82, 196, 26, 0.3);
 }
 
-.driver-manager-card-main {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+.driver-manager-card-progress {
+    border-color: rgba(22, 119, 255, 0.45);
+    box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.1);
+}
+
+.driver-manager-card-done {
+    border-color: rgba(82, 196, 26, 0.5);
+    box-shadow: 0 0 0 3px rgba(82, 196, 26, 0.12);
+}
+
+.driver-manager-card-error {
+    border-color: rgba(255, 77, 79, 0.5);
+    box-shadow: 0 0 0 3px rgba(255, 77, 79, 0.12);
+}
+
+.driver-manager-card-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1;
+    text-transform: uppercase;
+}
+
+.driver-manager-card-body {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     gap: 16px 20px;
-    align-items: start;
-    padding: 16px;
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .driver-manager-card-info {
@@ -3023,6 +3289,7 @@ body[data-ui-version="v2"] .gn-v2-titlebar .titlebar-web-logout-btn {
     flex-direction: column;
     gap: 10px;
     min-width: 0;
+    flex: 1 1 320px;
 }
 
 .driver-manager-title-row,
@@ -3064,6 +3331,7 @@ body[data-ui-version="v2"] .gn-v2-titlebar .titlebar-web-logout-btn {
     flex-direction: column;
     gap: 10px;
     min-width: 0;
+    flex: 0 1 auto;
 }
 
 .driver-manager-control-block {
@@ -3124,6 +3392,161 @@ body[data-ui-version="v2"] .gn-v2-titlebar .titlebar-web-logout-btn {
     justify-content: flex-end;
 }
 
+/* ── Round 3 · mockup-alignment styles ──
+   Inline card progress replaces the action buttons while a download is
+   running (driver-manager-card-progress-active), and collapses to a
+   "ready + switch version" row when done (driver-manager-card-progress-done).
+   Hero shows the loaded count + a sort label sits in the list head, and the
+   top-level batch panel is replaced by the compact driver-manager-batch-bar. */
+
+.driver-manager-hero-loaded {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.driver-manager-hero-subtitle-sep {
+  margin: 0 2px;
+  opacity: 0.5;
+}
+
+.driver-manager-card-progress-active {
+  gap: 6px;
+}
+
+.driver-manager-progress-lg.ant-progress-line {
+  margin: 0;
+}
+
+.driver-manager-progress-lg .ant-progress-bg {
+  height: 8px !important;
+}
+
+.driver-manager-card-progress-cancel {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+.driver-manager-card-progress-done {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.driver-manager-card-ready-text {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+
+.driver-manager-version-block {
+  gap: 4px;
+}
+
+.driver-manager-progress-error {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.driver-manager-list-head-left,
+.driver-manager-list-head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.driver-manager-list-head-sort {
+  /* Follows the settings-center font scale when embedded; standalone keeps 12px. */
+  font-size: var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px));
+  white-space: nowrap;
+}
+
+/* Compact top-level batch progress bar (replaces the old panel). */
+.driver-manager-batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid rgba(22, 119, 255, 0.35);
+  border-radius: 10px;
+  background: rgba(22, 119, 255, 0.06);
+}
+
+.driver-manager-batch-bar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: rgba(22, 119, 255, 0.14);
+  color: #1677ff;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.driver-manager-batch-bar-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.driver-manager-batch-bar-text .ant-typography {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.driver-manager-batch-bar-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 220px;
+  min-width: 140px;
+}
+
+.driver-manager-batch-bar-progress .ant-progress {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.driver-manager-batch-bar-percent {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.driver-manager-batch-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 900px) {
+  .driver-manager-batch-bar {
+    flex-wrap: wrap;
+  }
+
+  .driver-manager-batch-bar-progress {
+    flex-basis: 100%;
+    order: 3;
+  }
+
+  .driver-manager-batch-bar-actions {
+    margin-left: auto;
+  }
+}
+
 /* The settings-center view is a compact driver workbench, not a stack of
    standalone cards. Keep the full modal presentation above unchanged. */
 .driver-manager-embedded-layout {
@@ -3149,7 +3572,7 @@ body[data-ui-version="v2"] .gn-v2-titlebar .titlebar-web-logout-btn {
     min-width: 0;
 }
 
-.driver-manager-shell.is-embedded .driver-manager-header {
+.driver-manager-shell.is-embedded .driver-manager-hero {
     align-items: center;
     padding: 0 2px 10px;
     border-radius: 0;
@@ -3171,6 +3594,10 @@ body[data-ui-version="v2"] .gn-v2-titlebar .titlebar-web-logout-btn {
     min-width: 0;
 }
 
+.driver-manager-shell.is-embedded .driver-manager-hero .driver-manager-stats {
+    justify-content: flex-start;
+}
+
 .driver-manager-shell.is-embedded .driver-manager-stat {
     flex-direction: row;
     align-items: baseline;
@@ -3181,14 +3608,22 @@ body[data-ui-version="v2"] .gn-v2-titlebar .titlebar-web-logout-btn {
     background: transparent;
 }
 
+.driver-manager-shell.is-embedded .driver-manager-stat-icon {
+    display: none;
+}
+
 .driver-manager-shell.is-embedded .driver-manager-stat + .driver-manager-stat {
     border-left: 1px solid var(--ant-color-border-secondary, rgba(5, 5, 5, 0.08)) !important;
 }
 
-.driver-manager-shell.is-embedded .driver-manager-stat span:first-child {
+.driver-manager-shell.is-embedded .driver-manager-stat-value {
     font-size: var(--gn-font-size, 14px);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-stat-label {
+    font-size: var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px));
 }
 
 .driver-manager-shell.is-embedded .driver-manager-directory-panel {
@@ -3239,10 +3674,79 @@ body[data-ui-version="v2"] .gn-v2-titlebar .titlebar-web-logout-btn {
     gap: 6px !important;
 }
 
+.driver-manager-shell.is-embedded .driver-manager-filterbar {
+    padding: 6px 2px 8px;
+    gap: 6px;
+    border-bottom: 1px solid var(--ant-color-border-secondary, rgba(5, 5, 5, 0.08));
+}
+
+.driver-manager-shell.is-embedded .driver-manager-filter-chip {
+    padding: 2px 10px;
+    font-size: var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px));
+    background: transparent;
+    border-color: var(--ant-color-border-secondary, rgba(5, 5, 5, 0.12));
+}
+
+.driver-manager-shell.is-embedded .driver-manager-filter-chip.is-active {
+    background: var(--gn-accent-soft, rgba(22, 119, 255, 0.12));
+    border-color: var(--ant-color-primary, #1677ff);
+}
+
+.driver-manager-shell.is-embedded .driver-manager-filter-chip-count {
+    min-width: 16px;
+    height: 16px;
+    font-size: 10px;
+}
+
 .driver-manager-shell.is-embedded .driver-manager-batch-progress-panel {
     padding: 10px 2px;
     border-radius: 0;
     background: transparent;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-batch-bar {
+    padding: 8px 2px;
+    border-radius: 0;
+    border-inline: 0;
+    background: transparent;
+}
+
+.driver-manager-shell.is-embedded .driver-manager-batch-bar-icon {
+    width: 26px;
+    height: 26px;
+    font-size: 13px;
+    border-radius: 6px;
+}
+
+/* The embedded driver workbench keeps standard control metrics.
+   The settings-center modal compacts buttons (12px caption font, 600
+   weight) for its list-style panes; the approved driver-workbench
+   mockup uses default button metrics (body font, normal weight). */
+body[data-ui-version] .gonavi-settings-center-modal .driver-manager-shell.is-embedded .ant-btn {
+    height: 32px !important;
+    min-height: 32px;
+    padding-inline: 15px !important;
+    border-radius: 6px !important;
+    font-size: var(--gn-font-size, 14px) !important;
+    font-weight: 400 !important;
+}
+
+body[data-ui-version] .gonavi-settings-center-modal .driver-manager-shell.is-embedded .ant-btn-sm {
+    height: 24px !important;
+    min-height: 24px;
+    padding-inline: 7px !important;
+    font-size: var(--gn-font-size-sm, 12px) !important;
+}
+
+body[data-ui-version] .gonavi-settings-center-modal .driver-manager-shell.is-embedded .ant-btn-icon-only {
+    width: 32px !important;
+    min-width: 32px;
+    padding-inline: 0 !important;
+}
+
+body[data-ui-version] .gonavi-settings-center-modal .driver-manager-shell.is-embedded .ant-btn-sm.ant-btn-icon-only {
+    width: 24px !important;
+    min-width: 24px;
 }
 
 .driver-manager-shell.is-embedded .driver-manager-list-head {
@@ -3258,16 +3762,19 @@ body[data-ui-version="v2"] .gn-v2-titlebar .titlebar-web-logout-btn {
 
 .driver-manager-shell.is-embedded .driver-manager-card,
 .driver-manager-shell.is-embedded .driver-manager-card-warning,
-.driver-manager-shell.is-embedded .driver-manager-card-ready {
+.driver-manager-shell.is-embedded .driver-manager-card-ready,
+.driver-manager-shell.is-embedded .driver-manager-card-progress,
+.driver-manager-shell.is-embedded .driver-manager-card-done,
+.driver-manager-shell.is-embedded .driver-manager-card-error {
+    padding: 12px 2px;
     border-radius: 0;
     background: transparent !important;
     overflow: visible;
+    box-shadow: none !important;
 }
 
-.driver-manager-shell.is-embedded .driver-manager-card-main {
-    grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
-    gap: 12px 20px;
-    padding: 12px 2px;
+.driver-manager-shell.is-embedded .driver-manager-card-body {
+    gap: 12px 16px;
 }
 
 .driver-manager-shell.is-embedded .driver-manager-card-info {
@@ -3341,9 +3848,10 @@ body[data-ui-version="v2"] .gn-v2-titlebar .titlebar-web-logout-btn {
 }
 
 @container driver-card (max-width: 780px) {
-    .driver-manager-card-main,
-    .driver-manager-shell.is-embedded .driver-manager-card-main {
-        grid-template-columns: minmax(0, 1fr);
+    .driver-manager-card-body,
+    .driver-manager-shell.is-embedded .driver-manager-card-body {
+        flex-direction: column;
+        align-items: stretch;
     }
 
     .driver-manager-card-controls {
@@ -3356,14 +3864,18 @@ body[data-ui-version="v2"] .gn-v2-titlebar .titlebar-web-logout-btn {
 }
 
 @media (max-width: 900px) {
-    .driver-manager-header,
-    .driver-manager-card-main {
-        grid-template-columns: 1fr;
+    .driver-manager-hero {
+        padding: 14px;
     }
 
     .driver-manager-stats {
         min-width: 0;
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .driver-manager-card-body {
+        flex-direction: column;
+        align-items: stretch;
     }
 
     .driver-manager-card-actions {
@@ -3375,9 +3887,8 @@ body[data-ui-version="v2"] .gn-v2-titlebar .titlebar-web-logout-btn {
         justify-content: flex-start;
     }
 
-    .driver-manager-shell.is-embedded .driver-manager-header,
-    .driver-manager-shell.is-embedded .driver-manager-card-main {
-        grid-template-columns: 1fr;
+    .driver-manager-shell.is-embedded .driver-manager-hero {
+        padding: 0 2px 10px;
     }
 
     .driver-manager-shell.is-embedded .driver-manager-stats,
