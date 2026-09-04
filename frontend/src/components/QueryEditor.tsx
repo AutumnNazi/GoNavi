@@ -274,6 +274,7 @@ import {
     resolveQueryEditorHoverTarget,
     resolveQueryEditorNavigationDecorations,
     resolveQueryEditorNavigationTarget,
+    resolveNextQueryEditorTableLocateIndex,
     rankQueryEditorCompletionCandidate,
     resolveQueryLocatorPlan,
     rewriteLeadingSelectTableReference,
@@ -2274,6 +2275,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       Record<string, Promise<boolean | null> | undefined>
   >({});
   const tableNavigationActionInFlightRef = useRef<Record<string, Promise<void> | undefined>>({});
+  const queryTableLocateCycleRef = useRef<{ lineNumber: number; signature: string; index: number } | null>(null);
   const allColumnsRef = useRef<CompletionColumnMeta[]>([]); // Store all columns (cross-db)
   const viewsRef = useRef<CompletionViewMeta[]>([]);
   const materializedViewsRef = useRef<CompletionViewMeta[]>([]);
@@ -11873,6 +11875,67 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       };
   }, [activeShortcutPlatform, languagePreference, toggleQueryResultsPanelShortcutBinding, toggleResultPanelVisibility]);
 
+  useEffect(() => {
+      const handleLocateActiveQueryTable = () => {
+          if (!isActive) return;
+          const editor = editorRef.current;
+          const model = editor?.getModel?.();
+          const position = normalizeEditorPosition(editor?.getPosition?.() || lastEditorCursorPositionRef.current);
+          const connectionId = String(currentConnectionIdRef.current || '').trim();
+          const dbName = String(currentDbRef.current || '').trim();
+          if (!model || !position || !connectionId || !dbName) {
+              void message.warning(translate('query_editor.message.locate_table_unavailable'));
+              return;
+          }
+          const lineContent = String(model.getLineContent?.(position.lineNumber) || '');
+          const dialect = resolveSqlDialect(
+              String(currentConnectionConfig?.type || ''),
+              String(currentConnectionConfig?.driver || ''),
+              { oceanBaseProtocol: currentConnectionConfig?.oceanBaseProtocol },
+          );
+          const references = collectQueryEditorTableReferences(lineContent, dialect);
+          const targets = references.map((reference) => resolveQueryEditorNavigationTarget(
+              `FROM ${reference.tableIdent}`,
+              6,
+              dbName,
+              visibleDbsRef.current,
+              tablesRef.current,
+              viewsRef.current,
+              materializedViewsRef.current,
+              triggersRef.current,
+              routinesRef.current,
+              sequencesRef.current,
+              packagesRef.current,
+              true,
+              undefined,
+              currentSchemaRef.current,
+              dialect,
+          )).filter((target): target is Extract<QueryEditorNavigationTarget, { type: 'table' }> => target?.type === 'table');
+          if (targets.length === 0) {
+              void message.warning(translate('query_editor.message.locate_table_unavailable'));
+              return;
+          }
+          const signature = targets.map((target) => `${target.dbName}\u0000${target.schemaName || ''}\u0000${target.tableName}`).join('\u0001');
+          const cycle = queryTableLocateCycleRef.current;
+          const index = resolveNextQueryEditorTableLocateIndex(
+              cycle,
+              position.lineNumber,
+              signature,
+              targets.length,
+          );
+          const target = targets[index];
+          queryTableLocateCycleRef.current = { lineNumber: position.lineNumber, signature, index };
+          dispatchQueryEditorSidebarLocate({
+              connectionId,
+              dbName: target.dbName,
+              tableName: target.tableName,
+              schemaName: target.schemaName,
+              objectGroup: 'tables',
+          });
+      };
+      window.addEventListener('gonavi:locate-active-query-table', handleLocateActiveQueryTable);
+      return () => window.removeEventListener('gonavi:locate-active-query-table', handleLocateActiveQueryTable);
+  }, [currentConnectionConfig, isActive]);
   useEffect(() => {
       const handleRunActiveQuery = (event: Event) => {
           if (!isActive) {

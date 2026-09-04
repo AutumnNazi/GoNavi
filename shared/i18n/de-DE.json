@@ -7278,6 +7278,7 @@
   "query_editor.message.no_format_restore_snapshot": "Es ist kein SQL-Stand vor der Formatierung zum Wiederherstellen verfügbar.",
   "query_editor.message.no_selectable_sql": "Keine auswählbare SQL-Anweisung.",
   "query_editor.message.object_info_target_not_found": "Der Cursor befindet sich auf keiner erkannten Tabelle oder Spalte.",
+  "query_editor.message.locate_table_unavailable": "In der aktuellen Zeile wurde keine auffindbare Tabelle gefunden.",
   "query_editor.message.table_navigation_target_missing": "Tabelle {{table}} ist nicht mehr vorhanden. Die Metadaten des SQL-Editors wurden aktualisiert.",
   "query_editor.message.page_query_empty": "Die Seitenabfrage hat keine Ergebnismenge zurückgegeben.",
   "query_editor.message.page_query_failed": "Seitenabfrage fehlgeschlagen: {{error}}",

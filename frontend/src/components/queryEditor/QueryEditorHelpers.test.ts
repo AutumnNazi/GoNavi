@@ -34,6 +34,7 @@ import {
     resolveQueryEditorHoverTarget,
     resolveQueryEditorMonacoLanguage,
     resolveQueryEditorNavigationTarget,
+    resolveNextQueryEditorTableLocateIndex,
     resolveQueryEditorNavigationDecorations,
     rewriteOracleSelectAllWithExpressions,
     selectUnqualifiedCompletionSynonyms,
@@ -43,6 +44,23 @@ import {
     splitQueryIdentifierPathSegments,
     splitTopLevelComma,
 } from './QueryEditorHelpers';
+
+describe('QueryEditor table locate cycle', () => {
+    it('advances in order and wraps at the end of a line', () => {
+        const signature = 'users\u0001orders\u0001items';
+        expect(resolveNextQueryEditorTableLocateIndex(null, 2, signature, 3)).toBe(0);
+        expect(resolveNextQueryEditorTableLocateIndex({ lineNumber: 2, signature, index: 0 }, 2, signature, 3)).toBe(1);
+        expect(resolveNextQueryEditorTableLocateIndex({ lineNumber: 2, signature, index: 1 }, 2, signature, 3)).toBe(2);
+        expect(resolveNextQueryEditorTableLocateIndex({ lineNumber: 2, signature, index: 2 }, 2, signature, 3)).toBe(0);
+    });
+
+    it('resets when the cursor line or references change', () => {
+        const previous = { lineNumber: 2, signature: 'users\u0001orders', index: 1 };
+        expect(resolveNextQueryEditorTableLocateIndex(previous, 3, previous.signature, 2)).toBe(0);
+        expect(resolveNextQueryEditorTableLocateIndex(previous, 2, 'users\u0001items', 2)).toBe(0);
+        expect(resolveNextQueryEditorTableLocateIndex(previous, 2, previous.signature, 0)).toBe(0);
+    });
+});
 
 describe('QueryEditor SELECT structure parsing', () => {
     it.each([

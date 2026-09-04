@@ -7278,6 +7278,7 @@
   "query_editor.message.no_format_restore_snapshot": "No pre-format SQL snapshot is available to restore.",
   "query_editor.message.no_selectable_sql": "No selectable SQL statement.",
   "query_editor.message.object_info_target_not_found": "The cursor is not on a recognized table or column.",
+  "query_editor.message.locate_table_unavailable": "No locatable table was found on the current line.",
   "query_editor.message.table_navigation_target_missing": "Table {{table}} no longer exists. SQL editor metadata has been refreshed.",
   "query_editor.message.page_query_empty": "The page query returned no result set.",
   "query_editor.message.page_query_failed": "Page query failed: {{error}}",

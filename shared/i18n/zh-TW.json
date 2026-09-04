@@ -7278,6 +7278,7 @@
   "query_editor.message.no_format_restore_snapshot": "沒有可還原的美化前 SQL",
   "query_editor.message.no_selectable_sql": "沒有可選取的 SQL 陳述式。",
   "query_editor.message.object_info_target_not_found": "目前游標未定位到可識別的資料表或欄位。",
+  "query_editor.message.locate_table_unavailable": "目前這一列找不到可定位的資料表。",
   "query_editor.message.table_navigation_target_missing": "資料表 {{table}} 已不存在，已重新整理 SQL 編輯器中繼資料。",
   "query_editor.message.page_query_empty": "翻頁未傳回結果集",
   "query_editor.message.page_query_failed": "翻頁失敗：{{error}}",

@@ -1011,7 +1011,10 @@ const Sidebar: React.FC<{
     [activeTab?.connectionId, connections],
   );
   const activeTabLocateRequest = useMemo(() => normalizeSidebarLocateObjectRequestFromTab(activeTab), [activeTab]);
-  const canLocateActiveTab = !!activeTabLocateRequest;
+  const isActiveQueryTab = activeTab?.type === 'query' && !String(activeTab.filePath || '').trim();
+  const canLocateActiveTab = isActiveQueryTab
+    ? Boolean(activeTabHasConnection && String(activeTab?.dbName || '').trim())
+    : !!activeTabLocateRequest;
 
   // Background Helper (Duplicate logic for now, ideally shared)
   const getBg = (darkHex: string) => {
@@ -2181,6 +2184,10 @@ const Sidebar: React.FC<{
   };
 
   const handleLocateActiveTabInSidebar = () => {
+      if (isActiveQueryTab) {
+          window.dispatchEvent(new CustomEvent('gonavi:locate-active-query-table'));
+          return;
+      }
       if (!activeTabLocateRequest) {
           message.warning(t('sidebar.message.locate_current_table_unavailable'));
           return;

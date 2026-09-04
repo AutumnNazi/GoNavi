@@ -4334,6 +4334,20 @@ export const resolveQueryEditorNavigationDecorations = (
     }];
 };
 
+export const resolveNextQueryEditorTableLocateIndex = (
+    previous: { lineNumber: number; signature: string; index: number } | null | undefined,
+    lineNumber: number,
+    signature: string,
+    count: number,
+): number => {
+    if (count <= 0) return 0;
+    return previous
+        && previous.lineNumber === lineNumber
+        && previous.signature === signature
+        ? (previous.index + 1) % count
+        : 0;
+};
+
 export const dispatchQueryEditorSidebarLocate = (detail: Record<string, unknown>) => {
     if (typeof window === 'undefined') {
         return;
