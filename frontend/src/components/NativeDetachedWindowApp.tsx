@@ -377,7 +377,14 @@ const NativeDetachedWindowContent: React.FC<{
 
   if (bootstrap.kind === 'workbench') {
     return tab
-      ? <WorkbenchTabContent tab={tab} isActive onContentReady={onContentReady} />
+      ? (
+          <WorkbenchTabContent
+            tab={tab}
+            isActive
+            onContentReady={onContentReady}
+            onRequestClose={onClose}
+          />
+        )
       : null;
   }
   if (bootstrap.kind === 'query-result') {
@@ -645,7 +652,10 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
           'gonavi:jvm-apply-ai-plan',
           'gonavi:jvm-apply-diagnostic-plan',
         ]
-      : ['gonavi:ai:inject-prompt'];
+      : [
+          'gonavi:ai:inject-prompt',
+          'gonavi:open-global-proxy-settings',
+        ];
     const forwardToHost = (event: Event) => {
       hostEventSequenceRef.current += 1;
       const hostEvent: NativeDetachedHostEvent = {

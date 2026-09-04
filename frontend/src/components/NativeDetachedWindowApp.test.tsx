@@ -67,6 +67,7 @@ const workbenchTabTypes: TabData['type'][] = [
   'sql-file-execution',
   'sql-analysis',
   'sql-audit',
+  'driver-manager',
   'redis-keys',
   'redis-command',
   'redis-monitor',
@@ -158,14 +159,20 @@ vi.mock('./WorkbenchTabContent', () => ({
   default: ({
     tab,
     onContentReady,
+    onRequestClose,
   }: {
     tab: TabData;
     onContentReady?: () => void;
+    onRequestClose?: () => void;
   }) => {
     React.useEffect(() => {
       onContentReady?.();
     }, [onContentReady]);
-    return <div data-workbench-tab={tab.id} />;
+    return (
+      <div data-workbench-tab={tab.id}>
+        <button data-workbench-request-close type="button" onClick={onRequestClose} />
+      </div>
+    );
   },
 }));
 
@@ -592,6 +599,58 @@ describe('NativeDetachedWindowApp', () => {
     await act(async () => {
       renderer!.unmount();
     });
+  });
+
+  it('routes the driver manager body close action through the native window lifecycle', async () => {
+    const tab: TabData = {
+      id: 'driver-manager',
+      title: 'Driver Manager',
+      type: 'driver-manager',
+      connectionId: '',
+    };
+    const bootstrap: NativeDetachedWindowBootstrap = {
+      id: 'workbench:driver-manager',
+      kind: 'workbench',
+      title: tab.title,
+      payload: {
+        storeState: {
+          tabs: [tab],
+          activeTabId: tab.id,
+          theme: 'light',
+          appearance: { uiVersion: 'v2' },
+        },
+        tab,
+      },
+    };
+    const client = {
+      load: vi.fn(async () => bootstrap),
+      ready: vi.fn(async () => undefined),
+      sync: vi.fn(async () => undefined),
+      attach: vi.fn(async () => undefined),
+      close: vi.fn(async () => undefined),
+      cancelCloseRequest: vi.fn(async () => undefined),
+      openAISettings: vi.fn(async () => undefined),
+      closeCurrentWindow: vi.fn(async () => undefined),
+    };
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<NativeDetachedWindowApp client={client} />);
+      await flushEffects();
+    });
+
+    await act(async () => {
+      renderer!.root.findByProps({ 'data-workbench-request-close': true }).props.onClick();
+      await flushEffects();
+      await flushEffects();
+    });
+
+    expect(client.close).toHaveBeenCalledWith(expect.objectContaining({
+      id: bootstrap.id,
+      kind: 'workbench',
+    }));
+    expect(client.closeCurrentWindow).toHaveBeenCalledOnce();
+    await act(async () => renderer!.unmount());
   });
 
   it('hydrates and renders AI chat in a native detached window', async () => {
@@ -1161,6 +1220,80 @@ describe('NativeDetachedWindowApp', () => {
       await act(async () => {
         renderer!.unmount();
       });
+    } finally {
+      if (previousWindowDescriptor) {
+        Object.defineProperty(globalThis, 'window', previousWindowDescriptor);
+      } else {
+        Reflect.deleteProperty(globalThis, 'window');
+      }
+    }
+  });
+
+  it('forwards driver manager proxy settings requests to the main window', async () => {
+    const previousWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    const eventTarget = new EventTarget();
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: Object.assign(eventTarget, {
+        clearTimeout: globalThis.clearTimeout,
+        innerWidth: 960,
+        outerHeight: 720,
+        outerWidth: 960,
+        screenX: 40,
+        screenY: 40,
+        setTimeout: globalThis.setTimeout,
+      }),
+    });
+    const tab: TabData = {
+      id: 'driver-manager',
+      title: 'Driver Manager',
+      type: 'driver-manager',
+      connectionId: '',
+    };
+    const bootstrap: NativeDetachedWindowBootstrap = {
+      id: 'workbench:driver-manager',
+      kind: 'workbench',
+      title: tab.title,
+      payload: {
+        storeState: {
+          appearance: { uiVersion: 'v2' },
+          theme: 'light',
+          tabs: [tab],
+          activeTabId: tab.id,
+        },
+        tab,
+      },
+    };
+    const client = {
+      load: vi.fn(async () => bootstrap),
+      ready: vi.fn(async () => undefined),
+      sync: vi.fn(async () => undefined),
+      attach: vi.fn(async () => undefined),
+      close: vi.fn(async () => undefined),
+      openAISettings: vi.fn(async () => undefined),
+      hostEvent: vi.fn(async () => undefined),
+      closeCurrentWindow: vi.fn(async () => undefined),
+    };
+
+    try {
+      let renderer: TestRenderer.ReactTestRenderer;
+      await act(async () => {
+        renderer = TestRenderer.create(<NativeDetachedWindowApp client={client} />);
+        await flushEffects();
+      });
+      await act(async () => {
+        eventTarget.dispatchEvent(new Event('gonavi:open-global-proxy-settings'));
+        await flushEffects();
+      });
+
+      expect(client.hostEvent).toHaveBeenCalledWith(expect.objectContaining({
+        id: bootstrap.id,
+        kind: 'workbench',
+        hostEvent: expect.objectContaining({
+          name: 'gonavi:open-global-proxy-settings',
+        }),
+      }));
+      await act(async () => renderer!.unmount());
     } finally {
       if (previousWindowDescriptor) {
         Object.defineProperty(globalThis, 'window', previousWindowDescriptor);

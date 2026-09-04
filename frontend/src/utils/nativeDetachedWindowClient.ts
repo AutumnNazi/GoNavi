@@ -62,6 +62,7 @@ export const NATIVE_DETACHED_HOST_EVENT_NAMES = [
   'gonavi:insert-sql-to-tab',
   'gonavi:jvm-apply-ai-plan',
   'gonavi:jvm-apply-diagnostic-plan',
+  'gonavi:open-global-proxy-settings',
   'gonavi:shortcut:toggle-ai-panel',
 ] as const;
 

@@ -316,6 +316,29 @@ describe('DriverManagerModal i18n', () => {
     },
   );
 
+  it('renders the driver manager body in German without falling back to Simplified Chinese', async () => {
+    storeState.appearance.uiVersion = 'v2';
+    storeState.languagePreference = 'de-DE';
+    const { setCurrentLanguage } = await import('../i18n');
+    setCurrentLanguage('de-DE');
+    const { default: DriverManagerModal } = await import('./DriverManagerModal');
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<DriverManagerModal open onClose={vi.fn()} />);
+    });
+
+    const content = textContent(renderer!.toJSON());
+    expect(content).toContain('Treiberverwaltung');
+    expect(content).toContain('Alle Treiber installieren');
+    expect(renderer!.root.findAll((node) => (
+      node.type === 'input'
+      && String(node.props?.placeholder || '').includes('Treibername/-typ suchen')
+    ))).toHaveLength(1);
+    expect(content).toContain('Größe: 12 MB');
+    expect(content).not.toMatch(/驱动管理|安装所有驱动|搜索驱动|已启用|未启用/);
+  });
+
   it.each([
     ['legacy', 'zh-CN', '暂无驱动数据'],
     ['v2', 'en-US', 'No drivers available'],

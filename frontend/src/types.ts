@@ -505,6 +505,7 @@ export interface TabData {
     | "sql-file-execution"
     | "sql-analysis"
     | "sql-audit"
+    | "driver-manager"
     | "request-diagnostics"
     | "message-queue"
     | "redis-keys"

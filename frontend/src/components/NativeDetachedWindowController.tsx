@@ -309,6 +309,9 @@ export const applyNativeDetachedWindowEvent = (
           showMainWindow();
         }
       } else if (hostEvent.name !== 'gonavi:shortcut:toggle-ai-panel') {
+        if (!localWindowId && hostEvent.name === 'gonavi:open-global-proxy-settings') {
+          showMainWindow();
+        }
         callbacks.onHostEvent?.(hostEvent);
       }
     }

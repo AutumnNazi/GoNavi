@@ -2907,8 +2907,8 @@ body[data-platform='windows'] .titlebar-window-controls {
     justify-content: flex-end;
 }
 
-/* The settings-center view is a compact driver workbench, not a stack of
-   standalone cards. Keep the full modal presentation above unchanged. */
+/* The tab-hosted view is a compact driver workbench, not a stack of
+   standalone modal cards. Keep the legacy modal presentation above unchanged. */
 .driver-manager-embedded-layout {
     display: flex;
     flex-direction: column;

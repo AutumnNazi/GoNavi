@@ -307,6 +307,45 @@ describe('NativeDetachedWindowController', () => {
     expect(onHostEvent).toHaveBeenCalledWith(event.payload?.hostEvent);
   });
 
+  it('raises the main window before opening global proxy settings from a detached workbench', () => {
+    const previousWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    const calls: string[] = [];
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        runtime: {
+          Show: vi.fn(() => calls.push('show-app')),
+          WindowShow: vi.fn(() => calls.push('show-window')),
+        },
+      },
+    });
+    const event: NativeDetachedWindowEvent = {
+      id: 'workbench:driver-manager',
+      kind: 'workbench',
+      action: 'host-event',
+      payload: {
+        hostEvent: {
+          id: 'workbench:driver-manager:proxy-settings-1',
+          name: 'gonavi:open-global-proxy-settings',
+        },
+      },
+    };
+
+    try {
+      applyNativeDetachedWindowEvent(event, undefined, {
+        onHostEvent: () => calls.push('open-proxy-settings'),
+      });
+
+      expect(calls).toEqual(['show-app', 'show-window', 'open-proxy-settings']);
+    } finally {
+      if (previousWindowDescriptor) {
+        Object.defineProperty(globalThis, 'window', previousWindowDescriptor);
+      } else {
+        Reflect.deleteProperty(globalThis, 'window');
+      }
+    }
+  });
+
   it('toggles only the main-window AI panel for a shortcut forwarded by a result child', () => {
     expect(useStore.getState().aiPanelVisible).toBe(false);
 
