@@ -106,12 +106,16 @@ vi.mock('../utils/driverManagerWorkbenchTheme', () => ({
 vi.mock('@ant-design/icons', () => {
   const Icon = () => <span />;
   return {
+    AppstoreOutlined: Icon,
+    CheckCircleOutlined: Icon,
     DeleteOutlined: Icon,
     DownloadOutlined: Icon,
     FileSearchOutlined: Icon,
     FolderOpenOutlined: Icon,
     InfoCircleFilled: Icon,
     ReloadOutlined: Icon,
+    StopOutlined: Icon,
+    WarningOutlined: Icon,
   };
 });
 

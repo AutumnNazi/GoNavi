@@ -659,6 +659,7 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
         ]
       : [
           'gonavi:ai:inject-prompt',
+          'gonavi:open-download-source-settings',
           'gonavi:open-global-proxy-settings',
           ...(bootstrap.kind === 'workbench' ? ['gonavi:locate-sidebar-object' as const] : []),
         ];

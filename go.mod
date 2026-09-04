@@ -27,7 +27,7 @@ require (
 	github.com/tailscale/hujson v0.0.0-20260718110524-10d7940d4c87
 	github.com/taosdata/driver-go/v3 v3.7.8
 	github.com/trinodb/trino-go-client v0.333.0
-	github.com/wailsapp/wails/v2 v2.15.0
+	github.com/wailsapp/wails/v2 v2.11.0
 	github.com/xuri/excelize/v2 v2.10.0
 	go.mongodb.org/mongo-driver v1.17.9
 	go.mongodb.org/mongo-driver/v2 v2.5.0
@@ -42,7 +42,6 @@ require (
 )
 
 require (
-	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
 	github.com/apache/thrift v0.22.0 // indirect
 	github.com/elastic/elastic-transport-go/v8 v8.9.0 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect

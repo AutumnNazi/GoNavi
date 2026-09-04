@@ -307,7 +307,10 @@ describe('NativeDetachedWindowController', () => {
     expect(onHostEvent).toHaveBeenCalledWith(event.payload?.hostEvent);
   });
 
-  it('raises the main window before opening global proxy settings from a detached workbench', () => {
+  it.each([
+    'gonavi:open-global-proxy-settings',
+    'gonavi:open-download-source-settings',
+  ] as const)('raises the main window before forwarding %s from a detached workbench', (eventName) => {
     const previousWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
     const calls: string[] = [];
     Object.defineProperty(globalThis, 'window', {
@@ -325,18 +328,18 @@ describe('NativeDetachedWindowController', () => {
       action: 'host-event',
       payload: {
         hostEvent: {
-          id: 'workbench:driver-manager:proxy-settings-1',
-          name: 'gonavi:open-global-proxy-settings',
+          id: `workbench:driver-manager:${eventName}`,
+          name: eventName,
         },
       },
     };
 
     try {
       applyNativeDetachedWindowEvent(event, undefined, {
-        onHostEvent: () => calls.push('open-proxy-settings'),
+        onHostEvent: () => calls.push('open-settings'),
       });
 
-      expect(calls).toEqual(['show-app', 'show-window', 'open-proxy-settings']);
+      expect(calls).toEqual(['show-app', 'show-window', 'open-settings']);
     } finally {
       if (previousWindowDescriptor) {
         Object.defineProperty(globalThis, 'window', previousWindowDescriptor);

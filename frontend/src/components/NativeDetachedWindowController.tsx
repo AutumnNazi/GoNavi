@@ -314,7 +314,13 @@ export const applyNativeDetachedWindowEvent = (
           showMainWindow();
         }
       } else if (hostEvent.name !== 'gonavi:shortcut:toggle-ai-panel') {
-        if (!localWindowId && hostEvent.name === 'gonavi:open-global-proxy-settings') {
+        if (
+          !localWindowId
+          && (
+            hostEvent.name === 'gonavi:open-global-proxy-settings'
+            || hostEvent.name === 'gonavi:open-download-source-settings'
+          )
+        ) {
           showMainWindow();
         }
         callbacks.onHostEvent?.(hostEvent);

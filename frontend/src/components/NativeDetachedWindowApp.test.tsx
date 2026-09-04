@@ -1238,7 +1238,10 @@ describe('NativeDetachedWindowApp', () => {
     }
   });
 
-  it('forwards driver manager proxy settings requests to the main window', async () => {
+  it.each([
+    'gonavi:open-global-proxy-settings',
+    'gonavi:open-download-source-settings',
+  ] as const)('forwards driver manager %s requests to the main window', async (eventName) => {
     const previousWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
     const eventTarget = new EventTarget();
     Object.defineProperty(globalThis, 'window', {
@@ -1291,7 +1294,7 @@ describe('NativeDetachedWindowApp', () => {
         await flushEffects();
       });
       await act(async () => {
-        eventTarget.dispatchEvent(new Event('gonavi:open-global-proxy-settings'));
+        eventTarget.dispatchEvent(new Event(eventName));
         await flushEffects();
       });
 
@@ -1299,7 +1302,7 @@ describe('NativeDetachedWindowApp', () => {
         id: bootstrap.id,
         kind: 'workbench',
         hostEvent: expect.objectContaining({
-          name: 'gonavi:open-global-proxy-settings',
+          name: eventName,
         }),
       }));
     } finally {
