@@ -83,6 +83,87 @@ describe('DataGridPaginationBar boundary navigation', () => {
     expect(markup).toMatch(/data-grid-pagination-last="true"[^>]*>[\s\S]*Last page[\s\S]*?<\/button>/);
   });
 
+  it('shows the distinct selected-row count in the V2 statusbar', () => {
+    const translate = (key: string, params?: Record<string, unknown>): string => (
+      key === 'data_grid.pagination.selected_count'
+        ? `Selected ${String(params?.count)} rows`
+        : key
+    );
+    const markup = renderToStaticMarkup(
+      <DataGridPaginationBar
+        isV2Ui
+        pagination={{ current: 1, pageSize: 100, total: 500, totalKnown: true }}
+        selectedRowCount={6}
+        paginationV2SummaryText="Current 100 rows / 500 rows total"
+        paginationSummaryText="Current 100 rows / 500 rows total"
+        paginationControlTotal={500}
+        paginationTotalPages={5}
+        paginationPageText="Page 1 / 5"
+        paginationPageSizeOptions={['100']}
+        showKnownPageCount
+        onPageChange={vi.fn()}
+        onPageSizeChange={vi.fn()}
+        onV2PageStep={vi.fn()}
+        translate={translate}
+      />,
+    );
+
+    expect(markup).toContain('data-grid-selected-count="true"');
+    expect(markup).toContain('Selected 6 rows');
+  });
+
+  it('does not render a selected-row count when nothing is selected', () => {
+    const markup = renderToStaticMarkup(
+      <DataGridPaginationBar
+        isV2Ui={false}
+        pagination={{ current: 1, pageSize: 100, total: 24, totalKnown: true }}
+        selectedRowCount={0}
+        paginationV2SummaryText="24 rows"
+        paginationSummaryText="Current 24 rows / 24 rows total"
+        paginationControlTotal={24}
+        paginationTotalPages={1}
+        paginationPageText="Page 1 / 1"
+        paginationPageSizeOptions={['100']}
+        showKnownPageCount
+        onPageChange={vi.fn()}
+        onPageSizeChange={vi.fn()}
+        onV2PageStep={vi.fn()}
+      />,
+    );
+
+    expect(markup).not.toContain('data-grid-selected-count="true"');
+  });
+
+  it('keeps the selected-row count for non-paginated result sets', () => {
+    const translate = (key: string, params?: Record<string, unknown>): string => (
+      key === 'data_grid.pagination.selected_count'
+        ? `Selected ${String(params?.count)} rows`
+        : key
+    );
+
+    for (const isV2Ui of [true, false]) {
+      const markup = renderToStaticMarkup(
+        <DataGridPaginationBar
+          isV2Ui={isV2Ui}
+          selectedRowCount={3}
+          paginationV2SummaryText=""
+          paginationSummaryText=""
+          paginationControlTotal={0}
+          paginationTotalPages={1}
+          paginationPageText=""
+          paginationPageSizeOptions={[]}
+          showKnownPageCount={false}
+          onPageSizeChange={vi.fn()}
+          onV2PageStep={vi.fn()}
+          translate={translate}
+        />,
+      );
+
+      expect(markup).toContain('data-grid-selected-count="true"');
+      expect(markup).toContain('Selected 3 rows');
+    }
+  });
+
   it('does not render a total-count action without a real callback', () => {
     const markup = renderToStaticMarkup(
       <DataGridPaginationBar

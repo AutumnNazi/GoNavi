@@ -785,6 +785,10 @@ func normalizeSchemaAndTableByType(dbType string, dbName string, tableName strin
 	}
 
 	if dbType == "kingbase" {
+		// DDL target parts are logical identifier values.  The metadata
+		// adapters may need to preserve a quoted final segment for their own
+		// second-pass parsing, but feeding that delimiter into the generic
+		// quoter would encode it as part of the identifier.
 		schema, table := db.SplitKingbaseQualifiedName(rawTable)
 		if schema != "" && table != "" {
 			return schema, table
@@ -795,7 +799,10 @@ func normalizeSchemaAndTableByType(dbType string, dbName string, tableName strin
 	}
 
 	if dbType == "postgres" || dbType == "highgo" || dbType == "vastbase" || dbType == "opengauss" || dbType == "gaussdb" {
-		schema, table := db.SplitSQLQualifiedName(rawTable)
+		// Keep DDL construction separate from metadata argument handling:
+		// quoteSqlIdentifierPath/quoteTableIdentByType adds the dialect
+		// delimiter itself, so the parts must not retain an input delimiter.
+		schema, table := db.SplitSQLQualifiedNameForDialect(rawTable, dbType)
 		if schema != "" && table != "" {
 			return schema, table
 		}
@@ -805,7 +812,7 @@ func normalizeSchemaAndTableByType(dbType string, dbName string, tableName strin
 	}
 
 	if dbType == "iris" {
-		schema, table := db.SplitSQLQualifiedName(rawTable)
+		schema, table := db.SplitSQLQualifiedNameForDialect(rawTable, dbType)
 		if schema != "" && table != "" {
 			return schema, table
 		}
@@ -818,12 +825,26 @@ func normalizeSchemaAndTableByType(dbType string, dbName string, tableName strin
 		return rawDB, rawTable
 	}
 
-	if parts := strings.SplitN(rawTable, ".", 2); len(parts) == 2 {
-		schema := strings.TrimSpace(parts[0])
-		table := strings.TrimSpace(parts[1])
-		if schema != "" && table != "" {
+	if dbType == "sqlite" {
+		return normalizeSQLiteSchemaAndTable(rawDB, rawTable)
+	}
+
+	// Use the quote-aware splitter for ordinary SQL dialects. A table name
+	// such as `Sales.Data` is one identifier; strings.SplitN would incorrectly
+	// turn the dot inside its delimiters into a schema separator. Preserve the
+	// final delimiter for dialects whose driver parses this argument again.
+	if shouldPreserveQuotedTableSegment(dbType) {
+		if schema, table := db.SplitSQLQualifiedNamePreserveTableQuoteForDialect(rawTable, dbType); table != "" {
+			if schema != "" {
+				return schema, table
+			}
+			return rawDB, table
+		}
+	} else if schema, table := db.SplitSQLQualifiedNameForDialect(rawTable, dbType); table != "" {
+		if schema != "" {
 			return schema, table
 		}
+		return rawDB, table
 	}
 
 	switch dbType {
@@ -841,7 +862,7 @@ func resolveCreateStatementTargets(config connection.ConnectionConfig, dbType st
 			metadataDB = strings.TrimSpace(config.Database)
 		}
 		rawTable := strings.TrimSpace(tableName)
-		schema, table := db.SplitSQLQualifiedName(rawTable)
+		schema, table := db.SplitSQLQualifiedNameForDialect(rawTable, dbType)
 		if table == "" {
 			table = rawTable
 		}
@@ -851,8 +872,23 @@ func resolveCreateStatementTargets(config connection.ConnectionConfig, dbType st
 		return metadataDB, rawTable, schema, table
 	}
 
-	schema, table := normalizeSchemaAndTableByType(dbType, dbName, tableName)
-	return schema, table, schema, table
+	// Metadata adapters and DDL rendering intentionally use different forms:
+	// adapters that parse the table argument a second time need the delimiter
+	// preserved around a dotted final identifier, while the DDL quoter must see
+	// the logical value so it can add exactly one delimiter itself.
+	ddlSchemaName, ddlTableName := normalizeSchemaAndTableByType(dbType, dbName, tableName)
+	metadataSchemaName, metadataTableName := normalizeMetadataSchemaAndTable(config, dbName, tableName)
+	// Kingbase's fallback builder and metadata adapters use the explicit
+	// public schema contract for an unqualified table. Keep the generic
+	// PostgreSQL-family metadata path search_path-aware, but do not pass an
+	// empty schema to this legacy-compatible Kingbase fallback.
+	if dbType == "kingbase" && strings.TrimSpace(metadataSchemaName) == "" && strings.TrimSpace(ddlSchemaName) != "" {
+		metadataSchemaName = ddlSchemaName
+	}
+	if strings.TrimSpace(metadataTableName) == "" {
+		metadataSchemaName, metadataTableName = ddlSchemaName, ddlTableName
+	}
+	return metadataSchemaName, metadataTableName, ddlSchemaName, ddlTableName
 }
 
 func quoteTableIdentByType(dbType string, schema string, table string) string {
@@ -1111,20 +1147,22 @@ func (a *App) MySQLShowCreateTable(config connection.ConnectionConfig, dbName st
 }
 
 type dbQueryAuditOptions struct {
-	trackHistory             bool
-	auditAll                 bool
-	auditWrites              bool
-	source                   string
-	executionContext         context.Context
-	classifyConnectionErrors bool
+	trackHistory              bool
+	auditAll                  bool
+	auditWrites               bool
+	source                    string
+	executionContext          context.Context
+	synchronousConnectionWait bool
+	classifyConnectionErrors  bool
 }
 
 type dbQueryMultiAuditOptions struct {
-	auditAll                 bool
-	auditWrites              bool
-	source                   string
-	executionContext         context.Context
-	classifyConnectionErrors bool
+	auditAll                  bool
+	auditWrites               bool
+	source                    string
+	executionContext          context.Context
+	synchronousConnectionWait bool
+	classifyConnectionErrors  bool
 }
 
 func buildQueryConnectionFailure(err error, queryID string, classify bool) connection.QueryResult {
@@ -1379,7 +1417,13 @@ func (a *App) dbQueryWithCancel(
 		cleanupRunningQuery()
 	}()
 
-	dbInst, err := a.getDatabaseWithContext(ctx, runConfig, false)
+	var dbInst db.Database
+	var err error
+	if auditOptions.synchronousConnectionWait {
+		dbInst, err = a.getDatabaseSynchronouslyWithContext(ctx, runConfig, false)
+	} else {
+		dbInst, err = a.getDatabaseWithContext(ctx, runConfig, false)
+	}
 	if err != nil {
 		logger.Error(err, "DBQuery 获取连接失败：%s", formatConnSummary(runConfig))
 		return buildQueryConnectionFailure(err, queryID, auditOptions.classifyConnectionErrors)
@@ -1452,7 +1496,13 @@ func (a *App) dbQueryWithCancel(
 			if a.invalidateCachedDatabase(runConfig, err) {
 				requestTrace.MarkRetry("cached connection refresh")
 				setRunningQueryCancellable(true)
-				retryInst, retryErr := a.getDatabaseWithContext(ctx, runConfig, true)
+				var retryInst db.Database
+				var retryErr error
+				if auditOptions.synchronousConnectionWait {
+					retryInst, retryErr = a.getDatabaseSynchronouslyWithContext(ctx, runConfig, true)
+				} else {
+					retryInst, retryErr = a.getDatabaseWithContext(ctx, runConfig, true)
+				}
 				if retryErr != nil {
 					logger.Error(retryErr, "DBQuery 重建连接失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
 					return buildQueryConnectionFailure(retryErr, queryID, auditOptions.classifyConnectionErrors)
@@ -1619,7 +1669,13 @@ func (a *App) dbQueryMulti(
 		cleanupRunningQuery()
 	}()
 
-	dbInst, err := a.getDatabaseWithContext(ctx, runConfig, false)
+	var dbInst db.Database
+	var err error
+	if auditOptions.synchronousConnectionWait {
+		dbInst, err = a.getDatabaseSynchronouslyWithContext(ctx, runConfig, false)
+	} else {
+		dbInst, err = a.getDatabaseWithContext(ctx, runConfig, false)
+	}
 	if err != nil {
 		logger.Error(err, "DBQueryMulti 获取连接失败：%s", formatConnSummary(runConfig))
 		return buildQueryConnectionFailure(err, queryID, auditOptions.classifyConnectionErrors)
@@ -1746,7 +1802,13 @@ func (a *App) dbQueryMulti(
 		if a.invalidateCachedDatabase(runConfig, err) {
 			requestTrace.MarkRetry("cached connection refresh")
 			setRunningQueryCancellable(true)
-			retryInst, retryErr := a.getDatabaseWithContext(ctx, runConfig, true)
+			var retryInst db.Database
+			var retryErr error
+			if auditOptions.synchronousConnectionWait {
+				retryInst, retryErr = a.getDatabaseSynchronouslyWithContext(ctx, runConfig, true)
+			} else {
+				retryInst, retryErr = a.getDatabaseWithContext(ctx, runConfig, true)
+			}
 			if retryErr != nil {
 				logger.Error(retryErr, "DBQueryMulti 重建连接失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
 				return buildQueryConnectionFailure(retryErr, queryID, auditOptions.classifyConnectionErrors)
@@ -2378,14 +2440,14 @@ func looksLikeSQLServerProcedureInvocation(query string) bool {
 		return false
 	}
 
-	next, ok := skipSQLIdentifierToken(query, pos)
+	next, ok := skipSQLIdentifierToken(query, pos, "sqlserver")
 	if !ok || next <= pos {
 		return false
 	}
 	pos = skipSQLTrivia(query, next)
 	for pos < len(query) && query[pos] == '.' {
 		pos = skipSQLTrivia(query, pos+1)
-		next, ok = skipSQLIdentifierToken(query, pos)
+		next, ok = skipSQLIdentifierToken(query, pos, "sqlserver")
 		if !ok || next <= pos {
 			return false
 		}
@@ -2409,6 +2471,16 @@ func looksLikeSQLServerProcedureInvocation(query string) bool {
 }
 
 func (a *App) DBQueryIsolated(config connection.ConnectionConfig, dbName string, query string) connection.QueryResult {
+	return a.dbQueryIsolatedContext(context.Background(), config, dbName, query)
+}
+
+func (a *App) dbQueryIsolatedContext(parent context.Context, config connection.ConnectionConfig, dbName string, query string) connection.QueryResult {
+	if parent == nil {
+		parent = context.Background()
+	}
+	if err := parent.Err(); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error(), Data: map[string]any{"cancelled": true}}
+	}
 	runConfig := normalizeRunConfig(config, dbName)
 
 	query = sanitizeSQLForPgLike(resolveDDLDBType(config), query)
@@ -2429,8 +2501,11 @@ func (a *App) DBQueryIsolated(config connection.ConnectionConfig, dbName string,
 			logger.Error(closeErr, "DBQueryIsolated 关闭临时连接失败：%s", formatConnSummary(runConfig))
 		}
 	}()
+	if err := parent.Err(); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error(), Data: map[string]any{"cancelled": true}}
+	}
 
-	ctx, cancel := newQueryExecutionContext(runConfig)
+	ctx, cancel := newQueryExecutionContextWithParent(parent, runConfig)
 	defer cancel()
 
 	isReadQuery := isReadOnlySQLQuery(runConfig.Type, query)
@@ -2449,7 +2524,15 @@ func (a *App) DBQueryIsolated(config connection.ConnectionConfig, dbName string,
 		}); ok {
 			data, columns, err = q.QueryContext(ctx, query)
 		} else {
+			if contextErr := ctx.Err(); contextErr != nil {
+				return buildQueryExecutionFailure(ctx, contextErr, contextErr.Error(), "")
+			}
 			data, columns, err = dbInst.Query(query)
+			if ctx.Err() != nil {
+				return a.buildCancellationUnsupportedExecutionResult(connection.QueryResult{
+					Data: data, Fields: columns, Messages: messages,
+				}, err)
+			}
 		}
 		if err == nil {
 			return connection.QueryResult{Success: true, Data: data, Fields: columns, Messages: messages}
@@ -2469,7 +2552,15 @@ func (a *App) DBQueryIsolated(config connection.ConnectionConfig, dbName string,
 	}); ok {
 		affected, err = e.ExecContext(ctx, query)
 	} else {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return buildQueryExecutionFailure(ctx, contextErr, contextErr.Error(), "")
+		}
 		affected, err = dbInst.Exec(query)
+		if ctx.Err() != nil {
+			return a.buildCancellationUnsupportedExecutionResult(connection.QueryResult{
+				Data: map[string]int64{"affectedRows": affected},
+			}, err)
+		}
 	}
 	if err != nil {
 		err = classifyDispatchedWriteError(err)
@@ -2880,15 +2971,60 @@ func lookupExactTableExists(database tableNameMetadataProvider, dbName, tableNam
 	return containsExactTableName(tables, tableName), nil
 }
 
+// usesBareTableCatalogNames identifies drivers whose GetTables result is the
+// object name only. Query text may retain a delimiter around a dotted literal,
+// but exact catalog comparison must receive the logical object name.
+func usesBareTableCatalogNames(dbType string) bool {
+	switch strings.ToLower(strings.TrimSpace(dbType)) {
+	case "mysql", "mariadb", "oceanbase", "diros", "starrocks", "sphinx", "tidb", "clickhouse", "tdengine":
+		return true
+	default:
+		return false
+	}
+}
+
 func normalizeTableExistsLookup(config connection.ConnectionConfig, dbName, tableName string) (string, string) {
-	// MySQL-family drivers enumerate TABLE_NAME without the database prefix,
-	// while callers may pass a qualified object (database.table) from a data
-	// sync mapping. Keep the database in the GetTables argument and compare the
-	// bare table name, matching the contract used by GetColumns and DDL paths.
-	switch resolveDDLDBType(config) {
-	case "mysql", "mariadb":
+	dbType := resolveDDLDBType(config)
+	if usesBareTableCatalogNames(dbType) {
+		if schema, table := normalizeMetadataSchemaAndTable(config, dbName, tableName); strings.TrimSpace(table) != "" {
+			// Metadata normalization preserves a quoted dotted final segment for
+			// DDL helpers. GetTables, however, returns its logical bare name.
+			if _, logicalTable := db.SplitSQLQualifiedNameForDialect(table, dbType); strings.TrimSpace(logicalTable) != "" {
+				table = logicalTable
+			}
+			return schema, table
+		}
+	}
+
+	if dbType == "sqlite" {
+		// SQLite normalization already distinguishes an attached-database
+		// qualifier from a literal dotted table name. Do not parse its bare
+		// catalog result again or `order.items` would be split incorrectly.
 		if schema, table := normalizeMetadataSchemaAndTable(config, dbName, tableName); strings.TrimSpace(table) != "" {
 			return schema, table
+		}
+	}
+
+	if dbType == "sqlserver" {
+		// SQL Server metadata returns dotted table names as
+		// `[schema].[order.items]`. Match that canonical form when the query
+		// uses a bracketed dotted final segment; ordinary schema.table names
+		// retain their existing catalog spelling.
+		segments := db.SplitSQLIdentifierPathForDialect(tableName, "sqlserver")
+		if len(segments) >= 1 && segments[len(segments)-1].Quoted && strings.Contains(segments[len(segments)-1].Value, ".") {
+			quote := func(value string) string {
+				return "[" + strings.ReplaceAll(strings.TrimSpace(value), "]", "]]") + "]"
+			}
+			schemaParts := make([]string, 0, len(segments)-1)
+			for _, segment := range segments[:len(segments)-1] {
+				if value := strings.TrimSpace(segment.Value); value != "" {
+					schemaParts = append(schemaParts, quote(value))
+				}
+			}
+			if len(schemaParts) == 0 {
+				schemaParts = append(schemaParts, quote("dbo"))
+			}
+			return dbName, strings.Join(schemaParts, ".") + "." + quote(segments[len(segments)-1].Value)
 		}
 	}
 	return dbName, tableName
@@ -3021,7 +3157,15 @@ func resolveCreateStatementWithFallbackWithText(dbInst db.Database, config conne
 			if columns, err := loadCreateStatementCommentColumns(dbInst, dbType, metadataSchemaName, metadataTableName); err == nil {
 				sqlStr = appendCreateStatementColumnComments(dbType, ddlSchemaName, ddlTableName, sqlStr, columns)
 			}
-			sqlStr = appendCreateStatementTableComment(dbInst, dbType, metadataSchemaName, metadataTableName, ddlSchemaName, ddlTableName, sqlStr)
+			sqlStr = appendCreateStatementTableComment(
+				dbInst,
+				dbType,
+				metadataSchemaName,
+				metadataTableName,
+				ddlSchemaName,
+				ddlTableName,
+				sqlStr,
+			)
 			return sqlStr, nil
 		}
 		if isOceanBaseOracleProtocol(config) {
@@ -3071,7 +3215,15 @@ func resolveCreateStatementWithFallbackWithText(dbInst db.Database, config conne
 		}
 		return "", buildErr
 	}
-	fallbackDDL = appendCreateStatementTableComment(dbInst, dbType, metadataSchemaName, metadataTableName, ddlSchemaName, ddlTableName, fallbackDDL)
+	fallbackDDL = appendCreateStatementTableComment(
+		dbInst,
+		dbType,
+		metadataSchemaName,
+		metadataTableName,
+		ddlSchemaName,
+		ddlTableName,
+		fallbackDDL,
+	)
 	return fallbackDDL, nil
 }
 

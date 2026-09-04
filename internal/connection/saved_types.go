@@ -11,6 +11,7 @@ type SchemaVisibilityRule struct {
 type SavedConnectionInput struct {
 	ID                         string                          `json:"id,omitempty"`
 	Name                       string                          `json:"name"`
+	CreatedAt                  int64                           `json:"createdAt,omitempty"`
 	EnvironmentType            string                          `json:"environmentType,omitempty"`
 	Config                     ConnectionConfig                `json:"config"`
 	IncludeDatabases           []string                        `json:"includeDatabases,omitempty"`
@@ -50,6 +51,7 @@ type ConnectionVisibilityInput struct {
 type SavedConnectionView struct {
 	ID                         string                          `json:"id"`
 	Name                       string                          `json:"name"`
+	CreatedAt                  int64                           `json:"createdAt,omitempty"`
 	EnvironmentType            string                          `json:"environmentType,omitempty"`
 	Config                     ConnectionConfig                `json:"config"`
 	IncludeDatabases           []string                        `json:"includeDatabases,omitempty"`

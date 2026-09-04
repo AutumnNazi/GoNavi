@@ -346,6 +346,32 @@ describe('NativeDetachedWindowController', () => {
     }
   });
 
+  it('accepts sidebar locate host events from a detached workbench', () => {
+    const onHostEvent = vi.fn();
+    const event: NativeDetachedWindowEvent = {
+      id: 'workbench:query-a',
+      kind: 'workbench',
+      action: 'host-event',
+      payload: {
+        hostEvent: {
+          id: 'workbench:query-a:locate-1',
+          name: 'gonavi:locate-sidebar-object',
+          detail: {
+            connectionId: 'conn-1',
+            dbName: 'main',
+            tableName: 'users',
+            objectGroup: 'tables',
+          },
+        },
+      },
+    };
+
+    applyNativeDetachedWindowEvent(event, undefined, { onHostEvent });
+
+    expect(onHostEvent).toHaveBeenCalledOnce();
+    expect(onHostEvent).toHaveBeenCalledWith(event.payload?.hostEvent);
+  });
+
   it('toggles only the main-window AI panel for a shortcut forwarded by a result child', () => {
     expect(useStore.getState().aiPanelVisible).toBe(false);
 
@@ -367,6 +393,26 @@ describe('NativeDetachedWindowController', () => {
 
     applyNativeDetachedWindowEvent(event);
     expect(useStore.getState().aiPanelVisible).toBe(true);
+  });
+
+  it('delegates a forwarded AI shortcut to the guarded main-window toggle when provided', () => {
+    const onToggleAI = vi.fn();
+    const event: NativeDetachedWindowEvent = {
+      id: 'query-result:query-a:r1',
+      kind: 'query-result',
+      action: 'host-event',
+      payload: {
+        hostEvent: {
+          id: 'query-result:query-a:r1:shortcut-guarded',
+          name: 'gonavi:shortcut:toggle-ai-panel',
+        },
+      },
+    };
+
+    applyNativeDetachedWindowEvent(event, undefined, { onToggleAI });
+
+    expect(onToggleAI).toHaveBeenCalledOnce();
+    expect(useStore.getState().aiPanelVisible).toBe(false);
   });
 
   it('shows the main window only when the shortcut opens docked AI', () => {

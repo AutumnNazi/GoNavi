@@ -732,7 +732,7 @@ func TestKeepOptionalDriverDownloadURLOrderExpandsDispatcherAndDeduplicatesGitHu
 		githubURL,
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("expected canonical DMIT -> Bero -> GitHub candidates, got %v", got)
+		t.Fatalf("expected canonical Cst -> Bero -> GitHub candidates, got %v", got)
 	}
 	expanded, err := expandOptionalDriverDownloadCandidates([]string{
 		dispatcherURL,
@@ -811,7 +811,7 @@ func TestDownloadDriverPackageFallsBackToGitHubAndPersistsActualSource(t *testin
 		t.Fatalf("resolve expected driver fallback candidates: %v", err)
 	}
 	if len(expectedURLs) != 3 {
-		t.Fatalf("expected DMIT, Bero, and GitHub candidates, got %v", expectedURLs)
+		t.Fatalf("expected Cst, Bero, and GitHub candidates, got %v", expectedURLs)
 	}
 
 	type downloadAttempt struct {
@@ -996,7 +996,7 @@ func TestResolveOptionalDriverAgentDownloadURLsAddsDevMirrorCandidatesWhenGitHub
 		t.Fatalf("expand expected mirror candidates: %v", err)
 	}
 	if len(expanded) != len(expectedExpanded) {
-		t.Fatalf("expected DMIT/Bero/GitHub candidates with duplicate GitHub removed, got %#v", expanded)
+		t.Fatalf("expected Cst/Bero/GitHub candidates with duplicate GitHub removed, got %#v", expanded)
 	}
 	for index, expected := range expectedExpanded {
 		if expanded[index].URL != expected {

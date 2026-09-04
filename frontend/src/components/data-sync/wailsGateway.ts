@@ -1,5 +1,10 @@
 import * as WailsApp from '../../../wailsjs/go/app/App';
 import { syncjob } from '../../../wailsjs/go/models';
+import {
+  invokeAppWithSignal,
+  isWebRPCAbortError,
+  type WebRPCRequestOptions,
+} from '../../utils/webRpc';
 
 import type { DataSyncWorkbenchGateway } from './gateway';
 import type {
@@ -304,9 +309,15 @@ export const createWailsDataSyncWorkbenchGateway = (
 
   const getCheckpoint = async (
     taskId: string,
+    requestOptions?: WebRPCRequestOptions,
   ): Promise<DataSyncCheckpointSummary | null> => {
     if (!taskId.trim() || isLocalDataSyncTaskId(taskId)) return null;
-    const result = await api.DataSyncCheckpointGet(taskId);
+    const result = await invokeAppWithSignal(
+      'DataSyncCheckpointGet',
+      [taskId],
+      requestOptions?.signal,
+      () => api.DataSyncCheckpointGet(taskId),
+    );
     if (isCheckpointMissing(result)) return null;
     return decodeCheckpoint(requireWailsQueryData(result, 'DataSyncCheckpointGet'));
   };
@@ -324,22 +335,32 @@ export const createWailsDataSyncWorkbenchGateway = (
       return connections;
     },
 
-    async listDatabases(connectionId) {
+    async listDatabases(connectionId, requestOptions) {
       return decodeDatabaseMetadata(
         requireWailsQueryData(
-          await api.DataSyncDatabaseList(connectionId),
+          await invokeAppWithSignal(
+            'DataSyncDatabaseList',
+            [connectionId],
+            requestOptions?.signal,
+            () => api.DataSyncDatabaseList(connectionId),
+          ),
           'DataSyncDatabaseList',
         ),
       );
     },
 
-    async listObjects(endpoint) {
+    async listObjects(endpoint, requestOptions) {
       return decodeObjectMetadata(
         requireWailsQueryData(
-          await api.DataSyncObjectList(
-            endpoint.connectionId,
-            endpoint.database,
-            endpoint.schema,
+          await invokeAppWithSignal(
+            'DataSyncObjectList',
+            [endpoint.connectionId, endpoint.database, endpoint.schema],
+            requestOptions?.signal,
+            () => api.DataSyncObjectList(
+              endpoint.connectionId,
+              endpoint.database,
+              endpoint.schema,
+            ),
           ),
           'DataSyncObjectList',
         ),
@@ -347,23 +368,38 @@ export const createWailsDataSyncWorkbenchGateway = (
       );
     },
 
-    async listFields(endpoint, objectName) {
+    async listFields(endpoint, objectName, requestOptions) {
       return decodeFieldMetadata(
         requireWailsQueryData(
-          await api.DataSyncFieldList(
-            endpoint.connectionId,
-            endpoint.database,
-            endpoint.schema,
-            stripEndpointSchema(endpoint.schema, objectName),
+          await invokeAppWithSignal(
+            'DataSyncFieldList',
+            [
+              endpoint.connectionId,
+              endpoint.database,
+              endpoint.schema,
+              stripEndpointSchema(endpoint.schema, objectName),
+            ],
+            requestOptions?.signal,
+            () => api.DataSyncFieldList(
+              endpoint.connectionId,
+              endpoint.database,
+              endpoint.schema,
+              stripEndpointSchema(endpoint.schema, objectName),
+            ),
           ),
           'DataSyncFieldList',
         ),
       );
     },
 
-    async listTasks() {
+    async listTasks(requestOptions) {
       const value = requireWailsQueryData(
-        await api.DataSyncJobList(),
+        await invokeAppWithSignal(
+          'DataSyncJobList',
+          [],
+          requestOptions?.signal,
+          () => api.DataSyncJobList(),
+        ),
         'DataSyncJobList',
       );
       if (!Array.isArray(value)) {
@@ -413,19 +449,31 @@ export const createWailsDataSyncWorkbenchGateway = (
       return saved;
     },
 
-    async resolveCapability(task) {
+    async resolveCapability(task, requestOptions) {
       if (!task.source.connectionId || !task.target.connectionId) {
         return { ...UNKNOWN_CAPABILITY };
       }
       const base = decodeRouteCapability(
         requireWailsQueryData(
-          await api.DataSyncCapabilityResolve(
-            task.source.connectionId,
-            task.source.database,
-            task.source.schema,
-            task.target.connectionId,
-            task.target.database,
-            task.target.schema,
+          await invokeAppWithSignal(
+            'DataSyncCapabilityResolve',
+            [
+              task.source.connectionId,
+              task.source.database,
+              task.source.schema,
+              task.target.connectionId,
+              task.target.database,
+              task.target.schema,
+            ],
+            requestOptions?.signal,
+            () => api.DataSyncCapabilityResolve(
+              task.source.connectionId,
+              task.source.database,
+              task.source.schema,
+              task.target.connectionId,
+              task.target.database,
+              task.target.schema,
+            ),
           ),
           'DataSyncCapabilityResolve',
         ),
@@ -437,11 +485,21 @@ export const createWailsDataSyncWorkbenchGateway = (
       try {
         const probe = decodeCDCProbe(
           requireWailsQueryData(
-            await api.DataSyncCDCProbe(
-              task.source.connectionId,
-              task.source.database,
-              task.source.schema,
-              '',
+            await invokeAppWithSignal(
+              'DataSyncCDCProbe',
+              [
+                task.source.connectionId,
+                task.source.database,
+                task.source.schema,
+                '',
+              ],
+              requestOptions?.signal,
+              () => api.DataSyncCDCProbe(
+                task.source.connectionId,
+                task.source.database,
+                task.source.schema,
+                '',
+              ),
             ),
             'DataSyncCDCProbe',
           ),
@@ -456,6 +514,7 @@ export const createWailsDataSyncWorkbenchGateway = (
           cdcAdapter: probe.adapter,
         };
       } catch (error) {
+        if (isWebRPCAbortError(error)) throw error;
         return {
           ...base,
           canExecute: false,
@@ -467,7 +526,7 @@ export const createWailsDataSyncWorkbenchGateway = (
       }
     },
 
-    async preflightTask(task) {
+    async preflightTask(task, requestOptions) {
       const localIssues = validateDataSyncTask(task);
       if (localIssues.some((issue) => issue.severity === 'blocker')) {
         preflights.delete(task.id);
@@ -488,7 +547,12 @@ export const createWailsDataSyncWorkbenchGateway = (
       const previous = wireJobs.get(task.id);
       const input = encodeDataSyncJobDefinition(task, previous);
       const decoded = decodeDataSyncPreflightQuery(
-        await api.DataSyncJobPreflight(asJobDefinition(input)),
+        await invokeAppWithSignal(
+          'DataSyncJobPreflight',
+          [asJobDefinition(input)],
+          requestOptions?.signal,
+          () => api.DataSyncJobPreflight(asJobDefinition(input)),
+        ),
         task,
       );
       if (task.kind === 'compare' && !decoded.capability.canExecute) {
@@ -755,10 +819,10 @@ export const createWailsDataSyncWorkbenchGateway = (
       );
     },
 
-    async listCdcSources() {
+    async listCdcSources(requestOptions) {
       const tasks =
         !tasksLoaded
-          ? await gateway.listTasks()
+          ? await gateway.listTasks(requestOptions)
           : Array.from(wireJobs.values()).map(decodeDataSyncJobDefinition);
       const cdcTasks = tasks.filter(
         (
@@ -773,24 +837,36 @@ export const createWailsDataSyncWorkbenchGateway = (
           let checkpoint: DataSyncCheckpointSummary | null = null;
           let checkpointError = '';
           try {
-            checkpoint = await getCheckpoint(task.id);
+            checkpoint = await getCheckpoint(task.id, requestOptions);
           } catch (error) {
+            if (isWebRPCAbortError(error)) throw error;
             checkpointError = error instanceof Error ? error.message : String(error);
           }
           try {
             const probe = decodeCDCProbe(
               requireWailsQueryData(
-              await api.DataSyncCDCProbe(
-                task.source.connectionId,
-                task.source.database,
-                task.source.schema,
-                '',
+                await invokeAppWithSignal(
+                  'DataSyncCDCProbe',
+                  [
+                    task.source.connectionId,
+                    task.source.database,
+                    task.source.schema,
+                    '',
+                  ],
+                  requestOptions?.signal,
+                  () => api.DataSyncCDCProbe(
+                    task.source.connectionId,
+                    task.source.database,
+                    task.source.schema,
+                    '',
+                  ),
                 ),
                 'DataSyncCDCProbe',
               ),
             );
             return cdcSourceFromProbe(task, probe, checkpoint, checkpointError);
           } catch (error) {
+            if (isWebRPCAbortError(error)) throw error;
             const reason = error instanceof Error ? error.message : String(error);
             return cdcSourceFromProbe(task, null, checkpoint, reason);
           }

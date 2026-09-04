@@ -64,6 +64,8 @@ const cloneLayout = (
     childOrder: tag.childOrder ? [...tag.childOrder] : undefined,
   })),
   sidebarRootOrder: [...layout.sidebarRootOrder],
+  rootSortMode: layout.rootSortMode,
+  rootConnectionSortMode: layout.rootConnectionSortMode,
 });
 
 const layoutFingerprint = (layout: ConnectionSidebarLayoutInput): string =>

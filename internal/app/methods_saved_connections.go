@@ -12,7 +12,11 @@ func (a *App) savedConnectionRepository() *savedConnectionRepository {
 }
 
 func (a *App) GetSavedConnections() ([]connection.SavedConnectionView, error) {
-	items, err := a.savedConnectionRepository().List()
+	repository := a.savedConnectionRepository()
+	if err := repository.MigrateLegacyCreatedAt(); err != nil {
+		return nil, err
+	}
+	items, err := repository.List()
 	if err != nil {
 		return nil, err
 	}
@@ -61,6 +65,16 @@ func (a *App) UpdateConnectionVisibility(input connection.ConnectionVisibilityIn
 func (a *App) DeleteConnection(id string) error {
 	err := a.savedConnectionRepository().Delete(id)
 	if err == nil {
+		a.markCloudBackupDirty()
+	}
+	return err
+}
+
+// DeleteConnections deletes saved connections and their credentials as one
+// recoverable operation. It is used when a group tree is deleted from the UI.
+func (a *App) DeleteConnections(ids []string) error {
+	err := a.savedConnectionRepository().DeleteMany(ids)
+	if err == nil && len(ids) > 0 {
 		a.markCloudBackupDirty()
 	}
 	return err

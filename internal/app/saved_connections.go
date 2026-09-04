@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"GoNavi-Wails/internal/appdata"
 	"GoNavi-Wails/internal/connection"
@@ -431,6 +432,7 @@ func splitConnectionSecrets(input connection.SavedConnectionInput) (connection.S
 	view := connection.SavedConnectionView{
 		ID:                      id,
 		Name:                    strings.TrimSpace(input.Name),
+		CreatedAt:               input.CreatedAt,
 		EnvironmentType:         normalizeConnectionEnvironmentType(input.EnvironmentType),
 		Config:                  meta,
 		IncludeDatabases:        cloneStringSlice(input.IncludeDatabases),
@@ -557,30 +559,48 @@ func (r *savedConnectionRepository) withWriteTransaction(operation func() error)
 }
 
 func (r *savedConnectionRepository) load() ([]connection.SavedConnectionView, error) {
+	connections, _, err := r.loadWithLegacyCreatedAt()
+	return connections, err
+}
+
+// loadWithLegacyCreatedAt preserves the display order of legacy connection
+// files while reporting whether their derived timestamps need writing back.
+func (r *savedConnectionRepository) loadWithLegacyCreatedAt() ([]connection.SavedConnectionView, bool, error) {
 	data, err := os.ReadFile(r.connectionsPath())
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []connection.SavedConnectionView{}, nil
+			return []connection.SavedConnectionView{}, false, nil
 		}
-		return nil, err
+		return nil, false, err
 	}
 
 	var file savedConnectionsFile
 	if err := json.Unmarshal(data, &file); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if file.Connections == nil {
-		return []connection.SavedConnectionView{}, nil
+		return []connection.SavedConnectionView{}, false, nil
 	}
+	// Legacy files predate CreatedAt. Derive a stable monotonic order from the
+	// file timestamp so repeated restarts do not reshuffle old connections.
+	legacyCreatedAt := int64(0)
+	if info, statErr := os.Stat(r.connectionsPath()); statErr == nil {
+		legacyCreatedAt = info.ModTime().UnixMilli()
+	}
+	legacyCreatedAtChanged := false
 	for index := range file.Connections {
+		if file.Connections[index].CreatedAt <= 0 && legacyCreatedAt > 0 {
+			file.Connections[index].CreatedAt = legacyCreatedAt - int64(index)
+			legacyCreatedAtChanged = true
+		}
 		file.Connections[index].EnvironmentType = normalizeConnectionEnvironmentType(
 			file.Connections[index].EnvironmentType,
 		)
 		if err := validateDatabasePatterns("include", file.Connections[index].IncludeDatabasePatterns); err != nil {
-			return nil, fmt.Errorf("invalid saved connection %q: %w", file.Connections[index].ID, err)
+			return nil, false, fmt.Errorf("invalid saved connection %q: %w", file.Connections[index].ID, err)
 		}
 		if err := validateDatabasePatterns("exclude", file.Connections[index].ExcludeDatabasePatterns); err != nil {
-			return nil, fmt.Errorf("invalid saved connection %q: %w", file.Connections[index].ID, err)
+			return nil, false, fmt.Errorf("invalid saved connection %q: %w", file.Connections[index].ID, err)
 		}
 		file.Connections[index].IncludeDatabasePatterns = sanitizeDatabasePatterns(
 			file.Connections[index].IncludeDatabasePatterns,
@@ -589,7 +609,7 @@ func (r *savedConnectionRepository) load() ([]connection.SavedConnectionView, er
 			file.Connections[index].ExcludeDatabasePatterns,
 		)
 	}
-	return file.Connections, nil
+	return file.Connections, legacyCreatedAtChanged, nil
 }
 
 func (r *savedConnectionRepository) saveAll(connections []connection.SavedConnectionView) error {
@@ -662,6 +682,9 @@ func prepareSavedConnectionInput(input connection.SavedConnectionInput) (connect
 		input.ID = strings.TrimSpace(input.Config.ID)
 	}
 	input.Config.ID = input.ID
+	if input.CreatedAt <= 0 {
+		input.CreatedAt = time.Now().UnixMilli()
+	}
 	return input, nil
 }
 
@@ -957,10 +980,42 @@ func buildDuplicateConnectionName(baseName string, existing []connection.SavedCo
 }
 
 func (r *savedConnectionRepository) List() ([]connection.SavedConnectionView, error) {
+	// load derives stable timestamps for legacy records in memory. Do not try
+	// to persist that normalization here: List is also called while callers
+	// hold the repository write lock (for example during cloud restore), and
+	// the lock is deliberately non-reentrant.
 	return r.load()
 }
 
+// MigrateLegacyCreatedAt persists timestamps derived for older connection
+// files. It is deliberately explicit so callers that already hold the
+// non-reentrant repository lock can keep using List safely.
+func (r *savedConnectionRepository) MigrateLegacyCreatedAt() error {
+	return r.withWriteTransaction(func() error {
+		connections, changed, err := r.loadWithLegacyCreatedAt()
+		if err != nil || !changed {
+			return err
+		}
+		return r.saveAll(connections)
+	})
+}
+
 func (r *savedConnectionRepository) Delete(id string) error {
+	return r.DeleteMany([]string{id})
+}
+
+// DeleteMany removes all requested connections in one metadata/credential
+// transaction. A failed credential or metadata write restores both files.
+func (r *savedConnectionRepository) DeleteMany(ids []string) error {
+	targets := make(map[string]struct{}, len(ids))
+	for _, rawID := range ids {
+		if id := strings.TrimSpace(rawID); id != "" {
+			targets[id] = struct{}{}
+		}
+	}
+	if len(targets) == 0 {
+		return nil
+	}
 	return r.withWriteTransaction(func() error {
 		connections, err := r.load()
 		if err != nil {
@@ -968,7 +1023,7 @@ func (r *savedConnectionRepository) Delete(id string) error {
 		}
 		filtered := make([]connection.SavedConnectionView, 0, len(connections))
 		for _, item := range connections {
-			if item.ID == strings.TrimSpace(id) {
+			if _, remove := targets[item.ID]; remove {
 				if deleteErr := r.deleteSecretBundle(item.ID); deleteErr != nil {
 					return deleteErr
 				}
@@ -1002,6 +1057,7 @@ func (r *savedConnectionRepository) Duplicate(id string, unnamedName string, cop
 		original := connections[index]
 		duplicate := original
 		duplicate.ID = "conn-" + uuid.New().String()[:8]
+		duplicate.CreatedAt = time.Now().UnixMilli()
 		duplicate.Config.ID = duplicate.ID
 		duplicate.Name = buildDuplicateConnectionName(original.Name, connections, unnamedName, copySuffix)
 		duplicate.IncludeDatabasePatterns = cloneStringSlice(original.IncludeDatabasePatterns)

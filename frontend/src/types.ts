@@ -351,6 +351,7 @@ export interface MongoMemberInfo {
 export interface SavedConnection {
   id: string;
   name: string;
+  createdAt?: number;
   environmentType?: ConnectionEnvironmentType;
   config: ConnectionConfig;
   secretRef?: string;
@@ -389,6 +390,7 @@ export interface GlobalProxyConfig extends ProxyConfig {
 export interface ConnectionTag {
   id: string;
   name: string;
+  createdAt?: number;
   /**
    * Parent group id. An omitted value keeps the group at the sidebar root.
    * Hosts are always owned by exactly one direct group, while groups can nest.
@@ -400,11 +402,19 @@ export interface ConnectionTag {
    * `connection:<id>` tokens as the sidebar root order.
    */
   childOrder?: string[];
+  /** Direct connection display order within this group. */
+  connectionSortMode?: ConnectionDisplaySortMode;
+  sortMode?: ConnectionSortMode;
 }
+
+export type ConnectionSortMode = 'manual' | 'name' | 'createdAt';
+export type ConnectionDisplaySortMode = 'name' | 'createdAt';
 
 export interface ConnectionSidebarLayoutInput {
   connectionTags: ConnectionTag[];
   sidebarRootOrder: string[];
+  rootSortMode?: ConnectionSortMode;
+  rootConnectionSortMode?: ConnectionDisplaySortMode;
 }
 
 export interface ConnectionSidebarLayout extends ConnectionSidebarLayoutInput {
@@ -456,6 +466,8 @@ export interface TriggerDefinition {
   timing: string;
   event: string;
   statement: string;
+  /** ROW or STATEMENT when the backend exposes trigger firing granularity. */
+  orientation?: string;
 }
 
 export type TableExportScope = "selected" | "page" | "all" | "filteredAll";
@@ -548,6 +560,7 @@ export interface TabData {
   nacosGroup?: string; // Nacos group filter for config or service workbenches
   triggerName?: string; // Trigger name for trigger tabs
   triggerTableName?: string; // Trigger target table for trigger tabs
+  triggerRollbackSql?: string; // Original trigger definition used after a failed replacement
   viewName?: string; // View name for view definition tabs
   viewKind?: "view" | "materialized";
   eventName?: string; // Event name for MySQL event definition tabs
@@ -733,12 +746,20 @@ export interface AIProviderConfig {
   model: string;
   inlineCompletionModel?: string;
   models?: string[];
+  /** Per-configuration suggestions only; absent fields preserve legacy behavior. */
+  disabledModels?: string[];
+  customModels?: string[];
   apiFormat?: string; // openai 可选 openai-responses；custom 支持 openai/anthropic/gemini/CLI 等格式
   headers?: Record<string, string>;
   maxTokens: number;
   temperature: number;
   /** 思考强度：off | low | medium | high；空表示供应商默认 */
   thinkingIntensity?: string;
+  /**
+   * 本机 CLI 供应商的推理档位。合法值域由目标 CLI 决定，三个 CLI 两两不同，
+   * 候选值来自后端 AIGetCLICapabilities，前端不维护副本。空表示沿用 CLI 默认。
+   */
+  effort?: string;
 }
 
 export interface AIUserPromptSettings {
@@ -848,13 +869,38 @@ export interface AIChatAttachment {
 
 export type ChatPhase =
   | "idle"
+  | "queued"
   | "connecting"
   | "thinking"
   | "generating"
   | "tool_calling";
 
+/**
+ * A user-visible, redacted projection of one Agent Harness run step. Keep
+ * provider reasoning, tool arguments, tool output, and raw errors out of
+ * this type: those belong to their existing dedicated UI paths.
+ */
+export type AIChatRunActivityKind = "model" | "tool" | "approval" | "workspace" | "retry" | "run";
+export type AIChatRunActivityStatus = "active" | "waiting" | "completed" | "failed" | "canceled";
+
+export interface AIChatRunActivity {
+  /** Stable only within a run; it is not rendered to the user. */
+  id: string;
+  kind: AIChatRunActivityKind;
+  status: AIChatRunActivityStatus;
+  timestamp: number;
+  /** A catalog tool name, safe to expose without its arguments or results. */
+  toolName?: string;
+  /** Harness retry attempt, when the activity represents a retry. */
+  attempt?: number;
+  /** Stable failure code only; raw provider messages stay in `rawError`. */
+  errorCode?: string;
+}
+
 export interface AIChatMessage {
   id: string;
+  /** Harness run that owns this transient or durable message, when known. */
+  runId?: string;
   role: "user" | "assistant" | "system" | "tool";
   phase?: ChatPhase;
   content: string;
@@ -865,9 +911,12 @@ export interface AIChatMessage {
   images?: string[]; // base64 encoded images with data URI prefix
   attachments?: AIChatAttachment[];
   tool_calls?: AIToolCall[];
+  /** Redacted, ordered execution steps retained with this assistant message. */
+  runActivities?: AIChatRunActivity[];
   tool_call_id?: string;
   tool_name?: string; // used for UI display
   rawError?: string; // 存储未清洗的原始错误信息，用于用户复制排查
+  excludeFromAIContext?: boolean; // 纯 UI 状态或错误消息，不回灌给模型
   success?: boolean; // 标记探针执行是否成功
   jvmPlanContext?: JVMAIPlanContext;
   jvmDiagnosticPlanContext?: JVMDiagnosticPlanContext;

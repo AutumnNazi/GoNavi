@@ -17,6 +17,7 @@ import {
   haveSameRelevantToolResults,
   type AIToolResultIndex,
 } from './aiToolResultIndex';
+import { collectRetryableAIChatAssistantMessageIds } from './aiChatRetrySafety';
 
 interface AIChatPanelConversationViewProps {
   mode: AIChatPanelMode;
@@ -41,15 +42,17 @@ interface AIChatPanelConversationViewProps {
   onScrollMessages: (event: React.UIEvent<HTMLDivElement>) => void;
   onQuickAction: (prompt: string, autoSend?: boolean) => void;
   onSelectSession: (sessionId: string) => void;
+  onArchiveSession?: (session: AIChatInlineHistorySession) => Promise<void> | void;
   onEditMessage: (message: AIChatMessage) => void;
   onRetryMessage: (message: AIChatMessage) => void;
-  onDeleteMessage: (id: string) => void;
+  onDeleteMessage?: (id: string) => void;
   onMessageRenderError: (error: Error, errorInfo: React.ErrorInfo, message: AIChatMessage) => void;
   onScrollBottom: () => void;
 }
 
 interface AIChatMessageRowProps {
   message: AIChatMessage;
+  canRetry: boolean;
   toolResultsById: AIToolResultIndex;
   darkMode: boolean;
   overlayTheme: OverlayWorkbenchTheme;
@@ -59,7 +62,7 @@ interface AIChatMessageRowProps {
   activeDbName?: string;
   onEditMessage: (message: AIChatMessage) => void;
   onRetryMessage: (message: AIChatMessage) => void;
-  onDeleteMessage: (id: string) => void;
+  onDeleteMessage?: (id: string) => void;
   onMessageRenderError: (error: Error, errorInfo: React.ErrorInfo, message: AIChatMessage) => void;
 }
 
@@ -68,6 +71,7 @@ const areAIChatMessageRowPropsEqual = (
   next: AIChatMessageRowProps,
 ): boolean => (
   previous.message === next.message
+  && previous.canRetry === next.canRetry
   && previous.darkMode === next.darkMode
   && previous.overlayTheme === next.overlayTheme
   && previous.textColor === next.textColor
@@ -87,6 +91,7 @@ const areAIChatMessageRowPropsEqual = (
 
 const AIChatMessageRow: React.FC<AIChatMessageRowProps> = React.memo(({
   message,
+  canRetry,
   toolResultsById,
   darkMode,
   overlayTheme,
@@ -108,6 +113,7 @@ const AIChatMessageRow: React.FC<AIChatMessageRowProps> = React.memo(({
   >
     <AIMessageBubble
       msg={message}
+      canRetry={canRetry}
       darkMode={darkMode}
       overlayTheme={overlayTheme}
       textColor={textColor}
@@ -124,7 +130,7 @@ const AIChatMessageRow: React.FC<AIChatMessageRowProps> = React.memo(({
 
 interface AIChatMessageListProps extends Omit<
   AIChatMessageRowProps,
-  'message' | 'toolResultsById'
+  'message' | 'canRetry' | 'toolResultsById'
 > {
   messages: AIChatMessage[];
 }
@@ -137,6 +143,10 @@ const AIChatMessageList: React.FC<AIChatMessageListProps> = ({
     () => buildAIToolResultIndex(messages),
     [messages],
   );
+  const retryableMessageIds = React.useMemo(
+    () => collectRetryableAIChatAssistantMessageIds(messages),
+    [messages],
+  );
 
   return (
     <>
@@ -145,6 +155,7 @@ const AIChatMessageList: React.FC<AIChatMessageListProps> = ({
           key={message.id}
           {...rowProps}
           message={message}
+          canRetry={retryableMessageIds.has(message.id)}
           toolResultsById={toolResultsById}
         />
       ))}
@@ -175,6 +186,7 @@ const AIChatPanelConversationView: React.FC<AIChatPanelConversationViewProps> = 
   onScrollMessages,
   onQuickAction,
   onSelectSession,
+  onArchiveSession,
   onEditMessage,
   onRetryMessage,
   onDeleteMessage,
@@ -219,6 +231,7 @@ const AIChatPanelConversationView: React.FC<AIChatPanelConversationViewProps> = 
         activeSessionId={activeSessionId}
         sessionActionsDisabled={sessionActionsDisabled}
         onSelectSession={onSelectSession}
+        onArchiveSession={onArchiveSession}
       />
 
       <div ref={messagesEndRef} />

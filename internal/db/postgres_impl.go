@@ -323,16 +323,26 @@ func (e *postgresSessionExecer) QueryContextWithMessages(ctx context.Context, qu
 }
 
 func queryPostgresConnWithMessages(ctx context.Context, conn *sql.Conn, query string) ([]map[string]interface{}, []string, []string, error) {
-	return querySQLConnWithTextNotices(ctx, conn, query, func(driverConn driver.Conn, addNotice func(string)) {
-		if addNotice == nil {
-			pq.SetNoticeHandler(driverConn, nil)
-			return
+	return querySQLConnWithTextNotices(ctx, conn, query, setPostgresNoticeHandler)
+}
+
+// lib/pq's notice setter accepts only its private *pq.conn and panics for
+// other PostgreSQL-compatible drivers. Message capture is optional, so a
+// driver such as GaussDB's *stdlib.Conn must still be allowed to execute the
+// query without a notice handler.
+func setPostgresNoticeHandler(driverConn driver.Conn, addNotice func(string)) {
+	defer func() {
+		_ = recover()
+	}()
+
+	if addNotice == nil {
+		pq.SetNoticeHandler(driverConn, nil)
+		return
+	}
+	pq.SetNoticeHandler(driverConn, func(notice *pq.Error) {
+		if notice != nil {
+			addNotice(notice.Message)
 		}
-		pq.SetNoticeHandler(driverConn, func(notice *pq.Error) {
-			if notice != nil {
-				addNotice(notice.Message)
-			}
-		})
 	})
 }
 
@@ -394,6 +404,10 @@ func parsePostgresTableNames(data []map[string]interface{}) []string {
 		if schema != "" {
 			table = fmt.Sprintf("%s.%s", encodePGLikeQualifiedNamePart(schema), table)
 		}
+		// pg_catalog and information_schema return the identifier value itself;
+		// a quote in relname is therefore data, not a transport wrapper. Use the
+		// encoded qualified name as the fallback identity so legal names such as
+		// `"orders"` cannot collapse into the ordinary `orders` table.
 		key := table
 		if _, exists := seen[key]; exists {
 			continue
@@ -416,7 +430,9 @@ func (p *PostgresDB) GetCreateStatement(dbName, tableName string) (string, error
 }
 
 func (p *PostgresDB) GetTableComment(dbName, tableName string) (string, error) {
-	schema, table := normalizePGLikeMetadataTable(dbName, tableName)
+	// TableCommentProvider receives already-separated logical identifier parts.
+	// Do not reinterpret a dot inside tableName as a schema separator.
+	schema, table := normalizePGLikeMetadataParts(dbName, tableName)
 	if table == "" {
 		return "", localizedDatabaseRuntimeError("db.backend.error.table_name_required", nil)
 	}
@@ -497,7 +513,7 @@ func (p *PostgresDB) GetTriggers(dbName, tableName string) ([]connection.Trigger
 		return nil, localizedDatabaseRuntimeError("db.backend.error.table_name_required", nil)
 	}
 
-	data, _, err := p.Query(buildPGLikeTriggersMetadataQuery(schema, table))
+	data, err := queryPGLikeTriggersMetadata(p, schema, table)
 	if err != nil {
 		return nil, err
 	}
@@ -505,10 +521,11 @@ func (p *PostgresDB) GetTriggers(dbName, tableName string) ([]connection.Trigger
 	var triggers []connection.TriggerDefinition
 	for _, row := range data {
 		trig := connection.TriggerDefinition{
-			Name:      fmt.Sprintf("%v", row["trigger_name"]),
-			Timing:    fmt.Sprintf("%v", row["action_timing"]),
-			Event:     fmt.Sprintf("%v", row["event_manipulation"]),
-			Statement: fmt.Sprintf("%v", row["action_statement"]),
+			Name:        fmt.Sprintf("%v", row["trigger_name"]),
+			Timing:      fmt.Sprintf("%v", row["action_timing"]),
+			Event:       fmt.Sprintf("%v", row["event_manipulation"]),
+			Statement:   fmt.Sprintf("%v", row["action_statement"]),
+			Orientation: getPGLikeTriggerOrientation(row),
 		}
 		triggers = append(triggers, trig)
 	}

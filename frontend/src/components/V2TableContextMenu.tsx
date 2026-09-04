@@ -702,6 +702,7 @@ export type V2CellContextMenuActionKey =
   | 'copy-column-data'
   | 'undo-cell-change'
   | 'set-null'
+  | 'set-null-selected'
   | 'edit-row'
   | 'fill-selected'
   | 'paste-copied-columns'
@@ -827,6 +828,7 @@ export const V2CellContextMenuView: React.FC<{
   tableName?: string;
   rowLabel?: string;
   selectedRowCount?: number;
+  selectedCellCount?: number;
   canModifyData?: boolean;
   canUndoCellChange?: boolean;
   copiedRowCount?: number;
@@ -839,6 +841,7 @@ export const V2CellContextMenuView: React.FC<{
   tableName,
   rowLabel,
   selectedRowCount = 0,
+  selectedCellCount = 0,
   canModifyData = false,
   canUndoCellChange = false,
   copiedRowCount = 0,
@@ -851,6 +854,9 @@ export const V2CellContextMenuView: React.FC<{
     onAction as (action: string) => void,
   );
   const selectedCountLabel = Math.max(0, selectedRowCount).toLocaleString(getCurrentLanguage());
+  const normalizedSelectedCellCount = Number.isFinite(Number(selectedCellCount))
+    ? Math.max(0, Math.trunc(Number(selectedCellCount)))
+    : 0;
   const menuTitle = fieldName || t('data_grid.context_menu.column_unnamed_field');
   const meta = [tableName, rowLabel || t('data_grid.context_menu.current_row')].filter(Boolean).join(' · ') || t('data_grid.context_menu.current_cell');
 
@@ -879,6 +885,12 @@ export const V2CellContextMenuView: React.FC<{
                 disabled: !canUndoCellChange,
               },
               { action: 'set-null', icon: <ClearOutlined />, title: t('data_grid.batch_fill.set_null') },
+              {
+                action: 'set-null-selected',
+                icon: <ClearOutlined />,
+                title: t('data_grid.batch_fill.set_null_selected'),
+                disabled: normalizedSelectedCellCount <= 0,
+              },
               { action: 'edit-row', icon: <EditOutlined />, title: t('data_grid.context_menu.edit_row'), kbd: '↵' },
               { action: 'copy-row-for-paste', icon: <CopyOutlined />, title: t('data_grid.context_menu.copy_row_as_new') },
               {

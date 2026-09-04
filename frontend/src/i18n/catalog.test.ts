@@ -334,6 +334,10 @@ describe("i18n catalog", () => {
       "app.theme.data_table.table_double_click_action.open_data",
       "app.theme.data_table.table_double_click_action.open_design",
       "app.theme.data_table.table_double_click_action_hint",
+      "app.theme.data_table.query_ctrl_click_action",
+      "app.theme.data_table.query_ctrl_click_action.open_design",
+      "app.theme.data_table.query_ctrl_click_action.locate",
+      "app.theme.data_table.query_ctrl_click_action_hint",
       "app.theme.instant_apply_hint",
       "app.theme.nav.appearance.description",
       "app.theme.nav.appearance.title",
@@ -564,6 +568,7 @@ describe("i18n catalog", () => {
       "data_grid.pagination.jump_label",
       "data_grid.pagination.jump_aria",
       "data_grid.pagination.jump_action",
+      "data_grid.pagination.selected_count",
       "data_grid.pagination.summary.approximate",
       "data_grid.pagination.summary.cancelled",
       "data_grid.pagination.summary.counting",
@@ -603,6 +608,7 @@ describe("i18n catalog", () => {
       "data_grid.cell_viewer.title_with_column",
       "data_grid.batch_fill.title",
       "data_grid.batch_fill.set_null",
+      "data_grid.batch_fill.set_null_selected",
       "data_grid.batch_fill.value_placeholder",
       "data_grid.json_editor.title",
       "data_grid.json_editor.description",
@@ -930,7 +936,7 @@ describe("i18n catalog", () => {
     const source = readQueryEditorSource();
     const handleRunSource = sliceBetween(
       source,
-      "const handleRun = async () => {",
+      "const handleRun = async (runScope: QueryEditorRunScope = 'default') => {",
       "  const handleCancel = async () => {",
     );
     const handleCancelSource = sliceBetween(
@@ -960,7 +966,7 @@ describe("i18n catalog", () => {
     const source = readQueryEditorSource();
     const handleRunSource = sliceBetween(
       source,
-      "const handleRun = async () => {",
+      "const handleRun = async (runScope: QueryEditorRunScope = 'default') => {",
       "  const handleCancel = async () => {",
     );
 
@@ -986,7 +992,7 @@ describe("i18n catalog", () => {
     const source = readQueryEditorSource();
     const handleRunSource = sliceBetween(
       source,
-      "const handleRun = async () => {",
+      "const handleRun = async (runScope: QueryEditorRunScope = 'default') => {",
       "  const handleCancel = async () => {",
     );
 
@@ -1007,7 +1013,7 @@ describe("i18n catalog", () => {
     const handleReloadSource = sliceBetween(
       source,
       "  const handleReloadResult = async (resultKey: string, sql: string) => {",
-      "  const handleRun = async () => {",
+      "  const handleRun = async (runScope: QueryEditorRunScope = 'default') => {",
     );
 
     for (const language of SUPPORTED_LANGUAGES) {
@@ -1058,6 +1064,7 @@ describe("i18n catalog", () => {
     const hoverKeys = [
       "query_editor.hover.switch_database_with_shortcut",
       "query_editor.hover.open_table_with_shortcut",
+      "query_editor.hover.locate_table_with_shortcut",
       "query_editor.hover.open_view_with_shortcut",
       "query_editor.hover.open_materialized_view_with_shortcut",
       "query_editor.hover.open_trigger_with_shortcut",
@@ -1807,6 +1814,8 @@ describe("i18n catalog", () => {
       "app.shortcuts.action.saveQuery.label",
       "app.shortcuts.action.saveQueryAs.label",
       "query_editor.action.show_object_info",
+      "query_editor.action.run_selected_sql",
+      "query_editor.action.run_all_sql",
     ] as const;
     const source = readQueryEditorSource();
     const actionLabelSource = [

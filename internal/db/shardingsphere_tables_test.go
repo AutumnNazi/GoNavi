@@ -145,3 +145,46 @@ func TestParsePostgresTableNamesPreservesDotsInsideTableIdentifiers(t *testing.T
 		t.Fatalf("parsed tables = %v, want %v", got, want)
 	}
 }
+
+func TestParsePostgresTableNamesPreservesDoubleQuotesInsideIdentifier(t *testing.T) {
+	t.Parallel()
+
+	// A catalog value can legally contain quote characters when the table was
+	// created with an escaped quoted identifier, e.g. CREATE TABLE """orders""".
+	got := parsePostgresTableNames([]map[string]interface{}{
+		{"schemaname": "public", "tablename": `"orders"`},
+	})
+	want := []string{`public."""orders"""`}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parsed tables = %v, want %v", got, want)
+	}
+}
+
+func TestParsePostgresTableNamesKeepsLiteralQuoteNameDistinctFromBareName(t *testing.T) {
+	t.Parallel()
+
+	got := parsePostgresTableNames([]map[string]interface{}{
+		{"schemaname": "public", "tablename": "orders"},
+		{"schemaname": "public", "tablename": `"orders"`},
+	})
+	want := []string{"public.orders", `public."""orders"""`}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parsed tables = %v, want %v", got, want)
+	}
+}
+
+func TestParsePostgresTableNamesPreservesRawQuoteRowsWhenRepeated(t *testing.T) {
+	t.Parallel()
+
+	got := parsePostgresTableNames([]map[string]interface{}{
+		{"schemaname": "public", "tablename": `"orders"`},
+		{"schemaname": "public", "tablename": `"orders"`},
+	})
+	want := []string{`public."""orders"""`}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("parsed tables = %v, want %v", got, want)
+	}
+}

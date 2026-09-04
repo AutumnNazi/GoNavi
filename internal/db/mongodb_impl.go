@@ -500,6 +500,10 @@ func (m *MongoDB) Close() error {
 }
 
 func (m *MongoDB) Ping() error {
+	return m.PingContext(context.Background())
+}
+
+func (m *MongoDB) PingContext(parent context.Context) error {
 	if m.client == nil {
 		return fmt.Errorf("连接未打开")
 	}
@@ -507,7 +511,10 @@ func (m *MongoDB) Ping() error {
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	return m.client.Ping(ctx, readpref.Primary())
 }
@@ -704,6 +711,10 @@ func buildMembersFromHello(raw bson.M) []connection.MongoMemberInfo {
 }
 
 func (m *MongoDB) DiscoverMembers() (string, []connection.MongoMemberInfo, error) {
+	return m.DiscoverMembersContext(context.Background())
+}
+
+func (m *MongoDB) DiscoverMembersContext(parent context.Context) (string, []connection.MongoMemberInfo, error) {
 	if m.client == nil {
 		return "", nil, fmt.Errorf("连接未打开")
 	}
@@ -712,7 +723,10 @@ func (m *MongoDB) DiscoverMembers() (string, []connection.MongoMemberInfo, error
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	adminDB := m.client.Database("admin")

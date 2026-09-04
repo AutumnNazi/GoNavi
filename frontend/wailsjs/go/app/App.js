@@ -434,6 +434,14 @@ export function DeleteConnection(arg1) {
   return window['go']['app']['App']['DeleteConnection'](arg1);
 }
 
+export function DeleteConnectionGroup(arg1) {
+  return window['go']['app']['App']['DeleteConnectionGroup'](arg1);
+}
+
+export function DeleteConnections(arg1) {
+  return window['go']['app']['App']['DeleteConnections'](arg1);
+}
+
 export function DeleteImportJob(arg1) {
   return window['go']['app']['App']['DeleteImportJob'](arg1);
 }
@@ -604,6 +612,10 @@ export function GetDataRootDirectoryInfo() {
 
 export function GetDatabaseDiagnosticPackagePreview() {
   return window['go']['app']['App']['GetDatabaseDiagnosticPackagePreview']();
+}
+
+export function GetDownloadSourceConfig() {
+  return window['go']['app']['App']['GetDownloadSourceConfig']();
 }
 
 export function GetDriverStatusList(arg1, arg2) {
@@ -1284,6 +1296,10 @@ export function SaveConnection(arg1) {
 
 export function SaveConnectionSidebarLayout(arg1) {
   return window['go']['app']['App']['SaveConnectionSidebarLayout'](arg1);
+}
+
+export function SaveDownloadSourceConfig(arg1) {
+  return window['go']['app']['App']['SaveDownloadSourceConfig'](arg1);
 }
 
 export function SaveGlobalProxy(arg1) {

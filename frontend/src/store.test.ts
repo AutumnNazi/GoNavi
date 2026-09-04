@@ -78,8 +78,9 @@ describe('store appearance persistence', () => {
     expect(appearance.blur).toBe(6);
     expect(appearance).not.toHaveProperty('useNativeMacWindowControls');
     expect(appearance.tableDoubleClickAction).toBe('open-data');
+    expect(appearance.queryTableCtrlClickAction).toBe('open-design');
     expect(appearance.v2SidebarSearchMode).toBe('command');
-    expect(appearance.v2CommandSearchPersistentFilterEnabled).toBe(false);
+    expect(appearance).not.toHaveProperty('v2CommandSearchPersistentFilterEnabled');
     expect(appearance.v2SidebarPersistedFilter).toBe('');
     expect(appearance.v2SidebarRailScale).toBe(1);
     expect(appearance.tabEnvironmentAccentThickness).toBe(2);
@@ -126,7 +127,7 @@ describe('store appearance persistence', () => {
       primaryElements: ['object'],
       secondaryElements: ['kind', 'connection', 'database'],
     });
-    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(20);
+    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(21);
 
     storage.setItem('lite-db-storage', JSON.stringify({
       state: {
@@ -179,7 +180,7 @@ describe('store appearance persistence', () => {
     expect(appearance.sqlEditorFontSizeFollowGlobal).toBe(false);
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
-    expect(persisted.version).toBe(20);
+    expect(persisted.version).toBe(21);
     expect(persisted.state.appearance.sqlEditorFontSize).toBe(17);
     expect(persisted.state.appearance.sqlEditorFontSizeFollowGlobal).toBe(false);
   });
@@ -198,7 +199,7 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().appearance.uiVersion).toBe('v2');
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
-    expect(persisted.version).toBe(20);
+    expect(persisted.version).toBe(21);
     expect(persisted.state.appearance.uiVersion).toBe('v2');
   });
 
@@ -224,6 +225,7 @@ describe('store appearance persistence', () => {
       showDataTableRowNumber: false,
       dataTableDensity: 'compact',
       tableDoubleClickAction: 'open-design',
+      queryTableCtrlClickAction: 'locate',
       v2SidebarRailScale: 1.55,
       tabEnvironmentAccentThickness: 5,
       sidebarSingleDatabaseExpansion: true,
@@ -234,6 +236,7 @@ describe('store appearance persistence', () => {
     expect(persisted.state.appearance.showDataTableRowNumber).toBe(false);
     expect(persisted.state.appearance.dataTableDensity).toBe('compact');
     expect(persisted.state.appearance.tableDoubleClickAction).toBe('open-design');
+    expect(persisted.state.appearance.queryTableCtrlClickAction).toBe('locate');
     expect(persisted.state.appearance.v2SidebarRailScale).toBe(1.55);
     expect(persisted.state.appearance.tabEnvironmentAccentThickness).toBe(5);
     expect(persisted.state.appearance.sidebarSingleDatabaseExpansion).toBe(true);
@@ -246,6 +249,7 @@ describe('store appearance persistence', () => {
     expect(appearance.showDataTableRowNumber).toBe(false);
     expect(appearance.dataTableDensity).toBe('compact');
     expect(appearance.tableDoubleClickAction).toBe('open-design');
+    expect(appearance.queryTableCtrlClickAction).toBe('locate');
     expect(appearance.v2SidebarRailScale).toBe(1.55);
     expect(appearance.tabEnvironmentAccentThickness).toBe(5);
     expect(appearance.sidebarSingleDatabaseExpansion).toBe(true);
@@ -525,6 +529,7 @@ describe('store appearance persistence', () => {
       state: {
         appearance: {
           tableDoubleClickAction: 'open-random',
+          queryTableCtrlClickAction: 'open-random',
         },
       },
       version: 10,
@@ -532,6 +537,7 @@ describe('store appearance persistence', () => {
 
     const { useStore } = await importStore();
     expect(useStore.getState().appearance.tableDoubleClickAction).toBe('open-data');
+    expect(useStore.getState().appearance.queryTableCtrlClickAction).toBe('open-design');
   });
 
   it('sanitizes persisted v2 sidebar rail scale settings into the supported range', async () => {
@@ -700,13 +706,12 @@ describe('store appearance persistence', () => {
 
     useStore.getState().setAppearance({
       v2SidebarSearchMode: 'filter',
-      v2CommandSearchPersistentFilterEnabled: true,
       v2SidebarPersistedFilter: `  ${'orders'.repeat(40)}  `,
     });
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
     expect(persisted.state.appearance.v2SidebarSearchMode).toBe('filter');
-    expect(persisted.state.appearance.v2CommandSearchPersistentFilterEnabled).toBe(true);
+    expect(persisted.state.appearance).not.toHaveProperty('v2CommandSearchPersistentFilterEnabled');
     expect(persisted.state.appearance.v2SidebarPersistedFilter).toHaveLength(120);
     expect(persisted.state.appearance.v2SidebarPersistedFilter.startsWith('orders')).toBe(true);
 
@@ -715,7 +720,7 @@ describe('store appearance persistence', () => {
     const appearance = reloaded.useStore.getState().appearance;
 
     expect(appearance.v2SidebarSearchMode).toBe('filter');
-    expect(appearance.v2CommandSearchPersistentFilterEnabled).toBe(true);
+    expect(appearance).not.toHaveProperty('v2CommandSearchPersistentFilterEnabled');
     expect(appearance.v2SidebarPersistedFilter).toHaveLength(120);
   });
 
@@ -1482,7 +1487,7 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().connectionTags.every((item) => !('environmentType' in item))).toBe(true);
   }, 30_000);
 
-  it('reorders connections inside tags and ungrouped roots independently', async () => {
+  it('keeps group order custom while storing independent connection display sorting', async () => {
     const { useStore } = await importStore();
 
     useStore.getState().replaceConnections([
@@ -1513,16 +1518,15 @@ describe('store appearance persistence', () => {
       connectionIds: ['conn-b', 'conn-d'],
     });
 
-    useStore.getState().reorderConnections('conn-d', 'conn-b', 'tag-dev', true);
-    expect(useStore.getState().connectionTags[0]?.connectionIds).toEqual(['conn-d', 'conn-b']);
+    useStore.getState().setConnectionDisplaySortMode('tag-dev', 'name');
+    useStore.getState().setConnectionDisplaySortMode(null, 'createdAt');
 
-    useStore.getState().reorderConnections('conn-c', 'conn-a', null, true);
-    expect(useStore.getState().connections.map((conn) => conn.id)).toEqual([
-      'conn-c',
-      'conn-a',
-      'conn-b',
-      'conn-d',
-    ]);
+    expect(useStore.getState().connectionTags[0]).toEqual(expect.objectContaining({
+      sortMode: 'manual',
+      connectionSortMode: 'name',
+    }));
+    expect(useStore.getState().rootSortMode).toBe('manual');
+    expect(useStore.getState().rootConnectionSortMode).toBe('createdAt');
   });
 
   it('reorders sidebar root items across tags and ungrouped hosts', async () => {
@@ -1797,7 +1801,7 @@ describe('store appearance persistence', () => {
     )).toEqual(legacyTag?.childOrder);
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
-    expect(persisted.version).toBe(20);
+    expect(persisted.version).toBe(21);
     expect(persisted.state.connectionTags[0].childOrder).toEqual([
       'connection:conn-a',
       'connection:conn-b',
@@ -1975,6 +1979,28 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().connectionTags.find(
       (tag) => tag.id === 'group-1',
     )?.connectionIds).toEqual(['host-1', 'host-3', 'host-4', 'host-2']);
+  });
+
+  it('rejects duplicate group names under the same parent but permits them elsewhere', async () => {
+    const { useStore } = await importStore();
+    useStore.getState().addConnectionTag({ id: 'root-a', name: 'Shared', connectionIds: [] });
+    useStore.getState().addConnectionTag({ id: 'root-b', name: ' shared ', connectionIds: [] });
+    useStore.getState().addConnectionTag({ id: 'parent', name: 'Parent', connectionIds: [] });
+    useStore.getState().addConnectionTag({ id: 'child', name: 'shared', parentTagId: 'parent', connectionIds: [] });
+
+    expect(useStore.getState().connectionTags.map((tag) => tag.id)).toEqual(['root-a', 'parent', 'child']);
+  });
+
+  it('removes a group subtree without promoting its descendants', async () => {
+    const { useStore } = await importStore();
+    useStore.getState().addConnectionTag({ id: 'root', name: 'Root', connectionIds: [] });
+    useStore.getState().addConnectionTag({ id: 'child', name: 'Child', parentTagId: 'root', connectionIds: [] });
+    useStore.getState().addConnectionTag({ id: 'grandchild', name: 'Grandchild', parentTagId: 'child', connectionIds: [] });
+    useStore.getState().addConnectionTag({ id: 'other', name: 'Other', connectionIds: [] });
+
+    useStore.getState().removeConnectionTagTree('root');
+
+    expect(useStore.getState().connectionTags.map((tag) => tag.id)).toEqual(['other']);
   });
 
   it('rejects moving a group into itself or a descendant', async () => {
@@ -2770,7 +2796,7 @@ describe('store appearance persistence', () => {
     expect(reloaded.useStore.getState().tabs[0].formatRestoreSnapshot).toBeUndefined();
   });
 
-  it('updates activeContext when switching between tabs with different host or database', async () => {
+  it('updates activeContext, including the selected table, when switching between tabs', async () => {
     const { useStore } = await importStore();
 
     useStore.getState().addTab({
@@ -2784,6 +2810,7 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().activeContext).toEqual({
       connectionId: 'conn-1',
       dbName: 'sys',
+      tableName: 'users',
     });
 
     useStore.getState().addTab({
@@ -2804,6 +2831,48 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().activeContext).toEqual({
       connectionId: 'conn-1',
       dbName: 'sys',
+      tableName: 'users',
+    });
+  });
+
+  it('keeps query schema in activeContext and does not let an inactive draft overwrite it', async () => {
+    const { useStore } = await importStore();
+
+    useStore.getState().addTab({
+      id: 'query-anno',
+      title: '新建查询',
+      type: 'query',
+      connectionId: 'conn-1',
+      dbName: 'sys',
+      schemaName: 'anno',
+      query: 'select 1;',
+    });
+
+    expect(useStore.getState().activeContext).toEqual({
+      connectionId: 'conn-1',
+      dbName: 'sys',
+      schemaName: 'anno',
+    });
+
+    useStore.getState().addTab({
+      id: 'query-old-schema',
+      title: '旧查询',
+      type: 'query',
+      connectionId: 'conn-1',
+      dbName: 'sys',
+      schemaName: 'dbms_job',
+      query: 'select 2;',
+    });
+    useStore.getState().setActiveTab('query-anno');
+
+    useStore.getState().updateQueryTabDraft('query-old-schema', {
+      schemaName: 'dbms_job_v2',
+    });
+
+    expect(useStore.getState().activeContext).toEqual({
+      connectionId: 'conn-1',
+      dbName: 'sys',
+      schemaName: 'anno',
     });
   });
 
@@ -3085,6 +3154,77 @@ describe('store appearance persistence', () => {
     expect(useStore.getState().activeTabId).toBe('query-other');
   });
 
+  it('restores object-edit identity fields so sidebar locating survives a reload', async () => {
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: {
+        tabs: [
+          {
+            id: 'query-edit-routine-1',
+            title: '修改函数/存储过程: main.func_name',
+            type: 'query',
+            connectionId: 'conn-1',
+            dbName: 'example',
+            schemaName: 'main',
+            query: 'CREATE OR REPLACE MACRO main.func_name(param1) AS (param1 * 3);',
+            queryMode: 'object-edit',
+            routineName: 'main.func_name',
+            routineType: 'MACRO',
+            sidebarLocateKey: 'conn-1-example-routine-func-main.func_name',
+            returnToTabId: 'query-source',
+          },
+          {
+            id: 'query-edit-mview-1',
+            title: '修改物化视图: analytics.mv_daily',
+            type: 'query',
+            connectionId: 'conn-1',
+            dbName: 'example',
+            query: 'SELECT 1;',
+            queryMode: 'object-edit',
+            viewName: 'analytics.mv_daily',
+            viewKind: 'materialized',
+            objectType: 'materialized-view',
+          },
+          {
+            id: 'query-plain-1',
+            title: '普通查询',
+            type: 'query',
+            connectionId: 'conn-1',
+            dbName: 'main',
+            query: 'SELECT 1;',
+            routineName: 'should.not.leak',
+            queryMode: 'standard',
+          },
+        ],
+      },
+      version: 21,
+    }));
+
+    const { useStore } = await importStore();
+    const tabs = useStore.getState().tabs;
+
+    const routineTab = tabs.find((tab) => tab.id === 'query-edit-routine-1');
+    expect(routineTab).toEqual(expect.objectContaining({
+      queryMode: 'object-edit',
+      routineName: 'main.func_name',
+      routineType: 'MACRO',
+      schemaName: 'main',
+      sidebarLocateKey: 'conn-1-example-routine-func-main.func_name',
+      returnToTabId: 'query-source',
+    }));
+
+    const materializedViewTab = tabs.find((tab) => tab.id === 'query-edit-mview-1');
+    expect(materializedViewTab).toEqual(expect.objectContaining({
+      queryMode: 'object-edit',
+      viewName: 'analytics.mv_daily',
+      viewKind: 'materialized',
+      objectType: 'materialized-view',
+    }));
+
+    const plainTab = tabs.find((tab) => tab.id === 'query-plain-1');
+    expect(plainTab?.queryMode).toBeUndefined();
+    expect(plainTab?.routineName).toBeUndefined();
+  });
+
   it('reuses the current tab when the same id is reopened as an object-edit query', async () => {
     const { useStore } = await importStore();
 
@@ -3269,7 +3409,11 @@ describe('store appearance persistence', () => {
 
     useStore.getState().closeAllTabs();
     expect(useStore.getState().tabs.map((tab) => tab.id)).toEqual(['data-import-workbench']);
-    expect(useStore.getState().activeContext).toEqual({ connectionId: 'conn-1', dbName: 'main' });
+    expect(useStore.getState().activeContext).toEqual({
+      connectionId: 'conn-1',
+      dbName: 'main',
+      tableName: 'users',
+    });
 
     useStore.getState().addTab({
       ...useStore.getState().tabs[0],
@@ -3791,7 +3935,7 @@ describe('store appearance persistence', () => {
       mac: { combo: 'Meta+K', enabled: false },
       windows: { combo: 'Ctrl+K', enabled: true },
     });
-    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(20);
+    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(21);
 
     storage.setItem('lite-db-storage', JSON.stringify({
       state: {
@@ -4028,6 +4172,45 @@ describe('store persistence hot path', () => {
     expect(transientOnly).toBe(initial);
     expect(changedTheme).not.toBe(initial);
     expect(changedTheme.theme).not.toBe(initial.theme);
+  });
+
+  it('reuses sanitized query tabs when only the active tab changes', async () => {
+    const { useStore } = await importStore();
+    const partialize = useStore.persist.getOptions().partialize;
+    if (!partialize) {
+      throw new Error('expected store partialize option');
+    }
+    let queryReads = 0;
+    const createQueryTab = (id: string) => new Proxy({
+      id,
+      title: id,
+      type: 'query' as const,
+      connectionId: 'kingbase-1',
+      dbName: 'appdb',
+      query: Array.from({ length: 120 }, (_, index) => `SELECT * FROM public.order_${index + 1};`).join('\n'),
+    }, {
+      get(target, property, receiver) {
+        if (property === 'query') queryReads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const state = {
+      ...useStore.getState(),
+      tabs: [createQueryTab('query-1'), createQueryTab('query-2')],
+      activeTabId: 'query-1',
+    };
+
+    const initial = partialize(state) as Partial<typeof state>;
+    queryReads = 0;
+    const switched = partialize({
+      ...state,
+      activeTabId: 'query-2',
+    }) as Partial<typeof state>;
+
+    expect(switched).not.toBe(initial);
+    expect(switched.tabs).toBe(initial.tabs);
+    expect(switched.activeTabId).toBe('query-2');
+    expect(queryReads).toBe(0);
   });
 
   it('invalidates connection projection when legacy secrets appear or disappear', async () => {

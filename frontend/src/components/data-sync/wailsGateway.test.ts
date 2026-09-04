@@ -276,6 +276,75 @@ describe('real Wails data sync gateway', () => {
     expect(api.DataSyncCDCProbe).toHaveBeenCalledWith('source-id', 'sales', '', '');
   });
 
+  it('rethrows a Web RPC abort from CDC probing instead of reporting capability unavailable', async () => {
+    const task = reviseDataSyncTask(
+      createDataSyncTaskDraft({ id: 'persisted-cdc', kind: 'cdc' }),
+      {
+        source: {
+          connectionId: 'source-id',
+          connectionName: 'Mongo source',
+          type: 'mongodb',
+          database: 'sales',
+          schema: '',
+        },
+        target: {
+          connectionId: 'target-id',
+          connectionName: 'Target',
+          type: 'postgresql',
+          database: 'warehouse',
+          schema: 'ods',
+        },
+      },
+    );
+    const api = apiFixture({
+      DataSyncJobList: vi.fn(async () =>
+        success([encodeDataSyncJobDefinition(task)]),
+      ),
+    });
+    const gateway = createWailsDataSyncWorkbenchGateway({ api, now: () => NOW });
+    await gateway.listTasks();
+
+    const abortError = Object.assign(new Error('aborted'), {
+      name: 'AbortError',
+      code: 'WEB_RPC_ABORTED',
+      dispatchState: 'possibly_dispatched',
+    });
+    const invokeWithOptions = vi.fn(async (
+      _namespace: string,
+      _receiver: string,
+      method: string,
+    ) => {
+      if (method === 'DataSyncCheckpointGet') {
+        return { success: false, message: 'data sync job record not found' };
+      }
+      throw abortError;
+    });
+    const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: { __GONAVI_WEB_RPC__: { invokeWithOptions } },
+    });
+    const controller = new AbortController();
+    try {
+      await expect(
+        gateway.listCdcSources({ signal: controller.signal }),
+      ).rejects.toBe(abortError);
+    } finally {
+      if (originalWindow) {
+        Object.defineProperty(globalThis, 'window', originalWindow);
+      } else {
+        delete (globalThis as { window?: unknown }).window;
+      }
+    }
+    expect(invokeWithOptions).toHaveBeenCalledWith(
+      'app',
+      'App',
+      'DataSyncCDCProbe',
+      ['source-id', 'sales', '', ''],
+      { signal: controller.signal },
+    );
+  });
+
   it('returns localized-form validation codes before calling backend preflight', async () => {
     const base = taskFixture();
     const task = reviseDataSyncTask(base, {

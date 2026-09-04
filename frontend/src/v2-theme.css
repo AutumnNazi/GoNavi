@@ -457,6 +457,23 @@ body[data-ui-version="v2"] .ant-input-search-button {
   color: #fff !important;
 }
 
+/* 搜索框和按钮共用边界，避免全局圆角影响拼接。 */
+body[data-ui-version="v2"] .ant-input-search > .ant-input-group > .ant-input-affix-wrapper {
+  border-inline-end: none !important;
+  border-start-end-radius: 0 !important;
+  border-end-end-radius: 0 !important;
+}
+
+body[data-ui-version="v2"] .ant-input-search > .ant-input-group > .ant-input-group-addon:last-child {
+  inset-inline-start: 0 !important;
+}
+
+body[data-ui-version="v2"] .ant-input-search > .ant-input-group > .ant-input-group-addon:last-child .ant-input-search-button {
+  margin-inline-end: 0 !important;
+  border-start-start-radius: 0 !important;
+  border-end-start-radius: 0 !important;
+}
+
 /* ─── Select dropdown ─────────────────────────────────── */
 body[data-ui-version="v2"] .ant-select-dropdown,
 body[data-ui-version="v2"] .ant-dropdown-menu,
@@ -2157,9 +2174,9 @@ body[data-ui-version="v2"] .gn-v2-app-sider {
 
 body[data-ui-version="v2"] .gn-v2-sidebar-redesign {
   --gn-v2-rail-scale: calc(var(--gn-ui-scale, 1) * var(--gn-sidebar-rail-scale, 1));
+  --gn-v2-explorer-scale: var(--gn-ui-scale, 1);
   width: 100%;
   background: var(--gn-bg-panel-2);
-  border-right: 0.5px solid var(--gn-br-1);
   overflow: hidden;
 }
 
@@ -2175,6 +2192,10 @@ body[data-ui-version="v2"] .gn-v2-connection-rail {
   border-right: 0.5px solid var(--gn-br-1);
   /* Match explorer panel — no tint strip (tinted empty rail looked worse) */
   background: transparent;
+}
+
+body[data-ui-version="v2"] .ant-layout-sider[data-sidebar-actions-placement='titlebar'] .gn-v2-connection-rail {
+  display: none;
 }
 
 body[data-ui-version="v2"] .gn-v2-rail-sidebar-toggle-slot {
@@ -2535,25 +2556,132 @@ body[data-ui-version="v2"] .gn-v2-object-explorer {
   container-name: gn-v2-object-explorer;
 }
 
-/* The title bar carries the current Host/database context. Keep the explorer
-   focused on navigation and actions instead of repeating that context. */
+/* Keep the current connection/database/object path visible beside its explorer tools.
+   The copy owns the flexible space; every action remains fixed and reachable. */
 body[data-ui-version="v2"] .gn-v2-explorer-actions {
   min-width: 0;
-  min-height: 30px;
+  min-height: calc(46px * var(--gn-v2-explorer-scale));
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 2px;
-  padding: 2px 10px 4px;
+  justify-content: flex-start;
+  gap: calc(2px * var(--gn-v2-explorer-scale));
+  padding: calc(2px * var(--gn-v2-explorer-scale)) calc(10px * var(--gn-v2-explorer-scale)) calc(4px * var(--gn-v2-explorer-scale));
   overflow-x: auto;
   overflow-y: hidden;
-  border-bottom: 0.5px solid var(--gn-br-1);
+  border-bottom: none;
   background: var(--gn-bg-panel-2);
   scrollbar-width: none;
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-actions::-webkit-scrollbar {
   display: none;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-context {
+  min-width: calc(88px * var(--gn-v2-explorer-scale));
+  max-width: 100%;
+  flex: 1 1 calc(128px * var(--gn-v2-explorer-scale));
+  display: inline-flex;
+  align-items: center;
+  gap: calc(6px * var(--gn-v2-explorer-scale));
+  padding-inline: calc(1px * var(--gn-v2-explorer-scale));
+  overflow: visible;
+  color: var(--gn-fg-3);
+  font-family: var(--gn-font-sans);
+  line-height: 1;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-context-copy {
+  display: flex;
+  max-width: 100%;
+  min-width: 0;
+  min-height: calc(3.15em + 2px * var(--gn-v2-explorer-scale));
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: calc(1px * var(--gn-v2-explorer-scale));
+  font-size: var(--gn-sidebar-tree-font-size, var(--gn-font-size-sm, 12px));
+  line-height: 1.05;
+  overflow: hidden;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-context[data-sidebar-active-context="false"] .gn-v2-explorer-context-copy {
+  align-items: stretch;
+  text-align: start;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-context[data-sidebar-active-context="false"] .gn-v2-explorer-context-line.is-database {
+  order: -1;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-context[data-sidebar-active-context="true"][data-sidebar-active-context-depth="connection"] .gn-v2-explorer-context-copy {
+  justify-content: center;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-context[data-sidebar-active-context="true"] .gn-v2-explorer-context-line:empty {
+  display: none;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-context-line {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 1em;
+  overflow: hidden;
+  font-size: var(--gn-sidebar-tree-font-size, var(--gn-font-size-sm, 12px));
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-context-line.is-connection {
+  color: var(--gn-fg-2);
+  font-size: var(--gn-sidebar-tree-font-size, var(--gn-font-size-sm, 12px));
+  font-weight: 750;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-context-line.is-database,
+body[data-ui-version="v2"] .gn-v2-explorer-context-line.is-object {
+  color: var(--gn-fg-4);
+  font-family: var(--gn-font-mono);
+  font-size: var(--gn-sidebar-tree-font-size, var(--gn-font-size-sm, 12px));
+  font-weight: 500;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-context-tooltip-popup {
+  max-width: min(calc(360px * var(--gn-ui-scale, 1)), calc(100vw - 24px));
+  pointer-events: none;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-context-tooltip {
+  display: flex;
+  max-width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: calc(2px * var(--gn-ui-scale, 1));
+  font-family: var(--gn-font-sans);
+  font-size: var(--gn-sidebar-tree-font-size, var(--gn-font-size-sm, 12px));
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-context-tooltip-line {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-context-tooltip-line.is-connection {
+  font-family: var(--gn-font-sans);
+  font-weight: 750;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-context-tooltip-line.is-database,
+body[data-ui-version="v2"] .gn-v2-explorer-context-tooltip-line.is-object {
+  font-family: var(--gn-font-mono);
+  font-weight: 500;
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-action-group,
@@ -2564,22 +2692,26 @@ body[data-ui-version="v2"] .gn-v2-explorer-action-wrap {
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-action-group {
-  gap: 2px;
+  gap: calc(2px * var(--gn-v2-explorer-scale));
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-tool.ant-btn {
-  width: 26px;
-  min-width: 26px;
-  height: 26px !important;
-  flex: 0 0 26px;
+  width: calc(26px * var(--gn-v2-explorer-scale));
+  min-width: calc(26px * var(--gn-v2-explorer-scale));
+  height: calc(26px * var(--gn-v2-explorer-scale)) !important;
+  flex: 0 0 calc(26px * var(--gn-v2-explorer-scale));
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0 !important;
   border: 0;
-  border-radius: 7px;
+  border-radius: calc(7px * var(--gn-v2-explorer-scale));
   color: var(--gn-fg-3);
   transition: background-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-tool.ant-btn .anticon {
+  font-size: calc(14px * var(--gn-v2-explorer-scale));
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-tool.ant-btn:hover:not(:disabled) {
@@ -2607,17 +2739,20 @@ body[data-ui-version="v2"] .gn-v2-explorer-tool.ant-btn:disabled {
 @container gn-v2-object-explorer (max-width: 300px) {
   body[data-ui-version="v2"] .gn-v2-explorer-actions {
     justify-content: flex-start;
-    padding-right: 8px;
-    padding-left: 8px;
+    padding-right: calc(8px * var(--gn-v2-explorer-scale));
+    padding-left: calc(8px * var(--gn-v2-explorer-scale));
+  }
+
+  body[data-ui-version="v2"] .gn-v2-explorer-context {
+    min-width: calc(68px * var(--gn-v2-explorer-scale));
   }
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-search {
-  padding: 10px 10px 6px !important;
+  padding: calc(10px * var(--gn-v2-explorer-scale)) calc(10px * var(--gn-v2-explorer-scale)) calc(6px * var(--gn-v2-explorer-scale)) !important;
   border-bottom: none !important;
 }
 
-body[data-ui-version="v2"] .gn-v2-explorer-command-row,
 body[data-ui-version="v2"] .gn-v2-explorer-legacy-filter-row {
   display: flex;
   align-items: center;
@@ -2628,38 +2763,6 @@ body[data-ui-version="v2"] .gn-v2-explorer-legacy-filter-row {
 body[data-ui-version="v2"] .gn-v2-explorer-legacy-filter-row .ant-input-affix-wrapper {
   flex: 1 1 auto;
   min-width: 0;
-}
-
-body[data-ui-version="v2"] .gn-v2-explorer-command-trigger {
-  flex: 1 1 auto;
-  min-width: 0;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 0.5px solid var(--gn-br-2);
-  border-radius: 7px;
-  padding: 0 8px;
-  background: var(--gn-bg-panel-2);
-  color: var(--gn-fg-4);
-  cursor: text;
-  font-size: 12px;
-  font-weight: 500;
-  text-align: left;
-}
-
-body[data-ui-version="v2"] .gn-v2-explorer-command-trigger:hover {
-  border-color: var(--gn-accent);
-  background: var(--gn-bg-hover);
-  color: var(--gn-fg-2);
-}
-
-body[data-ui-version="v2"] .gn-v2-explorer-command-trigger > span:nth-child(2) {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-filter-action {
@@ -2740,38 +2843,6 @@ body[data-ui-version="v2"] .gn-v2-command-searchbar .ant-input::placeholder {
 body[data-ui-version="v2"] .gn-v2-command-searchbar > .anticon {
   font-size: 18px;
   color: var(--gn-fg-4);
-}
-
-body[data-ui-version="v2"] .gn-v2-command-filter-switch {
-  height: 30px;
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-body[data-ui-version="v2"] .gn-v2-command-searchbar .ant-switch {
-  flex: 0 0 auto;
-}
-
-body[data-ui-version="v2"] .gn-v2-command-searchbar .ant-btn {
-  width: 30px !important;
-  height: 30px !important;
-  flex: 0 0 30px;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  border-radius: 8px !important;
-  color: var(--gn-fg-4) !important;
-}
-
-body[data-ui-version="v2"] .gn-v2-command-searchbar .ant-btn:hover:not(:disabled) {
-  background: var(--gn-bg-hover) !important;
-  color: var(--gn-fg-2) !important;
-}
-
-body[data-ui-version="v2"] .gn-v2-command-searchbar .ant-btn:disabled {
-  color: var(--gn-fg-5) !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-command-searchbar > kbd,
@@ -3006,27 +3077,6 @@ body[data-ui-version="v2"] .gn-v2-explorer-search .ant-input-prefix .anticon {
 
 body[data-ui-version="v2"] .gn-v2-explorer-search .ant-input-suffix {
   margin-inline-start: 8px !important;
-}
-
-body[data-ui-version="v2"] .gn-v2-search-shortcut {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-body[data-ui-version="v2"] .gn-v2-search-shortcut kbd {
-  min-width: 18px;
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 0.5px solid var(--gn-br-2);
-  border-radius: 5px;
-  background: var(--gn-bg-panel-2);
-  color: var(--gn-fg-3);
-  font-family: var(--gn-font-mono);
-  font-size: 11px;
-  font-weight: 700;
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-filter-tabs {
@@ -3520,7 +3570,7 @@ body[data-ui-version="v2"] .gn-v2-tree-status.is-loading::before {
   width: 10px;
   height: 10px;
   flex: 0 0 10px;
-  border: 2px solid rgba(37, 99, 235, 0.24);
+  border: 2px solid rgba(37, 99, 235, 0.58);
   border-top-color: #2563eb;
   background: transparent;
   box-shadow: none;
@@ -3788,6 +3838,7 @@ body[data-ui-version="v2"] .gn-v2-empty-hero {
 }
 
 body[data-ui-version="v2"] .gn-v2-empty-hero {
+  --gn-v2-empty-hero-padding-inline-start: 30px;
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
@@ -4045,6 +4096,7 @@ body[data-ui-version="v2"] .gn-v2-empty-resource-empty .ant-btn {
 
 @media (max-width: 1360px) {
   body[data-ui-version="v2"] .gn-v2-empty-hero {
+    --gn-v2-empty-hero-padding-inline-start: 24px;
     padding: 22px 22px 16px 24px;
   }
 
@@ -4077,6 +4129,10 @@ body[data-ui-version="v2"] .gn-v2-empty-resource-empty .ant-btn {
     padding-right: 16px;
   }
 
+  body[data-ui-version="v2"] .gn-v2-empty-hero {
+    --gn-v2-empty-hero-padding-inline-start: 16px;
+  }
+
   body[data-ui-version="v2"] .gn-v2-empty-resource-empty {
     grid-template-columns: 28px minmax(0, 1fr);
   }
@@ -4087,6 +4143,30 @@ body[data-ui-version="v2"] .gn-v2-empty-resource-empty .ant-btn {
   }
 }
 
+/* The docked collapsed toolbar needs a second titlebar band. The empty
+   workbench already has clear space above its heading, so let that one screen
+   reclaim the band instead of shifting every landing-page element downward. */
+body[data-ui-version="v2"]
+  [data-gonavi-close-shortcut-scope="workspace"][data-empty-workbench='true'][data-collapsed-sidebar-actions-docked='true'][data-security-update-banner-visible='false']
+  > .ant-layout {
+  margin-top: calc(-1 * var(--gn-v2-empty-workbench-titlebar-overlap, 0px));
+}
+
+/* Only the eyebrow crosses the docked toolbar row. Keep the headline and all
+   following content on their normal left edge while moving this short label
+   just past the six scaled toolbar actions. */
+body[data-ui-version="v2"]
+  [data-gonavi-close-shortcut-scope="workspace"][data-empty-workbench='true'][data-collapsed-sidebar-actions-docked='true'][data-security-update-banner-visible='false']
+  .gn-v2-empty-eyebrow {
+  padding-left: max(
+    0px,
+    calc(
+      (182px * var(--gn-ui-scale, 1))
+      - var(--gn-v2-empty-hero-padding-inline-start, 30px)
+    )
+  );
+}
+
 /* ─── Full V2 workbench shell: app / topbar / workspace ─ */
 body[data-ui-version="v2"] .gn-v2-app-root {
   background: var(--gn-bg-app) !important;
@@ -4095,9 +4175,45 @@ body[data-ui-version="v2"] .gn-v2-app-root {
 
 body[data-ui-version="v2"] .gn-v2-titlebar {
   position: relative;
+  overflow: visible;
   background: var(--gn-bg-panel-2) !important;
   border: 0 !important;
   box-shadow: none !important;
+}
+
+/* When the V2 explorer is collapsed on macOS or Windows, reuse the otherwise
+   empty lower titlebar band for the same six scaled actions shown by the
+   expanded explorer toolbar. Keep the Windows window controls out of its way. */
+body[data-ui-version="v2"] .gn-v2-titlebar-collapsed-docked .gn-v2-collapsed-sidebar-actions {
+  --gn-v2-explorer-scale: var(--gn-ui-scale, 1);
+  position: absolute;
+  left: calc(6px * var(--gn-ui-scale, 1));
+  right: calc(var(--gn-titlebar-window-controls-width, 0px) + 6px);
+  bottom: 1px;
+  z-index: 4;
+  display: flex;
+  min-width: 0;
+  max-width: none;
+  height: calc(26px * var(--gn-v2-explorer-scale));
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: calc(2px * var(--gn-ui-scale, 1));
+  padding: 0 calc(2px * var(--gn-ui-scale, 1));
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-app-region: no-drag;
+  --wails-draggable: no-drag;
+}
+
+body[data-ui-version="v2"] .gn-v2-titlebar-collapsed-docked .gn-v2-collapsed-sidebar-actions::-webkit-scrollbar {
+  display: none;
+}
+
+/* Keep the shared focus ring inside the scrolling titlebar host. */
+body[data-ui-version="v2"] .gn-v2-titlebar-collapsed-docked .gn-v2-collapsed-sidebar-actions .gn-v2-explorer-tool.ant-btn:focus-visible,
+body[data-ui-version="v2"] .gn-v2-titlebar-collapsed-docked .gn-v2-collapsed-sidebar-actions .gn-v2-explorer-action-wrap:focus-visible {
+  outline-offset: -3px;
 }
 
 body[data-ui-version="v2"] .gn-v2-titlebar-brand {
@@ -4113,62 +4229,6 @@ body[data-ui-version="v2"] .gn-v2-titlebar-brand {
   font-size: 10px;
   font-weight: 800;
   box-shadow: inset 0 0.5px 0 rgba(255,255,255,0.22), 0 1px 2px color-mix(in srgb, var(--gn-accent-strong, var(--gn-accent)) 24%, transparent);
-}
-
-body[data-ui-version="v2"] .gn-v2-titlebar-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  line-height: 1.05;
-}
-
-body[data-ui-version="v2"] .gn-v2-titlebar-copy strong {
-  color: var(--gn-fg-2);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-body[data-ui-version="v2"] .gn-v2-titlebar-copy small {
-  max-width: 260px;
-  margin-top: 2px;
-  overflow: hidden;
-  color: var(--gn-fg-4);
-  font-family: var(--gn-font-mono);
-  font-size: 9.5px;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-body[data-ui-version="v2"] .gn-v2-titlebar-center {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  display: inline-flex;
-  max-width: 520px;
-  transform: translate(-50%, -50%);
-  align-items: center;
-  gap: 8px;
-  color: var(--gn-fg-3);
-  font-family: var(--gn-font-mono);
-  font-size: 12px;
-  font-weight: 650;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-body[data-ui-version="v2"] .gn-v2-titlebar-center span:last-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-body[data-ui-version="v2"] .gn-v2-titlebar-live {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 7px;
-  border-radius: 50%;
-  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent);
 }
 
 body[data-ui-version="v2"] .gn-v2-app-shell {

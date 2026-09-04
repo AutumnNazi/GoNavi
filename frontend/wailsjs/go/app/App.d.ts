@@ -227,6 +227,10 @@ export function DataSyncSchedulePreview(arg1:syncjob.JobDefinition,arg2:number):
 
 export function DeleteConnection(arg1:string):Promise<void>;
 
+export function DeleteConnectionGroup(arg1:connection.DeleteConnectionGroupInput):Promise<void>;
+
+export function DeleteConnections(arg1:Array<string>):Promise<void>;
+
 export function DeleteImportJob(arg1:string):Promise<connection.QueryResult>;
 
 export function DeleteQuery(arg1:string):Promise<void>;
@@ -312,6 +316,8 @@ export function GetAppInfo():Promise<connection.QueryResult>;
 export function GetDataRootDirectoryInfo():Promise<connection.QueryResult>;
 
 export function GetDatabaseDiagnosticPackagePreview():Promise<connection.QueryResult>;
+
+export function GetDownloadSourceConfig():Promise<app.DownloadSourceConfig>;
 
 export function GetDriverStatusList(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
@@ -652,6 +658,8 @@ export function SaveCloudBackupConfig(arg1:app.CloudBackupConfigInput):Promise<a
 export function SaveConnection(arg1:connection.SavedConnectionInput):Promise<connection.SavedConnectionView>;
 
 export function SaveConnectionSidebarLayout(arg1:connection.SaveConnectionSidebarLayoutInput):Promise<connection.SaveConnectionSidebarLayoutResult>;
+
+export function SaveDownloadSourceConfig(arg1:string):Promise<app.DownloadSourceConfig>;
 
 export function SaveGlobalProxy(arg1:connection.SaveGlobalProxyInput):Promise<connection.GlobalProxyView>;
 

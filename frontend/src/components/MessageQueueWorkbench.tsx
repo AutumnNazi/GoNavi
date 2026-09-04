@@ -4,6 +4,7 @@ import {
   Button,
   Empty,
   Input,
+  Modal,
   Segmented,
   Space,
   Tag,
@@ -235,6 +236,10 @@ const MessageQueueWorkbench: React.FC<{ tab: TabData; isActive: boolean }> = ({ 
   const [consumeModalOpen, setConsumeModalOpen] = useState(false);
   const [commandModalOpen, setCommandModalOpen] = useState(false);
   const [publishModalOpen, setPublishModalOpen] = useState(false);
+  const [consumerGroupsOpen, setConsumerGroupsOpen] = useState(false);
+  const [consumerGroupsLoading, setConsumerGroupsLoading] = useState(false);
+  const [consumerGroupsError, setConsumerGroupsError] = useState('');
+  const [consumerGroupsRows, setConsumerGroupsRows] = useState<Record<string, any>[]>([]);
   const [requestedDestination, setRequestedDestination] = useState('');
   const [publishDefaults, setPublishDefaults] = useState({ destination: '', exchange: '' });
   const [hydratedWorkspaceScope, setHydratedWorkspaceScope] = useState('');
@@ -244,6 +249,7 @@ const MessageQueueWorkbench: React.FC<{ tab: TabData; isActive: boolean }> = ({ 
   const streamOffsetsRef = useRef(new Map<string, number>());
   const mountedRef = useRef(true);
   const requestKeyRef = useRef<string>('');
+  const consumerGroupsRequestRef = useRef(0);
   const persistenceWarningScopeRef = useRef<string>('');
   const runtimeContextRef = useRef<MessageQueueRuntimeContext>({
     connection: null,
@@ -536,6 +542,12 @@ const MessageQueueWorkbench: React.FC<{ tab: TabData; isActive: boolean }> = ({ 
     const previousRuntime = previousRuntimeContextRef.current;
     connectionRuntimeKeyRef.current = connectionRuntimeKey;
 
+    consumerGroupsRequestRef.current += 1;
+    setConsumerGroupsOpen(false);
+    setConsumerGroupsLoading(false);
+    setConsumerGroupsError('');
+    setConsumerGroupsRows([]);
+
     const existingSubscriptions = subscriptionsRef.current;
     runTokensRef.current.clear();
     unsubscribeMQTT(existingSubscriptions, previousRuntime);
@@ -696,6 +708,32 @@ const MessageQueueWorkbench: React.FC<{ tab: TabData; isActive: boolean }> = ({ 
 
   const anyRunning = subscriptions.some((subscription) => subscription.running || subscription.loading);
 
+  const openConsumerGroups = async () => {
+    const requestID = ++consumerGroupsRequestRef.current;
+    setConsumerGroupsOpen(true);
+    setConsumerGroupsLoading(true);
+    setConsumerGroupsError('');
+    setConsumerGroupsRows([]);
+    try {
+      const result = await DBQuery(
+        buildRpcConnectionConfig(connection.config) as any,
+        executionDbName,
+        'SHOW CONSUMER GROUPS;',
+      );
+      if (requestID !== consumerGroupsRequestRef.current) return;
+      if (!result?.success) {
+        setConsumerGroupsError(result?.message || t('message_queue_workbench.consumer_groups.error.unavailable'));
+      } else {
+        setConsumerGroupsRows(normalizeRows(result.data));
+      }
+    } catch (error) {
+      if (requestID !== consumerGroupsRequestRef.current) return;
+      setConsumerGroupsError(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (requestID === consumerGroupsRequestRef.current) setConsumerGroupsLoading(false);
+    }
+  };
+
   return (
     <div className="gn-message-workbench" data-testid="message-queue-workbench">
       <header className="gn-message-workbench-header">
@@ -716,6 +754,28 @@ const MessageQueueWorkbench: React.FC<{ tab: TabData; isActive: boolean }> = ({ 
           </div>
         </div>
         <Space size={8} wrap>
+          {profile.type === 'kafka' && (
+            <Button icon={<InboxOutlined />} onClick={() => { void openConsumerGroups(); }} loading={consumerGroupsLoading}>
+              {t('message_queue_workbench.consumer_groups.action.open')}
+            </Button>
+          )}
+          {profile.type === 'rocketmq' && (
+            <Tooltip title={t('message_queue_workbench.consumer_groups.error.rocketmq_unsupported')}>
+              <span
+                tabIndex={0}
+                aria-describedby="rocketmq-consumer-groups-unavailable"
+              >
+                <Button icon={<InboxOutlined />} disabled>
+                  {t('message_queue_workbench.consumer_groups.action.open')}
+                </Button>
+              </span>
+            </Tooltip>
+          )}
+          {profile.type === 'rocketmq' && (
+            <span id="rocketmq-consumer-groups-unavailable" className="gn-message-workbench-sr-only">
+              {t('message_queue_workbench.consumer_groups.error.rocketmq_unsupported')}
+            </span>
+          )}
           <Button
             icon={<CodeOutlined />}
             onClick={() => setCommandModalOpen(true)}
@@ -926,6 +986,30 @@ const MessageQueueWorkbench: React.FC<{ tab: TabData; isActive: boolean }> = ({ 
         onCancel={() => setConsumeModalOpen(false)}
         onConfirm={addSubscription}
       />
+      <Modal
+        title={t('message_queue_workbench.consumer_groups.title')}
+        open={consumerGroupsOpen}
+        footer={null}
+        onCancel={() => {
+          consumerGroupsRequestRef.current += 1;
+          setConsumerGroupsLoading(false);
+          setConsumerGroupsOpen(false);
+        }}
+        width={1120}
+        destroyOnHidden
+      >
+        {consumerGroupsError ? (
+          <Empty description={consumerGroupsError} />
+        ) : (
+          consumerGroupsLoading ? <Empty description={t('message_queue_workbench.consumer_groups.loading')} /> : consumerGroupsRows.length === 0 ? <Empty description={t('message_queue_workbench.consumer_groups.empty')} /> : (
+            <div className="gn-consumer-groups-panel"><table><thead><tr>{[
+              'group', 'state', 'member', 'client', 'topic', 'partition', 'current_offset', 'log_end_offset', 'lag',
+            ].map((label) => <th key={label}>{t(`message_queue_workbench.consumer_groups.column.${label}`)}</th>)}</tr></thead><tbody>{consumerGroupsRows.map((row, index) => <tr key={`${row.group || 'group'}-${row.topic || ''}-${row.partition ?? row.queue_id ?? index}`}>
+              <td>{row.group || '-'}</td><td>{row.state || '-'}</td><td>{row.member || '-'}</td><td>{row.client_id || '-'}</td><td>{row.topic || '-'}</td><td>{row.partition ?? row.queue_id ?? '-'}</td><td>{row.current_offset ?? '-'}</td><td>{row.log_end_offset ?? '-'}</td><td>{row.lag ?? '-'}</td>
+            </tr>)}</tbody></table></div>
+          )
+        )}
+      </Modal>
       <MessageCommandModal
         open={commandModalOpen}
         connection={connection}

@@ -586,15 +586,25 @@ func cleanupOptionalDriverBundleCache(keepPaths ...string) {
 }
 
 func downloadOptionalDriverBundleToCache(bundleURL string, onProgress func(downloaded, total int64)) (string, error) {
+	return downloadOptionalDriverBundleToCachePreferred(bundleURL, onProgress, DownloadSourceCst)
+}
+
+func downloadOptionalDriverBundleToCachePreferred(bundleURL string, onProgress func(downloaded, total int64), preferred DownloadSource) (string, error) {
 	cachePath, err := optionalDriverBundleCachePath(bundleURL)
 	if err != nil {
 		return "", err
 	}
 	tempPath := cachePath + fmt.Sprintf(".%d.tmp", time.Now().UnixNano())
 	_ = os.Remove(tempPath)
-	if _, err := downloadFileWithHashWithTimeout(bundleURL, tempPath, onProgress, optionalDriverBundleDownloadTimeout); err != nil {
+	var downloadErr error
+	if preferred == DownloadSourceCst {
+		_, downloadErr = downloadFileWithHashWithTimeout(bundleURL, tempPath, onProgress, optionalDriverBundleDownloadTimeout)
+	} else {
+		_, downloadErr = downloadFileWithHashWithTimeoutPreferred(bundleURL, tempPath, onProgress, optionalDriverBundleDownloadTimeout, preferred)
+	}
+	if downloadErr != nil {
 		_ = os.Remove(tempPath)
-		return "", err
+		return "", downloadErr
 	}
 	if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err) {
 		_ = os.Remove(tempPath)
@@ -618,6 +628,13 @@ func downloadOptionalDriverBundleToCache(bundleURL string, onProgress func(downl
 }
 
 func acquireOptionalDriverBundlePath(bundleURL string, onProgress func(downloaded, total int64), onWaiting func()) (string, error) {
+	if strings.TrimSpace(bundleURL) == "" {
+		return "", newLocalizedDriverBackendError("driver_manager.backend.error.bundle_url_empty", nil, nil)
+	}
+	return acquireOptionalDriverBundlePathPreferred(bundleURL, onProgress, onWaiting, DownloadSourceCst)
+}
+
+func acquireOptionalDriverBundlePathPreferred(bundleURL string, onProgress func(downloaded, total int64), onWaiting func(), preferred DownloadSource) (string, error) {
 	trimmedURL := strings.TrimSpace(bundleURL)
 	if trimmedURL == "" {
 		return "", newLocalizedDriverBackendError("driver_manager.backend.error.bundle_url_empty", nil, nil)
@@ -665,7 +682,7 @@ func acquireOptionalDriverBundlePath(bundleURL string, onProgress func(downloade
 		optionalDriverBundleDownloads[trimmedURL] = state
 		optionalDriverBundleDownloadMu.Unlock()
 
-		path, err := downloadOptionalDriverBundleToCache(trimmedURL, onProgress)
+		path, err := downloadOptionalDriverBundleToCachePreferred(trimmedURL, onProgress, preferred)
 		optionalDriverBundleDownloadMu.Lock()
 		state.path = path
 		state.err = err
@@ -734,6 +751,23 @@ func expandOptionalDriverDownloadCandidates(urls []string) ([]optionalDriverDown
 		appendCandidate(trimmed, trimmed)
 	}
 	return candidates, nil
+}
+
+func reorderOptionalDriverDownloadCandidates(candidates []optionalDriverDownloadCandidate, preferred DownloadSource) []optionalDriverDownloadCandidate {
+	urls := make([]string, 0, len(candidates))
+	byURL := make(map[string]optionalDriverDownloadCandidate, len(candidates))
+	for _, candidate := range candidates {
+		urls = append(urls, candidate.URL)
+		byURL[optionalDriverRequestURLKey(candidate.URL)] = candidate
+	}
+	orderedURLs := reorderDownloadCandidates(urls, preferred)
+	result := make([]optionalDriverDownloadCandidate, 0, len(orderedURLs))
+	for _, rawURL := range orderedURLs {
+		if candidate, ok := byURL[optionalDriverRequestURLKey(rawURL)]; ok {
+			result = append(result, candidate)
+		}
+	}
+	return result
 }
 
 func keepOptionalDriverDownloadURLOrder(urls []string) []string {

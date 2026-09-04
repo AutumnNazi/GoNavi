@@ -1019,8 +1019,10 @@ func (a *App) CloudBackupRestore(request CloudBackupRestoreRequest) (CloudBackup
 			}
 			if payload.ConnectionSidebarLayout != nil {
 				_, replaceErr := layoutRepo.replaceUnlocked(connection.ConnectionSidebarLayoutInput{
-					ConnectionTags:   payload.ConnectionSidebarLayout.ConnectionTags,
-					SidebarRootOrder: payload.ConnectionSidebarLayout.SidebarRootOrder,
+					ConnectionTags:         payload.ConnectionSidebarLayout.ConnectionTags,
+					SidebarRootOrder:       payload.ConnectionSidebarLayout.SidebarRootOrder,
+					RootSortMode:           payload.ConnectionSidebarLayout.RootSortMode,
+					RootConnectionSortMode: payload.ConnectionSidebarLayout.RootConnectionSortMode,
 				})
 				if replaceErr != nil {
 					if rollbackErr := rollbackMutations(); rollbackErr != nil {
@@ -1559,18 +1561,14 @@ func writeCloudBackupFile(target string, data []byte, mode os.FileMode) error {
 
 func (a *App) initializeCloudBackup(ctx context.Context) {
 	a.initializeCloudBackupLifecycle(ctx)
-	if _, err := a.CloudBackupGetConfig(); err != nil {
+	// Startup must only inspect non-sensitive metadata. CloudBackupGetConfig
+	// reads credentials from the OS keyring, which would trigger a macOS
+	// authorization prompt on every development rebuild. Credentials are
+	// loaded when the settings/API path or an actual sync operation is used.
+	if _, err := a.loadCloudBackupConfig(); err != nil {
 		logger.Warnf("加载云端备份配置失败：%v", err)
 	}
 	a.restartCloudBackupScheduler()
-	config, err := a.loadCloudBackupConfig()
-	if err == nil && config.Enabled {
-		go func() {
-			if _, checkErr := a.CloudBackupListRestorePoints(); checkErr != nil {
-				logger.Warnf("启动时检查云端备份失败：%v", checkErr)
-			}
-		}()
-	}
 }
 
 func (a *App) restartCloudBackupScheduler() {

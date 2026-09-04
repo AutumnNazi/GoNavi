@@ -8,7 +8,7 @@ import {
   buildSidebarTablePinKey,
   resolveSidebarRootOrderTokens,
 } from '../store';
-import type { ConnectionTag, SavedConnection, TabData } from '../types';
+import type { ConnectionDisplaySortMode, ConnectionTag, SavedConnection, TabData } from '../types';
 import type { SidebarTableMetadataField } from '../utils/sidebarTableMetadata';
 import { readTableAccessCount } from '../utils/tableAccessCount';
 import { t } from '../i18n';
@@ -112,12 +112,12 @@ export const dedupeSidebarTreeNodesByKey = (
     if (objectRecord) return objectRecord;
 
     const key = getNodeKey(node);
-    const record = (key && recordsByKey.get(key)) || {
+    const record = recordsByKey.get(key) || {
       source: node,
       children: [],
     };
     recordsByObject.set(node, record);
-    if (key && !recordsByKey.has(key)) recordsByKey.set(key, record);
+    if (!recordsByKey.has(key)) recordsByKey.set(key, record);
     return record;
   };
 
@@ -208,6 +208,60 @@ export const dedupeSidebarTreeNodesByKey = (
   }
 
   return result;
+};
+
+/**
+ * Replaces one node's children while preserving the tree's global key
+ * invariant. Canonicalize before the replacement so stale children from a
+ * duplicate target cannot be merged back after a metadata refresh.
+ */
+export const replaceSidebarTreeNodeChildren = (
+  nodes: SidebarTreeNode[],
+  targetKey: Key,
+  children: SidebarTreeNode[] | undefined,
+  dataRef?: unknown,
+): SidebarTreeNode[] => {
+  const canonicalTree = dedupeSidebarTreeNodesByKey(nodes);
+  const result: SidebarTreeNode[] = [];
+  const normalizedTargetKey = targetKey == null ? '' : String(targetKey).trim();
+  let replaced = false;
+  type CopyFrame = {
+    source: SidebarTreeNode;
+    output: SidebarTreeNode[];
+  };
+  const pending: CopyFrame[] = [];
+
+  for (let index = canonicalTree.length - 1; index >= 0; index -= 1) {
+    pending.push({ source: canonicalTree[index], output: result });
+  }
+
+  while (pending.length > 0) {
+    const frame = pending.pop();
+    if (!frame) continue;
+
+    const { source, output } = frame;
+    if (!replaced && String(source.key == null ? '' : source.key).trim() === normalizedTargetKey) {
+      replaced = true;
+      output.push({
+        ...source,
+        children,
+        ...(dataRef === undefined ? {} : { dataRef }),
+      });
+      continue;
+    }
+
+    const clonedNode: SidebarTreeNode = { ...source };
+    output.push(clonedNode);
+    if (!Array.isArray(source.children) || source.children.length === 0) continue;
+
+    const childOutput: SidebarTreeNode[] = [];
+    clonedNode.children = childOutput;
+    for (let index = source.children.length - 1; index >= 0; index -= 1) {
+      pending.push({ source: source.children[index], output: childOutput });
+    }
+  }
+
+  return dedupeSidebarTreeNodesByKey(result);
 };
 
 // Keep these values aligned with the V2 explorer tree layout in v2-theme.css.
@@ -600,6 +654,8 @@ export const buildSidebarConnectionTagTree = (
   connections: SavedConnection[],
   connectionTags: ConnectionTag[],
   sidebarRootOrder: string[] = [],
+  _rootSortMode: ConnectionTag['sortMode'] = 'manual',
+  rootConnectionSortMode: ConnectionDisplaySortMode = 'createdAt',
 ): SidebarConnectionTagTreeItem[] => {
   const connectionById = new Map(connections.map((connection) => [connection.id, connection]));
   const tagById = new Map(connectionTags.map((tag) => [tag.id, tag]));
@@ -656,6 +712,31 @@ export const buildSidebarConnectionTagTree = (
     ));
   };
 
+  const sortConnectionIds = (ids: string[], mode: ConnectionDisplaySortMode): string[] => {
+    const manualIndex = new Map(ids.map((id, index) => [id, index]));
+    return [...ids].sort((left, right) => {
+      const a = connectionById.get(left);
+      const b = connectionById.get(right);
+      if (!a || !b) return (manualIndex.get(left) || 0) - (manualIndex.get(right) || 0);
+      if (mode === 'createdAt') {
+        return (b.createdAt || 0) - (a.createdAt || 0)
+          || (manualIndex.get(left) || 0) - (manualIndex.get(right) || 0)
+          || left.localeCompare(right);
+      }
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true })
+        || (manualIndex.get(left) || 0) - (manualIndex.get(right) || 0)
+        || left.localeCompare(right);
+    });
+  };
+
+  const applyConnectionSort = (tokens: string[], ids: string[], mode: ConnectionDisplaySortMode): string[] => {
+    const sorted = sortConnectionIds(ids, mode);
+    if (sorted === ids) return tokens;
+    const sortedTokens = sorted.map(buildSidebarRootConnectionToken);
+    let index = 0;
+    return tokens.map((token) => token.startsWith('connection:') ? sortedTokens[index++] || token : token);
+  };
+
   const resolveOrderedChildTokens = (tagId: string): string[] => {
     const directTagIds = childTagIdsByParentId.get(tagId) || [];
     const directConnectionIds = directConnectionIdsForTag(tagId);
@@ -669,7 +750,12 @@ export const buildSidebarConnectionTagTree = (
       result.push(token);
     };
 
-    resolveConnectionTagChildOrder(tagId, connectionTags).forEach(append);
+    const orderedTokens = resolveConnectionTagChildOrder(tagId, connectionTags);
+    applyConnectionSort(
+      orderedTokens,
+      directConnectionIds,
+      tagById.get(tagId)?.connectionSortMode || 'createdAt',
+    ).forEach(append);
     // Legacy groups have no childOrder; keep their old host-first layout and
     // append any new subgroup records in their persisted creation order.
     directConnectionIds.forEach((id) => append(buildSidebarRootConnectionToken(id)));
@@ -689,7 +775,8 @@ export const buildSidebarConnectionTagTree = (
     if (!rootAllowedTokens.has(token) || orderedRootTokens.includes(token)) return;
     orderedRootTokens.push(token);
   };
-  resolveSidebarRootOrderTokens(sidebarRootOrder, connectionTags, connections).forEach(appendRoot);
+  const rawRootTokens = resolveSidebarRootOrderTokens(sidebarRootOrder, connectionTags, connections);
+  applyConnectionSort(rawRootTokens, rootConnectionIds, rootConnectionSortMode).forEach(appendRoot);
   rootTagIds.forEach((id) => appendRoot(buildSidebarRootTagToken(id)));
   rootConnectionIds.forEach((id) => appendRoot(buildSidebarRootConnectionToken(id)));
 
@@ -761,6 +848,8 @@ export const flattenSidebarConnectionTagTree = (
   connections: SavedConnection[],
   connectionTags: ConnectionTag[],
   sidebarRootOrder: string[] = [],
+  rootSortMode: ConnectionTag['sortMode'] = 'manual',
+  rootConnectionSortMode: ConnectionDisplaySortMode = 'createdAt',
 ): SavedConnection[] => {
   const ordered: SavedConnection[] = [];
   const append = (items: SidebarConnectionTagTreeItem[]) => {
@@ -773,7 +862,7 @@ export const flattenSidebarConnectionTagTree = (
     });
   };
 
-  append(buildSidebarConnectionTagTree(connections, connectionTags, sidebarRootOrder));
+  append(buildSidebarConnectionTagTree(connections, connectionTags, sidebarRootOrder, rootSortMode, rootConnectionSortMode));
   return ordered;
 };
 
@@ -781,6 +870,8 @@ export const buildV2RailConnectionGroups = (
   connections: SavedConnection[],
   connectionTags: ConnectionTag[],
   sidebarRootOrder: string[] = [],
+  rootSortMode: ConnectionTag['sortMode'] = 'manual',
+  rootConnectionSortMode: ConnectionDisplaySortMode = 'createdAt',
 ): V2RailConnectionGroup[] => {
   const buildGroup = (item: SidebarConnectionTagTreeItem): V2RailConnectionGroup => {
     if (item.kind === 'connection') {
@@ -810,7 +901,7 @@ export const buildV2RailConnectionGroups = (
     };
   };
 
-  return buildSidebarConnectionTagTree(connections, connectionTags, sidebarRootOrder).map(buildGroup);
+  return buildSidebarConnectionTagTree(connections, connectionTags, sidebarRootOrder, rootSortMode, rootConnectionSortMode).map(buildGroup);
 };
 
 export const resolveV2ConnectionGroup = (
@@ -1193,24 +1284,6 @@ export const shouldRunV2CommandSearchEnter = ({
   if (key !== 'Enter') return false;
   if (isComposing || keyCode === 229) return false;
   return activeItemCount > 0;
-};
-
-export interface V2CommandSearchPersistentFilterState {
-  commandSearchValue: string;
-  persistedFilter: string;
-  enabled: boolean;
-  isOpen: boolean;
-}
-
-export const resolveV2CommandSearchPersistentFilter = ({
-  commandSearchValue,
-  persistedFilter,
-  enabled,
-  isOpen,
-}: V2CommandSearchPersistentFilterState): string => {
-  if (!enabled) return '';
-  if (!isOpen) return String(persistedFilter ?? '').trim();
-  return String(commandSearchValue ?? '').trim();
 };
 
 export interface V2CommandSearchGlobalKeyState {

@@ -161,6 +161,11 @@ const resolveCopyObjectNameLabel = (node: any): string => {
   return t('sidebar.copy_object_name.label.table');
 };
 
+const resolveNodeSchemaName = (node: any): string | undefined => {
+  const schemaName = String(node?.dataRef?.schemaName ?? '').trim();
+  return schemaName || undefined;
+};
+
 const quoteMySqlIdentifier = (raw: string): string => `\`${String(raw || '').replace(/`/g, '``')}\``;
 
 const buildMySqlEventReference = (eventName: string, schemaName?: string): string => {
@@ -447,6 +452,7 @@ export const useSidebarObjectActions = ({
         detail: {
           connectionId: node.dataRef?.id,
           dbName: node.dataRef?.dbName,
+          schemaName: String(node.dataRef?.schemaName || '').trim() || undefined,
           tableName: node.dataRef?.tableName,
           viewMode: 'er',
         },
@@ -911,10 +917,11 @@ export const useSidebarObjectActions = ({
   };
 
   const openViewDefinition = (node: any) => {
-    const { viewName, dbName, id, schemaName } = node.dataRef;
+    const { viewName, dbName, id } = node.dataRef;
+    const schemaName = resolveNodeSchemaName(node);
     const isMaterialized = node.type === 'materialized-view' || node.dataRef?.objectKind === 'materialized-view';
     addTab({
-      id: `view-def-${id}-${dbName}-${viewName}`,
+      id: `view-def-${id}-${dbName}${schemaName ? `-${schemaName}` : ''}-${viewName}`,
       title: t(isMaterialized ? 'sidebar.tab.materialized_view_definition' : 'sidebar.tab.view_definition', { name: viewName }),
       type: 'view-def',
       connectionId: id,
@@ -929,6 +936,7 @@ export const useSidebarObjectActions = ({
   const openEditView = async (node: any) => {
     const conn = node.dataRef;
     const { viewName, dbName, id } = conn;
+    const schemaName = resolveNodeSchemaName(node);
     const dialect = getMetadataDialect(conn as SavedConnection);
     const sqlTemplateHeader = `-- ${t('sidebar.sql_template.edit_view', { name: viewName })}`;
     let template = `${sqlTemplateHeader}\n-- ${t('sidebar.sql_template.modify_then_execute')}\nCREATE OR REPLACE VIEW ${viewName} AS\nSELECT * FROM your_table;`;
@@ -994,13 +1002,16 @@ export const useSidebarObjectActions = ({
       query: template,
       queryMode: 'object-edit',
       viewName,
+      schemaName,
       objectType: 'view',
+      sidebarLocateKey: String(node.key || ''),
     });
   };
 
   const openCreateView = (node: any) => {
     const conn = node.dataRef;
     const { dbName, id } = conn;
+    const schemaName = resolveNodeSchemaName(node);
     const dialect = getMetadataDialect(conn as SavedConnection);
     let template: string;
     switch (dialect) {
@@ -1030,6 +1041,7 @@ export const useSidebarObjectActions = ({
       type: 'query',
       connectionId: id,
       dbName,
+      schemaName,
       query: template,
     });
   };
@@ -1037,6 +1049,7 @@ export const useSidebarObjectActions = ({
   const openCreateStarRocksMaterializedView = (node: any) => {
     const conn = node.dataRef;
     const { dbName, id } = conn;
+    const schemaName = resolveNodeSchemaName(node);
     const schemaPrefix = String(conn.schemaName || dbName || '').trim();
     const mvName = schemaPrefix ? `${schemaPrefix}.mv_name` : 'mv_name';
     const template = buildStarRocksMaterializedViewPreviewSql({
@@ -1052,6 +1065,7 @@ export const useSidebarObjectActions = ({
       type: 'query',
       connectionId: id,
       dbName,
+      schemaName,
       query: template,
     });
   };
@@ -1072,6 +1086,7 @@ export const useSidebarObjectActions = ({
   const openCreateStarRocksRollup = (node: any) => {
     const conn = node.dataRef;
     const { tableName, dbName, id } = conn;
+    const schemaName = resolveNodeSchemaName(node);
     const safeTable = String(tableName || 'table_name').trim();
     const safeTableParts = [splitQualifiedName(safeTable).schemaName, splitQualifiedName(safeTable).objectName].filter(Boolean);
     const quotedTable = safeTable.includes('`')
@@ -1083,6 +1098,7 @@ export const useSidebarObjectActions = ({
       type: 'query',
       connectionId: id,
       dbName,
+      schemaName,
       query: `ALTER TABLE ${quotedTable}\nADD ROLLUP rollup_name (column1, column2);`,
     });
   };
@@ -1265,27 +1281,31 @@ export const useSidebarObjectActions = ({
 
   const openRoutineDefinition = (node: any) => {
     const { routineName, routineType, dbName, id } = node.dataRef;
+    const schemaName = resolveNodeSchemaName(node);
     const typeLabel = t(routineType === 'PROCEDURE' ? 'sidebar.object.procedure' : 'sidebar.object.function');
     addTab({
-      id: `routine-def-${id}-${dbName}-${routineName}`,
+      id: `routine-def-${id}-${dbName}${schemaName ? `-${schemaName}` : ''}-${routineName}`,
       title: t('sidebar.tab.routine_definition', { type: typeLabel, name: routineName }),
       type: 'routine-def',
       connectionId: id,
       dbName,
       routineName,
       routineType,
+      schemaName,
     });
   };
 
   const openEventDefinition = (node: any) => {
     const { eventName, dbName, id } = node.dataRef;
+    const schemaName = resolveNodeSchemaName(node);
     addTab({
-      id: `event-def-${id}-${dbName}-${eventName}`,
+      id: `event-def-${id}-${dbName}${schemaName ? `-${schemaName}` : ''}-${eventName}`,
       title: t('sidebar.tab.event', { name: eventName }),
       type: 'event-def',
       connectionId: id,
       dbName,
       eventName,
+      schemaName,
     });
   };
 
@@ -1294,6 +1314,7 @@ export const useSidebarObjectActions = ({
     const eventName = String(conn?.eventName || '').trim();
     const dbName = String(conn?.dbName || '').trim();
     const id = String(conn?.id || '').trim();
+    const schemaName = resolveNodeSchemaName(node);
     if (!eventName) return;
 
     const objectLabel = t('definition_viewer.object.event');
@@ -1332,36 +1353,44 @@ export const useSidebarObjectActions = ({
       dbName,
       query: template,
       queryMode: 'object-edit',
+      eventName,
+      schemaName,
+      sidebarLocateKey: String(node.key || ''),
     });
   };
 
   const openSequenceDefinition = (node: any) => {
     const { sequenceName, dbName, id } = node.dataRef;
+    const schemaName = resolveNodeSchemaName(node);
     addTab({
-      id: `sequence-def-${id}-${dbName}-${sequenceName}`,
+      id: `sequence-def-${id}-${dbName}${schemaName ? `-${schemaName}` : ''}-${sequenceName}`,
       title: t('sidebar.tab.sequence_definition', { name: sequenceName }),
       type: 'sequence-def',
       connectionId: id,
       dbName,
       sequenceName,
+      schemaName,
     });
   };
 
   const openPackageDefinition = (node: any) => {
     const { packageName, dbName, id } = node.dataRef;
+    const schemaName = resolveNodeSchemaName(node);
     addTab({
-      id: `package-def-${id}-${dbName}-${packageName}`,
+      id: `package-def-${id}-${dbName}${schemaName ? `-${schemaName}` : ''}-${packageName}`,
       title: t('sidebar.tab.package_definition', { name: packageName }),
       type: 'package-def',
       connectionId: id,
       dbName,
       packageName,
+      schemaName,
     });
   };
 
   const openEditRoutine = async (node: any) => {
     const conn = node.dataRef;
     const { routineName, routineType, dbName, id } = conn;
+    const schemaName = resolveNodeSchemaName(node);
     const dialect = getMetadataDialect(conn as SavedConnection);
     const tabTypeKey = routineType === 'PROCEDURE' ? 'sidebar.object.procedure' : 'sidebar.object.function';
     const tabTypeLabel = t(tabTypeKey);
@@ -1449,12 +1478,17 @@ export const useSidebarObjectActions = ({
       dbName,
       query: template,
       queryMode: 'object-edit',
+      routineName,
+      routineType,
+      schemaName,
+      sidebarLocateKey: String(node.key || ''),
     });
   };
 
   const openCreateRoutine = (node: any, type: 'FUNCTION' | 'PROCEDURE') => {
     const conn = node.dataRef;
     const { dbName, id } = conn;
+    const schemaName = resolveNodeSchemaName(node);
     const dialect = getMetadataDialect(conn as SavedConnection);
     const isProc = type === 'PROCEDURE';
     let template: string;
@@ -1498,6 +1532,7 @@ export const useSidebarObjectActions = ({
       type: 'query',
       connectionId: id,
       dbName,
+      schemaName,
       query: template,
     });
   };

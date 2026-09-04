@@ -3,9 +3,12 @@ package aiservice
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"GoNavi-Wails/internal/ai"
@@ -49,6 +52,14 @@ func TestSplitProviderSecretsStripsAPIKeyAndSensitiveHeaders(t *testing.T) {
 	}
 	if bundle.SensitiveHeaders["Authorization"] != "Bearer test" {
 		t.Fatal("bundle should keep sensitive header")
+	}
+}
+
+func TestNewDefaultAISecretStoreSkipsKeychainOnDarwin(t *testing.T) {
+	withTestAIGOOS(t, "darwin")
+
+	if _, err := newDefaultAISecretStore().Get("must-not-reach-keychain"); !secretstore.IsUnavailable(err) {
+		t.Fatal("macOS AI service must not open the Keychain backend")
 	}
 }
 
@@ -222,8 +233,20 @@ func TestAISaveProviderKeepsLegacyPlaintextSecretAfterStartupLoad(t *testing.T) 
 }
 
 func TestAITestProviderUsesLegacyPlaintextSecretAfterStartupLoad(t *testing.T) {
-	service := NewServiceWithSecretStore(failOnUseSecretStore{})
-	service.configDir = t.TempDir()
+	service := newProviderManagementTestService(t)
+	service.secretStore = failOnUseSecretStore{}
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.Header.Get("Authorization") != "Bearer sk-test" || r.Header.Get("X-Api-Key") != "header-test" || r.Header.Get("X-Team") != "db" {
+			t.Error("legacy API key and sensitive headers were not retained")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer server.Close()
 
 	legacy := aiConfig{
 		Providers: []ai.ProviderConfig{
@@ -232,10 +255,10 @@ func TestAITestProviderUsesLegacyPlaintextSecretAfterStartupLoad(t *testing.T) {
 				Type:    "custom",
 				Name:    "OpenAI",
 				APIKey:  "sk-test",
-				BaseURL: "",
+				BaseURL: server.URL,
 				Headers: map[string]string{
-					"Authorization": "Bearer test",
-					"X-Team":        "db",
+					"X-Api-Key": "header-test",
+					"X-Team":    "db",
 				},
 			},
 		},
@@ -254,7 +277,7 @@ func TestAITestProviderUsesLegacyPlaintextSecretAfterStartupLoad(t *testing.T) {
 		ID:        "openai-main",
 		Type:      "custom",
 		Name:      "OpenAI",
-		BaseURL:   "",
+		BaseURL:   server.URL,
 		HasSecret: true,
 		Headers: map[string]string{
 			"X-Team": "db",
@@ -263,6 +286,9 @@ func TestAITestProviderUsesLegacyPlaintextSecretAfterStartupLoad(t *testing.T) {
 
 	if success, _ := result["success"].(bool); !success {
 		t.Fatalf("expected test provider to use in-memory legacy secret, got %#v", result)
+	}
+	if requests.Load() != 1 || result["checkKind"] != "endpoint" || result["modelVerified"] != false {
+		t.Fatal("expected exactly one local endpoint check, not a model response")
 	}
 }
 

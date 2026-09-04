@@ -28,6 +28,10 @@
 </p>
 
 <p align="center">
+  <a href="https://mcpvault.io/servers/gonavi/health?utm_source=external_badge&utm_medium=referral&utm_campaign=mcp_health_report"><img src="https://mcpvault.io/badge/gonavi.svg" alt="MCPVault: claimed" /></a>
+</p>
+
+<p align="center">
   <b>语言</b>：<a href="README.md">English</a> · 简体中文
   &nbsp;·&nbsp;
   <a href="https://gonavi.org"><b>🌐 官网</b></a>
@@ -271,7 +275,7 @@ Elasticsearch 连接复用查询工作区，并按服务端版本提供受控 RE
 - [Wails CLI](https://wails.io/docs/gettingstarted/installation)
 
 ```bash
-go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
 ```
 
 ### 开发

@@ -21,11 +21,13 @@ import {
   type ConnectionHealthRun,
   type ConnectionHealthStatus,
 } from '../utils/connectionHealth';
+import { APP_FOREGROUND_MODAL_Z_INDEX } from '../utils/overlayZIndex';
 
 type ConnectionHealthModalProps = {
   open: boolean;
   targetConnectionIds?: string[];
   onClose: () => void;
+  zIndex?: number;
 };
 
 const statusIcon = (status: ConnectionHealthStatus) => {
@@ -49,6 +51,7 @@ const ConnectionHealthModal: React.FC<ConnectionHealthModalProps> = ({
   open,
   targetConnectionIds = [],
   onClose,
+  zIndex = APP_FOREGROUND_MODAL_Z_INDEX,
 }) => {
   const connections = useStore((state) => state.connections);
   const connectionTags = useStore((state) => state.connectionTags);
@@ -307,6 +310,8 @@ const ConnectionHealthModal: React.FC<ConnectionHealthModalProps> = ({
       open={open}
       onCancel={handleClose}
       width={860}
+      centered
+      zIndex={zIndex}
       destroyOnHidden
       footer={(
         <Space>

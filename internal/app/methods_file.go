@@ -1873,7 +1873,7 @@ func sqlFileSQLServerIdentifierAt(stmt string, start int) (string, bool) {
 		}
 		return stmt[start:end], true
 	}
-	end, ok := skipSQLIdentifierToken(stmt, start)
+	end, ok := skipSQLIdentifierToken(stmt, start, "sqlserver")
 	if !ok {
 		return "", false
 	}
@@ -2145,7 +2145,7 @@ func isSQLFileSingleTransactionControlStatement(dbType, stmt string) bool {
 	case "set":
 		// Session and transaction settings can alter the outer transaction's
 		// semantics. Other SET statements are rejected below as unknown too.
-		return sqlContainsKeyword(stmt, "autocommit") || sqlContainsKeyword(stmt, "transaction") || sqlContainsKeyword(stmt, "isolation")
+		return sqlContainsKeyword(stmt, "autocommit", dbType) || sqlContainsKeyword(stmt, "transaction", dbType) || sqlContainsKeyword(stmt, "isolation", dbType)
 	}
 	return false
 }
@@ -3141,6 +3141,22 @@ func (a *App) ImportDatabaseSQLWithOptions(config connection.ConnectionConfig, d
 }
 
 func (a *App) importDatabaseSQLWithGTIDMode(config connection.ConnectionConfig, dbName string, filePath string, jobID string, continueOnError bool, mode mysqlGTIDImportMode) (result connection.QueryResult) {
+	return a.importDatabaseSQLWithGTIDModeContext(context.Background(), config, dbName, filePath, jobID, continueOnError, mode)
+}
+
+func (a *App) importDatabaseSQLContext(ctx context.Context, config connection.ConnectionConfig, dbName string, filePath string, jobID string, continueOnError bool, mysqlGTIDMode string) connection.QueryResult {
+	mode := mysqlGTIDImportModeReject
+	if strings.TrimSpace(mysqlGTIDMode) != "" {
+		var err error
+		mode, err = normalizeMySQLGTIDImportMode(mysqlGTIDMode)
+		if err != nil {
+			return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.mysql_gtid_mode_invalid", nil)}
+		}
+	}
+	return a.importDatabaseSQLWithGTIDModeContext(ctx, config, dbName, filePath, jobID, continueOnError, mode)
+}
+
+func (a *App) importDatabaseSQLWithGTIDModeContext(ctx context.Context, config connection.ConnectionConfig, dbName string, filePath string, jobID string, continueOnError bool, mode mysqlGTIDImportMode) (result connection.QueryResult) {
 	if err := a.validateDatabaseSQLImportAccess(config); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
@@ -3156,7 +3172,7 @@ func (a *App) importDatabaseSQLWithGTIDMode(config connection.ConnectionConfig, 
 		mode = ""
 	}
 	return a.executeSQLFileWithStatementLimitPolicyContextWithPolicy(
-		context.Background(),
+		ctx,
 		config,
 		dbName,
 		filePath,
@@ -3173,6 +3189,10 @@ func (a *App) importDatabaseSQLWithGTIDMode(config connection.ConnectionConfig, 
 }
 
 func (a *App) ExecuteSQLFile(config connection.ConnectionConfig, dbName string, filePath string, jobID string) connection.QueryResult {
+	return a.executeSQLFileContext(context.Background(), config, dbName, filePath, jobID)
+}
+
+func (a *App) executeSQLFileContext(ctx context.Context, config connection.ConnectionConfig, dbName string, filePath string, jobID string) connection.QueryResult {
 	// The generic SQL-file runner retains its established compatibility
 	// behavior. Database restore calls ImportDatabaseSQL and chooses the policy
 	// explicitly, defaulting to fail-fast in the UI.
@@ -3184,7 +3204,7 @@ func (a *App) ExecuteSQLFile(config connection.ConnectionConfig, dbName string, 
 	); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	return a.executeSQLFile(config, dbName, filePath, jobID, true)
+	return a.executeSQLFileWithStatementLimitPolicyContext(ctx, config, dbName, filePath, jobID, true, DefaultSQLImportMaxStatementBytes, false, "sql_file")
 }
 
 func (a *App) executeSQLFile(config connection.ConnectionConfig, dbName string, filePath string, jobID string, continueOnError bool) (result connection.QueryResult) {
@@ -4033,12 +4053,22 @@ func (a *App) SelectDatabaseFile(currentPath string, driverType string) connecti
 
 // PreviewImportFile 解析导入文件，返回字段列表、总行数、前 5 行预览数据
 func (a *App) PreviewImportFile(filePath string) connection.QueryResult {
-	return a.PreviewImportFileWithOptions(filePath, ImportFileOptions{})
+	return a.previewImportFileContext(context.Background(), filePath, ImportFileOptions{})
 }
 
 // PreviewImportFileWithOptions previews a file with the same parser settings
 // that will be used by ImportDataWithProgressOptions.
 func (a *App) PreviewImportFileWithOptions(filePath string, options ImportFileOptions) (queryResult connection.QueryResult) {
+	return a.previewImportFileContext(context.Background(), filePath, options)
+}
+
+func (a *App) previewImportFileContext(ctx context.Context, filePath string, options ImportFileOptions) (queryResult connection.QueryResult) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
 	if strings.TrimSpace(filePath) == "" {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.import_file_empty", nil)}
 	}
@@ -4059,7 +4089,7 @@ func (a *App) PreviewImportFileWithOptions(filePath string, options ImportFileOp
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
-	preview, err := buildImportPreviewWithOptions(filePath, defaultImportPreviewLimit, options)
+	preview, err := buildImportPreviewWithOptionsContext(ctx, filePath, defaultImportPreviewLimit, options)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
@@ -4489,19 +4519,27 @@ func buildImportExecutionPayload(resultData importExecutionResult, summary strin
 		total = resultData.Success + resultData.Skipped + resultData.Failed
 	}
 	return map[string]interface{}{
-		"success":            resultData.Success,
-		"skipped":            resultData.Skipped,
-		"failed":             resultData.Failed,
-		"total":              total,
-		"affectedRows":       int64(resultData.Success),
-		"errorLogs":          resultData.ErrorLogs,
-		"errorLogsOmitted":   max(0, resultData.Failed-len(resultData.ErrorLogs)),
-		"errorArtifactId":    resultData.ErrorArtifactID,
-		"errorArtifactCount": resultData.ErrorArtifactCount,
-		"errorSummary":       summary,
-		"cancelled":          cancelled,
-		"stoppedOnError":     resultData.StoppedOnError,
-		"outcomeUnknown":     resultData.OutcomeUnknown,
+		"success":                       resultData.Success,
+		"skipped":                       resultData.Skipped,
+		"failed":                        resultData.Failed,
+		"total":                         total,
+		"affectedRows":                  int64(resultData.Success),
+		"errorLogs":                     resultData.ErrorLogs,
+		"errorLogsOmitted":              max(0, resultData.Failed-len(resultData.ErrorLogs)),
+		"errorArtifactId":               resultData.ErrorArtifactID,
+		"errorArtifactCount":            resultData.ErrorArtifactCount,
+		"errorArtifactBytes":            resultData.ErrorArtifactBytes,
+		"errorArtifactOmittedCount":     resultData.ErrorArtifactOmittedCount,
+		"errorArtifactTruncated":        resultData.ErrorArtifactTruncated,
+		"errorArtifactRetryableCount":   resultData.ErrorArtifactRetryableCount,
+		"errorArtifactUnretryableCount": resultData.ErrorArtifactUnretryableCount,
+		"errorArtifactScopeKnown":       resultData.ErrorArtifactScopeKnown,
+		"errorArtifactMaxRows":          resultData.ErrorArtifactMaxRows,
+		"errorArtifactMaxBytes":         resultData.ErrorArtifactMaxBytes,
+		"errorSummary":                  summary,
+		"cancelled":                     cancelled,
+		"stoppedOnError":                resultData.StoppedOnError,
+		"outcomeUnknown":                resultData.OutcomeUnknown,
 	}
 }
 
@@ -4535,6 +4573,10 @@ func (a *App) stoppedImportResult(resultData importExecutionResult, detail strin
 // ImportDataWithProgressOptions executes a streamed import with optional source-header
 // to database-column mappings. ImportDataWithProgress remains the compatibility entrypoint.
 func (a *App) ImportDataWithProgressOptions(config connection.ConnectionConfig, dbName, tableName, filePath string, options ImportFileOptions) (result connection.QueryResult) {
+	return a.importDataWithProgressContext(context.Background(), config, dbName, tableName, filePath, options)
+}
+
+func (a *App) importDataWithProgressContext(parent context.Context, config connection.ConnectionConfig, dbName, tableName, filePath string, options ImportFileOptions) (result connection.QueryResult) {
 	resolvedPath, err := a.resolveWebUploadReference(filePath, webUploadPurposeDataImport)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -4543,7 +4585,7 @@ func (a *App) ImportDataWithProgressOptions(config connection.ConnectionConfig, 
 	if a.webRuntime {
 		defer func() { result = sanitizeWebManagedResult(result, filePath) }()
 	}
-	return a.importDataWithProgressOptions(config, dbName, tableName, filePath, options, nil)
+	return a.importDataWithProgressOptionsContext(parent, config, dbName, tableName, filePath, options, nil)
 }
 
 func (a *App) importDataWithProgressOptions(
@@ -4552,11 +4594,24 @@ func (a *App) importDataWithProgressOptions(
 	options ImportFileOptions,
 	recovery *tableImportRecoveryPlan,
 ) (result connection.QueryResult) {
+	return a.importDataWithProgressOptionsContext(context.Background(), config, dbName, tableName, filePath, options, recovery)
+}
+
+func (a *App) importDataWithProgressOptionsContext(
+	parent context.Context,
+	config connection.ConnectionConfig,
+	dbName, tableName, filePath string,
+	options ImportFileOptions,
+	recovery *tableImportRecoveryPlan,
+) (result connection.QueryResult) {
+	if parent == nil {
+		parent = context.Background()
+	}
 	if strings.TrimSpace(filePath) == "" {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.import_file_empty", nil)}
 	}
 	dbType := resolveDDLDBType(config)
-	schemaName, pureTableName := normalizeSchemaAndTable(config, dbName, tableName)
+	schemaName, pureTableName := normalizeSchemaAndTableByType(dbType, dbName, tableName)
 	auditTarget := strings.TrimSpace(tableName)
 	if pureTableName != "" {
 		auditTarget = quoteTableIdentByType(dbType, schemaName, pureTableName)
@@ -4593,9 +4648,7 @@ func (a *App) importDataWithProgressOptions(
 			return connection.QueryResult{Success: false, Message: importJobRecoveryErrorMessage(a, err)}
 		}
 	}
-	metadataSchemaName, metadataTableName := normalizeMetadataSchemaAndTable(config, dbName, tableName)
-
-	importCtx, importCancel := context.WithCancel(context.Background())
+	importCtx, importCancel := context.WithCancel(parent)
 	defer importCancel()
 	jobID := strings.TrimSpace(options.JobID)
 	if recovery != nil && jobID == "" {
@@ -4680,7 +4733,7 @@ func (a *App) importDataWithProgressOptions(
 		return a.cancelledImportResult(importExecutionResult{})
 	}
 	runConfig := normalizeRunConfig(config, dbName)
-	dbInst, err := a.getDatabase(runConfig)
+	dbInst, err := a.getDatabaseSynchronouslyWithContext(importCtx, runConfig, false)
 	if err != nil {
 		if errors.Is(importCtx.Err(), context.Canceled) {
 			return a.cancelledImportResult(importExecutionResult{})
@@ -4702,7 +4755,7 @@ func (a *App) importDataWithProgressOptions(
 		}
 	}
 
-	targetColumns, colErr := getColumnsWithMetadataFallback(dbInst, config, metadataSchemaName, metadataTableName, a.appText)
+	targetColumns, colErr := a.importTargetColumnsContext(importCtx, dbInst, config, dbName, tableName)
 	if errors.Is(importCtx.Err(), context.Canceled) {
 		return a.cancelledImportResult(importExecutionResult{})
 	}
@@ -4768,7 +4821,7 @@ func (a *App) importDataWithProgressOptions(
 		}
 		return managedArtifact.finish(resultData)
 	}
-	if err := streamImportFileWithOptions(filePath, consumer, options); err != nil {
+	if err := streamImportFileWithOptionsContext(importCtx, filePath, consumer, options); err != nil {
 		resultData := batchConsumer.Result()
 		if jobPersistErr != nil {
 			if artifactErr := finishArtifact(&resultData); artifactErr != nil {
@@ -4862,6 +4915,34 @@ func (a *App) importDataWithProgressOptions(
 	return connection.QueryResult{Success: true, Data: resultPayload, Message: summary}
 }
 
+func (a *App) importTargetColumnsContext(
+	ctx context.Context,
+	dbInst db.Database,
+	config connection.ConnectionConfig,
+	dbName, tableName string,
+) ([]connection.ColumnDefinition, error) {
+	// A second connection to :memory: is a different SQLite or DuckDB database.
+	// Prefer a same-instance Context API for file-local engines so cancellation
+	// does not regress their in-memory import path. Other databases retain the
+	// isolated metadata session, which avoids binding request Context to a shared
+	// cached driver instance.
+	dbType := resolveDDLDBType(config)
+	if dbType == "sqlite" || dbType == "duckdb" {
+		if getter, ok := dbInst.(db.ColumnDefinitionContexter); ok {
+			schemaName, pureTableName := normalizeMetadataSchemaAndTable(config, dbName, tableName)
+			return getter.GetColumnsContext(ctx, schemaName, pureTableName)
+		}
+	}
+	metadataResult := a.runWebMetadataWithContext(ctx, func(session *App) connection.QueryResult {
+		return session.DBGetColumns(config, dbName, tableName)
+	})
+	if !metadataResult.Success {
+		return nil, errors.New(metadataResult.Message)
+	}
+	targetColumns, _ := metadataResult.Data.([]connection.ColumnDefinition)
+	return targetColumns, nil
+}
+
 func (a *App) ApplyChanges(config connection.ConnectionConfig, dbName, tableName string, changes connection.ChangeSet) (result connection.QueryResult) {
 	auditSQL := fmt.Sprintf("APPLY CHANGES TO %s", strings.TrimSpace(tableName))
 	defer a.beginSQLAuditUserAction(config, dbName, "data_editor", &auditSQL, &result)()
@@ -4912,7 +4993,7 @@ func resolveChangeTargetTableName(config connection.ConnectionConfig, dbName, ta
 		return targetTableName
 	}
 
-	schemaName, pureTableName := normalizeSchemaAndTable(config, dbName, targetTableName)
+	schemaName, pureTableName := normalizeSchemaAndTableByType(dbType, dbName, targetTableName)
 	if strings.TrimSpace(schemaName) == "" || strings.TrimSpace(pureTableName) == "" {
 		return targetTableName
 	}
@@ -4932,13 +5013,13 @@ func splitDamengChangeTarget(dbName, tableName string) (string, string) {
 		strings.EqualFold(targetTableName[:len(schemaName)], schemaName) &&
 		targetTableName[len(schemaName)] == '.' {
 		pureTableName := strings.TrimSpace(targetTableName[len(schemaName)+1:])
-		if parsedSchema, parsedTable := db.SplitSQLQualifiedName(pureTableName); parsedSchema == "" && parsedTable != "" {
+		if parsedSchema, parsedTable := db.SplitSQLQualifiedNameForDialect(pureTableName, "dameng"); parsedSchema == "" && parsedTable != "" {
 			pureTableName = parsedTable
 		}
 		return schemaName, pureTableName
 	}
 
-	parsedSchema, parsedTable := db.SplitSQLQualifiedName(targetTableName)
+	parsedSchema, parsedTable := db.SplitSQLQualifiedNameForDialect(targetTableName, "dameng")
 	if parsedTable == "" {
 		return schemaName, targetTableName
 	}
@@ -6048,11 +6129,15 @@ func (a *App) ClearTables(config connection.ConnectionConfig, dbName string, tab
 }
 
 func quoteIdentByType(dbType string, ident string) string {
-	if ident == "" {
-		return ident
+	if strings.TrimSpace(ident) == "" {
+		return ""
 	}
 
 	dbType = resolveDDLDBType(connection.ConnectionConfig{Type: dbType})
+	if segments := db.SplitSQLIdentifierPathForDialect(ident, dbType); len(segments) == 1 && segments[0].Quoted {
+		ident = segments[0].Value
+	}
+
 	switch dbType {
 	case "mysql", "mariadb", "oceanbase", "diros", "starrocks", "sphinx", "tdengine", "clickhouse":
 		return "`" + strings.ReplaceAll(ident, "`", "``") + "`"
@@ -6074,7 +6159,11 @@ func quoteQualifiedIdentByType(dbType string, ident string) string {
 
 	dbType = resolveDDLDBType(connection.ConnectionConfig{Type: dbType})
 	if dbType == "trino" {
-		parts := strings.Split(raw, ".")
+		segments := db.SplitSQLIdentifierPathForDialect(raw, dbType)
+		parts := make([]string, 0, len(segments))
+		for _, segment := range segments {
+			parts = append(parts, segment.Value)
+		}
 		switch {
 		case len(parts) >= 3:
 			catalog := strings.TrimSpace(parts[0])
@@ -6098,7 +6187,7 @@ func quoteQualifiedIdentByType(dbType string, ident string) string {
 		return quoteIdentByType(dbType, schema) + "." + quoteIdentByType(dbType, table)
 	}
 	if dbType == "dameng" {
-		schema, table := db.SplitSQLQualifiedName(raw)
+		schema, table := db.SplitSQLQualifiedNameForDialect(raw, dbType)
 		if table == "" {
 			return quoteIdentByType(dbType, raw)
 		}
@@ -6108,14 +6197,14 @@ func quoteQualifiedIdentByType(dbType string, ident string) string {
 		return quoteIdentByType(dbType, schema) + "." + quoteIdentByType(dbType, table)
 	}
 
-	parts := strings.Split(raw, ".")
-	if len(parts) <= 1 {
+	segments := db.SplitSQLIdentifierPathForDialect(raw, dbType)
+	if len(segments) <= 1 {
 		return quoteIdentByType(dbType, raw)
 	}
 
-	quotedParts := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
+	quotedParts := make([]string, 0, len(segments))
+	for _, segment := range segments {
+		part := strings.TrimSpace(segment.Value)
 		if part == "" {
 			continue
 		}
@@ -6243,23 +6332,22 @@ func buildSQLDropIfExistsStatementWithDatabaseContext(
 	isView bool,
 	includeDatabaseContext bool,
 ) string {
-	schemaName, pureObjectName := normalizeSchemaAndTable(config, dbName, objectName)
+	dbType := resolveDDLDBType(config)
+	schemaName, pureObjectName := normalizeSchemaAndTableByType(dbType, dbName, objectName)
 	if strings.TrimSpace(pureObjectName) == "" {
 		return ""
 	}
 
-	dbType := resolveDDLDBType(config)
 	objectType := "TABLE"
 	// ClickHouse exposes views (including materialized views) through the table
 	// namespace and removes them with DROP TABLE.
 	if isView && dbType != "clickhouse" {
 		objectType = "VIEW"
 	}
-	outputObjectName := qualifyTable(schemaName, pureObjectName)
+	qualifiedObject := quoteTableIdentByType(dbType, schemaName, pureObjectName)
 	if supportsMySQLDatabaseContext(config) && !includeDatabaseContext {
-		outputObjectName = pureObjectName
+		qualifiedObject = quoteIdentByType(dbType, pureObjectName)
 	}
-	qualifiedObject := quoteQualifiedIdentByType(dbType, outputObjectName)
 	if strings.TrimSpace(qualifiedObject) == "" {
 		return ""
 	}
@@ -7069,18 +7157,20 @@ func dumpTableSQLWithDatabaseContext(
 	viewLookup map[string]string,
 	includeDatabaseContext bool,
 ) error {
-	schemaName, pureTableName := normalizeSchemaAndTable(config, dbName, tableName)
-	objectKey := normalizeExportObjectKeyByParts(schemaName, pureTableName)
+	dbType := resolveDDLDBType(config)
+	metadataSchemaName, metadataTableName := normalizeMetadataSchemaAndTable(config, dbName, tableName)
+	ddlSchemaName, ddlTableName := normalizeSchemaAndTableByType(dbType, dbName, tableName)
+	objectKey := normalizeExportObjectKey(config, dbName, tableName)
 	_, isView := viewLookup[objectKey]
 	var createSQL string
 
 	if includeSchema {
 		if isView {
-			viewDDL, ok := tryGetViewCreateStatement(dbInst, config, dbName, schemaName, pureTableName)
+			viewDDL, ok := tryGetViewCreateStatement(dbInst, config, dbName, metadataSchemaName, metadataTableName)
 			if ok {
 				createSQL = viewDDL
 			} else {
-				ddl, err := dbInst.GetCreateStatement(schemaName, pureTableName)
+				ddl, err := dbInst.GetCreateStatement(metadataSchemaName, metadataTableName)
 				if err != nil {
 					return err
 				}
@@ -7089,7 +7179,7 @@ func dumpTableSQLWithDatabaseContext(
 		} else {
 			ddl, err := resolveCreateStatementWithFallback(dbInst, config, dbName, tableName)
 			if err != nil {
-				if viewDDL, ok := tryGetViewCreateStatement(dbInst, config, dbName, schemaName, pureTableName); ok {
+				if viewDDL, ok := tryGetViewCreateStatement(dbInst, config, dbName, metadataSchemaName, metadataTableName); ok {
 					createSQL = viewDDL
 					isView = true
 				} else {
@@ -7102,7 +7192,7 @@ func dumpTableSQLWithDatabaseContext(
 	}
 
 	if includeData && !includeSchema && !isView {
-		if _, ok := tryGetViewCreateStatement(dbInst, config, dbName, schemaName, pureTableName); ok {
+		if _, ok := tryGetViewCreateStatement(dbInst, config, dbName, metadataSchemaName, metadataTableName); ok {
 			isView = true
 		}
 	}
@@ -7115,7 +7205,7 @@ func dumpTableSQLWithDatabaseContext(
 	if _, err := w.WriteString("\n-- ----------------------------\n"); err != nil {
 		return err
 	}
-	if _, err := w.WriteString(fmt.Sprintf("-- %s: %s\n", objectLabel, qualifyTable(schemaName, pureTableName))); err != nil {
+	if _, err := w.WriteString(fmt.Sprintf("-- %s: %s\n", objectLabel, qualifyTable(ddlSchemaName, ddlTableName))); err != nil {
 		return err
 	}
 	if _, err := w.WriteString("-- ----------------------------\n\n"); err != nil {
@@ -7142,21 +7232,19 @@ func dumpTableSQLWithDatabaseContext(
 		return nil
 	}
 
-	qualified := qualifyTable(schemaName, pureTableName)
-	dbType := resolveDDLDBType(config)
-	selectSQL := fmt.Sprintf("SELECT * FROM %s", quoteQualifiedIdentByType(dbType, qualified))
-	outputTableName := qualified
+	selectSQL := fmt.Sprintf("SELECT * FROM %s", quoteTableIdentByType(dbType, ddlSchemaName, ddlTableName))
+	outputTableName := quoteTableIdentByType(dbType, ddlSchemaName, ddlTableName)
 	if supportsMySQLDatabaseContext(config) && !includeDatabaseContext {
-		outputTableName = pureTableName
+		outputTableName = quoteIdentByType(dbType, ddlTableName)
 	}
 	columnTypeMap := map[string]string{}
-	if defs, colErr := dbInst.GetColumns(schemaName, pureTableName); colErr == nil {
+	if defs, colErr := dbInst.GetColumns(metadataSchemaName, metadataTableName); colErr == nil {
 		columnTypeMap = buildImportColumnTypeMap(defs)
 	}
 	insertConsumer := &sqlInsertExportConsumer{
 		w:             w,
 		dbType:        dbType,
-		quotedTable:   quoteQualifiedIdentByType(dbType, outputTableName),
+		quotedTable:   outputTableName,
 		columnTypeMap: columnTypeMap,
 	}
 	if err := streamQueryDataForExport(dbInst, config, selectSQL, insertConsumer); err != nil {

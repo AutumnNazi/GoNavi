@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { isWebRPCAbortError } from '../../utils/webRpc';
 
 import { DataSyncEndpointSelector } from './DataSyncEndpointSelector';
 import { DataSyncFieldMappingEditor } from './DataSyncFieldMappingEditor';
@@ -1226,6 +1227,7 @@ export const DataSyncTaskEditor: React.FC<{
   currentTaskRef.current = task;
   const [inspectedMappingId, setInspectedMappingId] = useState('');
   const mappingProbeEpochRef = useRef(0);
+  const mappingProbeAbortRef = useRef<AbortController | null>(null);
   const [mappingProbe, setMappingProbe] = useState<{
     taskId: string;
     epoch: number;
@@ -1238,9 +1240,13 @@ export const DataSyncTaskEditor: React.FC<{
   useEffect(() => {
     setInspectedMappingId('');
     mappingProbeEpochRef.current += 1;
+    mappingProbeAbortRef.current?.abort();
+    mappingProbeAbortRef.current = null;
     setMappingProbe(null);
     return () => {
       mappingProbeEpochRef.current += 1;
+      mappingProbeAbortRef.current?.abort();
+      mappingProbeAbortRef.current = null;
     };
   }, [
     task.id,
@@ -1345,6 +1351,9 @@ export const DataSyncTaskEditor: React.FC<{
     );
     if (addedMappings.length === 0) return;
     const probeEpoch = ++mappingProbeEpochRef.current;
+    mappingProbeAbortRef.current?.abort();
+    const probeController = new AbortController();
+    mappingProbeAbortRef.current = probeController;
     setMappingProbe({
       taskId: requestTask.id,
       epoch: probeEpoch,
@@ -1377,6 +1386,7 @@ export const DataSyncTaskEditor: React.FC<{
               const sourceFields = await gateway.listFields(
                 requestTask.source,
                 mapping.sourceObject,
+                { signal: probeController.signal },
               );
               let targetFields: DataSyncFieldMetadata[] = [];
               if (requestTask.kind === 'cdc' && mapping.targetObject.trim()) {
@@ -1384,8 +1394,16 @@ export const DataSyncTaskEditor: React.FC<{
                   targetFields = await gateway.listFields(
                     requestTask.target,
                     mapping.targetObject,
+                    { signal: probeController.signal },
                   );
-                } catch {
+                } catch (error) {
+                  if (
+                    probeController.signal.aborted ||
+                    isWebRPCAbortError(error) ||
+                    mappingProbeEpochRef.current !== probeEpoch
+                  ) {
+                    return;
+                  }
                   targetFields = [];
                 }
               }
@@ -1398,7 +1416,14 @@ export const DataSyncTaskEditor: React.FC<{
                 targetFields,
                 targetObject: mapping.targetObject,
               });
-            } catch {
+            } catch (error) {
+              if (
+                probeController.signal.aborted ||
+                isWebRPCAbortError(error) ||
+                mappingProbeEpochRef.current !== probeEpoch
+              ) {
+                return;
+              }
               metadataByMappingId.set(mapping.id, {
                 keyColumns: [],
                 sourceFields: [],
@@ -1426,6 +1451,15 @@ export const DataSyncTaskEditor: React.FC<{
         },
       );
       await Promise.all(workers);
+      if (mappingProbeAbortRef.current === probeController) {
+        mappingProbeAbortRef.current = null;
+      }
+      if (
+        probeController.signal.aborted ||
+        mappingProbeEpochRef.current !== probeEpoch
+      ) {
+        return;
+      }
 
       const currentTask = currentTaskRef.current;
       const currentSourceScope = JSON.stringify([

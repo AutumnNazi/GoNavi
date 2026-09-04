@@ -3,10 +3,16 @@ import { describe, expect, it } from 'vitest';
 import { setCurrentLanguage } from '../i18n';
 import {
   isMysqlFamilyDialect,
+  appendTableAlias,
   resolveColumnTypeOptions,
   resolveSqlDialect,
   resolveSqlFunctions,
   resolveSqlKeywords,
+  resolveTableAliasSyntax,
+  quoteSqlIdentifierPart,
+  quoteSqlIdentifierPath,
+  unquoteSqlIdentifierPart,
+  unquoteSqlIdentifierPath,
 } from './sqlDialect';
 
 const values = (options: Array<{ value: string }>) => options.map((item) => item.value);
@@ -58,6 +64,52 @@ describe('sqlDialect', () => {
     expect(isMysqlFamilyDialect('oceanbase')).toBe(true);
     expect(isMysqlFamilyDialect('starrocks')).toBe(true);
     expect(isMysqlFamilyDialect('oracle')).toBe(false);
+  });
+
+  it('uses dialect-compatible table alias syntax', () => {
+    expect(resolveTableAliasSyntax('mysql')).toBe('as');
+    expect(resolveTableAliasSyntax('tidb')).toBe('as');
+    expect(resolveTableAliasSyntax('postgres')).toBe('as');
+    expect(resolveTableAliasSyntax('oceanbase')).toBe('as');
+    expect(resolveTableAliasSyntax('oracle')).toBe('bare');
+    expect(resolveTableAliasSyntax(resolveSqlDialect('oceanbase', '', { oceanBaseProtocol: 'oracle' }))).toBe('bare');
+    expect(resolveTableAliasSyntax('dameng')).toBe('bare');
+    expect(resolveTableAliasSyntax('iotdb')).toBe('none');
+    expect(resolveTableAliasSyntax('unknown')).toBe('none');
+    expect(appendTableAlias('system_user', 'su', 'mysql')).toBe('system_user AS su');
+    expect(appendTableAlias('system_user', 'su', 'tidb')).toBe('system_user AS su');
+    expect(appendTableAlias('system_user', 'su', 'oracle')).toBe('system_user su');
+    expect(appendTableAlias('system_user', 'su', 'unknown')).toBe('system_user');
+    expect(appendTableAlias('', 'su', 'mysql')).toBe('AS su');
+  });
+
+  it('preserves dots inside quoted identifier path segments', () => {
+    const path = '"PEM2.4_V1_1"."COM_APPROVE_INFO"';
+    expect(unquoteSqlIdentifierPath(path)).toBe('PEM2.4_V1_1.COM_APPROVE_INFO');
+    expect(quoteSqlIdentifierPath('postgres', path)).toBe(path);
+  });
+
+  it('unescapes delimited identifier escapes before quoting again', () => {
+    expect(quoteSqlIdentifierPath('mysql', '`audit``log`.`order``items`'))
+      .toBe('`audit``log`.`order``items`');
+    expect(quoteSqlIdentifierPath('postgres', '"Audit""Schema"."Order""Items"'))
+      .toBe('"Audit""Schema"."Order""Items"');
+    expect(quoteSqlIdentifierPath('sqlserver', '[audit]]schema].[order]]items]'))
+      .toBe('[audit]]schema].[order]]items]');
+  });
+
+  it('preserves delimited whitespace and applies bracket quoting only to supporting dialects', () => {
+    expect(quoteSqlIdentifierPath('postgres', '" id "')).toBe('" id "');
+    expect(quoteSqlIdentifierPath('mysql', '[weird]]name]')).toBe('`[weird]]name]`');
+    expect(quoteSqlIdentifierPath('sqlserver', '[weird]]name]')).toBe('[weird]]name]');
+    expect(quoteSqlIdentifierPart('sqlite', '[order.items]')).toBe('"order.items"');
+    expect(unquoteSqlIdentifierPart('[order.items]', 'sqlite')).toBe('order.items');
+    expect(quoteSqlIdentifierPart('sqlite', ' [order.items] ')).toBe('"order.items"');
+  });
+
+  it('trims unquoted identifier parts before quoting', () => {
+    expect(quoteSqlIdentifierPart('mysql', ' users ')).toBe('`users`');
+    expect(quoteSqlIdentifierPart('postgres', ' Users ')).toBe('"Users"');
   });
 
   it('resolves field type options per datasource family', () => {
