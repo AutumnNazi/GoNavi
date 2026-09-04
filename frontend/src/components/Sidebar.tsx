@@ -879,12 +879,12 @@ const Sidebar: React.FC<{
   onOpenSettings?: () => void;
   /**
    * Open a settings-center group/pane, tool-center entry, or run a settings action
-   * (import/export connections, data-sync, sql audit). Mirrors 设置 left-nav groups.
+   * (import/export connections, data-sync, driver manager, sql audit). Mirrors 设置 left-nav groups.
    */
   onOpenSettingsNavigation?: (spec: {
     group: 'preferences' | 'services' | 'config' | 'workflow' | 'workspace' | 'about';
     pane?: string;
-    action?: 'import-connections' | 'export-connections' | 'schema-compare' | 'data-compare' | 'sync' | 'sql-audit';
+    action?: 'import-connections' | 'export-connections' | 'schema-compare' | 'data-compare' | 'sync' | 'drivers' | 'sql-audit';
   }) => void;
   /** Whether web-only settings entries (e.g. browser auth) should appear. */
   isWebRuntime?: boolean;
@@ -4572,7 +4572,7 @@ const Sidebar: React.FC<{
       key: 'drivers',
       label: t('app.tools.entry.drivers.title'),
       icon: <SettingOutlined aria-hidden="true" />,
-      onClick: () => onOpenSettingsNavigation?.({ group: 'workspace', pane: 'drivers' }),
+      onClick: () => onOpenSettingsNavigation?.({ group: 'workspace', action: 'drivers' }),
     },
     {
       key: 'open-external-sql-file',

@@ -32,7 +32,6 @@ import {
   type AboutUpdateActionsSurface,
 } from './utils/aboutUpdateActions';
 import { type DataSyncEntryMode } from './components/dataSyncEntryMode';
-import DriverManagerModal from './components/DriverManagerModal';
 import LinuxCJKFontBanner from './components/LinuxCJKFontBanner';
 import LogPanel from './components/LogPanel';
 import AIPanelErrorBoundary from './components/ai/AIPanelErrorBoundary';
@@ -118,6 +117,12 @@ import {
 } from './utils/connectionExport';
 import { downloadBrowserTextFile } from './utils/browserFileTransfer';
 import { buildDataSyncWorkbenchTab } from './utils/dataSyncTab';
+import {
+  buildDriverManagerWorkbenchTab,
+  notifyDownloadSourceChanged,
+  OPEN_DOWNLOAD_SOURCE_SETTINGS_EVENT,
+  OPEN_GLOBAL_PROXY_SETTINGS_EVENT,
+} from './utils/driverManagerTab';
 import { buildSqlAuditWorkbenchTab } from './utils/sqlAuditTab';
 import { buildRequestDiagnosticsWorkbenchTab } from './utils/requestDiagnosticsTab';
 import {
@@ -250,6 +255,7 @@ import { waitForWindowCondition } from './utils/windowTransition';
 import {
   hasNativeDetachedWindowManager,
   openNativeAIChatWindow,
+  openNativeWorkbenchTabWindow,
   toggleOrFocusNativeAIChatFromMainWindow,
 } from './utils/nativeDetachedWindowHost';
 import {
@@ -599,7 +605,6 @@ type ToolCenterPaneKey =
   | 'connection-package'
   | 'data-root'
   | 'security-update'
-  | 'drivers'
   | 'snippet-settings'
   | 'shortcut-settings';
 
@@ -806,7 +811,6 @@ function App() {
   const [notificationApi, notificationContextHolder] = notification.useNotification();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isConnectionModalMounted, setIsConnectionModalMounted] = useState(false);
-  const [isDriverModalOpen, setIsDriverModalOpen] = useState(false);
   const [editingConnection, setEditingConnection] = useState<SavedConnection | null>(null);
   const [isConnectionHealthModalOpen, setIsConnectionHealthModalOpen] = useState(false);
   const [connectionHealthTargetIds, setConnectionHealthTargetIds] = useState<string[]>([]);
@@ -1538,6 +1542,7 @@ function App() {
       const nextSource = normalizeDownloadSourceId(value);
       const previousSource = downloadSource;
       setDownloadSource(nextSource);
+      notifyDownloadSourceChanged(nextSource);
       const backendApp = (window as any).go?.app?.App;
       if (typeof backendApp?.SaveDownloadSourceConfig !== 'function') {
           return;
@@ -1545,10 +1550,13 @@ function App() {
       setDownloadSourceSaving(true);
       try {
           const result = await backendApp.SaveDownloadSourceConfig(nextSource);
-          setDownloadSource(normalizeDownloadSourceId(result?.source ?? nextSource));
+          const savedSource = normalizeDownloadSourceId(result?.source ?? nextSource);
+          setDownloadSource(savedSource);
+          notifyDownloadSourceChanged(savedSource);
           void message.success(t('app.download_source.message.saved'));
       } catch (error: unknown) {
           setDownloadSource(previousSource);
+          notifyDownloadSourceChanged(previousSource);
           void message.error(error instanceof Error ? error.message : t('app.download_source.message.save_failed'));
       } finally {
           setDownloadSourceSaving(false);
@@ -2586,6 +2594,15 @@ function App() {
   });
 
   const addTab = useStore(state => state.addTab);
+  const handleOpenDriverManagerWorkbench = useCallback(() => {
+      const tab = buildDriverManagerWorkbenchTab();
+      const wasDetached = useStore.getState().isWorkbenchTabDetached(tab.id);
+      addTab(tab);
+      if (!wasDetached) return;
+      void openNativeWorkbenchTabWindow(tab.id).catch((error) => {
+          message.error(error instanceof Error ? error.message : String(error));
+      });
+  }, [addTab]);
   const activeContext = useStore(state => state.activeContext);
   const connections = useStore(state => state.connections);
   const [sidebarTitlebarSnapshot, setSidebarTitlebarSnapshot] = useState<TitlebarSidebarSnapshot>({
@@ -4213,7 +4230,7 @@ function App() {
   const handleTitleBarSettingsNavigation = useCallback((spec: {
     group: 'preferences' | 'services' | 'config' | 'workflow' | 'workspace' | 'about';
     pane?: string;
-    action?: 'import-connections' | 'export-connections' | 'schema-compare' | 'data-compare' | 'sync' | 'sql-audit';
+    action?: 'import-connections' | 'export-connections' | 'schema-compare' | 'data-compare' | 'sync' | 'drivers' | 'sql-audit';
   }) => withAISettingsLeaveGuard(aiSettingsLeaveGuardRef.current, () => {
       if (spec.action === 'import-connections') {
           void handleImportConnections('config');
@@ -4233,6 +4250,11 @@ function App() {
       }
       if (spec.action === 'sync') {
           handleOpenDataSyncWorkbench('sync');
+          return;
+      }
+      if (spec.action === 'drivers') {
+          handleCancelSettingsCenterPane();
+          handleOpenDriverManagerWorkbench();
           return;
       }
       if (spec.action === 'sql-audit') {
@@ -4270,6 +4292,7 @@ function App() {
       handleExportConnections,
       handleImportConnections,
       handleOpenDataSyncWorkbench,
+      handleOpenDriverManagerWorkbench,
       handleOpenSettingsCenterPane,
       handleOpenSettingsModal,
       handleOpenToolCenterPane,
@@ -4846,32 +4869,34 @@ function App() {
       setIsConnectionHealthModalOpen(true);
   }, []);
 
-  const handleOpenDriverManagerFromConnection = () => {
+  const handleOpenDriverManagerFromConnection = useCallback(() => {
       pendingConnectionTagIdRef.current = null;
       setIsModalOpen(false);
       setEditingConnection(null);
       setToolCenterBackGroupKey(null);
-      setIsDriverModalOpen(true);
-  };
-
-  const handleCloseDriverManager = useCallback(() => {
-      const reopenSecurityUpdateDetails = shouldReopenSecurityUpdateDetails(securityUpdateRepairSource);
-      setIsDriverModalOpen(false);
-      setToolCenterBackGroupKey(null);
-      setSecurityUpdateRepairSource(null);
-      if (reopenSecurityUpdateDetails) {
-          openSecurityUpdateSettings();
-      }
-  }, [openSecurityUpdateSettings, securityUpdateRepairSource]);
+      handleOpenDriverManagerWorkbench();
+  }, [handleOpenDriverManagerWorkbench]);
 
   const handleOpenGlobalProxySettings = useCallback(() => {
       setSecurityUpdateRepairSource(null);
       setIsProxyModalOpen(true);
   }, []);
 
+  useEffect(() => {
+      const openGlobalProxySettings = () => handleOpenGlobalProxySettings();
+      window.addEventListener(OPEN_GLOBAL_PROXY_SETTINGS_EVENT, openGlobalProxySettings);
+      return () => window.removeEventListener(OPEN_GLOBAL_PROXY_SETTINGS_EVENT, openGlobalProxySettings);
+  }, [handleOpenGlobalProxySettings]);
+
   const handleOpenDownloadSourceSettings = useCallback(() => {
       handleOpenSettingsCenterPane('services', 'download-source');
   }, [handleOpenSettingsCenterPane]);
+
+  useEffect(() => {
+      const openDownloadSourceSettings = () => handleOpenDownloadSourceSettings();
+      window.addEventListener(OPEN_DOWNLOAD_SOURCE_SETTINGS_EVENT, openDownloadSourceSettings);
+      return () => window.removeEventListener(OPEN_DOWNLOAD_SOURCE_SETTINGS_EVENT, openDownloadSourceSettings);
+  }, [handleOpenDownloadSourceSettings]);
 
   const handleCloseGlobalProxySettings = useCallback(() => {
       const reopenSecurityUpdateDetails = shouldReopenSecurityUpdateDetails(securityUpdateRepairSource);
@@ -9436,7 +9461,8 @@ function App() {
                     title: t('app.tools.entry.drivers.title'),
                     description: t('app.tools.entry.drivers.description'),
                     onClick: () => {
-                      handleOpenToolCenterPane('workspace', 'drivers');
+                      handleCancelSettingsCenterPane();
+                      handleOpenDriverManagerWorkbench();
                     },
                   },
                   {
@@ -9724,20 +9750,6 @@ function App() {
                     onRestart={handleRestartSecurityUpdate}
                     onIssueAction={handleSecurityUpdateIssueAction}
                   />
-                );
-              }
-
-              if (activeSettingsCenterPane.key === 'drivers') {
-                return (
-              <DriverManagerModal
-                embedded
-                open
-                onClose={handleCancelSettingsCenterPane}
-                onBack={closeToolCenterPane}
-                onOpenGlobalProxySettings={handleOpenGlobalProxySettings}
-                onOpenDownloadSourceSettings={handleOpenDownloadSourceSettings}
-                downloadSource={downloadSource}
-              />
                 );
               }
 
@@ -10195,16 +10207,6 @@ function App() {
               </div>
             )}
           </Modal>
-          )}
-          {isDriverModalOpen && (
-          <DriverManagerModal
-            open={isDriverModalOpen}
-            onClose={handleCloseDriverManager}
-            onBack={toolCenterBackGroupKey === 'workspace' ? () => handleReturnToToolCenter(() => setIsDriverModalOpen(false)) : undefined}
-            onOpenGlobalProxySettings={handleOpenGlobalProxySettings}
-            onOpenDownloadSourceSettings={handleOpenDownloadSourceSettings}
-            downloadSource={downloadSource}
-          />
           )}
           <SecurityUpdateIntroModal
             open={isSecurityUpdateIntroOpen}

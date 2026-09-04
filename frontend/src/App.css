@@ -3547,7 +3547,7 @@ body[data-theme='dark'] .gonavi-about-download-source:hover {
   }
 }
 
-/* The settings-center view is a compact driver workbench, not a stack of
+/* The tab-hosted view is a compact driver workbench, not a stack of
    standalone cards. Keep the full modal presentation above unchanged. */
 .driver-manager-embedded-layout {
     display: flex;

@@ -687,8 +687,9 @@ describe('DriverManagerModal toolbar actions', () => {
 
   // Skipped: this scenario is no longer reachable through the UI. The approved
   // redesign renders the terminal "done" state as a read-only "✓ 已就绪" badge
-  // with no action buttons, so a newer install cannot be started from a card
-  // that already shows an older terminal task. The underlying guard (a late
+  // without install or removal actions (the read-only log entry remains), so a
+  // newer install cannot be started from a card that already shows an older
+  // terminal task. The underlying guard (a late
   // starter snapshot must not revert a terminal state) is still covered by
   // "keeps a fast completed task terminal when its starter snapshot arrives late".
   it.skip('lets a new task replace an older terminal task before its starter returns', async () => {

@@ -1157,7 +1157,7 @@ describe('Sidebar locate toolbar', () => {
     const driverSource = actionsSource.slice(driverIndex, actionsSource.indexOf("key: 'open-external-sql-file'", driverIndex));
     expect(driverSource).not.toContain("priority: 'secondary'");
     expect(driverSource).toContain("label: t('app.tools.entry.drivers.title')");
-    expect(driverSource).toContain("pane: 'drivers'");
+    expect(driverSource).toContain("action: 'drivers'");
 
     const workspaceSource = actionsSource.slice(workspaceIndex);
     expect(workspaceSource).toContain("priority: 'secondary'");

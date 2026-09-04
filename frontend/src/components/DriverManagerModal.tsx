@@ -1531,7 +1531,13 @@ const DriverManagerModal: React.FC<{
         }
         return false;
       }
-      appendOperationLog(row.type, t('driver.modal.operationLog.localImport.done', { version: logVersionTip }));
+      const doneMessage = t('driver.modal.operationLog.localImport.done', { version: logVersionTip });
+      appendOperationLog(row.type, doneMessage);
+      updateDriverProgress(row.type, {
+        status: 'done',
+        message: doneMessage,
+        percent: 100,
+      });
       if (!options?.silentToast) {
         message.success(t('driver.modal.success.localImportDriver', { name: row.name, version: versionTip }));
       }
@@ -2286,6 +2292,14 @@ const DriverManagerModal: React.FC<{
             ) : isDownloadDone ? (
               <div className="driver-manager-control-block driver-manager-card-progress-done">
                 <Text type="success" className="driver-manager-card-ready-text">✓ {t('driver.modal.card.ready')}</Text>
+                {(operationLogMap[row.type] || []).length > 0 ? (
+                  <Button
+                    size={embedded ? 'small' : undefined}
+                    onClick={() => openDriverLog(row.type)}
+                  >
+                    {t('driver_manager.action.logs')}
+                  </Button>
+                ) : null}
                 {isDriverVersionSwitchPending(row) ? (
                   <Button
                     size={embedded ? 'small' : undefined}
