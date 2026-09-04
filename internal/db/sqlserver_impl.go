@@ -678,6 +678,8 @@ JOIN [%s].sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.colum
 JOIN [%s].sys.tables t ON i.object_id = t.object_id
 JOIN [%s].sys.schemas s ON t.schema_id = s.schema_id
 WHERE s.name = '%s' AND t.name = '%s' AND i.name IS NOT NULL
+  AND i.is_primary_key = 0
+  AND ic.is_included_column = 0
 ORDER BY i.name, ic.key_ordinal`,
 		safeDB, safeDB, safeDB, safeDB, safeDB, esc(schema), esc(table))
 

@@ -456,7 +456,7 @@ func (o *OracleDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefi
 			continue
 		}
 
-		return parseOracleColumns(data), nil
+		return o.applyOracleIdentityMetadata(candidate.schema, candidate.table, parseOracleColumns(data)), nil
 	}
 	for _, target := range o.lookupOracleSynonymTargets(dbName, tableName) {
 		query := buildOracleColumnsQuery(target.schema, target.table)
@@ -468,7 +468,7 @@ func (o *OracleDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefi
 			continue
 		}
 
-		return parseOracleColumns(data), nil
+		return o.applyOracleIdentityMetadata(target.schema, target.table, parseOracleColumns(data)), nil
 	}
 	if columns, err := o.inferOracleColumnsFromSelect(dbName, tableName); err == nil && len(columns) > 0 {
 		return columns, nil
@@ -549,6 +549,11 @@ func oracleColumnsFromSQLRows(rows *sql.Rows) ([]connection.ColumnDefinition, er
 	return columns, nil
 }
 
+// oracleDriverUnknownScale 是 go-ora 用来表示"变精度 / scale 未知"的哨兵值。
+// 驱动的 ParameterInfo.Scale 是 uint8，Oracle 的 -127（变精度 NUMBER）在驱动内
+// 被折成 0xFF，经 ColumnTypePrecisionScale 转成 int64 后就是 255。
+const oracleDriverUnknownScale = 255
+
 func formatOracleSQLColumnType(colType *sql.ColumnType) string {
 	if colType == nil {
 		return ""
@@ -562,7 +567,12 @@ func formatOracleSQLColumnType(colType *sql.ColumnType) string {
 		return fmt.Sprintf("%s(%d)", typeName, length)
 	}
 	if precision, scale, ok := colType.DecimalSize(); ok && precision > 0 && (strings.Contains(upperType, "NUMBER") || strings.Contains(upperType, "DECIMAL") || strings.Contains(upperType, "NUMERIC")) {
-		if scale > 0 {
+		// 这条路径的 scale 来自驱动，字段类型是 uint8，拿不到 Oracle 的负 scale
+		// （真正的负 scale 只出现在读 DATA_SCALE 的字典路径，见
+		// formatOracleColumnType）。go-ora 用 0xFF=255 表示"变精度/未知 scale"，
+		// 原样拼出来会得到 NUMBER(38,255) 这种非法类型：精度上限是 38，而下游
+		// 折算层只认负号，不会拦这个值，最终建表报 Too big scale。
+		if scale > 0 && scale != oracleDriverUnknownScale {
 			return fmt.Sprintf("%s(%d,%d)", typeName, precision, scale)
 		}
 		return fmt.Sprintf("%s(%d)", typeName, precision)
@@ -633,7 +643,10 @@ func formatOracleColumnType(row map[string]interface{}) string {
 		precision, hasPrecision := oracleRowInt(row, "DATA_PRECISION", "NUMERIC_PRECISION")
 		if hasPrecision && precision > 0 {
 			scale, hasScale := oracleRowInt(row, "DATA_SCALE", "NUMERIC_SCALE")
-			if hasScale && scale > 0 {
+			// 负 scale 必须保留：Oracle 的 NUMBER(10,-2) 表示向左舍入到百位，
+			// 丢掉负号会当成 NUMBER(10) 从而改变精度语义。跨方言迁移时由
+			// 归一层把负 scale 折算成目标库合法的写法。
+			if hasScale && scale != 0 {
 				return fmt.Sprintf("%s(%d,%d)", dataType, precision, scale)
 			}
 			return fmt.Sprintf("%s(%d)", dataType, precision)
@@ -921,6 +934,63 @@ func parseOracleColumns(data []map[string]interface{}) []connection.ColumnDefini
 		columns = append(columns, col)
 	}
 	return columns
+}
+
+// buildOracleIdentityColumnsQuery 读取 12c 起提供的 identity 列元数据。
+//
+// 刻意独立成一条查询：ALL_TAB_IDENTITY_COLS 在 11g 及更早版本不存在，合并进主
+// 查询会让整个 GetColumns 在旧库上直接失败；受限账号缺少该视图权限时同理。
+// 调用方应把查询错误降级为告警，保留基础列元数据。
+func buildOracleIdentityColumnsQuery(schema string, table string) string {
+	metadataTableName := escapeOracleMetadataLiteralExact(table)
+	if strings.TrimSpace(schema) == "" {
+		return fmt.Sprintf(`SELECT column_name AS "COLUMN_NAME"
+FROM user_tab_identity_cols
+WHERE table_name = '%s'`, metadataTableName)
+	}
+
+	metadataSchemaName := escapeOracleMetadataLiteralExact(schema)
+	return fmt.Sprintf(`SELECT column_name AS "COLUMN_NAME"
+FROM all_tab_identity_cols
+WHERE owner = '%s'
+  AND table_name = '%s'`, metadataSchemaName, metadataTableName)
+}
+
+// applyOracleIdentityColumns 给 identity 列打上 auto_increment 标记。
+// 跨库自动建表只认 Extra 里的这个标记来识别自增，缺失会让目标表建成普通数字列，
+// 导入后目标端不再自动生成 ID。
+func applyOracleIdentityColumns(columns []connection.ColumnDefinition, data []map[string]interface{}) []connection.ColumnDefinition {
+	identityColumns := make(map[string]struct{}, len(data))
+	for _, row := range data {
+		name := strings.ToUpper(strings.TrimSpace(oracleRowString(row, "COLUMN_NAME")))
+		if name != "" {
+			identityColumns[name] = struct{}{}
+		}
+	}
+	if len(identityColumns) == 0 {
+		return columns
+	}
+
+	for i := range columns {
+		if _, ok := identityColumns[strings.ToUpper(strings.TrimSpace(columns[i].Name))]; ok {
+			columns[i].Extra = "auto_increment"
+		}
+	}
+	return columns
+}
+
+// applyOracleIdentityMetadata 查询并回填 identity 标记。查询失败只告警，
+// 保证旧版本 Oracle 与受限账号仍能拿到基础列定义。
+func (o *OracleDB) applyOracleIdentityMetadata(schema string, table string, columns []connection.ColumnDefinition) []connection.ColumnDefinition {
+	if len(columns) == 0 {
+		return columns
+	}
+	data, _, err := o.Query(buildOracleIdentityColumnsQuery(schema, table))
+	if err != nil {
+		logger.Warnf("Oracle GetColumns identity 元数据查询失败，已返回基础字段定义：%v", err)
+		return columns
+	}
+	return applyOracleIdentityColumns(columns, data)
 }
 
 func (o *OracleDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefinition, error) {

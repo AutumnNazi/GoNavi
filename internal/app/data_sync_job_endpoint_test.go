@@ -2,11 +2,70 @@ package app
 
 import (
 	"bytes"
+	"path/filepath"
 	"testing"
 
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/syncjob"
 )
+
+func TestResolveDataSyncEndpointConfigAttachesManagedSSHTrustStore(t *testing.T) {
+	application := NewApp()
+	application.configDir = t.TempDir()
+
+	config, selectedDatabase, err := application.resolveDataSyncEndpointConfig(connection.ConnectionConfig{
+		Type:   "kingbase",
+		UseSSH: true,
+		SSH: connection.SSHConfig{
+			Host: "bastion.example.test",
+			Port: 22,
+		},
+	}, "warehouse")
+	if err != nil {
+		t.Fatalf("resolveDataSyncEndpointConfig returned error: %v", err)
+	}
+	if selectedDatabase != "warehouse" {
+		t.Fatalf("selected database = %q, want warehouse", selectedDatabase)
+	}
+	want := filepath.Join(application.configDir, "ssh", managedSSHHostKeyTrustStoreFileName)
+	if got := config.SSH.ManagedHostKeyTrustStorePath(); got != want {
+		t.Fatalf("DataSync endpoint trust-store path = %q, want %q", got, want)
+	}
+}
+
+func TestResolveDataSyncJobEndpointCarriesManagedSSHTrustStoreFromSavedConnection(t *testing.T) {
+	application := NewAppWithSecretStore(newFakeAppSecretStore())
+	application.configDir = t.TempDir()
+	if _, err := application.SaveConnection(connection.SavedConnectionInput{
+		ID:   "kingbase-ssh",
+		Name: "Kingbase over SSH",
+		Config: connection.ConnectionConfig{
+			ID:       "kingbase-ssh",
+			Type:     "kingbase",
+			Host:     "127.0.0.1",
+			Port:     15434,
+			User:     "kingbase",
+			UseSSH:   true,
+			Database: "warehouse",
+			SSH: connection.SSHConfig{
+				Host: "bastion.example.test",
+				Port: 2222,
+				User: "tunnel",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveConnection returned error: %v", err)
+	}
+
+	endpoint, err := application.resolveDataSyncJobEndpoint("kingbase-ssh", "warehouse", "")
+	if err != nil {
+		t.Fatalf("resolveDataSyncJobEndpoint returned error: %v", err)
+	}
+	want := filepath.Join(application.configDir, "ssh", managedSSHHostKeyTrustStoreFileName)
+	if got := endpoint.Config.SSH.ManagedHostKeyTrustStorePath(); got != want {
+		t.Fatalf("saved DataSync endpoint trust-store path = %q, want %q", got, want)
+	}
+}
 
 func TestDataSyncJobSourceIndexLocationUsesMappingThenEndpointSelection(t *testing.T) {
 	endpoint := resolvedDataSyncJobEndpoint{Database: "sales", Schema: "public"}

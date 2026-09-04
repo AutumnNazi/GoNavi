@@ -408,7 +408,43 @@ func (s *SQLiteDB) getColumnsContext(ctx context.Context, dbName, tableName stri
 
 		columns = append(columns, col)
 	}
-	return columns, nil
+
+	// PRAGMA table_info 不回显 AUTOINCREMENT，只能从建表 SQL 识别；
+	// 拿不到 DDL（虚拟表/异常）时静默跳过，不影响其余元数据。
+	tableDDL := ""
+	ddlRows, _, ddlErr := s.QueryContext(ctx, fmt.Sprintf("SELECT sql FROM sqlite_master WHERE type='table' AND name='%s'", escapeSQLiteStringLiteral(table)))
+	if ddlErr == nil && len(ddlRows) > 0 {
+		if val, ok := ddlRows[0]["sql"]; ok && val != nil {
+			tableDDL = fmt.Sprintf("%v", val)
+		}
+	}
+	return applySQLiteAutoIncrement(columns, tableDDL), nil
+}
+
+// applySQLiteAutoIncrement 给 AUTOINCREMENT 主键列打上 auto_increment 标记，
+// 供跨库迁移识别自增语义。该写法只对单列主键合法，复合主键的 DDL 里不会出现
+// AUTOINCREMENT，按主键列数守卫即可。识别经
+// sqliteDDLPrimaryKeyUsesAutoIncrement 匹配真实的内联约束序列，字符串默认值、
+// 注释与引号标识符里的关键字不会误判，理由见其注释。
+func applySQLiteAutoIncrement(columns []connection.ColumnDefinition, tableDDL string) []connection.ColumnDefinition {
+	if !sqliteDDLPrimaryKeyUsesAutoIncrement(tableDDL) {
+		return columns
+	}
+	pkCount := 0
+	for _, col := range columns {
+		if col.Key == "PRI" {
+			pkCount++
+		}
+	}
+	if pkCount != 1 {
+		return columns
+	}
+	for i := range columns {
+		if columns[i].Key == "PRI" {
+			columns[i].Extra = "auto_increment"
+		}
+	}
+	return columns
 }
 
 func (s *SQLiteDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefinition, error) {

@@ -4529,6 +4529,7 @@ export namespace syncjob {
 	    targetSchema?: string;
 	    targetTable: string;
 	    targetTableStrategy?: string;
+	    targetTableStrategyExplicit?: boolean;
 	    filter?: string;
 	    keyColumns?: string[];
 	    columns?: ColumnMapping[];
@@ -4546,6 +4547,7 @@ export namespace syncjob {
 	        this.targetSchema = source["targetSchema"];
 	        this.targetTable = source["targetTable"];
 	        this.targetTableStrategy = source["targetTableStrategy"];
+	        this.targetTableStrategyExplicit = source["targetTableStrategyExplicit"];
 	        this.filter = source["filter"];
 	        this.keyColumns = source["keyColumns"];
 	        this.columns = this.convertValues(source["columns"], ColumnMapping);

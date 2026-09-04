@@ -3705,7 +3705,11 @@ func formatAppOracleColumnType(row map[string]interface{}) string {
 		precision, hasPrecision := appOracleRowInt(row, "DATA_PRECISION", "NUMERIC_PRECISION", "data_precision", "numeric_precision")
 		if hasPrecision && precision > 0 {
 			scale, hasScale := appOracleRowInt(row, "DATA_SCALE", "NUMERIC_SCALE", "data_scale", "numeric_scale")
-			if hasScale && scale > 0 {
+			// 负 scale 必须保留，理由与 internal/db 的 formatOracleColumnType 相同：
+			// Oracle 的 NUMBER(10,-2) 表示向左舍入到百位，丢掉负号会显示成
+			// NUMBER(10) 而改变精度语义。这两条路径都可能被 DBGetColumns 走到
+			// （db 层返回空列表时才走本兜底），保持一致才不会让同一列显示出两种类型。
+			if hasScale && scale != 0 {
 				return fmt.Sprintf("%s(%d,%d)", dataType, precision, scale)
 			}
 			return fmt.Sprintf("%s(%d)", dataType, precision)

@@ -12,7 +12,7 @@ func init() {
 		"sqlserver":     "src-e03b09a949e349d1",
 		"sqlite":        "src-fc840ce80a56ec0f",
 		"duckdb":        "src-54d0eef604419ec4",
-		"dameng":        "src-2bef14bbd9e422e4",
+		"dameng":        "src-13c5d36606f618ab",
 		"kingbase":      "src-1ccfbf6694ce620f",
 		"highgo":        "src-e826dd90d87903f3",
 		"vastbase":      "src-dd4a53092e3dface",

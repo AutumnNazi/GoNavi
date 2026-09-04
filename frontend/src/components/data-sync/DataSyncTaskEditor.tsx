@@ -11,7 +11,10 @@ import {
   buildDataSyncMappingsFromSelection,
   createDataSyncTableMapping,
   canUseDataSyncRowErrorIsolation,
+  clearDataSyncTargetModeExplicitMarks,
   DATA_SYNC_TASK_STAGES,
+  migrationAllowTargetCreate,
+  repairMigrationTargetModes,
   validateDataSyncTask,
   type DataSyncConnectionTreeItem,
   type DataSyncDeliveryPolicy,
@@ -243,32 +246,14 @@ const normalizeDataSyncObjectName = (value: string): string =>
     .replace(/[`"\]]$/, '')
     .toLowerCase();
 
-const resolveDataSyncObjectIdentity = (
-  value: string,
-  fallbackSchema: string,
-): { schema: string; name: string } => {
-  const parts = value
-    .trim()
-    .split('.')
-    .map((part) => normalizeDataSyncObjectName(part))
-    .filter(Boolean);
-  const name = parts.pop() || '';
-  return {
-    name,
-    schema:
-      parts.length > 0
-        ? parts.join('.')
-        : normalizeDataSyncObjectName(fallbackSchema),
-  };
-};
-
-const hasImplicitSameNameMappings = (task: DataSyncTaskDefinition): boolean => {
+const hasIdentityMigrationMappings = (task: DataSyncTaskDefinition): boolean => {
   const structureMigration =
     task.kind === 'migration' &&
     (task.content === 'schema' || task.content === 'both');
-  const mappings = task.mappings;
+  const mappings = task.mappings.filter((mapping) => mapping.enabled);
   return (
-    mappings.some((mapping) => mapping.enabled) &&
+    structureMigration &&
+    mappings.length > 0 &&
     mappings.every((mapping) => {
       if (
         mapping.fields.length > 0 ||
@@ -277,17 +262,9 @@ const hasImplicitSameNameMappings = (task: DataSyncTaskDefinition): boolean => {
       ) {
         return false;
       }
-      const source = resolveDataSyncObjectIdentity(
-        mapping.sourceObject,
-        task.source.schema,
-      );
-      const target = resolveDataSyncObjectIdentity(
-        mapping.targetObject,
-        task.target.schema,
-      );
-      return (
-        Boolean(source.name) &&
-        source.name === target.name
+      return Boolean(
+        normalizeDataSyncObjectName(mapping.sourceObject) &&
+          normalizeDataSyncObjectName(mapping.targetObject),
       );
     })
   );
@@ -331,13 +308,13 @@ const DeliveryStage: React.FC<{
       (task.kind === 'cdc' &&
         task.incremental.mode === 'cdc' &&
         allEnabledMappingsHaveKeys));
-  const implicitSameNameMappings = hasImplicitSameNameMappings(task);
+  const identityMigrationMappings = hasIdentityMigrationMappings(task);
   const schemaOnlyMigration =
     task.kind === 'migration' && task.content === 'schema';
   const canConfigureMigrationStructure =
     task.kind === 'migration' &&
     capability.canExecute &&
-    (implicitSameNameMappings || schemaOnlyMigration);
+    (identityMigrationMappings || schemaOnlyMigration);
   const canAutoAddColumns =
     canConfigureMigrationStructure && capability.supportsAutoAddColumns === true;
   const canCreateIndexes =
@@ -1224,6 +1201,18 @@ export const DataSyncTaskEditor: React.FC<{
     preflight && !preflightStale ? preflight.issues : validateDataSyncTask(task);
   const currentTaskRef = useRef(task);
   const stageNavRef = useRef<HTMLElement | null>(null);
+  const userSelectedTargetModeIdsRef = useRef<Set<string>>(new Set());
+  const endpointScope = JSON.stringify([
+    task.source.connectionId,
+    task.source.type,
+    task.source.database,
+    task.source.schema,
+    task.target.connectionId,
+    task.target.type,
+    task.target.database,
+    task.target.schema,
+  ]);
+  const endpointScopeRef = useRef({ taskId: task.id, value: endpointScope });
   currentTaskRef.current = task;
   const [inspectedMappingId, setInspectedMappingId] = useState('');
   const mappingProbeEpochRef = useRef(0);
@@ -1263,6 +1252,38 @@ export const DataSyncTaskEditor: React.FC<{
   useEffect(() => {
     if (inspectedMappingId && !inspectedMapping) setInspectedMappingId('');
   }, [inspectedMapping, inspectedMappingId]);
+
+  useEffect(() => {
+    const previous = endpointScopeRef.current;
+    if (previous.taskId !== task.id) {
+      endpointScopeRef.current = { taskId: task.id, value: endpointScope };
+      userSelectedTargetModeIdsRef.current.clear();
+      return;
+    }
+    if (previous.value === endpointScope) return;
+    endpointScopeRef.current = { taskId: task.id, value: endpointScope };
+    userSelectedTargetModeIdsRef.current.clear();
+    const mappings = clearDataSyncTargetModeExplicitMarks(task.mappings);
+    if (mappings !== task.mappings) onPatch({ mappings });
+  }, [endpointScope, onPatch, task.id, task.mappings]);
+
+  // 能力快照就绪后自修复迁移映射的 targetMode：存量任务在自动建表支持
+  // 上线前保存的 existing_only 映射、以及能力加载完成前手工添加的行，
+  // 在目标表确实缺失且后端支持建表时升为 create_or_reuse，否则预检会
+  // 报"目标表不存在，且当前任务不能自动创建该表"且 UI 无从解释原因。
+  const repairedMappings = repairMigrationTargetModes(
+    task.mappings,
+    task.kind,
+    capability,
+    targetObjects.items,
+    targetObjects.status === 'ready',
+    userSelectedTargetModeIdsRef.current,
+  );
+  useEffect(() => {
+    if (repairedMappings !== task.mappings) {
+      onPatch({ mappings: repairedMappings });
+    }
+  }, [repairedMappings, task.mappings, onPatch]);
 
   useEffect(() => {
     const navigation = stageNavRef.current;
@@ -1306,8 +1327,19 @@ export const DataSyncTaskEditor: React.FC<{
     return () => observer.disconnect();
   }, [activeStage]);
 
-  const changeMapping = (mapping: DataSyncTableMapping) =>
+  const changeMapping = (mapping: DataSyncTableMapping) => {
+    const currentMapping = task.mappings.find(({ id }) => id === mapping.id);
+    if (currentMapping && currentMapping.targetMode !== mapping.targetMode) {
+      if (mapping.targetMode === 'existing_only') {
+        userSelectedTargetModeIdsRef.current.add(mapping.id);
+        mapping = { ...mapping, targetModeExplicit: true };
+      } else {
+        userSelectedTargetModeIdsRef.current.delete(mapping.id);
+        mapping = { ...mapping, targetModeExplicit: undefined };
+      }
+    }
     onPatch({ mappings: updateMapping(task, mapping) });
+  };
 
   const addSelectedObjects = (sourceNames: string[]) => {
     const requestTask = task;
@@ -1330,11 +1362,13 @@ export const DataSyncTaskEditor: React.FC<{
         sourceNames,
         targetObjects: targetObjects.items,
         existingMappings,
-        allowTargetCreate:
-          requestTask.kind === 'migration' &&
-          capability.canExecute &&
-          capability.supportsAutoCreate &&
-          capability.requiresExistingTarget !== true,
+        // 能力未知（加载中/解析失败）必须传 undefined，让选表回落到迁移
+        // 默认许可并由后端预检兜底；传 false 会把映射永久锁死在
+        // existing_only，能力返回后预检只能报"不能自动创建该表"。
+        allowTargetCreate: migrationAllowTargetCreate(
+          requestTask.kind,
+          capability,
+        ),
       });
     const mappings = buildMappings(requestTask.mappings);
     onPatch({ mappings });

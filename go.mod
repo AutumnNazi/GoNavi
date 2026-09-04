@@ -27,7 +27,7 @@ require (
 	github.com/tailscale/hujson v0.0.0-20260718110524-10d7940d4c87
 	github.com/taosdata/driver-go/v3 v3.7.8
 	github.com/trinodb/trino-go-client v0.333.0
-	github.com/wailsapp/wails/v2 v2.15.0
+	github.com/wailsapp/wails/v2 v2.12.0
 	github.com/xuri/excelize/v2 v2.10.0
 	go.mongodb.org/mongo-driver v1.17.9
 	go.mongodb.org/mongo-driver/v2 v2.5.0

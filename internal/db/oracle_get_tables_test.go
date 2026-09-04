@@ -283,6 +283,25 @@ func TestFormatOracleColumnTypeIncludesLengthAndPrecision(t *testing.T) {
 			want: "NUMBER(10,2)",
 		},
 		{
+			// 负 scale 表示向左舍入到百位，丢掉负号会改变精度语义。
+			name: "number negative scale preserved",
+			row: map[string]interface{}{
+				"DATA_TYPE":      "NUMBER",
+				"DATA_PRECISION": 10,
+				"DATA_SCALE":     -2,
+			},
+			want: "NUMBER(10,-2)",
+		},
+		{
+			name: "number zero scale omits scale",
+			row: map[string]interface{}{
+				"DATA_TYPE":      "NUMBER",
+				"DATA_PRECISION": 10,
+				"DATA_SCALE":     0,
+			},
+			want: "NUMBER(10)",
+		},
+		{
 			name: "date remains plain",
 			row: map[string]interface{}{
 				"DATA_TYPE": "DATE",
