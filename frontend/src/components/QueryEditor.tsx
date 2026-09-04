@@ -3109,6 +3109,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       queryEditorMountedRef.current = true;
       return () => {
           queryEditorMountedRef.current = false;
+          if (aiInlineGhostTimerRef.current !== null) {
+              clearTimeout(aiInlineGhostTimerRef.current);
+              aiInlineGhostTimerRef.current = null;
+          }
+          aiInlineGhostRequestSeqRef.current += 1;
       };
   }, []);
 
@@ -6301,6 +6306,16 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const requestAiInlineGhost = (delayMs: number, focusEditor = false, manualTrigger = false) => {
           clearAiInlineGhost();
           if (aiInlineGhostAcceptingRef.current || editorRef.current !== editor) {
+              return;
+          }
+          // Automatic ghost completion is debounced to keep model snapshotting
+          // off the Monaco content-change hot path. Manual triggers still use
+          // delay 0 and retain their immediate behavior.
+          if (delayMs > 0) {
+              aiInlineGhostTimerRef.current = setTimeout(() => {
+                  aiInlineGhostTimerRef.current = null;
+                  requestAiInlineGhost(0, focusEditor, manualTrigger);
+              }, delayMs);
               return;
           }
           if (focusEditor) {

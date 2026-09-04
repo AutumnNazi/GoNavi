@@ -2343,7 +2343,7 @@ describe('QueryEditor external SQL save', () => {
         editorState.modelContentListeners.forEach((listener) => listener({
           changes: [{ text: 'E' }],
         }));
-        vi.advanceTimersByTime(120);
+        vi.advanceTimersByTime(220);
         for (let i = 0; i < 8; i += 1) {
           await Promise.resolve();
         }
@@ -11907,6 +11907,43 @@ END;`;
     expect(editorState.editor.getModel().getValue).not.toHaveBeenCalled();
   });
 
+  it('does not build the full inline AI snapshot synchronously during typing', async () => {
+    vi.useFakeTimers();
+    Object.assign(window, {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    });
+    try {
+      await act(async () => {
+        create(<QueryEditor tab={createTab({ query: 'select 1;' })} />);
+      });
+
+      const model = editorState.editor.getModel();
+      const getValueInRangeSpy = vi.spyOn(model, 'getValueInRange');
+      editorState.value = `SELECT * FROM users ${'x'.repeat(60_000)}`;
+      editorState.position = { lineNumber: 1, column: editorState.value.length + 1 };
+
+      await act(async () => {
+        editorState.latestOnChange?.(editorState.value);
+        editorState.modelContentListeners.forEach((listener) => listener({
+          changes: [{ text: ' ' }],
+        }));
+      });
+
+      try {
+        expect(getValueInRangeSpy).not.toHaveBeenCalled();
+      } finally {
+        getValueInRangeSpy.mockRestore();
+      }
+    } finally {
+      vi.useRealTimers();
+      Object.assign(window, {
+        setTimeout: globalThis.setTimeout.bind(globalThis),
+        clearTimeout: globalThis.clearTimeout.bind(globalThis),
+      });
+    }
+  });
+
   it('debounces object decoration rescans and colors newly typed tables in the same database context', async () => {
     vi.useFakeTimers();
     Object.assign(window, {
@@ -15932,6 +15969,47 @@ WHERE GRANTEE = 'APPUSER';`;
     expect(storeState.addSqlLog).toHaveBeenCalledWith(expect.objectContaining({
       sql: expect.stringContaining('select 2 as two'),
     }));
+  });
+
+  it('keeps the same statement when a run-button focus shift moves the caret past its semicolon', async () => {
+    backendApp.DBQueryMulti.mockResolvedValue({ success: true, data: [] });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({
+        dbName: 'main',
+        query: 'select 1 as a; select 2 as b;',
+      })} />);
+    });
+
+    const firstSemicolonColumn = 'select 1 as a'.length + 1;
+    editorState.position = { lineNumber: 1, column: firstSemicolonColumn };
+    const runButton = findButton(renderer!, '运行');
+
+    await act(async () => {
+      runButton.props.onMouseDown?.({ preventDefault: vi.fn() });
+      await runButton.props.onClick();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    editorState.position = { lineNumber: 1, column: firstSemicolonColumn + 1 };
+    await act(async () => {
+      runButton.props.onMouseDown?.({ preventDefault: vi.fn() });
+      await runButton.props.onClick();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(backendApp.DBQueryMulti).toHaveBeenCalledTimes(2);
+    expect(String(backendApp.DBQueryMulti.mock.calls[0][2])).toContain('select 1 as a');
+    expect(String(backendApp.DBQueryMulti.mock.calls[0][2])).not.toContain('select 2 as b');
+    expect(String(backendApp.DBQueryMulti.mock.calls[1][2])).toContain('select 1 as a');
+    expect(String(backendApp.DBQueryMulti.mock.calls[1][2])).not.toContain('select 2 as b');
   });
 
   it('keeps cursor statement execution available in v2 UI', async () => {

@@ -612,6 +612,49 @@ describe('sqlStatementSelection', () => {
     });
   });
 
+  it('keeps a caret reported on the newline after a semicolon with the preceding statement', () => {
+    const sql = 'select 1 as a;\nselect 2 as b;';
+    const firstSemicolon = sql.indexOf(';');
+
+    expect(resolveExecutableSql(sql, firstSemicolon + 1)).toEqual({
+      sql: 'select 1 as a',
+      source: 'statement',
+    });
+  });
+
+  it('does not swallow the next statement when it starts immediately after a semicolon', () => {
+    const sql = 'select 1;select 2;';
+
+    expect(resolveExecutableSql(sql, sql.indexOf('select 2'))).toEqual({
+      sql: 'select 2',
+      source: 'statement',
+    });
+  });
+
+  it('keeps whitespace before a delimiter attached to the preceding statement', () => {
+    const sql = 'select 1   ;\nselect 2;';
+    const delimiterFollowup = sql.indexOf(';') + 1;
+
+    expect(resolveExecutableSql(sql, delimiterFollowup)).toEqual({
+      sql: 'select 1',
+      source: 'statement',
+    });
+  });
+
+  it('keeps execution on the preceding statement across same-line semicolon whitespace', () => {
+    const sql = 'select 1 as a; select 2 as b;';
+    const semicolon = sql.indexOf(';');
+
+    expect(resolveExecutableSql(sql, semicolon)).toEqual({
+      sql: 'select 1 as a',
+      source: 'statement',
+    });
+    expect(resolveExecutableSql(sql, semicolon + 1)).toEqual({
+      sql: 'select 1 as a',
+      source: 'statement',
+    });
+  });
+
   it('falls back to all SQL when the cursor is on a blank line between statements', () => {
     const sql = 'select 1;\n\n  select 2';
 
