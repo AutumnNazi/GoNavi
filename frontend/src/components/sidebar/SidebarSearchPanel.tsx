@@ -1,7 +1,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { ConfigProvider, Input, Tooltip } from 'antd';
-import { CloseOutlined, SearchOutlined, TableOutlined, RobotOutlined } from '@ant-design/icons';
+import { CloseOutlined, CopyOutlined, SearchOutlined, TableOutlined, RobotOutlined } from '@ant-design/icons';
 import { noAutoCapInputProps } from '../../utils/inputAutoCap';
 import { t } from '../../i18n';
 import { APP_COMMAND_PALETTE_Z_INDEX } from '../../utils/overlayZIndex';
@@ -13,6 +13,13 @@ import { APP_COMMAND_PALETTE_Z_INDEX } from '../../utils/overlayZIndex';
 //
 // 注意：组件接收 V2CommandSearchItem[]，类型由 Sidebar 主组件定义（含 React.ReactNode 字段），
 // 这里用结构化类型 V2CommandSearchItemLike 代替，避免循环依赖。
+
+export type V2CommandSearchCopyAction = 'object-name' | 'database-name' | 'connection-name' | 'sql';
+
+export interface V2CommandSearchCopyOption {
+  action: V2CommandSearchCopyAction;
+  label: string;
+}
 
 export interface V2CommandSearchItemLike {
   key: string;
@@ -47,8 +54,27 @@ export interface SidebarSearchPanelProps<TItem extends V2CommandSearchItemLike =
     onItemHover: (key: string) => void;
     onRemoveRecentItem: (item: TItem) => void;
     onClearRecentItems: () => void;
+    getCopyOptions?: (item: TItem) => V2CommandSearchCopyOption[];
+    onCopyCommandSearchItem?: (item: TItem, action: V2CommandSearchCopyAction) => void | Promise<void>;
   };
 }
+
+type CommandSearchContextMenuState<TItem> = {
+  item: TItem;
+  options: V2CommandSearchCopyOption[];
+  left: number;
+  top: number;
+};
+
+const COMMAND_SEARCH_CONTEXT_MENU_WIDTH = 248;
+const COMMAND_SEARCH_CONTEXT_MENU_MARGIN = 8;
+const COMMAND_SEARCH_CONTEXT_MENU_ITEM_HEIGHT = 36;
+
+const clampContextMenuPosition = (value: number, viewportSize: number, menuSize: number): number => {
+  const safeValue = Number.isFinite(value) ? value : COMMAND_SEARCH_CONTEXT_MENU_MARGIN;
+  const maxValue = Math.max(COMMAND_SEARCH_CONTEXT_MENU_MARGIN, viewportSize - menuSize - COMMAND_SEARCH_CONTEXT_MENU_MARGIN);
+  return Math.min(Math.max(COMMAND_SEARCH_CONTEXT_MENU_MARGIN, safeValue), maxValue);
+};
 
 const SidebarSearchPanel = <TItem extends V2CommandSearchItemLike>({
   isOpen,
@@ -63,6 +89,41 @@ const SidebarSearchPanel = <TItem extends V2CommandSearchItemLike>({
   inputRef,
   handlers,
 }: SidebarSearchPanelProps<TItem>) => {
+  const [contextMenu, setContextMenu] = React.useState<CommandSearchContextMenuState<TItem> | null>(null);
+  const contextMenuRef = React.useRef<HTMLDivElement | null>(null);
+
+  const closeContextMenu = React.useCallback(() => {
+    setContextMenu(null);
+  }, []);
+
+  React.useEffect(() => {
+    if (!isOpen) closeContextMenu();
+  }, [closeContextMenu, isOpen]);
+
+  React.useEffect(() => {
+    if (!contextMenu || typeof document === 'undefined') return undefined;
+    if (typeof document.addEventListener !== 'function') return undefined;
+
+    const handleDocumentMouseDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (target && contextMenuRef.current?.contains(target)) return;
+      closeContextMenu();
+    };
+    const handleDocumentKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeContextMenu();
+      }
+    };
+
+    document.addEventListener('mousedown', handleDocumentMouseDown, true);
+    document.addEventListener('keydown', handleDocumentKeyDown, true);
+    return () => {
+      document.removeEventListener('mousedown', handleDocumentMouseDown, true);
+      document.removeEventListener('keydown', handleDocumentKeyDown, true);
+    };
+  }, [closeContextMenu, contextMenu]);
+
   if (!isOpen || typeof document === 'undefined') return null;
 
   const emptyCopy = aiMode
@@ -71,11 +132,42 @@ const SidebarSearchPanel = <TItem extends V2CommandSearchItemLike>({
       ? t('sidebar.command_search.empty.object')
       : t('sidebar.command_search.empty.default');
 
+  const openContextMenu = (event: React.MouseEvent<HTMLDivElement>, item: TItem) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const options = item.kind === 'action'
+      ? []
+      : (handlers.getCopyOptions?.(item) || []);
+    if (options.length === 0) {
+      closeContextMenu();
+      return;
+    }
+
+    const viewportWidth = typeof window === 'undefined' ? 0 : window.innerWidth;
+    const viewportHeight = typeof window === 'undefined' ? 0 : window.innerHeight;
+    const menuHeight = options.length * COMMAND_SEARCH_CONTEXT_MENU_ITEM_HEIGHT + 16;
+    setContextMenu({
+      item,
+      options,
+      left: clampContextMenuPosition(event.clientX, viewportWidth, COMMAND_SEARCH_CONTEXT_MENU_WIDTH),
+      top: clampContextMenuPosition(event.clientY, viewportHeight, menuHeight),
+    });
+  };
+
+  const handleCopyAction = (action: V2CommandSearchCopyAction) => {
+    if (!contextMenu) return;
+    const item = contextMenu.item;
+    closeContextMenu();
+    void Promise.resolve(handlers.onCopyCommandSearchItem?.(item, action)).catch(() => undefined);
+  };
+
   const renderRow = (item: TItem, active: boolean) => (
     <div
       key={item.key}
       className={`gn-v2-command-row-shell${active ? ' is-active' : ''}`}
       onMouseEnter={() => handlers.onItemHover(item.key)}
+      onContextMenu={(event) => openContextMenu(event, item)}
     >
       <button
         type="button"
@@ -188,11 +280,51 @@ const SidebarSearchPanel = <TItem extends V2CommandSearchItemLike>({
     </div>
   );
 
-  return createPortal(
-    <ConfigProvider theme={{ token: { zIndexPopupBase: APP_COMMAND_PALETTE_Z_INDEX } }}>
-      {panel}
-    </ConfigProvider>,
+  const contextMenuPortal = contextMenu ? createPortal(
+    <div
+      ref={contextMenuRef}
+      className="gn-v2-command-context-menu"
+      data-v2-command-context-menu="true"
+      role="menu"
+      style={{
+        left: contextMenu.left,
+        top: contextMenu.top,
+        zIndex: APP_COMMAND_PALETTE_Z_INDEX + 1,
+      }}
+      onMouseDown={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    >
+      {contextMenu.options.map((option) => (
+        <button
+          key={option.action}
+          type="button"
+          className="gn-v2-command-context-menu-item"
+          role="menuitem"
+          onClick={(event) => {
+            event.stopPropagation();
+            handleCopyAction(option.action);
+          }}
+        >
+          <CopyOutlined />
+          <span>{option.label}</span>
+        </button>
+      ))}
+    </div>,
     document.body,
+  ) : null;
+
+  return (
+    <>
+      {createPortal(
+        <ConfigProvider theme={{ token: { zIndexPopupBase: APP_COMMAND_PALETTE_Z_INDEX } }}>
+          {panel}
+        </ConfigProvider>,
+        document.body,
+      )}
+      {contextMenuPortal}
+    </>
   );
 };
 
