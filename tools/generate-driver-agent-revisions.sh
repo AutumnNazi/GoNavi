@@ -343,6 +343,49 @@ else
   output_drivers=("${drivers[@]}")
 fi
 
+is_transient_go_module_error() {
+  local log="$1"
+  grep -Eiq \
+    'stream error|INTERNAL_ERROR; received from peer|connection reset by peer|i/o timeout|TLS handshake timeout|timeout awaiting response headers|EOF|502 Bad Gateway|503 Service Unavailable|429 Too Many Requests' \
+    "$log"
+}
+
+run_go_list_deps() {
+  local output="$1"
+  local cgo_enabled="$2"
+  local target_goos="$3"
+  local target_goarch="$4"
+  local tag="$5"
+  shift 5
+  local attempt max_attempts=3
+  local err_log raw
+  local source_format='{{if not .Standard}}{{range .GoFiles}}{{$.Dir}}/{{.}}{{"\n"}}{{end}}{{range .CgoFiles}}{{$.Dir}}/{{.}}{{"\n"}}{{end}}{{end}}'
+  err_log="$(mktemp "${TMPDIR:-/tmp}/gonavi-go-list-err.XXXXXX")"
+  raw="$(mktemp "${TMPDIR:-/tmp}/gonavi-go-list-out.XXXXXX")"
+  for attempt in 1 2 3; do
+    if CGO_ENABLED="$cgo_enabled" GOOS="$target_goos" GOARCH="$target_goarch" GOTOOLCHAIN=auto \
+      go list -deps \
+        -tags "$tag" \
+        -f "$source_format" \
+        "$@" >"$raw" 2>"$err_log"; then
+      cat "$err_log" >&2 || true
+      LC_ALL=C sort -u "$raw" -o "$output"
+      rm -f "$err_log" "$raw"
+      return 0
+    fi
+    cat "$err_log" >&2 || true
+    if [[ "$attempt" -lt "$max_attempts" ]] && is_transient_go_module_error "$err_log"; then
+      echo "⚠️ go list 依赖枚举遇到瞬时错误，准备重试 (${attempt}/${max_attempts})" >&2
+      sleep "${GONAVI_GO_LIST_RETRY_SLEEP:-$((attempt * 2))}"
+      continue
+    fi
+    rm -f "$err_log" "$raw"
+    return 1
+  done
+  rm -f "$err_log" "$raw"
+  return 1
+}
+
 fingerprint_driver() {
   local driver="$1"
   local build_driver tag cgo_enabled tmp dependency_files included_files external_imports external_dependency_files hash_entries
@@ -364,11 +407,7 @@ fingerprint_driver() {
   } >"$tmp"
 
   dependency_files="$(mktemp "${TMPDIR:-/tmp}/gonavi-agent-dependencies.XXXXXX")"
-  if ! CGO_ENABLED="$cgo_enabled" GOOS="$goos" GOARCH="$goarch" GOTOOLCHAIN=auto \
-    go list -deps \
-      -tags "$tag" \
-      -f '{{if not .Standard}}{{range .GoFiles}}{{$.Dir}}/{{.}}{{"\n"}}{{end}}{{range .CgoFiles}}{{$.Dir}}/{{.}}{{"\n"}}{{end}}{{end}}' \
-      ./cmd/optional-driver-agent | sort -u >"$dependency_files"; then
+  if ! run_go_list_deps "$dependency_files" "$cgo_enabled" "$goos" "$goarch" "$tag" ./cmd/optional-driver-agent; then
     rm -f "$tmp" "$dependency_files"
     echo "driver-agent dependency enumeration failed: $driver ($goos/$goarch)" >&2
     return 1
@@ -409,11 +448,7 @@ fingerprint_driver() {
   done <"$external_imports"
 
   if [[ ${#direct_external_imports[@]} -gt 0 ]]; then
-    if ! CGO_ENABLED="$cgo_enabled" GOOS="$goos" GOARCH="$goarch" GOTOOLCHAIN=auto \
-      go list -deps \
-        -tags "$tag" \
-        -f '{{if not .Standard}}{{range .GoFiles}}{{$.Dir}}/{{.}}{{"\n"}}{{end}}{{range .CgoFiles}}{{$.Dir}}/{{.}}{{"\n"}}{{end}}{{end}}' \
-        "${direct_external_imports[@]}" | LC_ALL=C sort -u >"$external_dependency_files"; then
+    if ! run_go_list_deps "$external_dependency_files" "$cgo_enabled" "$goos" "$goarch" "$tag" "${direct_external_imports[@]}"; then
       rm -f "$tmp" "$dependency_files" "$included_files" "$external_imports" "$external_dependency_files" "$hash_entries"
       echo "driver-agent external dependency enumeration failed: $driver ($goos/$goarch)" >&2
       return 1

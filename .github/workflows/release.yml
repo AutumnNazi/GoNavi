@@ -337,6 +337,8 @@ jobs:
 
       - name: Generate canonical driver revision map
         shell: bash
+        env:
+          GODEBUG: http2client=0
         run: |
           set -euo pipefail
           ./tools/generate-driver-agent-revisions.sh --platform "${{ matrix.goos }}/${{ matrix.goarch }}"

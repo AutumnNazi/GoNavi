@@ -17,6 +17,7 @@ copy_repo_to_tmp() {
 }
 
 tmpdir_failure="$(mktemp -d "${TMPDIR:-/tmp}/gonavi-generate-driver-revisions-failure.XXXXXX")"
+tmpdir_retry="$(mktemp -d "${TMPDIR:-/tmp}/gonavi-generate-driver-revisions-retry.XXXXXX")"
 tmpdir_platform="$(mktemp -d "${TMPDIR:-/tmp}/gonavi-generate-driver-revisions-platform.XXXXXX")"
 tmpdir_connection="$(mktemp -d "${TMPDIR:-/tmp}/gonavi-generate-driver-revisions-connection.XXXXXX")"
 tmpdir_scope="$(mktemp -d "${TMPDIR:-/tmp}/gonavi-generate-driver-revisions-scope.XXXXXX")"
@@ -24,7 +25,7 @@ tmpdir_runner="$(mktemp -d "${TMPDIR:-/tmp}/gonavi-generate-driver-revisions-run
 darwin_file="$(mktemp "${TMPDIR:-/tmp}/gonavi-darwin-revisions.XXXXXX")"
 windows_file="$(mktemp "${TMPDIR:-/tmp}/gonavi-windows-revisions.XXXXXX")"
 cleanup() {
-  rm -rf "$tmpdir_failure" "$tmpdir_platform" "$tmpdir_connection" "$tmpdir_scope" "$tmpdir_runner"
+  rm -rf "$tmpdir_failure" "$tmpdir_retry" "$tmpdir_platform" "$tmpdir_connection" "$tmpdir_scope" "$tmpdir_runner"
   rm -f "$darwin_file" "$windows_file"
 }
 trap cleanup EXIT
@@ -61,6 +62,59 @@ EOF
   if ! grep -Fq "driver-agent dependency enumeration failed: mariadb (darwin/arm64)" generator.stderr; then
     echo "expected failed revision generation to report the dependency enumeration error" >&2
     cat generator.stderr >&2
+    exit 1
+  fi
+)
+
+copy_repo_to_tmp "$tmpdir_retry"
+
+(
+  cd "$tmpdir_retry"
+  mkdir -p fake-bin
+  printf '0\n' >go-list-attempts
+  cat >fake-bin/go <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1:-}" == "list" ]]; then
+  attempts_file="${GO_LIST_ATTEMPTS:?}"
+  attempt="$(cat "$attempts_file")"
+  printf '%s\n' "$((attempt + 1))" >"$attempts_file"
+  if [[ "$attempt" -eq 0 ]]; then
+    echo 'internal/db/clickhouse_impl.go:8:2: go.opentelemetry.io/otel/trace@v1.39.0: read "https://proxy.golang.org/go.opentelemetry.io/otel/trace/@v/v1.39.0.zip": stream error: stream ID 9; INTERNAL_ERROR; received from peer' >&2
+    exit 1
+  fi
+  for arg in "$@"; do
+    if [[ "$arg" == "./cmd/optional-driver-agent" ]]; then
+      printf '%s\n' "$PWD/cmd/optional-driver-agent/main.go"
+      printf '%s\n' "$PWD/internal/db/mariadb_impl.go"
+      exit 0
+    fi
+  done
+fi
+
+exec "${REAL_GO:?}" "$@"
+EOF
+  chmod +x fake-bin/go
+
+  if ! REAL_GO="$(command -v go)" GO_LIST_ATTEMPTS="$PWD/go-list-attempts" PATH="$PWD/fake-bin:$PATH" GONAVI_DRIVER_REVISION_JOBS=1 GONAVI_GO_LIST_RETRY_SLEEP=0 \
+    bash ./tools/generate-driver-agent-revisions.sh --platform darwin/arm64 --drivers mariadb \
+      >generator.stdout 2>generator.stderr; then
+    echo "expected revision generation to retry after a transient go list proxy error" >&2
+    cat generator.stderr >&2
+    exit 1
+  fi
+  if ! grep -Fq "准备重试 (1/3)" generator.stderr; then
+    echo "expected revision generation to retry the transient go list error" >&2
+    cat generator.stderr >&2
+    exit 1
+  fi
+  if [[ "$(cat go-list-attempts)" -lt 2 ]]; then
+    echo "expected go list to run more than once after a transient proxy error" >&2
+    exit 1
+  fi
+  if [[ -z "$(extract_revision internal/db/driver_agent_revisions_gen.go mariadb)" ]]; then
+    echo "expected mariadb revision to be generated after a retried go list" >&2
     exit 1
   fi
 )

@@ -331,6 +331,9 @@ jobs:
 
       - name: Generate canonical driver revision map
         shell: bash
+        env:
+          # proxy.golang.org has been returning HTTP/2 INTERNAL_ERROR mid-download.
+          GODEBUG: http2client=0
         run: |
           set -euo pipefail
           ./tools/generate-driver-agent-revisions.sh --platform "${{ matrix.goos }}/${{ matrix.goarch }}"
