@@ -58,6 +58,7 @@ import {
   formatSidebarRowCount,
   hasSidebarLazyChildren,
   shouldLoadSidebarNodeOnExpand,
+  resolveSidebarDoubleClickExpandedKeys,
   getV2RailConnectionGroupBadgeText,
   resolveSidebarTitlebarObjectName,
   resolveSidebarTableNameForCopy,
@@ -2630,7 +2631,7 @@ const Sidebar: React.FC<{
   };
 
   const onDoubleClick = (e: any, node: any) => {
-      // 双击时取消单击延迟动作（如表概览打开），让双击只触发展开/折叠
+      // 双击时取消单击延迟动作（如表概览打开）。连接节点只展开不折叠，其它目录仍切换展开。
       if (clickTimerRef.current) {
           clearTimeout(clickTimerRef.current);
           clickTimerRef.current = null;
@@ -2849,13 +2850,15 @@ const Sidebar: React.FC<{
       }
 
       const key = node.key;
-      const isExpanded = expandedKeys.includes(key);
-      const newExpandedKeys = isExpanded
-          ? expandedKeys.filter(k => k !== key)
-          : [...expandedKeys, key];
-
-      setExpandedKeys(newExpandedKeys);
-      if (!isExpanded) {
+      const { expandedKeys: nextExpandedKeys, didExpand } = resolveSidebarDoubleClickExpandedKeys({
+          nodeType: type,
+          nodeKey: key,
+          expandedKeys,
+      });
+      setExpandedKeys(nextExpandedKeys);
+      // 连接节点双击只展开：工作台定位已经展开后，再双击同一 Host 保持库树打开。
+      // 若已展开但子节点尚未加载，继续走懒加载，而不是把树收起来。
+      if (didExpand || (type === 'connection' && shouldLoadSidebarNodeOnExpand(node))) {
           setAutoExpandParent(false);
           if (shouldLoadSidebarNodeOnExpand(node)) {
               void onLoadData(node);

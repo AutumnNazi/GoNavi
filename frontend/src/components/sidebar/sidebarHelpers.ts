@@ -514,3 +514,33 @@ export const shouldLoadSidebarNodeOnExpand = (
       || node.type === 'nacos-config-entry'
       || node.type === 'nacos-services-entry';
 };
+
+/**
+ * resolveSidebarDoubleClickExpandedKeys 计算目录节点双击后的 expandedKeys。
+ * 连接节点只展开不折叠：工作台定位已经展开 Host 后，再双击同一行不应把库树收起来。
+ * 其他目录节点仍保持双击切换展开。
+ */
+export const resolveSidebarDoubleClickExpandedKeys = ({
+  nodeType,
+  nodeKey,
+  expandedKeys,
+}: {
+  nodeType: unknown;
+  nodeKey: string | number;
+  expandedKeys: Array<string | number>;
+}): { expandedKeys: Array<string | number>; didExpand: boolean } => {
+  const isExpanded = expandedKeys.includes(nodeKey);
+  if (nodeType === 'connection') {
+    if (isExpanded) {
+      return { expandedKeys, didExpand: false };
+    }
+    return { expandedKeys: [...expandedKeys, nodeKey], didExpand: true };
+  }
+  if (isExpanded) {
+    return {
+      expandedKeys: expandedKeys.filter((key) => key !== nodeKey),
+      didExpand: false,
+    };
+  }
+  return { expandedKeys: [...expandedKeys, nodeKey], didExpand: true };
+};
