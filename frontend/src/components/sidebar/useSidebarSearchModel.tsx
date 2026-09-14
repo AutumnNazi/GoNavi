@@ -27,6 +27,7 @@ import { resolveConnectionAccentColor, resolveConnectionIconType } from '../../u
 import { getDbIcon } from '../DatabaseIcons';
 import {
   isV2SidebarObjectNode,
+  matchesSidebarSearchText,
   parseV2CommandSearchQuery,
   type V2ExplorerFilter,
 } from './sidebarHelpers';
@@ -304,42 +305,42 @@ export const useSidebarSearchModel = ({
   const getConnectionNameSearchText = (node: TreeNode): string => {
     if (node.type !== 'connection') return '';
     const name = node.dataRef?.name ?? node.title;
-    return String(name || '').toLowerCase();
+    return String(name || '');
   };
 
   // Table comments live on dataRef regardless of whether the user displays
   // them, so the keyword should match them in both smart and object scopes.
   const getObjectCommentSearchText = (node: TreeNode): string => (
     isV2SidebarObjectNode(node)
-      ? String(node?.dataRef?.tableComment || '').toLowerCase()
+      ? String(node?.dataRef?.tableComment || '')
       : ''
   );
 
   const matchByScopes = (node: TreeNode, keyword: string, scopes: SearchScope[]): boolean => {
-    const title = String(node.title || '').toLowerCase();
+    const title = String(node.title || '');
     if (
       scopes.includes('database')
       && (node.type === 'database' || node.type === 'message-namespace')
-      && title.includes(keyword)
+      && matchesSidebarSearchText(title, keyword)
     ) {
       return true;
     }
-    if (scopes.includes('tag') && node.type === 'tag' && title.includes(keyword)) {
+    if (scopes.includes('tag') && node.type === 'tag' && matchesSidebarSearchText(title, keyword)) {
       return true;
     }
-    if (scopes.includes('host') && node.type === 'connection' && getConnectionHostSearchText(node).includes(keyword)) {
+    if (scopes.includes('host') && node.type === 'connection' && matchesSidebarSearchText(getConnectionHostSearchText(node), keyword)) {
       return true;
     }
     if (
       scopes.includes('object')
       && (isV2SidebarObjectNode(node) || node.type === 'object-group' || node.type === 'message-object-group')
-      && (title.includes(keyword) || getObjectCommentSearchText(node).includes(keyword))
+      && (matchesSidebarSearchText(title, keyword) || matchesSidebarSearchText(getObjectCommentSearchText(node), keyword))
     ) {
       return true;
     }
     if (node.type === 'external-sql-root' || node.type === 'external-sql-directory' || node.type === 'external-sql-folder' || node.type === 'external-sql-file') {
-      const pathText = String(node?.dataRef?.path || '').toLowerCase();
-      return title.includes(keyword) || pathText.includes(keyword);
+      const pathText = String(node?.dataRef?.path || '');
+      return matchesSidebarSearchText(title, keyword) || matchesSidebarSearchText(pathText, keyword);
     }
     return false;
   };
@@ -356,10 +357,11 @@ export const useSidebarSearchModel = ({
     const isSmartMode = searchScopes.includes('smart');
     const result: TreeNode[] = [];
     data.forEach((item) => {
-      const titleMatch = String(item.title || '').toLowerCase().includes(keyword);
+      const titleMatch = matchesSidebarSearchText(item.title, keyword);
       const smartMatch = item.type === 'connection'
-        ? getConnectionNameSearchText(item).includes(keyword) || getConnectionHostSearchText(item).includes(keyword)
-        : titleMatch || getObjectCommentSearchText(item).includes(keyword);
+        ? matchesSidebarSearchText(getConnectionNameSearchText(item), keyword)
+          || matchesSidebarSearchText(getConnectionHostSearchText(item), keyword)
+        : titleMatch || matchesSidebarSearchText(getObjectCommentSearchText(item), keyword);
       const scopedMatch = matchByScopes(item, keyword, searchScopes);
       const selfMatch = isSmartMode ? smartMatch : scopedMatch;
       const filteredChildren = item.children ? loop(item.children, keyword) : [];
@@ -391,7 +393,7 @@ export const useSidebarSearchModel = ({
   };
 
   const displayTreeData = useMemo(() => {
-    const keyword = deferredSearchValue.trim().toLowerCase();
+    const keyword = String(deferredSearchValue || '').trim();
     if (!keyword) return normalizedTreeData;
     return loop(normalizedTreeData, keyword);
   }, [deferredSearchValue, normalizedTreeData, searchScopes]);
@@ -538,8 +540,8 @@ export const useSidebarSearchModel = ({
     if (v2CommandSearchObjectMode || v2CommandSearchAiMode) return [];
     if (!normalizedV2CommandSearchValue) return commandSearchActionItems;
     return commandSearchActionItems.filter((item) => {
-      const haystack = `${item.title} ${item.meta}`.toLowerCase();
-      return haystack.includes(normalizedV2CommandSearchValue);
+      const haystack = `${item.title} ${item.meta}`;
+      return matchesSidebarSearchText(haystack, normalizedV2CommandSearchValue);
     });
   }, [commandSearchActionItems, normalizedV2CommandSearchValue, v2CommandSearchAiMode, v2CommandSearchObjectMode]);
 
@@ -547,8 +549,8 @@ export const useSidebarSearchModel = ({
     if (v2CommandSearchObjectMode || v2CommandSearchAiMode) return [];
     if (!normalizedV2CommandSearchValue) return commandSearchRecentItems;
     return commandSearchRecentItems.filter((item) => {
-      const haystack = `${item.title} ${item.meta}`.toLowerCase();
-      return haystack.includes(normalizedV2CommandSearchValue);
+      const haystack = `${item.title} ${item.meta}`;
+      return matchesSidebarSearchText(haystack, normalizedV2CommandSearchValue);
     });
   }, [commandSearchRecentItems, normalizedV2CommandSearchValue, v2CommandSearchAiMode, v2CommandSearchObjectMode]);
 

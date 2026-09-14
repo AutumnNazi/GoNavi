@@ -445,6 +445,12 @@ describe('Sidebar locate toolbar', () => {
     expect(parseV2CommandSearchQuery('＠fs_mkefu_server_info')).toMatchObject({
       mode: 'object',
       keyword: 'fs_mkefu_server_info',
+      normalizedKeyword: 'fs_mkefu_server_info',
+    });
+    expect(parseV2CommandSearchQuery('sys＿user')).toMatchObject({
+      mode: 'default',
+      keyword: 'sys＿user',
+      normalizedKeyword: 'sys_user',
     });
     expect(parseV2CommandSearchQuery('? 帮我分析订单表')).toMatchObject({
       mode: 'ai',

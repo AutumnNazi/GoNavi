@@ -332,6 +332,54 @@ describe('sidebarV2 command search performance helpers', () => {
     expect(matchedKeys('user profile')).toEqual(['node-user-table']);
   });
 
+  it('matches snake_case table names by literal underscore and fullwidth underscore', () => {
+    const items: V2CommandSearchItem[] = [
+      {
+        key: 'node-user-table',
+        kind: 'node',
+        title: 'sys_user',
+        meta: 'app',
+        icon: null,
+        node: {
+          type: 'table',
+          key: 'user-table',
+          title: 'sys_user',
+          dataRef: {
+            tableName: 'sys_user',
+            dbName: 'app',
+          },
+        },
+      },
+      {
+        key: 'node-users-table',
+        kind: 'node',
+        title: 'users',
+        meta: 'app',
+        icon: null,
+        node: {
+          type: 'table',
+          key: 'users-table',
+          title: 'users',
+          dataRef: {
+            tableName: 'users',
+            dbName: 'app',
+          },
+        },
+      },
+    ];
+
+    const matchedKeys = (query: string) =>
+      filterV2CommandSearchTreeItems(items, parseV2CommandSearchQuery(query)).map((item) => item.key);
+
+    expect(matchedKeys('sys_user')).toEqual(['node-user-table']);
+    expect(matchedKeys('sys＿user')).toEqual(['node-user-table']);
+    expect(matchedKeys('@sys_user')).toEqual(['node-user-table']);
+    expect(matchedKeys('_user')).toEqual(['node-user-table']);
+    expect(matchedKeys('_')).toEqual(['node-user-table']);
+    expect(matchedKeys('users')).toEqual(['node-users-table']);
+    expect(matchedKeys('sysuser')).toEqual([]);
+  });
+
   it('prunes only cold collapsed database trees when too many object trees stay loaded', () => {
     expect(resolveSidebarDatabaseTreePruneKeys({
       treeData: [

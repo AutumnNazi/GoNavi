@@ -430,5 +430,26 @@ describe('useSidebarSearchModel search filtering', () => {
     // Command palette rows surface the comment in meta next to connection · database.
     const orderItem = commandModel?.commandSearchTreeItems.find((item) => item.key === `node-${orderTable.key}`);
     expect(orderItem?.meta).toBe('MySQL · app — 订单主表');
+
+    const underscoreTree = collectTreeNodes(
+      buildHarness({ deferredSearchValue: '_user' })?.displayTreeData || [],
+    ).map((node) => node.key);
+    expect(underscoreTree).toContain(userTable.key);
+    expect(underscoreTree).not.toContain(orderTable.key);
+
+    const fullwidthTree = collectTreeNodes(
+      buildHarness({ deferredSearchValue: 'sys＿user' })?.displayTreeData || [],
+    ).map((node) => node.key);
+    expect(fullwidthTree).toContain(userTable.key);
+
+    const commandUnderscore = buildHarness({
+      deferredSearchValue: '',
+      isV2CommandSearchOpen: true,
+      v2CommandSearchValue: 't_order',
+    });
+    expect(commandUnderscore?.filteredCommandSearchTreeItems.map((item) => item.key))
+      .toContain(`node-${orderTable.key}`);
+    expect(commandUnderscore?.filteredCommandSearchTreeItems.map((item) => item.key))
+      .not.toContain(`node-${userTable.key}`);
   });
 });

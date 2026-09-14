@@ -434,6 +434,26 @@ export interface V2CommandSearchQuery {
   aiPrompt: string;
 }
 
+const FULLWIDTH_UNDERSCORE = '\uFF3F';
+
+/**
+ * normalizeSidebarSearchText 把搜索关键字和对象名统一成可比较文本。
+ * 表名里的 ASCII `_` 与中文输入法全角 `＿` 视为同一个字符。
+ */
+export const normalizeSidebarSearchText = (value: unknown): string =>
+  String(value ?? '').trim().toLowerCase().replaceAll(FULLWIDTH_UNDERSCORE, '_');
+
+/**
+ * matchesSidebarSearchText 匹配侧栏/命令搜索关键字。
+ * 表名中的 ASCII `_` 按字面包含匹配；中文输入法全角 `＿` 视为同一个字符。
+ */
+export const matchesSidebarSearchText = (haystack: unknown, needle: unknown): boolean => {
+  const normalizedHaystack = normalizeSidebarSearchText(haystack);
+  const normalizedNeedle = normalizeSidebarSearchText(needle);
+  if (!normalizedNeedle) return true;
+  return normalizedHaystack.includes(normalizedNeedle);
+};
+
 /**
  * parseV2CommandSearchQuery 解析命令搜索框的输入。
  * - "@" 或 "＠" 前缀：对象搜索模式
@@ -451,7 +471,7 @@ export const parseV2CommandSearchQuery = (value: unknown): V2CommandSearchQuery 
       mode: 'object',
       rawValue,
       keyword,
-      normalizedKeyword: keyword.toLowerCase(),
+      normalizedKeyword: normalizeSidebarSearchText(keyword),
       aiPrompt: '',
     };
   }
@@ -462,7 +482,7 @@ export const parseV2CommandSearchQuery = (value: unknown): V2CommandSearchQuery 
       mode: 'ai',
       rawValue,
       keyword: aiPrompt,
-      normalizedKeyword: aiPrompt.toLowerCase(),
+      normalizedKeyword: normalizeSidebarSearchText(aiPrompt),
       aiPrompt,
     };
   }
@@ -471,7 +491,7 @@ export const parseV2CommandSearchQuery = (value: unknown): V2CommandSearchQuery 
     mode: 'default',
     rawValue,
     keyword: trimmedValue,
-    normalizedKeyword: trimmedValue.toLowerCase(),
+    normalizedKeyword: normalizeSidebarSearchText(trimmedValue),
     aiPrompt: '',
   };
 };

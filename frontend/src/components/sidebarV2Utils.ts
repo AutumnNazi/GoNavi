@@ -16,6 +16,8 @@ import { t as catalogTranslate } from '../i18n/catalog';
 import {
   buildSidebarTableMetadataDisplayItems,
   buildSidebarTableMetadataSnapshot,
+  matchesSidebarSearchText,
+  normalizeSidebarSearchText,
 } from './sidebar/sidebarHelpers';
 
 type SidebarV2Translate = (key: string) => string;
@@ -1162,7 +1164,7 @@ export const parseV2CommandSearchQuery = (value: unknown): V2CommandSearchQuery 
       mode: 'object',
       rawValue,
       keyword,
-      normalizedKeyword: keyword.toLowerCase(),
+      normalizedKeyword: normalizeSidebarSearchText(keyword),
       aiPrompt: '',
     };
   }
@@ -1173,7 +1175,7 @@ export const parseV2CommandSearchQuery = (value: unknown): V2CommandSearchQuery 
       mode: 'ai',
       rawValue,
       keyword: aiPrompt,
-      normalizedKeyword: aiPrompt.toLowerCase(),
+      normalizedKeyword: normalizeSidebarSearchText(aiPrompt),
       aiPrompt,
     };
   }
@@ -1182,7 +1184,7 @@ export const parseV2CommandSearchQuery = (value: unknown): V2CommandSearchQuery 
     mode: 'default',
     rawValue,
     keyword: trimmedValue,
-    normalizedKeyword: trimmedValue.toLowerCase(),
+    normalizedKeyword: normalizeSidebarSearchText(trimmedValue),
     aiPrompt: '',
   };
 };
@@ -1214,8 +1216,8 @@ export const buildV2CommandSearchTreeIndex = (
     }
     seenKeys.add(dedupeKey);
     const dataRef = item.node.dataRef || {};
-    const normalizedTitle = String(item.title || '').toLowerCase();
-    const normalizedPrimaryObjectText = String(
+    const normalizedTitle = normalizeSidebarSearchText(item.title);
+    const normalizedPrimaryObjectText = normalizeSidebarSearchText(
       dataRef.messageObjectName
       || dataRef.topicName
       || dataRef.queueName
@@ -1226,11 +1228,11 @@ export const buildV2CommandSearchTreeIndex = (
       || dataRef.packageName
       || item.title
       || '',
-    ).toLowerCase();
+    );
 
     return [{
       item,
-      normalizedSearchText: [
+      normalizedSearchText: normalizeSidebarSearchText([
         item.title,
         item.meta,
         dataRef.messageObjectName,
@@ -1245,8 +1247,10 @@ export const buildV2CommandSearchTreeIndex = (
         dataRef.dbName,
         dataRef.name,
         dataRef.config?.host,
-      ].filter(Boolean).join(' ').toLowerCase(),
-      normalizedObjectText: `${normalizedPrimaryObjectText} ${String(dataRef.tableComment || '').trim().toLowerCase()} ${normalizedTitle}`.trim(),
+      ].filter(Boolean).join(' ')),
+      normalizedObjectText: normalizeSidebarSearchText(
+        `${normalizedPrimaryObjectText} ${String(dataRef.tableComment || '').trim()} ${normalizedTitle}`,
+      ),
       objectNode: isV2CommandSearchObjectNode(item.node),
     }];
   });
@@ -1273,7 +1277,9 @@ export const filterV2CommandSearchTreeItems = (
     }
     if (!normalizedKeyword) {
       result.push(entry.item);
-    } else if (objectMode ? entry.normalizedObjectText.includes(normalizedKeyword) : entry.normalizedSearchText.includes(normalizedKeyword)) {
+    } else if (objectMode
+      ? matchesSidebarSearchText(entry.normalizedObjectText, normalizedKeyword)
+      : matchesSidebarSearchText(entry.normalizedSearchText, normalizedKeyword)) {
       result.push(entry.item);
     }
     if (result.length >= maxResults) {
