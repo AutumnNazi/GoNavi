@@ -4809,6 +4809,8 @@
   "data_grid.message.column_quick_find_not_rendered": "字段列“{{column}}”当前未渲染，无法定位",
   "data_grid.message.column_visibility_reset": "已恢复全部列",
   "data_grid.message.commit_failed": "提交失败：{{detail}}",
+  "data_grid.message.commit_outcome_unknown": "提交结果未知：{{detail}}。已刷新当前数据，请核对后再编辑，不要直接整批重试。",
+  "data_grid.message.auto_commit_outcome_unknown": "自动提交结果未知：{{detail}}。已刷新当前数据，请核对后再编辑，不要直接整批重试。",
   "data_grid.message.transaction_outcome_unknown": "事务结果可能未知",
   "data_grid.message.copied_columns": "已创建包含 {{count}} 个字段的填充模板，请框选目标单元格或勾选目标行。",
   "data_grid.message.copied_rows": "已复制 {{count}} 行，可作为新行粘贴。",

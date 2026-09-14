@@ -1639,6 +1639,191 @@ describe('DataGrid DDL interactions', () => {
     renderer!.unmount();
   });
 
+  it('reloads authoritative rows and drops pending edits when ApplyChanges reports an unknown outcome', async () => {
+    storeState.dataEditTransactionOptions = {
+      commitMode: 'manual',
+      autoCommitDelayMs: 5000,
+    };
+    messageApi.error.mockClear();
+    messageApi.warning.mockClear();
+    storeState.addSqlLog.mockClear();
+    backendApp.ApplyChanges.mockResolvedValue({
+      success: false,
+      outcomeUnknown: true,
+      message: 'response lost',
+      data: {
+        deletes: [],
+        updates: [],
+        inserts: ["INSERT INTO `users` (`id`, `name`) VALUES (NULL, NULL);"],
+      },
+    });
+    const onReload = vi.fn(async () => {
+      throw new Error('reload failed');
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <DataGrid
+          data={[{ __gonavi_row_key__: 'row-1', id: 1, name: 'Ada' }]}
+          columnNames={['id', 'name']}
+          loading={false}
+          tableName="users"
+          dbName="main"
+          connectionId="conn-1"
+          pkColumns={['id']}
+          onReload={onReload}
+        />,
+      );
+    });
+    await waitForEffects();
+    await act(async () => {
+      renderer!.root.findByType(DataGridToolbarFrame).props.onAddRow();
+    });
+    await waitForEffects();
+    expect(renderer!.root.findByType(DataGridToolbarFrame).props.hasChanges).toBe(true);
+
+    await act(async () => {
+      await renderer!.root.findByType(DataGridToolbarFrame).props.onCommit();
+    });
+    await waitForEffects();
+
+    expect(backendApp.ApplyChanges).toHaveBeenCalledTimes(1);
+    expect(onReload).toHaveBeenCalledTimes(1);
+    expect(messageApi.warning).toHaveBeenCalledWith(t('data_grid.message.commit_outcome_unknown', { detail: 'response lost' }));
+    expect(messageApi.error).not.toHaveBeenCalled();
+    expect(renderer!.root.findByType(DataGridToolbarFrame).props.hasChanges).toBe(false);
+    expect(storeState.addSqlLog).toHaveBeenLastCalledWith(expect.objectContaining({
+      status: 'error',
+      message: `response lost (${t('data_grid.message.transaction_outcome_unknown')})`,
+      sql: expect.stringContaining('-- COMMIT outcome is unknown; do not replay this batch.'),
+    }));
+    expect(String(storeState.addSqlLog.mock.calls.at(-1)?.[0]?.sql || '')).not.toContain(
+      '-- COMMIT was not issued because this batch failed.',
+    );
+
+    await act(async () => {
+      await renderer!.root.findByType(DataGridToolbarFrame).props.onCommit();
+    });
+    expect(backendApp.ApplyChanges).toHaveBeenCalledTimes(1);
+    renderer!.unmount();
+  });
+
+  it('keeps pending edits after a known ApplyChanges failure so the user can retry', async () => {
+    storeState.dataEditTransactionOptions = {
+      commitMode: 'manual',
+      autoCommitDelayMs: 5000,
+    };
+    messageApi.error.mockClear();
+    messageApi.warning.mockClear();
+    backendApp.ApplyChanges.mockResolvedValue({
+      success: false,
+      message: 'constraint rejected',
+      data: { deletes: [], updates: [], inserts: [] },
+    });
+    const onReload = vi.fn(async () => undefined);
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <DataGrid
+          data={[{ __gonavi_row_key__: 'row-1', id: 1, name: 'Ada' }]}
+          columnNames={['id', 'name']}
+          loading={false}
+          tableName="users"
+          dbName="main"
+          connectionId="conn-1"
+          pkColumns={['id']}
+          onReload={onReload}
+        />,
+      );
+    });
+    await waitForEffects();
+    await act(async () => {
+      renderer!.root.findByType(DataGridToolbarFrame).props.onAddRow();
+    });
+    await waitForEffects();
+
+    await act(async () => {
+      await renderer!.root.findByType(DataGridToolbarFrame).props.onCommit();
+    });
+    await waitForEffects();
+
+    expect(backendApp.ApplyChanges).toHaveBeenCalledTimes(1);
+    expect(onReload).not.toHaveBeenCalled();
+    expect(messageApi.error).toHaveBeenCalledWith(t('data_grid.message.commit_failed', { detail: 'constraint rejected' }));
+    expect(messageApi.warning).not.toHaveBeenCalled();
+    expect(renderer!.root.findByType(DataGridToolbarFrame).props.hasChanges).toBe(true);
+
+    await act(async () => {
+      await renderer!.root.findByType(DataGridToolbarFrame).props.onCommit();
+    });
+    expect(backendApp.ApplyChanges).toHaveBeenCalledTimes(2);
+    renderer!.unmount();
+  });
+
+  it('does not auto replay after an unknown auto-commit outcome', async () => {
+    vi.useFakeTimers();
+    storeState.dataEditTransactionOptions = {
+      commitMode: 'auto',
+      autoCommitDelayMs: 3000,
+    };
+    messageApi.error.mockClear();
+    messageApi.warning.mockClear();
+    backendApp.ApplyChanges.mockResolvedValue({
+      success: false,
+      outcomeUnknown: true,
+      message: 'response lost',
+      data: {
+        deletes: [],
+        updates: [],
+        inserts: ["INSERT INTO `users` (`id`, `name`) VALUES (NULL, NULL);"],
+      },
+    });
+    const onReload = vi.fn(async () => undefined);
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <DataGrid
+          data={[{ __gonavi_row_key__: 'row-1', id: 1, name: 'Ada' }]}
+          columnNames={['id', 'name']}
+          loading={false}
+          tableName="users"
+          dbName="main"
+          connectionId="conn-1"
+          pkColumns={['id']}
+          onReload={onReload}
+        />,
+      );
+    });
+    await waitForEffects();
+    await act(async () => {
+      renderer!.root.findByType(DataGridToolbarFrame).props.onAddRow();
+    });
+    await waitForEffects();
+    expect(backendApp.ApplyChanges).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(3000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(backendApp.ApplyChanges).toHaveBeenCalledTimes(1);
+    expect(onReload).toHaveBeenCalledTimes(1);
+    expect(messageApi.warning).toHaveBeenCalledWith(t('data_grid.message.auto_commit_outcome_unknown', { detail: 'response lost' }));
+    expect(renderer!.root.findByType(DataGridToolbarFrame).props.hasChanges).toBe(false);
+
+    await act(async () => {
+      vi.advanceTimersByTime(3000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(backendApp.ApplyChanges).toHaveBeenCalledTimes(1);
+    renderer!.unmount();
+  });
+
   it('commits pending edits with Meta+S on macOS and ignores save shortcuts outside or in read-only grids', async () => {
 
     Object.defineProperty(navigator, 'platform', { configurable: true, value: 'MacIntel' });
