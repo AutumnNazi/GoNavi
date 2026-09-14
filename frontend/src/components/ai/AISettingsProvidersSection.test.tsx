@@ -166,6 +166,7 @@ describe('AISettingsProvidersSection', () => {
     expect(markup).toContain('Provider catalog');
     expect(markup).toContain('gonavi-ai-provider-chips');
     expect(markup).toContain('gonavi-ai-provider-row gonavi-ai-provider-chip is-active');
+    expect(markup).toContain('is-draggable');
     expect(markup).toContain('gonavi-ai-provider-add-preset-select');
     expect(markup).toContain('Default');
     expect(markup).not.toContain('gonavi-ai-provider-config-card');
@@ -178,11 +179,61 @@ describe('AISettingsProvidersSection', () => {
     expect(markup).not.toContain('gonavi-ai-provider-config-empty');
   });
 
-  it('renders the connected tree node as the compact configured-provider list', () => {
+  it('renders the connected tree node as a full-width configured-provider list', () => {
     const markup = wrap({ treeHostedView: 'connected' });
-    expect(markup).toContain('gonavi-ai-provider-chips');
+    expect(markup).toContain('is-connected-only');
+    expect(markup).toContain('data-connected-list="true"');
+    expect(markup).toContain('gonavi-ai-provider-connected-title');
+    expect(markup).toContain('gonavi-ai-provider-connected-hint');
+    expect(markup).toContain('gpt-4o');
+    expect(markup).toContain('/icons/ai/openai.svg');
+    expect(markup).toContain('Search name, provider or model');
+    expect(markup).not.toContain('gonavi-ai-provider-density');
     expect(markup).not.toContain('gonavi-ai-provider-config-card');
     expect(markup).not.toContain('Provider catalog');
+    expect(markup).toContain('is-draggable');
+  });
+
+  it('shows the selected vendor brand logo on each connected provider row', () => {
+    const markup = wrap({
+      treeHostedView: 'connected',
+      providers: [
+        { ...provider, id: 'openai-1', name: 'codex', type: 'custom', apiFormat: 'codex-cli', model: 'gpt-5.6-sol' },
+        { ...provider, id: 'grok-1', name: 'Grok', type: 'custom', apiFormat: 'grok-cli', model: 'grok-4.6' },
+        { ...provider, id: 'cursor-1', name: 'Cursor Ultra', type: 'custom', apiFormat: 'cursor-cli', model: 'cursor-grok-4.6-high' },
+      ],
+      activeProviderId: 'cursor-1',
+      resolveProviderPreset: (item) => {
+        if (item.apiFormat === 'grok-cli') return { key: 'grok', label: 'Grok', icon: <span>G</span> };
+        if (item.apiFormat === 'cursor-cli') return { key: 'cursor', label: 'Cursor', icon: <span>C</span> };
+        return { key: 'openai', label: 'OpenAI', icon: <span>O</span> };
+      },
+    });
+    expect(markup).toContain('/icons/ai/openai.svg');
+    expect(markup).toContain('/icons/ai/grok.svg');
+    expect(markup).toContain('/icons/ai/cursor.svg');
+  });
+
+  it('lays the connected provider page out as a scrolling full-width list', () => {
+    expect(providerStyles).toContain('.gonavi-ai-provider-management.is-connected-only {');
+    expect(providerStyles).toContain('flex-direction: column');
+    expect(providerStyles).toContain('.gonavi-ai-provider-management.is-connected-only .gonavi-ai-provider-chips');
+    expect(providerStyles).toContain('.gonavi-ai-provider-management.is-connected-only .gonavi-ai-provider-chip {');
+    expect(providerStyles).toContain('width: 100%');
+    expect(providerStyles).toContain('.gonavi-ai-provider-connected-title');
+    expect(providerStyles).toContain('.gonavi-ai-provider-management.is-connected-only .gonavi-ai-provider-icon {');
+    expect(providerStyles).toContain('.gonavi-ai-provider-management.is-connected-only .gonavi-ai-provider-icon .gonavi-ai-provider-logo');
+    expect(providerStyles).toMatch(/\.gonavi-ai-provider-management\.is-connected-only \.gonavi-ai-provider-icon \{[^}]*background: transparent;/);
+    expect(providerStyles).toMatch(/\.gonavi-ai-provider-management\.is-connected-only \.gonavi-ai-provider-name \{[^}]*font-size: var\(--gn-settings-font-body, var\(--gn-font-size, 14px\)\);/);
+    expect(providerStyles).toMatch(/\.gonavi-ai-provider-management\.is-connected-only \.gonavi-ai-provider-chip-model \{[^}]*font-size: var\(--gn-settings-font-body, var\(--gn-font-size, 14px\)\);/);
+    expect(providerStyles).toMatch(/\.gonavi-ai-provider-management\.is-connected-only \.gonavi-ai-provider-current \{[^}]*font-size: var\(--gn-settings-font-body, var\(--gn-font-size, 14px\)\);/);
+    expect(providerStyles).toMatch(/\.gonavi-ai-provider-management\.is-connected-only \.gonavi-ai-provider-chip-remove \{[^}]*width: var\(--gn-control-height, 32px\);/);
+    expect(providerStyles).toContain('.gonavi-ai-provider-chip.is-draggable');
+    expect(providerStyles).toContain('.gonavi-ai-provider-chip.is-drag-placeholder');
+    expect(providerStyles).toContain('.gonavi-ai-provider-management.is-connected-only .gonavi-ai-provider-toolbar-end');
+    expect(providerStyles).toContain('min-width: min(20rem, 100%)');
+    expect(providerStyles).toContain('max-width: 32rem');
+    expect(providerStyles).toContain('@container connected-providers');
   });
 
   it('renders the restored vertical editor while retaining the provider dropdown', () => {
