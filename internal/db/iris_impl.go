@@ -63,6 +63,8 @@ func (c *CacheDB) productType() string {
 
 var _ Database = (*IrisDB)(nil)
 var _ Database = (*CacheDB)(nil)
+var _ BatchApplierContext = (*IrisDB)(nil)
+var _ BatchApplierContext = (*CacheDB)(nil)
 
 type irisTableRef struct {
 	Schema string
@@ -528,23 +530,28 @@ func (i *IrisDB) GetTriggers(dbName, tableName string) ([]connection.TriggerDefi
 }
 
 func (i *IrisDB) ApplyChanges(tableName string, changes connection.ChangeSet) error {
+	return i.ApplyChangesContext(context.Background(), tableName, changes)
+}
+
+func (i *IrisDB) ApplyChangesContext(ctx context.Context, tableName string, changes connection.ChangeSet) (err error) {
 	if i.conn == nil {
 		return fmt.Errorf("连接未打开")
 	}
-	tx, err := i.conn.Begin()
+	tx, err := i.conn.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	transactionCommitted := false
+	defer func() { rollbackUnfinishedWriteTransaction(tx, transactionCommitted, &err) }()
 
 	for _, keys := range changes.Deletes {
 		query, args, ok := buildIRISDeleteSQL(tableName, keys)
 		if !ok {
 			continue
 		}
-		res, err := tx.Exec(query, args...)
+		res, err := tx.ExecContext(ctx, query, args...)
 		if err != nil {
-			return fmt.Errorf("删除失败：%v", err)
+			return markWriteOutcomeUnknownIfAmbiguous(ctx, fmt.Errorf("删除失败：%w", err))
 		}
 		if err := requireSingleRowAffected(res, rowMutationActionDelete); err != nil {
 			return err
@@ -559,9 +566,9 @@ func (i *IrisDB) ApplyChanges(tableName string, changes connection.ChangeSet) er
 		if !ok {
 			continue
 		}
-		res, err := tx.Exec(query, args...)
+		res, err := tx.ExecContext(ctx, query, args...)
 		if err != nil {
-			return fmt.Errorf("更新失败：%v", err)
+			return markWriteOutcomeUnknownIfAmbiguous(ctx, fmt.Errorf("更新失败：%w", err))
 		}
 		if err := requireSingleRowAffected(res, rowMutationActionUpdate); err != nil {
 			return err
@@ -573,16 +580,20 @@ func (i *IrisDB) ApplyChanges(tableName string, changes connection.ChangeSet) er
 		if !ok {
 			continue
 		}
-		res, err := tx.Exec(query, args...)
+		res, err := tx.ExecContext(ctx, query, args...)
 		if err != nil {
-			return fmt.Errorf("插入失败：%v", err)
+			return markWriteOutcomeUnknownIfAmbiguous(ctx, fmt.Errorf("插入失败：%w", err))
 		}
 		if affected, err := res.RowsAffected(); err == nil && affected == 0 {
 			return fmt.Errorf("插入未生效：未影响任何行")
 		}
 	}
 
-	return tx.Commit()
+	if err := commitWriteTransaction(tx); err != nil {
+		return err
+	}
+	transactionCommitted = true
+	return nil
 }
 
 func buildIRISInfoSchemaWhereQuery(table string, ref irisTableRef) string {

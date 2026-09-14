@@ -3,11 +3,15 @@
 package db
 
 import (
+	"context"
 	"database/sql/driver"
+	"errors"
+	"io"
 	"net/url"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"GoNavi-Wails/internal/connection"
 )
@@ -374,3 +378,147 @@ func TestBuildIRISUpdateSQLRequiresLocatorKeys(t *testing.T) {
 		t.Fatalf("expected missing keys to be rejected, ok=%v err=%v", ok, err)
 	}
 }
+
+func TestIrisApplyChangesMarksCommitFailureOutcomeUnknown(t *testing.T) {
+	for name, commitErr := range map[string]error{
+		"lost response": errors.New("commit response lost"),
+		"bad conn":      driver.ErrBadConn,
+	} {
+		t.Run(name, func(t *testing.T) {
+			state := &writeOutcomeTransactionState{commitErr: commitErr}
+			database := openWriteOutcomeTransactionDB(t, state)
+
+			err := (&IrisDB{conn: database}).ApplyChanges("Sample.Person", connection.ChangeSet{
+				Deletes: []map[string]interface{}{{"id": int64(1)}},
+			})
+			if !IsWriteOutcomeUnknown(err) || !errors.Is(err, commitErr) {
+				t.Fatalf("commit error must preserve its cause and mark the outcome unknown, got %v", err)
+			}
+		})
+	}
+}
+
+func TestIrisApplyChangesMarksAmbiguousDMLResponseOutcomeUnknown(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		writeErr error
+		changes  connection.ChangeSet
+	}{
+		"delete transport":    {writeErr: io.ErrUnexpectedEOF, changes: connection.ChangeSet{Deletes: []map[string]interface{}{{"id": int64(1)}}}},
+		"update transport":    {writeErr: io.ErrUnexpectedEOF, changes: connection.ChangeSet{Updates: []connection.UpdateRow{{Keys: map[string]interface{}{"id": int64(1)}, Values: map[string]interface{}{"name": "Alice"}}}}},
+		"insert transport":    {writeErr: io.ErrUnexpectedEOF, changes: connection.ChangeSet{Inserts: []map[string]interface{}{{"id": int64(1)}}}},
+		"delete cancellation": {writeErr: context.Canceled, changes: connection.ChangeSet{Deletes: []map[string]interface{}{{"id": int64(1)}}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			state := &writeOutcomeTransactionState{execErr: testCase.writeErr}
+			database := openWriteOutcomeTransactionDB(t, state)
+
+			err := (&IrisDB{conn: database}).ApplyChangesContext(context.Background(), "Sample.Person", testCase.changes)
+			if !IsWriteOutcomeUnknown(err) || !errors.Is(err, testCase.writeErr) {
+				t.Fatalf("ambiguous DML response must mark the outcome unknown, got %v", err)
+			}
+		})
+	}
+}
+
+func TestIrisApplyChangesKeepsSemanticDMLRejectionKnown(t *testing.T) {
+	state := &writeOutcomeTransactionState{execErr: errors.New("constraint rejected")}
+	database := openWriteOutcomeTransactionDB(t, state)
+
+	err := (&IrisDB{conn: database}).ApplyChangesContext(context.Background(), "Sample.Person", connection.ChangeSet{
+		Deletes: []map[string]interface{}{{"id": int64(1)}},
+	})
+	if err == nil || IsWriteOutcomeUnknown(err) {
+		t.Fatalf("semantic DML rejection must remain a known error, got %v", err)
+	}
+}
+
+func TestIrisApplyChangesMarksRollbackFailureOutcomeUnknown(t *testing.T) {
+	execErr := errors.New("known statement rejection")
+	rollbackErr := errors.New("rollback response lost")
+	state := &writeOutcomeTransactionState{execErr: execErr, rollbackErr: rollbackErr}
+	database := openWriteOutcomeTransactionDB(t, state)
+
+	err := (&IrisDB{conn: database}).ApplyChangesContext(context.Background(), "Sample.Person", connection.ChangeSet{
+		Deletes: []map[string]interface{}{{"id": int64(1)}},
+	})
+	if !IsWriteOutcomeUnknown(err) || !errors.Is(err, rollbackErr) {
+		t.Fatalf("rollback failure must preserve its cause and mark the outcome unknown, got %v", err)
+	}
+}
+
+func TestIrisApplyChangesKeepsRowCountFailuresKnown(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		affected int64
+		changes  connection.ChangeSet
+	}{
+		"delete no rows":       {affected: 0, changes: connection.ChangeSet{Deletes: []map[string]interface{}{{"id": int64(1)}}}},
+		"delete multiple rows": {affected: 2, changes: connection.ChangeSet{Deletes: []map[string]interface{}{{"id": int64(1)}}}},
+		"update no rows":       {affected: 0, changes: connection.ChangeSet{Updates: []connection.UpdateRow{{Keys: map[string]interface{}{"id": int64(1)}, Values: map[string]interface{}{"name": "Alice"}}}}},
+		"insert no rows":       {affected: 0, changes: connection.ChangeSet{Inserts: []map[string]interface{}{{"id": int64(1)}}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dbConn, state := openOracleRecordingDB(t)
+			state.rowsAffected = testCase.affected
+
+			err := (&IrisDB{conn: dbConn}).ApplyChanges("Sample.Person", testCase.changes)
+			if err == nil || IsWriteOutcomeUnknown(err) {
+				t.Fatalf("row-count failure must remain a known error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestIrisApplyChangesContextHonorsCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	database := openWriteOutcomeTransactionDB(t, &writeOutcomeTransactionState{})
+
+	err := (&IrisDB{conn: database}).ApplyChangesContext(ctx, "Sample.Person", connection.ChangeSet{
+		Deletes: []map[string]interface{}{{"id": int64(1)}},
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled context must reach IRIS ApplyChanges, got %v", err)
+	}
+	if IsWriteOutcomeUnknown(err) {
+		t.Fatalf("canceled context before BeginTx must remain a known error, got %v", err)
+	}
+}
+
+func TestIrisApplyChangesContextCancelsInFlightStatement(t *testing.T) {
+	dbConn, state := openOracleRecordingDB(t)
+	state.mu.Lock()
+	state.blockExecUntilCanceled = true
+	state.execStarted = make(chan struct{}, 1)
+	state.execRelease = make(chan struct{})
+	state.mu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- (&IrisDB{conn: dbConn}).ApplyChangesContext(ctx, "Sample.Person", connection.ChangeSet{
+			Deletes: []map[string]interface{}{{"id": int64(1)}},
+		})
+	}()
+
+	select {
+	case <-state.execStarted:
+		cancel()
+	case <-time.After(time.Second):
+		cancel()
+		close(state.execRelease)
+		t.Fatal("ApplyChangesContext did not reach the context-aware SQL execution path")
+	}
+
+	select {
+	case err := <-errCh:
+		if !IsWriteOutcomeUnknown(err) || !errors.Is(err, context.Canceled) {
+			t.Fatalf("in-flight cancellation must mark the outcome unknown, got %v", err)
+		}
+	case <-time.After(time.Second):
+		close(state.execRelease)
+		t.Fatal("ApplyChangesContext did not return after cancellation")
+	}
+}
+
+var _ BatchApplierContext = (*IrisDB)(nil)
+var _ BatchApplierContext = (*CacheDB)(nil)
