@@ -441,7 +441,7 @@ const FULLWIDTH_UNDERSCORE = '\uFF3F';
  * 表名里的 ASCII `_` 与中文输入法全角 `＿` 视为同一个字符。
  */
 export const normalizeSidebarSearchText = (value: unknown): string =>
-  String(value ?? '').trim().toLowerCase().replaceAll(FULLWIDTH_UNDERSCORE, '_');
+  String(value ?? '').trim().toLowerCase().split(FULLWIDTH_UNDERSCORE).join('_');
 
 /**
  * matchesSidebarSearchText 匹配侧栏/命令搜索关键字。
