@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyPresetOrder, movePresetWithinGroup } from './providerPresetOrder';
+import { applyKeyOrder, applyPresetOrder, movePresetWithinGroup } from './providerPresetOrder';
 
 const presets = ['openai', 'codex', 'grok', 'cursor-cli', 'deepseek'].map((key) => ({ key }));
 const keys = (list: Array<{ key: string }>) => list.map((preset) => preset.key);
@@ -7,6 +7,12 @@ const keys = (list: Array<{ key: string }>) => list.map((preset) => preset.key);
 describe('providerPresetOrder', () => {
   it('keeps the default order when nothing is stored', () => {
     expect(applyPresetOrder(presets, [])).toBe(presets);
+  });
+
+  it('orders arbitrary items by stored keys and appends unknown ones', () => {
+    const items = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+    expect(applyKeyOrder(items, [], (item) => item.id)).toBe(items);
+    expect(applyKeyOrder(items, ['c', 'a'], (item) => item.id).map((item) => item.id)).toEqual(['c', 'a', 'b']);
   });
 
   it('sorts known keys by the stored order and appends unknown presets in default order', () => {

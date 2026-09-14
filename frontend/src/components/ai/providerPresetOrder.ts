@@ -11,6 +11,11 @@ export const applyPresetOrder = <T extends { key: string }>(presets: T[], order:
   return [...known, ...unknown];
 };
 
+export const applyKeyOrder = <T>(items: T[], order: string[], keyOf: (item: T) => string): T[] => {
+  if (!order.length) return items;
+  return applyPresetOrder(items.map((item) => ({ key: keyOf(item), item })), order).map((entry) => entry.item);
+};
+
 // Move `activeKey` onto `overKey` inside one displayed group (visible catalog or
 // hidden list). The group is a subsequence of the full order; its members swap
 // slots among themselves while every other key keeps its place.

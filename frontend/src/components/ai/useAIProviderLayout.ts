@@ -35,9 +35,10 @@ interface LayoutPreferences {
   connectionLayout: 'stacked' | 'inline';
   hiddenPresetKeys: string[];
   presetOrder: string[];
+  providerOrder: string[];
   hiddenPaneHeight: number | null;
 }
-const defaults: LayoutPreferences = { catalogCollapsed: false, catalogWidth: DEFAULT_WIDTH, savedCollapsed: false, density: 'compact', connectionLayout: 'stacked', hiddenPresetKeys: [], presetOrder: [], hiddenPaneHeight: null };
+const defaults: LayoutPreferences = { catalogCollapsed: false, catalogWidth: DEFAULT_WIDTH, savedCollapsed: false, density: 'compact', connectionLayout: 'stacked', hiddenPresetKeys: [], presetOrder: [], providerOrder: [], hiddenPaneHeight: null };
 const readKeyList = (value: unknown): string[] => Array.isArray(value)
   ? [...new Set<string>(value.filter((key: unknown): key is string => typeof key === 'string' && Boolean(key.trim())).map((key: string) => key.trim()))] : [];
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -55,6 +56,7 @@ function readPreferences(): LayoutPreferences {
       connectionLayout: value.connectionLayout === 'inline' ? 'inline' : 'stacked',
       hiddenPresetKeys: readKeyList(value.hiddenPresetKeys),
       presetOrder: readKeyList(value.presetOrder),
+      providerOrder: readKeyList(value.providerOrder),
       catalogWidth: Number.isFinite(value.catalogWidth) ? clamp(value.catalogWidth, MIN_CATALOG_WIDTH, MAX_CATALOG_WIDTH) : DEFAULT_WIDTH,
       hiddenPaneHeight: Number.isFinite(value.hiddenPaneHeight) && value.hiddenPaneHeight > 0 ? value.hiddenPaneHeight : null };
   } catch { return { ...defaults }; }
