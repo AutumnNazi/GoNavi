@@ -311,6 +311,34 @@ describe('provider settings mounted controls', () => {
     expect(props.onCLIDefaults).toHaveBeenCalledWith(capability);
   });
 
+  it('projects Cursor model-id suffixes into the effort selector', async () => {
+    const cursorCapability = {
+      ...capability, apiFormat: 'cursor-cli', command: 'cursor-agent',
+      supportsEffort: false, effortValues: [], supportsModelDiscovery: true, defaultModel: '', defaultEffort: '',
+    };
+    bridge.capabilities.mockResolvedValue([capability, claudeCapability, codexCapability, cursorCapability]);
+    bridge.models.mockResolvedValue({
+      models: ['cursor-grok-4.6-high', 'cursor-grok-4.6-xhigh'], source: 'cli', stale: false, defaultModel: '',
+      modelCapabilities: {
+        'cursor-grok-4.6-high': { effortValues: ['high', 'xhigh'], defaultEffort: 'high' },
+        'cursor-grok-4.6-xhigh': { effortValues: ['high', 'xhigh'], defaultEffort: 'xhigh' },
+      },
+    });
+    values = { ...values, model: 'cursor-grok-4.6-xhigh', effort: '', authMode: 'local-cli', type: 'custom' };
+    await render({
+      isEditing: true, editingProvider: { id: 'cursor-1' }, watchedPresetKey: 'cursor', watchedApiFormat: 'cursor-cli',
+      providerPresets: [...presets, {
+        key: 'cursor', fixedApiFormat: 'cursor-cli', label: 'Cursor', authMode: 'local-cli',
+        backendType: 'custom', defaultBaseUrl: '', desc: '', icon: null,
+      }],
+    });
+    const effortSelect = renderer!.root.findByProps({ 'data-field': 'effort' }).findByType('select');
+    expect(effortSelect.props.disabled).toBeFalsy();
+    expect(effortSelect.props.options.map((option: any) => option.value)).toEqual(['high', 'xhigh']);
+    await act(async () => effortSelect.props.onChange('high'));
+    expect(props.form.setFieldValue).toHaveBeenCalledWith('model', 'cursor-grok-4.6-high');
+  });
+
   it('uses the live Codex catalog without mixing in the OpenAI API preset model', async () => {
     values = { model: 'gpt-5.6-sol', models: [], effort: 'ultra', authMode: 'local-cli', type: 'custom' };
     bridge.models.mockResolvedValue({

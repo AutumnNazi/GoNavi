@@ -50,7 +50,7 @@ func TestCLIEffortDomainsAreNotShared(t *testing.T) {
 
 // 空档位表示沿用 CLI 默认，不得下发任何参数。
 func TestNormalizeEffortEmptyIsPassthrough(t *testing.T) {
-	for _, format := range []string{"codex-cli", "claude-cli", "grok-cli"} {
+	for _, format := range []string{"codex-cli", "claude-cli", "grok-cli", "cursor-cli"} {
 		capability, _ := LookupCLICapability(format)
 		value, err := capability.NormalizeEffort("  ")
 		if err != nil || value != "" {
@@ -80,6 +80,11 @@ func TestAppendEffortArgsUsesPerCLIShape(t *testing.T) {
 	if got := grok.AppendEffortArgs(nil, "high"); len(got) != 2 ||
 		got[0] != "--reasoning-effort" || got[1] != "high" {
 		t.Fatalf("grok 档位应走 --reasoning-effort，得到 %v", got)
+	}
+
+	cursor, _ := LookupCLICapability("cursor-cli")
+	if got := cursor.AppendEffortArgs(nil, "high"); len(got) != 0 {
+		t.Fatalf("Cursor 档位必须改写模型 ID，不得下发 flag：%v", got)
 	}
 }
 
