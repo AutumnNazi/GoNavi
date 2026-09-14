@@ -1788,6 +1788,9 @@ func (a *App) connectAndCacheDatabase(effectiveConfig connection.ConnectionConfi
 }
 
 func (a *App) cachedConnectFailureError(effectiveConfig connection.ConnectionConfig, key string, messageKey string) error {
+	if a.inStartupConnectRetryWindow() {
+		return nil
+	}
 	failure, remaining, ok := a.getCachedConnectFailureByKey(key)
 	if !ok {
 		return nil
@@ -1860,6 +1863,9 @@ func (a *App) recordConnectFailureForFlight(flight *databaseConnectFlight, key s
 	defer a.mu.Unlock()
 	if flightErr := a.databaseConnectFlightErrorLocked(flight); flightErr != nil {
 		return flightErr
+	}
+	if a.inStartupConnectRetryWindow() {
+		return nil
 	}
 	// Keep the final failure key on the active token so a release that wins
 	// immediately after this commit can clear the just-recorded cooldown.
@@ -2006,10 +2012,18 @@ func (a *App) startupPhaseLabel() string {
 	if age < 0 {
 		age = 0
 	}
-	if age <= startupConnectRetryWindow {
+	if a.inStartupConnectRetryWindow() {
 		return fmt.Sprintf("启动期(age=%s)", age)
 	}
 	return fmt.Sprintf("稳定期(age=%s)", age)
+}
+
+func (a *App) inStartupConnectRetryWindow() bool {
+	if a == nil || a.startedAt.IsZero() {
+		return false
+	}
+	age := time.Since(a.startedAt)
+	return age >= 0 && age <= startupConnectRetryWindow
 }
 
 func (a *App) shouldRetryConnect(err error, attempt int) bool {
@@ -2019,13 +2033,7 @@ func (a *App) shouldRetryConnect(err error, attempt int) bool {
 	if !isTransientStartupConnectError(err) {
 		return false
 	}
-	if a != nil && !a.startedAt.IsZero() {
-		age := time.Since(a.startedAt)
-		if age >= 0 && age <= startupConnectRetryWindow {
-			return true
-		}
-	}
-	return false
+	return a.inStartupConnectRetryWindow()
 }
 
 func isTransientStartupConnectError(err error) bool {

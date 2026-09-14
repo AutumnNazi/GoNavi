@@ -324,6 +324,88 @@ func TestGetDatabaseWithPing_CoolsDownRepeatedFailures(t *testing.T) {
 	}
 }
 
+func TestGetDatabaseWithPing_DoesNotCoolDownDuringStartupWindow(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	originalResolveDialConfigWithProxyFunc := resolveDialConfigWithProxyFunc
+	defer func() {
+		newDatabaseFunc = originalNewDatabaseFunc
+		resolveDialConfigWithProxyFunc = originalResolveDialConfigWithProxyFunc
+	}()
+
+	connectCalls := 0
+	newDatabaseFunc = func(dbType string) (db.Database, error) {
+		return &fakeStartupRetryDB{
+			connect: func(config connection.ConnectionConfig) error {
+				connectCalls++
+				return errors.New("dial tcp 10.1.131.86:5432: connect: connection refused")
+			},
+		}, nil
+	}
+	resolveDialConfigWithProxyFunc = func(raw connection.ConnectionConfig) (connection.ConnectionConfig, error) {
+		return raw, nil
+	}
+
+	a := &App{
+		startedAt:       time.Now(),
+		dbCache:         make(map[string]cachedDatabase),
+		connectFailures: make(map[string]cachedConnectFailure),
+		runningQueries:  make(map[string]queryContext),
+	}
+	config := connection.ConnectionConfig{Type: "postgres", Host: "10.1.131.86", Port: 5432, User: "postgres"}
+
+	_, firstErr := a.getDatabaseWithPing(config, false)
+	if firstErr == nil {
+		t.Fatal("expected first connection attempt to fail")
+	}
+	if len(a.connectFailures) != 0 {
+		t.Fatalf("startup-window failures must not record connect cooldown, got %#v", a.connectFailures)
+	}
+
+	_, secondErr := a.getDatabaseWithPing(config, false)
+	if secondErr == nil {
+		t.Fatal("expected second connection attempt to fail with the real error")
+	}
+	if strings.Contains(secondErr.Error(), "cooldown") || strings.Contains(secondErr.Error(), "冷却") {
+		t.Fatalf("startup-window retry must not return cooldown, got %q", secondErr.Error())
+	}
+	if connectCalls != startupConnectRetryAttempts*2 {
+		t.Fatalf("expected startup-window retry to reconnect, got %d connect attempts", connectCalls)
+	}
+}
+
+func TestStartupWindowSkipsConnectFailureCooldownForAllDatabaseTypes(t *testing.T) {
+	dialErr := errors.New("dial tcp 10.1.131.86:3306: connect: connection refused")
+	for _, dbType := range []string{"mysql", "postgres", "sqlserver", "kingbase", "iotdb", "tdengine", "clickhouse", "oracle"} {
+		t.Run(dbType, func(t *testing.T) {
+			config := connection.ConnectionConfig{Type: dbType, Host: "10.1.131.86", Port: 3306, User: "root"}
+			key := getCacheKey(config)
+			a := &App{
+				startedAt:       time.Now(),
+				dbCache:         make(map[string]cachedDatabase),
+				connectFailures: make(map[string]cachedConnectFailure),
+				runningQueries:  make(map[string]queryContext),
+			}
+			flight, err := a.beginDatabaseConnectFlight(key, config)
+			if err != nil {
+				t.Fatalf("begin flight: %v", err)
+			}
+			defer a.finishDatabaseConnectFlight(flight)
+
+			if recordErr := a.recordConnectFailureForFlight(flight, key, dialErr); recordErr != nil {
+				t.Fatalf("recordConnectFailureForFlight: %v", recordErr)
+			}
+			if len(a.connectFailures) != 0 {
+				t.Fatalf("startup-window must not record cooldown for %s, got %#v", dbType, a.connectFailures)
+			}
+
+			a.connectFailures[key] = cachedConnectFailure{occurredAt: time.Now(), err: dialErr}
+			if cooldownErr := a.cachedConnectFailureError(config, key, "db.backend.message.connect_failure_cooldown"); cooldownErr != nil {
+				t.Fatalf("startup-window must ignore cached cooldown for %s, got %v", dbType, cooldownErr)
+			}
+		})
+	}
+}
+
 func TestGetDatabaseWithPing_AllowsRetryAfterFailureCooldown(t *testing.T) {
 	originalNewDatabaseFunc := newDatabaseFunc
 	originalResolveDialConfigWithProxyFunc := resolveDialConfigWithProxyFunc
