@@ -8,7 +8,9 @@ import { AIProviderLogo, PRESET_ICON_SLUG } from './AIProviderLogo';
 describe('AIProviderLogo', () => {
   it('maps known presets to brand SVG paths', () => {
     expect(PRESET_ICON_SLUG.openai).toBe('openai');
-    expect(PRESET_ICON_SLUG.codex).toBeUndefined();
+    expect(PRESET_ICON_SLUG.codex).toBe('openai');
+    expect(PRESET_ICON_SLUG.cursor).toBe('cursor');
+    expect(PRESET_ICON_SLUG.grok).toBe('grok');
     expect(PRESET_ICON_SLUG['claude-subscription']).toBe('claudecode');
     expect(PRESET_ICON_SLUG['qwen-bailian']).toBe('alibabacloud');
     expect(PRESET_ICON_SLUG.atlascloud).toBe('atlascloud');
@@ -20,6 +22,9 @@ describe('AIProviderLogo', () => {
     expect(PRESET_ICON_SLUG['volcengine-coding']).toBe('volcengine');
     const markup = renderToStaticMarkup(<AIProviderLogo presetKey="openai" label="OpenAI" />);
     expect(markup).toContain('/icons/ai/openai.svg');
+    expect(renderToStaticMarkup(<AIProviderLogo presetKey="codex" label="codex" />)).toContain('/icons/ai/openai.svg');
+    expect(renderToStaticMarkup(<AIProviderLogo presetKey="cursor" label="Cursor" />)).toContain('/icons/ai/cursor.svg');
+    expect(renderToStaticMarkup(<AIProviderLogo presetKey="grok" label="Grok" />)).toContain('/icons/ai/grok.svg');
     const xiaomiMiMo = renderToStaticMarkup(<AIProviderLogo presetKey="xiaomi-mimo" label="Xiaomi MiMo" />);
     expect(xiaomiMiMo).toContain('/icons/ai/xiaomimimo.svg');
   });

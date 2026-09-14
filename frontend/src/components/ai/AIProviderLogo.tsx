@@ -3,6 +3,7 @@ import { AppstoreOutlined } from '@ant-design/icons';
 
 export const PRESET_ICON_SLUG: Record<string, string> = {
   openai: 'openai',
+  codex: 'openai',
   deepseek: 'deepseek',
   'qwen-bailian': 'alibabacloud',
   'qwen-coding-plan': 'alibabacloud',
