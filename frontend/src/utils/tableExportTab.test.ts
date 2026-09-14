@@ -189,7 +189,7 @@ describe('tableExportTab', () => {
     expect(tab.id).toBe('table-export-batch-connections');
     expect(tab.type).toBe('table-export');
     expect(tab.exportWorkbenchMode).toBe('batch-connections');
-    expect(tab.connectionId).toBeUndefined();
+    expect(tab.connectionId).toBe('');
     expect(tab.tableExportInitialConnectionIds).toEqual(['conn-1', 'conn-2']);
     expect(tab.title).toBe('批量处理连接');
   });

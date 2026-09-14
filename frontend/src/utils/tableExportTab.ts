@@ -263,6 +263,7 @@ export const buildBatchConnectionWorkbenchTab = (
   title: String(input.title || t('sidebar.action.batch_connections')).trim() || t('sidebar.action.batch_connections'),
   type: 'table-export',
   exportWorkbenchMode: 'batch-connections',
+  connectionId: '',
   initialTab: 'config',
   ...(normalizeNameList(input.initialConnectionIds)
     ? { tableExportInitialConnectionIds: normalizeNameList(input.initialConnectionIds) }

@@ -8,6 +8,8 @@
 //   - 不依赖 Sidebar.tsx 内部的 TreeNode 类型（用结构化类型参数代替）
 //   - 共享常量和类型集中管理，便于跨文件复用
 
+import type { Key } from 'react';
+
 import { t } from '../../i18n';
 import type {
   SidebarTableMetadataField,
@@ -526,13 +528,13 @@ export const resolveSidebarDoubleClickExpandedKeys = ({
   expandedKeys,
 }: {
   nodeType: unknown;
-  nodeKey: string | number;
-  expandedKeys: Array<string | number>;
-}): { expandedKeys: Array<string | number>; didExpand: boolean } => {
+  nodeKey: Key;
+  expandedKeys: readonly Key[];
+}): { expandedKeys: Key[]; didExpand: boolean } => {
   const isExpanded = expandedKeys.includes(nodeKey);
   if (nodeType === 'connection') {
     if (isExpanded) {
-      return { expandedKeys, didExpand: false };
+      return { expandedKeys: [...expandedKeys], didExpand: false };
     }
     return { expandedKeys: [...expandedKeys, nodeKey], didExpand: true };
   }

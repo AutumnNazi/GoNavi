@@ -118,6 +118,7 @@ const renderWorkbench = async (initialConnectionIds?: string[]) => {
           title: '批量处理连接',
           type: 'table-export',
           exportWorkbenchMode: 'batch-connections',
+          connectionId: '',
           tableExportInitialConnectionIds: initialConnectionIds,
         }}
       />,

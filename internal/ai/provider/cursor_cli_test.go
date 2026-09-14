@@ -154,8 +154,11 @@ func TestCursorCLIModelCapabilitiesGroupEffortSuffixes(t *testing.T) {
 		"claude-opus-5-thinking-high", "claude-opus-5-thinking-xhigh",
 	}
 	capabilities := cursorCLIModelCapabilities(models)
-	if capabilities["auto"] != (CLIModelCapability{}) || capabilities["composer-2.5"].EffortValues != nil {
-		t.Fatalf("single-id families must not grow an effort selector: %+v", capabilities)
+	if _, ok := capabilities["auto"]; ok {
+		t.Fatalf("single-id families must not grow an effort selector: %+v", capabilities["auto"])
+	}
+	if _, ok := capabilities["composer-2.5"]; ok {
+		t.Fatalf("fast-only families must not grow an effort selector: %+v", capabilities["composer-2.5"])
 	}
 	grok := capabilities["cursor-grok-4.6-xhigh"]
 	if grok.DefaultEffort != "xhigh" || !reflect.DeepEqual(grok.EffortValues, []string{"low", "medium", "high", "xhigh"}) {

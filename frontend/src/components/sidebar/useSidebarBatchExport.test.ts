@@ -100,6 +100,6 @@ describe('useSidebarBatchExport', () => {
       exportWorkbenchMode: 'batch-connections',
       tableExportInitialConnectionIds: ['es-1'],
     }));
-    expect(addTab.mock.calls[0][0].connectionId).toBeUndefined();
+    expect(addTab.mock.calls[0][0].connectionId).toBe('');
   });
 });

@@ -382,6 +382,7 @@ describe('TableExportWorkbench', () => {
           title: '批量处理连接',
           type: 'table-export',
           exportWorkbenchMode: 'batch-connections',
+          connectionId: '',
         }}
       />,
     );

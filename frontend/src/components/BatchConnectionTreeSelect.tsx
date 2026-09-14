@@ -31,12 +31,12 @@ import './data-sync/DataSyncWorkbench.css';
 import './BatchConnectionTreeSelect.css';
 
 const BrowserSafeTreeSelect: React.FC<
-  TreeSelectProps<string, DataSyncConnectionTreeDataNode>
+  TreeSelectProps<string[], DataSyncConnectionTreeDataNode>
 > = (props) => {
   if (typeof window === 'undefined' || typeof HTMLElement === 'undefined') {
     return React.createElement('gn-data-sync-tree-select', props);
   }
-  return <TreeSelect<string, DataSyncConnectionTreeDataNode> {...props} />;
+  return <TreeSelect<string[], DataSyncConnectionTreeDataNode> {...props} />;
 };
 
 const projectSidebarItem = (
@@ -134,7 +134,7 @@ export const buildBatchConnectionHoverModel = (
       [t('app.theme.tab_display.element.host.label'), host],
       [t('tab_manager.hover.label.database'), database],
       [t('app.theme.tab_display.element.group.label'), groupName],
-    ].filter(([, value]) => Boolean(value)),
+    ].filter((row): row is [string, string] => Boolean(row[1])),
   };
 };
 
@@ -147,7 +147,7 @@ export const buildBatchGroupHoverModel = (
   title: name,
   rows: [
     [t('data_export.label.connection'), String(connectionCount)],
-  ].filter(([, value]) => Boolean(value)),
+  ].filter((row): row is [string, string] => Boolean(row[1])),
 });
 
 const BatchConnectionHoverCard: React.FC<BatchConnectionHoverModel> = ({

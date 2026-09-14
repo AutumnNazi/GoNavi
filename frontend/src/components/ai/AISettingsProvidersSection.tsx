@@ -25,6 +25,7 @@ import {
 import { isProviderSecretRequirementSatisfied } from '../../utils/providerSecretDraft';
 import { recordFromRows } from '../../utils/aiProviderKeyValue';
 import { AIGetCLICapabilities, AIGetCLIModelCatalog } from '../../../wailsjs/go/aiservice/Service';
+import { BrowserOpenURL } from '../../../wailsjs/runtime';
 import { applyCursorCLIModelEffort, parseCursorCLIModelID } from '../../utils/cursorCLIModelEffort';
 import type { ai } from '../../../wailsjs/go/models';
 import type { OverlayWorkbenchTheme } from '../../utils/overlayWorkbenchTheme';
