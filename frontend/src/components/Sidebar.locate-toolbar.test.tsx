@@ -1142,9 +1142,6 @@ describe('Sidebar locate toolbar', () => {
 
     expect(actionsSource).toContain("key: 'data-workflow'");
     expect(actionsSource).toContain('label: v2DataWorkflowLabel');
-    expect(actionsSource).toContain("key: 'batch-connections'");
-    expect(actionsSource).toContain("key: 'batch-tables'");
-    expect(actionsSource).toContain("key: 'batch-databases'");
     expect(actionsSource).toContain("key: 'compare'");
     expect(actionsSource).toContain("action: 'compare'");
     expect(actionsSource).not.toContain("key: 'schema-compare'");
@@ -3010,7 +3007,6 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).toContain(t('sidebar.sql_file_exec.title'));
     expect(markup).toContain(t('sidebar.menu.edit_connection'));
     expect(markup).toContain(t('connection.sidebar.menu.copy'));
-    expect(markup).toContain(t('sidebar.action.batch_connections'));
     expect(markup).toContain(t('connection.sidebar.menu.disconnect'));
     expect(markup).toContain(t('connection.sidebar.menu.groupSection'));
     expect(markup).toContain('生产环境');
@@ -3042,7 +3038,6 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).toContain('Edit connection');
     expect(markup).toContain('Connection');
     expect(markup).toContain('Copy connection');
-    expect(markup).toContain('Batch connections');
     expect(markup).toContain('Disconnect');
     expect(markup).toContain('Connection groups');
     expect(markup).toContain('Current');

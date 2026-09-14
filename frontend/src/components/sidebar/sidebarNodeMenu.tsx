@@ -371,7 +371,6 @@ export const buildSidebarNodeMenuItems = (
     openExportDialog,
     openBatchTableWorkbench,
     openBatchDatabaseWorkbench,
-    openBatchConnectionWorkbench,
     isSavedQueryUnmatched,
     connections,
     handleRebindSavedQuery,
@@ -697,12 +696,6 @@ export const buildSidebarNodeMenuItems = (
                     onClick: () => void disconnectConnectionNode(node)
                 },
                 {
-                    key: 'batch-connections',
-                    label: t('sidebar.action.batch_connections'),
-                    icon: <AppstoreOutlined />,
-                    onClick: () => openBatchConnectionWorkbench?.(node),
-                },
-                {
                     key: 'delete',
                     label: t('connection.sidebar.menu.delete'),
                     icon: <DeleteOutlined />,
@@ -773,12 +766,6 @@ export const buildSidebarNodeMenuItems = (
                     label: t('connection.sidebar.menu.disconnect'),
                     icon: <DisconnectOutlined />,
                     onClick: () => void disconnectConnectionNode(node),
-                },
-                {
-                    key: 'batch-connections',
-                    label: t('sidebar.action.batch_connections'),
-                    icon: <AppstoreOutlined />,
-                    onClick: () => openBatchConnectionWorkbench?.(node),
                 },
                 {
                     key: 'delete',
@@ -927,12 +914,6 @@ export const buildSidebarNodeMenuItems = (
                  label: t('connection.sidebar.menu.disconnect'),
                  icon: <DisconnectOutlined />,
                  onClick: () => void disconnectConnectionNode(node)
-             },
-             {
-                 key: 'batch-connections',
-                 label: t('sidebar.action.batch_connections'),
-                 icon: <AppstoreOutlined />,
-                 onClick: () => openBatchConnectionWorkbench?.(node),
              },
              {
                  key: 'delete',

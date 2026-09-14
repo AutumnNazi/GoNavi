@@ -35,9 +35,6 @@ export const buildExportWorkbenchHistoryKey = (
   if (mode === 'batch-databases') {
     return [connectionId, '__batch_databases__'].join('::');
   }
-  if (mode === 'batch-connections') {
-    return '__batch_connections__';
-  }
   if (mode === 'database') {
     return [connectionId, dbName, '__database__'].join('::');
   }
@@ -79,11 +76,6 @@ type BuildBatchDatabaseExportWorkbenchTabInput = ExportWorkbenchLaunchOptions & 
   connectionId: string;
   title?: string;
   initialDatabaseNames?: string[];
-};
-
-type BuildBatchConnectionWorkbenchTabInput = ExportWorkbenchLaunchOptions & {
-  title?: string;
-  initialConnectionIds?: string[];
 };
 
 type BuildDatabaseExportWorkbenchTabInput = ExportWorkbenchLaunchOptions & {
@@ -255,20 +247,6 @@ export const buildBatchDatabaseExportWorkbenchTab = (
     ...buildLaunchMetadata(input),
   };
 };
-
-export const buildBatchConnectionWorkbenchTab = (
-  input: BuildBatchConnectionWorkbenchTabInput = {},
-): TabData => ({
-  id: 'table-export-batch-connections',
-  title: String(input.title || t('sidebar.action.batch_connections')).trim() || t('sidebar.action.batch_connections'),
-  type: 'table-export',
-  exportWorkbenchMode: 'batch-connections',
-  initialTab: 'config',
-  ...(normalizeNameList(input.initialConnectionIds)
-    ? { tableExportInitialConnectionIds: normalizeNameList(input.initialConnectionIds) }
-    : {}),
-  ...buildLaunchMetadata(input),
-});
 
 export const buildDatabaseExportWorkbenchTab = (
   input: BuildDatabaseExportWorkbenchTabInput,
