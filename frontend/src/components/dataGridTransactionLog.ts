@@ -47,11 +47,13 @@ export const buildDataGridTransactionLog = ({
   tableName,
   preview,
   committed,
+  outcomeUnknown = false,
 }: {
   dbType: string;
   tableName: string;
   preview?: ChangePreview | null;
   committed: boolean;
+  outcomeUnknown?: boolean;
 }): string => {
   const statements = [
     ...previewStatements(preview?.deletes),
@@ -77,6 +79,8 @@ export const buildDataGridTransactionLog = ({
   lines.push(...statements);
   if (committed && boundary?.commit) {
     lines.push(`${boundary.commit};`);
+  } else if (outcomeUnknown) {
+    lines.push('-- COMMIT outcome is unknown; do not replay this batch.');
   } else if (!committed) {
     lines.push('-- COMMIT was not issued because this batch failed.');
   }

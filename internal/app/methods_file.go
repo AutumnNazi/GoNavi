@@ -4999,7 +4999,12 @@ func (a *App) ApplyChanges(config connection.ConnectionConfig, dbName, tableName
 		preview := buildChangePreview(dbInst, config, targetTableName, changes)
 		err := applier.ApplyChanges(targetTableName, changes)
 		if err != nil {
-			return connection.QueryResult{Success: false, Message: err.Error(), Data: preview}
+			return connection.QueryResult{
+				Success:        false,
+				Message:        err.Error(),
+				Data:           preview,
+				OutcomeUnknown: db.IsWriteOutcomeUnknown(err),
+			}
 		}
 		return connection.QueryResult{Success: true, Message: a.appText("file.backend.message.transaction_committed", nil), Data: preview}
 	}

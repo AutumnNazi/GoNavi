@@ -755,6 +755,8 @@ describe("i18n catalog", () => {
       "data_grid.message.change_set_build_failed_detail",
       "data_grid.message.preview_sql_failed_detail",
       "data_grid.message.commit_failed",
+      "data_grid.message.commit_outcome_unknown",
+      "data_grid.message.auto_commit_outcome_unknown",
       "data_grid.message.rollback_failed",
     ];
     const noPlaceholderKeys = [

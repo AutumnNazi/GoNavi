@@ -1,6 +1,9 @@
 package app
 
 import (
+	"database/sql/driver"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -56,6 +59,69 @@ func TestApplyChangesReturnsDetailedSQLPreview(t *testing.T) {
 	}
 	if fakeDB.previewTableName != "users" || fakeDB.applyTableName != "users" {
 		t.Fatalf("non-Oracle target changed unexpectedly: preview=%q apply=%q", fakeDB.previewTableName, fakeDB.applyTableName)
+	}
+}
+
+func TestApplyChangesMarksWriteOutcomeUnknown(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	originalResolveDialConfigWithProxyFunc := resolveDialConfigWithProxyFunc
+	t.Cleanup(func() {
+		newDatabaseFunc = originalNewDatabaseFunc
+		resolveDialConfigWithProxyFunc = originalResolveDialConfigWithProxyFunc
+	})
+
+	lost := errors.New("response lost")
+	fakeDB := &fakeCreateDatabaseDB{applyErr: db.MarkWriteOutcomeUnknown(lost)}
+	newDatabaseFunc = func(string) (db.Database, error) {
+		return fakeDB, nil
+	}
+	resolveDialConfigWithProxyFunc = func(raw connection.ConnectionConfig) (connection.ConnectionConfig, error) {
+		return raw, nil
+	}
+
+	result := NewAppWithSecretStore(secretstore.NewUnavailableStore("test")).ApplyChanges(
+		connection.ConnectionConfig{Type: "mysql", Host: "127.0.0.1", Port: 3306, Database: "main"},
+		"main",
+		"users",
+		connection.ChangeSet{Inserts: []map[string]interface{}{{"id": 1}}},
+	)
+	if result.Success || !result.OutcomeUnknown || !strings.Contains(result.Message, "response lost") {
+		t.Fatalf("unknown write must set OutcomeUnknown, got success=%t unknown=%t message=%q", result.Success, result.OutcomeUnknown, result.Message)
+	}
+}
+
+func TestApplyChangesKeepsKnownFailureOutcomeKnown(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	originalResolveDialConfigWithProxyFunc := resolveDialConfigWithProxyFunc
+	t.Cleanup(func() {
+		newDatabaseFunc = originalNewDatabaseFunc
+		resolveDialConfigWithProxyFunc = originalResolveDialConfigWithProxyFunc
+	})
+
+	for name, applyErr := range map[string]error{
+		"constraint":              errors.New("constraint rejected"),
+		"unmarked unexpected eof": io.ErrUnexpectedEOF,
+		"unmarked bad conn":       driver.ErrBadConn,
+	} {
+		t.Run(name, func(t *testing.T) {
+			fakeDB := &fakeCreateDatabaseDB{applyErr: applyErr}
+			newDatabaseFunc = func(string) (db.Database, error) {
+				return fakeDB, nil
+			}
+			resolveDialConfigWithProxyFunc = func(raw connection.ConnectionConfig) (connection.ConnectionConfig, error) {
+				return raw, nil
+			}
+
+			result := NewAppWithSecretStore(secretstore.NewUnavailableStore("test")).ApplyChanges(
+				connection.ConnectionConfig{Type: "mysql", Host: "127.0.0.1", Port: 3306, Database: "main"},
+				"main",
+				"users",
+				connection.ChangeSet{Inserts: []map[string]interface{}{{"id": 1}}},
+			)
+			if result.Success || result.OutcomeUnknown || result.Message != applyErr.Error() {
+				t.Fatalf("unmarked failure must not set OutcomeUnknown, got success=%t unknown=%t message=%q", result.Success, result.OutcomeUnknown, result.Message)
+			}
+		})
 	}
 }
 

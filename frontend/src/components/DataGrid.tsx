@@ -4002,12 +4002,17 @@ const DataGrid: React.FC<DataGridProps> = ({
       const startTime = Date.now();
       const res = await ApplyChanges(buildRpcConnectionConfig(config) as any, dbName || '', tableName, { inserts, updates, deletes, locatorStrategy: effectiveEditLocator?.strategy } as any);
       const duration = Date.now() - startTime;
+      const outcomeUnknown = res?.outcomeUnknown === true;
+      const logMessage = outcomeUnknown
+          ? `${res.message} (${translateDataGrid('data_grid.message.transaction_outcome_unknown')})`
+          : res.message;
 
       const logSql = buildDataGridTransactionLog({
           dbType,
           tableName,
           preview: res.data,
           committed: res.success,
+          outcomeUnknown,
       });
 
       if (res.success) {
@@ -4018,7 +4023,7 @@ const DataGrid: React.FC<DataGridProps> = ({
               sql: logSql.trim(),
               status: 'success',
               duration,
-              message: res.message,
+              message: logMessage,
               dbName
           });
           setAddedRows([]);
@@ -4037,11 +4042,28 @@ const DataGrid: React.FC<DataGridProps> = ({
               sql: logSql.trim(),
               status: 'error',
               duration,
-              message: res.message,
+              message: logMessage,
               dbName
           });
           if (source === 'auto') {
               autoCommitFailedTokenRef.current = autoCommitChangeTokenRef.current;
+          }
+          if (outcomeUnknown) {
+              autoCommitFailedTokenRef.current = autoCommitChangeTokenRef.current;
+              setAddedRows([]);
+              setModifiedRows({});
+              setDeletedRowKeys(new Set());
+              setModifiedColumns({});
+              try {
+                  await onReload?.();
+              } catch {
+                  // Reload failures must not hide the unknown-outcome warning.
+              } finally {
+                  void message.warning(source === 'auto'
+                      ? translateDataGrid('data_grid.message.auto_commit_outcome_unknown', { detail: res.message })
+                      : translateDataGrid('data_grid.message.commit_outcome_unknown', { detail: res.message }));
+              }
+              return false;
           }
           void message.error(source === 'auto'
               ? translateDataGrid('data_grid.message.auto_commit_failed', { detail: res.message })

@@ -12,6 +12,7 @@ type fakeCreateDatabaseDB struct {
 	connectConfig    connection.ConnectionConfig
 	execQueries      []string
 	applyChanges     connection.ChangeSet
+	applyErr         error
 	applyTableName   string
 	previewTableName string
 	previewDeletes   []string
@@ -57,7 +58,7 @@ func (f *fakeCreateDatabaseDB) GetTriggers(dbName, tableName string) ([]connecti
 func (f *fakeCreateDatabaseDB) ApplyChanges(tableName string, changes connection.ChangeSet) error {
 	f.applyTableName = tableName
 	f.applyChanges = changes
-	return nil
+	return f.applyErr
 }
 func (f *fakeCreateDatabaseDB) PreviewChanges(tableName string, changes connection.ChangeSet) (deletes, updates, inserts []string) {
 	f.previewTableName = tableName

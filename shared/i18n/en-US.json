@@ -4809,6 +4809,8 @@
   "data_grid.message.column_quick_find_not_rendered": "Field column \"{{column}}\" is not currently rendered, so it cannot be located.",
   "data_grid.message.column_visibility_reset": "All columns restored",
   "data_grid.message.commit_failed": "Commit failed: {{detail}}",
+  "data_grid.message.commit_outcome_unknown": "Commit result is unknown: {{detail}}. Reloaded the current rows. Do not retry the same batch until you verify the data.",
+  "data_grid.message.auto_commit_outcome_unknown": "Auto commit result is unknown: {{detail}}. Reloaded the current rows. Do not retry the same batch until you verify the data.",
   "data_grid.message.transaction_outcome_unknown": "Transaction outcome may be unknown",
   "data_grid.message.copied_columns": "Created a fill template with {{count}} fields. Select target cells or check target rows.",
   "data_grid.message.copied_rows": "Copied {{count}} rows. You can paste them as new rows.",
