@@ -1447,6 +1447,7 @@ const Sidebar: React.FC<{
       handleExportSchemaSQL,
       openBatchTableWorkbench,
       openBatchDatabaseWorkbench,
+      openBatchConnectionWorkbench,
   } = useSidebarBatchExport({
       connections,
       selectedNodesRef,
@@ -3619,6 +3620,7 @@ const Sidebar: React.FC<{
       handleExportDatabaseSQL,
       openBatchTableWorkbench,
       openBatchDatabaseWorkbench,
+      openBatchConnectionWorkbench,
       handleRunSQLFile,
       handleDeleteDatabase,
       onCreateConnectionInGroup,
@@ -4086,6 +4088,7 @@ const Sidebar: React.FC<{
     openExportDialog,
     openBatchTableWorkbench,
     openBatchDatabaseWorkbench,
+    openBatchConnectionWorkbench,
     isSavedQueryUnmatched,
     connections,
     handleRebindSavedQuery,
@@ -4482,6 +4485,7 @@ const Sidebar: React.FC<{
   const v2DataWorkflowLabel = t('app.tools.group.workflow.title');
   const v2BatchTablesLabel = t('sidebar.action.batch_tables');
   const v2BatchDatabasesLabel = t('sidebar.action.batch_databases');
+  const v2BatchConnectionsLabel = t('sidebar.action.batch_connections');
   const v2DataImportLabel = t('sidebar.action.data_import');
   const v2SqlToolsLabel = t('sidebar.action.sql_tools');
   const v2SlowQueryLabel = t('sql_analysis.slow_query.rail.aria_label');
@@ -4559,6 +4563,12 @@ const Sidebar: React.FC<{
       key: 'data-workflow',
       label: v2DataWorkflowLabel,
       menu: [
+        {
+          key: 'batch-connections',
+          label: v2BatchConnectionsLabel,
+          icon: <CloudOutlined aria-hidden="true" />,
+          onClick: openBatchConnectionWorkbench,
+        },
         {
           key: 'batch-tables',
           label: v2BatchTablesLabel,

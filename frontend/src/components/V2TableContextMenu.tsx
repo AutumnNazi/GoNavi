@@ -542,6 +542,7 @@ export type V2ConnectionContextMenuActionKey =
   | 'open-monitor'
   | 'edit'
   | 'copy-connection'
+  | 'batch-connections'
   | 'disconnect'
   | 'delete'
   | 'move-to-ungrouped'
@@ -673,6 +674,7 @@ export const V2ConnectionContextMenuView: React.FC<{
           ...(supportsVisibility ? [{ action: 'visibility' as const, icon: <EyeInvisibleOutlined />, title: t('sidebar.database_schema_visibility.menu.manage') }] : []),
           { action: 'edit', icon: <EditOutlined />, title: t('sidebar.menu.edit_connection'), kbd: 'F2' },
           { action: 'copy-connection', icon: <CopyOutlined />, title: t('connection.sidebar.menu.copy') },
+          { action: 'batch-connections', icon: <AppstoreOutlined />, title: t('sidebar.action.batch_connections') },
           { action: 'disconnect', icon: <DisconnectOutlined />, title: t('connection.sidebar.menu.disconnect') },
         ])}
 

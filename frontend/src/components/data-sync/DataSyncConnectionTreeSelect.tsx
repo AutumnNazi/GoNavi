@@ -16,6 +16,7 @@ export type DataSyncConnectionTreeDataNode = {
   key: string;
   value: string;
   title: React.ReactNode;
+  label: string;
   searchText: string;
   selectable?: boolean;
   disabled?: boolean;
@@ -92,6 +93,7 @@ export const buildDataSyncConnectionTreeData = (
         key: connectionValue(connection.id),
         value: connectionValue(connection.id),
         title: <ConnectionTitle connection={connection} />,
+        label: connection.name,
         searchText: `${connection.name} ${connection.type}`.toLocaleLowerCase(),
         disabled: disabledConnectionIds.has(connection.id),
       };
@@ -107,6 +109,7 @@ export const buildDataSyncConnectionTreeData = (
       key: groupValue(item.id),
       value: groupValue(item.id),
       title: <GroupTitle name={item.name} />,
+      label: item.name,
       searchText: item.name.toLocaleLowerCase(),
       selectable: false,
       children,
@@ -123,6 +126,7 @@ export const buildDataSyncConnectionTreeData = (
       key: connectionValue(connection.id),
       value: connectionValue(connection.id),
       title: <ConnectionTitle connection={connection} />,
+      label: connection.name,
       searchText: `${connection.name} ${connection.type}`.toLocaleLowerCase(),
       disabled: disabledConnectionIds.has(connection.id),
     });

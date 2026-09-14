@@ -574,7 +574,7 @@ export interface TabData {
   sidebarLocateKey?: string; // Precise sidebar tree key for locating an object node
   savedQueryId?: string; // Saved query identity for quick-save behavior
   objectType?: 'table' | 'view' | 'materialized-view'; // Table-like object type for shared viewers
-  exportWorkbenchMode?: 'single' | 'batch-tables' | 'batch-databases' | 'database' | 'schema';
+  exportWorkbenchMode?: 'single' | 'batch-tables' | 'batch-databases' | 'batch-connections' | 'database' | 'schema';
   dataSyncEntryMode?: 'sync' | 'compare' | 'schemaCompare' | 'dataCompare';
   dataSyncFocusTaskId?: string;
   dataSyncFocusStage?: 'endpoints' | 'mappings' | 'delivery' | 'trigger' | 'preflight';
@@ -585,6 +585,7 @@ export interface TabData {
   tableExportRowCountByScope?: Partial<Record<TableExportScope, number>>;
   tableExportInitialObjectNames?: string[];
   tableExportInitialDatabaseNames?: string[];
+  tableExportInitialConnectionIds?: string[];
   tableExportContentMode?: TableExportContentMode;
   tableExportIncludeDropIfExists?: boolean;
   tableExportLaunchKey?: string;

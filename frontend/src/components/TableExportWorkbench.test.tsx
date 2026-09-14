@@ -77,6 +77,10 @@ const createMockStoreState = () => ({
   upsertTableExportHistory: mockUpsertTableExportHistory,
   addTab: mockAddTab,
   addSqlLog: mockAddSqlLog,
+  connectionTags: [],
+  sidebarRootOrder: [],
+  rootSortMode: 'manual',
+  rootConnectionSortMode: 'createdAt',
 });
 const createMockProgressRunnerState = (): ExportProgressState => ({
   open: true,
@@ -129,11 +133,18 @@ vi.mock('antd', async () => {
     Button: component('mock-button'),
     Checkbox: component('mock-checkbox'),
     Empty: component('mock-empty'),
+    Input: component('mock-input'),
     InputNumber: component('mock-input-number'),
     Progress: component('mock-progress'),
     Segmented: component('mock-segmented'),
     Select: component('mock-select'),
     Tooltip: component('mock-tooltip'),
+    Tree: component('mock-tree'),
+    TreeSelect: Object.assign(component('mock-tree-select'), {
+      SHOW_CHILD: 'SHOW_CHILD',
+      SHOW_PARENT: 'SHOW_PARENT',
+      SHOW_ALL: 'SHOW_ALL',
+    }),
     message: {
       loading: vi.fn(() => vi.fn()),
       success: vi.fn(),
@@ -158,13 +169,18 @@ vi.mock('@ant-design/icons', async () => {
     ClockCircleOutlined: icon,
     DeleteOutlined: icon,
     ExportOutlined: icon,
+    FolderOutlined: icon,
     ReloadOutlined: icon,
   };
 });
 
-vi.mock('../store', () => ({
-  useStore: (selector: (state: any) => any) => selector(mockStoreState),
-}));
+vi.mock('../store', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../store')>();
+  return {
+    ...actual,
+    useStore: (selector: (state: any) => any) => selector(mockStoreState),
+  };
+});
 
 vi.mock('../../wailsjs/go/app/App', () => ({
   ClearTables: vi.fn(),
@@ -356,6 +372,22 @@ describe('TableExportWorkbench', () => {
     expect(markup).toContain('批量对象导出会统一生成一个 SQL 文件');
     expect(markup).toContain('已完成 3 / 8 个对象');
     expect(markup).toContain('/Users/yangguofeng/Desktop/SYS_schema_8tables.sql');
+  });
+
+  it('routes batch connection workbench into the dedicated connection panel', () => {
+    const markup = renderToStaticMarkup(
+      <TableExportWorkbench
+        tab={{
+          id: 'table-export-batch-connections',
+          title: '批量处理连接',
+          type: 'table-export',
+          exportWorkbenchMode: 'batch-connections',
+        }}
+      />,
+    );
+
+    expect(markup).toContain('data-batch-connection-workbench="true"');
+    expect(markup).not.toContain('data-batch-intent-switch');
   });
 
   it('renders batch database history with directory-oriented labels', () => {

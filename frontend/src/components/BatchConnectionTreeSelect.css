@@ -1,0 +1,100 @@
+.gn-data-sync-connection-tree-select.ant-select-multiple .ant-select-selector {
+  min-height: var(--gn-control-height, 32px) !important;
+  padding-block: 3px !important;
+}
+
+.gn-data-sync-connection-tree-select.ant-select-multiple .ant-select-selection-item {
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  line-height: 22px !important;
+}
+
+.gn-batch-connection-tree-popup .ant-select-tree-treenode {
+  display: flex;
+  align-items: center;
+}
+
+.gn-batch-connection-tree-popup .ant-select-tree-switcher,
+.gn-batch-connection-tree-popup .ant-select-tree-checkbox {
+  margin-block: 0 !important;
+  align-self: center;
+}
+
+.gn-batch-connection-tree-popup .ant-select-tree-checkbox {
+  top: 0;
+}
+
+.gn-batch-connection-tree-popup .ant-select-tree-node-content-wrapper {
+  display: inline-flex;
+  align-items: center;
+  min-height: calc(28px * var(--gn-ui-scale, 1));
+  line-height: 1;
+}
+
+.gn-batch-connection-tree-popup .ant-select-tree-title {
+  display: inline-flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+}
+
+.gn-batch-connection-tree-node-hover {
+  display: inline-flex;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+}
+
+.gn-batch-connection-tree-popup .gn-data-sync-connection-tree-node {
+  width: 100%;
+  line-height: 1;
+}
+
+.gn-batch-connection-tree-popup .gn-data-sync-connection-tree-node__name {
+  flex: 1 1 auto;
+}
+
+.gn-batch-connection-hover-tooltip {
+  z-index: 1300 !important;
+}
+
+.gn-batch-connection-hover-tooltip .ant-tooltip-inner {
+  min-width: 280px;
+  max-width: min(360px, calc(100vw - 24px));
+  padding: 0;
+}
+
+.gn-batch-connection-hover-tooltip .gn-v2-tab-hover-card {
+  --gn-v2-tab-hover-grid-columns: 72px minmax(0, 1fr);
+}
+
+.gn-batch-connection-hover-tooltip .gn-v2-tab-hover-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.gn-batch-connection-hover-tooltip .gn-v2-tab-hover-head > span {
+  flex: 0 0 auto;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gn-batch-connection-hover-tooltip .gn-v2-tab-hover-head > strong {
+  flex: 1 1 8em;
+  min-width: 0;
+}
+
+.gn-batch-connection-hover-tooltip .gn-v2-tab-hover-head[data-has-badge="false"] {
+  display: block;
+}
+
+.gn-batch-connection-hover-tooltip .gn-v2-tab-hover-head[data-has-badge="false"] > strong {
+  flex: none;
+  display: block;
+}
