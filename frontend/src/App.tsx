@@ -307,7 +307,7 @@ import { canInheritNewQueryTableContext, resolveNewQueryContext } from './utils/
 import { useAppUtilityStyles } from './hooks/useAppUtilityStyles';
 import { useWorkbenchTabs } from './hooks/useWorkbenchTabs';
 import { useAIWorkspaceSnapshot } from './components/ai/useAIWorkspaceSnapshot';
-import { shouldAllowNativeContextMenu } from './utils/nativeContextMenu';
+import { isWailsDevNativeContextMenu, shouldAllowNativeContextMenu } from './utils/nativeContextMenu';
 import AgentDataSettingsPanel from './components/ai/AgentDataSettingsPanel';
 import {
   ApplyDataRootDirectory,
@@ -8279,10 +8279,11 @@ function App() {
   const sidebarPanelCollapseLabel = t('app.sidebar.collapse');
   const sidebarPanelExpandLabel = t('app.sidebar.expand');
   const sidebarPanelToggleLabel = isSidebarCollapsed ? sidebarPanelExpandLabel : sidebarPanelCollapseLabel;
+  const allowDebugNativeContextMenu = isWailsDevNativeContextMenu(import.meta.env.DEV);
   const handleAppContextMenu = useCallback((event: React.MouseEvent<HTMLElement>) => {
-    if (event.defaultPrevented || shouldAllowNativeContextMenu(event.target)) return;
+    if (event.defaultPrevented || shouldAllowNativeContextMenu(event.target, { allowDebugMenu: allowDebugNativeContextMenu })) return;
     event.preventDefault();
-  }, []);
+  }, [allowDebugNativeContextMenu]);
 
   return (
     <ConfigProvider

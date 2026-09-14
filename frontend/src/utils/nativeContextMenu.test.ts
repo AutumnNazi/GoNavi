@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { shouldAllowNativeContextMenu } from './nativeContextMenu';
+import { isWailsDevNativeContextMenu, shouldAllowNativeContextMenu } from './nativeContextMenu';
 
 type ContextMenuElement = EventTarget & {
   parentElement: ContextMenuElement | null;
@@ -52,5 +52,12 @@ describe('shouldAllowNativeContextMenu', () => {
     const editable = createElement({ contentEditable: 'true' });
     const blocked = createElement({ contentEditable: 'false', parent: editable });
     expect(shouldAllowNativeContextMenu(createElement({ parent: blocked }))).toBe(false);
+  });
+
+  it('allows the WebView debug menu only for wails dev, not packaged latest or packaged dev', () => {
+    expect(isWailsDevNativeContextMenu(true)).toBe(true);
+    expect(isWailsDevNativeContextMenu(false)).toBe(false);
+    expect(shouldAllowNativeContextMenu(createElement(), { allowDebugMenu: true })).toBe(true);
+    expect(shouldAllowNativeContextMenu(createElement(), { allowDebugMenu: false })).toBe(false);
   });
 });
