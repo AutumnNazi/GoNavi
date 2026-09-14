@@ -1698,7 +1698,8 @@ describe('DataGrid DDL interactions', () => {
       message: `response lost (${t('data_grid.message.transaction_outcome_unknown')})`,
       sql: expect.stringContaining('-- COMMIT outcome is unknown; do not replay this batch.'),
     }));
-    expect(String(storeState.addSqlLog.mock.calls.at(-1)?.[0]?.sql || '')).not.toContain(
+    const lastSqlLog = storeState.addSqlLog.mock.calls[storeState.addSqlLog.mock.calls.length - 1]?.[0];
+    expect(String(lastSqlLog?.sql || '')).not.toContain(
       '-- COMMIT was not issued because this batch failed.',
     );
 
