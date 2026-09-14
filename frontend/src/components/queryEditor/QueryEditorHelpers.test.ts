@@ -801,6 +801,36 @@ SELECT * FROM analytics.public.events;
         )).toEqual([]);
     });
 
+    it('does not treat IoTDB timeseries path roots as metadata databases', () => {
+        expect(collectQueryEditorReferencedDatabaseNames(
+            'SELECT * FROM root.ln.wf01.wt01',
+            'root.sg',
+            ['root.ln', 'root.sg'],
+            'iotdb',
+        )).toEqual(['root.sg', 'root.ln']);
+        expect(collectQueryEditorReferencedDatabaseNames(
+            'SELECT * FROM root.other.wf01.wt01',
+            'root.sg',
+            ['root.ln', 'root.sg'],
+            'iotdb',
+        )).toEqual(['root.sg']);
+    });
+
+    it('treats Trino catalog.schema.table as a namespace, not the catalog alone', () => {
+        expect(collectQueryEditorReferencedDatabaseNames(
+            'SELECT * FROM hive.sales.orders',
+            'iceberg.default',
+            ['hive.sales', 'iceberg.default'],
+            'trino',
+        )).toEqual(['iceberg.default', 'hive.sales']);
+        expect(collectQueryEditorReferencedDatabaseNames(
+            'SELECT * FROM sales.orders',
+            'hive.sales',
+            ['hive.sales', 'hive.billing'],
+            'trino',
+        )).toEqual(['hive.sales']);
+    });
+
     it('treats Oracle and Dameng qualified owners as metadata databases', () => {
         const sql = [
             'SELECT * FROM B.local_table',

@@ -2532,6 +2532,8 @@ export type QueryEditorTableReference = {
     aliasSegment?: QueryIdentifierPathSegment;
 };
 
+const QUERY_EDITOR_IOTDB_TABLE_PATH_MAX_PARTS = 8;
+
 const createQueryEditorIdentitySegment = (value: string): QueryIdentifierPathSegment => ({
     raw: value,
     value,
@@ -2749,8 +2751,11 @@ const analyzeQueryEditorTableReferences = (source: string, dbType = ''): {
 
             const pathTokens = [token.raw];
             let pathEnd = index;
+            const maxPathTokens = String(resolveSqlDialect(dbType) || dbType || '').toLowerCase() === 'iotdb'
+                ? QUERY_EDITOR_IOTDB_TABLE_PATH_MAX_PARTS
+                : 3;
             while (
-                pathTokens.length < 3
+                pathTokens.length < maxPathTokens
                 && tokens[pathEnd + 1]?.raw === '.'
                 && isQueryEditorSqlIdentifierToken(tokens[pathEnd + 2])
             ) {
@@ -2931,6 +2936,25 @@ export const collectQueryEditorTableReferences = (source: string, dbType = ''): 
 
 export type QueryEditorExecutionContext = { dbName?: string; schemaName?: string };
 
+const resolveIotdbVisibleStorageGroup = (
+    parts: string[],
+    visible: Map<string, string>,
+): string | undefined => {
+    if (parts.length < 2 || visible.size === 0) return undefined;
+    for (let length = parts.length - 1; length >= 1; length -= 1) {
+        const matched = visible.get(parts.slice(0, length).join('.').toLowerCase());
+        if (matched) return matched;
+    }
+    return undefined;
+};
+
+const usesQueryEditorCatalogQualifiedTwoPartNames = (dialect: string): boolean => {
+    const normalizedDialect = String(resolveSqlDialect(dialect) || '').toLowerCase();
+    return isMysqlFamilyDialect(normalizedDialect)
+        || normalizedDialect === 'clickhouse'
+        || normalizedDialect === 'tdengine';
+};
+
 /** Resolve the database/schema explicitly named by the SQL, without changing SQL text. */
 export const resolveQueryEditorExecutionContext = (
     source: string,
@@ -2950,7 +2974,16 @@ export const resolveQueryEditorExecutionContext = (
     for (const reference of collectQueryEditorTableReferences(source, normalized)) {
         const parts = reference.parts.map((part) => String(part || '').trim()).filter(Boolean);
         if (parts.length < 2) continue;
-        if (normalized === 'sqlserver') {
+        if (normalized === 'iotdb') {
+            // Storage groups are multi-segment paths such as root.ln, not the
+            // first identifier of a timeseries (root).
+            const storageGroup = resolveIotdbVisibleStorageGroup(parts, visible);
+            if (storageGroup) result.dbName = storageGroup;
+        } else if (normalized === 'trino') {
+            // Toolbar namespaces are catalog.schema. Two-part schema.table
+            // stays in the current catalog; only catalog.schema.table can switch.
+            if (parts.length >= 3) result.dbName = canonical(`${parts[0]}.${parts[1]}`);
+        } else if (normalized === 'sqlserver') {
             if (parts.length >= 3) result.dbName = canonical(parts[0]);
         } else if (isPgLikeDialect(normalized)) {
             if (parts.length >= 3) {
@@ -2959,9 +2992,18 @@ export const resolveQueryEditorExecutionContext = (
             } else if (parts.length === 2) {
                 result.schemaName = parts[0];
             }
-        } else if (isOracleLikeDialect(normalized)) {
-            result.dbName = canonical(parts[0]);
-        } else if (isMysqlFamilyDialect(normalized) || ['clickhouse', 'tdengine', 'iotdb'].includes(normalized)) {
+        } else if (
+            isOracleLikeDialect(normalized)
+            || normalized === 'sqlite'
+            || normalized === 'duckdb'
+            || normalized === 'iris'
+        ) {
+            // owner.table / schema.table / attached-db.table is already
+            // qualified. Switching the toolbar catalog reconnects or reloads
+            // the wrong namespace (Oracle CURRENT_SCHEMA, IRIS namespace,
+            // DuckDB/SQLite attached catalog).
+            continue;
+        } else if (usesQueryEditorCatalogQualifiedTwoPartNames(normalized) && parts.length === 2) {
             result.dbName = canonical(parts[0]);
         }
         if (result.dbName || result.schemaName) break;
@@ -3134,6 +3176,28 @@ export const collectQueryEditorReferencedDatabaseNames = (
         if (!tableIdent) continue;
         const parts = reference.parts.map((part) => String(part || '').trim()).filter(Boolean);
         if (parts.length < 2) continue;
+
+        if (normalizedDialect === 'iotdb') {
+            const storageGroup = resolveIotdbVisibleStorageGroup(parts, visibleDbByLower);
+            if (storageGroup && storageGroup.toLowerCase() !== currentDbKey) {
+                addDb(storageGroup);
+            }
+            continue;
+        }
+        if (normalizedDialect === 'trino') {
+            if (parts.length >= 3) {
+                const namespace = `${parts[0]}.${parts[1]}`;
+                const key = namespace.toLowerCase();
+                if (key !== currentDbKey) {
+                    addDb(visibleDbByLower.get(key) || namespace);
+                }
+            }
+            continue;
+        }
+        if (usesQueryEditorCatalogQualifiedTwoPartNames(normalizedDialect) && parts.length !== 2) {
+            // catalog.db.table (StarRocks/Doris/ClickHouse) is already qualified.
+            continue;
+        }
 
         const firstPart = parts[0];
         const firstKey = firstPart.toLowerCase();
