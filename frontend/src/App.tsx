@@ -6819,21 +6819,19 @@ function App() {
 
   const renderSettingsCenterAboutProjectEntry = ({
       icon,
-      logoSrc,
       title,
       description,
       url,
       copyText,
   }: {
-      icon?: React.ReactNode;
-      logoSrc?: string;
+      icon: React.ReactNode;
       title: string;
       description: string;
       url?: string;
       copyText?: string;
   }) => (
       <button
-        className={`gonavi-about-project-entry${logoSrc ? ' is-sponsor' : ''}`}
+        className="gonavi-about-project-entry"
         type="button"
         onClick={() => {
             if (copyText) {
@@ -6850,7 +6848,7 @@ function App() {
         style={{
             width: '100%',
             display: 'flex',
-            alignItems: logoSrc ? 'center' : 'flex-start',
+            alignItems: 'flex-start',
             gap: 10,
             padding: '10px 12px',
             border: `1px solid ${darkMode ? 'rgba(255,255,255,0.10)' : 'rgba(16,24,40,0.10)'}`,
@@ -6862,13 +6860,9 @@ function App() {
             textAlign: 'left',
         }}
       >
-          {logoSrc ? (
-              <img className="gonavi-about-project-entry-logo" src={logoSrc} alt="" />
-          ) : (
-              <span style={{ fontSize: 18, display: 'grid', placeItems: 'center', marginTop: 1, color: overlayTheme.iconColor }}>
-                  {icon}
-              </span>
-          )}
+          <span style={{ fontSize: 18, display: 'grid', placeItems: 'center', marginTop: 1, color: overlayTheme.iconColor }}>
+              {icon}
+          </span>
           <span style={{ minWidth: 0, flex: 1 }}>
               <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                   <span style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.35 }}>{title}</span>
@@ -7087,20 +7081,6 @@ function App() {
                           title: t('app.about.project.wechat.title'),
                           description: t('app.about.project.wechat.description'),
                           copyText: t('app.about.project.wechat.id'),
-                      })}
-                  </div>
-              </section>
-
-              <section className="gonavi-about-section" aria-labelledby="gonavi-about-sponsors-heading">
-                  <div id="gonavi-about-sponsors-heading" className="gonavi-about-section-title" style={{ color: overlayTheme.titleText }}>
-                      {t('app.about.sponsors')}
-                  </div>
-                  <div className="gonavi-about-link-grid">
-                      {renderSettingsCenterAboutProjectEntry({
-                          logoSrc: '/sponsors/hualong-mark.png',
-                          title: t('app.about.project.hualong.title'),
-                          description: t('app.about.project.hualong.description'),
-                          url: 'https://api.hualong.online/',
                       })}
                   </div>
               </section>

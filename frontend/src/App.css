@@ -5311,16 +5311,6 @@ body .gonavi-about-link-grid {
   gap: 8px;
 }
 
-body .gonavi-about-project-entry-logo {
-  width: 40px;
-  height: 40px;
-  object-fit: contain;
-  flex-shrink: 0;
-  display: block;
-  border-radius: 6px;
-  background: #fff;
-}
-
 @media (max-width: 920px) {
   body .gonavi-about-link-grid {
     grid-template-columns: 1fr;
