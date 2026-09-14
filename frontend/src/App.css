@@ -11,6 +11,22 @@ html, body, #root {
   background-color: transparent !important; /* CRITICAL: Allow Wails window transparency */
 }
 
+/* Windows uses an opaque HWND. Transparent pixels here fall through to the
+   native white client area and look like a blank window, including the gap
+   while React hydrates and around an undersized WebView2 controller. */
+html[data-gonavi-windows="true"],
+html[data-gonavi-windows="true"] body,
+html[data-gonavi-windows="true"] #root {
+  background-color: var(--gn-bg-app, #f4f6f8) !important;
+}
+html[data-gonavi-windows="true"][data-theme="dark"],
+html[data-gonavi-windows="true"] body[data-theme="dark"],
+html[data-gonavi-windows="true"][data-theme="dark"] body,
+html[data-gonavi-windows="true"][data-theme="dark"] #root,
+html[data-gonavi-windows="true"] body[data-theme="dark"] #root {
+  background-color: var(--gn-bg-app, #14161a) !important;
+}
+
 /* Native detached WebViews use the same transparent window composition as the
    main macOS surface. Paint the resolved app token behind any child content so
    loading gaps and transparent component pixels never fall back to white. */

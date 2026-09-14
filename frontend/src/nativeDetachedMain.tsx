@@ -9,6 +9,7 @@ import { setCurrentLanguage } from './i18n';
 import { I18nProvider } from './i18n/provider';
 import { applyDayjsLocale } from './i18n/runtime';
 import { useStore } from './store';
+import { hideBootSplash } from './utils/bootSplash';
 import { configureAntdStaticOverlayLayer } from './utils/overlayZIndex';
 
 configureAntdStaticOverlayLayer();
@@ -70,6 +71,7 @@ const NativeDetachedRoot = () => {
 };
 
 disableDetachedPersistence();
+hideBootSplash();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

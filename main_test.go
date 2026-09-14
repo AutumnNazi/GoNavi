@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"GoNavi-Wails/internal/ai/runharness"
@@ -250,6 +251,12 @@ func TestResolveWindowVisualOptions(t *testing.T) {
 			}
 			if got := windowsOptions.BackdropType; got != tt.wantWindowsBackdrop {
 				t.Fatalf("Windows backdrop = %v, want %v", got, tt.wantWindowsBackdrop)
+			}
+			if windowsOptions.Messages == nil {
+				t.Fatal("Windows WebView2 runtime messages are nil")
+			}
+			if !strings.Contains(windowsOptions.Messages.Webview2NotInstalled, "WebView2") {
+				t.Fatalf("WebView2 missing-runtime message = %q", windowsOptions.Messages.Webview2NotInstalled)
 			}
 		})
 	}

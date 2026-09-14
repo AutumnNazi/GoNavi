@@ -183,6 +183,7 @@ func main() {
 		signalStartupNativeIconReadyOnce.Do(func() { close(startupNativeIconReady) })
 	}
 	var showInitialWindowOnce sync.Once
+	windowsStartupGate := newWindowsStartupWindowGate()
 
 	// Create application with options
 	err = wails.Run(&options.App{
@@ -206,6 +207,11 @@ func main() {
 			defer signalStartupNativeIconReady()
 			runtimeCtx = ctx
 			if isWindowsDesktop {
+				// Subscribe before brand-icon I/O so a fast first paint cannot
+				// emit gonavi:frontend-ready into an empty event bus.
+				wailsRuntime.EventsOn(ctx, windowsFrontendReadyEvent, func(...interface{}) {
+					windowsStartupGate.markFrontendReady()
+				})
 				if err := app.InitializePersistedNativeBrandIcon(application, ctx); err != nil {
 					logger.Warnf("启动时应用已保存的 Windows 品牌图标失败：%v", err)
 				}
@@ -238,7 +244,20 @@ func main() {
 			app.HandleFrontendDomReady(application)
 			if isWindowsDesktop {
 				<-startupNativeIconReady
-				showInitialWindowOnce.Do(func() { wailsRuntime.WindowShow(ctx) })
+				windowsStartupGate.bindShow(func() {
+					showInitialWindowOnce.Do(func() {
+						result := application.RefreshWebViewBounds()
+						if !result.Success && strings.TrimSpace(result.Message) != "" {
+							logger.Warnf("启动时刷新 WebView2 窗口边界失败：%s", result.Message)
+						}
+						wailsRuntime.WindowShow(ctx)
+					})
+				})
+				windowsStartupGate.markIconReady()
+				windowsStartupGate.startFallback(windowsStartupShowFallback, func() {
+					logger.Warnf("前端首屏握手超时，仍显示主窗口以免一直不可见")
+					windowsStartupGate.markTimedOut()
+				})
 			}
 		},
 		OnShutdown: func(ctx context.Context) {
@@ -381,6 +400,7 @@ func resolveWindowVisualOptions(goos string, lowMemoryMode bool) (*options.RGBA,
 			BackdropType:                      windows.None,
 			DisableWindowIcon:                 false,
 			DisableFramelessWindowDecorations: false,
+			Messages:                          resolveWindowsRuntimeMessages(),
 		}
 	}
 
@@ -390,5 +410,22 @@ func resolveWindowVisualOptions(goos string, lowMemoryMode bool) (*options.RGBA,
 		BackdropType:                      windows.Acrylic,
 		DisableWindowIcon:                 false,
 		DisableFramelessWindowDecorations: false,
+		Messages:                          resolveWindowsRuntimeMessages(),
 	}
+}
+
+func resolveWindowsRuntimeMessages() *windows.Messages {
+	messages := windows.DefaultMessages()
+	messages.InstallationRequired = "GoNavi 需要 Microsoft Edge WebView2 运行时。点击确定下载并安装（安装程序会在后台下载，请稍候）。\n\nGoNavi requires the Microsoft Edge WebView2 Runtime. Press OK to download and install."
+	messages.UpdateRequired = "GoNavi 需要更新 Microsoft Edge WebView2 运行时。点击确定下载并安装。\n\nThe WebView2 runtime needs updating. Press OK to download and install."
+	messages.MissingRequirements = "缺少运行组件 / Missing Requirements"
+	messages.Webview2NotInstalled = "未安装 WebView2 运行时 / WebView2 runtime not installed"
+	messages.Error = "GoNavi 启动失败"
+	messages.FailedToInstall = "WebView2 运行时安装失败，请重试或由管理员安装独立安装包。\n\nThe runtime failed to install. Please retry, or ask an administrator to install the standalone installer."
+	messages.DownloadPage = "GoNavi 需要 Microsoft Edge WebView2 运行时。点击确定打开下载页。最低版本：\n\nThis application requires the WebView2 runtime. Press OK to open the download page. Minimum version required: "
+	messages.PressOKToInstall = "点击确定安装 / Press OK to install."
+	messages.ContactAdmin = "GoNavi 需要 Microsoft Edge WebView2 运行时才能打开。请联系系统管理员安装。\n\nThe WebView2 runtime is required to run GoNavi. Please contact your system administrator."
+	messages.InvalidFixedWebview2 = "已指定的 WebView2 运行时无效，请检查路径与最低版本。\n\nThe specified WebView2 runtime is not valid."
+	messages.WebView2ProcessCrash = "WebView2 进程已崩溃，需要重新打开 GoNavi。\n\nThe WebView2 process crashed and GoNavi needs to be restarted."
+	return messages
 }

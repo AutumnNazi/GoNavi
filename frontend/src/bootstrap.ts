@@ -1,6 +1,7 @@
 import { loadCatalog } from './i18n/catalog';
 import { resolveLanguage } from './i18n/resolveLanguage';
 import { isNativeDetachedWindowRoute } from './utils/nativeDetachedWindowRoute';
+import { showBootSplashError } from './utils/bootSplash';
 
 type DetachedBootstrapRuntime = {
   loadBootstrap?: () => Promise<{
@@ -44,4 +45,5 @@ const loadEntry = async (): Promise<void> => {
 
 void loadEntry().catch((error) => {
   console.error('[GoNavi] Failed to load frontend entry', error);
+  showBootSplashError(error instanceof Error ? error.message : String(error));
 });
