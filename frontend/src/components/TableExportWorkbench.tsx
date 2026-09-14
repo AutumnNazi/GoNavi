@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import BatchConnectionWorkbench from './BatchConnectionWorkbench';
 import { Alert, Button, Checkbox, Empty, InputNumber, Segmented, Select, Tooltip, Typography, message } from 'antd';
 import Modal from './common/ResizableDraggableModal';
 import { ClockCircleOutlined, DeleteOutlined, ExportOutlined, ReloadOutlined } from '@ant-design/icons';
@@ -361,7 +362,7 @@ export const buildTableExportHistoryEntry = ({
   message: progressState.message,
 });
 
-const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
+const TableExportWorkbenchBody: React.FC<{ tab: TabData }> = ({ tab }) => {
   const connections = useStore((state) => state.connections);
   const upsertTableExportHistory = useStore((state) => state.upsertTableExportHistory);
   const addTab = useStore((state) => state.addTab);
@@ -2629,5 +2630,11 @@ const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => {
     </div>
   );
 };
+
+const TableExportWorkbench: React.FC<{ tab: TabData }> = ({ tab }) => (
+  resolveWorkbenchMode(tab) === 'batch-connections'
+    ? <BatchConnectionWorkbench tab={tab} />
+    : <TableExportWorkbenchBody tab={tab} />
+);
 
 export default TableExportWorkbench;

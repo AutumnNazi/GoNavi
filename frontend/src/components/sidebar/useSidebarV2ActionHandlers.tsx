@@ -101,6 +101,7 @@ type UseSidebarV2ActionHandlersArgs = {
   handleExportDatabaseSQL: (node: any, includeData: boolean) => Promise<void>;
   openBatchTableWorkbench: (node?: any) => void;
   openBatchDatabaseWorkbench: (node?: any) => void;
+  openBatchConnectionWorkbench: (node?: any) => void;
   handleRunSQLFile: (node: any) => void;
   handleDeleteDatabase: (node: any) => void;
   onCreateConnectionInGroup?: (targetTagId: string) => void;
@@ -175,6 +176,7 @@ export const useSidebarV2ActionHandlers = ({
   handleExportDatabaseSQL,
   openBatchTableWorkbench,
   openBatchDatabaseWorkbench,
+  openBatchConnectionWorkbench,
   handleRunSQLFile,
   handleDeleteDatabase,
   onCreateConnectionInGroup,
@@ -628,6 +630,9 @@ export const useSidebarV2ActionHandlers = ({
         return;
       case 'copy-connection':
         void handleDuplicateConnection(node.dataRef as SavedConnection);
+        return;
+      case 'batch-connections':
+        openBatchConnectionWorkbench(node);
         return;
       case 'disconnect':
         void disconnectConnectionNode(node);

@@ -96,6 +96,7 @@ describe('connection root menu query entry gating', () => {
       });
       expect(itemKeys(items), JSON.stringify(config)).toContain('new-query');
       expect(itemKeys(items), JSON.stringify(config)).toContain('open-sql-file');
+      expect(itemKeys(items), JSON.stringify(config)).toContain('batch-connections');
     });
   });
 

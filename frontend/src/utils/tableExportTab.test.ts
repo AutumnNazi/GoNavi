@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  buildBatchConnectionWorkbenchTab,
   buildBatchDatabaseExportWorkbenchTab,
   buildBatchTableExportWorkbenchTab,
   buildDatabaseExportWorkbenchTab,
@@ -33,6 +34,10 @@ describe('tableExportTab', () => {
       dbName: ' ignored ',
       exportWorkbenchMode: 'batch-databases',
     })).toBe('conn-1::__batch_databases__');
+    expect(buildExportWorkbenchHistoryKey({
+      connectionId: ' ignored ',
+      exportWorkbenchMode: 'batch-connections',
+    })).toBe('__batch_connections__');
     expect(buildExportWorkbenchHistoryKey({
       connectionId: ' conn-1 ',
       dbName: ' app ',
@@ -173,6 +178,20 @@ describe('tableExportTab', () => {
     expect(tab.type).toBe('table-export');
     expect(tab.title).toBe('批量导出库');
     expect(tab.exportWorkbenchMode).toBe('batch-databases');
+  });
+
+  it('builds a stable batch connection workbench tab without binding a host', () => {
+    setCurrentLanguage('zh-CN');
+    const tab = buildBatchConnectionWorkbenchTab({
+      initialConnectionIds: [' conn-1 ', 'conn-2', 'conn-1', ''],
+    });
+
+    expect(tab.id).toBe('table-export-batch-connections');
+    expect(tab.type).toBe('table-export');
+    expect(tab.title).toBe('批量处理连接');
+    expect(tab.exportWorkbenchMode).toBe('batch-connections');
+    expect(tab.connectionId).toBeUndefined();
+    expect(tab.tableExportInitialConnectionIds).toEqual(['conn-1', 'conn-2']);
   });
 
   it('carries selected databases and an auto-start request into the batch database workbench', () => {

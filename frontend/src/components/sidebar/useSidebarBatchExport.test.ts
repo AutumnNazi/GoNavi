@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SavedConnection } from '../../types';
 import { showSQLExportOptionsDialog } from '../SQLExportOptionsDialog';
-import { resolveBatchWorkbenchContext, useSidebarBatchExport } from './useSidebarBatchExport';
+import { resolveBatchConnectionIds, resolveBatchWorkbenchContext, useSidebarBatchExport } from './useSidebarBatchExport';
 
 vi.mock('../SQLExportOptionsDialog', () => ({
   showSQLExportOptionsDialog: vi.fn(),
@@ -35,6 +35,17 @@ describe('resolveBatchWorkbenchContext', () => {
       title: 'search-index',
       dataRef: { id: 'es-1' },
     }], connections)).toEqual({ connectionId: 'sql-1', dbName: '' });
+  });
+});
+
+describe('resolveBatchConnectionIds', () => {
+  it('prefills existing connection nodes and ignores unknown ids', () => {
+    expect(resolveBatchConnectionIds([
+      { type: 'connection', key: 'sql-1' },
+      { type: 'database', dataRef: { id: 'es-1' } },
+      { type: 'connection', key: 'missing' },
+      { type: 'connection', key: 'sql-1' },
+    ], connections)).toEqual(['sql-1', 'es-1']);
   });
 });
 
@@ -71,5 +82,24 @@ describe('useSidebarBatchExport', () => {
       tableExportLaunchKey: expect.stringMatching(/^database-/),
       tableExportRequestKey: undefined,
     }));
+  });
+
+  it('opens a shared batch connection workbench with the current host preselected', () => {
+    const addTab = vi.fn();
+    const { openBatchConnectionWorkbench } = useSidebarBatchExport({
+      connections,
+      selectedNodesRef: { current: [{ type: 'connection', key: 'es-1', dataRef: { id: 'es-1' } }] },
+      addTab,
+    });
+
+    openBatchConnectionWorkbench();
+
+    expect(addTab).toHaveBeenCalledOnce();
+    expect(addTab).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'table-export-batch-connections',
+      exportWorkbenchMode: 'batch-connections',
+      tableExportInitialConnectionIds: ['es-1'],
+    }));
+    expect(addTab.mock.calls[0][0].connectionId).toBeUndefined();
   });
 });

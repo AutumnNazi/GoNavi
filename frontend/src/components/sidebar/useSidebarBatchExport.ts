@@ -5,6 +5,7 @@ import type { SavedConnection } from '../../types';
 import { t } from '../../i18n';
 import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
 import {
+  buildBatchConnectionWorkbenchTab,
   buildBatchDatabaseExportWorkbenchTab,
   buildBatchTableExportWorkbenchTab,
   buildDatabaseExportWorkbenchTab,
@@ -49,6 +50,29 @@ export const resolveBatchWorkbenchContext = (
     };
   }
   return { connectionId, dbName: '' };
+};
+
+export const resolveBatchConnectionIds = (
+  selectedNodes: any[],
+  connections: SavedConnection[],
+): string[] => {
+  const existingIds = new Set(connections.map((connection) => connection.id));
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  const consider = (rawId: string) => {
+    const connectionId = String(rawId || '').trim();
+    if (!connectionId || !existingIds.has(connectionId) || seen.has(connectionId)) return;
+    seen.add(connectionId);
+    ids.push(connectionId);
+  };
+  selectedNodes.forEach((node) => {
+    if (node?.type === 'connection') {
+      consider(String(node.key || node.dataRef?.id || ''));
+      return;
+    }
+    consider(String(node?.dataRef?.id || ''));
+  });
+  return ids;
 };
 
 interface UseSidebarBatchExportArgs {
@@ -113,10 +137,19 @@ export const useSidebarBatchExport = ({
     }));
   };
 
+  const openBatchConnectionWorkbench = (node?: any) => {
+    const selectedNodes = node ? [node] : selectedNodesRef.current;
+    addTab(buildBatchConnectionWorkbenchTab({
+      title: t('sidebar.action.batch_connections'),
+      initialConnectionIds: resolveBatchConnectionIds(selectedNodes, connections),
+    }));
+  };
+
   return {
     handleExportDatabaseSQL,
     handleExportSchemaSQL,
     openBatchTableWorkbench,
     openBatchDatabaseWorkbench,
+    openBatchConnectionWorkbench,
   };
 };
