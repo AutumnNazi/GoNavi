@@ -204,21 +204,19 @@ WHERE c.relkind = 'r'
 ORDER BY c.relname`;
         }
         case 'sqlserver': {
-            const safeDB = `[${dbName.replace(/]/g, ']]')}]`;
             return `
 SELECT
     s.name + '.' + t.name AS table_name,
-    ep.value AS table_comment,
+    CONVERT(nvarchar(4000), ep.value) AS table_comment,
     SUM(p.rows) AS table_rows,
-    SUM(a.total_pages) * 8 * 1024 AS data_length,
-    SUM(a.used_pages) * 8 * 1024 AS index_length
-FROM ${safeDB}.sys.tables t
-JOIN ${safeDB}.sys.schemas s ON t.schema_id = s.schema_id
-LEFT JOIN ${safeDB}.sys.extended_properties ep ON ep.major_id = t.object_id AND ep.minor_id = 0 AND ep.name = 'MS_Description'
-LEFT JOIN ${safeDB}.sys.partitions p ON t.object_id = p.object_id AND p.index_id IN (0, 1)
-LEFT JOIN ${safeDB}.sys.allocation_units a ON p.partition_id = a.container_id
+    CAST(NULL AS bigint) AS data_length,
+    CAST(NULL AS bigint) AS index_length
+FROM sys.tables t
+JOIN sys.schemas s ON t.schema_id = s.schema_id
+LEFT JOIN sys.extended_properties ep ON ep.major_id = t.object_id AND ep.minor_id = 0 AND ep.name = 'MS_Description'
+LEFT JOIN sys.partitions p ON t.object_id = p.object_id AND p.index_id IN (0, 1)
 WHERE t.type = 'U'
-GROUP BY s.name, t.name, ep.value
+GROUP BY s.name, t.name, CONVERT(nvarchar(4000), ep.value)
 ORDER BY s.name, t.name`;
         }
         case 'clickhouse':

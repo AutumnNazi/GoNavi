@@ -474,8 +474,7 @@ func buildObjectRoutineMetadataQueries(dbType string, dbName string) []objectMet
 			{sql: `SELECT n.nspname AS schema_name, p.proname AS routine_name, 'FUNCTION' AS routine_type FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg|_%' ESCAPE '|' ORDER BY n.nspname, p.proname`},
 		}
 	case "sqlserver":
-		safeDB := quoteIdentByType("sqlserver", firstNonEmptyString(dbName, "master"))
-		return []objectMetadataQuerySpec{{sql: fmt.Sprintf(`SELECT s.name AS schema_name, o.name AS routine_name, CASE o.type WHEN 'P' THEN 'PROCEDURE' WHEN 'FN' THEN 'FUNCTION' WHEN 'IF' THEN 'FUNCTION' WHEN 'TF' THEN 'FUNCTION' END AS routine_type FROM %s.sys.objects o JOIN %s.sys.schemas s ON o.schema_id = s.schema_id WHERE o.type IN ('P','FN','IF','TF') ORDER BY o.type, s.name, o.name`, safeDB, safeDB)}}
+		return []objectMetadataQuerySpec{{sql: `SELECT s.name AS schema_name, o.name AS routine_name, CASE o.type WHEN 'P' THEN 'PROCEDURE' WHEN 'FN' THEN 'FUNCTION' WHEN 'IF' THEN 'FUNCTION' WHEN 'TF' THEN 'FUNCTION' END AS routine_type FROM sys.objects o JOIN sys.schemas s ON o.schema_id = s.schema_id WHERE o.type IN ('P','FN','IF','TF') ORDER BY o.type, s.name, o.name`}}
 	case "oracle", "dameng":
 		objectStatusProjection := ""
 		if dbType == "oracle" {
@@ -506,8 +505,7 @@ func buildObjectTriggerMetadataQueries(dbType string, dbName string) []objectMet
 	case "postgres", "kingbase", "highgo", "vastbase", "opengauss", "gaussdb":
 		return []objectMetadataQuerySpec{{sql: `SELECT DISTINCT event_object_schema AS schema_name, event_object_table AS table_name, trigger_name FROM information_schema.triggers WHERE trigger_schema NOT IN ('pg_catalog', 'information_schema') AND trigger_schema NOT LIKE 'pg|_%' ESCAPE '|' ORDER BY event_object_schema, event_object_table, trigger_name`}}
 	case "sqlserver":
-		safeDB := quoteIdentByType("sqlserver", firstNonEmptyString(dbName, "master"))
-		return []objectMetadataQuerySpec{{sql: fmt.Sprintf(`SELECT s.name AS schema_name, t.name AS table_name, tr.name AS trigger_name FROM %s.sys.triggers tr JOIN %s.sys.tables t ON tr.parent_id = t.object_id JOIN %s.sys.schemas s ON t.schema_id = s.schema_id WHERE tr.parent_class = 1 ORDER BY s.name, t.name, tr.name`, safeDB, safeDB, safeDB)}}
+		return []objectMetadataQuerySpec{{sql: `SELECT s.name AS schema_name, t.name AS table_name, tr.name AS trigger_name FROM sys.triggers tr JOIN sys.tables t ON tr.parent_id = t.object_id JOIN sys.schemas s ON t.schema_id = s.schema_id WHERE tr.parent_class = 1 ORDER BY s.name, t.name, tr.name`}}
 	case "oracle":
 		if strings.TrimSpace(dbName) == "" {
 			return []objectMetadataQuerySpec{{sql: `SELECT t.TRIGGER_NAME AS trigger_name, t.TABLE_NAME AS table_name, o.STATUS AS object_status FROM USER_TRIGGERS t LEFT JOIN USER_OBJECTS o ON o.OBJECT_NAME = t.TRIGGER_NAME AND o.OBJECT_TYPE = 'TRIGGER' ORDER BY t.TABLE_NAME, t.TRIGGER_NAME`}}

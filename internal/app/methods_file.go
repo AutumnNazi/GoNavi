@@ -6692,16 +6692,8 @@ func buildListViewQueries(config connection.ConnectionConfig, dbName string) []s
 			`SELECT table_schema AS schema_name, table_name AS object_name FROM information_schema.views WHERE table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY table_schema, table_name`,
 		}
 	case "sqlserver":
-		safeDBName := strings.TrimSpace(config.Database)
-		if safeDBName == "" {
-			safeDBName = strings.TrimSpace(dbName)
-		}
-		if safeDBName == "" {
-			return nil
-		}
-		safeDB := quoteIdentByType("sqlserver", safeDBName)
 		return []string{
-			fmt.Sprintf(`SELECT s.name AS schema_name, v.name AS object_name FROM %s.sys.views v JOIN %s.sys.schemas s ON v.schema_id = s.schema_id ORDER BY s.name, v.name`, safeDB, safeDB),
+			`SELECT s.name AS schema_name, v.name AS object_name FROM sys.views v JOIN sys.schemas s ON v.schema_id = s.schema_id ORDER BY s.name, v.name`,
 		}
 	case "oracle", "dameng":
 		if strings.TrimSpace(dbName) == "" {
@@ -6840,21 +6832,13 @@ func buildViewCreateQueries(config connection.ConnectionConfig, dbName, schemaNa
 		if schema == "" {
 			schema = "dbo"
 		}
-		safeDBName := strings.TrimSpace(dbName)
-		if safeDBName == "" {
-			safeDBName = strings.TrimSpace(config.Database)
-		}
-		if safeDBName == "" {
-			return nil
-		}
-		safeDB := quoteIdentByType("sqlserver", safeDBName)
 		return []string{
 			fmt.Sprintf(`SELECT m.definition AS ddl
-FROM %s.sys.views v
-JOIN %s.sys.schemas s ON v.schema_id = s.schema_id
-JOIN %s.sys.sql_modules m ON v.object_id = m.object_id
+FROM sys.views v
+JOIN sys.schemas s ON v.schema_id = s.schema_id
+JOIN sys.sql_modules m ON v.object_id = m.object_id
 WHERE s.name = '%s' AND v.name = '%s'`,
-				safeDB, safeDB, safeDB, escapeSQLLiteral(schema), escapedView),
+				escapeSQLLiteral(schema), escapedView),
 		}
 	case "oracle", "dameng":
 		if safeSchema == "" {

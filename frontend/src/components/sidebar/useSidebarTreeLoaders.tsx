@@ -1343,10 +1343,9 @@ export const useSidebarTreeLoaders = ({
                     });
                 }
                 const tableStatusSql = buildSidebarTableStatusSQL(conn as SavedConnection, conn.dbName);
-                const tableStatsResult = tableStatusSql
-                    ? await DBQuery(buildRpcConnectionConfig(config) as any, conn.dbName, tableStatusSql).catch(() => ({ success: false, data: [] as any[] }))
-                    : { success: false, data: [] as any[] };
-                if (!isCurrentLoad()) return;
+                const tableStatsPromise = tableStatusSql
+                    ? DBQuery(buildRpcConnectionConfig(config) as any, conn.dbName, tableStatusSql).catch(() => ({ success: false, data: [] as any[] }))
+                    : Promise.resolve({ success: false, data: [] as any[] });
                 const tableMetadataMap = new Map<string, SidebarLoadedTableMetadata>();
                 const metadataObjectKeyIdentities = new Map<string, Set<string>>();
                 const ambiguousMetadataObjectKeys = new Set<string>();
@@ -1438,6 +1437,19 @@ export const useSidebarTreeLoaders = ({
                         }, rawSchemaName ? String(rawSchemaName).trim() : '');
                     }
                 });
+
+	            const [tableStatsResult, schemasResult, viewsResult, materializedViewsResult, triggersResult, routinesResult, sequencesResult, packagesResult, eventsResult] = await Promise.all([
+                    tableStatsPromise,
+	                loadSchemas(conn, conn.dbName),
+	                loadViews(conn, conn.dbName),
+	                loadStarRocksMaterializedViews(conn, conn.dbName),
+	                loadDatabaseTriggers(conn, conn.dbName),
+	                loadFunctions(conn, conn.dbName),
+	                loadSequences(conn, conn.dbName),
+	                loadPackages(conn, conn.dbName),
+	                loadDatabaseEvents(conn, conn.dbName),
+	            ]);
+            if (!isCurrentLoad()) return;
                 if (tableStatsResult?.success && Array.isArray(tableStatsResult.data)) {
                     tableStatsResult.data.forEach((row: Record<string, any>) => {
                         const rawTableName = String(
@@ -1535,17 +1547,6 @@ export const useSidebarTreeLoaders = ({
                     };
                 }) as SidebarLoadedTableEntry[];
 
-	            const [schemasResult, viewsResult, materializedViewsResult, triggersResult, routinesResult, sequencesResult, packagesResult, eventsResult] = await Promise.all([
-	                loadSchemas(conn, conn.dbName),
-	                loadViews(conn, conn.dbName),
-	                loadStarRocksMaterializedViews(conn, conn.dbName),
-	                loadDatabaseTriggers(conn, conn.dbName),
-	                loadFunctions(conn, conn.dbName),
-	                loadSequences(conn, conn.dbName),
-	                loadPackages(conn, conn.dbName),
-	                loadDatabaseEvents(conn, conn.dbName),
-	            ]);
-            if (!isCurrentLoad()) return;
             const viewRows: SidebarViewMetadataEntry[] = Array.isArray(viewsResult.views) ? viewsResult.views : [];
             const materializedViewRows: SidebarViewMetadataEntry[] = Array.isArray(materializedViewsResult.views) ? materializedViewsResult.views : [];
             const triggerRows: any[] = Array.isArray(triggersResult.triggers) ? triggersResult.triggers : [];

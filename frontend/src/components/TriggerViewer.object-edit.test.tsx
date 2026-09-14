@@ -332,7 +332,7 @@ END;`;
     });
 
     const sql = String(backendApp.DBQuery.mock.calls[0][2] || '');
-    expect(sql).toContain('FROM [main].sys.all_sql_modules AS m');
+    expect(sql).toContain('FROM sys.all_sql_modules AS m');
     expect(sql).toContain("WHERE o.name = N'users_bi'");
     expect(sql).toContain("AND s.name = N'audit'");
     expect(sql).toContain("o.type IN ('TR', 'TA')");

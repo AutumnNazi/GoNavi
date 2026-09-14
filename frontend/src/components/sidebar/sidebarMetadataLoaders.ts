@@ -350,17 +350,18 @@ const buildSidebarTableStatusSQL = (
         "ORDER BY n.nspname, c.relname",
       ].join("\n");
     case "sqlserver": {
-      const safeDb = quoteSqlServerIdentifier(dbName);
+      // Azure SQL Database rejects or hangs on three-part names such as
+      // [db].sys.tables. The metadata connection is already opened with
+      // database=dbName, so current-database sys.* views are the portable form.
       return [
-        "SELECT s.name + '.' + t.name AS table_name, ep.value AS table_comment, SUM(p.rows) AS table_rows,",
-        "SUM(a.total_pages) * 8 * 1024 AS table_size, t.create_date AS create_time, t.modify_date AS update_time",
-        `FROM ${safeDb}.sys.tables t`,
-        `JOIN ${safeDb}.sys.schemas s ON t.schema_id = s.schema_id`,
-        `LEFT JOIN ${safeDb}.sys.extended_properties ep ON ep.major_id = t.object_id AND ep.minor_id = 0 AND ep.name = 'MS_Description'`,
-        `LEFT JOIN ${safeDb}.sys.partitions p ON t.object_id = p.object_id AND p.index_id IN (0, 1)`,
-        `LEFT JOIN ${safeDb}.sys.allocation_units a ON p.partition_id = a.container_id`,
+        "SELECT s.name + '.' + t.name AS table_name, CONVERT(nvarchar(4000), ep.value) AS table_comment, SUM(p.rows) AS table_rows,",
+        "CAST(NULL AS bigint) AS table_size, t.create_date AS create_time, t.modify_date AS update_time",
+        "FROM sys.tables t",
+        "JOIN sys.schemas s ON t.schema_id = s.schema_id",
+        "LEFT JOIN sys.extended_properties ep ON ep.major_id = t.object_id AND ep.minor_id = 0 AND ep.name = 'MS_Description'",
+        "LEFT JOIN sys.partitions p ON t.object_id = p.object_id AND p.index_id IN (0, 1)",
         "WHERE t.type = 'U'",
-        "GROUP BY s.name, t.name, ep.value, t.create_date, t.modify_date",
+        "GROUP BY s.name, t.name, CONVERT(nvarchar(4000), ep.value), t.create_date, t.modify_date",
         "ORDER BY s.name, t.name",
       ].join("\n");
     }
@@ -511,10 +512,9 @@ const buildViewsMetadataQuerySpecs = (
         },
       ];
     case "sqlserver": {
-      const safeDb = quoteSqlServerIdentifier(dbName || "master");
       return [
         {
-          sql: `SELECT s.name AS schema_name, v.name AS view_name FROM ${safeDb}.sys.views v JOIN ${safeDb}.sys.schemas s ON v.schema_id = s.schema_id ORDER BY s.name, v.name`,
+          sql: `SELECT s.name AS schema_name, v.name AS view_name FROM sys.views v JOIN sys.schemas s ON v.schema_id = s.schema_id ORDER BY s.name, v.name`,
         },
       ];
     }
@@ -589,10 +589,9 @@ const buildTriggersMetadataQuerySpecs = (
         },
       ];
     case "sqlserver": {
-      const safeDb = quoteSqlServerIdentifier(dbName || "master");
       return [
         {
-          sql: `SELECT s.name AS schema_name, t.name AS table_name, tr.name AS trigger_name FROM ${safeDb}.sys.triggers tr JOIN ${safeDb}.sys.tables t ON tr.parent_id = t.object_id JOIN ${safeDb}.sys.schemas s ON t.schema_id = s.schema_id WHERE tr.parent_class = 1 ORDER BY s.name, t.name, tr.name`,
+          sql: `SELECT s.name AS schema_name, t.name AS table_name, tr.name AS trigger_name FROM sys.triggers tr JOIN sys.tables t ON tr.parent_id = t.object_id JOIN sys.schemas s ON t.schema_id = s.schema_id WHERE tr.parent_class = 1 ORDER BY s.name, t.name, tr.name`,
         },
       ];
     }
@@ -683,10 +682,9 @@ const buildFunctionsMetadataQuerySpecs = (
         },
       ]);
     case "sqlserver": {
-      const safeDb = quoteSqlServerIdentifier(dbName || "master");
       return [
         {
-          sql: `SELECT s.name AS schema_name, o.name AS routine_name, CASE o.type WHEN 'P' THEN 'PROCEDURE' WHEN 'FN' THEN 'FUNCTION' WHEN 'IF' THEN 'FUNCTION' WHEN 'TF' THEN 'FUNCTION' END AS routine_type FROM ${safeDb}.sys.objects o JOIN ${safeDb}.sys.schemas s ON o.schema_id = s.schema_id WHERE o.type IN ('P','FN','IF','TF') ORDER BY o.type, s.name, o.name`,
+          sql: `SELECT s.name AS schema_name, o.name AS routine_name, CASE o.type WHEN 'P' THEN 'PROCEDURE' WHEN 'FN' THEN 'FUNCTION' WHEN 'IF' THEN 'FUNCTION' WHEN 'TF' THEN 'FUNCTION' END AS routine_type FROM sys.objects o JOIN sys.schemas s ON o.schema_id = s.schema_id WHERE o.type IN ('P','FN','IF','TF') ORDER BY o.type, s.name, o.name`,
         },
       ];
     }
@@ -815,14 +813,11 @@ const buildSchemasMetadataQuerySpecs = (
   }
 
   if (dialect === "sqlserver") {
-    const safeDb = quoteSqlServerIdentifier(dbName);
-    return safeDb
-      ? [
-          {
-            sql: `SELECT name AS schema_name FROM ${safeDb}.sys.schemas WHERE name NOT IN ('sys', 'INFORMATION_SCHEMA') ORDER BY CASE WHEN name = 'dbo' THEN 0 ELSE 1 END, name`,
-          },
-        ]
-      : [];
+    return [
+      {
+        sql: `SELECT name AS schema_name FROM sys.schemas WHERE name NOT IN ('sys', 'INFORMATION_SCHEMA') ORDER BY CASE WHEN name = 'dbo' THEN 0 ELSE 1 END, name`,
+      },
+    ];
   }
 
   if (dialect === "iris") {

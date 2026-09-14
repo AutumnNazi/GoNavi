@@ -552,6 +552,34 @@ func TestSQLServerDSN_EncryptMapping(t *testing.T) {
 	}
 }
 
+func TestSQLServerDSN_AzureHostEnablesEncryptAndHostNameInCertificate(t *testing.T) {
+	s := &SqlServerDB{}
+	cfg := connection.ConnectionConfig{
+		Type:     "sqlserver",
+		Host:     "myserver.database.windows.net",
+		Port:     1433,
+		User:     "sa",
+		Password: "pass",
+		Database: "appdb",
+	}
+
+	dsn := s.getDSN(cfg)
+	parsed, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatalf("parse sqlserver azure dsn: %v", err)
+	}
+	query := parsed.Query()
+	if got := strings.ToLower(query.Get("encrypt")); got != "true" {
+		t.Fatalf("azure encrypt = %q, want true", query.Get("encrypt"))
+	}
+	if got := strings.ToLower(query.Get("trustservercertificate")); got != "true" {
+		t.Fatalf("azure trustservercertificate = %q, want true", query.Get("trustservercertificate"))
+	}
+	if got := query.Get("hostnameincertificate"); got != "*.database.windows.net" {
+		t.Fatalf("azure hostnameincertificate = %q, want *.database.windows.net", got)
+	}
+}
+
 func TestSQLServerDSN_MergesConnectionParams(t *testing.T) {
 	s := &SqlServerDB{}
 	cfg := connection.ConnectionConfig{

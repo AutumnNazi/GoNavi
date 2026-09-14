@@ -20,20 +20,18 @@ const buildSqlServerObjectRef = (schemaName: string, objectName: string): string
   return `${quoteSqlServerIdentifier(schema)}.${quoteSqlServerIdentifier(object)}`;
 };
 
-const resolveSqlServerObjectTarget = (rawObjectName: string, fallbackDbName: string) => {
+const resolveSqlServerObjectTarget = (rawObjectName: string, _fallbackDbName: string) => {
   const segments = splitQualifiedNameSegments(rawObjectName).filter(Boolean);
   const objectName = String(segments[segments.length - 1] || '').trim();
   let schemaName = '';
-  let databaseName = String(fallbackDbName || '').trim();
 
   if (segments.length >= 3) {
-    databaseName = String(segments[segments.length - 3] || databaseName).trim();
     schemaName = String(segments[segments.length - 2] || '').trim();
   } else if (segments.length === 2) {
     schemaName = String(segments[0] || '').trim();
   }
 
-  return { databaseName, schemaName, objectName };
+  return { schemaName, objectName };
 };
 
 export const buildSqlServerObjectDefinitionQueries = (
@@ -45,7 +43,6 @@ export const buildSqlServerObjectDefinitionQueries = (
   const target = resolveSqlServerObjectTarget(objectName, dbName);
   if (!target.objectName) return [];
 
-  const catalogPrefix = target.databaseName ? `${quoteSqlServerIdentifier(target.databaseName)}.` : '';
   const safeObjectName = escapeSqlServerLiteral(target.objectName);
   const safeSchemaName = escapeSqlServerLiteral(target.schemaName);
   const objectTypes = SQL_SERVER_OBJECT_TYPES[kind] || [];
@@ -62,9 +59,9 @@ export const buildSqlServerObjectDefinitionQueries = (
   const moduleQuery = [
     `SELECT TOP (1)`,
     `    m.definition AS ${resultAlias}`,
-    `FROM ${catalogPrefix}sys.all_sql_modules AS m`,
-    `JOIN ${catalogPrefix}sys.all_objects AS o ON o.object_id = m.object_id`,
-    `JOIN ${catalogPrefix}sys.schemas AS s ON s.schema_id = o.schema_id`,
+    `FROM sys.all_sql_modules AS m`,
+    `JOIN sys.all_objects AS o ON o.object_id = m.object_id`,
+    `JOIN sys.schemas AS s ON s.schema_id = o.schema_id`,
     `WHERE o.name = N'${safeObjectName}'`,
     typeFilter.trimEnd(),
     schemaFilter.trimEnd(),
@@ -73,9 +70,7 @@ export const buildSqlServerObjectDefinitionQueries = (
   ].filter(Boolean).join('\n');
 
   const objectRef = buildSqlServerObjectRef(target.schemaName, target.objectName);
-  const helpTextProcedure = target.databaseName
-    ? `EXEC ${quoteSqlServerIdentifier(target.databaseName)}.sys.sp_helptext @objname = N'${escapeSqlServerLiteral(objectRef)}'`
-    : `EXEC sys.sp_helptext @objname = N'${escapeSqlServerLiteral(objectRef)}'`;
+  const helpTextProcedure = `EXEC sys.sp_helptext @objname = N'${escapeSqlServerLiteral(objectRef)}'`;
 
   return [moduleQuery, helpTextProcedure];
 };

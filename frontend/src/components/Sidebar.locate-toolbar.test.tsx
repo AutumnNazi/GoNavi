@@ -3364,7 +3364,9 @@ describe('Sidebar locate toolbar', () => {
     expect(mysqlSql).toContain('CREATE_TIME AS create_time');
     expect(pgSql).toContain("obj_description(c.oid, 'pg_class') AS table_comment");
     expect(pgSql).toContain('pg_total_relation_size(c.oid) AS table_size');
-    expect(sqlServerSql).toContain('ep.value AS table_comment');
+    expect(sqlServerSql).toContain('CONVERT(nvarchar(4000), ep.value) AS table_comment');
+    expect(sqlServerSql).toContain('FROM sys.tables t');
+    expect(sqlServerSql).not.toMatch(/\]\.sys\.tables/);
     expect(sqlServerSql).toContain('t.create_date AS create_time');
     expect(oracleSql).toContain('comments AS table_comment');
     expect(oracleSql).toContain('COALESCE(t.blocks, 0) * 8192 AS table_size');

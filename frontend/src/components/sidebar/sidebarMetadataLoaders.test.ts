@@ -66,6 +66,18 @@ describe("sidebar table metadata", () => {
     )).toBe(0);
   });
 
+  it("loads SQL Server table status from the current database catalog", () => {
+    const sql = buildSidebarTableStatusSQL(
+      { config: { type: "sqlserver" } } as any,
+      "app_db",
+    );
+
+    expect(sql).toContain("FROM sys.tables t");
+    expect(sql).toContain("CONVERT(nvarchar(4000), ep.value) AS table_comment");
+    expect(sql).not.toMatch(/\]\.sys\./);
+    expect(sql).not.toContain("sys.allocation_units");
+  });
+
   it("loads the MySQL engine so unreliable InnoDB zero estimates can be identified", () => {
     const sql = buildSidebarTableStatusSQL(
       { config: { type: "mysql" } } as any,
@@ -148,7 +160,10 @@ describe("buildSchemasMetadataQuerySpecs", () => {
   it("returns schema queries for independent-schema targets", () => {
     expect(
       buildSchemasMetadataQuerySpecs("sqlserver", "app_db")[0]?.sql,
-    ).toContain(".sys.schemas");
+    ).toContain("sys.schemas");
+    expect(
+      buildSchemasMetadataQuerySpecs("sqlserver", "app_db")[0]?.sql,
+    ).not.toMatch(/\]\.sys\.schemas/);
     expect(
       buildSchemasMetadataQuerySpecs("iris", "USER")[0]?.sql.toLowerCase(),
     ).toContain("information_schema.schemata");

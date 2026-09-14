@@ -131,6 +131,32 @@ func TestBuildOracleObjectMetadataQueriesExposeCompileStatus(t *testing.T) {
 	}
 }
 
+func TestBuildSQLServerObjectMetadataQueriesUseCurrentDatabaseCatalog(t *testing.T) {
+	routineSpecs := buildObjectRoutineMetadataQueries("sqlserver", "AppDB")
+	if len(routineSpecs) != 1 {
+		t.Fatalf("expected one SQL Server routine metadata query, got %#v", routineSpecs)
+	}
+	if !strings.Contains(routineSpecs[0].sql, "FROM sys.objects") || strings.Contains(routineSpecs[0].sql, "].sys.") {
+		t.Fatalf("SQL Server routine query must use current-database sys.objects, got %q", routineSpecs[0].sql)
+	}
+
+	triggerSpecs := buildObjectTriggerMetadataQueries("sqlserver", "AppDB")
+	if len(triggerSpecs) != 1 {
+		t.Fatalf("expected one SQL Server trigger metadata query, got %#v", triggerSpecs)
+	}
+	if !strings.Contains(triggerSpecs[0].sql, "FROM sys.triggers") || strings.Contains(triggerSpecs[0].sql, "].sys.") {
+		t.Fatalf("SQL Server trigger query must use current-database sys.triggers, got %q", triggerSpecs[0].sql)
+	}
+
+	viewQueries := buildListViewQueries(testConnectionConfig("sqlserver"), "AppDB")
+	if len(viewQueries) != 1 {
+		t.Fatalf("expected one SQL Server view query, got %#v", viewQueries)
+	}
+	if !strings.Contains(viewQueries[0], "FROM sys.views") || strings.Contains(viewQueries[0], "].sys.") {
+		t.Fatalf("SQL Server view query must use current-database sys.views, got %q", viewQueries[0])
+	}
+}
+
 func testConnectionConfig(dbType string) connection.ConnectionConfig {
 	return connection.ConnectionConfig{Type: dbType}
 }

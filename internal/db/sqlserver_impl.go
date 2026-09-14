@@ -46,7 +46,13 @@ func scanSQLServerRowsWithMessages(ctx context.Context, rows *sql.Rows, retmsg *
 	)
 	active := true
 	for active {
+		if err := ctx.Err(); err != nil {
+			return resultSets, messages, err
+		}
 		raw := retmsg.Message(ctx)
+		if err := ctx.Err(); err != nil {
+			return resultSets, messages, err
+		}
 		switch msg := raw.(type) {
 		case sqlexp.MsgNotice:
 			text := strings.TrimSpace(fmt.Sprint(msg.Message))
@@ -155,6 +161,9 @@ func (s *SqlServerDB) getDSN(config connection.ConnectionConfig) string {
 	encrypt, trustServerCertificate := resolveSQLServerTLSSettings(config)
 	q.Set("encrypt", encrypt)
 	q.Set("trustservercertificate", trustServerCertificate)
+	if hostNameInCertificate := azureSQLHostNameInCertificate(config.Host); hostNameInCertificate != "" {
+		q.Set("hostnameincertificate", hostNameInCertificate)
+	}
 	if strings.TrimSpace(config.SSLCAPath) != "" {
 		q.Set("certificate", strings.TrimSpace(config.SSLCAPath))
 	}
@@ -321,7 +330,9 @@ func (s *SqlServerDB) Query(query string) ([]map[string]interface{}, []string, e
 }
 
 func (s *SqlServerDB) QueryWithMessages(query string) ([]map[string]interface{}, []string, []string, error) {
-	return s.QueryContextWithMessages(metadataContextFor(s), query)
+	ctx, cancel := sqlServerMetadataQueryContext(s)
+	defer cancel()
+	return s.QueryContextWithMessages(ctx, query)
 }
 
 func (s *SqlServerDB) ExecContext(ctx context.Context, query string) (int64, error) {
@@ -508,32 +519,84 @@ func (e *sqlServerSessionExecer) Discard() error {
 	return discardSQLConn(&e.conn)
 }
 
-func (s *SqlServerDB) GetDatabases() ([]string, error) {
-	query := "SELECT name FROM sys.databases WHERE state_desc = 'ONLINE' ORDER BY name"
-	data, _, err := s.Query(query)
+const sqlServerMetadataQueryTimeout = 60 * time.Second
+
+func sqlServerMetadataQueryContext(database any) (context.Context, context.CancelFunc) {
+	ctx := metadataContextFor(database)
+	if _, hasDeadline := ctx.Deadline(); hasDeadline {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, sqlServerMetadataQueryTimeout)
+}
+
+func (s *SqlServerDB) queryEngineEdition() (int, error) {
+	data, _, err := s.Query(sqlServerEngineEditionQuery())
+	if err != nil {
+		return 0, err
+	}
+	if len(data) == 0 {
+		return 0, fmt.Errorf("empty ENGINEEDITION result")
+	}
+	raw, ok := data[0]["edition"]
+	if !ok {
+		return 0, fmt.Errorf("missing ENGINEEDITION column")
+	}
+	edition, ok := sqlServerIntFromValue(raw)
+	if !ok {
+		return 0, fmt.Errorf("invalid ENGINEEDITION value %v", raw)
+	}
+	return edition, nil
+}
+
+func (s *SqlServerDB) currentDatabaseNames() ([]string, error) {
+	data, _, err := s.Query(sqlServerCurrentDatabaseQuery())
 	if err != nil {
 		return nil, err
 	}
-	var dbs []string
-	for _, row := range data {
-		if val, ok := row["name"]; ok {
-			dbs = append(dbs, fmt.Sprintf("%v", val))
+	names := collectSQLServerNameColumn(data)
+	if len(names) == 0 {
+		return nil, fmt.Errorf("empty current database name")
+	}
+	return names, nil
+}
+
+func (s *SqlServerDB) GetDatabases() ([]string, error) {
+	if edition, err := s.queryEngineEdition(); err == nil && sqlServerUsesCurrentDatabaseCatalogOnly(edition) {
+		current, currentErr := s.currentDatabaseNames()
+		if currentErr != nil {
+			return nil, currentErr
+		}
+		if len(current) == 1 && strings.EqualFold(current[0], "master") {
+			data, _, listErr := s.Query(sqlServerAccessibleDatabasesQuery())
+			if listErr == nil {
+				if names := collectSQLServerNameColumn(data); len(names) > 0 {
+					return names, nil
+				}
+			}
+		}
+		return current, nil
+	}
+
+	data, _, err := s.Query(sqlServerAccessibleDatabasesQuery())
+	if err == nil {
+		if names := collectSQLServerNameColumn(data); len(names) > 0 {
+			return names, nil
 		}
 	}
-	return dbs, nil
+	names, fallbackErr := s.currentDatabaseNames()
+	if fallbackErr != nil {
+		if err != nil {
+			return nil, err
+		}
+		return nil, fallbackErr
+	}
+	return names, nil
 }
 
 func (s *SqlServerDB) GetTables(dbName string) ([]string, error) {
-	// SQL Server uses schema.table format, default schema is dbo
-	safeDB := quoteBracket(dbName)
-	query := fmt.Sprintf(`
-SELECT s.name AS schema_name, t.name AS table_name
-FROM [%s].sys.tables t
-JOIN [%s].sys.schemas s ON t.schema_id = s.schema_id
-WHERE t.type = 'U'
-ORDER BY s.name, t.name`, safeDB, safeDB)
-
-	data, _, err := s.Query(query)
+	// The DSN already selects dbName. Azure SQL Database rejects or hangs on
+	// three-part catalog names such as [dbName].sys.tables.
+	data, _, err := s.Query(sqlServerListTablesQuery())
 	if err != nil {
 		return nil, err
 	}
@@ -595,7 +658,6 @@ func (s *SqlServerDB) GetColumns(dbName, tableName string) ([]connection.ColumnD
 	}
 
 	esc := func(s string) string { return strings.ReplaceAll(s, "'", "''") }
-	safeDB := quoteBracket(dbName)
 
 	query := fmt.Sprintf(`
 SELECT
@@ -607,24 +669,23 @@ SELECT
     END AS data_type,
     CASE WHEN c.is_nullable = 1 THEN 'YES' ELSE 'NO' END AS is_nullable,
     dc.definition AS column_default,
-    ep.value AS comment,
+    CONVERT(nvarchar(4000), ep.value) AS comment,
     CASE WHEN pk.column_id IS NOT NULL THEN 'PRI' ELSE '' END AS column_key,
     CASE WHEN c.is_identity = 1 THEN 'auto_increment' ELSE '' END AS extra
-FROM [%s].sys.columns c
-JOIN [%s].sys.types t ON c.user_type_id = t.user_type_id
-JOIN [%s].sys.tables tb ON c.object_id = tb.object_id
-JOIN [%s].sys.schemas s ON tb.schema_id = s.schema_id
-LEFT JOIN [%s].sys.default_constraints dc ON c.default_object_id = dc.object_id
-LEFT JOIN [%s].sys.extended_properties ep ON ep.major_id = c.object_id AND ep.minor_id = c.column_id AND ep.name = 'MS_Description'
+FROM sys.columns c
+JOIN sys.types t ON c.user_type_id = t.user_type_id
+JOIN sys.tables tb ON c.object_id = tb.object_id
+JOIN sys.schemas s ON tb.schema_id = s.schema_id
+LEFT JOIN sys.default_constraints dc ON c.default_object_id = dc.object_id
+LEFT JOIN sys.extended_properties ep ON ep.major_id = c.object_id AND ep.minor_id = c.column_id AND ep.name = 'MS_Description'
 LEFT JOIN (
     SELECT ic.object_id, ic.column_id
-    FROM [%s].sys.index_columns ic
-    JOIN [%s].sys.indexes i ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+    FROM sys.index_columns ic
+    JOIN sys.indexes i ON ic.object_id = i.object_id AND ic.index_id = i.index_id
     WHERE i.is_primary_key = 1
 ) pk ON pk.object_id = c.object_id AND pk.column_id = c.column_id
 WHERE s.name = '%s' AND tb.name = '%s'
 ORDER BY c.column_id`,
-		safeDB, safeDB, safeDB, safeDB, safeDB, safeDB, safeDB, safeDB,
 		esc(schema), esc(table))
 
 	data, _, err := s.Query(query)
@@ -658,16 +719,15 @@ ORDER BY c.column_id`,
 }
 
 func (s *SqlServerDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWithTable, error) {
-	safeDB := quoteBracket(dbName)
-	query := fmt.Sprintf(`
-SELECT s.name AS schema_name, t.name AS table_name, c.name AS column_name, tp.name AS data_type, ep.value AS comment
-FROM [%s].sys.columns c
-JOIN [%s].sys.tables t ON c.object_id = t.object_id
-JOIN [%s].sys.schemas s ON t.schema_id = s.schema_id
-JOIN [%s].sys.types tp ON c.user_type_id = tp.user_type_id
-LEFT JOIN [%s].sys.extended_properties ep ON ep.major_id = c.object_id AND ep.minor_id = c.column_id AND ep.name = 'MS_Description'
+	query := `
+SELECT s.name AS schema_name, t.name AS table_name, c.name AS column_name, tp.name AS data_type, CONVERT(nvarchar(4000), ep.value) AS comment
+FROM sys.columns c
+JOIN sys.tables t ON c.object_id = t.object_id
+JOIN sys.schemas s ON t.schema_id = s.schema_id
+JOIN sys.types tp ON c.user_type_id = tp.user_type_id
+LEFT JOIN sys.extended_properties ep ON ep.major_id = c.object_id AND ep.minor_id = c.column_id AND ep.name = 'MS_Description'
 WHERE t.type = 'U'
-ORDER BY s.name, t.name, c.column_id`, safeDB, safeDB, safeDB, safeDB, safeDB)
+ORDER BY s.name, t.name, c.column_id`
 
 	data, _, err := s.Query(query)
 	if err != nil {
@@ -701,7 +761,6 @@ func (s *SqlServerDB) GetIndexes(dbName, tableName string) ([]connection.IndexDe
 	}
 
 	esc := func(s string) string { return strings.ReplaceAll(s, "'", "''") }
-	safeDB := quoteBracket(dbName)
 
 	query := fmt.Sprintf(`
 SELECT
@@ -710,16 +769,16 @@ SELECT
     i.is_unique,
     ic.key_ordinal AS seq_in_index,
     i.type_desc AS index_type
-FROM [%s].sys.indexes i
-JOIN [%s].sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-JOIN [%s].sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
-JOIN [%s].sys.tables t ON i.object_id = t.object_id
-JOIN [%s].sys.schemas s ON t.schema_id = s.schema_id
+FROM sys.indexes i
+JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+JOIN sys.tables t ON i.object_id = t.object_id
+JOIN sys.schemas s ON t.schema_id = s.schema_id
 WHERE s.name = '%s' AND t.name = '%s' AND i.name IS NOT NULL
   AND i.is_primary_key = 0
   AND ic.is_included_column = 0
 ORDER BY i.name, ic.key_ordinal`,
-		safeDB, safeDB, safeDB, safeDB, safeDB, esc(schema), esc(table))
+		esc(schema), esc(table))
 
 	data, _, err := s.Query(query)
 	if err != nil {
@@ -778,7 +837,6 @@ func (s *SqlServerDB) GetForeignKeys(dbName, tableName string) ([]connection.For
 	}
 
 	esc := func(s string) string { return strings.ReplaceAll(s, "'", "''") }
-	safeDB := quoteBracket(dbName)
 
 	query := fmt.Sprintf(`
 SELECT
@@ -787,17 +845,17 @@ SELECT
     rs.name AS foreign_schema,
     rt.name AS foreign_table,
     rc.name AS foreign_column
-FROM [%s].sys.foreign_keys fk
-JOIN [%s].sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
-JOIN [%s].sys.columns c ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id
-JOIN [%s].sys.tables t ON fk.parent_object_id = t.object_id
-JOIN [%s].sys.schemas s ON t.schema_id = s.schema_id
-JOIN [%s].sys.tables rt ON fk.referenced_object_id = rt.object_id
-JOIN [%s].sys.schemas rs ON rt.schema_id = rs.schema_id
-JOIN [%s].sys.columns rc ON fkc.referenced_object_id = rc.object_id AND fkc.referenced_column_id = rc.column_id
+FROM sys.foreign_keys fk
+JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+JOIN sys.columns c ON fkc.parent_object_id = c.object_id AND fkc.parent_column_id = c.column_id
+JOIN sys.tables t ON fk.parent_object_id = t.object_id
+JOIN sys.schemas s ON t.schema_id = s.schema_id
+JOIN sys.tables rt ON fk.referenced_object_id = rt.object_id
+JOIN sys.schemas rs ON rt.schema_id = rs.schema_id
+JOIN sys.columns rc ON fkc.referenced_object_id = rc.object_id AND fkc.referenced_column_id = rc.column_id
 WHERE s.name = '%s' AND t.name = '%s'
 ORDER BY fk.name`,
-		safeDB, safeDB, safeDB, safeDB, safeDB, safeDB, safeDB, safeDB, esc(schema), esc(table))
+		esc(schema), esc(table))
 
 	data, _, err := s.Query(query)
 	if err != nil {
@@ -830,7 +888,6 @@ func (s *SqlServerDB) GetTriggers(dbName, tableName string) ([]connection.Trigge
 	}
 
 	esc := func(s string) string { return strings.ReplaceAll(s, "'", "''") }
-	safeDB := quoteBracket(dbName)
 
 	query := fmt.Sprintf(`
 SELECT
@@ -838,17 +895,17 @@ SELECT
     CASE WHEN tr.is_instead_of_trigger = 1 THEN 'INSTEAD OF' ELSE 'AFTER' END AS timing,
     STUFF((
         SELECT ', ' + te.type_desc
-        FROM [%s].sys.trigger_events te
+        FROM sys.trigger_events te
         WHERE te.object_id = tr.object_id
         FOR XML PATH('')
     ), 1, 2, '') AS event,
     OBJECT_DEFINITION(tr.object_id) AS statement
-FROM [%s].sys.triggers tr
-JOIN [%s].sys.tables t ON tr.parent_id = t.object_id
-JOIN [%s].sys.schemas s ON t.schema_id = s.schema_id
+FROM sys.triggers tr
+JOIN sys.tables t ON tr.parent_id = t.object_id
+JOIN sys.schemas s ON t.schema_id = s.schema_id
 WHERE s.name = '%s' AND t.name = '%s'
 ORDER BY tr.name`,
-		safeDB, safeDB, safeDB, safeDB, esc(schema), esc(table))
+		esc(schema), esc(table))
 
 	data, _, err := s.Query(query)
 	if err != nil {

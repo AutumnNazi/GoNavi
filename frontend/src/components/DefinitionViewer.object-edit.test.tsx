@@ -354,7 +354,7 @@ describe('DefinitionViewer object edit entry', () => {
     });
 
     const sql = String(backendApp.DBQuery.mock.calls[0][2] || '');
-    expect(sql).toContain('FROM [main].sys.all_sql_modules AS m');
+    expect(sql).toContain('FROM sys.all_sql_modules AS m');
     expect(sql).toContain("WHERE o.name = N'refresh_stats'");
     expect(sql).toContain("AND s.name = N'reporting'");
     expect(sql).not.toContain('OBJECT_DEFINITION');
@@ -388,7 +388,7 @@ describe('DefinitionViewer object edit entry', () => {
       await flushPromises();
     });
 
-    expect(backendApp.DBQuery.mock.calls[1][2]).toBe("EXEC [main].sys.sp_helptext @objname = N'[reporting].[refresh_stats]'");
+    expect(backendApp.DBQuery.mock.calls[1][2]).toBe("EXEC sys.sp_helptext @objname = N'[reporting].[refresh_stats]'");
     const editorText = String(renderer.root.findAll((node: any) => node.props['data-editor'] === 'true')[0].children.join(''));
     expect(editorText).toContain('CREATE PROCEDURE [reporting].[refresh_stats]');
     expect(editorText).toContain('BEGIN\n  SELECT 1;\nEND');
