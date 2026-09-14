@@ -236,6 +236,9 @@ body.gonavi-ai-provider-dragging, body.gonavi-ai-provider-dragging * { cursor: g
 .gonavi-ai-provider-model-label .gonavi-ai-provider-model-sync:disabled {
   border-color: var(--provider-line); color: var(--provider-muted); background: var(--provider-control-disabled-bg); cursor: wait;
 }
+.gonavi-ai-provider-cli-catalog-status { font-size: 12px; line-height: 1.45; }
+.gonavi-ai-provider-cli-catalog-status.is-success { color: var(--provider-active); }
+.gonavi-ai-provider-cli-catalog-status.is-error { color: var(--gn-danger, #c2410c); }
 .gonavi-ai-provider-model-label .gonavi-ai-provider-model-count:hover,
 .gonavi-ai-provider-model-label .gonavi-ai-provider-model-count:focus-visible {
   border-color: var(--gn-br-2, var(--provider-line)); background: var(--gn-bg-hover, var(--provider-active-bg)); outline: none;

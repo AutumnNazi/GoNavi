@@ -1592,10 +1592,24 @@ func (s *Service) AIGetCLIModelCatalog(config ai.ProviderConfig) (map[string]int
 	if ok {
 		catalog, err = capability.ModelCatalogWithConfig(context.Background(), config)
 	}
-	return map[string]interface{}{
-		"models": catalog.Models, "source": catalog.Source, "stale": catalog.Stale,
-		"defaultModel": catalog.DefaultModel, "modelCapabilities": catalog.ModelCapabilities,
-	}, err
+	return cliModelCatalogResponse(catalog), err
+}
+
+func cliModelCatalogResponse(catalog provider.CLIModelCatalog) map[string]interface{} {
+	models := catalog.Models
+	if models == nil {
+		models = []string{}
+	}
+	result := map[string]interface{}{
+		"models": models, "source": catalog.Source, "stale": catalog.Stale,
+	}
+	if catalog.DefaultModel != "" {
+		result["defaultModel"] = catalog.DefaultModel
+	}
+	if len(catalog.ModelCapabilities) > 0 {
+		result["modelCapabilities"] = catalog.ModelCapabilities
+	}
+	return result
 }
 
 // AISetContextLevel 设置上下文传递级别

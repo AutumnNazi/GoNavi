@@ -90,7 +90,9 @@ describe('provider settings mounted controls', () => {
     stored = new Map();
     vi.stubGlobal('window', { localStorage: { getItem: (key: string) => stored.get(key) || null, setItem: (key: string, value: string) => stored.set(key, value) } });
     bridge.capabilities.mockResolvedValue([capability, claudeCapability, codexCapability]);
-    bridge.models.mockResolvedValue({ models: ['discovered-model'], source: 'cli', stale: false });
+    bridge.models.mockResolvedValue({
+      models: ['discovered-model'], source: 'cli', stale: false, defaultModel: '', modelCapabilities: null,
+    });
     values = { model: 'typed-model', models: ['my-model'], effort: 'low' };
     props = {
       providers: [
@@ -398,9 +400,52 @@ describe('provider settings mounted controls', () => {
     expect(modelPickers()[0].props.options).not.toContainEqual({ value: 'upstream-a', label: 'upstream-a' });
   });
 
-  it('does not label a local CLI catalog refresh as an upstream sync', async () => {
-    await render({ isEditing: true, providers: [], editingProvider: { id: '' }, onSyncProviderModels: vi.fn() });
-    expect(renderer!.root.findAllByProps({ className: 'gonavi-ai-provider-model-sync' })).toHaveLength(0);
+  it('refreshes local CLI catalogs without labeling them as upstream sync', async () => {
+    const onSyncProviderModels = vi.fn();
+    stored.set('gonavi.ai.providers.modelCatalog.v2', JSON.stringify({ 'grok-cli': { catalog: { models: ['cached-grok'], source: 'cli', stale: false }, fetchedAt: Date.now() } }));
+    await render({ isEditing: true, providers: [], editingProvider: { id: '' }, onSyncProviderModels });
+    const sync = renderer!.root.findByProps({ className: 'gonavi-ai-provider-model-sync' });
+    expect(elementText(sync.props.children)).toContain('Sync from CLI');
+    expect(elementText(sync.props.children)).not.toContain('Sync upstream');
+    expect(bridge.models).not.toHaveBeenCalled();
+    await act(async () => sync.props.onClick({ preventDefault() {}, stopPropagation() {} }));
+    expect(bridge.models).toHaveBeenCalledTimes(1);
+    expect(onSyncProviderModels).not.toHaveBeenCalled();
+    expect(modelPickers()[0].props.options).toContainEqual({ value: 'discovered-model', label: 'discovered-model' });
+    expect(renderedText(renderer!.toJSON())).toContain('Synced 1 models from the CLI');
+  });
+
+  it('refetches a cached CLI catalog even if StrictMode replays the catalog effect', async () => {
+    stored.set('gonavi.ai.providers.modelCatalog.v2', JSON.stringify({ 'grok-cli': { catalog: { models: ['cached-grok'], source: 'cli', stale: false }, fetchedAt: Date.now() } }));
+    props = {
+      ...props,
+      isEditing: true,
+      providers: [],
+      editingProvider: { id: '' },
+    };
+    await act(async () => {
+      renderer = create(
+        <React.StrictMode>
+          <AISettingsProvidersSection {...props} />
+        </React.StrictMode>,
+      );
+    });
+    expect(bridge.models).not.toHaveBeenCalled();
+    const sync = renderer!.root.findByProps({ className: 'gonavi-ai-provider-model-sync' });
+    await act(async () => sync.props.onClick({ preventDefault() {}, stopPropagation() {} }));
+    expect(bridge.models).toHaveBeenCalled();
+    expect(modelPickers()[0].props.options).toContainEqual({ value: 'discovered-model', label: 'discovered-model' });
+  });
+
+  it('shows the CLI catalog error when a manual refresh fails', async () => {
+    stored.set('gonavi.ai.providers.modelCatalog.v2', JSON.stringify({ 'grok-cli': { catalog: { models: ['cached-grok'], source: 'cli', stale: false }, fetchedAt: Date.now() } }));
+    await render({ isEditing: true, providers: [], editingProvider: { id: '' } });
+    bridge.models.mockRejectedValueOnce(new Error('cursor-agent command was not found'));
+    const sync = renderer!.root.findByProps({ className: 'gonavi-ai-provider-model-sync' });
+    await act(async () => sync.props.onClick({ preventDefault() {}, stopPropagation() {} }));
+    expect(bridge.models).toHaveBeenCalledTimes(1);
+    expect(renderedText(renderer!.toJSON())).toContain('cursor-agent command was not found');
+    expect(modelPickers()[0].props.options).toContainEqual({ value: 'cached-grok', label: 'cached-grok' });
   });
 
   it('reuses the cached CLI catalog on entry and only refetches from the enabled count', async () => {

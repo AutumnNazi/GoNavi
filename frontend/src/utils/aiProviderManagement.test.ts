@@ -57,6 +57,15 @@ describe('model candidates', () => {
     expect(parseCLIModelCatalog({ models: ['model'], source: 'unknown', stale: false })).toBeNull();
     expect(parseCLIModelCatalog({ models: ['old'], source: 'cache', stale: true })).toEqual({ models: [], source: 'cache', stale: true });
   });
+  it('accepts the Wails JSON shape for a CLI catalog with empty optional fields', () => {
+    expect(parseCLIModelCatalog({
+      models: ['auto', 'composer-2.5'],
+      source: 'cli',
+      stale: false,
+      defaultModel: '',
+      modelCapabilities: null,
+    })).toEqual({ models: ['auto', 'composer-2.5'], source: 'cli', stale: false });
+  });
   it('preserves documented aliases as suggestions without claiming live discovery', () => {
     const catalog = { models: ['sonnet', 'opus', 'haiku'], source: 'aliases', stale: false };
     expect(parseCLIModelCatalog(catalog)).toEqual(catalog);

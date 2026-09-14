@@ -215,6 +215,7 @@ describe('mcpClientInstallPanelState', () => {
 
   it('uses the documented local commands for the added MCP clients when CLI detection is unavailable', () => {
     const cases = [
+      ['cursor', 'Cursor', 'cursor'],
       ['zcode', 'ZCode', 'zcode'],
       ['deepseek-harness', 'DeepSeek Harness', 'dsh'],
       ['kimi', 'Kimi Code', 'kimi'],

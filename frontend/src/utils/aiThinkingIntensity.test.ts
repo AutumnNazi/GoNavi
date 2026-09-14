@@ -82,4 +82,19 @@ describe('aiThinkingIntensity', () => {
     expect(control.options.map((item) => item.value)).toEqual(['default', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
     expect(control.defaultValue).toBe('high');
   });
+
+  it('uses Cursor catalog suffixes as the effort selector', () => {
+    const control = resolveProviderThinkingIntensityControl({
+      type: 'custom', authMode: 'local-cli', apiFormat: 'cursor-cli', model: 'cursor-grok-4.6-xhigh',
+    }, {
+      supportsEffort: false, effortValues: [],
+    }, {
+      models: ['cursor-grok-4.6-high', 'cursor-grok-4.6-xhigh'], source: 'cli', stale: false,
+      modelCapabilities: {
+        'cursor-grok-4.6-xhigh': { effortValues: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'xhigh' },
+      },
+    });
+    expect(control.options.map((item) => item.value)).toEqual(['default', 'low', 'medium', 'high', 'xhigh']);
+    expect(control.defaultValue).toBe('xhigh');
+  });
 });

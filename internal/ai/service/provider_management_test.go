@@ -41,6 +41,27 @@ func TestProviderManagementCatalogWithoutEnumeration(t *testing.T) {
 	}
 }
 
+func TestProviderManagementCLIModelCatalogJSONOmitsEmptyOptionalFields(t *testing.T) {
+	service := newProviderManagementTestService(t)
+	result, err := service.AIGetCLIModelCatalog(ai.ProviderConfig{APIFormat: "claude-cli"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := result["defaultModel"]; ok {
+		t.Fatal("empty defaultModel must not be present for Wails JSON")
+	}
+	if _, ok := result["modelCapabilities"]; ok {
+		t.Fatal("nil modelCapabilities must not be serialized as null")
+	}
+	raw, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), `"modelCapabilities":null`) || strings.Contains(string(raw), `"defaultModel":""`) {
+		t.Fatalf("Wails JSON must not null-out optional catalog fields: %s", raw)
+	}
+}
+
 func TestProviderManagementCLIModelCatalogRestoresHiddenExecutionEnvironment(t *testing.T) {
 	service := newProviderManagementTestService(t)
 	service.configDir = t.TempDir()

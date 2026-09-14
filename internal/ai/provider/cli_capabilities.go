@@ -19,7 +19,8 @@ import (
 // 三个本机 CLI 在同一件事上的做法两两不同，调用点绝不能共享枚举，
 // 也不能用退出码统一判成败：
 //
-//   - 档位 flag 形态不同：claude/grok 有专用 flag，codex 只能走 -c 配置键。
+//   - 档位 flag 形态不同：claude/grok 有专用 flag，codex 只能走 -c 配置键，
+//     Cursor 没有独立 flag，档位写在 --model 的 ID 后缀里。
 //   - 档位值域不同：Codex 还会随模型目录变化，claude 5 个、grok 4 个。
 //   - 非法值的失败语义不同：codex 非零退出；grok 退出码仍为 0、错误只在 stdout；
 //     claude 直接静默降级为默认档位并把请求跑完。
@@ -48,6 +49,8 @@ const (
 	CLIEffortConfigKV CLIEffortStyle = "config-kv"
 	// CLIEffortUnsupported 该 CLI 不接受档位参数。
 	CLIEffortUnsupported CLIEffortStyle = "unsupported"
+	// CLIEffortModelSuffix 没有独立档位 flag；同系列模型用 ID 后缀区分档位。
+	CLIEffortModelSuffix CLIEffortStyle = "model-suffix"
 )
 
 // CLICapability 声明单个本机 CLI 的模型与档位能力。
@@ -141,13 +144,13 @@ var cliCapabilities = map[string]CLICapability{
 		Rejection:   CLIRejectHardFailNonZero,
 	},
 	"cursor-cli": {
-		// Parameters checked against cursor-agent 2026.05.05-84a231c and
-		// official docs on 2026-08-31; model responses remain a manual gate.
+		// cursor-agent 2026.09.10-fd3934a has no --effort flag. Effort is a
+		// model-id suffix (cursor-grok-4.6-xhigh) or a parameterized override.
 		APIFormat:          "cursor-cli",
 		Command:            "cursor-agent",
 		ModelFlag:          "--model",
 		ModelDiscoveryArgs: []string{"models"},
-		EffortStyle:        CLIEffortUnsupported,
+		EffortStyle:        CLIEffortModelSuffix,
 		Rejection:          CLIRejectHardFailNonZero,
 	},
 }
@@ -168,6 +171,12 @@ func (c CLICapability) NormalizeEffort(value string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(value))
 	if normalized == "" {
 		return "", nil
+	}
+	if c.EffortStyle == CLIEffortModelSuffix {
+		if isCursorCLIEffortToken(normalized) {
+			return normalized, nil
+		}
+		return "", fmt.Errorf("%s 不支持档位 %q", c.Command, value)
 	}
 	if !c.SupportsEffort() {
 		return "", fmt.Errorf("%s 不接受推理档位参数", c.Command)
@@ -192,6 +201,8 @@ func (c CLICapability) AppendEffortArgs(args []string, effort string) []string {
 		return append(args, c.EffortFlag, normalized)
 	case CLIEffortConfigKV:
 		return append(args, "-c", fmt.Sprintf("%s=%q", c.EffortConfigKey, normalized))
+	case CLIEffortModelSuffix:
+		return args
 	default:
 		return args
 	}

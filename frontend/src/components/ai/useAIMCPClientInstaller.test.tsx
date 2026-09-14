@@ -30,6 +30,7 @@ const openCodeStatus = {
 };
 
 const additionalAutoMCPClients = [
+  ['cursor', 'Cursor', 'AIInstallCursorMCP'],
   ['zcode', 'ZCode', 'AIInstallZCodeMCP'],
   ['deepseek-harness', 'DeepSeek Harness', 'AIInstallDeepSeekHarnessMCP'],
   ['kimi', 'Kimi Code', 'AIInstallKimiMCP'],
@@ -37,6 +38,16 @@ const additionalAutoMCPClients = [
 ] as const;
 
 const additionalAutoMCPClientStatuses = [
+  {
+    client: 'cursor',
+    displayName: 'Cursor',
+    installMode: 'auto' as const,
+    installed: false,
+    matchesCurrent: false,
+    clientDetected: true,
+    clientCommand: 'cursor',
+    message: 'No Cursor user-level GoNavi MCP configuration was detected',
+  },
   {
     client: 'zcode',
     displayName: 'ZCode',
@@ -189,6 +200,7 @@ describe('useAIMCPClientInstaller', () => {
       AIInstallClaudeCodeMCP: vi.fn(async () => ({})),
       AIInstallCodexMCP: vi.fn(async () => ({})),
       AIInstallOpenCodeMCP: vi.fn(async () => ({})),
+      AIInstallCursorMCP: vi.fn(async () => ({ success: true })),
       AIInstallZCodeMCP: vi.fn(async () => ({ success: true })),
       AIInstallDeepSeekHarnessMCP: vi.fn(async () => ({ success: true })),
       AIInstallKimiMCP: vi.fn(async () => ({ success: true })),
@@ -214,7 +226,7 @@ describe('useAIMCPClientInstaller', () => {
     expect(service.AIInstallClaudeCodeMCP).not.toHaveBeenCalled();
     expect(service.AIInstallCodexMCP).not.toHaveBeenCalled();
     expect(service.AIInstallOpenCodeMCP).not.toHaveBeenCalled();
-    expect(onConfigChanged).toHaveBeenCalledTimes(4);
+    expect(onConfigChanged).toHaveBeenCalledTimes(5);
   });
 
   it('does not write a local MCP config until the selected client is detected', async () => {

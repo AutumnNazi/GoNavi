@@ -25,7 +25,7 @@ import {
 import { isProviderSecretRequirementSatisfied } from '../../utils/providerSecretDraft';
 import { recordFromRows } from '../../utils/aiProviderKeyValue';
 import { AIGetCLICapabilities, AIGetCLIModelCatalog } from '../../../wailsjs/go/aiservice/Service';
-import { BrowserOpenURL } from '../../../wailsjs/runtime';
+import { applyCursorCLIModelEffort, parseCursorCLIModelID } from '../../utils/cursorCLIModelEffort';
 import type { ai } from '../../../wailsjs/go/models';
 import type { OverlayWorkbenchTheme } from '../../utils/overlayWorkbenchTheme';
 import AIProviderPresetSelect from './AIProviderPresetSelect';
@@ -314,10 +314,8 @@ const AISettingsProvidersSection: React.FC<AISettingsProvidersSectionProps> = ({
   const hasCustomCLIExecution = watchedCLIPath !== '' || Boolean(watchedCLIEnv && Object.keys(watchedCLIEnv).length);
   const catalogScope = `${cliScope}:${watchedApiFormat || ''}:${cliExecutionScope}`;
   const [catalogRefresh, setCatalogRefresh] = React.useState(0);
-  // Set by the enabled-count button: the next effect run bypasses the cached
-  // catalog and shells out to the CLI again.
-  const catalogRefreshForced = React.useRef(false);
   const [catalogResponse, setCatalogResponse] = React.useState<{ scope: string; cliScope: string; catalog: CLIModelCatalog } | null>(null);
+  const [catalogNotice, setCatalogNotice] = React.useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   // A refresh keeps the current list until the new result lands, but only within
   // the same editor session; another provider's catalog must never show through.
   const modelCatalog = catalogResponse?.scope === catalogScope ? catalogResponse.catalog : null;
@@ -327,10 +325,12 @@ const AISettingsProvidersSection: React.FC<AISettingsProvidersSectionProps> = ({
     setModelDiscoveryError(false);
     setModelsLoading(false);
     if (!editorReady || !usesLocalCLI || duplicateCLI || !watchedApiFormat) return;
-    const forced = catalogRefreshForced.current;
-    catalogRefreshForced.current = false;
-    // Entering the editor reuses the last usable catalog; only the count button refreshes.
-    const cached = forced || hasCustomCLIExecution ? null : readCachedCLIModelCatalog(watchedApiFormat);
+    // Entering the editor reuses the last usable catalog. catalogRefresh is
+    // incremented by Sync from CLI / the enabled-count control; that counter
+    // (not a ref) survives StrictMode's setup/cleanup/setup replay.
+    const requestedRefresh = catalogRefresh > 0;
+    if (requestedRefresh) setCatalogNotice(null);
+    const cached = requestedRefresh || hasCustomCLIExecution ? null : readCachedCLIModelCatalog(watchedApiFormat);
     if (cached) { setCatalogResponse({ scope: catalogScope, cliScope, catalog: cached }); return; }
     let cancelled = false;
     setModelsLoading(true);
@@ -341,15 +341,24 @@ const AISettingsProvidersSection: React.FC<AISettingsProvidersSectionProps> = ({
       .then((value) => {
         if (cancelled) return;
         const catalog = parseCLIModelCatalog(value);
-        if (!catalog) throw new Error('Invalid model catalog');
+        if (!catalog) throw new Error(copy('ai_settings.models.sync_cli_failed'));
         if (!hasCustomCLIExecution) writeCachedCLIModelCatalog(watchedApiFormat, catalog);
         setCatalogResponse({ scope: catalogScope, cliScope, catalog });
         setModelDiscoveryError(catalog.stale || (catalog.source !== 'none' && !catalog.models.length));
+        if (requestedRefresh) {
+          setCatalogNotice(!catalog.models.length || catalog.stale
+            ? { tone: 'error', text: copy('ai_settings.models.sync_cli_empty') }
+            : { tone: 'success', text: copy('ai_settings.models.sync_cli_success', { count: catalog.models.length }) });
+        }
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (cancelled) return;
         setModelDiscoveryError(true);
         setCatalogResponse((previous) => (previous?.scope === catalogScope ? previous : null));
+        if (requestedRefresh) {
+          const detail = String((error as { message?: string })?.message || error || '').trim();
+          setCatalogNotice({ tone: 'error', text: detail || copy('ai_settings.models.sync_cli_failed') });
+        }
       })
       .finally(() => { if (!cancelled) setModelsLoading(false); });
     return () => { cancelled = true; };
@@ -378,6 +387,11 @@ const AISettingsProvidersSection: React.FC<AISettingsProvidersSectionProps> = ({
   }, [upstreamScope]);
   const supportsUpstreamModelSync = Boolean(onSyncProviderModels && !usesLocalCLI && selectedEndpointType !== 'cli'
     && String(watchedApiFormat || '').trim().toLowerCase() !== 'codebuddy-cli');
+  const supportsCLIModelSync = Boolean(usesLocalCLI && !duplicateCLI && watchedApiFormat);
+  const refreshCLIModels = () => {
+    if (!supportsCLIModelSync || modelsLoading) return;
+    setCatalogRefresh((value) => value + 1);
+  };
   const syncUpstreamModels = async () => {
     if (!supportsUpstreamModelSync || upstreamModelsLoading || !onSyncProviderModels) return;
     const request = ++upstreamRequestRef.current;
@@ -411,12 +425,27 @@ const AISettingsProvidersSection: React.FC<AISettingsProvidersSectionProps> = ({
   const activeEffortValues = activeModelCapability?.effortValues?.length
     ? activeModelCapability.effortValues
     : (activeCLICapability?.effortValues || []);
+  const effortSelectable = activeEffortValues.length > 0;
+  const cursorCLIEffort = String(watchedApiFormat || '').trim().toLowerCase() === 'cursor-cli';
   React.useEffect(() => {
     const effort = String(watchedEffort || '').trim().toLowerCase();
-    if (!usesLocalCLI || !activeModelCapability || !effort || activeEffortValues.includes(effort)) return;
+    if (!usesLocalCLI || !effort) return;
+    if (activeModelCapability && activeEffortValues.includes(effort)) return;
+    if (!activeModelCapability && !cursorCLIEffort) return;
     form.setFieldValue('effort', undefined);
     onValuesChange?.({ effort: undefined });
-  }, [activeEffortValues, activeModelCapability, form, onValuesChange, usesLocalCLI, watchedEffort]);
+  }, [activeEffortValues, activeModelCapability, cursorCLIEffort, form, onValuesChange, usesLocalCLI, watchedEffort]);
+  React.useEffect(() => {
+    if (!usesLocalCLI || !cursorCLIEffort) return;
+    const model = String(watchedModel || '').trim();
+    if (!model) return;
+    const parsed = parseCursorCLIModelID(model);
+    const nextEffort = parsed.effort && activeEffortValues.includes(parsed.effort) ? parsed.effort : undefined;
+    const current = String(watchedEffort || '').trim().toLowerCase() || undefined;
+    if (nextEffort === current) return;
+    form.setFieldValue('effort', nextEffort);
+    onValuesChange?.({ effort: nextEffort });
+  }, [activeEffortValues, cursorCLIEffort, form, onValuesChange, usesLocalCLI, watchedModel]);
   const patchModels = (patch: Record<string, string[]>) => { form.setFieldsValue(patch); onValuesChange?.(patch); };
   const modelSourceKey = modelCatalog?.stale ? 'ai_settings.form.model_catalog.stale'
     : modelDiscoveryError ? 'ai_settings.form.models_manual_fallback'
@@ -737,7 +766,9 @@ const AISettingsProvidersSection: React.FC<AISettingsProvidersSectionProps> = ({
             </Form.Item>}
             <div className={`gonavi-ai-provider-field-grid gonavi-ai-provider-basic-fields${usesLocalCLI ? ' has-effort' : ''}`}>
               <Form.Item label={fieldLabel('ai_settings.form.display_name')} name="name"><Input placeholder={copy('ai_settings.form.provider_name_placeholder')} size="middle" /></Form.Item>
-              <Form.Item name="model" rules={[requiredModelRule]} label={<span className="gonavi-ai-provider-model-label">
+              <Form.Item name="model" rules={[requiredModelRule]} extra={catalogNotice ? (
+                <div role="status" className={`gonavi-ai-provider-cli-catalog-status is-${catalogNotice.tone}`}>{catalogNotice.text}</div>
+              ) : undefined} label={<span className="gonavi-ai-provider-model-label">
                 <span className="gonavi-ai-provider-model-title">{fieldLabel('ai_settings.form.default_model')}</span>
                 <span className="gonavi-ai-provider-model-meta">
                   {supportsUpstreamModelSync && <button type="button" className="gonavi-ai-provider-model-sync"
@@ -746,9 +777,15 @@ const AISettingsProvidersSection: React.FC<AISettingsProvidersSectionProps> = ({
                     <SyncOutlined spin={upstreamModelsLoading} aria-hidden="true" />
                     <span>{copy('ai_settings.models.sync_upstream')}</span>
                   </button>}
+                  {supportsCLIModelSync && <button type="button" className="gonavi-ai-provider-model-sync"
+                    disabled={modelsLoading} aria-busy={modelsLoading}
+                    onClick={(event) => { event.preventDefault(); event.stopPropagation(); refreshCLIModels(); }}>
+                    <SyncOutlined spin={modelsLoading} aria-hidden="true" />
+                    <span>{copy('ai_settings.models.sync_cli')}</span>
+                  </button>}
                   <button type="button" className="gonavi-ai-provider-model-count" aria-haspopup="dialog" onClick={(event) => {
                     event.preventDefault(); event.stopPropagation();
-                    if (usesLocalCLI) { catalogRefreshForced.current = true; setCatalogRefresh((value) => value + 1); }
+                    if (usesLocalCLI) setCatalogRefresh((value) => value + 1);
                     setModelManagementRequest((previous) => ({ scope: editorScope, request: previous.request + 1 }));
                   }}
                     aria-label={copy('ai_settings.models.manage')}>{copy('ai_settings.models.enabled_count', { enabled: enabledModelOptions.length, total: modelOptions.length })}</button>
@@ -768,10 +805,18 @@ const AISettingsProvidersSection: React.FC<AISettingsProvidersSectionProps> = ({
                   customLabel={copy('ai_settings.form.model_use_custom')} options={modelOptions} disabledModels={watchedDisabledModels} />
               </Form.Item>
               {usesLocalCLI && <Form.Item label={fieldLabel('ai_settings.form.effort')} name="effort">
-                {activeCLICapability?.supportsEffort ? <Select allowClear size="middle" placeholder={copy('ai_settings.form.effort_placeholder_empty')}
+                {effortSelectable ? <Select allowClear={Boolean(activeCLICapability?.supportsEffort)} size="middle" placeholder={copy('ai_settings.form.effort_placeholder_empty')}
                   popupMatchSelectWidth={false} classNames={{ popup: { root: 'gonavi-ai-provider-form-popup' } }}
-                  options={activeEffortValues.map((value) => ({ label: value, value }))} />
-                  : <Input size="middle" disabled placeholder={copy(activeCLICapability?.supportsEffort === false ? 'ai_settings.form.effort_unsupported' : 'ai_settings.form.effort_placeholder_empty')} />}
+                  options={activeEffortValues.map((value) => ({ label: value, value }))}
+                  onChange={(value) => {
+                    if (!cursorCLIEffort) return;
+                    const nextModel = applyCursorCLIModelEffort(String(watchedModel || ''), String(value || ''), modelCatalog?.models);
+                    if (nextModel && nextModel !== String(watchedModel || '').trim()) {
+                      form.setFieldValue('model', nextModel);
+                      onValuesChange?.({ model: nextModel });
+                    }
+                  }} />
+                  : <Input size="middle" disabled placeholder={copy(activeCLICapability?.supportsEffort === false || cursorCLIEffort ? 'ai_settings.form.effort_unsupported' : 'ai_settings.form.effort_placeholder_empty')} />}
               </Form.Item>}
             </div>
             {usesLocalCLI ? <>

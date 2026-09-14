@@ -23,19 +23,29 @@ export interface CLIModelCatalog {
 
 export const parseCLIModelCatalog = (value: unknown): CLIModelCatalog | null => {
   if (!value || typeof value !== 'object') return null;
-  const result = value as CLIModelCatalog;
+  const result = value as CLIModelCatalog & { defaultModel?: string | null; modelCapabilities?: CLIModelCatalog['modelCapabilities'] | null };
   if (!Array.isArray(result.models) || result.models.some((model) => typeof model !== 'string')
     || !['none', 'cache', 'cli', 'aliases', 'app-server'].includes(result.source) || typeof result.stale !== 'boolean') return null;
-  if (result.defaultModel !== undefined && typeof result.defaultModel !== 'string') return null;
-  if (result.modelCapabilities !== undefined) {
-    if (!result.modelCapabilities || typeof result.modelCapabilities !== 'object' || Array.isArray(result.modelCapabilities)) return null;
-    for (const capability of Object.values(result.modelCapabilities)) {
+  // Wails encodes Go's empty string / nil map as "" and null. Those are absent
+  // fields, not an invalid catalog; rejecting them made Sync from CLI look failed.
+  const defaultModel = result.defaultModel == null || result.defaultModel === '' ? undefined : result.defaultModel;
+  if (defaultModel !== undefined && typeof defaultModel !== 'string') return null;
+  const rawCapabilities = result.modelCapabilities;
+  if (rawCapabilities != null) {
+    if (typeof rawCapabilities !== 'object' || Array.isArray(rawCapabilities)) return null;
+    for (const capability of Object.values(rawCapabilities)) {
       if (!capability || typeof capability !== 'object' || !Array.isArray(capability.effortValues)
         || capability.effortValues.some((effort) => typeof effort !== 'string')
         || (capability.defaultEffort !== undefined && typeof capability.defaultEffort !== 'string')) return null;
     }
   }
-  return { ...result, models: result.stale ? [] : result.models };
+  return {
+    models: result.stale ? [] : result.models,
+    source: result.source,
+    stale: result.stale,
+    ...(defaultModel ? { defaultModel } : {}),
+    ...(rawCapabilities ? { modelCapabilities: rawCapabilities } : {}),
+  };
 };
 
 // Every model control shares this candidate pool; changing suggestions must not

@@ -119,6 +119,9 @@ export const resolveMCPClientCommandName = (status: AIMCPClientInstallStatus | u
   if (status?.client === 'opencode') {
     return 'opencode';
   }
+  if (status?.client === 'cursor') {
+    return 'cursor';
+  }
   if (status?.client === 'zcode') {
     return 'zcode';
   }

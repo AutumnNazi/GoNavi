@@ -13,12 +13,16 @@ import (
 const (
 	zCodeClientCommandName    = "zcode"
 	kimiCodeClientCommandName = "kimi"
+	cursorClientCommandName   = "cursor"
+	cursorAgentCommandName    = "cursor-agent"
 )
 
 var zCodeConfigPathFunc = resolveZCodeConfigPath
 var kimiCodeConfigPathFunc = resolveKimiCodeConfigPath
+var cursorConfigPathFunc = resolveCursorConfigPath
 var zCodeClientDetectFunc = detectZCodeClient
 var zCodeHomeDirFunc = resolveZCodeHomeDir
+var cursorHomeDirFunc = resolveCursorHomeDir
 
 type externalJSONMCPClientSpec struct {
 	Client         string
@@ -61,6 +65,20 @@ var kimiCodeMCPClientSpec = externalJSONMCPClientSpec{
 	EnabledKey: "enabled",
 }
 
+var cursorMCPClientSpec = externalJSONMCPClientSpec{
+	Client:      "cursor",
+	DisplayName: "Cursor",
+	CLICommand:  cursorClientCommandName,
+	ConfigPathFunc: func() (string, error) {
+		return cursorConfigPathFunc()
+	},
+	DetectFunc: func() (bool, string) {
+		return detectCursorClient()
+	},
+	ServerPath: []string{"mcpServers"},
+	EnabledKey: "enabled",
+}
+
 // AIInstallZCodeMCP writes GoNavi into ZCode's user-level MCP config.
 func (s *Service) AIInstallZCodeMCP() (ai.MCPClientInstallResult, error) {
 	return s.installExternalJSONMCPClient(zCodeMCPClientSpec)
@@ -69,6 +87,11 @@ func (s *Service) AIInstallZCodeMCP() (ai.MCPClientInstallResult, error) {
 // AIInstallKimiMCP writes GoNavi into Kimi Code's user-level MCP config.
 func (s *Service) AIInstallKimiMCP() (ai.MCPClientInstallResult, error) {
 	return s.installExternalJSONMCPClient(kimiCodeMCPClientSpec)
+}
+
+// AIInstallCursorMCP writes GoNavi into Cursor's user-level MCP config.
+func (s *Service) AIInstallCursorMCP() (ai.MCPClientInstallResult, error) {
+	return s.installExternalJSONMCPClient(cursorMCPClientSpec)
 }
 
 func resolveZCodeConfigPath() (string, error) {
@@ -81,6 +104,14 @@ func resolveZCodeConfigPath() (string, error) {
 
 func resolveKimiCodeConfigPath() (string, error) {
 	configRoot, err := resolveMCPClientConfigRoot("KIMI_CODE_HOME", ".kimi-code")
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(configRoot, "mcp.json"), nil
+}
+
+func resolveCursorConfigPath() (string, error) {
+	configRoot, err := resolveMCPClientConfigRoot("CURSOR_HOME", ".cursor")
 	if err != nil {
 		return "", err
 	}
@@ -112,6 +143,34 @@ func resolveZCodeHomeDir() string {
 	// The MCP config lives at ~/.zcode/cli/config.json; the installation marker
 	// is the directory two levels up (~/.zcode).
 	homeDir := filepath.Dir(filepath.Dir(configPath))
+	info, err := os.Stat(homeDir)
+	if err != nil || !info.IsDir() {
+		return ""
+	}
+	return filepath.Clean(homeDir)
+}
+
+// detectCursorClient reports whether Cursor is present on this machine.
+// The IDE keeps a stable user-level ~/.cursor directory even when the
+// cursor / cursor-agent commands are missing from PATH (common for GUI
+// installs), so that directory is checked first. CLI lookup is only a
+// fallback for machines that have the CLI without a populated home dir.
+func detectCursorClient() (bool, string) {
+	if homeDir := cursorHomeDirFunc(); homeDir != "" {
+		return true, homeDir
+	}
+	if detected, path := detectLocalCLICommand(cursorAgentCommandName); detected {
+		return true, path
+	}
+	return detectLocalCLICommand(cursorClientCommandName)
+}
+
+func resolveCursorHomeDir() string {
+	configPath, err := cursorConfigPathFunc()
+	if err != nil {
+		return ""
+	}
+	homeDir := filepath.Dir(configPath)
 	info, err := os.Stat(homeDir)
 	if err != nil || !info.IsDir() {
 		return ""

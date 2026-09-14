@@ -7,6 +7,7 @@ export type MCPClientKey =
   | 'claude-code'
   | 'codex'
   | 'opencode'
+  | 'cursor'
   | 'zcode'
   | 'deepseek-harness'
   | 'kimi'
@@ -18,6 +19,7 @@ const AUTO_MCP_CLIENTS = new Set<MCPClientKey>([
   'claude-code',
   'codex',
   'opencode',
+  'cursor',
   'zcode',
   'deepseek-harness',
   'kimi',
@@ -201,6 +203,16 @@ export const EMPTY_MCP_CLIENT_STATUSES: AIMCPClientInstallStatus[] = [
     message: 'No OpenCode user-level GoNavi MCP configuration was detected',
   },
   {
+    client: 'cursor',
+    displayName: 'Cursor',
+    installMode: 'auto',
+    installed: false,
+    matchesCurrent: false,
+    clientDetected: false,
+    clientCommand: 'cursor',
+    message: 'No Cursor user-level GoNavi MCP configuration was detected',
+  },
+  {
     client: 'zcode',
     displayName: 'ZCode',
     installMode: 'auto',
@@ -266,6 +278,7 @@ const MCP_CLIENT_ORDER: MCPClientKey[] = [
   'claude-code',
   'codex',
   'opencode',
+  'cursor',
   'zcode',
   'deepseek-harness',
   'kimi',
@@ -286,6 +299,7 @@ export const isMCPClientKey = (client: string): client is MCPClientKey =>
   client === 'claude-code' ||
   client === 'codex' ||
   client === 'opencode' ||
+  client === 'cursor' ||
   client === 'zcode' ||
   client === 'deepseek-harness' ||
   client === 'kimi' ||
@@ -443,7 +457,7 @@ export const buildRemoteMCPClientGuide = (
     `- ${translateMCPClientCopy(
       translate,
       'ai_settings.mcp_server.remote_quick_start.guide.boundary.local_stdio',
-      'The built-in local GoNavi MCP entry is stdio, suitable for clients such as Claude Code / Codex / OpenCode / ZCode / DeepSeek Harness / Kimi Code / Grok Build running on the same machine as GoNavi.',
+      'The built-in local GoNavi MCP entry is stdio, suitable for clients such as Claude Code / Codex / OpenCode / Cursor / ZCode / DeepSeek Harness / Kimi Code / Grok Build running on the same machine as GoNavi.',
     )}`,
     `- ${translateMCPClientCopy(
       translate,

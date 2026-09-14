@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -384,4 +385,178 @@ func MergeProviderCLIEnv(env []string, extra map[string]string) []string {
 		out = append(filtered, prefix+value)
 	}
 	return out
+}
+
+const loginShellEnvLinePrefix = "__GONAVI_LOGIN_ENV__"
+
+type loginShellEnvSnapshot struct {
+	values    map[string]string
+	expiresAt time.Time
+}
+
+var (
+	loginShellEnvLookupFunc = lookupLoginShellEnvValues
+	loginShellEnvCacheTTL   = 60 * time.Second
+	loginShellEnvCacheMu    sync.Mutex
+	loginShellEnvCache      loginShellEnvSnapshot
+)
+
+func resetLoginShellEnvCache() {
+	loginShellEnvCacheMu.Lock()
+	defer loginShellEnvCacheMu.Unlock()
+	loginShellEnvCache = loginShellEnvSnapshot{}
+}
+
+// MergeMissingLoginShellEnv fills empty keys from a login shell (.zshrc / .bash_profile).
+// Desktop apps do not inherit those exports; command lookup already uses the same shell.
+func MergeMissingLoginShellEnv(env []string, keys []string) []string {
+	missing := make([]string, 0, len(keys))
+	for _, key := range keys {
+		key = strings.TrimSpace(key)
+		if key == "" || strings.TrimSpace(envValue(env, key)) != "" {
+			continue
+		}
+		missing = append(missing, key)
+	}
+	if len(missing) == 0 {
+		return env
+	}
+	values := loginShellEnvLookupFunc(missing)
+	extra := make(map[string]string, len(values))
+	for _, key := range missing {
+		if value := values[key]; value != "" {
+			extra[key] = value
+		}
+	}
+	return MergeProviderCLIEnv(env, extra)
+}
+
+func lookupLoginShellEnvValues(keys []string) map[string]string {
+	return LookupLoginShellEnvValuesUsing(CLILookupHooks{}, keys)
+}
+
+func LookupLoginShellEnvValuesUsing(hooks CLILookupHooks, keys []string) map[string]string {
+	result := make(map[string]string, len(keys))
+	safeKeys := make([]string, 0, len(keys))
+	for _, key := range keys {
+		key = strings.TrimSpace(key)
+		if !isSafeCLIEnvKey(key) {
+			continue
+		}
+		safeKeys = append(safeKeys, key)
+	}
+	if len(safeKeys) == 0 {
+		return result
+	}
+
+	hooks = normalizeCLILookupHooks(hooks)
+	if hooks.GOOS == "windows" {
+		return result
+	}
+
+	now := time.Now()
+	loginShellEnvCacheMu.Lock()
+	if now.Before(loginShellEnvCache.expiresAt) && loginShellEnvCache.values != nil {
+		hit := true
+		for _, key := range safeKeys {
+			if _, ok := loginShellEnvCache.values[key]; !ok {
+				hit = false
+				break
+			}
+		}
+		if hit {
+			for _, key := range safeKeys {
+				result[key] = loginShellEnvCache.values[key]
+			}
+			loginShellEnvCacheMu.Unlock()
+			return result
+		}
+	}
+	loginShellEnvCacheMu.Unlock()
+
+	fetched := fetchLoginShellEnvValues(hooks, safeKeys)
+	loginShellEnvCacheMu.Lock()
+	if loginShellEnvCache.values == nil {
+		loginShellEnvCache.values = make(map[string]string)
+	}
+	for _, key := range safeKeys {
+		value := fetched[key]
+		loginShellEnvCache.values[key] = value
+		result[key] = value
+	}
+	loginShellEnvCache.expiresAt = time.Now().Add(loginShellEnvCacheTTL)
+	loginShellEnvCacheMu.Unlock()
+	return result
+}
+
+func fetchLoginShellEnvValues(hooks CLILookupHooks, keys []string) map[string]string {
+	command := buildLoginShellEnvDumpCommand(keys)
+	if command == "" {
+		return map[string]string{}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), hooks.Timeout)
+	defer cancel()
+	for _, shell := range hooks.ShellCandidates() {
+		shell = strings.TrimSpace(shell)
+		if shell == "" || ctx.Err() != nil {
+			continue
+		}
+		output, err := hooks.ShellOutput(ctx, shell, command)
+		if err != nil || ctx.Err() != nil {
+			continue
+		}
+		return parseLoginShellEnvDump(string(output), keys)
+	}
+	return map[string]string{}
+}
+
+func buildLoginShellEnvDumpCommand(keys []string) string {
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if !isSafeCLIEnvKey(key) {
+			continue
+		}
+		parts = append(parts, "printf '"+loginShellEnvLinePrefix+key+"=%s\\n' \"${"+key+"-}\"")
+	}
+	return strings.Join(parts, "; ")
+}
+
+func parseLoginShellEnvDump(output string, keys []string) map[string]string {
+	wanted := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		wanted[key] = struct{}{}
+	}
+	result := make(map[string]string, len(keys))
+	for _, raw := range strings.Split(output, "\n") {
+		line := strings.TrimSuffix(raw, "\r")
+		rest, ok := strings.CutPrefix(line, loginShellEnvLinePrefix)
+		if !ok {
+			continue
+		}
+		key, value, found := strings.Cut(rest, "=")
+		if !found {
+			continue
+		}
+		if _, want := wanted[key]; !want {
+			continue
+		}
+		result[key] = value
+	}
+	return result
+}
+
+func isSafeCLIEnvKey(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, char := range name {
+		if char >= 'A' && char <= 'Z' || char >= 'a' && char <= 'z' || char == '_' {
+			continue
+		}
+		if i > 0 && char >= '0' && char <= '9' {
+			continue
+		}
+		return false
+	}
+	return true
 }

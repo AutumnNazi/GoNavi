@@ -32,7 +32,7 @@ const MCP_CLIENT_INSTALL_STEPS = [
     titleKey: 'ai_chat.mcp_client.install.selector.step.target.title',
     titleFallback: 'Choose target client',
     detailKey: 'ai_chat.mcp_client.install.selector.step.target.detail',
-    detailFallback: 'Detected local Claude Code, Codex, OpenCode, ZCode, DeepSeek Harness, Kimi Code, and Grok Build clients can be configured automatically. OpenClaw/Hermans use remote connection guidance.',
+    detailFallback: 'Detected local Claude Code, Codex, OpenCode, Cursor, ZCode, DeepSeek Harness, Kimi Code, and Grok Build clients can be configured automatically. OpenClaw/Hermans use remote connection guidance.',
   },
   {
     step: '2',
@@ -182,7 +182,7 @@ const AIMCPClientSelectorPanel: React.FC<AIMCPClientSelectorPanelProps> = ({
           <span className="gonavi-ai-mcp-summary-note" style={{ color: overlayTheme.mutedText }}>
             {copy(
               'ai_chat.mcp_client.install.intro.description',
-              'After their local command is detected, Claude Code, Codex, OpenCode, ZCode, DeepSeek Harness, Kimi Code, and Grok Build can receive a user-level MCP config. Cloud Agents such as OpenClaw and Hermans use remote connection guidance so database passwords are not copied to the cloud.',
+              'After their local command is detected, Claude Code, Codex, OpenCode, Cursor, ZCode, DeepSeek Harness, Kimi Code, and Grok Build can receive a user-level MCP config. Cloud Agents such as OpenClaw and Hermans use remote connection guidance so database passwords are not copied to the cloud.',
             )}
           </span>
         </summary>

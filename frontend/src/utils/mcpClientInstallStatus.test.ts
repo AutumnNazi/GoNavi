@@ -47,6 +47,7 @@ describe('mcpClientInstallStatus helpers', () => {
       EMPTY_MCP_CLIENT_STATUSES[6],
       EMPTY_MCP_CLIENT_STATUSES[7],
       EMPTY_MCP_CLIENT_STATUSES[8],
+      EMPTY_MCP_CLIENT_STATUSES[9],
     ]);
   });
 
@@ -55,6 +56,7 @@ describe('mcpClientInstallStatus helpers', () => {
       'claude-code',
       'codex',
       'opencode',
+      'cursor',
       'zcode',
       'deepseek-harness',
       'kimi',
@@ -67,12 +69,13 @@ describe('mcpClientInstallStatus helpers', () => {
       'claude-code',
       'codex',
       'opencode',
+      'cursor',
       'zcode',
       'deepseek-harness',
       'kimi',
       'grok-build',
     ]);
-    for (const client of ['opencode', 'zcode', 'deepseek-harness', 'kimi', 'grok-build']) {
+    for (const client of ['opencode', 'cursor', 'zcode', 'deepseek-harness', 'kimi', 'grok-build']) {
       const status = EMPTY_MCP_CLIENT_STATUSES.find((item) => item.client === client);
       expect(supportsAutoMCPClientInstall(status)).toBe(true);
       expect(isRemoteMCPClientStatus(status)).toBe(false);
@@ -294,7 +297,7 @@ describe('mcpClientInstallStatus helpers', () => {
     expect(guide).toContain('The cloud Agent does not need to store database passwords.');
     expect(guide).toContain('Remote access uses schema-only mode by default and does not register execute_sql');
     expect(guide).toContain('it cannot use the Windows local stdio command directly');
-    expect(guide).toContain('Claude Code / Codex / OpenCode / ZCode / DeepSeek Harness / Kimi Code / Grok Build');
+    expect(guide).toContain('Claude Code / Codex / OpenCode / Cursor / ZCode / DeepSeek Harness / Kimi Code / Grok Build');
     expect(guide).toContain('allowMutating=true');
     expect(guide).toContain('"type": "streamable-http"');
     expect(guide).toContain('"Authorization": "Bearer <random-token>"');

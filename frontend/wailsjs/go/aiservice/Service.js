@@ -110,6 +110,10 @@ export function AIInstallCodexMCP() {
   return window['go']['aiservice']['Service']['AIInstallCodexMCP']();
 }
 
+export function AIInstallCursorMCP() {
+  return window['go']['aiservice']['Service']['AIInstallCursorMCP']();
+}
+
 export function AIInstallDeepSeekHarnessMCP() {
   return window['go']['aiservice']['Service']['AIInstallDeepSeekHarnessMCP']();
 }

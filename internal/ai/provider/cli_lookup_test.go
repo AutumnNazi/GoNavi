@@ -267,3 +267,82 @@ func TestMergeProviderCLIEnvOverridesMatchingKeys(t *testing.T) {
 		t.Fatalf("old FOO remained: %#v", got)
 	}
 }
+
+func TestMergeMissingLoginShellEnvFillsEmptyKeysAndKeepsExisting(t *testing.T) {
+	originalLookup := loginShellEnvLookupFunc
+	t.Cleanup(func() { loginShellEnvLookupFunc = originalLookup })
+	calls := 0
+	loginShellEnvLookupFunc = func(keys []string) map[string]string {
+		calls++
+		got := map[string]string{}
+		for _, key := range keys {
+			got[key] = "from-shell-" + key
+		}
+		return got
+	}
+
+	filled := MergeMissingLoginShellEnv([]string{"PATH=/bin"}, []string{"CURSOR_API_KEY", "CURSOR_AUTH_TOKEN"})
+	if envValue(filled, "CURSOR_API_KEY") != "from-shell-CURSOR_API_KEY" || envValue(filled, "CURSOR_AUTH_TOKEN") != "from-shell-CURSOR_AUTH_TOKEN" {
+		t.Fatalf("missing login-shell keys were not filled: %#v", filled)
+	}
+	if calls != 1 {
+		t.Fatalf("lookup calls = %d, want 1", calls)
+	}
+
+	kept := MergeMissingLoginShellEnv([]string{"CURSOR_API_KEY=already"}, []string{"CURSOR_API_KEY"})
+	if envValue(kept, "CURSOR_API_KEY") != "already" {
+		t.Fatalf("existing key must win: %#v", kept)
+	}
+	if calls != 1 {
+		t.Fatalf("lookup must not run when keys are already present, calls=%d", calls)
+	}
+}
+
+func TestParseLoginShellEnvDumpIgnoresShellNoise(t *testing.T) {
+	output := "Last login: today\n" + loginShellEnvLinePrefix + "CURSOR_API_KEY=sk-from-zshrc\nignored\n"
+	got := parseLoginShellEnvDump(output, []string{"CURSOR_API_KEY", "CURSOR_AUTH_TOKEN"})
+	if got["CURSOR_API_KEY"] != "sk-from-zshrc" {
+		t.Fatalf("parsed %#v", got)
+	}
+	if _, ok := got["CURSOR_AUTH_TOKEN"]; ok {
+		t.Fatalf("empty key should stay absent: %#v", got)
+	}
+}
+
+func TestLookupLoginShellEnvValuesUsingSkipsWindows(t *testing.T) {
+	got := LookupLoginShellEnvValuesUsing(CLILookupHooks{
+		GOOS:            "windows",
+		ShellCandidates: func() []string { t.Fatal("windows must not use login shell env"); return nil },
+	}, []string{"CURSOR_API_KEY"})
+	if len(got) != 0 {
+		t.Fatalf("windows lookup = %#v", got)
+	}
+}
+
+func TestLookupLoginShellEnvValuesUsingReadsPrefixedDumpAndCaches(t *testing.T) {
+	resetLoginShellEnvCache()
+	t.Cleanup(resetLoginShellEnvCache)
+	calls := 0
+	got := LookupLoginShellEnvValuesUsing(CLILookupHooks{
+		GOOS:            "darwin",
+		Timeout:         time.Second,
+		ShellCandidates: func() []string { return []string{"/bin/zsh"} },
+		ShellOutput: func(ctx context.Context, shell, command string) ([]byte, error) {
+			calls++
+			if shell != "/bin/zsh" || !strings.Contains(command, "CURSOR_API_KEY") {
+				t.Fatalf("shell=%q command=%q", shell, command)
+			}
+			return []byte("Last login\n" + loginShellEnvLinePrefix + "CURSOR_API_KEY=from-profile\n"), nil
+		},
+	}, []string{"CURSOR_API_KEY"})
+	if got["CURSOR_API_KEY"] != "from-profile" || calls != 1 {
+		t.Fatalf("first lookup = %#v calls=%d", got, calls)
+	}
+	cached := LookupLoginShellEnvValuesUsing(CLILookupHooks{
+		GOOS:            "darwin",
+		ShellCandidates: func() []string { t.Fatal("cache hit must not spawn a shell"); return nil },
+	}, []string{"CURSOR_API_KEY"})
+	if cached["CURSOR_API_KEY"] != "from-profile" || calls != 1 {
+		t.Fatalf("cached lookup = %#v calls=%d", cached, calls)
+	}
+}

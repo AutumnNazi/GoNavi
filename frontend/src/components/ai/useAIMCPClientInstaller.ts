@@ -39,6 +39,7 @@ interface AIMCPClientInstallerService {
   AIInstallClaudeCodeMCP?: () => Promise<MCPClientInstallResult>;
   AIInstallCodexMCP?: () => Promise<MCPClientInstallResult>;
   AIInstallOpenCodeMCP?: () => Promise<MCPClientInstallResult>;
+  AIInstallCursorMCP?: () => Promise<MCPClientInstallResult>;
   AIInstallZCodeMCP?: () => Promise<MCPClientInstallResult>;
   AIInstallDeepSeekHarnessMCP?: () => Promise<MCPClientInstallResult>;
   AIInstallKimiMCP?: () => Promise<MCPClientInstallResult>;
@@ -49,6 +50,7 @@ const MCP_CLIENT_DISPLAY_NAMES: Record<MCPClientKey, string> = {
   'claude-code': 'Claude Code',
   codex: 'Codex',
   opencode: 'OpenCode',
+  cursor: 'Cursor',
   zcode: 'ZCode',
   'deepseek-harness': 'DeepSeek Harness',
   kimi: 'Kimi Code',
@@ -188,6 +190,12 @@ export const useAIMCPClientInstaller = ({
             throw new Error(copy('ai_chat.mcp_client.install.message.opencode_not_supported', 'This version does not support automatic OpenCode MCP installation yet'));
           }
           await service.AIInstallOpenCodeMCP();
+          break;
+        case 'cursor':
+          if (typeof service?.AIInstallCursorMCP !== 'function') {
+            throw new Error(copy('ai_chat.mcp_client.install.message.auto_install_not_supported', 'This version does not support automatic {{label}} MCP installation yet', { label: targetLabel }));
+          }
+          await service.AIInstallCursorMCP();
           break;
         case 'codex':
           if (typeof service?.AIInstallCodexMCP !== 'function') {

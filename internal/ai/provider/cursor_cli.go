@@ -227,14 +227,21 @@ func buildCursorCLIArgsWithStream(config ai.ProviderConfig, stream bool) ([]stri
 	if !ok {
 		return nil, fmt.Errorf("Cursor CLI capability is not registered")
 	}
-	if _, err := capability.NormalizeEffort(config.Effort); err != nil {
+	effort, err := capability.NormalizeEffort(config.Effort)
+	if err != nil {
 		return nil, err
 	}
 	args := []string{"--print", "--output-format", "json", "--mode", "ask", "--sandbox", "enabled", "--trust"}
 	if stream {
 		args = []string{"--print", "--output-format", "stream-json", "--stream-partial-output", "--mode", "ask", "--sandbox", "enabled", "--trust"}
 	}
-	if model := strings.TrimSpace(config.Model); model != "" {
+	model := strings.TrimSpace(config.Model)
+	if effort != "" {
+		if next := applyCursorCLIModelEffort(model, effort); next != "" {
+			model = next
+		}
+	}
+	if model != "" {
 		args = append(args, "--model", model)
 	}
 	return args, nil
@@ -259,10 +266,13 @@ func parseCursorCLIResponse(output []byte) (string, error) {
 	return strings.TrimSpace(result.Result), nil
 }
 
+var cursorCLILoginShellAuthKeys = []string{"CURSOR_API_KEY", "CURSOR_AUTH_TOKEN"}
+
 func buildCursorCLIEnv(env []string, dataDir string) []string {
-	// Keep HOME and native policy/config resolution for existing login and
-	// managed policies. Only request data is temporary; hooks are not disabled.
-	env = removeEnvKeys(env, "CURSOR_API_KEY", "CURSOR_AUTH_TOKEN", "CURSOR_STATSIG_OVERRIDES", "CURSOR_DATA_DIR", "NO_COLOR", "FORCE_COLOR")
+	// Keep HOME, CURSOR_CONFIG_DIR, and auth env (API key / token, including
+	// values loaded from a login shell). Isolate only request data and telemetry
+	// overrides; hooks are not disabled.
+	env = removeEnvKeys(env, "CURSOR_STATSIG_OVERRIDES", "CURSOR_DATA_DIR", "NO_COLOR", "FORCE_COLOR")
 	env = append(env, "CURSOR_DATA_DIR="+dataDir, "NO_COLOR=1", "FORCE_COLOR=0")
 	return env
 }
@@ -341,6 +351,7 @@ func startCursorCLICommandWithConfig(ctx context.Context, config ai.ProviderConf
 	cmd := newLocalCLICommand(cursorCommandContext, ctx, command, commandArgs...)
 	cmd.Dir = workspace
 	customEnv := MergeProviderCLIEnv(cmd.Environ(), config.CLIEnv)
+	customEnv = MergeMissingLoginShellEnv(customEnv, cursorCLILoginShellAuthKeys)
 	cmd.Env = EnrichCLICommandPATH(buildCursorCLIEnv(customEnv, filepath.Join(workspace, "data")), command)
 	cmd.Stdin = strings.NewReader(prompt)
 	cmd.WaitDelay = time.Second

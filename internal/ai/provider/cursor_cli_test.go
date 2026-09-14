@@ -42,7 +42,7 @@ func TestCursorCLIResolverDoesNotConfuseOtherVendorsOrEditor(t *testing.T) {
 	}
 }
 
-func TestCursorCLITransportAndUnsupportedEffort(t *testing.T) {
+func TestCursorCLITransportRejectsAPIKeyMode(t *testing.T) {
 	if _, err := NewCursorCLIProvider(ai.ProviderConfig{AuthMode: "api-key"}); err == nil {
 		t.Fatal("local CLI must reject API-key mode")
 	}
@@ -60,10 +60,19 @@ func TestCursorCLITransportAndUnsupportedEffort(t *testing.T) {
 	if _, ok := remote.(*CustomProvider).inner.(*CursorAgentProvider); !ok {
 		t.Fatal("existing Cursor cloud API routing must be preserved")
 	}
-	commands := overrideCursorCLIProcess(t, "echo", "", 0)
-	local, _ = NewCursorCLIProvider(ai.ProviderConfig{AuthMode: "local-cli", Effort: "high"})
-	if _, err := local.Chat(context.Background(), ai.ChatRequest{}); err == nil || len(*commands) != 0 {
-		t.Fatal("unsupported effort must fail before any CLI request")
+}
+
+func TestCursorCLIArgsRewriteEffortIntoModelID(t *testing.T) {
+	args, err := buildCursorCLIArgs(ai.ProviderConfig{AuthMode: "local-cli", Model: "cursor-grok-4.6-xhigh", Effort: "high"})
+	if err != nil || !hasArgSequence(args, "--model", "cursor-grok-4.6-high") || hasArg(args, "--effort") {
+		t.Fatalf("effort must rewrite --model and never send --effort: %v %v", args, err)
+	}
+	fast, err := buildCursorCLIArgs(ai.ProviderConfig{AuthMode: "local-cli", Model: "cursor-grok-4.6-xhigh-fast", Effort: "low"})
+	if err != nil || !hasArgSequence(fast, "--model", "cursor-grok-4.6-low-fast") {
+		t.Fatalf("fast variants must keep -fast: %v %v", fast, err)
+	}
+	if _, err := buildCursorCLIArgs(ai.ProviderConfig{AuthMode: "local-cli", Model: "cursor-grok-4.6-xhigh", Effort: "bogus"}); err == nil {
+		t.Fatal("unknown effort tokens must fail before a CLI request")
 	}
 }
 
@@ -73,10 +82,11 @@ func TestCursorCLIEnvironmentRetainsNativePoliciesWithoutAPIOverrides(t *testing
 		"CURSOR_API_KEY=fixture", "CURSOR_AUTH_TOKEN=fixture", "CURSOR_STATSIG_OVERRIDES=fixture",
 		"CURSOR_DATA_DIR=/native-data", "FORCE_COLOR=1",
 	}, "/temporary-data")
-	for _, key := range []string{"CURSOR_API_KEY", "CURSOR_AUTH_TOKEN", "CURSOR_STATSIG_OVERRIDES"} {
-		if envValue(env, key) != "" {
-			t.Fatalf("ambient override must be removed: %s", key)
-		}
+	if envValue(env, "CURSOR_API_KEY") != "fixture" || envValue(env, "CURSOR_AUTH_TOKEN") != "fixture" {
+		t.Fatal("login env from shell or CLI config must be preserved")
+	}
+	if envValue(env, "CURSOR_STATSIG_OVERRIDES") != "" {
+		t.Fatal("statsig override must be removed")
 	}
 	if envValue(env, "HOME") != "/native-home" || envValue(env, "CURSOR_CONFIG_DIR") != "/native-policy" || envValue(env, "CURSOR_DATA_DIR") != "/temporary-data" {
 		t.Fatal("preserve native login/policies and isolate only request data")
@@ -125,10 +135,46 @@ func TestCursorCLIModelCatalogParsesNativeRowsAndRejectsInvalidOutput(t *testing
 	if !hasArg((*commands)[0].Args, "models") || hasArg((*commands)[0].Args, "--print") {
 		t.Fatal("model discovery must not send a chat request")
 	}
+	if catalog.ModelCapabilities != nil {
+		t.Fatalf("fixture ids without effort suffixes must not invent capabilities: %+v", catalog.ModelCapabilities)
+	}
 	for _, invalid := range []string{"", "No models available for this account.", "* other-vendor-model", "Available models\nPlease log in", "Available models\nError: unauthorized", "Available models\nmodel - Model\nUnknown output format"} {
 		if models, err := parseCursorCLIModels(invalid); err == nil || len(models) != 0 {
 			t.Fatalf("invalid/error output must not become candidates: %q %v", invalid, models)
 		}
+	}
+}
+
+func TestCursorCLIModelCapabilitiesGroupEffortSuffixes(t *testing.T) {
+	models := []string{
+		"auto", "composer-2.5", "composer-2.5-fast",
+		"cursor-grok-4.6-low", "cursor-grok-4.6-medium", "cursor-grok-4.6-high", "cursor-grok-4.6-xhigh",
+		"cursor-grok-4.6-low-fast", "cursor-grok-4.6-high-fast", "cursor-grok-4.6-xhigh-fast",
+		"gpt-5.3-codex", "gpt-5.3-codex-low", "gpt-5.3-codex-high",
+		"claude-opus-5-thinking-high", "claude-opus-5-thinking-xhigh",
+	}
+	capabilities := cursorCLIModelCapabilities(models)
+	if capabilities["auto"] != (CLIModelCapability{}) || capabilities["composer-2.5"].EffortValues != nil {
+		t.Fatalf("single-id families must not grow an effort selector: %+v", capabilities)
+	}
+	grok := capabilities["cursor-grok-4.6-xhigh"]
+	if grok.DefaultEffort != "xhigh" || !reflect.DeepEqual(grok.EffortValues, []string{"low", "medium", "high", "xhigh"}) {
+		t.Fatalf("grok family: %+v", grok)
+	}
+	fast := capabilities["cursor-grok-4.6-xhigh-fast"]
+	if grokFast := fast.EffortValues; !reflect.DeepEqual(grokFast, []string{"low", "high", "xhigh"}) {
+		t.Fatalf("fast variants stay in the fast group: %+v", fast)
+	}
+	codex := capabilities["gpt-5.3-codex"]
+	if !reflect.DeepEqual(codex.EffortValues, []string{"low", "high"}) || codex.DefaultEffort != "" {
+		t.Fatalf("unsuffixed default keeps empty effort: %+v", codex)
+	}
+	thinking := capabilities["claude-opus-5-thinking-high"]
+	if thinking.DefaultEffort != "high" || !reflect.DeepEqual(thinking.EffortValues, []string{"high", "xhigh"}) {
+		t.Fatalf("thinking stays in the family name: %+v", thinking)
+	}
+	if applyCursorCLIModelEffort("cursor-grok-4.6-xhigh-fast", "low") != "cursor-grok-4.6-low-fast" {
+		t.Fatal("fast suffix must be preserved when rewriting effort")
 	}
 }
 
@@ -169,6 +215,30 @@ func TestCursorCLIChatUsesStdinAndTemporaryPermissions(t *testing.T) {
 	}
 }
 
+func TestCursorCLIChatUsesLoginShellAuthWhenProcessEnvIsEmpty(t *testing.T) {
+	t.Setenv("CURSOR_API_KEY", "")
+	t.Setenv("CURSOR_AUTH_TOKEN", "")
+	commands := overrideCursorCLIProcess(t, "echo", "", 0)
+	loginShellEnvLookupFunc = func(keys []string) map[string]string {
+		got := map[string]string{}
+		for _, key := range keys {
+			got[key] = ""
+		}
+		got["CURSOR_API_KEY"] = "from-zshrc"
+		return got
+	}
+	provider, err := NewCursorCLIProvider(ai.ProviderConfig{AuthMode: "local-cli"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.Chat(context.Background(), ai.ChatRequest{Messages: []ai.Message{{Role: "user", Content: "hi"}}}); err != nil {
+		t.Fatalf("login-shell Cursor auth should be forwarded: %v", err)
+	}
+	if got := envValue((*commands)[0].Env, "CURSOR_API_KEY"); got != "from-zshrc" {
+		t.Fatalf("login-shell API key = %q, want from-zshrc", got)
+	}
+}
+
 func TestCursorCLIChatUsesConfiguredExecutableAndSafeEnvironment(t *testing.T) {
 	commands := overrideCursorCLIProcess(t, "echo", "", 0)
 	executable, err := os.Executable()
@@ -183,7 +253,7 @@ func TestCursorCLIChatUsesConfiguredExecutableAndSafeEnvironment(t *testing.T) {
 		CLIPath:  executable,
 		CLIEnv: map[string]string{
 			"GONAVI_CURSOR_CUSTOM": "configured",
-			"CURSOR_API_KEY":       "must-stay-blocked",
+			"CURSOR_API_KEY":       "configured-key",
 		},
 	})
 	if err != nil {
@@ -202,8 +272,8 @@ func TestCursorCLIChatUsesConfiguredExecutableAndSafeEnvironment(t *testing.T) {
 	if got := envValue(command.Env, "GONAVI_CURSOR_CUSTOM"); got != "configured" {
 		t.Fatalf("custom environment = %q, want configured", got)
 	}
-	if got := envValue(command.Env, "CURSOR_API_KEY"); got != "" {
-		t.Fatalf("Cursor API override was restored after isolation: %q", got)
+	if got := envValue(command.Env, "CURSOR_API_KEY"); got != "configured-key" {
+		t.Fatalf("configured Cursor API key must be forwarded: %q", got)
 	}
 }
 
@@ -285,10 +355,11 @@ func TestCursorCLIDeadlinesCancellationAndOutputBounds(t *testing.T) {
 // Every command below is this test executable, never the installed Cursor CLI.
 func overrideCursorCLIProcess(t *testing.T, scenario, output string, exitCode int) *[]*exec.Cmd {
 	t.Helper()
-	originalLookPath, originalCommand, originalAuth := cursorLookPath, cursorCommandContext, cursorCLIAuthCheck
+	originalLookPath, originalCommand, originalAuth, originalLookup := cursorLookPath, cursorCommandContext, cursorCLIAuthCheck, loginShellEnvLookupFunc
 	t.Cleanup(func() {
-		cursorLookPath, cursorCommandContext, cursorCLIAuthCheck = originalLookPath, originalCommand, originalAuth
+		cursorLookPath, cursorCommandContext, cursorCLIAuthCheck, loginShellEnvLookupFunc = originalLookPath, originalCommand, originalAuth, originalLookup
 	})
+	loginShellEnvLookupFunc = func([]string) map[string]string { return map[string]string{} }
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)

@@ -932,8 +932,8 @@ func TestMCPClientInstallStatusMessagesUseServiceLanguage(t *testing.T) {
 		}
 	}
 
-	if len(statuses) != 9 {
-		t.Fatalf("expected 9 MCP client statuses, got %d", len(statuses))
+	if len(statuses) != 10 {
+		t.Fatalf("expected 10 MCP client statuses, got %d", len(statuses))
 	}
 	if !strings.Contains(statuses[0].Message, "No Claude Code user-level GoNavi MCP configuration") {
 		t.Fatalf("unexpected Claude Code status message: %q", statuses[0].Message)
@@ -944,13 +944,13 @@ func TestMCPClientInstallStatusMessagesUseServiceLanguage(t *testing.T) {
 	if !strings.Contains(statuses[2].Message, "No OpenCode user-level GoNavi MCP configuration") {
 		t.Fatalf("unexpected OpenCode status message: %q", statuses[2].Message)
 	}
-	for _, index := range []int{3, 4, 5, 6} {
+	for _, index := range []int{3, 4, 5, 6, 7} {
 		if !strings.Contains(statuses[index].Message, "No ") || !strings.Contains(statuses[index].Message, "user-level GoNavi MCP configuration") {
 			t.Fatalf("unexpected %s status message: %q", statuses[index].Client, statuses[index].Message)
 		}
 	}
-	if !strings.Contains(statuses[7].Message, "usually runs in the cloud or a remote environment") {
-		t.Fatalf("unexpected remote client status message: %q", statuses[7].Message)
+	if !strings.Contains(statuses[8].Message, "usually runs in the cloud or a remote environment") {
+		t.Fatalf("unexpected remote client status message: %q", statuses[8].Message)
 	}
 }
 

@@ -17,6 +17,7 @@ type additionalMCPClientConfigPaths struct {
 	DeepSeekHarness string
 	KimiCode        string
 	GrokBuild       string
+	Cursor          string
 }
 
 func isolateAdditionalMCPClientConfigs(t *testing.T) additionalMCPClientConfigPaths {
@@ -25,6 +26,7 @@ func isolateAdditionalMCPClientConfigs(t *testing.T) additionalMCPClientConfigPa
 	originalDeepSeekHarnessConfigPathFunc := deepSeekHarnessConfigPathFunc
 	originalKimiCodeConfigPathFunc := kimiCodeConfigPathFunc
 	originalGrokBuildConfigPathFunc := grokBuildConfigPathFunc
+	originalCursorConfigPathFunc := cursorConfigPathFunc
 
 	tempDir := t.TempDir()
 	paths := additionalMCPClientConfigPaths{
@@ -32,16 +34,19 @@ func isolateAdditionalMCPClientConfigs(t *testing.T) additionalMCPClientConfigPa
 		DeepSeekHarness: filepath.Join(tempDir, "deepseek-harness", "cordis.patch.yml"),
 		KimiCode:        filepath.Join(tempDir, "kimi", "mcp.json"),
 		GrokBuild:       filepath.Join(tempDir, "grok", "config.toml"),
+		Cursor:          filepath.Join(tempDir, "cursor", "mcp.json"),
 	}
 	zCodeConfigPathFunc = func() (string, error) { return paths.ZCode, nil }
 	deepSeekHarnessConfigPathFunc = func() (string, error) { return paths.DeepSeekHarness, nil }
 	kimiCodeConfigPathFunc = func() (string, error) { return paths.KimiCode, nil }
 	grokBuildConfigPathFunc = func() (string, error) { return paths.GrokBuild, nil }
+	cursorConfigPathFunc = func() (string, error) { return paths.Cursor, nil }
 	t.Cleanup(func() {
 		zCodeConfigPathFunc = originalZCodeConfigPathFunc
 		deepSeekHarnessConfigPathFunc = originalDeepSeekHarnessConfigPathFunc
 		kimiCodeConfigPathFunc = originalKimiCodeConfigPathFunc
 		grokBuildConfigPathFunc = originalGrokBuildConfigPathFunc
+		cursorConfigPathFunc = originalCursorConfigPathFunc
 	})
 	return paths
 }
@@ -94,11 +99,19 @@ func isolateZCodeHomeFallback(t *testing.T) {
 	t.Cleanup(func() { zCodeHomeDirFunc = originalHomeDirFunc })
 }
 
+func isolateCursorHomeFallback(t *testing.T) {
+	t.Helper()
+	originalHomeDirFunc := cursorHomeDirFunc
+	cursorHomeDirFunc = func() string { return "" }
+	t.Cleanup(func() { cursorHomeDirFunc = originalHomeDirFunc })
+}
+
 func TestLocalMCPClientInstallersRejectUndetectedClientsWithoutWritingConfig(t *testing.T) {
 	disableLocalCLICommandShellFallback(t)
 	additionalPaths := isolateAdditionalMCPClientConfigs(t)
 	isolateDeepSeekHarnessClientFallbacks(t)
 	isolateZCodeHomeFallback(t)
+	isolateCursorHomeFallback(t)
 	openCodePath := isolateOpenCodeMCPConfig(t)
 	originalClaudeConfigPathFunc := claudeCodeConfigPathFunc
 	originalCodexConfigPathFunc := codexConfigPathFunc
@@ -127,6 +140,7 @@ func TestLocalMCPClientInstallersRejectUndetectedClientsWithoutWritingConfig(t *
 		{name: "Claude Code", path: claudePath, run: func() error { _, err := service.AIInstallClaudeCodeMCP(); return err }},
 		{name: "Codex", path: codexPath, run: func() error { _, err := service.AIInstallCodexMCP(); return err }},
 		{name: "OpenCode", path: openCodePath, run: func() error { _, err := service.AIInstallOpenCodeMCP(); return err }},
+		{name: "Cursor", path: additionalPaths.Cursor, run: func() error { _, err := service.AIInstallCursorMCP(); return err }},
 		{name: "ZCode", path: additionalPaths.ZCode, run: func() error { _, err := service.AIInstallZCodeMCP(); return err }},
 		{name: "DeepSeek Harness", path: additionalPaths.DeepSeekHarness, run: func() error { _, err := service.AIInstallDeepSeekHarnessMCP(); return err }},
 		{name: "Kimi Code", path: additionalPaths.KimiCode, run: func() error { _, err := service.AIInstallKimiMCP(); return err }},
@@ -219,6 +233,22 @@ func TestAdditionalMCPClientInstallersWriteCurrentUserConfigs(t *testing.T) {
 		t.Fatalf("WriteFile Kimi config returned error: %v", err)
 	}
 
+	cursorInitial := map[string]any{
+		"mcpServers": map[string]any{
+			"memory": map[string]any{"command": "memory-server"},
+		},
+	}
+	cursorData, err := json.MarshalIndent(cursorInitial, "", "  ")
+	if err != nil {
+		t.Fatalf("MarshalIndent Cursor config returned error: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(paths.Cursor), 0o755); err != nil {
+		t.Fatalf("MkdirAll Cursor dir returned error: %v", err)
+	}
+	if err := os.WriteFile(paths.Cursor, append(cursorData, '\n'), 0o644); err != nil {
+		t.Fatalf("WriteFile Cursor config returned error: %v", err)
+	}
+
 	if err := os.MkdirAll(filepath.Dir(paths.GrokBuild), 0o755); err != nil {
 		t.Fatalf("MkdirAll Grok dir returned error: %v", err)
 	}
@@ -267,6 +297,7 @@ func TestAdditionalMCPClientInstallersWriteCurrentUserConfigs(t *testing.T) {
 		{name: "DeepSeek Harness", path: paths.DeepSeekHarness, run: func() error { _, err := service.AIInstallDeepSeekHarnessMCP(); return err }},
 		{name: "Kimi Code", path: paths.KimiCode, run: func() error { _, err := service.AIInstallKimiMCP(); return err }},
 		{name: "Grok Build", path: paths.GrokBuild, run: func() error { _, err := service.AIInstallGrokBuildMCP(); return err }},
+		{name: "Cursor", path: paths.Cursor, run: func() error { _, err := service.AIInstallCursorMCP(); return err }},
 	}
 	for _, installer := range installers {
 		if err := installer.run(); err != nil {
@@ -298,6 +329,21 @@ func TestAdditionalMCPClientInstallersWriteCurrentUserConfigs(t *testing.T) {
 	}
 	if !kimiConfig.Enabled || kimiConfig.Command != executablePath || !reflect.DeepEqual(kimiConfig.Args, []string{"mcp-server"}) {
 		t.Fatalf("unexpected Kimi config: %#v", kimiConfig)
+	}
+
+	cursorConfig, found, err := readExternalJSONMCPServerConfig(paths.Cursor, gonaviMCPServerID, cursorMCPClientSpec, service.serviceText)
+	if err != nil || !found {
+		t.Fatalf("read Cursor GoNavi MCP config = (%#v, %t, %v)", cursorConfig, found, err)
+	}
+	if !cursorConfig.Enabled || cursorConfig.Command != executablePath || !reflect.DeepEqual(cursorConfig.Args, []string{"mcp-server"}) {
+		t.Fatalf("unexpected Cursor config: %#v", cursorConfig)
+	}
+	cursorSaved, err := os.ReadFile(paths.Cursor)
+	if err != nil {
+		t.Fatalf("ReadFile Cursor config returned error: %v", err)
+	}
+	if !strings.Contains(string(cursorSaved), `"memory"`) {
+		t.Fatalf("expected unrelated Cursor settings to remain, got %s", cursorSaved)
 	}
 
 	grokConfig, found, err := readGrokBuildMCPServerConfig(paths.GrokBuild, gonaviMCPServerID, service.serviceText)
@@ -361,15 +407,18 @@ func TestAdditionalMCPClientStatusesReportCurrentInstallations(t *testing.T) {
 	if _, err := service.AIInstallGrokBuildMCP(); err != nil {
 		t.Fatalf("AIInstallGrokBuildMCP returned error: %v", err)
 	}
+	if _, err := service.AIInstallCursorMCP(); err != nil {
+		t.Fatalf("AIInstallCursorMCP returned error: %v", err)
+	}
 
 	statuses := service.AIGetMCPClientInstallStatuses()
-	if len(statuses) != 9 {
-		t.Fatalf("expected 9 MCP client statuses, got %d", len(statuses))
+	if len(statuses) != 10 {
+		t.Fatalf("expected 10 MCP client statuses, got %d", len(statuses))
 	}
 	byClient := make(map[string]bool, len(statuses))
 	for _, status := range statuses {
 		byClient[status.Client] = true
-		if status.Client == "zcode" || status.Client == "deepseek-harness" || status.Client == "kimi" || status.Client == "grok-build" {
+		if status.Client == "zcode" || status.Client == "deepseek-harness" || status.Client == "kimi" || status.Client == "grok-build" || status.Client == "cursor" {
 			if !status.Installed || !status.MatchesCurrent || status.Command != executablePath || !reflect.DeepEqual(status.Args, []string{"mcp-server"}) {
 				t.Fatalf("unexpected %s status: %#v", status.Client, status)
 			}
@@ -378,7 +427,7 @@ func TestAdditionalMCPClientStatusesReportCurrentInstallations(t *testing.T) {
 			}
 		}
 	}
-	for _, client := range []string{"zcode", "deepseek-harness", "kimi", "grok-build"} {
+	for _, client := range []string{"zcode", "deepseek-harness", "kimi", "grok-build", "cursor"} {
 		if !byClient[client] {
 			t.Fatalf("missing %s status: %#v", client, statuses)
 		}
@@ -395,6 +444,18 @@ func TestResolveKimiCodeConfigPathHonorsKimiCodeHome(t *testing.T) {
 	}
 	if want := filepath.Join(root, "mcp.json"); path != want {
 		t.Fatalf("Kimi config path = %q, want %q", path, want)
+	}
+}
+
+func TestResolveCursorConfigPathHonorsCursorHome(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "cursor-home")
+	t.Setenv("CURSOR_HOME", root)
+	path, err := resolveCursorConfigPath()
+	if err != nil {
+		t.Fatalf("resolveCursorConfigPath returned error: %v", err)
+	}
+	if want := filepath.Join(root, "mcp.json"); path != want {
+		t.Fatalf("Cursor config path = %q, want %q", path, want)
 	}
 }
 
@@ -620,5 +681,69 @@ func TestZCodeStatusConnectedWhenOnlyHomeDirDetected(t *testing.T) {
 	}
 	if !status.Installed || !status.MatchesCurrent {
 		t.Fatalf("expected ZCode config to be reported as connected, got %#v", status)
+	}
+}
+
+func TestDetectCursorClientFallsBackToUserHomeDir(t *testing.T) {
+	disableLocalCLICommandShellFallback(t)
+	originalCLIPathFunc := localCLICommandPathFunc
+	localCLICommandPathFunc = func(string) (string, error) { return "", errors.New("not found") }
+	t.Cleanup(func() { localCLICommandPathFunc = originalCLIPathFunc })
+
+	homeDir := t.TempDir()
+	originalHomeDirFunc := cursorHomeDirFunc
+	cursorHomeDirFunc = func() string { return homeDir }
+	t.Cleanup(func() { cursorHomeDirFunc = originalHomeDirFunc })
+
+	detected, path := detectCursorClient()
+	if !detected {
+		t.Fatal("expected Cursor client to be detected via its user home directory")
+	}
+	if path != homeDir {
+		t.Fatalf("detected client path = %q, want %q", path, homeDir)
+	}
+}
+
+func TestDetectCursorClientSkipsHomeDirWhenMissing(t *testing.T) {
+	disableLocalCLICommandShellFallback(t)
+	originalCLIPathFunc := localCLICommandPathFunc
+	localCLICommandPathFunc = func(string) (string, error) { return "", errors.New("not found") }
+	t.Cleanup(func() { localCLICommandPathFunc = originalCLIPathFunc })
+
+	originalHomeDirFunc := cursorHomeDirFunc
+	cursorHomeDirFunc = func() string { return "" }
+	t.Cleanup(func() { cursorHomeDirFunc = originalHomeDirFunc })
+
+	if detected, path := detectCursorClient(); detected || path != "" {
+		t.Fatalf("home-directory fallback must not fire when missing, got (%t, %q)", detected, path)
+	}
+}
+
+func TestCursorStatusConnectedWhenOnlyHomeDirDetected(t *testing.T) {
+	disableLocalCLICommandShellFallback(t)
+	paths := isolateAdditionalMCPClientConfigs(t)
+	executablePath := isolateAdditionalMCPClientExecutable(t)
+
+	homeDir := t.TempDir()
+	originalHomeDirFunc := cursorHomeDirFunc
+	cursorHomeDirFunc = func() string { return homeDir }
+	t.Cleanup(func() { cursorHomeDirFunc = originalHomeDirFunc })
+
+	originalCLIPathFunc := localCLICommandPathFunc
+	localCLICommandPathFunc = func(string) (string, error) { return "", errors.New("not found") }
+	t.Cleanup(func() { localCLICommandPathFunc = originalCLIPathFunc })
+
+	service := NewService()
+	service.AISetLanguage(string(i18n.LanguageEnUS))
+	if err := upsertExternalJSONMCPServerConfig(paths.Cursor, gonaviMCPServerID, executablePath, []string{"mcp-server"}, cursorMCPClientSpec, service.serviceText); err != nil {
+		t.Fatalf("upsertExternalJSONMCPServerConfig returned error: %v", err)
+	}
+
+	status := inspectExternalJSONMCPClientInstallStatus(cursorMCPClientSpec, executablePath, []string{"mcp-server"}, nil, service.serviceText)
+	if !status.ClientDetected || status.ClientPath != homeDir {
+		t.Fatalf("expected Cursor detected via home directory, got %#v", status)
+	}
+	if !status.Installed || !status.MatchesCurrent {
+		t.Fatalf("expected Cursor config to be reported as connected, got %#v", status)
 	}
 }

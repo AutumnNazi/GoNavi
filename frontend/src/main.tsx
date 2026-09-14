@@ -448,6 +448,19 @@ if (
             args: ['mcp-server'],
         },
         {
+            client: 'cursor',
+            displayName: 'Cursor',
+            installMode: 'auto',
+            installed: false,
+            matchesCurrent: false,
+            clientDetected: false,
+            clientCommand: 'cursor',
+            message: t('ai_chat.mcp_client.install.summary.missing', { label: 'Cursor' }),
+            configPath: 'C:/Users/mock/.cursor/mcp.json',
+            command: 'C:/Program Files/GoNavi/GoNavi.exe',
+            args: ['mcp-server'],
+        },
+        {
             client: 'zcode',
             displayName: 'ZCode',
             installMode: 'auto',
@@ -1553,6 +1566,7 @@ if (
                     };
                 },
                 AIInstallZCodeMCP: async () => installBrowserMockMCPClient('zcode', 'ZCode', 'C:/Users/mock/.zcode/cli/config.json'),
+                AIInstallCursorMCP: async () => installBrowserMockMCPClient('cursor', 'Cursor', 'C:/Users/mock/.cursor/mcp.json'),
                 AIInstallDeepSeekHarnessMCP: async () => installBrowserMockMCPClient('deepseek-harness', 'DeepSeek Harness', 'C:/Users/mock/.dsh/cordis.patch.yml'),
                 AIInstallKimiMCP: async () => installBrowserMockMCPClient('kimi', 'Kimi Code', 'C:/Users/mock/.kimi-code/mcp.json'),
                 AIInstallGrokBuildMCP: async () => installBrowserMockMCPClient('grok-build', 'Grok Build', 'C:/Users/mock/.grok/config.toml'),

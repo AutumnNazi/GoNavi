@@ -50,7 +50,11 @@ func (c CLICapability) ModelCatalogWithConfig(ctx context.Context, config ai.Pro
 		if err != nil {
 			return result, err
 		}
-		return CLIModelCatalog{Models: models, Source: "cli"}, nil
+		catalog := CLIModelCatalog{Models: models, Source: "cli"}
+		if c.APIFormat == "cursor-cli" {
+			catalog.ModelCapabilities = cursorCLIModelCapabilities(models)
+		}
+		return catalog, nil
 	}
 	if c.ModelCatalogSource == "claude-aliases" {
 		// Documented common aliases, not an account's available-model list.

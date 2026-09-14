@@ -58,6 +58,8 @@ export function AIInstallClaudeCodeMCP():Promise<ai.MCPClientInstallResult>;
 
 export function AIInstallCodexMCP():Promise<ai.MCPClientInstallResult>;
 
+export function AIInstallCursorMCP():Promise<ai.MCPClientInstallResult>;
+
 export function AIInstallDeepSeekHarnessMCP():Promise<ai.MCPClientInstallResult>;
 
 export function AIInstallGrokBuildMCP():Promise<ai.MCPClientInstallResult>;

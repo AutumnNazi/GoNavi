@@ -64,7 +64,7 @@ describe('AIMCPClientInstallPanel', () => {
 
     expect(markup).toContain('This connects GoNavi MCP to supported local clients or remote Agents');
     expect(markup).toContain('external tool calls');
-    expect(markup).toContain('After their local command is detected, Claude Code, Codex, OpenCode, ZCode, DeepSeek Harness, Kimi Code, and Grok Build can receive a user-level MCP config');
+    expect(markup).toContain('After their local command is detected, Claude Code, Codex, OpenCode, Cursor, ZCode, DeepSeek Harness, Kimi Code, and Grok Build can receive a user-level MCP config');
     expect(markup).toContain('Cloud Agents such as OpenClaw and Hermans use remote connection guidance');
     expect(markup).toContain('Connect external client');
     expect(markup).toContain('Select external client');
