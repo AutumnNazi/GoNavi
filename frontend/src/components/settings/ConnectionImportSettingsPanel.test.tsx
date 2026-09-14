@@ -1,16 +1,44 @@
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
 
 import type { ConnectionTag } from '../../types';
-import {
+import { I18nProvider } from '../../i18n/provider';
+import ConnectionImportSettingsPanel, {
   buildConnectionImportGroupOptions,
   resolveConnectionImportPlacement,
+  type ConnectionImportNotice,
 } from './ConnectionImportSettingsPanel';
+
+const renderImportPanel = (notice?: ConnectionImportNotice | null) => renderToStaticMarkup(
+  <I18nProvider preference="zh-CN" onPreferenceChange={() => undefined}>
+    <ConnectionImportSettingsPanel
+      groupOptions={[]}
+      targetGroupId=""
+      password=""
+      protectedPackageReady={false}
+      busy={false}
+      notice={notice}
+      onTargetGroupChange={() => undefined}
+      onChooseFile={() => undefined}
+      onPasswordChange={() => undefined}
+      onConfirmProtectedPackage={() => undefined}
+      onDiscardProtectedPackage={() => undefined}
+    />
+  </I18nProvider>,
+);
 
 describe('ConnectionImportSettingsPanel', () => {
   it('uses the actual import notice severity instead of always showing success', () => {
-    const source = readFileSync(new URL('./ConnectionImportSettingsPanel.tsx', import.meta.url), 'utf8');
-    expect(source).toContain('<Alert type={notice.type} showIcon message={notice.message} />');
+    const warningMarkup = renderImportPanel({ type: 'warning', message: 'partial import' });
+    expect(warningMarkup).toContain('partial import');
+    expect(warningMarkup).toContain('ant-alert-warning');
+    expect(warningMarkup).not.toContain('ant-alert-success');
+
+    const successMarkup = renderImportPanel({ type: 'success', message: 'import finished' });
+    expect(successMarkup).toContain('import finished');
+    expect(successMarkup).toContain('ant-alert-success');
+    expect(successMarkup).not.toContain('ant-alert-warning');
   });
 
   it('uses full paths to distinguish nested groups with duplicate names', () => {

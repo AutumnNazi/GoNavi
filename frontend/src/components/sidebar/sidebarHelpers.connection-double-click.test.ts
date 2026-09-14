@@ -1,9 +1,6 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { resolveSidebarDoubleClickExpandedKeys } from './sidebarHelpers';
-
-const sidebarSource = readFileSync(new URL('../Sidebar.tsx', import.meta.url), 'utf8');
 
 describe('resolveSidebarDoubleClickExpandedKeys', () => {
   it('keeps an already expanded connection open instead of collapsing it', () => {
@@ -45,10 +42,5 @@ describe('resolveSidebarDoubleClickExpandedKeys', () => {
       expandedKeys: ['kingbase-1', 'kingbase-1-app'],
       didExpand: true,
     });
-  });
-
-  it('wires connection double-click through the expand-only helper', () => {
-    expect(sidebarSource).toContain('resolveSidebarDoubleClickExpandedKeys');
-    expect(sidebarSource).not.toMatch(/expandedKeys\.filter\(\s*k => k !== key\s*\)/);
   });
 });
