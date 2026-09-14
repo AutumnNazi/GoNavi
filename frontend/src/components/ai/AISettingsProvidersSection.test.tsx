@@ -136,8 +136,13 @@ describe('AISettingsProvidersSection', () => {
 
   it('lets enlarged model actions define the form label row height without clipping', () => {
     expect(providerStyles).toMatch(/\.gonavi-ai-provider-editor \.ant-form-item-label \{[^}]*overflow: visible;/);
-    expect(providerStyles).toMatch(/\.gonavi-ai-provider-editor \.ant-form-item-label > label \{[^}]*height: auto;/);
+    expect(providerStyles).toMatch(/\.gonavi-ai-provider-editor \.ant-form-item-label \{[^}]*width: 100%;/);
+    expect(providerStyles).toMatch(/\.gonavi-ai-provider-editor \.ant-form-item-label \{[^}]*align-self: stretch;/);
+    expect(providerStyles).toMatch(/\.gonavi-ai-provider-editor \.ant-form-item-label > label \{[^}]*display: flex;/);
+    expect(providerStyles).toMatch(/\.gonavi-ai-provider-editor \.ant-form-item-label > label \{[^}]*height: auto/);
     expect(providerStyles).toContain('.gonavi-ai-provider-basic-fields > .ant-form-item .ant-form-item-label > label { min-height: 32px; }');
+    expect(providerStyles).toMatch(/\.gonavi-ai-provider-model-label \{[^}]*width: 100%;/);
+    expect(providerStyles).toMatch(/\.gonavi-ai-provider-model-meta \{[^}]*margin-left: auto;/);
   });
 
   it('centers provider rows and partner badges independently of custom UI font metrics', () => {

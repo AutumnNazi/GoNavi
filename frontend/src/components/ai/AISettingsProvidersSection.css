@@ -158,8 +158,26 @@ body.gonavi-ai-provider-dragging, body.gonavi-ai-provider-dragging * { cursor: g
 .gonavi-ai-provider-hint-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .gonavi-ai-provider-editor .gonavi-ai-provider-field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 0 12px; }
 .gonavi-ai-provider-editor .gonavi-ai-provider-field-grid > .ant-form-item { margin-bottom: 8px; min-width: 0; }
-.gonavi-ai-provider-editor .ant-form-item-label { overflow: visible; padding-bottom: 2px; }
-.gonavi-ai-provider-editor .ant-form-item-label > label { width: 100%; height: auto; font-size: 12px; }
+/* Vertical Ant Form keeps the label column content-sized (`flex-grow: 0` +
+   `inline-flex`). Give it a definite width so default-model actions can sit
+   flush with the control below instead of overflowing into the next column. */
+.gonavi-ai-provider-editor .ant-form-item-label {
+  overflow: visible;
+  padding-bottom: 2px;
+  width: 100%;
+  max-width: 100%;
+  align-self: stretch;
+  box-sizing: border-box;
+}
+.gonavi-ai-provider-editor .ant-form-item-label > label {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  height: auto !important;
+  font-size: 12px;
+}
+.gonavi-ai-provider-editor .ant-form-item-label > label::after { display: none; }
 .gonavi-ai-provider-editor .gonavi-ai-provider-basic-fields > .ant-form-item .ant-form-item-label > label { min-height: 32px; }
 .gonavi-ai-provider-form .ant-input,
 .gonavi-ai-provider-form .ant-input-affix-wrapper > input.ant-input,
@@ -218,7 +236,15 @@ body.gonavi-ai-provider-dragging, body.gonavi-ai-provider-dragging * { cursor: g
 }
 .gonavi-ai-provider-editor .gonavi-ai-provider-auth-method { width: min(100%, 240px); margin-bottom: 8px; }
 .gonavi-ai-provider-editor .ant-form-item-extra { font-size: 11px; }
-.gonavi-ai-provider-model-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; }
+.gonavi-ai-provider-model-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
 .gonavi-ai-provider-model-label button {
   display: inline-flex; align-items: center; justify-content: center; min-height: 32px; padding: 5px 11px;
   border: 1px solid transparent; border-radius: 6px; color: var(--provider-active); background: transparent;
@@ -413,7 +439,7 @@ body[data-ui-version] .gonavi-ai-model-management-popup .ant-input {
 .gonavi-ai-provider-chip-hint { position: absolute; top: -6px; right: 18px; z-index: 1; display: grid; place-items: center; width: 16px; height: 16px; padding: 0; border: 0; border-radius: 4px; color: var(--provider-muted); background: var(--provider-bg); cursor: help; font-size: 11px; }
 .gonavi-ai-provider-chip-hint:hover, .gonavi-ai-provider-chip-hint:focus-visible { color: var(--provider-active); background: var(--provider-active-bg); }
 .gonavi-ai-provider-model-title { display: inline-flex; align-items: center; gap: 6px; min-width: 0; flex: 1; }
-.gonavi-ai-provider-model-meta { display: inline-flex; align-items: center; gap: 7px; flex: none; }
+.gonavi-ai-provider-model-meta { display: inline-flex; align-items: center; gap: 7px; flex: none; margin-left: auto; }
 /* The body grows with its list up to MODEL_MANAGEMENT_BODY_HEIGHT (from
    AIProviderModelSelect.tsx via --gn-model-management-body-height) and scrolls
    beyond it; a short list drops the cap so one or two models do not leave a gap. */
