@@ -33,6 +33,8 @@ class FakeEventTarget {
 describe('useAIChatPanelResize interaction cleanup', () => {
   const previousWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
   const previousDocumentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  const previousRequestAnimationFrame = Object.getOwnPropertyDescriptor(globalThis, 'requestAnimationFrame');
+  const previousCancelAnimationFrame = Object.getOwnPropertyDescriptor(globalThis, 'cancelAnimationFrame');
   let renderer: ReactTestRenderer | null = null;
   let resize: ReturnType<typeof useAIChatPanelResize> | null = null;
   let fakeWindow: FakeEventTarget;
@@ -73,11 +75,22 @@ describe('useAIChatPanelResize interaction cleanup', () => {
 
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
-      value: Object.assign(fakeWindow, { innerHeight: 900 }),
+      value: Object.assign(fakeWindow, { innerHeight: 900, innerWidth: 1440 }),
     });
     Object.defineProperty(globalThis, 'document', {
       configurable: true,
       value: fakeDocument,
+    });
+    Object.defineProperty(globalThis, 'requestAnimationFrame', {
+      configurable: true,
+      value: (callback: FrameRequestCallback) => {
+        callback(0);
+        return 1;
+      },
+    });
+    Object.defineProperty(globalThis, 'cancelAnimationFrame', {
+      configurable: true,
+      value: () => {},
     });
 
     act(() => {
@@ -101,6 +114,16 @@ describe('useAIChatPanelResize interaction cleanup', () => {
       Object.defineProperty(globalThis, 'document', previousDocumentDescriptor);
     } else {
       Reflect.deleteProperty(globalThis, 'document');
+    }
+    if (previousRequestAnimationFrame) {
+      Object.defineProperty(globalThis, 'requestAnimationFrame', previousRequestAnimationFrame);
+    } else {
+      Reflect.deleteProperty(globalThis, 'requestAnimationFrame');
+    }
+    if (previousCancelAnimationFrame) {
+      Object.defineProperty(globalThis, 'cancelAnimationFrame', previousCancelAnimationFrame);
+    } else {
+      Reflect.deleteProperty(globalThis, 'cancelAnimationFrame');
     }
   });
 
@@ -193,5 +216,18 @@ describe('useAIChatPanelResize interaction cleanup', () => {
     expect(fakeDocument.listenerCount('mousemove')).toBe(0);
     expect(fakeDocument.listenerCount('mouseup')).toBe(0);
     expect(fakeWindow.listenerCount('blur')).toBe(0);
+  });
+
+  it('lets the docked panel grow past 520px while dragging', () => {
+    beginResize();
+
+    act(() => {
+      fakeDocument.dispatch('mousemove', { buttons: 1, clientX: 180 });
+    });
+    act(() => {
+      fakeDocument.dispatch('mouseup');
+    });
+
+    expect(resize?.panelWidth).toBe(840);
   });
 });

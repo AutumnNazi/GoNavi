@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DEFAULT_AI_PANEL_WIDTH,
+  MIN_AI_PANEL_WIDTH,
+  MIN_WORKBENCH_WIDTH_WHEN_AI_DOCKED,
+  clampAIPanelDockWidth,
+  resolveAIPanelDockMaxWidth,
   resolveFullscreenAIPanelOverlayWidth,
   resolveOverlayAIPanelWidth,
   shouldOverlayAIPanel,
@@ -58,6 +62,18 @@ describe('aiPanelLayout', () => {
       minOverlayWidth: 260,
       overlayGap: 12,
     })).toBe(210);
+  });
+
+  it('lets the docked AI panel grow past the old 520px cap up to remaining workbench space', () => {
+    expect(resolveAIPanelDockMaxWidth(1440)).toBe(1440 - MIN_WORKBENCH_WIDTH_WHEN_AI_DOCKED);
+    expect(clampAIPanelDockWidth(800, 1440)).toBe(800);
+    expect(clampAIPanelDockWidth(200, 1440)).toBe(MIN_AI_PANEL_WIDTH);
+    expect(clampAIPanelDockWidth(2000, 1440)).toBe(1440 - MIN_WORKBENCH_WIDTH_WHEN_AI_DOCKED);
+  });
+
+  it('does not impose a pixel cap when the viewport size is unknown', () => {
+    expect(resolveAIPanelDockMaxWidth(0)).toBe(Number.POSITIVE_INFINITY);
+    expect(clampAIPanelDockWidth(960, 0)).toBe(960);
   });
 
   it('uses a viewport-wide overlay below the compact layout breakpoint', () => {

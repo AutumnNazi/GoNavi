@@ -1,6 +1,5 @@
 /* ─── V2 AI side panel ─ */
 body[data-ui-version="v2"] .gn-v2-ai-panel {
-  width: 340px;
   background: var(--gn-bg-panel) !important;
   border-left: 0.5px solid var(--gn-br-1) !important;
 }

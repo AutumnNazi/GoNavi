@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 
+import { clampAIPanelDockWidth } from '../../utils/aiPanelLayout';
+
 interface UseAIChatPanelResizeOptions {
   width: number;
   onWidthChange?: (width: number) => void;
@@ -76,9 +78,10 @@ export const useAIChatPanelResize = ({
       }
       animationFrameId = requestAnimationFrame(() => {
         const delta = resizeStartX.current - event.clientX;
-        const minWidth = 300;
-        const maxWidth = 520;
-        const nextWidth = Math.min(Math.max(resizeStartWidth.current + delta, minWidth), maxWidth);
+        const nextWidth = clampAIPanelDockWidth(
+          resizeStartWidth.current + delta,
+          window.innerWidth,
+        );
         dragWidthRef.current = nextWidth;
 
         if (!ghostRef.current || !panelRect.current) {
