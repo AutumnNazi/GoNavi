@@ -48,6 +48,12 @@ describe('brand icon asset resolution', () => {
     expect(resolveBrandTitlebarSrc('03')).toBe('data:image/svg+xml;base64,remote');
   });
 
+  it('never exposes the compact GN fallback as a native dock or taskbar source', () => {
+    for (const icon of BRAND_ICONS) {
+      expect(resolveBrandDockSrc(icon.id)).not.toBe(BRAND_ICON_FALLBACK_SRC);
+    }
+  });
+
   it('gives browser harnesses six distinct immutable remote assets', () => {
     const sources = BRAND_ICONS.map((icon) => resolveBrandIconRemoteSrc(icon.id));
     const remoteIcons = BRAND_ICONS.filter((icon) => !icon.bundled);

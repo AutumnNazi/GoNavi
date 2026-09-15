@@ -3523,9 +3523,13 @@ function App() {
       windowsBrandIconApplyingRef.current = id;
       setBrandIconId(id);
       try {
-          const source = resolveBrandDockSrc(id) || resolveBrandIconSrc(id);
+          const source = resolveBrandDockSrc(id);
           if (!source) {
-              throw new Error('selected brand icon source is unavailable');
+              // Remote ribbon assets are still warming the cache. The compact
+              // GN fallback must never be written to the Windows icon cache;
+              // the dock sync effect applies the verified asset once it lands.
+              message.success(t('app.settings.entry.brand_icon.applied'));
+              return;
           }
           // Windows fills the whole taskbar tile; the macOS Dock safe-area
           // inset would shrink the ICO mark relative to neighbouring apps.

@@ -135,6 +135,9 @@ func prepareWindowsBrandIconRestartPNG(pngBytes []byte, configDir string) error 
 }
 
 func setCurrentWindowsApplicationIcon(runtimeContext context.Context, iconPath string) (uintptr, error) {
+	if err := migrateWindowsApplicationIconFile(iconPath); err != nil {
+		return 0, err
+	}
 	small, err := windowsApplicationIconLoad(iconPath, windowsSmallIconPixels)
 	if err != nil {
 		return 0, err
