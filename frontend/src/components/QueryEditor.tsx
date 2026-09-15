@@ -311,6 +311,11 @@ export {
     resolveQueryEditorNavigationDecorations,
     resolveQueryEditorNavigationTarget,
 } from './queryEditor/QueryEditorHelpers';
+import {
+    collectOracleCompileTargets,
+    formatOracleCompileErrors,
+    loadOracleCompileErrors,
+} from './sidebar/oracleObjectCompilation';
 
 const buildQueryEditorMonacoActionLabel = (key: string): string =>
     `GoNavi: ${translate(key)}`;
@@ -11012,6 +11017,33 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             }
             if (!isCurrentRun()) return;
             const duration = Date.now() - startTime;
+            let oracleCompileFailureMessage = '';
+            if (res?.success && isOracleLikeDialect(normalizedDbType)) {
+                const compileTargets = collectOracleCompileTargets(sourceStatements);
+                if (compileTargets.length > 0) {
+                    try {
+                        const compileErrors = await loadOracleCompileErrors(compileTargets, {
+                            query: async (sql) => DBQuery(
+                                buildRpcConnectionConfig(executionConfig) as any,
+                                executionDbName,
+                                sql,
+                            ),
+                        });
+                        if (!isCurrentRun()) return;
+                        if (compileErrors.length > 0) {
+                            oracleCompileFailureMessage = formatOracleCompileErrors(compileErrors);
+                            res = {
+                                ...(res && typeof res === 'object' ? res : {}),
+                                success: false,
+                                message: oracleCompileFailureMessage,
+                                executedCount: sourceStatements.length,
+                            };
+                        }
+                    } catch {
+                        if (!isCurrentRun()) return;
+                    }
+                }
+            }
 
             addSqlLog({
                 id: `log-${Date.now()}-query-multi`,
@@ -11042,7 +11074,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             }
 
             if (!res.success) {
-                const executionErrorText = formatSqlExecutionError(res.message, { translate });
+                const executionErrorText = oracleCompileFailureMessage
+                    ? translate('query_editor.message.object_compile_failed', {
+                        error: oracleCompileFailureMessage,
+                    })
+                    : formatSqlExecutionError(res.message, { translate });
                 let triggerRestoreMessage = '';
                 const triggerRollbackSql = normalizeTableDesignerTriggerRestoreSql(
                     String(tab.triggerRollbackSql || '').trim(),
@@ -11138,6 +11174,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 updateResultPanelVisibility(true);
                 setExecutionError(triggerRestoreMessage
                     || executionErrorText);
+                if (oracleCompileFailureMessage) {
+                    message.error(executionErrorText);
+                }
                 clearUnpinnedResultSets(QUERY_EDITOR_SQL_LOG_TAB_KEY);
                 return;
             }

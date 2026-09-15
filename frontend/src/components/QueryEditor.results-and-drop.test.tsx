@@ -1270,6 +1270,58 @@ describe('QueryEditor external SQL save', () => {
     renderer?.unmount();
   });
 
+  it('surfaces Oracle ALL_ERRORS after CREATE OR REPLACE instead of pretending execution succeeded', async () => {
+    storeState.connections[0].config.type = 'oracle';
+    storeState.connections[0].config.database = 'ORCLPDB1';
+    backendApp.DBQueryMulti.mockResolvedValueOnce({
+      success: true,
+      data: [{ columns: ['affectedRows'], rows: [{ affectedRows: 1 }] }],
+    });
+    backendApp.DBQuery.mockImplementation(async (_config: unknown, _dbName: string, sql: string) => {
+      if (/USER_ERRORS|ALL_ERRORS/i.test(String(sql))) {
+        return {
+          success: true,
+          data: [{
+            object_name: 'CPROC_TZHSSR_ORDER2SALE_A1',
+            object_type: 'PROCEDURE',
+            error_line: 12,
+            error_position: 5,
+            error_text: "PLS-00201: identifier 'MISSING_TABLE' must be declared",
+          }],
+        };
+      }
+      return { success: true, data: [] };
+    });
+    const plsql = [
+      'CREATE OR REPLACE PROCEDURE cproc_tzhssr_order2sale_A1 AS',
+      'BEGIN',
+      '  SELECT * FROM missing_table;',
+      'END;',
+    ].join('\n');
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ dbName: 'ORCLPDB1', query: plsql, queryMode: 'object-edit' })} />);
+    });
+    await act(async () => {
+      await findButton(renderer!, '运行').props.onClick();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const rendered = textContent(renderer!.toJSON());
+    expect(backendApp.DBQuery.mock.calls.some((call: unknown[]) => /USER_ERRORS|ALL_ERRORS/i.test(String(call[2])))).toBe(true);
+    expect(messageApi.success).not.toHaveBeenCalledWith('执行成功。');
+    expect(messageApi.error).toHaveBeenCalled();
+    expect(String(messageApi.error.mock.calls[0][0])).toContain('PLS-00201');
+    expect(rendered).toContain('PLS-00201');
+    expect(rendered).not.toContain('执行成功');
+    renderer?.unmount();
+  });
+
   it('runs the preceding Oracle procedure when the cursor is on the SQLPlus slash delimiter', async () => {
     storeState.connections[0].config.type = 'oracle';
     storeState.connections[0].config.database = 'ORCLPDB1';

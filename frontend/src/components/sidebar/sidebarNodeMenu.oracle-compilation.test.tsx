@@ -54,5 +54,11 @@ describe('Oracle object compilation sidebar actions', () => {
       { ...context, getMetadataDialect: () => 'mysql' },
     );
     expect(findMenuItem(mysqlItems, 'compile-oracle-object')).toBeUndefined();
+
+    const damengItems = buildSidebarNodeMenuItems(
+      routineNode,
+      { ...context, getMetadataDialect: () => 'dameng' },
+    );
+    expect(findMenuItem(damengItems, 'compile-oracle-object')).toBeDefined();
   });
 });

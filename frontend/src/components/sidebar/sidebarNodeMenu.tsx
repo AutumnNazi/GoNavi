@@ -50,6 +50,7 @@ import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import { supportsTableTruncateAction } from '../tableDataDangerActions';
 import { noAutoCapInputProps } from '../../utils/inputAutoCap';
 import { confirmProductionMutation } from '../../utils/productionRiskConfirm';
+import { supportsOracleObjectCompilation } from './oracleObjectCompilation';
 import {
   buildNacosServicesTabData,
   resolveNacosNamespaceDiscoveryModeFromTreeNode,
@@ -1451,7 +1452,9 @@ export const buildSidebarNodeMenuItems = (
     } else if (node.type === 'routine') {
         const routineType = node.dataRef?.routineType || 'FUNCTION';
         const typeLabel = t(routineType === 'PROCEDURE' ? 'sidebar.object.procedure' : 'sidebar.object.function');
-        const supportsOracleCompilation = getMetadataDialect(node.dataRef as SavedConnection) === 'oracle';
+        const supportsOracleCompilation = supportsOracleObjectCompilation(
+            getMetadataDialect(node.dataRef as SavedConnection),
+        );
         return [
             {
                 key: 'view-routine-def',
@@ -1488,7 +1491,9 @@ export const buildSidebarNodeMenuItems = (
             },
         ];
     } else if (node.type === 'db-trigger') {
-        const supportsOracleCompilation = getMetadataDialect(node.dataRef as SavedConnection) === 'oracle';
+        const supportsOracleCompilation = supportsOracleObjectCompilation(
+            getMetadataDialect(node.dataRef as SavedConnection),
+        );
         return [
             {
                 key: 'view-trigger-definition',
