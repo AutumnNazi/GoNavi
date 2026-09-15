@@ -303,6 +303,7 @@ import {
 import { useAppUpdateManager } from './hooks/useAppUpdateManager';
 import { useAppLogPanelResize } from './hooks/useAppLogPanelResize';
 import { useAppSidebarResize } from './hooks/useAppSidebarResize';
+import { resolveSidebarResizeHitGeometry } from './utils/sidebarLayout';
 import { canInheritNewQueryTableContext, resolveNewQueryContext } from './utils/newQueryContext';
 import { useAppUtilityStyles } from './hooks/useAppUtilityStyles';
 import { useWorkbenchTabs } from './hooks/useWorkbenchTabs';
@@ -5535,6 +5536,7 @@ function App() {
       sidebarWidth,
       sidebarCollapsed: isSidebarCollapsed,
   });
+  const sidebarResizeHit = resolveSidebarResizeHitGeometry(sidebarResizeHandleWidth);
 
   // Apply the document theme before the first paint. V2 structural styles are
   // scoped by data-ui-version; a passive effect leaves one unstyled titlebar
@@ -8475,7 +8477,7 @@ function App() {
                 position: 'relative',
                 background: 'var(--gn-bg-panel-2)',
                 ['--gonavi-sidebar-collapsed-width' as any]: `${sidebarCollapsedWidth}px`,
-                ['--gonavi-sidebar-resize-inner-hit-width' as any]: `${sidebarResizeHandleWidth / 2}px`,
+                [sidebarResizeHit.cssVariable as any]: `${sidebarResizeHit.innerHitWidth}px`,
             }}
           >
             <div
@@ -8564,10 +8566,10 @@ function App() {
                 title={t('app.sidebar.resize_width')}
                 style={{
                     position: 'absolute',
-                    right: -(sidebarResizeHandleWidth / 2),
+                    right: sidebarResizeHit.handleOffset,
                     top: 0,
                     bottom: 0,
-                    width: sidebarResizeHandleWidth,
+                    width: sidebarResizeHit.handleWidth,
                     cursor: 'col-resize',
                     zIndex: 3,
                     touchAction: 'none',

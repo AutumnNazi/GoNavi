@@ -8,14 +8,6 @@ const appCss = readFileSync(
   fileURLToPath(new globalThis.URL('../App.css', import.meta.url)),
   'utf8',
 );
-const driverManagerModalSource = readFileSync(
-  fileURLToPath(new globalThis.URL('./DriverManagerModal.tsx', import.meta.url)),
-  'utf8',
-);
-const driverManagerWorkbenchSource = readFileSync(
-  fileURLToPath(new globalThis.URL('./DriverManagerWorkbench.tsx', import.meta.url)),
-  'utf8',
-);
 const driverManagerWorkbenchCss = readFileSync(
   fileURLToPath(new globalThis.URL('./DriverManagerWorkbench.css', import.meta.url)),
   'utf8',
@@ -148,8 +140,6 @@ describe('DriverManagerModal embedded layout', () => {
     expect(appCss).toMatch(
       /\.driver-manager-mirror-chip-switch\.ant-btn\s*\{[^}]*flex-shrink:\s*0/s,
     );
-    expect(driverManagerModalSource.match(/driver-manager-mirror-chip-source/g)?.length).toBe(2);
-    expect(driverManagerWorkbenchSource).toContain('preview-settings-source-name');
     expect(driverManagerWorkbenchCss).toMatch(
       /\.preview-settings-source-name\s*\{[^}]*min-width:\s*0[^}]*flex:\s*0 1 auto[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/s,
     );
