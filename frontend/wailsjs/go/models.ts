@@ -2536,6 +2536,7 @@ export namespace connection {
 	    retryable?: boolean;
 	    truncated?: boolean;
 	    scannedCount?: number;
+	    durationMs?: number;
 	    queryId?: string;
 	    cancellationState?: string;
 	    transactionId?: string;
@@ -2563,6 +2564,7 @@ export namespace connection {
 	        this.retryable = source["retryable"];
 	        this.truncated = source["truncated"];
 	        this.scannedCount = source["scannedCount"];
+	        this.durationMs = source["durationMs"];
 	        this.queryId = source["queryId"];
 	        this.cancellationState = source["cancellationState"];
 	        this.transactionId = source["transactionId"];

@@ -408,6 +408,7 @@ type QueryResult struct {
 	Retryable          bool        `json:"retryable,omitempty"`
 	Truncated          bool        `json:"truncated,omitempty"`
 	ScannedCount       int         `json:"scannedCount,omitempty"`
+	DurationMs         int64       `json:"durationMs,omitempty"` // 驱动侧 SQL 执行耗时（毫秒），不含建连与结果回传
 	QueryID            string      `json:"queryId,omitempty"` // Unique ID for query cancellation
 	CancellationState  string      `json:"cancellationState,omitempty"`
 	TransactionID      string      `json:"transactionId,omitempty"`

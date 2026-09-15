@@ -117,6 +117,9 @@ func (a *App) DBQueryMultiTransactional(config connection.ConnectionConfig, dbNa
 	}
 	var queryExecutionDuration time.Duration
 	defer func() {
+		result.DurationMs = durationMilliseconds(queryExecutionDuration)
+	}()
+	defer func() {
 		if !result.Success {
 			return
 		}
@@ -359,6 +362,9 @@ func (a *App) DBQueryMultiInTransaction(transactionID string, query string, quer
 	}
 
 	var queryExecutionDuration time.Duration
+	defer func() {
+		result.DurationMs = durationMilliseconds(queryExecutionDuration)
+	}()
 	defer func() {
 		if !result.Success {
 			return

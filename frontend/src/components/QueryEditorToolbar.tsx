@@ -114,6 +114,17 @@ export const formatQueryExecutionElapsed = (elapsedMs: number): string => {
     : `${minutesText}:${secondsText}.${tenths}`;
 };
 
+export const resolveReportedQueryDurationMs = (
+  result: { durationMs?: unknown } | null | undefined,
+  fallbackMs: number,
+): number => {
+  const reported = result?.durationMs;
+  if (typeof reported === "number" && Number.isFinite(reported) && reported >= 0) {
+    return Math.round(reported);
+  }
+  return Math.max(0, Math.round(Number(fallbackMs) || 0));
+};
+
 export const resolveQueryExecutionSpeedIcon = (elapsedMs: number): "⚡" | "🐇" | "🐢" => {
   const normalizedElapsedMs = Math.max(0, Number(elapsedMs) || 0);
   if (normalizedElapsedMs < 1_000) return "⚡";
@@ -121,16 +132,34 @@ export const resolveQueryExecutionSpeedIcon = (elapsedMs: number): "⚡" | "🐇
   return "🐢";
 };
 
-export const useQueryExecutionElapsed = (loading: boolean, executionRunToken = 0): number => {
+export const useQueryExecutionElapsed = (
+  timingActive: boolean,
+  executionRunToken = 0,
+  completedElapsedMs: number | null = null,
+): number => {
   const [elapsedMs, setElapsedMs] = React.useState(0);
   const startedAtRef = React.useRef<number | null>(null);
+  const lastTokenRef = React.useRef(executionRunToken);
 
   React.useEffect(() => {
-    if (!loading) {
+    const tokenChanged = lastTokenRef.current !== executionRunToken;
+    lastTokenRef.current = executionRunToken;
+
+    if (tokenChanged && !timingActive) {
+      startedAtRef.current = null;
+      setElapsedMs(0);
+      return;
+    }
+
+    if (!timingActive) {
       const startedAt = startedAtRef.current;
+      startedAtRef.current = null;
+      if (typeof completedElapsedMs === "number" && Number.isFinite(completedElapsedMs) && completedElapsedMs >= 0) {
+        setElapsedMs(Math.round(completedElapsedMs));
+        return;
+      }
       if (startedAt !== null) {
         setElapsedMs(Date.now() - startedAt);
-        startedAtRef.current = null;
       }
       return;
     }
@@ -142,7 +171,7 @@ export const useQueryExecutionElapsed = (loading: boolean, executionRunToken = 0
     updateElapsed();
     const timer = globalThis.setInterval(updateElapsed, QUERY_EXECUTION_TIMER_INTERVAL_MS);
     return () => globalThis.clearInterval(timer);
-  }, [executionRunToken, loading]);
+  }, [completedElapsedMs, executionRunToken, timingActive]);
 
   return elapsedMs;
 };

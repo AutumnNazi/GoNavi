@@ -32,6 +32,7 @@ type fakeBatchWriteDB struct {
 	execAffected      map[string]int64
 	batchErr          error
 	execDelay         map[string]time.Duration
+	queryDelay        map[string]time.Duration
 	execStarted       chan<- string
 	execRelease       <-chan struct{}
 	execIgnoreContext bool
@@ -223,6 +224,15 @@ func (f *fakeBatchWriteDB) QueryContext(ctx context.Context, query string) ([]ma
 	f.lastCtx = ctx
 	f.queryCalls++
 	f.queryQueries = append(f.queryQueries, query)
+	if delay := f.queryDelay[query]; delay > 0 {
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		}
+	}
 	if err := f.queryErr[query]; err != nil {
 		return nil, nil, err
 	}
@@ -1064,6 +1074,55 @@ func TestDBQueryMulti_MySQLQueriesDoNotInheritConnectTimeout(t *testing.T) {
 	}
 	if _, ok := fakeDB.lastCtx.Deadline(); ok {
 		t.Fatal("expected MySQL query context to avoid connection-timeout deadline")
+	}
+}
+
+func TestDBQueryMultiReportsDriverExecutionDuration(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() {
+		newDatabaseFunc = originalNewDatabaseFunc
+	})
+
+	query := "SELECT 1"
+	fakeDB := &fakeBatchWriteDB{
+		queryDelay: map[string]time.Duration{
+			query: 40 * time.Millisecond,
+		},
+		queryMap: map[string][]map[string]interface{}{
+			query: {{"value": 1}},
+		},
+		fieldMap: map[string][]string{
+			query: {"value"},
+		},
+		queryErr: map[string]error{},
+	}
+	newDatabaseFunc = func(dbType string) (db.Database, error) {
+		time.Sleep(30 * time.Millisecond)
+		return fakeDB, nil
+	}
+
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	config := connection.ConnectionConfig{Type: "mysql", Host: "127.0.0.1", Port: 3306}
+
+	started := time.Now()
+	result := app.DBQueryMulti(config, "testdb", query, "mysql-duration-test")
+	wallMs := time.Since(started).Milliseconds()
+	if !result.Success {
+		t.Fatalf("expected DBQueryMulti success, got failure: %s", result.Message)
+	}
+	if result.DurationMs < 20 {
+		t.Fatalf("DurationMs=%d, want SQL execution time around 40ms", result.DurationMs)
+	}
+	if wallMs-result.DurationMs < 15 {
+		t.Fatalf("DurationMs=%d wall=%dms; SQL duration should exclude connection wait", result.DurationMs, wallMs)
+	}
+
+	single := app.DBQueryWithCancel(config, "testdb", query, "mysql-duration-single-test")
+	if !single.Success {
+		t.Fatalf("expected DBQueryWithCancel success, got failure: %s", single.Message)
+	}
+	if single.DurationMs < 20 {
+		t.Fatalf("DBQueryWithCancel DurationMs=%d, want SQL execution time around 40ms", single.DurationMs)
 	}
 }
 

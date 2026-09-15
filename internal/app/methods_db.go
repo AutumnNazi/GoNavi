@@ -1390,6 +1390,9 @@ func (a *App) dbQueryWithCancel(
 	trackQueryHistory := auditOptions.trackHistory
 	auditStartedAt := time.Now()
 	var queryExecutionDuration time.Duration
+	defer func() {
+		result.DurationMs = durationMilliseconds(queryExecutionDuration)
+	}()
 	query = sanitizeSQLForPgLike(resolveDDLDBType(config), query)
 	trackSQLAudit := auditOptions.auditAll || (auditOptions.auditWrites && containsSQLAuditWrite(resolveDDLDBType(runConfig), query))
 	if trackSQLAudit {
@@ -1640,6 +1643,9 @@ func (a *App) dbQueryMulti(
 	// 用 named return + defer 覆盖所有 return path，避免遗漏。
 	var queryExecutionDuration time.Duration
 	queryExecuted := false
+	defer func() {
+		result.DurationMs = durationMilliseconds(queryExecutionDuration)
+	}()
 	defer func() {
 		if !result.Success {
 			return

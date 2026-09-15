@@ -169,6 +169,7 @@ import { decorateV2MonacoContextMenu } from './common/V2ActionMenuPopup';
 import QueryEditorToolbar, {
     formatQueryExecutionElapsed,
     resolveQueryExecutionSpeedIcon,
+    resolveReportedQueryDurationMs,
     useQueryExecutionElapsed,
 } from './QueryEditorToolbar';
 import { loadSchemas } from './sidebar/sidebarMetadataLoaders';
@@ -2130,12 +2131,32 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       setQueryContextLockRunSeq(0);
   }, []);
   const [executionRunToken, setExecutionRunToken] = useState(0);
-  const executionElapsedMs = useQueryExecutionElapsed(loading, executionRunToken);
+  const [executionTimingActive, setExecutionTimingActive] = useState(false);
+  const [completedExecutionElapsedMs, setCompletedExecutionElapsedMs] = useState<number | null>(null);
+  const executionElapsedMs = useQueryExecutionElapsed(
+      executionTimingActive,
+      executionRunToken,
+      completedExecutionElapsedMs,
+  );
   const executionElapsedText = formatQueryExecutionElapsed(executionElapsedMs);
   const executionElapsedLabel = translate('query_editor.execution.elapsed', {
       duration: executionElapsedText,
   });
   const executionSpeedIcon = resolveQueryExecutionSpeedIcon(executionElapsedMs);
+  const beginQueryEditorRunClock = useCallback((runSeq: number) => {
+      setExecutionRunToken(runSeq);
+      setExecutionTimingActive(false);
+      setCompletedExecutionElapsedMs(null);
+  }, []);
+  const finishQueryEditorSqlClock = useCallback((
+      result: { durationMs?: unknown } | null | undefined,
+      startedAt: number,
+  ) => {
+      const durationMs = resolveReportedQueryDurationMs(result, Date.now() - startedAt);
+      setExecutionTimingActive(false);
+      setCompletedExecutionElapsedMs(durationMs);
+      return durationMs;
+  }, []);
   const [executionError, setExecutionError] = useState<string>('');
   const [, setCurrentQueryId] = useState<string>('');
   const [isSqlSnippetPickerOpen, setIsSqlSnippetPickerOpen] = useState(false);
@@ -9728,7 +9749,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const runSeq = ++runSeqRef.current;
       const isCurrentRun = () => runSeqRef.current === runSeq;
       let runQueryId = '';
-      setExecutionRunToken(runSeq);
+      beginQueryEditorRunClock(runSeq);
       setLoading(true);
 
       try {
@@ -9754,16 +9775,25 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           if (!isCurrentRun()) return;
           runQueryId = queryId;
           setQueryId(queryId);
-          const res = await executeSqlEditorMultiQuery(
-              config,
-              executionDbName,
-              sql,
-              queryId,
-              splitSQLStatements(sql, normalizedDbType),
-              normalizedDbType,
-              currentResult?.executionConnectionParams,
-              executionConnectionId,
-          );
+          setExecutionTimingActive(true);
+          const sqlStartedAt = Date.now();
+          let res: any = undefined;
+          try {
+              res = await executeSqlEditorMultiQuery(
+                  config,
+                  executionDbName,
+                  sql,
+                  queryId,
+                  splitSQLStatements(sql, normalizedDbType),
+                  normalizedDbType,
+                  currentResult?.executionConnectionParams,
+                  executionConnectionId,
+              );
+          } finally {
+              if (isCurrentRun()) {
+                  finishQueryEditorSqlClock(res, sqlStartedAt);
+              }
+          }
           if (!isCurrentRun()) return;
           if (currentQueryIdRef.current === queryId) {
               clearQueryId();
@@ -10039,7 +10069,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const runSeq = ++runSeqRef.current;
       const isCurrentRun = () => runSeqRef.current === runSeq;
       let runQueryId = '';
-      setExecutionRunToken(runSeq);
+      beginQueryEditorRunClock(runSeq);
       setLoading(true);
 
       try {
@@ -10069,16 +10099,25 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           if (!isCurrentRun()) return;
           runQueryId = queryId;
           setQueryId(queryId);
-          const res = await executeSqlEditorMultiQuery(
-              config,
-              executionDbName,
-              pageSql,
-              queryId,
-              splitSQLStatements(pageSql, normalizedDbType),
-              normalizedDbType,
-              target.executionConnectionParams,
-              executionConnectionId,
-          );
+          setExecutionTimingActive(true);
+          const sqlStartedAt = Date.now();
+          let res: any = undefined;
+          try {
+              res = await executeSqlEditorMultiQuery(
+                  config,
+                  executionDbName,
+                  pageSql,
+                  queryId,
+                  splitSQLStatements(pageSql, normalizedDbType),
+                  normalizedDbType,
+                  target.executionConnectionParams,
+                  executionConnectionId,
+              );
+          } finally {
+              if (isCurrentRun()) {
+                  finishQueryEditorSqlClock(res, sqlStartedAt);
+              }
+          }
           if (!isCurrentRun()) return;
           if (currentQueryIdRef.current === queryId) {
               clearQueryId();
@@ -10317,7 +10356,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           return;
       }
 
-      setExecutionRunToken(runSeq);
+      beginQueryEditorRunClock(runSeq);
       setLoading(true);
       setExecutionError('');
       let queryID = '';
@@ -10329,14 +10368,23 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           }
           if (!isElasticsearchConsoleRunCurrent(runSeqRef.current, runSeq)) return;
           setQueryId(queryID);
-          const execution: any = await ExecuteElasticsearchConsole(
-              config,
-              currentDb || '',
-              sourceToExecute,
-              queryID,
-              String(inspection.fingerprint || ''),
-              confirmationToken,
-          );
+          setExecutionTimingActive(true);
+          const sqlStartedAt = Date.now();
+          let execution: any = undefined;
+          try {
+              execution = await ExecuteElasticsearchConsole(
+                  config,
+                  currentDb || '',
+                  sourceToExecute,
+                  queryID,
+                  String(inspection.fingerprint || ''),
+                  confirmationToken,
+              );
+          } finally {
+              if (isElasticsearchConsoleRunCurrent(runSeqRef.current, runSeq)) {
+                  finishQueryEditorSqlClock(execution, sqlStartedAt);
+              }
+          }
           if (!isElasticsearchConsoleRunCurrent(runSeqRef.current, runSeq)) {
               return;
           }
@@ -10500,11 +10548,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
     const runSeq = ++runSeqRef.current;
     let runQueryId = '';
     const isCurrentRun = () => runSeqRef.current === runSeq;
-    setExecutionRunToken(runSeq);
+    beginQueryEditorRunClock(runSeq);
     lockQueryContextForRun(runSeq);
     setLoading(true);
     setExecutionError('');
     const runStartTime = Date.now();
+    let sqlDurationMs: number | undefined;
 
     try {
     await cancelResultTotalCountRequests(Object.keys(resultTotalCountRequestsRef.current));
@@ -10607,8 +10656,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             const maxRows = Number(queryOptions?.maxRows) || 0;
             const wantsLimitProbe = Number.isFinite(maxRows) && maxRows > 0;
             let anyTruncated = false;
-
-            for (let idx = 0; idx < statements.length; idx++) {
+            let mongoTotalDuration = 0;
+            setExecutionTimingActive(true);
+            try {
+                for (let idx = 0; idx < statements.length; idx++) {
                 const rawStatement = statements[idx];
                 let executedSql = rawStatement;
                 const shellConvert = convertMongoShellToJsonCommand(executedSql);
@@ -10632,7 +10683,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                         executedSql = limitResult.command;
                     }
                 }
-                const startTime = Date.now();
                 let queryId: string;
                 try {
                     queryId = await GenerateQueryID();
@@ -10644,6 +10694,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 runQueryId = queryId;
                 setQueryId(queryId);
 
+                const startTime = Date.now();
                 const mongoRPCConfig = buildRpcConnectionConfig(config) as any;
                 const res = await invokeRequestScopedApp(
                     'DBQueryWithCancel',
@@ -10656,7 +10707,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                     runQueryId = '';
                 }
                 const legacyResultMessages = normalizeQueryResultMessages(res?.messages);
-                const duration = Date.now() - startTime;
+                const duration = resolveReportedQueryDurationMs(res, Date.now() - startTime);
+                mongoTotalDuration += duration;
                 addSqlLog({
                     id: `log-${Date.now()}-query-${idx + 1}`,
                     timestamp: Date.now(),
@@ -10735,6 +10787,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                             readOnly: true
                         });
                     }
+                }
+            }
+            } finally {
+                if (isCurrentRun()) {
+                    sqlDurationMs = mongoTotalDuration;
+                    finishQueryEditorSqlClock({ durationMs: mongoTotalDuration }, 0);
                 }
             }
             if (nextResultSets.length > 0) {
@@ -10941,7 +10999,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 ? normalizeOracleSqlPlusSlashTerminators(normalizedRawSQL)
                 : executableStatements.join(';\n');
 
-            const startTime = Date.now();
             let queryId: string;
             try {
                 queryId = await GenerateQueryID();
@@ -10953,7 +11010,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             runQueryId = queryId;
             setQueryId(queryId);
 
-            let res: any;
+            let res: any = undefined;
+            const startTime = Date.now();
+            setExecutionTimingActive(true);
             try {
                 res = useManagedTransaction
                     ? await DBQueryMultiTransactional(
@@ -10989,6 +11048,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                     data: [],
                     outcomeUnknown: true,
                 };
+            } finally {
+                if (isCurrentRun()) {
+                    sqlDurationMs = finishQueryEditorSqlClock(res, startTime);
+                }
             }
             if (!res || typeof res.success !== 'boolean') {
                 if (!sourceStatements.some((statement) => (
@@ -11016,7 +11079,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 return;
             }
             if (!isCurrentRun()) return;
-            const duration = Date.now() - startTime;
+            const duration = sqlDurationMs ?? resolveReportedQueryDurationMs(res, Date.now() - startTime);
             let oracleCompileFailureMessage = '';
             if (res?.success && isOracleLikeDialect(normalizedDbType)) {
                 const compileTargets = collectOracleCompileTargets(sourceStatements);
@@ -11396,7 +11459,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             timestamp: Date.now(),
             sql: executableSQL || getExecutableSQL() || getCurrentQuery(),
             status: 'error',
-            duration: Date.now() - runStartTime,
+            duration: sqlDurationMs ?? Date.now() - runStartTime,
             message: e.message,
             dbName: executionDbName
         });

@@ -6,6 +6,7 @@ import { readV2ThemeCss } from '../test/readV2ThemeCss';
 import {
   formatQueryExecutionElapsed,
   resolveQueryExecutionSpeedIcon,
+  resolveReportedQueryDurationMs,
   useQueryExecutionElapsed,
 } from './QueryEditorToolbar';
 
@@ -239,6 +240,13 @@ describe('QueryEditorToolbar layout', () => {
     expect(formatQueryExecutionElapsed(Number.NaN)).toBe('00:00.0');
   });
 
+  it('prefers backend SQL duration over frontend wall-clock fallback', () => {
+    expect(resolveReportedQueryDurationMs({ durationMs: 18 }, 1_500)).toBe(18);
+    expect(resolveReportedQueryDurationMs({ durationMs: 0 }, 1_500)).toBe(0);
+    expect(resolveReportedQueryDurationMs({}, 1_500)).toBe(1_500);
+    expect(resolveReportedQueryDurationMs(undefined, 42.8)).toBe(43);
+  });
+
   it('uses distinct speed icons at the one- and five-second boundaries', () => {
     expect(resolveQueryExecutionSpeedIcon(0)).toBe('⚡');
     expect(resolveQueryExecutionSpeedIcon(999)).toBe('⚡');
@@ -253,19 +261,31 @@ describe('QueryEditorToolbar layout', () => {
     let elapsedMs = -1;
     let renderer: ReactTestRenderer | null = null;
 
-    const Harness: React.FC<{ loading: boolean; runToken: number }> = ({ loading, runToken }) => {
-      elapsedMs = useQueryExecutionElapsed(loading, runToken);
+    const Harness: React.FC<{
+      timingActive: boolean;
+      runToken: number;
+      completedMs?: number | null;
+    }> = ({ timingActive, runToken, completedMs = null }) => {
+      elapsedMs = useQueryExecutionElapsed(timingActive, runToken, completedMs);
       return null;
     };
 
     try {
       act(() => {
-        renderer = create(<Harness loading={false} runToken={0} />);
+        renderer = create(<Harness timingActive={false} runToken={0} />);
       });
       expect(elapsedMs).toBe(0);
 
       act(() => {
-        renderer?.update(<Harness loading runToken={1} />);
+        renderer?.update(<Harness timingActive={false} runToken={1} />);
+      });
+      act(() => {
+        vi.advanceTimersByTime(1_500);
+      });
+      expect(elapsedMs).toBe(0);
+
+      act(() => {
+        renderer?.update(<Harness timingActive runToken={1} />);
       });
       act(() => {
         vi.advanceTimersByTime(350);
@@ -273,7 +293,7 @@ describe('QueryEditorToolbar layout', () => {
       expect(elapsedMs).toBe(300);
 
       act(() => {
-        renderer?.update(<Harness loading runToken={2} />);
+        renderer?.update(<Harness timingActive runToken={2} />);
       });
       expect(elapsedMs).toBe(0);
 
@@ -283,17 +303,17 @@ describe('QueryEditorToolbar layout', () => {
       expect(elapsedMs).toBe(300);
 
       act(() => {
-        renderer?.update(<Harness loading={false} runToken={2} />);
+        renderer?.update(<Harness timingActive={false} runToken={2} completedMs={18} />);
       });
-      expect(elapsedMs).toBe(350);
+      expect(elapsedMs).toBe(18);
 
       act(() => {
         vi.advanceTimersByTime(1_000);
       });
-      expect(elapsedMs).toBe(350);
+      expect(elapsedMs).toBe(18);
 
       act(() => {
-        renderer?.update(<Harness loading runToken={3} />);
+        renderer?.update(<Harness timingActive={false} runToken={3} completedMs={null} />);
       });
       expect(elapsedMs).toBe(0);
     } finally {
@@ -324,6 +344,9 @@ describe('QueryEditorToolbar layout', () => {
     expect(editorSource).toContain('className="gn-query-execution-timer"');
     expect(editorSource).toContain('role="timer"');
     expect(editorSource).toContain('query_editor.execution.elapsed');
+    expect(editorSource).toContain('executionTimingActive');
+    expect(editorSource).toContain('completedExecutionElapsedMs');
+    expect(editorSource).not.toContain('useQueryExecutionElapsed(loading, executionRunToken)');
     const statusbarIndex = editorSource.indexOf('className="gn-query-execution-statusbar"');
     expect(statusbarIndex).toBeGreaterThan(editorSource.indexOf('<Editor'));
     expect(statusbarIndex).toBeLessThan(editorSource.indexOf('<QueryEditorResultsPanel', statusbarIndex));
