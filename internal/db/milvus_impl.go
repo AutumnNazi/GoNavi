@@ -360,7 +360,7 @@ func (m *MilvusDB) ApplyChangesContext(ctx context.Context, tableName string, ch
 	if collection == "" {
 		return fmt.Errorf("collection name cannot be empty")
 	}
-	primaryField, err := m.primaryField(ctx, collection)
+	primary, err := m.primaryFieldInfo(ctx, collection)
 	if err != nil {
 		return err
 	}
@@ -373,12 +373,16 @@ func (m *MilvusDB) ApplyChangesContext(ctx context.Context, tableName string, ch
 	}
 
 	if len(changes.Deletes) > 0 {
-		ids := milvusRowIDs(changes.Deletes, primaryField)
+		ids := milvusRowIDs(changes.Deletes, primary.name)
 		if len(ids) != len(changes.Deletes) {
-			return fmt.Errorf("Milvus delete is missing primary key field %q", primaryField)
+			return fmt.Errorf("Milvus delete is missing primary key field %q", primary.name)
 		}
 		if len(ids) > 0 {
-			if err := m.deleteEntities(ctx, collection, milvusIDFilter(primaryField, ids)); err != nil {
+			filter, filterErr := milvusIDFilterWithType(primary.name, primary.typeName, ids)
+			if filterErr != nil {
+				return writeError(filterErr)
+			}
+			if err := m.deleteEntities(ctx, collection, filter); err != nil {
 				return writeError(err)
 			}
 			writeApplied = true
@@ -395,16 +399,20 @@ func (m *MilvusDB) ApplyChangesContext(ctx context.Context, tableName string, ch
 			for key, value := range update.Values {
 				row[key] = value
 			}
-			id, ok := milvusRowID(row, primaryField)
+			id, ok := milvusRowID(row, primary.name)
 			if !ok {
-				return writeError(fmt.Errorf("Milvus update is missing primary key field %q", primaryField))
+				return writeError(fmt.Errorf("Milvus update is missing primary key field %q", primary.name))
 			}
-			existingRows, _, queryErr := m.queryEntities(ctx, collection, milvusIDFilter(primaryField, []interface{}{id}), []string{"*"}, 1, 0)
+			filter, filterErr := milvusIDFilterWithType(primary.name, primary.typeName, []interface{}{id})
+			if filterErr != nil {
+				return writeError(filterErr)
+			}
+			existingRows, _, queryErr := m.queryEntities(ctx, collection, filter, []string{"*"}, 1, 0)
 			if queryErr != nil {
 				return writeError(queryErr)
 			}
 			if len(existingRows) == 0 {
-				return writeError(fmt.Errorf("Milvus entity with %s=%v was not found", primaryField, id))
+				return writeError(fmt.Errorf("Milvus entity with %s=%v was not found", primary.name, id))
 			}
 			merged := existingRows[0]
 			for key, value := range row {
@@ -885,11 +893,14 @@ func (m *MilvusDB) deleteCommand(ctx context.Context, collection string, cmd map
 		if len(ids) == 0 {
 			return 0, fmt.Errorf("Milvus delete command requires filter or ids")
 		}
-		primaryField, err := m.primaryField(ctx, collection)
+		primary, err := m.primaryFieldInfo(ctx, collection)
 		if err != nil {
 			return 0, err
 		}
-		filter = milvusIDFilter(primaryField, ids)
+		filter, err = milvusIDFilterWithType(primary.name, primary.typeName, ids)
+		if err != nil {
+			return 0, err
+		}
 		count = int64(len(ids))
 	}
 	if err := m.deleteEntities(ctx, collection, filter); err != nil {
@@ -953,19 +964,27 @@ func (m *MilvusDB) dropIndex(ctx context.Context, collection, indexName string) 
 	}, nil)
 }
 
-func (m *MilvusDB) primaryField(ctx context.Context, collection string) (string, error) {
+type milvusPrimaryField struct {
+	name     string
+	typeName string
+}
+
+func (m *MilvusDB) primaryFieldInfo(ctx context.Context, collection string) (milvusPrimaryField, error) {
 	info, err := m.getCollectionInfo(ctx, m.database, collection)
 	if err != nil {
-		return "", err
+		return milvusPrimaryField{}, err
 	}
 	for _, field := range milvusMapSlice(info["fields"]) {
 		if milvusBoolValue(firstExisting(field, "primaryKey", "isPrimary", "isPrimaryKey"), false) {
 			if name := firstStringValue(field, "name", "fieldName"); name != "" {
-				return name, nil
+				return milvusPrimaryField{
+					name:     name,
+					typeName: firstStringValue(field, "type", "dataType"),
+				}, nil
 			}
 		}
 	}
-	return "", fmt.Errorf("Milvus collection %q has no primary key field", collection)
+	return milvusPrimaryField{}, fmt.Errorf("Milvus collection %q has no primary key field", collection)
 }
 
 func (m *MilvusDB) vectorField(ctx context.Context, collection string) (string, error) {
@@ -1202,12 +1221,16 @@ func milvusRowID(row map[string]interface{}, primaryField string) (interface{}, 
 	return value, true
 }
 
-func milvusIDFilter(primaryField string, ids []interface{}) string {
+func milvusIDFilterWithType(primaryField, primaryType string, ids []interface{}) (string, error) {
 	literals := make([]string, 0, len(ids))
 	for _, id := range ids {
-		literals = append(literals, milvusFilterLiteral(id))
+		literal, err := milvusFilterLiteralWithType(id, primaryType)
+		if err != nil {
+			return "", fmt.Errorf("Milvus primary key %q value %v is invalid for %s: %w", primaryField, id, primaryType, err)
+		}
+		literals = append(literals, literal)
 	}
-	return fmt.Sprintf("%s in [%s]", strings.TrimSpace(primaryField), strings.Join(literals, ", "))
+	return fmt.Sprintf("%s in [%s]", strings.TrimSpace(primaryField), strings.Join(literals, ", ")), nil
 }
 
 func milvusFilterLiteral(value interface{}) string {
@@ -1225,4 +1248,25 @@ func milvusFilterLiteral(value interface{}) string {
 		}
 		return string(encoded)
 	}
+}
+
+func milvusFilterLiteralWithType(value interface{}, fieldType string) (string, error) {
+	if !isMilvusInt64Type(fieldType) {
+		return milvusFilterLiteral(value), nil
+	}
+
+	text := strings.TrimSpace(fmt.Sprintf("%v", value))
+	if text == "" || text == "<nil>" {
+		return "", fmt.Errorf("expected a non-empty Int64 value")
+	}
+	parsed, err := strconv.ParseInt(text, 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("expected a decimal Int64 value, got %q", text)
+	}
+	return strconv.FormatInt(parsed, 10), nil
+}
+
+func isMilvusInt64Type(fieldType string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(fieldType))
+	return normalized == "int64" || normalized == "datatype.int64" || normalized == "5"
 }

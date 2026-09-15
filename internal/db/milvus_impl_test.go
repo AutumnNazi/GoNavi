@@ -387,6 +387,79 @@ func TestMilvusApplyChangesDeletesMergesUpdatesAndInserts(t *testing.T) {
 	}
 }
 
+func TestMilvusInt64DeleteFilterNormalizesStringIDs(t *testing.T) {
+	description := map[string]interface{}{
+		"fields": []map[string]interface{}{
+			{"name": "id", "type": "Int64", "primaryKey": true},
+		},
+	}
+	var deleteBodies []map[string]interface{}
+	server := newMockMilvusServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case isMilvusCollectionListRequest(r):
+			writeMilvusJSON(w, []string{})
+		case r.Method == http.MethodPost && r.URL.Path == milvusCollectionsDescribePath:
+			writeMilvusJSON(w, description)
+		case r.Method == http.MethodPost && r.URL.Path == milvusEntitiesDeletePath:
+			deleteBodies = append(deleteBodies, decodeMilvusRequest(t, r))
+			writeMilvusJSON(w, map[string]interface{}{})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	db := newTestMilvusDB(t, server.URL)
+	const firstID = "468479501012567144"
+	const secondID = "468479501012567145"
+	if err := db.ApplyChanges("products", connection.ChangeSet{
+		Deletes: []map[string]interface{}{{"id": firstID}, {"id": secondID}},
+	}); err != nil {
+		t.Fatalf("ApplyChanges failed: %v", err)
+	}
+	if len(deleteBodies) != 1 || deleteBodies[0]["filter"] != "id in [468479501012567144, 468479501012567145]" {
+		t.Fatalf("delete bodies = %#v", deleteBodies)
+	}
+
+	if _, err := db.Exec(`{"delete":"products","ids":["468479501012567144","468479501012567145"]}`); err != nil {
+		t.Fatalf("JSON delete failed: %v", err)
+	}
+	if len(deleteBodies) != 2 || deleteBodies[1]["filter"] != "id in [468479501012567144, 468479501012567145]" {
+		t.Fatalf("JSON delete bodies = %#v", deleteBodies)
+	}
+}
+
+func TestMilvusVarCharDeleteFilterKeepsStringIDsQuoted(t *testing.T) {
+	description := map[string]interface{}{
+		"fields": []map[string]interface{}{
+			{"name": "id", "type": "VarChar", "primaryKey": true},
+		},
+	}
+	var deleteBody map[string]interface{}
+	server := newMockMilvusServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case isMilvusCollectionListRequest(r):
+			writeMilvusJSON(w, []string{})
+		case r.Method == http.MethodPost && r.URL.Path == milvusCollectionsDescribePath:
+			writeMilvusJSON(w, description)
+		case r.Method == http.MethodPost && r.URL.Path == milvusEntitiesDeletePath:
+			deleteBody = decodeMilvusRequest(t, r)
+			writeMilvusJSON(w, map[string]interface{}{})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	db := newTestMilvusDB(t, server.URL)
+	if err := db.ApplyChanges("products", connection.ChangeSet{
+		Deletes: []map[string]interface{}{{"id": "468479501012567144"}},
+	}); err != nil {
+		t.Fatalf("ApplyChanges failed: %v", err)
+	}
+	if deleteBody["filter"] != `id in ["468479501012567144"]` {
+		t.Fatalf("delete body = %#v", deleteBody)
+	}
+}
+
 func TestMilvusApplyChangesRejectsDeletesWithoutPrimaryKey(t *testing.T) {
 	description := map[string]interface{}{
 		"fields": []map[string]interface{}{{"name": "id", "type": "Int64", "primaryKey": true}},
