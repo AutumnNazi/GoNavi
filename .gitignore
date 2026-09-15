@@ -26,6 +26,7 @@ GoNavi-Wails.exe
 /optional-driver-agent.exe
 .ace-tool/
 .superpowers/
+# Local agent working dirs only. Root AGENTS.md / CLAUDE.md are project conventions and must be committed.
 .claude/
 .gemini/
 .playwright-mcp/
@@ -34,8 +35,6 @@ GoNavi-Wails.exe
 docs/superpowers/
 docs/需求追踪/
 
-CLAUDE.md
-**/CLAUDE.md
 .worktrees
 docs
 !docs/

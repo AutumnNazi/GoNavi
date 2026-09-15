@@ -1,0 +1,18 @@
+---
+description: GoNavi Java 规约（阿里巴巴手册在 jmx-helper / JVM 夹具上的落地）
+globs: "**/*.java"
+alwaysApply: false
+---
+
+# GoNavi Java
+
+范围：`tools/jmx-helper`、`internal/jvm/testdata`。条款对齐《阿里巴巴 Java 开发手册》。
+
+## 【强制】
+
+- 类名 UpperCamelCase，方法/变量 lowerCamelCase，常量 `UPPER_SNAKE`。
+- 工具类 `final` + 私有构造（参考 `JmxHelperMain`）。
+- 禁止空 `catch`；helper 可把错误写入 stdout JSON 的 `ok/error`，必须带异常类型。
+- 文件 ≤400 行，方法 ≤80 行。协议解析放 `JmxRuntime`，`main` 只做读写。
+- 使用 `StandardCharsets.UTF_8`；魔法值抽常量。
+- 禁止把密码、连接串打进日志。stdout 仅用于约定 JSON。

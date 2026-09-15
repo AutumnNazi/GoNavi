@@ -1,0 +1,13 @@
+---
+description: GoNavi i18n：目录键、插值、全语言同步
+globs: shared/i18n/**/*
+alwaysApply: false
+---
+
+# GoNavi i18n
+
+- 源目录：`shared/i18n/*.json`（zh-CN / zh-TW / en-US / ja-JP / de-DE / ru-RU）。
+- 键名：`domain.feature.detail`（如 `db.backend.error.query_failed`）。
+- 插值：`{{name}}`，各语言占位符集合必须一致。
+- 新增或重命名键时同步全部语言文件，并保证前后端都改用新键。
+- 禁止在 UI 或 Go 绑定层写死用户可见句子来「先顶上」。

@@ -114,6 +114,17 @@ git push
 
 ---
 
+## Coding Standards
+
+GoNavi coding conventions for humans and AI (Cursor / Claude / Codex) live in [`AGENTS.md`](./AGENTS.md).
+
+- Go: [`GO_STYLE.md`](./GO_STYLE.md) (Uber / Google / Effective Go — **not** the Alibaba Java manual)
+- Java helpers: Alibaba Java Coding Guidelines
+
+Hard rule: do not grow already oversized files. Split packages, types, hooks, and tests instead.
+
+---
+
 ## Commit Message Recommendation
 
 Keep commit messages clear and easy to audit.

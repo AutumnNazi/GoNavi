@@ -1,0 +1,26 @@
+---
+description: GoNavi 全局编码规约（拆分、分层、i18n、禁止手改生成物）
+alwaysApply: true
+---
+
+# GoNavi 核心规约
+
+完整正文：仓库根目录 `AGENTS.md`。Go 专属手册：`GO_STYLE.md`（不要拿阿里巴巴 Java 手册套 Go）。本规则只强调全局硬约束。
+
+## 【强制】拆分
+
+- 新建生产文件建议 ≤400 行，硬上限 800 行。函数/组件体建议 ≤80 行，硬上限 120 行。
+- 禁止让这些文件再变长：`QueryEditor.tsx`、`App.tsx`、`store.ts`、`DataGrid.tsx`、`Sidebar.tsx`、`QueryEditorHelpers.ts`、`methods_file.go`、`methods_db.go`、`app.go`。
+- 触碰超标文件时：本次新逻辑抽到新文件；旧文件只保留接线。范例：`components/queryEditor/`、`DataGridShell`/`DataGridCore`、`methods_db_objects.go`。
+
+## 【强制】分层
+
+- Wails 绑定（`internal/app`）保持薄：校验 → 调 `internal/db` 等 → `connection.QueryResult`。
+- 驱动特有能力用可选接口，不把方法堆进 `Database`。
+- 禁止手改 `frontend/wailsjs/`。UI 栈：React 函数组件 + antd 5 + Zustand + `v2-theme-*.css`。
+- 用户可见文案只进 `shared/i18n/*.json`，用 `t()` / `localizer.T`。
+
+## 【强制】安全
+
+- 日志禁止密码、token、完整 DSN。不绕过只读连接与生产库确认。
+- 未要求时不 commit、不 push。

@@ -1,0 +1,37 @@
+---
+description: GoNavi React/TS 规约：拆组件、hook、i18n、Zustand
+globs: frontend/src/**/*.{ts,tsx,css}
+alwaysApply: false
+---
+
+# GoNavi React / TypeScript
+
+详见 `AGENTS.md` §4。不要改 `frontend/wailsjs/`。
+
+## 拆组件
+
+- 函数组件 only。主文件只接线；toolbar / modal / layout / 纯函数放到特性目录。
+- 禁止往 `QueryEditor.tsx`、`App.tsx`、`DataGrid.tsx`、`Sidebar.tsx`、`store.ts` 净增职责。
+- 正确方向：`components/queryEditor/`、`components/sidebar/useXxx.ts`、`DataGridShell.tsx`。
+
+```tsx
+// ❌ 在 QueryEditor.tsx 再写 200 行执行逻辑
+// ✅
+const execution = useQueryEditorExecution(props);
+return <QueryEditorToolbar {...execution.toolbar} />;
+```
+
+## 状态与类型
+
+- 新 Zustand 状态新建 slice 文件，不要继续膨胀 `store.ts`。
+- 新代码禁止 `any`；Wails 结果收敛到 `frontend/src/types.ts` 或局部类型。
+
+## i18n 与样式
+
+- UI 文案：`t('domain.feature.key')`，目录 `shared/i18n/*.json`，插值 `{{name}}`，同步全部语言。
+- 样式走 `v2-theme-*.css` 或组件旁 CSS，不要把大块布局堆进 `App.css`。
+
+## 测试
+
+- Vitest：`*.test.ts(x)` 与实现同目录，按场景拆文件。
+- 不要往已经数千行的 `QueryEditor.*.test.tsx` 里继续堆用例。

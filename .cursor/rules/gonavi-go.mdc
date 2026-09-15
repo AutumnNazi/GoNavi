@@ -1,0 +1,41 @@
+---
+description: GoNavi Go 专属规约（Uber/Google 底本 + 本仓库叠加）。完整手册见 GO_STYLE.md
+globs: "**/*.go"
+alwaysApply: false
+---
+
+# GoNavi Go
+
+Java 跟阿里巴巴手册。**Go 跟仓库根目录 `GO_STYLE.md`**（Uber Go Style + Google/Code Review Comments + Effective Go + 本仓库叠加）。不适用于 `third_party/`。
+
+## 拆包
+
+- `internal/app/methods_<领域>.go`，超标再拆（已有 `methods_db_objects.go`）。
+- `internal/db/<引擎>_impl.go`，过大拆 catalog/query/exec/ssh，包名仍为 `db`。
+- 平台：`*_windows.go` / `*_darwin.go` / `*_stub.go`。
+- 禁止往 `methods_file.go`、`methods_db.go`、`app.go` 净增职责。函数体 ≤120 行。
+
+## 错误 / context / 接口
+
+```go
+// ❌ rows, _ := inst.Query(q)
+// ✅
+data, fields, err := a.runQuery(ctx, config, q)
+if err != nil {
+    logger.Error(err, "DBQuery failed: %s", formatConnSummary(config))
+    return connection.QueryResult{Success: false, Message: a.appText("db.backend.error.query_failed", map[string]any{"detail": err.Error()})}
+}
+```
+
+- 绑定层只返回 `connection.QueryResult`；领域层 `fmt.Errorf("...: %w", err)` + `errors.Is/As`。
+- `ctx` 第一参数，必须传到 Query/HTTP；禁止 `panic`。
+- `Database` 保持小；特有能力用可选接口。`var _ db.Database = (*MySQLDB)(nil)`。
+
+## 并发与日志
+
+- 每个 goroutine 有退出条件；无缓冲 channel 为默认；持锁不做网络 IO。
+- 只用 `internal/logger`；禁止密码/DSN。用户文案走 `shared/i18n`。
+
+## 测试
+
+- 同包 `xxx_test.go`，表驱动，不连生产库。纯函数必带测。
