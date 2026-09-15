@@ -1295,6 +1295,36 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).not.toContain(`>${t('sidebar.command_search.object_kind.tables')}<`);
   });
 
+  it('keeps the object-kind filter slot stable while switching to a dedicated workbench connection', () => {
+    mocks.state.connections = [{
+      id: 'pg-1',
+      name: 'PostGreSQL',
+      config: { type: 'postgres', host: 'localhost', port: 5432 },
+    }, {
+      id: 'nacos-1',
+      name: 'Nacos',
+      config: { type: 'nacos', host: 'localhost', port: 8848 },
+    }];
+    mocks.state.activeContext = { connectionId: 'nacos-1', dbName: 'public' };
+    mocks.state.activeTabId = 'nacos-services';
+    mocks.state.tabs = [{
+      id: 'nacos-services',
+      title: 'Nacos',
+      type: 'nacos-services',
+      connectionId: 'nacos-1',
+      dbName: 'public',
+    }];
+
+    const markup = renderSidebarMarkup({});
+    const filterSlotIndex = markup.indexOf('data-object-kind-filter-slot="true"');
+    const treeShellIndex = markup.indexOf('gn-v2-explorer-tree-shell');
+
+    expect(filterSlotIndex).toBeGreaterThanOrEqual(0);
+    expect(filterSlotIndex).toBeLessThan(treeShellIndex);
+    expect(markup).toContain('data-object-kind-filter-visible="false"');
+    expect(markup).not.toContain('gn-v2-explorer-filter-tabs');
+  });
+
   it('keeps relational object-kind filters hidden without an active host when only dedicated workbenches exist', () => {
     mocks.state.connections = [{
       id: 'nacos-1',
@@ -1316,6 +1346,7 @@ describe('Sidebar locate toolbar', () => {
     const markup = renderSidebarMarkup({  });
 
     expect(markup).not.toContain('gn-v2-explorer-filter-tabs');
+    expect(markup).not.toContain('data-object-kind-filter-slot');
   });
 
   it('hides relational object-kind filters for Nacos and other dedicated workbenches', () => {

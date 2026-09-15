@@ -3109,6 +3109,13 @@ body[data-ui-version="v2"] .gn-v2-explorer-search .ant-input-suffix {
   margin-inline-start: 8px !important;
 }
 
+body[data-ui-version="v2"] .gn-v2-explorer-filter-slot {
+  height: calc(36px * var(--gn-v2-explorer-scale));
+  min-height: calc(36px * var(--gn-v2-explorer-scale));
+  flex: 0 0 calc(36px * var(--gn-v2-explorer-scale));
+  overflow: hidden;
+}
+
 body[data-ui-version="v2"] .gn-v2-explorer-filter-tabs {
   display: flex;
   flex-wrap: nowrap;

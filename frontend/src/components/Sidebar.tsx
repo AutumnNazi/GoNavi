@@ -4879,25 +4879,33 @@ const Sidebar: React.FC<{
         </div>
         )}
 
-        {showV2ObjectKindFilters && (
-            <div className="gn-v2-explorer-filter-tabs" aria-label={t('sidebar.command_search.object_kind.filter_aria')}>
-                {V2_EXPLORER_FILTER_OPTIONS.map((item) => {
-                    const label = t(item.labelKey);
-                    return (
-                    <Tooltip key={item.key} title={label} mouseEnterDelay={0.25}>
-                    <button
-                        type="button"
-                        className={v2ExplorerFilter === item.key ? 'is-active' : undefined}
-                        aria-label={label}
-                        aria-pressed={v2ExplorerFilter === item.key}
-                        data-object-kind-filter={item.key}
-                        onClick={() => setV2ExplorerFilter(item.key)}
-                    >
-                        {V2_EXPLORER_FILTER_ICONS[item.key]}
-                    </button>
-                    </Tooltip>
-                    );
-                })}
+        {hasRelationalObjectKindFilterConnection && (
+            <div
+                className="gn-v2-explorer-filter-slot"
+                data-object-kind-filter-slot="true"
+                data-object-kind-filter-visible={showV2ObjectKindFilters ? 'true' : 'false'}
+            >
+                {showV2ObjectKindFilters && (
+                    <div className="gn-v2-explorer-filter-tabs" aria-label={t('sidebar.command_search.object_kind.filter_aria')}>
+                        {V2_EXPLORER_FILTER_OPTIONS.map((item) => {
+                            const label = t(item.labelKey);
+                            return (
+                            <Tooltip key={item.key} title={label} mouseEnterDelay={0.25}>
+                            <button
+                                type="button"
+                                className={v2ExplorerFilter === item.key ? 'is-active' : undefined}
+                                aria-label={label}
+                                aria-pressed={v2ExplorerFilter === item.key}
+                                data-object-kind-filter={item.key}
+                                onClick={() => setV2ExplorerFilter(item.key)}
+                            >
+                                {V2_EXPLORER_FILTER_ICONS[item.key]}
+                            </button>
+                            </Tooltip>
+                            );
+                        })}
+                    </div>
+                )}
             </div>
         )}
 
