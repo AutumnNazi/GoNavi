@@ -111,7 +111,7 @@ import {
 } from '../utils/sqlFileTabDrafts';
 import {
     clearQueryEditorResultSession,
-    saveQueryEditorResultSession,
+    saveQueryEditorResultSessionForOpenTab,
     takeQueryEditorResultSession,
 } from '../utils/queryEditorResultSessionCache';
 import { buildEditableTriggerSql } from '../utils/triggerEditSql';
@@ -144,6 +144,7 @@ import {
     getColumnDefinitionType,
 } from '../utils/columnDefinition';
 import { installQueryEditorSuggestWidgetWidth } from './queryEditor/queryEditorSuggestionLayout';
+import { useQueryEditorResultSessionUnmount } from './queryEditor/queryEditorResultSessionLifecycle';
 import {
     applyQueryEditorAutomaticLayout,
     buildQueryEditorMonacoActionLabel,
@@ -1580,11 +1581,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const captureSession = (event: Event) => {
           const requestedTabId = String((event as CustomEvent).detail?.tabId || '').trim();
           if (requestedTabId !== tab.id) return;
-          saveQueryEditorResultSession(tab.id, {
+          saveQueryEditorResultSessionForOpenTab(tab.id, {
               resultSets: resultSetsRef.current,
               activeResultKey: activeResultKeyRef.current,
               isResultPanelVisible: isResultPanelVisibleRef.current,
-          });
+          }, useStore.getState().tabs);
       };
       window.addEventListener('gonavi:capture-query-result-session', captureSession);
       return () => {
@@ -1592,24 +1593,20 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       };
   }, [tab.id]);
 
-  useEffect(() => {
-      // Keep result panel state across detach/attach remounts of the same tab.
-      return () => {
-          saveQueryEditorResultSession(tab.id, {
-              resultSets: resultSetsRef.current,
-              activeResultKey: activeResultKeyRef.current,
-              isResultPanelVisible: isResultPanelVisibleRef.current,
-          });
-      };
-  }, [tab.id]);
+  useQueryEditorResultSessionUnmount({
+      tabId: tab.id,
+      resultSetsRef,
+      activeResultKeyRef,
+      isResultPanelVisibleRef,
+  });
 
   useEffect(() => {
       if (!publishesDetachedResultSession) return;
-      saveQueryEditorResultSession(tab.id, {
+      saveQueryEditorResultSessionForOpenTab(tab.id, {
           resultSets,
           activeResultKey,
           isResultPanelVisible,
-      });
+      }, useStore.getState().tabs);
   }, [activeResultKey, isResultPanelVisible, publishesDetachedResultSession, resultSets, tab.id]);
   const shortcutOptions = useStore(state => state.shortcutOptions);
   const activeShortcutPlatform = getShortcutPlatform(isMacLikePlatform());

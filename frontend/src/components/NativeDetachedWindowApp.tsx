@@ -44,7 +44,7 @@ import type { CustomThemeDefinition } from '../utils/customTheme';
 import { isMacLikePlatform } from '../utils/appearance';
 import {
   peekQueryEditorResultSession,
-  saveQueryEditorResultSession,
+  saveQueryEditorResultSessionForOpenTab,
   subscribeQueryEditorResultSession,
   type QueryEditorResultSessionSnapshot,
 } from '../utils/queryEditorResultSessionCache';
@@ -558,9 +558,10 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
         if (nextBootstrap.kind === 'workbench' && nextBootstrap.payload.tab) {
           resultSessionRef.current = nextBootstrap.payload.resultSession ?? null;
           if (nextBootstrap.payload.resultSession) {
-            saveQueryEditorResultSession(
+            saveQueryEditorResultSessionForOpenTab(
               nextBootstrap.payload.tab.id,
               nextBootstrap.payload.resultSession,
+              useStore.getState().tabs,
             );
           }
         }

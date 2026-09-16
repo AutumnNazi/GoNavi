@@ -3200,7 +3200,7 @@ describe('QueryEditor external SQL save', () => {
       renderer = create(<QueryEditor tab={createTab()} />);
     });
 
-    expect(findSqlLogTab(renderer)).toHaveLength(1);
+    expect(findSqlLogTab(renderer)).toHaveLength(0);
 
     await act(async () => {
       windowListeners['gonavi:show-sql-execution-log']?.forEach((listener) => listener());

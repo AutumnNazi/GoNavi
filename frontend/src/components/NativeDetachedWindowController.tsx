@@ -31,10 +31,7 @@ import {
   type NativeDetachedStoreSnapshot,
   type NativeDetachedWindowKind,
 } from '../utils/nativeDetachedWindowClient';
-import {
-  saveQueryEditorResultSession,
-  type QueryEditorResultSessionSnapshot,
-} from '../utils/queryEditorResultSessionCache';
+import { saveQueryEditorResultSessionForOpenQueryTab, type QueryEditorResultSessionSnapshot } from '../utils/queryEditorResultSessionCache';
 import { setQueryTabDraft, subscribeQueryTabDraftChanges } from '../utils/sqlFileTabDrafts';
 
 export const NATIVE_DETACHED_WINDOW_EVENT = 'gonavi:native-detached-event';
@@ -373,8 +370,8 @@ export const applyNativeDetachedWindowEvent = (
   }
   if (event.kind === 'workbench' && tab) {
     replaceSyncedTab(tab);
-    if (tab.type === 'query' && event.payload?.resultSession) {
-      saveQueryEditorResultSession(tab.id, event.payload.resultSession);
+    if (event.action !== 'cancel-close') {
+      saveQueryEditorResultSessionForOpenQueryTab(tab, event.payload?.resultSession, useStore.getState().tabs);
     }
   }
   if (
@@ -415,6 +412,7 @@ export const applyNativeDetachedWindowEvent = (
       if (latest.tabs.some((item) => item.id === tabId) && !latest.isWorkbenchTabDetached(tabId)) {
         latest.detachWorkbenchTab(tabId);
       }
+      saveQueryEditorResultSessionForOpenQueryTab(tab, event.payload?.resultSession, useStore.getState().tabs);
     } else if (
       event.payload?.rollbackAction === 'attach'
       && event.payload.resultWindow
