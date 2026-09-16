@@ -7598,6 +7598,7 @@
   "query_editor.message.save_first_before_rename": "名前を変更する前に、先にクエリを保存してください。",
   "query_editor.message.save_query_failed": "クエリの保存に失敗しました: {{error}}",
   "query_editor.message.save_sql_file_failed": "SQL ファイルの保存に失敗しました: {{error}}",
+  "query_editor.message.draft_recovery_limited": "この SQL はドラフト復旧予算を超えています。ファイルまたは保存済みクエリに保存してください。クラッシュ復旧では先頭の {{limit}} のみ復元される場合があります。",
   "query_editor.message.saved": "クエリを保存しました。",
   "query_editor.message.saved_as": "クエリを別名で保存しました。",
   "query_editor.message.select_database_first": "先にデータベースを選択してください。",

@@ -7598,6 +7598,7 @@
   "query_editor.message.save_first_before_rename": "Сначала сохраните запрос, а затем переименуйте его.",
   "query_editor.message.save_query_failed": "Не удалось сохранить запрос: {{error}}",
   "query_editor.message.save_sql_file_failed": "Не удалось сохранить SQL-файл: {{error}}",
+  "query_editor.message.draft_recovery_limited": "Этот SQL превышает лимит восстановления черновика. Сохраните его в файл или как сохранённый запрос; после сбоя могут быть восстановлены только первые {{limit}}.",
   "query_editor.message.saved": "Запрос сохранен.",
   "query_editor.message.saved_as": "Запрос сохранен как копия.",
   "query_editor.message.select_database_first": "Сначала выберите базу данных.",

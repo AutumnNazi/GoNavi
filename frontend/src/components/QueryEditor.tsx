@@ -256,6 +256,7 @@ import {
     supportsQueryEditorSchemaSelection,
 } from './queryEditor/queryEditorSchemaContext';
 import { useSqlEditorTransactionController } from './useSqlEditorTransactionController';
+import { useQueryEditorDraftRecoveryWarning } from './queryEditor/useQueryEditorDraftRecoveryWarning';
 import {
     cancelQueryEditorMetadataRequests,
     isQueryEditorMetadataAbortError,
@@ -1123,6 +1124,7 @@ const resetSharedQueryEditorMetadata = (releaseHoverDdlState = false) => {
 };
 
 const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isActive = true }) => {
+  useQueryEditorDraftRecoveryWarning(tab.id);
   const appearance = useStore(state => state.appearance);
   const queryOptions = useStore(state => state.queryOptions);
   const setQueryOptions = useStore(state => state.setQueryOptions);
@@ -1146,9 +1148,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       ),
       [isActive, isObjectEditQueryTab, wordWrapEnabled],
   );
-
   type ResultSet = QueryEditorResultSet;
-
   // Result Sets (session cache survives detach/attach remounts)
   const restoredResultSessionRef = useRef(takeQueryEditorResultSession(tab.id));
   const restoredResultHistoryRef = useRef<{

@@ -7598,6 +7598,7 @@
   "query_editor.message.save_first_before_rename": "請先儲存查詢後再重新命名。",
   "query_editor.message.save_query_failed": "儲存查詢失敗：{{error}}",
   "query_editor.message.save_sql_file_failed": "儲存 SQL 檔案失敗：{{error}}",
+  "query_editor.message.draft_recovery_limited": "此 SQL 已超出草稿復原預算。請儲存到檔案或已儲存查詢；當機復原時可能只能復原前 {{limit}}。",
   "query_editor.message.saved": "查詢已儲存。",
   "query_editor.message.saved_as": "查詢已另存為。",
   "query_editor.message.select_database_first": "請先選擇資料庫。",

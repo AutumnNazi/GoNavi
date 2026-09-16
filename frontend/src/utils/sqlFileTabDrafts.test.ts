@@ -8,7 +8,10 @@ import {
   getSQLFileTabDraft,
   hasQueryTabDraft,
   hasSQLFileTabDraft,
+  listPersistedQueryTabDraftEntries,
   persistQueryTabDraftSnapshot,
+  QUERY_TAB_DRAFT_MEMORY_MAX_BYTES,
+  QUERY_TAB_DRAFT_SNAPSHOT_MAX_TEXT_LENGTH,
   setQueryTabDraft,
   setSQLFileTabDraft,
   subscribeQueryTabDraftChanges,
@@ -106,7 +109,7 @@ describe('sqlFileTabDrafts', () => {
     vi.unstubAllGlobals();
   });
 
-  it('keeps the 160ms editor flush path free of large serialization and synchronous storage writes', async () => {
+  it('writes one recovery shard per idle slice instead of serializing a 30 MiB array', async () => {
     vi.useFakeTimers();
     vi.resetModules();
 
@@ -117,10 +120,10 @@ describe('sqlFileTabDrafts', () => {
     vi.stubGlobal('window', scheduling.windowStub);
     vi.stubGlobal('localStorage', storage);
 
-    const { persistQueryTabDraftSnapshot } = await import('./sqlFileTabDrafts');
+    const drafts = await import('./sqlFileTabDrafts');
     const oneMiBDraft = 'x'.repeat(1024 * 1024);
     for (let index = 0; index < 30; index += 1) {
-      persistQueryTabDraftSnapshot({
+      drafts.persistQueryTabDraftSnapshot({
         id: `large-query-${index}`,
         title: `Large query ${index}`,
         connectionId: 'conn-1',
@@ -140,9 +143,17 @@ describe('sqlFileTabDrafts', () => {
 
     scheduling.runNextIdleCallback();
 
-    expect(stringifySpy).toHaveBeenCalledTimes(1);
-    expect(setItemSpy).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(storage.getItem('gonavi-query-tab-drafts-v1') || '[]')).toHaveLength(30);
+    expect(setItemSpy.mock.calls.length).toBeGreaterThan(0);
+    expect(Math.max(...setItemSpy.mock.calls.map(([, value]) => String(value).length)))
+      .toBeLessThanOrEqual(QUERY_TAB_DRAFT_SNAPSHOT_MAX_TEXT_LENGTH + 16_384);
+    expect(stringifySpy.mock.calls.every(([value]) => (
+      !Array.isArray(value)
+      || value.every((entry) => !entry || typeof entry !== 'object' || !('query' in entry))
+    ))).toBe(true);
+    expect(scheduling.idleCallbacks.size).toBe(1);
+
+    while (scheduling.idleCallbacks.size > 0) scheduling.runNextIdleCallback();
+    expect((await import('./sqlFileTabDrafts')).listPersistedQueryTabDraftEntries()).toHaveLength(30);
   });
 
   it('keeps at most one idle write pending while edits continue', async () => {
@@ -152,7 +163,7 @@ describe('sqlFileTabDrafts', () => {
     const storage = new MemoryStorage();
     vi.stubGlobal('window', scheduling.windowStub);
     vi.stubGlobal('localStorage', storage);
-    const { persistQueryTabDraftSnapshot } = await import('./sqlFileTabDrafts');
+    const drafts = await import('./sqlFileTabDrafts');
     const tab = {
       id: 'query-bounded',
       title: 'Bounded queue',
@@ -160,12 +171,12 @@ describe('sqlFileTabDrafts', () => {
       dbName: 'main',
     };
 
-    persistQueryTabDraftSnapshot(tab, 'select 1;');
+    drafts.persistQueryTabDraftSnapshot(tab, 'select 1;');
     await vi.advanceTimersByTimeAsync(160);
     expect(scheduling.idleCallbacks.size).toBe(1);
 
     for (let index = 0; index < 100; index += 1) {
-      persistQueryTabDraftSnapshot(tab, `select ${index};`);
+      drafts.persistQueryTabDraftSnapshot(tab, `select ${index};`);
     }
 
     expect(scheduling.idleCallbacks.size).toBe(0);
@@ -185,7 +196,7 @@ describe('sqlFileTabDrafts', () => {
       cancelIdleCallback: undefined,
     });
     vi.stubGlobal('localStorage', storage);
-    const { persistQueryTabDraftSnapshot } = await import('./sqlFileTabDrafts');
+    const drafts = await import('./sqlFileTabDrafts');
     const tab = {
       id: 'query-no-idle-cancel',
       title: 'No idle cancellation',
@@ -193,15 +204,15 @@ describe('sqlFileTabDrafts', () => {
       dbName: 'main',
     };
 
-    persistQueryTabDraftSnapshot(tab, 'select 1;');
+    drafts.persistQueryTabDraftSnapshot(tab, 'select 1;');
     await vi.advanceTimersByTimeAsync(160);
-    persistQueryTabDraftSnapshot(tab, 'select 2;');
+    drafts.persistQueryTabDraftSnapshot(tab, 'select 2;');
     await vi.advanceTimersByTimeAsync(160);
 
     expect(scheduling.windowStub.requestIdleCallback).toHaveBeenCalledTimes(1);
     expect(scheduling.idleCallbacks.size).toBe(1);
     scheduling.runNextIdleCallback();
-    expect(JSON.parse(storage.getItem('gonavi-query-tab-drafts-v1') || '[]')[0].query).toBe('select 2;');
+    expect(drafts.listPersistedQueryTabDraftEntries()[0].query).toBe('select 2;');
   });
 
   it('defers the synchronous fallback write beyond the editor debounce when idle callbacks are unavailable', async () => {
@@ -230,7 +241,7 @@ describe('sqlFileTabDrafts', () => {
     await vi.advanceTimersByTimeAsync(499);
     expect(setItemSpy).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
-    expect(setItemSpy).toHaveBeenCalledTimes(1);
+    expect(setItemSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
   it('flushes synchronously for pagehide, beforeunload, and explicit recovery requests', async () => {
@@ -251,27 +262,100 @@ describe('sqlFileTabDrafts', () => {
 
     drafts.persistQueryTabDraftSnapshot(tab, 'select 1;');
     scheduling.dispatch('pagehide');
-    expect(setItemSpy).toHaveBeenCalledTimes(1);
+    expect(setItemSpy).toHaveBeenCalledTimes(2);
 
     drafts.persistQueryTabDraftSnapshot(tab, 'select 2;');
     scheduling.dispatch('beforeunload');
-    expect(setItemSpy).toHaveBeenCalledTimes(2);
+    expect(setItemSpy).toHaveBeenCalledTimes(4);
 
     drafts.persistQueryTabDraftSnapshot(tab, 'select 3;');
     await vi.advanceTimersByTimeAsync(160);
     expect(scheduling.idleCallbacks.size).toBe(1);
     drafts.flushQueryTabDraftSnapshots();
-    expect(setItemSpy).toHaveBeenCalledTimes(3);
+    expect(setItemSpy).toHaveBeenCalledTimes(6);
     expect(scheduling.idleCallbacks.size).toBe(0);
     expect(scheduling.windowStub.cancelIdleCallback).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(storage.getItem('gonavi-query-tab-drafts-v1') || '[]')[0].query).toBe('select 3;');
+    expect(drafts.listPersistedQueryTabDraftEntries()[0].query).toBe('select 3;');
 
     vi.resetModules();
     const reloaded = await import('./sqlFileTabDrafts');
     expect(reloaded.getQueryTabDraft(tab.id)).toBe('select 3;');
   });
 
-  it('preserves v1 ordering, count, and text-size limits when an idle batch is flushed', async () => {
+  it('flushes pending recovery shards when the document becomes hidden', async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    const scheduling = createBrowserSchedulingHarness();
+    const storage = new MemoryStorage();
+    let visibilityListener: EventListener | undefined;
+    const documentStub = {
+      visibilityState: 'visible',
+      addEventListener: vi.fn((type: string, listener: EventListener) => {
+        if (type === 'visibilitychange') visibilityListener = listener;
+      }),
+    };
+    vi.stubGlobal('window', scheduling.windowStub);
+    vi.stubGlobal('document', documentStub);
+    vi.stubGlobal('localStorage', storage);
+    const drafts = await import('./sqlFileTabDrafts');
+
+    drafts.persistQueryTabDraftSnapshot({
+      id: 'query-hidden-flush',
+      title: 'Hidden flush',
+      connectionId: 'conn-1',
+      dbName: 'main',
+    }, 'select 42;');
+    documentStub.visibilityState = 'hidden';
+    visibilityListener?.(new Event('visibilitychange'));
+
+    vi.resetModules();
+    const reloaded = await import('./sqlFileTabDrafts');
+    expect(reloaded.getQueryTabDraft('query-hidden-flush')).toBe('select 42;');
+  });
+
+  it('keeps the v1 snapshot until every migration shard is durable', async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    const scheduling = createBrowserSchedulingHarness();
+    const storage = new MemoryStorage();
+    storage.setItem('gonavi-query-tab-drafts-v1', JSON.stringify([
+      { tabId: 'legacy-1', title: 'Legacy 1', query: 'select 1;', connectionId: 'conn-1', dbName: 'main', updatedAt: 2 },
+      { tabId: 'legacy-2', title: 'Legacy 2', query: 'select 2;', connectionId: 'conn-1', dbName: 'main', updatedAt: 1 },
+    ]));
+    vi.stubGlobal('window', scheduling.windowStub);
+    vi.stubGlobal('localStorage', storage);
+    const drafts = await import('./sqlFileTabDrafts');
+
+    expect(drafts.listPersistedQueryTabDraftEntries()).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(160);
+    scheduling.runNextIdleCallback();
+    expect(storage.getItem('gonavi-query-tab-drafts-v1')).not.toBeNull();
+    expect(storage.getItem('gonavi-query-tab-drafts-v2-index')).toBeNull();
+
+    while (scheduling.idleCallbacks.size > 0) scheduling.runNextIdleCallback();
+    expect(storage.getItem('gonavi-query-tab-drafts-v1')).toBeNull();
+    expect(storage.getItem('gonavi-query-tab-drafts-v2-index')).not.toBeNull();
+
+    vi.resetModules();
+    const reloaded = await import('./sqlFileTabDrafts');
+    expect(reloaded.getQueryTabDraft('legacy-1')).toBe('select 1;');
+    expect(reloaded.getQueryTabDraft('legacy-2')).toBe('select 2;');
+  });
+
+  it('falls back to v1 when the v2 recovery index is corrupted', async () => {
+    vi.resetModules();
+    const storage = new MemoryStorage();
+    storage.setItem('gonavi-query-tab-drafts-v2-index', '{broken');
+    storage.setItem('gonavi-query-tab-drafts-v1', JSON.stringify([
+      { tabId: 'legacy-fallback', title: 'Fallback', query: 'select fallback;', connectionId: 'conn-1', dbName: 'main', updatedAt: 1 },
+    ]));
+    vi.stubGlobal('localStorage', storage);
+
+    const drafts = await import('./sqlFileTabDrafts');
+    expect(drafts.getQueryTabDraft('legacy-fallback')).toBe('select fallback;');
+  });
+
+  it('preserves ordering, count, and text-size limits when idle shards are flushed', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-21T00:00:00Z'));
     vi.resetModules();
@@ -300,11 +384,11 @@ describe('sqlFileTabDrafts', () => {
     }, 'x'.repeat(1024 * 1024 + 100));
 
     await vi.advanceTimersByTimeAsync(160);
-    scheduling.runNextIdleCallback();
+    while (scheduling.idleCallbacks.size > 0) scheduling.runNextIdleCallback();
 
-    expect(setItemSpy).toHaveBeenCalledTimes(1);
-    expect(storage.length).toBe(1);
-    const payload = JSON.parse(storage.getItem('gonavi-query-tab-drafts-v1') || '[]');
+    expect(setItemSpy.mock.calls.length).toBeGreaterThan(30);
+    expect(storage.length).toBe(31);
+    const payload = drafts.listPersistedQueryTabDraftEntries();
     expect(payload).toHaveLength(30);
     expect(payload[0].tabId).toBe('ordered-query-1');
     expect(payload[0].query).toHaveLength(1024 * 1024);
@@ -325,6 +409,89 @@ describe('sqlFileTabDrafts', () => {
     clearQueryTabDraft('query-tab-1');
 
     expect(hasQueryTabDraft('query-tab-1')).toBe(false);
+  });
+
+  it('removes the recovery shard and index entry when a query tab closes', async () => {
+    vi.resetModules();
+    const storage = new MemoryStorage();
+    vi.stubGlobal('localStorage', storage);
+    const drafts = await import('./sqlFileTabDrafts');
+
+    drafts.persistQueryTabDraftSnapshot({
+      id: 'query-close-cleanup',
+      title: 'Cleanup',
+      connectionId: 'conn-1',
+      dbName: 'main',
+    }, 'select cleanup;');
+    drafts.flushQueryTabDraftSnapshots();
+    expect(storage.length).toBe(2);
+
+    drafts.clearQueryTabDraft('query-close-cleanup');
+    drafts.flushQueryTabDraftSnapshots();
+    expect(storage.length).toBe(0);
+
+    vi.resetModules();
+    const reloaded = await import('./sqlFileTabDrafts');
+    expect(reloaded.getQueryTabDraft('query-close-cleanup', 'missing')).toBe('missing');
+  });
+
+  it('keeps a 10 MiB live draft under an explicit total memory budget', async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    const scheduling = createBrowserSchedulingHarness();
+    vi.stubGlobal('window', scheduling.windowStub);
+    vi.stubGlobal('localStorage', new MemoryStorage());
+    const drafts = await import('./sqlFileTabDrafts');
+    const largeSql = 'x'.repeat(10 * 1024 * 1024);
+    const sliceSpy = vi.spyOn(String.prototype, 'slice');
+    const status = drafts.persistQueryTabDraftSnapshot({
+      id: 'query-ten-mib',
+      title: 'Large SQL',
+      connectionId: 'conn-1',
+      dbName: 'main',
+    }, largeSql);
+
+    expect(sliceSpy.mock.instances.filter((value) => String(value).length === largeSql.length)).toHaveLength(0);
+
+    expect(drafts.getQueryTabDraft('query-ten-mib')).toBe(largeSql);
+    expect(drafts.getQueryTabDraftMemoryStats()).toMatchObject({
+      maxBytes: QUERY_TAB_DRAFT_MEMORY_MAX_BYTES,
+      totalBytes: largeSql.length * 2,
+    });
+    expect(status).toMatchObject({
+      recoveryTruncated: true,
+      recoveryTextLength: QUERY_TAB_DRAFT_SNAPSHOT_MAX_TEXT_LENGTH,
+    });
+    expect(drafts.getQueryTabDraftBudgetState('query-ten-mib')).toMatchObject({
+      recoveryTruncated: true,
+    });
+    drafts.flushQueryTabDraftSnapshots();
+    expect(sliceSpy.mock.instances.filter((value) => String(value).length === largeSql.length)).toHaveLength(1);
+    drafts.clearQueryTabDraft('query-ten-mib');
+  });
+
+  it('evicts the oldest live draft when the total memory budget is exceeded', async () => {
+    vi.resetModules();
+    vi.stubGlobal('localStorage', new MemoryStorage());
+    const drafts = await import('./sqlFileTabDrafts');
+    const largeSql = 'y'.repeat(10 * 1024 * 1024);
+    const fullDrafts: string[] = [];
+    for (let index = 0; index < 4; index += 1) {
+      const content = `${index}${largeSql.slice(1)}`;
+      fullDrafts.push(content);
+      drafts.persistQueryTabDraftSnapshot({
+        id: `query-memory-${index}`,
+        title: `Memory ${index}`,
+        connectionId: 'conn-1',
+        dbName: 'main',
+      }, content);
+    }
+
+    expect(drafts.getQueryTabDraftMemoryStats().totalBytes)
+      .toBeLessThanOrEqual(QUERY_TAB_DRAFT_MEMORY_MAX_BYTES);
+    expect(drafts.getQueryTabDraft('query-memory-0')).toHaveLength(QUERY_TAB_DRAFT_SNAPSHOT_MAX_TEXT_LENGTH);
+    expect(drafts.getQueryTabDraft('query-memory-0', fullDrafts[0])).toBe(fullDrafts[0]);
+    for (let index = 0; index < 4; index += 1) drafts.clearQueryTabDraft(`query-memory-${index}`);
   });
 
   it('notifies live snapshot consumers only when a draft actually changes', () => {
@@ -396,7 +563,7 @@ describe('sqlFileTabDrafts', () => {
 
     expect(getQueryTabDraft('query-empty-db-override')).toBe('select * from users;');
     flushQueryTabDraftSnapshots();
-    const payload = JSON.parse(localStorage.getItem('gonavi-query-tab-drafts-v1') || '[]');
+    const payload = listPersistedQueryTabDraftEntries();
     expect(payload.find((entry: { tabId: string }) => entry.tabId === 'query-empty-db-override')?.dbName).toBe('');
   });
 });

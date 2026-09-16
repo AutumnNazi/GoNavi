@@ -7598,6 +7598,7 @@
   "query_editor.message.save_first_before_rename": "Save the query before renaming it.",
   "query_editor.message.save_query_failed": "Failed to save query: {{error}}",
   "query_editor.message.save_sql_file_failed": "Failed to save SQL file: {{error}}",
+  "query_editor.message.draft_recovery_limited": "This SQL exceeds the draft recovery budget. Save it to a file or saved query; crash recovery may restore only the first {{limit}}.",
   "query_editor.message.saved": "Query saved.",
   "query_editor.message.saved_as": "Query saved as a new copy.",
   "query_editor.message.select_database_first": "Select a database first.",

@@ -7598,6 +7598,7 @@
   "query_editor.message.save_first_before_rename": "Speichern Sie die Abfrage, bevor Sie sie umbenennen.",
   "query_editor.message.save_query_failed": "Abfrage konnte nicht gespeichert werden: {{error}}",
   "query_editor.message.save_sql_file_failed": "SQL-Datei konnte nicht gespeichert werden: {{error}}",
+  "query_editor.message.draft_recovery_limited": "Dieses SQL überschreitet das Budget für die Entwurfswiederherstellung. Speichern Sie es als Datei oder gespeicherte Abfrage; nach einem Absturz werden möglicherweise nur die ersten {{limit}} wiederhergestellt.",
   "query_editor.message.saved": "Abfrage gespeichert.",
   "query_editor.message.saved_as": "Abfrage als Kopie gespeichert.",
   "query_editor.message.select_database_first": "Wählen Sie zuerst eine Datenbank aus.",
