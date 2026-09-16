@@ -1,6 +1,6 @@
 import React from 'react';
-import { create } from 'react-test-renderer';
-import { describe, expect, it, vi } from 'vitest';
+import { act, create } from 'react-test-renderer';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildOverlayWorkbenchTheme } from '../../utils/overlayWorkbenchTheme';
 
@@ -22,6 +22,7 @@ vi.mock('./useAIObservabilityRuns', () => ({
       { id: 'r1', requestId: 'q1', sessionId: 's1', providerId: 'grok', model: 'grok-3', thinking: 'high', taskKind: 'chat', state: 'completed', attempt: 1, createdAt: new Date(2026, 8, 9, 9).getTime(), updatedAt: new Date(2026, 8, 9, 9, 0, 8).getTime(), durationMs: 8000, activeDurationMs: 6200, promptTokens: 120, completionTokens: 30, totalTokens: 150, reservedTokens: 0, terminalReason: '' },
       { id: 'r2', requestId: 'q2', sessionId: 's2', providerId: 'openai', model: 'gpt-5', thinking: 'medium', taskKind: 'query_editor_generation', state: 'failed', attempt: 2, createdAt: new Date(2026, 8, 9, 10).getTime(), updatedAt: new Date(2026, 8, 9, 10, 0, 15).getTime(), durationMs: 15000, activeDurationMs: 11000, promptTokens: 80, completionTokens: 0, totalTokens: 80, reservedTokens: 0, terminalReason: 'upstream' },
       { id: 'r3', requestId: 'q3', sessionId: 's3', providerId: 'local-cli', model: 'no-usage', thinking: 'medium', taskKind: 'chat', state: 'completed', attempt: 1, createdAt: new Date(2026, 8, 9, 11).getTime(), updatedAt: new Date(2026, 8, 9, 11, 0, 3).getTime(), durationMs: 3000, activeDurationMs: 2500, promptTokens: 0, completionTokens: 0, totalTokens: 0, reservedTokens: 0, terminalReason: '' },
+      { id: 'r-old', requestId: 'q-old', sessionId: 's-old', providerId: 'grok', model: 'yesterday-only', thinking: 'low', taskKind: 'chat', state: 'completed', attempt: 1, createdAt: new Date(2026, 8, 8, 23).getTime(), updatedAt: new Date(2026, 8, 8, 23, 0, 1).getTime(), durationMs: 1000, activeDurationMs: 900, promptTokens: 10, completionTokens: 10, totalTokens: 20, reservedTokens: 0, terminalReason: '' },
     ],
     sessionTotal: 2,
     loadedSessionCount: 2,
@@ -37,6 +38,15 @@ vi.mock('./useAIObservabilityRuns', () => ({
 import AISettingsAnalysisSection from './AISettingsAnalysisSection';
 
 describe('AI settings analysis section', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 8, 9, 12, 30, 0, 0));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('renders the full observability dashboard from ledger metadata', () => {
     const theme = buildOverlayWorkbenchTheme(false);
     const renderer = create(
@@ -154,5 +164,28 @@ describe('AI settings analysis section', () => {
     expect(primaryValue.children.join('')).toBe('Usage not reported');
     expect(requestLabels).toHaveLength(1);
     expect(row.findAllByProps({ className: 'gonavi-ai-observability-model-bar-input' })).toHaveLength(0);
+    expect(renderer.root.findAll((node) => String(node.props.title || '').includes('yesterday-only'))).toHaveLength(0);
+  });
+
+  it('hides yesterday records in the default today range and shows them after switching to 7d', () => {
+    const renderer = create(
+      <AISettingsAnalysisSection
+        active
+        providers={[{ id: 'grok', name: 'Grok Subscription' }] as any}
+        overlayTheme={buildOverlayWorkbenchTheme(false)}
+        cardBg="#fff"
+        cardBorder="#ddd"
+      />,
+    );
+
+    expect(renderer.root.findByProps({ title: 'Grok Subscription / grok-3' })).toBeTruthy();
+    expect(renderer.root.findAll((node) => String(node.props.title || '').includes('yesterday-only'))).toHaveLength(0);
+
+    const rangeSelect = renderer.root.findByProps({ 'aria-label': 'Range' });
+    act(() => {
+      rangeSelect.props.onChange('7d');
+    });
+
+    expect(renderer.root.findAll((node) => String(node.props.title || '').includes('yesterday-only')).length).toBeGreaterThan(0);
   });
 });
