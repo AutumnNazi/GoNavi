@@ -30,6 +30,8 @@ type writeOutcomeTransactionState struct {
 	execErr     error
 	commitErr   error
 	rollbackErr error
+	queries     []string
+	execArgs    [][]driver.NamedValue
 	commits     int
 	rollbacks   int
 	closes      int
@@ -70,9 +72,11 @@ func (conn *writeOutcomeTransactionConn) BeginTx(context.Context, driver.TxOptio
 	return &writeOutcomeTransactionTx{state: conn.state}, nil
 }
 
-func (conn *writeOutcomeTransactionConn) ExecContext(context.Context, string, []driver.NamedValue) (driver.Result, error) {
+func (conn *writeOutcomeTransactionConn) ExecContext(_ context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
 	conn.state.mu.Lock()
 	defer conn.state.mu.Unlock()
+	conn.state.queries = append(conn.state.queries, query)
+	conn.state.execArgs = append(conn.state.execArgs, append([]driver.NamedValue(nil), args...))
 	if conn.state.execErr != nil {
 		return nil, conn.state.execErr
 	}

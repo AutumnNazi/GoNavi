@@ -365,6 +365,7 @@ func (m *MariaDB) ApplyChangesContext(ctx context.Context, tableName string, cha
 	if m.conn == nil {
 		return fmt.Errorf("连接未打开")
 	}
+	quotedTableName := fmt.Sprintf("`%s`", escapeMySQLBacktickIdent(tableName))
 
 	tx, err := m.conn.BeginTx(ctx, nil)
 	if err != nil {
@@ -378,13 +379,13 @@ func (m *MariaDB) ApplyChangesContext(ctx context.Context, tableName string, cha
 		var wheres []string
 		var args []interface{}
 		for k, v := range pk {
-			wheres = append(wheres, fmt.Sprintf("`%s` = ?", k))
+			wheres = append(wheres, fmt.Sprintf("`%s` = ?", escapeMySQLBacktickIdent(k)))
 			args = append(args, normalizeMySQLComplexValue(normalizeMySQLDateTimeValue(v)))
 		}
 		if len(wheres) == 0 {
 			continue
 		}
-		query := fmt.Sprintf("DELETE FROM `%s` WHERE %s", tableName, strings.Join(wheres, " AND "))
+		query := fmt.Sprintf("DELETE FROM %s WHERE %s", quotedTableName, strings.Join(wheres, " AND "))
 		res, err := tx.ExecContext(ctx, query, args...)
 		if err != nil {
 			return markWriteOutcomeUnknownIfAmbiguous(ctx, fmt.Errorf("删除失败：%w", err))
@@ -403,7 +404,7 @@ func (m *MariaDB) ApplyChangesContext(ctx context.Context, tableName string, cha
 		var args []interface{}
 
 		for k, v := range update.Values {
-			sets = append(sets, fmt.Sprintf("`%s` = ?", k))
+			sets = append(sets, fmt.Sprintf("`%s` = ?", escapeMySQLBacktickIdent(k)))
 			args = append(args, normalizeMySQLComplexValue(normalizeMySQLDateTimeValue(v)))
 		}
 
@@ -413,7 +414,7 @@ func (m *MariaDB) ApplyChangesContext(ctx context.Context, tableName string, cha
 
 		var wheres []string
 		for k, v := range update.Keys {
-			wheres = append(wheres, fmt.Sprintf("`%s` = ?", k))
+			wheres = append(wheres, fmt.Sprintf("`%s` = ?", escapeMySQLBacktickIdent(k)))
 			args = append(args, normalizeMySQLComplexValue(normalizeMySQLDateTimeValue(v)))
 		}
 
@@ -421,7 +422,7 @@ func (m *MariaDB) ApplyChangesContext(ctx context.Context, tableName string, cha
 			return fmt.Errorf("更新操作需要主键条件")
 		}
 
-		query := fmt.Sprintf("UPDATE `%s` SET %s WHERE %s", tableName, strings.Join(sets, ", "), strings.Join(wheres, " AND "))
+		query := fmt.Sprintf("UPDATE %s SET %s WHERE %s", quotedTableName, strings.Join(sets, ", "), strings.Join(wheres, " AND "))
 		res, err := tx.ExecContext(ctx, query, args...)
 		if err != nil {
 			return markWriteOutcomeUnknownIfAmbiguous(ctx, fmt.Errorf("更新失败：%w", err))
@@ -434,7 +435,7 @@ func (m *MariaDB) ApplyChangesContext(ctx context.Context, tableName string, cha
 
 	var unknownWriteErr error
 	if err := execParameterizedInsertBatches(parameterizedInsertConfig{
-		Table: fmt.Sprintf("`%s`", escapeMySQLBacktickIdent(tableName)),
+		Table: quotedTableName,
 		Rows:  changes.Inserts,
 		QuoteColumn: func(column string) string {
 			return fmt.Sprintf("`%s`", escapeMySQLBacktickIdent(column))
