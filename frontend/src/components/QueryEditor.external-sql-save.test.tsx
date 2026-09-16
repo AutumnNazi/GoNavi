@@ -14,6 +14,7 @@ import { resolveNewQueryContext } from '../utils/newQueryContext';
 import { QUERY_TAB_RENAME_REQUEST_EVENT } from '../utils/queryTabTitle';
 import { clearQueryTabDraft, clearSQLFileTabDraft, getQueryTabDraft, getSQLFileTabDraft } from '../utils/sqlFileTabDrafts';
 import { clearQueryEditorInlineRuntimeReadinessCache } from './queryEditor/QueryEditorAiAssist';
+import { queryEditorLazyTablesCache } from './queryEditor/queryEditorMetadataCaches';
 import QueryEditor, {
   collectQueryEditorObjectDecorationCandidates,
   resolveQueryEditorNavigationDecorations,
@@ -4633,6 +4634,60 @@ describe('QueryEditor external SQL save', () => {
     await act(async () => {
       renderer.unmount();
     });
+  });
+
+  it('does not refetch table metadata or comments when FROM completion already has current-db tables', async () => {
+    let renderer!: ReactTestRenderer;
+    autoFetchState.visible = true;
+    backendApp.DBGetDatabases.mockResolvedValueOnce({ success: true, data: [{ Database: 'main' }] });
+    backendApp.DBGetTables.mockResolvedValue({
+      success: true,
+      data: [{ Tables_in_main: 'users' }],
+    });
+    backendApp.DBGetAllColumns.mockResolvedValue({ success: true, data: [] });
+    backendApp.DBQuery.mockResolvedValue({ success: true, data: [] });
+
+    try {
+      await act(async () => {
+        renderer = create(<QueryEditor tab={createTab({ query: '', dbName: 'main' })} />);
+      });
+      await act(async () => {
+        for (let index = 0; index < 8; index += 1) {
+          await Promise.resolve();
+        }
+      });
+
+      const sqlProvider = editorState.providers.find((provider) => (
+        Array.isArray(provider.triggerCharacters) && provider.triggerCharacters.includes('.')
+      ));
+      expect(sqlProvider).toBeTruthy();
+
+      editorState.value = 'SELECT * FROM us';
+      editorState.latestOnChange?.(editorState.value);
+      const initialCompletion = await sqlProvider.provideCompletionItems(
+        editorState.editor.getModel(),
+        { lineNumber: 1, column: editorState.value.length + 1 },
+      );
+      expect(initialCompletion.suggestions.map((item: any) => item.label)).toContain('users');
+
+      queryEditorLazyTablesCache.clear();
+      backendApp.DBGetTables.mockClear();
+      backendApp.DBQuery.mockClear();
+
+      const cachedCompletion = await sqlProvider.provideCompletionItems(
+        editorState.editor.getModel(),
+        { lineNumber: 1, column: editorState.value.length + 1 },
+      );
+
+      expect(cachedCompletion.suggestions.map((item: any) => item.label)).toContain('users');
+      expect(backendApp.DBGetTables).not.toHaveBeenCalled();
+      expect(backendApp.DBQuery).not.toHaveBeenCalled();
+    } finally {
+      queryEditorLazyTablesCache.clear();
+      await act(async () => {
+        renderer?.unmount();
+      });
+    }
   });
 
   it('retries lazy table metadata after a transient failure instead of caching an empty catalog', async () => {
