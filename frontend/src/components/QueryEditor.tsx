@@ -202,9 +202,23 @@ import {
 } from './queryEditor/queryEditorObjectDefinitionQueries';
 import {
     filterQueryEditorResultSetsForBulkClose,
+    mergeQueryEditorResultSets,
     parseQueryResultSortInfo,
     sortCompleteQueryResultRows,
 } from './queryEditor/queryEditorResultSets';
+import {
+    applyQueryEditorResultHistoryBudget,
+    canPinQueryEditorResult,
+    QUERY_EDITOR_PINNED_RESULT_MAX_BYTES,
+    QUERY_EDITOR_PINNED_RESULT_MAX_RESULTS,
+    QUERY_EDITOR_PINNED_RESULT_MAX_ROWS,
+    QUERY_EDITOR_RESULT_HISTORY_MAX_BYTES,
+    QUERY_EDITOR_RESULT_HISTORY_MAX_RESULTS,
+    QUERY_EDITOR_RESULT_HISTORY_MAX_ROWS,
+} from './queryEditor/queryEditorResultHistory';
+import { shouldDestroyHiddenQueryResult } from './queryEditor/queryEditorResultLifecycle';
+import { useQueryEditorResultHistoryBudget } from './queryEditor/useQueryEditorResultHistoryBudget';
+import { useQueryEditorResultViewState } from './queryEditor/useQueryEditorResultViewState';
 import { materializeSqlSnippetText } from './queryEditor/queryEditorSqlSnippets';
 import QueryEditorResultsPanel, {
     QUERY_EDITOR_SQL_LOG_TAB_KEY,
@@ -280,7 +294,6 @@ import {
     buildQueryEditorReferenceIdentityKeys,
     buildQueryEditorTableSourceAlias,
     buildQueryEditorHoverMarkdown,
-    buildQueryEditorResultSetMergeKey,
     buildQualifiedCompletionName,
     clearQueryEditorLinkDecorations,
     clearQueryEditorObjectDecorations,
@@ -323,7 +336,6 @@ import {
     materializeBoundedQueryEditorCompletionBatches,
     resolveNewQueryDefaultTemplate,
     resolveEventTargetNode,
-    resolveNextResultSetIndex,
     resolveOracleExactCaseTableReference,
     resolveOracleLikeDefaultSchemaName,
     resolveOracleLikeExecutionSchemaName,
@@ -1182,11 +1194,28 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
   // Result Sets (session cache survives detach/attach remounts)
   const restoredResultSessionRef = useRef(takeQueryEditorResultSession(tab.id));
+  const restoredResultHistoryRef = useRef<{
+      resultSets: ResultSet[];
+      evictedKeys: string[];
+  } | null>(null);
+  if (restoredResultHistoryRef.current === null) {
+      const restoredActiveKey = restoredResultSessionRef.current?.activeResultKey || '';
+      restoredResultHistoryRef.current = applyQueryEditorResultHistoryBudget(
+          restoredResultSessionRef.current?.resultSets || [],
+          restoredActiveKey ? [restoredActiveKey] : [],
+      );
+  }
   const [resultSets, setResultSets] = useState<ResultSet[]>(
-    () => restoredResultSessionRef.current?.resultSets || [],
+    () => restoredResultHistoryRef.current?.resultSets || [],
   );
   const [activeResultKey, setActiveResultKey] = useState<string>(
-    () => restoredResultSessionRef.current?.activeResultKey || '',
+    () => {
+        const restoredActiveKey = restoredResultSessionRef.current?.activeResultKey || '';
+        const restoredResults = restoredResultHistoryRef.current?.resultSets || [];
+        return restoredResults.some((result) => result.key === restoredActiveKey)
+            ? restoredActiveKey
+            : restoredResults[0]?.key || '';
+    },
   );
   const [resultDataPreviewRequest, setResultDataPreviewRequest] = useState<{
       resultKey: string;
@@ -1200,6 +1229,31 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   >());
   resultSetsRef.current = resultSets;
   activeResultKeyRef.current = activeResultKey;
+  const handleResultViewStateChange = useQueryEditorResultViewState({
+      tabId: tab.id,
+      resultSets,
+      resultSetsRef,
+      setResultSets,
+  });
+  const hasPendingResultChanges = resultSets.some((result) => result.hasPendingChanges === true);
+  const notifyResultHistoryTrimmed = useCallback(() => {
+      void message.info(translate('query_editor.results_panel.message.history_trimmed', {
+          results: QUERY_EDITOR_RESULT_HISTORY_MAX_RESULTS,
+          rows: QUERY_EDITOR_RESULT_HISTORY_MAX_ROWS,
+          size: Math.round(QUERY_EDITOR_RESULT_HISTORY_MAX_BYTES / 1024 / 1024),
+      }));
+  }, []);
+  useEffect(() => {
+      if ((restoredResultHistoryRef.current?.evictedKeys.length || 0) === 0) return;
+      notifyResultHistoryTrimmed();
+  }, [notifyResultHistoryTrimmed]);
+  useQueryEditorResultHistoryBudget({
+      resultSets,
+      protectedActiveKey: activeResultKey === QUERY_EDITOR_SQL_LOG_TAB_KEY ? '' : activeResultKey,
+      resultSetsRef,
+      setResultSets,
+      onTrimmed: notifyResultHistoryTrimmed,
+  });
   const [loading, setLoading] = useState(false);
   const [queryEditorMetadataReloadTick, setQueryEditorMetadataReloadTick] = useState(0);
   // 事件驱动的结构变更重载必须绕过 fetchKey 去重（服务端结构可能已变，前端无从感知）
@@ -8567,28 +8621,18 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       return selected;
   };
 
-  const buildResultSetMergeKey = (result: ResultSet): string => (
-      buildQueryEditorResultSetMergeKey(result)
-  );
-
-  const mergeResultSets = (previous: ResultSet[], next: ResultSet[], replaceAll: boolean): ResultSet[] => {
-      const merged = replaceAll ? previous.filter((result) => result.pinned) : [...previous];
-      next.forEach((result) => {
-          const incomingKey = buildResultSetMergeKey(result);
-          const existingIndex = merged.findIndex(
-              (item) => !item.pinned && buildResultSetMergeKey(item) === incomingKey,
-          );
-          if (existingIndex >= 0) {
-              merged[existingIndex] = { ...result, key: merged[existingIndex].key, pinned: false };
-              return;
-          }
-          merged.push({ ...result, key: `result-${resolveNextResultSetIndex(merged)}`, pinned: false });
-      });
+  const mergeResultSets = (previous: ResultSet[], next: ResultSet[], replaceAll: boolean) => {
+      const merged = mergeQueryEditorResultSets(previous, next, replaceAll);
+      if (merged.evictedKeys.length > 0) {
+          notifyResultHistoryTrimmed();
+      }
       return merged;
   };
 
   const clearUnpinnedResultSets = (fallbackActiveKey = ''): ResultSet[] => {
-      const nextResultSets = resultSetsRef.current.filter((result) => result.pinned);
+      const nextResultSets = resultSetsRef.current.filter((result) => (
+          result.pinned || result.hasPendingChanges
+      ));
       const nextActiveKey = nextResultSets.some((result) => result.key === activeResultKeyRef.current)
           ? activeResultKeyRef.current
           : nextResultSets[0]?.key || fallbackActiveKey;
@@ -8597,22 +8641,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       setResultSets(nextResultSets);
       setActiveResultKey(nextActiveKey);
       return nextResultSets;
-  };
-
-  const isDisplayableResultSet = (result?: ResultSet | null): boolean => {
-      if (!result) {
-          return false;
-      }
-      if (Array.isArray(result.messages) && result.messages.length > 0) {
-          return true;
-      }
-      if (Array.isArray(result.columns) && result.columns.length > 0) {
-          return true;
-      }
-      if (Array.isArray(result.rows) && result.rows.length > 0) {
-          return true;
-      }
-      return false;
   };
 
   const isAffectedRowsResultSet = (result?: ResultSet | null): boolean =>
@@ -8641,25 +8669,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       return false;
   };
 
-  const isMessageLikeResultSet = (result?: ResultSet | null): boolean =>
-      Boolean(
-          result &&
-          Array.isArray(result.messages) &&
-          result.messages.length > 0 &&
-          result.resultType !== 'grid',
-      );
-
-  const isConcreteGridResultSet = (result?: ResultSet | null): boolean =>
-      Boolean(
-          result &&
-          result.resultType !== 'message' &&
-          !isAffectedRowsResultSet(result) &&
-          (
-              (Array.isArray(result.columns) && result.columns.length > 0) ||
-              (Array.isArray(result.rows) && result.rows.length > 0)
-          ),
-      );
-
   const isQueryDataGridResultSet = (result?: ResultSet | null): boolean =>
       Boolean(
           result &&
@@ -8667,26 +8676,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           !isAffectedRowsResultSet(result),
       );
 
-  const resolveActiveResultKeyAfterMerge = (merged: ResultSet[], executed: ResultSet[]): string => {
-      const firstExecutedResult = executed.find((result) => isConcreteGridResultSet(result))
-          || executed.find((result) => isMessageLikeResultSet(result))
-          || executed.find((result) => isDisplayableResultSet(result) && !isAffectedRowsResultSet(result))
-          || executed.find((result) => isDisplayableResultSet(result))
-          || executed[0];
-      if (!firstExecutedResult) {
-          return '';
-      }
-      const executedSqlKey = buildResultSetMergeKey(firstExecutedResult);
-      return merged.find(
-          (item) => !item.pinned && buildResultSetMergeKey(item) === executedSqlKey,
-      )?.key
-          || firstExecutedResult.key
-          || merged[0]?.key
-          || '';
-  };
-
-  const activateExecutedResult = (merged: ResultSet[], executed: ResultSet[], requestSeq: number) => {
-      const nextActiveResultKey = resolveActiveResultKeyAfterMerge(merged, executed);
+  const activateExecutedResult = (merged: ResultSet[], nextActiveResultKey: string, requestSeq: number) => {
       const nextActiveResult = merged.find((result) => result.key === nextActiveResultKey);
       setActiveResultKey(nextActiveResultKey);
       setResultDataPreviewRequest(isQueryDataGridResultSet(nextActiveResult)
@@ -9104,6 +9094,15 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           }
       }));
   };
+
+  useEffect(() => {
+      const retainedKeys = new Set(resultSets.map((result) => result.key));
+      const orphanedRequestKeys = Object.keys(resultTotalCountRequestsRef.current)
+          .filter((key) => !retainedKeys.has(key));
+      if (orphanedRequestKeys.length > 0) {
+          void cancelResultTotalCountRequests(orphanedRequestKeys);
+      }
+  }, [resultSets]);
 
   useEffect(() => {
       const nextContext = `${currentConnectionId}\u0000${currentDb}\u0000${currentSchema}`;
@@ -9524,8 +9523,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           if (nextResultSets.length > 0) {
               updateResultPanelVisibility(true);
               const merged = mergeResultSets(resultSetsRef.current, nextResultSets, runAll);
-              setResultSets(merged);
-              activateExecutedResult(merged, nextResultSets, runSeq);
+              resultSetsRef.current = merged.resultSets;
+              setResultSets(merged.resultSets);
+              activateExecutedResult(merged.resultSets, merged.activeResultKey, runSeq);
           }
           if (!execution?.success) {
               const errorMessage = String(execution?.message || translate('query_editor.elasticsearch.execute_failed'));
@@ -9899,8 +9899,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             }
             const shouldReplaceAllResults = didExecuteWholeEditor;
             const mergedResultSets = mergeResultSets(resultSets, nextResultSets, shouldReplaceAllResults);
-            setResultSets(mergedResultSets);
-            activateExecutedResult(mergedResultSets, nextResultSets, runSeq);
+            resultSetsRef.current = mergedResultSets.resultSets;
+            setResultSets(mergedResultSets.resultSets);
+            activateExecutedResult(mergedResultSets.resultSets, mergedResultSets.activeResultKey, runSeq);
             if (didExecuteAppendedSql || didExecuteWholeEditor) {
                 lastExecutedEditorQueryRef.current = currentQuery;
             }
@@ -10525,8 +10526,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             }
             const shouldReplaceAllResults = didExecuteWholeEditor;
             const mergedResultSets = mergeResultSets(resultSets, nextResultSets, shouldReplaceAllResults);
-            setResultSets(mergedResultSets);
-            activateExecutedResult(mergedResultSets, nextResultSets, runSeq);
+            resultSetsRef.current = mergedResultSets.resultSets;
+            setResultSets(mergedResultSets.resultSets);
+            activateExecutedResult(mergedResultSets.resultSets, mergedResultSets.activeResultKey, runSeq);
             if (didExecuteAppendedSql || didExecuteWholeEditor) {
                 lastExecutedEditorQueryRef.current = currentQuery;
             }
@@ -12177,6 +12179,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   }, [isActive, true, tab.id, updateResultPanelVisibility]);
 
   const handleResultPinnedChange = (key: string, pinned: boolean) => {
+      if (pinned && !canPinQueryEditorResult(resultSetsRef.current, key)) {
+          void message.warning(translate('query_editor.results_panel.message.pin_budget_exceeded', {
+              results: QUERY_EDITOR_PINNED_RESULT_MAX_RESULTS,
+              rows: QUERY_EDITOR_PINNED_RESULT_MAX_ROWS,
+              size: Math.round(QUERY_EDITOR_PINNED_RESULT_MAX_BYTES / 1024 / 1024),
+          }));
+          return;
+      }
       const nextResultSets = resultSetsRef.current.map((result) => (
           result.key === key ? { ...result, pinned } : result
       ));
@@ -12231,6 +12241,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   ) => {
       const target = resultSets.find((result) => result.key === key);
       if (!target) return;
+      if (!shouldDestroyHiddenQueryResult(target)) {
+          void message.warning(translate('query_editor.results_panel.message.detach_pending_changes'));
+          return;
+      }
       const index = resultSets.findIndex((result) => result.key === key);
       const title = target.resultType === 'message'
           ? translate('query_editor.results_panel.tab.message', { index: index + 1 })
@@ -12276,6 +12290,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               showRowNumberColumn: target.showRowNumberColumn,
               truncated: target.truncated,
               pinned: target.pinned,
+              filterConditions: target.filterConditions,
+              quickWhereCondition: target.quickWhereCondition,
+              selectedRowKeys: target.selectedRowKeys,
+              selectedCellKeys: target.selectedCellKeys,
+              scrollSnapshot: target.scrollSnapshot,
           },
       };
       void openNativeQueryResultWindow(detachedWindow)
@@ -12332,11 +12351,20 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   showRowNumberColumn: restored.showRowNumberColumn,
                   truncated: restored.truncated,
                   pinned: restored.pinned === true,
+                  filterConditions: restored.filterConditions,
+                  quickWhereCondition: restored.quickWhereCondition,
+                  selectedRowKeys: restored.selectedRowKeys,
+                  selectedCellKeys: restored.selectedCellKeys,
+                  scrollSnapshot: restored.scrollSnapshot,
               } as ResultSet;
-              const nextResultSets = [
+              const budgeted = applyQueryEditorResultHistoryBudget([
                   ...resultSetsRef.current,
                   restoredResult,
-              ];
+              ], [restoredKey]);
+              const nextResultSets = budgeted.resultSets;
+              if (budgeted.evictedKeys.length > 0) {
+                  notifyResultHistoryTrimmed();
+              }
               resultSetsRef.current = nextResultSets;
               setResultSets(nextResultSets);
               if (windowId === expectedWindowId) {
@@ -12577,12 +12605,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       )}
       </div>
 
-      {isResultPanelVisible && (
+      {(isResultPanelVisible || hasPendingResultChanges) && (
         <QueryEditorResultsPanel
           workbenchTabId={tab.id}
           resultSets={resultSets}
           activeResultKey={activeResultKey}
-          isActive={isActive}
+          isActive={isActive && isResultPanelVisible}
+          hidden={!isResultPanelVisible}
           loading={loading}
           executionError={executionError}
           sqlLogCount={sqlLogCount}
@@ -12600,6 +12629,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           onCloseResultTabsToRight={closeResultTabsToRight}
           onCloseAllResultTabs={closeAllResultTabs}
           onResultPinnedChange={handleResultPinnedChange}
+          onResultViewStateChange={handleResultViewStateChange}
           onOpenResultInWindow={openResultInWindow}
           onReloadResult={handleReloadResult}
           onResultPageChange={handleResultPageChange}

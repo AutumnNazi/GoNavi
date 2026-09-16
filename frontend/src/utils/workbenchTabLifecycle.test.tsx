@@ -6,7 +6,10 @@ import { Tabs } from 'antd';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { TabData } from '../types';
-import { shouldDestroyHiddenWorkbenchTab } from './workbenchTabLifecycle';
+import {
+  shouldBlockWorkbenchTabDetach,
+  shouldDestroyHiddenWorkbenchTab,
+} from './workbenchTabLifecycle';
 
 const buildQueryTab = (id: string): TabData => ({
   id,
@@ -48,6 +51,13 @@ describe('workbench tab lifecycle', () => {
     expect(shouldDestroyHiddenWorkbenchTab(buildQueryTab('query-pending'), {
       'query-pending': { id: 'tx-1' },
     })).toBe(false);
+    expect(shouldDestroyHiddenWorkbenchTab(buildQueryTab('query-dirty-result'), {}, true)).toBe(false);
+  });
+
+  it('blocks detaching query tabs while a result grid has pending edits', () => {
+    expect(shouldBlockWorkbenchTabDetach(buildQueryTab('query-clean'), false)).toBe(false);
+    expect(shouldBlockWorkbenchTabDetach(buildQueryTab('query-dirty'), true)).toBe(true);
+    expect(shouldBlockWorkbenchTabDetach({ type: 'table' }, true)).toBe(false);
   });
 
   it('keeps one query probe and one listener set mounted after visiting twenty query tabs', async () => {

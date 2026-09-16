@@ -207,6 +207,7 @@ import { useDataGridV2Actions } from './useDataGridV2Actions';
 import { useDataGridMetadata } from './useDataGridMetadata';
 import { useDataGridColumnResize } from './useDataGridColumnResize';
 import { useDataGridPreviewPanel } from './useDataGridPreviewPanel';
+import { useControllableDataGridSelection, useReportDataGridPendingChanges } from './useControllableDataGridSelection';
 import { buildTableExportTab } from '../utils/tableExportTab';
 import { createSidebarResizeAwareFrameScheduler } from '../utils/sidebarResizeLifecycle';
 import { buildDataGridCssText } from './dataGridStyles';
@@ -377,6 +378,7 @@ const DataGrid: React.FC<DataGridProps> = ({
     onDataViewActivate,
     onDataChange,
     workbenchTabId,
+    sessionState,
 }) => {
   const storedConnections = useStore(state => state.connections);
   const connections = useMemo(() => {
@@ -1075,7 +1077,7 @@ const DataGrid: React.FC<DataGridProps> = ({
 
   // 批量编辑模式状态
   const [cellEditMode, setCellEditMode] = useState(false);
-  const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
+  const { selectedRowKeys, setSelectedRowKeys, selectedCells, setSelectedCells } = useControllableDataGridSelection(sessionState);
   const [cellSelectionDeleteEligible, setCellSelectionDeleteEligible] = useState(false);
   const cellSelectionSourceDataRef = useRef<Item[] | null>(null);
   // Keep the origin of an explicit user cell selection separate from the
@@ -1628,7 +1630,6 @@ const DataGrid: React.FC<DataGridProps> = ({
       };
   }, [recalculateTableMetrics]);
 
-  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [addedRows, setAddedRows] = useState<any[]>([]);
   const [modifiedRows, setModifiedRows] = useState<Record<string, any>>({});
   const [deletedRowKeys, setDeletedRowKeys] = useState<Set<string>>(new Set());
@@ -2691,6 +2692,7 @@ const DataGrid: React.FC<DataGridProps> = ({
       looksLikeJsonText,
       normalizeDateTimeString,
   });
+  useReportDataGridPendingChanges(hasChanges || cellEditMode || virtualEditingCell !== null || dataPanelDirtyRef.current, sessionState?.onPendingChangesChange);
   const focusedCellWritable = useMemo(() => (
       canModifyData &&
       !!focusedCellInfo &&

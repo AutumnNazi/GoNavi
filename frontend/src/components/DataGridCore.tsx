@@ -147,6 +147,7 @@ import DataGridSecondaryActions from './DataGridSecondaryActions';
 import DataGridToolbarFrame from './DataGridToolbarFrame';
 import DataGridModals from './DataGridModals';
 import DataGridPreviewPanel from './DataGridPreviewPanel';
+import type { DataGridSessionStateProps } from './useControllableDataGridSelection';
 import {
     DEFAULT_DATA_EXPORT_FORMAT,
     DEFAULT_XLSX_ROWS_PER_SHEET,
@@ -1613,6 +1614,7 @@ interface DataGridProps {
     onDataChange?: (rows: any[]) => void;
     /** Workbench tab that owns editable changes in this grid. */
     workbenchTabId?: string;
+    sessionState?: DataGridSessionStateProps;
 }
 
 type GridFilterCondition = FilterCondition & {

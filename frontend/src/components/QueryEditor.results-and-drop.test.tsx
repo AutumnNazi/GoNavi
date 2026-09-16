@@ -6,7 +6,10 @@ import { readV2ThemeCss } from '../test/readV2ThemeCss';
 
 import { setCurrentLanguage } from '../i18n';
 import type { SavedQuery, TabData } from '../types';
-import { clearQueryEditorResultSession } from '../utils/queryEditorResultSessionCache';
+import {
+  clearQueryEditorResultSession,
+  saveQueryEditorResultSession,
+} from '../utils/queryEditorResultSessionCache';
 import { formatSqlExecutionError } from '../utils/sqlErrorSemantics';
 import { clearQueryTabDraft, clearSQLFileTabDraft } from '../utils/sqlFileTabDrafts';
 import {
@@ -1189,10 +1192,106 @@ describe('QueryEditor external SQL save', () => {
     expect(backendApp.DBQueryMulti).toHaveBeenCalledOnce();
     expect(backendApp.DBGetColumns).not.toHaveBeenCalled();
     expect(backendApp.DBGetIndexes).not.toHaveBeenCalled();
-    expect(resultTabs).toHaveLength(52);
+    expect(resultTabs).toHaveLength(20);
     await act(async () => {
       renderer.unmount();
     });
+  });
+
+  it('bounds restored result sessions before mounting their DataGrids', async () => {
+    saveQueryEditorResultSession('tab-1', {
+      resultSets: Array.from({ length: 25 }, (_, index) => ({
+        key: `result-${index + 1}`,
+        sql: `select ${index + 1}`,
+        columns: ['value'],
+        rows: [{ value: index + 1 }],
+        pkColumns: [],
+        readOnly: true,
+      })),
+      activeResultKey: 'result-1',
+      isResultPanelVisible: true,
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab()} />);
+    });
+
+    const panel = renderer.root.findByType(QueryEditorResultsPanel);
+    expect(panel.props.resultSets).toHaveLength(20);
+    expect(panel.props.resultSets.map((result: any) => result.key)).toContain('result-1');
+    expect(panel.props.activeResultKey).toBe('result-1');
+    expect(messageApi.info).toHaveBeenCalledWith(expect.stringContaining('20'));
+    renderer.unmount();
+  });
+
+  it('keeps a hidden result panel mounted until pending grid edits are cleared', async () => {
+    saveQueryEditorResultSession('tab-1', {
+      resultSets: [{
+        key: 'result-1',
+        sql: 'select id from users',
+        columns: ['id'],
+        rows: [{ id: 1 }],
+        pkColumns: ['id'],
+        readOnly: false,
+      }],
+      activeResultKey: 'result-1',
+      isResultPanelVisible: true,
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab()} />);
+    });
+
+    await act(async () => {
+      dataGridState.latestProps.sessionState.onPendingChangesChange(true);
+    });
+    expect(renderer.root.findByType(QueryEditorResultsPanel).props.resultSets[0].hasPendingChanges).toBe(true);
+
+    await act(async () => {
+      renderer.root.findByType(QueryEditorResultsPanel).props.onHide();
+    });
+    const hiddenPanel = renderer.root.findByType(QueryEditorResultsPanel);
+    expect(hiddenPanel.props.hidden).toBe(true);
+    expect(hiddenPanel.props.isActive).toBe(false);
+
+    await act(async () => {
+      dataGridState.latestProps.sessionState.onPendingChangesChange(false);
+    });
+    expect(renderer.root.findAllByType(QueryEditorResultsPanel)).toHaveLength(0);
+    renderer.unmount();
+  });
+
+  it('does not clear a pending result when an execution produces no SQL', async () => {
+    saveQueryEditorResultSession('tab-1', {
+      resultSets: [{
+        key: 'result-1',
+        sql: 'select id from users',
+        columns: ['id'],
+        rows: [{ id: 1 }],
+        pkColumns: ['id'],
+        readOnly: false,
+        hasPendingChanges: true,
+      }],
+      activeResultKey: 'result-1',
+      isResultPanelVisible: true,
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: '-- no executable SQL' })} />);
+    });
+    await act(async () => {
+      await findButton(renderer, '运行').props.onClick();
+    });
+
+    const panel = renderer.root.findByType(QueryEditorResultsPanel);
+    expect(panel.props.resultSets).toEqual([
+      expect.objectContaining({ key: 'result-1', hasPendingChanges: true }),
+    ]);
+    expect(backendApp.DBQueryMulti).not.toHaveBeenCalled();
+    renderer.unmount();
   });
 
   it('runs the whole Oracle procedure when the cursor is in the exception tail', async () => {

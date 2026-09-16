@@ -1,5 +1,8 @@
 import { GONAVI_ROW_KEY } from '../DataGridCore';
 import type { GridSortInfoItem } from '../../utils/dataGridSort';
+import type { QueryEditorResultSet } from '../QueryEditorResultsPanel';
+import { buildQueryEditorResultSetMergeKey, resolveNextResultSetIndex } from './QueryEditorHelpers';
+import { applyQueryEditorResultHistoryBudget } from './queryEditorResultHistory';
 
 export type QueryEditorBulkCloseMode = 'other' | 'left' | 'right' | 'all';
 
@@ -110,4 +113,78 @@ export const filterQueryEditorResultSetsForBulkClose = <T extends { key: string;
         if (mode === 'left') return index >= targetIndex;
         return index <= targetIndex;
     });
+};
+
+const isAffectedRowsResult = (result?: QueryEditorResultSet | null): boolean => Boolean(
+    result
+    && result.columns.length === 1
+    && result.columns[0] === 'affectedRows',
+);
+
+const isDisplayableResult = (result?: QueryEditorResultSet | null): boolean => Boolean(
+    result
+    && (
+        (Array.isArray(result.messages) && result.messages.length > 0)
+        || (Array.isArray(result.columns) && result.columns.length > 0)
+        || (Array.isArray(result.rows) && result.rows.length > 0)
+    ),
+);
+
+const resolvePreferredExecutedResultIndex = (
+    executed: QueryEditorResultSet[],
+): number => {
+    const index = executed.findIndex((result) => (
+        result.resultType !== 'message'
+        && !isAffectedRowsResult(result)
+        && (result.columns.length > 0 || result.rows.length > 0)
+    ));
+    if (index >= 0) return index;
+    const messageIndex = executed.findIndex((result) => (
+        result.messages && result.messages.length > 0 && result.resultType !== 'grid'
+    ));
+    if (messageIndex >= 0) return messageIndex;
+    const nonAffectedIndex = executed.findIndex((result) => (
+        isDisplayableResult(result) && !isAffectedRowsResult(result)
+    ));
+    if (nonAffectedIndex >= 0) return nonAffectedIndex;
+    const displayableIndex = executed.findIndex(isDisplayableResult);
+    return displayableIndex >= 0 ? displayableIndex : (executed.length > 0 ? 0 : -1);
+};
+
+export const mergeQueryEditorResultSets = (
+    previous: QueryEditorResultSet[],
+    next: QueryEditorResultSet[],
+    replaceAll: boolean,
+): { resultSets: QueryEditorResultSet[]; activeResultKey: string; evictedKeys: string[] } => {
+    const merged = replaceAll
+        ? previous.filter((result) => result.pinned || result.hasPendingChanges)
+        : [...previous];
+    const executedResultKeys: string[] = [];
+    next.forEach((result) => {
+        const incomingKey = buildQueryEditorResultSetMergeKey(result);
+        const existingIndex = merged.findIndex((item) => (
+            !item.pinned
+            && !item.hasPendingChanges
+            && buildQueryEditorResultSetMergeKey(item) === incomingKey
+        ));
+        if (existingIndex >= 0) {
+            const existingKey = merged[existingIndex].key;
+            merged[existingIndex] = { ...result, key: existingKey, pinned: false };
+            executedResultKeys.push(existingKey);
+            return;
+        }
+        const nextKey = `result-${resolveNextResultSetIndex(merged)}`;
+        merged.push({ ...result, key: nextKey, pinned: false });
+        executedResultKeys.push(nextKey);
+    });
+    const preferredExecutedIndex = resolvePreferredExecutedResultIndex(next);
+    const activeResultKey = preferredExecutedIndex >= 0
+        ? executedResultKeys[preferredExecutedIndex] || merged[0]?.key || ''
+        : '';
+    const budgeted = applyQueryEditorResultHistoryBudget(merged, activeResultKey ? [activeResultKey] : []);
+    return {
+        resultSets: budgeted.resultSets,
+        activeResultKey,
+        evictedKeys: budgeted.evictedKeys,
+    };
 };

@@ -3,9 +3,24 @@ import { describe, expect, it } from 'vitest';
 import { GONAVI_ROW_KEY } from '../DataGridCore';
 import {
     filterQueryEditorResultSetsForBulkClose,
+    mergeQueryEditorResultSets,
     parseQueryResultSortInfo,
     sortCompleteQueryResultRows,
 } from './queryEditorResultSets';
+import type { QueryEditorResultSet } from '../QueryEditorResultsPanel';
+
+const buildResult = (
+    key: string,
+    overrides: Partial<QueryEditorResultSet> = {},
+): QueryEditorResultSet => ({
+    key,
+    sql: 'select value from items',
+    columns: ['value'],
+    rows: [{ value: key }],
+    pkColumns: [],
+    readOnly: true,
+    ...overrides,
+});
 
 describe('query editor result sets', () => {
     it('parses multi-column sort payloads and falls back to the legacy single column shape', () => {
@@ -41,5 +56,20 @@ describe('query editor result sets', () => {
         expect(filterQueryEditorResultSetsForBulkClose(resultSets, 'result-2', 'left').map((result) => result.key)).toEqual(['result-2', 'result-3']);
         expect(filterQueryEditorResultSetsForBulkClose(resultSets, 'result-2', 'right').map((result) => result.key)).toEqual(['result-1', 'result-2']);
         expect(filterQueryEditorResultSetsForBulkClose(resultSets, '', 'all').map((result) => result.key)).toEqual(['result-2']);
+    });
+
+    it('preserves a pending result when the same SQL is executed with replace-all semantics', () => {
+        const merged = mergeQueryEditorResultSets([
+            buildResult('result-1', { hasPendingChanges: true, rows: [{ value: 'edited' }] }),
+            buildResult('result-2', { sql: 'select stale from items' }),
+        ], [
+            buildResult('incoming', { rows: [{ value: 'fresh' }] }),
+        ], true);
+
+        expect(merged.resultSets).toEqual([
+            expect.objectContaining({ key: 'result-1', hasPendingChanges: true, rows: [{ value: 'edited' }] }),
+            expect.objectContaining({ key: 'result-2', rows: [{ value: 'fresh' }] }),
+        ]);
+        expect(merged.activeResultKey).toBe('result-2');
     });
 });
