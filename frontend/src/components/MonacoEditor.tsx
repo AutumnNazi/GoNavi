@@ -909,19 +909,19 @@ const ensureMonacoConfigured = (): Promise<void> => {
   }
 
   if (!monacoConfiguredPromise) {
-    monacoConfiguredPromise = import('monaco-editor/esm/nls.messages.zh-cn')
+    monacoConfiguredPromise = import('monaco-editor/nls/lang/zh-cn.js')
       .then(() => Promise.all([
-        import('monaco-editor/esm/vs/editor/editor.api.js'),
-        import('monaco-editor/esm/vs/editor/editor.worker?worker'),
-        import('monaco-editor/esm/vs/language/json/json.worker?worker'),
+        import('monaco-editor/editor/editor.api.js'),
+        import('monaco-editor/editor/editor.worker?worker'),
+        import('monaco-editor/language/json/json.worker?worker'),
         // 编辑器组件与内置语言高亮按需引入(纯副作用)。刻意不引整包
-        // monaco-editor:其 editor.main 附带 TS/CSS/HTML 语言服务及对应
+        // monaco-editor:其默认入口附带 TS/CSS/HTML 语言服务及对应
         // worker(约 8MB),而本应用只用 sql/mysql/redis/json 语言。
-        import('monaco-editor/esm/vs/editor/editor.all.js'),
-        import('monaco-editor/esm/vs/basic-languages/sql/sql.contribution.js'),
-        import('monaco-editor/esm/vs/basic-languages/mysql/mysql.contribution.js'),
-        import('monaco-editor/esm/vs/basic-languages/redis/redis.contribution.js'),
-        import('monaco-editor/esm/vs/language/json/monaco.contribution.js'),
+        import('monaco-editor/features/register.all.js'),
+        import('monaco-editor/languages/definitions/sql/register.js'),
+        import('monaco-editor/languages/definitions/mysql/register.js'),
+        import('monaco-editor/languages/definitions/redis/register.js'),
+        import('monaco-editor/languages/features/json/register.js'),
       ]))
       .then(([monaco, editorWorker, jsonWorker]) => {
         installMonacoWorkerEnvironment(globalThis as unknown as Record<string, any>, {

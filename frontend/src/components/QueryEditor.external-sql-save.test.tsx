@@ -8856,7 +8856,7 @@ describe('QueryEditor external SQL save', () => {
       strings: false,
     });
     expect(monacoEditorMockState.latestProps.options.hover).toMatchObject({
-      enabled: true,
+      enabled: 'on',
       delay: 1000,
     });
     expect(editorState.editor.updateOptions).toHaveBeenCalledWith(expect.objectContaining({
@@ -8932,7 +8932,7 @@ describe('QueryEditor external SQL save', () => {
         addExtraSpaceOnTop: false,
       },
       hover: {
-        enabled: true,
+        enabled: 'on',
         delay: 1000,
         above: false,
       },

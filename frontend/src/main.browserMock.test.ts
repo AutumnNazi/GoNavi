@@ -51,7 +51,7 @@ vi.mock('monaco-editor', () => ({
   },
 }));
 
-vi.mock('monaco-editor/esm/nls.messages.zh-cn', () => ({}));
+vi.mock('monaco-editor/nls/lang/zh-cn.js', () => ({}));
 
 const syncLanguageRuntimeMock = vi.fn(async (_language: string) => undefined);
 

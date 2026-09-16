@@ -97,10 +97,10 @@ vi.mock('@ant-design/icons', () => ({
 
 const renderPanel = async ({
   continueOnError = false,
-  onRunningChange = vi.fn(),
+  onRunningChange = vi.fn<(running: boolean) => void>(),
 }: {
   continueOnError?: boolean;
-  onRunningChange?: ReturnType<typeof vi.fn>;
+  onRunningChange?: ReturnType<typeof vi.fn<(running: boolean) => void>>;
 } = {}) => {
   let renderer!: ReactTestRenderer;
   await act(async () => {

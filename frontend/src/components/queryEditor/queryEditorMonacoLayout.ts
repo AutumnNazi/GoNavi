@@ -53,7 +53,7 @@ export const buildQueryEditorMonacoOptions = (
         addExtraSpaceOnTop: false,
     },
     hover: {
-        enabled: true,
+        enabled: 'on' as const,
         delay: QUERY_EDITOR_HOVER_DELAY_MS,
         above: false,
     },
