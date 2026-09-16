@@ -35,6 +35,11 @@ CONTRIBUTED_BY_RE = re.compile(
     r"\(\s*contributed\s+by\s+(?:\*\*)?@[A-Za-z0-9-]+(?:\*\*)?\s*\)",
     re.IGNORECASE,
 )
+HUALONG_SPONSOR_URL = "https://api.hualong.online/register?promo=GONAVI%26HUALONG"
+HUALONG_SPONSOR_NOTICE = (
+    f"> 💖 **赞助商 · [華龍算力]({HUALONG_SPONSOR_URL})**："
+    "国模大促销，DeepSeek、GLM、Kimi 降至官方定价 **3.8 折**"
+)
 
 
 @dataclass(frozen=True)
@@ -358,6 +363,12 @@ def category_for_subject(subject: str) -> str:
     return "other"
 
 
+def render_sponsor_notice() -> str:
+    """Compact sponsor line prepended to CI-generated changelogs."""
+
+    return HUALONG_SPONSOR_NOTICE
+
+
 def render_release_notes(
     *,
     commits: Sequence[Commit],
@@ -407,7 +418,7 @@ def render_release_notes(
             f"({base_url}/compare/{previous_url}...{tag_url})"
         )
 
-    return "\n\n".join(blocks) + "\n"
+    return "\n\n".join([render_sponsor_notice(), *blocks]) + "\n"
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
