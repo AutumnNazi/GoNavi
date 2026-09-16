@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -86,17 +87,13 @@ func scanRowsForDialectWithPreview(rows *sql.Rows, dialect string, boundOracleLa
 func scanRowsWithScanner(rows *sql.Rows, columns []string, scanner queryRowsScanner, boundOracleLargeObjects bool, budget *RowBudget) ([]map[string]interface{}, []string, bool, error) {
 	resultData := make([]map[string]interface{}, 0)
 
-	// maxRows 为每个结果集的行数上限。达到上限后再观察到一次 rows.Next()==true
-	// 才判定截断，保证行数恰好等于上限的完整结果集不被误标。
-	maxRows := budget.MaxRowsPerResult()
 	var rowNumber int64
 	truncated := false
 	for rows.Next() {
-		if maxRows > 0 && rowNumber >= int64(maxRows) {
+		if !budget.CanMaterializeRow(len(resultData)) {
 			// 结果集仍有更多行：停止读取（不排空、不推进结果集），
 			// 由调用方既有的 rows.Close 释放 Rows 与连接。
 			truncated = true
-			budget.MarkTruncated()
 			break
 		}
 		rowNumber++
@@ -112,6 +109,15 @@ func scanRowsWithScanner(rows *sql.Rows, columns []string, scanner queryRowsScan
 		if err != nil {
 			return resultData, columns, false, newQueryRowScanError(rowNumber, columns, err)
 		}
+		entry, fieldTruncated := boundQueryRowFields(entry, budget.MaxFieldBytes())
+		if fieldTruncated {
+			budget.MarkFieldTruncated()
+		}
+		if !budget.ConsumeRow(estimateQueryRowBytes(entry)) {
+			truncated = true
+			break
+		}
+		truncated = truncated || fieldTruncated
 		resultData = append(resultData, entry)
 	}
 
@@ -122,6 +128,95 @@ func scanRowsWithScanner(rows *sql.Rows, columns []string, scanner queryRowsScan
 		return resultData, columns, false, err
 	}
 	return resultData, columns, false, nil
+}
+
+func boundQueryRowFields(row map[string]interface{}, maxFieldBytes int) (map[string]interface{}, bool) {
+	if maxFieldBytes <= 0 {
+		return row, false
+	}
+	truncated := false
+	for key, value := range row {
+		preview, fieldTruncated := buildQueryFieldPreview(value, maxFieldBytes)
+		if !fieldTruncated {
+			continue
+		}
+		row[key] = preview
+		truncated = true
+	}
+	return row, truncated
+}
+
+func buildQueryFieldPreview(value interface{}, maxBytes int) (interface{}, bool) {
+	if maxBytes <= 0 {
+		return value, false
+	}
+	switch typed := value.(type) {
+	case string:
+		if len(typed) <= maxBytes {
+			return value, false
+		}
+		preview := truncateUTF8Prefix(typed, maxBytes)
+		return fmt.Sprintf("[TEXT preview: %d/%d bytes] %s", len(preview), len(typed), preview), true
+	case []byte:
+		if len(typed) <= maxBytes {
+			return value, false
+		}
+		return fmt.Sprintf("[BINARY preview: %d/%d bytes] 0x%x", maxBytes, len(typed), typed[:maxBytes]), true
+	default:
+		encoded, err := json.Marshal(value)
+		if err != nil || len(encoded) <= maxBytes {
+			return value, false
+		}
+		preview := truncateUTF8Prefix(string(encoded), maxBytes)
+		return fmt.Sprintf("[JSON preview: %d/%d bytes] %s", len(preview), len(encoded), preview), true
+	}
+}
+
+func estimateQueryRowBytes(row map[string]interface{}) int64 {
+	var total int64 = 2
+	for key, value := range row {
+		total += estimateJSONStringBytes(key) + 2
+		total += estimateQueryValueBytes(value)
+	}
+	return total
+}
+
+func estimateQueryValueBytes(value interface{}) int64 {
+	switch typed := value.(type) {
+	case nil:
+		return 4
+	case string:
+		return estimateJSONStringBytes(typed)
+	case []byte:
+		return int64(((len(typed)+2)/3)*4 + 2)
+	case bool:
+		return 5
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+		return 24
+	default:
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return int64(len(fmt.Sprint(value)))
+		}
+		return int64(len(encoded))
+	}
+}
+
+func estimateJSONStringBytes(value string) int64 {
+	var size int64 = 2
+	for index := 0; index < len(value); index++ {
+		switch value[index] {
+		case '"', '\\':
+			size += 2
+		default:
+			if value[index] < 0x20 {
+				size += 6
+			} else {
+				size++
+			}
+		}
+	}
+	return size
 }
 
 func streamRowsForDialect(rows *sql.Rows, dialect string, consumer QueryStreamConsumer) error {
@@ -397,12 +492,17 @@ func scanMultiRowsWithBudget(rows *sql.Rows, dialect string, budget *RowBudget) 
 		if cols == nil {
 			cols = []string{}
 		}
+		truncated = budget.TakeResultTruncated() || truncated
+		if truncated && len(data) == 0 && budget.Exhausted() && len(results) > 0 {
+			results[len(results)-1].Truncated = true
+			break
+		}
 		results = append(results, connection.ResultSetData{
 			Rows:      data,
 			Columns:   cols,
 			Truncated: truncated,
 		})
-		if truncated {
+		if budget.Exhausted() {
 			// 达到行预算：不再调用 NextResultSet（database/sql 会先排空当前
 			// 结果集的剩余行），剩余结果集与行一并放弃。
 			break

@@ -18,7 +18,7 @@ import { format } from 'sql-formatter';
 import { v4 as uuidv4 } from 'uuid';
 import { TabData, ColumnDefinition, type ConnectionConfig, type SavedQuery, type SqlSnippet } from '../types';
 import { type SqlLog, useStore } from '../store';
-import { DBQuery, DBQueryWithCancel, DBQueryMulti, DBQueryMultiInTransaction, DBQueryMultiTransactional, DBQueryAudited, DBGetTables, DBTableExists, DBGetAllColumns, DBGetDatabases, DBGetColumns, DBGetTriggers, DBShowCreateTable, CancelQuery, DBRollbackTransactionWithTrigger, GenerateQueryID, WriteSQLFile, ExportSQLFile, InspectElasticsearchConsole, ExecuteElasticsearchConsole } from '../../wailsjs/go/app/App';
+import { DBQuery, DBQueryWithCancel, DBQueryMultiInTransactionWithOptions, DBQueryMultiTransactionalWithOptions, DBQueryMultiWithOptions, DBQueryAudited, DBGetTables, DBTableExists, DBGetAllColumns, DBGetDatabases, DBGetColumns, DBGetTriggers, DBShowCreateTable, CancelQuery, DBRollbackTransactionWithTrigger, GenerateQueryID, WriteSQLFile, ExportSQLFile, InspectElasticsearchConsole, ExecuteElasticsearchConsole } from '../../wailsjs/go/app/App';
 import { GONAVI_ROW_KEY } from './DataGrid';
 import { EventsOn } from '../../wailsjs/runtime';
 import {
@@ -217,6 +217,7 @@ import {
     QUERY_EDITOR_RESULT_HISTORY_MAX_ROWS,
 } from './queryEditor/queryEditorResultHistory';
 import { shouldDestroyHiddenQueryResult } from './queryEditor/queryEditorResultLifecycle';
+import { buildQueryEditorResultBudgetOptions } from './queryEditor/queryEditorResultBudget';
 import { useQueryEditorResultHistoryBudget } from './queryEditor/useQueryEditorResultHistoryBudget';
 import { useQueryEditorResultViewState } from './queryEditor/useQueryEditorResultViewState';
 import { materializeSqlSnippetText } from './queryEditor/queryEditorSqlSnippets';
@@ -8783,6 +8784,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       connectionParamsOverride?: string,
       executionConnectionId = currentConnectionIdRef.current,
   ) => {
+      const resultBudget = buildQueryEditorResultBudgetOptions(queryOptions?.maxRows);
       const executionConfig = connectionParamsOverride === undefined
           ? buildSqlExecutionConnectionConfig(config)
           : { ...config, connectionParams: connectionParamsOverride };
@@ -8801,15 +8803,15 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           && matchesCurrentExecutionContext
           && canReusePendingSqlEditorTransactionForType(dbType, sourceStatements, config as ConnectionConfig)
       ) {
-          return DBQueryMultiInTransaction(pendingTransaction.id, sql, queryId);
+          return DBQueryMultiInTransactionWithOptions(pendingTransaction.id, sql, queryId, resultBudget);
       }
       const rpcConfig = buildRpcConnectionConfig(executionConfig) as any;
       return invokeRequestScopedApp(
-          'DBQueryMulti',
-          [rpcConfig, dbName, sql, queryId],
-          () => DBQueryMulti(rpcConfig, dbName, sql, queryId),
+          'DBQueryMultiWithOptions',
+          [rpcConfig, dbName, sql, queryId, resultBudget],
+          () => DBQueryMultiWithOptions(rpcConfig, dbName, sql, queryId, resultBudget),
       );
-  }, [buildSqlExecutionConnectionConfig, invokeRequestScopedApp]);
+  }, [buildSqlExecutionConnectionConfig, invokeRequestScopedApp, queryOptions?.maxRows]);
 
   // 精准重查询单个结果集（提交事务 / 刷新按钮使用），不会重跑整个编辑器 SQL
   const handleReloadResult = async (resultKey: string, sql: string) => {
@@ -9754,7 +9756,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             const nextResultSets: ResultSet[] = [];
             const maxRows = Number(queryOptions?.maxRows) || 0;
             const wantsLimitProbe = Number.isFinite(maxRows) && maxRows > 0;
-            let anyTruncated = false;
             let mongoTotalDuration = 0;
             setExecutionTimingActive(true);
             try {
@@ -9832,7 +9833,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                     let truncated = false;
                     if (wantsLimitProbe && Number.isFinite(maxRows) && maxRows > 0 && rows.length > maxRows) {
                         truncated = true;
-                        anyTruncated = true;
                         rows = rows.slice(0, maxRows);
                     }
                     const cols = (res.fields && res.fields.length > 0)
@@ -10098,6 +10098,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             const fullSQL = shouldPreserveOraclePlsqlBatch
                 ? normalizeOracleSqlPlusSlashTerminators(normalizedRawSQL)
                 : executableStatements.join(';\n');
+            const resultBudget = buildQueryEditorResultBudgetOptions(queryOptions?.maxRows);
 
             let queryId: string;
             try {
@@ -10115,11 +10116,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             setExecutionTimingActive(true);
             try {
                 res = useManagedTransaction
-                    ? await DBQueryMultiTransactional(
+                    ? await DBQueryMultiTransactionalWithOptions(
                         buildRpcConnectionConfig(executionConfig) as any,
                         executionDbName,
                         fullSQL,
                         queryId,
+                        resultBudget,
                     )
                     : await executeSqlEditorMultiQuery(
                         config,
@@ -10372,7 +10374,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             const topLevelMessages = normalizeQueryResultMessages(res.messages);
             const nextResultSets: ResultSet[] = [];
             const maxRows = Number(queryOptions?.maxRows) || 0;
-            let anyTruncated = false;
             const statementResultCounts = new Map<number, number>();
             const resolveSourceStatementIndex = (rsData: any, idx: number): number => {
                 const explicitStatementIndex = Number(rsData?.statementIndex || 0);
@@ -10453,11 +10454,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                     });
                 } else {
                     let rows = Array.isArray(rsData.rows) ? rsData.rows : [];
-                    let truncated = false;
+                    let truncated = rsData?.truncated === true;
                     // 仅当前端自动注入了 LIMIT 时才做兜底截断；用户手写 LIMIT 时尊重原始结果
                     if (anyLimitApplied && Number.isFinite(maxRows) && maxRows > 0 && rows.length > maxRows) {
                         truncated = true;
-                        anyTruncated = true;
                         rows = rows.slice(0, maxRows);
                     }
                     const cols = (rsData.columns && rsData.columns.length > 0)

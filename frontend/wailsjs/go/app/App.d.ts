@@ -137,7 +137,13 @@ export function DBQueryMulti(arg1:connection.ConnectionConfig,arg2:string,arg3:s
 
 export function DBQueryMultiInTransaction(arg1:string,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
+export function DBQueryMultiInTransactionWithOptions(arg1:string,arg2:string,arg3:string,arg4:app.QueryResultBudgetOptions):Promise<connection.QueryResult>;
+
 export function DBQueryMultiTransactional(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function DBQueryMultiTransactionalWithOptions(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:app.QueryResultBudgetOptions):Promise<connection.QueryResult>;
+
+export function DBQueryMultiWithOptions(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:app.QueryResultBudgetOptions):Promise<connection.QueryResult>;
 
 export function DBQueryWithCancel(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
 

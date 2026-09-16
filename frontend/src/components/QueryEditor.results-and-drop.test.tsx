@@ -136,26 +136,33 @@ const notifyStoreSubscribers = () => {
   storeSubscribers.forEach((subscriber) => subscriber());
 };
 
-const backendApp = vi.hoisted(() => ({
-  DBQuery: vi.fn(),
-  DBQueryWithCancel: vi.fn(),
-  DBQueryMulti: vi.fn(),
-  DBQueryMultiTransactional: vi.fn(),
-  DBCommitTransaction: vi.fn(),
-  DBCommitTransactionWithTrigger: vi.fn(),
-  DBRollbackTransaction: vi.fn(),
-  DBRollbackTransactionWithTrigger: vi.fn(),
-  DBGetTables: vi.fn(),
-  DBTableExists: vi.fn(),
-  DBGetAllColumns: vi.fn(),
-  DBGetDatabases: vi.fn(),
-  DBGetColumns: vi.fn(),
-  DBGetIndexes: vi.fn(),
-  CancelQuery: vi.fn(),
-  GenerateQueryID: vi.fn(),
-  WriteSQLFile: vi.fn(),
-  ExportSQLFile: vi.fn(),
-}));
+const backendApp = vi.hoisted(() => {
+  const queryMulti = vi.fn();
+  const queryMultiTransactional = vi.fn();
+  return {
+    DBQuery: vi.fn(),
+    DBQueryWithCancel: vi.fn(),
+    DBQueryMulti: queryMulti,
+    DBQueryMultiWithOptions: vi.fn((...args: any[]) => queryMulti(...args.slice(0, 4))),
+    DBQueryMultiInTransactionWithOptions: vi.fn(),
+    DBQueryMultiTransactional: queryMultiTransactional,
+    DBQueryMultiTransactionalWithOptions: vi.fn((...args: any[]) => queryMultiTransactional(...args.slice(0, 4))),
+    DBCommitTransaction: vi.fn(),
+    DBCommitTransactionWithTrigger: vi.fn(),
+    DBRollbackTransaction: vi.fn(),
+    DBRollbackTransactionWithTrigger: vi.fn(),
+    DBGetTables: vi.fn(),
+    DBTableExists: vi.fn(),
+    DBGetAllColumns: vi.fn(),
+    DBGetDatabases: vi.fn(),
+    DBGetColumns: vi.fn(),
+    DBGetIndexes: vi.fn(),
+    CancelQuery: vi.fn(),
+    GenerateQueryID: vi.fn(),
+    WriteSQLFile: vi.fn(),
+    ExportSQLFile: vi.fn(),
+  };
+});
 
 const nativeDetachedWindowState = vi.hoisted(() => ({
   openNativeQueryResultWindow: vi.fn(),
@@ -946,6 +953,9 @@ describe('QueryEditor external SQL save', () => {
       storeState.sqlEditorPendingTransactions[tabId] = transaction;
     });
     Object.values(backendApp).forEach((fn) => fn.mockReset());
+    backendApp.DBQueryMultiWithOptions.mockImplementation((...args: any[]) => backendApp.DBQueryMulti(...args.slice(0, 4)));
+    backendApp.DBQueryMultiTransactionalWithOptions.mockImplementation((...args: any[]) => backendApp.DBQueryMultiTransactional(...args.slice(0, 4)));
+    backendApp.DBQueryMultiInTransactionWithOptions.mockResolvedValue({ success: true, data: [] });
     nativeDetachedWindowState.openNativeQueryResultWindow.mockReset();
     nativeDetachedWindowState.openNativeQueryResultWindow.mockResolvedValue(false);
     messageApi.success.mockReset();

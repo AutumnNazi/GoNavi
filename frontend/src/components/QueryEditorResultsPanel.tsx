@@ -22,10 +22,8 @@ import DetachDragPreview, {
 import LogPanel from './LogPanel';
 import { renderV2ActionMenuPopup } from './common/V2ActionMenuPopup';
 import QueryEditorResultGrid from './QueryEditorResultGrid';
-import {
-    resolveMountedQueryResultKey,
-    shouldDestroyHiddenQueryResult,
-} from './queryEditor/queryEditorResultLifecycle';
+import QueryEditorResultTruncatedIndicator from './QueryEditorResultTruncatedIndicator';
+import { resolveMountedQueryResultKey, shouldDestroyHiddenQueryResult } from './queryEditor/queryEditorResultLifecycle';
 
 export type OpenResultInWindowPreferred = Partial<Pick<DetachedWindowBounds, 'x' | 'y' | 'width' | 'height'>>;
 
@@ -596,6 +594,7 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                             <PushpinOutlined className="query-result-tab-pin" />
                         </Tooltip>
                     ) : null}
+                    {rs.truncated ? <QueryEditorResultTruncatedIndicator /> : null}
                     {(() => {
                         if (rs.resultType === 'message') return <span className="query-result-tab-count" data-query-result-tab-count="true">i</span>;
                         if (isAffectedRowsResult(rs)) return <span className="query-result-tab-count" data-query-result-tab-count="true">✓</span>;

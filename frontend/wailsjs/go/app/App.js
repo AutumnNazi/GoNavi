@@ -254,8 +254,20 @@ export function DBQueryMultiInTransaction(arg1, arg2, arg3) {
   return window['go']['app']['App']['DBQueryMultiInTransaction'](arg1, arg2, arg3);
 }
 
+export function DBQueryMultiInTransactionWithOptions(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['DBQueryMultiInTransactionWithOptions'](arg1, arg2, arg3, arg4);
+}
+
 export function DBQueryMultiTransactional(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['DBQueryMultiTransactional'](arg1, arg2, arg3, arg4);
+}
+
+export function DBQueryMultiTransactionalWithOptions(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['App']['DBQueryMultiTransactionalWithOptions'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function DBQueryMultiWithOptions(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['App']['DBQueryMultiWithOptions'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function DBQueryWithCancel(arg1, arg2, arg3, arg4) {

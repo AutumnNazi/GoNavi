@@ -221,32 +221,40 @@ const notifyStoreSubscribers = () => {
   storeSubscribers.forEach((subscriber) => subscriber());
 };
 
-const backendApp = vi.hoisted(() => ({
-  DBQuery: vi.fn(),
-  DBQueryWithCancel: vi.fn(),
-  DBQueryMulti: vi.fn(),
-  DBQueryMultiInTransaction: vi.fn(),
-  DBQueryMultiTransactional: vi.fn(),
-  DBQueryAudited: vi.fn(),
-  DBCommitTransaction: vi.fn(),
-  DBCommitTransactionWithTrigger: vi.fn(),
-  DBRollbackTransaction: vi.fn(),
-  DBRollbackTransactionWithTrigger: vi.fn(),
-  DBGetTables: vi.fn(),
-  DBTableExists: vi.fn(),
-  DBGetAllColumns: vi.fn(),
-  DBGetDatabases: vi.fn(),
-  DBGetColumns: vi.fn(),
-  DBGetIndexes: vi.fn(),
-  DBGetTriggers: vi.fn(),
-  DBShowCreateTable: vi.fn(),
-  CancelQuery: vi.fn(),
-  GenerateQueryID: vi.fn(),
-  WriteSQLFile: vi.fn(),
-  ExportSQLFile: vi.fn(),
-  InspectElasticsearchConsole: vi.fn(),
-  ExecuteElasticsearchConsole: vi.fn(),
-}));
+const backendApp = vi.hoisted(() => {
+  const queryMulti = vi.fn();
+  const queryMultiInTransaction = vi.fn();
+  const queryMultiTransactional = vi.fn();
+  return {
+    DBQuery: vi.fn(),
+    DBQueryWithCancel: vi.fn(),
+    DBQueryMulti: queryMulti,
+    DBQueryMultiWithOptions: vi.fn((...args: any[]) => queryMulti(...args.slice(0, 4))),
+    DBQueryMultiInTransaction: queryMultiInTransaction,
+    DBQueryMultiInTransactionWithOptions: vi.fn((...args: any[]) => queryMultiInTransaction(...args.slice(0, 3))),
+    DBQueryMultiTransactional: queryMultiTransactional,
+    DBQueryMultiTransactionalWithOptions: vi.fn((...args: any[]) => queryMultiTransactional(...args.slice(0, 4))),
+    DBQueryAudited: vi.fn(),
+    DBCommitTransaction: vi.fn(),
+    DBCommitTransactionWithTrigger: vi.fn(),
+    DBRollbackTransaction: vi.fn(),
+    DBRollbackTransactionWithTrigger: vi.fn(),
+    DBGetTables: vi.fn(),
+    DBTableExists: vi.fn(),
+    DBGetAllColumns: vi.fn(),
+    DBGetDatabases: vi.fn(),
+    DBGetColumns: vi.fn(),
+    DBGetIndexes: vi.fn(),
+    DBGetTriggers: vi.fn(),
+    DBShowCreateTable: vi.fn(),
+    CancelQuery: vi.fn(),
+    GenerateQueryID: vi.fn(),
+    WriteSQLFile: vi.fn(),
+    ExportSQLFile: vi.fn(),
+    InspectElasticsearchConsole: vi.fn(),
+    ExecuteElasticsearchConsole: vi.fn(),
+  };
+});
 
 const messageApi = vi.hoisted(() => ({
   error: vi.fn(),
@@ -1047,6 +1055,9 @@ describe('QueryEditor external SQL save', () => {
       storeState.sqlEditorPendingTransactions[tabId] = transaction;
     });
     Object.values(backendApp).forEach((fn) => fn.mockReset());
+    backendApp.DBQueryMultiWithOptions.mockImplementation((...args: any[]) => backendApp.DBQueryMulti(...args.slice(0, 4)));
+    backendApp.DBQueryMultiInTransactionWithOptions.mockImplementation((...args: any[]) => backendApp.DBQueryMultiInTransaction(...args.slice(0, 3)));
+    backendApp.DBQueryMultiTransactionalWithOptions.mockImplementation((...args: any[]) => backendApp.DBQueryMultiTransactional(...args.slice(0, 4)));
     messageApi.success.mockReset();
     messageApi.error.mockReset();
     messageApi.info.mockReset();
