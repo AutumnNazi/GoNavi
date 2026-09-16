@@ -34,6 +34,8 @@ export interface DataGridHorizontalRangeCommitOptions {
   thresholdPx: number;
 }
 
+export type DataGridHorizontalSyncMode = 'scroll-left' | 'timeline';
+
 export interface ExternalHorizontalScrollInnerWidthOptions {
   tableScrollWidth: number;
   trackInset: number;
@@ -286,6 +288,16 @@ export const shouldBindDataGridCaptureHorizontalWheel = ({
   nativeHorizontalEnabled: boolean;
   hasVirtualHolder: boolean;
 }): boolean => !(nativeHorizontalEnabled && hasVirtualHolder);
+
+export const resolveDataGridHorizontalSyncMode = ({
+  isMacLike,
+  supportsScrollTimeline,
+}: {
+  isMacLike: boolean;
+  supportsScrollTimeline: boolean;
+}): DataGridHorizontalSyncMode => (
+  !isMacLike && supportsScrollTimeline ? 'timeline' : 'scroll-left'
+);
 
 export const resolveNativeHorizontalWheelScrollLeft = ({
   delta,

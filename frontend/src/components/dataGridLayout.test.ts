@@ -8,6 +8,7 @@ import {
   resolveExternalHorizontalScrollMetrics,
   resolveDataGridColumnQuickFindScrollLeft,
   resolveDataGridHorizontalWheelDelta,
+  resolveDataGridHorizontalSyncMode,
   resolveNativeHorizontalWheelScrollLeft,
   shouldBindDataGridCaptureHorizontalWheel,
   shouldCommitVirtualHorizontalRange,
@@ -222,6 +223,21 @@ describe('dataGridLayout helpers', () => {
       nativeHorizontalEnabled: false,
       hasVirtualHolder: true,
     })).toBe(true);
+  });
+
+  it('uses scrollLeft on macOS or without timeline support', () => {
+    expect(resolveDataGridHorizontalSyncMode({
+      isMacLike: true,
+      supportsScrollTimeline: true,
+    })).toBe('scroll-left');
+    expect(resolveDataGridHorizontalSyncMode({
+      isMacLike: false,
+      supportsScrollTimeline: false,
+    })).toBe('scroll-left');
+    expect(resolveDataGridHorizontalSyncMode({
+      isMacLike: false,
+      supportsScrollTimeline: true,
+    })).toBe('timeline');
   });
 
   it('applies native horizontal wheel deltas onto the holder scrollLeft', () => {

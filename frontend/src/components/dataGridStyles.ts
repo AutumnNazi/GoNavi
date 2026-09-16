@@ -344,15 +344,15 @@ export const buildDataGridCssText = ({
                         from { transform: translate3d(calc(-1 * var(--gn-datagrid-h-max, 0px)), 0, 0) !important; }
                         to { transform: translate3d(0, 0, 0) !important; }
                     }
-                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] {
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"][data-horizontal-scroll-sync="timeline"] {
                         timeline-scope: --${gridId}-h;
                     }
-                    .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"],
-                    .${gridId} .rc-virtual-list-holder[data-horizontal-scroll-native="true"] {
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="timeline"] .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"],
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="timeline"] .rc-virtual-list-holder[data-horizontal-scroll-native="true"] {
                         scroll-timeline-name: --${gridId}-h;
                         scroll-timeline-axis: x;
                     }
-                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header > table {
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"][data-horizontal-scroll-sync="timeline"] .ant-table-header > table {
                         animation-name: gn-${gridId}-header-follow;
                         animation-duration: auto;
                         animation-timing-function: linear;
@@ -360,19 +360,19 @@ export const buildDataGridCssText = ({
                         animation-timeline: --${gridId}-h;
                         animation-range: 0% 100%;
                     }
-                    .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-left,
-                    .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-left-first,
-                    .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-left-last,
-                    .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-selection-column,
-                    .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.data-grid-row-number-cell,
-                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-left,
-                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-left-first,
-                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-left-last,
-                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header .ant-table-thead > tr > th.ant-table-selection-column,
-                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header .ant-table-thead > tr > th.data-grid-row-number-cell,
-                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header thead > tr > th.ant-table-cell-fix-left,
-                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header thead > tr > th.ant-table-selection-column,
-                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header thead > tr > th.data-grid-row-number-cell {
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="timeline"] .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-left,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="timeline"] .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-left-first,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="timeline"] .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-left-last,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="timeline"] .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-selection-column,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="timeline"] .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.data-grid-row-number-cell,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"][data-horizontal-scroll-sync="timeline"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-left,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"][data-horizontal-scroll-sync="timeline"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-left-first,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"][data-horizontal-scroll-sync="timeline"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-left-last,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"][data-horizontal-scroll-sync="timeline"] .ant-table-header .ant-table-thead > tr > th.ant-table-selection-column,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"][data-horizontal-scroll-sync="timeline"] .ant-table-header .ant-table-thead > tr > th.data-grid-row-number-cell,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"][data-horizontal-scroll-sync="timeline"] .ant-table-header thead > tr > th.ant-table-cell-fix-left,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"][data-horizontal-scroll-sync="timeline"] .ant-table-header thead > tr > th.ant-table-selection-column,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"][data-horizontal-scroll-sync="timeline"] .ant-table-header thead > tr > th.data-grid-row-number-cell {
                         position: relative !important;
                         left: auto !important;
                         right: auto !important;
@@ -384,12 +384,12 @@ export const buildDataGridCssText = ({
                         animation-timeline: --${gridId}-h;
                         animation-range: 0% 100%;
                     }
-                    .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-right,
-                    .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-right-first,
-                    .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-right-last,
-                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-right,
-                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-right-first,
-                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-right-last {
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="timeline"] .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-right,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="timeline"] .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-right-first,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="timeline"] .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-right-last,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"][data-horizontal-scroll-sync="timeline"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-right,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"][data-horizontal-scroll-sync="timeline"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-right-first,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"][data-horizontal-scroll-sync="timeline"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-right-last {
                         position: relative !important;
                         left: auto !important;
                         right: auto !important;

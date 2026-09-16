@@ -59,6 +59,7 @@ import {
     calculateVirtualTableScrollX,
     resolveDataGridColumnQuickFindScrollLeft,
     resolveDataGridHorizontalWheelDelta,
+    resolveDataGridHorizontalSyncMode,
     resolveExternalHorizontalScrollMetrics,
     shouldBindDataGridCaptureHorizontalWheel,
     shouldCommitVirtualHorizontalRange,
@@ -4464,6 +4465,16 @@ const DataGrid: React.FC<DataGridProps> = ({
   const virtualListItemHeightFixed = !virtualEditingCellForRender;
   const virtualListItemNativeScrollbarControlled = isMacLike && virtualListItemHeightFixed;
   const virtualListItemHorizontalOffsetComposited = DATA_GRID_COMPOSITED_HORIZONTAL_OFFSET;
+  const horizontalScrollTimelineSupported = useMemo(() => (
+      typeof globalThis.CSS !== 'undefined'
+      && typeof globalThis.CSS.supports === 'function'
+      && globalThis.CSS.supports('timeline-scope: none')
+      && globalThis.CSS.supports('animation-timeline: --gonavi-data-grid-horizontal')
+  ), []);
+  const virtualListItemHorizontalSyncMode = resolveDataGridHorizontalSyncMode({
+      isMacLike,
+      supportsScrollTimeline: horizontalScrollTimelineSupported,
+  });
   // 原生 overflow-x 把横滑交给合成线程。这层活着时关掉列窗口，避免滑动中一次 React 提交把行掏出空洞。
   const virtualListItemColumnVirtual = enableVirtual
       && !virtualEditingCellForRender
@@ -4532,7 +4543,8 @@ const DataGrid: React.FC<DataGridProps> = ({
   /**
    * 虚拟表横滚视觉同步：
    * - 表体：原生 holder.scrollLeft，滚轮/触控交给合成线程
-   * - 表头与固定列：scroll-driven animation 跟随 holder，不在滚动帧写 scrollLeft
+   * - Chromium：表头与固定列由 scroll-driven animation 跟随 holder
+   * - WebKit：命名时间线不可用时，同步 header.scrollLeft
    * - 回退路径：marginLeft + 单 CSS 变量补偿
    */
   const syncVirtualHorizontalVisualOffset = useCallback((tableContainer: HTMLElement, nextOffset: number) => {
@@ -4547,7 +4559,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           ? Math.max(0, holderEl.scrollLeft)
           : Math.max(0, Math.abs(parseFloat(innerEl.style.marginLeft) || 0));
       if (virtualListItemHorizontalOffsetComposited) {
-          // Mac 上横滚层由浏览器接管。提交后守卫会把更旧的 React 偏移写回去，覆盖合成线程已经推进的 holder。
+          // 原生横滚层由浏览器接管。提交后守卫会把更旧的 React 偏移写回去，覆盖合成线程已经推进的 holder。
           virtualHorizontalPostCommitGuardRef.current?.cancel();
           virtualHorizontalPreviewActiveRef.current = false;
       } else {
@@ -4590,7 +4602,11 @@ const DataGrid: React.FC<DataGridProps> = ({
               headerTable.style.translate = '';
           }
           if (virtualListItemHorizontalOffsetComposited) {
-              if (headerEl.scrollLeft) {
+              if (virtualListItemHorizontalSyncMode === 'scroll-left') {
+                  if (Math.abs(headerEl.scrollLeft - clampedOffset) > 1) {
+                      headerEl.scrollLeft = clampedOffset;
+                  }
+              } else if (headerEl.scrollLeft) {
                   headerEl.scrollLeft = 0;
               }
           } else if (Math.abs(headerEl.scrollLeft - clampedOffset) > 1) {
@@ -4599,7 +4615,7 @@ const DataGrid: React.FC<DataGridProps> = ({
       }
 
       return { holderEl, innerEl, clampedOffset, currentOffset };
-  }, [resolveVirtualHorizontalElements, tableScrollX, virtualListItemHorizontalOffsetComposited]);
+  }, [resolveVirtualHorizontalElements, tableScrollX, virtualListItemHorizontalOffsetComposited, virtualListItemHorizontalSyncMode]);
 
   virtualHorizontalPostCommitFrameHandlerRef.current = (offset) => {
       const tableContainer = tableContainerRef.current;
@@ -5823,8 +5839,7 @@ const DataGrid: React.FC<DataGridProps> = ({
   useEffect(() => {
       if (!isTableSurfaceActive) return;
       const tableContainer = tableContainerRef.current;
-      const externalScroll = externalHorizontalScrollRef.current;
-      if (!(tableContainer instanceof HTMLElement) || !(externalScroll instanceof HTMLDivElement)) return;
+      if (!(tableContainer instanceof HTMLElement)) return;
 
       let rafId: number | null = null;
       let boundTargets: HTMLElement[] = [];
@@ -6290,6 +6305,7 @@ const DataGrid: React.FC<DataGridProps> = ({
         virtualListItemHeightFixed,
         virtualListItemNativeScrollbarControlled,
         virtualListItemHorizontalOffsetComposited,
+        virtualListItemHorizontalSyncMode,
         virtualListItemColumnVirtual,
         window,
       }}
