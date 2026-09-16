@@ -258,7 +258,6 @@ export const buildDataGridCssText = ({
                     /* 与非固定表头一致：本网格 thead 被设为 transparent，透出 .ant-table 的 --gn-bg-panel */
                     background: var(--gn-bg-panel, ${bgContent}) !important;
                     background-clip: padding-box !important;
-                    transform: none !important;
                     overflow: hidden !important;
                     isolation: isolate;
                 }
@@ -272,7 +271,6 @@ export const buildDataGridCssText = ({
                     z-index: 32 !important;
                     /* 全选列与钉住列/行号同色；覆盖 v2-theme 里可能的 panel-2 */
                     background: var(--gn-bg-panel, ${bgContent}) !important;
-                    transform: none !important;
                     overflow: hidden !important;
                     isolation: isolate;
                 }
@@ -323,11 +321,86 @@ export const buildDataGridCssText = ({
                 .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-right-first,
                 .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-right-last {
                     position: sticky !important;
-                    transform: none !important;
                     z-index: 4 !important;
                     background: var(--gn-bg-panel, ${bgContent}) !important;
                     background-clip: padding-box !important;
                     overflow: hidden !important;
+                }
+                /*
+                 * 双轴滚动容器上的 sticky left 会走 Chromium 主线程。
+                 * rc-virtual-list 还会给 inner 做 translateY，sticky 会贴到填充块而不是 holder。
+                 * 用命名滚动时间线钉住表头和冻结列，让它们留在合成线程上。
+                 */
+                @supports (timeline-scope: none) {
+                    @keyframes gn-${gridId}-header-follow {
+                        from { transform: translate3d(0, 0, 0) !important; }
+                        to { transform: translate3d(calc(-1 * var(--gn-datagrid-h-max, 0px)), 0, 0) !important; }
+                    }
+                    @keyframes gn-${gridId}-pin-left {
+                        from { transform: translate3d(0, 0, 0) !important; }
+                        to { transform: translate3d(var(--gn-datagrid-h-max, 0px), 0, 0) !important; }
+                    }
+                    @keyframes gn-${gridId}-pin-right {
+                        from { transform: translate3d(calc(-1 * var(--gn-datagrid-h-max, 0px)), 0, 0) !important; }
+                        to { transform: translate3d(0, 0, 0) !important; }
+                    }
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] {
+                        timeline-scope: --${gridId}-h;
+                    }
+                    .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"],
+                    .${gridId} .rc-virtual-list-holder[data-horizontal-scroll-native="true"] {
+                        scroll-timeline-name: --${gridId}-h;
+                        scroll-timeline-axis: x;
+                    }
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header > table {
+                        animation-name: gn-${gridId}-header-follow;
+                        animation-duration: auto;
+                        animation-timing-function: linear;
+                        animation-fill-mode: both;
+                        animation-timeline: --${gridId}-h;
+                        animation-range: 0% 100%;
+                    }
+                    .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-left,
+                    .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-left-first,
+                    .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-left-last,
+                    .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-selection-column,
+                    .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.data-grid-row-number-cell,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-left,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-left-first,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-left-last,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header .ant-table-thead > tr > th.ant-table-selection-column,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header .ant-table-thead > tr > th.data-grid-row-number-cell,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header thead > tr > th.ant-table-cell-fix-left,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header thead > tr > th.ant-table-selection-column,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header thead > tr > th.data-grid-row-number-cell {
+                        position: relative !important;
+                        left: auto !important;
+                        right: auto !important;
+                        isolation: auto;
+                        animation-name: gn-${gridId}-pin-left;
+                        animation-duration: auto;
+                        animation-timing-function: linear;
+                        animation-fill-mode: both;
+                        animation-timeline: --${gridId}-h;
+                        animation-range: 0% 100%;
+                    }
+                    .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-right,
+                    .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-right-first,
+                    .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-right-last,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-right,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-right-first,
+                    .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-right-last {
+                        position: relative !important;
+                        left: auto !important;
+                        right: auto !important;
+                        isolation: auto;
+                        animation-name: gn-${gridId}-pin-right;
+                        animation-duration: auto;
+                        animation-timing-function: linear;
+                        animation-fill-mode: both;
+                        animation-timeline: --${gridId}-h;
+                        animation-range: 0% 100%;
+                    }
                 }
                 .${gridId} .ant-table-tbody > tr > td.ant-table-cell-fix-left,
                 .${gridId} .ant-table-tbody > tr > td.ant-table-cell-fix-right,
@@ -977,17 +1050,7 @@ export const buildDataGridCssText = ({
 
                     overscroll-behavior-x: contain;
 
-                    scrollbar-width: none;
-
-                }
-
-                .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"]::-webkit-scrollbar,
-
-                .${gridId} .rc-virtual-list-holder[data-horizontal-scroll-native="true"]::-webkit-scrollbar {
-
-                    width: 0;
-
-                    height: 0;
+                    contain: none;
 
                 }
 
@@ -1043,13 +1106,17 @@ export const buildDataGridCssText = ({
 
                 }
 
-                .${gridId} .rc-virtual-list-holder {
+                .${gridId} .ant-table-tbody-virtual-holder:not([data-horizontal-scroll-native="true"]),
+
+                .${gridId} .rc-virtual-list-holder:not([data-horizontal-scroll-native="true"]) {
 
                     scrollbar-width: thin;
 
                     scrollbar-color: ${floatingScrollbarThumbBg} transparent;
 
                 }
+
+                .${gridId} .ant-table-tbody-virtual-holder::-webkit-scrollbar,
 
                 .${gridId} .rc-virtual-list-holder::-webkit-scrollbar {
 
@@ -1058,6 +1125,32 @@ export const buildDataGridCssText = ({
                     height: 0;
 
                 }
+
+                .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"]::-webkit-scrollbar {
+
+                    width: ${floatingScrollbarHeight}px;
+
+                    height: ${floatingScrollbarHeight}px;
+
+                }
+
+                .${gridId} .rc-virtual-list-holder[data-horizontal-scroll-native="true"]::-webkit-scrollbar {
+
+                    width: ${floatingScrollbarHeight}px;
+
+                    height: ${floatingScrollbarHeight}px;
+
+                }
+
+                .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"]::-webkit-scrollbar-track:horizontal,
+
+                .${gridId} .rc-virtual-list-holder[data-horizontal-scroll-native="true"]::-webkit-scrollbar-track:horizontal {
+
+                    margin: 0 8px;
+
+                }
+
+                .${gridId} .ant-table-tbody-virtual-holder::-webkit-scrollbar-track,
 
                 .${gridId} .rc-virtual-list-holder::-webkit-scrollbar-track {
 
@@ -1068,6 +1161,8 @@ export const buildDataGridCssText = ({
                     border-radius: 999px;
 
                 }
+
+                .${gridId} .ant-table-tbody-virtual-holder::-webkit-scrollbar-thumb,
 
                 .${gridId} .rc-virtual-list-holder::-webkit-scrollbar-thumb {
 
@@ -1082,6 +1177,8 @@ export const buildDataGridCssText = ({
                     box-shadow: ${floatingScrollbarThumbShadow};
 
                 }
+
+                .${gridId} .ant-table-tbody-virtual-holder::-webkit-scrollbar-thumb:hover,
 
                 .${gridId} .rc-virtual-list-holder::-webkit-scrollbar-thumb:hover {
 
@@ -1131,6 +1228,12 @@ export const buildDataGridCssText = ({
 
                 }
 
+                .${gridId} .data-grid-table-wrap[data-horizontal-scroll-native="true"] > .data-grid-external-horizontal-scroll {
+
+                    display: none;
+
+                }
+
                 .${gridId} .data-grid-external-horizontal-scroll {
 
                     position: absolute;
@@ -1146,6 +1249,8 @@ export const buildDataGridCssText = ({
                     overflow-x: auto;
 
                     overflow-y: hidden;
+
+                    overscroll-behavior-x: contain;
 
                     background: transparent;
 

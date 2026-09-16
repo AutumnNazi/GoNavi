@@ -7,7 +7,11 @@ import {
   coversFixedVirtualRange,
   createDataGridIdleCommitScheduler,
   createDataGridVisualFrameGuard,
+  applyDataGridNativeHorizontalMaxScroll,
+  DATA_GRID_COMPOSITED_HORIZONTAL_OFFSET,
+  DATA_GRID_NATIVE_HORIZONTAL_MAX_VAR,
   readDataGridVirtualInnerOffset,
+  resolveDataGridNativeHorizontalMaxScroll,
   shouldVirtualizeDataGridColumns,
   type DataGridVisualFrameGuard,
 } from './dataGridVirtualScroll';
@@ -74,6 +78,10 @@ describe('virtual body horizontal offset', () => {
 });
 
 describe('column virtualization threshold', () => {
+  it('keeps native compositor horizontal offset on every platform', () => {
+    expect(DATA_GRID_COMPOSITED_HORIZONTAL_OFFSET).toBe(true);
+  });
+
   it('renders narrow tables directly and virtualizes wider tables', () => {
     expect(shouldVirtualizeDataGridColumns(16)).toBe(false);
     expect(shouldVirtualizeDataGridColumns(17)).toBe(true);
@@ -397,5 +405,24 @@ describe('createDataGridVisualFrameGuard', () => {
     expect(cancelFrame).toHaveBeenCalledWith(1);
     expect(appliedOffsets).toEqual([720]);
     expect(guard.hasPending()).toBe(false);
+  });
+});
+
+describe('native horizontal max scroll css variable', () => {
+  it('writes the compositor pin distance once until the viewport changes', () => {
+    expect(resolveDataGridNativeHorizontalMaxScroll({
+      scrollWidth: 2400,
+      clientWidth: 800,
+    })).toBe(1600);
+    expect(resolveDataGridNativeHorizontalMaxScroll({
+      scrollWidth: 800,
+      clientWidth: 800,
+    })).toBe(0);
+
+    const root = { style: createStyleStub() };
+    expect(applyDataGridNativeHorizontalMaxScroll(root as unknown as HTMLElement, 1600)).toBe(true);
+    expect(root.style.setProperty).toHaveBeenCalledWith(DATA_GRID_NATIVE_HORIZONTAL_MAX_VAR, '1600px');
+    expect(applyDataGridNativeHorizontalMaxScroll(root as unknown as HTMLElement, 1600)).toBe(false);
+    expect(root.style.setProperty).toHaveBeenCalledTimes(1);
   });
 });
