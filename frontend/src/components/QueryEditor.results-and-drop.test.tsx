@@ -137,10 +137,17 @@ const notifyStoreSubscribers = () => {
 };
 
 const backendApp = vi.hoisted(() => {
+  const query = vi.fn();
   const queryMulti = vi.fn();
   const queryMultiTransactional = vi.fn();
+  const getTables = vi.fn();
+  const getAllColumns = vi.fn();
+  const getDatabases = vi.fn();
+  const getColumns = vi.fn();
+  const showCreateTable = vi.fn();
   return {
-    DBQuery: vi.fn(),
+    DBQuery: query,
+    DBQueryApplicationWithCancel: vi.fn((...args: any[]) => query(...args.slice(0, 3))),
     DBQueryWithCancel: vi.fn(),
     DBQueryMulti: queryMulti,
     DBQueryMultiWithOptions: vi.fn((...args: any[]) => queryMulti(...args.slice(0, 4))),
@@ -151,11 +158,17 @@ const backendApp = vi.hoisted(() => {
     DBCommitTransactionWithTrigger: vi.fn(),
     DBRollbackTransaction: vi.fn(),
     DBRollbackTransactionWithTrigger: vi.fn(),
-    DBGetTables: vi.fn(),
+    DBGetTables: getTables,
+    DBGetTablesWithCancel: vi.fn((...args: any[]) => getTables(...args.slice(0, 2))),
     DBTableExists: vi.fn(),
-    DBGetAllColumns: vi.fn(),
-    DBGetDatabases: vi.fn(),
-    DBGetColumns: vi.fn(),
+    DBGetAllColumns: getAllColumns,
+    DBGetAllColumnsWithCancel: vi.fn((...args: any[]) => getAllColumns(...args.slice(0, 2))),
+    DBGetDatabases: getDatabases,
+    DBGetDatabasesWithCancel: vi.fn((...args: any[]) => getDatabases(...args.slice(0, 1))),
+    DBGetColumns: getColumns,
+    DBGetColumnsWithCancel: vi.fn((...args: any[]) => getColumns(...args.slice(0, 3))),
+    DBShowCreateTable: showCreateTable,
+    DBShowCreateTableWithCancel: vi.fn((...args: any[]) => showCreateTable(...args.slice(0, 3))),
     DBGetIndexes: vi.fn(),
     CancelQuery: vi.fn(),
     GenerateQueryID: vi.fn(),

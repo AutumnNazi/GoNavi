@@ -2,6 +2,7 @@ import type { SqlLanguage } from 'sql-formatter';
 import type { TabData, ColumnDefinition, IndexDefinition } from '../../types';
 import { DBGetColumns, DBGetIndexes, DBQuery } from '../../../wailsjs/go/app/App';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
+import { queryEditorMetadataQuery } from './queryEditorMetadataRequests';
 import {
     isMysqlFamilyDialect,
     isOracleLikeDialect,
@@ -1579,20 +1580,18 @@ export const queryCompletionMetadataRowsBySpecs = async (
     config: Record<string, any>,
     dbName: string,
     specs: MetadataQuerySpec[],
+    request?: { connectionId: string; signal?: AbortSignal },
 ): Promise<MetadataQueryResult[]> => {
     const normalizedSpecs = normalizeMetadataQuerySpecs(specs);
     if (normalizedSpecs.length === 0) {
         return [];
     }
-    // Compatibility specs can be complementary (Oracle owners) as well as
-    // fallbacks. The same SSH tunnel/driver connection is often the shared
-    // bottleneck, so serialise requests to avoid queueing and contention while
-    // retaining every successful result in declaration order.
     const rpcConfig = buildRpcConnectionConfig(config) as any;
     const results: MetadataQueryResult[] = [];
     for (const spec of normalizedSpecs) {
+        if (request?.signal?.aborted) break;
         try {
-            const result = await DBQuery(rpcConfig, dbName, spec.sql);
+            const result = request ? await queryEditorMetadataQuery(request.connectionId, rpcConfig, dbName, spec.sql, request.signal) : await DBQuery(rpcConfig, dbName, spec.sql);
             if (result.success && Array.isArray(result.data)) {
                 results.push({
                     rows: result.data as Record<string, any>[],
@@ -1600,6 +1599,7 @@ export const queryCompletionMetadataRowsBySpecs = async (
                 });
             }
         } catch {
+            if (request?.signal?.aborted) break;
             // 忽略单条元数据查询失败，继续使用其它兼容查询结果。
         }
     }

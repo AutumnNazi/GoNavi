@@ -18,7 +18,7 @@ import { format } from 'sql-formatter';
 import { v4 as uuidv4 } from 'uuid';
 import { TabData, ColumnDefinition, type ConnectionConfig, type SavedQuery, type SqlSnippet } from '../types';
 import { type SqlLog, useStore } from '../store';
-import { DBQuery, DBQueryWithCancel, DBQueryMultiInTransactionWithOptions, DBQueryMultiTransactionalWithOptions, DBQueryMultiWithOptions, DBQueryAudited, DBGetTables, DBTableExists, DBGetAllColumns, DBGetDatabases, DBGetColumns, DBGetTriggers, DBShowCreateTable, CancelQuery, DBRollbackTransactionWithTrigger, GenerateQueryID, WriteSQLFile, ExportSQLFile, InspectElasticsearchConsole, ExecuteElasticsearchConsole } from '../../wailsjs/go/app/App';
+import { DBQuery, DBQueryWithCancel, DBQueryMultiInTransactionWithOptions, DBQueryMultiTransactionalWithOptions, DBQueryMultiWithOptions, DBQueryAudited, DBTableExists, DBGetTriggers, CancelQuery, DBRollbackTransactionWithTrigger, GenerateQueryID, WriteSQLFile, ExportSQLFile, InspectElasticsearchConsole, ExecuteElasticsearchConsole } from '../../wailsjs/go/app/App';
 import { GONAVI_ROW_KEY } from './DataGrid';
 import { EventsOn } from '../../wailsjs/runtime';
 import {
@@ -256,6 +256,25 @@ import {
     supportsQueryEditorSchemaSelection,
 } from './queryEditor/queryEditorSchemaContext';
 import { useSqlEditorTransactionController } from './useSqlEditorTransactionController';
+import {
+    cancelQueryEditorMetadataRequests,
+    isQueryEditorMetadataAbortError,
+    queryEditorMetadataGetAllColumns,
+    queryEditorMetadataGetColumns,
+    queryEditorMetadataGetDatabases,
+    queryEditorMetadataGetTables,
+    queryEditorMetadataQuery,
+    queryEditorMetadataShowCreateTable,
+    reconcileQueryEditorMetadataConnections,
+} from './queryEditor/queryEditorMetadataRequests';
+import {
+    buildQueryEditorLazyTablesCacheKey as buildSharedLazyTablesCacheKey,
+    buildQueryEditorMetadataDatabaseKey,
+    clearQueryEditorMetadataCaches,
+    invalidateQueryEditorMetadataCaches,
+    queryEditorColumnsCache as sharedColumnsCache,
+    queryEditorLazyTablesCache as sharedLazyTablesCache,
+} from './queryEditor/queryEditorMetadataCaches';
 import {
     type CompletionColumnMeta,
     type CompletionPackageMeta,
@@ -593,14 +612,7 @@ let sharedTriggersData: CompletionTriggerMeta[] = [];
 let sharedRoutinesData: CompletionRoutineMeta[] = [];
 let sharedSequencesData: CompletionSequenceMeta[] = [];
 let sharedPackagesData: CompletionPackageMeta[] = [];
-let sharedColumnsCacheData: Record<string, any[]> = {};
 let sharedActiveEditorModelUri = '';
-const sharedLazyTablesCache: Record<string, CompletionTableMeta[] | undefined> = {};
-const sharedLazyTablesInFlight: Record<string, Promise<CompletionTableMeta[]> | undefined> = {};
-// Revisions prevent an already-running lazy metadata request from writing its
-// stale result back after a schema refresh. The global metadata generation is
-// scoped to the active editor, while this map is scoped to each cache entry.
-const sharedLazyTablesRevisionByKey: Record<string, number> = {};
 const createSqlCompletionResult = (suggestions: any[], retriggerOnContinue = false) => ({
     suggestions,
     // Monaco otherwise keeps filtering a cached list locally. Re-run strict
@@ -610,84 +622,16 @@ const createSqlCompletionResult = (suggestions: any[], retriggerOnContinue = fal
         && (retriggerOnContinue || suggestions.length >= QUERY_EDITOR_COMPLETION_SUGGESTION_LIMIT),
 });
 const createEmptySqlCompletionResult = () => createSqlCompletionResult([]);
-const isSqlCompletionRequestCancelled = (token?: { isCancellationRequested?: boolean } | null) =>
-    Boolean(token?.isCancellationRequested);
-const clearRecord = (record: Record<string, unknown>) => {
-    Object.keys(record).forEach((key) => {
-        delete record[key];
-    });
-};
-
-const splitSharedLazyTablesCacheKey = (key: string): { connectionId: string; dbName: string } => {
-    const separator = String(key || '').indexOf('|');
-    if (separator < 0) {
-        return { connectionId: String(key || ''), dbName: '' };
-    }
-    const rest = String(key || '').slice(separator + 1);
-    return {
-        connectionId: String(key || '').slice(0, separator),
-        dbName: rest.split('|', 1)[0] || '',
-    };
-};
-
-const buildSharedLazyTablesCacheKey = (
-    connectionId: string,
-    dbName: string,
-    metadataDialect = '',
-): string => (
-    `${String(connectionId || '').trim()}|${buildMetadataIdentityKey(metadataDialect, dbName)}`
-);
-
-const isSharedLazyTablesCacheKeyForRequest = (
-    key: string,
-    connectionId: string,
-    dbName?: string,
-): boolean => {
-    const parts = splitSharedLazyTablesCacheKey(key);
-    if (parts.connectionId !== connectionId) return false;
-    const metadataDialect = normalizeMetadataDialect(
-        sharedConnections.find((connection) => connection.id === connectionId),
-    );
-    const requestedDbKey = buildMetadataIdentityKey(metadataDialect, dbName);
-    return !requestedDbKey
-        || buildMetadataIdentityKey(metadataDialect, parts.dbName) === requestedDbKey;
-};
-
-const getSharedLazyTablesRevision = (cacheKey: string): number => (
-    sharedLazyTablesRevisionByKey[cacheKey] || 0
-);
-
-const invalidateSharedLazyTablesCacheKey = (cacheKey: string) => {
-    const normalizedCacheKey = String(cacheKey || '').trim();
-    if (!normalizedCacheKey) return;
-    delete sharedLazyTablesCache[normalizedCacheKey];
-    sharedLazyTablesRevisionByKey[normalizedCacheKey] = getSharedLazyTablesRevision(normalizedCacheKey) + 1;
-    Object.keys(sharedLazyTablesInFlight).forEach((inFlightKey) => {
-        const inFlightCacheKey = inFlightKey.replace(/\|\d+$/, '');
-        if (inFlightCacheKey === normalizedCacheKey) {
-            delete sharedLazyTablesInFlight[inFlightKey];
-        }
-    });
-};
+const isSqlCompletionRequestCancelled = (token?: { isCancellationRequested?: boolean } | null) => Boolean(token?.isCancellationRequested);
+const buildSharedMetadataDatabaseKey = (connectionId: string, dbName: string): string => buildQueryEditorMetadataDatabaseKey(sharedConnections, connectionId, dbName);
 
 const invalidateSharedLazyTablesCache = (connectionId: string, dbName?: string) => {
     const normalizedConnectionId = String(connectionId || '').trim();
     if (!normalizedConnectionId) return;
-
-    const cacheKeys = new Set([
-        ...Object.keys(sharedLazyTablesCache),
-        ...Object.keys(sharedLazyTablesRevisionByKey),
-    ]);
-    Object.keys(sharedLazyTablesInFlight).forEach((inFlightKey) => {
-        // In-flight keys append the metadata generation to the cache key.
-        const cacheKey = inFlightKey.replace(/\|\d+$/, '');
-        if (!isSharedLazyTablesCacheKeyForRequest(cacheKey, normalizedConnectionId, dbName)) return;
-        cacheKeys.add(cacheKey);
-    });
-    cacheKeys.forEach((cacheKey) => {
-        if (!isSharedLazyTablesCacheKeyForRequest(cacheKey, normalizedConnectionId, dbName)) return;
-        invalidateSharedLazyTablesCacheKey(cacheKey);
-    });
+    const databaseKey = dbName === undefined
+        ? undefined
+        : buildSharedMetadataDatabaseKey(normalizedConnectionId, dbName);
+    invalidateQueryEditorMetadataCaches(normalizedConnectionId, databaseKey);
 };
 const QUERY_EDITOR_SQL_SNIPPET_SUGGEST_DETAIL_MIN_HEIGHT = 260;
 const QUERY_EDITOR_TABLE_NAVIGATION_VALIDATION_TIMEOUT_MS = 5_000;
@@ -989,10 +933,16 @@ const loadQueryEditorHoverDdl = async (
 
     const request = (async () => {
         try {
-            const result = await DBShowCreateTable(
+            const result = await queryEditorMetadataShowCreateTable(
+                snapshot.connectionId,
                 buildRpcConnectionConfig(snapshot.connectionConfig as any) as any,
                 dbName,
                 tableName,
+                undefined,
+                buildQueryEditorMetadataIdentityKey(
+                    normalizeMetadataDialect({ config: snapshot.connectionConfig }),
+                    dbName,
+                ),
             );
             if (!result?.success) return '';
 
@@ -1115,13 +1065,17 @@ const fetchCompletionTableCommentMap = async (
     config: any,
     dbName: string,
     metadataDialect: string,
+    request?: { connectionId: string; signal?: AbortSignal },
 ): Promise<Map<string, string>> => {
     const tableComments = new Map<string, string>();
     const tableCommentSQL = buildCompletionTableCommentSQL(metadataDialect, dbName);
     if (!tableCommentSQL) return tableComments;
 
     try {
-        const resTableComments = await DBQuery(buildRpcConnectionConfig(config) as any, dbName, tableCommentSQL);
+        const rpcConfig = buildRpcConnectionConfig(config) as any;
+        const resTableComments = request
+            ? await queryEditorMetadataQuery(request.connectionId, rpcConfig, dbName, tableCommentSQL, request.signal)
+            : await DBQuery(rpcConfig, dbName, tableCommentSQL);
         if (resTableComments.success && Array.isArray(resTableComments.data)) {
             resTableComments.data.forEach((row: any) => {
                 const tableName = normalizeCommentText(getCaseInsensitiveValue(row, ['table_name', 'TABLE_NAME', 'name', 'Name']));
@@ -1139,6 +1093,8 @@ const fetchCompletionTableCommentMap = async (
 };
 
 const resetSharedQueryEditorMetadata = (releaseHoverDdlState = false) => {
+    const previousConnectionId = sharedCurrentConnectionId;
+    const previousDatabaseKey = buildSharedMetadataDatabaseKey(previousConnectionId, sharedCurrentDb);
     sharedQueryEditorMetadataGeneration += 1;
     sharedQueryEditorMetadataContextKey = '';
     sharedQueryEditorMetadataConnectionConfig = null;
@@ -1154,12 +1110,12 @@ const resetSharedQueryEditorMetadata = (releaseHoverDdlState = false) => {
     sharedRoutinesData = [];
     sharedSequencesData = [];
     sharedPackagesData = [];
-    sharedColumnsCacheData = {};
     sharedActiveEditorModelUri = '';
-    clearRecord(sharedLazyTablesCache);
-    clearRecord(sharedLazyTablesInFlight);
-    clearRecord(sharedLazyTablesRevisionByKey);
+    if (previousConnectionId) {
+        cancelQueryEditorMetadataRequests(previousConnectionId, previousDatabaseKey);
+    }
     if (releaseHoverDdlState) {
+        clearQueryEditorMetadataCaches();
         sharedQueryEditorHoverDdlCache.clear();
         sharedQueryEditorHoverDdlRequests.clear();
         sharedQueryEditorHoverDdlRevisionByConnection.clear();
@@ -1414,7 +1370,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const acceptAiInlineCompletionRef = useRef<(() => boolean) | null>(null);
   const acceptSqlAiCompletionBindingRef = useRef<{ combo: string; enabled: boolean }>({ combo: '', enabled: false });
   const queryEditorActiveRef = useRef(false);
-  const aiContextMetadataWarmupRef = useRef<Record<string, Promise<boolean> | undefined>>({});
+  const aiContextMetadataWarmupRef = useRef<Record<string, {
+      promise: Promise<boolean>;
+      controller: AbortController;
+  } | undefined>>({});
   const incompleteColumnMetadataDbsRef = useRef<Set<string>>(new Set());
   const aiContextCacheRef = useRef<{ deps: unknown[]; value: QueryEditorAiContext } | null>(null);
   const triggerSqlAiCompletionAltPressedRef = useRef(false);
@@ -1612,7 +1571,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       && String(currentConnectionIdRef.current || '').trim() === snapshot.connectionId
       && connectionsRef.current.find((connection) => connection.id === snapshot.connectionId)?.config === snapshot.connectionConfig
   ), []);
-  const columnsCacheRef = useRef<Record<string, ColumnDefinition[]>>({});
   const saveQuery = useStore(state => state.saveQuery);
   const theme = useStore(state => state.theme);
   const languagePreference = useStore((state) => state.languagePreference);
@@ -2093,6 +2051,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       metadataContextConnectionConfigRef.current = connectionConfig;
       metadataFetchKeyRef.current = '';
       metadataRetryPendingRef.current = false;
+      Object.values(aiContextMetadataWarmupRef.current).forEach((entry) => entry?.controller.abort());
       aiContextMetadataWarmupRef.current = {};
       aiContextCacheRef.current = null;
       incompleteColumnMetadataDbsRef.current.clear();
@@ -2106,7 +2065,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       routinesRef.current = [];
       sequencesRef.current = [];
       packagesRef.current = [];
-      columnsCacheRef.current = {};
       if (isActive) {
           resetSharedQueryEditorMetadata();
       }
@@ -2490,11 +2448,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           ?? '',
       ).trim();
       const metadataDialect = normalizeMetadataDialect(conn);
-      const lazyTablesEntry = sharedLazyTablesCache[buildSharedLazyTablesCacheKey(
+      const lazyTablesEntry = sharedLazyTablesCache.get(buildSharedLazyTablesCacheKey(
           resolvedConnectionId,
           currentDbName,
           metadataDialect,
-      )];
+      ));
 
       // 大库下全量合并可达数十万条且每次补全请求都会调用；依赖引用未变时复用上次结果，
       // 同时保持 tables/columns 数组身份稳定，让下游按数组身份缓存的索引也能跨请求复用。
@@ -2616,14 +2574,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           dbName,
           metadataDialect,
       );
-      const lazyTablesCacheRevision = getSharedLazyTablesRevision(lazyTablesCacheKey);
       const warmupKey = `${connectionId}\u0000${normalizedDbName}\u0000${needsTables ? 'tables' : ''}\u0000${needsColumns ? 'columns' : ''}\u0000${metadataGeneration}`;
       const existingWarmup = aiContextMetadataWarmupRef.current[warmupKey];
       if (existingWarmup) {
-          await existingWarmup;
+          await existingWarmup.promise;
           return;
       }
 
+      const warmupController = new AbortController();
       const warmupPromise = (async (): Promise<boolean> => {
           const conn = connectionsRef.current.find((item) => item.id === connectionId);
           if (!conn) {
@@ -2647,6 +2605,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               useSSH: conn.config.useSSH || false,
               ssh: conn.config.ssh || { host: '', port: 22, user: '', password: '', keyPath: '' },
           };
+          const rpcConfig = buildRpcConnectionConfig(config) as any;
 
           if (needsTables) {
               try {
@@ -2654,8 +2613,17 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       return false;
                   }
                   const [tableComments, resTables] = await Promise.all([
-                      fetchCompletionTableCommentMap(config, dbName, metadataDialect).catch(() => new Map<string, string>()),
-                      DBGetTables(buildRpcConnectionConfig(config) as any, dbName),
+                      fetchCompletionTableCommentMap(config, dbName, metadataDialect, {
+                          connectionId,
+                          signal: warmupController.signal,
+                      }).catch(() => new Map<string, string>()),
+                      queryEditorMetadataGetTables(
+                          connectionId,
+                          rpcConfig,
+                          dbName,
+                          warmupController.signal,
+                          normalizedDbName,
+                      ),
                   ]);
                   if (!isCurrentMetadataRequest()) {
                       return false;
@@ -2690,14 +2658,18 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           });
                           tablesRef.current = [...nextTableByKey.values()];
                           sharedTablesData = tablesRef.current;
-                          if (getSharedLazyTablesRevision(lazyTablesCacheKey) === lazyTablesCacheRevision) {
-                              sharedLazyTablesCache[lazyTablesCacheKey] = fetchedTables;
-                          }
+                          sharedLazyTablesCache.set(
+                              lazyTablesCacheKey,
+                              { connectionId, databaseKey: normalizedDbName },
+                              fetchedTables,
+                          );
                       }
                   }
               } catch (error) {
                   warmupSucceeded = false;
-                  console.warn('GoNavi AI inline table metadata warmup failed', error);
+                  if (!warmupController.signal.aborted) {
+                      console.warn('GoNavi AI inline table metadata warmup failed', error);
+                  }
               }
           }
 
@@ -2706,7 +2678,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   if (!isCurrentMetadataRequest()) {
                       return false;
                   }
-                  const resCols = await DBGetAllColumns(buildRpcConnectionConfig(config) as any, dbName);
+                  const resCols = await queryEditorMetadataGetAllColumns(
+                      connectionId,
+                      rpcConfig,
+                      dbName,
+                      warmupController.signal,
+                      normalizedDbName,
+                  );
                   if (!isCurrentMetadataRequest()) {
                       return false;
                   }
@@ -2758,19 +2736,22 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   }
               } catch (error) {
                   warmupSucceeded = false;
-                  console.warn('GoNavi AI inline column metadata warmup failed', error);
+                  if (!warmupController.signal.aborted) {
+                      console.warn('GoNavi AI inline column metadata warmup failed', error);
+                  }
               }
           }
           return warmupSucceeded;
       })();
 
       // 成功的 warmup 结果整个会话内复用，避免每次内联补全都真实查库；失败时删除缓存以便重试。
-      aiContextMetadataWarmupRef.current[warmupKey] = warmupPromise;
+      const warmupEntry = { promise: warmupPromise, controller: warmupController };
+      aiContextMetadataWarmupRef.current[warmupKey] = warmupEntry;
       let warmupSucceeded = false;
       try {
           warmupSucceeded = await warmupPromise;
       } finally {
-          if (!warmupSucceeded) {
+          if (!warmupSucceeded && aiContextMetadataWarmupRef.current[warmupKey] === warmupEntry) {
               delete aiContextMetadataWarmupRef.current[warmupKey];
           }
       }
@@ -2825,11 +2806,18 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       sharedRoutinesData = routinesRef.current;
       sharedSequencesData = sequencesRef.current;
       sharedPackagesData = packagesRef.current;
-      sharedColumnsCacheData = columnsCacheRef.current;
       sharedActiveEditorModelUri = String(editorRef.current?.getModel?.()?.uri?.toString?.() || '');
   }, [isActive, currentDb, currentConnectionId, currentSchema, connections, tab.id]);
 
   useEffect(() => {
+      const invalidatedConnectionIds = reconcileQueryEditorMetadataConnections(
+          connections.map((connection) => ({ id: connection.id, config: connection.config })),
+      );
+      invalidatedConnectionIds.forEach((connectionId) => {
+          invalidateQueryEditorMetadataCaches(connectionId);
+          invalidateQueryEditorHoverDdlCacheForConnection(connectionId);
+          sharedQueryEditorMetadataReloadRequestListeners.forEach((listener) => listener({ connectionId }));
+      });
       connectionsRef.current = connections;
   }, [connections]);
 
@@ -3142,23 +3130,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           buildQueryEditorMetadataIdentityKey(metadataDialect, column.dbName) !== normalizedDbKey
           || !isTargetTableName(String(column.tableName || ''))
       ));
-      Object.keys(columnsCacheRef.current).forEach((cacheKey) => {
-          const [cachedConnectionId = '', cachedDbName = ''] = cacheKey.split('|');
-          if (
-              cachedConnectionId === connectionId
-              && buildQueryEditorMetadataIdentityKey(metadataDialect, cachedDbName)
-                  === normalizedDbKey
-          ) {
-              delete columnsCacheRef.current[cacheKey];
-          }
-      });
       // A validation result invalidates any in-flight response for the same
       // database; otherwise that response can reinsert the missing table.
       invalidateSharedLazyTablesCache(connectionId, dbName);
       aiContextCacheRef.current = null;
       sharedTablesData = tablesRef.current;
       sharedAllColumnsData = allColumnsRef.current;
-      sharedColumnsCacheData = columnsCacheRef.current;
       refreshObjectDecorations(QUERY_EDITOR_LIVE_DECORATION_MAX_TEXT_LENGTH);
   }, [refreshObjectDecorations]);
 
@@ -3863,6 +3840,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       }
 
       let cancelled = false;
+      const controller = new AbortController();
       const fetchDbs = async () => {
           const conn = connections.find(c => c.id === currentConnectionId);
           if (!conn) return;
@@ -3876,7 +3854,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             ssh: conn.config.ssh || { host: "", port: 22, user: "", password: "", keyPath: "" }
           };
 
-          const res = await DBGetDatabases(buildRpcConnectionConfig(config) as any);
+          const res = await queryEditorMetadataGetDatabases(
+              currentConnectionId,
+              buildRpcConnectionConfig(config) as any,
+              controller.signal,
+          );
           if (cancelled) return;
           if (res.success && Array.isArray(res.data)) {
               let dbs = res.data.map((row: any) => row.Database || row.database);
@@ -3899,7 +3881,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           }
       };
       void fetchDbs().catch((error) => {
-          if (cancelled) return;
+          if (cancelled || controller.signal.aborted) return;
           console.warn('GoNavi query editor database list fetch failed', error);
           visibleDbsRef.current = [];
           if (isActive) sharedVisibleDbs = [];
@@ -3907,6 +3889,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       });
       return () => {
           cancelled = true;
+          controller.abort();
       };
   }, [autoFetchVisible, currentConnectionId, connections, isActive]);
 
@@ -3949,6 +3932,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const requestSeq = schemaLoadSeqRef.current + 1;
       schemaLoadSeqRef.current = requestSeq;
       let cancelled = false;
+      const controller = new AbortController();
       setSchemaLoading(true);
 
       const config = {
@@ -3959,15 +3943,30 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           useSSH: conn.config.useSSH || false,
           ssh: conn.config.ssh || { host: '', port: 22, user: '', password: '', keyPath: '' },
       };
-      const loadCurrentSchema = DBQuery(
-          buildRpcConnectionConfig(config) as any,
+      const rpcConfig = buildRpcConnectionConfig(config) as any;
+      const databaseKey = buildQueryEditorMetadataIdentityKey(normalizeMetadataDialect(conn), dbName);
+      const loadCurrentSchema = queryEditorMetadataQuery(
+          currentConnectionId,
+          rpcConfig,
           dbName,
           QUERY_EDITOR_CURRENT_SCHEMA_SQL,
+          controller.signal,
+          databaseKey,
       ).then((result) => (
           result.success ? extractQueryEditorCurrentSchema(result.data) : ''
       )).catch(() => '');
 
-      void Promise.all([loadSchemas(conn, dbName), loadCurrentSchema])
+      void Promise.all([
+          loadSchemas(conn, dbName, (queryConfig, queryDbName, sql) => queryEditorMetadataQuery(
+              currentConnectionId,
+              queryConfig,
+              queryDbName,
+              sql,
+              controller.signal,
+              databaseKey,
+          )),
+          loadCurrentSchema,
+      ])
           .then(([result, databaseDefaultSchema]) => {
               if (cancelled) return;
               const resolved = resolveLoadedQueryEditorSchema({
@@ -4000,6 +3999,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
       return () => {
           cancelled = true;
+          controller.abort();
       };
   }, [
       autoFetchVisible,
@@ -4037,7 +4037,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           routinesRef.current = [];
           sequencesRef.current = [];
           packagesRef.current = [];
-          columnsCacheRef.current = {};
           incompleteColumnMetadataDbsRef.current.clear();
           missingTableMetadataKeysRef.current.clear();
           if (updatesSharedActiveContext) {
@@ -4073,6 +4072,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       }
 
       let cancelled = false;
+      const controller = new AbortController();
       // 事件驱动的重载只生效一次；普通依赖变化不绕过去重
       const forceMetadataReload = queryEditorMetadataForceReloadRef.current;
       queryEditorMetadataForceReloadRef.current = false;
@@ -4187,7 +4187,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               targetDbName: string,
               specs: MetadataQuerySpec[],
           ): Promise<MetadataQueryResult[]> => {
-              const results = await queryCompletionMetadataRowsBySpecs(config, targetDbName, specs);
+              const results = await queryCompletionMetadataRowsBySpecs(config, targetDbName, specs, {
+                  connectionId: currentConnectionId,
+                  signal: controller.signal,
+              });
               // An empty successful catalog is valid; an empty result for a
               // non-empty spec set means every compatibility query failed and
               // must remain retryable (especially over SSH).
@@ -4261,40 +4264,65 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
           for (const dbName of metadataDbNames) {
               if (cancelled) return;
-              const tableComments = await fetchCompletionTableCommentMap(config, dbName, metadataDialect);
+              const databaseKey = buildQueryEditorMetadataIdentityKey(metadataDialect, dbName);
+              const tableComments = await fetchCompletionTableCommentMap(config, dbName, metadataDialect, {
+                  connectionId: currentConnectionId,
+                  signal: controller.signal,
+              });
               if (cancelled) return;
 
               // 获取表
               let resTables: any = { success: false, data: [] };
               try {
-                  resTables = await DBGetTables(buildRpcConnectionConfig(config) as any, dbName);
+                  resTables = await queryEditorMetadataGetTables(
+                      currentConnectionId,
+                      buildRpcConnectionConfig(config) as any,
+                      dbName,
+                      controller.signal,
+                      databaseKey,
+                  );
               } catch (error) {
                   metadataFetchFailed = true;
                   if (cancelled) return;
-                  console.warn('GoNavi query editor table metadata fetch failed', error);
+                  if (!isQueryEditorMetadataAbortError(error)) {
+                      console.warn('GoNavi query editor table metadata fetch failed', error);
+                  }
               }
               if (cancelled) return;
               if (!resTables?.success || !Array.isArray(resTables.data)) {
                   metadataFetchFailed = true;
               }
               if (resTables?.success && Array.isArray(resTables.data)) {
-                  resTables.data.forEach((row: any) => {
-                      const tableMeta = buildCompletionTableMeta(dbName, row, tableComments, metadataDialect);
-                      if (tableMeta) {
-                          allTables.push(tableMeta);
-                      }
-                  });
+                  const fetchedTables = resTables.data
+                      .map((row: any) => buildCompletionTableMeta(dbName, row, tableComments, metadataDialect))
+                      .filter((table: CompletionTableMeta | null): table is CompletionTableMeta => !!table);
+                  allTables.push(...fetchedTables);
+                  if (fetchedTables.length > 0) {
+                      sharedLazyTablesCache.set(
+                          buildSharedLazyTablesCacheKey(currentConnectionId, dbName, metadataDialect),
+                          { connectionId: currentConnectionId, databaseKey },
+                          fetchedTables,
+                      );
+                  }
               }
               if (!syncMetadataSnapshot()) return;
 
               // 获取列 (所有数据库类型都支持 DBGetAllColumns)
               let resCols: any = { success: false, data: [] };
               try {
-                  resCols = await DBGetAllColumns(buildRpcConnectionConfig(config) as any, dbName);
+                  resCols = await queryEditorMetadataGetAllColumns(
+                      currentConnectionId,
+                      buildRpcConnectionConfig(config) as any,
+                      dbName,
+                      controller.signal,
+                      databaseKey,
+                  );
               } catch (error) {
                   metadataFetchFailed = true;
                   if (cancelled) return;
-                  console.warn('GoNavi query editor column metadata fetch failed', error);
+                  if (!isQueryEditorMetadataAbortError(error)) {
+                      console.warn('GoNavi query editor column metadata fetch failed', error);
+                  }
               }
               if (cancelled) return;
               if (!resCols?.success || !Array.isArray(resCols.data)) {
@@ -4556,12 +4584,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           refreshObjectDecorations();
       };
       void fetchMetadata().catch((error) => {
-          if (!cancelled) {
+          if (!cancelled && !controller.signal.aborted && !isQueryEditorMetadataAbortError(error)) {
               console.warn('GoNavi query editor metadata refresh failed', error);
           }
       });
       return () => {
           cancelled = true;
+          controller.abort();
       };
   }, [
       autoFetchVisible,
@@ -4960,10 +4989,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       }
 
       if (conn && definitionTabType === 'view-def' && dialect === 'oracle') {
-          const result = await DBShowCreateTable(
+          const result = await queryEditorMetadataShowCreateTable(
+              connectionId,
               buildRpcConnectionConfig(buildQueryEditorObjectDefinitionConnectionConfig(conn)) as any,
               targetDbName,
               objectEditName,
+              undefined,
+              buildQueryEditorMetadataIdentityKey(dialect, targetDbName),
           );
           if (result?.success && String(result.data || '').trim()) {
                 latestDefinition = formatDdlForDisplay(String(result.data), dialect, {
@@ -7175,132 +7207,86 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   dbName,
                   metadataDialect,
               );
-              if (sharedLazyTablesCache[cacheKey]) {
-                  return sharedLazyTablesCache[cacheKey];
-              }
-              const cacheRevision = getSharedLazyTablesRevision(cacheKey);
-                  const metadataSnapshot: QueryEditorMetadataRequestSnapshot = {
-                      generation: sharedQueryEditorMetadataGeneration,
-                      connectionId: connId,
-                      connectionConfig: conn.config,
-                  };
-                  const metadataContextKey = sharedQueryEditorMetadataContextKey;
-                  const inFlightKey = `${cacheKey}|${metadataSnapshot.generation}`;
-                  if (sharedLazyTablesInFlight[inFlightKey]) {
-                      return sharedLazyTablesInFlight[inFlightKey];
-                  }
+              const cachedTables = sharedLazyTablesCache.get(cacheKey);
+              if (cachedTables) return cachedTables;
+              const metadataSnapshot: QueryEditorMetadataRequestSnapshot = {
+                  generation: sharedQueryEditorMetadataGeneration,
+                  connectionId: connId,
+                  connectionConfig: conn.config,
+              };
+              const metadataContextKey = sharedQueryEditorMetadataContextKey;
+              const config = buildConnConfig();
+              if (!config) return [] as CompletionTableMeta[];
+              const databaseKey = buildQueryEditorMetadataIdentityKey(metadataDialect, dbName);
 
-                  const config = buildConnConfig();
-                  if (!config) return [] as CompletionTableMeta[];
-
-                  const request = DBGetTables(buildRpcConnectionConfig(config) as any, dbName)
-                      .then((res) => {
-                          if (
-                              !isSharedQueryEditorMetadataRequestCurrent(metadataSnapshot, metadataContextKey)
-                              || getSharedLazyTablesRevision(cacheKey) !== cacheRevision
-                          ) {
-                              return [];
-                          }
-                          // Do not memoize a failed metadata request as an
-                          // empty catalog. A transient SSH/driver failure must
-                          // remain retryable on the next completion request;
-                          // only a confirmed successful empty result is safe to
-                          // cache.
-                          if (!res?.success || !Array.isArray(res.data)) {
-                              return [];
-                          }
-                          const tables = res.data
-                              .map((row: any) => buildCompletionTableMeta(
-                                  dbName,
-                                  row,
-                                  new Map<string, string>(),
-                                  metadataDialect,
-                              ))
-                              .filter((table): table is CompletionTableMeta => !!table);
-                          sharedLazyTablesCache[cacheKey] = tables;
-                          if (tables.length > 0) {
-                              const lazyTableByKey = new Map(tables.map((table) => [
-                                  buildCompletionTableMetadataIdentityKey(
-                                      metadataDialect,
-                                      table.dbName,
-                                      table.tableName,
-                                  ),
-                                  table,
-                              ]));
-                              const existingKeys = new Set<string>();
-                              let changed = false;
-                              const nextSharedTables = sharedTablesData.map((table) => {
-                                  const tableKey = buildCompletionTableMetadataIdentityKey(
-                                      metadataDialect,
-                                      table.dbName,
-                                      table.tableName,
-                                  );
-                                  existingKeys.add(tableKey);
-                                  const lazyTable = lazyTableByKey.get(tableKey);
-                                  if (lazyTable?.comment && lazyTable.comment !== table.comment) {
-                                      changed = true;
-                                      return { ...table, comment: lazyTable.comment };
-                                  }
-                                  return table;
-                              });
-                              const missingTables = tables.filter((table) => !existingKeys.has(
-                                  buildCompletionTableMetadataIdentityKey(
-                                      metadataDialect,
-                                      table.dbName,
-                                      table.tableName,
-                                  ),
-                              ));
-                              if (missingTables.length > 0) {
-                                  changed = true;
-                                  nextSharedTables.push(...missingTables);
-                              }
-                              if (changed) {
-                                  sharedTablesData = nextSharedTables;
-                              }
-                          }
-                          void fetchCompletionTableCommentMap(config, dbName, metadataDialect)
-                              .then((tableComments) => {
-                                  if (
-                                      tableComments.size === 0
-                                      || !isSharedQueryEditorMetadataRequestCurrent(metadataSnapshot, metadataContextKey)
-                                      || getSharedLazyTablesRevision(cacheKey) !== cacheRevision
-                                  ) {
-                                      return;
-                                  }
-                                  const cachedTables = sharedLazyTablesCache[cacheKey];
-                                  if (!cachedTables || cachedTables.length === 0) {
-                                      return;
-                                  }
-                                  const resolveComment = (table: CompletionTableMeta) => (
-                                      getCompletionTableComment(
-                                          tableComments,
-                                          table.tableName,
-                                          metadataDialect,
-                                          table.comment || '',
-                                      )
-                                  );
-                                  const enrichedTables = mergeCompletionTableComments(cachedTables, resolveComment);
-                                  if (enrichedTables !== cachedTables) {
-                                      sharedLazyTablesCache[cacheKey] = enrichedTables;
-                                  }
-                                  sharedTablesData = mergeCompletionTableComments(sharedTablesData, (table) => (
-                                      buildQueryEditorMetadataIdentityKey(metadataDialect, table.dbName || '')
-                                          === buildQueryEditorMetadataIdentityKey(metadataDialect, dbName)
-                                          ? resolveComment(table)
-                                          : (table.comment || '')
-                                  ));
-                              })
-                              .catch(() => undefined);
-                          return tables;
-                      })
-                      .catch(() => [])
-                      .finally(() => {
-                          if (sharedLazyTablesInFlight[inFlightKey] === request) {
-                              delete sharedLazyTablesInFlight[inFlightKey];
-                          }
+              try {
+                  const res = await queryEditorMetadataGetTables(
+                      connId,
+                      buildRpcConnectionConfig(config) as any,
+                      dbName,
+                      undefined,
+                      databaseKey,
+                  );
+                  if (!isSharedQueryEditorMetadataRequestCurrent(metadataSnapshot, metadataContextKey)) return [];
+                  if (!res?.success || !Array.isArray(res.data)) return [];
+                  const tables = res.data
+                      .map((row: any) => buildCompletionTableMeta(
+                          dbName,
+                          row,
+                          new Map<string, string>(),
+                          metadataDialect,
+                      ))
+                      .filter((table): table is CompletionTableMeta => !!table);
+                  sharedLazyTablesCache.set(cacheKey, { connectionId: connId, databaseKey }, tables);
+                  if (tables.length > 0) {
+                      const lazyTableByKey = new Map(tables.map((table) => [
+                          buildCompletionTableMetadataIdentityKey(metadataDialect, table.dbName, table.tableName),
+                          table,
+                      ]));
+                      const existingKeys = new Set<string>();
+                      const nextSharedTables = sharedTablesData.map((table) => {
+                          const tableKey = buildCompletionTableMetadataIdentityKey(
+                              metadataDialect,
+                              table.dbName,
+                              table.tableName,
+                          );
+                          existingKeys.add(tableKey);
+                          return lazyTableByKey.get(tableKey) || table;
                       });
-                  sharedLazyTablesInFlight[inFlightKey] = request;
-                  return request;
+                      nextSharedTables.push(...tables.filter((table) => !existingKeys.has(
+                          buildCompletionTableMetadataIdentityKey(metadataDialect, table.dbName, table.tableName),
+                      )));
+                      sharedTablesData = nextSharedTables;
+                  }
+                  void fetchCompletionTableCommentMap(config, dbName, metadataDialect, {
+                      connectionId: connId,
+                  }).then((tableComments) => {
+                      if (
+                          tableComments.size === 0
+                          || !isSharedQueryEditorMetadataRequestCurrent(metadataSnapshot, metadataContextKey)
+                      ) return;
+                      const currentTables = sharedLazyTablesCache.get(cacheKey);
+                      if (!currentTables || currentTables.length === 0) return;
+                      const resolveComment = (table: CompletionTableMeta) => getCompletionTableComment(
+                          tableComments,
+                          table.tableName,
+                          metadataDialect,
+                          table.comment || '',
+                      );
+                      const enrichedTables = mergeCompletionTableComments(currentTables, resolveComment);
+                      if (enrichedTables !== currentTables) {
+                          sharedLazyTablesCache.set(cacheKey, { connectionId: connId, databaseKey }, enrichedTables);
+                      }
+                      sharedTablesData = mergeCompletionTableComments(sharedTablesData, (table) => (
+                          buildQueryEditorMetadataIdentityKey(metadataDialect, table.dbName || '') === databaseKey
+                              ? resolveComment(table)
+                              : (table.comment || '')
+                      ));
+                  }).catch(() => undefined);
+                  return tables;
+              } catch {
+                  return [];
+              }
               };
 
               const toCompletionColumns = (
@@ -7395,7 +7381,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       buildQueryEditorMetadataIdentityKey(activeDialect, lookupDbName),
                       normalizeQueryEditorTableTargetName(lookupTableName, activeDialect),
                   ].join('|');
-                  const cached = sharedColumnsCacheData[key] as ColumnDefinition[] | undefined;
+                  const databaseKey = buildQueryEditorMetadataIdentityKey(activeDialect, lookupDbName);
+                  const cached = sharedColumnsCache.get(key);
                   if (cached) {
                       const cachedColumns = toCompletionColumns(cached, targetDb, targetTable);
                       mergeSharedCompletionColumns(cachedColumns);
@@ -7411,13 +7398,20 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   };
                   const metadataContextKey = sharedQueryEditorMetadataContextKey;
 
-                  const res = await DBGetColumns(buildRpcConnectionConfig(config) as any, lookupDbName, lookupTableName);
+                  const res = await queryEditorMetadataGetColumns(
+                      connId,
+                      buildRpcConnectionConfig(config) as any,
+                      lookupDbName,
+                      lookupTableName,
+                      undefined,
+                      databaseKey,
+                  );
                   if (!isSharedQueryEditorMetadataRequestCurrent(metadataSnapshot, metadataContextKey)) {
                       return [] as CompletionColumnMeta[];
                   }
                   if (res?.success && Array.isArray(res.data)) {
                       const cols = res.data as ColumnDefinition[];
-                      sharedColumnsCacheData[key] = cols;
+                      sharedColumnsCache.set(key, { connectionId: connId, databaseKey }, cols);
                       const completionColumns = toCompletionColumns(cols, targetDb, targetTable);
                       mergeSharedCompletionColumns(completionColumns);
                       return completionColumns;
@@ -9543,7 +9537,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   connectionId: conn.id,
                   reason: 'elasticsearch-write',
               });
-              void DBGetDatabases(config)
+              void queryEditorMetadataGetDatabases(conn.id, config)
                   .then((databaseResult: any) => {
                       if (
                           String(currentConnectionIdRef.current || '').trim() !== conn.id
@@ -9972,7 +9966,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                         connectionId: currentConnectionId,
                         connectionConfig: conn.config,
                     };
-                    const resTables = await DBGetTables(buildRpcConnectionConfig(config) as any, normalizedDbName);
+                    const resTables = await queryEditorMetadataGetTables(
+                        currentConnectionId,
+                        buildRpcConnectionConfig(config) as any,
+                        normalizedDbName,
+                        undefined,
+                        buildQueryEditorMetadataIdentityKey(metadataDialect, normalizedDbName),
+                    );
                     if (!resTables?.success || !Array.isArray(resTables.data)) {
                         oracleTableCache.set(cacheKey, []);
                         return [];
