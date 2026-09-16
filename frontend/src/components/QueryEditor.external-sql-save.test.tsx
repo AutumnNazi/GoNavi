@@ -4595,11 +4595,18 @@ describe('QueryEditor external SQL save', () => {
     editorState.latestOnChange?.(editorState.value);
     const result = await sqlProvider.provideCompletionItems(editorState.editor.getModel(), { lineNumber: 1, column: editorState.value.length + 1 });
     const labels = result.suggestions.map((item: any) => item.label);
-    const tableSuggestion = result.suggestions.find((item: any) => item.label === 'fs_org_auth_application');
 
     expect(backendApp.DBGetTables).toHaveBeenCalledWith(expect.any(Object), 'front_end_sys');
     expect(labels).toContain('fs_org_auth_application');
-    expect(tableSuggestion?.detail).toBe('表 - 认证申请表');
+
+    await vi.waitFor(async () => {
+      const resultWithComments = await sqlProvider.provideCompletionItems(
+        editorState.editor.getModel(),
+        { lineNumber: 1, column: editorState.value.length + 1 },
+      );
+      const tableSuggestion = resultWithComments.suggestions.find((item: any) => item.label === 'fs_org_auth_application');
+      expect(tableSuggestion?.detail).toBe('表 - 认证申请表');
+    });
     await act(async () => {
       renderer.unmount();
     });

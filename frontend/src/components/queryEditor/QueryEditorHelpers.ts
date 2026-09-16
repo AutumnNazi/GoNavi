@@ -3078,7 +3078,12 @@ export const isQueryEditorTableAliasCompletionContext = (source: string, dbType 
 
 export type QueryEditorAliasMap = Record<
     string,
-    { dbName: string; tableName: string; explicitOwnerName?: string }
+    {
+        dbName: string;
+        tableName: string;
+        explicitOwnerName?: string;
+        sourceSegments?: QueryIdentifierPathSegment[];
+    }
 >;
 
 export const buildQueryEditorAliasMap = (
@@ -3105,8 +3110,8 @@ export const buildQueryEditorAliasMap = (
         const shortTable = reference.segments?.[reference.segments.length - 1]
             || splitQueryIdentifierPathSegments(parts[parts.length - 1] || '', dbType)[0];
         const aliasTarget = explicitOwnerName
-            ? { dbName, tableName, explicitOwnerName }
-            : { dbName, tableName };
+            ? { dbName, tableName, explicitOwnerName, sourceSegments: reference.segments }
+            : { dbName, tableName, sourceSegments: reference.segments };
         const shortTableKey = shortTable ? buildQueryEditorIdentifierIdentityKey([shortTable], dbType) : '';
         if (shortTableKey) aliasMap[shortTableKey] = aliasTarget;
 
@@ -4308,16 +4313,9 @@ export const resolveQueryEditorHoverTarget = (
             // the current database/schema interpretation when that catalog is
             // unavailable.
             const explicitOwner = String(aliasInfo.explicitOwnerName || '').trim();
-            const aliasReference = collectQueryEditorTableReferences(fullText, dialect).find((reference) => {
-                const referenceAlias = reference.aliasSegment
-                    || (reference.alias
-                        ? splitQueryIdentifierPathSegments(reference.alias, dialect)[0]
-                        : undefined);
-                return referenceAlias
-                    && buildQueryEditorIdentifierIdentityKey([referenceAlias], dialect) === aliasKey;
-            });
-            const sourceSegments = aliasReference?.segments
-                || splitQueryIdentifierPathSegments(aliasInfo.tableName, dialect);
+            const sourceSegments = aliasInfo.sourceSegments && aliasInfo.sourceSegments.length > 0
+                ? aliasInfo.sourceSegments
+                : splitQueryIdentifierPathSegments(aliasInfo.tableName, dialect);
             const currentSchemaColumn = explicitOwner
                 ? findColumnTarget(
                     currentDb,

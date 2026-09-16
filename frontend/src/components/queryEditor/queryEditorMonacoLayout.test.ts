@@ -3,11 +3,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { QUERY_EDITOR_HOVER_DELAY_MS } from './QueryEditorHelpers';
 import {
     applyQueryEditorAutomaticLayout,
+    buildQueryEditorMonacoActionLabel,
     buildQueryEditorMonacoOptions,
     collectQueryEditorSplitLayoutObserveTargets,
     installQueryEditorFindWidgetOverflowClass,
     QUERY_EDITOR_FIND_CONTROLLER_ID,
     QUERY_EDITOR_FIND_WIDGET_VISIBLE_CLASS,
+    QUERY_EDITOR_QUICK_SUGGESTIONS_DELAY_MS,
+    setQueryEditorMouseCursor,
     syncQueryEditorFindWidgetVisibleClass,
 } from './queryEditorMonacoLayout';
 
@@ -19,8 +22,11 @@ describe('query editor monaco layout', () => {
         expect(hidden).toMatchObject({
             automaticLayout: false,
             quickSuggestions: { other: true, comments: false, strings: false },
+            quickSuggestionsDelay: QUERY_EDITOR_QUICK_SUGGESTIONS_DELAY_MS,
             suggestOnTriggerCharacters: true,
             hover: { enabled: true, delay: QUERY_EDITOR_HOVER_DELAY_MS, above: false },
+            wordBasedSuggestions: 'off',
+            occurrencesHighlight: 'off',
             wordWrap: 'off',
         });
         expect(visible).toMatchObject({
@@ -123,5 +129,17 @@ describe('query editor monaco layout', () => {
         applyQueryEditorAutomaticLayout(editor, true);
         expect(editor.updateOptions).toHaveBeenCalledWith({ automaticLayout: true });
         expect(editor.layout).toHaveBeenCalledTimes(1);
+    });
+
+    it('prefixes Monaco action labels with the product name', () => {
+        expect(buildQueryEditorMonacoActionLabel('query_editor.action.find_in_editor')).toContain('GoNavi:');
+    });
+
+    it('writes the editor mouse cursor onto the DOM node', () => {
+        const style: { cursor?: string } = {};
+        setQueryEditorMouseCursor({ getDomNode: () => ({ style }) }, 'pointer');
+        expect(style.cursor).toBe('pointer');
+        setQueryEditorMouseCursor({ getDomNode: () => ({ style }) }, '');
+        expect(style.cursor).toBe('');
     });
 });

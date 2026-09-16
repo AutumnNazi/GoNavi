@@ -335,6 +335,7 @@ describe('QueryEditorToolbar layout', () => {
   it('keeps live and completed execution time at the editor bottom-left', () => {
     const toolbarSource = readFileSync(new URL('./QueryEditorToolbar.tsx', import.meta.url), 'utf8');
     const editorSource = readFileSync(new URL('./QueryEditor.tsx', import.meta.url), 'utf8');
+    const timerSource = readFileSync(new URL('./queryEditor/QueryEditorExecutionTimer.tsx', import.meta.url), 'utf8');
     const css = readV2ThemeCss();
     const statusbarCss = css.slice(
       css.indexOf('.gn-query-execution-statusbar {'),
@@ -344,18 +345,27 @@ describe('QueryEditorToolbar layout', () => {
       css.indexOf('.gn-query-execution-elapsed {'),
       css.indexOf('body[data-ui-version="v2"] .gn-v2-query-resizer {'),
     );
+    const cancelFn = editorSource.slice(
+      editorSource.indexOf('const finishCancelledRun = () => {'),
+      editorSource.indexOf('if (!currentQueryIdRef.current)'),
+    );
 
     expect(toolbarSource).toContain('globalThis.setInterval(updateElapsed, QUERY_EXECUTION_TIMER_INTERVAL_MS)');
     expect(toolbarSource).toContain('startedAtRef.current = null');
     expect(toolbarSource).not.toContain('gn-query-toolbar-execution-slot');
-    expect(editorSource).toContain('className="gn-query-execution-statusbar"');
-    expect(editorSource).toContain('className="gn-query-execution-timer"');
-    expect(editorSource).toContain('role="timer"');
-    expect(editorSource).toContain('query_editor.execution.elapsed');
+    expect(timerSource).toContain('className="gn-query-execution-statusbar"');
+    expect(timerSource).toContain('className="gn-query-execution-timer"');
+    expect(timerSource).toContain('role="timer"');
+    expect(timerSource).toContain('query_editor.execution.elapsed');
+    expect(timerSource).toContain('useQueryExecutionElapsed(');
+    expect(editorSource).toContain('QueryEditorExecutionTimer');
     expect(editorSource).toContain('executionTimingActive');
     expect(editorSource).toContain('completedExecutionElapsedMs');
+    expect(editorSource).toContain('timingActive={executionTimingActive && loading}');
     expect(editorSource).not.toContain('useQueryExecutionElapsed(loading, executionRunToken)');
-    const statusbarIndex = editorSource.indexOf('className="gn-query-execution-statusbar"');
+    expect(editorSource).not.toContain('useQueryExecutionElapsed(');
+    expect(cancelFn).toContain('setExecutionTimingActive(false)');
+    const statusbarIndex = editorSource.indexOf('<QueryEditorExecutionTimer');
     expect(statusbarIndex).toBeGreaterThan(editorSource.indexOf('<Editor'));
     expect(statusbarIndex).toBeLessThan(editorSource.indexOf('<QueryEditorResultsPanel', statusbarIndex));
     expect(statusbarCss).toContain('flex: 0 0 22px;');

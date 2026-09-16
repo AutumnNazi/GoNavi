@@ -585,14 +585,14 @@ describe('QueryEditorHelpers qualified navigation (MySQL db.table + PG schema.ta
 
     it('tracks an explicit two-part owner separately from the current database', () => {
         const qualified = buildQueryEditorAliasMap('SELECT p.* FROM IMP_BASICINFO.PERSON p', 'A');
-        expect(qualified.p).toEqual({
+        expect(qualified.p).toMatchObject({
             dbName: 'IMP_BASICINFO',
             tableName: 'PERSON',
             explicitOwnerName: 'IMP_BASICINFO',
         });
 
         const unqualified = buildQueryEditorAliasMap('SELECT p.* FROM PERSON p', 'A');
-        expect(unqualified.p).toEqual({ dbName: 'A', tableName: 'PERSON' });
+        expect(unqualified.p).toMatchObject({ dbName: 'A', tableName: 'PERSON' });
     });
 
     it('uses a supplied full-document alias map when resolving a local hover probe', () => {
@@ -703,10 +703,10 @@ describe('QueryEditorHelpers qualified navigation (MySQL db.table + PG schema.ta
             'DEV',
         );
 
-        expect(aliases.vulnerability_info_t).toEqual({ dbName: 'DEV', tableName: 'VULNERABILITY_INFO_T' });
-        expect(aliases.a).toEqual({ dbName: 'DEV', tableName: 'VULNERABILITY_INFO_T' });
-        expect(aliases.vulnerability_detail_t).toEqual({ dbName: 'DEV', tableName: 'VULNERABILITY_DETAIL_T' });
-        expect(aliases.b).toEqual({ dbName: 'DEV', tableName: 'VULNERABILITY_DETAIL_T' });
+        expect(aliases.vulnerability_info_t).toMatchObject({ dbName: 'DEV', tableName: 'VULNERABILITY_INFO_T' });
+        expect(aliases.a).toMatchObject({ dbName: 'DEV', tableName: 'VULNERABILITY_INFO_T' });
+        expect(aliases.vulnerability_detail_t).toMatchObject({ dbName: 'DEV', tableName: 'VULNERABILITY_DETAIL_T' });
+        expect(aliases.b).toMatchObject({ dbName: 'DEV', tableName: 'VULNERABILITY_DETAIL_T' });
     });
 
     it('ignores expression commas, literals, comments, and table-valued functions', () => {
