@@ -111,7 +111,6 @@ import {
 } from '../utils/sqlFileTabDrafts';
 import {
     clearQueryEditorResultSession,
-    saveQueryEditorResultSessionForOpenTab,
     takeQueryEditorResultSession,
 } from '../utils/queryEditorResultSessionCache';
 import { buildEditableTriggerSql } from '../utils/triggerEditSql';
@@ -144,7 +143,10 @@ import {
     getColumnDefinitionType,
 } from '../utils/columnDefinition';
 import { installQueryEditorSuggestWidgetWidth } from './queryEditor/queryEditorSuggestionLayout';
-import { useQueryEditorResultSessionUnmount } from './queryEditor/queryEditorResultSessionLifecycle';
+import {
+    restoreQueryEditorViewState,
+    useQueryEditorResultSessionLifecycle,
+} from './queryEditor/queryEditorResultSessionLifecycle';
 import {
     applyQueryEditorAutomaticLayout,
     buildQueryEditorMonacoActionLabel,
@@ -1577,37 +1579,17 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   isResultPanelVisibleRef.current = isResultPanelVisible;
   const publishesDetachedResultSession = useMemo(() => isNativeDetachedWindow(), []);
 
-  useEffect(() => {
-      const captureSession = (event: Event) => {
-          const requestedTabId = String((event as CustomEvent).detail?.tabId || '').trim();
-          if (requestedTabId !== tab.id) return;
-          saveQueryEditorResultSessionForOpenTab(tab.id, {
-              resultSets: resultSetsRef.current,
-              activeResultKey: activeResultKeyRef.current,
-              isResultPanelVisible: isResultPanelVisibleRef.current,
-          }, useStore.getState().tabs);
-      };
-      window.addEventListener('gonavi:capture-query-result-session', captureSession);
-      return () => {
-          window.removeEventListener('gonavi:capture-query-result-session', captureSession);
-      };
-  }, [tab.id]);
-
-  useQueryEditorResultSessionUnmount({
+  useQueryEditorResultSessionLifecycle({
       tabId: tab.id,
+      resultSets,
+      activeResultKey,
+      isResultPanelVisible,
+      publishesDetachedResultSession,
       resultSetsRef,
       activeResultKeyRef,
       isResultPanelVisibleRef,
+      editorRef,
   });
-
-  useEffect(() => {
-      if (!publishesDetachedResultSession) return;
-      saveQueryEditorResultSessionForOpenTab(tab.id, {
-          resultSets,
-          activeResultKey,
-          isResultPanelVisible,
-      }, useStore.getState().tabs);
-  }, [activeResultKey, isResultPanelVisible, publishesDetachedResultSession, resultSets, tab.id]);
   const shortcutOptions = useStore(state => state.shortcutOptions);
   const activeShortcutPlatform = getShortcutPlatform(isMacLikePlatform());
   const runQueryShortcutBinding = useMemo(
@@ -5102,6 +5084,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               originalSuggestDetailsLayout(width, Math.max(height, QUERY_EDITOR_SQL_SNIPPET_SUGGEST_DETAIL_MIN_HEIGHT));
           };
       }
+      restoreQueryEditorViewState(editor, restoredResultSessionRef.current?.editorViewState);
       lastEditorCursorPositionRef.current = normalizeEditorPosition(editor.getPosition?.());
       if (isActive) {
           sharedActiveEditorModelUri = String(editor.getModel?.()?.uri?.toString?.() || '');
@@ -5758,6 +5741,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       };
 
       const syncModifierState = (keyboardEvent?: KeyboardEvent | MouseEvent | null) => {
+          if (!queryEditorActiveRef.current) {
+              ctrlMetaPressedRef.current = false;
+              return;
+          }
           const wasPressed = ctrlMetaPressedRef.current;
           const isKeyboardLikeEvent = keyboardEvent
               && typeof keyboardEvent === 'object'

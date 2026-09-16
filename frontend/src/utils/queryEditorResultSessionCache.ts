@@ -5,6 +5,8 @@ export type QueryEditorResultSessionSnapshot = {
   resultSets: QueryEditorResultSet[];
   activeResultKey: string;
   isResultPanelVisible?: boolean;
+  /** Serializable Monaco cursor, selection, scroll, and contribution state. */
+  editorViewState?: unknown;
 };
 
 const cache = new Map<string, QueryEditorResultSessionSnapshot>();
@@ -27,6 +29,9 @@ export const saveQueryEditorResultSession = (
     resultSets: Array.isArray(snapshot.resultSets) ? snapshot.resultSets : [],
     activeResultKey: String(snapshot.activeResultKey || ''),
     isResultPanelVisible: snapshot.isResultPanelVisible,
+    ...(snapshot.editorViewState !== undefined
+      ? { editorViewState: snapshot.editorViewState }
+      : {}),
   };
   cache.set(id, nextSnapshot);
   notifyQueryEditorResultSession(id, nextSnapshot);

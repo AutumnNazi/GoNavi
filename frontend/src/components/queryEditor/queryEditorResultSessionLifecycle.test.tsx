@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import TestRenderer, { act, type ReactTestRenderer } from 'react-test-renderer';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useStore } from '../../store';
 import type { TabData } from '../../types';
@@ -11,7 +11,15 @@ import {
   saveQueryEditorResultSessionForOpenTab,
   type QueryEditorResultSessionSnapshot,
 } from '../../utils/queryEditorResultSessionCache';
-import { useQueryEditorResultSessionUnmount } from './queryEditorResultSessionLifecycle';
+import { getInitialEditorQuery } from './QueryEditorHelpers';
+import {
+  clearQueryTabDraft,
+  setQueryTabDraft,
+} from '../../utils/sqlFileTabDrafts';
+import {
+  restoreQueryEditorViewState,
+  useQueryEditorResultSessionLifecycle,
+} from './queryEditorResultSessionLifecycle';
 
 const buildQueryTab = (
   id: string,
@@ -29,6 +37,7 @@ const buildQueryTab = (
 const buildSnapshot = (tabId: string): QueryEditorResultSessionSnapshot => ({
   activeResultKey: `result-${tabId}`,
   isResultPanelVisible: true,
+  editorViewState: { cursorState: [{ positionLineNumber: 2 }], tabId },
   resultSets: [{
     key: `result-${tabId}`,
     sql: `select '${tabId}'`,
@@ -46,14 +55,20 @@ const ResultSessionLifecycleHarness: React.FC<{
   const resultSetsRef = useRef(snapshot.resultSets);
   const activeResultKeyRef = useRef(snapshot.activeResultKey);
   const isResultPanelVisibleRef = useRef(snapshot.isResultPanelVisible === true);
+  const editorRef = useRef({ saveViewState: () => snapshot.editorViewState });
   resultSetsRef.current = snapshot.resultSets;
   activeResultKeyRef.current = snapshot.activeResultKey;
   isResultPanelVisibleRef.current = snapshot.isResultPanelVisible === true;
-  useQueryEditorResultSessionUnmount({
+  useQueryEditorResultSessionLifecycle({
     tabId,
+    resultSets: snapshot.resultSets,
+    activeResultKey: snapshot.activeResultKey,
+    isResultPanelVisible: snapshot.isResultPanelVisible === true,
+    publishesDetachedResultSession: false,
     resultSetsRef,
     activeResultKeyRef,
     isResultPanelVisibleRef,
+    editorRef,
   });
   return null;
 };
@@ -193,6 +208,7 @@ describe('query editor result session lifecycle', () => {
     });
     renderers = [];
     allTabIds.forEach(clearQueryEditorResultSession);
+    clearQueryTabDraft('remount-draft');
   });
 
   it.each(scenarios)('does not restore closed sessions after $name unmount cleanup', (scenario) => {
@@ -246,5 +262,20 @@ describe('query editor result session lifecycle', () => {
       useStore.getState().tabs,
     )).toBe(false);
     expect(peekQueryEditorResultSession(tab.id)).toBeNull();
+  });
+
+  it('restores Monaco cursor, selection, and scroll state from the result session', () => {
+    const restoreViewState = vi.fn();
+    const state = buildSnapshot('view-state').editorViewState;
+
+    expect(restoreQueryEditorViewState({ restoreViewState }, state)).toBe(true);
+    expect(restoreViewState).toHaveBeenCalledWith(state);
+  });
+
+  it('uses the latest SQL draft when a hidden query tab remounts', () => {
+    const tab = buildQueryTab('remount-draft');
+    setQueryTabDraft(tab.id, 'select latest draft');
+
+    expect(getInitialEditorQuery({ ...tab, query: 'select stale tab value' })).toBe('select latest draft');
   });
 });

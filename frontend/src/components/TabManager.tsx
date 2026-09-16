@@ -32,10 +32,7 @@ import {
   isSQLFileQueryTab,
   normalizeSQLFileReadContent,
 } from '../utils/sqlFileTabDirty';
-import { clearSQLFileTabDraft, getSQLFileTabDraft } from '../utils/sqlFileTabDrafts';
-import {
-  clearQueryTabDraft,
-} from '../utils/sqlFileTabDrafts';
+import { clearQueryTabDraft, clearSQLFileTabDraft, getSQLFileTabDraft } from '../utils/sqlFileTabDrafts';
 import {
   buildApplicationQuitUnsavedSQLLabel,
   assertApplicationQuitSavedSQLTargetsUnchanged,
@@ -77,6 +74,7 @@ import { getDbIcon } from './DatabaseIcons';
 import { resolveConnectionAccentColor, resolveConnectionIconType } from '../utils/connectionVisual';
 import { dispatchSidebarLocateConnection } from '../utils/sidebarLocate';
 import { renderV2ActionMenuPopup } from './common/V2ActionMenuPopup';
+import { shouldDestroyHiddenWorkbenchTab } from '../utils/workbenchTabLifecycle';
 
 const getTabKindLabel = (tab: TabData): string => {
   if (tab.type === 'query') return t('tab_manager.kind_badge.query');
@@ -874,6 +872,7 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
   const appearance = useStore(state => state.appearance);
   const languagePreference = useStore(state => state.languagePreference);
   const activeTabId = useStore(state => state.activeTabId);
+  const sqlEditorPendingTransactions = useStore(state => state.sqlEditorPendingTransactions);
   const setActiveTab = useStore(state => state.setActiveTab);
   const addTab = useStore(state => state.addTab);
   const closeTab = useStore(state => state.closeTab);
@@ -1600,9 +1599,10 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
       ),
       key: tab.id,
       closable: false,
+      destroyOnHidden: shouldDestroyHiddenWorkbenchTab(tab, sqlEditorPendingTransactions),
       children: <WorkbenchTabContent tab={tab} isActive={tabIsActive} />,
     };
-  }), [dockedTabs, dockedActiveTabId, tabs, connections, connectionGroupNameById, appearance.tabDisplay, closeTab, closeTabsWithSQLFilePrompt, detachTabToWindow, true, languagePreference]);
+  }), [dockedTabs, dockedActiveTabId, tabs, connections, connectionGroupNameById, appearance.tabDisplay, closeTab, closeTabsWithSQLFilePrompt, detachTabToWindow, true, languagePreference, sqlEditorPendingTransactions]);
 
   const queryCapableConnections = useMemo(
     () => connections.filter((connection) => getDataSourceCapabilities(connection.config).supportsQueryEditor),
@@ -2171,7 +2171,6 @@ body[data-theme='dark'] .main-tabs .ant-tabs-tab.ant-tabs-tab-active {
             <Tabs
                 className={`main-tabs gn-v2-main-tabs${hasDoubleLineTabLabel ? ' gn-v2-main-tabs-double' : ''}`}
                 type="editable-card"
-                destroyOnHidden={false}
                 onChange={(newActiveKey) => {
                   if (Date.now() < suppressClickUntilRef.current) return;
                   onChange(newActiveKey);
