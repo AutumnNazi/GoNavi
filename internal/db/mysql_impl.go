@@ -1385,13 +1385,13 @@ func (m *MySQLDB) ApplyChangesContext(ctx context.Context, tableName string, cha
 		var wheres []string
 		var args []interface{}
 		for k, v := range pk {
-			wheres = append(wheres, fmt.Sprintf("`%s` = ?", k))
+			wheres = append(wheres, fmt.Sprintf("`%s` = ?", escapeMySQLBacktickIdent(k)))
 			args = append(args, normalizeMySQLValueForWrite(k, v, columnTypeMap))
 		}
 		if len(wheres) == 0 {
 			continue
 		}
-		query := fmt.Sprintf("DELETE FROM `%s` WHERE %s", tableName, strings.Join(wheres, " AND "))
+		query := fmt.Sprintf("DELETE FROM `%s` WHERE %s", escapeMySQLBacktickIdent(tableName), strings.Join(wheres, " AND "))
 		res, err := tx.ExecContext(ctx, query, args...)
 		if err != nil {
 			return markWriteOutcomeUnknownIfAmbiguous(ctx, fmt.Errorf("删除失败：%w", err))
@@ -1407,7 +1407,7 @@ func (m *MySQLDB) ApplyChangesContext(ctx context.Context, tableName string, cha
 		var args []interface{}
 
 		for k, v := range update.Values {
-			sets = append(sets, fmt.Sprintf("`%s` = ?", k))
+			sets = append(sets, fmt.Sprintf("`%s` = ?", escapeMySQLBacktickIdent(k)))
 			args = append(args, normalizeMySQLValueForWrite(k, v, columnTypeMap))
 		}
 
@@ -1417,7 +1417,7 @@ func (m *MySQLDB) ApplyChangesContext(ctx context.Context, tableName string, cha
 
 		var wheres []string
 		for k, v := range update.Keys {
-			wheres = append(wheres, fmt.Sprintf("`%s` = ?", k))
+			wheres = append(wheres, fmt.Sprintf("`%s` = ?", escapeMySQLBacktickIdent(k)))
 			args = append(args, normalizeMySQLValueForWrite(k, v, columnTypeMap))
 		}
 
@@ -1425,7 +1425,7 @@ func (m *MySQLDB) ApplyChangesContext(ctx context.Context, tableName string, cha
 			return fmt.Errorf("更新操作需要主键条件")
 		}
 
-		query := fmt.Sprintf("UPDATE `%s` SET %s WHERE %s", tableName, strings.Join(sets, ", "), strings.Join(wheres, " AND "))
+		query := fmt.Sprintf("UPDATE `%s` SET %s WHERE %s", escapeMySQLBacktickIdent(tableName), strings.Join(sets, ", "), strings.Join(wheres, " AND "))
 		res, err := tx.ExecContext(ctx, query, args...)
 		if err != nil {
 			return markWriteOutcomeUnknownIfAmbiguous(ctx, fmt.Errorf("更新失败：%w", err))
