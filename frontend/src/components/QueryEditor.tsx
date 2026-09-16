@@ -145,6 +145,12 @@ import {
     getColumnDefinitionType,
 } from '../utils/columnDefinition';
 import { installQueryEditorSuggestWidgetWidth } from './queryEditor/queryEditorSuggestionLayout';
+import {
+    applyQueryEditorAutomaticLayout,
+    buildQueryEditorMonacoOptions,
+    collectQueryEditorSplitLayoutObserveTargets,
+    installQueryEditorFindWidgetOverflowClass,
+} from './queryEditor/queryEditorMonacoLayout';
 import QueryEditorResultsPanel, {
     QUERY_EDITOR_SQL_LOG_TAB_KEY,
     resolveEffectiveActiveResultKey,
@@ -195,7 +201,6 @@ import {
     type MetadataQuerySpec,
     type QueryEditorNavigationTarget,
     type QueryStatementPlan,
-    QUERY_EDITOR_HOVER_DELAY_MS,
     QUERY_EDITOR_COMPLETION_SUGGESTION_LIMIT,
     QUERY_EDITOR_LIVE_DECORATION_MAX_TEXT_LENGTH,
     QUERY_EDITOR_OBJECT_DECORATION_MAX_TEXT_LENGTH,
@@ -242,6 +247,7 @@ import {
     getInitialEditorQuery,
     getMySQLShowTablesName,
     getNormalizedOffsetAtPosition,
+    readQueryEditorCompletionAnalysisText,
     getQueryEditorDecorationModelTextIfLightweight,
     getQueryEditorDocumentOffsetAtPosition,
     getQueryEditorObjectResolveText,
@@ -288,7 +294,6 @@ import {
 } from './queryEditor/QueryEditorHelpers';
 import {
     applyQueryEditorCompletionFragmentCase,
-    buildQueryEditorAiInlineSuggestOptions,
     getQueryEditorAiService,
     requestQueryEditorInlineCompletion,
     requestQueryEditorTextToElasticsearch,
@@ -435,12 +440,6 @@ const normalizeQueryEditorInlineMemorySqlKey = (sql: string): string => (
         .toLowerCase()
 );
 
-const normalizeQueryEditorCompletionAnalysisText = (sql: string): string => {
-    const normalized = String(sql || '').replace(/\r\n?/g, '\n');
-    // Preserve offsets while preventing a UTF-8 BOM from becoming part of SQL syntax analysis.
-    return normalized.startsWith('\uFEFF') ? ` ${normalized.slice(1)}` : normalized;
-};
-
 const matchesQueryEditorInlineMemoryDb = (currentDb: string, candidateDb?: string): boolean => {
     const normalizedCurrentDb = String(currentDb || '').trim().toLowerCase();
     const normalizedCandidateDb = String(candidateDb || '').trim().toLowerCase();
@@ -512,36 +511,6 @@ const buildQueryEditorInlineMemoryEntries = ({
         .slice(0, 16)
         .map((entry) => ({ sql: entry.sql }));
 };
-
-const buildQueryEditorMonacoOptions = (
-    isObjectEditQueryTab: boolean,
-    wordWrapEnabled = false,
-) => ({
-    minimap: { enabled: false },
-    automaticLayout: true,
-    fixedOverflowWidgets: true,
-    wordWrap: wordWrapEnabled ? ('on' as const) : ('off' as const),
-    // Keep the find widget as an overlay; Monaco's default top spacer creates a blank band.
-    find: {
-        addExtraSpaceOnTop: false,
-    },
-    hover: {
-        enabled: true,
-        delay: QUERY_EDITOR_HOVER_DELAY_MS,
-        above: false,
-    },
-    scrollBeyondLastLine: false,
-    quickSuggestions: { other: true, comments: false, strings: false },
-    suggestOnTriggerCharacters: true,
-    suggestLineHeight: QUERY_EDITOR_TABLE_SUGGESTION_ROW_HEIGHT,
-    inlineSuggest: buildQueryEditorAiInlineSuggestOptions(),
-    ...(isObjectEditQueryTab
-        ? {
-            lineNumbersMinChars: 4,
-            stickyScroll: { enabled: false },
-        }
-        : {}),
-});
 
 const QUERY_EDITOR_SQL_PROMPT_PLACEHOLDER = '{SQL}';
 
@@ -1119,7 +1088,7 @@ const resolveQueryEditorAiConnectionHost = (connection: any): string => {
 
 // HMR 重载时释放旧注册避免补全和 hover 内容重复
 const _g = globalThis as any;
-const SQL_COMPLETION_PROVIDER_VERSION = '20260831-hover-ddl-v6';
+const SQL_COMPLETION_PROVIDER_VERSION = '20260915-completion-scope-v1';
 const SQL_COMPLETION_PROVIDER_MODULE_TOKEN = {};
 const QUERY_EDITOR_MONACO_LANGUAGE_IDS = ['sql', 'mysql'] as const;
 if (!_g.__gonaviSqlCompletionState) {
@@ -1153,8 +1122,6 @@ let nextQueryEditorHoverDdlConfigRevision = 1;
 const sharedQueryEditorMetadataReloadRequestListeners = new Set<
     (request: SidebarDatabaseRefreshRequest) => void
 >();
-
-const QUERY_EDITOR_TABLE_SUGGESTION_ROW_HEIGHT = 36;
 
 export const shouldRefreshQueryEditorCompletionColumns = (
     intent: string,
@@ -2089,8 +2056,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       () => buildQueryEditorMonacoOptions(
           isObjectEditQueryTab,
           wordWrapEnabled,
+          isActive,
       ),
-      [isObjectEditQueryTab, wordWrapEnabled],
+      [isActive, isObjectEditQueryTab, wordWrapEnabled],
   );
 
   type ResultSet = QueryEditorResultSet;
@@ -5541,8 +5509,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const ResizeObserverCtor = typeof ResizeObserver === 'function' ? ResizeObserver : null;
       const resizeObserver = ResizeObserverCtor ? new ResizeObserverCtor(scheduleApply) : null;
       if (resizeObserver) {
-          if (queryEditorRootRef.current) resizeObserver.observe(queryEditorRootRef.current);
-          if (editorPaneRef.current) resizeObserver.observe(editorPaneRef.current);
+          collectQueryEditorSplitLayoutObserveTargets(
+              queryEditorRootRef.current,
+              editorPaneRef.current,
+          ).forEach((target) => {
+              resizeObserver.observe(target);
+          });
       }
       window.addEventListener('resize', scheduleApply);
       return () => {
@@ -5554,6 +5526,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           window.removeEventListener('resize', scheduleApply);
       };
   }, [applyEditorHeightRatio, isActive, isResultPanelVisible, tab.id]);
+
+  useEffect(() => {
+      applyQueryEditorAutomaticLayout(editorRef.current, isActive);
+  }, [isActive]);
 
   const applyEditorHeightToDom = useCallback(() => {
       const nextHeight = pendingEditorHeightRef.current;
@@ -6037,6 +6013,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const mountedEditorOptions = buildQueryEditorMonacoOptions(
           isObjectEditQueryTab,
           wordWrapEnabled,
+          isActive,
       );
       editor.updateOptions?.(isElasticsearchMode ? {
           ...mountedEditorOptions,
@@ -6044,6 +6021,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           suggestOnTriggerCharacters: false,
           inlineSuggest: { enabled: false },
       } : mountedEditorOptions);
+      const disposeFindWidgetOverflowClass = installQueryEditorFindWidgetOverflowClass(
+          editor,
+          () => editorStageRef.current,
+      );
 
       if (typeof editor.onContextMenu === 'function') {
           editor.onContextMenu(() => {
@@ -7123,7 +7104,16 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               if (editorRef.current !== editor) {
                   return;
               }
-              const modelText = String(editor.getModel?.()?.getValue?.() || '');
+              const model = editor.getModel?.();
+              const modelLength = getQueryEditorModelValueLength(model)
+                  ?? lastLocalQueryRef.current.length;
+              if (modelLength > QUERY_EDITOR_LIVE_DECORATION_MAX_TEXT_LENGTH) {
+                  if (!hasSlashCommandMarker) {
+                      scheduleObjectDecorationRefresh(editor);
+                  }
+                  return;
+              }
+              const modelText = String(model?.getValue?.() || lastLocalQueryRef.current);
               const referencedConnection = connectionsRef.current.find(
                   (item) => item.id === String(currentConnectionIdRef.current || '').trim(),
               );
@@ -7436,6 +7426,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       });
 
       editor.onDidDispose?.(() => {
+          disposeFindWidgetOverflowClass();
           cancelPendingSqlReferencedMetadataRefresh();
           cancelPendingObjectDecorationRefresh();
           clearQueryEditorLinkDecorations(editor, linkDecorationIdsRef);
@@ -8306,11 +8297,15 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   return [];
               };
 
-              const fullText = normalizeQueryEditorCompletionAnalysisText(model.getValue());
-              const cursorOffset = getNormalizedOffsetAtPosition(fullText, {
-                  lineNumber: Number(position?.lineNumber || 1),
-                  column: Number(position?.column || 1),
-              });
+              if (isSqlCompletionRequestCancelled(token)) {
+                  return createEmptySqlCompletionResult();
+              }
+              const analysis = readQueryEditorCompletionAnalysisText(model, position);
+              if (isSqlCompletionRequestCancelled(token)) {
+                  return createEmptySqlCompletionResult();
+              }
+              const fullText = analysis.text;
+              const cursorOffset = analysis.cursorOffset;
               const currentStatementRange = resolveCurrentSqlStatementRange(fullText, cursorOffset, activeDialect);
 
               const lineStartOffset = fullText.lastIndexOf('\n', Math.max(0, cursorOffset - 1)) + 1;

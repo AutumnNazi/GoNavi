@@ -298,14 +298,14 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
   });
 
   let pendingInput: {
-    valueBefore: string;
+    valueLengthBefore: number;
     positionBefore: any;
     offsetBefore: number;
     text: string;
     timer: number | null;
   } | null = null;
   let pendingSelectionInput: {
-    valueBefore: string;
+    valueLengthBefore: number;
     rangeBefore: {
       startLineNumber: number;
       startColumn: number;
@@ -423,38 +423,51 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
     return matchesShortcutKey;
   };
 
+  const getModelValueLength = (): number => {
+    const model = editor.getModel?.();
+    if (typeof model?.getValueLength === 'function') {
+      const length = Number(model.getValueLength());
+      if (Number.isFinite(length)) {
+        return length;
+      }
+    }
+    return String(editor.getValue?.() ?? '').length;
+  };
+
+  const getTextInOffsetRange = (startOffset: number, endOffset: number): string => {
+    const model = editor.getModel?.();
+    const safeStart = Math.max(0, Math.min(startOffset, endOffset));
+    const safeEnd = Math.max(safeStart, endOffset);
+    if (
+      typeof model?.getPositionAt === 'function'
+      && typeof model?.getValueInRange === 'function'
+    ) {
+      const start = model.getPositionAt(safeStart);
+      const end = model.getPositionAt(safeEnd);
+      if (start && end) {
+        return String(model.getValueInRange({
+          startLineNumber: start.lineNumber,
+          startColumn: start.column,
+          endLineNumber: end.lineNumber,
+          endColumn: end.column,
+        }) ?? '');
+      }
+    }
+    return String(editor.getValue?.() ?? '').slice(safeStart, safeEnd);
+  };
+
   const getPendingNativeInputDelta = (pending: NonNullable<typeof pendingInput>) => {
-    const afterValue = String(editor.getValue?.() ?? '');
-    if (afterValue === pending.valueBefore) {
-      return null;
-    }
-
-    let startOffset = 0;
-    while (
-      startOffset < pending.valueBefore.length
-      && startOffset < afterValue.length
-      && pending.valueBefore[startOffset] === afterValue[startOffset]
-    ) {
-      startOffset += 1;
-    }
-
-    let beforeEndOffset = pending.valueBefore.length;
-    let afterEndOffset = afterValue.length;
-    while (
-      beforeEndOffset > startOffset
-      && afterEndOffset > startOffset
-      && pending.valueBefore[beforeEndOffset - 1] === afterValue[afterEndOffset - 1]
-    ) {
-      beforeEndOffset -= 1;
-      afterEndOffset -= 1;
-    }
-
-    if (startOffset !== pending.offsetBefore || beforeEndOffset !== startOffset) {
+    const afterLength = getModelValueLength();
+    const insertedLength = afterLength - pending.valueLengthBefore;
+    if (insertedLength <= 0) {
       return null;
     }
 
     return {
-      insertedText: afterValue.slice(startOffset, afterEndOffset),
+      insertedText: getTextInOffsetRange(
+        pending.offsetBefore,
+        pending.offsetBefore + insertedLength,
+      ),
     };
   };
 
@@ -476,10 +489,10 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
 
   const isPendingInputContextCurrent = (
     pending: NonNullable<typeof pendingInput>,
-    value: string,
     position: any,
   ): boolean => {
-    if (value === pending.valueBefore) {
+    const afterLength = getModelValueLength();
+    if (afterLength === pending.valueLengthBefore) {
       return sameEditorPosition(position, pending.positionBefore);
     }
     const nativeDelta = getPendingNativeInputDelta(pending);
@@ -497,9 +510,9 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
     currentPosition: any,
   ): boolean => {
     const nativeDelta = getPendingNativeInputDelta(pending);
-    const afterValue = String(editor.getValue?.() ?? '');
+    const afterLength = getModelValueLength();
     if (
-      (afterValue !== pending.valueBefore
+      (afterLength !== pending.valueLengthBefore
         && (!nativeDelta?.insertedText || !isSubsequence(nativeDelta.insertedText, pending.text)))
       || typeof editor.executeEdits !== 'function'
     ) {
@@ -542,20 +555,20 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
     return true;
   };
 
-  const getSelectionReplacementValue = (
-    pending: NonNullable<typeof pendingSelectionInput>,
-    text: string,
-  ): string => (
-    pending.valueBefore.slice(0, pending.startOffset)
-    + text
-    + pending.valueBefore.slice(pending.endOffset)
-  );
-
   const hasSelectionInputValueApplied = (
     pending: NonNullable<typeof pendingSelectionInput>,
-  ): boolean => (
-    String(editor.getValue?.() ?? '') === getSelectionReplacementValue(pending, pending.text)
-  );
+  ): boolean => {
+    const expectedLength = pending.valueLengthBefore
+      - (pending.endOffset - pending.startOffset)
+      + pending.text.length;
+    if (getModelValueLength() !== expectedLength) {
+      return false;
+    }
+    return getTextInOffsetRange(
+      pending.startOffset,
+      pending.startOffset + pending.text.length,
+    ) === pending.text;
+  };
 
   const hasNativeSelectionInputApplied = (
     pending: NonNullable<typeof pendingSelectionInput>,
@@ -573,10 +586,11 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
   const recoverPendingSelectionInput = (
     pending: NonNullable<typeof pendingSelectionInput>,
   ): boolean => {
-    const afterValue = String(editor.getValue?.() ?? '');
-    const expectedValue = getSelectionReplacementValue(pending, pending.text);
+    const afterLength = getModelValueLength();
+    const deletedLength = pending.valueLengthBefore - (pending.endOffset - pending.startOffset);
+    const expectedLength = deletedLength + pending.text.length;
     const model = editor.getModel?.();
-    if (afterValue === expectedValue) {
+    if (afterLength === expectedLength && hasSelectionInputValueApplied(pending)) {
       const expectedPosition = model?.getPositionAt?.(
         pending.startOffset + pending.text.length,
       );
@@ -585,15 +599,14 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
       }
       return true;
     }
-    const valueAfterDeletion = getSelectionReplacementValue(pending, '');
     if (
-      (afterValue !== pending.valueBefore && afterValue !== valueAfterDeletion)
+      (afterLength !== pending.valueLengthBefore && afterLength !== deletedLength)
       || typeof editor.executeEdits !== 'function'
     ) {
       return false;
     }
 
-    const range = afterValue === pending.valueBefore
+    const range = afterLength === pending.valueLengthBefore
       ? pending.rangeBefore
       : (() => {
           const startPosition = model?.getPositionAt?.(pending.startOffset);
@@ -704,7 +717,7 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
       }
 
       const pending = {
-        valueBefore: String(editor.getValue?.() ?? ''),
+        valueLengthBefore: getModelValueLength(),
         rangeBefore: {
           startLineNumber: selectionBefore.startLineNumber,
           startColumn: selectionBefore.startColumn,
@@ -741,7 +754,6 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
       }, PRINTABLE_INPUT_FALLBACK_DELAY_MS);
       return;
     }
-    let beforeValue = String(editor.getValue?.() ?? '');
     let beforePosition = editor.getPosition?.();
     if (!beforePosition) {
       return;
@@ -753,10 +765,9 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
     if (pendingInput && hasNativeInputApplied(pendingInput)) {
       clearPendingInput();
     }
-    if (pendingInput && !isPendingInputContextCurrent(pendingInput, beforeValue, beforePosition)) {
+    if (pendingInput && !isPendingInputContextCurrent(pendingInput, beforePosition)) {
       recoverPendingInputAtOriginalPosition(pendingInput, beforePosition);
       clearPendingInput();
-      beforeValue = String(editor.getValue?.() ?? '');
       beforePosition = editor.getPosition?.();
       if (!beforePosition) {
         return;
@@ -773,7 +784,7 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
       }
     } else {
       pendingInput = {
-        valueBefore: beforeValue,
+        valueLengthBefore: getModelValueLength(),
         positionBefore: beforePosition,
         offsetBefore: beforeOffset,
         text,
@@ -800,12 +811,12 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
       if (document.activeElement && !domNode.contains(document.activeElement)) {
         return;
       }
-      const afterValue = String(editor.getValue?.() ?? '');
+      const afterLength = getModelValueLength();
       const afterPosition = editor.getPosition?.();
       if (hasNativeInputApplied(pending)) {
         return;
       }
-      if (afterValue !== pending.valueBefore || !sameEditorPosition(pending.positionBefore, afterPosition)) {
+      if (afterLength !== pending.valueLengthBefore || !sameEditorPosition(pending.positionBefore, afterPosition)) {
         recoverPendingInputAtOriginalPosition(pending, afterPosition);
         return;
       }

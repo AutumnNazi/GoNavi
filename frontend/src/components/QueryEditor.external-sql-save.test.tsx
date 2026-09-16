@@ -8813,6 +8813,38 @@ describe('QueryEditor external SQL save', () => {
     expect(newEditorDisableButton.props['aria-pressed']).toBe(true);
   });
 
+  it('disables automaticLayout on hidden SQL editors and restores layout when shown', async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: 'select 1' })} isActive={false} />);
+    });
+
+    expect(monacoEditorMockState.latestProps.options.automaticLayout).toBe(false);
+    expect(monacoEditorMockState.latestProps.options.quickSuggestions).toEqual({
+      other: true,
+      comments: false,
+      strings: false,
+    });
+    expect(monacoEditorMockState.latestProps.options.hover).toMatchObject({
+      enabled: true,
+      delay: 1000,
+    });
+    expect(editorState.editor.updateOptions).toHaveBeenCalledWith(expect.objectContaining({
+      automaticLayout: false,
+    }));
+
+    editorState.editor.layout.mockClear();
+    editorState.editor.updateOptions.mockClear();
+
+    await act(async () => {
+      renderer.update(<QueryEditor tab={createTab({ query: 'select 1' })} isActive />);
+    });
+
+    expect(monacoEditorMockState.latestProps.options.automaticLayout).toBe(true);
+    expect(editorState.editor.updateOptions).toHaveBeenCalledWith({ automaticLayout: true });
+    expect(editorState.editor.layout).toHaveBeenCalled();
+  });
+
   it('shows object info via editor ctrl+q action', async () => {
     editorState.value = 'select users.id from users';
     autoFetchState.visible = true;
@@ -11966,6 +11998,39 @@ END;`;
     expect(editorState.editor.deltaDecorations).not.toHaveBeenCalled();
     expect(editorState.editor.getModel().getValueLength).not.toHaveBeenCalled();
     expect(editorState.editor.getModel().getValue).not.toHaveBeenCalled();
+  });
+
+  it('does not read a large SQL document when the referenced-database scan settles', async () => {
+    vi.useFakeTimers();
+    Object.assign(window, {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+    });
+    const largeSql = `select * from users;\n${'x'.repeat(60_000)}`;
+    try {
+      await act(async () => {
+        create(<QueryEditor tab={createTab({ query: 'select 1;' })} />);
+      });
+
+      editorState.editor.getModel().getValue.mockClear();
+      await act(async () => {
+        editorState.value = largeSql;
+        editorState.latestOnChange?.(largeSql);
+        editorState.modelContentListeners.forEach((listener) => listener({
+          changes: [{ text: largeSql }],
+        }));
+        vi.advanceTimersByTime(450);
+        await Promise.resolve();
+      });
+
+      expect(editorState.editor.getModel().getValue).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      Object.assign(window, {
+        setTimeout: globalThis.setTimeout.bind(globalThis),
+        clearTimeout: globalThis.clearTimeout.bind(globalThis),
+      });
+    }
   });
 
   it('does not build the full inline AI snapshot synchronously during typing', async () => {

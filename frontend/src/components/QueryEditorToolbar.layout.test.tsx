@@ -94,7 +94,7 @@ describe('QueryEditorToolbar layout', () => {
     );
     const monacoStageCss = css.slice(
       css.indexOf('body[data-ui-version="v2"] .gn-v2-query-monaco-stage {'),
-      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-monaco-stage:has('),
+      css.indexOf('body[data-ui-version="v2"] .gn-v2-query-monaco-stage.is-find-widget-visible'),
     );
 
     expect(defaultMonacoCss).toContain('--gn-monaco-bg: var(--gn-bg-panel-2);');
@@ -104,6 +104,14 @@ describe('QueryEditorToolbar layout', () => {
     expect(monacoStageCss).toContain(
       'background: var(--gn-monaco-bg, var(--gn-query-workbench-bg));',
     );
+  });
+
+  it('does not use :has() against the Monaco subtree for find-widget overflow', () => {
+    const css = readV2ThemeCss();
+    expect(css).toContain(
+      'body[data-ui-version="v2"] .gn-v2-query-monaco-stage.is-find-widget-visible',
+    );
+    expect(css).not.toContain('.gn-v2-query-monaco-stage:has(');
   });
 
   it('maps query toolbar button states onto public custom-theme variables', () => {

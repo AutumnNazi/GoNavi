@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { getCurrentLanguage, setCurrentLanguage } from '../../i18n';
 
@@ -26,6 +26,8 @@ import {
     isQueryEditorTableSourceCompletionContext,
     materializeBoundedQueryEditorCompletionBatches,
     rankQueryEditorCompletionCandidate,
+    readQueryEditorCompletionAnalysisText,
+    QUERY_EDITOR_COMPLETION_ANALYSIS_MAX_TEXT_LENGTH,
     resolveQueryEditorCompletionFilterText,
     resolveQueryEditorConnectionTimeout,
     resolveOracleLikeDefaultSchemaName,
@@ -59,6 +61,67 @@ describe('QueryEditor table locate cycle', () => {
         expect(resolveNextQueryEditorTableLocateIndex(previous, 3, previous.signature, 2)).toBe(0);
         expect(resolveNextQueryEditorTableLocateIndex(previous, 2, 'users\u0001items', 2)).toBe(0);
         expect(resolveNextQueryEditorTableLocateIndex(previous, 2, previous.signature, 0)).toBe(0);
+    });
+});
+
+describe('QueryEditor completion analysis scope', () => {
+    const createModel = (value: string) => {
+        const offsetAt = (position: { lineNumber: number; column: number }) => {
+            let offset = 0;
+            const lines = value.split('\n');
+            for (let lineNumber = 1; lineNumber < Math.max(1, position.lineNumber); lineNumber += 1) {
+                offset += (lines[lineNumber - 1]?.length || 0) + 1;
+            }
+            return Math.min(value.length, offset + Math.max(0, position.column - 1));
+        };
+        const positionAt = (offset: number) => {
+            const prefix = value.slice(0, Math.max(0, Math.min(value.length, offset)));
+            const lines = prefix.split('\n');
+            return { lineNumber: lines.length, column: (lines[lines.length - 1]?.length || 0) + 1 };
+        };
+        return {
+            getValue: () => value,
+            getValueLength: () => value.length,
+            getOffsetAt: offsetAt,
+            getPositionAt: positionAt,
+            getValueInRange: (range: {
+                startLineNumber: number;
+                startColumn: number;
+                endLineNumber: number;
+                endColumn: number;
+            }) => {
+                const start = offsetAt({ lineNumber: range.startLineNumber, column: range.startColumn });
+                const end = offsetAt({ lineNumber: range.endLineNumber, column: range.endColumn });
+                return value.slice(Math.min(start, end), Math.max(start, end));
+            },
+        };
+    };
+
+    it('reads short SQL through the full model', () => {
+        const sql = 'SELECT * FROM users WHERE id = 1';
+        const analysis = readQueryEditorCompletionAnalysisText(
+            createModel(sql),
+            { lineNumber: 1, column: sql.length + 1 },
+        );
+        expect(analysis.text).toBe(sql);
+        expect(analysis.cursorOffset).toBe(sql.length);
+    });
+
+    it('does not copy a large SQL document when analyzing the current caret', () => {
+        const prefix = `SELECT * FROM users WHERE note = '${'x'.repeat(QUERY_EDITOR_COMPLETION_ANALYSIS_MAX_TEXT_LENGTH)}';\n`;
+        const current = 'SELECT id FROM orders WHERE ';
+        const sql = `${prefix}${current}`;
+        const model = createModel(sql);
+        const getValue = vi.spyOn(model, 'getValue');
+        const analysis = readQueryEditorCompletionAnalysisText(
+            model,
+            { lineNumber: 2, column: current.length + 1 },
+        );
+        expect(getValue).not.toHaveBeenCalled();
+        expect(analysis.text.endsWith(current)).toBe(true);
+        expect(analysis.text).toContain('FROM orders');
+        expect(analysis.text.length).toBeLessThan(sql.length);
+        expect(analysis.cursorOffset).toBe(analysis.text.length);
     });
 });
 

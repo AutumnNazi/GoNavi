@@ -123,10 +123,27 @@ describe('MonacoEditor printable input fallback', () => {
         endLineNumber: position.lineNumber,
         endColumn: position.column,
       }),
-      getValue: () => value,
+      getValue: vi.fn(() => value),
       getModel: () => ({
         getOffsetAt: offsetAt,
         getPositionAt: positionAt,
+        getValueLength: () => value.length,
+        getValueInRange: (range: {
+          startLineNumber: number;
+          startColumn: number;
+          endLineNumber: number;
+          endColumn: number;
+        }) => {
+          const start = offsetAt({
+            lineNumber: range.startLineNumber,
+            column: range.startColumn,
+          });
+          const end = offsetAt({
+            lineNumber: range.endLineNumber,
+            column: range.endColumn,
+          });
+          return value.slice(Math.min(start, end), Math.max(start, end));
+        },
       }),
       getPosition: () => position,
       getOption: () => false,
@@ -212,6 +229,24 @@ describe('MonacoEditor printable input fallback', () => {
     vi.advanceTimersByTime(200);
 
     expect(editor.trigger).not.toHaveBeenCalled();
+  });
+
+  it('does not copy the full model on the printable input hot path', () => {
+    installFallback();
+
+    value = `select 1;\n${'x'.repeat(80_000)}`;
+    position = { lineNumber: 1, column: 9 };
+    editor.getValue.mockClear();
+
+    input.dispatchPrintableBeforeInput(' ');
+    value = `select 1;\n${'x'.repeat(80_000)}`.replace('select 1;', 'select 1 ;');
+    position = { lineNumber: 1, column: 10 };
+    modelContentListener?.();
+    vi.advanceTimersByTime(200);
+
+    expect(editor.getValue).not.toHaveBeenCalled();
+    expect(editor.trigger).not.toHaveBeenCalled();
+    expect(editor.executeEdits).not.toHaveBeenCalled();
   });
 
   it('recovers a missing leading character when a later character is committed natively', () => {

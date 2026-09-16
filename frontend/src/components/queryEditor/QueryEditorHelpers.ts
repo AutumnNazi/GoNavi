@@ -1657,6 +1657,9 @@ export const QUERY_EDITOR_OBJECT_DECORATION_MAX_IDENTIFIERS = 200;
 export const QUERY_EDITOR_OBJECT_DECORATION_MAX_LINES = 1_000;
 export const QUERY_EDITOR_LIVE_DECORATION_MAX_TEXT_LENGTH = 50_000;
 export const QUERY_EDITOR_PERSISTED_DRAFT_MAX_TEXT_LENGTH = 50_000;
+export const QUERY_EDITOR_COMPLETION_ANALYSIS_MAX_TEXT_LENGTH = QUERY_EDITOR_LIVE_DECORATION_MAX_TEXT_LENGTH;
+export const QUERY_EDITOR_COMPLETION_ANALYSIS_PREFIX_CHARS = 16_000;
+export const QUERY_EDITOR_COMPLETION_ANALYSIS_SUFFIX_CHARS = 256;
 
 export const getQueryEditorModelValueLength = (model: any): number | null => {
     if (!model || typeof model.getValueLength !== 'function') {
@@ -1668,6 +1671,58 @@ export const getQueryEditorModelValueLength = (model: any): number | null => {
     } catch {
         return null;
     }
+};
+
+const normalizeQueryEditorCompletionAnalysisText = (sql: string): string => {
+    const normalized = String(sql || '').replace(/\r\n?/g, '\n');
+    return normalized.startsWith('\uFEFF') ? ` ${normalized.slice(1)}` : normalized;
+};
+
+export const readQueryEditorCompletionAnalysisText = (
+    model: any,
+    position: { lineNumber: number; column: number },
+): { text: string; cursorOffset: number } => {
+    const normalizedPosition = {
+        lineNumber: Math.max(1, Math.floor(Number(position?.lineNumber) || 1)),
+        column: Math.max(1, Math.floor(Number(position?.column) || 1)),
+    };
+    const modelLength = getQueryEditorModelValueLength(model);
+    const canReadWindow = typeof model?.getOffsetAt === 'function'
+        && typeof model?.getPositionAt === 'function'
+        && typeof model?.getValueInRange === 'function';
+    if (
+        modelLength === null
+        || modelLength <= QUERY_EDITOR_COMPLETION_ANALYSIS_MAX_TEXT_LENGTH
+        || !canReadWindow
+    ) {
+        const text = normalizeQueryEditorCompletionAnalysisText(String(model?.getValue?.() || ''));
+        return {
+            text,
+            cursorOffset: getNormalizedOffsetAtPosition(text, normalizedPosition),
+        };
+    }
+
+    const rawCursorOffset = Number(model.getOffsetAt(normalizedPosition));
+    const cursorOffset = Number.isFinite(rawCursorOffset)
+        ? Math.max(0, Math.min(modelLength, rawCursorOffset))
+        : 0;
+    const startOffset = Math.max(0, cursorOffset - QUERY_EDITOR_COMPLETION_ANALYSIS_PREFIX_CHARS);
+    const endOffset = Math.min(modelLength, cursorOffset + QUERY_EDITOR_COMPLETION_ANALYSIS_SUFFIX_CHARS);
+    const start = model.getPositionAt(startOffset);
+    const cursor = model.getPositionAt(cursorOffset);
+    const end = model.getPositionAt(endOffset);
+    const toRange = (from: any, to: any) => ({
+        startLineNumber: from.lineNumber,
+        startColumn: from.column,
+        endLineNumber: to.lineNumber,
+        endColumn: to.column,
+    });
+    const prefix = normalizeQueryEditorCompletionAnalysisText(String(model.getValueInRange(toRange(start, cursor)) || ''));
+    const suffix = normalizeQueryEditorCompletionAnalysisText(String(model.getValueInRange(toRange(cursor, end)) || ''));
+    return {
+        text: `${prefix}${suffix}`,
+        cursorOffset: prefix.length,
+    };
 };
 
 export type QueryIdentifierPathSegment = {
