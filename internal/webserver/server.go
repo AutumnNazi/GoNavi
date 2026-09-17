@@ -1098,6 +1098,7 @@ func (s *Server) handleInvoke(w http.ResponseWriter, r *http.Request) {
 		s.writeInvokeResponse(w, http.StatusBadRequest, invokeResponse{Error: err.Error()})
 		return
 	}
+	clearLongRunningInvokeWriteDeadline(w, request.Method)
 	var webTrace *requesttrace.Handle
 	if shouldTraceWebInvoke(request) {
 		if traceStore := appcore.RequestTraceStoreForEntryPoint(s.app); traceStore != nil {

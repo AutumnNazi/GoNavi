@@ -38,26 +38,6 @@ func normalizeTestConnectionConfig(config connection.ConnectionConfig) connectio
 	return normalized
 }
 
-func newQueryExecutionContext(config connection.ConnectionConfig) (context.Context, context.CancelFunc) {
-	return newQueryExecutionContextWithParent(context.Background(), config)
-}
-
-// newQueryExecutionContextWithParent keeps query cancellation linked to the
-// caller while deliberately keeping connection establishment timeout separate
-// from the query deadline.
-func newQueryExecutionContextWithParent(parent context.Context, config connection.ConnectionConfig) (context.Context, context.CancelFunc) {
-	if parent == nil {
-		parent = context.Background()
-	}
-	if config.QueryTimeout > 0 {
-		return context.WithTimeout(parent, time.Duration(config.QueryTimeout)*time.Second)
-	}
-
-	// Connection timeout is only for establishing the connection. Do not reuse it
-	// as a query deadline; long-running queries remain cancellable via CancelQuery.
-	return context.WithCancel(parent)
-}
-
 func validateTestConnectionInput(config connection.ConnectionConfig) error {
 	return validateTestConnectionInputWithText(config, defaultDBBackendText)
 }
@@ -1438,7 +1418,9 @@ func (a *App) dbQueryWithCancel(
 		true,
 		optionalDriverTypeForConnectionConfig(runConfig),
 	)
+	lifecycle := a.beginQueryExecutionLifecycle(queryID)
 	defer func() {
+		lifecycle.complete(result)
 		cancel()
 		cleanupRunningQuery()
 	}()
@@ -1705,7 +1687,9 @@ func (a *App) dbQueryMulti(
 		true,
 		optionalDriverTypeForConnectionConfig(runConfig),
 	)
+	lifecycle := a.beginQueryExecutionLifecycle(queryID)
 	defer func() {
+		lifecycle.complete(result)
 		cancel()
 		cleanupRunningQuery()
 	}()

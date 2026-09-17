@@ -14,6 +14,8 @@ import (
 	"time"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
+
+	"GoNavi-Wails/internal/rpctimeout"
 )
 
 const defaultDetachedRPCRequestTimeout = 30 * time.Second
@@ -110,7 +112,13 @@ func (b *Bridge) Invoke(namespace string, receiver string, method string, args [
 		Args:      args,
 	}
 	var response invokeResponse
-	status, err := b.doRPCJSON(http.MethodPost, InvokePath, request, &response)
+	var status int
+	var err error
+	if rpctimeout.IsLongRunningAppMethod(method) {
+		status, err = b.doJSON(b.lifecycleContext(), http.MethodPost, InvokePath, request, &response)
+	} else {
+		status, err = b.doRPCJSON(http.MethodPost, InvokePath, request, &response)
+	}
 	if err != nil {
 		return nil, err
 	}

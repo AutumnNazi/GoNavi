@@ -138,7 +138,9 @@ func (a *App) DBQueryMultiTransactional(config connection.ConnectionConfig, dbNa
 
 	ctx, cancel := newQueryExecutionContext(runConfig)
 	cleanupRunningQuery := a.registerRunningQuery(queryID, cancel, true, optionalDriverTypeForConnectionConfig(runConfig))
+	lifecycle := a.beginQueryExecutionLifecycle(queryID)
 	defer func() {
+		lifecycle.complete(result)
 		cancel()
 		cleanupRunningQuery()
 	}()
@@ -350,7 +352,9 @@ func (a *App) DBQueryMultiInTransaction(transactionID string, query string, quer
 	}
 	ctx, cancel := newQueryExecutionContext(runConfig)
 	cleanupRunningQuery := a.registerRunningQuery(queryID, cancel, true, optionalDriverTypeForConnectionConfig(runConfig))
+	lifecycle := a.beginQueryExecutionLifecycle(queryID)
 	defer func() {
+		lifecycle.complete(result)
 		cancel()
 		cleanupRunningQuery()
 	}()

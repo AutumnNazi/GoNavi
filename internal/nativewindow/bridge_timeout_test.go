@@ -379,6 +379,45 @@ func TestBridgeSSEIsNotBoundByOrdinaryRPCDeadline(t *testing.T) {
 	close(streamRelease)
 }
 
+func TestBridgeLongRunningInvokeIgnoresOrdinaryRPCTimeout(t *testing.T) {
+	const rpcTimeout = 20 * time.Millisecond
+	bridge := newTimeoutTestBridge(rpcTimeout)
+	bridge.client.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Path == EventsPath {
+			return emptyBridgeResponse(http.StatusNoContent), nil
+		}
+		if request.URL.Path != InvokePath {
+			return emptyBridgeResponse(http.StatusNotFound), nil
+		}
+		select {
+		case <-time.After(4 * rpcTimeout):
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{"result":{"success":true}}`)),
+			}, nil
+		case <-request.Context().Done():
+			return nil, request.Context().Err()
+		}
+	})
+	InitializeBridge(bridge, context.Background())
+
+	if _, err := bridge.Invoke("app", "App", "Health", nil); err == nil {
+		t.Fatal("ordinary Health invoke should still honor the 30s-class RPC timeout")
+	}
+	result, err := bridge.Invoke("app", "App", "DBQueryWithCancel", nil)
+	if err != nil {
+		t.Fatalf("long-running query invoke timed out: %v", err)
+	}
+	payload, ok := result.(map[string]any)
+	if !ok {
+		t.Fatalf("query invoke result type = %T, want map", result)
+	}
+	if success, _ := payload["success"].(bool); !success {
+		t.Fatalf("query invoke result = %#v, want success", payload)
+	}
+}
+
 func bridgeBlockingTransport(path string, started chan<- struct{}, fallback time.Duration) roundTripFunc {
 	var startOnce sync.Once
 	return func(request *http.Request) (*http.Response, error) {
