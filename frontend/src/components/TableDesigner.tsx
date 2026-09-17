@@ -31,6 +31,7 @@ import {
     getColumnDefinitionExtra,
     normalizeColumnDefinition,
 } from '../utils/columnDefinition';
+import { resolveDataTableVerticalBorderColor } from '../utils/dataGridDisplay';
 import { buildEditableTriggerSql } from '../utils/triggerEditSql';
 import {
     buildTableDesignerTriggerDropSql,
@@ -554,6 +555,9 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
   const appearance = useStore(state => state.appearance);
   const i18nLanguage = useTableDesignerI18nLanguage();
   const darkMode = theme === 'dark';
+  const dataTableVerticalBorderRule = appearance.showDataTableVerticalBorders === true
+      ? `1px solid ${resolveDataTableVerticalBorderColor({ darkMode, visible: true })}`
+      : 'none';
 
   const resizeGuideColor = darkMode ? '#f6c453' : '#1890ff';
   const readOnly = !!tab.readOnly;
@@ -569,11 +573,11 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
   const charsetOptions = useMemo(() => getCharsetOptions(i18nLanguage), [i18nLanguage]);
   const collationOptions = useMemo(() => getCollationOptions(i18nLanguage), [i18nLanguage]);
   const panelRadius = 10;
-  const panelFrameColor = darkMode ? 'rgba(0, 0, 0, 0.18)' : 'rgba(0, 0, 0, 0.12)';
-  const panelToolbarBorder = darkMode ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.10)';
-  const panelToolbarBg = darkMode ? 'rgba(20, 20, 20, 0.35)' : 'rgba(255, 255, 255, 0.72)';
-  const panelBodyBg = darkMode ? 'rgba(0, 0, 0, 0.24)' : 'rgba(255, 255, 255, 0.82)';
-  const focusRowBg = darkMode ? 'rgba(246, 196, 83, 0.22)' : 'rgba(24, 144, 255, 0.12)';
+  const panelFrameColor = 'var(--gn-br-1)';
+  const panelToolbarBorder = 'var(--gn-br-1)';
+  const panelToolbarBg = 'var(--gn-bg-panel-2)';
+  const panelBodyBg = 'var(--gn-bg-panel-2)';
+  const focusRowBg = 'var(--gn-bg-selected)';
 
   const [tableHeight, setTableHeight] = useState(500);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -3591,7 +3595,7 @@ END;`;
         ref={shellRef}
         className={`table-designer-shell gn-v2-table-designer${embedded ? ' is-embedded' : ''}`}
         onKeyDown={columnClipboard.handleKeyDown}
-        style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, padding: embedded ? 0 : '6px 0', position: 'relative' }}
+        style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, padding: embedded ? 0 : '6px 0', position: 'relative', ['--gn-data-table-vertical-border' as string]: dataTableVerticalBorderRule }}
     >
         <style>{`
             .table-designer-shell .ant-table,
@@ -3607,15 +3611,15 @@ END;`;
                 border: none !important;
             }
             .table-designer-shell .ant-table-thead > tr > th {
-                background: transparent !important;
-                border-bottom: 1px solid ${darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'} !important;
-                border-inline-end: 1px solid transparent !important;
+                background: var(--gn-bg-panel-2) !important;
+                border-bottom: 1px solid var(--gn-br-1) !important;
+                border-inline-end: var(--gn-data-table-vertical-border, none) !important;
             }
             .table-designer-shell .ant-table-tbody > tr > td,
             .table-designer-shell .ant-table-tbody .ant-table-row > .ant-table-cell {
                 background: transparent !important;
-                border-bottom: 1px solid ${darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'} !important;
-                border-inline-end: 1px solid transparent !important;
+                border-bottom: 1px solid var(--gn-br-1) !important;
+                border-inline-end: var(--gn-data-table-vertical-border, none) !important;
             }
             .table-designer-shell .ant-table-tbody td .ant-input {
                 padding-left: 0 !important;
@@ -3629,9 +3633,9 @@ END;`;
                 align-items: center;
                 min-height: 34px;
                 padding: 0 10px;
-                border: 1px solid ${darkMode ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.10)'};
+                border: 1px solid var(--gn-br-2);
                 border-radius: 10px;
-                background: ${darkMode ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.72)'};
+                background: var(--gn-bg-input);
                 box-sizing: border-box;
             }
             .table-designer-shell .table-designer-cell-field .ant-input,
@@ -3719,7 +3723,7 @@ END;`;
                 cursor: text;
             }
             .table-designer-shell .table-designer-comment-display.is-empty {
-                color: ${darkMode ? 'rgba(255,255,255,0.28)' : 'rgba(0,0,0,0.28)'};
+                color: var(--gn-fg-5);
             }
             .table-designer-shell .table-designer-action-cell {
                 display: flex;
@@ -3744,7 +3748,7 @@ END;`;
             }
             .table-designer-shell .ant-table-tbody > tr:hover > td,
             .table-designer-shell .ant-table-tbody .ant-table-row:hover > .ant-table-cell {
-                background: ${darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.02)'} !important;
+                background: var(--gn-bg-hover) !important;
             }
             .table-designer-shell .ant-tabs-nav {
                 margin-bottom: 8px !important;
@@ -3756,7 +3760,7 @@ END;`;
                 margin-bottom: 0 !important;
             }
             .table-designer-shell .ant-tabs-nav::before {
-                border-bottom-color: ${darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'} !important;
+                border-bottom-color: var(--gn-br-1) !important;
             }
             .table-designer-shell .ant-tabs-ink-bar {
                 will-change: transform;

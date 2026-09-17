@@ -795,10 +795,10 @@ body[data-ui-version="v2"] .gn-v2-query-error .custom-scrollbar {
 /* ─── V2 table designer ─ */
 body[data-ui-version="v2"] .gn-v2-table-designer {
   padding: 0 !important;
-  background: var(--gn-bg-app);
+  background: var(--gn-bg-panel-2);
   --gn-v2-designer-header-height: 40px;
-  --gn-v2-designer-header-padding: 0 8px;
-  --gn-v2-designer-cell-padding: 3px 8px;
+  --gn-v2-designer-header-padding: 0 8px 0 2px;
+  --gn-v2-designer-cell-padding: 3px 8px 3px 2px;
   --gn-v2-designer-selection-column-width: 44px;
   --gn-v2-designer-row-selection-min-height: 14px;
   --gn-v2-designer-content-font-size: 12px;
@@ -817,13 +817,13 @@ body[data-ui-version="v2"] .gn-v2-designer-tabs > .ant-tabs-nav {
 }
 
 body[data-ui-version="v2"] .gn-v2-table-designer .gn-v2-designer-tabs {
-  background: var(--gn-bg-panel) !important;
+  background: var(--gn-bg-panel-2) !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-table-designer .gn-v2-designer-tabs > .ant-tabs-nav {
   padding: 0 12px !important;
   min-height: 34px;
-  background: var(--gn-bg-panel) !important;
+  background: var(--gn-bg-panel-2) !important;
   border-bottom: 0 !important;
   box-shadow: none !important;
 }
@@ -855,24 +855,24 @@ body[data-ui-version="v2"] .gn-v2-table-designer .gn-v2-designer-tabs .ant-tabs-
 }
 
 body[data-ui-version="v2"] .gn-v2-table-designer.is-embedded {
-  background: var(--gn-bg-panel) !important;
+  background: var(--gn-bg-panel-2) !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-table-designer.is-embedded .gn-v2-designer-toolbar {
   padding: 8px 12px 6px !important;
   border-left: 0 !important;
   border-right: 0 !important;
-  background: var(--gn-bg-panel) !important;
+  background: var(--gn-bg-panel-2) !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-table-designer.is-embedded .gn-v2-designer-tabs {
-  background: var(--gn-bg-panel) !important;
+  background: var(--gn-bg-panel-2) !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-table-designer.is-embedded .gn-v2-designer-tabs > .ant-tabs-nav {
   padding: 0 12px !important;
   min-height: 30px;
-  background: var(--gn-bg-panel) !important;
+  background: var(--gn-bg-panel-2) !important;
   border-bottom: 0 !important;
   box-shadow: none !important;
 }
@@ -928,7 +928,7 @@ body[data-ui-version="v2"] .gn-v2-table-designer .ant-table-thead > tr > th {
   min-height: var(--gn-v2-designer-header-height);
   padding-top: 0 !important;
   padding-bottom: 0 !important;
-  padding-left: 8px !important;
+  padding-left: 2px !important;
   padding-right: 8px !important;
   vertical-align: middle !important;
   white-space: nowrap;
@@ -951,13 +951,14 @@ body[data-ui-version="v2"] .gn-v2-table-designer .ant-table-thead > tr > th .ant
 
 body[data-ui-version="v2"] .gn-v2-table-designer .ant-table-thead > tr > th.ant-table-selection-column,
 body[data-ui-version="v2"] .gn-v2-table-designer .ant-table-tbody > tr > td.ant-table-selection-column,
+body[data-ui-version="v2"] .gn-v2-table-designer .ant-table-thead > tr > th.table-designer-select-column,
+body[data-ui-version="v2"] .gn-v2-table-designer .ant-table-tbody > tr > td.table-designer-select-column,
 body[data-ui-version="v2"] .gn-v2-table-designer .table-designer-select-column {
   width: var(--gn-v2-designer-selection-column-width) !important;
   min-width: var(--gn-v2-designer-selection-column-width) !important;
   max-width: var(--gn-v2-designer-selection-column-width) !important;
-  padding-inline: 0 !important;
-  padding-left: 0 !important;
-  padding-right: 0 !important;
+  padding: 0 !important;
+  text-align: center !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-table-designer .ant-table-thead > tr > th.ant-table-selection-column .ant-table-selection,
@@ -977,7 +978,18 @@ body[data-ui-version="v2"] .gn-v2-table-designer .ant-table-tbody > tr > td:firs
 }
 
 body[data-ui-version="v2"] .gn-v2-table-designer .ant-table-tbody > tr > td {
+  height: calc(28px * var(--gn-ui-scale, 1));
   vertical-align: middle !important;
+  font-size: var(--gn-v2-designer-content-font-size, 12px);
+  color: var(--gn-fg-2);
+}
+
+body[data-ui-version="v2"] .gn-v2-table-designer .ant-table,
+body[data-ui-version="v2"] .gn-v2-table-designer .ant-table-wrapper,
+body[data-ui-version="v2"] .gn-v2-table-designer .ant-table-container,
+body[data-ui-version="v2"] .gn-v2-table-designer .ant-table-body,
+body[data-ui-version="v2"] .gn-v2-table-designer .ant-table-content {
+  background: var(--gn-bg-panel-2) !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-table-designer .table-designer-cell-field .ant-input,
@@ -995,7 +1007,7 @@ body[data-ui-version="v2"] .gn-v2-designer-tab-content,
 body[data-ui-version="v2"] .gn-v2-designer-ddl-shell {
   border: 0.5px solid var(--gn-br-1) !important;
   border-radius: 8px !important;
-  background: var(--gn-bg-panel) !important;
+  background: var(--gn-bg-panel-2) !important;
   overflow: hidden;
 }
 
