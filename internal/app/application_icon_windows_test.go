@@ -209,6 +209,9 @@ func TestInitializePersistedNativeBrandIconAppliesActiveIcon(t *testing.T) {
 	originalSend := windowsApplicationIconSendMessageCall
 	originalSetClass := windowsApplicationIconSetClassIcon
 	originalSetTaskbarProperties := windowsApplicationIconSetTaskbarProperties
+	originalUpdateShortcuts := windowsUpdateCurrentApplicationShortcuts
+	originalResolveInstallTarget := updateResolveInstallTarget
+	originalVersion := AppVersion
 	windowsApplicationIconHandleMu.Lock()
 	originalSmallHandle := windowsApplicationIconSmallHandle
 	originalLargeHandle := windowsApplicationIconLargeHandle
@@ -221,6 +224,9 @@ func TestInitializePersistedNativeBrandIconAppliesActiveIcon(t *testing.T) {
 		windowsApplicationIconSendMessageCall = originalSend
 		windowsApplicationIconSetClassIcon = originalSetClass
 		windowsApplicationIconSetTaskbarProperties = originalSetTaskbarProperties
+		windowsUpdateCurrentApplicationShortcuts = originalUpdateShortcuts
+		updateResolveInstallTarget = originalResolveInstallTarget
+		AppVersion = originalVersion
 		windowsApplicationIconHandleMu.Lock()
 		windowsApplicationIconSmallHandle = originalSmallHandle
 		windowsApplicationIconLargeHandle = originalLargeHandle
@@ -254,11 +260,29 @@ func TestInitializePersistedNativeBrandIconAppliesActiveIcon(t *testing.T) {
 	}
 	windowsApplicationIconSetClassIcon = func(uintptr, int32, uintptr) {}
 	var taskbarIconPath string
+	var shortcutIconPath string
+	shortcutUpdateCount := 0
+	var identityEvents []string
+	windowsUpdateCurrentApplicationShortcuts = func(actualPath string) error {
+		shortcutUpdateCount++
+		shortcutIconPath = actualPath
+		identityEvents = append(identityEvents, "shortcut")
+		return nil
+	}
+	installDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(installDir, windowsMSIInstallMarker), []byte("MSI"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	updateResolveInstallTarget = func() string {
+		return filepath.Join(installDir, "GoNavi.exe")
+	}
+	AppVersion = "1.0.0"
 	windowsApplicationIconSetTaskbarProperties = func(actualHWND uintptr, actualPath string) error {
 		if actualHWND != hwnd {
 			t.Fatalf("taskbar HWND = %#x, want %#x", actualHWND, hwnd)
 		}
 		taskbarIconPath = actualPath
+		identityEvents = append(identityEvents, "window")
 		return nil
 	}
 
@@ -270,6 +294,84 @@ func TestInitializePersistedNativeBrandIconAppliesActiveIcon(t *testing.T) {
 	}
 	if taskbarIconPath != iconPath {
 		t.Fatalf("taskbar icon path = %q, want %q", taskbarIconPath, iconPath)
+	}
+	if shortcutIconPath != iconPath {
+		t.Fatalf("shortcut icon path = %q, want %q", shortcutIconPath, iconPath)
+	}
+	if got := strings.Join(identityEvents, ","); got != "shortcut,window" {
+		t.Fatalf("startup identity order = %q, want shortcut,window", got)
+	}
+	if err := InitializePersistedNativeBrandIcon(application, ctx); err != nil {
+		t.Fatalf("initialize persisted native brand icon again: %v", err)
+	}
+	if shortcutUpdateCount != 1 {
+		t.Fatalf("shortcut update count = %d, want one-time MSI migration", shortcutUpdateCount)
+	}
+	migrationPath := filepath.Join(configDir, windowsApplicationIconDirectoryName, ".taskbar-identity-v1")
+	migrationState, err := os.ReadFile(migrationPath)
+	if err != nil {
+		t.Fatalf("taskbar identity migration state: %v", err)
+	}
+	wantIdentity := windowsApplicationUserModelIDForIconPath(iconPath)
+	if state := string(migrationState); !containsAll(state, AppVersion, wantIdentity, strings.ToLower(filepath.Join(installDir, "GoNavi.exe"))) {
+		t.Fatalf("taskbar identity migration state = %q", state)
+	}
+	AppVersion = "1.0.1"
+	if err := InitializePersistedNativeBrandIcon(application, ctx); err != nil {
+		t.Fatalf("initialize persisted native brand icon after MSI update: %v", err)
+	}
+	if shortcutUpdateCount != 2 {
+		t.Fatalf("shortcut update count after MSI update = %d, want 2", shortcutUpdateCount)
+	}
+}
+
+func TestRepairPersistedWindowsApplicationShortcutsOnceSkipsPortable(t *testing.T) {
+	originalUpdateShortcuts := windowsUpdateCurrentApplicationShortcuts
+	originalResolveInstallTarget := updateResolveInstallTarget
+	t.Cleanup(func() {
+		windowsUpdateCurrentApplicationShortcuts = originalUpdateShortcuts
+		updateResolveInstallTarget = originalResolveInstallTarget
+	})
+
+	installDir := t.TempDir()
+	updateResolveInstallTarget = func() string {
+		return filepath.Join(installDir, "GoNavi.exe")
+	}
+	windowsUpdateCurrentApplicationShortcuts = func(string) error {
+		t.Fatal("portable startup must not migrate MSI taskbar shortcuts")
+		return nil
+	}
+	configDir := t.TempDir()
+	repairPersistedWindowsApplicationShortcutsOnce(`C:\icons\gonavi-brand.ico`, configDir)
+	migrationPath := filepath.Join(configDir, windowsApplicationIconDirectoryName, ".taskbar-identity-v1")
+	if _, err := os.Stat(migrationPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("portable migration marker error = %v, want not exist", err)
+	}
+}
+
+func TestSetApplicationIconPNGDoesNotActivateAfterShortcutFailure(t *testing.T) {
+	source := image.NewNRGBA(image.Rect(0, 0, 2, 2))
+	source.SetNRGBA(0, 0, color.NRGBA{R: 0x44, G: 0x88, B: 0xcc, A: 0xff})
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, source); err != nil {
+		t.Fatal(err)
+	}
+	configDir := t.TempDir()
+	if err := clearPersistedWindowsApplicationIcon(configDir); err != nil {
+		t.Fatalf("initialize empty active icon state: %v", err)
+	}
+	originalUpdate := windowsUpdateCurrentApplicationShortcuts
+	t.Cleanup(func() { windowsUpdateCurrentApplicationShortcuts = originalUpdate })
+	windowsUpdateCurrentApplicationShortcuts = func(string) error {
+		return errors.New("shortcut update failed")
+	}
+
+	if err := setApplicationIconPNG(encoded.Bytes(), configDir, context.Background()); err == nil {
+		t.Fatal("expected shortcut update failure")
+	}
+	activeStatePath := filepath.Join(configDir, windowsApplicationIconDirectoryName, windowsApplicationIconStateFileName)
+	if data, err := os.ReadFile(activeStatePath); err != nil || strings.TrimSpace(string(data)) != "" {
+		t.Fatalf("active icon state after failed live apply = %q, err=%v, want empty", string(data), err)
 	}
 }
 

@@ -341,7 +341,7 @@ public static class GoNaviShortcutPropertyStore
         {
             // AppUserModel.ID must be written last. Windows uses that write to
             // notify the taskbar that the preceding relaunch values changed.
-            SetString(store, new PROPERTYKEY(PKEY_AppUserModel, 2), targetPath);
+            SetString(store, new PROPERTYKEY(PKEY_AppUserModel, 2), "\"" + targetPath + "\"");
             SetString(store, new PROPERTYKEY(PKEY_AppUserModel, 3), iconPath + ",0");
             SetString(store, new PROPERTYKEY(PKEY_AppUserModel, 4), "GoNavi");
             SetString(store, new PROPERTYKEY(PKEY_AppUserModel, 5), applicationUserModelID);
@@ -466,6 +466,7 @@ function Set-GoNaviShortcutBrandIcon {
         $ApplicationUserModelID = 'Syngnat.GoNavi'
     }
     $updatedCount = 0
+    $failureMessages = [Collections.Generic.List[string]]::new()
     try {
         $normalizedTargetPath = Get-NormalizedFilePath $TargetPath
         $normalizedIconPath = Get-NormalizedFilePath $IconPath
@@ -473,8 +474,10 @@ function Set-GoNaviShortcutBrandIcon {
             [string]::IsNullOrWhiteSpace($normalizedIconPath) -or
             -not (Test-Path -LiteralPath $normalizedTargetPath -PathType Leaf) -or
             -not (Test-Path -LiteralPath $normalizedIconPath -PathType Leaf)) {
-            return $updatedCount
+            throw 'GoNavi shortcut target or icon does not exist'
         }
+        $msiMarkerPath = Join-Path ([IO.Path]::GetDirectoryName($normalizedTargetPath)) '.gonavi-msi-install'
+        $isMSITarget = Test-Path -LiteralPath $msiMarkerPath -PathType Leaf
 
         if ($null -eq $ShortcutDirectories -or $ShortcutDirectories.Count -eq 0) {
             $applicationData = [Environment]::GetFolderPath([Environment+SpecialFolder]::ApplicationData)
@@ -507,7 +510,8 @@ function Set-GoNaviShortcutBrandIcon {
                 continue
             }
             $visitedDirectories[$normalizedDirectory] = $true
-            $shortcuts = Get-ChildItem -LiteralPath $normalizedDirectory -Filter '*.lnk' -File -Recurse -Force -ErrorAction SilentlyContinue
+            $enumerationErrorAction = if (Test-SameFilePath $normalizedDirectory $taskbarDirectory) { 'Stop' } else { 'SilentlyContinue' }
+            $shortcuts = Get-ChildItem -LiteralPath $normalizedDirectory -Filter '*.lnk' -File -Recurse -Force -ErrorAction $enumerationErrorAction
             foreach ($shortcutFile in $shortcuts) {
                 try {
                     $shortcut = $shell.CreateShortcut($shortcutFile.FullName)
@@ -515,19 +519,16 @@ function Set-GoNaviShortcutBrandIcon {
                     $isTaskbarShortcut = -not [string]::IsNullOrWhiteSpace($taskbarPrefix) -and
                         $shortcutFile.FullName.StartsWith($taskbarPrefix, [StringComparison]::OrdinalIgnoreCase)
                     $isGoNaviTaskbarShortcut = $false
-                    # A development/portable build can be running while the
-                    # pinned shortcut still targets the installed GoNavi.exe.
-                    # Recognize that same GoNavi taskbar identity, but keep its
-                    # original launch target below instead of redirecting it.
-                    # Brand-icon selections rotate the identity inside the
-                    # Syngnat.GoNavi family so Explorer re-renders the cached
-                    # group icon; every family member must be recognized here.
+                    # Recognize pins created by older releases that rotated the
+                    # identity inside the Syngnat.GoNavi family. An MSI launch
+                    # repairs those pins to the current installed executable;
+                    # development and portable launches preserve their target.
                     if (-not $matchesTarget -and $isTaskbarShortcut) {
                         $shortcutName = [IO.Path]::GetFileNameWithoutExtension($shortcutFile.Name)
                         $targetName = [IO.Path]::GetFileName($shortcut.TargetPath)
                         $looksLikeGoNaviPin =
-                            $shortcutName -match '^GoNavi(?:[-_.].*)?$' -and
-                            $targetName -match '^GoNavi(?:[-_.].*)?\.exe$'
+                            $shortcutName -match '^GoNavi(?:[-_.].*|\s*\(\d+\))?$' -and
+                            $targetName -match '^GoNavi(?:[-_.].*|\s*\(\d+\))?\.exe$'
                         $isGoNaviTaskbarShortcut = $looksLikeGoNaviPin -or
                             ((Get-GoNaviShortcutAppUserModelID $shortcutFile.FullName) -match '^Syngnat\.GoNavi(?:\.Icon\.[0-9a-f]+)?$')
                     }
@@ -535,7 +536,7 @@ function Set-GoNaviShortcutBrandIcon {
                         continue
                     }
                     $shortcutTargetPath = $normalizedTargetPath
-                    if (-not $matchesTarget) {
+                    if (-not $matchesTarget -and -not $isMSITarget) {
                         $shortcutTargetPath = Get-NormalizedFilePath $shortcut.TargetPath
                         if ([string]::IsNullOrWhiteSpace($shortcutTargetPath)) {
                             continue
@@ -547,19 +548,24 @@ function Set-GoNaviShortcutBrandIcon {
                         # relaunch icon changed. Save both representations,
                         # then write the AppUserModel properties last because
                         # WScript.Shell.Save can discard custom properties.
-                        $shortcutUpdated = $false
+                        $shortcutNeedsSave = $false
+                        if ($isMSITarget -and -not $matchesTarget) {
+                            $shortcut.TargetPath = $normalizedTargetPath
+                            $shortcut.WorkingDirectory = [IO.Path]::GetDirectoryName($normalizedTargetPath)
+                            $shortcutNeedsSave = $true
+                        }
                         $wantedIconLocation = $normalizedIconPath + ',0'
                         if (-not [string]::Equals([string]$shortcut.IconLocation, $wantedIconLocation, [StringComparison]::OrdinalIgnoreCase)) {
                             $shortcut.IconLocation = $wantedIconLocation
+                            $shortcutNeedsSave = $true
+                        }
+                        if ($shortcutNeedsSave) {
                             $shortcut.Save()
-                            $shortcutUpdated = $true
                         }
-                        if (Set-GoNaviShortcutRelaunchProperties -ShortcutPath $shortcutFile.FullName -TargetPath $shortcutTargetPath -IconPath $normalizedIconPath -ApplicationUserModelID $ApplicationUserModelID) {
-                            $shortcutUpdated = $true
+                        if (-not (Set-GoNaviShortcutRelaunchProperties -ShortcutPath $shortcutFile.FullName -TargetPath $shortcutTargetPath -IconPath $normalizedIconPath -ApplicationUserModelID $ApplicationUserModelID)) {
+                            throw ('taskbar property-store update failed for ' + $shortcutFile.FullName)
                         }
-                        if ($shortcutUpdated) {
-                            $updatedCount++
-                        }
+                        $updatedCount++
                         Send-ShellItemUpdatedNotification $shortcutFile.FullName
                         continue
                     }
@@ -575,13 +581,19 @@ function Set-GoNaviShortcutBrandIcon {
                     }
                     Send-ShellItemUpdatedNotification $shortcutFile.FullName
                 } catch {
-                    Write-ShortcutRepairLog ("brand icon update failed for " + $shortcutFile.FullName + ": " + $_.Exception.Message)
+                    $failureMessage = "brand icon update failed for " + $shortcutFile.FullName + ": " + $_.Exception.Message
+                    Write-ShortcutRepairLog $failureMessage
+                    [void]$failureMessages.Add($failureMessage)
                 }
             }
         }
         Send-ShellItemUpdatedNotification $normalizedIconPath
     } catch {
         Write-ShortcutRepairLog ("brand icon shortcut update failed: " + $_.Exception.Message)
+        throw
+    }
+    if ($failureMessages.Count -gt 0) {
+        throw ('one or more GoNavi shortcut updates failed: ' + [string]::Join('; ', $failureMessages))
     }
     return $updatedCount
 }
