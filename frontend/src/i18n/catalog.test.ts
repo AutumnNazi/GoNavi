@@ -502,6 +502,9 @@ describe("i18n catalog", () => {
       "data_grid.column.comment_tooltip",
       "data_grid.column.foreign_key_tooltip",
       "data_grid.column.foreign_key_jump_title",
+      "data_grid.column.primary_key_tooltip",
+      "data_grid.column.unique_key_tooltip",
+      "data_grid.column.index_tooltip",
       "data_grid.column_quick_find.tooltip",
       "data_grid.column_quick_find.placeholder",
       "data_grid.column_settings.display_settings",
@@ -545,6 +548,9 @@ describe("i18n catalog", () => {
     expect(t("zh-CN", "data_grid.column.type_tooltip", { type: "uuid" })).toBe("类型：uuid");
     expect(t("zh-CN", "data_grid.column.comment_tooltip", { comment: "账户编号" })).toBe("注释：账户编号");
     expect(t("zh-CN", "data_grid.column.foreign_key_tooltip", { target: "public.users.id" })).toBe("外键：public.users.id");
+    expect(t("zh-CN", "data_grid.column.primary_key_tooltip")).toBe("主键");
+    expect(t("zh-CN", "data_grid.column.unique_key_tooltip")).toBe("唯一索引");
+    expect(t("zh-CN", "data_grid.column.index_tooltip")).toBe("索引");
     expect(t("en-US", "data_grid.column.foreign_key_jump_title", { tableName: "audit.log" })).toBe("Open foreign key table: audit.log");
     assertSourceDoesNotInlineCatalogValues(source, dataGridColumnControlKeys);
   });

@@ -128,7 +128,9 @@ describe('DataGridColumnTitle', () => {
     );
 
     expect(markup).toContain('class="gn-v2-column-title"');
+    expect(markup).toContain('class="gn-v2-column-title-heading"');
     expect(markup).toContain('class="gn-v2-column-title-type"');
+    expect(markup).toContain('data-grid-column-type-role="none"');
     expect(markup).toContain('bigint');
     expect(markup).toContain('class="gn-v2-column-title-comment"');
     expect(markup).toContain('主键 ID');
@@ -172,6 +174,66 @@ describe('DataGridColumnTitle', () => {
     );
 
     expect(markup).toContain('color:rgba(255, 236, 179, 0.98)');
+  });
+
+  it('colors header types by primary key, unique, index, and foreign-key roles', () => {
+    const pkMarkup = renderToStaticMarkup(
+      <DataGridColumnTitle
+        columnName="id"
+        columnMeta={{ type: 'bigint', key: 'PRI' }}
+        showColumnType
+        showColumnComment={false}
+        metaFontSize={11}
+        columnMetaHintColor="#999"
+        columnMetaTooltipColor="#fff"
+        darkMode={false}
+      />,
+    );
+    const uniqueMarkup = renderToStaticMarkup(
+      <DataGridColumnTitle
+        columnName="email"
+        columnMeta={{ type: 'varchar(64)', key: 'UNI' }}
+        showColumnType
+        showColumnComment={false}
+        metaFontSize={11}
+        columnMetaHintColor="#999"
+        columnMetaTooltipColor="#fff"
+        darkMode={false}
+      />,
+    );
+    const indexMarkup = renderToStaticMarkup(
+      <DataGridColumnTitle
+        columnName="city"
+        columnMeta={{ type: 'character varying', key: 'MUL' }}
+        showColumnType
+        showColumnComment={false}
+        metaFontSize={11}
+        columnMetaHintColor="#999"
+        columnMetaTooltipColor="#fff"
+        darkMode={false}
+      />,
+    );
+    const fkMarkup = renderToStaticMarkup(
+      <DataGridColumnTitle
+        columnName="customer_id"
+        columnMeta={{ type: 'bigint' }}
+        foreignKeyTarget={{ refTableName: 'customers', refColumnName: 'id' }}
+        showColumnType
+        showColumnComment={false}
+        metaFontSize={11}
+        columnMetaHintColor="#999"
+        columnMetaTooltipColor="#fff"
+        darkMode={false}
+      />,
+    );
+
+    expect(pkMarkup).toContain('class="gn-v2-column-title-type is-pk"');
+    expect(pkMarkup).toContain('data-grid-column-type-role="pk"');
+    expect(pkMarkup).toContain('gn-v2-column-title-type-swatch');
+    expect(uniqueMarkup).toContain('class="gn-v2-column-title-type is-unique"');
+    expect(indexMarkup).toContain('class="gn-v2-column-title-type is-index"');
+    expect(fkMarkup).toContain('class="gn-v2-column-title-type is-fk"');
+    expect(fkMarkup).toContain('data-grid-fk-jump="true"');
   });
 
   it('renders foreign-key jump affordance when reference target exists', () => {
@@ -228,14 +290,57 @@ describe('DataGridColumnTitle', () => {
     );
 
     expect(markup).toContain('class="gn-v2-column-title-shell"');
+    expect(markup).toContain('class="gn-v2-column-title-shell-main"');
+    expect(markup).toContain('class="gn-v2-column-title-filter"');
+    expect(markup).toContain('class="gn-v2-column-title-heading"');
     expect(markup).toContain('data-grid-column-filter-trigger="true"');
     expect(markup).toContain('data-grid-column-filter-active="true"');
     expect(markup).toContain('data-grid-column-filter-popover="true"');
-    expect(markup).toContain('flex:1 1 auto');
-    expect(markup).toContain('display:inline-flex;flex:1 1 auto;max-width:100%;min-width:0;overflow:hidden');
-    expect(markup).toContain('width:100%');
     expect(markup).toContain('Filter status');
     expect(markup).toContain('value="active"');
+  });
+
+  it('keeps the filter trigger as an overlay sibling so type and comment can use full column width', () => {
+    const markup = renderToStaticMarkup(
+      <DataGridColumnTitle
+        columnName="id"
+        columnMeta={{ type: 'bigint', comment: '客户 ID', key: 'PRI' }}
+        showColumnType
+        showColumnComment
+        metaFontSize={11}
+        columnMetaHintColor="#999"
+        columnMetaTooltipColor="#fff"
+        darkMode={false}
+        columnFilter={{
+          active: false,
+          operatorOptions: [{ value: '=', label: '=' }],
+          defaultOperator: '=',
+          filterLabel: 'Filter',
+          applyLabel: 'Apply',
+          clearLabel: 'Clear',
+          valuePlaceholder: 'Value',
+          secondValuePlaceholder: 'End value',
+          listValuePlaceholder: 'List values',
+          noValuePlaceholder: 'No value needed',
+          isNoValueOp: () => false,
+          isBetweenOp: () => false,
+          isListOp: () => false,
+          onApply: () => true,
+          onClear: () => true,
+        }}
+      />,
+    );
+
+    const shellMainIndex = markup.indexOf('gn-v2-column-title-shell-main');
+    const typeIndex = markup.indexOf('gn-v2-column-title-type is-pk');
+    const commentIndex = markup.indexOf('gn-v2-column-title-comment');
+    const filterIndex = markup.indexOf('gn-v2-column-title-filter');
+
+    expect(shellMainIndex).toBeGreaterThan(-1);
+    expect(typeIndex).toBeGreaterThan(shellMainIndex);
+    expect(commentIndex).toBeGreaterThan(typeIndex);
+    expect(filterIndex).toBeGreaterThan(commentIndex);
+    expect(markup).not.toContain('flex:0 0 22px');
   });
 
   it('isolates pointer interactions inside the filter popover from column dragging', () => {
@@ -502,13 +607,16 @@ describe('DataGridColumnTitle', () => {
       if (key === 'data_grid.column.comment_tooltip') return `COMMENT ${String(params?.comment)}`;
       if (key === 'data_grid.column.foreign_key_tooltip') return `FK ${String(params?.target)}`;
       if (key === 'data_grid.column.foreign_key_jump_title') return `JUMP ${String(params?.tableName)}`;
+      if (key === 'data_grid.column.primary_key_tooltip') return 'PRIMARY KEY';
+      if (key === 'data_grid.column.unique_key_tooltip') return 'UNIQUE INDEX';
+      if (key === 'data_grid.column.index_tooltip') return 'INDEX';
       return key;
     });
 
     const markup = renderToStaticMarkup(
       <DataGridColumnTitle
         columnName="account_id"
-        columnMeta={{ type: 'uuid', comment: '账户编号' }}
+        columnMeta={{ type: 'uuid', comment: '账户编号', key: 'PRI' }}
         foreignKeyTarget={{ refTableName: 'public.users', refColumnName: 'id' }}
         showColumnType
         showColumnComment
@@ -521,6 +629,7 @@ describe('DataGridColumnTitle', () => {
     );
 
     expect(markup).toContain('TYPE uuid');
+    expect(markup).toContain('PRIMARY KEY');
     expect(markup).toContain('COMMENT 账户编号');
     expect(markup).toContain('FK public.users.id');
     expect(markup).toContain('title="JUMP public.users"');
@@ -530,6 +639,7 @@ describe('DataGridColumnTitle', () => {
     expect(markup).not.toContain('跳转到外键表：public.users');
 
     expect(translate).toHaveBeenCalledWith('data_grid.column.type_tooltip', { type: 'uuid' });
+    expect(translate).toHaveBeenCalledWith('data_grid.column.primary_key_tooltip');
     expect(translate).toHaveBeenCalledWith('data_grid.column.comment_tooltip', { comment: '账户编号' });
     expect(translate).toHaveBeenCalledWith('data_grid.column.foreign_key_tooltip', { target: 'public.users.id' });
     expect(translate).toHaveBeenCalledWith('data_grid.column.foreign_key_jump_title', { tableName: 'public.users' });

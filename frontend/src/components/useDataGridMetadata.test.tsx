@@ -76,4 +76,31 @@ describe('useDataGridMetadata execution context', () => {
     expect(controller?.columnMetaMap).toHaveProperty('public_value');
     expect(controller?.columnMetaMap).not.toHaveProperty('sales_value');
   });
+
+  it('merges primary, unique, and secondary index roles into column meta', async () => {
+    backendApp.DBGetColumns.mockResolvedValue({
+      success: true,
+      data: [
+        { name: 'id', type: 'bigint', key: 'PRI' },
+        { name: 'email', type: 'varchar' },
+        { name: 'city', type: 'varchar' },
+      ],
+    });
+    backendApp.DBGetIndexes.mockResolvedValue({
+      success: true,
+      data: [
+        { name: 'users_pkey', columnName: 'id', nonUnique: 0, seqInIndex: 1, indexType: 'BTREE' },
+        { name: 'users_email_key', columnName: 'email', nonUnique: 0, seqInIndex: 1, indexType: 'BTREE' },
+        { name: 'idx_users_city', columnName: 'city', nonUnique: 1, seqInIndex: 1, indexType: 'BTREE' },
+      ],
+    });
+
+    await act(async () => {
+      renderer = create(<Harness connectionParamsOverride="search_path=public" />);
+    });
+
+    expect(controller?.columnMetaMap.id).toMatchObject({ type: 'bigint', key: 'PRI' });
+    expect(controller?.columnMetaMap.email).toMatchObject({ type: 'varchar', key: 'UNI' });
+    expect(controller?.columnMetaMap.city).toMatchObject({ type: 'varchar', key: 'MUL' });
+  });
 });

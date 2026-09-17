@@ -9,6 +9,10 @@ import {
   type DataGridColumnValueCountSortOrder,
 } from '../utils/dataGridClientFilter';
 import type { FilterValueSelection } from '../utils/sql';
+import {
+  DATA_GRID_COLUMN_TYPE_ROLE_TOOLTIP_KEY,
+  resolveDataGridColumnTypeRole,
+} from './dataGridColumnTypeMarker';
 
 export type DataGridColumnTitleTranslate = (key: string, params?: I18nParams) => string;
 
@@ -46,6 +50,7 @@ export interface DataGridColumnTitleProps {
   columnMeta?: {
     type?: string;
     comment?: string;
+    key?: string;
   } | null;
   foreignKeyTarget?: {
     refTableName?: string;
@@ -100,6 +105,11 @@ const DataGridColumnTitle: React.FC<DataGridColumnTitleProps> = ({
   const columnComment = String(columnMeta?.comment || '').trim();
   const refTableName = String(foreignKeyTarget?.refTableName || '').trim();
   const refColumnName = String(foreignKeyTarget?.refColumnName || '').trim();
+  const columnTypeRole = resolveDataGridColumnTypeRole({
+    key: columnMeta?.key,
+    hasForeignKey: refTableName.length > 0,
+  });
+  const columnTypeRoleClassName = columnTypeRole === 'none' ? '' : ` is-${columnTypeRole}`;
   const shouldShowColumnType = showColumnType && columnType.length > 0;
   const shouldShowColumnComment = showColumnComment && columnComment.length > 0;
   const isSingleLineColumnTitle = !shouldShowColumnType && !shouldShowColumnComment;
@@ -144,6 +154,9 @@ const DataGridColumnTitle: React.FC<DataGridColumnTitleProps> = ({
 
   const hoverLines: string[] = [];
   if (columnType) hoverLines.push(translate('data_grid.column.type_tooltip', { type: columnType }));
+  if (columnTypeRole !== 'none' && columnTypeRole !== 'fk') {
+    hoverLines.push(translate(DATA_GRID_COLUMN_TYPE_ROLE_TOOLTIP_KEY[columnTypeRole]));
+  }
   if (columnComment) hoverLines.push(translate('data_grid.column.comment_tooltip', { comment: columnComment }));
   if (refTableName) {
     const refColumnText = refColumnName ? `.${refColumnName}` : '';
@@ -153,6 +166,7 @@ const DataGridColumnTitle: React.FC<DataGridColumnTitleProps> = ({
   const fieldLabel = refTableName ? (
     <button
       type="button"
+      className="gn-v2-column-title-heading"
       data-grid-fk-jump="true"
       data-column-name={normalizedName}
       data-ref-table-name={refTableName}
@@ -185,7 +199,10 @@ const DataGridColumnTitle: React.FC<DataGridColumnTitleProps> = ({
       <LinkOutlined style={{ fontSize: metaFontSize + 1, color: columnMetaHintColor, flex: 'none' }} />
     </button>
   ) : (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, maxWidth: '100%' }}>
+    <span
+      className="gn-v2-column-title-heading"
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, maxWidth: '100%' }}
+    >
       {pinIcon}
       <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
         {normalizedName}
@@ -217,18 +234,22 @@ const DataGridColumnTitle: React.FC<DataGridColumnTitleProps> = ({
       {fieldLabel}
       {shouldShowColumnType && (
         <span
-          className="gn-v2-column-title-type"
+          className={`gn-v2-column-title-type${columnTypeRoleClassName}`}
+          data-grid-column-type-role={columnTypeRole}
           style={{
             marginTop: 2,
             fontSize: metaFontSize,
-            color: columnMetaHintColor,
+            color: columnTypeRole === 'none' ? columnMetaHintColor : undefined,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
             maxWidth: '100%',
           }}
         >
-          {columnType}
+          {columnTypeRole !== 'none' && (
+            <span className="gn-v2-column-title-type-swatch" aria-hidden="true" />
+          )}
+          <span className="gn-v2-column-title-type-text">{columnType}</span>
         </span>
       )}
       {shouldShowColumnComment && (
@@ -567,19 +588,8 @@ const DataGridColumnTitle: React.FC<DataGridColumnTitleProps> = ({
   );
 
   return (
-    <span
-      className="gn-v2-column-title-shell"
-      style={{
-        display: 'flex',
-        // 顶对齐：有无注释时标题块高度不同，center 会让筛选图标上下错位
-        alignItems: 'flex-start',
-        gap: 4,
-        width: '100%',
-        maxWidth: '100%',
-        minWidth: 0,
-      }}
-    >
-      <span style={{ display: 'inline-flex', flex: '1 1 auto', maxWidth: '100%', minWidth: 0, overflow: 'hidden' }}>
+    <span className="gn-v2-column-title-shell">
+      <span className="gn-v2-column-title-shell-main">
         {titleWithOptionalTooltip}
       </span>
       <Popover
@@ -591,6 +601,7 @@ const DataGridColumnTitle: React.FC<DataGridColumnTitleProps> = ({
       >
         <button
           type="button"
+          className="gn-v2-column-title-filter"
           data-grid-column-filter-trigger="true"
           data-grid-column-filter-active={columnFilter.active ? 'true' : undefined}
           aria-label={filterButtonTitle}
@@ -601,25 +612,14 @@ const DataGridColumnTitle: React.FC<DataGridColumnTitleProps> = ({
           onMouseDown={stopColumnHeaderInteraction}
           onPointerDown={stopColumnHeaderInteraction}
           style={{
-            width: 22,
-            height: 22,
-            flex: '0 0 22px',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            // 与列名首行光学对齐（约 1.2 行高与 22px 按钮的中线差）
-            marginTop: 0,
-            padding: 0,
             border: columnFilter.active ? `1px solid ${activeColor}` : '1px solid transparent',
-            borderRadius: 6,
             background: columnFilter.active
               ? (darkMode ? 'rgba(34, 197, 94, 0.14)' : 'rgba(34, 197, 94, 0.12)')
               : 'transparent',
             color: mutedColor,
-            cursor: 'pointer',
           }}
         >
-          <FilterOutlined style={{ fontSize: 12 }} />
+          <FilterOutlined />
         </button>
       </Popover>
     </span>

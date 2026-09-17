@@ -3,11 +3,13 @@ import { DBGetColumns, DBGetForeignKeys, DBGetIndexes } from '../../wailsjs/go/a
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import { resolveDataSourceType } from '../utils/dataSourceCapabilities';
 import { requestTableMetadata } from '../utils/tableMetadataRequestCache';
+import { GONAVI_ROW_KEY } from './DataGridCore';
+import { buildColumnMetaMap, hasUsableColumnMeta } from './dataGridColumnMeta';
 import {
-  buildColumnMetaMap,
-  GONAVI_ROW_KEY,
-  hasUsableColumnMeta,
-} from './DataGridCore';
+  applyIndexColumnKeysToColumnMetaMap,
+  resolveIndexColumnKeys,
+  type DataGridColumnIndexKey,
+} from './dataGridColumnTypeMarker';
 import { resolveUniqueKeyGroupsFromIndexes } from './dataGridCopyInsert';
 
 type UseDataGridMetadataContext = Record<string, any>;
@@ -34,6 +36,7 @@ export const useDataGridMetadata = (ctx: UseDataGridMetadataContext) => {
   const foreignKeySeqRef = useRef(0);
   const uniqueKeyGroupsCacheRef = useRef<Record<string, string[][]>>({});
   const uniqueKeyGroupsSeqRef = useRef(0);
+  const indexColumnKeysRef = useRef<Record<string, Record<string, DataGridColumnIndexKey>>>({});
   const metadataConnectionParams = useMemo(() => {
     if (connectionParamsOverride !== undefined) {
       return String(connectionParamsOverride || '');
@@ -114,7 +117,10 @@ export const useDataGridMetadata = (ctx: UseDataGridMetadataContext) => {
           if (!res.success || !Array.isArray(res.data)) {
             continue;
           }
-          const candidateMap = buildColumnMetaMap(res.data as any[]);
+          const candidateMap = applyIndexColumnKeysToColumnMetaMap(
+            buildColumnMetaMap(res.data as any[]),
+            indexColumnKeysRef.current[cacheKey],
+          );
           if (!hasUsableColumnMeta(candidateMap)) {
             continue;
           }
@@ -262,6 +268,15 @@ export const useDataGridMetadata = (ctx: UseDataGridMetadataContext) => {
         const nextGroups = resolveUniqueKeyGroupsFromIndexes(res.data as any[]);
         uniqueKeyGroupsCacheRef.current[cacheKey] = nextGroups;
         setUniqueKeyGroups(nextGroups);
+        const nextIndexKeys = resolveIndexColumnKeys(res.data as any[]);
+        indexColumnKeysRef.current[cacheKey] = nextIndexKeys;
+        setColumnMetaMap((prev) => {
+          const merged = applyIndexColumnKeysToColumnMetaMap(prev, nextIndexKeys);
+          if (Object.keys(prev).length > 0) {
+            columnMetaCacheRef.current[cacheKey] = merged;
+          }
+          return merged;
+        });
       })
       .catch(() => {
         if (seq !== uniqueKeyGroupsSeqRef.current) return;
