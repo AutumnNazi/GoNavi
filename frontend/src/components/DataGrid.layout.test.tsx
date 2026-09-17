@@ -2051,6 +2051,8 @@ describe('DataGrid layout', () => {
       source.indexOf('const handleExternalHorizontalScrollPointerDown = useCallback'),
     );
 
+    expect(source).toContain('const isWindowsLike = useMemo(() => isWindowsPlatform(), []);');
+    expect(virtualColumnSource).toContain('&& !isWindowsLike');
     expect(virtualColumnSource).not.toContain('&& !isMacLike');
     expect(virtualColumnSource).toContain('&& shouldVirtualizeDataGridColumns(displayColumnNames.length);');
     expect(visualSyncSource).toContain('virtualHorizontalPostCommitGuardRef.current?.cancel();');
