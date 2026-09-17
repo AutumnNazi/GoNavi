@@ -437,6 +437,13 @@ type UseSidebarTreeLoadersOptions = {
   onDatabaseTreeLoaded?: (databaseKey: string) => void;
 };
 
+/**
+ * How long the database loader waits for views/routines/sequences/triggers after the
+ * tables are known before committing a tables-only tree. Remote or driver-agent links
+ * (strictly serial transport) exceed this and get a progressive render.
+ */
+export const SIDEBAR_DATABASE_TREE_FIRST_COMMIT_GRACE_MS = 80;
+
 const dedupeTrimmedDatabaseNames = (databaseNames: readonly string[]): string[] => {
   const seen = new Set<string>();
   const result: string[] = [];
@@ -1315,6 +1322,14 @@ export const useSidebarTreeLoaders = ({
 	              return;
 	          }
 
+	          // Table stats and the schema list only depend on the database, so they leave
+	          // together with the table list instead of after it (one round trip less on
+	          // remote links; on the serial driver-agent transport they simply queue behind).
+	          const tableStatusSql = buildSidebarTableStatusSQL(conn as SavedConnection, conn.dbName);
+	          const tableStatsPromise = tableStatusSql
+	              ? DBQuery(buildRpcConnectionConfig(config) as any, conn.dbName, tableStatusSql).catch(() => ({ success: false, data: [] as any[] }))
+	              : Promise.resolve({ success: false, data: [] as any[] });
+	          const schemasPromise = loadSchemas(conn, conn.dbName);
 	          const res = await DBGetTables(buildRpcConnectionConfig(config) as any, conn.dbName);
           if (!isCurrentLoad()) return;
 	          if (res.success) {
@@ -1342,10 +1357,6 @@ export const useSidebarTreeLoaders = ({
                         ),
                     });
                 }
-                const tableStatusSql = buildSidebarTableStatusSQL(conn as SavedConnection, conn.dbName);
-                const tableStatsPromise = tableStatusSql
-                    ? DBQuery(buildRpcConnectionConfig(config) as any, conn.dbName, tableStatusSql).catch(() => ({ success: false, data: [] as any[] }))
-                    : Promise.resolve({ success: false, data: [] as any[] });
                 const tableMetadataMap = new Map<string, SidebarLoadedTableMetadata>();
                 const metadataObjectKeyIdentities = new Map<string, Set<string>>();
                 const ambiguousMetadataObjectKeys = new Set<string>();
@@ -1438,9 +1449,17 @@ export const useSidebarTreeLoaders = ({
                     }
                 });
 
-	            const [tableStatsResult, schemasResult, viewsResult, materializedViewsResult, triggersResult, routinesResult, sequencesResult, packagesResult, eventsResult] = await Promise.all([
-                    tableStatsPromise,
-	                loadSchemas(conn, conn.dbName),
+	            // Tables and schemas first: they are all the tree needs to render the table
+	            // groups. The remaining object kinds are requested only after that, because the
+	            // optional driver-agent transport is strictly serial and would otherwise let a
+	            // slow view/routine query jump ahead of the schema list.
+	            const [tableStatsResult, schemasResult] = await Promise.all([
+	                tableStatsPromise,
+	                schemasPromise,
+	            ]);
+            if (!isCurrentLoad()) return;
+	            let objectLoadsSettled = false;
+	            const objectLoadsPromise = Promise.all([
 	                loadViews(conn, conn.dbName),
 	                loadStarRocksMaterializedViews(conn, conn.dbName),
 	                loadDatabaseTriggers(conn, conn.dbName),
@@ -1448,8 +1467,16 @@ export const useSidebarTreeLoaders = ({
 	                loadSequences(conn, conn.dbName),
 	                loadPackages(conn, conn.dbName),
 	                loadDatabaseEvents(conn, conn.dbName),
-	            ]);
-            if (!isCurrentLoad()) return;
+	            ]).then(
+	                (results) => {
+	                    objectLoadsSettled = true;
+	                    return { ok: true as const, results };
+	                },
+	                (error: unknown) => {
+	                    objectLoadsSettled = true;
+	                    return { ok: false as const, error };
+	                },
+	            );
                 if (tableStatsResult?.success && Array.isArray(tableStatsResult.data)) {
                     tableStatsResult.data.forEach((row: Record<string, any>) => {
                         const rawTableName = String(
@@ -1547,6 +1574,30 @@ export const useSidebarTreeLoaders = ({
                     };
                 }) as SidebarLoadedTableEntry[];
 
+	            type SidebarDatabaseObjectLoadResults = {
+	                viewsResult: Awaited<ReturnType<typeof loadViews>>;
+	                materializedViewsResult: Awaited<ReturnType<typeof loadStarRocksMaterializedViews>>;
+	                triggersResult: Awaited<ReturnType<typeof loadDatabaseTriggers>>;
+	                routinesResult: Awaited<ReturnType<typeof loadFunctions>>;
+	                sequencesResult: Awaited<ReturnType<typeof loadSequences>>;
+	                packagesResult: Awaited<ReturnType<typeof loadPackages>>;
+	                eventsResult: Awaited<ReturnType<typeof loadDatabaseEvents>>;
+	            };
+	            // Runs twice: once with empty object results as soon as tables are known, and
+	            // once more when views/routines/sequences/triggers/events have arrived.
+	            const buildRenderedDatabaseChildren = (
+	                objectResults: SidebarDatabaseObjectLoadResults,
+	                notifyMetadataIssues: boolean,
+	            ) => {
+	            const {
+	                viewsResult,
+	                materializedViewsResult,
+	                triggersResult,
+	                routinesResult,
+	                sequencesResult,
+	                packagesResult,
+	                eventsResult,
+	            } = objectResults;
             const viewRows: SidebarViewMetadataEntry[] = Array.isArray(viewsResult.views) ? viewsResult.views : [];
             const materializedViewRows: SidebarViewMetadataEntry[] = Array.isArray(materializedViewsResult.views) ? materializedViewsResult.views : [];
             const triggerRows: any[] = Array.isArray(triggersResult.triggers) ? triggersResult.triggers : [];
@@ -1705,7 +1756,7 @@ export const useSidebarTreeLoaders = ({
                 displayName: String(event.displayName || event.eventName || '').trim(),
             })).filter((event: any) => event.eventName && event.displayName);
 
-            if (isSphinxConnection(conn as SavedConnection)) {
+            if (notifyMetadataIssues && isSphinxConnection(conn as SavedConnection)) {
                 const unsupportedObjects: string[] = [];
                 if (!viewsResult.supported) unsupportedObjects.push(t('sidebar.object_group.views'));
                 if (!routinesResult.supported) unsupportedObjects.push(t('sidebar.object_group.routines'));
@@ -1729,7 +1780,7 @@ export const useSidebarTreeLoaders = ({
                 { label: t('sidebar.object_group.packages'), message: packagesResult.failureMessage },
                 { label: t('sidebar.object_group.events'), message: eventsResult.failureMessage },
             ].filter((failure) => failure.message);
-            if (metadataFailures.length > 0) {
+            if (notifyMetadataIssues && metadataFailures.length > 0) {
                 const warningKey = `db-${key}-metadata-partial`;
                 message.warning({
                     key: warningKey,
@@ -2107,7 +2158,57 @@ export const useSidebarTreeLoaders = ({
 
 	                renderedDatabaseChildren = [queriesNode, ...groupedNodes];
 	            }
+	            return { renderedDatabaseChildren, latestDatabaseConnection };
+	            };
+
+	            const emptyObjectLoadResults: SidebarDatabaseObjectLoadResults = {
+	                viewsResult: { views: [], supported: true },
+	                materializedViewsResult: { views: [], supported: true },
+	                triggersResult: { triggers: [], supported: true },
+	                routinesResult: { routines: [], supported: true },
+	                sequencesResult: { sequences: [], supported: true },
+	                packagesResult: { packages: [], supported: true },
+	                eventsResult: { events: [], supported: true },
+	            };
+	            let renderedDatabaseChildren: TreeNode[] = [];
+	            let latestDatabaseConnection: SavedConnection = conn as SavedConnection;
+	            // Give the object kinds a short grace period: fast local databases finish within
+	            // it and get a single commit, while slow or serialized remote links show the
+	            // table groups right away and fill in the rest with a second commit.
+	            if (!objectLoadsSettled) {
+	                await Promise.race([
+	                    objectLoadsPromise,
+	                    new Promise<void>((resolve) => {
+	                        setTimeout(resolve, SIDEBAR_DATABASE_TREE_FIRST_COMMIT_GRACE_MS);
+	                    }),
+	                ]);
+	                if (!isCurrentLoad()) return;
+	            }
+	            if (!objectLoadsSettled) {
+	                const firstPass = buildRenderedDatabaseChildren(emptyObjectLoadResults, false);
+	                renderedDatabaseChildren = firstPass.renderedDatabaseChildren;
+	                latestDatabaseConnection = firstPass.latestDatabaseConnection;
             if (!isCurrentLoad()) return;
+            replaceTreeNodeChildren(key, renderedDatabaseChildren, latestDatabaseConnection);
+                onDatabaseTreeLoaded?.(String(key));
+                shouldMarkDatabaseSuccess = true;
+	            }
+
+	            const objectLoads = await objectLoadsPromise;
+            if (!isCurrentLoad()) return;
+	            if (!objectLoads.ok) throw objectLoads.error;
+	            const [viewsResult, materializedViewsResult, triggersResult, routinesResult, sequencesResult, packagesResult, eventsResult] = objectLoads.results;
+	            const secondPass = buildRenderedDatabaseChildren({
+	                viewsResult,
+	                materializedViewsResult,
+	                triggersResult,
+	                routinesResult,
+	                sequencesResult,
+	                packagesResult,
+	                eventsResult,
+	            }, true);
+	            renderedDatabaseChildren = secondPass.renderedDatabaseChildren;
+	            latestDatabaseConnection = secondPass.latestDatabaseConnection;
             replaceTreeNodeChildren(key, renderedDatabaseChildren, latestDatabaseConnection);
                 onDatabaseTreeLoaded?.(String(key));
                 shouldMarkDatabaseSuccess = true;

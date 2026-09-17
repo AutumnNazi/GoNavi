@@ -4935,6 +4935,10 @@ const Sidebar: React.FC<{
                     autoExpandParent={autoExpandParent}
                     selectedKeys={selectedKeys}
                     blockNode
+                    // Expand/collapse animation re-renders the newly revealed rows on every
+                    // frame (each with a Tooltip) and blocks scroll-to-key until it ends; on
+                    // large databases that added ~0.7s to locating a table in WebKit.
+                    motion={false}
                     height={effectiveTreeHeight}
                     itemHeight={30}
                     itemHeightResolver={resolveSidebarTreeRowHeight}
