@@ -40,7 +40,7 @@ import { v4 as generateUuid } from 'uuid';
 import 'react-resizable/css/styles.css';
 import '../styles/v2-theme-workbench.css';
 import { buildOrderBySQL, buildPaginatedSelectSQL, buildWhereSQL, escapeLiteral, hasExplicitSort, quoteIdentPart, withSortBufferTuningSQL, type FilterCondition } from '../utils/sql';
-import { isMacLikePlatform, normalizeOpacityForPlatform, resolveAppearanceValues } from '../utils/appearance';
+import { isMacLikePlatform, isWindowsPlatform, normalizeOpacityForPlatform, resolveAppearanceValues } from '../utils/appearance';
 import { isConnectionDataImportRestricted } from '../utils/connectionReadOnly';
 import { confirmProductionRisk } from '../utils/productionRiskConfirm';
 import { getDataSourceCapabilities, resolveDataSourceType } from '../utils/dataSourceCapabilities';
@@ -442,7 +442,7 @@ const DataGrid: React.FC<DataGridProps> = ({
   }), [translateDataGrid]);
 
   const isMacLike = useMemo(() => isMacLikePlatform(), []);
-
+  const isWindowsLike = useMemo(() => isWindowsPlatform(), []);
   const effectiveUiScale = Math.min(1.25, Math.max(0.8, Number(uiScale) || 1));
   const activeShortcutPlatform = useMemo(() => getShortcutPlatform(isMacLike), [isMacLike]);
   const darkMode = theme === 'dark';
@@ -4474,10 +4474,10 @@ const DataGrid: React.FC<DataGridProps> = ({
   const virtualListItemHeightFixed = !virtualEditingCellForRender;
   const virtualListItemNativeScrollbarControlled = isMacLike && virtualListItemHeightFixed;
   const virtualListItemHorizontalOffsetComposited = isMacLike;
-  // Wide tables virtualize columns on every platform. Keeping all cells
-  // mounted makes vertical scrolling scale with row count × field count.
+  // Windows 快速横滚时保持所有列已挂载，避免列窗口提交晚一帧。
   const virtualListItemColumnVirtual = enableVirtual
       && !virtualEditingCellForRender
+      && !isWindowsLike
       && shouldVirtualizeDataGridColumns(displayColumnNames.length);
   const tableComponents = useMemo(() => {
       const body: Record<string, any> = {};
