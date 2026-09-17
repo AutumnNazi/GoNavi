@@ -77,6 +77,8 @@ import { getDbIcon } from './DatabaseIcons';
 import { resolveConnectionAccentColor, resolveConnectionIconType } from '../utils/connectionVisual';
 import { dispatchSidebarLocateConnection } from '../utils/sidebarLocate';
 import { renderV2ActionMenuPopup } from './common/V2ActionMenuPopup';
+import { QueryEditorTabRunningIndicator } from './queryEditor/QueryEditorTabRunningIndicator';
+import { QueryEditorRunningTabsDock } from './queryEditor/QueryEditorRunningTabsDock';
 
 const getTabKindLabel = (tab: TabData): string => {
   if (tab.type === 'query') return t('tab_manager.kind_badge.query');
@@ -633,6 +635,7 @@ const SortableTabLabel: React.FC<SortableTabLabelProps> = ({
           aria-label={environmentLabel}
         />
       ) : null}
+      {tab.type === 'query' ? <QueryEditorTabRunningIndicator tabId={tab.id} /> : null}
       <span className="gn-v2-tab-label-content">
           <span className="gn-v2-tab-label-main tab-title-text">
             {displayModel.primaryParts.length > 0
@@ -1496,7 +1499,7 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
   ), [appearance.tabDisplay, connections, connectionGroupNameById, dockedTabs]);
 
   const renderTabBar: TabsProps['renderTabBar'] = (tabBarProps, DefaultTabBar) => (
-    <DefaultTabBar {...tabBarProps}>
+    <DefaultTabBar {...tabBarProps} extra={<QueryEditorRunningTabsDock />}>
       {(node) => <DraggableTabNode key={node.key} node={node} />}
     </DefaultTabBar>
   );

@@ -23,6 +23,11 @@ import DetachDragPreview, {
 import DataGrid from './DataGrid';
 import LogPanel from './LogPanel';
 import { renderV2ActionMenuPopup } from './common/V2ActionMenuPopup';
+import { QueryEditorExecutionStatus } from './queryEditor/QueryEditorExecutionStatus';
+import {
+    resolveVisibleQueryEditorExecutionLifecycle,
+    type QueryEditorExecutionLifecycleState,
+} from './queryEditor/queryEditorExecutionLifecycle';
 
 export type OpenResultInWindowPreferred = Partial<Pick<DetachedWindowBounds, 'x' | 'y' | 'width' | 'height'>>;
 
@@ -110,6 +115,7 @@ interface QueryEditorResultsPanelProps {
     onCancelResultTotalCount?: (key: string) => void;
     onDiagnoseExecutionError: () => void;
     onCompareResult?: (resultKey: string) => void;
+    executionLifecycle?: QueryEditorExecutionLifecycleState | null;
 }
 
 const isAffectedRowsResult = (result: QueryEditorResultSet): boolean =>
@@ -174,6 +180,7 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
     onCancelResultTotalCount,
     onDiagnoseExecutionError,
     onCompareResult,
+    executionLifecycle = null,
 }) => {
     const i18n = useOptionalI18n();
     const t = i18n?.t ?? defaultTranslate;
@@ -816,6 +823,7 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
             ),
         }
         : undefined;
+    const visibleExecutionLifecycle = resolveVisibleQueryEditorExecutionLifecycle(loading, executionLifecycle);
 
     return (
         <>
@@ -854,6 +862,9 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
               .query-result-tabs .ant-tabs-extra-content .query-result-panel-tab-action { width: 28px; min-width: 28px; height: 28px !important; min-height: 28px !important; padding: 0 !important; display: inline-flex; align-items: center; justify-content: center; }
             `}</style>
             <div data-gonavi-close-shortcut-scope="result" className="gn-v2-query-results" style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                {tabItems.length > 0 && visibleExecutionLifecycle ? (
+                    <QueryEditorExecutionStatus compact lifecycle={visibleExecutionLifecycle} />
+                ) : null}
                 {tabItems.length > 0 ? (
                     <Tabs className="query-result-tabs" activeKey={resolvedActiveResultKey} onChange={onActiveResultKeyChange} animated={false} style={{ flex: 1, minHeight: 0 }} tabBarExtraContent={tabsExtraContent} items={tabItems} />
                 ) : executionError ? (
@@ -883,12 +894,16 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                             <span className="query-result-panel-header-title">{t('query_editor.results_panel.panel.title')}</span>
                             {hideButton}
                         </div>
-                        <div className="gn-v2-query-empty" style={{ flex: 1, minHeight: 0 }}>
-                            <div>
+                        {visibleExecutionLifecycle ? (
+                            <QueryEditorExecutionStatus lifecycle={visibleExecutionLifecycle} />
+                        ) : (
+                            <div className="gn-v2-query-empty" style={{ flex: 1, minHeight: 0 }}>
+                                <div>
                                     <strong>{t('query_editor.empty_state.title')}</strong>
                                     <span>{t('query_editor.empty_state.description')}</span>
+                                </div>
                             </div>
-                        </div>
+                        )}
                     </>
                 )}
             </div>

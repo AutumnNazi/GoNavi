@@ -172,6 +172,16 @@ import QueryEditorToolbar, {
     resolveReportedQueryDurationMs,
     useQueryExecutionElapsed,
 } from './QueryEditorToolbar';
+import { useQueryEditorExecutionLifecycle } from './queryEditor/useQueryEditorExecutionLifecycle';
+import { useQueryEditorTabExecutionBroadcast } from './queryEditor/queryEditorTabExecutionState';
+import {
+    buildQueryEditorLifecycleAffectedRowsResult,
+    isQueryEditorCancelledRpcError,
+    queryEditorExecutionTimerStatusI18nKey,
+    shouldRetainQueryEditorRun,
+    shouldRetainQueryEditorRunAfterRpcFailure,
+    type QueryEditorExecutionLifecycleState,
+} from './queryEditor/queryEditorExecutionLifecycle';
 import { loadSchemas } from './sidebar/sidebarMetadataLoaders';
 import {
     applyQueryEditorSchemaSearchPath,
@@ -2134,7 +2144,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const [executionTimingActive, setExecutionTimingActive] = useState(false);
   const [completedExecutionElapsedMs, setCompletedExecutionElapsedMs] = useState<number | null>(null);
   const executionElapsedMs = useQueryExecutionElapsed(
-      executionTimingActive,
+      executionTimingActive && loading,
       executionRunToken,
       completedExecutionElapsedMs,
   );
@@ -2158,11 +2168,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       return durationMs;
   }, []);
   const [executionError, setExecutionError] = useState<string>('');
-  const [, setCurrentQueryId] = useState<string>('');
+  const [currentQueryId, setCurrentQueryId] = useState<string>('');
   const [isSqlSnippetPickerOpen, setIsSqlSnippetPickerOpen] = useState(false);
   const [sqlSnippetPickerKeyword, setSqlSnippetPickerKeyword] = useState('');
   const runSeqRef = useRef(0);
   const currentQueryIdRef = useRef('');
+  const rpcLostWithoutResultRef = useRef(false);
   const queryEditorUnmountedRef = useRef(false);
   const requestScopedRPCControllersRef = useRef(new Set<AbortController>());
   const invokeRequestScopedApp = useCallback(<T,>(
@@ -2908,6 +2919,39 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       setIsResultPanelVisible(visible);
       updateQueryTabDraft(tab.id, { resultPanelVisible: visible });
   }, [tab.id, updateQueryTabDraft]);
+  const handleExecutionLifecycleTerminal = useCallback((state: QueryEditorExecutionLifecycleState) => {
+      if (!rpcLostWithoutResultRef.current) {
+          return;
+      }
+      rpcLostWithoutResultRef.current = false;
+      setLoading(false);
+      setExecutionTimingActive(false);
+      const affectedResult = buildQueryEditorLifecycleAffectedRowsResult('', state);
+      if (affectedResult) {
+          setExecutionError('');
+          updateResultPanelVisibility(true);
+          setResultSets([affectedResult as ResultSet]);
+          return;
+      }
+      if (state.status === 'error' || state.outcomeUnknown || state.status === 'cancelled') {
+          updateResultPanelVisibility(true);
+          setExecutionError(state.message || translate(
+              state.outcomeUnknown
+                  ? 'query_editor.execution.outcome_unknown'
+                  : 'query_editor.result.execution_failed',
+          ));
+      }
+  }, [updateResultPanelVisibility]);
+  const executionLifecycle = useQueryEditorExecutionLifecycle({
+      queryId: currentQueryId,
+      loading,
+      onTerminal: handleExecutionLifecycleTerminal,
+  });
+  useQueryEditorTabExecutionBroadcast(tab.id, loading, executionLifecycle.status, isActive);
+  const executionLifecycleRef = useRef(executionLifecycle);
+  executionLifecycleRef.current = executionLifecycle;
+  const executionStatusKey = queryEditorExecutionTimerStatusI18nKey(executionTimingActive && loading, executionLifecycle);
+  const executionStatusText = executionStatusKey ? translate(executionStatusKey) : '';
   const toggleResultPanelVisibility = useCallback(() => {
       const nextVisible = !isResultPanelVisibleRef.current;
       isResultPanelVisibleRef.current = nextVisible;
@@ -10552,6 +10596,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
     lockQueryContextForRun(runSeq);
     setLoading(true);
     setExecutionError('');
+    updateResultPanelVisibility(true);
+    rpcLostWithoutResultRef.current = false;
     const runStartTime = Date.now();
     let sqlDurationMs: number | undefined;
 
@@ -11451,7 +11497,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         }
     } catch (e: any) {
         if (!isCurrentRun()) return;
-        if (isWebRPCAbortError(e)) return;
+        if (shouldRetainQueryEditorRunAfterRpcFailure(e, executionLifecycleRef.current)) {
+            rpcLostWithoutResultRef.current = true;
+            return;
+        }
+        if (isWebRPCAbortError(e) || isQueryEditorCancelledRpcError(e)) return;
         const formattedError = formatSqlExecutionError(e?.message || e, { translate });
         message.error(translate('query_editor.message.execution_failed_with_error', { error: formattedError }));
         addSqlLog({
@@ -11468,8 +11518,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         clearUnpinnedResultSets(QUERY_EDITOR_SQL_LOG_TAB_KEY);
     } finally {
         unlockQueryContextForRun(runSeq);
-        if (isCurrentRun()) setLoading(false);
-        if (runQueryId && currentQueryIdRef.current === runQueryId) {
+        const retainRun = isCurrentRun() && (
+            rpcLostWithoutResultRef.current
+            || shouldRetainQueryEditorRun(executionLifecycleRef.current)
+        );
+        if (isCurrentRun() && !retainRun) setLoading(false);
+        if (runQueryId && currentQueryIdRef.current === runQueryId && !retainRun) {
             clearQueryId();
         }
     }
@@ -13468,6 +13522,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               {executionElapsedText}
             </span>
           </span>
+          {executionStatusText ? (
+            <span className="gn-query-execution-status-label" title={executionStatusText}>
+              {executionStatusText}
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -13494,6 +13553,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           activeResultKey={activeResultKey}
           isActive={isActive}
           loading={loading}
+          executionLifecycle={executionLifecycle}
           executionError={executionError}
           sqlLogCount={sqlLogCount}
           darkMode={darkMode}
