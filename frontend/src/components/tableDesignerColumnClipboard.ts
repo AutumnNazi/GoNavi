@@ -159,11 +159,17 @@ export const readTableDesignerColumnsClipboard = async (
   }
 };
 
+export type TableDesignerPrimaryKeyFields = {
+  key?: string;
+  extra?: string;
+  isAutoIncrement?: boolean;
+};
+
 export const clipboardColumnsHavePrimaryKey = (
-  columns: Array<Pick<TableDesignerClipboardColumn, 'key'>>,
+  columns: Array<Pick<TableDesignerPrimaryKeyFields, 'key'>>,
 ): boolean => columns.some((column) => column.key === 'PRI');
 
-export const stripPrimaryKeyFromClipboardColumns = <T extends TableDesignerClipboardColumn>(
+export const stripPrimaryKeyFromClipboardColumns = <T extends TableDesignerPrimaryKeyFields>(
   columns: T[],
 ): T[] => (
   columns.map((column) => {
