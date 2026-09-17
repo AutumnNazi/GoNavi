@@ -28,6 +28,7 @@ import {
     decodeDataGridColumnOrderDragPayload,
     hasDataGridColumnOrderDragPayload,
     moveDataGridColumnInVisibleOrder,
+    resolveDataGridDisplayColumnNames,
 } from './dataGridColumnOrder';
 import { ImportData, ExportDataWithOptions, ExportQueryWithOptions, ApplyChanges, PreviewChanges, DBGetColumns, DBGetIndexes, DBGetForeignKeys, DBShowCreateTable } from '../../wailsjs/go/app/App';
 import ImportPreviewModal from './ImportPreviewModal';
@@ -489,7 +490,6 @@ const DataGrid: React.FC<DataGridProps> = ({
 
   // --- Display Columns Order & Visibility Management ---
   const [allOrderedColumnNames, setAllOrderedColumnNames] = useState<string[]>([]);
-  const [displayColumnNames, setDisplayColumnNames] = useState<string[]>([]);
   const [localHiddenColumns, setLocalHiddenColumns] = useState<string[]>([]);
   const [columnSearchText, setColumnSearchText] = useState('');
   const [columnQuickFindText, setColumnQuickFindText] = useState('');
@@ -592,19 +592,15 @@ const DataGrid: React.FC<DataGridProps> = ({
       [pinnedLeftColumnNames],
   );
 
-  // Compute final display columns（固定列须连续靠左，否则 ant Table fixed 会错位）
-  useEffect(() => {
-      const hiddenSet = new Set(localHiddenColumns);
-      const visible = allOrderedColumnNames.filter((col) => !hiddenSet.has(col));
-      if (pinnedLeftColumnNames.length === 0) {
-          setDisplayColumnNames(visible);
-          return;
-      }
-      const pinnedSet = new Set(pinnedLeftColumnNames);
-      const pinnedVisible = pinnedLeftColumnNames.filter((col) => visible.includes(col));
-      const restVisible = visible.filter((col) => !pinnedSet.has(col));
-      setDisplayColumnNames([...pinnedVisible, ...restVisible]);
-  }, [allOrderedColumnNames, localHiddenColumns, pinnedLeftColumnNames]);
+  // The stored order is synchronized in an effect. Derive the current list
+  // from the incoming columns when that snapshot is stale so rows never render
+  // a selection/#-only frame while their real fields are already available.
+  const displayColumnNames = useMemo(() => resolveDataGridDisplayColumnNames({
+      visibleColumnNames,
+      orderedColumnNames: allOrderedColumnNames,
+      hiddenColumnNames: new Set(localHiddenColumns),
+      pinnedLeftColumnNames,
+  }), [allOrderedColumnNames, localHiddenColumns, pinnedLeftColumnNames, visibleColumnNames]);
 
   const displayOutputColumnNames = useMemo(
       () => resolveDataGridOutputColumnNames(
@@ -1031,7 +1027,12 @@ const DataGrid: React.FC<DataGridProps> = ({
       holderEl: HTMLElement | null;
       innerEl: HTMLElement | null;
       headerEl: HTMLElement | null;
-  }>({ tableContainer: null, holderEl: null, innerEl: null, headerEl: null });
+  }>({
+      tableContainer: null,
+      holderEl: null,
+      innerEl: null,
+      headerEl: null,
+  });
   const horizontalSyncSourceRef = useRef<'table' | 'external' | ''>('');
   const lastTableScrollLeftRef = useRef(0);
   const lastCommittedVirtualHorizontalOffsetRef = useRef(0);
@@ -3717,14 +3718,18 @@ const DataGrid: React.FC<DataGridProps> = ({
               paddingInline: 2,
               verticalAlign: 'middle' as const,
               width: rowNumberColumnWidth,
-              minWidth: 28,
+              minWidth: rowNumberColumnWidth,
+              maxWidth: rowNumberColumnWidth,
+              flex: `0 0 ${rowNumberColumnWidth}px`,
           },
       }),
       onCell: (record: Item, index?: number) => ({
           'data-grid-row-number-action': 'true',
           style: {
               width: rowNumberColumnWidth,
-              minWidth: 28,
+              minWidth: rowNumberColumnWidth,
+              maxWidth: rowNumberColumnWidth,
+              flex: `0 0 ${rowNumberColumnWidth}px`,
               padding: 0,
               textAlign: 'center' as const,
             },
@@ -4439,8 +4444,9 @@ const DataGrid: React.FC<DataGridProps> = ({
           totalWidth,
           tableViewportWidth,
           isMacLike,
+          stretchToViewport: mergedColumns.length > 0,
       });
-  }, [totalWidth, isMacLike, tableViewportWidth]);
+  }, [mergedColumns.length, totalWidth, isMacLike, tableViewportWidth]);
   const externalHorizontalScrollMetrics = useMemo(() => resolveExternalHorizontalScrollMetrics({
       tableScrollWidth: tableScrollX,
       tableViewportWidth,
@@ -4466,11 +4472,10 @@ const DataGrid: React.FC<DataGridProps> = ({
   const virtualListItemHeightFixed = !virtualEditingCellForRender;
   const virtualListItemNativeScrollbarControlled = isMacLike && virtualListItemHeightFixed;
   const virtualListItemHorizontalOffsetComposited = isMacLike;
-  // Mac keeps the row window virtualized, but leaves every column mounted so
-  // native trackpad scrolling never needs a React column-window commit.
+  // Wide tables virtualize columns on every platform. Keeping all cells
+  // mounted makes vertical scrolling scale with row count × field count.
   const virtualListItemColumnVirtual = enableVirtual
       && !virtualEditingCellForRender
-      && !isMacLike
       && shouldVirtualizeDataGridColumns(displayColumnNames.length);
   const tableComponents = useMemo(() => {
       const body: Record<string, any> = {};
@@ -4536,9 +4541,8 @@ const DataGrid: React.FC<DataGridProps> = ({
   /**
    * 虚拟表横滚视觉同步：
    * - Mac 表体：原生 holder.scrollLeft，触控板滚动交给合成线程
-   * - Mac 固定列：原生 sticky，不在滚动帧内写单元格样式
+   * - Mac 表头：用一层 translate 跟随原生滚动，固定表头由 CSS 变量补偿
    * - 其他平台：保留 marginLeft + 单 CSS 变量补偿
-   * - 表头：同步 scrollLeft，并在预览期间拦截 rc-table 的反向回写
    */
   const syncVirtualHorizontalVisualOffset = useCallback((tableContainer: HTMLElement, nextOffset: number) => {
       const { holderEl, innerEl, headerEl } = resolveVirtualHorizontalElements(tableContainer);
@@ -4551,6 +4555,7 @@ const DataGrid: React.FC<DataGridProps> = ({
       const currentOffset = virtualListItemHorizontalOffsetComposited
           ? Math.max(0, holderEl.scrollLeft)
           : Math.max(0, Math.abs(parseFloat(innerEl.style.marginLeft) || 0));
+      const headerScrollLeft = headerEl instanceof HTMLElement ? headerEl.scrollLeft : 0;
       if (virtualListItemHorizontalOffsetComposited) {
           // The browser owns the native horizontal scroll layer on Mac. A
           // post-commit guard would reapply an older React offset after the
@@ -4563,6 +4568,10 @@ const DataGrid: React.FC<DataGridProps> = ({
       }
 
       if (virtualListItemHorizontalOffsetComposited) {
+          const nextMaxScrollVar = `${maxScroll}px`;
+          if (tableContainer.style.getPropertyValue('--gn-datagrid-h-max') !== nextMaxScrollVar) {
+              tableContainer.style.setProperty('--gn-datagrid-h-max', nextMaxScrollVar);
+          }
           if (Math.abs(holderEl.scrollLeft - clampedOffset) > 0.5) {
               holderEl.scrollLeft = clampedOffset;
           }
@@ -4590,13 +4599,24 @@ const DataGrid: React.FC<DataGridProps> = ({
       }
 
       if (headerEl instanceof HTMLElement) {
-          headerEl.style.removeProperty('--gn-datagrid-h-scroll');
           const headerTable = headerEl.querySelector('table') as HTMLElement | null;
-          if (headerTable?.style.translate) {
-              headerTable.style.translate = '';
-          }
-          if (Math.abs(headerEl.scrollLeft - clampedOffset) > 1) {
-              headerEl.scrollLeft = clampedOffset;
+          if (virtualListItemHorizontalOffsetComposited) {
+              const nextHeaderScrollVar = `${clampedOffset}px`;
+              const nextHeaderTranslate = `${headerScrollLeft - clampedOffset}px 0`;
+              if (headerEl.style.getPropertyValue('--gn-datagrid-h-scroll') !== nextHeaderScrollVar) {
+                  headerEl.style.setProperty('--gn-datagrid-h-scroll', nextHeaderScrollVar);
+              }
+              if (headerTable && headerTable.style.translate !== nextHeaderTranslate) {
+                  headerTable.style.translate = nextHeaderTranslate;
+              }
+          } else {
+              headerEl.style.removeProperty('--gn-datagrid-h-scroll');
+              if (headerTable?.style.translate) {
+                  headerTable.style.translate = '';
+              }
+              if (Math.abs(headerScrollLeft - clampedOffset) > 1) {
+                  headerEl.scrollLeft = clampedOffset;
+              }
           }
       }
 
@@ -4694,7 +4714,12 @@ const DataGrid: React.FC<DataGridProps> = ({
           const tableContainer = tableContainerRef.current;
           if (!(tableContainer instanceof HTMLElement)) return;
 
-          virtualHorizontalElementsRef.current = { tableContainer: null, holderEl: null, innerEl: null, headerEl: null };
+          virtualHorizontalElementsRef.current = {
+              tableContainer: null,
+              holderEl: null,
+              innerEl: null,
+              headerEl: null,
+          };
           const externalScroll = externalHorizontalScrollRef.current;
           const nextLeft = Math.max(0, preferredLeft ?? externalScroll?.scrollLeft ?? lastTableScrollLeftRef.current);
           const applied = applyVirtualHorizontalOffset(tableContainer, nextLeft, { forceInternalScroll: true });
@@ -4764,7 +4789,6 @@ const DataGrid: React.FC<DataGridProps> = ({
           horizontalSyncSourceRef.current = '';
           return;
       }
-
       const nextScrollLeft = visual.clampedOffset;
       lastTableScrollLeftRef.current = nextScrollLeft;
       const externalScroll = externalHorizontalScrollRef.current;
@@ -5802,6 +5826,7 @@ const DataGrid: React.FC<DataGridProps> = ({
               && source?.classList.contains('ant-table-tbody-virtual-holder')
           ) {
               if (horizontalSyncSourceRef.current === 'external') return;
+              syncVirtualHorizontalVisualOffset(tableContainer, source.scrollLeft);
               scheduleNativeVirtualHorizontalScroll(tableContainer);
               return;
           }
@@ -5852,6 +5877,7 @@ const DataGrid: React.FC<DataGridProps> = ({
       pickTableToExternalSyncTargets,
       scheduleNativeVirtualHorizontalScroll,
       scheduleSyncExternalScrollFromTargets,
+      syncVirtualHorizontalVisualOffset,
       syncExternalScrollFromTargets,
       virtualListItemHorizontalOffsetComposited,
   ]);

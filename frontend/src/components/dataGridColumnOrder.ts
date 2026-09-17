@@ -55,3 +55,31 @@ export const moveDataGridColumnInVisibleOrder = (
     hiddenColumnNames.has(columnName) ? columnName : nextVisibleColumnNames[visibleIndex++]
   ));
 };
+
+export const resolveDataGridDisplayColumnNames = ({
+  visibleColumnNames,
+  orderedColumnNames,
+  hiddenColumnNames,
+  pinnedLeftColumnNames,
+}: {
+  visibleColumnNames: string[];
+  orderedColumnNames: string[];
+  hiddenColumnNames: ReadonlySet<string>;
+  pinnedLeftColumnNames: string[];
+}): string[] => {
+  const visibleSet = new Set(visibleColumnNames);
+  const orderedSet = new Set(orderedColumnNames);
+  const orderedSnapshotIsCurrent = orderedColumnNames.length === visibleColumnNames.length
+    && orderedSet.size === visibleSet.size
+    && orderedColumnNames.every((columnName) => visibleSet.has(columnName));
+  const currentOrder = orderedSnapshotIsCurrent ? orderedColumnNames : visibleColumnNames;
+  const visible = currentOrder.filter((columnName) => !hiddenColumnNames.has(columnName));
+  if (pinnedLeftColumnNames.length === 0) {
+    return visible;
+  }
+
+  const visibleColumns = new Set(visible);
+  const pinnedVisible = pinnedLeftColumnNames.filter((columnName) => visibleColumns.has(columnName));
+  const pinnedSet = new Set(pinnedVisible);
+  return [...pinnedVisible, ...visible.filter((columnName) => !pinnedSet.has(columnName))];
+};

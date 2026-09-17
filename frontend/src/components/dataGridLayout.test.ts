@@ -37,6 +37,12 @@ describe('dataGridLayout helpers', () => {
 
   it('keeps scroll width aligned with viewport or content width', () => {
     expect(calculateVirtualTableScrollX({ totalWidth: 646, tableViewportWidth: 1200, isMacLike: false })).toBe(1200);
+    expect(calculateVirtualTableScrollX({
+      totalWidth: 82,
+      tableViewportWidth: 1200,
+      isMacLike: true,
+      stretchToViewport: false,
+    })).toBe(82);
     expect(calculateVirtualTableScrollX({ totalWidth: 646, tableViewportWidth: 0, isMacLike: false })).toBe(646);
     expect(calculateVirtualTableScrollX({ totalWidth: 1200, tableViewportWidth: 800, isMacLike: true })).toBe(1202);
   });

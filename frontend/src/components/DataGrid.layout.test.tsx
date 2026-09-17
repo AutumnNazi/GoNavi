@@ -1650,6 +1650,8 @@ describe('DataGrid layout', () => {
       expect(markup).toContain('vertical-align:middle');
       expect(markup).toContain('data-grid-row-number="true"');
       expect(markup).toContain('data-grid-row-number-action="true"');
+      expect(markup).toContain('data-col-name="id"');
+      expect(markup).toContain('data-col-name="name"');
       expect(markup).toContain(`title="${zhRowNumberHint}"`);
       expect(markup).toContain(
         `<span class="data-grid-row-number" data-grid-row-number="true" title="${zhRowNumberHint}"`,
@@ -1658,6 +1660,9 @@ describe('DataGrid layout', () => {
       expect(markup).toContain('width:100%');
       expect(markup).toContain('height:100%');
       expect(markup).toContain('width:36');
+      expect(markup).toContain('min-width:36');
+      expect(markup).toContain('max-width:36');
+      expect(markup).toContain('flex:0 0 36px');
       // ant Table fixed 列会渲染 fix 相关 class
       expect(markup.includes('ant-table-cell-fix') || markup.includes('fixed')).toBe(true);
       expect(markup).toContain('51');
@@ -2046,7 +2051,7 @@ describe('DataGrid layout', () => {
       source.indexOf('const handleExternalHorizontalScrollPointerDown = useCallback'),
     );
 
-    expect(virtualColumnSource).toContain('&& !isMacLike');
+    expect(virtualColumnSource).not.toContain('&& !isMacLike');
     expect(virtualColumnSource).toContain('&& shouldVirtualizeDataGridColumns(displayColumnNames.length);');
     expect(visualSyncSource).toContain('virtualHorizontalPostCommitGuardRef.current?.cancel();');
     expect(visualSyncSource).toContain('virtualHorizontalPreviewActiveRef.current = false;');
@@ -2054,11 +2059,51 @@ describe('DataGrid layout', () => {
     expect(externalScrollSource).toContain("horizontalSyncSourceRef.current === 'table'");
   });
 
+  it('keeps the macOS header on one transform path that follows every native scroll', () => {
+    const source = readDataGridSource();
+    const shellSource = readDataGridShellSource();
+    const css = buildDataGridCssText({
+      darkMode: false,
+      densityParams: { dataFontSize: 12 },
+      gridId: 'mac-scroll-grid',
+      floatingScrollbarHeight: 8,
+    });
+    const visualSyncSource = source.slice(
+      source.indexOf('const syncVirtualHorizontalVisualOffset = useCallback'),
+      source.indexOf('virtualHorizontalPostCommitFrameHandlerRef.current ='),
+    );
+    const nativeScrollHandlerIndex = source.indexOf('const handleTargetScroll = (event: Event)');
+    const nativeScrollBindingSource = source.slice(
+      source.lastIndexOf('useEffect(() => {', nativeScrollHandlerIndex),
+      source.indexOf('const paginationControlTotal = useMemo', nativeScrollHandlerIndex),
+    );
+
+    const nativeScrollFlushSource = source.slice(
+      source.indexOf('const flushNativeVirtualHorizontalScroll = useCallback'),
+      source.indexOf('const scheduleNativeVirtualHorizontalScroll = useCallback'),
+    );
+
+    expect(shellSource).toContain("data-horizontal-scroll-sync={virtualListItemHorizontalOffsetComposited ? 'transform' : undefined}");
+    expect(css).not.toContain('[data-horizontal-scroll-sync="timeline"]');
+    expect(css).toContain('[data-horizontal-scroll-sync="transform"] .ant-table-header > table');
+    expect(css).toContain('translate: var(--gn-datagrid-h-scroll, 0px) 0 !important;');
+    expect(css).not.toContain('animation-timeline:');
+    expect(source).not.toContain('resolveDataGridHorizontalSyncMode');
+    expect(visualSyncSource).toContain("headerEl.style.setProperty('--gn-datagrid-h-scroll', nextHeaderScrollVar)");
+    expect(visualSyncSource).toContain('headerTable.style.translate = nextHeaderTranslate');
+    expect(visualSyncSource).not.toContain("cell.style.setProperty('transform'");
+    expect(nativeScrollBindingSource.indexOf('syncVirtualHorizontalVisualOffset(tableContainer, source.scrollLeft)'))
+      .toBeLessThan(nativeScrollBindingSource.indexOf('scheduleNativeVirtualHorizontalScroll(tableContainer)'));
+    expect(nativeScrollFlushSource).toContain('const visual = syncVirtualHorizontalVisualOffset(tableContainer, holderEl.scrollLeft);');
+    expect(nativeScrollFlushSource).not.toContain('timeline');
+  });
+
   it('keeps overflowing table column references stable across viewport-only resizes', () => {
     const source = readDataGridSource();
 
     expect(source).toContain('const baseTableColumns = useMemo(() => (');
     expect(source).toContain('columns: baseTableColumns,');
+    expect(source).toContain('stretchToViewport: mergedColumns.length > 0');
   });
 
   it('keeps DataGrid scroll synchronization throttled to animation frames', () => {

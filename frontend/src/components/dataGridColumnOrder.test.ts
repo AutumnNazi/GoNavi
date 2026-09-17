@@ -6,6 +6,7 @@ import {
   encodeDataGridColumnOrderDragPayload,
   hasDataGridColumnOrderDragPayload,
   moveDataGridColumnInVisibleOrder,
+  resolveDataGridDisplayColumnNames,
   shouldBypassDndKitForNativeColumnHeaderDrag,
 } from './dataGridColumnOrder';
 
@@ -39,5 +40,30 @@ describe('dataGridColumnOrder helpers', () => {
     expect(shouldBypassDndKitForNativeColumnHeaderDrag('mouse')).toBe(true);
     expect(shouldBypassDndKitForNativeColumnHeaderDrag('touch')).toBe(false);
     expect(shouldBypassDndKitForNativeColumnHeaderDrag('pen')).toBe(false);
+  });
+
+  it('uses incoming columns immediately while a previous ordered snapshot is stale', () => {
+    expect(resolveDataGridDisplayColumnNames({
+      visibleColumnNames: ['id', 'name', 'status'],
+      orderedColumnNames: [],
+      hiddenColumnNames: new Set(),
+      pinnedLeftColumnNames: ['status'],
+    })).toEqual(['status', 'id', 'name']);
+
+    expect(resolveDataGridDisplayColumnNames({
+      visibleColumnNames: ['id', 'name'],
+      orderedColumnNames: ['legacy_id'],
+      hiddenColumnNames: new Set(),
+      pinnedLeftColumnNames: [],
+    })).toEqual(['id', 'name']);
+  });
+
+  it('keeps a current manual order while applying hidden and pinned columns', () => {
+    expect(resolveDataGridDisplayColumnNames({
+      visibleColumnNames: ['id', 'name', 'status', 'note'],
+      orderedColumnNames: ['name', 'id', 'note', 'status'],
+      hiddenColumnNames: new Set(['note']),
+      pinnedLeftColumnNames: ['status'],
+    })).toEqual(['status', 'name', 'id']);
   });
 });

@@ -528,7 +528,9 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
   const handleTableScrollSnapshotChange = useCallback((snapshot: ViewerScrollSnapshot) => {
     scrollSnapshotRef.current = snapshot;
     pendingScrollSnapshotPersistRef.current = snapshot;
-    if (scrollSnapshotPersistTimerRef.current !== null) return;
+    if (scrollSnapshotPersistTimerRef.current !== null) {
+      window.clearTimeout(scrollSnapshotPersistTimerRef.current);
+    }
     scrollSnapshotPersistTimerRef.current = window.setTimeout(() => {
       scrollSnapshotPersistTimerRef.current = null;
       const pendingScrollSnapshot = pendingScrollSnapshotPersistRef.current;

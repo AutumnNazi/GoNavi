@@ -135,10 +135,10 @@ export const calculateFixedVirtualRange = ({
       : 0;
   const clampedScrollTop = Math.max(0, Math.min(maxScrollTop, requestedScrollTop));
 
-  // Native scrolling can advance before React commits the next virtual
-  // window. Keep at least one viewport mounted on each side so a large wheel
-  // delta cannot expose the unmounted filler between two React frames.
-  const overscanRows = Math.max(6, Math.ceil(viewport / height));
+  // Native scrolling can advance multiple screens before WebKit dispatches
+  // the next main-thread event. Keep two viewports mounted on each side so a
+  // fast trackpad fling cannot expose the unmounted filler.
+  const overscanRows = Math.max(8, Math.ceil(viewport / height) * 2);
   const start = Math.min(count - 1, Math.max(0, Math.ceil(clampedScrollTop / height) - overscanRows));
   const end = Math.min(count - 1, Math.floor((clampedScrollTop + viewport) / height) + overscanRows);
 

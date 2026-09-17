@@ -8,6 +8,7 @@ export interface VirtualTableScrollXOptions {
   totalWidth: number;
   tableViewportWidth: number;
   isMacLike: boolean;
+  stretchToViewport?: boolean;
 }
 
 export interface DataGridHorizontalWheelIntentOptions {
@@ -82,11 +83,12 @@ export const calculateVirtualTableScrollX = ({
   totalWidth,
   tableViewportWidth,
   isMacLike,
+  stretchToViewport = true,
 }: VirtualTableScrollXOptions): number => {
   const safeTotalWidth = Math.max(0, Math.ceil(totalWidth));
   const safeViewportWidth = Math.max(0, Math.floor(tableViewportWidth));
 
-  if (safeViewportWidth > 0 && safeTotalWidth < safeViewportWidth) {
+  if (stretchToViewport && safeViewportWidth > 0 && safeTotalWidth < safeViewportWidth) {
     return safeViewportWidth;
   }
 

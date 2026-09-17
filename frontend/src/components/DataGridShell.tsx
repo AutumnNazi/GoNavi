@@ -460,6 +460,7 @@ const renderDataTableView = () => (
       <div
           ref={tableContainerRef}
           className={`gn-v2-data-grid-table-shell gn-v2-data-grid-table-wrap data-grid-table-wrap${horizontalScrollVisible ? ' data-grid-table-wrap-external-active' : ''}`}
+          data-horizontal-scroll-sync={virtualListItemHorizontalOffsetComposited ? 'transform' : undefined}
           onClickCapture={enableVirtual ? handleVirtualTableClickCapture : undefined}
           onDoubleClickCapture={enableVirtual ? handleVirtualTableDoubleClickCapture : undefined}
           onContextMenuCapture={enableVirtual ? handleVirtualTableContextMenuCapture : undefined}

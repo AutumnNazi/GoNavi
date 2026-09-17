@@ -329,6 +329,34 @@ export const buildDataGridCssText = ({
                     background-clip: padding-box !important;
                     overflow: hidden !important;
                 }
+                .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="transform"] .ant-table-header > table {
+                    will-change: translate;
+                }
+                .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="transform"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-left,
+                .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="transform"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-left-first,
+                .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="transform"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-left-last,
+                .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="transform"] .ant-table-header .ant-table-thead > tr > th.ant-table-selection-column,
+                .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="transform"] .ant-table-header .ant-table-thead > tr > th.data-grid-row-number-cell,
+                .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="transform"] .ant-table-header thead > tr > th.ant-table-cell-fix-left,
+                .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="transform"] .ant-table-header thead > tr > th.ant-table-selection-column,
+                .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="transform"] .ant-table-header thead > tr > th.data-grid-row-number-cell {
+                    position: relative !important;
+                    left: auto !important;
+                    right: auto !important;
+                    isolation: auto;
+                    translate: var(--gn-datagrid-h-scroll, 0px) 0 !important;
+                    will-change: translate;
+                }
+                .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="transform"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-right,
+                .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="transform"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-right-first,
+                .${gridId} .data-grid-table-wrap[data-horizontal-scroll-sync="transform"] .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-right-last {
+                    position: relative !important;
+                    left: auto !important;
+                    right: auto !important;
+                    isolation: auto;
+                    translate: calc(var(--gn-datagrid-h-scroll, 0px) - var(--gn-datagrid-h-max, 0px)) 0 !important;
+                    will-change: translate;
+                }
                 .${gridId} .ant-table-tbody > tr > td.ant-table-cell-fix-left,
                 .${gridId} .ant-table-tbody > tr > td.ant-table-cell-fix-right,
                 .${gridId} .ant-table-tbody > tr > td.ant-table-selection-column {

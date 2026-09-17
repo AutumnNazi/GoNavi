@@ -100,6 +100,64 @@ const createRows = (count: number) => Array.from({ length: count }, (_, i) => ({
 
 describe('DataViewer safe editing locator', () => {
 
+  it('persists only the latest table scroll snapshot after scrolling becomes idle', async () => {
+    vi.useFakeTimers();
+    const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        clearTimeout: globalThis.clearTimeout,
+        setTimeout: globalThis.setTimeout,
+      },
+    });
+    const tab = createTab({ id: 'tab-scroll-snapshot-idle', initialViewMode: 'fields' });
+    let firstRenderer: ReactTestRenderer | null = null;
+    let beforeIdleRenderer: ReactTestRenderer | null = null;
+    let afterIdleRenderer: ReactTestRenderer | null = null;
+
+    try {
+      await act(async () => {
+        firstRenderer = create(<DataViewer tab={tab} />);
+        await Promise.resolve();
+      });
+      const onScrollSnapshotChange = dataGridState.latestProps.onScrollSnapshotChange;
+
+      act(() => {
+        onScrollSnapshotChange({ top: 40, left: 4 });
+        vi.advanceTimersByTime(100);
+        onScrollSnapshotChange({ top: 120, left: 12 });
+        vi.advanceTimersByTime(61);
+      });
+
+      await act(async () => {
+        beforeIdleRenderer = create(<DataViewer tab={tab} />);
+        await Promise.resolve();
+      });
+      expect(dataGridState.latestProps.scrollSnapshot).toEqual({ top: 0, left: 0 });
+
+      act(() => {
+        vi.advanceTimersByTime(99);
+      });
+      await act(async () => {
+        afterIdleRenderer = create(<DataViewer tab={tab} />);
+        await Promise.resolve();
+      });
+      expect(dataGridState.latestProps.scrollSnapshot).toEqual({ top: 120, left: 12 });
+    } finally {
+      act(() => {
+        firstRenderer?.unmount();
+        beforeIdleRenderer?.unmount();
+        afterIdleRenderer?.unmount();
+      });
+      if (windowDescriptor) {
+        Object.defineProperty(globalThis, 'window', windowDescriptor);
+      } else {
+        Reflect.deleteProperty(globalThis, 'window');
+      }
+      vi.useRealTimers();
+    }
+  });
+
   const renderAndReload = async (tab: TabData = createTab()) => {
     let renderer: ReactTestRenderer;
     await act(async () => {

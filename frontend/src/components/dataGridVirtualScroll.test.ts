@@ -126,9 +126,9 @@ describe('calculateFixedVirtualRange', () => {
       scrollTop: 14_000_001,
     })).toEqual({
       scrollHeight: 28_000_000,
-      start: 499_991,
-      end: 500_020,
-      offset: 13_999_748,
+      start: 499_981,
+      end: 500_030,
+      offset: 13_999_468,
     });
   });
 
@@ -141,7 +141,7 @@ describe('calculateFixedVirtualRange', () => {
     })).toEqual({
       scrollHeight: 2_800,
       start: 0,
-      end: 21,
+      end: 31,
       offset: 0,
     });
   });
@@ -161,13 +161,13 @@ describe('calculateFixedVirtualRange', () => {
       scrollTop: Number.POSITIVE_INFINITY,
     })).toEqual({
       scrollHeight: 2_800,
-      start: 80,
+      start: 70,
       end: 99,
-      offset: 2_240,
+      offset: 1_960,
     });
   });
 
-  it('extends the dependency visible range by one viewport for native scroll coverage', () => {
+  it('extends the dependency visible range by two viewports for native scroll coverage', () => {
     const itemCount = 40;
     const itemHeight = 7;
     const viewportHeight = 70;
@@ -179,7 +179,7 @@ describe('calculateFixedVirtualRange', () => {
         viewportHeight,
         scrollTop,
       });
-      const overscanRows = Math.max(6, Math.ceil(viewportHeight / itemHeight));
+      const overscanRows = Math.max(8, Math.ceil(viewportHeight / itemHeight) * 2);
       expect(calculateFixedVirtualRange({
         itemCount,
         itemHeight,
@@ -206,6 +206,19 @@ describe('calculateFixedVirtualRange', () => {
     const jumpedViewportBottom = (15 * itemHeight) + viewportHeight;
 
     expect((initialRange.end + 1) * itemHeight).toBeGreaterThanOrEqual(jumpedViewportBottom);
+  });
+
+  it('keeps a two-screen native jump covered before React commits', () => {
+    const itemHeight = 28;
+    const viewportHeight = 840;
+    const initialRange = calculateFixedVirtualRange({
+      itemCount: 1_000,
+      itemHeight,
+      viewportHeight,
+      scrollTop: 0,
+    });
+
+    expect((initialRange.end + 1) * itemHeight).toBeGreaterThanOrEqual(viewportHeight * 3);
   });
 
   it('keeps the recorded reverse jump covered while React still has the old range', () => {

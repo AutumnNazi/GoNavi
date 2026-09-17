@@ -76,7 +76,7 @@ index c517366..a6ddca3 100644
      fullHeight?: boolean;
      itemKey: React.Key | ((item: T) => React.Key);
 diff --git a/node_modules/rc-virtual-list/es/List.js b/node_modules/rc-virtual-list/es/List.js
-index 2926056..8094502 100644
+index 2926056..86448c9 100644
 --- a/node_modules/rc-virtual-list/es/List.js
 +++ b/node_modules/rc-virtual-list/es/List.js
 @@ -4,7 +4,7 @@ import _objectSpread from "@babel/runtime/helpers/esm/objectSpread2";
@@ -176,9 +176,9 @@ index 2926056..8094502 100644
 +        }
 +        var fixedMaxScrollTop = Math.max(0, fixedScrollHeight - height);
 +        var fixedOffsetTop = Math.max(0, Math.min(fixedMaxScrollTop, offsetTop));
-+        // Keep one viewport mounted on each side so native compositor
-+        // scrolling can move before React commits the next window.
-+        var fixedOverscanRows = Math.max(6, Math.ceil(height / itemHeight));
++        // Keep two viewports mounted on each side so a fast WebKit trackpad
++        // fling cannot expose the filler before React commits the next window.
++        var fixedOverscanRows = Math.max(8, Math.ceil(height / itemHeight) * 2);
 +        var fixedStartIndex = Math.min(fixedDataLen - 1, Math.max(0, Math.ceil(fixedOffsetTop / itemHeight) - fixedOverscanRows));
 +        var fixedEndIndex = Math.min(fixedDataLen - 1, Math.floor((fixedOffsetTop + height) / itemHeight) + fixedOverscanRows);
 +        return {
@@ -748,7 +748,7 @@ index c517366..a6ddca3 100644
      fullHeight?: boolean;
      itemKey: React.Key | ((item: T) => React.Key);
 diff --git a/node_modules/rc-virtual-list/lib/List.js b/node_modules/rc-virtual-list/lib/List.js
-index f0cb64d..680e403 100644
+index f0cb64d..0a159fc 100644
 --- a/node_modules/rc-virtual-list/lib/List.js
 +++ b/node_modules/rc-virtual-list/lib/List.js
 @@ -32,7 +32,7 @@ var _useScrollDrag = _interopRequireDefault(require("./hooks/useScrollDrag"));
@@ -848,9 +848,9 @@ index f0cb64d..680e403 100644
 +        }
 +        var fixedMaxScrollTop = Math.max(0, fixedScrollHeight - height);
 +        var fixedOffsetTop = Math.max(0, Math.min(fixedMaxScrollTop, offsetTop));
-+        // Keep one viewport mounted on each side so native compositor
-+        // scrolling can move before React commits the next window.
-+        var fixedOverscanRows = Math.max(6, Math.ceil(height / itemHeight));
++        // Keep two viewports mounted on each side so a fast WebKit trackpad
++        // fling cannot expose the filler before React commits the next window.
++        var fixedOverscanRows = Math.max(8, Math.ceil(height / itemHeight) * 2);
 +        var fixedStartIndex = Math.min(fixedDataLen - 1, Math.max(0, Math.ceil(fixedOffsetTop / itemHeight) - fixedOverscanRows));
 +        var fixedEndIndex = Math.min(fixedDataLen - 1, Math.floor((fixedOffsetTop + height) / itemHeight) + fixedOverscanRows);
 +        return {
