@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { readFileSync } from 'node:fs';
+
 import {
     buildQueryEditorTableSuggestionLabel,
     mergeCompletionTableComments,
@@ -12,6 +14,12 @@ describe('query editor completion policy', () => {
     it('does not wait for a table list that is already in memory', () => {
         expect(shouldAwaitLazyTablesForTableCompletion(true)).toBe(false);
         expect(shouldAwaitLazyTablesForTableCompletion(false)).toBe(true);
+    });
+
+    it('keeps FROM completion off the table-comment RPC once the current database already has tables', () => {
+        const editorSource = readFileSync(new URL('../QueryEditor.tsx', import.meta.url), 'utf8');
+        expect(editorSource).toContain('shouldAwaitLazyTablesForTableCompletion(');
+        expect(editorSource).not.toContain('currentSharedTables.some((table) => !normalizeCommentText(table.comment))');
     });
 
     it('applies newly loaded table comments without rewriting unchanged rows', () => {
