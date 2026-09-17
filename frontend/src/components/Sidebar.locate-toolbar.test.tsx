@@ -952,9 +952,10 @@ describe('Sidebar locate toolbar', () => {
 
   it('reveals command-search objects with an exact-key centered tree scroll', () => {
     const source = readSourceFile('./Sidebar.tsx');
+    const scrollSource = readSourceFile('./sidebar/sidebarTreeScrollRequest.ts');
 
     expect(source).toContain("querySelectorAll<HTMLElement>('[data-sidebar-node-key]')");
-    expect(source).toMatch(/scrollIntoView\?\.\(\{\s*block:\s*request\.scrollBlock,\s*inline:\s*'nearest'/s);
+    expect(scrollSource).toMatch(/scrollIntoView\?\.\(\{\s*block:\s*request\.scrollBlock,\s*inline:\s*'nearest'/s);
     expect(source).toContain("scrollSidebarTreeToKey(targetKey, 'center')");
     expect(source).toContain("setV2ExplorerFilter('all')");
   });

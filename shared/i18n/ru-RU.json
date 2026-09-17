@@ -10623,5 +10623,6 @@
   "app.connection_package.excel.column.use_ssh": "Использовать SSH",
   "app.connection_package.excel.column.ssh_port": "Порт SSH",
   "app.connection_package.excel.column.connection_params": "Параметры подключения",
-  "app.connection_package.excel.column.remark": "Примечание"
+  "app.connection_package.excel.column.remark": "Примечание",
+  "sidebar.message.locate_failed": "Не удалось найти объект: {{detail}}"
 }

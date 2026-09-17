@@ -10623,5 +10623,6 @@
   "app.connection_package.excel.column.use_ssh": "SSH verwenden",
   "app.connection_package.excel.column.ssh_port": "SSH-Port",
   "app.connection_package.excel.column.connection_params": "Verbindungsparameter",
-  "app.connection_package.excel.column.remark": "Bemerkung"
+  "app.connection_package.excel.column.remark": "Bemerkung",
+  "sidebar.message.locate_failed": "Lokalisieren fehlgeschlagen: {{detail}}"
 }

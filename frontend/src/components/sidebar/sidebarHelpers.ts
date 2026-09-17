@@ -307,7 +307,7 @@ export const resolveV2ObjectGroupTitle = (
  * 优先级：dataRef.tableName > dataRef.viewName > dataRef.eventName > title。
  */
 export const resolveSidebarTableNameForCopy = (
-  node: Pick<SidebarNodeLike, 'title' | 'dataRef'> | null | undefined,
+  node: Pick<SidebarNodeLike, 'dataRef'> & { title?: unknown } | null | undefined,
 ): string => {
   return String(
     node?.dataRef?.messageObjectName
@@ -338,7 +338,7 @@ const SIDEBAR_TITLEBAR_OBJECT_TYPES = new Set([
 
 /** Extracts the selected object's own name for compact context displays. */
 export const resolveSidebarTitlebarObjectName = (
-  node: Pick<SidebarNodeLike, 'title' | 'type' | 'dataRef'> | null | undefined,
+  node: Pick<SidebarNodeLike, 'type' | 'dataRef'> & { title?: unknown } | null | undefined,
 ): string => {
   // Folder, schema, and namespace rows carry a display title too, but they
   // are database context rather than a selected table/object. Only mirror

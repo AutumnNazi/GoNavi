@@ -141,6 +141,75 @@ describe('useSidebarCommandSearchRunner title bar context', () => {
       .toBeLessThan(loadDatabases.mock.invocationCallOrder[0]);
   });
 
+  it('expands the host group immediately when selecting a connection from the rail', async () => {
+    const mergeExpandedTreeKeys = vi.fn();
+    const loadDatabases = vi.fn().mockResolvedValue(undefined);
+    let runCommandSearchItem: ReturnType<typeof useSidebarCommandSearchRunner>['runCommandSearchItem'] | undefined;
+    const connection = {
+      id: 'conn-kb',
+      name: 'KingBase',
+      config: { type: 'kingbase', host: '127.0.0.1', port: 54321 },
+    } as any;
+    const connectionNode = {
+      key: connection.id,
+      title: connection.name,
+      type: 'connection' as const,
+      dataRef: connection,
+    };
+    const groupedTree = [{
+      key: 'group-lab',
+      title: 'Lab',
+      type: 'tag' as const,
+      children: [connectionNode],
+    }];
+    const item: V2CommandSearchItem = {
+      key: 'connection-conn-kb',
+      kind: 'node',
+      title: connection.name,
+      meta: 'Host',
+      icon: null,
+      node: connectionNode,
+    };
+
+    const Harness = () => {
+      ({ runCommandSearchItem } = useSidebarCommandSearchRunner({
+        activeContext: null,
+        activeTab: null,
+        addTab: vi.fn(),
+        clearStaleHostStateOnSelection: vi.fn(),
+        closeV2CommandSearch: vi.fn(),
+        commandSearchFlatItems: [],
+        connectionIds: ['conn-kb'],
+        queryCapableConnectionIds: new Set(),
+        findTreeNodeByKeyRef: { current: () => connectionNode },
+        locateObjectInSidebar: vi.fn(),
+        loadDatabases,
+        mergeExpandedTreeKeys,
+        onDoubleClick: vi.fn(),
+        revealCommandSearchNode: vi.fn(),
+        scrollSidebarTreeToKey: vi.fn(),
+        selectedNodesRef: { current: [] },
+        setActiveContext: vi.fn(),
+        setSelectedKeys: vi.fn(),
+        setV2CommandActiveIndex: vi.fn(),
+        treeDataRef: { current: groupedTree },
+        v2CommandActiveIndex: 0,
+      }));
+      return null;
+    };
+
+    act(() => {
+      renderer = create(<Harness />);
+    });
+    await act(async () => {
+      runCommandSearchItem?.(item);
+      await Promise.resolve();
+    });
+
+    expect(mergeExpandedTreeKeys).toHaveBeenCalledWith(['group-lab', 'conn-kb']);
+    expect(loadDatabases).toHaveBeenCalledWith(connectionNode);
+  });
+
   it('reveals and locates a table in the sidebar before opening it', () => {
     const revealCommandSearchNode = vi.fn();
     const locateObjectInSidebar = vi.fn().mockResolvedValue(undefined);

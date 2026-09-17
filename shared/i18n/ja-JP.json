@@ -10623,5 +10623,6 @@
   "app.connection_package.excel.column.use_ssh": "SSH を使用",
   "app.connection_package.excel.column.ssh_port": "SSH ポート",
   "app.connection_package.excel.column.connection_params": "接続パラメータ",
-  "app.connection_package.excel.column.remark": "備考"
+  "app.connection_package.excel.column.remark": "備考",
+  "sidebar.message.locate_failed": "位置特定に失敗しました：{{detail}}"
 }

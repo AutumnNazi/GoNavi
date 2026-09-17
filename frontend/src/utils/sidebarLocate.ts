@@ -433,6 +433,18 @@ export const findSidebarNodePathByKey = (
   return null;
 };
 
+export const collectSidebarLocateExpandKeys = (
+  nodes: SidebarLocateTreeNodeLike[],
+  targetKey: string,
+  options?: { includeSelf?: boolean },
+): string[] => {
+  const path = findSidebarNodePathByKey(nodes, targetKey);
+  if (!path || path.length === 0) {
+    return [targetKey];
+  }
+  return options?.includeSelf === false ? path.slice(0, -1) : path;
+};
+
 const matchesLocateObjectName = (
   target: SidebarLocateTarget,
   nodeObjectName: string,

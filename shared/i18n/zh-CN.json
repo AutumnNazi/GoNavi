@@ -10623,5 +10623,6 @@
   "app.connection_package.excel.column.use_ssh": "使用 SSH",
   "app.connection_package.excel.column.ssh_port": "SSH 端口",
   "app.connection_package.excel.column.connection_params": "连接参数",
-  "app.connection_package.excel.column.remark": "备注"
+  "app.connection_package.excel.column.remark": "备注",
+  "sidebar.message.locate_failed": "定位失败：{{detail}}"
 }
