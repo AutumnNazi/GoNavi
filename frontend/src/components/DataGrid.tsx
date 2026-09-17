@@ -62,6 +62,7 @@ import {
     resolveDataGridHorizontalWheelDelta,
     resolveNativeHorizontalWheelScrollLeft,
     resolveExternalHorizontalScrollMetrics,
+    resolveVirtualHorizontalMaxScroll,
     shouldCommitVirtualHorizontalRange,
     shouldLetNativeHorizontalWheelPass,
 } from './dataGridLayout';
@@ -1596,22 +1597,23 @@ const DataGrid: React.FC<DataGridProps> = ({
       ));
       // 普通表格可通过 body 底部内边距避开悬浮横向滚动条；
       // 但虚拟表格的内部横向滚动轨道会直接覆盖在可视区底部，需要同时从 y 高度里扣掉安全区。
-      const nextBodyBottomPadding = calculateTableBodyBottomPadding({
+      // Windows 使用原生滚动条占位，不再为悬浮条预留底部空间。
+      const nextBodyBottomPadding = isWindowsLike ? 0 : calculateTableBodyBottomPadding({
           hasHorizontalOverflow,
           floatingScrollbarHeight,
           floatingScrollbarGap,
       });
       setTableBodyBottomPadding(nextBodyBottomPadding);
       const extraBottom = 2;
-      const virtualScrollbarViewportReserve = hasHorizontalOverflow && !!virtualScrollbarEl
-          ? Math.ceil(virtualScrollbarEl.getBoundingClientRect().height || (floatingScrollbarHeight + floatingScrollbarGap + 4))
-          : 0;
+      const virtualScrollbarViewportReserve = isWindowsLike || !hasHorizontalOverflow || !virtualScrollbarEl
+          ? 0
+          : Math.ceil(virtualScrollbarEl.getBoundingClientRect().height || (floatingScrollbarHeight + floatingScrollbarGap + 4));
       const nextHeight = Math.max(
           100,
           Math.floor(height - headerHeight - paginationHeight - extraBottom - virtualScrollbarViewportReserve)
       );
       setTableHeight(nextHeight);
-  }, [floatingScrollbarGap, floatingScrollbarHeight]);
+  }, [floatingScrollbarGap, floatingScrollbarHeight, isWindowsLike]);
 
   useEffect(() => {
       const el = containerRef.current;
@@ -4446,9 +4448,10 @@ const DataGrid: React.FC<DataGridProps> = ({
           totalWidth,
           tableViewportWidth,
           isMacLike,
+          nativeHorizontalScroll: isMacLike || isWindowsLike,
           stretchToViewport: mergedColumns.length > 0,
       });
-  }, [mergedColumns.length, totalWidth, isMacLike, tableViewportWidth]);
+  }, [mergedColumns.length, totalWidth, isMacLike, isWindowsLike, tableViewportWidth]);
   const externalHorizontalScrollMetrics = useMemo(() => resolveExternalHorizontalScrollMetrics({
       tableScrollWidth: tableScrollX,
       tableViewportWidth,
@@ -4464,7 +4467,7 @@ const DataGrid: React.FC<DataGridProps> = ({
       tableScrollX,
       tableViewportWidth,
   ]);
-  const horizontalScrollVisible = isTableSurfaceActive && externalHorizontalScrollMetrics.visible;
+  const horizontalScrollVisible = isTableSurfaceActive && !isWindowsLike && externalHorizontalScrollMetrics.visible;
   const horizontalScrollWidth = externalHorizontalScrollMetrics.innerWidth;
   const tableScrollConfig = useMemo(() => ({ x: tableScrollX, y: tableHeight }), [tableScrollX, tableHeight]);
   // V2 data rows have a CSS-enforced 28px height. Entering fixed mode on the
@@ -4473,7 +4476,7 @@ const DataGrid: React.FC<DataGridProps> = ({
   const virtualListItemHeight = Math.max(1, 28 * effectiveUiScale);
   const virtualListItemHeightFixed = !virtualEditingCellForRender;
   const virtualListItemNativeScrollbarControlled = isMacLike && virtualListItemHeightFixed;
-  const virtualListItemHorizontalOffsetComposited = isMacLike;
+  const virtualListItemHorizontalOffsetComposited = isMacLike || isWindowsLike;
   // Windows 快速横滚时保持所有列已挂载，避免列窗口提交晚一帧。
   const virtualListItemColumnVirtual = enableVirtual
       && !virtualEditingCellForRender
@@ -4552,7 +4555,12 @@ const DataGrid: React.FC<DataGridProps> = ({
           return null;
       }
 
-      const maxScroll = Math.max(0, tableScrollX - holderEl.clientWidth);
+      const maxScroll = resolveVirtualHorizontalMaxScroll({
+          tableScrollX,
+          clientWidth: holderEl.clientWidth,
+          scrollWidth: holderEl.scrollWidth,
+          useNativeScroll: virtualListItemHorizontalOffsetComposited,
+      });
       const clampedOffset = Math.max(0, Math.min(maxScroll, nextOffset));
       const currentOffset = virtualListItemHorizontalOffsetComposited
           ? Math.max(0, holderEl.scrollLeft)
@@ -4574,7 +4582,8 @@ const DataGrid: React.FC<DataGridProps> = ({
           if (tableContainer.style.getPropertyValue('--gn-datagrid-h-max') !== nextMaxScrollVar) {
               tableContainer.style.setProperty('--gn-datagrid-h-max', nextMaxScrollVar);
           }
-          if (Math.abs(holderEl.scrollLeft - clampedOffset) > 0.5) {
+          // Windows 原生横滚由浏览器持有 scrollLeft；再写回去会把滑块从轨道末端弹回。
+          if (!isWindowsLike && Math.abs(holderEl.scrollLeft - clampedOffset) > 0.5) {
               holderEl.scrollLeft = clampedOffset;
           }
           if (innerEl.style.translate) {
@@ -4622,7 +4631,7 @@ const DataGrid: React.FC<DataGridProps> = ({
       }
 
       return { holderEl, innerEl, clampedOffset, currentOffset };
-  }, [resolveVirtualHorizontalElements, tableScrollX, virtualListItemHorizontalOffsetComposited]);
+  }, [isWindowsLike, resolveVirtualHorizontalElements, tableScrollX, virtualListItemHorizontalOffsetComposited]);
 
   virtualHorizontalPostCommitFrameHandlerRef.current = (offset) => {
       const tableContainer = tableContainerRef.current;
@@ -4679,6 +4688,10 @@ const DataGrid: React.FC<DataGridProps> = ({
       }
 
       const tableInstance = tableRef.current;
+      if (isWindowsLike && virtualListItemHorizontalOffsetComposited) {
+          lastCommittedVirtualHorizontalOffsetRef.current = clampedOffset;
+          return true;
+      }
       if (tableInstance && typeof tableInstance.scrollTo === 'function') {
           // 更新 rc-virtual-list 内部 offsetLeft
           tableInstance.scrollTo({ left: clampedOffset });
@@ -4703,7 +4716,7 @@ const DataGrid: React.FC<DataGridProps> = ({
       lastCommittedVirtualHorizontalOffsetRef.current = clampedOffset;
       scheduleVirtualHorizontalPostCommit(tableContainer, clampedOffset);
       return true;
-  }, [scheduleVirtualHorizontalPostCommit, syncVirtualHorizontalVisualOffset, virtualListItemHorizontalOffsetComposited]);
+  }, [isWindowsLike, scheduleVirtualHorizontalPostCommit, syncVirtualHorizontalVisualOffset, virtualListItemHorizontalOffsetComposited]);
 
   const scheduleVirtualHorizontalAlignment = useCallback((preferredLeft?: number) => {
       if (!enableVirtual || !isTableSurfaceActive) return;
@@ -5572,12 +5585,13 @@ const DataGrid: React.FC<DataGridProps> = ({
                   return;
               }
 
+              const nativeHorizontalEnabled = virtualListItemHorizontalOffsetComposited
+                  && virtualHolder.contains(event.target as Node);
               const nativeHorizontalScroll = shouldLetNativeHorizontalWheelPass({
                   deltaX: event.deltaX,
                   deltaY: event.deltaY,
                   shiftKey: event.shiftKey,
-                  nativeHorizontalEnabled: virtualListItemHorizontalOffsetComposited
-                      && virtualHolder.contains(event.target as Node),
+                  nativeHorizontalEnabled,
               });
               if (nativeHorizontalScroll) {
                   const maxScrollLeft = Math.max(0, virtualHolder.scrollWidth - virtualHolder.clientWidth);
@@ -5592,6 +5606,17 @@ const DataGrid: React.FC<DataGridProps> = ({
                       // the header, external thumb, and virtual column window later.
                       return;
                   }
+              }
+              if (isWindowsLike && nativeHorizontalEnabled) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  const maxScrollLeft = Math.max(0, virtualHolder.scrollWidth - virtualHolder.clientWidth);
+                  virtualHolder.scrollLeft = resolveNativeHorizontalWheelScrollLeft({
+                      delta: horizontalDelta,
+                      currentScrollLeft: virtualHolder.scrollLeft,
+                      maxScrollLeft,
+                  });
+                  return;
               }
 
               event.preventDefault();
@@ -5647,6 +5672,7 @@ const DataGrid: React.FC<DataGridProps> = ({
   }, [
       enableVirtual,
       isTableSurfaceActive,
+      isWindowsLike,
       pickHorizontalScrollTargets,
       scheduleVirtualHorizontalWheel,
       virtualListItemHorizontalOffsetComposited,

@@ -8,7 +8,15 @@ export interface VirtualTableScrollXOptions {
   totalWidth: number;
   tableViewportWidth: number;
   isMacLike: boolean;
+  nativeHorizontalScroll?: boolean;
   stretchToViewport?: boolean;
+}
+
+export interface VirtualHorizontalMaxScrollOptions {
+  tableScrollX: number;
+  clientWidth: number;
+  scrollWidth?: number;
+  useNativeScroll: boolean;
 }
 
 export interface DataGridHorizontalWheelIntentOptions {
@@ -83,6 +91,7 @@ export const calculateVirtualTableScrollX = ({
   totalWidth,
   tableViewportWidth,
   isMacLike,
+  nativeHorizontalScroll,
   stretchToViewport = true,
 }: VirtualTableScrollXOptions): number => {
   const safeTotalWidth = Math.max(0, Math.ceil(totalWidth));
@@ -92,11 +101,27 @@ export const calculateVirtualTableScrollX = ({
     return safeViewportWidth;
   }
 
-  if (isMacLike && safeViewportWidth > 0 && safeTotalWidth > safeViewportWidth) {
+  const useNativeSlop = nativeHorizontalScroll ?? isMacLike;
+  if (useNativeSlop && safeViewportWidth > 0 && safeTotalWidth > safeViewportWidth) {
     return safeTotalWidth + 2;
   }
 
   return safeTotalWidth;
+};
+
+export const resolveVirtualHorizontalMaxScroll = ({
+  tableScrollX,
+  clientWidth,
+  scrollWidth,
+  useNativeScroll,
+}: VirtualHorizontalMaxScrollOptions): number => {
+  const safeClientWidth = Math.max(0, Number(clientWidth) || 0);
+  const declaredMax = Math.max(0, (Number(tableScrollX) || 0) - safeClientWidth);
+  if (!useNativeScroll) {
+    return declaredMax;
+  }
+  const nativeMax = Math.max(0, (Number(scrollWidth) || 0) - safeClientWidth);
+  return nativeMax > 0 ? nativeMax : declaredMax;
 };
 
 /** 兼容 antd ColumnType.key（React.Key = string | number | bigint） */

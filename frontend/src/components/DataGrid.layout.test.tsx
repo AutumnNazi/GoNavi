@@ -501,8 +501,7 @@ describe('DataGrid layout', () => {
       expect(ruleStart).toBeGreaterThan(transparentHover);
       const ruleEnd = css.indexOf('}', ruleStart);
       const rule = css.slice(ruleStart, ruleEnd + 1);
-      expect(rule).toContain('background: var(--gn-bg-panel, #ffffff) !important;');
-      expect(rule).toContain('background-image: none !important;');
+      expect(rule).toContain('background: var(--gn-bg-panel-2, #ffffff) !important;');
     });
 
     const fixedRowControlSelectedSelectors = [
@@ -540,11 +539,7 @@ describe('DataGrid layout', () => {
     const fixedControlHoverRuleStart = css.indexOf(fixedControlHoverSelector);
     const fixedControlHoverRuleEnd = css.indexOf('}', fixedControlHoverRuleStart);
     const fixedControlHoverRule = css.slice(fixedControlHoverRuleStart, fixedControlHoverRuleEnd + 1);
-    expect(fixedControlHoverRule).toContain('background-color: var(--gn-bg-panel, #ffffff) !important;');
-    expect(fixedControlHoverRule).toContain('background-image: linear-gradient(');
-    expect(fixedControlHoverRule).toContain(
-      'var(--gn-bg-hover, rgba(15, 23, 42, 0.045))',
-    );
+    expect(fixedControlHoverRule).toContain('background: var(--gn-bg-panel-2, #ffffff) !important;');
     expect(css).toContain('var(--gn-bg-hover, rgba(15, 23, 42, 0.045))');
     expect(css).toContain('var(--gn-bg-active, rgba(15, 23, 42, 0.075))');
     expect(css.indexOf('[data-cell-selected="true"]')).toBeGreaterThan(css.indexOf(rowSelector));
@@ -2052,6 +2047,8 @@ describe('DataGrid layout', () => {
     );
 
     expect(source).toContain('const isWindowsLike = useMemo(() => isWindowsPlatform(), []);');
+    expect(source).toContain('const virtualListItemHorizontalOffsetComposited = isMacLike || isWindowsLike;');
+    expect(source).toContain('const horizontalScrollVisible = isTableSurfaceActive && !isWindowsLike && externalHorizontalScrollMetrics.visible;');
     expect(virtualColumnSource).toContain('&& !isWindowsLike');
     expect(virtualColumnSource).not.toContain('&& !isMacLike');
     expect(virtualColumnSource).toContain('&& shouldVirtualizeDataGridColumns(displayColumnNames.length);');
@@ -2099,6 +2096,26 @@ describe('DataGrid layout', () => {
       .toBeLessThan(nativeScrollBindingSource.indexOf('scheduleNativeVirtualHorizontalScroll(tableContainer)'));
     expect(nativeScrollFlushSource).toContain('const visual = syncVirtualHorizontalVisualOffset(tableContainer, holderEl.scrollLeft);');
     expect(nativeScrollFlushSource).not.toContain('timeline');
+  });
+
+  it('uses native Windows scrollbars and keeps the macOS overlay track', () => {
+    const source = readDataGridSource();
+    const css = buildDataGridCssText({
+      darkMode: false,
+      densityParams: { dataFontSize: 12 },
+      gridId: 'win-scroll-grid',
+      floatingScrollbarHeight: 8,
+    });
+    const themeCss = readV2ThemeCss();
+
+    expect(source).toContain('const virtualListItemHorizontalOffsetComposited = isMacLike || isWindowsLike;');
+    expect(source).toContain('const horizontalScrollVisible = isTableSurfaceActive && !isWindowsLike && externalHorizontalScrollMetrics.visible;');
+    expect(source).toContain('const virtualListItemNativeScrollbarControlled = isMacLike && virtualListItemHeightFixed;');
+    expect(css).toContain('body[data-platform="darwin"] .win-scroll-grid .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"]::-webkit-scrollbar');
+    expect(css).toContain('body[data-platform="windows"] .win-scroll-grid .data-grid-external-horizontal-scroll');
+    expect(css).toContain('body:not([data-platform="windows"]) .win-scroll-grid .ant-table-body::-webkit-scrollbar');
+    expect(themeCss).toContain('body[data-ui-version="v2"]:not([data-platform="windows"]) ::-webkit-scrollbar');
+    expect(themeCss).not.toMatch(/body\[data-ui-version="v2"\] ::-webkit-scrollbar \{/);
   });
 
   it('keeps overflowing table column references stable across viewport-only resizes', () => {

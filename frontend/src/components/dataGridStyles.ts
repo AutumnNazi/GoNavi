@@ -41,7 +41,9 @@ export const buildDataGridCssText = ({
     selectionAccentRgb,
     tableBodyBottomPadding,
     verticalScrollbarTrackBg,
-}: DataGridCssTextParams) => `
+}: DataGridCssTextParams) => {
+    const selectionColumnFill = `var(--gn-bg-panel-2, ${bgContent})`;
+    return `
 
                 .${gridId} .data-grid-toolbar-scroll > * {
 
@@ -244,14 +246,11 @@ export const buildDataGridCssText = ({
                 /* —— 表头固定 —— */
                 .${gridId} .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-left,
                 .${gridId} .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-right,
-                .${gridId} .ant-table-header .ant-table-thead > tr > th.ant-table-selection-column,
                 .${gridId} .ant-table-header th.ant-table-cell-fix-left,
                 .${gridId} .ant-table-header th.ant-table-cell-fix-right,
-                .${gridId} .ant-table-header th.ant-table-selection-column,
                 .${gridId} .ant-table-header th.data-grid-row-number-cell,
                 .${gridId} .ant-table-thead > tr > th.ant-table-cell-fix-left,
                 .${gridId} .ant-table-thead > tr > th.ant-table-cell-fix-right,
-                .${gridId} .ant-table-thead > tr > th.ant-table-selection-column,
                 .${gridId} .ant-table-thead > tr > th.data-grid-row-number-cell {
                     position: sticky !important;
                     z-index: 30 !important;
@@ -270,8 +269,6 @@ export const buildDataGridCssText = ({
                     position: sticky !important;
                     left: 0 !important;
                     z-index: 32 !important;
-                    /* 全选列与钉住列/行号同色；覆盖 v2-theme 里可能的 panel-2 */
-                    background: var(--gn-bg-panel, ${bgContent}) !important;
                     transform: none !important;
                     overflow: hidden !important;
                     isolation: isolate;
@@ -301,7 +298,6 @@ export const buildDataGridCssText = ({
                 .${gridId} .ant-table-tbody-virtual-holder:not([data-horizontal-scroll-native="true"]) .ant-table-row > .ant-table-cell.ant-table-cell-fix-left,
                 .${gridId} .ant-table-tbody-virtual-holder:not([data-horizontal-scroll-native="true"]) .ant-table-row > .ant-table-cell.ant-table-cell-fix-left-first,
                 .${gridId} .ant-table-tbody-virtual-holder:not([data-horizontal-scroll-native="true"]) .ant-table-row > .ant-table-cell.ant-table-cell-fix-left-last,
-                .${gridId} .ant-table-tbody-virtual-holder:not([data-horizontal-scroll-native="true"]) .ant-table-row > .ant-table-cell.ant-table-selection-column,
                 .${gridId} .ant-table-tbody-virtual-holder:not([data-horizontal-scroll-native="true"]) .ant-table-row > .ant-table-cell.ant-table-cell-fix-right,
                 .${gridId} .ant-table-tbody-virtual-holder:not([data-horizontal-scroll-native="true"]) .ant-table-row > .ant-table-cell.ant-table-cell-fix-right-first,
                 .${gridId} .ant-table-tbody-virtual-holder:not([data-horizontal-scroll-native="true"]) .ant-table-row > .ant-table-cell.ant-table-cell-fix-right-last {
@@ -318,7 +314,6 @@ export const buildDataGridCssText = ({
                 .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-left,
                 .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-left-first,
                 .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-left-last,
-                .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-selection-column,
                 .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-right,
                 .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-right-first,
                 .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-right-last {
@@ -358,20 +353,39 @@ export const buildDataGridCssText = ({
                     will-change: translate;
                 }
                 .${gridId} .ant-table-tbody > tr > td.ant-table-cell-fix-left,
-                .${gridId} .ant-table-tbody > tr > td.ant-table-cell-fix-right,
-                .${gridId} .ant-table-tbody > tr > td.ant-table-selection-column {
+                .${gridId} .ant-table-tbody > tr > td.ant-table-cell-fix-right {
                     position: sticky !important;
                     z-index: 4 !important;
                     background: var(--gn-bg-panel, ${bgContent}) !important;
                     background-clip: padding-box !important;
                     transform: none !important;
                 }
-                .${gridId} .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-left-last,
+                .${gridId} .ant-table-header .ant-table-thead > tr > th.ant-table-selection-column,
+                .${gridId} .ant-table-header th.ant-table-selection-column,
+                .${gridId} .ant-table-thead > tr > th.ant-table-selection-column,
+                .${gridId} .ant-table-tbody > tr > td.ant-table-selection-column,
+                .${gridId} .ant-table-tbody .ant-table-row > .ant-table-cell.ant-table-selection-column,
+                .${gridId} .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell.ant-table-selection-column,
+                .${gridId} .ant-table-tbody-virtual .ant-table-row > .ant-table-cell.ant-table-selection-column,
+                .${gridId} .ant-table-tbody-virtual-holder:not([data-horizontal-scroll-native="true"]) .ant-table-row > .ant-table-cell.ant-table-selection-column,
+                .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-selection-column,
+                .${gridId}.data-grid-root .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell.ant-table-selection-column,
+                .${gridId}.data-grid-root .ant-table-header th.ant-table-selection-column,
+                .${gridId}.data-grid-root .ant-table-thead > tr > th.ant-table-selection-column {
+                    background: ${selectionColumnFill} !important;
+                    background-clip: padding-box !important;
+                }
+
+                .${gridId} .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-left-last:not(.ant-table-selection-column),
                 .${gridId} .ant-table-header th.data-grid-row-number-cell,
-                .${gridId} .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell.ant-table-cell-fix-left-last {
+                .${gridId} .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell.ant-table-cell-fix-left-last:not(.ant-table-selection-column) {
                     box-shadow: ${darkMode
                         ? '4px 0 6px -2px rgba(0,0,0,0.45)'
                         : '4px 0 6px -2px rgba(15, 23, 42, 0.16)'} !important;
+                }
+                .${gridId} .ant-table-header .ant-table-thead > tr > th.ant-table-selection-column,
+                .${gridId} .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell.ant-table-selection-column {
+                    box-shadow: none !important;
                 }
                 .${gridId} .ant-table-header .ant-table-thead > tr > th.ant-table-cell-fix-right-first,
                 .${gridId} .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell.ant-table-cell-fix-right-first {
@@ -382,12 +396,14 @@ export const buildDataGridCssText = ({
                 /* 固定列悬浮时保持实心底，防止透出横向滚动内容 */
                 .${gridId} .ant-table-tbody-virtual-holder .ant-table-row:hover > .ant-table-cell.ant-table-cell-fix-left,
                 .${gridId} .ant-table-tbody-virtual-holder .ant-table-row:hover > .ant-table-cell.ant-table-cell-fix-right,
-                .${gridId} .ant-table-tbody-virtual-holder .ant-table-row:hover > .ant-table-cell.ant-table-selection-column,
                 .${gridId} .ant-table-tbody > tr:hover > td.ant-table-cell-fix-left,
-                .${gridId} .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right,
-                .${gridId} .ant-table-tbody > tr:hover > td.ant-table-selection-column {
+                .${gridId} .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right {
                     background: var(--gn-bg-panel, ${bgContent}) !important;
                     background-image: none !important;
+                }
+                .${gridId} .ant-table-tbody-virtual-holder .ant-table-row:hover > .ant-table-cell.ant-table-selection-column,
+                .${gridId} .ant-table-tbody > tr:hover > td.ant-table-selection-column {
+                    background: ${selectionColumnFill} !important;
                 }
                 /* 固定列选中：与整行同一绿色（实心底防透出滚动内容） */
                 .${gridId} .ant-table-tbody-virtual-holder .ant-table-row.ant-table-row-selected > .ant-table-cell.ant-table-cell-fix-left,
@@ -396,8 +412,8 @@ export const buildDataGridCssText = ({
                 .${gridId} .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-left,
                 .${gridId} .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right,
                 .${gridId} .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-selection-column {
-                    background: rgba(34, 197, 94, 0.14) !important;
-                    background-color: rgba(34, 197, 94, 0.14) !important;
+                    background: var(--gn-bg-selected, rgba(34, 197, 94, 0.14)) !important;
+                    background-color: var(--gn-bg-selected, rgba(34, 197, 94, 0.14)) !important;
                     background-image: none !important;
                 }
                 .${gridId} .ant-table-tbody-virtual-holder .ant-table-row.ant-table-row-selected:hover > .ant-table-cell.ant-table-cell-fix-left,
@@ -406,8 +422,8 @@ export const buildDataGridCssText = ({
                 .${gridId} .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-left,
                 .${gridId} .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-right,
                 .${gridId} .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-selection-column {
-                    background: rgba(34, 197, 94, 0.14) !important;
-                    background-color: rgba(34, 197, 94, 0.14) !important;
+                    background: var(--gn-bg-selected, rgba(34, 197, 94, 0.14)) !important;
+                    background-color: var(--gn-bg-selected, rgba(34, 197, 94, 0.14)) !important;
                     background-image: none !important;
                 }
                 .${gridId} .data-grid-row-number-cell {
@@ -463,8 +479,7 @@ export const buildDataGridCssText = ({
                 .${gridId}.data-grid-root .ant-table-tbody-virtual .ant-table-row:hover > .ant-table-cell:is(.data-grid-row-number-cell, .ant-table-selection-column),
                 .${gridId}.data-grid-root .ant-table-tbody-virtual-holder-inner .ant-table-row:hover > .ant-table-cell:is(.data-grid-row-number-cell, .ant-table-selection-column),
                 .${gridId}.data-grid-root .ant-table-tbody > tr:hover > td:is(.data-grid-row-number-cell, .ant-table-selection-column) {
-                    background: var(--gn-bg-panel, ${bgContent}) !important;
-                    background-image: none !important;
+                    background: ${selectionColumnFill} !important;
                 }
 
                 /* 当前单元格行列交叉高亮：仅增加中性半透明蒙层，不改变行勾选或单元格选区语义。 */
@@ -487,11 +502,7 @@ export const buildDataGridCssText = ({
                 .${gridId}.data-grid-root .ant-table-tbody-virtual .ant-table-row[data-active-cell-row="true"]:hover > .ant-table-cell:is(.data-grid-row-number-cell, .ant-table-selection-column),
                 .${gridId}.data-grid-root .ant-table-tbody-virtual-holder-inner .ant-table-row[data-active-cell-row="true"]:hover > .ant-table-cell:is(.data-grid-row-number-cell, .ant-table-selection-column),
                 .${gridId}.data-grid-root .ant-table-tbody > tr[data-active-cell-row="true"]:hover > td:is(.data-grid-row-number-cell, .ant-table-selection-column) {
-                    background-color: var(--gn-bg-panel, ${bgContent}) !important;
-                    background-image: linear-gradient(
-                        var(--gn-bg-hover, ${darkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.045)'}),
-                        var(--gn-bg-hover, ${darkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(15, 23, 42, 0.045)'})
-                    ) !important;
+                    background: ${selectionColumnFill} !important;
                 }
 
                 .${gridId}.data-grid-root .ant-table-header .ant-table-thead > tr > th.ant-table-cell[data-active-cell-column="true"],
@@ -501,6 +512,16 @@ export const buildDataGridCssText = ({
                         var(--gn-bg-active, ${darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.075)'}),
                         var(--gn-bg-active, ${darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.075)'})
                     ) !important;
+                }
+
+                .${gridId}.data-grid-root .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell.ant-table-selection-column[data-active-cell-column="true"],
+                .${gridId}.data-grid-root .ant-table-tbody-virtual .ant-table-row > .ant-table-cell.ant-table-selection-column[data-active-cell-column="true"],
+                .${gridId}.data-grid-root .ant-table-tbody > tr > td.ant-table-selection-column[data-active-cell-column="true"],
+                .${gridId}.data-grid-root .ant-table-header .ant-table-thead > tr > th.ant-table-selection-column[data-active-cell-column="true"],
+                .${gridId}.data-grid-root .ant-table-thead > tr > th.ant-table-selection-column[data-active-cell-column="true"],
+                .${gridId}.data-grid-root .ant-table-header th.ant-table-selection-column:hover,
+                .${gridId}.data-grid-root .ant-table-thead > tr > th.ant-table-selection-column:hover {
+                    background: ${selectionColumnFill} !important;
                 }
 
                 /*
@@ -1009,9 +1030,27 @@ export const buildDataGridCssText = ({
 
                 }
 
-                .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"]::-webkit-scrollbar,
+                .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"],
 
-                .${gridId} .rc-virtual-list-holder[data-horizontal-scroll-native="true"]::-webkit-scrollbar {
+                .${gridId} .rc-virtual-list-holder[data-horizontal-scroll-native="true"] {
+
+                    overflow-x: auto !important;
+
+                    overscroll-behavior-x: contain;
+
+                }
+
+                body[data-platform="darwin"] .${gridId} .data-grid-table-wrap.data-grid-table-wrap-external-active .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"],
+
+                body[data-platform="darwin"] .${gridId} .data-grid-table-wrap.data-grid-table-wrap-external-active .rc-virtual-list-holder[data-horizontal-scroll-native="true"] {
+
+                    scrollbar-width: none;
+
+                }
+
+                body[data-platform="darwin"] .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"]::-webkit-scrollbar,
+
+                body[data-platform="darwin"] .${gridId} .rc-virtual-list-holder[data-horizontal-scroll-native="true"]::-webkit-scrollbar {
 
                     width: 0;
 
@@ -1019,7 +1058,23 @@ export const buildDataGridCssText = ({
 
                 }
 
-                .${gridId} .ant-table-body {
+                body[data-platform="windows"] .${gridId} .data-grid-external-horizontal-scroll {
+
+                    display: none !important;
+
+                }
+
+                body[data-platform="windows"] .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"],
+
+                body[data-platform="windows"] .${gridId} .rc-virtual-list-holder[data-horizontal-scroll-native="true"],
+
+                body[data-platform="windows"] .${gridId} .ant-table-body {
+
+                    scrollbar-width: auto;
+
+                }
+
+                body:not([data-platform="windows"]) .${gridId} .ant-table-body {
 
                     scrollbar-width: thin;
 
@@ -1027,7 +1082,7 @@ export const buildDataGridCssText = ({
 
                 }
 
-                .${gridId} .ant-table-body::-webkit-scrollbar {
+                body:not([data-platform="windows"]) .${gridId} .ant-table-body::-webkit-scrollbar {
 
                     width: ${floatingScrollbarHeight}px;
 
@@ -1035,7 +1090,7 @@ export const buildDataGridCssText = ({
 
                 }
 
-                .${gridId} .ant-table-body::-webkit-scrollbar-track {
+                body:not([data-platform="windows"]) .${gridId} .ant-table-body::-webkit-scrollbar-track {
 
                     background: ${verticalScrollbarTrackBg};
 
@@ -1045,7 +1100,7 @@ export const buildDataGridCssText = ({
 
                 }
 
-                .${gridId} .ant-table-body::-webkit-scrollbar-thumb {
+                body:not([data-platform="windows"]) .${gridId} .ant-table-body::-webkit-scrollbar-thumb {
 
                     background: ${floatingScrollbarThumbBg};
 
@@ -1059,7 +1114,7 @@ export const buildDataGridCssText = ({
 
                 }
 
-                .${gridId} .ant-table-body::-webkit-scrollbar-thumb:hover {
+                body:not([data-platform="windows"]) .${gridId} .ant-table-body::-webkit-scrollbar-thumb:hover {
 
                     background: ${floatingScrollbarThumbHoverBg};
 
@@ -1071,7 +1126,7 @@ export const buildDataGridCssText = ({
 
                 }
 
-                .${gridId} .rc-virtual-list-holder {
+                body:not([data-platform="windows"]) .${gridId} .rc-virtual-list-holder {
 
                     scrollbar-width: thin;
 
@@ -1079,7 +1134,7 @@ export const buildDataGridCssText = ({
 
                 }
 
-                .${gridId} .rc-virtual-list-holder::-webkit-scrollbar {
+                body:not([data-platform="windows"]) .${gridId} .rc-virtual-list-holder::-webkit-scrollbar {
 
                     width: ${floatingScrollbarHeight}px;
 
@@ -1087,7 +1142,7 @@ export const buildDataGridCssText = ({
 
                 }
 
-                .${gridId} .rc-virtual-list-holder::-webkit-scrollbar-track {
+                body:not([data-platform="windows"]) .${gridId} .rc-virtual-list-holder::-webkit-scrollbar-track {
 
                     background: ${verticalScrollbarTrackBg};
 
@@ -1097,7 +1152,7 @@ export const buildDataGridCssText = ({
 
                 }
 
-                .${gridId} .rc-virtual-list-holder::-webkit-scrollbar-thumb {
+                body:not([data-platform="windows"]) .${gridId} .rc-virtual-list-holder::-webkit-scrollbar-thumb {
 
                     background: ${floatingScrollbarThumbBg};
 
@@ -1111,7 +1166,7 @@ export const buildDataGridCssText = ({
 
                 }
 
-                .${gridId} .rc-virtual-list-holder::-webkit-scrollbar-thumb:hover {
+                body:not([data-platform="windows"]) .${gridId} .rc-virtual-list-holder::-webkit-scrollbar-thumb:hover {
 
                     background: ${floatingScrollbarThumbHoverBg};
 
@@ -1866,3 +1921,4 @@ export const buildDataGridCssText = ({
                 }
 
   `;
+};

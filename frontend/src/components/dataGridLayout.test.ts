@@ -9,6 +9,7 @@ import {
   resolveDataGridColumnQuickFindScrollLeft,
   resolveDataGridHorizontalWheelDelta,
   resolveNativeHorizontalWheelScrollLeft,
+  resolveVirtualHorizontalMaxScroll,
   shouldCommitVirtualHorizontalRange,
   shouldLetNativeHorizontalWheelPass,
 } from './dataGridLayout';
@@ -45,6 +46,33 @@ describe('dataGridLayout helpers', () => {
     })).toBe(82);
     expect(calculateVirtualTableScrollX({ totalWidth: 646, tableViewportWidth: 0, isMacLike: false })).toBe(646);
     expect(calculateVirtualTableScrollX({ totalWidth: 1200, tableViewportWidth: 800, isMacLike: true })).toBe(1202);
+    expect(calculateVirtualTableScrollX({
+      totalWidth: 1200,
+      tableViewportWidth: 800,
+      isMacLike: false,
+      nativeHorizontalScroll: true,
+    })).toBe(1202);
+  });
+
+  it('clamps native horizontal scroll to the live DOM range so the thumb can reach the end', () => {
+    expect(resolveVirtualHorizontalMaxScroll({
+      tableScrollX: 2000,
+      clientWidth: 800,
+      scrollWidth: 2016,
+      useNativeScroll: true,
+    })).toBe(1216);
+    expect(resolveVirtualHorizontalMaxScroll({
+      tableScrollX: 2000,
+      clientWidth: 800,
+      scrollWidth: 0,
+      useNativeScroll: true,
+    })).toBe(1200);
+    expect(resolveVirtualHorizontalMaxScroll({
+      tableScrollX: 2000,
+      clientWidth: 800,
+      scrollWidth: 2016,
+      useNativeScroll: false,
+    })).toBe(1200);
   });
 
   it('absorbs leftover viewport width into the last flexible data column only', () => {
