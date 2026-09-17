@@ -2089,7 +2089,8 @@ describe('DataGrid layout', () => {
     expect(css).toContain('translate: var(--gn-datagrid-h-scroll, 0px) 0 !important;');
     expect(css).not.toContain('animation-timeline:');
     expect(source).not.toContain('resolveDataGridHorizontalSyncMode');
-    expect(visualSyncSource).toContain("headerEl.style.setProperty('--gn-datagrid-h-scroll', nextHeaderScrollVar)");
+    expect(visualSyncSource).toContain('applyDataGridHeaderPinOffset(headerEl, clampedOffset)');
+    expect(visualSyncSource).not.toContain("headerEl.style.setProperty('--gn-datagrid-h-scroll'");
     expect(visualSyncSource).toContain('headerTable.style.translate = nextHeaderTranslate');
     expect(visualSyncSource).not.toContain("cell.style.setProperty('transform'");
     expect(nativeScrollBindingSource.indexOf('syncVirtualHorizontalVisualOffset(tableContainer, source.scrollLeft)'))

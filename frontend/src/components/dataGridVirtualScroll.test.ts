@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   applyDataGridFixedCellPreviewOffset,
+  applyDataGridHeaderPinOffset,
   calculateFixedVirtualRange,
+  clearDataGridHeaderPinOffset,
   commitDataGridFixedCellOffset,
   coversFixedVirtualRange,
   createDataGridIdleCommitScheduler,
@@ -57,6 +59,52 @@ describe('fixed cell horizontal preview', () => {
     expect(second.style.removeProperty).toHaveBeenCalledWith('transform');
   });
 
+});
+
+describe('header fixed cell pin offset', () => {
+  it('writes the pin offset to fixed header cells instead of the header container', () => {
+    const left = { style: createStyleStub() };
+    const right = { style: createStyleStub() };
+    const plain = { style: createStyleStub() };
+    const header = {
+      style: createStyleStub(),
+      querySelectorAll: vi.fn(() => [left, right]),
+    };
+
+    expect(applyDataGridHeaderPinOffset(header as unknown as ParentNode, 640)).toBe(2);
+    expect(left.style.setProperty).toHaveBeenCalledWith('--gn-datagrid-h-scroll', '640px');
+    expect(right.style.setProperty).toHaveBeenCalledWith('--gn-datagrid-h-scroll', '640px');
+    // 容器上的变量会被全部表头单元格继承，宽表下每帧的样式失效范围随字段数放大。
+    expect(header.style.setProperty).not.toHaveBeenCalled();
+    expect(plain.style.setProperty).not.toHaveBeenCalled();
+  });
+
+  it('skips cells that already carry the same offset', () => {
+    const cell = { style: createStyleStub() };
+    const header = { querySelectorAll: vi.fn(() => [cell]) };
+
+    expect(applyDataGridHeaderPinOffset(header as unknown as ParentNode, 480)).toBe(1);
+    expect(applyDataGridHeaderPinOffset(header as unknown as ParentNode, 480)).toBe(0);
+    expect(applyDataGridHeaderPinOffset(header as unknown as ParentNode, 960)).toBe(1);
+    expect(cell.style.setProperty).toHaveBeenCalledTimes(2);
+  });
+
+  it('clears the pin offset when leaving the composited path', () => {
+    const cell = { style: createStyleStub() };
+    const header = { querySelectorAll: vi.fn(() => [cell]) };
+    cell.style.setProperty('--gn-datagrid-h-scroll', '480px');
+
+    expect(clearDataGridHeaderPinOffset(header as unknown as ParentNode)).toBe(1);
+    expect(cell.style.removeProperty).toHaveBeenCalledWith('--gn-datagrid-h-scroll');
+    expect(clearDataGridHeaderPinOffset(header as unknown as ParentNode)).toBe(0);
+  });
+
+  it('tolerates a header without any fixed cell', () => {
+    const header = { querySelectorAll: vi.fn(() => []) };
+
+    expect(applyDataGridHeaderPinOffset(header as unknown as ParentNode, 240)).toBe(0);
+    expect(clearDataGridHeaderPinOffset(header as unknown as ParentNode)).toBe(0);
+  });
 });
 
 describe('virtual body horizontal offset', () => {

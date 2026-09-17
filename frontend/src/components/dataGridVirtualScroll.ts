@@ -32,6 +32,59 @@ const queryDataGridFixedCells = (root: ParentNode): NodeListOf<HTMLElement> => (
 
 const DATA_GRID_COLUMN_VIRTUALIZATION_THRESHOLD = 16;
 
+/**
+ * 表头固定列（含选择列、行号列）。native 横滚时表头整体靠 translate 跟随，
+ * 这些单元格再用自身偏移钉回视口。
+ */
+const DATA_GRID_HEADER_FIXED_CELL_SELECTOR = [
+  '.ant-table-header .ant-table-cell-fix-left',
+  '.ant-table-header .ant-table-cell-fix-left-first',
+  '.ant-table-header .ant-table-cell-fix-left-last',
+  '.ant-table-header .ant-table-cell-fix-right',
+  '.ant-table-header .ant-table-cell-fix-right-first',
+  '.ant-table-header .ant-table-cell-fix-right-last',
+  '.ant-table-header .ant-table-selection-column',
+  '.ant-table-header .data-grid-row-number-cell',
+].join(',');
+
+/**
+ * 把固定表头单元格的横向偏移写到单元格自身，而不是表头容器。
+ * 容器上的变量会被每个表头单元格继承，写一次就让全部表头单元格样式失效；
+ * 宽表（数百字段）横滚时这笔开销随字段数线性增长，直接吃掉整帧预算。
+ * 只写命中的固定单元格则与字段数无关。
+ */
+export const applyDataGridHeaderPinOffset = (
+  headerRoot: ParentNode,
+  offset: number,
+): number => {
+  const cells = headerRoot.querySelectorAll<HTMLElement>(DATA_GRID_HEADER_FIXED_CELL_SELECTOR);
+  if (cells.length === 0) {
+    return 0;
+  }
+  const scrollVar = `${normalizeHorizontalOffset(offset)}px`;
+  let writes = 0;
+  cells.forEach((cell) => {
+    if (cell.style.getPropertyValue('--gn-datagrid-h-scroll') === scrollVar) {
+      return;
+    }
+    cell.style.setProperty('--gn-datagrid-h-scroll', scrollVar);
+    writes += 1;
+  });
+  return writes;
+};
+
+export const clearDataGridHeaderPinOffset = (headerRoot: ParentNode): number => {
+  const cells = headerRoot.querySelectorAll<HTMLElement>(DATA_GRID_HEADER_FIXED_CELL_SELECTOR);
+  let cleared = 0;
+  cells.forEach((cell) => {
+    if (cell.style.getPropertyValue('--gn-datagrid-h-scroll')) {
+      cell.style.removeProperty('--gn-datagrid-h-scroll');
+      cleared += 1;
+    }
+  });
+  return cleared;
+};
+
 export const shouldVirtualizeDataGridColumns = (columnCount: number): boolean => (
   Number.isFinite(columnCount)
   && Math.max(0, Math.floor(columnCount)) > DATA_GRID_COLUMN_VIRTUALIZATION_THRESHOLD

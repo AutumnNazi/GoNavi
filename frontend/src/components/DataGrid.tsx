@@ -67,6 +67,8 @@ import {
 } from './dataGridLayout';
 import {
     applyDataGridFixedCellPreviewOffset,
+    applyDataGridHeaderPinOffset,
+    clearDataGridHeaderPinOffset,
     commitDataGridFixedCellOffset,
     createDataGridIdleCommitScheduler,
     createDataGridVisualFrameGuard,
@@ -4601,16 +4603,15 @@ const DataGrid: React.FC<DataGridProps> = ({
       if (headerEl instanceof HTMLElement) {
           const headerTable = headerEl.querySelector('table') as HTMLElement | null;
           if (virtualListItemHorizontalOffsetComposited) {
-              const nextHeaderScrollVar = `${clampedOffset}px`;
+              // 偏移只写给表头固定单元格：写在容器上会被全部表头单元格继承，
+              // 宽表每帧的样式失效范围会随字段数放大。
+              applyDataGridHeaderPinOffset(headerEl, clampedOffset);
               const nextHeaderTranslate = `${headerScrollLeft - clampedOffset}px 0`;
-              if (headerEl.style.getPropertyValue('--gn-datagrid-h-scroll') !== nextHeaderScrollVar) {
-                  headerEl.style.setProperty('--gn-datagrid-h-scroll', nextHeaderScrollVar);
-              }
               if (headerTable && headerTable.style.translate !== nextHeaderTranslate) {
                   headerTable.style.translate = nextHeaderTranslate;
               }
           } else {
-              headerEl.style.removeProperty('--gn-datagrid-h-scroll');
+              clearDataGridHeaderPinOffset(headerEl);
               if (headerTable?.style.translate) {
                   headerTable.style.translate = '';
               }
