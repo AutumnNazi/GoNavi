@@ -20,16 +20,17 @@ import (
 )
 
 const (
-	windowsImageIcon       = 1
-	windowsLoadFromFile    = 0x0010
-	windowsGetIconMessage  = 0x007f
-	windowsSetIconMessage  = 0x0080
-	windowsIconSmall       = 0
-	windowsIconBig         = 1
-	windowsClassIconLarge  = -14
-	windowsClassIconSmall  = -34
-	windowsSmallIconPixels = 16
-	windowsLargeIconPixels = 32
+	windowsImageIcon                     = 1
+	windowsLoadFromFile                  = 0x0010
+	windowsGetIconMessage                = 0x007f
+	windowsSetIconMessage                = 0x0080
+	windowsIconSmall                     = 0
+	windowsIconBig                       = 1
+	windowsClassIconLarge                = -14
+	windowsClassIconSmall                = -34
+	windowsSmallIconPixels               = 16
+	windowsLargeIconPixels               = 32
+	windowsShortcutIdentityStateFileName = ".taskbar-identity-v1"
 )
 
 var (
@@ -72,6 +73,7 @@ func applyPersistedWindowsApplicationIcon(runtimeContext context.Context, config
 	if strings.TrimSpace(iconPath) == "" {
 		return clearPersistedWindowsApplicationIcon(configDir)
 	}
+	repairPersistedWindowsApplicationShortcutsOnce(iconPath, configDir)
 	_, err = setCurrentWindowsApplicationIcon(runtimeContext, iconPath)
 	if err != nil {
 		return err
@@ -85,6 +87,52 @@ func applyPersistedWindowsApplicationIcon(runtimeContext context.Context, config
 	return nil
 }
 
+func repairPersistedWindowsApplicationShortcutsOnce(iconPath, configDir string) {
+	state, ok := currentWindowsShortcutIdentityState(iconPath)
+	if !ok {
+		return
+	}
+	statePath := filepath.Join(configDir, windowsApplicationIconDirectoryName, windowsShortcutIdentityStateFileName)
+	currentState, err := os.ReadFile(statePath)
+	if err == nil && string(currentState) == state {
+		return
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		logger.Warnf("检查 Windows 任务栏身份迁移状态失败：%v", err)
+		return
+	}
+	if err := windowsUpdateCurrentApplicationShortcuts(iconPath); err != nil {
+		logger.Warnf("更新 Windows 应用快捷方式图标失败：%v", err)
+		return
+	}
+	if err := os.WriteFile(statePath, []byte(state), 0o600); err != nil {
+		logger.Warnf("记录 Windows 任务栏身份迁移状态失败：%v", err)
+	}
+}
+
+func currentWindowsShortcutIdentityState(iconPath string) (string, bool) {
+	executablePath := strings.TrimSpace(updateResolveInstallTarget())
+	if resolveUpdateInstallModeForExecutable("windows", executablePath) != updateInstallModeMSI {
+		return "", false
+	}
+	return strings.Join([]string{
+		strings.TrimSpace(getCurrentVersion()),
+		windowsApplicationUserModelIDForIconPath(iconPath),
+		strings.ToLower(filepath.Clean(executablePath)),
+	}, "\n") + "\n", true
+}
+
+func recordCurrentWindowsShortcutIdentityState(iconPath, configDir string) {
+	state, ok := currentWindowsShortcutIdentityState(iconPath)
+	if !ok {
+		return
+	}
+	statePath := filepath.Join(configDir, windowsApplicationIconDirectoryName, windowsShortcutIdentityStateFileName)
+	if err := os.WriteFile(statePath, []byte(state), 0o600); err != nil {
+		logger.Warnf("记录 Windows 任务栏身份迁移状态失败：%v", err)
+	}
+}
+
 func setApplicationIconPNG(pngBytes []byte, configDir string, runtimeContext context.Context) error {
 	if len(pngBytes) == 0 {
 		return errors.New("application icon PNG is empty")
@@ -96,14 +144,15 @@ func setApplicationIconPNG(pngBytes []byte, configDir string, runtimeContext con
 	if err != nil {
 		return err
 	}
+	// Update shortcuts before moving the live window to the new identity.
+	// The update is synchronous so quitting cannot leave a half-written pin.
+	if err := windowsUpdateCurrentApplicationShortcuts(iconPath); err != nil {
+		return err
+	}
 	if err := activatePersistedWindowsApplicationIcon(iconPath, configDir); err != nil {
 		return err
 	}
-	// Migrate existing taskbar pins before assigning the explicit window AUMID.
-	// The update is synchronous so quitting cannot leave a half-written pin.
-	if err := windowsUpdateCurrentApplicationShortcuts(iconPath); err != nil {
-		logger.Warnf("更新 Windows 应用快捷方式图标失败：%v", err)
-	}
+	recordCurrentWindowsShortcutIdentityState(iconPath, configDir)
 	_, err = setCurrentWindowsApplicationIcon(runtimeContext, iconPath)
 	if err != nil {
 		return err
@@ -131,7 +180,11 @@ func prepareWindowsBrandIconRestartPNG(pngBytes []byte, configDir string) error 
 		// unchanged, so the next startup will continue using the previous icon.
 		return err
 	}
-	return activatePersistedWindowsApplicationIcon(iconPath, configDir)
+	if err := activatePersistedWindowsApplicationIcon(iconPath, configDir); err != nil {
+		return err
+	}
+	recordCurrentWindowsShortcutIdentityState(iconPath, configDir)
+	return nil
 }
 
 func setCurrentWindowsApplicationIcon(runtimeContext context.Context, iconPath string) (uintptr, error) {
