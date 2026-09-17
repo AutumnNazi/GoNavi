@@ -13,7 +13,7 @@ import {
 import { splitQualifiedNameLast } from '../utils/qualifiedName';
 import { t as translateCatalog, type I18nParams } from '../i18n';
 
-type SchemaSqlTranslator = (key: string, params?: I18nParams) => string;
+export type SchemaSqlTranslator = (key: string, params?: I18nParams) => string;
 
 export interface EditableColumnSnapshot {
   _key: string;

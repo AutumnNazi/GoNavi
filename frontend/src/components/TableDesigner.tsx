@@ -1,7 +1,8 @@
 import Modal from './common/ResizableDraggableModal';
 import React, { useEffect, useState, useContext, useMemo, useRef, useCallback } from 'react';
-import { Table, Tabs, Button, message, Input, Checkbox, AutoComplete, Tooltip, Select, Empty, Space, Tag, Radio, Spin } from 'antd';
-import { ReloadOutlined, SaveOutlined, PlusOutlined, DeleteOutlined, MenuOutlined, FileTextOutlined, EyeOutlined, EditOutlined, ExclamationCircleOutlined, CopyOutlined, TableOutlined, FolderOpenOutlined } from '@ant-design/icons';
+import { flushSync } from 'react-dom';
+import { Table, Tabs, Button, message, Input, Checkbox, AutoComplete, Tooltip, Select, Empty, Space, Tag, Radio, Spin, Dropdown } from 'antd';
+import { ReloadOutlined, SaveOutlined, PlusOutlined, DeleteOutlined, MenuOutlined, FileTextOutlined, EyeOutlined, EditOutlined, ExclamationCircleOutlined, CopyOutlined, SnippetsOutlined, TableOutlined, FolderOpenOutlined } from '@ant-design/icons';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -60,11 +61,8 @@ import {
     TABLE_DESIGNER_CURRENT_SCHEMA_SQL,
 } from './tableDesignerSchemaContext';
 import { buildTDengineStableOptions, buildTDengineStableQueries } from '../utils/tdengineStableMetadata';
-import {
-    cloneTableDesignerColumnsForPaste,
-    parseTableDesignerColumns,
-    serializeTableDesignerColumns,
-} from './tableDesignerColumnClipboard';
+import TableDesignerCopyColumnsModal from './TableDesignerCopyColumnsModal';
+import { useTableDesignerColumnClipboard } from './useTableDesignerColumnClipboard';
 
 interface EditableColumn extends ColumnDefinition {
     _key: string;
@@ -506,10 +504,6 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
   const [activeKey, setActiveKey] = useState(tab.initialTab || "columns");
   const [selectedColumnRowKeys, setSelectedColumnRowKeys] = useState<string[]>([]);
   const [isCopyColumnsModalOpen, setIsCopyColumnsModalOpen] = useState(false);
-  const [copyTableName, setCopyTableName] = useState('');
-  const [copyCharset, setCopyCharset] = useState('utf8mb4');
-  const [copyCollation, setCopyCollation] = useState('utf8mb4_unicode_ci');
-  const [copyExecuting, setCopyExecuting] = useState(false);
   const [tableComment, setTableComment] = useState('');
   const [tableCommentDraft, setTableCommentDraft] = useState('');
   const [isTableCommentModalOpen, setIsTableCommentModalOpen] = useState(false);
@@ -1755,33 +1749,41 @@ END;`;
       setColumns(prev => prev.filter(c => c._key !== key));
   };
 
-  const isNativeColumnEditorTarget = (target: EventTarget | null): boolean => {
-      const element = target instanceof HTMLElement ? target : null;
-      return !!element?.closest('input:not([type="checkbox"]):not([type="radio"]), textarea, select, [contenteditable="true"]');
-  };
-
-  const handleColumnClipboardCopy = (event: React.ClipboardEvent<HTMLDivElement>) => {
-      if (readOnly || selectedColumns.length === 0 || isNativeColumnEditorTarget(event.target)) return;
-      event.clipboardData.setData('text/plain', serializeTableDesignerColumns(selectedColumns));
-      event.preventDefault();
-  };
-
-  const handleColumnClipboardPaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
-      if (readOnly || isNativeColumnEditorTarget(event.target)) return;
-      const pastedColumns = parseTableDesignerColumns(event.clipboardData.getData('text/plain'));
-      if (!pastedColumns || pastedColumns.length === 0) return;
-      const nextColumns = cloneTableDesignerColumnsForPaste(pastedColumns, columns) as EditableColumn[];
-      setColumns(prev => [...prev, ...nextColumns]);
-      setSelectedColumnRowKeys(nextColumns.map(column => column._key));
-      pendingFocusColumnKeyRef.current = nextColumns[0]._key || null;
-      event.preventDefault();
-  };
-
   const selectedColumns = useMemo(() => {
       if (selectedColumnRowKeys.length === 0) return [];
       const selectedSet = new Set(selectedColumnRowKeys);
       return columns.filter(col => selectedSet.has(col._key));
   }, [columns, selectedColumnRowKeys]);
+
+  const openCopySelectedColumnsModal = () => {
+      if (selectedColumns.length === 0) {
+          message.warning(t('table_designer.message.select_columns_to_copy', undefined, i18nLanguage));
+          return;
+      }
+      setIsCopyColumnsModalOpen(true);
+  };
+
+  const columnClipboard = useTableDesignerColumnClipboard({
+      readOnly,
+      language: i18nLanguage,
+      columns,
+      selectedColumns,
+      setColumns: (updater) => {
+          setColumns((previous) => updater(previous) as EditableColumn[]);
+      },
+      setSelectedColumnRowKeys,
+      pendingFocusColumnKeyRef,
+      onCopyToTable: openCopySelectedColumnsModal,
+      shortcutEnabled: activeKey === 'columns' || activeKey === 'tdengine',
+  });
+
+  const handleColumnRowContextMenu = (record: EditableColumn) => {
+      flushSync(() => {
+          setSelectedColumnRowKeys((previous) => (
+              previous.includes(record._key) ? previous : [record._key]
+          ));
+      });
+  };
 
   const groupedIndexes = useMemo<IndexDisplayRow[]>(() => {
       type IndexFieldItem = {
@@ -2276,36 +2278,17 @@ END;`;
       });
   };
 
-  const openCopySelectedColumnsModal = () => {
-      if (selectedColumns.length === 0) {
-          message.warning(t('table_designer.message.select_columns_to_copy', undefined, i18nLanguage));
-          return;
-      }
-      const sourceName = (tab.tableName || 'new_table').trim();
-      setCopyTableName(`${sourceName}_copy`);
-      setCopyCharset(charset);
-      const charsetCollations = (COLLATIONS as any)[charset] || [];
-      setCopyCollation(
-          charsetCollations.some((item: any) => item.value === collation)
-              ? collation
-              : (charsetCollations[0]?.value || 'utf8mb4_unicode_ci')
-      );
-      setIsCopyColumnsModalOpen(true);
-  };
-
-  const handleExecuteCopySelectedColumns = async () => {
-      if (!copyTableName.trim()) {
-          message.error(t('table_designer.message.target_table_required', undefined, i18nLanguage));
-          return;
-      }
-      if (selectedColumns.length === 0) {
-          message.error(t('table_designer.message.no_copyable_columns', undefined, i18nLanguage));
-          return;
-      }
+  const handleCopyColumnsExecute = async (
+      sql: string,
+      target: { tableName: string; kind: 'create' | 'alter' },
+  ) => {
       const conn = connections.find(c => c.id === tab.connectionId);
       if (!conn) {
-          message.error(t('table_designer.message.connection_not_found', undefined, i18nLanguage));
-          return;
+          return {
+              ok: false,
+              message: t('table_designer.message.connection_not_found', undefined, i18nLanguage),
+              statementCount: 0,
+          };
       }
       const approved = await confirmProductionRisk({
           connection: conn,
@@ -2313,29 +2296,28 @@ END;`;
           target: [
               tab.dbName,
               supportsTableDesignerSchemaSelection ? designerSchemaTitle : '',
-              copyTableName.trim(),
+              target.tableName,
           ].filter(Boolean).join(' / '),
           translate: (key, params) => t(key, params, i18nLanguage),
       });
-      if (!approved) return;
-      const sql = buildCreateTableSql(copyTableName.trim(), selectedColumns, copyCharset, copyCollation);
-      setCopyExecuting(true);
-      try {
-          const result = await executeSchemaStatements(sql, {
-              skipProductionRiskConfirm: true,
-          });
-          if (result.ok) {
-              message.success(t('table_designer.message.columns_copied_to_new_table', { count: selectedColumns.length, table: copyTableName.trim() }, i18nLanguage));
-              setIsCopyColumnsModalOpen(false);
-          } else {
-              message.error(t('table_designer.message.execution_failed', {
-                  detail: result.rawMessage || result.message,
-              }, i18nLanguage));
-          }
-      } finally {
-          setCopyExecuting(false);
+      if (!approved) {
+          return { ok: false, cancelled: true, statementCount: 0 };
       }
+      return executeSchemaStatements(sql, { skipProductionRiskConfirm: true });
   };
+
+  const copyColumnsRpcConfig = useMemo(() => {
+      const conn = connections.find(c => c.id === tab.connectionId);
+      if (!conn) return null;
+      return buildRpcConnectionConfig({
+          ...conn.config,
+          port: Number(conn.config.port),
+          password: conn.config.password || '',
+          database: conn.config.database || '',
+          useSSH: conn.config.useSSH || false,
+          ssh: conn.config.ssh || { host: '', port: 22, user: '', password: '', keyPath: '' },
+      });
+  }, [connections, tab.connectionId]);
 
   const executeSchemaStatements = async (
       sqlText: string,
@@ -3474,11 +3456,13 @@ END;`;
   );
 
   const columnsTabContent = (
+      <Dropdown menu={{ items: columnClipboard.contextMenuItems }} trigger={['contextMenu']}>
       <div
           ref={containerRef}
           className="table-designer-wrapper gn-v2-designer-table-shell"
-          onCopy={handleColumnClipboardCopy}
-          onPaste={handleColumnClipboardPaste}
+          onCopy={columnClipboard.handleCopyEvent}
+          onPaste={columnClipboard.handlePasteEvent}
+          onKeyDown={columnClipboard.handleKeyDown}
           style={{
               height: '100%',
               overflow: 'hidden',
@@ -3510,6 +3494,9 @@ END;`;
                 cell: ResizableTitle,
               },
             }}
+            onRow={(record: EditableColumn) => ({
+                onContextMenu: () => handleColumnRowContextMenu(record),
+            })}
         />
   ) : (
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
@@ -3528,11 +3515,15 @@ END;`;
                     body: { row: SortableRow },
                     header: { cell: ResizableTitle }
                 }}
+                onRow={(record: EditableColumn) => ({
+                    onContextMenu: () => handleColumnRowContextMenu(record),
+                })}
             />
         </SortableContext>
       </DndContext>
   )}
   </div>
+      </Dropdown>
   );
 
   const tdengineCombinedTabContent = (
@@ -3599,6 +3590,7 @@ END;`;
     <div
         ref={shellRef}
         className={`table-designer-shell gn-v2-table-designer${embedded ? ' is-embedded' : ''}`}
+        onKeyDown={columnClipboard.handleKeyDown}
         style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, padding: embedded ? 0 : '6px 0', position: 'relative' }}
     >
         <style>{`
@@ -4003,14 +3995,33 @@ END;`;
                     {t('table_designer.action.add_after_selected', undefined, i18nLanguage)}
                 </Button>
             )}
-            {!readOnly && !isTDengineChildNewTable && (
+            {!isTDengineChildNewTable && (
                 <Button
                     size="small"
                     icon={<CopyOutlined />}
+                    onClick={() => { void columnClipboard.copySelected(); }}
+                    disabled={selectedColumns.length === 0}
+                >
+                    {t('table_designer.action.copy_columns', undefined, i18nLanguage)}
+                </Button>
+            )}
+            {!readOnly && !isTDengineChildNewTable && (
+                <Button
+                    size="small"
+                    icon={<SnippetsOutlined />}
+                    onClick={() => { void columnClipboard.pasteFromClipboard(); }}
+                >
+                    {t('table_designer.action.paste_columns', undefined, i18nLanguage)}
+                </Button>
+            )}
+            {!readOnly && !isTDengineChildNewTable && (
+                <Button
+                    size="small"
+                    icon={<TableOutlined />}
                     onClick={openCopySelectedColumnsModal}
                     disabled={selectedColumns.length === 0}
                 >
-                    {t('table_designer.action.copy_selected_to_new_table', undefined, i18nLanguage)}
+                    {t('table_designer.action.copy_columns_to_table', undefined, i18nLanguage)}
                 </Button>
             )}
             <div style={{ flex: 1 }} />
@@ -4330,47 +4341,29 @@ END;`;
             </Space>
         </Modal>
 
-        <Modal
-            title={t('table_designer.modal.copy_columns_title', undefined, i18nLanguage)}
+        <TableDesignerCopyColumnsModal
             open={isCopyColumnsModalOpen}
-            onCancel={() => setIsCopyColumnsModalOpen(false)}
-            onOk={handleExecuteCopySelectedColumns}
-            okText={t('table_designer.action.create_table', undefined, i18nLanguage)}
-            cancelText={t('table_designer.action.cancel', undefined, i18nLanguage)}
-            confirmLoading={copyExecuting}
-            width={560}
-        >
-            <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                <div style={{ color: '#666' }}>
-                    {t('table_designer.selection.columns_selected', { count: selectedColumns.length }, i18nLanguage)}
-                </div>
-                <Input
-                    {...noAutoCapInputProps}
-                    placeholder={t('table_designer.placeholder.target_table_name', undefined, i18nLanguage)}
-                    value={copyTableName}
-                    onChange={e => setCopyTableName(e.target.value)}
-                    maxLength={128}
-                />
-                <Space wrap>
-                    <Select
-                        value={copyCharset}
-                        onChange={v => {
-                            setCopyCharset(v);
-                            const cols = (COLLATIONS as any)[v];
-                            if (cols && cols.length > 0) setCopyCollation(cols[0].value);
-                        }}
-                        options={charsetOptions}
-                        style={{ width: 160 }}
-                    />
-                    <Select
-                        value={copyCollation}
-                        onChange={setCopyCollation}
-                        options={(collationOptions as any)[copyCharset] || []}
-                        style={{ width: 220 }}
-                    />
-                </Space>
-            </Space>
-        </Modal>
+            language={i18nLanguage}
+            darkMode={darkMode}
+            selectedCount={selectedColumns.length}
+            selectedColumns={selectedColumns}
+            defaultNewTableName={`${(tab.tableName || 'new_table').trim()}_copy`}
+            currentTableName={tab.tableName || ''}
+            dbName={tab.dbName || ''}
+            dbType={getDbType()}
+            selectedSchema={selectedSchema}
+            rpcConfig={copyColumnsRpcConfig}
+            charset={charset}
+            collation={collation}
+            charsetOptions={charsetOptions}
+            collationOptions={collationOptions}
+            showCharsetFields
+            buildCreateTableSql={(tableName, nextCharset, nextCollation) => (
+                buildCreateTableSql(tableName, selectedColumns, nextCharset, nextCollation)
+            )}
+            onExecute={handleCopyColumnsExecute}
+            onClose={() => setIsCopyColumnsModalOpen(false)}
+        />
 
         <Modal
             title={t('table_designer.modal.table_comment_title', undefined, i18nLanguage)}
