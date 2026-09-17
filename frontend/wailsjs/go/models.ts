@@ -1513,24 +1513,6 @@ export namespace app {
 	        this.description = source["description"];
 	    }
 	}
-	export class QueryResultBudgetOptions {
-	    maxRowsPerResult?: number;
-	    maxTotalRows?: number;
-	    maxTotalBytes?: number;
-	    maxFieldBytes?: number;
-
-	    static createFrom(source: any = {}) {
-	        return new QueryResultBudgetOptions(source);
-	    }
-
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.maxRowsPerResult = source["maxRowsPerResult"];
-	        this.maxTotalRows = source["maxTotalRows"];
-	        this.maxTotalBytes = source["maxTotalBytes"];
-	        this.maxFieldBytes = source["maxFieldBytes"];
-	    }
-	}
 	export class RedisExportKeysOptions {
 	    scope?: string;
 	    keys?: string[];

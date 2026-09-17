@@ -2,7 +2,6 @@ import type { SqlLanguage } from 'sql-formatter';
 import type { TabData, ColumnDefinition, IndexDefinition } from '../../types';
 import { DBGetColumns, DBGetIndexes, DBQuery } from '../../../wailsjs/go/app/App';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
-import { queryEditorMetadataQuery } from './queryEditorMetadataRequests';
 import {
     isMysqlFamilyDialect,
     isOracleLikeDialect,
@@ -1580,18 +1579,20 @@ export const queryCompletionMetadataRowsBySpecs = async (
     config: Record<string, any>,
     dbName: string,
     specs: MetadataQuerySpec[],
-    request?: { connectionId: string; signal?: AbortSignal },
 ): Promise<MetadataQueryResult[]> => {
     const normalizedSpecs = normalizeMetadataQuerySpecs(specs);
     if (normalizedSpecs.length === 0) {
         return [];
     }
+    // Compatibility specs can be complementary (Oracle owners) as well as
+    // fallbacks. The same SSH tunnel/driver connection is often the shared
+    // bottleneck, so serialise requests to avoid queueing and contention while
+    // retaining every successful result in declaration order.
     const rpcConfig = buildRpcConnectionConfig(config) as any;
     const results: MetadataQueryResult[] = [];
     for (const spec of normalizedSpecs) {
-        if (request?.signal?.aborted) break;
         try {
-            const result = request ? await queryEditorMetadataQuery(request.connectionId, rpcConfig, dbName, spec.sql, request.signal) : await DBQuery(rpcConfig, dbName, spec.sql);
+            const result = await DBQuery(rpcConfig, dbName, spec.sql);
             if (result.success && Array.isArray(result.data)) {
                 results.push({
                     rows: result.data as Record<string, any>[],
@@ -1599,7 +1600,6 @@ export const queryCompletionMetadataRowsBySpecs = async (
                 });
             }
         } catch {
-            if (request?.signal?.aborted) break;
             // 忽略单条元数据查询失败，继续使用其它兼容查询结果。
         }
     }
@@ -1657,9 +1657,6 @@ export const QUERY_EDITOR_OBJECT_DECORATION_MAX_IDENTIFIERS = 200;
 export const QUERY_EDITOR_OBJECT_DECORATION_MAX_LINES = 1_000;
 export const QUERY_EDITOR_LIVE_DECORATION_MAX_TEXT_LENGTH = 50_000;
 export const QUERY_EDITOR_PERSISTED_DRAFT_MAX_TEXT_LENGTH = 50_000;
-export const QUERY_EDITOR_COMPLETION_ANALYSIS_MAX_TEXT_LENGTH = QUERY_EDITOR_LIVE_DECORATION_MAX_TEXT_LENGTH;
-export const QUERY_EDITOR_COMPLETION_ANALYSIS_PREFIX_CHARS = 16_000;
-export const QUERY_EDITOR_COMPLETION_ANALYSIS_SUFFIX_CHARS = 256;
 
 export const getQueryEditorModelValueLength = (model: any): number | null => {
     if (!model || typeof model.getValueLength !== 'function') {
@@ -1671,58 +1668,6 @@ export const getQueryEditorModelValueLength = (model: any): number | null => {
     } catch {
         return null;
     }
-};
-
-const normalizeQueryEditorCompletionAnalysisText = (sql: string): string => {
-    const normalized = String(sql || '').replace(/\r\n?/g, '\n');
-    return normalized.startsWith('\uFEFF') ? ` ${normalized.slice(1)}` : normalized;
-};
-
-export const readQueryEditorCompletionAnalysisText = (
-    model: any,
-    position: { lineNumber: number; column: number },
-): { text: string; cursorOffset: number } => {
-    const normalizedPosition = {
-        lineNumber: Math.max(1, Math.floor(Number(position?.lineNumber) || 1)),
-        column: Math.max(1, Math.floor(Number(position?.column) || 1)),
-    };
-    const modelLength = getQueryEditorModelValueLength(model);
-    const canReadWindow = typeof model?.getOffsetAt === 'function'
-        && typeof model?.getPositionAt === 'function'
-        && typeof model?.getValueInRange === 'function';
-    if (
-        modelLength === null
-        || modelLength <= QUERY_EDITOR_COMPLETION_ANALYSIS_MAX_TEXT_LENGTH
-        || !canReadWindow
-    ) {
-        const text = normalizeQueryEditorCompletionAnalysisText(String(model?.getValue?.() || ''));
-        return {
-            text,
-            cursorOffset: getNormalizedOffsetAtPosition(text, normalizedPosition),
-        };
-    }
-
-    const rawCursorOffset = Number(model.getOffsetAt(normalizedPosition));
-    const cursorOffset = Number.isFinite(rawCursorOffset)
-        ? Math.max(0, Math.min(modelLength, rawCursorOffset))
-        : 0;
-    const startOffset = Math.max(0, cursorOffset - QUERY_EDITOR_COMPLETION_ANALYSIS_PREFIX_CHARS);
-    const endOffset = Math.min(modelLength, cursorOffset + QUERY_EDITOR_COMPLETION_ANALYSIS_SUFFIX_CHARS);
-    const start = model.getPositionAt(startOffset);
-    const cursor = model.getPositionAt(cursorOffset);
-    const end = model.getPositionAt(endOffset);
-    const toRange = (from: any, to: any) => ({
-        startLineNumber: from.lineNumber,
-        startColumn: from.column,
-        endLineNumber: to.lineNumber,
-        endColumn: to.column,
-    });
-    const prefix = normalizeQueryEditorCompletionAnalysisText(String(model.getValueInRange(toRange(start, cursor)) || ''));
-    const suffix = normalizeQueryEditorCompletionAnalysisText(String(model.getValueInRange(toRange(cursor, end)) || ''));
-    return {
-        text: `${prefix}${suffix}`,
-        cursorOffset: prefix.length,
-    };
 };
 
 export type QueryIdentifierPathSegment = {
@@ -3078,12 +3023,7 @@ export const isQueryEditorTableAliasCompletionContext = (source: string, dbType 
 
 export type QueryEditorAliasMap = Record<
     string,
-    {
-        dbName: string;
-        tableName: string;
-        explicitOwnerName?: string;
-        sourceSegments?: QueryIdentifierPathSegment[];
-    }
+    { dbName: string; tableName: string; explicitOwnerName?: string }
 >;
 
 export const buildQueryEditorAliasMap = (
@@ -3110,8 +3050,8 @@ export const buildQueryEditorAliasMap = (
         const shortTable = reference.segments?.[reference.segments.length - 1]
             || splitQueryIdentifierPathSegments(parts[parts.length - 1] || '', dbType)[0];
         const aliasTarget = explicitOwnerName
-            ? { dbName, tableName, explicitOwnerName, sourceSegments: reference.segments }
-            : { dbName, tableName, sourceSegments: reference.segments };
+            ? { dbName, tableName, explicitOwnerName }
+            : { dbName, tableName };
         const shortTableKey = shortTable ? buildQueryEditorIdentifierIdentityKey([shortTable], dbType) : '';
         if (shortTableKey) aliasMap[shortTableKey] = aliasTarget;
 
@@ -4313,9 +4253,16 @@ export const resolveQueryEditorHoverTarget = (
             // the current database/schema interpretation when that catalog is
             // unavailable.
             const explicitOwner = String(aliasInfo.explicitOwnerName || '').trim();
-            const sourceSegments = aliasInfo.sourceSegments && aliasInfo.sourceSegments.length > 0
-                ? aliasInfo.sourceSegments
-                : splitQueryIdentifierPathSegments(aliasInfo.tableName, dialect);
+            const aliasReference = collectQueryEditorTableReferences(fullText, dialect).find((reference) => {
+                const referenceAlias = reference.aliasSegment
+                    || (reference.alias
+                        ? splitQueryIdentifierPathSegments(reference.alias, dialect)[0]
+                        : undefined);
+                return referenceAlias
+                    && buildQueryEditorIdentifierIdentityKey([referenceAlias], dialect) === aliasKey;
+            });
+            const sourceSegments = aliasReference?.segments
+                || splitQueryIdentifierPathSegments(aliasInfo.tableName, dialect);
             const currentSchemaColumn = explicitOwner
                 ? findColumnTarget(
                     currentDb,

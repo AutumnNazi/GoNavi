@@ -103,7 +103,6 @@ type fakeAgentTimeoutDB struct {
 	execCalled         bool
 	execContextCalled  bool
 	deadlineSet        bool
-	rowBudget          *db.RowBudget
 	queryMessages      []string
 	multiResults       []connection.ResultSetData
 	multiMessages      []string
@@ -191,7 +190,6 @@ func (f *fakeAgentTimeoutDB) Query(query string) ([]map[string]interface{}, []st
 }
 func (f *fakeAgentTimeoutDB) QueryContext(ctx context.Context, query string) ([]map[string]interface{}, []string, error) {
 	f.queryContextCalled = true
-	f.rowBudget = db.RowBudgetFromContext(ctx)
 	if _, ok := ctx.Deadline(); ok {
 		f.deadlineSet = true
 	}
@@ -242,7 +240,6 @@ func (f *fakeAgentTimeoutDB) QueryMultiWithMessages(query string) ([]connection.
 	return append([]connection.ResultSetData(nil), f.multiResults...), append([]string(nil), f.multiMessages...), nil
 }
 func (f *fakeAgentTimeoutDB) QueryMultiContextWithMessages(ctx context.Context, query string) ([]connection.ResultSetData, []string, error) {
-	f.rowBudget = db.RowBudgetFromContext(ctx)
 	if _, ok := ctx.Deadline(); ok {
 		f.deadlineSet = true
 	}

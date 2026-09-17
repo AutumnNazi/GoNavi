@@ -108,12 +108,10 @@ describe('nativeDetachedWindowClient', () => {
       sqlLogs: [{ id: 'log-1', sql: 'select 1' }],
     };
 
-    const editorViewState = { cursorState: [{ positionLineNumber: 3 }], viewState: { scrollTop: 480 } };
     const payload = buildNativeDetachedWorkbenchPayload(state, queryTab, {
       resultSets: [],
       activeResultKey: '',
       isResultPanelVisible: true,
-      editorViewState,
     });
 
     expect(payload.tab).toEqual(queryTab);
@@ -133,7 +131,6 @@ describe('nativeDetachedWindowClient', () => {
     });
     expect(JSON.stringify(payload)).not.toContain('updateQueryTabDraft');
     expect(JSON.stringify(payload)).not.toContain('callback');
-    expect(payload.resultSession?.editorViewState).toEqual(editorViewState);
   });
 
   it('skips heavyweight runtime state before recursively cloning a workbench snapshot', () => {

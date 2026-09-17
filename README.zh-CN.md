@@ -281,7 +281,11 @@ Elasticsearch 连接复用查询工作区，并按服务端版本提供受控 RE
 
 - [Go](https://go.dev/dl/) 1.21+
 - [Node.js](https://nodejs.org/) 18+
-- [Wails CLI](https://wails.io/docs/gettingstarted/installation)，按下方命令安装到项目目录
+- [Wails CLI](https://wails.io/docs/gettingstarted/installation)
+
+```bash
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+```
 
 ### 开发
 
@@ -289,19 +293,16 @@ Elasticsearch 连接复用查询工作区，并按服务端版本提供受控 RE
 git clone https://github.com/Syngnat/GoNavi.git
 cd GoNavi
 
-node tools/project-tools.mjs install wails
-node tools/project-tools.mjs run wails dev  # 完整热重载
+wails dev                          # 完整热重载
 node tools/wails-fast-dev.mjs      # Go 导出签名未变时更快
 node tools/wails-fast-dev.mjs --refresh-bindings  # 修改导出方法签名后刷新绑定
 ```
 
-安装器会从 `go.mod` 读取固定的 Wails 版本，并将 CLI 写入 `.tools/bin`，因此全局 Wails 不会覆盖项目版本。
-
 ### 构建
 
 ```bash
-node tools/project-tools.mjs run wails build
-node tools/project-tools.mjs run wails build -clean  # 发布前推荐
+wails build
+wails build -clean   # 发布前推荐
 ```
 
 产物位于 `build/bin`。

@@ -68,27 +68,6 @@ class GenerateReleaseNotesTests(unittest.TestCase):
         self.assertNotIn("keep owner entry (contributed by", body)
         self.assertNotIn("dependabot[bot]", body)
         self.assertEqual(body.count("**@OutsideUser**"), 1)
-        self.assertTrue(body.startswith(MODULE.HUALONG_SPONSOR_NOTICE))
-        self.assertIn("華龍算力", body)
-        self.assertIn("3.8 折", body)
-        self.assertIn("https://api.hualong.online/register?promo=GONAVI%26HUALONG", body)
-        self.assertNotIn("GONAVI&HUALONG", body)
-        self.assertNotIn("](https://api.hualong.online/)", body)
-
-    def test_empty_commit_list_still_keeps_sponsor_notice(self) -> None:
-        body = MODULE.render_release_notes(
-            commits=[],
-            attributions={},
-            repository="Syngnat/GoNavi",
-            tag="v1.1.0",
-            previous_tag="",
-            repository_url="https://github.com/Syngnat/GoNavi",
-        )
-
-        self.assertEqual(
-            body,
-            MODULE.HUALONG_SPONSOR_NOTICE + "\n\n暂无提交记录。\n",
-        )
 
     def test_prefers_merged_pull_request_author_for_commit_attribution(self) -> None:
         pulls = [
@@ -261,7 +240,6 @@ class GenerateReleaseNotesTests(unittest.TestCase):
                 "[v1.0.0...v1.1.0](https://github.com/Syngnat/GoNavi/compare/v1.0.0...v1.1.0)",
                 body,
             )
-            self.assertTrue(body.startswith(MODULE.HUALONG_SPONSOR_NOTICE))
 
     def test_release_workflow_uses_tested_generator_and_pull_request_metadata(self) -> None:
         release = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")

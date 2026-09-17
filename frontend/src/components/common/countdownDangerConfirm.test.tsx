@@ -15,11 +15,9 @@ import {
 } from './countdownDangerConfirm';
 
 describe('showCountdownDangerConfirm', () => {
-  type ConfirmUpdate = Parameters<ReturnType<typeof Modal.confirm>['update']>[0];
-
   let previousLanguage: string;
-  let update: ReturnType<typeof vi.fn<(configUpdate: ConfirmUpdate) => void>>;
-  let destroy: ReturnType<typeof vi.fn<() => void>>;
+  let update: ReturnType<typeof vi.fn>;
+  let destroy: ReturnType<typeof vi.fn>;
 
   const getLatestUpdate = (): ModalFuncProps => (
     update.mock.calls[update.mock.calls.length - 1]?.[0] as ModalFuncProps
@@ -30,8 +28,8 @@ describe('showCountdownDangerConfirm', () => {
     setCurrentLanguage('en-US');
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-23T00:00:00Z'));
-    update = vi.fn<(configUpdate: ConfirmUpdate) => void>();
-    destroy = vi.fn<() => void>();
+    update = vi.fn();
+    destroy = vi.fn();
     vi.mocked(Modal.confirm).mockReset();
     vi.mocked(Modal.confirm).mockReturnValue({ update, destroy });
   });

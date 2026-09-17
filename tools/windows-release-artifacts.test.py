@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-import os
-import shutil
-import stat
-import subprocess
-import tempfile
-import textwrap
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -18,8 +12,6 @@ WORKFLOWS = (
 PUBLISH_WORKFLOW = ROOT / ".github" / "workflows" / "publish-release.yml"
 INSTALLER = ROOT / "build" / "windows" / "installer.wxs"
 LOCAL_RELEASE_SCRIPT = ROOT / "build-release.sh"
-PROJECT_TOOLS = ROOT / "tools" / "project-tools.mjs"
-WAILS_FAST_DEV = ROOT / "tools" / "wails-fast-dev.mjs"
 WIX_NAMESPACE = "http://wixtoolset.org/schemas/v4/wxs"
 UPGRADE_CODE = "CDD6BF2F-ED1E-4345-A0AB-DCDB7E15FB23"
 AMD64_COMPONENT_GUID = "0BCEE70B-9CF2-449C-9ADE-190188493234"
@@ -115,19 +107,9 @@ class WindowsReleaseArtifactsTest(unittest.TestCase):
         source = LOCAL_RELEASE_SCRIPT.read_text(encoding="utf-8")
         windows_builds = source.split("# --- Windows AMD64", 1)[1].split("# --- Linux AMD64", 1)[0]
 
-        self.assertIn('"$WAILS_BIN" build -trimpath -platform windows/amd64', windows_builds)
-        self.assertIn('"$WAILS_BIN" build -trimpath -platform windows/arm64', windows_builds)
+        self.assertIn("wails build -trimpath -platform windows/amd64", windows_builds)
+        self.assertIn("wails build -trimpath -platform windows/arm64", windows_builds)
         self.assertNotIn("upx", windows_builds.lower())
-
-    def test_local_release_uses_one_resolved_wails_binary_for_all_builds(self) -> None:
-        source = LOCAL_RELEASE_SCRIPT.read_text(encoding="utf-8")
-
-        self.assertIn(
-            'WAILS_BIN="$(node "$SCRIPT_DIR/tools/project-tools.mjs" resolve wails)"',
-            source,
-        )
-        self.assertEqual(source.count('"$WAILS_BIN" build'), 7)
-        self.assertNotRegex(source, r"(?m)^\s*wails build")
 
     def test_installer_declares_upgrade_shortcuts_and_uninstall_metadata(self) -> None:
         root = ET.parse(INSTALLER).getroot()
@@ -216,201 +198,6 @@ class WindowsReleaseArtifactsTest(unittest.TestCase):
         assert notice_file is not None
         self.assertEqual(notice_file.attrib["Source"], "$(var.NoticeFile)")
         self.assertEqual(notice_file.attrib["Name"], "NOTICE.txt")
-
-
-@unittest.skipIf(os.name == "nt", "build-release.sh requires a POSIX shell")
-class ProjectLocalWailsToolsTest(unittest.TestCase):
-    node = shutil.which("node")
-
-    def setUp(self) -> None:
-        if not self.node:
-            self.skipTest("node is required")
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp_dir.cleanup)
-        self.project_root = Path(self.temp_dir.name) / "project with spaces"
-        self.tools_dir = self.project_root / "tools"
-        self.tools_dir.mkdir(parents=True)
-        shutil.copy2(PROJECT_TOOLS, self.tools_dir / PROJECT_TOOLS.name)
-        (self.project_root / "go.mod").write_text(
-            "module example.test/project\n\nrequire github.com/wailsapp/wails/v2 v2.15.0\n",
-            encoding="utf-8",
-        )
-
-    def write_executable(self, path: Path, source: str) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(textwrap.dedent(source).lstrip(), encoding="utf-8")
-        path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-
-    def run_project_tools(self, *args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [self.node, str(self.tools_dir / PROJECT_TOOLS.name), *args],
-            cwd=self.project_root,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-    def test_install_uses_go_mod_version_and_project_bin(self) -> None:
-        fake_bin = self.project_root / "fake-bin"
-        log_prefix = self.project_root / "go-install"
-        self.write_executable(
-            fake_bin / "go",
-            """
-            #!/bin/sh
-            printf '%s\n' "$GOBIN" > "${PROJECT_TOOL_TEST_LOG}.gobin"
-            printf '%s\n' "$@" > "${PROJECT_TOOL_TEST_LOG}.args"
-            mkdir -p "$GOBIN"
-            : > "$GOBIN/wails"
-            chmod +x "$GOBIN/wails"
-            """,
-        )
-        env = os.environ.copy()
-        env["PATH"] = f"{fake_bin}{os.pathsep}{env.get('PATH', '')}"
-        env["PROJECT_TOOL_TEST_LOG"] = str(log_prefix)
-
-        result = self.run_project_tools("install", "wails", env=env)
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(
-            Path(Path(f"{log_prefix}.gobin").read_text(encoding="utf-8").strip()).resolve(),
-            (self.project_root / ".tools" / "bin").resolve(),
-        )
-        self.assertEqual(
-            Path(f"{log_prefix}.args").read_text(encoding="utf-8").splitlines(),
-            ["install", "github.com/wailsapp/wails/v2/cmd/wails@v2.15.0"],
-        )
-
-    def test_resolve_and_run_ignore_global_wails(self) -> None:
-        local_log = self.project_root / "local-wails.log"
-        global_log = self.project_root / "global-wails.log"
-        local_wails = self.project_root / ".tools" / "bin" / "wails"
-        fake_bin = self.project_root / "fake-bin"
-        self.write_executable(
-            local_wails,
-            """
-            #!/bin/sh
-            printf '%s\n' "$*" > "$LOCAL_WAILS_LOG"
-            exit 23
-            """,
-        )
-        self.write_executable(
-            fake_bin / "wails",
-            """
-            #!/bin/sh
-            printf '%s\n' "$*" > "$GLOBAL_WAILS_LOG"
-            exit 24
-            """,
-        )
-        env = os.environ.copy()
-        env["PATH"] = f"{fake_bin}{os.pathsep}{env.get('PATH', '')}"
-        env["LOCAL_WAILS_LOG"] = str(local_log)
-        env["GLOBAL_WAILS_LOG"] = str(global_log)
-
-        resolved = self.run_project_tools("resolve", "wails", env=env)
-        invoked = self.run_project_tools("run", "wails", "build", "-clean", env=env)
-
-        self.assertEqual(resolved.returncode, 0, resolved.stderr)
-        self.assertEqual(Path(resolved.stdout.strip()).resolve(), local_wails.resolve())
-        self.assertEqual(invoked.returncode, 23)
-        self.assertEqual(local_log.read_text(encoding="utf-8").strip(), "build -clean")
-        self.assertFalse(global_log.exists())
-
-    def test_missing_wails_reports_install_command(self) -> None:
-        result = self.run_project_tools("resolve", "wails")
-
-        self.assertEqual(result.returncode, 1)
-        self.assertIn(".tools/bin/wails", result.stderr)
-        self.assertIn("node tools/project-tools.mjs install wails", result.stderr)
-
-    def test_release_fails_before_cleaning_when_local_wails_is_missing(self) -> None:
-        shutil.copy2(LOCAL_RELEASE_SCRIPT, self.project_root / LOCAL_RELEASE_SCRIPT.name)
-        sentinel = self.project_root / "dist" / "keep.txt"
-        sentinel.parent.mkdir()
-        sentinel.write_text("keep", encoding="utf-8")
-
-        result = subprocess.run(
-            ["bash", str(self.project_root / LOCAL_RELEASE_SCRIPT.name)],
-            cwd=self.project_root,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        self.assertEqual(result.returncode, 1)
-        self.assertTrue(sentinel.exists())
-        self.assertIn("node tools/project-tools.mjs install wails", result.stderr)
-
-    def test_release_uses_local_wails_instead_of_path_wails(self) -> None:
-        shutil.copy2(LOCAL_RELEASE_SCRIPT, self.project_root / LOCAL_RELEASE_SCRIPT.name)
-        local_log = self.project_root / "local-release-wails.log"
-        global_log = self.project_root / "global-release-wails.log"
-        fake_bin = self.project_root / "fake-bin"
-        self.write_executable(
-            self.project_root / ".tools" / "bin" / "wails",
-            """
-            #!/bin/sh
-            printf '%s\n' "$*" >> "$LOCAL_WAILS_LOG"
-            exit 1
-            """,
-        )
-        self.write_executable(
-            fake_bin / "wails",
-            """
-            #!/bin/sh
-            printf '%s\n' "$*" >> "$GLOBAL_WAILS_LOG"
-            exit 1
-            """,
-        )
-        self.write_executable(
-            self.tools_dir / "generate-driver-agent-revisions.sh",
-            """
-            #!/bin/sh
-            exit 0
-            """,
-        )
-        version_file = self.project_root / "version" / "dev-version.txt"
-        version_file.parent.mkdir()
-        version_file.write_text("0.0.1-test\n", encoding="utf-8")
-        env = os.environ.copy()
-        env["PATH"] = f"{fake_bin}{os.pathsep}{env.get('PATH', '')}"
-        env["LOCAL_WAILS_LOG"] = str(local_log)
-        env["GLOBAL_WAILS_LOG"] = str(global_log)
-
-        result = subprocess.run(
-            ["bash", str(self.project_root / LOCAL_RELEASE_SCRIPT.name)],
-            cwd=self.project_root,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        self.assertEqual(result.returncode, 1)
-        invocations = local_log.read_text(encoding="utf-8").splitlines()
-        self.assertTrue(any("-platform darwin/arm64" in line for line in invocations))
-        self.assertTrue(any("-platform darwin/amd64" in line for line in invocations))
-        self.assertFalse(global_log.exists())
-
-    def test_fast_dev_dry_run_uses_project_local_wails(self) -> None:
-        shutil.copy2(WAILS_FAST_DEV, self.tools_dir / WAILS_FAST_DEV.name)
-        local_wails = self.project_root / ".tools" / "bin" / "wails"
-        self.write_executable(local_wails, "#!/bin/sh\nexit 0\n")
-        (self.project_root / "frontend" / "wailsjs").mkdir(parents=True)
-        (self.project_root / "wails.json").write_text("{}\n", encoding="utf-8")
-
-        result = subprocess.run(
-            [self.node, str(self.tools_dir / WAILS_FAST_DEV.name), "--dry-run", "--no-install"],
-            cwd=self.project_root,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("Would run:", result.stdout)
-        self.assertIn(str(local_wails.resolve()), result.stdout)
-        self.assertIn(" dev ", result.stdout)
 
 
 if __name__ == "__main__":

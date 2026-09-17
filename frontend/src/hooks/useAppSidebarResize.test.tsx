@@ -131,7 +131,7 @@ describe('useAppSidebarResize interaction cleanup', () => {
   let fakeDocument: FakeEventTarget & { body: FakeBody };
   let scheduledFrames: Map<number, FrameRequestCallback>;
   let nextFrameId: number;
-  let setSidebarWidth: ReturnType<typeof vi.fn<(width: number) => void>>;
+  let setSidebarWidth: ReturnType<typeof vi.fn>;
   let fakeSider: FakeHTMLElement;
   let fakeContent: FakeHTMLElement;
 
@@ -160,7 +160,7 @@ describe('useAppSidebarResize interaction cleanup', () => {
   beforeEach(() => {
     scheduledFrames = new Map();
     nextFrameId = 1;
-    setSidebarWidth = vi.fn<(width: number) => void>();
+    setSidebarWidth = vi.fn();
     fakeWindow = Object.assign(new FakeEventTarget(), {
       getComputedStyle: () => ({ minWidth: '180px', maxWidth: '600px' }),
       innerWidth: 1200,

@@ -86,7 +86,6 @@ type optionalAgentRequest struct {
 	StreamSSHProgress    bool                         `json:"streamSSHProgress,omitempty"`
 	Query                string                       `json:"query,omitempty"`
 	TimeoutMs            int64                        `json:"timeoutMs,omitempty"`
-	RowBudget            *RowBudgetOptions            `json:"rowBudget,omitempty"`
 	DBName               string                       `json:"dbName,omitempty"`
 	TableName            string                       `json:"tableName,omitempty"`
 	Changes              *connection.ChangeSet        `json:"changes,omitempty"`
@@ -94,7 +93,6 @@ type optionalAgentRequest struct {
 	// sshProgressReporter remains in the main process and is never serialized
 	// into the driver-agent request.
 	sshProgressReporter connection.SSHProgressReporter `json:"-"`
-	rowBudget           *RowBudget                     `json:"-"`
 }
 
 type optionalAgentResponse struct {
@@ -109,8 +107,6 @@ type optionalAgentResponse struct {
 	Messages        []string                      `json:"messages,omitempty"`
 	ChunkType       string                        `json:"chunkType,omitempty"`
 	RowsAffected    int64                         `json:"rowsAffected,omitempty"`
-	Truncated       bool                          `json:"truncated,omitempty"`
-	BudgetExhausted bool                          `json:"budgetExhausted,omitempty"`
 }
 
 type OptionalDriverAgentMetadata struct {
@@ -379,7 +375,6 @@ func (c *optionalDriverAgentClient) callLocked(req optionalAgentRequest, out int
 				return fmt.Errorf("解析 %s 驱动代理数据失败：%w", driverDisplayName(c.driver), err)
 			}
 		}
-		recordOptionalAgentBudgetResponse(req, out, resp)
 		return nil
 	}
 }
@@ -882,6 +877,27 @@ func (d *OptionalDriverAgentDB) ElasticsearchConsoleTransportUsable() bool {
 	return client != nil && client.stoppedError() == nil
 }
 
+func (d *OptionalDriverAgentDB) QueryContextWithMessages(ctx context.Context, query string) ([]map[string]interface{}, []string, []string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, nil, err
+	}
+	client, err := d.requireClient()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	var data []map[string]interface{}
+	var fields []string
+	var messages []string
+	if err := client.callContext(ctx, optionalAgentRequest{
+		Method:    optionalAgentMethodQuery,
+		Query:     query,
+		TimeoutMs: timeoutMsFromContext(ctx),
+	}, &data, &fields, &messages, nil); err != nil {
+		return nil, nil, nil, err
+	}
+	return data, fields, messages, nil
+}
+
 func (d *OptionalDriverAgentDB) Query(query string) ([]map[string]interface{}, []string, error) {
 	data, fields, _, err := d.QueryContextWithMessages(metadataContextFor(d), query)
 	return data, fields, err
@@ -906,6 +922,34 @@ func (d *OptionalDriverAgentDB) QueryMultiWithMessages(query string) ([]connecti
 	if err := client.call(optionalAgentRequest{
 		Method: optionalAgentMethodQueryMulti,
 		Query:  query,
+	}, &results, nil, &messages, nil); err != nil {
+		if isOptionalAgentMultiResultUnsupportedError(err) {
+			return nil, nil, nil
+		}
+		return nil, nil, err
+	}
+	return results, messages, nil
+}
+
+func (d *OptionalDriverAgentDB) QueryMultiContext(ctx context.Context, query string) ([]connection.ResultSetData, error) {
+	results, _, err := d.QueryMultiContextWithMessages(ctx, query)
+	return results, err
+}
+
+func (d *OptionalDriverAgentDB) QueryMultiContextWithMessages(ctx context.Context, query string) ([]connection.ResultSetData, []string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	client, err := d.requireClient()
+	if err != nil {
+		return nil, nil, err
+	}
+	var results []connection.ResultSetData
+	var messages []string
+	if err := client.callContext(ctx, optionalAgentRequest{
+		Method:    optionalAgentMethodQueryMulti,
+		Query:     query,
+		TimeoutMs: timeoutMsFromContext(ctx),
 	}, &results, nil, &messages, nil); err != nil {
 		if isOptionalAgentMultiResultUnsupportedError(err) {
 			return nil, nil, nil
@@ -1116,6 +1160,29 @@ func (s *optionalDriverAgentSession) StreamQueryContext(ctx context.Context, que
 		return nil
 	}
 	return err
+}
+
+func (s *optionalDriverAgentSession) QueryContext(ctx context.Context, query string) ([]map[string]interface{}, []string, error) {
+	data, fields, _, err := s.QueryContextWithMessages(ctx, query)
+	return data, fields, err
+}
+
+func (s *optionalDriverAgentSession) QueryContextWithMessages(ctx context.Context, query string) ([]map[string]interface{}, []string, []string, error) {
+	if err := s.ensureOpen(); err != nil {
+		return nil, nil, nil, err
+	}
+	var data []map[string]interface{}
+	var fields []string
+	var messages []string
+	if err := s.client.callContext(ctx, optionalAgentRequest{
+		Method:    optionalAgentMethodQuery,
+		SessionID: s.sessionID,
+		Query:     query,
+		TimeoutMs: timeoutMsFromContext(ctx),
+	}, &data, &fields, &messages, nil); err != nil {
+		return nil, nil, nil, err
+	}
+	return data, fields, messages, nil
 }
 
 func (s *optionalDriverAgentSession) Exec(query string) (int64, error) {

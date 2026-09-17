@@ -4,13 +4,13 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveProjectTool } from './project-tools.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, '..');
 const frontendDir = path.join(projectRoot, 'frontend');
 const wailsConfigPath = path.join(projectRoot, 'wails.json');
 const nodeCommand = process.execPath;
+const wailsCommand = process.platform === 'win32' ? 'wails.exe' : 'wails';
 
 const usage = `Usage:
   node tools/wails-fast-dev.mjs [--refresh-bindings] [--no-install] [--dry-run] [wails dev flags...]
@@ -26,14 +26,6 @@ const rawArgs = process.argv.slice(2);
 if (rawArgs.includes('--help') || rawArgs.includes('-h')) {
   console.log(usage);
   process.exit(0);
-}
-
-let wailsCommand;
-try {
-  wailsCommand = resolveProjectTool('wails');
-} catch (error) {
-  console.error(error.message);
-  process.exit(1);
 }
 
 const readWailsConfig = () => {

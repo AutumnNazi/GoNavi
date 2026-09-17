@@ -2,14 +2,12 @@ export interface TableBodyBottomPaddingOptions {
   hasHorizontalOverflow: boolean;
   floatingScrollbarHeight: number;
   floatingScrollbarGap: number;
-  reserveFloatingScrollbar?: boolean;
 }
 
 export interface VirtualTableScrollXOptions {
   totalWidth: number;
   tableViewportWidth: number;
-  nativeHorizontalOverflow?: boolean;
-  isMacLike?: boolean;
+  isMacLike: boolean;
 }
 
 export interface DataGridHorizontalWheelIntentOptions {
@@ -33,8 +31,6 @@ export interface DataGridHorizontalRangeCommitOptions {
   lastCommittedOffset: number;
   thresholdPx: number;
 }
-
-export type DataGridHorizontalSyncMode = 'scroll-left' | 'timeline';
 
 export interface ExternalHorizontalScrollInnerWidthOptions {
   tableScrollWidth: number;
@@ -71,9 +67,8 @@ export const calculateTableBodyBottomPadding = ({
   hasHorizontalOverflow,
   floatingScrollbarHeight,
   floatingScrollbarGap,
-  reserveFloatingScrollbar = true,
 }: TableBodyBottomPaddingOptions): number => {
-  if (!hasHorizontalOverflow || !reserveFloatingScrollbar) {
+  if (!hasHorizontalOverflow) {
     return 0;
   }
 
@@ -86,18 +81,16 @@ export const calculateTableBodyBottomPadding = ({
 export const calculateVirtualTableScrollX = ({
   totalWidth,
   tableViewportWidth,
-  nativeHorizontalOverflow,
   isMacLike,
 }: VirtualTableScrollXOptions): number => {
   const safeTotalWidth = Math.max(0, Math.ceil(totalWidth));
   const safeViewportWidth = Math.max(0, Math.floor(tableViewportWidth));
-  const useNativeOverflow = nativeHorizontalOverflow ?? Boolean(isMacLike);
 
   if (safeViewportWidth > 0 && safeTotalWidth < safeViewportWidth) {
     return safeViewportWidth;
   }
 
-  if (useNativeOverflow && safeViewportWidth > 0 && safeTotalWidth > safeViewportWidth) {
+  if (isMacLike && safeViewportWidth > 0 && safeTotalWidth > safeViewportWidth) {
     return safeTotalWidth + 2;
   }
 
@@ -274,30 +267,11 @@ export const shouldLetNativeHorizontalWheelPass = ({
   shiftKey,
   nativeHorizontalEnabled,
 }: DataGridNativeHorizontalWheelOptions): boolean => {
-  if (!nativeHorizontalEnabled) {
+  if (!nativeHorizontalEnabled || shiftKey) {
     return false;
   }
-  // Chromium 会把 Shift+滚轮映射到 overflow-x。拦截后只能走无惯性的 JS scrollLeft，Windows 横滑就会比原生竖滑顿。
-  return resolveDataGridHorizontalWheelDelta({ deltaX, deltaY, shiftKey }) !== 0;
+  return resolveDataGridHorizontalWheelDelta({ deltaX, deltaY, shiftKey: false }) !== 0;
 };
-
-export const shouldBindDataGridCaptureHorizontalWheel = ({
-  nativeHorizontalEnabled,
-  hasVirtualHolder,
-}: {
-  nativeHorizontalEnabled: boolean;
-  hasVirtualHolder: boolean;
-}): boolean => !(nativeHorizontalEnabled && hasVirtualHolder);
-
-export const resolveDataGridHorizontalSyncMode = ({
-  isMacLike,
-  supportsScrollTimeline,
-}: {
-  isMacLike: boolean;
-  supportsScrollTimeline: boolean;
-}): DataGridHorizontalSyncMode => (
-  !isMacLike && supportsScrollTimeline ? 'timeline' : 'scroll-left'
-);
 
 export const resolveNativeHorizontalWheelScrollLeft = ({
   delta,

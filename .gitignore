@@ -10,7 +10,6 @@ build/bin/
 
 # wails / node artifacts (按需)
 node_modules/
-/.tools/
 frontend/wailsjs/tsconfig.json
 __pycache__/
 *.py[cod]

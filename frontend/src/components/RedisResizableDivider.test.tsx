@@ -51,7 +51,7 @@ describe('RedisResizableDivider interaction cleanup', () => {
   };
   let overlays: FakeOverlay[];
   let renderer: ReactTestRenderer | null = null;
-  let onResizeEnd: ReturnType<typeof vi.fn<(newWidth: number) => void>>;
+  let onResizeEnd: ReturnType<typeof vi.fn>;
   const target = {
     offsetWidth: 420,
     parentElement: { offsetWidth: 1200 },
@@ -85,7 +85,7 @@ describe('RedisResizableDivider interaction cleanup', () => {
     });
     Object.defineProperty(globalThis, 'window', { configurable: true, value: fakeWindow });
     Object.defineProperty(globalThis, 'document', { configurable: true, value: fakeDocument });
-    onResizeEnd = vi.fn<(newWidth: number) => void>();
+    onResizeEnd = vi.fn();
     act(() => {
       renderer = create(
         <RedisResizableDivider

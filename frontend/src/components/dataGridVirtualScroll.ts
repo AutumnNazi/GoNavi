@@ -32,12 +32,6 @@ const queryDataGridFixedCells = (root: ParentNode): NodeListOf<HTMLElement> => (
 
 const DATA_GRID_COLUMN_VIRTUALIZATION_THRESHOLD = 16;
 
-/**
- * 原生 overflow-x 把横滑交给合成线程，手感对齐竖滑。
- * 这层活着时关掉列窗口，避免滑动中一次 React 提交把行掏出空洞。
- */
-export const DATA_GRID_COMPOSITED_HORIZONTAL_OFFSET = true;
-
 export const shouldVirtualizeDataGridColumns = (columnCount: number): boolean => (
   Number.isFinite(columnCount)
   && Math.max(0, Math.floor(columnCount)) > DATA_GRID_COLUMN_VIRTUALIZATION_THRESHOLD
@@ -53,7 +47,8 @@ export const readDataGridVirtualInnerOffset = (inner: HTMLElement): number => {
 };
 
 /**
- * 连续横滚预览时钉住固定列。一个继承变量替代给每个已挂载固定单元格写 style。
+ * Keeps fixed cells visually pinned during a continuous horizontal preview.
+ * One inherited variable replaces a style write on every mounted fixed cell.
  */
 export const applyDataGridFixedCellPreviewOffset = (
   inner: HTMLElement,
@@ -68,7 +63,8 @@ export const applyDataGridFixedCellPreviewOffset = (
 };
 
 /**
- * 把已稳定的偏移留给后续竖滚挂上的行，并清掉单元格上的预览覆盖。
+ * Persists the settled offset for rows mounted by later vertical scrolling,
+ * then releases the per-cell preview overrides.
  */
 export const commitDataGridFixedCellOffset = (
   root: ParentNode,
@@ -109,7 +105,8 @@ export const coversFixedVirtualRange = (
 };
 
 /**
- * 对齐 rc-virtual-list 固定行高的可见区间语义，但用算术算范围，不扫每一项。
+ * Mirrors rc-virtual-list's visible range semantics for a fixed-height list,
+ * but calculates the range arithmetically instead of scanning every item.
  */
 export const calculateFixedVirtualRange = ({
   itemCount,
@@ -138,7 +135,9 @@ export const calculateFixedVirtualRange = ({
       : 0;
   const clampedScrollTop = Math.max(0, Math.min(maxScrollTop, requestedScrollTop));
 
-  // 原生滚动可能比 React 提交下一扇虚拟窗口更快。两侧至少挂一屏，避免大滚轮跨帧露出未挂载的填充块。
+  // Native scrolling can advance before React commits the next virtual
+  // window. Keep at least one viewport mounted on each side so a large wheel
+  // delta cannot expose the unmounted filler between two React frames.
   const overscanRows = Math.max(6, Math.ceil(viewport / height));
   const start = Math.min(count - 1, Math.max(0, Math.ceil(clampedScrollTop / height) - overscanRows));
   const end = Math.min(count - 1, Math.floor((clampedScrollTop + viewport) / height) + overscanRows);
@@ -186,7 +185,8 @@ export interface DataGridVisualFrameGuard<T> {
 const NO_PENDING_IDLE_COMMIT = Symbol('data-grid-no-pending-idle-commit');
 
 /**
- * 连续视觉预览流空闲后合并成一次提交。任意时刻只活着一个定时器。
+ * Coalesces a continuous stream of visual scroll previews into one commit
+ * after the stream has been idle. Only one timer is live at any time.
  */
 export const createDataGridIdleCommitScheduler = <T>({
   delayMs,
@@ -262,7 +262,8 @@ export const createDataGridIdleCommitScheduler = <T>({
 const NO_VISUAL_FRAME_GUARD_VALUE = Symbol('data-grid-no-visual-frame-guard-value');
 
 /**
- * 异步内部提交还可能把更旧的偏移画回 DOM 时，持续把最新视觉偏移写回去。
+ * Keeps reasserting the latest visual scroll offset while an async internal
+ * commit can still repaint an older offset into the DOM.
  */
 export const createDataGridVisualFrameGuard = <T>({
   onFrame,
@@ -336,30 +337,4 @@ export const createDataGridVisualFrameGuard = <T>({
       return active;
     },
   };
-};
-
-export const DATA_GRID_NATIVE_HORIZONTAL_MAX_VAR = '--gn-datagrid-h-max';
-
-export const resolveDataGridNativeHorizontalMaxScroll = ({
-  scrollWidth,
-  clientWidth,
-}: {
-  scrollWidth: number;
-  clientWidth: number;
-}): number => {
-  const width = Number.isFinite(scrollWidth) ? Math.max(0, scrollWidth) : 0;
-  const viewport = Number.isFinite(clientWidth) ? Math.max(0, clientWidth) : 0;
-  return Math.max(0, width - viewport);
-};
-
-export const applyDataGridNativeHorizontalMaxScroll = (
-  root: HTMLElement,
-  maxScroll: number,
-): boolean => {
-  const next = `${Math.max(0, Number.isFinite(maxScroll) ? maxScroll : 0)}px`;
-  if (root.style.getPropertyValue(DATA_GRID_NATIVE_HORIZONTAL_MAX_VAR) === next) {
-    return false;
-  }
-  root.style.setProperty(DATA_GRID_NATIVE_HORIZONTAL_MAX_VAR, next);
-  return true;
 };

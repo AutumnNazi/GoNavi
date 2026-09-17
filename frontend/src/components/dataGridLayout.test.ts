@@ -8,9 +8,7 @@ import {
   resolveExternalHorizontalScrollMetrics,
   resolveDataGridColumnQuickFindScrollLeft,
   resolveDataGridHorizontalWheelDelta,
-  resolveDataGridHorizontalSyncMode,
   resolveNativeHorizontalWheelScrollLeft,
-  shouldBindDataGridCaptureHorizontalWheel,
   shouldCommitVirtualHorizontalRange,
   shouldLetNativeHorizontalWheelPass,
 } from './dataGridLayout';
@@ -37,21 +35,10 @@ describe('dataGridLayout helpers', () => {
     })).toBe(30);
   });
 
-  it('skips the floating-bar gutter when native compositor scrolling owns the track', () => {
-    expect(calculateTableBodyBottomPadding({
-      hasHorizontalOverflow: true,
-      floatingScrollbarHeight: 10,
-      floatingScrollbarGap: 6,
-      reserveFloatingScrollbar: false,
-    })).toBe(0);
-  });
-
   it('keeps scroll width aligned with viewport or content width', () => {
     expect(calculateVirtualTableScrollX({ totalWidth: 646, tableViewportWidth: 1200, isMacLike: false })).toBe(1200);
     expect(calculateVirtualTableScrollX({ totalWidth: 646, tableViewportWidth: 0, isMacLike: false })).toBe(646);
     expect(calculateVirtualTableScrollX({ totalWidth: 1200, tableViewportWidth: 800, isMacLike: true })).toBe(1202);
-    expect(calculateVirtualTableScrollX({ totalWidth: 1200, tableViewportWidth: 800, nativeHorizontalOverflow: true })).toBe(1202);
-    expect(calculateVirtualTableScrollX({ totalWidth: 1200, tableViewportWidth: 800, nativeHorizontalOverflow: false })).toBe(1200);
   });
 
   it('absorbs leftover viewport width into the last flexible data column only', () => {
@@ -185,7 +172,7 @@ describe('dataGridLayout helpers', () => {
     })).toBe(20);
   });
 
-  it('lets native compositor horizontal wheel pass including Shift+wheel', () => {
+  it('lets native compositor horizontal wheel pass on Mac-like virtual tables', () => {
     expect(shouldLetNativeHorizontalWheelPass({
       deltaX: 18,
       deltaY: 3,
@@ -194,11 +181,11 @@ describe('dataGridLayout helpers', () => {
     })).toBe(true);
 
     expect(shouldLetNativeHorizontalWheelPass({
-      deltaX: 0,
-      deltaY: 20,
+      deltaX: 18,
+      deltaY: 3,
       shiftKey: true,
       nativeHorizontalEnabled: true,
-    })).toBe(true);
+    })).toBe(false);
 
     expect(shouldLetNativeHorizontalWheelPass({
       deltaX: 18,
@@ -206,38 +193,6 @@ describe('dataGridLayout helpers', () => {
       shiftKey: false,
       nativeHorizontalEnabled: false,
     })).toBe(false);
-  });
-
-  it('does not bind a capturing wheel interceptor over a native horizontal holder', () => {
-    expect(shouldBindDataGridCaptureHorizontalWheel({
-      nativeHorizontalEnabled: true,
-      hasVirtualHolder: true,
-    })).toBe(false);
-
-    expect(shouldBindDataGridCaptureHorizontalWheel({
-      nativeHorizontalEnabled: true,
-      hasVirtualHolder: false,
-    })).toBe(true);
-
-    expect(shouldBindDataGridCaptureHorizontalWheel({
-      nativeHorizontalEnabled: false,
-      hasVirtualHolder: true,
-    })).toBe(true);
-  });
-
-  it('uses scrollLeft on macOS or without timeline support', () => {
-    expect(resolveDataGridHorizontalSyncMode({
-      isMacLike: true,
-      supportsScrollTimeline: true,
-    })).toBe('scroll-left');
-    expect(resolveDataGridHorizontalSyncMode({
-      isMacLike: false,
-      supportsScrollTimeline: false,
-    })).toBe('scroll-left');
-    expect(resolveDataGridHorizontalSyncMode({
-      isMacLike: false,
-      supportsScrollTimeline: true,
-    })).toBe('timeline');
   });
 
   it('applies native horizontal wheel deltas onto the holder scrollLeft', () => {

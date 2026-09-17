@@ -550,7 +550,7 @@ body[data-ui-version="v2"] .gn-v2-query-monaco-stage {
   background: var(--gn-monaco-bg, var(--gn-query-workbench-bg));
 }
 
-body[data-ui-version="v2"] .gn-v2-query-monaco-stage.is-find-widget-visible {
+body[data-ui-version="v2"] .gn-v2-query-monaco-stage:has(.monaco-editor .find-widget.visible:not(.hiddenEditor)) {
   overflow: visible;
 }
 

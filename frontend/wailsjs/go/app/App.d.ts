@@ -89,21 +89,15 @@ export function DBGetAllColumns(arg1:connection.ConnectionConfig,arg2:string):Pr
 
 export function DBGetAllColumnsContext(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:string):Promise<connection.QueryResult>;
 
-export function DBGetAllColumnsWithCancel(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
-
 export function DBGetColumns(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
 export function DBGetColumnsContext(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:string,arg4:string):Promise<connection.QueryResult>;
-
-export function DBGetColumnsWithCancel(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
 
 export function DBGetDatabaseForeignKeys(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
 export function DBGetDatabases(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
 
 export function DBGetDatabasesContext(arg1:context.Context,arg2:connection.ConnectionConfig):Promise<connection.QueryResult>;
-
-export function DBGetDatabasesWithCancel(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
 export function DBGetForeignKeys(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
@@ -120,8 +114,6 @@ export function DBGetObjectsContext(arg1:context.Context,arg2:connection.Connect
 export function DBGetTables(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
 export function DBGetTablesContext(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:string):Promise<connection.QueryResult>;
-
-export function DBGetTablesWithCancel(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
 export function DBGetTriggers(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
@@ -145,13 +137,7 @@ export function DBQueryMulti(arg1:connection.ConnectionConfig,arg2:string,arg3:s
 
 export function DBQueryMultiInTransaction(arg1:string,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
-export function DBQueryMultiInTransactionWithOptions(arg1:string,arg2:string,arg3:string,arg4:app.QueryResultBudgetOptions):Promise<connection.QueryResult>;
-
 export function DBQueryMultiTransactional(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
-
-export function DBQueryMultiTransactionalWithOptions(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:app.QueryResultBudgetOptions):Promise<connection.QueryResult>;
-
-export function DBQueryMultiWithOptions(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:app.QueryResultBudgetOptions):Promise<connection.QueryResult>;
 
 export function DBQueryWithCancel(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
 
@@ -166,8 +152,6 @@ export function DBRollbackTransactionWithTrigger(arg1:string,arg2:string):Promis
 export function DBShowCreateTable(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
 export function DBShowCreateTableContext(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:string,arg4:string):Promise<connection.QueryResult>;
-
-export function DBShowCreateTableWithCancel(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
 
 export function DBTableExists(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
 

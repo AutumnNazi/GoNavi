@@ -189,10 +189,10 @@ const getClipboardReaders = (scope: MonacoClipboardScope): {
 const loadMonacoClipboardInternals = (): Promise<MonacoClipboardInternals | null> => {
   if (!monacoClipboardInternalsPromise) {
     monacoClipboardInternalsPromise = Promise.all([
-      import('monaco-editor/editor/contrib/clipboard/browser/clipboard.js'),
-      import('monaco-editor/editor/browser/controller/editContext/clipboardUtils.js'),
+      import('monaco-editor/esm/vs/editor/contrib/clipboard/browser/clipboard.js'),
+      import('monaco-editor/esm/vs/editor/browser/controller/editContext/clipboardUtils.js'),
     ]).then(([clipboardModule, clipboardUtilsModule]) => {
-      // Monaco ships these symbols without public declarations. The editor feature bundle
+      // Monaco 0.55.1 ships these symbols without public declarations. The main editor bundle
       // imports both modules, so these are the same instances used by Monaco's default action.
       const pasteAction = (clipboardModule as unknown as {
         PasteAction?: MonacoClipboardPasteActionLike;

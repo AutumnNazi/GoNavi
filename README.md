@@ -282,7 +282,11 @@ Elasticsearch connections reuse the query workspace as a version-aware REST cons
 
 - [Go](https://go.dev/dl/) 1.21+
 - [Node.js](https://nodejs.org/) 18+
-- [Wails CLI](https://wails.io/docs/gettingstarted/installation), installed project-locally below
+- [Wails CLI](https://wails.io/docs/gettingstarted/installation)
+
+```bash
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+```
 
 ### Develop
 
@@ -290,19 +294,16 @@ Elasticsearch connections reuse the query workspace as a version-aware REST cons
 git clone https://github.com/Syngnat/GoNavi.git
 cd GoNavi
 
-node tools/project-tools.mjs install wails
-node tools/project-tools.mjs run wails dev  # full hot reload
+wails dev                          # full hot reload
 node tools/wails-fast-dev.mjs      # faster when Go exports unchanged
 node tools/wails-fast-dev.mjs --refresh-bindings  # after Go export signature changes
 ```
 
-The installer reads the pinned Wails version from `go.mod` and writes the CLI to `.tools/bin`, so a global Wails installation cannot override the project version.
-
 ### Build
 
 ```bash
-node tools/project-tools.mjs run wails build
-node tools/project-tools.mjs run wails build -clean  # clean build before release
+wails build
+wails build -clean   # clean build before release
 ```
 
 Artifacts → `build/bin`.

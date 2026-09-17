@@ -1,12 +1,9 @@
 import type { QueryEditorResultSet } from '../components/QueryEditorResultsPanel';
-import type { TabData } from '../types';
 
 export type QueryEditorResultSessionSnapshot = {
   resultSets: QueryEditorResultSet[];
   activeResultKey: string;
   isResultPanelVisible?: boolean;
-  /** Serializable Monaco cursor, selection, scroll, and contribution state. */
-  editorViewState?: unknown;
 };
 
 const cache = new Map<string, QueryEditorResultSessionSnapshot>();
@@ -29,36 +26,10 @@ export const saveQueryEditorResultSession = (
     resultSets: Array.isArray(snapshot.resultSets) ? snapshot.resultSets : [],
     activeResultKey: String(snapshot.activeResultKey || ''),
     isResultPanelVisible: snapshot.isResultPanelVisible,
-    ...(snapshot.editorViewState !== undefined
-      ? { editorViewState: snapshot.editorViewState }
-      : {}),
   };
   cache.set(id, nextSnapshot);
   notifyQueryEditorResultSession(id, nextSnapshot);
 };
-
-export const saveQueryEditorResultSessionForOpenTab = (
-  tabId: string,
-  snapshot: QueryEditorResultSessionSnapshot,
-  tabs: readonly Pick<TabData, 'id'>[] | null | undefined,
-): boolean => {
-  const id = String(tabId || '').trim();
-  if (!id || !Array.isArray(tabs) || !tabs.some((tab) => tab.id === id)) {
-    return false;
-  }
-  saveQueryEditorResultSession(id, snapshot);
-  return true;
-};
-
-export const saveQueryEditorResultSessionForOpenQueryTab = (
-  tab: Pick<TabData, 'id' | 'type'> | null | undefined,
-  snapshot: QueryEditorResultSessionSnapshot | null | undefined,
-  tabs: readonly Pick<TabData, 'id'>[] | null | undefined,
-): boolean => (
-  tab?.type === 'query' && snapshot
-    ? saveQueryEditorResultSessionForOpenTab(tab.id, snapshot, tabs)
-    : false
-);
 
 export const takeQueryEditorResultSession = (
   tabId: string,

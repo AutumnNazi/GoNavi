@@ -11,10 +11,6 @@ DEFAULT_BINARY_NAME="GoNavi" # 对应 wails.json 中的 outputfilename
 DEV_VERSION_FILE="version/dev-version.txt"
 DEFAULT_DEV_VERSION="0.0.1-test"
 
-if ! WAILS_BIN="$(node "$SCRIPT_DIR/tools/project-tools.mjs" resolve wails)"; then
-    exit 1
-fi
-
 resolve_build_version() {
     if [ -n "${GONAVI_VERSION:-}" ]; then
         printf '%s\n' "${GONAVI_VERSION}"
@@ -167,7 +163,7 @@ package_macos_release() {
 
     echo -e "${GREEN}🍎 正在构建 macOS (${platform})...${NC}"
     generate_driver_agent_revisions "darwin/${platform}"
-    "$WAILS_BIN" build -trimpath -platform "darwin/${platform}" -clean -ldflags "$LDFLAGS"
+    wails build -trimpath -platform "darwin/${platform}" -clean -ldflags "$LDFLAGS"
     if [ $? -ne 0 ]; then
         echo -e "${RED}   ❌ macOS ${platform} 构建失败。${NC}"
         record_build_failure "macOS ${platform}"
@@ -225,7 +221,7 @@ package_macos_release "amd64" "mac-amd64"
 echo -e "${GREEN}🪟 正在构建 Windows (amd64)...${NC}"
 if command -v x86_64-w64-mingw32-gcc &> /dev/null; then
     generate_driver_agent_revisions "windows/amd64"
-    "$WAILS_BIN" build -trimpath -platform windows/amd64 -clean -ldflags "$LDFLAGS"
+    wails build -trimpath -platform windows/amd64 -clean -ldflags "$LDFLAGS"
     if [ $? -eq 0 ]; then
         TARGET_EXE="$DIST_DIR/${APP_NAME}-${VERSION}-windows-amd64.exe"
         mv "$BUILD_BIN_DIR/${DEFAULT_BINARY_NAME}.exe" "$TARGET_EXE"
@@ -242,7 +238,7 @@ fi
 echo -e "${GREEN}🪟 正在构建 Windows (arm64)...${NC}"
 if command -v aarch64-w64-mingw32-gcc &> /dev/null; then
     generate_driver_agent_revisions "windows/arm64"
-    "$WAILS_BIN" build -trimpath -platform windows/arm64 -clean -ldflags "$LDFLAGS"
+    wails build -trimpath -platform windows/arm64 -clean -ldflags "$LDFLAGS"
     if [ $? -eq 0 ]; then
         TARGET_EXE="$DIST_DIR/${APP_NAME}-${VERSION}-windows-arm64.exe"
         mv "$BUILD_BIN_DIR/${DEFAULT_BINARY_NAME}.exe" "$TARGET_EXE"
@@ -265,7 +261,7 @@ CURRENT_ARCH=$(uname -m)
 if [ "$CURRENT_OS" = "Linux" ] && [ "$CURRENT_ARCH" = "x86_64" ]; then
     # 本机 Linux amd64，直接构建
     generate_driver_agent_revisions "linux/amd64"
-    "$WAILS_BIN" build -trimpath -platform linux/amd64 -clean -ldflags "$LDFLAGS"
+    wails build -trimpath -platform linux/amd64 -clean -ldflags "$LDFLAGS"
     if [ $? -eq 0 ]; then
         TARGET_LINUX_BIN="$DIST_DIR/${APP_NAME}-${VERSION}-linux-amd64"
         mv "$BUILD_BIN_DIR/${DEFAULT_BINARY_NAME}" "$TARGET_LINUX_BIN"
@@ -287,7 +283,7 @@ elif command -v x86_64-linux-gnu-gcc &> /dev/null; then
     export CXX=x86_64-linux-gnu-g++
     export CGO_ENABLED=1
     generate_driver_agent_revisions "linux/amd64"
-    "$WAILS_BIN" build -trimpath -platform linux/amd64 -clean -ldflags "$LDFLAGS"
+    wails build -trimpath -platform linux/amd64 -clean -ldflags "$LDFLAGS"
     if [ $? -eq 0 ]; then
         TARGET_LINUX_BIN="$DIST_DIR/${APP_NAME}-${VERSION}-linux-amd64"
         mv "$BUILD_BIN_DIR/${DEFAULT_BINARY_NAME}" "$TARGET_LINUX_BIN"
@@ -313,7 +309,7 @@ echo -e "${GREEN}🐧 正在构建 Linux (arm64)...${NC}"
 if [ "$CURRENT_OS" = "Linux" ] && [ "$CURRENT_ARCH" = "aarch64" ]; then
     # 本机 Linux arm64，直接构建
     generate_driver_agent_revisions "linux/arm64"
-    "$WAILS_BIN" build -trimpath -platform linux/arm64 -clean -ldflags "$LDFLAGS"
+    wails build -trimpath -platform linux/arm64 -clean -ldflags "$LDFLAGS"
     if [ $? -eq 0 ]; then
         TARGET_LINUX_BIN="$DIST_DIR/${APP_NAME}-${VERSION}-linux-arm64"
         mv "$BUILD_BIN_DIR/${DEFAULT_BINARY_NAME}" "$TARGET_LINUX_BIN"
@@ -334,7 +330,7 @@ elif command -v aarch64-linux-gnu-gcc &> /dev/null; then
     export CXX=aarch64-linux-gnu-g++
     export CGO_ENABLED=1
     generate_driver_agent_revisions "linux/arm64"
-    "$WAILS_BIN" build -trimpath -platform linux/arm64 -clean -ldflags "$LDFLAGS"
+    wails build -trimpath -platform linux/arm64 -clean -ldflags "$LDFLAGS"
     if [ $? -eq 0 ]; then
         TARGET_LINUX_BIN="$DIST_DIR/${APP_NAME}-${VERSION}-linux-arm64"
         mv "$BUILD_BIN_DIR/${DEFAULT_BINARY_NAME}" "$TARGET_LINUX_BIN"

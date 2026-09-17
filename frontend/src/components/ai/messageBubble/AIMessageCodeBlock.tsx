@@ -31,14 +31,6 @@ import { useOptionalI18n } from '../../../i18n/provider';
 import Modal from '../../common/ResizableDraggableModal';
 import type { OverlayWorkbenchTheme } from '../../../utils/overlayWorkbenchTheme';
 import { buildAIReadonlyPreviewSQL } from '../../../utils/aiSqlLimit';
-import {
-  assertSafeMermaidSource,
-  buildMermaidConfig,
-  buildMermaidSandboxDocument,
-  enqueueMermaidRender,
-  sanitizeMermaidSvg,
-  withMermaidRenderTimeout,
-} from './mermaidSecurity';
 
 [
   bash,
@@ -92,59 +84,49 @@ const useMessageCopy = () => {
   )(key, params);
 };
 
+const escapeHtml = (value: string) => value
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
 const MermaidRenderer: React.FC<{ chart: string; darkMode: boolean }> = ({ chart, darkMode }) => {
+  const containerRef = React.useRef<HTMLDivElement>(null);
   const copy = useMessageCopy();
-  const [sandboxDocument, setSandboxDocument] = useState('');
-  const [renderError, setRenderError] = useState('');
 
   React.useEffect(() => {
+    if (!containerRef.current) {
+      return;
+    }
     let cancelled = false;
-    setSandboxDocument('');
-    setRenderError('');
 
     (async () => {
       try {
-        assertSafeMermaidSource(chart);
         const { default: mermaid } = await import('mermaid');
-        if (cancelled) return;
-        const document = await enqueueMermaidRender(async () => {
-          mermaid.initialize(buildMermaidConfig(darkMode));
-          const id = `mermaid-${Math.random().toString(36).slice(2)}`;
-          const result: any = await withMermaidRenderTimeout(mermaid.render(id, chart));
-          const sanitizedSvg = sanitizeMermaidSvg(String(result?.svg || result || ''));
-          return buildMermaidSandboxDocument(sanitizedSvg, darkMode);
-        });
-        if (!cancelled) setSandboxDocument(document);
+        if (cancelled || !containerRef.current) {
+          return;
+        }
+
+        mermaid.initialize({ startOnLoad: false, theme: darkMode ? 'dark' : 'default' });
+        const id = `mermaid-${Math.random().toString(36).slice(2)}`;
+        const result: any = await mermaid.render(id, chart);
+        if (!cancelled && containerRef.current) {
+          containerRef.current.innerHTML = result.svg || result;
+        }
       } catch (error: any) {
-        if (!cancelled) setRenderError(error?.message || '');
+        if (!cancelled && containerRef.current) {
+          containerRef.current.innerHTML = `<div style="color:#ef4444; padding:12px; background:rgba(239,68,68,0.1); border-radius:6px; font-size:12px">${escapeHtml(copy('ai_chat.message.mermaid.render_failed', { detail: error?.message || '' }))}</div>`;
+        }
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [chart, darkMode]);
+  }, [chart, copy, darkMode]);
 
-  if (renderError) {
-    return (
-      <div className="ai-mermaid-container" style={{ color: '#ef4444', padding: 12, background: 'rgba(239,68,68,0.1)', borderRadius: 6, fontSize: 12 }}>
-        {copy('ai_chat.message.mermaid.render_failed', { detail: renderError })}
-      </div>
-    );
-  }
-  if (!sandboxDocument) {
-    return <div className="ai-mermaid-container" aria-busy="true" style={{ minHeight: 120, margin: '16px 0' }} />;
-  }
-  return (
-    <iframe
-      data-testid="ai-mermaid-sandbox"
-      title="Mermaid"
-      sandbox=""
-      srcDoc={sandboxDocument}
-      className="ai-mermaid-container"
-      style={{ width: '100%', minHeight: 320, margin: '16px 0', border: 0, background: 'transparent' }}
-    />
-  );
+  return <div ref={containerRef} className="ai-mermaid-container" style={{ margin: '16px 0', display: 'flex', justifyContent: 'flex-start', overflowX: 'auto' }} />;
 };
 
 const CodeCopyButton: React.FC<{ text: string }> = ({ text }) => {

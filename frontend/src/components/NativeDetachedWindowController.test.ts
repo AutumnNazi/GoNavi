@@ -7,10 +7,7 @@ import {
   clearNativeDetachedHostEvents,
   recordNativeDetachedVisibilityRevision,
 } from '../utils/nativeDetachedWindowHost';
-import {
-  clearQueryEditorResultSession,
-  peekQueryEditorResultSession,
-} from '../utils/queryEditorResultSessionCache';
+import { peekQueryEditorResultSession } from '../utils/queryEditorResultSessionCache';
 import { clearQueryTabDraft, getQueryTabDraft } from '../utils/sqlFileTabDrafts';
 import {
   applyNativeDetachedWindowEvent,
@@ -29,8 +26,6 @@ const buildQueryTab = (id: string, query: string) => ({
 
 describe('NativeDetachedWindowController', () => {
   beforeEach(() => {
-    clearQueryEditorResultSession('query-a');
-    clearQueryEditorResultSession('query-b');
     clearQueryTabDraft('query-a');
     clearQueryTabDraft('query-b');
     clearNativeDetachedHostEvents('ai-chat');
@@ -79,33 +74,6 @@ describe('NativeDetachedWindowController', () => {
     expect(useStore.getState().tabs.find((tab) => tab.id === 'query-b')?.query).toBe('select 2');
     expect((useStore.getState().sqlEditorPendingTransactions['query-a'] as any)?.transactionId).toBe('tx-1');
     expect(peekQueryEditorResultSession('query-a')?.resultSets[0]?.rows).toEqual([{ value: 42 }]);
-  });
-
-  it('ignores a delayed result session after the source query tab closes', () => {
-    useStore.getState().closeTab('query-a');
-
-    applyNativeDetachedWindowEvent({
-      id: 'workbench:query-a',
-      kind: 'workbench',
-      action: 'sync',
-      payload: {
-        tab: buildQueryTab('query-a', 'select stale'),
-        resultSession: {
-          activeResultKey: 'result-stale',
-          resultSets: [{
-            key: 'result-stale',
-            sql: 'select stale',
-            rows: [{ value: 'stale' }],
-            columns: ['value'],
-            pkColumns: [],
-            readOnly: true,
-          }],
-        },
-      },
-    });
-
-    expect(useStore.getState().tabs.some((tab) => tab.id === 'query-a')).toBe(false);
-    expect(peekQueryEditorResultSession('query-a')).toBeNull();
   });
 
   it('ignores sync events echoed back to the child that originated them', () => {
@@ -852,20 +820,7 @@ describe('NativeDetachedWindowController', () => {
       id: `workbench:${detachedTab.id}`,
       kind: 'workbench',
       action: 'cancel-close',
-      payload: {
-        tab: detachedTab,
-        resultSession: {
-          activeResultKey: 'result-recovered',
-          resultSets: [{
-            key: 'result-recovered',
-            sql: 'select unsaved_work',
-            rows: [{ value: 'recovered' }],
-            columns: ['value'],
-            pkColumns: [],
-            readOnly: true,
-          }],
-        },
-      },
+      payload: { tab: detachedTab },
     });
 
     expect(useStore.getState().tabs.find((tab) => tab.id === detachedTab.id)).toEqual(
@@ -873,9 +828,6 @@ describe('NativeDetachedWindowController', () => {
     );
     expect(useStore.getState().detachedWorkbenchWindows).toEqual([
       expect.objectContaining({ tabId: detachedTab.id }),
-    ]);
-    expect(peekQueryEditorResultSession(detachedTab.id)?.resultSets[0]?.rows).toEqual([
-      { value: 'recovered' },
     ]);
   });
 

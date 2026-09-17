@@ -11,7 +11,7 @@ import (
 )
 
 var requiredIssue1098WebRPCContextMethods = []string{
-	"DBQuery", "DBQueryApplicationWithCancel", "DBQueryWithCancel", "DBQueryMulti", "DBQueryMultiWithOptions", "DBQueryAudited", "DBQueryAI", "DBQueryIsolated", "MySQLQuery",
+	"DBQuery", "DBQueryApplicationWithCancel", "DBQueryWithCancel", "DBQueryMulti", "DBQueryAudited", "DBQueryAI", "DBQueryIsolated", "MySQLQuery",
 	"DBGetDatabases", "DBGetTables", "DBGetViews", "DBGetObjects", "DBGetAllColumns", "DBGetColumns", "DBGetIndexes",
 	"DBGetForeignKeys", "DBGetDatabaseForeignKeys", "DBGetTriggers", "DBShowCreateTable", "DBTableExists",
 	"MySQLGetDatabases", "MySQLGetTables", "MySQLShowCreateTable", "MongoDiscoverMembers", "DBRefreshTableStats", "DiagnoseQuery",
@@ -45,9 +45,6 @@ func WebRPCContextHandlers(a *App) map[string]any {
 		},
 		"DBQueryMulti": func(ctx context.Context, config connection.ConnectionConfig, dbName, query, queryID string) connection.QueryResult {
 			return a.dbQueryMultiContext(ctx, config, dbName, query, queryID)
-		},
-		"DBQueryMultiWithOptions": func(ctx context.Context, config connection.ConnectionConfig, dbName, query, queryID string, options QueryResultBudgetOptions) connection.QueryResult {
-			return a.dbQueryMultiWithOptionsContext(ctx, config, dbName, query, queryID, options)
 		},
 		"DBQueryAudited": func(ctx context.Context, config connection.ConnectionConfig, dbName, query, source string) connection.QueryResult {
 			return a.dbQueryAuditedContext(ctx, config, dbName, query, source)
@@ -241,25 +238,6 @@ func (a *App) dbQueryMultiContext(ctx context.Context, config connection.Connect
 		auditAll: explicitQuery || a.webRuntime, auditWrites: true, source: source,
 		executionContext: ctx, synchronousConnectionWait: true,
 	})
-}
-
-func (a *App) dbQueryMultiWithOptionsContext(
-	ctx context.Context,
-	config connection.ConnectionConfig,
-	dbName string,
-	query string,
-	queryID string,
-	options QueryResultBudgetOptions,
-) connection.QueryResult {
-	budget := normalizeQueryResultBudgetOptions(options)
-	return a.dbQueryMulti(config, dbName, query, queryID, dbQueryMultiAuditOptions{
-		auditAll: explicitQueryID(queryID) || a.webRuntime, auditWrites: true, source: "query_editor",
-		executionContext: ctx, synchronousConnectionWait: true, ResultBudget: &budget,
-	})
-}
-
-func explicitQueryID(queryID string) bool {
-	return strings.TrimSpace(queryID) != ""
 }
 
 func (a *App) dbQueryAuditedContext(ctx context.Context, config connection.ConnectionConfig, dbName, query, source string) connection.QueryResult {

@@ -1,6 +1,18 @@
 /// <reference types="vite/client" />
 
-declare module 'monaco-editor/editor/contrib/clipboard/browser/clipboard.js' {
+declare module 'monaco-editor/esm/nls.messages.zh-cn' {
+  const messages: Record<string, string>;
+  export default messages;
+}
+
+// 按需引入的 monaco 模块(纯副作用,无类型定义):见 MonacoEditor.tsx 的加载链
+declare module 'monaco-editor/esm/vs/editor/editor.all.js';
+declare module 'monaco-editor/esm/vs/basic-languages/sql/sql.contribution.js';
+declare module 'monaco-editor/esm/vs/basic-languages/mysql/mysql.contribution.js';
+declare module 'monaco-editor/esm/vs/basic-languages/redis/redis.contribution.js';
+declare module 'monaco-editor/esm/vs/language/json/monaco.contribution.js';
+
+declare module 'monaco-editor/esm/vs/editor/contrib/clipboard/browser/clipboard.js' {
   export const PasteAction: {
     addImplementation(
       priority: number,
@@ -10,7 +22,7 @@ declare module 'monaco-editor/editor/contrib/clipboard/browser/clipboard.js' {
   } | undefined;
 }
 
-declare module 'monaco-editor/editor/browser/controller/editContext/clipboardUtils.js' {
+declare module 'monaco-editor/esm/vs/editor/browser/controller/editContext/clipboardUtils.js' {
   interface ClipboardMetadata {
     isFromEmptySelection?: boolean;
     multicursorText?: string[] | null;

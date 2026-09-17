@@ -164,9 +164,7 @@ describe('ConnectionGroupManagementModal rendering', () => {
     vi.clearAllMocks();
   });
 
-  const renderModal = (
-    onCloseTabsByConnection: ReturnType<typeof vi.fn<(connectionId: string) => void>> = vi.fn<(connectionId: string) => void>(),
-  ) => {
+  const renderModal = (onCloseTabsByConnection: ReturnType<typeof vi.fn> = vi.fn()) => {
     act(() => {
       renderer = create(<ConnectionGroupManagementModal
         open
