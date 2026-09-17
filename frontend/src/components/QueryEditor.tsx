@@ -145,6 +145,11 @@ import {
     getColumnDefinitionType,
 } from '../utils/columnDefinition';
 import { installQueryEditorSuggestWidgetWidth } from './queryEditor/queryEditorSuggestionLayout';
+import {
+    buildQueryEditorMetadataRenderContextKey,
+    buildQueryEditorTableNavigationContextKey,
+} from './queryEditor/queryEditorVisibilityContext';
+import { useQueryEditorEverActive } from './queryEditor/useQueryEditorEverActive';
 import QueryEditorResultsPanel, {
     QUERY_EDITOR_SQL_LOG_TAB_KEY,
     resolveEffectiveActiveResultKey,
@@ -2080,6 +2085,7 @@ export const filterQueryEditorResultSetsForBulkClose = (
 };
 
 const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isActive = true }) => {
+  const hasBeenActive = useQueryEditorEverActive(isActive);
   const appearance = useStore(state => state.appearance);
   const queryOptions = useStore(state => state.queryOptions);
   const setQueryOptions = useStore(state => state.setQueryOptions);
@@ -2367,7 +2373,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       key: '',
       connectionConfig: null,
   });
-  const metadataRenderContextKey = `${isActive ? 'active' : 'inactive'}\u0000${tab.id}\u0000${currentConnectionId}\u0000${currentDb}`;
+  const metadataRenderContextKey = buildQueryEditorMetadataRenderContextKey(
+      tab.id,
+      currentConnectionId,
+      currentDb,
+  );
   if (
       metadataRenderContextRef.current.key !== metadataRenderContextKey
       || metadataRenderContextRef.current.connectionConfig !== currentConnectionConfig
@@ -2457,7 +2467,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       connectionConfig: null,
       version: 0,
   });
-  const tableNavigationContextKey = `${isActive ? 'active' : 'inactive'}\u0000${tab.id}\u0000${currentConnectionId}\u0000${currentDb}\u0000${currentSchema}`;
+  const tableNavigationContextKey = buildQueryEditorTableNavigationContextKey(
+      tab.id,
+      currentConnectionId,
+      currentDb,
+      currentSchema,
+  );
   if (
       tableNavigationContextRef.current.key !== tableNavigationContextKey
       || tableNavigationContextRef.current.connectionConfig !== currentConnectionConfig
@@ -2488,7 +2503,6 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       snapshot: QueryEditorMetadataRequestSnapshot,
   ): boolean => (
       queryEditorMountedRef.current
-      && queryEditorActiveRef.current
       && metadataGenerationRef.current === snapshot.generation
       && String(currentConnectionIdRef.current || '').trim() === snapshot.connectionId
       && connectionsRef.current.find((connection) => connection.id === snapshot.connectionId)?.config === snapshot.connectionConfig
@@ -4796,7 +4810,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
   // Fetch Database List
   useEffect(() => {
-      if (!isActive || !autoFetchVisible) {
+      if (!hasBeenActive || !autoFetchVisible) {
           return;
       }
 
@@ -4823,14 +4837,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
               // 存储可见数据库列表用于跨库智能提示
               visibleDbsRef.current = dbs;
-              if (isActive) {
+              if (queryEditorActiveRef.current) {
                   sharedVisibleDbs = dbs;
               }
 
               setDbList(dbs);
           } else {
               visibleDbsRef.current = [];
-              if (isActive) {
+              if (queryEditorActiveRef.current) {
                   sharedVisibleDbs = [];
               }
               setDbList([]);
@@ -4840,18 +4854,18 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           if (cancelled) return;
           console.warn('GoNavi query editor database list fetch failed', error);
           visibleDbsRef.current = [];
-          if (isActive) sharedVisibleDbs = [];
+          if (queryEditorActiveRef.current) sharedVisibleDbs = [];
           setDbList([]);
       });
       return () => {
           cancelled = true;
       };
-  }, [autoFetchVisible, currentConnectionId, connections, isActive]);
+  }, [autoFetchVisible, currentConnectionId, connections, hasBeenActive]);
 
   // PostgreSQL keeps database and schema as separate execution contexts. Load the
   // available schemas without mutating the saved connection configuration.
   useEffect(() => {
-      if (!isActive || !autoFetchVisible) {
+      if (!hasBeenActive || !autoFetchVisible) {
           schemaLoadSeqRef.current += 1;
           setSchemaLoading(false);
           return;
@@ -4945,7 +4959,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       currentConnection,
       currentConnectionId,
       currentDb,
-      isActive,
+      hasBeenActive,
       setSchemaLoading,
       tab.id,
       updateQueryTabDraft,
@@ -5006,7 +5020,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       };
   }, []);
   useEffect(() => {
-      if (!isActive || !autoFetchVisible || isObjectEditQueryTab) {
+      if (!hasBeenActive || !autoFetchVisible || isObjectEditQueryTab) {
           return;
       }
 
@@ -5032,7 +5046,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
           const visibleDbs = filterVisibleDatabaseNames(conn, visibleDbsRef.current);
           visibleDbsRef.current = visibleDbs;
-          if (isActive) {
+          if (queryEditorActiveRef.current) {
               sharedVisibleDbs = visibleDbs;
           }
           setDbList((current) => (
@@ -5076,7 +5090,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               return !oracleMetadataOwner
                   || oracleMetadataOwner.toLowerCase() === targetOwner.toLowerCase();
           };
-          if (isActive) {
+          if (queryEditorActiveRef.current) {
               sharedCurrentDb = metadataDbName;
           }
           const metadataDbNames = collectQueryEditorReferencedDatabaseNames(
@@ -5147,7 +5161,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               routinesRef.current = [...allRoutines];
               sequencesRef.current = [...allSequences];
               packagesRef.current = [...allPackages];
-              if (isActive) {
+              if (queryEditorActiveRef.current) {
                   sharedCurrentDb = metadataDbName;
                   sharedTablesData = tablesRef.current;
                   sharedAllColumnsData = allColumnsRef.current;
@@ -5506,7 +5520,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       currentConnectionId,
       currentDb,
       connections,
-      isActive,
+      hasBeenActive,
       isQueryEditorMetadataRequestCurrent,
       isObjectEditQueryTab,
       queryEditorMetadataReloadTick,

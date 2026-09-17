@@ -1512,7 +1512,6 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
       : undefined;
     const displayTitle = displayModel.fullTitle;
     const hostSummary = resolveConnectionHostSummary(connection?.config);
-    const tabIsActive = tab.id === dockedActiveTabId;
     const renameQueryMenuState = resolveQueryTabRenameMenuState(tab);
 
     const menuItems: MenuProps['items'] = [
@@ -1603,9 +1602,9 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
       ),
       key: tab.id,
       closable: false,
-      children: <WorkbenchTabContent tab={tab} isActive={tabIsActive} />,
+      children: <WorkbenchTabContent tab={tab} />,
     };
-  }), [dockedTabs, dockedActiveTabId, tabs, connections, connectionGroupNameById, appearance.tabDisplay, closeTab, closeTabsWithSQLFilePrompt, detachTabToWindow, true, languagePreference]);
+  }), [dockedTabs, tabs, connections, connectionGroupNameById, appearance.tabDisplay, closeTab, closeTabsWithSQLFilePrompt, detachTabToWindow, true, languagePreference]);
 
   const queryCapableConnections = useMemo(
     () => connections.filter((connection) => getDataSourceCapabilities(connection.config).supportsQueryEditor),

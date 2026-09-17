@@ -2,6 +2,7 @@ import React from 'react';
 import { Spin } from 'antd';
 import type { TabData } from '../types';
 import { useStore } from '../store';
+import { useWorkbenchTabActivation } from './useWorkbenchTabActivation';
 import '../styles/v2-theme-workbench.css';
 
 const DataViewer = React.lazy(() => import('./DataViewer'));
@@ -96,17 +97,18 @@ const WorkbenchContentReady: React.FC<{
 
 export interface WorkbenchTabContentProps {
   tab: TabData;
-  isActive: boolean;
+  isActive?: boolean;
   onContentReady?: () => void;
   onRequestClose?: () => void;
 }
 
 export const WorkbenchTabContent: React.FC<WorkbenchTabContentProps> = React.memo(({
   tab,
-  isActive,
+  isActive: isActiveProp,
   onContentReady,
   onRequestClose,
 }) => {
+  const isActive = useWorkbenchTabActivation(tab.id, isActiveProp);
   let content: React.ReactNode;
   if (tab.type === 'query') {
     content = <QueryWorkbenchContent tab={tab} isActive={isActive} />;
