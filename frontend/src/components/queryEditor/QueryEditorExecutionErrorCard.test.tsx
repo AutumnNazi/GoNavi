@@ -9,6 +9,9 @@ vi.mock('antd', () => ({
     Button: ({ children, onClick, icon }: { children?: React.ReactNode; onClick?: () => void; icon?: React.ReactNode }) => (
         <button type="button" onClick={onClick}>{icon}{children}</button>
     ),
+    Tooltip: ({ children, title }: { children?: React.ReactNode; title?: React.ReactNode }) => (
+        title == null ? <>{children}</> : <span data-test-tooltip={textContent(title)}>{children}</span>
+    ),
 }));
 
 vi.mock('@ant-design/icons', () => {
@@ -93,5 +96,34 @@ describe('QueryEditorExecutionErrorCard', () => {
             />,
         );
         expect(textContent(renderer.toJSON())).not.toContain('定位');
+    });
+
+    it('shows the AI diagnose shortcut hint when a label is provided', () => {
+        const renderer = create(
+            <QueryEditorExecutionErrorCard
+                darkMode={false}
+                error={"Table 'demo.t' doesn't exist"}
+                onDiagnose={vi.fn()}
+                diagnoseShortcutLabel="Ctrl+Shift+A"
+            />,
+        );
+        const tooltips = renderer.root.findAll((node) => (
+            typeof node.props?.['data-test-tooltip'] === 'string'
+        ));
+        expect(tooltips.map((node) => node.props['data-test-tooltip'])).toContain('一键 AI 诊断（Ctrl+Shift+A）');
+    });
+
+    it('omits the AI diagnose shortcut hint when no label is provided', () => {
+        const renderer = create(
+            <QueryEditorExecutionErrorCard
+                darkMode={false}
+                error={"Table 'demo.t' doesn't exist"}
+                onDiagnose={vi.fn()}
+            />,
+        );
+        const tooltips = renderer.root.findAll((node) => (
+            typeof node.props?.['data-test-tooltip'] === 'string'
+        ));
+        expect(tooltips).toHaveLength(0);
     });
 });

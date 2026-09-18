@@ -253,43 +253,43 @@ samp {
 }
 
 /* Scrollbar styling for dark mode */
-body[data-theme='dark']:not([data-platform='windows']) ::-webkit-scrollbar {
+body[data-theme='dark']:not([data-platform='windows']) :not(:is(.gn-v2-explorer-tree-shell .ant-tree-list-holder))::-webkit-scrollbar {
     width: 10px;
     height: 10px;
 }
-body[data-theme='dark']:not([data-platform='windows']) ::-webkit-scrollbar-track {
+body[data-theme='dark']:not([data-platform='windows']) :not(:is(.gn-v2-explorer-tree-shell .ant-tree-list-holder))::-webkit-scrollbar-track {
     background: #1f1f1f;
 }
-body[data-theme='dark']:not([data-platform='windows']) ::-webkit-scrollbar-corner {
+body[data-theme='dark']:not([data-platform='windows']) :not(:is(.gn-v2-explorer-tree-shell .ant-tree-list-holder))::-webkit-scrollbar-corner {
     background: #1f1f1f;
 }
-body[data-theme='dark']:not([data-platform='windows']) ::-webkit-scrollbar-thumb {
+body[data-theme='dark']:not([data-platform='windows']) :not(:is(.gn-v2-explorer-tree-shell .ant-tree-list-holder))::-webkit-scrollbar-thumb {
     background: #424242;
     border-radius: 4px;
     border: 2px solid #1f1f1f;
 }
-body[data-theme='dark']:not([data-platform='windows']) ::-webkit-scrollbar-thumb:hover {
+body[data-theme='dark']:not([data-platform='windows']) :not(:is(.gn-v2-explorer-tree-shell .ant-tree-list-holder))::-webkit-scrollbar-thumb:hover {
     background: #666;
 }
 
 /* Scrollbar styling for light mode (transparent-friendly) */
-body[data-theme='light']:not([data-platform='windows']) ::-webkit-scrollbar {
+body[data-theme='light']:not([data-platform='windows']) :not(:is(.gn-v2-explorer-tree-shell .ant-tree-list-holder))::-webkit-scrollbar {
     width: 10px;
     height: 10px;
 }
-body[data-theme='light']:not([data-platform='windows']) ::-webkit-scrollbar-track {
+body[data-theme='light']:not([data-platform='windows']) :not(:is(.gn-v2-explorer-tree-shell .ant-tree-list-holder))::-webkit-scrollbar-track {
     background: transparent;
 }
-body[data-theme='light']:not([data-platform='windows']) ::-webkit-scrollbar-corner {
+body[data-theme='light']:not([data-platform='windows']) :not(:is(.gn-v2-explorer-tree-shell .ant-tree-list-holder))::-webkit-scrollbar-corner {
     background: transparent;
 }
-body[data-theme='light']:not([data-platform='windows']) ::-webkit-scrollbar-thumb {
+body[data-theme='light']:not([data-platform='windows']) :not(:is(.gn-v2-explorer-tree-shell .ant-tree-list-holder))::-webkit-scrollbar-thumb {
     background: rgba(0, 0, 0, 0.18);
     border-radius: 4px;
     border: 2px solid transparent;
     background-clip: content-box;
 }
-body[data-theme='light']:not([data-platform='windows']) ::-webkit-scrollbar-thumb:hover {
+body[data-theme='light']:not([data-platform='windows']) :not(:is(.gn-v2-explorer-tree-shell .ant-tree-list-holder))::-webkit-scrollbar-thumb:hover {
     background: rgba(0, 0, 0, 0.30);
     border: 2px solid transparent;
     background-clip: content-box;
@@ -6195,11 +6195,10 @@ body .gonavi-theme-settings .gonavi-settings-row.is-control-only .gonavi-setting
 }
 
 
-/* Settings center workbench: flush scrollbar + refined thumb */
+/* Settings center: same 8px thin bar as the connection-tree overlay. */
 .gonavi-settings-center-workbench-host,
 .gonavi-settings-center-modal {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--gn-fg-4, #6b7280) 55%, transparent) transparent;
 }
 .gonavi-settings-center-workbench-host .gonavi-settings-center-pane-scroll,
 .gonavi-settings-center-modal .gonavi-settings-center-pane-scroll,

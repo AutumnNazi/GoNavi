@@ -21,7 +21,6 @@ import { type SqlLog, useStore } from '../../store';
 import type { SavedConnection } from '../../types';
 import { getCurrentLanguage, t } from '../../i18n';
 import { resolveShortcutDisplay } from '../../utils/shortcuts';
-import type { SidebarTableMetadataField } from '../../utils/sidebarTableMetadata';
 import { resolveConnectionHostSummary, resolveConnectionHostTokens } from '../../utils/tabDisplay';
 import { resolveConnectionAccentColor, resolveConnectionIconType } from '../../utils/connectionVisual';
 import { getDbIcon } from '../DatabaseIcons';
@@ -35,7 +34,6 @@ import type { SearchScope } from '../sidebarCoreUtils';
 import {
   buildV2CommandSearchTreeIndex,
   dedupeSidebarTreeNodesByKey,
-  estimateV2TreeHorizontalScrollWidth,
   filterV2CommandSearchTreeItems,
   filterV2ExplorerTreeByKind,
   resolveSidebarNodeConnectionId,
@@ -75,11 +73,8 @@ type SidebarSearchModelArgs = {
   v2CommandSearchValue: string;
   setV2CommandActiveIndex: Dispatch<SetStateAction<number>>;
   v2ExplorerFilter: V2ExplorerFilter;
-  sidebarTableMetadataFields: SidebarTableMetadataField[];
   treeData: TreeNode[];
-  treeViewportWidth: number;
   treeHeight: number;
-  expandedKeys: React.Key[];
   isV2CommandSearchOpen: boolean;
   connections: SavedConnection[];
   connectionIds: string[];
@@ -114,11 +109,8 @@ export const useSidebarSearchModel = ({
   v2CommandSearchValue,
   setV2CommandActiveIndex,
   v2ExplorerFilter,
-  sidebarTableMetadataFields,
   treeData,
-  treeViewportWidth,
   treeHeight,
-  expandedKeys,
   isV2CommandSearchOpen,
   connections,
   connectionIds,
@@ -649,15 +641,6 @@ export const useSidebarSearchModel = ({
     }
     return filterV2ExplorerTreeByKind(activeConnectionTreeData, v2ExplorerFilter);
   }, [activeConnectionTreeData, displayTreeData, v2ExplorerFilter]);
-  const v2TreeHorizontalScrollWidth = useMemo(
-    () => estimateV2TreeHorizontalScrollWidth(
-      v2VisibleTreeData,
-      treeViewportWidth,
-      sidebarTableMetadataFields,
-      expandedKeys,
-    ),
-    [expandedKeys, sidebarTableMetadataFields, treeViewportWidth, v2VisibleTreeData],
-  );
   const effectiveTreeHeight = resolveSidebarTreeVirtualHeight(treeHeight);
   const v2TreeMetrics = useMemo(() => {
     const databaseTableCounts = new Map<React.Key, number>();
@@ -726,7 +709,6 @@ export const useSidebarSearchModel = ({
     activeDatabaseDisplayName,
     activeConnectionTreeData,
     v2VisibleTreeData,
-    v2TreeHorizontalScrollWidth,
     effectiveTreeHeight,
     v2TreeMetrics,
     activeConnectionObjectCount: v2TreeMetrics.activeObjectCount,
