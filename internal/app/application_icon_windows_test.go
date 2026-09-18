@@ -235,6 +235,9 @@ func TestInitializePersistedNativeBrandIconAppliesActiveIcon(t *testing.T) {
 
 	var loadedSizes []int
 	windowsApplicationIconLoad = func(actualPath string, size int) (uintptr, error) {
+		if application.ctx != ctx {
+			t.Fatal("runtime context was not bound before persisted icon restore")
+		}
 		if actualPath != iconPath {
 			t.Fatalf("loaded icon path = %q, want %q", actualPath, iconPath)
 		}
