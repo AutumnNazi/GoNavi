@@ -4,7 +4,7 @@ import { renderSidebarV2TreeTitle } from './SidebarTreeTitle';
 
 const baseOptions = {
   hoverTitle: 'Oracle object',
-  statusBadge: null,
+  connectionStatus: undefined,
   getV2TreeMetaText: () => '',
   sidebarTableMetadataFields: [],
   snapshotTreeSelectionBeforeDrag: vi.fn(),
