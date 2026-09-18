@@ -180,7 +180,7 @@ import QueryEditorToolbar, {
 import { useQueryEditorExecutionLifecycle } from './queryEditor/useQueryEditorExecutionLifecycle';
 import { useQueryEditorSqlErrorLocator } from './queryEditor/useQueryEditorSqlErrorLocator';
 import { resolveQueryEditorAiConnectionHost } from './queryEditor/queryEditorAiContext';
-import { injectQueryEditorAiPromptWithContext } from './queryEditor/queryEditorAiPromptInject';
+import { diagnoseExecutionErrorWithAI, injectQueryEditorAiPromptWithContext } from './queryEditor/queryEditorAiPromptInject';
 import { peekDatabaseServerVersion } from './queryEditor/queryEditorServerVersion';
 import { useQueryEditorTabExecutionBroadcast } from './queryEditor/queryEditorTabExecutionState';
 import {
@@ -2151,6 +2151,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       return durationMs;
   }, []);
   const [executionError, setExecutionError] = useState<string>('');
+  // 渲染期同步最新执行错误，keydown 监听从 ref 读取，避免每次执行后重注册监听。
+  const executionErrorRef = useRef('');
+  executionErrorRef.current = executionError;
   const [currentQueryId, setCurrentQueryId] = useState<string>('');
   const [isSqlSnippetPickerOpen, setIsSqlSnippetPickerOpen] = useState(false);
   const [sqlSnippetPickerKeyword, setSqlSnippetPickerKeyword] = useState('');
@@ -2557,6 +2560,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       () => resolveShortcutBinding(shortcutOptions, 'showSlowQueries', activeShortcutPlatform),
       [activeShortcutPlatform, shortcutOptions],
   );
+  const diagnoseExecutionErrorShortcutBinding = useMemo(
+      () => resolveShortcutBinding(shortcutOptions, 'diagnoseExecutionError', activeShortcutPlatform),
+      [activeShortcutPlatform, shortcutOptions],
+  );
   const sortedSqlSnippets = useMemo(
       () => [...sqlSnippets].sort((left, right) => (
           left.prefix.localeCompare(right.prefix) || left.name.localeCompare(right.name)
@@ -2738,6 +2745,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         openSqlAnalysisWorkbench('diagnose', getCurrentQuery());
         return;
       }
+      if (diagnoseExecutionErrorShortcutBinding?.enabled && isShortcutMatch(e, diagnoseExecutionErrorShortcutBinding.combo)) {
+        e.preventDefault();
+        // 仅在最近一次执行失败时触发，与结果区「一键 AI 诊断」按钮的可见条件一致。
+        if (executionErrorRef.current) {
+          diagnoseExecutionErrorWithAI(getCurrentQuery(), executionErrorRef.current);
+        }
+        return;
+      }
       if (showSlowQueriesShortcutBinding?.enabled && isShortcutMatch(e, showSlowQueriesShortcutBinding.combo)) {
         e.preventDefault();
         openSqlAnalysisWorkbench('slow-query');
@@ -2745,7 +2760,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [diagnoseQueryShortcutBinding, isActive, openSqlAnalysisWorkbench, showSlowQueriesShortcutBinding]);
+  }, [diagnoseExecutionErrorShortcutBinding, diagnoseQueryShortcutBinding, isActive, openSqlAnalysisWorkbench, showSlowQueriesShortcutBinding]);
   const selectCurrentStatementShortcutBinding = useMemo(
       () => resolveShortcutBinding(shortcutOptions, 'selectCurrentStatement', activeShortcutPlatform),
       [activeShortcutPlatform, shortcutOptions],
@@ -13348,19 +13363,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       toggleQueryResultsPanelShortcutBinding.enabled && toggleQueryResultsPanelShortcutBinding.combo
           ? getShortcutDisplayLabel(toggleQueryResultsPanelShortcutBinding.combo, activeShortcutPlatform)
           : '';
+  const diagnoseExecutionErrorShortcutLabel =
+      diagnoseExecutionErrorShortcutBinding.enabled && diagnoseExecutionErrorShortcutBinding.combo
+          ? getShortcutDisplayLabel(diagnoseExecutionErrorShortcutBinding.combo, activeShortcutPlatform)
+          : '';
 
   const handleDiagnoseExecutionError = () => {
-      const errSql = getCurrentQuery();
-      const prompt = translate('query_editor.ai_prompt.diagnose', {
-          sql: errSql,
-          error: executionError,
-      });
-      const store = useStore.getState();
-      const wasClosed = !store.aiPanelVisible;
-      if (wasClosed) store.setAIPanelVisible(true);
-      setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('gonavi:ai:inject-prompt', { detail: { prompt } }));
-      }, wasClosed ? 350 : 0);
+      diagnoseExecutionErrorWithAI(getCurrentQuery(), executionError);
   };
 
   const sqlEditorTransactionToolbar = (
@@ -13585,6 +13594,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           onRequestResultTotalCount={handleRequestResultTotalCount}
           onCancelResultTotalCount={handleCancelResultTotalCount}
           onDiagnoseExecutionError={handleDiagnoseExecutionError}
+          diagnoseShortcutLabel={diagnoseExecutionErrorShortcutLabel}
           onLocateExecutionError={() => locateExecutionError(executionError)}
           onCompareResult={(resultKey) => {
             setResultDiffAnchorKey(resultKey);

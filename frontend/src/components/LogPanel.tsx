@@ -12,6 +12,7 @@ interface LogPanelProps {
     variant?: 'panel' | 'embedded';
     executionError?: string;
     onDiagnoseExecutionError?: () => void;
+    diagnoseShortcutLabel?: string;
     onLocateExecutionError?: () => void;
 }
 
@@ -22,6 +23,7 @@ const LogPanel: React.FC<LogPanelProps> = ({
     variant = 'panel',
     executionError,
     onDiagnoseExecutionError,
+    diagnoseShortcutLabel,
     onLocateExecutionError,
 }) => {
     const { t } = useI18n();
@@ -198,6 +200,7 @@ const LogPanel: React.FC<LogPanelProps> = ({
                                 darkMode={darkMode}
                                 error={executionError}
                                 onDiagnose={onDiagnoseExecutionError}
+                                diagnoseShortcutLabel={diagnoseShortcutLabel}
                                 onLocate={onLocateExecutionError}
                             />
                         </div>

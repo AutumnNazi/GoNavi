@@ -1,4 +1,5 @@
 import { useStore } from '../../store';
+import { t } from '../../i18n';
 import {
   buildQueryEditorAiContextPromptAsync,
   type QueryEditorAiPromptConnection,
@@ -20,6 +21,14 @@ export const dispatchQueryEditorAiPrompt = (prompt: string, delayMs = 0): void =
     return;
   }
   fire();
+};
+
+/** 一键 AI 诊断：把当前 SQL 与执行错误注入 AI 面板（结果区按钮与快捷键共用）。 */
+export const diagnoseExecutionErrorWithAI = (sql: string, error: string): void => {
+  const prompt = t('query_editor.ai_prompt.diagnose', { sql, error });
+  const store = useStore.getState();
+  const delayMs = !store.aiPanelVisible ? 350 : 0;
+  dispatchQueryEditorAiPrompt(prompt, delayMs);
 };
 
 export const injectQueryEditorAiPromptWithContext = async (options: {
