@@ -198,6 +198,12 @@ func main() {
 		WindowStartState:   resolveInitialWindowStartState(runtime.GOOS),
 		StartHidden:        isWindowsDesktop,
 		Frameless:          windowChrome.Frameless,
+		// 打开 Wails 原生文件拖放：查询编辑器接收操作系统 .sql 文件拖入
+		// （frontend/src/components/queryEditor/useExternalSqlFileDrop.ts），
+		// 同时由 Wails 运行时拦截拖放默认行为，避免 WebView 导航离开应用。
+		DragAndDrop: &options.DragAndDrop{
+			EnableFileDrop: true,
+		},
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

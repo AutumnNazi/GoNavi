@@ -301,6 +301,19 @@ body[data-theme='light']:not([data-platform='windows']) ::-webkit-scrollbar-thum
     flex-direction: column;
     min-height: 0;
     overflow: hidden;
+    /* Wails 原生文件拖放的投放目标标记。CSS 自定义属性会继承到 Monaco
+       内部层，Wails 用 elementFromPoint 命中的元素读取该值判定可投放。 */
+    --wails-drop-target: drop;
+}
+
+.gn-query-monaco-stage.wails-drop-target-active::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    pointer-events: none;
+    border: 1.5px dashed rgba(22, 119, 255, 0.65);
+    background: rgba(22, 119, 255, 0.06);
 }
 
 .gn-query-monaco-shell {
