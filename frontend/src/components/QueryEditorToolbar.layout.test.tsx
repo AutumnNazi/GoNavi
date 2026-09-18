@@ -225,9 +225,15 @@ describe('QueryEditorToolbar layout', () => {
     );
   });
 
-  it('keeps run and stop buttons separated in the v2 toolbar action group', () => {
+  it('keeps run and stop on the same v2 toolbar action', () => {
     const toolbarSource = readFileSync(new URL('./QueryEditorToolbar.tsx', import.meta.url), 'utf8');
+    const runActionSource = readFileSync(new URL('./queryEditor/QueryEditorToolbarRunAction.tsx', import.meta.url), 'utf8');
     const css = readV2ThemeCss();
+    expect(toolbarSource).toContain('QueryEditorToolbarRunAction');
+    expect(toolbarSource).not.toContain('gn-v2-query-toolbar-stop-action');
+    expect(runActionSource).toContain('gn-v2-query-toolbar-run-action');
+    expect(runActionSource).toContain('LoadingOutlined');
+    expect(runActionSource).not.toContain('loading={loading}');
     expect(css).toContain('body[data-ui-version="v2"] .gn-v2-query-toolbar-action-group {');
     expect(css).not.toContain('.gn-v2-query-toolbar-action-group.ant-btn-group');
     expect(css).toContain('gap: 6px;');

@@ -464,6 +464,7 @@ vi.mock('@ant-design/icons', () => {
     TableOutlined: Icon,
     ArrowLeftOutlined: Icon,
     ArrowRightOutlined: Icon,
+    LoadingOutlined: Icon,
     PlayCircleOutlined: Icon,
     SaveOutlined: Icon,
     UndoOutlined: Icon,
@@ -3131,7 +3132,7 @@ describe('QueryEditor external SQL save', () => {
     expect(backendApp.DBQueryMulti).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      void findButton(renderer, '运行').props.onClick();
+      void renderer.root.findByType(QueryEditorToolbar).props.onRun();
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -3181,7 +3182,7 @@ describe('QueryEditor external SQL save', () => {
     expect(backendApp.DBQueryMulti).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      void findButton(renderer, '运行').props.onClick();
+      void renderer.root.findByType(QueryEditorToolbar).props.onRun();
       await Promise.resolve();
       await Promise.resolve();
     });

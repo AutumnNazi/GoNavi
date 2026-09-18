@@ -624,6 +624,7 @@ vi.mock('@ant-design/icons', () => {
     FormatPainterOutlined: Icon,
     HistoryOutlined: Icon,
     KeyOutlined: Icon,
+    LoadingOutlined: Icon,
     PlayCircleOutlined: Icon,
     PushpinOutlined: Icon,
     RobotOutlined: Icon,

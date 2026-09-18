@@ -16,7 +16,6 @@ import {
   SearchOutlined,
   SaveOutlined,
   SettingOutlined,
-  StopOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
 
@@ -33,6 +32,7 @@ import QueryEditorTransactionSettings, {
   type SqlEditorCommitMode,
 } from "./QueryEditorTransactionSettings";
 import { renderV2ActionMenuPopup } from './common/V2ActionMenuPopup';
+import { QueryEditorToolbarRunAction } from './queryEditor/QueryEditorToolbarRunAction';
 
 export type QueryEditorMode = "sql" | "elasticsearch";
 
@@ -595,7 +595,7 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
         className="gn-v2-query-toolbar-action-group"
         style={{ display: "flex", gap: "8px", alignItems: "center" }}
       >
-        <Tooltip
+        <QueryEditorToolbarRunAction
           title={
             isElasticsearchMode
               ? t("query_editor.elasticsearch.action.run_current")
@@ -608,20 +608,16 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
                 })
               : t("query_editor.action.run")
           }
-        >
-          <Button
-            aria-label={t(isElasticsearchMode
-              ? "query_editor.elasticsearch.action.run_current"
-              : "query_editor.action.run")}
-            className="gn-v2-query-toolbar-icon-action gn-v2-query-toolbar-run-action"
-            type="primary"
-            icon={<PlayCircleOutlined />}
-            onMouseDown={onCaptureEditorCursorPosition}
-            onClick={onRun}
-            loading={loading}
-            disabled={runDisabled}
-          />
-        </Tooltip>
+          ariaLabel={t(isElasticsearchMode
+            ? "query_editor.elasticsearch.action.run_current"
+            : "query_editor.action.run")}
+          stopTitle={t("query_editor.action.stop")}
+          loading={loading}
+          disabled={runDisabled}
+          onCaptureEditorCursorPosition={onCaptureEditorCursorPosition}
+          onRun={onRun}
+          onCancel={onCancel}
+        />
         {isElasticsearchMode && onRunAll && (
           <Tooltip title={t("query_editor.elasticsearch.action.run_all")}>
             <Button
@@ -642,18 +638,6 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
               icon={<DiffOutlined />}
               disabled={loading}
               onClick={onViewDataVerify}
-            />
-          </Tooltip>
-        )}
-        {loading && (
-          <Tooltip title={t("query_editor.action.stop")}>
-            <Button
-              aria-label={t("query_editor.action.stop")}
-              className="gn-v2-query-toolbar-icon-action gn-v2-query-toolbar-stop-action"
-              type="primary"
-              danger
-              icon={<StopOutlined />}
-              onClick={onCancel}
             />
           </Tooltip>
         )}
