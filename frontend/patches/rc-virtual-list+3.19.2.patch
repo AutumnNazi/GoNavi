@@ -11,7 +11,7 @@ index c38d9c9..d7c40e6 100644
      children: React.ReactNode;
      onInnerResize?: () => void;
 diff --git a/node_modules/rc-virtual-list/es/Filler.js b/node_modules/rc-virtual-list/es/Filler.js
-index be305c7..0d15772 100644
+index be305c7..f8f9f60 100644
 --- a/node_modules/rc-virtual-list/es/Filler.js
 +++ b/node_modules/rc-virtual-list/es/Filler.js
 @@ -11,6 +11,8 @@ var Filler = /*#__PURE__*/React.forwardRef(function (_ref, ref) {
@@ -23,11 +23,13 @@ index be305c7..0d15772 100644
      children = _ref.children,
      prefixCls = _ref.prefixCls,
      onInnerResize = _ref.onInnerResize,
-@@ -27,11 +29,20 @@ var Filler = /*#__PURE__*/React.forwardRef(function (_ref, ref) {
+@@ -26,16 +28,34 @@ var Filler = /*#__PURE__*/React.forwardRef(function (_ref, ref) {
+     // Not set `width` since this will break `sticky: right`
      outerStyle = {
        height: height,
-       position: 'relative',
+-      position: 'relative',
 -      overflow: 'hidden'
++      position: horizontalOffsetComposited ? 'sticky' : 'relative', left: horizontalOffsetComposited && !rtl ? 0 : undefined, right: horizontalOffsetComposited && rtl ? 0 : undefined,
 +      overflow: horizontalOffsetComposited ? 'visible' : 'hidden'
      };
 -    innerStyle = _objectSpread(_objectSpread({}, innerStyle), {}, _defineProperty(_defineProperty(_defineProperty(_defineProperty(_defineProperty({
@@ -48,6 +50,20 @@ index be305c7..0d15772 100644
    }
    return /*#__PURE__*/React.createElement("div", {
      style: outerStyle
+-  }, /*#__PURE__*/React.createElement(ResizeObserver, {
++  }, horizontalOffsetComposited && scrollWidth ? /*#__PURE__*/React.createElement("div", {
++    "aria-hidden": true,
++    style: _defineProperty({
++      height: 1,
++      pointerEvents: 'none',
++      position: 'absolute',
++      top: 0,
++      width: scrollWidth
++    }, rtl ? 'right' : 'left', 0)
++  }) : null, /*#__PURE__*/React.createElement(ResizeObserver, {
+     onResize: function onResize(_ref2) {
+       var offsetHeight = _ref2.offsetHeight;
+       if (offsetHeight && onInnerResize) {
 diff --git a/node_modules/rc-virtual-list/es/List.d.ts b/node_modules/rc-virtual-list/es/List.d.ts
 index c517366..a6ddca3 100644
 --- a/node_modules/rc-virtual-list/es/List.d.ts
@@ -76,7 +92,7 @@ index c517366..a6ddca3 100644
      fullHeight?: boolean;
      itemKey: React.Key | ((item: T) => React.Key);
 diff --git a/node_modules/rc-virtual-list/es/List.js b/node_modules/rc-virtual-list/es/List.js
-index 2926056..86448c9 100644
+index 2926056..441996b 100644
 --- a/node_modules/rc-virtual-list/es/List.js
 +++ b/node_modules/rc-virtual-list/es/List.js
 @@ -4,7 +4,7 @@ import _objectSpread from "@babel/runtime/helpers/esm/objectSpread2";
@@ -150,16 +166,48 @@ index 2926056..86448c9 100644
    var componentRef = useRef();
    var fillerInnerRef = useRef();
    var containerRef = useRef();
-@@ -101,6 +127,8 @@ export function RawList(props, ref) {
+@@ -101,14 +127,39 @@ export function RawList(props, ref) {
      _useState6 = _slicedToArray(_useState5, 2),
      scrollMoving = _useState6[0],
      setScrollMoving = _useState6[1];
 +  var nativeScrollPendingTopRef = useRef(null);
 +  var nativeScrollFlushScheduledRef = useRef(false);
++  var nativeScrollMovingState = React.useState(false),
++    nativeScrollMoving = nativeScrollMovingState[0],
++    setNativeScrollMoving = nativeScrollMovingState[1];
++  var nativeScrollMovingRef = useRef(false);
++  var nativeScrollStopTimerRef = useRef(null);
    var onScrollbarStartMove = function onScrollbarStartMove() {
      setScrollMoving(true);
    };
-@@ -159,6 +187,75 @@ export function RawList(props, ref) {
+   var onScrollbarStopMove = function onScrollbarStopMove() {
+     setScrollMoving(false);
+   };
++  var markNativeScrollMoving = function markNativeScrollMoving() {
++    clearTimeout(nativeScrollStopTimerRef.current);
++    if (!nativeScrollMovingRef.current) {
++      nativeScrollMovingRef.current = true;
++      setNativeScrollMoving(true);
++    }
++    nativeScrollStopTimerRef.current = setTimeout(function () {
++      nativeScrollMovingRef.current = false;
++      setNativeScrollMoving(false);
++    }, 120);
++  };
++  React.useEffect(function () {
++    return function () {
++      clearTimeout(nativeScrollStopTimerRef.current);
++    };
++  }, []);
++  var renderScrolling = scrollMoving || nativeScrollMoving;
+   var sharedConfig = {
+-    getKey: getKey
++    getKey: getKey,
++    scrolling: renderScrolling
+   };
+ 
+   // ================================ Scroll ================================
+@@ -159,6 +210,75 @@ export function RawList(props, ref) {
            offset: undefined
          };
        }
@@ -176,9 +224,9 @@ index 2926056..86448c9 100644
 +        }
 +        var fixedMaxScrollTop = Math.max(0, fixedScrollHeight - height);
 +        var fixedOffsetTop = Math.max(0, Math.min(fixedMaxScrollTop, offsetTop));
-+        // Keep two viewports mounted on each side so a fast WebKit trackpad
-+        // fling cannot expose the filler before React commits the next window.
-+        var fixedOverscanRows = Math.max(8, Math.ceil(height / itemHeight) * 2);
++        // Distant native jumps flush the destination window synchronously.
++        // Two rows on each edge cover fractional wheel deltas without remounting whole viewports.
++        var fixedOverscanRows = 2;
 +        var fixedStartIndex = Math.min(fixedDataLen - 1, Math.max(0, Math.ceil(fixedOffsetTop / itemHeight) - fixedOverscanRows));
 +        var fixedEndIndex = Math.min(fixedDataLen - 1, Math.floor((fixedOffsetTop + height) / itemHeight) + fixedOverscanRows);
 +        return {
@@ -235,7 +283,7 @@ index 2926056..86448c9 100644
        var itemTop = 0;
        var startIndex;
        var startOffset;
-@@ -201,7 +298,7 @@ export function RawList(props, ref) {
+@@ -201,7 +321,7 @@ export function RawList(props, ref) {
          end: endIndex,
          offset: startOffset
        };
@@ -244,7 +292,7 @@ index 2926056..86448c9 100644
      scrollHeight = _React$useMemo.scrollHeight,
      start = _React$useMemo.start,
      end = _React$useMemo.end,
-@@ -213,6 +310,10 @@ export function RawList(props, ref) {
+@@ -213,6 +333,10 @@ export function RawList(props, ref) {
    // Which will make scroll jump.
    // Let's sync scroll top to avoid jump
    React.useLayoutEffect(function () {
@@ -255,7 +303,7 @@ index 2926056..86448c9 100644
      var changedRecord = heights.getRecord();
      if (changedRecord.size === 1) {
        var recordKey = Array.from(changedRecord.keys())[0];
-@@ -232,7 +333,7 @@ export function RawList(props, ref) {
+@@ -232,7 +356,7 @@ export function RawList(props, ref) {
        }
      }
      heights.resetRecord();
@@ -264,7 +312,18 @@ index 2926056..86448c9 100644
  
    // ================================= Size =================================
    var _React$useState = React.useState({
-@@ -296,6 +397,37 @@ export function RawList(props, ref) {
+@@ -279,8 +403,9 @@ export function RawList(props, ref) {
+ 
+   // ================================ Scroll ================================
+   var getVirtualScrollInfo = function getVirtualScrollInfo() {
++    var liveOffsetLeft = itemHorizontalOffsetComposited && componentRef.current ? componentRef.current.scrollLeft : offsetLeft;
+     return {
+-      x: isRTL ? -offsetLeft : offsetLeft,
++      x: isRTL ? -liveOffsetLeft : liveOffsetLeft,
+       y: offsetTop
+     };
+   };
+@@ -296,6 +421,37 @@ export function RawList(props, ref) {
        }
      }
    });
@@ -302,7 +361,7 @@ index 2926056..86448c9 100644
    function onScrollBar(newScrollOffset, horizontal) {
      var newOffset = newScrollOffset;
      if (horizontal) {
-@@ -303,6 +435,20 @@ export function RawList(props, ref) {
+@@ -303,6 +459,20 @@ export function RawList(props, ref) {
          setOffsetLeft(newOffset);
        });
        triggerScroll();
@@ -323,7 +382,7 @@ index 2926056..86448c9 100644
      } else {
        syncScrollTop(newOffset);
      }
-@@ -312,12 +458,31 @@ export function RawList(props, ref) {
+@@ -312,12 +482,34 @@ export function RawList(props, ref) {
    function onFallbackScroll(e) {
      var newScrollTop = e.currentTarget.scrollTop;
      if (newScrollTop !== offsetTop) {
@@ -333,6 +392,9 @@ index 2926056..86448c9 100644
 +        // covers the destination. Only flushSync when a distant jump would
 +        // otherwise expose the empty filler.
 +        var alignedTop = keepInRange(newScrollTop);
++        if (!controlledNativeVerticalScroll) {
++          markNativeScrollMoving();
++        }
 +        if (!nativeWindowCoversViewport(alignedTop)) {
 +          nativeScrollPendingTopRef.current = null;
 +          flushSync(function () {
@@ -357,7 +419,7 @@ index 2926056..86448c9 100644
    }
    var keepInHorizontalRange = function keepInHorizontalRange(nextOffsetLeft) {
      var tmpOffsetLeft = nextOffsetLeft;
-@@ -388,6 +553,9 @@ export function RawList(props, ref) {
+@@ -388,6 +580,9 @@ export function RawList(props, ref) {
        }
      }
      var componentEle = componentRef.current;
@@ -367,7 +429,7 @@ index 2926056..86448c9 100644
      componentEle.addEventListener('wheel', onRawWheel, {
        passive: false
      });
-@@ -402,7 +570,7 @@ export function RawList(props, ref) {
+@@ -402,7 +597,7 @@ export function RawList(props, ref) {
        componentEle.removeEventListener('DOMMouseScroll', onFireFoxScroll);
        componentEle.removeEventListener('MozMousePixelScroll', onMozMousePixelScroll);
      };
@@ -376,7 +438,7 @@ index 2926056..86448c9 100644
  
    // Sync scroll left
    useLayoutEffect(function () {
-@@ -423,10 +591,13 @@ export function RawList(props, ref) {
+@@ -423,10 +618,13 @@ export function RawList(props, ref) {
    };
    var _scrollTo = useScrollTo(componentRef, mergedData, heights, itemHeight, getKey, function () {
      return collectHeight(true);
@@ -391,7 +453,7 @@ index 2926056..86448c9 100644
        getScrollInfo: getVirtualScrollInfo,
        scrollTo: function scrollTo(config) {
          function isPosScroll(arg) {
-@@ -435,7 +606,11 @@ export function RawList(props, ref) {
+@@ -435,7 +633,11 @@ export function RawList(props, ref) {
          if (isPosScroll(config)) {
            // Scroll X
            if (config.left !== undefined) {
@@ -404,16 +466,29 @@ index 2926056..86448c9 100644
            }
  
            // Scroll Y
-@@ -457,7 +632,7 @@ export function RawList(props, ref) {
+@@ -457,26 +659,28 @@ export function RawList(props, ref) {
    }, [start, end, mergedData]);
  
    // ================================ Extra =================================
 -  var getSize = useGetSize(mergedData, getKey, heights, itemHeight);
 +  var getSize = useGetSize(mergedData, getKey, heights, itemHeight, fixedItemOffsets, itemHeightFixed);
++  var renderOffsetLeft = itemHorizontalOffsetComposited && componentRef.current ? componentRef.current.scrollLeft : offsetLeft;
    var extraContent = extraRender === null || extraRender === void 0 ? void 0 : extraRender({
      start: start,
      end: end,
-@@ -474,9 +649,9 @@ export function RawList(props, ref) {
+     virtual: inVirtual,
+-    offsetX: offsetLeft,
++    scrolling: renderScrolling,
++    offsetX: renderOffsetLeft,
+     offsetY: fillerOffset,
+     rtl: isRTL,
+     getSize: getSize
+   });
+ 
+   // ================================ Render ================================
+-  var listChildren = useChildren(mergedData, start, end, scrollWidth, offsetLeft, setInstanceRef, children, sharedConfig);
++  var listChildren = useChildren(mergedData, start, end, scrollWidth, renderOffsetLeft, setInstanceRef, children, sharedConfig);
+   var componentStyle = null;
    if (height) {
      componentStyle = _objectSpread(_defineProperty({}, fullHeight ? 'height' : 'maxHeight', height), ScrollStyle);
      if (useVirtual) {
@@ -425,7 +500,7 @@ index 2926056..86448c9 100644
        }
        if (scrollMoving) {
          componentStyle.pointerEvents = 'none';
-@@ -499,6 +674,8 @@ export function RawList(props, ref) {
+@@ -499,6 +703,8 @@ export function RawList(props, ref) {
      className: "".concat(prefixCls, "-holder"),
      style: componentStyle,
      ref: componentRef,
@@ -434,7 +509,7 @@ index 2926056..86448c9 100644
      onScroll: onFallbackScroll,
      onMouseEnter: delayHideScrollBar
    }, /*#__PURE__*/React.createElement(Filler, {
-@@ -506,13 +683,14 @@ export function RawList(props, ref) {
+@@ -506,13 +712,14 @@ export function RawList(props, ref) {
      height: scrollHeight,
      offsetX: offsetLeft,
      offsetY: fillerOffset,
@@ -450,7 +525,7 @@ index 2926056..86448c9 100644
      ref: verticalScrollBarRef,
      prefixCls: prefixCls,
      scrollOffset: offsetTop,
-@@ -526,7 +704,7 @@ export function RawList(props, ref) {
+@@ -526,7 +733,7 @@ export function RawList(props, ref) {
      style: styles === null || styles === void 0 ? void 0 : styles.verticalScrollBar,
      thumbStyle: styles === null || styles === void 0 ? void 0 : styles.verticalScrollBarThumb,
      showScrollBar: showScrollBar
@@ -459,6 +534,29 @@ index 2926056..86448c9 100644
      ref: horizontalScrollBarRef,
      prefixCls: prefixCls,
      scrollOffset: offsetLeft,
+diff --git a/node_modules/rc-virtual-list/es/hooks/useChildren.js b/node_modules/rc-virtual-list/es/hooks/useChildren.js
+index 1d405e4..8bb7d5d 100644
+--- a/node_modules/rc-virtual-list/es/hooks/useChildren.js
++++ b/node_modules/rc-virtual-list/es/hooks/useChildren.js
+@@ -1,14 +1,16 @@
+ import * as React from 'react';
+ import { Item } from "../Item";
+ export default function useChildren(list, startIndex, endIndex, scrollWidth, offsetX, setNodeRef, renderFunc, _ref) {
+-  var getKey = _ref.getKey;
++  var getKey = _ref.getKey,
++    scrolling = _ref.scrolling;
+   return list.slice(startIndex, endIndex + 1).map(function (item, index) {
+     var eleIndex = startIndex + index;
+     var node = renderFunc(item, eleIndex, {
+       style: {
+         width: scrollWidth
+       },
+-      offsetX: offsetX
++      offsetX: offsetX,
++      scrolling: scrolling
+     });
+     var key = getKey(item);
+     return /*#__PURE__*/React.createElement(Item, {
 diff --git a/node_modules/rc-virtual-list/es/hooks/useGetSize.d.ts b/node_modules/rc-virtual-list/es/hooks/useGetSize.d.ts
 index adc0bea..e35a75d 100644
 --- a/node_modules/rc-virtual-list/es/hooks/useGetSize.d.ts
@@ -670,6 +768,30 @@ index e7958f9..962039a 100644
            needCollectHeight = true;
          }
        }
+diff --git a/node_modules/rc-virtual-list/es/interface.d.ts b/node_modules/rc-virtual-list/es/interface.d.ts
+index 684eb5a..4198de6 100644
+--- a/node_modules/rc-virtual-list/es/interface.d.ts
++++ b/node_modules/rc-virtual-list/es/interface.d.ts
+@@ -2,9 +2,11 @@
+ export type RenderFunc<T> = (item: T, index: number, props: {
+     style: React.CSSProperties;
+     offsetX: number;
++    scrolling: boolean;
+ }) => React.ReactNode;
+ export interface SharedConfig<T> {
+     getKey: (item: T) => React.Key;
++    scrolling: boolean;
+ }
+ export type GetKey<T> = (item: T) => React.Key;
+ export type GetSize = (startKey: React.Key, endKey?: React.Key) => {
+@@ -18,6 +20,7 @@ export interface ExtraRenderInfo {
+     end: number;
+     /** Is current in virtual render */
+     virtual: boolean;
++    scrolling: boolean;
+     /** Used for `scrollWidth` tell the horizontal offset */
+     offsetX: number;
+     offsetY: number;
 diff --git a/node_modules/rc-virtual-list/lib/Filler.d.ts b/node_modules/rc-virtual-list/lib/Filler.d.ts
 index c38d9c9..d7c40e6 100644
 --- a/node_modules/rc-virtual-list/lib/Filler.d.ts
@@ -683,7 +805,7 @@ index c38d9c9..d7c40e6 100644
      children: React.ReactNode;
      onInnerResize?: () => void;
 diff --git a/node_modules/rc-virtual-list/lib/Filler.js b/node_modules/rc-virtual-list/lib/Filler.js
-index 38f5192..eed6bcc 100644
+index 38f5192..96ce743 100644
 --- a/node_modules/rc-virtual-list/lib/Filler.js
 +++ b/node_modules/rc-virtual-list/lib/Filler.js
 @@ -19,6 +19,8 @@ var Filler = /*#__PURE__*/React.forwardRef(function (_ref, ref) {
@@ -695,11 +817,13 @@ index 38f5192..eed6bcc 100644
      children = _ref.children,
      prefixCls = _ref.prefixCls,
      onInnerResize = _ref.onInnerResize,
-@@ -35,11 +37,20 @@ var Filler = /*#__PURE__*/React.forwardRef(function (_ref, ref) {
+@@ -34,16 +36,34 @@ var Filler = /*#__PURE__*/React.forwardRef(function (_ref, ref) {
+     // Not set `width` since this will break `sticky: right`
      outerStyle = {
        height: height,
-       position: 'relative',
+-      position: 'relative',
 -      overflow: 'hidden'
++      position: horizontalOffsetComposited ? 'sticky' : 'relative', left: horizontalOffsetComposited && !rtl ? 0 : undefined, right: horizontalOffsetComposited && rtl ? 0 : undefined,
 +      overflow: horizontalOffsetComposited ? 'visible' : 'hidden'
      };
 -    innerStyle = (0, _objectSpread3.default)((0, _objectSpread3.default)({}, innerStyle), {}, (0, _defineProperty2.default)((0, _defineProperty2.default)((0, _defineProperty2.default)((0, _defineProperty2.default)((0, _defineProperty2.default)({
@@ -720,6 +844,20 @@ index 38f5192..eed6bcc 100644
    }
    return /*#__PURE__*/React.createElement("div", {
      style: outerStyle
+-  }, /*#__PURE__*/React.createElement(_rcResizeObserver.default, {
++  }, horizontalOffsetComposited && scrollWidth ? /*#__PURE__*/React.createElement("div", {
++    "aria-hidden": true,
++    style: (0, _defineProperty2.default)({
++      height: 1,
++      pointerEvents: 'none',
++      position: 'absolute',
++      top: 0,
++      width: scrollWidth
++    }, rtl ? 'right' : 'left', 0)
++  }) : null, /*#__PURE__*/React.createElement(_rcResizeObserver.default, {
+     onResize: function onResize(_ref2) {
+       var offsetHeight = _ref2.offsetHeight;
+       if (offsetHeight && onInnerResize) {
 diff --git a/node_modules/rc-virtual-list/lib/List.d.ts b/node_modules/rc-virtual-list/lib/List.d.ts
 index c517366..a6ddca3 100644
 --- a/node_modules/rc-virtual-list/lib/List.d.ts
@@ -748,7 +886,7 @@ index c517366..a6ddca3 100644
      fullHeight?: boolean;
      itemKey: React.Key | ((item: T) => React.Key);
 diff --git a/node_modules/rc-virtual-list/lib/List.js b/node_modules/rc-virtual-list/lib/List.js
-index f0cb64d..0a159fc 100644
+index f0cb64d..22acc9e 100644
 --- a/node_modules/rc-virtual-list/lib/List.js
 +++ b/node_modules/rc-virtual-list/lib/List.js
 @@ -32,7 +32,7 @@ var _useScrollDrag = _interopRequireDefault(require("./hooks/useScrollDrag"));
@@ -822,16 +960,48 @@ index f0cb64d..0a159fc 100644
    var componentRef = (0, _react.useRef)();
    var fillerInnerRef = (0, _react.useRef)();
    var containerRef = (0, _react.useRef)();
-@@ -110,6 +136,8 @@ function RawList(props, ref) {
+@@ -110,14 +136,39 @@ function RawList(props, ref) {
      _useState6 = (0, _slicedToArray2.default)(_useState5, 2),
      scrollMoving = _useState6[0],
      setScrollMoving = _useState6[1];
 +  var nativeScrollPendingTopRef = (0, _react.useRef)(null);
 +  var nativeScrollFlushScheduledRef = (0, _react.useRef)(false);
++  var nativeScrollMovingState = React.useState(false),
++    nativeScrollMoving = nativeScrollMovingState[0],
++    setNativeScrollMoving = nativeScrollMovingState[1];
++  var nativeScrollMovingRef = (0, _react.useRef)(false);
++  var nativeScrollStopTimerRef = (0, _react.useRef)(null);
    var onScrollbarStartMove = function onScrollbarStartMove() {
      setScrollMoving(true);
    };
-@@ -168,6 +196,75 @@ function RawList(props, ref) {
+   var onScrollbarStopMove = function onScrollbarStopMove() {
+     setScrollMoving(false);
+   };
++  var markNativeScrollMoving = function markNativeScrollMoving() {
++    clearTimeout(nativeScrollStopTimerRef.current);
++    if (!nativeScrollMovingRef.current) {
++      nativeScrollMovingRef.current = true;
++      setNativeScrollMoving(true);
++    }
++    nativeScrollStopTimerRef.current = setTimeout(function () {
++      nativeScrollMovingRef.current = false;
++      setNativeScrollMoving(false);
++    }, 120);
++  };
++  React.useEffect(function () {
++    return function () {
++      clearTimeout(nativeScrollStopTimerRef.current);
++    };
++  }, []);
++  var renderScrolling = scrollMoving || nativeScrollMoving;
+   var sharedConfig = {
+-    getKey: getKey
++    getKey: getKey,
++    scrolling: renderScrolling
+   };
+ 
+   // ================================ Scroll ================================
+@@ -168,6 +219,75 @@ function RawList(props, ref) {
            offset: undefined
          };
        }
@@ -848,9 +1018,9 @@ index f0cb64d..0a159fc 100644
 +        }
 +        var fixedMaxScrollTop = Math.max(0, fixedScrollHeight - height);
 +        var fixedOffsetTop = Math.max(0, Math.min(fixedMaxScrollTop, offsetTop));
-+        // Keep two viewports mounted on each side so a fast WebKit trackpad
-+        // fling cannot expose the filler before React commits the next window.
-+        var fixedOverscanRows = Math.max(8, Math.ceil(height / itemHeight) * 2);
++        // Distant native jumps flush the destination window synchronously.
++        // Two rows on each edge cover fractional wheel deltas without remounting whole viewports.
++        var fixedOverscanRows = 2;
 +        var fixedStartIndex = Math.min(fixedDataLen - 1, Math.max(0, Math.ceil(fixedOffsetTop / itemHeight) - fixedOverscanRows));
 +        var fixedEndIndex = Math.min(fixedDataLen - 1, Math.floor((fixedOffsetTop + height) / itemHeight) + fixedOverscanRows);
 +        return {
@@ -907,7 +1077,7 @@ index f0cb64d..0a159fc 100644
        var itemTop = 0;
        var startIndex;
        var startOffset;
-@@ -210,7 +307,7 @@ function RawList(props, ref) {
+@@ -210,7 +330,7 @@ function RawList(props, ref) {
          end: endIndex,
          offset: startOffset
        };
@@ -916,7 +1086,7 @@ index f0cb64d..0a159fc 100644
      scrollHeight = _React$useMemo.scrollHeight,
      start = _React$useMemo.start,
      end = _React$useMemo.end,
-@@ -222,6 +319,10 @@ function RawList(props, ref) {
+@@ -222,6 +342,10 @@ function RawList(props, ref) {
    // Which will make scroll jump.
    // Let's sync scroll top to avoid jump
    React.useLayoutEffect(function () {
@@ -927,7 +1097,7 @@ index f0cb64d..0a159fc 100644
      var changedRecord = heights.getRecord();
      if (changedRecord.size === 1) {
        var recordKey = Array.from(changedRecord.keys())[0];
-@@ -241,7 +342,7 @@ function RawList(props, ref) {
+@@ -241,7 +365,7 @@ function RawList(props, ref) {
        }
      }
      heights.resetRecord();
@@ -936,7 +1106,18 @@ index f0cb64d..0a159fc 100644
  
    // ================================= Size =================================
    var _React$useState = React.useState({
-@@ -305,6 +406,37 @@ function RawList(props, ref) {
+@@ -288,8 +412,9 @@ function RawList(props, ref) {
+ 
+   // ================================ Scroll ================================
+   var getVirtualScrollInfo = function getVirtualScrollInfo() {
++    var liveOffsetLeft = itemHorizontalOffsetComposited && componentRef.current ? componentRef.current.scrollLeft : offsetLeft;
+     return {
+-      x: isRTL ? -offsetLeft : offsetLeft,
++      x: isRTL ? -liveOffsetLeft : liveOffsetLeft,
+       y: offsetTop
+     };
+   };
+@@ -305,6 +430,37 @@ function RawList(props, ref) {
        }
      }
    });
@@ -974,7 +1155,7 @@ index f0cb64d..0a159fc 100644
    function onScrollBar(newScrollOffset, horizontal) {
      var newOffset = newScrollOffset;
      if (horizontal) {
-@@ -312,6 +444,20 @@ function RawList(props, ref) {
+@@ -312,6 +468,20 @@ function RawList(props, ref) {
          setOffsetLeft(newOffset);
        });
        triggerScroll();
@@ -995,7 +1176,7 @@ index f0cb64d..0a159fc 100644
      } else {
        syncScrollTop(newOffset);
      }
-@@ -321,12 +467,31 @@ function RawList(props, ref) {
+@@ -321,12 +491,34 @@ function RawList(props, ref) {
    function onFallbackScroll(e) {
      var newScrollTop = e.currentTarget.scrollTop;
      if (newScrollTop !== offsetTop) {
@@ -1005,6 +1186,9 @@ index f0cb64d..0a159fc 100644
 +        // covers the destination. Only flushSync when a distant jump would
 +        // otherwise expose the empty filler.
 +        var alignedTop = keepInRange(newScrollTop);
++        if (!controlledNativeVerticalScroll) {
++          markNativeScrollMoving();
++        }
 +        if (!nativeWindowCoversViewport(alignedTop)) {
 +          nativeScrollPendingTopRef.current = null;
 +          (0, _reactDom.flushSync)(function () {
@@ -1029,7 +1213,7 @@ index f0cb64d..0a159fc 100644
    }
    var keepInHorizontalRange = function keepInHorizontalRange(nextOffsetLeft) {
      var tmpOffsetLeft = nextOffsetLeft;
-@@ -397,6 +562,9 @@ function RawList(props, ref) {
+@@ -397,6 +589,9 @@ function RawList(props, ref) {
        }
      }
      var componentEle = componentRef.current;
@@ -1039,7 +1223,7 @@ index f0cb64d..0a159fc 100644
      componentEle.addEventListener('wheel', onRawWheel, {
        passive: false
      });
-@@ -411,7 +579,7 @@ function RawList(props, ref) {
+@@ -411,7 +606,7 @@ function RawList(props, ref) {
        componentEle.removeEventListener('DOMMouseScroll', onFireFoxScroll);
        componentEle.removeEventListener('MozMousePixelScroll', onMozMousePixelScroll);
      };
@@ -1048,7 +1232,7 @@ index f0cb64d..0a159fc 100644
  
    // Sync scroll left
    (0, _useLayoutEffect.default)(function () {
-@@ -432,10 +600,13 @@ function RawList(props, ref) {
+@@ -432,10 +627,13 @@ function RawList(props, ref) {
    };
    var _scrollTo = (0, _useScrollTo.default)(componentRef, mergedData, heights, itemHeight, getKey, function () {
      return collectHeight(true);
@@ -1063,7 +1247,7 @@ index f0cb64d..0a159fc 100644
        getScrollInfo: getVirtualScrollInfo,
        scrollTo: function scrollTo(config) {
          function isPosScroll(arg) {
-@@ -444,7 +615,11 @@ function RawList(props, ref) {
+@@ -444,7 +642,11 @@ function RawList(props, ref) {
          if (isPosScroll(config)) {
            // Scroll X
            if (config.left !== undefined) {
@@ -1076,16 +1260,29 @@ index f0cb64d..0a159fc 100644
            }
  
            // Scroll Y
-@@ -466,7 +641,7 @@ function RawList(props, ref) {
+@@ -466,26 +668,28 @@ function RawList(props, ref) {
    }, [start, end, mergedData]);
  
    // ================================ Extra =================================
 -  var getSize = (0, _useGetSize.useGetSize)(mergedData, getKey, heights, itemHeight);
 +  var getSize = (0, _useGetSize.useGetSize)(mergedData, getKey, heights, itemHeight, fixedItemOffsets, itemHeightFixed);
++  var renderOffsetLeft = itemHorizontalOffsetComposited && componentRef.current ? componentRef.current.scrollLeft : offsetLeft;
    var extraContent = extraRender === null || extraRender === void 0 ? void 0 : extraRender({
      start: start,
      end: end,
-@@ -483,9 +658,9 @@ function RawList(props, ref) {
+     virtual: inVirtual,
+-    offsetX: offsetLeft,
++    scrolling: renderScrolling,
++    offsetX: renderOffsetLeft,
+     offsetY: fillerOffset,
+     rtl: isRTL,
+     getSize: getSize
+   });
+ 
+   // ================================ Render ================================
+-  var listChildren = (0, _useChildren.default)(mergedData, start, end, scrollWidth, offsetLeft, setInstanceRef, children, sharedConfig);
++  var listChildren = (0, _useChildren.default)(mergedData, start, end, scrollWidth, renderOffsetLeft, setInstanceRef, children, sharedConfig);
+   var componentStyle = null;
    if (height) {
      componentStyle = (0, _objectSpread3.default)((0, _defineProperty2.default)({}, fullHeight ? 'height' : 'maxHeight', height), ScrollStyle);
      if (useVirtual) {
@@ -1097,7 +1294,7 @@ index f0cb64d..0a159fc 100644
        }
        if (scrollMoving) {
          componentStyle.pointerEvents = 'none';
-@@ -508,6 +683,8 @@ function RawList(props, ref) {
+@@ -508,6 +712,8 @@ function RawList(props, ref) {
      className: "".concat(prefixCls, "-holder"),
      style: componentStyle,
      ref: componentRef,
@@ -1106,7 +1303,7 @@ index f0cb64d..0a159fc 100644
      onScroll: onFallbackScroll,
      onMouseEnter: delayHideScrollBar
    }, /*#__PURE__*/React.createElement(_Filler.default, {
-@@ -515,13 +692,14 @@ function RawList(props, ref) {
+@@ -515,13 +721,14 @@ function RawList(props, ref) {
      height: scrollHeight,
      offsetX: offsetLeft,
      offsetY: fillerOffset,
@@ -1122,7 +1319,7 @@ index f0cb64d..0a159fc 100644
      ref: verticalScrollBarRef,
      prefixCls: prefixCls,
      scrollOffset: offsetTop,
-@@ -535,7 +713,7 @@ function RawList(props, ref) {
+@@ -535,7 +742,7 @@ function RawList(props, ref) {
      style: styles === null || styles === void 0 ? void 0 : styles.verticalScrollBar,
      thumbStyle: styles === null || styles === void 0 ? void 0 : styles.verticalScrollBarThumb,
      showScrollBar: showScrollBar
@@ -1131,6 +1328,29 @@ index f0cb64d..0a159fc 100644
      ref: horizontalScrollBarRef,
      prefixCls: prefixCls,
      scrollOffset: offsetLeft,
+diff --git a/node_modules/rc-virtual-list/lib/hooks/useChildren.js b/node_modules/rc-virtual-list/lib/hooks/useChildren.js
+index 15a64e0..5f38739 100644
+--- a/node_modules/rc-virtual-list/lib/hooks/useChildren.js
++++ b/node_modules/rc-virtual-list/lib/hooks/useChildren.js
+@@ -8,14 +8,16 @@ exports.default = useChildren;
+ var React = _interopRequireWildcard(require("react"));
+ var _Item = require("../Item");
+ function useChildren(list, startIndex, endIndex, scrollWidth, offsetX, setNodeRef, renderFunc, _ref) {
+-  var getKey = _ref.getKey;
++  var getKey = _ref.getKey,
++    scrolling = _ref.scrolling;
+   return list.slice(startIndex, endIndex + 1).map(function (item, index) {
+     var eleIndex = startIndex + index;
+     var node = renderFunc(item, eleIndex, {
+       style: {
+         width: scrollWidth
+       },
+-      offsetX: offsetX
++      offsetX: offsetX,
++      scrolling: scrolling
+     });
+     var key = getKey(item);
+     return /*#__PURE__*/React.createElement(_Item.Item, {
 diff --git a/node_modules/rc-virtual-list/lib/hooks/useGetSize.d.ts b/node_modules/rc-virtual-list/lib/hooks/useGetSize.d.ts
 index adc0bea..e35a75d 100644
 --- a/node_modules/rc-virtual-list/lib/hooks/useGetSize.d.ts
@@ -1342,3 +1562,27 @@ index 707bf35..e233388 100644
            needCollectHeight = true;
          }
        }
+diff --git a/node_modules/rc-virtual-list/lib/interface.d.ts b/node_modules/rc-virtual-list/lib/interface.d.ts
+index 684eb5a..4198de6 100644
+--- a/node_modules/rc-virtual-list/lib/interface.d.ts
++++ b/node_modules/rc-virtual-list/lib/interface.d.ts
+@@ -2,9 +2,11 @@
+ export type RenderFunc<T> = (item: T, index: number, props: {
+     style: React.CSSProperties;
+     offsetX: number;
++    scrolling: boolean;
+ }) => React.ReactNode;
+ export interface SharedConfig<T> {
+     getKey: (item: T) => React.Key;
++    scrolling: boolean;
+ }
+ export type GetKey<T> = (item: T) => React.Key;
+ export type GetSize = (startKey: React.Key, endKey?: React.Key) => {
+@@ -18,6 +20,7 @@ export interface ExtraRenderInfo {
+     end: number;
+     /** Is current in virtual render */
+     virtual: boolean;
++    scrolling: boolean;
+     /** Used for `scrollWidth` tell the horizontal offset */
+     offsetX: number;
+     offsetY: number;

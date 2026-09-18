@@ -11,6 +11,7 @@ import {
   createDataGridVisualFrameGuard,
   readDataGridVirtualInnerOffset,
   shouldVirtualizeDataGridColumns,
+  syncDataGridHeaderHorizontalOffset,
   type DataGridVisualFrameGuard,
 } from './dataGridVirtualScroll';
 
@@ -104,6 +105,27 @@ describe('header fixed cell pin offset', () => {
 
     expect(applyDataGridHeaderPinOffset(header as unknown as ParentNode, 240)).toBe(0);
     expect(clearDataGridHeaderPinOffset(header as unknown as ParentNode)).toBe(0);
+  });
+
+  it('recomputes native table translation when rc-table changes header scrollLeft', () => {
+    const cell = { style: createStyleStub() };
+    const table = { style: { translate: '' } };
+    const header = {
+      scrollLeft: 320,
+      querySelector: vi.fn(() => table),
+      querySelectorAll: vi.fn(() => [cell]),
+    };
+
+    syncDataGridHeaderHorizontalOffset(header as unknown as HTMLElement, 480, true);
+    expect(table.style.translate).toBe('-160px 0');
+
+    header.scrollLeft = 0;
+    syncDataGridHeaderHorizontalOffset(header as unknown as HTMLElement, 480, true);
+    expect(table.style.translate).toBe('-480px 0');
+
+    syncDataGridHeaderHorizontalOffset(header as unknown as HTMLElement, 240, false);
+    expect(table.style.translate).toBe('');
+    expect(header.scrollLeft).toBe(240);
   });
 });
 

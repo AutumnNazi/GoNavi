@@ -2,6 +2,7 @@ import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { GONAVI_ROW_NUMBER_COLUMN_KEY } from './DataGridCore';
 import { useDataGridColumnResize } from './useDataGridColumnResize';
 
 type Listener = (event: any) => void;
@@ -43,6 +44,7 @@ class FakeStyle {
   ) {}
 
   minWidth = '';
+  maxWidth = '';
   position = '';
   overflow = '';
   zIndex = '';
@@ -101,7 +103,9 @@ describe('useDataGridColumnResize interaction cleanup', () => {
   let previewTable: { style: FakeStyle };
   let externalScrollInner: { style: FakeStyle };
   let previewCell: { style: FakeStyle };
+  let previewHeaderCell: { style: FakeStyle };
   let previewRow: { style: FakeStyle };
+  let previewStandardCell: { style: FakeStyle };
   let nextFixedHeaderCell: { style: FakeStyle };
   let nextFixedBodyCell: { style: FakeStyle };
   let nextStandardFixedBodyCell: { style: FakeStyle };
@@ -124,7 +128,7 @@ describe('useDataGridColumnResize interaction cleanup', () => {
     resize = useDataGridColumnResize({
       columnMetaMap: {},
       columnMetaMapByLowerName: {},
-      columnWidths: { name: 120 },
+      columnWidths: { name: 120, [GONAVI_ROW_NUMBER_COLUMN_KEY]: 36 },
       containerRef,
       dataTableDensity: 'comfortable',
       densityParams: { dataFontSize: 13, defaultColumnWidth: 160 },
@@ -138,9 +142,9 @@ describe('useDataGridColumnResize interaction cleanup', () => {
     return null;
   };
 
-  const beginResize = () => {
+  const beginResize = (key = 'name') => {
     act(() => {
-      resize?.handleResizeStart('name')({
+      resize?.handleResizeStart(key)({
         button: 0,
         clientX: 200,
         currentTarget: resizeHandle,
@@ -179,7 +183,7 @@ describe('useDataGridColumnResize interaction cleanup', () => {
     } as any;
     previewCell = {
       style: new FakeStyle('120px', '0 0 120px', '0px'),
-      classList: fakeClassList('ant-table-cell', 'ant-table-cell-fix-left'),
+      classList: fakeClassList('ant-table-cell', 'ant-table-cell-fix-left', 'data-grid-row-number-cell'),
       getAttribute: (name: string) => name === 'data-col-name' ? 'name' : null,
     } as any;
     nextFixedBodyCell = {
@@ -192,9 +196,9 @@ describe('useDataGridColumnResize interaction cleanup', () => {
       children: [previewCell, nextFixedBodyCell],
       getBoundingClientRect: () => ({ width: renderedTableWidth }),
     } as any;
-    const standardTargetCell = {
+    previewStandardCell = {
       style: new FakeStyle('120px', '', '0px'),
-      classList: fakeClassList('ant-table-cell', 'ant-table-cell-fix-left'),
+      classList: fakeClassList('ant-table-cell', 'ant-table-cell-fix-left', 'data-grid-row-number-cell'),
       getAttribute: (name: string) => name === 'data-col-name' ? 'name' : null,
     } as any;
     nextStandardFixedBodyCell = {
@@ -204,7 +208,7 @@ describe('useDataGridColumnResize interaction cleanup', () => {
     } as any;
     const standardRow = {
       style: new FakeStyle('1000px'),
-      children: [standardTargetCell, nextStandardFixedBodyCell],
+      children: [previewStandardCell, nextStandardFixedBodyCell],
     } as any;
     const tableSurface = {
       querySelector: (selector: string) => selector === '.data-grid-external-horizontal-scroll-inner'
@@ -237,7 +241,7 @@ describe('useDataGridColumnResize interaction cleanup', () => {
         ? {}
         : null,
     } as any;
-    const headerCell = {
+    previewHeaderCell = {
       cellIndex: 0,
       style: new FakeStyle('120px'),
       classList: {
@@ -247,11 +251,11 @@ describe('useDataGridColumnResize interaction cleanup', () => {
       getBoundingClientRect: () => ({ width: renderedHeaderWidth }),
       closest: (selector: string) => selector === 'table' ? table : null,
     } as any;
-    headerCell.parentElement = {
-      children: [headerCell, nextFixedHeaderCell],
+    (previewHeaderCell as any).parentElement = {
+      children: [previewHeaderCell, nextFixedHeaderCell],
     };
     resizeHandle = {
-      closest: (selector: string) => selector === 'th' ? headerCell : null,
+      closest: (selector: string) => selector === 'th' ? previewHeaderCell : null,
       style: new FakeStyle(),
     };
     fakeWindow = new FakeEventTarget();
@@ -355,6 +359,30 @@ describe('useDataGridColumnResize interaction cleanup', () => {
     expect(nextStandardFixedBodyCell.style.left).toBe('120px');
     expect(setColumnWidths).toHaveBeenCalledTimes(1);
     expectLastWidthUpdate(170);
+  });
+
+  it('previews row-number width bounds in the header and body before release', () => {
+    renderedHeaderWidth = 36;
+    previewCol.style.width = '36px';
+    for (const cell of [previewHeaderCell, previewCell, previewStandardCell]) {
+      cell.style.width = '36px';
+      cell.style.minWidth = '36px';
+      cell.style.maxWidth = '36px';
+      cell.style.flex = '0 0 36px';
+    }
+
+    beginResize(GONAVI_ROW_NUMBER_COLUMN_KEY);
+    act(() => fakeDocument.dispatch('mousemove', { buttons: 1, clientX: 230 }));
+    act(() => flushAnimationFrames());
+
+    expect(previewCol.style.width).toBe('66px');
+    for (const cell of [previewHeaderCell, previewCell, previewStandardCell]) {
+      expect(cell.style.width).toBe('66px');
+      expect(cell.style.minWidth).toBe('66px');
+      expect(cell.style.maxWidth).toBe('66px');
+      expect(cell.style.flex).toBe('0 0 66px');
+    }
+    expect(setColumnWidths).not.toHaveBeenCalled();
   });
 
   it('self-heals when movement reports no pressed button', () => {
