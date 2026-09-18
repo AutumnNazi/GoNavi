@@ -948,20 +948,20 @@ body[data-ui-version="v2"] .ant-segmented .ant-segmented-thumb {
 }
 
 /* ─── Scrollbars ──────────────────────────────────────── */
-body[data-ui-version="v2"]:not([data-platform="windows"]) ::-webkit-scrollbar {
+body[data-ui-version="v2"]:not([data-platform="windows"]) :not(:is(.gn-v2-explorer-tree-shell .ant-tree-list-holder))::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
-body[data-ui-version="v2"]:not([data-platform="windows"]) ::-webkit-scrollbar-track {
+body[data-ui-version="v2"]:not([data-platform="windows"]) :not(:is(.gn-v2-explorer-tree-shell .ant-tree-list-holder))::-webkit-scrollbar-track {
   background: transparent;
 }
-body[data-ui-version="v2"]:not([data-platform="windows"]) ::-webkit-scrollbar-thumb {
+body[data-ui-version="v2"]:not([data-platform="windows"]) :not(:is(.gn-v2-explorer-tree-shell .ant-tree-list-holder))::-webkit-scrollbar-thumb {
   background: var(--gn-br-3);
   border: 3px solid transparent;
   background-clip: content-box;
   border-radius: 10px;
 }
-body[data-ui-version="v2"]:not([data-platform="windows"]) ::-webkit-scrollbar-thumb:hover {
+body[data-ui-version="v2"]:not([data-platform="windows"]) :not(:is(.gn-v2-explorer-tree-shell .ant-tree-list-holder))::-webkit-scrollbar-thumb:hover {
   background: var(--gn-fg-5);
   border: 3px solid transparent;
   background-clip: content-box;
@@ -7057,46 +7057,94 @@ body[data-ui-version="v2"] .gn-v2-context-menu-kbd {
   }
 }
 
-/* Settings center: flush right edge + refined scrollbar
-   Must beat body[data-ui-version="v2"] ::-webkit-scrollbar (imported after App.css). */
+/* Settings center and explorer tree share the same 8px bar with a visible track. */
 body[data-ui-version="v2"] .gonavi-settings-center-workbench-host,
 body[data-ui-version="v2"] .gonavi-settings-center-workbench,
-body[data-ui-version="v2"] .gonavi-settings-center-modal {
+body[data-ui-version="v2"] .gonavi-settings-center-modal,
+body[data-ui-version="v2"] .gonavi-settings-center-tree,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--gn-fg-4) 50%, transparent) transparent;
 }
 body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar,
 body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar,
-body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar {
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar {
+  -webkit-appearance: none;
+  appearance: none;
   width: 8px;
   height: 8px;
 }
+body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar:horizontal,
+body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar:horizontal,
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar:horizontal,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar:horizontal {
+  height: 8px;
+  background: color-mix(in srgb, var(--gn-fg-4) 14%, var(--gn-bg-panel));
+}
 body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar-track,
 body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar-track,
-body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-track {
-  background: transparent;
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-track,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar-track {
+  background: color-mix(in srgb, var(--gn-fg-4) 14%, var(--gn-bg-panel));
+  border-radius: 999px;
+}
+body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar-track:vertical,
+body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar-track:vertical,
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-track:vertical,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar-track:vertical {
   margin: 2px 0;
+}
+body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar-track:horizontal,
+body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar-track:horizontal,
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-track:horizontal,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar-track:horizontal {
+  margin: 0;
 }
 body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar-thumb,
 body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar-thumb,
-body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-thumb {
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-thumb,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--gn-fg-4) 38%, transparent);
   border: 2px solid transparent;
   background-clip: content-box;
   border-radius: 999px;
+}
+body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar-thumb:vertical,
+body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar-thumb:vertical,
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-thumb:vertical,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar-thumb:vertical {
   min-height: 36px;
+}
+body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar-thumb:horizontal,
+body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar-thumb:horizontal,
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-thumb:horizontal,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar-thumb:horizontal {
+  min-width: 36px;
+  border-width: 1px 2px;
+  background-clip: padding-box;
+  background-color: color-mix(in srgb, var(--gn-fg-4) 42%, var(--gn-bg-panel));
 }
 body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar-thumb:hover,
 body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar-thumb:hover,
-body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-thumb:hover {
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-thumb:hover,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--gn-accent) 50%, var(--gn-fg-4));
   border: 2px solid transparent;
   background-clip: content-box;
 }
+body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar-thumb:horizontal:hover,
+body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar-thumb:horizontal:hover,
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-thumb:horizontal:hover,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar-thumb:horizontal:hover {
+  border-width: 1px 2px;
+  background-clip: padding-box;
+  background-color: color-mix(in srgb, var(--gn-accent) 50%, var(--gn-fg-4));
+}
 body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar-corner,
 body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar-corner,
-body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-corner {
-  background: transparent;
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-corner,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar-corner {
+  background: color-mix(in srgb, var(--gn-fg-4) 14%, var(--gn-bg-panel));
 }
 body[data-ui-version="v2"] .gonavi-settings-center-pane-scroll,
 body[data-ui-version="v2"] .gonavi-settings-center-content {

@@ -2114,7 +2114,7 @@ describe('DataGrid layout', () => {
     expect(css).toContain('body[data-platform="darwin"] .win-scroll-grid .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"]::-webkit-scrollbar');
     expect(css).toContain('body[data-platform="windows"] .win-scroll-grid .data-grid-external-horizontal-scroll');
     expect(css).toContain('body:not([data-platform="windows"]) .win-scroll-grid .ant-table-body::-webkit-scrollbar');
-    expect(themeCss).toContain('body[data-ui-version="v2"]:not([data-platform="windows"]) ::-webkit-scrollbar');
+    expect(themeCss).toContain('body[data-ui-version="v2"]:not([data-platform="windows"]) :not(:is(.gn-v2-explorer-tree-shell .ant-tree-list-holder))::-webkit-scrollbar');
     expect(themeCss).not.toMatch(/body\[data-ui-version="v2"\] ::-webkit-scrollbar \{/);
   });
 
