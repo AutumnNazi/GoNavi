@@ -1032,7 +1032,7 @@ describe("i18n catalog", () => {
     const source = readQueryEditorSource();
     const handleReloadSource = sliceBetween(
       source,
-      "  const handleReloadResult = async (resultKey: string, sql: string) => {",
+      "  const handleReloadResult = async (",
       "  const handleRun = async (runScope: QueryEditorRunScope = 'default') => {",
     );
 

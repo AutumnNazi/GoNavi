@@ -4442,8 +4442,12 @@ describe('QueryEditor external SQL save', () => {
     });
     expect(dataGridState.latestProps?.data).toEqual([{ value: 2 }]);
     expect(dataGridState.latestProps?.isActive).toBe(true);
+    // The per-result grid renders in its own memoized module so a result switch
+    // can skip untouched grids; the active flag must still be scoped per result.
+    expect(readFileSync(new URL('./QueryEditorResultTabContent.tsx', import.meta.url), 'utf8'))
+      .toContain('isActive={isResultActive}');
     expect(readFileSync(new URL('./QueryEditorResultsPanel.tsx', import.meta.url), 'utf8'))
-      .toContain('isActive={isActive && resolvedActiveResultKey === rs.key}');
+      .toContain('isResultActive={isActive && resolvedActiveResultKey === rs.key}');
 
     renderer.unmount();
   });

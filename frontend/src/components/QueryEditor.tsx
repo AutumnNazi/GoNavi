@@ -9749,14 +9749,34 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   }, [buildSqlExecutionConnectionConfig, invokeRequestScopedApp]);
 
   // 精准重查询单个结果集（提交事务 / 刷新按钮使用），不会重跑整个编辑器 SQL
-  const handleReloadResult = async (resultKey: string, sql: string) => {
+  const handleReloadResult = async (
+      resultKey: string,
+      sql: string,
+      executionContext?: {
+          executionConnectionId?: string;
+          executionDbName?: string;
+          executionConnectionParams?: string;
+          statementResultIndex?: number;
+      },
+  ) => {
+      // Result keys are positional (`result-N`) and get reused across runs, so a
+      // live lookup can resolve to a *different* result than the grid the user
+      // clicked. Prefer the caller's own execution context, which is the result
+      // actually being displayed.
       const currentResult = resultSets.find((item) => item.key === resultKey);
-      const executionConnectionId = currentResult?.executionConnectionId || currentConnectionId;
+      const executionConnectionId = executionContext?.executionConnectionId
+          || currentResult?.executionConnectionId
+          || currentConnectionId;
       const conn = connections.find(c => c.id === executionConnectionId);
       if (!conn) return;
-      const executionDbName = currentResult?.executionDbName ?? currentDb;
+      const executionDbName = executionContext?.executionDbName
+          ?? currentResult?.executionDbName
+          ?? currentDb;
       if (!sql?.trim() || !canUseQueryEditorDatabaseContext(conn, executionDbName)) return;
-      const statementResultIndex = Math.max(1, Number(currentResult?.statementResultIndex || 1));
+      const statementResultIndex = Math.max(
+          1,
+          Number(executionContext?.statementResultIndex ?? currentResult?.statementResultIndex ?? 1),
+      );
 
       const config = {
           ...conn.config,
@@ -9812,7 +9832,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   queryId,
                   splitSQLStatements(sql, normalizedDbType),
                   normalizedDbType,
-                  currentResult?.executionConnectionParams,
+                  executionContext?.executionConnectionParams ?? currentResult?.executionConnectionParams,
                   executionConnectionId,
               );
           } finally {
