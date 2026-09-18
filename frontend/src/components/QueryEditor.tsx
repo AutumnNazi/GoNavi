@@ -178,6 +178,7 @@ import QueryEditorToolbar, {
     useQueryExecutionElapsed,
 } from './QueryEditorToolbar';
 import { useQueryEditorExecutionLifecycle } from './queryEditor/useQueryEditorExecutionLifecycle';
+import { useQueryEditorSqlErrorLocator } from './queryEditor/useQueryEditorSqlErrorLocator';
 import { useQueryEditorTabExecutionBroadcast } from './queryEditor/queryEditorTabExecutionState';
 import {
     buildQueryEditorLifecycleAffectedRowsResult,
@@ -2290,6 +2291,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const lastEditorCursorPositionRef = useRef<any>(null);
   const lastHoverTargetPositionRef = useRef<{ lineNumber: number; column: number } | null>(null);
   const lastExecutedEditorQueryRef = useRef<string>('');
+  const { recordExecutionOrigin, locateExecutionError } = useQueryEditorSqlErrorLocator(editorRef);
   const linkDecorationIdsRef = useRef<string[]>([]);
   const ctrlMetaPressedRef = useRef(false);
   const objectDecorationIdsRef = useRef<string[]>([]);
@@ -10612,6 +10614,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
     lockQueryContextForRun(runSeq);
     setLoading(true);
     setExecutionError('');
+    recordExecutionOrigin(currentQuery, executableSQL);
     updateResultPanelVisibility(true);
     rpcLostWithoutResultRef.current = false;
     const runStartTime = Date.now();
@@ -11060,6 +11063,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             const fullSQL = shouldPreserveOraclePlsqlBatch
                 ? normalizeOracleSqlPlusSlashTerminators(normalizedRawSQL)
                 : executableStatements.join(';\n');
+            recordExecutionOrigin(currentQuery, executableSQL, fullSQL, executablePlans);
 
             let queryId: string;
             try {
@@ -13597,6 +13601,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           onRequestResultTotalCount={handleRequestResultTotalCount}
           onCancelResultTotalCount={handleCancelResultTotalCount}
           onDiagnoseExecutionError={handleDiagnoseExecutionError}
+          onLocateExecutionError={() => locateExecutionError(executionError)}
           onCompareResult={(resultKey) => {
             setResultDiffAnchorKey(resultKey);
             setResultDiffWizardOpen(true);

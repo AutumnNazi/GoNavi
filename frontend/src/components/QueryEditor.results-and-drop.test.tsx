@@ -475,6 +475,7 @@ vi.mock('@ant-design/icons', () => {
     ThunderboltOutlined: Icon,
     DownOutlined: Icon,
     RobotOutlined: Icon,
+    AimOutlined: Icon,
     SearchOutlined: Icon,
     DatabaseOutlined: Icon,
     EyeOutlined: Icon,

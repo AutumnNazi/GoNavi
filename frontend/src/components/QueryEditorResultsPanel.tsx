@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Dropdown, Segmented, Tag, Tabs, Tooltip, message, type MenuProps } from 'antd';
-import { ArrowLeftOutlined, ArrowRightOutlined, BugOutlined, ClearOutlined, CloseOutlined, CopyOutlined, DiffOutlined, ExportOutlined, EyeInvisibleOutlined, PushpinOutlined, RobotOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ArrowRightOutlined, BugOutlined, ClearOutlined, CloseOutlined, CopyOutlined, DiffOutlined, ExportOutlined, EyeInvisibleOutlined, PushpinOutlined } from '@ant-design/icons';
 
 import { useStore } from '../store';
 import type { EditRowLocator } from '../utils/rowLocator';
@@ -24,6 +24,7 @@ import DataGrid from './DataGrid';
 import LogPanel from './LogPanel';
 import { renderV2ActionMenuPopup } from './common/V2ActionMenuPopup';
 import { QueryEditorExecutionStatus } from './queryEditor/QueryEditorExecutionStatus';
+import { QueryEditorExecutionErrorCard } from './queryEditor/QueryEditorExecutionErrorCard';
 import {
     resolveVisibleQueryEditorExecutionLifecycle,
     type QueryEditorExecutionLifecycleState,
@@ -114,6 +115,7 @@ interface QueryEditorResultsPanelProps {
     onRequestResultTotalCount?: (key: string) => void;
     onCancelResultTotalCount?: (key: string) => void;
     onDiagnoseExecutionError: () => void;
+    onLocateExecutionError?: () => void;
     onCompareResult?: (resultKey: string) => void;
     executionLifecycle?: QueryEditorExecutionLifecycleState | null;
 }
@@ -179,6 +181,7 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
     onRequestResultTotalCount,
     onCancelResultTotalCount,
     onDiagnoseExecutionError,
+    onLocateExecutionError,
     onCompareResult,
     executionLifecycle = null,
 }) => {
@@ -787,6 +790,7 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                     variant="embedded"
                     executionError={executionError}
                     onDiagnoseExecutionError={executionError ? onDiagnoseExecutionError : undefined}
+                    onLocateExecutionError={executionError ? onLocateExecutionError : undefined}
                 />
             ),
         };
@@ -873,19 +877,13 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                             <span className="query-result-panel-header-title">{t('query_editor.results_panel.panel.title')}</span>
                             {hideButton}
                         </div>
-                        <div className="gn-v2-query-error" style={{ flex: 1, minHeight: 0, padding: 24, display: 'flex', flexDirection: 'column', gap: 16, background: darkMode ? '#1e1e1e' : '#fafafa', overflow: 'auto' }}>
-                            <div style={{ color: '#ff4d4f', fontWeight: 'bold', fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <CloseOutlined />
-                                <span>{t('query_editor.result.execution_failed')}</span>
-                            </div>
-                            <div className="custom-scrollbar" style={{ padding: 16, background: darkMode ? '#2d1a1a' : '#fff2f0', border: `1px solid ${darkMode ? '#5c2020' : '#ffccc7'}`, borderRadius: 6, color: darkMode ? '#ffa39e' : '#cf1322', fontFamily: 'var(--gn-font-mono)', fontSize: 'var(--gn-font-size-mono, 13px)', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: '40vh', overflow: 'auto' }}>
-                                {executionError}
-                            </div>
-                            <div style={{ marginTop: 8 }}>
-                                <Button type="primary" icon={<RobotOutlined />} style={{ background: '#818cf8', borderColor: '#818cf8', boxShadow: '0 2px 0 rgba(129, 140, 248, 0.2)' }} onClick={onDiagnoseExecutionError}>
-                                    {t('query_editor.result.ai_diagnose')}
-                                </Button>
-                            </div>
+                        <div className="gn-v2-query-error" style={{ flex: 1, minHeight: 0, padding: 24, display: 'flex', flexDirection: 'column', background: darkMode ? '#1e1e1e' : '#fafafa', overflow: 'auto' }}>
+                            <QueryEditorExecutionErrorCard
+                                darkMode={darkMode}
+                                error={executionError}
+                                onDiagnose={onDiagnoseExecutionError}
+                                onLocate={onLocateExecutionError}
+                            />
                         </div>
                     </>
                 ) : (

@@ -84,6 +84,7 @@ vi.mock("@ant-design/icons", async () => {
     CloseOutlined: Icon,
     ClockCircleOutlined: Icon,
     RobotOutlined: Icon,
+    AimOutlined: Icon,
   };
 });
 
@@ -200,6 +201,50 @@ describe("LogPanel i18n", () => {
       diagnoseButton.props.onClick?.();
     });
     expect(onDiagnoseExecutionError).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets the reported SQL position jump back to the editor from the embedded log tab", () => {
+    const onLocateExecutionError = vi.fn();
+    const renderer = renderLogPanel({
+      variant: "embedded",
+      executionError: "第 1 条语句执行失败: ORA-00907: missing right parenthesis\nerror occur at position: 2868",
+      onDiagnoseExecutionError: vi.fn(),
+      onLocateExecutionError,
+    });
+    const renderedText = textContent(renderer.toJSON());
+
+    expect(renderedText).toContain("2868");
+    expect(renderedText).toContain("Locate");
+
+    const locateButton = renderer.root.findAll((node) => (
+      node.type === "button" && textContent(node).includes("2868")
+    ))[0];
+    act(() => {
+      locateButton.props.onClick?.();
+    });
+    expect(onLocateExecutionError).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows locate for KingBase at-or-near errors that omit LINE/position", () => {
+    const onLocateExecutionError = vi.fn();
+    const renderer = renderLogPanel({
+      variant: "embedded",
+      executionError: '第 1 条语句执行失败: kb: syntax error at or near "("',
+      onDiagnoseExecutionError: vi.fn(),
+      onLocateExecutionError,
+    });
+    const renderedText = textContent(renderer.toJSON());
+
+    expect(renderedText).toContain("Locate");
+    expect(renderedText).toContain('at or near "("');
+
+    const locateButton = renderer.root.findAll((node) => (
+      node.type === "button" && textContent(node).includes("Locate")
+    ))[0];
+    act(() => {
+      locateButton.props.onClick?.();
+    });
+    expect(onLocateExecutionError).toHaveBeenCalledTimes(1);
   });
 
   it("omits duplicate log chrome from the embedded log tab", () => {

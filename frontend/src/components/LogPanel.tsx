@@ -1,9 +1,10 @@
 import React from 'react';
 import { Table, Tag, Button, Tooltip, Empty } from 'antd';
-import { ClearOutlined, CloseOutlined, BugOutlined, RobotOutlined } from '@ant-design/icons';
+import { ClearOutlined, CloseOutlined, BugOutlined } from '@ant-design/icons';
 import { useStore } from '../store';
 import { useI18n } from '../i18n/provider';
 import { normalizeOpacityForPlatform, resolveAppearanceValues } from '../utils/appearance';
+import { QueryEditorExecutionErrorCard } from './queryEditor/QueryEditorExecutionErrorCard';
 interface LogPanelProps {
     height?: number;
     onClose?: () => void;
@@ -11,6 +12,7 @@ interface LogPanelProps {
     variant?: 'panel' | 'embedded';
     executionError?: string;
     onDiagnoseExecutionError?: () => void;
+    onLocateExecutionError?: () => void;
 }
 
 const LogPanel: React.FC<LogPanelProps> = ({
@@ -20,6 +22,7 @@ const LogPanel: React.FC<LogPanelProps> = ({
     variant = 'panel',
     executionError,
     onDiagnoseExecutionError,
+    onLocateExecutionError,
 }) => {
     const { t } = useI18n();
     const sqlLogs = useStore(state => state.sqlLogs);
@@ -189,42 +192,14 @@ const LogPanel: React.FC<LogPanelProps> = ({
                             borderRadius: 8,
                             border: `1px solid ${darkMode ? '#5c2020' : '#ffccc7'}`,
                             background: darkMode ? '#2d1a1a' : '#fff2f0',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 12,
                         }}>
-                            <div style={{ color: '#ff7875', fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <CloseOutlined />
-                                <span>{t('query_editor.result.execution_failed')}</span>
-                            </div>
-                            <div
-                                className="log-panel-scroll"
-                                style={{
-                                    paddingRight: 4,
-                                    maxHeight: 220,
-                                    overflow: 'auto',
-                                    color: darkMode ? '#ffa39e' : '#cf1322',
-                                    fontFamily: 'var(--gn-font-mono)',
-                                    fontSize: 'var(--gn-font-size-mono, 12px)',
-                                    whiteSpace: 'pre-wrap',
-                                    wordBreak: 'break-all',
-                                    lineHeight: 1.55,
-                                }}
-                            >
-                                {executionError}
-                            </div>
-                            {onDiagnoseExecutionError && (
-                                <div>
-                                    <Button
-                                        type="primary"
-                                        icon={<RobotOutlined />}
-                                        onClick={onDiagnoseExecutionError}
-                                        style={{ background: '#818cf8', borderColor: '#818cf8', boxShadow: '0 2px 0 rgba(129, 140, 248, 0.2)' }}
-                                    >
-                                        {t('query_editor.result.ai_diagnose')}
-                                    </Button>
-                                </div>
-                            )}
+                            <QueryEditorExecutionErrorCard
+                                compact
+                                darkMode={darkMode}
+                                error={executionError}
+                                onDiagnose={onDiagnoseExecutionError}
+                                onLocate={onLocateExecutionError}
+                            />
                         </div>
                     </div>
                 )}
