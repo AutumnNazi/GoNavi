@@ -302,6 +302,7 @@ import {
     stripCompletionIdentifierQuotes,
     shouldHandleQueryEditorRunShortcutFallback,
 } from './queryEditor/QueryEditorHelpers';
+import { finalizeQueryEditorSqlServerResultSets, resolveQueryEditorExecutionSuccessToast } from './queryEditor/queryEditorSqlServerResultMessages';
 import {
     applyQueryEditorCompletionFragmentCase,
     buildQueryEditorAiInlineSuggestOptions,
@@ -11481,14 +11482,15 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                     readOnly: true,
                 });
             }
+            const visibleResultSets = finalizeQueryEditorSqlServerResultSets(normalizedDbType, nextResultSets);
 
-            if (nextResultSets.length > 0) {
+            if (visibleResultSets.length > 0) {
                 updateResultPanelVisibility(true);
             }
             const shouldReplaceAllResults = didExecuteWholeEditor;
-            const mergedResultSets = mergeResultSets(resultSets, nextResultSets, shouldReplaceAllResults);
+            const mergedResultSets = mergeResultSets(resultSets, visibleResultSets, shouldReplaceAllResults);
             setResultSets(mergedResultSets);
-            activateExecutedResult(mergedResultSets, nextResultSets, runSeq);
+            activateExecutedResult(mergedResultSets, visibleResultSets, runSeq);
             if (didExecuteAppendedSql || didExecuteWholeEditor) {
                 lastExecutedEditorQueryRef.current = currentQuery;
             }
@@ -11501,12 +11503,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             if (res.message) {
                 message.info(res.message);
             }
-            if (resultSetDataArray.length > 1) {
-                message.success(translate('query_editor.message.execution_result_sets_success', {
-                    results: nextResultSets.length,
-                }));
-            } else if (nextResultSets.length === 0) {
-                message.success(translate('query_editor.message.execution_success'));
+            const successToast = resolveQueryEditorExecutionSuccessToast(resultSetDataArray.length, visibleResultSets);
+            if (successToast) {
+                message.success(translate(successToast.key, successToast.params));
             }
 
         }
