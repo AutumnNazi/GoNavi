@@ -141,21 +141,30 @@ export const markQueryEditorExecutionStalled = (
   return { ...current, status: 'stalled', backendAlive: true };
 };
 
+export const isTerminalQueryEditorExecutionStatus = (
+  status: QueryEditorExecutionLifecycleStatus,
+): boolean => status === 'done' || status === 'cancelled' || status === 'error';
+
 export const resolveVisibleQueryEditorExecutionLifecycle = (
   loading: boolean,
   lifecycle: QueryEditorExecutionLifecycleState | null | undefined,
 ): QueryEditorExecutionLifecycleState | null => {
+  // After a successful RPC, loading drops before the done event is applied.
+  // A leftover "running" heartbeat must not keep the results banner spinning.
+  if (!loading) {
+    return null;
+  }
   if (lifecycle && isActiveQueryEditorExecutionStatus(lifecycle.status)) {
     return lifecycle;
   }
-  if (loading) {
-    return {
-      ...createIdleQueryEditorExecutionLifecycle(),
-      status: 'starting',
-      backendAlive: true,
-    };
+  if (lifecycle && isTerminalQueryEditorExecutionStatus(lifecycle.status)) {
+    return null;
   }
-  return null;
+  return {
+    ...createIdleQueryEditorExecutionLifecycle(),
+    status: 'starting',
+    backendAlive: true,
+  };
 };
 
 export const isActiveQueryEditorExecutionStatus = (
@@ -174,6 +183,26 @@ export const shouldApplyQueryExecutionProgressEvent = (
 export const shouldRetainQueryEditorRun = (
   state: QueryEditorExecutionLifecycleState | null | undefined,
 ): boolean => Boolean(state && isActiveQueryEditorExecutionStatus(state.status) && state.backendAlive);
+
+// Keep loading only when the RPC vanished while the backend is still alive.
+// A finished SELECT must not stay "running" just because the last event was a heartbeat.
+export const shouldRetainQueryEditorRunAfterRpc = (
+  rpcLostWithoutResult: boolean,
+  state: QueryEditorExecutionLifecycleState | null | undefined,
+): boolean => rpcLostWithoutResult && shouldRetainQueryEditorRun(state);
+
+export const shouldFinishQueryEditorRunAfterCancelMiss = (
+  result: { success?: boolean; cancellationState?: unknown } | null | undefined,
+  editorStillLoading: boolean,
+): boolean => {
+  if (result?.success === true) {
+    return false;
+  }
+  if (String(result?.cancellationState || '').trim().toLowerCase() === 'unsupported') {
+    return false;
+  }
+  return editorStillLoading;
+};
 
 export const shouldRetainQueryEditorRunAfterRpcFailure = (
   error: unknown,

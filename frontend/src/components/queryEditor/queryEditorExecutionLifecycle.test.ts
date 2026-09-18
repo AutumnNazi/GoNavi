@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -8,7 +9,9 @@ import {
     queryEditorExecutionTimerStatusI18nKey,
     reduceQueryEditorExecutionLifecycle,
     shouldApplyQueryExecutionProgressEvent,
+    shouldFinishQueryEditorRunAfterCancelMiss,
     shouldRetainQueryEditorRun,
+    shouldRetainQueryEditorRunAfterRpc,
     shouldRetainQueryEditorRunAfterRpcFailure,
     resolveVisibleQueryEditorExecutionLifecycle,
 } from './queryEditorExecutionLifecycle';
@@ -129,6 +132,45 @@ describe('query editor execution lifecycle', () => {
         expect(resolveVisibleQueryEditorExecutionLifecycle(false, createIdleQueryEditorExecutionLifecycle())).toBeNull();
     });
 
+    it('hides a stale running banner after the SQL RPC has already returned rows', () => {
+        const running = reduceQueryEditorExecutionLifecycle(
+            createIdleQueryEditorExecutionLifecycle(),
+            { queryId: 'query-1', status: 'running', stage: 'executing', cancellable: true },
+            1_000,
+        );
+        expect(resolveVisibleQueryEditorExecutionLifecycle(true, running)?.status).toBe('running');
+        expect(resolveVisibleQueryEditorExecutionLifecycle(false, running)).toBeNull();
+
+        const done = reduceQueryEditorExecutionLifecycle(
+            running,
+            { queryId: 'query-1', status: 'done', stage: 'completed' },
+            1_100,
+        );
+        expect(resolveVisibleQueryEditorExecutionLifecycle(true, done)).toBeNull();
+        expect(resolveVisibleQueryEditorExecutionLifecycle(false, done)).toBeNull();
+    });
+
+    it('does not keep loading after a successful RPC just because heartbeats are still live', () => {
+        const running = reduceQueryEditorExecutionLifecycle(
+            createIdleQueryEditorExecutionLifecycle(),
+            { queryId: 'query-1', status: 'running', stage: 'executing' },
+            1_000,
+        );
+        expect(shouldRetainQueryEditorRun(running)).toBe(true);
+        expect(shouldRetainQueryEditorRunAfterRpc(false, running)).toBe(false);
+        expect(shouldRetainQueryEditorRunAfterRpc(true, running)).toBe(true);
+    });
+
+    it('clears a stuck editor when stop misses a query that already left the registry', () => {
+        expect(shouldFinishQueryEditorRunAfterCancelMiss({ success: false }, true)).toBe(true);
+        expect(shouldFinishQueryEditorRunAfterCancelMiss({ success: false }, false)).toBe(false);
+        expect(shouldFinishQueryEditorRunAfterCancelMiss({
+            success: false,
+            cancellationState: 'unsupported',
+        }, true)).toBe(false);
+        expect(shouldFinishQueryEditorRunAfterCancelMiss({ success: true }, true)).toBe(false);
+    });
+
     it('does not attach another tab\'s progress to an editor that has not started a run', () => {
         expect(shouldApplyQueryExecutionProgressEvent('', 'query-1')).toBe(false);
         expect(shouldApplyQueryExecutionProgressEvent('query-1', 'query-2')).toBe(false);
@@ -141,5 +183,12 @@ describe('query editor execution lifecycle', () => {
         };
         expect(queryEditorExecutionTimerStatusI18nKey(false, leaked)).toBe('');
         expect(queryEditorExecutionTimerStatusI18nKey(true, leaked)).toBe('query_editor.execution.status.running');
+    });
+
+    it('keeps QueryEditor from retaining a successful SQL RPC just because heartbeats are live', () => {
+        const source = readFileSync(new URL('../QueryEditor.tsx', import.meta.url), 'utf8');
+        expect(source).toContain('shouldRetainQueryEditorRunAfterRpc(');
+        expect(source).toContain('shouldFinishQueryEditorRunAfterCancelMiss(res, loading)');
+        expect(source).not.toContain('|| shouldRetainQueryEditorRun(executionLifecycleRef.current)');
     });
 });

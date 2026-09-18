@@ -183,7 +183,8 @@ import {
     buildQueryEditorLifecycleAffectedRowsResult,
     isQueryEditorCancelledRpcError,
     queryEditorExecutionTimerStatusI18nKey,
-    shouldRetainQueryEditorRun,
+    shouldFinishQueryEditorRunAfterCancelMiss,
+    shouldRetainQueryEditorRunAfterRpc,
     shouldRetainQueryEditorRunAfterRpcFailure,
     type QueryEditorExecutionLifecycleState,
 } from './queryEditor/queryEditorExecutionLifecycle';
@@ -11532,9 +11533,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         clearUnpinnedResultSets(QUERY_EDITOR_SQL_LOG_TAB_KEY);
     } finally {
         unlockQueryContextForRun(runSeq);
-        const retainRun = isCurrentRun() && (
-            rpcLostWithoutResultRef.current
-            || shouldRetainQueryEditorRun(executionLifecycleRef.current)
+        const retainRun = isCurrentRun() && shouldRetainQueryEditorRunAfterRpc(
+            rpcLostWithoutResultRef.current,
+            executionLifecycleRef.current,
         );
         if (isCurrentRun() && !retainRun) setLoading(false);
         if (runQueryId && currentQueryIdRef.current === runQueryId && !retainRun) {
@@ -11627,6 +11628,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           finishCancelledRun();
           clearQueryId();
         }
+      } else if (
+        currentQueryIdRef.current === queryIdToCancel
+        && shouldFinishQueryEditorRunAfterCancelMiss(res, loading)
+      ) {
+        finishCancelledRun();
+        clearQueryId();
       } else {
         message.warning(res.message);
       }
