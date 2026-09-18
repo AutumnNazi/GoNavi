@@ -584,6 +584,18 @@ describe('shortcut defaults', () => {
     });
   });
 
+  it('registers AI diagnosis as a query editor shortcut', () => {
+    expect(DEFAULT_SHORTCUT_OPTIONS.diagnoseExecutionError).toEqual({
+      mac: { combo: 'Meta+Shift+A', enabled: true },
+      windows: { combo: 'Ctrl+Shift+A', enabled: true },
+    });
+    expect(SHORTCUT_ACTION_META.diagnoseExecutionError).toMatchObject({
+      label: 'AI 诊断',
+      scope: 'queryEditor',
+      allowInEditable: true,
+    });
+  });
+
   // Windows 任务栏恢复后字体异常变大的兜底入口（方案 3）。
   // 自动 fix 路径（9848b8b2）刻意不再 toggle 以避免可见动画，由该快捷键给用户主动触发的修复入口。
   it('registers reset window zoom shortcut with default Ctrl+Shift+0', () => {

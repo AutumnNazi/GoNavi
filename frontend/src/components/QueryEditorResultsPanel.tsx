@@ -105,6 +105,7 @@ interface QueryEditorResultsPanelProps {
     maxRows?: number;
     dataPreviewRequest?: { resultKey: string; requestId: string } | null;
     toggleShortcutLabel: string;
+    diagnoseShortcutLabel?: string;
     onActiveResultKeyChange: (key: string) => void;
     onHide: () => void;
     onCloseResult: (key: string) => void;
@@ -172,6 +173,7 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
     maxRows,
     dataPreviewRequest,
     toggleShortcutLabel,
+    diagnoseShortcutLabel,
     onActiveResultKeyChange,
     onHide,
     onCloseResult,
@@ -670,6 +672,7 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                     variant="embedded"
                     executionError={executionError}
                     onDiagnoseExecutionError={executionError ? onDiagnoseExecutionError : undefined}
+                    diagnoseShortcutLabel={executionError ? diagnoseShortcutLabel : undefined}
                     onLocateExecutionError={executionError ? onLocateExecutionError : undefined}
                 />
             ),
@@ -762,6 +765,7 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                                 darkMode={darkMode}
                                 error={executionError}
                                 onDiagnose={onDiagnoseExecutionError}
+                                diagnoseShortcutLabel={diagnoseShortcutLabel}
                                 onLocate={onLocateExecutionError}
                             />
                         </div>

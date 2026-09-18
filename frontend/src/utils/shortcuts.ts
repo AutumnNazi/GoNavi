@@ -26,6 +26,7 @@ export type ShortcutAction =
   | 'toggleMacFullscreen'
   | 'resetWindowZoom'
   | 'diagnoseQuery'
+  | 'diagnoseExecutionError'
   | 'showSlowQueries';
 
 export type ShortcutPlatform = 'mac' | 'windows';
@@ -127,6 +128,7 @@ export const SHORTCUT_ACTION_ORDER: ShortcutAction[] = [
   'toggleLogPanel',
   'toggleTheme',
   'diagnoseQuery',
+  'diagnoseExecutionError',
   'showSlowQueries',
   'openShortcutManager',
   'toggleMacFullscreen',
@@ -265,6 +267,12 @@ const SHORTCUT_ACTION_META_DEFINITIONS: Record<ShortcutAction, ShortcutActionMet
     scope: 'queryEditor',
     allowInEditable: true,
   },
+  diagnoseExecutionError: {
+    labelKey: 'app.shortcuts.action.diagnoseExecutionError.label',
+    descriptionKey: 'app.shortcuts.action.diagnoseExecutionError.description',
+    scope: 'queryEditor',
+    allowInEditable: true,
+  },
   showSlowQueries: {
     labelKey: 'app.shortcuts.action.showSlowQueries.label',
     descriptionKey: 'app.shortcuts.action.showSlowQueries.description',
@@ -376,6 +384,11 @@ export const DEFAULT_SHORTCUT_OPTIONS: ShortcutOptions = {
   diagnoseQuery: {
     mac: { combo: 'Meta+Shift+P', enabled: true },
     windows: { combo: 'Ctrl+Shift+P', enabled: true },
+  },
+  // AI 诊断：与 SQL 诊断同族，用 Ctrl+Shift+A（A = AI），注入当前 SQL 与执行错误到 AI 面板
+  diagnoseExecutionError: {
+    mac: { combo: 'Meta+Shift+A', enabled: true },
+    windows: { combo: 'Ctrl+Shift+A', enabled: true },
   },
   // 慢查询历史：避开 toggleLogPanel 的 Ctrl+H / Meta+Shift+H，用 Ctrl+Shift+L（L = Log）
   showSlowQueries: {
