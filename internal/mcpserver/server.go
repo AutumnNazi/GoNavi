@@ -94,7 +94,7 @@ func NewServerWithOptions(backend Backend, options ServerOptions) *mcp.Server {
 	if !options.SchemaOnly {
 		mcp.AddTool(server, &mcp.Tool{
 			Name:        "execute_sql",
-			Description: "执行 SQL 并返回少量结果行（默认每结果集最多 50 行，上限 200）。适合探查样例数据，不适合大批量导出。执行范围受 GoNavi AI 设置中的安全控制约束；命中允许范围内的 DML/DDL 等非只读语句时，仍必须显式传 allowMutating=true。",
+			Description: "执行 SQL，范围与内置 AI 助手相同，受 GoNavi「安全控制」约束：只读仅查询，读写可 DML，完全可 DDL。调用本工具即视为确认，不必再传 allowMutating。查询结果默认每结果集最多 50 行、上限 200，只为避免撑爆 Agent 上下文。",
 		}, service.ExecuteSQL)
 	}
 

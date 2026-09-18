@@ -882,7 +882,7 @@ func TestGetTriggersReturnsTriggerDefinitions(t *testing.T) {
 	}
 }
 
-func TestExecuteSQLRejectsMutatingStatementsWithoutAllowMutating(t *testing.T) {
+func TestExecuteSQLAllowsDMLWhenAISafetyIsReadWriteWithoutAllowMutating(t *testing.T) {
 	backend := &fakeBackend{
 		editableConnection: connection.SavedConnectionView{
 			ID: "mysql-main",
@@ -899,6 +899,10 @@ func TestExecuteSQLRejectsMutatingStatementsWithoutAllowMutating(t *testing.T) {
 			},
 		},
 		safetyLevel: ai.PermissionReadWrite,
+		queryResult: connection.QueryResult{
+			Success: true,
+			Data:    []connection.ResultSetData{},
+		},
 	}
 
 	service := NewService(backend)
@@ -909,14 +913,11 @@ func TestExecuteSQLRejectsMutatingStatementsWithoutAllowMutating(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteSQL returned error: %v", err)
 	}
-	if result == nil || !result.IsError {
-		t.Fatalf("expected tool error, got %#v", result)
+	if result == nil || result.IsError {
+		t.Fatalf("expected success without allowMutating, got %#v", result)
 	}
-	if !strings.Contains(firstTextContent(result), "allowMutating=true") {
-		t.Fatalf("unexpected error text: %q", firstTextContent(result))
-	}
-	if backend.queryCalled {
-		t.Fatalf("expected SQL not to execute when allowMutating is false")
+	if !backend.queryCalled {
+		t.Fatal("expected SQL to execute under readwrite safety")
 	}
 }
 

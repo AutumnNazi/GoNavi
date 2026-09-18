@@ -27,7 +27,7 @@ const buildPermissionMatrix = (safetyLevel: string) => ({
   allowDML: safetyLevel === 'readwrite' || safetyLevel === 'full',
   allowDDL: safetyLevel === 'full',
   requiresConfirmationForAllowedNonQuery: true,
-  requiresMCPAllowMutatingForAllowedNonQuery: true,
+  requiresMCPAllowMutatingForAllowedNonQuery: false,
 });
 
 export const buildAISafetySnapshot = (params: {
@@ -89,7 +89,7 @@ export const buildAISafetySnapshot = (params: {
     effectiveRestrictions.push(translateInspectionCopy(
       translate,
       'ai_chat.inspection.safety.restriction.mcp_allow_mutating',
-      'When executing non-query statements through GoNavi MCP execute_sql, allowMutating=true must also be passed explicitly.',
+      'GoNavi MCP execute_sql uses the same safety controls as the built-in assistant. Calling execute_sql is the confirmation; allowMutating is not required for SQL the current safety level already allows.',
     ));
   }
   if (activeResultReadOnly) {

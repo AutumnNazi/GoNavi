@@ -99,7 +99,7 @@ const BUILTIN_TOOL_FLOW_COPY: BuiltinToolFlowCopy[] = [
     key: 'safety_boundary',
     title: 'Check write safety boundaries',
     steps: 'inspect_ai_safety -> inspect_ai_runtime -> inspect_current_connection',
-    description: 'Check whether the current state is read-only, whether DDL/DML is allowed, and whether MCP writes require allowMutating.',
+    description: 'Check whether the current state is read-only, whether DDL/DML is allowed, and that MCP execute_sql follows the same safety controls.',
   },
   {
     key: 'providers_models',

@@ -417,7 +417,7 @@ docker compose --env-file docker.mcp-server.env -f docker-compose.mcp-server.yml
 | Helm | [deploy/helm/gonavi-mcp-server](deploy/helm/gonavi-mcp-server) |
 | 仅构建镜像 | `Dockerfile.build-env` → `ghcr.io/syngnat/gonavi-build-env` |
 
-安全默认：远端 `schema-only` 不暴露 `execute_sql`；变更类 SQL 需显式 `allowMutating=true`。  
+安全默认：远端 `schema-only` 不暴露 `execute_sql`；开放后与内置 AI 助手共用安全控制，调用 `execute_sql` 即视为确认。  
 详见：[cmd/gonavi-mcp-server/README.md](cmd/gonavi-mcp-server/README.md)。
 
 ### 仅 Linux 构建环境

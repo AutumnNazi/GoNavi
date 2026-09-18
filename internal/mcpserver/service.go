@@ -8,14 +8,13 @@ import (
 	"sort"
 	"strings"
 
-	"GoNavi-Wails/internal/ai"
 	appcore "GoNavi-Wails/internal/app"
 	"GoNavi-Wails/internal/connection"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const (
-	// 默认/上限刻意压低：MCP 只用于「少量样例数据」探查，避免把大结果集灌进 Agent 上下文。
+	// 结果行数上限只为避免撑爆 Agent 上下文，不是「只能查询」。
 	defaultMaxRowsPerResult = 50
 	maxRowsPerResultLimit   = 200
 	redactedOpaqueTarget    = "opaque-connection-string-configured"
@@ -56,8 +55,8 @@ type executeSQLArgs struct {
 	ConnectionID     string `json:"connectionId" jsonschema:"get_connections 返回的连接 ID"`
 	DBName           string `json:"dbName,omitempty" jsonschema:"可选数据库/Schema 名称。为空时优先使用保存连接里的默认数据库"`
 	SQL              string `json:"sql" jsonschema:"待执行的 SQL 文本，可以包含多条语句"`
-	AllowMutating    bool   `json:"allowMutating,omitempty" jsonschema:"当 SQL 包含当前 AI 安全控制允许范围内的 DDL/DML 等非只读语句时，必须显式设为 true"`
-	MaxRowsPerResult int    `json:"maxRowsPerResult,omitempty" jsonschema:"每个结果集最多返回多少行。默认 50，最大 200（少量数据探查）。达到上限后立即停止读取，剩余行不返回；多语句查询中某条语句达到上限时，后续语句不再返回结果（逐条执行路径中后续语句将不执行；原生多语句批次中的语句仍会在服务端全部执行）"`
+	AllowMutating    bool   `json:"allowMutating,omitempty" jsonschema:"兼容旧客户端的可选字段。安全控制已允许的写语句不再要求传 true；调用 execute_sql 即视为确认"`
+	MaxRowsPerResult int    `json:"maxRowsPerResult,omitempty" jsonschema:"每个结果集最多返回多少行。默认 50，最大 200，只限制返回给 Agent 的行数，不限制可执行的 SQL 类型。达到上限后立即停止读取，剩余行不返回；多语句查询中某条语句达到上限时，后续语句不再返回结果（逐条执行路径中后续语句将不执行；原生多语句批次中的语句仍会在服务端全部执行）"`
 }
 
 type connectionDescriptor struct {
@@ -611,12 +610,9 @@ func (s *Service) ExecuteSQL(ctx context.Context, req *mcp.CallToolRequest, args
 	}
 
 	safetyLevel := normalizeSQLSafetyLevel(s.backend.GetSQLSafetyLevel())
-	safetyDecision := evaluateSQLSafety(safetyLevel, inspection)
-	if len(safetyDecision.disallowed) > 0 {
-		return toolError("%s", buildSafetyDeniedMessage(safetyLevel, safetyDecision.disallowed)), executeSQLResult{}, nil
-	}
-	if safetyDecision.requiresConfirm && !args.AllowMutating {
-		return toolError("当前 SQL 已通过 GoNavi AI 安全控制（%s），但包含非只读语句 %s，请显式传入 allowMutating=true 后重试", safetyLevelDisplayName(safetyLevel), formatSafetyStatements(safetyDecision.confirmRequired)), executeSQLResult{}, nil
+	mutatingAck, denyMessage := applyExecuteSQLSafety(safetyLevel, inspection)
+	if denyMessage != "" {
+		return toolError("%s", denyMessage), executeSQLResult{}, nil
 	}
 	if err := s.backend.AuthorizeSQLConnection(view.Config, sqlText); err != nil {
 		return toolError("连接写保护拒绝 SQL 执行: %s", strings.TrimSpace(err.Error())), executeSQLResult{}, nil
@@ -630,7 +626,7 @@ func (s *Service) ExecuteSQL(ctx context.Context, req *mcp.CallToolRequest, args
 	// 而不是把完整结果物化后再截断。
 	maxRowsPerResult := normalizeMaxRowsPerResult(args.MaxRowsPerResult)
 	dbName := effectiveDBName(args.DBName, view.Config)
-	queryResult, effectiveDialect := s.executeAuthorizedSQL(ctx, view, dbName, sqlText, args.AllowMutating, maxRowsPerResult)
+	queryResult, effectiveDialect := s.executeAuthorizedSQL(ctx, view, dbName, sqlText, mutatingAck || args.AllowMutating, maxRowsPerResult)
 	if !queryResult.Success {
 		failure := executeSQLResult{
 			RequestID:         mcpRequestID(ctx),
@@ -1283,136 +1279,4 @@ func ensureNonNilDatabaseObjects(items []connection.DatabaseObject) []connection
 		return []connection.DatabaseObject{}
 	}
 	return items
-}
-
-type sqlSafetyStatement struct {
-	Index         int
-	Keyword       string
-	OperationType ai.SQLOperationType
-}
-
-type sqlSafetyDecision struct {
-	requiresConfirm bool
-	disallowed      []sqlSafetyStatement
-	confirmRequired []sqlSafetyStatement
-}
-
-func isConsistentSQLInspection(inspection appcore.SQLInspection) bool {
-	if inspection.StatementCount <= 0 || inspection.StatementCount != len(inspection.Statements) {
-		return false
-	}
-	readOnly := true
-	for index, statement := range inspection.Statements {
-		if statement.Index != index+1 {
-			return false
-		}
-		if !statement.ReadOnly {
-			readOnly = false
-		}
-	}
-	return inspection.ReadOnly == readOnly
-}
-
-func evaluateSQLSafety(level ai.SQLPermissionLevel, inspection appcore.SQLInspection) sqlSafetyDecision {
-	decision := sqlSafetyDecision{
-		disallowed:      []sqlSafetyStatement{},
-		confirmRequired: []sqlSafetyStatement{},
-	}
-
-	for _, stmt := range inspection.Statements {
-		statement := sqlSafetyStatement{
-			Index:         stmt.Index,
-			Keyword:       strings.TrimSpace(stmt.Keyword),
-			OperationType: classifyStatementOperation(stmt),
-		}
-		if !isOperationAllowed(level, statement.OperationType) {
-			decision.disallowed = append(decision.disallowed, statement)
-			continue
-		}
-		if statement.OperationType != ai.SQLOpQuery {
-			decision.requiresConfirm = true
-			decision.confirmRequired = append(decision.confirmRequired, statement)
-		}
-	}
-
-	return decision
-}
-
-func classifyStatementOperation(stmt appcore.SQLStatementInspection) ai.SQLOperationType {
-	if stmt.ReadOnly {
-		return ai.SQLOpQuery
-	}
-
-	switch strings.ToLower(strings.TrimSpace(stmt.Keyword)) {
-	case "insert", "update", "delete", "replace", "merge", "upsert":
-		return ai.SQLOpDML
-	case "create", "alter", "drop", "truncate", "rename":
-		return ai.SQLOpDDL
-	default:
-		return ai.SQLOpOther
-	}
-}
-
-func isOperationAllowed(level ai.SQLPermissionLevel, opType ai.SQLOperationType) bool {
-	switch normalizeSQLSafetyLevel(level) {
-	case ai.PermissionReadOnly:
-		return opType == ai.SQLOpQuery
-	case ai.PermissionReadWrite:
-		return opType == ai.SQLOpQuery || opType == ai.SQLOpDML
-	case ai.PermissionFull:
-		return true
-	default:
-		return opType == ai.SQLOpQuery
-	}
-}
-
-func normalizeSQLSafetyLevel(level ai.SQLPermissionLevel) ai.SQLPermissionLevel {
-	switch level {
-	case ai.PermissionReadOnly, ai.PermissionReadWrite, ai.PermissionFull:
-		return level
-	default:
-		return ai.PermissionReadOnly
-	}
-}
-
-func buildSafetyDeniedMessage(level ai.SQLPermissionLevel, statements []sqlSafetyStatement) string {
-	return fmt.Sprintf("当前 GoNavi AI 安全控制为%s，已阻止以下语句：%s。%s", safetyLevelDisplayName(level), formatSafetyStatements(statements), safetyLevelRuleText(level))
-}
-
-func safetyLevelDisplayName(level ai.SQLPermissionLevel) string {
-	switch normalizeSQLSafetyLevel(level) {
-	case ai.PermissionReadOnly:
-		return "只读模式"
-	case ai.PermissionReadWrite:
-		return "读写模式"
-	case ai.PermissionFull:
-		return "完全模式"
-	default:
-		return "只读模式"
-	}
-}
-
-func safetyLevelRuleText(level ai.SQLPermissionLevel) string {
-	switch normalizeSQLSafetyLevel(level) {
-	case ai.PermissionReadOnly:
-		return "只读模式仅允许查询语句。"
-	case ai.PermissionReadWrite:
-		return "读写模式仅允许查询和 DML 语句。"
-	case ai.PermissionFull:
-		return "完全模式允许所有 SQL 操作；高风险或未识别语句仍会要求确认。"
-	default:
-		return "只读模式仅允许查询语句。"
-	}
-}
-
-func formatSafetyStatements(statements []sqlSafetyStatement) string {
-	parts := make([]string, 0, len(statements))
-	for _, stmt := range statements {
-		keyword := strings.TrimSpace(stmt.Keyword)
-		if keyword == "" {
-			keyword = "unknown"
-		}
-		parts = append(parts, fmt.Sprintf("#%d %s(%s)", stmt.Index, strings.ToLower(keyword), strings.ToUpper(string(stmt.OperationType))))
-	}
-	return strings.Join(parts, "，")
 }

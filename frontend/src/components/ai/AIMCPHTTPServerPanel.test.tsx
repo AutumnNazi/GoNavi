@@ -53,7 +53,8 @@ describe('AIMCPHTTPServerPanel', () => {
 
     expect(markup).toContain('GoNavi MCP HTTP service');
     expect(markup).toContain('Running');
-    expect(markup).toContain('Limited query');
+    expect(markup).toContain('All builtin tools');
+    expect(markup).toContain('Read-only mode');
     expect(markup).toContain('Listen address / port');
     expect(markup).toContain('Authorization');
     expect(markup).toContain('127.0.0.1:8765');
@@ -63,6 +64,7 @@ describe('AIMCPHTTPServerPanel', () => {
     expect(markup).toContain('Connection settings and permissions');
     expect(markup).toContain('class="gonavi-ai-mcp-disclosure gonavi-ai-mcp-http-disclosure"');
     expect(markup).not.toContain('gonavi-ai-mcp-http-disclosure" open');
+    expect(markup).not.toContain('Enable execute_sql');
   });
 
   it('falls back to English without an i18n provider', () => {
@@ -100,5 +102,15 @@ describe('AIMCPHTTPServerPanel', () => {
 
     expect(markup).toContain('listen tcp 127.0.0.1:8765: bind: address already in use');
     expect(markup).toContain('Retry start');
+  });
+
+  it('shows Full mode next to all builtin tools when AI safety is full', () => {
+    const markup = renderToStaticMarkup(
+      <AIMCPHTTPServerPanel {...buildPanelProps()} safetyLevel="full" />,
+    );
+
+    expect(markup).toContain('All builtin tools');
+    expect(markup).toContain('Full mode');
+    expect(markup).not.toContain('Read-only mode');
   });
 });

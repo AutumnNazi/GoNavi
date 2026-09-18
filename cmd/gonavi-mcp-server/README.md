@@ -23,9 +23,9 @@
   - 入参：`connectionId`、可选 `dbName`、`tableName`
 - `execute_sql`
   - 入参：`connectionId`、可选 `dbName`、`sql`
-  - 默认只允许只读 SQL
-  - 如果 SQL 包含 DDL/DML，必须显式传 `allowMutating=true`
-  - `maxRowsPerResult` 用来限制单个结果集返回的行数，默认 `200`
+  - 与内置 AI 助手共用「安全控制」：只读仅查询，读写可 DML，完全可 DDL
+  - 调用本工具即视为确认，不必再传 `allowMutating`
+  - `maxRowsPerResult` 限制单个结果集返回给 Agent 的行数，默认 `50`，上限 `200`
 
 远程 Agent 只需要结构元数据时，启动 HTTP 模式请加 `--schema-only`。该模式不注册 `execute_sql`，只保留连接摘要、对象清单、表/视图、字段、索引、外键、触发器和 DDL 工具。
 
@@ -339,7 +339,7 @@ OpenClaw、Hermans 这类部署在云端或远端 Linux 的 Agent，不能直接
 }
 ```
 
-不要把数据库 `host/user/password` 写入云端 Agent 的配置文件。默认 `--schema-only` 不暴露 `execute_sql`；如果你明确需要远程执行 SQL，可以去掉该参数，此时 `execute_sql` 仍受 GoNavi AI 安全设置控制，写操作必须显式传 `allowMutating=true`。
+不要把数据库 `host/user/password` 写入云端 Agent 的配置文件。默认 `--schema-only` 不暴露 `execute_sql`；如果你明确需要远程执行 SQL，可以去掉该参数，此时 `execute_sql` 与内置 AI 助手共用安全控制，调用工具即视为确认。
 
 ## MCP 客户端配置示例
 

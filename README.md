@@ -415,7 +415,7 @@ docker compose --env-file docker.mcp-server.env -f docker-compose.mcp-server.yml
 | Helm | [deploy/helm/gonavi-mcp-server](deploy/helm/gonavi-mcp-server) |
 | Build-only image | `Dockerfile.build-env` → `ghcr.io/syngnat/gonavi-build-env` |
 
-Safety defaults: remote `schema-only` omits `execute_sql`; mutating SQL requires explicit `allowMutating=true`.  
+Safety defaults: remote `schema-only` omits `execute_sql`; when enabled it follows the same AI safety controls as the built-in assistant, and calling `execute_sql` is the confirmation.  
 Details: [cmd/gonavi-mcp-server/README.md](cmd/gonavi-mcp-server/README.md).
 
 ### Linux build environment only

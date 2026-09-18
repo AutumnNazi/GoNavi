@@ -8,7 +8,7 @@ const INSPECTION_GUIDANCE_FALLBACKS = {
   inspect_ai_runtime:
     'If the user asks which model is active, what the current safety level is, which tools are available, or which Skills / MCP tools are enabled, call inspect_ai_runtime first to read the current AI runtime state instead of answering from memory or assumptions.',
   inspect_ai_safety:
-    'If the user asks why writing is blocked, whether the current mode is read-only, whether DDL can run, or whether allowMutating should be passed, call inspect_ai_safety first to read the real safety boundary instead of guessing from UI state or memory.',
+    'If the user asks why writing is blocked, whether the current mode is read-only, or whether DDL can run, call inspect_ai_safety first to read the real safety boundary instead of guessing from UI state or memory.',
   inspect_ai_context:
     'If the user asks about the current AI context, associated tables, or table schemas attached to the session, call inspect_ai_context first to read the mounted table-schema context instead of repeating from memory.',
   inspect_app_health:

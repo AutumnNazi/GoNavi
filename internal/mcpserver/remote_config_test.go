@@ -61,7 +61,7 @@ func TestRenderRemoteMCPClientConfigShowsCloudAndWindowsCommands(t *testing.T) {
 		`gonavi-mcp-server http --addr 127.0.0.1:8765 --path /mcp --token secret-token --schema-only`,
 		"数据库连接、账号和密码继续保存在 Windows GoNavi",
 		"默认 schema-only 模式不会注册 execute_sql",
-		"allowMutating=true",
+		"调用 execute_sql 即视为确认",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("expected rendered config to contain %q, got:\n%s", want, text)

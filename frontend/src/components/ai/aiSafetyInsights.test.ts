@@ -92,7 +92,7 @@ describe('buildAISafetySnapshot', () => {
     expect(snapshot.permissionMatrix.allowDDL).toBe(false);
     expect(snapshot.activeConnection?.readOnly).toBe(true);
     expect(snapshot.jvmGuards?.allowMutatingCommands).toBe(false);
-    expect(snapshot.effectiveRestrictions.join('\n')).toContain('allowMutating=true');
+    expect(snapshot.effectiveRestrictions.join('\n')).toContain('Calling execute_sql is the confirmation');
     expect(snapshot.effectiveRestrictions.join('\n')).toContain('Current JVM diagnostics explicitly disallow mutating commands');
   });
 
@@ -105,6 +105,7 @@ describe('buildAISafetySnapshot', () => {
     expect(snapshot.safetyLevel).toBe('full');
     expect(snapshot.permissionMatrix.allowDML).toBe(true);
     expect(snapshot.permissionMatrix.allowDDL).toBe(true);
+    expect(snapshot.permissionMatrix.requiresMCPAllowMutatingForAllowedNonQuery).toBe(false);
     expect(snapshot.sqlRuleText).toContain('allows all SQL operations');
     expect(snapshot.effectiveRestrictions.join('\n')).toContain('high-risk or unrecognized statements still require confirmation');
   });

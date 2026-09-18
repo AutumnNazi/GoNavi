@@ -4,20 +4,28 @@ import { CopyOutlined } from '@ant-design/icons';
 
 import { t as catalogTranslate } from '../../i18n/catalog';
 import { useOptionalI18n } from '../../i18n/provider';
-import type { AIMCPHTTPServerStatus } from '../../types';
+import type { AIMCPHTTPServerStatus, AISafetyLevel } from '../../types';
 import type { OverlayWorkbenchTheme } from '../../utils/overlayWorkbenchTheme';
+import {
+  MCP_HTTP_SAFETY_LABEL_KEY,
+  MCP_HTTP_SAFETY_TAG_COLOR,
+  MCP_HTTP_SURFACE_MODE_KEY,
+  normalizeMcpHttpSafetyLevel,
+  resolveMcpHttpSurfaceMode,
+} from './mcpHttpPanelMode';
 
 export interface AIMCPHTTPServerDraft {
   addr: string;
   path: string;
   authorizationHeader: string;
-  /** false 时注册 execute_sql，允许查少量样例数据 */
+  /** 设置页始终开放全部数据库内置工具；仅 CLI --schema-only 会为 true */
   schemaOnly: boolean;
 }
 
 export interface AIMCPHTTPServerPanelProps {
   status: AIMCPHTTPServerStatus;
   draft: AIMCPHTTPServerDraft;
+  safetyLevel?: AISafetyLevel | string;
   loading: boolean;
   cardBg: string;
   cardBorder: string;
@@ -32,6 +40,7 @@ export interface AIMCPHTTPServerPanelProps {
 const AIMCPHTTPServerPanel: React.FC<AIMCPHTTPServerPanelProps> = ({
   status,
   draft,
+  safetyLevel,
   loading,
   darkMode,
   overlayTheme,
@@ -46,6 +55,12 @@ const AIMCPHTTPServerPanel: React.FC<AIMCPHTTPServerPanelProps> = ({
   const running = status?.running === true;
   const url = String(status?.url || '').trim();
   const authorizationHeader = String(status?.authorizationHeader || '').trim();
+  const surfaceMode = resolveMcpHttpSurfaceMode({
+    draftSchemaOnly: draft.schemaOnly,
+    running,
+    statusSchemaOnly: status.schemaOnly,
+  });
+  const resolvedSafetyLevel = normalizeMcpHttpSafetyLevel(safetyLevel);
   const inputStyle: React.CSSProperties = {
     borderRadius: 10,
     background: darkMode ? 'rgba(15,23,42,0.82)' : '#fff',
@@ -72,10 +87,11 @@ const AIMCPHTTPServerPanel: React.FC<AIMCPHTTPServerPanelProps> = ({
             <Tag color={running ? 'success' : 'default'} style={{ marginInlineEnd: 0 }}>
               {copy(running ? 'ai_settings.mcp_http.panel.status.running' : 'ai_settings.mcp_http.panel.status.stopped')}
             </Tag>
-            <Tag color={draft.schemaOnly || status.schemaOnly ? 'blue' : 'green'} style={{ marginInlineEnd: 0 }}>
-              {draft.schemaOnly || (running && status.schemaOnly)
-                ? copy('ai_settings.mcp_http.panel.mode.schema_only')
-                : copy('ai_settings.mcp_http.panel.mode.limited_query')}
+            <Tag color={surfaceMode === 'schema_only' ? 'blue' : 'green'} style={{ marginInlineEnd: 0 }}>
+              {copy(MCP_HTTP_SURFACE_MODE_KEY[surfaceMode])}
+            </Tag>
+            <Tag color={MCP_HTTP_SAFETY_TAG_COLOR[resolvedSafetyLevel]} style={{ marginInlineEnd: 0 }}>
+              {copy(MCP_HTTP_SAFETY_LABEL_KEY[resolvedSafetyLevel])}
             </Tag>
           </div>
         </div>
@@ -139,30 +155,6 @@ const AIMCPHTTPServerPanel: React.FC<AIMCPHTTPServerPanelProps> = ({
               style={inputStyle}
             />
           </div>
-        </div>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: overlayTheme.titleText }}>
-              {copy('ai_settings.mcp_http.panel.limited_query.label')}
-            </div>
-            <div style={{ marginTop: 2, fontSize: 'var(--gn-font-size-sm, 12px)', color: overlayTheme.mutedText, lineHeight: 1.6 }}>
-              {copy('ai_settings.mcp_http.panel.limited_query.hint')}
-            </div>
-          </div>
-          <Switch
-            aria-label={`${copy('ai_settings.mcp_http.panel.limited_query.label')}: ${copy(!draft.schemaOnly ? 'ai_settings.mcp_http.panel.limited_query.on' : 'ai_settings.mcp_http.panel.limited_query.off')}`}
-            checked={!draft.schemaOnly}
-            disabled={running || loading}
-            onChange={(checked) => onDraftChange({ schemaOnly: !checked })}
-          />
         </div>
           {!(enabled && !running && status.message) && (
             <div style={{ fontSize: 12, color: overlayTheme.mutedText, lineHeight: 1.7 }}>

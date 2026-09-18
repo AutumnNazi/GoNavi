@@ -743,7 +743,7 @@ func agentToolDescriptors() []runharness.ToolDescriptor {
 		readOnly("get_table_ddl", "Return the CREATE statement for one table or view.", schemaObject([]string{"connectionId", "tableName"}, map[string]any{"connectionId": schemaString("saved connection ID"), "dbName": schemaString("optional database or schema"), "tableName": schemaString("table or view name")})),
 		{
 			Name:        agentSQLToolName,
-			Description: "Execute SQL against a saved connection. Read-only statements run directly; mutating statements are classified from SQL inspection and require an explicit Harness approval before dispatch.",
+			Description: "Execute SQL against a saved connection. The same AI safety controls as the built-in assistant apply: read-only queries, read/write DML, full DDL. Calling this tool is the confirmation; allowMutating is a legacy no-op for allowed SQL.",
 			InputSchema: schemaObject([]string{"connectionId", "sql"}, map[string]any{
 				"connectionId":     schemaString("saved connection ID"),
 				"dbName":           schemaString("optional database or schema"),
