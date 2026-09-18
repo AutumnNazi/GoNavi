@@ -81,6 +81,7 @@ func (s *Service) AIGetMCPHTTPServerStatus() ai.MCPHTTPServerStatus {
 
 // AIStartMCPHTTPServer 从客户端内启动 GoNavi Streamable HTTP MCP 服务。
 func (s *Service) AIStartMCPHTTPServer(options ai.MCPHTTPServerOptions) (ai.MCPHTTPServerStatus, error) {
+	s.resetMCPHTTPCrashCount()
 	return s.startMCPHTTPServer(options)
 }
 
@@ -138,6 +139,7 @@ func (s *Service) startMCPHTTPServer(options ai.MCPHTTPServerOptions) (ai.MCPHTT
 		s.setMCPHTTPLastStatus(status)
 		return status, err
 	}
+	_ = waitMCPHTTPAddrAvailable(attempt.ctx, startOptions.Addr, mcpHTTPAddrWait)
 	process, err := startMCPHTTPProcess(attempt.ctx, startOptions, textLookup)
 	if err != nil {
 		err = localizeMCPHTTPError(textLookup, "ai_service.backend.error.mcp_http_start_failed", nil, err)
@@ -276,6 +278,7 @@ func ShutdownWithContext(s *Service, ctx context.Context) {
 		result = errors.Join(result, harness.Close())
 	}
 
+	s.markMCPHTTPShuttingDown()
 	s.cancelMCPHTTPStart()
 	s.mcpHTTPOpMu.Lock()
 	stopCtx, cancel := s.shutdownMCPHTTPContext(ctx)
@@ -344,37 +347,6 @@ func (s *Service) cancelMCPHTTPStart() {
 		attempt.cancel()
 	}
 	s.mcpHTTPStartMu.Unlock()
-}
-
-func (s *Service) restoreMCPHTTPServer() {
-	config := s.currentMCPHTTPServerConfig()
-	if !config.Enabled {
-		return
-	}
-
-	if _, err := s.startMCPHTTPServer(mcpHTTPServerOptionsFromConfig(config)); err != nil {
-		logger.Warnf("恢复 GoNavi MCP HTTP 服务失败：addr=%s path=%s reason=%v", config.Addr, config.Path, err)
-	}
-}
-
-func (s *Service) watchMCPHTTPServer(runtime *mcpHTTPServerRuntime) {
-	err := runtime.process.Wait()
-
-	s.mcpHTTPMu.Lock()
-	defer s.mcpHTTPMu.Unlock()
-	if s.mcpHTTP != runtime {
-		return
-	}
-
-	message := localizeMCPHTTPText(s.serviceText, "ai_settings.mcp_http.message.stopped", nil)
-	if err != nil && !runtime.stopping {
-		message = localizeMCPHTTPText(s.serviceText, "ai_service.backend.error.mcp_http_process_exited", map[string]any{
-			"detail": err.Error(),
-		})
-		logger.Error(err, "GoNavi MCP HTTP 服务异常退出：addr=%s path=%s", runtime.status.Addr, runtime.status.Path)
-	}
-	s.mcpHTTP = nil
-	s.mcpHTTPLast = stoppedMCPHTTPStatus(runtime.status, message)
 }
 
 func (s *Service) currentMCPHTTPServerConfig() ai.MCPHTTPServerConfig {
@@ -496,7 +468,7 @@ func normalizeInAppMCPHTTPOptions(options ai.MCPHTTPServerOptions, textLookup mc
 		Addr:  addr,
 		Path:  path,
 		Token: token,
-		// 尊重调用方配置：false 时注册 execute_sql，用于查少量样例数据（仍受 AI 安全控制与行数上限约束）。
+		// 默认开放 execute_sql，与内置助手共用安全控制；schemaOnly=true 时只暴露结构工具。
 		SchemaOnly: options.SchemaOnly,
 	}, token, nil
 }
@@ -510,10 +482,14 @@ func startMCPHTTPCommandProcess(ctx context.Context, options mcpHTTPProcessStart
 	if err != nil {
 		return nil, localizeMCPHTTPError(textLookup, "ai_service.backend.error.mcp_http_executable_resolve_failed", nil, err)
 	}
-	if ctx == nil {
-		ctx = context.Background()
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 	}
-	processCtx, cancel := context.WithCancel(ctx)
+	// 子进程生命周期只由 Stop/Shutdown 取消，不绑 Wails OnStartup ctx。
+	// 启动阶段 ctx 若被替换或短暂取消，否则会把刚拉起的 MCP HTTP 一起杀掉。
+	processCtx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(processCtx, command, args...)
 	cmd.Env = append(os.Environ(), "GONAVI_MCP_HTTP_TOKEN="+options.Token)
 	cmd.Stdout = io.Discard
@@ -619,15 +595,30 @@ func waitForMCPHTTPReady(ctx context.Context, process mcpHTTPProcess, status ai.
 
 	select {
 	case err := <-healthErrCh:
-		return err
+		return firstMCPHTTPReadyError(process, err, textLookup)
 	case <-process.Done():
+		return mcpHTTPProcessExitError(process, textLookup)
+	case <-readyCtx.Done():
+		return firstMCPHTTPReadyError(process, readyCtx.Err(), textLookup)
+	}
+}
+
+func firstMCPHTTPReadyError(process mcpHTTPProcess, err error, textLookup mcpHTTPTextLookup) error {
+	select {
+	case <-process.Done():
+		return mcpHTTPProcessExitError(process, textLookup)
+	default:
+		return err
+	}
+}
+
+func mcpHTTPProcessExitError(process mcpHTTPProcess, textLookup mcpHTTPTextLookup) error {
+	if process != nil {
 		if err := process.Wait(); err != nil {
 			return err
 		}
-		return fmt.Errorf("%s", localizeMCPHTTPText(textLookup, "ai_service.backend.error.mcp_http_subprocess_exited", nil))
-	case <-readyCtx.Done():
-		return readyCtx.Err()
 	}
+	return fmt.Errorf("%s", localizeMCPHTTPText(textLookup, "ai_service.backend.error.mcp_http_subprocess_exited", nil))
 }
 
 func waitMCPHTTPHealthEndpoint(ctx context.Context, healthURL string, textLookup mcpHTTPTextLookup) error {
@@ -692,7 +683,7 @@ func defaultMCPHTTPServerStatus(textLookup mcpHTTPTextLookup) ai.MCPHTTPServerSt
 		Addr:    defaultMCPHTTPAddr,
 		Path:    defaultMCPHTTPPath,
 		URL:     buildMCPHTTPURL(defaultMCPHTTPAddr, defaultMCPHTTPPath),
-		// 默认允许只读 execute_sql 查少量数据；仍可在启动时显式传 schemaOnly=true 关闭。
+		// 默认开放 execute_sql，与内置助手共用安全控制；启动时仍可显式传 schemaOnly=true。
 		SchemaOnly: false,
 		Message:    localizeMCPHTTPText(textLookup, "ai_settings.mcp_http.status.not_running", nil),
 	}

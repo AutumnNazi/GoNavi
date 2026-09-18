@@ -157,7 +157,7 @@ func TestMCPHTTPServerLifecycleFromAIService(t *testing.T) {
 		t.Fatalf("expected normalized path /mcp, got %q", started.Path)
 	}
 	if started.SchemaOnly {
-		t.Fatal("expected in-app MCP HTTP server to default to execute_sql-enabled mode for limited data queries")
+		t.Fatal("expected in-app MCP HTTP server to default to execute_sql-enabled mode")
 	}
 	if capturedOptions.SchemaOnly || capturedOptions.Token != started.Token {
 		t.Fatalf("expected process to receive schemaOnly=false and generated token, got %#v", capturedOptions)
@@ -450,9 +450,12 @@ func TestMCPHTTPServerStartFailureUsesEnglishError(t *testing.T) {
 func TestMCPHTTPServerUnexpectedExitUsesEnglishStatusMessage(t *testing.T) {
 	originalStarter := startMCPHTTPProcess
 	originalHealth := waitMCPHTTPHealth
+	originalSupervise := mcpHTTPSuperviseRestarts
+	mcpHTTPSuperviseRestarts = false
 	t.Cleanup(func() {
 		startMCPHTTPProcess = originalStarter
 		waitMCPHTTPHealth = originalHealth
+		mcpHTTPSuperviseRestarts = originalSupervise
 	})
 
 	process := newFakeMCPHTTPProcessWithWaitErr(fmt.Errorf("exit status 1"))

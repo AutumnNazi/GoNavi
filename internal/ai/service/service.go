@@ -74,6 +74,8 @@ type Service struct {
 	mcpHTTPMu                sync.Mutex
 	mcpHTTP                  *mcpHTTPServerRuntime
 	mcpHTTPLast              ai.MCPHTTPServerStatus
+	mcpHTTPShuttingDown      bool
+	mcpHTTPCrashCount        int
 }
 
 var miniMaxAnthropicModels = []string{
