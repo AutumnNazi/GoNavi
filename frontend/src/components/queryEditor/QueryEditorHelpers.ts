@@ -34,6 +34,7 @@ import {
     splitQualifiedNameSegments,
     splitQualifiedNameSegmentsDetailed,
 } from '../../utils/qualifiedName';
+import { buildQueryEditorNavigationTableMetas } from './queryEditorNavigationTableMetas';
 import { resolveUniqueKeyGroupsFromIndexes } from '../dataGridCopyInsert';
 import { t as translate } from '../../i18n';
 
@@ -3299,26 +3300,11 @@ export const resolveQueryEditorNavigationTarget = (
             .map((db) => buildMetadataIdentityKey(dialect, db))
             .filter(Boolean),
     );
-    const tableMetas = tables.map((table) => {
-        const dbName = String(table.dbName || '').trim();
-        const rawTableName = String(table.tableName || '').trim();
-        // sqlite_master reports literal table names without quoting. A dot in
-        // that catalog value is legal object data, not a schema separator.
-        const parsed = connectionScopedDialect
-            ? { schemaName: '', objectName: rawTableName }
-            : splitSidebarQualifiedName(rawTableName);
-        return {
-            dbName,
-            rawTableName,
-            metadataDbKey: buildMetadataIdentityKey(dialect, dbName),
-            normalizedDbName: dbName.toLowerCase(),
-            normalizedRawTableName: rawTableName.toLowerCase(),
-            normalizedObjectName: String(parsed.objectName || rawTableName).trim().toLowerCase(),
-            schemaName: String(parsed.schemaName || '').trim(),
-            normalizedSchemaName: String(parsed.schemaName || '').trim().toLowerCase(),
-            identifierSegments: splitQualifiedNameSegmentsDetailed(rawTableName, dialect),
-        };
-    });
+    const tableMetas = buildQueryEditorNavigationTableMetas(
+        tables,
+        dialect,
+        connectionScopedDialect,
+    );
 
     const rawIdentifierSegments = splitQueryIdentifierPathSegments(rawIdentifier, dialect);
     // A single delimited segment such as `order.items` or [order.items] is
