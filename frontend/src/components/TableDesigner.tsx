@@ -1157,7 +1157,11 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
 
   useEffect(() => {
     fetchData();
-  }, [tab, selectedSchema]);
+    // Depend on the identity fields fetchData actually reads instead of the whole
+    // `tab` object: hosts such as DataGridShell pass an inline literal, so a new
+    // object identity on every parent render would otherwise re-run all five
+    // metadata RPCs continuously.
+  }, [tab.connectionId, tab.dbName, tab.tableName, selectedSchema]);
 
   // --- Trigger Handlers ---
 
