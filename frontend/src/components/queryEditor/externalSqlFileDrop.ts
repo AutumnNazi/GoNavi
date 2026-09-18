@@ -1,5 +1,9 @@
 import type { ExternalSQLDirectory, TabData } from '../../types';
-import { buildExternalSQLTabId, resolveExternalSQLFileBinding } from '../../utils/externalSqlTree';
+import {
+  buildExternalSQLTabId,
+  normalizeExternalSQLPath,
+  resolveExternalSQLFileBinding,
+} from '../../utils/externalSqlTree';
 import { buildSQLFileExecutionWorkbenchTab } from '../../utils/sqlFileExecutionTab';
 import { normalizeSQLFileReadContent } from '../../utils/sqlFileTabDirty';
 
@@ -98,8 +102,34 @@ const readLargeFilePayload = (data: unknown): LargeFilePayload | null => {
   return payload.isLargeFile === true ? payload : null;
 };
 
-// 解析拖入文件的连接上下文：外部 SQL 目录的显式绑定优先，
-// 否则沿用拖放目标查询标签页的连接与库。
+// 找到包含拖入文件的外部 SQL 目录（最长路径匹配，与
+// resolveExternalSQLFileBinding 的目录匹配规则一致）。
+const findSqlDropDirectory = (
+  directories: ExternalSQLDirectory[],
+  filePath: string,
+): ExternalSQLDirectory | undefined => {
+  const normalizedFilePath = normalizeExternalSQLPath(filePath);
+  if (!normalizedFilePath) return undefined;
+  const matching = directories
+    .map((directory) => {
+      const raw = normalizeExternalSQLPath(directory.path);
+      return {
+        directory,
+        dirPath: raw === '/' ? '/' : raw.replace(/\/+$/u, ''),
+      };
+    })
+    .filter(({ dirPath }) => Boolean(dirPath) && (
+      dirPath === '/'
+        ? normalizedFilePath.startsWith('/')
+        : normalizedFilePath === dirPath || normalizedFilePath.startsWith(`${dirPath}/`)
+    ))
+    .sort((left, right) => right.dirPath.length - left.dirPath.length);
+  return matching[0]?.directory;
+};
+
+// 解析拖入文件的连接上下文：文件级显式绑定 > 所属目录的默认连接 >
+// 拖放目标查询标签页的连接与库。目录默认连接与侧栏打开同一文件时的
+// 继承语义对齐，避免同一文件因入口不同落在不同标签页。
 export const resolveSqlDropOpenContext = (
   directories: ExternalSQLDirectory[],
   filePath: string,
@@ -115,6 +145,14 @@ export const resolveSqlDropOpenContext = (
       dbName: String(binding.dbName || '').trim(),
     };
   }
+  const directory = findSqlDropDirectory(directories, filePath);
+  const directoryConnectionId = String(directory?.connectionId || '').trim();
+  if (directoryConnectionId) {
+    return {
+      connectionId: directoryConnectionId,
+      dbName: String(directory?.dbName || '').trim(),
+    };
+  }
   return fallbackContext;
 };
 
@@ -123,18 +161,14 @@ export const resolveSqlDropOpenContext = (
 // - 超限文件转入 SQL 执行工作台（需要连接上下文）；
 // - 同一文件已有标签页时绝不静默覆盖，只切换过去；
 // - 新文件建带 filePath 的查询标签页，天然获得保存/脏检查能力。
+// store 快照在读取完成后才获取：读取期间标签页可能被关闭或新建，
+// 基于过期快照决策会切换到已关闭的标签或覆盖刚建好的内容。
 export const openDroppedSqlFile = async (
   deps: ExternalSqlFileDropDeps,
   filePath: string,
   fallbackContext: ExternalSqlFileDropContext,
 ): Promise<void> => {
   const fileTitle = resolveSqlDropFileTitle(filePath);
-  const snapshot = deps.getSnapshot();
-  const openContext = resolveSqlDropOpenContext(
-    snapshot.externalSQLDirectories,
-    filePath,
-    fallbackContext,
-  );
 
   let result: ExternalSqlFileDropReadResult;
   try {
@@ -151,6 +185,13 @@ export const openDroppedSqlFile = async (
     }));
     return;
   }
+
+  const snapshot = deps.getSnapshot();
+  const openContext = resolveSqlDropOpenContext(
+    snapshot.externalSQLDirectories,
+    filePath,
+    fallbackContext,
+  );
 
   const largeFile = readLargeFilePayload(result.data);
   if (largeFile) {

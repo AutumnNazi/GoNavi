@@ -136,6 +136,57 @@ describe('resolveSqlDropOpenContext', () => {
     expect(context).toEqual({ connectionId: 'conn-bound', dbName: 'analytics' });
   });
 
+  it('无文件级绑定时继承所属目录的默认连接', () => {
+    const directories = [{
+      id: 'dir-1',
+      name: 'reports',
+      path: 'D:/reports',
+      connectionId: 'conn-dir',
+      dbName: 'analytics',
+      createdAt: 0,
+    }] as any;
+    const context = resolveSqlDropOpenContext(directories, 'D:/reports/daily.sql', {
+      connectionId: 'conn-1',
+      dbName: 'app',
+    });
+    expect(context).toEqual({ connectionId: 'conn-dir', dbName: 'analytics' });
+  });
+
+  it('目录无默认连接时沿用拖放目标上下文', () => {
+    const directories = [{
+      id: 'dir-1',
+      name: 'reports',
+      path: 'D:/reports',
+      createdAt: 0,
+    }] as any;
+    const context = resolveSqlDropOpenContext(directories, 'D:/reports/daily.sql', {
+      connectionId: 'conn-1',
+      dbName: 'app',
+    });
+    expect(context).toEqual({ connectionId: 'conn-1', dbName: 'app' });
+  });
+
+  it('文件级绑定优先于目录默认连接', () => {
+    const directories = [{
+      id: 'dir-1',
+      name: 'reports',
+      path: 'D:/reports',
+      connectionId: 'conn-dir',
+      dbName: 'analytics',
+      fileBindings: [{
+        filePath: 'D:/reports/daily.sql',
+        connectionId: 'conn-file',
+        dbName: 'sales',
+      }],
+      createdAt: 0,
+    }] as any;
+    const context = resolveSqlDropOpenContext(directories, 'D:/reports/daily.sql', {
+      connectionId: 'conn-1',
+      dbName: 'app',
+    });
+    expect(context).toEqual({ connectionId: 'conn-file', dbName: 'sales' });
+  });
+
   it('无绑定时沿用拖放目标上下文', () => {
     const context = resolveSqlDropOpenContext([], FILE_PATH, {
       connectionId: 'conn-1',
@@ -269,6 +320,35 @@ describe('openDroppedSqlFile', () => {
       level: 'warning',
       text: 'query_editor.message.external_sql_drop_large_file_no_connection:daily.sql',
     }]);
+  });
+
+  it('读取期间已有标签页被关闭时基于最新快照重建标签', async () => {
+    const existingTab: TabData = {
+      id: FILE_TAB_ID,
+      title: 'daily.sql',
+      type: 'query',
+      connectionId: 'conn-1',
+      dbName: 'app',
+      query: 'SELECT 1',
+      filePath: FILE_PATH,
+    } as TabData;
+    const snapshot: ExternalSqlFileDropStoreSnapshot = {
+      tabs: [existingTab],
+      externalSQLDirectories: [],
+    };
+    const { deps, addedTabs, activatedTabIds } = createDeps({ snapshot });
+    const depsWithLateClose: ExternalSqlFileDropDeps = {
+      ...deps,
+      readSqlFile: async () => {
+        // 模拟读取期间用户关闭了同文件标签页
+        snapshot.tabs = [];
+        return { success: true, data: 'SELECT 1' };
+      },
+    };
+    await openDroppedSqlFile(depsWithLateClose, FILE_PATH, { connectionId: 'conn-1', dbName: 'app' });
+    expect(activatedTabIds).toEqual([]);
+    expect(addedTabs).toHaveLength(1);
+    expect(addedTabs[0]).toMatchObject({ id: FILE_TAB_ID, query: 'SELECT 1' });
   });
 
   it('无连接上下文时仍可打开普通大小的文件', async () => {

@@ -1,10 +1,9 @@
 /** @vitest-environment jsdom */
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TabData } from '../../types';
-import { useExternalSqlFileDrop } from './useExternalSqlFileDrop';
 
 const runtimeApi = vi.hoisted(() => ({
   OnFileDrop: vi.fn(),
@@ -43,23 +42,17 @@ vi.mock('../../i18n', () => ({
   ),
 }));
 
-const Harness = () => {
-  useExternalSqlFileDrop();
-  return null;
-};
+type UseExternalSqlFileDrop = () => void;
 
-const triggerDrop = async (paths: string[]) => {
-  const callback = runtimeApi.OnFileDrop.mock.calls[0]?.[0] as
-    | ((x: number, y: number, paths: string[]) => void)
-    | undefined;
-  expect(callback).toBeTypeOf('function');
-  await act(async () => {
-    callback?.(10, 20, paths);
-  });
+// hook 内部是模块级常驻注册标记，测试之间用动态导入重置模块状态
+const loadHook = async (): Promise<UseExternalSqlFileDrop> => {
+  const module = await import('./useExternalSqlFileDrop');
+  return module.useExternalSqlFileDrop;
 };
 
 describe('useExternalSqlFileDrop', () => {
   let renderers: ReactTestRenderer[];
+  let useExternalSqlFileDrop: UseExternalSqlFileDrop;
 
   const mount = async (count = 1) => {
     for (let i = 0; i < count; i += 1) {
@@ -79,7 +72,22 @@ describe('useExternalSqlFileDrop', () => {
     }
   };
 
-  beforeEach(() => {
+  const Harness = () => {
+    useExternalSqlFileDrop();
+    return null;
+  };
+
+  const triggerDrop = async (paths: string[]) => {
+    const callback = runtimeApi.OnFileDrop.mock.calls[0]?.[0] as
+      | ((x: number, y: number, paths: string[]) => void)
+      | undefined;
+    expect(callback).toBeTypeOf('function');
+    await act(async () => {
+      callback?.(10, 20, paths);
+    });
+  };
+
+  beforeEach(async () => {
     vi.clearAllMocks();
     renderers = [];
     storeApi.tabs = [];
@@ -90,40 +98,28 @@ describe('useExternalSqlFileDrop', () => {
       OnFileDrop: () => {},
       OnFileDropOff: () => {},
     };
-  });
-
-  afterEach(async () => {
-    await unmountAll();
-    delete (window as unknown as { runtime?: unknown }).runtime;
+    vi.resetModules();
+    useExternalSqlFileDrop = await loadHook();
   });
 
   it('Wails 运行时不可用时不注册', async () => {
     delete (window as unknown as { runtime?: unknown }).runtime;
+    useExternalSqlFileDrop = await loadHook();
     await mount();
     expect(runtimeApi.OnFileDrop).not.toHaveBeenCalled();
-    expect(runtimeApi.OnFileDropOff).not.toHaveBeenCalled();
   });
 
-  it('多个编辑器实例只注册一次，全部卸载后清理', async () => {
+  it('多个编辑器实例只注册一次，卸载后保持注册（常驻拦截拖放默认行为）', async () => {
     await mount(3);
     expect(runtimeApi.OnFileDrop).toHaveBeenCalledTimes(1);
     expect(runtimeApi.OnFileDrop).toHaveBeenCalledWith(expect.any(Function), true);
 
     await unmountAll();
-    expect(runtimeApi.OnFileDropOff).toHaveBeenCalledTimes(1);
-
-    // 清理后重新挂载可以再次注册（例如关闭全部标签页后再开新查询）
-    await mount();
-    expect(runtimeApi.OnFileDrop).toHaveBeenCalledTimes(2);
-  });
-
-  it('部分实例卸载不影响剩余实例的注册', async () => {
-    await mount(2);
-    await act(async () => {
-      renderers[0].unmount();
-    });
-    renderers.splice(0, 1);
     expect(runtimeApi.OnFileDropOff).not.toHaveBeenCalled();
+
+    // 常驻注册：重新挂载不会二次注册
+    await mount();
+    expect(runtimeApi.OnFileDrop).toHaveBeenCalledTimes(1);
   });
 
   it('拖入非 .sql 文件时给出警告且不读取', async () => {
