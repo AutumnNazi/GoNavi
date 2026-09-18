@@ -12,10 +12,12 @@ vi.mock('antd', () => ({
     },
 }));
 
-const HookHarness: React.FC<{
-    editorRef: { current?: unknown };
+type QueryEditorSqlErrorLocatorHarnessProps = {
+    editorRef: Parameters<typeof useQueryEditorSqlErrorLocator>[0];
     onReady: (api: ReturnType<typeof useQueryEditorSqlErrorLocator>) => void;
-}> = ({ editorRef, onReady }) => {
+};
+
+const HookHarness: React.FC<QueryEditorSqlErrorLocatorHarnessProps> = ({ editorRef, onReady }) => {
     const api = useQueryEditorSqlErrorLocator(editorRef);
     onReady(api);
     return null;
