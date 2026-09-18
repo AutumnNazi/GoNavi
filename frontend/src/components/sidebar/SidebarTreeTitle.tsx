@@ -20,10 +20,13 @@ import {
 } from './sidebarHelpers';
 import { normalizeOracleObjectCompileStatus } from './oracleObjectCompilation';
 
+/** Connection / database state, expressed by the row icon via CSS (no status dot). */
+export type SidebarTreeConnectionStatus = 'loading' | 'success' | 'error' | 'default';
+
 type SidebarV2TreeTitleOptions = {
   node: any;
   hoverTitle: string;
-  statusBadge: React.ReactNode;
+  connectionStatus?: SidebarTreeConnectionStatus;
   getV2TreeMetaText: (node: any) => string;
   sidebarTableMetadataFields: SidebarTableMetadataField[];
   snapshotTreeSelectionBeforeDrag: () => void;
@@ -158,7 +161,7 @@ const SidebarTableHoverTooltip = ({
 export const renderSidebarV2TreeTitle = ({
   node,
   hoverTitle,
-  statusBadge,
+  connectionStatus,
   getV2TreeMetaText,
   sidebarTableMetadataFields,
   snapshotTreeSelectionBeforeDrag,
@@ -257,6 +260,13 @@ export const renderSidebarV2TreeTitle = ({
       <StarFilled aria-hidden="true" />
     </span>
   ) : null;
+  const connectionStatusAttr = node.type === 'connection' || node.type === 'database'
+    ? (connectionStatus ?? 'default')
+    : undefined;
+  // Right-pinned status dot (CSS positions it); hidden while idle.
+  const statusDot = connectionStatusAttr && connectionStatusAttr !== 'default'
+    ? <span className={`gn-v2-tree-status is-${connectionStatusAttr}`} aria-hidden="true" />
+    : null;
   if (node.type === 'connection') {
     return (
       <span
@@ -265,11 +275,12 @@ export const renderSidebarV2TreeTitle = ({
         data-node-type={node.type}
         data-sidebar-node-key={String(node.key || '')}
         data-sidebar-node-type={String(node.type || '')}
+        data-sidebar-connection-status={connectionStatusAttr}
       >
         <span className="gn-v2-tree-connection-copy">
           <span className="gn-v2-tree-label">{displayTitle}</span>
         </span>
-        {statusBadge}
+        {statusDot}
       </span>
     );
   }
@@ -284,6 +295,7 @@ export const renderSidebarV2TreeTitle = ({
       data-sidebar-node-key={String(node.key || '')}
       data-sidebar-node-type={String(node.type || '')}
       data-sidebar-drop-placement={sidebarDropPlacement || undefined}
+      data-sidebar-connection-status={connectionStatusAttr}
       onPointerOverCapture={hasTableHoverInfo ? clearSidebarTableNativeHoverTitle : undefined}
       onMouseOverCapture={hasTableHoverInfo ? clearSidebarTableNativeHoverTitle : undefined}
       onDragStart={dragText ? (event) => {
@@ -321,7 +333,7 @@ export const renderSidebarV2TreeTitle = ({
       ))}
       {objectCompileStatusBadge}
       {metaText && <span className="gn-v2-tree-count">{metaText}</span>}
-      {statusBadge}
+      {statusDot}
     </span>
   );
 

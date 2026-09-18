@@ -3195,6 +3195,8 @@
   "app.security_update.stage.updating_secure_storage": "正在更新安全儲存",
   "app.security_update.stage.verifying_result": "正在校驗更新結果",
   "app.settings.description": "集中處理語言、代理、主題、AI 與關於等通用設定入口。",
+  "app.settings.search.placeholder": "搜尋設定",
+  "app.settings.search.empty": "沒有符合的設定項",
   "app.settings.entry.about.description": "檢視版本資訊、仓库地址和更新状态。",
   "app.settings.entry.about.title": "關於 GoNavi",
   "app.settings.entry.ai.description": "管理模型供应商、密钥和預設行为。",

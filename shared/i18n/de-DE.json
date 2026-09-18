@@ -3195,6 +3195,8 @@
   "app.security_update.stage.updating_secure_storage": "Sicherer Speicher wird aktualisiert",
   "app.security_update.stage.verifying_result": "Updateergebnis wird geprüft",
   "app.settings.description": "Verwaltet allgemeine Einstellungen wie Sprache, Proxy, Theme, AI und Informationen.",
+  "app.settings.search.placeholder": "Einstellungen suchen",
+  "app.settings.search.empty": "Keine passenden Einstellungen",
   "app.settings.entry.about.description": "Versionsinformationen, Repository-Links und Updatestatus anzeigen.",
   "app.settings.entry.about.title": "Über GoNavi",
   "app.settings.entry.ai.description": "Modellanbieter, Schlüssel und Standardverhalten verwalten.",

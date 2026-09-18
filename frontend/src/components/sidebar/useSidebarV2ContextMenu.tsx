@@ -321,10 +321,7 @@ export const useSidebarV2ContextMenu = ({
           const count = flattenConnectionNodes(node.children || []).length;
           return count > 0 ? count.toLocaleString() : '';
       }
-      if (node.type === 'database') {
-          const count = v2TreeMetrics.databaseTableCounts.get(node.key) || 0;
-          return count > 0 ? count.toLocaleString() : '';
-      }
+      // Database rows show no count: the "表" object group below already does.
       if (node.type === 'object-group') {
           const count = v2TreeMetrics.objectGroupCounts.get(node.key) || 0;
           return count > 0 ? count.toLocaleString() : '';

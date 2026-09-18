@@ -948,20 +948,20 @@ body[data-ui-version="v2"] .ant-segmented .ant-segmented-thumb {
 }
 
 /* ─── Scrollbars ──────────────────────────────────────── */
-body[data-ui-version="v2"]:not([data-platform="windows"]) ::-webkit-scrollbar {
+body[data-ui-version="v2"]:not([data-platform="windows"]) :not(:is(.gn-v2-explorer-tree-shell .ant-tree-list-holder))::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
-body[data-ui-version="v2"]:not([data-platform="windows"]) ::-webkit-scrollbar-track {
+body[data-ui-version="v2"]:not([data-platform="windows"]) :not(:is(.gn-v2-explorer-tree-shell .ant-tree-list-holder))::-webkit-scrollbar-track {
   background: transparent;
 }
-body[data-ui-version="v2"]:not([data-platform="windows"]) ::-webkit-scrollbar-thumb {
+body[data-ui-version="v2"]:not([data-platform="windows"]) :not(:is(.gn-v2-explorer-tree-shell .ant-tree-list-holder))::-webkit-scrollbar-thumb {
   background: var(--gn-br-3);
   border: 3px solid transparent;
   background-clip: content-box;
   border-radius: 10px;
 }
-body[data-ui-version="v2"]:not([data-platform="windows"]) ::-webkit-scrollbar-thumb:hover {
+body[data-ui-version="v2"]:not([data-platform="windows"]) :not(:is(.gn-v2-explorer-tree-shell .ant-tree-list-holder))::-webkit-scrollbar-thumb:hover {
   background: var(--gn-fg-5);
   border: 3px solid transparent;
   background-clip: content-box;
@@ -3177,8 +3177,9 @@ body[data-ui-version="v2"] .gn-v2-explorer-toolbar {
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell {
-  --gn-v2-tree-horizontal-scroll-reserve: 32px;
-  --gn-v2-tree-trailing-inset: 12px;
+  /* Status dot box (14px) sits this far from the row content edge; the row's
+     own 6px padding keeps it off the hover background border. */
+  --gn-v2-tree-trailing-inset: 2px;
   --gn-v2-tree-trailing-status-slot: 16px;
   margin: 0;
   border: 0;
@@ -3215,48 +3216,27 @@ body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list {
   box-sizing: border-box;
 }
 
+/* The explorer tree only scrolls vertically. Long labels ellipsize; the user
+   widens the sidebar to read them. */
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder {
   box-sizing: border-box;
-  height: calc(100% - var(--gn-v2-tree-horizontal-scroll-reserve));
-  max-height: calc(100% - var(--gn-v2-tree-horizontal-scroll-reserve)) !important;
+  height: 100%;
+  max-height: 100% !important;
   overflow-x: hidden !important;
-  scrollbar-width: thin;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-scrollbar-vertical {
+  display: none !important;
   visibility: hidden !important;
-  pointer-events: none;
-}
-
-body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-vertical-scrolling .ant-tree-list-scrollbar-vertical {
-  visibility: visible !important;
-  pointer-events: auto;
-}
-
-body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-scrollbar-vertical:has(.ant-tree-list-scrollbar-thumb-moving) {
-  visibility: visible !important;
-  pointer-events: auto;
+  pointer-events: none !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-scrollbar-horizontal {
-  height: 12px !important;
-  left: 8px !important;
-  right: 8px !important;
-  bottom: 0 !important;
-  border-radius: 999px !important;
-  background: transparent !important;
-  box-shadow: none !important;
-}
-
-body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-scrollbar-horizontal .ant-tree-list-scrollbar-thumb {
-  height: 8px !important;
-  border-radius: 999px !important;
-  background: color-mix(in srgb, var(--gn-fg-4) 52%, transparent) !important;
-}
-
-body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-scrollbar-horizontal .ant-tree-list-scrollbar-thumb:hover,
-body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-scrollbar-horizontal .ant-tree-list-scrollbar-thumb-moving {
-  background: color-mix(in srgb, var(--gn-fg-3) 72%, transparent) !important;
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder-inner {
@@ -3265,9 +3245,11 @@ body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder-inne
   box-sizing: border-box;
 }
 
+/* Every row spans exactly the visible width, so right-pinned indicators sit on
+   the visible edge and never depend on scroll state. */
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode {
   position: relative;
-  width: calc(100% + var(--gn-v2-tree-horizontal-offset, 0px)) !important;
+  width: 100% !important;
   min-height: 26px !important;
   padding: 0 6px !important;
   align-items: center;
@@ -3448,25 +3430,26 @@ body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn
   line-height: 1;
 }
 
+/* Title chain shrinks with the row; the label ellipsizes while trailing
+   metadata / pin indicators keep their natural width. */
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-title {
-  min-width: max-content;
-  flex: 0 0 auto;
+  min-width: 0;
+  flex: 1 1 auto;
   display: inline-flex;
   align-items: center;
-  overflow: visible;
+  overflow: hidden;
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-title > span {
-  min-width: max-content;
-  overflow: visible;
-  text-overflow: clip;
+  min-width: 0;
   white-space: nowrap;
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-title > .gn-v2-tree-title {
-  width: max-content;
+  width: auto;
+  max-width: 100%;
   min-width: 0;
-  overflow: visible;
+  overflow: hidden;
 }
 
 body[data-ui-version="v2"] .gn-v2-tree-title {
@@ -3484,15 +3467,17 @@ body[data-ui-version="v2"] .gn-v2-tree-title {
 }
 
 body[data-ui-version="v2"] .gn-v2-tree-title.is-mono {
-  width: max-content;
+  width: auto;
+  max-width: 100%;
   min-width: 0;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
 }
 
 body[data-ui-version="v2"] .gn-v2-tree-title.is-mono .gn-v2-tree-label {
-  flex: 0 0 auto;
-  overflow: visible;
-  text-overflow: clip;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-family: inherit;
   font-size: inherit;
   font-weight: 400 !important;
@@ -3580,19 +3565,15 @@ body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode.ant-tre
 }
 
 body[data-ui-version="v2"] .gn-v2-tree-title:not(.is-mono) {
-  width: max-content;
+  width: auto;
+  max-width: 100%;
   min-width: 0;
 }
 
 body[data-ui-version="v2"] .gn-v2-tree-title.is-connection .gn-v2-tree-connection-copy {
-  min-width: max-content;
-  flex: 0 0 auto;
-  overflow: visible;
-}
-
-/* 状态点绝对定位，行宽仍按内容；只留右侧槽位 */
-body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-status) .ant-tree-node-content-wrapper {
-  padding-right: calc(var(--gn-v2-tree-trailing-inset, 12px) + var(--gn-v2-tree-trailing-status-slot, 16px) + 12px) !important;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
 }
 
 body[data-ui-version="v2"] .gn-v2-tree-title.is-connection .gn-v2-tree-label,
@@ -3602,17 +3583,33 @@ body[data-ui-version="v2"] .gn-v2-tree-title[data-node-type="database"] .gn-v2-t
 body[data-ui-version="v2"] .gn-v2-tree-title[data-node-type="queries-folder"] .gn-v2-tree-label,
 body[data-ui-version="v2"] .gn-v2-tree-title[data-node-type="external-sql-root"] .gn-v2-tree-label {
   display: block;
-  flex: 0 0 auto;
-  min-width: max-content;
-  overflow: visible;
-  text-overflow: clip;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* Connection / database status dot pinned to the visible right edge. The
+   content wrapper reserves the slot so the ellipsized label never runs under it. */
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .gn-v2-tree-status {
+  position: absolute;
+  top: 50%;
+  right: var(--gn-v2-tree-trailing-inset, 2px);
+  z-index: 1;
+  margin: 0;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-status) .ant-tree-node-content-wrapper {
+  padding-right: calc(var(--gn-v2-tree-trailing-inset, 2px) + var(--gn-v2-tree-trailing-status-slot, 16px) + 6px) !important;
+}
+
+/* Count pills sit inline right after the label (title gap provides spacing). */
 body[data-ui-version="v2"] .gn-v2-tree-title.is-connection-group .gn-v2-tree-count,
-body[data-ui-version="v2"] .gn-v2-tree-title.is-group .gn-v2-tree-count,
-body[data-ui-version="v2"] .gn-v2-tree-title[data-node-type="database"] .gn-v2-tree-count {
-  margin-left: auto;
+body[data-ui-version="v2"] .gn-v2-tree-title.is-group .gn-v2-tree-count {
+  margin-left: 0;
   padding: 0 6px;
   min-width: 16px;
   min-height: 16px;
@@ -3630,47 +3627,19 @@ body[data-ui-version="v2"] .gn-v2-tree-title[data-node-type="database"] .gn-v2-t
   opacity: 0.92;
 }
 
-body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .gn-v2-tree-status {
-  position: absolute;
-  top: 50%;
-  right: var(--gn-v2-tree-trailing-inset, 12px);
-  z-index: 1;
-  margin: 0;
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-
-/* 分组/对象组数字：与绿色状态点同一右缘；有状态点时让到圆点左侧 */
+/* 分组/对象组的数字徽章紧跟名称内联显示，不钉在右缘 */
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-title.is-connection-group) .gn-v2-tree-count,
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-title.is-group) .gn-v2-tree-count {
-  position: absolute;
-  top: 50%;
-  right: var(--gn-v2-tree-trailing-inset, 12px);
-  z-index: 1;
+  position: static;
+  top: auto;
+  right: auto;
+  z-index: auto;
   margin-left: 0;
-  transform: translateY(-50%);
+  transform: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-}
-
-body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-status) .gn-v2-tree-count {
-  position: absolute;
-  top: 50%;
-  right: calc(var(--gn-v2-tree-trailing-inset, 12px) + var(--gn-v2-tree-trailing-status-slot, 16px));
-  z-index: 1;
-  margin-left: 0;
-  transform: translateY(-50%);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-}
-
-body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-title.is-connection-group) .ant-tree-node-content-wrapper,
-body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-title.is-group) .ant-tree-node-content-wrapper {
-  padding-right: calc(var(--gn-v2-tree-trailing-inset, 12px) + 20px) !important;
 }
 
 /* Host grouping drag: group rows are magnetic targets, gaps remain sortable. */
@@ -3809,9 +3778,23 @@ body[data-ui-version="v2"] .gn-v2-sidebar-tree-drag-preview-label {
     transition: none;
   }
 
+  body[data-ui-version="v2"] .gn-v2-tree-status.is-loading::before {
+    animation: none;
+  }
+
   body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-host-tree-dragging .ant-tree-treenode:has(.gn-v2-tree-title.is-drop-inside) {
     transition: none;
   }
+}
+
+body[data-ui-version="v2"] .gn-v2-tree-label {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0;
+  font-weight: 400 !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-tree-status {
@@ -3874,16 +3857,6 @@ body[data-ui-version="v2"] .gn-v2-tree-status.is-error::before {
 
 @keyframes gn-v2-tree-status-spin {
   to { transform: rotate(360deg); }
-}
-
-body[data-ui-version="v2"] .gn-v2-tree-label {
-  min-width: max-content;
-  flex: 0 0 auto;
-  overflow: visible;
-  text-overflow: clip;
-  white-space: nowrap;
-  letter-spacing: 0;
-  font-weight: 400 !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-tree-title.is-redis-db .gn-v2-tree-label {
@@ -7057,46 +7030,94 @@ body[data-ui-version="v2"] .gn-v2-context-menu-kbd {
   }
 }
 
-/* Settings center: flush right edge + refined scrollbar
-   Must beat body[data-ui-version="v2"] ::-webkit-scrollbar (imported after App.css). */
+/* Settings center and explorer tree share the same 8px bar with a visible track. */
 body[data-ui-version="v2"] .gonavi-settings-center-workbench-host,
 body[data-ui-version="v2"] .gonavi-settings-center-workbench,
-body[data-ui-version="v2"] .gonavi-settings-center-modal {
+body[data-ui-version="v2"] .gonavi-settings-center-modal,
+body[data-ui-version="v2"] .gonavi-settings-center-tree,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--gn-fg-4) 50%, transparent) transparent;
 }
 body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar,
 body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar,
-body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar {
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar {
+  -webkit-appearance: none;
+  appearance: none;
   width: 8px;
   height: 8px;
 }
+body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar:horizontal,
+body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar:horizontal,
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar:horizontal,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar:horizontal {
+  height: 8px;
+  background: color-mix(in srgb, var(--gn-fg-4) 14%, var(--gn-bg-panel));
+}
 body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar-track,
 body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar-track,
-body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-track {
-  background: transparent;
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-track,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar-track {
+  background: color-mix(in srgb, var(--gn-fg-4) 14%, var(--gn-bg-panel));
+  border-radius: 999px;
+}
+body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar-track:vertical,
+body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar-track:vertical,
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-track:vertical,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar-track:vertical {
   margin: 2px 0;
+}
+body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar-track:horizontal,
+body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar-track:horizontal,
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-track:horizontal,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar-track:horizontal {
+  margin: 0;
 }
 body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar-thumb,
 body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar-thumb,
-body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-thumb {
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-thumb,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--gn-fg-4) 38%, transparent);
   border: 2px solid transparent;
   background-clip: content-box;
   border-radius: 999px;
+}
+body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar-thumb:vertical,
+body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar-thumb:vertical,
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-thumb:vertical,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar-thumb:vertical {
   min-height: 36px;
+}
+body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar-thumb:horizontal,
+body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar-thumb:horizontal,
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-thumb:horizontal,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar-thumb:horizontal {
+  min-width: 36px;
+  border-width: 1px 2px;
+  background-clip: padding-box;
+  background-color: color-mix(in srgb, var(--gn-fg-4) 42%, var(--gn-bg-panel));
 }
 body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar-thumb:hover,
 body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar-thumb:hover,
-body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-thumb:hover {
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-thumb:hover,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--gn-accent) 50%, var(--gn-fg-4));
   border: 2px solid transparent;
   background-clip: content-box;
 }
+body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar-thumb:horizontal:hover,
+body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar-thumb:horizontal:hover,
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-thumb:horizontal:hover,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar-thumb:horizontal:hover {
+  border-width: 1px 2px;
+  background-clip: padding-box;
+  background-color: color-mix(in srgb, var(--gn-accent) 50%, var(--gn-fg-4));
+}
 body[data-ui-version="v2"] .gonavi-settings-center-workbench-host ::-webkit-scrollbar-corner,
 body[data-ui-version="v2"] .gonavi-settings-center-workbench ::-webkit-scrollbar-corner,
-body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-corner {
-  background: transparent;
+body[data-ui-version="v2"] .gonavi-settings-center-modal ::-webkit-scrollbar-corner,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-list-holder::-webkit-scrollbar-corner {
+  background: color-mix(in srgb, var(--gn-fg-4) 14%, var(--gn-bg-panel));
 }
 body[data-ui-version="v2"] .gonavi-settings-center-pane-scroll,
 body[data-ui-version="v2"] .gonavi-settings-center-content {

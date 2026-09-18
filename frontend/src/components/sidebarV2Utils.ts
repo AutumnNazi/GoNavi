@@ -9,13 +9,10 @@ import {
   resolveSidebarRootOrderTokens,
 } from '../store';
 import type { ConnectionDisplaySortMode, ConnectionTag, SavedConnection, TabData } from '../types';
-import type { SidebarTableMetadataField } from '../utils/sidebarTableMetadata';
 import { readTableAccessCount } from '../utils/tableAccessCount';
 import { t } from '../i18n';
 import { t as catalogTranslate } from '../i18n/catalog';
 import {
-  buildSidebarTableMetadataDisplayItems,
-  buildSidebarTableMetadataSnapshot,
   matchesSidebarSearchText,
   normalizeSidebarSearchText,
 } from './sidebar/sidebarHelpers';
@@ -266,7 +263,7 @@ export const replaceSidebarTreeNodeChildren = (
 };
 
 // Keep these values aligned with the V2 explorer tree layout in v2-theme.css.
-const V2_TREE_HORIZONTAL_SCROLL_RESERVE_PX = 32;
+const V2_TREE_HORIZONTAL_SCROLL_RESERVE_PX = 0;
 const V2_TREE_CONTENT_TOP_PADDING_PX = 4;
 
 export const resolveSidebarTreeVirtualHeight = (
@@ -985,76 +982,7 @@ const V2_EXPLORER_FILTER_GROUP_KEYS: Record<Exclude<V2ExplorerFilter, 'all'>, st
   events: ['events'],
 };
 
-const V2_TREE_HORIZONTAL_SCROLL_MAX_WIDTH = 2600;
-const V2_TREE_HORIZONTAL_SCROLL_BASE_WIDTH = 88;
-const V2_TREE_HORIZONTAL_SCROLL_INDENT_WIDTH = 24;
-const V2_TREE_HORIZONTAL_SCROLL_AVG_CHAR_WIDTH = 8;
-const V2_TREE_HORIZONTAL_SCROLL_ITEM_GAP_WIDTH = 5;
-const V2_TREE_HORIZONTAL_SCROLL_COMMENT_MAX_CHARS = 32;
-const V2_TREE_HORIZONTAL_SCROLL_VIEWPORT_BUFFER = 48;
-export const V2_TREE_HORIZONTAL_SCROLL_BOTTOM_RESERVE = 32;
-
-/**
- * 层层（可见层）估算横滚宽度：
- * - 只统计当前展开路径上可见的节点（含超长连接名/分组名）
- * - 不统计折叠子树里的长表名
- */
-export const estimateV2TreeHorizontalScrollWidth = (
-  nodes: SidebarTreeNode[],
-  viewportWidth: number,
-  sidebarTableMetadataFields: SidebarTableMetadataField[] = [],
-  expandedKeys: ReadonlyArray<Key> = [],
-): number | undefined => {
-  const safeViewportWidth = Math.max(0, Math.ceil(viewportWidth || 0));
-  let estimatedContentWidth = safeViewportWidth;
-  const expandedKeySet = new Set(expandedKeys.map((key) => String(key)));
-
-  const visit = (items: SidebarTreeNode[], depth: number) => {
-    items.forEach((node) => {
-      const title = String(node?.title || '');
-      const tableMetadataItems = node?.type === 'table'
-        ? buildSidebarTableMetadataDisplayItems(
-            sidebarTableMetadataFields,
-            buildSidebarTableMetadataSnapshot(node?.dataRef),
-          )
-        : [];
-      const metaText = tableMetadataItems.length > 0
-        ? tableMetadataItems
-          .map((item) => item.key === 'comment'
-            ? item.text.slice(0, V2_TREE_HORIZONTAL_SCROLL_COMMENT_MAX_CHARS)
-            : item.text)
-          .join('')
-        : node?.dataRef?.groupKey === 'tables' && Array.isArray(node.children)
-          ? String(node.children.length)
-          : '';
-      const metaItemCount = tableMetadataItems.length > 0
-        ? tableMetadataItems.length
-        : metaText
-          ? 1
-          : 0;
-      const nodeWidth = V2_TREE_HORIZONTAL_SCROLL_BASE_WIDTH
-        + (depth * V2_TREE_HORIZONTAL_SCROLL_INDENT_WIDTH)
-        + ((title.length + metaText.length) * V2_TREE_HORIZONTAL_SCROLL_AVG_CHAR_WIDTH)
-        + (metaItemCount * V2_TREE_HORIZONTAL_SCROLL_ITEM_GAP_WIDTH);
-      estimatedContentWidth = Math.max(estimatedContentWidth, nodeWidth);
-      // 仅进入已展开节点的子层
-      if (node.children?.length && expandedKeySet.has(String(node.key))) {
-        visit(node.children, depth + 1);
-      }
-    });
-  };
-  visit(nodes, 0);
-
-  if (estimatedContentWidth <= safeViewportWidth + 8) {
-    return undefined;
-  }
-  // 只按内容宽度给 scrollWidth，避免 viewport+buffer 造出“假空白”可滚区间
-  const scrollWidth = Math.min(
-    V2_TREE_HORIZONTAL_SCROLL_MAX_WIDTH,
-    Math.ceil(estimatedContentWidth),
-  );
-  return scrollWidth;
-};
+export const V2_TREE_HORIZONTAL_SCROLL_BOTTOM_RESERVE = 0;
 
 export const filterV2ExplorerTreeByKind = (
   nodes: SidebarTreeNode[],

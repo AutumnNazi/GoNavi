@@ -22,7 +22,7 @@ import { SidebarEntityModals } from './sidebar/SidebarEntityModals';
 import { SavedQueryGroupModal } from './sidebar/SavedQueryGroupModal';
 import DatabaseSchemaVisibilityModal from './sidebar/DatabaseSchemaVisibilityModal';
 import type { DatabaseSchemaVisibilityDraft } from './sidebar/databaseSchemaVisibility';
-import { renderSidebarV2TreeTitle } from './sidebar/SidebarTreeTitle';
+import { renderSidebarV2TreeTitle, type SidebarTreeConnectionStatus } from './sidebar/SidebarTreeTitle';
 import {
   useSidebarV2ContextMenu,
 } from './sidebar/useSidebarV2ContextMenu';
@@ -257,7 +257,6 @@ import {
   buildV2SidebarTableSectionedChildren,
   resolveSidebarTreeRowHeight,
   collectSidebarSubtreeKeys,
-  estimateV2TreeHorizontalScrollWidth,
   filterV2CommandSearchTreeItems,
   filterV2ExplorerTreeByKind,
   isSidebarDatabasePinned,
@@ -301,7 +300,6 @@ export {
   buildV2SidebarTableSectionedChildren,
   resolveSidebarTreeRowHeight,
   collectSidebarSubtreeKeys,
-  estimateV2TreeHorizontalScrollWidth,
   filterV2CommandSearchTreeItems,
   filterV2ExplorerTreeByKind,
   isSidebarDatabasePinned,
@@ -383,54 +381,6 @@ const SIDEBAR_CACHED_DATABASE_TREE_LIMIT = 12;
 const NACOS_SERVICES_CHANGED_EVENT = 'gonavi:nacos-services-changed';
 const SIDEBAR_GROUP_HOVER_EXPAND_DELAY_MS = 500;
 const SIDEBAR_TREE_SCROLL_IDLE_DELAY_MS = 2000;
-
-type SidebarTreeHorizontalWheelInput = {
-  deltaX?: number;
-  deltaY?: number;
-  shiftKey?: boolean;
-};
-
-/**
- * Normalize wheel input to the horizontal intent used by the virtual tree.
- * On macOS, Shift+wheel commonly reports the vertical wheel amount in
- * `deltaY`, so relying on `deltaX` alone makes the gesture work only when the
- * browser happens to retarget it to a focused tree row.
- */
-export const resolveSidebarTreeHorizontalWheelDelta = ({
-  deltaX = 0,
-  deltaY = 0,
-  shiftKey = false,
-}: SidebarTreeHorizontalWheelInput): number => {
-  const safeDeltaX = Number.isFinite(deltaX) ? Number(deltaX) : 0;
-  const safeDeltaY = Number.isFinite(deltaY) ? Number(deltaY) : 0;
-
-  if (shiftKey) {
-    return safeDeltaX !== 0 ? safeDeltaX : safeDeltaY;
-  }
-
-  return Math.abs(safeDeltaX) > Math.abs(safeDeltaY) ? safeDeltaX : 0;
-};
-
-export const resolveSidebarTreeHorizontalScrollLeft = ({
-  currentLeft,
-  delta,
-  scrollWidth,
-  viewportWidth,
-}: {
-  currentLeft: number;
-  delta: number;
-  scrollWidth: number;
-  viewportWidth: number;
-}): number | null => {
-  const safeCurrentLeft = Number.isFinite(currentLeft) ? currentLeft : 0;
-  const safeDelta = Number.isFinite(delta) ? delta : 0;
-  const safeScrollWidth = Number.isFinite(scrollWidth) ? scrollWidth : 0;
-  const safeViewportWidth = Number.isFinite(viewportWidth) ? viewportWidth : 0;
-  const maxLeft = Math.max(0, safeScrollWidth - safeViewportWidth);
-  const nextLeft = Math.min(maxLeft, Math.max(0, safeCurrentLeft + safeDelta));
-
-  return Math.abs(nextLeft - safeCurrentLeft) > 0.5 ? nextLeft : null;
-};
 
 const buildOptionalSchemaContext = (value: unknown): { schemaName?: string } => {
   const schemaName = String(value ?? '').trim();
@@ -1262,7 +1212,6 @@ const Sidebar: React.FC<{
 
   // Virtual Scroll State
   const [treeHeight, setTreeHeight] = useState(500);
-  const [treeViewportWidth, setTreeViewportWidth] = useState(0);
   const treeContainerRef = useRef<HTMLDivElement>(null);
   const treeScrollIdleTimerRef = useRef<number | null>(null);
   const treeRef = useRef<any>(null);
@@ -1307,7 +1256,6 @@ const Sidebar: React.FC<{
           if (!target) return;
           const rect = target.getBoundingClientRect();
           setTreeHeight((current) => current === rect.height ? current : rect.height);
-          setTreeViewportWidth((current) => current === rect.width ? current : rect.width);
       });
       const resizeObserver = new ResizeObserver(() => scheduler.schedule());
       resizeObserver.observe(treeContainerRef.current);
@@ -3634,7 +3582,6 @@ const Sidebar: React.FC<{
       flattenConnectionNodes,
       activeConnection,
       v2VisibleTreeData,
-      v2TreeHorizontalScrollWidth,
       effectiveTreeHeight,
       v2TreeMetrics,
   } = useSidebarSearchModel({
@@ -3646,11 +3593,8 @@ const Sidebar: React.FC<{
       v2CommandSearchValue,
       setV2CommandActiveIndex,
       v2ExplorerFilter,
-      sidebarTableMetadataFields,
       treeData: visibleSidebarTreeData,
-      treeViewportWidth,
       treeHeight,
-      expandedKeys,
       isV2CommandSearchOpen,
       connections,
       connectionIds,
@@ -3669,89 +3613,13 @@ const Sidebar: React.FC<{
       setAIPanelVisible,
       extractObjectName,
   });
-
+  // The tree never scrolls horizontally: long labels ellipsize and the user
+  // widens the sidebar to read them. Wheel input only drives vertical scroll.
   const handleTreeWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
-      const horizontalDelta = resolveSidebarTreeHorizontalWheelDelta(event);
-      if (horizontalDelta !== 0 && v2TreeHorizontalScrollWidth) {
-          const shell = event.currentTarget;
-          const holder = shell.querySelector<HTMLElement>('.ant-tree-list-holder');
-          const holderInner = shell.querySelector<HTMLElement>('.ant-tree-list-holder-inner');
-          const viewportWidth = holder?.clientWidth || treeViewportWidth;
-          const currentLeft = holderInner
-              ? Math.max(0, -(Number.parseFloat(holderInner.style.marginLeft || '0') || 0))
-              : 0;
-          const nextLeft = resolveSidebarTreeHorizontalScrollLeft({
-              currentLeft,
-              delta: horizontalDelta,
-              scrollWidth: v2TreeHorizontalScrollWidth,
-              viewportWidth,
-          });
-
-          if (nextLeft !== null && treeRef.current?.scrollTo) {
-              // The rc-virtual-list listener is attached to the holder only.
-              // Stop propagation here so blank tree space and the scrollbar
-              // reserve use the same virtual offset without double-applying
-              // the wheel delta when the event target is inside the holder.
-              event.preventDefault();
-              event.stopPropagation();
-              treeRef.current.scrollTo({ left: nextLeft });
-              return;
-          }
-      }
-
       if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
           markTreeScrollActivity();
       }
-  }, [
-      true,
-      markTreeScrollActivity,
-      treeViewportWidth,
-      v2TreeHorizontalScrollWidth,
-  ]);
-
-  useEffect(() => {
-
-      const shell = treeContainerRef.current;
-      const holderInner = shell?.querySelector<HTMLElement>('.ant-tree-list-holder-inner');
-      if (!shell || !holderInner) return;
-
-      const syncHorizontalViewportOffset = () => {
-          const marginLeft = Number.parseFloat(holderInner.style.marginLeft || '0');
-          const horizontalOffset = Number.isFinite(marginLeft)
-              ? Math.max(0, -marginLeft)
-              : 0;
-          shell.style.setProperty('--gn-v2-tree-horizontal-offset', `${horizontalOffset}px`);
-      };
-
-      syncHorizontalViewportOffset();
-      const observer = new MutationObserver(syncHorizontalViewportOffset);
-      observer.observe(holderInner, {
-          attributes: true,
-          attributeFilter: ['style'],
-      });
-
-      return () => {
-          observer.disconnect();
-          shell.style.removeProperty('--gn-v2-tree-horizontal-offset');
-      };
-  }, [
-      true,
-      sidebarObjectVisibilitySignature,
-      v2ExplorerFilter,
-      v2TreeHorizontalScrollWidth,
-  ]);
-
-  // 侧栏改宽时复位虚拟列表横滚（offsetLeft / marginLeft），避免左侧被拉空。
-  // rc-virtual-list 不用 DOM scrollLeft，必须走 Tree.scrollTo({ left })。
-  useEffect(() => {
-
-      const resetHorizontalScroll = () => {
-          treeRef.current?.scrollTo?.({ left: 0 });
-      };
-      resetHorizontalScroll();
-      const raf = window.requestAnimationFrame(resetHorizontalScroll);
-      return () => window.cancelAnimationFrame(raf);
-  }, [treeViewportWidth, v2TreeHorizontalScrollWidth]);
+  }, [markTreeScrollActivity]);
 
   useSidebarLayoutEffect(() => {
       if (!sidebarTreeScrollRequest) return;
@@ -3843,10 +3711,10 @@ const Sidebar: React.FC<{
   const getV2TreeMetaTextRef = useRef(getV2TreeMetaText);
   getV2TreeMetaTextRef.current = getV2TreeMetaText;
 
-  const renderV2TreeTitle = useCallback((node: any, hoverTitle: string, statusBadge: React.ReactNode) => renderSidebarV2TreeTitle({
+  const renderV2TreeTitle = useCallback((node: any, hoverTitle: string, connectionStatus: SidebarTreeConnectionStatus) => renderSidebarV2TreeTitle({
       node,
       hoverTitle,
-      statusBadge,
+      connectionStatus,
       getV2TreeMetaText: getV2TreeMetaTextRef.current,
       sidebarTableMetadataFields,
       snapshotTreeSelectionBeforeDrag,
@@ -4942,7 +4810,6 @@ const Sidebar: React.FC<{
                     height={effectiveTreeHeight}
                     itemHeight={30}
                     itemHeightResolver={resolveSidebarTreeRowHeight}
-                    scrollWidth={v2TreeHorizontalScrollWidth}
                     onContextMenu={handleV2TreeContextMenu}
                     onRightClick={onRightClick}
                 />

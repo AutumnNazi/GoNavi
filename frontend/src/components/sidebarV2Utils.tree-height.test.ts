@@ -7,13 +7,14 @@ import {
 
 describe('resolveSidebarTreeVirtualHeight', () => {
   it('matches the V2 tree virtual viewport to the visible holder height', () => {
-    expect(resolveSidebarTreeVirtualHeight(500)).toBe(464);
+    expect(resolveSidebarTreeVirtualHeight(500)).toBe(496);
   });
 
   it('never returns a negative height and preserves subpixel measurements', () => {
-    expect(resolveSidebarTreeVirtualHeight(20)).toBe(0);
+    expect(resolveSidebarTreeVirtualHeight(20)).toBe(16);
+    expect(resolveSidebarTreeVirtualHeight(3)).toBe(0);
     expect(resolveSidebarTreeVirtualHeight(Number.NaN)).toBe(0);
-    expect(resolveSidebarTreeVirtualHeight(500.9)).toBeCloseTo(464.9);
+    expect(resolveSidebarTreeVirtualHeight(500.9)).toBeCloseTo(496.9);
   });
 });
 
