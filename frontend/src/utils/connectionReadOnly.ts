@@ -86,8 +86,63 @@ const SQL_READ_ONLY_KEYWORDS = new Set([
   "consume",
 ]);
 
-const SQL_MUTATING_WITH_KEYWORDS = /\b(insert|update|delete|replace|merge|upsert)\b/i;
-const SQL_SELECT_INTO_PATTERN = /^\s*select\b[\s\S]*\binto\b/i;
+const SQL_MUTATING_WITH_KEYWORDS = /\b(insert|update|delete|merge|upsert)\b/i;
+const SQL_REPLACE_INTO_PATTERN = /\breplace\s+into\b/i;
+
+/**
+ * Remove SQL literals and non-executable comments before looking for tokens.
+ * A literal such as `SELECT 'into'` is still a read-only query; searching the
+ * raw SQL would incorrectly classify it as SELECT INTO. Whitespace is kept so
+ * token boundaries remain intact after removal.
+ */
+const stripSqlLiteralsAndComments = (statement: string, dbType: string): string => {
+  const text = String(statement || "");
+  let output = "";
+  for (let index = 0; index < text.length;) {
+    const remaining = text.slice(index);
+    if (remaining.startsWith("--") && isDashLineCommentStart(remaining, dbType)) {
+      index = skipKeepAliveLineComment(text, index + 2);
+      output += " ";
+      continue;
+    }
+    if (text[index] === "#" && supportsHashLineComment(dbType)) {
+      index = skipKeepAliveLineComment(text, index + 1);
+      output += " ";
+      continue;
+    }
+    if (remaining.startsWith("/*") && !isExecutableBlockComment(remaining, dbType)) {
+      const end = remaining.indexOf("*/", 2);
+      index = end >= 0 ? index + end + 2 : text.length;
+      output += " ";
+      continue;
+    }
+    const current = text[index];
+    if (current === "'" || current === '"' || current === "`") {
+      index = skipKeepAliveQuotedText(text, index, current);
+      output += " ";
+      continue;
+    }
+    if (current === "[") {
+      const end = text.indexOf("]", index + 1);
+      index = end >= 0 ? end + 1 : text.length;
+      output += " ";
+      continue;
+    }
+    output += current;
+    index += 1;
+  }
+  return output;
+};
+
+const hasSelectInto = (statement: string, dbType: string): boolean =>
+  /\bselect\b[\s\S]*\binto\b/i.test(
+    stripSqlLiteralsAndComments(statement, dbType),
+  );
+
+const hasMutatingWithKeyword = (statement: string, dbType: string): boolean => {
+  const code = stripSqlLiteralsAndComments(statement, dbType);
+  return SQL_MUTATING_WITH_KEYWORDS.test(code) || SQL_REPLACE_INTO_PATTERN.test(code);
+};
 
 const MONGO_READ_ONLY_COMMANDS = new Set([
   "aggregate",
@@ -218,11 +273,11 @@ const isReadOnlySqlStatement = (statement: string, dbType: string): boolean => {
     return false;
   }
   if (keyword === "select") {
-    return !SQL_SELECT_INTO_PATTERN.test(text);
+    return !hasSelectInto(text, dbType);
   }
   if (keyword === "with") {
-    return !SQL_SELECT_INTO_PATTERN.test(text) &&
-      !SQL_MUTATING_WITH_KEYWORDS.test(text);
+    return !hasSelectInto(text, dbType) &&
+      !hasMutatingWithKeyword(text, dbType);
   }
   return true;
 };
