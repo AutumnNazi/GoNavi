@@ -1,5 +1,36 @@
+.gonavi-settings-center-nav {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+
+.gonavi-settings-center-tree-search {
+  flex: 0 0 auto;
+  padding: 2px 4px 0 0;
+}
+
+.gonavi-settings-center-tree-search .ant-input-affix-wrapper {
+  border-radius: 6px;
+}
+
+.gonavi-settings-center-tree-search-empty {
+  padding: 6px 8px 0;
+  font-size: var(--gn-font-size-sm, 13px);
+  color: var(--gn-fg-5, rgba(15, 23, 42, 0.55));
+}
+
+.gonavi-settings-center-tree-highlight {
+  padding: 0 1px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--gn-accent, #6d5dfc) 24%, transparent);
+  color: inherit;
+}
+
 .gonavi-settings-center-tree {
   display: grid;
+  flex: 1 1 auto;
   align-content: start;
   gap: 1px;
   min-height: 0;

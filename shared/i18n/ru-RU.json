@@ -3195,6 +3195,8 @@
   "app.security_update.stage.updating_secure_storage": "Обновление безопасного хранилища",
   "app.security_update.stage.verifying_result": "Проверка результата обновления",
   "app.settings.description": "Управление общими настройками: язык, прокси, тема, AI и сведения о приложении.",
+  "app.settings.search.placeholder": "Поиск настроек",
+  "app.settings.search.empty": "Нет подходящих настроек",
   "app.settings.entry.about.description": "Просмотр версии, ссылок на репозиторий и статуса обновлений.",
   "app.settings.entry.about.title": "О GoNavi",
   "app.settings.entry.ai.description": "Управление поставщиками моделей, ключами и поведением по умолчанию.",

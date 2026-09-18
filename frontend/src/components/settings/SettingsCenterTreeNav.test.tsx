@@ -6,9 +6,12 @@ import { act, create } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildOverlayWorkbenchTheme } from '../../utils/overlayWorkbenchTheme';
+import { t } from '../../i18n';
 
 vi.mock('@ant-design/icons', () => ({
   CaretRightOutlined: () => React.createElement('span', { 'data-tree-caret': 'true' }),
+  SearchOutlined: () => React.createElement('span', { 'data-tree-search-icon': 'true' }),
+  CloseCircleFilled: () => React.createElement('span', { 'data-tree-search-clear': 'true' }),
 }));
 
 import SettingsCenterTreeNav, {
@@ -965,6 +968,91 @@ describe('SettingsCenterTreeNav keyboard focus', () => {
     pressKey(tree, 'ArrowRight');
     expect(document.activeElement).toBe(tree);
     expect(onSelectGroup).not.toHaveBeenCalled();
+  });
+
+  const typeSearch = (value: string) => {
+    const input = container!.querySelector<HTMLInputElement>('input[data-settings-tree-search="true"]');
+    expect(input).toBeInstanceOf(HTMLInputElement);
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    reactAct(() => {
+      setter?.call(input, value);
+      input!.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    return input!;
+  };
+
+  it('filters the tree from the search box, expands hits and restores the browse state on clear', () => {
+    localStorage.setItem(SETTINGS_CENTER_EXPANDED_KEYS_STORAGE_KEY, JSON.stringify([]));
+    const onProxyClick = vi.fn();
+    reactAct(() => {
+      root?.render(
+        <SettingsCenterTreeNav
+          groups={createGroups(vi.fn(), onProxyClick)}
+          activeGroupKey="preferences"
+          activeItemKey="language"
+          darkMode={false}
+          overlayTheme={overlayTheme}
+          ariaLabel="设置中心"
+          onSelectGroup={vi.fn()}
+        />,
+      );
+    });
+
+    // Only the active group is revealed; "services" stays collapsed.
+    expect(container!.querySelectorAll('[role="treeitem"]')).toHaveLength(4);
+    expect(treeNode(container!, 'group:services').getAttribute('aria-expanded')).toBe('false');
+
+    typeSearch('代理');
+    const visible = Array.from(container!.querySelectorAll('[data-settings-tree-node]'))
+      .map((node) => node.getAttribute('data-settings-tree-node'));
+    expect(visible).toEqual(['group:services', 'item:services:proxy']);
+    expect(treeNode(container!, 'group:services').getAttribute('aria-expanded')).toBe('true');
+    expect(container!.querySelector('.gonavi-settings-center-tree-highlight')?.textContent).toBe('代理');
+    expect(container!.querySelector('.gonavi-settings-center-tree-search-empty')).toBeNull();
+    // Search-time expansion is visual only: only the active group was persisted as expanded.
+    expect(JSON.parse(localStorage.getItem(SETTINGS_CENTER_EXPANDED_KEYS_STORAGE_KEY) ?? '[]')).toEqual(['group:preferences']);
+
+    typeSearch('不存在的设置');
+    expect(container!.querySelectorAll('[role="treeitem"]')).toHaveLength(0);
+    expect(container!.querySelector('.gonavi-settings-center-tree-search-empty')?.textContent)
+      .toBe(t('app.settings.search.empty'));
+
+    typeSearch('');
+    expect(container!.querySelectorAll('[role="treeitem"]')).toHaveLength(4);
+    expect(treeNode(container!, 'group:services').getAttribute('aria-expanded')).toBe('false');
+    expect(container!.querySelector('.gonavi-settings-center-tree-highlight')).toBeNull();
+  });
+
+  it('opens the first hit with Enter and moves focus into the tree with ArrowDown', () => {
+    const onProxyClick = vi.fn();
+    const onSelectGroup = vi.fn();
+    reactAct(() => {
+      root?.render(
+        <SettingsCenterTreeNav
+          groups={createGroups(vi.fn(), onProxyClick)}
+          activeGroupKey="preferences"
+          activeItemKey="language"
+          darkMode={false}
+          overlayTheme={overlayTheme}
+          ariaLabel="设置中心"
+          onSelectGroup={onSelectGroup}
+        />,
+      );
+    });
+
+    const input = typeSearch('网络代理');
+    pressKey(input, 'ArrowDown');
+    expect(document.activeElement).toBe(treeNode(container!, 'group:services'));
+
+    reactAct(() => {
+      input.focus();
+    });
+    pressKey(input, 'Enter');
+    expect(onSelectGroup).toHaveBeenCalledWith('services');
+
+    pressKey(input, 'Escape');
+    expect(input.value).toBe('');
+    expect(container!.querySelectorAll('[role="treeitem"]').length).toBeGreaterThan(1);
   });
 
   it('keeps keyboard focus on a leaf group', () => {
