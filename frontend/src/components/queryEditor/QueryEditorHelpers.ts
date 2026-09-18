@@ -30,11 +30,15 @@ import {
     type MetadataIdentityMode,
 } from '../../utils/metadataIdentity';
 import {
-    splitMetadataQualifiedName,
     splitQualifiedNameSegments,
     splitQualifiedNameSegmentsDetailed,
 } from '../../utils/qualifiedName';
 import { buildQueryEditorNavigationTableMetas } from './queryEditorNavigationTableMetas';
+import {
+    buildQueryEditorNamedObjectMetas,
+    buildQueryEditorRoutineObjectMetas,
+    buildQueryEditorTriggerObjectMetas,
+} from './queryEditorNamedObjectMetas';
 import { resolveUniqueKeyGroupsFromIndexes } from '../dataGridCopyInsert';
 import { t as translate } from '../../i18n';
 
@@ -3439,56 +3443,14 @@ export const resolveQueryEditorNavigationTarget = (
     }
     if (parts.length > 3) return null;
 
-    const buildObjectNameMeta = (
-        dbName: string,
-        rawObjectName: string,
-        explicitSchemaName = '',
-    ) => {
-        const normalizedExplicitSchema = String(explicitSchemaName || '').trim();
-        const parsedMetadata = normalizedExplicitSchema
-            ? splitMetadataQualifiedName(rawObjectName, normalizedExplicitSchema)
-            : null;
-        const parsedLegacy = parsedMetadata ? null : splitSidebarQualifiedName(rawObjectName);
-        const schemaName = String(
-            normalizedExplicitSchema
-            || parsedMetadata?.parentPath
-            || parsedLegacy?.schemaName
-            || '',
-        ).trim();
-        const objectName = String(
-            parsedMetadata?.objectName
-            || parsedLegacy?.objectName
-            || rawObjectName,
-        ).trim();
-        return {
-            dbName: String(dbName || '').trim(),
-            rawObjectName: String(rawObjectName || '').trim(),
-            objectName,
-            schemaName,
-            metadataDbKey: buildMetadataIdentityKey(dialect, dbName),
-            normalizedDbName: String(dbName || '').trim().toLowerCase(),
-            normalizedRawObjectName: String(rawObjectName || '').trim().toLowerCase(),
-            normalizedObjectName: objectName.toLowerCase(),
-            normalizedSchemaName: schemaName.toLowerCase(),
-            identifierSegments: splitQualifiedNameSegmentsDetailed(
-                schemaName ? `${schemaName}.${objectName}` : rawObjectName,
-                dialect,
-            ),
-        };
-    };
-
-    const viewMetas = views.map((view) => buildObjectNameMeta(view.dbName, view.viewName, view.schemaName));
-    const materializedViewMetas = materializedViews.map((view) => buildObjectNameMeta(view.dbName, view.viewName, view.schemaName));
-    const triggerMetas = triggers.map((trigger) => ({
-        ...buildObjectNameMeta(trigger.dbName, trigger.triggerName, trigger.schemaName),
-        tableName: String(trigger.tableName || '').trim(),
-    }));
-    const routineMetas = routines.map((routine) => ({
-        ...buildObjectNameMeta(routine.dbName, routine.routineName, routine.schemaName),
-        routineType: String(routine.routineType || 'FUNCTION').trim().toUpperCase() || 'FUNCTION',
-    }));
-    const sequenceMetas = sequences.map((sequence) => buildObjectNameMeta(sequence.dbName, sequence.sequenceName, sequence.schemaName));
-    const packageMetas = packages.map((pkg) => buildObjectNameMeta(pkg.dbName, pkg.packageName, pkg.schemaName));
+    // Normalized once per catalog snapshot rather than once per identifier candidate:
+    // non-table objects outnumber tables in large schemas and dominated the input path.
+    const viewMetas = buildQueryEditorNamedObjectMetas(views, 'viewName', dialect);
+    const materializedViewMetas = buildQueryEditorNamedObjectMetas(materializedViews, 'viewName', dialect);
+    const triggerMetas = buildQueryEditorTriggerObjectMetas(triggers, dialect);
+    const routineMetas = buildQueryEditorRoutineObjectMetas(routines, dialect);
+    const sequenceMetas = buildQueryEditorNamedObjectMetas(sequences, 'sequenceName', dialect);
+    const packageMetas = buildQueryEditorNamedObjectMetas(packages, 'packageName', dialect);
 
     const findTable = (candidateDbName: string, candidateTableName: string, schemaName = ''): QueryEditorNavigationTarget | null => {
         const normalizedDbName = String(candidateDbName || '').trim().toLowerCase();
