@@ -82,6 +82,29 @@ function Test-LegacyMissingMSIIcon {
     return -not (Test-Path -LiteralPath $normalizedIconPath -PathType Leaf)
 }
 
+function Test-GoNaviShortcutWritable {
+    param([string]$ShortcutPath)
+
+    # Shortcuts in shared Start Menu directories are created by the installer with
+    # administrator rights, so a standard user can only read them. Probe writability
+    # first so one unwritable entry cannot fail the whole shortcut update batch.
+    # Only an explicit permission denial counts as read-only. Sharing violations and
+    # other errors must propagate, otherwise a temporarily locked shortcut would be
+    # silently skipped and the update recorded as completed.
+    try {
+        $stream = [IO.File]::Open(
+            $ShortcutPath,
+            [IO.FileMode]::Open,
+            [IO.FileAccess]::ReadWrite,
+            [IO.FileShare]::Read
+        )
+        $stream.Close()
+        return $true
+    } catch [System.UnauthorizedAccessException] {
+        return $false
+    }
+}
+
 function Get-GoNaviDesktopDirectories {
     return @(
         [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory),
@@ -560,7 +583,14 @@ function Set-GoNaviShortcutBrandIcon {
                             $shortcutNeedsSave = $true
                         }
                         if ($shortcutNeedsSave) {
-                            $shortcut.Save()
+                            # Keep writing the AppUserModel properties even when the
+                            # shortcut itself is not writable: a property-store failure
+                            # must still throw so a broken pin is never recorded as fixed.
+                            if (Test-GoNaviShortcutWritable $shortcutFile.FullName) {
+                                $shortcut.Save()
+                            } else {
+                                Write-ShortcutRepairLog ("skipped read-only shortcut save: " + $shortcutFile.FullName)
+                            }
                         }
                         if (-not (Set-GoNaviShortcutRelaunchProperties -ShortcutPath $shortcutFile.FullName -TargetPath $shortcutTargetPath -IconPath $normalizedIconPath -ApplicationUserModelID $ApplicationUserModelID)) {
                             throw ('taskbar property-store update failed for ' + $shortcutFile.FullName)
@@ -576,8 +606,15 @@ function Set-GoNaviShortcutBrandIcon {
                         $needsSave = $true
                     }
                     if ($needsSave) {
-                        $shortcut.Save()
-                        $updatedCount++
+                        # Shared Start Menu shortcuts are read-only for a standard user:
+                        # skip the save instead of failing the whole batch, while still
+                        # notifying Explorer about the entry.
+                        if (Test-GoNaviShortcutWritable $shortcutFile.FullName) {
+                            $shortcut.Save()
+                            $updatedCount++
+                        } else {
+                            Write-ShortcutRepairLog ("skipped read-only shortcut icon update: " + $shortcutFile.FullName)
+                        }
                     }
                     Send-ShellItemUpdatedNotification $shortcutFile.FullName
                 } catch {

@@ -302,3 +302,156 @@ if (-not (Test-SameFilePath $restoredMatchingShortcut.TargetPath $target)) {
 		t.Fatalf("shortcut repair integration failed: %v\n%s", err, output)
 	}
 }
+
+// Shared Start Menu shortcuts under ProgramData are created by the installer and
+// are not writable for a standard user. Their presence must not turn a whole brand
+// icon update into a failure: the writable pins still update and the process must
+// report success so the caller can persist the new identity.
+func TestWindowsShortcutBrandIconSkipsUnwritableShortcut(t *testing.T) {
+	powerShell, err := exec.LookPath("powershell.exe")
+	if err != nil {
+		t.Skip("powershell.exe is unavailable")
+	}
+
+	tempDir := t.TempDir()
+	targetPath := filepath.Join(tempDir, "install", "GoNavi.exe")
+	// shortcutsDirectory stands in for a ProgramData Start Menu location: plain
+	// shortcuts that are not taskbar pins. taskbarDirectory stays separate so the
+	// read-only entry exercises the non-taskbar branch.
+	shortcutsDirectory := filepath.Join(tempDir, "shortcuts")
+	taskbarDirectory := filepath.Join(tempDir, "taskbar")
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, directory := range []string{shortcutsDirectory, taskbarDirectory} {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(targetPath, []byte("test"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	harness := windowsShortcutRepairPowerShellScript + `
+$ErrorActionPreference = 'Stop'
+$shell = New-Object -ComObject WScript.Shell
+
+function New-TestShortcut {
+    param([string]$Path, [string]$TargetPath)
+    $shortcut = $shell.CreateShortcut($Path)
+    $shortcut.TargetPath = $TargetPath
+    $shortcut.IconLocation = ',0'
+    $shortcut.Save()
+}
+
+# Access-control work uses the .NET file APIs rather than Get-Acl/Set-Acl.
+# Importing Microsoft.PowerShell.Security inside a non-interactive child process
+# can fail on TypeData already being registered (AuditToString/AccessToString),
+# and that has nothing to do with what this test verifies.
+$currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+
+# Capture the repair log so the read-only skip stays observable. Reading the
+# shortcut back is not an option after the deny rule: COM resolves an entry the
+# user cannot write to an empty shell, so a log assertion is the reliable evidence
+# that the read-only branch ran instead of failing the batch.
+$script:GoNaviRepairLog = [Collections.Generic.List[string]]::new()
+function Write-UpdateLog { param([string]$Message) [void]$script:GoNaviRepairLog.Add([string]$Message) }
+
+$target = $env:GONAVI_TEST_TARGET
+$shortcuts = $env:GONAVI_TEST_SHORTCUTS
+$taskbar = $env:GONAVI_TEST_TASKBAR
+$writableShortcut = Join-Path $shortcuts 'GoNavi.lnk'
+$readonlyShortcut = Join-Path $shortcuts 'GoNavi-readonly.lnk'
+New-TestShortcut $writableShortcut $target
+New-TestShortcut $readonlyShortcut $target
+
+# The read-only entry carries a stale icon location so the script genuinely tries
+# to save it. Without a difference the icon already matches, the save branch never
+# runs, and the read-only skip path would stay untested.
+$readonlyStaleIcon = 'C:\stale-GoNavi-icon.ico,0'
+$staleShortcut = $shell.CreateShortcut($readonlyShortcut)
+$staleShortcut.IconLocation = $readonlyStaleIcon
+$staleShortcut.Save()
+$staleReadBack = [string]($shell.CreateShortcut($readonlyShortcut)).IconLocation
+if (-not [string]::Equals($staleReadBack, $readonlyStaleIcon, [StringComparison]::OrdinalIgnoreCase)) {
+    throw ('stale icon was not persisted before the deny rule: ' + $staleReadBack)
+}
+
+# Deny writes for the current user so WScript.Shell.Save fails like it does for
+# a ProgramData Start Menu shortcut owned by the installer. The read-only entry
+# lives outside the taskbar directory on purpose: the real ProgramData Start
+# Menu path is not a taskbar shortcut, and it must be skipped rather than fail
+# the whole batch.
+#
+# Only WriteData is denied. Denying the broader Write/Modify set would also block
+# reading the shortcut, and COM would then resolve it to an empty shell whose empty
+# target no longer matches, skipping the entry before the save branch is reached.
+$readonlyAcl = [IO.File]::GetAccessControl($readonlyShortcut)
+$deny = New-Object System.Security.AccessControl.FileSystemAccessRule(
+    $currentUser,
+    'WriteData',
+    'Deny')
+$readonlyAcl.AddAccessRule($deny)
+[IO.File]::SetAccessControl($readonlyShortcut, $readonlyAcl)
+
+$denyCount = @([IO.File]::GetAccessControl($readonlyShortcut).Access | Where-Object { $_.AccessControlType -eq 'Deny' }).Count
+if ($denyCount -lt 1) {
+    throw 'deny rule was not applied to the read-only shortcut'
+}
+if (Test-GoNaviShortcutWritable $readonlyShortcut) {
+    throw 'read-only shortcut was still reported writable'
+}
+if (-not (Test-GoNaviShortcutWritable $writableShortcut)) {
+    throw 'writable shortcut was reported read-only'
+}
+
+# Only an explicit permission denial may be treated as read-only. A shortcut that
+# is merely locked by another process must surface its error instead of being
+# skipped, otherwise the caller records the update as done and never retries.
+$probeLock = [IO.File]::Open($writableShortcut, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+$lockThrew = $false
+try {
+    [void](Test-GoNaviShortcutWritable $writableShortcut)
+} catch {
+    $lockThrew = $true
+}
+$probeLock.Close()
+if (-not $lockThrew) {
+    throw 'a locked shortcut was treated as read-only instead of failing the batch'
+}
+
+$brandIcon = Join-Path $env:GONAVI_TEST_ROOT 'gonavi-brand-abcdefabcdefabcdefabcdef.ico'
+[IO.File]::WriteAllBytes($brandIcon, [byte[]](0, 0, 1, 0, 0, 0))
+
+# A read-only shortcut must be skipped instead of failing the whole batch.
+$updateCount = Set-GoNaviShortcutBrandIcon -TargetPath $target -IconPath $brandIcon -ShortcutDirectories @($shortcuts) -TaskbarDirectory $taskbar
+if ($updateCount -ne 1) {
+    throw ('expected only the writable shortcut to update, got ' + $updateCount)
+}
+$updatedShortcut = $shell.CreateShortcut($writableShortcut)
+if (-not [string]::Equals([string]$updatedShortcut.IconLocation, ($brandIcon + ',0'), [StringComparison]::OrdinalIgnoreCase)) {
+    throw ('writable shortcut icon was not applied: ' + $updatedShortcut.IconLocation)
+}
+$skipLog = @($script:GoNaviRepairLog | Where-Object { $_ -like '*skipped read-only shortcut icon update*' })
+if ($skipLog.Count -lt 1) {
+    throw ('the read-only shortcut was not skipped: ' + [string]::Join(' | ', $script:GoNaviRepairLog))
+}
+if (-not ($skipLog[0] -like ('*' + $readonlyShortcut + '*'))) {
+    throw ('the skip log did not name the read-only shortcut: ' + $skipLog[0])
+}`
+	scriptPath := filepath.Join(tempDir, "brand-icon-readonly-test.ps1")
+	if err := os.WriteFile(scriptPath, []byte(strings.ReplaceAll(harness, "\n", "\r\n")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	command := exec.Command(powerShell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned", "-File", scriptPath)
+	command.Env = append(os.Environ(),
+		"GONAVI_TEST_TARGET="+targetPath,
+		"GONAVI_TEST_SHORTCUTS="+shortcutsDirectory,
+		"GONAVI_TEST_TASKBAR="+taskbarDirectory,
+		"GONAVI_TEST_ROOT="+tempDir,
+	)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("read-only shortcut brand icon update failed: %v\n%s", err, output)
+	}
+}
