@@ -1540,6 +1540,85 @@ describe('QueryEditor external SQL save', () => {
     expect(messageApi.success).toHaveBeenCalledWith('已执行完成，生成 1 个结果集。');
   });
 
+  it('hides ignorable SQL Server session notices after a single SELECT', async () => {
+    storeState.connections[0].config.type = 'sqlserver';
+    storeState.connections[0].config.database = 'NSGJ_Golf75';
+    backendApp.DBQueryMulti.mockResolvedValueOnce({
+      success: true,
+      data: [
+        {
+          columns: ['ID', 'OrderDate', 'Amount', 'rn'],
+          rows: [{ ID: 101, OrderDate: '2026-01-01', Amount: 500, rn: '1' }],
+        },
+        {
+          columns: [],
+          rows: [],
+          messages: [
+            "mssql: Changed database context to 'NSGJ_Golf75'.",
+            '(1 row(s) affected)',
+          ],
+        },
+      ],
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({
+        dbName: 'NSGJ_Golf75',
+        query: 'WITH OracleData_CTE AS (SELECT 1 AS ID) SELECT * FROM OracleData_CTE',
+      })} />);
+    });
+
+    await act(async () => {
+      await findButton(renderer!, '运行').props.onClick();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const rendered = textContent(renderer!.toJSON());
+    expect(rendered).toContain('结果 1');
+    expect(rendered).not.toContain('消息 2');
+    expect(messageApi.success).toHaveBeenCalledWith('已执行完成，生成 1 个结果集。');
+    expect(dataGridState.latestProps?.columnNames).toEqual(['ID', 'OrderDate', 'Amount', 'rn']);
+  });
+
+  it('keeps SQL Server PRINT output after a query result without counting it as a second result set', async () => {
+    storeState.connections[0].config.type = 'sqlserver';
+    storeState.connections[0].config.database = 'hydee';
+    backendApp.DBQueryMulti.mockResolvedValueOnce({
+      success: true,
+      data: [
+        { columns: ['id'], rows: [{ id: 1 }] },
+        {
+          columns: [],
+          rows: [],
+          messages: ["insert into c_user(userid) values('168')"],
+        },
+      ],
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ dbName: 'hydee', query: 'SELECT 1 AS id' })} />);
+    });
+
+    await act(async () => {
+      await findButton(renderer!, '运行').props.onClick();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const rendered = textContent(renderer!.toJSON());
+    expect(rendered).toContain('结果 1');
+    expect(rendered).toContain('消息 2');
+    expect(messageApi.success).toHaveBeenCalledWith('已执行完成，生成 1 个结果集。');
+    expect(messageApi.success).not.toHaveBeenCalledWith('已执行完成，生成 2 个结果集。');
+  });
+
   it('hides redundant sqlserver affected-row status results for every statement in a batch', async () => {
 
     storeState.connections[0].config.type = 'sqlserver';
