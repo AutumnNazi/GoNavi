@@ -94,7 +94,7 @@ const DEFAULT_MCP_HTTP_SERVER_STATUS: AIMCPHTTPServerStatus = {
     addr: '127.0.0.1:8765',
     path: '/mcp',
     url: 'http://127.0.0.1:8765/mcp',
-    // 默认允许 execute_sql 查少量数据
+    // 设置页始终开放全部数据库内置工具，与内置助手共用安全控制
     schemaOnly: false,
     message: '',
 };
@@ -124,10 +124,7 @@ const buildMCPHTTPServerDraftFromStatus = (
         fallback.authorizationHeader ||
         '',
     ).trim(),
-    // 运行中用状态；未运行保留草稿选择
-    schemaOnly: typeof status.schemaOnly === 'boolean'
-        ? status.schemaOnly
-        : (typeof fallback.schemaOnly === 'boolean' ? fallback.schemaOnly : false),
+    schemaOnly: status.running === true && status.schemaOnly === true,
 });
 
 const normalizeMCPHTTPAuthorizationToken = (value: string): string => {
@@ -322,6 +319,7 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
         handleCopySelectedMCPConfigPath,
         handleCopySelectedMCPLaunchCommand,
         handleInstallSelectedMCPClient,
+        handleUpdateStaleMCPClients,
         handleSelectMCPClient,
         loadMCPClientStatuses,
         mcpClientStatusLoading,
@@ -1092,7 +1090,7 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
                     addr: mcpHTTPServerDraft.addr || DEFAULT_MCP_HTTP_SERVER_STATUS.addr,
                     path: mcpHTTPServerDraft.path || DEFAULT_MCP_HTTP_SERVER_STATUS.path,
                     token: normalizeMCPHTTPAuthorizationToken(mcpHTTPServerDraft.authorizationHeader),
-                    schemaOnly: mcpHTTPServerDraft.schemaOnly === true,
+                    schemaOnly: false,
                 })
                 : await Service.AIStopMCPHTTPServer();
             if (nextStatus) {
@@ -1583,6 +1581,7 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
                         selectedMCPClientCommandText={selectedMCPClientCommandText}
                         mcpHTTPServerStatus={mcpHTTPServerStatus}
                         mcpHTTPServerDraft={mcpHTTPServerDraft}
+                        safetyLevel={safetyLevel}
                         mcpServers={mcpServers}
                         mcpTools={mcpTools}
                         darkMode={darkMode}
@@ -1602,6 +1601,7 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
                         onCopyConfigPath={() => void handleCopySelectedMCPConfigPath()}
                         onCopyLaunchCommand={() => void handleCopySelectedMCPLaunchCommand()}
                         onInstallSelectedClient={handleInstallSelectedMCPClient}
+                        onUpdateStaleClients={handleUpdateStaleMCPClients}
                         onAddServer={handleAddMCPServer}
                         onUpdateServerDraft={updateMCPServerDraft}
                         onTestServer={handleTestMCPServer}

@@ -10,23 +10,21 @@ import {
   isLocalMCPClientUnavailable,
   isMCPClientConnected,
   isRemoteMCPClientStatus,
+  listMCPClientsNeedingUpdate,
   normalizeMCPClientStatuses,
   pickPreferredMCPClient,
   type MCPClientKey,
 } from '../../utils/mcpClientInstallStatus';
 import {
+  installLocalMCPClient,
+  summarizeStaleMCPClientUpdates,
+  type MCPClientInstallService,
+} from './mcpClientInstallActions';
+import {
   translateMCPClientInstallCopy,
   resolveMCPClientCommandName,
   type MCPClientInstallTranslator,
 } from './mcpClientInstallPanelState';
-
-interface MCPClientInstallResult {
-  success?: boolean;
-  client?: string;
-  configPath?: string;
-  command?: string;
-  args?: string[];
-}
 
 interface MCPClientMessageApi {
   error: (content: string) => unknown;
@@ -34,16 +32,8 @@ interface MCPClientMessageApi {
   warning: (content: string) => unknown;
 }
 
-interface AIMCPClientInstallerService {
+interface AIMCPClientInstallerService extends MCPClientInstallService {
   AIGetMCPClientInstallStatuses?: () => Promise<AIMCPClientInstallStatus[]>;
-  AIInstallClaudeCodeMCP?: () => Promise<MCPClientInstallResult>;
-  AIInstallCodexMCP?: () => Promise<MCPClientInstallResult>;
-  AIInstallOpenCodeMCP?: () => Promise<MCPClientInstallResult>;
-  AIInstallCursorMCP?: () => Promise<MCPClientInstallResult>;
-  AIInstallZCodeMCP?: () => Promise<MCPClientInstallResult>;
-  AIInstallDeepSeekHarnessMCP?: () => Promise<MCPClientInstallResult>;
-  AIInstallKimiMCP?: () => Promise<MCPClientInstallResult>;
-  AIInstallGrokBuildMCP?: () => Promise<MCPClientInstallResult>;
 }
 
 const MCP_CLIENT_DISPLAY_NAMES: Record<MCPClientKey, string> = {
@@ -184,55 +174,7 @@ export const useAIMCPClientInstaller = ({
       await onBeforeInstall?.();
       setMCPClientSelectionTouched(true);
       const service = await resolveAIService();
-      switch (targetClient) {
-        case 'opencode':
-          if (typeof service?.AIInstallOpenCodeMCP !== 'function') {
-            throw new Error(copy('ai_chat.mcp_client.install.message.opencode_not_supported', 'This version does not support automatic OpenCode MCP installation yet'));
-          }
-          await service.AIInstallOpenCodeMCP();
-          break;
-        case 'cursor':
-          if (typeof service?.AIInstallCursorMCP !== 'function') {
-            throw new Error(copy('ai_chat.mcp_client.install.message.auto_install_not_supported', 'This version does not support automatic {{label}} MCP installation yet', { label: targetLabel }));
-          }
-          await service.AIInstallCursorMCP();
-          break;
-        case 'codex':
-          if (typeof service?.AIInstallCodexMCP !== 'function') {
-            throw new Error(copy('ai_chat.mcp_client.install.message.codex_not_supported', 'This version does not support automatic Codex MCP installation yet'));
-          }
-          await service.AIInstallCodexMCP();
-          break;
-        case 'zcode':
-          if (typeof service?.AIInstallZCodeMCP !== 'function') {
-            throw new Error(copy('ai_chat.mcp_client.install.message.auto_install_not_supported', 'This version does not support automatic {{label}} MCP installation yet', { label: targetLabel }));
-          }
-          await service.AIInstallZCodeMCP();
-          break;
-        case 'deepseek-harness':
-          if (typeof service?.AIInstallDeepSeekHarnessMCP !== 'function') {
-            throw new Error(copy('ai_chat.mcp_client.install.message.auto_install_not_supported', 'This version does not support automatic {{label}} MCP installation yet', { label: targetLabel }));
-          }
-          await service.AIInstallDeepSeekHarnessMCP();
-          break;
-        case 'kimi':
-          if (typeof service?.AIInstallKimiMCP !== 'function') {
-            throw new Error(copy('ai_chat.mcp_client.install.message.auto_install_not_supported', 'This version does not support automatic {{label}} MCP installation yet', { label: targetLabel }));
-          }
-          await service.AIInstallKimiMCP();
-          break;
-        case 'grok-build':
-          if (typeof service?.AIInstallGrokBuildMCP !== 'function') {
-            throw new Error(copy('ai_chat.mcp_client.install.message.auto_install_not_supported', 'This version does not support automatic {{label}} MCP installation yet', { label: targetLabel }));
-          }
-          await service.AIInstallGrokBuildMCP();
-          break;
-        default:
-          if (typeof service?.AIInstallClaudeCodeMCP !== 'function') {
-            throw new Error(copy('ai_chat.mcp_client.install.message.claude_not_supported', 'This version does not support automatic Claude Code MCP installation yet'));
-          }
-          await service.AIInstallClaudeCodeMCP();
-      }
+      await installLocalMCPClient(service, targetClient, copy, targetLabel);
       await loadMCPClientStatuses({ silent: true });
       onConfigChanged?.();
       void messageApi.success(copy('ai_chat.mcp_client.install.message.install_success', 'Wrote {{label}} user-level MCP config', { label: targetLabel }));
@@ -242,6 +184,58 @@ export const useAIMCPClientInstaller = ({
       onAfterInstall?.();
     }
   }, [copy, copyTextToClipboard, loadMCPClientStatuses, messageApi, onAfterInstall, onBeforeInstall, onConfigChanged, resolveAIService, selectedMCPClientStatus]);
+
+  const handleUpdateStaleMCPClients = useCallback(async () => {
+    const staleClients = listMCPClientsNeedingUpdate(mcpClientStatuses);
+    if (staleClients.length === 0) {
+      void messageApi.warning(copy(
+        'ai_chat.mcp_client.install.message.update_all_none',
+        'No clients currently need updating',
+      ));
+      return;
+    }
+    try {
+      await onBeforeInstall?.();
+      const service = await resolveAIService();
+      const updatedLabels: string[] = [];
+      const failedLabels: string[] = [];
+      for (const status of staleClients) {
+        const label = status.displayName || status.client;
+        const client = isMCPClientKey(status.client) ? status.client : null;
+        if (!client) {
+          failedLabels.push(label);
+          continue;
+        }
+        try {
+          await installLocalMCPClient(service, client, copy, label);
+          updatedLabels.push(label);
+        } catch (error) {
+          console.warn('[AI] update stale mcp client failed', status.client, error);
+          failedLabels.push(label);
+        }
+      }
+      await loadMCPClientStatuses({ silent: true });
+      if (updatedLabels.length > 0) {
+        onConfigChanged?.();
+      }
+      const summary = summarizeStaleMCPClientUpdates(updatedLabels, failedLabels, copy);
+      if (summary.type === 'success') {
+        void messageApi.success(summary.message);
+      } else if (summary.type === 'warning') {
+        void messageApi.warning(summary.message);
+      } else {
+        void messageApi.error(summary.message);
+      }
+    } catch (error: any) {
+      void messageApi.error(error?.message || copy(
+        'ai_chat.mcp_client.install.message.update_all_failed',
+        'Batch update failed: {{failedLabels}}',
+        { failedLabels: '' },
+      ));
+    } finally {
+      onAfterInstall?.();
+    }
+  }, [copy, loadMCPClientStatuses, mcpClientStatuses, messageApi, onAfterInstall, onBeforeInstall, onConfigChanged, resolveAIService]);
 
   const handleCopySelectedMCPConfigPath = useCallback(async () => {
     const configPath = String(selectedMCPClientStatus?.configPath || '').trim();
@@ -272,6 +266,7 @@ export const useAIMCPClientInstaller = ({
     handleCopySelectedMCPConfigPath,
     handleCopySelectedMCPLaunchCommand,
     handleInstallSelectedMCPClient,
+    handleUpdateStaleMCPClients,
     handleSelectMCPClient,
     loadMCPClientStatuses,
     mcpClientStatusLoading,

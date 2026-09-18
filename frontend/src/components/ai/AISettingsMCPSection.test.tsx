@@ -73,6 +73,7 @@ const buildMCPSectionProps = (patch: Partial<AISettingsMCPSectionProps> = {}): A
   onCopyConfigPath: () => {},
   onCopyLaunchCommand: () => {},
   onInstallSelectedClient: () => {},
+  onUpdateStaleClients: () => {},
   onAddServer: () => {},
   onUpdateServerDraft: () => {},
   onTestServer: () => {},
@@ -270,5 +271,13 @@ describe('AISettingsMCPSection', () => {
     captured.httpPanelProps.onDraftChange({ addr: '127.0.0.1:9123' });
 
     expect(onUpdateHTTPServerDraft).toHaveBeenCalledWith({ addr: '127.0.0.1:9123' });
+  });
+
+  it('forwards the current AI safety level to the HTTP panel', async () => {
+    const captured = await renderSectionWithMockedHTTPPanel(buildMCPSectionProps({
+      safetyLevel: 'full',
+    }));
+
+    expect(captured.httpPanelProps.safetyLevel).toBe('full');
   });
 });

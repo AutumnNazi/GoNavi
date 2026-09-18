@@ -12,6 +12,7 @@ import { useOptionalI18n } from '../../i18n/provider';
 import type { OverlayWorkbenchTheme } from '../../utils/overlayWorkbenchTheme';
 import AIMCPClientSelectorPanel from './AIMCPClientSelectorPanel';
 import AIMCPClientStatusPanel from './AIMCPClientStatusPanel';
+import AIMCPClientUpdateAllButton from './AIMCPClientUpdateAllButton';
 import {
   getMCPClientDetectionSummary,
   resolveMCPClientInstallActionLabel,
@@ -34,6 +35,7 @@ interface AIMCPClientInstallPanelProps {
   onCopyConfigPath: () => void;
   onCopyLaunchCommand: () => void;
   onInstall: () => void;
+  onUpdateStaleClients?: () => void;
 }
 
 const AIMCPClientInstallPanel: React.FC<AIMCPClientInstallPanelProps> = ({
@@ -51,6 +53,7 @@ const AIMCPClientInstallPanel: React.FC<AIMCPClientInstallPanelProps> = ({
   onCopyConfigPath,
   onCopyLaunchCommand,
   onInstall,
+  onUpdateStaleClients,
 }) => {
   const i18n = useOptionalI18n();
   const t = i18n?.t;
@@ -81,6 +84,14 @@ const AIMCPClientInstallPanel: React.FC<AIMCPClientInstallPanelProps> = ({
           statusLoading={statusLoading}
           onSelectClient={onSelectClient}
         />
+
+        {onUpdateStaleClients ? (
+          <AIMCPClientUpdateAllButton
+            statuses={statuses}
+            loading={loading}
+            onUpdate={onUpdateStaleClients}
+          />
+        ) : null}
 
         <AIMCPClientStatusPanel
           selectedStatus={selectedStatus}

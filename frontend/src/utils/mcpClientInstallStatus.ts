@@ -325,6 +325,19 @@ export const isMCPClientConnected = (
   status?: Pick<AIMCPClientInstallStatus, 'client' | 'installMode' | 'clientDetected' | 'matchesCurrent'> | null,
 ): boolean => status?.matchesCurrent === true && !isLocalMCPClientUnavailable(status);
 
+export const needsMCPClientUpdate = (
+  status?: Pick<AIMCPClientInstallStatus, 'client' | 'installMode' | 'clientDetected' | 'installed' | 'matchesCurrent'> | null,
+): boolean => Boolean(
+  status?.installed
+  && status.matchesCurrent !== true
+  && supportsAutoMCPClientInstall(status)
+  && !isLocalMCPClientUnavailable(status),
+);
+
+export const listMCPClientsNeedingUpdate = (
+  items?: AIMCPClientInstallStatus[] | null,
+): AIMCPClientInstallStatus[] => (Array.isArray(items) ? items : []).filter(needsMCPClientUpdate);
+
 const hasStatusError = (status: AIMCPClientInstallStatus): boolean =>
   MCP_CLIENT_STATUS_ERROR_PATTERNS.some((pattern) => pattern.test(String(status.message || '').trim()));
 
@@ -522,7 +535,7 @@ export const buildRemoteMCPClientGuide = (
     translateMCPClientCopy(
       translate,
       'ai_settings.mcp_server.remote_quick_start.guide.execute_sql_note',
-      'If remote SQL execution is explicitly required, remove --schema-only; execute_sql remains constrained by GoNavi AI safety controls, and writes must explicitly pass allowMutating=true.',
+      'If remote SQL execution is needed, remove --schema-only. execute_sql then follows the same AI safety controls as the built-in assistant; calling execute_sql is the confirmation and allowMutating is not required.',
     ),
     '',
     status?.message

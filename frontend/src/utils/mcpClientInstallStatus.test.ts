@@ -9,6 +9,8 @@ import {
   isLocalMCPClientUnavailable,
   isMCPClientConnected,
   isRemoteMCPClientStatus,
+  listMCPClientsNeedingUpdate,
+  needsMCPClientUpdate,
   normalizeMCPClientStatuses,
   pickPreferredMCPClient,
   supportsAutoMCPClientInstall,
@@ -119,6 +121,7 @@ describe('mcpClientInstallStatus helpers', () => {
 
     expect(isLocalMCPClientUnavailable(unavailableClient)).toBe(true);
     expect(isMCPClientConnected(unavailableClient)).toBe(false);
+    expect(needsMCPClientUpdate(unavailableClient)).toBe(false);
     expect(pickPreferredMCPClient([
       unavailableClient,
       {
@@ -298,7 +301,7 @@ describe('mcpClientInstallStatus helpers', () => {
     expect(guide).toContain('Remote access uses schema-only mode by default and does not register execute_sql');
     expect(guide).toContain('it cannot use the Windows local stdio command directly');
     expect(guide).toContain('Claude Code / Codex / OpenCode / Cursor / ZCode / DeepSeek Harness / Kimi Code / Grok Build');
-    expect(guide).toContain('allowMutating=true');
+    expect(guide).toContain('calling execute_sql is the confirmation');
     expect(guide).toContain('"type": "streamable-http"');
     expect(guide).toContain('"Authorization": "Bearer <random-token>"');
     expect(guide).toContain('GoNavi.exe mcp-server remote-config --client openclaw --url https://<your-domain-or-tunnel>/mcp --token <random-token> --schema-only');
@@ -321,6 +324,83 @@ describe('mcpClientInstallStatus helpers', () => {
     expect(quickStart.standaloneCommand).toBe('gonavi-mcp-server http --addr 127.0.0.1:8765 --path /mcp --token <random-token> --schema-only');
     expect(quickStart.verificationSteps.join('\n')).toContain('get_connections');
     expect(quickStart.securityNotes.join('\n')).toContain('--schema-only does not register execute_sql by default');
-    expect(quickStart.securityNotes.join('\n')).toContain('allowMutating=true');
+    expect(quickStart.securityNotes.join('\n')).toContain('Calling execute_sql is the confirmation');
+  });
+
+  it('lists only locally detected auto-install clients whose GoNavi config is stale', () => {
+    const staleCodex: AIMCPClientInstallStatus = {
+      client: 'codex',
+      displayName: 'Codex',
+      installMode: 'auto',
+      installed: true,
+      matchesCurrent: false,
+      clientDetected: true,
+      clientCommand: 'codex',
+      message: 'stale',
+    };
+    const staleClaude: AIMCPClientInstallStatus = {
+      client: 'claude-code',
+      displayName: 'Claude Code',
+      installMode: 'auto',
+      installed: true,
+      matchesCurrent: false,
+      clientDetected: true,
+      clientCommand: 'claude',
+      message: 'stale',
+    };
+    const connected: AIMCPClientInstallStatus = {
+      client: 'opencode',
+      displayName: 'OpenCode',
+      installMode: 'auto',
+      installed: true,
+      matchesCurrent: true,
+      clientDetected: true,
+      clientCommand: 'opencode',
+      message: 'connected',
+    };
+    const missing: AIMCPClientInstallStatus = {
+      client: 'cursor',
+      displayName: 'Cursor',
+      installMode: 'auto',
+      installed: false,
+      matchesCurrent: false,
+      clientDetected: true,
+      clientCommand: 'cursor',
+      message: 'missing',
+    };
+    const undetectedStale: AIMCPClientInstallStatus = {
+      client: 'kimi',
+      displayName: 'Kimi Code',
+      installMode: 'auto',
+      installed: true,
+      matchesCurrent: false,
+      clientDetected: false,
+      clientCommand: 'kimi',
+      message: 'not detected',
+    };
+    const remote: AIMCPClientInstallStatus = {
+      client: 'openclaw',
+      displayName: 'OpenClaw',
+      installMode: 'remote',
+      installed: true,
+      matchesCurrent: false,
+      clientDetected: false,
+      clientCommand: 'openclaw',
+      message: 'remote',
+    };
+
+    expect(needsMCPClientUpdate(staleCodex)).toBe(true);
+    expect(needsMCPClientUpdate(connected)).toBe(false);
+    expect(needsMCPClientUpdate(missing)).toBe(false);
+    expect(needsMCPClientUpdate(undetectedStale)).toBe(false);
+    expect(needsMCPClientUpdate(remote)).toBe(false);
+    expect(listMCPClientsNeedingUpdate([
+      staleClaude,
+      staleCodex,
+      connected,
+      missing,
+      undetectedStale,
+      remote,
+    ]).map((item) => item.client)).toEqual(['claude-code', 'codex']);
   });
 });

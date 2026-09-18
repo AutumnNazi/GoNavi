@@ -2,7 +2,7 @@ import React from 'react';
 
 import { t as catalogTranslate } from '../../i18n/catalog';
 import { useOptionalI18n } from '../../i18n/provider';
-import type { AIMCPClientInstallStatus, AIMCPHTTPServerStatus, AIMCPServerConfig, AIMCPToolDescriptor } from '../../types';
+import type { AIMCPClientInstallStatus, AIMCPHTTPServerStatus, AIMCPServerConfig, AIMCPToolDescriptor, AISafetyLevel } from '../../types';
 import type { MCPClientKey } from '../../utils/mcpClientInstallStatus';
 import { MCP_FIELD_GUIDES } from '../../utils/mcpServerGuidance';
 import type { OverlayWorkbenchTheme } from '../../utils/overlayWorkbenchTheme';
@@ -22,6 +22,7 @@ export interface AISettingsMCPSectionProps {
   selectedMCPClientCommandText: string;
   mcpHTTPServerStatus: AIMCPHTTPServerStatus;
   mcpHTTPServerDraft: AIMCPHTTPServerDraft;
+  safetyLevel?: AISafetyLevel | string;
   mcpServers: AIMCPServerConfig[];
   mcpTools: AIMCPToolDescriptor[];
   darkMode: boolean;
@@ -41,6 +42,7 @@ export interface AISettingsMCPSectionProps {
   onCopyConfigPath: () => void;
   onCopyLaunchCommand: () => void;
   onInstallSelectedClient: () => void;
+  onUpdateStaleClients: () => void;
   onAddServer: (seed?: Partial<AIMCPServerConfig>) => void;
   onUpdateServerDraft: (id: string, patch: Partial<AIMCPServerConfig>) => void;
   onTestServer: (server: AIMCPServerConfig) => void;
@@ -55,6 +57,7 @@ const AISettingsMCPSection: React.FC<AISettingsMCPSectionProps> = ({
   selectedMCPClientCommandText,
   mcpHTTPServerStatus,
   mcpHTTPServerDraft,
+  safetyLevel,
   mcpServers,
   mcpTools,
   darkMode,
@@ -74,6 +77,7 @@ const AISettingsMCPSection: React.FC<AISettingsMCPSectionProps> = ({
   onCopyConfigPath,
   onCopyLaunchCommand,
   onInstallSelectedClient,
+  onUpdateStaleClients,
   onAddServer,
   onUpdateServerDraft,
   onTestServer,
@@ -164,6 +168,7 @@ const AISettingsMCPSection: React.FC<AISettingsMCPSectionProps> = ({
         <AIMCPHTTPServerPanel
           status={mcpHTTPServerStatus}
           draft={mcpHTTPServerDraft}
+          safetyLevel={safetyLevel}
           loading={mcpHTTPServerLoading}
           cardBg={cardBg}
           cardBorder={cardBorder}
@@ -190,6 +195,7 @@ const AISettingsMCPSection: React.FC<AISettingsMCPSectionProps> = ({
           onCopyConfigPath={onCopyConfigPath}
           onCopyLaunchCommand={onCopyLaunchCommand}
           onInstall={onInstallSelectedClient}
+          onUpdateStaleClients={onUpdateStaleClients}
         />
       </div>
 
