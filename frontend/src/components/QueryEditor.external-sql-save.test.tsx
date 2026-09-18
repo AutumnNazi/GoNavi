@@ -9216,7 +9216,7 @@ describe('QueryEditor external SQL save', () => {
     });
 
     expect(getLastInjectedPrompt()).toBe(
-      'Context: mysql "local", selected database "analytics".\nGenerate a query based on the current database schema.',
+      'Context: mysql "local", selected database "analytics", database version unknown.\nGenerate a query based on the current database schema.',
     );
   });
 
@@ -9283,11 +9283,12 @@ describe('QueryEditor external SQL save', () => {
         editorState.contentChangeListeners.forEach((listener) => (listener as any)({
           changes: [{ text: '__AI_SQL__' }],
         }));
+        await Promise.resolve();
         vi.runAllTimers();
       });
 
       expect(getLastInjectedPrompt()).toBe(
-        'Context: mysql "local", selected database "main".\nGenerate SQL for this requirement:',
+        'Context: mysql "local", selected database "main", database version unknown.\nGenerate SQL for this requirement:',
       );
     } finally {
       vi.useRealTimers();
@@ -9865,7 +9866,7 @@ describe('QueryEditor external SQL save', () => {
     });
 
     expect(getLastInjectedPrompt()).toBe(
-      'Context: mysql "local", selected database "analytics".\nGenerate a query based on the current database schema.',
+      'Context: mysql "local", selected database "analytics", database version unknown.\nGenerate a query based on the current database schema.',
     );
     expect(getLastInjectedPrompt()).not.toContain('上下文环境：');
     expect(getLastInjectedPrompt()).toContain('"local"');
@@ -9896,14 +9897,14 @@ describe('QueryEditor external SQL save', () => {
       await findEditorAction('ai.generateSQL').run(actionEditor);
     });
     expect(getLastInjectedPrompt()).toBe(
-      'Context: mysql "local", selected database "main".\nGenerate a query based on the current database schema.',
+      'Context: mysql "local", selected database "main", database version unknown.\nGenerate a query based on the current database schema.',
     );
 
     await act(async () => {
       await findEditorAction('ai.explainSQL').run(actionEditor);
     });
     expect(getLastInjectedPrompt()).toBe(
-      'Context: mysql "local", selected database "main".\nExplain the execution logic of this SQL statement:\n```sql\nselect * from users\n```',
+      'Context: mysql "local", selected database "main", database version unknown.\nExplain the execution logic of this SQL statement:\n```sql\nselect * from users\n```',
     );
     expect(getLastInjectedPrompt()).not.toContain('请解释以下 SQL');
 
@@ -9911,7 +9912,7 @@ describe('QueryEditor external SQL save', () => {
       await findEditorAction('ai.optimizeSQL').run(actionEditor);
     });
     expect(getLastInjectedPrompt()).toBe(
-      'Context: mysql "local", selected database "main".\nAnalyze this SQL statement for performance issues and suggest optimizations:\n```sql\nselect * from users\n```',
+      'Context: mysql "local", selected database "main", database version unknown.\nAnalyze this SQL statement for performance issues and suggest optimizations:\n```sql\nselect * from users\n```',
     );
     expect(getLastInjectedPrompt()).not.toContain('请分析以下 SQL');
   });
@@ -9986,12 +9987,13 @@ describe('QueryEditor external SQL save', () => {
         editorState.contentChangeListeners.forEach((listener) => (listener as any)({
           changes: [{ text: '__AI_SQL__' }],
         }));
+        await Promise.resolve();
         vi.runAllTimers();
       });
 
       expect(editorState.value).toBe('select 1;');
       expect(getLastInjectedPrompt()).toBe(
-        'Context: mysql "local", selected database "analytics".\nGenerate SQL for this requirement:',
+        'Context: mysql "local", selected database "analytics", database version unknown.\nGenerate SQL for this requirement:',
       );
       expect(getLastInjectedPrompt()).not.toContain('请根据以下需求生成 SQL：');
     } finally {
@@ -10018,9 +10020,10 @@ describe('QueryEditor external SQL save', () => {
 
       await act(async () => {
         findExactButton(renderer, 'Schema analysis').props.onClick();
+        await Promise.resolve();
       });
       expect(getLastInjectedPrompt()).toBe(
-        'Context: mysql "local", selected database "main".\nAnalyze the current database schema and suggest performance and design improvements.',
+        'Context: mysql "local", selected database "main", database version unknown.\nAnalyze the current database schema and suggest performance and design improvements.',
       );
       expect(getLastInjectedPrompt()).not.toContain('请针对当前数据库的表结构进行系统分析');
 

@@ -16,6 +16,7 @@ func TestNewServerWithOptionsOmitsExecuteSQLInSchemaOnlyMode(t *testing.T) {
 	toolNames := listServerToolNames(t, NewServerWithOptions(&fakeBackend{}, ServerOptions{SchemaOnly: true}))
 
 	assertToolPresent(t, toolNames, "get_connections")
+	assertToolPresent(t, toolNames, "get_server_version")
 	assertToolPresent(t, toolNames, "get_views")
 	assertToolPresent(t, toolNames, "get_objects")
 	assertToolPresent(t, toolNames, "get_table_ddl")

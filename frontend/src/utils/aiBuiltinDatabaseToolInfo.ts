@@ -144,6 +144,20 @@ const DATABASE_TOOL_INFO_COPY: DatabaseToolInfoCopy[] = [
     required: ["connectionId", "dbName", "tableName"],
   },
   {
+    name: "get_server_version",
+    icon: "🏷️",
+    desc: "Read the live database server version",
+    detail:
+      "Pass connectionId and return that connection's real server version. Call this before generating SQL so older databases are not given newer-version syntax.",
+    params: "connectionId: connection ID",
+    toolDescription:
+      "Read the live database server version for the specified connection. Call this before generating SQL and use only syntax and functions that version already supports.",
+    parameters: {
+      connectionId: { type: "string", description: "Connection ID (from get_connections)" },
+    },
+    required: ["connectionId"],
+  },
+  {
     name: "get_table_ddl",
     icon: "📝",
     desc: "Get the table creation statement (DDL)",

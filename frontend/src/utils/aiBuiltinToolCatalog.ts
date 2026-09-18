@@ -38,8 +38,8 @@ const BUILTIN_TOOL_FLOW_COPY: BuiltinToolFlowCopy[] = [
   {
     key: 'locate_table_fields',
     title: 'Locate tables and fields',
-    steps: 'get_connections -> get_databases -> get_tables -> get_columns',
-    description: 'Find the connection, database, and table first, then confirm real field names before generating SQL.',
+    steps: 'get_connections -> get_server_version -> get_databases -> get_tables -> get_columns',
+    description: 'Find the connection and its live database version first, then confirm real field names before generating SQL.',
   },
   {
     key: 'field_lookup_table',

@@ -41,6 +41,7 @@ import type {
 } from './ai/aiRunEventProjection';
 import {
     getAIWorkspaceSourceInstanceID,
+    prepareAIWorkspaceSnapshotForChat,
 } from './ai/useAIWorkspaceSnapshot';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import type { AIComposerNoticeDescriptor } from '../utils/aiComposerNotice';
@@ -713,6 +714,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         const resolvedRevision = sessionId
             ? await resolveSessionRevision(sessionId, expectedRevision, service)
             : undefined;
+        await prepareAIWorkspaceSnapshotForChat();
         const receipt = await submitAgentInput({
             requestId: `agent-input-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             ...(sessionId ? { sessionId } : {}),

@@ -68,6 +68,7 @@ describe('buildCurrentConnectionSnapshot', () => {
       activeTabType: 'table',
       activeTableName: 'orders',
       readOnly: true,
+      databaseVersion: '',
     });
   });
 

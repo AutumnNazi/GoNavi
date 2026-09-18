@@ -179,6 +179,9 @@ import QueryEditorToolbar, {
 } from './QueryEditorToolbar';
 import { useQueryEditorExecutionLifecycle } from './queryEditor/useQueryEditorExecutionLifecycle';
 import { useQueryEditorSqlErrorLocator } from './queryEditor/useQueryEditorSqlErrorLocator';
+import { resolveQueryEditorAiConnectionHost } from './queryEditor/queryEditorAiContext';
+import { injectQueryEditorAiPromptWithContext } from './queryEditor/queryEditorAiPromptInject';
+import { peekDatabaseServerVersion } from './queryEditor/queryEditorServerVersion';
 import { useQueryEditorTabExecutionBroadcast } from './queryEditor/queryEditorTabExecutionState';
 import {
     buildQueryEditorLifecycleAffectedRowsResult,
@@ -1107,37 +1110,8 @@ const extractQueryEditorTriggerDefinition = (dialect: string, data: any[]): stri
     return String(getQueryEditorObjectEditRawValue(row, ['TRIGGER_BODY', 'trigger_body', 'TEXT', 'text']) || Object.values(row)[0] || '');
 };
 
-const buildQueryEditorAiContextPrompt = (connection: any, database: string): string => {
-    if (!connection) {
-        return '';
-    }
-
-    const sourceLabel = String(connection.config?.type || '').trim() || translate('query_editor.ai_prompt.default_source');
-    const databaseLabel = String(database || '').trim() || translate('query_editor.ai_prompt.default_database');
-
-    return translate('query_editor.ai_prompt.context', {
-        type: sourceLabel,
-        name: `"${connection.name}"`,
-        database: `"${databaseLabel}"`,
-    });
-};
-
-const resolveQueryEditorAiConnectionHost = (connection: any): string => {
-    const config = connection?.config || {};
-    if (Array.isArray(config.hosts)) {
-        const hosts = config.hosts
-            .map((item: any) => String(typeof item === 'string' ? item : item?.host || item?.hostname || item?.address || '').trim())
-            .filter(Boolean);
-        if (hosts.length > 0) {
-            return hosts.join(', ');
-        }
-    }
-    return String(config.host || config.hostname || config.server || config.address || '').trim();
-};
-
-// HMR 重载时释放旧注册避免补全和 hover 内容重复
-const _g = globalThis as any;
 const SQL_COMPLETION_PROVIDER_VERSION = '20260831-hover-ddl-v6';
+const _g = globalThis as any;
 const SQL_COMPLETION_PROVIDER_MODULE_TOKEN = {};
 const QUERY_EDITOR_MONACO_LANGUAGE_IDS = ['sql', 'mysql'] as const;
 if (!_g.__gonaviSqlCompletionState) {
@@ -3466,6 +3440,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           visibleDbsRef.current,
           appearance.customTableAliasPrefixEnabled,
           appearance.customTableAliasPrefix,
+          peekDatabaseServerVersion(resolvedConnectionId),
       ];
       const cached = aiContextCacheRef.current;
       if (cached && cached.deps.every((dep, index) => dep === cacheDeps[index])) {
@@ -3499,6 +3474,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           mergedColumnsByKey.set(columnKey, column);
       });
       const value: QueryEditorAiContext = {
+          connectionId: resolvedConnectionId,
           connectionName: conn?.name,
           host: resolveQueryEditorAiConnectionHost(conn),
           port: conn?.config?.port,
@@ -3515,6 +3491,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           visibleDbs: visibleDbsRef.current,
           tables: [...mergedTablesByKey.values()],
           columns: [...mergedColumnsByKey.values()],
+          databaseVersion: peekDatabaseServerVersion(resolvedConnectionId),
       };
       aiContextCacheRef.current = { deps: cacheDeps, value };
       return value;
@@ -4573,19 +4550,17 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               label: action.label,
               contextMenuGroupId: '9_ai',
               contextMenuOrder: 1,
-              run: (ed: any) => {
+              run: async (ed: any) => {
                   const selection = ed.getModel()?.getValueInRange(ed.getSelection());
-                  const conn = connectionsRef.current.find(c => c.id === currentConnectionIdRef.current);
-                  const ctxText = buildQueryEditorAiContextPrompt(conn, currentDbRef.current);
-                  let prompt = ctxText + action.prompt;
+                  let prompt = action.prompt;
                   if (action.useSelection && selection) {
                       prompt = prompt.replace(QUERY_EDITOR_SQL_PROMPT_PLACEHOLDER, selection);
                   }
-                  const store = useStore.getState();
-                  if (!store.aiPanelVisible) {
-                      store.setAIPanelVisible(true);
-                  }
-                  window.dispatchEvent(new CustomEvent('gonavi:ai:inject-prompt', { detail: { prompt } }));
+                  await injectQueryEditorAiPromptWithContext({
+                      connection: connectionsRef.current.find((c) => c.id === currentConnectionIdRef.current),
+                      database: currentDbRef.current,
+                      prompt,
+                  });
               },
           })
       ));
@@ -9228,24 +9203,19 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           model.setValue(newText);
           _handlingSlash = false;
 
-          // 组装 prompt
           const conn = connectionsRef.current.find(c => c.id === currentConnectionIdRef.current);
-          const ctxText = buildQueryEditorAiContextPrompt(conn, currentDbRef.current);
-          let finalPrompt = ctxText + cmdDef.prompt;
+          let prompt = cmdDef.prompt;
           if (cmdDef.useSelection) {
               const sel = editor.getSelection();
               const selText = sel ? model.getValueInRange(sel) : '';
-              finalPrompt = finalPrompt.replace(QUERY_EDITOR_SQL_PROMPT_PLACEHOLDER, selText || getCurrentQuery());
+              prompt = prompt.replace(QUERY_EDITOR_SQL_PROMPT_PLACEHOLDER, selText || getCurrentQuery());
           }
-
-          // 打开 AI 面板并注入 prompt
-          const store = useStore.getState();
-          if (!store.aiPanelVisible) {
-              store.setAIPanelVisible(true);
-          }
-          setTimeout(() => {
-              window.dispatchEvent(new CustomEvent('gonavi:ai:inject-prompt', { detail: { prompt: finalPrompt } }));
-          }, store.aiPanelVisible ? 0 : 350);
+          void injectQueryEditorAiPromptWithContext({
+              connection: conn,
+              database: currentDbRef.current,
+              prompt,
+              delayIfPanelClosedMs: 350,
+          });
       });
   };
 
@@ -9433,22 +9403,16 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const editor = editorRef.current;
       const selection = editor?.getModel()?.getValueInRange(editor.getSelection()) || '';
       const fullSQL = getCurrentQuery();
-
-      const conn = connections.find(c => c.id === currentConnectionId);
-      const ctxText = buildQueryEditorAiContextPrompt(conn, currentDb);
-
       const prompts: Record<string, string> = {
-          generate: `${ctxText}${translate('query_editor.ai_prompt.generate')}`,
-          explain: `${ctxText}${translate('query_editor.ai_prompt.explain', { sql: selection || fullSQL || QUERY_EDITOR_SQL_PROMPT_PLACEHOLDER })}`,
-          optimize: `${ctxText}${translate('query_editor.ai_prompt.optimize', { sql: selection || fullSQL || QUERY_EDITOR_SQL_PROMPT_PLACEHOLDER })}`,
-          schema: `${ctxText}${translate('query_editor.ai_prompt.schema')}`,
+          explain: translate('query_editor.ai_prompt.explain', { sql: selection || fullSQL || QUERY_EDITOR_SQL_PROMPT_PLACEHOLDER }),
+          optimize: translate('query_editor.ai_prompt.optimize', { sql: selection || fullSQL || QUERY_EDITOR_SQL_PROMPT_PLACEHOLDER }),
+          schema: translate('query_editor.ai_prompt.schema'),
       };
-
-      const store = useStore.getState();
-      if (!store.aiPanelVisible) {
-          store.setAIPanelVisible(true);
-      }
-      window.dispatchEvent(new CustomEvent('gonavi:ai:inject-prompt', { detail: { prompt: prompts[action] } }));
+      void injectQueryEditorAiPromptWithContext({
+          connection: connections.find((c) => c.id === currentConnectionId),
+          database: currentDb,
+          prompt: prompts[action] || '',
+      });
   };
 
   const formatSettingsMenu: MenuProps['items'] = [

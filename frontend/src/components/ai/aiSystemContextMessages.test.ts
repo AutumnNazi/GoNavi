@@ -150,10 +150,10 @@ describe('buildAISystemContextMessages', () => {
         return `skill wrapper -> ${params?.skillName} / ${params?.skillDescription} / ${params?.requiredTools} / ${params?.content}`;
       }
       if (key === 'ai_chat.system.context.database_with_schema') {
-        return `database schema prompt -> ${params?.dbType} / ${params?.ddlChunks}`;
+        return `database schema prompt -> ${params?.dbType} / ${params?.version} / ${params?.ddlChunks}`;
       }
       if (key === 'ai_chat.system.context.database_with_target') {
-        return `database target prompt -> ${params?.dbType} / ${params?.dbName}`;
+        return `database target prompt -> ${params?.dbType} / ${params?.dbName} / ${params?.version}`;
       }
       if (key === 'ai_chat.system.context.database_without_context') {
         return `database no context prompt -> ${params?.connList}`;
@@ -197,7 +197,7 @@ describe('buildAISystemContextMessages', () => {
       translate,
     });
     const schemaJoined = databaseWithSchemaMessages.map((message) => message.content).join('\n');
-    expect(schemaJoined).toContain('database schema prompt -> MySQL / -- Table: app_db.orders');
+    expect(schemaJoined).toContain('database schema prompt -> MySQL / unknown / -- Table: app_db.orders');
     expect(schemaJoined).toContain('CREATE TABLE orders (id bigint);');
     expect(schemaJoined).toContain('global prompt wrapper -> 回答前先核对上下文。');
     expect(schemaJoined).toContain('database prompt wrapper -> 生成 SQL 时保持只读优先。');
@@ -219,7 +219,7 @@ describe('buildAISystemContextMessages', () => {
       userPromptSettings,
       translate,
     });
-    expect(databaseTargetMessages[0].content).toContain('database target prompt -> MySQL / app_db');
+    expect(databaseTargetMessages[0].content).toContain('database target prompt -> MySQL / app_db / unknown');
 
     const databaseNoContextMessages = buildAISystemContextMessages({
       activeContext: null,
@@ -282,11 +282,25 @@ describe('buildAISystemContextMessages', () => {
   });
 
   it('keeps fixed system context keys in all six catalogs', () => {
+    const getPlaceholders = (value: string): string[] =>
+      Array.from(value.matchAll(/\{\{([A-Za-z0-9_]+)\}\}/g), (match) => match[1]).sort();
     for (const key of AI_SYSTEM_CONTEXT_KEYS) {
       for (const language of Object.keys(catalogs) as Array<keyof typeof catalogs>) {
         expect(catalogs[language]).toHaveProperty(key);
         expect(catalogs[language][key as keyof (typeof catalogs)[typeof language]]).toBeTruthy();
       }
+    }
+    for (const language of Object.keys(catalogs) as Array<keyof typeof catalogs>) {
+      expect([...new Set(getPlaceholders(catalogs[language]['ai_chat.system.context.database_with_schema']))].sort()).toEqual([
+        'dbType',
+        'ddlChunks',
+        'version',
+      ]);
+      expect([...new Set(getPlaceholders(catalogs[language]['ai_chat.system.context.database_with_target']))].sort()).toEqual([
+        'dbName',
+        'dbType',
+        'version',
+      ]);
     }
   });
 

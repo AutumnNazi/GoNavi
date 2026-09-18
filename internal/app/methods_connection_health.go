@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -578,7 +577,7 @@ func connectionHealthNacosOperationContext(parent context.Context, config connec
 }
 
 func inspectDatabaseVersionHealth(dbInst db.Database, config connection.ConnectionConfig) connection.ConnectionHealthCheck {
-	query, ok := connectionHealthVersionQuery(config)
+	query, ok := db.ServerVersionQuery(config)
 	if !ok {
 		return unsupportedHealthCheck(connection.ConnectionHealthCheckVersion, "not_available")
 	}
@@ -587,7 +586,7 @@ func inspectDatabaseVersionHealth(dbInst db.Database, config connection.Connecti
 	if err != nil {
 		return failedHealthCheck(connection.ConnectionHealthCheckVersion, time.Since(startedAt), "review_driver_compatibility")
 	}
-	version := safeHealthVersion(firstHealthRowValue(rows))
+	version := db.SanitizeServerVersion(db.FirstQueryRowValue(rows))
 	if version == "" {
 		return unsupportedHealthCheck(connection.ConnectionHealthCheckVersion, "not_available")
 	}
@@ -628,27 +627,6 @@ func connectionHealthSupportsPagination(config connection.ConnectionConfig) bool
 		return db.ResolveCustomDataSourceCapability(config.Driver).Pagination.Supported
 	}
 	return db.ResolveDataSourceCapability(config.Type).Pagination.Supported
-}
-
-func connectionHealthVersionQuery(config connection.ConnectionConfig) (string, bool) {
-	typeName := strings.ToLower(strings.TrimSpace(config.Type))
-	if typeName == "custom" {
-		typeName = strings.ToLower(strings.TrimSpace(config.Driver))
-	}
-	switch typeName {
-	case "mysql", "goldendb", "mariadb", "oceanbase", "diros", "starrocks", "sphinx",
-		"postgres", "kingbase", "highgo", "vastbase", "opengauss", "gaussdb", "duckdb",
-		"clickhouse", "trino":
-		return "SELECT VERSION() AS version", true
-	case "sqlserver":
-		return "SELECT @@VERSION AS version", true
-	case "sqlite":
-		return "SELECT sqlite_version() AS version", true
-	case "oracle":
-		return "SELECT banner AS version FROM v$version WHERE ROWNUM = 1", true
-	default:
-		return "", false
-	}
 }
 
 func healthTLSCheck(config connection.ConnectionConfig) connection.ConnectionHealthCheck {
@@ -695,7 +673,7 @@ func passedHealthCheck(key string, duration time.Duration, detail string) connec
 		Key:        key,
 		Status:     connection.ConnectionHealthStatusPassed,
 		DurationMs: duration.Milliseconds(),
-		Detail:     safeHealthVersion(detail),
+		Detail:     db.SanitizeServerVersion(detail),
 	}
 }
 
@@ -752,26 +730,6 @@ func orderConnectionHealthChecks(checks []connection.ConnectionHealthCheck) []co
 	return ordered
 }
 
-func firstHealthRowValue(rows []map[string]interface{}) string {
-	if len(rows) == 0 {
-		return ""
-	}
-	for _, value := range rows[0] {
-		return fmt.Sprint(value)
-	}
-	return ""
-}
-
 func safeHealthVersion(value string) string {
-	value = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(value, "\r", " "), "\n", " "))
-	lowerValue := strings.ToLower(value)
-	for _, secretMarker := range []string{"password", "passwd", "secret", "token", "api key", "apikey", "jdbc:", "://"} {
-		if strings.Contains(lowerValue, secretMarker) {
-			return ""
-		}
-	}
-	if len(value) > 256 {
-		value = value[:256]
-	}
-	return value
+	return db.SanitizeServerVersion(value)
 }

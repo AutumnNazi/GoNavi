@@ -56,6 +56,9 @@ const readAppSource = (): string =>
 const readQueryEditorHelpersSource = (): string =>
   readFileSync(new URL("../components/queryEditor/QueryEditorHelpers.ts", import.meta.url), "utf8");
 
+const readQueryEditorAiContextSource = (): string =>
+  readFileSync(new URL("../components/queryEditor/queryEditorAiContext.ts", import.meta.url), "utf8");
+
 const readQueryEditorResultsPanelSource = (): string =>
   readFileSync(new URL("../components/QueryEditorResultsPanel.tsx", import.meta.url), "utf8");
 
@@ -1688,13 +1691,13 @@ describe("i18n catalog", () => {
     const aiContextKeys = [
       "query_editor.ai_prompt.default_source",
       "query_editor.ai_prompt.default_database",
+      "query_editor.ai_prompt.default_version",
       "query_editor.ai_prompt.context",
     ] as const;
-    const source = readQueryEditorSource();
     const aiContextSource = sliceBetween(
-      source,
-      "const buildQueryEditorAiContextPrompt = (connection: any, database: string): string => {",
-      "// HMR 重载时释放旧注册避免补全和 hover 内容重复",
+      readQueryEditorAiContextSource(),
+      "export const buildQueryEditorAiContextPrompt = (",
+      "  return translate('query_editor.ai_prompt.context', {",
     );
 
     for (const language of SUPPORTED_LANGUAGES) {
@@ -1702,12 +1705,18 @@ describe("i18n catalog", () => {
         expect(catalogs[language]).toHaveProperty(key);
         expect(catalogs[language][key]).toBeTruthy();
       }
+      expect(getPlaceholders(catalogs[language]["query_editor.ai_prompt.context"])).toEqual([
+        "database",
+        "name",
+        "type",
+        "version",
+      ]);
     }
 
-    for (const key of aiContextKeys) {
-    }
-
-    assertSourceDoesNotInlineCatalogValues(aiContextSource, aiContextKeys);
+    assertSourceDoesNotInlineCatalogValues(aiContextSource, [
+      "query_editor.ai_prompt.default_version",
+      "query_editor.ai_prompt.context",
+    ]);
   });
 
   it("keeps QueryEditor AI context menu prompts in catalogs instead of source literals", () => {
@@ -1909,7 +1918,7 @@ describe("i18n catalog", () => {
       sliceBetween(
         source,
         "const buildQueryEditorEditableDefinitionSql = (",
-        "const buildQueryEditorAiContextPrompt = (",
+        "const SQL_COMPLETION_PROVIDER_VERSION = '20260831-hover-ddl-v6';",
       ),
       sliceBetween(
         source,

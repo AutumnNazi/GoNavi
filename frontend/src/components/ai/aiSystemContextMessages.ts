@@ -16,6 +16,7 @@ import {
   translateInspectionCopy,
   type AIInspectionTranslator,
 } from './aiInspectionI18n';
+import { peekDatabaseServerVersion } from '../queryEditor/queryEditorServerVersion';
 
 export interface AISystemContextMessage {
   role: 'system';
@@ -155,6 +156,15 @@ const contextCopy = (
   fallback: string,
   params?: Record<string, string | number | boolean | null | undefined>,
 ) => translateInspectionCopy(translate, key, fallback, params);
+
+const resolveDatabaseVersionLabel = (
+  connectionId: string | undefined,
+  translate: AIInspectionTranslator | undefined,
+): string => peekDatabaseServerVersion(connectionId) || contextCopy(
+  translate,
+  'query_editor.ai_prompt.default_version',
+  'unknown',
+);
 
 const resolveActiveTab = (params: {
   tabs: TabData[];
@@ -377,26 +387,28 @@ Response rules:
   if (activeContextItems.length > 0) {
     const connection = connections.find((item) => item.id === targetConnId);
     const dbDisplayType = resolveDatabaseDisplayType(connection?.config);
+    const databaseVersion = resolveDatabaseVersionLabel(targetConnId, translate);
     const ddlChunks = activeContextItems.map((item) => `-- Table: ${item.dbName}.${item.tableName}\n${item.ddl}`).join('\n\n');
     systemMessages.push({
       role: 'system',
       content: contextCopy(
         translate,
         'ai_chat.system.context.database_with_schema',
-        'You are a professional database assistant. The current connection database type is {{dbType}}. Generate SQL using the {{dbType}} dialect. The user has attached table schema information; prioritize it when answering:\n\n{{ddlChunks}}',
-        { dbType: dbDisplayType, ddlChunks },
+        'You are a professional database assistant. The current connection database type is {{dbType}}, and the live server version is {{version}}. Generate SQL using the {{dbType}} dialect and only syntax that version already supports. Do not emit newer-version SQL. If the version is unknown, call get_server_version first. The user has attached table schema information; prioritize it when answering:\n\n{{ddlChunks}}',
+        { dbType: dbDisplayType, version: databaseVersion, ddlChunks },
       ),
     });
   } else if (targetConnId && targetDbName) {
     const connection = connections.find((item) => item.id === targetConnId);
     const dbDisplayType = resolveDatabaseDisplayType(connection?.config);
+    const databaseVersion = resolveDatabaseVersionLabel(targetConnId, translate);
     systemMessages.push({
       role: 'system',
       content: contextCopy(
         translate,
         'ai_chat.system.context.database_with_target',
-        'You are a professional database assistant. The current connection database type is {{dbType}}, and the current database name is {{dbName}}. If the user needs a specific table or information about the current database, call the provided get_tables tool to actively fetch table information.',
-        { dbType: dbDisplayType, dbName: targetDbName },
+        'You are a professional database assistant. The current connection database type is {{dbType}}, the current database name is {{dbName}}, and the live server version is {{version}}. Use only SQL syntax that version already supports. Do not emit newer-version SQL. If the version is unknown, call get_server_version first. If the user needs a specific table or information about the current database, call the provided get_tables tool to actively fetch table information.',
+        { dbType: dbDisplayType, dbName: targetDbName, version: databaseVersion },
       ),
     });
   } else {
@@ -415,7 +427,7 @@ Response rules:
 
 Important rules:
 1. If you need to help the user find a target table, never guess the table name. Call tools to fetch real data.
-2. Complete workflow: get_connections -> get_databases -> get_tables -> get_columns -> generate SQL. Do not skip any step.
+2. Complete workflow: get_connections -> get_server_version -> get_databases -> get_tables -> get_columns -> generate SQL. Do not skip any step.
 3. Connection priority is critical. After retrieving connections, check them in this order:
    - First priority: host is localhost or 127.0.0.1, or the connection name indicates a local environment.
    - Second priority: name or host indicates a development/local environment, or host is a private-network IP such as 10.x, 192.168.x, or 172.16-31.x.

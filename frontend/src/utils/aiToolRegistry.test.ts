@@ -292,6 +292,7 @@ describe('aiToolRegistry', () => {
     expect(tools.some((item) => item.function.name === 'inspect_mcp_draft')).toBe(true);
     expect(tools.some((item) => item.function.name === 'inspect_mcp_tool_schema')).toBe(true);
     expect(tools.some((item) => item.function.name === 'inspect_ai_guidance')).toBe(true);
+    expect(tools.some((item) => item.function.name === 'get_server_version')).toBe(true);
     expect(tools.some((item) => item.function.name === 'inspect_current_connection')).toBe(true);
     expect(tools.some((item) => item.function.name === 'inspect_connection_capabilities')).toBe(true);
     expect(tools.some((item) => item.function.name === 'inspect_saved_connections')).toBe(true);

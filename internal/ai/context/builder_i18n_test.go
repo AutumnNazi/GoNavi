@@ -9,6 +9,7 @@ import (
 var databaseContextShellKeys = []string{
 	"ai_service.backend.database_context.title",
 	"ai_service.backend.database_context.database_type",
+	"ai_service.backend.database_context.database_version",
 	"ai_service.backend.database_context.database_name",
 	"ai_service.backend.database_context.table_schema",
 	"ai_service.backend.database_context.table_heading",
@@ -36,6 +37,7 @@ func sampleDatabaseContext() *DatabaseContext {
 	return &DatabaseContext{
 		DatabaseType: "mysql",
 		DatabaseName: "shop_db",
+		Version:      "5.7.44-log",
 		Tables: []TableContext{
 			{
 				Name:     "orders",
@@ -164,6 +166,7 @@ func TestFormatDatabaseContextDefaultShellUsesEnglishFallback(t *testing.T) {
 	for _, want := range []string{
 		"## Current database context",
 		"Database type: mysql",
+		"Database version: 5.7.44-log",
 		"Database name: shop_db",
 		"### Table structure",
 		"#### Table: orders",
@@ -200,6 +203,8 @@ func TestFormatDatabaseContextWithTextLookupLocalizesShell(t *testing.T) {
 			return "## DB context"
 		case "ai_service.backend.database_context.database_type":
 			return "Type = " + params["type"].(string)
+		case "ai_service.backend.database_context.database_version":
+			return "Version = " + params["version"].(string)
 		case "ai_service.backend.database_context.database_name":
 			return "Name = " + params["name"].(string)
 		case "ai_service.backend.database_context.table_schema":
@@ -235,7 +240,7 @@ func TestFormatDatabaseContextWithTextLookupLocalizesShell(t *testing.T) {
 
 	formatted := FormatDatabaseContextWithTextLookup(sampleDatabaseContext(), lookup)
 
-	for _, want := range []string{"## DB context", "Type = mysql", "Name = shop_db", "### Structure", "#### Object: orders", "[42 rows approx]", "| Field | Data type | Allows null | PK | Note |", "YES", "NO", "**Index list:**", "(UNIQUE)", "**Samples (1):**"} {
+	for _, want := range []string{"## DB context", "Type = mysql", "Version = 5.7.44-log", "Name = shop_db", "### Structure", "#### Object: orders", "[42 rows approx]", "| Field | Data type | Allows null | PK | Note |", "YES", "NO", "**Index list:**", "(UNIQUE)", "**Samples (1):**"} {
 		if !strings.Contains(formatted, want) {
 			t.Fatalf("expected localized context to contain %q, got:\n%s", want, formatted)
 		}

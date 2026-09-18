@@ -33,7 +33,7 @@ func TestAgentToolCatalogListIsBuiltInAndSchemaComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List returned error: %v", err)
 	}
-	wantNames := []string{"get_connections", "get_databases", "get_tables", "get_views", "get_objects", "get_all_columns", "get_columns", "get_indexes", "get_foreign_keys", "get_triggers", "get_table_ddl", "execute_sql"}
+	wantNames := []string{"get_connections", "get_server_version", "get_databases", "get_tables", "get_views", "get_objects", "get_all_columns", "get_columns", "get_indexes", "get_foreign_keys", "get_triggers", "get_table_ddl", "execute_sql"}
 	if len(items) != len(wantNames) {
 		t.Fatalf("catalog length = %d, want %d", len(items), len(wantNames))
 	}

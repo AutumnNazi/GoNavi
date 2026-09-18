@@ -485,6 +485,15 @@ func (e *agentToolExecutor) Execute(ctx context.Context, request runharness.Tool
 			result, output, err := e.catalog.service.GetConnections(ctx, nil, args)
 			return result, output, err
 		})
+	case "get_server_version":
+		var args connectionIDArgs
+		if err := decodeAgentToolArguments(request.Arguments, &args); err != nil {
+			return failedAgentToolResult("malformed_tool_call"), err
+		}
+		return e.call(ctx, func() (*mcp.CallToolResult, any, error) {
+			result, output, err := e.catalog.service.GetServerVersion(ctx, nil, args)
+			return result, output, err
+		})
 	case "get_databases":
 		var args connectionIDArgs
 		if err := decodeAgentToolArguments(request.Arguments, &args); err != nil {
@@ -721,6 +730,7 @@ func agentToolDescriptors() []runharness.ToolDescriptor {
 	}
 	return []runharness.ToolDescriptor{
 		readOnly("get_connections", "List saved GoNavi database connections. Use the returned connectionId for subsequent calls.", schemaObject(nil, nil)),
+		readOnly("get_server_version", "Read the live database server version for a saved connection. Call this before generating SQL so the statement uses syntax that version already supports.", schemaObject([]string{"connectionId"}, map[string]any{"connectionId": schemaString("saved connection ID")})),
 		readOnly("get_databases", "List databases or schemas for a saved connection.", schemaObject([]string{"connectionId"}, map[string]any{"connectionId": schemaString("saved connection ID")})),
 		readOnly("get_tables", "List tables and views for a saved connection and optional database.", schemaObject([]string{"connectionId"}, map[string]any{"connectionId": schemaString("saved connection ID"), "dbName": schemaString("optional database or schema")})),
 		readOnly("get_views", "List views for a saved connection and optional database.", schemaObject([]string{"connectionId"}, map[string]any{"connectionId": schemaString("saved connection ID"), "dbName": schemaString("optional database or schema")})),

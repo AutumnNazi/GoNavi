@@ -86,6 +86,7 @@ vi.mock('./ai/aiRunHarnessClient', () => ({
 }));
 vi.mock('./ai/useAIWorkspaceSnapshot', () => ({
   getAIWorkspaceSourceInstanceID: () => 'desktop-test-instance',
+  prepareAIWorkspaceSnapshotForChat: async () => undefined,
 }));
 vi.mock('../utils/connectionRpcConfig', () => ({ buildRpcConnectionConfig: () => undefined }));
 vi.mock('../utils/aiComposerNotice', () => ({ buildAIComposerNotice: () => null }));

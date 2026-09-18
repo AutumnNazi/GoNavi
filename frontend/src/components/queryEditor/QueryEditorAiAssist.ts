@@ -31,6 +31,7 @@ import {
     parseAIRunEvent,
 } from '../ai/aiRunEventProjection';
 import { getAIWorkspaceSourceInstanceID } from '../ai/useAIWorkspaceSnapshot';
+import { ensureQueryEditorAiContextServerVersion } from './queryEditorServerVersion';
 
 export type QueryEditorAiApplyMode = 'insert' | 'replaceSelection' | 'replaceAll';
 
@@ -46,6 +47,7 @@ export interface QueryEditorAiMessage {
 }
 
 export interface QueryEditorAiContext {
+    connectionId?: string;
     connectionName?: string;
     host?: string;
     port?: string | number;
@@ -61,6 +63,7 @@ export interface QueryEditorAiContext {
     inlineCompletionIntent?: 'general_sql' | 'table_name' | 'column_name';
     inlineCompletionFragment?: string;
     inlineCompletionQualifier?: string;
+    databaseVersion?: string;
     elasticsearchVersion?: string;
     elasticsearchMapping?: string;
 }
@@ -578,7 +581,6 @@ export const requestQueryEditorInlineCompletion = async ({
     editorSnapshot: QueryEditorAiEditorSnapshot;
     autoAddTableAlias?: boolean;
 }): Promise<string> => {
-    const dialect = aiContext.sqlDialect || aiContext.sourceType || '';
     const localCompletion = resolveQueryEditorInlineLocalCompletion({
         aiContext,
         editorSnapshot,
@@ -587,13 +589,15 @@ export const requestQueryEditorInlineCompletion = async ({
     if (localCompletion.handled) {
         return localCompletion.insertText;
     }
+    const versionedContext = await ensureQueryEditorAiContextServerVersion(aiContext);
+    const dialect = versionedContext.sqlDialect || versionedContext.sourceType || '';
     const inlineIntent = resolveQueryEditorInlineCompletionIntentDetails(editorSnapshot, dialect);
     const readiness = await resolveQueryEditorInlineRuntimeReadiness(service);
     if (!service || !readiness.ready || !readiness.provider) {
         return '';
     }
 
-    const inlineAiContext = buildQueryEditorInlineCompletionContext(aiContext, editorSnapshot);
+    const inlineAiContext = buildQueryEditorInlineCompletionContext(versionedContext, editorSnapshot);
     const messages = buildQueryEditorInlineCompletionMessages({
         aiContext: inlineAiContext,
         editorSnapshot,
@@ -678,8 +682,9 @@ export const requestQueryEditorTextToSql = async ({
         return { sql: '', readiness };
     }
 
+    const versionedContext = await ensureQueryEditorAiContextServerVersion(aiContext);
     const messages = buildQueryEditorTextToSqlMessages({
-        aiContext,
+        aiContext: versionedContext,
         editorSnapshot,
         instruction,
         userPromptSettings: readiness.userPromptSettings,
@@ -753,7 +758,8 @@ export const buildQueryEditorInlineCompletionMessages = ({
                 'Return only the exact SQL text that should be inserted at the cursor.',
                 'Do not use Markdown, code fences, explanations, comments about your answer, or natural language.',
                 'Continue the current SQL instead of repeating text that already exists before the cursor.',
-                'Respect the selected database connection, host, database, dialect, and schema hints.',
+                'Respect the selected database connection, host, database, dialect, reported database_version, and schema hints.',
+                'Use only SQL syntax and functions supported by that database version. If database_version is unknown, use a conservative baseline for the dialect.',
                 'Use only tables, columns, schemas, and databases present in the schema hints or already present in the editor snapshot.',
                 'If schema hints are insufficient, generate only minimal SQL syntax and do not invent object names.',
                 'When inline_completion_intent is table_name, use only tables from the selected database context.',
@@ -798,7 +804,8 @@ export const buildQueryEditorTextToSqlMessages = ({
             'You are GoNavi Text-to-SQL.',
             'Generate SQL for the SQL editor from the user request.',
             'Return only SQL. Do not use Markdown, code fences, or explanations.',
-            'Respect the database dialect, current database, schema hints, and existing editor context.',
+            'Respect the database dialect, reported database_version, current database, schema hints, and existing editor context.',
+            'Use only SQL syntax and functions supported by that database version. If database_version is unknown, use a conservative baseline for the dialect.',
             'Prefer read-only SQL unless the user explicitly asks for data or schema changes.',
         ].join('\n'),
     },
@@ -966,6 +973,8 @@ export const buildQueryEditorAiContextBlock = (context: QueryEditorAiContext): s
         .filter(Boolean)
         .slice(0, 24)
         .join(', ');
+    const sqlDialect = String(context.sqlDialect || '').trim();
+    const databaseVersion = String(context.databaseVersion || '').trim();
     const referencedTables = (context.inlineReferencedTables || [])
         .map((table) => {
             const label = `${table.dbName ? `${table.dbName}.` : ''}${table.tableName}`;
@@ -977,9 +986,11 @@ export const buildQueryEditorAiContextBlock = (context: QueryEditorAiContext): s
     return [
         'Database context:',
         `- source_type: ${sourceType}`,
+        sqlDialect ? `- sql_dialect: ${sqlDialect}` : '',
         `- connection: ${connectionName}`,
         hostLabel ? `- host: ${hostLabel}` : '',
         `- current_database: ${currentDb}`,
+        databaseVersion ? `- database_version: ${databaseVersion}` : '- database_version: unknown',
         visibleDbs ? `- visible_databases: ${visibleDbs}` : '',
         context.inlineSchemaScope ? `- schema_scope: ${context.inlineSchemaScope}` : '',
         referencedTables ? `- current_statement_tables: ${referencedTables}` : '',

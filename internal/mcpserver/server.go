@@ -37,6 +37,11 @@ func NewServerWithOptions(backend Backend, options ServerOptions) *mcp.Server {
 	}, service.GetConnections)
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_server_version",
+		Description: "根据 connectionId 读取当前数据库的真实服务端版本。生成 SQL 前必须先看版本，避免对低版本库使用高版本语法。",
+	}, service.GetServerVersion)
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_databases",
 		Description: "根据 connectionId 获取数据库/Schema 列表。",
 	}, service.GetDatabases)

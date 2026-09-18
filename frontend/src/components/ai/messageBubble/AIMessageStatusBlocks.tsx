@@ -49,6 +49,7 @@ const TOOL_ACTION_LABEL_KEYS: Record<string, string> = {
   get_connections: 'ai_chat.message.tool_call.get_connections',
   get_databases: 'ai_chat.message.tool_call.get_databases',
   get_objects: 'ai_chat.message.tool_call.get_objects',
+  get_server_version: 'ai_chat.message.tool_call.get_server_version',
   get_tables: 'ai_chat.message.tool_call.get_tables',
   get_views: 'ai_chat.message.tool_call.get_views',
   get_all_columns: 'ai_chat.message.tool_call.get_all_columns',

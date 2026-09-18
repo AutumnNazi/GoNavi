@@ -4,6 +4,7 @@ package aicontext
 type DatabaseContext struct {
 	DatabaseType string         `json:"databaseType"` // mysql, postgres 等
 	DatabaseName string         `json:"databaseName"`
+	Version      string         `json:"version,omitempty"`
 	Tables       []TableContext `json:"tables"`
 }
 

@@ -106,7 +106,7 @@ describe('describeBuiltinToolParameters', () => {
     const [flow] = localizeBuiltinToolFlows(t);
 
     expect(flow.title).toBe('Locate tables and fields');
-    expect(flow.steps).toBe('get_connections -> get_databases -> get_tables -> get_columns');
+    expect(flow.steps).toBe('get_connections -> get_server_version -> get_databases -> get_tables -> get_columns');
     expect(flow.description).toContain('writing SQL');
   });
 

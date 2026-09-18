@@ -40,6 +40,7 @@ describe('AIBuiltinToolsCatalog', () => {
 
     expect(markup).toContain('字段反查表');
     expect(markup).toContain('get_all_columns');
+    expect(markup).toContain('get_server_version');
     expect(markup).toContain('结构深挖');
     expect(markup).toContain('get_indexes');
     expect(markup).toContain('get_foreign_keys');
@@ -141,7 +142,7 @@ describe('AIBuiltinToolsCatalog', () => {
     expect(markup).toContain('参数提示');
     expect(markup).toContain('搜索工具、流程或参数');
     expect(markup).toContain('45/45');
-    expect(markup).toContain('53/53');
+    expect(markup).toContain('54/54');
     expect(markup).toContain('类型：string');
     expect(markup).toContain('默认：160');
     expect(markup).toContain('示例：');

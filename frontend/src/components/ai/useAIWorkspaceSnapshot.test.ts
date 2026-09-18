@@ -62,6 +62,44 @@ describe('buildDesktopWorkspaceSnapshot', () => {
 
     expect(snapshot.shortcuts).toEqual({});
   });
+
+  it('stuffs the live database version into the workspace active context', async () => {
+    const {
+      ensureDatabaseServerVersion,
+      resetDatabaseServerVersionCache,
+      setDatabaseServerVersionQuery,
+    } = await import('../queryEditor/queryEditorServerVersion');
+    resetDatabaseServerVersionCache();
+    setDatabaseServerVersionQuery(async () => ({
+      success: true,
+      message: 'PostgreSQL 12.1 (KingbaseES V8 R6)',
+    }));
+    await ensureDatabaseServerVersion({
+      id: 'kb-1',
+      config: { type: 'kingbase', host: '127.0.0.1' },
+    });
+
+    const snapshot = buildDesktopWorkspaceSnapshot({
+      tabs: [],
+      activeTabId: null,
+      activeContext: { connectionId: 'kb-1', dbName: 'test' },
+      aiContexts: {},
+      savedQueries: [],
+      sqlSnippets: [],
+      externalSQLDirectories: [],
+      sqlLogs: [],
+      shortcutOptions: {},
+    }, 3, 'desktop-main', 'instance-1');
+
+    expect(snapshot.activeContext).toEqual(expect.objectContaining({
+      connectionId: 'kb-1',
+      dbName: 'test',
+      databaseVersion: 'PostgreSQL 12.1 (KingbaseES V8 R6)',
+      sqlDialectConstraint: expect.stringContaining('PostgreSQL 12.1 (KingbaseES V8 R6)'),
+    }));
+    resetDatabaseServerVersionCache();
+    setDatabaseServerVersionQuery(null);
+  });
 });
 
 describe('useAIWorkspaceSnapshot lease renewal', () => {

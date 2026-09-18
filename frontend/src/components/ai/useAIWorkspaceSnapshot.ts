@@ -11,6 +11,11 @@ import {
   type WorkspaceSnapshotRequest,
 } from './aiRunHarnessClient';
 import {
+  buildSqlDialectConstraint,
+  ensureDatabaseServerVersionById,
+  peekDatabaseServerVersion,
+} from '../queryEditor/queryEditorServerVersion';
+import {
   DEFAULT_AI_RUN_RUNTIME_CONFIG,
   normalizeAIRunPolicySnapshot,
 } from './aiRunPolicy';
@@ -32,6 +37,36 @@ const sourceInstanceID = newInstanceID();
 let nextRevision = 0;
 
 export const getAIWorkspaceSourceInstanceID = (): string => sourceInstanceID;
+
+type SnapshotPublisher = (contentChanged: boolean) => Promise<void>;
+
+let snapshotPublisher: SnapshotPublisher | null = null;
+let snapshotPublisherGeneration = 0;
+
+const snapshotDatabaseVersion = (connectionId?: string | null) => {
+  const databaseVersion = peekDatabaseServerVersion(connectionId);
+  return {
+    databaseVersion: databaseVersion || undefined,
+    sqlDialectConstraint: buildSqlDialectConstraint(databaseVersion),
+  };
+};
+
+export const publishAIWorkspaceSnapshotNow = async (): Promise<void> => {
+  if (!snapshotPublisher) {
+    return;
+  }
+  await snapshotPublisher(true);
+};
+
+export const prepareAIWorkspaceSnapshotForChat = async (): Promise<void> => {
+  const connectionId = String(
+    (useStore.getState().activeContext as { connectionId?: string } | null)?.connectionId || '',
+  ).trim();
+  if (connectionId) {
+    await ensureDatabaseServerVersionById(connectionId);
+  }
+  await publishAIWorkspaceSnapshotNow();
+};
 
 const text = (value: unknown): string => String(value || '').trim();
 
@@ -89,7 +124,11 @@ export const buildDesktopWorkspaceSnapshot = (
     revision,
     capturedAt: new Date().toISOString(),
     activeContext: activeContext
-      ? { ...activeContext, attachedItems: attachedContext }
+      ? {
+          ...activeContext,
+          attachedItems: attachedContext,
+          ...snapshotDatabaseVersion(activeContext.connectionId),
+        }
       : { attachedItems: attachedContext },
     tabs: tabs.map(tabSnapshot),
     activeTabId: activeTabID || undefined,
@@ -184,9 +223,14 @@ export const useAIWorkspaceSnapshot = ({
   // backend already treats that as an UPDATE of lease_expires_at; minting a
   // new revision here would append the complete workspace every five seconds.
   const latestSnapshotRef = useRef<WorkspaceSnapshotRequest | null>(null);
+  const publishImplRef = useRef<(contentChanged: boolean) => Promise<void>>(async () => undefined);
 
-  const publish = (contentChanged: boolean) => {
+  const publish = async (contentChanged: boolean): Promise<void> => {
     if (!enabledRef.current) return;
+    const activeConnectionId = String(
+      (snapshotInputsRef.current as { activeContext?: { connectionId?: string } } | null)
+        ?.activeContext?.connectionId || '',
+    ).trim();
     const service = getAIRunHarnessService();
     // Wails bindings can become available after the first React mount. The
     // scheduled renewal will retry publication without requiring a state edit.
@@ -207,19 +251,43 @@ export const useAIWorkspaceSnapshot = ({
     }
     const snapshot = latestSnapshotRef.current;
     if (!snapshot) return;
-    void updateWorkspaceSnapshot(snapshot, service).catch((error) => {
+    try {
+      await updateWorkspaceSnapshot(snapshot, service);
+    } catch (error) {
       // Snapshot publication must never interrupt editor or chat input.
       console.warn('Failed to publish AI workspace snapshot', error);
-    });
+    }
+    if (!activeConnectionId) {
+      return;
+    }
+    const publishedVersion = String(
+      (latestSnapshotRef.current?.activeContext as { databaseVersion?: string } | undefined)?.databaseVersion || '',
+    );
+    const version = await ensureDatabaseServerVersionById(activeConnectionId);
+    if (!enabledRef.current || !version || version === publishedVersion) {
+      return;
+    }
+    await publishImplRef.current(true);
   };
-  publishRef.current = () => publish(false);
+  publishImplRef.current = publish;
+  publishRef.current = () => { void publish(false); };
+
+  useEffect(() => {
+    const generation = ++snapshotPublisherGeneration;
+    snapshotPublisher = (contentChanged) => publishImplRef.current(contentChanged);
+    return () => {
+      if (generation === snapshotPublisherGeneration) {
+        snapshotPublisher = null;
+      }
+    };
+  }, []);
 
   // Context edits publish an updated full snapshot immediately. This effect
   // deliberately owns no timer: the lease cadence below remains stable while
   // the editor, tabs, or SQL log change.
   useEffect(() => {
     if (!enabled || !dependencyKey) return;
-    publish(true);
+    void publish(true);
   }, [dependencyKey, enabled, sourceId]);
 
   useEffect(() => {

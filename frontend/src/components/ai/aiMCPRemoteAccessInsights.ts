@@ -184,7 +184,7 @@ export const buildMCPRemoteAccessSnapshot = (params: {
     translateMCPRemoteCopy(
       translate,
       'ai_chat.inspection.mcp_remote.next_action.inspect_connections',
-      'Call get_connections first to obtain connectionId, then read schemas; do not copy database passwords to the cloud Agent.',
+      'Call get_connections first to obtain connectionId, then call get_server_version and read schemas; do not copy database passwords to the cloud Agent.',
     ),
   ];
 

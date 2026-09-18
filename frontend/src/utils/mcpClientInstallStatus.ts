@@ -441,7 +441,7 @@ export const buildRemoteMCPClientGuide = (
     `- ${translateMCPClientCopy(
       translate,
       'ai_settings.mcp_server.remote_quick_start.guide.goal.tools_only',
-      'The cloud Agent only reads get_connections/get_databases/get_objects/get_tables/get_views/get_columns/get_table_ddl results through MCP tools.',
+      'The cloud Agent only reads get_connections/get_server_version/get_databases/get_objects/get_tables/get_views/get_columns/get_table_ddl results through MCP tools.',
     )}`,
     `- ${translateMCPClientCopy(
       translate,
@@ -490,7 +490,7 @@ export const buildRemoteMCPClientGuide = (
     translateMCPClientCopy(
       translate,
       'ai_settings.mcp_server.remote_quick_start.guide.step.inspect_schema',
-      '4. Call get_connections first to obtain connectionId, then call schema tools; do not write database host/user/password into the cloud Agent config.',
+      '4. Call get_connections first to obtain connectionId, then call get_server_version and schema tools; do not write database host/user/password into the cloud Agent config.',
     ),
     '',
     translateMCPClientCopy(

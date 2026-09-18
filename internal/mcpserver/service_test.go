@@ -29,6 +29,7 @@ type fakeBackend struct {
 	foreignKeysResult     connection.QueryResult
 	triggersResult        connection.QueryResult
 	ddlResult             connection.QueryResult
+	serverVersionResult   connection.QueryResult
 	queryResult           connection.QueryResult
 	inspection            appcore.SQLInspection
 	safetyLevel           ai.SQLPermissionLevel
@@ -153,6 +154,13 @@ func (f *fakeBackend) DBGetTriggers(context.Context, connection.ConnectionConfig
 
 func (f *fakeBackend) DBShowCreateTable(context.Context, connection.ConnectionConfig, string, string) connection.QueryResult {
 	return f.ddlResult
+}
+
+func (f *fakeBackend) DBGetServerVersion(context.Context, connection.ConnectionConfig) connection.QueryResult {
+	if f.serverVersionResult.Success || f.serverVersionResult.Message != "" || f.serverVersionResult.Data != nil {
+		return f.serverVersionResult
+	}
+	return connection.QueryResult{Success: true, Message: "", Data: []map[string]interface{}{}}
 }
 
 func (f *fakeBackend) ExecuteSQLFromMCP(ctx context.Context, config connection.ConnectionConfig, dbName string, query string, maxRowsPerResult int) connection.QueryResult {

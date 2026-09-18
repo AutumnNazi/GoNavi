@@ -1,5 +1,6 @@
 import type { SavedConnection, TabData } from '../../types';
 import { t as translateCatalog, type I18nParams } from '../../i18n';
+import { peekDatabaseServerVersion } from '../queryEditor/queryEditorServerVersion';
 
 type AIInspectionTranslator = (key: string, params?: I18nParams) => string;
 
@@ -99,6 +100,7 @@ export const buildCurrentConnectionSnapshot = (params: {
     readPreference: config.readPreference || '',
     mongoSrv: config.mongoSrv === true,
     redisDB: typeof config.redisDB === 'number' ? config.redisDB : null,
+    databaseVersion: peekDatabaseServerVersion(connectionId),
     readOnly: activeTab?.readOnly === true || config.jvm?.readOnly === true,
     activeTabId: activeTab?.id || '',
     activeTabType: activeTab?.type || '',

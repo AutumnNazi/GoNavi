@@ -617,6 +617,8 @@ describe('QueryEditorAiAssist', () => {
         const inlineJoined = inlineMessages.map((message) => message.content).join('\n');
         expect(inlineJoined).toContain('Always use explicit column names.');
         expect(inlineJoined).toContain('- host: 127.0.0.1:3306');
+        expect(inlineJoined).toContain('- database_version: unknown');
+        expect(inlineJoined).toContain('Use only SQL syntax and functions supported by that database version.');
         expect(inlineJoined).toContain('- current_statement_tables: shop.videos AS v');
         expect(inlineJoined).toContain('- inline_completion_intent: column_name');
         expect(inlineJoined).toContain('- inline_completion_qualifier: v');
@@ -625,7 +627,10 @@ describe('QueryEditorAiAssist', () => {
         expect(inlineJoined).toContain('<prefix_before_cursor>');
 
         const textToSqlMessages = buildQueryEditorTextToSqlMessages({
-            aiContext,
+            aiContext: {
+                ...aiContext,
+                databaseVersion: '5.7.44-log',
+            },
             editorSnapshot: {
                 prefix: '',
                 suffix: '',
@@ -635,7 +640,10 @@ describe('QueryEditorAiAssist', () => {
             instruction: 'total order amount by day',
             userPromptSettings,
         });
-        expect(textToSqlMessages.map((message) => message.content).join('\n')).toContain('total order amount by day');
+        const textToSqlJoined = textToSqlMessages.map((message) => message.content).join('\n');
+        expect(textToSqlJoined).toContain('total order amount by day');
+        expect(textToSqlJoined).toContain('- database_version: 5.7.44-log');
+        expect(textToSqlJoined).toContain('Use only SQL syntax and functions supported by that database version.');
     });
 
     it('focuses inline schema hints on referenced tables or the current database', () => {

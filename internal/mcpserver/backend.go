@@ -29,6 +29,7 @@ type Backend interface {
 	DBGetForeignKeys(context.Context, connection.ConnectionConfig, string, string) connection.QueryResult
 	DBGetTriggers(context.Context, connection.ConnectionConfig, string, string) connection.QueryResult
 	DBShowCreateTable(context.Context, connection.ConnectionConfig, string, string) connection.QueryResult
+	DBGetServerVersion(context.Context, connection.ConnectionConfig) connection.QueryResult
 	ExecuteSQLFromMCP(context.Context, connection.ConnectionConfig, string, string, int) connection.QueryResult
 	InspectSQL(dbType string, sql string) appcore.SQLInspection
 	GetSQLSafetyLevel() ai.SQLPermissionLevel
@@ -158,6 +159,10 @@ func (b *AppBackend) DBGetTriggers(ctx context.Context, config connection.Connec
 
 func (b *AppBackend) DBShowCreateTable(ctx context.Context, config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
 	return b.app.DBShowCreateTableContext(ctx, config, dbName, tableName)
+}
+
+func (b *AppBackend) DBGetServerVersion(ctx context.Context, config connection.ConnectionConfig) connection.QueryResult {
+	return b.app.DBGetServerVersionContext(ctx, config)
 }
 
 // ExecuteAuthorizedSQLFromMCP resolves the saved connection and checks its

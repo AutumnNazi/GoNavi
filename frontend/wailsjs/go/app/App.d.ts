@@ -111,6 +111,10 @@ export function DBGetObjects(arg1:connection.ConnectionConfig,arg2:string):Promi
 
 export function DBGetObjectsContext(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:string):Promise<connection.QueryResult>;
 
+export function DBGetServerVersion(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
+
+export function DBGetServerVersionContext(arg1:context.Context,arg2:connection.ConnectionConfig):Promise<connection.QueryResult>;
+
 export function DBGetTables(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
 export function DBGetTablesContext(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:string):Promise<connection.QueryResult>;

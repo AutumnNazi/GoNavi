@@ -103,6 +103,12 @@ func FormatDatabaseContextWithTextLookup(ctx *DatabaseContext, lookup DatabaseCo
 		"type": ctx.DatabaseType,
 	}))
 	b.WriteString("\n")
+	if version := strings.TrimSpace(ctx.Version); version != "" {
+		b.WriteString(databaseContextText(lookup, "ai_service.backend.database_context.database_version", map[string]any{
+			"version": version,
+		}))
+		b.WriteString("\n")
+	}
 	b.WriteString(databaseContextText(lookup, "ai_service.backend.database_context.database_name", map[string]any{
 		"name": ctx.DatabaseName,
 	}))
@@ -209,6 +215,8 @@ func defaultDatabaseContextText(key string, params map[string]any) string {
 		return "## Current database context"
 	case "ai_service.backend.database_context.database_type":
 		return fmt.Sprintf("Database type: %s", stringParam(params, "type"))
+	case "ai_service.backend.database_context.database_version":
+		return fmt.Sprintf("Database version: %s", stringParam(params, "version"))
 	case "ai_service.backend.database_context.database_name":
 		return fmt.Sprintf("Database name: %s", stringParam(params, "name"))
 	case "ai_service.backend.database_context.table_schema":
@@ -282,7 +290,8 @@ Strict output rules:
 2. Stay concise: avoid excessive preamble and get straight to the answer.
 3. Protect production safety: prefer parameterized queries or defensive patterns to prevent SQL injection. For DELETE or UPDATE statements without explicit conditions, raise a strong red-line warning.
 4. Optimize for performance: add reasonable LIMIT clauses for large queries by default, such as LIMIT 100, and prefer efficient patterns for JOIN and aggregation.
-5. Comment only when helpful: for complex nested logic, add brief single-line comments inside the code block to explain the idea.`
+5. Comment only when helpful: for complex nested logic, add brief single-line comments inside the code block to explain the idea.
+6. Honor the connected database server version from context. Use only syntax, functions, and features that version already supports; never emit newer-version SQL. If the version is unknown, stay on a conservative dialect baseline and mention version-sensitive differences.`
 }
 
 func buildSQLExplainPrompt() string {
