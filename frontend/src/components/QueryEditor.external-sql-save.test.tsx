@@ -4027,7 +4027,7 @@ describe('QueryEditor external SQL save', () => {
     });
   });
 
-  it('matches table names by prefix and substring in FROM completion', async () => {
+  it('matches table names by prefix, substring, and ordered characters in FROM completion', async () => {
     let renderer!: ReactTestRenderer;
     autoFetchState.visible = true;
     storeState.connections[0].config.database = '';
@@ -4071,10 +4071,10 @@ describe('QueryEditor external SQL save', () => {
     const labels = result.suggestions.map((item: any) => item.label);
 
     expect(labels).toContain('hrmresource');
-    // 子串匹配（#822/#939）：包含 hrmres 的表名候选保留，且排在精确/前缀命中之后
+    // 连续子串和有序字符匹配均保留，且排在精确/前缀命中之后。
     expect(labels).toContain('archive_hrmresource');
     expect(labels.indexOf('archive_hrmresource')).toBeGreaterThan(labels.indexOf('hrmresource'));
-    expect(labels).not.toContain('hrm_resource_export_template');
+    expect(labels).toContain('hrm_resource_export_template');
     expect(labels).not.toContain('hrmresult');
 
     editorState.value = 'SELECT * FROM users u, hrmres';
@@ -4404,7 +4404,8 @@ describe('QueryEditor external SQL save', () => {
       { lineNumber: 1, column: editorState.value.length + 1 },
       { triggerKind: 2 },
     );
-    expect(retriggeredResult.suggestions.map((item: any) => item.label)).toEqual(['hrmresource']);
+    expect(retriggeredResult.suggestions).toHaveLength(200);
+    expect(retriggeredResult.suggestions.map((item: any) => item.label)).toContain('hrmresource');
     expect(retriggeredResult.incomplete).toBe(true);
 
     await act(async () => {
