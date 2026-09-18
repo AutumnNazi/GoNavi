@@ -437,21 +437,6 @@ func (a *App) appText(key string, params map[string]any) string {
 	return a.localizer.T(key, params)
 }
 
-// InitializePersistedNativeBrandIcon applies the last selected desktop icon
-// before the first Wails window is shown. It is intentionally a package
-// function so it is not exposed through the reflective Wails bridge.
-func InitializePersistedNativeBrandIcon(a *App, ctx context.Context) error {
-	if a == nil {
-		return errors.New("application is unavailable")
-	}
-	configDir := strings.TrimSpace(a.configDir)
-	if configDir == "" {
-		configDir = resolveAppConfigDir()
-		a.configDir = configDir
-	}
-	return applyPersistedWindowsApplicationIcon(ctx, configDir)
-}
-
 // InitializeLifecycle attaches runtime context without exposing lifecycle internals to Wails bindings.
 func InitializeLifecycle(a *App, ctx context.Context) {
 	a.startup(ctx)
