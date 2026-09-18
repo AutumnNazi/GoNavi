@@ -111,6 +111,65 @@ describe('connectionReadOnly', () => {
     )).toEqual(["UPDATE users SET name = 'next'"]);
   });
 
+  it('does not treat literals, comments, or quoted identifiers as SELECT INTO', () => {
+    const config = { type: 'postgres' } as any;
+    const sql = [
+      "SELECT 'into' AS marker",
+      'SELECT 1 /* INTO should stay a comment */',
+      'SELECT [into] FROM records',
+    ].join(';');
+
+    expect(findPotentiallyMutatingConnectionStatements(config, sql)).toEqual([]);
+    expect(findPotentiallyMutatingConnectionStatements(
+      config,
+      'SELECT value INTO archive FROM records',
+    )).toEqual(['SELECT value INTO archive FROM records']);
+  });
+
+  it('does not treat text in a CTE literal or comment as a mutating keyword', () => {
+    const config = { type: 'postgres' } as any;
+
+    expect(findPotentiallyMutatingConnectionStatements(
+      config,
+      "WITH probe AS (SELECT 'update' AS operation /* delete */) SELECT * FROM probe",
+    )).toEqual([]);
+    expect(findPotentiallyMutatingConnectionStatements(
+      config,
+      'WITH changed AS (UPDATE accounts SET active = true RETURNING *) SELECT * FROM changed',
+    )).toEqual([
+      'WITH changed AS (UPDATE accounts SET active = true RETURNING *) SELECT * FROM changed',
+    ]);
+    expect(findPotentiallyMutatingConnectionStatements(
+      config,
+      'WITH source AS (SELECT id FROM accounts) SELECT id INTO archived_accounts FROM source',
+    )).toEqual([
+      'WITH source AS (SELECT id FROM accounts) SELECT id INTO archived_accounts FROM source',
+    ]);
+  });
+
+  it('does not treat SQL Server REPLACE functions in a read-only CTE as writes', () => {
+    const config = { type: 'sqlserver' } as any;
+    const sql = `WITH OracleData_CTE AS (
+      SELECT
+        T.c.value('c[1]', 'INT') AS ID,
+        T.c.value('c[2]', 'DATE') AS OrderDate,
+        T.c.value('c[3]', 'DECIMAL(18,2)') AS Amount,
+        T.c.value('c[4]', 'NVARCHAR(2)') AS rn
+      FROM (
+        SELECT CAST(
+          '<root><r><c>' +
+          REPLACE(REPLACE('101|2026-01-01|500|1', '||', '</c></r><r><c>'), '|', '</c><c>') +
+          '</c></r></root>' AS XML
+        ) AS XmlData
+      ) x
+      CROSS APPLY x.XmlData.nodes('/root/r') AS T(c)
+    )
+    SELECT O.ID, O.OrderDate, O.Amount, O.rn
+    FROM OracleData_CTE O`;
+
+    expect(findPotentiallyMutatingConnectionStatements(config, sql)).toEqual([]);
+  });
+
   it('uses the connection dialect when filtering comment-only statements', () => {
     expect(findConnectionMutatingStatements({
       type: 'postgres',
