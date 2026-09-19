@@ -84,12 +84,16 @@ export const resolveEffectiveActiveResultKey = (
     resultSets: Pick<QueryEditorResultSet, 'key'>[],
     activeResultKey: string,
     showSqlLogTab: boolean,
+    showParamsTab = false,
 ): string => {
     if (resultSets.some((result) => result.key === activeResultKey)) {
         return activeResultKey;
     }
     if (showSqlLogTab && activeResultKey === QUERY_EDITOR_SQL_LOG_TAB_KEY) {
         return QUERY_EDITOR_SQL_LOG_TAB_KEY;
+    }
+    if (showParamsTab && activeResultKey === QUERY_EDITOR_PARAMS_PANEL_KEY) {
+        return QUERY_EDITOR_PARAMS_PANEL_KEY;
     }
     return resultSets[0]?.key || (showSqlLogTab ? QUERY_EDITOR_SQL_LOG_TAB_KEY : '');
 };
@@ -410,6 +414,7 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
         resultSets,
         activeResultKey,
         true,
+        Boolean(paramsPanel),
     );
 
     // The per-result content reads actions through a ref so its props stay
