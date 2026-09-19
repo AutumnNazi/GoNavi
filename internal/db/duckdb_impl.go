@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"GoNavi-Wails/internal/connection"
@@ -17,6 +18,12 @@ import (
 type DuckDB struct {
 	conn        *sql.DB
 	pingTimeout time.Duration
+
+	// 外部数据源附加状态（见 duckdb_attach.go）：attachMu 串行化附加/卸载，
+	// attachments 记录本驱动创建的附加关系用于同源替换判定，均随连接关闭消亡。
+	attachMu         *sync.Mutex
+	attachments      map[string]duckDBAttachmentSpec
+	loadedExtensions map[string]bool
 }
 
 func duckDBRuntimeError(key string, params map[string]any) error {
