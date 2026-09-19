@@ -38,7 +38,7 @@ const findButton = (renderer: ReactTestRenderer, testDataId: string) =>
 const clickInsert = async (renderer: ReactTestRenderer): Promise<void> => {
   const insertButton = renderer.root.find(
     (node) => node.props['data-duckdb-attach-insert'] === 'true',
-  ) as { props: { disabled: boolean; onClick: () => void } };
+  ) as unknown as { props: { disabled: boolean; onClick: () => void } };
   expect(insertButton.props.disabled).toBe(false);
   await act(async () => {
     insertButton.props.onClick();
@@ -61,10 +61,10 @@ describe('DuckDBAttachPickerModal', () => {
     });
 
     // 不支持类型禁用
-    expect((findButton(renderer!, 'conn-uuid-3') as { props: { disabled: boolean } }).props.disabled).toBe(true);
+    expect((findButton(renderer!, 'conn-uuid-3') as unknown as { props: { disabled: boolean } }).props.disabled).toBe(true);
     // 支持类型可选
     await act(async () => {
-      (findButton(renderer!, 'conn-uuid-1') as { props: { onClick: () => void } }).props.onClick();
+      (findButton(renderer!, 'conn-uuid-1') as unknown as { props: { onClick: () => void } }).props.onClick();
     });
 
     // 默认只读 + 别名自动派生（中文名 → saved_db_<ID 片段>）
@@ -88,7 +88,7 @@ describe('DuckDBAttachPickerModal', () => {
     });
 
     await act(async () => {
-      (findButton(renderer!, 'conn-uuid-2') as { props: { onClick: () => void } }).props.onClick();
+      (findButton(renderer!, 'conn-uuid-2') as unknown as { props: { onClick: () => void } }).props.onClick();
     });
     // 关闭只读开关
     const readonlySwitch = renderer!.root.findByProps({ 'data-testid': 'attach-readonly-switch' }) as unknown as {

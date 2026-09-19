@@ -4,6 +4,7 @@ import {
   buildDuckDBAttachStatementText,
   buildDuckDBDetachStatementText,
   escapeDuckDBAttachStringLiteral,
+  isDuckDBAttachableConnection,
   isDuckDBAttachableConnectionType,
   slugifyDuckDBAttachAlias,
 } from './duckdbAttachStatement';
@@ -29,7 +30,7 @@ describe('slugifyDuckDBAttachAlias', () => {
 
   it('falls back to saved_db plus id fragment for non-latin names', () => {
     expect(slugifyDuckDBAttachAlias('生产库-订单', 'a3f8c2e1-9d44-4b7a')).toBe('saved_db_a3f8c2e1');
-    expect(slugifyDuckDBAttachAlias('9库', '')).toBe('saved_db_');
+    expect(slugifyDuckDBAttachAlias('9库', '')).toBe('saved_db');
   });
 });
 
@@ -81,5 +82,14 @@ describe('buildDuckDBDetachStatementText', () => {
 
   it('rejects invalid alias', () => {
     expect(buildDuckDBDetachStatementText('bad alias')).toBe('');
+  });
+});
+
+describe('isDuckDBAttachableConnection', () => {
+  it('rejects oceanbase with oracle protocol while accepting mysql protocol', () => {
+    expect(isDuckDBAttachableConnection({ type: 'oceanbase', oceanBaseProtocol: 'oracle' })).toBe(false);
+    expect(isDuckDBAttachableConnection({ type: 'oceanbase', oceanBaseProtocol: 'mysql' })).toBe(true);
+    expect(isDuckDBAttachableConnection({ type: 'mysql' })).toBe(true);
+    expect(isDuckDBAttachableConnection(null)).toBe(false);
   });
 });

@@ -12,6 +12,19 @@ import (
 	"GoNavi-Wails/internal/logger"
 )
 
+// duckDBAttachParseError 携带 i18n 键的解析错误；展示文本由调用方经 appText 渲染，
+// 解析函数本身不产出用户可见文案（AGENTS.md §4.3）。
+type duckDBAttachParseError struct {
+	key    string
+	params map[string]any
+}
+
+func (e *duckDBAttachParseError) Error() string { return e.key }
+
+func newDuckDBAttachParseError(key string, params map[string]any) *duckDBAttachParseError {
+	return &duckDBAttachParseError{key: "db.backend.error.duckdb_attach." + key, params: params}
+}
+
 // DuckDB 保存连接附加指令：由本层拦截执行，绝不进入 DuckDB 解析器，
 // 用户 SQL 全程不出现账号、密码或 DSN（issue #1270）。
 type duckDBAttachDirectiveKind int
@@ -53,7 +66,7 @@ func parseDuckDBSavedConnectionDirective(statement string) (*duckDBAttachDirecti
 
 func parseDuckDBAttachDirectiveBody(body string) (*duckDBAttachDirective, bool, error) {
 	if body == "" {
-		return nil, true, errors.New("缺少连接引用")
+		return nil, true, newDuckDBAttachParseError("parse_missing_ref", nil)
 	}
 	ref, rest, err := consumeDuckDBAttachRef(body)
 	if err != nil {
@@ -70,7 +83,7 @@ func parseDuckDBAttachDirectiveBody(body string) (*duckDBAttachDirective, bool, 
 		aliasPart := strings.TrimSpace(rest[3:])
 		parts := strings.Fields(aliasPart)
 		if len(parts) == 0 || !duckDBAttachIdentifierPattern.MatchString(parts[0]) {
-			return nil, true, errors.New("AS 后需要合法别名（字母或下划线开头）")
+			return nil, true, newDuckDBAttachParseError("parse_alias_invalid", nil)
 		}
 		directive.alias = parts[0]
 		rest = strings.TrimSpace(strings.Join(parts[1:], " "))
@@ -86,18 +99,18 @@ func parseDuckDBAttachDirectiveBody(body string) (*duckDBAttachDirective, bool, 
 	case "READWRITE":
 		directive.readOnly = false
 	default:
-		return nil, true, fmt.Errorf("无法识别的子句 %q", rest)
+		return nil, true, newDuckDBAttachParseError("parse_clause_unknown", map[string]any{"clause": rest})
 	}
 	return directive, true, nil
 }
 
 func parseDuckDBDetachDirectiveBody(body string) (*duckDBAttachDirective, bool, error) {
 	if body == "" {
-		return nil, true, errors.New("缺少要卸载的别名")
+		return nil, true, newDuckDBAttachParseError("parse_detach_missing_alias", nil)
 	}
 	fields := strings.Fields(body)
 	if len(fields) != 1 || !duckDBAttachIdentifierPattern.MatchString(fields[0]) {
-		return nil, true, errors.New("卸载语句需要单个合法别名")
+		return nil, true, newDuckDBAttachParseError("parse_detach_alias_invalid", nil)
 	}
 	return &duckDBAttachDirective{kind: duckDBAttachDirectiveKindDetach, alias: fields[0]}, true, nil
 }
@@ -105,7 +118,7 @@ func parseDuckDBDetachDirectiveBody(body string) (*duckDBAttachDirective, bool, 
 // consumeDuckDBAttachRef 读取连接引用：单引号字符串（成对单引号转义）或无空格裸词。
 func consumeDuckDBAttachRef(body string) (string, string, error) {
 	if body == "" {
-		return "", "", errors.New("缺少连接引用")
+		return "", "", newDuckDBAttachParseError("parse_missing_ref", nil)
 	}
 	if body[0] == '\'' {
 		var builder strings.Builder
@@ -122,7 +135,7 @@ func consumeDuckDBAttachRef(body string) (string, string, error) {
 				builder.WriteByte(body[i])
 			}
 		}
-		return "", "", errors.New("连接引用的引号未闭合")
+		return "", "", newDuckDBAttachParseError("parse_unclosed_quote", nil)
 	}
 	end := 0
 	for end < len(body) && body[end] != ' ' && body[end] != '\t' {
@@ -130,7 +143,7 @@ func consumeDuckDBAttachRef(body string) (string, string, error) {
 	}
 	ref := body[:end]
 	if !duckDBAttachBarewordPattern.MatchString(ref) {
-		return "", "", errors.New("含空格的连接名称需要用单引号包裹")
+		return "", "", newDuckDBAttachParseError("parse_quoted_required", nil)
 	}
 	return ref, body[end:], nil
 }
@@ -304,7 +317,12 @@ func (a *App) applyDuckDBSavedConnectionDirectives(ctx context.Context, dbInst d
 		}
 		directive, isDirective, parseErr := parseDuckDBSavedConnectionDirective(statement)
 		if parseErr != nil {
-			return "", fmt.Errorf("%s", a.appText("db.backend.error.duckdb_attach.malformed", map[string]any{"detail": parseErr.Error()}))
+			var parseTyped *duckDBAttachParseError
+			detail := parseErr.Error()
+			if errors.As(parseErr, &parseTyped) {
+				detail = a.appText(parseTyped.key, parseTyped.params)
+			}
+			return "", fmt.Errorf("%s", a.appText("db.backend.error.duckdb_attach.malformed", map[string]any{"detail": detail}))
 		}
 		if !isDirective {
 			rewritten = append(rewritten, strings.TrimSuffix(strings.TrimSpace(statement), ";"))

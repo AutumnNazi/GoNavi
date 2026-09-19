@@ -318,6 +318,13 @@ func TestApplyDuckDBSavedConnectionDirectives(t *testing.T) {
 		if !strings.Contains(got, "SELECT '") || strings.Contains(got, "ATTACH SAVED CONNECTION") {
 			t.Fatalf("rewritten query = %q", got)
 		}
+		// 成功消息必须经过 i18n 渲染（含别名参数值），不允许出现原始键名
+		if strings.Contains(got, "db.backend.info.") {
+			t.Fatalf("unrendered i18n key in synthetic message: %q", got)
+		}
+		if !strings.Contains(got, "orders_db") {
+			t.Fatalf("message missing alias param: %q", got)
+		}
 		if len(fake.attached) != 1 || fake.attached[0].Alias != "orders_db" {
 			t.Fatalf("attached = %+v", fake.attached)
 		}

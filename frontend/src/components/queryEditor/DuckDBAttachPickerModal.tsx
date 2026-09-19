@@ -5,7 +5,7 @@ import { t as translate } from '../../i18n';
 import type { SavedConnection } from '../../types';
 import {
   buildDuckDBAttachStatementText,
-  isDuckDBAttachableConnectionType,
+  isDuckDBAttachableConnection,
   slugifyDuckDBAttachAlias,
 } from './duckdbAttachStatement';
 
@@ -51,7 +51,7 @@ const DuckDBAttachPickerModal: React.FC<DuckDBAttachPickerModalProps> = ({
     () => connections.find((item) => item.id === selectedId) || null,
     [connections, selectedId],
   );
-  const selectedAttachable = !!selected && isDuckDBAttachableConnectionType(selected.config?.type);
+  const selectedAttachable = !!selected && isDuckDBAttachableConnection(selected?.config);
 
   const statement = useMemo(() => {
     if (!selected || !selectedAttachable) {
@@ -136,7 +136,7 @@ const DuckDBAttachPickerModal: React.FC<DuckDBAttachPickerModalProps> = ({
             <Empty description={translate('query_editor.duckdb_attach.empty')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
           ) : (
             filtered.map((connection) => {
-              const attachable = isDuckDBAttachableConnectionType(connection.config?.type);
+              const attachable = isDuckDBAttachableConnection(connection.config);
               const isSelected = connection.id === selectedId;
               return (
                 <button

@@ -4,16 +4,14 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
-	"sync"
 )
 
-// ensureAttachState 惰性初始化附加状态（连接建立后首次附加/卸载时调用）。
+// ensureAttachState 惰性初始化附加映射；必须在 attachMu 持有后调用
+// （锁本身是值类型，零值即可用，避免惰性初始化自身的竞态）。
 func (d *DuckDB) ensureAttachState() {
-	if d.attachMu == nil {
-		d.attachMu = &sync.Mutex{}
-	}
 	if d.attachments == nil {
 		d.attachments = map[string]duckDBAttachmentSpec{}
 	}
@@ -34,9 +32,9 @@ func (d *DuckDB) AttachExternalDatabase(ctx context.Context, spec ExternalAttach
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	d.ensureAttachState()
 	d.attachMu.Lock()
 	defer d.attachMu.Unlock()
+	d.ensureAttachState()
 
 	desired := duckDBAttachmentSpec{
 		kind:     spec.Kind,
@@ -53,8 +51,9 @@ func (d *DuckDB) AttachExternalDatabase(ctx context.Context, spec ExternalAttach
 			// 别名被不同数据源占用：拒绝，防误绑；同源重跑走下面的替换语义
 			return duckDBRuntimeError("db.backend.error.duckdb_attach.alias_occupied", map[string]any{"alias": spec.Alias})
 		}
-		// 同源重复执行（保存文件重跑）：卸旧重建，绑定当前最新凭据
-		if err := d.detachLocked(ctx, spec.Alias); err != nil {
+		// 同源重复执行（保存文件重跑）：卸旧重建，绑定当前最新凭据；
+		// 附加关系已被原生 DETACH 移除时视为无需卸载，直接重建
+		if err := d.detachLocked(ctx, spec.Alias); err != nil && !errors.Is(err, ErrExternalAttachNotAttached) {
 			return err
 		}
 	}
@@ -73,9 +72,9 @@ func (d *DuckDB) DetachExternalDatabase(ctx context.Context, alias string) error
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	d.ensureAttachState()
 	d.attachMu.Lock()
 	defer d.attachMu.Unlock()
+	d.ensureAttachState()
 	return d.detachLocked(ctx, alias)
 }
 
@@ -208,7 +207,9 @@ func duckDBWrapAttachEngineError(err error, password string) error {
 	}
 	detail := err.Error()
 	if password != "" {
+		// 引擎错误可能回显 SQL 片段：裸密码与字面量转义形式都脱敏
 		detail = strings.ReplaceAll(detail, password, "***")
+		detail = strings.ReplaceAll(detail, quoteDuckDBStringLiteral(password), "***")
 	}
 	return duckDBRuntimeError("db.backend.error.duckdb_attach.engine_failed", map[string]any{"detail": detail})
 }

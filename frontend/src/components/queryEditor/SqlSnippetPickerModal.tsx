@@ -1,5 +1,7 @@
 import React from 'react';
-import { Button, Input, Modal } from 'antd';
+import { Button, Input } from 'antd';
+
+import Modal from '../common/ResizableDraggableModal';
 
 import { t as translate } from '../../i18n';
 import type { SqlSnippet } from '../../types';
@@ -30,7 +32,7 @@ const SqlSnippetPickerModal: React.FC<SqlSnippetPickerModalProps> = ({
 }) => (
       <Modal
         title={translate('query_editor.snippet_picker.title')}
-        open={isSqlSnippetPickerOpen}
+        open={open}
         centered
         mask={false}
         maskClosable={false}
@@ -39,7 +41,7 @@ const SqlSnippetPickerModal: React.FC<SqlSnippetPickerModalProps> = ({
         resizable
         minResizableWidth={460}
         minResizableHeight={320}
-        onCancel={handleCloseSqlSnippetPicker}
+        onCancel={onClose}
         footer={null}
         styles={{
           content: {

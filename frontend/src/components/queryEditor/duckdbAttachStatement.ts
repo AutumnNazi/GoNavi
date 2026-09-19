@@ -1,3 +1,5 @@
+import type { ConnectionConfig } from '../../types';
+
 // DuckDB 保存连接附加语句构造（issue #1270）。
 // 语句最终由后端拦截执行（见 internal/app/duckdb_saved_attach.go），
 // 这里只负责生成用户可读的语句文本；与后端类型映射保持一致。
@@ -19,6 +21,20 @@ export const DUCKDB_ATTACHABLE_CONNECTION_TYPES: ReadonlySet<string> = new Set([
 
 export const isDuckDBAttachableConnectionType = (type: string): boolean =>
   DUCKDB_ATTACHABLE_CONNECTION_TYPES.has(String(type || '').trim().toLowerCase());
+
+/** OceanBase 的 oracle 兼容协议后端会拒绝附加，选择器需同步禁用（与 buildDuckDBAttachSpec 对齐）。 */
+export const isDuckDBAttachableConnection = (
+  config: Pick<ConnectionConfig, 'type' | 'oceanBaseProtocol'> | null | undefined,
+): boolean => {
+  if (!config) {
+    return false;
+  }
+  if (String(config.type || '').trim().toLowerCase() === 'oceanbase'
+    && String(config.oceanBaseProtocol || '').trim().toLowerCase() === 'oracle') {
+    return false;
+  }
+  return isDuckDBAttachableConnectionType(config.type);
+};
 
 const DUCKDB_ATTACH_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -49,8 +65,10 @@ export const slugifyDuckDBAttachAlias = (name: string, connectionId: string): st
   const sanitizedID = String(connectionId || '')
     .split('')
     .map((char) => (/[A-Za-z0-9]/.test(char) ? char : '_'))
-    .join('');
-  return `saved_db_${sanitizedID.slice(0, 8)}`;
+    .join('')
+    .replace(/_+$/, '')
+    .slice(0, 8);
+  return sanitizedID ? `saved_db_${sanitizedID}` : 'saved_db';
 };
 
 /** 单引号字面量：成对单引号转义。 */

@@ -1588,6 +1588,8 @@ func (a *App) dbQueryMulti(
 	resolvedDBType := resolveDDLDBType(runConfig)
 	trackSQLAudit := auditOptions.auditAll || (auditOptions.auditWrites && containsSQLAuditWrite(resolvedDBType, query))
 	auditSource := normalizeSQLAuditSource(auditOptions.source)
+	// 审计与历史记录使用用户原始提交文本；附加指令改写只影响实际下发引擎的语句
+	originalQuery := query
 	auditStartedAt := time.Now()
 	var statementAuditEvents []sqlaudit.Event
 	if trackSQLAudit {
@@ -1597,7 +1599,7 @@ func (a *App) dbQueryMulti(
 				Database:   dbName,
 				DBType:     resolvedDBType,
 				QueryID:    queryID,
-				SQL:        query,
+				SQL:        originalQuery,
 				Source:     auditSource,
 				CommitMode: result.CommitMode,
 				Duration:   time.Since(auditStartedAt),
@@ -1620,7 +1622,7 @@ func (a *App) dbQueryMulti(
 			return
 		}
 		durationMs := queryExecutionDuration.Milliseconds()
-		a.recordQueryExecution(config, dbName, resolvedDBType, query, durationMs, 0, queryResultRowsReturned(result))
+		a.recordQueryExecution(config, dbName, resolvedDBType, originalQuery, durationMs, 0, queryResultRowsReturned(result))
 	}()
 	measureQueryExecution := func(run func()) {
 		startedAt := time.Now()
