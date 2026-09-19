@@ -294,7 +294,7 @@ func upsertDeepSeekHarnessMCPServerConfig(configPath string, command string, arg
 	if err != nil {
 		return externalMCPClientError(text, "ai.service.mcp_client.external.config_serialize_failed", "DeepSeek Harness", map[string]any{"detail": err.Error()})
 	}
-	if err := os.WriteFile(configPath, data, 0o644); err != nil {
+	if err := writeMCPConfigFileAtomically(configPath, data); err != nil {
 		return externalMCPClientError(text, "ai.service.mcp_client.external.config_write_failed", "DeepSeek Harness", map[string]any{"detail": err.Error()})
 	}
 	return nil

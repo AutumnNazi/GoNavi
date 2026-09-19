@@ -4,7 +4,7 @@ package aiservice
 
 import "golang.org/x/sys/windows"
 
-func replaceOpenCodeConfigFile(source string, target string) error {
+func replaceMCPConfigFile(source string, target string) error {
 	sourcePath, err := windows.UTF16PtrFromString(source)
 	if err != nil {
 		return err
