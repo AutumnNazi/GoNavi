@@ -10800,5 +10800,7 @@
   "query_editor.params.type.null": "NULL",
   "query_editor.params.type.list": "List",
   "query_editor.params.null_unset": "Unset NULL",
-  "query_editor.params.list_hint": "Elements bind as text; for integer columns prefer explicit typed parameters"
+  "query_editor.params.list_hint": "Elements bind as text; for integer columns prefer explicit typed parameters",
+  "query_editor.params.unsupported_session": "The current transaction session does not support parameter binding. Run outside the transaction or upgrade the driver agent",
+  "query_editor.params.no_executable_statement": "No executable SQL statements"
 }

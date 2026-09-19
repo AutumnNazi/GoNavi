@@ -1622,7 +1622,7 @@ func sanitizeSavedQuery(input connection.SavedQuery, index int, allowGeneratedID
 		FingerprintVersion:    strings.TrimSpace(input.FingerprintVersion),
 		BindingStatus:         strings.TrimSpace(input.BindingStatus),
 		OriginalConnectionID:  strings.TrimSpace(input.OriginalConnectionID),
-		Parameters:            input.Parameters,
+		Parameters:            normalizeSavedQueryParameters(input.Parameters),
 	}, true
 }
 

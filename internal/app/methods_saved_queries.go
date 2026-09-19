@@ -37,7 +37,6 @@ func (a *App) SaveQuery(input connection.SavedQuery) (connection.SavedQuery, err
 	if strings.TrimSpace(input.Name) == "" {
 		input.Name = a.localizedSavedQueryDefaultName(0)
 	}
-	input.Parameters = normalizeSavedQueryParameters(input.Parameters)
 	currentConnections, err := a.savedConnectionRepository().List()
 	if err == nil {
 		input = resolveSavedQueryBindings([]connection.SavedQuery{input}, currentConnections, nil)[0]

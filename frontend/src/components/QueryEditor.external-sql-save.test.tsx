@@ -681,19 +681,6 @@ vi.mock('antd', () => {
     <textarea value={value} onChange={onChange} placeholder={placeholder} disabled={disabled} />
   );
 
-  const Spin: any = () => <div className="mock-spin" />;
-  const Checkbox: any = ({ children, checked, onChange }: any) => (
-    <label>
-      <input type="checkbox" checked={!!checked} onChange={(event) => onChange?.({ target: { checked: event.target.checked } })} />
-      {children}
-    </label>
-  );
-  const DatePicker: any = ({ value, onChange }: any) => (
-    <input data-mock="datepicker" value={value || ''} onChange={() => {}} />
-  );
-  const InputNumber: any = ({ value, onChange }: any) => (
-    <input data-mock="inputnumber" value={value ?? ''} onChange={(event) => onChange?.(event.target.value === '' ? null : Number(event.target.value))} />
-  );
   const Modal = ({ children, open, onOk, okText = '确认', afterOpenChange }: any) => {
     React.useEffect(() => {
       if (open) {
@@ -9613,7 +9600,9 @@ describe('QueryEditor external SQL save', () => {
         windowListeners[type] ||= [];
         windowListeners[type].push(listener);
       }),
-      removeEventListener: vi.fn(),
+      removeEventListener: vi.fn((type: string, listener: (event?: any) => void) => {
+        windowListeners[type] = (windowListeners[type] || []).filter((item) => item !== listener);
+      }),
       dispatchEvent: vi.fn(),
       setTimeout,
       clearTimeout,

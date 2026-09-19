@@ -67,9 +67,14 @@ export function useQueryEditorParams(options: UseQueryEditorParamsOptions): Quer
     savedParamsRef.current = savedParams;
   }, [savedParams]);
 
-  // 保存查询切换时用其默认值重建会话输入。
+  // 保存查询切换时用其默认值重建会话输入；空映射时跳过 setState，
+  // 避免挂载期一次无意义渲染（曾放大监听器重注册类回归）。
   useEffect(() => {
-    setValues(initialValuesFromSavedParams(savedParams));
+    const initial = initialValuesFromSavedParams(savedParams);
+    if (Object.keys(initial).length === 0) {
+      return;
+    }
+    setValues(initial);
   }, [resetToken, savedParams]);
 
   useEffect(() => {
@@ -82,6 +87,9 @@ export function useQueryEditorParams(options: UseQueryEditorParamsOptions): Quer
     // 注意：不要在 effect 体内同步 setState（如 setAnalyzing）——挂载期立即
     // 触发额外渲染会让依赖不稳定的监听器 effect 在测试桩下重复注册。
     const timer = setTimeout(async () => {
+      // analyzeNow/applyAnalysis 已推进 sequence 时本轮回调已过期：
+      // 不能再置 analyzing（否则其 finally 因 sequence 失配不复位，永久卡 true）。
+      if (sequenceRef.current !== sequence) return;
       setAnalyzing(true);
       try {
         const rawConfig = (config || {}) as unknown as connection.ConnectionConfig;

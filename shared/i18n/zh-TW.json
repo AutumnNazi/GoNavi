@@ -10800,5 +10800,7 @@
   "query_editor.params.type.null": "NULL",
   "query_editor.params.type.list": "清單",
   "query_editor.params.null_unset": "取消 NULL",
-  "query_editor.params.list_hint": "元素按文字綁定，整數列建議用數值參數逐條匹配"
+  "query_editor.params.list_hint": "元素按文字綁定，整數列建議用數值參數逐條匹配",
+  "query_editor.params.unsupported_session": "目前交易會話不支援參數綁定，請改用非交易方式執行或升級驅動代理",
+  "query_editor.params.no_executable_statement": "沒有可執行的 SQL 語句"
 }

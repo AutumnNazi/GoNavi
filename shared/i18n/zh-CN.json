@@ -10800,5 +10800,7 @@
   "query_editor.params.type.null": "NULL",
   "query_editor.params.type.list": "列表",
   "query_editor.params.null_unset": "取消 NULL",
-  "query_editor.params.list_hint": "元素按文本绑定，整数列建议用数值参数逐条匹配"
+  "query_editor.params.list_hint": "元素按文本绑定，整数列建议用数值参数逐条匹配",
+  "query_editor.params.unsupported_session": "当前事务会话不支持参数绑定，请改用非事务方式执行或升级驱动代理",
+  "query_editor.params.no_executable_statement": "没有可执行的 SQL 语句"
 }

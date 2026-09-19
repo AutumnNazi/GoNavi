@@ -10800,5 +10800,7 @@
   "query_editor.params.type.null": "NULL",
   "query_editor.params.type.list": "Список",
   "query_editor.params.null_unset": "Отменить NULL",
-  "query_editor.params.list_hint": "Элементы привязываются как текст; для целочисленных колонок используйте типизированные параметры"
+  "query_editor.params.list_hint": "Элементы привязываются как текст; для целочисленных колонок используйте типизированные параметры",
+  "query_editor.params.unsupported_session": "Текущая сессия транзакции не поддерживает привязку параметров. Выполните вне транзакции или обновите драйвер-агент",
+  "query_editor.params.no_executable_statement": "Нет исполняемых SQL-инструкций"
 }

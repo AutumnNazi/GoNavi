@@ -262,7 +262,7 @@ func (a *App) dbQueryMultiTransactionalWithBindings(config connection.Connection
 
 	statements, executionOptions, bindErr := prepareManagedTransactionStatements(transactionDBType, query, sessionExecer, bindings)
 	if bindErr != nil {
-		return connection.QueryResult{Success: false, Message: bindErr.Error(), QueryID: queryID}
+		return connection.QueryResult{Success: false, Message: a.translateParameterBindingError(bindErr), QueryID: queryID}
 	}
 	queryStartedAt := time.Now()
 	statementAuditEvents := make([]sqlaudit.Event, 0, len(statements))

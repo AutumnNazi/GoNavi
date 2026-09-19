@@ -4402,7 +4402,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       void message.error(translate('connection_modal.message.copy_failed'));
   };
 
-  const handleDuplicateCurrentLine = () => {
+  const handleDuplicateCurrentLine = useCallback(() => {
       const editor = editorRef.current;
       const monaco = monacoRef.current;
       const model = editor?.getModel?.();
@@ -4445,7 +4445,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       if (typeof nextValue === 'string') {
           applyQueryState(nextValue);
       }
-  };
+
+    }, [applyQueryState]);
 
   const buildQueryEditorAiContextMenuActions = useCallback(() => ([
       {
@@ -12344,6 +12345,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   }): Promise<boolean> => {
       const sql = getCurrentQuery();
       lastLocalQueryRef.current = sql;
+      // 重存已存查询时保留其已持久化的参数声明（当前 UI 无默认值编辑入口，
+      // payload 不含 parameters——缺省即不覆盖，防止保存动作清空声明）。
+      const existingParameters = savedQueries.find((item) => item.id === payload.id)?.parameters;
       const saved = {
           id: payload.id,
           name: payload.name,
@@ -12351,6 +12355,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           connectionId: currentConnectionId,
           dbName: currentDb ?? tab.dbName ?? '',
           createdAt: payload.createdAt ?? Date.now(),
+          parameters: existingParameters,
       };
       const persisted = await runQueuedSaveOperation(() => saveQuery(saved));
       if (!queryEditorMountedRef.current) {
@@ -13003,10 +13008,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const idx = currentResultSets.findIndex(result => result.key === key);
       if (idx < 0) return;
 
+      const showParamsTab = Boolean(paramsState.hasParams || paramsState.analysis);
       const currentActiveKey = resolveEffectiveActiveResultKey(
           currentResultSets,
           activeResultKeyRef.current,
           true,
+          showParamsTab,
       );
       const nextResultSets = currentResultSets.filter(result => result.key !== key);
       const nextActiveKey = currentActiveKey && currentActiveKey !== key
@@ -13036,6 +13043,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               resultSetsRef.current,
               activeResultKeyRef.current,
               true,
+              Boolean(paramsState.hasParams || paramsState.analysis),
           );
           if (!effectiveActiveKey) return;
 

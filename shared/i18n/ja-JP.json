@@ -10800,5 +10800,7 @@
   "query_editor.params.type.null": "NULL",
   "query_editor.params.type.list": "リスト",
   "query_editor.params.null_unset": "NULL を解除",
-  "query_editor.params.list_hint": "要素はテキストとしてバインドされます。整数列では型付きパラメータを推奨"
+  "query_editor.params.list_hint": "要素はテキストとしてバインドされます。整数列では型付きパラメータを推奨",
+  "query_editor.params.unsupported_session": "現在のトランザクションセッションはパラメータバインドに対応していません。トランザクション外で実行するかドライバエージェントを更新してください",
+  "query_editor.params.no_executable_statement": "実行可能な SQL 文がありません"
 }

@@ -35,7 +35,7 @@ export function QueryEditorParamsPanel(props: QueryEditorParamsPanelProps) {
       </div>
     );
   }
-  if (analysis.statements.length === 0) {
+  if ((analysis.parameterNames || []).length === 0) {
     return (
       <div className="gn-query-params-panel">
         <Empty

@@ -10800,5 +10800,7 @@
   "query_editor.params.type.null": "NULL",
   "query_editor.params.type.list": "Liste",
   "query_editor.params.null_unset": "NULL aufheben",
-  "query_editor.params.list_hint": "Elemente werden als Text gebunden; für Integer-Spalten sind typisierte Parameter zu empfehlen"
+  "query_editor.params.list_hint": "Elemente werden als Text gebunden; für Integer-Spalten sind typisierte Parameter zu empfehlen",
+  "query_editor.params.unsupported_session": "Die aktuelle Transaktionssitzung unterstützt keine Parameterbindung. Ohne Transaktion ausführen oder Treiber-Agent aktualisieren",
+  "query_editor.params.no_executable_statement": "Keine ausführbaren SQL-Anweisungen"
 }

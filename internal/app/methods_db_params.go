@@ -145,7 +145,7 @@ func (a *App) dbQueryMultiWithParams(
 	}
 	stmts, err := bindParameterizedStatements(splitSQLStatementsForDialect(resolvedDBType, query), resolvedDBType, values)
 	if err != nil {
-		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
+		return connection.QueryResult{Success: false, Message: a.translateParameterBindingError(err), QueryID: queryID}
 	}
 
 	// 审计与慢查询历史只记录含 :name 的原文；重写文本与参数值不落盘。
@@ -210,6 +210,21 @@ func (a *App) dbQueryMultiWithParams(
 		Data:    resultSets,
 		QueryID: queryID,
 	}, executedCount, 0, sqlaudit.BoundaryModeImplicit, false)
+}
+
+// translateParameterBindingError 把参数绑定链路的哨兵错误翻译为 i18n 文案；
+// 其余错误（含 sqlparam 的缺值/类型错误）保持原文进 detail，与既有模式一致。
+func (a *App) translateParameterBindingError(err error) string {
+	switch {
+	case errors.Is(err, errParameterBindingSessionUnsupported):
+		return a.appText("query_editor.params.unsupported_session", nil)
+	case errors.Is(err, errParameterBindingUnsupported):
+		return a.appText("query_editor.params.unsupported_driver", nil)
+	case errors.Is(err, errNoExecutableStatement):
+		return a.appText("query_editor.params.no_executable_statement", nil)
+	default:
+		return err.Error()
+	}
 }
 
 // checkParameterBindingSupport 组合静态能力声明与运行时契约断言；目标实例
@@ -403,7 +418,7 @@ func bindParameterizedStatements(statementTexts []string, dbType string, values 
 		stmts = append(stmts, parameterizedStatement{text: trimmed, sql: bound.SQL, args: bound.Args})
 	}
 	if len(stmts) == 0 {
-		return nil, errors.New("没有可执行的 SQL 语句")
+		return nil, errNoExecutableStatement
 	}
 	return stmts, nil
 }
@@ -456,6 +471,14 @@ func statementArgsFromBound(stmts []parameterizedStatement) [][]any {
 	}
 	return args
 }
+
+// 参数绑定失败的哨兵错误：绑定层用 errors.Is 判定后翻译为 i18n 文案。
+// sqlparam 的缺值/类型错误与既有 multi_statement 模式一致，原文进 detail。
+var (
+	errParameterBindingUnsupported        = errors.New("当前驱动不支持参数绑定")
+	errParameterBindingSessionUnsupported = errors.New("当前事务会话不支持参数绑定")
+	errNoExecutableStatement              = errors.New("没有可执行的 SQL 语句")
+)
 
 // ensureDriverSupportsParameterBinding 是执行时的兜底校验：静态能力声明之外的
 // 运行时差异（自定义驱动、agent 协议版本）统一由参数化契约断言拦截。
@@ -513,12 +536,12 @@ func (a *App) executeParameterizedStatements(
 					if target, ok := session.(db.StatementQueryArgsExecer); ok {
 						data, columns, queryErr = target.QueryContextWithArgs(ctx, stmt.sql, stmt.args)
 					} else {
-						queryErr = errors.New("当前事务会话不支持参数绑定")
+						queryErr = errParameterBindingSessionUnsupported
 					}
 				} else if target, ok := dbInst.(db.QueryArgsContexter); ok {
 					data, columns, queryErr = target.QueryContextWithArgs(ctx, stmt.sql, stmt.args)
 				} else {
-					queryErr = errors.New("当前驱动不支持参数绑定")
+					queryErr = errParameterBindingUnsupported
 				}
 				if queryErr == nil {
 					resultSets = append(resultSets, connection.ResultSetData{Rows: data, Columns: columns})
@@ -534,12 +557,12 @@ func (a *App) executeParameterizedStatements(
 				if target, ok := session.(db.StatementExecArgsExecer); ok {
 					affected, execErr = target.ExecContextWithArgs(ctx, stmt.sql, stmt.args)
 				} else {
-					execErr = errors.New("当前事务会话不支持参数绑定")
+					execErr = errParameterBindingSessionUnsupported
 				}
 			} else if target, ok := dbInst.(db.ExecArgsContexter); ok {
 				affected, execErr = target.ExecContextWithArgs(ctx, stmt.sql, stmt.args)
 			} else {
-				execErr = errors.New("当前驱动不支持参数绑定")
+				execErr = errParameterBindingUnsupported
 			}
 			if execErr == nil {
 				resultSets = append(resultSets, connection.ResultSetData{
