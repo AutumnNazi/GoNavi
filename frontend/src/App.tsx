@@ -8937,8 +8937,8 @@ function App() {
                   {
                     key: 'request-diagnostics',
                     icon: <BugOutlined />,
-                    title: '请求诊断',
-                    description: '按请求 ID 查看默认脱敏、可复制导出的调用追踪。',
+                    title: t('app.tools.entry.request_diagnostics.title'),
+                    description: t('app.tools.entry.request_diagnostics.description'),
                     onClick: () => {
                       handleCancelSettingsCenterPane();
                       addTab(buildRequestDiagnosticsWorkbenchTab());

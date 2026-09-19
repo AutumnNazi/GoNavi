@@ -19,6 +19,9 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { CopyOutlined, DownloadOutlined, EyeOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { TabData } from '../../types';
+import { t as catalogTranslate } from '../../i18n/catalog';
+import { useOptionalI18n } from '../../i18n/provider';
+import type { I18nParams } from '../../i18n/types';
 import { downloadBrowserTextFile } from '../../utils/browserFileTransfer';
 import {
   emptyRequestTracePage,
@@ -44,6 +47,8 @@ interface RequestDiagnosticsWorkbenchProps {
   isActive?: boolean;
 }
 
+type WorkbenchTranslate = (key: string, params?: I18nParams) => string;
+
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'medium',
@@ -67,25 +72,25 @@ const copyToClipboard = async (content: string) => {
   throw new Error('Clipboard unavailable');
 };
 
-const cancellationLabel = (trace: RequestTraceRecord): string => {
+const cancellationLabel = (trace: RequestTraceRecord, translate: WorkbenchTranslate): string => {
   const cancellation = trace.cancellation;
-  if (!cancellation?.requested) return '未请求';
+  if (!cancellation?.requested) return translate('request_diagnostics.workbench.cancellation.not_requested');
   switch (cancellation.outcome) {
-    case 'observed': return '驱动已确认取消';
-    case 'not_observed': return '已转发，驱动未确认';
-    case 'not_accepted': return '未接受取消';
-    case 'forwarded': return '已转发';
-    default: return '取消状态未知';
+    case 'observed': return translate('request_diagnostics.workbench.cancellation.observed');
+    case 'not_observed': return translate('request_diagnostics.workbench.cancellation.not_observed');
+    case 'not_accepted': return translate('request_diagnostics.workbench.cancellation.not_accepted');
+    case 'forwarded': return translate('request_diagnostics.workbench.cancellation.forwarded');
+    default: return translate('request_diagnostics.workbench.cancellation.unknown');
   }
 };
 
-const databaseDiagnosticConnectionStateLabel = (state?: string): string => {
+const databaseDiagnosticConnectionStateLabel = (state: string | undefined, translate: WorkbenchTranslate): string => {
   switch (state) {
-    case 'no_connection': return '无活动连接';
-    case 'connected': return '已连接';
-    case 'multiple_connections': return '多连接';
-    case 'multiple_drivers': return '多驱动';
-    default: return '未知';
+    case 'no_connection': return translate('request_diagnostics.workbench.connection_state.no_connection');
+    case 'connected': return translate('request_diagnostics.workbench.connection_state.connected');
+    case 'multiple_connections': return translate('request_diagnostics.workbench.connection_state.multiple_connections');
+    case 'multiple_drivers': return translate('request_diagnostics.workbench.connection_state.multiple_drivers');
+    default: return translate('request_diagnostics.workbench.connection_state.unknown');
   }
 };
 
@@ -94,6 +99,8 @@ export default function RequestDiagnosticsWorkbench({
   backend: backendOverride,
   isActive = true,
 }: RequestDiagnosticsWorkbenchProps) {
+  const i18n = useOptionalI18n();
+  const t = i18n?.t ?? ((key: string, params?: I18nParams) => catalogTranslate('en-US', key, params));
   const backend = backendOverride ?? resolveRequestDiagnosticsBackend();
   const [entry, setEntry] = useState<string | undefined>();
   const [requestID, setRequestID] = useState('');
@@ -113,7 +120,7 @@ export default function RequestDiagnosticsWorkbench({
     setError('');
     try {
       if (typeof backend.GetRequestDiagnostics !== 'function') {
-        throw new Error('请求诊断后端不可用');
+        throw new Error(t('request_diagnostics.workbench.error_backend_unavailable'));
       }
       const payload = await backend.GetRequestDiagnostics({
         requestId: requestID.trim() || undefined,
@@ -129,7 +136,7 @@ export default function RequestDiagnosticsWorkbench({
     } finally {
       if (sequence === requestSequence.current) setLoading(false);
     }
-  }, [backend, entry, requestID]);
+  }, [backend, entry, requestID, t]);
 
   useEffect(() => {
     if (!isActive) return undefined;
@@ -143,28 +150,28 @@ export default function RequestDiagnosticsWorkbench({
 
   const columns = useMemo<ColumnsType<RequestTraceRecord>>(() => [
     {
-      title: '时间',
+      title: t('request_diagnostics.workbench.column.time'),
       dataIndex: 'startedAt',
       key: 'startedAt',
       width: 172,
       render: (value: number) => <time dateTime={value ? new Date(value).toISOString() : undefined}>{formatTimestamp(value)}</time>,
     },
     {
-      title: '入口',
+      title: t('request_diagnostics.workbench.column.entry'),
       dataIndex: 'entry',
       key: 'entry',
       width: 88,
       render: (value: string) => <Tag>{value || '-'}</Tag>,
     },
     {
-      title: '操作',
+      title: t('request_diagnostics.workbench.column.operation'),
       dataIndex: 'operation',
       key: 'operation',
       width: 200,
       ellipsis: true,
     },
     {
-      title: '数据源 / 驱动',
+      title: t('request_diagnostics.workbench.column.datasource_driver'),
       key: 'driver',
       width: 168,
       render: (_value, record) => (
@@ -172,14 +179,14 @@ export default function RequestDiagnosticsWorkbench({
       ),
     },
     {
-      title: '状态',
+      title: t('request_diagnostics.workbench.column.status'),
       dataIndex: 'status',
       key: 'status',
       width: 96,
       render: (value: string) => <Tag color={requestTraceStatusColor(value)}>{value || 'unknown'}</Tag>,
     },
     {
-      title: '耗时',
+      title: t('request_diagnostics.workbench.column.duration'),
       dataIndex: 'durationMs',
       key: 'durationMs',
       width: 92,
@@ -187,7 +194,7 @@ export default function RequestDiagnosticsWorkbench({
       render: (value: number) => value ? `${value.toLocaleString()} ms` : '-',
     },
     {
-      title: '重试',
+      title: t('request_diagnostics.workbench.column.retry'),
       dataIndex: 'retryCount',
       key: 'retryCount',
       width: 76,
@@ -195,12 +202,12 @@ export default function RequestDiagnosticsWorkbench({
       render: (value: number) => value || 0,
     },
     {
-      title: '操作',
+      title: t('request_diagnostics.workbench.column.action'),
       key: 'action',
       width: 68,
       fixed: 'right',
       render: (_value, record) => (
-        <Tooltip title="查看可复制追踪">
+        <Tooltip title={t('request_diagnostics.workbench.action_view_trace')}>
           <Button type="text" size="small" icon={<EyeOutlined />} onClick={(event) => {
             event.stopPropagation();
             setSelected(record);
@@ -208,15 +215,15 @@ export default function RequestDiagnosticsWorkbench({
         </Tooltip>
       ),
     },
-  ], []);
+  ], [t]);
 
   const copySelected = async () => {
     if (!selected) return;
     try {
       await copyToClipboard(JSON.stringify(selected, null, 2));
-      message.success('已复制脱敏请求追踪');
+      message.success(t('request_diagnostics.workbench.success_copy'));
     } catch {
-      message.error('复制请求追踪失败');
+      message.error(t('request_diagnostics.workbench.error_copy'));
     }
   };
 
@@ -229,15 +236,15 @@ export default function RequestDiagnosticsWorkbench({
       'application/json;charset=utf-8',
     );
     if (exported) {
-      message.success('已导出脱敏请求追踪');
+      message.success(t('request_diagnostics.workbench.success_export'));
       return;
     }
-    message.error('当前环境不支持导出请求追踪');
+    message.error(t('request_diagnostics.workbench.error_export_unsupported'));
   };
 
   const openDatabaseDiagnosticPackagePreview = async () => {
     if (typeof backend.GetDatabaseDiagnosticPackagePreview !== 'function') {
-      message.error('数据库诊断包后端不可用');
+      message.error(t('request_diagnostics.workbench.error_package_backend_unavailable'));
       return;
     }
     setPackagePreviewLoading(true);
@@ -247,7 +254,7 @@ export default function RequestDiagnosticsWorkbench({
       setPackagePreviewOpen(true);
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : String(cause);
-      message.error('无法准备数据库诊断包：' + detail);
+      message.error(t('request_diagnostics.workbench.error_package_prepare', { detail }));
     } finally {
       setPackagePreviewLoading(false);
     }
@@ -267,71 +274,73 @@ export default function RequestDiagnosticsWorkbench({
         }
         const data = unwrapRequestDiagnostics(result) || {};
         const path = String(data.path || data.filePath || '').trim();
-        message.success(path ? '诊断包已导出至 ' + path : '诊断包已导出');
+        message.success(path
+          ? t('request_diagnostics.workbench.success_package_exported_to', { path })
+          : t('request_diagnostics.workbench.success_package_exported'));
         setPackagePreviewOpen(false);
         return;
       }
       if (typeof backend.BuildDatabaseDiagnosticPackage !== 'function') {
-        throw new Error('数据库诊断包导出后端不可用');
+        throw new Error(t('request_diagnostics.workbench.error_package_export_backend_unavailable'));
       }
       const data = unwrapRequestDiagnostics(await backend.BuildDatabaseDiagnosticPackage()) || {};
       const content = String(data.content || '');
       const fileName = String(data.fileName || 'gonavi-database-diagnostics.json');
       const mimeType = String(data.mimeType || 'application/json;charset=utf-8');
       if (!content || !downloadBrowserTextFile(content, fileName, mimeType)) {
-        throw new Error('当前环境不支持下载诊断包');
+        throw new Error(t('request_diagnostics.workbench.error_package_download_unsupported'));
       }
-      message.success('诊断包已下载');
+      message.success(t('request_diagnostics.workbench.success_package_downloaded'));
       setPackagePreviewOpen(false);
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : String(cause);
-      message.error('导出数据库诊断包失败：' + detail);
+      message.error(t('request_diagnostics.workbench.error_package_export', { detail }));
     } finally {
       setPackageExporting(false);
     }
   };
 
   return (
-    <section className="gn-request-diagnostics-workbench" aria-label="请求诊断中心">
+    <section className="gn-request-diagnostics-workbench" aria-label={t('request_diagnostics.workbench.aria_label')}>
       <header className="gn-request-diagnostics-header">
         <div>
-          <Title level={3}>请求诊断</Title>
-          <Text type="secondary">当前运行进程内的请求摘要；不保存 SQL、结果行、连接地址或凭证。</Text>
+          <Title level={3}>{t('request_diagnostics.workbench.title')}</Title>
+          <Text type="secondary">{t('request_diagnostics.workbench.privacy_summary')}</Text>
           <br />
-          <Text type="secondary">导出前会先展示采集范围和脱敏结果；生成过程不会连接数据库或执行 SQL。</Text>
+          <Text type="secondary">{t('request_diagnostics.workbench.privacy_export')}</Text>
         </div>
         <Space wrap>
           <Input
             allowClear
-            aria-label="按请求 ID 过滤"
-            placeholder="按请求 ID 过滤"
+            aria-label={t('request_diagnostics.workbench.filter_aria_label')}
+            placeholder={t('request_diagnostics.workbench.filter_placeholder')}
             value={requestID}
             onChange={(event) => setRequestID(event.target.value)}
             style={{ width: 244 }}
           />
           <Select
             allowClear
-            placeholder="全部入口"
+            placeholder={t('request_diagnostics.workbench.entry_filter_placeholder')}
             value={entry}
             options={entryOptions}
             onChange={setEntry}
             style={{ minWidth: 132 }}
           />
-          <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>刷新</Button>
+          <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>{t('request_diagnostics.workbench.action_refresh')}</Button>
           <Button
             type="primary"
             icon={<DownloadOutlined />}
             onClick={() => void openDatabaseDiagnosticPackagePreview()}
             loading={packagePreviewLoading}
           >
-            生成诊断包
+            {t('request_diagnostics.workbench.action_generate_package')}
           </Button>
         </Space>
       </header>
-      {error ? <Alert type="warning" showIcon message="无法读取请求诊断" description={error} /> : null}
+      {error ? <Alert type="warning" showIcon message={t('request_diagnostics.workbench.error_read')} description={error} /> : null}
       <div className="gn-request-diagnostics-summary" aria-live="polite">
-        <span>已加载 <strong>{page.items.length}</strong> / {page.total} 条</span>
-        <span>记录达到上限时会自动淘汰最早的追踪。</span>
+        <span>{t('request_diagnostics.workbench.summary_loaded', { loaded: page.items.length, total: page.total })}</span>
+        <span>{t('request_diagnostics.workbench.summary_eviction')}</span>
       </div>
       <div className="gn-request-diagnostics-table">
         <Spin spinning={loading}>
@@ -342,7 +351,7 @@ export default function RequestDiagnosticsWorkbench({
             columns={columns}
             pagination={false}
             scroll={{ x: 1080, y: 'calc(100vh - 360px)' }}
-            locale={{ emptyText: <Empty description="暂无请求追踪" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+            locale={{ emptyText: <Empty description={t('request_diagnostics.workbench.empty_traces')} image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
             onRow={(record) => ({ onClick: () => setSelected(record) })}
             rowClassName="gn-request-diagnostics-row"
           />
@@ -351,9 +360,9 @@ export default function RequestDiagnosticsWorkbench({
       <ReproductionBundlePanel backend={backend} isActive={isActive} />
       <Modal
         open={packagePreviewOpen}
-        title="生成只读数据库诊断包"
-        okText="生成并导出 JSON"
-        cancelText="取消"
+        title={t('request_diagnostics.workbench.package_modal_title')}
+        okText={t('request_diagnostics.workbench.package_modal_ok')}
+        cancelText={t('common.cancel')}
         confirmLoading={packageExporting}
         okButtonProps={{ disabled: !packagePreview }}
         onCancel={() => setPackagePreviewOpen(false)}
@@ -363,27 +372,27 @@ export default function RequestDiagnosticsWorkbench({
         <Alert
           type="info"
           showIcon
-          message="默认脱敏且只读"
-          description="该过程仅快照现有内存状态和已有慢查询摘要，不会打开连接、执行 SQL、创建历史文件或写入审计数据。"
+          message={t('request_diagnostics.workbench.package_privacy_title')}
+          description={t('request_diagnostics.workbench.package_privacy_description')}
         />
         <Descriptions size="small" bordered column={1} style={{ marginTop: 16 }}>
-          <Descriptions.Item label="包格式">{String(packagePreview?.format || 'json').toUpperCase()}</Descriptions.Item>
-          <Descriptions.Item label="连接摘要">{packagePreview?.connectionCount || 0}</Descriptions.Item>
-          <Descriptions.Item label="请求追踪">{packagePreview?.requestTraceCount || 0}</Descriptions.Item>
-          <Descriptions.Item label="运行中查询">{packagePreview?.runningQueryCount || 0}</Descriptions.Item>
-          <Descriptions.Item label="待完成事务">{packagePreview?.pendingTransactionCount || 0}</Descriptions.Item>
-          <Descriptions.Item label="慢查询汇总">{packagePreview?.slowQuerySummaryCount || 0}</Descriptions.Item>
-          <Descriptions.Item label="连接状态">{databaseDiagnosticConnectionStateLabel(packagePreview?.sources?.connectionState)}</Descriptions.Item>
-          <Descriptions.Item label="驱动类型">{packagePreview?.sources?.driverTypes?.join(' · ') || '-'}</Descriptions.Item>
+          <Descriptions.Item label={t('request_diagnostics.workbench.package_field.format')}>{String(packagePreview?.format || 'json').toUpperCase()}</Descriptions.Item>
+          <Descriptions.Item label={t('request_diagnostics.workbench.package_field.connection_summary')}>{packagePreview?.connectionCount || 0}</Descriptions.Item>
+          <Descriptions.Item label={t('request_diagnostics.workbench.package_field.request_traces')}>{packagePreview?.requestTraceCount || 0}</Descriptions.Item>
+          <Descriptions.Item label={t('request_diagnostics.workbench.package_field.running_queries')}>{packagePreview?.runningQueryCount || 0}</Descriptions.Item>
+          <Descriptions.Item label={t('request_diagnostics.workbench.package_field.pending_transactions')}>{packagePreview?.pendingTransactionCount || 0}</Descriptions.Item>
+          <Descriptions.Item label={t('request_diagnostics.workbench.package_field.slow_queries')}>{packagePreview?.slowQuerySummaryCount || 0}</Descriptions.Item>
+          <Descriptions.Item label={t('request_diagnostics.workbench.package_field.connection_state')}>{databaseDiagnosticConnectionStateLabel(packagePreview?.sources?.connectionState, t)}</Descriptions.Item>
+          <Descriptions.Item label={t('request_diagnostics.workbench.package_field.driver_types')}>{packagePreview?.sources?.driverTypes?.join(' · ') || '-'}</Descriptions.Item>
         </Descriptions>
         <section style={{ marginTop: 16 }}>
-          <Text strong>会采集</Text>
+          <Text strong>{t('request_diagnostics.workbench.package_scope_included')}</Text>
           <ul>
             {(packagePreview?.scope?.included || []).map((item) => <li key={item}>{item}</li>)}
           </ul>
         </section>
         <section>
-          <Text strong>不会采集</Text>
+          <Text strong>{t('request_diagnostics.workbench.package_scope_excluded')}</Text>
           <ul>
             {(packagePreview?.scope?.excluded || []).map((item) => <li key={item}>{item}</li>)}
           </ul>
@@ -398,11 +407,11 @@ export default function RequestDiagnosticsWorkbench({
         open={Boolean(selected)}
         onClose={() => setSelected(null)}
         width="min(760px, calc(100vw - 24px))"
-        title="请求追踪详情"
+        title={t('request_diagnostics.workbench.detail_title')}
         extra={(
           <Space size={4}>
-            <Button size="small" icon={<DownloadOutlined />} onClick={exportSelected}>导出 JSON</Button>
-            <Button size="small" icon={<CopyOutlined />} onClick={() => void copySelected()}>复制 JSON</Button>
+            <Button size="small" icon={<DownloadOutlined />} onClick={exportSelected}>{t('request_diagnostics.workbench.detail_export_json')}</Button>
+            <Button size="small" icon={<CopyOutlined />} onClick={() => void copySelected()}>{t('request_diagnostics.workbench.detail_copy_json')}</Button>
           </Space>
         )}
         destroyOnHidden
@@ -410,26 +419,26 @@ export default function RequestDiagnosticsWorkbench({
         {selected ? (
           <div className="gn-request-diagnostics-detail">
             <section>
-              <Title level={5}>请求摘要</Title>
+              <Title level={5}>{t('request_diagnostics.workbench.detail_summary_title')}</Title>
               <Descriptions size="small" bordered column={{ xs: 1, sm: 2 }}>
-                <Descriptions.Item label="请求 ID" span={2}><Text code copyable={{ text: selected.requestId }}>{selected.requestId || '-'}</Text></Descriptions.Item>
-                <Descriptions.Item label="入口">{selected.entry || '-'}</Descriptions.Item>
-                <Descriptions.Item label="操作">{selected.operation || '-'}</Descriptions.Item>
-                <Descriptions.Item label="数据源">{selected.dataSourceType || '-'}</Descriptions.Item>
-                <Descriptions.Item label="驱动模式">{selected.driverMode || '-'}</Descriptions.Item>
-                <Descriptions.Item label="开始时间">{formatTimestamp(selected.startedAt)}</Descriptions.Item>
-                <Descriptions.Item label="截止时间">{formatTimestamp(selected.deadlineAt)}</Descriptions.Item>
-                <Descriptions.Item label="状态"><Tag color={requestTraceStatusColor(selected.status)}>{selected.status}</Tag></Descriptions.Item>
-                <Descriptions.Item label="耗时">{selected.durationMs ? `${selected.durationMs.toLocaleString()} ms` : '-'}</Descriptions.Item>
-                <Descriptions.Item label="响应字节">{formatTraceBytes(selected.responseBytes || 0, selected.responseBytesExact === true)}</Descriptions.Item>
-                <Descriptions.Item label="分页">{selected.pagination?.resultSetCount ? `${selected.pagination.resultSetCount} 结果集 / ${selected.pagination.returnedRows || 0} 行${selected.pagination.truncated ? '（截断）' : ''}` : '-'}</Descriptions.Item>
-                <Descriptions.Item label="重试次数">{selected.retryCount || 0}</Descriptions.Item>
-                <Descriptions.Item label="取消结果" span={2}><Tag color={selected.cancellation?.outcome === 'not_accepted' || selected.cancellation?.outcome === 'not_observed' ? 'warning' : 'default'}>{cancellationLabel(selected)}</Tag></Descriptions.Item>
+                <Descriptions.Item label={t('request_diagnostics.workbench.detail_field.request_id')} span={2}><Text code copyable={{ text: selected.requestId }}>{selected.requestId || '-'}</Text></Descriptions.Item>
+                <Descriptions.Item label={t('request_diagnostics.workbench.detail_field.entry')}>{selected.entry || '-'}</Descriptions.Item>
+                <Descriptions.Item label={t('request_diagnostics.workbench.detail_field.operation')}>{selected.operation || '-'}</Descriptions.Item>
+                <Descriptions.Item label={t('request_diagnostics.workbench.detail_field.datasource')}>{selected.dataSourceType || '-'}</Descriptions.Item>
+                <Descriptions.Item label={t('request_diagnostics.workbench.detail_field.driver_mode')}>{selected.driverMode || '-'}</Descriptions.Item>
+                <Descriptions.Item label={t('request_diagnostics.workbench.detail_field.started_at')}>{formatTimestamp(selected.startedAt)}</Descriptions.Item>
+                <Descriptions.Item label={t('request_diagnostics.workbench.detail_field.deadline_at')}>{formatTimestamp(selected.deadlineAt)}</Descriptions.Item>
+                <Descriptions.Item label={t('request_diagnostics.workbench.detail_field.status')}><Tag color={requestTraceStatusColor(selected.status)}>{selected.status}</Tag></Descriptions.Item>
+                <Descriptions.Item label={t('request_diagnostics.workbench.detail_field.duration')}>{selected.durationMs ? `${selected.durationMs.toLocaleString()} ms` : '-'}</Descriptions.Item>
+                <Descriptions.Item label={t('request_diagnostics.workbench.detail_field.response_bytes')}>{formatTraceBytes(selected.responseBytes || 0, selected.responseBytesExact === true)}</Descriptions.Item>
+                <Descriptions.Item label={t('request_diagnostics.workbench.detail_field.pagination')}>{selected.pagination?.resultSetCount ? `${t('request_diagnostics.workbench.detail_pagination_summary', { resultSets: selected.pagination.resultSetCount, rows: selected.pagination.returnedRows || 0 })}${selected.pagination.truncated ? t('request_diagnostics.workbench.detail_pagination_truncated') : ''}` : '-'}</Descriptions.Item>
+                <Descriptions.Item label={t('request_diagnostics.workbench.detail_field.retry_count')}>{selected.retryCount || 0}</Descriptions.Item>
+                <Descriptions.Item label={t('request_diagnostics.workbench.detail_field.cancellation')} span={2}><Tag color={selected.cancellation?.outcome === 'not_accepted' || selected.cancellation?.outcome === 'not_observed' ? 'warning' : 'default'}>{cancellationLabel(selected, t)}</Tag></Descriptions.Item>
               </Descriptions>
             </section>
-            {selected.error?.message ? <Alert type="error" showIcon message={`错误映射：${selected.error.kind || 'execution'}`} description={selected.error.message} /> : null}
+            {selected.error?.message ? <Alert type="error" showIcon message={t('request_diagnostics.workbench.detail_error_mapping', { kind: selected.error.kind || 'execution' })} description={selected.error.message} /> : null}
             <section>
-              <Title level={5}>子调用与重试时间线</Title>
+              <Title level={5}>{t('request_diagnostics.workbench.detail_timeline_title')}</Title>
               {selected.events?.length ? (
                 <ol className="gn-request-diagnostics-timeline">
                   {selected.events.map((event, index) => (
@@ -439,7 +448,7 @@ export default function RequestDiagnosticsWorkbench({
                     </li>
                   ))}
                 </ol>
-              ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有子调用事件" />}
+              ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('request_diagnostics.workbench.detail_no_events')} />}
             </section>
           </div>
         ) : null}

@@ -150,6 +150,7 @@ import {
     buildQueryEditorTableNavigationContextKey,
 } from './queryEditor/queryEditorVisibilityContext';
 import { useQueryEditorEverActive } from './queryEditor/useQueryEditorEverActive';
+import { useExternalSqlFileDrop } from './queryEditor/useExternalSqlFileDrop';
 import QueryEditorResultsPanel, {
     QUERY_EDITOR_SQL_LOG_TAB_KEY,
     resolveEffectiveActiveResultKey,
@@ -2065,6 +2066,7 @@ export const filterQueryEditorResultSetsForBulkClose = (
 
 const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isActive = true }) => {
   const hasBeenActive = useQueryEditorEverActive(isActive);
+  useExternalSqlFileDrop();
   const appearance = useStore(state => state.appearance);
   const queryOptions = useStore(state => state.queryOptions);
   const setQueryOptions = useStore(state => state.setQueryOptions);
