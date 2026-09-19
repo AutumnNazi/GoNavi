@@ -135,3 +135,31 @@ export const buildIndexCreateSqlPreview = (input: BuildIndexCreateSqlInput): Bui
   }
   return { sql: `CREATE ${uniquePrefix}INDEX ${indexRef} ON ${input.tableRef} (${colSql});` };
 };
+
+export interface BuildCreateTableIndexStatementInput {
+  name: string;
+  columnNames: string[];
+  kind: TableDesignerIndexKind;
+  indexType?: string;
+}
+
+export const buildCreateTableIndexStatements = (input: {
+  dbType: string;
+  tableRef: string;
+  indexes?: BuildCreateTableIndexStatementInput[];
+  translate?: TableDesignerIndexTranslate;
+}): string => (
+  (Array.isArray(input.indexes) ? input.indexes : [])
+    .filter((index) => (index.kind || 'NORMAL') !== 'PRIMARY')
+    .map((index) => buildIndexCreateSqlPreview({
+      dbType: input.dbType,
+      tableRef: input.tableRef,
+      name: index.name,
+      columnNames: index.columnNames,
+      kind: index.kind,
+      indexType: index.indexType,
+      translate: input.translate,
+    }).sql)
+    .filter((sql): sql is string => Boolean(sql))
+    .join('\n')
+);

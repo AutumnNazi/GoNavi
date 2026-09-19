@@ -107,3 +107,76 @@ export const shouldRestoreOriginalIndex = (result: SchemaExecutionSnapshot): boo
   && String(result.cancellationState || '').trim().toLowerCase() !== 'unsupported'
   && (result.failedStatementIndex ?? -1) > 0
 );
+
+const storedIndexType = (form: IndexFormSnapshot): string => {
+  if (form.kind === 'FULLTEXT') return 'FULLTEXT';
+  if (form.kind === 'SPATIAL') return 'SPATIAL';
+  if (form.kind === 'PRIMARY') return 'BTREE';
+  const normalized = String(form.indexType || '').trim().toUpperCase();
+  return !normalized || normalized === 'DEFAULT' ? '' : normalized;
+};
+
+export const applyPrimaryIndexToColumnKeys = <T extends { name: string; key?: string }>(
+  columns: T[],
+  primaryColumnNames: string[],
+): T[] => {
+  const selected = new Set(
+    primaryColumnNames.map((name) => String(name || '').trim()).filter(Boolean),
+  );
+  return columns.map((column) => {
+    const isPrimary = selected.has(String(column.name || '').trim());
+    const currentKey = String(column.key || '');
+    if (isPrimary) {
+      return currentKey === 'PRI' ? column : { ...column, key: 'PRI' };
+    }
+    if (currentKey === 'PRI') {
+      return { ...column, key: '' };
+    }
+    return column;
+  });
+};
+
+export const replaceIndexDefinitionsFromForm = (
+  indexes: Array<{
+    name: string;
+    columnName: string;
+    nonUnique: number;
+    seqInIndex: number;
+    indexType: string;
+  }>,
+  previousName: string | undefined,
+  form: IndexFormSnapshot,
+): Array<{
+  name: string;
+  columnName: string;
+  nonUnique: number;
+  seqInIndex: number;
+  indexType: string;
+}> => {
+  const previous = String(previousName || '').trim().toUpperCase();
+  const kept = previous
+    ? indexes.filter((idx) => String(idx.name || '').trim().toUpperCase() !== previous)
+    : indexes;
+  const nextName = form.kind === 'PRIMARY' ? 'PRIMARY' : String(form.name || '').trim();
+  const indexType = storedIndexType(form);
+  const nonUnique = form.kind === 'UNIQUE' || form.kind === 'PRIMARY' ? 0 : 1;
+  const nextRows = form.columnNames
+    .map((name) => String(name || '').trim())
+    .filter(Boolean)
+    .map((columnName, index) => ({
+      name: nextName,
+      columnName,
+      nonUnique,
+      seqInIndex: index + 1,
+      indexType,
+    }));
+  return [...kept, ...nextRows];
+};
+
+export const removeIndexDefinitionsByNames = <T extends { name: string }>(
+  indexes: T[],
+  names: string[],
+): T[] => {
+  const drop = new Set(names.map((name) => String(name || '').trim().toUpperCase()).filter(Boolean));
+  return indexes.filter((idx) => !drop.has(String(idx.name || '').trim().toUpperCase()));
+};
