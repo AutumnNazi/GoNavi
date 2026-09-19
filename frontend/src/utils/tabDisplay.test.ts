@@ -168,6 +168,23 @@ describe('tabDisplay', () => {
       .toBe('Treiberverwaltung');
   });
 
+  it('re-resolves the request diagnostics tab title through the active translate', () => {
+    const requestDiagnosticsTab: TabData = {
+      id: 'request-diagnostics-center',
+      title: '请求诊断',
+      type: 'request-diagnostics',
+      connectionId: '',
+    };
+    const translate = (key: string) => (
+      key === 'app.tools.entry.request_diagnostics.title' ? 'Request Diagnostics' : key
+    );
+
+    expect(buildTabDisplayTitle(requestDiagnosticsTab, undefined, undefined, translate))
+      .toBe('Request Diagnostics');
+    expect(buildTabDisplayModel(requestDiagnosticsTab, undefined, undefined, translate).primaryText)
+      .toBe('Request Diagnostics');
+  });
+
   it('hides schema prefixes from schema-qualified table tab labels', () => {
     const connection: SavedConnection = {
       id: 'kingbase-1',
