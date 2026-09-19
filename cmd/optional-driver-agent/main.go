@@ -36,21 +36,24 @@ type agentRequest struct {
 	DBName               string                          `json:"dbName,omitempty"`
 	TableName            string                          `json:"tableName,omitempty"`
 	Changes              *connection.ChangeSet           `json:"changes,omitempty"`
+	AttachSpec           *db.ExternalAttachSpec          `json:"attachSpec,omitempty"`
+	Alias                string                          `json:"alias,omitempty"`
 	ElasticsearchRequest *db.ElasticsearchConsoleRequest `json:"elasticsearchRequest,omitempty"`
 }
 
 type agentResponse struct {
-	ID              int64                         `json:"id"`
-	Success         bool                          `json:"success"`
-	Error           string                        `json:"error,omitempty"`
-	OutcomeUnknown  bool                          `json:"outcomeUnknown,omitempty"`
-	SSHHostKeyTrust *sshbridge.HostKeyTrustStatus `json:"sshHostKeyTrust,omitempty"`
-	SSHProgress     *connection.SSHProgressEvent  `json:"sshProgress,omitempty"`
-	Data            interface{}                   `json:"data,omitempty"`
-	Fields          []string                      `json:"fields,omitempty"`
-	Messages        []string                      `json:"messages,omitempty"`
-	ChunkType       string                        `json:"chunkType,omitempty"`
-	RowsAffected    int64                         `json:"rowsAffected,omitempty"`
+	ID                        int64                         `json:"id"`
+	Success                   bool                          `json:"success"`
+	Error                     string                        `json:"error,omitempty"`
+	OutcomeUnknown            bool                          `json:"outcomeUnknown,omitempty"` // ExternalAttachNotAttached 标记 DETACH 目标别名不存在（幂等语义）。
+	ExternalAttachNotAttached bool                          `json:"externalAttachNotAttached,omitempty"`
+	SSHHostKeyTrust           *sshbridge.HostKeyTrustStatus `json:"sshHostKeyTrust,omitempty"`
+	SSHProgress               *connection.SSHProgressEvent  `json:"sshProgress,omitempty"`
+	Data                      interface{}                   `json:"data,omitempty"`
+	Fields                    []string                      `json:"fields,omitempty"`
+	Messages                  []string                      `json:"messages,omitempty"`
+	ChunkType                 string                        `json:"chunkType,omitempty"`
+	RowsAffected              int64                         `json:"rowsAffected,omitempty"`
 }
 
 type agentConnectionInfo struct {
@@ -59,30 +62,32 @@ type agentConnectionInfo struct {
 }
 
 const (
-	agentMethodConnect              = "connect"
-	agentMethodClose                = "close"
-	agentMethodMetadata             = "metadata"
-	agentMethodPing                 = "ping"
-	agentMethodOpenSession          = "openSession"
-	agentMethodCloseSession         = "closeSession"
-	agentMethodOpenTransaction      = "openTransaction"
-	agentMethodCommitTransaction    = "commitTransaction"
-	agentMethodRollbackTransaction  = "rollbackTransaction"
-	agentMethodQuery                = "query"
-	agentMethodQueryMulti           = "queryMulti"
-	agentMethodStreamQuery          = "streamQuery"
-	agentMethodExec                 = "exec"
-	agentMethodElasticsearchConsole = "executeElasticsearchConsoleRequest"
-	agentMethodGetDatabases         = "getDatabases"
-	agentMethodGetTables            = "getTables"
-	agentMethodTableExists          = "tableExists"
-	agentMethodGetCreateStmt        = "getCreateStatement"
-	agentMethodGetColumns           = "getColumns"
-	agentMethodGetAllColumns        = "getAllColumns"
-	agentMethodGetIndexes           = "getIndexes"
-	agentMethodGetForeignKey        = "getForeignKeys"
-	agentMethodGetTriggers          = "getTriggers"
-	agentMethodApplyChanges         = "applyChanges"
+	agentMethodConnect                = "connect"
+	agentMethodClose                  = "close"
+	agentMethodMetadata               = "metadata"
+	agentMethodPing                   = "ping"
+	agentMethodOpenSession            = "openSession"
+	agentMethodCloseSession           = "closeSession"
+	agentMethodOpenTransaction        = "openTransaction"
+	agentMethodCommitTransaction      = "commitTransaction"
+	agentMethodRollbackTransaction    = "rollbackTransaction"
+	agentMethodQuery                  = "query"
+	agentMethodQueryMulti             = "queryMulti"
+	agentMethodStreamQuery            = "streamQuery"
+	agentMethodExec                   = "exec"
+	agentMethodElasticsearchConsole   = "executeElasticsearchConsoleRequest"
+	agentMethodGetDatabases           = "getDatabases"
+	agentMethodGetTables              = "getTables"
+	agentMethodTableExists            = "tableExists"
+	agentMethodGetCreateStmt          = "getCreateStatement"
+	agentMethodGetColumns             = "getColumns"
+	agentMethodGetAllColumns          = "getAllColumns"
+	agentMethodGetIndexes             = "getIndexes"
+	agentMethodGetForeignKey          = "getForeignKeys"
+	agentMethodGetTriggers            = "getTriggers"
+	agentMethodApplyChanges           = "applyChanges"
+	agentMethodAttachExternalDatabase = "attachExternalDatabase"
+	agentMethodDetachExternalDatabase = "detachExternalDatabase"
 )
 
 const legacyClickHouseDefaultTimeout = 2 * time.Hour
@@ -542,6 +547,46 @@ func handleRequestWithSSHProgressReporter(runtimeState *agentRuntime, req agentR
 			return fail(resp, err.Error())
 		}
 		resp.Data = data
+	case agentMethodAttachExternalDatabase:
+		if runtimeState.inst == nil {
+			return fail(resp, "connection not open")
+		}
+		if req.AttachSpec == nil {
+			return fail(resp, "attach spec is empty")
+		}
+		attacher, ok := runtimeState.inst.(db.ExternalDatabaseAttacher)
+		if !ok {
+			return fail(resp, fmt.Sprintf("当前数据源（%s）不支持附加外部数据源", strings.TrimSpace(agentDriverType)))
+		}
+		attachCtx := context.Background()
+		var attachCancel context.CancelFunc
+		if req.TimeoutMs > 0 {
+			attachCtx, attachCancel = context.WithTimeout(attachCtx, time.Duration(req.TimeoutMs)*time.Millisecond)
+			defer attachCancel()
+		}
+		if err := attacher.AttachExternalDatabase(attachCtx, *req.AttachSpec); err != nil {
+			return failWithExternalAttachNotAttached(resp, err)
+		}
+		return resp
+	case agentMethodDetachExternalDatabase:
+		if runtimeState.inst == nil {
+			return fail(resp, "connection not open")
+		}
+		attacher, ok := runtimeState.inst.(db.ExternalDatabaseAttacher)
+		if !ok {
+			return fail(resp, fmt.Sprintf("当前数据源（%s）不支持附加外部数据源", strings.TrimSpace(agentDriverType)))
+		}
+		detachCtx := context.Background()
+		var detachCancel context.CancelFunc
+		if req.TimeoutMs > 0 {
+			detachCtx, detachCancel = context.WithTimeout(detachCtx, time.Duration(req.TimeoutMs)*time.Millisecond)
+			defer detachCancel()
+		}
+		if err := attacher.DetachExternalDatabase(detachCtx, req.Alias); err != nil {
+			return failWithExternalAttachNotAttached(resp, err)
+		}
+		return resp
+
 	case agentMethodApplyChanges:
 		if req.Changes == nil {
 			return fail(resp, "变更集为空")
@@ -793,6 +838,15 @@ func writeResponse(writer *bufio.Writer, resp agentResponse) error {
 	return writer.Flush()
 }
 
+// failWithExternalAttachNotAttached 在错误为“别名未附加”哨兵时打上协议标记，
+// 主进程据此把 DETACH 未附加映射为幂等提示而不是失败。
+func failWithExternalAttachNotAttached(resp agentResponse, err error) agentResponse {
+	failed := fail(resp, err.Error())
+	if errors.Is(err, db.ErrExternalAttachNotAttached) {
+		failed.ExternalAttachNotAttached = true
+	}
+	return failed
+}
 func fail(resp agentResponse, errText string) agentResponse {
 	resp.Success = false
 	resp.Error = strings.TrimSpace(errText)
