@@ -49,8 +49,17 @@ var (
 // parseDuckDBSavedConnectionDirective 判断一条语句是否为附加/卸载指令。
 // 第二个返回值为 false 表示不是指令（原样执行）；true 但带错误表示语句以
 // 指令开头但格式非法，应向用户报错而不是静默透传。
+// 语句允许以 -- 行注释开头（注释与指令常被分词器合并为一条语句）。
 func parseDuckDBSavedConnectionDirective(statement string) (*duckDBAttachDirective, bool, error) {
 	trimmed := strings.TrimSpace(statement)
+	for strings.HasPrefix(trimmed, "--") {
+		nl := strings.IndexByte(trimmed, '\n')
+		if nl < 0 {
+			// 整条语句都是注释
+			return nil, false, nil
+		}
+		trimmed = strings.TrimSpace(trimmed[nl+1:])
+	}
 	trimmed = strings.TrimSuffix(trimmed, ";")
 	trimmed = strings.TrimSpace(trimmed)
 	upper := strings.ToUpper(trimmed)

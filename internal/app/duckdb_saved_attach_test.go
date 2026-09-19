@@ -173,6 +173,21 @@ func TestParseDuckDBSavedConnectionDirective(t *testing.T) {
 			wantErr:   true,
 		},
 		{
+			name:      "leading comment lines before directive",
+			statement: "-- ① 附加远程订单库（幂等）\nATTACH SAVED CONNECTION 'conn-uuid-1' AS target READ ONLY;",
+			wantParse: true,
+			verify: func(t *testing.T, d *duckDBAttachDirective) {
+				if d.ref != "conn-uuid-1" || d.alias != "target" || !d.readOnly {
+					t.Fatalf("unexpected directive: %+v", d)
+				}
+			},
+		},
+		{
+			name:      "comment only statement is not a directive",
+			statement: "-- just a comment",
+			wantParse: false,
+		},
+		{
 			name:      "malformed detach alias",
 			statement: "DETACH SAVED CONNECTION not an alias",
 			wantParse: true,
