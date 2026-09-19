@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"GoNavi-Wails/internal/connection"
+	"GoNavi-Wails/internal/sqlparam"
 )
 
 func (a *App) savedQueryRepository() *savedQueryRepository {
@@ -36,6 +37,7 @@ func (a *App) SaveQuery(input connection.SavedQuery) (connection.SavedQuery, err
 	if strings.TrimSpace(input.Name) == "" {
 		input.Name = a.localizedSavedQueryDefaultName(0)
 	}
+	input.Parameters = normalizeSavedQueryParameters(input.Parameters)
 	currentConnections, err := a.savedConnectionRepository().List()
 	if err == nil {
 		input = resolveSavedQueryBindings([]connection.SavedQuery{input}, currentConnections, nil)[0]
@@ -153,4 +155,43 @@ func (a *App) GetUnboundSavedQueries() ([]connection.SavedQuery, error) {
 		}
 	}
 	return result, nil
+}
+
+// normalizeSavedQueryParameters 只保留名称合法且类型可识别的参数声明，
+// 防止导入或共享的保存查询把任意类型注入参数面板。
+func normalizeSavedQueryParameters(params []connection.SavedQueryParam) []connection.SavedQueryParam {
+	if len(params) == 0 {
+		return nil
+	}
+	normalized := make([]connection.SavedQueryParam, 0, len(params))
+	seen := make(map[string]struct{}, len(params))
+	for _, param := range params {
+		name := strings.TrimSpace(param.Name)
+		if name == "" {
+			continue
+		}
+		if _, dup := seen[name]; dup {
+			continue
+		}
+		typ := strings.TrimSpace(param.Type)
+		switch typ {
+		case sqlparam.TypeString, sqlparam.TypeNumber, sqlparam.TypeBoolean,
+			sqlparam.TypeDatetime, sqlparam.TypeList, sqlparam.TypeNull:
+		case "":
+			typ = sqlparam.TypeString
+		default:
+			continue
+		}
+		seen[name] = struct{}{}
+		normalized = append(normalized, connection.SavedQueryParam{
+			Name:    name,
+			Type:    typ,
+			Label:   strings.TrimSpace(param.Label),
+			Default: param.Default,
+		})
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
 }

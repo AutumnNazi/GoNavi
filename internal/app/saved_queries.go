@@ -18,7 +18,7 @@ import (
 
 const (
 	savedQueriesFileName      = "saved_queries.json"
-	savedQueriesFormatVersion = 3
+	savedQueriesFormatVersion = 4
 )
 
 const (
@@ -51,6 +51,7 @@ type savedQueryDiskRecord struct {
 	FingerprintVersion    string `json:"fingerprintVersion,omitempty"`
 	BindingStatus         string `json:"bindingStatus,omitempty"`
 	OriginalConnectionID  string `json:"originalConnectionId,omitempty"`
+	Parameters            []connection.SavedQueryParam `json:"parameters,omitempty"`
 }
 
 type savedQueriesDiskFile struct {
@@ -176,6 +177,7 @@ func savedQueryFromDiskRecord(record savedQueryDiskRecord, sqlText string) conne
 		FingerprintVersion:    record.FingerprintVersion,
 		BindingStatus:         record.BindingStatus,
 		OriginalConnectionID:  record.OriginalConnectionID,
+		Parameters:            record.Parameters,
 	}
 }
 
@@ -191,6 +193,7 @@ func savedQueryToDiskRecord(query connection.SavedQuery, fileName string) savedQ
 		FingerprintVersion:    query.FingerprintVersion,
 		BindingStatus:         query.BindingStatus,
 		OriginalConnectionID:  query.OriginalConnectionID,
+		Parameters:            query.Parameters,
 	}
 }
 

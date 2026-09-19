@@ -36,6 +36,7 @@ type DataSourceUICapabilities struct {
 	PreferManualTotalCount         bool `json:"preferManualTotalCount"`
 	SupportsApproximateTableCount  bool `json:"supportsApproximateTableCount"`
 	SupportsApproximateTotalPages  bool `json:"supportsApproximateTotalPages"`
+	ParameterBinding               bool `json:"parameterBinding"`
 }
 
 // DataSourceNavigationCapabilities exposes the navigation filtering contract
