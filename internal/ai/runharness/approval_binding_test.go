@@ -300,6 +300,8 @@ func TestRecoveryControlRetryWithSameRequestIDIsIdempotent(t *testing.T) {
 	// to make startWorker a no-op. With no concurrent writer, the run stays
 	// unleased and the fenced transition below is deterministic.
 	placeholder := &runExecution{
+		// done is intentionally never closed; nothing waits on a quiescent
+		// execution, and Close() only joins workers registered with wg.
 		runID:                  run.ID,
 		sessionID:              run.SessionID,
 		ctx:                    context.Background(),
