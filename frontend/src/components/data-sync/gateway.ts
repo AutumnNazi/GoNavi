@@ -266,9 +266,11 @@ export const createStaticDataSyncWorkbenchGateway = (
     for (const run of runs) {
       if (run.taskId !== taskId) continue;
       if (CANCELABLE_RUN_STATUSES.has(run.status)) {
+        // Mirrors the store: queued/paused runs get the cancel message
+        // unconditionally, active runs only when their message is empty.
         run.status = 'canceled';
         run.finishedAt = at;
-        run.message = run.message || `canceled because task was ${lifecycle}`;
+        run.message = `canceled because task was ${lifecycle}`;
       } else if (ACTIVE_RUN_STATUSES.has(run.status)) {
         run.status = 'cancelling';
         run.message = run.message || `cancellation requested because task was ${lifecycle}`;

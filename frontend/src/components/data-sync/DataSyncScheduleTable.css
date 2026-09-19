@@ -1,6 +1,11 @@
 /* Schedule list table. Scoped to the schedule view so the shared
    DataSyncWorkbench.css stays untouched. */
 
+/* Multi-line impact scope inside the shared confirm dialog. */
+.gn-data-sync-confirm-text {
+  white-space: pre-line;
+}
+
 .gn-data-sync-schedule-table {
   display: grid;
   grid-template-columns:

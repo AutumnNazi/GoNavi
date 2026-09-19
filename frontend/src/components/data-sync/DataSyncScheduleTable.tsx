@@ -154,7 +154,12 @@ export const DataSyncScheduleTable: React.FC<{
                     <button
                       type="button"
                       className="gn-data-sync-button gn-data-sync-button--primary"
-                      disabled={frozen}
+                      disabled={frozen || schedule.lifecycle === 'paused'}
+                      title={
+                        schedule.lifecycle === 'paused'
+                          ? t('schedules.disabled')
+                          : undefined
+                      }
                       onClick={() => onRunNow(schedule)}
                     >
                       {t('schedules.run_now')}

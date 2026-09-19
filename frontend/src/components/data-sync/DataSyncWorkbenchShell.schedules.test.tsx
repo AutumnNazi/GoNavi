@@ -448,6 +448,51 @@ describe('DataSyncWorkbenchShell schedule control', () => {
     expect(textOf(selectedRow)).toContain('scheduled-a');
   });
 
+  it('routes an immediate run that requires production approval into the editor instead of starting', async () => {
+    const taskA = buildScheduledTask();
+    const baseGateway = createStaticDataSyncWorkbenchGateway({
+      tasks: [taskA],
+      schedules: [scheduleRowFor(taskA)],
+      capabilities: { 'scheduled-a': CAN_EXECUTE },
+      approvalRequiredByTask: { 'scheduled-a': true },
+      runs: [],
+      now: () => NOW,
+    });
+    const startTask = vi.fn(() =>
+      Promise.reject(new Error('start must not be called')),
+    );
+    const renderer = await renderShell(
+      {
+        ...baseGateway,
+        startTask,
+      },
+      [taskA],
+    );
+
+    await openSchedules(renderer);
+    await clickRowButton(renderer, 'scheduled-a', '立即运行');
+    const confirmation = latestConfirmation();
+    await act(async () => {
+      await confirmation.onOk();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The fresh preflight invalidates any cached approval token, so starting
+    // here would burn the grant and fail; fail closed into the editor instead.
+    expect(startTask).not.toHaveBeenCalled();
+    renderer.root.findByProps({ 'data-data-sync-preflight': 'true' });
+    const alertTexts = renderer.root
+      .findAllByProps({ role: 'alert' })
+      .map((alert) => textOf(alert));
+    expect(alertTexts.join('\n')).toContain('需要先在编辑器中完成预检或审批');
+    // Nothing changed about the task: no dirty draft is fabricated.
+    expect(renderer.root.findAllByProps({ 'data-dirty': 'true' })).toHaveLength(
+      0,
+    );
+  });
+
   it('fails closed when the immediate run hits a blocked preflight', async () => {
     const taskA = buildScheduledTask();
     const baseGateway = createStaticDataSyncWorkbenchGateway({

@@ -129,7 +129,7 @@ describe('DataSyncScheduleTable', () => {
     expect((markup.match(/disabled/g) || []).length).toBeGreaterThanOrEqual(3);
   });
 
-  it('shows the paused projection with a cleared next run', () => {
+  it('shows the paused projection with a cleared next run and no immediate run', () => {
     const markup = renderTable({
       schedules: [
         buildSchedule({
@@ -139,9 +139,13 @@ describe('DataSyncScheduleTable', () => {
         }),
       ],
       onToggle: () => undefined,
+      onRunNow: () => undefined,
     });
     expect(markup).toContain('已暂停');
     expect(markup).toContain('启用');
     expect(markup).not.toContain('已启用');
+    // A paused task cannot start immediately; the button is disabled rather
+    // than guaranteed to fail through the lifecycle gate.
+    expect(markup).toContain('disabled=""');
   });
 });

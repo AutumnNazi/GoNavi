@@ -369,6 +369,17 @@ export const useDataSyncScheduleControl = (
                   getGateway().preflightTask(target),
                   getGateway().resolveCapability(target),
                 ]);
+                if (snapshot.approvalRequired && snapshot.approvalSatisfied !== true) {
+                  // A fresh preflight invalidates the gateway-side approval
+                  // token, so startTask would fail on a spent grant. Fail
+                  // closed into the editor, where the approval completes
+                  // before the run starts — no faked local state.
+                  setTaskPreflight(target.id, snapshot);
+                  setCapability(capability);
+                  openTaskPreflightStage(target.id);
+                  setOperationError(t('schedules.preflight_required'));
+                  return;
+                }
                 // Park the evidence on the editor preflight stage first so a
                 // rejected run still shows why it was rejected.
                 setTaskPreflight(target.id, snapshot);

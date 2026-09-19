@@ -6,8 +6,8 @@
 export const dataSyncScheduleTextsZhCN = {
   'schedules.title': '调度',
   'schedules.subtitle': '集中查看调度状态、最近运行和下一次执行。',
-  'schedules.empty_title': '还没有启用调度',
-  'schedules.empty_desc': '在任务的“触发与增量”阶段选择指定时间或 Cron。',
+  'schedules.empty_title': '还没有定时调度的任务',
+  'schedules.empty_desc': '在任务的“触发与增量”阶段选择指定时间或 Cron，暂停的任务也会在这里管理。',
   'schedules.task': '任务',
   'schedules.status': '调度状态',
   'schedules.trigger': '触发方式',
@@ -39,8 +39,9 @@ export type DataSyncScheduleTextKey = keyof typeof dataSyncScheduleTextsZhCN;
 export const dataSyncScheduleTextsEnUS: Record<DataSyncScheduleTextKey, string> = {
   'schedules.title': 'Schedules',
   'schedules.subtitle': 'Review schedule state, recent runs, and next runs in one place.',
-  'schedules.empty_title': 'No enabled schedules',
-  'schedules.empty_desc': 'Choose a one-time or Cron trigger in the task editor.',
+  'schedules.empty_title': 'No scheduled tasks yet',
+  'schedules.empty_desc':
+    'Choose a one-time or Cron trigger in the task editor; paused tasks are managed here too.',
   'schedules.task': 'Task',
   'schedules.status': 'State',
   'schedules.trigger': 'Trigger',
