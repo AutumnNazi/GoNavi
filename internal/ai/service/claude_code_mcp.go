@@ -851,7 +851,7 @@ func upsertClaudeCodeMCPServerConfig(configPath string, serverID string, serverC
 		return fmt.Errorf("%s", mcpClientInstallText(text, "ai.service.mcp_client.claude_code.config_serialize_failed", map[string]any{"detail": err.Error()}))
 	}
 
-	if err := os.WriteFile(configPath, append(data, '\n'), 0o644); err != nil {
+	if err := writeMCPConfigFileAtomically(configPath, append(data, '\n')); err != nil {
 		return fmt.Errorf("%s", mcpClientInstallText(text, "ai.service.mcp_client.claude_code.config_write_failed", map[string]any{"detail": err.Error()}))
 	}
 	return nil
@@ -924,7 +924,7 @@ func upsertCodexMCPServerConfig(configPath string, serverID string, serverConfig
 	}
 
 	updated := replaceOrAppendTOMLMCPServerBlock(string(data), strings.TrimSpace(serverID), renderCodexMCPServerBlock(serverID, serverConfig))
-	if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
+	if err := writeMCPConfigFileAtomically(configPath, []byte(updated)); err != nil {
 		return fmt.Errorf("%s", mcpClientInstallText(text, "ai.service.mcp_client.codex.config_write_failed", map[string]any{"detail": err.Error()}))
 	}
 	return nil
