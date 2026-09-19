@@ -286,6 +286,11 @@ func (a *App) buildDuckDBAttachSpec(view connection.SavedConnectionView, resolve
 // 由本层执行，改写为一条返回执行结果的合成 SELECT 交给后续管道；其余语句原样保留。
 // 返回改写后的查询文本；无指令时原样返回。
 func (a *App) applyDuckDBSavedConnectionDirectives(ctx context.Context, dbInst db.Database, query string) (string, error) {
+	// 快速短路：绝大多数查询不含指令，避免无谓的语句切分（管道随后还要切一次）
+	upperQuery := strings.ToUpper(query)
+	if !strings.Contains(upperQuery, "ATTACH SAVED CONNECTION") && !strings.Contains(upperQuery, "DETACH SAVED CONNECTION") {
+		return query, nil
+	}
 	statements := splitSQLStatementsForDialect("duckdb", query)
 	if len(statements) == 0 {
 		return query, nil

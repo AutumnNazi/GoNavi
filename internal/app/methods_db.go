@@ -1191,19 +1191,6 @@ func (a *App) buildCancellationUnsupportedExecutionResult(result connection.Quer
 	return result
 }
 
-func containsSQLAuditWrite(dbType string, query string) bool {
-	statements := splitSQLStatementsForDialect(dbType, query)
-	if len(statements) == 0 {
-		return !isReadOnlySQLQuery(dbType, query)
-	}
-	for _, statement := range statements {
-		statement = strings.TrimSpace(statement)
-		if statement != "" && !isReadOnlySQLQuery(dbType, statement) {
-			return true
-		}
-	}
-	return false
-}
 
 // writeExecutionOutcomeUnknown covers both a driver-level ambiguous response
 // and a caller cancellation observed while a write was in flight. The latter
@@ -1712,6 +1699,16 @@ func (a *App) dbQueryMulti(
 		}
 	}()
 	legacyCancellationUnsupported := false
+
+	// DuckDB 保存连接附加指令（issue #1270）：在本层拦截执行并改写为合成 SELECT。
+	// 密钥仅在 Go 侧解析，指令文本不进入 DuckDB 解析器；见 duckdb_saved_attach.go。
+	if resolvedDBType == "duckdb" {
+		rewrittenQuery, directiveErr := a.applyDuckDBSavedConnectionDirectives(ctx, dbInst, query)
+		if directiveErr != nil {
+			return connection.QueryResult{Success: false, Message: directiveErr.Error(), QueryID: queryID}
+		}
+		query = rewrittenQuery
+	}
 
 	// 尝试使用驱动原生多结果集支持。普通 database/sql 驱动仅在安全的
 	// 读取场景使用该路径；Navicat ntunnel_mysql.php 则可用一个请求的
