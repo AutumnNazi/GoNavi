@@ -39,8 +39,19 @@ import {
     buildQueryEditorRoutineObjectMetas,
     buildQueryEditorTriggerObjectMetas,
 } from './queryEditorNamedObjectMetas';
+import {
+    QUERY_EDITOR_COMPLETION_SUGGESTION_LIMIT,
+    type QueryEditorCompletionMatchRank,
+} from './queryEditorCompletionMatch';
 import { resolveUniqueKeyGroupsFromIndexes } from '../dataGridCopyInsert';
 import { t as translate } from '../../i18n';
+
+export {
+    QUERY_EDITOR_COMPLETION_SUGGESTION_LIMIT,
+    rankQueryEditorCompletionCandidate,
+    resolveQueryEditorCompletionFilterText,
+} from './queryEditorCompletionMatch';
+export type { QueryEditorCompletionMatchRank } from './queryEditorCompletionMatch';
 
 export type CompletionTableMeta = {dbName: string, tableName: string, comment?: string};
 export type CompletionColumnMeta = {dbName: string, tableName: string, name: string, type: string, comment?: string};
@@ -84,57 +95,6 @@ export const findCompletionTablesByDatabase = (
         indexes.set(identityMode, index);
     }
     return index.get(buildMetadataIdentityKey(metadataDialect, dbName)) || [];
-};
-
-export const QUERY_EDITOR_COMPLETION_SUGGESTION_LIMIT = 200;
-
-export type QueryEditorCompletionMatchRank = 0 | 1 | 2 | null;
-
-export const rankQueryEditorCompletionCandidate = (
-    prefix: string,
-    candidates: readonly string[],
-    includeSubstring = true,
-): QueryEditorCompletionMatchRank => {
-    const normalizedPrefix = String(prefix || '').trim().toLowerCase();
-    if (!normalizedPrefix) return 0;
-
-    let hasPrefixMatch = false;
-    let hasSubstringMatch = false;
-    for (const candidate of candidates) {
-        const normalizedCandidate = String(candidate || '').trim().toLowerCase();
-        if (!normalizedCandidate) continue;
-        if (normalizedCandidate === normalizedPrefix) return 0;
-        if (normalizedCandidate.startsWith(normalizedPrefix)) {
-            hasPrefixMatch = true;
-        } else if (includeSubstring && normalizedCandidate.includes(normalizedPrefix)) {
-            hasSubstringMatch = true;
-        }
-    }
-    if (hasPrefixMatch) return 1;
-    if (hasSubstringMatch) return 2;
-    return null;
-};
-
-/**
- * Monaco applies its own fuzzy filter after the provider returns. When a
- * candidate is matched only by a substring, expose the matching suffix so
- * Monaco can keep the item visible even when the match does not start at a
- * word boundary (for example `title` in `subtitle`).
- */
-export const resolveQueryEditorCompletionFilterText = (
-    prefix: string,
-    candidates: readonly string[],
-): string | undefined => {
-    const normalizedPrefix = String(prefix || '').trim().toLowerCase();
-    if (!normalizedPrefix) return undefined;
-    for (const candidate of candidates) {
-        const value = String(candidate || '').trim();
-        const matchIndex = value.toLowerCase().indexOf(normalizedPrefix);
-        if (matchIndex >= 0) {
-            return value.slice(matchIndex);
-        }
-    }
-    return undefined;
 };
 
 type RankedQueryEditorCompletionCandidate<Candidate> = {
