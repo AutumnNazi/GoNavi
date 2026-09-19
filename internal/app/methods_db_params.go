@@ -408,6 +408,14 @@ func bindParameterizedStatements(statementTexts []string, dbType string, values 
 	return stmts, nil
 }
 
+// managedTransactionStatementOptions 携带托管事务参数化执行所需的每语句产物：
+// statements 仍传含 :name 的原文（审计/观察者使用），ExecutableTexts 是按方言
+// 重写占位符后的可执行文本，ArgsByStatement 与非空语句一一对应。
+type managedTransactionStatementOptions struct {
+	ExecutableTexts []string
+	ArgsByStatement [][]any
+}
+
 // prepareManagedTransactionStatements 拆分并绑定托管事务待执行语句：
 // 返回的 statements 是含 :name 的原文（审计/观察者使用），options 携带
 // 重写后的可执行文本与逐语句绑定值；未提供绑定时走纯拆分的 legacy 形态。

@@ -438,14 +438,6 @@ func executeManagedSQLTransactionStatements(ctx context.Context, session db.Stat
 	return executeManagedSQLTransactionStatementsWithObserver(ctx, session, runConfig, statements, text, nil)
 }
 
-// managedTransactionStatementOptions 携带参数化执行所需的每语句产物：
-// statements 仍传含 :name 的原文（审计/观察者使用），ExecutableTexts 是按方言
-// 重写占位符后的可执行文本，ArgsByStatement 与非空语句一一对应。
-type managedTransactionStatementOptions struct {
-	ExecutableTexts []string
-	ArgsByStatement [][]any
-}
-
 func executeManagedSQLTransactionStatementsWithObserver(
 	ctx context.Context,
 	session db.StatementExecer,
