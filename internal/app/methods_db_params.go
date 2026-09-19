@@ -336,11 +336,11 @@ func (a *App) DBQueryMultiWithParamsInTransaction(transactionID string, sql stri
 	}()
 
 	if err := ensureDriverSupportsParameterBinding(tx.execer); err != nil {
-		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID, TransactionID: transactionID, TransactionPending: true}
+		return connection.QueryResult{Success: false, Message: a.translateParameterBindingError(err), QueryID: queryID, TransactionID: transactionID, TransactionPending: true}
 	}
 	values, err := bindingsToTypedValues(bindings)
 	if err != nil {
-		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID, TransactionID: transactionID, TransactionPending: true}
+		return connection.QueryResult{Success: false, Message: a.translateParameterBindingError(err), QueryID: queryID, TransactionID: transactionID, TransactionPending: true}
 	}
 
 	resolvedDBType := resolveDDLDBType(runConfig)
@@ -348,7 +348,7 @@ func (a *App) DBQueryMultiWithParamsInTransaction(transactionID string, sql stri
 	statementTexts := splitSQLStatementsForDialect(tx.dbType, query)
 	stmts, err := bindParameterizedStatements(statementTexts, tx.dbType, values)
 	if err != nil {
-		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID, TransactionID: transactionID, TransactionPending: true}
+		return connection.QueryResult{Success: false, Message: a.translateParameterBindingError(err), QueryID: queryID, TransactionID: transactionID, TransactionPending: true}
 	}
 
 	queryStartedAt := time.Now()
@@ -491,7 +491,7 @@ func ensureDriverSupportsParameterBinding(target any) error {
 		_ = t
 		return nil
 	default:
-		return errors.New("当前驱动不支持参数绑定")
+		return errParameterBindingUnsupported
 	}
 }
 

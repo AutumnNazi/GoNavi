@@ -526,7 +526,7 @@ func executeManagedSQLTransactionStatementsWithObserver(
 				if argsTarget, ok := session.(db.StatementQueryArgsExecer); ok {
 					data, columns, err = argsTarget.QueryContextWithArgs(ctx, executableStmt, stmtArgs)
 				} else {
-					err = errors.New("当前事务会话不支持参数绑定")
+					err = errParameterBindingSessionUnsupported
 				}
 			} else if isReadStmt && shouldPreferPlainReadQueryResult(resolvedDBType) {
 				if sessionQueryMessageTarget != nil {
@@ -623,7 +623,7 @@ func executeManagedSQLTransactionStatementsWithObserver(
 			if argsTarget, ok := session.(db.StatementExecArgsExecer); ok {
 				affected, err = argsTarget.ExecContextWithArgs(ctx, executableStmt, stmtArgs)
 			} else {
-				err = errors.New("当前事务会话不支持参数绑定")
+				err = errParameterBindingSessionUnsupported
 			}
 		} else {
 			affected, err = session.ExecContext(ctx, stmt)
