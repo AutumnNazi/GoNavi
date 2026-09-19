@@ -5,6 +5,7 @@ import {
     mapSqlErrorLocationToOffset,
     offsetToMonacoPosition,
     parseSqlExecutionErrorLocation,
+    resolveExecutionErrorStatementText,
     revealQueryEditorSqlErrorLocation,
     splitSqlErrorLocationText,
 } from './queryEditorErrorLocation';
@@ -274,5 +275,44 @@ describe('query editor SQL error location', () => {
             error: 'table not found',
             currentSql: sql,
         })).toBe(false);
+    });
+});
+
+describe('resolveExecutionErrorStatementText', () => {
+    const twoStatementSql = 'SELECT * FROM users;\nUPDATE orders SET amount = 1 WHERE;\nSELECT 1;';
+
+    it('uses the per-statement origin entry when the error carries a statement index', () => {
+        const origin = createQueryEditorExecutionOrigin(
+            twoStatementSql,
+            twoStatementSql,
+            twoStatementSql,
+            [
+                { originalSql: 'SELECT * FROM users;' },
+                { originalSql: 'UPDATE orders SET amount = 1 WHERE;' },
+                { originalSql: 'SELECT 1;' },
+            ],
+        );
+        expect(resolveExecutionErrorStatementText({
+            error: '第 2 条语句执行失败: ERROR: syntax error at end of input',
+            origin,
+            currentEditorSql: twoStatementSql,
+        })).toBe('UPDATE orders SET amount = 1 WHERE;');
+    });
+
+    it('falls back to the statement containing the mapped error offset', () => {
+        expect(resolveExecutionErrorStatementText({
+            error: 'ERROR: syntax error at or near ";"\nLINE 2: UPDATE orders SET amount = 1 WHERE;',
+            origin: null,
+            currentEditorSql: twoStatementSql,
+            dbType: 'postgresql',
+        })).toBe('UPDATE orders SET amount = 1 WHERE');
+    });
+
+    it('returns empty when the error has no parseable location', () => {
+        expect(resolveExecutionErrorStatementText({
+            error: 'connection refused',
+            origin: null,
+            currentEditorSql: twoStatementSql,
+        })).toBe('');
     });
 });

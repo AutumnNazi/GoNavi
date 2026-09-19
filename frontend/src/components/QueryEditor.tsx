@@ -180,8 +180,10 @@ import QueryEditorToolbar, {
 } from './QueryEditorToolbar';
 import { useQueryEditorExecutionLifecycle } from './queryEditor/useQueryEditorExecutionLifecycle';
 import { useQueryEditorSqlErrorLocator } from './queryEditor/useQueryEditorSqlErrorLocator';
+import { useQueryEditorErrorDiagnose } from './queryEditor/useQueryEditorErrorDiagnose';
 import { resolveQueryEditorAiConnectionHost } from './queryEditor/queryEditorAiContext';
-import { diagnoseExecutionErrorWithAI, injectQueryEditorAiPromptWithContext } from './queryEditor/queryEditorAiPromptInject';
+import { injectQueryEditorAiPromptWithContext } from './queryEditor/queryEditorAiPromptInject';
+import { useAiSqlInsertToTabListener } from './queryEditor/queryEditorAiSqlInsert';
 import { peekDatabaseServerVersion } from './queryEditor/queryEditorServerVersion';
 import { useQueryEditorTabExecutionBroadcast } from './queryEditor/queryEditorTabExecutionState';
 import {
@@ -2270,7 +2272,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const lastEditorCursorPositionRef = useRef<any>(null);
   const lastHoverTargetPositionRef = useRef<{ lineNumber: number; column: number } | null>(null);
   const lastExecutedEditorQueryRef = useRef<string>('');
-  const { recordExecutionOrigin, locateExecutionError } = useQueryEditorSqlErrorLocator(editorRef);
+  const { recordExecutionOrigin, locateExecutionError, resolveExecutionErrorStatement } = useQueryEditorSqlErrorLocator(editorRef);
   const linkDecorationIdsRef = useRef<string[]>([]);
   const ctrlMetaPressedRef = useRef(false);
   const objectDecorationIdsRef = useRef<string[]>([]);
@@ -2739,6 +2741,18 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   }, [disposeTransformCaseContextMenuActions]);
 
   // SQL 诊断 / 慢 SQL 历史的快捷键监听（必须在 binding 声明之后）
+  // getEditorSql/getDialect 为惰性 getter：事件触发时才求值，
+  // 规避对后置声明（getCurrentQuery 等）的渲染期 TDZ 引用。
+  const handleDiagnoseExecutionErrorWithAI = useQueryEditorErrorDiagnose({
+      getEditorSql: () => getCurrentQuery(),
+      resolveExecutionErrorStatement,
+      getDialect: () => String(resolveSqlDialect(
+          String(currentConnectionConfig?.type || ''),
+          String(currentConnectionConfig?.driver || ''),
+          { oceanBaseProtocol: currentConnectionConfig?.oceanBaseProtocol },
+      ) || ''),
+  });
+
   useEffect(() => {
     if (!isActive) return;
     const handler = (e: KeyboardEvent) => {
@@ -2751,7 +2765,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         e.preventDefault();
         // 仅在最近一次执行失败时触发，与结果区「一键 AI 诊断」按钮的可见条件一致。
         if (executionErrorRef.current) {
-          diagnoseExecutionErrorWithAI(getCurrentQuery(), executionErrorRef.current);
+          handleDiagnoseExecutionErrorWithAI(executionErrorRef.current);
         }
         return;
       }
@@ -2762,6 +2776,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
+    // handleDiagnoseExecutionErrorWithAI 有意不进 deps：getter 惰性求值使其陈旧闭包安全，
+    // 与原实现对 getCurrentQuery 的处理一致
   }, [diagnoseExecutionErrorShortcutBinding, diagnoseQueryShortcutBinding, isActive, openSqlAnalysisWorkbench, showSlowQueriesShortcutBinding]);
   const selectCurrentStatementShortcutBinding = useMemo(
       () => resolveShortcutBinding(shortcutOptions, 'selectCurrentStatement', activeShortcutPlatform),
@@ -12346,86 +12362,18 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       };
   }, [duplicateCurrentLineShortcutBinding, handleDuplicateCurrentLine, isActive]);
 
-  // 监听由 TabManager 分发的专用注入事件
-  useEffect(() => {
-      const handleInsertSql = (e: any) => {
-          if (e.detail?.tabId !== tab.id || !e.detail?.sql) return;
-          const { sql: sqlText, connectionId, dbName } = e.detail;
-
-          const activeConnectionId = String(currentConnectionIdRef.current || '').trim();
-          const targetConnectionId = String(connectionId || activeConnectionId).trim();
-          const targetDbName = String(
-              dbName ?? (targetConnectionId === activeConnectionId ? currentDbRef.current : ''),
-          ).trim();
-          if (!switchQueryContext(targetConnectionId, targetDbName)) return;
-
-          const editor = editorRef.current;
-          const monaco = monacoRef.current;
-          if (editor && monaco) {
-              const model = editor.getModel();
-              const existingContent = editor.getValue?.() || '';
-
-              // runImmediately 模式下，如果编辑器内容已是待注入的 SQL（TabManager 创建时已传入），
-              // 跳过追加，直接选中全部内容并执行
-              if (e.detail.runImmediately && existingContent.trim() === sqlText.trim()) {
-                  if (model) {
-                      const lineCount = model.getLineCount();
-                      const maxCol = model.getLineMaxColumn(lineCount);
-                      editor.setSelection(new monaco.Range(1, 1, lineCount, maxCol));
-                      editor.focus();
-                      runAfterQueryContextReady();
-                  }
-              } else {
-              let position = editor.getPosition();
-              if (!position && model) {
-                  const lineCount = model.getLineCount();
-                  const maxCol = model.getLineMaxColumn(lineCount);
-                  position = new monaco.Position(lineCount, maxCol);
-              }
-
-              if (position) {
-                  const mText = (sqlText.endsWith('\n') ? sqlText : sqlText + '\n');
-                  const startRange = new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column);
-
-                  editor.executeEdits('ai-insert', [{
-                      range: startRange,
-                      text: (position.column > 1 ? '\n' : '') + mText,
-                      forceMoveMarkers: true
-                  }]);
-                  const nextValue = editor.getValue?.();
-                  if (typeof nextValue === 'string') {
-                      applyQueryState(nextValue);
-                  }
-
-                  // 定位并滚动到可见区域
-                  const targetLine = position.lineNumber + (position.column > 1 ? 1 : 0);
-                  editor.revealLineInCenterIfOutsideViewport(targetLine);
-                  editor.setPosition({ lineNumber: targetLine + mText.split('\n').length - 1, column: 1 });
-                  editor.focus();
-
-                  if (!e.detail.runImmediately) {
-                      message.success(translate('query_editor.message.insert_success'));
-                  }
-
-                  if (e.detail.runImmediately) {
-                      const endPosition = editor.getPosition();
-                      editor.setSelection(new monaco.Range(
-                          targetLine, 1,
-                          endPosition.lineNumber, endPosition.column
-                      ));
-                      // 🔧 延迟 500ms 等待连接/数据库切换的 setState 生效后再执行
-                      runAfterQueryContextReady();
-                  }
-              }
-              }
-          } else {
-              applyQueryState(getCurrentQuery() ? `${getCurrentQuery()}\n${sqlText}` : sqlText);
-              message.success(translate('query_editor.message.append_success'));
-          }
-      };
-      window.addEventListener('gonavi:insert-sql-to-tab', handleInsertSql as EventListener);
-      return () => window.removeEventListener('gonavi:insert-sql-to-tab', handleInsertSql as EventListener);
-  }, [runAfterQueryContextReady, switchQueryContext, tab.id]);
+  // 监听由 TabManager 分发的专用注入事件（含 AI“替换原 SQL”，见 queryEditorAiSqlInsert.ts）
+  useAiSqlInsertToTabListener({
+      tabId: tab.id,
+      editorRef,
+      monacoRef,
+      currentConnectionIdRef,
+      currentDbRef,
+      switchQueryContext,
+      applyQueryState,
+      getCurrentQuery,
+      runAfterQueryContextReady,
+  });
 
   const resolveDefaultQueryName = () => {
       const rawTitle = String(tab.title || '').trim();
@@ -13371,7 +13319,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           : '';
 
   const handleDiagnoseExecutionError = () => {
-      diagnoseExecutionErrorWithAI(getCurrentQuery(), executionError);
+      handleDiagnoseExecutionErrorWithAI(executionError);
   };
 
   const sqlEditorTransactionToolbar = (
