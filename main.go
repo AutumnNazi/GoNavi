@@ -1,3 +1,5 @@
+//go:build !bindings
+
 package main
 
 import (
@@ -155,10 +157,7 @@ func main() {
 	if nativeWindowErr != nil {
 		logger.Warnf("初始化原生独立窗口管理器失败：%v", nativeWindowErr)
 	}
-	bindings := []interface{}{application, aiService}
-	if nativeWindowManager != nil {
-		bindings = append(bindings, nativeWindowManager)
-	}
+	bindings := collectWailsBindings(application, aiService, nativeWindowManager)
 	lowMemoryMode := isLowMemoryMode()
 	backgroundColour, windowsOptions := resolveWindowVisualOptions(runtime.GOOS, lowMemoryMode)
 	windowsOptions.WebviewUserDataPath = resolveWindowsWebviewUserDataPath()
@@ -277,6 +276,7 @@ func main() {
 
 	if err != nil {
 		logger.Error(err, "应用启动失败")
+		os.Exit(1)
 	}
 }
 

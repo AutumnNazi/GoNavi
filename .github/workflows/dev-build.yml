@@ -775,6 +775,7 @@ jobs:
           export GOCACHE="${RUNNER_TEMP}/go-build-${{ matrix.os_name }}-${{ matrix.arch_name }}-${REVISION_HASH}"
           mkdir -p "$GOCACHE"
           echo "🧭 使用隔离 GOCACHE：$GOCACHE"
+          python3 scripts/ci-apply-wails-webkit-tags.py "${{ matrix.linux_webkit }}"
           if [ -n "${{ matrix.wails_tags }}" ]; then
             wails build -s -skipbindings -trimpath -platform ${{ matrix.platform }} -clean -o ${{ matrix.build_name }} -tags "${{ matrix.wails_tags }}" -ldflags "-s -w -X GoNavi-Wails/internal/app.AppVersion=${DEV_VERSION}"
           else
