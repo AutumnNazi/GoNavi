@@ -526,38 +526,5 @@ func addOpenCodeSchema(payload []byte) ([]byte, error) {
 }
 
 func writeOpenCodeConfigFile(configPath string, payload []byte) error {
-	writePath := configPath
-	if info, err := os.Lstat(configPath); err == nil && info.Mode()&os.ModeSymlink != 0 {
-		resolvedPath, err := filepath.EvalSymlinks(configPath)
-		if err != nil {
-			return err
-		}
-		writePath = resolvedPath
-	}
-	mode := os.FileMode(0o644)
-	if info, err := os.Stat(writePath); err == nil {
-		mode = info.Mode().Perm()
-	}
-	temp, err := os.CreateTemp(filepath.Dir(writePath), ".opencode-*.tmp")
-	if err != nil {
-		return err
-	}
-	tempPath := temp.Name()
-	defer os.Remove(tempPath)
-	if err := temp.Chmod(mode); err != nil {
-		_ = temp.Close()
-		return err
-	}
-	if _, err := temp.Write(payload); err != nil {
-		_ = temp.Close()
-		return err
-	}
-	if err := temp.Sync(); err != nil {
-		_ = temp.Close()
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		return err
-	}
-	return replaceOpenCodeConfigFile(tempPath, writePath)
+	return writeMCPConfigFileAtomically(configPath, payload)
 }

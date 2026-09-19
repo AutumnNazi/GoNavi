@@ -1,3 +1,5 @@
+import { dataSyncScheduleTextsEnUS, dataSyncScheduleTextsZhCN } from './textSchedules';
+
 const zhCN = {
   'workbench.title': '数据迁移与同步',
   'workbench.title_short': '数据同步',
@@ -462,10 +464,7 @@ const zhCN = {
   'common.details': '查看详情',
   'common.retry': '重试',
   'common.cancel': '取消',
-  'schedules.title': '调度',
-  'schedules.subtitle': '集中查看任务时区、Cron 和下一次执行。',
-  'schedules.empty_title': '还没有启用调度',
-  'schedules.empty_desc': '在任务的“触发与增量”阶段选择指定时间或 Cron。',
+  ...dataSyncScheduleTextsZhCN,
   'cdc.title': '持续同步状态',
   'cdc.subtitle': '这里显示源库是否已准备好持续同步，以及任务当前进度。后端没上报延迟时不会猜测。',
   'cdc.empty_title': '还没有可监控的持续同步源',
@@ -1053,10 +1052,7 @@ const enUS: Record<DataSyncWorkbenchTextKey, string> = {
   'common.details': 'View details',
   'common.retry': 'Retry',
   'common.cancel': 'Cancel',
-  'schedules.title': 'Schedules',
-  'schedules.subtitle': 'Review timezones, Cron expressions, and next runs in one place.',
-  'schedules.empty_title': 'No enabled schedules',
-  'schedules.empty_desc': 'Choose a one-time or Cron trigger in the task editor.',
+  ...dataSyncScheduleTextsEnUS,
   'cdc.title': 'CDC source status',
   'cdc.subtitle': 'Status comes from adapter probes and task checkpoints. Lag is never inferred when the backend does not report it.',
   'cdc.empty_title': 'No CDC sources to monitor',

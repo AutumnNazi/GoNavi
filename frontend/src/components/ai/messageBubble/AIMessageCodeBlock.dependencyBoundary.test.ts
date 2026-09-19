@@ -48,6 +48,7 @@ vi.mock('@ant-design/icons', () => ({
   CheckOutlined: () => null,
   CopyOutlined: () => null,
   PlayCircleOutlined: () => null,
+  SwapOutlined: () => null,
 }));
 
 vi.mock('../../common/ResizableDraggableModal', () => ({

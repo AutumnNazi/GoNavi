@@ -42,6 +42,8 @@ interface AIMessageBubbleProps {
   activeConnectionId?: string;
   activeConnectionConfig?: any;
   activeDbName?: string;
+  /** 会话中该消息对应的“原 SQL”候选，供“插入 SQL”替换偏好使用。 */
+  originalSqlCandidates?: string[];
   toolResultsById: AIToolResultIndex;
 }
 
@@ -218,6 +220,7 @@ export const AIMessageBubble: React.FC<AIMessageBubbleProps> = React.memo(({
   activeConnectionId,
   activeConnectionConfig,
   activeDbName,
+  originalSqlCandidates,
   toolResultsById,
 }) => {
   const [isCopied, setIsCopied] = useState(false);
@@ -410,6 +413,7 @@ export const AIMessageBubble: React.FC<AIMessageBubbleProps> = React.memo(({
               activeConnectionConfig={activeConnectionConfig}
               activeConnectionId={activeConnectionId}
               activeDbName={activeDbName}
+              originalSqlCandidates={originalSqlCandidates}
             />
           )}
 

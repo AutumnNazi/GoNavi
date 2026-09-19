@@ -525,15 +525,12 @@ export type DataSyncErrorRow = {
   operation: string;
 };
 
-export type DataSyncScheduleSummary = {
-  id: string;
-  taskId: string;
-  taskName: string;
-  enabled: boolean;
-  expression: string;
-  timezone: string;
-  nextRunAt: string;
-};
+// Schedule rows live in modelSchedule.ts; re-exported here so gateway and
+// workbench modules keep a single type source.
+export type {
+  DataSyncScheduleRunSummary,
+  DataSyncScheduleSummary,
+} from './modelSchedule';
 
 export type DataSyncCdcSourceStatus = {
   taskId: string;
