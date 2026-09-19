@@ -3532,12 +3532,12 @@ body[data-ui-version="v2"] .gn-v2-tree-title.is-connection {
 /* 可见层长标签按内容撑开（横滚由 estimate 按展开层计算）；短标签自然不溢出 */
 
 
-body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-title:not(.is-mono)):hover {
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:not(.ant-tree-treenode-selected):has(.gn-v2-tree-title:not(.is-mono)):hover {
   background: var(--gn-bg-hover) !important;
   border-radius: 6px;
 }
 
-body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-title:not(.is-mono)):hover .ant-tree-node-content-wrapper {
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:not(.ant-tree-treenode-selected):has(.gn-v2-tree-title:not(.is-mono)):hover .ant-tree-node-content-wrapper {
   background: transparent !important;
 }
 
@@ -3550,7 +3550,7 @@ body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode.ant-tre
   background: color-mix(in srgb, var(--gn-accent) 14%, var(--gn-bg-selected)) !important;
 }
 
-body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-title:not(.is-mono)):active {
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:not(.ant-tree-treenode-selected):has(.gn-v2-tree-title:not(.is-mono)):active {
   background: var(--gn-bg-active) !important;
 }
 
