@@ -23,6 +23,59 @@ func queryContextWithArgsOnConn(ctx context.Context, conn *sql.DB, dialect strin
 	return scanRowsForDialectContext(ctx, rows, dialect)
 }
 
+// 事务/会话执行器的参数化变体：与各自 QueryContext/ExecContext 保持同一
+// 锁语义、状态机与扫描方言，仅向底层 Conn/Tx 多传位置参数。
+
+func (e *sqlConnTransactionExecer) QueryContextWithArgs(ctx context.Context, query string, args []any) ([]map[string]interface{}, []string, error) {
+	conn, err := e.activeConn()
+	if err != nil {
+		return nil, nil, err
+	}
+	rows, err := conn.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	return scanRowsForDialectContext(ctx, rows, e.scanDialect)
+}
+
+func (e *sqlConnTransactionExecer) ExecContextWithArgs(ctx context.Context, query string, args []any) (int64, error) {
+	conn, err := e.activeConn()
+	if err != nil {
+		return 0, err
+	}
+	res, err := conn.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func (e *sqlTxStatementExecer) QueryContextWithArgs(ctx context.Context, query string, args []any) ([]map[string]interface{}, []string, error) {
+	tx, err := e.activeTx()
+	if err != nil {
+		return nil, nil, err
+	}
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	return scanRowsContext(ctx, rows)
+}
+
+func (e *sqlTxStatementExecer) ExecContextWithArgs(ctx context.Context, query string, args []any) (int64, error) {
+	tx, err := e.activeTx()
+	if err != nil {
+		return 0, err
+	}
+	res, err := tx.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func execContextWithArgsOnConn(ctx context.Context, conn *sql.DB, query string, args []any) (int64, error) {
 	res, err := conn.ExecContext(ctx, query, args...)
 	if err != nil {

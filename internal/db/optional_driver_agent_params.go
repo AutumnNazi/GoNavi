@@ -9,6 +9,10 @@ import (
 // 参数绑定仅在协议版本 V2 的 agent 上开放：旧版 agent 会静默忽略 Args 字段，
 // 导致含占位符的 SQL 原样下发到数据库。宁可拒绝执行并提示升级，也不能让
 // 用户收到莫名的语法错误。
+//
+// 已知限制：Args 经 JSON-lines 往返，time.Time 会序列化为 RFC3339 字符串、
+// 整数解码为 float64——agent 侧驱动按字符串/浮点绑定，日期时间的会话时区
+// 与隐式转换由驱动决定。直接编译（内置驱动）路径不受影响。
 
 // ErrOptionalDriverAgentParamsUnsupported 表示当前 agent 协议不支持参数绑定。
 var ErrOptionalDriverAgentParamsUnsupported = errors.New("驱动代理不支持参数绑定")

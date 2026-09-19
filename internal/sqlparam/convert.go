@@ -109,7 +109,7 @@ func convertNumber(value any) (any, error) {
 		}
 		parsed, err := strconv.ParseFloat(text, 64)
 		if err != nil {
-			return nil, fmt.Errorf("%w：%q 不是有效数值", ErrInvalidValue, v)
+			return nil, fmt.Errorf("%w：应为数值", ErrInvalidValue)
 		}
 		return normalizeJSONNumber(parsed), nil
 	default:
@@ -135,7 +135,7 @@ func convertBoolean(value any) (any, error) {
 	case string:
 		parsed, err := strconv.ParseBool(trimSpaceBytes(v))
 		if err != nil {
-			return nil, fmt.Errorf("%w：%q 不是有效布尔值", ErrInvalidValue, v)
+			return nil, fmt.Errorf("%w：应为布尔值", ErrInvalidValue)
 		}
 		return parsed, nil
 	default:
@@ -157,7 +157,7 @@ func convertDatetime(value any) (any, error) {
 			return parsed, nil
 		}
 	}
-	return nil, fmt.Errorf("%w：%q 不是可识别的日期时间", ErrInvalidValue, text)
+	return nil, fmt.Errorf("%w：应为 YYYY-MM-DD 或 ISO 8601 日期时间", ErrInvalidValue)
 }
 
 func convertList(value any) (any, error) {

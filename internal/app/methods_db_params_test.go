@@ -160,3 +160,64 @@ func TestDBQueryMultiWithParamsRejectsUnsupportedDriver(t *testing.T) {
 		t.Fatalf("错误信息应可操作: %s", result.Message)
 	}
 }
+
+// fakeParamsTransactionSession 在托管事务会话上叠加参数化契约并捕获绑定值。
+type fakeParamsTransactionSession struct {
+	fakeTransactionSession
+	argsQuerySQL   []string
+	argsQueryValue [][]any
+	argsExecSQL    []string
+	argsExecValue  [][]any
+}
+
+func (f *fakeParamsTransactionSession) QueryContextWithArgs(ctx context.Context, query string, args []any) ([]map[string]interface{}, []string, error) {
+	f.argsQuerySQL = append(f.argsQuerySQL, query)
+	f.argsQueryValue = append(f.argsQueryValue, args)
+	return []map[string]interface{}{{"id": int64(9)}}, []string{"id"}, nil
+}
+
+func (f *fakeParamsTransactionSession) ExecContextWithArgs(ctx context.Context, query string, args []any) (int64, error) {
+	f.argsExecSQL = append(f.argsExecSQL, query)
+	f.argsExecValue = append(f.argsExecValue, args)
+	return 1, nil
+}
+
+type fakeParamsTransactionalDB struct {
+	fakeBatchWriteDB
+	txSession *fakeParamsTransactionSession
+}
+
+func (f *fakeParamsTransactionalDB) OpenTransactionExecer(context.Context) (db.TransactionExecer, error) {
+	f.txSession = &fakeParamsTransactionSession{
+		fakeTransactionSession: fakeTransactionSession{
+			fakeBatchWriteSession: fakeBatchWriteSession{parent: &f.fakeBatchWriteDB},
+		},
+	}
+	return f.txSession, nil
+}
+
+func TestDBQueryMultiTransactionalWithParamsBindsInsideTransaction(t *testing.T) {
+	fake := &fakeParamsTransactionalDB{}
+	originalNewDatabaseFunc := newDatabaseFunc
+	t.Cleanup(func() { newDatabaseFunc = originalNewDatabaseFunc })
+	newDatabaseFunc = func(string) (db.Database, error) { return fake, nil }
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+
+	config := paramsTestConfig
+	started := app.DBQueryMultiTransactionalWithParams(config, "main",
+		"UPDATE t SET b = :v WHERE id = 1", "tx-params-1",
+		[]connection.QueryParamBinding{{Name: "v", Type: "string", Value: "x"}},
+	)
+	if !started.Success || started.TransactionID == "" {
+		t.Fatalf("托管事务带参启动失败: %#v", started)
+	}
+	if fake.txSession == nil || len(fake.txSession.argsExecSQL) != 1 {
+		t.Fatalf("事务会话应收到参数化语句: %#v", fake.txSession)
+	}
+	if !strings.Contains(fake.txSession.argsExecSQL[0], "?") || strings.Contains(fake.txSession.argsExecSQL[0], ":v") {
+		t.Fatalf("事务内应重写为位置占位符: %q", fake.txSession.argsExecSQL[0])
+	}
+	if len(fake.txSession.argsExecValue[0]) != 1 || fake.txSession.argsExecValue[0][0] != "x" {
+		t.Fatalf("事务内绑定值异常: %#v", fake.txSession.argsExecValue[0])
+	}
+}
