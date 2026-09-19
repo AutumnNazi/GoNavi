@@ -29,7 +29,6 @@ describe('DataGrid native vertical scroll lifecycle', () => {
     expect(tablePatch).toContain('virtualizeDuringNativeVerticalScroll');
     expect(tablePatch).toContain('leadingOverscanWidth: virtualizeDuringNativeVerticalScroll ? 0 : undefined');
     expect(tablePatch).toContain('resolveBodyLineColumnVirtualWindow(itemProps.offsetX, itemProps.scrolling)');
-    expect(stylesSource).toContain('.ant-table-tbody-virtual-holder:active > div > .ant-table-tbody-virtual-holder-inner');
-    expect(stylesSource).toContain('transform: none !important;');
+    expect(stylesSource).not.toContain('.ant-table-tbody-virtual-holder:active > div > .ant-table-tbody-virtual-holder-inner');
   });
 });

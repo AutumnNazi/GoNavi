@@ -1027,12 +1027,6 @@ export const buildDataGridCssText = ({
 
                 }
 
-                .${gridId} .ant-table-tbody-virtual-holder:active > div > .ant-table-tbody-virtual-holder-inner {
-                    position: sticky;
-                    top: 0;
-                    transform: none !important;
-                }
-
                 body[data-platform="darwin"] .${gridId} .data-grid-table-wrap.data-grid-table-wrap-external-active .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"],
 
                 body[data-platform="darwin"] .${gridId} .data-grid-table-wrap.data-grid-table-wrap-external-active .rc-virtual-list-holder[data-horizontal-scroll-native="true"] {
