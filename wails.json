@@ -6,6 +6,7 @@
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",
   "wailsjsdir": "./frontend",
+  "build:tags": "webkit2_41",
   "version": "2",
   "author": {
     "name": "Syngnat",

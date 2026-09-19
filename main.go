@@ -1,3 +1,5 @@
+//go:build !bindings
+
 package main
 
 import (
@@ -155,10 +157,7 @@ func main() {
 	if nativeWindowErr != nil {
 		logger.Warnf("初始化原生独立窗口管理器失败：%v", nativeWindowErr)
 	}
-	bindings := []interface{}{application, aiService}
-	if nativeWindowManager != nil {
-		bindings = append(bindings, nativeWindowManager)
-	}
+	bindings := collectWailsBindings(application, aiService, nativeWindowManager)
 	lowMemoryMode := isLowMemoryMode()
 	backgroundColour, windowsOptions := resolveWindowVisualOptions(runtime.GOOS, lowMemoryMode)
 	windowsOptions.WebviewUserDataPath = resolveWindowsWebviewUserDataPath()
@@ -198,6 +197,12 @@ func main() {
 		WindowStartState:   resolveInitialWindowStartState(runtime.GOOS),
 		StartHidden:        isWindowsDesktop,
 		Frameless:          windowChrome.Frameless,
+		// 打开 Wails 原生文件拖放：查询编辑器接收操作系统 .sql 文件拖入
+		// （frontend/src/components/queryEditor/useExternalSqlFileDrop.ts），
+		// 同时由 Wails 运行时拦截拖放默认行为，避免 WebView 导航离开应用。
+		DragAndDrop: &options.DragAndDrop{
+			EnableFileDrop: true,
+		},
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
@@ -277,6 +282,7 @@ func main() {
 
 	if err != nil {
 		logger.Error(err, "应用启动失败")
+		os.Exit(1)
 	}
 }
 
