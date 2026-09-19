@@ -515,3 +515,121 @@ func TestStorePurgeJobAllowsPausedRun(t *testing.T) {
 		t.Fatalf("purged job get error = %v, want ErrNotFound", err)
 	}
 }
+
+func TestStorePersistsPausedScheduledJobAcrossReopen(t *testing.T) {
+	dbPath := t.TempDir() + "/sync-jobs.db"
+	store, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	definition, err := store.PutJob(context.Background(), JobDefinition{
+		Name:            "scheduled orders sync",
+		Enabled:         true,
+		Kind:            JobKindReconcile,
+		IncrementalMode: IncrementalSnapshot,
+		Source:          EndpointRef{ConnectionID: "source"},
+		Target:          EndpointRef{ConnectionID: "target"},
+		Mappings:        []TableMapping{{SourceTable: "orders", TargetTable: "orders", Enabled: true}},
+		Schedule: ScheduleSpec{
+			Kind:            ScheduleInterval,
+			IntervalSeconds: 60,
+		},
+	})
+	if err != nil {
+		t.Fatalf("put scheduled job: %v", err)
+	}
+	if definition.NextRunAt == 0 {
+		t.Fatal("enabled interval schedule must compute the next run time")
+	}
+
+	paused, err := store.PauseJob(context.Background(), definition.ID)
+	if err != nil {
+		t.Fatalf("pause job: %v", err)
+	}
+	if paused.Lifecycle != JobLifecyclePaused || paused.Enabled {
+		t.Fatalf("paused job = lifecycle %q enabled %v", paused.Lifecycle, paused.Enabled)
+	}
+	if paused.NextRunAt != 0 {
+		t.Fatalf("paused next run at = %d, want 0", paused.NextRunAt)
+	}
+
+	if err := store.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+
+	reopened, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("reopen store: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := reopened.Close(); err != nil {
+			t.Errorf("close reopened store: %v", err)
+		}
+	})
+	reloaded, err := reopened.GetJob(context.Background(), definition.ID)
+	if err != nil {
+		t.Fatalf("get reloaded job: %v", err)
+	}
+	if reloaded.Lifecycle != JobLifecyclePaused || reloaded.Enabled || reloaded.NextRunAt != 0 {
+		t.Fatalf("reloaded job = lifecycle %q enabled %v nextRun %d", reloaded.Lifecycle, reloaded.Enabled, reloaded.NextRunAt)
+	}
+	due, err := reopened.ListDueJobs(context.Background(), time.Now().Add(24*time.Hour).UnixMilli())
+	if err != nil {
+		t.Fatalf("list due jobs: %v", err)
+	}
+	for _, job := range due {
+		if job.ID == definition.ID {
+			t.Fatal("paused job must not be scheduled while paused")
+		}
+	}
+}
+
+func TestStorePausedPutCancelsQueuedRunsAndRequestsRunningCancellation(t *testing.T) {
+	store := openTestStore(t)
+	definition := putTestJob(t, store, "queue")
+	queued := createStoredRun(t, store, definition, RunStatusQueued)
+	running := createStoredRun(t, store, definition, RunStatusRunning)
+
+	paused, err := store.PutJob(context.Background(), JobDefinition{
+		Version:          definition.Version,
+		ID:               definition.ID,
+		Name:             definition.Name,
+		Lifecycle:        JobLifecyclePaused,
+		Enabled:          false,
+		Kind:             definition.Kind,
+		IncrementalMode:  definition.IncrementalMode,
+		Source:           definition.Source,
+		Target:           definition.Target,
+		Mappings:         definition.Mappings,
+		ConcurrencyPolicy: definition.ConcurrencyPolicy,
+		Revision:         definition.Revision,
+	})
+	if err != nil {
+		t.Fatalf("put paused job: %v", err)
+	}
+	if paused.Lifecycle != JobLifecyclePaused {
+		t.Fatalf("put job lifecycle = %q", paused.Lifecycle)
+	}
+
+	canceledRun, err := store.GetRun(context.Background(), queued.ID)
+	if err != nil {
+		t.Fatalf("get queued run: %v", err)
+	}
+	if canceledRun.Status != RunStatusCanceled || canceledRun.FinishedAt == 0 {
+		t.Fatalf("queued run = status %q finishedAt %d, want canceled with finish time", canceledRun.Status, canceledRun.FinishedAt)
+	}
+	if canceledRun.Message != "canceled because task was paused" {
+		t.Fatalf("canceled run message = %q", canceledRun.Message)
+	}
+
+	cancellingRun, err := store.GetRun(context.Background(), running.ID)
+	if err != nil {
+		t.Fatalf("get running run: %v", err)
+	}
+	if cancellingRun.Status != RunStatusCancelling || cancellingRun.FinishedAt != 0 {
+		t.Fatalf("running run = status %q finishedAt %d, want cancelling without finish time", cancellingRun.Status, cancellingRun.FinishedAt)
+	}
+	if cancellingRun.Message != "cancellation requested because task was paused" {
+		t.Fatalf("cancelling run message = %q", cancellingRun.Message)
+	}
+}
