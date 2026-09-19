@@ -10798,5 +10798,7 @@
   "query_editor.params.type.boolean": "Boolean",
   "query_editor.params.type.datetime": "Datum/Zeit",
   "query_editor.params.type.null": "NULL",
-  "query_editor.params.type.list": "Liste"
+  "query_editor.params.type.list": "Liste",
+  "query_editor.params.null_unset": "NULL aufheben",
+  "query_editor.params.list_hint": "Elemente werden als Text gebunden; für Integer-Spalten sind typisierte Parameter zu empfehlen"
 }

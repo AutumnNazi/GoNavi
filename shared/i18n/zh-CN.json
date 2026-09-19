@@ -10798,5 +10798,7 @@
   "query_editor.params.type.boolean": "布尔",
   "query_editor.params.type.datetime": "日期时间",
   "query_editor.params.type.null": "NULL",
-  "query_editor.params.type.list": "列表"
+  "query_editor.params.type.list": "列表",
+  "query_editor.params.null_unset": "取消 NULL",
+  "query_editor.params.list_hint": "元素按文本绑定，整数列建议用数值参数逐条匹配"
 }

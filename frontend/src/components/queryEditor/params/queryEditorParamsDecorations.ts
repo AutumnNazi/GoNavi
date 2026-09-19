@@ -4,7 +4,8 @@ import type * as MonacoNS from 'monaco-editor';
 // 位置来自后端 AnalyzeQueryParameters 的语句拆分结果不可用（后端返回的是
 // 语句级文本），这里用轻量正则在纯文本层定位——只做展示，不参与执行判定。
 
-let decorationPool: string[] = [];
+// 装饰 id 池按编辑器实例隔离：多编辑器标签页各自维护，避免跨实例清理失效。
+const decorationPools = new WeakMap<MonacoNS.editor.IStandaloneCodeEditor, string[]>();
 
 export function applyParamNameDecorations(
   editor: MonacoNS.editor.IStandaloneCodeEditor | null | undefined,
@@ -47,7 +48,7 @@ export function applyParamNameDecorations(
       match = pattern.exec(text);
     }
   }
-  decorationPool = editor.deltaDecorations(decorationPool, decorations);
+  decorationPools.set(editor, editor.deltaDecorations(decorationPools.get(editor) || [], decorations));
 }
 
 export function clearParamNameDecorations(
@@ -56,5 +57,5 @@ export function clearParamNameDecorations(
   if (!editor) {
     return;
   }
-  decorationPool = editor.deltaDecorations(decorationPool, []);
+  decorationPools.set(editor, editor.deltaDecorations(decorationPools.get(editor) || [], []));
 }

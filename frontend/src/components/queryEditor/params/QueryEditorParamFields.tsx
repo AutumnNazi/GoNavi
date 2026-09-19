@@ -42,29 +42,35 @@ export function QueryEditorParamFields(props: QueryEditorParamFieldsProps) {
 
   return (
     <div className="gn-query-params-groups">
-      {groups.map((statement) => (
-        <div className="gn-query-params-group" key={statement.index}>
-          <Tooltip
-            title={<pre className="gn-query-params-sql-preview">{statement.text}</pre>}
-            placement="topLeft"
-          >
-            <div className="gn-query-params-group-title">
-              {t('query_editor.params.statement_label', { index: statement.index + 1 })}
-            </div>
-          </Tooltip>
-          {statement.parameters.map((name) => (
-            <ParamRow
-              key={name}
-              name={name}
-              usage={usage[name] || []}
-              currentStatement={statement.index}
-              input={values[name]}
-              onChange={onChange}
-              compact={Boolean(compact)}
-            />
-          ))}
-        </div>
-      ))}
+      {groups.map((statement) => {
+        // 同名参数归入首次出现的语句组，其余组只显示「亦用于」提示。
+        const groupParams = statement.parameters.filter(
+          (name) => (usage[name]?.[0] ?? statement.index) === statement.index,
+        );
+        return (
+          <div className="gn-query-params-group" key={statement.index}>
+            <Tooltip
+              title={<pre className="gn-query-params-sql-preview">{statement.text}</pre>}
+              placement="topLeft"
+            >
+              <div className="gn-query-params-group-title">
+                {t('query_editor.params.statement_label', { index: statement.index + 1 })}
+              </div>
+            </Tooltip>
+            {groupParams.map((name) => (
+              <ParamRow
+                key={name}
+                name={name}
+                usage={usage[name] || []}
+                currentStatement={statement.index}
+                input={values[name]}
+                onChange={onChange}
+                compact={Boolean(compact)}
+              />
+            ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -126,9 +132,14 @@ function ParamRow(props: ParamRowProps) {
         />
       )}
       {isNull ? (
-        <span className="gn-query-params-null-text">
-          {t('query_editor.params.null_hint')}
-        </span>
+        <Button
+          size="small"
+          type="link"
+          className="gn-query-params-null-text"
+          onClick={() => onChange(name, { type: 'string', value: '' })}
+        >
+          {t('query_editor.params.null_unset')}
+        </Button>
       ) : type === 'list' ? (
         <Space direction="vertical" className="gn-query-params-list" size={4}>
           {listValues.map((item, index) => (
@@ -160,6 +171,9 @@ function ParamRow(props: ParamRowProps) {
           >
             {t('query_editor.params.list_add')}
           </Button>
+          {!compact && (
+            <span className="gn-query-params-null-text">{t('query_editor.params.list_hint')}</span>
+          )}
         </Space>
       ) : type === 'datetime' ? (
         <DatePicker

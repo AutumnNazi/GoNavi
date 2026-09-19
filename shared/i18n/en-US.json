@@ -10798,5 +10798,7 @@
   "query_editor.params.type.boolean": "Boolean",
   "query_editor.params.type.datetime": "Date/Time",
   "query_editor.params.type.null": "NULL",
-  "query_editor.params.type.list": "List"
+  "query_editor.params.type.list": "List",
+  "query_editor.params.null_unset": "Unset NULL",
+  "query_editor.params.list_hint": "Elements bind as text; for integer columns prefer explicit typed parameters"
 }

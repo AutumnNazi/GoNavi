@@ -9,7 +9,7 @@ import type { QueryResultPaginationState } from '../utils/queryResultPagination'
 import { filterColumnNamesByGlobalHiddenColumns, useGlobalHiddenColumns } from '../utils/globalHiddenColumns';
 import { buildQueryResultColumnPinScope } from '../utils/queryResultColumnPinScope';
 import { t as defaultTranslate } from '../i18n';
-import { QUERY_EDITOR_PARAMS_PANEL_KEY } from './queryEditor/params/queryEditorParamsModel';
+import { QUERY_EDITOR_PARAMS_PANEL_KEY, type QueryParamBindingInput } from './queryEditor/params/queryEditorParamsModel';
 import { useOptionalI18n } from '../i18n/provider';
 import {
   resolveNativeDetachPreferredBounds,
@@ -67,6 +67,8 @@ export type QueryEditorResultSet = {
     executionConnectionParams?: string;
     executionConnectionId?: string;
     executionDbName?: string;
+    /** 参数化执行时的绑定值快照：分页/总计数/刷新等远端重跑路径必须原样携带 */
+    executionBindings?: QueryParamBindingInput[];
     pkColumns: string[];
     editLocator?: EditRowLocator;
     readOnly: boolean;

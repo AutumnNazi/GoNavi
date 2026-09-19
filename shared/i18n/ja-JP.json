@@ -10798,5 +10798,7 @@
   "query_editor.params.type.boolean": "真偽値",
   "query_editor.params.type.datetime": "日時",
   "query_editor.params.type.null": "NULL",
-  "query_editor.params.type.list": "リスト"
+  "query_editor.params.type.list": "リスト",
+  "query_editor.params.null_unset": "NULL を解除",
+  "query_editor.params.list_hint": "要素はテキストとしてバインドされます。整数列では型付きパラメータを推奨"
 }
