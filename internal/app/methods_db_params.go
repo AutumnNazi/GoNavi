@@ -43,10 +43,10 @@ func (a *App) AnalyzeQueryParameters(config connection.ConnectionConfig, dbName 
 	resolvedDBType := resolveDDLDBType(runConfig)
 	analysis := QueryParameterAnalysis{Statements: []QueryParameterStatement{}}
 
-	capability, ok := resolveParameterBindingCapability(runConfig)
-	if !ok || !capability {
+	capability, capabilityKnown := resolveParameterBindingCapability(runConfig)
+	analysis.Supported = capabilityKnown && capability
+	if !analysis.Supported {
 		analysis.MessageKey = "query_editor.params.unsupported_driver"
-		return analysis
 	}
 
 	statementTexts := splitSQLStatementsForDialect(resolvedDBType, sql)
@@ -67,7 +67,6 @@ func (a *App) AnalyzeQueryParameters(config connection.ConnectionConfig, dbName 
 		}
 		analysis.Statements = append(analysis.Statements, entry)
 	}
-	analysis.Supported = true
 	return analysis
 }
 
@@ -123,12 +122,6 @@ func (a *App) dbQueryMultiWithParams(
 	if queryID == "" {
 		queryID = generateQueryID()
 	}
-
-	values, err := bindingsToTypedValues(bindings)
-	if err != nil {
-		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
-	}
-
 	resolvedDBType := resolveDDLDBType(runConfig)
 	query = sanitizeSQLForPgLike(resolvedDBType, query)
 	if err := a.ensureDataSourceQueryCapability(config); err != nil {
@@ -138,55 +131,33 @@ func (a *App) dbQueryMultiWithParams(
 		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
 	}
 
-	traceContext, requestTrace, ownsRequestTrace := a.beginQueryRequestTrace(
-		auditOptions.executionContext,
-		runConfig,
-		queryID,
-		auditOptions.source,
-		"database.query_multi_with_params",
-	)
-	auditOptions.executionContext = traceContext
-	defer func() {
-		a.recordQueryRequestTraceOutcome(requestTrace, result, ownsRequestTrace)
-	}()
-	requestTrace.AddEvent("query.accepted", nil)
+	if !a.checkParameterBindingSupport(runConfig, nil) {
+		return connection.QueryResult{
+			Success: false,
+			Message: a.appText("query_editor.params.unsupported_driver", nil),
+			QueryID: queryID,
+		}
+	}
 
+	values, err := bindingsToTypedValues(bindings)
+	if err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
+	}
+	stmts, err := bindParameterizedStatements(splitSQLStatementsForDialect(resolvedDBType, query), resolvedDBType, values)
+	if err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
+	}
+
+	// 审计与慢查询历史只记录含 :name 的原文；重写文本与参数值不落盘。
 	trackSQLAudit := auditOptions.auditAll || (auditOptions.auditWrites && containsSQLAuditWrite(resolvedDBType, query))
 	auditSource := normalizeSQLAuditSource(auditOptions.source)
-	auditStartedAt := time.Now()
 	var statementAuditEvents []sqlaudit.Event
-	if trackSQLAudit {
-		defer func() {
-			a.recordSQLAuditQuery(sqlAuditQueryInput{
-				Config:     runConfig,
-				Database:   dbName,
-				DBType:     resolvedDBType,
-				QueryID:    queryID,
-				SQL:        query,
-				Source:     auditSource,
-				CommitMode: result.CommitMode,
-				Duration:   time.Since(auditStartedAt),
-				Result:     result,
-			})
-		}()
-		defer func() {
-			a.appendSQLAuditEvents(statementAuditEvents)
-		}()
-	}
-	var queryExecutionDuration time.Duration
-	defer func() {
-		result.DurationMs = durationMilliseconds(queryExecutionDuration)
-	}()
-	defer func() {
-		if !result.Success {
-			return
-		}
-		durationMs := queryExecutionDuration.Milliseconds()
-		a.recordQueryExecution(config, dbName, resolvedDBType, query, durationMs, 0, queryResultRowsReturned(result))
-	}()
+	auditStartedAt := time.Now()
+	defer a.recordParameterizedQueryAudit(
+		&result, runConfig, dbName, resolvedDBType, query, queryID, auditOptions, trackSQLAudit, auditSource, auditStartedAt, &statementAuditEvents,
+	)
 
 	ctx, cancel := newQueryExecutionContextWithParent(auditOptions.executionContext, runConfig)
-	requestTrace.AddEvent("driver.dispatched", nil)
 	cleanupRunningQuery, setRunningQueryCancellable := a.registerRunningQueryWithCancellationCapability(
 		queryID,
 		cancel,
@@ -194,20 +165,20 @@ func (a *App) dbQueryMultiWithParams(
 		optionalDriverTypeForConnectionConfig(runConfig),
 	)
 	lifecycle := a.beginQueryExecutionLifecycle(queryID)
+	var queryExecutionDuration time.Duration
 	defer func() {
 		lifecycle.complete(result)
 		cancel()
 		cleanupRunningQuery()
+		result.DurationMs = durationMilliseconds(queryExecutionDuration)
+		if !result.Success {
+			return
+		}
+		a.recordQueryExecution(config, dbName, resolvedDBType, query, durationMilliseconds(queryExecutionDuration), 0, queryResultRowsReturned(result))
 	}()
 
-	var dbInst db.Database
-	if auditOptions.synchronousConnectionWait {
-		dbInst, err = a.getDatabaseSynchronouslyWithContext(ctx, runConfig, false)
-	} else {
-		dbInst, err = a.getDatabaseWithContext(ctx, runConfig, false)
-	}
+	dbInst, err := a.getConnectionForParams(ctx, runConfig, auditOptions.synchronousConnectionWait)
 	if err != nil {
-		logger.Error(err, "DBQueryMultiWithParams 获取连接失败：%s", formatConnSummary(runConfig))
 		return buildQueryConnectionFailure(err, queryID, auditOptions.classifyConnectionErrors)
 	}
 	defer func() {
@@ -216,20 +187,9 @@ func (a *App) dbQueryMultiWithParams(
 		}
 	}()
 
-	if err := ensureDriverSupportsParameterBinding(dbInst); err != nil {
-		logger.Error(err, "DBQueryMultiWithParams 驱动不支持参数绑定：%s", formatConnSummary(runConfig))
-		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
-	}
-
-	statementTexts := splitSQLStatementsForDialect(resolvedDBType, query)
-	stmts, err := bindParameterizedStatements(statementTexts, resolvedDBType, values)
-	if err != nil {
-		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
-	}
-
 	resultSets, executedCount, failedIndex, auditEvents, execErr := a.executeParameterizedStatements(
 		ctx, dbInst, nil, runConfig, resolvedDBType, stmts,
-		trackSQLAudit, auditSource, auditStartedAt, queryID, "", setRunningQueryCancellable, &queryExecutionDuration,
+		trackSQLAudit, auditSource, time.Now(), queryID, "", setRunningQueryCancellable, &queryExecutionDuration,
 	)
 	statementAuditEvents = auditEvents
 	if execErr != nil {
@@ -242,15 +202,74 @@ func (a *App) dbQueryMultiWithParams(
 			Success: false,
 			Message: message,
 			QueryID: queryID,
-		}, executedCount, failedIndex, sqlaudit.BoundaryModeImplicit, false)
+		}, executedCount, failedIndex, sqlaudit.BoundaryModeImplicit, writeExecutionOutcomeUnknown(ctx, execErr))
 	}
 
-	applyRowBudgetTruncation(resultSets, db.NewRowBudget(0))
 	return summarizeMultiStatementResult(connection.QueryResult{
 		Success: true,
 		Data:    resultSets,
 		QueryID: queryID,
 	}, executedCount, 0, sqlaudit.BoundaryModeImplicit, false)
+}
+
+// checkParameterBindingSupport 组合静态能力声明与运行时契约断言；目标实例
+// 可为 nil（仅静态能力检查）。返回 false 时调用方给出可操作的限制说明。
+func (a *App) checkParameterBindingSupport(runConfig connection.ConnectionConfig, target db.Database) bool {
+	supported, known := resolveParameterBindingCapability(runConfig)
+	if !known || !supported {
+		logger.Error(errors.New("parameter binding unsupported"), "参数绑定能力门控拦截：%s", formatConnSummary(runConfig))
+		return false
+	}
+	if target != nil {
+		if err := ensureDriverSupportsParameterBinding(target); err != nil {
+			logger.Error(err, "驱动不支持参数绑定：%s", formatConnSummary(runConfig))
+			return false
+		}
+	}
+	return true
+}
+
+// getConnectionForParams 按调用方语义获取数据库实例。
+func (a *App) getConnectionForParams(ctx context.Context, runConfig connection.ConnectionConfig, synchronous bool) (db.Database, error) {
+	if synchronous {
+		return a.getDatabaseSynchronouslyWithContext(ctx, runConfig, false)
+	}
+	return a.getDatabaseWithContext(ctx, runConfig, false)
+}
+
+// recordParameterizedQueryAudit 装配参数化执行的审计与慢查询历史 defer：
+// SQL 审计记录含 :name 的原文，参数值与重写文本不进入任何落盘通道。
+func (a *App) recordParameterizedQueryAudit(
+	result *connection.QueryResult,
+	runConfig connection.ConnectionConfig,
+	dbName string,
+	resolvedDBType string,
+	query string,
+	queryID string,
+	auditOptions dbQueryMultiAuditOptions,
+	trackSQLAudit bool,
+	auditSource string,
+	auditStartedAt time.Time,
+	statementAuditEvents *[]sqlaudit.Event,
+) {
+	if trackSQLAudit {
+		defer func() {
+			a.recordSQLAuditQuery(sqlAuditQueryInput{
+				Config:     runConfig,
+				Database:   dbName,
+				DBType:     resolvedDBType,
+				QueryID:    queryID,
+				SQL:        query,
+				Source:     auditSource,
+				CommitMode: result.CommitMode,
+				Duration:   time.Since(auditStartedAt),
+				Result:     *result,
+			})
+		}()
+		defer func() {
+			a.appendSQLAuditEvents(*statementAuditEvents)
+		}()
+	}
 }
 
 // DBQueryMultiWithParamsInTransaction 在编辑器托管事务内执行参数化 SQL。
@@ -389,6 +408,47 @@ func bindParameterizedStatements(statementTexts []string, dbType string, values 
 	return stmts, nil
 }
 
+// prepareManagedTransactionStatements 拆分并绑定托管事务待执行语句：
+// 返回的 statements 是含 :name 的原文（审计/观察者使用），options 携带
+// 重写后的可执行文本与逐语句绑定值；未提供绑定时走纯拆分的 legacy 形态。
+func prepareManagedTransactionStatements(dbType string, query string, session db.StatementExecer, bindings []connection.QueryParamBinding) ([]string, managedTransactionStatementOptions, error) {
+	statementTexts := splitSQLStatementsForDialect(dbType, query)
+	if len(bindings) == 0 {
+		return statementTexts, managedTransactionStatementOptions{}, nil
+	}
+	if err := ensureDriverSupportsParameterBinding(session); err != nil {
+		return nil, managedTransactionStatementOptions{}, err
+	}
+	values, err := bindingsToTypedValues(bindings)
+	if err != nil {
+		return nil, managedTransactionStatementOptions{}, err
+	}
+	bound, err := bindParameterizedStatements(statementTexts, dbType, values)
+	if err != nil {
+		return nil, managedTransactionStatementOptions{}, err
+	}
+	// 审计与历史只接收含 :name 的原文；可执行文本与绑定值仅存在于内存。
+	statements := make([]string, 0, len(bound))
+	executableTexts := make([]string, 0, len(bound))
+	for _, stmt := range bound {
+		statements = append(statements, stmt.text)
+		executableTexts = append(executableTexts, stmt.sql)
+	}
+	return statements, managedTransactionStatementOptions{
+		ExecutableTexts: executableTexts,
+		ArgsByStatement: statementArgsFromBound(bound),
+	}, nil
+}
+
+// statementArgsFromBound 把绑定产物映射为托管事务执行器所需的逐语句参数。
+func statementArgsFromBound(stmts []parameterizedStatement) [][]any {
+	args := make([][]any, 0, len(stmts))
+	for _, stmt := range stmts {
+		args = append(args, stmt.args)
+	}
+	return args
+}
+
 // ensureDriverSupportsParameterBinding 是执行时的兜底校验：静态能力声明之外的
 // 运行时差异（自定义驱动、agent 协议版本）统一由参数化契约断言拦截。
 func ensureDriverSupportsParameterBinding(target any) error {
@@ -486,7 +546,7 @@ func (a *App) executeParameterizedStatements(
 
 		if trackSQLAudit {
 			statementAuditEvents = append(statementAuditEvents, a.buildParameterizedStatementAuditEvent(
-				runConfig, resolvedDBType, queryID, transactionID, auditSource, auditStartedAt,
+				ctx, runConfig, resolvedDBType, queryID, transactionID, auditSource, auditStartedAt,
 				stmt, idx+1, len(stmts), statementStartedAt, statementErr,
 			))
 		}
@@ -506,6 +566,7 @@ func (a *App) executeParameterizedStatements(
 // buildParameterizedStatementAuditEvent 构造单语句审计事件；SQL 字段是含
 // :name 的原文，参数值不可能进入事件。
 func (a *App) buildParameterizedStatementAuditEvent(
+	ctx context.Context,
 	runConfig connection.ConnectionConfig,
 	resolvedDBType string,
 	queryID string,
@@ -534,7 +595,7 @@ func (a *App) buildParameterizedStatementAuditEvent(
 		StatementCount: statementCount,
 		ExecutedCount:  executedStatementCount(statementErr),
 		FailedIndex:    failedStatementIndex(statementIndex, statementErr),
-		OutcomeUnknown: writeExecutionOutcomeUnknown(context.Background(), statementErr),
+		OutcomeUnknown: writeExecutionOutcomeUnknown(ctx, statementErr),
 		Duration:       time.Since(startedAt),
 		Err:            statementErr,
 	})

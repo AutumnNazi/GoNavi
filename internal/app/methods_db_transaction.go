@@ -55,7 +55,16 @@ func withManagedSQLStatementAuditTimestamp(
 // DBQueryMultiTransactional executes SQL editor DML in a managed transaction.
 // The transaction stays open until DBCommitTransaction or DBRollbackTransaction
 // is called by the SQL editor UI.
-func (a *App) DBQueryMultiTransactional(config connection.ConnectionConfig, dbName string, query string, queryID string) (result connection.QueryResult) {
+func (a *App) DBQueryMultiTransactional(config connection.ConnectionConfig, dbName string, query string, queryID string) connection.QueryResult {
+	return a.dbQueryMultiTransactionalWithBindings(config, dbName, query, queryID, nil)
+}
+
+// DBQueryMultiTransactionalWithParams 在托管事务启动时按名绑定参数执行首条 SQL。
+func (a *App) DBQueryMultiTransactionalWithParams(config connection.ConnectionConfig, dbName string, query string, queryID string, bindings []connection.QueryParamBinding) connection.QueryResult {
+	return a.dbQueryMultiTransactionalWithBindings(config, dbName, query, queryID, bindings)
+}
+
+func (a *App) dbQueryMultiTransactionalWithBindings(config connection.ConnectionConfig, dbName string, query string, queryID string, bindings []connection.QueryParamBinding) (result connection.QueryResult) {
 	runConfig := normalizeRunConfig(config, dbName)
 	transactionDBType := resolveDDLDBType(runConfig)
 	transactionConfig := runConfig
@@ -84,6 +93,13 @@ func (a *App) DBQueryMultiTransactional(config connection.ConnectionConfig, dbNa
 
 	query = sanitizeSQLForPgLike(transactionDBType, query)
 	if !shouldUseManagedSQLTransaction(transactionDBType, query) {
+		if len(bindings) > 0 {
+			return a.dbQueryMultiWithParams(config, dbName, query, queryID, bindings, dbQueryMultiAuditOptions{
+				auditAll:    true,
+				auditWrites: true,
+				source:      "query_editor",
+			})
+		}
 		return a.DBQueryMulti(config, dbName, query, queryID)
 	}
 	transactionID := "sql-editor-" + uuid.NewString()
@@ -244,7 +260,10 @@ func (a *App) DBQueryMultiTransactional(config connection.ConnectionConfig, dbNa
 		BoundaryMode:  transactionBoundaryMode,
 	})
 
-	statements := splitSQLStatementsForDialect(transactionDBType, query)
+	statements, executionOptions, bindErr := prepareManagedTransactionStatements(transactionDBType, query, sessionExecer, bindings)
+	if bindErr != nil {
+		return connection.QueryResult{Success: false, Message: bindErr.Error(), QueryID: queryID}
+	}
 	queryStartedAt := time.Now()
 	statementAuditEvents := make([]sqlaudit.Event, 0, len(statements))
 	resultSets, err := executeManagedSQLTransactionStatementsWithObserver(
@@ -257,6 +276,7 @@ func (a *App) DBQueryMultiTransactional(config connection.ConnectionConfig, dbNa
 			a.sqlAuditTransactionStatementObserver(transactionConfig, dbName, transactionDBType, queryID, transactionID, transactionBoundaryMode, &statementAuditEvents),
 			&statementAuditEvents,
 		),
+		executionOptions,
 	)
 	queryExecutionDuration += time.Since(queryStartedAt)
 	a.appendSQLAuditEvents(statementAuditEvents)
@@ -418,6 +438,14 @@ func executeManagedSQLTransactionStatements(ctx context.Context, session db.Stat
 	return executeManagedSQLTransactionStatementsWithObserver(ctx, session, runConfig, statements, text, nil)
 }
 
+// managedTransactionStatementOptions 携带参数化执行所需的每语句产物：
+// statements 仍传含 :name 的原文（审计/观察者使用），ExecutableTexts 是按方言
+// 重写占位符后的可执行文本，ArgsByStatement 与非空语句一一对应。
+type managedTransactionStatementOptions struct {
+	ExecutableTexts []string
+	ArgsByStatement [][]any
+}
+
 func executeManagedSQLTransactionStatementsWithObserver(
 	ctx context.Context,
 	session db.StatementExecer,
@@ -425,9 +453,14 @@ func executeManagedSQLTransactionStatementsWithObserver(
 	statements []string,
 	text func(string, map[string]any) string,
 	observer managedSQLStatementObserver,
+	options ...managedTransactionStatementOptions,
 ) ([]connection.ResultSetData, error) {
 	if text == nil {
 		text = defaultDBBackendText
+	}
+	var executionOptions managedTransactionStatementOptions
+	if len(options) > 0 {
+		executionOptions = options[0]
 	}
 	resolvedDBType := resolveDDLDBType(runConfig)
 	buildStatementExecutionFailedError := func(index int, err error) error {
@@ -478,6 +511,14 @@ func executeManagedSQLTransactionStatementsWithObserver(
 			})
 		}
 
+		executableStmt := stmt
+		if executionOptions.ExecutableTexts != nil && statementIndex-1 < len(executionOptions.ExecutableTexts) {
+			executableStmt = executionOptions.ExecutableTexts[statementIndex-1]
+		}
+		var stmtArgs []any
+		if executionOptions.ArgsByStatement != nil && statementIndex-1 < len(executionOptions.ArgsByStatement) {
+			stmtArgs = executionOptions.ArgsByStatement[statementIndex-1]
+		}
 		isReadStmt := isReadOnlySQLQuery(runConfig.Type, stmt)
 		tryQueryStmtFirst := shouldTryQueryResultFirst(runConfig.Type, stmt)
 		if isReadStmt || tryQueryStmtFirst {
@@ -489,7 +530,13 @@ func executeManagedSQLTransactionStatementsWithObserver(
 				usedMultiResult  bool
 				err              error
 			)
-			if isReadStmt && shouldPreferPlainReadQueryResult(resolvedDBType) {
+			if len(stmtArgs) > 0 {
+				if argsTarget, ok := session.(db.StatementQueryArgsExecer); ok {
+					data, columns, err = argsTarget.QueryContextWithArgs(ctx, executableStmt, stmtArgs)
+				} else {
+					err = errors.New("当前事务会话不支持参数绑定")
+				}
+			} else if isReadStmt && shouldPreferPlainReadQueryResult(resolvedDBType) {
 				if sessionQueryMessageTarget != nil {
 					data, columns, messages, err = sessionQueryMessageTarget.QueryContextWithMessages(ctx, stmt)
 				} else if sessionQueryTarget != nil {
@@ -578,7 +625,17 @@ func executeManagedSQLTransactionStatementsWithObserver(
 			return nil, statementErr
 		}
 
-		affected, err := session.ExecContext(ctx, stmt)
+		var affected int64
+		var err error
+		if len(stmtArgs) > 0 {
+			if argsTarget, ok := session.(db.StatementExecArgsExecer); ok {
+				affected, err = argsTarget.ExecContextWithArgs(ctx, executableStmt, stmtArgs)
+			} else {
+				err = errors.New("当前事务会话不支持参数绑定")
+			}
+		} else {
+			affected, err = session.ExecContext(ctx, stmt)
+		}
 		if err != nil {
 			statementErr := buildStatementExecutionFailedError(statementIndex, err)
 			emitObservation(0, 0, statementErr)
