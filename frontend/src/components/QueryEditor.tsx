@@ -168,6 +168,8 @@ import {
     buildQueryEditorTableNavigationContextKey,
 } from './queryEditor/queryEditorVisibilityContext';
 import { useQueryEditorEverActive } from './queryEditor/useQueryEditorEverActive';
+import SqlSnippetPickerModal from './queryEditor/SqlSnippetPickerModal';
+import DuckDBAttachPickerModal from './queryEditor/DuckDBAttachPickerModal';
 import { useExternalSqlFileDrop } from './queryEditor/useExternalSqlFileDrop';
 import QueryEditorResultsPanel, {
     QUERY_EDITOR_SQL_LOG_TAB_KEY,
@@ -2042,6 +2044,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   executionErrorRef.current = executionError;
   const [currentQueryId, setCurrentQueryId] = useState<string>('');
   const [isSqlSnippetPickerOpen, setIsSqlSnippetPickerOpen] = useState(false);
+  const [isDuckDBAttachPickerOpen, setIsDuckDBAttachPickerOpen] = useState(false);
   const [sqlSnippetPickerKeyword, setSqlSnippetPickerKeyword] = useState('');
   const runSeqRef = useRef(0);
   const currentQueryIdRef = useRef('');
@@ -3206,6 +3209,23 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       handleCloseSqlSnippetPicker();
       editor.focus?.();
   }, [applyQueryState, handleCloseSqlSnippetPicker]);
+  const handleInsertDuckDBAttachStatement = useCallback((statement: string) => {
+      const editor = editorRef.current;
+      const monaco = monacoRef.current;
+      if (!editor || !monaco?.Range || !statement) {
+          return;
+      }
+      const model = editor.getModel?.();
+      const position = editor.getPosition?.()
+          || { lineNumber: model?.getLineCount?.() || 1, column: model?.getLineMaxColumn?.(model?.getLineCount?.() || 1) || 1 };
+      const range = new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column);
+      editor.executeEdits?.('gonavi-duckdb-attach', [{ range, text: statement, forceMoveMarkers: true }]);
+      const nextValue = editor.getValue?.();
+      if (typeof nextValue === 'string') {
+          applyQueryState(nextValue);
+      }
+      editor.focus?.();
+  }, [applyQueryState]);
 
   useEffect(() => {
       const latestQuery = lastLocalQueryRef.current;
@@ -12622,6 +12642,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           key: 'query-actions',
           label: translate('tab_manager.kind_badge.query'),
           children: [
+              ...(String(currentConnectionConfig?.type || '').toLowerCase() === 'duckdb' ? [{
+                  key: 'duckdb-attach-datasource',
+                  label: translate('query_editor.duckdb_attach.menu'),
+                  onClick: () => setIsDuckDBAttachPickerOpen(true),
+              }] : []),
               ...(currentSavedQuery && !tab.filePath ? [{
                   key: 'save-query-as',
                   icon: <SaveOutlined />,
@@ -13715,158 +13740,24 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         </div>
       </Modal>
 
-      <Modal
-        title={translate('query_editor.snippet_picker.title')}
+      <SqlSnippetPickerModal
         open={isSqlSnippetPickerOpen}
-        centered
-        mask={false}
-        maskClosable={false}
-        width={620}
-        draggable
-        resizable
-        minResizableWidth={460}
-        minResizableHeight={320}
-        onCancel={handleCloseSqlSnippetPicker}
-        footer={null}
-        styles={{
-          content: {
-            borderRadius: 16,
-            border: darkMode ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(15,23,42,0.12)',
-            background: darkMode ? 'rgba(18,18,20,0.98)' : 'rgba(255,255,255,0.98)',
-            boxShadow: darkMode ? '0 24px 60px rgba(0,0,0,0.45)' : '0 24px 60px rgba(15,23,42,0.16)',
-            backdropFilter: 'blur(12px)',
-          },
-          header: {
-            background: 'transparent',
-            borderBottom: 'none',
-            paddingBottom: 8,
-          },
-          body: {
-            paddingTop: 8,
-            paddingBottom: 16,
-            display: 'flex',
-            flexDirection: 'column',
-            minHeight: 0,
-            overflow: 'hidden',
-          },
-        }}
-      >
-        <div
-          data-query-editor-snippet-picker="true"
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 12,
-            flex: '1 1 420px',
-            minHeight: 0,
-            overflow: 'hidden',
-          }}
-        >
-          <div style={{ fontSize: 12, lineHeight: 1.6, color: darkMode ? 'rgba(255,255,255,0.65)' : 'rgba(16,24,40,0.6)' }}>
-            {translate('query_editor.snippet_picker.description')}
-          </div>
-          <Input
-            autoFocus
-            data-query-editor-snippet-search="true"
-            value={sqlSnippetPickerKeyword}
-            onChange={(event) => setSqlSnippetPickerKeyword(event.target.value)}
-            onPressEnter={() => {
-              if (filteredSqlSnippets[0]) {
-                handleInsertSqlSnippet(filteredSqlSnippets[0]);
-              }
-            }}
-            placeholder={translate('query_editor.snippet_picker.search_placeholder')}
-          />
-          <div
-            style={{
-              flex: '1 1 auto',
-              minHeight: 0,
-              overflowY: 'auto',
-              paddingRight: 4,
-              display: 'grid',
-              gap: 8,
-            }}
-          >
-            {filteredSqlSnippets.map((snippet) => {
-              const preview = String(snippet.description || snippet.syntaxHelp || snippet.body || '')
-                .replace(/\s+/g, ' ')
-                .trim();
-              return (
-                <button
-                  key={snippet.id}
-                  type="button"
-                  data-query-editor-snippet-item={snippet.id}
-                  onClick={() => handleInsertSqlSnippet(snippet)}
-                  style={{
-                    textAlign: 'left',
-                    borderRadius: 12,
-                    border: darkMode ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(15,23,42,0.1)',
-                    background: darkMode ? 'rgba(255,255,255,0.03)' : '#fff',
-                    padding: '12px 14px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-                    <span style={{ fontFamily: 'var(--gn-font-mono)', fontSize: 12, fontWeight: 700, color: '#1677ff' }}>
-                      {snippet.prefix}
-                    </span>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: darkMode ? 'rgba(255,255,255,0.9)' : 'rgba(15,23,42,0.88)' }}>
-                      {snippet.name}
-                    </span>
-                    {snippet.isBuiltin ? (
-                      <span
-                        style={{
-                          fontSize: 11,
-                          padding: '1px 8px',
-                          borderRadius: 999,
-                          background: darkMode ? 'rgba(22,119,255,0.18)' : 'rgba(22,119,255,0.1)',
-                          color: '#1677ff',
-                        }}
-                      >
-                        {translate('snippet_settings.tag.builtin')}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      lineHeight: 1.6,
-                      color: darkMode ? 'rgba(255,255,255,0.65)' : 'rgba(16,24,40,0.6)',
-                      fontFamily: preview.includes('${') ? 'var(--gn-font-mono)' : undefined,
-                    }}
-                  >
-                    {preview}
-                  </div>
-                </button>
-              );
-            })}
-            {!filteredSqlSnippets.length ? (
-              <div
-                data-query-editor-snippet-empty="true"
-                style={{
-                  borderRadius: 12,
-                  padding: '18px 16px',
-                  border: darkMode ? '1px dashed rgba(255,255,255,0.14)' : '1px dashed rgba(15,23,42,0.12)',
-                  color: darkMode ? 'rgba(255,255,255,0.6)' : 'rgba(16,24,40,0.55)',
-                  fontSize: 13,
-                  lineHeight: 1.7,
-                }}
-              >
-                {sqlSnippetPickerEmptyLabel}
-              </div>
-            ) : null}
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-            <Button onClick={handleOpenSnippetSettingsFromPicker}>
-              {translate('query_editor.snippet_picker.manage')}
-            </Button>
-            <Button onClick={handleCloseSqlSnippetPicker}>
-              {translate('common.cancel')}
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
+        darkMode={darkMode}
+        keyword={sqlSnippetPickerKeyword}
+        onKeywordChange={setSqlSnippetPickerKeyword}
+        filteredSnippets={filteredSqlSnippets}
+        emptyLabel={sqlSnippetPickerEmptyLabel}
+        onInsertSnippet={handleInsertSqlSnippet}
+        onManageSnippets={handleOpenSnippetSettingsFromPicker}
+        onClose={handleCloseSqlSnippetPicker}
+      />
+      <DuckDBAttachPickerModal
+        open={isDuckDBAttachPickerOpen}
+        connections={connections}
+        darkMode={darkMode}
+        onClose={() => setIsDuckDBAttachPickerOpen(false)}
+        onInsert={handleInsertDuckDBAttachStatement}
+      />
       <Modal
         title={translate(
           saveModalMode === 'rename'
