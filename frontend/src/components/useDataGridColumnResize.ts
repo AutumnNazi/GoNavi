@@ -11,13 +11,15 @@ const ROW_NUMBER_MIN_WIDTH = 28;
 const ROW_NUMBER_MAX_WIDTH = 120;
 
 type UseDataGridColumnResizeContext = Record<string, any>;
-type ColumnResizePreviewTargetKind = 'width' | 'width-and-flex' | 'delta-width' | 'table-width' | 'sticky-left';
+type ColumnResizePreviewTargetKind = 'width' | 'width-and-flex' | 'bounded-width-and-flex' | 'delta-width' | 'table-width' | 'sticky-left';
 type ColumnResizePreviewTarget = {
   element: HTMLElement;
   initialWidth: string;
   initialWidthPriority: string;
   initialMinWidth: string;
   initialMinWidthPriority: string;
+  initialMaxWidth: string;
+  initialMaxWidthPriority: string;
   initialFlex: string;
   initialLeft: string;
   kind: ColumnResizePreviewTargetKind;
@@ -85,6 +87,8 @@ const createColumnResizePreview = (
       initialWidthPriority: element.style.getPropertyPriority?.('width') ?? '',
       initialMinWidth: element.style.minWidth,
       initialMinWidthPriority: element.style.getPropertyPriority?.('min-width') ?? '',
+      initialMaxWidth: element.style.maxWidth,
+      initialMaxWidthPriority: element.style.getPropertyPriority?.('max-width') ?? '',
       initialFlex: element.style.flex,
       initialLeft: element.style.left,
       kind,
@@ -128,6 +132,9 @@ const createColumnResizePreview = (
       addTarget(cell, 'sticky-left', left);
     });
   }
+  if (key === GONAVI_ROW_NUMBER_COLUMN_KEY) {
+    addTarget(headerCell, 'bounded-width-and-flex');
+  }
 
   const virtualRows = Array.from(
     tableRoot.querySelectorAll('.ant-table-tbody-virtual .ant-table-row'),
@@ -141,7 +148,10 @@ const createColumnResizePreview = (
     ));
     if (!targetCell) return;
 
-    addTarget(targetCell, 'width-and-flex');
+    addTarget(
+      targetCell,
+      key === GONAVI_ROW_NUMBER_COLUMN_KEY ? 'bounded-width-and-flex' : 'width-and-flex',
+    );
     const rowWidth = parseInlinePixelValue(row.style.width, row.getBoundingClientRect?.().width ?? 0);
     addTarget(row, 'delta-width', rowWidth);
 
@@ -165,7 +175,11 @@ const createColumnResizePreview = (
         ? cell.classList?.contains('data-grid-row-number-cell')
         : cell.getAttribute?.('data-col-name') === key
     ));
-    if (!targetCell?.classList?.contains('ant-table-cell-fix-left')) return;
+    if (!targetCell) return;
+    if (key === GONAVI_ROW_NUMBER_COLUMN_KEY) {
+      addTarget(targetCell, 'bounded-width-and-flex');
+    }
+    if (!targetCell.classList?.contains('ant-table-cell-fix-left')) return;
 
     const targetIndex = cells.indexOf(targetCell);
     cells.slice(targetIndex + 1).forEach((cell) => {
@@ -216,6 +230,13 @@ const applyColumnResizePreview = (
       element.style.flex = `0 0 ${width}px`;
       return;
     }
+    if (kind === 'bounded-width-and-flex') {
+      element.style.width = `${width}px`;
+      element.style.minWidth = `${width}px`;
+      element.style.maxWidth = `${width}px`;
+      element.style.flex = `0 0 ${width}px`;
+      return;
+    }
     const nextValue = (baseValue ?? 0) + delta;
     if (kind === 'table-width') {
       element.style.setProperty('width', `${nextValue}px`, 'important');
@@ -238,6 +259,8 @@ const restoreColumnResizePreview = (preview: ColumnResizePreview | null) => {
     initialWidthPriority,
     initialMinWidth,
     initialMinWidthPriority,
+    initialMaxWidth,
+    initialMaxWidthPriority,
     initialFlex,
     initialLeft,
   }) => {
@@ -248,6 +271,10 @@ const restoreColumnResizePreview = (preview: ColumnResizePreview | null) => {
     element.style.minWidth = initialMinWidth;
     if (initialMinWidthPriority) {
       element.style.setProperty('min-width', initialMinWidth, initialMinWidthPriority);
+    }
+    element.style.maxWidth = initialMaxWidth;
+    if (initialMaxWidthPriority) {
+      element.style.setProperty('max-width', initialMaxWidth, initialMaxWidthPriority);
     }
     element.style.flex = initialFlex;
     element.style.left = initialLeft;

@@ -85,6 +85,25 @@ export const clearDataGridHeaderPinOffset = (headerRoot: ParentNode): number => 
   return cleared;
 };
 
+export const syncDataGridHeaderHorizontalOffset = (
+  header: HTMLElement,
+  offset: number,
+  nativeScroll: boolean,
+): void => {
+  // rc-table may update header.scrollLeft after a result pane is reactivated.
+  const normalizedOffset = normalizeHorizontalOffset(offset);
+  const table = header.querySelector('table') as HTMLElement | null;
+  if (nativeScroll) {
+    applyDataGridHeaderPinOffset(header, normalizedOffset);
+    const translate = `${header.scrollLeft - normalizedOffset}px 0`;
+    if (table && table.style.translate !== translate) table.style.translate = translate;
+    return;
+  }
+  clearDataGridHeaderPinOffset(header);
+  if (table?.style.translate) table.style.translate = '';
+  if (Math.abs(header.scrollLeft - normalizedOffset) > 1) header.scrollLeft = normalizedOffset;
+};
+
 export const shouldVirtualizeDataGridColumns = (columnCount: number): boolean => (
   Number.isFinite(columnCount)
   && Math.max(0, Math.floor(columnCount)) > DATA_GRID_COLUMN_VIRTUALIZATION_THRESHOLD

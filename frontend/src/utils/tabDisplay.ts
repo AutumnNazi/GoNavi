@@ -494,6 +494,9 @@ const buildCompactObjectTabTitle = (tab: TabData, translate: TabDisplayTranslate
   if (tab.type === 'settings-center') {
     return translate('app.settings.title');
   }
+  if (tab.type === 'request-diagnostics') {
+    return translate('app.tools.entry.request_diagnostics.title');
+  }
   if (tab.type === 'table') {
     return stripSchemaFromTabObjectLabel(tab.tableName || tab.title) || tab.title;
   }
@@ -575,7 +578,7 @@ const getTabRawObjectLabel = (tab: TabData, translate: TabDisplayTranslate = def
   if (tab.type === 'sql-audit') return tab.title;
   if (tab.type === 'driver-manager') return translate('app.tools.entry.drivers.title');
   if (tab.type === 'settings-center') return translate('app.settings.title');
-  if (tab.type === 'request-diagnostics') return tab.title;
+  if (tab.type === 'request-diagnostics') return translate('app.tools.entry.request_diagnostics.title');
   return tab.title;
 };
 
