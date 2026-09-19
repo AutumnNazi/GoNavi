@@ -67,8 +67,9 @@ export function useQueryEditorParams(options: UseQueryEditorParamsOptions): Quer
     savedParamsRef.current = savedParams;
   }, [savedParams]);
 
-  // 保存查询切换时用其默认值重建会话输入；空映射时跳过 setState，
-  // 避免挂载期一次无意义渲染（曾放大监听器重注册类回归）。
+  // 保存查询切换时用其默认值重建会话输入。空声明时保留既有会话值是有意
+  // 行为（与"重复执行保留上次输入"的会话语义一致，且收集绑定只认分析结果
+  // 内的参数名，残留值不会误绑）；跳过 setState 同时避免挂载期多余渲染。
   useEffect(() => {
     const initial = initialValuesFromSavedParams(savedParams);
     if (Object.keys(initial).length === 0) {

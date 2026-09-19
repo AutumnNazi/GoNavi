@@ -1985,6 +1985,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   } | null>(null);
   const resultSetsRef = useRef(resultSets);
   const activeResultKeyRef = useRef(activeResultKey);
+  // 参数面板可用性快照：监听器闭包内不能读 paramsState（effect 不随分析刷新，
+  // 陈旧闭包会让快捷键误关未查看的结果 tab），与 isResultPanelVisibleRef 同模式。
+  const paramsPanelAvailableRef = useRef(false);
   const nativeRestoredResultRefs = useRef(new Map<
     string,
     { resultKey: string; result: ResultSet }
@@ -3090,6 +3093,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       analysis: QueryParameterAnalysisInfo | null;
   }>({ open: false, analysis: null });
   const lastParamsRunScopeRef = useRef<QueryEditorRunScope>('default');
+  paramsPanelAvailableRef.current = paramsState.hasParams || !!paramsState.analysis;
 
   // 参数名在 Monaco 中的展示高亮：随分析结果刷新（面板/执行同节奏）。
   useEffect(() => {
@@ -13008,12 +13012,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const idx = currentResultSets.findIndex(result => result.key === key);
       if (idx < 0) return;
 
-      const showParamsTab = Boolean(paramsState.hasParams || paramsState.analysis);
       const currentActiveKey = resolveEffectiveActiveResultKey(
           currentResultSets,
           activeResultKeyRef.current,
           true,
-          showParamsTab,
+          paramsPanelAvailableRef.current,
       );
       const nextResultSets = currentResultSets.filter(result => result.key !== key);
       const nextActiveKey = currentActiveKey && currentActiveKey !== key
@@ -13043,7 +13046,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               resultSetsRef.current,
               activeResultKeyRef.current,
               true,
-              Boolean(paramsState.hasParams || paramsState.analysis),
+              paramsPanelAvailableRef.current,
           );
           if (!effectiveActiveKey) return;
 
