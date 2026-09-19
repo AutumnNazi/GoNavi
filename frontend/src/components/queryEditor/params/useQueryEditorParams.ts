@@ -16,6 +16,8 @@ export interface UseQueryEditorParamsOptions {
   config: Record<string, unknown> | null | undefined;
   dbName: string;
   sql: string;
+  // 编辑器实时取数通道：query state 不随键入更新，分析必须走这里。
+  getSql?: () => string;
   // 编辑器未挂载或无连接时关闭分析。
   enabled: boolean;
   // 保存查询随附的参数声明，用作会话输入的初始默认值。
@@ -36,6 +38,8 @@ export interface QueryEditorParamsState {
   // 执行前门控：立即以权威结果分析给定 SQL，并把面板分析刷新为该结果。
   analyzeNow: (sql: string, dbName?: string) => Promise<QueryParameterAnalysisInfo | null>;
   applyAnalysis: (analysis: QueryParameterAnalysisInfo | null) => void;
+  // 编辑器键入时触发防抖重分析（面板与高亮随最新内容刷新）。
+  requestAnalysis: () => void;
 }
 
 // 会话级参数输入状态 + 防抖参数分析。解析权威在后端；同一编辑器标签页内
@@ -45,12 +49,19 @@ export function useQueryEditorParams(options: UseQueryEditorParamsOptions): Quer
   const [analysis, setAnalysis] = useState<QueryParameterAnalysisInfo | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [values, setValues] = useState<QueryParamValueMap>({});
+  // 分析输入与 query state 解耦：query 只在保存/切换时更新，键入通过
+  // requestAnalysis 把编辑器实时内容送进防抖分析。
+  const [analysisSql, setAnalysisSql] = useState(sql);
   const sequenceRef = useRef(0);
   const savedParamsRef = useRef<SavedQueryParamInfo[] | null | undefined>(savedParams);
   const configRef = useRef(config);
   useEffect(() => {
     configRef.current = config;
   }, [config]);
+  const getSqlRef = useRef(options.getSql);
+  useEffect(() => {
+    getSqlRef.current = options.getSql;
+  }, [options.getSql]);
 
   useEffect(() => {
     savedParamsRef.current = savedParams;
@@ -74,7 +85,7 @@ export function useQueryEditorParams(options: UseQueryEditorParamsOptions): Quer
       setAnalyzing(true);
       try {
         const rawConfig = (config || {}) as unknown as connection.ConnectionConfig;
-        const result = await AnalyzeQueryParameters(rawConfig, dbName || '', sql || '');
+        const result = await AnalyzeQueryParameters(rawConfig, dbName || '', analysisSql || '');
         if (sequenceRef.current !== sequence) {
           return;
         }
@@ -102,7 +113,7 @@ export function useQueryEditorParams(options: UseQueryEditorParamsOptions): Quer
     return () => {
       clearTimeout(timer);
     };
-  }, [config, dbName, sql, enabled]);
+  }, [config, dbName, analysisSql, enabled]);
 
   const setValue = useCallback((name: string, input: QueryParamInput | null) => {
     setValues((current) => {
@@ -125,6 +136,11 @@ export function useQueryEditorParams(options: UseQueryEditorParamsOptions): Quer
     setAnalysis(next);
     setAnalyzing(false);
   }, []);
+
+  const requestAnalysis = useCallback(() => {
+    const latest = getSqlRef.current?.() ?? sql;
+    setAnalysisSql((current) => (current === latest ? current : latest));
+  }, [getSqlRef, sql]);
 
   const analyzeNow = useCallback(async (sqlText: string, analysisDbName?: string) => {
     const sequence = ++sequenceRef.current;
@@ -171,5 +187,6 @@ export function useQueryEditorParams(options: UseQueryEditorParamsOptions): Quer
     applyValues,
     analyzeNow,
     applyAnalysis,
+    requestAnalysis,
   };
 }

@@ -3080,6 +3080,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       config: (currentConnection?.config ?? null) as Record<string, unknown> | null,
       dbName: currentDb,
       sql: query,
+      getSql: () => editorRef.current?.getValue?.() ?? query,
       enabled: Boolean(currentConnectionId),
       savedParams: currentSavedQuery?.parameters ?? null,
       resetToken: `${currentConnectionId || ''}:${currentDb || ''}`,
@@ -13416,6 +13417,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             onChange={(val) => {
                 const nextValue = val || '';
                 syncQueryDraft(nextValue);
+                paramsState.requestAnalysis();
             }}
             beforeMount={handleEditorBeforeMount}
             onMount={handleEditorDidMount}
