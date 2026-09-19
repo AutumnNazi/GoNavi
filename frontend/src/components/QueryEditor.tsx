@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import Editor, { type BeforeMount, type OnMount } from './MonacoEditor';
 import { message, Input, Form, MenuProps, Button, Segmented, type InputRef } from 'antd';
 import {
+    ApiOutlined,
     CodeOutlined,
     ClockCircleOutlined,
     EditOutlined,
@@ -12644,6 +12645,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           children: [
               ...(String(currentConnectionConfig?.type || '').toLowerCase() === 'duckdb' ? [{
                   key: 'duckdb-attach-datasource',
+                  icon: <ApiOutlined />,
                   label: translate('query_editor.duckdb_attach.menu'),
                   onClick: () => setIsDuckDBAttachPickerOpen(true),
               }] : []),

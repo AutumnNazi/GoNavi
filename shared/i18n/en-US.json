@@ -7847,7 +7847,7 @@
   "query_editor.snippet_picker.manage": "Manage snippets",
   "query_editor.snippet_picker.search_placeholder": "Search by prefix, name, or content",
   "query_editor.snippet_picker.title": "Insert SQL Snippet",
-  "query_editor.duckdb_attach.menu": "Attach saved datasource\u2026",
+  "query_editor.duckdb_attach.menu": "Attach saved datasource",
   "query_editor.duckdb_attach.title": "Attach saved datasource",
   "query_editor.duckdb_attach.description": "Pick a saved connection and attach it to the current DuckDB query. The statement only carries the connection ID \u2014 no username, password or DSN.",
   "query_editor.duckdb_attach.search_placeholder": "Search connection name or ID\u2026",

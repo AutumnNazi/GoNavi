@@ -7847,7 +7847,7 @@
   "query_editor.snippet_picker.manage": "Snippets verwalten",
   "query_editor.snippet_picker.search_placeholder": "Nach Präfix, Name oder Inhalt suchen",
   "query_editor.snippet_picker.title": "SQL-Snippet einfügen",
-  "query_editor.duckdb_attach.menu": "Gespeicherte Datenquelle anh\u00e4ngen\u2026",
+  "query_editor.duckdb_attach.menu": "Gespeicherte Datenquelle anhängen",
   "query_editor.duckdb_attach.title": "Gespeicherte Datenquelle anh\u00e4ngen",
   "query_editor.duckdb_attach.description": "W\u00e4hlen Sie eine gespeicherte Verbindung und h\u00e4ngen Sie sie an die aktuelle DuckDB-Abfrage an. Die Anweisung enth\u00e4lt nur die Verbindungs-ID \u2014 kein Benutzername, Passwort oder DSN.",
   "query_editor.duckdb_attach.search_placeholder": "Verbindungsname oder ID suchen\u2026",
