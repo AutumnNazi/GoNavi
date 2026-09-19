@@ -71,6 +71,9 @@ type optionalAgentRequest struct {
 	// a supporting client opts in.
 	StreamSSHProgress    bool                         `json:"streamSSHProgress,omitempty"`
 	Query                string                       `json:"query,omitempty"`
+	// Args 是按占位符顺序排列的位置绑定参数，仅在 json-lines-v2 及以上协议
+	// 中发送（omitempty 保证旧协议报文不携带该字段）。
+	Args                 []any                        `json:"args,omitempty"`
 	TimeoutMs            int64                        `json:"timeoutMs,omitempty"`
 	DBName               string                       `json:"dbName,omitempty"`
 	TableName            string                       `json:"tableName,omitempty"`
@@ -101,10 +104,6 @@ type OptionalDriverAgentMetadata struct {
 	ProtocolSchema string `json:"protocolSchema,omitempty"`
 }
 
-type optionalAgentConnectionInfo struct {
-	ElasticsearchServerMajor int `json:"elasticsearchServerMajor,omitempty"`
-}
-
 type optionalDriverAgentClient struct {
 	cmd             *exec.Cmd
 	stdin           io.WriteCloser
@@ -120,57 +119,23 @@ type optionalDriverAgentClient struct {
 	stderr          boundedDiagnosticTail
 	driver          string
 	shutdownTimeout time.Duration
+	// protocolSchema 来自 connect 响应；旧版 agent 不回显（空串）。
+	protocolSchema string
 }
 
-func ProbeOptionalDriverAgentMetadata(driverType string, executablePath string) (OptionalDriverAgentMetadata, error) {
-	metadata, err := probeOptionalDriverAgentMetadataWithRetry(func(timeout time.Duration) (OptionalDriverAgentMetadata, error) {
-		client, clientErr := newOptionalDriverAgentClient(driverType, executablePath)
-		if clientErr != nil {
-			return OptionalDriverAgentMetadata{}, clientErr
-		}
-		defer func() {
-			_ = client.close()
-		}()
-
-		var result OptionalDriverAgentMetadata
-		if callErr := client.callWithTimeout(optionalAgentRequest{Method: optionalAgentMethodMetadata}, &result, nil, nil, nil, timeout); callErr != nil {
-			return OptionalDriverAgentMetadata{}, callErr
-		}
-		return result, nil
-	}, runtime.GOOS == "windows", optionalAgentMetadataProbeRetryDelay)
-	if err != nil {
-		return OptionalDriverAgentMetadata{}, err
-	}
-	metadata.DriverType = normalizeRuntimeDriverType(metadata.DriverType)
-	metadata.AgentRevision = strings.TrimSpace(metadata.AgentRevision)
-	metadata.ProtocolSchema = strings.TrimSpace(metadata.ProtocolSchema)
-	return metadata, nil
+// schema 返回 connect 响应回显的协议版本，供参数绑定等能力门控读取。
+func (c *optionalDriverAgentClient) schema() string {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	return c.protocolSchema
 }
 
-func probeOptionalDriverAgentMetadataWithRetry(
-	probe func(time.Duration) (OptionalDriverAgentMetadata, error),
-	retryOnTimeout bool,
-	delay time.Duration,
-) (OptionalDriverAgentMetadata, error) {
-	if probe == nil {
-		return OptionalDriverAgentMetadata{}, errors.New("driver-agent metadata probe is nil")
+func (c *optionalDriverAgentClient) setSchema(schema string) {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	if c.protocolSchema == "" {
+		c.protocolSchema = schema
 	}
-
-	metadata, firstErr := probe(optionalAgentMetadataProbeTimeout)
-	if firstErr == nil || !retryOnTimeout || !errors.Is(firstErr, context.DeadlineExceeded) {
-		return metadata, firstErr
-	}
-	if delay > 0 {
-		time.Sleep(delay)
-	}
-
-	metadata, retryErr := probe(optionalAgentMetadataProbeRetryTimeout)
-	if retryErr == nil {
-		return metadata, nil
-	}
-	// Preserve the 30s primary timeout as the causal error while retaining the
-	// second attempt's detail for logs and localized error rendering.
-	return OptionalDriverAgentMetadata{}, fmt.Errorf("首次 metadata 探测失败：%w；冷启动重试失败：%v", firstErr, retryErr)
 }
 
 func newOptionalDriverAgentClient(driverType string, executablePath string) (*optionalDriverAgentClient, error) {
@@ -633,20 +598,9 @@ func (d *OptionalDriverAgentDB) Connect(config connection.ConnectionConfig) erro
 	d.client = client
 	d.pingTimeout = connectTimeout
 	d.serverMajor = connectionInfo.ElasticsearchServerMajor
+	client.setSchema(strings.TrimSpace(connectionInfo.ProtocolSchema))
 	d.ensureKingbaseSearchPath(config)
 	return nil
-}
-
-func newOptionalAgentConnectRequest(config connection.ConnectionConfig) optionalAgentRequest {
-	request := optionalAgentRequest{
-		Method:            optionalAgentMethodConnect,
-		Config:            &config,
-		StreamSSHProgress: config.UseSSH,
-	}
-	if config.UseSSH {
-		request.SSHRuntime = config.SSH.RuntimeSnapshot()
-	}
-	return request
 }
 
 func (d *OptionalDriverAgentDB) Close() error {
@@ -1076,30 +1030,6 @@ func (s *optionalDriverAgentSession) ensureOpen() error {
 		return fmt.Errorf("%s 事务会话已关闭", driverDisplayName(s.driver))
 	}
 	return nil
-}
-
-func isOptionalAgentStreamUnsupportedError(err error) bool {
-	if err == nil {
-		return false
-	}
-	text := strings.TrimSpace(err.Error())
-	if text == "" {
-		return false
-	}
-	return strings.Contains(text, "不支持的方法") || strings.Contains(text, "不支持流式查询")
-}
-
-func isOptionalAgentMultiResultUnsupportedError(err error) bool {
-	if err == nil {
-		return false
-	}
-	text := strings.TrimSpace(err.Error())
-	if text == "" {
-		return false
-	}
-	return strings.Contains(text, "不支持的方法") ||
-		strings.Contains(text, "不支持原生多结果集查询") ||
-		strings.Contains(text, "不支持多结果集查询")
 }
 
 func (d *OptionalDriverAgentDB) GetDatabases() ([]string, error) {
