@@ -681,6 +681,19 @@ vi.mock('antd', () => {
     <textarea value={value} onChange={onChange} placeholder={placeholder} disabled={disabled} />
   );
 
+  const Spin: any = () => <div className="mock-spin" />;
+  const Checkbox: any = ({ children, checked, onChange }: any) => (
+    <label>
+      <input type="checkbox" checked={!!checked} onChange={(event) => onChange?.({ target: { checked: event.target.checked } })} />
+      {children}
+    </label>
+  );
+  const DatePicker: any = ({ value, onChange }: any) => (
+    <input data-mock="datepicker" value={value || ''} onChange={() => {}} />
+  );
+  const InputNumber: any = ({ value, onChange }: any) => (
+    <input data-mock="inputnumber" value={value ?? ''} onChange={(event) => onChange?.(event.target.value === '' ? null : Number(event.target.value))} />
+  );
   const Modal = ({ children, open, onOk, okText = '确认', afterOpenChange }: any) => {
     React.useEffect(() => {
       if (open) {
@@ -712,6 +725,15 @@ vi.mock('antd', () => {
     Space,
     Table,
     Tag: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
+    Checkbox: ({ children, checked, onChange }: any) => (
+      <label>
+        <input type="checkbox" checked={!!checked} onChange={(event) => onChange?.({ target: { checked: event.target.checked } })} />
+        {children}
+      </label>
+    ),
+    DatePicker: ({ value }: any) => <input data-mock="datepicker" value={value || ''} />,
+    InputNumber: ({ value }: any) => <input data-mock="inputnumber" value={value ?? ''} />,
+    Spin: () => <div className="mock-spin" />,
     Empty,
     message: messageApi,
     Modal,

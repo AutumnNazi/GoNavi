@@ -70,6 +70,17 @@ import {
     shouldUseSqlEditorManagedTransactionForType,
 } from '../utils/sqlEditorTransaction';
 import { findSqlStatementRanges, resolveCurrentSqlStatementRange, resolveExecutableSql, stripLeadingSqlTrivia } from '../utils/sqlStatementSelection';
+import { useQueryEditorParams } from './queryEditor/params/useQueryEditorParams';
+import { applyParamNameDecorations } from './queryEditor/params/queryEditorParamsDecorations';
+import { QueryEditorParamsBindDialog, QueryEditorParamsPanel } from './queryEditor/params/QueryEditorParamsPanel';
+import {
+    bindingsFromValues,
+    collectMissingParamNames,
+    QUERY_EDITOR_PARAMS_PANEL_KEY,
+    type QueryParamBindingInput,
+    type QueryParameterAnalysisInfo,
+} from './queryEditor/params/queryEditorParamsModel';
+import { DBQueryMultiWithParams, DBQueryMultiWithParamsInTransaction, DBQueryMultiTransactionalWithParams } from '../../wailsjs/go/app/App';
 import { isMacLikePlatform } from '../utils/appearance';
 import { splitSidebarQualifiedName } from '../utils/sidebarLocate';
 import { splitMetadataQualifiedName, splitQualifiedNameSegmentsDetailed } from '../utils/qualifiedName';
@@ -3195,6 +3206,26 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       }
       return savedQueries.find((item) => item.id === tabId) || null;
   }, [savedQueries, tab.id, tab.savedQueryId]);
+
+  // 运行时绑定参数：面板防抖分析 + 执行前权威门控（见 handleRun）。
+  const paramsState = useQueryEditorParams({
+      config: (currentConnection?.config ?? null) as Record<string, unknown> | null,
+      dbName: currentDb,
+      sql: query,
+      enabled: Boolean(currentConnectionId),
+      savedParams: currentSavedQuery?.parameters ?? null,
+      resetToken: `${currentConnectionId || ''}:${currentDb || ''}`,
+  });
+  const [paramsDialogState, setParamsDialogState] = useState<{
+      open: boolean;
+      analysis: QueryParameterAnalysisInfo | null;
+  }>({ open: false, analysis: null });
+  const lastParamsRunScopeRef = useRef<QueryEditorRunScope>('default');
+
+  // 参数名在 Monaco 中的展示高亮：随分析结果刷新（面板/执行同节奏）。
+  useEffect(() => {
+      applyParamNameDecorations(editorRef.current, monacoRef.current, paramsState.analysis?.parameterNames || []);
+  }, [paramsState.analysis]);
 
   useEffect(() => {
       queryEditorMountedRef.current = true;
@@ -9752,6 +9783,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       dbType = String(config.type || ''),
       connectionParamsOverride?: string,
       executionConnectionId = currentConnectionIdRef.current,
+      paramBindings?: QueryParamBindingInput[],
   ) => {
       const executionConfig = connectionParamsOverride === undefined
           ? buildSqlExecutionConnectionConfig(config)
@@ -9771,9 +9803,19 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           && matchesCurrentExecutionContext
           && canReusePendingSqlEditorTransactionForType(dbType, sourceStatements, config as ConnectionConfig)
       ) {
+          if (paramBindings && paramBindings.length > 0) {
+              return DBQueryMultiWithParamsInTransaction(pendingTransaction.id, sql, queryId, paramBindings);
+          }
           return DBQueryMultiInTransaction(pendingTransaction.id, sql, queryId);
       }
       const rpcConfig = buildRpcConnectionConfig(executionConfig) as any;
+      if (paramBindings && paramBindings.length > 0) {
+          return invokeRequestScopedApp(
+              'DBQueryMultiWithParams',
+              [rpcConfig, dbName, sql, queryId, paramBindings],
+              () => DBQueryMultiWithParams(rpcConfig, dbName, sql, queryId, paramBindings),
+          );
+      }
       return invokeRequestScopedApp(
           'DBQueryMulti',
           [rpcConfig, dbName, sql, queryId],
@@ -10564,7 +10606,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       }
   };
 
-  const handleRun = async (runScope: QueryEditorRunScope = 'default') => {
+  const handleRun = async (runScope: QueryEditorRunScope = 'default', runOptions?: { skipParamsGate?: boolean }) => {
     if (isElasticsearchMode) {
         await handleElasticsearchRun(runScope === 'all');
         return;
@@ -11082,6 +11124,27 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 : executableStatements.join(';\n');
             recordExecutionOrigin(currentQuery, executableSQL, fullSQL, executablePlans);
 
+            // 运行时绑定参数门控：以刚要执行的 SQL 做权威分析。
+            let paramBindings: QueryParamBindingInput[] | undefined;
+            if (!runOptions?.skipParamsGate) {
+                const freshAnalysis = await paramsState.analyzeNow(fullSQL, executionDbName);
+                if (freshAnalysis && freshAnalysis.parameterNames.length > 0) {
+                    if (!freshAnalysis.supported) {
+                        message.error(translate(freshAnalysis.messageKey || 'query_editor.params.unsupported_driver'));
+                        if (isCurrentRun()) setLoading(false);
+                        return;
+                    }
+                    const missing = collectMissingParamNames(freshAnalysis.parameterNames, paramsState.values);
+                    if (missing.length > 0) {
+                        lastParamsRunScopeRef.current = runScope;
+                        setParamsDialogState({ open: true, analysis: freshAnalysis });
+                        if (isCurrentRun()) setLoading(false);
+                        return;
+                    }
+                    paramBindings = bindingsFromValues(freshAnalysis.parameterNames, paramsState.values);
+                }
+            }
+
             let queryId: string;
             try {
                 queryId = await GenerateQueryID();
@@ -11098,12 +11161,20 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             setExecutionTimingActive(true);
             try {
                 res = useManagedTransaction
-                    ? await DBQueryMultiTransactional(
-                        buildRpcConnectionConfig(executionConfig) as any,
-                        executionDbName,
-                        fullSQL,
-                        queryId,
-                    )
+                    ? (paramBindings
+                        ? await DBQueryMultiTransactionalWithParams(
+                            buildRpcConnectionConfig(executionConfig) as any,
+                            executionDbName,
+                            fullSQL,
+                            queryId,
+                            paramBindings,
+                        )
+                        : await DBQueryMultiTransactional(
+                            buildRpcConnectionConfig(executionConfig) as any,
+                            executionDbName,
+                            fullSQL,
+                            queryId,
+                        ))
                     : await executeSqlEditorMultiQuery(
                         config,
                         executionDbName,
@@ -11113,6 +11184,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                         normalizedDbType,
                         executionConnectionParams,
                         currentConnectionId,
+                        paramBindings,
                     );
             } catch (error: any) {
                 // A rejected Wails call has the same ambiguity as a returned
@@ -13550,8 +13622,36 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             setResultDiffAnchorKey(resultKey);
             setResultDiffWizardOpen(true);
           }}
+          paramsPanel={
+            paramsState.hasParams || paramsState.analyzing || paramsState.analysis ? (
+              <QueryEditorParamsPanel
+                analysis={paramsState.analysis}
+                analyzing={paramsState.analyzing}
+                values={paramsState.values}
+                onChange={paramsState.setValue}
+              />
+            ) : undefined
+          }
         />
       )}
+
+      <QueryEditorParamsBindDialog
+        open={false && paramsDialogState.open}
+        analysis={paramsDialogState.analysis}
+        analyzing={paramsState.analyzing}
+        values={paramsState.values}
+        missingNames={
+          paramsDialogState.analysis
+            ? collectMissingParamNames(paramsDialogState.analysis.parameterNames, paramsState.values)
+            : []
+        }
+        onChange={paramsState.setValue}
+        onConfirm={() => {
+          setParamsDialogState((current) => ({ ...current, open: false }));
+          void handleRun(lastParamsRunScopeRef.current || 'default', { skipParamsGate: true });
+        }}
+        onCancel={() => setParamsDialogState((current) => ({ ...current, open: false }))}
+      />
 
       <ResultDiffWizard
         open={resultDiffWizardOpen}

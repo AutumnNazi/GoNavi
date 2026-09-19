@@ -1,0 +1,98 @@
+/* 查询编辑器运行时绑定参数：面板与绑定对话框共享样式 */
+
+.gn-query-params-panel {
+    padding: 8px 12px;
+    overflow: auto;
+    max-height: 100%;
+}
+
+.gn-query-params-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.gn-query-params-group {
+    border-left: 2px solid var(--gn-border-color, rgba(128, 128, 128, 0.35));
+    padding-left: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.gn-query-params-group-title {
+    font-weight: 600;
+    font-size: 12px;
+    cursor: default;
+    width: fit-content;
+}
+
+.gn-query-params-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.gn-query-params-name {
+    font-family: var(--font-monospace, monospace);
+    font-size: 12px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(127, 127, 127, 0.15);
+    cursor: default;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gn-query-params-type {
+    width: 96px;
+}
+
+.gn-query-params-value {
+    flex: 1 1 180px;
+    max-width: 320px;
+}
+
+.gn-query-params-list {
+    flex: 1 1 220px;
+}
+
+.gn-query-params-null-text {
+    font-size: 12px;
+    opacity: 0.65;
+    align-self: center;
+}
+
+.gn-query-params-null-check {
+    font-size: 12px;
+}
+
+.gn-query-params-usage {
+    font-size: 11px;
+    opacity: 0.75;
+}
+
+.gn-query-params-missing {
+    margin-bottom: 8px;
+    color: var(--gn-warning-color, #d48806);
+    font-size: 12px;
+}
+
+.gn-query-params-sql-preview {
+    margin: 0;
+    max-height: 220px;
+    overflow: auto;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-width: 480px;
+}
+
+/* Monaco 内参数记号高亮 */
+.gn-query-param-token {
+    background: rgba(24, 144, 255, 0.18);
+    border-bottom: 1px dashed rgba(24, 144, 255, 0.6);
+}

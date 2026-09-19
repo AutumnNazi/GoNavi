@@ -1,0 +1,175 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AnalyzeQueryParameters } from '../../../../wailsjs/go/app/App';
+import type { connection } from '../../../../wailsjs/go/models';
+import type {
+  QueryParamInput,
+  QueryParamValueMap,
+  QueryParameterAnalysisInfo,
+  SavedQueryParamInfo,
+} from './queryEditorParamsModel';
+import { collectMissingParamNames, initialValuesFromSavedParams } from './queryEditorParamsModel';
+
+const ANALYSIS_DEBOUNCE_MS = 400;
+
+export interface UseQueryEditorParamsOptions {
+  // 原始连接配置（type/driver/oceanBaseProtocol 参与方言与能力判定）。
+  config: Record<string, unknown> | null | undefined;
+  dbName: string;
+  sql: string;
+  // 编辑器未挂载或无连接时关闭分析。
+  enabled: boolean;
+  // 保存查询随附的参数声明，用作会话输入的初始默认值。
+  savedParams?: SavedQueryParamInfo[] | null;
+  // SQL 清空或整体替换时重置会话值。
+  resetToken?: string;
+}
+
+export interface QueryEditorParamsState {
+  analysis: QueryParameterAnalysisInfo | null;
+  analyzing: boolean;
+  supported: boolean;
+  hasParams: boolean;
+  missingNames: string[];
+  values: QueryParamValueMap;
+  setValue: (name: string, input: QueryParamInput | null) => void;
+  applyValues: (next: QueryParamValueMap) => void;
+  // 执行前门控：立即以权威结果分析给定 SQL，并把面板分析刷新为该结果。
+  analyzeNow: (sql: string, dbName?: string) => Promise<QueryParameterAnalysisInfo | null>;
+  applyAnalysis: (analysis: QueryParameterAnalysisInfo | null) => void;
+}
+
+// 会话级参数输入状态 + 防抖参数分析。解析权威在后端；同一编辑器标签页内
+// 重复执行时保留上次输入（不持久化，敏感值零落盘）。
+export function useQueryEditorParams(options: UseQueryEditorParamsOptions): QueryEditorParamsState {
+  const { config, dbName, sql, enabled, savedParams, resetToken } = options;
+  const [analysis, setAnalysis] = useState<QueryParameterAnalysisInfo | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [values, setValues] = useState<QueryParamValueMap>({});
+  const sequenceRef = useRef(0);
+  const savedParamsRef = useRef<SavedQueryParamInfo[] | null | undefined>(savedParams);
+  const configRef = useRef(config);
+  useEffect(() => {
+    configRef.current = config;
+  }, [config]);
+
+  useEffect(() => {
+    savedParamsRef.current = savedParams;
+  }, [savedParams]);
+
+  // 保存查询切换时用其默认值重建会话输入。
+  useEffect(() => {
+    setValues(initialValuesFromSavedParams(savedParams));
+  }, [resetToken, savedParams]);
+
+  useEffect(() => {
+    if (!enabled) {
+      setAnalysis(null);
+      setAnalyzing(false);
+      return undefined;
+    }
+    const sequence = ++sequenceRef.current;
+    // 注意：不要在 effect 体内同步 setState（如 setAnalyzing）——挂载期立即
+    // 触发额外渲染会让依赖不稳定的监听器 effect 在测试桩下重复注册。
+    const timer = setTimeout(async () => {
+      setAnalyzing(true);
+      try {
+        const rawConfig = (config || {}) as unknown as connection.ConnectionConfig;
+        const result = await AnalyzeQueryParameters(rawConfig, dbName || '', sql || '');
+        if (sequenceRef.current !== sequence) {
+          return;
+        }
+        setAnalysis({
+          supported: Boolean(result?.supported),
+          statements: (result?.statements || []).map((item) => ({
+            index: Number(item?.index || 0),
+            text: String(item?.text || ''),
+            parameters: (item?.parameters || []).map(String),
+          })),
+          parameterNames: (result?.parameterNames || []).map(String),
+          messageKey: result?.messageKey || undefined,
+          detail: result?.detail || undefined,
+        });
+      } catch {
+        if (sequenceRef.current === sequence) {
+          setAnalysis(null);
+        }
+      } finally {
+        if (sequenceRef.current === sequence) {
+          setAnalyzing(false);
+        }
+      }
+    }, ANALYSIS_DEBOUNCE_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [config, dbName, sql, enabled]);
+
+  const setValue = useCallback((name: string, input: QueryParamInput | null) => {
+    setValues((current) => {
+      const next = { ...current };
+      if (!input) {
+        delete next[name];
+      } else {
+        next[name] = input;
+      }
+      return next;
+    });
+  }, []);
+
+  const applyValues = useCallback((next: QueryParamValueMap) => {
+    setValues({ ...next });
+  }, []);
+
+  const applyAnalysis = useCallback((next: QueryParameterAnalysisInfo | null) => {
+    sequenceRef.current += 1;
+    setAnalysis(next);
+    setAnalyzing(false);
+  }, []);
+
+  const analyzeNow = useCallback(async (sqlText: string, analysisDbName?: string) => {
+    const sequence = ++sequenceRef.current;
+    setAnalyzing(true);
+    try {
+      const rawConfig = (configRef.current || {}) as unknown as connection.ConnectionConfig;
+      const result = await AnalyzeQueryParameters(rawConfig, analysisDbName || dbName || '', sqlText || '');
+      const normalized: QueryParameterAnalysisInfo = {
+        supported: Boolean(result?.supported),
+        statements: (result?.statements || []).map((item) => ({
+          index: Number(item?.index || 0),
+          text: String(item?.text || ''),
+          parameters: (item?.parameters || []).map(String),
+        })),
+        parameterNames: (result?.parameterNames || []).map(String),
+        messageKey: result?.messageKey || undefined,
+        detail: result?.detail || undefined,
+      };
+      if (sequenceRef.current === sequence) {
+        setAnalysis(normalized);
+        setAnalyzing(false);
+      }
+      return normalized;
+    } catch {
+      if (sequenceRef.current === sequence) {
+        setAnalysis(null);
+        setAnalyzing(false);
+      }
+      return null;
+    }
+  }, [dbName]);
+
+  const parameterNames = analysis?.parameterNames || [];
+  const missingNames = collectMissingParamNames(parameterNames, values);
+
+  return {
+    analysis,
+    analyzing,
+    supported: Boolean(analysis?.supported),
+    hasParams: parameterNames.length > 0,
+    missingNames,
+    values,
+    setValue,
+    applyValues,
+    analyzeNow,
+    applyAnalysis,
+  };
+}

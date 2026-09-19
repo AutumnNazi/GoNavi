@@ -10781,5 +10781,22 @@
   "app.connection_package.excel.column.ssh_port": "SSH-Port",
   "app.connection_package.excel.column.connection_params": "Verbindungsparameter",
   "app.connection_package.excel.column.remark": "Bemerkung",
-  "sidebar.message.locate_failed": "Lokalisieren fehlgeschlagen: {{detail}}"
+  "sidebar.message.locate_failed": "Lokalisieren fehlgeschlagen: {{detail}}",
+  "query_editor.params.panel_title": "Parameter",
+  "query_editor.params.dialog_title": "Parameter binden",
+  "query_editor.params.execute": "Ausführen",
+  "query_editor.params.statement_label": "SQL {{index}}",
+  "query_editor.params.empty": "Keine benannten Parameter im SQL gefunden (:name verwenden)",
+  "query_editor.params.unsupported_driver": "Diese Datenquelle unterstützt keine Parameterbindung: :name-Parameter können nicht ausgeführt werden. Literale verwenden oder Treiber-Agent aktualisieren",
+  "query_editor.params.missing_hint": "Fehlende Parameterwerte: {{names}}",
+  "query_editor.params.null_hint": "Als NULL binden",
+  "query_editor.params.null_toggle": "NULL",
+  "query_editor.params.list_add": "Wert hinzufügen",
+  "query_editor.params.also_used_in": "Auch in SQL {{indexes}}",
+  "query_editor.params.type.string": "String",
+  "query_editor.params.type.number": "Zahl",
+  "query_editor.params.type.boolean": "Boolean",
+  "query_editor.params.type.datetime": "Datum/Zeit",
+  "query_editor.params.type.null": "NULL",
+  "query_editor.params.type.list": "Liste"
 }

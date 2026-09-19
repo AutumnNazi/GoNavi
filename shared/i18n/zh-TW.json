@@ -10781,5 +10781,22 @@
   "app.connection_package.excel.column.ssh_port": "SSH 連接埠",
   "app.connection_package.excel.column.connection_params": "連線參數",
   "app.connection_package.excel.column.remark": "備註",
-  "sidebar.message.locate_failed": "定位失敗：{{detail}}"
+  "sidebar.message.locate_failed": "定位失敗：{{detail}}",
+  "query_editor.params.panel_title": "參數",
+  "query_editor.params.dialog_title": "綁定參數",
+  "query_editor.params.execute": "執行",
+  "query_editor.params.statement_label": "SQL {{index}}",
+  "query_editor.params.empty": "目前 SQL 未偵測到命名參數（使用 :name 撰寫）",
+  "query_editor.params.unsupported_driver": "目前資料來源不支援參數綁定：SQL 中的 :name 參數無法執行，請改用字面量或升級驅動代理",
+  "query_editor.params.missing_hint": "以下參數尚未填值：{{names}}",
+  "query_editor.params.null_hint": "以 NULL 綁定",
+  "query_editor.params.null_toggle": "NULL",
+  "query_editor.params.list_add": "新增值",
+  "query_editor.params.also_used_in": "亦用於 SQL {{indexes}}",
+  "query_editor.params.type.string": "字串",
+  "query_editor.params.type.number": "數值",
+  "query_editor.params.type.boolean": "布林",
+  "query_editor.params.type.datetime": "日期時間",
+  "query_editor.params.type.null": "NULL",
+  "query_editor.params.type.list": "清單"
 }
