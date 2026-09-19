@@ -1468,7 +1468,7 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
       // 插入模式：追加到已有 tab 或新建 tab
       if (activeTab && activeTab.type === 'query') {
         window.dispatchEvent(new CustomEvent('gonavi:insert-sql-to-tab', {
-          detail: { tabId: activeTab.id, sql, runImmediately: false, connectionId: eventConnId, dbName: eventDbName }
+          detail: { ...e.detail, tabId: activeTab.id, runImmediately: false }
         }));
       } else {
         const newTabId = 'tab-' + Date.now();

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Tooltip, message } from 'antd';
-import { CheckOutlined, CopyOutlined, PlayCircleOutlined } from '@ant-design/icons';
+import { CheckOutlined, CopyOutlined, PlayCircleOutlined, SwapOutlined } from '@ant-design/icons';
 import SyntaxHighlighter from 'react-syntax-highlighter/dist/esm/prism-light';
 import bash from 'react-syntax-highlighter/dist/esm/languages/prism/bash';
 import css from 'react-syntax-highlighter/dist/esm/languages/prism/css';
@@ -64,6 +64,8 @@ interface AIMessageCodeBlockProps {
   activeConnectionConfig?: any;
   activeConnectionId?: string;
   activeDbName?: string;
+  /** 会话中该消息对应的“原 SQL”候选，供“插入 SQL”替换偏好使用。 */
+  originalSqlCandidates?: string[];
 }
 
 interface HighlightedCodeBlockProps {
@@ -75,6 +77,7 @@ interface HighlightedCodeBlockProps {
   activeConnectionConfig?: any;
   activeConnectionId?: string;
   activeDbName?: string;
+  originalSqlCandidates?: string[];
 }
 
 const useMessageCopy = () => {
@@ -157,7 +160,7 @@ const CodeCopyButton: React.FC<{ text: string }> = ({ text }) => {
   );
 };
 
-const CodeRunButton: React.FC<{ text: string; connectionId?: string; dbName?: string }> = ({ text, connectionId, dbName }) => {
+const CodeRunButton: React.FC<{ text: string; connectionId?: string; dbName?: string; originalSqlCandidates?: string[] }> = ({ text, connectionId, dbName, originalSqlCandidates }) => {
   const copy = useMessageCopy();
   const contextMatch = text.match(/^--\s*@context\s+connectionId=(\S+)\s+dbName=(\S+)/m);
   const resolvedConnId = contextMatch?.[1] || connectionId;
@@ -169,6 +172,8 @@ const CodeRunButton: React.FC<{ text: string; connectionId?: string; dbName?: st
     connectionId: resolvedConnId,
     dbName: resolvedDbName,
   });
+  // 仅当会话里能提取到原 SQL 候选（AI 诊断提示词或用户粘贴的出错 SQL）时才提供替换入口
+  const canReplaceOriginal = (originalSqlCandidates?.length ?? 0) > 0;
 
   const handleExecute = async () => {
     try {
@@ -223,6 +228,32 @@ const CodeRunButton: React.FC<{ text: string; connectionId?: string; dbName?: st
           <span style={{ marginLeft: 4 }}>{copy('ai_chat.message.code.insert')}</span>
         </span>
       </Tooltip>
+      {canReplaceOriginal && (
+        <Tooltip title={copy('ai_chat.message.code.replace_tooltip')}>
+          <span
+            className="ai-code-run-btn"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('gonavi:insert-sql', {
+                detail: { ...sqlDetail(false), replaceOriginal: true, originalSqlCandidates },
+              }));
+            }}
+            style={{
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              opacity: 0.6,
+              transition: 'opacity 0.2s',
+              padding: '0 4px',
+              color: '#f97316',
+            }}
+            onMouseEnter={(event) => { event.currentTarget.style.opacity = '1'; }}
+            onMouseLeave={(event) => { event.currentTarget.style.opacity = '0.6'; }}
+          >
+            <SwapOutlined />
+            <span style={{ marginLeft: 4 }}>{copy('ai_chat.message.code.replace')}</span>
+          </span>
+        </Tooltip>
+      )}
       <Tooltip title={copy('ai_chat.message.code.execute_tooltip')}>
         <span
           className="ai-code-run-btn"
@@ -256,6 +287,7 @@ const HighlightedCodeBlock: React.FC<HighlightedCodeBlockProps> = ({
   activeConnectionConfig,
   activeConnectionId,
   activeDbName,
+  originalSqlCandidates,
 }) => {
   const copy = useMessageCopy();
   const [expanded, setExpanded] = useState(false);
@@ -316,7 +348,7 @@ const HighlightedCodeBlock: React.FC<HighlightedCodeBlockProps> = ({
       >
         <span style={{ fontFamily: 'var(--gn-font-mono)' }}>{language}</span>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          {isSql && <CodeRunButton text={codeText} connectionId={activeConnectionId} dbName={activeDbName} />}
+          {isSql && <CodeRunButton text={codeText} connectionId={activeConnectionId} dbName={activeDbName} originalSqlCandidates={originalSqlCandidates} />}
           {isSelectQuery && activeConnectionConfig && (
             <Tooltip title={copy('ai_chat.message.code.preview_tooltip')}>
               <span
@@ -472,6 +504,7 @@ export const AIMessageCodeBlock: React.FC<AIMessageCodeBlockProps> = ({
   activeConnectionConfig,
   activeConnectionId,
   activeDbName,
+  originalSqlCandidates,
 }) => {
   const match = /language-(\w+)/.exec(className || '');
   if (!inline && match && match[1] === 'mermaid') {
@@ -492,6 +525,7 @@ export const AIMessageCodeBlock: React.FC<AIMessageCodeBlockProps> = ({
         activeConnectionConfig={activeConnectionConfig}
         activeConnectionId={activeConnectionId}
         activeDbName={activeDbName}
+        originalSqlCandidates={originalSqlCandidates}
       />
     );
   }

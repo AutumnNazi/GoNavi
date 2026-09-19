@@ -18,6 +18,7 @@ import {
   type AIToolResultIndex,
 } from './aiToolResultIndex';
 import { collectRetryableAIChatAssistantMessageIds } from './aiChatRetrySafety';
+import { collectOriginalSqlCandidatesForAssistant } from './aiSqlReplaceCandidates';
 
 interface AIChatPanelConversationViewProps {
   mode: AIChatPanelMode;
@@ -59,6 +60,8 @@ interface AIChatMessageRowProps {
   activeConnectionId?: string;
   activeConnectionConfig?: RpcConnectionConfig;
   activeDbName?: string;
+  /** 该 assistant 消息对应的“原 SQL”候选（见 aiSqlReplaceCandidates.ts）。 */
+  originalSqlCandidates?: string[];
   onEditMessage: (message: AIChatMessage) => void;
   onRetryMessage: (message: AIChatMessage) => void;
   onDeleteMessage?: (id: string) => void;
@@ -77,6 +80,7 @@ const areAIChatMessageRowPropsEqual = (
   && previous.activeConnectionId === next.activeConnectionId
   && previous.activeConnectionConfig === next.activeConnectionConfig
   && previous.activeDbName === next.activeDbName
+  && previous.originalSqlCandidates === next.originalSqlCandidates
   && previous.onEditMessage === next.onEditMessage
   && previous.onRetryMessage === next.onRetryMessage
   && previous.onDeleteMessage === next.onDeleteMessage
@@ -98,6 +102,7 @@ const AIChatMessageRow: React.FC<AIChatMessageRowProps> = React.memo(({
   activeConnectionId,
   activeConnectionConfig,
   activeDbName,
+  originalSqlCandidates,
   onEditMessage,
   onRetryMessage,
   onDeleteMessage,
@@ -122,6 +127,7 @@ const AIChatMessageRow: React.FC<AIChatMessageRowProps> = React.memo(({
       activeConnectionId={activeConnectionId}
       activeConnectionConfig={activeConnectionConfig}
       activeDbName={activeDbName}
+      originalSqlCandidates={originalSqlCandidates}
       toolResultsById={toolResultsById}
     />
   </AIMessageRenderBoundary>
@@ -146,6 +152,17 @@ const AIChatMessageList: React.FC<AIChatMessageListProps> = ({
     () => collectRetryableAIChatAssistantMessageIds(messages),
     [messages],
   );
+  const originalSqlCandidatesByMessageId = React.useMemo(() => {
+    const candidatesByMessageId = new Map<string, string[]>();
+    for (const message of messages) {
+      if (message.role !== 'assistant') continue;
+      const candidates = collectOriginalSqlCandidatesForAssistant(messages, message.id);
+      if (candidates.length > 0) {
+        candidatesByMessageId.set(message.id, candidates);
+      }
+    }
+    return candidatesByMessageId;
+  }, [messages]);
 
   return (
     <>
@@ -155,6 +172,7 @@ const AIChatMessageList: React.FC<AIChatMessageListProps> = ({
           {...rowProps}
           message={message}
           canRetry={retryableMessageIds.has(message.id)}
+          originalSqlCandidates={originalSqlCandidatesByMessageId.get(message.id)}
           toolResultsById={toolResultsById}
         />
       ))}

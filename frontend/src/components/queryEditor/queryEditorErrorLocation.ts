@@ -4,6 +4,7 @@ import {
   tokenOccupiesOffset,
   unescapeSqlErrorToken,
 } from './queryEditorErrorToken';
+import { resolveCurrentSqlStatementRange } from '../../utils/sqlStatementSelection';
 
 export type SqlExecutionErrorLocationKind = 'offset' | 'lineColumn' | 'token';
 
@@ -272,6 +273,50 @@ export const splitSqlErrorLocationText = (
     { text: token, locate: true },
     { text: text.slice(index + token.length) },
   ].filter((part) => part.text);
+};
+
+/**
+ * 解析执行错误对应的“出错语句”文本，供 AI 诊断注入提示词使用。
+ * 优先用错误文本中的语句序号（“第 N 条” / “statement N failed”）取 origin 里
+ * 逐条执行的语句——序号独立于位置信息，即使解析不出位置也要先尝试；
+ * 否则把错误位置映射回编辑器偏移并取包含该偏移的语句。
+ * 解析不出时返回空字符串，由调用方回退为整篇查询。
+ */
+export const resolveExecutionErrorStatementText = (params: {
+  error: string;
+  origin?: QueryEditorExecutionOrigin | null;
+  currentEditorSql: string;
+  dbType?: string;
+}): string => {
+  const text = String(params.error || '');
+  let statementIndex = 0;
+  for (const pattern of STATEMENT_INDEX_PATTERNS) {
+    const match = text.match(pattern);
+    if (match) {
+      statementIndex = parsePositiveInt(match[1]);
+      break;
+    }
+  }
+  const statement = statementIndex > 0
+    ? params.origin?.statements?.[statementIndex - 1]
+    : undefined;
+  if (statement?.originalSql?.trim()) {
+    return statement.originalSql.trim();
+  }
+  const location = parseSqlExecutionErrorLocation(params.error);
+  if (!location) {
+    return '';
+  }
+  const editorSql = normalizeSqlText(params.currentEditorSql || params.origin?.editorSql || '');
+  if (!editorSql) {
+    return '';
+  }
+  const offset = mapSqlErrorLocationToOffset(location, params.origin, editorSql);
+  if (offset == null) {
+    return '';
+  }
+  const range = resolveCurrentSqlStatementRange(editorSql, offset, params.dbType || '');
+  return range?.text?.trim() || '';
 };
 
 type QueryEditorErrorLocatorEditor = {
