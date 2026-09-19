@@ -1,5 +1,5 @@
 diff --git a/node_modules/rc-table/es/VirtualTable/BodyGrid.js b/node_modules/rc-table/es/VirtualTable/BodyGrid.js
-index 42dcde8..b43edae 100644
+index 42dcde8..319d0f0 100644
 --- a/node_modules/rc-table/es/VirtualTable/BodyGrid.js
 +++ b/node_modules/rc-table/es/VirtualTable/BodyGrid.js
 @@ -6,11 +6,12 @@ import * as React from 'react';
@@ -16,7 +16,7 @@ index 42dcde8..b43edae 100644
      flattenColumns = _useContext.flattenColumns,
      onColumnResize = _useContext.onColumnResize,
      getRowKey = _useContext.getRowKey,
-@@ -18,16 +19,36 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
+@@ -18,16 +19,40 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
      prefixCls = _useContext.prefixCls,
      childrenColumnName = _useContext.childrenColumnName,
      scrollX = _useContext.scrollX,
@@ -39,14 +39,18 @@ index 42dcde8..b43edae 100644
 +  var lastForwardedXRef = React.useRef(0);
 +  var columnVirtualWindowRef = React.useRef(null);
 +
-+  var resolveBodyLineColumnVirtualWindow = function resolveBodyLineColumnVirtualWindow(offsetX) {
-+    if (!listItemColumnVirtual || direction === 'rtl') {
++  var resolveBodyLineColumnVirtualWindow = function resolveBodyLineColumnVirtualWindow(offsetX, scrolling) {
++    var virtualizeDuringNativeVerticalScroll = listItemHorizontalOffsetComposited && !listItemColumnVirtual && scrolling;
++    if ((!listItemColumnVirtual && !virtualizeDuringNativeVerticalScroll) || direction === 'rtl') {
 +      columnVirtualWindowRef.current = null;
 +      return null;
 +    }
 +    var nextWindow = resolveColumnVirtualWindow(columnVirtualWindowRef.current, {
 +      offsetX: Math.max(0, offsetX || 0),
-+      viewportWidth: Math.max(0, componentWidth || 0)
++      viewportWidth: Math.max(0, componentWidth || 0),
++      leadingOverscanWidth: virtualizeDuringNativeVerticalScroll ? 0 : undefined,
++      trailingOverscanWidth: virtualizeDuringNativeVerticalScroll ? 0 : undefined,
++      retentionBufferWidth: virtualizeDuringNativeVerticalScroll ? 0 : undefined
 +    });
 +    columnVirtualWindowRef.current = nextWindow;
 +    return nextWindow;
@@ -54,7 +58,7 @@ index 42dcde8..b43edae 100644
  
    // =========================== Data ===========================
    var flattenData = useFlattenRecords(data, childrenColumnName, expandedKeys, getRowKey);
-@@ -49,6 +70,13 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
+@@ -49,6 +74,13 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
        return colWidth[2];
      });
    }, [columnsWidth]);
@@ -68,7 +72,7 @@ index 42dcde8..b43edae 100644
    React.useEffect(function () {
      columnsWidth.forEach(function (_ref2) {
        var _ref3 = _slicedToArray(_ref2, 2),
-@@ -71,11 +99,21 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
+@@ -71,11 +103,21 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
      Object.defineProperty(obj, 'scrollLeft', {
        get: function get() {
          var _listRef$current3;
@@ -92,13 +96,13 @@ index 42dcde8..b43edae 100644
            left: value
          });
        }
-@@ -110,10 +148,16 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
+@@ -110,10 +152,16 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
      return 1;
    };
    var extraRender = function extraRender(info) {
 +    // The column-window fast path explicitly requires rows without spans.
 +    // Avoid scanning every column on each vertical window update.
-+    if (listItemColumnVirtual) {
++    if (listItemColumnVirtual || listItemHorizontalOffsetComposited && info.scrolling) {
 +      return null;
 +    }
      var start = info.start,
@@ -110,7 +114,7 @@ index 42dcde8..b43edae 100644
  
      // Do nothing if no data
      if (end < 0) {
-@@ -198,6 +242,7 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
+@@ -198,6 +246,7 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
          style: {
            top: -offsetY + sizeInfo.top
          },
@@ -118,7 +122,7 @@ index 42dcde8..b43edae 100644
          extra: true,
          getHeight: getHeight
        });
-@@ -239,6 +284,9 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
+@@ -239,6 +288,9 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
      className: tblPrefixCls,
      height: scrollY,
      itemHeight: listItemHeight || 24,
@@ -128,7 +132,7 @@ index 42dcde8..b43edae 100644
      data: flattenData,
      itemKey: function itemKey(item) {
        return getRowKey(item.record);
-@@ -249,6 +297,8 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
+@@ -249,6 +301,8 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
      onVirtualScroll: function onVirtualScroll(_ref4) {
        var _listRef$current7;
        var x = _ref4.x;
@@ -137,16 +141,16 @@ index 42dcde8..b43edae 100644
        onScroll({
          currentTarget: (_listRef$current7 = listRef.current) === null || _listRef$current7 === void 0 ? void 0 : _listRef$current7.nativeElement,
          scrollLeft: x
-@@ -262,6 +312,7 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
+@@ -262,6 +316,7 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
        data: item,
        rowKey: rowKey,
        index: index,
-+      columnVirtualWindow: resolveBodyLineColumnVirtualWindow(itemProps.offsetX),
++      columnVirtualWindow: resolveBodyLineColumnVirtualWindow(itemProps.offsetX, itemProps.scrolling),
        style: itemProps.style
      });
    }));
 diff --git a/node_modules/rc-table/es/VirtualTable/BodyLine.js b/node_modules/rc-table/es/VirtualTable/BodyLine.js
-index c760819..99983a6 100644
+index c760819..5ad05f4 100644
 --- a/node_modules/rc-table/es/VirtualTable/BodyLine.js
 +++ b/node_modules/rc-table/es/VirtualTable/BodyLine.js
 @@ -2,36 +2,67 @@ import _extends from "@babel/runtime/helpers/esm/extends";
@@ -279,7 +283,7 @@ index c760819..99983a6 100644
 -  }));
 +  };
 +  var columnNodes;
-+  if (listItemColumnVirtual && direction !== 'rtl' && !extra && columnVirtualWindow && columnsOffset && columnsOffset.length === flattenColumns.length) {
++  if (direction !== 'rtl' && !extra && columnVirtualWindow && columnsOffset && columnsOffset.length === flattenColumns.length) {
 +    var visibleStart = columnVirtualWindow.start;
 +    var visibleEnd = columnVirtualWindow.end;
 +    var nodes = [];
@@ -502,7 +506,7 @@ index 9bfe1b6..4ce1549 100644
  }
 \ No newline at end of file
 diff --git a/node_modules/rc-table/lib/VirtualTable/BodyGrid.js b/node_modules/rc-table/lib/VirtualTable/BodyGrid.js
-index dee2539..648083b 100644
+index dee2539..ed98c23 100644
 --- a/node_modules/rc-table/lib/VirtualTable/BodyGrid.js
 +++ b/node_modules/rc-table/lib/VirtualTable/BodyGrid.js
 @@ -14,13 +14,14 @@ var React = _interopRequireWildcard(require("react"));
@@ -521,7 +525,7 @@ index dee2539..648083b 100644
      flattenColumns = _useContext.flattenColumns,
      onColumnResize = _useContext.onColumnResize,
      getRowKey = _useContext.getRowKey,
-@@ -28,16 +29,35 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
+@@ -28,16 +29,39 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
      prefixCls = _useContext.prefixCls,
      childrenColumnName = _useContext.childrenColumnName,
      scrollX = _useContext.scrollX,
@@ -543,14 +547,18 @@ index dee2539..648083b 100644
    var listRef = React.useRef();
 +  var lastForwardedXRef = React.useRef(0);
 +  var columnVirtualWindowRef = React.useRef(null);
-+  var resolveBodyLineColumnVirtualWindow = function resolveBodyLineColumnVirtualWindow(offsetX) {
-+    if (!listItemColumnVirtual || direction === 'rtl') {
++  var resolveBodyLineColumnVirtualWindow = function resolveBodyLineColumnVirtualWindow(offsetX, scrolling) {
++    var virtualizeDuringNativeVerticalScroll = listItemHorizontalOffsetComposited && !listItemColumnVirtual && scrolling;
++    if ((!listItemColumnVirtual && !virtualizeDuringNativeVerticalScroll) || direction === 'rtl') {
 +      columnVirtualWindowRef.current = null;
 +      return null;
 +    }
 +    var nextWindow = (0, _columnVirtualWindow.resolveColumnVirtualWindow)(columnVirtualWindowRef.current, {
 +      offsetX: Math.max(0, offsetX || 0),
-+      viewportWidth: Math.max(0, componentWidth || 0)
++      viewportWidth: Math.max(0, componentWidth || 0),
++      leadingOverscanWidth: virtualizeDuringNativeVerticalScroll ? 0 : undefined,
++      trailingOverscanWidth: virtualizeDuringNativeVerticalScroll ? 0 : undefined,
++      retentionBufferWidth: virtualizeDuringNativeVerticalScroll ? 0 : undefined
 +    });
 +    columnVirtualWindowRef.current = nextWindow;
 +    return nextWindow;
@@ -558,7 +566,7 @@ index dee2539..648083b 100644
  
    // =========================== Data ===========================
    var flattenData = (0, _useFlattenRecords.default)(data, childrenColumnName, expandedKeys, getRowKey);
-@@ -59,6 +79,13 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
+@@ -59,6 +83,13 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
        return colWidth[2];
      });
    }, [columnsWidth]);
@@ -572,7 +580,7 @@ index dee2539..648083b 100644
    React.useEffect(function () {
      columnsWidth.forEach(function (_ref2) {
        var _ref3 = (0, _slicedToArray2.default)(_ref2, 2),
-@@ -81,11 +108,21 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
+@@ -81,11 +112,21 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
      Object.defineProperty(obj, 'scrollLeft', {
        get: function get() {
          var _listRef$current3;
@@ -596,13 +604,13 @@ index dee2539..648083b 100644
            left: value
          });
        }
-@@ -120,10 +157,16 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
+@@ -120,10 +161,16 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
      return 1;
    };
    var extraRender = function extraRender(info) {
 +    // The column-window fast path explicitly requires rows without spans.
 +    // Avoid scanning every column on each vertical window update.
-+    if (listItemColumnVirtual) {
++    if (listItemColumnVirtual || listItemHorizontalOffsetComposited && info.scrolling) {
 +      return null;
 +    }
      var start = info.start,
@@ -614,7 +622,7 @@ index dee2539..648083b 100644
  
      // Do nothing if no data
      if (end < 0) {
-@@ -208,6 +251,7 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
+@@ -208,6 +255,7 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
          style: {
            top: -offsetY + sizeInfo.top
          },
@@ -622,7 +630,7 @@ index dee2539..648083b 100644
          extra: true,
          getHeight: getHeight
        });
-@@ -249,6 +293,9 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
+@@ -249,6 +297,9 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
      className: tblPrefixCls,
      height: scrollY,
      itemHeight: listItemHeight || 24,
@@ -632,7 +640,7 @@ index dee2539..648083b 100644
      data: flattenData,
      itemKey: function itemKey(item) {
        return getRowKey(item.record);
-@@ -259,6 +306,8 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
+@@ -259,6 +310,8 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
      onVirtualScroll: function onVirtualScroll(_ref4) {
        var _listRef$current7;
        var x = _ref4.x;
@@ -641,16 +649,16 @@ index dee2539..648083b 100644
        onScroll({
          currentTarget: (_listRef$current7 = listRef.current) === null || _listRef$current7 === void 0 ? void 0 : _listRef$current7.nativeElement,
          scrollLeft: x
-@@ -272,6 +321,7 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
+@@ -272,6 +325,7 @@ var Grid = /*#__PURE__*/React.forwardRef(function (props, ref) {
        data: item,
        rowKey: rowKey,
        index: index,
-+      columnVirtualWindow: resolveBodyLineColumnVirtualWindow(itemProps.offsetX),
++      columnVirtualWindow: resolveBodyLineColumnVirtualWindow(itemProps.offsetX, itemProps.scrolling),
        style: itemProps.style
      });
    }));
 diff --git a/node_modules/rc-table/lib/VirtualTable/BodyLine.js b/node_modules/rc-table/lib/VirtualTable/BodyLine.js
-index e1275fb..e9162bd 100644
+index e1275fb..591733e 100644
 --- a/node_modules/rc-table/lib/VirtualTable/BodyLine.js
 +++ b/node_modules/rc-table/lib/VirtualTable/BodyLine.js
 @@ -19,29 +19,60 @@ var _useRowInfo = _interopRequireDefault(require("../hooks/useRowInfo"));
@@ -774,7 +782,7 @@ index e1275fb..e9162bd 100644
 -  }));
 +  };
 +  var columnNodes;
-+  if (listItemColumnVirtual && direction !== 'rtl' && !extra && columnVirtualWindow && columnsOffset && columnsOffset.length === flattenColumns.length) {
++  if (direction !== 'rtl' && !extra && columnVirtualWindow && columnsOffset && columnsOffset.length === flattenColumns.length) {
 +    var visibleStart = columnVirtualWindow.start;
 +    var visibleEnd = columnVirtualWindow.end;
 +    var nodes = [];

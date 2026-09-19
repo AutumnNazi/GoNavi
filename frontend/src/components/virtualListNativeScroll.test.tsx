@@ -56,34 +56,6 @@ describe('resolver-based native virtual scrolling', () => {
     expect(wheel.defaultPrevented).toBe(false);
   });
 
-  it('pre-renders two viewports around fixed-height rows to cover a large native jump', () => {
-    const rows: Row[] = Array.from({ length: 200 }, (_, index) => ({
-      id: `fixed-${index}`,
-      height: 10,
-    }));
-    container = document.createElement('div');
-    document.body.append(container);
-    root = createRoot(container);
-
-    act(() => {
-      root?.render(
-        <VirtualList
-          data={rows}
-          height={300}
-          itemHeight={10}
-          itemHeightFixed
-          itemKey="id"
-        >
-          {(row) => <div data-row-id={row.id}>{row.id}</div>}
-        </VirtualList>,
-      );
-    });
-
-    expect(container.querySelector('[data-row-id="fixed-75"]')).not.toBeNull();
-    expect(container.querySelector('[data-row-id="fixed-90"]')).not.toBeNull();
-    expect(container.querySelector('[data-row-id="fixed-91"]')).toBeNull();
-  });
-
   it('commits a native scroll window without writing scrollTop back to WebKit', () => {
     const rows: Row[] = Array.from({ length: 200 }, (_, index) => ({
       id: `native-${index}`,

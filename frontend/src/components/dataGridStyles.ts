@@ -295,30 +295,17 @@ export const buildDataGridCssText = ({
                     opacity: 1 !important;
                 }
                 /* —— 表体固定：与 .ant-table 的 --gn-bg-panel 同色 —— */
-                .${gridId} .ant-table-tbody-virtual-holder:not([data-horizontal-scroll-native="true"]) .ant-table-row > .ant-table-cell.ant-table-cell-fix-left,
-                .${gridId} .ant-table-tbody-virtual-holder:not([data-horizontal-scroll-native="true"]) .ant-table-row > .ant-table-cell.ant-table-cell-fix-left-first,
-                .${gridId} .ant-table-tbody-virtual-holder:not([data-horizontal-scroll-native="true"]) .ant-table-row > .ant-table-cell.ant-table-cell-fix-left-last,
-                .${gridId} .ant-table-tbody-virtual-holder:not([data-horizontal-scroll-native="true"]) .ant-table-row > .ant-table-cell.ant-table-cell-fix-right,
-                .${gridId} .ant-table-tbody-virtual-holder:not([data-horizontal-scroll-native="true"]) .ant-table-row > .ant-table-cell.ant-table-cell-fix-right-first,
-                .${gridId} .ant-table-tbody-virtual-holder:not([data-horizontal-scroll-native="true"]) .ant-table-row > .ant-table-cell.ant-table-cell-fix-right-last {
+                .${gridId} .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell.ant-table-cell-fix-left,
+                .${gridId} .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell.ant-table-cell-fix-left-first,
+                .${gridId} .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell.ant-table-cell-fix-left-last,
+                .${gridId} .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell.ant-table-cell-fix-right,
+                .${gridId} .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell.ant-table-cell-fix-right-first,
+                .${gridId} .ant-table-tbody-virtual-holder .ant-table-row > .ant-table-cell.ant-table-cell-fix-right-last {
                     position: relative !important;
                     left: auto !important;
                     right: auto !important;
                     transform: translate3d(var(--gn-datagrid-h-scroll, 0px), 0, 0) !important;
                     will-change: transform;
-                    z-index: 4 !important;
-                    background: var(--gn-bg-panel, ${bgContent}) !important;
-                    background-clip: padding-box !important;
-                    overflow: hidden !important;
-                }
-                .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-left,
-                .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-left-first,
-                .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-left-last,
-                .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-right,
-                .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-right-first,
-                .${gridId} .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"] .ant-table-row > .ant-table-cell.ant-table-cell-fix-right-last {
-                    position: sticky !important;
-                    transform: none !important;
                     z-index: 4 !important;
                     background: var(--gn-bg-panel, ${bgContent}) !important;
                     background-clip: padding-box !important;
