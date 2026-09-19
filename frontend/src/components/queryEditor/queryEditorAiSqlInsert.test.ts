@@ -181,6 +181,22 @@ describe('tryReplaceOriginalSql', () => {
     expect(ok).toBe(false);
     expect(options.edits).toHaveLength(0);
   });
+
+  it('refuses to replace when the user has edited the original SQL and it no longer matches', () => {
+    const content = 'SELECT id FROM t WHERE id = 5;';
+    const options = makeOptions(content);
+    const ok = tryReplaceOriginalSql(
+      options.editorRef.current!,
+      monaco,
+      options.editorRef.current!.getModel!(),
+      ['SELECT id FROM t WHERE id = ;'],
+      'SELECT id FROM t WHERE id = 5 AND status = 1;',
+      vi.fn(),
+    );
+    expect(ok).toBe(false);
+    expect(options.edits).toHaveLength(0);
+    expect(options.editorRef.current!.getValue!()).toBe(content);
+  });
 });
 
 describe('createAiSqlInsertHandler', () => {
@@ -262,5 +278,35 @@ describe('findOriginalSqlMatch trailing boundary', () => {
     const match = findOriginalSqlMatch(content, ['SELECT 1']);
     expect(match).not.toBeNull();
     expect(content.slice(match!.start, match!.end)).toBe('SELECT 1\n;');
+  });
+});
+
+describe('findOriginalSqlMatch statement boundary guard', () => {
+  it('rejects a candidate whose tail only prefix-matches an edited statement', () => {
+    const content = 'SELECT * FROM users WHERE id = 5;';
+    expect(findOriginalSqlMatch(content, ['SELECT * FROM users WHERE id = ;'])).toBeNull();
+  });
+
+  it('rejects prefix matches that would stop inside a longer token or list', () => {
+    expect(findOriginalSqlMatch('SELECT 123;', ['SELECT 1'])).toBeNull();
+    expect(findOriginalSqlMatch('SELECT 1, 2;', ['SELECT 1'])).toBeNull();
+  });
+
+  it('rejects a hit that does not start at a statement boundary', () => {
+    expect(findOriginalSqlMatch('MSELECT 1;', ['SELECT 1'])).toBeNull();
+  });
+
+  it('skips a non-boundary hit and matches a later standalone occurrence', () => {
+    const content = 'XSELECT 1; SELECT 1;';
+    const match = findOriginalSqlMatch(content, ['SELECT 1']);
+    expect(match).not.toBeNull();
+    expect(content.slice(match!.start, match!.end)).toBe('SELECT 1;');
+  });
+
+  it('keeps matching a normal statement followed by the next one', () => {
+    const content = 'SELECT 1;\nSELECT 2;';
+    const match = findOriginalSqlMatch(content, ['SELECT 1']);
+    expect(match).not.toBeNull();
+    expect(content.slice(match!.start, match!.end)).toBe('SELECT 1;');
   });
 });

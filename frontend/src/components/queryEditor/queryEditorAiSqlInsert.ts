@@ -85,9 +85,33 @@ export interface OriginalSqlMatch {
   end: number;
 }
 
+const isStatementStartBoundary = (source: string, index: number): boolean =>
+  index <= 0 || source[index - 1] === ';' || /\s/.test(source[index - 1]);
+
+/**
+ * 语句终点只允许三种形态：分号终结、文末、换行分隔的下一条语句。
+ * 行内空白后直接跟实质内容说明编辑器里的语句比候选长（用户补过值等），
+ * 此时不允许命中，否则替换后会残留后半段内容（如候选 `WHERE id =` 命中 `WHERE id = 5;`）。
+ */
+const endsAtStatementBoundary = (source: string, index: number): boolean => {
+  let cursor = index;
+  let sawNewline = false;
+  while (cursor < source.length && /\s/.test(source[cursor])) {
+    const ch = source[cursor];
+    if (ch === '\n' || ch === '\r') sawNewline = true;
+    cursor += 1;
+  }
+  if (cursor >= source.length) return true;
+  if (source[cursor] === ';') return true;
+  return sawNewline;
+};
+
 /**
  * 在编辑器全文中按候选顺序查找“原 SQL”，返回首个命中的字符区间。
  * 只做纯文本匹配，不依赖 Monaco 实例，便于单测。
+ * 命中必须落在语句边界上：起点前是文首/分号/空白，终点后只跟分号、文末或换行，
+ * 排除前缀误匹配（候选命中更长语句的中段会静默损坏编辑器内容）；
+ * 单个候选跳过非边界命中继续找下一个位置。
  * 命中若不以分号结尾，收回尾随空白（\s* 可能吞掉语句间换行，导致替换后下一条语句被粘行）。
  */
 export const findOriginalSqlMatch = (
@@ -99,13 +123,18 @@ export const findOriginalSqlMatch = (
   for (const candidate of candidates) {
     const pattern = buildOriginalSqlSearchPattern(candidate);
     if (!pattern) continue;
-    const match = new RegExp(pattern).exec(source);
-    if (match) {
+    const regex = new RegExp(pattern, 'g');
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(source)) !== null) {
+      if (!isStatementStartBoundary(source, match.index)) continue;
       const matched = match[0];
       const end = matched.endsWith(';')
         ? match.index + matched.length
         : match.index + matched.replace(/\s+$/, '').length;
       if (end <= match.index) return null;
+      // 在语句本体结束处（收回 \s* 吞掉的尾随空白与可选分号之后）校验终点边界；
+      // 从 end 继续向后扫描，被吞掉的空白会被重新检查，不会漏掉残留内容。
+      if (!endsAtStatementBoundary(source, end)) continue;
       return { start: match.index, end };
     }
   }
