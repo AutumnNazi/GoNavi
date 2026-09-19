@@ -1,0 +1,73 @@
+/* Schedule list table. Scoped to the schedule view so the shared
+   DataSyncWorkbench.css stays untouched. */
+
+.gn-data-sync-schedule-table {
+  display: grid;
+  grid-template-columns:
+    minmax(170px, 1.2fr) minmax(90px, 0.65fr) minmax(130px, 0.9fr)
+    minmax(150px, 1fr) minmax(250px, 1.7fr) minmax(190px, 1fr);
+  gap: 0 12px;
+  min-width: 980px;
+  font-size: var(--gn-font-size, 14px);
+}
+
+.gn-data-sync-schedule-table__head,
+.gn-data-sync-schedule-table__row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--gn-border-color, rgba(0, 0, 0, 0.08));
+}
+
+.gn-data-sync-schedule-table__head {
+  color: var(--gn-text-secondary, rgba(0, 0, 0, 0.55));
+  font-weight: 600;
+}
+
+.gn-data-sync-schedule-table__row:hover {
+  background: var(--gn-bg-hover, rgba(0, 0, 0, 0.02));
+}
+
+.gn-data-sync-schedule-table__task,
+.gn-data-sync-schedule-table__latest,
+.gn-data-sync-schedule-table__actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.gn-data-sync-schedule-table__task strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gn-data-sync-schedule-table small {
+  display: block;
+  color: var(--gn-text-secondary, rgba(0, 0, 0, 0.55));
+}
+
+.gn-data-sync-schedule-table__state[data-enabled='false'] {
+  color: var(--gn-text-secondary, rgba(0, 0, 0, 0.55));
+}
+
+.gn-data-sync-schedule-table__error {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--gn-danger, #cf1322);
+}
+
+.gn-data-sync-schedule-table__actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.gn-data-sync-schedule-table__latest .gn-data-sync-link-button {
+  align-self: flex-start;
+}

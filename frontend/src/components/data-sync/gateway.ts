@@ -218,6 +218,22 @@ const isTerminalRun = (status: DataSyncRunRecord['status']): boolean =>
     status,
   );
 
+/** Runs that a paused/archived task drops immediately, mirroring the store. */
+const CANCELABLE_RUN_STATUSES = new Set<DataSyncRunRecord['status']>([
+  'queued',
+  'paused',
+]);
+
+/** Runs that must unwind through the cancelling state. */
+const ACTIVE_RUN_STATUSES = new Set<DataSyncRunRecord['status']>([
+  'running',
+  'cancelling',
+  'preflighting',
+  'snapshotting',
+  'catching_up',
+  'streaming',
+]);
+
 /**
  * Static adapter used until persisted task/run APIs are available.
  * It deliberately does not call Wails and stores only non-secret task references.
@@ -242,6 +258,23 @@ export const createStaticDataSyncWorkbenchGateway = (
   const objects = copy(fixtures.objectsByEndpoint || DEFAULT_OBJECTS);
   const fields = copy(fixtures.fieldsByObject || DEFAULT_FIELDS);
   const now = fixtures.now || (() => new Date().toISOString());
+
+  // Mirrors store.putJob: a persisted lifecycle change to paused/archived
+  // cancels queued runs and requests cancellation for active ones.
+  const cancelInactiveTaskRuns = (taskId: string, lifecycle: string): void => {
+    const at = now();
+    for (const run of runs) {
+      if (run.taskId !== taskId) continue;
+      if (CANCELABLE_RUN_STATUSES.has(run.status)) {
+        run.status = 'canceled';
+        run.finishedAt = at;
+        run.message = run.message || `canceled because task was ${lifecycle}`;
+      } else if (ACTIVE_RUN_STATUSES.has(run.status)) {
+        run.status = 'cancelling';
+        run.message = run.message || `cancellation requested because task was ${lifecycle}`;
+      }
+    }
+  };
 
   return {
     capabilities: { errorRowRetry: false },
@@ -271,8 +304,20 @@ export const createStaticDataSyncWorkbenchGateway = (
       return Array.from(taskMap.values()).map(copy);
     },
     async saveTask(task) {
-      const saved = copy(task);
+      const current = taskMap.get(task.id);
+      if (current && current.revision !== task.revision) {
+        throw new Error('data sync task revision changed');
+      }
+      const saved: DataSyncTaskDefinition = {
+        ...copy(task),
+        revision: current ? current.revision + 1 : task.revision,
+        createdAt: current?.createdAt || task.createdAt,
+        updatedAt: now(),
+      };
       taskMap.set(saved.id, saved);
+      if (saved.lifecycle === 'paused' || saved.lifecycle === 'archived') {
+        cancelInactiveTaskRuns(saved.id, saved.lifecycle);
+      }
       return copy(saved);
     },
     async deleteTask(taskId) {
@@ -338,8 +383,13 @@ export const createStaticDataSyncWorkbenchGateway = (
       };
     },
     async startTask(task, preflight) {
+      const current = taskMap.get(task.id);
+      if (!current) throw new Error('data sync task not found');
+      if (current.revision !== task.revision) {
+        throw new Error('data sync task revision changed');
+      }
       if (
-        (task.lifecycle !== 'ready' && task.lifecycle !== 'enabled') ||
+        (current.lifecycle !== 'ready' && current.lifecycle !== 'enabled') ||
         preflight.taskId !== task.id ||
         preflight.taskRevision !== task.revision ||
         preflight.taskEditEpoch !== task.editEpoch ||
@@ -355,12 +405,9 @@ export const createStaticDataSyncWorkbenchGateway = (
         taskName: task.name,
         compareMode: task.kind === 'compare' ? task.compareMode : undefined,
         status: task.kind === 'cdc' ? 'streaming' : 'queued',
-        trigger:
-          task.trigger.mode === 'manual'
-            ? 'manual'
-            : task.trigger.mode === 'continuous'
-              ? 'continuous'
-              : 'schedule',
+        // The backend StartRun path always records manual triggers, including
+        // immediate runs started from the schedule list.
+        trigger: 'manual',
         attempt: 1,
         resumable: false,
         message: '',
@@ -425,7 +472,9 @@ export const createStaticDataSyncWorkbenchGateway = (
         status: 'queued' as const,
         trigger: 'resume' as const,
         attempt: previous.attempt + 1,
-        startedAt: '',
+        // Queued runs carry their queue time in startedAt, matching the Wails
+        // decoder's queuedAt fallback so schedule rows rank them correctly.
+        startedAt: now(),
         finishedAt: '',
       };
       runs.unshift(resumed);
@@ -440,7 +489,7 @@ export const createStaticDataSyncWorkbenchGateway = (
         status: 'queued' as const,
         trigger: 'retry' as const,
         attempt: previous.attempt + 1,
-        startedAt: '',
+        startedAt: now(),
         finishedAt: '',
       };
       runs.unshift(retried);

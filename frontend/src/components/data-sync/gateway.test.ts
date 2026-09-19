@@ -94,8 +94,14 @@ describe('static data sync workbench gateway', () => {
     expect(await gateway.listRuns(task.id)).toHaveLength(1);
 
     const renamed = reviseDataSyncTask(task, { name: 'Renamed migration' });
-    await gateway.saveTask(renamed);
-    expect(await gateway.listTasks()).toContainEqual(renamed);
+    // Store.PutJob advances the persisted revision on every accepted save.
+    const saved = await gateway.saveTask(renamed);
+    expect(saved).toMatchObject({
+      id: renamed.id,
+      name: 'Renamed migration',
+      revision: renamed.revision + 1,
+    });
+    expect(await gateway.listTasks()).toContainEqual(saved);
   });
 
   it('fails closed with an explicit warning when no backend capability is injected', async () => {
@@ -200,5 +206,104 @@ describe('static data sync workbench gateway', () => {
     await expect(
       readyGateway.resetCheckpoint(ready.id, ready.revision),
     ).rejects.toThrow('requires a paused task');
+  });
+});
+
+describe('static data sync workbench gateway schedule control', () => {
+  const scheduledTask = () => {
+    const task = configuredTask();
+    return {
+      ...task,
+      id: 'static-scheduled',
+      lifecycle: 'enabled' as const,
+      trigger: {
+        mode: 'cron' as const,
+        expression: '0 0 2 * * *',
+        timezone: 'Asia/Shanghai',
+        overlap: 'skip' as const,
+      },
+    };
+  };
+
+  const runnablePreflight = async (
+    gateway: ReturnType<typeof createStaticDataSyncWorkbenchGateway>,
+    task: ReturnType<typeof scheduledTask>,
+  ) => {
+    const preflight = await gateway.preflightTask(task);
+    return preflight;
+  };
+
+  it('cancels inactive runs and bumps the revision when a schedule is paused', async () => {
+    const task = scheduledTask();
+    const queuedRun = {
+      id: 'run-queued',
+      taskId: task.id,
+      taskName: task.name,
+      status: 'queued' as const,
+      trigger: 'schedule' as const,
+      attempt: 1,
+      resumable: false,
+      message: '',
+      startedAt: '2026-08-08T00:30:00.000Z',
+      finishedAt: '',
+      rowsRead: 0,
+      rowsWritten: 0,
+      rowsFailed: 0,
+      throughput: 0,
+      checkpoint: '',
+    };
+    const streamingRun = {
+      ...queuedRun,
+      id: 'run-streaming',
+      status: 'streaming' as const,
+    };
+    const gateway = createStaticDataSyncWorkbenchGateway({
+      tasks: [task],
+      runs: [queuedRun, streamingRun],
+      now: () => '2026-08-08T01:00:00.000Z',
+    });
+
+    const paused = await gateway.saveTask({
+      ...task,
+      lifecycle: 'paused',
+    });
+    expect(paused).toMatchObject({ lifecycle: 'paused', revision: task.revision + 1 });
+
+    const runs = await gateway.listRuns(task.id);
+    expect(runs).toEqual([
+      expect.objectContaining({
+        id: 'run-queued',
+        status: 'canceled',
+        finishedAt: '2026-08-08T01:00:00.000Z',
+        message: 'canceled because task was paused',
+      }),
+      expect.objectContaining({
+        id: 'run-streaming',
+        status: 'cancelling',
+        message: 'cancellation requested because task was paused',
+      }),
+    ]);
+  });
+
+  it('rejects a save that submits a stale persisted revision', async () => {
+    const task = scheduledTask();
+    const gateway = createStaticDataSyncWorkbenchGateway({ tasks: [task] });
+    await expect(
+      gateway.saveTask({ ...task, revision: task.revision - 1 }),
+    ).rejects.toThrow('data sync task revision changed');
+  });
+
+  it('records schedule-list immediate runs as manual triggers against the stored revision', async () => {
+    const task = scheduledTask();
+    const gateway = createStaticDataSyncWorkbenchGateway({ tasks: [task] });
+    const preflight = await runnablePreflight(gateway, task);
+
+    const run = await gateway.startTask(task, preflight);
+    expect(run).toMatchObject({ taskId: task.id, status: 'queued', trigger: 'manual' });
+
+    const staleTask = { ...task, revision: task.revision - 1 };
+    await expect(gateway.startTask(staleTask, preflight)).rejects.toThrow(
+      'data sync task revision changed',
+    );
   });
 });
