@@ -22,33 +22,34 @@ import (
 )
 
 const (
-	optionalAgentMethodConnect                = "connect"
-	optionalAgentMethodClose                  = "close"
-	optionalAgentMethodMetadata               = "metadata"
-	optionalAgentMethodPing                   = "ping"
-	optionalAgentMethodOpenSession            = "openSession"
-	optionalAgentMethodCloseSession           = "closeSession"
-	optionalAgentMethodOpenTransaction        = "openTransaction"
-	optionalAgentMethodCommitTransaction      = "commitTransaction"
-	optionalAgentMethodRollbackTransaction    = "rollbackTransaction"
-	optionalAgentMethodQuery                  = "query"
-	optionalAgentMethodQueryMulti             = "queryMulti"
-	optionalAgentMethodStreamQuery            = "streamQuery"
-	optionalAgentMethodExec                   = "exec"
-	optionalAgentMethodElasticsearchConsole   = "executeElasticsearchConsoleRequest"
-	optionalAgentMethodGetDatabases           = "getDatabases"
-	optionalAgentMethodGetTables              = "getTables"
-	optionalAgentMethodTableExists            = "tableExists"
-	optionalAgentMethodGetCreateStmt          = "getCreateStatement"
-	optionalAgentMethodGetColumns             = "getColumns"
-	optionalAgentMethodGetAllColumns          = "getAllColumns"
-	optionalAgentMethodGetIndexes             = "getIndexes"
-	optionalAgentMethodGetForeignKeys         = "getForeignKeys"
-	optionalAgentMethodGetTriggers            = "getTriggers"
-	optionalAgentMethodApplyChanges           = "applyChanges"
-	optionalAgentMethodAttachExternalDatabase = "attachExternalDatabase"
-	optionalAgentMethodDetachExternalDatabase = "detachExternalDatabase"
-	optionalAgentDefaultScannerMaxBytes       = 8 << 20
+	optionalAgentMethodConnect                 = "connect"
+	optionalAgentMethodClose                   = "close"
+	optionalAgentMethodMetadata                = "metadata"
+	optionalAgentMethodPing                    = "ping"
+	optionalAgentMethodOpenSession             = "openSession"
+	optionalAgentMethodCloseSession            = "closeSession"
+	optionalAgentMethodOpenTransaction         = "openTransaction"
+	optionalAgentMethodCommitTransaction       = "commitTransaction"
+	optionalAgentMethodRollbackTransaction     = "rollbackTransaction"
+	optionalAgentMethodQuery                   = "query"
+	optionalAgentMethodQueryMulti              = "queryMulti"
+	optionalAgentMethodStreamQuery             = "streamQuery"
+	optionalAgentMethodExec                    = "exec"
+	optionalAgentMethodElasticsearchConsole    = "executeElasticsearchConsoleRequest"
+	optionalAgentMethodGetDatabases            = "getDatabases"
+	optionalAgentMethodGetTables               = "getTables"
+	optionalAgentMethodTableExists             = "tableExists"
+	optionalAgentMethodGetCreateStmt           = "getCreateStatement"
+	optionalAgentMethodGetColumns              = "getColumns"
+	optionalAgentMethodGetAllColumns           = "getAllColumns"
+	optionalAgentMethodGetIndexes              = "getIndexes"
+	optionalAgentMethodGetForeignKeys          = "getForeignKeys"
+	optionalAgentMethodGetTriggers             = "getTriggers"
+	optionalAgentMethodApplyChanges            = "applyChanges"
+	optionalAgentMethodAttachExternalDatabase  = "attachExternalDatabase"
+	optionalAgentMethodDetachExternalDatabase  = "detachExternalDatabase"
+	optionalAgentMethodListExternalAttachments = "listExternalAttachments"
+	optionalAgentDefaultScannerMaxBytes        = 8 << 20
 	// Freshly downloaded agents may start slowly while OS security scanning completes.
 	optionalAgentMetadataProbeTimeout = 30 * time.Second
 	// A Windows security scanner can hold the first process start long enough to
@@ -684,6 +685,21 @@ func (d *OptionalDriverAgentDB) DetachExternalDatabase(ctx context.Context, alia
 	return nil
 }
 
+// ListExternalAttachments 通过驱动代理查询当前会话的附加关系列表。
+func (d *OptionalDriverAgentDB) ListExternalAttachments(ctx context.Context) ([]ExternalAttachmentInfo, error) {
+	client, err := d.requireClient()
+	if err != nil {
+		return nil, err
+	}
+	var attachments []ExternalAttachmentInfo
+	if err := client.callContext(ctx, optionalAgentRequest{
+		Method: optionalAgentMethodListExternalAttachments,
+	}, &attachments, nil, nil, nil); err != nil {
+		return nil, err
+	}
+	return attachments, nil
+}
+
 // wrapOptionalAgentExternalAttachError 还原代理侧的“别名未附加”哨兵，
 // 使 App 层的 errors.Is 幂等判定在代理形态下同样成立。
 func wrapOptionalAgentExternalAttachError(err error) error {
@@ -698,6 +714,7 @@ func wrapOptionalAgentExternalAttachError(err error) error {
 
 // 编译期守卫：代理实现可选附加接口。
 var _ ExternalDatabaseAttacher = (*OptionalDriverAgentDB)(nil)
+var _ ExternalAttachmentLister = (*OptionalDriverAgentDB)(nil)
 
 func (d *OptionalDriverAgentDB) ExecuteElasticsearchConsoleRequest(ctx context.Context, request ElasticsearchConsoleRequest) (ElasticsearchConsoleResponse, error) {
 	if normalizeRuntimeDriverType(d.driverType) != "elasticsearch" {

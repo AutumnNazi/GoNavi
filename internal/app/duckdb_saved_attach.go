@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/db"
 	"GoNavi-Wails/internal/logger"
+	"GoNavi-Wails/internal/utils"
 )
 
 // duckDBAttachParseError 携带 i18n 键的解析错误；展示文本由调用方经 appText 渲染，
@@ -257,9 +259,10 @@ func (a *App) buildDuckDBAttachSpec(view connection.SavedConnectionView, resolve
 		finalAlias = slugifyAttachAlias(name, view.ID)
 	}
 	spec := db.ExternalAttachSpec{
-		Alias:      finalAlias,
-		ReadOnly:   readOnly,
-		SecretName: "gonavi_attach_" + finalAlias,
+		Alias:        finalAlias,
+		ReadOnly:     readOnly,
+		SecretName:   "gonavi_attach_" + finalAlias,
+		ConnectionID: strings.TrimSpace(view.ID),
 	}
 	switch strings.ToLower(strings.TrimSpace(resolved.Type)) {
 	case "mysql", "mariadb":
@@ -398,6 +401,27 @@ func (a *App) executeDuckDBAttachDirective(ctx context.Context, attacher db.Exte
 	}
 }
 
+// ListDuckDBAttachedDatasources 供前端“附加已保存数据源”选择器查询当前
+// DuckDB 连接上由本功能创建、仍然有效的附加关系（别名/来源连接/只读模式）。
+// 连接未打开或驱动不支持时返回空列表，前端据此不展示状态。
+func (a *App) ListDuckDBAttachedDatasources(config connection.ConnectionConfig, dbName string) ([]db.ExternalAttachmentInfo, error) {
+	runConfig := normalizeRunConfig(config, dbName)
+	ctx, cancel := utils.ContextWithTimeout(15 * time.Second)
+	defer cancel()
+	dbInst, err := a.getDatabaseWithContext(ctx, runConfig, false)
+	if err != nil {
+		return []db.ExternalAttachmentInfo{}, nil
+	}
+	lister, ok := dbInst.(db.ExternalAttachmentLister)
+	if !ok {
+		return []db.ExternalAttachmentInfo{}, nil
+	}
+	infos, err := lister.ListExternalAttachments(ctx)
+	if err != nil {
+		return []db.ExternalAttachmentInfo{}, nil
+	}
+	return infos, nil
+}
 func escapeDuckDBSingleQuoted(value string) string {
 	return strings.ReplaceAll(value, "'", "''")
 }

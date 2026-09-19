@@ -13757,6 +13757,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         open={isDuckDBAttachPickerOpen}
         connections={connections}
         darkMode={darkMode}
+        hostConnectionConfig={currentConnectionConfig}
+        hostDbName={currentDb}
         onClose={() => setIsDuckDBAttachPickerOpen(false)}
         onInsert={handleInsertDuckDBAttachStatement}
       />

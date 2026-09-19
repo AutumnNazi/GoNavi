@@ -91,3 +91,31 @@ func TestOptionalDriverAgentDetachRehydratesSentinel(t *testing.T) {
 		})
 	}
 }
+
+func TestOptionalDriverAgentListAttachmentsDecodesPayload(t *testing.T) {
+	response, err := json.Marshal(map[string]any{
+		"id":      1,
+		"success": true,
+		"data": []map[string]any{
+			{"alias": "target", "connectionId": "conn-1", "kind": "duckdb", "readOnly": true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var stdin optionalAgentTestWriteCloser
+	client := &optionalDriverAgentClient{
+		stdin:  &stdin,
+		reader: bufio.NewReader(bytes.NewReader(append(response, '\n'))),
+		driver: "duckdb",
+	}
+	db := &OptionalDriverAgentDB{driverType: "duckdb", client: client}
+	attachments, err := db.ListExternalAttachments(nil)
+	if err != nil {
+		t.Fatalf("list over agent = %v", err)
+	}
+	if len(attachments) != 1 || attachments[0].Alias != "target" ||
+		attachments[0].ConnectionID != "conn-1" || !attachments[0].ReadOnly {
+		t.Fatalf("attachments = %+v", attachments)
+	}
+}

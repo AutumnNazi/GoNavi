@@ -32,6 +32,17 @@ type ExternalAttachSpec struct {
 	Alias      string // 目标 catalog 别名，调用方保证是合法标识符
 	ReadOnly   bool
 	SecretName string // mysql / postgres 使用的会话级 SECRET 名
+	// ConnectionID 标记来源保存连接（仅用于附加状态展示与同源判定，
+	// 不参与连接参数）；代理与驱动原样保存并在列表查询中返回。
+	ConnectionID string
+}
+
+// ExternalAttachmentInfo 描述当前会话中一个由本驱动创建的附加关系。
+type ExternalAttachmentInfo struct {
+	Alias        string `json:"alias"`
+	ConnectionID string `json:"connectionId,omitempty"`
+	Kind         string `json:"kind"`
+	ReadOnly     bool   `json:"readOnly"`
 }
 
 // ExternalDatabaseAttacher 是驱动可选能力：把外部数据源附加到当前
@@ -40,4 +51,10 @@ type ExternalDatabaseAttacher interface {
 	AttachExternalDatabase(ctx context.Context, spec ExternalAttachSpec) error
 	// DetachExternalDatabase 卸载指定别名；未附加时返回 ErrExternalAttachNotAttached。
 	DetachExternalDatabase(ctx context.Context, alias string) error
+}
+
+// ExternalAttachmentLister 是可选能力：列出当前会话由本驱动创建、仍有效的
+// 附加关系（供“附加已保存数据源”选择器展示状态，见 issue #1270 讨论）。
+type ExternalAttachmentLister interface {
+	ListExternalAttachments(ctx context.Context) ([]ExternalAttachmentInfo, error)
 }

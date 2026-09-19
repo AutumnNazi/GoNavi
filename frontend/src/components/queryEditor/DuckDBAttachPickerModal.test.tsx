@@ -46,6 +46,38 @@ const clickInsert = async (renderer: ReactTestRenderer): Promise<void> => {
 };
 
 describe('DuckDBAttachPickerModal', () => {
+  it('shows attached badge and reuses alias and readonly mode for attached connections', async () => {
+    const onInsert = vi.fn();
+    const invoker = vi.fn(async (_ns: string, _recv: string, method: string, args: unknown[]) => {
+      expect(method).toBe('ListDuckDBAttachedDatasources');
+      return [
+        { alias: 'target', connectionId: 'conn-uuid-1', kind: 'duckdb', readOnly: false },
+      ];
+    });
+    (window as unknown as { __GONAVI_WEB_RPC__?: unknown }).__GONAVI_WEB_RPC__ = {
+      invokeWithOptions: invoker,
+    };
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(React.createElement(DuckDBAttachPickerModal, {
+        open: true,
+        connections,
+        darkMode: false,
+        hostConnectionConfig: { type: 'duckdb' },
+        hostDbName: 'memory',
+        onClose: vi.fn(),
+        onInsert,
+      }));
+    });
+    await act(async () => {
+      (findButton(renderer!, 'conn-uuid-1') as unknown as { props: { onClick: () => void } }).props.onClick();
+    });
+    await clickInsert(renderer!);
+    // 已附加：沿用别名 target，且沿用其读写模式（false → READ WRITE）
+    expect(onInsert).toHaveBeenCalledWith("ATTACH SAVED CONNECTION 'conn-uuid-1' AS target READ WRITE");
+    delete (window as unknown as { __GONAVI_WEB_RPC__?: unknown }).__GONAVI_WEB_RPC__;
+  });
+
   it('renders candidates, marks unsupported types disabled, and builds the insert statement', async () => {
     const onInsert = vi.fn();
     const onClose = vi.fn();

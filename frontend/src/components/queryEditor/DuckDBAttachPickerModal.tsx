@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { invokeAppMethodDynamic } from '../../utils/webRpc';
 import { Button, Empty, Input, Modal, Switch, Tag } from 'antd';
 
 import { t as translate } from '../../i18n';
@@ -9,10 +10,20 @@ import {
   slugifyDuckDBAttachAlias,
 } from './duckdbAttachStatement';
 
+export interface DuckDBAttachedDatasource {
+  alias: string;
+  connectionId?: string;
+  kind: string;
+  readOnly: boolean;
+}
+
 interface DuckDBAttachPickerModalProps {
   open: boolean;
   connections: SavedConnection[];
   darkMode: boolean;
+  /** 宿主 DuckDB 连接配置，用于查询当前会话的附加状态。 */
+  hostConnectionConfig?: unknown;
+  hostDbName?: string;
   onClose: () => void;
   /** 选中连接并点击插入后回调，statement 为构造好的 ATTACH 语句文本。 */
   onInsert: (statement: string) => void;
@@ -26,15 +37,51 @@ const DuckDBAttachPickerModal: React.FC<DuckDBAttachPickerModalProps> = ({
   open,
   connections,
   darkMode,
+  hostConnectionConfig,
+  hostDbName,
   onClose,
   onInsert,
 }) => {
   const [keyword, setKeyword] = useState('');
+  const [attachedList, setAttachedList] = useState<DuckDBAttachedDatasource[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [alias, setAlias] = useState('');
   const [aliasEdited, setAliasEdited] = useState(false);
   const [readOnly, setReadOnly] = useState(true);
 
+  // 弹窗打开时查询宿主会话的附加状态：卡片显示“已附加 → 别名”，
+  // 选中已附加连接时自动沿用其别名与只读模式（用户无需记忆上次设置）。
+  React.useEffect(() => {
+    if (!open) {
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        let result: DuckDBAttachedDatasource[] = [];
+        const viaBridge = await invokeAppMethodDynamic<DuckDBAttachedDatasource[]>('ListDuckDBAttachedDatasources', [hostConnectionConfig ?? null, hostDbName ?? '']);
+        if (Array.isArray(viaBridge)) {
+          result = viaBridge;
+        } else {
+          const dynamic = (window as unknown as { go?: { app?: { App?: { ListDuckDBAttachedDatasources?: (c: unknown, d: string) => Promise<DuckDBAttachedDatasource[]> } } } }).go?.app?.App;
+          if (typeof dynamic?.ListDuckDBAttachedDatasources === 'function') {
+            result = await dynamic.ListDuckDBAttachedDatasources(hostConnectionConfig ?? null, hostDbName ?? '');
+          }
+        }
+        if (!cancelled && Array.isArray(result)) {
+          setAttachedList(result);
+        }
+      } catch {
+        if (!cancelled) {
+          setAttachedList([]);
+        }
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, hostConnectionConfig, hostDbName]);
   const filtered = useMemo(() => {
     const keywordText = keyword.trim().toLowerCase();
     const items = [...connections].sort((a, b) =>
@@ -46,6 +93,16 @@ const DuckDBAttachPickerModal: React.FC<DuckDBAttachPickerModalProps> = ({
       String(item.name || '').toLowerCase().includes(keywordText)
       || String(item.id || '').toLowerCase().includes(keywordText));
   }, [connections, keyword]);
+
+  const attachedByConnectionId = useMemo(() => {
+    const map = new Map<string, DuckDBAttachedDatasource>();
+    for (const item of attachedList) {
+      if (item.connectionId) {
+        map.set(item.connectionId, item);
+      }
+    }
+    return map;
+  }, [attachedList]);
 
   const selected = useMemo(
     () => connections.find((item) => item.id === selectedId) || null,
@@ -66,6 +123,14 @@ const DuckDBAttachPickerModal: React.FC<DuckDBAttachPickerModalProps> = ({
 
   const handleSelect = (connection: SavedConnection) => {
     setSelectedId(connection.id);
+    const attached = attachedByConnectionId.get(connection.id);
+    if (attached) {
+      // 已附加的连接：沿用上次别名与只读模式，重跑即幂等替换
+      setAlias(attached.alias);
+      setAliasEdited(true);
+      setReadOnly(attached.readOnly);
+      return;
+    }
     if (!aliasEdited) {
       setAlias(slugifyDuckDBAttachAlias(connection.name, connection.id));
     }
@@ -169,6 +234,15 @@ const DuckDBAttachPickerModal: React.FC<DuckDBAttachPickerModalProps> = ({
                   <div style={{ fontSize: 11, color: mutedColor, marginTop: 4, fontFamily: 'var(--gn-font-mono)' }}>
                     {connection.id}
                   </div>
+                  {attachedByConnectionId.get(connection.id) ? (
+                    <div style={{ marginTop: 4 }}>
+                      <Tag color="green" style={{ marginRight: 0 }}>
+                        {translate('query_editor.duckdb_attach.attached_badge', {
+                          alias: attachedByConnectionId.get(connection.id)!.alias,
+                        })}
+                      </Tag>
+                    </div>
+                  ) : null}
                 </button>
               );
             })

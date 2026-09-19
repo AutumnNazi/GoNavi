@@ -37,14 +37,15 @@ func (d *DuckDB) AttachExternalDatabase(ctx context.Context, spec ExternalAttach
 	d.ensureAttachState()
 
 	desired := duckDBAttachmentSpec{
-		kind:     spec.Kind,
-		host:     spec.Host,
-		port:     spec.Port,
-		user:     spec.User,
-		password: spec.Password,
-		database: spec.Database,
-		filePath: spec.FilePath,
-		readOnly: spec.ReadOnly,
+		kind:         spec.Kind,
+		host:         spec.Host,
+		port:         spec.Port,
+		user:         spec.User,
+		password:     spec.Password,
+		database:     spec.Database,
+		filePath:     spec.FilePath,
+		readOnly:     spec.ReadOnly,
+		connectionID: spec.ConnectionID,
 	}
 	if existing, ok := d.attachments[spec.Alias]; ok {
 		if existing != desired {
@@ -76,6 +77,38 @@ func (d *DuckDB) DetachExternalDatabase(ctx context.Context, alias string) error
 	defer d.attachMu.Unlock()
 	d.ensureAttachState()
 	return d.detachLocked(ctx, alias)
+}
+
+// ListExternalAttachments 实现 ExternalDatabaseAttacher：返回本驱动创建且当前
+// 仍真实附加的条目（已在外部被原生 DETACH 的会被剔除并清理元数据）。
+func (d *DuckDB) ListExternalAttachments(ctx context.Context) ([]ExternalAttachmentInfo, error) {
+	if d.conn == nil {
+		return nil, duckDBConnectionNotOpenError()
+	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	d.attachMu.Lock()
+	defer d.attachMu.Unlock()
+	d.ensureAttachState()
+	infos := make([]ExternalAttachmentInfo, 0, len(d.attachments))
+	for alias, spec := range d.attachments {
+		attached, err := d.aliasAttached(ctx, alias)
+		if err != nil {
+			return nil, err
+		}
+		if !attached {
+			delete(d.attachments, alias)
+			continue
+		}
+		infos = append(infos, ExternalAttachmentInfo{
+			Alias:        alias,
+			ConnectionID: spec.connectionID,
+			Kind:         spec.kind,
+			ReadOnly:     spec.readOnly,
+		})
+	}
+	return infos, nil
 }
 
 func (d *DuckDB) attachLocked(ctx context.Context, spec ExternalAttachSpec, desired duckDBAttachmentSpec) error {

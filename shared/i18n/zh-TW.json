@@ -7848,6 +7848,7 @@
   "query_editor.snippet_picker.search_placeholder": "搜尋前綴、名稱或內容",
   "query_editor.snippet_picker.title": "插入 SQL 片段",
   "query_editor.duckdb_attach.menu": "附加已儲存資料源",
+  "query_editor.duckdb_attach.attached_badge": "\u5df2\u9644\u52a0\uff1a{{alias}}",
   "query_editor.duckdb_attach.title": "\u9644\u52a0\u5df2\u5132\u5b58\u8cc7\u6599\u6e90",
   "query_editor.duckdb_attach.description": "\u9078\u64c7\u4e00\u500b\u5df2\u5132\u5b58\u9023\u7dda\uff0c\u9644\u52a0\u5230\u76ee\u524d DuckDB \u67e5\u8a62\u3002\u8a9e\u53e5\u53ea\u5305\u542b\u9023\u7dda ID\uff0c\u4e0d\u6703\u5beb\u5165\u5e33\u865f\u3001\u5bc6\u78bc\u6216 DSN\u3002",
   "query_editor.duckdb_attach.search_placeholder": "\u641c\u5c0b\u9023\u7dda\u540d\u7a31\u6216 ID\u2026",

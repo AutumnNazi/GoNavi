@@ -13,14 +13,15 @@ var duckDBAttachAliasPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // duckDBAttachmentSpec 记录附加关系的关键参数，用于同源替换判定（保存文件重跑
 // 时同源即替换重建、绑定最新凭据）与异源冲突报错。仅存活于连接实例内存中。
 type duckDBAttachmentSpec struct {
-	kind     string
-	host     string
-	port     int
-	user     string
-	password string
-	database string
-	filePath string
-	readOnly bool
+	kind         string
+	host         string
+	port         int
+	user         string
+	password     string
+	database     string
+	filePath     string
+	readOnly     bool
+	connectionID string
 }
 
 func buildDuckDBAttachStatement(spec ExternalAttachSpec) string {

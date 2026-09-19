@@ -62,32 +62,33 @@ type agentConnectionInfo struct {
 }
 
 const (
-	agentMethodConnect                = "connect"
-	agentMethodClose                  = "close"
-	agentMethodMetadata               = "metadata"
-	agentMethodPing                   = "ping"
-	agentMethodOpenSession            = "openSession"
-	agentMethodCloseSession           = "closeSession"
-	agentMethodOpenTransaction        = "openTransaction"
-	agentMethodCommitTransaction      = "commitTransaction"
-	agentMethodRollbackTransaction    = "rollbackTransaction"
-	agentMethodQuery                  = "query"
-	agentMethodQueryMulti             = "queryMulti"
-	agentMethodStreamQuery            = "streamQuery"
-	agentMethodExec                   = "exec"
-	agentMethodElasticsearchConsole   = "executeElasticsearchConsoleRequest"
-	agentMethodGetDatabases           = "getDatabases"
-	agentMethodGetTables              = "getTables"
-	agentMethodTableExists            = "tableExists"
-	agentMethodGetCreateStmt          = "getCreateStatement"
-	agentMethodGetColumns             = "getColumns"
-	agentMethodGetAllColumns          = "getAllColumns"
-	agentMethodGetIndexes             = "getIndexes"
-	agentMethodGetForeignKey          = "getForeignKeys"
-	agentMethodGetTriggers            = "getTriggers"
-	agentMethodApplyChanges           = "applyChanges"
-	agentMethodAttachExternalDatabase = "attachExternalDatabase"
-	agentMethodDetachExternalDatabase = "detachExternalDatabase"
+	agentMethodConnect                 = "connect"
+	agentMethodClose                   = "close"
+	agentMethodMetadata                = "metadata"
+	agentMethodPing                    = "ping"
+	agentMethodOpenSession             = "openSession"
+	agentMethodCloseSession            = "closeSession"
+	agentMethodOpenTransaction         = "openTransaction"
+	agentMethodCommitTransaction       = "commitTransaction"
+	agentMethodRollbackTransaction     = "rollbackTransaction"
+	agentMethodQuery                   = "query"
+	agentMethodQueryMulti              = "queryMulti"
+	agentMethodStreamQuery             = "streamQuery"
+	agentMethodExec                    = "exec"
+	agentMethodElasticsearchConsole    = "executeElasticsearchConsoleRequest"
+	agentMethodGetDatabases            = "getDatabases"
+	agentMethodGetTables               = "getTables"
+	agentMethodTableExists             = "tableExists"
+	agentMethodGetCreateStmt           = "getCreateStatement"
+	agentMethodGetColumns              = "getColumns"
+	agentMethodGetAllColumns           = "getAllColumns"
+	agentMethodGetIndexes              = "getIndexes"
+	agentMethodGetForeignKey           = "getForeignKeys"
+	agentMethodGetTriggers             = "getTriggers"
+	agentMethodApplyChanges            = "applyChanges"
+	agentMethodAttachExternalDatabase  = "attachExternalDatabase"
+	agentMethodDetachExternalDatabase  = "detachExternalDatabase"
+	agentMethodListExternalAttachments = "listExternalAttachments"
 )
 
 const legacyClickHouseDefaultTimeout = 2 * time.Hour
@@ -587,6 +588,26 @@ func handleRequestWithSSHProgressReporter(runtimeState *agentRuntime, req agentR
 		}
 		return resp
 
+	case agentMethodListExternalAttachments:
+		if runtimeState.inst == nil {
+			return fail(resp, "connection not open")
+		}
+		lister, ok := runtimeState.inst.(db.ExternalAttachmentLister)
+		if !ok {
+			return fail(resp, fmt.Sprintf("当前数据源（%s）不支持附加外部数据源", strings.TrimSpace(agentDriverType)))
+		}
+		listCtx := context.Background()
+		var listCancel context.CancelFunc
+		if req.TimeoutMs > 0 {
+			listCtx, listCancel = context.WithTimeout(listCtx, time.Duration(req.TimeoutMs)*time.Millisecond)
+			defer listCancel()
+		}
+		attachments, listErr := lister.ListExternalAttachments(listCtx)
+		if listErr != nil {
+			return fail(resp, listErr.Error())
+		}
+		resp.Data = attachments
+		return resp
 	case agentMethodApplyChanges:
 		if req.Changes == nil {
 			return fail(resp, "变更集为空")

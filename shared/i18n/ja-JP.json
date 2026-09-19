@@ -7848,6 +7848,7 @@
   "query_editor.snippet_picker.search_placeholder": "プレフィックス、名前、内容で検索",
   "query_editor.snippet_picker.title": "SQL スニペットを挿入",
   "query_editor.duckdb_attach.menu": "保存済みデータソースをアタッチ",
+  "query_editor.duckdb_attach.attached_badge": "\u30a2\u30bf\u30c3\u30c1\u6e08\u307f: {{alias}}",
   "query_editor.duckdb_attach.title": "\u4fdd\u5b58\u6e08\u307f\u30c7\u30fc\u30bf\u30bd\u30fc\u30b9\u3092\u30a2\u30bf\u30c3\u30c1",
   "query_editor.duckdb_attach.description": "\u4fdd\u5b58\u6e08\u307f\u63a5\u7d9a\u3092\u9078\u3093\u3067\u73fe\u5728\u306e DuckDB \u30af\u30a8\u30ea\u306b\u30a2\u30bf\u30c3\u30c1\u3057\u307e\u3059\u3002\u30b9\u30c6\u30fc\u30c8\u30e1\u30f3\u30c8\u306b\u306f\u63a5\u7d9a ID \u306e\u307f\u304c\u542b\u307e\u308c\u3001\u30e6\u30fc\u30b6\u30fc\u540d\u30fb\u30d1\u30b9\u30ef\u30fc\u30c9\u30fbDSN \u306f\u66f8\u304d\u8fbc\u307e\u308c\u307e\u305b\u3093\u3002",
   "query_editor.duckdb_attach.search_placeholder": "\u63a5\u7d9a\u540d\u307e\u305f\u306f ID \u3092\u691c\u7d22\u2026",
