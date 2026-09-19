@@ -29,7 +29,7 @@ export const dataSyncScheduleTextsZhCN = {
   'schedules.confirm_run_now_warning': '将按当前已保存的任务定义立即排队执行。',
   'schedules.confirm_scope_source': '源端：{scope}',
   'schedules.confirm_scope_target': '目标端：{scope}',
-  'schedules.preflight_required': '需要先在编辑器中完成预检或审批，再保存启用状态。',
+  'schedules.preflight_required': '需要先在编辑器中完成预检或审批，再继续操作。',
   'schedules.task_missing': '任务不存在或已被删除，请刷新调度清单。',
   'schedules.unsaved_edits': '任务存在未保存的编辑，请先在编辑器中保存或放弃修改。',
 } as const;
@@ -67,7 +67,7 @@ export const dataSyncScheduleTextsEnUS: Record<DataSyncScheduleTextKey, string> 
   'schedules.confirm_scope_source': 'Source: {scope}',
   'schedules.confirm_scope_target': 'Target: {scope}',
   'schedules.preflight_required':
-    'Complete preflight or approval in the editor, then save to enable.',
+    'Complete preflight or approval in the editor first, then continue.',
   'schedules.task_missing': 'The task no longer exists; refresh the schedule list.',
   'schedules.unsaved_edits':
     'The task has unsaved edits; save or discard them in the editor first.',
