@@ -2,7 +2,6 @@ package db
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -57,19 +56,6 @@ const (
 	optionalAgentMetadataProbeRetryDelay   = 100 * time.Millisecond
 	optionalAgentControlCallTimeout        = 30 * time.Second
 	optionalAgentShutdownCallTimeout       = 2 * time.Second
-	// callStreamQueryGCInterval 控制 callStreamQuery 每接收多少行 driver-agent 数据触发一次 runtime.GC。
-	//
-	// 该路径不走 sql.Rows（scan_rows.go 的周期 GC 覆盖不到），但每个 chunk 解码
-	// [][]interface{} + normalizeQueryValue 转换会产生大量临时字符串，需要主动回收。
-	// 取 50000 与 scan_rows.go 的 streamRowsPeriodicGCInterval 保持一致，
-	// 让两端在相近节奏下分别 GC，避免内存峰值叠加。
-	callStreamQueryGCInterval = 50000
-)
-
-const (
-	optionalAgentChunkColumns = "columns"
-	optionalAgentChunkRows    = "rows"
-	optionalAgentChunkDone    = "done"
 )
 
 var errOptionalAgentTransportStopped = errors.New("驱动代理传输已关闭")
@@ -488,149 +474,6 @@ func (c *optionalDriverAgentClient) callWithContext(ctx context.Context, req opt
 		return fmt.Errorf("%s 驱动代理 metadata 探测超时（%s），请确认导入的是正确的 driver-agent 可执行文件：%w", driverDisplayName(c.driver), timeout, err)
 	}
 	return err
-}
-
-func (c *optionalDriverAgentClient) callStreamQuery(req optionalAgentRequest, consumer QueryStreamConsumer) error {
-	return c.runWithContext(context.Background(), req.Method, func() error {
-		return c.callStreamQueryLocked(req, consumer)
-	})
-}
-
-func (c *optionalDriverAgentClient) callStreamQueryLocked(req optionalAgentRequest, consumer QueryStreamConsumer) error {
-	if consumer == nil {
-		return fmt.Errorf("query stream consumer required")
-	}
-
-	if err := c.stoppedError(); err != nil {
-		return fmt.Errorf("%s 驱动代理传输不可用：%w", driverDisplayName(c.driver), err)
-	}
-
-	c.nextID++
-	req.ID = c.nextID
-
-	payload, err := json.Marshal(req)
-	if err != nil {
-		return err
-	}
-	payload = append(payload, '\n')
-	if len(payload) > OptionalDriverAgentMaxJSONLineBytes {
-		_ = c.forceTerminate(ErrOptionalDriverAgentJSONLineTooLarge)
-		return fmt.Errorf("发送 %s 驱动代理请求失败：%w", driverDisplayName(c.driver), ErrOptionalDriverAgentJSONLineTooLarge)
-	}
-	if _, err := c.stdin.Write(payload); err != nil {
-		stderrText := c.stderrText()
-		if stderrText == "" {
-			return fmt.Errorf("调用 %s 驱动代理失败：%w", driverDisplayName(c.driver), err)
-		}
-		return fmt.Errorf("调用 %s 驱动代理失败：%w（stderr: %s）", driverDisplayName(c.driver), err, stderrText)
-	}
-
-	var columns []string
-	valueConsumer, useValueConsumer := consumer.(QueryStreamValueConsumer)
-
-	// processedRows 用于周期性触发 GC。
-	// 该路径不走 sql.Rows，scan_rows.go 的周期 GC 覆盖不到。
-	// 每个 chunk 解码会分配 [][]interface{} + normalizeQueryValue 转换副本，
-	// 88W 行场景下不主动 GC 会让主进程 RSS 单调爬升。
-	var processedRows int64
-
-	for {
-		line, err := ReadOptionalDriverAgentJSONLine(c.reader)
-		if err != nil {
-			if errors.Is(err, ErrOptionalDriverAgentJSONLineTooLarge) {
-				_ = c.forceTerminate(err)
-			}
-			stderrText := c.stderrText()
-			if stderrText == "" {
-				return fmt.Errorf("读取 %s 驱动代理响应失败：%w", driverDisplayName(c.driver), err)
-			}
-			return fmt.Errorf("读取 %s 驱动代理响应失败：%w（stderr: %s）", driverDisplayName(c.driver), err, stderrText)
-		}
-
-		var resp optionalAgentResponse
-		if err := json.Unmarshal(line, &resp); err != nil {
-			return fmt.Errorf("解析 %s 驱动代理响应失败：%w", driverDisplayName(c.driver), err)
-		}
-		if !resp.Success {
-			errText := strings.TrimSpace(resp.Error)
-			if errText == "" {
-				errText = fmt.Sprintf("%s 驱动代理返回失败", driverDisplayName(c.driver))
-			}
-			if errText == ErrOptionalDriverAgentJSONLineTooLarge.Error() {
-				_ = c.forceTerminate(ErrOptionalDriverAgentJSONLineTooLarge)
-				return ErrOptionalDriverAgentJSONLineTooLarge
-			}
-			return errors.New(errText)
-		}
-
-		switch resp.ChunkType {
-		case optionalAgentChunkColumns:
-			columns = append(columns[:0], resp.Fields...)
-			if err := consumer.SetColumns(columns); err != nil {
-				return err
-			}
-		case optionalAgentChunkRows:
-			if len(columns) == 0 {
-				return fmt.Errorf("%s 驱动代理流式响应缺少列信息", driverDisplayName(c.driver))
-			}
-			rows, err := decodeOptionalAgentRowValueBatch(resp.Data)
-			if err != nil {
-				return fmt.Errorf("解析 %s 驱动代理流式数据失败：%w", driverDisplayName(c.driver), err)
-			}
-			for _, row := range rows {
-				if useValueConsumer {
-					if err := valueConsumer.ConsumeRowValues(row); err != nil {
-						return err
-					}
-					continue
-				}
-				entry := make(map[string]interface{}, len(columns))
-				for i, column := range columns {
-					if i < len(row) {
-						entry[column] = row[i]
-					} else {
-						entry[column] = nil
-					}
-				}
-				if err := consumer.ConsumeRow(entry); err != nil {
-					return err
-				}
-			}
-			processedRows += int64(len(rows))
-			if processedRows >= callStreamQueryGCInterval {
-				runtime.GC()
-				processedRows = 0
-			}
-		case optionalAgentChunkDone:
-			return nil
-		default:
-			return fmt.Errorf("%s 驱动代理返回未知流式分片类型：%s", driverDisplayName(c.driver), strings.TrimSpace(resp.ChunkType))
-		}
-	}
-}
-
-func decodeOptionalAgentRowValueBatch(data []byte) ([][]interface{}, error) {
-	if len(data) == 0 {
-		return nil, nil
-	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	var rows [][]interface{}
-	if err := decoder.Decode(&rows); err != nil {
-		return nil, err
-	}
-	for rowIdx := range rows {
-		for colIdx := range rows[rowIdx] {
-			rows[rowIdx][colIdx] = normalizeQueryValue(rows[rowIdx][colIdx])
-		}
-	}
-	return rows, nil
-}
-
-func (c *optionalDriverAgentClient) callStreamQueryContext(ctx context.Context, req optionalAgentRequest, consumer QueryStreamConsumer) error {
-	return c.runWithContext(ctx, req.Method, func() error {
-		return c.callStreamQueryLocked(req, consumer)
-	})
 }
 
 func (c *optionalDriverAgentClient) stoppedError() error {
