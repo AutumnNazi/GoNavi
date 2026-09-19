@@ -29,6 +29,10 @@ func (d *DuckDB) AttachExternalDatabase(ctx context.Context, spec ExternalAttach
 	if !duckDBAttachAliasPattern.MatchString(spec.Alias) {
 		return duckDBRuntimeError("db.backend.error.duckdb_attach.alias_invalid", map[string]any{"alias": spec.Alias})
 	}
+	// 第二道防线：SECRET 名拼入 DDL，必须同为安全标识符
+	if spec.SecretName != "" && !duckDBAttachAliasPattern.MatchString(spec.SecretName) {
+		return duckDBRuntimeError("db.backend.error.duckdb_attach.alias_invalid", map[string]any{"alias": spec.SecretName})
+	}
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -48,7 +52,7 @@ func (d *DuckDB) AttachExternalDatabase(ctx context.Context, spec ExternalAttach
 		connectionID: spec.ConnectionID,
 	}
 	if existing, ok := d.attachments[spec.Alias]; ok {
-		if existing != desired {
+		if !sameExternalAttachmentIdentity(existing, desired) {
 			// 别名被不同数据源占用：拒绝，防误绑；同源重跑走下面的替换语义
 			return duckDBRuntimeError("db.backend.error.duckdb_attach.alias_occupied", map[string]any{"alias": spec.Alias})
 		}
@@ -81,6 +85,7 @@ func (d *DuckDB) DetachExternalDatabase(ctx context.Context, alias string) error
 
 // ListExternalAttachments 实现 ExternalDatabaseAttacher：返回本驱动创建且当前
 // 仍真实附加的条目（已在外部被原生 DETACH 的会被剔除并清理元数据）。
+// attachMu 是叶子锁：锁内的目录查询不会回取本锁，无死锁风险；仅互斥窗口随查询耗时拉长。
 func (d *DuckDB) ListExternalAttachments(ctx context.Context) ([]ExternalAttachmentInfo, error) {
 	if d.conn == nil {
 		return nil, duckDBConnectionNotOpenError()

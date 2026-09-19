@@ -410,6 +410,7 @@ func (a *App) ListDuckDBAttachedDatasources(config connection.ConnectionConfig, 
 	defer cancel()
 	dbInst, err := a.getDatabaseWithContext(ctx, runConfig, false)
 	if err != nil {
+		logger.Warnf("查询 DuckDB 附加状态失败（连接未建立）：%v", err)
 		return []db.ExternalAttachmentInfo{}, nil
 	}
 	lister, ok := dbInst.(db.ExternalAttachmentLister)
@@ -418,6 +419,7 @@ func (a *App) ListDuckDBAttachedDatasources(config connection.ConnectionConfig, 
 	}
 	infos, err := lister.ListExternalAttachments(ctx)
 	if err != nil {
+		logger.Warnf("查询 DuckDB 附加状态失败：%v", err)
 		return []db.ExternalAttachmentInfo{}, nil
 	}
 	return infos, nil

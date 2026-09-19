@@ -662,6 +662,7 @@ func (d *OptionalDriverAgentDB) AttachExternalDatabase(ctx context.Context, spec
 	}
 	if err := client.callContext(ctx, optionalAgentRequest{
 		Method:     optionalAgentMethodAttachExternalDatabase,
+		TimeoutMs:  timeoutMsFromContext(ctx),
 		AttachSpec: &spec,
 	}, nil, nil, nil, nil); err != nil {
 		return wrapOptionalAgentExternalAttachError(err)
@@ -677,8 +678,9 @@ func (d *OptionalDriverAgentDB) DetachExternalDatabase(ctx context.Context, alia
 		return err
 	}
 	if err := client.callContext(ctx, optionalAgentRequest{
-		Method: optionalAgentMethodDetachExternalDatabase,
-		Alias:  alias,
+		TimeoutMs: timeoutMsFromContext(ctx),
+		Method:    optionalAgentMethodDetachExternalDatabase,
+		Alias:     alias,
 	}, nil, nil, nil, nil); err != nil {
 		return wrapOptionalAgentExternalAttachError(err)
 	}
@@ -693,7 +695,8 @@ func (d *OptionalDriverAgentDB) ListExternalAttachments(ctx context.Context) ([]
 	}
 	var attachments []ExternalAttachmentInfo
 	if err := client.callContext(ctx, optionalAgentRequest{
-		Method: optionalAgentMethodListExternalAttachments,
+		TimeoutMs: timeoutMsFromContext(ctx),
+		Method:    optionalAgentMethodListExternalAttachments,
 	}, &attachments, nil, nil, nil); err != nil {
 		return nil, err
 	}

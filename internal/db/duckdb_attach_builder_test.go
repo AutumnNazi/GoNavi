@@ -47,3 +47,28 @@ func TestBuildDuckDBAttachStatement(t *testing.T) {
 		})
 	}
 }
+
+func TestSameExternalAttachmentIdentityIgnoresPassword(t *testing.T) {
+	base := duckDBAttachmentSpec{
+		kind: ExternalAttachKindMySQL, host: "h", port: 3306,
+		user: "u", password: "old", database: "d", readOnly: true,
+		connectionID: "conn-1",
+	}
+	rotated := base
+	rotated.password = "new"
+	if !sameExternalAttachmentIdentity(base, rotated) {
+		t.Fatal("password rotation must still count as same source")
+	}
+	otherHost := base
+	otherHost.password = "new"
+	otherHost.host = "other"
+	if sameExternalAttachmentIdentity(base, otherHost) {
+		t.Fatal("different host must be a conflict")
+	}
+	otherReadonly := base
+	otherReadonly.password = "new"
+	otherReadonly.readOnly = false
+	if sameExternalAttachmentIdentity(base, otherReadonly) {
+		t.Fatal("different readonly mode must be a conflict")
+	}
+}

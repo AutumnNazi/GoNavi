@@ -3,6 +3,7 @@ package db
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -30,7 +31,7 @@ func TestOptionalDriverAgentAttachRequestCarriesSpec(t *testing.T) {
 		SecretName: "gonavi_attach_orders_db",
 	}
 	db := &OptionalDriverAgentDB{driverType: "duckdb", client: client}
-	if err := db.AttachExternalDatabase(nil, spec); err != nil {
+	if err := db.AttachExternalDatabase(context.Background(), spec); err != nil {
 		t.Fatalf("attach over agent = %v", err)
 	}
 
@@ -81,7 +82,7 @@ func TestOptionalDriverAgentDetachRehydratesSentinel(t *testing.T) {
 				driver: "duckdb",
 			}
 			db := &OptionalDriverAgentDB{driverType: "duckdb", client: client}
-			err := db.DetachExternalDatabase(nil, "orders_db")
+			err := db.DetachExternalDatabase(context.Background(), "orders_db")
 			if tc.wantSentinel && !errors.Is(err, ErrExternalAttachNotAttached) {
 				t.Fatalf("err = %v, want sentinel", err)
 			}
@@ -110,7 +111,7 @@ func TestOptionalDriverAgentListAttachmentsDecodesPayload(t *testing.T) {
 		driver: "duckdb",
 	}
 	db := &OptionalDriverAgentDB{driverType: "duckdb", client: client}
-	attachments, err := db.ListExternalAttachments(nil)
+	attachments, err := db.ListExternalAttachments(context.Background())
 	if err != nil {
 		t.Fatalf("list over agent = %v", err)
 	}

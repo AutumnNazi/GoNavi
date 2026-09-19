@@ -24,6 +24,14 @@ type duckDBAttachmentSpec struct {
 	connectionID string
 }
 
+// sameExternalAttachmentIdentity 判断两条附加记录是否同一数据源：
+// 忽略 password（凭据轮换属同源重跑，应替换重建而非冲突）。
+func sameExternalAttachmentIdentity(a, b duckDBAttachmentSpec) bool {
+	a.password = ""
+	b.password = ""
+	return a == b
+}
+
 func buildDuckDBAttachStatement(spec ExternalAttachSpec) string {
 	readOnly := ""
 	if spec.ReadOnly {

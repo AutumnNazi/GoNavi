@@ -123,17 +123,16 @@ const DuckDBAttachPickerModal: React.FC<DuckDBAttachPickerModalProps> = ({
 
   const handleSelect = (connection: SavedConnection) => {
     setSelectedId(connection.id);
+    // 每次切换选中都重置派生：已附加的沿用其别名与模式，未附加的按名称重派生
+    // （aliasEdited 只对"当前选中连接"生效，避免污染下一次选择）
+    setAliasEdited(false);
     const attached = attachedByConnectionId.get(connection.id);
     if (attached) {
-      // 已附加的连接：沿用上次别名与只读模式，重跑即幂等替换
       setAlias(attached.alias);
-      setAliasEdited(true);
       setReadOnly(attached.readOnly);
       return;
     }
-    if (!aliasEdited) {
-      setAlias(slugifyDuckDBAttachAlias(connection.name, connection.id));
-    }
+    setAlias(slugifyDuckDBAttachAlias(connection.name, connection.id));
   };
 
   const handleClose = () => {
@@ -145,6 +144,10 @@ const DuckDBAttachPickerModal: React.FC<DuckDBAttachPickerModalProps> = ({
     onClose();
   };
 
+  // 测试环境（窄 mock）与真实 antd 的 Modal 行为差异：open=false 时不执行渲染体
+  if (!open) {
+    return null;
+  }
   const mutedColor = darkMode ? 'rgba(255,255,255,0.65)' : 'rgba(16,24,40,0.6)';
   const borderColor = darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(15,23,42,0.1)';
 
