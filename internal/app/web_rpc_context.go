@@ -19,7 +19,7 @@ var requiredIssue1098WebRPCContextMethods = []string{
 	"DataSyncJobList", "DataSyncJobGet", "DataSyncRunGet", "DataSyncRunList", "DataSyncRunPage", "DataSyncRunEventList",
 	"DataSyncErrorRowList", "DataSyncErrorRowGet", "DataSyncCheckpointGet", "DataSync", "DataSyncAnalyze", "DataSyncPreview",
 	"PreviewImportFile", "PreviewImportFileWithOptions", "ImportDataWithProgress", "ImportDataWithProgressOptions",
-	"ImportDatabaseSQL", "ImportDatabaseSQLWithOptions", "ExecuteSQLFile", "ResumeImportJob", "RetryImportJobFailedRows",
+	"ImportDatabaseSQL", "ImportDatabaseSQLWithOptions", "ExecuteSQLFile", "ResumeImportJob", "RetryImportJobFailedRows", "VerifySQLAuditIntegrity",
 }
 
 // RequiredIssue1098WebRPCContextMethods returns the exact App method set whose
@@ -199,6 +199,9 @@ func WebRPCContextHandlers(a *App) map[string]any {
 		},
 		"RetryImportJobFailedRows": func(ctx context.Context, jobID string) connection.QueryResult {
 			return a.retryImportJobFailedRowsContext(ctx, jobID)
+		},
+		"VerifySQLAuditIntegrity": func(ctx context.Context) connection.QueryResult {
+			return a.verifySQLAuditIntegrity(ctx)
 		},
 	}
 }
