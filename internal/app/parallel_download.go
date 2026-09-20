@@ -438,10 +438,8 @@ func newDownloadRangeRequest(ctx context.Context, rawURL string, start, end int6
 
 func downloadRangeClient(client *http.Client) *http.Client {
 	rangeClient := *client
-	if transport, ok := client.Transport.(*http.Transport); ok && transport != nil {
-		cloned := transport.Clone()
-		cloned.ResponseHeaderTimeout = parallelDownloadHeaderTimeout
-		rangeClient.Transport = cloned
+	if transport := cloneTransportWithResponseHeaderTimeout(client.Transport, parallelDownloadHeaderTimeout); transport != nil {
+		rangeClient.Transport = transport
 	}
 	return &rangeClient
 }

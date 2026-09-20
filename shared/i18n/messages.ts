@@ -947,7 +947,6 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
     "driver.modal.batch.compactTitle": "正在安装驱动 {completed}/{total}",
     "driver.modal.batch.cancelAll": "取消全部",
     "driver.modal.batch.detail": "详情",
-    "driver.modal.batch.cancelUnsupported": "当前版本不支持取消单个下载任务",
   },
   "en-US": {
     "common.action.cancel": "Cancel",
@@ -1936,6 +1935,5 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
     "driver.modal.batch.compactTitle": "Installing drivers {completed}/{total}",
     "driver.modal.batch.cancelAll": "Cancel all",
     "driver.modal.batch.detail": "Details",
-    "driver.modal.batch.cancelUnsupported": "Cancelling an individual driver download is not supported in this version",
   },
 };

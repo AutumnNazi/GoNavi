@@ -17,6 +17,7 @@ import {
 } from '../../utils/objectQueryTemplates';
 import { DBReleaseConnection } from '../../../wailsjs/go/app/App';
 import { updateSidebarDatabasePinKeys } from '../../store';
+import type { SidebarTableSortPreference } from '../../utils/sidebarTreeOrder';
 import { getDbIcon } from '../DatabaseIcons';
 import { getMetadataDialect } from './sidebarMetadataLoaders';
 import {
@@ -71,7 +72,7 @@ type UseSidebarV2ActionHandlersArgs = {
   moveConnectionToTag: (connectionId: string, tagId: string | null) => void;
   setSidebarTablePinned: (connectionId: string, dbName: string, tableName: string, schemaName: string, pinned: boolean) => void;
   setSidebarDatabasePinned: (connectionId: string, dbName: string, pinned: boolean) => void;
-  setTableSortPreference: (connectionId: string, dbName: string, sortBy: 'name' | 'frequency') => void;
+  setTableSortPreference: (connectionId: string, dbName: string, sortBy: SidebarTableSortPreference) => void;
   replaceTreeNodeChildren: (key: React.Key, children: TreeNode[] | undefined) => void;
   loadDatabases: (node: any, options?: SidebarTreeLoadOptions) => Promise<void>;
   loadTables: (node: any, options?: SidebarTreeLoadOptions) => Promise<void>;

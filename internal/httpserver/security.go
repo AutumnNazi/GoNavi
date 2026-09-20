@@ -94,8 +94,9 @@ func writeRequestBodyError(w http.ResponseWriter, status int) {
 }
 
 // StreamingWriteTimeout converts http.Server's absolute WriteTimeout into a
-// rolling per-write timeout. Long-lived SSE connections may remain idle for any
-// duration, but a write to a slow or disconnected client is still bounded.
+// rolling per-write timeout. Long-lived SSE connections and slow App invoke
+// handlers may remain idle for any duration, but a write to a slow or
+// disconnected client is still bounded.
 func StreamingWriteTimeout(next http.Handler) http.Handler {
 	return streamingWriteTimeout(next, WriteTimeout)
 }

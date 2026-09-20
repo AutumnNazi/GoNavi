@@ -530,6 +530,9 @@ const buildCompactObjectTabTitle = (tab: TabData, translate: TabDisplayTranslate
   if (tab.type === 'package-def') {
     return replaceTitleObjectLabel(tab.title, tab.packageName);
   }
+  if (tab.type === 'database-link-def') {
+    return replaceTitleObjectLabel(tab.title, tab.databaseLinkName);
+  }
   return tab.title;
 };
 
@@ -560,6 +563,7 @@ export const getTabDisplayKindLabel = (tab: TabData): string => {
   if (tab.type === 'routine-def') return 'FUNC';
   if (tab.type === 'sequence-def') return 'SEQ';
   if (tab.type === 'package-def') return 'PKG';
+  if (tab.type === 'database-link-def') return 'DBLINK';
   return 'TAB';
 };
 
@@ -571,6 +575,7 @@ const getTabRawObjectLabel = (tab: TabData, translate: TabDisplayTranslate = def
   if (tab.routineName) return tab.routineName;
   if (tab.sequenceName) return tab.sequenceName;
   if (tab.packageName) return tab.packageName;
+  if (tab.databaseLinkName) return tab.databaseLinkName;
   if (tab.triggerName) return tab.triggerName;
   if (tab.resourcePath) return tab.resourcePath;
   if (tab.filePath) return getFileNameFromPath(tab.filePath);

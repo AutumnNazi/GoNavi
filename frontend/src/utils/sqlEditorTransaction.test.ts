@@ -174,4 +174,48 @@ describe('sqlEditorTransaction', () => {
       { type: 'custom', driver: 'future-driver' },
     )).toBe(true);
   });
+
+  // issue #1308：缺分号时切分器切不出边界，整段被当成一条以 select 开头的读语句，
+  // 于是不走托管事务、以 autocommit 直接下发，数据库侧再无事务可回滚。
+  it('uses a managed transaction when a read statement embeds a semicolon-less write (issue #1308)', () => {
+    const incidentSql = [
+      'SELECT',
+      '    *',
+      'FROM',
+      '    t_bank_payment',
+      'WHERE',
+      "    f_bank_name = '安徽农商银行'",
+      'ORDER BY',
+      '    id DESC',
+      'DELETE FROM t_bank_payment',
+      'WHERE',
+      "    f_bank_name = '安徽农商银行'",
+    ].join('\n');
+
+    expect(shouldUseSqlEditorManagedTransactionForType('mysql', [incidentSql])).toBe(true);
+    // 该语句含 DELETE，不得被视为可复用待提交事务的只读后续语句。
+    expect(canReusePendingSqlEditorTransactionForType('mysql', [incidentSql])).toBe(false);
+  });
+
+  it('keeps read-only statements on the non-transactional path (issue #1308)', () => {
+    const readOnlyCases: Array<[string, string]> = [
+      ['mysql', 'SELECT * FROM delete_log'],
+      ['mysql', "SELECT 'DELETE FROM t' AS note"],
+      ['mysql', 'SELECT 1 -- DELETE FROM t'],
+      ['mysql', 'SHOW CREATE TABLE users'],
+      ['mysql', 'SELECT * FROM t WHERE id = 1 FOR UPDATE'],
+      ['postgres', 'SELECT $$ DELETE FROM t $$'],
+    ];
+
+    for (const [dbType, sql] of readOnlyCases) {
+      expect(
+        shouldUseSqlEditorManagedTransactionForType(dbType, [sql]),
+        `${dbType}: ${sql}`,
+      ).toBe(false);
+      expect(
+        canReusePendingSqlEditorTransactionForType(dbType, [sql]),
+        `${dbType}: ${sql}`,
+      ).toBe(true);
+    }
+  });
 });

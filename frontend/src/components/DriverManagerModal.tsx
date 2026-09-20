@@ -9,8 +9,27 @@ import { useStore } from '../store';
 import { t } from '../i18n';
 import { resolveAppearanceValues } from '../utils/appearance';
 import { isBackendCancelledResult } from '../utils/connectionExport';
-import { normalizeDriverProgressUpdate, type DriverProgressState } from '../utils/driverProgress';
+import {
+  isDriverProgressTerminalStatus,
+  normalizeDriverProgressUpdate,
+  resolveDriverProgressDisplay,
+  type DriverProgressState,
+  type DriverProgressStatus,
+} from '../utils/driverProgress';
 import { buildDriverManagerWorkbenchTheme } from '../utils/driverManagerWorkbenchTheme';
+import {
+  createDriverDownloadCancelIntents,
+  extractDriverDownloadTaskSnapshots,
+  isDriverDownloadActive,
+  isDriverDownloadTerminal,
+  normalizeDriverDownloadTaskSnapshot,
+  nextDriverActionStateAfterCancel,
+  shouldAbortDriverInstall,
+  shouldIgnoreDriverDownloadProgress,
+  waitForDriverDownloadTask,
+  type DriverDownloadTaskSnapshot,
+} from './driverManager/driverDownloadCancellation';
+import { useDriverDownloadCancellation } from './driverManager/useDriverDownloadCancellation';
 import {
   getDriverLocalImportButtonLabel,
   getDriverLocalImportDirectoryHelp,
@@ -26,7 +45,6 @@ import {
 } from '../utils/driverManagerRequestState';
 import {
   CheckDriverNetworkStatus,
-  DownloadDriverPackage,
   GetDriverVersionList,
   GetDriverVersionPackageSize,
   GetDriverStatusList,
@@ -40,7 +58,6 @@ import {
 } from '../../wailsjs/go/app/App';
 
 const { Paragraph, Text } = Typography;
-
 
 type DriverListSortKey = 'name' | 'status' | 'size' | 'version';
 
@@ -114,22 +131,9 @@ type DriverStatusRow = {
 type DriverProgressEvent = {
   taskId?: string;
   driverType?: string;
-  status?: 'start' | 'downloading' | 'done' | 'error';
+  status?: DriverProgressStatus;
   message?: string;
   percent?: number;
-};
-
-type DriverDownloadTaskSnapshot = {
-  taskId: string;
-  driverType: string;
-  version?: string;
-  downloadDir?: string;
-  status: DriverProgressState['status'];
-  percent: number;
-  message?: string;
-  running?: boolean;
-  startedAt?: string;
-  finishedAt?: string;
 };
 
 type DriverLocalSourceCode = 'file' | 'directory';
@@ -296,37 +300,6 @@ const resolvePreferredVersionOption = (
 const DRIVER_STATUS_CACHE_TTL_MS = 60 * 1000;
 const DRIVER_NETWORK_CACHE_TTL_MS = 5 * 60 * 1000;
 const normalizeDriverSearchText = (value: string) => String(value || '').trim().toLowerCase();
-const isDriverDownloadActive = (progress?: DriverProgressState): boolean => (
-  progress?.status === 'start' || progress?.status === 'downloading'
-);
-const isDriverDownloadTerminal = (progress?: DriverProgressState): boolean => (
-  progress?.status === 'done' || progress?.status === 'error'
-);
-const normalizeDriverDownloadTaskSnapshot = (value: unknown): DriverDownloadTaskSnapshot | null => {
-  const item = (value || {}) as Record<string, unknown>;
-  const taskId = String(item.taskId || '').trim();
-  const driverType = String(item.driverType || '').trim().toLowerCase();
-  const rawStatus = String(item.status || '').trim().toLowerCase();
-  if (!taskId || !driverType || !['start', 'downloading', 'done', 'error'].includes(rawStatus)) {
-    return null;
-  }
-  const running = typeof item.running === 'boolean' ? item.running : undefined;
-  const status = running === false && (rawStatus === 'start' || rawStatus === 'downloading')
-    ? 'error'
-    : rawStatus;
-  return {
-    taskId,
-    driverType,
-    version: String(item.version || '').trim() || undefined,
-    downloadDir: String(item.downloadDir || '').trim() || undefined,
-    status: status as DriverProgressState['status'],
-    percent: Math.max(0, Math.min(100, Number(item.percent || 0))),
-    message: String(item.message || '').trim() || undefined,
-    running,
-    startedAt: String(item.startedAt || '').trim() || undefined,
-    finishedAt: String(item.finishedAt || '').trim() || undefined,
-  };
-};
 const isSlimBuildInstallUnavailable = (row: DriverStatusRow) => row.reasonCode === 'slim_build_missing_driver' && !row.packageInstalled;
 const resolveDriverBatchActionLabel = (actionKind: DriverBatchActionKind) => {
   switch (actionKind) {
@@ -735,6 +708,7 @@ const DriverManagerModal: React.FC<{
   const progressMapRef = useRef<Record<string, DriverProgressState>>({});
   const progressTaskIdMapRef = useRef<Record<string, string>>({});
   const tasklessProgressOwnerRef = useRef('');
+  const cancelIntentsRef = useRef(createDriverDownloadCancelIntents());
   const versionLoadPromiseMapRef = useRef<Record<string, Promise<DriverVersionOption[]>>>({});
   const statusRequestGenerationRef = useRef(0);
   const networkRequestGenerationRef = useRef(0);
@@ -785,6 +759,9 @@ const DriverManagerModal: React.FC<{
       return undefined;
     }
     const previousProgress = options?.resetPrevious ? undefined : progressMapRef.current[normalized];
+    if (shouldIgnoreDriverDownloadProgress(incoming.status, cancelIntentsRef.current.isRequested(normalized))) {
+      return previousProgress;
+    }
     const nextProgress = normalizeDriverProgressUpdate(previousProgress, incoming);
     progressMapRef.current = {
       ...progressMapRef.current,
@@ -879,9 +856,12 @@ const DriverManagerModal: React.FC<{
     if (!normalizedDriverType || !normalizedTaskId) {
       return { applied: false };
     }
+    const previousProgress = progressMapRef.current[normalizedDriverType];
+    if (shouldIgnoreDriverDownloadProgress(incoming.status, cancelIntentsRef.current.isRequested(normalizedDriverType))) {
+      return { applied: false, progress: previousProgress };
+    }
 
     const knownTaskId = progressTaskIdMapRef.current[normalizedDriverType];
-    const previousProgress = progressMapRef.current[normalizedDriverType];
     if (knownTaskId === normalizedTaskId && isDriverDownloadTerminal(previousProgress)) {
       return { applied: false, progress: previousProgress };
     }
@@ -925,7 +905,7 @@ const DriverManagerModal: React.FC<{
       `driver-progress:${statusText}:${messageText}`,
       'update-last',
     );
-    return task.status === 'done' || task.status === 'error';
+    return isDriverProgressTerminalStatus(task.status);
   }, [appendOperationLog, applyTaskScopedDriverProgress]);
 
   const refreshDriverDownloadTasks = useCallback(async (): Promise<boolean> => {
@@ -934,14 +914,8 @@ const DriverManagerModal: React.FC<{
       if (!result?.success) {
         return false;
       }
-      const rawTasks: unknown[] = Array.isArray(result.data)
-        ? result.data
-        : (Array.isArray((result.data as any)?.tasks) ? (result.data as any).tasks : []);
-      const tasks = rawTasks
-        .map(normalizeDriverDownloadTaskSnapshot)
-        .filter((task): task is DriverDownloadTaskSnapshot => !!task);
       let hasTerminalTask = false;
-      tasks.forEach((task) => {
+      extractDriverDownloadTaskSnapshots(result.data).forEach((task) => {
         hasTerminalTask = applyDriverDownloadTaskSnapshot(task) || hasTerminalTask;
       });
       return hasTerminalTask;
@@ -950,6 +924,24 @@ const DriverManagerModal: React.FC<{
       return false;
     }
   }, [applyDriverDownloadTaskSnapshot]);
+
+  const {
+    batchCancellation,
+    cancelIntents,
+    installSessions,
+    cancelDriverDownload,
+    cancelDriverDownloadTask,
+    cancelAllDriverDownloads,
+  } = useDriverDownloadCancellation({
+    progressTaskIdMapRef,
+    progressMapRef,
+    cancelIntents: cancelIntentsRef.current,
+    applyDriverDownloadTaskSnapshot,
+    updateDriverProgress,
+    appendOperationLog,
+    resolveDriverErrorMessage,
+    onReleaseInstallAction: (driverType) => setActionState((prev) => nextDriverActionStateAfterCancel(prev, driverType)),
+  });
 
   const refreshStatus = useCallback(async (
     toastOnError = true,
@@ -1309,6 +1301,9 @@ const DriverManagerModal: React.FC<{
         if (!driverType || !status) {
           return;
         }
+        if (shouldIgnoreDriverDownloadProgress(status, cancelIntentsRef.current.isRequested(driverType))) {
+          return;
+        }
         const taskId = String(event.taskId || '').trim();
         if (!taskId && tasklessProgressOwnerRef.current !== driverType) {
           return;
@@ -1392,10 +1387,11 @@ const DriverManagerModal: React.FC<{
 
   const installDriver = useCallback(async (
     row: DriverStatusRow,
-    actionOptions?: { silentToast?: boolean; skipRefresh?: boolean; runInline?: boolean },
+    actionOptions?: { silentToast?: boolean; skipRefresh?: boolean; awaitCompletion?: boolean },
   ) => {
     const normalizedDriverType = String(row.type || '').trim().toLowerCase();
-    let ownsTasklessProgress = false;
+    const session = installSessions.begin(normalizedDriverType);
+    cancelIntents.clear(normalizedDriverType);
     setActionState({ driverType: row.type, kind: 'install' });
     clearDriverDownloadTaskId(row.type);
     updateDriverProgress(row.type, {
@@ -1419,14 +1415,17 @@ const DriverManagerModal: React.FC<{
       );
       const selectedVersion = selectedOption?.version || row.pinnedVersion || '';
       const selectedDownloadURL = selectedOption?.downloadUrl || row.defaultDownloadUrl || '';
-      const runInline = actionOptions?.runInline === true;
-      if (runInline) {
-        tasklessProgressOwnerRef.current = normalizedDriverType;
-        ownsTasklessProgress = true;
+      if (!installSessions.isCurrent(normalizedDriverType, session) || shouldAbortDriverInstall(normalizedDriverType, cancelIntents.isRequested, batchCancellation.isRequested())) {
+        return false;
       }
-      const result = runInline
-        ? await DownloadDriverPackage(row.type, selectedVersion, selectedDownloadURL, downloadDir)
-        : await StartDriverPackageDownload(row.type, selectedVersion, selectedDownloadURL, downloadDir);
+      const result = await StartDriverPackageDownload(row.type, selectedVersion, selectedDownloadURL, downloadDir);
+      if (!installSessions.isCurrent(normalizedDriverType, session) || shouldAbortDriverInstall(normalizedDriverType, cancelIntents.isRequested, batchCancellation.isRequested())) {
+        const startedTask = normalizeDriverDownloadTaskSnapshot((result?.data as { task?: unknown } | undefined)?.task);
+        if (startedTask?.taskId) {
+          await cancelDriverDownloadTask(row.type, startedTask.taskId, row.name, { silentToast: true });
+        }
+        return false;
+      }
       if (!result?.success) {
         const errText = resolveDriverErrorMessage(
           result?.message,
@@ -1450,34 +1449,40 @@ const DriverManagerModal: React.FC<{
         return false;
       }
 
-      if (!runInline) {
-        const task = normalizeDriverDownloadTaskSnapshot((result.data as any)?.task);
-        if (task) {
-          applyDriverDownloadTaskSnapshot(task);
-          if (task.driverType !== String(row.type || '').trim().toLowerCase()) {
-            // The backend serializes driver installs because they share a
-            // process-wide download directory. Do not leave a phantom local
-            // task behind when another manager instance already owns it.
-            clearDriverProgress(row.type);
-          }
-        }
+      const task = normalizeDriverDownloadTaskSnapshot((result.data as { task?: unknown } | undefined)?.task);
+      if (!task) {
         return true;
       }
-
-      const versionTip = formatDriverVersionTip(selectedVersion);
-      updateDriverProgress(row.type, {
-        status: 'done',
-        message: t('driver.modal.operationLog.autoInstall.done', { version: formatDriverLogVersionTip(selectedVersion) }),
-        percent: 100,
+      applyDriverDownloadTaskSnapshot(task);
+      if (task.driverType !== normalizedDriverType) {
+        // The backend serializes driver installs because they share a
+        // process-wide download directory. Do not leave a phantom local
+        // task behind when another manager instance already owns it.
+        clearDriverProgress(row.type);
+        return !actionOptions?.awaitCompletion;
+      }
+      if (!actionOptions?.awaitCompletion) {
+        return true;
+      }
+      const finishedTask = await waitForDriverDownloadTask(task.taskId, {
+        listTasks: ListDriverDownloadTasks,
+        onSnapshot: applyDriverDownloadTaskSnapshot,
       });
-      if (!actionOptions?.silentToast) {
-        message.success(t('driver.modal.success.installDriver', { name: row.name, version: versionTip }));
+      if (!finishedTask) {
+        appendOperationLog(row.type, `[ERROR] ${t('driver_manager.message.install_failed_fallback', { name: row.name })}`);
+        return false;
+      }
+      if (finishedTask.status !== 'done') {
+        return false;
       }
       if (!actionOptions?.skipRefresh) {
         await refreshStatus(false);
       }
       return true;
     } catch (error) {
+      if (!installSessions.isCurrent(normalizedDriverType, session) || shouldAbortDriverInstall(normalizedDriverType, cancelIntents.isRequested, batchCancellation.isRequested())) {
+        return false;
+      }
       const errText = error instanceof Error
         ? error.message
         : String(error || t('driver_manager.message.install_failed_fallback', { name: row.name }));
@@ -1492,12 +1497,9 @@ const DriverManagerModal: React.FC<{
       }
       return false;
     } finally {
-      if (ownsTasklessProgress && tasklessProgressOwnerRef.current === normalizedDriverType) {
-        tasklessProgressOwnerRef.current = '';
-      }
-      setActionState({ driverType: '', kind: '' });
+      if (installSessions.isCurrent(normalizedDriverType, session)) setActionState({ driverType: '', kind: '' });
     }
-  }, [appendOperationLog, applyDriverDownloadTaskSnapshot, clearDriverDownloadTaskId, clearDriverProgress, downloadDir, loadVersionOptions, refreshStatus, resolveDriverErrorMessage, selectedVersionMap, updateDriverProgress, versionMap]);
+  }, [appendOperationLog, applyDriverDownloadTaskSnapshot, batchCancellation, cancelDriverDownloadTask, cancelIntents, clearDriverDownloadTaskId, clearDriverProgress, downloadDir, installSessions, loadVersionOptions, refreshStatus, resolveDriverErrorMessage, selectedVersionMap, updateDriverProgress, versionMap]);
 
   const runAfterDriverInterruptionConfirmation = useCallback((
     targetRows: DriverStatusRow[],
@@ -1809,7 +1811,7 @@ const DriverManagerModal: React.FC<{
       return <Tag color="success">{t('driver.modal.card.builtInUsable')}</Tag>;
     }
     const progress = progressMap[row.type];
-    if (progress && (progress.status === 'start' || progress.status === 'downloading')) {
+    if (isDriverDownloadActive(progress)) {
       return <Tag color="processing">{t('driver.modal.card.installing', { percent: resolveDriverProgress(row).percent })}</Tag>;
     }
     if (row.needsUpdate) {
@@ -1824,27 +1826,7 @@ const DriverManagerModal: React.FC<{
     return <Tag>{t('driver.modal.card.notEnabled')}</Tag>;
   };
 
-  const resolveDriverProgress = (row: DriverStatusRow) => {
-    const progress = progressMap[row.type];
-    let percent = 0;
-    let status: 'normal' | 'exception' | 'active' | 'success' = 'normal';
-
-    if (progress?.status === 'error') {
-      percent = Math.max(0, Math.min(100, Math.round(progress.percent || 0)));
-      status = 'exception';
-    } else if (progress && (progress.status === 'start' || progress.status === 'downloading')) {
-      percent = Math.max(1, Math.min(99, Math.round(progress.percent || 0)));
-      status = 'active';
-    } else if (progress?.status === 'done') {
-      percent = 100;
-      status = 'success';
-    } else if (row.connectable || row.packageInstalled) {
-      percent = 100;
-      status = 'success';
-    }
-
-    return { percent, status };
-  };
+  const resolveDriverProgress = (row: DriverStatusRow) => resolveDriverProgressDisplay(progressMap[row.type], !!(row.connectable || row.packageInstalled));
 
   const renderVersionControl = (row: DriverStatusRow) => {
     if (row.builtIn) {
@@ -2069,11 +2051,17 @@ const DriverManagerModal: React.FC<{
 
     setBatchAction(actionKind);
     setBatchProgress(createDriverBatchProgress(targetRows.length, t('driver.modal.batch.prepare', { action: successLabel })));
+    batchCancellation.reset();
     let successCount = 0;
     let failCount = 0;
     let slimSkipCount = 0;
+    let unfinishedCount = 0;
     try {
       for (const row of targetRows) {
+        if (batchCancellation.isRequested()) {
+          unfinishedCount += 1;
+          continue;
+        }
         if (isSlimBuildInstallUnavailable(row)) {
           slimSkipCount += 1;
           appendOperationLog(row.type, t('driver.modal.operationLog.autoInstall.slimSkipped'));
@@ -2104,10 +2092,13 @@ const DriverManagerModal: React.FC<{
             currentMessage: t('driver.modal.batch.driverRunning', { action: successLabel, name: row.name }),
           };
         });
-        const ok = await installDriver(row, { silentToast: true, skipRefresh: true, runInline: true });
+        const ok = await installDriver(row, { silentToast: true, skipRefresh: true, awaitCompletion: true });
+        const canceled = !ok && batchCancellation.isRequested();
         if (ok) {
           successCount += 1;
           await refreshStatus(false, { showLoading: false });
+        } else if (canceled) {
+          unfinishedCount += 1;
         } else {
           failCount += 1;
         }
@@ -2120,12 +2111,14 @@ const DriverManagerModal: React.FC<{
             ...prev,
             completed,
             success: prev.success + (ok ? 1 : 0),
-            failed: prev.failed + (ok ? 0 : 1),
+            failed: prev.failed + (ok || canceled ? 0 : 1),
             currentDriverType: '',
             currentDriverName: '',
             currentMessage: ok
               ? t('driver.modal.batch.driverCompleted', { name: row.name })
-              : t('driver.modal.batch.driverFailed', { name: row.name }),
+              : canceled
+                ? t('driver_manager.batch.driver.canceled', { name: row.name })
+                : t('driver.modal.batch.driverFailed', { name: row.name }),
           };
         });
       }
@@ -2136,6 +2129,11 @@ const DriverManagerModal: React.FC<{
     }
 
     const skipTip = formatDriverBatchSkipSummary(0, slimSkipCount);
+    if (batchCancellation.isRequested()) {
+      batchCancellation.reset();
+      message.warning(t('driver_manager.batch.result.canceled', { action: successLabel, success: successCount, failed: failCount, remaining: unfinishedCount, skip: skipTip }));
+      return;
+    }
     if (failCount === 0) {
       message.success(t('driver.modal.batch.actionResult.success', { action: successLabel, success: successCount, skip: skipTip }));
       return;
@@ -2145,7 +2143,12 @@ const DriverManagerModal: React.FC<{
       return;
     }
     message.error(t('driver.modal.batch.actionResult.failed', { action: successLabel, failed: failCount, skip: skipTip }));
-  }, [appendOperationLog, installDriver, refreshStatus]);
+  }, [appendOperationLog, batchCancellation, installDriver, refreshStatus]);
+
+  const cancelBatchDownloads = useCallback(() => {
+    setBatchProgress((prev) => (prev ? { ...prev, currentMessage: t('driver_manager.batch.cancel_requested') } : prev));
+    void cancelAllDriverDownloads((driverType) => rows.find((row) => row.type === driverType)?.name || driverType);
+  }, [cancelAllDriverDownloads, rows]);
 
   const reinstallNeededDrivers = useCallback(() => {
     runAfterDriverInterruptionConfirmation(reinstallableRows, () => runBatchInstall(
@@ -2242,7 +2245,7 @@ const DriverManagerModal: React.FC<{
   const resolveDriverListTone = (row: DriverStatusRow) => {
     const progressState = progressMap[row.type];
     if (progressState?.status === 'error') return 'error';
-    if (progressState && (progressState.status === 'start' || progressState.status === 'downloading')) return 'checking';
+    if (isDriverDownloadActive(progressState)) return 'checking';
     if (progressState?.status === 'done') return 'ok';
     if (row.needsUpdate) return 'warning';
     if (row.builtIn || row.connectable) return 'ok';
@@ -2253,7 +2256,7 @@ const DriverManagerModal: React.FC<{
   const renderDriverListItem = (row: DriverStatusRow) => {
     const selected = selectedRow?.type === row.type;
     const progressState = progressMap[row.type];
-    const isDownloading = !!progressState && (progressState.status === 'start' || progressState.status === 'downloading');
+    const isDownloading = isDriverDownloadActive(progressState);
     const metaText = row.builtIn
       ? t('driver.modal.card.noInstallNeeded')
       : isDownloading
@@ -2286,9 +2289,10 @@ const DriverManagerModal: React.FC<{
     const affectedText = row.affectedConnections && row.affectedConnections > 0
       ? t('driver.modal.card.affectedConnections', { count: row.affectedConnections })
       : '';
-    const isDownloading = !!progressState && (progressState.status === 'start' || progressState.status === 'downloading');
+    const isDownloading = isDriverDownloadActive(progressState);
     const isDownloadDone = progressState?.status === 'done';
     const isDownloadError = progressState?.status === 'error';
+    const isDownloadCanceled = progressState?.status === 'canceled';
 
     return (
       <div key={row.type} className="driver-manager-detail-body">
@@ -2336,7 +2340,7 @@ const DriverManagerModal: React.FC<{
                     size="small"
                     type="text"
                     danger
-                    onClick={() => message.warning(t('driver.modal.batch.cancelUnsupported'))}
+                    onClick={() => { void cancelDriverDownload(row.type, row.name); }}
                   >
                     {t('common.action.cancel')}
                   </Button>
@@ -2370,11 +2374,11 @@ const DriverManagerModal: React.FC<{
                   {renderVersionControl(row)}
                 </div>
               ) : null}
-              {isDownloadError && progressState?.message ? (
+              {(isDownloadError || isDownloadCanceled) && progressState?.message ? (
                 <Paragraph
                   className="driver-manager-progress-error"
-                  type="danger"
-                  role="alert"
+                  type={isDownloadError ? 'danger' : 'warning'}
+                  role={isDownloadError ? 'alert' : 'status'}
                   ellipsis={{ rows: 2, expandable: true, symbol: t('driver.modal.card.expand') }}
                   style={{ marginBottom: 0 }}
                 >
@@ -2753,7 +2757,7 @@ const DriverManagerModal: React.FC<{
                 size="small"
                 danger
                 ghost
-                onClick={() => message.warning(t('driver.modal.batch.cancelUnsupported'))}
+                onClick={cancelBatchDownloads}
               >
                 {t('driver.modal.batch.cancelAll')}
               </Button>

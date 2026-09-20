@@ -33,6 +33,11 @@ describe('resolveSidebarTitlebarObjectName', () => {
       title: 'PKG_ORDERS',
       dataRef: { packageName: 'PKG_ORDERS' },
     }, 'PKG_ORDERS'],
+    [{
+      type: 'database-link',
+      title: 'ORCL.WORLD',
+      dataRef: { databaseLinkName: 'ORCL.WORLD' },
+    }, 'ORCL.WORLD'],
   ])('uses the selected object name for compact context', (node, expectedName) => {
     expect(resolveSidebarTitlebarObjectName(node)).toBe(expectedName);
   });

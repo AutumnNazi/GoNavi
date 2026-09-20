@@ -752,7 +752,7 @@ func (s *SharedRuntime) EmitToBestEffort(targetID string, name string, args ...a
 
 func (s *SharedRuntime) routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle(internalRoutePrefix+"/api/invoke", httpserverlimits.LimitRequestBody(http.HandlerFunc(s.server.handleInvoke)))
+	mux.Handle(internalRoutePrefix+"/api/invoke", wrapInvokeRoute(http.HandlerFunc(s.server.handleInvoke)))
 	mux.Handle(internalRoutePrefix+"/events", httpserverlimits.StreamingWriteTimeout(http.HandlerFunc(s.server.handleEvents)))
 	mux.HandleFunc(s.runtimeBridgePath, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -993,7 +993,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc(internalRoutePrefix+"/auth/logout", s.handleLogout)
 	mux.Handle(internalRoutePrefix+"/auth/settings", s.requireWebAuth(http.HandlerFunc(s.handleAuthSettings)))
 	mux.Handle(internalRoutePrefix+"/auth/settings/password", s.requireWebAuth(httpserverlimits.LimitRequestBody(http.HandlerFunc(s.handleAuthPasswordChange))))
-	mux.Handle(internalRoutePrefix+"/api/invoke", s.requireWebAuth(httpserverlimits.LimitRequestBody(http.HandlerFunc(s.handleInvoke))))
+	mux.Handle(internalRoutePrefix+"/api/invoke", s.requireWebAuth(wrapInvokeRoute(http.HandlerFunc(s.handleInvoke))))
 	mux.Handle(internalRoutePrefix+"/api/upload", s.requireWebAuth(http.HandlerFunc(s.handleWebUpload)))
 	mux.Handle(internalRoutePrefix+"/api/download/", s.requireWebAuth(httpserverlimits.StreamingWriteTimeout(http.HandlerFunc(s.handleWebDownload))))
 	mux.Handle(internalRoutePrefix+"/events", s.requireWebAuth(httpserverlimits.StreamingWriteTimeout(http.HandlerFunc(s.handleEvents))))

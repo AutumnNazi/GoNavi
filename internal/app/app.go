@@ -198,7 +198,8 @@ type App struct {
 	driverDownloadTaskMu          sync.RWMutex
 	driverDownloadTasks           map[string]DriverDownloadTaskStatus
 	driverDownloadActiveTaskID    string
-	driverDownloadTaskRunner      func(string, string, string, string) connection.QueryResult
+	driverDownloadTaskRunner      driverDownloadTaskRunner
+	driverDownloadTaskControls    map[string]driverDownloadTaskControl
 	driverInstallMu               sync.Mutex
 	driverMaintenance             map[string]int
 	dataRootApplyMu               sync.Mutex
@@ -321,6 +322,7 @@ func NewAppWithSecretStore(store secretstore.SecretStore) *App {
 		connectionHealthRuns:          make(map[string]*connectionHealthRun),
 		importTasks:                   make(map[string]importTaskRegistration),
 		driverDownloadTasks:           make(map[string]DriverDownloadTaskStatus),
+		driverDownloadTaskControls:    make(map[string]driverDownloadTaskControl),
 		driverMaintenance:             make(map[string]int),
 		sqlTransactions:               make(map[string]*managedSQLTransaction),
 		requestTraceStore:             requesttrace.NewStore(requesttrace.DefaultCapacity),

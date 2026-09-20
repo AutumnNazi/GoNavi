@@ -1,4 +1,5 @@
 import { getDataSourceCapabilityContract } from './dataSourceCapabilities';
+import { hasEmbeddedWriteStatement } from './sqlEmbeddedWrite';
 import {
     supportsSqlBracketIdentifier,
     supportsSqlEscapedBracketIdentifier,
@@ -299,6 +300,12 @@ export const hasTopLevelSqlEditorForUpdate = (statement: string, dbType = ''): b
 
 const sqlEditorStatementHasManagedWrite = (statement: string, dbType = ''): boolean => {
     const text = String(statement || '');
+    // 缺分号导致首关键字为读、体内却埋着 DML 时（issue #1308），
+    // 只看首关键字会把这批语句判为"不可托管的读"，从而跳过托管事务、
+    // 以 autocommit 直接下发，数据库侧再无事务可回滚。
+    if (hasEmbeddedWriteStatement(text, dbType)) {
+        return true;
+    }
     const leading = readSqlEditorKeyword(text, 0);
     if (leading.keyword === 'with') {
         const analysis = resolveSqlEditorWithAnalysis(text, leading.end, dbType);

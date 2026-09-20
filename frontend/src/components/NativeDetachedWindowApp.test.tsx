@@ -76,6 +76,7 @@ const workbenchTabTypes: TabData['type'][] = [
   'routine-def',
   'sequence-def',
   'package-def',
+  'database-link-def',
   'table-overview',
   'table-export',
   'jvm-overview',

@@ -3302,6 +3302,14 @@ body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-node-content-wra
   align-items: center;
   border-radius: 6px !important;
   color: var(--gn-fg-3) !important;
+  cursor: default !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-switcher,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-iconEle,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-title,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .gn-v2-tree-title {
+  cursor: default !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .gn-v2-tree-title.is-connection,
@@ -3319,7 +3327,7 @@ body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-node-content-wra
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode.ant-tree-treenode-draggable {
-  cursor: pointer !important;
+  cursor: default !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode.ant-tree-treenode-draggable:hover {
@@ -3517,6 +3525,7 @@ body[data-ui-version="v2"] .gn-v2-tree-title.is-group {
 body[data-ui-version="v2"] .gn-v2-tree-title.is-connection-group {
   color: var(--gn-fg-3);
   font-weight: 600 !important;
+  line-height: 1.4;
   letter-spacing: 0.01em;
 }
 
@@ -3667,12 +3676,16 @@ body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-host-tree-dragging .ant
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-host-tree-dragging .ant-tree-treenode:has(.gn-v2-tree-title.is-drop-before) .ant-tree-node-content-wrapper,
-body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-host-tree-dragging .ant-tree-treenode:has(.gn-v2-tree-title.is-drop-after) .ant-tree-node-content-wrapper {
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-host-tree-dragging .ant-tree-treenode:has(.gn-v2-tree-title.is-drop-after) .ant-tree-node-content-wrapper,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-object-tree-dragging .ant-tree-treenode:has(.gn-v2-tree-title.is-drop-before) .ant-tree-node-content-wrapper,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-object-tree-dragging .ant-tree-treenode:has(.gn-v2-tree-title.is-drop-after) .ant-tree-node-content-wrapper {
   position: relative;
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-host-tree-dragging .ant-tree-treenode:has(.gn-v2-tree-title.is-drop-before) .ant-tree-node-content-wrapper::after,
-body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-host-tree-dragging .ant-tree-treenode:has(.gn-v2-tree-title.is-drop-after) .ant-tree-node-content-wrapper::after {
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-host-tree-dragging .ant-tree-treenode:has(.gn-v2-tree-title.is-drop-after) .ant-tree-node-content-wrapper::after,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-object-tree-dragging .ant-tree-treenode:has(.gn-v2-tree-title.is-drop-before) .ant-tree-node-content-wrapper::after,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-object-tree-dragging .ant-tree-treenode:has(.gn-v2-tree-title.is-drop-after) .ant-tree-node-content-wrapper::after {
   position: absolute;
   z-index: 3;
   right: 4px;
@@ -3684,11 +3697,13 @@ body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-host-tree-dragging .ant
   pointer-events: none;
 }
 
-body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-host-tree-dragging .ant-tree-treenode:has(.gn-v2-tree-title.is-drop-before) .ant-tree-node-content-wrapper::after {
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-host-tree-dragging .ant-tree-treenode:has(.gn-v2-tree-title.is-drop-before) .ant-tree-node-content-wrapper::after,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-object-tree-dragging .ant-tree-treenode:has(.gn-v2-tree-title.is-drop-before) .ant-tree-node-content-wrapper::after {
   top: -1px;
 }
 
-body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-host-tree-dragging .ant-tree-treenode:has(.gn-v2-tree-title.is-drop-after) .ant-tree-node-content-wrapper::after {
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-host-tree-dragging .ant-tree-treenode:has(.gn-v2-tree-title.is-drop-after) .ant-tree-node-content-wrapper::after,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-object-tree-dragging .ant-tree-treenode:has(.gn-v2-tree-title.is-drop-after) .ant-tree-node-content-wrapper::after {
   bottom: -1px;
 }
 
@@ -3696,8 +3711,21 @@ body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.has-host-group-drop-previe
   display: none !important;
 }
 
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-host-tree-dragging .ant-tree-drop-indicator {
+  display: none !important;
+}
+
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-drop-indicator::after {
   display: none !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-object-tree-dragging .ant-tree-drop-indicator {
+  display: none !important;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-object-tree-dragging,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-object-tree-dragging * {
+  cursor: grabbing !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell.is-host-tree-dragging .ant-tree-treenode.dragging::after {

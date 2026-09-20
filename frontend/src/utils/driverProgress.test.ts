@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { normalizeDriverProgressUpdate, type DriverProgressState } from './driverProgress';
+import {
+  normalizeDriverProgressUpdate,
+  resolveDriverProgressDisplay,
+  type DriverProgressState,
+} from './driverProgress';
 
 describe('normalizeDriverProgressUpdate', () => {
   it('keeps downloading progress monotonic within one install session', () => {
@@ -78,5 +82,57 @@ describe('normalizeDriverProgressUpdate', () => {
       message: '下载驱动总包',
       percent: 40,
     })).toBe(failed);
+  });
+
+  it('treats a user cancellation as a terminal state that keeps the reached percent', () => {
+    const canceled = normalizeDriverProgressUpdate({
+      status: 'downloading',
+      message: '下载预编译包',
+      percent: 42,
+    }, {
+      status: 'canceled',
+      message: '已取消下载',
+      percent: 0,
+    });
+
+    expect(canceled).toEqual({
+      status: 'canceled',
+      message: '已取消下载',
+      percent: 42,
+    });
+    expect(normalizeDriverProgressUpdate(canceled, {
+      status: 'downloading',
+      message: '迟到的进度',
+      percent: 60,
+    })).toBe(canceled);
+    expect(normalizeDriverProgressUpdate(canceled, {
+      status: 'start',
+      message: '重新开始安装',
+      percent: 0,
+    })).toEqual({
+      status: 'start',
+      message: '重新开始安装',
+      percent: 0,
+    });
+  });
+});
+
+describe('resolveDriverProgressDisplay', () => {
+  it('floors an in-flight start at 1% so the card is already cancelable', () => {
+    expect(resolveDriverProgressDisplay({ status: 'start', message: '开始安装', percent: 0 })).toEqual({
+      percent: 1,
+      status: 'active',
+    });
+  });
+
+  it('keeps a canceled install from looking like a finished success', () => {
+    expect(resolveDriverProgressDisplay({
+      status: 'canceled',
+      message: '已取消下载',
+      percent: 1,
+    }, true)).toEqual({
+      percent: 1,
+      status: 'normal',
+    });
   });
 });

@@ -45,17 +45,25 @@ export const useQueryEditorSqlErrorLocator = (
         return located;
     }, [editorRef]);
 
-    // AI 诊断注入用：解析出错的那一条语句；解析不出时返回空串由调用方回退整篇
+    // AI 诊断注入用：局部执行保留实际范围；全文执行再解析具体出错语句。
     const resolveExecutionErrorStatement = useCallback((
         error: string,
         currentEditorSql: string,
         dbType?: string,
-    ): string => resolveExecutionErrorStatementText({
-        error,
-        origin: originRef.current,
-        currentEditorSql,
-        dbType,
-    }), []);
+    ): string => {
+        const origin = originRef.current;
+        const executedSql = String(origin?.originalSql || '').trim();
+        if (executedSql && executedSql !== String(origin?.editorSql || '').trim()) {
+            return executedSql;
+        }
+        const resolved = resolveExecutionErrorStatementText({
+            error,
+            origin,
+            currentEditorSql: origin?.editorSql || currentEditorSql,
+            dbType,
+        });
+        return resolved || executedSql;
+    }, []);
 
     return { recordExecutionOrigin, locateExecutionError, resolveExecutionErrorStatement };
 };

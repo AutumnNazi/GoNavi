@@ -5,7 +5,11 @@ import {
   getColumnDefinitionKey,
   getColumnDefinitionName,
   getColumnDefinitionType,
+  normalizeMySQLUnsignedColumnType,
   normalizeColumnDefinition,
+  setMySQLUnsignedColumnType,
+  supportsMySQLUnsignedDialect,
+  supportsMySQLUnsignedColumnType,
 } from './columnDefinition';
 
 describe('columnDefinition metadata normalization', () => {
@@ -131,5 +135,37 @@ describe('columnDefinition metadata normalization', () => {
     expect(getColumnDefinitionKey({ column_name: 'id', primary_key: 't' })).toBe('PRI');
     expect(getColumnDefinitionKey({ column_name: 'email', is_unique: 'yes' })).toBe('UNI');
     expect(getColumnDefinitionKey({ column_name: 'id', column_key: 'primary key' })).toBe('PRI');
+  });
+
+  it('separates the MySQL unsigned modifier from numeric column types', () => {
+    expect(normalizeMySQLUnsignedColumnType('BIGINT(20) UNSIGNED ZEROFILL')).toEqual({
+      type: 'BIGINT(20) ZEROFILL',
+      unsigned: true,
+    });
+    expect(normalizeMySQLUnsignedColumnType('int zerofill').unsigned).toBe(true);
+    for (const dialect of ['mysql', 'mariadb', 'tidb', 'oceanbase']) {
+      expect(supportsMySQLUnsignedDialect(dialect)).toBe(true);
+      expect(supportsMySQLUnsignedColumnType(dialect, 'bigint(20)')).toBe(true);
+    }
+    for (const dialect of ['oracle', 'starrocks', 'diros', 'sphinx']) {
+      expect(supportsMySQLUnsignedDialect(dialect)).toBe(false);
+      expect(supportsMySQLUnsignedColumnType(dialect, 'bigint')).toBe(false);
+    }
+    expect(supportsMySQLUnsignedColumnType('mysql', 'decimal(12, 2)')).toBe(false);
+    expect(supportsMySQLUnsignedColumnType('mysql', 'float')).toBe(false);
+    expect(supportsMySQLUnsignedColumnType('mysql', 'varchar(32)')).toBe(false);
+    expect(normalizeMySQLUnsignedColumnType('decimal(12,2) unsigned')).toEqual({
+      type: 'decimal(12,2) unsigned',
+      unsigned: false,
+    });
+  });
+
+  it('toggles MySQL unsigned without duplicating or applying it to text types', () => {
+    expect(setMySQLUnsignedColumnType('int unsigned', true)).toBe('int unsigned');
+    expect(setMySQLUnsignedColumnType('int unsigned', false)).toBe('int');
+    expect(setMySQLUnsignedColumnType('int unsigned zerofill', true)).toBe('int unsigned zerofill');
+    expect(setMySQLUnsignedColumnType('int unsigned zerofill', false)).toBe('int');
+    expect(setMySQLUnsignedColumnType('int signed', true)).toBe('int unsigned');
+    expect(setMySQLUnsignedColumnType('varchar(32)', true)).toBe('varchar(32)');
   });
 });
