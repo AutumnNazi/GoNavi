@@ -2389,7 +2389,7 @@ const Sidebar: React.FC<{
           openPackageDefinition(node);
           return true;
       }
-      return false;
+      return node.type === 'database-link';
   };
 
   const openMessageObjectNode = (node: any): boolean => {
@@ -2463,17 +2463,7 @@ const Sidebar: React.FC<{
               dbName: dataRef.dbName,
               ...buildOptionalSchemaContext(dataRef.schemaName),
           });
-      } else if (
-          type === 'table'
-          || type === 'message-object'
-          || type === 'view'
-          || type === 'materialized-view'
-          || type === 'sequence'
-          || type === 'package'
-          || type === 'db-trigger'
-          || type === 'db-event'
-          || type === 'routine'
-      ) {
+      } else if (isV2SidebarObjectNode(info.node)) {
           setActiveContext({
               connectionId: nodeConnectionId || dataRef.id,
               dbName: dataRef.dbName,
@@ -2592,7 +2582,7 @@ const Sidebar: React.FC<{
           });
       } else if (type === 'jvm-mode' || type === 'jvm-resource' || type === 'jvm-diagnostic' || type === 'jvm-monitoring') {
           setActiveContext({ connectionId: nodeConnectionId || dataRef.id, dbName: '' });
-      } else if (type === 'table' || type === 'message-object' || type === 'view' || type === 'materialized-view' || type === 'sequence' || type === 'package' || type === 'db-trigger' || type === 'db-event' || type === 'routine') {
+      } else if (isV2SidebarObjectNode(node)) {
           setActiveContext({
               connectionId: nodeConnectionId || dataRef.id,
               dbName: dataRef.dbName,
@@ -2753,6 +2743,8 @@ const Sidebar: React.FC<{
           return;
       } else if (node.type === 'package') {
           openPackageDefinition(node);
+          return;
+      } else if (node.type === 'database-link') {
           return;
       } else if (node.type === 'jvm-mode') {
           const { providerMode, id } = node.dataRef;

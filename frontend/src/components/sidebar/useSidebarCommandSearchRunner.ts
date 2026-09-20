@@ -175,7 +175,7 @@ export const useSidebarCommandSearchRunner = ({
       onDoubleClick(null, node);
       return;
     }
-    if (node.type === 'db-trigger' || node.type === 'db-event' || node.type === 'routine' || node.type === 'sequence' || node.type === 'package') {
+    if (node.type === 'db-trigger' || node.type === 'db-event' || node.type === 'routine' || node.type === 'sequence' || node.type === 'package' || node.type === 'database-link') {
       publishTitlebarSelectionForNode?.(node);
       setActiveContext({
         connectionId: resolveSidebarNodeConnectionId(node, connectionIds) || dataRef.id,
@@ -188,7 +188,7 @@ export const useSidebarCommandSearchRunner = ({
       setSelectedKeys([node.key]);
       selectedNodesRef.current = [node];
       scrollSidebarTreeToKey(node.key, 'center');
-      if (node.type !== 'sequence' && node.type !== 'package') {
+      if (node.type !== 'sequence' && node.type !== 'package' && node.type !== 'database-link') {
         onDoubleClick(null, node);
       }
     }

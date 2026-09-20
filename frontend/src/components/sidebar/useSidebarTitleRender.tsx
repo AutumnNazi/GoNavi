@@ -41,7 +41,7 @@ export const useSidebarTitleRender = ({
 
   const displayTitle = resolveSidebarQueriesFolderTitle(node) ?? String(node.title ?? '');
   let hoverTitle = displayTitle;
-  if (node.type === 'message-object' || node.type === 'table' || node.type === 'view' || node.type === 'materialized-view' || node.type === 'sequence' || node.type === 'package' || node.type === 'db-event') {
+  if (node.type === 'message-object' || node.type === 'table' || node.type === 'view' || node.type === 'materialized-view' || node.type === 'sequence' || node.type === 'package' || node.type === 'database-link' || node.type === 'db-event') {
     const rawTableName = String(
       node?.dataRef?.messageObjectName
       || node?.dataRef?.topicName
@@ -51,6 +51,7 @@ export const useSidebarTitleRender = ({
       || node?.dataRef?.viewName
       || node?.dataRef?.sequenceName
       || node?.dataRef?.packageName
+      || node?.dataRef?.databaseLinkName
       || node?.dataRef?.eventName
       || '',
     ).trim();
