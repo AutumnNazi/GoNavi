@@ -29,9 +29,14 @@
 
 .gn-query-params-row {
     display: grid;
-    grid-template-columns: 128px 96px minmax(0, 1fr);
-    align-items: center;
+    grid-template-columns: 128px 96px minmax(0, 1fr) auto;
+    align-items: start;
     gap: 8px;
+}
+
+/* 弹窗 compact 模式无类型列 */
+.gn-query-params-row--compact {
+    grid-template-columns: 128px minmax(0, 1fr) auto;
 }
 
 /* 参数名固定列宽：多行参数时名称/类型/输入框严格纵向对齐 */
@@ -74,6 +79,14 @@
 
 .gn-query-params-null-check {
     font-size: 12px;
+}
+
+/* 第四列：NULL 勾选与「亦用于」提示并排 */
+.gn-query-params-extras {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
 }
 
 .gn-query-params-usage {

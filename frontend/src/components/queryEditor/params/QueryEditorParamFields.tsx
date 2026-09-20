@@ -114,7 +114,11 @@ function ParamRow(props: ParamRowProps) {
   };
 
   return (
-    <div className="gn-query-params-row">
+    <div
+      className={
+        compact ? 'gn-query-params-row gn-query-params-row--compact' : 'gn-query-params-row'
+      }
+    >
       <Tooltip title={name}>
         <span className="gn-query-params-name">{name}</span>
       </Tooltip>
@@ -215,28 +219,30 @@ function ParamRow(props: ParamRowProps) {
           onChange={(event) => onChange(name, { type, value: event.target.value })}
         />
       )}
-      {!isNull && type !== 'list' && !compact && (
-        <Checkbox
-          className="gn-query-params-null-check"
-          checked={false}
-          onChange={(event) => {
-            if (event.target.checked) {
-              onChange(name, { type: 'null', value: null });
-            } else {
-              onChange(name, { type, value: '' });
-            }
-          }}
-        >
-          {t('query_editor.params.null_toggle')}
-        </Checkbox>
-      )}
-      {otherUsage.length > 0 && (
-        <Tag className="gn-query-params-usage">
-          {t('query_editor.params.also_used_in', {
-            indexes: otherUsage.map((index) => index + 1).join(', '),
-          })}
-        </Tag>
-      )}
+      <div className="gn-query-params-extras">
+        {!isNull && !compact && type !== 'list' && (
+          <Checkbox
+            className="gn-query-params-null-check"
+            checked={false}
+            onChange={(event) => {
+              if (event.target.checked) {
+                onChange(name, { type: 'null', value: null });
+              } else {
+                onChange(name, { type, value: '' });
+              }
+            }}
+          >
+            {t('query_editor.params.null_toggle')}
+          </Checkbox>
+        )}
+        {otherUsage.length > 0 && (
+          <Tag className="gn-query-params-usage">
+            {t('query_editor.params.also_used_in', {
+              indexes: otherUsage.map((index) => index + 1).join(', '),
+            })}
+          </Tag>
+        )}
+      </div>
     </div>
   );
 }
