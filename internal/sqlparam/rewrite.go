@@ -3,6 +3,7 @@ package sqlparam
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -44,8 +45,10 @@ type BindResult struct {
 //   - 参数按名字取值，同名出现多次只绑定一次值（填一次、处处生效）；
 //   - 列表参数的一个占位符展开为与元素数量相同的逗号分隔占位符（供 IN 使用，
 //     圆括号由调用方 SQL 自带）；
+//   - 引号模板 '{name} 后缀'：整段（含引号）替换为一个占位符，绑定值为
+//     模板渲染后的字符串（{name} 替换为参数原始输入，其余文本原样保留）；
 //   - 未提供值的参数返回 ErrMissingParameter（包装具体参数名）；
-//   - 不修改任何字符串字面量或注释；值永远通过 Args 绑定，绝不拼进 SQL。
+//   - 不修改任何合法字符串字面量或注释；值永远通过 Args 绑定，绝不拼进 SQL。
 func Bind(sql string, dbType string, values map[string]TypedValue) (BindResult, error) {
 	opts := OptionsForDBType(dbType)
 	spans := Scan(sql, opts)
@@ -68,6 +71,27 @@ func Bind(sql string, dbType string, values map[string]TypedValue) (BindResult, 
 
 	for spanIdx, span := range spans {
 		out.WriteString(sql[between(spans, spanIdx):span.Start])
+
+		// 引号模板 '{name} 后缀'：整段替换为一个占位符，绑定渲染后的字符串。
+		if span.Template != "" {
+			rendered, rErr := renderTemplate(span.Template, values)
+			if rErr != nil {
+				return BindResult{}, rErr
+			}
+			if dialect == DialectQmark {
+				out.WriteByte('?')
+				qmarkArgs = append(qmarkArgs, rendered)
+			} else {
+				marker := "$"
+				if dialect == DialectOracle {
+					marker = ":"
+				}
+				fmt.Fprintf(&out, "%s%d", marker, nextSlot)
+				slots[nextSlot] = rendered
+				nextSlot++
+			}
+			continue
+		}
 
 		converted, err := convertOnce(span.Name, values, convertedCache)
 		if err != nil {
@@ -133,6 +157,54 @@ func Bind(sql string, dbType string, values map[string]TypedValue) (BindResult, 
 		args[slot-1] = value
 	}
 	return BindResult{SQL: out.String(), Args: args}, nil
+}
+
+// renderTemplate 把字符串模板中的 {name} 替换为参数原始输入的字符串形式，
+// 其余文本原样保留。模板内参数缺失时返回 ErrMissingParameter。
+// 使用原始输入而非转换后的值：用户输入 "2025-01-01" + 模板后缀 " 00:00:00"
+// 应渲染为 "2025-01-01 00:00:00"，二次格式化会造成错位。
+func renderTemplate(content string, values map[string]TypedValue) (string, error) {
+	var b strings.Builder
+	b.Grow(len(content) + 16)
+	for i := 0; i < len(content); i++ {
+		if content[i] != '{' {
+			b.WriteByte(content[i])
+			continue
+		}
+		end := strings.IndexByte(content[i:], '}')
+		if end <= 1 {
+			b.WriteByte(content[i])
+			continue
+		}
+		name := content[i+1 : i+end]
+		typed, ok := values[name]
+		if !ok {
+			return "", fmt.Errorf("%w：%s", ErrMissingParameter, name)
+		}
+		b.WriteString(renderRawValue(typed.Value))
+		i += end
+	}
+	return b.String(), nil
+}
+
+// renderRawValue 把参数原始输入渲染为字符串（JSON 反序列化形态 → 文本）。
+func renderRawValue(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return v
+	case bool:
+		return strconv.FormatBool(v)
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case int:
+		return strconv.Itoa(v)
+	default:
+		return fmt.Sprintf("%v", value)
+	}
 }
 
 func between(spans []Span, idx int) int {

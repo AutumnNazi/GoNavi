@@ -99,7 +99,7 @@ func TestScanRecognizesCurlyBraceParameters(t *testing.T) {
 		{name: "空名不识别", sql: "SELECT ${} FROM t", opts: OptionsForDBType("mysql"), want: nil},
 		{name: "未闭合不识别", sql: "SELECT ${x FROM t", opts: OptionsForDBType("mysql"), want: nil},
 		{name: "名字内空白截断不识别", sql: "SELECT ${x y} FROM t", opts: OptionsForDBType("mysql"), want: nil},
-		{name: "字符串内不识别", sql: "WHERE note = '${fake}' AND x = ${real}", opts: OptionsForDBType("mysql"), want: []string{"real"}},
+		{name: "字符串内花括号模板参数", sql: "WHERE note = '${fake}' AND x = ${real}", opts: OptionsForDBType("mysql"), want: []string{"fake", "real"}},
 		{name: "注释内不识别", sql: "SELECT 1 /* ${fake} */ , ${real}", opts: OptionsForDBType("mysql"), want: []string{"real"}},
 		{name: "PG dollar-quote 不受花括号影响", sql: "SELECT $$ ${fake} $$, ${real}", opts: OptionsForDBType("postgres"), want: []string{"real"}},
 		{name: "非 PG 方言同样支持花括号", sql: "WHERE a = ${x}", opts: OptionsForDBType("oracle"), want: []string{"x"}},
@@ -128,13 +128,13 @@ func TestScanRecognizesQuotedCurlyParameters(t *testing.T) {
 	}{
 		{name: "Navicat 风格引号包裹", sql: "WHERE f_date >= '{startDate}'", opts: OptionsForDBType("mysql"), want: []string{"startDate"}},
 		{name: "含下划线数字", sql: "WHERE d <= '{u_end_2}', x = '{a1}'", opts: OptionsForDBType("mysql"), want: []string{"u_end_2", "a1"}},
-		{name: "带额外文本不识别", sql: "WHERE note = 'abc{name}def'", opts: OptionsForDBType("mysql"), want: nil},
-		{name: "多段内容不识别", sql: "WHERE x = '{a}{b}'", opts: OptionsForDBType("mysql"), want: nil},
+		{name: "带前后缀文本为模板参数", sql: "WHERE note = 'abc{name}def'", opts: OptionsForDBType("mysql"), want: []string{"name"}},
+		{name: "多段花括号归为模板", sql: "WHERE x = '{a}{b}'", opts: OptionsForDBType("mysql"), want: []string{"a"}},
 		{name: "JSON 字面量不误伤", sql: "WHERE payload = '{\"a\":1}'", opts: OptionsForDBType("postgres"), want: nil},
 		{name: "数字开头不识别", sql: "WHERE x = '{123}'", opts: OptionsForDBType("mysql"), want: nil},
 		{name: "空白名不识别", sql: "WHERE x = '{ }'", opts: OptionsForDBType("mysql"), want: nil},
-		{name: "标准转义引号邻接", sql: "WHERE note = 'it''s {fake}' AND x = '{real}'", opts: OptionsForDBType("postgres"), want: []string{"real"}},
-		{name: "MySQL 反斜杠转义内不识别", sql: "WHERE note = 'a\\'b {fake}' AND x = '{real}'", opts: OptionsForDBType("mysql"), want: []string{"real"}},
+		{name: "标准转义引号后的模板参数", sql: "WHERE note = 'it''s {fake}' AND x = '{real}'", opts: OptionsForDBType("postgres"), want: []string{"fake", "real"}},
+		{name: "MySQL 反斜杠转义后的模板参数", sql: "WHERE note = 'a\\'b {fake}' AND x = '{real}'", opts: OptionsForDBType("mysql"), want: []string{"fake", "real"}},
 		{name: "与裸花括号同名归一", sql: "SELECT '{x}' AS a, ${x} AS b", opts: OptionsForDBType("mysql"), want: []string{"x", "x"}},
 	}
 

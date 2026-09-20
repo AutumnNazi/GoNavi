@@ -172,3 +172,34 @@ func TestSQLiteContractDriversImplementArgsInterfaces(t *testing.T) {
 		t.Fatal("SQLiteDB 应实现 QueryArgsContexter")
 	}
 }
+
+func TestSQLiteQuotedTemplateParamBindsRenderedString(t *testing.T) {
+	client := newArgsTestSQLiteDB(t)
+	ctx := context.Background()
+
+	// 用户场景（Navicat 风格）：'{param} 固定后缀' → 整段绑定渲染后的字符串
+	bound, err := sqlparam.Bind(
+		"SELECT id, name FROM bind_items WHERE created_at >= '{u_startDate} 00:00:00' ORDER BY id",
+		"sqlite",
+		map[string]sqlparam.TypedValue{
+			"u_startDate": {Type: sqlparam.TypeDatetime, Value: "2026-08-02"},
+		},
+	)
+	if err != nil {
+		t.Fatalf("Bind 返回错误: %v", err)
+	}
+	t.Logf("DIAG sql=%q args=%#v", bound.SQL, bound.Args)
+	if bound.SQL != "SELECT id, name FROM bind_items WHERE created_at >= ? ORDER BY id" {
+		t.Fatalf("模板应整段替换为占位符: %q", bound.SQL)
+	}
+	if !reflect.DeepEqual(bound.Args, []any{"2026-08-02 00:00:00"}) {
+		t.Fatalf("渲染值异常: %#v", bound.Args)
+	}
+	rows, _, err := client.QueryContextWithArgs(ctx, bound.SQL, bound.Args)
+	if err != nil {
+		t.Fatalf("QueryContextWithArgs 返回错误: %v", err)
+	}
+	if len(rows) != 2 || rows[0]["id"] != int64(2) || rows[1]["id"] != int64(3) {
+		t.Fatalf("模板参数查询结果异常: %#v", rows)
+	}
+}

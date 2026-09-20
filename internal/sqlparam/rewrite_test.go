@@ -323,3 +323,35 @@ func TestBindQuotedCurlyParameterRewritesWholeLiteral(t *testing.T) {
 		t.Fatalf("应绑定两个时间值: %#v", result.Args)
 	}
 }
+
+func TestBindQuotedTemplateRendersSuffixText(t *testing.T) {
+	// 用户场景：'{u_startDate} 00:00:00' → 占位符绑定 "2025-01-01 00:00:00"
+	result, err := Bind("WHERE f_trade_date >= '{u_startDate} 00:00:00'", "mysql", map[string]TypedValue{
+		"u_startDate": {Type: TypeDatetime, Value: "2025-01-01"},
+	})
+	if err != nil {
+		t.Fatalf("Bind 返回错误: %v", err)
+	}
+	if result.SQL != "WHERE f_trade_date >= ?" {
+		t.Fatalf("重写结果异常: %q", result.SQL)
+	}
+	if !reflect.DeepEqual(result.Args, []any{"2025-01-01 00:00:00"}) {
+		t.Fatalf("渲染值异常: %#v", result.Args)
+	}
+}
+
+func TestBindQuotedTemplateMultipleNames(t *testing.T) {
+	result, err := Bind("WHERE d BETWEEN '{start} 00:00:00' AND '{end} 23:59:59'", "mysql", map[string]TypedValue{
+		"start": {Type: TypeDatetime, Value: "2025-01-01"},
+		"end":   {Type: TypeDatetime, Value: "2025-01-31"},
+	})
+	if err != nil {
+		t.Fatalf("Bind 返回错误: %v", err)
+	}
+	if result.SQL != "WHERE d BETWEEN ? AND ?" {
+		t.Fatalf("重写结果异常: %q", result.SQL)
+	}
+	if !reflect.DeepEqual(result.Args, []any{"2025-01-01 00:00:00", "2025-01-31 23:59:59"}) {
+		t.Fatalf("绑定值异常: %#v", result.Args)
+	}
+}

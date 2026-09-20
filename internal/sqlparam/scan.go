@@ -77,10 +77,13 @@ func normalizeDBType(dbType string) string {
 }
 
 // Span 描述一个命名参数在原文中的字节跨度（含起始冒号，不含结束）。
+// Template 非空时表示引号包裹的字符串模板参数：'前缀{name}后缀' 整体
+// 是一个参数跨度，Template 保存字符串字面量原文（含 {name} 占位）。
 type Span struct {
-	Name  string
-	Start int
-	End   int
+	Name     string
+	Start    int
+	End      int
+	Template string
 }
 
 // Scan 返回 sql 中所有命名参数 :name 的出现位置，按出现顺序排列，不去重。
@@ -143,13 +146,21 @@ func Scan(sql string, opts ScanOptions) []Span {
 				continue
 			}
 			if inSingle {
-				// 引号包裹参数 '{name}'：整个字符串字面量恰为一个 {标识符}，
-				// 连同两端引号识别为参数。名字收紧为标识符规则，排除
-				// '{"a":1}' 之类以花括号开头结尾的 JSON 字面量误伤。
-				if i > singleStart+2 && sql[singleStart+1] == '{' && sql[i-1] == '}' {
-					if name := sql[singleStart+2 : i-1]; isQuotedParamName(name) {
+				// 引号包裹参数两种形态：
+				// 1. 整个字符串恰为一个 {标识符} → 纯参数（连同引号替换为占位符）
+				// 2. 内容含 {标识符} 且混有其他文本 → 字符串模板（Template 保存
+				//    原文，渲染时把 {name} 替换为参数值字符串形式后整体绑定）
+				// 名字均为标识符规则，排除 '{"a":1}' 之类 JSON 数据字面量误伤。
+				content := sql[singleStart+1 : i]
+				if len(content) > 1 && content[0] == '{' && content[len(content)-1] == '}' {
+					if name := content[1 : len(content)-1]; isQuotedParamName(name) {
 						spans = append(spans, Span{Name: name, Start: singleStart, End: i + 1})
+						inSingle = !inSingle
+						continue
 					}
+				}
+				if names := extractTemplateNames(content); len(names) > 0 {
+					spans = append(spans, Span{Name: names[0], Start: singleStart, End: i + 1, Template: content})
 				}
 			} else {
 				singleStart = i
@@ -289,6 +300,29 @@ func isQuotedParamName(name string) bool {
 		}
 	}
 	return true
+}
+
+// extractTemplateNames 提取字符串内容中的全部 {标识符} 参数名，按出现顺序去重。
+func extractTemplateNames(content string) []string {
+	seen := make(map[string]struct{})
+	var names []string
+	for i := 0; i < len(content); i++ {
+		if content[i] != '{' {
+			continue
+		}
+		end := strings.IndexByte(content[i:], '}')
+		if end <= 1 {
+			continue
+		}
+		if name := content[i+1 : i+end]; isQuotedParamName(name) {
+			if _, dup := seen[name]; !dup {
+				seen[name] = struct{}{}
+				names = append(names, name)
+			}
+			i += end
+		}
+	}
+	return names
 }
 
 func isHorizontalWhitespaceByte(ch byte) bool {
