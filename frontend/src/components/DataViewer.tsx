@@ -11,6 +11,8 @@ import { getDataSourceCapabilities, resolveDataSourceType } from '../utils/dataS
 import { resolveDataViewerAutoFetchAction } from '../utils/dataViewerAutoFetch';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import { resolveLanguage, t as translate, type I18nParams } from '../i18n';
+import { useOptionalI18n } from '../i18n/provider';
+import { formatDataViewerQueryError } from '../utils/dataViewerQueryError';
 import {
   buildEffectiveFilterConditions,
   normalizeQuickWhereCondition,
@@ -252,33 +254,10 @@ const escapeSQLLiteral = (value: string): string => String(value || '').replace(
 
 const isDuckDBUnsupportedTypeError = (msg: string): boolean => /unsupported\s*type:\s*duckdb\./i.test(String(msg || ''));
 
-const DATA_VIEWER_TIMEOUT_KEYWORDS = [
-  '\u8d85\u65f6',
-  '\u903e\u6642',
-  'タイムアウト',
-  'zeitüberschreitung',
-  'тайм-аут',
-];
-
 const isDuckDBComplexColumnType = (columnType?: string): boolean => {
   const raw = String(columnType || '').trim().toLowerCase();
   if (!raw) return false;
   return raw.includes('map') || raw.includes('struct') || raw.includes('union') || raw.includes('array') || raw.includes('list');
-};
-
-const formatDataViewerQueryError = (dbType: string, messageText: unknown, tr: DataViewerTranslator): string => {
-  const rawMessage = String(messageText || tr('data_viewer.message.query_failed')).trim() || tr('data_viewer.message.query_failed');
-  const lower = rawMessage.toLowerCase();
-  const hasLocalizedTimeoutKeyword = DATA_VIEWER_TIMEOUT_KEYWORDS.some((keyword) => lower.includes(keyword.toLowerCase()));
-  const isTimeout = lower.includes('context deadline exceeded') || lower.includes('deadline exceeded') || lower.includes('timeout') || lower.includes('timed out') || hasLocalizedTimeoutKeyword;
-  const isDuckDBInterrupted = String(dbType || '').trim().toLowerCase() === 'duckdb' && (lower.includes('interrupt error') || lower.includes('interrupted'));
-  if (isTimeout || isDuckDBInterrupted) {
-    if (String(dbType || '').trim().toLowerCase() === 'duckdb') {
-      return tr('data_viewer.message.duckdb_query_timeout');
-    }
-    return tr('data_viewer.message.query_timeout');
-  }
-  return rawMessage;
 };
 
 type ViewerFilterSnapshot = {
@@ -381,9 +360,14 @@ const DataViewer: React.FC<{ tab: TabData; isActive?: boolean }> = React.memo(({
   const connections = useStore(state => state.connections);
   const addSqlLog = useStore(state => state.addSqlLog);
   const appearance = useStore(state => state.appearance);
+  const i18n = useOptionalI18n();
   const languagePreference = useStore(state => state.languagePreference);
-  const language = resolveLanguage(languagePreference);
-  const tr = useCallback((key: string, params?: I18nParams) => translate(key, params, language), [language]);
+  const tr = useCallback((key: string, params?: I18nParams) => {
+    if (i18n?.t) {
+      return i18n.t(key, params);
+    }
+    return translate(key, params, resolveLanguage(languagePreference));
+  }, [i18n, languagePreference]);
 
   const fetchSeqRef = useRef(0);
   const countSeqRef = useRef(0);

@@ -53,8 +53,8 @@ func TestOracleGetDSNIncludesTimeoutDefaults(t *testing.T) {
 	if got := query.Get("CONNECT TIMEOUT"); got != "12" {
 		t.Fatalf("CONNECT TIMEOUT = %q, want 12", got)
 	}
-	if got := query.Get("READ TIMEOUT"); got != "12" {
-		t.Fatalf("READ TIMEOUT = %q, want 12", got)
+	if got := query.Get("READ TIMEOUT"); got != "" {
+		t.Fatalf("READ TIMEOUT leaked from connect timeout: %q", got)
 	}
 }
 
