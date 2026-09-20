@@ -74,4 +74,30 @@ describe('useQueryEditorSqlErrorLocator', () => {
         expect(api.locateExecutionError('table not found')).toBe(false);
         expect(warning).toHaveBeenCalledTimes(1);
     });
+
+    it('falls back to the executed selection when the error has no location', () => {
+        const editorRef = { current: { getModel: () => ({ getValue: () => 'SELECT changed' }) } };
+        let api!: ReturnType<typeof useQueryEditorSqlErrorLocator>;
+        create(<HookHarness editorRef={editorRef} onReady={(next) => { api = next; }} />);
+        act(() => api.recordExecutionOrigin('SELECT first; SELECT broken', 'SELECT broken'));
+        expect(api.resolveExecutionErrorStatement(
+            'driver exploded',
+            'SELECT changed',
+        )).toBe('SELECT broken');
+    });
+
+    it('resolves located errors against the execution snapshot after the draft changes', () => {
+        const editorRef = { current: { getModel: () => ({ getValue: () => 'SELECT changed' }) } };
+        let api!: ReturnType<typeof useQueryEditorSqlErrorLocator>;
+        create(<HookHarness editorRef={editorRef} onReady={(next) => { api = next; }} />);
+        act(() => api.recordExecutionOrigin(
+            'SELECT first\n\nSELECT broken;',
+            'SELECT broken;',
+        ));
+        expect(api.resolveExecutionErrorStatement(
+            'You have an error in your SQL syntax at line 1',
+            'SELECT changed',
+            'mysql',
+        )).toBe('SELECT broken;');
+    });
 });

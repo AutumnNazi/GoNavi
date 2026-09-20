@@ -2741,11 +2741,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   }, [disposeTransformCaseContextMenuActions]);
 
   // SQL 诊断 / 慢 SQL 历史的快捷键监听（必须在 binding 声明之后）
-  // getEditorSql/getDialect 为惰性 getter：事件触发时才求值，
-  // 规避对后置声明（getCurrentQuery 等）的渲染期 TDZ 引用。
   const handleDiagnoseExecutionErrorWithAI = useQueryEditorErrorDiagnose({
       getEditorSql: () => getCurrentQuery(),
       resolveExecutionErrorStatement,
+      getConnectionId: () => currentConnectionIdRef.current,
+      getDatabase: () => currentDbRef.current,
       getDialect: () => String(resolveSqlDialect(
           String(currentConnectionConfig?.type || ''),
           String(currentConnectionConfig?.driver || ''),
