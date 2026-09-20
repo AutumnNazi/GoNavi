@@ -6,6 +6,50 @@ import (
 	"GoNavi-Wails/internal/connection"
 )
 
+func TestResolveSQLServerTLSSettingsUsesRemoteIdentityAfterSSHForwarding(t *testing.T) {
+	t.Parallel()
+
+	forwarded := connection.ConnectionConfig{
+		Host: "127.0.0.1",
+		Port: 1433,
+	}
+	encrypt, trust := resolveSQLServerTLSSettings(forwarded)
+	if encrypt != "disable" || trust != "true" {
+		t.Fatalf("local forward without SSL: encrypt=%q trust=%q, want disable/true", encrypt, trust)
+	}
+
+	remoteIdentity := forwarded
+	remoteIdentity.Host = "myserver.database.windows.net"
+	encrypt, trust = resolveSQLServerTLSSettings(remoteIdentity)
+	if encrypt != "true" || trust != "true" {
+		t.Fatalf("azure remote identity: encrypt=%q trust=%q, want true/true", encrypt, trust)
+	}
+}
+
+func TestSQLServerHostNameInCertificateUsesRemoteIdentityAfterSSHForwarding(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		host string
+		want string
+	}{
+		{name: "azure", host: "myserver.database.windows.net", want: "*.database.windows.net"},
+		{name: "on premises host", host: "sql.internal.example.com", want: "sql.internal.example.com"},
+		{name: "host with port", host: "sql.internal.example.com:1433", want: "sql.internal.example.com"},
+		{name: "ipv6", host: "[2001:db8::1]:1433", want: "2001:db8::1"},
+		{name: "local forward", host: "127.0.0.1", want: "127.0.0.1"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := sqlServerHostNameInCertificate(test.host); got != test.want {
+				t.Fatalf("sqlServerHostNameInCertificate(%q)=%q, want %q", test.host, got, test.want)
+			}
+		})
+	}
+}
+
 func TestLooksLikeAzureSQLHost(t *testing.T) {
 	t.Parallel()
 
