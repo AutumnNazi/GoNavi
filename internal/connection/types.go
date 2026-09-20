@@ -497,6 +497,16 @@ type ColumnDefinitionWithTable struct {
 type UpdateRow struct {
 	Keys   map[string]interface{} `json:"keys"`
 	Values map[string]interface{} `json:"values"`
+	// PreviousValues 记录本次更新所涉及列的变更前值（before-image），用于生成反向语句。
+	// 纯增量可选字段：旧调用方不填时，反向生成会跳过该行而不是产出错误语句。
+	PreviousValues map[string]interface{} `json:"previousValues,omitempty"`
+}
+
+// LocatorColumn 描述一个行定位列：Key 是 WHERE 条件里使用的列名，
+// ValueColumn 是行数据中承载该值的列（两者不同时见于 Oracle rowid / DuckDB rowid 等伪列策略）。
+type LocatorColumn struct {
+	Key         string `json:"key"`
+	ValueColumn string `json:"valueColumn,omitempty"`
 }
 
 // ChangeSet 表示一组批量变更，包含新增、修改和删除操作。
@@ -505,6 +515,12 @@ type ChangeSet struct {
 	Updates         []UpdateRow              `json:"updates"`
 	Deletes         []map[string]interface{} `json:"deletes"`
 	LocatorStrategy string                   `json:"locatorStrategy,omitempty"`
+	// PreviousDeletes 与 Deletes 按下标一一对应，记录被删除行的完整原始值，用于生成反向 INSERT。
+	// 纯增量可选字段：长度不足时，反向生成会跳过对应行而不是产出残缺语句。
+	PreviousDeletes []map[string]interface{} `json:"previousDeletes,omitempty"`
+	// LocatorColumns 行定位列。用于在新增行已知其定位值时生成反向 DELETE；
+	// 定位值由数据库生成（如自增主键、rowid）时该行会被跳过。
+	LocatorColumns []LocatorColumn `json:"locatorColumns,omitempty"`
 }
 
 // MongoMemberInfo 描述 MongoDB 副本集成员的信息。
