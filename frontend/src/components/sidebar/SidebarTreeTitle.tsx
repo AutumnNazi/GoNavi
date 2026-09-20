@@ -2,13 +2,11 @@ import React from 'react';
 import { Tooltip } from 'antd';
 import { StarFilled } from '@ant-design/icons';
 import { t } from '../../i18n';
-import { SIDEBAR_SQL_EDITOR_DRAG_MIME, encodeSidebarSqlEditorDragPayload } from '../../utils/sidebarSqlDrag';
 import {
   type SidebarTableMetadataField,
 } from '../../utils/sidebarTableMetadata';
 import { sanitizeRedisDbAlias } from '../../utils/redisDbAlias';
 import { resolveConnectionHostSummary } from '../../utils/tabDisplay';
-import { resolveSidebarObjectDragText } from '../sidebarCoreUtils';
 import {
   buildSidebarTableMetadataDisplayItems,
   buildSidebarTableMetadataSnapshot,
@@ -29,10 +27,6 @@ type SidebarV2TreeTitleOptions = {
   connectionStatus?: SidebarTreeConnectionStatus;
   getV2TreeMetaText: (node: any) => string;
   sidebarTableMetadataFields: SidebarTableMetadataField[];
-  snapshotTreeSelectionBeforeDrag: () => void;
-  restoreTreeSelectionAfterDrag: () => void;
-  treeDragSelectSuppressUntilRef: React.MutableRefObject<number>;
-  setIsTreeDragging: (dragging: boolean) => void;
   sidebarDropPlacement?: 'before' | 'inside' | 'after' | null;
 };
 
@@ -164,15 +158,10 @@ export const renderSidebarV2TreeTitle = ({
   connectionStatus,
   getV2TreeMetaText,
   sidebarTableMetadataFields,
-  snapshotTreeSelectionBeforeDrag,
-  restoreTreeSelectionAfterDrag,
-  treeDragSelectSuppressUntilRef,
-  setIsTreeDragging,
   sidebarDropPlacement,
 }: SidebarV2TreeTitleOptions): React.ReactNode => {
   const rawTitle = String(node.title ?? '');
   const groupKey = String(node?.dataRef?.groupKey || '');
-  const dragText = resolveSidebarObjectDragText(node);
   if (node.type === 'v2-table-section' || node.type === 'v2-database-section') {
     return (
       <span
@@ -290,7 +279,6 @@ export const renderSidebarV2TreeTitle = ({
       ref={hasTableHoverInfo ? clearSidebarTableNativeHoverTitleRef : undefined}
       className={titleClassName}
       title={hasTableHoverInfo ? undefined : effectiveHoverTitle}
-      draggable={!!dragText}
       data-node-type={node.type}
       data-group-key={groupKey || undefined}
       data-sidebar-node-key={String(node.key || '')}
@@ -299,27 +287,6 @@ export const renderSidebarV2TreeTitle = ({
       data-sidebar-connection-status={connectionStatusAttr}
       onPointerOverCapture={hasTableHoverInfo ? clearSidebarTableNativeHoverTitle : undefined}
       onMouseOverCapture={hasTableHoverInfo ? clearSidebarTableNativeHoverTitle : undefined}
-      onDragStart={dragText ? (event) => {
-        snapshotTreeSelectionBeforeDrag();
-        treeDragSelectSuppressUntilRef.current = Date.now() + 600;
-        setIsTreeDragging(true);
-        event.stopPropagation();
-        event.dataTransfer.effectAllowed = 'copy';
-        event.dataTransfer.setData('text/plain', dragText);
-        event.dataTransfer.setData(
-          SIDEBAR_SQL_EDITOR_DRAG_MIME,
-          encodeSidebarSqlEditorDragPayload({
-            text: dragText,
-            nodeType: node.type,
-            connectionId: String(node?.dataRef?.id || ''),
-            dbName: String(node?.dataRef?.dbName || ''),
-          }),
-        );
-      } : undefined}
-      onDragEnd={dragText ? () => {
-        restoreTreeSelectionAfterDrag();
-        setIsTreeDragging(false);
-      } : undefined}
     >
       <span className="gn-v2-tree-label">
         {redisDbAlias ? (

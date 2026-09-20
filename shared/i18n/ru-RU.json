@@ -8848,6 +8848,7 @@
   "sidebar.v2_table_group_menu.metadata_value.updated_at": "Изменена {{time}}",
   "sidebar.v2_table_group_menu.show_table_comments": "Показывать комментарии таблиц",
   "sidebar.v2_table_group_menu.sort_frequency": "частоте использования",
+  "sidebar.v2_table_group_menu.sort_manual": "пользовательскому порядку",
   "sidebar.v2_table_group_menu.sort_name": "имени",
   "sidebar.v2_table_group_menu.table_comment_tooltip": "Комментарий: {{comment}}",
   "sidebar.v2_table_group_menu.title": "Таблицы",
