@@ -518,6 +518,7 @@ export interface TabData {
     | "sql-file-execution"
     | "sql-analysis"
     | "sql-audit"
+    | "dml-snapshot"
     | "driver-manager"
     | "settings-center"
     | "request-diagnostics"
