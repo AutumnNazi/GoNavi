@@ -5932,6 +5932,7 @@
   "db.backend.error.duckdb_attach.type_unsupported": "Connections of type {{type}} (\"{{name}}\") cannot be attached to DuckDB yet. Supported: MySQL/MariaDB, PostgreSQL family, SQLite and DuckDB files.",
   "db.backend.error.duckdb_attach.sqlite_memory_unsupported": "Connection \"{{name}}\" points to an in-memory database with no file to attach.",
   "db.backend.error.duckdb_attach.parse_missing_ref": "missing the connection reference",
+  "db.backend.error.duckdb_attach.directive_in_transaction": "Attach/detach directives cannot run inside a managed transaction: move ATTACH/DETACH SAVED CONNECTION statements out of the transaction batch and run them separately.",
   "db.backend.error.duckdb_attach.parse_unclosed_quote": "unterminated quote in the connection reference",
   "db.backend.error.duckdb_attach.parse_quoted_required": "connection names containing spaces must be single-quoted",
   "db.backend.error.duckdb_attach.parse_alias_invalid": "AS requires a valid alias (starting with a letter or underscore)",

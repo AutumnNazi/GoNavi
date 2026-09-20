@@ -46,6 +46,11 @@ type duckDBAttachDirective struct {
 var (
 	duckDBAttachIdentifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	duckDBAttachBarewordPattern   = regexp.MustCompile(`^[A-Za-z0-9_.:-]+$`)
+	// 指令前缀允许词间任意空白（多空格、换行）；\b 防止误匹配 CONNECTIONS 等扩展词。
+	duckDBAttachDirectivePrefixPattern = regexp.MustCompile(`(?i)^ATTACH\s+SAVED\s+CONNECTION\b`)
+	duckDBDetachDirectivePrefixPattern = regexp.MustCompile(`(?i)^DETACH\s+SAVED\s+CONNECTION\b`)
+	// 快速预筛：绝大多数查询不含指令，避免对大文本做整串大写拷贝与语句切分。
+	duckDBSavedConnectionDirectivePattern = regexp.MustCompile(`(?i)ATTACH\s+SAVED\s+CONNECTION|DETACH\s+SAVED\s+CONNECTION`)
 )
 
 // parseDuckDBSavedConnectionDirective 判断一条语句是否为附加/卸载指令。
@@ -64,15 +69,13 @@ func parseDuckDBSavedConnectionDirective(statement string) (*duckDBAttachDirecti
 	}
 	trimmed = strings.TrimSuffix(trimmed, ";")
 	trimmed = strings.TrimSpace(trimmed)
-	upper := strings.ToUpper(trimmed)
-	switch {
-	case strings.HasPrefix(upper, "ATTACH SAVED CONNECTION"):
-		return parseDuckDBAttachDirectiveBody(strings.TrimSpace(trimmed[len("ATTACH SAVED CONNECTION"):]))
-	case strings.HasPrefix(upper, "DETACH SAVED CONNECTION"):
-		return parseDuckDBDetachDirectiveBody(strings.TrimSpace(trimmed[len("DETACH SAVED CONNECTION"):]))
-	default:
-		return nil, false, nil
+	if match := duckDBAttachDirectivePrefixPattern.FindStringSubmatchIndex(trimmed); match != nil {
+		return parseDuckDBAttachDirectiveBody(strings.TrimSpace(trimmed[match[1]:]))
 	}
+	if match := duckDBDetachDirectivePrefixPattern.FindStringSubmatchIndex(trimmed); match != nil {
+		return parseDuckDBDetachDirectiveBody(strings.TrimSpace(trimmed[match[1]:]))
+	}
+	return nil, false, nil
 }
 
 func parseDuckDBAttachDirectiveBody(body string) (*duckDBAttachDirective, bool, error) {
@@ -83,14 +86,18 @@ func parseDuckDBAttachDirectiveBody(body string) (*duckDBAttachDirective, bool, 
 	if err != nil {
 		return nil, true, err
 	}
+	if strings.TrimSpace(ref) == "" {
+		// 空引用（如 ''）：按缺少引用报错，而不是落到 connection_not_found
+		return nil, true, newDuckDBAttachParseError("parse_missing_ref", nil)
+	}
 	directive := &duckDBAttachDirective{kind: duckDBAttachDirectiveKindAttach, ref: ref, readOnly: true}
 
 	rest = strings.TrimSpace(rest)
 	if rest == "" {
 		return directive, true, nil
 	}
-	// 可选 AS <alias>
-	if len(rest) >= 3 && strings.EqualFold(rest[:2], "AS") && (rest[2] == ' ' || rest[2] == '\t') {
+	// 可选 AS <alias>（AS 后允许任意空白，含换行）
+	if len(rest) >= 3 && strings.EqualFold(rest[:2], "AS") && (rest[2] == ' ' || rest[2] == '\t' || rest[2] == '\n' || rest[2] == '\r') {
 		aliasPart := strings.TrimSpace(rest[3:])
 		parts := strings.Fields(aliasPart)
 		if len(parts) == 0 || !duckDBAttachIdentifierPattern.MatchString(parts[0]) {
@@ -307,13 +314,18 @@ func (a *App) buildDuckDBAttachSpec(view connection.SavedConnectionView, resolve
 	return spec, nil
 }
 
+// queryContainsDuckDBSavedConnectionDirective 判断查询文本是否包含附加/卸载指令
+// 关键词（宽松预筛，不解析）；供事务路径等不做指令改写的入口做防御性拦截。
+func queryContainsDuckDBSavedConnectionDirective(query string) bool {
+	return duckDBSavedConnectionDirectivePattern.MatchString(query)
+}
+
 // applyDuckDBSavedConnectionDirectives 在语句级扫描 DuckDB 查询：附加/卸载指令
 // 由本层执行，改写为一条返回执行结果的合成 SELECT 交给后续管道；其余语句原样保留。
 // 返回改写后的查询文本；无指令时原样返回。
 func (a *App) applyDuckDBSavedConnectionDirectives(ctx context.Context, dbInst db.Database, query string) (string, error) {
 	// 快速短路：绝大多数查询不含指令，避免无谓的语句切分（管道随后还要切一次）
-	upperQuery := strings.ToUpper(query)
-	if !strings.Contains(upperQuery, "ATTACH SAVED CONNECTION") && !strings.Contains(upperQuery, "DETACH SAVED CONNECTION") {
+	if !duckDBSavedConnectionDirectivePattern.MatchString(query) {
 		return query, nil
 	}
 	statements := splitSQLStatementsForDialect("duckdb", query)

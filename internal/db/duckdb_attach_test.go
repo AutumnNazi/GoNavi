@@ -82,6 +82,9 @@ func TestDuckDBAttachReplaceAndConflictSemantics(t *testing.T) {
 	host := newDuckDBAttachTestInstance(t)
 	fileA := newDuckDBAttachTargetFile(t, "marker_a")
 	fileB := newDuckDBAttachTargetFile(t, "marker_b")
+	// 宿主引擎持有目标文件句柄：TempDir 的 RemoveAll 清理注册晚于宿主关闭清理
+	//（LIFO 先执行），必须先显式关闭宿主再删目录，否则 Windows 上文件占用报错。
+	t.Cleanup(func() { _ = host.conn.Close() })
 	ctx := context.Background()
 
 	specA := ExternalAttachSpec{Kind: ExternalAttachKindDuckDB, FilePath: fileA, Alias: "ext_db"}

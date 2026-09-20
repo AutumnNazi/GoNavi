@@ -46,7 +46,6 @@ const DuckDBAttachPickerModal: React.FC<DuckDBAttachPickerModalProps> = ({
   const [attachedList, setAttachedList] = useState<DuckDBAttachedDatasource[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [alias, setAlias] = useState('');
-  const [aliasEdited, setAliasEdited] = useState(false);
   const [readOnly, setReadOnly] = useState(true);
 
   // 弹窗打开时查询宿主会话的附加状态：卡片显示“已附加 → 别名”，
@@ -124,8 +123,6 @@ const DuckDBAttachPickerModal: React.FC<DuckDBAttachPickerModalProps> = ({
   const handleSelect = (connection: SavedConnection) => {
     setSelectedId(connection.id);
     // 每次切换选中都重置派生：已附加的沿用其别名与模式，未附加的按名称重派生
-    // （aliasEdited 只对"当前选中连接"生效，避免污染下一次选择）
-    setAliasEdited(false);
     const attached = attachedByConnectionId.get(connection.id);
     if (attached) {
       setAlias(attached.alias);
@@ -139,7 +136,6 @@ const DuckDBAttachPickerModal: React.FC<DuckDBAttachPickerModalProps> = ({
     setKeyword('');
     setSelectedId('');
     setAlias('');
-    setAliasEdited(false);
     setReadOnly(true);
     onClose();
   };
@@ -261,7 +257,6 @@ const DuckDBAttachPickerModal: React.FC<DuckDBAttachPickerModalProps> = ({
             value={alias}
             onChange={(event) => {
               setAlias(event.target.value);
-              setAliasEdited(true);
             }}
             placeholder={translate('query_editor.duckdb_attach.alias_placeholder')}
             style={{ flex: '1 1 200px' }}

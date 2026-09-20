@@ -188,6 +188,47 @@ func TestParseDuckDBSavedConnectionDirective(t *testing.T) {
 			wantParse: false,
 		},
 		{
+			name:      "double space between keywords",
+			statement: "ATTACH  SAVED  CONNECTION 'conn-uuid-1' AS target",
+			wantParse: true,
+			verify: func(t *testing.T, d *duckDBAttachDirective) {
+				if d.ref != "conn-uuid-1" || d.alias != "target" {
+					t.Fatalf("unexpected directive: %+v", d)
+				}
+			},
+		},
+		{
+			name:      "newline between keywords",
+			statement: "ATTACH\nSAVED\nCONNECTION 'conn-uuid-1'",
+			wantParse: true,
+			verify: func(t *testing.T, d *duckDBAttachDirective) {
+				if d.ref != "conn-uuid-1" {
+					t.Fatalf("unexpected directive: %+v", d)
+				}
+			},
+		},
+		{
+			name:      "newline after AS",
+			statement: "ATTACH SAVED CONNECTION 'conn-uuid-1' AS\ntarget",
+			wantParse: true,
+			verify: func(t *testing.T, d *duckDBAttachDirective) {
+				if d.alias != "target" {
+					t.Fatalf("alias = %q", d.alias)
+				}
+			},
+		},
+		{
+			name:      "empty quoted ref reports missing ref",
+			statement: "ATTACH SAVED CONNECTION ''",
+			wantParse: true,
+			wantErr:   true,
+		},
+		{
+			name:      "CONNECTIONS plural is not a directive",
+			statement: "ATTACH SAVED CONNECTIONS 'x'",
+			wantParse: false,
+		},
+		{
 			name:      "malformed detach alias",
 			statement: "DETACH SAVED CONNECTION not an alias",
 			wantParse: true,
