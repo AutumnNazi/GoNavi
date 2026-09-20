@@ -7872,6 +7872,7 @@
   "query_editor.transaction.delay.immediate_commit": "立即提交",
   "query_editor.transaction.delay.seconds_commit": "{{seconds}}s後提交",
   "query_editor.transaction.message.pending_managed_transaction": "目前 SQL 編輯器已有未提交交易，請先提交或回滾後再執行新的新增、更新或刪除語句。",
+  "query_editor.transaction.message.executed_without_transaction": "本次執行包含寫入操作，但未納入託管交易，資料庫已直接生效，無法透過回滾復原。",
   "query_editor.transaction.mode.auto": "自動",
   "query_editor.transaction.mode.manual": "手動",
   "query_editor.transaction.mode.tooltip": "參考 DBeaver：SQL 編輯器執行 INSERT/UPDATE/DELETE/MERGE/REPLACE 等 DML 時，會先進入 GoNavi 代管交易；手動提交需要自行提交/回滾，自動提交會在執行成功後自動 COMMIT。",

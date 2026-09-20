@@ -7872,6 +7872,7 @@
   "query_editor.transaction.delay.immediate_commit": "Commit сразу",
   "query_editor.transaction.delay.seconds_commit": "Commit через {{seconds}}s",
   "query_editor.transaction.message.pending_managed_transaction": "В SQL-редакторе уже есть незавершённая транзакция. Перед выполнением нового DML-оператора выполните commit или rollback.",
+  "query_editor.transaction.message.executed_without_transaction": "Этот запуск содержит операции записи, но не был включён в управляемую транзакцию. Изменения уже применены к базе данных, и откатить их нельзя.",
   "query_editor.transaction.mode.auto": "Авто",
   "query_editor.transaction.mode.manual": "Вручную",
   "query_editor.transaction.mode.tooltip": "Как в DBeaver: когда SQL-редактор выполняет DML, например INSERT/UPDATE/DELETE/MERGE/REPLACE, GoNavi сначала открывает управляемую транзакцию. В ручном режиме нужно выполнить commit/rollback; в автоматическом режиме после успешного выполнения автоматически запускается COMMIT.",

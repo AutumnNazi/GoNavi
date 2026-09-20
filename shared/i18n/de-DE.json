@@ -7872,6 +7872,7 @@
   "query_editor.transaction.delay.immediate_commit": "Sofort committen",
   "query_editor.transaction.delay.seconds_commit": "Commit in {{seconds}}s",
   "query_editor.transaction.message.pending_managed_transaction": "Im SQL-Editor ist bereits eine nicht festgeschriebene Transaktion offen. Führen Sie zuerst Commit oder Rollback aus, bevor Sie eine weitere DML-Anweisung starten.",
+  "query_editor.transaction.message.executed_without_transaction": "Diese Ausführung enthält Schreibvorgänge, wurde aber nicht in eine verwaltete Transaktion eingebunden. Sie ist bereits in der Datenbank wirksam und kann nicht per Rollback rückgängig gemacht werden.",
   "query_editor.transaction.mode.auto": "Automatisch",
   "query_editor.transaction.mode.manual": "Manuell",
   "query_editor.transaction.mode.tooltip": "Wie in DBeaver: Wenn der SQL-Editor DML wie INSERT/UPDATE/DELETE/MERGE/REPLACE ausführt, öffnet GoNavi zuerst eine verwaltete Transaktion. Im manuellen Modus müssen Sie commit/rollback ausführen; im automatischen Modus wird nach erfolgreicher Ausführung automatisch COMMIT ausgeführt.",
