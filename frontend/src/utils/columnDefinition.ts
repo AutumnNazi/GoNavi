@@ -1,4 +1,50 @@
 import type { ColumnDefinition } from '../types';
+import { resolveSqlDialect } from './sqlDialect';
+
+export const COMMON_COLUMN_DEFAULT_OPTIONS = [
+  { value: 'CURRENT_TIMESTAMP' },
+  { value: 'NULL' },
+  { value: '0' },
+  { value: "''" },
+];
+
+const MYSQL_UNSIGNED_DIALECTS = new Set(['mysql', 'mariadb', 'tidb', 'oceanbase']);
+const MYSQL_UNSIGNED_INTEGER_TYPE_PATTERN = /^(?:tinyint|smallint|mediumint|int|integer|bigint)\b/i;
+
+export const isMySQLCharacterColumnType = (columnType: string): boolean => (
+  /^(?:char|varchar|tinytext|text|mediumtext|longtext|enum|set|nchar|nvarchar)\b/i.test(String(columnType || '').trim())
+);
+
+const isMySQLUnsignedIntegerType = (columnType: string): boolean => (
+  MYSQL_UNSIGNED_INTEGER_TYPE_PATTERN.test(String(columnType || '').trim())
+);
+
+export const supportsMySQLUnsignedDialect = (dbType: string): boolean => (
+  MYSQL_UNSIGNED_DIALECTS.has(resolveSqlDialect(dbType))
+);
+
+export const supportsMySQLUnsignedColumnType = (dbType: string, columnType: string): boolean => (
+  supportsMySQLUnsignedDialect(dbType) && isMySQLUnsignedIntegerType(columnType)
+);
+
+export const normalizeMySQLUnsignedColumnType = (columnType: string): { type: string; unsigned: boolean } => {
+  const type = String(columnType || '').replace(/\s+/g, ' ').trim();
+  const unsigned = isMySQLUnsignedIntegerType(type) && /\b(?:unsigned|zerofill)\b/i.test(type);
+  return {
+    type: unsigned ? type.replace(/\bunsigned\b/gi, '').replace(/\s+/g, ' ').trim() : type,
+    unsigned,
+  };
+};
+
+export const setMySQLUnsignedColumnType = (columnType: string, unsigned: boolean): string => {
+  const normalized = normalizeMySQLUnsignedColumnType(columnType);
+  if (!isMySQLUnsignedIntegerType(normalized.type)) return normalized.type;
+  const baseType = normalized.type.replace(/\bsigned\b/gi, '').replace(/\s+/g, ' ').trim();
+  if (!unsigned) return baseType.replace(/\bzerofill\b/gi, '').replace(/\s+/g, ' ').trim();
+  return /\bzerofill\b/i.test(baseType)
+    ? baseType.replace(/\bzerofill\b/i, 'unsigned zerofill')
+    : `${baseType} unsigned`;
+};
 
 const readStringProperty = (value: unknown, keys: string[]): string => {
   const source = value as Record<string, unknown> | null | undefined;

@@ -112,6 +112,29 @@ describe('tableDesignerSchemaSql', () => {
     expect(sql).toContain('AFTER `id`');
   });
 
+  it.each(['mysql', 'mariadb', 'tidb', 'oceanbase'])(
+    'preserves the independently toggled MySQL unsigned modifier for %s',
+    (dbType) => {
+      const unsignedColumn = baseColumn({ _key: 'amount', name: 'amount', type: 'bigint unsigned', nullable: 'NO' });
+      const createSql = buildCreateTablePreviewSql({
+        dbType,
+        tableName: 'balances',
+        columns: [unsignedColumn],
+      });
+      const alterSql = buildAlterTablePreviewSql(buildInput({
+        dbType,
+        tableName: 'balances',
+        originalColumns: [baseColumn({ ...unsignedColumn, type: 'bigint' })],
+        columns: [unsignedColumn],
+      }));
+
+      expect(createSql).toContain('`amount` bigint unsigned NOT NULL');
+      expect(alterSql).toContain('MODIFY COLUMN `amount` bigint unsigned NOT NULL');
+      expect(createSql.match(/unsigned/gi)).toHaveLength(1);
+      expect(alterSql.match(/unsigned/gi)).toHaveLength(1);
+    },
+  );
+
   it('generates modify statements when only the column order changed', () => {
     const originalColumns = [
       baseColumn({ _key: 'id', name: 'id', type: 'int', key: 'PRI', nullable: 'NO' }),

@@ -9207,6 +9207,7 @@
   "table_designer.column.not_null": "不是 NULL",
   "table_designer.column.primary_key": "主鍵",
   "table_designer.column.type": "類型",
+  "table_designer.column.unsigned": "無符號",
   "table_designer.copy_columns.conflict_hint": "若目標表已有同名欄位，將自動命名為 name_copy",
   "table_designer.copy_columns.mode.existing_table": "既有表",
   "table_designer.copy_columns.mode.new_table": "新建表",

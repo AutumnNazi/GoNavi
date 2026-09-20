@@ -9207,6 +9207,7 @@
   "table_designer.column.not_null": "NOT NULL",
   "table_designer.column.primary_key": "Primärschlüssel",
   "table_designer.column.type": "Typ",
+  "table_designer.column.unsigned": "Vorzeichenlos",
   "table_designer.copy_columns.conflict_hint": "Existiert der Spaltenname bereits, wird er in name_copy umbenannt",
   "table_designer.copy_columns.mode.existing_table": "Vorhandene Tabelle",
   "table_designer.copy_columns.mode.new_table": "Neue Tabelle",

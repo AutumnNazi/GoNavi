@@ -9207,6 +9207,7 @@
   "table_designer.column.not_null": "Not NULL",
   "table_designer.column.primary_key": "Primary key",
   "table_designer.column.type": "Type",
+  "table_designer.column.unsigned": "Unsigned",
   "table_designer.copy_columns.conflict_hint": "If the target already has the same column name, it will be renamed to name_copy",
   "table_designer.copy_columns.mode.existing_table": "Existing table",
   "table_designer.copy_columns.mode.new_table": "New table",
