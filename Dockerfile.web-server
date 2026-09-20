@@ -34,6 +34,11 @@ RUN go mod download
 
 COPY . .
 RUN ./tools/generate-driver-agent-revisions.sh --platform "${TARGETOS}/${TARGETARCH}"
+
+# catalog.zip 是提交进 git 的派生物，二进制无法参与三方合并；合并后与 JSON 源
+# 文件漂移会让 Go 侧 T() 返回裸 key。构建前强制重新生成，与 wails preBuildHook、
+# CI 的 go build 环节保持同一策略。
+RUN go generate ./shared/i18n
 COPY --from=frontend /src/frontend/dist ./frontend/dist
 # 主程序以 zip 形态嵌入前端产物,与 frontend/dist 一样在 frontend 阶段新鲜构建
 COPY --from=frontend /src/frontend/dist.zip ./frontend/dist.zip

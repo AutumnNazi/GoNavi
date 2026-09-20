@@ -20,7 +20,7 @@
     "comments": "GoNavi is licensed under the Apache License, Version 2.0."
   },
   "preBuildHooks": {
-    "*/*": "node -e \"const fs=require('node:fs');const src='../../tools/stub-dist.zip';const dst='../../frontend/dist.zip';if(!fs.existsSync(dst)){fs.copyFileSync(src,dst)}\""
+    "*/*": "node ../../scripts/wails-pre-build.mjs"
   },
   "postBuildHooks": {
     "darwin/*": "bash ../../scripts/codesign-dev-app.sh ${bin}",
