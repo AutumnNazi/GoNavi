@@ -52,7 +52,7 @@ describe('rc-table stable column virtual window', () => {
     expect(patch).toContain('resolveColumnVirtualWindow');
     expect(patch).toContain('DEFAULT_RETENTION_BUFFER_WIDTH = 512');
     expect(patch).toContain('columnVirtualWindowRef');
-    expect(patch).toContain('columnVirtualWindow: resolveBodyLineColumnVirtualWindow(itemProps.offsetX)');
+    expect(patch).toContain('columnVirtualWindow: resolveBodyLineColumnVirtualWindow(itemProps.offsetX, itemProps.scrolling)');
     expect(patch).toContain('React.memo(BodyLine, bodyLinePropsAreEqual)');
     expect(patch).toContain('maxFitWidth = scrollWidth && scrollWidth > 0 ? Math.max(scrollWidth, clientWidth) : clientWidth');
     expect(patch).toContain('[flattenColumns, scrollWidth, maxFitWidth]');

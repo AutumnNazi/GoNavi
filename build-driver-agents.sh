@@ -372,6 +372,12 @@ for platform in "${platforms[@]}"; do
   echo "🧭 生成 driver-agent revision 指纹：$platform"
   "$SCRIPT_DIR/tools/generate-driver-agent-revisions.sh" --platform "$platform" --drivers "$revision_driver_csv"
 
+  # driver agent 经 internal/db 间接嵌入 shared/i18n。catalog.zip 是提交进 git 的
+  # 派生物，合并后可能与 JSON 源文件漂移（Go 侧 T() 会返回裸 key），编译前强制
+  # 重新生成，与 wails preBuildHook、CI 的 go build 环节保持同一策略。
+  echo "🌐 刷新 i18n catalog：$platform"
+  (cd "$SCRIPT_DIR" && go generate ./shared/i18n)
+
   for driver in "${drivers[@]}"; do
     if [[ "$driver" == "duckdb" && "$goos" == "windows" && "$goarch" != "amd64" ]]; then
       echo "⚠️  跳过 duckdb（$platform 仅支持 windows/amd64）"

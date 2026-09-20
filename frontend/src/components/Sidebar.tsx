@@ -158,6 +158,7 @@ import FindInDatabaseModal from './FindInDatabaseModal';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import { buildSqlAnalysisWorkbenchTab } from '../utils/sqlAnalysisTab';
 import { buildSqlAuditWorkbenchTab } from '../utils/sqlAuditTab';
+import { buildDMLSnapshotWorkbenchTab } from '../utils/dmlSnapshotTab';
 import {
     normalizeSidebarDatabaseListRefreshRequest,
     normalizeSidebarDatabaseRefreshRequest,
@@ -4263,6 +4264,10 @@ const Sidebar: React.FC<{
     addTab(buildSqlAuditWorkbenchTab());
   }, [addTab]);
 
+  const handleOpenDMLSnapshotWorkbench = useCallback(() => {
+    addTab(buildDMLSnapshotWorkbenchTab());
+  }, [addTab]);
+
   const v2TitlebarQuickActions: TitleBarQuickAction[] = [
     {
       key: 'data-workflow',
@@ -4322,6 +4327,12 @@ const Sidebar: React.FC<{
           label: v2SqlAuditLabel,
           icon: <AuditOutlined aria-hidden="true" />,
           onClick: handleOpenSqlAuditWorkbench,
+        },
+        {
+          key: 'dml-snapshot',
+          label: t('dml_snapshot.workbench.title'),
+          icon: <SafetyCertificateOutlined aria-hidden="true" />,
+          onClick: handleOpenDMLSnapshotWorkbench,
         },
       ],
     },

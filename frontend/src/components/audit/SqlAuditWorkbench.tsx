@@ -20,10 +20,10 @@ import type { ColumnsType } from 'antd/es/table';
 import {
   AuditOutlined,
   ClearOutlined,
+  EditOutlined,
   ExportOutlined,
   EyeOutlined,
   HistoryOutlined,
-  ImportOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
   SearchOutlined,
@@ -357,8 +357,8 @@ export default function SqlAuditWorkbench({ tab, backend: backendOverride, isAct
     const recoveryState = getSQLAuditRecoveryState(event);
     if (!isSQLAuditEventRestorable(event)) {
       message.warning(t(recoveryState === 'metadata'
-        ? 'query_history.restore.metadata_unavailable'
-        : 'query_history.restore.event_unavailable'));
+        ? 'query_history.insert.metadata_unavailable'
+        : 'query_history.insert.event_unavailable'));
       return;
     }
     const originalConnectionId = String(event.connectionId || '').trim();
@@ -368,24 +368,24 @@ export default function SqlAuditWorkbench({ tab, backend: backendOverride, isAct
       connectionId: connectionAvailable ? originalConnectionId : '',
       dbName: event.database,
       sql: event.sqlText,
-      title: t('query_history.restore.tab_title'),
+      title: t('query_history.insert.tab_title'),
       preserveUnboundConnection: !connectionAvailable,
     }));
     if (!connectionAvailable) {
-      message.warning(t('query_history.restore.connection_missing', {
+      message.warning(t('query_history.insert.connection_missing', {
         connectionId: originalConnectionId || t('common.unknown'),
       }));
       return;
     }
     if (recoveryState === 'redacted') {
-      message.warning(t('query_history.restore.redacted_warning'));
+      message.warning(t('query_history.insert.redacted_warning'));
       return;
     }
-    message.success(t('query_history.restore.success'));
+    message.success(t('query_history.insert.success'));
   }, [addTab, connections, t]);
 
-  const recoveryLabel = useCallback((event: SQLAuditEvent): string => (
-    t(`query_history.recovery.${getSQLAuditRecoveryState(event)}` as any)
+  const textAvailabilityLabel = useCallback((event: SQLAuditEvent): string => (
+    t(`query_history.text.${getSQLAuditRecoveryState(event)}` as any)
   ), [t]);
 
   const eventTypeOptions = useMemo(() => uniqueOptions(
@@ -475,14 +475,14 @@ export default function SqlAuditWorkbench({ tab, backend: backendOverride, isAct
       render: (_value, record) => numberFormatter.format(getSQLAuditPrimaryRowCount(record)),
     },
     {
-      title: t('query_history.column.recovery'),
-      key: 'recovery',
+      title: t('query_history.column.text_available'),
+      key: 'textAvailability',
       width: 116,
       render: (_value, record) => {
         const recoveryState = getSQLAuditRecoveryState(record);
         return (
           <Tag color={recoveryState === 'complete' ? 'success' : recoveryState === 'redacted' ? 'processing' : 'default'}>
-            {recoveryLabel(record)}
+            {textAvailabilityLabel(record)}
           </Tag>
         );
       },
@@ -501,24 +501,24 @@ export default function SqlAuditWorkbench({ tab, backend: backendOverride, isAct
       fixed: 'right',
       render: (_value, record) => {
         const recoveryState = getSQLAuditRecoveryState(record);
-        const restorable = isSQLAuditEventRestorable(record);
-        const restoreHint = recoveryState === 'metadata'
-          ? t('query_history.restore.metadata_unavailable')
-          : !restorable
-            ? t('query_history.restore.event_unavailable')
+        const insertable = isSQLAuditEventRestorable(record);
+        const insertHint = recoveryState === 'metadata'
+          ? t('query_history.insert.metadata_unavailable')
+          : !insertable
+            ? t('query_history.insert.event_unavailable')
           : recoveryState === 'redacted'
-            ? t('query_history.restore.redacted_tooltip')
-            : t('query_history.restore.action');
+            ? t('query_history.insert.redacted_tooltip')
+            : t('query_history.insert.action');
         return (
           <Space size={2}>
-            <Tooltip title={restoreHint}>
+            <Tooltip title={insertHint}>
               <span>
                 <Button
                   type="text"
                   size="small"
-                  icon={<ImportOutlined aria-hidden="true" />}
-                  aria-label={t('query_history.restore.action')}
-                  disabled={!restorable}
+                  icon={<EditOutlined aria-hidden="true" />}
+                  aria-label={t('query_history.insert.action')}
+                  disabled={!insertable}
                   onClick={() => handleRestoreEvent(record)}
                 />
               </span>
@@ -539,7 +539,7 @@ export default function SqlAuditWorkbench({ tab, backend: backendOverride, isAct
     ];
     if (!queryHistoryMode) return auditColumns;
     return auditColumns.filter((column) => column.key !== 'eventType' && column.key !== 'source');
-  }, [connectionNameById, dateTimeFormatter, handleRestoreEvent, labelEnum, numberFormatter, queryHistoryMode, recoveryLabel, t]);
+  }, [connectionNameById, dateTimeFormatter, handleRestoreEvent, labelEnum, numberFormatter, queryHistoryMode, textAvailabilityLabel, t]);
 
   const hasLoadedRecords = pageData.items.length > 0;
   const emptyDescription = hasActiveFilters

@@ -409,6 +409,10 @@ jobs:
           asset="gonavi-cli_${version}_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.extension }}"
           stage="${RUNNER_TEMP}/gonavi-cli-${{ matrix.goos }}-${{ matrix.goarch }}"
           mkdir -p "$stage"
+          # catalog.zip 是提交进 git 的派生物，二进制无法参与三方合并；合并后
+          # 漂移会让 Go 侧 T() 返回裸 key。构建前强制重新生成，与 wails 的
+          # preBuildHook 保持同一策略。
+          go generate ./shared/i18n
           ./tools/write-driver-revision-contract.sh --role cli \
             --platform "${{ matrix.goos }}/${{ matrix.goarch }}" \
             --output-dir driver-revision-contract
@@ -831,6 +835,9 @@ jobs:
           TARGET_PLATFORM="${{ matrix.platform }}"
           GOOS="${TARGET_PLATFORM%%/*}"
           GOARCH="${TARGET_PLATFORM##*/}"
+          # driver agent 经 internal/db 间接嵌入 shared/i18n，catalog.zip 漂移
+          # 同样会让其编译进过期目录；先重新生成再编译。
+          go generate ./shared/i18n
           REVISION_HASH="$(python3 - <<'PY'
           import hashlib
           from pathlib import Path

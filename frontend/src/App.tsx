@@ -163,6 +163,7 @@ import {
 import { SettingsCenterWorkbenchRegistrar } from './components/settings/SettingsCenterWorkbenchBridge';
 import { buildSqlAuditWorkbenchTab } from './utils/sqlAuditTab';
 import { buildRequestDiagnosticsWorkbenchTab } from './utils/requestDiagnosticsTab';
+import { buildDMLSnapshotWorkbenchTab } from './utils/dmlSnapshotTab';
 import {
   getDataSourceCapabilities,
   isMessageQueueDataSource,
@@ -8933,6 +8934,16 @@ function App() {
                     onClick: () => {
                       handleCancelSettingsCenterPane();
                       addTab(buildRequestDiagnosticsWorkbenchTab());
+                    },
+                  },
+                  {
+                    key: 'dml-snapshot',
+                    icon: <SafetyCertificateOutlined />,
+                    title: t('dml_snapshot.workbench.title'),
+                    description: t('dml_snapshot.workbench.description'),
+                    onClick: () => {
+                      handleCancelSettingsCenterPane();
+                      addTab(buildDMLSnapshotWorkbenchTab());
                     },
                   },
                 ],

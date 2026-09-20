@@ -59,6 +59,9 @@ const readQueryEditorHelpersSource = (): string =>
 const readQueryEditorAiContextSource = (): string =>
   readFileSync(new URL("../components/queryEditor/queryEditorAiContext.ts", import.meta.url), "utf8");
 
+const readQueryEditorAiSqlInsertSource = (): string =>
+  readFileSync(new URL("../components/queryEditor/queryEditorAiSqlInsert.ts", import.meta.url), "utf8");
+
 const readQueryEditorResultsPanelSource = (): string =>
   readFileSync(new URL("../components/QueryEditorResultsPanel.tsx", import.meta.url), "utf8");
 
@@ -895,10 +898,12 @@ describe("i18n catalog", () => {
       "} catch (e) {",
       "const handleAIAction = (action: 'generate' | 'explain' | 'optimize' | 'schema') => {",
     );
+    // AI 注入 SQL 的实现已从 QueryEditor.tsx 抽到 queryEditorAiSqlInsert.ts，
+    // 锚点必须跟着落到新文件，否则切片会静默失配。
     const insertSqlEffectSource = sliceBetween(
-      source,
-      "const handleInsertSql = (e: any) => {",
-      "const resolveDefaultQueryName = () => {",
+      readQueryEditorAiSqlInsertSource(),
+      "export const createAiSqlInsertHandler",
+      "export const useAiSqlInsertToTabListener",
     );
 
     for (const language of SUPPORTED_LANGUAGES) {
@@ -907,6 +912,12 @@ describe("i18n catalog", () => {
         expect(catalogs[language][key]).toBeTruthy();
       }
     }
+
+    assertSourceDoesNotInlineCatalogValues(formatCatchSource, ["query_editor.message.format_failed"]);
+    assertSourceDoesNotInlineCatalogValues(insertSqlEffectSource, [
+      "query_editor.message.insert_success",
+      "query_editor.message.append_success",
+    ]);
   });
 
   it("keeps QueryEditor local editor interaction toasts in catalogs instead of source literals", () => {
