@@ -21,9 +21,16 @@ const notifyStoreSubscribers = () => {
   storeSubscribers.forEach((subscriber) => subscriber());
 };
 
+const messageApi = vi.hoisted(() => ({
+  error: vi.fn(),
+  warning: vi.fn(),
+  success: vi.fn(),
+  info: vi.fn(),
+}));
+
 const backendApp = {
+  CancelDriverPackageDownload: vi.fn(),
   CheckDriverNetworkStatus: vi.fn(),
-  DownloadDriverPackage: vi.fn(),
   GetDriverVersionList: vi.fn(),
   GetDriverVersionPackageSize: vi.fn(),
   GetDriverStatusList: vi.fn(),
@@ -185,12 +192,6 @@ vi.mock('antd', () => {
     Paragraph: ({ children }: any) => <div>{children}</div>,
   };
 
-  const message = {
-    error: vi.fn(),
-    warning: vi.fn(),
-    success: vi.fn(),
-    info: vi.fn(),
-  };
   const Tooltip = ({ children }: any) => <>{children}</>;
   const Popover = ({ children }: any) => <>{children}</>;
 
@@ -210,7 +211,7 @@ vi.mock('antd', () => {
     Tag,
     Tooltip,
     Typography,
-    message,
+    message: messageApi,
   };
 });
 
@@ -270,7 +271,7 @@ describe('DriverManagerModal i18n', () => {
     });
     backendApp.GetDriverVersionList.mockResolvedValue({ success: true, data: { versions: [] } });
     backendApp.GetDriverVersionPackageSize.mockResolvedValue({ success: true, data: { packageSizeText: '12 MB' } });
-    backendApp.DownloadDriverPackage.mockResolvedValue({ success: true });
+    backendApp.CancelDriverPackageDownload.mockResolvedValue({ success: true, data: { task: null } });
     backendApp.InstallLocalDriverPackage.mockResolvedValue({ success: true });
     backendApp.ListDriverDownloadTasks.mockResolvedValue({ success: true, data: [] });
     backendApp.OpenDriverDownloadDirectory.mockResolvedValue({ success: true });
@@ -278,6 +279,8 @@ describe('DriverManagerModal i18n', () => {
     backendApp.SelectDriverPackageDirectory.mockResolvedValue({ success: false, message: '已取消' });
     backendApp.SelectDriverPackageFile.mockResolvedValue({ success: false, message: '已取消' });
     backendApp.StartDriverPackageDownload.mockResolvedValue({ success: true, data: { task: null } });
+    Object.values(backendApp).forEach((fn) => fn.mockClear());
+    Object.values(messageApi).forEach((fn) => fn.mockClear());
   });
 
   it('updates visible copy when languagePreference changes while the modal stays open', async () => {
@@ -950,5 +953,125 @@ describe('DriverManagerModal i18n', () => {
     expect(logSection).not.toContain('[DONE]');
     expect(content).not.toContain('开始本地导入');
     expect(content).not.toContain('本地导入安装完成');
+  });
+
+  const mockIoTDBDriver = () => {
+    backendApp.GetDriverStatusList.mockResolvedValue({
+      success: true,
+      data: {
+        downloadDir: 'D:/drivers',
+        drivers: [
+          {
+            type: 'iotdb',
+            name: 'Apache IoTDB',
+            builtIn: false,
+            pinnedVersion: '1.3.7',
+            installedVersion: '1.3.6',
+            packageSizeText: '33.34 MB',
+            runtimeAvailable: true,
+            packageInstalled: true,
+            connectable: true,
+            needsUpdate: true,
+            affectedConnections: 1,
+            activeConnections: 0,
+            installDir: 'D:/drivers/iotdb',
+            executablePath: 'D:/drivers/iotdb/iotdb-driver-agent.exe',
+          },
+        ],
+      },
+    });
+  };
+
+  it('cancels immediately while version lookup is still showing 1%', async () => {
+    mockIoTDBDriver();
+    let resolveVersions: (value: unknown) => void = () => {};
+    backendApp.GetDriverVersionList.mockImplementation(() => new Promise((resolve) => {
+      resolveVersions = resolve;
+    }));
+    const { setCurrentLanguage } = await import('../i18n');
+    setCurrentLanguage('zh-CN');
+    const { default: DriverManagerModal } = await import('./DriverManagerModal');
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<DriverManagerModal open onClose={vi.fn()} />);
+    });
+
+    await act(async () => {
+      findButton(renderer!, '重装驱动').props.onClick();
+    });
+
+    expect(textContent(renderer!.toJSON())).toContain('安装中 1%');
+    await act(async () => {
+      renderer!.root.findAll((node) => node.type === 'button' && textContent(node) === '取消')[0].props.onClick();
+    });
+
+    expect(messageApi.info).toHaveBeenCalledWith('已取消 Apache IoTDB 的下载');
+    expect(messageApi.warning).not.toHaveBeenCalledWith(expect.stringContaining('尚未进入可取消的下载阶段'));
+    expect(backendApp.CancelDriverPackageDownload).not.toHaveBeenCalled();
+    expect(backendApp.StartDriverPackageDownload).not.toHaveBeenCalled();
+    expect(findButton(renderer!, '重装驱动').props.disabled).toBeFalsy();
+
+    await act(async () => {
+      resolveVersions({ success: true, data: { versions: [{ version: '1.3.7', downloadUrl: 'https://example/iotdb.zip', recommended: true }] } });
+    });
+
+    expect(backendApp.StartDriverPackageDownload).not.toHaveBeenCalled();
+    expect(textContent(renderer!.toJSON())).toContain('已取消下载');
+  });
+
+  it('cancels a backend task that appears only after Start returns', async () => {
+    mockIoTDBDriver();
+    backendApp.GetDriverVersionList.mockResolvedValue({
+      success: true,
+      data: { versions: [{ version: '1.3.7', downloadUrl: 'https://example/iotdb.zip', recommended: true }] },
+    });
+    let resolveStart: (value: unknown) => void = () => {};
+    backendApp.StartDriverPackageDownload.mockImplementation(() => new Promise((resolve) => {
+      resolveStart = resolve;
+    }));
+    const { setCurrentLanguage } = await import('../i18n');
+    setCurrentLanguage('zh-CN');
+    const { default: DriverManagerModal } = await import('./DriverManagerModal');
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<DriverManagerModal open onClose={vi.fn()} />);
+    });
+
+    await act(async () => {
+      findButton(renderer!, '重装驱动').props.onClick();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(backendApp.StartDriverPackageDownload).toHaveBeenCalledTimes(1);
+    expect(textContent(renderer!.toJSON())).toContain('安装中 1%');
+
+    await act(async () => {
+      renderer!.root.findAll((node) => node.type === 'button' && textContent(node) === '取消')[0].props.onClick();
+    });
+
+    expect(messageApi.info).toHaveBeenCalledWith('已取消 Apache IoTDB 的下载');
+    expect(messageApi.warning).not.toHaveBeenCalledWith(expect.stringContaining('尚未进入可取消的下载阶段'));
+    expect(findButton(renderer!, '重装驱动').props.disabled).toBeFalsy();
+
+    await act(async () => {
+      resolveStart({
+        success: true,
+        data: {
+          task: {
+            taskId: 'task-iotdb',
+            driverType: 'iotdb',
+            status: 'downloading',
+            percent: 1,
+            running: true,
+          },
+        },
+      });
+    });
+
+    expect(backendApp.CancelDriverPackageDownload).toHaveBeenCalledWith('task-iotdb');
   });
 });

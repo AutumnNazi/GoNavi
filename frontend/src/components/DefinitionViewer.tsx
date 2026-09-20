@@ -12,6 +12,11 @@ import { splitQualifiedNameLast } from '../utils/qualifiedName';
 import { buildSqlServerObjectDefinitionQueries } from '../utils/sqlServerObjectDefinition';
 import { clearQueryTabDraft } from '../utils/sqlFileTabDrafts';
 import { formatDdlForDisplay } from '../utils/ddlFormat';
+import {
+  buildOracleDatabaseLinkDefinitionQueries,
+  extractOracleDatabaseLinkDefinition,
+} from './databaseLinkDefinition';
+import { resolveDefinitionViewerObjectMeta } from './definitionViewerObjectMeta';
 
 interface DefinitionViewerProps {
     tab: TabData;
@@ -186,6 +191,7 @@ const DefinitionViewer: React.FC<DefinitionViewerProps> = ({ tab }) => {
         tab.routineType,
         tab.sequenceName,
         tab.packageName,
+        tab.databaseLinkName,
         tab.schemaName,
     ].map((item) => String(item || '')).join('||');
 
@@ -783,6 +789,20 @@ const DefinitionViewer: React.FC<DefinitionViewerProps> = ({ tab }) => {
             extractFn = extractPackageDefinition;
             resolvedObjectLabel = t('definition_viewer.object.package');
             resolvedObjectName = packageName;
+        } else if (tab.type === 'database-link-def') {
+            const databaseLinkName = String(tab.databaseLinkName || '').trim();
+            if (!databaseLinkName) {
+                return { success: false, error: t('definition_viewer.error.database_link_name_empty') };
+            }
+            queries = dialect === 'oracle'
+                ? buildOracleDatabaseLinkDefinitionQueries(databaseLinkName, String(tab.schemaName || dbName || ''))
+                : [`-- ${t('definition_viewer.editor.unsupported_database_link_definition')}`];
+            extractFn = (_dialect, data) => extractOracleDatabaseLinkDefinition(data, databaseLinkName, String(tab.schemaName || dbName || ''), {
+                notFoundComment: t('definition_viewer.editor.database_link_definition_not_found'),
+                passwordUnavailableComment: t('definition_viewer.editor.database_link_password_unavailable'),
+            });
+            resolvedObjectLabel = t('definition_viewer.object.database_link');
+            resolvedObjectName = databaseLinkName;
         } else {
             const routineName = tab.routineName || '';
             const routineType = tab.routineType || 'FUNCTION';
@@ -928,37 +948,13 @@ const DefinitionViewer: React.FC<DefinitionViewerProps> = ({ tab }) => {
         return () => {
             cancelled = true;
         };
-    }, [tab.connectionId, tab.dbName, tab.viewName, tab.viewKind, tab.eventName, tab.routineName, tab.routineType, tab.sequenceName, tab.packageName, tab.type, connections, objectIdentityKey, t]);
+    }, [tab.connectionId, tab.dbName, tab.viewName, tab.viewKind, tab.eventName, tab.routineName, tab.routineType, tab.sequenceName, tab.packageName, tab.databaseLinkName, tab.schemaName, tab.type, connections, objectIdentityKey, t]);
 
     useEffect(() => () => {
         isMountedRef.current = false;
     }, []);
 
-    const objectLabel = tab.type === 'view-def'
-        ? (tab.viewKind === 'materialized' ? t('definition_viewer.object.materialized_view') : t('definition_viewer.object.view'))
-        : (tab.type === 'event-def'
-            ? t('definition_viewer.object.event')
-            : (tab.type === 'sequence-def'
-                ? t('definition_viewer.object.sequence')
-                : (tab.type === 'package-def'
-                    ? t('definition_viewer.object.package')
-                    : t('definition_viewer.object.routine'))));
-    const objectName = tab.type === 'view-def'
-        ? tab.viewName
-        : (tab.type === 'event-def'
-            ? tab.eventName
-            : (tab.type === 'sequence-def'
-                ? tab.sequenceName
-                : (tab.type === 'package-def' ? tab.packageName : tab.routineName)));
-    const loadingTip = tab.type === 'view-def'
-        ? t('definition_viewer.loading.view_definition')
-        : (tab.type === 'event-def'
-            ? t('definition_viewer.loading.event_definition')
-            : (tab.type === 'sequence-def'
-                ? t('definition_viewer.loading.sequence_definition')
-                : (tab.type === 'package-def'
-                    ? t('definition_viewer.loading.package_definition')
-                    : t('definition_viewer.loading.routine_definition'))));
+    const { label: objectLabel, name: objectName, loadingTip } = resolveDefinitionViewerObjectMeta(tab, t);
     const normalizedObjectName = String(objectName || '').trim();
     const displayedDefinition = loadedDefinitionKeyRef.current === objectIdentityKey ? definition : '';
     const hasDefinition = String(displayedDefinition || '').trim() !== '';
@@ -1120,9 +1116,11 @@ const DefinitionViewer: React.FC<DefinitionViewerProps> = ({ tab }) => {
                     {tab.dbName && <span style={{ marginLeft: 16, color: '#888' }}>{t('definition_viewer.field.database')}: {tab.dbName}</span>}
                     {tab.routineType && <span style={{ marginLeft: 16, color: '#888' }}>{t('definition_viewer.field.type')}: {tab.routineType}</span>}
                 </div>
+                {tab.type !== 'database-link-def' ? (
                 <Button size="small" icon={<EditOutlined />} onClick={openObjectEditQuery} disabled={!normalizedObjectName} loading={openingObjectEdit}>
                     {t('definition_viewer.action.edit_object')}
                 </Button>
+                ) : null}
             </div>
             {error && hasDefinition && (
                 <div style={{ padding: '8px 16px 0' }}>

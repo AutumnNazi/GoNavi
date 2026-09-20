@@ -9,6 +9,8 @@ import {
   resolveSidebarRootOrderTokens,
 } from '../store';
 import type { ConnectionDisplaySortMode, ConnectionTag, SavedConnection, TabData } from '../types';
+import type { SidebarTreeNodeType } from './sidebar/sidebarTreeNodeTypes';
+export type { SidebarTreeNodeType } from './sidebar/sidebarTreeNodeTypes';
 import { readTableAccessCount } from '../utils/tableAccessCount';
 import { t } from '../i18n';
 import { t as catalogTranslate } from '../i18n/catalog';
@@ -23,49 +25,6 @@ const translateSidebarV2Current: SidebarV2Translate = (key) => t(key);
 const translateSidebarV2ZhCN: SidebarV2Translate = (key) => catalogTranslate('zh-CN', key);
 
 export type SidebarConnectionState = 'loading' | 'success' | 'error';
-
-export type SidebarTreeNodeType =
-  | 'connection'
-  | 'database'
-  | 'message-namespace'
-  | 'message-object'
-  | 'message-object-group'
-  | 'table'
-  | 'view'
-  | 'materialized-view'
-  | 'db-trigger'
-  | 'db-event'
-  | 'routine'
-  | 'sequence'
-  | 'package'
-  | 'object-group'
-  | 'v2-database-section'
-  | 'v2-table-section'
-  | 'queries-folder'
-  | 'saved-query'
-  | 'all-saved-queries'
-  | 'saved-query-group'
-  | 'saved-query-manual-group'
-  | 'unmatched-saved-queries'
-  | 'external-sql-root'
-  | 'external-sql-directory'
-  | 'external-sql-folder'
-  | 'external-sql-file'
-  | 'folder-columns'
-  | 'folder-indexes'
-  | 'folder-fks'
-  | 'folder-triggers'
-  | 'redis-db'
-  | 'nacos-namespace'
-  | 'nacos-config-entry'
-  | 'nacos-config-group'
-  | 'nacos-services-entry'
-  | 'nacos-service-group'
-  | 'tag'
-  | 'jvm-mode'
-  | 'jvm-resource'
-  | 'jvm-diagnostic'
-  | 'jvm-monitoring';
 
 export interface SidebarTreeNode {
   title: string;
@@ -1121,9 +1080,8 @@ const isV2CommandSearchObjectNode = (node: SidebarTreeNode): boolean => {
   return node.type === 'table'
     || node.type === 'view'
     || node.type === 'materialized-view'
-    || node.type === 'sequence'
-    || node.type === 'package'
-    || node.type === 'message-object';
+    || node.type === 'sequence' || node.type === 'package'
+    || node.type === 'database-link' || node.type === 'message-object';
 };
 
 export const V2_COMMAND_SEARCH_INITIAL_TREE_LIMIT = 24;
@@ -1153,7 +1111,7 @@ export const buildV2CommandSearchTreeIndex = (
       || dataRef.tableName
       || dataRef.viewName
       || dataRef.sequenceName
-      || dataRef.packageName
+      || dataRef.packageName || dataRef.databaseLinkName
       || item.title
       || '',
     );

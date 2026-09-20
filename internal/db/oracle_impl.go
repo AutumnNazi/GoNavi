@@ -181,7 +181,8 @@ func (o *OracleDB) getDSN(config connection.ConnectionConfig) string {
 	q.Set("LOB FETCH", "POST")
 	timeoutSeconds := strconv.Itoa(getConnectTimeoutSeconds(config))
 	q.Set("CONNECT TIMEOUT", timeoutSeconds)
-	q.Set("READ TIMEOUT", timeoutSeconds)
+	// Do not copy connect timeout into go-ora READ TIMEOUT. That I/O deadline
+	// would abort long-running queries; set READ TIMEOUT only via connection params.
 	mergeConnectionParamsFromConfigWithAllowlist(q, config, oracleConnectionParamNames, "oracle")
 	if encoded := q.Encode(); encoded != "" {
 		u.RawQuery = encoded

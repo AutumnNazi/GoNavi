@@ -204,6 +204,21 @@ describe('sidebarLocate', () => {
     });
 
     expect(normalizeSidebarLocateObjectRequestFromTab({
+      id: 'database-link-def-conn-ora-H2-H2-ORCL.WORLD',
+      type: 'database-link-def',
+      connectionId: 'conn-ora',
+      dbName: 'H2',
+      schemaName: 'H2',
+      databaseLinkName: 'ORCL.WORLD',
+      sidebarLocateKey: 'conn-ora-H2-schema-x-databaseLinks-database-link-ORCL.WORLD',
+    })).toMatchObject({
+      objectGroup: 'databaseLinks',
+      tableName: 'ORCL.WORLD',
+      schemaName: 'H2',
+      tabId: 'conn-ora-H2-schema-x-databaseLinks-database-link-ORCL.WORLD',
+    });
+
+    expect(normalizeSidebarLocateObjectRequestFromTab({
       id: 'query-1',
       type: 'query',
       queryMode: 'object-edit',

@@ -143,7 +143,7 @@ export const WorkbenchTabContent: React.FC<WorkbenchTabContentProps> = React.mem
     );
   } else if (tab.type === 'trigger') {
     content = <TriggerViewer tab={tab} />;
-  } else if (tab.type === 'view-def' || tab.type === 'event-def' || tab.type === 'routine-def' || tab.type === 'sequence-def' || tab.type === 'package-def') {
+  } else if (tab.type === 'view-def' || tab.type === 'event-def' || tab.type === 'routine-def' || tab.type === 'sequence-def' || tab.type === 'package-def' || tab.type === 'database-link-def') {
     content = <DefinitionViewer tab={tab} />;
   } else if (tab.type === 'table-overview') {
     content = <TableOverview tab={tab} />;

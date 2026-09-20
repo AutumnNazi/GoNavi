@@ -8,6 +8,7 @@ export const SIDEBAR_OBJECT_GROUP_KEYS = [
   'packages',
   'triggers',
   'events',
+  'databaseLinks',
 ] as const;
 
 export type SidebarObjectGroupKey = (typeof SIDEBAR_OBJECT_GROUP_KEYS)[number];

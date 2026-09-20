@@ -2,6 +2,7 @@ package app
 
 import (
 	"archive/zip"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -603,6 +604,7 @@ func TestEnsureOptionalDriverAgentBinaryUsesCurrentLanguageForPrebuiltPathErrors
 	}
 
 	_, _, err := ensureOptionalDriverAgentBinary(
+		context.Background(),
 		app,
 		driverDefinition{Type: "kingbase", Name: "Kingbase"},
 		executablePath,
@@ -762,6 +764,7 @@ func TestEnsureOptionalDriverAgentBinaryRejectsMalformedDispatcherWithoutDownloa
 	})
 	var attempts int
 	downloadOptionalDriverAgentBinaryForInstall = func(
+		_ context.Context,
 		_ *App,
 		_ driverDefinition,
 		_ string,
@@ -780,6 +783,7 @@ func TestEnsureOptionalDriverAgentBinaryRejectsMalformedDispatcherWithoutDownloa
 	validPath := "%2Fdrivers%2Fdev%2Freleases%2Fdownload%2Fdev-5b7ef3c%2Fsqlserver-driver-agent-darwin-arm64.zip"
 	malformedURL := "https://download-dispatch.syngnat.top/v1/resolve?path=" + validPath + "&path=" + validPath
 	_, _, err := ensureOptionalDriverAgentBinary(
+		context.Background(),
 		nil,
 		definition,
 		filepath.Join(t.TempDir(), optionalDriverExecutableBaseName("sqlserver")),
@@ -820,6 +824,7 @@ func TestDownloadDriverPackageFallsBackToGitHubAndPersistsActualSource(t *testin
 	}
 	attempts := make([]downloadAttempt, 0, len(expectedURLs))
 	downloadOptionalDriverAgentBinaryForInstall = func(
+		_ context.Context,
 		_ *App,
 		_ driverDefinition,
 		urlText string,
