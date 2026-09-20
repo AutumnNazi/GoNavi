@@ -3985,7 +3985,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           return false;
       }
 
-      const { inserts, updates, deletes } = changeSetResult.changes;
+      const { inserts, updates, deletes, previousDeletes, locatorColumns } = changeSetResult.changes;
       if (inserts.length === 0 && updates.length === 0 && deletes.length === 0) {
           void message.info(translateDataGrid('data_grid.message.no_changes_to_commit'));
           return true;
@@ -4009,7 +4009,16 @@ const DataGrid: React.FC<DataGridProps> = ({
       if (!approved) return false;
 
       const startTime = Date.now();
-      const res = await ApplyChanges(buildRpcConnectionConfig(config) as any, dbName || '', tableName, { inserts, updates, deletes, locatorStrategy: effectiveEditLocator?.strategy } as any);
+      // previousDeletes / locatorColumns 是执行前快照的还原线索，必须与正向变更一起送达后端；
+      // 只传 inserts/updates/deletes 会让快照生成静默失效（提交照样成功，但事后不可还原）。
+      const res = await ApplyChanges(buildRpcConnectionConfig(config) as any, dbName || '', tableName, {
+          inserts,
+          updates,
+          deletes,
+          locatorStrategy: effectiveEditLocator?.strategy,
+          previousDeletes,
+          locatorColumns,
+      } as any);
       const duration = Date.now() - startTime;
       const outcomeUnknown = res?.outcomeUnknown === true;
       const logMessage = outcomeUnknown

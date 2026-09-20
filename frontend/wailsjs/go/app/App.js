@@ -634,6 +634,10 @@ export function GetBrandIconDataURL(arg1) {
   return window['go']['app']['App']['GetBrandIconDataURL'](arg1);
 }
 
+export function GetDMLSnapshot(arg1) {
+  return window['go']['app']['App']['GetDMLSnapshot'](arg1);
+}
+
 export function GetDataRootDirectoryInfo() {
   return window['go']['app']['App']['GetDataRootDirectoryInfo']();
 }
@@ -844,6 +848,10 @@ export function JVMStartMonitoring(arg1) {
 
 export function JVMStopMonitoring(arg1, arg2) {
   return window['go']['app']['App']['JVMStopMonitoring'](arg1, arg2);
+}
+
+export function ListDMLSnapshots() {
+  return window['go']['app']['App']['ListDMLSnapshots']();
 }
 
 export function ListDatabaseCharsets(arg1) {

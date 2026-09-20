@@ -327,6 +327,8 @@ export function GetAppInfo():Promise<connection.QueryResult>;
 
 export function GetBrandIconDataURL(arg1:string):Promise<string>;
 
+export function GetDMLSnapshot(arg1:string):Promise<connection.QueryResult>;
+
 export function GetDataRootDirectoryInfo():Promise<connection.QueryResult>;
 
 export function GetDatabaseDiagnosticPackagePreview():Promise<connection.QueryResult>;
@@ -432,6 +434,8 @@ export function JVMStartDiagnosticSession(arg1:connection.ConnectionConfig,arg2:
 export function JVMStartMonitoring(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
 
 export function JVMStopMonitoring(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
+
+export function ListDMLSnapshots():Promise<connection.QueryResult>;
 
 export function ListDatabaseCharsets(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
 

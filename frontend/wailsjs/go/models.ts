@@ -1824,9 +1824,24 @@ export namespace app {
 
 export namespace connection {
 	
+	export class LocatorColumn {
+	    key: string;
+	    valueColumn?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LocatorColumn(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.valueColumn = source["valueColumn"];
+	    }
+	}
 	export class UpdateRow {
 	    keys: Record<string, any>;
 	    values: Record<string, any>;
+	    previousValues?: Record<string, any>;
 	
 	    static createFrom(source: any = {}) {
 	        return new UpdateRow(source);
@@ -1836,6 +1851,7 @@ export namespace connection {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.keys = source["keys"];
 	        this.values = source["values"];
+	        this.previousValues = source["previousValues"];
 	    }
 	}
 	export class ChangeSet {
@@ -1843,6 +1859,8 @@ export namespace connection {
 	    updates: UpdateRow[];
 	    deletes: any[];
 	    locatorStrategy?: string;
+	    previousDeletes?: any[];
+	    locatorColumns?: LocatorColumn[];
 	
 	    static createFrom(source: any = {}) {
 	        return new ChangeSet(source);
@@ -1854,6 +1872,8 @@ export namespace connection {
 	        this.updates = this.convertValues(source["updates"], UpdateRow);
 	        this.deletes = source["deletes"];
 	        this.locatorStrategy = source["locatorStrategy"];
+	        this.previousDeletes = source["previousDeletes"];
+	        this.locatorColumns = this.convertValues(source["locatorColumns"], LocatorColumn);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -2512,6 +2532,7 @@ export namespace connection {
 	        this.secretRef = source["secretRef"];
 	    }
 	}
+	
 	
 	
 	
