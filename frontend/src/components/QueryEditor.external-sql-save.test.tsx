@@ -714,6 +714,15 @@ vi.mock('antd', () => {
     Space,
     Table,
     Tag: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
+    Checkbox: ({ children, checked, onChange }: any) => (
+      <label>
+        <input type="checkbox" checked={!!checked} onChange={(event) => onChange?.({ target: { checked: event.target.checked } })} />
+        {children}
+      </label>
+    ),
+    DatePicker: ({ value }: any) => <input data-mock="datepicker" value={value || ''} />,
+    InputNumber: ({ value }: any) => <input data-mock="inputnumber" value={value ?? ''} />,
+    Spin: () => <div className="mock-spin" />,
     Empty,
     message: messageApi,
     Modal,
@@ -9595,7 +9604,9 @@ describe('QueryEditor external SQL save', () => {
         windowListeners[type] ||= [];
         windowListeners[type].push(listener);
       }),
-      removeEventListener: vi.fn(),
+      removeEventListener: vi.fn((type: string, listener: (event?: any) => void) => {
+        windowListeners[type] = (windowListeners[type] || []).filter((item) => item !== listener);
+      }),
       dispatchEvent: vi.fn(),
       setTimeout,
       clearTimeout,

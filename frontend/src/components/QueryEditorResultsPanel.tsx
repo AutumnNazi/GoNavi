@@ -9,6 +9,7 @@ import type { QueryResultPaginationState } from '../utils/queryResultPagination'
 import { filterColumnNamesByGlobalHiddenColumns, useGlobalHiddenColumns } from '../utils/globalHiddenColumns';
 import { buildQueryResultColumnPinScope } from '../utils/queryResultColumnPinScope';
 import { t as defaultTranslate } from '../i18n';
+import { QUERY_EDITOR_PARAMS_PANEL_KEY, type QueryParamBindingInput } from './queryEditor/params/queryEditorParamsModel';
 import { useOptionalI18n } from '../i18n/provider';
 import {
   resolveNativeDetachPreferredBounds,
@@ -66,6 +67,8 @@ export type QueryEditorResultSet = {
     executionConnectionParams?: string;
     executionConnectionId?: string;
     executionDbName?: string;
+    /** 参数化执行时的绑定值快照：分页/总计数/刷新等远端重跑路径必须原样携带 */
+    executionBindings?: QueryParamBindingInput[];
     pkColumns: string[];
     editLocator?: EditRowLocator;
     readOnly: boolean;
@@ -81,6 +84,7 @@ export const resolveEffectiveActiveResultKey = (
     resultSets: Pick<QueryEditorResultSet, 'key'>[],
     activeResultKey: string,
     showSqlLogTab: boolean,
+    showParamsTab = false,
 ): string => {
     if (resultSets.some((result) => result.key === activeResultKey)) {
         return activeResultKey;
@@ -88,11 +92,15 @@ export const resolveEffectiveActiveResultKey = (
     if (showSqlLogTab && activeResultKey === QUERY_EDITOR_SQL_LOG_TAB_KEY) {
         return QUERY_EDITOR_SQL_LOG_TAB_KEY;
     }
+    if (showParamsTab && activeResultKey === QUERY_EDITOR_PARAMS_PANEL_KEY) {
+        return QUERY_EDITOR_PARAMS_PANEL_KEY;
+    }
     return resultSets[0]?.key || (showSqlLogTab ? QUERY_EDITOR_SQL_LOG_TAB_KEY : '');
 };
 
 interface QueryEditorResultsPanelProps {
     workbenchTabId?: string;
+    paramsPanel?: React.ReactNode;
     resultSets: QueryEditorResultSet[];
     activeResultKey: string;
     isActive: boolean;
@@ -160,6 +168,7 @@ export const shouldActivateResultTabDetachPointer = (event: {
 };
 
 const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
+    paramsPanel,
     workbenchTabId,
     resultSets,
     activeResultKey,
@@ -405,6 +414,7 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
         resultSets,
         activeResultKey,
         true,
+        Boolean(paramsPanel),
     );
 
     // The per-result content reads actions through a ref so its props stay
@@ -677,7 +687,18 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                 />
             ),
         };
-    const tabItems = [logTabItem, ...resultTabItems];
+    const paramsTabItem = paramsPanel ? {
+            key: QUERY_EDITOR_PARAMS_PANEL_KEY,
+            label: (
+                <Tooltip title={t('query_editor.params.panel_title')}>
+                    <div className="query-result-tab-label">
+                        <span className="query-result-tab-text">{t('query_editor.params.panel_title')}</span>
+                    </div>
+                </Tooltip>
+            ),
+            children: paramsPanel,
+        } : null;
+    const tabItems = [logTabItem, ...(paramsTabItem ? [paramsTabItem] : []), ...resultTabItems];
     const activeResultSet = resultSets.find((rs) => rs.key === resolvedActiveResultKey) || null;
     const activeResultUsesDataGrid = Boolean(activeResultSet && activeResultSet.resultType !== 'message' && !isAffectedRowsResult(activeResultSet));
 

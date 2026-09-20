@@ -1,0 +1,117 @@
+/* 查询编辑器运行时绑定参数：面板与绑定对话框共享样式 */
+
+.gn-query-params-panel {
+    padding: 8px 12px;
+    overflow: auto;
+    max-height: 100%;
+}
+
+.gn-query-params-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.gn-query-params-group {
+    border-left: 2px solid var(--gn-border-color, rgba(128, 128, 128, 0.35));
+    padding-left: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.gn-query-params-group-title {
+    font-weight: 600;
+    font-size: 12px;
+    cursor: default;
+    width: fit-content;
+}
+
+.gn-query-params-row {
+    display: grid;
+    grid-template-columns: 128px 96px minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 8px;
+}
+
+/* 弹窗 compact 模式无类型列 */
+.gn-query-params-row--compact {
+    grid-template-columns: 128px minmax(0, 1fr) auto;
+}
+
+/* 参数名固定列宽：多行参数时名称/类型/输入框严格纵向对齐 */
+.gn-query-params-name {
+    font-family: var(--font-monospace, monospace);
+    font-size: 12px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(127, 127, 127, 0.15);
+    cursor: default;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gn-query-params-type {
+    width: 96px;
+}
+
+.gn-query-params-value {
+    width: 100%;
+}
+
+.gn-query-params-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.gn-query-params-list .ant-space-vertical {
+    width: 100%;
+}
+
+.gn-query-params-null-text {
+    font-size: 12px;
+    opacity: 0.65;
+    align-self: center;
+}
+
+.gn-query-params-null-check {
+    font-size: 12px;
+}
+
+/* 第四列：NULL 勾选与「亦用于」提示并排 */
+.gn-query-params-extras {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.gn-query-params-usage {
+    font-size: 11px;
+    opacity: 0.75;
+}
+
+.gn-query-params-missing {
+    margin-bottom: 8px;
+    color: var(--gn-warning-color, #d48806);
+    font-size: 12px;
+}
+
+.gn-query-params-sql-preview {
+    margin: 0;
+    max-height: 220px;
+    overflow: auto;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-width: 480px;
+}
+
+/* Monaco 内参数记号高亮 */
+.gn-query-param-token {
+    background: rgba(24, 144, 255, 0.18);
+    border-bottom: 1px dashed rgba(24, 144, 255, 0.6);
+}

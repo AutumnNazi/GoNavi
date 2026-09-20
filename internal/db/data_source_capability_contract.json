@@ -34,6 +34,7 @@
                                                                    "supported":  true
                                                                },
                                        "ui":  {
+                                                               "parameterBinding":  true,
                                                   "explainDiagnosis":  true,
                                                   "sqlQueryExport":  true,
                                                   "copyInsert":  true,
@@ -82,6 +83,7 @@
                                                                    "supported":  true
                                                                },
                                        "ui":  {
+                                                               "parameterBinding":  true,
                                                   "explainDiagnosis":  true,
                                                   "sqlQueryExport":  true,
                                                   "copyInsert":  true,
@@ -129,6 +131,7 @@
                                                                        "supported":  true
                                                                    },
                                            "ui":  {
+                                                                   "parameterBinding":  true,
                                                       "explainDiagnosis":  true,
                                                       "sqlQueryExport":  true,
                                                       "copyInsert":  true,
@@ -175,6 +178,7 @@
                                                                     "supported":  true
                                                                 },
                                         "ui":  {
+                                                                "parameterBinding":  true,
                                                    "sqlQueryExport":  true,
                                                    "copyInsert":  true
                                                },
@@ -218,6 +222,7 @@
                                                                       "supported":  true
                                                                   },
                                           "ui":  {
+                                                                  "parameterBinding":  true,
                                                      "explainDiagnosis":  true,
                                                      "sqlQueryExport":  true,
                                                      "copyInsert":  true,
@@ -266,6 +271,7 @@
                                                                                  "supported":  true
                                                                              },
                                                      "ui":  {
+                                                                             "parameterBinding":  true,
                                                                 "explainDiagnosis":  true,
                                                                 "sqlQueryExport":  true,
                                                                 "copyInsert":  true,
@@ -313,6 +319,7 @@
                                                                        "supported":  true
                                                                    },
                                            "ui":  {
+                                                                   "parameterBinding":  true,
                                                       "explainDiagnosis":  true,
                                                       "sqlQueryExport":  true,
                                                       "copyInsert":  true,
@@ -358,6 +365,7 @@
                                                                   "supported":  true
                                                               },
                                       "ui":  {
+                                                              "parameterBinding":  true,
                                                  "sqlQueryExport":  true,
                                                  "copyInsert":  true
                                              },
@@ -401,6 +409,7 @@
                                                                       "supported":  true
                                                                   },
                                           "ui":  {
+                                                                  "parameterBinding":  true,
                                                      "explainDiagnosis":  true,
                                                      "sqlQueryExport":  true,
                                                      "copyInsert":  true
@@ -445,6 +454,7 @@
                                                                     "supported":  true
                                                                 },
                                         "ui":  {
+                                                                "parameterBinding":  true,
                                                    "sqlQueryExport":  true,
                                                    "copyInsert":  true,
                                                    "preferManualTotalCount":  true,
@@ -491,6 +501,7 @@
                                                                     "supported":  true
                                                                 },
                                         "ui":  {
+                                                                "parameterBinding":  true,
                                                    "explainDiagnosis":  true,
                                                    "sqlQueryExport":  true,
                                                    "copyInsert":  true,
@@ -537,6 +548,7 @@
                                                                     "supported":  true
                                                                 },
                                         "ui":  {
+                                                                "parameterBinding":  true,
                                                    "sqlQueryExport":  true,
                                                    "copyInsert":  true
                                                },
@@ -583,6 +595,7 @@
                                                                       "supported":  true
                                                                   },
                                           "ui":  {
+                                                                  "parameterBinding":  true,
                                                      "sqlQueryExport":  true,
                                                      "copyInsert":  true,
                                                      "createDatabase":  true,
@@ -632,6 +645,7 @@
                                                                         "supported":  true
                                                                     },
                                             "ui":  {
+                                                                    "parameterBinding":  true,
                                                        "explainDiagnosis":  true,
                                                        "sqlQueryExport":  true,
                                                        "copyInsert":  true,
@@ -682,6 +696,7 @@
                                                                    "supported":  true
                                                                },
                                        "ui":  {
+                                                               "parameterBinding":  true,
                                                   "sqlQueryExport":  true,
                                                   "copyInsert":  true
                                               },

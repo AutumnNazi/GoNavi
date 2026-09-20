@@ -526,6 +526,15 @@ vi.mock('antd', () => {
     Space,
     Table,
     Tag: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
+    Spin: () => <div className="mock-spin" />,
+    Checkbox: ({ children, checked, onChange }: any) => (
+      <label>
+        <input type="checkbox" checked={!!checked} onChange={(event) => onChange?.({ target: { checked: event.target.checked } })} />
+        {children}
+      </label>
+    ),
+    DatePicker: ({ value }: any) => <input data-mock="datepicker" value={value || ''} />,
+    InputNumber: ({ value }: any) => <input data-mock="inputnumber" value={value ?? ''} />,
     Empty,
     message: messageApi,
     Modal: ({ children, open, onOk, okText = '确认' }: any) => (open ? (
