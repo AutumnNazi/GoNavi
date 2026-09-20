@@ -9206,6 +9206,7 @@
   "table_designer.column.not_null": "NOT NULL",
   "table_designer.column.primary_key": "Первичный ключ",
   "table_designer.column.type": "Тип",
+  "table_designer.column.unsigned": "Без знака",
   "table_designer.copy_columns.conflict_hint": "Если в целевой таблице уже есть столбец с таким именем, он будет переименован в name_copy",
   "table_designer.copy_columns.mode.existing_table": "Существующая таблица",
   "table_designer.copy_columns.mode.new_table": "Новая таблица",

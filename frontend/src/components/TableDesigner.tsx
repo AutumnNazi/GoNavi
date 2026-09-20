@@ -45,8 +45,8 @@ import { dispatchSidebarDatabaseRefresh } from '../utils/sidebarDatabaseRefresh'
 import { getCurrentLanguage, t } from '../i18n';
 import { useOptionalI18n } from '../i18n/provider';
 import {
-    getColumnDefinitionExtra,
-    normalizeColumnDefinition,
+    COMMON_COLUMN_DEFAULT_OPTIONS, getColumnDefinitionExtra, isMySQLCharacterColumnType, normalizeColumnDefinition,
+    normalizeMySQLUnsignedColumnType, setMySQLUnsignedColumnType, supportsMySQLUnsignedColumnType, supportsMySQLUnsignedDialect,
 } from '../utils/columnDefinition';
 import { resolveDataTableVerticalBorderColor } from '../utils/dataGridDisplay';
 import { buildEditableTriggerSql } from '../utils/triggerEditSql';
@@ -289,18 +289,6 @@ const DB_TYPE_OPTIONS: Record<string, { value: string }[]> = {
         { value: 'XMLTYPE' },
     ],
 };
-
-const COMMON_DEFAULTS = [
-    { value: 'CURRENT_TIMESTAMP' },
-    { value: 'NULL' },
-    { value: '0' },
-    { value: "''" },
-];
-
-const isMySQLCharacterColumnType = (columnType: string): boolean => (
-    /^(?:char|varchar|tinytext|text|mediumtext|longtext|enum|set|nchar|nvarchar)\b/i.test(String(columnType || '').trim())
-);
-
 
 const PGLIKE_INDEX_TYPE_OPTIONS = [
     { label: 'DEFAULT', value: 'DEFAULT' },
@@ -761,9 +749,10 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
       };
   }, [activeKey, columns, focusColumnRow]);
 
-  // Initial Columns Definition
   useEffect(() => {
-      const columnTypeOptions = resolveColumnTypeOptions(getDbType());
+      const dbType = getDbType();
+      const supportsUnsigned = supportsMySQLUnsignedDialect(dbType);
+      const columnTypeOptions = resolveColumnTypeOptions(dbType);
       const initialCols = [
           {
               title: renderDesignerHeaderTitle(t('table_designer.column.name', undefined, i18nLanguage)),
@@ -783,11 +772,22 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
               width: 150,
               render: (text: string, record: EditableColumn) => readOnly ? text : (
                   renderDesignerCellField(
-                      <AutoComplete options={columnTypeOptions} value={text} onChange={val => handleColumnChange(record._key, 'type', val)} style={{ width: '100%' }} variant="borderless" />,
+                      <AutoComplete options={columnTypeOptions}
+                          value={supportsUnsigned ? normalizeMySQLUnsignedColumnType(text).type : text}
+                          onChange={val => handleColumnChange(record._key, 'type', supportsUnsigned
+                              ? setMySQLUnsignedColumnType(val, normalizeMySQLUnsignedColumnType(text).unsigned || normalizeMySQLUnsignedColumnType(val).unsigned) : val)}
+                          style={{ width: '100%' }} variant="borderless" />,
                       'is-compact'
                   )
               )
           },
+          ...(supportsUnsigned ? [{
+              title: renderDesignerHeaderTitle(t('table_designer.column.unsigned', undefined, i18nLanguage)), dataIndex: 'type', key: 'unsigned', width: 70, align: 'center',
+              render: (type: string, record: EditableColumn) => renderDesignerCellCheck(<Checkbox checked={normalizeMySQLUnsignedColumnType(type).unsigned}
+                  disabled={readOnly || !supportsMySQLUnsignedColumnType(dbType, type)}
+                  onChange={e => handleColumnChange(record._key, 'type', setMySQLUnsignedColumnType(type, e.target.checked))}
+              />, 'is-left-aligned'),
+          }] : []),
           {
               title: renderDesignerHeaderTitle(t('table_designer.column.primary_key', undefined, i18nLanguage)),
               dataIndex: 'key',
@@ -839,7 +839,7 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
                   if (readOnly) return value;
                   return renderDesignerCellField(
                       <AutoComplete
-                          options={COMMON_DEFAULTS}
+                          options={COMMON_COLUMN_DEFAULT_OPTIONS}
                           value={value}
                           onChange={val => {
                               const hasDefault = val.length > 0;
@@ -4353,7 +4353,7 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
                         {t('table_designer.column.enable_default', undefined, i18nLanguage)}
                     </Checkbox>
                     <AutoComplete
-                        options={COMMON_DEFAULTS}
+                        options={COMMON_COLUMN_DEFAULT_OPTIONS}
                         value={columnDefaultValue}
                         onChange={setColumnDefaultValue}
                         disabled={!columnDefaultEnabled}

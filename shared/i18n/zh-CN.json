@@ -9206,6 +9206,7 @@
   "table_designer.column.not_null": "不是 NULL",
   "table_designer.column.primary_key": "主键",
   "table_designer.column.type": "类型",
+  "table_designer.column.unsigned": "无符号",
   "table_designer.copy_columns.conflict_hint": "若目标表已有同名字段，将自动命名为 name_copy",
   "table_designer.copy_columns.mode.existing_table": "已有表",
   "table_designer.copy_columns.mode.new_table": "新建表",

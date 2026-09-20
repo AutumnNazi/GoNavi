@@ -9206,6 +9206,7 @@
   "table_designer.column.not_null": "NOT NULL",
   "table_designer.column.primary_key": "主キー",
   "table_designer.column.type": "型",
+  "table_designer.column.unsigned": "符号なし",
   "table_designer.copy_columns.conflict_hint": "コピー先に同名の列がある場合は name_copy に自動変更されます",
   "table_designer.copy_columns.mode.existing_table": "既存テーブル",
   "table_designer.copy_columns.mode.new_table": "新しいテーブル",
