@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -927,10 +928,17 @@ func (a *App) UpdateSQLAuditSettings(settings sqlaudit.Settings) connection.Quer
 }
 
 func (a *App) VerifySQLAuditIntegrity() connection.QueryResult {
+	return a.verifySQLAuditIntegrity(context.Background())
+}
+
+func (a *App) verifySQLAuditIntegrity(ctx context.Context) connection.QueryResult {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	var report sqlaudit.IntegrityReport
 	err := a.withSQLAuditStore(false, func(store *sqlaudit.Store) error {
 		var verifyErr error
-		report, verifyErr = store.VerifyIntegrity()
+		report, verifyErr = store.VerifyIntegrityContext(ctx)
 		return verifyErr
 	})
 	if err != nil {
