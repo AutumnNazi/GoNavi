@@ -66,7 +66,7 @@ const MYSQL_DASH_COMMENT_DIALECTS = new Set([
   'mysql', 'mariadb', 'oceanbase', 'diros', 'starrocks', 'goldendb', 'sphinx', 'tidb',
 ]);
 
-const supportsSqlHashLineComment = (dbType: string): boolean => {
+export const supportsSqlHashLineComment = (dbType: string): boolean => {
   const normalized = normalizeSqlLexicalDbType(dbType);
   return !normalized || normalized === 'clickhouse' || MYSQL_DASH_COMMENT_DIALECTS.has(normalized);
 };

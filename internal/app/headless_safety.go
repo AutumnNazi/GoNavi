@@ -113,10 +113,16 @@ func classifyHeadlessSQLOperation(dbType, statement string, inspection SQLStatem
 	if inspection.ReadOnly {
 		return ai.SQLOpQuery
 	}
-	if isBatchableWriteSQLStatement(dbType, statement) {
+	// 首关键字为读、但语句体内缺分号嵌入了写语句时（issue #1308），
+	// sqlDataOperationInfo 仍会返回 select，必须改由内嵌写扫描给出真实关键字，
+	// 否则写操作会被归为 SQLOpOther/DDL 而被误判为越权拒绝。
+	keyword, _ := sqlDataOperationInfo(statement, dbType)
+	if embedded := firstEmbeddedWriteKeyword(dbType, statement); embedded != "" {
+		keyword = embedded
+	}
+	if isBatchableWriteSQLStatement(dbType, statement) || isSQLDataWriteKeyword(keyword) {
 		return ai.SQLOpDML
 	}
-	keyword, _ := sqlDataOperationInfo(statement, dbType)
 	switch keyword {
 	case "create", "alter", "drop", "truncate", "rename":
 		return ai.SQLOpDDL
