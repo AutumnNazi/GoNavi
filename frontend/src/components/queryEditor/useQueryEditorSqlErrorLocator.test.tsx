@@ -91,13 +91,13 @@ describe('useQueryEditorSqlErrorLocator', () => {
         let api!: ReturnType<typeof useQueryEditorSqlErrorLocator>;
         create(<HookHarness editorRef={editorRef} onReady={(next) => { api = next; }} />);
         act(() => api.recordExecutionOrigin(
-            'SELECT first;\nSELECT broken;',
+            'SELECT first\n\nSELECT broken;',
             'SELECT broken;',
         ));
         expect(api.resolveExecutionErrorStatement(
-            'ERROR: syntax error at or near "broken"\nLINE 1: SELECT broken;',
+            'You have an error in your SQL syntax at line 1',
             'SELECT changed',
-            'postgresql',
-        )).toBe('SELECT broken');
+            'mysql',
+        )).toBe('SELECT broken;');
     });
 });

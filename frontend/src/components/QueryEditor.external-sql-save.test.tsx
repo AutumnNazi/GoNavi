@@ -10014,7 +10014,10 @@ describe('QueryEditor external SQL save', () => {
 
       let renderer!: ReactTestRenderer;
       await act(async () => {
-        renderer = create(<QueryEditor tab={createTab({ dbName: 'main', query: 'select 0;\nselect 1;' })} />);
+        renderer = create(<QueryEditor tab={createTab({
+          dbName: 'main',
+          query: 'select * from first_table\n\nselect * from broken_table where id = ;',
+        })} />);
       });
 
       await act(async () => {
@@ -10033,14 +10036,18 @@ describe('QueryEditor external SQL save', () => {
       expect(getLastInjectedPrompt()).not.toContain('请针对当前数据库的表结构进行系统分析');
 
       backendApp.DBGetServerVersion.mockResolvedValue({ success: true, message: '5.7.44-log' });
-      backendApp.DBQueryMulti.mockResolvedValueOnce({ success: false, message: 'driver exploded', data: [] });
+      backendApp.DBQueryMulti.mockResolvedValueOnce({
+        success: false,
+        message: 'You have an error in your SQL syntax at line 1',
+        data: [],
+      });
       editorState.selection = {
-        startLineNumber: 2,
+        startLineNumber: 3,
         startColumn: 1,
-        endLineNumber: 2,
-        endColumn: 'select 1;'.length + 1,
-        positionLineNumber: 1,
-        positionColumn: 'select 1;'.length + 1,
+        endLineNumber: 3,
+        endColumn: 'select * from broken_table where id = ;'.length + 1,
+        positionLineNumber: 3,
+        positionColumn: 'select * from broken_table where id = ;'.length + 1,
       };
 
       await act(async () => {
@@ -10064,8 +10071,9 @@ describe('QueryEditor external SQL save', () => {
       });
 
       expect(getLastInjectedPrompt()).toBe(
-        `Context: mysql "local", selected database "main", database version 5.7.44-log.\nI got an error while executing this SQL:\n\`\`\`sql\nselect 1;\n\`\`\`\n\nThe database returned this error:\n\`\`\`text\n${formatSqlExecutionError('driver exploded')}\n\`\`\`\n\nAnalyze the cause and suggest a fix.`,
+        `Context: mysql "local", selected database "main", database version 5.7.44-log.\nI got an error while executing this SQL:\n\`\`\`sql\nselect * from broken_table where id = ;\n\`\`\`\n\nThe database returned this error:\n\`\`\`text\n${formatSqlExecutionError('You have an error in your SQL syntax at line 1')}\n\`\`\`\n\nAnalyze the cause and suggest a fix.`,
       );
+      expect(getLastInjectedPrompt()).not.toContain('first_table');
       expect(getLastInjectedPrompt()).not.toContain('我在执行以下 SQL 时遇到了错误');
     } finally {
       vi.useRealTimers();
