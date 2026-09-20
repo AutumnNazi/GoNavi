@@ -232,6 +232,7 @@ export const renderSidebarV2TreeTitle = ({
     || node.type === 'db-event'
     || node.type === 'routine'
     || node.type === 'package'
+    || node.type === 'database-link'
     || node.type === 'saved-query'
     || node.type === 'external-sql-file';
   const titleClassName = [

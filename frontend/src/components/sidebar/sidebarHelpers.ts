@@ -264,7 +264,8 @@ export const isV2SidebarObjectNode = (
       || node?.type === 'db-trigger'
       || node?.type === 'db-event'
       || node?.type === 'routine'
-      || node?.type === 'package';
+      || node?.type === 'package'
+      || node?.type === 'database-link';
 };
 
 // === 第二期：依赖 i18n 但不依赖 TreeNode 内部类型的工具函数 ===
@@ -299,6 +300,7 @@ export const resolveV2ObjectGroupTitle = (
   if (groupKey === 'triggers') return t('sidebar.object_group.triggers');
   if (groupKey === 'events') return t('sidebar.object_group.events');
   if (groupKey === 'materializedViews') return t('sidebar.object_group.materialized_views');
+  if (groupKey === 'databaseLinks') return t('sidebar.object_group.database_links');
   return null;
 };
 
@@ -318,6 +320,7 @@ export const resolveSidebarTableNameForCopy = (
     || node?.dataRef?.viewName
     || node?.dataRef?.sequenceName
     || node?.dataRef?.packageName
+    || node?.dataRef?.databaseLinkName
     || node?.dataRef?.eventName
     || node?.title
     || '',
@@ -331,6 +334,7 @@ const SIDEBAR_TITLEBAR_OBJECT_TYPES = new Set([
   'materialized-view',
   'sequence',
   'package',
+  'database-link',
   'db-trigger',
   'db-event',
   'routine',
@@ -357,7 +361,9 @@ export const resolveSidebarTitlebarObjectName = (
           ? dataRef?.sequenceName
           : node?.type === 'package'
             ? dataRef?.packageName
-            : undefined;
+            : node?.type === 'database-link'
+              ? dataRef?.databaseLinkName
+              : undefined;
 
   return String(objectName || resolveSidebarTableNameForCopy(node) || '').trim();
 };

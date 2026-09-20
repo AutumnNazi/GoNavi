@@ -71,7 +71,8 @@ export const isV2SidebarObjectNode = (node: Pick<SidebarObjectNodeLike, 'type'> 
     || node?.type === 'db-trigger'
     || node?.type === 'db-event'
     || node?.type === 'routine'
-    || node?.type === 'package';
+    || node?.type === 'package'
+    || node?.type === 'database-link';
 };
 
 export const resolveSidebarObjectDragText = (
@@ -95,6 +96,7 @@ export const resolveSidebarObjectDragText = (
   if (node?.type === 'db-trigger') return String(dataRef.triggerName || node?.title || '').trim();
   if (node?.type === 'routine') return String(dataRef.routineName || node?.title || '').trim();
   if (node?.type === 'package') return String(dataRef.packageName || node?.title || '').trim();
+  if (node?.type === 'database-link') return String(dataRef.databaseLinkName || node?.title || '').trim();
   if (node?.type === 'db-event') return String(dataRef.eventName || node?.title || '').trim();
   return '';
 };

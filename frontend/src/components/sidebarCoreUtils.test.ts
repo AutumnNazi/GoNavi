@@ -85,10 +85,16 @@ describe('sidebarCoreUtils', () => {
       dataRef: { packageName: 'MYCIMLED.PKG_PERSON' },
     })).toBe('MYCIMLED.PKG_PERSON');
     expect(resolveSidebarObjectDragText({
+      type: 'database-link',
+      title: 'fallback_link',
+      dataRef: { databaseLinkName: 'ORCL.WORLD' },
+    })).toBe('ORCL.WORLD');
+    expect(resolveSidebarObjectDragText({
       type: 'message-object',
       title: 'display topic',
       dataRef: { messageObjectName: 'devices/+/telemetry' },
     })).toBe('devices/+/telemetry');
     expect(isV2SidebarObjectNode({ type: 'message-object' })).toBe(true);
+    expect(isV2SidebarObjectNode({ type: 'database-link' })).toBe(true);
   });
 });

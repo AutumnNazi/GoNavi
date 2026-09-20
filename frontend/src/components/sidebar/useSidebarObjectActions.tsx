@@ -32,6 +32,7 @@ import {
   resolveOracleCompileTarget,
   supportsOracleObjectCompilation,
 } from './oracleObjectCompilation';
+import { resolveCopyObjectNameLabel } from './sidebarCopyObjectName';
 import {
   resolveSidebarDatabaseNameForCopy,
   resolveSidebarTableNameForCopy,
@@ -156,15 +157,6 @@ type UseSidebarObjectActionsArgs = {
     oldDbName: string,
     newDbName?: string,
   ) => void;
-};
-
-const resolveCopyObjectNameLabel = (node: any): string => {
-  if (node?.type === 'view') return t('sidebar.copy_object_name.label.view');
-  if (node?.type === 'materialized-view') return t('sidebar.copy_object_name.label.materialized_view');
-  if (node?.type === 'sequence') return t('sidebar.copy_object_name.label.sequence');
-  if (node?.type === 'package') return t('sidebar.copy_object_name.label.package');
-  if (node?.type === 'db-event') return t('sidebar.copy_object_name.label.event');
-  return t('sidebar.copy_object_name.label.table');
 };
 
 const resolveNodeSchemaName = (node: any): string | undefined => {
