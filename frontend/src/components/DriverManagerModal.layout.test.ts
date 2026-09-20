@@ -181,6 +181,27 @@ describe('DriverManagerModal embedded layout', () => {
     );
   });
 
+  it('uses the settings body font for driver detail actions, paths, and logs', () => {
+    expect(appCss).toMatch(
+      /\.driver-manager-shell\s*\{[^}]*--driver-manager-font-body:\s*var\(--gn-settings-font-body, var\(--gn-font-size, 14px\)\)/s,
+    );
+    expect(appCss).toMatch(
+      /\.driver-manager-progress-error\s*\{[^}]*font-size:\s*var\(--driver-manager-font-body\)/s,
+    );
+    expect(appCss).toMatch(
+      /\.driver-manager-detail-path\s*\{[^}]*font-size:\s*var\(--driver-manager-font-body\)/s,
+    );
+    expect(appCss).toMatch(
+      /\.driver-manager-control-label,\s*\.driver-manager-small-text\s*\{[^}]*font-size:\s*var\(--driver-manager-font-body\)/s,
+    );
+    expect(appCss).toMatch(
+      /\.driver-manager-log-empty\s*\{[^}]*font-size:\s*var\(--driver-manager-font-body\)/s,
+    );
+    expect(appCss).toMatch(
+      /body\[data-ui-version\] \.gonavi-settings-center-modal \.driver-manager-card-actions \.ant-btn-sm\s*\{[^}]*font-size:\s*var\(--driver-manager-font-body, var\(--gn-font-size, 14px\)\)/s,
+    );
+  });
+
 });
 
 describe('V2 filled accent contrast', () => {

@@ -46,6 +46,10 @@ export function CancelConnectionTest(arg1) {
   return window['go']['app']['App']['CancelConnectionTest'](arg1);
 }
 
+export function CancelDriverPackageDownload(arg1) {
+  return window['go']['app']['App']['CancelDriverPackageDownload'](arg1);
+}
+
 export function CancelImportJob(arg1) {
   return window['go']['app']['App']['CancelImportJob'](arg1);
 }

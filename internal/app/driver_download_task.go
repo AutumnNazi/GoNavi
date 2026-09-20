@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -9,6 +11,32 @@ import (
 	"GoNavi-Wails/internal/connection"
 	"github.com/google/uuid"
 )
+
+type driverDownloadTaskRunner func(
+	context.Context,
+	string,
+	string,
+	string,
+	string,
+) connection.QueryResult
+
+type driverDownloadTaskControl struct {
+	cancel context.CancelFunc
+}
+
+type driverDownloadTaskContextKey struct{}
+
+func withDriverDownloadTaskID(ctx context.Context, taskID string) context.Context {
+	return context.WithValue(ctx, driverDownloadTaskContextKey{}, strings.TrimSpace(taskID))
+}
+
+func driverDownloadTaskIDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	taskID, _ := ctx.Value(driverDownloadTaskContextKey{}).(string)
+	return strings.TrimSpace(taskID)
+}
 
 // DriverDownloadTaskStatus is the durable, in-process state for a driver
 // package download. It intentionally survives a driver-manager modal close so
@@ -75,16 +103,75 @@ func (a *App) StartDriverPackageDownload(driverType string, version string, down
 	a.driverDownloadTasks[task.TaskID] = task
 	a.driverDownloadActiveTaskID = task.TaskID
 	runner := a.driverDownloadTaskRunner
+	parentContext := a.ctx
+	if parentContext == nil {
+		parentContext = context.Background()
+	}
+	taskContext, cancel := context.WithCancel(parentContext)
+	if a.driverDownloadTaskControls == nil {
+		a.driverDownloadTaskControls = make(map[string]driverDownloadTaskControl)
+	}
+	a.driverDownloadTaskControls[task.TaskID] = driverDownloadTaskControl{cancel: cancel}
 	a.driverDownloadTaskMu.Unlock()
 
 	if runner == nil {
-		runner = a.DownloadDriverPackage
+		runner = a.downloadDriverPackage
 	}
-	go a.runDriverPackageDownloadTask(task, runner)
+	go a.runDriverPackageDownloadTask(withDriverDownloadTaskID(taskContext, task.TaskID), cancel, task, runner)
 
 	return connection.QueryResult{Success: true, Data: map[string]interface{}{
 		"task":           task,
 		"alreadyRunning": false,
+	}}
+}
+
+// CancelDriverPackageDownload requests cancellation for exactly one active
+// driver task. The task is marked terminal before returning so late progress
+// from the canceled worker cannot overwrite the canceled snapshot.
+func (a *App) CancelDriverPackageDownload(taskID string) connection.QueryResult {
+	if a == nil {
+		return connection.QueryResult{Success: false, Message: "application is not initialized"}
+	}
+	normalizedTaskID := strings.TrimSpace(taskID)
+	if normalizedTaskID == "" {
+		return connection.QueryResult{Success: false, Message: a.appText("driver_manager.backend.error.download_task_not_found", nil)}
+	}
+
+	a.driverDownloadTaskMu.Lock()
+	task, ok := a.driverDownloadTasks[normalizedTaskID]
+	if !ok {
+		a.driverDownloadTaskMu.Unlock()
+		return connection.QueryResult{Success: false, Message: a.appText("driver_manager.backend.error.download_task_not_found", nil)}
+	}
+	if !task.Running || task.Status == "done" || task.Status == "error" {
+		// A worker that already emitted its terminal progress has finished the
+		// real work (for example, the metadata is written); reporting it as
+		// canceled would hide an installed driver from the user.
+		a.driverDownloadTaskMu.Unlock()
+		return connection.QueryResult{Success: true, Data: map[string]interface{}{
+			"task":            task,
+			"alreadyFinished": true,
+		}}
+	}
+
+	control := a.driverDownloadTaskControls[normalizedTaskID]
+	if control.cancel != nil {
+		control.cancel()
+	}
+	task.Status = "canceled"
+	task.Message = a.appText("driver_manager.progress.download_canceled", nil)
+	task.Running = false
+	task.FinishedAt = time.Now().Format(time.RFC3339)
+	a.driverDownloadTasks[normalizedTaskID] = task
+	delete(a.driverDownloadTaskControls, normalizedTaskID)
+	if a.driverDownloadActiveTaskID == normalizedTaskID {
+		a.driverDownloadActiveTaskID = ""
+	}
+	a.driverDownloadTaskMu.Unlock()
+
+	a.emitDriverDownloadTaskSnapshot(task)
+	return connection.QueryResult{Success: true, Data: map[string]interface{}{
+		"task": task,
 	}}
 }
 
@@ -108,15 +195,18 @@ func (a *App) ListDriverDownloadTasks() connection.QueryResult {
 	return connection.QueryResult{Success: true, Data: tasks}
 }
 
-func (a *App) runDriverPackageDownloadTask(task DriverDownloadTaskStatus, runner func(string, string, string, string) connection.QueryResult) {
+func (a *App) runDriverPackageDownloadTask(ctx context.Context, cancel context.CancelFunc, task DriverDownloadTaskStatus, runner driverDownloadTaskRunner) {
 	result := connection.QueryResult{Success: false, Message: "driver download did not run"}
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			result = connection.QueryResult{Success: false, Message: fmt.Sprintf("driver download panic: %v", recovered)}
 		}
-		a.finishDriverDownloadTask(task.TaskID, result)
+		// Read the context error before releasing it: a user cancellation must
+		// be recorded as "canceled" rather than as a generic failure.
+		a.finishDriverDownloadTask(task.TaskID, result, ctx.Err())
+		cancel()
 	}()
-	result = runner(task.DriverType, task.Version, task.DownloadURL, task.DownloadDir)
+	result = runner(ctx, task.DriverType, task.Version, task.DownloadURL, task.DownloadDir)
 }
 
 func (a *App) activeDriverDownloadTaskLocked() (DriverDownloadTaskStatus, bool) {
@@ -133,17 +223,31 @@ func (a *App) activeDriverDownloadTaskLocked() (DriverDownloadTaskStatus, bool) 
 }
 
 func (a *App) updateDriverDownloadTaskProgress(driverType string, status string, percent float64, message string) string {
+	return a.updateDriverDownloadTaskProgressForTask("", driverType, status, percent, message)
+}
+
+func (a *App) updateDriverDownloadTaskProgressForTask(taskID string, driverType string, status string, percent float64, message string) string {
 	if a == nil {
 		return ""
 	}
 	normalizedDriverType := normalizeDriverType(driverType)
+	normalizedTaskID := strings.TrimSpace(taskID)
 	a.driverDownloadTaskMu.Lock()
 	defer a.driverDownloadTaskMu.Unlock()
-	task, ok := a.activeDriverDownloadTaskLocked()
+	var task DriverDownloadTaskStatus
+	var ok bool
+	if normalizedTaskID != "" {
+		task, ok = a.driverDownloadTasks[normalizedTaskID]
+		if !ok || !task.Running || task.DriverType != normalizedDriverType {
+			return ""
+		}
+	} else {
+		task, ok = a.activeDriverDownloadTaskLocked()
+	}
 	if !ok || task.DriverType != normalizedDriverType {
 		return ""
 	}
-	if task.Status == "done" || task.Status == "error" {
+	if task.Status == "done" || task.Status == "error" || task.Status == "canceled" {
 		return task.TaskID
 	}
 	nextStatus := normalizeDriverDownloadTaskStatus(status)
@@ -166,7 +270,7 @@ func (a *App) updateDriverDownloadTaskProgress(driverType string, status string,
 	return task.TaskID
 }
 
-func (a *App) finishDriverDownloadTask(taskID string, result connection.QueryResult) {
+func (a *App) finishDriverDownloadTask(taskID string, result connection.QueryResult, contextErr error) {
 	if a == nil {
 		return
 	}
@@ -176,7 +280,11 @@ func (a *App) finishDriverDownloadTask(taskID string, result connection.QueryRes
 		a.driverDownloadTaskMu.Unlock()
 		return
 	}
-	terminalAlreadyEmitted := task.Status == "done" || task.Status == "error"
+	if task.Running && errors.Is(contextErr, context.Canceled) {
+		task.Status = "canceled"
+		task.Message = a.appText("driver_manager.progress.download_canceled", nil)
+	}
+	terminalAlreadyEmitted := task.Status == "done" || task.Status == "error" || task.Status == "canceled"
 	if !terminalAlreadyEmitted {
 		if result.Success {
 			task.Status = "done"
@@ -191,6 +299,7 @@ func (a *App) finishDriverDownloadTask(taskID string, result connection.QueryRes
 	task.Running = false
 	task.FinishedAt = time.Now().Format(time.RFC3339)
 	a.driverDownloadTasks[task.TaskID] = task
+	delete(a.driverDownloadTaskControls, task.TaskID)
 	if a.driverDownloadActiveTaskID == task.TaskID {
 		a.driverDownloadActiveTaskID = ""
 	}
@@ -207,7 +316,7 @@ func (a *App) finishDriverDownloadTask(taskID string, result connection.QueryRes
 
 func normalizeDriverDownloadTaskStatus(status string) string {
 	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "start", "downloading", "done", "error":
+	case "start", "downloading", "done", "error", "canceled":
 		return strings.ToLower(strings.TrimSpace(status))
 	default:
 		return "downloading"

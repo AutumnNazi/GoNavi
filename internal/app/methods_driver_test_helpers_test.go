@@ -14,6 +14,7 @@ func methodsDriverSource(t *testing.T) string {
 	paths := []string{
 		"methods_driver.go",
 		"methods_driver_assets.go",
+		"methods_driver_download.go",
 	}
 	parts := make([]string, 0, len(paths))
 	for _, path := range paths {

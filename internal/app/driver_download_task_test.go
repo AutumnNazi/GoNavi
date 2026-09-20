@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -11,7 +12,7 @@ func TestStartDriverPackageDownloadRunsAfterStarterReturns(t *testing.T) {
 	app := NewApp()
 	started := make(chan struct{})
 	release := make(chan struct{})
-	app.driverDownloadTaskRunner = func(driverType string, _ string, _ string, _ string) connection.QueryResult {
+	app.driverDownloadTaskRunner = func(_ context.Context, driverType string, _ string, _ string, _ string) connection.QueryResult {
 		app.emitDriverDownloadProgress(driverType, "downloading", 45, 100, "downloading driver")
 		close(started)
 		<-release
@@ -75,7 +76,7 @@ func TestStartDriverPackageDownloadRunsAfterStarterReturns(t *testing.T) {
 
 func TestStartDriverPackageDownloadRecordsFailureWithoutProgressEvent(t *testing.T) {
 	app := NewApp()
-	app.driverDownloadTaskRunner = func(_ string, _ string, _ string, _ string) connection.QueryResult {
+	app.driverDownloadTaskRunner = func(_ context.Context, _ string, _ string, _ string, _ string) connection.QueryResult {
 		return connection.QueryResult{Success: false, Message: "selected driver version is invalid"}
 	}
 
@@ -104,7 +105,7 @@ func TestStartDriverPackageDownloadRecordsFailureWithoutProgressEvent(t *testing
 
 func TestStartDriverPackageDownloadPreservesProgressOnEmittedFailure(t *testing.T) {
 	app := NewApp()
-	app.driverDownloadTaskRunner = func(driverType string, _ string, _ string, _ string) connection.QueryResult {
+	app.driverDownloadTaskRunner = func(_ context.Context, driverType string, _ string, _ string, _ string) connection.QueryResult {
 		app.emitDriverDownloadProgress(driverType, "downloading", 92, 100, "building local fallback")
 		app.emitDriverDownloadProgress(driverType, "error", 0, 0, "driver download failed")
 		return connection.QueryResult{Success: false, Message: "driver download failed"}
@@ -142,7 +143,7 @@ func TestStartDriverPackageDownloadKeepsEmittedFailureTerminal(t *testing.T) {
 			close(release)
 		}
 	}()
-	app.driverDownloadTaskRunner = func(driverType string, _ string, _ string, _ string) connection.QueryResult {
+	app.driverDownloadTaskRunner = func(_ context.Context, driverType string, _ string, _ string, _ string) connection.QueryResult {
 		app.emitDriverDownloadProgress(driverType, "downloading", 92, 100, "building local fallback")
 		app.emitDriverDownloadProgress(driverType, "error", 0, 0, "driver download failed")
 		app.emitDriverDownloadProgress(driverType, "downloading", 95, 100, "stale download progress")
@@ -173,4 +174,57 @@ func TestStartDriverPackageDownloadKeepsEmittedFailureTerminal(t *testing.T) {
 	}
 
 	close(release)
+}
+
+func TestCancelDriverPackageDownloadCancelsRunnerAndPreservesCanceledState(t *testing.T) {
+	app := NewApp()
+	started := make(chan struct{})
+	runnerReturned := make(chan struct{})
+	app.driverDownloadTaskRunner = func(ctx context.Context, driverType string, _ string, _ string, _ string) connection.QueryResult {
+		close(started)
+		<-ctx.Done()
+		app.emitDriverDownloadProgress(driverType, "downloading", 99, 100, "late progress")
+		close(runnerReturned)
+		return connection.QueryResult{Success: false, Message: "context canceled"}
+	}
+
+	startedResult := app.StartDriverPackageDownload("duckdb", "2.5.6", "builtin://activate/duckdb", t.TempDir())
+	if !startedResult.Success {
+		t.Fatalf("start background driver download failed: %#v", startedResult)
+	}
+	startedTask := startedResult.Data.(map[string]interface{})["task"].(DriverDownloadTaskStatus)
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("background driver download did not start")
+	}
+
+	cancelResult := app.CancelDriverPackageDownload(startedTask.TaskID)
+	if !cancelResult.Success {
+		t.Fatalf("cancel driver download failed: %#v", cancelResult)
+	}
+	select {
+	case <-runnerReturned:
+	case <-time.After(time.Second):
+		t.Fatal("runner did not observe cancellation")
+	}
+
+	listed := app.ListDriverDownloadTasks()
+	tasks := listed.Data.([]DriverDownloadTaskStatus)
+	if len(tasks) != 1 {
+		t.Fatalf("unexpected task list: %#v", listed.Data)
+	}
+	task := tasks[0]
+	if task.Status != "canceled" || task.Running {
+		t.Fatalf("canceled task = %#v, want status=canceled running=false", task)
+	}
+
+	repeat := app.CancelDriverPackageDownload(startedTask.TaskID)
+	if !repeat.Success {
+		t.Fatalf("repeated cancellation should be idempotent: %#v", repeat)
+	}
+	unknown := app.CancelDriverPackageDownload("not-the-active-task")
+	if unknown.Success {
+		t.Fatalf("unknown task cancellation unexpectedly succeeded: %#v", unknown)
+	}
 }

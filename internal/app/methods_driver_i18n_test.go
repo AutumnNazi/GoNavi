@@ -202,13 +202,19 @@ func TestMethodsDriverInstallActionDetailsUseEnglishInternalWrappers(t *testing.
 				`"failed to write local driver metadata, driver=%s"`,
 			},
 		},
-		"func (a *App) DownloadDriverPackage": {
+		"func (a *App) installOptionalGoDriverPackage": {
 			rawMessages: []string{
 				`"驱动下载安装失败，driver=%s version=%s url=%s"`,
-				`"写入驱动元数据失败，driver=%s version=%s"`,
 			},
 			internalDetails: []string{
 				`"failed to download and install driver, driver=%s version=%s url=%s"`,
+			},
+		},
+		"func (a *App) driverMetadataWriteFailure": {
+			rawMessages: []string{
+				`"写入驱动元数据失败，driver=%s version=%s"`,
+			},
+			internalDetails: []string{
 				`"failed to write driver metadata, driver=%s version=%s"`,
 			},
 		},

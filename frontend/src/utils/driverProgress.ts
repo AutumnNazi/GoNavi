@@ -1,10 +1,24 @@
-export type DriverProgressStatus = 'start' | 'downloading' | 'done' | 'error';
+export type DriverProgressStatus = 'start' | 'downloading' | 'done' | 'error' | 'canceled';
 
 export type DriverProgressState = {
   status: DriverProgressStatus;
   message: string;
   percent: number;
 };
+
+export const DRIVER_PROGRESS_STATUSES: readonly DriverProgressStatus[] = ['start', 'downloading', 'done', 'error', 'canceled'];
+
+export const isDriverProgressStatus = (value: unknown): value is DriverProgressStatus => (
+  typeof value === 'string' && (DRIVER_PROGRESS_STATUSES as readonly string[]).includes(value)
+);
+
+export const isDriverProgressActiveStatus = (status?: DriverProgressStatus): boolean => (
+  status === 'start' || status === 'downloading'
+);
+
+export const isDriverProgressTerminalStatus = (status?: DriverProgressStatus): boolean => (
+  status === 'done' || status === 'error' || status === 'canceled'
+);
 
 const clampDriverProgressPercent = (value: number): number => {
   if (!Number.isFinite(value)) {
@@ -37,23 +51,57 @@ export const normalizeDriverProgressUpdate = (
     };
   }
 
-  if (next.status === 'error') {
+  if (next.status === 'error' || next.status === 'canceled') {
     return {
       ...next,
       percent: Math.max(clampDriverProgressPercent(previous?.percent || 0), next.percent),
     };
   }
 
-  if (previous?.status === 'done' || previous?.status === 'error') {
-    return previous;
+  if (isDriverProgressTerminalStatus(previous?.status)) {
+    return previous as DriverProgressState;
   }
 
-  if (previous?.status === 'start' || previous?.status === 'downloading') {
+  if (isDriverProgressActiveStatus(previous?.status)) {
     return {
       ...next,
-      percent: Math.max(clampDriverProgressPercent(previous.percent || 0), next.percent),
+      percent: Math.max(clampDriverProgressPercent(previous?.percent || 0), next.percent),
     };
   }
 
   return next;
+};
+
+export type DriverProgressDisplayStatus = 'normal' | 'exception' | 'active' | 'success';
+
+/** Maps stored progress onto the card percent / Ant Progress status. */
+export const resolveDriverProgressDisplay = (
+  progress: DriverProgressState | undefined,
+  fallbackReady = false,
+): { percent: number; status: DriverProgressDisplayStatus } => {
+  if (progress?.status === 'error') {
+    return {
+      percent: Math.max(0, Math.min(100, Math.round(progress.percent || 0))),
+      status: 'exception',
+    };
+  }
+  if (progress && isDriverProgressActiveStatus(progress.status)) {
+    return {
+      percent: Math.max(1, Math.min(99, Math.round(progress.percent || 0))),
+      status: 'active',
+    };
+  }
+  if (progress?.status === 'done') {
+    return { percent: 100, status: 'success' };
+  }
+  if (progress?.status === 'canceled') {
+    return {
+      percent: Math.max(0, Math.min(100, Math.round(progress.percent || 0))),
+      status: 'normal',
+    };
+  }
+  if (fallbackReady) {
+    return { percent: 100, status: 'success' };
+  }
+  return { percent: 0, status: 'normal' };
 };
