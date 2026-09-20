@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Descriptions, Drawer, Empty, Pagination, Space, Spin, Tag, Typography, message, theme } from 'antd';
-import { CopyOutlined, ImportOutlined } from '@ant-design/icons';
+import { CopyOutlined, EditOutlined } from '@ant-design/icons';
 import { useI18n } from '../../i18n/provider';
 import {
   buildSQLAuditFilterPayload,
@@ -144,7 +144,7 @@ export default function SqlAuditDetailDrawer({
   const eventTypeLabel = labelEnum('event_type', event.eventType);
   const boundaryModeLabel = t(`sql_audit.boundary_mode.${event.boundaryMode || 'unknown'}`);
   const recoveryState = getSQLAuditRecoveryState(event);
-  const restorable = isSQLAuditEventRestorable(event);
+  const insertable = isSQLAuditEventRestorable(event);
 
   return (
     <Drawer
@@ -169,16 +169,16 @@ export default function SqlAuditDetailDrawer({
         <Space size={6} wrap>
           <Button
             size="small"
-            icon={<ImportOutlined aria-hidden="true" />}
-            disabled={!restorable}
-            title={restorable
-              ? t('query_history.restore.action')
+            icon={<EditOutlined aria-hidden="true" />}
+            disabled={!insertable}
+            title={insertable
+              ? t('query_history.insert.action')
               : t(recoveryState === 'metadata'
-                ? 'query_history.restore.metadata_unavailable'
-                : 'query_history.restore.event_unavailable')}
+                ? 'query_history.insert.metadata_unavailable'
+                : 'query_history.insert.event_unavailable')}
             onClick={() => onRestore?.(event)}
           >
-            {t('query_history.restore.action')}
+            {t('query_history.insert.action')}
           </Button>
           <Button
             size="small"
@@ -234,10 +234,18 @@ export default function SqlAuditDetailDrawer({
             </Button>
           </div>
           {event.sqlText ? <pre className="gn-sql-audit-detail-sql">{event.sqlText}</pre> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('sql_audit.detail.no_sql')} />}
+          {/* 审计只记录执行事实，没有行数据快照，任何已执行的数据变更都无法从这里
+              还原。此处显式声明，避免用户把"填入编辑器"误读成"回退这次操作"。 */}
+          <Alert
+            type="info"
+            showIcon
+            message={t('sql_audit.detail.data_recovery')}
+            description={t('sql_audit.detail.data_recovery_notice')}
+          />
           {recoveryState === 'metadata' ? (
-            <Alert type="warning" showIcon message={t('query_history.recovery.metadata')} description={t('query_history.restore.metadata_unavailable')} />
+            <Alert type="warning" showIcon message={t('query_history.text.metadata')} description={t('query_history.insert.metadata_unavailable')} />
           ) : recoveryState === 'redacted' ? (
-            <Alert type="info" showIcon message={t('query_history.recovery.redacted')} description={t('query_history.restore.redacted_warning')} />
+            <Alert type="info" showIcon message={t('query_history.text.redacted')} description={t('query_history.insert.redacted_warning')} />
           ) : null}
           {event.error ? <Alert type="error" showIcon message={t('sql_audit.detail.error')} description={event.error} /> : null}
         </section>

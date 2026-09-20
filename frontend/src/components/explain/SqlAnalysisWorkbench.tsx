@@ -101,9 +101,9 @@ export default function SqlAnalysisWorkbench({ tab }: { tab: TabData }) {
       connectionId: String(tab.connectionId || '').trim(),
       dbName,
       sql: text,
-      title: t('query_history.restore.tab_title'),
+      title: t('query_history.insert.tab_title'),
     }))
-    message.warning(t('query_history.restore.redacted_warning'))
+    message.warning(t('query_history.insert.redacted_warning'))
   }, [addTab, dbName, t, tab.connectionId])
 
   const handleViewChange = useCallback((value: string | number) => {
