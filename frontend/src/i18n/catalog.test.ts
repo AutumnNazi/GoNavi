@@ -82,6 +82,23 @@ const sliceBetween = (source: string, start: string, end: string): string => {
   return normalizedSource.slice(startIndex, endIndex);
 };
 
+// 切片起点用「函数名 + 参数开头」的正则锚定，而不是写死完整签名：
+// handleRun 一类函数的参数会随功能演进增删（如新增 runOptions），
+// 写死签名会让 indexOf 静默返回 -1、切片落到错误区间，断言随之失效。
+const sliceFromFunctionStart = (source: string, declaration: string, end: string): string => {
+  const normalizedSource = source.replace(/\r\n/g, "\n");
+  const pattern = new RegExp(`^\\s*(?:const|function)\\s+${declaration}\\b[^\\n]*\\{`, "m");
+  const match = pattern.exec(normalizedSource);
+
+  expect(match).not.toBeNull();
+  const startIndex = match!.index;
+  const endIndex = normalizedSource.indexOf(end, startIndex + match![0].length);
+
+  expect(endIndex).toBeGreaterThan(startIndex);
+
+  return normalizedSource.slice(startIndex, endIndex);
+};
+
 const assertSourceDoesNotInlineCatalogValues = (
   source: string,
   keys: readonly (keyof (typeof catalogs)["en-US"] )[],
@@ -965,9 +982,9 @@ describe("i18n catalog", () => {
       "query_editor.message.cancel_failed",
     ] as const;
     const source = readQueryEditorSource();
-    const handleRunSource = sliceBetween(
+    const handleRunSource = sliceFromFunctionStart(
       source,
-      "const handleRun = async (runScope: QueryEditorRunScope = 'default') => {",
+      "handleRun",
       "  const handleCancel = async () => {",
     );
     const handleCancelSource = sliceBetween(
@@ -995,9 +1012,9 @@ describe("i18n catalog", () => {
       "query_editor.message.execution_failed_with_error",
     ] as const;
     const source = readQueryEditorSource();
-    const handleRunSource = sliceBetween(
+    const handleRunSource = sliceFromFunctionStart(
       source,
-      "const handleRun = async (runScope: QueryEditorRunScope = 'default') => {",
+      "handleRun",
       "  const handleCancel = async () => {",
     );
 
@@ -1021,9 +1038,9 @@ describe("i18n catalog", () => {
   it("keeps QueryEditor multi-statement failure prefixes in catalogs instead of source literals", () => {
     const statementFailedPrefixKey = "query_editor.message.statement_failed_prefix" as const;
     const source = readQueryEditorSource();
-    const handleRunSource = sliceBetween(
+    const handleRunSource = sliceFromFunctionStart(
       source,
-      "const handleRun = async (runScope: QueryEditorRunScope = 'default') => {",
+      "handleRun",
       "  const handleCancel = async () => {",
     );
 
@@ -1044,7 +1061,7 @@ describe("i18n catalog", () => {
     const handleReloadSource = sliceBetween(
       source,
       "  const handleReloadResult = async (",
-      "  const handleRun = async (runScope: QueryEditorRunScope = 'default') => {",
+      "  const handleRun = async (",
     );
 
     for (const language of SUPPORTED_LANGUAGES) {
