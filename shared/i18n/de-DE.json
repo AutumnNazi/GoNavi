@@ -8848,6 +8848,7 @@
   "sidebar.v2_table_group_menu.metadata_value.updated_at": "Geändert {{time}}",
   "sidebar.v2_table_group_menu.show_table_comments": "Tabellenkommentare anzeigen",
   "sidebar.v2_table_group_menu.sort_frequency": "Nutzungshäufigkeit",
+  "sidebar.v2_table_group_menu.sort_manual": "benutzerdefinierte Reihenfolge",
   "sidebar.v2_table_group_menu.sort_name": "Name",
   "sidebar.v2_table_group_menu.table_comment_tooltip": "Kommentar: {{comment}}",
   "sidebar.v2_table_group_menu.title": "Tabellen",

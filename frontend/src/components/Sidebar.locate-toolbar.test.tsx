@@ -101,6 +101,7 @@ const readSidebarSource = () => [
   readSourceFile('./sidebar/useSidebarTreeLoaders.tsx'),
   readSourceFile('./sidebar/SidebarEntityModals.tsx'),
   readSourceFile('./sidebar/SidebarTreeTitle.tsx'),
+  readSourceFile('./sidebar/sidebarTreeDragOrder.ts'),
   readSourceFile('./sidebar/useSidebarV2ContextMenu.tsx'),
   readSourceFile('./sidebar/useSidebarObjectActions.tsx'),
   readSourceFile('./sidebar/useSidebarSearchModel.tsx'),
@@ -1858,6 +1859,22 @@ describe('Sidebar locate toolbar', () => {
       dropToGap: false,
       fallbackInsertBefore: false,
     })).toBe('inside');
+    expect(resolveSidebarTreeDropPlacement({
+      dragNodeType: 'tag',
+      dropNodeType: 'tag',
+      relativeDropPosition: 0,
+      dropToGap: undefined,
+      fallbackInsertBefore: false,
+      metrics: { clientY: 102, top: 100, height: 30 },
+    })).toBe('before');
+    expect(resolveSidebarTreeDropPlacement({
+      dragNodeType: 'tag',
+      dropNodeType: 'tag',
+      relativeDropPosition: 0,
+      dropToGap: undefined,
+      fallbackInsertBefore: true,
+      metrics: { clientY: 128, top: 100, height: 30 },
+    })).toBe('after');
   });
 
   it('maps Host group drop intent to stable moveConnectionToTag arguments', () => {
@@ -1981,10 +1998,6 @@ describe('Sidebar locate toolbar', () => {
       connectionStatus: undefined,
       getV2TreeMetaText: () => '',
       sidebarTableMetadataFields: [],
-      snapshotTreeSelectionBeforeDrag: vi.fn(),
-      restoreTreeSelectionAfterDrag: vi.fn(),
-      treeDragSelectSuppressUntilRef: { current: 0 },
-      setIsTreeDragging: vi.fn(),
     };
     const targetMarkup = renderToStaticMarkup(renderSidebarV2TreeTitle({
       ...baseOptions,
@@ -1999,19 +2012,30 @@ describe('Sidebar locate toolbar', () => {
   });
 
   it('uses V2-only capture DnD with a compact preview and stable whole-row states', () => {
-    const source = readSourceFile('./Sidebar.tsx');
+    const source = `${readSourceFile('./Sidebar.tsx')}\n${readSourceFile('./sidebar/sidebarTreeDragOrder.ts')}`;
     const css = readV2ThemeCss();
 
     expect(source).toContain('onDragOverCapture={handleSidebarTreeDragOverCapture}');
     expect(source).toContain('onDropCapture={handleSidebarTreeDropCapture}');
+    expect(source).toContain('onMouseDownCapture={sidebarTreeDrag.markSidebarTreeMouseDownHandled}');
+    expect(source).toContain('resolveSidebarTreeOrderDropAtEvent(');
+    expect(source.match(/sidebarTreeDrag\.isSidebarTreeGapNoOp\(/g)).toHaveLength(2);
+    expect(source).toContain('|| sidebarTreeDrag.isSidebarTreeOrderNode(node)');
+    expect(source).toContain('applySidebarTreeOrdersToNode(');
+    expect(source).toContain('sidebarTreeOrdersRef.current = next;');
+    expect(source).toContain('tableSortPreferenceRef.current = next;');
     expect(source).toContain('resolveSidebarDropDomHit(event)');
     expect(source).toContain('resolveSidebarHostGroupDropDestination({');
-    expect(source).toContain('sidebarTreeDragPreviewElementRef.current = createSidebarTreeDragPreview(event, node)');
-    expect(source).toContain("&& sidebarTreeDragNodeRef.current?.type === 'connection'");
+    expect(source).toContain('sidebarTreeDragPreviewElementRef.current = sidebarTreeDrag.createSidebarTreeDragPreview(event, node)');
+    expect(source).toContain('&& sidebarTreeDrag.isSidebarHostTreeNode(sidebarTreeDragNodeRef.current)');
     expect(source).toContain('dataTransfer.setDragImage(preview, 18, 15)');
     expect(source).toContain('SIDEBAR_GROUP_HOVER_EXPAND_DELAY_MS = 500');
     expect(css).toContain('.ant-tree-treenode:has(.gn-v2-tree-title.is-drop-inside)');
     expect(css).toContain('.gn-v2-sidebar-tree-drag-preview');
+    expect(css).toContain('.is-object-tree-dragging .ant-tree-treenode:has(.gn-v2-tree-title.is-drop-before)');
+    expect(css).toMatch(/\.gn-v2-explorer-tree-shell\.is-object-tree-dragging \.ant-tree-drop-indicator \{[^}]*display: none !important;/s);
+    expect(css).toMatch(/\.gn-v2-explorer-tree-shell\.is-host-tree-dragging \.ant-tree-drop-indicator \{[^}]*display: none !important;/s);
+    expect(css).toMatch(/\.gn-v2-tree-title\.is-connection-group \{[^}]*line-height: 1\.4;/s);
     expect(css).toContain('cursor: grabbing !important;');
     expect(css).not.toContain('.gn-v2-tree-host-drop-hint');
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
@@ -2389,10 +2413,6 @@ describe('Sidebar locate toolbar', () => {
       connectionStatus: undefined,
       getV2TreeMetaText: () => '',
       sidebarTableMetadataFields: [],
-      snapshotTreeSelectionBeforeDrag: vi.fn(),
-      restoreTreeSelectionAfterDrag: vi.fn(),
-      treeDragSelectSuppressUntilRef: { current: 0 },
-      setIsTreeDragging: vi.fn(),
     }));
     expect(sectionMarkup).toContain('class="gn-v2-tree-section-title"');
     expect(sectionMarkup).toContain('data-section-kind="pinned"');
@@ -2453,10 +2473,6 @@ describe('Sidebar locate toolbar', () => {
       connectionStatus: undefined,
       getV2TreeMetaText: () => '',
       sidebarTableMetadataFields: [],
-      snapshotTreeSelectionBeforeDrag: vi.fn(),
-      restoreTreeSelectionAfterDrag: vi.fn(),
-      treeDragSelectSuppressUntilRef: { current: 0 },
-      setIsTreeDragging: vi.fn(),
     };
     const renderTableTitle = (pinnedSidebarTable: boolean) => renderToStaticMarkup(renderSidebarV2TreeTitle({
       ...baseOptions,
@@ -2490,10 +2506,6 @@ describe('Sidebar locate toolbar', () => {
       connectionStatus: undefined,
       getV2TreeMetaText: () => '',
       sidebarTableMetadataFields: [],
-      snapshotTreeSelectionBeforeDrag: vi.fn(),
-      restoreTreeSelectionAfterDrag: vi.fn(),
-      treeDragSelectSuppressUntilRef: { current: 0 },
-      setIsTreeDragging: vi.fn(),
     };
     const renderDatabaseTitle = (pinnedSidebarDatabase: boolean) => renderToStaticMarkup(
       renderSidebarV2TreeTitle({
@@ -3202,10 +3214,6 @@ describe('Sidebar locate toolbar', () => {
       hoverTitle: 'users',
       connectionStatus: undefined,
       getV2TreeMetaText: () => '',
-      snapshotTreeSelectionBeforeDrag: vi.fn(),
-      restoreTreeSelectionAfterDrag: vi.fn(),
-      treeDragSelectSuppressUntilRef: { current: 0 },
-      setIsTreeDragging: vi.fn(),
     };
 
     const hiddenSuffixMarkup = renderToStaticMarkup(renderSidebarV2TreeTitle({

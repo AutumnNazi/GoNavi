@@ -8848,6 +8848,7 @@
   "sidebar.v2_table_group_menu.metadata_value.updated_at": "更新 {{time}}",
   "sidebar.v2_table_group_menu.show_table_comments": "テーブルコメントを表示",
   "sidebar.v2_table_group_menu.sort_frequency": "使用頻度",
+  "sidebar.v2_table_group_menu.sort_manual": "カスタム順序",
   "sidebar.v2_table_group_menu.sort_name": "名前",
   "sidebar.v2_table_group_menu.table_comment_tooltip": "コメント: {{comment}}",
   "sidebar.v2_table_group_menu.title": "テーブル",

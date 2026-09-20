@@ -8848,6 +8848,7 @@
   "sidebar.v2_table_group_menu.metadata_value.updated_at": "改 {{time}}",
   "sidebar.v2_table_group_menu.show_table_comments": "显示表备注",
   "sidebar.v2_table_group_menu.sort_frequency": "使用频率",
+  "sidebar.v2_table_group_menu.sort_manual": "自定义顺序",
   "sidebar.v2_table_group_menu.sort_name": "名称",
   "sidebar.v2_table_group_menu.table_comment_tooltip": "备注：{{comment}}",
   "sidebar.v2_table_group_menu.title": "表",
