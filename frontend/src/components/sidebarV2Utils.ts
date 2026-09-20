@@ -12,6 +12,7 @@ import type { ConnectionDisplaySortMode, ConnectionTag, SavedConnection, TabData
 import type { SidebarTreeNodeType } from './sidebar/sidebarTreeNodeTypes';
 export type { SidebarTreeNodeType } from './sidebar/sidebarTreeNodeTypes';
 import { readTableAccessCount } from '../utils/tableAccessCount';
+import type { SidebarTableSortPreference } from '../utils/sidebarTreeOrder';
 import { t } from '../i18n';
 import { t as catalogTranslate } from '../i18n/catalog';
 import {
@@ -354,8 +355,6 @@ export const resolveSidebarTableNameForCopy = (
     || '',
   ).trim();
 };
-
-type SidebarTableSortPreference = 'name' | 'frequency';
 
 type SidebarTableEntryForSort = {
   tableName: string;
@@ -1340,7 +1339,8 @@ export const resolveSidebarTreeDropPlacement = ({
   fallbackInsertBefore,
   metrics,
 }: SidebarTreeDropPlacementOptions): SidebarTreeDropPlacement => {
-  const isHostMovingToGroup = dragNodeType === 'connection' && dropNodeType === 'tag';
+  const isHostMovingToGroup = (dragNodeType === 'connection' || dragNodeType === 'tag')
+    && dropNodeType === 'tag';
   if (isHostMovingToGroup) {
     const clientY = metrics?.clientY;
     const top = metrics?.top;
@@ -1358,8 +1358,9 @@ export const resolveSidebarTreeDropPlacement = ({
       const offset = clientY - top;
       if (offset < edgeSize) return 'before';
       if (offset > height - edgeSize) return 'after';
+      return 'inside';
     }
-    return 'inside';
+    if (dragNodeType === 'connection') return 'inside';
   }
 
   if (

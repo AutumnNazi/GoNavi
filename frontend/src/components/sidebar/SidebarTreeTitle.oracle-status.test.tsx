@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { renderSidebarV2TreeTitle } from './SidebarTreeTitle';
 
 const baseOptions = {
@@ -7,10 +7,6 @@ const baseOptions = {
   connectionStatus: undefined,
   getV2TreeMetaText: () => '',
   sidebarTableMetadataFields: [],
-  snapshotTreeSelectionBeforeDrag: vi.fn(),
-  restoreTreeSelectionAfterDrag: vi.fn(),
-  treeDragSelectSuppressUntilRef: { current: 0 },
-  setIsTreeDragging: vi.fn(),
 };
 
 describe('Oracle object compilation status in the V2 sidebar tree', () => {
@@ -31,7 +27,7 @@ describe('Oracle object compilation status in the V2 sidebar tree', () => {
 });
 
 describe('message queue nodes in the V2 sidebar tree', () => {
-  it('makes a message object draggable into the SQL editor', () => {
+  it('leaves message-object dragging to the unified tree source', () => {
     const markup = renderToStaticMarkup(renderSidebarV2TreeTitle({
       ...baseOptions,
       node: {
@@ -46,7 +42,7 @@ describe('message queue nodes in the V2 sidebar tree', () => {
       },
     }));
 
-    expect(markup).toContain('draggable="true"');
+    expect(markup).not.toContain('draggable="true"');
     expect(markup).toContain('data-sidebar-node-type="message-object"');
     expect(markup).toContain('is-mono');
   });

@@ -1,4 +1,5 @@
 import React from 'react';
+import type { SidebarTableSortPreference } from '../utils/sidebarTreeOrder';
 import {
   CodeOutlined,
   ConsoleSqlOutlined,
@@ -297,7 +298,7 @@ export const V2TableGroupContextMenuView: React.FC<{
   shortcutPlatform?: ShortcutPlatform;
   dbName?: string;
   count?: number;
-  currentSort?: 'name' | 'frequency';
+  currentSort?: SidebarTableSortPreference;
   onAction?: (action: V2TableGroupContextMenuActionKey) => void;
 }> = ({
   title,
@@ -307,9 +308,11 @@ export const V2TableGroupContextMenuView: React.FC<{
   currentSort = 'name',
   onAction,
 }) => {
-  const sortLabel = currentSort === 'frequency'
-    ? t('sidebar.v2_table_group_menu.sort_frequency')
-    : t('sidebar.v2_table_group_menu.sort_name');
+  const sortLabel = currentSort === 'manual'
+    ? t('sidebar.v2_table_group_menu.sort_manual')
+    : currentSort === 'frequency'
+      ? t('sidebar.v2_table_group_menu.sort_frequency')
+      : t('sidebar.v2_table_group_menu.sort_name');
   const databaseLabel = dbName || t('sidebar.v2_table_group_menu.current_database');
   const tableCountLabel = Math.max(0, count ?? 0).toLocaleString(getCurrentLanguage());
   const renderItems = (items: V2TableContextMenuItemConfig[]) => renderV2ContextMenuItems(

@@ -8848,6 +8848,7 @@
   "sidebar.v2_table_group_menu.metadata_value.updated_at": "改 {{time}}",
   "sidebar.v2_table_group_menu.show_table_comments": "顯示資料表備註",
   "sidebar.v2_table_group_menu.sort_frequency": "使用頻率",
+  "sidebar.v2_table_group_menu.sort_manual": "自訂順序",
   "sidebar.v2_table_group_menu.sort_name": "名稱",
   "sidebar.v2_table_group_menu.table_comment_tooltip": "備註：{{comment}}",
   "sidebar.v2_table_group_menu.title": "資料表",
