@@ -193,19 +193,22 @@ var azureSQLHostSuffixes = []string{
 }
 
 func looksLikeAzureSQLHost(host string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(host))
+	return azureSQLHostNameInCertificate(host) != ""
+}
+
+func normalizeSQLServerHost(host string) string {
+	normalized := strings.TrimSpace(host)
 	if normalized == "" {
-		return false
+		return ""
 	}
 	if h, _, err := net.SplitHostPort(normalized); err == nil {
 		normalized = h
 	}
-	for _, suffix := range azureSQLHostSuffixes {
-		if strings.HasSuffix(normalized, suffix) {
-			return true
-		}
+	normalized = strings.Trim(normalized, "[]")
+	if len(normalized) > 1 {
+		normalized = strings.TrimSuffix(normalized, ".")
 	}
-	return false
+	return normalized
 }
 
 // sqlServerHostNameInCertificate returns the certificate name to verify for a
@@ -215,23 +218,13 @@ func sqlServerHostNameInCertificate(host string) string {
 	if hostNameInCertificate := azureSQLHostNameInCertificate(host); hostNameInCertificate != "" {
 		return hostNameInCertificate
 	}
-	normalized := strings.TrimSpace(host)
-	if normalized == "" {
-		return ""
-	}
-	if h, _, err := net.SplitHostPort(normalized); err == nil {
-		normalized = h
-	}
-	return strings.Trim(normalized, "[]")
+	return normalizeSQLServerHost(host)
 }
 
 func azureSQLHostNameInCertificate(host string) string {
-	normalized := strings.ToLower(strings.TrimSpace(host))
+	normalized := strings.ToLower(normalizeSQLServerHost(host))
 	if normalized == "" {
 		return ""
-	}
-	if h, _, err := net.SplitHostPort(normalized); err == nil {
-		normalized = h
 	}
 	for _, suffix := range azureSQLHostSuffixes {
 		if strings.HasSuffix(normalized, suffix) {

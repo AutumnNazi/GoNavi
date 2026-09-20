@@ -38,6 +38,11 @@ func TestSQLServerHostNameInCertificateUsesRemoteIdentityAfterSSHForwarding(t *t
 		{name: "on premises host", host: "sql.internal.example.com", want: "sql.internal.example.com"},
 		{name: "host with port", host: "sql.internal.example.com:1433", want: "sql.internal.example.com"},
 		{name: "ipv6", host: "[2001:db8::1]:1433", want: "2001:db8::1"},
+		{name: "bare ipv6", host: "2001:db8::1", want: "2001:db8::1"},
+		{name: "bracketed ipv6", host: "[2001:db8::1]", want: "2001:db8::1"},
+		{name: "azure mixed case and whitespace", host: "  MyServer.Database.Windows.NET  ", want: "*.database.windows.net"},
+		{name: "azure trailing dot", host: "myserver.database.windows.net.", want: "*.database.windows.net"},
+		{name: "empty", host: "", want: ""},
 		{name: "local forward", host: "127.0.0.1", want: "127.0.0.1"},
 	}
 	for _, test := range tests {

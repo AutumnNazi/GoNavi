@@ -24,13 +24,35 @@ type SqlServerDB struct {
 	conn        *sql.DB
 	pingTimeout time.Duration
 	forwarder   *ssh.LocalForwarder
+
+	acquireLocalForwarder func(connection.SSHConfig, string, int) (*ssh.LocalForwarder, error)
+	openDB                func(string, string) (*sql.DB, error)
+	releaseLocalForwarder func(*ssh.LocalForwarder) error
 }
 
-var (
-	sqlServerAcquireLocalForwarder = ssh.AcquireLocalForwarder
-	sqlServerOpenDB                = sql.Open
-	sqlServerReleaseLocalForwarder = (*ssh.LocalForwarder).Release
-)
+func (s *SqlServerDB) acquireForwarder(config connection.SSHConfig, host string, port int) (*ssh.LocalForwarder, error) {
+	if s.acquireLocalForwarder != nil {
+		return s.acquireLocalForwarder(config, host, port)
+	}
+	return ssh.AcquireLocalForwarder(config, host, port)
+}
+
+func (s *SqlServerDB) openSQLDB(driverName, dsn string) (*sql.DB, error) {
+	if s.openDB != nil {
+		return s.openDB(driverName, dsn)
+	}
+	return sql.Open(driverName, dsn)
+}
+
+func (s *SqlServerDB) releaseForwarder(forwarder *ssh.LocalForwarder) error {
+	if s.releaseLocalForwarder != nil {
+		return s.releaseLocalForwarder(forwarder)
+	}
+	if forwarder == nil {
+		return nil
+	}
+	return forwarder.Release()
+}
 
 type sqlServerSessionExecer struct {
 	conn *sql.Conn
@@ -160,7 +182,7 @@ func (s *SqlServerDB) Connect(config connection.ConnectionConfig) (err error) {
 	if config.UseSSH {
 		logger.Infof("SQL Server 使用 SSH 连接：地址=%s:%d 用户=%s", config.Host, config.Port, config.User)
 
-		forwarder, err := sqlServerAcquireLocalForwarder(config.SSH, config.Host, config.Port)
+		forwarder, err := s.acquireForwarder(config.SSH, config.Host, config.Port)
 		if err != nil {
 			return fmt.Errorf("创建 SSH 隧道失败：%w", err)
 		}
@@ -187,7 +209,7 @@ func (s *SqlServerDB) Connect(config connection.ConnectionConfig) (err error) {
 		dsn = s.getDSN(config)
 	}
 
-	db, err := sqlServerOpenDB("sqlserver", dsn)
+	db, err := s.openSQLDB("sqlserver", dsn)
 	if err != nil {
 		return wrapDatabaseConnectionOpenError(err)
 	}
@@ -209,7 +231,7 @@ func (s *SqlServerDB) Connect(config connection.ConnectionConfig) (err error) {
 
 func (s *SqlServerDB) Close() error {
 	if s.forwarder != nil {
-		if err := sqlServerReleaseLocalForwarder(s.forwarder); err != nil {
+		if err := s.releaseForwarder(s.forwarder); err != nil {
 			logger.Warnf("关闭 SQL Server SSH 端口转发失败：%v", err)
 		}
 		s.forwarder = nil
