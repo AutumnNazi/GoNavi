@@ -10786,7 +10786,7 @@
   "query_editor.params.dialog_title": "綁定參數",
   "query_editor.params.execute": "執行",
   "query_editor.params.statement_label": "SQL {{index}}",
-  "query_editor.params.empty": "目前 SQL 未偵測到命名參數（使用 :name 撰寫）",
+  "query_editor.params.empty": "目前 SQL 未偵測到命名參數（使用 :name 或 ${name} 撰寫）",
   "query_editor.params.unsupported_driver": "目前資料來源不支援參數綁定：SQL 中的 :name 參數無法執行，請改用字面量或升級驅動代理",
   "query_editor.params.missing_hint": "以下參數尚未填值：{{names}}",
   "query_editor.params.null_hint": "以 NULL 綁定",

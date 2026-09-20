@@ -1,6 +1,8 @@
 // Package sqlparam 提供查询编辑器运行时绑定参数的扫描、重写与值转换。
 //
-// 参数语法为命名参数 :name（[A-Za-z_][A-Za-z0-9_$#]*）。扫描遵循 SQL 词法边界：
+// 参数语法为命名参数 :name（[A-Za-z_][A-Za-z0-9_$#]*）与花括号参数
+// ${name}（花括号内为非空白字符，边界明确，可承载连字符等特殊字符），
+// 两者按名字归一——同名即同一参数。扫描遵循 SQL 词法边界：
 // 字符串字面量、引号标识符、注释与 dollar-quote 块内的冒号不构成参数，PG 类型
 // 转换 :: 不构成参数。词法选项与 internal/app/sql_split.go 的语句拆分器保持
 // 一致，确保「按语句分组」与「参数扫描」对同一份 SQL 得到互相吻合的边界。
@@ -179,6 +181,20 @@ func Scan(sql string, opts ScanOptions) []Span {
 			}
 		}
 
+		// 花括号参数 ${name}：'$' 后跟 '{' 不是任何方言的 dollar-quote 或
+		// 位置占位符语法，可安全识别。名字取到 '}' 为止（非空白），空名不识别。
+		if ch == '$' && next == '{' {
+			end := i + 2
+			for end < len(sql) && sql[end] != '}' && !isHorizontalWhitespaceByte(sql[end]) {
+				end++
+			}
+			if end < len(sql) && sql[end] == '}' && end > i+2 {
+				spans = append(spans, Span{Name: sql[i+2 : end], Start: i, End: end + 1})
+				i = end
+				continue
+			}
+		}
+
 		if ch == ':' && next != ':' {
 			prev := byte(' ')
 			if i > 0 {
@@ -245,6 +261,10 @@ func parseDollarTagAt(text string, start int) string {
 		}
 	}
 	return ""
+}
+
+func isHorizontalWhitespaceByte(ch byte) bool {
+	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'
 }
 
 func isIdentifierStart(ch byte) bool {

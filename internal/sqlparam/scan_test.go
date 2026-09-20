@@ -86,3 +86,35 @@ func TestNamesDeduplicatesPreservingFirstSeenOrder(t *testing.T) {
 		t.Fatalf("Names = %v, want %v", got, want)
 	}
 }
+
+func TestScanRecognizesCurlyBraceParameters(t *testing.T) {
+	cases := []struct {
+		name string
+		sql  string
+		opts ScanOptions
+		want []string
+	}{
+		{name: "基础花括号参数", sql: "SELECT * FROM t WHERE a = ${x}", opts: OptionsForDBType("mysql"), want: []string{"x"}},
+		{name: "花括号允许连字符与点号", sql: "WHERE ${col-name} = 1 AND ${t.col} = 2", opts: OptionsForDBType("postgres"), want: []string{"col-name", "t.col"}},
+		{name: "空名不识别", sql: "SELECT ${} FROM t", opts: OptionsForDBType("mysql"), want: nil},
+		{name: "未闭合不识别", sql: "SELECT ${x FROM t", opts: OptionsForDBType("mysql"), want: nil},
+		{name: "名字内空白截断不识别", sql: "SELECT ${x y} FROM t", opts: OptionsForDBType("mysql"), want: nil},
+		{name: "字符串内不识别", sql: "WHERE note = '${fake}' AND x = ${real}", opts: OptionsForDBType("mysql"), want: []string{"real"}},
+		{name: "注释内不识别", sql: "SELECT 1 /* ${fake} */ , ${real}", opts: OptionsForDBType("mysql"), want: []string{"real"}},
+		{name: "PG dollar-quote 不受花括号影响", sql: "SELECT $$ ${fake} $$, ${real}", opts: OptionsForDBType("postgres"), want: []string{"real"}},
+		{name: "非 PG 方言同样支持花括号", sql: "WHERE a = ${x}", opts: OptionsForDBType("oracle"), want: []string{"x"}},
+		{name: "与冒号参数混合", sql: "WHERE a = :a AND b = ${b} AND c = :a", opts: OptionsForDBType("mysql"), want: []string{"a", "b", "a"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := namesOf(Scan(tc.sql, tc.opts))
+			if len(got) == 0 && len(tc.want) == 0 {
+				return
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("Scan(%q) = %v, want %v", tc.sql, got, tc.want)
+			}
+		})
+	}
+}

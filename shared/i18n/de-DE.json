@@ -10786,7 +10786,7 @@
   "query_editor.params.dialog_title": "Parameter binden",
   "query_editor.params.execute": "Ausführen",
   "query_editor.params.statement_label": "SQL {{index}}",
-  "query_editor.params.empty": "Keine benannten Parameter im SQL gefunden (:name verwenden)",
+  "query_editor.params.empty": "Keine benannten Parameter im SQL gefunden (:name oder ${name} verwenden)",
   "query_editor.params.unsupported_driver": "Diese Datenquelle unterstützt keine Parameterbindung: :name-Parameter können nicht ausgeführt werden. Literale verwenden oder Treiber-Agent aktualisieren",
   "query_editor.params.missing_hint": "Fehlende Parameterwerte: {{names}}",
   "query_editor.params.null_hint": "Als NULL binden",

@@ -10786,7 +10786,7 @@
   "query_editor.params.dialog_title": "Bind Parameters",
   "query_editor.params.execute": "Execute",
   "query_editor.params.statement_label": "SQL {{index}}",
-  "query_editor.params.empty": "No named parameters detected in the current SQL (write :name)",
+  "query_editor.params.empty": "No named parameters detected in the current SQL (write :name or ${name})",
   "query_editor.params.unsupported_driver": "This data source does not support parameter binding: :name parameters in the SQL cannot run. Use literals or upgrade the driver agent",
   "query_editor.params.missing_hint": "Parameters still missing values: {{names}}",
   "query_editor.params.null_hint": "Bound as NULL",

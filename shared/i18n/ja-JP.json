@@ -10786,7 +10786,7 @@
   "query_editor.params.dialog_title": "パラメータのバインド",
   "query_editor.params.execute": "実行",
   "query_editor.params.statement_label": "SQL {{index}}",
-  "query_editor.params.empty": "現在の SQL に名前付きパラメータが見つかりません（:name 形式）",
+  "query_editor.params.empty": "現在の SQL に名前付きパラメータが見つかりません（:name または ${name} 形式）",
   "query_editor.params.unsupported_driver": "このデータソースはパラメータバインドに対応していません：SQL 内の :name は実行できません。リテラルを使うかドライバエージェントを更新してください",
   "query_editor.params.missing_hint": "次のパラメータに値が未入力です：{{names}}",
   "query_editor.params.null_hint": "NULL としてバインド",

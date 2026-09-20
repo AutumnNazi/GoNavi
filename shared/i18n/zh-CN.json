@@ -10786,7 +10786,7 @@
   "query_editor.params.dialog_title": "绑定参数",
   "query_editor.params.execute": "执行",
   "query_editor.params.statement_label": "SQL {{index}}",
-  "query_editor.params.empty": "当前 SQL 未检测到命名参数（使用 :name 书写）",
+  "query_editor.params.empty": "当前 SQL 未检测到命名参数（使用 :name 或 ${name} 书写）",
   "query_editor.params.unsupported_driver": "当前数据源不支持参数绑定：SQL 中的 :name 参数无法执行，请改用字面量或升级驱动代理",
   "query_editor.params.missing_hint": "以下参数尚未填值：{{names}}",
   "query_editor.params.null_hint": "按 NULL 绑定",

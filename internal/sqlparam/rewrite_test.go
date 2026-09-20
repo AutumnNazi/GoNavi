@@ -245,3 +245,64 @@ func TestDialectForDBType(t *testing.T) {
 		}
 	}
 }
+
+func TestBindCurlyBraceParameters(t *testing.T) {
+	cases := []struct {
+		name     string
+		dbType   string
+		sql      string
+		wantSQL  string
+		wantArgs []any
+	}{
+		{name: "Qmark", dbType: "mysql", sql: "WHERE a = ${x}", wantSQL: "WHERE a = ?", wantArgs: []any{"v"}},
+		{name: "Dollar", dbType: "postgres", sql: "WHERE a = ${x}", wantSQL: "WHERE a = $1", wantArgs: []any{"v"}},
+		{name: "Oracle", dbType: "oracle", sql: "WHERE a = ${x}", wantSQL: "WHERE a = :1", wantArgs: []any{"v"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Bind(tc.sql, tc.dbType, map[string]TypedValue{
+				"x": {Type: TypeString, Value: "v"},
+			})
+			if err != nil {
+				t.Fatalf("Bind 返回错误: %v", err)
+			}
+			if result.SQL != tc.wantSQL {
+				t.Fatalf("重写结果异常: %q", result.SQL)
+			}
+			if !reflect.DeepEqual(result.Args, tc.wantArgs) {
+				t.Fatalf("绑定值异常: %#v", result.Args)
+			}
+		})
+	}
+}
+
+func TestBindNormalizesColonAndCurlySameName(t *testing.T) {
+	// :x 与 ${x} 同名归一：跨语法填一次生效。
+	result, err := Bind("SELECT :x AS a, ${x} AS b", "postgres", map[string]TypedValue{
+		"x": {Type: TypeString, Value: "same"},
+	})
+	if err != nil {
+		t.Fatalf("Bind 返回错误: %v", err)
+	}
+	if result.SQL != "SELECT $1 AS a, $1 AS b" {
+		t.Fatalf("跨语法同名应复用槽位: %q", result.SQL)
+	}
+	if !reflect.DeepEqual(result.Args, []any{"same"}) {
+		t.Fatalf("绑定值异常: %#v", result.Args)
+	}
+}
+
+func TestBindListCurlyBraceExpansion(t *testing.T) {
+	result, err := Bind("SELECT name FROM t WHERE id IN (${ids})", "sqlite", map[string]TypedValue{
+		"ids": {Type: TypeList, Value: []any{"a", "b"}},
+	})
+	if err != nil {
+		t.Fatalf("Bind 返回错误: %v", err)
+	}
+	if result.SQL != "SELECT name FROM t WHERE id IN (?,?)" {
+		t.Fatalf("花括号列表展开异常: %q", result.SQL)
+	}
+	if !reflect.DeepEqual(result.Args, []any{"a", "b"}) {
+		t.Fatalf("绑定值异常: %#v", result.Args)
+	}
+}
