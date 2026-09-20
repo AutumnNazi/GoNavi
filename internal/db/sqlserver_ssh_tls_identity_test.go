@@ -58,6 +58,46 @@ func openSQLServerIdentityProbeDB(t *testing.T) (*sql.DB, error) {
 	return sql.Open(sqlServerIdentityProbeDriverName, "")
 }
 
+const sqlServerPingFailureProbeDriverName = "gonavi-sqlserver-ping-failure-probe"
+
+var (
+	registerSQLServerPingFailureProbeDriver sync.Once
+	errSQLServerPingFailureProbe            = errors.New("verify probe: login failed")
+)
+
+type sqlServerPingFailureProbeDriver struct{}
+
+func (sqlServerPingFailureProbeDriver) Open(string) (driver.Conn, error) {
+	return sqlServerPingFailureProbeConn{}, nil
+}
+
+type sqlServerPingFailureProbeConn struct{}
+
+func (sqlServerPingFailureProbeConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (sqlServerPingFailureProbeConn) Close() error { return nil }
+
+func (sqlServerPingFailureProbeConn) Begin() (driver.Tx, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (sqlServerPingFailureProbeConn) Ping(context.Context) error {
+	return errSQLServerPingFailureProbe
+}
+
+// openSQLServerPingFailureProbeDB returns a *sql.DB whose Ping always fails so
+// that Connect's verification branch, including forwarder cleanup, can be
+// exercised without a real server.
+func openSQLServerPingFailureProbeDB(t *testing.T) (*sql.DB, error) {
+	t.Helper()
+	registerSQLServerPingFailureProbeDriver.Do(func() {
+		sql.Register(sqlServerPingFailureProbeDriverName, sqlServerPingFailureProbeDriver{})
+	})
+	return sql.Open(sqlServerPingFailureProbeDriverName, "")
+}
+
 func TestSQLServerDSNSSHForwardKeepsRemoteAzureIdentity(t *testing.T) {
 	t.Parallel()
 
@@ -155,7 +195,7 @@ func TestSQLServerDSNSSHForwardRespectsExplicitCertificateIdentity(t *testing.T)
 	}
 }
 
-func TestSQLServerDSNWithExplicitServerCertificateParsesWithDriver(t *testing.T) {
+func TestSQLServerDSNExplicitServerCertificateSurvivesSSHIdentitySynthesis(t *testing.T) {
 	t.Parallel()
 
 	s := &SqlServerDB{}
@@ -165,41 +205,78 @@ func TestSQLServerDSNWithExplicitServerCertificateParsesWithDriver(t *testing.T)
 		User:             "sa",
 		Password:         "pass",
 		Database:         "appdb",
-		SSLCAPath:        `C:\certs\ca.pem`,
-		ConnectionParams: `servercertificate=C:\certs\sqlserver.pem&hostnameincertificate=sql.explicit.example.com`,
-	}
-	dsn := s.dsnForRemoteHost(cfg, "sql.internal.example.com")
-	if _, err := msdsn.Parse(dsn); err != nil {
-		t.Fatalf("msdsn.Parse(%q) error = %v", dsn, err)
-	}
-}
-
-func TestSQLServerDSNExplicitServerCertificateOverridesConflictingTLSIdentity(t *testing.T) {
-	t.Parallel()
-
-	s := &SqlServerDB{}
-	cfg := connection.ConnectionConfig{
-		Host:             "127.0.0.1",
-		Port:             58228,
-		User:             "sa",
-		Password:         "pass",
-		Database:         "appdb",
-		SSLCAPath:        `C:\certs\ca.pem`,
-		ConnectionParams: `servercertificate=C:\certs\sqlserver.pem&hostnameincertificate=sql.explicit.example.com`,
+		ConnectionParams: `servercertificate=C:\certs\sqlserver.pem`,
 	}
 	parsed, err := url.Parse(s.dsnForRemoteHost(cfg, "sql.internal.example.com"))
 	if err != nil {
-		t.Fatalf("parse sqlserver dsn with conflicting certificates: %v", err)
+		t.Fatalf("parse sqlserver dsn with explicit server certificate: %v", err)
 	}
 	query := parsed.Query()
-	if got := query.Get("certificate"); got != "" {
-		t.Fatalf("certificate = %q, want empty when servercertificate is explicit", got)
-	}
-	if got := query.Get("hostnameincertificate"); got != "" {
-		t.Fatalf("hostnameincertificate = %q, want empty when servercertificate is explicit", got)
-	}
 	if got := query.Get("servercertificate"); got != `C:\certs\sqlserver.pem` {
 		t.Fatalf("servercertificate = %q, want C:\\certs\\sqlserver.pem", got)
+	}
+	// Synthesis must not add hostnameincertificate next to servercertificate:
+	// go-mssqldb rejects that combination outright.
+	if got := query.Get("hostnameincertificate"); got != "" {
+		t.Fatalf("hostnameincertificate = %q, want empty alongside servercertificate", got)
+	}
+}
+
+// The DSN builder must not silently drop one half of a mutually exclusive
+// certificate configuration. go-mssqldb surfaces an actionable error for these
+// combinations, and swallowing a parameter here would turn an explicit
+// security choice into an unexplained downgrade.
+func TestSQLServerDSNKeepsConflictingCertificateParamsForDriverToReject(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		sslCAPath        string
+		connectionParams string
+		wantConflict     string
+	}{
+		{
+			name:             "servercertificate versus certificate",
+			sslCAPath:        `C:\certs\ca.pem`,
+			connectionParams: `servercertificate=C:\certs\sqlserver.pem`,
+			wantConflict:     "certificate",
+		},
+		{
+			name:             "servercertificate versus hostnameincertificate",
+			connectionParams: `servercertificate=C:\certs\sqlserver.pem&hostnameincertificate=sql.explicit.example.com`,
+			wantConflict:     "hostnameincertificate",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			s := &SqlServerDB{}
+			cfg := connection.ConnectionConfig{
+				Host:             "127.0.0.1",
+				Port:             58228,
+				User:             "sa",
+				Password:         "pass",
+				Database:         "appdb",
+				SSLCAPath:        test.sslCAPath,
+				ConnectionParams: test.connectionParams,
+			}
+			dsn := s.dsnForRemoteHost(cfg, "sql.internal.example.com")
+
+			parsed, err := url.Parse(dsn)
+			if err != nil {
+				t.Fatalf("parse sqlserver dsn: %v", err)
+			}
+			if got := parsed.Query().Get("servercertificate"); got == "" {
+				t.Fatal("servercertificate was dropped from the DSN")
+			}
+			if got := parsed.Query().Get(test.wantConflict); got == "" {
+				t.Fatalf("%s was dropped from the DSN; the driver can no longer report the conflict", test.wantConflict)
+			}
+			if _, err := msdsn.Parse(dsn); err == nil {
+				t.Fatalf("msdsn.Parse(%q) error = nil, want mutually exclusive parameter error", dsn)
+			}
+		})
 	}
 }
 
@@ -403,27 +480,78 @@ func TestSQLServerConnectSSHAzureUsesRemoteIdentityAndRequiredTLS(t *testing.T) 
 	}
 }
 
+func sqlServerTestConnectConfig() connection.ConnectionConfig {
+	return connection.ConnectionConfig{
+		Type:     "sqlserver",
+		Host:     "sql.internal.example.com",
+		Port:     1433,
+		User:     "sa",
+		Password: "pass",
+		Database: "appdb",
+		UseSSL:   true,
+		SSLMode:  "required",
+		UseSSH:   true,
+		SSH:      connection.SSHConfig{Host: "jump.internal.example.com", Port: 22, User: "jump"},
+	}
+}
+
 func TestSQLServerConnectSSHReleasesForwarderOnFailure(t *testing.T) {
 	tests := []struct {
-		name        string
-		localAddr   string
-		openErr     error
-		wantRelease int
+		name         string
+		localAddr    string
+		acquireErr   error
+		openErr      error
+		pingErr      error
+		wantRelease  int
+		wantOpenCall bool
 	}{
-		{name: "invalid local address", localAddr: "not-a-host:port", wantRelease: 1},
-		{name: "open failure", localAddr: "127.0.0.1:58230", openErr: errors.New("open failed"), wantRelease: 1},
+		{
+			name:        "acquire failure never releases",
+			acquireErr:  errors.New("tunnel refused"),
+			wantRelease: 0,
+		},
+		{
+			// Fails while splitting forwarder.LocalAddr, before sql.Open runs.
+			name:        "invalid local address",
+			localAddr:   "not-a-host:port",
+			wantRelease: 1,
+		},
+		{
+			name:         "open failure",
+			localAddr:    "127.0.0.1:58230",
+			openErr:      errors.New("open failed"),
+			wantRelease:  1,
+			wantOpenCall: true,
+		},
+		{
+			name:         "ping failure",
+			localAddr:    "127.0.0.1:58231",
+			pingErr:      errSQLServerPingFailureProbe,
+			wantRelease:  1,
+			wantOpenCall: true,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			forwarder := &ssh.LocalForwarder{LocalAddr: test.localAddr}
-			releaseCount := 0
+			var (
+				releaseCount int
+				openCalls    int
+			)
 			s := &SqlServerDB{}
 			s.acquireLocalForwarder = func(_ connection.SSHConfig, _ string, _ int) (*ssh.LocalForwarder, error) {
+				if test.acquireErr != nil {
+					return nil, test.acquireErr
+				}
 				return forwarder, nil
 			}
 			s.openDB = func(string, string) (*sql.DB, error) {
+				openCalls++
 				if test.openErr != nil {
 					return nil, test.openErr
+				}
+				if test.pingErr != nil {
+					return openSQLServerPingFailureProbeDB(t)
 				}
 				return openSQLServerIdentityProbeDB(t)
 			}
@@ -432,28 +560,57 @@ func TestSQLServerConnectSSHReleasesForwarderOnFailure(t *testing.T) {
 				return nil
 			}
 
-			cfg := connection.ConnectionConfig{
-				Type:     "sqlserver",
-				Host:     "sql.internal.example.com",
-				Port:     1433,
-				User:     "sa",
-				Password: "pass",
-				Database: "appdb",
-				UseSSL:   true,
-				SSLMode:  "required",
-				UseSSH:   true,
-				SSH:      connection.SSHConfig{Host: "jump.internal.example.com", Port: 22, User: "jump"},
-			}
-			if err := s.Connect(cfg); err == nil {
+			if err := s.Connect(sqlServerTestConnectConfig()); err == nil {
 				t.Fatal("Connect() error = nil, want failure")
 			}
 			if releaseCount != test.wantRelease {
 				t.Fatalf("Release() calls = %d, want %d", releaseCount, test.wantRelease)
 			}
+			if got := openCalls > 0; got != test.wantOpenCall {
+				t.Fatalf("openDB called = %v, want %v", got, test.wantOpenCall)
+			}
 			if s.forwarder != nil {
 				t.Fatalf("s.forwarder = %#v, want nil after failed Connect", s.forwarder)
 			}
+			if s.conn != nil {
+				t.Fatalf("s.conn = %#v, want nil after failed Connect", s.conn)
+			}
 		})
+	}
+}
+
+func TestSQLServerConnectSSHReleasesForwarderExactlyOnceOnClose(t *testing.T) {
+	forwarder := &ssh.LocalForwarder{LocalAddr: "127.0.0.1:58232"}
+	var releaseCount int
+	s := &SqlServerDB{}
+	s.acquireLocalForwarder = func(_ connection.SSHConfig, _ string, _ int) (*ssh.LocalForwarder, error) {
+		return forwarder, nil
+	}
+	s.openDB = func(string, string) (*sql.DB, error) {
+		return openSQLServerIdentityProbeDB(t)
+	}
+	s.releaseLocalForwarder = func(*ssh.LocalForwarder) error {
+		releaseCount++
+		return nil
+	}
+
+	if err := s.Connect(sqlServerTestConnectConfig()); err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	if releaseCount != 0 {
+		t.Fatalf("Release() calls after Connect = %d, want 0", releaseCount)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if releaseCount != 1 {
+		t.Fatalf("Release() calls after Close = %d, want 1", releaseCount)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("second Close() error = %v", err)
+	}
+	if releaseCount != 1 {
+		t.Fatalf("Release() calls after second Close = %d, want 1 (Close must be idempotent)", releaseCount)
 	}
 }
 func TestSQLServerConnectWithoutSSHKeepsDirectHostIdentity(t *testing.T) {

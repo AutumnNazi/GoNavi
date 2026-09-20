@@ -43,15 +43,11 @@ func (s *SqlServerDB) dsnForRemoteHost(config connection.ConnectionConfig, remot
 	if strings.TrimSpace(config.SSLCAPath) != "" {
 		q.Set("certificate", strings.TrimSpace(config.SSLCAPath))
 	}
+	// Leave user-supplied connection params untouched: go-mssqldb rejects the
+	// mutually exclusive certificate combinations itself with an actionable
+	// error. Silently dropping one of them would turn an explicit security
+	// choice into an unexplained downgrade.
 	mergeConnectionParamsFromConfigWithAllowlist(q, config, sqlServerConnectionParamNames, "sqlserver")
-	// servercertificate performs byte-for-byte certificate comparison and is
-	// mutually exclusive with both chain validation and hostname overrides in
-	// go-mssqldb. Keep the explicit server certificate as the strongest user
-	// choice and remove the incompatible parameters before the driver parses it.
-	if strings.TrimSpace(q.Get("servercertificate")) != "" {
-		q.Del("certificate")
-		q.Del("hostnameincertificate")
-	}
 	// The driver defaults hostnameincertificate to the DSN host. Under SSH the
 	// DSN host is the local forward address, so fill in the original remote
 	// host unless the user configured either certificate identity explicitly.
