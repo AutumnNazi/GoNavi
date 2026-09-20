@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"fmt"
 	"net"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +24,34 @@ type SqlServerDB struct {
 	conn        *sql.DB
 	pingTimeout time.Duration
 	forwarder   *ssh.LocalForwarder
+
+	acquireLocalForwarder func(connection.SSHConfig, string, int) (*ssh.LocalForwarder, error)
+	openDB                func(string, string) (*sql.DB, error)
+	releaseLocalForwarder func(*ssh.LocalForwarder) error
+}
+
+func (s *SqlServerDB) acquireForwarder(config connection.SSHConfig, host string, port int) (*ssh.LocalForwarder, error) {
+	if s.acquireLocalForwarder != nil {
+		return s.acquireLocalForwarder(config, host, port)
+	}
+	return ssh.AcquireLocalForwarder(config, host, port)
+}
+
+func (s *SqlServerDB) openSQLDB(driverName, dsn string) (*sql.DB, error) {
+	if s.openDB != nil {
+		return s.openDB(driverName, dsn)
+	}
+	return sql.Open(driverName, dsn)
+}
+
+func (s *SqlServerDB) releaseForwarder(forwarder *ssh.LocalForwarder) error {
+	if s.releaseLocalForwarder != nil {
+		return s.releaseLocalForwarder(forwarder)
+	}
+	if forwarder == nil {
+		return nil
+	}
+	return forwarder.Release()
 }
 
 type sqlServerSessionExecer struct {
@@ -142,37 +169,6 @@ func quoteSQLServerChangeIdentifier(name string) string {
 	return "[" + strings.ReplaceAll(n, "]", "]]") + "]"
 }
 
-func (s *SqlServerDB) getDSN(config connection.ConnectionConfig) string {
-	// sqlserver://user:password@host:port?database=dbname
-	dbname := config.Database
-	if dbname == "" {
-		dbname = "master"
-	}
-
-	u := &url.URL{
-		Scheme: "sqlserver",
-		Host:   net.JoinHostPort(config.Host, strconv.Itoa(config.Port)),
-	}
-	u.User = url.UserPassword(config.User, config.Password)
-
-	q := url.Values{}
-	q.Set("database", dbname)
-	q.Set("connection timeout", strconv.Itoa(getConnectTimeoutSeconds(config)))
-	encrypt, trustServerCertificate := resolveSQLServerTLSSettings(config)
-	q.Set("encrypt", encrypt)
-	q.Set("trustservercertificate", trustServerCertificate)
-	if hostNameInCertificate := azureSQLHostNameInCertificate(config.Host); hostNameInCertificate != "" {
-		q.Set("hostnameincertificate", hostNameInCertificate)
-	}
-	if strings.TrimSpace(config.SSLCAPath) != "" {
-		q.Set("certificate", strings.TrimSpace(config.SSLCAPath))
-	}
-	mergeConnectionParamsFromConfigWithAllowlist(q, config, sqlServerConnectionParamNames, "sqlserver")
-	u.RawQuery = q.Encode()
-
-	return u.String()
-}
-
 func (s *SqlServerDB) Connect(config connection.ConnectionConfig) (err error) {
 	_ = s.Close()
 	defer func() {
@@ -186,7 +182,7 @@ func (s *SqlServerDB) Connect(config connection.ConnectionConfig) (err error) {
 	if config.UseSSH {
 		logger.Infof("SQL Server 使用 SSH 连接：地址=%s:%d 用户=%s", config.Host, config.Port, config.User)
 
-		forwarder, err := ssh.AcquireLocalForwarder(config.SSH, config.Host, config.Port)
+		forwarder, err := s.acquireForwarder(config.SSH, config.Host, config.Port)
 		if err != nil {
 			return fmt.Errorf("创建 SSH 隧道失败：%w", err)
 		}
@@ -207,13 +203,13 @@ func (s *SqlServerDB) Connect(config connection.ConnectionConfig) (err error) {
 		localConfig.Port = port
 		localConfig.UseSSH = false
 
-		dsn = s.getDSN(localConfig)
+		dsn = s.dsnForRemoteHost(localConfig, config.Host)
 		logger.Infof("SQL Server 通过本地端口转发连接：%s -> %s:%d", forwarder.LocalAddr, config.Host, config.Port)
 	} else {
 		dsn = s.getDSN(config)
 	}
 
-	db, err := sql.Open("sqlserver", dsn)
+	db, err := s.openSQLDB("sqlserver", dsn)
 	if err != nil {
 		return wrapDatabaseConnectionOpenError(err)
 	}
@@ -235,7 +231,7 @@ func (s *SqlServerDB) Connect(config connection.ConnectionConfig) (err error) {
 
 func (s *SqlServerDB) Close() error {
 	if s.forwarder != nil {
-		if err := s.forwarder.Release(); err != nil {
+		if err := s.releaseForwarder(s.forwarder); err != nil {
 			logger.Warnf("关闭 SQL Server SSH 端口转发失败：%v", err)
 		}
 		s.forwarder = nil
