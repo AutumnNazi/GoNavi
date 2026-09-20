@@ -3740,6 +3740,7 @@
   "connection.production_risk.title": "本番環境のリスク警告",
   "connection.production_risk.message": "この接続は本番環境として設定されていますが、本番保護が未設定です。実行内容：{{action}}。対象：{{target}}。接続先と対象を確認して続行してください。",
   "connection.production_risk.action.execute_sql": "データまたは構造を変更する可能性がある SQL を実行",
+  "connection.production_risk.action.commit_transaction": "開かれているトランザクションのコミット",
   "connection.production_risk.action.modify_data": "本番環境のデータを変更",
   "connection.production_risk.action.modify_configuration": "本番環境の設定を変更",
   "connection.production_risk.action.modify_service": "本番環境のサービスインスタンスを変更",

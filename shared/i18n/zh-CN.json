@@ -3740,6 +3740,7 @@
   "connection.production_risk.title": "生产环境风险提示",
   "connection.production_risk.message": "当前连接属于生产环境，且尚未设置生产环境保护。即将执行：{{action}}。目标：{{target}}。请确认连接和操作对象无误。",
   "connection.production_risk.action.execute_sql": "执行可能修改数据或结构的 SQL",
+  "connection.production_risk.action.commit_transaction": "提交已打开的事务",
   "connection.production_risk.action.modify_data": "修改生产环境中的数据",
   "connection.production_risk.action.modify_configuration": "修改生产环境中的配置",
   "connection.production_risk.action.modify_service": "修改生产环境中的服务实例",

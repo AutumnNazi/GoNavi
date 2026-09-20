@@ -3740,6 +3740,7 @@
   "connection.production_risk.title": "Предупреждение для продуктивной среды",
   "connection.production_risk.message": "Это подключение отмечено как продуктивное, но защита продуктивной среды не настроена. Будет выполнено: {{action}}. Цель: {{target}}. Проверьте подключение и цель перед продолжением.",
   "connection.production_risk.action.execute_sql": "Выполнить SQL, который может изменить данные или структуру",
+  "connection.production_risk.action.commit_transaction": "Зафиксировать открытую транзакцию",
   "connection.production_risk.action.modify_data": "Изменить данные в продуктивной среде",
   "connection.production_risk.action.modify_configuration": "Изменить конфигурацию продуктивной среды",
   "connection.production_risk.action.modify_service": "Изменить экземпляры сервисов в продуктивной среде",

@@ -11297,6 +11297,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                         dbName: executionDbName,
                         statements: sourceStatements,
                         executionDurationMs: duration,
+                        connectionId: currentConnectionId,
                     });
                 } else {
                     appendPendingSqlTransactionExecution({

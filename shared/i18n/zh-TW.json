@@ -3740,6 +3740,7 @@
   "connection.production_risk.title": "生產環境風險提示",
   "connection.production_risk.message": "目前連線屬於生產環境，且尚未設定生產環境保護。即將執行：{{action}}。目標：{{target}}。請確認連線與操作對象無誤。",
   "connection.production_risk.action.execute_sql": "執行可能修改資料或結構的 SQL",
+  "connection.production_risk.action.commit_transaction": "提交已開啟的交易",
   "connection.production_risk.action.modify_data": "修改生產環境中的資料",
   "connection.production_risk.action.modify_configuration": "修改生產環境中的設定",
   "connection.production_risk.action.modify_service": "修改生產環境中的服務實例",
