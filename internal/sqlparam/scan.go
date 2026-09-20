@@ -87,6 +87,7 @@ type Span struct {
 func Scan(sql string, opts ScanOptions) []Span {
 	var spans []Span
 	inSingle, inDouble, inBacktick, inBracket := false, false, false, false
+	singleStart := -1
 	inLineComment, inBlockComment, escaped := false, false, false
 	dollarTag := ""
 
@@ -140,6 +141,18 @@ func Scan(sql string, opts ScanOptions) []Span {
 			if inSingle && next == '\'' {
 				i++
 				continue
+			}
+			if inSingle {
+				// 引号包裹参数 '{name}'：整个字符串字面量恰为一个 {标识符}，
+				// 连同两端引号识别为参数。名字收紧为标识符规则，排除
+				// '{"a":1}' 之类以花括号开头结尾的 JSON 字面量误伤。
+				if i > singleStart+2 && sql[singleStart+1] == '{' && sql[i-1] == '}' {
+					if name := sql[singleStart+2 : i-1]; isQuotedParamName(name) {
+						spans = append(spans, Span{Name: name, Start: singleStart, End: i + 1})
+					}
+				}
+			} else {
+				singleStart = i
 			}
 			inSingle = !inSingle
 			continue
@@ -261,6 +274,21 @@ func parseDollarTagAt(text string, start int) string {
 		}
 	}
 	return ""
+}
+
+// isQuotedParamName 校验引号包裹参数的名字：标识符规则（字母/下划线开头，
+// 字母数字下划线）。刻意比 ${name} 的宽松字符集收紧，避免 '{...}' 形态的
+// JSON 等数据字面量被误认为参数。
+func isQuotedParamName(name string) bool {
+	if name == "" || !isIdentifierStart(name[0]) {
+		return false
+	}
+	for i := 1; i < len(name); i++ {
+		if !isIdentifierPart(name[i]) || name[i] == '$' || name[i] == '#' {
+			return false
+		}
+	}
+	return true
 }
 
 func isHorizontalWhitespaceByte(ch byte) bool {

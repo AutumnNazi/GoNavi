@@ -10786,7 +10786,7 @@
   "query_editor.params.dialog_title": "Привязка параметров",
   "query_editor.params.execute": "Выполнить",
   "query_editor.params.statement_label": "SQL {{index}}",
-  "query_editor.params.empty": "Именованные параметры в SQL не найдены (используйте :name или ${name})",
+  "query_editor.params.empty": "Именованные параметры в SQL не найдены (используйте :name, ${name} или '{name}')",
   "query_editor.params.unsupported_driver": "Этот источник данных не поддерживает привязку параметров: :name в SQL не будет выполнен. Используйте литералы или обновите драйвер-агент",
   "query_editor.params.missing_hint": "Не заданы значения параметров: {{names}}",
   "query_editor.params.null_hint": "Привязать как NULL",

@@ -118,3 +118,35 @@ func TestScanRecognizesCurlyBraceParameters(t *testing.T) {
 		})
 	}
 }
+
+func TestScanRecognizesQuotedCurlyParameters(t *testing.T) {
+	cases := []struct {
+		name string
+		sql  string
+		opts ScanOptions
+		want []string
+	}{
+		{name: "Navicat 风格引号包裹", sql: "WHERE f_date >= '{startDate}'", opts: OptionsForDBType("mysql"), want: []string{"startDate"}},
+		{name: "含下划线数字", sql: "WHERE d <= '{u_end_2}', x = '{a1}'", opts: OptionsForDBType("mysql"), want: []string{"u_end_2", "a1"}},
+		{name: "带额外文本不识别", sql: "WHERE note = 'abc{name}def'", opts: OptionsForDBType("mysql"), want: nil},
+		{name: "多段内容不识别", sql: "WHERE x = '{a}{b}'", opts: OptionsForDBType("mysql"), want: nil},
+		{name: "JSON 字面量不误伤", sql: "WHERE payload = '{\"a\":1}'", opts: OptionsForDBType("postgres"), want: nil},
+		{name: "数字开头不识别", sql: "WHERE x = '{123}'", opts: OptionsForDBType("mysql"), want: nil},
+		{name: "空白名不识别", sql: "WHERE x = '{ }'", opts: OptionsForDBType("mysql"), want: nil},
+		{name: "标准转义引号邻接", sql: "WHERE note = 'it''s {fake}' AND x = '{real}'", opts: OptionsForDBType("postgres"), want: []string{"real"}},
+		{name: "MySQL 反斜杠转义内不识别", sql: "WHERE note = 'a\\'b {fake}' AND x = '{real}'", opts: OptionsForDBType("mysql"), want: []string{"real"}},
+		{name: "与裸花括号同名归一", sql: "SELECT '{x}' AS a, ${x} AS b", opts: OptionsForDBType("mysql"), want: []string{"x", "x"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := namesOf(Scan(tc.sql, tc.opts))
+			if len(got) == 0 && len(tc.want) == 0 {
+				return
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("Scan(%q) = %v, want %v", tc.sql, got, tc.want)
+			}
+		})
+	}
+}

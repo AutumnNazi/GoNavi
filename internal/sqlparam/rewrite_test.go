@@ -306,3 +306,20 @@ func TestBindListCurlyBraceExpansion(t *testing.T) {
 		t.Fatalf("绑定值异常: %#v", result.Args)
 	}
 }
+
+func TestBindQuotedCurlyParameterRewritesWholeLiteral(t *testing.T) {
+	// 引号连同内容整体替换为占位符，值走绑定——杜绝字符串拼接注入面。
+	result, err := Bind("WHERE f_trade_date >= '{startDate}' AND f_trade_date < '{endDate}'", "mysql", map[string]TypedValue{
+		"startDate": {Type: TypeDatetime, Value: "2025-01-01 00:00:00"},
+		"endDate":   {Type: TypeDatetime, Value: "2025-01-31 23:59:59"},
+	})
+	if err != nil {
+		t.Fatalf("Bind 返回错误: %v", err)
+	}
+	if result.SQL != "WHERE f_trade_date >= ? AND f_trade_date < ?" {
+		t.Fatalf("引号应连同内容整体替换: %q", result.SQL)
+	}
+	if len(result.Args) != 2 {
+		t.Fatalf("应绑定两个时间值: %#v", result.Args)
+	}
+}
