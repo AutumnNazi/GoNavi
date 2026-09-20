@@ -84,8 +84,9 @@ export const ensureDatabaseServerVersion = async (
   }
   const request = (async () => {
     try {
-      const version = parseServerVersion(await versionQuery(config));
-      versions.set(connectionId, version);
+      const result = await versionQuery(config);
+      const version = parseServerVersion(result);
+      if (result?.success) versions.set(connectionId, version);
       return version;
     } catch {
       return '';

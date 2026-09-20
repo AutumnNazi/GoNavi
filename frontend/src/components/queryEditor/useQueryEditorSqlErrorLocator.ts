@@ -45,17 +45,21 @@ export const useQueryEditorSqlErrorLocator = (
         return located;
     }, [editorRef]);
 
-    // AI 诊断注入用：解析出错的那一条语句；解析不出时返回空串由调用方回退整篇
+    // AI 诊断注入用：优先解析出错语句；无位置信息时保留实际执行的选区。
     const resolveExecutionErrorStatement = useCallback((
         error: string,
         currentEditorSql: string,
         dbType?: string,
-    ): string => resolveExecutionErrorStatementText({
-        error,
-        origin: originRef.current,
-        currentEditorSql,
-        dbType,
-    }), []);
+    ): string => {
+        const origin = originRef.current;
+        const resolved = resolveExecutionErrorStatementText({
+            error,
+            origin,
+            currentEditorSql: origin?.editorSql || currentEditorSql,
+            dbType,
+        });
+        return resolved || String(origin?.originalSql || '').trim();
+    }, []);
 
     return { recordExecutionOrigin, locateExecutionError, resolveExecutionErrorStatement };
 };

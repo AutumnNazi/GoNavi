@@ -14,6 +14,7 @@ import { resolveNewQueryContext } from '../utils/newQueryContext';
 import { QUERY_TAB_RENAME_REQUEST_EVENT } from '../utils/queryTabTitle';
 import { clearQueryTabDraft, clearSQLFileTabDraft, getQueryTabDraft, getSQLFileTabDraft } from '../utils/sqlFileTabDrafts';
 import { clearQueryEditorInlineRuntimeReadinessCache } from './queryEditor/QueryEditorAiAssist';
+import { resetDatabaseServerVersionCache } from './queryEditor/queryEditorServerVersion';
 import QueryEditor, {
   collectQueryEditorObjectDecorationCandidates,
   resolveQueryEditorNavigationDecorations,
@@ -240,6 +241,7 @@ const backendApp = vi.hoisted(() => ({
   DBGetIndexes: vi.fn(),
   DBGetTriggers: vi.fn(),
   DBShowCreateTable: vi.fn(),
+  DBGetServerVersion: vi.fn(),
   CancelQuery: vi.fn(),
   GenerateQueryID: vi.fn(),
   WriteSQLFile: vi.fn(),
@@ -911,6 +913,7 @@ const createQueryEditorSplitNodeMock = (element: any) => {
 
 describe('QueryEditor external SQL save', () => {
   beforeEach(() => {
+    resetDatabaseServerVersionCache();
     clearQueryEditorInlineRuntimeReadinessCache();
     const completionState = (globalThis as any).__gonaviSqlCompletionState;
     if (completionState) {
@@ -1074,6 +1077,7 @@ describe('QueryEditor external SQL save', () => {
     backendApp.DBGetTables.mockResolvedValue({ success: true, data: [] });
     backendApp.DBTableExists.mockResolvedValue({ success: true, data: { exists: true } });
     backendApp.DBShowCreateTable.mockResolvedValue({ success: false, data: '' });
+    backendApp.DBGetServerVersion.mockResolvedValue({ success: false });
     backendApp.GenerateQueryID.mockResolvedValue('query-1');
     backendApp.InspectElasticsearchConsole.mockResolvedValue({
       success: true,
@@ -10010,7 +10014,7 @@ describe('QueryEditor external SQL save', () => {
 
       let renderer!: ReactTestRenderer;
       await act(async () => {
-        renderer = create(<QueryEditor tab={createTab({ dbName: 'main', query: 'select 1;' })} />);
+        renderer = create(<QueryEditor tab={createTab({ dbName: 'main', query: 'select 0;\nselect 1;' })} />);
       });
 
       await act(async () => {
@@ -10028,11 +10032,12 @@ describe('QueryEditor external SQL save', () => {
       );
       expect(getLastInjectedPrompt()).not.toContain('请针对当前数据库的表结构进行系统分析');
 
+      backendApp.DBGetServerVersion.mockResolvedValue({ success: true, message: '5.7.44-log' });
       backendApp.DBQueryMulti.mockResolvedValueOnce({ success: false, message: 'driver exploded', data: [] });
       editorState.selection = {
-        startLineNumber: 1,
+        startLineNumber: 2,
         startColumn: 1,
-        endLineNumber: 1,
+        endLineNumber: 2,
         endColumn: 'select 1;'.length + 1,
         positionLineNumber: 1,
         positionColumn: 'select 1;'.length + 1,
@@ -10049,14 +10054,17 @@ describe('QueryEditor external SQL save', () => {
       });
 
       expect(textContent(renderer.toJSON())).toContain('SQL 执行日志');
+      editorState.value = 'select changed;';
+      editorState.selection = null;
 
       await act(async () => {
         findButton(renderer, 'AI diagnose').props.onClick();
+        await Promise.resolve();
         vi.runAllTimers();
       });
 
       expect(getLastInjectedPrompt()).toBe(
-        `I got an error while executing this SQL:\n\`\`\`sql\nselect 1;\n\`\`\`\n\nThe database returned this error:\n\`\`\`text\n${formatSqlExecutionError('driver exploded')}\n\`\`\`\n\nAnalyze the cause and suggest a fix.`,
+        `Context: mysql "local", selected database "main", database version 5.7.44-log.\nI got an error while executing this SQL:\n\`\`\`sql\nselect 1;\n\`\`\`\n\nThe database returned this error:\n\`\`\`text\n${formatSqlExecutionError('driver exploded')}\n\`\`\`\n\nAnalyze the cause and suggest a fix.`,
       );
       expect(getLastInjectedPrompt()).not.toContain('我在执行以下 SQL 时遇到了错误');
     } finally {
