@@ -1530,7 +1530,15 @@ export const buildSidebarNodeMenuItems = (
             buildSidebarCopyObjectNameMenuItem(node, handleCopyTableName, 'copy-package-name'),
         ];
     } else if (node.type === 'database-link') {
-        return [buildSidebarCopyObjectNameMenuItem(node, handleCopyTableName, 'copy-database-link-name')];
+        return [
+            {
+                key: 'view-database-link-def',
+                label: t('sidebar.menu.view_object_definition'),
+                icon: <CodeOutlined />,
+                onClick: () => onDoubleClick(null, node),
+            },
+            buildSidebarCopyObjectNameMenuItem(node, handleCopyTableName, 'copy-database-link-name'),
+        ];
     } else if (node.type === 'db-event') {
         return [
             {

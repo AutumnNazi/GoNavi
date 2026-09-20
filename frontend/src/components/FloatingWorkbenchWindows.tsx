@@ -46,6 +46,7 @@ const getTabKindLabel = (type: string): string => {
   if (type === 'routine-def') return t('tab_manager.kind_badge.routine');
   if (type === 'sequence-def') return t('tab_manager.kind_badge.sequence');
   if (type === 'package-def') return t('tab_manager.kind_badge.package');
+  if (type === 'database-link-def') return t('tab_manager.kind_badge.database_link');
   return t('tab_manager.kind_badge.fallback');
 };
 

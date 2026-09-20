@@ -30,6 +30,7 @@ import {
   useSidebarObjectActions,
   type SidebarMessagePublishTarget,
 } from './sidebar/useSidebarObjectActions';
+import { tryOpenSidebarObjectNode } from './sidebar/sidebarOpenObjectNode';
 import { useSidebarSearchModel } from './sidebar/useSidebarSearchModel';
 import { useSidebarFilterPersistence } from './sidebar/useSidebarFilterPersistence';
 import { useSidebarV2ActionHandlers } from './sidebar/useSidebarV2ActionHandlers';
@@ -2331,66 +2332,14 @@ const Sidebar: React.FC<{
       });
   };
 
-  const openSidebarObjectNode = (node: any): boolean => {
-      if (node.type === 'view' || node.type === 'materialized-view') {
-          const { viewName, dbName, id, schemaName } = node.dataRef;
-          addTab({
-              id: node.key,
-              title: viewName,
-              type: 'table',
-              connectionId: id,
-              dbName,
-              tableName: viewName,
-              objectType: node.type === 'materialized-view' ? 'materialized-view' : 'view',
-              schemaName,
-              sidebarLocateKey: String(node.key || ''),
-          });
-          return true;
-      }
-      if (node.type === 'db-trigger') {
-          const { triggerName, triggerTableName, schemaName, dbName, id } = node.dataRef;
-          addTab({
-              id: `trigger-${node.key}`,
-              title: t('sidebar.tab.trigger', { name: triggerName }),
-              type: 'trigger',
-              connectionId: id,
-              dbName,
-              triggerName,
-              triggerTableName,
-              schemaName,
-              sidebarLocateKey: String(node.key || ''),
-          });
-          return true;
-      }
-      if (node.type === 'db-event') {
-          openEventDefinition(node);
-          return true;
-      }
-      if (node.type === 'routine') {
-          const { routineName, routineType, dbName, id, schemaName } = node.dataRef;
-          const typeLabel = t(routineType === 'PROCEDURE' ? 'sidebar.object.procedure' : 'sidebar.object.function');
-          addTab({
-              id: `routine-def-${node.key}`,
-              title: t('sidebar.tab.routine_definition', { type: typeLabel, name: routineName }),
-              type: 'routine-def',
-              connectionId: id,
-              dbName,
-              routineName,
-              routineType,
-              ...buildOptionalSchemaContext(schemaName),
-          });
-          return true;
-      }
-      if (node.type === 'sequence') {
-          openSequenceDefinition(node);
-          return true;
-      }
-      if (node.type === 'package') {
-          openPackageDefinition(node);
-          return true;
-      }
-      return node.type === 'database-link';
-  };
+  const openSidebarObjectNode = (node: any): boolean => tryOpenSidebarObjectNode(node, {
+      addTab,
+      openEventDefinition,
+      openSequenceDefinition,
+      openPackageDefinition,
+      t,
+      buildOptionalSchemaContext,
+  });
 
   const openMessageObjectNode = (node: any): boolean => {
       if (node?.type !== 'message-object') return false;
@@ -2618,6 +2567,8 @@ const Sidebar: React.FC<{
       }
       if (openMessageObjectNode(node)) {
           return;
+      } else if (openSidebarObjectNode(node)) {
+          return;
       } else if (node.type === 'table') {
           const { tableName, dbName, id, schemaName } = node.dataRef;
           // 记录表访问
@@ -2633,20 +2584,6 @@ const Sidebar: React.FC<{
               initialViewMode: tableDoubleClickAction === 'open-design' ? 'fields' : undefined,
               initialViewModeRequestId: tableDoubleClickAction === 'open-design' ? String(Date.now()) : undefined,
               objectType: 'table',
-          });
-          return;
-      } else if (node.type === 'view' || node.type === 'materialized-view') {
-          const { viewName, dbName, id, schemaName } = node.dataRef;
-          addTab({
-              id: node.key,
-              title: viewName,
-              type: 'table',
-              connectionId: id,
-              dbName,
-              tableName: viewName,
-              objectType: node.type === 'materialized-view' ? 'materialized-view' : 'view',
-              schemaName,
-              sidebarLocateKey: String(node.key || ''),
           });
           return;
       } else if (node.type === 'saved-query') {
@@ -2707,45 +2644,6 @@ const Sidebar: React.FC<{
               return;
           }
           // Service explorer entry is a folder: fall through to expand/collapse + lazy load groups.
-      } else if (node.type === 'db-trigger') {
-          const { triggerName, triggerTableName, schemaName, dbName, id } = node.dataRef;
-          addTab({
-              id: `trigger-${node.key}`,
-              title: t('sidebar.tab.trigger', { name: triggerName }),
-              type: 'trigger',
-              connectionId: id,
-              dbName,
-              triggerName,
-              triggerTableName,
-              schemaName,
-              sidebarLocateKey: String(node.key || ''),
-          });
-          return;
-      } else if (node.type === 'db-event') {
-          openEventDefinition(node);
-          return;
-      } else if (node.type === 'routine') {
-          const { routineName, routineType, dbName, id, schemaName } = node.dataRef;
-          const typeLabel = t(routineType === 'PROCEDURE' ? 'sidebar.object.procedure' : 'sidebar.object.function');
-          addTab({
-              id: `routine-def-${node.key}`,
-              title: t('sidebar.tab.routine_definition', { type: typeLabel, name: routineName }),
-              type: 'routine-def',
-              connectionId: id,
-              dbName,
-              routineName,
-              routineType,
-              ...buildOptionalSchemaContext(schemaName),
-          });
-          return;
-      } else if (node.type === 'sequence') {
-          openSequenceDefinition(node);
-          return;
-      } else if (node.type === 'package') {
-          openPackageDefinition(node);
-          return;
-      } else if (node.type === 'database-link') {
-          return;
       } else if (node.type === 'jvm-mode') {
           const { providerMode, id } = node.dataRef;
           const conn = (connections.find((item) => item.id === id) || node.dataRef) as SavedConnection;

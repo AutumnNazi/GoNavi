@@ -114,6 +114,7 @@ const getTabKindLabel = (tab: TabData): string => {
   if (tab.type === 'routine-def') return t('tab_manager.kind_badge.routine');
   if (tab.type === 'sequence-def') return t('tab_manager.kind_badge.sequence');
   if (tab.type === 'package-def') return t('tab_manager.kind_badge.package');
+  if (tab.type === 'database-link-def') return t('tab_manager.kind_badge.database_link');
   return t('tab_manager.kind_badge.fallback');
 };
 
@@ -377,6 +378,7 @@ const getTabKindTooltipLabel = (tab: TabData): string => {
   if (tab.type === 'routine-def') return t('tab_manager.hover.kind.routine');
   if (tab.type === 'sequence-def') return t('tab_manager.hover.kind.sequence');
   if (tab.type === 'package-def') return t('tab_manager.hover.kind.package');
+  if (tab.type === 'database-link-def') return t('tab_manager.hover.kind.database_link');
   return t('tab_manager.hover.kind.fallback');
 };
 
@@ -387,6 +389,7 @@ const getTabObjectLabel = (tab: TabData): string => {
   if (tab.routineName) return tab.routineName;
   if (tab.sequenceName) return tab.sequenceName;
   if (tab.packageName) return tab.packageName;
+  if (tab.databaseLinkName) return tab.databaseLinkName;
   if (tab.triggerName) return tab.triggerName;
   if (tab.resourcePath) return tab.resourcePath;
   if (tab.filePath) return tab.filePath;

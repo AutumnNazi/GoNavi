@@ -175,7 +175,20 @@ export const useSidebarCommandSearchRunner = ({
       onDoubleClick(null, node);
       return;
     }
-    if (node.type === 'db-trigger' || node.type === 'db-event' || node.type === 'routine' || node.type === 'sequence' || node.type === 'package' || node.type === 'database-link') {
+    if (node.type === 'database-link') {
+      publishTitlebarSelectionForNode?.(node);
+      void locateObjectInSidebar({
+        tabId: String(node.key || ''),
+        connectionId: dataRef.id,
+        dbName: dataRef.dbName,
+        tableName: dataRef.databaseLinkName,
+        schemaName: dataRef.schemaName,
+        objectGroup: 'databaseLinks',
+      });
+      onDoubleClick(null, node);
+      return;
+    }
+    if (node.type === 'db-trigger' || node.type === 'db-event' || node.type === 'routine' || node.type === 'sequence' || node.type === 'package') {
       publishTitlebarSelectionForNode?.(node);
       setActiveContext({
         connectionId: resolveSidebarNodeConnectionId(node, connectionIds) || dataRef.id,
@@ -188,7 +201,7 @@ export const useSidebarCommandSearchRunner = ({
       setSelectedKeys([node.key]);
       selectedNodesRef.current = [node];
       scrollSidebarTreeToKey(node.key, 'center');
-      if (node.type !== 'sequence' && node.type !== 'package' && node.type !== 'database-link') {
+      if (node.type !== 'sequence' && node.type !== 'package') {
         onDoubleClick(null, node);
       }
     }
