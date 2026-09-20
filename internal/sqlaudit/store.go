@@ -538,6 +538,12 @@ func (s *Store) ClearWithControl(beforeTimestamp int64, control Event) (int64, e
 }
 
 func (s *Store) VerifyIntegrity() (IntegrityReport, error) {
+	return s.VerifyIntegrityContext(context.Background())
+}
+
+// VerifyIntegrityContext verifies the local hash chain while honoring the
+// caller context so a canceled Web request can stop a long-running scan.
+func (s *Store) VerifyIntegrityContext(ctx context.Context) (IntegrityReport, error) {
 	report := IntegrityReport{
 		Valid:          true,
 		WeakValidation: true,
@@ -547,7 +553,7 @@ func (s *Store) VerifyIntegrity() (IntegrityReport, error) {
 	if err := s.ensureOpen(); err != nil {
 		return report, err
 	}
-	rows, err := s.db.QueryContext(context.Background(), selectEventColumns+` ORDER BY sequence ASC`)
+	rows, err := s.db.QueryContext(ctx, selectEventColumns+` ORDER BY sequence ASC`)
 	if err != nil {
 		return report, fmt.Errorf("read sql audit chain: %w", err)
 	}
