@@ -71,7 +71,14 @@ func (d *DuckDB) Connect(config connection.ConnectionConfig) error {
 		dsn = ":memory:"
 	}
 
-	db, err := sql.Open("duckdb", dsn)
+	// 官方扩展仓库不覆盖所有平台（如 windows_amd64_mingw），这些平台上用户只能
+	// 安装本地自行编译的无签名扩展；打开实例时显式允许，ATTACH SAVED CONNECTION
+	// 依赖该能力。已签名扩展不受影响。
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	db, err := sql.Open("duckdb", dsn+sep+"allow_unsigned_extensions=true")
 	if err != nil {
 		return duckDBWrapRuntimeError("db.backend.error.connection_open_failed_prefix", err)
 	}
