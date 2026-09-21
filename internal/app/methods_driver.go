@@ -217,6 +217,7 @@ type driverStatusItem struct {
 	AgentRevision       string `json:"agentRevision,omitempty"`
 	ExpectedRevision    string `json:"expectedRevision,omitempty"`
 	NeedsUpdate         bool   `json:"needsUpdate,omitempty"`
+	OptionalUpdate      bool   `json:"optionalUpdate,omitempty"`
 	UpdateReason        string `json:"updateReason,omitempty"`
 	AffectedConnections int    `json:"affectedConnections,omitempty"`
 	ActiveConnections   int    `json:"activeConnections,omitempty"`
@@ -1209,7 +1210,7 @@ func (a *App) GetDriverStatusList(downloadDir string, manifestURL string) connec
 		engine := effectiveDriverEngine(definition)
 		runtimeAvailable, runtimeReason := db.DriverRuntimeSupportStatus(definition.Type)
 		pkg, packageMetaExists := readInstalledDriverPackage(resolvedDir, definition.Type)
-		needsUpdate, updateReason, expectedRevision := optionalDriverPackageUpdateStatus(definition, pkg, packageMetaExists)
+		needsUpdate, optionalUpdate, updateReason, expectedRevision := optionalDriverPackageUpdateStatus(definition, pkg, packageMetaExists)
 		packageInstalled := definition.BuiltIn || packageMetaExists
 		if runtimeAvailable && db.IsOptionalGoDriver(definition.Type) {
 			packageInstalled = true
@@ -1231,6 +1232,7 @@ func (a *App) GetDriverStatusList(downloadDir string, manifestURL string) connec
 			AgentRevision:       strings.TrimSpace(pkg.AgentRevision),
 			ExpectedRevision:    expectedRevision,
 			NeedsUpdate:         needsUpdate,
+			OptionalUpdate:      optionalUpdate && !needsUpdate,
 			UpdateReason:        updateReason,
 			AffectedConnections: usageCounts[normalizeDriverType(definition.Type)],
 			ActiveConnections:   activeUsageCounts[normalizeDriverType(definition.Type)],
@@ -1252,6 +1254,8 @@ func (a *App) GetDriverStatusList(downloadDir string, manifestURL string) connec
 		switch {
 		case definition.BuiltIn:
 			item.Message = a.appText("driver_manager.backend.status.built_in_available", nil)
+		case optionalUpdate:
+			item.Message = a.appText("driver_manager.backend.status.optional_component_update_detail", nil)
 		case needsUpdate:
 			// item.UpdateReason / item.Message already localized above.
 		case runtimeAvailable:
@@ -3209,20 +3213,38 @@ func optionalDriverAgentRevisionStatus(driverType string, pkg installedDriverPac
 	}), expected
 }
 
-func optionalDriverPackageUpdateStatus(definition driverDefinition, pkg installedDriverPackage, packageMetaExists bool) (bool, string, string) {
-	needsUpdate, reason, expected := optionalDriverAgentRevisionStatus(definition.Type, pkg, packageMetaExists)
+func optionalDriverPackageUpdateStatus(definition driverDefinition, pkg installedDriverPackage, packageMetaExists bool) (needsUpdate bool, optionalUpdate bool, reason string, expected string) {
+	needsUpdate, reason, expected = optionalDriverAgentRevisionStatus(definition.Type, pkg, packageMetaExists)
+	if needsUpdate && !optionalDriverLibraryVersionChanged(definition, pkg) {
+		// revision 变化但驱动库版本未变：多为共享实现文件随主程序升级变化，
+		// 降级为可选更新（不阻断、可关闭），避免全驱动误报「需更新」（issue #1326）
+		needsUpdate = false
+		optionalUpdate = true
+		reason = localizedDriverBackendText(nil, "driver_manager.backend.status.optional_component_update_detail", nil)
+	}
 	if needsUpdate {
-		return true, reason, expected
+		return true, false, reason, expected
 	}
 	if mongoDriverNeedsLegacyCompatibilityUpdate(definition, pkg, packageMetaExists) {
 		pinned := strings.TrimSpace(definition.PinnedVersion)
 		installed := strings.TrimSpace(pkg.Version)
-		return true, localizedDriverBackendText(nil, "driver_manager.backend.status.mongodb_compatibility_update_detail", map[string]any{
+		return true, false, localizedDriverBackendText(nil, "driver_manager.backend.status.mongodb_compatibility_update_detail", map[string]any{
 			"recommended": pinned,
 			"installed":   installed,
 		}), expected
 	}
-	return false, "", expected
+	return false, optionalUpdate, reason, expected
+}
+
+// optionalDriverLibraryVersionChanged 判断驱动库版本是否发生了变化：
+// 已安装版本与清单推荐版本不一致（含已安装版本缺失）视为变化。
+func optionalDriverLibraryVersionChanged(definition driverDefinition, pkg installedDriverPackage) bool {
+	pinned := normalizeVersion(strings.TrimSpace(definition.PinnedVersion))
+	installed := normalizeVersion(strings.TrimSpace(pkg.Version))
+	if installed == "" {
+		return true
+	}
+	return pinned != installed
 }
 
 func mongoDriverNeedsLegacyCompatibilityUpdate(definition driverDefinition, pkg installedDriverPackage, packageMetaExists bool) bool {

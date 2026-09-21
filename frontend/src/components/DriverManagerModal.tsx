@@ -121,6 +121,7 @@ type DriverStatusRow = {
   agentRevision?: string;
   expectedRevision?: string;
   needsUpdate?: boolean;
+  optionalUpdate?: boolean;
   updateReason?: string;
   affectedConnections?: number;
   activeConnections?: number;
@@ -510,13 +511,29 @@ const appendRawNonChineseDetail = (parts: string[], value: unknown) => {
   }
   parts.push(text);
 };
-const formatDriverCardStatusMessage = (row: DriverStatusRow): string => {
+// issue #1326：可选更新（revision 变化但驱动库版本未变）的弱提示，
+// 支持按 expectedRevision「不再提示此版本」；状态持久化在 localStorage。
+const OPTIONAL_UPDATE_DISMISS_KEY = 'gonavi.driver.optionalUpdate.dismissedRevision';
+const readOptionalUpdateDismissedRevision = (): string | undefined => {
+  try {
+    return window.localStorage.getItem(OPTIONAL_UPDATE_DISMISS_KEY) || undefined;
+  } catch {
+    return undefined;
+  }
+};
+const isOptionalUpdateVisible = (row: DriverStatusRow, dismissedRevision?: string): boolean => {
+  return !!row.optionalUpdate && !!row.expectedRevision && row.expectedRevision !== dismissedRevision;
+};
+const formatDriverCardStatusMessage = (row: DriverStatusRow, dismissedRevision?: string): string => {
   const parts: string[] = [];
   if (row.builtIn) {
     parts.push(t('driver.modal.card.status.builtIn'));
   } else if (row.needsUpdate) {
     parts.push(t('driver.modal.card.status.needsUpdate'));
     appendRawNonChineseDetail(parts, row.updateReason);
+    appendRawNonChineseDetail(parts, row.message);
+  } else if (isOptionalUpdateVisible(row, dismissedRevision)) {
+    parts.push(t('driver.modal.card.status.optionalUpdate'));
     appendRawNonChineseDetail(parts, row.message);
   } else if (row.connectable || row.runtimeAvailable) {
     parts.push(t('driver.modal.card.status.runtimeAvailable'));
@@ -701,6 +718,7 @@ const DriverManagerModal: React.FC<{
   const [selectedVersionMap, setSelectedVersionMap] = useState<Record<string, string>>({});
   const [versionLoadingMap, setVersionLoadingMap] = useState<Record<string, boolean>>({});
   const [versionSizeLoadingMap, setVersionSizeLoadingMap] = useState<Record<string, boolean>>({});
+  const [optionalUpdateDismissedRevision, setOptionalUpdateDismissedRevision] = useState<string | undefined>(() => readOptionalUpdateDismissedRevision());
   const [driverFilter, setDriverFilter] = useState<'all' | 'needsUpdate' | 'enabled' | 'notEnabled'>('all');
   const [driverSortKey, setDriverSortKey] = useState<DriverListSortKey>('name');
   const [selectedDriverType, setSelectedDriverType] = useState('');
@@ -999,6 +1017,7 @@ const DriverManagerModal: React.FC<{
         agentRevision: String(item.agentRevision || '').trim() || undefined,
         expectedRevision: String(item.expectedRevision || '').trim() || undefined,
         needsUpdate: !!item.needsUpdate,
+        optionalUpdate: !!item.optionalUpdate && !item.needsUpdate,
         updateReason: String(item.updateReason || '').trim() || undefined,
         affectedConnections: Number.isFinite(Number(item.affectedConnections))
           ? Number(item.affectedConnections)
@@ -1817,6 +1836,9 @@ const DriverManagerModal: React.FC<{
     if (row.needsUpdate) {
       return <Tag color="warning">{t('driver.modal.stats.needsUpdate')}</Tag>;
     }
+    if (isOptionalUpdateVisible(row, optionalUpdateDismissedRevision)) {
+      return <Tag color="processing">{t('driver.modal.stats.canUpdate')}</Tag>;
+    }
     if (row.connectable) {
       return <Tag color="success">{t('driver.modal.card.enabled')}</Tag>;
     }
@@ -1935,6 +1957,26 @@ const DriverManagerModal: React.FC<{
     return (
       <Space size={8} wrap className="driver-manager-card-actions">
         {mainAction}
+        {isOptionalUpdateVisible(row, optionalUpdateDismissedRevision) ? (
+          <Button
+            size={embedded ? 'small' : undefined}
+            type="text"
+            disabled={driverMutationBusy}
+            onClick={() => {
+              if (!row.expectedRevision) {
+                return;
+              }
+              try {
+                window.localStorage.setItem(OPTIONAL_UPDATE_DISMISS_KEY, row.expectedRevision);
+              } catch {
+                // localStorage 不可用时仅本次会话内生效
+              }
+              setOptionalUpdateDismissedRevision(row.expectedRevision);
+            }}
+          >
+            {t('driver.modal.card.optionalUpdate.dismiss')}
+          </Button>
+        ) : null}
         {!row.connectable ? (
           <Button size={embedded ? 'small' : undefined} danger ghost icon={<DeleteOutlined />} disabled={driverMutationBusy} onClick={() => confirmRemoveDriver(row)}>
             {t('driver.modal.card.action.remove')}
@@ -1958,7 +2000,7 @@ const DriverManagerModal: React.FC<{
         row.type,
         row.pinnedVersion,
         row.installedVersion,
-        formatDriverCardStatusMessage(row),
+        formatDriverCardStatusMessage(row, optionalUpdateDismissedRevision),
         row.builtIn ? t('driver.modal.search.builtIn') : t('driver.modal.search.external'),
         row.needsUpdate
           ? t('driver.modal.search.reinstallRecommended')
@@ -2285,7 +2327,7 @@ const DriverManagerModal: React.FC<{
   const renderDriverDetail = (row: DriverStatusRow) => {
     const progressState = progressMap[row.type];
     const progress = resolveDriverProgress(row);
-    const statusMessage = formatDriverCardStatusMessage(row);
+    const statusMessage = formatDriverCardStatusMessage(row, optionalUpdateDismissedRevision);
     const affectedText = row.affectedConnections && row.affectedConnections > 0
       ? t('driver.modal.card.affectedConnections', { count: row.affectedConnections })
       : '';

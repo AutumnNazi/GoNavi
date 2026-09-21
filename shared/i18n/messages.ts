@@ -753,7 +753,9 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
       "驱动代理独立运行，GoNavi 升级后如提示重装，请重新安装对应驱动以应用新的 agent 逻辑。",
     "driver.modal.stats.total": "全部",
     "driver.modal.stats.enabled": "已启用",
+    "driver.modal.stats.canUpdate": "可更新",
     "driver.modal.stats.needsUpdate": "需重装",
+    "driver.modal.card.optionalUpdate.dismiss": "不再提示此版本",
     "driver.modal.stats.notEnabled": "未启用",
     "driver.modal.network.unreachable.downloadChain":
       "重要提醒：驱动下载链路域名不可达",
@@ -831,6 +833,8 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
     "driver.modal.card.status.runtimeAvailable": "纯 Go 驱动已启用，可直接连接。",
     "driver.modal.card.status.needsUpdate":
       "驱动组件有更新，建议重装以获得最新修复与兼容性改进；当前版本仍可正常使用。",
+    "driver.modal.card.status.optionalUpdate":
+      "驱动组件有更新（可选，不影响使用）。",
     "driver.modal.card.status.installedRevision":
       "已安装 revision {revision}。",
     "driver.modal.card.status.expectedRevision":
@@ -1741,7 +1745,9 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
       "Driver agents run independently. If GoNavi asks for reinstallation after an upgrade, reinstall the affected driver so the new agent logic is applied.",
     "driver.modal.stats.total": "Total",
     "driver.modal.stats.enabled": "Enabled",
+    "driver.modal.stats.canUpdate": "Can update",
     "driver.modal.stats.needsUpdate": "Reinstall needed",
+    "driver.modal.card.optionalUpdate.dismiss": "Don't show for this version",
     "driver.modal.stats.notEnabled": "Not enabled",
     "driver.modal.network.unreachable.downloadChain":
       "Important: driver download chain hosts are unreachable",
@@ -1819,6 +1825,8 @@ export const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
     "driver.modal.card.status.runtimeAvailable": "Pure Go driver is enabled and ready to connect.",
     "driver.modal.card.status.needsUpdate":
       "The driver component has an update. Reinstall to get the latest fixes and compatibility improvements; the current version still works.",
+    "driver.modal.card.status.optionalUpdate":
+      "Driver component update available (optional, no impact on usage).",
     "driver.modal.card.status.installedRevision":
       "installed revision {revision}.",
     "driver.modal.card.status.expectedRevision":
