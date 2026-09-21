@@ -4,6 +4,7 @@ import { message } from 'antd';
 import { t } from '../../i18n';
 import {
     createQueryEditorExecutionOrigin,
+    resolveEditorSelectionStartOffset,
     resolveExecutionErrorStatementText,
     revealQueryEditorSqlErrorLocation,
     type QueryEditorExecutionOrigin,
@@ -25,11 +26,15 @@ export const useQueryEditorSqlErrorLocator = (
         sentSql?: string,
         statements?: QueryEditorExecutionOriginStatement[],
     ) => {
+        // 选区执行时记录选区起始偏移：数据库按片段相对行号报错时，
+        // 定位需要「选区起始 + 片段内相对行」而非 indexOf 首次命中（#1324）。
+        const fragmentStartOffset = resolveEditorSelectionStartOffset(editorRef.current, editorSql);
         originRef.current = createQueryEditorExecutionOrigin(
             editorSql,
             originalSql,
             sentSql,
             statements,
+            fragmentStartOffset,
         );
     }, []);
 
