@@ -5934,7 +5934,7 @@
   "db.backend.error.duckdb_attach.sqlite_memory_unsupported": "接続「{{name}}」はインメモリデータベースで、アタッチ可能なファイルがありません。",
   "db.backend.error.duckdb_attach.parse_missing_ref": "\u63a5\u7d9a\u53c2\u7167\u304c\u3042\u308a\u307e\u305b\u3093",
   "db.backend.error.duckdb_attach.directive_in_transaction": "アタッチ/デタッチ命令は管理トランザクション内では実行できません。ATTACH/DETACH SAVED CONNECTION ステートメントをトランザクションバッチの外に移動して単独で実行してください。",
-  "db.backend.error.duckdb_attach.agent_outdated": "DuckDB ドライバーエージェントのバージョンが古く、外部データソースのアタッチに対応していません。ドライバー管理で DuckDB ドライバーを再インストールしてから再試行してください。",
+  "db.backend.error.duckdb_attach.agent_outdated": "DuckDB ドライバーエージェントのバージョンが古く、外部データソースのアタッチに対応していません。ドライバー管理で DuckDB ドライバーを再インストールしてから再試行してください。元のエラー: {{detail}}",
   "db.backend.error.duckdb_attach.parse_unclosed_quote": "\u63a5\u7d9a\u53c2\u7167\u306e\u5f15\u7528\u7b26\u304c\u9589\u3058\u3066\u3044\u307e\u305b\u3093",
   "db.backend.error.duckdb_attach.parse_quoted_required": "\u7a7a\u767d\u3092\u542b\u3080\u63a5\u7d9a\u540d\u306f\u5358\u4e00\u5f15\u7528\u7b26\u3067\u56f2\u3093\u3067\u304f\u3060\u3055\u3044",
   "db.backend.error.duckdb_attach.parse_alias_invalid": "AS \u306e\u5f8c\u306b\u306f\u6709\u52b9\u306a\u30a8\u30a4\u30ea\u30a2\u30b9\uff08\u82f1\u5b57\u307e\u305f\u306f\u30a2\u30f3\u30c0\u30fc\u30b9\u30b3\u30a2\u3067\u958b\u59cb\uff09\u304c\u5fc5\u8981\u3067\u3059",
