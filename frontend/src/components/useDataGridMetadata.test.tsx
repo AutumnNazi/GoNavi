@@ -17,7 +17,11 @@ describe('useDataGridMetadata execution context', () => {
   let controller: ReturnType<typeof useDataGridMetadata> | null = null;
   let renderer: ReactTestRenderer | null = null;
 
-  const Harness: React.FC<{ connectionParamsOverride: string }> = ({ connectionParamsOverride }) => {
+  const Harness: React.FC<{
+    connectionParamsOverride: string;
+    initialColumnMetaMap?: Record<string, any>;
+    initialUniqueKeyGroups?: string[][];
+  }> = ({ connectionParamsOverride, initialColumnMetaMap, initialUniqueKeyGroups }) => {
     controller = useDataGridMetadata({
       connections: [{
         id: 'conn-1',
@@ -35,6 +39,8 @@ describe('useDataGridMetadata execution context', () => {
       exportScope: 'queryResult',
       visibleColumnNames: ['value'],
       loading: false,
+      initialColumnMetaMap,
+      initialUniqueKeyGroups,
     });
     return null;
   };
@@ -102,5 +108,58 @@ describe('useDataGridMetadata execution context', () => {
     expect(controller?.columnMetaMap.id).toMatchObject({ type: 'bigint', key: 'PRI' });
     expect(controller?.columnMetaMap.email).toMatchObject({ type: 'varchar', key: 'UNI' });
     expect(controller?.columnMetaMap.city).toMatchObject({ type: 'varchar', key: 'MUL' });
+  });
+
+  it('does not replace empty metadata after the first query-result paint', async () => {
+    const snapshots: ReturnType<typeof useDataGridMetadata>[] = [];
+    const EmptyQuery = () => {
+      snapshots.push(useDataGridMetadata({ connections: [], connectionId: '', tableName: '',
+        dbName: '', exportScope: 'queryResult', visibleColumnNames: ['value'], loading: false }));
+      return null;
+    };
+    await act(async () => { renderer = create(<EmptyQuery />); });
+    expect(snapshots).toHaveLength(1);
+    expect(backendApp.DBGetColumns).not.toHaveBeenCalled();
+  });
+
+  it('uses execution-plan metadata without requesting the same table again', async () => {
+    const initialColumnMetaMap = {
+      id: { type: 'bigint', comment: '', nullable: 'NO', default: '', hasDefault: false, extra: '', key: 'PRI' },
+    };
+
+    await act(async () => {
+      renderer = create(
+        <Harness
+          connectionParamsOverride="search_path=public"
+          initialColumnMetaMap={initialColumnMetaMap}
+          initialUniqueKeyGroups={[["id"]]}
+        />,
+      );
+    });
+
+    expect(controller?.columnMetaMap).toBe(initialColumnMetaMap);
+    expect(controller?.uniqueKeyGroups).toEqual([['id']]);
+    expect(backendApp.DBGetColumns).not.toHaveBeenCalled();
+    expect(backendApp.DBGetIndexes).not.toHaveBeenCalled();
+  });
+
+  it('renders prepared query metadata once and retains it when the query context changes', async () => {
+    const snapshots: ReturnType<typeof useDataGridMetadata>[] = [];
+    const columns = { id: { type: 'bigint', key: 'PRI', comment: '' } };
+    const keys = [['id']];
+    const PreparedQuery = ({ table }: { table: string }) => {
+      snapshots.push(useDataGridMetadata({ connections: [], connectionId: 'conn-1', dbName: 'app',
+        tableName: table, exportScope: 'queryResult', visibleColumnNames: ['id'], loading: false,
+        initialColumnMetaMap: columns, initialUniqueKeyGroups: keys }));
+      return null;
+    };
+    await act(async () => { renderer = create(<PreparedQuery table="users" />); });
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0].columnMetaMap).toBe(columns);
+    expect(snapshots[0].uniqueKeyGroups).toBe(keys);
+    await act(async () => { renderer?.update(<PreparedQuery table="archived_users" />); });
+    expect(snapshots).toHaveLength(2);
+    expect(backendApp.DBGetColumns).not.toHaveBeenCalled();
+    expect(backendApp.DBGetIndexes).not.toHaveBeenCalled();
   });
 });

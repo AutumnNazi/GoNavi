@@ -31,6 +31,25 @@ const createFilterHookProps = (
 });
 
 describe('useDataGridFilters', () => {
+  it('renders initial filters once and still synchronizes replacement filters', () => {
+    const props = createFilterHookProps();
+    const snapshots: UseDataGridFiltersResult[] = [];
+    const Harness = ({ filters }: { filters: typeof props.appliedFilterConditions }) => {
+      snapshots.push(useDataGridFilters({ ...props, appliedFilterConditions: filters }));
+      return null;
+    };
+    let tree: ReactTestRenderer;
+    const initial = [{ id: 7, column: 'code', op: '=', value: 'A' }];
+    act(() => { tree = create(<Harness filters={initial} />); });
+    try {
+      expect(snapshots[0].filterConditions).toMatchObject(initial);
+      expect(snapshots).toHaveLength(1);
+      act(() => tree.update(<Harness filters={[]} />));
+      expect(snapshots[snapshots.length - 1].filterConditions).toEqual([]);
+      act(() => { snapshots[snapshots.length - 1].applyColumnFilter({ column: 'title', op: '=', value: 'B' }); });
+      expect(snapshots[snapshots.length - 1].filterConditions).toMatchObject([{ column: 'title', value: 'B' }]);
+    } finally { act(() => tree.unmount()); }
+  });
   it('syncs column-header filters into the shared toolbar filter state without requiring the filter panel to be open', () => {
     const onApplyFilter = vi.fn();
     const hookProps = createFilterHookProps({

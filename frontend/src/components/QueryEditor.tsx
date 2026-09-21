@@ -174,6 +174,7 @@ import QueryEditorResultsPanel, {
     resolveEffectiveActiveResultKey,
     type QueryEditorResultSet,
 } from './QueryEditorResultsPanel';
+import { expandCompactQueryResult, invokeCompactDBQueryMulti } from './queryEditor/queryResultTransport';
 import { showCountdownDangerConfirm } from './common/countdownDangerConfirm';
 import ResultDiffWizard from './resultDiff/ResultDiffWizard';
 import ResultDiffPanel from './resultDiff/ResultDiffPanel';
@@ -9690,11 +9691,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               () => DBQueryMultiWithParams(rpcConfig, dbName, sql, queryId, paramBindings),
           );
       }
-      return invokeRequestScopedApp(
-          'DBQueryMulti',
-          [rpcConfig, dbName, sql, queryId],
-          () => DBQueryMulti(rpcConfig, dbName, sql, queryId),
-      );
+      return invokeCompactDBQueryMulti([rpcConfig, dbName, sql, queryId], () => DBQueryMulti(rpcConfig, dbName, sql, queryId), invokeRequestScopedApp)
+          .then(expandCompactQueryResult);
   }, [buildSqlExecutionConnectionConfig, invokeRequestScopedApp]);
 
   // 精准重查询单个结果集（提交事务 / 刷新按钮使用），不会重跑整个编辑器 SQL
@@ -11450,6 +11448,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                         executionConnectionParams,
                         executionBindings: paramBindings,
                         pkColumns: plan?.pkColumns || [],
+                        columnMetaMap: plan?.columnMetaMap,
+                        uniqueKeyGroups: plan?.uniqueKeyGroups,
                         editLocator,
                         readOnly: forceReadOnlyResult || !editLocator || editLocator.readOnly,
                         truncated,

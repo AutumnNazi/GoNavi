@@ -11,7 +11,7 @@ import (
 )
 
 var requiredIssue1098WebRPCContextMethods = []string{
-	"DBQuery", "DBQueryApplicationWithCancel", "DBQueryWithCancel", "DBQueryMulti", "DBQueryAudited", "DBQueryAI", "DBQueryIsolated", "MySQLQuery",
+	"DBQuery", "DBQueryApplicationWithCancel", "DBQueryWithCancel", "DBQueryMulti", "DBQueryMultiCompact", "DBQueryAudited", "DBQueryAI", "DBQueryIsolated", "MySQLQuery",
 	"DBGetDatabases", "DBGetTables", "DBGetViews", "DBGetObjects", "DBGetAllColumns", "DBGetColumns", "DBGetIndexes",
 	"DBGetForeignKeys", "DBGetDatabaseForeignKeys", "DBGetTriggers", "DBShowCreateTable", "DBTableExists",
 	"MySQLGetDatabases", "MySQLGetTables", "MySQLShowCreateTable", "MongoDiscoverMembers", "DBRefreshTableStats", "DiagnoseQuery",
@@ -45,6 +45,9 @@ func WebRPCContextHandlers(a *App) map[string]any {
 		},
 		"DBQueryMulti": func(ctx context.Context, config connection.ConnectionConfig, dbName, query, queryID string) connection.QueryResult {
 			return a.dbQueryMultiContext(ctx, config, dbName, query, queryID)
+		},
+		"DBQueryMultiCompact": func(ctx context.Context, config connection.ConnectionConfig, dbName, query, queryID string) CompactQueryResult {
+			return a.dbQueryMultiCompactContext(ctx, config, dbName, query, queryID)
 		},
 		"DBQueryAudited": func(ctx context.Context, config connection.ConnectionConfig, dbName, query, source string) connection.QueryResult {
 			return a.dbQueryAuditedContext(ctx, config, dbName, query, source)
@@ -231,7 +234,15 @@ func (a *App) dbQueryWithCancelContext(ctx context.Context, config connection.Co
 	})
 }
 
-func (a *App) dbQueryMultiContext(ctx context.Context, config connection.ConnectionConfig, dbName, query, queryID string) connection.QueryResult {
+// dbQueryMultiWithContextOptions runs the shared DBQueryMulti body with the
+// request-scoped options that the Web RPC runtime requires.
+func (a *App) dbQueryMultiWithContextOptions(
+	ctx context.Context,
+	config connection.ConnectionConfig,
+	dbName string,
+	query string,
+	queryID string,
+) connection.QueryResult {
 	explicitQuery := strings.TrimSpace(queryID) != ""
 	source := "query_editor"
 	if !explicitQuery {
@@ -241,6 +252,17 @@ func (a *App) dbQueryMultiContext(ctx context.Context, config connection.Connect
 		auditAll: explicitQuery || a.webRuntime, auditWrites: true, source: source,
 		executionContext: ctx, synchronousConnectionWait: true,
 	})
+}
+
+func (a *App) dbQueryMultiContext(ctx context.Context, config connection.ConnectionConfig, dbName, query, queryID string) connection.QueryResult {
+	return a.dbQueryMultiWithContextOptions(ctx, config, dbName, query, queryID)
+}
+
+// dbQueryMultiCompactContext mirrors dbQueryMultiContext for the compact
+// transport: identical audit, cancellation and connection-wait semantics, with
+// the result set compacted for the Web RPC payload.
+func (a *App) dbQueryMultiCompactContext(ctx context.Context, config connection.ConnectionConfig, dbName, query, queryID string) CompactQueryResult {
+	return encodeCompactQueryResult(a.dbQueryMultiWithContextOptions(ctx, config, dbName, query, queryID))
 }
 
 func (a *App) dbQueryAuditedContext(ctx context.Context, config connection.ConnectionConfig, dbName, query, source string) connection.QueryResult {

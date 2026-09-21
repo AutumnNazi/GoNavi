@@ -1,9 +1,13 @@
-import type { IndexDefinition } from '../types';
+import type { ColumnDefinition, IndexDefinition } from '../types';
 import { resolveUniqueKeyGroupsFromIndexes } from './dataGridCopyInsert';
-import type { ColumnMeta } from './dataGridColumnMeta';
+import { buildColumnMetaMap, type ColumnMeta } from './dataGridColumnMeta';
 
 export type DataGridColumnIndexKey = 'PRI' | 'UNI' | 'MUL';
 export type DataGridColumnTypeRole = 'pk' | 'unique' | 'fk' | 'index' | 'none';
+export type DataGridIndexedColumnMetadata = {
+  columnMetaMap?: Record<string, ColumnMeta>;
+  uniqueKeyGroups?: string[][];
+};
 
 export const DATA_GRID_COLUMN_TYPE_ROLE_TOOLTIP_KEY: Record<
   Exclude<DataGridColumnTypeRole, 'none' | 'fk'>,
@@ -134,4 +138,18 @@ export const applyIndexColumnKeysToColumnMetaMap = (
   });
 
   return changed ? nextMap : metaMap;
+};
+
+export const buildIndexedColumnMetadata = (
+  columns: ColumnDefinition[],
+  indexes: IndexDefinition[] | undefined,
+): DataGridIndexedColumnMetadata => {
+  if (!indexes) return {};
+  return {
+    columnMetaMap: applyIndexColumnKeysToColumnMetaMap(
+      buildColumnMetaMap(columns),
+      resolveIndexColumnKeys(indexes),
+    ),
+    uniqueKeyGroups: resolveUniqueKeyGroupsFromIndexes(indexes),
+  };
 };

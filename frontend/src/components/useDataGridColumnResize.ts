@@ -1,14 +1,15 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import {
   MIN_DATA_TABLE_COLUMN_WIDTH,
   resolveDataTableColumnWidth,
 } from '../utils/dataGridDisplay';
-import { calculateAutoFitColumnWidth } from './dataGridAutoWidth';
+import { calculateAutoFitColumnWidth, calculateAutoFitColumnWidths } from './dataGridAutoWidth';
 import { DEFAULT_GRID_MONO_FONT_FAMILY, GONAVI_ROW_NUMBER_COLUMN_KEY } from './DataGridCore';
 
 const ROW_NUMBER_DEFAULT_WIDTH = 36;
 const ROW_NUMBER_MIN_WIDTH = 28;
 const ROW_NUMBER_MAX_WIDTH = 120;
+const useDataGridLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
 type UseDataGridColumnResizeContext = Record<string, any>;
 type ColumnResizePreviewTargetKind = 'width' | 'width-and-flex' | 'bounded-width-and-flex' | 'delta-width' | 'table-width' | 'sticky-left';
@@ -488,27 +489,30 @@ export const useDataGridColumnResize = (ctx: UseDataGridColumnResizeContext) => 
     return (text: string) => measureTextWidth(text, font);
   }, [measureTextWidth]);
 
-  const autoFitDoneRef = useRef<string>('');
-  useEffect(() => {
+  const initialAutoFitSignature = displayColumnNames.length > 0
+    && displayColumnNames.every((key: string) => Number.isFinite(columnWidths[key]))
+      ? displayColumnNames.join(',')
+      : '';
+  const autoFitDoneRef = useRef<string>(initialAutoFitSignature);
+  useDataGridLayoutEffect(() => {
     if (displayColumnNames.length === 0 || displayData.length === 0) return;
     const sig = displayColumnNames.join(',');
     if (autoFitDoneRef.current === sig) return;
-    const font = `${densityParams.dataFontSize}px ${DEFAULT_GRID_MONO_FONT_FAMILY}`;
-    const newWidths: Record<string, number> = {};
-    displayColumnNames.forEach((key: string) => {
-      const autoWidth = calculateAutoFitColumnWidth({
-        headerTexts: [key],
-        valueTexts: displayData.slice(0, 200).map((row: any) => row?.[key]),
-        measureHeaderText: (text) => measureTextWidth(text, `600 ${font}`),
-        measureCellText: (text) => measureTextWidth(text, `400 ${font}`),
-        minWidth: MIN_DATA_TABLE_COLUMN_WIDTH,
-        maxWidth: 600,
-        defaultWidth: densityParams.defaultColumnWidth,
-      });
-      newWidths[key] = autoWidth;
+    const newWidths = calculateAutoFitColumnWidths({
+      columnNames: displayColumnNames,
+      rows: displayData,
+      dataFontSize: densityParams.dataFontSize,
+      defaultWidth: densityParams.defaultColumnWidth,
+      minWidth: MIN_DATA_TABLE_COLUMN_WIDTH,
+      maxWidth: 600,
+      measureTextWidth,
     });
     autoFitDoneRef.current = sig;
-    setColumnWidths((prev: Record<string, number>) => ({ ...newWidths, ...prev }));
+    setColumnWidths((prev: Record<string, number>) => (
+      Object.keys(newWidths).every((key) => Number.isFinite(prev[key]))
+        ? prev
+        : { ...newWidths, ...prev }
+    ));
   }, [displayColumnNames, displayData, densityParams, measureTextWidth, setColumnWidths]);
 
   const autoFitColumnWidth = useCallback((key: string, headerEl?: HTMLElement | null) => {

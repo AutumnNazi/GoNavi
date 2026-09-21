@@ -1,5 +1,5 @@
+import { DATA_GRID_FILL_BODY_CSS } from './dataGridLayout';
 type DataGridCssTextParams = Record<string, any>;
-
 export const buildDataGridCssText = ({
     darkMode,
     bgContent,
@@ -42,9 +42,9 @@ export const buildDataGridCssText = ({
     tableBodyBottomPadding,
     verticalScrollbarTrackBg,
 }: DataGridCssTextParams) => {
-    const selectionColumnFill = `var(--gn-bg-panel-2, ${bgContent})`;
-    return `
-
+    const fixedColumnFill = `rgb(from var(--gn-bg-panel, ${bgContent}) r g b / 1)`;
+    const selectionColumnFill = `rgb(from var(--gn-bg-panel-2, ${bgContent}) r g b / 1)`;
+    return `${DATA_GRID_FILL_BODY_CSS}
                 .${gridId} .data-grid-toolbar-scroll > * {
 
                     flex-shrink: 0;
@@ -255,7 +255,7 @@ export const buildDataGridCssText = ({
                     position: sticky !important;
                     z-index: 30 !important;
                     /* 与非固定表头一致：本网格 thead 被设为 transparent，透出 .ant-table 的 --gn-bg-panel */
-                    background: var(--gn-bg-panel, ${bgContent}) !important;
+                    background: ${fixedColumnFill} !important;
                     background-clip: padding-box !important;
                     transform: none !important;
                     overflow: hidden !important;
@@ -307,7 +307,7 @@ export const buildDataGridCssText = ({
                     transform: translate3d(var(--gn-datagrid-h-scroll, 0px), 0, 0) !important;
                     will-change: transform;
                     z-index: 4 !important;
-                    background: var(--gn-bg-panel, ${bgContent}) !important;
+                    background: ${fixedColumnFill} !important;
                     background-clip: padding-box !important;
                     overflow: hidden !important;
                 }
@@ -343,7 +343,7 @@ export const buildDataGridCssText = ({
                 .${gridId} .ant-table-tbody > tr > td.ant-table-cell-fix-right {
                     position: sticky !important;
                     z-index: 4 !important;
-                    background: var(--gn-bg-panel, ${bgContent}) !important;
+                    background: ${fixedColumnFill} !important;
                     background-clip: padding-box !important;
                     transform: none !important;
                 }
@@ -385,7 +385,7 @@ export const buildDataGridCssText = ({
                 .${gridId} .ant-table-tbody-virtual-holder .ant-table-row:hover > .ant-table-cell.ant-table-cell-fix-right,
                 .${gridId} .ant-table-tbody > tr:hover > td.ant-table-cell-fix-left,
                 .${gridId} .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right {
-                    background: var(--gn-bg-panel, ${bgContent}) !important;
+                    background: ${fixedColumnFill} !important;
                     background-image: none !important;
                 }
                 .${gridId} .ant-table-tbody-virtual-holder .ant-table-row:hover > .ant-table-cell.ant-table-selection-column,
@@ -399,9 +399,7 @@ export const buildDataGridCssText = ({
                 .${gridId} .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-left,
                 .${gridId} .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right,
                 .${gridId} .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-selection-column {
-                    background: var(--gn-bg-selected, rgba(34, 197, 94, 0.14)) !important;
-                    background-color: var(--gn-bg-selected, rgba(34, 197, 94, 0.14)) !important;
-                    background-image: none !important;
+                    background: linear-gradient(var(--gn-bg-selected, rgba(34, 197, 94, 0.14)), var(--gn-bg-selected, rgba(34, 197, 94, 0.14))), ${fixedColumnFill} !important;
                 }
                 .${gridId} .ant-table-tbody-virtual-holder .ant-table-row.ant-table-row-selected:hover > .ant-table-cell.ant-table-cell-fix-left,
                 .${gridId} .ant-table-tbody-virtual-holder .ant-table-row.ant-table-row-selected:hover > .ant-table-cell.ant-table-cell-fix-right,
@@ -409,9 +407,7 @@ export const buildDataGridCssText = ({
                 .${gridId} .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-left,
                 .${gridId} .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-right,
                 .${gridId} .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-selection-column {
-                    background: var(--gn-bg-selected, rgba(34, 197, 94, 0.14)) !important;
-                    background-color: var(--gn-bg-selected, rgba(34, 197, 94, 0.14)) !important;
-                    background-image: none !important;
+                    background: linear-gradient(var(--gn-bg-selected, rgba(34, 197, 94, 0.14)), var(--gn-bg-selected, rgba(34, 197, 94, 0.14))), ${fixedColumnFill} !important;
                 }
                 .${gridId} .data-grid-row-number-cell {
                     text-align: center !important;
@@ -494,7 +490,7 @@ export const buildDataGridCssText = ({
 
                 .${gridId}.data-grid-root .ant-table-header .ant-table-thead > tr > th.ant-table-cell[data-active-cell-column="true"],
                 .${gridId}.data-grid-root .ant-table-thead > tr > th.ant-table-cell[data-active-cell-column="true"] {
-                    background-color: var(--gn-bg-panel, ${bgContent}) !important;
+                    background-color: ${fixedColumnFill} !important;
                     background-image: linear-gradient(
                         var(--gn-bg-active, ${darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.075)'}),
                         var(--gn-bg-active, ${darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.075)'})
@@ -547,7 +543,7 @@ export const buildDataGridCssText = ({
                 .${gridId}.data-grid-root .ant-table-tbody-virtual .ant-table-row:is(.ant-table-row-selected, .ant-table-row-selected:hover) > .ant-table-cell:is(.data-grid-row-number-cell, .ant-table-selection-column),
                 .${gridId}.data-grid-root .ant-table-tbody-virtual-holder-inner .ant-table-row:is(.ant-table-row-selected, .ant-table-row-selected:hover) > .ant-table-cell:is(.data-grid-row-number-cell, .ant-table-selection-column),
                 .${gridId}.data-grid-root .ant-table-tbody > tr:is(.ant-table-row-selected, .ant-table-row-selected:hover) > td:is(.data-grid-row-number-cell, .ant-table-selection-column) {
-                    background-color: var(--gn-bg-panel, ${bgContent}) !important;
+                    background-color: ${fixedColumnFill} !important;
                     background-image: linear-gradient(
                         var(--gn-bg-selected, rgba(34, 197, 94, 0.14)),
                         var(--gn-bg-selected, rgba(34, 197, 94, 0.14))

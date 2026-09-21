@@ -41,6 +41,8 @@ const readDataGridSecondaryActionsSource = (): string =>
   readFileSync(new URL('./DataGridSecondaryActions.tsx', import.meta.url), 'utf8');
 const readDataGridShellSource = (): string =>
   readFileSync(new URL('./DataGridShell.tsx', import.meta.url), 'utf8');
+const readDataGridColumnResizeSource = (): string =>
+  readFileSync(new URL('./useDataGridColumnResize.ts', import.meta.url), 'utf8');
 
 const mockStoreState = vi.hoisted(() => ({
   languagePreference: 'system' as LanguagePreference,
@@ -152,6 +154,17 @@ const zhRowNumberHint = zhCnCatalog['data_grid.row_number.double_click_to_view']
 const enUndoCellChangeLabel = enUsCatalog['data_grid.context_menu.undo_cell_change'];
 
 describe('DataGrid layout', () => {
+  it('applies new-column auto widths before the browser paints the reused grid', () => {
+    const source = readDataGridColumnResizeSource();
+    const autoFitEffect = source.slice(
+      source.indexOf('const initialAutoFitSignature'),
+      source.indexOf('const autoFitColumnWidth'),
+    );
+
+    expect(autoFitEffect).toContain('useDataGridLayoutEffect(() => {');
+    expect(autoFitEffect).not.toContain('useEffect(() => {');
+  });
+
   it('uses SQL max-row presets for paginated SQL results without changing other grids', () => {
     expect(buildDataGridPaginationPageSizeOptions()).toEqual(['100', '200', '500', '1000']);
     expect(buildDataGridPaginationPageSizeOptions(750)).toEqual(['100', '500', '1000', '5000', '20000', '0', '750']);
@@ -501,7 +514,7 @@ describe('DataGrid layout', () => {
       expect(ruleStart).toBeGreaterThan(transparentHover);
       const ruleEnd = css.indexOf('}', ruleStart);
       const rule = css.slice(ruleStart, ruleEnd + 1);
-      expect(rule).toContain('background: var(--gn-bg-panel-2, #ffffff) !important;');
+      expect(rule).toContain('background: rgb(from var(--gn-bg-panel-2, #ffffff) r g b / 1) !important;');
     });
 
     const fixedRowControlSelectedSelectors = [
@@ -515,7 +528,7 @@ describe('DataGrid layout', () => {
       expect(ruleStart).toBeGreaterThan(transparentHover);
       const ruleEnd = css.indexOf('}', ruleStart);
       const rule = css.slice(ruleStart, ruleEnd + 1);
-      expect(rule).toContain('background-color: var(--gn-bg-panel, #ffffff) !important;');
+      expect(rule).toContain('background-color: rgb(from var(--gn-bg-panel, #ffffff) r g b / 1) !important;');
       expect(rule).toContain('background-image: linear-gradient(');
       expect(rule).toContain('var(--gn-bg-selected, rgba(34, 197, 94, 0.14))');
     });
@@ -539,7 +552,7 @@ describe('DataGrid layout', () => {
     const fixedControlHoverRuleStart = css.indexOf(fixedControlHoverSelector);
     const fixedControlHoverRuleEnd = css.indexOf('}', fixedControlHoverRuleStart);
     const fixedControlHoverRule = css.slice(fixedControlHoverRuleStart, fixedControlHoverRuleEnd + 1);
-    expect(fixedControlHoverRule).toContain('background: var(--gn-bg-panel-2, #ffffff) !important;');
+    expect(fixedControlHoverRule).toContain('background: rgb(from var(--gn-bg-panel-2, #ffffff) r g b / 1) !important;');
     expect(css).toContain('var(--gn-bg-hover, rgba(15, 23, 42, 0.045))');
     expect(css).toContain('var(--gn-bg-active, rgba(15, 23, 42, 0.075))');
     expect(css.indexOf('[data-cell-selected="true"]')).toBeGreaterThan(css.indexOf(rowSelector));
@@ -2049,7 +2062,9 @@ describe('DataGrid layout', () => {
     expect(source).toContain('const isWindowsLike = useMemo(() => isWindowsPlatform(), []);');
     expect(source).toContain('const virtualListItemHorizontalOffsetComposited = isMacLike || isWindowsLike;');
     expect(source).toContain('const horizontalScrollVisible = isTableSurfaceActive && !isWindowsLike && externalHorizontalScrollMetrics.visible;');
-    expect(virtualColumnSource).toContain('&& !isWindowsLike');
+    // Every platform now keeps the column window: rc-table's 640/960px overscan
+    // plus its 512px retention buffer covers a one-frame-late window.
+    expect(virtualColumnSource).not.toContain('&& !isWindowsLike');
     expect(virtualColumnSource).not.toContain('&& !isMacLike');
     expect(virtualColumnSource).toContain('&& shouldVirtualizeDataGridColumns(displayColumnNames.length);');
     expect(visualSyncSource).toContain('virtualHorizontalPostCommitGuardRef.current?.cancel();');
@@ -2091,8 +2106,8 @@ describe('DataGrid layout', () => {
     expect(visualSyncSource).toContain('syncDataGridHeaderHorizontalOffset(');
     expect(visualSyncSource).not.toContain("headerEl.style.setProperty('--gn-datagrid-h-scroll'");
     expect(visualSyncSource).not.toContain("cell.style.setProperty('transform'");
-    expect(nativeScrollBindingSource.indexOf('syncVirtualHorizontalVisualOffset(tableContainer, source.scrollLeft)'))
-      .toBeLessThan(nativeScrollBindingSource.indexOf('scheduleNativeVirtualHorizontalScroll(tableContainer)'));
+    expect(nativeScrollBindingSource).toContain('scheduleNativeVirtualHorizontalScroll(tableContainer)');
+    expect(nativeScrollBindingSource).not.toContain('syncVirtualHorizontalVisualOffset(tableContainer, source.scrollLeft)');
     expect(nativeScrollFlushSource).toContain('const visual = syncVirtualHorizontalVisualOffset(tableContainer, holderEl.scrollLeft);');
     expect(nativeScrollFlushSource).not.toContain('timeline');
   });

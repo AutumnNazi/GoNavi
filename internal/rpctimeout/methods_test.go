@@ -10,6 +10,8 @@ func TestIsLongRunningAppMethod(t *testing.T) {
 		want   bool
 	}{
 		{method: "DBQueryWithCancel", want: true},
+		{method: "DBQueryMulti", want: true},
+		{method: "DBQueryMultiCompact", want: true},
 		{method: "DBQueryMultiWithOptions", want: true},
 		{method: "DBQueryMultiTransactionalWithOptions", want: true},
 		{method: "ExecuteSQLFile", want: true},
