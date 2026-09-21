@@ -301,8 +301,14 @@ jobs:
             # 不发布 dev-<sha> 永久快照——它会让版本号 tag（0.9.8 等）被数百条
             # dev 噪音压到列表后页，用户无法肉眼定位可锁定的版本。
             type=raw,value=dev-latest,enable=${{ github.ref == 'refs/heads/dev' }}
+            # 同时发布带 v 与不带 v 两种形式：#1318 的验收标准写的是 vX.Y.Z，
+            # 而 K8s 生态里 0.9.8 这种无前缀写法更常见（Helm chart、kustomize
+            # 的 image.tag 多按 semver 原样使用）。两者指向同一 digest，多出的
+            # 一两个 tag 不会造成噪音——dev 分支已不发布永久快照。
             type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=semver,pattern=v{{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=semver,pattern={{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=semver,pattern=v{{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
           labels: |
             org.opencontainers.image.title=${{ matrix.image_name }}

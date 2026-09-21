@@ -169,6 +169,12 @@ class DockerImagesWorkflowTest(unittest.TestCase):
         self.assertIn("type=semver,pattern={{major}}.{{minor}}", self.source)
         self.assertIn("type=raw,value=latest", self.source)
 
+    def test_release_publishes_v_prefixed_aliases(self) -> None:
+        # #1318 的验收标准写的是 vX.Y.Z，而 K8s 生态惯用无前缀的 0.9.8。
+        # 两种形式都要发，且必须指向同一 digest，否则用户按 issue 里的写法拉不到。
+        self.assertIn("type=semver,pattern=v{{version}}", self.source)
+        self.assertIn("type=semver,pattern=v{{major}}.{{minor}}", self.source)
+
     def test_every_published_tag_is_verified_after_push(self) -> None:
         # imagetools create 会算出某个 tag 却没能让它落库，而步骤仍返回 0；
         # 只校验单个 version 的输出会漏掉这种缺口，必须逐个回查 EXPECTED_TAGS。
