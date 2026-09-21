@@ -2,6 +2,7 @@ package app
 
 import (
 	"archive/zip"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1055,5 +1056,5 @@ func writeWebDownloadZip(targetPath string, entries []webDownloadZipEntry, budge
 	if err := archive.Close(); err != nil {
 		return err
 	}
-	return target.commit()
+	return target.commit(context.Background())
 }

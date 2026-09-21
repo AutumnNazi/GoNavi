@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -623,6 +624,7 @@ func TestTryGetViewCreateStatement_OracleUsesUnboundedStreamForCLOB(t *testing.T
 	}
 
 	ddl, ok := tryGetViewCreateStatement(
+			context.Background(),
 		dbInst,
 		connection.ConnectionConfig{Type: "oracle"},
 		"H2",

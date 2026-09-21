@@ -37,6 +37,8 @@ export function CancelConnectionTest(arg1:string):Promise<connection.QueryResult
 
 export function CancelDriverPackageDownload(arg1:string):Promise<connection.QueryResult>;
 
+export function CancelExportFile(arg1:string):Promise<connection.QueryResult>;
+
 export function CancelImportJob(arg1:string):Promise<connection.QueryResult>;
 
 export function CancelQuery(arg1:string):Promise<connection.QueryResult>;

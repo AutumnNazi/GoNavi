@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -80,7 +81,7 @@ func (a *App) ExportImportErrorRows(artifactID string) (result connection.QueryR
 	if written > maxImportErrorArtifactBytes {
 		return connection.QueryResult{Success: false, Message: fmt.Sprintf("import error artifact exceeds %d-byte limit", maxImportErrorArtifactBytes)}
 	}
-	if err := target.commit(); err != nil {
+	if err := target.commit(context.Background()); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 	return connection.QueryResult{

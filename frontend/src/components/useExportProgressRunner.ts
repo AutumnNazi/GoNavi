@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import { message } from 'antd';
 import { t } from '../i18n';
+import { CancelExportFile } from '../../wailsjs/go/app/App';
 import { downloadBrowserFileFromResult } from '../utils/browserFileTransfer';
 import {
+  cancelExportProgressTask,
   createEphemeralExportProgressTaskKey,
   consumeExportProgressTaskRequest,
   finishExportProgressTask,
   getExportProgressTaskSnapshot,
   isExportProgressTaskRunning,
   resetExportProgressTask,
+  revertCancelExportProgressTask,
   startExportProgressTask,
   subscribeExportProgressTask,
   type ExportProgressState,
@@ -24,6 +27,7 @@ export type {
 export type ExportRunResult = {
   success: boolean;
   message: string;
+  data?: unknown;
 };
 
 export type RunExportWithProgressOptions<T extends ExportRunResult> = {
@@ -58,6 +62,16 @@ const hasUsableTotalRows = (known: boolean, total: unknown): boolean => {
 const buildExportJobId = (): string => `export-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const EXPORT_CANCELED_MESSAGE = '\u5df2\u53d6\u6d88';
 
+// 运行期取消（CancelExportFile 路径）带结构化标记；保存对话框取消只有旧文案、
+// 依旧按「任务未开始」静默重置，两者语义不同不能混用。
+const hasStructuredCancelMark = (result: ExportRunResult | null): boolean => {
+  if (!result || result.success) {
+    return false;
+  }
+  const data = result.data as { canceled?: unknown } | undefined;
+  return data?.canceled === true;
+};
+
 export function useExportProgressRunner(options?: UseExportProgressRunnerOptions) {
   const showToast = options?.showToast !== false;
   const configuredTaskKey = String(options?.taskKey || '').trim();
@@ -90,6 +104,39 @@ export function useExportProgressRunner(options?: UseExportProgressRunnerOptions
   const reset = useCallback(() => {
     resetExportProgressTask(taskKey);
   }, [taskKey]);
+
+  // cancelExport 把任务标记为 cancelling 并向后端分发取消信号；后端确认后
+  // 协作式停止，run 结果以 data.canceled 收尾归档为 cancelled 终态。
+  // 后端拒绝（任务不存在、IPC 异常）时回退 cancelling，让任务保持可关闭/可重试。
+  const cancelExport = useCallback(async (): Promise<boolean> => {
+    if (!isExportProgressTaskRunning(taskKey)) {
+      return false;
+    }
+    const jobId = String(getExportProgressTaskSnapshot(taskKey).state.jobId || '').trim();
+    if (!jobId) {
+      return false;
+    }
+    if (!cancelExportProgressTask(taskKey)) {
+      return false;
+    }
+    try {
+      const response = await CancelExportFile(jobId);
+      if (!response?.success) {
+        revertCancelExportProgressTask(taskKey);
+        if (showToast && response?.message) {
+          void message.warning(response.message);
+        }
+        return false;
+      }
+      return true;
+    } catch (error: any) {
+      revertCancelExportProgressTask(taskKey);
+      if (showToast) {
+        void message.warning(error?.message || String(error));
+      }
+      return false;
+    }
+  }, [showToast, taskKey]);
 
   const runExportWithProgress = useCallback(async <T extends ExportRunResult,>(
     runOptions: RunExportWithProgressOptions<T>,
@@ -149,6 +196,18 @@ export function useExportProgressRunner(options?: UseExportProgressRunnerOptions
         if (showToast) {
           void message.success(t('data_export.message.export_success'));
         }
+      } else if (hasStructuredCancelMark(result)) {
+        finishExportProgressTask(taskKey, jobId, (prev): ExportProgressState => ({
+          ...prev,
+          open: true,
+          status: 'cancelled',
+          finishedAt: prev.finishedAt || Date.now(),
+          stage: prev.stage || t('data_export.progress.title.cancelled'),
+          message: result.message || '',
+        }));
+        if (showToast) {
+          void message.info(t('data_export.progress.title.cancelled'));
+        }
       } else if (result.message !== EXPORT_CANCELED_MESSAGE) {
         finishExportProgressTask(taskKey, jobId, (prev): ExportProgressState => ({
           ...prev,
@@ -187,7 +246,8 @@ export function useExportProgressRunner(options?: UseExportProgressRunnerOptions
     logs: snapshot.logs,
     taskKey,
     reset,
+    cancelExport,
     runExportWithProgress,
-    isRunning: state.status === 'start' || state.status === 'running' || state.status === 'finalizing',
+    isRunning: state.status === 'start' || state.status === 'running' || state.status === 'finalizing' || state.status === 'cancelling',
   };
 }

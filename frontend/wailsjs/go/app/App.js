@@ -58,6 +58,10 @@ export function CancelImportJob(arg1) {
   return window['go']['app']['App']['CancelImportJob'](arg1);
 }
 
+export function CancelExportFile(arg1) {
+  return window['go']['app']['App']['CancelExportFile'](arg1);
+}
+
 export function CancelQuery(arg1) {
   return window['go']['app']['App']['CancelQuery'](arg1);
 }

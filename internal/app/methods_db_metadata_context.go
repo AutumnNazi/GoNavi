@@ -256,3 +256,12 @@ func (a *App) DBGetTriggersContext(ctx context.Context, config connection.Connec
 func (a *App) DBShowCreateTableContext(ctx context.Context, config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
 	return a.runMetadataWithContext(ctx, func(session *App) connection.QueryResult { return session.DBShowCreateTable(config, dbName, tableName) })
 }
+
+// bindMetadataDatabase 把数据库实例挂到当前元数据会话上，
+// 供 getDatabase 家族在取回实例后登记元数据请求上下文。
+func (a *App) bindMetadataDatabase(instance db.Database) {
+	if a == nil || a.metadataSession == nil || instance == nil {
+		return
+	}
+	a.metadataSession.bindDatabase(instance)
+}

@@ -40,9 +40,16 @@ const messageApi = vi.hoisted(() => ({
   warning: vi.fn(),
   success: vi.fn(),
   error: vi.fn(),
+  info: vi.fn(),
+}));
+
+const appBindings = vi.hoisted(() => ({
+  CancelExportFile: vi.fn(),
 }));
 
 vi.mock('../../wailsjs/runtime/runtime', () => runtimeApi);
+
+vi.mock('../../wailsjs/go/app/App', () => appBindings);
 
 vi.mock('antd', () => ({
   message: messageApi,
@@ -72,6 +79,7 @@ describe('useExportProgressRunner', () => {
     setCurrentLanguage('zh-CN');
     runtimeApi.reset();
     runtimeApi.EventsOn.mockClear();
+    appBindings.CancelExportFile.mockReset();
     messageApi.warning.mockReset();
     messageApi.success.mockReset();
     messageApi.error.mockReset();
@@ -562,6 +570,120 @@ describe('useExportProgressRunner', () => {
     expect(runner?.state.status).toBe('idle');
     expect(runner?.state.jobId).toBe('');
     expect(runner?.logs).toEqual([]);
+  });
+
+  it('marks a running export as cancelled after backend confirms cancellation', async () => {
+    renderRunner('cancelable-export-task');
+
+    let resolveRun!: (value: { success: boolean; message: string; data?: unknown }) => void;
+    const pendingRun = new Promise<{ success: boolean; message: string; data?: unknown }>((resolve) => {
+      resolveRun = resolve;
+    });
+    let runPromise: Promise<{ success: boolean; message: string; data?: unknown } | null> | null = null;
+    await act(async () => {
+      runPromise = runner?.runExportWithProgress({
+        title: '导出 big_table',
+        targetName: 'big_table',
+        format: 'csv',
+        run: async () => pendingRun,
+      }) || null;
+      await Promise.resolve();
+    });
+    const jobId = runner?.state.jobId || '';
+    expect(jobId).not.toBe('');
+
+    appBindings.CancelExportFile.mockResolvedValueOnce({ success: true, message: '已发送取消请求' });
+    let cancelOk = false;
+    await act(async () => {
+      cancelOk = (await runner?.cancelExport()) || false;
+    });
+
+    expect(appBindings.CancelExportFile).toHaveBeenCalledTimes(1);
+    expect(appBindings.CancelExportFile).toHaveBeenCalledWith(jobId);
+    expect(cancelOk).toBe(true);
+    expect(runner?.state.status).toBe('cancelling');
+
+    await act(async () => {
+      resolveRun({ success: false, message: '导出已取消', data: { canceled: true } });
+      await runPromise;
+    });
+
+    expect(runner?.state.status).toBe('cancelled');
+    expect(runner?.logs.map((entry) => entry.source)).toEqual(['client', 'client', 'result']);
+  });
+
+  it('keeps the task running when the backend rejects the cancel request', async () => {
+    renderRunner('cancel-rejected-export-task');
+
+    let resolveRun!: (value: { success: boolean; message: string }) => void;
+    const pendingRun = new Promise<{ success: boolean; message: string }>((resolve) => {
+      resolveRun = resolve;
+    });
+    let runPromise: Promise<{ success: boolean; message: string } | null> | null = null;
+    await act(async () => {
+      runPromise = runner?.runExportWithProgress({
+        title: '导出 keep_running',
+        targetName: 'keep_running',
+        format: 'csv',
+        run: async () => pendingRun,
+      }) || null;
+      await Promise.resolve();
+    });
+
+    appBindings.CancelExportFile.mockResolvedValueOnce({ success: false, message: 'task not found' });
+    let cancelOk = true;
+    await act(async () => {
+      cancelOk = (await runner?.cancelExport()) || false;
+    });
+    expect(cancelOk).toBe(false);
+    expect(appBindings.CancelExportFile).toHaveBeenCalledTimes(1);
+    expect(runner?.state.status).toBe('running');
+
+    now = 6_000;
+    await act(async () => {
+      resolveRun({ success: true, message: '导出完成' });
+      await runPromise;
+    });
+    expect(runner?.state.status).toBe('done');
+  });
+
+  it('does not call the backend when cancelling an idle task', async () => {
+    renderRunner('idle-cancel-attempt');
+
+    let cancelOk = true;
+    await act(async () => {
+      cancelOk = (await runner?.cancelExport()) || false;
+    });
+
+    expect(cancelOk).toBe(false);
+    expect(appBindings.CancelExportFile).not.toHaveBeenCalled();
+  });
+
+  it('prefers the structured cancel mark over the legacy canceled message', async () => {
+    renderRunner('structured-cancel-mark-task');
+
+    let resolveRun!: (value: { success: boolean; message: string; data?: unknown }) => void;
+    const pendingRun = new Promise<{ success: boolean; message: string; data?: unknown }>((resolve) => {
+      resolveRun = resolve;
+    });
+    let runPromise: Promise<{ success: boolean; message: string; data?: unknown } | null> | null = null;
+    await act(async () => {
+      runPromise = runner?.runExportWithProgress({
+        title: '导出 structured cancel',
+        targetName: 'structured_cancel',
+        format: 'csv',
+        run: async () => pendingRun,
+      }) || null;
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      resolveRun({ success: false, message: '已取消', data: { canceled: true } });
+      await runPromise;
+    });
+
+    expect(runner?.state.status).toBe('cancelled');
+    expect(runner?.state.jobId).not.toBe('');
   });
 
   it('caps structured progress logs while retaining the newest stages', async () => {
