@@ -39,6 +39,14 @@ ghcr.io/syngnat/gonavi-mcp-server:latest
 ghcr.io/syngnat/gonavi-mcp-server:dev-latest
 ```
 
+`latest` 与 `dev-latest` 都是**移动指针**，节点重启后是否拉到新版本取决于镜像拉取策略，不适合需要版本可控的场景。要锁定具体版本，请用精确版本 tag（**不带 `v` 前缀**，即 Git tag `v0.9.8` 对应镜像 tag `0.9.8`）：
+
+```text
+ghcr.io/syngnat/gonavi-mcp-server:0.9.8
+```
+
+同时把 `imagePullPolicy` 设为 `IfNotPresent`，即可避免本地已有 `latest` 时因拉取策略导致的更新行为不确定。
+
 如果你要使用自建镜像，再按下面方式覆盖 `image`：
 
 - 在当前节点可访问的 Docker / Podman / containerd 环境中构建并导入这个镜像

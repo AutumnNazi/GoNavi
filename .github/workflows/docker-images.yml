@@ -296,8 +296,11 @@ jobs:
           flavor: |
             latest=false
           tags: |
+            # dev 分支只保留滚动指针：每次推送复用同一个 dev-latest，旧构建
+            # 失去唯一 tag 后自动转为 untagged，不再挤占 package 版本列表。
+            # 不发布 dev-<sha> 永久快照——它会让版本号 tag（0.9.8 等）被数百条
+            # dev 噪音压到列表后页，用户无法肉眼定位可锁定的版本。
             type=raw,value=dev-latest,enable=${{ github.ref == 'refs/heads/dev' }}
-            type=sha,format=short,prefix=dev-,enable=${{ github.ref == 'refs/heads/dev' }}
             type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=semver,pattern={{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
@@ -315,8 +318,27 @@ jobs:
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf 'ghcr.io/${{ steps.vars.outputs.owner_lc }}/${{ matrix.image_name }}@sha256:%s ' *)
 
-      - name: Inspect image
+      - name: Verify every published tag resolves
         shell: bash
+        env:
+          EXPECTED_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           set -euo pipefail
-          docker buildx imagetools inspect "ghcr.io/${{ steps.vars.outputs.owner_lc }}/${{ matrix.image_name }}:${{ steps.meta.outputs.version }}"
+          # imagetools create 返回 0 不代表每个 -t 都真正落库：历史上出现过构建已算出
+          # dev-<sha> tag、推送步骤报 success，但 registry 里查不到该 tag 的情况，
+          # 「按提交锁定 dev 镜像」于是在无声中失效。这里逐个回查，缺一即失败。
+          # 旧的 Inspect 步骤只校验 steps.meta.outputs.version 单个 tag，覆盖不到这种缺口。
+          missing=0
+          while IFS= read -r tag; do
+            [[ -n "${tag}" ]] || continue
+            if docker buildx imagetools inspect "${tag}" >/dev/null 2>&1; then
+              echo "✅ ${tag}"
+            else
+              echo "❌ 推送后校验失败，tag 未真正落库: ${tag}" >&2
+              missing=$((missing + 1))
+            fi
+          done <<< "${EXPECTED_TAGS}"
+          if [[ "${missing}" -gt 0 ]]; then
+            echo "共 ${missing} 个 tag 未落库，镜像对该引用不可用" >&2
+            exit 1
+          fi

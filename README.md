@@ -415,6 +415,19 @@ docker compose --env-file docker.mcp-server.env -f docker-compose.mcp-server.yml
 | Helm | [deploy/helm/gonavi-mcp-server](deploy/helm/gonavi-mcp-server) |
 | Build-only image | `Dockerfile.build-env` → `ghcr.io/syngnat/gonavi-build-env` |
 
+Image tags (all four images follow the same scheme):
+
+| Tag | Meaning |
+|---|---|
+| `latest` | Newest stable release |
+| `0.9.8` | Exact release, e.g. `ghcr.io/syngnat/gonavi-web-server:0.9.8` |
+| `0.9` | Newest patch of a minor line |
+| `dev-latest` | Rolling `dev` branch build, moves on every push |
+
+Pin an exact release when a cluster should not drift; `dev-latest` is a moving
+pointer and is not a stable anchor. Tags carry no `v` prefix — the Git tag is
+`v0.9.8`, the image tag is `0.9.8`.
+
 Safety defaults: remote `schema-only` omits `execute_sql`; when enabled it follows the same AI safety controls as the built-in assistant, and calling `execute_sql` is the confirmation.  
 Details: [cmd/gonavi-mcp-server/README.md](cmd/gonavi-mcp-server/README.md).
 
