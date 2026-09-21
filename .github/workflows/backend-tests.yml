@@ -61,7 +61,7 @@ jobs:
       - name: Run DuckDB driver tests
         env:
           CGO_ENABLED: 1
-        run: go test -tags gonavi_duckdb_driver ./internal/db/ ./internal/app/ -run 'DuckDB|Attach|Slugify|SavedConnection|ConnectionSecret|BuildDuckDB|SameExternal|ParseDuckDB' -count=1 -timeout=30m
+        run: go test -tags gonavi_duckdb_driver ./internal/db/ ./internal/app/ -run 'DuckDB|Attach|Slugify|SavedConnection|ConnectionSecret|BuildDuckDB|SameExternal|ParseDuckDB|SecretCleanup' -count=1 -timeout=30m
 
   platform-sensitive:
     name: Platform-sensitive tests (${{ matrix.os }})
