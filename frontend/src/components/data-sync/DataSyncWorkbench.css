@@ -976,6 +976,12 @@ textarea.gn-data-sync-control {
   font-weight: 520;
 }
 
+.gn-data-sync-field-hint {
+  color: var(--gn-fg-5, #9ca3af);
+  font-size: var(--gn-font-size-xs, 11px);
+  line-height: 1.5;
+}
+
 .gn-data-sync-guide {
   width: min(100%, 560px);
   margin: 28px auto 40px;

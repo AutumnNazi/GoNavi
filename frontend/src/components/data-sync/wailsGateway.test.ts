@@ -369,6 +369,33 @@ describe('real Wails data sync gateway', () => {
     expect(api.DataSyncJobPreflight).not.toHaveBeenCalled();
   });
 
+  it('blocks an unschedulable Cron expression locally instead of returning definition_invalid', async () => {
+    const task = reviseDataSyncTask(taskFixture(), {
+      trigger: {
+        mode: 'cron',
+        expression: '0 0 3 * * *',
+        timezone: 'Asia/Shanghai',
+        overlap: 'skip',
+      },
+    });
+    const api = apiFixture();
+    const gateway = createWailsDataSyncWorkbenchGateway({ api, now: () => NOW });
+
+    // issue #1298：此前该表达式会带着后端原文走一次预检，最终只显示
+    // “任务定义无效”，阻断项还落在 endpoints。
+    const preflight = await gateway.preflightTask(task);
+
+    expect(preflight).toMatchObject({ status: 'blocked', definitionHash: '' });
+    expect(preflight.issues).toEqual([
+      expect.objectContaining({
+        code: 'cron_expression_field_count',
+        severity: 'blocker',
+        stage: 'trigger',
+      }),
+    ]);
+    expect(api.DataSyncJobPreflight).not.toHaveBeenCalled();
+  });
+
   it('sends a keyless snapshot mapping to backend preflight so target existence can decide', async () => {
     const task = reviseDataSyncTask(taskFixture(), {
       mappings: [

@@ -218,7 +218,7 @@ describe('static data sync workbench gateway schedule control', () => {
       lifecycle: 'enabled' as const,
       trigger: {
         mode: 'cron' as const,
-        expression: '0 0 2 * * *',
+        expression: '0 2 * * *',
         timezone: 'Asia/Shanghai',
         overlap: 'skip' as const,
       },

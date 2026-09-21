@@ -299,6 +299,43 @@ describe('data sync task model', () => {
     );
   });
 
+  it('blocks a Cron expression the scheduler cannot parse on the trigger stage', () => {
+    const base = createDataSyncTaskDraft({ id: 'task-cron', kind: 'reconcile' });
+    const configured = reviseDataSyncTask(base, {
+      name: 'Orders sync',
+      source: { ...base.source, connectionId: 'mysql-prod' },
+      target: { ...base.target, connectionId: 'pg-warehouse' },
+      mappings: [
+        {
+          ...createDataSyncTableMapping('map-cron', 'orders', 'ods.orders'),
+          keyColumns: ['id'],
+        },
+      ],
+    });
+    const withCron = (expression: string) =>
+      reviseDataSyncTask(configured, {
+        trigger: {
+          mode: 'cron',
+          expression,
+          timezone: 'Asia/Shanghai',
+          overlap: 'skip',
+        },
+      });
+
+    // issue #1298：六段（含秒）格式曾被判为「任务定义无效」，阻断项还落在 endpoints。
+    const seconds = validateDataSyncTask(withCron('0 0 3 * * *'));
+    expect(
+      seconds.find((item) => item.code === 'cron_expression_field_count'),
+    ).toMatchObject({ severity: 'blocker', stage: 'trigger' });
+    expect(seconds.every((item) => item.stage !== 'endpoints')).toBe(true);
+
+    expect(validateDataSyncTask(withCron('60 3 * * *')).map((item) => item.code))
+      .toContain('cron_expression_invalid');
+
+    // 表达式合法时不得引入新的阻断项。
+    expect(validateDataSyncTask(withCron('0 3 * * *'))).toEqual([]);
+  });
+
   it('auto-matches field names case-insensitively and keeps existing transforms', () => {
     const matched = autoMatchDataSyncFields(
       'orders-map',
