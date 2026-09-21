@@ -35,6 +35,26 @@ func sameExternalAttachmentIdentity(a, b duckDBAttachmentSpec) bool {
 	return a == b
 }
 
+// buildCreateExternalSecretStatement 生成创建外部数据源 SECRET 的 DDL。
+// mysql 扩展要求库名经 SECRET 的 DATABASE 传递（path 被当作主机 DSN）；
+// postgres 分支形态与之对齐。返回 "" 表示该 kind 不需要 SECRET（如 sqlite/duckdb 原生）。
+func buildCreateExternalSecretStatement(spec ExternalAttachSpec) string {
+	switch spec.Kind {
+	case ExternalAttachKindMySQL:
+		return fmt.Sprintf("CREATE OR REPLACE SECRET %s (TYPE MYSQL, HOST %s, PORT %d, USER %s, PASSWORD %s, DATABASE %s)",
+			spec.SecretName, quoteDuckDBStringLiteral(spec.Host), spec.Port,
+			quoteDuckDBStringLiteral(spec.User), quoteDuckDBStringLiteral(spec.Password),
+			quoteDuckDBStringLiteral(spec.Database))
+	case ExternalAttachKindPostgres:
+		return fmt.Sprintf("CREATE OR REPLACE SECRET %s (TYPE POSTGRES, HOST %s, PORT %d, USER %s, PASSWORD %s, DATABASE %s)",
+			spec.SecretName, quoteDuckDBStringLiteral(spec.Host), spec.Port,
+			quoteDuckDBStringLiteral(spec.User), quoteDuckDBStringLiteral(spec.Password),
+			quoteDuckDBStringLiteral(spec.Database))
+	default:
+		return ""
+	}
+}
+
 func buildDuckDBAttachStatement(spec ExternalAttachSpec) string {
 	readOnly := ""
 	if spec.ReadOnly {

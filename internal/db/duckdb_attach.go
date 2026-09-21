@@ -5,7 +5,6 @@ package db
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 )
@@ -202,19 +201,8 @@ func (d *DuckDB) execAttach(ctx context.Context, spec ExternalAttachSpec) error 
 }
 
 func (d *DuckDB) createExternalSecret(ctx context.Context, spec ExternalAttachSpec) error {
-	var statement string
-	switch spec.Kind {
-	case ExternalAttachKindMySQL:
-		statement = fmt.Sprintf("CREATE OR REPLACE SECRET %s (TYPE MYSQL, HOST %s, PORT %d, USER %s, PASSWORD %s, DATABASE %s)",
-			spec.SecretName, quoteDuckDBStringLiteral(spec.Host), spec.Port,
-			quoteDuckDBStringLiteral(spec.User), quoteDuckDBStringLiteral(spec.Password),
-			quoteDuckDBStringLiteral(spec.Database))
-	case ExternalAttachKindPostgres:
-		statement = fmt.Sprintf("CREATE OR REPLACE SECRET %s (TYPE POSTGRES, HOST %s, PORT %d, USER %s, PASSWORD %s, DATABASE %s)",
-			spec.SecretName, quoteDuckDBStringLiteral(spec.Host), spec.Port,
-			quoteDuckDBStringLiteral(spec.User), quoteDuckDBStringLiteral(spec.Password),
-			quoteDuckDBStringLiteral(spec.Database))
-	default:
+	statement := buildCreateExternalSecretStatement(spec)
+	if statement == "" {
 		return nil
 	}
 	if _, err := d.conn.ExecContext(ctx, statement); err != nil {

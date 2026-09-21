@@ -157,35 +157,55 @@ func TestDuckDBAttachMySQLSecretSyntaxAndErrorSanitization(t *testing.T) {
 
 // TestDuckDBAttachMySQLUsesSecretDatabase 回归（上游审查 P0-1）：mysql 扩展把
 // ATTACH 的 path 当主机 DSN，库名必须经 SECRET 的 DATABASE 传递。
+//
+// 实现注意：不读 duckdb_secrets() 的 database_value 列做断言——该视图暴露的列
+// 随 DuckDB 版本漂移（旧版本只有 name/type/storage/scope），CI 会因列不存在而
+// 挂。核心契约是"生成的 CREATE SECRET 语句确实写入 DATABASE"，改为直接断言
+// 纯函数产出的 SQL；引擎侧只做 smoke 验证 SECRET 能成功创建。
 func TestDuckDBAttachMySQLUsesSecretDatabase(t *testing.T) {
-	host := newDuckDBAttachTestInstance(t)
-	ctx := context.Background()
-	if err := host.ensureExtensionLoaded(ctx, "mysql"); err != nil {
-		t.Skipf("mysql extension unavailable: %v", err)
-	}
-
 	spec := ExternalAttachSpec{
 		Kind: ExternalAttachKindMySQL, Host: "127.0.0.1", Port: 3306,
 		User: "gonavi-test", Password: "pw", Database: "orders_db",
 		Alias: "mysql_ext", SecretName: "gonavi_attach_mysql_ext", ReadOnly: true,
 	}
-	statement := buildDuckDBAttachStatement(spec)
-	if !strings.Contains(statement, "ATTACH '' ") {
-		t.Fatalf("attach path must be empty (mysql treats path as host DSN): %s", statement)
+
+	// 1) 静态契约：ATTACH 路径必须为空，库名走 SECRET 的 DATABASE
+	attachStmt := buildDuckDBAttachStatement(spec)
+	if !strings.Contains(attachStmt, "ATTACH '' ") {
+		t.Fatalf("attach path must be empty (mysql treats path as host DSN): %s", attachStmt)
+	}
+	secretStmt := buildCreateExternalSecretStatement(spec)
+	if secretStmt == "" {
+		t.Fatal("mysql must build a CREATE SECRET statement")
+	}
+	if !strings.Contains(secretStmt, "TYPE MYSQL") {
+		t.Fatalf("secret statement missing TYPE MYSQL: %s", secretStmt)
+	}
+	if !strings.Contains(secretStmt, "DATABASE 'orders_db'") {
+		t.Fatalf("secret statement missing DATABASE 'orders_db': %s", secretStmt)
+	}
+
+	// 2) 引擎 smoke：CREATE SECRET 能被当前 DuckDB 接受（不读版本敏感的 catalog 列）
+	host := newDuckDBAttachTestInstance(t)
+	ctx := context.Background()
+	if err := host.ensureExtensionLoaded(ctx, "mysql"); err != nil {
+		t.Skipf("mysql extension unavailable: %v", err)
 	}
 	if err := host.createExternalSecret(ctx, spec); err != nil {
 		t.Fatalf("create secret: %v", err)
 	}
 	defer func() { host.dropExternalSecret(context.Background(), spec.SecretName) }()
 
-	var name, database string
+	// 用 duckdb_secrets() 中跨版本稳定存在的 name 列确认 SECRET 已注册，
+	// 避免依赖 database_value 等版本漂移列。
+	var name string
 	if err := host.conn.QueryRowContext(ctx,
-		"SELECT name, database_value FROM duckdb_secrets() WHERE name = ?",
-		spec.SecretName).Scan(&name, &database); err != nil {
-		t.Fatalf("read secret: %v", err)
+		"SELECT name FROM duckdb_secrets() WHERE name = ?",
+		spec.SecretName).Scan(&name); err != nil {
+		t.Fatalf("read secret name: %v", err)
 	}
-	if database != "orders_db" {
-		t.Fatalf("secret database = %q, want orders_db", database)
+	if name != spec.SecretName {
+		t.Fatalf("registered secret name = %q, want %q", name, spec.SecretName)
 	}
 }
 
