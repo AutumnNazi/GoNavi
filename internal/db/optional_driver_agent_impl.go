@@ -22,31 +22,34 @@ import (
 )
 
 const (
-	optionalAgentMethodConnect              = "connect"
-	optionalAgentMethodClose                = "close"
-	optionalAgentMethodMetadata             = "metadata"
-	optionalAgentMethodPing                 = "ping"
-	optionalAgentMethodOpenSession          = "openSession"
-	optionalAgentMethodCloseSession         = "closeSession"
-	optionalAgentMethodOpenTransaction      = "openTransaction"
-	optionalAgentMethodCommitTransaction    = "commitTransaction"
-	optionalAgentMethodRollbackTransaction  = "rollbackTransaction"
-	optionalAgentMethodQuery                = "query"
-	optionalAgentMethodQueryMulti           = "queryMulti"
-	optionalAgentMethodStreamQuery          = "streamQuery"
-	optionalAgentMethodExec                 = "exec"
-	optionalAgentMethodElasticsearchConsole = "executeElasticsearchConsoleRequest"
-	optionalAgentMethodGetDatabases         = "getDatabases"
-	optionalAgentMethodGetTables            = "getTables"
-	optionalAgentMethodTableExists          = "tableExists"
-	optionalAgentMethodGetCreateStmt        = "getCreateStatement"
-	optionalAgentMethodGetColumns           = "getColumns"
-	optionalAgentMethodGetAllColumns        = "getAllColumns"
-	optionalAgentMethodGetIndexes           = "getIndexes"
-	optionalAgentMethodGetForeignKeys       = "getForeignKeys"
-	optionalAgentMethodGetTriggers          = "getTriggers"
-	optionalAgentMethodApplyChanges         = "applyChanges"
-	optionalAgentDefaultScannerMaxBytes     = 8 << 20
+	optionalAgentMethodConnect                 = "connect"
+	optionalAgentMethodClose                   = "close"
+	optionalAgentMethodMetadata                = "metadata"
+	optionalAgentMethodPing                    = "ping"
+	optionalAgentMethodOpenSession             = "openSession"
+	optionalAgentMethodCloseSession            = "closeSession"
+	optionalAgentMethodOpenTransaction         = "openTransaction"
+	optionalAgentMethodCommitTransaction       = "commitTransaction"
+	optionalAgentMethodRollbackTransaction     = "rollbackTransaction"
+	optionalAgentMethodQuery                   = "query"
+	optionalAgentMethodQueryMulti              = "queryMulti"
+	optionalAgentMethodStreamQuery             = "streamQuery"
+	optionalAgentMethodExec                    = "exec"
+	optionalAgentMethodElasticsearchConsole    = "executeElasticsearchConsoleRequest"
+	optionalAgentMethodGetDatabases            = "getDatabases"
+	optionalAgentMethodGetTables               = "getTables"
+	optionalAgentMethodTableExists             = "tableExists"
+	optionalAgentMethodGetCreateStmt           = "getCreateStatement"
+	optionalAgentMethodGetColumns              = "getColumns"
+	optionalAgentMethodGetAllColumns           = "getAllColumns"
+	optionalAgentMethodGetIndexes              = "getIndexes"
+	optionalAgentMethodGetForeignKeys          = "getForeignKeys"
+	optionalAgentMethodGetTriggers             = "getTriggers"
+	optionalAgentMethodApplyChanges            = "applyChanges"
+	optionalAgentMethodAttachExternalDatabase  = "attachExternalDatabase"
+	optionalAgentMethodDetachExternalDatabase  = "detachExternalDatabase"
+	optionalAgentMethodListExternalAttachments = "listExternalAttachments"
+	optionalAgentDefaultScannerMaxBytes        = 8 << 20
 	// Freshly downloaded agents may start slowly while OS security scanning completes.
 	optionalAgentMetadataProbeTimeout = 30 * time.Second
 	// A Windows security scanner can hold the first process start long enough to
@@ -78,6 +81,8 @@ type optionalAgentRequest struct {
 	DBName               string                       `json:"dbName,omitempty"`
 	TableName            string                       `json:"tableName,omitempty"`
 	Changes              *connection.ChangeSet        `json:"changes,omitempty"`
+	AttachSpec           *ExternalAttachSpec          `json:"attachSpec,omitempty"`
+	Alias                string                       `json:"alias,omitempty"`
 	ElasticsearchRequest *ElasticsearchConsoleRequest `json:"elasticsearchRequest,omitempty"`
 	// sshProgressReporter remains in the main process and is never serialized
 	// into the driver-agent request.
@@ -85,17 +90,18 @@ type optionalAgentRequest struct {
 }
 
 type optionalAgentResponse struct {
-	ID              int64                         `json:"id"`
-	Success         bool                          `json:"success"`
-	Error           string                        `json:"error,omitempty"`
-	OutcomeUnknown  bool                          `json:"outcomeUnknown,omitempty"`
-	SSHHostKeyTrust *sshbridge.HostKeyTrustStatus `json:"sshHostKeyTrust,omitempty"`
-	SSHProgress     *connection.SSHProgressEvent  `json:"sshProgress,omitempty"`
-	Data            json.RawMessage               `json:"data,omitempty"`
-	Fields          []string                      `json:"fields,omitempty"`
-	Messages        []string                      `json:"messages,omitempty"`
-	ChunkType       string                        `json:"chunkType,omitempty"`
-	RowsAffected    int64                         `json:"rowsAffected,omitempty"`
+	ID                        int64                         `json:"id"`
+	Success                   bool                          `json:"success"`
+	Error                     string                        `json:"error,omitempty"`
+	OutcomeUnknown            bool                          `json:"outcomeUnknown,omitempty"`
+	ExternalAttachNotAttached bool                          `json:"externalAttachNotAttached,omitempty"`
+	SSHHostKeyTrust           *sshbridge.HostKeyTrustStatus `json:"sshHostKeyTrust,omitempty"`
+	SSHProgress               *connection.SSHProgressEvent  `json:"sshProgress,omitempty"`
+	Data                      json.RawMessage               `json:"data,omitempty"`
+	Fields                    []string                      `json:"fields,omitempty"`
+	Messages                  []string                      `json:"messages,omitempty"`
+	ChunkType                 string                        `json:"chunkType,omitempty"`
+	RowsAffected              int64                         `json:"rowsAffected,omitempty"`
 }
 
 type OptionalDriverAgentMetadata struct {
@@ -304,6 +310,9 @@ func (c *optionalDriverAgentClient) callLocked(req optionalAgentRequest, out int
 			}
 			if resp.SSHHostKeyTrust != nil {
 				return fmt.Errorf("%s: %w", errText, &sshbridge.HostKeyTrustRequiredError{Status: *resp.SSHHostKeyTrust})
+			}
+			if resp.ExternalAttachNotAttached {
+				return fmt.Errorf("%s: %w", errText, ErrExternalAttachNotAttached)
 			}
 			err := errors.New(errText)
 			if resp.OutcomeUnknown {
@@ -643,6 +652,72 @@ func (d *OptionalDriverAgentDB) QueryContext(ctx context.Context, query string) 
 	data, fields, _, err := d.QueryContextWithMessages(ctx, query)
 	return data, fields, err
 }
+
+// AttachExternalDatabase 通过驱动代理转发外部数据源附加（issue #1270）；
+// 附加状态保存在代理进程内，随连接关闭消失。
+func (d *OptionalDriverAgentDB) AttachExternalDatabase(ctx context.Context, spec ExternalAttachSpec) error {
+	client, err := d.requireClient()
+	if err != nil {
+		return err
+	}
+	if err := client.callContext(ctx, optionalAgentRequest{
+		Method:     optionalAgentMethodAttachExternalDatabase,
+		TimeoutMs:  timeoutMsFromContext(ctx),
+		AttachSpec: &spec,
+	}, nil, nil, nil, nil); err != nil {
+		return wrapOptionalAgentExternalAttachError(err)
+	}
+	return nil
+}
+
+// DetachExternalDatabase 通过驱动代理转发卸载；代理进程内未附加时返回
+// ErrExternalAttachNotAttached，保持与进程内驱动一致的幂等语义。
+func (d *OptionalDriverAgentDB) DetachExternalDatabase(ctx context.Context, alias string) error {
+	client, err := d.requireClient()
+	if err != nil {
+		return err
+	}
+	if err := client.callContext(ctx, optionalAgentRequest{
+		TimeoutMs: timeoutMsFromContext(ctx),
+		Method:    optionalAgentMethodDetachExternalDatabase,
+		Alias:     alias,
+	}, nil, nil, nil, nil); err != nil {
+		return wrapOptionalAgentExternalAttachError(err)
+	}
+	return nil
+}
+
+// ListExternalAttachments 通过驱动代理查询当前会话的附加关系列表。
+func (d *OptionalDriverAgentDB) ListExternalAttachments(ctx context.Context) ([]ExternalAttachmentInfo, error) {
+	client, err := d.requireClient()
+	if err != nil {
+		return nil, err
+	}
+	var attachments []ExternalAttachmentInfo
+	if err := client.callContext(ctx, optionalAgentRequest{
+		TimeoutMs: timeoutMsFromContext(ctx),
+		Method:    optionalAgentMethodListExternalAttachments,
+	}, &attachments, nil, nil, nil); err != nil {
+		return nil, err
+	}
+	return attachments, nil
+}
+
+// wrapOptionalAgentExternalAttachError 还原代理侧的“别名未附加”哨兵，
+// 使 App 层的 errors.Is 幂等判定在代理形态下同样成立。
+func wrapOptionalAgentExternalAttachError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(err.Error(), ErrExternalAttachNotAttached.Error()) {
+		return fmt.Errorf("%w", ErrExternalAttachNotAttached)
+	}
+	return err
+}
+
+// 编译期守卫：代理实现可选附加接口。
+var _ ExternalDatabaseAttacher = (*OptionalDriverAgentDB)(nil)
+var _ ExternalAttachmentLister = (*OptionalDriverAgentDB)(nil)
 
 func (d *OptionalDriverAgentDB) ExecuteElasticsearchConsoleRequest(ctx context.Context, request ElasticsearchConsoleRequest) (ElasticsearchConsoleResponse, error) {
 	if normalizeRuntimeDriverType(d.driverType) != "elasticsearch" {

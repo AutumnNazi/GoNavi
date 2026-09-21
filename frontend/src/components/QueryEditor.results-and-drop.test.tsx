@@ -462,6 +462,7 @@ vi.mock('@ant-design/icons', () => {
     HistoryOutlined: Icon,
     KeyOutlined: Icon,
     TableOutlined: Icon,
+    ApiOutlined: Icon,
     ArrowLeftOutlined: Icon,
     ArrowRightOutlined: Icon,
     LoadingOutlined: Icon,

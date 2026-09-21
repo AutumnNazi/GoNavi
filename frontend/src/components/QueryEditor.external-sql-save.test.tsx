@@ -603,6 +603,7 @@ vi.mock('./LogPanel', () => ({
 vi.mock('@ant-design/icons', () => {
   const Icon = () => <span />;
   return {
+    ApiOutlined: Icon,
     ArrowLeftOutlined: Icon,
     ArrowRightOutlined: Icon,
     BugOutlined: Icon,

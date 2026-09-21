@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"GoNavi-Wails/internal/connection"
@@ -17,6 +18,12 @@ import (
 type DuckDB struct {
 	conn        *sql.DB
 	pingTimeout time.Duration
+
+	// 外部数据源附加状态（见 duckdb_attach.go）：attachMu 串行化附加/卸载，
+	// attachments 记录本驱动创建的附加关系用于同源替换判定，均随连接关闭消亡。
+	attachMu         sync.Mutex
+	attachments      map[string]duckDBAttachmentSpec
+	loadedExtensions map[string]bool
 }
 
 func duckDBRuntimeError(key string, params map[string]any) error {
@@ -64,7 +71,14 @@ func (d *DuckDB) Connect(config connection.ConnectionConfig) error {
 		dsn = ":memory:"
 	}
 
-	db, err := sql.Open("duckdb", dsn)
+	// 官方扩展仓库不覆盖所有平台（如 windows_amd64_mingw），这些平台上用户只能
+	// 安装本地自行编译的无签名扩展；打开实例时显式允许，ATTACH SAVED CONNECTION
+	// 依赖该能力。已签名扩展不受影响。
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	db, err := sql.Open("duckdb", dsn+sep+"allow_unsigned_extensions=true")
 	if err != nil {
 		return duckDBWrapRuntimeError("db.backend.error.connection_open_failed_prefix", err)
 	}

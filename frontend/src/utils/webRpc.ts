@@ -27,6 +27,21 @@ const webRPCBridge = (): GoNaviWebRPCBridge | undefined => {
 };
 
 /**
+ * 按方法名动态调用 App 绑定（仅 Web 桥存在时可用；桌面端返回 undefined，
+ * 调用方回退到 window.go 动态对象或生成的绑定）。用于新增方法尚无生成绑定的场景。
+ */
+export const invokeAppMethodDynamic = <T>(
+  method: string,
+  args: unknown[],
+): Promise<T> | undefined => {
+  const invokeWithOptions = webRPCBridge()?.invokeWithOptions;
+  if (typeof invokeWithOptions === 'function') {
+    return invokeWithOptions<T>('app', 'App', method, args, {});
+  }
+  return undefined;
+};
+
+/**
  * Uses request cancellation only when the browser Web RPC bridge is present.
  * The Wails fallback always waits for the generated binding's real result;
  * aborting the signal never creates a client-side "fake cancellation" there.

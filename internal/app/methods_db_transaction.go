@@ -370,6 +370,17 @@ func (a *App) DBQueryMultiInTransaction(transactionID string, query string, quer
 	if strings.TrimSpace(runConfig.Type) == "" {
 		runConfig.Type = tx.dbType
 	}
+	// 附加/卸载指令在托管事务中无语义（由连接级拦截执行），直接给出明确报错，
+	// 避免指令原文透传到引擎产生难懂的语法错误（Web RPC 公开入口的防御）。
+	if strings.EqualFold(runConfig.Type, "duckdb") && queryContainsDuckDBSavedConnectionDirective(query) {
+		return connection.QueryResult{
+			Success:            false,
+			Message:            a.appText("db.backend.error.duckdb_attach.directive_in_transaction", nil),
+			QueryID:            queryID,
+			TransactionID:      transactionID,
+			TransactionPending: true,
+		}
+	}
 	ctx, cancel := newQueryExecutionContext(runConfig)
 	cleanupRunningQuery := a.registerRunningQuery(queryID, cancel, true, optionalDriverTypeForConnectionConfig(runConfig))
 	lifecycle := a.beginQueryExecutionLifecycle(queryID)

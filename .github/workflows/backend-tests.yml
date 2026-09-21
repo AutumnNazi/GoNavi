@@ -56,6 +56,13 @@ jobs:
       - name: Run backend tests
         run: go test -tags webkit2_41 ./... -count=1 -timeout=30m
 
+      # DuckDB 附加模块带 gonavi_duckdb_driver 构建标签（需 CGO），主套件
+      # 的 webkit2_41 标签不编译这批文件；单独跑一遍防止无覆盖回归。
+      - name: Run DuckDB driver tests
+        env:
+          CGO_ENABLED: 1
+        run: go test -tags gonavi_duckdb_driver ./internal/db/ ./internal/app/ -run 'DuckDB|Attach|Slugify|SavedConnection|ConnectionSecret|BuildDuckDB|SameExternal|ParseDuckDB' -count=1 -timeout=30m
+
   platform-sensitive:
     name: Platform-sensitive tests (${{ matrix.os }})
     strategy:

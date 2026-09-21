@@ -1191,19 +1191,6 @@ func (a *App) buildCancellationUnsupportedExecutionResult(result connection.Quer
 	return result
 }
 
-func containsSQLAuditWrite(dbType string, query string) bool {
-	statements := splitSQLStatementsForDialect(dbType, query)
-	if len(statements) == 0 {
-		return !isReadOnlySQLQuery(dbType, query)
-	}
-	for _, statement := range statements {
-		statement = strings.TrimSpace(statement)
-		if statement != "" && !isReadOnlySQLQuery(dbType, statement) {
-			return true
-		}
-	}
-	return false
-}
 
 // writeExecutionOutcomeUnknown covers both a driver-level ambiguous response
 // and a caller cancellation observed while a write was in flight. The latter
@@ -1601,6 +1588,8 @@ func (a *App) dbQueryMulti(
 	resolvedDBType := resolveDDLDBType(runConfig)
 	trackSQLAudit := auditOptions.auditAll || (auditOptions.auditWrites && containsSQLAuditWrite(resolvedDBType, query))
 	auditSource := normalizeSQLAuditSource(auditOptions.source)
+	// 审计与历史记录使用用户原始提交文本；附加指令改写只影响实际下发引擎的语句
+	originalQuery := query
 	auditStartedAt := time.Now()
 	var statementAuditEvents []sqlaudit.Event
 	if trackSQLAudit {
@@ -1610,7 +1599,7 @@ func (a *App) dbQueryMulti(
 				Database:   dbName,
 				DBType:     resolvedDBType,
 				QueryID:    queryID,
-				SQL:        query,
+				SQL:        originalQuery,
 				Source:     auditSource,
 				CommitMode: result.CommitMode,
 				Duration:   time.Since(auditStartedAt),
@@ -1633,7 +1622,7 @@ func (a *App) dbQueryMulti(
 			return
 		}
 		durationMs := queryExecutionDuration.Milliseconds()
-		a.recordQueryExecution(config, dbName, resolvedDBType, query, durationMs, 0, queryResultRowsReturned(result))
+		a.recordQueryExecution(config, dbName, resolvedDBType, originalQuery, durationMs, 0, queryResultRowsReturned(result))
 	}()
 	measureQueryExecution := func(run func()) {
 		startedAt := time.Now()
@@ -1713,10 +1702,28 @@ func (a *App) dbQueryMulti(
 	}()
 	legacyCancellationUnsupported := false
 
+	// DuckDB 保存连接附加指令（issue #1270）：在本层拦截执行并改写为合成 SELECT。
+	// 密钥仅在 Go 侧解析，指令文本不进入 DuckDB 解析器；见 duckdb_saved_attach.go。
+	if resolvedDBType == "duckdb" {
+		rewrittenQuery, directiveErr := a.applyDuckDBSavedConnectionDirectives(ctx, dbInst, query)
+		if directiveErr != nil {
+			return connection.QueryResult{Success: false, Message: directiveErr.Error(), QueryID: queryID}
+		}
+		query = rewrittenQuery
+	}
+
 	// 尝试使用驱动原生多结果集支持。普通 database/sql 驱动仅在安全的
 	// 读取场景使用该路径；Navicat ntunnel_mysql.php 则可用一个请求的
 	// 多个 q[] 同时保留会话状态和每条写语句的 affectedRows。
 	statements := splitSQLStatementsForDialect(resolvedDBType, query)
+	// 指令改写保持语句一一对应：语句级审计记录用户原始文本（合成 SELECT
+	// 只是执行载体，无审计价值）；数量不一致时放弃映射，回退记录改写文本。
+	auditStatements := statements
+	if query != originalQuery {
+		if originals := splitSQLStatementsForDialect(resolvedDBType, originalQuery); len(originals) == len(statements) {
+			auditStatements = originals
+		}
+	}
 	statementCount := 0
 	for _, statement := range statements {
 		if strings.TrimSpace(statement) != "" {
@@ -1879,13 +1886,13 @@ func (a *App) dbQueryMulti(
 					rowsAffected += affected
 					rowsReturned += returned
 				}
-				appendStatementAudit(statements[index-1], index, auditStartedAt, rowsAffected, rowsReturned, sqlaudit.BoundaryModeDriverAPI, sqlaudit.CommitModeAuto, nil)
+				appendStatementAudit(auditStatements[index-1], index, auditStartedAt, rowsAffected, rowsReturned, sqlaudit.BoundaryModeDriverAPI, sqlaudit.CommitModeAuto, nil)
 			}
 		}
 		failedIndex := 0
 		if exactPrefix && executedCount < statementCount {
 			failedIndex = executedCount + 1
-			appendStatementAudit(statements[failedIndex-1], failedIndex, auditStartedAt, 0, 0, sqlaudit.BoundaryModeDriverAPI, sqlaudit.CommitModeAuto, err)
+			appendStatementAudit(auditStatements[failedIndex-1], failedIndex, auditStartedAt, 0, 0, sqlaudit.BoundaryModeDriverAPI, sqlaudit.CommitModeAuto, err)
 			if outcomeUnknown && len(statementAuditEvents) > 0 {
 				statementAuditEvents[len(statementAuditEvents)-1].OutcomeUnknown = true
 			}
@@ -1914,7 +1921,7 @@ func (a *App) dbQueryMulti(
 	if results != nil {
 		for index, statement := range statements {
 			if strings.TrimSpace(statement) != "" {
-				appendStatementAudit(statement, index+1, auditStartedAt, 0, 0, sqlaudit.BoundaryModeDriverAPI, sqlaudit.CommitModeAuto, nil)
+				appendStatementAudit(auditStatements[index], index+1, auditStartedAt, 0, 0, sqlaudit.BoundaryModeDriverAPI, sqlaudit.CommitModeAuto, nil)
 			}
 		}
 		applyRowBudgetTruncation(results, rowBudget)
@@ -2183,7 +2190,7 @@ func (a *App) dbQueryMulti(
 						rowsReturned += returned
 						resultSets = append(resultSets, statementResult)
 					}
-					appendStatementAudit(stmt, idx+1, statementStartedAt, rowsAffected, rowsReturned, statementBoundaryMode, statementCommitMode, nil)
+					appendStatementAudit(auditStatements[idx], idx+1, statementStartedAt, rowsAffected, rowsReturned, statementBoundaryMode, statementCommitMode, nil)
 					executedCount++
 					textTransactionOpen = advancesSQLAuditTextTransaction(stmt, textTransactionOpen)
 					continue
@@ -2200,7 +2207,7 @@ func (a *App) dbQueryMulti(
 					Messages:       messages,
 					StatementIndex: idx + 1,
 				})
-				appendStatementAudit(stmt, idx+1, statementStartedAt, 0, int64(len(data)), statementBoundaryMode, statementCommitMode, nil)
+				appendStatementAudit(auditStatements[idx], idx+1, statementStartedAt, 0, int64(len(data)), statementBoundaryMode, statementCommitMode, nil)
 				executedCount++
 				textTransactionOpen = advancesSQLAuditTextTransaction(stmt, textTransactionOpen)
 				continue
@@ -2208,7 +2215,7 @@ func (a *App) dbQueryMulti(
 			if isReadStmt {
 				logger.Error(err, "DBQueryMulti 逐条查询失败（第 %d/%d 条）：%s SQL片段=%q", idx+1, len(statements), formatConnSummary(runConfig), sqlSnippet(stmt))
 				errMsg := buildStatementExecutionFailedMessage(idx+1, err, len(resultSets))
-				appendStatementAudit(stmt, idx+1, statementStartedAt, 0, 0, statementBoundaryMode, statementCommitMode, err)
+				appendStatementAudit(auditStatements[idx], idx+1, statementStartedAt, 0, 0, statementBoundaryMode, statementCommitMode, err)
 				return summarizeMultiStatementResultWithCommitMode(buildQueryExecutionFailure(ctx, err, errMsg, queryID), executedCount, idx+1, statementBoundaryMode, statementCommitMode, false)
 			}
 			if shouldRefreshCachedConnection(err) {
@@ -2217,7 +2224,7 @@ func (a *App) dbQueryMulti(
 			err = classifyDispatchedWriteError(err)
 			logger.Error(err, "DBQueryMulti 写入查询失败（第 %d/%d 条）：%s SQL片段=%q", idx+1, len(statements), formatConnSummary(runConfig), sqlSnippet(stmt))
 			errMsg := buildStatementExecutionFailedMessage(idx+1, err, len(resultSets))
-			appendStatementAudit(stmt, idx+1, statementStartedAt, 0, 0, statementBoundaryMode, statementCommitMode, err)
+			appendStatementAudit(auditStatements[idx], idx+1, statementStartedAt, 0, 0, statementBoundaryMode, statementCommitMode, err)
 			failure := buildWriteExecutionFailure(ctx, err, queryID)
 			failure.Message = errMsg
 			return summarizeMultiStatementResultWithCommitMode(failure, executedCount, idx+1, statementBoundaryMode, statementCommitMode, writeExecutionOutcomeUnknown(ctx, err))
@@ -2264,7 +2271,7 @@ func (a *App) dbQueryMulti(
 			err = classifyDispatchedWriteError(err)
 			logger.Error(err, "DBQueryMulti 逐条执行失败（第 %d/%d 条）：%s SQL片段=%q", idx+1, len(statements), formatConnSummary(runConfig), sqlSnippet(stmt))
 			errMsg := buildStatementExecutionFailedMessage(idx+1, err, len(resultSets))
-			appendStatementAudit(stmt, idx+1, statementStartedAt, 0, 0, statementBoundaryMode, statementCommitMode, err)
+			appendStatementAudit(auditStatements[idx], idx+1, statementStartedAt, 0, 0, statementBoundaryMode, statementCommitMode, err)
 			if writeExecutionOutcomeUnknown(ctx, err) {
 				return summarizeMultiStatementResultWithCommitMode(connection.QueryResult{Success: false, Message: errMsg, Data: map[string]any{"outcomeUnknown": true}, QueryID: queryID}, executedCount, idx+1, statementBoundaryMode, statementCommitMode, true)
 			}
@@ -2275,7 +2282,7 @@ func (a *App) dbQueryMulti(
 			Columns:        []string{"affectedRows"},
 			StatementIndex: idx + 1,
 		})
-		appendStatementAudit(stmt, idx+1, statementStartedAt, affected, 0, statementBoundaryMode, statementCommitMode, nil)
+		appendStatementAudit(auditStatements[idx], idx+1, statementStartedAt, affected, 0, statementBoundaryMode, statementCommitMode, nil)
 		executedCount++
 		textTransactionOpen = advancesSQLAuditTextTransaction(stmt, textTransactionOpen)
 	}
