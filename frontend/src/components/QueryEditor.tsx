@@ -333,7 +333,7 @@ import {
 } from './queryEditor/QueryEditorHelpers';
 import { duplicateCurrentLineInEditor } from './queryEditor/queryEditorDuplicateLine';
 import { registerQueryEditorShortcutAction } from './queryEditor/queryEditorShortcutRegistration';
-import { registerQueryEditorCommentAction, resolveToggleLineCommentKeybindings, runMonacoToggleLineComment } from './queryEditor/queryEditorCommentActions';
+import { registerQueryEditorCommentAction, resolveToggleLineCommentBindingPlan, runMonacoToggleLineComment } from './queryEditor/queryEditorCommentActions';
 import { finalizeQueryEditorSqlServerResultSets, resolveQueryEditorExecutionSuccessToast } from './queryEditor/queryEditorSqlServerResultMessages';
 import {
     applyQueryEditorCompletionFragmentCase,
@@ -4460,24 +4460,22 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           return;
       }
       disposeToggleLineCommentAction();
-      const binding = toggleLineCommentShortcutBinding;
+      const plan = resolveToggleLineCommentBindingPlan({
+          platform: activeShortcutPlatform,
+          combo: toggleLineCommentShortcutBinding?.combo,
+          enabled: toggleLineCommentShortcutBinding?.enabled,
+          keyModEnum: monacoRef.current.KeyMod,
+          keyCodeEnum: monacoRef.current.KeyCode,
+      });
       toggleLineCommentActionRef.current = registerQueryEditorCommentAction({
           editor,
           label: translate('query_editor.action.toggle_line_comment'),
-          keybindings: resolveToggleLineCommentKeybindings({
-              platform: activeShortcutPlatform,
-              combo: binding?.combo,
-              enabled: binding?.enabled,
-              keyModEnum: monacoRef.current.KeyMod,
-              keyCodeEnum: monacoRef.current.KeyCode,
-          }),
-          run: () => {
-              if (binding?.enabled) {
-                  runMonacoToggleLineComment(editorRef.current);
-              }
-          },
+          keybindings: plan.menuKeybindings,
+          swallowKeybinding: plan.swallowKeybinding,
+          // 菜单入口不受快捷键禁用影响；吞键命令内部按 enabled 决定是否委托
+          run: () => runMonacoToggleLineComment(editorRef.current),
       });
-  }, [activeShortcutPlatform, disposeToggleLineCommentAction, toggleLineCommentShortcutBinding]);
+  }, [activeShortcutPlatform, disposeToggleLineCommentAction, toggleLineCommentShortcutBinding, languagePreference]);
 
   const buildQueryEditorAiContextMenuActions = useCallback(() => ([
       {
@@ -11959,7 +11957,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           platform: activeShortcutPlatform,
           id: 'gonavi.duplicateCurrentLine',
           label: buildQueryEditorMonacoActionLabel('app.shortcuts.action.duplicateCurrentLine.label'),
-          combo: saveQueryShortcutBinding?.combo,
+          combo: duplicateCurrentLineShortcutBinding?.combo,
           enabled: saveQueryShortcutBinding?.enabled,
           run: handleDuplicateCurrentLine,
       });
@@ -11997,7 +11995,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           platform: activeShortcutPlatform,
           id: 'gonavi.saveQuery',
           label: buildQueryEditorMonacoActionLabel('app.shortcuts.action.saveQuery.label'),
-          combo: saveQueryAsShortcutBinding?.combo,
+          combo: saveQueryShortcutBinding?.combo,
           enabled: saveQueryAsShortcutBinding?.enabled,
           run: () => {
               window.dispatchEvent(new CustomEvent('gonavi:save-active-query'));
@@ -12028,7 +12026,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           platform: activeShortcutPlatform,
           id: 'gonavi.saveQueryAs',
           label: buildQueryEditorMonacoActionLabel('app.shortcuts.action.saveQueryAs.label'),
-          combo: duplicateCurrentLineShortcutBinding?.combo,
+          combo: saveQueryAsShortcutBinding?.combo,
           enabled: duplicateCurrentLineShortcutBinding?.enabled,
           run: () => {
               window.dispatchEvent(new CustomEvent('gonavi:save-active-query-as'));

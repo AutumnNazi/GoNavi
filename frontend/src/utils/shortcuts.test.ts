@@ -884,8 +884,8 @@ describe('comboToMonacoKeyBinding', () => {
     KeyG: 42, KeyH: 43, KeyK: 47, KeyN: 50, KeyP: 52, KeyR: 54, KeyS: 55,
     Digit0: 21, Digit1: 22, Digit2: 23, Digit3: 24, Digit4: 25,
     Digit5: 26, Digit6: 27, Digit7: 28, Digit8: 29, Digit9: 30,
-    F1: 61, F2: 62, F3: 63, F4: 64, F5: 65, F6: 66,
-    F7: 67, F8: 68, F9: 69, F10: 70, F11: 71, F12: 72,
+    F1: 59, F2: 60, F3: 61, F4: 62, F5: 63, F6: 64,
+    F7: 65, F8: 66, F9: 67, F10: 68, F11: 69, F12: 70,
     // monaco 0.55 真实枚举名与值（Oem 系已被移除，别再用）
     Semicolon: 85, Equal: 86, Comma: 87, Minus: 88, Period: 89,
     Slash: 90, Backquote: 91, BracketLeft: 92, Backslash: 93,

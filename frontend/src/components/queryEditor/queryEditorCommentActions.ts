@@ -15,8 +15,15 @@ export interface RegisterQueryEditorCommentActionInput {
   editor: any;
   /** 右键菜单与快捷键列表显示的文案（已本地化） */
   label: string;
-  /** 注册的组合键（Monaco keyMod|keyCode，通常含平台默认 Ctrl/Cmd+/ 以压制内置键位） */
+  /** 菜单 action 携带的键位（enabled 且改绑时为改后组合键；含默认键位时菜单显示键位提示） */
   keybindings?: number[];
+  /**
+   * 需要占用/吞键的平台默认组合键（Ctrl/Cmd+/）：
+   * enabled 时委托切换注释（压制内置同键位），disabled 时吞键。
+   * 与菜单 action 分离——禁用快捷键不影响右键菜单入口。
+   */
+  swallowKeybinding?: { keyMod: number; keyCode: number } | null;
+  enabled?: boolean;
   run: () => void;
 }
 
@@ -27,11 +34,13 @@ export interface QueryEditorDisposable {
 export function registerQueryEditorCommentAction(
   input: RegisterQueryEditorCommentActionInput,
 ): QueryEditorDisposable | null {
-  const { editor, label, keybindings, run } = input;
+  const { editor, label, keybindings, swallowKeybinding, enabled, run } = input;
   if (!editor || typeof editor.addAction !== 'function') {
     return null;
   }
-  return editor.addAction({
+  const disposables: QueryEditorDisposable[] = [];
+  // 菜单 action：右键入口不受快捷键禁用影响，始终可用
+  disposables.push(editor.addAction({
     id: QUERY_EDITOR_TOGGLE_LINE_COMMENT_ACTION_ID,
     label,
     precondition: QUERY_EDITOR_TOGGLE_LINE_COMMENT_PRECONDITION,
@@ -39,7 +48,22 @@ export function registerQueryEditorCommentAction(
     contextMenuOrder: QUERY_EDITOR_TOGGLE_LINE_COMMENT_MENU_ORDER,
     ...(keybindings && keybindings.length > 0 ? { keybindings } : {}),
     run,
-  });
+  }));
+  if (swallowKeybinding && typeof editor.addCommand === 'function') {
+    // 默认 Ctrl(Cmd)+/ 的占用命令（addCommand 不进右键菜单）：
+    // enabled 时委托切换注释并压制内置同键位；disabled 时吞键。
+    const commandId = editor.addCommand(swallowKeybinding.keyMod | swallowKeybinding.keyCode, () => {
+      if (enabled) {
+        runMonacoToggleLineComment(editor);
+      }
+    });
+    if (typeof commandId === 'number' || typeof commandId === 'string') {
+      disposables.push({ dispose: () => editor.removeCommand?.(commandId) });
+    }
+  }
+  return {
+    dispose: () => disposables.forEach((disposable) => disposable?.dispose?.()),
+  };
 }
 
 // 供快捷键注册处解析组合键：优先走内置 action；action 缺失时回退
@@ -57,24 +81,47 @@ export function runMonacoToggleLineComment(editor: any): boolean {
   return false;
 }
 
-// 解析「取消/添加注释」的 Monaco 键位：平台默认 Ctrl（Cmd）+/ 始终占用
-// （enabled 时委托切换注释；disabled 时吞键，压制内置默认键位）；
-// 用户改绑其它组合键时追加该键位。返回 keyMod|keyCode 列表。
-export function resolveToggleLineCommentKeybindings(input: {
+// 解析「取消/添加注释」的键位方案：
+// - enabled 且未改绑：菜单 action 携带平台默认 Ctrl(Cmd)+/（压制内置同键位）；
+// - enabled 且改绑：菜单 action 携带新键位，默认键位作为吞键命令压制内置；
+// - disabled：菜单保留（不受禁用影响），默认键位仅吞键。
+export function resolveToggleLineCommentBindingPlan(input: {
   platform: 'mac' | 'windows';
   combo?: string;
   enabled?: boolean;
   keyModEnum: Record<string, number>;
   keyCodeEnum: Record<string, number>;
-}): number[] {
+}): {
+  menuKeybindings: number[];
+  swallowKeybinding: { keyMod: number; keyCode: number } | null;
+} {
   const { platform, combo, enabled, keyModEnum, keyCodeEnum } = input;
   const defaultCombo = DEFAULT_SHORTCUT_OPTIONS.toggleLineComment[platform].combo;
   const defaultKeyBinding = comboToMonacoKeyBinding(defaultCombo, keyModEnum, keyCodeEnum, platform);
   const normalizedCombo = normalizeShortcutCombo(String(combo || ''));
-  const customKeyBinding = enabled && normalizedCombo && normalizedCombo !== normalizeShortcutCombo(defaultCombo)
-    ? comboToMonacoKeyBinding(normalizedCombo, keyModEnum, keyCodeEnum, platform)
+  const usingCustomCombo = Boolean(enabled)
+    && Boolean(normalizedCombo)
+    && normalizedCombo !== normalizeShortcutCombo(defaultCombo);
+  const customKeyBinding = usingCustomCombo
+    ? comboToMonacoKeyBinding(String(normalizedCombo), keyModEnum, keyCodeEnum, platform)
     : null;
-  return [defaultKeyBinding, customKeyBinding]
-    .filter((entry): entry is { keyMod: number; keyCode: number } => Boolean(entry))
-    .map((entry) => entry.keyMod | entry.keyCode);
+
+  if (!enabled) {
+    return {
+      menuKeybindings: [],
+      swallowKeybinding: defaultKeyBinding,
+    };
+  }
+  if (customKeyBinding) {
+    return {
+      menuKeybindings: [customKeyBinding.keyMod | customKeyBinding.keyCode],
+      swallowKeybinding: defaultKeyBinding,
+    };
+  }
+  return {
+    menuKeybindings: defaultKeyBinding
+      ? [defaultKeyBinding.keyMod | defaultKeyBinding.keyCode]
+      : [],
+    swallowKeybinding: null,
+  };
 }
