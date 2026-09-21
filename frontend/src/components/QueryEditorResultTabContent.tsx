@@ -58,7 +58,6 @@ const QueryEditorResultTabContent: React.FC<{
     workbenchTabId?: string;
     /** True only while this result is the selected tab of the active editor. */
     isResultActive: boolean;
-    loading: boolean;
     darkMode: boolean;
     currentDb: string;
     currentConnectionId: string;
@@ -77,7 +76,6 @@ const QueryEditorResultTabContent: React.FC<{
     rs,
     workbenchTabId,
     isResultActive,
-    loading,
     darkMode,
     currentDb,
     currentConnectionId,
@@ -239,7 +237,7 @@ const QueryEditorResultTabContent: React.FC<{
                         data={rs.rows}
                         columnNames={resolveVisibleQueryResultColumns(rs.columns, globalHiddenColumns)}
                         isActive={isResultActive}
-                        loading={loading}
+                        loading={false}
                         columnPinScope={buildQueryResultColumnPinScope({ sql: rs.sql })}
                         exportScope="queryResult"
                         resultSql={rs.sql}
@@ -290,7 +288,7 @@ const QueryEditorResultTabContent: React.FC<{
                 data={rs.rows}
                 columnNames={visibleColumns}
                 isActive={isResultActive}
-                loading={loading || rs.page?.loading === true}
+                loading={rs.page?.loading === true}
                 tableName={resultTableName}
                 columnPinScope={resultTableName ? undefined : buildQueryResultColumnPinScope({
                     sql: rs.exportSql || rs.sql,
@@ -310,6 +308,8 @@ const QueryEditorResultTabContent: React.FC<{
                 initialViewModeRequestId={dataPreviewRequest?.resultKey === rs.key ? dataPreviewRequest.requestId : undefined}
                 initialViewModeScope={dataPreviewRequest?.resultKey === rs.key ? 'local' : undefined}
                 pkColumns={rs.pkColumns}
+                initialColumnMetaMap={rs.columnMetaMap}
+                initialUniqueKeyGroups={rs.uniqueKeyGroups}
                 editLocator={rs.editLocator}
                 onReload={() => {
                     if (rs.page) {

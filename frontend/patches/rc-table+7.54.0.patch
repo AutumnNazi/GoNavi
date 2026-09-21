@@ -363,6 +363,44 @@ index c760819..5ad05f4 100644
  if (process.env.NODE_ENV !== 'production') {
    ResponseBodyLine.displayName = 'BodyLine';
  }
+diff --git a/node_modules/rc-table/es/VirtualTable/VirtualCell.js b/node_modules/rc-table/es/VirtualTable/VirtualCell.js
+index b2b820f..a560163 100644
+--- a/node_modules/rc-table/es/VirtualTable/VirtualCell.js
++++ b/node_modules/rc-table/es/VirtualTable/VirtualCell.js
+@@ -110,4 +110,31 @@ function VirtualCell(props) {
+     }, cellSpan)
+   }));
+ }
+-export default VirtualCell;
+\ No newline at end of file
++function virtualCellPropsAreEqual(previous, next) {
++  // Columns without an explicit update contract keep rc-table's normal path.
++  if (!next.column.shouldCellUpdate) return false;
++  var keys = Object.keys(previous);
++  if (keys.length !== Object.keys(next).length) return false;
++  return keys.every(function (key) {
++    if (!Object.prototype.hasOwnProperty.call(next, key)) return false;
++    if (key !== 'rowInfo') return Object.is(previous[key], next[key]);
++    var before = previous.rowInfo;
++    var after = next.rowInfo;
++    if (Object.is(before, after)) return true;
++    var rowKeys = Object.keys(before);
++    if (rowKeys.length !== Object.keys(after).length) return false;
++    return rowKeys.every(function (rowKey) {
++      if (!Object.prototype.hasOwnProperty.call(after, rowKey)) return false;
++      // BodyLine applies rowProps; VirtualCell/getCellProps never read it.
++      if (rowKey === 'rowProps') return true;
++      if (rowKey === 'columnsKey') {
++        return before.columnsKey.length === after.columnsKey.length
++          && before.columnsKey.every(function (value, index) {
++            return Object.is(value, after.columnsKey[index]);
++          });
++      }
++      return Object.is(before[rowKey], after[rowKey]);
++    });
++  });
++}
++export default /*#__PURE__*/React.memo(VirtualCell, virtualCellPropsAreEqual);
 diff --git a/node_modules/rc-table/es/VirtualTable/columnVirtualWindow.d.ts b/node_modules/rc-table/es/VirtualTable/columnVirtualWindow.d.ts
 new file mode 100644
 index 0000000..42da2eb
@@ -862,6 +900,44 @@ index e1275fb..591733e 100644
  if (process.env.NODE_ENV !== 'production') {
    ResponseBodyLine.displayName = 'BodyLine';
  }
+diff --git a/node_modules/rc-table/lib/VirtualTable/VirtualCell.js b/node_modules/rc-table/lib/VirtualTable/VirtualCell.js
+index ab3d275..1d92c70 100644
+--- a/node_modules/rc-table/lib/VirtualTable/VirtualCell.js
++++ b/node_modules/rc-table/lib/VirtualTable/VirtualCell.js
+@@ -121,4 +121,31 @@ function VirtualCell(props) {
+     }, cellSpan)
+   }));
+ }
+-var _default = exports.default = VirtualCell;
+\ No newline at end of file
++function virtualCellPropsAreEqual(previous, next) {
++  // Columns without an explicit update contract keep rc-table's normal path.
++  if (!next.column.shouldCellUpdate) return false;
++  var keys = Object.keys(previous);
++  if (keys.length !== Object.keys(next).length) return false;
++  return keys.every(function (key) {
++    if (!Object.prototype.hasOwnProperty.call(next, key)) return false;
++    if (key !== 'rowInfo') return Object.is(previous[key], next[key]);
++    var before = previous.rowInfo;
++    var after = next.rowInfo;
++    if (Object.is(before, after)) return true;
++    var rowKeys = Object.keys(before);
++    if (rowKeys.length !== Object.keys(after).length) return false;
++    return rowKeys.every(function (rowKey) {
++      if (!Object.prototype.hasOwnProperty.call(after, rowKey)) return false;
++      // BodyLine applies rowProps; VirtualCell/getCellProps never read it.
++      if (rowKey === 'rowProps') return true;
++      if (rowKey === 'columnsKey') {
++        return before.columnsKey.length === after.columnsKey.length
++          && before.columnsKey.every(function (value, index) {
++            return Object.is(value, after.columnsKey[index]);
++          });
++      }
++      return Object.is(before[rowKey], after[rowKey]);
++    });
++  });
++}
++var _default = exports.default = /*#__PURE__*/React.memo(VirtualCell, virtualCellPropsAreEqual);
 diff --git a/node_modules/rc-table/lib/VirtualTable/columnVirtualWindow.d.ts b/node_modules/rc-table/lib/VirtualTable/columnVirtualWindow.d.ts
 new file mode 100644
 index 0000000..42da2eb

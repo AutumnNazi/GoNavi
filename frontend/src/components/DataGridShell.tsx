@@ -425,6 +425,7 @@ const DataGridShell: React.FC<DataGridShellProps> = (props) => {
     showColumnComment,
     showColumnType,
     showFilter,
+    appliedFilterConditions,
     sortInfo,
     stopQuickWhereClipboardPropagation,
     supportsCopyInsert,
@@ -675,7 +676,7 @@ const renderDataTableView = () => (
         ref={rootRef}
         tabIndex={-1}
         onPointerDownCapture={handleDataGridRootPointerDownCapture}
-        className={`${gridId}${cellEditMode ? ' cell-edit-mode' : ''} data-grid-root gn-v2-data-grid`}
+        className={`${gridId}${cellEditMode ? ' cell-edit-mode' : ''}${tableRenderData.length === 0 ? ' data-grid-empty' : ''} data-grid-root gn-v2-data-grid`}
         style={{ '--gonavi-header-min-height': `${headerCellMinHeight}px`, flex: '1 1 auto', height: '100%', overflow: 'hidden', padding: 0, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, background: 'transparent', outline: 'none' } as React.CSSProperties}
     >
         <DataGridToolbarFrame
@@ -693,6 +694,7 @@ const renderDataTableView = () => (
             toolbarBottomPadding={toolbarBottomPadding}
             filterTopPadding={filterTopPadding}
             showFilter={showFilter}
+            appliedFilterConditions={appliedFilterConditions}
             filterPanelRef={filterPanelRef}
             onReload={onReload}
             onToggleFilter={onToggleFilter}

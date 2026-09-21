@@ -410,7 +410,7 @@ const parseMongoScalar = (column: string, rawValue: string): unknown => {
   return raw;
 };
 
-const parseMongoJSONValue = (raw: string): unknown => {
+export const parseMongoJSONValue = (raw: string): unknown => {
   const text = String(raw || '').trim();
   if (!text) return {};
   const normalized = normalizeExtendedJSON(text);

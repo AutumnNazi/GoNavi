@@ -27,6 +27,12 @@ export type QueryEditorExecutionOrigin = {
   editorSql: string;
   originalSql: string;
   sentSql: string;
+  /**
+   * 执行时 originalSql 在 editorSql 中的起始偏移（归一化坐标）。
+   * 选区执行时由编辑器选区起始位置换算而来，用于把数据库返回的
+   * 「片段内相对行号」映射回编辑器绝对位置；缺省时回退 indexOf 首次命中。
+   */
+  fragmentStartOffset?: number;
   statements?: QueryEditorExecutionOriginStatement[];
 };
 
@@ -73,10 +79,12 @@ export const createQueryEditorExecutionOrigin = (
   originalSql: string,
   sentSql = originalSql,
   statements?: QueryEditorExecutionOriginStatement[],
+  fragmentStartOffset?: number,
 ): QueryEditorExecutionOrigin => ({
   editorSql: normalizeSqlText(editorSql),
   originalSql: normalizeSqlText(originalSql),
   sentSql: normalizeSqlText(sentSql || originalSql),
+  fragmentStartOffset,
   statements: statements?.map((statement) => ({
     originalSql: normalizeSqlText(statement.originalSql || ''),
     executedSql: normalizeSqlText(statement.executedSql || statement.originalSql || ''),
@@ -191,9 +199,25 @@ const lineColumnToOffset = (
   return lineStart + Math.min(maxColumn, Math.max(1, column)) - 1;
 };
 
-const resolveFragmentStart = (editorSql: string, originalSql: string): number => {
+const resolveFragmentStart = (
+  editorSql: string,
+  originalSql: string,
+  recordedStart?: number,
+): number => {
   if (!originalSql) {
     return 0;
+  }
+  // 选区执行时 originalSql 在实际选区起点；同一文本在编辑器出现多次时
+  // indexOf 只会命中第一处，因此优先采用执行时记录的选区起始偏移，
+  // 但仅当片段确实从该偏移开始才信任（编辑器内容可能已变化）。
+  if (
+    typeof recordedStart === 'number'
+    && Number.isInteger(recordedStart)
+    && recordedStart > 0
+    && recordedStart + originalSql.length <= editorSql.length
+    && editorSql.startsWith(originalSql, recordedStart)
+  ) {
+    return recordedStart;
   }
   const index = editorSql.indexOf(originalSql);
   return index >= 0 ? index : 0;
@@ -226,7 +250,7 @@ export const mapSqlErrorLocationToOffset = (
   if (!editorSql) {
     return null;
   }
-  const fragmentStart = resolveFragmentStart(editorSql, originalSql);
+  const fragmentStart = resolveFragmentStart(editorSql, originalSql, origin?.fragmentStartOffset);
   const fragment = fragmentStart > 0 || editorSql.startsWith(originalSql)
     ? originalSql
     : editorSql;
@@ -323,6 +347,13 @@ type QueryEditorErrorLocatorEditor = {
   getModel?: () => {
     getValue?: () => string;
     getPositionAt?: (offset: number) => { lineNumber: number; column: number };
+    getOffsetAt?: (position: { lineNumber: number; column: number }) => number;
+  } | null;
+  getSelection?: () => {
+    startLineNumber: number;
+    startColumn: number;
+    endLineNumber: number;
+    endColumn: number;
   } | null;
   setPosition?: (position: { lineNumber: number; column: number }) => void;
   setSelection?: (selection: {
@@ -335,6 +366,40 @@ type QueryEditorErrorLocatorEditor = {
   revealLineInCenterIfOutsideViewport?: (lineNumber: number) => void;
   focus?: () => void;
 } | null | undefined;
+
+/**
+ * 读取编辑器当前选区起始位置，换算成 origin 使用的归一化偏移。
+ *
+ * 执行时调用：把 Monaco 选区的原始偏移映射到 \r\n → \n 归一化后的坐标系，
+ * 使 lineColumn 类数据库错误能按「选区起始 + 片段内相对行」映射回编辑器。
+ * 编辑器取值与传入的 editorSql 不一致（内容已变化）时返回 undefined，
+ * 由 mapSqlErrorLocationToOffset 回退到 indexOf 首次命中。
+ */
+export const resolveEditorSelectionStartOffset = (
+  editor: QueryEditorErrorLocatorEditor | null | undefined,
+  editorSql: string,
+): number | undefined => {
+  const model = editor?.getModel?.();
+  const selection = editor?.getSelection?.();
+  if (!model || !selection) {
+    return undefined;
+  }
+  const rawValue = model.getValue?.();
+  if (typeof rawValue !== 'string') {
+    return undefined;
+  }
+  if (normalizeSqlText(rawValue) !== normalizeSqlText(editorSql)) {
+    return undefined;
+  }
+  const rawOffset = model.getOffsetAt?.({
+    lineNumber: selection.startLineNumber,
+    column: selection.startColumn,
+  });
+  if (typeof rawOffset !== 'number' || !Number.isFinite(rawOffset) || rawOffset < 0) {
+    return undefined;
+  }
+  return normalizeSqlText(rawValue.slice(0, rawOffset)).length;
+};
 
 export const revealQueryEditorSqlErrorLocation = (params: {
   editor: QueryEditorErrorLocatorEditor;

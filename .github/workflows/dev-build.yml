@@ -51,6 +51,7 @@ jobs:
           python3 tools/legal-release-assets.test.py
           python3 tools/windows-release-artifacts.test.py
           python3 tools/generate-release-notes.test.py
+          python3 tools/prune-ghcr-dev-snapshots.test.py
 
       - name: Setup Node
         uses: actions/setup-node@v5

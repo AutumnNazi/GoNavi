@@ -2,47 +2,44 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-const readDataGridSource = () => readFileSync(new URL('./DataGrid.tsx', import.meta.url), 'utf8');
-const readDataGridStylesSource = () => readFileSync(new URL('./dataGridStyles.ts', import.meta.url), 'utf8');
+import { buildDataGridCssText } from './dataGridStyles';
+
+/**
+ * DataGrid 原生横向滚动生命周期的守卫断言。
+ *
+ * 依赖补丁（patches/*.patch）与生成的 CSS 无对应可执行代码，对其断言是最直接的验证方式；
+ * 组件自身的实现细节断言已按 testPolicy 守卫移除——它们不执行被测代码，
+ * 实测把逻辑改坏后仍会通过，且会因改名/格式化误报。
+ */
+
 const readVirtualListPatch = () => readFileSync(
   new URL('../../patches/rc-virtual-list+3.19.2.patch', import.meta.url),
   'utf8',
 );
 
+const buildCss = () => buildDataGridCssText({
+  darkMode: false,
+  densityParams: { dataFontSize: 12 },
+  gridId: 'horizontal-scroll-grid',
+  floatingScrollbarHeight: 8,
+});
+
 describe('DataGrid native horizontal scroll lifecycle', () => {
   it('keeps the native scrollbar while moving the header and sticky body from one DOM offset', () => {
-    const source = readDataGridSource();
-    const stylesSource = readDataGridStylesSource();
     const virtualListPatch = readVirtualListPatch();
-    const nativeScrollHandlerIndex = source.indexOf('const handleTargetScroll = (event: Event)');
-    const nativeScrollBindingSource = source.slice(
-      source.lastIndexOf('useEffect(() => {', nativeScrollHandlerIndex),
-      source.indexOf('const paginationControlTotal = useMemo', nativeScrollHandlerIndex),
-    );
-    const alignmentSource = source.slice(
-      source.indexOf('const scheduleVirtualHorizontalAlignment = useCallback'),
-      source.indexOf('const flushVirtualHorizontalWheel = useCallback'),
-    );
+    const css = buildCss();
 
-    expect(source).toContain('nativeHorizontalScroll: isMacLike || isWindowsLike,');
-    expect(source).toContain('const virtualListItemHorizontalOffsetComposited = isMacLike || isWindowsLike;');
-    expect(source).toContain('const horizontalScrollVisible = isTableSurfaceActive && !isWindowsLike');
-    expect(stylesSource).toContain('body[data-platform="windows"] .${gridId} .data-grid-external-horizontal-scroll');
     expect(virtualListPatch).toContain("position: horizontalOffsetComposited ? 'sticky' : 'relative'");
-    expect(source).toContain('const nextBodyTranslate = `${-clampedOffset}px 0`;');
-    expect(nativeScrollBindingSource).toContain("source?.classList.contains('ant-table-header')");
-    expect(nativeScrollBindingSource).toContain('syncVirtualHorizontalVisualOffset(tableContainer, holderEl.scrollLeft);');
-    expect(alignmentSource).toContain('? readVirtualHorizontalOffset(tableContainer)');
+    // Windows 隐藏浮动的外置滚动条，改用表格原生滚动条；其他平台保留外置轨道。
+    expect(css).toContain('body[data-platform="windows"] .horizontal-scroll-grid .data-grid-external-horizontal-scroll');
+    expect(css).toContain('.horizontal-scroll-grid .data-grid-external-horizontal-scroll');
   });
 
-  it('measures the first result layout before the browser paints the native scrollbar', () => {
-    const source = readDataGridSource();
-    const metricsEffect = source.slice(
-      source.indexOf('useDataGridLayoutEffect(() => {', source.indexOf('// Dynamic Height')),
-      source.indexOf('const [selectedRowKeys', source.indexOf('// Dynamic Height')),
-    );
+  it('keeps the macOS overlay track for the composited native holder', () => {
+    const css = buildCss();
 
-    expect(metricsEffect).toContain('resizeObserver.observe(el);');
-    expect(metricsEffect).toContain('recalculateTableMetrics(el);');
+    expect(css).toContain(
+      'body[data-platform="darwin"] .horizontal-scroll-grid .ant-table-tbody-virtual-holder[data-horizontal-scroll-native="true"]::-webkit-scrollbar',
+    );
   });
 });

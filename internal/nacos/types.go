@@ -171,6 +171,11 @@ type ServiceQuery struct {
 	GroupName   string `json:"groupName,omitempty"`
 	PageNo      int    `json:"pageNo,omitempty"`
 	PageSize    int    `json:"pageSize,omitempty"`
+	// WithStatistics asks the client to surface the instance statistics that some
+	// Nacos service-list responses carry for free. It never triggers extra requests:
+	// when the upstream response does not contain them the page simply reports
+	// StatisticsAvailable=false instead of fabricating zeros.
+	WithStatistics bool `json:"withStatistics,omitempty"`
 }
 
 // ServicePage is a paged service name list.
@@ -179,6 +184,31 @@ type ServicePage struct {
 	ServiceNames []string `json:"serviceNames"`
 	PageNo       int      `json:"pageNo,omitempty"`
 	PageSize     int      `json:"pageSize,omitempty"`
+
+	// Services is only populated when ServiceQuery.WithStatistics is set and the
+	// upstream response carried statistics. It stays index-aligned with ServiceNames.
+	//
+	// It is a per-page slice: the service list API is paged, so a caller that wants
+	// namespace-wide statistics must fold the pages itself (the sidebar already walks
+	// every page to collect group names). Keeping the aggregation on the caller side
+	// avoids turning a paged read into a hidden full scan on the server.
+	Services []ServiceSummary `json:"services,omitempty"`
+	// StatisticsAvailable reports whether the upstream response really carried
+	// instance statistics.
+	StatisticsAvailable bool `json:"statisticsAvailable"`
+	// StatisticsFamily records which API family produced Services, for diagnostics.
+	StatisticsFamily string `json:"statisticsFamily,omitempty"`
+}
+
+// ServiceSummary is per-service instance statistics taken from the service list
+// response itself. StatisticsAvailable separates "reported zero instances" from
+// "this API family does not report instance counts at all".
+type ServiceSummary struct {
+	Name                 string `json:"name"`
+	GroupName            string `json:"groupName,omitempty"`
+	InstanceCount        int    `json:"instanceCount"`
+	HealthyInstanceCount int    `json:"healthyInstanceCount"`
+	StatisticsAvailable  bool   `json:"statisticsAvailable"`
 }
 
 // ServiceDetail is service metadata.

@@ -417,6 +417,18 @@ docker compose --env-file docker.mcp-server.env -f docker-compose.mcp-server.yml
 | Helm | [deploy/helm/gonavi-mcp-server](deploy/helm/gonavi-mcp-server) |
 | 仅构建镜像 | `Dockerfile.build-env` → `ghcr.io/syngnat/gonavi-build-env` |
 
+镜像 tag（四个镜像规则一致）：
+
+| Tag | 含义 |
+|---|---|
+| `latest` | 最新稳定版 |
+| `0.9.8` / `v0.9.8` | 精确版本，例如 `ghcr.io/syngnat/gonavi-web-server:0.9.8` |
+| `0.9` / `v0.9` | 该次版本线的最新补丁 |
+| `dev-latest` | `dev` 分支滚动构建，每次推送都会移动 |
+
+集群不希望版本漂移时请锁定精确版本；`dev-latest` 是移动指针，不是稳定锚点。
+版本 tag 同时发布带 `v`（`v0.9.8`）与不带 `v`（`0.9.8`）两种形式，指向同一 digest，按习惯任选一种即可。
+
 安全默认：远端 `schema-only` 不暴露 `execute_sql`；开放后与内置 AI 助手共用安全控制，调用 `execute_sql` 即视为确认。  
 详见：[cmd/gonavi-mcp-server/README.md](cmd/gonavi-mcp-server/README.md)。
 

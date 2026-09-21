@@ -1,5 +1,5 @@
 import { getDataSourceCapabilityContract } from './dataSourceCapabilities';
-import { hasEmbeddedWriteStatement } from './sqlEmbeddedWrite';
+import { firstEmbeddedWriteKeyword } from './sqlEmbeddedWrite';
 import {
     supportsSqlBracketIdentifier,
     supportsSqlEscapedBracketIdentifier,
@@ -300,13 +300,23 @@ export const hasTopLevelSqlEditorForUpdate = (statement: string, dbType = ''): b
 
 const sqlEditorStatementHasManagedWrite = (statement: string, dbType = ''): boolean => {
     const text = String(statement || '');
+    const leading = readSqlEditorKeyword(text, 0);
     // 缺分号导致首关键字为读、体内却埋着 DML 时（issue #1308），
     // 只看首关键字会把这批语句判为"不可托管的读"，从而跳过托管事务、
     // 以 autocommit 直接下发，数据库侧再无事务可回滚。
-    if (hasEmbeddedWriteStatement(text, dbType)) {
+    //
+    // 两道门缺一不可：
+    // - 首关键字必须是读关键字。内嵌写扫描的关键字集合额外收录了 DDL，
+    //   若不加此前置，`CREATE OR REPLACE PROCEDURE` / `DROP TRIGGER` 这类
+    //   首关键字本身就是 DDL 的语句会因命中 'create'/'drop' 立刻返回 true，
+    //   被误判为"可托管写"而路由到 DBQueryMultiTransactional，绕过失败补偿
+    //   恢复逻辑，并与后端 isBatchableWriteSQLStatement（只认 DML）漂移。
+    //   这也是 sqlEmbeddedWrite 模块注释声明的调用约束。
+    // - 命中关键字必须是 DML。DDL 交给非托管路径，与后端口径一致。
+    if (SQL_EDITOR_READ_KEYWORDS.has(leading.keyword)
+        && SQL_EDITOR_DML_KEYWORDS.has(firstEmbeddedWriteKeyword(text, dbType))) {
         return true;
     }
-    const leading = readSqlEditorKeyword(text, 0);
     if (leading.keyword === 'with') {
         const analysis = resolveSqlEditorWithAnalysis(text, leading.end, dbType);
         return analysis.cteHasManagedWrite || SQL_EDITOR_DML_KEYWORDS.has(analysis.keyword);

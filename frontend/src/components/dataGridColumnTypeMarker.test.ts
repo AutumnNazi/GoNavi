@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ColumnMeta } from './dataGridColumnMeta';
 import {
   applyIndexColumnKeysToColumnMetaMap,
+  buildIndexedColumnMetadata,
   resolveDataGridColumnTypeRole,
   resolveIndexColumnKeys,
 } from './dataGridColumnTypeMarker';
@@ -18,6 +19,19 @@ const meta = (key: string): ColumnMeta => ({
 });
 
 describe('dataGridColumnTypeMarker', () => {
+  it('builds query-result column metadata only when index metadata is available', () => {
+    const columns = [{ name: 'id', type: 'bigint', nullable: 'NO', key: '', extra: '', comment: '' }];
+    const indexes = [{ name: 'users_pkey', columnName: 'id', nonUnique: 0, seqInIndex: 1, indexType: 'BTREE' }];
+
+    expect(buildIndexedColumnMetadata(columns, indexes)).toEqual({
+      columnMetaMap: {
+        id: expect.objectContaining({ type: 'bigint', key: 'PRI' }),
+      },
+      uniqueKeyGroups: [['id']],
+    });
+    expect(buildIndexedColumnMetadata(columns, undefined)).toEqual({});
+  });
+
   it('ranks primary, unique, foreign-key, and index roles in that order', () => {
     expect(resolveDataGridColumnTypeRole({ key: 'PRI', hasForeignKey: true })).toBe('pk');
     expect(resolveDataGridColumnTypeRole({ key: 'UNI', hasForeignKey: true })).toBe('unique');

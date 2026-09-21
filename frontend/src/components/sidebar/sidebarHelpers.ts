@@ -23,8 +23,8 @@ export const V2_RAIL_UNGROUPED_CONNECTION_GROUP_ID = '__gonavi-v2-ungrouped-conn
 
 // === 共享类型 ===
 
-/** V2 资源管理器过滤维度 */
-export type V2ExplorerFilter = 'all' | 'tables' | 'views' | 'sequences' | 'routines' | 'packages' | 'events';
+/** V2 资源管理器过滤维度。定义已迁至 `./sidebarExplorerFilter`，此处再导出保持既有引用不变。 */
+export type { V2ExplorerFilter } from './sidebarExplorerFilter';
 
 // === 纯函数 ===
 

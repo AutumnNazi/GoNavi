@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   absorbExtraWidthIntoFlexibleColumns,
@@ -8,13 +8,102 @@ import {
   resolveExternalHorizontalScrollMetrics,
   resolveDataGridColumnQuickFindScrollLeft,
   resolveDataGridHorizontalWheelDelta,
+  resolveDataGridMeasurementHeight,
   resolveNativeHorizontalWheelScrollLeft,
   resolveVirtualHorizontalMaxScroll,
+  observeDataGridMetrics,
   shouldCommitVirtualHorizontalRange,
   shouldLetNativeHorizontalWheelPass,
 } from './dataGridLayout';
 
 describe('dataGridLayout helpers', () => {
+  it('derives the first query-result grid height from the already stable tabs content', () => {
+    expect(resolveDataGridMeasurementHeight({
+      measuredHeight: 94,
+      rootHeight: 180,
+      queryResultHeight: 534,
+      queryResultSiblingHeight: 0,
+    })).toBe(448);
+
+    expect(resolveDataGridMeasurementHeight({
+      measuredHeight: 94,
+      rootHeight: 180,
+      queryResultHeight: 534,
+      queryResultSiblingHeight: 64,
+    })).toBe(384);
+  });
+
+  it('keeps the measured grid height outside query-result tabs', () => {
+    expect(resolveDataGridMeasurementHeight({
+      measuredHeight: 320,
+    })).toBe(320);
+  });
+
+  it('measures synchronously until the first valid grid size, then coalesces resizes', () => {
+    const previousDescriptors = new Map(
+      ['ResizeObserver', 'window', 'document', 'requestAnimationFrame', 'cancelAnimationFrame'].map((name) => [
+        name,
+        Object.getOwnPropertyDescriptor(globalThis, name),
+      ]),
+    );
+    let resizeCallback: (() => void) | undefined;
+    let scheduledFrame: FrameRequestCallback | undefined;
+    const disconnect = vi.fn();
+    const target = {} as HTMLElement;
+    const measure = vi.fn()
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true)
+      .mockReturnValue(true);
+
+    Object.defineProperty(globalThis, 'ResizeObserver', {
+      configurable: true,
+      value: class {
+        constructor(callback: () => void) {
+          resizeCallback = callback;
+        }
+        observe = vi.fn();
+        disconnect = disconnect;
+      },
+    });
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: { addEventListener: vi.fn(), removeEventListener: vi.fn() },
+    });
+    Object.defineProperty(globalThis, 'document', {
+      configurable: true,
+      value: { body: { getAttribute: () => null } },
+    });
+    Object.defineProperty(globalThis, 'requestAnimationFrame', {
+      configurable: true,
+      value: vi.fn((callback: FrameRequestCallback) => {
+        scheduledFrame = callback;
+        return 1;
+      }),
+    });
+    Object.defineProperty(globalThis, 'cancelAnimationFrame', {
+      configurable: true,
+      value: vi.fn(),
+    });
+
+    try {
+      const dispose = observeDataGridMetrics(target, measure);
+      expect(measure).toHaveBeenCalledTimes(1);
+      resizeCallback?.();
+      expect(measure).toHaveBeenCalledTimes(2);
+      resizeCallback?.();
+      expect(measure).toHaveBeenCalledTimes(2);
+      scheduledFrame?.(0);
+      expect(measure).toHaveBeenCalledTimes(3);
+      dispose();
+      expect(disconnect).toHaveBeenCalledOnce();
+    } finally {
+      for (const [name, descriptor] of previousDescriptors) {
+        if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+        else Reflect.deleteProperty(globalThis, name);
+      }
+    }
+  });
+
   it('returns zero bottom padding without horizontal overflow', () => {
     expect(calculateTableBodyBottomPadding({
       hasHorizontalOverflow: false,

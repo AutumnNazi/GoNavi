@@ -231,7 +231,6 @@ const DATA_EDIT_AUTO_COMMIT_DELAY_OPTIONS = [
     { value: 10000, seconds: 10 },
     { value: 30000, seconds: 30 },
 ];
-const DATA_GRID_DISPLAY_RENDER_VERSION = Symbol('DATA_GRID_DISPLAY_RENDER_VERSION');
 const DATA_GRID_VIRTUAL_EDIT_RENDER_VERSION = Symbol('DATA_GRID_VIRTUAL_EDIT_RENDER_VERSION');
 const DEFAULT_GRID_MONO_FONT_FAMILY = '"JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 const normalizedDateTimeCache = new Map<string, string>();
@@ -655,33 +654,6 @@ export const attachDataGridVirtualEditRenderVersion = <T extends Item>(
         });
         return nextRow;
     });
-};
-
-export const attachDataGridDisplayRenderVersion = <T extends Item>(
-    rows: T[],
-    renderVersion: string,
-): T[] => {
-    if (!renderVersion) return rows;
-
-    return rows.map((row) => {
-        if (!row || typeof row !== 'object') return row;
-        const nextRow = { ...(row as object) } as T;
-        Object.defineProperty(nextRow, DATA_GRID_DISPLAY_RENDER_VERSION, {
-            value: renderVersion,
-            enumerable: true,
-        });
-        return nextRow;
-    });
-};
-
-export const hasDataGridDisplayRenderVersionChanged = (nextRecord: unknown, previousRecord: unknown): boolean => {
-    const nextVersion = nextRecord && typeof nextRecord === 'object'
-        ? (nextRecord as Record<symbol, unknown>)[DATA_GRID_DISPLAY_RENDER_VERSION]
-        : undefined;
-    const previousVersion = previousRecord && typeof previousRecord === 'object'
-        ? (previousRecord as Record<symbol, unknown>)[DATA_GRID_DISPLAY_RENDER_VERSION]
-        : undefined;
-    return nextVersion !== previousVersion;
 };
 
 export const hasDataGridVirtualEditRenderVersionChanged = (nextRecord: unknown, previousRecord: unknown): boolean => {
@@ -1609,6 +1581,9 @@ interface DataGridProps {
     onDataChange?: (rows: any[]) => void;
     /** Workbench tab that owns editable changes in this grid. */
     workbenchTabId?: string;
+    /** Metadata already loaded while preparing a query execution plan. */
+    initialColumnMetaMap?: Record<string, ColumnMeta>;
+    initialUniqueKeyGroups?: string[][];
 }
 
 type GridFilterCondition = FilterCondition & {
@@ -1947,7 +1922,6 @@ export {
     TABLE_CELL_PREVIEW_MAX_CHARS,
     ROW_NUMBER_COLUMN_WIDTH,
     DATA_EDIT_AUTO_COMMIT_DELAY_OPTIONS,
-    DATA_GRID_DISPLAY_RENDER_VERSION,
     DATA_GRID_VIRTUAL_EDIT_RENDER_VERSION,
     DEFAULT_GRID_MONO_FONT_FAMILY,
     normalizedDateTimeCache,

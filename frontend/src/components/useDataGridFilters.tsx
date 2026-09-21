@@ -135,14 +135,17 @@ export const useDataGridFilters = ({
     });
   }, [normalizeFilterLogic]);
 
-  const [filterConditions, setFilterConditions] = React.useState<GridFilterConditionState[]>([]);
-  const [nextFilterId, setNextFilterId] = React.useState(1);
+  const [filterConditions, setFilterConditions] = React.useState(() => normalizeGridFilterConditions(appliedFilterConditions));
+  const [nextFilterId, setNextFilterId] = React.useState(() => filterConditions.reduce((next, cond) => Math.max(next, cond.id + 1), 1));
+  const appliedConditionsRef = React.useRef(appliedFilterConditions);
   const [quickWhereDraft, setQuickWhereDraft] = React.useState(() => normalizeQuickWhereCondition(quickWhereCondition));
   const [quickWhereSuggestionsOpen, setQuickWhereSuggestionsOpen] = React.useState(false);
   const filterPanelRef = React.useRef<HTMLDivElement>(null);
   const autoDefaultFilterIdsRef = React.useRef<Set<number>>(new Set());
 
   React.useEffect(() => {
+    if (appliedConditionsRef.current === appliedFilterConditions) return;
+    appliedConditionsRef.current = appliedFilterConditions;
     const nextConditions = normalizeGridFilterConditions(appliedFilterConditions);
     autoDefaultFilterIdsRef.current.clear();
     setFilterConditions(nextConditions);
@@ -431,13 +434,23 @@ export const useDataGridFilters = ({
     return true;
   }, [applyQuickWhereCondition, filterConditions, onApplyFilter]);
 
+  // Enable/disable all must reach the host immediately: keeping it as a local draft
+  // until "apply" is pressed is what makes the toolbar read as if nothing happened.
+  const commitFilterConditionFlag = React.useCallback((enabled: boolean) => {
+    if (filterConditions.length === 0) return;
+    if (filterConditions.every((cond) => (cond.enabled !== false) === enabled)) return;
+    const nextConditions = filterConditions.map((cond) => ({ ...cond, enabled }));
+    setFilterConditions(nextConditions);
+    if (onApplyFilter) onApplyFilter(nextConditions);
+  }, [filterConditions, onApplyFilter]);
+
   const applyAllFiltersEnabled = React.useCallback(() => {
-    setFilterConditions((prev) => prev.map((cond) => ({ ...cond, enabled: true })));
-  }, []);
+    commitFilterConditionFlag(true);
+  }, [commitFilterConditionFlag]);
 
   const applyAllFiltersDisabled = React.useCallback(() => {
-    setFilterConditions((prev) => prev.map((cond) => ({ ...cond, enabled: false })));
-  }, []);
+    commitFilterConditionFlag(false);
+  }, [commitFilterConditionFlag]);
 
   return {
     filterConditions,

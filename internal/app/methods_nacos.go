@@ -125,6 +125,10 @@ type NacosServiceQuery struct {
 	GroupName   string `json:"groupName,omitempty"`
 	PageNo      int    `json:"pageNo,omitempty"`
 	PageSize    int    `json:"pageSize,omitempty"`
+	// WithStatistics asks for per-service instance statistics. It never adds extra
+	// Nacos requests: the counts come from the same service-list response when the
+	// server provides them, and are reported as unavailable otherwise.
+	WithStatistics bool `json:"withStatistics,omitempty"`
 }
 
 // NacosServicePayload creates/updates a service.
@@ -914,11 +918,12 @@ func (a *App) NacosListServices(config connection.ConnectionConfig, query NacosS
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 	page, err := client.ListServices(ctx, nacos.ServiceQuery{
-		NamespaceID: query.NamespaceID,
-		ServiceName: query.ServiceName,
-		GroupName:   query.GroupName,
-		PageNo:      query.PageNo,
-		PageSize:    query.PageSize,
+		NamespaceID:    query.NamespaceID,
+		ServiceName:    query.ServiceName,
+		GroupName:      query.GroupName,
+		PageNo:         query.PageNo,
+		PageSize:       query.PageSize,
+		WithStatistics: query.WithStatistics,
 	})
 	if err != nil {
 		logger.Error(err, "NacosListServices 失败：%s", formatNacosConnSummary(config))

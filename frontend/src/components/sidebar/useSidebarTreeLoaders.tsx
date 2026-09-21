@@ -82,7 +82,7 @@ import {
 } from './sidebarPartitions';
 import { DBGetDatabases, DBGetObjects, DBGetTables, DBQuery, DBRefreshTableStats, GetDriverStatusList, JVMProbeCapabilities } from '../../../wailsjs/go/app/App';
 import type { SidebarTableMetadataSnapshot } from '../../utils/sidebarTableMetadata';
-import { collectNacosServiceGroupsByPage } from '../nacosServiceName';
+import { loadNacosServiceGroupsIntoTree } from './nacosServiceGroupNodes';
 import { isPostgresSchemaDialect } from '../sidebarCoreUtils';
 import { splitMetadataQualifiedName } from '../../utils/qualifiedName';
 
@@ -2344,98 +2344,28 @@ export const useSidebarTreeLoaders = ({
       }
   };
 
+  // Extracted to ./nacosServiceGroupNodes so this hook — already far past the repo's
+  // file-size limit — only wires the loader up.
   const loadNacosServiceGroups = async (
       node: any,
       options: { force?: boolean } = {},
-  ): Promise<boolean> => {
-      const dataRef = node?.dataRef || {};
-      const connectionId = String(dataRef.id || '');
-      const namespaceId = String(dataRef.nacosNamespaceId ?? '');
-      const namespaceName = String(dataRef.nacosNamespaceName || namespaceId || 'public');
-      const nodeKeyId = namespaceId || 'public';
-      const loadKey = `nacos-service-groups-${connectionId}-${nodeKeyId}`;
-      if (!connectionId) return false;
-      if (loadingNodesRef.current.has(loadKey) && !options.force) return false;
-      const connectionEpoch = getConnectionLoadEpoch(connectionId);
-      const loadGeneration = beginLoadGeneration(loadKey);
-      const isCurrentLoad = () => (
-          isCurrentConnectionLoadEpoch(connectionId, connectionEpoch)
-          && isCurrentLoadGeneration(loadKey, loadGeneration)
-      );
-      const requestId = (nacosServiceGroupRequestIdsRef.current[loadKey] || 0) + 1;
-      nacosServiceGroupRequestIdsRef.current[loadKey] = requestId;
-      loadingNodesRef.current.add(loadKey);
-      try {
-          const rpcConfig = buildRpcConnectionConfig(dataRef.config || {});
-          const groups = await collectNacosServiceGroupsByPage(async (pageNo, pageSize) => {
-              const res = await (window as any).go.app.App.NacosListServices(rpcConfig, {
-                  namespaceId,
-                  groupName: '',
-                  pageNo,
-                  pageSize,
-              });
-              if (!res?.success) {
-                  throw new Error(res?.message || 'list service groups failed');
-              }
-              return res.data || {};
-          });
-          if (
-              !isCurrentLoad()
-              || nacosServiceGroupRequestIdsRef.current[loadKey] !== requestId
-          ) {
-              return false;
-          }
-
-          const allNode: TreeNode = {
-              title: t('nacos_viewer.label.all'),
-              key: `${connectionId}-nacos-ns-${nodeKeyId}-service-group-__all__`,
-              icon: <AppstoreOutlined style={{ color: '#13C2C2' }} />,
-              type: 'nacos-service-group',
-              dataRef: {
-                  ...dataRef,
-                  nacosNamespaceId: namespaceId,
-                  nacosNamespaceName: namespaceName,
-                  nacosGroup: '',
-              },
-              isLeaf: true,
-          };
-          const groupNodes: TreeNode[] = groups.map((group) => ({
-              title: group,
-              key: `${connectionId}-nacos-ns-${nodeKeyId}-service-group-${encodeURIComponent(group)}`,
-              icon: <FolderOpenOutlined style={{ color: '#13C2C2' }} />,
-              type: 'nacos-service-group',
-              dataRef: {
-                  ...dataRef,
-                  nacosNamespaceId: namespaceId,
-                  nacosNamespaceName: namespaceName,
-                  nacosGroup: group,
-              },
-              isLeaf: true,
-          }));
-          replaceTreeNodeChildren(node.key, [allNode, ...groupNodes], dataRef);
-          return true;
-      } catch (error: any) {
-          if (
-              !isCurrentLoad()
-              || nacosServiceGroupRequestIdsRef.current[loadKey] !== requestId
-          ) {
-              return false;
-          }
-          message.error({
-              content: t('sidebar.message.connection_failed', { error: error?.message || String(error) }),
-              key: loadKey,
-          });
-          setLoadedKeys((prev) => prev.filter((k) => k !== node.key));
-          return false;
-      } finally {
-          if (
-              isCurrentLoad()
-              && nacosServiceGroupRequestIdsRef.current[loadKey] === requestId
-          ) {
-              loadingNodesRef.current.delete(loadKey);
-          }
-      }
-  };
+  ): Promise<boolean> => loadNacosServiceGroupsIntoTree({
+      node,
+      options,
+      nacosServiceGroupRequestIdsRef,
+      loadingNodesRef,
+      setLoadedKeys,
+      replaceTreeNodeChildren,
+      buildRpcConnectionConfig,
+      getConnectionLoadEpoch,
+      beginLoadGeneration,
+      isCurrentConnectionLoadEpoch,
+      isCurrentLoadGeneration,
+      showError: (payload) => message.error(payload),
+      listServices: (rpcConfig, query) => (
+          (window as any).go.app.App.NacosListServices(rpcConfig, query)
+      ),
+  });
 
   return {
       loadDatabases,

@@ -22,6 +22,8 @@ import {
   UndoOutlined,
   VerticalAlignBottomOutlined,
 } from '@ant-design/icons';
+import { hasActiveGridFilters } from './dataGridFilterActivity';
+import type { FilterCondition } from '../utils/sql';
 
 type GridFilterCondition = {
   id: number;
@@ -56,6 +58,8 @@ export interface DataGridToolbarFrameProps {
   toolbarBottomPadding: number;
   filterTopPadding: number;
   showFilter?: boolean;
+  /** Applied (already committed to the host) conditions; drives the filter entry highlight. */
+  appliedFilterConditions?: FilterCondition[];
   filterPanelRef?: React.RefObject<HTMLDivElement>;
   onReload?: () => void;
   onToggleFilter?: () => void;
@@ -157,6 +161,7 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
   toolbarBottomPadding,
   filterTopPadding,
   showFilter,
+  appliedFilterConditions,
   filterPanelRef,
   onReload,
   onToggleFilter,
@@ -256,6 +261,9 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
     />
   );
 
+  // Highlight means "the data really is filtered", not "the panel is open", so the
+  // entry stays lit after horizontal scrolling hides the filtered columns (issue #1302).
+  const filterEntryActive = hasActiveGridFilters(appliedFilterConditions, quickWhereCondition, dbType);
   const quickWherePlaceholder = dbType === 'mongodb'
     ? translate('data_grid.filter.mongodb_query_placeholder')
     : translate('data_grid.filter.quick_where_placeholder');
@@ -375,7 +383,9 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
             {renderToolbarAction({
               label: translate('data_grid.toolbar.filter'),
               icon: <FilterOutlined />,
-              type: showFilter ? 'primary' : 'default',
+              type: filterEntryActive ? 'primary' : 'default',
+              'aria-pressed': filterEntryActive,
+              dataGridAction: 'filter',
               onClick: onToggleFilterClick,
             })}
           </>
@@ -906,7 +916,7 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
             <Button size="small" onClick={onDisableAllFilters}>{translate('data_grid.filter.disable_all')}</Button>
             <div style={{ width: 1, height: 16, background: panelFrameColor, margin: '0 2px', flexShrink: 0 }} />
             <Button type="primary" onClick={onApplyFilters} size="small">{translate('data_grid.filter.apply')}</Button>
-            <Button size="small" icon={<ClearOutlined />} onClick={onClearFiltersAndSorts}>{translate('data_grid.filter.clear')}</Button>
+            <Button size="small" icon={<ClearOutlined />} onClick={onClearFiltersAndSorts}>{translate('data_grid.filter.clear_all')}</Button>
           </div>
         </div>
       )}

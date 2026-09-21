@@ -17,6 +17,7 @@ import {
   resolveV2ObjectGroupTitle,
 } from './sidebarHelpers';
 import { normalizeOracleObjectCompileStatus } from './oracleObjectCompilation';
+import NacosGroupHealthBadge from './NacosGroupHealthBadge';
 
 /** Connection / database state, expressed by the row icon via CSS (no status dot). */
 export type SidebarTreeConnectionStatus = 'loading' | 'success' | 'error' | 'default';
@@ -207,6 +208,27 @@ export const renderSidebarV2TreeTitle = ({
   const effectiveHoverTitle = hoverTitle;
   const hasTableHoverInfo = node.type === 'table';
   const metaText = node.type === 'table' ? '' : getV2TreeMetaText(node);
+  // Nacos service groups carry their own trailing metadata: how many services live
+  // in the group and how much of it is actually healthy. Both come from the service
+  // list scan the sidebar already performs, so neither costs an extra request.
+  const nacosServiceCount = node.type === 'nacos-service-group'
+    ? Number(node?.dataRef?.nacosServiceCount)
+    : NaN;
+  const hasNacosServiceCount = Number.isFinite(nacosServiceCount) && nacosServiceCount > 0;
+  const nacosHealthEntry = node.type === 'nacos-service-group'
+    ? node?.dataRef?.nacosGroupHealth
+    : null;
+  // The "all" row (nacosGroup === '') spans every group in the namespace. It shows
+  // the service total only: a health aggregate there would have to sum the whole
+  // namespace, and rendering "unknown" for it would be pure noise.
+  const isNacosAggregateRow = node.type === 'nacos-service-group'
+    && !String(node?.dataRef?.nacosGroup || '').trim();
+  const nacosHealthAvailable = node.type === 'nacos-service-group'
+    && !isNacosAggregateRow
+    && Boolean(node?.dataRef?.nacosHealthAvailable);
+  const nacosServiceCountTitle = hasNacosServiceCount
+    ? t('nacos_service.group.tooltip.services', { count: nacosServiceCount })
+    : '';
   const redisDbAlias = node.type === 'redis-db'
     ? sanitizeRedisDbAlias(node?.dataRef?.redisDbAlias)
     : '';
@@ -300,6 +322,17 @@ export const renderSidebarV2TreeTitle = ({
         <span key={item.key} className={item.className}>{item.text}</span>
       ))}
       {objectCompileStatusBadge}
+      {hasNacosServiceCount && (
+        <span className="gn-v2-tree-nacos-count" title={nacosServiceCountTitle}>
+          {nacosServiceCount}
+        </span>
+      )}
+      {nacosHealthEntry || nacosHealthAvailable ? (
+        <NacosGroupHealthBadge
+          entry={nacosHealthEntry}
+          statisticsAvailable={nacosHealthAvailable}
+        />
+      ) : null}
       {metaText && <span className="gn-v2-tree-count">{metaText}</span>}
       {statusDot}
     </span>

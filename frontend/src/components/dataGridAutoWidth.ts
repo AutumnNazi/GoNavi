@@ -2,7 +2,28 @@ const AUTO_FIT_DEFAULT_MIN_WIDTH = 80;
 const AUTO_FIT_DEFAULT_MAX_WIDTH = 720;
 const AUTO_FIT_DEFAULT_PADDING = 20;
 const AUTO_FIT_DEFAULT_SAMPLE_LIMIT = 200;
+/**
+ * Total number of cell measurements one auto-fit pass is allowed to make.
+ * Derived from the measured cost of `measureText`: a budget of ~1200 keeps the
+ * synchronous pass in the low tens of milliseconds on a warm canvas, while
+ * "200 rows for every column" reached tens of thousands of calls and delayed
+ * the first paint by hundreds of milliseconds to several seconds.
+ */
+const AUTO_FIT_MEASURE_BUDGET = 1200;
+const AUTO_FIT_MIN_SAMPLE_LIMIT = 8;
 const AUTO_FIT_MAX_PREVIEW_CHARS = 120;
+
+/**
+ * Splits the auto-fit measurement budget across the columns being measured.
+ * Narrow result sets keep the full per-column sample; wide ones sample fewer
+ * rows per column so the first paint does not scale with column count x rows.
+ */
+export const resolveAutoFitSampleLimit = (columnCount: number): number => {
+  const columns = Number.isFinite(columnCount) ? Math.max(0, Math.floor(columnCount)) : 0;
+  if (columns === 0) return 0;
+  const perColumn = Math.floor(AUTO_FIT_MEASURE_BUDGET / columns);
+  return Math.min(AUTO_FIT_DEFAULT_SAMPLE_LIMIT, Math.max(AUTO_FIT_MIN_SAMPLE_LIMIT, perColumn));
+};
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => {
   return Object.prototype.toString.call(value) === '[object Object]';
@@ -105,4 +126,66 @@ export const calculateAutoFitColumnWidth = ({
   });
 
   return clampWidth(widestTextWidth + safePadding, minWidth, maxWidth);
+};
+
+export const createDataGridCanvasTextMeasurer = () => {
+  let context: CanvasRenderingContext2D | null = null;
+  const cache = new Map<string, number>();
+
+  return (text: string, font: string): number => {
+    const cacheKey = `${font}\u0000${text}`;
+    const cached = cache.get(cacheKey);
+    if (cached !== undefined) return cached;
+
+    if (!context && typeof document !== 'undefined') {
+      context = document.createElement('canvas').getContext('2d');
+    }
+    if (!context) return text.length * 8;
+
+    context.font = font;
+    const width = context.measureText(text).width;
+    cache.set(cacheKey, width);
+    return width;
+  };
+};
+
+export const calculateAutoFitColumnWidths = ({
+  columnNames,
+  rows,
+  dataFontSize,
+  defaultWidth,
+  minWidth,
+  maxWidth,
+  measureTextWidth = createDataGridCanvasTextMeasurer(),
+}: {
+  columnNames: string[];
+  rows: Array<Record<string, unknown>>;
+  dataFontSize: number;
+  defaultWidth: number;
+  minWidth: number;
+  maxWidth: number;
+  measureTextWidth?: (text: string, font: string) => number;
+}): Record<string, number> => {
+  const font = `${dataFontSize}px "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace`;
+  // Auto-fit runs inside the first render, so its cost is paid before the grid
+  // paints. One measureText per (column x sampled row) adds up fast: 100 columns
+  // x 200 rows is 20k canvas calls, which visibly delays opening a result set.
+  // Spend a fixed budget instead, split across the columns, so wide result sets
+  // sample fewer rows per column rather than blocking proportionally longer.
+  const perColumnSampleLimit = resolveAutoFitSampleLimit(columnNames.length);
+  const sampleRows = perColumnSampleLimit > 0
+    ? rows.slice(0, perColumnSampleLimit)
+    : [];
+  return Object.fromEntries(columnNames.map((columnName) => [
+    columnName,
+    calculateAutoFitColumnWidth({
+      headerTexts: [columnName],
+      valueTexts: sampleRows.map((row) => row?.[columnName]),
+      measureHeaderText: (text) => measureTextWidth(text, `600 ${font}`),
+      measureCellText: (text) => measureTextWidth(text, `400 ${font}`),
+      minWidth,
+      maxWidth,
+      defaultWidth,
+    }),
+  ]));
 };

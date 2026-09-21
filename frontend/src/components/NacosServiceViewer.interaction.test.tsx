@@ -148,6 +148,14 @@ const flushEffects = async () => {
 const latestServiceTableProps = () =>
   [...antdState.tableProps].reverse().find((props) => props.className === 'gn-nacos-service-table');
 
+// Look the delete column up by key instead of by position: the table gained a
+// health column, and positional lookups silently read the wrong cell.
+const serviceDeleteColumn = (serviceTable: { columns: Array<Record<string, unknown>> }) => {
+  const column = serviceTable.columns.find((item) => item.key === 'actions');
+  if (!column) throw new Error('service table has no actions column');
+  return column as { render: (value: unknown, row: unknown) => any };
+};
+
 const latestServicePaginationProps = () =>
   antdState.paginationProps[antdState.paginationProps.length - 1];
 
@@ -225,6 +233,58 @@ describe('NacosServiceViewer interactions', () => {
     renderer = null;
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it('asks for instance statistics and feeds them into the service list health column', async () => {
+    nacosBackend.NacosListServices.mockResolvedValue({
+      success: true,
+      data: {
+        count: 2,
+        pageNo: 1,
+        pageSize: 50,
+        serviceNames: ['GROUP_A@@alpha', 'GROUP_A@@beta'],
+        statisticsAvailable: true,
+        statisticsFamily: 'v1',
+        services: [
+          { name: 'alpha', groupName: 'GROUP_A', instanceCount: 3, healthyInstanceCount: 3, statisticsAvailable: true },
+          { name: 'beta', groupName: 'GROUP_A', instanceCount: 3, healthyInstanceCount: 1, statisticsAvailable: true },
+        ],
+      },
+    });
+
+    await act(async () => {
+      renderer = create(
+        <NacosServiceViewer connectionId="nacos-1" namespaceId="dev" namespaceName="dev" />,
+      );
+    });
+    await flushEffects();
+
+    // The counts ride along on the list request the viewer already issues, so the
+    // opt-in must always be on — without it the backend skips the projection.
+    expect(nacosBackend.NacosListServices).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ withStatistics: true }),
+    );
+
+    // And the response must reach the per-row status cell, matched by raw service
+    // name — a wrong index key would silently render every row without a badge.
+    const healthColumn = latestServiceTableProps().columns
+      .find((column: any) => column.key === 'health');
+    expect(healthColumn).toBeTruthy();
+    const rows = latestServiceTableProps().dataSource as Array<{ rawName: string }>;
+    const byName = new Map(rows.map((row) => [row.rawName, row]));
+    const summaryFor = (rawName: string) =>
+      healthColumn.render(undefined, byName.get(rawName)!).props.summary;
+
+    expect(summaryFor('GROUP_A@@alpha')).toMatchObject({
+      instanceCount: 3,
+      healthyInstanceCount: 3,
+      statisticsAvailable: true,
+    });
+    expect(summaryFor('GROUP_A@@beta')).toMatchObject({
+      instanceCount: 3,
+      healthyInstanceCount: 1,
+    });
   });
 
   it('keeps service pagination in a dedicated footer below a full-height scroll region', async () => {
@@ -1622,7 +1682,7 @@ describe('NacosServiceViewer interactions', () => {
     expect(createButton).toBeDefined();
 
     const serviceTable = latestServiceTableProps();
-    const deleteAction = serviceTable.columns[1].render(undefined, serviceTable.dataSource[0]);
+    const deleteAction = serviceDeleteColumn(serviceTable).render(undefined, serviceTable.dataSource[0]);
     expect(deleteAction.props.disabled).toBe(false);
     await act(async () => {
       serviceTable.onRow(serviceTable.dataSource[0]).onClick();
@@ -1646,7 +1706,7 @@ describe('NacosServiceViewer interactions', () => {
     await flushEffects();
 
     const serviceTable = latestServiceTableProps();
-    const deleteAction = serviceTable.columns[1].render(undefined, serviceTable.dataSource[0]);
+    const deleteAction = serviceDeleteColumn(serviceTable).render(undefined, serviceTable.dataSource[0]);
     await act(async () => {
       deleteAction.props.onConfirm();
       await Promise.resolve();
@@ -1684,7 +1744,7 @@ describe('NacosServiceViewer interactions', () => {
     await flushEffects();
 
     let serviceTable = latestServiceTableProps();
-    const deleteAction = serviceTable.columns[1].render(undefined, serviceTable.dataSource[0]);
+    const deleteAction = serviceDeleteColumn(serviceTable).render(undefined, serviceTable.dataSource[0]);
     await act(async () => {
       deleteAction.props.onConfirm();
     });
@@ -1729,7 +1789,7 @@ describe('NacosServiceViewer interactions', () => {
     await flushEffects();
 
     const serviceTable = latestServiceTableProps();
-    const deleteAction = serviceTable.columns[1].render(undefined, serviceTable.dataSource[0]);
+    const deleteAction = serviceDeleteColumn(serviceTable).render(undefined, serviceTable.dataSource[0]);
     await act(async () => {
       deleteAction.props.onConfirm();
     });
