@@ -212,7 +212,9 @@ func slugifyAttachAlias(name string, connectionID string) string {
 				}
 			}
 			sanitizedID := strings.TrimPrefix(idBuilder.String(), "conn")
-			prefix = "saved_db_" + sanitizedID[:min(len(sanitizedID), 8)]
+			if suffix := sanitizedID[:min(len(sanitizedID), 8)]; suffix != "" {
+				prefix = "saved_db_" + suffix
+			}
 		}
 		slug = prefix
 	}
@@ -333,6 +335,10 @@ func (a *App) buildDuckDBAttachSpec(view connection.SavedConnectionView, resolve
 // （语句级解析，字符串字面量/注释中出现的同形文本不误伤）；
 // 供事务路径等不做指令改写的入口做防御性拦截。
 func queryContainsDuckDBSavedConnectionDirective(query string) bool {
+	// 廉价预筛：绝大多数事务查询不含指令关键词，避免无谓的全量切分
+	if !duckDBSavedConnectionDirectivePattern.MatchString(query) {
+		return false
+	}
 	for _, statement := range splitSQLStatementsForDialect("duckdb", query) {
 		if strings.TrimSpace(statement) == "" {
 			continue
@@ -407,14 +413,15 @@ func (a *App) wrapDuckDBAttachAgentOutdatedError(err error) string {
 	if !strings.Contains(text, "不支持的方法") && !strings.Contains(lower, "unsupported method") && !strings.Contains(lower, "unknown method") {
 		return ""
 	}
-	return a.appText("db.backend.error.duckdb_attach.agent_outdated", nil)
+	// 指引后附原始错误，避免替换式提示丢失真实诊断信息（detail 走 i18n 模板）
+	return a.appText("db.backend.error.duckdb_attach.agent_outdated", map[string]any{"detail": text})
 }
 
 // ensureStatementSemicolonSafety 语句含未加引号的行注释时补一个换行：rejoin 的
 // 分号若紧跟注释（同行或注释行尾）会被吞掉，导致相邻语句被静默合并、语义改变。
-// 单引号感知：'a--b' 这类字面量不触发。
+// 单引号（含 '' 转义）与双引号标识符感知：'a--b'、\"a--b\" 这类字面量不触发。
 func ensureStatementSemicolonSafety(stmt string) string {
-	inSingle := false
+	inSingle, inDouble := false, false
 	for i := 0; i < len(stmt); i++ {
 		switch ch := stmt[i]; {
 		case inSingle:
@@ -425,8 +432,14 @@ func ensureStatementSemicolonSafety(stmt string) string {
 				}
 				inSingle = false
 			}
+		case inDouble:
+			if ch == '"' {
+				inDouble = false
+			}
 		case ch == '\'':
 			inSingle = true
+		case ch == '"':
+			inDouble = true
 		case ch == '-' && i+1 < len(stmt) && stmt[i+1] == '-':
 			return stmt + "\n"
 		}

@@ -5939,7 +5939,7 @@
   "db.backend.error.duckdb_attach.sqlite_memory_unsupported": "連線「{{name}}」指向記憶體庫，沒有可附加的檔案。",
   "db.backend.error.duckdb_attach.parse_missing_ref": "\u7f3a\u5c11\u9023\u7dda\u5f15\u7528",
   "db.backend.error.duckdb_attach.directive_in_transaction": "附加/卸載指令不支援在託管交易中執行：請將 ATTACH/DETACH SAVED CONNECTION 語句移出交易批次後單獨執行。",
-  "db.backend.error.duckdb_attach.agent_outdated": "DuckDB 驅動代理版本過舊，不支援附加外部資料源。請在驅動管理中重新安裝 DuckDB 驅動後重試。",
+  "db.backend.error.duckdb_attach.agent_outdated": "DuckDB 驅動代理版本過舊，不支援附加外部資料源。請在驅動管理中重新安裝 DuckDB 驅動後重試。原始錯誤：{{detail}}",
   "db.backend.error.duckdb_attach.parse_unclosed_quote": "\u9023\u7dda\u5f15\u7528\u7684\u5f15\u865f\u672a\u9589\u5408",
   "db.backend.error.duckdb_attach.parse_quoted_required": "\u542b\u7a7a\u683c\u7684\u9023\u7dda\u540d\u7a31\u9700\u8981\u7528\u55ae\u5f15\u865f\u5305\u88f9",
   "db.backend.error.duckdb_attach.parse_alias_invalid": "AS \u5f8c\u9700\u8981\u5408\u6cd5\u5225\u540d\uff08\u5b57\u6bcd\u6216\u5e95\u7dda\u958b\u982d\uff09",

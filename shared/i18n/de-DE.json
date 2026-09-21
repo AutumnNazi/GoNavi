@@ -5939,7 +5939,7 @@
   "db.backend.error.duckdb_attach.sqlite_memory_unsupported": "Die Verbindung „{{name}}“ zeigt auf eine In-Memory-Datenbank ohne anhängbare Datei.",
   "db.backend.error.duckdb_attach.parse_missing_ref": "Verbindungsreferenz fehlt",
   "db.backend.error.duckdb_attach.directive_in_transaction": "Attach-/Detach-Direktiven können nicht innerhalb einer verwalteten Transaktion ausgeführt werden: Verschieben Sie ATTACH/DETACH SAVED CONNECTION-Anweisungen aus dem Transaktionsbatch und führen Sie sie separat aus.",
-  "db.backend.error.duckdb_attach.agent_outdated": "Der DuckDB-Treiberagent ist veraltet und unterstützt das Anhängen externer Datenquellen nicht. Bitte installieren Sie den DuckDB-Treiber über die Treiberverwaltung neu und versuchen Sie es erneut.",
+  "db.backend.error.duckdb_attach.agent_outdated": "Der DuckDB-Treiberagent ist veraltet und unterstützt das Anhängen externer Datenquellen nicht. Bitte installieren Sie den DuckDB-Treiber über die Treiberverwaltung neu und versuchen Sie es erneut. Ursprünglicher Fehler: {{detail}}",
   "db.backend.error.duckdb_attach.parse_unclosed_quote": "nicht geschlossenes Anf\u00fchrungszeichen in der Verbindungsreferenz",
   "db.backend.error.duckdb_attach.parse_quoted_required": "Verbindungsnamen mit Leerzeichen m\u00fcssen in einfache Anf\u00fchrungszeichen gesetzt werden",
   "db.backend.error.duckdb_attach.parse_alias_invalid": "AS erfordert einen g\u00fcltigen Alias (Beginn mit Buchstabe oder Unterstrich)",
