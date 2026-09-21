@@ -2,7 +2,7 @@ import { splitQualifiedNameLast } from './qualifiedName';
 
 export const SIDEBAR_LOCATE_CONNECTION_EVENT = 'gonavi:locate-sidebar-connection';
 
-export type SidebarLocateObjectGroup = 'tables' | 'views' | 'materializedViews' | 'triggers' | 'routines' | 'sequences' | 'packages' | 'events' | 'externalSqlFiles' | 'savedQueries';
+export type SidebarLocateObjectGroup = 'tables' | 'views' | 'materializedViews' | 'triggers' | 'routines' | 'sequences' | 'packages' | 'events' | 'databaseLinks' | 'externalSqlFiles' | 'savedQueries';
 export type SidebarLocateDatabaseObjectGroup = Exclude<SidebarLocateObjectGroup, 'externalSqlFiles' | 'savedQueries'>;
 
 export interface SidebarLocateConnectionRequest {
@@ -76,6 +76,7 @@ export interface SidebarLocateTabLike {
   routineName?: string;
   sequenceName?: string;
   packageName?: string;
+  databaseLinkName?: string;
   eventName?: string;
   schemaName?: string;
   sidebarLocateKey?: string;
@@ -153,6 +154,7 @@ const inferObjectGroup = (detail: Record<string, unknown>, connectionId: string,
   if (explicitGroup === 'sequences' || explicitGroup === 'sequence') return 'sequences';
   if (explicitGroup === 'packages' || explicitGroup === 'package') return 'packages';
   if (explicitGroup === 'events' || explicitGroup === 'event') return 'events';
+  if (explicitGroup === 'databaseLinks' || explicitGroup === 'database-link' || explicitGroup === 'database_link') return 'databaseLinks';
 
   const explicitType = toTrimmedString(detail.objectType);
   if (explicitType === 'view' || explicitType === 'views') return 'views';
@@ -162,6 +164,7 @@ const inferObjectGroup = (detail: Record<string, unknown>, connectionId: string,
   if (explicitType === 'sequence' || explicitType === 'sequences') return 'sequences';
   if (explicitType === 'package' || explicitType === 'packages') return 'packages';
   if (explicitType === 'event' || explicitType === 'events') return 'events';
+  if (explicitType === 'database-link' || explicitType === 'database_link' || explicitType === 'databaseLinks') return 'databaseLinks';
 
   const tabId = toTrimmedString(detail.tabId);
   const dbNodeKey = `${connectionId}-${dbName}`;
@@ -172,6 +175,7 @@ const inferObjectGroup = (detail: Record<string, unknown>, connectionId: string,
   if (tabId.startsWith(`${dbNodeKey}-sequence-`) || tabId.startsWith(`sequence-def-${connectionId}-${dbName}-`)) return 'sequences';
   if (tabId.startsWith(`${dbNodeKey}-package-`) || tabId.startsWith(`package-def-${connectionId}-${dbName}-`)) return 'packages';
   if (tabId.startsWith(`${dbNodeKey}-event-`) || tabId.startsWith(`event-def-${connectionId}-${dbName}-`)) return 'events';
+  if (tabId.includes('-databaseLinks-') || tabId.startsWith(`database-link-def-${connectionId}-`)) return 'databaseLinks';
 
   return 'tables';
 };
@@ -204,7 +208,7 @@ export const normalizeSidebarLocateObjectRequest = (detail: unknown): SidebarLoc
 
   const connectionId = toTrimmedString(raw.connectionId);
   const dbName = toTrimmedString(raw.dbName);
-  const tableName = toTrimmedString(raw.tableName || raw.objectName || raw.viewName || raw.triggerName || raw.routineName || raw.sequenceName || raw.packageName || raw.eventName);
+  const tableName = toTrimmedString(raw.tableName || raw.objectName || raw.viewName || raw.triggerName || raw.routineName || raw.sequenceName || raw.packageName || raw.databaseLinkName || raw.eventName);
 
   if (!connectionId || !dbName || !tableName) {
     return null;
@@ -242,6 +246,10 @@ const resolveObjectEditLocateIdentity = (
   if (packageName) {
     return { objectName: packageName, objectGroup: 'packages' };
   }
+  const databaseLinkName = toTrimmedString(tab.databaseLinkName);
+  if (databaseLinkName) {
+    return { objectName: databaseLinkName, objectGroup: 'databaseLinks' };
+  }
   const eventName = toTrimmedString(tab.eventName);
   if (eventName) {
     return { objectName: eventName, objectGroup: 'events' };
@@ -260,6 +268,7 @@ const resolveDefinitionTabObjectGroup = (tab: SidebarLocateTabLike): SidebarLoca
   if (tab.type === 'routine-def') return 'routines';
   if (tab.type === 'sequence-def') return 'sequences';
   if (tab.type === 'package-def') return 'packages';
+  if (tab.type === 'database-link-def') return 'databaseLinks';
   if (tab.type === 'event-def') return 'events';
   if (tab.objectType === 'materialized-view') return 'materializedViews';
   if (tab.objectType === 'view') return 'views';
@@ -313,10 +322,12 @@ export const normalizeSidebarLocateObjectRequestFromTab = (tab: SidebarLocateTab
           ? toTrimmedString(tab.sequenceName || tab.tableName)
           : tab.type === 'package-def'
             ? toTrimmedString(tab.packageName || tab.tableName)
+            : tab.type === 'database-link-def'
+              ? toTrimmedString(tab.databaseLinkName || tab.tableName)
             : tab.type === 'event-def'
               ? toTrimmedString(tab.eventName || tab.tableName)
               : toTrimmedString(tab.tableName || tab.viewName);
-  if (tab.type !== 'table' && tab.type !== 'view-def' && tab.type !== 'trigger' && tab.type !== 'routine-def' && tab.type !== 'sequence-def' && tab.type !== 'package-def' && tab.type !== 'event-def') {
+  if (tab.type !== 'table' && tab.type !== 'view-def' && tab.type !== 'trigger' && tab.type !== 'routine-def' && tab.type !== 'sequence-def' && tab.type !== 'package-def' && tab.type !== 'database-link-def' && tab.type !== 'event-def') {
     return null;
   }
 
@@ -381,6 +392,8 @@ export const resolveSidebarLocateTarget = (
             ? `${databaseKey}-sequence-${request.tableName}`
             : request.objectGroup === 'packages'
               ? `${databaseKey}-package-${request.tableName}`
+              : request.objectGroup === 'databaseLinks'
+                ? `${databaseKey}-database-link-${request.tableName}`
               : request.objectGroup === 'events'
                 ? `${databaseKey}-event-${request.tableName}`
                 : `${databaseKey}-${request.tableName}`;
@@ -544,6 +557,16 @@ const matchesLocateObjectNode = (
     return matchesLocateObjectName(target, toTrimmedString(dataRef.packageName || dataRef.tableName), toTrimmedString(dataRef.schemaName), options);
   }
 
+  if (target.objectGroup === 'databaseLinks') {
+    if (node.type !== 'database-link') return false;
+    const nodeLinkName = toTrimmedString(dataRef.databaseLinkName || dataRef.tableName)
+      || (typeof node.title === 'string' ? node.title.trim() : '');
+    if (!nodeLinkName || normalizeLocateName(nodeLinkName) !== normalizeLocateName(target.tableName)) return false;
+    const nodeSchemaName = toTrimmedString(dataRef.schemaName);
+    if (!target.schemaName || !nodeSchemaName) return true;
+    return normalizeLocateName(nodeSchemaName) === normalizeLocateName(target.schemaName);
+  }
+
   if (target.objectGroup === 'events') {
     if (node.type !== 'db-event') return false;
     return matchesLocateObjectName(target, toTrimmedString(dataRef.eventName || dataRef.tableName), toTrimmedString(dataRef.schemaName), options);
@@ -614,6 +637,8 @@ const getVisualNodeObjectName = (
             ? [`${target.databaseKey}-sequence-`]
             : target.objectGroup === 'packages'
               ? [`${target.databaseKey}-package-`]
+              : target.objectGroup === 'databaseLinks'
+                ? [`${target.databaseKey}-database-link-`]
               : target.objectGroup === 'events'
                 ? [`${target.databaseKey}-event-`]
                 : [`${target.databaseKey}-table-`, `${target.databaseKey}-`];
@@ -676,6 +701,7 @@ const matchesLocateObjectNodeByVisualIdentity = (
   if (target.objectGroup === 'routines' && node.type !== 'routine' && !insideExpectedGroup) return false;
   if (target.objectGroup === 'sequences' && node.type !== 'sequence' && !insideExpectedGroup) return false;
   if (target.objectGroup === 'packages' && node.type !== 'package' && !insideExpectedGroup) return false;
+  if (target.objectGroup === 'databaseLinks' && node.type !== 'database-link' && !insideExpectedGroup) return false;
   if (target.objectGroup === 'events' && node.type !== 'db-event' && !insideExpectedGroup) return false;
   if (target.objectGroup === 'tables' && node.type !== 'table' && !insideExpectedGroup) return false;
   if (target.objectGroup === 'externalSqlFiles' || target.objectGroup === 'savedQueries') return false;

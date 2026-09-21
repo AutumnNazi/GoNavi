@@ -473,6 +473,22 @@ func TestIntegrityDetectsTampering(t *testing.T) {
 	}
 }
 
+func TestVerifyIntegrityContextStopsBeforeScanWhenCanceled(t *testing.T) {
+	store := openTestStore(t)
+	if err := store.Append(sampleEvent("canceled-integrity", time.Now().UnixMilli())); err != nil {
+		t.Fatalf("Append returned error: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	report, err := store.VerifyIntegrityContext(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("VerifyIntegrityContext error = %v, want context.Canceled", err)
+	}
+	if report.CheckedRecords != 0 {
+		t.Fatalf("canceled verification checked %d records, want 0", report.CheckedRecords)
+	}
+}
 func TestClearAndRecordLimitPreserveRemainingHashes(t *testing.T) {
 	store := openTestStore(t)
 	now := time.Now().UnixMilli()

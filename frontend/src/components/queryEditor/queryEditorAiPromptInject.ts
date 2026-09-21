@@ -23,12 +23,21 @@ export const dispatchQueryEditorAiPrompt = (prompt: string, delayMs = 0): void =
   fire();
 };
 
-/** 一键 AI 诊断：把当前 SQL 与执行错误注入 AI 面板（结果区按钮与快捷键共用）。 */
-export const diagnoseExecutionErrorWithAI = (sql: string, error: string): void => {
-  const prompt = t('query_editor.ai_prompt.diagnose', { sql, error });
+/** 一键 AI 诊断：把实际执行的 SQL 与错误注入 AI 面板（结果区按钮与快捷键共用）。 */
+export const diagnoseExecutionErrorWithAI = async (
+  sql: string,
+  error: string,
+  connectionId?: string,
+  database = '',
+): Promise<void> => {
   const store = useStore.getState();
-  const delayMs = !store.aiPanelVisible ? 350 : 0;
-  dispatchQueryEditorAiPrompt(prompt, delayMs);
+  const prompt = t('query_editor.ai_prompt.diagnose', { sql, error });
+  await injectQueryEditorAiPromptWithContext({
+    connection: store.connections.find((item) => item.id === String(connectionId || '').trim()),
+    database,
+    prompt,
+    delayIfPanelClosedMs: 350,
+  });
 };
 
 export const injectQueryEditorAiPromptWithContext = async (options: {
@@ -41,6 +50,7 @@ export const injectQueryEditorAiPromptWithContext = async (options: {
   const delayMs = !store.aiPanelVisible && options.delayIfPanelClosedMs
     ? options.delayIfPanelClosedMs
     : 0;
+  if (!store.aiPanelVisible) store.setAIPanelVisible(true);
   const ctxText = await buildQueryEditorAiContextPromptAsync(options.connection, options.database);
   dispatchQueryEditorAiPrompt(`${ctxText}${options.prompt}`, delayMs);
 };

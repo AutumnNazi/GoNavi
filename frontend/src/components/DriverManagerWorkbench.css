@@ -42,7 +42,7 @@
 .preview-settings-pane-sub {
   margin-top: 2px;
   color: var(--driver-manager-workbench-muted);
-  font-size: 12px;
+  font-size: var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px));
   line-height: 1.5;
 }
 

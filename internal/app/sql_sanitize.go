@@ -477,11 +477,16 @@ func isReadOnlySQLQuery(dbType string, query string) bool {
 		return false
 	}
 	if keyword == "pragma" {
-		return !pragmaMayWrite(query, dbType)
+		// PRAGMA 本身可能写（如 PRAGMA journal_mode=WAL），其参数解析由
+		// pragmaMayWrite 负责；此外仍需扫描体内是否尾随了缺分号的写语句。
+		return !pragmaMayWrite(query, dbType) && !containsEmbeddedWriteStatement(dbType, query)
 	}
+	// 首关键字为读关键字时，语句体内仍可能内嵌写语句：当语句之间缺少分号时，
+	// 切分器无法切出边界，整段会被当成一条只读语句（issue #1308）。这里追加一次
+	// 词法扫描，只有确认体内不含写语句才判定为只读。
 	switch keyword {
 	case "select", "with", "show", "describe", "desc", "explain", "values", "consume":
-		return true
+		return !containsEmbeddedWriteStatement(dbType, query)
 	default:
 		return false
 	}
@@ -645,7 +650,13 @@ func isBatchableWriteSQLStatement(dbType string, query string) bool {
 	if keyword == "select" && isSQLSelectIntoStatement(query, dbType) {
 		return true
 	}
-	return isSQLDataWriteKeyword(keyword)
+	if isSQLDataWriteKeyword(keyword) {
+		return true
+	}
+	// 缺分号导致首关键字为读、体内却埋着写语句时（issue #1308），
+	// keyword 仍是 select，需由内嵌写扫描给出真实关键字，
+	// 否则托管事务会把这批语句判为"不可托管的读"而放行到 autocommit 执行。
+	return isSQLDataWriteKeyword(firstEmbeddedWriteKeyword(dbType, query))
 }
 
 func isSQLDataWriteKeyword(keyword string) bool {

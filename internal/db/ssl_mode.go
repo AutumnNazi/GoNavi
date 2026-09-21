@@ -193,28 +193,38 @@ var azureSQLHostSuffixes = []string{
 }
 
 func looksLikeAzureSQLHost(host string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(host))
-	if normalized == "" {
-		return false
-	}
-	if h, _, err := net.SplitHostPort(normalized); err == nil {
-		normalized = h
-	}
-	for _, suffix := range azureSQLHostSuffixes {
-		if strings.HasSuffix(normalized, suffix) {
-			return true
-		}
-	}
-	return false
+	return azureSQLHostNameInCertificate(host) != ""
 }
 
-func azureSQLHostNameInCertificate(host string) string {
-	normalized := strings.ToLower(strings.TrimSpace(host))
+func normalizeSQLServerHost(host string) string {
+	normalized := strings.TrimSpace(host)
 	if normalized == "" {
 		return ""
 	}
 	if h, _, err := net.SplitHostPort(normalized); err == nil {
 		normalized = h
+	}
+	normalized = strings.Trim(normalized, "[]")
+	if len(normalized) > 1 {
+		normalized = strings.TrimSuffix(normalized, ".")
+	}
+	return normalized
+}
+
+// sqlServerHostNameInCertificate returns the certificate name to verify for a
+// SQL Server endpoint. Azure uses the wildcard issued by Microsoft; all other
+// hosts use the original remote host instead of the SSH local forward address.
+func sqlServerHostNameInCertificate(host string) string {
+	if hostNameInCertificate := azureSQLHostNameInCertificate(host); hostNameInCertificate != "" {
+		return hostNameInCertificate
+	}
+	return normalizeSQLServerHost(host)
+}
+
+func azureSQLHostNameInCertificate(host string) string {
+	normalized := strings.ToLower(normalizeSQLServerHost(host))
+	if normalized == "" {
+		return ""
 	}
 	for _, suffix := range azureSQLHostSuffixes {
 		if strings.HasSuffix(normalized, suffix) {

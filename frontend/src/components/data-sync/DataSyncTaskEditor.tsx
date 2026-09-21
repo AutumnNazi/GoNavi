@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { isWebRPCAbortError } from '../../utils/webRpc';
 
+import { DataSyncCronTriggerFields } from './DataSyncCronTriggerFields';
 import { DataSyncEndpointSelector } from './DataSyncEndpointSelector';
+import { DataSyncField as Field } from './DataSyncField';
 import { DataSyncFieldMappingEditor } from './DataSyncFieldMappingEditor';
 import { DataSyncMappingTable } from './DataSyncMappingTable';
 import { DataSyncRouteBar } from './DataSyncRouteBar';
@@ -48,17 +50,6 @@ type TaskPatch = Partial<
 type TaskPatchUpdater =
   | TaskPatch
   | ((currentTask: DataSyncTaskDefinition) => TaskPatch);
-
-const Field: React.FC<{
-  label: string;
-  children: React.ReactNode;
-  wide?: boolean;
-}> = ({ label, children, wide = false }) => (
-  <label className="gn-data-sync-field" data-wide={wide ? 'true' : 'false'}>
-    <span>{label}</span>
-    {children}
-  </label>
-);
 
 const updateMapping = (
   task: DataSyncTaskDefinition,
@@ -933,43 +924,11 @@ const TriggerStage: React.FC<{
         </>
       ) : null}
       {trigger.mode === 'cron' ? (
-        <>
-          <Field label={t('trigger.cron_expression')}>
-            <input
-              className="gn-data-sync-control gn-data-sync-mono"
-              value={trigger.expression}
-              onChange={(event) =>
-                onPatch({ trigger: { ...trigger, expression: event.target.value } })
-              }
-            />
-          </Field>
-          <Field label={t('trigger.timezone')}>
-            <input
-              className="gn-data-sync-control gn-data-sync-mono"
-              value={trigger.timezone}
-              onChange={(event) =>
-                onPatch({ trigger: { ...trigger, timezone: event.target.value } })
-              }
-            />
-          </Field>
-          <Field label={t('trigger.overlap')}>
-            <select
-              className="gn-data-sync-control"
-              value={trigger.overlap}
-              onChange={(event) =>
-                onPatch({
-                  trigger: {
-                    ...trigger,
-                    overlap: event.target.value as 'skip' | 'queue',
-                  },
-                })
-              }
-            >
-              <option value="skip">{t('trigger.overlap.skip')}</option>
-              <option value="queue">{t('trigger.overlap.queue')}</option>
-            </select>
-          </Field>
-        </>
+        <DataSyncCronTriggerFields
+          trigger={trigger}
+          t={t}
+          onPatch={(nextTrigger) => onPatch({ trigger: nextTrigger })}
+        />
       ) : null}
       {trigger.mode === 'interval' ? (
         <>

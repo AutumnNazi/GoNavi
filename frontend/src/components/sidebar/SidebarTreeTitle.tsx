@@ -2,13 +2,11 @@ import React from 'react';
 import { Tooltip } from 'antd';
 import { StarFilled } from '@ant-design/icons';
 import { t } from '../../i18n';
-import { SIDEBAR_SQL_EDITOR_DRAG_MIME, encodeSidebarSqlEditorDragPayload } from '../../utils/sidebarSqlDrag';
 import {
   type SidebarTableMetadataField,
 } from '../../utils/sidebarTableMetadata';
 import { sanitizeRedisDbAlias } from '../../utils/redisDbAlias';
 import { resolveConnectionHostSummary } from '../../utils/tabDisplay';
-import { resolveSidebarObjectDragText } from '../sidebarCoreUtils';
 import {
   buildSidebarTableMetadataDisplayItems,
   buildSidebarTableMetadataSnapshot,
@@ -19,6 +17,7 @@ import {
   resolveV2ObjectGroupTitle,
 } from './sidebarHelpers';
 import { normalizeOracleObjectCompileStatus } from './oracleObjectCompilation';
+import NacosGroupHealthBadge from './NacosGroupHealthBadge';
 
 /** Connection / database state, expressed by the row icon via CSS (no status dot). */
 export type SidebarTreeConnectionStatus = 'loading' | 'success' | 'error' | 'default';
@@ -29,10 +28,6 @@ type SidebarV2TreeTitleOptions = {
   connectionStatus?: SidebarTreeConnectionStatus;
   getV2TreeMetaText: (node: any) => string;
   sidebarTableMetadataFields: SidebarTableMetadataField[];
-  snapshotTreeSelectionBeforeDrag: () => void;
-  restoreTreeSelectionAfterDrag: () => void;
-  treeDragSelectSuppressUntilRef: React.MutableRefObject<number>;
-  setIsTreeDragging: (dragging: boolean) => void;
   sidebarDropPlacement?: 'before' | 'inside' | 'after' | null;
 };
 
@@ -164,15 +159,10 @@ export const renderSidebarV2TreeTitle = ({
   connectionStatus,
   getV2TreeMetaText,
   sidebarTableMetadataFields,
-  snapshotTreeSelectionBeforeDrag,
-  restoreTreeSelectionAfterDrag,
-  treeDragSelectSuppressUntilRef,
-  setIsTreeDragging,
   sidebarDropPlacement,
 }: SidebarV2TreeTitleOptions): React.ReactNode => {
   const rawTitle = String(node.title ?? '');
   const groupKey = String(node?.dataRef?.groupKey || '');
-  const dragText = resolveSidebarObjectDragText(node);
   if (node.type === 'v2-table-section' || node.type === 'v2-database-section') {
     return (
       <span
@@ -218,6 +208,27 @@ export const renderSidebarV2TreeTitle = ({
   const effectiveHoverTitle = hoverTitle;
   const hasTableHoverInfo = node.type === 'table';
   const metaText = node.type === 'table' ? '' : getV2TreeMetaText(node);
+  // Nacos service groups carry their own trailing metadata: how many services live
+  // in the group and how much of it is actually healthy. Both come from the service
+  // list scan the sidebar already performs, so neither costs an extra request.
+  const nacosServiceCount = node.type === 'nacos-service-group'
+    ? Number(node?.dataRef?.nacosServiceCount)
+    : NaN;
+  const hasNacosServiceCount = Number.isFinite(nacosServiceCount) && nacosServiceCount > 0;
+  const nacosHealthEntry = node.type === 'nacos-service-group'
+    ? node?.dataRef?.nacosGroupHealth
+    : null;
+  // The "all" row (nacosGroup === '') spans every group in the namespace. It shows
+  // the service total only: a health aggregate there would have to sum the whole
+  // namespace, and rendering "unknown" for it would be pure noise.
+  const isNacosAggregateRow = node.type === 'nacos-service-group'
+    && !String(node?.dataRef?.nacosGroup || '').trim();
+  const nacosHealthAvailable = node.type === 'nacos-service-group'
+    && !isNacosAggregateRow
+    && Boolean(node?.dataRef?.nacosHealthAvailable);
+  const nacosServiceCountTitle = hasNacosServiceCount
+    ? t('nacos_service.group.tooltip.services', { count: nacosServiceCount })
+    : '';
   const redisDbAlias = node.type === 'redis-db'
     ? sanitizeRedisDbAlias(node?.dataRef?.redisDbAlias)
     : '';
@@ -232,6 +243,7 @@ export const renderSidebarV2TreeTitle = ({
     || node.type === 'db-event'
     || node.type === 'routine'
     || node.type === 'package'
+    || node.type === 'database-link'
     || node.type === 'saved-query'
     || node.type === 'external-sql-file';
   const titleClassName = [
@@ -289,7 +301,6 @@ export const renderSidebarV2TreeTitle = ({
       ref={hasTableHoverInfo ? clearSidebarTableNativeHoverTitleRef : undefined}
       className={titleClassName}
       title={hasTableHoverInfo ? undefined : effectiveHoverTitle}
-      draggable={!!dragText}
       data-node-type={node.type}
       data-group-key={groupKey || undefined}
       data-sidebar-node-key={String(node.key || '')}
@@ -298,27 +309,6 @@ export const renderSidebarV2TreeTitle = ({
       data-sidebar-connection-status={connectionStatusAttr}
       onPointerOverCapture={hasTableHoverInfo ? clearSidebarTableNativeHoverTitle : undefined}
       onMouseOverCapture={hasTableHoverInfo ? clearSidebarTableNativeHoverTitle : undefined}
-      onDragStart={dragText ? (event) => {
-        snapshotTreeSelectionBeforeDrag();
-        treeDragSelectSuppressUntilRef.current = Date.now() + 600;
-        setIsTreeDragging(true);
-        event.stopPropagation();
-        event.dataTransfer.effectAllowed = 'copy';
-        event.dataTransfer.setData('text/plain', dragText);
-        event.dataTransfer.setData(
-          SIDEBAR_SQL_EDITOR_DRAG_MIME,
-          encodeSidebarSqlEditorDragPayload({
-            text: dragText,
-            nodeType: node.type,
-            connectionId: String(node?.dataRef?.id || ''),
-            dbName: String(node?.dataRef?.dbName || ''),
-          }),
-        );
-      } : undefined}
-      onDragEnd={dragText ? () => {
-        restoreTreeSelectionAfterDrag();
-        setIsTreeDragging(false);
-      } : undefined}
     >
       <span className="gn-v2-tree-label">
         {redisDbAlias ? (
@@ -332,6 +322,17 @@ export const renderSidebarV2TreeTitle = ({
         <span key={item.key} className={item.className}>{item.text}</span>
       ))}
       {objectCompileStatusBadge}
+      {hasNacosServiceCount && (
+        <span className="gn-v2-tree-nacos-count" title={nacosServiceCountTitle}>
+          {nacosServiceCount}
+        </span>
+      )}
+      {nacosHealthEntry || nacosHealthAvailable ? (
+        <NacosGroupHealthBadge
+          entry={nacosHealthEntry}
+          statisticsAvailable={nacosHealthAvailable}
+        />
+      ) : null}
       {metaText && <span className="gn-v2-tree-count">{metaText}</span>}
       {statusDot}
     </span>

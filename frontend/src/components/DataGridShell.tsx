@@ -425,6 +425,7 @@ const DataGridShell: React.FC<DataGridShellProps> = (props) => {
     showColumnComment,
     showColumnType,
     showFilter,
+    appliedFilterConditions,
     sortInfo,
     stopQuickWhereClipboardPropagation,
     supportsCopyInsert,
@@ -693,6 +694,7 @@ const renderDataTableView = () => (
             toolbarBottomPadding={toolbarBottomPadding}
             filterTopPadding={filterTopPadding}
             showFilter={showFilter}
+            appliedFilterConditions={appliedFilterConditions}
             filterPanelRef={filterPanelRef}
             onReload={onReload}
             onToggleFilter={onToggleFilter}

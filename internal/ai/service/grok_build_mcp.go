@@ -167,7 +167,7 @@ func upsertGrokBuildMCPServerConfig(configPath string, serverID string, serverCo
 		return externalMCPClientError(text, "ai.service.mcp_client.external.config_read_failed", "Grok Build", map[string]any{"detail": err.Error()})
 	}
 	updated := replaceOrAppendTOMLMCPServerBlock(string(data), strings.TrimSpace(serverID), renderGrokBuildMCPServerBlock(serverID, serverConfig))
-	if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
+	if err := writeMCPConfigFileAtomically(configPath, []byte(updated)); err != nil {
 		return externalMCPClientError(text, "ai.service.mcp_client.external.config_write_failed", "Grok Build", map[string]any{"detail": err.Error()})
 	}
 	return nil

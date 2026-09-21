@@ -34,12 +34,12 @@ describe('tableDesignerColumnClipboard', () => {
     resetTableDesignerColumnsClipboardMemory();
   });
   it('serializes and parses column definitions without UI keys', () => {
-    const text = serializeTableDesignerColumns([column()]);
+    const text = serializeTableDesignerColumns([column({ type: 'bigint unsigned' })]);
     expect(text.startsWith(TABLE_DESIGNER_COLUMN_CLIPBOARD_PREFIX)).toBe(true);
     expect(text).not.toContain('column-1');
     expect(parseTableDesignerColumns(text)).toEqual([expect.objectContaining({
       name: 'created_at',
-      type: 'datetime',
+      type: 'bigint unsigned',
       default: 'CURRENT_TIMESTAMP',
       charset: 'utf8mb4',
     })]);

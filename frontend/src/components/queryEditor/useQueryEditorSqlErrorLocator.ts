@@ -4,6 +4,7 @@ import { message } from 'antd';
 import { t } from '../../i18n';
 import {
     createQueryEditorExecutionOrigin,
+    resolveEditorSelectionStartOffset,
     resolveExecutionErrorStatementText,
     revealQueryEditorSqlErrorLocation,
     type QueryEditorExecutionOrigin,
@@ -25,11 +26,15 @@ export const useQueryEditorSqlErrorLocator = (
         sentSql?: string,
         statements?: QueryEditorExecutionOriginStatement[],
     ) => {
+        // 选区执行时记录选区起始偏移：数据库按片段相对行号报错时，
+        // 定位需要「选区起始 + 片段内相对行」而非 indexOf 首次命中（#1324）。
+        const fragmentStartOffset = resolveEditorSelectionStartOffset(editorRef.current, editorSql);
         originRef.current = createQueryEditorExecutionOrigin(
             editorSql,
             originalSql,
             sentSql,
             statements,
+            fragmentStartOffset,
         );
     }, []);
 
@@ -45,17 +50,25 @@ export const useQueryEditorSqlErrorLocator = (
         return located;
     }, [editorRef]);
 
-    // AI 诊断注入用：解析出错的那一条语句；解析不出时返回空串由调用方回退整篇
+    // AI 诊断注入用：局部执行保留实际范围；全文执行再解析具体出错语句。
     const resolveExecutionErrorStatement = useCallback((
         error: string,
         currentEditorSql: string,
         dbType?: string,
-    ): string => resolveExecutionErrorStatementText({
-        error,
-        origin: originRef.current,
-        currentEditorSql,
-        dbType,
-    }), []);
+    ): string => {
+        const origin = originRef.current;
+        const executedSql = String(origin?.originalSql || '').trim();
+        if (executedSql && executedSql !== String(origin?.editorSql || '').trim()) {
+            return executedSql;
+        }
+        const resolved = resolveExecutionErrorStatementText({
+            error,
+            origin,
+            currentEditorSql: origin?.editorSql || currentEditorSql,
+            dbType,
+        });
+        return resolved || executedSql;
+    }, []);
 
     return { recordExecutionOrigin, locateExecutionError, resolveExecutionErrorStatement };
 };

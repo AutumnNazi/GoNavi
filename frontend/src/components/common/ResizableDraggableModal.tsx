@@ -26,6 +26,13 @@ export type ResizableDraggableModalProps = ModalProps & {
 const DEFAULT_MIN_WIDTH = 360;
 const DEFAULT_MIN_HEIGHT = 220;
 const VIEWPORT_PADDING = 16;
+// antd marks the panel with these classes for the whole zoom-in, and clears them once it
+// has settled. Used to tell a dialog that is still growing from one the user can close.
+const ENTER_MOTION_CLASS = /(?:^|\s)ant-zoom-(?:appear|enter)(?:\s|$)/;
+// Safety net for the enter guard below: a dialog whose animation never reports an end
+// (animation disabled, or a transition the browser does not run) must still become
+// mask-closable, and a browser animation takes ~300ms.
+const ENTER_SETTLE_FALLBACK_MS = 500;
 
 const isInteractiveTarget = (target: EventTarget | null) => {
   if (!(target instanceof HTMLElement)) return false;
@@ -36,6 +43,7 @@ const clamp = (value: number, min: number, max: number) => Math.min(Math.max(val
 
 type DraggableResizableModalFrameProps = {
   active?: boolean;
+  blockMaskClickUntilSettled?: boolean;
   children: React.ReactNode;
   draggable: boolean;
   resizable: boolean;
@@ -45,6 +53,7 @@ type DraggableResizableModalFrameProps = {
 
 const DraggableResizableModalFrame: React.FC<DraggableResizableModalFrameProps> = ({
   active = true,
+  blockMaskClickUntilSettled = false,
   children,
   draggable,
   resizable,
@@ -293,6 +302,47 @@ const DraggableResizableModalFrame: React.FC<DraggableResizableModalFrameProps> 
     };
   }, [handleFrameStart, wrapperElement]);
 
+  // Entering, antd scales the dialog in from 0.2, so the content is smaller than its
+  // final size and a click aimed at a button that has not grown into place yet lands
+  // on the mask instead. For a mask-closable dialog rc-dialog reads that as an outside
+  // click and closes without ever running onOk: the request is never sent while the
+  // user sees the confirmation disappear. Swallow mask clicks until the panel settles.
+  useEffect(() => {
+    if (!active || !blockMaskClickUntilSettled) return undefined;
+    const modalNode = wrapperElement?.closest('.ant-modal');
+    if (!(modalNode instanceof HTMLElement)) return undefined;
+
+    const isEntering = () => ENTER_MOTION_CLASS.test(modalNode.className);
+    let settled = !isEntering();
+    const settle = () => {
+      settled = true;
+    };
+    const swallowMaskClick = (clickEvent: MouseEvent) => {
+      if (settled) return;
+      // Only the mask wrapper itself counts; anything inside the dialog must pass.
+      const target = clickEvent.target;
+      if (!(target instanceof HTMLElement) || !target.classList.contains('ant-modal-wrap')) return;
+      clickEvent.preventDefault();
+      clickEvent.stopPropagation();
+    };
+
+    const observer = new MutationObserver(() => {
+      if (!isEntering()) settle();
+    });
+    observer.observe(modalNode, { attributes: true, attributeFilter: ['class'] });
+    modalNode.addEventListener('animationend', settle);
+    // A dialog whose animation never reports an end must still become closable.
+    const fallbackTimer = window.setTimeout(settle, ENTER_SETTLE_FALLBACK_MS);
+    window.addEventListener('click', swallowMaskClick, true);
+
+    return () => {
+      observer.disconnect();
+      modalNode.removeEventListener('animationend', settle);
+      window.clearTimeout(fallbackTimer);
+      window.removeEventListener('click', swallowMaskClick, true);
+    };
+  }, [active, blockMaskClickUntilSettled, wrapperElement]);
+
   const frameStyle = useMemo(() => {
     const style = {
       transform: `translate(${position.x}px, ${position.y}px)`,
@@ -438,13 +488,17 @@ type ModalRefWithUpdate = {
   update: (configUpdate: ModalConfigUpdate) => void;
 };
 
-const withDraggableModalRender = (config: ModalFuncProps): ModalFuncProps => {
+const withDraggableModalRender = (
+  blockMaskClickUntilSettled: boolean,
+  config: ModalFuncProps,
+): ModalFuncProps => {
   const originalModalRender = config.modalRender;
   return {
     ...config,
     modalRender: (modalNode) => (
       <DraggableResizableModalFrame
         active
+        blockMaskClickUntilSettled={blockMaskClickUntilSettled}
         draggable
         resizable
         minResizableWidth={DEFAULT_MIN_WIDTH}
@@ -456,18 +510,31 @@ const withDraggableModalRender = (config: ModalFuncProps): ModalFuncProps => {
   };
 };
 
-const wrapModalRefUpdate = <T extends ModalRefWithUpdate>(modalRef: T): T => {
+// Held across `update()` calls: an update carries only the changed fields, so the mask
+// decision from the opening config has to survive it.
+const wrapModalRefUpdate = <T extends ModalRefWithUpdate>(
+  modalRef: T,
+  blockMaskClickUntilSettled: boolean,
+): T => {
   const rawUpdate = modalRef.update.bind(modalRef);
   modalRef.update = (configUpdate: ModalConfigUpdate) => {
     rawUpdate(typeof configUpdate === 'function'
-      ? (prevConfig) => withDraggableModalRender(configUpdate(prevConfig))
-      : withDraggableModalRender(configUpdate));
+      ? (prevConfig) => withDraggableModalRender(blockMaskClickUntilSettled, configUpdate(prevConfig))
+      : withDraggableModalRender(blockMaskClickUntilSettled, configUpdate));
   };
   return modalRef;
 };
 
 const wrapModalFunc = <T extends (config: ModalFuncProps) => ModalRefWithUpdate>(modalFunc: T): T => (
-  ((config: ModalFuncProps) => wrapModalRefUpdate(modalFunc(withDraggableModalRender(config)))) as T
+  ((config: ModalFuncProps) => {
+    // antd's static dialogs default to `maskClosable: false`; only the ones that opt in
+    // can lose an action to the enter window, so only they need the guard.
+    const blockMaskClickUntilSettled = config.maskClosable === true;
+    return wrapModalRefUpdate(
+      modalFunc(withDraggableModalRender(blockMaskClickUntilSettled, config)),
+      blockMaskClickUntilSettled,
+    );
+  }) as T
 );
 
 const wrapHookModalApi = <T extends ReturnType<typeof AntdModal.useModal>[0]>(modalApi: T): T => ({

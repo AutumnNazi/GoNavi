@@ -99,6 +99,7 @@ const getTabKindLabel = (tab: TabData): string => {
   if (tab.type === 'sql-file-execution') return t('sidebar.sql_file_exec.title');
   if (tab.type === 'sql-analysis') return t('tab_manager.kind_badge.sql_analysis');
   if (tab.type === 'sql-audit') return t('tab_manager.kind_badge.sql_audit');
+  if (tab.type === 'dml-snapshot') return t('tab_manager.kind_badge.dml_snapshot');
   if (tab.type === 'driver-manager') return t('tab_manager.kind_badge.driver_manager');
   if (tab.type === 'settings-center') return t('tab_manager.kind_badge.settings_center');
   if (tab.type === 'message-queue') return t('message_queue_workbench.tab_kind');
@@ -114,6 +115,7 @@ const getTabKindLabel = (tab: TabData): string => {
   if (tab.type === 'routine-def') return t('tab_manager.kind_badge.routine');
   if (tab.type === 'sequence-def') return t('tab_manager.kind_badge.sequence');
   if (tab.type === 'package-def') return t('tab_manager.kind_badge.package');
+  if (tab.type === 'database-link-def') return t('tab_manager.kind_badge.database_link');
   return t('tab_manager.kind_badge.fallback');
 };
 
@@ -354,6 +356,7 @@ const getTabKindTooltipLabel = (tab: TabData): string => {
   if (tab.type === 'sql-file-execution') return t('sidebar.sql_file_exec.title');
   if (tab.type === 'sql-analysis') return t('tab_manager.hover.kind.sql_analysis');
   if (tab.type === 'sql-audit') return t('tab_manager.hover.kind.sql_audit');
+  if (tab.type === 'dml-snapshot') return t('tab_manager.hover.kind.dml_snapshot');
   if (tab.type === 'driver-manager') return t('tab_manager.hover.kind.driver_manager');
   if (tab.type === 'settings-center') return t('tab_manager.hover.kind.settings_center');
   if (tab.type === 'message-queue') return t('message_queue_workbench.tab_kind');
@@ -377,6 +380,7 @@ const getTabKindTooltipLabel = (tab: TabData): string => {
   if (tab.type === 'routine-def') return t('tab_manager.hover.kind.routine');
   if (tab.type === 'sequence-def') return t('tab_manager.hover.kind.sequence');
   if (tab.type === 'package-def') return t('tab_manager.hover.kind.package');
+  if (tab.type === 'database-link-def') return t('tab_manager.hover.kind.database_link');
   return t('tab_manager.hover.kind.fallback');
 };
 
@@ -387,12 +391,13 @@ const getTabObjectLabel = (tab: TabData): string => {
   if (tab.routineName) return tab.routineName;
   if (tab.sequenceName) return tab.sequenceName;
   if (tab.packageName) return tab.packageName;
+  if (tab.databaseLinkName) return tab.databaseLinkName;
   if (tab.triggerName) return tab.triggerName;
   if (tab.resourcePath) return tab.resourcePath;
   if (tab.filePath) return tab.filePath;
   if (tab.type === 'driver-manager') return t('app.tools.entry.drivers.title');
   if (tab.type === 'settings-center') return t('app.settings.title');
-  if (tab.type === 'sql-analysis' || tab.type === 'sql-audit') return tab.title;
+  if (tab.type === 'sql-analysis' || tab.type === 'sql-audit' || tab.type === 'dml-snapshot') return tab.title;
   if (tab.type === 'message-queue') return tab.messageQueueTarget || tab.dbName || '';
   if (tab.type.startsWith('redis')) return `db${tab.redisDB ?? 0}`;
   return '';

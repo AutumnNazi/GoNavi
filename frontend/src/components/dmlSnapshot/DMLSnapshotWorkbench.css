@@ -1,0 +1,74 @@
+.gn-dml-snapshot-workbench {
+  box-sizing: border-box;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.gn-dml-snapshot-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.gn-dml-snapshot-title-group {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.gn-dml-snapshot-title-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--gn-accent-soft, rgba(22, 119, 255, 0.12));
+  color: var(--gn-accent-2, #1677ff);
+  font-size: 20px;
+}
+
+.gn-dml-snapshot-title-copy {
+  min-width: 0;
+}
+
+.gn-dml-snapshot-title-copy .ant-typography {
+  margin: 0;
+}
+
+/* 反向脚本块：等宽字体 + 限高滚动，长表的大量语句不会撑爆抽屉。 */
+.gn-dml-snapshot-sql {
+  box-sizing: border-box;
+  max-height: 320px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 12px;
+  border: 1px solid var(--gn-border, rgba(5, 5, 5, 0.1));
+  border-radius: 8px;
+  background: var(--gn-code-bg, rgba(0, 0, 0, 0.03));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre;
+}
+
+.gn-dml-snapshot-skipped-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.gn-dml-snapshot-skipped-reason {
+  color: var(--gn-text-secondary, rgba(0, 0, 0, 0.45));
+}

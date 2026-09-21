@@ -1,0 +1,174 @@
+import React from 'react';
+import { Button, Input, Select, Tooltip } from 'antd';
+import { CheckOutlined } from '@ant-design/icons';
+
+import { t as defaultTranslate, type I18nParams } from '../../i18n';
+import { useOptionalI18n } from '../../i18n/provider';
+
+/**
+ * 工具栏「最大返回行数」上限，与 store 的 sanitizeQueryOptions 保持一致
+ * （store.ts 中 `Math.min(50000, Math.trunc(maxRows))`）。这里做前置校验，
+ * 让超限输入直接报错而不是被静默截断。
+ */
+export const QUERY_EDITOR_MAX_ROWS_UPPER_BOUND = 50000;
+
+/** 自定义行数输入的校验：仅接受 1–50000 的正整数（与上限契约一致）。 */
+export const isValidQueryEditorCustomMaxRows = (value: string): boolean => {
+  const normalizedValue = value.trim();
+  if (!/^\d+$/.test(normalizedValue)) return false;
+  const numericValue = Number(normalizedValue);
+  return Number.isSafeInteger(numericValue)
+    && numericValue > 0
+    && numericValue <= QUERY_EDITOR_MAX_ROWS_UPPER_BOUND;
+};
+
+/**
+ * 选中值不在固定枚举内时补一个同值选项，避免受控 Select 回显空白。
+ * 与 DataGrid 的 buildDataGridPaginationPageSizeOptions 同思路。
+ */
+export const buildQueryEditorMaxRowsOptions = (
+  maxRows: number,
+  fixedOptions: Array<{ label: React.ReactNode; value: number }>,
+): Array<{ label: React.ReactNode; value: number }> => {
+  const options = [...fixedOptions];
+  if (!Number.isSafeInteger(maxRows) || maxRows <= 0) return options;
+  if (options.some((option) => option.value === maxRows)) return options;
+  return [...options, { label: String(maxRows), value: maxRows }];
+};
+
+export interface QueryEditorToolbarMaxRowsSelectProps {
+  maxRows: number;
+  onMaxRowsChange: (maxRows: number) => void;
+  translate?: (key: string, params?: I18nParams) => string;
+}
+
+/**
+ * 工具栏「最大返回行数」选择器：固定枚举 + 下拉内嵌自定义输入。
+ *
+ * 交互照搬 DataGridPaginationBar 的自定义页大小实现（受控 open + ref 读值，
+ * 规避 antd 受控弹层的时序问题），并补上 `popupMatchSelectWidth={false}`：
+ * 该 Select 的 CSS 被锁死 80px 宽，不放开弹层宽度会把内嵌输入区压扁。
+ */
+const QueryEditorToolbarMaxRowsSelect: React.FC<QueryEditorToolbarMaxRowsSelectProps> = ({
+  maxRows,
+  onMaxRowsChange,
+  translate,
+}) => {
+  const i18n = useOptionalI18n();
+  const t = translate ?? i18n?.t ?? defaultTranslate;
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const [customInput, setCustomInput] = React.useState('');
+  const customInputRef = React.useRef('');
+  const [customError, setCustomError] = React.useState(false);
+
+  const fixedOptions = React.useMemo(() => [
+    { label: '100', value: 100 },
+    { label: t('query_editor.max_rows.option_500'), value: 500 },
+    { label: t('query_editor.max_rows.option_1000'), value: 1000 },
+    { label: t('query_editor.max_rows.option_5000'), value: 5000 },
+    { label: t('query_editor.max_rows.option_20000'), value: 20000 },
+    { label: t('query_editor.max_rows.option_unlimited'), value: 0 },
+  ], [t]);
+  const options = React.useMemo(
+    () => buildQueryEditorMaxRowsOptions(maxRows, fixedOptions),
+    [fixedOptions, maxRows],
+  );
+
+  const handleMenuOpenChange = (open: boolean) => {
+    setMenuOpen(open);
+    if (open && !customInputRef.current) {
+      // `0` 是「不限」的哨兵值，不能预填进输入框（否则与「至少 1 行」的校验自相矛盾）。
+      const initialValue = maxRows > 0 ? String(maxRows) : '';
+      customInputRef.current = initialValue;
+      setCustomInput(initialValue);
+    }
+    if (!open) setCustomError(false);
+  };
+
+  const submitCustomMaxRows = () => {
+    const normalizedValue = customInputRef.current.trim();
+    if (!isValidQueryEditorCustomMaxRows(normalizedValue)) {
+      setCustomError(true);
+      return;
+    }
+    const nextMaxRows = Number(normalizedValue);
+    customInputRef.current = String(nextMaxRows);
+    setCustomInput(String(nextMaxRows));
+    setMenuOpen(false);
+    setCustomError(false);
+    onMaxRowsChange(nextMaxRows);
+  };
+
+  // 惰性构造：弹层未展开时不触碰 antd 的 Input/Button，避免无谓的 JSX 构造。
+  const renderCustomMaxRowsDropdown = () => (
+    <div
+      data-query-editor-max-rows-dropdown="true"
+      style={{ width: 128, maxWidth: 'calc(100vw - 24px)' }}
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <label style={{ display: 'grid', gap: 4, padding: '6px 8px 8px' }}>
+        <span>{t('query_editor.max_rows.custom_label')}</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <Input
+            size="small"
+            value={customInput}
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              customInputRef.current = nextValue;
+              setCustomInput(nextValue);
+              if (customError) setCustomError(false);
+            }}
+            onPressEnter={submitCustomMaxRows}
+            onMouseDown={(event) => event.stopPropagation()}
+            data-query-editor-max-rows-input="true"
+            aria-label={t('query_editor.max_rows.custom_label')}
+            status={customError ? 'error' : undefined}
+            style={{ width: 80, minWidth: 80, maxWidth: 80, flex: '0 0 80px' }}
+          />
+          <Tooltip title={t('common.confirm')}>
+            <Button
+              type="text"
+              size="small"
+              icon={<CheckOutlined />}
+              data-query-editor-max-rows-confirm="true"
+              aria-label={t('common.confirm')}
+              onClick={submitCustomMaxRows}
+              onMouseDown={(event) => event.stopPropagation()}
+              style={{ width: 24, minWidth: 24, maxWidth: 24, height: 24, minHeight: 24, flex: '0 0 24px' }}
+            />
+          </Tooltip>
+        </span>
+      </label>
+      {customError ? (
+        <span role="alert" data-query-editor-max-rows-error="true">
+          {t('query_editor.max_rows.custom_invalid')}
+        </span>
+      ) : null}
+    </div>
+  );
+
+  // Tooltip 必须内联在这里：调用方若在外面套一层 <Tooltip>，rc-trigger 对非
+  // forwardRef 的函数组件不会注入 ref，气泡会静默失效（见 QueryEditorToolbarRunAction）。
+  return (
+    <Tooltip title={t('query_editor.max_rows.tooltip')}>
+      <Select
+        className="gn-v2-query-toolbar-select gn-v2-query-toolbar-max-rows-select"
+        value={maxRows}
+        onChange={(value) => onMaxRowsChange(Number(value))}
+        open={menuOpen}
+        onOpenChange={handleMenuOpenChange}
+        popupRender={(menu) => (
+          <>
+            {menu}
+            {renderCustomMaxRowsDropdown()}
+          </>
+        )}
+        popupMatchSelectWidth={false}
+        options={options}
+      />
+    </Tooltip>
+  );
+};
+
+export default QueryEditorToolbarMaxRowsSelect;

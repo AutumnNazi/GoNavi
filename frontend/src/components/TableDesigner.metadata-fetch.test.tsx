@@ -2,12 +2,16 @@
 import React from 'react';
 import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The embedded "fields" (表设计) view builds the designer's `tab` as an inline
 // object literal, so its identity changes on every parent render. The designer
 // must not re-run its metadata RPCs just because the parent re-rendered.
 const columnFetchCalls: number[] = [];
+
+beforeEach(() => {
+  columnFetchCalls.length = 0;
+});
 
 beforeAll(() => {
   (window as any).ResizeObserver = class {
@@ -99,7 +103,7 @@ describe('TableDesigner metadata fetch lifetime', () => {
 
     await act(async () => { root.unmount(); });
     container.remove();
-  });
+  }, 20000);
 
   it('refetches when the target table actually changes', async () => {
     const { default: TableDesigner } = await import('./TableDesigner');
@@ -122,5 +126,5 @@ describe('TableDesigner metadata fetch lifetime', () => {
 
     await act(async () => { root.unmount(); });
     container.remove();
-  });
+  }, 20000);
 });

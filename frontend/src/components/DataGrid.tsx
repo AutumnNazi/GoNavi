@@ -51,7 +51,7 @@ import {
     getDensityParams,
     MIN_DATA_TABLE_COLUMN_WIDTH,
     resolveDataTableColumnWidth,
-    resolveDataTableVerticalBorderColor,
+    resolveDataTableVerticalBorderRule,
 } from '../utils/dataGridDisplay';
 import { resolvePaginationPageText, resolvePaginationSummaryText, resolvePaginationTotalForControl } from '../utils/dataGridPagination';
 import { countGridColumnValues, filterRowsByGridConditions } from '../utils/dataGridClientFilter';
@@ -139,11 +139,8 @@ import {
 } from './dataGridTemporal';
 import {
     buildEffectiveFilterConditions,
-    normalizeQuickWhereCondition,
     resolveWhereConditionSelectedValue,
-    resolveWhereConditionSuggestions,
     shouldApplyQuickWhereOnEnter,
-    validateQuickWhereCondition,
 } from '../utils/dataGridWhereFilter';
 import {
     attachDataGridFindRenderVersion,
@@ -472,13 +469,10 @@ const DataGrid: React.FC<DataGridProps> = ({
       () => ({ padding: densityParams.inputCellPadding }),
       [densityParams.inputCellPadding],
   );
-  const dataTableVerticalBorderColor = resolveDataTableVerticalBorderColor({
+  const dataTableVerticalBorderRule = resolveDataTableVerticalBorderRule({
       darkMode,
       visible: showDataTableVerticalBorders,
   });
-  const dataTableVerticalBorderRule = showDataTableVerticalBorders
-      ? `1px solid ${dataTableVerticalBorderColor}`
-      : 'none';
   const effectiveEditLocator = useMemo<EditRowLocator | undefined>(() => {
       if (editLocator) return editLocator;
       if (pkColumns.length === 0) return undefined;
@@ -1549,7 +1543,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           tableBodyBottomPadding,
           verticalScrollbarTrackBg,
       }),
-      [themeStyles, gridId, tableBodyBottomPadding, darkMode, opacity, dataTableVerticalBorderColor, densityParams],
+      [themeStyles, gridId, tableBodyBottomPadding, darkMode, opacity, dataTableVerticalBorderRule, densityParams],
   );
 
   const recalculateTableMetrics = useCallback((targetElement?: HTMLElement | null) => {
@@ -3940,7 +3934,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           return false;
       }
 
-      const { inserts, updates, deletes } = changeSetResult.changes;
+      const { inserts, updates, deletes, previousDeletes, locatorColumns } = changeSetResult.changes;
       if (inserts.length === 0 && updates.length === 0 && deletes.length === 0) {
           void message.info(translateDataGrid('data_grid.message.no_changes_to_commit'));
           return true;
@@ -3964,7 +3958,16 @@ const DataGrid: React.FC<DataGridProps> = ({
       if (!approved) return false;
 
       const startTime = Date.now();
-      const res = await ApplyChanges(buildRpcConnectionConfig(config) as any, dbName || '', tableName, { inserts, updates, deletes, locatorStrategy: effectiveEditLocator?.strategy } as any);
+      // previousDeletes / locatorColumns 是执行前快照的还原线索，必须与正向变更一起送达后端；
+      // 只传 inserts/updates/deletes 会让快照生成静默失效（提交照样成功，但事后不可还原）。
+      const res = await ApplyChanges(buildRpcConnectionConfig(config) as any, dbName || '', tableName, {
+          inserts,
+          updates,
+          deletes,
+          locatorStrategy: effectiveEditLocator?.strategy,
+          previousDeletes,
+          locatorColumns,
+      } as any);
       const duration = Date.now() - startTime;
       const outcomeUnknown = res?.outcomeUnknown === true;
       const logMessage = outcomeUnknown
@@ -6244,6 +6247,7 @@ const DataGrid: React.FC<DataGridProps> = ({
         showColumnComment,
         showColumnType,
         showFilter,
+        appliedFilterConditions,
         sortInfo,
         stopQuickWhereClipboardPropagation,
         supportsCopyInsert,

@@ -72,6 +72,7 @@ const makeProps = (overrides: Partial<DataGridToolbarFrameProps> = {}): DataGrid
   toolbarBottomPadding: 8,
   filterTopPadding: 8,
   showFilter: false,
+  appliedFilterConditions: [],
   canModifyData: true,
   selectedRowKeysLength: 0,
   deleteTargetRowCount: 0,
@@ -114,6 +115,7 @@ const makeProps = (overrides: Partial<DataGridToolbarFrameProps> = {}): DataGrid
   onDataEditAutoCommitDelayChange: vi.fn(),
   onRefresh: vi.fn(),
   onToggleFilterClick: vi.fn(),
+  onToggleFilter: vi.fn(),
   onAddRow: vi.fn(),
   onUndoDeleteSelected: vi.fn(),
   onDeleteSelected: vi.fn(),
@@ -336,5 +338,107 @@ describe('DataGridToolbarFrame cell selection actions', () => {
     });
     expect(accessibleDisabledAction.props['aria-disabled']).toBe('true');
     expect(accessibleDisabledAction.props['aria-label']).toContain('请框选目标单元格，或勾选目标行');
+  });
+});
+
+describe('DataGridToolbarFrame filter entry highlight (issue #1302)', () => {
+  beforeEach(() => {
+    setCurrentLanguage('zh-CN');
+  });
+
+  const getFilterAction = (renderer: ReactTestRenderer) => findAction(renderer, 'filter');
+
+  it('stays unhighlighted when no filter is applied and the panel is closed', () => {
+    const renderer = create(<DataGridToolbarFrame {...makeProps({ showFilter: false })} />);
+
+    const action = getFilterAction(renderer);
+    expect(action.props['data-button-type']).toBe('default');
+    expect(action.props['aria-pressed']).toBe(false);
+  });
+
+  it('does not highlight merely because the panel is open', () => {
+    const renderer = create(<DataGridToolbarFrame {...makeProps({ showFilter: true })} />);
+
+    const action = getFilterAction(renderer);
+    expect(action.props['data-button-type']).toBe('default');
+    expect(action.props['aria-pressed']).toBe(false);
+  });
+
+  it('highlights while the panel is closed once a filter is applied', () => {
+    const renderer = create(
+      <DataGridToolbarFrame
+        {...makeProps({
+          showFilter: false,
+          appliedFilterConditions: [{ id: 1, enabled: true, column: 'code', op: '=', value: '3551' }],
+        })}
+      />,
+    );
+
+    const action = getFilterAction(renderer);
+    expect(action.props['data-button-type']).toBe('primary');
+    expect(action.props['aria-pressed']).toBe(true);
+  });
+
+  it('highlights for a quick-where condition on its own', () => {
+    const renderer = create(
+      <DataGridToolbarFrame {...makeProps({ showFilter: false, quickWhereCondition: 'status = 1' })} />,
+    );
+
+    expect(getFilterAction(renderer).props['data-button-type']).toBe('primary');
+  });
+
+  it('stays unhighlighted for a blank condition injected by opening the panel', () => {
+    const renderer = create(
+      <DataGridToolbarFrame
+        {...makeProps({
+          showFilter: true,
+          appliedFilterConditions: [{ id: 1, enabled: true, column: 'code', op: '=', value: '', value2: '' }],
+        })}
+      />,
+    );
+
+    const action = getFilterAction(renderer);
+    expect(action.props['data-button-type']).toBe('default');
+    expect(action.props['aria-pressed']).toBe(false);
+  });
+
+  it('stays unhighlighted when every applied condition is disabled', () => {
+    const renderer = create(
+      <DataGridToolbarFrame
+        {...makeProps({
+          appliedFilterConditions: [{ id: 1, enabled: false, column: 'code', op: '=', value: '3551' }],
+        })}
+      />,
+    );
+
+    expect(getFilterAction(renderer).props['data-button-type']).toBe('default');
+  });
+
+  it('toggles the panel through the highlighted entry', () => {
+    const onToggleFilterClick = vi.fn();
+    const renderer = create(<DataGridToolbarFrame {...makeProps({ onToggleFilterClick })} />);
+
+    act(() => {
+      getFilterAction(renderer).props.onClick();
+    });
+
+    expect(onToggleFilterClick).toHaveBeenCalledOnce();
+  });
+
+  it('labels the condition-area clear action apart from the quick-where clear action', () => {
+    const renderer = create(<DataGridToolbarFrame {...makeProps({ showFilter: true })} />);
+
+    // Icons render as sibling elements, so a button's children arrive as an array.
+    const collectText = (child: unknown): string[] => {
+      if (typeof child === 'string') return [child];
+      if (Array.isArray(child)) return child.flatMap(collectText);
+      return [];
+    };
+    const labels = renderer.root
+      .findAll((node) => node.type === 'button')
+      .flatMap((node) => collectText(node.props.children));
+
+    expect(labels).toContain('清空');
+    expect(labels).toContain('清空全部');
   });
 });

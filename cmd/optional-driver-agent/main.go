@@ -9,12 +9,10 @@ import (
 	"io"
 	"os"
 	"reflect"
-	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"GoNavi-Wails/internal/connection"
@@ -32,6 +30,8 @@ type agentRequest struct {
 	// exactly one response frame for a connect request.
 	StreamSSHProgress    bool                            `json:"streamSSHProgress,omitempty"`
 	Query                string                          `json:"query,omitempty"`
+	// Args 是 json-lines-v2 协议新增的位置绑定参数；旧版主进程不会发送该字段。
+	Args                 []any                           `json:"args,omitempty"`
 	TimeoutMs            int64                           `json:"timeoutMs,omitempty"`
 	DBName               string                          `json:"dbName,omitempty"`
 	TableName            string                          `json:"tableName,omitempty"`
@@ -54,7 +54,8 @@ type agentResponse struct {
 }
 
 type agentConnectionInfo struct {
-	ElasticsearchServerMajor int `json:"elasticsearchServerMajor,omitempty"`
+	ElasticsearchServerMajor int    `json:"elasticsearchServerMajor,omitempty"`
+	ProtocolSchema           string `json:"protocolSchema,omitempty"`
 }
 
 const (
@@ -94,23 +95,12 @@ const (
 	// 调小到 64：单批 JSON 编码 + 主进程解码的瞬时内存峰值降为原来的 1/4，
 	// 代价是 IPC 次数变为 4 倍，但每批仅一次 stdin/stdout 行读写，整体影响可忽略。
 	// 重要：减小批次不能根除内存峰值，仍需配合 SetGCPercent + 周期 GC（见 main）。
-	agentStreamBatchSize         = 64
-	agentMemoryTrimRowsThreshold = 100000
-	agentMemoryTrimMinInterval   = 3 * time.Second
+	agentStreamBatchSize = 64
 )
 
 var (
-	agentDriverType         string
-	agentDatabaseFactory    func() db.Database
-	agentMemoryTrimRunning  atomic.Bool
-	agentMemoryTrimLastAt   atomic.Int64
-	runAgentMemoryTrimAsync = func(fn func()) {
-		go fn()
-	}
-	agentMemoryTrimFn = func() {
-		runtime.GC()
-		debug.FreeOSMemory()
-	}
+	agentDriverType      string
+	agentDatabaseFactory func() db.Database
 )
 
 type agentRuntime struct {
@@ -280,9 +270,11 @@ func handleRequestWithSSHProgressReporter(runtimeState *agentRuntime, req agentR
 			return failWithSSHHostKeyTrust(resp, err)
 		}
 		runtimeState.inst = next
+		connectionInfo := agentConnectionInfo{ProtocolSchema: agentProtocolSchemaV2}
 		if versionProvider, ok := next.(db.ElasticsearchServerVersionProvider); ok {
-			resp.Data = agentConnectionInfo{ElasticsearchServerMajor: versionProvider.ElasticsearchServerMajor()}
+			connectionInfo.ElasticsearchServerMajor = versionProvider.ElasticsearchServerMajor()
 		}
+		resp.Data = connectionInfo
 		return resp
 	case agentMethodClose:
 		if runtimeState.inst != nil {
@@ -295,7 +287,7 @@ func handleRequestWithSSHProgressReporter(runtimeState *agentRuntime, req agentR
 		resp.Data = map[string]string{
 			"driverType":     strings.TrimSpace(agentDriverType),
 			"agentRevision":  db.OptionalDriverAgentRevision(agentDriverType),
-			"protocolSchema": "json-lines-v1",
+			"protocolSchema": agentProtocolSchemaV2,
 		}
 		return resp
 	case agentMethodOpenSession:
@@ -353,6 +345,16 @@ func handleRequestWithSSHProgressReporter(runtimeState *agentRuntime, req agentR
 	} else if ok {
 		switch method {
 		case agentMethodQuery:
+			if len(req.Args) > 0 {
+				data, fields, messages, err := queryStatementWithArgsOptionalTimeout(session, req.Query, req.Args, req.TimeoutMs)
+				if err != nil {
+					return fail(resp, err.Error())
+				}
+				resp.Data = data
+				resp.Fields = fields
+				resp.Messages = messages
+				break
+			}
 			data, fields, messages, err := queryStatementWithMessagesOptionalTimeout(session, req.Query, req.TimeoutMs)
 			if err != nil {
 				return fail(resp, err.Error())
@@ -371,6 +373,14 @@ func handleRequestWithSSHProgressReporter(runtimeState *agentRuntime, req agentR
 			resp.Data = data
 			resp.Messages = messages
 		case agentMethodExec:
+			if len(req.Args) > 0 {
+				affected, err := execStatementWithArgsOptionalTimeout(session, req.Query, req.Args, req.TimeoutMs)
+				if err != nil {
+					return fail(resp, err.Error())
+				}
+				resp.RowsAffected = affected
+				break
+			}
 			affected, err := execStatementWithOptionalTimeout(session, req.Query, req.TimeoutMs)
 			if err != nil {
 				return fail(resp, err.Error())
@@ -402,6 +412,16 @@ func handleRequestWithSSHProgressReporter(runtimeState *agentRuntime, req agentR
 			return fail(resp, err.Error())
 		}
 	case agentMethodQuery:
+		if len(req.Args) > 0 {
+			data, fields, messages, err := queryWithArgsOptionalTimeout(runtimeState.inst, req.Query, req.Args, req.TimeoutMs)
+			if err != nil {
+				return fail(resp, err.Error())
+			}
+			resp.Data = data
+			resp.Fields = fields
+			resp.Messages = messages
+			break
+		}
 		data, fields, messages, err := queryWithMessagesOptionalTimeout(runtimeState.inst, req.Query, req.TimeoutMs)
 		if err != nil {
 			return fail(resp, err.Error())
@@ -420,6 +440,14 @@ func handleRequestWithSSHProgressReporter(runtimeState *agentRuntime, req agentR
 		resp.Data = data
 		resp.Messages = messages
 	case agentMethodExec:
+		if len(req.Args) > 0 {
+			affected, err := execWithArgsOptionalTimeout(runtimeState.inst, req.Query, req.Args, req.TimeoutMs)
+			if err != nil {
+				return fail(resp, err.Error())
+			}
+			resp.RowsAffected = affected
+			break
+		}
 		affected, err := execWithOptionalTimeout(runtimeState.inst, req.Query, req.TimeoutMs)
 		if err != nil {
 			return fail(resp, err.Error())
@@ -1074,40 +1102,3 @@ func execStatementWithOptionalTimeout(inst db.StatementExecer, query string, tim
 	return execWithOptionalTimeout(inst, query, timeoutMs)
 }
 
-func countAgentResponseRows(data interface{}) int64 {
-	rows, ok := data.([]map[string]interface{})
-	if !ok {
-		return 0
-	}
-	return int64(len(rows))
-}
-
-func maybeReleaseAgentMemory(reason string, rows int64) {
-	if rows < agentMemoryTrimRowsThreshold {
-		return
-	}
-	if !agentMemoryTrimRunning.CompareAndSwap(false, true) {
-		return
-	}
-
-	runAgentMemoryTrimAsync(func() {
-		defer agentMemoryTrimRunning.Store(false)
-		if delay := nextAgentMemoryTrimDelay(); delay > 0 {
-			time.Sleep(delay)
-		}
-		agentMemoryTrimFn()
-		agentMemoryTrimLastAt.Store(time.Now().UnixNano())
-	})
-}
-
-func nextAgentMemoryTrimDelay() time.Duration {
-	lastUnixNano := agentMemoryTrimLastAt.Load()
-	if lastUnixNano <= 0 {
-		return 0
-	}
-	elapsed := time.Since(time.Unix(0, lastUnixNano))
-	if elapsed >= agentMemoryTrimMinInterval {
-		return 0
-	}
-	return agentMemoryTrimMinInterval - elapsed
-}

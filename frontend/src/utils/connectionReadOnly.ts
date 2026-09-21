@@ -1,6 +1,7 @@
 import type { ConnectionConfig } from "../types";
 import { convertMongoShellToJsonCommand } from "./mongodb";
 import { resolveSqlDialect } from "./sqlDialect";
+import { hasEmbeddedWriteStatement } from "./sqlEmbeddedWrite";
 import { findSqlStatementRanges } from "./sqlStatementSelection";
 
 export type ConnectionProtectionKey =
@@ -273,13 +274,17 @@ const isReadOnlySqlStatement = (statement: string, dbType: string): boolean => {
     return false;
   }
   if (keyword === "select") {
-    return !hasSelectInto(text, dbType);
+    return !hasSelectInto(text, dbType) &&
+      !hasEmbeddedWriteStatement(text, dbType);
   }
   if (keyword === "with") {
     return !hasSelectInto(text, dbType) &&
-      !hasMutatingWithKeyword(text, dbType);
+      !hasMutatingWithKeyword(text, dbType) &&
+      !hasEmbeddedWriteStatement(text, dbType);
   }
-  return true;
+  // 其余只读关键字（show / describe / desc / explain 等）同样可能被缺分号的
+  // 写语句尾随，必须一并扫描，否则 select 之外的只读分支仍会被绕过。
+  return !hasEmbeddedWriteStatement(text, dbType);
 };
 
 const normalizeMongoCommandText = (statement: string): string => {

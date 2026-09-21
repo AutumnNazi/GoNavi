@@ -843,6 +843,7 @@ export namespace app {
 	    preferManualTotalCount: boolean;
 	    supportsApproximateTableCount: boolean;
 	    supportsApproximateTotalPages: boolean;
+	    parameterBinding: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new DataSourceUICapabilities(source);
@@ -864,6 +865,7 @@ export namespace app {
 	        this.preferManualTotalCount = source["preferManualTotalCount"];
 	        this.supportsApproximateTableCount = source["supportsApproximateTableCount"];
 	        this.supportsApproximateTotalPages = source["supportsApproximateTotalPages"];
+	        this.parameterBinding = source["parameterBinding"];
 	    }
 	}
 	export class DataSourceOperationCapability {
@@ -1461,6 +1463,7 @@ export namespace app {
 	    groupName?: string;
 	    pageNo?: number;
 	    pageSize?: number;
+	    withStatistics?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new NacosServiceQuery(source);
@@ -1473,6 +1476,7 @@ export namespace app {
 	        this.groupName = source["groupName"];
 	        this.pageNo = source["pageNo"];
 	        this.pageSize = source["pageSize"];
+	        this.withStatistics = source["withStatistics"];
 	    }
 	}
 	export class NacosStartConfigListenPayload {
@@ -1513,6 +1517,61 @@ export namespace app {
 	        this.description = source["description"];
 	    }
 	}
+	export class QueryParameterStatement {
+	    index: number;
+	    text: string;
+	    parameters: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new QueryParameterStatement(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.index = source["index"];
+	        this.text = source["text"];
+	        this.parameters = source["parameters"];
+	    }
+	}
+	export class QueryParameterAnalysis {
+	    supported: boolean;
+	    statements: QueryParameterStatement[];
+	    parameterNames: string[];
+	    messageKey?: string;
+	    detail?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new QueryParameterAnalysis(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.supported = source["supported"];
+	        this.statements = this.convertValues(source["statements"], QueryParameterStatement);
+	        this.parameterNames = source["parameterNames"];
+	        this.messageKey = source["messageKey"];
+	        this.detail = source["detail"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class RedisExportKeysOptions {
 	    scope?: string;
 	    keys?: string[];
@@ -1824,9 +1883,24 @@ export namespace app {
 
 export namespace connection {
 	
+	export class LocatorColumn {
+	    key: string;
+	    valueColumn?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LocatorColumn(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.valueColumn = source["valueColumn"];
+	    }
+	}
 	export class UpdateRow {
 	    keys: Record<string, any>;
 	    values: Record<string, any>;
+	    previousValues?: Record<string, any>;
 	
 	    static createFrom(source: any = {}) {
 	        return new UpdateRow(source);
@@ -1836,6 +1910,7 @@ export namespace connection {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.keys = source["keys"];
 	        this.values = source["values"];
+	        this.previousValues = source["previousValues"];
 	    }
 	}
 	export class ChangeSet {
@@ -1843,6 +1918,8 @@ export namespace connection {
 	    updates: UpdateRow[];
 	    deletes: any[];
 	    locatorStrategy?: string;
+	    previousDeletes?: any[];
+	    locatorColumns?: LocatorColumn[];
 	
 	    static createFrom(source: any = {}) {
 	        return new ChangeSet(source);
@@ -1854,6 +1931,8 @@ export namespace connection {
 	        this.updates = this.convertValues(source["updates"], UpdateRow);
 	        this.deletes = source["deletes"];
 	        this.locatorStrategy = source["locatorStrategy"];
+	        this.previousDeletes = source["previousDeletes"];
+	        this.locatorColumns = this.convertValues(source["locatorColumns"], LocatorColumn);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -2519,6 +2598,23 @@ export namespace connection {
 	
 	
 	
+	
+	export class QueryParamBinding {
+	    name: string;
+	    type?: string;
+	    value?: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new QueryParamBinding(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.type = source["type"];
+	        this.value = source["value"];
+	    }
+	}
 	export class QueryResult {
 	    success: boolean;
 	    message: string;
@@ -2822,6 +2918,24 @@ export namespace connection {
 		    return a;
 		}
 	}
+	export class SavedQueryParam {
+	    name: string;
+	    type?: string;
+	    label?: string;
+	    default?: any;
+	
+	    static createFrom(source: any = {}) {
+	        return new SavedQueryParam(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.type = source["type"];
+	        this.label = source["label"];
+	        this.default = source["default"];
+	    }
+	}
 	export class SavedQuery {
 	    id: string;
 	    name: string;
@@ -2833,6 +2947,7 @@ export namespace connection {
 	    fingerprintVersion?: string;
 	    bindingStatus?: string;
 	    originalConnectionId?: string;
+	    parameters?: SavedQueryParam[];
 	
 	    static createFrom(source: any = {}) {
 	        return new SavedQuery(source);
@@ -2850,7 +2965,26 @@ export namespace connection {
 	        this.fingerprintVersion = source["fingerprintVersion"];
 	        this.bindingStatus = source["bindingStatus"];
 	        this.originalConnectionId = source["originalConnectionId"];
+	        this.parameters = this.convertValues(source["parameters"], SavedQueryParam);
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class SavedQueryGroup {
 	    id: string;
@@ -2906,6 +3040,7 @@ export namespace connection {
 		    return a;
 		}
 	}
+	
 	
 	export class TestGlobalProxyInput {
 	    proxy: SaveGlobalProxyInput;

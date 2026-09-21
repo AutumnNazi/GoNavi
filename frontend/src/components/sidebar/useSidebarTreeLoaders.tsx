@@ -60,13 +60,20 @@ import {
 } from './sidebarMetadataLoaders';
 import {
   applySidebarDatabasePinning,
-  buildSidebarTableChildrenForUi,
   buildV2SidebarDatabaseSectionedChildren,
   isSidebarTablePinned,
   sortSidebarTableEntries,
   type SidebarConnectionState,
   type SidebarTreeNode as TreeNode,
 } from '../sidebarV2Utils';
+import {
+  buildOracleDatabaseLinkGroup,
+  createSidebarObjectGroupBuilder,
+} from './sidebarObjectGroup';
+import {
+  loadOracleDatabaseLinks,
+  type OracleDatabaseLinkEntry,
+} from './sidebarOracleDatabaseLinks';
 import {
   dedupeSidebarTableEntries,
   getSidebarTableEntryIdentity,
@@ -75,7 +82,7 @@ import {
 } from './sidebarPartitions';
 import { DBGetDatabases, DBGetObjects, DBGetTables, DBQuery, DBRefreshTableStats, GetDriverStatusList, JVMProbeCapabilities } from '../../../wailsjs/go/app/App';
 import type { SidebarTableMetadataSnapshot } from '../../utils/sidebarTableMetadata';
-import { collectNacosServiceGroupsByPage } from '../nacosServiceName';
+import { loadNacosServiceGroupsIntoTree } from './nacosServiceGroupNodes';
 import { isPostgresSchemaDialect } from '../sidebarCoreUtils';
 import { splitMetadataQualifiedName } from '../../utils/qualifiedName';
 
@@ -1467,6 +1474,7 @@ export const useSidebarTreeLoaders = ({
 	                loadSequences(conn, conn.dbName),
 	                loadPackages(conn, conn.dbName),
 	                loadDatabaseEvents(conn, conn.dbName),
+	                loadOracleDatabaseLinks(conn as SavedConnection, conn.dbName),
 	            ]).then(
 	                (results) => {
 	                    objectLoadsSettled = true;
@@ -1582,6 +1590,7 @@ export const useSidebarTreeLoaders = ({
 	                sequencesResult: Awaited<ReturnType<typeof loadSequences>>;
 	                packagesResult: Awaited<ReturnType<typeof loadPackages>>;
 	                eventsResult: Awaited<ReturnType<typeof loadDatabaseEvents>>;
+	                databaseLinksResult: Awaited<ReturnType<typeof loadOracleDatabaseLinks>>;
 	            };
 	            // Runs twice: once with empty object results as soon as tables are known, and
 	            // once more when views/routines/sequences/triggers/events have arrived.
@@ -1597,6 +1606,7 @@ export const useSidebarTreeLoaders = ({
 	                sequencesResult,
 	                packagesResult,
 	                eventsResult,
+	                databaseLinksResult,
 	            } = objectResults;
             const viewRows: SidebarViewMetadataEntry[] = Array.isArray(viewsResult.views) ? viewsResult.views : [];
             const materializedViewRows: SidebarViewMetadataEntry[] = Array.isArray(materializedViewsResult.views) ? materializedViewsResult.views : [];
@@ -1605,6 +1615,7 @@ export const useSidebarTreeLoaders = ({
             const sequenceRows: any[] = Array.isArray(sequencesResult.sequences) ? sequencesResult.sequences : [];
             const packageRows: any[] = Array.isArray(packagesResult.packages) ? packagesResult.packages : [];
             const eventRows: any[] = Array.isArray(eventsResult.events) ? eventsResult.events : [];
+	            const databaseLinkEntries: OracleDatabaseLinkEntry[] = Array.isArray(databaseLinksResult.databaseLinks) ? databaseLinksResult.databaseLinks : [];
             const schemaRows: string[] = Array.isArray(schemasResult.schemas) ? schemasResult.schemas : [];
             const normalizedSchemaRows = schemaRows
                 .map((schemaName) => String(schemaName || '').trim())
@@ -1779,6 +1790,7 @@ export const useSidebarTreeLoaders = ({
                 { label: t('sidebar.object_group.sequences'), message: sequencesResult.failureMessage },
                 { label: t('sidebar.object_group.packages'), message: packagesResult.failureMessage },
                 { label: t('sidebar.object_group.events'), message: eventsResult.failureMessage },
+	                { label: t('sidebar.object_group.database_links'), message: databaseLinksResult.failureMessage },
             ].filter((failure) => failure.message);
             if (notifyMetadataIssues && metadataFailures.length > 0) {
                 const warningKey = `db-${key}-metadata-partial`;
@@ -2020,30 +2032,9 @@ export const useSidebarTreeLoaders = ({
 	                isLeaf: true,
 	            });
 
-	            const buildObjectGroup = (
-	                parentKey: string,
-	                groupKey: string,
-	                groupTitle: string,
-	                groupIcon: React.ReactNode,
-	                children: TreeNode[],
-	                extraData: Record<string, any> = {}
-	            ): TreeNode => {
-	                const groupNodeKey = `${parentKey}-${groupKey}`;
-	                const groupedChildren = groupKey === 'tables'
-	                    ? buildSidebarTableChildrenForUi(groupNodeKey, children)
-	                    : children;
-	                return {
-	                    title: groupTitle,
-	                    key: groupNodeKey,
-	                    icon: groupIcon,
-	                    type: 'object-group',
-	                    isLeaf: children.length === 0,
-	                    children: groupedChildren.length > 0 ? groupedChildren : undefined,
-	                    dataRef: { ...conn, dbName: conn.dbName, groupKey, ...extraData }
-	                };
-	            };
-
 	            let renderedDatabaseChildren: TreeNode[];
+	            const objectGroupConnection = conn as SavedConnection & { dbName?: string };
+	            const buildObjectGroup = createSidebarObjectGroupBuilder(objectGroupConnection);
 	            if (shouldGroupBySchema) {
 	                type SchemaBucket = {
 	                    schemaName: string;
@@ -2055,6 +2046,7 @@ export const useSidebarTreeLoaders = ({
 	                    packages: TreeNode[];
 	                    triggers: TreeNode[];
 	                    events: TreeNode[];
+	                    databaseLinks: OracleDatabaseLinkEntry[];
 	                };
 
 	                const schemaMap = new Map<string, SchemaBucket>();
@@ -2076,6 +2068,7 @@ export const useSidebarTreeLoaders = ({
 	                            packages: [],
 	                            triggers: [],
 	                            events: [],
+	                            databaseLinks: [],
 	                        };
 	                        schemaMap.set(schemaKey, bucket);
 	                    }
@@ -2096,6 +2089,8 @@ export const useSidebarTreeLoaders = ({
 	                const isOracleLike = (dialect === 'oracle' || dialect === 'dm');
 	                const includeMaterializedViews = dialect === 'starrocks';
 	                const includeOracleObjects = isOracleLike;
+	                databaseLinkEntries.forEach((entry) => getSchemaBucket(entry.schemaName).databaseLinks.push(entry));
+	                if (dialect === 'oracle') getSchemaBucket(String(dbName || '').trim());
 	                const includeSequences = supportsDatabaseSequences(conn as SavedConnection);
 	                const includeEvents = supportsDatabaseEvents(conn as SavedConnection);
 
@@ -2125,6 +2120,7 @@ export const useSidebarTreeLoaders = ({
 	                            ...(includeOracleObjects ? [buildObjectGroup(schemaNodeKey, 'packages', t('sidebar.object_group.packages'), <CodeOutlined />, bucket.packages, { schemaName: bucket.schemaName })] : []),
 	                            buildObjectGroup(schemaNodeKey, 'triggers', t('sidebar.object_group.triggers'), <FunctionOutlined />, bucket.triggers, { schemaName: bucket.schemaName }),
 	                            ...(includeEvents ? [buildObjectGroup(schemaNodeKey, 'events', t('sidebar.object_group.events'), <ClockCircleOutlined />, bucket.events, { schemaName: bucket.schemaName })] : []),
+	                            ...(dialect === 'oracle' ? [buildOracleDatabaseLinkGroup(objectGroupConnection, schemaNodeKey, t('sidebar.object_group.database_links'), bucket.databaseLinks, bucket.schemaName)] : []),
 	                        ];
 
 	                        return {
@@ -2154,6 +2150,7 @@ export const useSidebarTreeLoaders = ({
 	                    ...(includeOracleObjects ? [buildObjectGroup(key as string, 'packages', t('sidebar.object_group.packages'), <CodeOutlined />, packageEntries.map(buildPackageNode))] : []),
 	                    buildObjectGroup(key as string, 'triggers', t('sidebar.object_group.triggers'), <FunctionOutlined />, triggerEntries.map(buildTriggerNode)),
 	                    ...(includeEvents ? [buildObjectGroup(key as string, 'events', t('sidebar.object_group.events'), <ClockCircleOutlined />, eventEntries.map(buildEventNode))] : []),
+	                    ...(dialect === 'oracle' ? [buildOracleDatabaseLinkGroup(objectGroupConnection, key as string, t('sidebar.object_group.database_links'), databaseLinkEntries)] : []),
 	                ];
 
 	                renderedDatabaseChildren = [queriesNode, ...groupedNodes];
@@ -2169,6 +2166,7 @@ export const useSidebarTreeLoaders = ({
 	                sequencesResult: { sequences: [], supported: true },
 	                packagesResult: { packages: [], supported: true },
 	                eventsResult: { events: [], supported: true },
+	                databaseLinksResult: { databaseLinks: [], supported: true },
 	            };
 	            let renderedDatabaseChildren: TreeNode[] = [];
 	            let latestDatabaseConnection: SavedConnection = conn as SavedConnection;
@@ -2197,7 +2195,7 @@ export const useSidebarTreeLoaders = ({
 	            const objectLoads = await objectLoadsPromise;
             if (!isCurrentLoad()) return;
 	            if (!objectLoads.ok) throw objectLoads.error;
-	            const [viewsResult, materializedViewsResult, triggersResult, routinesResult, sequencesResult, packagesResult, eventsResult] = objectLoads.results;
+	            const [viewsResult, materializedViewsResult, triggersResult, routinesResult, sequencesResult, packagesResult, eventsResult, databaseLinksResult] = objectLoads.results;
 	            const secondPass = buildRenderedDatabaseChildren({
 	                viewsResult,
 	                materializedViewsResult,
@@ -2206,6 +2204,7 @@ export const useSidebarTreeLoaders = ({
 	                sequencesResult,
 	                packagesResult,
 	                eventsResult,
+	                databaseLinksResult,
 	            }, true);
 	            renderedDatabaseChildren = secondPass.renderedDatabaseChildren;
 	            latestDatabaseConnection = secondPass.latestDatabaseConnection;
@@ -2345,98 +2344,28 @@ export const useSidebarTreeLoaders = ({
       }
   };
 
+  // Extracted to ./nacosServiceGroupNodes so this hook — already far past the repo's
+  // file-size limit — only wires the loader up.
   const loadNacosServiceGroups = async (
       node: any,
       options: { force?: boolean } = {},
-  ): Promise<boolean> => {
-      const dataRef = node?.dataRef || {};
-      const connectionId = String(dataRef.id || '');
-      const namespaceId = String(dataRef.nacosNamespaceId ?? '');
-      const namespaceName = String(dataRef.nacosNamespaceName || namespaceId || 'public');
-      const nodeKeyId = namespaceId || 'public';
-      const loadKey = `nacos-service-groups-${connectionId}-${nodeKeyId}`;
-      if (!connectionId) return false;
-      if (loadingNodesRef.current.has(loadKey) && !options.force) return false;
-      const connectionEpoch = getConnectionLoadEpoch(connectionId);
-      const loadGeneration = beginLoadGeneration(loadKey);
-      const isCurrentLoad = () => (
-          isCurrentConnectionLoadEpoch(connectionId, connectionEpoch)
-          && isCurrentLoadGeneration(loadKey, loadGeneration)
-      );
-      const requestId = (nacosServiceGroupRequestIdsRef.current[loadKey] || 0) + 1;
-      nacosServiceGroupRequestIdsRef.current[loadKey] = requestId;
-      loadingNodesRef.current.add(loadKey);
-      try {
-          const rpcConfig = buildRpcConnectionConfig(dataRef.config || {});
-          const groups = await collectNacosServiceGroupsByPage(async (pageNo, pageSize) => {
-              const res = await (window as any).go.app.App.NacosListServices(rpcConfig, {
-                  namespaceId,
-                  groupName: '',
-                  pageNo,
-                  pageSize,
-              });
-              if (!res?.success) {
-                  throw new Error(res?.message || 'list service groups failed');
-              }
-              return res.data || {};
-          });
-          if (
-              !isCurrentLoad()
-              || nacosServiceGroupRequestIdsRef.current[loadKey] !== requestId
-          ) {
-              return false;
-          }
-
-          const allNode: TreeNode = {
-              title: t('nacos_viewer.label.all'),
-              key: `${connectionId}-nacos-ns-${nodeKeyId}-service-group-__all__`,
-              icon: <AppstoreOutlined style={{ color: '#13C2C2' }} />,
-              type: 'nacos-service-group',
-              dataRef: {
-                  ...dataRef,
-                  nacosNamespaceId: namespaceId,
-                  nacosNamespaceName: namespaceName,
-                  nacosGroup: '',
-              },
-              isLeaf: true,
-          };
-          const groupNodes: TreeNode[] = groups.map((group) => ({
-              title: group,
-              key: `${connectionId}-nacos-ns-${nodeKeyId}-service-group-${encodeURIComponent(group)}`,
-              icon: <FolderOpenOutlined style={{ color: '#13C2C2' }} />,
-              type: 'nacos-service-group',
-              dataRef: {
-                  ...dataRef,
-                  nacosNamespaceId: namespaceId,
-                  nacosNamespaceName: namespaceName,
-                  nacosGroup: group,
-              },
-              isLeaf: true,
-          }));
-          replaceTreeNodeChildren(node.key, [allNode, ...groupNodes], dataRef);
-          return true;
-      } catch (error: any) {
-          if (
-              !isCurrentLoad()
-              || nacosServiceGroupRequestIdsRef.current[loadKey] !== requestId
-          ) {
-              return false;
-          }
-          message.error({
-              content: t('sidebar.message.connection_failed', { error: error?.message || String(error) }),
-              key: loadKey,
-          });
-          setLoadedKeys((prev) => prev.filter((k) => k !== node.key));
-          return false;
-      } finally {
-          if (
-              isCurrentLoad()
-              && nacosServiceGroupRequestIdsRef.current[loadKey] === requestId
-          ) {
-              loadingNodesRef.current.delete(loadKey);
-          }
-      }
-  };
+  ): Promise<boolean> => loadNacosServiceGroupsIntoTree({
+      node,
+      options,
+      nacosServiceGroupRequestIdsRef,
+      loadingNodesRef,
+      setLoadedKeys,
+      replaceTreeNodeChildren,
+      buildRpcConnectionConfig,
+      getConnectionLoadEpoch,
+      beginLoadGeneration,
+      isCurrentConnectionLoadEpoch,
+      isCurrentLoadGeneration,
+      showError: (payload) => message.error(payload),
+      listServices: (rpcConfig, query) => (
+          (window as any).go.app.App.NacosListServices(rpcConfig, query)
+      ),
+  });
 
   return {
       loadDatabases,

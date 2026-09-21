@@ -444,7 +444,7 @@ function SlowQueryCard({
           >
             {t('sql_analysis.slow_query.action.copy')}
           </Button>
-          <Tooltip title={truncated ? t('query_history.restore.truncated_unavailable') : t('query_history.restore.redacted_tooltip')}>
+          <Tooltip title={truncated ? t('query_history.insert.truncated_unavailable') : t('query_history.insert.redacted_tooltip')}>
             <span>
               <Button
                 size="small"
@@ -452,7 +452,7 @@ function SlowQueryCard({
                 onClick={() => onRestoreQuery?.(sql, record)}
                 disabled={!canRestore}
               >
-                {t('query_history.restore.action')}
+                {t('query_history.insert.action')}
               </Button>
             </span>
           </Tooltip>

@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -185,10 +184,9 @@ describe('query editor execution lifecycle', () => {
         expect(queryEditorExecutionTimerStatusI18nKey(true, leaked)).toBe('query_editor.execution.status.running');
     });
 
-    it('keeps QueryEditor from retaining a successful SQL RPC just because heartbeats are live', () => {
-        const source = readFileSync(new URL('../QueryEditor.tsx', import.meta.url), 'utf8');
-        expect(source).toContain('shouldRetainQueryEditorRunAfterRpc(');
-        expect(source).toContain('shouldFinishQueryEditorRunAfterCancelMiss(res, loading)');
-        expect(source).not.toContain('|| shouldRetainQueryEditorRun(executionLifecycleRef.current)');
-    });
+    // 原第 12 个用例读 QueryEditor.tsx 源码断言 shouldRetainQueryEditorRunAfterRpc /
+    // shouldFinishQueryEditorRunAfterCancelMiss 出现在文本里。该断言不执行任何被测代码，
+    // 且其行为语义已由上面的 'does not keep loading after a successful RPC just because
+    // heartbeats are still live' 与 'clears a stuck editor when stop misses a query that
+    // already left the registry' 两个用例直接覆盖，故按 testPolicy 守卫撤销。
 });

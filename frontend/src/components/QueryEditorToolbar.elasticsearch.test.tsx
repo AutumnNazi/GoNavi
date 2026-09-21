@@ -28,6 +28,9 @@ vi.mock('antd', () => ({
     antdState.selectProps.push(props);
     return <div data-select={props.className}>{props.placeholder}</div>;
   },
+  // 「最大返回行数」选择器的下拉内嵌自定义输入框；本 mock 不透传 popupRender，
+  // 只保证 Input 可被解析，避免引入该组件后整份用例挂在未定义导出上。
+  Input: (props: any) => <input data-input value={props.value ?? ''} readOnly />,
   Tooltip: ({ children }: any) => <>{children}</>,
 }));
 

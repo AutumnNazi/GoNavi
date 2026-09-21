@@ -3,5 +3,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.web-server
+      args:
+        # 本地源码构建走的也是 dev 通道：版本号带 dev/-dev/-test/-local/
+        # -snapshot 后缀时 currentDriverReleaseTag() 才返回 dev-latest。
+        # 改成正式版本号会让驱动下载切到 releases/latest，与本地刚生成的
+        # 内嵌 revision 不匹配，驱动安装必然失败。
+        VERSION: ${GONAVI_WEB_VERSION:-dev-local}
     image: ${GONAVI_WEB_IMAGE_LOCAL:-gonavi-web-server:local}
     pull_policy: never

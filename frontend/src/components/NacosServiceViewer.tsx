@@ -9,7 +9,6 @@ import {
   Popconfirm,
   Space,
   Switch,
-  Table,
   Tag,
   message,
 } from 'antd';
@@ -33,9 +32,14 @@ import { t, type I18nParams } from '../i18n';
 import { useOptionalI18n } from '../i18n/provider';
 import { noAutoCapInputProps } from '../utils/inputAutoCap';
 import { parseNacosServiceName } from './nacosServiceName';
+import NacosServiceTable, { type NacosServiceRow } from './nacos/NacosServiceTable';
+import {
+  buildNacosServiceStatisticsIndex,
+  type NacosServiceStatisticsPage,
+} from './nacos/NacosServiceRowStatus';
 import { confirmProductionMutation } from '../utils/productionRiskConfirm';
 
-type ServicePage = {
+type ServicePage = NacosServiceStatisticsPage & {
   count: number;
   serviceNames: string[];
   pageNo?: number;
@@ -77,12 +81,6 @@ type NacosServiceViewerProps = {
   namespaceName?: string;
   initialGroup?: string;
   isActive?: boolean;
-};
-
-type NacosServiceRow = {
-  rawName: string;
-  serviceName: string;
-  groupName: string;
 };
 
 type NacosContextToken = {
@@ -185,6 +183,7 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
   const [loadingServices, setLoadingServices] = useState(false);
   const [loadingInstances, setLoadingInstances] = useState(false);
   const [serviceNames, setServiceNames] = useState<string[]>([]);
+  const [serviceStatistics, setServiceStatistics] = useState<ReturnType<typeof buildNacosServiceStatisticsIndex>>(() => new Map());
   const [serviceTotal, setServiceTotal] = useState(0);
   const [pageNo, setPageNo] = useState(1);
   const [pageSize, setPageSize] = useState(50);
@@ -295,6 +294,18 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
     setEditingInstance(null);
   }, []);
 
+  const handleSelectService = useCallback((rawName: string) => {
+    if (selectedServiceRawRef.current !== rawName) {
+      closeInstanceModal();
+    }
+    instanceRequestIdRef.current += 1;
+    selectedServiceRawRef.current = rawName;
+    setSelectedServiceRaw(rawName);
+    setSelectedServiceDetail(null);
+    setInstances([]);
+    void loadInstancesRef.current(rawName);
+  }, [closeInstanceModal]);
+
   const loadServices = useCallback(
     async (
       page = 1,
@@ -320,6 +331,7 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
           groupName: requestedGroup,
           pageNo: page,
           pageSize: requestedPageSize,
+          withStatistics: true,
         });
         if (requestId !== serviceRequestIdRef.current) return;
         if (!res?.success) {
@@ -327,6 +339,7 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
           return;
         }
         const pageData = (res.data || {}) as ServicePage;
+        setServiceStatistics(buildNacosServiceStatisticsIndex(pageData));
         const names = Array.isArray(pageData.serviceNames) ? pageData.serviceNames : [];
         const total = Number(pageData.count) || names.length;
         const lastPage = Math.max(1, Math.ceil(total / requestedPageSize));
@@ -981,79 +994,16 @@ const NacosServiceViewer: React.FC<NacosServiceViewerProps> = ({
               data-testid="nacos-service-list-scroll"
               style={{ flex: '1 1 0', minHeight: 0, overflow: 'auto' }}
             >
-              <Table
-                className="gn-nacos-service-table"
-                size="small"
+              <NacosServiceTable
+                rows={serviceRows}
+                statistics={serviceStatistics}
                 loading={loadingServices}
-                rowKey={(row) => row.rawName}
-                dataSource={serviceRows}
-                pagination={false}
-                onRow={(record) => ({
-                  onClick: () => {
-                    if (selectedServiceRawRef.current !== record.rawName) {
-                      closeInstanceModal();
-                    }
-                    instanceRequestIdRef.current += 1;
-                    selectedServiceRawRef.current = record.rawName;
-                    setSelectedServiceRaw(record.rawName);
-                    setSelectedServiceDetail(null);
-                    setInstances([]);
-                    void loadInstances(record.rawName);
-                  },
-                })}
-                rowClassName={(record) =>
-                  selectedServiceRaw === record.rawName ? 'ant-table-row-selected' : ''
-                }
-                columns={[
-                  {
-                    title: tr('nacos_service.field.service'),
-                    dataIndex: 'serviceName',
-                    key: 'serviceName',
-                    ellipsis: true,
-                    render: (_: unknown, row: NacosServiceRow) => (
-                      <div style={{ minWidth: 0 }}>
-                        <div
-                          title={row.serviceName}
-                          style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                        >
-                          {row.serviceName}
-                        </div>
-                        <div
-                          title={row.groupName}
-                          style={{
-                            marginTop: 2,
-                            color: workbenchTheme.textMuted,
-                            fontSize: 12,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {row.groupName}
-                        </div>
-                      </div>
-                    ),
-                  },
-                  {
-                    title: tr('nacos_viewer.action.delete'),
-                    key: 'actions',
-                    width: 90,
-                    render: (_: unknown, row: NacosServiceRow) => (
-                      <Popconfirm
-                        title={tr('nacos_service.message.confirm_delete_service', { name: row.rawName })}
-                        disabled={structureRestricted}
-                        onConfirm={() => void handleDeleteService(row.rawName)}
-                      >
-                        <Button
-                          size="small"
-                          danger
-                          icon={<DeleteOutlined />}
-                          disabled={structureRestricted}
-                        />
-                      </Popconfirm>
-                    ),
-                  },
-                ]}
+                selectedRaw={selectedServiceRaw}
+                structureRestricted={structureRestricted}
+                mutedColor={workbenchTheme.textMuted}
+                tr={tr}
+                onSelect={handleSelectService}
+                onDelete={(raw) => void handleDeleteService(raw)}
               />
             </div>
             <div

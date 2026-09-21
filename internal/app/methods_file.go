@@ -5047,6 +5047,8 @@ func (a *App) ApplyChanges(config connection.ConnectionConfig, dbName, tableName
 				OutcomeUnknown: db.IsWriteOutcomeUnknown(err),
 			}
 		}
+		// 提交成功后才留快照：失败或结果未知时数据库状态本身不确定，生成反向语句会伪装成"可还原"。
+		a.captureDMLSnapshot(config, dbName, targetTableName, changes)
 		return connection.QueryResult{Success: true, Message: a.appText("file.backend.message.transaction_committed", nil), Data: preview}
 	}
 

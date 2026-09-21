@@ -101,6 +101,7 @@ const readSidebarSource = () => [
   readSourceFile('./sidebar/useSidebarTreeLoaders.tsx'),
   readSourceFile('./sidebar/SidebarEntityModals.tsx'),
   readSourceFile('./sidebar/SidebarTreeTitle.tsx'),
+  readSourceFile('./sidebar/sidebarTreeDragOrder.ts'),
   readSourceFile('./sidebar/useSidebarV2ContextMenu.tsx'),
   readSourceFile('./sidebar/useSidebarObjectActions.tsx'),
   readSourceFile('./sidebar/useSidebarSearchModel.tsx'),
@@ -1293,7 +1294,7 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).not.toContain(`>${t('sidebar.command_search.object_kind.tables')}<`);
   });
 
-  it('keeps the object-kind filter slot stable while switching to a dedicated workbench connection', () => {
+  it('keeps the filter slot filled on a Nacos workbench, offering its own dimensions', () => {
     mocks.state.connections = [{
       id: 'pg-1',
       name: 'PostGreSQL',
@@ -1317,10 +1318,53 @@ describe('Sidebar locate toolbar', () => {
     const filterSlotIndex = markup.indexOf('data-object-kind-filter-slot="true"');
     const treeShellIndex = markup.indexOf('gn-v2-explorer-tree-shell');
 
+    // Slot keeps its position so the tree's vertical origin does not move.
     expect(filterSlotIndex).toBeGreaterThanOrEqual(0);
     expect(filterSlotIndex).toBeLessThan(treeShellIndex);
-    expect(markup).toContain('data-object-kind-filter-visible="false"');
+
+    // A Nacos host has dimensions of its own, so the slot stays populated rather
+    // than going blank as soon as the host is selected.
+    expect(markup).toContain('data-object-kind-filter-visible="true"');
+    expect(markup).toContain('gn-v2-explorer-filter-tabs');
+    expect(markup).toContain('data-object-kind-filter="all"');
+    expect(markup).toContain('data-object-kind-filter="nacos-services"');
+    expect(markup).toContain('data-object-kind-filter="nacos-configs"');
+    expect(markup).toContain(`aria-label="${t('sidebar.command_search.object_kind.nacos_services')}"`);
+    expect(markup).toContain(`aria-label="${t('sidebar.command_search.object_kind.nacos_configs')}"`);
+
+    // The relational dimensions name object kinds a Nacos tree does not contain.
+    expect(markup).not.toContain('data-object-kind-filter="tables"');
+    expect(markup).not.toContain('data-object-kind-filter="views"');
+    expect(markup).not.toContain('data-object-kind-filter="routines"');
+  });
+
+  it('keeps the object-kind slot for an active Redis connection without inventing counts', () => {
+    mocks.state.connections = [{
+      id: 'redis-1',
+      name: 'Redis-开发240',
+      config: { type: 'redis', host: 'localhost', port: 6379 },
+    }];
+    mocks.state.activeContext = { connectionId: 'redis-1', dbName: 'db0' };
+    mocks.state.activeTabId = 'redis-keys';
+    mocks.state.tabs = [{
+      id: 'redis-keys',
+      title: 'Redis',
+      type: 'redis-keys',
+      connectionId: 'redis-1',
+      dbName: 'db0',
+    }];
+
+    const markup = renderSidebarMarkup({});
+    const filterSlotIndex = markup.indexOf('data-object-kind-filter-slot="true"');
+    const treeShellIndex = markup.indexOf('gn-v2-explorer-tree-shell');
+
+    // Slot keeps its position so the tree's vertical origin does not move.
+    expect(filterSlotIndex).toBeGreaterThanOrEqual(0);
+    expect(filterSlotIndex).toBeLessThan(treeShellIndex);
     expect(markup).not.toContain('gn-v2-explorer-filter-tabs');
+    // The connection has not been expanded in this render, so the counts genuinely
+    // do not exist yet and the summary must stay absent rather than claim "0 keys".
+    expect(markup).not.toContain('data-redis-sidebar-overview="true"');
   });
 
   it('keeps relational object-kind filters hidden without an active host when only dedicated workbenches exist', () => {
@@ -1347,7 +1391,7 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).not.toContain('data-object-kind-filter-slot');
   });
 
-  it('hides relational object-kind filters for Nacos and other dedicated workbenches', () => {
+  it('hides relational object-kind filters for Nacos, which offers its own instead', () => {
     mocks.state.connections = [{
       id: 'nacos-1',
       name: 'Nacos',
@@ -1357,10 +1401,15 @@ describe('Sidebar locate toolbar', () => {
 
     const markup = renderSidebarMarkup({  });
 
-    expect(markup).not.toContain('gn-v2-explorer-filter-tabs');
     expect(markup).not.toContain(`>${t('sidebar.command_search.object_kind.tables')}<`);
     expect(markup).not.toContain(`>${t('sidebar.command_search.object_kind.views')}<`);
     expect(markup).not.toContain(`>${t('sidebar.command_search.object_kind.routines')}<`);
+    expect(markup).not.toContain('data-object-kind-filter="tables"');
+    expect(markup).not.toContain('data-object-kind-filter="views"');
+
+    // What the slot carries instead: the two Nacos explorer branches.
+    expect(markup).toContain('data-object-kind-filter="nacos-services"');
+    expect(markup).toContain('data-object-kind-filter="nacos-configs"');
   });
 
   it('replaces relational explorer controls in an active message queue context', () => {
@@ -1858,6 +1907,22 @@ describe('Sidebar locate toolbar', () => {
       dropToGap: false,
       fallbackInsertBefore: false,
     })).toBe('inside');
+    expect(resolveSidebarTreeDropPlacement({
+      dragNodeType: 'tag',
+      dropNodeType: 'tag',
+      relativeDropPosition: 0,
+      dropToGap: undefined,
+      fallbackInsertBefore: false,
+      metrics: { clientY: 102, top: 100, height: 30 },
+    })).toBe('before');
+    expect(resolveSidebarTreeDropPlacement({
+      dragNodeType: 'tag',
+      dropNodeType: 'tag',
+      relativeDropPosition: 0,
+      dropToGap: undefined,
+      fallbackInsertBefore: true,
+      metrics: { clientY: 128, top: 100, height: 30 },
+    })).toBe('after');
   });
 
   it('maps Host group drop intent to stable moveConnectionToTag arguments', () => {
@@ -1981,10 +2046,6 @@ describe('Sidebar locate toolbar', () => {
       connectionStatus: undefined,
       getV2TreeMetaText: () => '',
       sidebarTableMetadataFields: [],
-      snapshotTreeSelectionBeforeDrag: vi.fn(),
-      restoreTreeSelectionAfterDrag: vi.fn(),
-      treeDragSelectSuppressUntilRef: { current: 0 },
-      setIsTreeDragging: vi.fn(),
     };
     const targetMarkup = renderToStaticMarkup(renderSidebarV2TreeTitle({
       ...baseOptions,
@@ -1999,19 +2060,30 @@ describe('Sidebar locate toolbar', () => {
   });
 
   it('uses V2-only capture DnD with a compact preview and stable whole-row states', () => {
-    const source = readSourceFile('./Sidebar.tsx');
+    const source = `${readSourceFile('./Sidebar.tsx')}\n${readSourceFile('./sidebar/sidebarTreeDragOrder.ts')}`;
     const css = readV2ThemeCss();
 
     expect(source).toContain('onDragOverCapture={handleSidebarTreeDragOverCapture}');
     expect(source).toContain('onDropCapture={handleSidebarTreeDropCapture}');
+    expect(source).toContain('onMouseDownCapture={sidebarTreeDrag.markSidebarTreeMouseDownHandled}');
+    expect(source).toContain('resolveSidebarTreeOrderDropAtEvent(');
+    expect(source.match(/sidebarTreeDrag\.isSidebarTreeGapNoOp\(/g)).toHaveLength(2);
+    expect(source).toContain('|| sidebarTreeDrag.isSidebarTreeOrderNode(node)');
+    expect(source).toContain('applySidebarTreeOrdersToNode(');
+    expect(source).toContain('sidebarTreeOrdersRef.current = next;');
+    expect(source).toContain('tableSortPreferenceRef.current = next;');
     expect(source).toContain('resolveSidebarDropDomHit(event)');
     expect(source).toContain('resolveSidebarHostGroupDropDestination({');
-    expect(source).toContain('sidebarTreeDragPreviewElementRef.current = createSidebarTreeDragPreview(event, node)');
-    expect(source).toContain("&& sidebarTreeDragNodeRef.current?.type === 'connection'");
+    expect(source).toContain('sidebarTreeDragPreviewElementRef.current = sidebarTreeDrag.createSidebarTreeDragPreview(event, node)');
+    expect(source).toContain('&& sidebarTreeDrag.isSidebarHostTreeNode(sidebarTreeDragNodeRef.current)');
     expect(source).toContain('dataTransfer.setDragImage(preview, 18, 15)');
     expect(source).toContain('SIDEBAR_GROUP_HOVER_EXPAND_DELAY_MS = 500');
     expect(css).toContain('.ant-tree-treenode:has(.gn-v2-tree-title.is-drop-inside)');
     expect(css).toContain('.gn-v2-sidebar-tree-drag-preview');
+    expect(css).toContain('.is-object-tree-dragging .ant-tree-treenode:has(.gn-v2-tree-title.is-drop-before)');
+    expect(css).toMatch(/\.gn-v2-explorer-tree-shell\.is-object-tree-dragging \.ant-tree-drop-indicator \{[^}]*display: none !important;/s);
+    expect(css).toMatch(/\.gn-v2-explorer-tree-shell\.is-host-tree-dragging \.ant-tree-drop-indicator \{[^}]*display: none !important;/s);
+    expect(css).toMatch(/\.gn-v2-tree-title\.is-connection-group \{[^}]*line-height: 1\.4;/s);
     expect(css).toContain('cursor: grabbing !important;');
     expect(css).not.toContain('.gn-v2-tree-host-drop-hint');
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
@@ -2389,10 +2461,6 @@ describe('Sidebar locate toolbar', () => {
       connectionStatus: undefined,
       getV2TreeMetaText: () => '',
       sidebarTableMetadataFields: [],
-      snapshotTreeSelectionBeforeDrag: vi.fn(),
-      restoreTreeSelectionAfterDrag: vi.fn(),
-      treeDragSelectSuppressUntilRef: { current: 0 },
-      setIsTreeDragging: vi.fn(),
     }));
     expect(sectionMarkup).toContain('class="gn-v2-tree-section-title"');
     expect(sectionMarkup).toContain('data-section-kind="pinned"');
@@ -2453,10 +2521,6 @@ describe('Sidebar locate toolbar', () => {
       connectionStatus: undefined,
       getV2TreeMetaText: () => '',
       sidebarTableMetadataFields: [],
-      snapshotTreeSelectionBeforeDrag: vi.fn(),
-      restoreTreeSelectionAfterDrag: vi.fn(),
-      treeDragSelectSuppressUntilRef: { current: 0 },
-      setIsTreeDragging: vi.fn(),
     };
     const renderTableTitle = (pinnedSidebarTable: boolean) => renderToStaticMarkup(renderSidebarV2TreeTitle({
       ...baseOptions,
@@ -2490,10 +2554,6 @@ describe('Sidebar locate toolbar', () => {
       connectionStatus: undefined,
       getV2TreeMetaText: () => '',
       sidebarTableMetadataFields: [],
-      snapshotTreeSelectionBeforeDrag: vi.fn(),
-      restoreTreeSelectionAfterDrag: vi.fn(),
-      treeDragSelectSuppressUntilRef: { current: 0 },
-      setIsTreeDragging: vi.fn(),
     };
     const renderDatabaseTitle = (pinnedSidebarDatabase: boolean) => renderToStaticMarkup(
       renderSidebarV2TreeTitle({
@@ -3202,10 +3262,6 @@ describe('Sidebar locate toolbar', () => {
       hoverTitle: 'users',
       connectionStatus: undefined,
       getV2TreeMetaText: () => '',
-      snapshotTreeSelectionBeforeDrag: vi.fn(),
-      restoreTreeSelectionAfterDrag: vi.fn(),
-      treeDragSelectSuppressUntilRef: { current: 0 },
-      setIsTreeDragging: vi.fn(),
     };
 
     const hiddenSuffixMarkup = renderToStaticMarkup(renderSidebarV2TreeTitle({

@@ -176,6 +176,22 @@ import {
   type ToolbarButtonColorOverrides,
 } from "./utils/toolbarAppearance";
 import { normalizeTableAliasPrefix } from "./utils/tableAliasPrefix";
+import {
+  buildSidebarDatabasePinKey,
+  buildSidebarTablePinKey,
+  sanitizeSidebarTreeOrders,
+  updateSidebarDatabasePinKeys,
+  updateSidebarTreeOrders as applySidebarTreeOrderUpdates,
+  type SidebarTableSortPreference,
+  type SidebarTreeOrders,
+  type SidebarTreeOrderUpdates,
+} from "./utils/sidebarTreeOrder";
+
+export {
+  buildSidebarDatabasePinKey,
+  buildSidebarTablePinKey,
+  updateSidebarDatabasePinKeys,
+} from "./utils/sidebarTreeOrder";
 
 export type TableDoubleClickAction = "open-data" | "open-design";
 /** SQL 编辑器中按住 Ctrl/Cmd 点击表名时执行的动作。 */
@@ -1966,6 +1982,8 @@ export interface SqlEditorPendingTransactionState {
   dbName?: string;
   statements?: string[];
   executionDurationMs?: number;
+  /** 事务所属连接；提交前按它做生产环境确认，见 PendingSqlEditorTransaction。 */
+  connectionId?: string;
 }
 
 interface AppState {
@@ -2016,7 +2034,8 @@ interface AppState {
   sqlLogs: SqlLog[];
   tableExportHistories: Record<string, TableExportHistoryEntry[]>;
   tableAccessCount: Record<string, number>;
-  tableSortPreference: Record<string, "name" | "frequency">;
+  tableSortPreference: Record<string, SidebarTableSortPreference>;
+  sidebarTreeOrders: SidebarTreeOrders;
   tableDesignerSchemaByConnection: Record<string, string>;
   tableColumnOrders: Record<string, string[]>;
   enableColumnOrderMemory: boolean;
@@ -2225,8 +2244,9 @@ interface AppState {
   setTableSortPreference: (
     connectionId: string,
     dbName: string,
-    sortBy: "name" | "frequency",
+    sortBy: SidebarTableSortPreference,
   ) => void;
+  updateSidebarTreeOrders: (updates: SidebarTreeOrderUpdates) => void;
   setTableDesignerSchema: (connectionId: string, schemaName: string) => void;
   setSidebarTablePinned: (
     connectionId: string,
@@ -3183,14 +3203,14 @@ const sanitizeSqlEditorTransactionOptions = (
 
 const sanitizeTableSortPreference = (
   value: unknown,
-): Record<string, "name" | "frequency"> => {
+): Record<string, SidebarTableSortPreference> => {
   const raw =
     value && typeof value === "object"
       ? (value as Record<string, unknown>)
       : {};
-  const result: Record<string, "name" | "frequency"> = {};
+  const result: Record<string, SidebarTableSortPreference> = {};
   Object.entries(raw).forEach(([key, preference]) => {
-    result[key] = preference === "frequency" ? "frequency" : "name";
+    result[key] = preference === "frequency" || preference === "manual" ? preference : "name";
   });
   return result;
 };
@@ -3587,46 +3607,6 @@ const runWithExplicitShortcutPersistence = (callback: () => void): void => {
   }
 };
 
-export const buildSidebarTablePinKey = (
-  connectionId: string,
-  dbName: string,
-  tableName: string,
-  schemaName = "",
-): string => {
-  const parts = [
-    toTrimmedString(connectionId),
-    toTrimmedString(dbName),
-    toTrimmedString(schemaName),
-    toTrimmedString(tableName),
-  ];
-  return parts[0] && parts[1] && parts[3] ? JSON.stringify(parts) : "";
-};
-
-export const buildSidebarDatabasePinKey = (
-  connectionId: string,
-  dbName: string,
-): string => {
-  const parts = [toTrimmedString(connectionId), toTrimmedString(dbName)];
-  return parts[0] && parts[1] ? JSON.stringify(parts) : "";
-};
-
-export const updateSidebarDatabasePinKeys = (
-  pinnedKeys: unknown,
-  connectionId: string,
-  dbName: string,
-  pinned: boolean,
-): string[] => {
-  const current = new Set(sanitizePinnedSidebarTables(pinnedKeys));
-  const key = buildSidebarDatabasePinKey(connectionId, dbName);
-  if (!key) return Array.from(current);
-  if (pinned) {
-    current.add(key);
-  } else {
-    current.delete(key);
-  }
-  return Array.from(current);
-};
-
 const PERSISTED_STATE_DEPENDENCY_KEYS = [
   "tabs",
   "activeTabId",
@@ -3661,6 +3641,7 @@ const PERSISTED_STATE_DEPENDENCY_KEYS = [
   "sqlSnippets",
   "tableAccessCount",
   "tableSortPreference",
+  "sidebarTreeOrders",
   "tableDesignerSchemaByConnection",
   "tableColumnOrders",
   "enableColumnOrderMemory",
@@ -3730,6 +3711,7 @@ const buildPersistedStateProjection = (
     sqlSnippets: state.sqlSnippets,
     tableAccessCount: sanitizeTableAccessCount(state.tableAccessCount),
     tableSortPreference: state.tableSortPreference,
+    sidebarTreeOrders: state.sidebarTreeOrders,
     tableDesignerSchemaByConnection: sanitizeTableDesignerSchemaByConnection(
       state.tableDesignerSchemaByConnection,
     ),
@@ -3879,6 +3861,7 @@ export const useStore = create<AppState>()(
       tableExportHistories: {},
       tableAccessCount: {},
       tableSortPreference: {},
+      sidebarTreeOrders: {},
       tableDesignerSchemaByConnection: {},
       tableColumnOrders: {},
       enableColumnOrderMemory: true,
@@ -5735,6 +5718,11 @@ export const useStore = create<AppState>()(
           };
         }),
 
+      updateSidebarTreeOrders: (updates) =>
+        set((state) => ({
+          sidebarTreeOrders: applySidebarTreeOrderUpdates(state.sidebarTreeOrders, updates),
+        })),
+
       setTableDesignerSchema: (connectionId, schemaName) =>
         set((state) => {
           const safeConnectionId = toTrimmedString(connectionId);
@@ -6367,6 +6355,7 @@ export const useStore = create<AppState>()(
         nextState.tableSortPreference = sanitizeTableSortPreference(
           state.tableSortPreference,
         );
+        nextState.sidebarTreeOrders = sanitizeSidebarTreeOrders(state.sidebarTreeOrders);
         nextState.tableDesignerSchemaByConnection = sanitizeTableDesignerSchemaByConnection(
           state.tableDesignerSchemaByConnection,
         );
@@ -6484,6 +6473,7 @@ export const useStore = create<AppState>()(
           tableSortPreference: sanitizeTableSortPreference(
             state.tableSortPreference,
           ),
+          sidebarTreeOrders: sanitizeSidebarTreeOrders(state.sidebarTreeOrders),
           tableDesignerSchemaByConnection: sanitizeTableDesignerSchemaByConnection(
             state.tableDesignerSchemaByConnection,
           ),

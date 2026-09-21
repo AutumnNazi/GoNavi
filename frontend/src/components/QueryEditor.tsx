@@ -70,6 +70,24 @@ import {
     shouldUseSqlEditorManagedTransactionForType,
 } from '../utils/sqlEditorTransaction';
 import { findSqlStatementRanges, resolveCurrentSqlStatementRange, resolveExecutableSql, stripLeadingSqlTrivia } from '../utils/sqlStatementSelection';
+import {
+    buildQueryEditorInlineMemoryEntries,
+    copyQueryEditorTextToClipboard,
+    matchesQueryEditorInlineMemoryDb,
+    normalizeQueryEditorCompletionAnalysisText,
+    normalizeQueryEditorInlineMemorySqlKey,
+} from './queryEditor/queryEditorInlineMemory';
+import { useQueryEditorParams } from './queryEditor/params/useQueryEditorParams';
+import { applyParamNameDecorations } from './queryEditor/params/queryEditorParamsDecorations';
+import { QueryEditorParamsBindDialog, QueryEditorParamsPanel } from './queryEditor/params/QueryEditorParamsPanel';
+import {
+    bindingsFromValues,
+    collectMissingParamNames,
+    QUERY_EDITOR_PARAMS_PANEL_KEY,
+    type QueryParamBindingInput,
+    type QueryParameterAnalysisInfo,
+} from './queryEditor/params/queryEditorParamsModel';
+import { DBQueryMultiWithParams, DBQueryMultiWithParamsInTransaction, DBQueryMultiTransactionalWithParams } from '../../wailsjs/go/app/App';
 import { isMacLikePlatform } from '../utils/appearance';
 import { splitSidebarQualifiedName } from '../utils/sidebarLocate';
 import { splitMetadataQualifiedName, splitQualifiedNameSegmentsDetailed } from '../utils/qualifiedName';
@@ -452,92 +470,6 @@ const writeQueryEditorFormatLog = (level: 'info' | 'error', messageText: string)
     }
 };
 
-const normalizeQueryEditorInlineMemorySqlKey = (sql: string): string => (
-    String(sql || '')
-        .replace(/\r\n?/g, '\n')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .toLowerCase()
-);
-
-const normalizeQueryEditorCompletionAnalysisText = (sql: string): string => {
-    const normalized = String(sql || '').replace(/\r\n?/g, '\n');
-    // Preserve offsets while preventing a UTF-8 BOM from becoming part of SQL syntax analysis.
-    return normalized.startsWith('\uFEFF') ? ` ${normalized.slice(1)}` : normalized;
-};
-
-const matchesQueryEditorInlineMemoryDb = (currentDb: string, candidateDb?: string): boolean => {
-    const normalizedCurrentDb = String(currentDb || '').trim().toLowerCase();
-    const normalizedCandidateDb = String(candidateDb || '').trim().toLowerCase();
-    if (!normalizedCurrentDb || !normalizedCandidateDb) {
-        return true;
-    }
-    return normalizedCurrentDb === normalizedCandidateDb;
-};
-
-const buildQueryEditorInlineMemoryEntries = ({
-    currentConnectionId,
-    currentDb,
-    savedQueries,
-    sqlLogs,
-}: {
-    currentConnectionId: string;
-    currentDb: string;
-    savedQueries: SavedQuery[];
-    sqlLogs: SqlLog[];
-}): Array<{ sql: string }> => {
-    const ranked = new Map<string, { sql: string; score: number; latestAt: number }>();
-    const addCandidate = (sql: string, score: number, latestAt: number) => {
-        const text = String(sql || '').trim();
-        if (!text) {
-            return;
-        }
-        const key = normalizeQueryEditorInlineMemorySqlKey(text);
-        if (!key) {
-            return;
-        }
-        const existing = ranked.get(key);
-        if (!existing) {
-            ranked.set(key, { sql: text, score, latestAt });
-            return;
-        }
-        existing.score += score;
-        if (latestAt >= existing.latestAt) {
-            existing.latestAt = latestAt;
-            existing.sql = text;
-        }
-    };
-
-    savedQueries.forEach((query) => {
-        if (currentConnectionId && String(query.connectionId || '').trim() !== currentConnectionId) {
-            return;
-        }
-        if (!matchesQueryEditorInlineMemoryDb(currentDb, query.dbName)) {
-            return;
-        }
-        addCandidate(query.sql, 600, Number(query.createdAt || 0));
-    });
-
-    sqlLogs.forEach((log) => {
-        if (log.status !== 'success' || log.category === 'transaction') {
-            return;
-        }
-        if (!matchesQueryEditorInlineMemoryDb(currentDb, log.dbName)) {
-            return;
-        }
-        addCandidate(log.sql, 80, Number(log.timestamp || 0));
-    });
-
-    return [...ranked.values()]
-        .sort((left, right) => (
-            right.score - left.score
-            || right.latestAt - left.latestAt
-            || left.sql.length - right.sql.length
-        ))
-        .slice(0, 16)
-        .map((entry) => ({ sql: entry.sql }));
-};
-
 const buildQueryEditorMonacoOptions = (
     isObjectEditQueryTab: boolean,
     wordWrapEnabled = false,
@@ -573,59 +505,6 @@ const QUERY_EDITOR_SQL_PROMPT_PLACEHOLDER = '{SQL}';
 const escapeQueryEditorObjectEditSqlLiteral = (value: unknown): string => (
     String(value || '').replace(/'/g, "''")
 );
-
-const CLIPBOARD_WRITE_TIMEOUT_MS = 2000;
-
-const copyQueryEditorTextToClipboard = async (text: string): Promise<boolean> => {
-    const tryAsyncClipboardWrite = async (): Promise<boolean> => {
-        if (typeof navigator?.clipboard?.writeText !== 'function') {
-            return false;
-        }
-
-        try {
-            const written = await Promise.race([
-                navigator.clipboard.writeText(text).then(() => true as const),
-                new Promise<false>((resolve) => setTimeout(() => resolve(false), CLIPBOARD_WRITE_TIMEOUT_MS)),
-            ]);
-            return written;
-        } catch {
-            return false;
-        }
-    };
-
-    if (typeof document?.createElement === 'function' && typeof document?.execCommand === 'function') {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.setAttribute('readonly', 'true');
-        textarea.setAttribute('aria-hidden', 'true');
-        Object.assign(textarea.style, {
-            position: 'fixed',
-            top: '0',
-            left: '-9999px',
-            opacity: '0',
-            pointerEvents: 'none',
-        });
-
-        try {
-            document.body?.appendChild?.(textarea);
-            textarea.focus?.();
-            textarea.select?.();
-            textarea.setSelectionRange?.(0, text.length);
-            if (document.execCommand('copy')) {
-                return true;
-            }
-        } catch {
-            // Fall through to async clipboard APIs when execCommand is unavailable.
-        } finally {
-            textarea.remove?.();
-        }
-    }
-
-    if (await tryAsyncClipboardWrite()) {
-        return true;
-    }
-    return false;
-};
 
 const getQueryEditorObjectEditRawValue = (row: Record<string, any>, candidateKeys: string[]): any => {
     const keyMap = new Map<string, any>();
@@ -2107,6 +1986,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   } | null>(null);
   const resultSetsRef = useRef(resultSets);
   const activeResultKeyRef = useRef(activeResultKey);
+  // 参数面板可用性快照：监听器闭包内不能读 paramsState（effect 不随分析刷新，
+  // 陈旧闭包会让快捷键误关未查看的结果 tab），与 isResultPanelVisibleRef 同模式。
+  const paramsPanelAvailableRef = useRef(false);
   const nativeRestoredResultRefs = useRef(new Map<
     string,
     { resultKey: string; result: ResultSet }
@@ -2742,11 +2624,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   }, [disposeTransformCaseContextMenuActions]);
 
   // SQL 诊断 / 慢 SQL 历史的快捷键监听（必须在 binding 声明之后）
-  // getEditorSql/getDialect 为惰性 getter：事件触发时才求值，
-  // 规避对后置声明（getCurrentQuery 等）的渲染期 TDZ 引用。
   const handleDiagnoseExecutionErrorWithAI = useQueryEditorErrorDiagnose({
       getEditorSql: () => getCurrentQuery(),
       resolveExecutionErrorStatement,
+      getConnectionId: () => currentConnectionIdRef.current,
+      getDatabase: () => currentDbRef.current,
       getDialect: () => String(resolveSqlDialect(
           String(currentConnectionConfig?.type || ''),
           String(currentConnectionConfig?.driver || ''),
@@ -3196,6 +3078,28 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       }
       return savedQueries.find((item) => item.id === tabId) || null;
   }, [savedQueries, tab.id, tab.savedQueryId]);
+
+  // 运行时绑定参数：面板防抖分析 + 执行前权威门控（见 handleRun）。
+  const paramsState = useQueryEditorParams({
+      config: (currentConnection?.config ?? null) as Record<string, unknown> | null,
+      dbName: currentDb,
+      sql: query,
+      getSql: () => editorRef.current?.getValue?.() ?? query,
+      enabled: Boolean(currentConnectionId),
+      savedParams: currentSavedQuery?.parameters ?? null,
+      resetToken: `${currentConnectionId || ''}:${currentDb || ''}`,
+  });
+  const [paramsDialogState, setParamsDialogState] = useState<{
+      open: boolean;
+      analysis: QueryParameterAnalysisInfo | null;
+  }>({ open: false, analysis: null });
+  const lastParamsRunScopeRef = useRef<QueryEditorRunScope>('default');
+  paramsPanelAvailableRef.current = paramsState.hasParams || !!paramsState.analysis;
+
+  // 参数名在 Monaco 中的展示高亮：随分析结果刷新（面板/执行同节奏）。
+  useEffect(() => {
+      applyParamNameDecorations(editorRef.current, monacoRef.current, paramsState.analysis?.parameterNames || []);
+  }, [paramsState.analysis]);
 
   useEffect(() => {
       queryEditorMountedRef.current = true;
@@ -4503,7 +4407,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       void message.error(translate('connection_modal.message.copy_failed'));
   };
 
-  const handleDuplicateCurrentLine = () => {
+  const handleDuplicateCurrentLine = useCallback(() => {
       const editor = editorRef.current;
       const monaco = monacoRef.current;
       const model = editor?.getModel?.();
@@ -4546,7 +4450,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       if (typeof nextValue === 'string') {
           applyQueryState(nextValue);
       }
-  };
+
+    }, [applyQueryState]);
 
   const buildQueryEditorAiContextMenuActions = useCallback(() => ([
       {
@@ -9753,6 +9658,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       dbType = String(config.type || ''),
       connectionParamsOverride?: string,
       executionConnectionId = currentConnectionIdRef.current,
+      paramBindings?: QueryParamBindingInput[],
   ) => {
       const executionConfig = connectionParamsOverride === undefined
           ? buildSqlExecutionConnectionConfig(config)
@@ -9772,11 +9678,20 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           && matchesCurrentExecutionContext
           && canReusePendingSqlEditorTransactionForType(dbType, sourceStatements, config as ConnectionConfig)
       ) {
+          if (paramBindings && paramBindings.length > 0) {
+              return DBQueryMultiWithParamsInTransaction(pendingTransaction.id, sql, queryId, paramBindings);
+          }
           return DBQueryMultiInTransaction(pendingTransaction.id, sql, queryId);
       }
       const rpcConfig = buildRpcConnectionConfig(executionConfig) as any;
-      return invokeCompactDBQueryMulti([rpcConfig, dbName, sql, queryId],
-          () => DBQueryMulti(rpcConfig, dbName, sql, queryId), invokeRequestScopedApp)
+      if (paramBindings && paramBindings.length > 0) {
+          return invokeRequestScopedApp(
+              'DBQueryMultiWithParams',
+              [rpcConfig, dbName, sql, queryId, paramBindings],
+              () => DBQueryMultiWithParams(rpcConfig, dbName, sql, queryId, paramBindings),
+          );
+      }
+      return invokeCompactDBQueryMulti([rpcConfig, dbName, sql, queryId], () => DBQueryMulti(rpcConfig, dbName, sql, queryId), invokeRequestScopedApp)
           .then(expandCompactQueryResult);
   }, [buildSqlExecutionConnectionConfig, invokeRequestScopedApp]);
 
@@ -9866,6 +9781,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   normalizedDbType,
                   executionContext?.executionConnectionParams ?? currentResult?.executionConnectionParams,
                   executionConnectionId,
+                  currentResult?.executionBindings,
               );
           } finally {
               if (isCurrentRun()) {
@@ -10000,6 +9916,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               normalizedDbType,
               target.executionConnectionParams,
               executionConnectionId,
+              target.executionBindings,
           );
           const duration = Date.now() - countStartedAt;
           addSqlLog({
@@ -10190,6 +10107,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   normalizedDbType,
                   target.executionConnectionParams,
                   executionConnectionId,
+                  target.executionBindings,
               );
           } finally {
               if (isCurrentRun()) {
@@ -10563,7 +10481,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       }
   };
 
-  const handleRun = async (runScope: QueryEditorRunScope = 'default') => {
+  const handleRun = async (runScope: QueryEditorRunScope = 'default', runOptions?: { skipParamsGate?: boolean }) => {
     if (isElasticsearchMode) {
         await handleElasticsearchRun(runScope === 'all');
         return;
@@ -10671,7 +10589,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         return;
     }
 
-    if (findPotentiallyMutatingConnectionStatements(conn.config, executableSQL).length > 0) {
+    // 写操作判定要复用同一结果：生产确认和"不可撤销"提示必须基于同一判断，
+    // 各算一遍会在边界 SQL 上出现"确认了却没提示"或反之的漂移。
+    const mutatingStatements = findPotentiallyMutatingConnectionStatements(conn.config, executableSQL);
+    if (mutatingStatements.length > 0) {
         const approved = await confirmProductionRisk({
             connection: conn,
             action: translate('connection.production_risk.action.execute_sql'),
@@ -11081,6 +11002,35 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 : executableStatements.join(';\n');
             recordExecutionOrigin(currentQuery, executableSQL, fullSQL, executablePlans);
 
+            // 运行时绑定参数门控：以刚要执行的 SQL 做权威分析。
+            // skipParamsGate 表示用户已在绑定对话框确认——按对话框分析结果
+            // 与会话值构建绑定（对话框在缺值时禁用确认按钮），不再重复分析。
+            let paramBindings: QueryParamBindingInput[] | undefined;
+            if (runOptions?.skipParamsGate) {
+                const confirmed = paramsDialogState.analysis;
+                if (confirmed && confirmed.parameterNames.length > 0) {
+                    paramBindings = bindingsFromValues(confirmed.parameterNames, paramsState.values);
+                }
+            } else {
+                const freshAnalysis = await paramsState.analyzeNow(fullSQL, executionDbName);
+                if (freshAnalysis && freshAnalysis.parameterNames.length > 0) {
+                    if (!freshAnalysis.supported) {
+                        message.error(translate(freshAnalysis.messageKey || 'query_editor.params.unsupported_driver'));
+                        if (isCurrentRun()) setLoading(false);
+                        return;
+                    }
+                    const missing = collectMissingParamNames(freshAnalysis.parameterNames, paramsState.values);
+                    if (missing.length > 0) {
+                        lastParamsRunScopeRef.current = runScope;
+                        setParamsDialogState({ open: true, analysis: freshAnalysis });
+                        message.warning(translate('query_editor.params.missing_hint', { names: missing.join(', ') }));
+                        if (isCurrentRun()) setLoading(false);
+                        return;
+                    }
+                    paramBindings = bindingsFromValues(freshAnalysis.parameterNames, paramsState.values);
+                }
+            }
+
             let queryId: string;
             try {
                 queryId = await GenerateQueryID();
@@ -11097,12 +11047,20 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             setExecutionTimingActive(true);
             try {
                 res = useManagedTransaction
-                    ? await DBQueryMultiTransactional(
-                        buildRpcConnectionConfig(executionConfig) as any,
-                        executionDbName,
-                        fullSQL,
-                        queryId,
-                    )
+                    ? (paramBindings
+                        ? await DBQueryMultiTransactionalWithParams(
+                            buildRpcConnectionConfig(executionConfig) as any,
+                            executionDbName,
+                            fullSQL,
+                            queryId,
+                            paramBindings,
+                        )
+                        : await DBQueryMultiTransactional(
+                            buildRpcConnectionConfig(executionConfig) as any,
+                            executionDbName,
+                            fullSQL,
+                            queryId,
+                        ))
                     : await executeSqlEditorMultiQuery(
                         config,
                         executionDbName,
@@ -11112,6 +11070,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                         normalizedDbType,
                         executionConnectionParams,
                         currentConnectionId,
+                        paramBindings,
                     );
             } catch (error: any) {
                 // A rejected Wails call has the same ambiguity as a returned
@@ -11326,6 +11285,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                 return;
             }
 
+            // 有写操作、后端却没返回 transactionPending，说明本次是以 autocommit 落地的
+            // （DDL / TRUNCATE / CALL / 存储过程 / 非事务数据源，见后端 shouldUseManagedSQLTransaction）。
+            // 前端自己的 useManagedTransaction 判定比后端宽松，直接采信它会把 DDL 误报成"已托管"，
+            // 所以这里以后端的实际响应为准。必须显式告知，不能静默假装已保护（§3.2 验收 3）。
+            if (res.success && mutatingStatements.length > 0 && !res.transactionPending) {
+                message.warning(translate('query_editor.transaction.message.executed_without_transaction'), 6);
+            }
+
             if (res.transactionPending && res.transactionId) {
                 const transactionId = String(res.transactionId);
                 if (useManagedTransaction) {
@@ -11339,6 +11306,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                         dbName: executionDbName,
                         statements: sourceStatements,
                         executionDurationMs: duration,
+                        connectionId: currentConnectionId,
                     });
                 } else {
                     appendPendingSqlTransactionExecution({
@@ -11478,6 +11446,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                         executionConnectionId: currentConnectionId,
                         executionDbName: executionDbName,
                         executionConnectionParams,
+                        executionBindings: paramBindings,
                         pkColumns: plan?.pkColumns || [],
                         columnMetaMap: plan?.columnMetaMap,
                         uniqueKeyGroups: plan?.uniqueKeyGroups,
@@ -12392,6 +12361,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   }): Promise<boolean> => {
       const sql = getCurrentQuery();
       lastLocalQueryRef.current = sql;
+      // 重存已存查询时保留其已持久化的参数声明（当前 UI 无默认值编辑入口，
+      // payload 不含 parameters——缺省即不覆盖，防止保存动作清空声明）。
+      const existingParameters = savedQueries.find((item) => item.id === payload.id)?.parameters;
       const saved = {
           id: payload.id,
           name: payload.name,
@@ -12399,6 +12371,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           connectionId: currentConnectionId,
           dbName: currentDb ?? tab.dbName ?? '',
           createdAt: payload.createdAt ?? Date.now(),
+          parameters: existingParameters,
       };
       const persisted = await runQueuedSaveOperation(() => saveQuery(saved));
       if (!queryEditorMountedRef.current) {
@@ -13055,6 +13028,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           currentResultSets,
           activeResultKeyRef.current,
           true,
+          paramsPanelAvailableRef.current,
       );
       const nextResultSets = currentResultSets.filter(result => result.key !== key);
       const nextActiveKey = currentActiveKey && currentActiveKey !== key
@@ -13084,6 +13058,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               resultSetsRef.current,
               activeResultKeyRef.current,
               true,
+              paramsPanelAvailableRef.current,
           );
           if (!effectiveActiveKey) return;
 
@@ -13465,6 +13440,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             onChange={(val) => {
                 const nextValue = val || '';
                 syncQueryDraft(nextValue);
+                paramsState.requestAnalysis();
             }}
             beforeMount={handleEditorBeforeMount}
             onMount={handleEditorDidMount}
@@ -13551,8 +13527,36 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
             setResultDiffAnchorKey(resultKey);
             setResultDiffWizardOpen(true);
           }}
+          paramsPanel={
+            paramsState.hasParams || paramsState.analyzing || paramsState.analysis ? (
+              <QueryEditorParamsPanel
+                analysis={paramsState.analysis}
+                analyzing={paramsState.analyzing}
+                values={paramsState.values}
+                onChange={paramsState.setValue}
+              />
+            ) : undefined
+          }
         />
       )}
+
+      <QueryEditorParamsBindDialog
+        open={paramsDialogState.open}
+        analysis={paramsDialogState.analysis}
+        analyzing={paramsState.analyzing}
+        values={paramsState.values}
+        missingNames={
+          paramsDialogState.analysis
+            ? collectMissingParamNames(paramsDialogState.analysis.parameterNames, paramsState.values)
+            : []
+        }
+        onChange={paramsState.setValue}
+        onConfirm={() => {
+          setParamsDialogState((current) => ({ ...current, open: false }));
+          void handleRun(lastParamsRunScopeRef.current || 'default', { skipParamsGate: true });
+        }}
+        onCancel={() => setParamsDialogState((current) => ({ ...current, open: false }))}
+      />
 
       <ResultDiffWizard
         open={resultDiffWizardOpen}

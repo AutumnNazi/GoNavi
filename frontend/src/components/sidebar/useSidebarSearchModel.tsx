@@ -10,6 +10,7 @@ import {
   EyeOutlined,
   FilterOutlined,
   KeyOutlined,
+  LinkOutlined,
   PlusOutlined,
   RobotOutlined,
   TableOutlined,
@@ -432,6 +433,7 @@ export const useSidebarSearchModel = ({
             || dataRef.eventName
             || dataRef.routineName
             || dataRef.packageName
+            || dataRef.databaseLinkName
             || node.title
             || '',
           ).trim();
@@ -447,9 +449,13 @@ export const useSidebarSearchModel = ({
             ].filter(Boolean).join(' — '),
             icon: node.type === 'table'
               ? <TableOutlined />
-              : (node.type === 'sequence'
+              : node.type === 'sequence'
                 ? <KeyOutlined />
-                : (node.type === 'db-event' ? <ClockCircleOutlined /> : ((node.type === 'routine' || node.type === 'package') ? <CodeOutlined /> : <EyeOutlined />))),
+                : node.type === 'database-link'
+                  ? <LinkOutlined />
+                  : node.type === 'db-event'
+                    ? <ClockCircleOutlined />
+                    : ((node.type === 'routine' || node.type === 'package') ? <CodeOutlined /> : <EyeOutlined />),
             node,
           });
         }

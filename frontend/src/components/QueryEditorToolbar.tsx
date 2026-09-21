@@ -33,6 +33,7 @@ import QueryEditorTransactionSettings, {
 } from "./QueryEditorTransactionSettings";
 import { renderV2ActionMenuPopup } from './common/V2ActionMenuPopup';
 import { QueryEditorToolbarRunAction } from './queryEditor/QueryEditorToolbarRunAction';
+import QueryEditorToolbarMaxRowsSelect from './queryEditor/QueryEditorToolbarMaxRowsSelect';
 
 export type QueryEditorMode = "sql" | "elasticsearch";
 
@@ -555,21 +556,10 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
       )}
       {!isElasticsearchMode && (
         <>
-          <Tooltip title={t("query_editor.max_rows.tooltip")}>
-            <Select
-              className="gn-v2-query-toolbar-select gn-v2-query-toolbar-max-rows-select"
-              value={maxRows}
-              onChange={(val) => onMaxRowsChange(Number(val))}
-              options={[
-                { label: '100', value: 100 },
-                { label: t("query_editor.max_rows.option_500"), value: 500 },
-                { label: t("query_editor.max_rows.option_1000"), value: 1000 },
-                { label: t("query_editor.max_rows.option_5000"), value: 5000 },
-                { label: t("query_editor.max_rows.option_20000"), value: 20000 },
-                { label: t("query_editor.max_rows.option_unlimited"), value: 0 },
-              ]}
-            />
-          </Tooltip>
+          <QueryEditorToolbarMaxRowsSelect
+            maxRows={maxRows}
+            onMaxRowsChange={onMaxRowsChange}
+          />
           <QueryEditorTransactionSettings
             commitMode={sqlEditorCommitMode}
             autoCommitDelayMs={sqlEditorAutoCommitDelayMs}

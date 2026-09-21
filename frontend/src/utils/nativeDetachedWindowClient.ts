@@ -234,6 +234,7 @@ export const NATIVE_DETACHED_WORKBENCH_MUTABLE_KEYS = [
   'tableExportHistories',
   'tableAccessCount',
   'tableSortPreference',
+  'sidebarTreeOrders',
   'jvmDiagnosticDrafts',
   'jvmDiagnosticOutputs',
 ] as const;

@@ -38,23 +38,42 @@ export const collectNacosServiceGroupsByPage = async (
   fetchPage: NacosServiceNamePageFetcher,
   pageSize = NACOS_SERVICE_GROUP_PAGE_SIZE,
 ): Promise<string[]> => {
-  const normalizedPageSize = Number.isFinite(pageSize) && pageSize > 0
-    ? Math.floor(pageSize)
-    : NACOS_SERVICE_GROUP_PAGE_SIZE;
   const groups = new Set<string>();
-  let pageNo = 1;
-  let loadedServiceCount = 0;
-
-  while (true) {
-    const page = await fetchPage(pageNo, normalizedPageSize);
+  await walkNacosServicePages(fetchPage, pageSize, (page) => {
     const serviceNames = Array.isArray(page?.serviceNames) ? page.serviceNames : [];
-
     for (const rawName of serviceNames) {
       const identity = parseNacosServiceName(String(rawName ?? ''));
       if (identity.serviceName) {
         groups.add(identity.groupName);
       }
     }
+  });
+  return sortNacosServiceGroups(groups);
+};
+
+/**
+ * Walk every page of the namespace service list, handing each page to `onPage`.
+ *
+ * Split out of {@link collectNacosServiceGroupsByPage} because that scan is already
+ * paid for — the pages it reads carry per-service instance statistics on the Nacos
+ * versions that report them, so callers folding health data reuse this walk instead
+ * of issuing a second, independent scan.
+ */
+export const walkNacosServicePages = async (
+  fetchPage: NacosServiceNamePageFetcher,
+  pageSize: number,
+  onPage: (page: NacosServiceNamePage | null | undefined) => void,
+): Promise<void> => {
+  const normalizedPageSize = Number.isFinite(pageSize) && pageSize > 0
+    ? Math.floor(pageSize)
+    : NACOS_SERVICE_GROUP_PAGE_SIZE;
+  let pageNo = 1;
+  let loadedServiceCount = 0;
+
+  while (true) {
+    const page = await fetchPage(pageNo, normalizedPageSize);
+    onPage(page);
+    const serviceNames = Array.isArray(page?.serviceNames) ? page.serviceNames : [];
 
     loadedServiceCount += serviceNames.length;
     const total = Number(page?.count);
@@ -64,6 +83,4 @@ export const collectNacosServiceGroupsByPage = async (
     }
     pageNo += 1;
   }
-
-  return sortNacosServiceGroups(groups);
 };

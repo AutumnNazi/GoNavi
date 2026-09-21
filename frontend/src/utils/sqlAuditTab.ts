@@ -60,7 +60,7 @@ export const buildRestoredQueryTab = (
     || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   return {
     id: `query-history-restore-${sourceId || 'sql'}-${requestKey}`,
-    title: String(input.title || '').trim() || t('query_history.restore.tab_title'),
+    title: String(input.title || '').trim() || t('query_history.insert.tab_title'),
     type: 'query',
     connectionId: String(input.connectionId || '').trim(),
     dbName: String(input.dbName || '').trim() || undefined,

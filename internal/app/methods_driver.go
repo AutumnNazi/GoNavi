@@ -30,7 +30,6 @@ import (
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/db"
 	"GoNavi-Wails/internal/logger"
-	"GoNavi-Wails/internal/uievents"
 	"GoNavi-Wails/shared/i18n"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -223,18 +222,6 @@ type driverStatusItem struct {
 	ActiveConnections   int    `json:"activeConnections,omitempty"`
 	ReasonCode          string `json:"reasonCode,omitempty"`
 	Message             string `json:"message,omitempty"`
-}
-
-const driverDownloadProgressEvent = "driver:download-progress"
-
-type driverDownloadProgressPayload struct {
-	TaskID     string  `json:"taskId,omitempty"`
-	DriverType string  `json:"driverType"`
-	Status     string  `json:"status"`
-	Percent    float64 `json:"percent"`
-	Downloaded int64   `json:"downloaded"`
-	Total      int64   `json:"total"`
-	Message    string  `json:"message,omitempty"`
 }
 
 type driverNetworkProbeItem struct {
@@ -1510,108 +1497,8 @@ func (a *App) InstallLocalDriverPackage(driverType string, filePath string, down
 }
 
 func (a *App) DownloadDriverPackage(driverType string, version string, downloadURL string, downloadDir string) connection.QueryResult {
-	a.driverInstallMu.Lock()
-	defer a.driverInstallMu.Unlock()
-
-	definition, ok := resolveDriverDefinition(driverType)
-	if !ok {
-		return connection.QueryResult{Success: false, Message: a.appText("driver_manager.backend.error.unsupported_driver_type", nil)}
-	}
-	engine := effectiveDriverEngine(definition)
-	if definition.BuiltIn {
-		return connection.QueryResult{Success: false, Message: a.appText("driver_manager.backend.error.builtin_download_not_required", nil)}
-	}
-	if err := a.localizeDriverSelectionError(definition, ensureOptionalDriverBuildAvailable(definition)); err != nil {
-		return connection.QueryResult{Success: false, Message: err.Error()}
-	}
-	if !(engine == driverEngineGo && !definition.BuiltIn) {
-		return connection.QueryResult{Success: false, Message: a.appText("driver_manager.backend.error.optional_go_only", nil)}
-	}
-
-	urlText := strings.TrimSpace(downloadURL)
-	if urlText == "" {
-		urlText = strings.TrimSpace(definition.DefaultDownloadURL)
-	}
-	if urlText == "" {
-		urlText = fmt.Sprintf("builtin://activate/%s", optionalDriverPublicTypeName(definition.Type))
-	}
-	selectedVersion := resolveDriverInstallVersion(version, urlText, definition)
-	if err := a.localizeDriverSelectionError(definition, validateDriverSelectedVersion(definition, selectedVersion)); err != nil {
-		return connection.QueryResult{Success: false, Message: err.Error()}
-	}
-
-	resolvedDir, err := resolveDriverDownloadDirectory(downloadDir)
-	if err != nil {
-		return connection.QueryResult{Success: false, Message: err.Error()}
-	}
-	db.SetExternalDriverDownloadDirectory(resolvedDir)
-
-	if db.IsOptionalGoDriver(definition.Type) {
-		displayName := a.driverStatusDisplayName(definition)
-		startMessage := a.appText("driver_manager.progress.agent_install_start", map[string]any{"name": displayName})
-		if v := strings.TrimSpace(selectedVersion); v != "" {
-			startMessage = a.appText("driver_manager.progress.agent_install_start_with_version", map[string]any{"name": displayName, "version": v})
-		}
-		a.emitDriverDownloadProgress(definition.Type, "start", 0, 100, startMessage)
-		meta, installErr := installOptionalDriverAgentPackage(a, definition, selectedVersion, resolvedDir, urlText)
-		if installErr != nil {
-			errText := normalizeMixedEncodingText(localizedDriverBackendErrorMessage(a, installErr))
-			a.emitDriverDownloadProgress(definition.Type, "error", 0, 0, errText)
-			return connection.QueryResult{
-				Success: false,
-				Message: a.appText("driver_manager.backend.message.download_failed_detail", map[string]any{
-					"detail": a.driverOperationErrorMessage(installErr, "failed to download and install driver, driver=%s version=%s url=%s", definition.Type, selectedVersion, urlText),
-				}),
-			}
-		}
-		a.emitDriverDownloadProgress(definition.Type, "downloading", 95, 100, a.appText("driver_manager.progress.metadata_write", nil))
-		if writeErr := writeInstalledDriverPackage(resolvedDir, definition.Type, meta); writeErr != nil {
-			errText := localizedDriverBackendErrorMessage(a, writeErr)
-			a.emitDriverDownloadProgress(definition.Type, "error", 0, 0, errText)
-			return connection.QueryResult{
-				Success: false,
-				Message: a.appText("driver_manager.backend.message.metadata_write_failed_detail", map[string]any{
-					"detail": a.driverOperationErrorMessage(writeErr, "failed to write driver metadata, driver=%s version=%s", definition.Type, selectedVersion),
-				}),
-			}
-		}
-		a.emitDriverDownloadProgress(definition.Type, "done", 100, 100, a.appText("driver_manager.progress.agent_install_done", map[string]any{"name": displayName}))
-		return connection.QueryResult{Success: true, Message: a.appText("driver_manager.backend.message.driver_install_success", nil), Data: map[string]interface{}{
-			"driverType": definition.Type,
-			"driverName": definition.Name,
-			"engine":     engine,
-		}}
-	}
-
-	a.emitDriverDownloadProgress(definition.Type, "start", 0, 0, a.appText("driver_manager.progress.install_start", nil))
-	meta := installedDriverPackage{
-		DriverType:   definition.Type,
-		Version:      selectedVersion,
-		FilePath:     "",
-		FileName:     "embedded-go-driver",
-		DownloadURL:  urlText,
-		SHA256:       "",
-		DownloadedAt: time.Now().Format(time.RFC3339),
-	}
-	if err := writeInstalledDriverPackage(resolvedDir, definition.Type, meta); err != nil {
-		errText := localizedDriverBackendErrorMessage(a, err)
-		a.emitDriverDownloadProgress(definition.Type, "error", 0, 0, errText)
-		return connection.QueryResult{
-			Success: false,
-			Message: a.appText("driver_manager.backend.message.metadata_write_failed_detail", map[string]any{
-				"detail": a.driverOperationErrorMessage(err, "failed to write driver metadata, driver=%s version=%s", definition.Type, selectedVersion),
-			}),
-		}
-	}
-	a.emitDriverDownloadProgress(definition.Type, "done", 1, 1, a.appText("driver_manager.progress.pure_go_enabled", nil))
-
-	return connection.QueryResult{Success: true, Message: a.appText("driver_manager.backend.message.driver_install_success", nil), Data: map[string]interface{}{
-		"driverType": definition.Type,
-		"driverName": definition.Name,
-		"engine":     engine,
-	}}
+	return a.downloadDriverPackage(context.Background(), driverType, version, downloadURL, downloadDir)
 }
-
 func (a *App) RemoveDriverPackage(driverType string, downloadDir string) connection.QueryResult {
 	a.driverInstallMu.Lock()
 	defer a.driverInstallMu.Unlock()
@@ -1641,57 +1528,6 @@ func (a *App) RemoveDriverPackage(driverType string, downloadDir string) connect
 		"driverType": definition.Type,
 		"driverName": definition.Name,
 	}}
-}
-
-func (a *App) emitDriverDownloadProgress(driverType string, status string, downloaded, total int64, message string) {
-	taskID := a.updateDriverDownloadTaskProgress(driverType, status, 0, message)
-	payload := driverDownloadProgressPayload{
-		TaskID:     taskID,
-		DriverType: normalizeDriverType(driverType),
-		Status:     strings.TrimSpace(status),
-		Percent:    0,
-		Downloaded: downloaded,
-		Total:      total,
-		Message:    strings.TrimSpace(message),
-	}
-	if payload.DriverType == "" {
-		payload.DriverType = "unknown"
-	}
-	if payload.Status == "" {
-		payload.Status = "downloading"
-	}
-	if total > 0 {
-		payload.Percent = (float64(downloaded) / float64(total)) * 100
-		if payload.Percent < 0 {
-			payload.Percent = 0
-		}
-		if payload.Percent > 100 {
-			payload.Percent = 100
-		}
-	}
-	if payload.Status == "done" && payload.Percent < 100 {
-		payload.Percent = 100
-	}
-	if taskID != "" {
-		_ = a.updateDriverDownloadTaskProgress(driverType, payload.Status, payload.Percent, payload.Message)
-	}
-	if a.ctx == nil {
-		return
-	}
-	uievents.Emit(a.ctx, driverDownloadProgressEvent, payload)
-}
-
-func (a *App) emitDriverDownloadTaskSnapshot(task DriverDownloadTaskStatus) {
-	if a == nil || a.ctx == nil {
-		return
-	}
-	uievents.Emit(a.ctx, driverDownloadProgressEvent, driverDownloadProgressPayload{
-		TaskID:     task.TaskID,
-		DriverType: task.DriverType,
-		Status:     task.Status,
-		Percent:    task.Percent,
-		Message:    task.Message,
-	})
 }
 
 func probeDriverNetworkEndpoint(client *http.Client, item driverNetworkProbeItem) driverNetworkProbeItem {
@@ -3674,7 +3510,10 @@ func promoteOptionalDriverAgentFromStaging(a *App, driverType string, stagingPat
 	return nil
 }
 
-func installOptionalDriverAgentPackage(a *App, definition driverDefinition, selectedVersion string, resolvedDir string, downloadURL string) (installedDriverPackage, error) {
+func installOptionalDriverAgentPackage(ctx context.Context, a *App, definition driverDefinition, selectedVersion string, resolvedDir string, downloadURL string) (installedDriverPackage, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	driverType := normalizeDriverType(definition.Type)
 	installPath, err := db.ResolveOptionalDriverAgentExecutablePathForVersion(resolvedDir, driverType, selectedVersion)
 	if err != nil {
@@ -3694,9 +3533,13 @@ func installOptionalDriverAgentPackage(a *App, definition driverDefinition, sele
 	defer os.RemoveAll(stagingDir)
 	stagingPath := filepath.Join(stagingDir, filepath.Base(installPath))
 
-	downloadSource, hash, err := ensureOptionalDriverAgentBinary(a, definition, stagingPath, downloadURL, selectedVersion)
+	downloadSource, hash, err := ensureOptionalDriverAgentBinary(ctx, a, definition, stagingPath, downloadURL, selectedVersion)
 	if err != nil {
 		return installedDriverPackage{}, err
+	}
+	if ctx.Err() != nil {
+		// Never activate a binary for a task the user has already canceled.
+		return installedDriverPackage{}, driverDownloadCanceledError(ctx)
 	}
 	agentRevision, revisionErr := verifyInstalledOptionalDriverAgentRevision(driverType, stagingPath, selectedVersion)
 	if revisionErr != nil {
@@ -4151,7 +3994,10 @@ var downloadOptionalDriverAgentBinaryForInstall = downloadOptionalDriverAgentBin
 
 var fetchMirrorDriverReleaseByTagForDriverDownload = fetchMirrorDriverReleaseByTag
 
-func ensureOptionalDriverAgentBinary(a *App, definition driverDefinition, executablePath string, downloadURL string, selectedVersion string) (string, string, error) {
+func ensureOptionalDriverAgentBinary(ctx context.Context, a *App, definition driverDefinition, executablePath string, downloadURL string, selectedVersion string) (string, string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	driverType := normalizeDriverType(definition.Type)
 	displayName := resolveDriverDisplayName(definition)
 	if _, recognized, dispatcherErr := parseDownloadDispatcherAssetPath(downloadURL); recognized && dispatcherErr != nil {
@@ -4256,9 +4102,9 @@ func ensureOptionalDriverAgentBinary(a *App, definition driverDefinition, execut
 	if !forceSourceBuild && preferSourceBuildBeforeDownload {
 		sourceBuildAttempted = true
 		if a != nil {
-			a.emitDriverDownloadProgress(driverType, "downloading", 16, 100, a.appText("driver_manager.progress.source_build_preferred", map[string]any{"name": displayName}))
+			a.emitDriverDownloadProgressContext(ctx, driverType, "downloading", 16, 100, a.appText("driver_manager.progress.source_build_preferred", map[string]any{"name": displayName}))
 		}
-		hash, buildErr := buildOptionalDriverAgentFromSource(definition, executablePath, selectedVersion)
+		hash, buildErr := buildOptionalDriverAgentFromSource(ctx, definition, executablePath, selectedVersion)
 		if buildErr == nil {
 			if revisionErr := validateCandidateRevision(); revisionErr == nil {
 				return fmt.Sprintf("local://go-build/%s-driver-agent", driverType), hash, nil
@@ -4267,6 +4113,9 @@ func ensureOptionalDriverAgentBinary(a *App, definition driverDefinition, execut
 			}
 		} else {
 			cleanupCandidate()
+		}
+		if ctx.Err() != nil {
+			return "", "", driverDownloadCanceledError(ctx)
 		}
 		sourceBuildErr = buildErr
 		if requireSourceBuildBeforeDownload {
@@ -4280,11 +4129,14 @@ func ensureOptionalDriverAgentBinary(a *App, definition driverDefinition, execut
 	if !forceSourceBuild {
 		if len(downloadCandidates) > 0 {
 			for _, candidate := range downloadCandidates {
+				if ctx.Err() != nil {
+					return "", "", driverDownloadCanceledError(ctx)
+				}
 				candidateURL := candidate.URL
 				if a != nil {
-					a.emitDriverDownloadProgress(driverType, "downloading", 20, 100, a.appText("driver_manager.progress.download_prebuilt_agent", map[string]any{"name": displayName}))
+					a.emitDriverDownloadProgressContext(ctx, driverType, "downloading", 20, 100, a.appText("driver_manager.progress.download_prebuilt_agent", map[string]any{"name": displayName}))
 				}
-				hash, dlErr := downloadOptionalDriverAgentBinaryForInstall(a, definition, candidateURL, candidate.MetadataURL, executablePath, selectedVersion)
+				hash, dlErr := downloadOptionalDriverAgentBinaryForInstall(ctx, a, definition, candidateURL, candidate.MetadataURL, executablePath, selectedVersion)
 				if dlErr == nil {
 					if revisionErr := validateCandidateRevision(); revisionErr != nil {
 						logger.Warnf("预编译 %s 驱动代理 revision 校验失败，url=%s err=%v", displayName, candidateURL, revisionErr)
@@ -4301,11 +4153,14 @@ func ensureOptionalDriverAgentBinary(a *App, definition driverDefinition, execut
 			fallbackMessage := buildOptionalDriverFallbackProgressMessage(text, displayName, len(downloadURLs), len(bundleURLs), restrictToExplicitArtifact)
 			logger.Infof("%s，driver=%s version=%s", fallbackMessage, driverType, normalizeVersion(selectedVersion))
 			if a != nil {
-				a.emitDriverDownloadProgress(driverType, "downloading", 20, 100, fallbackMessage)
+				a.emitDriverDownloadProgressContext(ctx, driverType, "downloading", 20, 100, fallbackMessage)
 			}
 			for _, bundleURL := range bundleURLs {
+				if ctx.Err() != nil {
+					return "", "", driverDownloadCanceledError(ctx)
+				}
 				if a != nil {
-					a.emitDriverDownloadProgress(driverType, "downloading", 20, 100, a.appText("driver_manager.progress.extract_agent_from_bundle", map[string]any{"name": displayName}))
+					a.emitDriverDownloadProgressContext(ctx, driverType, "downloading", 20, 100, a.appText("driver_manager.progress.extract_agent_from_bundle", map[string]any{"name": displayName}))
 				}
 				source, hash, bundleErr := downloadOptionalDriverAgentFromBundle(a, definition, bundleURL, executablePath)
 				if bundleErr == nil {
@@ -4323,19 +4178,23 @@ func ensureOptionalDriverAgentBinary(a *App, definition driverDefinition, execut
 			fallbackMessage := buildOptionalDriverFallbackProgressMessage(text, displayName, len(downloadURLs), 0, restrictToExplicitArtifact)
 			logger.Infof("%s，driver=%s version=%s", fallbackMessage, driverType, normalizeVersion(selectedVersion))
 			if a != nil {
-				a.emitDriverDownloadProgress(driverType, "downloading", 20, 100, fallbackMessage)
+				a.emitDriverDownloadProgressContext(ctx, driverType, "downloading", 20, 100, fallbackMessage)
 			}
 		}
 	}
+	if ctx.Err() != nil {
+		// A canceled download must not fall through to the local source build.
+		return "", "", driverDownloadCanceledError(ctx)
+	}
 	if a != nil {
-		a.emitDriverDownloadProgress(driverType, "downloading", 92, 100, a.appText("driver_manager.progress.dev_build_fallback", nil))
+		a.emitDriverDownloadProgressContext(ctx, driverType, "downloading", 92, 100, a.appText("driver_manager.progress.dev_build_fallback", nil))
 	}
 
 	var buildErr error
 	if sourceBuildAttempted {
 		buildErr = sourceBuildErr
 	} else {
-		hash, runErr := buildOptionalDriverAgentFromSource(definition, executablePath, selectedVersion)
+		hash, runErr := buildOptionalDriverAgentFromSource(ctx, definition, executablePath, selectedVersion)
 		buildErr = runErr
 		if buildErr == nil {
 			if revisionErr := validateCandidateRevision(); revisionErr == nil {
@@ -4345,6 +4204,9 @@ func ensureOptionalDriverAgentBinary(a *App, definition driverDefinition, execut
 			}
 		} else {
 			cleanupCandidate()
+		}
+		if ctx.Err() != nil {
+			return "", "", driverDownloadCanceledError(ctx)
 		}
 	}
 
@@ -4416,10 +4278,13 @@ func isOptionalDriverDownloadZipURL(urlText string) bool {
 }
 
 func downloadOptionalDriverAgentBinary(a *App, definition driverDefinition, urlText string, executablePath string, selectedVersion string) (string, error) {
-	return downloadOptionalDriverAgentBinaryWithMetadata(a, definition, urlText, urlText, executablePath, selectedVersion)
+	return downloadOptionalDriverAgentBinaryWithMetadata(context.Background(), a, definition, urlText, urlText, executablePath, selectedVersion)
 }
 
-func downloadOptionalDriverAgentBinaryWithMetadata(a *App, definition driverDefinition, urlText string, metadataURL string, executablePath string, selectedVersion string) (string, error) {
+func downloadOptionalDriverAgentBinaryWithMetadata(ctx context.Context, a *App, definition driverDefinition, urlText string, metadataURL string, executablePath string, selectedVersion string) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	driverType := normalizeDriverType(definition.Type)
 	displayName := resolveDriverDisplayName(definition)
 	trimmedURL := strings.TrimSpace(urlText)
@@ -4430,15 +4295,18 @@ func downloadOptionalDriverAgentBinaryWithMetadata(a *App, definition driverDefi
 		tempPath := executablePath + ".download.zip"
 		_ = os.Remove(tempPath)
 
-		downloadHash, err := downloadFileWithHashPreferredForApp(a, trimmedURL, tempPath, func(downloaded, total int64) {
+		downloadHash, err := downloadFileWithHashPreferredForAppContext(ctx, a, trimmedURL, tempPath, func(downloaded, total int64) {
 			if a == nil {
 				return
 			}
 			scaledDownloaded, scaledTotal := scaleProgress(downloaded, total, 20, 90)
-			a.emitDriverDownloadProgress(driverType, "downloading", scaledDownloaded, scaledTotal, a.appText("driver_manager.progress.download_prebuilt_package", map[string]any{"name": displayName}))
+			a.emitDriverDownloadProgressContext(ctx, driverType, "downloading", scaledDownloaded, scaledTotal, a.appText("driver_manager.progress.download_prebuilt_package", map[string]any{"name": displayName}))
 		})
 		if err != nil {
 			_ = os.Remove(tempPath)
+			if ctx.Err() != nil {
+				return "", driverDownloadCanceledError(ctx)
+			}
 			return "", newLocalizedDriverBackendError("driver_manager.backend.error.download_failed", nil, err)
 		}
 		metadataSource := strings.TrimSpace(metadataURL)
@@ -4488,15 +4356,18 @@ func downloadOptionalDriverAgentBinaryWithMetadata(a *App, definition driverDefi
 	tempPath := executablePath + ".tmp"
 	_ = os.Remove(tempPath)
 
-	hash, err := downloadFileWithHashPreferredForApp(a, trimmedURL, tempPath, func(downloaded, total int64) {
+	hash, err := downloadFileWithHashPreferredForAppContext(ctx, a, trimmedURL, tempPath, func(downloaded, total int64) {
 		if a == nil {
 			return
 		}
 		scaledDownloaded, scaledTotal := scaleProgress(downloaded, total, 20, 90)
-		a.emitDriverDownloadProgress(driverType, "downloading", scaledDownloaded, scaledTotal, a.appText("driver_manager.progress.download_prebuilt_agent", map[string]any{"name": displayName}))
+		a.emitDriverDownloadProgressContext(ctx, driverType, "downloading", scaledDownloaded, scaledTotal, a.appText("driver_manager.progress.download_prebuilt_agent", map[string]any{"name": displayName}))
 	})
 	if err != nil {
 		_ = os.Remove(tempPath)
+		if ctx.Err() != nil {
+			return "", driverDownloadCanceledError(ctx)
+		}
 		return "", newLocalizedDriverBackendError("driver_manager.backend.error.download_failed", nil, err)
 	}
 
@@ -4661,7 +4532,13 @@ func downloadOptionalDriverAgentFromBundle(a *App, definition driverDefinition, 
 	return source, hash, nil
 }
 
-func buildOptionalDriverAgentFromSource(definition driverDefinition, executablePath string, selectedVersion string) (string, error) {
+func buildOptionalDriverAgentFromSource(parentCtx context.Context, definition driverDefinition, executablePath string, selectedVersion string) (string, error) {
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	if parentCtx.Err() != nil {
+		return "", driverDownloadCanceledError(parentCtx)
+	}
 	driverType := normalizeDriverType(definition.Type)
 	displayName := resolveDriverDisplayName(definition)
 	goPath, lookErr := resolveGoBinaryPath()
@@ -4711,12 +4588,16 @@ func buildOptionalDriverAgentFromSource(definition driverDefinition, executableP
 		env = prependPathEnv(env, duckDBLibDir)
 	}
 	buildArgs = append(buildArgs, "-o", executablePath, "./cmd/optional-driver-agent")
-	ctx, cancel := context.WithTimeout(context.Background(), optionalDriverSourceBuildTimeout)
+	ctx, cancel := context.WithTimeout(parentCtx, optionalDriverSourceBuildTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, goPath, buildArgs...)
 	cmd.Dir = projectRoot
 	cmd.Env = env
 	output, buildErr := cmd.CombinedOutput()
+	if parentCtx.Err() != nil {
+		// The user canceled the task: the build process was killed on purpose.
+		return "", driverDownloadCanceledError(parentCtx)
+	}
 	if ctx.Err() == context.DeadlineExceeded {
 		return "", newLocalizedDriverBackendError("driver_manager.backend.error.source_build_timeout", map[string]any{"name": displayName, "timeout": optionalDriverSourceBuildTimeout}, nil)
 	}

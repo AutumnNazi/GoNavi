@@ -12,13 +12,14 @@ const readAppCss = (): string => (
 );
 
 const readCssRuleBlock = (css: string, selector: string): string => {
-  const start = css.indexOf(`${selector} {`);
+  const normalizedCss = css.replace(/\r\n/g, '\n');
+  const start = normalizedCss.indexOf(`${selector} {`);
   if (start < 0) {
     throw new Error(`missing CSS rule: ${selector}`);
   }
-  const open = css.indexOf('{', start);
-  const close = css.indexOf('}', open);
-  return css.slice(open + 1, close);
+  const open = normalizedCss.indexOf('{', start);
+  const close = normalizedCss.indexOf('}', open);
+  return normalizedCss.slice(open + 1, close);
 };
 
 describe('sidebar tree native scrollbars', () => {

@@ -10,13 +10,12 @@ import type {
   DataSyncRunEvent,
   DataSyncRunRecord,
   DataSyncRunPageSize,
-  DataSyncScheduleSummary,
   DataSyncWorkbenchFamily,
 } from './model';
 import { tableHasCompareDiff } from './compareRepairSql';
 import type { DataSyncWorkbenchTranslate } from './text';
 
-const EmptyState: React.FC<{
+export const EmptyState: React.FC<{
   title: string;
   description: string;
 }> = ({ title, description }) => (
@@ -36,7 +35,7 @@ const formatCdcLag = (
     : `${Math.max(0, lagMs).toLocaleString()} ms`;
 
 /** 运行/调度时间统一按本地时区显示为 y-m-d h:m:s，无法解析时原样返回。 */
-const formatDataSyncTime = (value: string): string => {
+export const formatDataSyncTime = (value: string): string => {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -751,43 +750,6 @@ export const DataSyncRunHistory: React.FC<{
   </section>
   );
 };
-
-export const DataSyncScheduleView: React.FC<{
-  schedules: DataSyncScheduleSummary[];
-  t: DataSyncWorkbenchTranslate;
-  refreshing: boolean;
-  onRefresh: () => void;
-}> = ({ schedules, t, refreshing, onRefresh }) => (
-  <section className="gn-data-sync-operational-view" data-data-sync-schedules="true">
-    <header className="gn-data-sync-view-heading">
-      <h1>{t('schedules.title')}</h1>
-      <div>
-        <p>{t('schedules.subtitle')}</p>
-        <button type="button" className="gn-data-sync-button" disabled={refreshing} onClick={onRefresh}>
-          {t('common.refresh')}
-        </button>
-      </div>
-    </header>
-    {schedules.length === 0 ? (
-      <EmptyState
-        title={t('schedules.empty_title')}
-        description={t('schedules.empty_desc')}
-      />
-    ) : (
-      <ul className="gn-data-sync-summary-list">
-        {schedules.map((schedule) => (
-          <li key={schedule.id}>
-            <span className="gn-data-sync-summary-list__signal" data-active={schedule.enabled} />
-            <strong>{schedule.taskName}</strong>
-            <code>{schedule.expression}</code>
-            <span>{schedule.timezone}</span>
-            <time>{formatDataSyncTime(schedule.nextRunAt)}</time>
-          </li>
-        ))}
-      </ul>
-    )}
-  </section>
-);
 
 export const DataSyncCdcView: React.FC<{
   sources: DataSyncCdcSourceStatus[];

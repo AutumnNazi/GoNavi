@@ -48,6 +48,7 @@ type DataSourceUICapabilities struct {
 	PreferManualTotalCount         bool `json:"preferManualTotalCount"`
 	SupportsApproximateTableCount  bool `json:"supportsApproximateTableCount"`
 	SupportsApproximateTotalPages  bool `json:"supportsApproximateTotalPages"`
+	ParameterBinding               bool `json:"parameterBinding"`
 }
 
 // DataSourceCapability is the shared, generated data-source contract returned

@@ -372,7 +372,7 @@ func upsertExternalJSONMCPServerConfig(configPath string, serverID string, comma
 	if err != nil {
 		return externalMCPClientError(text, "ai.service.mcp_client.external.config_serialize_failed", spec.DisplayName, map[string]any{"detail": err.Error()})
 	}
-	if err := os.WriteFile(configPath, append(data, '\n'), 0o644); err != nil {
+	if err := writeMCPConfigFileAtomically(configPath, append(data, '\n')); err != nil {
 		return externalMCPClientError(text, "ai.service.mcp_client.external.config_write_failed", spec.DisplayName, map[string]any{"detail": err.Error()})
 	}
 	return nil

@@ -4,6 +4,6 @@ package aiservice
 
 import "os"
 
-func replaceOpenCodeConfigFile(source string, target string) error {
+func replaceMCPConfigFile(source string, target string) error {
 	return os.Rename(source, target)
 }

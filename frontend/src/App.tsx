@@ -163,6 +163,7 @@ import {
 import { SettingsCenterWorkbenchRegistrar } from './components/settings/SettingsCenterWorkbenchBridge';
 import { buildSqlAuditWorkbenchTab } from './utils/sqlAuditTab';
 import { buildRequestDiagnosticsWorkbenchTab } from './utils/requestDiagnosticsTab';
+import { buildDMLSnapshotWorkbenchTab } from './utils/dmlSnapshotTab';
 import {
   getDataSourceCapabilities,
   isMessageQueueDataSource,
@@ -206,6 +207,7 @@ import {
   SIDEBAR_OBJECT_GROUP_KEYS,
   type SidebarObjectGroupKey,
 } from './utils/sidebarObjectVisibility';
+import { buildSidebarObjectVisibilitySettings } from './utils/sidebarObjectVisibilitySettings';
 import {
   getSecurityUpdateStatusMeta,
   resolveSecurityUpdateEntryVisibility,
@@ -6632,17 +6634,7 @@ function App() {
   ]);
   const renderSidebarObjectVisibilitySettingsPane = useCallback(() => {
       const hiddenObjectGroups = new Set(appearance.sidebarHiddenObjectGroups);
-      const objectGroupItems: Array<{ key: SidebarObjectGroupKey; label: string }> = [
-          { key: 'savedQueries', label: t('sidebar.tree.saved_queries') },
-          { key: 'tables', label: t('sidebar.object_group.tables') },
-          { key: 'views', label: t('sidebar.object_group.views') },
-          { key: 'materializedViews', label: t('sidebar.object_group.materialized_views') },
-          { key: 'routines', label: t('sidebar.object_group.routines') },
-          { key: 'triggers', label: t('sidebar.object_group.triggers') },
-          { key: 'events', label: t('sidebar.object_group.events') },
-          { key: 'sequences', label: t('sidebar.object_group.sequences') },
-          { key: 'packages', label: t('sidebar.object_group.packages') },
-      ];
+      const objectGroupItems: Array<{ key: SidebarObjectGroupKey; label: string }> = buildSidebarObjectVisibilitySettings(t);
       const setObjectGroupVisible = (key: SidebarObjectGroupKey, visible: boolean) => {
           const nextHiddenObjectGroups = visible
               ? appearance.sidebarHiddenObjectGroups.filter((item) => item !== key)
@@ -8942,6 +8934,16 @@ function App() {
                     onClick: () => {
                       handleCancelSettingsCenterPane();
                       addTab(buildRequestDiagnosticsWorkbenchTab());
+                    },
+                  },
+                  {
+                    key: 'dml-snapshot',
+                    icon: <SafetyCertificateOutlined />,
+                    title: t('dml_snapshot.workbench.title'),
+                    description: t('dml_snapshot.workbench.description'),
+                    onClick: () => {
+                      handleCancelSettingsCenterPane();
+                      addTab(buildDMLSnapshotWorkbenchTab());
                     },
                   },
                 ],
