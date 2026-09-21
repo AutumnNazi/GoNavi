@@ -107,6 +107,20 @@ describe('DataSyncPreflightPanel production approval', () => {
         t,
       ),
     ).toBe('当前选择的增量同步方式还不能用。 MongoDB 必须运行在副本集或分片集群模式。');
+    // issue #1298：definition_invalid 包装了后端所有 ValidateDefinition 失败，
+    // 丢掉 message 后用户无从定位（例如 Cron 段数不对）。
+    expect(
+      dataSyncValidationIssueText(
+        {
+          code: 'definition_invalid',
+          message:
+            'cronExpression must contain five fields: minute hour day month weekday',
+        },
+        t,
+      ),
+    ).toBe(
+      '任务定义无效，请检查必填项、对象映射和执行策略。 cronExpression must contain five fields: minute hour day month weekday',
+    );
     expect(
       dataSyncValidationIssueText(
         { code: 'driver_specific_failure', message: 'driver unavailable' },
@@ -115,7 +129,7 @@ describe('DataSyncPreflightPanel production approval', () => {
     ).toBe('driver unavailable');
   });
 
-  it('prefers the localized validation text over a backend English message', () => {
+  it('keeps the localized validation text and appends the backend diagnostic', () => {
     const renderer = TestRenderer.create(
       <DataSyncPreflightPanel
         snapshot={{
@@ -151,6 +165,8 @@ describe('DataSyncPreflightPanel production approval', () => {
     expect(rendered).toContain(
       '任务定义无效，请检查必填项、对象映射和执行策略。',
     );
+    // issue #1298：本地化文案保留分类，后端原文提供可定位的具体原因。
+    expect(rendered).toContain('requires a targetTable');
     expect(renderer.root.findByType('p').props.title).toContain(
       'requires a targetTable',
     );

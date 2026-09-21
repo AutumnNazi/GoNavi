@@ -59,7 +59,7 @@ const baseScheduledTask = (): DataSyncTaskDefinition => ({
   ],
   trigger: {
     mode: 'cron',
-    expression: '0 0 2 * * *',
+    expression: '0 2 * * *',
     timezone: 'Asia/Shanghai',
     overlap: 'skip',
   },
@@ -100,7 +100,7 @@ const scheduleRowFor = (task: DataSyncTaskDefinition) => ({
   taskId: task.id,
   taskName: task.name,
   enabled: task.lifecycle === 'enabled',
-  expression: '0 0 2 * * *',
+  expression: '0 2 * * *',
   timezone: 'Asia/Shanghai',
   nextRunAt: task.lifecycle === 'enabled' ? '2026-09-03T02:00:00.000Z' : '',
 });
