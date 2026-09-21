@@ -431,13 +431,23 @@ export const useDataGridFilters = ({
     return true;
   }, [applyQuickWhereCondition, filterConditions, onApplyFilter]);
 
+  // Enable/disable all must reach the host immediately: keeping it as a local draft
+  // until "apply" is pressed is what makes the toolbar read as if nothing happened.
+  const commitFilterConditionFlag = React.useCallback((enabled: boolean) => {
+    if (filterConditions.length === 0) return;
+    if (filterConditions.every((cond) => (cond.enabled !== false) === enabled)) return;
+    const nextConditions = filterConditions.map((cond) => ({ ...cond, enabled }));
+    setFilterConditions(nextConditions);
+    if (onApplyFilter) onApplyFilter(nextConditions);
+  }, [filterConditions, onApplyFilter]);
+
   const applyAllFiltersEnabled = React.useCallback(() => {
-    setFilterConditions((prev) => prev.map((cond) => ({ ...cond, enabled: true })));
-  }, []);
+    commitFilterConditionFlag(true);
+  }, [commitFilterConditionFlag]);
 
   const applyAllFiltersDisabled = React.useCallback(() => {
-    setFilterConditions((prev) => prev.map((cond) => ({ ...cond, enabled: false })));
-  }, []);
+    commitFilterConditionFlag(false);
+  }, [commitFilterConditionFlag]);
 
   return {
     filterConditions,

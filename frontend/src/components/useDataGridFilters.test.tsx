@@ -129,3 +129,139 @@ describe('useDataGridFilters', () => {
     renderer?.unmount();
   });
 });
+
+// Issue #1302: enable/disable-all used to stay a local draft until "apply" was pressed,
+// so the toolbar looked as if the click had done nothing.
+describe('useDataGridFilters enable/disable all (issue #1302)', () => {
+  const renderWithApplied = (
+    appliedConditions: Parameters<typeof useDataGridFilters>[0]['appliedFilterConditions'],
+    onApplyFilter: (conditions: any[]) => void,
+  ) => {
+    let latest: UseDataGridFiltersResult | undefined;
+    let renderer: ReactTestRenderer | undefined;
+    const hookProps = createFilterHookProps({ appliedFilterConditions: appliedConditions, onApplyFilter });
+
+    const Harness = () => {
+      latest = useDataGridFilters(hookProps);
+      return null;
+    };
+
+    act(() => {
+      renderer = create(<Harness />);
+    });
+
+    return { getLatest: () => latest, unmount: () => renderer?.unmount() };
+  };
+
+  const appliedPair = [
+    { id: 1, enabled: true, column: 'code', op: '=', value: '3551' },
+    { id: 2, enabled: true, column: 'title', op: 'CONTAINS', value: 'navi' },
+  ];
+
+  it('pushes every condition as disabled on the first click', () => {
+    const onApplyFilter = vi.fn();
+    const { getLatest, unmount } = renderWithApplied(appliedPair, onApplyFilter);
+
+    act(() => {
+      getLatest()?.applyAllFiltersDisabled();
+    });
+
+    expect(onApplyFilter).toHaveBeenCalledOnce();
+    expect(onApplyFilter.mock.calls[0][0]).toEqual([
+      expect.objectContaining({ id: 1, enabled: false }),
+      expect.objectContaining({ id: 2, enabled: false }),
+    ]);
+    expect(getLatest()?.filterConditions.every((cond) => cond.enabled === false)).toBe(true);
+
+    unmount();
+  });
+
+  it('pushes every condition as enabled on the first click', () => {
+    const onApplyFilter = vi.fn();
+    const { getLatest, unmount } = renderWithApplied(
+      appliedPair.map((cond) => ({ ...cond, enabled: false })),
+      onApplyFilter,
+    );
+
+    act(() => {
+      getLatest()?.applyAllFiltersEnabled();
+    });
+
+    expect(onApplyFilter).toHaveBeenCalledOnce();
+    expect(onApplyFilter.mock.calls[0][0]).toEqual([
+      expect.objectContaining({ id: 1, enabled: true }),
+      expect.objectContaining({ id: 2, enabled: true }),
+    ]);
+
+    unmount();
+  });
+
+  it('is a no-op when the requested flag already matches every condition', () => {
+    const onApplyFilter = vi.fn();
+    const { getLatest, unmount } = renderWithApplied(appliedPair, onApplyFilter);
+
+    act(() => {
+      getLatest()?.applyAllFiltersEnabled();
+      getLatest()?.applyAllFiltersEnabled();
+    });
+
+    expect(onApplyFilter).not.toHaveBeenCalled();
+
+    unmount();
+  });
+
+  it('does not refetch when there is nothing to enable or disable', () => {
+    const onApplyFilter = vi.fn();
+    const { getLatest, unmount } = renderWithApplied([], onApplyFilter);
+
+    act(() => {
+      getLatest()?.applyAllFiltersDisabled();
+      getLatest()?.applyAllFiltersEnabled();
+    });
+
+    expect(onApplyFilter).not.toHaveBeenCalled();
+
+    unmount();
+  });
+
+  it('keeps only the leading condition enabled when the rest are mixed', () => {
+    const onApplyFilter = vi.fn();
+    const { getLatest, unmount } = renderWithApplied(appliedPair, onApplyFilter);
+
+    act(() => {
+      getLatest()?.applyAllFiltersDisabled();
+    });
+    act(() => {
+      getLatest()?.applyAllFiltersEnabled();
+    });
+
+    expect(onApplyFilter).toHaveBeenCalledTimes(2);
+    expect(onApplyFilter.mock.calls[1][0].every((cond: any) => cond.enabled === true)).toBe(true);
+
+    unmount();
+  });
+
+  it('does not throw when the host omits onApplyFilter', () => {
+    let latest: UseDataGridFiltersResult | undefined;
+    let renderer: ReactTestRenderer | undefined;
+    const hookProps = createFilterHookProps({ appliedFilterConditions: appliedPair });
+
+    const Harness = () => {
+      latest = useDataGridFilters(hookProps);
+      return null;
+    };
+
+    act(() => {
+      renderer = create(<Harness />);
+    });
+
+    expect(() => {
+      act(() => {
+        latest?.applyAllFiltersDisabled();
+      });
+    }).not.toThrow();
+    expect(latest?.filterConditions.every((cond) => cond.enabled === false)).toBe(true);
+
+    renderer?.unmount();
+  });
+});

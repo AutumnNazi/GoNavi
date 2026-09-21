@@ -132,11 +132,8 @@ import {
 } from './dataGridTemporal';
 import {
     buildEffectiveFilterConditions,
-    normalizeQuickWhereCondition,
     resolveWhereConditionSelectedValue,
-    resolveWhereConditionSuggestions,
     shouldApplyQuickWhereOnEnter,
-    validateQuickWhereCondition,
 } from '../utils/dataGridWhereFilter';
 import {
     attachDataGridFindRenderVersion,
@@ -6281,6 +6278,7 @@ const DataGrid: React.FC<DataGridProps> = ({
         showColumnComment,
         showColumnType,
         showFilter,
+        appliedFilterConditions,
         sortInfo,
         stopQuickWhereClipboardPropagation,
         supportsCopyInsert,
