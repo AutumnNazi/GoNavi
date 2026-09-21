@@ -5933,6 +5933,7 @@
   "db.backend.error.duckdb_attach.sqlite_memory_unsupported": "连接「{{name}}」指向内存库，没有可附加的文件。",
   "db.backend.error.duckdb_attach.parse_missing_ref": "\u7f3a\u5c11\u8fde\u63a5\u5f15\u7528",
   "db.backend.error.duckdb_attach.directive_in_transaction": "附加/卸载指令不支持在托管事务中执行：请将 ATTACH/DETACH SAVED CONNECTION 语句移出事务批次后单独执行。",
+  "db.backend.error.duckdb_attach.agent_outdated": "DuckDB 驱动代理版本过旧，不支持附加外部数据源。请在驱动管理中重装 DuckDB 驱动后重试。",
   "db.backend.error.duckdb_attach.parse_unclosed_quote": "\u8fde\u63a5\u5f15\u7528\u7684\u5f15\u53f7\u672a\u95ed\u5408",
   "db.backend.error.duckdb_attach.parse_quoted_required": "\u542b\u7a7a\u683c\u7684\u8fde\u63a5\u540d\u79f0\u9700\u8981\u7528\u5355\u5f15\u53f7\u5305\u88f9",
   "db.backend.error.duckdb_attach.parse_alias_invalid": "AS \u540e\u9700\u8981\u5408\u6cd5\u522b\u540d\uff08\u5b57\u6bcd\u6216\u4e0b\u5212\u7ebf\u5f00\u5934\uff09",

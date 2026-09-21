@@ -69,6 +69,14 @@ func parseDuckDBSavedConnectionDirective(statement string) (*duckDBAttachDirecti
 	}
 	trimmed = strings.TrimSuffix(trimmed, ";")
 	trimmed = strings.TrimSpace(trimmed)
+	// 尾部整行注释对称剥离（前导注释已支持）：否则注释被当作未知子句报错
+	for {
+		lines := strings.Split(trimmed, "\n")
+		if len(lines) == 1 || !strings.HasPrefix(strings.TrimSpace(lines[len(lines)-1]), "--") {
+			break
+		}
+		trimmed = strings.TrimSpace(strings.Join(lines[:len(lines)-1], "\n"))
+	}
 	if match := duckDBAttachDirectivePrefixPattern.FindStringSubmatchIndex(trimmed); match != nil {
 		return parseDuckDBAttachDirectiveBody(strings.TrimSpace(trimmed[match[1]:]))
 	}
@@ -109,9 +117,9 @@ func parseDuckDBAttachDirectiveBody(body string) (*duckDBAttachDirective, bool, 
 			return directive, true, nil
 		}
 	}
-	// 可选 READ ONLY / READ WRITE（兼容连写与下划线写法）
-	mode := strings.ToUpper(strings.ReplaceAll(strings.ReplaceAll(rest, "_", " "), "  ", " "))
-	switch strings.ReplaceAll(mode, " ", "") {
+	// 可选 READ ONLY / READ WRITE（兼容连写、下划线与任意空白写法）
+	mode := strings.Join(strings.Fields(strings.ToUpper(strings.ReplaceAll(rest, "_", " "))), "")
+	switch mode {
 	case "READONLY":
 		directive.readOnly = true
 	case "READWRITE":
@@ -156,7 +164,7 @@ func consumeDuckDBAttachRef(body string) (string, string, error) {
 		return "", "", newDuckDBAttachParseError("parse_unclosed_quote", nil)
 	}
 	end := 0
-	for end < len(body) && body[end] != ' ' && body[end] != '\t' {
+	for end < len(body) && body[end] != ' ' && body[end] != '\t' && body[end] != '\n' && body[end] != '\r' {
 		end++
 	}
 	ref := body[:end]
@@ -191,12 +199,15 @@ func slugifyAttachAlias(name string, connectionID string) string {
 	if !duckDBAttachIdentifierPattern.MatchString(slug) {
 		prefix := "saved_db"
 		if trimmedID := strings.TrimSpace(connectionID); trimmedID != "" {
-			sanitizedID := strings.Map(func(r rune) rune {
+			// 仅取 ID 的字母数字并剥掉常见 conn 前缀：保证后缀来自 ID 的随机段
+			//（8 位 hex ≈ 43 亿空间），避免形如 conn-<hex> 的 ID 只贡献 3 位熵
+			var idBuilder strings.Builder
+			for _, r := range trimmedID {
 				if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-					return r
+					idBuilder.WriteRune(r)
 				}
-				return '_'
-			}, trimmedID)
+			}
+			sanitizedID := strings.TrimPrefix(idBuilder.String(), "conn")
 			prefix = "saved_db_" + sanitizedID[:min(len(sanitizedID), 8)]
 		}
 		slug = prefix
@@ -314,10 +325,19 @@ func (a *App) buildDuckDBAttachSpec(view connection.SavedConnectionView, resolve
 	return spec, nil
 }
 
-// queryContainsDuckDBSavedConnectionDirective 判断查询文本是否包含附加/卸载指令
-// 关键词（宽松预筛，不解析）；供事务路径等不做指令改写的入口做防御性拦截。
+// queryContainsDuckDBSavedConnectionDirective 判断查询中是否存在真实指令语句
+// （语句级解析，字符串字面量/注释中出现的同形文本不误伤）；
+// 供事务路径等不做指令改写的入口做防御性拦截。
 func queryContainsDuckDBSavedConnectionDirective(query string) bool {
-	return duckDBSavedConnectionDirectivePattern.MatchString(query)
+	for _, statement := range splitSQLStatementsForDialect("duckdb", query) {
+		if strings.TrimSpace(statement) == "" {
+			continue
+		}
+		if _, isDirective, _ := parseDuckDBSavedConnectionDirective(statement); isDirective {
+			return true
+		}
+	}
+	return false
 }
 
 // applyDuckDBSavedConnectionDirectives 在语句级扫描 DuckDB 查询：附加/卸载指令
@@ -349,7 +369,7 @@ func (a *App) applyDuckDBSavedConnectionDirectives(ctx context.Context, dbInst d
 			return "", fmt.Errorf("%s", a.appText("db.backend.error.duckdb_attach.malformed", map[string]any{"detail": detail}))
 		}
 		if !isDirective {
-			rewritten = append(rewritten, strings.TrimSuffix(strings.TrimSpace(statement), ";"))
+			rewritten = append(rewritten, ensureStatementSemicolonSafety(strings.TrimSuffix(strings.TrimSpace(statement), ";")))
 			continue
 		}
 		if attacher == nil {
@@ -371,6 +391,45 @@ func (a *App) applyDuckDBSavedConnectionDirectives(ctx context.Context, dbInst d
 	return strings.Join(rewritten, ";\n"), nil
 }
 
+// wrapDuckDBAttachAgentOutdatedError 旧版驱动代理没有 attach RPC，错误文本落在
+// “不支持的方法”：替换为可行动的重装指引，避免用户误判为数据源不支持。
+// 返回空串表示不是该类错误，调用方沿用原错误处理。
+func (a *App) wrapDuckDBAttachAgentOutdatedError(err error) string {
+	if err == nil {
+		return ""
+	}
+	text := err.Error()
+	lower := strings.ToLower(text)
+	if !strings.Contains(text, "不支持的方法") && !strings.Contains(lower, "unsupported method") && !strings.Contains(lower, "unknown method") {
+		return ""
+	}
+	return a.appText("db.backend.error.duckdb_attach.agent_outdated", nil)
+}
+
+// ensureStatementSemicolonSafety 语句含未加引号的行注释时补一个换行：rejoin 的
+// 分号若紧跟注释（同行或注释行尾）会被吞掉，导致相邻语句被静默合并、语义改变。
+// 单引号感知：'a--b' 这类字面量不触发。
+func ensureStatementSemicolonSafety(stmt string) string {
+	inSingle := false
+	for i := 0; i < len(stmt); i++ {
+		switch ch := stmt[i]; {
+		case inSingle:
+			if ch == '\'' {
+				if i+1 < len(stmt) && stmt[i+1] == '\'' {
+					i++
+					continue
+				}
+				inSingle = false
+			}
+		case ch == '\'':
+			inSingle = true
+		case ch == '-' && i+1 < len(stmt) && stmt[i+1] == '-':
+			return stmt + "\n"
+		}
+	}
+	return stmt
+}
+
 func (a *App) executeDuckDBAttachDirective(ctx context.Context, attacher db.ExternalDatabaseAttacher, directive *duckDBAttachDirective) (string, error) {
 	switch directive.kind {
 	case duckDBAttachDirectiveKindDetach:
@@ -380,6 +439,9 @@ func (a *App) executeDuckDBAttachDirective(ctx context.Context, attacher db.Exte
 		}
 		if errors.Is(err, db.ErrExternalAttachNotAttached) {
 			return a.appText("db.backend.info.duckdb_attach.detached_missing", map[string]any{"alias": directive.alias}), nil
+		}
+		if agentErr := a.wrapDuckDBAttachAgentOutdatedError(err); agentErr != "" {
+			return "", fmt.Errorf("%s", agentErr)
 		}
 		return "", fmt.Errorf("%s", a.appText("db.backend.error.duckdb_attach.detach_failed", map[string]any{"detail": err.Error()}))
 	default:
@@ -398,6 +460,9 @@ func (a *App) executeDuckDBAttachDirective(ctx context.Context, attacher db.Exte
 			return "", err
 		}
 		if err := attacher.AttachExternalDatabase(ctx, spec); err != nil {
+			if agentErr := a.wrapDuckDBAttachAgentOutdatedError(err); agentErr != "" {
+				return "", fmt.Errorf("%s", agentErr)
+			}
 			return "", err
 		}
 		modeKey := "db.backend.info.duckdb_attach.mode_read_only"

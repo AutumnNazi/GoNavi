@@ -312,7 +312,7 @@ func TestBuildDuckDBAttachSpec(t *testing.T) {
 	}
 	if spec.Kind != db.ExternalAttachKindMySQL || spec.Host != "10.0.0.1" || spec.Port != 3306 ||
 		spec.User != "report" || spec.Password != "secret-1" || spec.Database != "orders" ||
-		!spec.ReadOnly || spec.Alias != "saved_db_conn_uui" || spec.SecretName != "gonavi_attach_saved_db_conn_uui" {
+		!spec.ReadOnly || spec.Alias != "saved_db_uuid1" || spec.SecretName != "gonavi_attach_saved_db_uuid1" {
 		t.Fatalf("mysql spec = %+v", spec)
 	}
 
@@ -433,4 +433,53 @@ func TestApplyDuckDBSavedConnectionDirectives(t *testing.T) {
 			t.Fatalf("expected attach failure")
 		}
 	})
+}
+
+// TestApplyDuckDBDirectivesPreserveCommentStatementBoundary 回归：以行注释收尾的
+// 语句在改写重组后，分号不得落入注释行被吞（否则相邻语句被静默合并）。
+func TestApplyDuckDBDirectivesPreserveCommentStatementBoundary(t *testing.T) {
+	app := newDuckDBAttachTestApp(t)
+	attacher := &fakeDuckDBAttacher{}
+	query := "ATTACH SAVED CONNECTION 'conn-uuid-1' AS ms1;\n" +
+		"SELECT col -- note\n;\nUNION ALL SELECT 2;"
+
+	rewritten, err := app.applyDuckDBSavedConnectionDirectives(context.Background(), attacher, query)
+	if err != nil {
+		t.Fatalf("rewrite: %v", err)
+	}
+	statements := splitSQLStatementsForDialect("duckdb", rewritten)
+	if len(statements) != 3 {
+		t.Fatalf("statement count = %d, want 3; rewritten=%q", len(statements), rewritten)
+	}
+	if !strings.Contains(statements[1], "SELECT col") {
+		t.Fatalf("statement[1] = %q, want the plain SELECT", statements[1])
+	}
+	if !strings.Contains(statements[2], "UNION ALL SELECT 2") {
+		t.Fatalf("statement[2] = %q, want the UNION statement", statements[2])
+	}
+}
+
+// TestQueryContainsDuckDBSavedConnectionDirective 事务守卫判定（上游审查 P1-7）：
+// 真实指令命中；字符串字面量/注释里的同形文本不得误伤。
+func TestQueryContainsDuckDBSavedConnectionDirective(t *testing.T) {
+	positives := []string{
+		"ATTACH SAVED CONNECTION 'x' AS y;",
+		"detach saved connection y",
+		"-- 附加上\nATTACH SAVED CONNECTION 'x';",
+	}
+	for _, q := range positives {
+		if !queryContainsDuckDBSavedConnectionDirective(q) {
+			t.Fatalf("expected directive detection: %q", q)
+		}
+	}
+	negatives := []string{
+		"SELECT 'ATTACH SAVED CONNECTION demo' AS note;",
+		"INSERT INTO t VALUES ('DETACH SAVED CONNECTION x');",
+		"SELECT 1 -- ATTACH SAVED CONNECTION later\n;",
+	}
+	for _, q := range negatives {
+		if queryContainsDuckDBSavedConnectionDirective(q) {
+			t.Fatalf("false positive on quoted/comment text: %q", q)
+		}
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // ensureAttachState 惰性初始化附加映射；必须在 attachMu 持有后调用
@@ -65,6 +66,17 @@ func (d *DuckDB) AttachExternalDatabase(ctx context.Context, spec ExternalAttach
 	return d.attachLocked(ctx, spec, desired)
 }
 
+// externalSecretName 附加会话 SECRET 的确定性命名；重建/清理都依赖该约定。
+func externalSecretName(alias string) string {
+	return "gonavi_attach_" + alias
+}
+
+// secretCleanupContext SECRET 清理专用：主 ctx 可能已取消/超时（ATTACH 失败的
+// 最常见原因正是超时），用不可取消派生 + 短超时保证清理真正执行。
+func secretCleanupContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+}
+
 // DetachExternalDatabase 实现 ExternalDatabaseAttacher；未附加时返回
 // ErrExternalAttachNotAttached，由调用方映射为幂等提示。
 func (d *DuckDB) DetachExternalDatabase(ctx context.Context, alias string) error {
@@ -103,6 +115,11 @@ func (d *DuckDB) ListExternalAttachments(ctx context.Context) ([]ExternalAttachm
 			return nil, err
 		}
 		if !attached {
+			// 引擎侧已无此附加：清理残留记录与会话 SECRET（原生 DETACH 不移除
+			// SECRET，漏清会导致同名重建报 already exists）。用不可取消 ctx。
+			cleanupCtx, cancel := secretCleanupContext(ctx)
+			d.dropExternalSecret(cleanupCtx, externalSecretName(alias))
+			cancel()
 			delete(d.attachments, alias)
 			continue
 		}
@@ -126,8 +143,11 @@ func (d *DuckDB) attachLocked(ctx context.Context, spec ExternalAttachSpec, desi
 			return err
 		}
 		if err := d.execAttach(ctx, spec); err != nil {
-			// SECRET 已建但 ATTACH 失败：清理会话级 SECRET，不留悬挂凭据
-			d.dropExternalSecret(ctx, spec.SecretName)
+			// SECRET 已建但 ATTACH 失败：清理会话级 SECRET，不留悬挂凭据。
+			// ATTACH 失败最常见原因正是 ctx 超时/取消，清理必须独立于该 ctx。
+			cleanupCtx, cancel := secretCleanupContext(ctx)
+			d.dropExternalSecret(cleanupCtx, spec.SecretName)
+			cancel()
 			return err
 		}
 		d.attachments[spec.Alias] = desired
@@ -162,11 +182,14 @@ func (d *DuckDB) detachLocked(ctx context.Context, alias string) error {
 	if !attached {
 		return ErrExternalAttachNotAttached
 	}
-	if _, err := d.conn.ExecContext(ctx, "DETACH "+alias); err != nil {
+	if _, err := d.conn.ExecContext(ctx, "DETACH "+quoteDuckDBIdentifier(alias)); err != nil {
 		return duckDBWrapAttachEngineError(err, "")
 	}
-	// 会话级 SECRET 跟随连接实例消失；此处尽力清理，失败不阻断卸载
-	d.dropExternalSecret(ctx, "gonavi_attach_"+alias)
+	// 会话级 SECRET 跟随连接实例消失；此处尽力清理，失败不阻断卸载。
+	// 原生 DETACH 不会移除 SECRET，漏清会让同名重建报 already exists。
+	cleanupCtx, cancel := secretCleanupContext(ctx)
+	d.dropExternalSecret(cleanupCtx, externalSecretName(alias))
+	cancel()
 	delete(d.attachments, alias)
 	return nil
 }
@@ -182,11 +205,12 @@ func (d *DuckDB) createExternalSecret(ctx context.Context, spec ExternalAttachSp
 	var statement string
 	switch spec.Kind {
 	case ExternalAttachKindMySQL:
-		statement = fmt.Sprintf("CREATE SECRET %s (TYPE MYSQL, HOST %s, PORT %d, USER %s, PASSWORD %s)",
+		statement = fmt.Sprintf("CREATE OR REPLACE SECRET %s (TYPE MYSQL, HOST %s, PORT %d, USER %s, PASSWORD %s, DATABASE %s)",
 			spec.SecretName, quoteDuckDBStringLiteral(spec.Host), spec.Port,
-			quoteDuckDBStringLiteral(spec.User), quoteDuckDBStringLiteral(spec.Password))
+			quoteDuckDBStringLiteral(spec.User), quoteDuckDBStringLiteral(spec.Password),
+			quoteDuckDBStringLiteral(spec.Database))
 	case ExternalAttachKindPostgres:
-		statement = fmt.Sprintf("CREATE SECRET %s (TYPE POSTGRES, HOST %s, PORT %d, USER %s, PASSWORD %s, DATABASE %s)",
+		statement = fmt.Sprintf("CREATE OR REPLACE SECRET %s (TYPE POSTGRES, HOST %s, PORT %d, USER %s, PASSWORD %s, DATABASE %s)",
 			spec.SecretName, quoteDuckDBStringLiteral(spec.Host), spec.Port,
 			quoteDuckDBStringLiteral(spec.User), quoteDuckDBStringLiteral(spec.Password),
 			quoteDuckDBStringLiteral(spec.Database))
@@ -200,13 +224,16 @@ func (d *DuckDB) createExternalSecret(ctx context.Context, spec ExternalAttachSp
 }
 
 // dropExternalSecret 尽力清理会话级 SECRET；失败不影响主流程（随连接关闭消亡）。
+// 传入的 ctx 应来自 secretCleanupContext（不可取消派生）。
 func (d *DuckDB) dropExternalSecret(ctx context.Context, secretName string) {
 	_, _ = d.conn.ExecContext(ctx, "DROP SECRET IF EXISTS "+secretName)
 }
 
 // ensureExtensionLoaded 先 LOAD（幂等、离线可用），失败再 INSTALL（需联网）后重新
-// LOAD；成功结果缓存在实例内，避免每条指令重复 LOAD。
+// LOAD；成功结果缓存在实例内，避免每条指令重复 LOAD。loadedExtensions 是跨调用
+// 共享的实例状态，这里兜底 ensureAttachState（所有调用方均持有 attachMu）。
 func (d *DuckDB) ensureExtensionLoaded(ctx context.Context, extension string) error {
+	d.ensureAttachState()
 	if d.loadedExtensions[extension] {
 		return nil
 	}

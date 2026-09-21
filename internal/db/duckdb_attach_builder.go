@@ -25,10 +25,13 @@ type duckDBAttachmentSpec struct {
 }
 
 // sameExternalAttachmentIdentity 判断两条附加记录是否同一数据源：
-// 忽略 password（凭据轮换属同源重跑，应替换重建而非冲突）。
+// 忽略 password（凭据轮换属同源重跑，应替换重建而非冲突）与 readOnly
+// （切换只读/读写同样是同源重跑，重建即生效，不应误报别名被占用）。
 func sameExternalAttachmentIdentity(a, b duckDBAttachmentSpec) bool {
 	a.password = ""
 	b.password = ""
+	a.readOnly = false
+	b.readOnly = false
 	return a == b
 }
 
@@ -39,22 +42,30 @@ func buildDuckDBAttachStatement(spec ExternalAttachSpec) string {
 	}
 	switch spec.Kind {
 	case ExternalAttachKindMySQL:
-		return fmt.Sprintf("ATTACH %s AS %s (TYPE MYSQL, SECRET %s%s)",
-			quoteDuckDBStringLiteral(spec.Database), spec.Alias, spec.SecretName, readOnly)
+		// mysql 扩展把 ATTACH 的 path 当作主机 DSN 而非库名：path 必须为空串，
+		// 库名经 SECRET 的 DATABASE 提供（与 Postgres 分支形态一致）。
+		return fmt.Sprintf("ATTACH '' AS %s (TYPE MYSQL, SECRET %s%s)",
+			quoteDuckDBAttachAlias(spec.Alias), spec.SecretName, readOnly)
 	case ExternalAttachKindPostgres:
 		return fmt.Sprintf("ATTACH '' AS %s (TYPE POSTGRES, SECRET %s%s)",
-			spec.Alias, spec.SecretName, readOnly)
+			quoteDuckDBAttachAlias(spec.Alias), spec.SecretName, readOnly)
 	case ExternalAttachKindSQLite:
 		return fmt.Sprintf("ATTACH %s AS %s (TYPE SQLITE%s)",
-			quoteDuckDBStringLiteral(spec.FilePath), spec.Alias, readOnly)
+			quoteDuckDBStringLiteral(spec.FilePath), quoteDuckDBAttachAlias(spec.Alias), readOnly)
 	default:
 		if spec.ReadOnly {
-			return fmt.Sprintf("ATTACH %s AS %s (READ_ONLY)", quoteDuckDBStringLiteral(spec.FilePath), spec.Alias)
+			return fmt.Sprintf("ATTACH %s AS %s (READ_ONLY)", quoteDuckDBStringLiteral(spec.FilePath), quoteDuckDBAttachAlias(spec.Alias))
 		}
-		return fmt.Sprintf("ATTACH %s AS %s", quoteDuckDBStringLiteral(spec.FilePath), spec.Alias)
+		return fmt.Sprintf("ATTACH %s AS %s", quoteDuckDBStringLiteral(spec.FilePath), quoteDuckDBAttachAlias(spec.Alias))
 	}
 }
 
 func quoteDuckDBStringLiteral(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
+
+// quoteDuckDBAttachAlias 把别名包进双引号，避免 from/table 等保留字别名
+// 触发解析错误；标识符白名单已保证不含双引号，此处仅防御性转义。
+func quoteDuckDBAttachAlias(value string) string {
+	return "\"" + strings.ReplaceAll(value, "\"", "\"\"") + "\""
 }

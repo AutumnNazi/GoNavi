@@ -154,3 +154,101 @@ func TestDuckDBAttachMySQLSecretSyntaxAndErrorSanitization(t *testing.T) {
 		t.Fatalf("failed attach left %d dangling secret(s)", secretCount)
 	}
 }
+
+// TestDuckDBAttachMySQLUsesSecretDatabase 回归（上游审查 P0-1）：mysql 扩展把
+// ATTACH 的 path 当主机 DSN，库名必须经 SECRET 的 DATABASE 传递。
+func TestDuckDBAttachMySQLUsesSecretDatabase(t *testing.T) {
+	host := newDuckDBAttachTestInstance(t)
+	ctx := context.Background()
+	if err := host.ensureExtensionLoaded(ctx, "mysql"); err != nil {
+		t.Skipf("mysql extension unavailable: %v", err)
+	}
+
+	spec := ExternalAttachSpec{
+		Kind: ExternalAttachKindMySQL, Host: "127.0.0.1", Port: 3306,
+		User: "gonavi-test", Password: "pw", Database: "orders_db",
+		Alias: "mysql_ext", SecretName: "gonavi_attach_mysql_ext", ReadOnly: true,
+	}
+	statement := buildDuckDBAttachStatement(spec)
+	if !strings.Contains(statement, "ATTACH '' ") {
+		t.Fatalf("attach path must be empty (mysql treats path as host DSN): %s", statement)
+	}
+	if err := host.createExternalSecret(ctx, spec); err != nil {
+		t.Fatalf("create secret: %v", err)
+	}
+	defer func() { host.dropExternalSecret(context.Background(), spec.SecretName) }()
+
+	var name, database string
+	if err := host.conn.QueryRowContext(ctx,
+		"SELECT name, database_value FROM duckdb_secrets() WHERE name = ?",
+		spec.SecretName).Scan(&name, &database); err != nil {
+		t.Fatalf("read secret: %v", err)
+	}
+	if database != "orders_db" {
+		t.Fatalf("secret database = %q, want orders_db", database)
+	}
+}
+
+// TestDuckDBAttachRerunAfterNativeDetachIsIdempotent 回归（上游审查 P1-3/P1-4）：
+// 原生 DETACH 不会移除 SECRET，重跑时残留 SECRET 不得让 CREATE 报 already exists；
+// 失败路径的清理在取消派生 ctx 下也必须真实执行。
+func TestDuckDBAttachRerunAfterNativeDetachIsIdempotent(t *testing.T) {
+	host := newDuckDBAttachTestInstance(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if err := host.ensureExtensionLoaded(ctx, "mysql"); err != nil {
+		t.Skipf("mysql extension unavailable: %v", err)
+	}
+
+	spec := ExternalAttachSpec{
+		Kind: ExternalAttachKindMySQL, Host: "127.0.0.1", Port: 1,
+		User: "gonavi-test", Password: "pw", Database: "no_such_db",
+		Alias: "mysql_ext", SecretName: externalSecretName("mysql_ext"), ReadOnly: true,
+	}
+
+	// 第一次附加：SECRET 建成后 ATTACH 拨号失败，失败路径清理 SECRET
+	if err := host.AttachExternalDatabase(ctx, spec); err == nil {
+		t.Skipf("127.0.0.1:1 unexpectedly accepted a mysql connection")
+	}
+	assertSecretCount(t, host, spec.SecretName, 0)
+
+	// 模拟外部残留（原生 DETACH 泄漏的等价状态）：同名 SECRET 已存在
+	if err := host.createExternalSecret(ctx, spec); err != nil {
+		t.Fatalf("seed residual secret: %v", err)
+	}
+	assertSecretCount(t, host, spec.SecretName, 1)
+
+	// 重跑：CREATE OR REPLACE 幂等覆盖，不得报 already exists；失败后再次清理
+	err := host.AttachExternalDatabase(ctx, spec)
+	if err == nil {
+		t.Skipf("127.0.0.1:1 unexpectedly accepted a mysql connection")
+	}
+	if strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("rerun hit residual secret: %v", err)
+	}
+	assertSecretCount(t, host, spec.SecretName, 0)
+}
+
+func assertSecretCount(t *testing.T, host *DuckDB, secretName string, want int) {
+	t.Helper()
+	var count int
+	if err := host.conn.QueryRowContext(context.Background(),
+		"SELECT count(*) FROM duckdb_secrets() WHERE name = ?", secretName).Scan(&count); err != nil {
+		t.Fatalf("read secret count: %v", err)
+	}
+	if count != want {
+		t.Fatalf("secret %q count = %d, want %d", secretName, count, want)
+	}
+}
+
+// TestSecretCleanupContextSurvivesParentCancel 钉住 P1-4 修复：ATTACH 失败最常见
+// 于 ctx 超时，SECRET 清理必须使用不可取消派生的 ctx。
+func TestSecretCleanupContextSurvivesParentCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cleanupCtx, cleanupCancel := secretCleanupContext(ctx)
+	defer cleanupCancel()
+	if err := cleanupCtx.Err(); err != nil {
+		t.Fatalf("cleanup ctx canceled with parent: %v", err)
+	}
+}
