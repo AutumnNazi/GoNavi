@@ -56,12 +56,11 @@ describe('registerQueryEditorCommentAction', () => {
     registerQueryEditorCommentAction({
       editor,
       label: 'Toggle Line Comment',
-      keyMod: 2,
-      keyCode: 191,
+      keybindings: [2 | 90, 4 | 67],
       run: () => {},
     });
 
-    expect(registered[0].options.keybindings).toEqual([2 | 191]);
+    expect(registered[0].options.keybindings).toEqual([2 | 90, 4 | 67]);
   });
 
   it('returns null for an unusable editor', () => {

@@ -239,6 +239,7 @@ import {
   ShortcutAction,
   canRecordShortcutForAction,
   eventToShortcut,
+  findEnabledActionConflicts,
   findReservedConflictsForAction,
   getShortcutDisplay,
   getShortcutDisplayLabel,
@@ -5825,16 +5826,12 @@ function App() {
                   : t('app.shortcuts.message.modifier_required'));
               return;
           }
-          const conflictAction = SHORTCUT_ACTION_ORDER.find((action) => {
-              if (action === capturingShortcutAction) {
-                  return false;
-              }
-              const binding = resolveShortcutBinding(shortcutOptions, action, activeShortcutPlatform);
-              if (!binding?.enabled) {
-                  return false;
-              }
-              return normalizeShortcutCombo(binding.combo) === normalizedCombo;
-          });
+          const conflictAction = findEnabledActionConflicts(
+              shortcutOptions,
+              capturingShortcutAction,
+              normalizedCombo,
+              activeShortcutPlatform,
+          )[0];
           if (conflictAction) {
               void message.warning(t('app.shortcuts.message.conflict', { action: SHORTCUT_ACTION_META[conflictAction].label }));
               return;

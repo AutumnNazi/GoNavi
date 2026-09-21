@@ -332,7 +332,8 @@ import {
     shouldHandleQueryEditorRunShortcutFallback,
 } from './queryEditor/QueryEditorHelpers';
 import { duplicateCurrentLineInEditor } from './queryEditor/queryEditorDuplicateLine';
-import { registerQueryEditorCommentAction, runMonacoToggleLineComment } from './queryEditor/queryEditorCommentActions';
+import { registerQueryEditorShortcutAction } from './queryEditor/queryEditorShortcutRegistration';
+import { registerQueryEditorCommentAction, resolveToggleLineCommentKeybindings, runMonacoToggleLineComment } from './queryEditor/queryEditorCommentActions';
 import { finalizeQueryEditorSqlServerResultSets, resolveQueryEditorExecutionSuccessToast } from './queryEditor/queryEditorSqlServerResultMessages';
 import {
     applyQueryEditorCompletionFragmentCase,
@@ -4444,6 +4445,40 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       duplicateCurrentLineInEditor(editor, monaco, applyQueryState);
   }, [applyQueryState]);
 
+  // 「取消/添加注释」右键菜单 + 可配置快捷键：委托 Monaco 内置
+  // editor.action.commentLine（当前行/选区生效、一步撤销），语言或改键变化时重注册。
+  // 平台默认 Ctrl（Cmd）+/ 始终被本 action 占用：enabled 时委托切换注释；
+  // disabled 时吞掉按键，保证设置中心的「禁用」对内置键位同样生效。
+  const disposeToggleLineCommentAction = useCallback(() => {
+      toggleLineCommentActionRef.current?.dispose?.();
+      toggleLineCommentActionRef.current = null;
+  }, []);
+
+  const registerToggleLineCommentAction = useCallback(() => {
+      const editor = editorRef.current;
+      if (!editor) {
+          return;
+      }
+      disposeToggleLineCommentAction();
+      const binding = toggleLineCommentShortcutBinding;
+      toggleLineCommentActionRef.current = registerQueryEditorCommentAction({
+          editor,
+          label: translate('query_editor.action.toggle_line_comment'),
+          keybindings: resolveToggleLineCommentKeybindings({
+              platform: activeShortcutPlatform,
+              combo: binding?.combo,
+              enabled: binding?.enabled,
+              keyModEnum: monacoRef.current.KeyMod,
+              keyCodeEnum: monacoRef.current.KeyCode,
+          }),
+          run: () => {
+              if (binding?.enabled) {
+                  runMonacoToggleLineComment(editorRef.current);
+              }
+          },
+      });
+  }, [activeShortcutPlatform, disposeToggleLineCommentAction, toggleLineCommentShortcutBinding]);
+
   const buildQueryEditorAiContextMenuActions = useCallback(() => ([
       {
           id: 'ai.generateSQL',
@@ -7450,6 +7485,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       registerQueryEditorAiContextMenuActions(editor);
       registerInsertSqlSnippetContextMenuAction(editor);
       registerTransformCaseContextMenuActions(editor);
+      registerToggleLineCommentAction();
       registerTriggerSqlAiCompletionAction(editor, monaco);
 
       // Register runQuery shortcut inside Monaco so it overrides Monaco's default keybinding
@@ -7529,39 +7565,33 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           }
       }
 
-      const saveBinding = saveQueryShortcutBinding;
-      if (saveBinding?.enabled && saveBinding.combo) {
-          const keyBinding = comboToMonacoKeyBinding(
-              saveBinding.combo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform,
-          );
-          if (keyBinding) {
-              saveQueryActionRef.current = editor.addAction({
-                  id: 'gonavi.saveQuery',
-                  label: buildQueryEditorMonacoActionLabel('app.shortcuts.action.saveQuery.label'),
-                  keybindings: [keyBinding.keyMod | keyBinding.keyCode],
-                  run: () => {
-                      window.dispatchEvent(new CustomEvent('gonavi:save-active-query'));
-                  },
-              });
-          }
-      }
+      saveQueryActionRef.current = registerQueryEditorShortcutAction({
+          editor,
+          monaco,
+          platform: activeShortcutPlatform,
+          id: 'gonavi.saveQuery',
+          label: buildQueryEditorMonacoActionLabel('app.shortcuts.action.saveQuery.label'),
+          combo: saveQueryShortcutBinding?.combo,
+          enabled: saveQueryShortcutBinding?.enabled,
+          run: () => {
+              window.dispatchEvent(new CustomEvent('gonavi:save-active-query'));
+          },
+      });
 
-      const saveAsBinding = saveQueryAsShortcutBinding;
-      if (currentSavedQuery && !tab.filePath && saveAsBinding?.enabled && saveAsBinding.combo) {
-          const keyBinding = comboToMonacoKeyBinding(
-              saveAsBinding.combo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform,
-          );
-          if (keyBinding) {
-              saveQueryAsActionRef.current = editor.addAction({
-                  id: 'gonavi.saveQueryAs',
-                  label: buildQueryEditorMonacoActionLabel('app.shortcuts.action.saveQueryAs.label'),
-                  keybindings: [keyBinding.keyMod | keyBinding.keyCode],
-                  run: () => {
-                      window.dispatchEvent(new CustomEvent('gonavi:save-active-query-as'));
-                  },
-              });
-          }
-      }
+      saveQueryAsActionRef.current = currentSavedQuery && !tab.filePath
+          ? registerQueryEditorShortcutAction({
+              editor,
+              monaco,
+              platform: activeShortcutPlatform,
+              id: 'gonavi.saveQueryAs',
+              label: buildQueryEditorMonacoActionLabel('app.shortcuts.action.saveQueryAs.label'),
+              combo: saveQueryAsShortcutBinding?.combo,
+              enabled: saveQueryAsShortcutBinding?.enabled,
+              run: () => {
+                  window.dispatchEvent(new CustomEvent('gonavi:save-active-query-as'));
+              },
+          })
+          : null;
 
       const findInEditorKeyBinding = comboToMonacoKeyBinding(
           findInEditorShortcutCombo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform,
@@ -11923,20 +11953,16 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const monaco = monacoRef.current;
       if (!editor || !monaco) return;
 
-      const binding = duplicateCurrentLineShortcutBinding;
-      if (!binding?.enabled || !binding.combo) return;
-
-      const keyBinding = comboToMonacoKeyBinding(
-          binding.combo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform,
-      );
-      if (keyBinding) {
-          duplicateCurrentLineActionRef.current = editor.addAction({
-              id: 'gonavi.duplicateCurrentLine',
-              label: buildQueryEditorMonacoActionLabel('app.shortcuts.action.duplicateCurrentLine.label'),
-              keybindings: [keyBinding.keyMod | keyBinding.keyCode],
-              run: handleDuplicateCurrentLine,
-          });
-      }
+      duplicateCurrentLineActionRef.current = registerQueryEditorShortcutAction({
+          editor,
+          monaco,
+          platform: activeShortcutPlatform,
+          id: 'gonavi.duplicateCurrentLine',
+          label: buildQueryEditorMonacoActionLabel('app.shortcuts.action.duplicateCurrentLine.label'),
+          combo: saveQueryShortcutBinding?.combo,
+          enabled: saveQueryShortcutBinding?.enabled,
+          run: handleDuplicateCurrentLine,
+      });
 
       return () => {
           if (duplicateCurrentLineActionRef.current) {
@@ -11948,28 +11974,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
   // 「取消/添加注释」右键菜单 + 可配置快捷键：委托 Monaco 内置
   // editor.action.commentLine（当前行/选区生效、一步撤销），语言或改键变化时重注册。
+  // 平台默认 Ctrl（Cmd）+/ 始终被本 action 占用：enabled 时委托切换注释；
+  // disabled 时吞掉按键，保证设置中心的「禁用」对内置键位同样生效。
   useEffect(() => {
-      const editor = editorRef.current;
-      if (!editor) return;
-      toggleLineCommentActionRef.current?.dispose?.();
-      const binding = toggleLineCommentShortcutBinding;
-      const keyBinding = binding?.enabled && binding.combo && monacoRef.current
-          ? comboToMonacoKeyBinding(
-              binding.combo, monacoRef.current.KeyMod, monacoRef.current.KeyCode, activeShortcutPlatform,
-            )
-          : null;
-      toggleLineCommentActionRef.current = registerQueryEditorCommentAction({
-          editor,
-          label: translate('query_editor.action.toggle_line_comment'),
-          keyMod: keyBinding?.keyMod,
-          keyCode: keyBinding?.keyCode,
-          run: () => runMonacoToggleLineComment(editorRef.current),
-      });
-      return () => {
-          toggleLineCommentActionRef.current?.dispose?.();
-          toggleLineCommentActionRef.current = null;
-      };
-  }, [activeShortcutPlatform, toggleLineCommentShortcutBinding, languagePreference]);
+      registerToggleLineCommentAction();
+      return () => disposeToggleLineCommentAction();
+  }, [disposeToggleLineCommentAction, registerToggleLineCommentAction]);
 
   useEffect(() => {
       if (saveQueryActionRef.current) {
@@ -11981,22 +11991,18 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const monaco = monacoRef.current;
       if (!editor || !monaco) return;
 
-      const binding = saveQueryShortcutBinding;
-      if (!binding?.enabled || !binding.combo) return;
-
-      const keyBinding = comboToMonacoKeyBinding(
-          binding.combo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform,
-      );
-      if (keyBinding) {
-          saveQueryActionRef.current = editor.addAction({
-              id: 'gonavi.saveQuery',
-              label: buildQueryEditorMonacoActionLabel('app.shortcuts.action.saveQuery.label'),
-              keybindings: [keyBinding.keyMod | keyBinding.keyCode],
-              run: () => {
-                  window.dispatchEvent(new CustomEvent('gonavi:save-active-query'));
-              },
-          });
-      }
+      saveQueryActionRef.current = registerQueryEditorShortcutAction({
+          editor,
+          monaco,
+          platform: activeShortcutPlatform,
+          id: 'gonavi.saveQuery',
+          label: buildQueryEditorMonacoActionLabel('app.shortcuts.action.saveQuery.label'),
+          combo: saveQueryAsShortcutBinding?.combo,
+          enabled: saveQueryAsShortcutBinding?.enabled,
+          run: () => {
+              window.dispatchEvent(new CustomEvent('gonavi:save-active-query'));
+          },
+      });
 
       return () => {
           if (saveQueryActionRef.current) {
@@ -12016,22 +12022,18 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const monaco = monacoRef.current;
       if (!editor || !monaco || !currentSavedQuery || tab.filePath) return;
 
-      const binding = saveQueryAsShortcutBinding;
-      if (!binding?.enabled || !binding.combo) return;
-
-      const keyBinding = comboToMonacoKeyBinding(
-          binding.combo, monaco.KeyMod, monaco.KeyCode, activeShortcutPlatform,
-      );
-      if (keyBinding) {
-          saveQueryAsActionRef.current = editor.addAction({
-              id: 'gonavi.saveQueryAs',
-              label: buildQueryEditorMonacoActionLabel('app.shortcuts.action.saveQueryAs.label'),
-              keybindings: [keyBinding.keyMod | keyBinding.keyCode],
-              run: () => {
-                  window.dispatchEvent(new CustomEvent('gonavi:save-active-query-as'));
-              },
-          });
-      }
+      saveQueryAsActionRef.current = registerQueryEditorShortcutAction({
+          editor,
+          monaco,
+          platform: activeShortcutPlatform,
+          id: 'gonavi.saveQueryAs',
+          label: buildQueryEditorMonacoActionLabel('app.shortcuts.action.saveQueryAs.label'),
+          combo: duplicateCurrentLineShortcutBinding?.combo,
+          enabled: duplicateCurrentLineShortcutBinding?.enabled,
+          run: () => {
+              window.dispatchEvent(new CustomEvent('gonavi:save-active-query-as'));
+          },
+      });
 
       return () => {
           if (saveQueryAsActionRef.current) {

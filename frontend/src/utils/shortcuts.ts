@@ -883,6 +883,22 @@ export const migrateLegacySidebarSearchShortcutOptions = (value: unknown): Short
   return options;
 };
 
+// 改键冲突检测：目标组合键是否已被其它已启用动作占用（设置中心改键与
+// 快捷键搜索共用）。返回按注册顺序排列的冲突动作列表。
+export const findEnabledActionConflicts = (
+  options: ShortcutOptions,
+  targetAction: ShortcutAction,
+  normalizedCombo: string,
+  platform: ShortcutPlatform,
+): ShortcutAction[] => SHORTCUT_ACTION_ORDER.filter((action) => {
+  if (action === targetAction) {
+    return false;
+  }
+  const binding = resolveShortcutBinding(options, action, platform);
+  return Boolean(binding?.enabled)
+    && normalizeShortcutCombo(String(binding?.combo || '')) === normalizedCombo;
+});
+
 export const resolveShortcutBinding = (
   options: Partial<ShortcutOptions> | null | undefined,
   action: ShortcutAction,
@@ -1113,17 +1129,17 @@ const MONACO_KEY_MAP: Record<string, KeyCodeResolver> = {
   Left:           (kc) => kc.LeftArrow,
   Right:          (kc) => kc.RightArrow,
   Insert:         (kc) => kc.Insert,
-  '/':            (kc) => kc.Oem2,
-  ',':            (kc) => kc.OemComma,
-  '-':            (kc) => kc.OemMinus,
-  '=':            (kc) => kc.OemPlus,
-  '.':            (kc) => kc.OemPeriod,
-  ';':            (kc) => kc.Oem1,
-  "'":            (kc) => kc.Oem7,
-  '[':            (kc) => kc.Oem4,
-  ']':            (kc) => kc.Oem6,
-  '\\':           (kc) => kc.Oem5,
-  '`':            (kc) => kc.Oem3,
+  '/':            (kc) => kc.Slash,
+  ',':            (kc) => kc.Comma,
+  '-':            (kc) => kc.Minus,
+  '=':            (kc) => kc.Equal,
+  '.':            (kc) => kc.Period,
+  ';':            (kc) => kc.Semicolon,
+  "'":            (kc) => kc.Quote,
+  '[':            (kc) => kc.BracketLeft,
+  ']':            (kc) => kc.BracketRight,
+  '\\':           (kc) => kc.Backslash,
+  '`':            (kc) => kc.Backquote,
 };
 
 function resolveKeyCode(token: string, kc: Record<string, number>): number | null {
