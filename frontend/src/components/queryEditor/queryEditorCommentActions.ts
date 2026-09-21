@@ -50,7 +50,7 @@ export function registerQueryEditorCommentAction(
   }));
   if (swallowKeybinding && typeof editor.addCommand === 'function') {
     // 默认 Ctrl(Cmd)+/ 的占用命令（addCommand 不进右键菜单）：
-    // enabled 时委托切换注释并压制内置同键位；disabled 时吞键。
+    // 恒为空操作，仅压制内置同键位（改绑后默认键完全静默）。
     const commandId = editor.addCommand(swallowKeybinding.keyMod | swallowKeybinding.keyCode, () => {});
     if (typeof commandId === 'number' || typeof commandId === 'string') {
       disposables.push({ dispose: () => editor.removeCommand?.(commandId) });

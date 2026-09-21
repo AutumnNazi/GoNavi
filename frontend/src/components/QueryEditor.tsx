@@ -4447,8 +4447,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
   // 「取消/添加注释」右键菜单 + 可配置快捷键：委托 Monaco 内置
   // editor.action.commentLine（当前行/选区生效、一步撤销），语言或改键变化时重注册。
-  // 平台默认 Ctrl（Cmd）+/ 始终被本 action 占用：enabled 时委托切换注释；
-  // disabled 时吞掉按键，保证设置中心的「禁用」对内置键位同样生效。
+  // 平台默认 Ctrl（Cmd）+/ 恒被吞键命令占用：enabled 时菜单键位委托切换
+  // 注释、disabled 时默认键完全静默，保证「禁用/改绑」对内置键位生效。
   const disposeToggleLineCommentAction = useCallback(() => {
       toggleLineCommentActionRef.current?.dispose?.();
       toggleLineCommentActionRef.current = null;
@@ -11972,8 +11972,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
   // 「取消/添加注释」右键菜单 + 可配置快捷键：委托 Monaco 内置
   // editor.action.commentLine（当前行/选区生效、一步撤销），语言或改键变化时重注册。
-  // 平台默认 Ctrl（Cmd）+/ 始终被本 action 占用：enabled 时委托切换注释；
-  // disabled 时吞掉按键，保证设置中心的「禁用」对内置键位同样生效。
+  // 平台默认 Ctrl（Cmd）+/ 恒被吞键命令占用：enabled 时菜单键位委托切换
+  // 注释、disabled 时默认键完全静默，保证「禁用/改绑」对内置键位生效。
   useEffect(() => {
       registerToggleLineCommentAction();
       return () => disposeToggleLineCommentAction();
