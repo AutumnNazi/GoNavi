@@ -1463,6 +1463,7 @@ export namespace app {
 	    groupName?: string;
 	    pageNo?: number;
 	    pageSize?: number;
+	    withStatistics?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new NacosServiceQuery(source);
@@ -1475,6 +1476,7 @@ export namespace app {
 	        this.groupName = source["groupName"];
 	        this.pageNo = source["pageNo"];
 	        this.pageSize = source["pageSize"];
+	        this.withStatistics = source["withStatistics"];
 	    }
 	}
 	export class NacosStartConfigListenPayload {
@@ -2596,6 +2598,7 @@ export namespace connection {
 	
 	
 	
+	
 	export class QueryParamBinding {
 	    name: string;
 	    type?: string;
@@ -2612,7 +2615,6 @@ export namespace connection {
 	        this.value = source["value"];
 	    }
 	}
-	
 	export class QueryResult {
 	    success: boolean;
 	    message: string;

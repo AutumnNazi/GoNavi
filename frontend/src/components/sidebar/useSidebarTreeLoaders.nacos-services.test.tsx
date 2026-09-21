@@ -138,6 +138,138 @@ describe('useSidebarTreeLoaders Nacos service groups', () => {
     expect(mocks.replaceTreeNodeChildren).toHaveBeenCalledTimes(1);
     expect(loadingNodesRef.current.size).toBe(0);
   });
+
+  it('wires the scanned statistics into each group node so the badge has data', async () => {
+    const listServices = vi.fn().mockResolvedValue({
+      success: true,
+      data: {
+        count: 3,
+        serviceNames: ['ORDER_GROUP@@orders', 'ORDER_GROUP@@payments', 'PAY_GROUP@@ledger'],
+        statisticsAvailable: true,
+        statisticsFamily: 'v1',
+        services: [
+          { name: 'orders', groupName: 'ORDER_GROUP', instanceCount: 4, healthyInstanceCount: 3, statisticsAvailable: true },
+          { name: 'payments', groupName: 'ORDER_GROUP', instanceCount: 2, healthyInstanceCount: 2, statisticsAvailable: true },
+          { name: 'ledger', groupName: 'PAY_GROUP', instanceCount: 5, healthyInstanceCount: 0, statisticsAvailable: true },
+        ],
+      },
+    });
+    vi.stubGlobal('window', {
+      go: { app: { App: { NacosListServices: listServices } } },
+    });
+
+    let loaders: ReturnType<typeof useSidebarTreeLoaders> | undefined;
+    const loadingNodesRef = { current: new Set<string>() };
+    const Harness = () => {
+      loaders = useSidebarTreeLoaders({
+        savedQueries: [],
+        tableSortPreference: {},
+        tableAccessCount: {},
+        pinnedSidebarTables: [],
+        pinnedSidebarDatabases: [],
+        loadingNodesRef,
+        setConnectionStates: vi.fn(),
+        setLoadedKeys: mocks.setLoadedKeys,
+        replaceTreeNodeChildren: mocks.replaceTreeNodeChildren,
+        buildRuntimeConfig: (conn) => conn.config,
+        buildJVMRuntimeConfig: (conn) => conn.config,
+        buildJVMDiagnosticTreeNodes: () => [],
+        resolveSavedQueryDisplayName: (name) => String(name || ''),
+      });
+      return null;
+    };
+    act(() => {
+      renderer = create(<Harness />);
+    });
+
+    const node = {
+      key: 'nacos-1-nacos-ns-dev-services',
+      dataRef: {
+        id: 'nacos-1',
+        nacosNamespaceId: 'dev',
+        nacosNamespaceName: 'Development',
+        config: { type: 'nacos', host: '127.0.0.1', port: 8848 },
+      },
+    };
+    await act(async () => {
+      expect(await loaders!.loadNacosServiceGroups(node)).toBe(true);
+    });
+
+    // The scan already walked every page, so the counts must ride along on the nodes
+    // the sidebar renders — this mapping is the only place the two ends meet.
+    const groups = mocks.replaceTreeNodeChildren.mock.calls[0][1] as any[];
+    const byGroup = new Map(groups.map((item) => [item.dataRef.nacosGroup, item.dataRef]));
+
+    expect(byGroup.get('ORDER_GROUP')).toMatchObject({
+      nacosServiceCount: 2,
+      nacosHealthAvailable: true,
+      nacosGroupHealth: {
+        groupName: 'ORDER_GROUP',
+        serviceCount: 2,
+        instanceCount: 6,
+        healthyInstanceCount: 5,
+      },
+    });
+    expect(byGroup.get('PAY_GROUP')).toMatchObject({
+      nacosServiceCount: 1,
+      nacosHealthAvailable: true,
+      nacosGroupHealth: { instanceCount: 5, healthyInstanceCount: 0 },
+    });
+    // The "all groups" row spans every group, so it aggregates counts only.
+    expect(byGroup.get('')).toMatchObject({ nacosServiceCount: 3 });
+  });
+
+  it('reports health as unavailable when the page carries no statistics', async () => {
+    const listServices = vi.fn().mockResolvedValue({
+      success: true,
+      data: { count: 1, serviceNames: ['ORDER_GROUP@@orders'] },
+    });
+    vi.stubGlobal('window', {
+      go: { app: { App: { NacosListServices: listServices } } },
+    });
+
+    let loaders: ReturnType<typeof useSidebarTreeLoaders> | undefined;
+    const loadingNodesRef = { current: new Set<string>() };
+    const Harness = () => {
+      loaders = useSidebarTreeLoaders({
+        savedQueries: [],
+        tableSortPreference: {},
+        tableAccessCount: {},
+        pinnedSidebarTables: [],
+        pinnedSidebarDatabases: [],
+        loadingNodesRef,
+        setConnectionStates: vi.fn(),
+        setLoadedKeys: mocks.setLoadedKeys,
+        replaceTreeNodeChildren: mocks.replaceTreeNodeChildren,
+        buildRuntimeConfig: (conn) => conn.config,
+        buildJVMRuntimeConfig: (conn) => conn.config,
+        buildJVMDiagnosticTreeNodes: () => [],
+        resolveSavedQueryDisplayName: (name) => String(name || ''),
+      });
+      return null;
+    };
+    act(() => {
+      renderer = create(<Harness />);
+    });
+
+    await act(async () => {
+      expect(await loaders!.loadNacosServiceGroups({
+        key: 'nacos-1-nacos-ns-dev-services',
+        dataRef: {
+          id: 'nacos-1',
+          nacosNamespaceId: 'dev',
+          nacosNamespaceName: 'Development',
+          config: { type: 'nacos', host: '127.0.0.1', port: 8848 },
+        },
+      })).toBe(true);
+    });
+
+    const groups = mocks.replaceTreeNodeChildren.mock.calls[0][1] as any[];
+    const group = groups.find((item) => item.dataRef.nacosGroup === 'ORDER_GROUP');
+    // Availability false is what hides the badge — it must not fall back to a
+    // fabricated "0/0" reading.
+    expect(group.dataRef.nacosHealthAvailable).toBe(false);
+  });
 });
 
 describe('useSidebarTreeLoaders Nacos namespace discovery', () => {
