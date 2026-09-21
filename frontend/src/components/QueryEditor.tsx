@@ -4472,7 +4472,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           label: translate('query_editor.action.toggle_line_comment'),
           keybindings: plan.menuKeybindings,
           swallowKeybinding: plan.swallowKeybinding,
-          // 菜单入口不受快捷键禁用影响；吞键命令内部按 enabled 决定是否委托
+          // 菜单入口不受快捷键禁用影响；吞键命令恒为空操作
           run: () => runMonacoToggleLineComment(editorRef.current),
       });
   }, [activeShortcutPlatform, disposeToggleLineCommentAction, toggleLineCommentShortcutBinding, languagePreference]);
@@ -11958,7 +11958,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           id: 'gonavi.duplicateCurrentLine',
           label: buildQueryEditorMonacoActionLabel('app.shortcuts.action.duplicateCurrentLine.label'),
           combo: duplicateCurrentLineShortcutBinding?.combo,
-          enabled: saveQueryShortcutBinding?.enabled,
+          enabled: duplicateCurrentLineShortcutBinding?.enabled,
           run: handleDuplicateCurrentLine,
       });
 
@@ -11996,7 +11996,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           id: 'gonavi.saveQuery',
           label: buildQueryEditorMonacoActionLabel('app.shortcuts.action.saveQuery.label'),
           combo: saveQueryShortcutBinding?.combo,
-          enabled: saveQueryAsShortcutBinding?.enabled,
+          enabled: saveQueryShortcutBinding?.enabled,
           run: () => {
               window.dispatchEvent(new CustomEvent('gonavi:save-active-query'));
           },
@@ -12027,7 +12027,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           id: 'gonavi.saveQueryAs',
           label: buildQueryEditorMonacoActionLabel('app.shortcuts.action.saveQueryAs.label'),
           combo: saveQueryAsShortcutBinding?.combo,
-          enabled: duplicateCurrentLineShortcutBinding?.enabled,
+          enabled: saveQueryAsShortcutBinding?.enabled,
           run: () => {
               window.dispatchEvent(new CustomEvent('gonavi:save-active-query-as'));
           },

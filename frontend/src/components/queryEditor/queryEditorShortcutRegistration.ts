@@ -2,8 +2,8 @@ import { comboToMonacoKeyBinding } from '../../utils/shortcuts';
 
 // 通用「设置中心可配置快捷键 → Monaco action」注册器：组合键禁用或无法
 // 解析时返回 null（调用方据此不登记 ref），由各自 effect 的清理函数负责释放。
-// resolveToggleLineCommentKeybindings 一类的特殊键位策略在各自模块中解析后，
-// 也可通过 rawKeybindings 直接传入。
+// 特殊键位策略（如 toggleLineComment 的默认键吞压）在各自模块解析后，
+// 可通过 rawKeybindings 直接传入。
 
 export interface QueryEditorShortcutRegistration {
   editor: any;

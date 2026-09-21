@@ -77,37 +77,22 @@ describe('registerQueryEditorCommentAction', () => {
     expect(registered[0].options.keybindings).toEqual([2 | 90]);
   });
 
-  it('registers a swallow command on the default combo that delegates while enabled', () => {
+  it('registers a no-op swallow command on the default combo to suppress the built-in binding', () => {
     const { editor, commands, innerActionRun } = createFakeEditor();
 
     const disposable = registerQueryEditorCommentAction({
       editor,
       label: '取消/添加注释',
       swallowKeybinding: { keyMod: 2, keyCode: 90 },
-      enabled: true,
       run: () => runMonacoToggleLineComment(editor),
     });
 
     expect(editor.addCommand).toHaveBeenCalledWith(DEFAULT_SWALLOW_KEY, expect.any(Function));
-    commands[0].handler();
-    expect(innerActionRun).toHaveBeenCalledTimes(1);
-    disposable?.dispose();
-    expect(editor.removeCommand).toHaveBeenCalledWith(1);
-  });
-
-  it('swallows the default combo without delegating while disabled', () => {
-    const { editor, commands, innerActionRun } = createFakeEditor();
-
-    registerQueryEditorCommentAction({
-      editor,
-      label: '取消/添加注释',
-      swallowKeybinding: { keyMod: 2, keyCode: 90 },
-      enabled: false,
-      run: () => runMonacoToggleLineComment(editor),
-    });
-
+    // 吞键命令恒为空操作：压制内置 Ctrl(Cmd)+/，不产生第二次注释切换
     commands[0].handler();
     expect(innerActionRun).not.toHaveBeenCalled();
+    disposable?.dispose();
+    expect(editor.removeCommand).toHaveBeenCalledWith(1);
   });
 
   it('disposes the swallow command via removeCommand', () => {
@@ -117,7 +102,6 @@ describe('registerQueryEditorCommentAction', () => {
       editor,
       label: '取消/添加注释',
       swallowKeybinding: { keyMod: 2, keyCode: 90 },
-      enabled: false,
       run: () => {},
     });
     disposable?.dispose();

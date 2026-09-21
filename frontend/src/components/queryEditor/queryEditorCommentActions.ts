@@ -18,12 +18,11 @@ export interface RegisterQueryEditorCommentActionInput {
   /** 菜单 action 携带的键位（enabled 且改绑时为改后组合键；含默认键位时菜单显示键位提示） */
   keybindings?: number[];
   /**
-   * 需要占用/吞键的平台默认组合键（Ctrl/Cmd+/）：
-   * enabled 时委托切换注释（压制内置同键位），disabled 时吞键。
-   * 与菜单 action 分离——禁用快捷键不影响右键菜单入口。
+   * 需要吞键的平台默认组合键（Ctrl/Cmd+/）：恒为空操作，仅压制内置同键位，
+   * 避免与设置中心的改键冲突检测打架。与菜单 action 分离——
+   * 禁用快捷键不影响右键菜单入口。
    */
   swallowKeybinding?: { keyMod: number; keyCode: number } | null;
-  enabled?: boolean;
   run: () => void;
 }
 
@@ -34,7 +33,7 @@ export interface QueryEditorDisposable {
 export function registerQueryEditorCommentAction(
   input: RegisterQueryEditorCommentActionInput,
 ): QueryEditorDisposable | null {
-  const { editor, label, keybindings, swallowKeybinding, enabled, run } = input;
+  const { editor, label, keybindings, swallowKeybinding, run } = input;
   if (!editor || typeof editor.addAction !== 'function') {
     return null;
   }
@@ -52,11 +51,7 @@ export function registerQueryEditorCommentAction(
   if (swallowKeybinding && typeof editor.addCommand === 'function') {
     // 默认 Ctrl(Cmd)+/ 的占用命令（addCommand 不进右键菜单）：
     // enabled 时委托切换注释并压制内置同键位；disabled 时吞键。
-    const commandId = editor.addCommand(swallowKeybinding.keyMod | swallowKeybinding.keyCode, () => {
-      if (enabled) {
-        runMonacoToggleLineComment(editor);
-      }
-    });
+    const commandId = editor.addCommand(swallowKeybinding.keyMod | swallowKeybinding.keyCode, () => {});
     if (typeof commandId === 'number' || typeof commandId === 'string') {
       disposables.push({ dispose: () => editor.removeCommand?.(commandId) });
     }
