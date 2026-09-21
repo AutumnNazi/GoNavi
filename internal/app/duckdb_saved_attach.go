@@ -67,16 +67,20 @@ func parseDuckDBSavedConnectionDirective(statement string) (*duckDBAttachDirecti
 		}
 		trimmed = strings.TrimSpace(trimmed[nl+1:])
 	}
+	// 尾部整行注释/独立分号行对称剥离（前导注释已支持）：否则注释被当作未知
+	// 子句报错。先剥尾部行再摘分号——分号可能在注释之前；每轮 TrimSpace 兼容空白形态。
+	for {
+		trimmed = strings.TrimSpace(trimmed)
+		lines := strings.Split(trimmed, "\n")
+		last := strings.TrimSpace(lines[len(lines)-1])
+		if len(lines) > 1 && (last == ";" || strings.HasPrefix(last, "--")) {
+			trimmed = strings.Join(lines[:len(lines)-1], "\n")
+			continue
+		}
+		break
+	}
 	trimmed = strings.TrimSuffix(trimmed, ";")
 	trimmed = strings.TrimSpace(trimmed)
-	// 尾部整行注释对称剥离（前导注释已支持）：否则注释被当作未知子句报错
-	for {
-		lines := strings.Split(trimmed, "\n")
-		if len(lines) == 1 || !strings.HasPrefix(strings.TrimSpace(lines[len(lines)-1]), "--") {
-			break
-		}
-		trimmed = strings.TrimSpace(strings.Join(lines[:len(lines)-1], "\n"))
-	}
 	if match := duckDBAttachDirectivePrefixPattern.FindStringSubmatchIndex(trimmed); match != nil {
 		return parseDuckDBAttachDirectiveBody(strings.TrimSpace(trimmed[match[1]:]))
 	}

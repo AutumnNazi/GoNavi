@@ -229,6 +229,49 @@ func TestParseDuckDBSavedConnectionDirective(t *testing.T) {
 			wantParse: false,
 		},
 		{
+			// 上游审查 P2：尾部行注释对称剥离（分号在注释之前/之后均可）
+			name:      "trailing full-line comment before semicolon",
+			statement: "ATTACH SAVED CONNECTION 'x' AS y;\n-- 尾注",
+			wantParse: true,
+			verify: func(t *testing.T, d *duckDBAttachDirective) {
+				if d.ref != "x" || d.alias != "y" {
+					t.Fatalf("unexpected directive: %+v", d)
+				}
+			},
+		},
+		{
+			name:      "trailing full-line comment after semicolon",
+			statement: "ATTACH SAVED CONNECTION 'x' AS y\n-- 尾注\n;",
+			wantParse: true,
+			verify: func(t *testing.T, d *duckDBAttachDirective) {
+				if d.ref != "x" || d.alias != "y" {
+					t.Fatalf("unexpected directive: %+v", d)
+				}
+			},
+		},
+		{
+			// 上游审查 P3：READ 与 ONLY 间为制表符也可解析
+			name:      "tab between read and only",
+			statement: "ATTACH SAVED CONNECTION 'x' READ\tONLY",
+			wantParse: true,
+			verify: func(t *testing.T, d *duckDBAttachDirective) {
+				if !d.readOnly {
+					t.Fatalf("expected read only")
+				}
+			},
+		},
+		{
+			// 上游审查 P3：裸词引用以换行终止，不吞后续子句
+			name:      "bareword ref terminated by newline",
+			statement: "ATTACH SAVED CONNECTION conn-x\nAS target",
+			wantParse: true,
+			verify: func(t *testing.T, d *duckDBAttachDirective) {
+				if d.ref != "conn-x" || d.alias != "target" {
+					t.Fatalf("unexpected directive: %+v", d)
+				}
+			},
+		},
+		{
 			name:      "malformed detach alias",
 			statement: "DETACH SAVED CONNECTION not an alias",
 			wantParse: true,
