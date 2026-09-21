@@ -24,6 +24,17 @@ FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS builder
 
 ARG TARGETOS
 ARG TARGETARCH
+# 版本号必须注入，否则 AppVersion 恒为编译期默认值 0.0.0：运行镜像只 COPY 了
+# 二进制、没有 version/dev-version.txt 与 frontend/package.json，getCurrentVersion()
+# 拿不到任何回退值，currentDriverReleaseTag() 会返回空 tag，驱动下载通道从
+# dev-latest 退化为 releases/latest（当前 v0.9.8），与本次构建现场生成的内嵌
+# revision 必然不匹配，驱动永远装不上。
+#
+# 默认值刻意取 dev-local：本地 `up --build` 不带 build-arg 时必须落在开发通道
+# （isDevelopmentDriverReleaseVersion 认 -dev/-test/-local/-snapshot 后缀）。
+# 不能照抄 Dockerfile.cli 的 ARG VERSION=dev——裸 "dev" 不匹配任何后缀，
+# 会被判为正式版并拼出 "vdev" 这个不存在的 tag。
+ARG VERSION=dev-local
 
 WORKDIR /src
 
@@ -44,8 +55,10 @@ COPY --from=frontend /src/frontend/dist ./frontend/dist
 COPY --from=frontend /src/frontend/dist.zip ./frontend/dist.zip
 
 # 纯 Go 构建主程序（web-server 模式不需要 Wails WebView / CGO）
+# -X 与 build-release.sh 的 LDFLAGS 保持同一注入点，保证容器内版本号、
+# 更新检查与驱动发布通道判定三者一致。
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -trimpath -ldflags="-s -w" -o /out/gonavi .
+    go build -trimpath -ldflags="-s -w -X GoNavi-Wails/internal/app.AppVersion=${VERSION}" -o /out/gonavi .
 
 FROM debian:bookworm-slim
 
