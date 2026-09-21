@@ -298,7 +298,10 @@ describe('DriverManagerModal optional update tier (issue #1326)', () => {
   });
 
   it('hides the weak hint when the dismissed revision matches on remount', { timeout: 30000 }, async () => {
-    localStorageMap.set(OPTIONAL_UPDATE_DISMISS_KEY, 'src-expected');
+    const { setCurrentLanguage } = await import('../i18n');
+    setCurrentLanguage('zh-CN');
+    localStorageMap.set(OPTIONAL_UPDATE_DISMISS_KEY, JSON.stringify(['src-expected']));
+
 
     backendApp.GetDriverStatusList.mockResolvedValue({
       success: true,

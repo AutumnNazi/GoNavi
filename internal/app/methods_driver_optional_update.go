@@ -9,6 +9,7 @@ import (
 // 本文件聚合 optional driver「组件更新」状态的分层判定与文案（issue #1326）：
 // revision 指纹含共享实现文件，主程序升级会让全部驱动的 revision 变化；
 // 驱动库版本未变时降级为可选更新，避免全量误报「需更新」。
+
 func optionalDriverAgentRevisionStatus(driverType string, pkg installedDriverPackage, packageMetaExists bool) (bool, string, string) {
 	expected := db.OptionalDriverAgentRevision(driverType)
 	if strings.TrimSpace(expected) == "" || !packageMetaExists || !db.IsOptionalGoDriver(driverType) || !shouldVerifyOptionalDriverAgentRevision(driverType, pkg.Version) {
@@ -86,4 +87,3 @@ func mongoDriverNeedsLegacyCompatibilityUpdate(definition driverDefinition, pkg 
 	}
 	return resolveMongoDriverMajorFromVersion(installed) == 2 && resolveMongoDriverMajorFromVersion(pinned) == 1
 }
-
