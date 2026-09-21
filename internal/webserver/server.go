@@ -104,6 +104,10 @@ var desktopOnlyCredentialAppMethods = map[string]struct{}{
 
 type Options struct {
 	Addr string
+	// Console 接收启动横幅。程序化调用方（测试、内嵌运行时）保持 nil 即可静默；
+	// 只有 CLI 入口 Run() 会把它设为 os.Stderr。日志默认只落文件，没有这行
+	// 用户既不知道服务是否起来，也不知道该去哪里看失败原因。
+	Console io.Writer
 }
 
 type invokeRequest struct {
@@ -797,6 +801,19 @@ func (s *SharedRuntime) routes() http.Handler {
 	return withSecurityHeaders(mux)
 }
 
+// webServerUsage 是 web-server 模式的用法文本。flag 包默认会把用法打到自己的
+// 输出上，但我们把输出改成了丢弃（见 ParseOptions），因此这里自行维护一份，
+// 由 Run 在需要时写到 stdout。
+const webServerUsage = `用法：gonavi web-server [选项]
+
+选项：
+  --addr <主机:端口>   监听地址，默认 127.0.0.1:34116
+                      也可用环境变量 GONAVI_WEB_ADDR 指定
+
+示例：
+  gonavi web-server --addr 127.0.0.1:34116
+`
+
 func ParseOptions(args []string) (Options, error) {
 	options := Options{
 		Addr: defaultWebServerAddr,
@@ -819,8 +836,18 @@ func ParseOptions(args []string) (Options, error) {
 func Run(ctx context.Context, assetFS fs.FS, args []string) error {
 	options, err := ParseOptions(args)
 	if err != nil {
+		// flag 包把 -h/--help 也报成错误，但用户主动求助不是失败：按仓库 CLI
+		// 惯例（internal/cli）把用法打到 stdout 并以 0 退出。此前这里会连同
+		// 用法一起被 logger 吞进文件，终端只剩一个空屏和退出码 1。
+		if errors.Is(err, flag.ErrHelp) {
+			_, _ = fmt.Fprint(os.Stdout, webServerUsage)
+			return nil
+		}
 		return err
 	}
+	// 只有命令行入口把横幅接到终端；New 的程序化调用方（测试、内嵌运行时）
+	// 保持 Console 为空，避免污染它们的输出。
+	options.Console = os.Stderr
 	server, err := New(ctx, assetFS, options)
 	if err != nil {
 		return err
@@ -920,6 +947,7 @@ func (s *Server) runHTTP(ctx context.Context, handler http.Handler) error {
 	}
 	s.boundAddr.Store(listener.Addr().String())
 	logger.Infof("GoNavi Web Server 启动：addr=%s", listener.Addr())
+	s.writeStartupBanner(listener.Addr().String())
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -1239,4 +1267,24 @@ type ioDiscard struct{}
 
 func (ioDiscard) Write(p []byte) (int, error) {
 	return len(p), nil
+}
+
+// writeStartupBanner 把监听地址与日志路径打到终端。
+//
+// 日志默认只写文件（internal/logger），CLI 启动后终端完全空白：用户既无法
+// 确认服务是否就绪，也不知道失败原因该去哪里查（端口占用、前端资源缺失、
+// 数据目录不可写都只体现在日志里）。失败的路径由 main.go 打印到 stderr，
+// 这里只负责成功路径。
+func (s *Server) writeStartupBanner(addr string) {
+	if s == nil || s.options.Console == nil {
+		return
+	}
+	// 监听 0.0.0.0 时直接给浏览器打开 0.0.0.0 是无效地址，展示回环地址。
+	display := addr
+	if host, port, err := net.SplitHostPort(addr); err == nil {
+		if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
+			display = net.JoinHostPort("127.0.0.1", port)
+		}
+	}
+	_, _ = fmt.Fprintf(s.options.Console, "GoNavi Web Server 已启动：http://%s\n日志：%s\n", display, logger.Path())
 }
