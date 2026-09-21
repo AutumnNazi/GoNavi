@@ -145,7 +145,19 @@ export const isReadOnlyContextualKeyword = (precedingToken: string): boolean =>
  *
  * CTE 体内的写由各模块既有的 WITH 分析负责，故此处遇到 `with` 直接跳过以免重复判定。
  */
-export const hasEmbeddedWriteStatement = (statement: string, dbType = ''): boolean => {
+export const hasEmbeddedWriteStatement = (statement: string, dbType = ''): boolean =>
+  firstEmbeddedWriteKeyword(statement, dbType) !== '';
+
+/**
+ * 返回语句体中第一个"内嵌写关键字"（小写），未检出时返回空串。
+ *
+ * 返回具体关键字而非布尔值，是因为托管事务判定只认 DML 而不认 DDL：
+ * 若只返回布尔值，调用方无法区分 `... 期间 DELETE FROM t`（应托管）
+ * 与 `CREATE PROCEDURE ... BEGIN`（DDL，不该被托管事务接管）。
+ *
+ * 调用约束与 hasEmbeddedWriteStatement 相同：调用方需先行确认首关键字为读关键字。
+ */
+export const firstEmbeddedWriteKeyword = (statement: string, dbType = ''): string => {
   const text = String(statement || '');
   let previousToken = '';
   let updateNeedsOfCheck = false;
@@ -192,10 +204,10 @@ export const hasEmbeddedWriteStatement = (statement: string, dbType = ''): boole
       SQL_EMBEDDED_WRITE_KEYWORDS.has(token) &&
       !isReadOnlyContextualKeyword(previousToken)
     ) {
-      return true;
+      return token;
     }
 
     previousToken = token;
   }
-  return false;
+  return '';
 };

@@ -7,6 +7,7 @@ import {
   resolveDataTableColumnWidth,
   resolveDataTableDefaultColumnWidth,
   resolveDataTableVerticalBorderColor,
+  resolveDataTableVerticalBorderRule,
   sanitizeDataGridDisplaySettings,
 } from './dataGridDisplay';
 
@@ -55,5 +56,14 @@ describe('dataGridDisplay helpers', () => {
     expect(resolveDataTableVerticalBorderColor({ darkMode: true, visible: true })).toBe('rgba(255, 255, 255, 0.08)');
     expect(resolveDataTableVerticalBorderColor({ darkMode: false, visible: true })).toBe('rgba(15, 23, 42, 0.08)');
     expect(resolveDataTableVerticalBorderColor({ darkMode: false, visible: false })).toBe('transparent');
+  });
+
+  it('derives the vertical border rule that both grids feed into the CSS variable', () => {
+    expect(resolveDataTableVerticalBorderRule({ darkMode: false, visible: true }))
+      .toBe('1px solid rgba(15, 23, 42, 0.08)');
+    expect(resolveDataTableVerticalBorderRule({ darkMode: true, visible: true }))
+      .toBe('1px solid rgba(255, 255, 255, 0.08)');
+    expect(resolveDataTableVerticalBorderRule({ darkMode: false, visible: false })).toBe('none');
+    expect(resolveDataTableVerticalBorderRule({ darkMode: true, visible: false })).toBe('none');
   });
 });

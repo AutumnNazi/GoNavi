@@ -170,3 +170,20 @@ export const resolveDataTableVerticalBorderColor = ({
 
   return darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)';
 };
+
+/**
+ * 解析表格竖向网格线的 border 值，供 `--gn-data-table-vertical-border` 变量使用。
+ *
+ * 数据预览网格与对象设计表共用同一份外观开关，规则必须由本函数唯一决定：
+ * 分散在各自组件内时两处写法会悄悄漂移（一处 `=== true`、一处真值判断，
+ * 颜色计算路径也不同），最终表现为同一个开关在两个表格上效果不一致。
+ */
+export const resolveDataTableVerticalBorderRule = ({
+  darkMode,
+  visible,
+}: {
+  darkMode: boolean;
+  visible: boolean;
+}): string => (visible
+  ? `1px solid ${resolveDataTableVerticalBorderColor({ darkMode, visible: true })}`
+  : 'none');

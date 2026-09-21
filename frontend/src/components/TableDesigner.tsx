@@ -48,7 +48,7 @@ import {
     COMMON_COLUMN_DEFAULT_OPTIONS, getColumnDefinitionExtra, isMySQLCharacterColumnType, normalizeColumnDefinition,
     normalizeMySQLUnsignedColumnType, setMySQLUnsignedColumnType, supportsMySQLUnsignedColumnType, supportsMySQLUnsignedDialect,
 } from '../utils/columnDefinition';
-import { resolveDataTableVerticalBorderColor } from '../utils/dataGridDisplay';
+import { resolveDataTableVerticalBorderRule } from '../utils/dataGridDisplay';
 import { buildEditableTriggerSql } from '../utils/triggerEditSql';
 import {
     buildTableDesignerTriggerDropSql,
@@ -561,9 +561,10 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
   const appearance = useStore(state => state.appearance);
   const i18nLanguage = useTableDesignerI18nLanguage();
   const darkMode = theme === 'dark';
-  const dataTableVerticalBorderRule = appearance.showDataTableVerticalBorders === true
-      ? `1px solid ${resolveDataTableVerticalBorderColor({ darkMode, visible: true })}`
-      : 'none';
+  const dataTableVerticalBorderRule = resolveDataTableVerticalBorderRule({
+      darkMode,
+      visible: appearance.showDataTableVerticalBorders === true,
+  });
 
   const resizeGuideColor = darkMode ? '#f6c453' : '#1890ff';
   const readOnly = !!tab.readOnly;

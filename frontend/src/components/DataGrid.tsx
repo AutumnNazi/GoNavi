@@ -49,7 +49,7 @@ import { normalizeOceanBaseProtocol } from '../utils/oceanBaseProtocol';
 import {
     getDensityParams,
     resolveDataTableColumnWidth,
-    resolveDataTableVerticalBorderColor,
+    resolveDataTableVerticalBorderRule,
 } from '../utils/dataGridDisplay';
 import { resolvePaginationPageText, resolvePaginationSummaryText, resolvePaginationTotalForControl } from '../utils/dataGridPagination';
 import { countGridColumnValues, filterRowsByGridConditions } from '../utils/dataGridClientFilter';
@@ -462,13 +462,10 @@ const DataGrid: React.FC<DataGridProps> = ({
       () => ({ padding: densityParams.inputCellPadding }),
       [densityParams.inputCellPadding],
   );
-  const dataTableVerticalBorderColor = resolveDataTableVerticalBorderColor({
+  const dataTableVerticalBorderRule = resolveDataTableVerticalBorderRule({
       darkMode,
       visible: showDataTableVerticalBorders,
   });
-  const dataTableVerticalBorderRule = showDataTableVerticalBorders
-      ? `1px solid ${dataTableVerticalBorderColor}`
-      : 'none';
   const effectiveEditLocator = useMemo<EditRowLocator | undefined>(() => {
       if (editLocator) return editLocator;
       if (pkColumns.length === 0) return undefined;
@@ -1548,7 +1545,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           tableBodyBottomPadding,
           verticalScrollbarTrackBg,
       }),
-      [themeStyles, gridId, tableBodyBottomPadding, darkMode, opacity, dataTableVerticalBorderColor, densityParams],
+      [themeStyles, gridId, tableBodyBottomPadding, darkMode, opacity, dataTableVerticalBorderRule, densityParams],
   );
 
   const recalculateTableMetrics = useCallback((targetElement?: HTMLElement | null) => {

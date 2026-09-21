@@ -197,6 +197,40 @@ describe('sqlEditorTransaction', () => {
     expect(canReusePendingSqlEditorTransactionForType('mysql', [incidentSql])).toBe(false);
   });
 
+  // 内嵌写扫描的关键字集合为覆盖 #1308 额外收录了 DDL。若托管事务判定不先确认
+  // 「首关键字为读」就打这个扫描，首关键字本身即 DDL 的语句（存储过程、触发器等）
+  // 会因命中 create/drop 被判成"可托管写"，被路由到 DBQueryMultiTransactional，
+  // 从而绕过非托管路径上的失败补偿恢复逻辑，并与后端 isBatchableWriteSQLStatement
+  // 的 DML-only 口径漂移。这组用例把该边界钉死。
+  it('keeps DDL on the non-transactional path even though the embedded scan lists DDL keywords', () => {
+    const ddlCases: Array<[string, string]> = [
+      ['oracle', 'CREATE OR REPLACE PROCEDURE p AS BEGIN NULL; END;'],
+      ['mysql', 'CREATE TABLE x (id INT)'],
+      ['mysql', 'ALTER TABLE users ADD COLUMN nickname VARCHAR(64)'],
+      ['postgres', 'DROP TRIGGER IF EXISTS users_bi ON users'],
+      ['postgres', 'CREATE FUNCTION users_bi_fn() RETURNS trigger AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql'],
+      ['mysql', 'TRUNCATE TABLE t_order'],
+    ];
+
+    for (const [dbType, sql] of ddlCases) {
+      expect(
+        shouldUseSqlEditorManagedTransactionForType(dbType, [sql]),
+        `${dbType}: ${sql}`,
+      ).toBe(false);
+      // DDL 同样不是可复用待提交事务的只读后续语句。
+      expect(
+        canReusePendingSqlEditorTransactionForType(dbType, [sql]),
+        `${dbType}: ${sql}`,
+      ).toBe(false);
+    }
+
+    // 反向钉子：首关键字为读、体内缺分号埋着 DDL 时仍必须拦截，
+    // 否则 #1308 的只读防线会在 DDL 方向重新被绕过。
+    expect(
+      shouldUseSqlEditorManagedTransactionForType('mysql', ['SELECT 1\nDROP TABLE t']),
+    ).toBe(false);
+  });
+
   it('keeps read-only statements on the non-transactional path (issue #1308)', () => {
     const readOnlyCases: Array<[string, string]> = [
       ['mysql', 'SELECT * FROM delete_log'],
