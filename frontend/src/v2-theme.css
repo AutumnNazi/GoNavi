@@ -3125,6 +3125,30 @@ body[data-ui-version="v2"] .gn-v2-explorer-filter-slot {
   overflow: hidden;
 }
 
+/* Redis workbench summary. Shares the filter slot's height so switching between a
+   relational host and Redis never shifts the tree's vertical origin. */
+body[data-ui-version="v2"] .gn-v2-explorer-redis-overview {
+  display: flex;
+  align-items: center;
+  gap: calc(10px * var(--gn-v2-explorer-scale));
+  height: 100%;
+  padding: 0 calc(12px * var(--gn-v2-explorer-scale));
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-redis-overview-item {
+  flex: 0 0 auto;
+  font-size: clamp(10px, calc(var(--gn-sidebar-tree-font-size, var(--gn-font-size-sm, 12px)) - 1px), 16px);
+  color: var(--gn-fg-4);
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-redis-overview-item:not(:last-child)::after {
+  content: '·';
+  margin-inline-start: calc(10px * var(--gn-v2-explorer-scale));
+  color: var(--gn-fg-5);
+}
+
 body[data-ui-version="v2"] .gn-v2-explorer-filter-tabs {
   display: flex;
   flex-wrap: nowrap;

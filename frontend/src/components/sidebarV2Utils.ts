@@ -915,82 +915,19 @@ export const getV2RailConnectionGroupBadgeText = (name: unknown, fallback = t('c
   return trimmed.slice(0, 2);
 };
 
-export type V2ExplorerFilter = 'all' | 'tables' | 'views' | 'sequences' | 'routines' | 'packages' | 'events';
-
-export const buildV2ExplorerFilterOptions = (
-  translate: SidebarV2Translate = translateSidebarV2Current,
-): Array<{ key: V2ExplorerFilter; label: string }> => [
-  { key: 'all', label: translate('sidebar.command_search.object_kind.all') },
-  { key: 'tables', label: translate('sidebar.command_search.object_kind.tables') },
-  { key: 'views', label: translate('sidebar.command_search.object_kind.views') },
-  { key: 'sequences', label: translate('sidebar.command_search.object_kind.sequences') },
-  { key: 'routines', label: translate('sidebar.command_search.object_kind.routines') },
-  { key: 'packages', label: translate('sidebar.command_search.object_kind.packages') },
-  { key: 'events', label: translate('sidebar.command_search.object_kind.events') },
-];
-
-export const V2_EXPLORER_FILTER_OPTIONS: Array<{ key: V2ExplorerFilter; label: string }> = buildV2ExplorerFilterOptions(translateSidebarV2ZhCN);
-
-const V2_EXPLORER_FILTER_GROUP_KEYS: Record<Exclude<V2ExplorerFilter, 'all'>, string[]> = {
-  tables: ['tables'],
-  views: ['views', 'materializedViews'],
-  sequences: ['sequences'],
-  routines: ['routines'],
-  packages: ['packages'],
-  events: ['events'],
-};
+// The filter dimension, its button ordering and the tree-narrowing rules now live
+// in `./sidebar/sidebarExplorerFilter`, which this file is too large to keep
+// hosting (AGENTS.md §1.1). Re-exported here so existing importers are untouched.
+export type { V2ExplorerFilter } from './sidebar/sidebarExplorerFilter';
+export {
+  buildV2ExplorerFilterOptions,
+  V2_EXPLORER_FILTER_OPTIONS,
+  V2_EXPLORER_FILTER_LABEL_KEYS,
+  filterV2ExplorerTreeByKind,
+} from './sidebar/sidebarExplorerFilter';
 
 export const V2_TREE_HORIZONTAL_SCROLL_BOTTOM_RESERVE = 0;
 
-export const filterV2ExplorerTreeByKind = (
-  nodes: SidebarTreeNode[],
-  filter: V2ExplorerFilter,
-): SidebarTreeNode[] => {
-  if (filter === 'all') return nodes;
-  const allowedGroupKeys = new Set(V2_EXPLORER_FILTER_GROUP_KEYS[filter]);
-  const objectTypeMatches = (node: SidebarTreeNode): boolean => {
-    if (filter === 'tables') return node.type === 'table';
-    if (filter === 'views') return node.type === 'view' || node.type === 'materialized-view';
-    if (filter === 'sequences') return node.type === 'sequence';
-    if (filter === 'routines') return node.type === 'routine';
-    if (filter === 'packages') return node.type === 'package';
-    if (filter === 'events') return node.type === 'db-event';
-    return false;
-  };
-
-  const visit = (node: SidebarTreeNode): SidebarTreeNode | null => {
-    if (node.type === 'external-sql-root') {
-      return null;
-    }
-    // Relational filters have no semantic equivalent for a broker. Keep the
-    // complete MQ namespace visible instead of making the explorer look empty
-    // when the user switches from a database connection with a filter active.
-    if (node.type === 'message-namespace') {
-      return node;
-    }
-    const groupKey = String(node?.dataRef?.groupKey || '');
-    if (node.type === 'object-group') {
-      if (allowedGroupKeys.has(groupKey)) {
-        return node;
-      }
-      if (groupKey === 'schema') {
-        const schemaChildren = (node.children || []).map(visit).filter(Boolean) as SidebarTreeNode[];
-        return schemaChildren.length > 0 ? { ...node, children: schemaChildren, isLeaf: false } : null;
-      }
-      return null;
-    }
-    if (objectTypeMatches(node)) {
-      return node;
-    }
-    if (node.type === 'database') {
-      const filteredChildren = (node.children || []).map(visit).filter(Boolean) as SidebarTreeNode[];
-      return filteredChildren.length > 0 ? { ...node, children: filteredChildren, isLeaf: false } : null;
-    }
-    return null;
-  };
-
-  return nodes.map(visit).filter(Boolean) as SidebarTreeNode[];
-};
 
 export type V2CommandSearchItem =
   | {

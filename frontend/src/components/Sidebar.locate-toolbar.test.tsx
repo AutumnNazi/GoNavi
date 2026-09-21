@@ -1294,7 +1294,7 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).not.toContain(`>${t('sidebar.command_search.object_kind.tables')}<`);
   });
 
-  it('keeps the object-kind filter slot stable while switching to a dedicated workbench connection', () => {
+  it('keeps the filter slot filled on a Nacos workbench, offering its own dimensions', () => {
     mocks.state.connections = [{
       id: 'pg-1',
       name: 'PostGreSQL',
@@ -1318,10 +1318,53 @@ describe('Sidebar locate toolbar', () => {
     const filterSlotIndex = markup.indexOf('data-object-kind-filter-slot="true"');
     const treeShellIndex = markup.indexOf('gn-v2-explorer-tree-shell');
 
+    // Slot keeps its position so the tree's vertical origin does not move.
     expect(filterSlotIndex).toBeGreaterThanOrEqual(0);
     expect(filterSlotIndex).toBeLessThan(treeShellIndex);
-    expect(markup).toContain('data-object-kind-filter-visible="false"');
+
+    // A Nacos host has dimensions of its own, so the slot stays populated rather
+    // than going blank as soon as the host is selected.
+    expect(markup).toContain('data-object-kind-filter-visible="true"');
+    expect(markup).toContain('gn-v2-explorer-filter-tabs');
+    expect(markup).toContain('data-object-kind-filter="all"');
+    expect(markup).toContain('data-object-kind-filter="nacos-services"');
+    expect(markup).toContain('data-object-kind-filter="nacos-configs"');
+    expect(markup).toContain(`aria-label="${t('sidebar.command_search.object_kind.nacos_services')}"`);
+    expect(markup).toContain(`aria-label="${t('sidebar.command_search.object_kind.nacos_configs')}"`);
+
+    // The relational dimensions name object kinds a Nacos tree does not contain.
+    expect(markup).not.toContain('data-object-kind-filter="tables"');
+    expect(markup).not.toContain('data-object-kind-filter="views"');
+    expect(markup).not.toContain('data-object-kind-filter="routines"');
+  });
+
+  it('keeps the object-kind slot for an active Redis connection without inventing counts', () => {
+    mocks.state.connections = [{
+      id: 'redis-1',
+      name: 'Redis-开发240',
+      config: { type: 'redis', host: 'localhost', port: 6379 },
+    }];
+    mocks.state.activeContext = { connectionId: 'redis-1', dbName: 'db0' };
+    mocks.state.activeTabId = 'redis-keys';
+    mocks.state.tabs = [{
+      id: 'redis-keys',
+      title: 'Redis',
+      type: 'redis-keys',
+      connectionId: 'redis-1',
+      dbName: 'db0',
+    }];
+
+    const markup = renderSidebarMarkup({});
+    const filterSlotIndex = markup.indexOf('data-object-kind-filter-slot="true"');
+    const treeShellIndex = markup.indexOf('gn-v2-explorer-tree-shell');
+
+    // Slot keeps its position so the tree's vertical origin does not move.
+    expect(filterSlotIndex).toBeGreaterThanOrEqual(0);
+    expect(filterSlotIndex).toBeLessThan(treeShellIndex);
     expect(markup).not.toContain('gn-v2-explorer-filter-tabs');
+    // The connection has not been expanded in this render, so the counts genuinely
+    // do not exist yet and the summary must stay absent rather than claim "0 keys".
+    expect(markup).not.toContain('data-redis-sidebar-overview="true"');
   });
 
   it('keeps relational object-kind filters hidden without an active host when only dedicated workbenches exist', () => {
@@ -1348,7 +1391,7 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).not.toContain('data-object-kind-filter-slot');
   });
 
-  it('hides relational object-kind filters for Nacos and other dedicated workbenches', () => {
+  it('hides relational object-kind filters for Nacos, which offers its own instead', () => {
     mocks.state.connections = [{
       id: 'nacos-1',
       name: 'Nacos',
@@ -1358,10 +1401,15 @@ describe('Sidebar locate toolbar', () => {
 
     const markup = renderSidebarMarkup({  });
 
-    expect(markup).not.toContain('gn-v2-explorer-filter-tabs');
     expect(markup).not.toContain(`>${t('sidebar.command_search.object_kind.tables')}<`);
     expect(markup).not.toContain(`>${t('sidebar.command_search.object_kind.views')}<`);
     expect(markup).not.toContain(`>${t('sidebar.command_search.object_kind.routines')}<`);
+    expect(markup).not.toContain('data-object-kind-filter="tables"');
+    expect(markup).not.toContain('data-object-kind-filter="views"');
+
+    // What the slot carries instead: the two Nacos explorer branches.
+    expect(markup).toContain('data-object-kind-filter="nacos-services"');
+    expect(markup).toContain('data-object-kind-filter="nacos-configs"');
   });
 
   it('replaces relational explorer controls in an active message queue context', () => {

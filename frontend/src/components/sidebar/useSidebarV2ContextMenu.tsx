@@ -24,6 +24,7 @@ import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
 import { isConnectionDataEditRestricted } from '../../utils/connectionReadOnly';
 import { resolveConnectionHostSummary } from '../../utils/tabDisplay';
 import { resolveConnectionIconType } from '../../utils/connectionVisual';
+import { resolveSidebarTreeMetaText } from './sidebarTreeMetaText';
 import { formatSidebarRowCount } from './sidebarHelpers';
 import {
   isSidebarDatabasePinned,
@@ -316,32 +317,13 @@ export const useSidebarV2ContextMenu = ({
       });
   };
 
-  const getV2TreeMetaText = (node: any): string => {
-      if (node.type === 'tag') {
-          const count = flattenConnectionNodes(node.children || []).length;
-          return count > 0 ? count.toLocaleString() : '';
-      }
-      // Database rows show no count: the "表" object group below already does.
-      if (node.type === 'object-group') {
-          const count = v2TreeMetrics.objectGroupCounts.get(node.key) || 0;
-          return count > 0 ? count.toLocaleString() : '';
-      }
-      if (node.type === 'redis-db') {
-          const keyCount = Number(node?.dataRef?.redisKeyCount);
-          if (Number.isFinite(keyCount) && keyCount > 0) {
-              return keyCount.toLocaleString();
-          }
-          // Fallback for nodes built before redisKeyCount was tracked; avoid
-          // matching an alias by only reading a trailing count suffix.
-          const match = String(node.title || '').match(/\((\d+)\)\s*$/);
-          return match?.[1] || '';
-      }
-      if (node.type === 'table') {
-          const rowCount = Number(node?.dataRef?.rowCount);
-          return Number.isFinite(rowCount) && rowCount >= 0 ? formatSidebarRowCount(rowCount) : '';
-      }
-      return '';
-  };
+  // The per-node-kind rules live in `sidebarTreeMetaText`, where they are unit
+  // testable; this hook only supplies the sidebar's live data.
+  const getV2TreeMetaText = (node: any): string => resolveSidebarTreeMetaText(node, {
+      countTagConnections: () => flattenConnectionNodes(node?.children || []).length,
+      countObjectGroupObjects: () => v2TreeMetrics.objectGroupCounts.get(node?.key) || 0,
+      formatRowCount: formatSidebarRowCount,
+  });
 
   const getV2TableContextMenuStatsKey = (node: any): string => {
       const id = String(node?.dataRef?.id || '');

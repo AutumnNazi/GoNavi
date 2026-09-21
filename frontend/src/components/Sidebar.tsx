@@ -32,6 +32,8 @@ import {
 } from './sidebar/useSidebarObjectActions';
 import { tryOpenSidebarObjectNode } from './sidebar/sidebarOpenObjectNode';
 import { useSidebarSearchModel } from './sidebar/useSidebarSearchModel';
+import { useV2ExplorerFilterReset } from './sidebar/useV2ExplorerFilterReset';
+import SidebarFilterSlot from './sidebar/SidebarFilterSlot';
 import { useSidebarFilterPersistence } from './sidebar/useSidebarFilterPersistence';
 import { useSidebarV2ActionHandlers } from './sidebar/useSidebarV2ActionHandlers';
 import { useSidebarCommandSearchRunner } from './sidebar/useSidebarCommandSearchRunner';
@@ -435,26 +437,6 @@ const buildConnectionRootRedisCommandTabTitle = (redisDbLabel = 'db0') =>
 
 const buildConnectionRootRedisMonitorTabTitle = (redisDbLabel = 'db0') =>
   t('sidebar.tab.redis_monitor', { database: redisDbLabel });
-
-const V2_EXPLORER_FILTER_OPTIONS: Array<{ key: V2ExplorerFilter; labelKey: string }> = [
-  { key: 'all', labelKey: 'sidebar.command_search.object_kind.all' },
-  { key: 'tables', labelKey: 'sidebar.command_search.object_kind.tables' },
-  { key: 'views', labelKey: 'sidebar.command_search.object_kind.views' },
-  { key: 'sequences', labelKey: 'sidebar.command_search.object_kind.sequences' },
-  { key: 'routines', labelKey: 'sidebar.command_search.object_kind.routines' },
-  { key: 'packages', labelKey: 'sidebar.command_search.object_kind.packages' },
-  { key: 'events', labelKey: 'sidebar.command_search.object_kind.events' },
-];
-
-const V2_EXPLORER_FILTER_ICONS: Record<V2ExplorerFilter, React.ReactNode> = {
-  all: <AppstoreOutlined />,
-  tables: <TableOutlined />,
-  views: <EyeOutlined />,
-  sequences: <KeyOutlined />,
-  routines: <CodeOutlined />,
-  packages: <SwitcherOutlined />,
-  events: <ClockCircleOutlined />,
-};
 
 const buildConnectionReloadSignature = (conn?: SavedConnection | null): string => {
   if (!conn) return '';
@@ -3524,14 +3506,10 @@ const Sidebar: React.FC<{
   const hasRelationalObjectKindFilterConnection = connections.some(
       (connection) => getDataSourceCapabilities(connection.config).supportsRelationalObjectKindFilter,
   );
-  const showV2ObjectKindFilters = activeConnection
-          ? getDataSourceCapabilities(activeConnection.config).supportsRelationalObjectKindFilter
-          : hasRelationalObjectKindFilterConnection;
-  useEffect(() => {
-      if (!showV2ObjectKindFilters && v2ExplorerFilter !== 'all') {
-          setV2ExplorerFilter('all');
-      }
-  }, [showV2ObjectKindFilters, v2ExplorerFilter]);
+  // Drops a filter belonging to another workbench family, so a stale one cannot
+  // empty the tree. The slot derives the same family from the same connection, so
+  // the two cannot disagree. See the hook for the reasoning.
+  useV2ExplorerFilterReset(activeConnection, v2ExplorerFilter, setV2ExplorerFilter);
 
 
   const {
@@ -4595,35 +4573,13 @@ const Sidebar: React.FC<{
         </div>
         )}
 
-        {hasRelationalObjectKindFilterConnection && (
-            <div
-                className="gn-v2-explorer-filter-slot"
-                data-object-kind-filter-slot="true"
-                data-object-kind-filter-visible={showV2ObjectKindFilters ? 'true' : 'false'}
-            >
-                {showV2ObjectKindFilters && (
-                    <div className="gn-v2-explorer-filter-tabs" aria-label={t('sidebar.command_search.object_kind.filter_aria')}>
-                        {V2_EXPLORER_FILTER_OPTIONS.map((item) => {
-                            const label = t(item.labelKey);
-                            return (
-                            <Tooltip key={item.key} title={label} mouseEnterDelay={0.25}>
-                            <button
-                                type="button"
-                                className={v2ExplorerFilter === item.key ? 'is-active' : undefined}
-                                aria-label={label}
-                                aria-pressed={v2ExplorerFilter === item.key}
-                                data-object-kind-filter={item.key}
-                                onClick={() => setV2ExplorerFilter(item.key)}
-                            >
-                                {V2_EXPLORER_FILTER_ICONS[item.key]}
-                            </button>
-                            </Tooltip>
-                            );
-                        })}
-                    </div>
-                )}
-            </div>
-        )}
+        <SidebarFilterSlot
+            activeConnection={activeConnection}
+            treeData={displayTreeData}
+            hasRelationalFilterConnection={hasRelationalObjectKindFilterConnection}
+            activeFilter={v2ExplorerFilter}
+            onFilterChange={setV2ExplorerFilter}
+        />
 
         <div
             ref={treeContainerRef}
