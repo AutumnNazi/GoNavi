@@ -32,6 +32,7 @@ import {
   setGlobalImeCompositionActive,
   sanitizeShortcutOptions,
   SHORTCUT_ACTION_META,
+  SHORTCUT_ACTION_ORDER,
 } from './shortcuts';
 import type { ConflictInfo } from './shortcuts';
 
@@ -998,5 +999,56 @@ describe('acceptSqlAiCompletion', () => {
   it('resolveShortcutBinding 对缺失配置回退默认 Tab', () => {
     const binding = resolveShortcutBinding({}, 'acceptSqlAiCompletion', 'windows');
     expect(binding).toEqual({ combo: 'Tab', enabled: true });
+  });
+});
+
+// ─── toggleLineComment（#1323 取消/添加注释） ────────────────────────
+
+describe('toggleLineComment shortcut', () => {
+  it('registers in the action order and metadata registry', () => {
+    expect(SHORTCUT_ACTION_ORDER).toContain('toggleLineComment');
+    expect(SHORTCUT_ACTION_META.toggleLineComment).toEqual(expect.objectContaining({
+      scope: 'queryEditor',
+      allowInEditable: true,
+      label: expect.stringContaining('注释'),
+    }));
+  });
+
+  it('defaults to Ctrl+/ on Windows and Meta+/ on macOS', () => {
+    expect(DEFAULT_SHORTCUT_OPTIONS.toggleLineComment.windows).toEqual({ combo: 'Ctrl+/', enabled: true });
+    expect(DEFAULT_SHORTCUT_OPTIONS.toggleLineComment.mac).toEqual({ combo: 'Meta+/', enabled: true });
+  });
+
+  it('falls back to defaults for users without stored bindings', () => {
+    expect(resolveShortcutBinding({} as never, 'toggleLineComment', 'windows')).toEqual({
+      combo: 'Ctrl+/',
+      enabled: true,
+    });
+  });
+
+  it('treats Ctrl+/ as non-reserved so the default binding raises no conflict', () => {
+    expect(findReservedConflict('Ctrl+/')).toBeNull();
+    expect(findReservedConflictsForAction('toggleLineComment', 'Ctrl+/', 'windows')).toEqual([]);
+  });
+
+  it('detects rebinding onto the AI diagnose combo as a conflict', () => {
+    const windowsBinding = resolveShortcutBinding(
+      {
+        toggleLineComment: { windows: { combo: 'Ctrl+Shift+A', enabled: true }, mac: { combo: '', enabled: false } },
+        diagnoseExecutionError: { windows: { combo: 'Ctrl+Shift+A', enabled: true }, mac: { combo: '', enabled: false } },
+      } as never,
+      'toggleLineComment',
+      'windows',
+    );
+    expect(windowsBinding.combo).toBe('Ctrl+Shift+A');
+    expect(canRecordShortcutForAction('toggleLineComment', 'Ctrl+Shift+A')).toBe(true);
+  });
+
+  it('maps the default combos to Monaco key bindings', () => {
+    const kc = { Oem2: 191 };
+    expect(comboToMonacoKeyBinding('Ctrl+/', { CtrlCmd: 2, Shift: 4, Alt: 8 }, kc, 'windows')).toEqual({
+      keyMod: 2,
+      keyCode: 191,
+    });
   });
 });

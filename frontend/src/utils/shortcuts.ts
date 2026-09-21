@@ -6,6 +6,7 @@ export type ShortcutAction =
   | 'runQuery'
   | 'selectCurrentStatement'
   | 'duplicateCurrentLine'
+  | 'toggleLineComment'
   | 'saveQuery'
   | 'saveQueryAs'
   | 'formatSql'
@@ -111,6 +112,7 @@ export const SHORTCUT_ACTION_ORDER: ShortcutAction[] = [
   'runQuery',
   'selectCurrentStatement',
   'duplicateCurrentLine',
+  'toggleLineComment',
   'saveQuery',
   'saveQueryAs',
   'formatSql',
@@ -171,6 +173,12 @@ const SHORTCUT_ACTION_META_DEFINITIONS: Record<ShortcutAction, ShortcutActionMet
     scope: 'queryEditor',
     allowInEditable: true,
     allowedReservedMonacoCommandIds: ['editor.action.addSelectionToNextFindMatch'],
+  },
+  toggleLineComment: {
+    labelKey: 'app.shortcuts.action.toggleLineComment.label',
+    descriptionKey: 'app.shortcuts.action.toggleLineComment.description',
+    scope: 'queryEditor',
+    allowInEditable: true,
   },
   saveQuery: {
     labelKey: 'app.shortcuts.action.saveQuery.label',
@@ -315,6 +323,12 @@ export const DEFAULT_SHORTCUT_OPTIONS: ShortcutOptions = {
   duplicateCurrentLine: {
     mac: { combo: 'Meta+D', enabled: true },
     windows: { combo: 'Ctrl+D', enabled: true },
+  },
+  // 行注释切换：沿用 Monaco 内置 Ctrl+/ 语义（sql 的 lineComment 为 --），
+  // 与「AI 诊断」的 Ctrl+Shift+A 不冲突；改键冲突由设置中心统一检测。
+  toggleLineComment: {
+    mac: { combo: 'Meta+/', enabled: true },
+    windows: { combo: 'Ctrl+/', enabled: true },
   },
   saveQuery: {
     mac: { combo: 'Meta+S', enabled: true },

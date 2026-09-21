@@ -331,6 +331,8 @@ import {
     stripCompletionIdentifierQuotes,
     shouldHandleQueryEditorRunShortcutFallback,
 } from './queryEditor/QueryEditorHelpers';
+import { duplicateCurrentLineInEditor } from './queryEditor/queryEditorDuplicateLine';
+import { registerQueryEditorCommentAction, runMonacoToggleLineComment } from './queryEditor/queryEditorCommentActions';
 import { finalizeQueryEditorSqlServerResultSets, resolveQueryEditorExecutionSuccessToast } from './queryEditor/queryEditorSqlServerResultMessages';
 import {
     applyQueryEditorCompletionFragmentCase,
@@ -2133,6 +2135,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const selectCurrentStatementActionRef = useRef<any>(null);
   const macFindWithSelectionGuardActionRef = useRef<any>(null);
   const duplicateCurrentLineActionRef = useRef<any>(null);
+  const toggleLineCommentActionRef = useRef<any>(null);
   const saveQueryActionRef = useRef<any>(null);
   const saveQueryAsActionRef = useRef<any>(null);
   const findInEditorActionRef = useRef<any>(null);
@@ -2672,6 +2675,10 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   );
   const duplicateCurrentLineShortcutBinding = useMemo(
       () => resolveShortcutBinding(shortcutOptions, 'duplicateCurrentLine', activeShortcutPlatform),
+      [activeShortcutPlatform, shortcutOptions],
+  );
+  const toggleLineCommentShortcutBinding = useMemo(
+      () => resolveShortcutBinding(shortcutOptions, 'toggleLineComment', activeShortcutPlatform),
       [activeShortcutPlatform, shortcutOptions],
   );
   const saveQueryShortcutBinding = useMemo(
@@ -4431,48 +4438,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const handleDuplicateCurrentLine = useCallback(() => {
       const editor = editorRef.current;
       const monaco = monacoRef.current;
-      const model = editor?.getModel?.();
-      const normalizedPosition = normalizeEditorPosition(editor?.getPosition?.());
-      if (!editor || !monaco?.Range || !model || !normalizedPosition) {
+      if (!editor || !monaco) {
           return;
       }
-
-      const lineNumber = normalizedPosition.lineNumber;
-      const lineText = String(model.getLineContent?.(lineNumber) || '');
-      const maxColumn = Number(model.getLineMaxColumn?.(lineNumber) || (lineText.length + 1));
-      const modelValue = String(model.getValue?.() || '');
-      const lineBreak = typeof model.getEOL?.() === 'string'
-          ? model.getEOL()
-          : (modelValue.includes('\r\n') ? '\r\n' : '\n');
-      const insertRange = new monaco.Range(lineNumber, maxColumn, lineNumber, maxColumn);
-      const nextColumn = Math.min(normalizedPosition.column, lineText.length + 1);
-
-      editor.executeEdits?.('gonavi-duplicate-current-line', [{
-          range: insertRange,
-          text: `${lineBreak}${lineText}`,
-          forceMoveMarkers: true,
-      }]);
-      editor.pushUndoStop?.();
-
-      const nextPosition = { lineNumber: lineNumber + 1, column: nextColumn };
-      const cursorSelection = new monaco.Range(
-          nextPosition.lineNumber,
-          nextPosition.column,
-          nextPosition.lineNumber,
-          nextPosition.column,
-      );
-      editor.setSelections?.([cursorSelection]);
-      editor.setSelection?.(cursorSelection);
-      editor.setPosition?.(nextPosition);
-      editor.revealLineInCenterIfOutsideViewport?.(nextPosition.lineNumber);
-      editor.focus?.();
-
-      const nextValue = editor.getValue?.();
-      if (typeof nextValue === 'string') {
-          applyQueryState(nextValue);
-      }
-
-    }, [applyQueryState]);
+      duplicateCurrentLineInEditor(editor, monaco, applyQueryState);
+  }, [applyQueryState]);
 
   const buildQueryEditorAiContextMenuActions = useCallback(() => ([
       {
@@ -11975,6 +11945,31 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           }
       };
   }, [activeShortcutPlatform, duplicateCurrentLineShortcutBinding, handleDuplicateCurrentLine, languagePreference]);
+
+  // 「取消/添加注释」右键菜单 + 可配置快捷键：委托 Monaco 内置
+  // editor.action.commentLine（当前行/选区生效、一步撤销），语言或改键变化时重注册。
+  useEffect(() => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      toggleLineCommentActionRef.current?.dispose?.();
+      const binding = toggleLineCommentShortcutBinding;
+      const keyBinding = binding?.enabled && binding.combo && monacoRef.current
+          ? comboToMonacoKeyBinding(
+              binding.combo, monacoRef.current.KeyMod, monacoRef.current.KeyCode, activeShortcutPlatform,
+            )
+          : null;
+      toggleLineCommentActionRef.current = registerQueryEditorCommentAction({
+          editor,
+          label: translate('query_editor.action.toggle_line_comment'),
+          keyMod: keyBinding?.keyMod,
+          keyCode: keyBinding?.keyCode,
+          run: () => runMonacoToggleLineComment(editorRef.current),
+      });
+      return () => {
+          toggleLineCommentActionRef.current?.dispose?.();
+          toggleLineCommentActionRef.current = null;
+      };
+  }, [activeShortcutPlatform, toggleLineCommentShortcutBinding, languagePreference]);
 
   useEffect(() => {
       if (saveQueryActionRef.current) {
