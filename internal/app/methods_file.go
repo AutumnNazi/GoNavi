@@ -5284,12 +5284,12 @@ func (a *App) ExportTableWithOptions(config connection.ConnectionConfig, dbName 
 	dbType := resolveDDLDBType(config)
 	query := buildExportTableSelectQuery(dbType, tableName, options.Columns)
 
-	f, err := openExportFileForTarget(webTarget, filename)
+	f, atomicTarget, err := openExportFileForTarget(webTarget, filename)
 	if err != nil {
 		reporter.Error(0, err.Error())
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	defer func() { _ = f.Close() }()
+	defer cleanupExportFileTarget(f, atomicTarget)
 	rowCount, _, err := exportQueryResultToFile(f, dbInst, runConfig, query, options, reporter)
 	if err != nil {
 		errMsg := a.appText("file.backend.error.write_failed", map[string]any{"detail": err.Error()})
@@ -5297,7 +5297,7 @@ func (a *App) ExportTableWithOptions(config connection.ConnectionConfig, dbName 
 		maybeReleaseFileTransferMemory("export-table-error", rowCount, filename)
 		return connection.QueryResult{Success: false, Message: errMsg}
 	}
-	if err := closeExportFile(f); err != nil {
+	if err := finishExportFileTarget(f, atomicTarget); err != nil {
 		errMsg := a.appText("file.backend.error.write_failed", map[string]any{"detail": err.Error()})
 		reporter.Error(rowCount, errMsg)
 		maybeReleaseFileTransferMemory("export-table-error", rowCount, filename)
@@ -7393,12 +7393,12 @@ func (a *App) ExportDataWithOptions(data []map[string]interface{}, columns []str
 	reporter := newExportProgressReporter(a, options, defaultName, reporterPath)
 	reporter.Start(a.appText("data_export.progress.stage.preparing_export", nil))
 
-	f, err := openExportFileForTarget(webTarget, filename)
+	f, atomicTarget, err := openExportFileForTarget(webTarget, filename)
 	if err != nil {
 		reporter.Error(0, err.Error())
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	defer func() { _ = f.Close() }()
+	defer cleanupExportFileTarget(f, atomicTarget)
 	writtenRows, err := writeRowsToFileWithReporter(f, data, columns, options, reporter)
 	if err != nil {
 		logger.Warnf("ExportData 写入失败：file=%s err=%v", filename, err)
@@ -7407,7 +7407,7 @@ func (a *App) ExportDataWithOptions(data []map[string]interface{}, columns []str
 		maybeReleaseFileTransferMemory("export-data-error", writtenRows, filename)
 		return connection.QueryResult{Success: false, Message: errMsg}
 	}
-	if err := closeExportFile(f); err != nil {
+	if err := finishExportFileTarget(f, atomicTarget); err != nil {
 		logger.Warnf("ExportData 落盘失败：file=%s err=%v", filename, err)
 		errMsg := a.appText("file.backend.error.write_failed", map[string]any{"detail": err.Error()})
 		reporter.Error(writtenRows, errMsg)
@@ -7516,12 +7516,12 @@ func (a *App) ExportQueryWithOptions(config connection.ConnectionConfig, dbName 
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.select_with_query_required", nil)}
 	}
 
-	f, err := openExportFileForTarget(webTarget, filename)
+	f, atomicTarget, err := openExportFileForTarget(webTarget, filename)
 	if err != nil {
 		reporter.Error(0, err.Error())
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	defer func() { _ = f.Close() }()
+	defer cleanupExportFileTarget(f, atomicTarget)
 
 	rowCount, columns, err := exportQueryResultToFile(f, dbInst, runConfig, query, options, reporter)
 	if err != nil {
@@ -7530,7 +7530,7 @@ func (a *App) ExportQueryWithOptions(config connection.ConnectionConfig, dbName 
 		maybeReleaseFileTransferMemory("export-query-error", rowCount, filename)
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	if err := closeExportFile(f); err != nil {
+	if err := finishExportFileTarget(f, atomicTarget); err != nil {
 		logger.Warnf("ExportQuery 落盘失败：file=%s err=%v", filename, err)
 		errMsg := a.appText("file.backend.error.write_failed", map[string]any{"detail": err.Error()})
 		reporter.Error(rowCount, errMsg)
