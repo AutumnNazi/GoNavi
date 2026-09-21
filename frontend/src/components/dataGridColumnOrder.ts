@@ -1,4 +1,27 @@
 import { arrayMove } from '@dnd-kit/sortable';
+import { useEffect, useMemo, useState } from 'react';
+
+export const useDataGridColumnLayout = (
+  visibleColumnNames: string[],
+  storedOrder?: string[],
+  storedHidden?: string[],
+  contextKey?: string,
+) => {
+  const nextOrder = useMemo(() => {
+    if (!storedOrder?.length) return visibleColumnNames;
+    const incoming = new Set(visibleColumnNames);
+    const stored = new Set(storedOrder);
+    return [...storedOrder.filter(name => incoming.has(name)),
+      ...visibleColumnNames.filter(name => !stored.has(name))];
+  }, [visibleColumnNames, storedOrder]);
+  const [allOrderedColumnNames, setAllOrderedColumnNames] = useState(nextOrder);
+  const [localHiddenColumns, setLocalHiddenColumns] = useState<string[]>(() => storedHidden || []);
+  useEffect(() => { setAllOrderedColumnNames(nextOrder); }, [nextOrder, contextKey]);
+  useEffect(() => {
+    setLocalHiddenColumns(current => storedHidden || (current.length ? [] : current));
+  }, [storedHidden, contextKey]);
+  return { allOrderedColumnNames, setAllOrderedColumnNames, localHiddenColumns, setLocalHiddenColumns };
+};
 
 export const DATA_GRID_COLUMN_ORDER_DRAG_MIME = 'application/x-gonavi-data-grid-column-order';
 

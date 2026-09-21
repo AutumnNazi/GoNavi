@@ -31,7 +31,9 @@ describe('DataGrid native horizontal scroll lifecycle', () => {
     expect(virtualListPatch).toContain("position: horizontalOffsetComposited ? 'sticky' : 'relative'");
     expect(source).toContain('const nextBodyTranslate = `${-clampedOffset}px 0`;');
     expect(nativeScrollBindingSource).toContain("source?.classList.contains('ant-table-header')");
-    expect(nativeScrollBindingSource).toContain('syncVirtualHorizontalVisualOffset(tableContainer, holderEl.scrollLeft);');
+    expect(nativeScrollBindingSource).toContain('scheduleNativeVirtualHorizontalScroll(tableContainer);');
+    expect(nativeScrollBindingSource).toContain('{ passive: true, capture: true }');
+    expect(nativeScrollBindingSource).toContain("removeEventListener('scroll', handleTargetScroll, true)");
     expect(alignmentSource).toContain('? readVirtualHorizontalOffset(tableContainer)');
   });
 
@@ -42,7 +44,29 @@ describe('DataGrid native horizontal scroll lifecycle', () => {
       source.indexOf('const [selectedRowKeys', source.indexOf('// Dynamic Height')),
     );
 
-    expect(metricsEffect).toContain('resizeObserver.observe(el);');
-    expect(metricsEffect).toContain('recalculateTableMetrics(el);');
+    expect(metricsEffect).toContain('return observeDataGridMetrics(el, recalculateTableMetrics);');
   });
+
+  it('still reports whether a measurement applied', () => {
+    const source = readDataGridSource();
+    const metricsBody = source.slice(
+      source.indexOf('const recalculateTableMetrics = useCallback'),
+      source.indexOf('useDataGridLayoutEffect(() => {', source.indexOf('// Dynamic Height')),
+    );
+
+    // The callers need to know when the panel was not laid out yet, so the
+    // early returns and the success path must stay explicit booleans.
+    expect(metricsBody).toContain('if (!target) return false;');
+    expect(metricsBody).toContain('const metrics = measureDataGridMetrics({');
+    expect(metricsBody).toContain('if (!metrics) return false;');
+    expect(metricsBody).toContain('if (metrics.tableHeight === null) return false;');
+    expect(metricsBody).toContain('return true;');
+  });
+
+  it('keeps DOM measurement and first-valid scheduling outside the oversized component', () => {
+    const source = readDataGridSource();
+    expect(source).not.toContain("closest('.query-result-tabs .ant-tabs-content')");
+    expect(source).not.toContain('new ResizeObserver');
+  });
+
 });

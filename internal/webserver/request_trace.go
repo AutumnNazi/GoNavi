@@ -26,7 +26,7 @@ func isDatabaseQueryInvoke(request invokeRequest) bool {
 		return false
 	}
 	switch strings.TrimSpace(request.Method) {
-	case "DBQuery", "DBQueryApplicationWithCancel", "DBQueryWithCancel", "DBQueryMulti":
+	case "DBQuery", "DBQueryApplicationWithCancel", "DBQueryWithCancel", "DBQueryMulti", "DBQueryMultiCompact":
 		return true
 	default:
 		return false
@@ -70,6 +70,14 @@ func webRequestTraceDriverMode(config connection.ConnectionConfig) string {
 	return "builtin"
 }
 
+// webInvokeResultRequestID reports the query ID a query-shaped RPC result
+// carries. Compact query results embed the same identity but are a distinct
+// type, so probe for the accessor instead of type-switching on the concrete
+// wrapper type.
+type webInvokeQueryIDCarrier interface {
+	QueryResultQueryID() string
+}
+
 func webInvokeResultRequestID(result any) string {
 	switch value := result.(type) {
 	case connection.QueryResult:
@@ -77,6 +85,10 @@ func webInvokeResultRequestID(result any) string {
 	case *connection.QueryResult:
 		if value != nil {
 			return strings.TrimSpace(value.QueryID)
+		}
+	case webInvokeQueryIDCarrier:
+		if value != nil {
+			return strings.TrimSpace(value.QueryResultQueryID())
 		}
 	}
 	return ""

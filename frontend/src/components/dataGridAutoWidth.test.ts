@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   calculateAutoFitColumnWidth,
+  calculateAutoFitColumnWidths,
   normalizeAutoFitCellText,
 } from './dataGridAutoWidth';
 
@@ -42,5 +43,20 @@ describe('dataGridAutoWidth helpers', () => {
     expect(normalizeAutoFitCellText(null)).toBe('NULL');
     expect(normalizeAutoFitCellText({ a: 1, b: 2 })).toBe('{"a":1,"b":2}');
     expect(normalizeAutoFitCellText(Array.from({ length: 81 }, (_, index) => index))).toBe('[Array(81)]');
+  });
+
+  it('calculates all initial column widths before the grid first renders', () => {
+    const widths = calculateAutoFitColumnWidths({
+      columnNames: ['id', 'name'],
+      rows: [{ id: 1, name: 'long display name' }],
+      dataFontSize: 13,
+      defaultWidth: 100,
+      minWidth: 80,
+      maxWidth: 720,
+      measureTextWidth: (text) => text.length * 8,
+    });
+
+    expect(widths.id).toBe(100);
+    expect(widths.name).toBe('long display name'.length * 8 + 20);
   });
 });

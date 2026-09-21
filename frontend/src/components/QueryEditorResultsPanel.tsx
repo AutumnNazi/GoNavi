@@ -5,6 +5,7 @@ import { ArrowLeftOutlined, ArrowRightOutlined, BugOutlined, ClearOutlined, Clos
 import { useStore } from '../store';
 import type { EditRowLocator } from '../utils/rowLocator';
 import type { GridSortInfoItem } from '../utils/dataGridSort';
+import type { ColumnMeta } from './dataGridColumnMeta';
 import type { QueryResultPaginationState } from '../utils/queryResultPagination';
 import { filterColumnNamesByGlobalHiddenColumns, useGlobalHiddenColumns } from '../utils/globalHiddenColumns';
 import { buildQueryResultColumnPinScope } from '../utils/queryResultColumnPinScope';
@@ -67,6 +68,8 @@ export type QueryEditorResultSet = {
     executionConnectionId?: string;
     executionDbName?: string;
     pkColumns: string[];
+    columnMetaMap?: Record<string, ColumnMeta>;
+    uniqueKeyGroups?: string[][];
     editLocator?: EditRowLocator;
     readOnly: boolean;
     showRowNumberColumn?: boolean;
@@ -642,7 +645,6 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                 rs={rs}
                 workbenchTabId={workbenchTabId}
                 isResultActive={isActive && resolvedActiveResultKey === rs.key}
-                loading={loading}
                 darkMode={darkMode}
                 currentDb={currentDb}
                 currentConnectionId={currentConnectionId}
@@ -749,9 +751,6 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
               .query-result-tabs .ant-tabs-extra-content .query-result-panel-tab-action { width: 28px; min-width: 28px; height: 28px !important; min-height: 28px !important; padding: 0 !important; display: inline-flex; align-items: center; justify-content: center; }
             `}</style>
             <div data-gonavi-close-shortcut-scope="result" className="gn-v2-query-results" style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                {tabItems.length > 0 && visibleExecutionLifecycle ? (
-                    <QueryEditorExecutionStatus compact lifecycle={visibleExecutionLifecycle} />
-                ) : null}
                 {tabItems.length > 0 ? (
                     <Tabs className="query-result-tabs" activeKey={resolvedActiveResultKey} onChange={onActiveResultKeyChange} animated={false} style={{ flex: 1, minHeight: 0 }} tabBarExtraContent={tabsExtraContent} items={tabItems} />
                 ) : executionError ? (

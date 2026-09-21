@@ -32,17 +32,45 @@ const createStyleStub = () => {
 };
 
 describe('fixed cell horizontal preview', () => {
-  it('updates one inherited variable instead of every visible fixed cell', () => {
-    const inner = { style: createStyleStub() };
+  it('writes an inline transform onto pinned cells instead of an inherited variable', () => {
+    const pinned = { style: createStyleStub() };
+    const plain = { style: createStyleStub() };
+    const inner = {
+      style: createStyleStub(),
+      querySelectorAll: vi.fn((selector: string) => (
+        selector.includes('fix-left') ? [pinned] : []
+      )),
+    };
 
     expect(applyDataGridFixedCellPreviewOffset(inner as unknown as HTMLElement, 640)).toBe(1);
-    expect(inner.style.setProperty).toHaveBeenCalledWith('--gn-datagrid-h-scroll', '640px');
+    expect(pinned.style.setProperty).toHaveBeenCalledWith('transform', 'translate3d(640px, 0, 0)', 'important');
+    // 继承变量必须落在共同祖先上，会让整棵子树（99 列 × 41 行）每帧失效重算，
+    // 那正是宽表横向拖动卡顿的来源。只写真正固定的单元格则与列数无关。
+    expect(inner.style.setProperty).not.toHaveBeenCalled();
+    expect(plain.style.setProperty).not.toHaveBeenCalled();
 
     expect(applyDataGridFixedCellPreviewOffset(inner as unknown as HTMLElement, 640)).toBe(0);
-    expect(inner.style.setProperty).toHaveBeenCalledTimes(1);
+    expect(pinned.style.setProperty).toHaveBeenCalledTimes(1);
   });
 
-  it('persists the settled offset once and releases per-cell preview styles', () => {
+  it('offsets right-pinned cells from the scroll end', () => {
+    const rightCell = { style: createStyleStub() };
+    const inner = {
+      style: createStyleStub(),
+      querySelectorAll: vi.fn((selector: string) => (
+        selector.includes('fix-right') ? [rightCell] : []
+      )),
+    };
+
+    expect(applyDataGridFixedCellPreviewOffset(inner as unknown as HTMLElement, 900, 17930)).toBe(1);
+    expect(rightCell.style.setProperty).toHaveBeenCalledWith(
+      'transform',
+      'translate3d(-17030px, 0, 0)',
+      'important',
+    );
+  });
+
+  it('settles the container offset and releases the preview transforms', () => {
     const first = { style: createStyleStub() };
     const second = { style: createStyleStub() };
     const root = { querySelectorAll: vi.fn(() => [first, second]) };
@@ -59,6 +87,8 @@ describe('fixed cell horizontal preview', () => {
     expect(first.style.removeProperty).toHaveBeenCalledWith('transform');
     expect(second.style.removeProperty).toHaveBeenCalledWith('transform');
   });
+
+
 
 });
 
@@ -126,6 +156,16 @@ describe('header fixed cell pin offset', () => {
     syncDataGridHeaderHorizontalOffset(header as unknown as HTMLElement, 240, false);
     expect(table.style.translate).toBe('');
     expect(header.scrollLeft).toBe(240);
+  });
+
+  it('uses the pre-write header measurement without forcing layout during scroll', () => {
+    const table = { style: { translate: '' } };
+    const readScrollLeft = vi.fn(() => 0);
+    const header = { querySelector: () => table, querySelectorAll: () => [] };
+    Object.defineProperty(header, 'scrollLeft', { get: readScrollLeft });
+    syncDataGridHeaderHorizontalOffset(header as unknown as HTMLElement, 480, true, 120);
+    expect(table.style.translate).toBe('-360px 0');
+    expect(readScrollLeft).not.toHaveBeenCalled();
   });
 });
 

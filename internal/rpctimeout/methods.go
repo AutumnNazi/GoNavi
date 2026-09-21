@@ -12,6 +12,7 @@ func IsLongRunningAppMethod(method string) bool {
 		"DBQueryApplicationWithCancel",
 		"DBQueryWithCancel",
 		"DBQueryMulti",
+		"DBQueryMultiCompact",
 		"DBQueryMultiWithOptions",
 		"DBQueryMultiTransactional",
 		"DBQueryMultiTransactionalWithOptions",

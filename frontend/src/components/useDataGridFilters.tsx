@@ -135,14 +135,17 @@ export const useDataGridFilters = ({
     });
   }, [normalizeFilterLogic]);
 
-  const [filterConditions, setFilterConditions] = React.useState<GridFilterConditionState[]>([]);
-  const [nextFilterId, setNextFilterId] = React.useState(1);
+  const [filterConditions, setFilterConditions] = React.useState(() => normalizeGridFilterConditions(appliedFilterConditions));
+  const [nextFilterId, setNextFilterId] = React.useState(() => filterConditions.reduce((next, cond) => Math.max(next, cond.id + 1), 1));
+  const appliedConditionsRef = React.useRef(appliedFilterConditions);
   const [quickWhereDraft, setQuickWhereDraft] = React.useState(() => normalizeQuickWhereCondition(quickWhereCondition));
   const [quickWhereSuggestionsOpen, setQuickWhereSuggestionsOpen] = React.useState(false);
   const filterPanelRef = React.useRef<HTMLDivElement>(null);
   const autoDefaultFilterIdsRef = React.useRef<Set<number>>(new Set());
 
   React.useEffect(() => {
+    if (appliedConditionsRef.current === appliedFilterConditions) return;
+    appliedConditionsRef.current = appliedFilterConditions;
     const nextConditions = normalizeGridFilterConditions(appliedFilterConditions);
     autoDefaultFilterIdsRef.current.clear();
     setFilterConditions(nextConditions);

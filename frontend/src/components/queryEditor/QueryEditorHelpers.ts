@@ -43,7 +43,7 @@ import {
     QUERY_EDITOR_COMPLETION_SUGGESTION_LIMIT,
     type QueryEditorCompletionMatchRank,
 } from './queryEditorCompletionMatch';
-import { resolveUniqueKeyGroupsFromIndexes } from '../dataGridCopyInsert';
+import { buildIndexedColumnMetadata, type DataGridIndexedColumnMetadata } from '../dataGridColumnTypeMarker';
 import { t as translate } from '../../i18n';
 
 export {
@@ -379,7 +379,7 @@ export type SimpleSelectInfo = {
     writableColumns: Record<string, string>;
 };
 
-export type QueryStatementPlan = {
+export type QueryStatementPlan = DataGridIndexedColumnMetadata & {
     originalSql: string;
     executedSql: string;
     tableRef?: QueryResultTableRef;
@@ -4538,9 +4538,10 @@ export const resolveQueryLocatorPlan = async ({
             .filter((column: any) => getColumnDefinitionKey(column) === 'PRI')
             .map(getColumnDefinitionName)
             .filter(Boolean);
-        const indexes = resIndexes?.success && Array.isArray(resIndexes.data)
-            ? resIndexes.data as IndexDefinition[]
-            : [];
+        const indexedMetadata = buildIndexedColumnMetadata(tableColumns,
+            resIndexes?.success && Array.isArray(resIndexes.data) ? resIndexes.data as IndexDefinition[] : undefined);
+        Object.assign(plan, indexedMetadata);
+        const uniqueKeyGroups = indexedMetadata.uniqueKeyGroups || [];
         const writableColumns: Record<string, string> = selectInfo.selectsAll
             ? Object.fromEntries(tableColumnNames.map((column) => [column, column]))
             : {};
@@ -4576,7 +4577,6 @@ export const resolveQueryLocatorPlan = async ({
             plan.pkColumns = primaryKeys;
             plan.editLocator = buildColumnLocator('primary-key', primaryKeys);
         } else {
-            const uniqueKeyGroups = resolveUniqueKeyGroupsFromIndexes(indexes);
             const uniqueKeyGroup = uniqueKeyGroups.find((group) => group.length > 0);
             if (uniqueKeyGroup) {
                 plan.editLocator = buildColumnLocator('unique-key', uniqueKeyGroup);
