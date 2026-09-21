@@ -314,6 +314,9 @@ func TestSavedConnectionDriverUsageCountsIncludesOptionalAndCustomDrivers(t *tes
 func TestOptionalDriverPackageUpdateStatusDemotesSharedRevisionMismatchToOptional(t *testing.T) {
 	app := NewApp()
 	app.SetLanguage(string(i18n.LanguageZhCN))
+	t.Cleanup(func() {
+		app.SetLanguage(string(i18n.LanguageZhCN))
+	})
 
 	definition := driverDefinition{Type: "clickhouse", Name: "ClickHouse", PinnedVersion: "1.0.0"}
 	pkg := installedDriverPackage{Version: "1.0.0", AgentRevision: "src-stale-shared-bump"}
@@ -333,6 +336,9 @@ func TestOptionalDriverPackageUpdateStatusDemotesSharedRevisionMismatchToOptiona
 func TestOptionalDriverPackageUpdateStatusKeepsUpdateWhenLibraryVersionChanged(t *testing.T) {
 	app := NewApp()
 	app.SetLanguage(string(i18n.LanguageZhCN))
+	t.Cleanup(func() {
+		app.SetLanguage(string(i18n.LanguageZhCN))
+	})
 
 	definition := driverDefinition{Type: "clickhouse", Name: "ClickHouse", PinnedVersion: "1.1.0"}
 	pkg := installedDriverPackage{Version: "1.0.0", AgentRevision: "src-stale"}
@@ -349,6 +355,9 @@ func TestOptionalDriverPackageUpdateStatusKeepsUpdateWhenLibraryVersionChanged(t
 func TestOptionalDriverPackageUpdateStatusKeepsUpdateWhenInstalledVersionMissing(t *testing.T) {
 	app := NewApp()
 	app.SetLanguage(string(i18n.LanguageZhCN))
+	t.Cleanup(func() {
+		app.SetLanguage(string(i18n.LanguageZhCN))
+	})
 
 	definition := driverDefinition{Type: "clickhouse", Name: "ClickHouse", PinnedVersion: "1.1.0"}
 	pkg := installedDriverPackage{Version: "", AgentRevision: "src-stale"}

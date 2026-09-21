@@ -514,17 +514,22 @@ const appendRawNonChineseDetail = (parts: string[], value: unknown) => {
 // issue #1326：可选更新（revision 变化但驱动库版本未变）的弱提示，
 // 支持按 expectedRevision「不再提示此版本」；状态持久化在 localStorage。
 const OPTIONAL_UPDATE_DISMISS_KEY = 'gonavi.driver.optionalUpdate.dismissedRevision';
-const readOptionalUpdateDismissedRevision = (): string | undefined => {
+const readOptionalUpdateDismissedRevisions = (): string[] => {
   try {
-    return window.localStorage.getItem(OPTIONAL_UPDATE_DISMISS_KEY) || undefined;
+    const raw = window.localStorage.getItem(OPTIONAL_UPDATE_DISMISS_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
   } catch {
-    return undefined;
+    return [];
   }
 };
-const isOptionalUpdateVisible = (row: DriverStatusRow, dismissedRevision?: string): boolean => {
-  return !!row.optionalUpdate && !!row.expectedRevision && row.expectedRevision !== dismissedRevision;
+const isOptionalUpdateVisible = (row: DriverStatusRow, dismissedRevisions: string[]): boolean => {
+  return !!row.optionalUpdate && !!row.expectedRevision && !dismissedRevisions.includes(row.expectedRevision);
 };
-const formatDriverCardStatusMessage = (row: DriverStatusRow, dismissedRevision?: string): string => {
+const formatDriverCardStatusMessage = (row: DriverStatusRow, dismissedRevisions: string[]): string => {
   const parts: string[] = [];
   if (row.builtIn) {
     parts.push(t('driver.modal.card.status.builtIn'));
@@ -532,7 +537,7 @@ const formatDriverCardStatusMessage = (row: DriverStatusRow, dismissedRevision?:
     parts.push(t('driver.modal.card.status.needsUpdate'));
     appendRawNonChineseDetail(parts, row.updateReason);
     appendRawNonChineseDetail(parts, row.message);
-  } else if (isOptionalUpdateVisible(row, dismissedRevision)) {
+  } else if (isOptionalUpdateVisible(row, dismissedRevisions)) {
     parts.push(t('driver.modal.card.status.optionalUpdate'));
     appendRawNonChineseDetail(parts, row.message);
   } else if (row.connectable || row.runtimeAvailable) {
@@ -718,7 +723,7 @@ const DriverManagerModal: React.FC<{
   const [selectedVersionMap, setSelectedVersionMap] = useState<Record<string, string>>({});
   const [versionLoadingMap, setVersionLoadingMap] = useState<Record<string, boolean>>({});
   const [versionSizeLoadingMap, setVersionSizeLoadingMap] = useState<Record<string, boolean>>({});
-  const [optionalUpdateDismissedRevision, setOptionalUpdateDismissedRevision] = useState<string | undefined>(() => readOptionalUpdateDismissedRevision());
+  const [optionalUpdateDismissedRevisions, setOptionalUpdateDismissedRevisions] = useState<string[]>(() => readOptionalUpdateDismissedRevisions());
   const [driverFilter, setDriverFilter] = useState<'all' | 'needsUpdate' | 'enabled' | 'notEnabled'>('all');
   const [driverSortKey, setDriverSortKey] = useState<DriverListSortKey>('name');
   const [selectedDriverType, setSelectedDriverType] = useState('');
@@ -1836,7 +1841,7 @@ const DriverManagerModal: React.FC<{
     if (row.needsUpdate) {
       return <Tag color="warning">{t('driver.modal.stats.needsUpdate')}</Tag>;
     }
-    if (isOptionalUpdateVisible(row, optionalUpdateDismissedRevision)) {
+    if (isOptionalUpdateVisible(row, optionalUpdateDismissedRevisions)) {
       return <Tag color="processing">{t('driver.modal.stats.canUpdate')}</Tag>;
     }
     if (row.connectable) {
@@ -1957,7 +1962,7 @@ const DriverManagerModal: React.FC<{
     return (
       <Space size={8} wrap className="driver-manager-card-actions">
         {mainAction}
-        {isOptionalUpdateVisible(row, optionalUpdateDismissedRevision) ? (
+        {isOptionalUpdateVisible(row, optionalUpdateDismissedRevisions) ? (
           <Button
             size={embedded ? 'small' : undefined}
             type="text"
@@ -1966,12 +1971,13 @@ const DriverManagerModal: React.FC<{
               if (!row.expectedRevision) {
                 return;
               }
+              const nextDismissed = Array.from(new Set([...optionalUpdateDismissedRevisions, row.expectedRevision]));
               try {
-                window.localStorage.setItem(OPTIONAL_UPDATE_DISMISS_KEY, row.expectedRevision);
+                window.localStorage.setItem(OPTIONAL_UPDATE_DISMISS_KEY, JSON.stringify(nextDismissed));
               } catch {
                 // localStorage 不可用时仅本次会话内生效
               }
-              setOptionalUpdateDismissedRevision(row.expectedRevision);
+              setOptionalUpdateDismissedRevisions(nextDismissed);
             }}
           >
             {t('driver.modal.card.optionalUpdate.dismiss')}
@@ -2000,7 +2006,7 @@ const DriverManagerModal: React.FC<{
         row.type,
         row.pinnedVersion,
         row.installedVersion,
-        formatDriverCardStatusMessage(row, optionalUpdateDismissedRevision),
+        formatDriverCardStatusMessage(row, optionalUpdateDismissedRevisions),
         row.builtIn ? t('driver.modal.search.builtIn') : t('driver.modal.search.external'),
         row.needsUpdate
           ? t('driver.modal.search.reinstallRecommended')
@@ -2013,7 +2019,7 @@ const DriverManagerModal: React.FC<{
       const searchableText = normalizeDriverSearchText(searchableParts.filter(Boolean).join(' '));
       return searchableText.includes(normalizedSearchKeyword);
     });
-  }, [normalizedSearchKeyword, rows]);
+  }, [normalizedSearchKeyword, rows, optionalUpdateDismissedRevisions]);
   const visibleRows = useMemo(() => {
     let nextRows: DriverStatusRow[];
     switch (driverFilter) {
@@ -2327,7 +2333,7 @@ const DriverManagerModal: React.FC<{
   const renderDriverDetail = (row: DriverStatusRow) => {
     const progressState = progressMap[row.type];
     const progress = resolveDriverProgress(row);
-    const statusMessage = formatDriverCardStatusMessage(row, optionalUpdateDismissedRevision);
+    const statusMessage = formatDriverCardStatusMessage(row, optionalUpdateDismissedRevisions);
     const affectedText = row.affectedConnections && row.affectedConnections > 0
       ? t('driver.modal.card.affectedConnections', { count: row.affectedConnections })
       : '';

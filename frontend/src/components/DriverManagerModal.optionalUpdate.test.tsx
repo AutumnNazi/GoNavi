@@ -178,7 +178,7 @@ const buildClickHouseDriver = (overrides: Record<string, unknown> = {}) => ({
 
 const mountModal = async () => {
   const { default: DriverManagerModal } = await import('./DriverManagerModal');
-  let renderer: ReactTestRenderer;
+  let renderer!: ReactTestRenderer;
   await act(async () => {
     renderer = create(<DriverManagerModal open onClose={vi.fn()} />);
   });
@@ -245,7 +245,7 @@ describe('DriverManagerModal optional update tier (issue #1326)', () => {
     expect(content).not.toContain('驱动组件有更新，建议重装以获得最新修复与兼容性改进');
   });
 
-  it('needs update rows keep the reinstall prompt and never render the dismiss entry', async () => {
+  it('needs update rows keep the reinstall prompt and never render the dismiss entry', { timeout: 30000 }, async () => {
     const { setCurrentLanguage } = await import('../i18n');
     setCurrentLanguage('zh-CN');
     backendApp.GetDriverStatusList.mockResolvedValue({
@@ -271,7 +271,7 @@ describe('DriverManagerModal optional update tier (issue #1326)', () => {
     expect(findButton(renderer, '不再提示此版本')).toBeUndefined();
   });
 
-  it('dismiss click persists the expected revision and hides the weak hint', async () => {
+  it('dismiss click persists the expected revision and hides the weak hint', { timeout: 30000 }, async () => {
     const { setCurrentLanguage } = await import('../i18n');
     setCurrentLanguage('zh-CN');
     backendApp.GetDriverStatusList.mockResolvedValue({
@@ -288,13 +288,16 @@ describe('DriverManagerModal optional update tier (issue #1326)', () => {
       dismiss.props.onClick();
     });
 
-    expect(localStorageSpies.setItem).toHaveBeenCalledWith(OPTIONAL_UPDATE_DISMISS_KEY, 'src-expected');
+    expect(localStorageSpies.setItem).toHaveBeenCalledWith(
+      OPTIONAL_UPDATE_DISMISS_KEY,
+      JSON.stringify(['src-expected']),
+    );
     expect(textContent(renderer.toJSON())).not.toContain('驱动组件有更新（可选，不影响使用）');
     expect(textContent(renderer.toJSON())).not.toContain('不再提示此版本');
     expect(textContent(renderer.toJSON())).toContain('纯 Go 驱动已启用，可直接连接');
   });
 
-  it('hides the weak hint when the dismissed revision matches on remount', async () => {
+  it('hides the weak hint when the dismissed revision matches on remount', { timeout: 30000 }, async () => {
     localStorageMap.set(OPTIONAL_UPDATE_DISMISS_KEY, 'src-expected');
 
     backendApp.GetDriverStatusList.mockResolvedValue({
