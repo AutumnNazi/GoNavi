@@ -6,8 +6,11 @@ import "dayjs/locale/de";
 import "dayjs/locale/ru";
 import type { SupportedLanguage } from "./types";
 
-const appApi = () => (window as any)?.go?.app?.App;
-const aiApi = () => (window as any)?.go?.aiservice?.Service;
+// The Wails bindings live on `window`, which only exists in the desktop
+// runtime; guard like the cookie writer below so a node-environment render
+// (react-test-renderer) syncs nothing instead of throwing.
+const appApi = () => (typeof window === "undefined" ? undefined : (window as any)?.go?.app?.App);
+const aiApi = () => (typeof window === "undefined" ? undefined : (window as any)?.go?.aiservice?.Service);
 const WEB_AUTH_LANGUAGE_COOKIE_NAME = "gonavi_web_lang";
 let lastSyncedLanguage: SupportedLanguage | null = null;
 let desiredLanguage: SupportedLanguage | null = null;

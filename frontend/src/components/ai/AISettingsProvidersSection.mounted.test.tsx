@@ -18,6 +18,16 @@ vi.mock('antd', () => {
   });
   return {
     Form, Input,
+    // SqlAiCompletionToggle renders an antd Switch; without this stub the whole
+    // file fails to mount on an import the mock never declared.
+    Switch: ({ checked, onChange, ...props }: any) => (
+      <input
+        type="checkbox"
+        {...props}
+        checked={Boolean(checked)}
+        onChange={(event) => onChange?.(event.target.checked)}
+      />
+    ),
     Select: React.forwardRef((props: any, ref: any) => <>
       <select ref={ref} {...props} />
       {typeof props.popupRender === 'function' ? props.popupRender(<div data-select-menu="true" />)

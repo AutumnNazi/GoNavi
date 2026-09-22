@@ -3,6 +3,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AIChatMessage } from '../../types';
+import { I18nProvider } from '../../i18n/provider';
 import { buildOverlayWorkbenchTheme } from '../../utils/overlayWorkbenchTheme';
 import AIChatPanelConversationView from './AIChatPanelConversationView';
 
@@ -42,31 +43,35 @@ const overlayTheme = buildOverlayWorkbenchTheme(false);
 const noop = () => {};
 
 const renderConversation = (messages: AIChatMessage[]) => (
-  <AIChatPanelConversationView
-    mode="chat"
-    messages={messages}
-    darkMode={false}
-    overlayTheme={overlayTheme}
-    textColor="#0f172a"
-    mutedColor="#64748b"
-    quickActionBg="rgba(255,255,255,0.8)"
-    quickActionBorder="1px solid rgba(0,0,0,0.06)"
-    showScrollBottom={false}
-    contextTableNames={[]}
+  // The session switcher renders through useI18n, so the view tree needs a
+  // provider the same way the static-markup sibling test wraps it.
+  <I18nProvider preference="zh-CN" systemLanguages={['zh-CN']} onPreferenceChange={() => {}}>
+    <AIChatPanelConversationView
+      mode="chat"
+      messages={messages}
+      darkMode={false}
+      overlayTheme={overlayTheme}
+      textColor="#0f172a"
+      mutedColor="#64748b"
+      quickActionBg="rgba(255,255,255,0.8)"
+      quickActionBorder="1px solid rgba(0,0,0,0.06)"
+      showScrollBottom={false}
+      contextTableNames={[]}
 
-    insights={[]}
-    sessions={[]}
-    activeSessionId="session-performance"
-    messagesEndRef={createRef<HTMLDivElement>()}
-    onScrollMessages={noop}
-    onQuickAction={noop}
-    onSelectSession={noop}
-    onEditMessage={noop}
-    onRetryMessage={noop}
-    onDeleteMessage={noop}
-    onMessageRenderError={noop}
-    onScrollBottom={noop}
-  />
+      insights={[]}
+      sessions={[]}
+      activeSessionId="session-performance"
+      messagesEndRef={createRef<HTMLDivElement>()}
+      onScrollMessages={noop}
+      onQuickAction={noop}
+      onSelectSession={noop}
+      onEditMessage={noop}
+      onRetryMessage={noop}
+      onDeleteMessage={noop}
+      onMessageRenderError={noop}
+      onScrollBottom={noop}
+    />
+  </I18nProvider>
 );
 
 describe('AIChatPanelConversationView streaming render performance', () => {
