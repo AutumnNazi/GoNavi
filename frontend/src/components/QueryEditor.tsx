@@ -1,5 +1,5 @@
 import Modal from './common/ResizableDraggableModal';
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react';
 import Editor, { type BeforeMount, type OnMount } from './MonacoEditor';
 import { message, Input, Form, MenuProps, Button, Segmented, type InputRef } from 'antd';
 import {
@@ -115,7 +115,8 @@ import {
     clampQueryEditorEditorHeight,
     resolveQueryEditorEditorHeightFromRatio,
     resolveQueryEditorEditorHeightRatio,
-    sanitizeQueryEditorEditorHeightRatio,
+    resolveQueryEditorTabSplitRatio,
+    setQueryEditorTabSplitRatio,
 } from '../utils/queryEditorSplitLayout';
 import {
     DUCKDB_ROWID_LOCATOR_COLUMN,
@@ -169,6 +170,7 @@ import {
     buildQueryEditorTableNavigationContextKey,
 } from './queryEditor/queryEditorVisibilityContext';
 import { useQueryEditorEverActive } from './queryEditor/useQueryEditorEverActive';
+import { useQueryEditorSqlLogBridge } from './queryEditor/useQueryEditorSqlLogBridge';
 import SqlSnippetPickerModal from './queryEditor/SqlSnippetPickerModal';
 import DuckDBAttachPickerModal from './queryEditor/DuckDBAttachPickerModal';
 import { useExternalSqlFileDrop } from './queryEditor/useExternalSqlFileDrop';
@@ -2323,6 +2325,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const addSqlLog = useStore(state => state.addSqlLog);
   const sqlLogs = useStore(state => (isActive ? state.sqlLogs : EMPTY_QUERY_EDITOR_SQL_LOGS));
   const sqlLogCount = sqlLogs.length;
+  const deferredSqlLogs = useDeferredValue(sqlLogs);
   const addTab = useStore(state => state.addTab);
   const setActiveContext = useStore(state => state.setActiveContext);
   const updateQueryTabDraft = useStore(state => state.updateQueryTabDraft);
@@ -2359,8 +2362,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       currentConnectionId,
       currentDb,
       savedQueries,
-      sqlLogs,
-  }), [currentConnectionId, currentDb, savedQueries, sqlLogs]);
+      sqlLogs: deferredSqlLogs,
+  }), [currentConnectionId, currentDb, savedQueries, deferredSqlLogs]);
   const draftSnapshotTab = useMemo(() => ({
       id: tab.id,
       title: tab.title,
@@ -2388,7 +2391,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
   const sqlFormatOptions = useStore(state => state.sqlFormatOptions);
   const setSqlFormatOptions = useStore(state => state.setSqlFormatOptions);
-  const queryEditorEditorHeightRatio = sanitizeQueryEditorEditorHeightRatio(
+  const queryEditorEditorHeightRatio = resolveQueryEditorTabSplitRatio(
+      tab.id,
       queryOptions?.queryEditorEditorHeightRatio,
   );
   const sqlEditorTransactionOptions = useStore(state => state.sqlEditorTransactionOptions);
@@ -5604,17 +5608,15 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           setEditorHeight(finalHeight);
           const availableHeight = resolveEditorSplitAvailableHeight();
           if (availableHeight > 0) {
-              setQueryOptions({
-                  queryEditorEditorHeightRatio: resolveQueryEditorEditorHeightRatio(
-                      finalHeight,
-                      availableHeight,
-                  ),
-              });
+              setQueryEditorTabSplitRatio(tab.id, resolveQueryEditorEditorHeightRatio(
+                  finalHeight,
+                  availableHeight,
+              ));
           }
       }
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
-  }, [applyEditorHeightToDom, cancelEditorResizeFrame, handleMouseMove, resolveEditorSplitAvailableHeight, setQueryOptions]);
+  }, [applyEditorHeightToDom, cancelEditorResizeFrame, handleMouseMove, resolveEditorSplitAvailableHeight, tab.id]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
       e.preventDefault();
@@ -12998,17 +13000,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       };
   }, [currentSavedQuery, handleSaveQueryAs, isActive, tab.filePath]);
 
-  useEffect(() => {
-      const handleOpenSqlExecutionLog = (event: Event) => {
-          const mode = event instanceof CustomEvent && event.detail?.mode === 'open' ? 'open' : 'toggle';
-          handleShowSqlExecutionLog(mode);
-      };
-
-      window.addEventListener('gonavi:show-sql-execution-log', handleOpenSqlExecutionLog as EventListener);
-      return () => {
-          window.removeEventListener('gonavi:show-sql-execution-log', handleOpenSqlExecutionLog as EventListener);
-      };
-  }, [handleShowSqlExecutionLog]);
+  useQueryEditorSqlLogBridge({
+      isActive,
+      isOpen: isResultPanelVisible && activeResultKey === QUERY_EDITOR_SQL_LOG_TAB_KEY,
+      onShow: handleShowSqlExecutionLog,
+  });
 
   const handleSave = async () => {
       try {
