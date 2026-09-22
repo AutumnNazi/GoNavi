@@ -4017,6 +4017,8 @@
   "connection_modal.field.readOnly.compatibility": "すべて選択すると、従来の「クエリのみ許可する」本番接続ガードと同じ挙動になります。",
   "connection_modal.field.readOnly.help": "結果編集、構造変更、スクリプト実行、インポートや同期について、必要な制限だけを選択してください。",
   "connection_modal.field.readOnly.label": "本番接続ガード",
+  "connection_modal.field.readOnly.option.all.label": "読み取り専用（すべて選択）",
+  "connection_modal.field.readOnly.option.all.help": "オンにするとすべての制限を選択したのと同じになり、この接続でのすべての書き込みを阻止します。",
   "connection_modal.field.readOnly.option.dataEdit.help": "結果グリッドの直接編集、一括クリア、この接続でのメッセージ公開による書き込みを禁止します。",
   "connection_modal.field.readOnly.option.nacos.dataEdit.help": "設定の公開・削除、およびサービスインスタンスの登録・更新・登録解除・ヘルス変更を禁止します。",
   "connection_modal.field.readOnly.option.nacos.structureEdit.help": "名前空間とサービスの作成・更新・削除を禁止します。",
