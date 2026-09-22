@@ -232,4 +232,78 @@ ORDER BY s.stru_order WITH ur;`;
     expect(applyQueryAutoLimit('UPDATE users SET name = \'a\'', 'mysql', 500).applied)
       .toBe(false);
   });
+
+  // 回归：`WITH ... AS (...)` 的 leading keyword 是 `with`，曾被 `keyword !== 'select'`
+  // 直接拒掉，导致 CTE 查询完全拿不到行数上限 —— 用户设「分页 1」仍返回全部行。
+  // 行数上限必须作用在主查询上，同时不能碰 CTE 定义体内的同名关键字。
+  describe('CTE 主查询', () => {
+    const cteSQL = `WITH rfm AS (
+  SELECT c.id, AVG(monetary) AS avg_monetary
+  FROM customers c
+  GROUP BY c.id
+)
+SELECT rfm.id, rfm.avg_monetary
+FROM rfm
+ORDER BY rfm.avg_monetary DESC`;
+
+    it.each(limitDialects)('adds generic LIMIT to the main query for %s connections', (dbType) => {
+      const result = applyQueryAutoLimit(cteSQL, dbType, 1);
+
+      expect(result.applied).toBe(true);
+      expect(result.sql.endsWith('LIMIT 1')).toBe(true);
+      // CTE 定义体必须原样保留，且只注入一次上限。
+      expect(result.sql).toContain('WITH rfm AS (');
+      expect(result.sql.match(/LIMIT /g)).toHaveLength(1);
+    });
+
+    it('does not mistake a LIMIT inside the CTE body for the outer query limit', () => {
+      const result = applyQueryAutoLimit('WITH t AS (SELECT id FROM a LIMIT 5) SELECT * FROM t', 'postgres', 10);
+
+      expect(result.applied).toBe(true);
+      expect(result.sql).toBe('WITH t AS (SELECT id FROM a LIMIT 5) SELECT * FROM t LIMIT 10');
+    });
+
+    it('keeps an existing outer LIMIT unchanged', () => {
+      expect(applyQueryAutoLimit('WITH t AS (SELECT id FROM a) SELECT * FROM t LIMIT 3', 'postgres', 10).applied)
+        .toBe(false);
+    });
+
+    it('handles multiple comma-separated CTE definitions', () => {
+      const result = applyQueryAutoLimit(
+        'WITH a AS (SELECT 1 AS x), b AS (SELECT 2 AS y) SELECT * FROM a JOIN b ON 1=1',
+        'postgres',
+        10,
+      );
+
+      expect(result.applied).toBe(true);
+      expect(result.sql.endsWith('LIMIT 10')).toBe(true);
+    });
+
+    it('adds SQL Server TOP to the main query, not the CTE body', () => {
+      const result = applyQueryAutoLimit(cteSQL, 'sqlserver', 1);
+
+      expect(result.applied).toBe(true);
+      expect(result.sql).toContain('SELECT TOP 1 rfm.id');
+      expect(result.sql).not.toContain('SELECT TOP 1 c.id');
+    });
+
+    it('keeps the CTE at top level for Oracle by appending FETCH FIRST', () => {
+      const result = applyQueryAutoLimit(cteSQL, 'oracle', 1);
+
+      expect(result.applied).toBe(true);
+      // ROWNUM 包装会把 `WITH` 塞进内联视图，那里子查询因子化不合法的风险很高。
+      expect(result.sql).not.toContain('ROWNUM');
+      expect(result.sql.startsWith('WITH rfm AS (')).toBe(true);
+      expect(result.sql.endsWith('FETCH FIRST 1 ROWS ONLY')).toBe(true);
+    });
+
+    it('never injects a row limit into a non-select CTE body', () => {
+      expect(applyQueryAutoLimit('WITH t AS (SELECT id FROM a) UPDATE b SET x = 1 WHERE id IN (SELECT id FROM t)', 'postgres', 10).applied)
+        .toBe(false);
+      expect(applyQueryAutoLimit('WITH t AS (SELECT id FROM a) DELETE FROM b WHERE id IN (SELECT id FROM t)', 'postgres', 10).applied)
+        .toBe(false);
+      expect(applyQueryAutoLimit('WITH t AS (SELECT id FROM a) INSERT INTO b SELECT * FROM t', 'postgres', 10).applied)
+        .toBe(false);
+    });
+  });
 });

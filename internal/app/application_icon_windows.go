@@ -101,6 +101,10 @@ func repairPersistedWindowsApplicationShortcutsOnce(iconPath, configDir string) 
 		logger.Warnf("检查 Windows 任务栏身份迁移状态失败：%v", err)
 		return
 	}
+	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
+		logger.Warnf("创建 Windows 任务栏身份迁移目录失败：%v", err)
+		return
+	}
 	if err := windowsUpdateCurrentApplicationShortcuts(iconPath); err != nil {
 		logger.Warnf("更新 Windows 应用快捷方式图标失败：%v", err)
 		return
@@ -112,7 +116,11 @@ func repairPersistedWindowsApplicationShortcutsOnce(iconPath, configDir string) 
 
 func currentWindowsShortcutIdentityState(iconPath string) (string, bool) {
 	executablePath := strings.TrimSpace(updateResolveInstallTarget())
-	if resolveUpdateInstallModeForExecutable("windows", executablePath) != updateInstallModeMSI {
+	// Both installs refresh their own pins once per version. The script only
+	// changes IconLocation, and it rewrites a target when that target is
+	// already missing or points at a brand ICO.
+	mode := resolveUpdateInstallModeForExecutable("windows", executablePath)
+	if mode != updateInstallModeMSI && mode != updateInstallModePortable {
 		return "", false
 	}
 	return strings.Join([]string{
@@ -144,8 +152,9 @@ func setApplicationIconPNG(pngBytes []byte, configDir string, runtimeContext con
 	if err != nil {
 		return err
 	}
-	// Update shortcuts before moving the live window to the new identity.
-	// The update is synchronous so quitting cannot leave a half-written pin.
+	// Update shortcuts before refreshing the live window icon. The update is
+	// synchronous so quitting cannot leave a half-written pin. The taskbar
+	// identity is not changed.
 	if err := windowsUpdateCurrentApplicationShortcuts(iconPath); err != nil {
 		return err
 	}
@@ -355,6 +364,7 @@ $ErrorActionPreference = 'Stop'
 		"GONAVI_BRAND_TARGET="+executablePath,
 		"GONAVI_BRAND_ICON="+iconPath,
 		"GONAVI_BRAND_AUMID="+windowsApplicationUserModelIDForIconPath(iconPath),
+		"GONAVI_BRAND_MATCH_TARGET_ONLY="+windowsBrandShortcutMatchTargetOnlyEnv(executablePath),
 	)
 	configureWindowsUpdateCommand(cmd)
 	if output, err := cmd.CombinedOutput(); err != nil {

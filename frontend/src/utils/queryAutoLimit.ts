@@ -350,6 +350,141 @@ const hasOracleSequencePseudoColumn = (sql: string): boolean => {
   return false;
 };
 
+/**
+ * `WITH ... AS (...)` 的 CTE 前缀长度；非 CTE 语句返回 0。
+ *
+ * 主体判定靠「深度 0 处的语句起始关键字」：CTE 定义体一律在括号内（深度 > 0），
+ * 而 CTE 名、`AS`、`RECURSIVE`、`MATERIALIZED` 都不属于该关键字集合，因此
+ * 第一个在深度 0 出现的起始关键字必然是主查询（`WITH a AS (...), b AS (...)
+ * SELECT ...` 里的 `b` 会被正确跳过）。返回主体起点后由调用方判定关键字是否
+ * 可施加行数上限：`WITH ... INSERT/UPDATE/DELETE` 注入 `LIMIT` 会破坏语法。
+ */
+const CTE_BODY_KEYWORDS = new Set(['select', 'with', 'values', 'insert', 'update', 'delete', 'merge', 'table']);
+
+const findCteBodyStart = (sql: string, dbType: string): number => {
+  const text = sql;
+  if (getLeadingKeyword(text, dbType) !== 'with') return 0;
+
+  let inSingle = false;
+  let inDouble = false;
+  let inBacktick = false;
+  let escaped = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+  let dollarTag: string | null = null;
+  let parenDepth = 0;
+  // 首个深度 0 的起始关键字是 `with` 自身，从这里之后才开始找主查询。
+  let skippedLeadingWith = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const next = i + 1 < text.length ? text[i + 1] : '';
+
+    if (!inSingle && !inDouble && !inBacktick) {
+      if (inLineComment) {
+        if (ch === '\n') inLineComment = false;
+        continue;
+      }
+      if (inBlockComment) {
+        if (ch === '*' && next === '/') {
+          i++;
+          inBlockComment = false;
+        }
+        continue;
+      }
+      if (ch === '/' && next === '*') {
+        i++;
+        inBlockComment = true;
+        continue;
+      }
+      if (ch === '-' && next === '-' && isSqlDashLineCommentStart(dbType, text[i + 2] || '')) {
+        i++;
+        inLineComment = true;
+        continue;
+      }
+      if (dollarTag) {
+        if (text.startsWith(dollarTag, i)) {
+          i += dollarTag.length - 1;
+          dollarTag = null;
+        }
+        continue;
+      }
+      if (ch === '$') {
+        const m = text.slice(i).match(/^\$[A-Za-z0-9_]*\$/);
+        if (m && m[0]) {
+          dollarTag = m[0];
+          i += dollarTag.length - 1;
+          continue;
+        }
+      }
+    }
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if ((inSingle || inDouble) && ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (!inDouble && !inBacktick && ch === "'") {
+      inSingle = !inSingle;
+      continue;
+    }
+    if (!inSingle && !inBacktick && ch === '"') {
+      inDouble = !inDouble;
+      continue;
+    }
+    if (!inSingle && !inDouble && ch === '`') {
+      inBacktick = !inBacktick;
+      continue;
+    }
+    if (inSingle || inDouble || inBacktick || dollarTag) continue;
+
+    if (ch === '(') {
+      parenDepth++;
+      continue;
+    }
+    if (ch === ')') {
+      if (parenDepth > 0) parenDepth--;
+      continue;
+    }
+    if (parenDepth !== 0) continue;
+    if (!isWord(ch)) continue;
+
+    let wordEnd = i;
+    while (wordEnd < text.length && isWord(text[wordEnd])) wordEnd++;
+    const word = text.slice(i, wordEnd).toLowerCase();
+    if (!skippedLeadingWith && word === 'with') {
+      skippedLeadingWith = true;
+      i = wordEnd - 1;
+      continue;
+    }
+    if (CTE_BODY_KEYWORDS.has(word)) return i;
+    i = wordEnd - 1;
+  }
+
+  return 0;
+};
+
+/**
+ * 语句是否以 SELECT 结果集收尾 —— CTE 语句看其主查询，而不是 literal 的
+ * leading keyword。`getLeadingKeyword(x) === 'select'` 会把 `WITH ... SELECT`
+ * 判成非查询，导致这类语句拿不到行数上限、分页状态或导出路径。
+ *
+ * 只放行 SELECT 主体：`WITH ... INSERT/UPDATE/DELETE` 返回 false。
+ */
+export const isSelectStatement = (sql: string, dbType = ''): boolean => {
+  const text = String(sql || '');
+  if (!text.trim()) return false;
+  const keyword = getLeadingKeyword(text, dbType);
+  if (keyword === 'select') return true;
+  if (keyword !== 'with') return false;
+  const bodyStart = findCteBodyStart(text, dbType);
+  if (bodyStart <= 0) return false;
+  return getLeadingKeyword(text.slice(bodyStart), dbType) === 'select';
+};
+
 export const applyQueryAutoLimit = (
   sql: string,
   dbType: string,
@@ -358,8 +493,13 @@ export const applyQueryAutoLimit = (
 ): { sql: string; applied: boolean; maxRows: number } => {
   if (!Number.isFinite(maxRows) || maxRows <= 0) return { sql, applied: false, maxRows };
   const normalizedType = String(resolveSqlDialect(dbType || 'mysql', driver)).toLowerCase();
-  const keyword = getLeadingKeyword(sql, normalizedType);
-  if (keyword !== 'select') return { sql, applied: false, maxRows };
+  // CTE 语句的 leading keyword 是 `with`，但行数上限真正作用在其后的主查询上。
+  // 这里只放行 SELECT 主体：`WITH ... INSERT/UPDATE/DELETE` 注入 LIMIT 会破坏语法，
+  // `WITH ... VALUES (...)` 也没有可追加 LIMIT 的位置，一律保持原样。
+  const cteBodyStart = getLeadingKeyword(sql, normalizedType) === 'with'
+    ? findCteBodyStart(sql, normalizedType)
+    : 0;
+  if (!isSelectStatement(sql, normalizedType)) return { sql, applied: false, maxRows };
 
   const { main, tail } = splitSqlTail(sql, normalizedType);
   if (!main.trim()) return { sql, applied: false, maxRows };
@@ -391,10 +531,20 @@ export const applyQueryAutoLimit = (
   if (normalizedType === 'oracle' || normalizedType === 'dameng') {
     const rownumPos = findTopLevelKeyword(executableMain, 'rownum', normalizedType);
     if (rownumPos >= 0) return { sql: executableSql, applied: false, maxRows };
+    const existingFetchPos = findTopLevelKeyword(executableMain, 'fetch', normalizedType);
+    if (existingFetchPos >= 0 && (fromPos < 0 || existingFetchPos > fromPos)) {
+      return { sql: executableSql, applied: false, maxRows };
+    }
     const offsetPos = findTopLevelKeyword(executableMain, 'offset', normalizedType);
     if (offsetPos >= 0 && (fromPos < 0 || offsetPos > fromPos)) return { sql: executableSql, applied: false, maxRows };
     const forPos = findTopLevelKeyword(executableMain, 'for', normalizedType);
     if (forPos >= 0 && (fromPos < 0 || forPos > fromPos)) return { sql: executableSql, applied: false, maxRows };
+    // CTE 主查询不能用 ROWNUM 包装：那会把 `WITH` 塞进内联视图，而子查询因子化
+    // 只在查询块起始处合法，是否被接受取决于数据库版本，风险高于收益。
+    // FETCH FIRST 直接追加在主查询末尾，CTE 保持顶层，无此问题。
+    if (normalizedType === 'oracle' && cteBodyStart > 0) {
+      return { sql: `${executableMain} FETCH FIRST ${maxRows} ROWS ONLY${tail}`, applied: true, maxRows };
+    }
     // Oracle-compatible databases reject NEXTVAL/CURRVAL when the ROWNUM cap
     // moves the original SELECT into a subquery.
     if (hasOracleSequencePseudoColumn(executableMain)) return { sql: executableSql, applied: false, maxRows };

@@ -256,7 +256,11 @@ if [[ "${1:-}" == "list" ]]; then
       ./cmd/optional-driver-agent)
         printf '%s\n' "$PWD/cmd/optional-driver-agent/main.go"
         printf '%s\n' "$PWD/internal/db/sqlite_impl.go"
+        printf '%s\n' "$PWD/internal/db/sqlite_ddl_strip.go"
         printf '%s\n' "$PWD/internal/db/mysql_impl.go"
+        printf '%s\n' "$PWD/internal/db/mysql_agent_path.go"
+        printf '%s\n' "$PWD/internal/db/optional_driver_agent_impl.go"
+        printf '%s\n' "$PWD/internal/db/optional_driver_agent_ipc.go"
         printf '%s\n' "$PWD/internal/utils/utils.go"
         printf '%s\n' "${FAKE_GOMODCACHE:?}/example.com/unrelated@v1.0.0/unrelated.go"
         exit 0
@@ -276,11 +280,15 @@ EOF
   before_file="$(mktemp "${TMPDIR:-/tmp}/gonavi-sqlite-revision-before.XXXXXX")"
   external_file="$(mktemp "${TMPDIR:-/tmp}/gonavi-sqlite-revision-external.XXXXXX")"
   other_driver_file="$(mktemp "${TMPDIR:-/tmp}/gonavi-sqlite-revision-other-driver.XXXXXX")"
+  client_only_file="$(mktemp "${TMPDIR:-/tmp}/gonavi-sqlite-revision-client-only.XXXXXX")"
   dependency_file="$(mktemp "${TMPDIR:-/tmp}/gonavi-sqlite-revision-dependency.XXXXXX")"
   own_driver_file="$(mktemp "${TMPDIR:-/tmp}/gonavi-sqlite-revision-own-driver.XXXXXX")"
+  own_driver_helper_file="$(mktemp "${TMPDIR:-/tmp}/gonavi-sqlite-revision-own-driver-helper.XXXXXX")"
+  protocol_file="$(mktemp "${TMPDIR:-/tmp}/gonavi-sqlite-revision-protocol.XXXXXX")"
   cleanup_scope_revision_files() {
     rm -rf "$fake_gomodcache"
-    rm -f "$before_file" "$external_file" "$other_driver_file" "$dependency_file" "$own_driver_file"
+    rm -f "$before_file" "$external_file" "$other_driver_file" "$client_only_file" \
+      "$dependency_file" "$own_driver_file" "$own_driver_helper_file" "$protocol_file"
   }
   trap cleanup_scope_revision_files EXIT
 
@@ -300,6 +308,13 @@ EOF
   GONAVI_DRIVER_REVISION_JOBS=1 bash ./tools/generate-driver-agent-revisions.sh --platform windows/amd64 --drivers sqlite >/dev/null
   cp internal/db/driver_agent_revisions_gen.go "$other_driver_file"
 
+  # 只在主进程执行的客户端包装代码（agent 客户端、agent 路径解析）不影响 agent 行为，
+  # 改动不得触发 revision 漂移，否则每次客户端重构都会要求用户重装全部驱动。
+  printf '\n// client-only agent wrapper revision test marker\n' >>internal/db/optional_driver_agent_impl.go
+  printf '\n// client-only agent path revision test marker\n' >>internal/db/mysql_agent_path.go
+  GONAVI_DRIVER_REVISION_JOBS=1 bash ./tools/generate-driver-agent-revisions.sh --platform windows/amd64 --drivers sqlite >/dev/null
+  cp internal/db/driver_agent_revisions_gen.go "$client_only_file"
+
   perl -0pi -e 's/const Revision = "first"/const Revision = "second"/' "$FAKE_GOMODCACHE/modernc.org/sqlite@v1.0.0/sqlite.go"
   GONAVI_DRIVER_REVISION_JOBS=1 bash ./tools/generate-driver-agent-revisions.sh --platform windows/amd64 --drivers sqlite >/dev/null
   cp internal/db/driver_agent_revisions_gen.go "$dependency_file"
@@ -308,12 +323,25 @@ EOF
   GONAVI_DRIVER_REVISION_JOBS=1 bash ./tools/generate-driver-agent-revisions.sh --platform windows/amd64 --drivers sqlite >/dev/null
   cp internal/db/driver_agent_revisions_gen.go "$own_driver_file"
 
+  # 驱动自己的辅助文件按 <driver>_*.go 前缀匹配，无需逐个登记在白名单里。
+  printf '\n// sqlite helper revision test marker\n' >>internal/db/sqlite_ddl_strip.go
+  GONAVI_DRIVER_REVISION_JOBS=1 bash ./tools/generate-driver-agent-revisions.sh --platform windows/amd64 --drivers sqlite >/dev/null
+  cp internal/db/driver_agent_revisions_gen.go "$own_driver_helper_file"
+
+  # agent 进程真正执行的共享协议代码（JSON Lines 帧读取）改动必须体现到全部驱动。
+  printf '\n// shared agent protocol revision test marker\n' >>internal/db/optional_driver_agent_ipc.go
+  GONAVI_DRIVER_REVISION_JOBS=1 bash ./tools/generate-driver-agent-revisions.sh --platform windows/amd64 --drivers sqlite >/dev/null
+  cp internal/db/driver_agent_revisions_gen.go "$protocol_file"
+
   before_sqlite="$(extract_revision "$before_file" sqlite)"
   external_sqlite="$(extract_revision "$external_file" sqlite)"
   other_driver_sqlite="$(extract_revision "$other_driver_file" sqlite)"
+  client_only_sqlite="$(extract_revision "$client_only_file" sqlite)"
   dependency_sqlite="$(extract_revision "$dependency_file" sqlite)"
   own_driver_sqlite="$(extract_revision "$own_driver_file" sqlite)"
-  if [[ -z "$before_sqlite" || -z "$external_sqlite" || -z "$other_driver_sqlite" || -z "$dependency_sqlite" || -z "$own_driver_sqlite" ]]; then
+  own_driver_helper_sqlite="$(extract_revision "$own_driver_helper_file" sqlite)"
+  protocol_sqlite="$(extract_revision "$protocol_file" sqlite)"
+  if [[ -z "$before_sqlite" || -z "$external_sqlite" || -z "$other_driver_sqlite" || -z "$client_only_sqlite" || -z "$dependency_sqlite" || -z "$own_driver_sqlite" || -z "$own_driver_helper_sqlite" || -z "$protocol_sqlite" ]]; then
     echo "expected sqlite revision to be generated for every scope check" >&2
     exit 1
   fi
@@ -325,12 +353,24 @@ EOF
     echo "expected unrelated driver and shared source changes to keep sqlite revision stable, before=$before_sqlite after=$other_driver_sqlite" >&2
     exit 1
   fi
+  if [[ "$before_sqlite" != "$client_only_sqlite" ]]; then
+    echo "expected client-only agent wrapper changes to keep sqlite revision stable, before=$before_sqlite after=$client_only_sqlite" >&2
+    exit 1
+  fi
   if [[ "$before_sqlite" == "$dependency_sqlite" ]]; then
     echo "expected sqlite dependency change to update sqlite revision, revision=$before_sqlite" >&2
     exit 1
   fi
   if [[ "$dependency_sqlite" == "$own_driver_sqlite" ]]; then
     echo "expected sqlite implementation change to update sqlite revision, revision=$dependency_sqlite" >&2
+    exit 1
+  fi
+  if [[ "$own_driver_sqlite" == "$own_driver_helper_sqlite" ]]; then
+    echo "expected sqlite helper file change to update sqlite revision, revision=$own_driver_sqlite" >&2
+    exit 1
+  fi
+  if [[ "$own_driver_helper_sqlite" == "$protocol_sqlite" ]]; then
+    echo "expected shared agent protocol change to update sqlite revision, revision=$own_driver_helper_sqlite" >&2
     exit 1
   fi
 )

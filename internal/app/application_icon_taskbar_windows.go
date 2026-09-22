@@ -99,9 +99,10 @@ type nativeWindowsWindowPropertyStoreVTable struct {
 	commit         uintptr
 }
 
-// setWindowsTaskbarProperties updates the Shell-owned identity and icon for the
-// live taskbar group. AppUserModel.ID must be written last because that write is
-// the documented notification that makes Explorer re-read the relaunch values.
+// setWindowsTaskbarProperties updates the relaunch icon of the live taskbar
+// group. AppUserModel.ID stays Syngnat.GoNavi, the same value as the MSI
+// shortcuts; writing that same ID last tells Explorer to re-read the icon
+// path without moving the window into a second taskbar button.
 func setWindowsTaskbarProperties(hwnd uintptr, iconPath string) error {
 	if hwnd == 0 {
 		return errors.New("set Windows taskbar properties: window handle is zero")
@@ -136,7 +137,7 @@ func setWindowsTaskbarProperties(hwnd uintptr, iconPath string) error {
 		{key: windowsAppUserModelRelaunchCommandKey, value: relaunchCommand},
 		{key: windowsAppUserModelRelaunchDisplayNameKey, value: windowsApplicationDisplayName},
 		{key: windowsAppUserModelRelaunchIconKey, value: iconPath + ",0"},
-		{key: windowsAppUserModelIDKey, value: windowsApplicationUserModelIDForIconPath(iconPath)},
+		{key: windowsAppUserModelIDKey, value: windowsApplicationUserModelID},
 	}
 	for _, property := range properties {
 		if err := store.setString(property.key, property.value); err != nil {

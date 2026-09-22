@@ -1,6 +1,7 @@
 import SidebarConnectionRail from './sidebar/SidebarConnectionRail';
 import Modal from './common/ResizableDraggableModal';
-import TitleBarQuickActions, { type TitleBarQuickAction } from './TitleBarQuickActions';
+import { type TitleBarQuickAction } from './TitleBarQuickActions';
+import TitleBarQuickActionsHost from './TitleBarQuickActionsHost';
 import { type DataSyncEntryModeAlias } from './dataSyncEntryMode';
 import type { DatabaseCharsetOption, DatabaseCollationOption } from '../utils/databaseCharset';
 import SidebarSearchPanel, {
@@ -4328,9 +4329,6 @@ const Sidebar: React.FC<{
       onClick: () => onOpenSettingsNavigation?.({ group: 'about', pane: 'about-go-navi' }),
     },
   ];
-  const v2TitlebarQuickActionsTarget = typeof document !== 'undefined'
-    ? document.getElementById('gonavi-titlebar-quick-actions')
-    : null;
 
   const getCommandSearchCopyOptions = useCallback((item: V2CommandSearchItem): V2CommandSearchCopyOption[] => {
     if (item.kind === 'action') return [];
@@ -4684,14 +4682,11 @@ const Sidebar: React.FC<{
           collapsedSidebarActionsTarget,
         )}
 
-        {v2TitlebarQuickActionsTarget && createPortal(
-          <TitleBarQuickActions
-            label={v2RailObjectActionsLabel}
-            actions={v2TitlebarQuickActions}
-            trailingActions={v2TitlebarAboutActions}
-          />,
-          v2TitlebarQuickActionsTarget,
-        )}
+        <TitleBarQuickActionsHost
+          label={v2RailObjectActionsLabel}
+          actions={v2TitlebarQuickActions}
+          trailingActions={v2TitlebarAboutActions}
+        />
 
         {contextMenu?.kind && typeof document !== 'undefined' && createPortal(
             <div

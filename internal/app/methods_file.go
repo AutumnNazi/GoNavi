@@ -504,30 +504,6 @@ func tryResolveExportTableTotalRows(dbInst db.Database, config connection.Connec
 	return resolveExportTotalRowsFromRows(rows)
 }
 
-func verifyOptionalDriverAgentReadyForExport(config connection.ConnectionConfig) error {
-	driverType := normalizeDriverType(config.Type)
-	if strings.EqualFold(strings.TrimSpace(config.Type), "custom") &&
-		strings.EqualFold(strings.TrimSpace(config.Driver), "clickhouse") {
-		driverType = "clickhouse"
-	}
-	if !db.IsOptionalGoDriver(driverType) {
-		return nil
-	}
-
-	executablePath, err := resolveOptionalDriverAgentExecutablePathFunc("", driverType)
-	if err != nil {
-		return err
-	}
-	if _, err := verifyInstalledOptionalDriverAgentRevision(driverType, executablePath); err != nil {
-		displayName := resolveDriverDisplayName(driverDefinition{Type: driverType})
-		return fmt.Errorf("%s", defaultAppText("file.backend.error.export_driver_agent_streaming_required", map[string]any{
-			"driver": displayName,
-			"detail": err.Error(),
-		}))
-	}
-	return nil
-}
-
 var exportFileNameSanitizer = strings.NewReplacer(
 	"/", "_",
 	"\\", "_",
@@ -5173,11 +5149,6 @@ func (a *App) ExportTableWithOptions(config connection.ConnectionConfig, dbName 
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 	format := options.Format
-	if format != "sql" {
-		if err := verifyOptionalDriverAgentReadyForExport(config); err != nil {
-			return connection.QueryResult{Success: false, Message: err.Error()}
-		}
-	}
 	defaultFilename := fmt.Sprintf("%s.%s", tableName, format)
 	filename := ""
 	var err error
@@ -5294,11 +5265,7 @@ func (a *App) ExportTableWithOptions(config connection.ConnectionConfig, dbName 
 		reporter.Error(0, err.Error())
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	if atomicTarget != nil {
-		defer atomicTarget.abort()
-	} else {
-		defer func() { _ = f.Close() }()
-	}
+	defer cleanupExportFileTarget(f, atomicTarget)
 	rowCount, _, err := exportQueryResultToFileWithContext(exportCtx, f, dbInst, runConfig, query, options, reporter)
 	if err != nil {
 		errMsg := a.appText("file.backend.error.write_failed", map[string]any{"detail": err.Error()})
@@ -7374,11 +7341,7 @@ func (a *App) ExportDataWithOptions(data []map[string]interface{}, columns []str
 		reporter.Error(0, err.Error())
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	if atomicTarget != nil {
-		defer atomicTarget.abort()
-	} else {
-		defer func() { _ = f.Close() }()
-	}
+	defer cleanupExportFileTarget(f, atomicTarget)
 	writtenRows, err := writeRowsToFileWithReporter(exportCtx, f, data, columns, options, reporter)
 	if err != nil {
 		logger.Warnf("ExportData 写入失败：file=%s err=%v", filename, err)
@@ -7421,11 +7384,6 @@ func (a *App) ExportQueryWithOptions(config connection.ConnectionConfig, dbName 
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 	format := options.Format
-	if format != "sql" {
-		if err := verifyOptionalDriverAgentReadyForExport(config); err != nil {
-			return connection.QueryResult{Success: false, Message: err.Error()}
-		}
-	}
 
 	defaultFilename := fmt.Sprintf("%s.%s", defaultName, strings.ToLower(format))
 	filename := ""
@@ -7506,11 +7464,7 @@ func (a *App) ExportQueryWithOptions(config connection.ConnectionConfig, dbName 
 		reporter.Error(0, err.Error())
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	if atomicTarget != nil {
-		defer atomicTarget.abort()
-	} else {
-		defer func() { _ = f.Close() }()
-	}
+	defer cleanupExportFileTarget(f, atomicTarget)
 
 	rowCount, columns, err := exportQueryResultToFileWithContext(exportCtx, f, dbInst, runConfig, query, options, reporter)
 	if err != nil {

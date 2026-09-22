@@ -1,10 +1,12 @@
 import React from 'react';
-import { Table, Tag, Button, Tooltip, Empty } from 'antd';
-import { ClearOutlined, CloseOutlined, BugOutlined } from '@ant-design/icons';
+import { Button, Empty, Tooltip } from 'antd';
+import { BugOutlined, ClearOutlined, CloseOutlined } from '@ant-design/icons';
 import { useStore } from '../store';
 import { useI18n } from '../i18n/provider';
 import { normalizeOpacityForPlatform, resolveAppearanceValues } from '../utils/appearance';
 import { QueryEditorExecutionErrorCard } from './queryEditor/QueryEditorExecutionErrorCard';
+import LogPanelList from './LogPanelList';
+import './LogPanel.css';
 interface LogPanelProps {
     height?: number;
     onClose?: () => void;
@@ -35,19 +37,6 @@ const LogPanel: React.FC<LogPanelProps> = ({
 
     const resolvedAppearance = resolveAppearanceValues(appearance);
     const opacity = normalizeOpacityForPlatform(resolvedAppearance.opacity);
-
-    // Background Helper
-    const getBg = (darkHex: string) => {
-        if (!darkMode) return `rgba(255, 255, 255, ${opacity})`;
-        const hex = darkHex.replace('#', '');
-        const r = parseInt(hex.substring(0, 2), 16);
-        const g = parseInt(hex.substring(2, 4), 16);
-        const b = parseInt(hex.substring(4, 6), 16);
-        return `rgba(${r}, ${g}, ${b}, ${opacity})`;
-    };
-    const bgMain = getBg('#1d1d1d');
-    const shellOpacity = darkMode ? Math.max(0.18, opacity * 0.82) : Math.max(0.28, opacity * 0.92);
-    const shellOpacityStrong = darkMode ? Math.max(0.22, opacity * 0.9) : Math.max(0.34, opacity * 0.96);
     const panelDividerColor = 'var(--gn-br-2)';
     const panelMutedTextColor = 'var(--gn-fg-4)';
     const panelPrimaryTextColor = 'var(--gn-fg-1)';
@@ -62,47 +51,7 @@ const LogPanel: React.FC<LogPanelProps> = ({
         ? `rgba(255, 255, 255, ${Math.max(0.28, opacity * 0.48)})`
         : `rgba(0, 0, 0, ${Math.max(0.18, opacity * 0.36)})`;
     const isEmbedded = variant === 'embedded';
-
-    const columns = [
-        {
-            title: t('log_panel.column.time'),
-            dataIndex: 'timestamp',
-            width: 80,
-            render: (ts: number) => <span style={{ color: panelMutedTextColor, fontSize: '12px' }}>{new Date(ts).toLocaleTimeString()}</span>
-        },
-        {
-            title: t('log_panel.column.status'),
-            dataIndex: 'status',
-            width: 70,
-            render: (status: string) => (
-                <Tag color={status === 'success' ? 'success' : 'error'} style={{ marginRight: 0, borderRadius: 999, paddingInline: 8, fontSize: 11, fontWeight: 700 }}>
-                    {status === 'success' ? 'OK' : 'ERR'}
-                </Tag>
-            )
-        },
-        {
-            title: t('log_panel.column.duration'),
-            dataIndex: 'duration',
-            width: 70,
-            render: (d: number) => <span style={{ color: d > 1000 ? 'orange' : 'inherit', fontSize: '12px' }}>{d}ms</span>
-        },
-        {
-            title: t('log_panel.column.sql_message'),
-            dataIndex: 'sql',
-            render: (text: string, record: any) => (
-                <div style={{ fontFamily: 'var(--gn-font-mono)', wordBreak: 'break-all', whiteSpace: 'pre-wrap', fontSize: '12px', lineHeight: '1.45' }}>
-                    {record.category === 'transaction' && (
-                        <Tag color="processing" style={{ margin: '0 0 4px', borderRadius: 999, fontSize: 10, fontWeight: 700 }}>TX</Tag>
-                    )}
-                    <div style={{ color: darkMode ? '#a6e22e' : '#005cc5' }}>{text}</div>
-                    {record.message && <div style={{ color: '#ff4d4f', marginTop: 2 }}>{record.message}</div>}
-                    {record.affectedRows !== undefined && <div style={{ color: panelMutedTextColor, marginTop: 1 }}>{t('log_panel.affected_rows', { count: record.affectedRows })}</div>}
-                </div>
-            )
-        }
-    ];
-
-    const logTable = (
+    const logBody = sqlLogs.length === 0 ? (
         <div
             className="log-panel-scroll"
             style={{
@@ -111,67 +60,23 @@ const LogPanel: React.FC<LogPanelProps> = ({
                 padding: isEmbedded ? '0 0 12px' : '8px 10px 10px',
             }}
         >
-            {sqlLogs.length === 0 ? (
-                <div style={{ height: '100%', minHeight: 160, display: 'grid', placeItems: 'center' }}>
-                    <Empty
-                        image={Empty.PRESENTED_IMAGE_SIMPLE}
-                        description={<span style={{ color: panelMutedTextColor }}>{t('log_panel.empty')}</span>}
-                    />
-                </div>
-            ) : (
-                <Table
-                    className="log-panel-table"
-                    dataSource={sqlLogs}
-                    columns={columns}
-                    size="small"
-                    pagination={false}
-                    rowKey="id"
-                    showHeader={false}
+            <div style={{ height: '100%', minHeight: 160, display: 'grid', placeItems: 'center' }}>
+                <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description={<span style={{ color: panelMutedTextColor }}>{t('log_panel.empty')}</span>}
                 />
-            )}
+            </div>
         </div>
-    );
-
-    const sharedStyles = (
-        <style>{`
-            .log-panel-scroll {
-                scrollbar-width: thin;
-                scrollbar-color: ${logScrollbarThumb} transparent;
-            }
-            .log-panel-scroll::-webkit-scrollbar {
-                width: 10px;
-                height: 10px;
-            }
-            .log-panel-scroll::-webkit-scrollbar-track,
-            .log-panel-scroll::-webkit-scrollbar-corner {
-                background: transparent;
-            }
-            .log-panel-scroll::-webkit-scrollbar-thumb {
-                background: ${logScrollbarThumb};
-                border-radius: 8px;
-                border: 2px solid transparent;
-                background-clip: padding-box;
-            }
-            .log-panel-scroll::-webkit-scrollbar-thumb:hover {
-                background: ${logScrollbarThumbHover};
-                background-clip: padding-box;
-            }
-            .log-panel-table .ant-table,
-            .log-panel-table .ant-table-container,
-            .log-panel-table .ant-table-tbody > tr > td {
-                background: transparent !important;
-            }
-            .log-panel-table .ant-table-tbody > tr > td {
-                padding: 8px 10px !important;
-                border-bottom: 1px solid ${panelDividerColor} !important;
-            }
-            .log-panel-table .ant-table-tbody > tr:last-child > td {
-                border-bottom: none !important;
-            }
-            .log-panel-table .ant-table-row:hover > td {
-                background: ${darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(16,24,40,0.03)'} !important;
-            }
-        `}</style>
+    ) : (
+        <LogPanelList
+            logs={sqlLogs}
+            darkMode={darkMode}
+            mutedColor={panelMutedTextColor}
+            affectedRowsLabel={(count) => t('log_panel.affected_rows', { count })}
+            padding={isEmbedded ? '0 0 12px' : '8px 10px 10px'}
+            scrollThumb={logScrollbarThumb}
+            scrollThumbHover={logScrollbarThumbHover}
+        />
     );
 
     if (isEmbedded) {
@@ -206,8 +111,7 @@ const LogPanel: React.FC<LogPanelProps> = ({
                         </div>
                     </div>
                 )}
-                {logTable}
-                {sharedStyles}
+                {logBody}
             </div>
         );
     }
@@ -275,8 +179,7 @@ const LogPanel: React.FC<LogPanelProps> = ({
                 </div>
             </div>
 
-            {logTable}
-            {sharedStyles}
+            {logBody}
         </div>
     );
 };

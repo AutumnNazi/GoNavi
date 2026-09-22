@@ -46,6 +46,16 @@ func TestGrokCLIExecutionErrorTranslatesBareCancelled(t *testing.T) {
 	}
 }
 
+func TestGrokCLIExecutionErrorExplainsMissingResponseID(t *testing.T) {
+	err := grokCLIExecutionError("Internal error: \"serialization error: missing field `id`\"")
+	if !strings.Contains(err.Error(), "缺少 id") {
+		t.Fatalf("missing-id failure must be explained, got %q", err.Error())
+	}
+	if grokCLIMissingResponseID("API error (status 402 Payment Required)") {
+		t.Fatal("unrelated API errors must not match the missing-id detector")
+	}
+}
+
 func TestGrokCLITerminalCancelled(t *testing.T) {
 	tests := []struct {
 		name   string

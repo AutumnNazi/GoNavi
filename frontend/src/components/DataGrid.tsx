@@ -303,6 +303,7 @@ import {
     INLINE_EDIT_FORM_ITEM_STYLE,
     VIRTUAL_EDITING_CELL_STYLE,
 } from './DataGridCore';
+import { useDataGridReloadReset } from './useDataGridReloadReset';
 
 import type {
     DataGridErrorBoundaryState,
@@ -2052,18 +2053,14 @@ const DataGrid: React.FC<DataGridProps> = ({
     resetCellSelection();
   }, [resetCellSelection]);
 
-  const previousSelectionSourceDataRef = useRef(data);
-  // Keep the data-refresh reset visible to the display-data effect. React may
-  // run both effects before the setSelectedCells reset is rendered, and the
-  // old selection must not be intersected with the new result set in between.
-  const selectionResetSourceDataRef = useRef<Item[] | null>(null);
-  useEffect(() => {
-    if (previousSelectionSourceDataRef.current === data) return;
-    previousSelectionSourceDataRef.current = data;
-    selectionResetSourceDataRef.current = data;
-    setSelectedRowKeys([]);
-    resetCellSelection();
-  }, [data, resetCellSelection]);
+  // 重新查询/刷新时重置选中与挂起删除（含索引键错位防护），逻辑见 hook 文件
+  const { selectionResetSourceDataRef } = useDataGridReloadReset({
+    data,
+    resetCellSelection,
+    setSelectedRowKeys,
+    deletedRowKeys,
+    setDeletedRowKeys,
+  });
 
   useEffect(() => {
     closeCellEditModeRef.current = closeCellEditMode;

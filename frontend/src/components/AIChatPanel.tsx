@@ -13,6 +13,7 @@ import { AIChatHeader } from './ai/AIChatHeader';
 import { AIChatInput } from './ai/AIChatInput';
 import { AIHistoryDrawer } from './ai/AIHistoryDrawer';
 import AIChatPanelConversationView from './ai/AIChatPanelConversationView';
+import { collectBusyAISessionIds } from './ai/AIChatSessionSwitcher';
 import AIChatRunControls, {
     type AIRunRecoveryAction,
 } from './ai/AIChatRunControls';
@@ -59,6 +60,7 @@ import {
     resolveAIChatPanelMode,
 } from './ai/aiChatPanelDerivedState';
 import { buildAIChatReadinessSnapshot } from './ai/aiChatReadiness';
+import { useAIInjectedPrompt } from './ai/useAIInjectedPrompt';
 import { useAIChatRuntimeResources } from './ai/useAIChatRuntimeResources';
 import { useAIChatAutoContext } from './ai/useAIChatAutoContext';
 import { useAIChatPanelResize } from './ai/useAIChatPanelResize';
@@ -325,20 +327,6 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         return () => clearTimeout(timer);
     }, []);
 
-    useEffect(() => {
-        const handler = (event: Event) => {
-            const detail = (event as CustomEvent).detail;
-            if (detail?.prompt) {
-                setInput(detail.prompt);
-                setTimeout(() => {
-                    textareaRef.current?.focus();
-                }, 50);
-            }
-        };
-        window.addEventListener('gonavi:ai:inject-prompt', handler);
-        return () => window.removeEventListener('gonavi:ai:inject-prompt', handler);
-    }, []);
-
     const handleScrollMessages = useCallback((event: React.UIEvent<HTMLDivElement>) => {
         const { scrollTop, scrollHeight, clientHeight } = event.currentTarget;
         const isNearBottom = scrollHeight - scrollTop - clientHeight < 150;
@@ -524,6 +512,10 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         [runStateVersion, sid],
     );
     const hasActiveRun = activeRuns.length > 0;
+    const busySessionIds = useMemo(
+        () => collectBusyAISessionIds(activeRunsRef.current.values()),
+        [runStateVersion],
+    );
     const stopRequestPending = useMemo(
         () => activeRuns.some(({ runId }) => stopRequestsInFlightRef.current.has(runId)),
         [activeRuns, stopRequestVersion],
@@ -779,6 +771,24 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         }
         return receipt;
     }, [activeProvider?.id, activeProvider?.model, addAIChatMessage, hydrateSessionProjection, resolveSessionRevision, setAIActiveSessionId, sid, thinkingIntensity]);
+
+    useAIInjectedPrompt({
+        interactionDisabled,
+        activeProvider,
+        dynamicModels,
+        loadingModels,
+        activeContext,
+        aiContexts,
+        setInput,
+        focusInput: () => { textareaRef.current?.focus(); },
+        setComposerNoticeState,
+        setSending,
+        setActivePanelMode,
+        addAIChatMessage,
+        activeSessionId: sid,
+        t,
+        submitHarnessRun,
+    });
 
     const handleRetryMessage = useCallback(async (msg: AIChatMessage) => {
         if (sending || interactionDisabled || msg.excludeFromAIContext === true) return;
@@ -1193,6 +1203,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
                 insights={aiInsights}
                 sessions={panelHistorySessions}
                 activeSessionId={sid}
+                busySessionIds={busySessionIds}
                 sessionActionsDisabled={interactionDisabled}
                 activeConnectionId={inferredConnectionId}
                 activeConnectionConfig={activeConnectionConfig}

@@ -4,11 +4,13 @@ import { setCurrentLanguage } from '../i18n';
 import {
   isMysqlFamilyDialect,
   appendTableAlias,
+  parseSqlServerVersion,
   resolveColumnTypeOptions,
   resolveSqlDialect,
   resolveSqlFunctions,
   resolveSqlKeywords,
   resolveTableAliasSyntax,
+  sqlKeywordPriority,
   quoteSqlIdentifierPart,
   quoteSqlIdentifierPath,
   unquoteSqlIdentifierPart,
@@ -249,5 +251,66 @@ describe('sqlDialect', () => {
     expect(detailByName('duckdb', 'STRUCT_PACK')).toBe('DuckDB - build struct');
     expect(detailByName('clickhouse', 'formatDateTime')).toBe('ClickHouse - date formatting');
     expect(detailByName('tdengine', 'TIMEDIFF')).toBe('TDengine - time difference');
+  });
+});
+
+describe('sqlDialect completion ranking and version gating (#1328)', () => {
+  it('ranks COMMON_KEYWORDS by their hand-ordered commonness and sinks the rest', () => {
+    expect(sqlKeywordPriority('SELECT')).toBe('00');
+    expect(sqlKeywordPriority(' WHERE ')).toBe('02');
+    expect(sqlKeywordPriority('ORDER BY')).toBe('13');
+    // 方言关键字与词表之外的条目排在常用词之后
+    expect(sqlKeywordPriority('LIMIT')).toBe('99');
+    expect(sqlKeywordPriority('SEQUENCE')).toBe('99');
+    expect(sqlKeywordPriority('SOMETHINGRARE')).toBe('99');
+  });
+
+  it('orders matching keywords by commonness rather than alphabetically', () => {
+    const rank = (keyword: string) => sqlKeywordPriority(keyword);
+    // 输入 sel：SELECT（常用）必须排在 SEQUENCE（方言词）之前
+    expect(rank('SELECT') < rank('SEQUENCE')).toBe(true);
+    // 输入 se：SELECT、SET 均为常用词，SELECT 更常用
+    expect(rank('SELECT') < rank('SET')).toBe(true);
+    expect(rank('SET') < rank('SEQUENCE')).toBe(true);
+    // 输入 ins：INSERT（常用）优于任何生僻词
+    expect(rank('INSERT') < rank('INSTEAD')).toBe(true);
+  });
+
+  it('parses major/minor out of vendor version strings without taking the year', () => {
+    expect(parseSqlServerVersion('Oracle Database 11g Enterprise Edition Release 11.2.0.4.0 - 64bit Production')).toEqual({ major: 11, minor: 2 });
+    expect(parseSqlServerVersion('Microsoft SQL Server 2019 (RTM) - 15.0.1000.0')).toEqual({ major: 15, minor: 0 });
+    expect(parseSqlServerVersion('Microsoft SQL Server 2008 R2 (RTM) - 10.50.6000.34')).toEqual({ major: 10, minor: 50 });
+    expect(parseSqlServerVersion('5.7.44-log')).toEqual({ major: 5, minor: 7 });
+    expect(parseSqlServerVersion('16.0.1')).toEqual({ major: 16, minor: 0 });
+    // 无小数点的串（"11g"、空、未知）视为版本未知
+    expect(parseSqlServerVersion('11g')).toBeNull();
+    expect(parseSqlServerVersion('')).toBeNull();
+    expect(parseSqlServerVersion(null)).toBeNull();
+    expect(parseSqlServerVersion('unknown')).toBeNull();
+  });
+
+  it('hides SQL Server functions newer than the connected server', () => {
+    // 2008 R2（10.50）：IIF（2012）与 STRING_AGG（2017）都还没有
+    const old = names(resolveSqlFunctions('sqlserver', 'Microsoft SQL Server 2008 R2 (RTM) - 10.50.6000.34'));
+    expect(old).not.toContain('IIF');
+    expect(old).not.toContain('STRING_AGG');
+    // 2014（12.0）：有 IIF，还没有 STRING_AGG
+    const mid = names(resolveSqlFunctions('sqlserver', '12.0.6439'));
+    expect(mid).toContain('IIF');
+    expect(mid).not.toContain('STRING_AGG');
+    // 2019（15.0）：两者都有
+    const neu = names(resolveSqlFunctions('sqlserver', 'Microsoft SQL Server 2019 (RTM) - 15.0.1000.0'));
+    expect(neu).toContain('IIF');
+    expect(neu).toContain('STRING_AGG');
+    // 常用的老函数不受影响
+    expect(neu).toContain('GETDATE');
+  });
+
+  it('does not filter when the version is missing or unparseable', () => {
+    expect(names(resolveSqlFunctions('sqlserver'))).toContain('STRING_AGG');
+    expect(names(resolveSqlFunctions('sqlserver', ''))).toContain('STRING_AGG');
+    expect(names(resolveSqlFunctions('sqlserver', 'unknown'))).toContain('STRING_AGG');
+    // 没有版本门禁的方言原样返回
+    expect(names(resolveSqlFunctions('oracle', '9.0.1'))).toContain('NVL');
   });
 });

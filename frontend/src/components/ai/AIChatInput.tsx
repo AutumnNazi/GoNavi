@@ -97,33 +97,6 @@ export const AIChatInput: React.FC<AIChatInputProps> = ({
         activeContextItems,
         translate: t,
     }), [activeProvider, dynamicModels, loadingModels, activeContext, activeContextItems, t]);
-    const composerStatusKey = React.useMemo(() => [
-        composerReadiness.status,
-        composerReadiness.activeProvider?.id || '',
-        composerReadiness.activeProvider?.model || '',
-        activeContext?.connectionId || '',
-        activeContext?.dbName || '',
-        composerReadiness.contextAttachedCount,
-        composerReadiness.selectableModelCount,
-    ].join('|'), [
-        composerReadiness.status,
-        composerReadiness.activeProvider?.id,
-        composerReadiness.activeProvider?.model,
-        activeContext?.connectionId,
-        activeContext?.dbName,
-        composerReadiness.contextAttachedCount,
-        composerReadiness.selectableModelCount,
-    ]);
-    const [dismissedComposerStatusKey, setDismissedComposerStatusKey] = React.useState<string | null>(null);
-    React.useEffect(() => {
-        setDismissedComposerStatusKey(null);
-    }, [composerStatusKey]);
-    const isComposerStatusDismissed = composerReadiness.ready && dismissedComposerStatusKey === composerStatusKey;
-    const handleDismissComposerStatus = React.useCallback(() => {
-        if (composerReadiness.ready) {
-            setDismissedComposerStatusKey(composerStatusKey);
-        }
-    }, [composerReadiness.ready, composerStatusKey]);
     const {
         appendingContext,
         contextExpanded,
@@ -230,13 +203,12 @@ export const AIChatInput: React.FC<AIChatInputProps> = ({
                     mutedColor={mutedColor}
                     onComposerNoticeAction={composerNoticeActionHandler}
                 />
-                {!composerNotice && !isComposerStatusDismissed && (
+                {!composerNotice && !composerReadiness.ready && (
                     <AIChatComposerStatus
                         snapshot={composerReadiness}
                         darkMode={darkMode}
                         overlayTheme={overlayTheme}
                         onAction={composerActionHandler}
-                        onDismiss={composerReadiness.ready ? handleDismissComposerStatus : undefined}
                     />
                 )}
                 <div className="gn-v2-ai-input-box" data-ai-chat-composer-input="true" style={{ position: 'relative' }}>

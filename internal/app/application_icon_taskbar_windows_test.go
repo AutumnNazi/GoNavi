@@ -58,7 +58,7 @@ func TestSetWindowsTaskbarPropertiesWritesIdentityLastAndCommits(t *testing.T) {
 		{key: windowsAppUserModelRelaunchCommandKey, value: `"C:\Program Files\GoNavi\GoNavi.exe"`},
 		{key: windowsAppUserModelRelaunchDisplayNameKey, value: windowsApplicationDisplayName},
 		{key: windowsAppUserModelRelaunchIconKey, value: `C:\Users\tester\gonavi-brand-a1b2c3d4e5f6a7b8c9d0e1f2.ico,0`},
-		{key: windowsAppUserModelIDKey, value: "Syngnat.GoNavi.Icon.a1b2c3d4e5f6a7b8c9d0e1f2"},
+		{key: windowsAppUserModelIDKey, value: windowsApplicationUserModelID},
 	}
 	if !reflect.DeepEqual(store.values, want) {
 		t.Fatalf("window properties = %#v, want %#v", store.values, want)

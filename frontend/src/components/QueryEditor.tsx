@@ -1,5 +1,5 @@
 import Modal from './common/ResizableDraggableModal';
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react';
 import Editor, { type BeforeMount, type OnMount } from './MonacoEditor';
 import { message, Input, Form, MenuProps, Button, Segmented, type InputRef } from 'antd';
 import {
@@ -51,7 +51,7 @@ import {
     type MetadataIdentityMode,
 } from '../utils/metadataIdentity';
 import { resolveOceanBaseProtocolFromConfig } from '../utils/oceanBaseProtocol';
-import { appendTableAlias, isOracleLikeDialect, resolveSqlDialect, resolveSqlFunctions, resolveSqlKeywords } from '../utils/sqlDialect';
+import { appendTableAlias, isOracleLikeDialect, resolveSqlDialect, resolveSqlFunctions, resolveSqlKeywords, sqlKeywordPriority } from '../utils/sqlDialect';
 import { applyQueryAutoLimit } from '../utils/queryAutoLimit';
 import {
     buildQueryResultCountSql,
@@ -115,7 +115,8 @@ import {
     clampQueryEditorEditorHeight,
     resolveQueryEditorEditorHeightFromRatio,
     resolveQueryEditorEditorHeightRatio,
-    sanitizeQueryEditorEditorHeightRatio,
+    resolveQueryEditorTabSplitRatio,
+    setQueryEditorTabSplitRatio,
 } from '../utils/queryEditorSplitLayout';
 import {
     DUCKDB_ROWID_LOCATOR_COLUMN,
@@ -169,6 +170,7 @@ import {
     buildQueryEditorTableNavigationContextKey,
 } from './queryEditor/queryEditorVisibilityContext';
 import { useQueryEditorEverActive } from './queryEditor/useQueryEditorEverActive';
+import { useQueryEditorSqlLogBridge } from './queryEditor/useQueryEditorSqlLogBridge';
 import SqlSnippetPickerModal from './queryEditor/SqlSnippetPickerModal';
 import DuckDBAttachPickerModal from './queryEditor/DuckDBAttachPickerModal';
 import { useExternalSqlFileDrop } from './queryEditor/useExternalSqlFileDrop';
@@ -2323,6 +2325,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const addSqlLog = useStore(state => state.addSqlLog);
   const sqlLogs = useStore(state => (isActive ? state.sqlLogs : EMPTY_QUERY_EDITOR_SQL_LOGS));
   const sqlLogCount = sqlLogs.length;
+  const deferredSqlLogs = useDeferredValue(sqlLogs);
   const addTab = useStore(state => state.addTab);
   const setActiveContext = useStore(state => state.setActiveContext);
   const updateQueryTabDraft = useStore(state => state.updateQueryTabDraft);
@@ -2359,8 +2362,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       currentConnectionId,
       currentDb,
       savedQueries,
-      sqlLogs,
-  }), [currentConnectionId, currentDb, savedQueries, sqlLogs]);
+      sqlLogs: deferredSqlLogs,
+  }), [currentConnectionId, currentDb, savedQueries, deferredSqlLogs]);
   const draftSnapshotTab = useMemo(() => ({
       id: tab.id,
       title: tab.title,
@@ -2388,7 +2391,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
   const sqlFormatOptions = useStore(state => state.sqlFormatOptions);
   const setSqlFormatOptions = useStore(state => state.setSqlFormatOptions);
-  const queryEditorEditorHeightRatio = sanitizeQueryEditorEditorHeightRatio(
+  const queryEditorEditorHeightRatio = resolveQueryEditorTabSplitRatio(
+      tab.id,
       queryOptions?.queryEditorEditorHeightRatio,
   );
   const sqlEditorTransactionOptions = useStore(state => state.sqlEditorTransactionOptions);
@@ -5604,17 +5608,15 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           setEditorHeight(finalHeight);
           const availableHeight = resolveEditorSplitAvailableHeight();
           if (availableHeight > 0) {
-              setQueryOptions({
-                  queryEditorEditorHeightRatio: resolveQueryEditorEditorHeightRatio(
-                      finalHeight,
-                      availableHeight,
-                  ),
-              });
+              setQueryEditorTabSplitRatio(tab.id, resolveQueryEditorEditorHeightRatio(
+                  finalHeight,
+                  availableHeight,
+              ));
           }
       }
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
-  }, [applyEditorHeightToDom, cancelEditorResizeFrame, handleMouseMove, resolveEditorSplitAvailableHeight, setQueryOptions]);
+  }, [applyEditorHeightToDom, cancelEditorResizeFrame, handleMouseMove, resolveEditorSplitAvailableHeight, tab.id]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
       e.preventDefault();
@@ -7872,7 +7874,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               );
               const activeConnectionHasScopedMetadata = isConnectionScopedQueryEditorMetadata(activeConnection);
               const dialectKeywords = resolveSqlKeywords(activeDialect);
-              const dialectFunctions = resolveSqlFunctions(activeDialect);
+              // 版本感知补全（#1328）：已探测到的服务端版本喂给函数解析，
+              // 低于函数最低版本的候选不出现在补全列表里。
+              const activeServerVersion = peekDatabaseServerVersion(
+                  String(currentConnectionIdRef.current || '').trim(),
+              );
+              const dialectFunctions = resolveSqlFunctions(activeDialect, activeServerVersion);
 
               const stripQuotes = stripCompletionIdentifierQuotes;
               const normalizeQualifiedName = normalizeCompletionQualifiedName;
@@ -9035,8 +9042,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       label: keyword,
                       kind: monaco.languages.CompletionItemKind.Keyword,
                       insertText: keyword,
+                      // filterText 让 Monaco 二次过滤（incomplete 大写列表）按
+                      // 关键字原文匹配，短前缀候选不再被 fuzzy 规则吞掉（#1328）。
+                      filterText: keyword,
                       range,
-                      sortText: sortGroups.keyword + keyword,
+                      // 组内按常用词权重排序，不再依赖字母序巧合（#1328）。
+                      sortText: sortGroups.keyword + sqlKeywordPriority(keyword) + keyword,
                   }),
               });
 
@@ -9052,6 +9063,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       insertText: func.name + '($0)',
                       insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
                       detail: func.detail,
+                      // 同关键字：让 Monaco 二次过滤按函数名匹配（#1328）。
+                      filterText: func.name,
                       range,
                       sortText: sortGroups.func + func.name,
                   }),
@@ -12998,17 +13011,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       };
   }, [currentSavedQuery, handleSaveQueryAs, isActive, tab.filePath]);
 
-  useEffect(() => {
-      const handleOpenSqlExecutionLog = (event: Event) => {
-          const mode = event instanceof CustomEvent && event.detail?.mode === 'open' ? 'open' : 'toggle';
-          handleShowSqlExecutionLog(mode);
-      };
-
-      window.addEventListener('gonavi:show-sql-execution-log', handleOpenSqlExecutionLog as EventListener);
-      return () => {
-          window.removeEventListener('gonavi:show-sql-execution-log', handleOpenSqlExecutionLog as EventListener);
-      };
-  }, [handleShowSqlExecutionLog]);
+  useQueryEditorSqlLogBridge({
+      isActive,
+      isOpen: isResultPanelVisible && activeResultKey === QUERY_EDITOR_SQL_LOG_TAB_KEY,
+      onShow: handleShowSqlExecutionLog,
+  });
 
   const handleSave = async () => {
       try {

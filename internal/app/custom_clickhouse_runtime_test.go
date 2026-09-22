@@ -679,50 +679,6 @@ func TestResolveDataSyncEndpointConfigCanonicalizesCustomClickHouse(t *testing.T
 	}
 }
 
-func TestVerifyOptionalDriverAgentReadyForExportRecognizesCustomClickHouse(t *testing.T) {
-	originalProbe := optionalDriverAgentMetadataProbe
-	originalResolvePath := resolveOptionalDriverAgentExecutablePathFunc
-	t.Cleanup(func() {
-		optionalDriverAgentMetadataProbe = originalProbe
-		resolveOptionalDriverAgentExecutablePathFunc = originalResolvePath
-	})
-
-	resolveCalls := 0
-	resolveOptionalDriverAgentExecutablePathFunc = func(downloadDir string, driverType string) (string, error) {
-		resolveCalls++
-		if driverType != "clickhouse" {
-			t.Fatalf("expected ClickHouse export preflight, got %q", driverType)
-		}
-		return "clickhouse-driver-agent", nil
-	}
-	optionalDriverAgentMetadataProbe = func(driverType string, executablePath string) (db.OptionalDriverAgentMetadata, error) {
-		return db.OptionalDriverAgentMetadata{
-			DriverType:    driverType,
-			AgentRevision: db.OptionalDriverAgentRevision(driverType),
-		}, nil
-	}
-
-	if err := verifyOptionalDriverAgentReadyForExport(connection.ConnectionConfig{
-		Type:   "custom",
-		Driver: "clickhouse",
-	}); err != nil {
-		t.Fatalf("custom ClickHouse export preflight failed: %v", err)
-	}
-	if resolveCalls != 1 {
-		t.Fatalf("expected one ClickHouse agent preflight, got %d", resolveCalls)
-	}
-
-	if err := verifyOptionalDriverAgentReadyForExport(connection.ConnectionConfig{
-		Type:   "custom",
-		Driver: "kingbase",
-	}); err != nil {
-		t.Fatalf("unrelated custom driver export preflight changed: %v", err)
-	}
-	if resolveCalls != 1 {
-		t.Fatalf("expected unrelated custom driver to skip optional-agent preflight, got %d calls", resolveCalls)
-	}
-}
-
 func TestDBReleaseConnectionCanonicalizesCustomClickHouseCacheKey(t *testing.T) {
 	a := NewApp()
 	raw := connection.ConnectionConfig{

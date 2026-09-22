@@ -10,6 +10,7 @@ import type { SavedQuery, TabData } from '../types';
 import { ORACLE_ROWID_LOCATOR_COLUMN } from '../utils/rowLocator';
 import { setGlobalImeCompositionActive } from '../utils/shortcuts';
 import { clearQueryEditorResultSession } from '../utils/queryEditorResultSessionCache';
+import { resetQueryEditorTabSplitRatiosForTests, resolveQueryEditorTabSplitRatio, setQueryEditorTabSplitRatio } from '../utils/queryEditorSplitLayout';
 import { resolveNewQueryContext } from '../utils/newQueryContext';
 import { QUERY_TAB_RENAME_REQUEST_EVENT } from '../utils/queryTabTitle';
 import { clearQueryTabDraft, clearSQLFileTabDraft, getQueryTabDraft, getSQLFileTabDraft } from '../utils/sqlFileTabDrafts';
@@ -923,6 +924,7 @@ const createQueryEditorSplitNodeMock = (element: any) => {
 
 describe('QueryEditor external SQL save', () => {
   beforeEach(() => {
+    resetQueryEditorTabSplitRatiosForTests();
     resetDatabaseServerVersionCache();
     clearQueryEditorInlineRuntimeReadinessCache();
     const completionState = (globalThis as any).__gonaviSqlCompletionState;
@@ -17346,7 +17348,7 @@ WHERE GRANTEE = 'APPUSER';`;
     expect(document.removeEventListener).toHaveBeenCalledWith('mouseup', expect.any(Function));
   });
 
-  it('persists the editor and result panel split ratio after dragging the splitter', async () => {
+  it('keeps the editor and result split ratio on the dragged query tab', async () => {
 
     const moveListeners: Array<(event: MouseEvent) => void> = [];
     const upListeners: Array<() => void> = [];
@@ -17372,17 +17374,20 @@ WHERE GRANTEE = 'APPUSER';`;
       upListeners.forEach((listener) => listener());
     });
 
-    expect(storeState.setQueryOptions).toHaveBeenCalledWith({
-      queryEditorEditorHeightRatio: 0.6,
-    });
+    expect(storeState.setQueryOptions).not.toHaveBeenCalledWith(
+      expect.objectContaining({ queryEditorEditorHeightRatio: expect.any(Number) }),
+    );
+    expect(resolveQueryEditorTabSplitRatio('tab-1', 0.5)).toBe(0.6);
+    expect(resolveQueryEditorTabSplitRatio('tab-2', 0.5)).toBe(0.5);
   });
 
-  it('applies the persisted editor and result split ratio when opening another query tab', async () => {
+  it('keeps another query tab on its own split ratio', async () => {
 
+    setQueryEditorTabSplitRatio('tab-1', 0.75);
     storeState.activeTabId = 'tab-2';
     storeState.queryOptions = {
       ...storeState.queryOptions,
-      queryEditorEditorHeightRatio: 0.75,
+      queryEditorEditorHeightRatio: 0.5,
     };
 
     let renderer!: ReactTestRenderer;
@@ -17397,7 +17402,7 @@ WHERE GRANTEE = 'APPUSER';`;
       const className = String(node.props?.className || '');
       return className.includes('gn-v2-query-monaco-stage');
     });
-    expect(editorStage.props.style.height).toBe(525);
+    expect(editorStage.props.style.height).toBe(350);
   });
 
   it('inserts sidebar object text when dropped into the SQL editor', async () => {

@@ -12,6 +12,8 @@ import TitleBarPrimaryActions, {
   resolveTitleBarPrimaryActionShortcut,
 } from './components/TitleBarPrimaryActions';
 import TitleBarSystemActions from './components/TitleBarSystemActions';
+import TitleBarViewMenu from './components/TitleBarViewMenu';
+import { useTitleBarViewMenuEntries } from './components/useTitleBarViewMenuEntries';
 import ConnectionGroupManagementModal from './components/sidebar/ConnectionGroupManagementModal';
 import TabManager from './components/TabManager';
 import FloatingWorkbenchWindows from './components/FloatingWorkbenchWindows';
@@ -64,6 +66,7 @@ import {
 } from './brand/macDockIcon';
 import CustomThemeManager from './components/settings/CustomThemeManager';
 import ToolbarButtonAppearanceSettings from './components/settings/ToolbarButtonAppearanceSettings';
+import TitlebarMenuStyleSettings from './components/settings/TitlebarMenuStyleSettings';
 import SettingsCenterTreeNav, {
   findSettingsCenterTreeItem,
 } from './components/settings/SettingsCenterTreeNav';
@@ -1067,9 +1070,9 @@ function App() {
       link.type = /\.webp(?:[?#]|$)/i.test(href) ? 'image/webp' : 'image/svg+xml';
       link.href = href;
 
-      // The selection flow below rotates the live window identity itself;
+      // The selection flow below updates the live window icon itself;
       // skip this sync while that apply is in flight so the shortcut update
-      // and window re-grouping run exactly once.
+      // and window icon refresh run exactly once.
       if (runtimePlatform === 'windows' && windowsBrandIconApplyingRef.current === brandIconId) {
           return;
       }
@@ -3516,12 +3519,9 @@ function App() {
           return;
       }
 
-      // Windows applies the new ICO to existing shortcuts and rotates the live
-      // window's AppUserModel identity in a single native call, so Explorer
-      // re-renders the taskbar group immediately — no restart required now
-      // that the identity follows the icon. Detached native windows spawned
-      // before the next full app restart keep the previous identity until
-      // then, which is the only leftover of skipping the restart.
+      // Windows writes the new ICO onto existing shortcuts and the live window.
+      // AppUserModelID stays Syngnat.GoNavi, so a pinned taskbar button keeps
+      // launching this process instead of splitting into a second button.
       windowsBrandIconApplyingRef.current = id;
       setBrandIconId(id);
       try {
@@ -4506,6 +4506,19 @@ function App() {
           openSecurityUpdateSettings();
       }
   }, [openSecurityUpdateSettings, securityUpdateRepairSource]);
+  const titleBarViewMenuEntries = useTitleBarViewMenuEntries({
+      activeTabType: activeWorkbenchTab?.type,
+      aiPanelVisible,
+      fullscreen: windowState === 'fullscreen',
+      isMacRuntime,
+      onCloseSettings: closeSettingsCenterWorkbenchTab,
+      onCollapseSidebar: handleCollapseSidebarPanel,
+      onExpandSidebar: handleExpandSidebarPanel,
+      onOpenSettings: handleOpenSettingsModal,
+      onToggleAI: handleToggleOrFocusAIPanel,
+      settingsOpen: isSettingsModalOpen,
+      sidebarCollapsed: isSidebarCollapsed,
+  });
   const handleCancelSettingsCenterPane = useCallback(() => withAISettingsLeaveGuard(aiSettingsLeaveGuardRef.current, () => {
       const leavingAI = activeSettingsCenterPane?.key === 'ai';
       if (isConnectionPackageSettingsPaneKey(activeSettingsCenterPane?.key)) {
@@ -7312,6 +7325,11 @@ function App() {
                                   options?.hideSectionTabs ? null : t('app.theme.nav.appearance.title'),
                                   <>
                                       {renderThemeSettingsRow({
+                                          label: t('app.theme.appearance.titlebar_menu_style_title'),
+                                          stacked: true,
+                                          control: <TitlebarMenuStyleSettings />,
+                                      })}
+                                      {renderThemeSettingsRow({
                                           label: t('app.theme.appearance.ui_scale_title'),
                                           hint: t('app.theme.appearance.ui_scale_hint'),
                                           stacked: true,
@@ -8374,6 +8392,13 @@ function App() {
                     onConnectionGroupManagement={() => setIsConnectionGroupManagementOpen(true)}
                   />
                   <div id="gonavi-titlebar-quick-actions" className="gonavi-titlebar-quick-actions-slot" />
+                  {appearance.titlebarMenuStyle === 'view-menu' && (
+                      <TitleBarViewMenu
+                        label={t('app.view_menu.trigger')}
+                        entries={titleBarViewMenuEntries}
+                      />
+                  )}
+                  <div id="gonavi-titlebar-about-action" className="gonavi-titlebar-quick-actions-slot gn-v2-titlebar-about-slot" />
               </div>
               {isCollapsedSidebarActionsDocked && (
                   <div

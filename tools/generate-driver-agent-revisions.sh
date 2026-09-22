@@ -79,25 +79,29 @@ files_equal() {
   [[ "$(hash_file "$left")" == "$(hash_file "$right")" ]]
 }
 
+# revision 只回答一个问题：「已安装的 driver-agent 进程，其行为是否与当前 GoNavi
+# 期望的一致」。因此指纹只覆盖真正跑在 agent 进程里的代码：
+#   1. cmd/optional-driver-agent/*         —— agent 入口与 IPC 分发（全部驱动共享）
+#   2. 下面的共享协议 / 取值归一化文件      —— 影响 agent 输出形态或 IPC 帧格式
+#   3. 目标驱动自己的 internal/db 源码       —— 按文件名前缀匹配（见 driver_source_prefixes）
+#   4. 上述文件直接 import 的外部模块闭包
+# 只在 GoNavi 主进程执行的客户端包装代码（OptionalDriverAgentDB、拉起/定位/校验 agent、
+# 工厂注册等）不参与指纹：它们的改动不会改变 agent 二进制的行为，若纳入会让每次
+# 客户端重构都要求用户重装全部 driver-agent。
 should_include_shared_internal_db_file() {
   local identity="$1"
   case "$identity" in
-    internal/db/agent_process_stub.go|\
-internal/db/agent_process_windows.go|\
-internal/db/database.go|\
-internal/db/database_optional_factories_full.go|\
-internal/db/database_optional_factories_lite.go|\
-internal/db/driver_agent_binary_check.go|\
+    internal/db/attach_external.go|\
 internal/db/driver_support.go|\
 internal/db/json_decode.go|\
-internal/db/mysql_agent_path.go|\
-internal/db/optional_driver_agent_impl.go|\
-internal/db/optional_driver_build_full.go|\
-internal/db/optional_driver_build_lite.go|\
+internal/db/optional_driver_agent_ipc.go|\
+internal/db/query_args.go|\
+internal/db/query_args_impl.go|\
 internal/db/query_value.go|\
 internal/db/scan_rows.go|\
 internal/db/ssl_mode.go|\
-internal/db/timeout.go)
+internal/db/timeout.go|\
+internal/db/write_outcome.go)
       return 0
       ;;
   esac
@@ -105,53 +109,70 @@ internal/db/timeout.go)
   return 1
 }
 
-should_include_driver_internal_db_file() {
-  local driver="$1"
-  local identity="$2"
-
-  case "$driver:$identity" in
-    mariadb:internal/db/mariadb_impl.go|\
-mariadb:internal/db/mysql_impl.go|\
-oceanbase:internal/db/oceanbase_impl.go|\
-oceanbase:internal/db/oracle_impl.go|\
-oceanbase:internal/db/mysql_impl.go|\
-diros:internal/db/diros_impl.go|\
-diros:internal/db/mysql_impl.go|\
-starrocks:internal/db/starrocks_impl.go|\
-starrocks:internal/db/mysql_impl.go|\
-sphinx:internal/db/sphinx_impl.go|\
-sphinx:internal/db/mysql_impl.go|\
-sqlserver:internal/db/sqlserver_impl.go|\
-sqlite:internal/db/sqlite_impl.go|\
-duckdb:internal/db/duckdb_impl.go|\
-duckdb:internal/db/duckdb_metadata.go|\
-duckdb:internal/db/duckdb_driver_import.go|\
-duckdb:internal/db/duckdb_platform_supported.go|\
-duckdb:internal/db/duckdb_platform_unsupported.go|\
-dameng:internal/db/dameng_impl.go|\
-dameng:internal/db/dameng_metadata.go|\
-kingbase:internal/db/kingbase_impl.go|\
-kingbase:internal/db/kingbase_identifier_utils.go|\
-highgo:internal/db/highgo_impl.go|\
-vastbase:internal/db/vastbase_impl.go|\
-opengauss:internal/db/opengauss_impl.go|\
-opengauss:internal/db/postgres_impl.go|\
-gaussdb:internal/db/gaussdb_impl.go|\
-gaussdb:internal/db/postgres_impl.go|\
-iris:internal/db/iris_impl.go|\
-cache:internal/db/iris_impl.go|\
-mongodb:internal/db/mongodb_impl.go|\
-mongodb:internal/db/mongodb_impl_v1.go|\
-tdengine:internal/db/tdengine_impl.go|\
-iotdb:internal/db/iotdb_impl.go|\
-clickhouse:internal/db/clickhouse_impl.go|\
-clickhouse:internal/db/clickhouse_legacy_http.go|\
-elasticsearch:internal/db/elasticsearch_impl.go|\
-elasticsearch:internal/db/elasticsearch_helpers.go|\
-trino:internal/db/trino_impl.go)
+# 客户端专属文件：与驱动前缀同名（如 mysql_agent_*.go）但只在主进程执行，显式排除。
+is_client_only_internal_db_file() {
+  local identity="$1"
+  case "$identity" in
+    internal/db/agent_process.go|\
+internal/db/agent_process_*.go|\
+internal/db/database_optional_factories_*.go|\
+internal/db/driver_agent_binary_check.go|\
+internal/db/driver_agent_stderr_tail.go|\
+internal/db/mysql_agent_impl.go|\
+internal/db/mysql_agent_path.go|\
+internal/db/optional_driver_agent_impl.go|\
+internal/db/optional_driver_agent_params.go|\
+internal/db/optional_driver_agent_protocol.go|\
+internal/db/optional_driver_agent_stream.go|\
+internal/db/optional_driver_build_*.go)
       return 0
       ;;
   esac
+
+  return 1
+}
+
+# 每个驱动对应的 internal/db 源码文件名前缀：<prefix>.go、<prefix>_*.go 与
+# query_args_impl_<prefix>.go 都视为该驱动自己的实现。共享基座（mysql / postgres /
+# oracle / pg 元数据）按实际复用关系挂到派生驱动下。
+driver_source_prefixes() {
+  case "$1" in
+    mariadb) echo "mariadb mysql" ;;
+    oceanbase) echo "oceanbase oracle mysql" ;;
+    diros) echo "diros mysql" ;;
+    starrocks) echo "starrocks mysql" ;;
+    sphinx) echo "sphinx mysql" ;;
+    opengauss) echo "opengauss postgres pg" ;;
+    gaussdb) echo "gaussdb postgres pg" ;;
+    kingbase) echo "kingbase pg" ;;
+    highgo) echo "highgo pg" ;;
+    vastbase) echo "vastbase pg" ;;
+    cache) echo "cache iris" ;;
+    *) echo "$1" ;;
+  esac
+}
+
+should_include_driver_internal_db_file() {
+  local driver="$1"
+  local identity="$2"
+  local base prefix
+
+  case "$identity" in
+    internal/db/*.go) ;;
+    *) return 1 ;;
+  esac
+  if is_client_only_internal_db_file "$identity"; then
+    return 1
+  fi
+
+  base="${identity#internal/db/}"
+  for prefix in $(driver_source_prefixes "$driver"); do
+    case "$base" in
+      "${prefix}.go"|"${prefix}_"*.go|"query_args_impl_${prefix}.go")
+        return 0
+        ;;
+    esac
+  done
 
   return 1
 }

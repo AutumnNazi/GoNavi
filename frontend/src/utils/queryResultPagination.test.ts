@@ -212,4 +212,33 @@ describe('queryResultPagination', () => {
     expect(parseQueryResultTotalCount({ count: BigInt(42) })).toBe(42);
     expect(parseQueryResultTotalCount({ total: '-1' })).toBeNull();
   });
+
+  // 回归：leading keyword 曾是判定「可翻页」的唯一依据，`WITH ... SELECT` 因此
+  // 被当成非查询语句，CTE 结果集拿不到任何分页状态。
+  it('builds pagination state for a CTE main query', () => {
+    const cteBase = `WITH rfm AS (
+  SELECT id FROM customers
+)
+SELECT rfm.id FROM rfm`;
+
+    expect(createInitialQueryResultPagination({
+      executedSql: `${cteBase}\nLIMIT 1`,
+      exportSql: cteBase,
+      dbType: 'kingbase',
+      returnedRowCount: 1,
+      fallbackPageSize: 1,
+    })).toMatchObject({
+      pageSize: 1,
+      baseSql: cteBase,
+    });
+  });
+
+  it('does not build pagination state for a non-select CTE statement', () => {
+    expect(createInitialQueryResultPagination({
+      executedSql: 'WITH t AS (SELECT id FROM a) UPDATE b SET x = 1 WHERE id IN (SELECT id FROM t)',
+      dbType: 'postgres',
+      returnedRowCount: 3,
+      fallbackPageSize: 500,
+    })).toBeUndefined();
+  });
 });

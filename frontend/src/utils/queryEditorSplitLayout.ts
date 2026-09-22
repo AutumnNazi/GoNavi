@@ -64,3 +64,26 @@ export const resolveQueryEditorEditorHeightRatio = (
   }
   return sanitizeQueryEditorEditorHeightRatio(rawEditorHeight / rawAvailableHeight);
 };
+
+const queryEditorTabSplitRatios = new Map<string, number>();
+
+/** 每个查询标签页自己的编辑区/结果区比例。没拖过的标签页回退到全局默认值。 */
+export const resolveQueryEditorTabSplitRatio = (tabId: string, fallback: unknown): number => {
+  const stored = queryEditorTabSplitRatios.get(String(tabId || '').trim());
+  if (stored === undefined) {
+    return sanitizeQueryEditorEditorHeightRatio(fallback);
+  }
+  return sanitizeQueryEditorEditorHeightRatio(stored);
+};
+
+export const setQueryEditorTabSplitRatio = (tabId: string, ratio: number): void => {
+  const id = String(tabId || '').trim();
+  if (!id) {
+    return;
+  }
+  queryEditorTabSplitRatios.set(id, sanitizeQueryEditorEditorHeightRatio(ratio));
+};
+
+export const resetQueryEditorTabSplitRatiosForTests = (): void => {
+  queryEditorTabSplitRatios.clear();
+};

@@ -72,6 +72,7 @@ class GenerateReleaseNotesTests(unittest.TestCase):
         self.assertIn("華龍算力", body)
         self.assertIn("3.8折", body)
         self.assertIn("1.9折", body)
+        self.assertIn("華龍算力AI中转站活动加码：充88得100，每人限1单哦", body)
         self.assertIn("https://api.hualong.online/register?promo=GONAVI%26HUALONG", body)
         self.assertNotIn("GONAVI&HUALONG", body)
         self.assertNotIn("](https://api.hualong.online/)", body)

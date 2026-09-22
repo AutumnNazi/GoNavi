@@ -131,6 +131,30 @@ describe('QueryEditorToolbarMaxRowsSelect custom rows', () => {
     renderer.unmount();
   });
 
+  // 回归：勾号按钮曾只做 stopPropagation，挡不住 mousedown 的默认焦点转移，
+  // 内嵌输入框随即失焦，rc-select 收到 blur 后关闭弹层并播放退场动画，
+  // 按钮在 mouseup 之前被滑走，click 落到 body 上，onClick 永不触发 ——
+  // 表现为「填了数字点勾没反应」。必须 preventDefault 拦下焦点转移。
+  it('prevents the confirm button mousedown from stealing focus', async () => {
+    const { renderer, openMenu } = await renderSelect(5000);
+    await openMenu();
+    const confirmButton = renderer.root.findByProps({ 'data-query-editor-max-rows-confirm': 'true' });
+
+    const event = {
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    };
+    await act(async () => {
+      confirmButton.props.onMouseDown(event);
+    });
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    // stopPropagation 既非必要（window 捕获监听在它之前就执行），也非充分，
+    // 不应再依赖它来维持弹层开启。
+    expect(event.stopPropagation).not.toHaveBeenCalled();
+    renderer.unmount();
+  });
+
   it('submits on Enter and normalizes leading zeros', async () => {
     const { renderer, onMaxRowsChange, openMenu } = await renderSelect(5000);
     await openMenu();
@@ -178,6 +202,46 @@ describe('QueryEditorToolbarMaxRowsSelect custom rows', () => {
     expect(select.props.value).toBe(12345);
     expect(select.props.options.map((option: { value: number }) => option.value)).toEqual([100, 500, 1000, 5000, 20000, 0, 12345]);
     expect(renderer.root.findByProps({ 'data-query-editor-max-rows-input': 'true' }).props.value).toBe('12345');
+    renderer.unmount();
+  });
+
+  // 回归：曾经只在「ref 为空」时预填，导致整个会话只预填一次。用户用固定选项改过后
+  // 再展开，输入框仍显示上一次残留的数字，此时直接点勾会把过期数字写回，
+  // 静默覆盖掉刚选的固定项。
+  it('re-syncs the custom input to the effective value on every reopen', async () => {
+    const onMaxRowsChange = vi.fn();
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <QueryEditorToolbarMaxRowsSelect maxRows={5000} onMaxRowsChange={onMaxRowsChange} />,
+      );
+    });
+    const select = () => renderer.root.findAllByType(Select)[0];
+    const customInput = () => renderer.root.findByProps({ 'data-query-editor-max-rows-input': 'true' });
+    const toggleMenu = async (open: boolean) => {
+      await act(async () => {
+        select().props.onOpenChange(open);
+      });
+    };
+
+    await toggleMenu(true);
+    expect(customInput().props.value).toBe('5000');
+
+    // 输入一个与当前生效值不同的数字，但不提交，直接关掉下拉。
+    await act(async () => {
+      customInput().props.onChange({ target: { value: '3000' } });
+    });
+    await toggleMenu(false);
+
+    // 模拟用户改选固定项：生效值变为 1000。
+    await act(async () => {
+      renderer.update(
+        <QueryEditorToolbarMaxRowsSelect maxRows={1000} onMaxRowsChange={onMaxRowsChange} />,
+      );
+    });
+
+    await toggleMenu(true);
+    expect(customInput().props.value).toBe('1000');
     renderer.unmount();
   });
 

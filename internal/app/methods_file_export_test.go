@@ -18,7 +18,6 @@ import (
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/db"
 	"GoNavi-Wails/internal/uievents"
-	"GoNavi-Wails/shared/i18n"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -809,56 +808,6 @@ func TestTryResolveExportTableTotalRows_UsesCountQuery(t *testing.T) {
 	}
 	if fake.lastQuery != "SELECT COUNT(*) AS total FROM `SYS`.`test`" {
 		t.Fatalf("整表导出统计 SQL 错误，got=%q", fake.lastQuery)
-	}
-}
-
-func TestVerifyOptionalDriverAgentReadyForExport_RejectsStaleAgent(t *testing.T) {
-	originalProbe := optionalDriverAgentMetadataProbe
-	originalResolvePath := resolveOptionalDriverAgentExecutablePathFunc
-	originalLanguage := defaultAppTextLanguage
-	t.Cleanup(func() {
-		optionalDriverAgentMetadataProbe = originalProbe
-		resolveOptionalDriverAgentExecutablePathFunc = originalResolvePath
-		setDefaultAppLanguage(originalLanguage)
-	})
-	setDefaultAppLanguage(i18n.LanguageEnUS)
-
-	resolveOptionalDriverAgentExecutablePathFunc = func(downloadDir string, driverType string) (string, error) {
-		return "/tmp/oceanbase-driver-agent", nil
-	}
-	optionalDriverAgentMetadataProbe = func(driverType string, executablePath string) (db.OptionalDriverAgentMetadata, error) {
-		return db.OptionalDriverAgentMetadata{
-			DriverType:    driverType,
-			AgentRevision: "src-stale-agent",
-		}, nil
-	}
-
-	err := verifyOptionalDriverAgentReadyForExport(connection.ConnectionConfig{Type: "oceanbase"})
-	if err == nil {
-		t.Fatal("预期旧版 OceanBase driver-agent 被导出前校验拦截")
-	}
-	expectedDriverName := resolveDriverDisplayName(driverDefinition{Type: "oceanbase"})
-	if strings.Contains(err.Error(), "当前导出依赖最新的") {
-		t.Fatalf("错误信息不应再直接返回中文原文，got=%q", err.Error())
-	}
-	if !strings.Contains(err.Error(), "latest "+expectedDriverName+" driver-agent streaming protocol") {
-		t.Fatalf("错误信息应说明需要最新的 driver-agent 流式协议，got=%q", err.Error())
-	}
-}
-
-func TestVerifyOptionalDriverAgentReadyForExport_SkipsBuiltInDriver(t *testing.T) {
-	originalResolvePath := resolveOptionalDriverAgentExecutablePathFunc
-	t.Cleanup(func() {
-		resolveOptionalDriverAgentExecutablePathFunc = originalResolvePath
-	})
-
-	resolveOptionalDriverAgentExecutablePathFunc = func(downloadDir string, driverType string) (string, error) {
-		t.Fatalf("内置驱动导出不应探测 optional driver-agent 路径")
-		return "", nil
-	}
-
-	if err := verifyOptionalDriverAgentReadyForExport(connection.ConnectionConfig{Type: "mysql"}); err != nil {
-		t.Fatalf("内置驱动导出不应被 optional driver-agent 校验阻断: %v", err)
 	}
 }
 

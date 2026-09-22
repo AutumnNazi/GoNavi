@@ -35,10 +35,20 @@ var grokCLIRequestTimeout = cliStreamMaxTimeout
 // grokCLIIsolationNote 说明本 provider 的隔离边界与 codex 不对等，务必不要按 codex 的假设使用。
 //
 // codex 有 --ignore-user-config / --ignore-rules，可以把用户的全局配置与规则整个隔离掉。
-// grok 1.0.5 没有任何等价 flag：它只提供 --rules（追加）与 --system-prompt-override（覆盖系统提示）。
+// grok 没有任何等价 flag：它只提供 --rules（追加）与 --system-prompt-override（覆盖系统提示）。
 // 实测未加隔离时，一次 "say OK" 的调用会把用户全局规则读进上下文（input_tokens 上万），
-// 因此这里必须显式覆盖系统提示，并把内置工具白名单清空。
+// 因此这里必须显式覆盖系统提示，并禁止内置工具。
 const grokCLIIsolationNote = "isolated"
+
+// grokCLIDisallowedTools 是 grok 1.0.40 默认注入、且会被模型实际调用的内置工具。
+// `--tools ""` 在这一版会被当成“未设置白名单”而忽略，模型仍会调用 search_tool / read_file。
+// 工具结果写回后的下一轮推理在 CLI 内部反序列化失败：missing field `id`。
+// 名单同时覆盖 flag id（run_terminal_cmd）和 function name（run_terminal_command）。
+const grokCLIDisallowedTools = "run_terminal_cmd,run_terminal_command,grep,read_file,search_replace,list_dir," +
+	"web_search,web_fetch,todo_write,task,search_tool,use_tool,write,monitor,workflow," +
+	"ask_user_question,send_feedback,image_gen,image_edit,image_to_video,reference_to_video," +
+	"enter_plan_mode,exit_plan_mode,Agent,spawn_subagent,kill_command_or_subagent," +
+	"get_command_or_subagent_output,scheduler_create,scheduler_delete,scheduler_list"
 
 // grokCLISystemPrompt 覆盖 grok 自身的 agent 系统提示，阻断用户全局规则进入本次调用。
 // 它只声明当前用途，不描述任何数据库写入能力——写库能力由 GoNavi 侧的安全层决定。
@@ -183,6 +193,9 @@ func (p *GrokCLIProvider) stream(ctx context.Context, req ai.ChatRequest, callba
 }
 
 func (p *GrokCLIProvider) streamAttempt(ctx context.Context, req ai.ChatRequest, callback func(ai.StreamChunk)) (emitted bool, err error) {
+	parent := ctx
+	ctx, cancelUpstream := context.WithCancel(parent)
+	defer cancelUpstream()
 	ctx, watchdog := startCLIIdleWatchdog(ctx, cliStreamIdleTimeout, cliStreamMaxTimeout)
 	defer watchdog.Close()
 
@@ -202,7 +215,9 @@ func (p *GrokCLIProvider) streamAttempt(ctx context.Context, req ai.ChatRequest,
 	}
 
 	cmd := newGrokCLICommand(ctx, command, args...)
-	cmd.Env = MergeProviderCLIEnv(EnrichCLICommandPATH(cmd.Environ(), command), p.config.CLIEnv)
+	cmdEnv, cleanupAuthHome := withGrokCLIAPIKeyAuth(MergeProviderCLIEnv(EnrichCLICommandPATH(cmd.Environ(), command), p.config.CLIEnv))
+	defer cleanupAuthHome()
+	cmd.Env = cmdEnv
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return false, fmt.Errorf("create Grok CLI stdout pipe failed: %w", err)
@@ -227,8 +242,11 @@ func (p *GrokCLIProvider) streamAttempt(ctx context.Context, req ai.ChatRequest,
 		requestErr = fmt.Errorf("start Grok CLI failed: %w", err)
 		return false, requestErr
 	}
+	var upstreamWatch *grokCLIUpstreamWatch
 	if cmd.Process != nil {
 		logger.Infof("GrokCLI 请求进程已启动：requestId=%s pid=%d", requestLog.id, cmd.Process.Pid)
+		upstreamWatch = startGrokCLIUpstreamWatchAt(grokCLILogPathForEnv(cmdEnv), cmd.Process.Pid, watchdog.Bump, cancelUpstream)
+		defer upstreamWatch.close()
 	}
 
 	var streamUsage *ai.TokenUsage
@@ -262,43 +280,49 @@ func (p *GrokCLIProvider) streamAttempt(ctx context.Context, req ai.ChatRequest,
 	stderrText := stderr.String()
 	combined.WriteString(stderrText)
 	failureOutput = combined.String()
+	requestErr = finishGrokCLIStream(parent, ctx, watchdog, upstreamWatch, waitErr, scanErr, stdoutText, stderrText, combined.String(), emitted)
+	if requestErr == nil {
+		callback(ai.StreamChunk{Done: true, Usage: streamUsage})
+	}
+	return emitted, requestErr
+}
 
+func finishGrokCLIStream(parent context.Context, ctx context.Context, watchdog *cliIdleWatchdog, upstreamWatch *grokCLIUpstreamWatch, waitErr error, scanErr error, stdoutText string, stderrText string, combined string, emitted bool) error {
+	if errors.Is(parent.Err(), context.Canceled) && !errors.Is(parent.Err(), context.DeadlineExceeded) {
+		return context.Canceled
+	}
+	if detail := upstreamWatch.giveUpMessage(); detail != "" {
+		return grokCLIExecutionError(detail)
+	}
 	if watchdog.TimedOut() || isClaudeCLITimeout(ctx, waitErr) {
-		requestErr = watchdog.TimeoutError("Grok CLI")
-		return emitted, requestErr
+		if detail := upstreamWatch.lastMessage(); detail != "" {
+			return grokCLIExecutionError(detail)
+		}
+		return watchdog.TimeoutError("Grok CLI")
 	}
 	if errors.Is(ctx.Err(), context.Canceled) {
-		requestErr = context.Canceled
-		return emitted, requestErr
+		return context.Canceled
 	}
 	capability, _ := LookupCLICapability("grok-cli")
-	if rejection := capability.InspectRejection(combined.String()); rejection != nil {
-		requestErr = rejection
-		return emitted, requestErr
+	if rejection := capability.InspectRejection(combined); rejection != nil {
+		return rejection
 	}
 	if detail := grokCLIStructuredErrorDetail(stdoutText); detail != "" {
-		requestErr = grokCLIExecutionError(detail)
-		return emitted, requestErr
+		return grokCLIExecutionError(detail)
 	}
 	if grokCLITerminalCancelled(stdoutText) {
-		requestErr = grokCLIExecutionError("cancelled")
-		return emitted, requestErr
+		return grokCLIExecutionError("cancelled")
 	}
 	if scanErr != nil {
-		requestErr = fmt.Errorf("read Grok CLI stream failed: %w", scanErr)
-		return emitted, requestErr
+		return fmt.Errorf("read Grok CLI stream failed: %w", scanErr)
 	}
 	if waitErr != nil && !emitted {
-		detail := grokCLIExecutionFailureDetail(stdoutText, stderrText, waitErr)
-		requestErr = grokCLIExecutionError(detail)
-		return emitted, requestErr
+		return grokCLIExecutionError(grokCLIExecutionFailureDetail(stdoutText, stderrText, waitErr))
 	}
 	if !emitted {
-		requestErr = fmt.Errorf("Grok CLI returned no streamed content")
-		return emitted, requestErr
+		return fmt.Errorf("Grok CLI returned no streamed content")
 	}
-	callback(ai.StreamChunk{Done: true, Usage: streamUsage})
-	return emitted, nil
+	return nil
 }
 
 func grokStreamChunkFromLine(raw []byte) (thinking, content string) {
@@ -402,7 +426,9 @@ func (p *GrokCLIProvider) runAttempt(ctx context.Context, req ai.ChatRequest) (g
 	}
 
 	cmd := newGrokCLICommand(ctx, command, args...)
-	cmd.Env = MergeProviderCLIEnv(EnrichCLICommandPATH(cmd.Environ(), command), p.config.CLIEnv)
+	cmdEnv, cleanupAuthHome := withGrokCLIAPIKeyAuth(MergeProviderCLIEnv(EnrichCLICommandPATH(cmd.Environ(), command), p.config.CLIEnv))
+	defer cleanupAuthHome()
+	cmd.Env = cmdEnv
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -600,7 +626,18 @@ func grokCLIExecutionError(detail string) error {
 	case "cancelled", "canceled", "request cancelled":
 		return fmt.Errorf("Grok CLI execution failed: %w（多为网络波动、代理断流或上游过载），请重新发送重试", errGrokCLIUpstreamCancelled)
 	}
+	if grokCLIMissingResponseID(detail) {
+		return fmt.Errorf("Grok CLI execution failed: 上游响应缺少 id，Grok CLI 无法继续解析。若仍出现，请把该模型的 api_backend 改为 chat_completions")
+	}
 	return fmt.Errorf("Grok CLI execution failed: %s", detail)
+}
+
+// grokCLIMissingResponseID 识别 grok 1.0.40 把 Responses 条目反序列化失败时的原文。
+// 失败发生在 CLI 进程内部，到达 GoNavi 时只剩这一句。
+func grokCLIMissingResponseID(detail string) bool {
+	normalized := strings.ToLower(detail)
+	return strings.Contains(normalized, "missing field `id`") ||
+		strings.Contains(normalized, `missing field "id"`)
 }
 
 // grokCLITerminalCancelled 识别终止 result 行声明的 "cancelled" stop reason。
@@ -652,10 +689,14 @@ func buildGrokCLIArgsWithStream(config ai.ProviderConfig, promptFile string, str
 		// grok 没有 --ignore-user-config/--ignore-rules；覆盖系统提示是唯一能阻断
 		// 用户全局规则进入本次调用的手段。
 		"--system-prompt-override", grokCLISystemPrompt,
-		// 空白名单 = 不允许任何内置工具。本 provider 只做对话与 SQL 生成，
-		// 数据库访问由 GoNavi 自己的工具层负责，不经由 CLI 的文件/命令工具。
+		// 1.0.5 把空 --tools 当成空白名单；1.0.40 会忽略空字符串并注入全套内置工具。
+		// 空名单保留给旧版，denylist 负责在 1.0.40 上真正去掉 search_tool / read_file。
 		"--tools", "",
+		"--disallowed-tools", grokCLIDisallowedTools,
 		"--disable-web-search",
+		"--no-subagents",
+		// 本 provider 只需要一轮文本回复。工具回合的下一次推理会触发 missing field `id`。
+		"--max-turns", "1",
 	)
 
 	capability, ok := LookupCLICapability("grok-cli")

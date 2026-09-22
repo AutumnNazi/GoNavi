@@ -7,9 +7,12 @@ import {
   MIN_QUERY_EDITOR_EDITOR_HEIGHT_RATIO,
   MIN_QUERY_EDITOR_RESULT_HEIGHT,
   clampQueryEditorEditorHeight,
+  resetQueryEditorTabSplitRatiosForTests,
   resolveQueryEditorEditorHeightFromRatio,
   resolveQueryEditorEditorHeightRatio,
+  resolveQueryEditorTabSplitRatio,
   sanitizeQueryEditorEditorHeightRatio,
+  setQueryEditorTabSplitRatio,
 } from './queryEditorSplitLayout';
 
 describe('query editor split layout', () => {
@@ -39,5 +42,13 @@ describe('query editor split layout', () => {
     expect(resolveQueryEditorEditorHeightRatio(20, 800)).toBe(MIN_QUERY_EDITOR_EDITOR_HEIGHT_RATIO);
     expect(resolveQueryEditorEditorHeightRatio(760, 800)).toBe(MAX_QUERY_EDITOR_EDITOR_HEIGHT_RATIO);
     expect(resolveQueryEditorEditorHeightRatio(480, 0)).toBe(DEFAULT_QUERY_EDITOR_EDITOR_HEIGHT_RATIO);
+  });
+
+  it('keeps each query tab split ratio independent', () => {
+    resetQueryEditorTabSplitRatiosForTests();
+    setQueryEditorTabSplitRatio('tab-1', 0.75);
+    expect(resolveQueryEditorTabSplitRatio('tab-1', 0.5)).toBe(0.75);
+    expect(resolveQueryEditorTabSplitRatio('tab-2', 0.5)).toBe(0.5);
+    resetQueryEditorTabSplitRatiosForTests();
   });
 });

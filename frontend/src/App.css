@@ -2760,6 +2760,12 @@ body[data-ui-version="v2"] .gn-v2-titlebar-quick-actions-slot {
     margin-left: 10px;
 }
 
+body[data-ui-version="v2"] .gn-v2-titlebar-about-slot {
+    margin-left: 0;
+    max-width: max-content;
+    flex: 0 0 auto;
+}
+
 body[data-ui-version="v2"] .gn-v2-titlebar-quick-actions {
     max-width: 100%;
 }
