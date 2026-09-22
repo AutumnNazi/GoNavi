@@ -262,6 +262,50 @@ describe('DataGrid layout', () => {
     expect(markup).not.toContain('当前页查找...');
   });
 
+  it('right-aligns numeric and datetime columns while keeping text columns left-aligned', () => {
+    const markup = renderDataGridWithI18n(
+      <DataGrid
+        data={[
+          {
+            __gonavi_row_key__: 'row-1',
+            id: 1,
+            amount: 9.5,
+            name: 'alpha',
+            created_at: '2026-01-01 00:00:00',
+          },
+        ]}
+        columnNames={['id', 'amount', 'name', 'created_at']}
+        initialColumnMetaMap={{
+          id: { type: 'int' },
+          amount: { type: 'decimal(10,2)' },
+          name: { type: 'varchar(255)' },
+          created_at: { type: 'datetime' },
+        } as any}
+        loading={false}
+        tableName="users"
+        dbName="main"
+        connectionId="conn-1"
+        readOnly
+        pagination={{
+          current: 1,
+          pageSize: 100,
+          total: 1,
+        }}
+        onPageChange={() => {}}
+      />,
+    );
+
+    const columnHeader = (columnName: string) => markup.match(new RegExp(`<th[^>]*data-col-name="${columnName}"[^>]*>`))?.[0] || '';
+
+    expect(columnHeader('id')).toContain('is-align-right');
+    expect(columnHeader('id')).toContain('text-align:right');
+    expect(columnHeader('amount')).toContain('is-align-right');
+    expect(columnHeader('created_at')).toContain('is-align-right');
+    expect(columnHeader('name')).not.toContain('is-align-right');
+    expect(columnHeader('name')).not.toContain('text-align:right');
+    expect(markup).toContain('align-items:flex-end');
+  });
+
   it('refreshes DataGrid localized chrome when the language preference changes', () => {
     mockStoreState.languagePreference = 'system';
     const renderLocalizedQuickFind = (systemLanguages: readonly string[]) => {

@@ -65,6 +65,8 @@ export interface DataGridColumnTitleProps {
   highlighted?: boolean;
   /** 左侧钉住列：表头显示固定图标 */
   pinnedLeft?: boolean;
+  /** 与单元格对齐方式一致：数值/日期列右对齐时表头标题跟随 */
+  align?: 'left' | 'right';
   translate?: DataGridColumnTitleTranslate;
   onOpenForeignKey?: () => void;
   currentValueCounts?: DataGridColumnValueCount[];
@@ -94,6 +96,7 @@ const DataGridColumnTitle: React.FC<DataGridColumnTitleProps> = ({
   darkMode,
   highlighted = false,
   pinnedLeft = false,
+  align = 'left',
   translate = defaultTranslate,
   onOpenForeignKey,
   currentValueCounts,
@@ -219,7 +222,7 @@ const DataGridColumnTitle: React.FC<DataGridColumnTitleProps> = ({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        alignItems: 'flex-start',
+        alignItems: align === 'right' ? 'flex-end' : 'flex-start',
         justifyContent: 'center',
         minWidth: 0,
         maxWidth: '100%',

@@ -137,6 +137,7 @@ import {
     type TemporalConnectionLike,
     type TemporalPickerType,
 } from './dataGridTemporal';
+import { resolveGridColumnAlign } from './dataGridColumnAlign';
 import {
     buildEffectiveFilterConditions,
     resolveWhereConditionSelectedValue,
@@ -1273,6 +1274,14 @@ const DataGrid: React.FC<DataGridProps> = ({
       return next;
   }, [displayColumnNames, columnMetaMap, columnTypeMapByLowerName]);
 
+  const gridColumnAlignMap = useMemo(() => {
+      const next: Record<string, 'left' | 'right'> = {};
+      displayColumnNames.forEach((columnName) => {
+          next[columnName] = resolveGridColumnAlign(displayColumnTypeMap[columnName], dbType, currentConnConfig);
+      });
+      return next;
+  }, [displayColumnNames, displayColumnTypeMap, dbType, currentConnConfig]);
+
   const insertSQLColumnTypes = useMemo(() => {
       const next: Record<string, string> = {};
       displayOutputColumnNames.forEach((columnName) => {
@@ -1702,7 +1711,7 @@ const DataGrid: React.FC<DataGridProps> = ({
       });
   }, [applyColumnFilter]);
 
-  const renderColumnTitle = useCallback((name: string): React.ReactNode => {
+  const renderColumnTitle = useCallback((name: string, align: 'left' | 'right' = 'left'): React.ReactNode => {
       const normalizedName = String(name || '');
       const meta = columnMetaMap[normalizedName] || columnMetaMapByLowerName[normalizedName.toLowerCase()];
       const foreignKeyTarget = foreignKeyMap[normalizedName] || foreignKeyMapByLowerName[normalizedName.toLowerCase()];
@@ -1721,6 +1730,7 @@ const DataGrid: React.FC<DataGridProps> = ({
               darkMode={darkMode}
               highlighted={highlightedColumnName === normalizedName}
               pinnedLeft={pinnedLeftColumnSet.has(normalizedName)}
+              align={align}
               translate={translateDataGrid}
               onOpenForeignKey={foreignKeyTarget ? () => openForeignKeyTarget(foreignKeyTarget) : undefined}
               loadCurrentValueCounts={() => getCurrentColumnValueCounts(normalizedName)}
@@ -3294,9 +3304,10 @@ const DataGrid: React.FC<DataGridProps> = ({
 
   const columns: (ColumnType<any> & { editable?: boolean })[] = useMemo(() => {
       return displayColumnNames.map(key => ({
-          title: renderColumnTitle(key),
+          title: renderColumnTitle(key, gridColumnAlignMap[key]),
           dataIndex: key,
           key: key,
+          align: gridColumnAlignMap[key],
           // 不使用 ellipsis，避免 Ant Design 的 Tooltip 展开行为
           width: resolveDataTableColumnWidth({
               manualWidth: columnWidths[key],
@@ -3330,7 +3341,7 @@ const DataGrid: React.FC<DataGridProps> = ({
               'data-col-name': key,
               columnOrderDragScope: columnOrderDragScopeRef.current,
               width: column.width,
-              className: `gonavi-sortable-header-cell${showColumnComment || showColumnType ? '' : ' is-single-line-title'}`,
+              className: `gonavi-sortable-header-cell${showColumnComment || showColumnType ? '' : ' is-single-line-title'}${gridColumnAlignMap[key] === 'right' ? ' is-align-right' : ''}`,
               'data-i18n-language': language,
               onResizeStart: handleResizeStart(key), // Only need start
               onResizeAutoFit: handleResizeAutoFit(key),
@@ -3390,7 +3401,7 @@ const DataGrid: React.FC<DataGridProps> = ({
               },
           }),
       }));
-  }, [canModifyData, cellEditMode, columnWidths, currentConnConfig, dataTableDensity, displayColumnNames, displayColumnTypeMap, effectiveEditLocator, enableVirtual, handleResizeAutoFit, handleResizeStart, language, normalizedPageFindText, onSort, pinnedLeftColumnSet, renderColumnTitle, reorderVisibleColumns, selectEditableColumnCells, showColumnComment, showColumnHeaderContextMenu, showColumnType, sortInfo]);
+  }, [canModifyData, cellEditMode, columnWidths, currentConnConfig, dataTableDensity, displayColumnNames, displayColumnTypeMap, effectiveEditLocator, enableVirtual, gridColumnAlignMap, handleResizeAutoFit, handleResizeStart, language, normalizedPageFindText, onSort, pinnedLeftColumnSet, renderColumnTitle, reorderVisibleColumns, selectEditableColumnCells, showColumnComment, showColumnHeaderContextMenu, showColumnType, sortInfo]);
 
   const mergedColumns = useMemo(() => columns.map((col): ColumnType<any> => {
       const dataIndex = String(col.dataIndex);
