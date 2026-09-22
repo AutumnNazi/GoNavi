@@ -50,12 +50,15 @@ func TestOptionalDriverPackageUpdateStatusDetectsMongoV2WhenLegacyDefault(t *tes
 		AgentRevision: db.OptionalDriverAgentRevision("mongodb"),
 	}
 
-	needsUpdate, reason, _ := optionalDriverPackageUpdateStatus(definition, meta, true)
+	needsUpdate, optionalUpdate, reason, _ := optionalDriverPackageUpdateStatus(definition, meta, true)
 	if !needsUpdate {
 		t.Fatal("expected installed MongoDB v2 driver to require reinstall when v1 is the compatibility default")
 	}
 	if !strings.Contains(reason, "MongoDB 4.0") || !strings.Contains(reason, "wire version 7") {
 		t.Fatalf("expected reason to explain MongoDB 4.0 compatibility, got %q", reason)
+	}
+	if optionalUpdate {
+		t.Fatal("mongodb compatibility update must not be optional")
 	}
 }
 
@@ -72,7 +75,7 @@ func TestOptionalDriverPackageUpdateStatusAcceptsMongoV1WithoutRevision(t *testi
 		AgentRevision: "",
 	}
 
-	needsUpdate, reason, _ := optionalDriverPackageUpdateStatus(definition, meta, true)
+	needsUpdate, _, reason, _ := optionalDriverPackageUpdateStatus(definition, meta, true)
 	if needsUpdate {
 		t.Fatalf("expected MongoDB v1 driver to skip revision mismatch prompts, reason=%q", reason)
 	}
@@ -307,3 +310,61 @@ func TestSavedConnectionDriverUsageCountsIncludesOptionalAndCustomDrivers(t *tes
 		t.Fatalf("expected built-in MySQL to be ignored, got %d", got)
 	}
 }
+
+func TestOptionalDriverPackageUpdateStatusDemotesSharedRevisionMismatchToOptional(t *testing.T) {
+	app := NewApp()
+	app.SetLanguage(string(i18n.LanguageZhCN))
+	t.Cleanup(func() {
+		app.SetLanguage(string(i18n.LanguageZhCN))
+	})
+
+	definition := driverDefinition{Type: "clickhouse", Name: "ClickHouse", PinnedVersion: "1.0.0"}
+	pkg := installedDriverPackage{Version: "1.0.0", AgentRevision: "src-stale-shared-bump"}
+
+	needsUpdate, optionalUpdate, reason, _ := optionalDriverPackageUpdateStatus(definition, pkg, true)
+	if needsUpdate {
+		t.Fatalf("revision mismatch with unchanged library version must not require update (issue #1326), reason=%q", reason)
+	}
+	if !optionalUpdate {
+		t.Fatal("expected optional update classification")
+	}
+	if !strings.Contains(reason, "仍可正常使用") || !strings.Contains(reason, "驱动库版本未变化") {
+		t.Fatalf("expected reason to explain shared-component update, got %q", reason)
+	}
+}
+
+func TestOptionalDriverPackageUpdateStatusKeepsUpdateWhenLibraryVersionChanged(t *testing.T) {
+	app := NewApp()
+	app.SetLanguage(string(i18n.LanguageZhCN))
+	t.Cleanup(func() {
+		app.SetLanguage(string(i18n.LanguageZhCN))
+	})
+
+	definition := driverDefinition{Type: "clickhouse", Name: "ClickHouse", PinnedVersion: "1.1.0"}
+	pkg := installedDriverPackage{Version: "1.0.0", AgentRevision: "src-stale"}
+
+	needsUpdate, optionalUpdate, reason, _ := optionalDriverPackageUpdateStatus(definition, pkg, true)
+	if !needsUpdate {
+		t.Fatalf("library version change must keep needs update, reason=%q", reason)
+	}
+	if optionalUpdate {
+		t.Fatal("library version change must not be classified as optional")
+	}
+}
+
+func TestOptionalDriverPackageUpdateStatusKeepsUpdateWhenInstalledVersionMissing(t *testing.T) {
+	app := NewApp()
+	app.SetLanguage(string(i18n.LanguageZhCN))
+	t.Cleanup(func() {
+		app.SetLanguage(string(i18n.LanguageZhCN))
+	})
+
+	definition := driverDefinition{Type: "clickhouse", Name: "ClickHouse", PinnedVersion: "1.1.0"}
+	pkg := installedDriverPackage{Version: "", AgentRevision: "src-stale"}
+
+	needsUpdate, optionalUpdate, _, _ := optionalDriverPackageUpdateStatus(definition, pkg, true)
+	if !needsUpdate || optionalUpdate {
+		t.Fatalf("missing installed version must keep conservative needs update, needsUpdate=%v optionalUpdate=%v", needsUpdate, optionalUpdate)
+	}
+}
+
