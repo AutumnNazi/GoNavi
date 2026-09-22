@@ -3237,7 +3237,7 @@
   "app.settings.entry.download_source.description": "Выберите предпочитаемый источник для пакетов обновлений и установщиков драйверов.",
   "app.settings.entry.download_source.title": "Источник загрузки",
   "app.settings.entry.theme.description": "Переключение светлой или темной темы и настройка внешнего вида интерфейса.",
-  "app.settings.entry.brand_icon.title": "Фирменный значок",
+  "app.settings.entry.brand_icon.title": "Сменить значок среды выполнения",
   "app.settings.entry.brand_icon.description": "Выберите значок талисмана GoNavi, отображаемый в приложении.",
   "app.settings.entry.brand_icon.help": "Выберите талисман для строки заголовка, страницы «О программе» и web favicon. В macOS также обновится значок Dock; в Windows — открытые окна и ярлыки, указывающие на текущий файл GoNavi. В Linux значок панели задач по-прежнему определяется установленным пакетом.",
   "app.settings.entry.brand_icon.applied": "Фирменный значок обновлён",
