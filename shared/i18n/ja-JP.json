@@ -4127,6 +4127,8 @@
   "connection_modal.jvm.security_policy": "セキュリティポリシー",
   "connection_modal.jvm.target_description": "JVM 管理 Endpoint のホスト、ポート、接続方法を設定します。",
   "connection_modal.jvm.target_title": "JVM ターゲット",
+  "connection_modal.kafka.sasl_mechanism": "SASL メカニズム",
+  "connection_modal.kafka.security_protocol": "セキュリティプロトコル",
   "connection_modal.layout.custom": "カスタムドライバー接続",
   "connection_modal.layout.file": "ファイルデータベース接続",
   "connection_modal.layout.generic_sql": "汎用 SQL 接続",

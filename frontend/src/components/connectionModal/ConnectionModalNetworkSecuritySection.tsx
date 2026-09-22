@@ -10,6 +10,7 @@ import {
   supportsConnectionKeepAliveSQL,
 } from "../../utils/connectionReadOnly";
 import { supportsRedisSshTunnel } from "../../utils/redisTopologySsh";
+import { readExplicitKafkaSecurityProtocol } from "./ConnectionModalKafkaAuth";
 
 const DEFAULT_KEEPALIVE_INTERVAL_MINUTES = 240;
 const MIN_KEEPALIVE_INTERVAL_MINUTES = 1;
@@ -183,7 +184,8 @@ const ConnectionModalNetworkSecuritySection: React.FC<ConnectionModalNetworkSecu
                     value: "skip-verify",
                     label: t("connection.modal.network.ssl_mode.skip_verify"),
                   },
-                ]}
+                ].filter(option => option.value !== "preferred" || dbType !== "kafka" ||
+                  !["SSL", "SASL_SSL"].includes(readExplicitKafkaSecurityProtocol(form.getFieldValue("uri"), form.getFieldValue("connectionParams")) || ""))}
               />
             </Form.Item>
           </div>

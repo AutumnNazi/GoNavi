@@ -4127,6 +4127,8 @@
   "connection_modal.jvm.security_policy": "Sicherheitsrichtlinie",
   "connection_modal.jvm.target_description": "Host, Port und Zugriffsmethode für den JVM-Verwaltungs-Endpoint konfigurieren.",
   "connection_modal.jvm.target_title": "JVM-Ziel",
+  "connection_modal.kafka.sasl_mechanism": "SASL-Mechanismus",
+  "connection_modal.kafka.security_protocol": "Sicherheitsprotokoll",
   "connection_modal.layout.custom": "Benutzerdefinierte Treiberverbindung",
   "connection_modal.layout.file": "Dateidatenbank-Verbindung",
   "connection_modal.layout.generic_sql": "Generische SQL-Verbindung",
