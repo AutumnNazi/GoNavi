@@ -265,6 +265,24 @@ describe("LogPanel i18n", () => {
     expect(renderedText).toContain("SELECT 1");
   });
 
+  it("renders only the visible window when the log is long", () => {
+    storeState.sqlLogs = Array.from({ length: 40 }, (_, index) => ({
+      id: `log-${index}`,
+      timestamp: Date.UTC(2026, 5, 16, 1, 2, index % 60),
+      sql: `QUERY_${index}_END`,
+      status: "success" as const,
+      duration: index,
+    }));
+
+    const renderer = renderLogPanel({ variant: "embedded" });
+    const rows = renderer.root.findAll((node) => node.props?.className === "log-panel-row");
+
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.length).toBeLessThan(20);
+    expect(textContent(renderer.toJSON())).toContain("QUERY_0_END");
+    expect(textContent(renderer.toJSON())).not.toContain("QUERY_39_END");
+  });
+
   it("uses the shared SQL workbench background for the embedded log surface", () => {
     storeState.appearance = { enabled: true, opacity: 1, blur: 0 };
 
