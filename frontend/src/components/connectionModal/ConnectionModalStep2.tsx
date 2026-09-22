@@ -35,6 +35,7 @@ import {
   getDbIconLabel,
 } from "../DatabaseIcons";
 import ConnectionModalMongoSections from "../ConnectionModalMongoSections";
+import ConnectionModalKafkaAuth, { ConnectionModalAdditionalParams, ConnectionModalKafkaCredentials, readKafkaSecurityProtocol, readKafkaAuthMechanism, writeKafkaSecurityProtocol, useKafkaSecuritySync } from "./ConnectionModalKafkaAuth";
 import { t } from "../../i18n";
 import {
   supportsConnectionReadOnlyMode,
@@ -203,6 +204,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
     useSSH,
     useSSL,
   } = props;
+  useKafkaSecuritySync(form, isKafka, setUseSSL);
 
   // 默认折叠生产保护，避免默认表单内容溢出触发滚动条；保留用户按需展开的交互。
   const [readOnlyProtectionExpanded, setReadOnlyProtectionExpanded] =
@@ -1442,8 +1444,9 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
             )}
 
             {/* 认证 · 密排（Demo：认证行 → 库范围 → 勾选 → 模式 → 生产保护） */}
+            {isKafka && <ConnectionModalKafkaAuth onTLSChange={setUseSSL} onChange={() => { setTestResult(null); setTestErrorLogOpen(false); setUriFeedback(null); }} />}
             {!isFileDb && !isRedis && (
-              <>
+              <ConnectionModalKafkaCredentials kafka={isKafka}>
                 <div className="gn-conn-f-row">
                   {denseLabel(
                     t("connection.modal.dense.auth"),
@@ -1509,7 +1512,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
                       description: t("connection.modal.secret.saved_password"),
                     })
                   : null}
-              </>
+              </ConnectionModalKafkaCredentials>
             )}
 
             {isRedis && (
@@ -2655,21 +2658,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
   const advancedSection = (
     <div style={{ display: "grid", gap: 14 }}>
       {supportsConnectionParams ? (
-        <Form.Item
-          name="connectionParams"
-          label={t("connection.modal.connectionParams.label")}
-          help={t("connection.modal.connectionParams.help")}
-          style={{ marginBottom: 0 }}
-        >
-          <Input.TextArea
-            {...noAutoCapInputProps}
-            rows={3}
-            placeholder={getConnectionParamsPlaceholder(
-              dbType,
-              oceanBaseProtocol,
-            )}
-          />
-        </Form.Item>
+        <ConnectionModalAdditionalParams placeholder={getConnectionParamsPlaceholder(dbType, oceanBaseProtocol)} />
       ) : (
         <div style={{ ...modalMutedTextStyle, padding: "8px 2px" }}>
           {t("connection.modal.config.advanced.empty")}
@@ -2813,6 +2802,12 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
           setUriFeedback(null);
         }
         if (changed.useSSL !== undefined) {
+          if (isKafka) {
+            const params = form.getFieldValue("connectionParams");
+            const uri = form.getFieldValue("uri");
+            const sasl = readKafkaSecurityProtocol(uri, params).startsWith("SASL_");
+            form.setFieldValue("connectionParams", writeKafkaSecurityProtocol(params, `${sasl ? "SASL_" : ""}${changed.useSSL ? "SSL" : "PLAINTEXT"}`, readKafkaAuthMechanism(uri, params)));
+          }
           setUseSSL(changed.useSSL);
           if (changed.useSSL) setActiveNetworkConfig("ssl");
         }
