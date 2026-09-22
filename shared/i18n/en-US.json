@@ -1854,6 +1854,8 @@
   "ai_settings.form.inline_completion_model": "Auto-completion model",
   "ai_settings.form.inline_completion_model_hint": "Choose a smaller, faster model for SQL editor ghost completions. Leave blank to follow the chat model.",
   "ai_settings.form.inline_completion_model_placeholder": "Follow chat model",
+  "ai_settings.form.inline_completion_enabled": "Enable SQL AI completion",
+  "ai_settings.form.inline_completion_enabled_hint": "When off, the editor no longer asks the model for ghost completions. Local table and keyword suggestions stay available, and the AI assistant is unchanged.",
   "ai_settings.form.local_cli.claude_hint": "Uses the Claude Code CLI sign-in on this machine. An existing sign-in is reused; run `claude` and `/login` only if signed out or expired. This mode supports chat and SQL generation only; it does not call database tools or local CLI tools.",
   "ai_settings.form.local_cli.codex_hint": "Uses the Codex CLI sign-in on this machine. An existing sign-in is reused; run `codex login` only if signed out or expired. This mode supports chat and SQL generation only; it does not call database tools or local CLI tools.",
   "ai_settings.form.local_cli.title": "Local CLI sign-in",

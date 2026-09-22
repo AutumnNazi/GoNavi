@@ -28,21 +28,25 @@ const (
 	windowsIconBig                       = 1
 	windowsClassIconLarge                = -14
 	windowsClassIconSmall                = -34
-	windowsSmallIconPixels               = 16
-	windowsLargeIconPixels               = 32
 	windowsShortcutIdentityStateFileName = ".taskbar-identity-v1"
 )
 
 var (
-	windowsApplicationIconUser32          = windows.NewLazySystemDLL("user32.dll")
-	windowsApplicationIconLoadImage       = windowsApplicationIconUser32.NewProc("LoadImageW")
-	windowsApplicationIconSendMessage     = windowsApplicationIconUser32.NewProc("SendMessageW")
-	windowsApplicationIconSetClassLong    = windowsApplicationIconUser32.NewProc("SetClassLongW")
-	windowsApplicationIconSetClassLongPtr = windowsApplicationIconUser32.NewProc("SetClassLongPtrW")
-	windowsApplicationIconDestroy         = windowsApplicationIconUser32.NewProc("DestroyIcon")
-	windowsApplicationIconHandleMu        sync.Mutex
-	windowsApplicationIconSmallHandle     uintptr
-	windowsApplicationIconLargeHandle     uintptr
+	windowsApplicationIconUser32           = windows.NewLazySystemDLL("user32.dll")
+	windowsApplicationIconLoadImage        = windowsApplicationIconUser32.NewProc("LoadImageW")
+	windowsApplicationIconGetDpiForSystem  = windowsApplicationIconUser32.NewProc("GetDpiForSystem")
+	windowsApplicationIconGetWindowLong    = windowsApplicationIconUser32.NewProc("GetWindowLongW")
+	windowsApplicationIconSetWindowLong    = windowsApplicationIconUser32.NewProc("SetWindowLongW")
+	windowsApplicationIconGetWindowLongPtr = windowsApplicationIconUser32.NewProc("GetWindowLongPtrW")
+	windowsApplicationIconSetWindowLongPtr = windowsApplicationIconUser32.NewProc("SetWindowLongPtrW")
+	windowsApplicationIconRtlGetVersion    = windows.NewLazySystemDLL("ntdll.dll").NewProc("RtlGetVersion")
+	windowsApplicationIconSendMessage      = windowsApplicationIconUser32.NewProc("SendMessageW")
+	windowsApplicationIconSetClassLong     = windowsApplicationIconUser32.NewProc("SetClassLongW")
+	windowsApplicationIconSetClassLongPtr  = windowsApplicationIconUser32.NewProc("SetClassLongPtrW")
+	windowsApplicationIconDestroy          = windowsApplicationIconUser32.NewProc("DestroyIcon")
+	windowsApplicationIconHandleMu         sync.Mutex
+	windowsApplicationIconSmallHandle      uintptr
+	windowsApplicationIconLargeHandle      uintptr
 
 	windowsApplicationIconSendMessageCall = func(hwnd, message, wParam, lParam uintptr) uintptr {
 		result, _, _ := windowsApplicationIconSendMessage.Call(hwnd, message, wParam, lParam)
@@ -57,6 +61,9 @@ var (
 	}
 	windowsApplicationIconSetTaskbarProperties = setWindowsTaskbarProperties
 	windowsApplicationIconLoad                 = loadWindowsApplicationIcon
+	windowsApplicationIconSystemDPI            = currentWindowsSystemDPI
+	windowsApplicationBuildNumber              = currentWindowsBuildNumber
+	windowsRefreshLegacyTaskbarButton          = refreshWindows10TaskbarButton
 	windowsApplicationIconDestroyCall          = destroyWindowsApplicationIcon
 	windowsUpdateCurrentApplicationShortcuts   = updateCurrentWindowsApplicationShortcuts
 )
@@ -200,11 +207,12 @@ func setCurrentWindowsApplicationIcon(runtimeContext context.Context, iconPath s
 	if err := migrateWindowsApplicationIconFile(iconPath); err != nil {
 		return 0, err
 	}
-	small, err := windowsApplicationIconLoad(iconPath, windowsSmallIconPixels)
+	dpi := windowsApplicationIconSystemDPI()
+	small, err := windowsApplicationIconLoad(iconPath, windowsTaskbarIconPixels(dpi))
 	if err != nil {
 		return 0, err
 	}
-	large, err := windowsApplicationIconLoad(iconPath, windowsLargeIconPixels)
+	large, err := windowsApplicationIconLoad(iconPath, windowsAltTabIconPixels(dpi))
 	if err != nil {
 		windowsApplicationIconDestroyCall(small)
 		return 0, err
@@ -297,7 +305,77 @@ func applyWindowsApplicationIcon(hwnd uintptr, iconPath string, small, large uin
 	if err := windowsApplicationIconSetTaskbarProperties(hwnd, iconPath); err != nil {
 		return fmt.Errorf("set Windows taskbar icon properties: %w", err)
 	}
+	// Windows 10 keeps the taskbar button that was created with the original
+	// icon. Rebuilding that button is what makes a logo switch visible there.
+	// Windows 11 already repaints from WM_SETICON, so it must not flicker.
+	windowsRefreshLegacyTaskbarButton(hwnd)
 	return nil
+}
+
+const (
+	windowsGWLExStyle     int32 = -20
+	windowsWSExToolWindow       = uintptr(0x00000080)
+)
+
+func currentWindowsBuildNumber() uint32 {
+	if windowsApplicationIconRtlGetVersion.Find() != nil {
+		return 0
+	}
+	type osVersionInfo struct {
+		size                          uint32
+		major, minor, build, platform uint32
+		servicePack                   [128]uint16
+	}
+	info := osVersionInfo{size: uint32(unsafe.Sizeof(osVersionInfo{}))}
+	if result, _, _ := windowsApplicationIconRtlGetVersion.Call(uintptr(unsafe.Pointer(&info))); result != 0 {
+		return 0
+	}
+	return info.build
+}
+
+func windowsWindowLongProc(ptrProc, fallbackProc *windows.LazyProc) *windows.LazyProc {
+	if unsafe.Sizeof(uintptr(0)) == 4 {
+		return fallbackProc
+	}
+	return ptrProc
+}
+
+func windowsGetWindowExStyle(hwnd uintptr) uintptr {
+	proc := windowsWindowLongProc(windowsApplicationIconGetWindowLongPtr, windowsApplicationIconGetWindowLong)
+	style, _, _ := proc.Call(hwnd, uintptr(int64(windowsGWLExStyle)))
+	return style
+}
+
+func windowsSetWindowExStyle(hwnd uintptr, style uintptr) {
+	proc := windowsWindowLongProc(windowsApplicationIconSetWindowLongPtr, windowsApplicationIconSetWindowLong)
+	proc.Call(hwnd, uintptr(int64(windowsGWLExStyle)), style)
+}
+
+// refreshWindows10TaskbarButton drops the taskbar button and puts it back so
+// Explorer copies the icon just applied with WM_SETICON. Windows 11 does not
+// need this, and hiding the button there would flicker a working icon.
+func refreshWindows10TaskbarButton(hwnd uintptr) {
+	build := windowsApplicationBuildNumber()
+	if hwnd == 0 || build == 0 || build >= 22000 {
+		return
+	}
+	style := windowsGetWindowExStyle(hwnd)
+	if style == 0 {
+		return
+	}
+	windowsSetWindowExStyle(hwnd, style|windowsWSExToolWindow)
+	windowsSetWindowExStyle(hwnd, style)
+}
+
+func currentWindowsSystemDPI() int {
+	if windowsApplicationIconGetDpiForSystem.Find() != nil {
+		return 96
+	}
+	dpi, _, _ := windowsApplicationIconGetDpiForSystem.Call()
+	if dpi < 96 {
+		return 96
+	}
+	return int(dpi)
 }
 
 func loadWindowsApplicationIcon(iconPath string, size int) (uintptr, error) {

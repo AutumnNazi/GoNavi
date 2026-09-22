@@ -6,6 +6,11 @@ import { ReloadOutlined, SaveOutlined, PlusOutlined, DeleteOutlined, MenuOutline
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import {
+    findDesignerColumnNameInput,
+    isTableDesignerSortCellKey,
+    tableDesignerRowSelector,
+} from './tableDesignerColumnFocus';
 import Editor from './MonacoEditor';
 import { TabData, ColumnDefinition, IndexDefinition, ForeignKeyDefinition, TriggerDefinition } from '../types';
 import { useStore } from '../store';
@@ -407,6 +412,7 @@ const SortableRow = ({ children, ...props }: RowProps) => {
     attributes,
     listeners,
     setNodeRef,
+    setActivatorNodeRef,
     transform,
     transition,
     isDragging,
@@ -422,26 +428,38 @@ const SortableRow = ({ children, ...props }: RowProps) => {
   };
 
   return (
-    <tr {...props} ref={setNodeRef} style={style} {...attributes}>
+    <tr {...props} ref={setNodeRef} style={style}>
       {React.Children.map(children, child => {
-        if ((child as React.ReactElement).key === 'sort') {
-          return React.cloneElement(child as React.ReactElement, {
-            children: (
-                <MenuOutlined
-                    style={{ cursor: 'grab', color: '#999' }}
-                    {...listeners}
-                />
-            ),
-          });
+        if (!React.isValidElement(child) || !isTableDesignerSortCellKey(child.key)) {
+          return child;
         }
-        return child;
+        return React.cloneElement(child as React.ReactElement<{ children?: React.ReactNode }>, {
+          children: (
+            <span
+              ref={setActivatorNodeRef}
+              className="table-designer-drag-handle"
+              {...attributes}
+              {...listeners}
+            >
+              <MenuOutlined />
+            </span>
+          ),
+        });
       })}
     </tr>
   );
 };
 
 const renderDesignerCellField = (content: React.ReactNode, className?: string) => (
-  <div className={`table-designer-cell-field${className ? ` ${className}` : ''}`}>
+  <div
+    className={`table-designer-cell-field${className ? ` ${className}` : ''}`}
+    onMouseDown={(event) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, .ant-select, button')) return;
+      const input = event.currentTarget.querySelector('input:not([type="checkbox"]):not([type="radio"])') as HTMLInputElement | null;
+      input?.focus();
+    }}
+  >
     {content}
   </div>
 );
@@ -664,7 +682,7 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
   });
 
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -697,8 +715,18 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
       if (activeKey !== 'columns' && activeKey !== 'tdengine') return false;
       const tableBody = containerRef.current?.querySelector('.ant-table-body') as HTMLElement | null;
       if (!tableBody) return false;
-      const row = tableBody.querySelector(`tr[data-row-key="${targetKey}"]`) as HTMLTableRowElement | null;
+      const row = tableBody.querySelector(tableDesignerRowSelector(targetKey)) as HTMLTableRowElement | null;
       if (!row) return false;
+
+      const active = document.activeElement;
+      if (
+          active instanceof HTMLInputElement
+          && active.type !== 'checkbox'
+          && active.type !== 'radio'
+          && row.contains(active)
+      ) {
+          return true;
+      }
 
       row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       setFocusColumnKey(targetKey);
@@ -710,10 +738,10 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
       }, 1600);
 
       if (!readOnly) {
-          const firstInput = row.querySelector('input') as HTMLInputElement | null;
-          if (firstInput) {
-              firstInput.focus();
-              firstInput.select();
+          const nameInput = findDesignerColumnNameInput(row);
+          if (nameInput) {
+              nameInput.focus();
+              nameInput.select();
           }
       }
       return true;
@@ -3520,6 +3548,12 @@ const TableDesigner: React.FC<{ tab: TabData; embedded?: boolean }> = ({ tab, em
             }
             .table-designer-wrapper .table-designer-focus-row > .ant-table-cell {
                 background: ${focusRowBg} !important;
+            }
+            .table-designer-wrapper .table-designer-drag-handle {
+                display: inline-flex;
+                align-items: center;
+                cursor: grab;
+                color: #999;
             }
         `}</style>
         {readOnly ? (

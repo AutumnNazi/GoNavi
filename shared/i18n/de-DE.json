@@ -1854,6 +1854,8 @@
   "ai_settings.form.inline_completion_model": "Autovervollständigungsmodell",
   "ai_settings.form.inline_completion_model_hint": "Wähle ein kleineres, schnelleres Modell für SQL-Editor-Geistervorschläge. Leer lassen, um dem Chatmodell zu folgen.",
   "ai_settings.form.inline_completion_model_placeholder": "Chatmodell verwenden",
+  "ai_settings.form.inline_completion_enabled": "SQL-KI-Vervollständigung aktivieren",
+  "ai_settings.form.inline_completion_enabled_hint": "Wenn deaktiviert, fragt der Editor das Modell nicht mehr nach grauen Vervollständigungen. Lokale Tabellen- und Schlüsselwortvorschläge bleiben verfügbar, der KI-Assistent ebenfalls.",
   "ai_settings.form.local_cli.claude_hint": "Verwendet die lokale Claude-Code-CLI-Anmeldung weiter. `claude` und `/login` sind nur bei fehlender oder abgelaufener Anmeldung nötig. Dieser Modus unterstützt nur Chat und SQL-Generierung und ruft keine Datenbank- oder lokalen CLI-Werkzeuge auf.",
   "ai_settings.form.local_cli.codex_hint": "Verwendet die lokale Codex-CLI-Anmeldung weiter. `codex login` ist nur bei fehlender oder abgelaufener Anmeldung nötig. Dieser Modus unterstützt nur Chat und SQL-Generierung und ruft keine Datenbank- oder lokalen CLI-Werkzeuge auf.",
   "ai_settings.form.local_cli.title": "Lokale CLI-Anmeldung",

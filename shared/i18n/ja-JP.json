@@ -1854,6 +1854,8 @@
   "ai_settings.form.inline_completion_model": "自動補完モデル",
   "ai_settings.form.inline_completion_model_hint": "SQL エディタのゴースト補完には、小さく高速なモデルを選べます。空欄の場合はチャットモデルに従います。",
   "ai_settings.form.inline_completion_model_placeholder": "チャットモデルに従う",
+  "ai_settings.form.inline_completion_enabled": "SQL AI 補完を有効にする",
+  "ai_settings.form.inline_completion_enabled_hint": "オフにすると、エディタはモデルへ灰色の補完を依頼しません。表名やキーワードのローカル候補と AI アシスタントはそのまま使えます。",
   "ai_settings.form.local_cli.claude_hint": "この端末の Claude Code CLI のログイン状態を再利用します。未ログインまたは期限切れの場合のみ `claude` と `/login` を実行してください。チャットと SQL 生成のみ対応し、データベースツールやローカル CLI ツールは呼び出しません。",
   "ai_settings.form.local_cli.codex_hint": "この端末の Codex CLI のログイン状態を再利用します。未ログインまたは期限切れの場合のみ `codex login` を実行してください。チャットと SQL 生成のみ対応し、データベースツールやローカル CLI ツールは呼び出しません。",
   "ai_settings.form.local_cli.title": "ローカル CLI ログイン",

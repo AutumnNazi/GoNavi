@@ -314,7 +314,7 @@ body.gonavi-ai-provider-dragging, body.gonavi-ai-provider-dragging * { cursor: g
   .gonavi-ai-provider-catalog, .gonavi-ai-provider-catalog-footer { transition: none; }
 }
 .gonavi-ai-provider-editor { min-width: 0; min-height: 0; flex: 1; display: flex; flex-direction: column; container-type: inline-size; container-name: provider-editor; }
-.gonavi-ai-provider-editor-empty { flex: 1; display: grid; place-items: center; text-align: center; color: var(--provider-muted); font-size: 13px; padding: 30px; }
+.gonavi-ai-provider-editor-empty { flex: 1; display: grid; place-items: center; text-align: center; color: var(--provider-muted); font-size: var(--gn-settings-font-body, var(--gn-font-size, 14px)); padding: 30px; }
 .gonavi-ai-provider-editor > .gonavi-ai-provider-form { display: flex; flex-direction: column; min-height: 0; height: 100%; }
 .gonavi-ai-provider-editor-scroll { min-height: 0; flex: 1; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 1px 5px 6px 1px; scrollbar-width: thin; }
 /* One hover icon replaces the stacked note blocks that used to sit between fields. */
@@ -324,6 +324,8 @@ body.gonavi-ai-provider-dragging, body.gonavi-ai-provider-dragging * { cursor: g
 .gonavi-ai-provider-hint-body .gonavi-ai-provider-density { width: max-content; }
 .gonavi-ai-provider-hint-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .gonavi-ai-provider-editor .gonavi-ai-provider-field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 0 12px; }
+.gonavi-ai-provider-editor .gonavi-sql-ai-completion-toggle { grid-column: 1 / -1; display: grid; justify-items: start; gap: 2px; margin-bottom: 8px; }
+.gonavi-ai-provider-editor .gonavi-sql-ai-completion-toggle-title { display: flex; align-items: center; gap: 8px; }
 .gonavi-ai-provider-editor .gonavi-ai-provider-field-grid > .ant-form-item { margin-bottom: 8px; min-width: 0; }
 /* Vertical Ant Form keeps the label column content-sized (`flex-grow: 0` +
    `inline-flex`). Give it a definite width so default-model actions can sit
@@ -342,7 +344,7 @@ body.gonavi-ai-provider-dragging, body.gonavi-ai-provider-dragging * { cursor: g
   width: 100%;
   max-width: 100%;
   height: auto !important;
-  font-size: 12px;
+  font-size: var(--gn-settings-font-body, var(--gn-font-size, 14px));
 }
 .gonavi-ai-provider-editor .ant-form-item-label > label::after { display: none; }
 .gonavi-ai-provider-editor .gonavi-ai-provider-basic-fields > .ant-form-item .ant-form-item-label > label { min-height: 32px; }
@@ -352,7 +354,7 @@ body.gonavi-ai-provider-dragging, body.gonavi-ai-provider-dragging * { cursor: g
 .gonavi-ai-provider-form .ant-select,
 .gonavi-ai-provider-form .ant-select-selection-item,
 .gonavi-ai-provider-form .ant-select-selection-placeholder,
-.gonavi-ai-provider-form .ant-select-selection-search-input { font-size: 13px; }
+.gonavi-ai-provider-form .ant-select-selection-search-input { font-size: var(--gn-settings-font-body, var(--gn-font-size, 14px)); }
 .gonavi-ai-provider-editor .ant-select { width: 100%; }
 .gonavi-ai-provider-management .gonavi-ai-provider-add-preset-select .ant-select-selector,
 .gonavi-ai-provider-management .gonavi-ai-provider-form .ant-input,
@@ -402,7 +404,7 @@ body.gonavi-ai-provider-dragging, body.gonavi-ai-provider-dragging * { cursor: g
   background: var(--provider-control-disabled-bg) !important;
 }
 .gonavi-ai-provider-editor .gonavi-ai-provider-auth-method { width: min(100%, 240px); margin-bottom: 8px; }
-.gonavi-ai-provider-editor .ant-form-item-extra { font-size: 11px; }
+.gonavi-ai-provider-editor .ant-form-item-extra { font-size: var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px)); }
 .gonavi-ai-provider-model-label {
   display: flex;
   align-items: center;
@@ -415,7 +417,7 @@ body.gonavi-ai-provider-dragging, body.gonavi-ai-provider-dragging * { cursor: g
 .gonavi-ai-provider-model-label button {
   display: inline-flex; align-items: center; justify-content: center; min-height: 32px; padding: 5px 11px;
   border: 1px solid transparent; border-radius: 6px; color: var(--provider-active); background: transparent;
-  cursor: pointer; white-space: nowrap; font-size: 12px; font-weight: 600; line-height: 20px;
+  cursor: pointer; white-space: nowrap; font-size: var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px)); font-weight: 600; line-height: 20px;
 }
 .gonavi-ai-provider-model-label .gonavi-ai-provider-model-sync {
   gap: 5px; padding-inline: 10px;
@@ -429,7 +431,7 @@ body.gonavi-ai-provider-dragging, body.gonavi-ai-provider-dragging * { cursor: g
 .gonavi-ai-provider-model-label .gonavi-ai-provider-model-sync:disabled {
   border-color: var(--provider-line); color: var(--provider-muted); background: var(--provider-control-disabled-bg); cursor: wait;
 }
-.gonavi-ai-provider-cli-catalog-status { font-size: 12px; line-height: 1.45; }
+.gonavi-ai-provider-cli-catalog-status { font-size: var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px)); line-height: 1.45; }
 .gonavi-ai-provider-cli-catalog-status.is-success { color: var(--provider-active); }
 .gonavi-ai-provider-cli-catalog-status.is-error { color: var(--gn-danger, #c2410c); }
 .gonavi-ai-provider-model-label .gonavi-ai-provider-model-count:hover,
@@ -568,7 +570,7 @@ body.gonavi-ai-provider-dragging, body.gonavi-ai-provider-dragging * { cursor: g
   color: var(--gn-primary, var(--provider-active));
   background: var(--gn-bg-selected, var(--provider-active-bg));
 }
-.gonavi-ai-provider-cli-path-help { display: block; color: var(--gn-fg-4, var(--provider-muted)); line-height: 1.45; }
+.gonavi-ai-provider-cli-path-help { display: block; color: var(--gn-fg-4, var(--provider-muted)); font-size: var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px)); line-height: 1.45; }
 .gonavi-ai-model-management-popup { max-width: calc(100vw - 24px); }
 body[data-ui-version] .ant-select-dropdown.gonavi-ai-model-management-popup {
   color: var(--gn-fg-1, var(--ant-color-text));
@@ -639,7 +641,7 @@ body[data-ui-version] .gonavi-ai-model-management-popup .ant-input {
 .gonavi-ai-provider-logo { width: 16px; height: 16px; object-fit: contain; flex-shrink: 0; display: inline-grid; place-items: center; }
 .gonavi-ai-provider-logo.is-fallback { width: 16px; height: 16px; border-radius: 3px; background: var(--provider-active-bg, #edf7f0); color: var(--provider-active, #00984a); font-size: 9px; font-weight: 700; }
 .gonavi-ai-provider-kv { display: grid; gap: 8px; }
-.gonavi-ai-provider-kv > .gonavi-ai-provider-kv-add { justify-self: start; min-height: 32px; padding-inline: 14px; font-size: 13px; font-weight: 550; }
+.gonavi-ai-provider-kv > .gonavi-ai-provider-kv-add { justify-self: start; min-height: 32px; padding-inline: 14px; font-size: var(--gn-settings-font-body, var(--gn-font-size, 14px)); font-weight: 550; }
 .gonavi-ai-provider-kv-row { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.3fr) 2rem; gap: 8px; align-items: center; }
 .gonavi-ai-provider-preset-option { display: flex; align-items: center; gap: 8px; min-width: 0; width: 100%; }
 .gonavi-ai-provider-preset-option > span:last-child { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

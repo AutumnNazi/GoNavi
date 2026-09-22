@@ -19,6 +19,7 @@ import {
 import { isPostgresSchemaDialect } from '../../utils/connectionDriverType';
 import { buildMetadataIdentityKey } from '../../utils/metadataIdentity';
 import { appendTableAlias, resolveTableAliasSyntax } from '../../utils/sqlDialect';
+import { isSqlAiCompletionEnabled } from '../../utils/sqlAiCompletionEnabled';
 import { resolveSqlStatementPrefix } from '../../utils/sqlStatementSelection';
 import {
     readAgentRun,
@@ -588,6 +589,9 @@ export const requestQueryEditorInlineCompletion = async ({
     });
     if (localCompletion.handled) {
         return localCompletion.insertText;
+    }
+    if (!isSqlAiCompletionEnabled()) {
+        return '';
     }
     const versionedContext = await ensureQueryEditorAiContextServerVersion(aiContext);
     const dialect = versionedContext.sqlDialect || versionedContext.sourceType || '';

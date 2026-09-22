@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { setSqlAiCompletionEnabled } from '../../utils/sqlAiCompletionEnabled';
+
 import {
     buildQueryEditorAiInlineSuggestOptions,
     buildQueryEditorInlineCompletionMessages,
@@ -1385,6 +1387,50 @@ describe('QueryEditorAiAssist', () => {
 
         expect(insertText).toBe('');
         expect(service.AISubmitAgentInput).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not ask the model for inline SQL when SQL AI completion is off', async () => {
+        setSqlAiCompletionEnabled(false);
+        try {
+            const service = readyService('= 1;');
+            await expect(requestQueryEditorInlineCompletion({
+                service,
+                aiContext: {
+                    connectionName: 'Local MySQL',
+                    sourceType: 'mysql',
+                    currentDb: 'shop',
+                    tables: [{ dbName: 'shop', tableName: 'users' }],
+                    columns: [{ dbName: 'shop', tableName: 'users', name: 'id', type: 'bigint' }],
+                },
+                editorSnapshot: {
+                    prefix: 'select * from users where id ',
+                    suffix: '',
+                    currentLineBeforeCursor: 'select * from users where id ',
+                    currentLineAfterCursor: '',
+                },
+            })).resolves.toBe('');
+            expect(service.AISubmitAgentInput).not.toHaveBeenCalled();
+
+            await expect(requestQueryEditorInlineCompletion({
+                service,
+                aiContext: {
+                    connectionName: 'Local MySQL',
+                    sourceType: 'mysql',
+                    currentDb: 'shop',
+                    tables: [{ dbName: 'shop', tableName: 'users' }],
+                    columns: [{ dbName: 'shop', tableName: 'users', name: 'id', type: 'bigint' }],
+                },
+                editorSnapshot: {
+                    prefix: 'SELECT',
+                    suffix: '',
+                    currentLineBeforeCursor: 'SELECT',
+                    currentLineAfterCursor: '',
+                },
+            })).resolves.toBe(' * FROM ');
+            expect(service.AISubmitAgentInput).not.toHaveBeenCalled();
+        } finally {
+            setSqlAiCompletionEnabled(true);
+        }
     });
 
     it('uses the dedicated inline completion model when configured', async () => {
