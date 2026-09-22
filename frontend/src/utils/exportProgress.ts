@@ -1,6 +1,6 @@
 import { getCurrentLanguage, t } from '../i18n';
 
-export type ExportProgressStatus = 'idle' | 'start' | 'running' | 'finalizing' | 'done' | 'error';
+export type ExportProgressStatus = 'idle' | 'start' | 'running' | 'finalizing' | 'cancelling' | 'done' | 'error' | 'cancelled';
 
 const hasUsableExportTotal = (total: number, totalRowsKnown: boolean): boolean => {
   const normalizedTotal = Number.isFinite(total) ? Math.max(0, Math.trunc(total)) : 0;
@@ -32,7 +32,7 @@ export const shouldUseIndeterminateExportProgress = (
   status: ExportProgressStatus,
   total: number,
   totalRowsKnown: boolean,
-): boolean => !hasUsableExportTotal(total, totalRowsKnown) && status !== 'idle' && status !== 'done' && status !== 'error';
+): boolean => !hasUsableExportTotal(total, totalRowsKnown) && status !== 'idle' && status !== 'done' && status !== 'error' && status !== 'cancelled';
 
 export const resolveExportProgressPercent = (
   status: ExportProgressStatus,

@@ -52,6 +52,7 @@ import {
   type DataExportFormat,
 } from './DataExportDialog';
 import ExportProgressBar from './ExportProgressBar';
+import { renderStatusPill, resolveStatusMeta } from './tableExport/tableExportStatusMeta';
 import BatchConnectionWorkbench from './BatchConnectionWorkbench';
 import { useExportProgressRunner } from './useExportProgressRunner';
 import type { ExportProgressState } from './useExportProgressRunner';
@@ -177,41 +178,6 @@ const resolveObjectTypeLabel = (objectType?: TabData['objectType']): string => {
   return t('data_export.workbench.object_type.table');
 };
 
-const resolveStatusMeta = (status: ExportProgressStatus): { label: string; border: string; bg: string; text: string } => {
-  const meta: Record<ExportProgressStatus, { label: string; border: string; bg: string; text: string }> = {
-    idle: { label: t('data_export.progress.status.idle'), border: 'rgba(148, 163, 184, 0.35)', bg: 'rgba(148, 163, 184, 0.12)', text: '#475467' },
-    start: { label: t('data_export.progress.status.start'), border: 'rgba(59, 130, 246, 0.3)', bg: 'rgba(59, 130, 246, 0.12)', text: '#1d4ed8' },
-    running: { label: t('data_export.progress.status.running'), border: 'rgba(16, 185, 129, 0.3)', bg: 'rgba(16, 185, 129, 0.14)', text: '#047857' },
-    finalizing: { label: t('data_export.progress.status.finalizing'), border: 'rgba(249, 115, 22, 0.3)', bg: 'rgba(249, 115, 22, 0.12)', text: '#c2410c' },
-    done: { label: t('data_export.progress.status.done'), border: 'rgba(34, 197, 94, 0.3)', bg: 'rgba(34, 197, 94, 0.14)', text: '#15803d' },
-    error: { label: t('data_export.progress.status.error'), border: 'rgba(239, 68, 68, 0.32)', bg: 'rgba(239, 68, 68, 0.12)', text: '#dc2626' },
-  };
-  return meta[status] || meta.idle;
-};
-
-const renderStatusPill = (status: ExportProgressStatus) => {
-  const meta = resolveStatusMeta(status);
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        padding: '4px 10px',
-        borderRadius: 999,
-        border: `1px solid ${meta.border}`,
-        background: meta.bg,
-        color: meta.text,
-        fontSize: 12,
-        lineHeight: 1.2,
-        fontWeight: 600,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {meta.label}
-    </span>
-  );
-};
-
 const renderSelectLabel = (text: string): React.ReactNode => (
   <span title={text} style={SELECT_ELLIPSIS_LABEL_STYLE}>
     {text}
@@ -315,7 +281,7 @@ const formatWorkbenchProgressSummary = (
 };
 
 const resolveProgressHint = (mode: ExportWorkbenchMode, status: ExportProgressStatus, totalRowsKnown: boolean): string | null => {
-  if (totalRowsKnown || status === 'done' || status === 'error') {
+  if (totalRowsKnown || status === 'done' || status === 'error' || status === 'cancelled') {
     return null;
   }
   if (mode === 'single') {
@@ -488,6 +454,7 @@ const TableExportWorkbenchBody: React.FC<{ tab: TabData }> = ({ tab }) => {
     state: progressState,
     logs: progressLogs,
     reset,
+    cancelExport,
     runExportWithProgress,
     isRunning,
   } = useExportProgressRunner({
@@ -806,7 +773,7 @@ const TableExportWorkbenchBody: React.FC<{ tab: TabData }> = ({ tab }) => {
     const jobId = String(progressState.jobId || '').trim();
     if (
       !jobId
-      || (progressState.status !== 'done' && progressState.status !== 'error')
+      || (progressState.status !== 'done' && progressState.status !== 'error' && progressState.status !== 'cancelled')
     ) return;
     const existingEntry = history.find((item) => item.jobId === jobId);
     const entry = buildTableExportHistoryEntry({
@@ -2426,6 +2393,21 @@ const TableExportWorkbenchBody: React.FC<{ tab: TabData }> = ({ tab }) => {
                     totalRowsKnown={progressState.totalRowsKnown}
                   />
                 </div>
+
+                {isRunning ? (
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <Button
+                      danger
+                      size="small"
+                      disabled={progressState.status === 'cancelling'}
+                      onClick={() => { void cancelExport(); }}
+                    >
+                      {progressState.status === 'cancelling'
+                        ? t('data_export.progress.cancelling')
+                        : t('data_export.progress.cancel')}
+                    </Button>
+                  </div>
+                ) : null}
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(260px, 0.9fr)', gap: 18 }}>
                   <div>

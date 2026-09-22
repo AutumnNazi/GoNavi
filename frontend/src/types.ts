@@ -486,8 +486,10 @@ export type TableExportHistoryStatus =
   | "start"
   | "running"
   | "finalizing"
+  | "cancelling"
   | "done"
-  | "error";
+  | "error"
+  | "cancelled";
 
 export interface TableExportHistoryEntry {
   jobId: string;

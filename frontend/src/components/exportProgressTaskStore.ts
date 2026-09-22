@@ -110,10 +110,10 @@ const hasUsableTotalRows = (known: boolean, total: unknown): boolean => {
 };
 
 const isActiveExportStatus = (status: ExportProgressStatus): boolean =>
-  status === 'start' || status === 'running' || status === 'finalizing';
+  status === 'start' || status === 'running' || status === 'finalizing' || status === 'cancelling';
 
 const isTerminalExportStatus = (status: ExportProgressStatus): boolean =>
-  status === 'done' || status === 'error';
+  status === 'done' || status === 'error' || status === 'cancelled';
 
 const touchTaskRecord = (record: ExportProgressTaskRecord) => {
   taskAccessSequence += 1;
@@ -259,7 +259,13 @@ const applyBackendProgress = (event: ExportProgressEvent) => {
   }
 
   const prev = record.snapshot.state;
-  const nextStatus = (event.status || prev.status || 'running') as ExportProgressStatus;
+  const incomingStatus = (event.status || prev.status || 'running') as ExportProgressStatus;
+  // 取消分发后：迟到的活动态进度不把 UI 打回活动态；迟到的 error 终态也
+  // 暂不应用（取消导致的失败由 run 结果统一归档为 cancelled，避免标题闪
+  // 「导出失败」）。done 照常应用。
+  const nextStatus = prev.status === 'cancelling' && incomingStatus !== 'done'
+    ? 'cancelling'
+    : incomingStatus;
   const nextStartedAt = prev.startedAt > 0 || nextStatus === 'idle'
     ? prev.startedAt
     : Date.now();
@@ -330,6 +336,39 @@ export const subscribeExportProgressTask = (
 export const isExportProgressTaskRunning = (taskKey: string): boolean => {
   const status = getOrCreateTaskRecord(taskKey).snapshot.state.status;
   return isActiveExportStatus(status);
+};
+
+// cancelExportProgressTask 把进行中的任务标记为 cancelling（幂等），
+// 后端取消信号由调用方（runner）发送；终态仍由 run 结果收尾。
+export const cancelExportProgressTask = (taskKey: string): boolean => {
+  const normalizedTaskKey = normalizeTaskKey(taskKey);
+  const record = taskRecords.get(normalizedTaskKey);
+  if (!record || !isActiveExportStatus(record.snapshot.state.status)) {
+    return false;
+  }
+  if (record.snapshot.state.status === 'cancelling') {
+    return true;
+  }
+  publishTaskState(record, {
+    ...record.snapshot.state,
+    status: 'cancelling',
+  }, 'client');
+  return true;
+};
+
+// revertCancelExportProgressTask 在后端拒绝取消请求时把 cancelling 回退为
+// running，避免任务卡在不可关闭、按钮置灰的取消中状态。
+export const revertCancelExportProgressTask = (taskKey: string): boolean => {
+  const normalizedTaskKey = normalizeTaskKey(taskKey);
+  const record = taskRecords.get(normalizedTaskKey);
+  if (!record || record.snapshot.state.status !== 'cancelling') {
+    return false;
+  }
+  publishTaskState(record, {
+    ...record.snapshot.state,
+    status: 'running',
+  }, 'client');
+  return true;
 };
 
 export const startExportProgressTask = (

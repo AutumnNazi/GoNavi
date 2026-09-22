@@ -1574,6 +1574,7 @@ func BenchmarkDumpTableSQL_SQLBackup_StreamMap_20000Rows(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		writer := bufio.NewWriterSize(io.Discard, 1024*1024)
 		if err := dumpTableSQL(
+			context.Background(),
 			writer,
 			streamDB,
 			connection.ConnectionConfig{Type: "mysql"},
@@ -1601,6 +1602,7 @@ func BenchmarkDumpTableSQL_SQLBackup_StreamValues_20000Rows(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		writer := bufio.NewWriterSize(io.Discard, 1024*1024)
 		if err := dumpTableSQL(
+			context.Background(),
 			writer,
 			streamDB,
 			connection.ConnectionConfig{Type: "mysql"},
@@ -1679,6 +1681,7 @@ func TestDumpTableSQL_PostgresBooleanBackupUsesBooleanLiterals(t *testing.T) {
 	writer := bufio.NewWriter(&buf)
 
 	err := dumpTableSQL(
+		context.Background(),
 		writer,
 		fake,
 		connection.ConnectionConfig{Type: "postgres"},
@@ -1718,6 +1721,7 @@ func TestDumpTableSQL_PostgresBackupExportIncludesEscapedTableComment(t *testing
 	writer := bufio.NewWriter(&buf)
 
 	err := dumpTableSQL(
+		context.Background(),
 		writer,
 		fake,
 		connection.ConnectionConfig{Type: "postgres"},
@@ -1761,6 +1765,7 @@ func TestDumpTableSQL_PostgresSchemaExportOmitsEmptyTableComment(t *testing.T) {
 	writer := bufio.NewWriter(&buf)
 
 	if err := dumpTableSQL(
+		context.Background(),
 		writer,
 		fake,
 		connection.ConnectionConfig{Type: "postgres"},
@@ -1879,6 +1884,7 @@ func TestDumpTableSQL_MySQLBackupBatchesRowsIntoMultiValueInsert(t *testing.T) {
 	writer := bufio.NewWriter(&buf)
 
 	err := dumpTableSQL(
+		context.Background(),
 		writer,
 		fake,
 		connection.ConnectionConfig{Type: "mysql"},
@@ -1916,6 +1922,7 @@ func TestDumpTableSQL_OracleBackupBatchesRowsIntoInsertAll(t *testing.T) {
 	writer := bufio.NewWriter(&buf)
 
 	err := dumpTableSQL(
+		context.Background(),
 		writer,
 		fake,
 		connection.ConnectionConfig{Type: "oracle"},
@@ -2019,7 +2026,7 @@ func TestExportDatabaseSQLToFileDefaultOptionsDoNotEmitDropsOrDatabaseContext(t 
 	if err := legacyFile.Close(); err != nil {
 		t.Fatalf("close legacy export file: %v", err)
 	}
-	legacyResult := app.exportDatabaseSQLToFile(config, "app", false, legacyPath, ExportFileOptions{})
+	legacyResult := app.exportDatabaseSQLToFile(context.Background(), config, "app", false, legacyPath, ExportFileOptions{})
 	if !legacyResult.Success {
 		t.Fatalf("legacy export failed: %+v", legacyResult)
 	}
@@ -2043,6 +2050,7 @@ func TestExportDatabaseSQLToFileDefaultOptionsDoNotEmitDropsOrDatabaseContext(t 
 		t.Fatalf("close opt-in export file: %v", err)
 	}
 	contextFreeDropResult := app.exportDatabaseSQLToFile(
+		context.Background(),
 		config,
 		"app",
 		false,
@@ -2089,6 +2097,7 @@ func TestExportDatabaseSQLToFileDatabaseContextIsExplicitOptIn(t *testing.T) {
 
 	contextFreePath := filepath.Join(t.TempDir(), "context-free.sql")
 	contextFreeResult := app.exportDatabaseSQLToFile(
+		context.Background(),
 		config,
 		"app",
 		true,
@@ -2127,6 +2136,7 @@ func TestExportDatabaseSQLToFileDatabaseContextIsExplicitOptIn(t *testing.T) {
 
 	contextPath := filepath.Join(t.TempDir(), "with-context.sql")
 	contextResult := app.exportDatabaseSQLToFile(
+		context.Background(),
 		config,
 		"app",
 		true,
@@ -2180,6 +2190,7 @@ func TestExportDatabaseSQLToFileReportsObjectProgress(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "app_backup.sql")
 
 	result := app.exportDatabaseSQLToFile(
+		context.Background(),
 		connection.ConnectionConfig{Type: "mysql", Host: "127.0.0.1", Port: 3306},
 		"app",
 		false,
@@ -2243,6 +2254,7 @@ func TestExportDatabaseSQLToFilePreservesExistingBackupOnFailure(t *testing.T) {
 	}
 
 	result := NewApp().exportDatabaseSQLToFile(
+		context.Background(),
 		connection.ConnectionConfig{Type: "mysql", Host: "127.0.0.1", Port: 3306},
 		"app",
 		false,

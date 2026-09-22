@@ -3277,7 +3277,7 @@ func resolveCreateStatementWithFallbackWithText(dbInst db.Database, config conne
 	}
 
 	if supportsViewCreateStatementLookup(dbType) {
-		if viewDDL, ok := tryGetViewCreateStatement(dbInst, config, dbName, ddlSchemaName, ddlTableName); ok {
+		if viewDDL, ok := tryGetViewCreateStatement(db.MetadataContext(dbInst), dbInst, config, dbName, ddlSchemaName, ddlTableName); ok {
 			return viewDDL, nil
 		}
 	}
