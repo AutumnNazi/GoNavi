@@ -3239,7 +3239,7 @@
   "app.settings.entry.download_source.description": "更新パッケージとドライバーインストーラーの優先ミラーを選択します。",
   "app.settings.entry.download_source.title": "ダウンロードミラー",
   "app.settings.entry.theme.description": "ライト/ダークテーマを切り替え、表示の見た目を調整します。",
-  "app.settings.entry.brand_icon.title": "ブランドアイコン",
+  "app.settings.entry.brand_icon.title": "実行時アイコンを変更",
   "app.settings.entry.brand_icon.description": "アプリ内に表示する GoNavi のマスコットアイコンを選択します。",
   "app.settings.entry.brand_icon.help": "タイトルバー、About、Web favicon に使用するマスコットを選択します。macOS では Dock アイコン、Windows では実行中のウィンドウと現在の GoNavi 実行ファイルを指すショートカットも同期して更新されます。Linux のタスクバーアイコンは引き続きインストール済みパッケージに従います。",
   "app.settings.entry.brand_icon.applied": "ブランドアイコンを更新しました",

@@ -340,15 +340,21 @@ func windowsWindowLongProc(ptrProc, fallbackProc *windows.LazyProc) *windows.Laz
 	return ptrProc
 }
 
+// windowsLongIndex converts a signed index such as GWL_EXSTYLE (-20) after it
+// is stored in a variable. A negative constant cannot convert to uintptr.
+func windowsLongIndex(index int32) uintptr {
+	return uintptr(index)
+}
+
 func windowsGetWindowExStyle(hwnd uintptr) uintptr {
 	proc := windowsWindowLongProc(windowsApplicationIconGetWindowLongPtr, windowsApplicationIconGetWindowLong)
-	style, _, _ := proc.Call(hwnd, uintptr(int64(windowsGWLExStyle)))
+	style, _, _ := proc.Call(hwnd, windowsLongIndex(windowsGWLExStyle))
 	return style
 }
 
 func windowsSetWindowExStyle(hwnd uintptr, style uintptr) {
 	proc := windowsWindowLongProc(windowsApplicationIconSetWindowLongPtr, windowsApplicationIconSetWindowLong)
-	proc.Call(hwnd, uintptr(int64(windowsGWLExStyle)), style)
+	proc.Call(hwnd, windowsLongIndex(windowsGWLExStyle), style)
 }
 
 // refreshWindows10TaskbarButton drops the taskbar button and puts it back so
