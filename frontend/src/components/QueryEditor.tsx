@@ -2038,6 +2038,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       resultKey: string;
       requestId: string;
   } | null>(null);
+  // ES 结果 table/raw 视图模式：提升到编辑器层，结果面板因隐藏/全屏重挂时不丢失。
+  const [elasticsearchViewModes, setElasticsearchViewModes] = useState<Record<string, 'table' | 'raw'>>({});
   const resultSetsRef = useRef(resultSets);
   const activeResultKeyRef = useRef(activeResultKey);
   // 参数面板可用性快照：监听器闭包内不能读 paramsState（effect 不随分析刷新，
@@ -5695,14 +5697,19 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       document.addEventListener('mouseup', handleMouseUp);
   }, [editorHeight, handleMouseMove, handleMouseUp]);
 
-  useEffect(() => {
-      return () => {
-          dragRef.current = null;
-          cancelEditorResizeFrame();
-          document.removeEventListener('mousemove', handleMouseMove);
-          document.removeEventListener('mouseup', handleMouseUp);
-      };
+  const abortEditorSplitDrag = useCallback(() => {
+      dragRef.current = null;
+      cancelEditorResizeFrame();
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
   }, [cancelEditorResizeFrame, handleMouseMove, handleMouseUp]);
+
+  useEffect(() => () => abortEditorSplitDrag(), [abortEditorSplitDrag]);
+
+  // 进入全屏时中止拖拽：监听在 document 上，残留 mousemove 会写内联 height 并在 mouseup 改写进入前比例。
+  useEffect(() => {
+      if (editorFullscreen.active) abortEditorSplitDrag();
+  }, [abortEditorSplitDrag, editorFullscreen.active]);
 
   const openRoutineObjectEditTab = useCallback(async (
       navigationTarget: Extract<QueryEditorNavigationTarget, { type: 'routine' }>,
@@ -13597,6 +13604,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           currentConnectionId={currentConnectionId}
           maxRows={queryOptions?.maxRows ?? 5000}
           dataPreviewRequest={resultDataPreviewRequest}
+          elasticsearchViewModes={elasticsearchViewModes}
+          onElasticsearchViewModeChange={(key, mode) => setElasticsearchViewModes((current) => ({ ...current, [key]: mode }))}
           toggleShortcutLabel={toggleQueryResultsPanelShortcutLabel}
           onActiveResultKeyChange={setActiveResultKey}
           onHide={() => updateResultPanelVisibility(false)}
