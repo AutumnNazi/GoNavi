@@ -172,7 +172,10 @@ func TestBuildGrokCLIArgsRejectsInvalidEffortLocally(t *testing.T) {
 		"--output-format json",
 		"--system-prompt-override",
 		"--tools",
+		"--disallowed-tools",
 		"--disable-web-search",
+		"--no-subagents",
+		"--max-turns 1",
 		"-m grok-4.6",
 		"--reasoning-effort xhigh",
 	} {

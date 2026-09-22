@@ -91,6 +91,31 @@ func TestBuildGrokCLIArgsStreamingFormat(t *testing.T) {
 	}
 }
 
+func TestBuildGrokCLIArgsDisablesBuiltinTools(t *testing.T) {
+	args, err := buildGrokCLIArgsWithStream(ai.ProviderConfig{}, "hi", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var denied string
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "--disallowed-tools" {
+			denied = args[i+1]
+			break
+		}
+	}
+	if denied == "" {
+		t.Fatalf("missing --disallowed-tools in %v", args)
+	}
+	for _, tool := range []string{"search_tool", "read_file", "run_terminal_cmd", "use_tool"} {
+		if !strings.Contains(denied, tool) {
+			t.Fatalf("denylist missing %s: %s", tool, denied)
+		}
+	}
+	if !hasArgSequence(args, "--max-turns", "1") {
+		t.Fatalf("single-turn chat must set --max-turns 1: %v", args)
+	}
+}
+
 func TestGrokCLIProviderChatStreamEmitsDeltasThenDone(t *testing.T) {
 	restore := overrideGrokCLIForTest(t, "stream")
 	defer restore()
