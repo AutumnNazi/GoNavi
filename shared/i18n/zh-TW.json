@@ -1854,6 +1854,8 @@
   "ai_settings.form.inline_completion_model": "自動補全模型",
   "ai_settings.form.inline_completion_model_hint": "建議選擇更小、更快的模型用於 SQL 編輯器灰色聯想。留空則跟隨聊天模型。",
   "ai_settings.form.inline_completion_model_placeholder": "跟隨聊天模型",
+  "ai_settings.form.inline_completion_enabled": "啟用 SQL AI 自動補全",
+  "ai_settings.form.inline_completion_enabled_hint": "關閉後，SQL 編輯器不再向模型請求灰色補全。本地的表名和關鍵字提示仍然可用，AI 助手不受影響。",
   "ai_settings.form.local_cli.claude_hint": "沿用本機 Claude Code CLI 的登入狀態；僅未登入或登入失效時執行 `claude`，再執行 `/login`。目前僅支援對話和 SQL 產生，不會呼叫資料庫工具或本機 CLI 工具。",
   "ai_settings.form.local_cli.codex_hint": "沿用本機 Codex CLI 的登入狀態；僅未登入或登入失效時執行 `codex login`。目前僅支援對話和 SQL 產生，不會呼叫資料庫工具或本機 CLI 工具。",
   "ai_settings.form.local_cli.title": "本機 CLI 登入",

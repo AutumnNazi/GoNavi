@@ -1252,11 +1252,7 @@ func (l *Ledger) ListSessions(ctx context.Context, request SessionListRequest) (
 	if offset < 0 {
 		offset = 0
 	}
-	where := ""
-	args := []any{}
-	if request.ActiveOnly {
-		where = ` WHERE archived=0 AND EXISTS (SELECT 1 FROM runs r WHERE r.session_id=s.id AND r.state NOT IN ('completed','failed','canceled','exhausted'))`
-	}
+	where, args := sessionListWhere(request.ActiveOnly)
 	var total int
 	if err := l.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions s`+where, args...).Scan(&total); err != nil {
 		return SessionListResult{}, err

@@ -1854,6 +1854,8 @@
   "ai_settings.form.inline_completion_model": "Модель автодополнения",
   "ai_settings.form.inline_completion_model_hint": "Выберите более маленькую и быструю модель для серых подсказок SQL-редактора. Оставьте пустым, чтобы использовать модель чата.",
   "ai_settings.form.inline_completion_model_placeholder": "Использовать модель чата",
+  "ai_settings.form.inline_completion_enabled": "Включить SQL-автодополнение ИИ",
+  "ai_settings.form.inline_completion_enabled_hint": "Если выключено, редактор больше не запрашивает у модели серые подсказки. Локальные подсказки таблиц и ключевых слов остаются, AI-ассистент не меняется.",
   "ai_settings.form.local_cli.claude_hint": "Используется существующий вход в Claude Code CLI на этом компьютере. Запустите `claude` и `/login`, только если вход отсутствует или истёк. Режим поддерживает только чат и генерацию SQL, без вызова инструментов базы данных или локальной CLI.",
   "ai_settings.form.local_cli.codex_hint": "Используется существующий вход в Codex CLI на этом компьютере. Выполните `codex login`, только если вход отсутствует или истёк. Режим поддерживает только чат и генерацию SQL, без вызова инструментов базы данных или локальной CLI.",
   "ai_settings.form.local_cli.title": "Локальный вход CLI",

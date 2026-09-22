@@ -6,6 +6,7 @@ import type { FormInstance } from 'antd/es/form';
 import type { AIProviderConfig } from '../../types';
 import { buildProviderModelOptions, filterProviders, parseCLIModelCatalog, type CLIModelCatalog, type ProviderCheckResult } from '../../utils/aiProviderManagement';
 import AIProviderModelSelect from './AIProviderModelSelect';
+import SqlAiCompletionToggle from './SqlAiCompletionToggle';
 import { readCachedCLIModelCatalog, writeCachedCLIModelCatalog } from './cliModelCatalogCache';
 import { applyKeyOrder, applyPresetOrder, movePresetWithinGroup } from './providerPresetOrder';
 import { AIProviderSortableGroup, AIProviderSortableItem } from './AIProviderSortable';
@@ -825,6 +826,7 @@ const AISettingsProvidersSection: React.FC<AISettingsProvidersSectionProps> = ({
                     onAdd: (model) => patchModels({ customModels: [...new Set([...watchedCustomModels, model])] }),
                   }} />
               </Form.Item>
+              <SqlAiCompletionToggle />
               <Form.Item name="inlineCompletionModel" rules={[requiredModelRule]} label={fieldLabel('ai_settings.form.inline_completion_model')}>
                 <AIProviderModelSelect label={copy('ai_settings.form.inline_completion_model')} placeholder={copy('ai_settings.form.inline_completion_model_placeholder')}
                   customLabel={copy('ai_settings.form.model_use_custom')} options={modelOptions} disabledModels={watchedDisabledModels} />
