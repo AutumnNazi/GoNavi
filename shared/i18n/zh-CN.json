@@ -6539,7 +6539,6 @@
   "file.backend.error.directory_name_no_separator": "目录名不能包含路径分隔符",
   "file.backend.error.directory_name_required": "目录名不能为空",
   "file.backend.error.directory_path_required": "目录路径不能为空",
-  "file.backend.error.export_driver_agent_streaming_required": "当前导出依赖最新的 {{driver}} driver-agent 流式协议；为避免大结果集回退到高内存缓冲模式，请在驱动管理中重装后重试：{{detail}}",
   "file.backend.error.export_unsupported_format": "不支持的导出格式: {{format}}",
   "file.backend.error.file_path_empty": "文件路径为空",
   "file.backend.error.file_path_required": "文件路径不能为空",

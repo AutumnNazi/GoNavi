@@ -6539,7 +6539,6 @@
   "file.backend.error.directory_name_no_separator": "ディレクトリ名にパス区切り文字は使用できません",
   "file.backend.error.directory_name_required": "ディレクトリ名は空にできません",
   "file.backend.error.directory_path_required": "ディレクトリパスは空にできません",
-  "file.backend.error.export_driver_agent_streaming_required": "現在のエクスポートには最新の {{driver}} driver-agent ストリーミングプロトコルが必要です。大きな結果セットで高メモリのバッファモードへフォールバックしないよう、Driver Management で再インストールしてから再試行してください: {{detail}}",
   "file.backend.error.export_unsupported_format": "サポートされていないエクスポート形式です: {{format}}",
   "file.backend.error.file_path_empty": "ファイルパスが空です",
   "file.backend.error.file_path_required": "ファイルパスは空にできません",

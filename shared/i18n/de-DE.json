@@ -6539,7 +6539,6 @@
   "file.backend.error.directory_name_no_separator": "Verzeichnisname darf keine Pfadtrennzeichen enthalten",
   "file.backend.error.directory_name_required": "Verzeichnisname darf nicht leer sein",
   "file.backend.error.directory_path_required": "Verzeichnispfad darf nicht leer sein",
-  "file.backend.error.export_driver_agent_streaming_required": "Für den Export ist das aktuelle {{driver}} driver-agent-Streaming-Protokoll erforderlich. Um bei großen Ergebnismengen einen Rückfall in den speicherintensiven Puffermodus zu vermeiden, installieren Sie es in der Treiberverwaltung neu und versuchen Sie es erneut: {{detail}}",
   "file.backend.error.export_unsupported_format": "Nicht unterstütztes Exportformat: {{format}}",
   "file.backend.error.file_path_empty": "Dateipfad ist leer",
   "file.backend.error.file_path_required": "Dateipfad darf nicht leer sein",

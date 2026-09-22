@@ -6539,7 +6539,6 @@
   "file.backend.error.directory_name_no_separator": "目錄名稱不能包含路徑分隔符",
   "file.backend.error.directory_name_required": "目錄名稱不能為空",
   "file.backend.error.directory_path_required": "目錄路徑不能為空",
-  "file.backend.error.export_driver_agent_streaming_required": "當前匯出依賴最新的 {{driver}} driver-agent 串流協議；為避免大結果集回退到高記憶體緩衝模式，請在驅動管理中重新安裝後再試：{{detail}}",
   "file.backend.error.export_unsupported_format": "不支援的匯出格式: {{format}}",
   "file.backend.error.file_path_empty": "檔案路徑為空",
   "file.backend.error.file_path_required": "檔案路徑不能為空",

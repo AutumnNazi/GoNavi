@@ -6539,7 +6539,6 @@
   "file.backend.error.directory_name_no_separator": "Имя каталога не может содержать разделители пути",
   "file.backend.error.directory_name_required": "Имя каталога не может быть пустым",
   "file.backend.error.directory_path_required": "Путь к каталогу не может быть пустым",
-  "file.backend.error.export_driver_agent_streaming_required": "Для экспорта требуется актуальный потоковый протокол driver-agent для {{driver}}. Чтобы избежать отката к буферизованному режиму с высоким потреблением памяти при больших результатах, переустановите его в управлении драйверами и повторите попытку: {{detail}}",
   "file.backend.error.export_unsupported_format": "Неподдерживаемый формат экспорта: {{format}}",
   "file.backend.error.file_path_empty": "Путь к файлу пуст",
   "file.backend.error.file_path_required": "Путь к файлу не может быть пустым",

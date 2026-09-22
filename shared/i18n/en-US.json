@@ -6539,7 +6539,6 @@
   "file.backend.error.directory_name_no_separator": "Directory name cannot contain path separators",
   "file.backend.error.directory_name_required": "Directory name cannot be empty",
   "file.backend.error.directory_path_required": "Directory path cannot be empty",
-  "file.backend.error.export_driver_agent_streaming_required": "Export requires the latest {{driver}} driver-agent streaming protocol. To avoid falling back to high-memory buffered mode for large result sets, reinstall it from Driver Management and try again: {{detail}}",
   "file.backend.error.export_unsupported_format": "Unsupported export format: {{format}}",
   "file.backend.error.file_path_empty": "File path is empty",
   "file.backend.error.file_path_required": "File path cannot be empty",

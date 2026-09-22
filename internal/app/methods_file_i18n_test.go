@@ -70,20 +70,6 @@ func TestExternalSQLFileBackendCatalogKeysExist(t *testing.T) {
 	}
 }
 
-func TestExportDriverAgentGuardCatalogKeyExists(t *testing.T) {
-	catalogs, err := i18n.LoadCatalogs()
-	if err != nil {
-		t.Fatalf("LoadCatalogs() error = %v", err)
-	}
-
-	for _, language := range i18n.SupportedLanguages() {
-		catalog := catalogs[language]
-		if strings.TrimSpace(catalog["file.backend.error.export_driver_agent_streaming_required"]) == "" {
-			t.Fatalf("%s catalog missing export driver-agent streaming key", language)
-		}
-	}
-}
-
 func TestFileSelectorDialogCatalogKeysExist(t *testing.T) {
 	catalogs, err := i18n.LoadCatalogs()
 	if err != nil {

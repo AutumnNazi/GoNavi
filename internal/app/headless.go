@@ -286,11 +286,6 @@ func (runtime *HeadlessRuntime) ExportQueryToPath(ctx context.Context, config co
 	if options.Format == "" {
 		return connection.QueryResult{Success: false, Message: "export format is required"}
 	}
-	if options.Format != "sql" {
-		if err := verifyOptionalDriverAgentReadyForExport(config); err != nil {
-			return connection.QueryResult{Success: false, Message: err.Error()}
-		}
-	}
 	target, err := resolveHeadlessExportTarget(filePath, options.Format, overwrite)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
