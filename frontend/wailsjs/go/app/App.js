@@ -170,12 +170,20 @@ export function DBGetAllColumnsContext(arg1, arg2, arg3) {
   return window['go']['app']['App']['DBGetAllColumnsContext'](arg1, arg2, arg3);
 }
 
+export function DBGetAllColumnsWithCancel(arg1, arg2, arg3) {
+  return window['go']['app']['App']['DBGetAllColumnsWithCancel'](arg1, arg2, arg3);
+}
+
 export function DBGetColumns(arg1, arg2, arg3) {
   return window['go']['app']['App']['DBGetColumns'](arg1, arg2, arg3);
 }
 
 export function DBGetColumnsContext(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['DBGetColumnsContext'](arg1, arg2, arg3, arg4);
+}
+
+export function DBGetColumnsWithCancel(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['DBGetColumnsWithCancel'](arg1, arg2, arg3, arg4);
 }
 
 export function DBGetDatabaseForeignKeys(arg1, arg2) {
@@ -188,6 +196,10 @@ export function DBGetDatabases(arg1) {
 
 export function DBGetDatabasesContext(arg1, arg2) {
   return window['go']['app']['App']['DBGetDatabasesContext'](arg1, arg2);
+}
+
+export function DBGetDatabasesWithCancel(arg1, arg2) {
+  return window['go']['app']['App']['DBGetDatabasesWithCancel'](arg1, arg2);
 }
 
 export function DBGetForeignKeys(arg1, arg2, arg3) {
@@ -228,6 +240,10 @@ export function DBGetTables(arg1, arg2) {
 
 export function DBGetTablesContext(arg1, arg2, arg3) {
   return window['go']['app']['App']['DBGetTablesContext'](arg1, arg2, arg3);
+}
+
+export function DBGetTablesWithCancel(arg1, arg2, arg3) {
+  return window['go']['app']['App']['DBGetTablesWithCancel'](arg1, arg2, arg3);
 }
 
 export function DBGetTriggers(arg1, arg2, arg3) {
@@ -278,12 +294,24 @@ export function DBQueryMultiInTransaction(arg1, arg2, arg3) {
   return window['go']['app']['App']['DBQueryMultiInTransaction'](arg1, arg2, arg3);
 }
 
+export function DBQueryMultiInTransactionWithOptions(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['DBQueryMultiInTransactionWithOptions'](arg1, arg2, arg3, arg4);
+}
+
 export function DBQueryMultiTransactional(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['DBQueryMultiTransactional'](arg1, arg2, arg3, arg4);
 }
 
+export function DBQueryMultiTransactionalWithOptions(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['App']['DBQueryMultiTransactionalWithOptions'](arg1, arg2, arg3, arg4, arg5);
+}
+
 export function DBQueryMultiTransactionalWithParams(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['app']['App']['DBQueryMultiTransactionalWithParams'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function DBQueryMultiWithOptions(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['App']['DBQueryMultiWithOptions'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function DBQueryMultiWithParams(arg1, arg2, arg3, arg4, arg5) {
@@ -320,6 +348,10 @@ export function DBShowCreateTable(arg1, arg2, arg3) {
 
 export function DBShowCreateTableContext(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['DBShowCreateTableContext'](arg1, arg2, arg3, arg4);
+}
+
+export function DBShowCreateTableWithCancel(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['DBShowCreateTableWithCancel'](arg1, arg2, arg3, arg4);
 }
 
 export function DBTableExists(arg1, arg2, arg3) {

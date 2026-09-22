@@ -4,6 +4,7 @@ import { ArrowLeftOutlined, ArrowRightOutlined, BugOutlined, ClearOutlined, Clos
 
 import { useStore } from '../store';
 import type { EditRowLocator } from '../utils/rowLocator';
+import type { FilterCondition } from '../utils/sql';
 import type { GridSortInfoItem } from '../utils/dataGridSort';
 import type { ColumnMeta } from './dataGridColumnMeta';
 import type { QueryResultPaginationState } from '../utils/queryResultPagination';
@@ -22,6 +23,7 @@ import DetachDragPreview, {
   buildDetachDragPreviewState,
   type DetachDragPreviewState,
 } from './DetachDragPreview';
+import QueryEditorResultTruncatedIndicator from './QueryEditorResultTruncatedIndicator';
 import DataGrid from './DataGrid';
 import QueryEditorResultTabContent, {
   isAffectedRowsResult,
@@ -81,7 +83,18 @@ export type QueryEditorResultSet = {
     sortInfo?: GridSortInfoItem[];
     page?: QueryResultPaginationState & { loading?: boolean };
     pinned?: boolean;
+    filterConditions?: FilterCondition[];
+    quickWhereCondition?: string;
+    selectedRowKeys?: React.Key[];
+    selectedCellKeys?: string[];
+    scrollSnapshot?: { top: number; left: number };
+    hasPendingChanges?: boolean;
 };
+
+export type QueryEditorResultViewState = Pick<
+    QueryEditorResultSet,
+    'filterConditions' | 'quickWhereCondition' | 'selectedRowKeys' | 'selectedCellKeys' | 'scrollSnapshot' | 'hasPendingChanges'
+>;
 
 export const resolveEffectiveActiveResultKey = (
     resultSets: Pick<QueryEditorResultSet, 'key'>[],
@@ -628,6 +641,7 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                             <PushpinOutlined className="query-result-tab-pin" />
                         </Tooltip>
                     ) : null}
+                    {rs.truncated ? <QueryEditorResultTruncatedIndicator /> : null}
                     {(() => {
                         if (rs.resultType === 'message') return <span className="query-result-tab-count" data-query-result-tab-count="true">i</span>;
                         if (isAffectedRowsResult(rs)) return <span className="query-result-tab-count" data-query-result-tab-count="true">✓</span>;

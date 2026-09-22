@@ -77,3 +77,35 @@ export const invokeCompactDBQueryMulti = <T>(
     ? invokeRequestScopedApp('DBQueryMultiCompact', args, invokeWails)
     : invokeWails();
 };
+
+/**
+ * Runs a desktop query that must carry a server-side result budget.
+ *
+ * The compact transport cannot forward it: `DBQueryMultiCompact` only accepts
+ * the four base arguments, and the budget is bound by the WithOptions method.
+ * This therefore routes to WithOptions over both transports instead of the
+ * compact fast path, so the scan-layer budget is actually enforced.
+ */
+export const invokeBudgetedDBQueryMulti = <T>(
+  args: [unknown, string, string, string, unknown],
+  fallback: () => Promise<T>,
+  invokeRequestScopedApp?: (
+    method: string,
+    values: unknown[],
+    wailsFallback: () => Promise<T>,
+  ) => Promise<T>,
+): Promise<T> => {
+  const methodName = 'DBQueryMultiWithOptions';
+  const invokeWails = () => {
+    if (typeof window === 'undefined') return fallback();
+    const method = (window as Window & {
+      go?: { app?: { App?: Record<string, unknown> } };
+    }).go?.app?.App?.[methodName];
+    return typeof method === 'function'
+      ? (method as (...values: unknown[]) => Promise<T>)(...args)
+      : fallback();
+  };
+  return invokeRequestScopedApp
+    ? invokeRequestScopedApp(methodName, args, invokeWails)
+    : invokeWails();
+};

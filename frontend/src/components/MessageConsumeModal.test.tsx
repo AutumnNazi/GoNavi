@@ -82,7 +82,11 @@ vi.mock('./common/ResizableDraggableModal', () => ({
   ),
 }));
 
-import MessageConsumeModal from './MessageConsumeModal';
+import MessageConsumeModal, { type MessageConsumeModalSubmit } from './MessageConsumeModal';
+
+type ConfirmMock = ReturnType<typeof vi.fn<(
+  value: MessageConsumeModalSubmit,
+) => void | Promise<void>>>;
 
 const mqttConnection = {
   id: 'mqtt-1',
@@ -107,10 +111,12 @@ const renderModal = (
   connection: any,
   options: {
     defaultDestination?: string;
-    onConfirm?: ReturnType<typeof vi.fn>;
+    onConfirm?: ConfirmMock;
   } = {},
-): { renderer: ReactTestRenderer; onConfirm: ReturnType<typeof vi.fn> } => {
-  const onConfirm = options.onConfirm || vi.fn();
+): { renderer: ReactTestRenderer; onConfirm: ConfirmMock } => {
+  const onConfirm = options.onConfirm || vi.fn<(
+    value: MessageConsumeModalSubmit,
+  ) => void | Promise<void>>();
   let renderer!: ReactTestRenderer;
   act(() => {
     renderer = create(

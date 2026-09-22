@@ -1,16 +1,20 @@
+// @vitest-environment jsdom
+
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import viteConfig from '../../../../vite.config';
 import { buildOverlayWorkbenchTheme } from '../../../utils/overlayWorkbenchTheme';
 import { AIMessageCodeBlock } from './AIMessageCodeBlock';
+import { MERMAID_MAX_SOURCE_LENGTH } from './mermaidSecurity';
 
 const dependencyMocks = vi.hoisted(() => ({
   completeRegistryLoad: vi.fn(),
   mermaidInitialize: vi.fn(),
   mermaidLoad: vi.fn(),
-  mermaidRender: vi.fn(async () => ({ svg: '<svg>diagram</svg>' })),
+  mermaidRender: vi.fn<(id: string, chart: string) => Promise<{ svg: string }>>(
+    async () => ({ svg: '<svg>diagram</svg>' }),
+  ),
   prismLightLoad: vi.fn(),
   registerLanguage: vi.fn(),
 }));
@@ -55,32 +59,6 @@ vi.mock('../../common/ResizableDraggableModal', () => ({
   default: Object.assign(() => null, { confirm: vi.fn() }),
 }));
 
-const codeHighlightDependencies = [
-  'react-syntax-highlighter/dist/esm/prism-light',
-  'react-syntax-highlighter/dist/esm/languages/prism/bash',
-  'react-syntax-highlighter/dist/esm/languages/prism/css',
-  'react-syntax-highlighter/dist/esm/languages/prism/diff',
-  'react-syntax-highlighter/dist/esm/languages/prism/go',
-  'react-syntax-highlighter/dist/esm/languages/prism/ini',
-  'react-syntax-highlighter/dist/esm/languages/prism/java',
-  'react-syntax-highlighter/dist/esm/languages/prism/javascript',
-  'react-syntax-highlighter/dist/esm/languages/prism/json',
-  'react-syntax-highlighter/dist/esm/languages/prism/jsx',
-  'react-syntax-highlighter/dist/esm/languages/prism/markdown',
-  'react-syntax-highlighter/dist/esm/languages/prism/markup',
-  'react-syntax-highlighter/dist/esm/languages/prism/php',
-  'react-syntax-highlighter/dist/esm/languages/prism/python',
-  'react-syntax-highlighter/dist/esm/languages/prism/ruby',
-  'react-syntax-highlighter/dist/esm/languages/prism/rust',
-  'react-syntax-highlighter/dist/esm/languages/prism/sql',
-  'react-syntax-highlighter/dist/esm/languages/prism/toml',
-  'react-syntax-highlighter/dist/esm/languages/prism/tsx',
-  'react-syntax-highlighter/dist/esm/languages/prism/typescript',
-  'react-syntax-highlighter/dist/esm/languages/prism/yaml',
-  'react-syntax-highlighter/dist/esm/styles/prism/vsc-dark-plus',
-  'react-syntax-highlighter/dist/esm/styles/prism/vs',
-];
-
 const renderCodeBlock = (className: string, children: string) => React.createElement(AIMessageCodeBlock, {
   className,
   children,
@@ -89,6 +67,11 @@ const renderCodeBlock = (className: string, children: string) => React.createEle
 });
 
 describe('AIMessageCodeBlock dependency boundary', () => {
+  afterEach(() => {
+    dependencyMocks.mermaidRender.mockImplementation(async () => ({ svg: '<svg>diagram</svg>' }));
+    vi.useRealTimers();
+  });
+
   it('loads the lightweight syntax highlighter without the complete language registry', () => {
     expect(dependencyMocks.completeRegistryLoad).not.toHaveBeenCalled();
     expect(dependencyMocks.prismLightLoad).toHaveBeenCalledOnce();
@@ -97,19 +80,10 @@ describe('AIMessageCodeBlock dependency boundary', () => {
 
   it('loads Mermaid only when a Mermaid fenced block is rendered', async () => {
     let renderer: ReactTestRenderer | undefined;
-    let mermaidContainer: { innerHTML: string } | undefined;
 
     try {
       act(() => {
-        renderer = create(renderCodeBlock('language-sql', 'SELECT 1;'), {
-          createNodeMock: (element) => {
-            if (element.type === 'div' && element.props.className === 'ai-mermaid-container') {
-              mermaidContainer = { innerHTML: '' };
-              return mermaidContainer;
-            }
-            return {};
-          },
-        });
+        renderer = create(renderCodeBlock('language-sql', 'SELECT 1;'));
       });
       expect(dependencyMocks.mermaidLoad).not.toHaveBeenCalled();
 
@@ -118,17 +92,76 @@ describe('AIMessageCodeBlock dependency boundary', () => {
       });
       await vi.waitFor(() => {
         expect(dependencyMocks.mermaidLoad).toHaveBeenCalledOnce();
-        expect(dependencyMocks.mermaidInitialize).toHaveBeenCalledWith({ startOnLoad: false, theme: 'default' });
+        expect(dependencyMocks.mermaidInitialize).toHaveBeenCalledWith(expect.objectContaining({
+          startOnLoad: false,
+          theme: 'default',
+          securityLevel: 'strict',
+          maxTextSize: MERMAID_MAX_SOURCE_LENGTH,
+          maxEdges: 500,
+        }));
         expect(dependencyMocks.mermaidRender).toHaveBeenCalledWith(expect.stringMatching(/^mermaid-/), 'graph TD; A-->B;');
-        expect(mermaidContainer?.innerHTML).toBe('<svg>diagram</svg>');
+        const sandbox = renderer?.root.findByProps({ 'data-testid': 'ai-mermaid-sandbox' });
+        expect(sandbox?.props.sandbox).toBe('');
+        expect(sandbox?.props.srcDoc).toContain('<svg>diagram</svg>');
       });
     } finally {
       act(() => renderer?.unmount());
     }
   });
 
-  it('pre-bundles every static syntax-highlighter dependency', () => {
-    const includedDependencies = viteConfig.optimizeDeps?.include || [];
-    expect(includedDependencies).toEqual(expect.arrayContaining(codeHighlightDependencies));
+  it('rejects oversized Mermaid input before invoking the renderer', async () => {
+    const renderCount = dependencyMocks.mermaidRender.mock.calls.length;
+    let renderer: ReactTestRenderer | undefined;
+
+    try {
+      await act(async () => {
+        renderer = create(renderCodeBlock(
+          'language-mermaid',
+          'x'.repeat(MERMAID_MAX_SOURCE_LENGTH + 1),
+        ));
+      });
+      await vi.waitFor(() => {
+        expect(dependencyMocks.mermaidRender).toHaveBeenCalledTimes(renderCount);
+        const container = renderer?.root.findByProps({ className: 'ai-mermaid-container' });
+        expect(container?.children.join('')).toContain('source exceeds');
+      });
+    } finally {
+      act(() => renderer?.unmount());
+    }
+  });
+
+  it('isolates a timed-out Mermaid chart and recovers on the next chart', async () => {
+    dependencyMocks.mermaidRender.mockImplementation(async (_id: string, chart: string) => {
+      if (chart.includes('slow')) throw new Error('mermaid render timeout');
+      return { svg: '<svg><text>fast diagram</text></svg>' };
+    });
+    let renderer: ReactTestRenderer | undefined;
+
+    try {
+      await act(async () => {
+        renderer = create(renderCodeBlock('language-mermaid', 'graph TD; slow-->wait;'));
+        await vi.dynamicImportSettled();
+      });
+
+      await vi.waitFor(() => {
+        const containers = renderer?.root.findAllByProps({ className: 'ai-mermaid-container' }) || [];
+        expect(containers.some((container) => container.children.join('').includes('timeout'))).toBe(true);
+      });
+
+      await act(async () => {
+        renderer?.update(renderCodeBlock('language-mermaid', 'graph TD; fast-->done;'));
+        await Promise.resolve();
+      });
+      await vi.waitFor(() => {
+        expect(dependencyMocks.mermaidRender.mock.calls.map(([, chart]) => chart)).toContain(
+          'graph TD; fast-->done;',
+        );
+        const sandboxes = renderer?.root.findAllByProps({ 'data-testid': 'ai-mermaid-sandbox' }) || [];
+        expect(sandboxes).toHaveLength(1);
+        expect(sandboxes[0].props.srcDoc).toContain('fast diagram');
+      });
+    } finally {
+      act(() => renderer?.unmount());
+    }
   });
 });

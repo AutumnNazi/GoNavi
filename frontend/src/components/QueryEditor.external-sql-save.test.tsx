@@ -223,12 +223,21 @@ const notifyStoreSubscribers = () => {
   storeSubscribers.forEach((subscriber) => subscriber());
 };
 
-const backendApp = vi.hoisted(() => ({
+const backendApp = vi.hoisted(() => {
+  // The budgeted variants are thin wrappers over the base bindings so existing
+  // assertions on DBQueryMulti / ...InTransaction / ...Transactional keep working.
+  const queryMulti = vi.fn();
+  const queryMultiInTransaction = vi.fn();
+  const queryMultiTransactional = vi.fn();
+  return {
   DBQuery: vi.fn(),
   DBQueryWithCancel: vi.fn(),
-  DBQueryMulti: vi.fn(),
-  DBQueryMultiInTransaction: vi.fn(),
-  DBQueryMultiTransactional: vi.fn(),
+  DBQueryMulti: queryMulti,
+  DBQueryMultiWithOptions: vi.fn((...args: any[]) => queryMulti(...args.slice(0, 4))),
+  DBQueryMultiInTransaction: queryMultiInTransaction,
+  DBQueryMultiInTransactionWithOptions: vi.fn((...args: any[]) => queryMultiInTransaction(...args.slice(0, 3))),
+  DBQueryMultiTransactional: queryMultiTransactional,
+  DBQueryMultiTransactionalWithOptions: vi.fn((...args: any[]) => queryMultiTransactional(...args.slice(0, 4))),
   DBQueryAudited: vi.fn(),
   DBCommitTransaction: vi.fn(),
   DBCommitTransactionWithTrigger: vi.fn(),
@@ -249,7 +258,8 @@ const backendApp = vi.hoisted(() => ({
   ExportSQLFile: vi.fn(),
   InspectElasticsearchConsole: vi.fn(),
   ExecuteElasticsearchConsole: vi.fn(),
-}));
+  };
+});
 
 const messageApi = vi.hoisted(() => ({
   error: vi.fn(),
@@ -3218,7 +3228,7 @@ describe('QueryEditor external SQL save', () => {
       renderer = create(<QueryEditor tab={createTab()} />);
     });
 
-    expect(findSqlLogTab(renderer)).toHaveLength(1);
+    expect(findSqlLogTab(renderer)).toHaveLength(0);
 
     await act(async () => {
       windowListeners['gonavi:show-sql-execution-log']?.forEach((listener) => listener());

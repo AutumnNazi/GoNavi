@@ -6,7 +6,10 @@ import { readV2ThemeCss } from '../test/readV2ThemeCss';
 
 import { setCurrentLanguage } from '../i18n';
 import type { SavedQuery, TabData } from '../types';
-import { clearQueryEditorResultSession } from '../utils/queryEditorResultSessionCache';
+import {
+  clearQueryEditorResultSession,
+  saveQueryEditorResultSession,
+} from '../utils/queryEditorResultSessionCache';
 import { formatSqlExecutionError } from '../utils/sqlErrorSemantics';
 import { clearQueryTabDraft, clearSQLFileTabDraft } from '../utils/sqlFileTabDrafts';
 import {
@@ -133,11 +136,17 @@ const notifyStoreSubscribers = () => {
   storeSubscribers.forEach((subscriber) => subscriber());
 };
 
-const backendApp = vi.hoisted(() => ({
+const backendApp = vi.hoisted(() => {
+  // Budgeted variants delegate to the base spies so existing assertions hold.
+  const queryMulti = vi.fn();
+  const queryMultiTransactional = vi.fn();
+  return {
   DBQuery: vi.fn(),
   DBQueryWithCancel: vi.fn(),
-  DBQueryMulti: vi.fn(),
-  DBQueryMultiTransactional: vi.fn(),
+  DBQueryMulti: queryMulti,
+  DBQueryMultiWithOptions: vi.fn((...args: any[]) => queryMulti(...args.slice(0, 4))),
+  DBQueryMultiTransactional: queryMultiTransactional,
+  DBQueryMultiTransactionalWithOptions: vi.fn((...args: any[]) => queryMultiTransactional(...args.slice(0, 4))),
   DBCommitTransaction: vi.fn(),
   DBCommitTransactionWithTrigger: vi.fn(),
   DBRollbackTransaction: vi.fn(),
@@ -152,7 +161,8 @@ const backendApp = vi.hoisted(() => ({
   GenerateQueryID: vi.fn(),
   WriteSQLFile: vi.fn(),
   ExportSQLFile: vi.fn(),
-}));
+  };
+});
 
 const nativeDetachedWindowState = vi.hoisted(() => ({
   openNativeQueryResultWindow: vi.fn(),
@@ -1285,10 +1295,39 @@ describe('QueryEditor external SQL save', () => {
     expect(backendApp.DBQueryMulti).toHaveBeenCalledOnce();
     expect(backendApp.DBGetColumns).not.toHaveBeenCalled();
     expect(backendApp.DBGetIndexes).not.toHaveBeenCalled();
-    expect(resultTabs).toHaveLength(52);
+    // 52 statements produce more results than the history budget keeps: the
+    // oldest unpinned sets are released instead of mounting 52 grids.
+    expect(resultTabs).toHaveLength(20);
     await act(async () => {
       renderer.unmount();
     });
+  });
+
+  it('bounds restored result sessions before mounting their DataGrids', async () => {
+    saveQueryEditorResultSession('tab-1', {
+      resultSets: Array.from({ length: 25 }, (_, index) => ({
+        key: `result-${index + 1}`,
+        sql: `select ${index + 1}`,
+        columns: ['value'],
+        rows: [{ value: index + 1 }],
+        pkColumns: [],
+        readOnly: true,
+      })),
+      activeResultKey: 'result-1',
+      isResultPanelVisible: true,
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab()} />);
+    });
+
+    const panel = renderer.root.findByType(QueryEditorResultsPanel);
+    expect(panel.props.resultSets).toHaveLength(20);
+    expect(panel.props.resultSets.map((result: any) => result.key)).toContain('result-1');
+    expect(panel.props.activeResultKey).toBe('result-1');
+    expect(messageApi.info).toHaveBeenCalledWith(expect.stringContaining('20'));
+    renderer.unmount();
   });
 
   it('runs the whole Oracle procedure when the cursor is in the exception tail', async () => {

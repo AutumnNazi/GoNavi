@@ -846,6 +846,7 @@ const queryMetadataRowsBySpecs = async (
   conn: any,
   dbName: string,
   specs: MetadataQuerySpec[],
+  query = DBQuery,
 ): Promise<{ results: MetadataQueryResult[]; hasSuccessfulQuery: boolean; failureMessage?: string }> => {
   const normalizedSpecs = normalizeMetadataQuerySpecs(specs);
   if (normalizedSpecs.length === 0) {
@@ -855,8 +856,6 @@ const queryMetadataRowsBySpecs = async (
   const results: MetadataQueryResult[] = [];
   let hasSuccessfulQuery = false;
   let failureMessage = "";
-  // Full queries (no inferredType) are mutually exclusive fallbacks: first success wins.
-  // Partial queries (inferredType set) are complementary (e.g. SHOW FUNCTION + SHOW PROCEDURE).
   let hasFullSuccess = false;
 
   for (const spec of normalizedSpecs) {
@@ -864,7 +863,7 @@ const queryMetadataRowsBySpecs = async (
       break;
     }
     try {
-      const result = await DBQuery(
+      const result = await query(
         buildRpcConnectionConfig(config) as any,
         dbName,
         spec.sql,
@@ -1414,10 +1413,7 @@ const loadDatabaseEvents = async (
   return { events, supported: hasSuccessfulQuery, failureMessage };
 };
 
-const loadSchemas = async (
-  conn: any,
-  dbName: string,
-): Promise<{ schemas: string[] } & MetadataLoadState> => {
+const loadSchemas = async (conn: any, dbName: string, query = DBQuery): Promise<{ schemas: string[] } & MetadataLoadState> => {
   const savedConnection = conn as SavedConnection;
   const dialect = getMetadataDialect(savedConnection);
   const querySpecs = buildSchemasMetadataQuerySpecs(dialect, dbName);
@@ -1427,6 +1423,7 @@ const loadSchemas = async (
     conn,
     dbName,
     querySpecs,
+    query,
   );
   const seen = new Set<string>();
   const schemas: string[] = [];

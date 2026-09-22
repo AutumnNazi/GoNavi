@@ -79,6 +79,7 @@ import { dispatchSidebarLocateConnection } from '../utils/sidebarLocate';
 import { renderV2ActionMenuPopup } from './common/V2ActionMenuPopup';
 import { QueryEditorTabRunningIndicator } from './queryEditor/QueryEditorTabRunningIndicator';
 import { QueryEditorRunningTabsDock } from './queryEditor/QueryEditorRunningTabsDock';
+import { useWorkbenchTabLifecyclePolicy } from './queryEditor/useWorkbenchTabLifecyclePolicy';
 
 const getTabKindLabel = (tab: TabData): string => {
   if (tab.type === 'query') return t('tab_manager.kind_badge.query');
@@ -882,6 +883,7 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
   const appearance = useStore(state => state.appearance);
   const languagePreference = useStore(state => state.languagePreference);
   const activeTabId = useStore(state => state.activeTabId);
+  const shouldDestroyHiddenTab = useWorkbenchTabLifecyclePolicy();
   const setActiveTab = useStore(state => state.setActiveTab);
   const addTab = useStore(state => state.addTab);
   const closeTab = useStore(state => state.closeTab);
@@ -1607,9 +1609,10 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
       ),
       key: tab.id,
       closable: false,
+      destroyOnHidden: shouldDestroyHiddenTab(tab),
       children: <WorkbenchTabContent tab={tab} />,
     };
-  }), [dockedTabs, tabs, connections, connectionGroupNameById, appearance.tabDisplay, closeTab, closeTabsWithSQLFilePrompt, detachTabToWindow, true, languagePreference]);
+  }), [dockedTabs, tabs, connections, connectionGroupNameById, appearance.tabDisplay, closeTab, closeTabsWithSQLFilePrompt, detachTabToWindow, true, languagePreference, shouldDestroyHiddenTab]);
 
   const queryCapableConnections = useMemo(
     () => connections.filter((connection) => getDataSourceCapabilities(connection.config).supportsQueryEditor),
@@ -2178,7 +2181,6 @@ body[data-theme='dark'] .main-tabs .ant-tabs-tab.ant-tabs-tab-active {
             <Tabs
                 className={`main-tabs gn-v2-main-tabs${hasDoubleLineTabLabel ? ' gn-v2-main-tabs-double' : ''}`}
                 type="editable-card"
-                destroyOnHidden={false}
                 onChange={(newActiveKey) => {
                   if (Date.now() < suppressClickUntilRef.current) return;
                   onChange(newActiveKey);

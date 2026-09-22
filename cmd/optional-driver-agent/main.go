@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"reflect"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -33,6 +32,7 @@ type agentRequest struct {
 	// Args 是 json-lines-v2 协议新增的位置绑定参数；旧版主进程不会发送该字段。
 	Args                 []any                           `json:"args,omitempty"`
 	TimeoutMs            int64                           `json:"timeoutMs,omitempty"`
+	RowBudget            *db.RowBudgetOptions            `json:"rowBudget,omitempty"`
 	DBName               string                          `json:"dbName,omitempty"`
 	TableName            string                          `json:"tableName,omitempty"`
 	Changes              *connection.ChangeSet           `json:"changes,omitempty"`
@@ -54,6 +54,8 @@ type agentResponse struct {
 	Messages                  []string                      `json:"messages,omitempty"`
 	ChunkType                 string                        `json:"chunkType,omitempty"`
 	RowsAffected              int64                         `json:"rowsAffected,omitempty"`
+	Truncated                 bool                          `json:"truncated,omitempty"`
+	BudgetExhausted           bool                          `json:"budgetExhausted,omitempty"`
 }
 
 type agentConnectionInfo struct {
@@ -361,15 +363,16 @@ func handleRequestWithSSHProgressReporter(runtimeState *agentRuntime, req agentR
 				resp.Messages = messages
 				break
 			}
-			data, fields, messages, err := queryStatementWithMessagesOptionalTimeout(session, req.Query, req.TimeoutMs)
+			data, fields, messages, budget, err := queryStatementWithMessagesRequest(session, req.Query, req.TimeoutMs, req.RowBudget)
 			if err != nil {
 				return fail(resp, err.Error())
 			}
 			resp.Data = data
 			resp.Fields = fields
 			resp.Messages = messages
+			applyAgentBudgetResponse(&resp, budget)
 		case agentMethodQueryMulti:
-			data, messages, supported, err := queryMultiStatementWithMessagesOptionalTimeout(session, req.Query, req.TimeoutMs)
+			data, messages, supported, budget, err := queryMultiStatementWithMessagesRequest(session, req.Query, req.TimeoutMs, req.RowBudget)
 			if err != nil {
 				return fail(resp, err.Error())
 			}
@@ -378,6 +381,7 @@ func handleRequestWithSSHProgressReporter(runtimeState *agentRuntime, req agentR
 			}
 			resp.Data = data
 			resp.Messages = messages
+			applyAgentBudgetResponse(&resp, budget)
 		case agentMethodExec:
 			if len(req.Args) > 0 {
 				affected, err := execStatementWithArgsOptionalTimeout(session, req.Query, req.Args, req.TimeoutMs)
@@ -428,15 +432,16 @@ func handleRequestWithSSHProgressReporter(runtimeState *agentRuntime, req agentR
 			resp.Messages = messages
 			break
 		}
-		data, fields, messages, err := queryWithMessagesOptionalTimeout(runtimeState.inst, req.Query, req.TimeoutMs)
+		data, fields, messages, budget, err := queryWithMessagesRequest(runtimeState.inst, req.Query, req.TimeoutMs, req.RowBudget)
 		if err != nil {
 			return fail(resp, err.Error())
 		}
 		resp.Data = data
 		resp.Fields = fields
 		resp.Messages = messages
+		applyAgentBudgetResponse(&resp, budget)
 	case agentMethodQueryMulti:
-		data, messages, supported, err := queryMultiWithMessagesOptionalTimeout(runtimeState.inst, req.Query, req.TimeoutMs)
+		data, messages, supported, budget, err := queryMultiWithMessagesRequest(runtimeState.inst, req.Query, req.TimeoutMs, req.RowBudget)
 		if err != nil {
 			return fail(resp, err.Error())
 		}
@@ -445,6 +450,7 @@ func handleRequestWithSSHProgressReporter(runtimeState *agentRuntime, req agentR
 		}
 		resp.Data = data
 		resp.Messages = messages
+		applyAgentBudgetResponse(&resp, budget)
 	case agentMethodExec:
 		if len(req.Args) > 0 {
 			affected, err := execWithArgsOptionalTimeout(runtimeState.inst, req.Query, req.Args, req.TimeoutMs)
@@ -868,67 +874,6 @@ func failWithExternalAttachNotAttached(resp agentResponse, err error) agentRespo
 	}
 	return failed
 }
-func fail(resp agentResponse, errText string) agentResponse {
-	resp.Success = false
-	resp.Error = strings.TrimSpace(errText)
-	return resp
-}
-
-func failWithSSHHostKeyTrust(resp agentResponse, err error) agentResponse {
-	resp = fail(resp, err.Error())
-	if status, ok := sshbridge.HostKeyTrustStatusFromError(err); ok {
-		resp.SSHHostKeyTrust = &status
-	}
-	return resp
-}
-
-func normalizeAgentResponseData(v interface{}) interface{} {
-	if v == nil {
-		return nil
-	}
-
-	rv := reflect.ValueOf(v)
-	switch rv.Kind() {
-	case reflect.Pointer, reflect.Interface:
-		if rv.IsNil() {
-			return nil
-		}
-		return normalizeAgentResponseData(rv.Elem().Interface())
-	case reflect.Map:
-		if rv.IsNil() {
-			return nil
-		}
-		out := make(map[string]interface{}, rv.Len())
-		iter := rv.MapRange()
-		for iter.Next() {
-			out[fmt.Sprint(iter.Key().Interface())] = normalizeAgentResponseData(iter.Value().Interface())
-		}
-		return out
-	case reflect.Slice:
-		if rv.IsNil() {
-			return nil
-		}
-		// 保持 []byte 原样，避免改变现有二进制列的 JSON 编码行为（base64）。
-		if rv.Type().Elem().Kind() == reflect.Uint8 {
-			return v
-		}
-		size := rv.Len()
-		items := make([]interface{}, size)
-		for i := 0; i < size; i++ {
-			items[i] = normalizeAgentResponseData(rv.Index(i).Interface())
-		}
-		return items
-	case reflect.Array:
-		size := rv.Len()
-		items := make([]interface{}, size)
-		for i := 0; i < size; i++ {
-			items[i] = normalizeAgentResponseData(rv.Index(i).Interface())
-		}
-		return items
-	default:
-		return v
-	}
-}
 
 type agentQueryRunner interface {
 	Query(string) ([]map[string]interface{}, []string, error)
@@ -971,33 +916,47 @@ type agentExecContextRunner interface {
 }
 
 func queryWithMessagesOptionalTimeout(inst agentQueryRunner, query string, timeoutMs int64) ([]map[string]interface{}, []string, []string, error) {
+	data, fields, messages, _, err := queryWithMessagesRequest(inst, query, timeoutMs, nil)
+	return data, fields, messages, err
+}
+
+func queryWithMessagesRequest(
+	inst agentQueryRunner,
+	query string,
+	timeoutMs int64,
+	options *db.RowBudgetOptions,
+) ([]map[string]interface{}, []string, []string, *db.RowBudget, error) {
 	effectiveTimeoutMs := timeoutMs
 	if effectiveTimeoutMs <= 0 && strings.EqualFold(strings.TrimSpace(agentDriverType), "clickhouse") {
 		effectiveTimeoutMs = int64(legacyClickHouseDefaultTimeout / time.Millisecond)
 	}
-	if effectiveTimeoutMs <= 0 {
+	ctx, cancel, budget := agentQueryRequestContext(effectiveTimeoutMs, options)
+	defer cancel()
+	if effectiveTimeoutMs <= 0 && budget == nil {
 		if q, ok := inst.(agentQueryMessageRunner); ok {
-			return q.QueryWithMessages(query)
+			data, fields, messages, err := q.QueryWithMessages(query)
+			return data, fields, messages, nil, err
 		}
 		data, fields, err := inst.Query(query)
-		return data, fields, nil, err
+		return data, fields, nil, nil, err
 	}
 	if q, ok := inst.(agentQueryMessageContextRunner); ok {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(effectiveTimeoutMs)*time.Millisecond)
-		defer cancel()
-		return q.QueryContextWithMessages(ctx, query)
+		data, fields, messages, err := q.QueryContextWithMessages(ctx, query)
+		return data, fields, messages, budget, err
 	}
 	if q, ok := inst.(agentQueryContextRunner); ok {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(effectiveTimeoutMs)*time.Millisecond)
-		defer cancel()
 		data, fields, err := q.QueryContext(ctx, query)
-		return data, fields, nil, err
+		return data, fields, nil, budget, err
+	}
+	if budget != nil {
+		return nil, nil, nil, budget, fmt.Errorf("当前驱动不支持带结果预算的上下文查询")
 	}
 	if q, ok := inst.(agentQueryMessageRunner); ok {
-		return q.QueryWithMessages(query)
+		data, fields, messages, err := q.QueryWithMessages(query)
+		return data, fields, messages, nil, err
 	}
 	data, fields, err := inst.Query(query)
-	return data, fields, nil, err
+	return data, fields, nil, nil, err
 }
 
 func queryWithOptionalTimeout(inst agentQueryRunner, query string, timeoutMs int64) ([]map[string]interface{}, []string, error) {
@@ -1014,71 +973,103 @@ func queryStatementWithOptionalTimeout(inst db.StatementExecer, query string, ti
 }
 
 func queryStatementWithMessagesOptionalTimeout(inst db.StatementExecer, query string, timeoutMs int64) ([]map[string]interface{}, []string, []string, error) {
+	data, fields, messages, _, err := queryStatementWithMessagesRequest(inst, query, timeoutMs, nil)
+	return data, fields, messages, err
+}
+
+func queryStatementWithMessagesRequest(
+	inst db.StatementExecer,
+	query string,
+	timeoutMs int64,
+	options *db.RowBudgetOptions,
+) ([]map[string]interface{}, []string, []string, *db.RowBudget, error) {
 	queryRunner, ok := inst.(agentQueryRunner)
 	if !ok {
-		return nil, nil, nil, fmt.Errorf("当前事务会话不支持查询语句")
+		return nil, nil, nil, nil, fmt.Errorf("当前事务会话不支持查询语句")
 	}
-	return queryWithMessagesOptionalTimeout(queryRunner, query, timeoutMs)
+	return queryWithMessagesRequest(queryRunner, query, timeoutMs, options)
 }
 
 func queryMultiWithMessagesOptionalTimeout(inst db.Database, query string, timeoutMs int64) ([]connection.ResultSetData, []string, bool, error) {
+	data, messages, supported, _, err := queryMultiWithMessagesRequest(inst, query, timeoutMs, nil)
+	return data, messages, supported, err
+}
+
+func queryMultiWithMessagesRequest(
+	inst db.Database,
+	query string,
+	timeoutMs int64,
+	options *db.RowBudgetOptions,
+) ([]connection.ResultSetData, []string, bool, *db.RowBudget, error) {
 	effectiveTimeoutMs := timeoutMs
 	if effectiveTimeoutMs <= 0 && strings.EqualFold(strings.TrimSpace(agentDriverType), "clickhouse") {
 		effectiveTimeoutMs = int64(legacyClickHouseDefaultTimeout / time.Millisecond)
 	}
-	if effectiveTimeoutMs > 0 {
+	ctx, cancel, budget := agentQueryRequestContext(effectiveTimeoutMs, options)
+	defer cancel()
+	if effectiveTimeoutMs > 0 || budget != nil {
 		if q, ok := inst.(agentMultiResultMessageContextRunner); ok {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(effectiveTimeoutMs)*time.Millisecond)
-			defer cancel()
 			data, messages, err := q.QueryMultiContextWithMessages(ctx, query)
-			return data, messages, true, err
+			return data, messages, true, budget, err
 		}
 		if q, ok := inst.(agentMultiResultContextRunner); ok {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(effectiveTimeoutMs)*time.Millisecond)
-			defer cancel()
 			data, err := q.QueryMultiContext(ctx, query)
-			return data, nil, true, err
+			return data, nil, true, budget, err
+		}
+		if budget != nil {
+			return nil, nil, false, budget, fmt.Errorf("当前驱动不支持带结果预算的多结果集上下文查询")
 		}
 	}
 	if q, ok := inst.(agentMultiResultMessageRunner); ok {
 		data, messages, err := q.QueryMultiWithMessages(query)
-		return data, messages, true, err
+		return data, messages, true, nil, err
 	}
 	if q, ok := inst.(agentMultiResultRunner); ok {
 		data, err := q.QueryMulti(query)
-		return data, nil, true, err
+		return data, nil, true, nil, err
 	}
-	return nil, nil, false, nil
+	return nil, nil, false, nil, nil
 }
 
 func queryMultiStatementWithMessagesOptionalTimeout(inst db.StatementExecer, query string, timeoutMs int64) ([]connection.ResultSetData, []string, bool, error) {
+	data, messages, supported, _, err := queryMultiStatementWithMessagesRequest(inst, query, timeoutMs, nil)
+	return data, messages, supported, err
+}
+
+func queryMultiStatementWithMessagesRequest(
+	inst db.StatementExecer,
+	query string,
+	timeoutMs int64,
+	options *db.RowBudgetOptions,
+) ([]connection.ResultSetData, []string, bool, *db.RowBudget, error) {
 	effectiveTimeoutMs := timeoutMs
 	if effectiveTimeoutMs <= 0 && strings.EqualFold(strings.TrimSpace(agentDriverType), "clickhouse") {
 		effectiveTimeoutMs = int64(legacyClickHouseDefaultTimeout / time.Millisecond)
 	}
-	if effectiveTimeoutMs > 0 {
+	ctx, cancel, budget := agentQueryRequestContext(effectiveTimeoutMs, options)
+	defer cancel()
+	if effectiveTimeoutMs > 0 || budget != nil {
 		if q, ok := inst.(agentMultiResultMessageContextRunner); ok {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(effectiveTimeoutMs)*time.Millisecond)
-			defer cancel()
 			data, messages, err := q.QueryMultiContextWithMessages(ctx, query)
-			return data, messages, true, err
+			return data, messages, true, budget, err
 		}
 		if q, ok := inst.(agentMultiResultContextRunner); ok {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(effectiveTimeoutMs)*time.Millisecond)
-			defer cancel()
 			data, err := q.QueryMultiContext(ctx, query)
-			return data, nil, true, err
+			return data, nil, true, budget, err
+		}
+		if budget != nil {
+			return nil, nil, false, budget, fmt.Errorf("当前事务会话不支持带结果预算的多结果集上下文查询")
 		}
 	}
 	if q, ok := inst.(agentMultiResultMessageRunner); ok {
 		data, messages, err := q.QueryMultiWithMessages(query)
-		return data, messages, true, err
+		return data, messages, true, nil, err
 	}
 	if q, ok := inst.(agentMultiResultRunner); ok {
 		data, err := q.QueryMulti(query)
-		return data, nil, true, err
+		return data, nil, true, nil, err
 	}
-	return nil, nil, false, nil
+	return nil, nil, false, nil, nil
 }
 
 func streamWithOptionalTimeout(inst db.StreamQueryExecer, query string, timeoutMs int64, consumer db.QueryStreamConsumer) error {
