@@ -4019,6 +4019,8 @@
   "connection_modal.field.readOnly.compatibility": "Selecting all options matches the legacy query-only production guard.",
   "connection_modal.field.readOnly.help": "Select only the restrictions you need for result editing, structure changes, script execution, and import or sync flows.",
   "connection_modal.field.readOnly.label": "Production guard",
+  "connection_modal.field.readOnly.option.all.label": "Read-only (select all)",
+  "connection_modal.field.readOnly.option.all.help": "When on, equivalent to selecting every restriction: blocks all write operations on this connection.",
   "connection_modal.field.readOnly.option.dataEdit.help": "Block result-grid edits, bulk clear actions, and message publishing writes on this connection.",
   "connection_modal.field.readOnly.option.nacos.dataEdit.help": "Block config publish/delete and service instance register, update, deregister, and health changes.",
   "connection_modal.field.readOnly.option.nacos.structureEdit.help": "Block namespace and service create, update, and delete operations.",

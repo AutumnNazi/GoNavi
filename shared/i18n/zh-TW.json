@@ -4019,6 +4019,8 @@
   "connection_modal.field.readOnly.compatibility": "全部勾選時，行為等同舊版「只允許查詢」的正式連線保護。",
   "connection_modal.field.readOnly.help": "依需求勾選限制項，分別限制結果編輯、結構變更、腳本執行與匯入/同步。",
   "connection_modal.field.readOnly.label": "正式連線保護",
+  "connection_modal.field.readOnly.option.all.label": "僅唯讀（一鍵全選）",
+  "connection_modal.field.readOnly.option.all.help": "開啟後等於勾選全部限制項，阻止此連接上的一切寫入操作。",
   "connection_modal.field.readOnly.option.dataEdit.help": "禁止結果集直接修改、批次清空以及訊息發佈等寫入操作。",
   "connection_modal.field.readOnly.option.nacos.dataEdit.help": "禁止設定發佈/刪除，以及服務執行個體的註冊、修改、註銷和健康狀態變更。",
   "connection_modal.field.readOnly.option.nacos.structureEdit.help": "禁止命名空間和服務的建立、修改與刪除。",

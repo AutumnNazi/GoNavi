@@ -4019,6 +4019,8 @@
   "connection_modal.field.readOnly.compatibility": "全部勾选时，行为等价于旧版“只允许查询”的生产保护。",
   "connection_modal.field.readOnly.help": "按需勾选限制项，分别限制结果编辑、结构变更、脚本执行与导入/同步。",
   "connection_modal.field.readOnly.label": "生产连接保护",
+  "connection_modal.field.readOnly.option.all.label": "仅只读（一键全选）",
+  "connection_modal.field.readOnly.option.all.help": "开启后等价于勾选全部限制项，阻止该连接上的一切写操作。",
   "connection_modal.field.readOnly.option.dataEdit.help": "禁止结果集直接修改、批量清空以及消息发布等写入操作。",
   "connection_modal.field.readOnly.option.nacos.dataEdit.help": "禁止配置发布/删除，以及服务实例的注册、修改、注销和健康状态变更。",
   "connection_modal.field.readOnly.option.nacos.structureEdit.help": "禁止命名空间和服务的创建、修改与删除。",

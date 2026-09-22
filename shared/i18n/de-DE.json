@@ -4019,6 +4019,8 @@
   "connection_modal.field.readOnly.compatibility": "Wenn alle Optionen ausgewählt sind, entspricht das dem bisherigen Produktionsschutz mit reinen Abfragen.",
   "connection_modal.field.readOnly.help": "Wählen Sie nur die Einschränkungen aus, die Sie für Ergebnisbearbeitung, Strukturänderungen, Skriptausführung sowie Import- oder Synchronisierungsvorgänge benötigen.",
   "connection_modal.field.readOnly.label": "Produktionsschutz",
+  "connection_modal.field.readOnly.option.all.label": "Schreibgeschützt (alle auswählen)",
+  "connection_modal.field.readOnly.option.all.help": "Wenn aktiv, entspricht es der Auswahl aller Einschränkungen: blockiert alle Schreibvorgänge auf dieser Verbindung.",
   "connection_modal.field.readOnly.option.dataEdit.help": "Direkte Bearbeitungen im Ergebnisraster, Massenleerungen und schreibende Nachrichtenaktionen für diese Verbindung blockieren.",
   "connection_modal.field.readOnly.option.nacos.dataEdit.help": "Das Veröffentlichen/Löschen von Konfigurationen sowie Registrierung, Änderung, Abmeldung und Gesundheitsänderungen von Serviceinstanzen blockieren.",
   "connection_modal.field.readOnly.option.nacos.structureEdit.help": "Das Erstellen, Ändern und Löschen von Namespaces und Services blockieren.",

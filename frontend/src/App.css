@@ -2019,6 +2019,13 @@ body[data-ui-version="v2"] .gn-conn-dense .gn-conn-mode-extra .ant-form-item {
     background: var(--gn-bg-hover, rgba(16, 24, 40, 0.04));
 }
 
+/* 「仅只读」总开关（#1325）：与下方分项之间一条分隔线，语义上全覆盖 */
+.gn-conn-prot-opt-all {
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--gn-border, rgba(16, 24, 40, 0.08));
+    padding-bottom: 8px;
+}
+
 .gn-conn-prot-opt .n {
     font-size: 12.5px;
     font-weight: 600;
