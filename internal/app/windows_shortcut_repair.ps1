@@ -485,9 +485,13 @@ function Set-GoNaviShortcutBrandIcon {
         [string]$TaskbarDirectory
     )
 
-    if ([string]::IsNullOrWhiteSpace($ApplicationUserModelID)) {
-        $ApplicationUserModelID = 'Syngnat.GoNavi'
-    }
+    # Fold every requested identity back to the MSI shortcut value. A per-icon
+    # ID (Syngnat.GoNavi.Icon.<hash>) makes Explorer split a pinned MSI button
+    # or delete a portable pin. The bitmap changes through IconLocation.
+    $ApplicationUserModelID = 'Syngnat.GoNavi'
+    # Portable launches must not retouch a pin that points at another copy,
+    # such as an MSI install beside the portable exe.
+    $onlyMatchingTarget = $env:GONAVI_BRAND_MATCH_TARGET_ONLY -eq '1'
     $updatedCount = 0
     $failureMessages = [Collections.Generic.List[string]]::new()
     try {
@@ -539,6 +543,9 @@ function Set-GoNaviShortcutBrandIcon {
                 try {
                     $shortcut = $shell.CreateShortcut($shortcutFile.FullName)
                     $matchesTarget = Test-SameFilePath $shortcut.TargetPath $normalizedTargetPath
+                    if ($onlyMatchingTarget -and -not $matchesTarget) {
+                        continue
+                    }
                     $isTaskbarShortcut = -not [string]::IsNullOrWhiteSpace($taskbarPrefix) -and
                         $shortcutFile.FullName.StartsWith($taskbarPrefix, [StringComparison]::OrdinalIgnoreCase)
                     $isGoNaviTaskbarShortcut = $false
@@ -571,6 +578,14 @@ function Set-GoNaviShortcutBrandIcon {
                         # relaunch icon changed. Save both representations,
                         # then write the AppUserModel properties last because
                         # WScript.Shell.Save can discard custom properties.
+                        # Capture the identity before that Save. Assigning one
+                        # to a portable pin that never had one makes Explorer
+                        # remove the pin, so only an MSI pin or a pin that
+                        # already carries Syngnat.GoNavi is written back, and
+                        # always as the stable ID.
+                        $existingAumid = [string](Get-GoNaviShortcutAppUserModelID $shortcutFile.FullName)
+                        $hasGoNaviIdentity = $existingAumid -match '^Syngnat\.GoNavi(?:\.Icon\.[0-9a-fA-F]+)?$'
+                        $shouldWriteIdentity = $isMSITarget -or $hasGoNaviIdentity
                         $shortcutNeedsSave = $false
                         if ($isMSITarget -and -not $matchesTarget) {
                             $shortcut.TargetPath = $normalizedTargetPath
@@ -592,8 +607,10 @@ function Set-GoNaviShortcutBrandIcon {
                                 Write-ShortcutRepairLog ("skipped read-only shortcut save: " + $shortcutFile.FullName)
                             }
                         }
-                        if (-not (Set-GoNaviShortcutRelaunchProperties -ShortcutPath $shortcutFile.FullName -TargetPath $shortcutTargetPath -IconPath $normalizedIconPath -ApplicationUserModelID $ApplicationUserModelID)) {
-                            throw ('taskbar property-store update failed for ' + $shortcutFile.FullName)
+                        if ($shouldWriteIdentity) {
+                            if (-not (Set-GoNaviShortcutRelaunchProperties -ShortcutPath $shortcutFile.FullName -TargetPath $shortcutTargetPath -IconPath $normalizedIconPath -ApplicationUserModelID $ApplicationUserModelID)) {
+                                throw ('taskbar property-store update failed for ' + $shortcutFile.FullName)
+                            }
                         }
                         $updatedCount++
                         Send-ShellItemUpdatedNotification $shortcutFile.FullName

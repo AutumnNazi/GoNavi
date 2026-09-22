@@ -180,8 +180,9 @@ if (-not (Test-SameFilePath $duplicateShortcut.TargetPath $target)) {
     throw ('numbered MSI GoNavi pin target was not repaired: ' + $duplicateShortcut.TargetPath)
 }
 
-# A later icon selection rotates the identity and must refresh every recognized
-# pin's icon properties before moving the live window to the new taskbar group.
+# A later icon selection refreshes every recognized pin and must keep the
+# installer identity. A rotated ID from an older caller is folded back so the
+# pin stays attached to the running window.
 $refreshedIcon = Join-Path $env:GONAVI_TEST_ROOT 'gonavi-brand-0123456789abcdef01234567.ico'
 [IO.File]::WriteAllBytes($refreshedIcon, [byte[]](0, 0, 1, 0, 0, 0))
 $refreshedAumid = 'Syngnat.GoNavi.Icon.0123456789abcdef01234567'
@@ -199,8 +200,8 @@ if (-not (Test-ShortcutIconLocation $shell.CreateShortcut((Join-Path $pins 'fore
     throw 'refreshed brand icon update modified a foreign target shortcut'
 }
 $refreshedItem = $shellApplication.Namespace($pins).ParseName('GoNavi-rotated.lnk')
-if ($null -ne $refreshedItem -and -not [string]::Equals([string]$refreshedItem.ExtendedProperty('System.AppUserModel.ID'), $refreshedAumid, [StringComparison]::OrdinalIgnoreCase)) {
-    throw ('rotated identity was not written to the pin property store: ' + $refreshedItem.ExtendedProperty('System.AppUserModel.ID'))
+if ($null -ne $refreshedItem -and -not [string]::Equals([string]$refreshedItem.ExtendedProperty('System.AppUserModel.ID'), 'Syngnat.GoNavi', [StringComparison]::OrdinalIgnoreCase)) {
+    throw ('brand icon update moved the pin off the stable identity: ' + $refreshedItem.ExtendedProperty('System.AppUserModel.ID'))
 }
 
 # Portable and development builds can refresh an installed pin's icon without
@@ -219,8 +220,13 @@ $portableIcon = Join-Path $portableRoot 'gonavi-brand-portable.ico'
 $portableShortcutPath = Join-Path $portablePins 'GoNavi-history.lnk'
 New-TestShortcut $portableShortcutPath $portableInstalledTarget ''
 [void](Set-GoNaviShortcutRelaunchProperties -ShortcutPath $portableShortcutPath -TargetPath $portableInstalledTarget -IconPath $missingIcon -ApplicationUserModelID 'Syngnat.GoNavi.Icon.deadbeef')
-$portableUpdateCount = Set-GoNaviShortcutBrandIcon -TargetPath $portableTarget -IconPath $portableIcon -ShortcutDirectories @($portablePins) -TaskbarDirectory $portablePins
-if ($portableUpdateCount -ne 1) {
+$portableStablePath = Join-Path $portablePins 'GoNavi-stable.lnk'
+New-TestShortcut $portableStablePath $portableTarget ''
+[void](Set-GoNaviShortcutRelaunchProperties -ShortcutPath $portableStablePath -TargetPath $portableTarget -IconPath $missingIcon -ApplicationUserModelID 'Syngnat.GoNavi')
+$portablePlainPath = Join-Path $portablePins 'GoNavi-plain.lnk'
+New-TestShortcut $portablePlainPath $portableTarget ''
+$portableUpdateCount = Set-GoNaviShortcutBrandIcon -TargetPath $portableTarget -IconPath $portableIcon -ApplicationUserModelID 'Syngnat.GoNavi.Icon.0123456789abcdef01234567' -ShortcutDirectories @($portablePins) -TaskbarDirectory $portablePins
+if ($portableUpdateCount -ne 3) {
     throw ('unexpected portable shortcut update count: ' + $portableUpdateCount)
 }
 $portableShortcut = $shell.CreateShortcut($portableShortcutPath)
@@ -233,7 +239,42 @@ if ($null -ne $portableItem) {
     if (-not [string]::Equals($portableRelaunchCommand, ('"' + $portableInstalledTarget + '"'), [StringComparison]::OrdinalIgnoreCase)) {
         throw ('portable relaunch target was not preserved and quoted: ' + $portableRelaunchCommand)
     }
+    $portableIdentity = [string]$portableItem.ExtendedProperty('System.AppUserModel.ID')
+    if (-not [string]::Equals($portableIdentity, 'Syngnat.GoNavi', [StringComparison]::OrdinalIgnoreCase)) {
+        throw ('portable rotated pin was not returned to the stable identity: ' + $portableIdentity)
+    }
 }
+$portableStableShortcut = $shell.CreateShortcut($portableStablePath)
+if (-not (Test-SameFilePath $portableStableShortcut.TargetPath $portableTarget)) {
+    throw ('stable portable pin target changed: ' + $portableStableShortcut.TargetPath)
+}
+if (-not (Test-ShortcutIconLocation $portableStableShortcut.IconLocation $portableIcon)) {
+    throw ('stable portable pin icon was not updated: ' + $portableStableShortcut.IconLocation)
+}
+$portableStableItem = $shellApplication.Namespace($portablePins).ParseName('GoNavi-stable.lnk')
+if ($null -ne $portableStableItem -and -not [string]::Equals([string]$portableStableItem.ExtendedProperty('System.AppUserModel.ID'), 'Syngnat.GoNavi', [StringComparison]::OrdinalIgnoreCase)) {
+    throw ('stable portable pin identity changed: ' + $portableStableItem.ExtendedProperty('System.AppUserModel.ID'))
+}
+$portablePlainItem = $shellApplication.Namespace($portablePins).ParseName('GoNavi-plain.lnk')
+if ($null -ne $portablePlainItem -and -not [string]::IsNullOrWhiteSpace([string]$portablePlainItem.ExtendedProperty('System.AppUserModel.ID'))) {
+    throw ('portable pin without an identity was assigned one: ' + $portablePlainItem.ExtendedProperty('System.AppUserModel.ID'))
+}
+$env:GONAVI_BRAND_MATCH_TARGET_ONLY = '1'
+$portableMatchedIcon = Join-Path $portableRoot 'gonavi-brand-matched.ico'
+[IO.File]::WriteAllBytes($portableMatchedIcon, [byte[]](0, 0, 1, 0, 0, 0))
+$matchedOnlyCount = Set-GoNaviShortcutBrandIcon -TargetPath $portableTarget -IconPath $portableMatchedIcon -ShortcutDirectories @($portablePins) -TaskbarDirectory $portablePins
+if ($matchedOnlyCount -ne 2) {
+    throw ('unexpected portable match-only update count: ' + $matchedOnlyCount)
+}
+$portableHistoryAfterMatchOnly = $shell.CreateShortcut($portableShortcutPath)
+if (-not (Test-ShortcutIconLocation $portableHistoryAfterMatchOnly.IconLocation $portableIcon)) {
+    throw ('match-only portable update rewrote a different install pin: ' + $portableHistoryAfterMatchOnly.IconLocation)
+}
+$portableStableAfterMatchOnly = $shell.CreateShortcut($portableStablePath)
+if (-not (Test-ShortcutIconLocation $portableStableAfterMatchOnly.IconLocation $portableMatchedIcon)) {
+    throw ('match-only portable update skipped the current executable pin: ' + $portableStableAfterMatchOnly.IconLocation)
+}
+$env:GONAVI_BRAND_MATCH_TARGET_ONLY = ''
 
 # A failed property-store write must fail the PowerShell process. Otherwise Go
 # records the identity state and permanently skips repairing the broken pin.

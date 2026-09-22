@@ -1067,9 +1067,9 @@ function App() {
       link.type = /\.webp(?:[?#]|$)/i.test(href) ? 'image/webp' : 'image/svg+xml';
       link.href = href;
 
-      // The selection flow below rotates the live window identity itself;
+      // The selection flow below updates the live window icon itself;
       // skip this sync while that apply is in flight so the shortcut update
-      // and window re-grouping run exactly once.
+      // and window icon refresh run exactly once.
       if (runtimePlatform === 'windows' && windowsBrandIconApplyingRef.current === brandIconId) {
           return;
       }
@@ -3516,12 +3516,9 @@ function App() {
           return;
       }
 
-      // Windows applies the new ICO to existing shortcuts and rotates the live
-      // window's AppUserModel identity in a single native call, so Explorer
-      // re-renders the taskbar group immediately — no restart required now
-      // that the identity follows the icon. Detached native windows spawned
-      // before the next full app restart keep the previous identity until
-      // then, which is the only leftover of skipping the restart.
+      // Windows writes the new ICO onto existing shortcuts and the live window.
+      // AppUserModelID stays Syngnat.GoNavi, so a pinned taskbar button keeps
+      // launching this process instead of splitting into a second button.
       windowsBrandIconApplyingRef.current = id;
       setBrandIconId(id);
       try {

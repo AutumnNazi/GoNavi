@@ -341,7 +341,7 @@ func TestRepairPersistedWindowsApplicationShortcutsOnceSkipsPortable(t *testing.
 		return filepath.Join(installDir, "GoNavi.exe")
 	}
 	windowsUpdateCurrentApplicationShortcuts = func(string) error {
-		t.Fatal("portable startup must not migrate MSI taskbar shortcuts")
+		t.Fatal("portable startup must not rewrite taskbar shortcuts")
 		return nil
 	}
 	configDir := t.TempDir()
