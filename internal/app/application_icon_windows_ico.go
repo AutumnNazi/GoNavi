@@ -121,7 +121,9 @@ func encodeWindowsICOBitmapFrame(img *image.NRGBA) []byte {
 	binary.LittleEndian.PutUint32(payload[8:12], uint32(height*2))
 	binary.LittleEndian.PutUint16(payload[12:14], 1)
 	binary.LittleEndian.PutUint16(payload[14:16], windowsICOBitmapBitCount)
-	binary.LittleEndian.PutUint32(payload[20:24], uint32(xorSize+andSize))
+	// biSizeImage is the XOR bitmap only. Counting the AND mask makes Windows 10's
+	// icon extractor reject the file and keep the executable icon.
+	binary.LittleEndian.PutUint32(payload[20:24], uint32(xorSize))
 
 	xor := payload[windowsICOBitmapHeaderSize : windowsICOBitmapHeaderSize+xorSize]
 	and := payload[windowsICOBitmapHeaderSize+xorSize:]

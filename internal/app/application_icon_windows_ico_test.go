@@ -92,6 +92,9 @@ func TestEncodeWindowsICOBitmapFrameUsesANDMaskForTransparency(t *testing.T) {
 	source.SetNRGBA(15, 15, color.NRGBA{})
 
 	payload := encodeWindowsICOBitmapFrame(source)
+	if got := binary.LittleEndian.Uint32(payload[20:24]); got != uint32(16*16*4) {
+		t.Fatalf("biSizeImage = %d, want XOR bitmap size only", got)
+	}
 	decoded, err := decodeWindowsICOBitmapFrame(payload)
 	if err != nil {
 		t.Fatalf("decode BMP frame: %v", err)

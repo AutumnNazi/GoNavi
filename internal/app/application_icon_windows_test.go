@@ -204,6 +204,7 @@ func TestInitializePersistedNativeBrandIconAppliesActiveIcon(t *testing.T) {
 	application := NewAppWithSecretStore(nil)
 	application.configDir = configDir
 
+	originalDPI := windowsApplicationIconSystemDPI
 	originalLoad := windowsApplicationIconLoad
 	originalDestroy := windowsApplicationIconDestroyCall
 	originalSend := windowsApplicationIconSendMessageCall
@@ -219,6 +220,7 @@ func TestInitializePersistedNativeBrandIconAppliesActiveIcon(t *testing.T) {
 	windowsApplicationIconLargeHandle = 0
 	windowsApplicationIconHandleMu.Unlock()
 	t.Cleanup(func() {
+		windowsApplicationIconSystemDPI = originalDPI
 		windowsApplicationIconLoad = originalLoad
 		windowsApplicationIconDestroyCall = originalDestroy
 		windowsApplicationIconSendMessageCall = originalSend
@@ -233,6 +235,7 @@ func TestInitializePersistedNativeBrandIconAppliesActiveIcon(t *testing.T) {
 		windowsApplicationIconHandleMu.Unlock()
 	})
 
+	windowsApplicationIconSystemDPI = func() int { return 96 }
 	var loadedSizes []int
 	windowsApplicationIconLoad = func(actualPath string, size int) (uintptr, error) {
 		if application.ctx != ctx {
@@ -242,7 +245,7 @@ func TestInitializePersistedNativeBrandIconAppliesActiveIcon(t *testing.T) {
 			t.Fatalf("loaded icon path = %q, want %q", actualPath, iconPath)
 		}
 		loadedSizes = append(loadedSizes, size)
-		if size == windowsSmallIconPixels {
+		if size == windowsTaskbarIconPixels(96) {
 			return small, nil
 		}
 		return large, nil
@@ -292,8 +295,8 @@ func TestInitializePersistedNativeBrandIconAppliesActiveIcon(t *testing.T) {
 	if err := InitializePersistedNativeBrandIcon(application, ctx); err != nil {
 		t.Fatalf("initialize persisted native brand icon: %v", err)
 	}
-	if len(loadedSizes) != 2 || loadedSizes[0] != windowsSmallIconPixels || loadedSizes[1] != windowsLargeIconPixels {
-		t.Fatalf("loaded icon sizes = %v, want [%d %d]", loadedSizes, windowsSmallIconPixels, windowsLargeIconPixels)
+	if len(loadedSizes) != 2 || loadedSizes[0] != windowsTaskbarIconPixels(96) || loadedSizes[1] != windowsAltTabIconPixels(96) {
+		t.Fatalf("loaded icon sizes = %v, want [%d %d]", loadedSizes, windowsTaskbarIconPixels(96), windowsAltTabIconPixels(96))
 	}
 	if taskbarIconPath != iconPath {
 		t.Fatalf("taskbar icon path = %q, want %q", taskbarIconPath, iconPath)
