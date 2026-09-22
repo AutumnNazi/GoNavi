@@ -2,6 +2,7 @@ package app
 
 import (
 	"archive/zip"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -873,7 +874,7 @@ func openExportFileForTarget(target *webDownloadTarget, filename string) (io.Wri
 // 既有文件；Web 目标仅关闭。与 openExportFileForTarget 成对使用。
 func finishExportFileTarget(f io.WriteCloser, atomic *atomicExportTarget) error {
 	if atomic != nil {
-		return atomic.commit()
+		return atomic.commit(context.Background())
 	}
 	return closeExportFile(f)
 }
@@ -1083,5 +1084,5 @@ func writeWebDownloadZip(targetPath string, entries []webDownloadZipEntry, budge
 	if err := archive.Close(); err != nil {
 		return err
 	}
-	return target.commit()
+	return target.commit(context.Background())
 }

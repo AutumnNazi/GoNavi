@@ -149,7 +149,7 @@ func TestOpenExportFileForTargetCommitReplacesExistingTarget(t *testing.T) {
 	if _, err := f.Write([]byte("NEW")); err != nil {
 		t.Fatal(err)
 	}
-	if err := atomic.commit(); err != nil {
+	if err := atomic.commit(context.Background()); err != nil {
 		t.Fatalf("commit 失败: %v", err)
 	}
 	if content, err := os.ReadFile(targetPath); err != nil || string(content) != "NEW" {

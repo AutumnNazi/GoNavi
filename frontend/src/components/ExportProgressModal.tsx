@@ -12,15 +12,17 @@ import { APP_NESTED_MODAL_Z_INDEX } from '../utils/overlayZIndex';
 const { Text, Paragraph } = Typography;
 
 export function useExportProgressDialog() {
-  const { state, reset, runExportWithProgress } = useExportProgressRunner();
+  const { state, reset, cancelExport, runExportWithProgress } = useExportProgressRunner();
 
-  const canClose = state.status === 'done' || state.status === 'error';
+  const canClose = state.status === 'done' || state.status === 'error' || state.status === 'cancelled';
+  const canCancel = state.status === 'start' || state.status === 'running' || state.status === 'finalizing';
+  const cancelling = state.status === 'cancelling';
 
   const modalNode = (
     <Modal
       title={state.status === 'error'
         ? t('data_export.progress.title.error')
-        : (state.status === 'done' ? t('data_export.progress.title.done') : t('data_export.progress.title.running'))}
+        : (state.status === 'done' ? t('data_export.progress.title.done') : (state.status === 'cancelled' ? t('data_export.progress.title.cancelled') : t('data_export.progress.title.running')))}
       open={state.open}
       zIndex={APP_NESTED_MODAL_Z_INDEX}
       width={560}
@@ -30,7 +32,16 @@ export function useExportProgressDialog() {
       onCancel={reset}
       footer={canClose ? [
         <Button key="close" onClick={reset}>{t('common.close')}</Button>,
-      ] : null}
+      ] : (canCancel || cancelling ? [
+        <Button
+          key="cancel-export"
+          danger
+          disabled={cancelling}
+          onClick={() => { void cancelExport(); }}
+        >
+          {cancelling ? t('data_export.progress.cancelling') : t('data_export.progress.cancel')}
+        </Button>,
+      ] : null)}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '72px 1fr', rowGap: 8, columnGap: 8 }}>
@@ -63,11 +74,11 @@ export function useExportProgressDialog() {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <Text type="secondary">{formatExportProgressRows(state.current, state.total, state.totalRowsKnown)}</Text>
-          {!state.totalRowsKnown && state.status !== 'done' && state.status !== 'error' ? (
+          {!state.totalRowsKnown && state.status !== 'done' && state.status !== 'error' && state.status !== 'cancelled' ? (
             <Text type="secondary">{t('data_export.hint.rows_unknown')}</Text>
           ) : null}
           {state.message ? (
-            <Text type="danger">{state.message}</Text>
+            <Text type={state.status === 'cancelled' ? 'secondary' : 'danger'}>{state.message}</Text>
           ) : null}
         </div>
       </div>

@@ -200,6 +200,8 @@ type App struct {
 	driverDownloadActiveTaskID    string
 	driverDownloadTaskRunner      driverDownloadTaskRunner
 	driverDownloadTaskControls    map[string]driverDownloadTaskControl
+	exportTaskMu                  sync.Mutex
+	exportTasks                   map[string]*exportTaskRegistration
 	driverInstallMu               sync.Mutex
 	driverMaintenance             map[string]int
 	dataRootApplyMu               sync.Mutex
@@ -1384,13 +1386,6 @@ func (a *App) getDatabase(config connection.ConnectionConfig) (db.Database, erro
 	instance, err := a.getDatabaseWithPing(config, false)
 	a.bindMetadataDatabase(instance)
 	return instance, err
-}
-
-func (a *App) bindMetadataDatabase(instance db.Database) {
-	if a == nil || a.metadataSession == nil || instance == nil {
-		return
-	}
-	a.metadataSession.bindDatabase(instance)
 }
 
 type databaseWaitResult struct {
