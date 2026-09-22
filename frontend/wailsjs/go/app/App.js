@@ -54,12 +54,12 @@ export function CancelDriverPackageDownload(arg1) {
   return window['go']['app']['App']['CancelDriverPackageDownload'](arg1);
 }
 
-export function CancelImportJob(arg1) {
-  return window['go']['app']['App']['CancelImportJob'](arg1);
-}
-
 export function CancelExportFile(arg1) {
   return window['go']['app']['App']['CancelExportFile'](arg1);
+}
+
+export function CancelImportJob(arg1) {
+  return window['go']['app']['App']['CancelImportJob'](arg1);
 }
 
 export function CancelQuery(arg1) {
@@ -268,6 +268,10 @@ export function DBQueryIsolated(arg1, arg2, arg3) {
 
 export function DBQueryMulti(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['DBQueryMulti'](arg1, arg2, arg3, arg4);
+}
+
+export function DBQueryMultiCompact(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['DBQueryMultiCompact'](arg1, arg2, arg3, arg4);
 }
 
 export function DBQueryMultiInTransaction(arg1, arg2, arg3) {
@@ -884,6 +888,10 @@ export function ListDatabaseCollations(arg1) {
 
 export function ListDriverDownloadTasks() {
   return window['go']['app']['App']['ListDriverDownloadTasks']();
+}
+
+export function ListDuckDBAttachedDatasources(arg1, arg2) {
+  return window['go']['app']['App']['ListDuckDBAttachedDatasources'](arg1, arg2);
 }
 
 export function ListImportJobs() {

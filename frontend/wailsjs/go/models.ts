@@ -679,6 +679,62 @@ export namespace app {
 	        this.dirty = source["dirty"];
 	    }
 	}
+	export class CompactQueryResult {
+	    success: boolean;
+	    message: string;
+	    data: any;
+	    fields?: string[];
+	    messages?: string[];
+	    partial?: boolean;
+	    executedCount?: number;
+	    failedIndex?: number;
+	    boundaryMode?: string;
+	    commitMode?: string;
+	    warnings?: string[];
+	    outcomeUnknown?: boolean;
+	    failedObjectTypes?: string[];
+	    retryable?: boolean;
+	    truncated?: boolean;
+	    scannedCount?: number;
+	    durationMs?: number;
+	    queryId?: string;
+	    cancellationState?: string;
+	    transactionId?: string;
+	    transactionPending?: boolean;
+	    dataEncoding?: string;
+	    encodedData?: number[];
+	
+	    static createFrom(source: any = {}) {
+	        return new CompactQueryResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.success = source["success"];
+	        this.message = source["message"];
+	        this.data = source["data"];
+	        this.fields = source["fields"];
+	        this.messages = source["messages"];
+	        this.partial = source["partial"];
+	        this.executedCount = source["executedCount"];
+	        this.failedIndex = source["failedIndex"];
+	        this.boundaryMode = source["boundaryMode"];
+	        this.commitMode = source["commitMode"];
+	        this.warnings = source["warnings"];
+	        this.outcomeUnknown = source["outcomeUnknown"];
+	        this.failedObjectTypes = source["failedObjectTypes"];
+	        this.retryable = source["retryable"];
+	        this.truncated = source["truncated"];
+	        this.scannedCount = source["scannedCount"];
+	        this.durationMs = source["durationMs"];
+	        this.queryId = source["queryId"];
+	        this.cancellationState = source["cancellationState"];
+	        this.transactionId = source["transactionId"];
+	        this.transactionPending = source["transactionPending"];
+	        this.dataEncoding = source["dataEncoding"];
+	        this.encodedData = source["encodedData"];
+	    }
+	}
 	export class ConnectionExcelGroupAssignment {
 	    connectionName: string;
 	    groupPath: string;
@@ -3075,6 +3131,29 @@ export namespace connection {
 		    }
 		    return a;
 		}
+	}
+
+}
+
+export namespace db {
+	
+	export class ExternalAttachmentInfo {
+	    alias: string;
+	    connectionId?: string;
+	    kind: string;
+	    readOnly: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ExternalAttachmentInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.alias = source["alias"];
+	        this.connectionId = source["connectionId"];
+	        this.kind = source["kind"];
+	        this.readOnly = source["readOnly"];
+	    }
 	}
 
 }
