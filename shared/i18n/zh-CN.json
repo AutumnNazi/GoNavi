@@ -4129,6 +4129,8 @@
   "connection_modal.jvm.security_policy": "安全策略",
   "connection_modal.jvm.target_description": "配置 JVM 管理端点的主机、端口和访问方式。",
   "connection_modal.jvm.target_title": "JVM 目标",
+  "connection_modal.kafka.sasl_mechanism": "SASL 机制",
+  "connection_modal.kafka.security_protocol": "安全协议",
   "connection_modal.layout.custom": "自定义驱动连接",
   "connection_modal.layout.file": "文件数据库连接",
   "connection_modal.layout.generic_sql": "通用 SQL 连接",

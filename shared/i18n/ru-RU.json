@@ -4129,6 +4129,8 @@
   "connection_modal.jvm.security_policy": "Политика безопасности",
   "connection_modal.jvm.target_description": "Настройте хост, порт и способ доступа к Endpoint управления JVM.",
   "connection_modal.jvm.target_title": "Цель JVM",
+  "connection_modal.kafka.sasl_mechanism": "Механизм SASL",
+  "connection_modal.kafka.security_protocol": "Протокол безопасности",
   "connection_modal.layout.custom": "Подключение через пользовательский драйвер",
   "connection_modal.layout.file": "Подключение к файловой базе данных",
   "connection_modal.layout.generic_sql": "Универсальное SQL-подключение",

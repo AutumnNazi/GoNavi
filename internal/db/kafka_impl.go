@@ -20,9 +20,6 @@ import (
 	"GoNavi-Wails/internal/ssh"
 
 	kafka "github.com/segmentio/kafka-go"
-	kafkasasl "github.com/segmentio/kafka-go/sasl"
-	kafkaplain "github.com/segmentio/kafka-go/sasl/plain"
-	kafkascram "github.com/segmentio/kafka-go/sasl/scram"
 )
 
 const (
@@ -456,7 +453,7 @@ func normalizeKafkaConfig(config connection.ConnectionConfig) connection.Connect
 			runConfig.SSLMode = "required"
 		}
 	}
-	return runConfig
+	return normalizeKafkaSecurityProtocol(runConfig)
 }
 
 func applyKafkaURI(config connection.ConnectionConfig) connection.ConnectionConfig {
@@ -1144,31 +1141,6 @@ func (r *kafkaGoRuntime) fetchPartitionMessages(ctx context.Context, topic strin
 		})
 	}
 	return records, nil
-}
-
-func kafkaSASLMechanism(config connection.ConnectionConfig) (kafkasasl.Mechanism, error) {
-	params := kafkaConnectionParams(config)
-	mechanism := strings.ToLower(strings.TrimSpace(firstNonEmpty(
-		params.Get("mechanism"),
-		params.Get("saslMechanism"),
-		params.Get("sasl_mechanism"),
-		params.Get("sasl"),
-	)))
-	if mechanism == "" || mechanism == "none" {
-		return nil, nil
-	}
-	username := strings.TrimSpace(config.User)
-	password := config.Password
-	switch mechanism {
-	case "plain", "sasl_plaintext":
-		return kafkaplain.Mechanism{Username: username, Password: password}, nil
-	case "scram-sha-256", "scram_sha_256", "scram256":
-		return kafkascram.Mechanism(kafkascram.SHA256, username, password)
-	case "scram-sha-512", "scram_sha_512", "scram512":
-		return kafkascram.Mechanism(kafkascram.SHA512, username, password)
-	default:
-		return nil, fmt.Errorf("不支持的 Kafka SASL 认证机制：%s", mechanism)
-	}
 }
 
 type kafkaParsedSQL struct {

@@ -11,6 +11,7 @@ import (
 	"GoNavi-Wails/internal/connection"
 
 	kafka "github.com/segmentio/kafka-go"
+	kafkasasl "github.com/segmentio/kafka-go/sasl"
 )
 
 type fakeKafkaRuntime struct {
@@ -56,6 +57,141 @@ type kafkaOffsetSeekerRecorder struct {
 	lastOffset  int64
 	seekOffset  int64
 	seekWhence  int
+}
+
+func TestKafkaRuntimeRecognizesSASLMechanismAliases(t *testing.T) {
+	for _, key := range []string{"mechanism", "saslMechanism", "sasl_mechanism", "sasl", "sasl.mechanism", "sasl.mechanisms", "librdkafka.sasl.mechanism", "librdkafka.sasl.mechanisms"} {
+		for _, location := range []string{"uri", "params"} {
+			t.Run(key+"/"+location, func(t *testing.T) {
+				config := connection.ConnectionConfig{Type: "kafka", URI: "kafka://test-user:test-password@127.0.0.1:9092"}
+				params := "librdkafka.security.protocol=SASL_PLAINTEXT&" + key + "=PLAIN"
+				if location == "uri" {
+					config.URI += "?" + params
+				} else {
+					config.ConnectionParams = params
+				}
+				runtime, err := newKafkaGoRuntime(normalizeKafkaConfig(config))
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer runtime.Close()
+				concrete := runtime.(*kafkaGoRuntime)
+				if concrete.transport.TLS != nil || concrete.dialer.TLS != nil {
+					t.Fatal("SASL_PLAINTEXT must not enable TLS")
+				}
+				for _, mechanism := range []kafkasasl.Mechanism{concrete.transport.SASL, concrete.dialer.SASLMechanism} {
+					if mechanism == nil {
+						t.Fatal("SASL mechanism was silently omitted")
+					}
+					if mechanism.Name() != "PLAIN" {
+						t.Fatalf("mechanism = %s", mechanism.Name())
+					}
+					_, response, err := mechanism.Start(context.Background())
+					if err != nil {
+						t.Fatal(err)
+					}
+					if string(response) != "\x00test-user\x00test-password" {
+						t.Fatal("PLAIN credentials not forwarded")
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestKafkaSASLAliasCompatibility(t *testing.T) {
+	for _, tc := range []struct {
+		name, uriParams, params, want string
+		wantError                     bool
+	}{
+		{name: "scram256", params: "librdkafka.sasl.mechanism=SCRAM-SHA-256", want: "SCRAM-SHA-256"},
+		{name: "scram512", params: "sasl.mechanisms=SCRAM-SHA-512", want: "SCRAM-SHA-512"},
+		{name: "unknown mechanism fails", params: "librdkafka.sasl.mechanism=GSSAPI", wantError: true},
+		{name: "no authentication"},
+		{name: "explicit none", params: "mechanism=none&librdkafka.sasl.mechanism=PLAIN"},
+		{name: "existing alias precedence", params: "mechanism=SCRAM-SHA-256&librdkafka.sasl.mechanism=PLAIN", want: "SCRAM-SHA-256"},
+		{name: "params override same URI key", uriParams: "librdkafka.sasl.mechanism=PLAIN", params: "librdkafka.sasl.mechanism=SCRAM-SHA-512", want: "SCRAM-SHA-512"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mechanism, err := kafkaSASLMechanism(connection.ConnectionConfig{
+				URI:              "kafka://127.0.0.1:9092?" + tc.uriParams,
+				ConnectionParams: tc.params, User: "test-user", Password: "test-password",
+			})
+			if (err != nil) != tc.wantError {
+				t.Fatalf("error = %v, wantError = %v", err, tc.wantError)
+			}
+			if tc.wantError {
+				return
+			}
+			if tc.want == "" {
+				if mechanism != nil {
+					t.Fatal("unexpected authentication")
+				}
+				return
+			}
+			if mechanism == nil || mechanism.Name() != tc.want {
+				t.Fatalf("mechanism = %v, want %s", mechanism, tc.want)
+			}
+		})
+	}
+}
+
+func TestKafkaExplicitTLSVerifiesCertificatesByDefault(t *testing.T) {
+	for _, protocol := range []string{"SSL", "SASL_SSL"} {
+		for _, mode := range []string{"", "preferred", "prefer", "disable", "required", "unexpected", "skip-verify", " INSECURE "} {
+			t.Run(protocol+"/"+mode, func(t *testing.T) {
+				config := normalizeKafkaConfig(connection.ConnectionConfig{
+					Type: "kafka", URI: "kafka://localhost:9092?librdkafka.security.protocol=" + protocol + "&mechanism=plain",
+					SSLMode: mode,
+				})
+				runtime, err := newKafkaGoRuntime(config)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer runtime.Close()
+				concrete := runtime.(*kafkaGoRuntime)
+				wantSkip := mode == "skip-verify" || mode == " INSECURE "
+				if concrete.transport.TLS == nil || concrete.dialer.TLS == nil {
+					t.Fatal("explicit TLS protocol did not enable TLS")
+				}
+				if concrete.transport.TLS.InsecureSkipVerify != wantSkip || concrete.dialer.TLS.InsecureSkipVerify != wantSkip {
+					t.Fatalf("certificate verification mismatch: want InsecureSkipVerify=%v", wantSkip)
+				}
+			})
+		}
+	}
+	legacy := normalizeKafkaConfig(connection.ConnectionConfig{UseSSL: true, SSLMode: "preferred"})
+	if legacy.SSLMode != "preferred" {
+		t.Fatal("changed legacy TLS configuration without an explicit security protocol")
+	}
+}
+
+func TestKafkaSecurityProtocols(t *testing.T) {
+	for _, protocol := range []string{"PLAINTEXT", "SSL", "SASL_PLAINTEXT", "SASL_SSL"} {
+		t.Run(protocol, func(t *testing.T) {
+			config := normalizeKafkaConfig(connection.ConnectionConfig{Type: "kafka", Host: "localhost", Port: 9092,
+				ConnectionParams: "security.protocol=" + protocol + "&mechanism=scram-sha-256", UseSSL: true, SSLMode: "disable", User: "test", Password: "test+pass=="})
+			runtime, err := newKafkaGoRuntime(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer runtime.Close()
+			concrete := runtime.(*kafkaGoRuntime)
+			wantTLS := protocol == "SSL" || protocol == "SASL_SSL"
+			wantSASL := strings.HasPrefix(protocol, "SASL_")
+			if (concrete.transport.TLS != nil) != wantTLS || (concrete.dialer.TLS != nil) != wantTLS {
+				t.Fatal("incorrect TLS configuration")
+			}
+			if (concrete.transport.SASL != nil) != wantSASL || (concrete.dialer.SASLMechanism != nil) != wantSASL {
+				t.Fatal("incorrect SASL configuration")
+			}
+		})
+	}
+	for _, params := range []string{"security.protocol=invalid", "security.protocol=SASL_SSL", "security.protocol=SASL_PLAINTEXT&mechanism=none"} {
+		if _, err := kafkaSASLMechanism(connection.ConnectionConfig{ConnectionParams: params}); err == nil {
+			t.Fatalf("expected error for %s", params)
+		}
+	}
 }
 
 func (s *kafkaOffsetSeekerRecorder) Seek(offset int64, whence int) (int64, error) {
