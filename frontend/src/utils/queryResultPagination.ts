@@ -1,5 +1,5 @@
 import { buildOrderBySQL, buildPaginatedSelectSQL, splitTrailingIsolationClause } from './sql';
-import { findTopLevelKeyword, getLeadingKeyword, splitSqlTail } from './queryAutoLimit';
+import { findTopLevelKeyword, isSelectStatement, splitSqlTail } from './queryAutoLimit';
 import { resolveSqlDialect } from './sqlDialect';
 
 export type QueryResultPaginationState = {
@@ -117,7 +117,7 @@ const wasLimitAppliedByQueryEditorCap = (
   }
 
   const pageSize = normalizePositiveInteger(fallbackPageSize);
-  if (pageSize <= 0 || getLeadingKeyword(exportBaseSql, dialect) !== 'select') return false;
+  if (pageSize <= 0 || !isSelectStatement(exportBaseSql, dialect)) return false;
 
   const queryEditorCappedSql = buildPaginatedSelectSQL(dialect, exportBaseSql, '', pageSize, 0);
   return normalizeSqlForComparison(executed) === normalizeSqlForComparison(queryEditorCappedSql);
@@ -230,7 +230,7 @@ export const createInitialQueryResultPagination = (params: {
 }): QueryResultPaginationState | undefined => {
   const executedSql = String(params.executedSql || '').trim();
   const dialect = resolveSqlDialect(params.dbType || 'mysql', params.driver || '');
-  if (!executedSql || getLeadingKeyword(executedSql, dialect) !== 'select') return undefined;
+  if (!executedSql || !isSelectStatement(executedSql, dialect)) return undefined;
   const explicitLimit = parseTopLevelLimit(executedSql, dialect);
   const mainSql = normalizePaginationStatement(executedSql, dialect);
   const fallbackPageSize = normalizePositiveInteger(params.fallbackPageSize);
@@ -244,7 +244,7 @@ export const createInitialQueryResultPagination = (params: {
   if (current <= 1 && returnedRowCount < pageSize) return undefined;
 
   const exportSql = String(params.exportSql || '').trim();
-  const exportAllSql = exportSql && getLeadingKeyword(exportSql, dialect) === 'select'
+  const exportAllSql = exportSql && isSelectStatement(exportSql, dialect)
     ? stripExplicitLimitForExport(exportSql, dialect)
     : stripExplicitLimitForExport(executedSql, dialect);
   const autoLimitCap = current === 1 && wasLimitAppliedByQueryEditorCap(

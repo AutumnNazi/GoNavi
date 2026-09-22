@@ -261,7 +261,10 @@ const DataGridPaginationBar: React.FC<DataGridPaginationBarProps> = ({
   };
   const handlePageSizeMenuOpenChange = (open: boolean) => {
     setPageSizeMenuOpen(open);
-    if (open && !customPageSizeInputRef.current) {
+    if (open) {
+      // 每次展开都以「当前生效的页大小」重置输入框，而不是仅在首次展开时预填：
+      // 若沿用上次残留的数字，用户用固定选项改过页大小后再展开会看到过期内容，
+      // 此时直接点勾/回车会把过期数字写回，静默覆盖掉刚选的固定项。
       const initialValue = pagination.pageSize > 0 ? String(pagination.pageSize) : '';
       customPageSizeInputRef.current = initialValue;
       setCustomPageSizeInput(initialValue);
@@ -325,7 +328,11 @@ const DataGridPaginationBar: React.FC<DataGridPaginationBarProps> = ({
               data-grid-custom-page-size-confirm="true"
               aria-label={translate('common.confirm')}
               onClick={submitCustomPageSize}
-              onMouseDown={(event) => event.stopPropagation()}
+              // 必须阻止 mousedown 的默认焦点转移：否则内嵌输入框立刻失焦，rc-select
+              // 收到 blur 即关闭弹层并播放退场动画，按钮在松开鼠标前被滑走，click 落在
+              // body 上，onClick 永不触发（表现为「填了数字点勾没反应」）。
+              // 仅 stopPropagation 无效，它拦不住默认行为。
+              onMouseDown={(event) => event.preventDefault()}
               style={{
                 width: 24,
                 minWidth: 24,

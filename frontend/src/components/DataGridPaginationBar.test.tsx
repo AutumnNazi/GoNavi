@@ -177,6 +177,78 @@ describe('DataGridPaginationBar custom page size values', () => {
     renderer.unmount();
   });
 
+  // 回归：曾经只在「ref 为空」时预填，导致整个会话只预填一次。用户用固定选项改过
+  // 页大小后再展开，输入框仍显示上一次残留的数字，此时直接点勾会把过期数字写回，
+  // 静默覆盖掉刚选的固定项。
+  it('re-syncs the custom input to the effective page size on every reopen', async () => {
+    const onPageSizeChange = vi.fn();
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<DataGridPaginationBar {...createProps(onPageSizeChange)} />);
+    });
+    const select = () => renderer.root.findAllByType(Select)[0];
+    const customInput = () => renderer.root.findByProps({ 'data-grid-custom-page-size-input': 'true' });
+
+    await act(async () => {
+      select().props.onOpenChange(true);
+    });
+    expect(customInput().props.value).toBe('100');
+
+    // 输入一个与当前生效值不同的数字，但不提交，直接关掉下拉。
+    await act(async () => {
+      customInput().props.onChange({ target: { value: '1500' } });
+    });
+    await act(async () => {
+      select().props.onOpenChange(false);
+    });
+
+    // 模拟用户改选固定项：生效页大小变为 200。
+    await act(async () => {
+      renderer.update(
+        <DataGridPaginationBar
+          {...createProps(onPageSizeChange)}
+          pagination={{ current: 1, pageSize: 200, total: 500, totalKnown: true }}
+        />,
+      );
+    });
+
+    await act(async () => {
+      renderer.root.findAllByType(Select)[0].props.onOpenChange(true);
+    });
+    expect(customInput().props.value).toBe('200');
+    renderer.unmount();
+  });
+
+  // 回归：勾号按钮曾只做 stopPropagation，挡不住 mousedown 的默认焦点转移，
+  // 内嵌输入框随即失焦，rc-select 收到 blur 后关闭弹层并播放退场动画，
+  // 按钮在 mouseup 之前被滑走，click 落到 body 上，onClick 永不触发 ——
+  // 表现为「填了数字点勾没反应」。必须 preventDefault 拦下焦点转移。
+  it('prevents the confirm button mousedown from stealing focus', async () => {
+    const onPageSizeChange = vi.fn();
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<DataGridPaginationBar {...createProps(onPageSizeChange)} />);
+    });
+    await act(async () => {
+      renderer.root.findAllByType(Select)[0].props.onOpenChange(true);
+    });
+    const confirmButton = renderer.root.findByProps({ 'data-grid-custom-page-size-confirm': 'true' });
+
+    const event = {
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    };
+    await act(async () => {
+      confirmButton.props.onMouseDown(event);
+    });
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    // stopPropagation 既非必要（window 捕获监听在它之前就执行），也非充分，
+    // 不应再依赖它来维持弹层开启。
+    expect(event.stopPropagation).not.toHaveBeenCalled();
+    renderer.unmount();
+  });
+
   it.each(['', '0', '-1', '12.5', '1e3', 'not-a-number', '9007199254740992'])(
     'keeps the custom input open for invalid value %j', async (value) => {
       const onPageSizeChange = vi.fn();
