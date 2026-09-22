@@ -5542,11 +5542,6 @@ body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-thead > tr > th:not(.is-s
   padding-right: 30px;
 }
 
-/* 数值/日期列右对齐：表头标题跟随单元格对齐（单元格对齐由列 align 内联样式生效） */
-body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-thead > tr > th.is-align-right .ant-table-column-sorters {
-  justify-content: flex-end;
-}
-
 body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-thead > tr > th.is-single-line-title {
   vertical-align: middle !important;
 }

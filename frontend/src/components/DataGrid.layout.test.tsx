@@ -296,6 +296,7 @@ describe('DataGrid layout', () => {
     );
 
     const columnHeader = (columnName: string) => markup.match(new RegExp(`<th[^>]*data-col-name="${columnName}"[^>]*>`))?.[0] || '';
+    const columnTitleBlock = (columnName: string) => markup.match(new RegExp(`<div class="gn-v2-column-title[^"]*" data-column-name="${columnName}"[^>]*style="[^"]*"`))?.[0] || '';
 
     expect(columnHeader('id')).toContain('is-align-right');
     expect(columnHeader('id')).toContain('text-align:right');
@@ -303,7 +304,12 @@ describe('DataGrid layout', () => {
     expect(columnHeader('created_at')).toContain('is-align-right');
     expect(columnHeader('name')).not.toContain('is-align-right');
     expect(columnHeader('name')).not.toContain('text-align:right');
-    expect(markup).toContain('align-items:flex-end');
+
+    expect(columnTitleBlock('amount')).toContain('align-items:flex-end');
+    expect(columnTitleBlock('id')).toContain('align-items:flex-end');
+    expect(columnTitleBlock('created_at')).toContain('align-items:flex-end');
+    expect(columnTitleBlock('name')).toContain('align-items:flex-start');
+    expect(columnTitleBlock('name')).not.toContain('align-items:flex-end');
   });
 
   it('refreshes DataGrid localized chrome when the language preference changes', () => {
