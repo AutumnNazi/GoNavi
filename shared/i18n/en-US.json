@@ -1,4 +1,6 @@
 {
+  "app.shortcuts.action.optimizeQueryWithAI.label": "AI Optimize",
+  "app.shortcuts.action.optimizeQueryWithAI.description": "Send selected SQL or the entire editor contents to the AI panel for optimization",
   "ai.service.mcp_client.claude_code.config_dir_create_failed": "Failed to create Claude Code configuration directory: {{detail}}",
   "ai.service.mcp_client.claude_code.config_format_invalid": "Claude Code configuration format is invalid: {{path}} should be {{expected}}",
   "ai.service.mcp_client.claude_code.config_parse_failed": "Failed to parse Claude Code configuration: {{detail}}",

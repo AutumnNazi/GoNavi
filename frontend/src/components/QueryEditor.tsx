@@ -352,6 +352,7 @@ import {
 } from './queryEditor/QueryEditorHelpers';
 import { duplicateCurrentLineInEditor } from './queryEditor/queryEditorDuplicateLine';
 import { registerQueryEditorShortcutAction } from './queryEditor/queryEditorShortcutRegistration';
+import { useQueryEditorAIAction } from './queryEditor/useQueryEditorAIAction';
 import { registerQueryEditorCommentAction, resolveToggleLineCommentBindingPlan, runMonacoToggleLineComment } from './queryEditor/queryEditorCommentActions';
 import { finalizeQueryEditorSqlServerResultSets, resolveQueryEditorExecutionSuccessToast } from './queryEditor/queryEditorSqlServerResultMessages';
 import {
@@ -9441,25 +9442,15 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       void message.success(translate('query_editor.message.format_restore_success'));
   };
 
+  const runAIAction = useQueryEditorAIAction({
+      isActive, shortcuts: shortcutOptions, platform: activeShortcutPlatform,
+      getSelection: () => editorRef.current?.getModel()?.getValueInRange(editorRef.current.getSelection()) || '',
+      getSQL: getCurrentQuery, placeholder: QUERY_EDITOR_SQL_PROMPT_PLACEHOLDER,
+      connection: connections.find((c) => c.id === currentConnectionId), database: currentDb,
+      openGenerate: openTextToSqlModal,
+  });
   const handleAIAction = (action: 'generate' | 'explain' | 'optimize' | 'schema') => {
-      if (action === 'generate') {
-          openTextToSqlModal();
-          return;
-      }
-
-      const editor = editorRef.current;
-      const selection = editor?.getModel()?.getValueInRange(editor.getSelection()) || '';
-      const fullSQL = getCurrentQuery();
-      const prompts: Record<string, string> = {
-          explain: translate('query_editor.ai_prompt.explain', { sql: selection || fullSQL || QUERY_EDITOR_SQL_PROMPT_PLACEHOLDER }),
-          optimize: translate('query_editor.ai_prompt.optimize', { sql: selection || fullSQL || QUERY_EDITOR_SQL_PROMPT_PLACEHOLDER }),
-          schema: translate('query_editor.ai_prompt.schema'),
-      };
-      void injectQueryEditorAiPromptWithContext({
-          connection: connections.find((c) => c.id === currentConnectionId),
-          database: currentDb,
-          prompt: prompts[action] || '',
-      });
+      runAIAction(action);
   };
 
   const formatSettingsMenu: MenuProps['items'] = [

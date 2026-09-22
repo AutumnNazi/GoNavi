@@ -8,9 +8,11 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 // object literal, so its identity changes on every parent render. The designer
 // must not re-run its metadata RPCs just because the parent re-rendered.
 const columnFetchCalls: number[] = [];
+let columnFixture: Array<Record<string, unknown>> = [];
 
 beforeEach(() => {
   columnFetchCalls.length = 0;
+  columnFixture = [];
 });
 
 beforeAll(() => {
@@ -32,7 +34,7 @@ beforeAll(() => {
 vi.mock('../../wailsjs/go/app/App', () => ({
   DBGetColumns: vi.fn(() => {
     columnFetchCalls.push(1);
-    return Promise.resolve({ success: true, data: [] });
+    return Promise.resolve({ success: true, data: columnFixture });
   }),
   DBGetIndexes: vi.fn(() => Promise.resolve({ success: true, data: [] })),
   DBGetForeignKeys: vi.fn(() => Promise.resolve({ success: true, data: [] })),
@@ -80,6 +82,27 @@ const buildEmbeddedTab = (tableName: string) => ({
 });
 
 describe('TableDesigner metadata fetch lifetime', () => {
+  it('keeps a renamed field editable across parent rerenders', async () => {
+    const { default: TableDesigner } = await import('./TableDesigner');
+    const { Simulate } = await import('react-dom/test-utils');
+    columnFixture = [{ name: 'old_name', type: 'varchar(64)', nullable: 'YES', key: '', extra: '' }];
+    const host = document.createElement('div');
+    document.body.append(host);
+    const root = createRoot(host);
+    const tab = { ...buildEmbeddedTab('users'), readOnly: false };
+    try {
+      await act(async () => root.render(<TableDesigner embedded tab={tab} />));
+      await flush();
+      const input = host.querySelector<HTMLInputElement>('.ant-table-tbody .table-designer-cell-field input')!;
+      expect(input.value).toBe('old_name');
+      expect(host.querySelector('.table-designer-comment-field button')).toBeNull();
+      expect(host.querySelector('.table-designer-action-cell [aria-label="edit"]')).not.toBeNull();
+      await act(async () => { Simulate.change(input, { target: { value: 'new_name' } } as never); });
+      expect(input.value).toBe('new_name');
+      await act(async () => root.render(<TableDesigner embedded tab={{ ...tab }} />));
+      expect(host.querySelector<HTMLInputElement>('.ant-table-tbody .table-designer-cell-field input')?.value).toBe('new_name');
+    } finally { await act(async () => root.unmount()); host.remove(); }
+  }, 60000);
   it('does not refetch when only the parent re-renders with a new tab identity', async () => {
     const { default: TableDesigner } = await import('./TableDesigner');
     const Host = ({ tick }: { tick: number }) => (

@@ -3495,7 +3495,7 @@ body[data-ui-version="v2"] .gn-v2-tree-title {
   font-family: var(--gn-font-sans);
   font-size: var(--gn-sidebar-tree-font-size, var(--gn-font-size-sm, 12px));
   font-weight: 400 !important;
-  line-height: 1.25;
+  line-height: 1.5;
 }
 
 body[data-ui-version="v2"] .gn-v2-tree-title.is-mono {

@@ -28,6 +28,7 @@ export type ShortcutAction =
   | 'resetWindowZoom'
   | 'diagnoseQuery'
   | 'diagnoseExecutionError'
+  | 'optimizeQueryWithAI'
   | 'showSlowQueries';
 
 export type ShortcutPlatform = 'mac' | 'windows';
@@ -131,6 +132,7 @@ export const SHORTCUT_ACTION_ORDER: ShortcutAction[] = [
   'toggleTheme',
   'diagnoseQuery',
   'diagnoseExecutionError',
+  'optimizeQueryWithAI',
   'showSlowQueries',
   'openShortcutManager',
   'toggleMacFullscreen',
@@ -281,6 +283,12 @@ const SHORTCUT_ACTION_META_DEFINITIONS: Record<ShortcutAction, ShortcutActionMet
     scope: 'queryEditor',
     allowInEditable: true,
   },
+  optimizeQueryWithAI: {
+    labelKey: 'app.shortcuts.action.optimizeQueryWithAI.label',
+    descriptionKey: 'app.shortcuts.action.optimizeQueryWithAI.description',
+    scope: 'queryEditor',
+    allowInEditable: true,
+  },
   showSlowQueries: {
     labelKey: 'app.shortcuts.action.showSlowQueries.label',
     descriptionKey: 'app.shortcuts.action.showSlowQueries.description',
@@ -403,6 +411,10 @@ export const DEFAULT_SHORTCUT_OPTIONS: ShortcutOptions = {
   diagnoseExecutionError: {
     mac: { combo: 'Meta+Shift+A', enabled: true },
     windows: { combo: 'Ctrl+Shift+A', enabled: true },
+  },
+  optimizeQueryWithAI: {
+    mac: { combo: 'Meta+Alt+O', enabled: true },
+    windows: { combo: 'Ctrl+Alt+O', enabled: true },
   },
   // 慢查询历史：避开 toggleLogPanel 的 Ctrl+H / Meta+Shift+H，用 Ctrl+Shift+L（L = Log）
   showSlowQueries: {
