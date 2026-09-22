@@ -87,14 +87,18 @@ func TestWindowsShortcutBrandIconDoesNotWriteUnsupportedWScriptAUMID(t *testing.
 		`GPS_READWRITE`,
 		`SetRelaunchProperties`,
 		`$isTaskbarShortcut`,
-		`Set-GoNaviShortcutRelaunchProperties -ShortcutPath $shortcutFile.FullName`,
+		`Set-GoNaviShortcutRelaunchProperties -ShortcutPath $pin.FullName`,
 		`$useTaskbarPropertyStore`,
 		`repaired legacy taskbar pin properties`,
+		`Do not write System.AppUserModel.Relaunch*`,
 		`continue`,
 	} {
 		if !strings.Contains(script, token) {
 			t.Fatalf("taskbar pin migration missing %q:\n%s", token, script)
 		}
+	}
+	if strings.Contains(script, `Set-GoNaviShortcutRelaunchProperties -ShortcutPath $shortcutFile.FullName`) {
+		t.Fatalf("brand icon updates must not write relaunch properties onto taskbar pins:\n%s", script)
 	}
 }
 
