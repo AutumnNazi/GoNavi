@@ -205,12 +205,10 @@ import {
 import { SQL_EDITOR_AUTO_COMMIT_DELAY_OPTIONS } from './QueryEditorTransactionSettings';
 import QueryEditorTransactionToolbar from './QueryEditorTransactionToolbar';
 import { decorateV2MonacoContextMenu } from './common/V2ActionMenuPopup';
-import QueryEditorToolbar, {
-    formatQueryExecutionElapsed,
-    resolveQueryExecutionSpeedIcon,
-    resolveReportedQueryDurationMs,
-    useQueryExecutionElapsed,
-} from './QueryEditorToolbar';
+import QueryEditorToolbar from './QueryEditorToolbar';
+import { formatQueryExecutionElapsed, resolveQueryExecutionSpeedIcon, resolveReportedQueryDurationMs, useQueryExecutionElapsed } from './queryEditor/queryEditorExecutionTimer';
+import { useQueryEditorFullscreen } from './queryEditor/useQueryEditorFullscreen';
+import { QueryEditorToolbarFullscreenAction } from './queryEditor/QueryEditorToolbarFullscreenAction';
 import { useQueryEditorExecutionLifecycle } from './queryEditor/useQueryEditorExecutionLifecycle';
 import { useQueryEditorSqlErrorLocator } from './queryEditor/useQueryEditorSqlErrorLocator';
 import { useQueryEditorErrorDiagnose } from './queryEditor/useQueryEditorErrorDiagnose';
@@ -2771,6 +2769,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       () => resolveShortcutBinding(shortcutOptions, 'toggleQueryResultsPanel', activeShortcutPlatform),
       [activeShortcutPlatform, shortcutOptions],
   );
+  const editorFullscreen = useQueryEditorFullscreen({ isActive, shortcutOptions, activeShortcutPlatform, editorRef, rootRef: queryEditorRootRef, editorHeight, resultsPanelVisible: isResultPanelVisible });
   const findInEditorShortcutCombo = useMemo(
       () => activeShortcutPlatform === 'mac' ? 'Meta+F' : 'Ctrl+F',
       [activeShortcutPlatform],
@@ -5590,7 +5589,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   }, [queryEditorEditorHeightRatio, resolveEditorSplitAvailableHeight]);
 
   useEffect(() => {
-      if (!isResultPanelVisible || !isActive) return;
+      if (editorFullscreen.active || !isResultPanelVisible || !isActive) return;
       let frame: number | null = null;
       const requestFrame = typeof window.requestAnimationFrame === 'function'
           ? window.requestAnimationFrame.bind(window)
@@ -5622,7 +5621,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           resizeObserver?.disconnect();
           window.removeEventListener('resize', scheduleApply);
       };
-  }, [applyEditorHeightRatio, isActive, isResultPanelVisible, tab.id]);
+  }, [applyEditorHeightRatio, editorFullscreen.active, isActive, isResultPanelVisible, tab.id]);
 
   const applyEditorHeightToDom = useCallback(() => {
       const nextHeight = pendingEditorHeightRef.current;
@@ -13411,28 +13410,16 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           onFinish={(action) => void handleFinishPendingSqlTransaction(action)}
       />
   );
-  const queryEditorStageStyle: React.CSSProperties = isResultPanelVisible
-      ? {
-          height: editorHeight,
-          minHeight: '100px',
-      }
-      : {
-          flex: '1 1 auto',
-          minHeight: 0,
-      };
-  const resolvedQueryEditorStageStyle: React.CSSProperties = {
-          ...queryEditorStageStyle,
-      } as React.CSSProperties;
-
   return (
     <div ref={queryEditorRootRef} className="gn-v2-query-editor" style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <div
         ref={editorPaneRef}
         className="gn-v2-query-editor-pane"
-        style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: isResultPanelVisible ? '0 0 auto' : '1 1 auto' }}
+        style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: editorFullscreen.resultsAreaMounted ? '0 0 auto' : '1 1 auto' }}
       >
       <QueryEditorToolbar
         editorMode={isElasticsearchMode ? 'elasticsearch' : 'sql'}
+        editorFullscreenAction={<QueryEditorToolbarFullscreenAction active={editorFullscreen.active} shortcutBinding={editorFullscreen.shortcutBinding} activeShortcutPlatform={activeShortcutPlatform} onToggle={editorFullscreen.toggle} />}
         currentConnectionId={currentConnectionId}
         currentDb={currentDb}
         queryCapableConnections={queryCapableConnections}
@@ -13529,7 +13516,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       <div
         ref={editorStageRef}
         className="gn-v2-query-monaco-stage gn-query-monaco-stage"
-        style={resolvedQueryEditorStageStyle}
+        style={editorFullscreen.stageStyle}
       >
         <div
           ref={editorShellRef}
@@ -13579,7 +13566,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         </div>
       </div>
 
-      {isResultPanelVisible && (
+      {editorFullscreen.resultsAreaMounted && (
         <div
           className="gn-v2-query-resizer"
           onMouseDown={handleMouseDown}
@@ -13595,7 +13582,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       )}
       </div>
 
-      {isResultPanelVisible && (
+      {editorFullscreen.resultsAreaMounted && (
         <QueryEditorResultsPanel
           workbenchTabId={tab.id}
           resultSets={resultSets}

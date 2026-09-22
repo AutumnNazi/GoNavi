@@ -13,6 +13,7 @@ export type ShortcutAction =
   | 'triggerSqlAiCompletion'
   | 'acceptSqlAiCompletion'
   | 'toggleQueryResultsPanel'
+  | 'toggleEditorFullscreen'
   | 'sendAIChatMessage'
   | 'focusSidebarSearch'
   | 'newQueryTab'
@@ -120,6 +121,7 @@ export const SHORTCUT_ACTION_ORDER: ShortcutAction[] = [
   'triggerSqlAiCompletion',
   'acceptSqlAiCompletion',
   'toggleQueryResultsPanel',
+  'toggleEditorFullscreen',
   'sendAIChatMessage',
   'focusSidebarSearch',
   'newQueryTab',
@@ -218,6 +220,13 @@ const SHORTCUT_ACTION_META_DEFINITIONS: Record<ShortcutAction, ShortcutActionMet
     descriptionKey: 'app.shortcuts.action.toggleQueryResultsPanel.description',
     scope: 'queryEditor',
     allowInEditable: true,
+  },
+  toggleEditorFullscreen: {
+    labelKey: 'app.shortcuts.action.toggleEditorFullscreen.label',
+    descriptionKey: 'app.shortcuts.action.toggleEditorFullscreen.description',
+    scope: 'queryEditor',
+    allowInEditable: true,
+    allowWithoutModifier: true,
   },
   sendAIChatMessage: {
     labelKey: 'app.shortcuts.action.sendAIChatMessage.label',
@@ -361,6 +370,12 @@ export const DEFAULT_SHORTCUT_OPTIONS: ShortcutOptions = {
   toggleQueryResultsPanel: {
     mac: { combo: 'Meta+Shift+M', enabled: true },
     windows: { combo: 'Ctrl+Shift+M', enabled: true },
+  },
+  // 编辑器面板全屏：Windows 用浏览器习惯的 F11；macOS 下裸 F11 被系统
+  // 「显示桌面」占用，改用 Ctrl+F11。与 toggleMacFullscreen（窗口级全屏）不冲突。
+  toggleEditorFullscreen: {
+    mac: { combo: 'Ctrl+F11', enabled: true },
+    windows: { combo: 'F11', enabled: true },
   },
   sendAIChatMessage: {
     mac: { combo: 'Enter', enabled: true },

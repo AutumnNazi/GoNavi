@@ -636,6 +636,8 @@ vi.mock('@ant-design/icons', () => {
     EyeOutlined: Icon,
     FileTextOutlined: Icon,
     FormatPainterOutlined: Icon,
+    FullscreenExitOutlined: Icon,
+    FullscreenOutlined: Icon,
     HistoryOutlined: Icon,
     KeyOutlined: Icon,
     LoadingOutlined: Icon,

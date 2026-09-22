@@ -480,6 +480,8 @@ vi.mock('@ant-design/icons', () => {
     SaveOutlined: Icon,
     UndoOutlined: Icon,
     FormatPainterOutlined: Icon,
+    FullscreenExitOutlined: Icon,
+    FullscreenOutlined: Icon,
     SettingOutlined: Icon,
     CloseOutlined: Icon,
     StopOutlined: Icon,
