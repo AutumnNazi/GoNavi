@@ -4017,6 +4017,8 @@
   "connection_modal.field.readOnly.compatibility": "Если включить все опции, поведение будет соответствовать прежней защите прод-подключения «только запросы».",
   "connection_modal.field.readOnly.help": "Выберите только те ограничения, которые нужны для редактирования результатов, изменения структуры, выполнения скриптов и операций импорта или синхронизации.",
   "connection_modal.field.readOnly.label": "Защита прод-подключения",
+  "connection_modal.field.readOnly.option.all.label": "Только чтение (выбрать все)",
+  "connection_modal.field.readOnly.option.all.help": "При включении эквивалентно выбору всех ограничений: блокирует все операции записи на этом подключении.",
   "connection_modal.field.readOnly.option.dataEdit.help": "Запретить прямое редактирование в таблице результатов, массовую очистку и операции записи при публикации сообщений для этого подключения.",
   "connection_modal.field.readOnly.option.nacos.dataEdit.help": "Запретить публикацию и удаление конфигураций, а также регистрацию, изменение, удаление и изменение состояния экземпляров сервиса.",
   "connection_modal.field.readOnly.option.nacos.structureEdit.help": "Запретить создание, изменение и удаление пространств имён и сервисов.",
