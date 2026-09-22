@@ -1,4 +1,6 @@
 {
+  "app.shortcuts.action.optimizeQueryWithAI.label": "AI 优化",
+  "app.shortcuts.action.optimizeQueryWithAI.description": "将选中 SQL 或编辑器全文发送到 AI 面板进行优化",
   "ai.service.mcp_client.claude_code.config_dir_create_failed": "创建 Claude Code 配置目录失败：{{detail}}",
   "ai.service.mcp_client.claude_code.config_format_invalid": "Claude Code 配置格式异常：{{path}} 应为 {{expected}}",
   "ai.service.mcp_client.claude_code.config_parse_failed": "解析 Claude Code 配置失败：{{detail}}",

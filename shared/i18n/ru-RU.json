@@ -1,4 +1,6 @@
 {
+  "app.shortcuts.action.optimizeQueryWithAI.label": "Оптимизация ИИ",
+  "app.shortcuts.action.optimizeQueryWithAI.description": "Отправить выделенный SQL или весь текст редактора на панель ИИ для оптимизации",
   "ai.service.mcp_client.claude_code.config_dir_create_failed": "Не удалось создать каталог конфигурации Claude Code: {{detail}}",
   "ai.service.mcp_client.claude_code.config_format_invalid": "Неверный формат конфигурации Claude Code: {{path}} должен быть {{expected}}",
   "ai.service.mcp_client.claude_code.config_parse_failed": "Не удалось разобрать конфигурацию Claude Code: {{detail}}",

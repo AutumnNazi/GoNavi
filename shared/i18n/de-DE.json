@@ -1,4 +1,6 @@
 {
+  "app.shortcuts.action.optimizeQueryWithAI.label": "KI-Optimierung",
+  "app.shortcuts.action.optimizeQueryWithAI.description": "Ausgewähltes SQL oder den gesamten Editorinhalt zur Optimierung an das KI-Panel senden",
   "ai.service.mcp_client.claude_code.config_dir_create_failed": "Claude Code-Konfigurationsverzeichnis konnte nicht erstellt werden: {{detail}}",
   "ai.service.mcp_client.claude_code.config_format_invalid": "Das Format der Claude Code-Konfiguration ist ungültig: {{path}} muss {{expected}} sein",
   "ai.service.mcp_client.claude_code.config_parse_failed": "Claude Code-Konfiguration konnte nicht geparst werden: {{detail}}",

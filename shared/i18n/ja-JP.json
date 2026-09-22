@@ -1,4 +1,6 @@
 {
+  "app.shortcuts.action.optimizeQueryWithAI.label": "AI 最適化",
+  "app.shortcuts.action.optimizeQueryWithAI.description": "選択した SQL またはエディター全体を AI パネルに送信して最適化",
   "ai.service.mcp_client.claude_code.config_dir_create_failed": "Claude Code 設定ディレクトリの作成に失敗しました: {{detail}}",
   "ai.service.mcp_client.claude_code.config_format_invalid": "Claude Code 設定の形式が正しくありません: {{path}} は {{expected}} である必要があります",
   "ai.service.mcp_client.claude_code.config_parse_failed": "Claude Code 設定の解析に失敗しました: {{detail}}",
