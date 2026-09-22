@@ -6,43 +6,27 @@ import (
 	"testing"
 )
 
-func TestWindowsApplicationUserModelIDForIconPathRotatesOnlyForBrandICO(t *testing.T) {
-	cases := []struct {
-		name     string
-		iconPath string
-		want     string
-	}{
-		{"empty path keeps base identity", "", windowsApplicationUserModelID},
-		{"executable icon keeps base identity", `C:\Program Files\GoNavi\GoNavi.exe`, windowsApplicationUserModelID},
-		{"legacy icon without hash keeps base identity", `C:\icons\gonavi-brand.ico`, windowsApplicationUserModelID},
-		{"non-hex token keeps base identity", `C:\icons\gonavi-brand-not-hex.ico`, windowsApplicationUserModelID},
-		{"empty token keeps base identity", `C:\icons\gonavi-brand-.ico`, windowsApplicationUserModelID},
-		{
-			"hashed brand icon rotates identity",
-			`C:\Users\tester\.gonavi\application-icons\gonavi-brand-d89e4f026a938e22fe081e12.ico`,
-			"Syngnat.GoNavi.Icon.d89e4f026a938e22fe081e12",
-		},
-		{
-			"uppercase hash is normalized to lowercase",
-			`C:\icons\gonavi-brand-ABCDEF0123456789ABCDEF12.ico`,
-			"Syngnat.GoNavi.Icon.abcdef0123456789abcdef12",
-		},
-		{
-			"forward slashed path rotates the same way",
-			`C:/icons/gonavi-brand-deadbeef01.ico`,
-			"Syngnat.GoNavi.Icon.deadbeef01",
-		},
+func TestWindowsApplicationUserModelIDForIconPathStaysStable(t *testing.T) {
+	cases := []string{
+		"",
+		`C:\Program Files\GoNavi\GoNavi.exe`,
+		`C:\icons\gonavi-brand.ico`,
+		`C:\icons\gonavi-brand-not-hex.ico`,
+		`C:\icons\gonavi-brand-.ico`,
+		`C:\Users\tester\.gonavi\application-icons\gonavi-brand-d89e4f026a938e22fe081e12.ico`,
+		`C:\icons\gonavi-brand-ABCDEF0123456789ABCDEF12.ico`,
+		`C:/icons/gonavi-brand-deadbeef01.ico`,
 	}
-	for _, testCase := range cases {
-		t.Run(testCase.name, func(t *testing.T) {
-			if got := windowsApplicationUserModelIDForIconPath(testCase.iconPath); got != testCase.want {
-				t.Fatalf("windowsApplicationUserModelIDForIconPath(%q) = %q, want %q", testCase.iconPath, got, testCase.want)
+	for _, iconPath := range cases {
+		t.Run(iconPath, func(t *testing.T) {
+			if got := windowsApplicationUserModelIDForIconPath(iconPath); got != windowsApplicationUserModelID {
+				t.Fatalf("windowsApplicationUserModelIDForIconPath(%q) = %q, want %q", iconPath, got, windowsApplicationUserModelID)
 			}
 		})
 	}
 }
 
-func TestWindowsApplicationUserModelIDForStartupFollowsPersistedSelection(t *testing.T) {
+func TestWindowsApplicationUserModelIDForStartupIgnoresPersistedSelection(t *testing.T) {
 	configDir := t.TempDir()
 	if got := windowsApplicationUserModelIDForStartup(configDir); got != windowsApplicationUserModelID {
 		t.Fatalf("startup identity without selection = %q, want %q", got, windowsApplicationUserModelID)
@@ -59,8 +43,21 @@ func TestWindowsApplicationUserModelIDForStartupFollowsPersistedSelection(t *tes
 	if err := os.WriteFile(filepath.Join(iconDir, windowsApplicationIconStateFileName), []byte(iconName+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	want := "Syngnat.GoNavi.Icon.d89e4f026a938e22fe081e12"
-	if got := windowsApplicationUserModelIDForStartup(configDir); got != want {
-		t.Fatalf("startup identity with selection = %q, want %q", got, want)
+	if got := windowsApplicationUserModelIDForStartup(configDir); got != windowsApplicationUserModelID {
+		t.Fatalf("startup identity with selection = %q, want %q", got, windowsApplicationUserModelID)
+	}
+}
+
+func TestWindowsBrandShortcutMatchTargetOnlyEnv(t *testing.T) {
+	portableDir := t.TempDir()
+	if got := windowsBrandShortcutMatchTargetOnlyEnv(filepath.Join(portableDir, "GoNavi.exe")); got != "1" {
+		t.Fatalf("portable match-target flag = %q, want 1", got)
+	}
+	msiDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(msiDir, windowsMSIInstallMarker), []byte("MSI"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := windowsBrandShortcutMatchTargetOnlyEnv(filepath.Join(msiDir, "GoNavi.exe")); got != "0" {
+		t.Fatalf("MSI match-target flag = %q, want 0", got)
 	}
 }

@@ -1,60 +1,37 @@
 package app
 
-import (
-	"strings"
-)
-
-// windowsApplicationUserModelID is the base Windows taskbar identity for
-// GoNavi. Explorer caches the taskbar group icon under this key and never
-// re-renders it, so any brand-icon selection must rotate to a fresh identity
-// instead of reusing the cached one.
+// windowsApplicationUserModelID is the Windows taskbar identity for GoNavi.
+// It is the same value written on the MSI shortcuts. Explorer binds a pinned
+// button to this ID for the life of the pin. Replacing it with a per-icon ID
+// detaches that button: an MSI pin stops grouping with the running window, and
+// a portable pin is removed.
 const windowsApplicationUserModelID = "Syngnat.GoNavi"
 
-const (
-	windowsApplicationUserModelIDIconPrefix = "gonavi-brand-"
-	windowsApplicationUserModelIDIconSuffix = ".Icon."
-)
-
-// windowsApplicationUserModelIDForIconPath derives the taskbar identity from a
-// content-addressed brand ICO (gonavi-brand-<hash>.ico). The hash token makes
-// each selection a brand-new identity for Explorer, which forces the taskbar
-// group to render the new icon instead of serving the bitmap cached under the
-// previous identity. Paths outside the brand-icon scheme keep the base
-// identity.
-//
-// 文件名提取同时识别 \ 与 /：不能用 filepath.Base——Linux 上反斜杠是普通字符，
-// 整条 Windows 路径会被当成一个文件名，轮换判定随宿主 OS 漂移（CI 全量套件
-// 曾因此在 Linux 连红）。AUMID 虽是 Windows 概念，但解析逻辑必须跨平台确定。
+// windowsApplicationUserModelIDForIconPath returns the taskbar identity used
+// while iconPath is the active brand icon. The path used to be hashed into the
+// ID so Explorer would discard a cached bitmap. That also orphaned pinned
+// shortcuts, so every icon keeps the installer identity. Callers still pass
+// the active ICO; the bitmap is updated through the shortcut icon and
+// WM_SETICON, not through a new ID.
 func windowsApplicationUserModelIDForIconPath(iconPath string) string {
-	name := iconPath
-	if index := strings.LastIndexAny(name, `\/`); index >= 0 {
-		name = name[index+1:]
-	}
-	name = strings.TrimSuffix(name, ".ico")
-	if !strings.HasPrefix(name, windowsApplicationUserModelIDIconPrefix) {
-		return windowsApplicationUserModelID
-	}
-	token := strings.ToLower(strings.TrimPrefix(name, windowsApplicationUserModelIDIconPrefix))
-	if token == "" || len(token) > 64 {
-		return windowsApplicationUserModelID
-	}
-	for _, r := range token {
-		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
-			return windowsApplicationUserModelID
-		}
-	}
-	return windowsApplicationUserModelID + windowsApplicationUserModelIDIconSuffix + token
+	_ = iconPath
+	return windowsApplicationUserModelID
 }
 
-// windowsApplicationUserModelIDForStartup derives the process identity from the
-// persisted brand selection. It must run before the first window exists so the
-// taskbar groups the window under an identity whose icon cache already matches
-// the active icon. Any read failure degrades to the base identity, which keeps
-// a broken state file from stranding the window on an orphaned group.
+// windowsApplicationUserModelIDForStartup is fixed before the first window
+// exists. It intentionally ignores the persisted icon so a previous per-icon
+// identity cannot start the process in a different taskbar group from the pin.
 func windowsApplicationUserModelIDForStartup(configDir string) string {
-	iconPath, err := loadPersistedWindowsApplicationIcon(configDir)
-	if err != nil || strings.TrimSpace(iconPath) == "" {
-		return windowsApplicationUserModelID
+	_ = configDir
+	return windowsApplicationUserModelID
+}
+
+// windowsBrandShortcutMatchTargetOnlyEnv is "1" unless this executable is the
+// MSI install. A portable process may sit next to an MSI pin; it may refresh
+// its own shortcut icon, but it must not rewrite the other pin.
+func windowsBrandShortcutMatchTargetOnlyEnv(executablePath string) string {
+	if resolveUpdateInstallModeForExecutable("windows", executablePath) == updateInstallModeMSI {
+		return "0"
 	}
-	return windowsApplicationUserModelIDForIconPath(iconPath)
+	return "1"
 }

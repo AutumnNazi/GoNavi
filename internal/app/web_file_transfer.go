@@ -853,11 +853,39 @@ func (target *webDownloadTarget) openFile() (webTransferOutputFile, error) {
 	return managed, nil
 }
 
-func openExportFileForTarget(target *webDownloadTarget, filename string) (io.WriteCloser, error) {
+// openExportFileForTarget 打开导出目标。桌面目标改走同目录临时文件的原子
+// 替换（第二返回值非 nil）：查询、编码、取消或落盘失败时调用方 abort 清理
+// 临时文件，既有目标文件在成功提交前保持不变；Web 下载目标行为不变
+// （第二返回值恒为 nil，无提交/回滚语义）。
+func openExportFileForTarget(target *webDownloadTarget, filename string) (io.WriteCloser, *atomicExportTarget, error) {
 	if target != nil {
-		return target.openFile()
+		f, err := target.openFile()
+		return f, nil, err
 	}
-	return os.Create(filename)
+	atomic, err := createAtomicExportTarget(filename)
+	if err != nil {
+		return nil, nil, err
+	}
+	return atomic.file, atomic, nil
+}
+
+// finishExportFileTarget 提交导出结果：桌面原子目标 Sync+Close 后原子替换
+// 既有文件；Web 目标仅关闭。与 openExportFileForTarget 成对使用。
+func finishExportFileTarget(f io.WriteCloser, atomic *atomicExportTarget) error {
+	if atomic != nil {
+		return atomic.commit()
+	}
+	return closeExportFile(f)
+}
+
+// cleanupExportFileTarget 清理未提交的导出句柄：原子目标删除临时文件
+// （已提交时为 no-op），Web 目标与桌面裸句柄直接关闭。
+func cleanupExportFileTarget(f io.WriteCloser, atomic *atomicExportTarget) {
+	if atomic != nil {
+		atomic.abort()
+		return
+	}
+	_ = f.Close()
 }
 
 func webDownloadBudgetForTarget(target *webDownloadTarget) *webTransferBudget {

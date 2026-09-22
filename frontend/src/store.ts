@@ -201,6 +201,8 @@ export type ThemePreference = ThemeMode | "system";
 /** AI 聊天默认打开形态：侧栏 / 独立浮动窗 */
 export type AIChatOpenMode = "dock" | "detached";
 
+export type TitlebarMenuStyle = 'classic' | 'view-menu';
+
 export interface AppearanceSettings
   extends DataGridDisplaySettings, SqlEditorTypographySettings {
   enabled: boolean;
@@ -208,6 +210,7 @@ export interface AppearanceSettings
   blur: number;
   tableDoubleClickAction: TableDoubleClickAction;
   queryTableCtrlClickAction: QueryTableCtrlClickAction;
+  titlebarMenuStyle: TitlebarMenuStyle;
   v2SidebarSearchMode: "command" | "filter";
   v2SidebarPersistedFilter: string;
   v2SidebarRailScale: number;
@@ -238,6 +241,7 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   blur: 0,
   tableDoubleClickAction: "open-data",
   queryTableCtrlClickAction: "open-design",
+  titlebarMenuStyle: "classic",
   v2SidebarSearchMode: "command",
   v2SidebarPersistedFilter: "",
   v2SidebarRailScale: DEFAULT_V2_SIDEBAR_RAIL_SCALE,
@@ -293,6 +297,11 @@ const sanitizeQueryTableCtrlClickAction = (
   value: unknown,
 ): QueryTableCtrlClickAction => {
   return value === "locate" ? "locate" : DEFAULT_APPEARANCE.queryTableCtrlClickAction;
+};
+
+/** 未知值一律回退经典模式，保证老配置升级后标题栏外观不变。 */
+export const sanitizeTitlebarMenuStyle = (value: unknown): TitlebarMenuStyle => {
+  return value === "view-menu" ? "view-menu" : DEFAULT_APPEARANCE.titlebarMenuStyle;
 };
 
 const sanitizeV2SidebarPersistedFilter = (value: unknown): string => {
@@ -3345,6 +3354,9 @@ const sanitizeAppearance = (
     ),
     queryTableCtrlClickAction: sanitizeQueryTableCtrlClickAction(
       appearance.queryTableCtrlClickAction,
+    ),
+    titlebarMenuStyle: sanitizeTitlebarMenuStyle(
+      appearance.titlebarMenuStyle,
     ),
     v2SidebarSearchMode: sanitizeV2SidebarSearchMode(
       appearance.v2SidebarSearchMode,

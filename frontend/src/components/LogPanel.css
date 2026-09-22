@@ -1,0 +1,90 @@
+.log-panel-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--log-scroll-thumb, rgba(0, 0, 0, 0.2)) transparent;
+}
+
+.log-panel-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.log-panel-scroll::-webkit-scrollbar-track,
+.log-panel-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.log-panel-scroll::-webkit-scrollbar-thumb {
+  background: var(--log-scroll-thumb, rgba(0, 0, 0, 0.2));
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.log-panel-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--log-scroll-thumb-hover, rgba(0, 0, 0, 0.32));
+  background-clip: padding-box;
+}
+
+.log-panel-row {
+  display: grid;
+  grid-template-columns: 80px 56px 64px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--gn-br-2);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 72px;
+}
+
+.log-panel-row-time,
+.log-panel-row-duration {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.log-panel-row-status {
+  justify-self: start;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.log-panel-row-status.is-ok {
+  background: #f6ffed;
+  color: #389e0d;
+}
+
+.log-panel-row-status.is-err {
+  background: #fff2f0;
+  color: #cf1322;
+}
+
+.log-panel-row-sql {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-all;
+}
+
+.log-panel-row-tx {
+  display: inline-block;
+  margin: 0 0 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #e6f4ff;
+  color: #0958d9;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+.log-panel-row-message {
+  margin-top: 2px;
+  color: #ff4d4f;
+}
+
+.log-panel-row-sentinel {
+  height: 1px;
+}

@@ -328,27 +328,31 @@ func TestInitializePersistedNativeBrandIconAppliesActiveIcon(t *testing.T) {
 	}
 }
 
-func TestRepairPersistedWindowsApplicationShortcutsOnceSkipsPortable(t *testing.T) {
+func TestRepairPersistedWindowsApplicationShortcutsOnceRepairsPortablePin(t *testing.T) {
 	originalUpdateShortcuts := windowsUpdateCurrentApplicationShortcuts
 	originalResolveInstallTarget := updateResolveInstallTarget
+	originalVersion := AppVersion
 	t.Cleanup(func() {
 		windowsUpdateCurrentApplicationShortcuts = originalUpdateShortcuts
 		updateResolveInstallTarget = originalResolveInstallTarget
+		AppVersion = originalVersion
 	})
 
 	installDir := t.TempDir()
 	updateResolveInstallTarget = func() string {
 		return filepath.Join(installDir, "GoNavi.exe")
 	}
+	AppVersion = "1.2.3"
+	called := 0
 	windowsUpdateCurrentApplicationShortcuts = func(string) error {
-		t.Fatal("portable startup must not migrate MSI taskbar shortcuts")
+		called++
 		return nil
 	}
 	configDir := t.TempDir()
 	repairPersistedWindowsApplicationShortcutsOnce(`C:\icons\gonavi-brand.ico`, configDir)
-	migrationPath := filepath.Join(configDir, windowsApplicationIconDirectoryName, ".taskbar-identity-v1")
-	if _, err := os.Stat(migrationPath); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("portable migration marker error = %v, want not exist", err)
+	repairPersistedWindowsApplicationShortcutsOnce(`C:\icons\gonavi-brand.ico`, configDir)
+	if called != 1 {
+		t.Fatalf("portable shortcut repair count = %d, want 1", called)
 	}
 }
 

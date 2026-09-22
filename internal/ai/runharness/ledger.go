@@ -1130,8 +1130,8 @@ func (l *Ledger) getSessionTx(ctx context.Context, tx *sql.Tx, id string, includ
 	if err != nil {
 		return SessionProjection{}, err
 	}
-	var title string
-	if err := l.openJSON("sessions", id, "title", titleBlob, &title); err != nil {
+	title, err := l.sessionDisplayTitleTx(ctx, tx, id, titleBlob)
+	if err != nil {
 		return SessionProjection{}, err
 	}
 	projection := SessionProjection{ID: id, Title: title, Revision: revision, Generation: generation,
@@ -1368,7 +1368,7 @@ func (l *Ledger) createRunTx(ctx context.Context, tx *sql.Tx, request CreateRunR
 			return RunSnapshot{}, err
 		}
 	}
-	if _, err := l.ensureSessionTx(ctx, tx, request.SessionID, ""); err != nil {
+	if _, err := l.ensureSessionTx(ctx, tx, request.SessionID, sessionTitleFromMessage(request.InitialMessage)); err != nil {
 		return RunSnapshot{}, err
 	}
 	var generation int64

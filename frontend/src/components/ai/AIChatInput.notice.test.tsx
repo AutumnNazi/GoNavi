@@ -272,6 +272,19 @@ describe('AIChatInput notice layout', () => {
     expect(markup).toContain('修复供应商配置');
   });
 
+  it('hides the ready composer status once a provider and model are selected', () => {
+    const markup = renderAIChatInput({
+      activeProvider: {
+        ...baseProvider,
+        model: 'grok-4.6',
+        models: ['grok-4.6'],
+      },
+    });
+
+    expect(markup).not.toContain('data-ai-chat-composer-status="true"');
+    expect(markup).not.toContain('已就绪');
+  });
+
   it('renders a dismiss affordance for the non-blocking ready composer status', () => {
     const snapshot = buildAIChatReadinessSnapshot({
       activeProvider: {

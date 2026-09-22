@@ -7,6 +7,7 @@ import type { AIChatMessage } from '../../types';
 import { AIChatWelcome } from './AIChatWelcome';
 import { AIMessageBubble } from './AIMessageBubble';
 import AIMessageRenderBoundary from './AIMessageRenderBoundary';
+import AIChatSessionSwitcher from './AIChatSessionSwitcher';
 import AIChatPanelModeContent, {
   type AIChatInlineHistorySession,
   type AIChatInsightItem,
@@ -34,6 +35,7 @@ interface AIChatPanelConversationViewProps {
   insights: AIChatInsightItem[];
   sessions: AIChatInlineHistorySession[];
   activeSessionId: string;
+  busySessionIds?: readonly string[];
   sessionActionsDisabled?: boolean;
   activeConnectionId?: string;
   activeConnectionConfig?: RpcConnectionConfig;
@@ -194,6 +196,7 @@ const AIChatPanelConversationView: React.FC<AIChatPanelConversationViewProps> = 
   insights,
   sessions,
   activeSessionId,
+  busySessionIds = [],
   sessionActionsDisabled = false,
   activeConnectionId,
   activeConnectionConfig,
@@ -210,6 +213,14 @@ const AIChatPanelConversationView: React.FC<AIChatPanelConversationViewProps> = 
   onScrollBottom,
 }) => (
   <>
+    {mode === 'chat' && (
+      <AIChatSessionSwitcher
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        busySessionIds={busySessionIds}
+        onSelectSession={onSelectSession}
+      />
+    )}
     <div className="ai-chat-messages" onScroll={onScrollMessages}>
       {mode === 'chat' && (
         messages.length === 0 ? (

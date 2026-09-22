@@ -1334,6 +1334,7 @@ func TestMethodsDriverUpdateStatusUsesLocalizedText(t *testing.T) {
 			},
 			keys: []string{
 				"driver_manager.backend.status.mongodb_compatibility_update_detail",
+				"driver_manager.backend.status.optional_component_update_detail",
 			},
 		},
 	}
@@ -1363,6 +1364,7 @@ func TestMethodsDriverUpdateStatusCatalogKeysExist(t *testing.T) {
 		"driver_manager.backend.status.agent_revision_update_detail",
 		"driver_manager.backend.status.agent_revision_update_detail_with_actual",
 		"driver_manager.backend.status.mongodb_compatibility_update_detail",
+		"driver_manager.backend.status.optional_component_update_detail",
 	}
 	for _, language := range i18n.SupportedLanguages() {
 		catalog := catalogs[language]
@@ -1415,7 +1417,7 @@ func TestOptionalDriverPackageUpdateStatusUsesCurrentLanguageForMongoCompatibili
 		AgentRevision: db.OptionalDriverAgentRevision("mongodb"),
 	}
 
-	needsUpdate, reason, _ := optionalDriverPackageUpdateStatus(definition, meta, true)
+	needsUpdate, _, reason, _ := optionalDriverPackageUpdateStatus(definition, meta, true)
 	if !needsUpdate {
 		t.Fatal("expected MongoDB legacy compatibility prompt")
 	}

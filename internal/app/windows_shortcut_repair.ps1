@@ -267,6 +267,38 @@ public static class GoNaviShortcutShellNotification
     }
 }
 
+function Send-ShellAssociationChangedNotification {
+    # Windows 11 keeps drawing a pinned taskbar button from its in-memory
+    # copy. UPDATEITEM refreshes a desktop .lnk; the taskbar needs the
+    # association flush before it shows the new IconLocation.
+    try {
+        if (-not ('GoNaviShortcutShellAssociation' -as [type])) {
+            Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class GoNaviShortcutShellAssociation
+{
+    private const uint SHCNE_ASSOCCHANGED = 0x08000000;
+    private const uint SHCNF_IDLIST = 0x0000;
+    private const uint SHCNF_FLUSH = 0x1000;
+
+    [DllImport("shell32.dll")]
+    private static extern void SHChangeNotify(uint eventId, uint flags, System.IntPtr item1, System.IntPtr item2);
+
+    public static void NotifyAssociationChanged()
+    {
+        SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST | SHCNF_FLUSH, System.IntPtr.Zero, System.IntPtr.Zero);
+    }
+}
+'@
+        }
+        [GoNaviShortcutShellAssociation]::NotifyAssociationChanged()
+    } catch {
+        Write-ShortcutRepairLog ("shell association refresh failed: " + $_.Exception.Message)
+    }
+}
+
 function Set-GoNaviShortcutRelaunchProperties {
     param(
         [string]$ShortcutPath,
@@ -485,9 +517,13 @@ function Set-GoNaviShortcutBrandIcon {
         [string]$TaskbarDirectory
     )
 
-    if ([string]::IsNullOrWhiteSpace($ApplicationUserModelID)) {
-        $ApplicationUserModelID = 'Syngnat.GoNavi'
-    }
+    # Fold every requested identity back to the MSI shortcut value. A per-icon
+    # ID (Syngnat.GoNavi.Icon.<hash>) makes Explorer split a pinned MSI button
+    # or delete a portable pin. The bitmap changes through IconLocation.
+    $ApplicationUserModelID = 'Syngnat.GoNavi'
+    # Portable launches must not retouch a pin that points at another copy,
+    # such as an MSI install beside the portable exe.
+    $onlyMatchingTarget = $env:GONAVI_BRAND_MATCH_TARGET_ONLY -eq '1'
     $updatedCount = 0
     $failureMessages = [Collections.Generic.List[string]]::new()
     try {
@@ -541,61 +577,64 @@ function Set-GoNaviShortcutBrandIcon {
                     $matchesTarget = Test-SameFilePath $shortcut.TargetPath $normalizedTargetPath
                     $isTaskbarShortcut = -not [string]::IsNullOrWhiteSpace($taskbarPrefix) -and
                         $shortcutFile.FullName.StartsWith($taskbarPrefix, [StringComparison]::OrdinalIgnoreCase)
+                    $existingTargetRaw = [string]$shortcut.TargetPath
+                    $existingTargetPath = Get-NormalizedFilePath $existingTargetRaw
+                    $targetMissing = [string]::IsNullOrWhiteSpace($existingTargetPath) -or -not (Test-Path -LiteralPath $existingTargetPath -PathType Leaf)
+                    $targetIsIcon = $existingTargetRaw -match '(?i)\.ico(\s*,\s*-?\d+)?$'
+                    # A previous brand-icon update wrote AppUserModel.RelaunchCommand
+                    # through the property store. Windows 11 then launches the pin
+                    # from that command, and a broken or icon path shows up as
+                    # "the item no longer exists" after GoNavi exits.
+                    $pinLaunchBroken = $isTaskbarShortcut -and ($targetMissing -or $targetIsIcon)
+                    if ($onlyMatchingTarget -and -not $matchesTarget -and -not $pinLaunchBroken) {
+                        continue
+                    }
                     $isGoNaviTaskbarShortcut = $false
                     # Recognize pins created by older releases that rotated the
                     # identity inside the Syngnat.GoNavi family. An MSI launch
                     # repairs those pins to the current installed executable;
-                    # development and portable launches preserve their target.
+                    # development and portable launches preserve a target that
+                    # still exists.
                     if (-not $matchesTarget -and $isTaskbarShortcut) {
                         $shortcutName = [IO.Path]::GetFileNameWithoutExtension($shortcutFile.Name)
-                        $targetName = [IO.Path]::GetFileName($shortcut.TargetPath)
-                        $looksLikeGoNaviPin =
-                            $shortcutName -match '^GoNavi(?:[-_.].*|\s*\(\d+\))?$' -and
-                            $targetName -match '^GoNavi(?:[-_.].*|\s*\(\d+\))?\.exe$'
+                        $targetName = [IO.Path]::GetFileName($existingTargetRaw)
+                        $namedGoNaviPin = $shortcutName -match '^GoNavi(?:[-_.].*|\s*\(\d+\))?$'
+                        $looksLikeGoNaviPin = $namedGoNaviPin -and (
+                            $targetName -match '^GoNavi(?:[-_.].*|\s*\(\d+\))?\.exe$' -or
+                            $pinLaunchBroken
+                        )
                         $isGoNaviTaskbarShortcut = $looksLikeGoNaviPin -or
                             ((Get-GoNaviShortcutAppUserModelID $shortcutFile.FullName) -match '^Syngnat\.GoNavi(?:\.Icon\.[0-9a-f]+)?$')
                     }
                     if (-not $matchesTarget -and -not $isGoNaviTaskbarShortcut) {
                         continue
                     }
-                    $shortcutTargetPath = $normalizedTargetPath
-                    if (-not $matchesTarget -and -not $isMSITarget) {
-                        $shortcutTargetPath = Get-NormalizedFilePath $shortcut.TargetPath
-                        if ([string]::IsNullOrWhiteSpace($shortcutTargetPath)) {
-                            continue
-                        }
-                    }
                     if ($isTaskbarShortcut) {
-                        # Windows 11 may keep rendering a pinned shortcut's
-                        # standard IconLocation even after the AppUserModel
-                        # relaunch icon changed. Save both representations,
-                        # then write the AppUserModel properties last because
-                        # WScript.Shell.Save can discard custom properties.
-                        $shortcutNeedsSave = $false
-                        if ($isMSITarget -and -not $matchesTarget) {
+                        # Do not write System.AppUserModel.Relaunch* here.
+                        # Windows 11 uses that command instead of the shortcut
+                        # target. Pointing it at a brand ICO, or committing the
+                        # property store over the pin, makes the pinned button
+                        # report that GoNavi no longer exists. Desktop shortcuts
+                        # only change IconLocation and keep launching; taskbar
+                        # pins must do the same. Save() drops a bad relaunch
+                        # command left by an older build and keeps TargetPath.
+                        if ($pinLaunchBroken -or ($isMSITarget -and -not $matchesTarget)) {
                             $shortcut.TargetPath = $normalizedTargetPath
                             $shortcut.WorkingDirectory = [IO.Path]::GetDirectoryName($normalizedTargetPath)
-                            $shortcutNeedsSave = $true
                         }
-                        $wantedIconLocation = $normalizedIconPath + ',0'
-                        if (-not [string]::Equals([string]$shortcut.IconLocation, $wantedIconLocation, [StringComparison]::OrdinalIgnoreCase)) {
-                            $shortcut.IconLocation = $wantedIconLocation
-                            $shortcutNeedsSave = $true
+                        if ($pinLaunchBroken) {
+                            $shortcut.Arguments = ''
                         }
-                        if ($shortcutNeedsSave) {
-                            # Keep writing the AppUserModel properties even when the
-                            # shortcut itself is not writable: a property-store failure
-                            # must still throw so a broken pin is never recorded as fixed.
-                            if (Test-GoNaviShortcutWritable $shortcutFile.FullName) {
-                                $shortcut.Save()
-                            } else {
-                                Write-ShortcutRepairLog ("skipped read-only shortcut save: " + $shortcutFile.FullName)
-                            }
+                        # Always save. WScript.Shell.Save rewrites the .lnk
+                        # without the AppUserModel property bag, which drops a
+                        # relaunch command that points at a missing file.
+                        $shortcut.IconLocation = $normalizedIconPath + ',0'
+                        if (Test-GoNaviShortcutWritable $shortcutFile.FullName) {
+                            $shortcut.Save()
+                            $updatedCount++
+                        } else {
+                            Write-ShortcutRepairLog ("skipped read-only shortcut save: " + $shortcutFile.FullName)
                         }
-                        if (-not (Set-GoNaviShortcutRelaunchProperties -ShortcutPath $shortcutFile.FullName -TargetPath $shortcutTargetPath -IconPath $normalizedIconPath -ApplicationUserModelID $ApplicationUserModelID)) {
-                            throw ('taskbar property-store update failed for ' + $shortcutFile.FullName)
-                        }
-                        $updatedCount++
                         Send-ShellItemUpdatedNotification $shortcutFile.FullName
                         continue
                     }
@@ -625,6 +664,9 @@ function Set-GoNaviShortcutBrandIcon {
             }
         }
         Send-ShellItemUpdatedNotification $normalizedIconPath
+        if ($updatedCount -gt 0) {
+            Send-ShellAssociationChangedNotification
+        }
     } catch {
         Write-ShortcutRepairLog ("brand icon shortcut update failed: " + $_.Exception.Message)
         throw

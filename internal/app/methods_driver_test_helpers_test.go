@@ -13,6 +13,7 @@ func methodsDriverSource(t *testing.T) string {
 
 	paths := []string{
 		"methods_driver.go",
+		"methods_driver_optional_update.go",
 		"methods_driver_assets.go",
 		"methods_driver_download.go",
 	}
