@@ -116,10 +116,11 @@ func repairPersistedWindowsApplicationShortcutsOnce(iconPath, configDir string) 
 
 func currentWindowsShortcutIdentityState(iconPath string) (string, bool) {
 	executablePath := strings.TrimSpace(updateResolveInstallTarget())
-	// Portable startup must not rewrite taskbar pins. A property-store update
-	// while Explorer is binding the pin is what removes a portable shortcut.
-	// The live logo change still refreshes a pin whose target is this exe.
-	if resolveUpdateInstallModeForExecutable("windows", executablePath) != updateInstallModeMSI {
+	// Both installs refresh their own pins once per version. The script only
+	// changes IconLocation, and it rewrites a target when that target is
+	// already missing or points at a brand ICO.
+	mode := resolveUpdateInstallModeForExecutable("windows", executablePath)
+	if mode != updateInstallModeMSI && mode != updateInstallModePortable {
 		return "", false
 	}
 	return strings.Join([]string{
