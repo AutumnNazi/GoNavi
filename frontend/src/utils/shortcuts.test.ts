@@ -14,6 +14,7 @@ import {
   RESERVED_SHORTCUTS,
   comboToMonacoKeyBinding,
   eventToShortcut,
+  findEnabledActionConflicts,
   getShortcutPlatform,
   getPrimaryShortcutDisplayLabel,
   getShortcutDisplayLabel,
@@ -32,6 +33,7 @@ import {
   setGlobalImeCompositionActive,
   sanitizeShortcutOptions,
   SHORTCUT_ACTION_META,
+  SHORTCUT_ACTION_ORDER,
 } from './shortcuts';
 import type { ConflictInfo } from './shortcuts';
 
@@ -882,11 +884,12 @@ describe('comboToMonacoKeyBinding', () => {
     KeyG: 42, KeyH: 43, KeyK: 47, KeyN: 50, KeyP: 52, KeyR: 54, KeyS: 55,
     Digit0: 21, Digit1: 22, Digit2: 23, Digit3: 24, Digit4: 25,
     Digit5: 26, Digit6: 27, Digit7: 28, Digit8: 29, Digit9: 30,
-    F1: 61, F2: 62, F3: 63, F4: 64, F5: 65, F6: 66,
-    F7: 67, F8: 68, F9: 69, F10: 70, F11: 71, F12: 72,
-    Oem1: 80, Oem2: 81, Oem3: 82, Oem4: 83, Oem5: 84,
-    Oem6: 85, Oem7: 86, OemComma: 87, OemMinus: 88,
-    OemPlus: 89, OemPeriod: 90,
+    F1: 59, F2: 60, F3: 61, F4: 62, F5: 63, F6: 64,
+    F7: 65, F8: 66, F9: 67, F10: 68, F11: 69, F12: 70,
+    // monaco 0.55 真实枚举名与值（Oem 系已被移除，别再用）
+    Semicolon: 85, Equal: 86, Comma: 87, Minus: 88, Period: 89,
+    Slash: 90, Backquote: 91, BracketLeft: 92, Backslash: 93,
+    BracketRight: 94, Quote: 95,
   };
 
   it('maps Windows Ctrl+Enter to Monaco CtrlCmd', () => {
@@ -941,14 +944,14 @@ describe('comboToMonacoKeyBinding', () => {
   it('maps Ctrl+, (comma)', () => {
     expect(comboToMonacoKeyBinding('Ctrl+,', mockKeyMod, mockKeyCode, 'windows')).toEqual({
       keyMod: mockKeyMod.CtrlCmd,
-      keyCode: mockKeyCode.OemComma,
+      keyCode: mockKeyCode.Comma,
     });
   });
 
   it('maps Alt+\\ (manual AI completion)', () => {
     expect(comboToMonacoKeyBinding('Alt+\\', mockKeyMod, mockKeyCode, 'windows')).toEqual({
       keyMod: mockKeyMod.Alt,
-      keyCode: mockKeyCode.Oem5,
+      keyCode: mockKeyCode.Backslash,
     });
   });
 
@@ -998,5 +1001,72 @@ describe('acceptSqlAiCompletion', () => {
   it('resolveShortcutBinding 对缺失配置回退默认 Tab', () => {
     const binding = resolveShortcutBinding({}, 'acceptSqlAiCompletion', 'windows');
     expect(binding).toEqual({ combo: 'Tab', enabled: true });
+  });
+});
+
+// ─── toggleLineComment（#1323 取消/添加注释） ────────────────────────
+
+describe('toggleLineComment shortcut', () => {
+  it('registers in the action order and metadata registry', () => {
+    expect(SHORTCUT_ACTION_ORDER).toContain('toggleLineComment');
+    expect(SHORTCUT_ACTION_META.toggleLineComment).toEqual(expect.objectContaining({
+      scope: 'queryEditor',
+      allowInEditable: true,
+      label: expect.stringContaining('注释'),
+    }));
+  });
+
+  it('defaults to Ctrl+/ on Windows and Meta+/ on macOS', () => {
+    expect(DEFAULT_SHORTCUT_OPTIONS.toggleLineComment.windows).toEqual({ combo: 'Ctrl+/', enabled: true });
+    expect(DEFAULT_SHORTCUT_OPTIONS.toggleLineComment.mac).toEqual({ combo: 'Meta+/', enabled: true });
+  });
+
+  it('falls back to defaults for users without stored bindings', () => {
+    expect(resolveShortcutBinding({} as never, 'toggleLineComment', 'windows')).toEqual({
+      combo: 'Ctrl+/',
+      enabled: true,
+    });
+  });
+
+  it('treats Ctrl+/ as non-reserved so the default binding raises no conflict', () => {
+    expect(findReservedConflict('Ctrl+/')).toBeNull();
+    expect(findReservedConflictsForAction('toggleLineComment', 'Ctrl+/', 'windows')).toEqual([]);
+  });
+
+  it('detects rebinding onto the AI diagnose combo as a conflict', () => {
+    const windowsBinding = resolveShortcutBinding(
+      {
+        toggleLineComment: { windows: { combo: 'Ctrl+Shift+A', enabled: true }, mac: { combo: '', enabled: false } },
+        diagnoseExecutionError: { windows: { combo: 'Ctrl+Shift+A', enabled: true }, mac: { combo: '', enabled: false } },
+      } as never,
+      'toggleLineComment',
+      'windows',
+    );
+    expect(windowsBinding.combo).toBe('Ctrl+Shift+A');
+    expect(canRecordShortcutForAction('toggleLineComment', 'Ctrl+Shift+A')).toBe(true);
+    // 设置中心改键冲突检测：同组合键被「AI 诊断」占用时必须报告冲突
+    expect(findEnabledActionConflicts(
+      {
+        toggleLineComment: { windows: { combo: 'Ctrl+Shift+A', enabled: true }, mac: { combo: '', enabled: false } },
+        diagnoseExecutionError: { windows: { combo: 'Ctrl+Shift+A', enabled: true }, mac: { combo: '', enabled: false } },
+      } as never,
+      'toggleLineComment',
+      'Ctrl+Shift+A',
+      'windows',
+    )).toEqual(['diagnoseExecutionError']);
+  });
+
+  it('maps the default combos to Monaco key bindings using the real 0.55 enum names', () => {
+    const kc = { Slash: 90 };
+    expect(comboToMonacoKeyBinding('Ctrl+/', { CtrlCmd: 2, Shift: 4, Alt: 8 }, kc, 'windows')).toEqual({
+      keyMod: 2,
+      keyCode: 90,
+    });
+    expect(comboToMonacoKeyBinding('Meta+/', { CtrlCmd: 2, Shift: 4, Alt: 8 }, kc, 'mac')).toEqual({
+      keyMod: 2,
+      keyCode: 90,
+    });
+    // 已废弃的 Oem 枚举名在 monaco 0.55 中为 undefined，映射必须返回 null
+    expect(comboToMonacoKeyBinding('Ctrl+Oem2', { CtrlCmd: 2, Shift: 4, Alt: 8 }, kc, 'windows')).toBeNull();
   });
 });
