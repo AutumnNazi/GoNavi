@@ -8,13 +8,17 @@ import type { SavedConnection } from '../../types';
 
 const AI_PROMPT_INJECT_EVENT = 'gonavi:ai:inject-prompt';
 
-export const dispatchQueryEditorAiPrompt = (prompt: string, delayMs = 0): void => {
+export const dispatchQueryEditorAiPrompt = (
+  prompt: string,
+  delayMs = 0,
+  autoSend = false,
+): void => {
   const store = useStore.getState();
   if (!store.aiPanelVisible) {
     store.setAIPanelVisible(true);
   }
   const fire = () => {
-    window.dispatchEvent(new CustomEvent(AI_PROMPT_INJECT_EVENT, { detail: { prompt } }));
+    window.dispatchEvent(new CustomEvent(AI_PROMPT_INJECT_EVENT, { detail: { prompt, autoSend } }));
   };
   if (delayMs > 0) {
     window.setTimeout(fire, delayMs);
@@ -31,12 +35,17 @@ export const diagnoseExecutionErrorWithAI = async (
   database = '',
 ): Promise<void> => {
   const store = useStore.getState();
-  const prompt = t('query_editor.ai_prompt.diagnose', { sql, error });
+  const headline = [database.trim(), error.split('\n')[0]?.trim() || '']
+    .filter(Boolean)
+    .join(' · ')
+    .slice(0, 80);
   await injectQueryEditorAiPromptWithContext({
     connection: store.connections.find((item) => item.id === String(connectionId || '').trim()),
     database,
-    prompt,
+    prompt: t('query_editor.ai_prompt.diagnose', { sql, error }),
+    headline,
     delayIfPanelClosedMs: 350,
+    autoSend: true,
   });
 };
 
@@ -44,7 +53,9 @@ export const injectQueryEditorAiPromptWithContext = async (options: {
   connection?: QueryEditorAiPromptConnection | SavedConnection | null;
   database: string;
   prompt: string;
+  headline?: string;
   delayIfPanelClosedMs?: number;
+  autoSend?: boolean;
 }): Promise<void> => {
   const store = useStore.getState();
   const delayMs = !store.aiPanelVisible && options.delayIfPanelClosedMs
@@ -52,5 +63,7 @@ export const injectQueryEditorAiPromptWithContext = async (options: {
     : 0;
   if (!store.aiPanelVisible) store.setAIPanelVisible(true);
   const ctxText = await buildQueryEditorAiContextPromptAsync(options.connection, options.database);
-  dispatchQueryEditorAiPrompt(`${ctxText}${options.prompt}`, delayMs);
+  const headline = String(options.headline || '').trim();
+  const prompt = `${headline ? `${headline}\n` : ''}${ctxText}${options.prompt}`;
+  dispatchQueryEditorAiPrompt(prompt, delayMs, options.autoSend === true);
 };

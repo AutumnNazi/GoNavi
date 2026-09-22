@@ -250,6 +250,8 @@
   "ai_chat.header.mode.insights": "Автоинсайты",
   "ai_chat.header.mode_tabs.aria_label": "Режим работы AI",
   "ai_chat.header.session.connected": "{{title}} · Подключено",
+  "ai_chat.session_switcher.aria_label": "Переключение чатов",
+  "ai_chat.session_switcher.running": "Выполняется",
   "ai_chat.header.tooltip.close": "Закрыть панель",
   "ai_chat.header.tooltip.export_markdown": "Экспортировать как Markdown",
   "ai_chat.header.tooltip.history": "История чатов",

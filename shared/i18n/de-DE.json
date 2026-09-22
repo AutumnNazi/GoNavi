@@ -250,6 +250,8 @@
   "ai_chat.header.mode.insights": "Auto-Insights",
   "ai_chat.header.mode_tabs.aria_label": "AI-Arbeitsmodus",
   "ai_chat.header.session.connected": "{{title}} · Verbunden",
+  "ai_chat.session_switcher.aria_label": "Zwischen Chats wechseln",
+  "ai_chat.session_switcher.running": "Läuft",
   "ai_chat.header.tooltip.close": "Panel schließen",
   "ai_chat.header.tooltip.export_markdown": "Als Markdown exportieren",
   "ai_chat.header.tooltip.history": "Chatverlauf",

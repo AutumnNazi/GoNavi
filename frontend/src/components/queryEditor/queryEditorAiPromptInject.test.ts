@@ -44,12 +44,14 @@ describe('diagnoseExecutionErrorWithAI', () => {
     );
 
     expect(dispatchEvent).toHaveBeenCalledTimes(1);
-    const event = dispatchEvent.mock.calls[0]?.[0] as CustomEvent<{ prompt: string }>;
+    const event = dispatchEvent.mock.calls[0]?.[0] as CustomEvent<{ prompt: string; autoSend?: boolean }>;
     expect(event.type).toBe('gonavi:ai:inject-prompt');
     expect(event.detail.prompt).toContain('SELECT * FROM demo.t');
     expect(event.detail.prompt).toContain("Table 'demo.t' doesn't exist");
     expect(event.detail.prompt).toContain('5.7.44-log');
     expect(event.detail.prompt).toContain('demo');
+    expect(event.detail.autoSend).toBe(true);
+    expect(event.detail.prompt.startsWith('demo ·')).toBe(true);
   });
 
   it('opens the AI panel immediately and delays prompt dispatch when it was closed', async () => {

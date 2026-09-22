@@ -250,6 +250,8 @@
   "ai_chat.header.mode.insights": "自動インサイト",
   "ai_chat.header.mode_tabs.aria_label": "AI 作業モード",
   "ai_chat.header.session.connected": "{{title}} · 接続済み",
+  "ai_chat.session_switcher.aria_label": "並行セッションを切り替え",
+  "ai_chat.session_switcher.running": "実行中",
   "ai_chat.header.tooltip.close": "パネルを閉じる",
   "ai_chat.header.tooltip.export_markdown": "Markdown としてエクスポート",
   "ai_chat.header.tooltip.history": "チャット履歴",

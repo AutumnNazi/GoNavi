@@ -250,6 +250,8 @@
   "ai_chat.header.mode.insights": "自动洞察",
   "ai_chat.header.mode_tabs.aria_label": "AI 工作模式",
   "ai_chat.header.session.connected": "{{title}} · 已连接",
+  "ai_chat.session_switcher.aria_label": "切换并行会话",
+  "ai_chat.session_switcher.running": "进行中",
   "ai_chat.header.tooltip.close": "关闭面板",
   "ai_chat.header.tooltip.export_markdown": "导出为 Markdown",
   "ai_chat.header.tooltip.history": "历史会话",
