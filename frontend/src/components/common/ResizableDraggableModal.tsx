@@ -29,10 +29,13 @@ const VIEWPORT_PADDING = 16;
 // antd marks the panel with these classes for the whole zoom-in, and clears them once it
 // has settled. Used to tell a dialog that is still growing from one the user can close.
 const ENTER_MOTION_CLASS = /(?:^|\s)ant-zoom-(?:appear|enter)(?:\s|$)/;
-// Safety net for the enter guard below: a dialog whose animation never reports an end
-// (animation disabled, or a transition the browser does not run) must still become
-// mask-closable, and a browser animation takes ~300ms.
-const ENTER_SETTLE_FALLBACK_MS = 500;
+// Fallbacks for the enter guard below. The poll keeps the guard alive for as long
+// as the motion classes are present (web runtimes can stretch the zoom well past
+// the ~300ms a browser animation takes - issue #1297 symptom "OK closes like
+// cancel without running onOk"), and the hard cap degrades to stock antd
+// behaviour when an animation never ends at all.
+const ENTER_SETTLE_POLL_MS = 100;
+const ENTER_SETTLE_HARD_FALLBACK_MS = 2000;
 
 const isInteractiveTarget = (target: EventTarget | null) => {
   if (!(target instanceof HTMLElement)) return false;
@@ -314,14 +317,22 @@ const DraggableResizableModalFrame: React.FC<DraggableResizableModalFrameProps> 
 
     const isEntering = () => ENTER_MOTION_CLASS.test(modalNode.className);
     let settled = !isEntering();
+    let hardCapReached = false;
     const settle = () => {
       settled = true;
     };
+    const forceSettle = () => {
+      settled = true;
+      hardCapReached = true;
+    };
     const swallowMaskClick = (clickEvent: MouseEvent) => {
-      if (settled) return;
       // Only the mask wrapper itself counts; anything inside the dialog must pass.
       const target = clickEvent.target;
       if (!(target instanceof HTMLElement) || !target.classList.contains('ant-modal-wrap')) return;
+      if (settled && !(isEntering() && !hardCapReached)) return;
+      // Issue #1297: on a stretched-out web entry the box is still scaled down, so a
+      // click aimed at a button keeps landing on the wrap. Swallow it until the motion
+      // classes are gone (or the hard cap degrades to stock antd behaviour).
       clickEvent.preventDefault();
       clickEvent.stopPropagation();
     };
@@ -332,13 +343,17 @@ const DraggableResizableModalFrame: React.FC<DraggableResizableModalFrameProps> 
     observer.observe(modalNode, { attributes: true, attributeFilter: ['class'] });
     modalNode.addEventListener('animationend', settle);
     // A dialog whose animation never reports an end must still become closable.
-    const fallbackTimer = window.setTimeout(settle, ENTER_SETTLE_FALLBACK_MS);
+    const pollTimer = window.setInterval(() => {
+      if (!isEntering()) settle();
+    }, ENTER_SETTLE_POLL_MS);
+    const hardFallbackTimer = window.setTimeout(forceSettle, ENTER_SETTLE_HARD_FALLBACK_MS);
     window.addEventListener('click', swallowMaskClick, true);
 
     return () => {
       observer.disconnect();
       modalNode.removeEventListener('animationend', settle);
-      window.clearTimeout(fallbackTimer);
+      window.clearInterval(pollTimer);
+      window.clearTimeout(hardFallbackTimer);
       window.removeEventListener('click', swallowMaskClick, true);
     };
   }, [active, blockMaskClickUntilSettled, wrapperElement]);
