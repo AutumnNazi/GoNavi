@@ -359,6 +359,48 @@ func TestRepairPersistedWindowsApplicationShortcutsOnceRepairsPortablePin(t *tes
 	}
 }
 
+func TestPackagedIconShortcutMigrationRetriesAndIgnoresOldIconMarker(t *testing.T) {
+	originalUpdate, originalTarget, originalVersion := windowsUpdateCurrentApplicationShortcuts, updateResolveInstallTarget, AppVersion
+	t.Cleanup(func() {
+		windowsUpdateCurrentApplicationShortcuts, updateResolveInstallTarget, AppVersion = originalUpdate, originalTarget, originalVersion
+	})
+	executable := filepath.Join(t.TempDir(), "GoNavi.exe")
+	updateResolveInstallTarget = func() string { return executable }
+	AppVersion = "1.2.3"
+	configDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(configDir, windowsApplicationIconDirectoryName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	recordCurrentWindowsShortcutIdentityState("old-custom.ico", configDir)
+	calls := 0
+	windowsUpdateCurrentApplicationShortcuts = func(iconPath string) error {
+		calls++
+		if iconPath != executable {
+			t.Fatalf("icon target = %q, want packaged executable", iconPath)
+		}
+		if calls == 1 {
+			return errors.New("temporary failure")
+		}
+		return nil
+	}
+	a := NewApp()
+	a.configDir = configDir
+	if err := MigrateLegacyApplicationShortcuts(a); err == nil {
+		t.Fatal("expected repair failure")
+	}
+	if _, err := os.Stat(filepath.Join(configDir, ".packaged-icon-shortcuts-v1")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("failure recorded as complete")
+	}
+	for i := 0; i < 2; i++ {
+		if err := MigrateLegacyApplicationShortcuts(a); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("repair calls = %d, want 2", calls)
+	}
+}
+
 func TestSetApplicationIconPNGDoesNotActivateAfterShortcutFailure(t *testing.T) {
 	source := image.NewNRGBA(image.Rect(0, 0, 2, 2))
 	source.SetNRGBA(0, 0, color.NRGBA{R: 0x44, G: 0x88, B: 0xcc, A: 0xff})

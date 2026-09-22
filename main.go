@@ -174,9 +174,7 @@ func main() {
 		}, windowChrome.Frameless)
 	}
 
-	// Keep the first native window hidden until the selected Windows icon has
-	// been bound. This prevents the taskbar from caching Wails' embedded icon
-	// while the frontend is still hydrating its persisted brand selection.
+	// Keep the native startup barrier before showing the packaged application icon.
 	startupNativeIconReady := make(chan struct{})
 	var signalStartupNativeIconReadyOnce sync.Once
 	signalStartupNativeIconReady := func() {
@@ -213,13 +211,13 @@ func main() {
 			defer signalStartupNativeIconReady()
 			runtimeCtx = ctx
 			if isWindowsDesktop {
-				// Subscribe before brand-icon I/O so a fast first paint cannot
+				// Subscribe before startup continues so a fast first paint cannot
 				// emit gonavi:frontend-ready into an empty event bus.
 				wailsRuntime.EventsOn(ctx, windowsFrontendReadyEvent, func(...interface{}) {
 					windowsStartupGate.markFrontendReady()
 				})
-				if err := app.InitializePersistedNativeBrandIcon(application, ctx); err != nil {
-					logger.Warnf("启动时应用已保存的 Windows 品牌图标失败：%v", err)
+				if err := app.MigrateLegacyApplicationShortcuts(application); err != nil {
+					logger.Warnf("迁移 Windows 应用快捷方式失败：%v", err)
 				}
 			}
 			// The icon is now ready; the remaining lifecycle services may continue

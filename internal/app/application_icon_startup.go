@@ -6,6 +6,19 @@ import (
 	"strings"
 )
 
+// MigrateLegacyApplicationShortcuts restores packaged icons without applying a saved runtime icon.
+// It is a package function so it is not exposed through the Wails bridge.
+func MigrateLegacyApplicationShortcuts(a *App) error {
+	if a == nil {
+		return errors.New("application is unavailable")
+	}
+	configDir := strings.TrimSpace(a.configDir)
+	if configDir == "" {
+		configDir = resolveAppConfigDir()
+	}
+	return migrateLegacyWindowsApplicationShortcuts(configDir)
+}
+
 // InitializePersistedNativeBrandIcon applies the last selected desktop icon
 // before the first Wails window is shown. It is intentionally a package
 // function so it is not exposed through the reflective Wails bridge.

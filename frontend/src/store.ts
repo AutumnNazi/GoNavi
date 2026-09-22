@@ -44,7 +44,6 @@ import {
 } from "./utils/sqlSnippetDefaults";
 import {
   DEFAULT_BRAND_ICON_ID,
-  sanitizeBrandIconId,
 } from "./brand/brandIcons";
 
 export interface AIChatSessionSummary {
@@ -65,8 +64,8 @@ type ActiveContext = {
   tableName?: string;
 };
 
-const sanitizeBrandIconIdLocal = (value: unknown): string =>
-  sanitizeBrandIconId(value) || DEFAULT_BRAND_ICON_ID;
+const sanitizeBrandIconIdLocal = (_value: unknown): string =>
+  DEFAULT_BRAND_ICON_ID;
 import { toPersistedGlobalProxy } from "./utils/globalProxyDraft";
 import {
   DEFAULT_DATA_GRID_DISPLAY_SETTINGS,
@@ -2199,7 +2198,6 @@ interface AppState {
 
   setTheme: (theme: ThemeMode) => void;
   setThemePreference: (themePreference: ThemePreference) => void;
-  setBrandIconId: (brandIconId: string) => void;
   setLanguagePreference: (languagePreference: LanguagePreference) => void;
   setAppearance: (appearance: Partial<AppearanceSettings>) => void;
   setRedisDbAlias: (
@@ -3836,7 +3834,7 @@ export const useStore = create<AppState>()(
       pinnedConnectionTypes: [],
       theme: "light",
       themePreference: "light",
-      brandIconId: "03",
+      brandIconId: DEFAULT_BRAND_ICON_ID,
       languagePreference: DEFAULT_LANGUAGE_PREFERENCE,
       appearance: { ...DEFAULT_APPEARANCE },
       uiScale: DEFAULT_UI_SCALE,
@@ -5504,10 +5502,6 @@ export const useStore = create<AppState>()(
       setThemePreference: (themePreference) =>
         set({
           themePreference: sanitizeThemePreference(themePreference),
-        }),
-      setBrandIconId: (brandIconId) =>
-        set({
-          brandIconId: sanitizeBrandIconIdLocal(brandIconId),
         }),
       setLanguagePreference: (languagePreference) =>
         set({

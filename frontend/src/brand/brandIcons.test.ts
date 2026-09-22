@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   BRAND_ICONS,
   resolveBrandAboutSrc,
@@ -14,9 +14,21 @@ import {
 } from './brandIcons';
 
 describe('brand icon asset resolution', () => {
-  it('keeps the current ribbon logo as the default after adding the legacy dog', () => {
-    expect(DEFAULT_BRAND_ICON_ID).toBe('03');
-    expect(BRAND_ICONS.find((icon) => icon.id === DEFAULT_BRAND_ICON_ID)?.slug).toBe('ribbon-graphite-glow');
+  it('ignores old runtime selections when hydrating persisted settings', async () => {
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => {}, removeItem: () => {} });
+    try {
+      const { useStore } = await import('../store');
+      const merge = useStore.persist.getOptions().merge!;
+      for (const brandIconId of ['03', '08', 'unknown']) {
+        const restored = merge({ brandIconId }, useStore.getState());
+        expect(restored.brandIconId).toBe('01');
+      }
+      expect(useStore.getState().brandIconId).toBe('01');
+    } finally { vi.unstubAllGlobals(); }
+  }, 30000);
+  it('uses bundled graphite air as the default', () => {
+    expect(DEFAULT_BRAND_ICON_ID).toBe('01');
+    expect(BRAND_ICONS.find((icon) => icon.id === DEFAULT_BRAND_ICON_ID)?.slug).toBe('ribbon-graphite-air');
     expect(sanitizeBrandIconId('07')).toBe('07');
   });
 
@@ -35,8 +47,8 @@ describe('brand icon asset resolution', () => {
   it('uses the transparent compact mark for the default titlebar icon', () => {
     const defaultTitlebarAsset = BRAND_ICON_FALLBACK_SRC;
     expect(resolveBrandTitlebarSrc('03')).toBe(defaultTitlebarAsset);
-    expect(resolveBrandTitlebarSrc()).toBe(defaultTitlebarAsset);
-    expect(resolveBrandTitlebarSrc('unknown')).toBe(defaultTitlebarAsset);
+    expect(resolveBrandTitlebarSrc()).toBe('/brand-fallback.svg');
+    expect(resolveBrandTitlebarSrc('unknown')).toBe('/brand-fallback.svg');
     expect(resolveBrandTitlebarSrc('01')).toBe(resolveBrandIconSrc('01'));
     expect(resolveBrandTitlebarSrc('08')).toBe('/brand-marks/08-database-search-transparent.png');
   });
@@ -59,9 +71,10 @@ describe('brand icon asset resolution', () => {
     const remoteIcons = BRAND_ICONS.filter((icon) => !icon.bundled);
     const bundledIcons = BRAND_ICONS.filter((icon) => icon.bundled);
     const remoteSources = remoteIcons.map((icon) => resolveBrandIconRemoteSrc(icon.id));
-    expect(new Set(remoteSources).size).toBe(6);
-    expect(bundledIcons).toHaveLength(10);
+    expect(new Set(remoteSources).size).toBe(5);
+    expect(bundledIcons).toHaveLength(11);
     expect(bundledIcons.map((icon) => icon.slug)).toEqual([
+      'ribbon-graphite-air',
       'database-hug',
       'database-search',
       'bandana-badge',
@@ -73,13 +86,13 @@ describe('brand icon asset resolution', () => {
       'terminal-sit',
       'compass-bandana',
     ]);
-    expect(sources[0]).toBe('https://origin-download.syngnat.top:8443/gonavi/brand-assets/v1/01-ribbon-graphite-air.svg');
+    expect(sources[0]).toBe('/brand-fallback.svg');
     expect(sources[sources.length - 1]).toBe('/brand-icons/16-compass-bandana.webp');
     expect(resolveBrandIconRemoteSrc('unknown')).toBe('');
   });
 
   it('falls back to the default about lockup for invalid selections', () => {
-    const defaultAboutAsset = resolveBrandAboutSrc('03');
+    const defaultAboutAsset = resolveBrandAboutSrc('01');
     expect(resolveBrandAboutSrc()).toBe(defaultAboutAsset);
     expect(resolveBrandAboutSrc('unknown')).toBe(defaultAboutAsset);
   });
