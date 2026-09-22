@@ -290,6 +290,16 @@ if (-not (Test-ShortcutIconLocation $brokenShortcut.IconLocation $refreshedIcon)
     throw ('broken taskbar pin icon was not updated: ' + $brokenShortcut.IconLocation)
 }
 
+# Removing runtime icon selection migrates existing pins to the EXE resource.
+[void](Set-GoNaviShortcutBrandIcon -TargetPath $target -IconPath $target -ShortcutDirectories @($pins) -TaskbarDirectory $pins)
+foreach ($pinName in @('GoNavi-missing.lnk', 'missing-icon.lnk', 'existing-icon.lnk')) {
+    $migrated = $shell.CreateShortcut((Join-Path $pins $pinName))
+    if (-not (Test-SameFilePath $migrated.TargetPath $target)) { throw 'packaged icon migration changed launch target' }
+    if (-not (Test-ShortcutIconLocation $migrated.IconLocation $target)) { throw 'packaged icon migration retained custom ICO' }
+}
+$foreignAfterMigration = $shell.CreateShortcut((Join-Path $pins 'foreign-target.lnk'))
+if (-not (Test-ShortcutIconLocation $foreignAfterMigration.IconLocation $missingIcon)) { throw 'packaged icon migration changed foreign shortcut' }
+
 $desktopDirectories = @($desktop, $commonDesktop)
 $absentState = Save-GoNaviDesktopShortcutState -TargetPath $target -BackupDirectory (Join-Path $env:GONAVI_TEST_ROOT 'backup-absent') -DesktopDirectories $desktopDirectories
 if (-not $absentState.Succeeded -or $absentState.InstallValue -ne '0' -or $absentState.Entries.Count -ne 0) {

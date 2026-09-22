@@ -121,6 +121,34 @@ func repairPersistedWindowsApplicationShortcutsOnce(iconPath, configDir string) 
 	}
 }
 
+func migrateLegacyWindowsApplicationShortcuts(configDir string) error {
+	executablePath := strings.TrimSpace(updateResolveInstallTarget())
+	state, ok := currentWindowsShortcutIdentityState(executablePath)
+	if !ok {
+		return nil
+	}
+	// Separate from the old icon-selection marker: the same version may have
+	// already repaired shortcuts to a custom ICO before this migration.
+	statePath := filepath.Join(configDir, ".packaged-icon-shortcuts-v1")
+	previous, err := os.ReadFile(statePath)
+	if err == nil && string(previous) == state {
+		return nil
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("read packaged icon migration state: %w", err)
+	}
+	if err := windowsUpdateCurrentApplicationShortcuts(executablePath); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		return fmt.Errorf("create shortcut migration directory: %w", err)
+	}
+	if err := os.WriteFile(statePath, []byte(state), 0o600); err != nil {
+		return fmt.Errorf("save packaged icon migration state: %w", err)
+	}
+	return nil
+}
+
 func currentWindowsShortcutIdentityState(iconPath string) (string, bool) {
 	executablePath := strings.TrimSpace(updateResolveInstallTarget())
 	// Both installs refresh their own pins once per version. The script only
@@ -414,7 +442,8 @@ func updateCurrentWindowsApplicationShortcuts(iconPath string) error {
 	if err != nil {
 		return fmt.Errorf("resolve Windows application executable: %w", err)
 	}
-	scriptDir := filepath.Dir(iconPath)
+	// Installed executables may live under a read-only Program Files directory.
+	scriptDir := os.TempDir()
 	temporary, err := os.CreateTemp(scriptDir, ".gonavi-brand-shortcuts-*.ps1")
 	if err != nil {
 		return fmt.Errorf("create Windows shortcut update script: %w", err)
