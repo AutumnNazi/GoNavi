@@ -7,7 +7,7 @@ import { isSqlAiCompletionEnabled, setSqlAiCompletionEnabled } from '../../utils
 
 export default function SqlAiCompletionToggle() {
   const i18n = useOptionalI18n();
-  const copy = (key: string) => i18n?.t(key) || catalogTranslate(key);
+  const copy = (key: string) => i18n?.t(key) || catalogTranslate('en-US', key);
   const [enabled, setEnabled] = React.useState(isSqlAiCompletionEnabled);
   const label = copy('ai_settings.form.inline_completion_enabled');
 
