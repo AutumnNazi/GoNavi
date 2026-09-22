@@ -5,13 +5,14 @@ import (
 	"strings"
 
 	"GoNavi-Wails/internal/connection"
+	"GoNavi-Wails/internal/db"
 	"GoNavi-Wails/internal/logger"
 	syncengine "GoNavi-Wails/internal/sync"
 	"GoNavi-Wails/internal/syncjob"
 )
 
 var requiredIssue1098WebRPCContextMethods = []string{
-	"DBQuery", "DBQueryApplicationWithCancel", "DBQueryWithCancel", "DBQueryMulti", "DBQueryMultiCompact", "DBQueryAudited", "DBQueryAI", "DBQueryIsolated", "MySQLQuery",
+	"DBQuery", "DBQueryApplicationWithCancel", "DBQueryWithCancel", "DBQueryMulti", "DBQueryMultiWithOptions", "DBQueryMultiCompact", "DBQueryAudited", "DBQueryAI", "DBQueryIsolated", "MySQLQuery",
 	"DBGetDatabases", "DBGetTables", "DBGetViews", "DBGetObjects", "DBGetAllColumns", "DBGetColumns", "DBGetIndexes",
 	"DBGetForeignKeys", "DBGetDatabaseForeignKeys", "DBGetTriggers", "DBShowCreateTable", "DBTableExists",
 	"MySQLGetDatabases", "MySQLGetTables", "MySQLShowCreateTable", "MongoDiscoverMembers", "DBRefreshTableStats", "DiagnoseQuery",
@@ -45,6 +46,9 @@ func WebRPCContextHandlers(a *App) map[string]any {
 		},
 		"DBQueryMulti": func(ctx context.Context, config connection.ConnectionConfig, dbName, query, queryID string) connection.QueryResult {
 			return a.dbQueryMultiContext(ctx, config, dbName, query, queryID)
+		},
+		"DBQueryMultiWithOptions": func(ctx context.Context, config connection.ConnectionConfig, dbName, query, queryID string, options QueryResultBudgetOptions) connection.QueryResult {
+			return a.dbQueryMultiWithOptionsContext(ctx, config, dbName, query, queryID, options)
 		},
 		"DBQueryMultiCompact": func(ctx context.Context, config connection.ConnectionConfig, dbName, query, queryID string) CompactQueryResult {
 			return a.dbQueryMultiCompactContext(ctx, config, dbName, query, queryID)
@@ -242,6 +246,7 @@ func (a *App) dbQueryMultiWithContextOptions(
 	dbName string,
 	query string,
 	queryID string,
+	budgetOptions *db.RowBudgetOptions,
 ) connection.QueryResult {
 	explicitQuery := strings.TrimSpace(queryID) != ""
 	source := "query_editor"
@@ -250,19 +255,32 @@ func (a *App) dbQueryMultiWithContextOptions(
 	}
 	return a.dbQueryMulti(config, dbName, query, queryID, dbQueryMultiAuditOptions{
 		auditAll: explicitQuery || a.webRuntime, auditWrites: true, source: source,
-		executionContext: ctx, synchronousConnectionWait: true,
+		executionContext: ctx, synchronousConnectionWait: true, ResultBudget: budgetOptions,
 	})
 }
 
+// dbQueryMultiWithOptionsContext 为 Web RPC 桌面查询绑定与服务端一致的复合结果预算。
+func (a *App) dbQueryMultiWithOptionsContext(
+	ctx context.Context,
+	config connection.ConnectionConfig,
+	dbName string,
+	query string,
+	queryID string,
+	options QueryResultBudgetOptions,
+) connection.QueryResult {
+	budget := normalizeQueryResultBudgetOptions(options)
+	return a.dbQueryMultiWithContextOptions(ctx, config, dbName, query, queryID, &budget)
+}
+
 func (a *App) dbQueryMultiContext(ctx context.Context, config connection.ConnectionConfig, dbName, query, queryID string) connection.QueryResult {
-	return a.dbQueryMultiWithContextOptions(ctx, config, dbName, query, queryID)
+	return a.dbQueryMultiWithContextOptions(ctx, config, dbName, query, queryID, nil)
 }
 
 // dbQueryMultiCompactContext mirrors dbQueryMultiContext for the compact
 // transport: identical audit, cancellation and connection-wait semantics, with
 // the result set compacted for the Web RPC payload.
 func (a *App) dbQueryMultiCompactContext(ctx context.Context, config connection.ConnectionConfig, dbName, query, queryID string) CompactQueryResult {
-	return encodeCompactQueryResult(a.dbQueryMultiWithContextOptions(ctx, config, dbName, query, queryID))
+	return encodeCompactQueryResult(a.dbQueryMultiWithContextOptions(ctx, config, dbName, query, queryID, nil))
 }
 
 func (a *App) dbQueryAuditedContext(ctx context.Context, config connection.ConnectionConfig, dbName, query, source string) connection.QueryResult {

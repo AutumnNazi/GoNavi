@@ -329,8 +329,7 @@ func (c *clickHouseLegacyHTTPCollector) ConsumeRow(row map[string]interface{}) e
 	return nil
 }
 
-// clickHouseLegacyHTTPBudgetCollector 在达到每结果集行数上限后停止消费，
-// 让流式解码循环提前退出并释放响应体。
+// clickHouseLegacyHTTPBudgetCollector 在达到结果预算后停止消费。
 type clickHouseLegacyHTTPBudgetCollector struct {
 	collector *clickHouseLegacyHTTPCollector
 	budget    *RowBudget
@@ -342,9 +341,15 @@ func (c *clickHouseLegacyHTTPBudgetCollector) SetColumns(columns []string) error
 }
 
 func (c *clickHouseLegacyHTTPBudgetCollector) ConsumeRow(row map[string]interface{}) error {
-	maxRows := c.budget.MaxRowsPerResult()
-	if maxRows > 0 && c.consumed >= maxRows {
-		c.budget.MarkTruncated()
+	if !c.budget.CanMaterializeRow(c.consumed) {
+		return errRowBudgetExhausted
+	}
+	var fieldTruncated bool
+	row, fieldTruncated = boundQueryRowFields(row, c.budget.MaxFieldBytes())
+	if fieldTruncated {
+		c.budget.MarkFieldTruncated()
+	}
+	if !c.budget.ConsumeRow(estimateQueryRowBytes(row)) {
 		return errRowBudgetExhausted
 	}
 	c.consumed++

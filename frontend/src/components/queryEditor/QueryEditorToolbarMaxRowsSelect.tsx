@@ -1,9 +1,14 @@
 import React from 'react';
-import { Button, Input, Select, Tooltip } from 'antd';
+import { Button, Input, Modal, Select, Tooltip } from 'antd';
 import { CheckOutlined } from '@ant-design/icons';
 
 import { t as defaultTranslate, type I18nParams } from '../../i18n';
 import { useOptionalI18n } from '../../i18n/provider';
+import {
+  QUERY_EDITOR_SAFE_MAX_FIELD_BYTES,
+  QUERY_EDITOR_SAFE_MAX_RESULT_BYTES,
+  QUERY_EDITOR_UNLIMITED_SAFE_MAX_ROWS,
+} from './queryEditorResultBudget';
 
 /**
  * 工具栏「最大返回行数」上限，与 store 的 sanitizeQueryOptions 保持一致
@@ -60,6 +65,11 @@ const QueryEditorToolbarMaxRowsSelect: React.FC<QueryEditorToolbarMaxRowsSelectP
   const [customInput, setCustomInput] = React.useState('');
   const customInputRef = React.useRef('');
   const [customError, setCustomError] = React.useState(false);
+  const safetyParams = {
+    rows: QUERY_EDITOR_UNLIMITED_SAFE_MAX_ROWS,
+    size: Math.round(QUERY_EDITOR_SAFE_MAX_RESULT_BYTES / 1024 / 1024),
+    fieldSize: Math.round(QUERY_EDITOR_SAFE_MAX_FIELD_BYTES / 1024 / 1024),
+  };
 
   const fixedOptions = React.useMemo(() => [
     { label: '100', value: 100 },
@@ -67,7 +77,12 @@ const QueryEditorToolbarMaxRowsSelect: React.FC<QueryEditorToolbarMaxRowsSelectP
     { label: t('query_editor.max_rows.option_1000'), value: 1000 },
     { label: t('query_editor.max_rows.option_5000'), value: 5000 },
     { label: t('query_editor.max_rows.option_20000'), value: 20000 },
-    { label: t('query_editor.max_rows.option_unlimited'), value: 0 },
+    {
+      label: t('query_editor.max_rows.option_unlimited_safe', {
+        rows: QUERY_EDITOR_UNLIMITED_SAFE_MAX_ROWS,
+      }),
+      value: 0,
+    },
   ], [t]);
   const options = React.useMemo(
     () => buildQueryEditorMaxRowsOptions(maxRows, fixedOptions),
@@ -100,6 +115,22 @@ const QueryEditorToolbarMaxRowsSelect: React.FC<QueryEditorToolbarMaxRowsSelectP
     setMenuOpen(false);
     setCustomError(false);
     onMaxRowsChange(nextMaxRows);
+  };
+
+  // 「不限」只取消自动 LIMIT，后端扫描层仍按安全预算截断；把它明确告知用户，
+  // 避免被理解成「无任何上限」。
+  const handleMaxRowsChange = (nextMaxRows: number) => {
+    if (nextMaxRows !== 0) {
+      onMaxRowsChange(nextMaxRows);
+      return;
+    }
+    void Modal.confirm({
+      title: t('query_editor.max_rows.unlimited_confirm.title'),
+      content: t('query_editor.max_rows.unlimited_confirm.content', safetyParams),
+      okText: t('query_editor.max_rows.unlimited_confirm.ok'),
+      cancelText: t('common.cancel'),
+      onOk: () => onMaxRowsChange(0),
+    });
   };
 
   // 惰性构造：弹层未展开时不触碰 antd 的 Input/Button，避免无谓的 JSX 构造。
@@ -158,11 +189,11 @@ const QueryEditorToolbarMaxRowsSelect: React.FC<QueryEditorToolbarMaxRowsSelectP
   // Tooltip 必须内联在这里：调用方若在外面套一层 <Tooltip>，rc-trigger 对非
   // forwardRef 的函数组件不会注入 ref，气泡会静默失效（见 QueryEditorToolbarRunAction）。
   return (
-    <Tooltip title={t('query_editor.max_rows.tooltip')}>
+    <Tooltip title={t('query_editor.max_rows.tooltip', safetyParams)}>
       <Select
         className="gn-v2-query-toolbar-select gn-v2-query-toolbar-max-rows-select"
         value={maxRows}
-        onChange={(value) => onMaxRowsChange(Number(value))}
+        onChange={(value) => handleMaxRowsChange(Number(value))}
         open={menuOpen}
         onOpenChange={handleMenuOpenChange}
         popupRender={(menu) => (

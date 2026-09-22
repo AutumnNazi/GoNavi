@@ -56,15 +56,15 @@ func withManagedSQLStatementAuditTimestamp(
 // The transaction stays open until DBCommitTransaction or DBRollbackTransaction
 // is called by the SQL editor UI.
 func (a *App) DBQueryMultiTransactional(config connection.ConnectionConfig, dbName string, query string, queryID string) connection.QueryResult {
-	return a.dbQueryMultiTransactionalWithBindings(config, dbName, query, queryID, nil)
+	return a.dbQueryMultiTransactionalWithBindings(config, dbName, query, queryID, nil, nil)
 }
 
 // DBQueryMultiTransactionalWithParams 在托管事务启动时按名绑定参数执行首条 SQL。
 func (a *App) DBQueryMultiTransactionalWithParams(config connection.ConnectionConfig, dbName string, query string, queryID string, bindings []connection.QueryParamBinding) connection.QueryResult {
-	return a.dbQueryMultiTransactionalWithBindings(config, dbName, query, queryID, bindings)
+	return a.dbQueryMultiTransactionalWithBindings(config, dbName, query, queryID, bindings, nil)
 }
 
-func (a *App) dbQueryMultiTransactionalWithBindings(config connection.ConnectionConfig, dbName string, query string, queryID string, bindings []connection.QueryParamBinding) (result connection.QueryResult) {
+func (a *App) dbQueryMultiTransactionalWithBindings(config connection.ConnectionConfig, dbName string, query string, queryID string, bindings []connection.QueryParamBinding, budgetOptions *db.RowBudgetOptions) (result connection.QueryResult) {
 	runConfig := normalizeRunConfig(config, dbName)
 	transactionDBType := resolveDDLDBType(runConfig)
 	transactionConfig := runConfig
@@ -93,6 +93,18 @@ func (a *App) dbQueryMultiTransactionalWithBindings(config connection.Connection
 
 	query = sanitizeSQLForPgLike(transactionDBType, query)
 	if !shouldUseManagedSQLTransaction(transactionDBType, query) {
+		if budgetOptions != nil {
+			options := dbQueryMultiAuditOptions{
+				auditAll:     true,
+				auditWrites:  true,
+				source:       "query_editor",
+				ResultBudget: budgetOptions,
+			}
+			if len(bindings) > 0 {
+				return a.dbQueryMultiWithParams(config, dbName, query, queryID, bindings, options)
+			}
+			return a.dbQueryMulti(config, dbName, query, queryID, options)
+		}
 		if len(bindings) > 0 {
 			return a.dbQueryMultiWithParams(config, dbName, query, queryID, bindings, dbQueryMultiAuditOptions{
 				auditAll:    true,
@@ -153,6 +165,9 @@ func (a *App) dbQueryMultiTransactionalWithBindings(config connection.Connection
 	}
 
 	ctx, cancel := newQueryExecutionContext(runConfig)
+	if budget := db.NewRowBudgetWithOptions(valueOrZero(budgetOptions)); budget != nil {
+		ctx = db.ContextWithRowBudget(ctx, budget)
+	}
 	cleanupRunningQuery := a.registerRunningQuery(queryID, cancel, true, optionalDriverTypeForConnectionConfig(runConfig))
 	lifecycle := a.beginQueryExecutionLifecycle(queryID)
 	defer func() {
@@ -351,6 +366,10 @@ func (a *App) dbQueryMultiTransactionalWithBindings(config connection.Connection
 // DBQueryMultiInTransaction executes follow-up SQL in an existing SQL editor managed transaction.
 // The transaction remains open until DBCommitTransaction or DBRollbackTransaction is called.
 func (a *App) DBQueryMultiInTransaction(transactionID string, query string, queryID string) (result connection.QueryResult) {
+	return a.dbQueryMultiInTransaction(transactionID, query, queryID, nil)
+}
+
+func (a *App) dbQueryMultiInTransaction(transactionID string, query string, queryID string, budgetOptions *db.RowBudgetOptions) (result connection.QueryResult) {
 	transactionID = strings.TrimSpace(transactionID)
 	if transactionID == "" {
 		return connection.QueryResult{Success: false, Message: a.appText("db.backend.error.transaction_id_required", nil), QueryID: queryID}
@@ -382,6 +401,9 @@ func (a *App) DBQueryMultiInTransaction(transactionID string, query string, quer
 		}
 	}
 	ctx, cancel := newQueryExecutionContext(runConfig)
+	if budget := db.NewRowBudgetWithOptions(valueOrZero(budgetOptions)); budget != nil {
+		ctx = db.ContextWithRowBudget(ctx, budget)
+	}
 	cleanupRunningQuery := a.registerRunningQuery(queryID, cancel, true, optionalDriverTypeForConnectionConfig(runConfig))
 	lifecycle := a.beginQueryExecutionLifecycle(queryID)
 	defer func() {
@@ -466,6 +488,7 @@ func executeManagedSQLTransactionStatementsWithObserver(
 		executionOptions = options[0]
 	}
 	resolvedDBType := resolveDDLDBType(runConfig)
+	rowBudget := db.RowBudgetFromContext(ctx)
 	buildStatementExecutionFailedError := func(index int, err error) error {
 		return fmt.Errorf("%s", text("db.backend.error.multi_statement_execution_failed", map[string]any{
 			"index":  index,
@@ -490,6 +513,10 @@ func executeManagedSQLTransactionStatementsWithObserver(
 	}
 	statementIndex := 0
 	for _, stmt := range statements {
+		if !rowBudget.CanMaterializeRow(0) {
+			applyRowBudgetTruncation(resultSets, rowBudget)
+			break
+		}
 		stmt = strings.TrimSpace(stmt)
 		if stmt == "" {
 			continue
@@ -598,6 +625,7 @@ func executeManagedSQLTransactionStatementsWithObserver(
 						rowsReturned += returned
 						resultSets = append(resultSets, statementResult)
 					}
+					applyRowBudgetTruncation(resultSets, rowBudget)
 					emitObservation(rowsAffected, rowsReturned, nil)
 					continue
 				}
@@ -613,6 +641,7 @@ func executeManagedSQLTransactionStatementsWithObserver(
 					Messages:       messages,
 					StatementIndex: statementIndex,
 				})
+				applyRowBudgetTruncation(resultSets, rowBudget)
 				emitObservation(0, int64(len(data)), nil)
 				continue
 			}
@@ -656,46 +685,6 @@ func executeManagedSQLTransactionStatementsWithObserver(
 		resultSets = []connection.ResultSetData{}
 	}
 	return resultSets, nil
-}
-
-func summarizeManagedSQLResultSet(resultSet connection.ResultSetData) (rowsAffected, rowsReturned int64) {
-	if !isAffectedRowsResultSet(resultSet) {
-		return 0, int64(len(resultSet.Rows))
-	}
-	for _, row := range resultSet.Rows {
-		value, ok := row["affectedRows"]
-		if !ok {
-			for key, candidate := range row {
-				if strings.EqualFold(strings.TrimSpace(key), "affectedRows") {
-					value = candidate
-					ok = true
-					break
-				}
-			}
-		}
-		if !ok {
-			continue
-		}
-		switch typed := value.(type) {
-		case int:
-			rowsAffected += int64(typed)
-		case int32:
-			rowsAffected += int64(typed)
-		case int64:
-			rowsAffected += typed
-		case uint:
-			rowsAffected += int64(typed)
-		case uint32:
-			rowsAffected += int64(typed)
-		case uint64:
-			if typed <= uint64(^uint64(0)>>1) {
-				rowsAffected += int64(typed)
-			}
-		case float64:
-			rowsAffected += int64(typed)
-		}
-	}
-	return rowsAffected, 0
 }
 
 func shouldUseManagedSQLTransaction(dbType string, query string) bool {

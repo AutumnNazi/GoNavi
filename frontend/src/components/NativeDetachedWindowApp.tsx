@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Button, ConfigProvider, Segmented, Spin, Tag, Tooltip, theme as antdTheme } from 'antd';
+import { Button, ConfigProvider, Spin, Tooltip, theme as antdTheme } from 'antd';
 import { CloseOutlined, CompressOutlined } from '@ant-design/icons';
 import { EventsOn } from '../../wailsjs/runtime';
 
@@ -44,7 +44,7 @@ import type { CustomThemeDefinition } from '../utils/customTheme';
 import { isMacLikePlatform } from '../utils/appearance';
 import {
   peekQueryEditorResultSession,
-  saveQueryEditorResultSession,
+  saveQueryEditorResultSessionForOpenTab,
   subscribeQueryEditorResultSession,
   type QueryEditorResultSessionSnapshot,
 } from '../utils/queryEditorResultSessionCache';
@@ -57,6 +57,7 @@ import CustomThemeStyleHost, {
   type CustomThemeAntTokenSnapshot,
 } from './theme/CustomThemeStyleHost';
 import ToolbarAppearanceStyleHost from './theme/ToolbarAppearanceStyleHost';
+import NativeDetachedQueryResult from './NativeDetachedQueryResult';
 import {
   getShortcutPlatform,
   installGlobalImeCompositionTracking,
@@ -65,7 +66,6 @@ import {
 } from '../utils/shortcuts';
 import { useAIWorkspaceSnapshot } from './ai/useAIWorkspaceSnapshot';
 const AIChatPanel = React.lazy(() => import('./AIChatPanel'));
-const DataGrid = React.lazy(() => import('./DataGrid'));
 const WorkbenchTabContent = React.lazy(() => import('./WorkbenchTabContent'));
 const NativeDetachedWindowController = React.lazy(
   () => import('./NativeDetachedWindowController'),
@@ -171,9 +171,6 @@ export interface NativeDetachedWindowAppProps {
   client?: NativeDetachedWindowClient;
 }
 
-const isAffectedRowsResult = (columns: string[]): boolean =>
-  columns.length === 1 && columns[0] === 'affectedRows';
-
 const buildActionPayload = (
   bootstrap: NativeDetachedWindowBootstrap,
   tab?: TabData,
@@ -234,119 +231,6 @@ const buildActionPayload = (
   };
 };
 
-const NativeDetachedQueryResult: React.FC<{
-  windowState: DetachedQueryResultWindow;
-  onDataChange: (rows: Array<Record<string, unknown>>) => void;
-}> = ({ windowState, onDataChange }) => {
-  const result = windowState.result;
-  const i18n = useOptionalI18n();
-  const t = i18n?.t ?? defaultTranslate;
-  const themeMode = useStore((state) => state.theme);
-  const [elasticsearchViewMode, setElasticsearchViewMode] = useState<'table' | 'raw'>('table');
-  const isDark = themeMode === 'dark';
-  if (result.resultType === 'elasticsearch') {
-    const hasTable = Array.isArray(result.rows) && result.rows.length > 0 && (result.columns || []).length > 0;
-    const viewMode = hasTable ? elasticsearchViewMode : 'raw';
-    const status = Number(result.httpStatus || 0);
-    const statusColor = status >= 200 && status < 300
-      ? (result.partialFailure ? 'orange' : 'green')
-      : 'red';
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', flex: '0 0 auto',
-          borderBottom: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.08)',
-        }}>
-          <span style={{ fontFamily: 'var(--gn-font-mono)', fontWeight: 600 }}>
-            {result.requestLabel || result.sql}
-          </span>
-          {status > 0 ? <Tag color={statusColor}>HTTP {status}</Tag> : null}
-          {result.partialFailure ? <Tag color="orange">{t('query_editor.elasticsearch.partial')}</Tag> : null}
-          {result.outcomeUnknown ? <Tag color="red">{t('query_editor.elasticsearch.outcome_unknown')}</Tag> : null}
-          <span style={{ flex: 1 }} />
-          {hasTable ? (
-            <Segmented
-              size="small"
-              value={viewMode}
-              options={[
-                { label: t('query_editor.elasticsearch.table'), value: 'table' },
-                { label: t('query_editor.elasticsearch.raw'), value: 'raw' },
-              ]}
-              onChange={(value) => setElasticsearchViewMode(value as 'table' | 'raw')}
-            />
-          ) : null}
-        </div>
-        {viewMode === 'raw' ? (
-          <textarea
-            aria-label={t('query_editor.elasticsearch.raw_response')}
-            readOnly
-            spellCheck={false}
-            value={String(result.rawResponse || '')}
-            style={{
-              flex: 1, minHeight: 0, margin: 12, padding: 12, resize: 'none', overflow: 'auto',
-              borderRadius: 6, fontFamily: 'var(--gn-font-mono)', whiteSpace: 'pre',
-              color: isDark ? '#d4d4d4' : '#333',
-              background: isDark ? 'rgba(0,0,0,0.18)' : 'rgba(0,0,0,0.018)',
-              border: isDark ? '1px solid rgba(255,255,255,0.14)' : '1px solid rgba(0,0,0,0.10)',
-            }}
-          />
-        ) : (
-          <DataGrid
-            data={result.rows || []}
-            columnNames={result.columns || []}
-            loading={false}
-            pkColumns={[]}
-            readOnly
-            connectionId={result.executionConnectionId || windowState.connectionId}
-            connectionParamsOverride={result.executionConnectionParams}
-            dbName={result.metadataDbName ?? result.executionDbName ?? windowState.dbName ?? ''}
-            resultSql={result.sql}
-            exportScope="queryResult"
-            isActive
-          />
-        )}
-      </div>
-    );
-  }
-  const isMessage = result.resultType === 'message' || isAffectedRowsResult(result.columns || []);
-  const messageText = (result.messages || []).join('\n')
-    || (isAffectedRowsResult(result.columns || [])
-      ? String(result.rows?.[0]?.affectedRows ?? '')
-      : '');
-
-  if (isMessage) {
-    return (
-      <textarea
-        className="gn-native-detached-message"
-        readOnly
-        value={messageText}
-      />
-    );
-  }
-
-  return (
-    <DataGrid
-      data={result.rows || []}
-      columnNames={result.columns || []}
-      loading={false}
-      tableName={result.tableName}
-      pkColumns={result.pkColumns || []}
-      editLocator={result.editLocator as any}
-      readOnly={result.readOnly !== false}
-      connectionId={result.executionConnectionId || windowState.connectionId}
-      connectionParamsOverride={result.executionConnectionParams}
-      dbName={result.metadataDbName ?? result.executionDbName ?? windowState.dbName ?? ''}
-      ddlDbName={result.ddlDbName}
-      ddlTableName={result.ddlTableName}
-      resultSql={result.exportSql || result.sql}
-      exportScope="queryResult"
-      showRowNumberColumn={result.showRowNumberColumn}
-      onDataChange={onDataChange}
-      isActive
-    />
-  );
-};
-
 const NativeDetachedWindowContent: React.FC<{
   bootstrap: NativeDetachedWindowBootstrap;
   themeModeOverride?: 'light' | 'dark';
@@ -355,7 +239,7 @@ const NativeDetachedWindowContent: React.FC<{
   onClose: () => void;
   onOpenSettings: (providerId?: string) => void;
   onRegisterAITerminalGuard: (guard: (() => Promise<boolean>) | null) => void;
-  onQueryResultDataChange: (rows: Array<Record<string, unknown>>) => void;
+  onQueryResultStateChange: (patch: Partial<DetachedQueryResultWindow['result']>) => void;
   interactionDisabled?: boolean;
 }> = ({
   bootstrap,
@@ -365,7 +249,7 @@ const NativeDetachedWindowContent: React.FC<{
   onClose,
   onOpenSettings,
   onRegisterAITerminalGuard,
-  onQueryResultDataChange,
+  onQueryResultStateChange,
   interactionDisabled = false,
 }) => {
   const tabFromStore = useStore((state) => bootstrap.payload.tab
@@ -393,7 +277,7 @@ const NativeDetachedWindowContent: React.FC<{
           <>
             <NativeDetachedQueryResult
               windowState={bootstrap.payload.resultWindow}
-              onDataChange={onQueryResultDataChange}
+              onStateChange={onQueryResultStateChange}
             />
             <NativeDetachedContentReady onReady={onContentReady} />
           </>
@@ -483,12 +367,12 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
   const hostEventSequenceRef = useRef(0);
   const workbenchStateSourceRef = useRef<NativeDetachedStoreSnapshot>({});
   const syncedWorkbenchTabIdsRef = useRef<Set<string>>(new Set());
-  const handleQueryResultDataChange = useCallback((rows: Array<Record<string, unknown>>) => {
+  const handleQueryResultStateChange = useCallback((patch: Partial<DetachedQueryResultWindow['result']>) => {
     const resultWindow = queryResultWindowRef.current;
     if (!resultWindow) return;
     queryResultWindowRef.current = {
       ...resultWindow,
-      result: { ...resultWindow.result, rows },
+      result: { ...resultWindow.result, ...patch },
     };
     queryResultDirtyGenerationRef.current += 1;
     scheduleSyncRef.current(false);
@@ -558,9 +442,10 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
         if (nextBootstrap.kind === 'workbench' && nextBootstrap.payload.tab) {
           resultSessionRef.current = nextBootstrap.payload.resultSession ?? null;
           if (nextBootstrap.payload.resultSession) {
-            saveQueryEditorResultSession(
+            saveQueryEditorResultSessionForOpenTab(
               nextBootstrap.payload.tab.id,
               nextBootstrap.payload.resultSession,
+              useStore.getState().tabs,
             );
           }
         }
@@ -1604,7 +1489,7 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
                   aiTerminalGuardRef.current = guard;
                 }}
                 interactionDisabled={Boolean(terminalAction)}
-                onQueryResultDataChange={handleQueryResultDataChange}
+                onQueryResultStateChange={handleQueryResultStateChange}
               />
             </React.Suspense>
           ) : null}

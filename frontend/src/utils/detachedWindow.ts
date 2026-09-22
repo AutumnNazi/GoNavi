@@ -1,4 +1,6 @@
+import type { Key } from 'react';
 import { APP_DETACHED_WINDOW_Z_INDEX_BASE } from './overlayZIndex';
+import type { FilterCondition } from './sql';
 
 export type DetachedWindowBounds = {
   x: number;
@@ -46,6 +48,11 @@ export type DetachedQueryResultSnapshot = {
   showRowNumberColumn?: boolean;
   truncated?: boolean;
   pinned?: boolean;
+  filterConditions?: FilterCondition[];
+  quickWhereCondition?: string;
+  selectedRowKeys?: Key[];
+  selectedCellKeys?: string[];
+  scrollSnapshot?: { top: number; left: number };
 };
 
 export type DetachedQueryResultWindow = DetachedWindowBounds & {

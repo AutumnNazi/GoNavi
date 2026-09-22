@@ -19,7 +19,7 @@ import { format } from 'sql-formatter';
 import { v4 as uuidv4 } from 'uuid';
 import { TabData, ColumnDefinition, type ConnectionConfig, type SavedQuery, type SqlSnippet } from '../types';
 import { type SqlLog, useStore } from '../store';
-import { DBQuery, DBQueryWithCancel, DBQueryMulti, DBQueryMultiInTransaction, DBQueryMultiTransactional, DBQueryAudited, DBGetTables, DBTableExists, DBGetAllColumns, DBGetDatabases, DBGetColumns, DBGetTriggers, DBShowCreateTable, CancelQuery, DBRollbackTransactionWithTrigger, GenerateQueryID, WriteSQLFile, ExportSQLFile, InspectElasticsearchConsole, ExecuteElasticsearchConsole } from '../../wailsjs/go/app/App';
+import { DBQuery, DBQueryWithCancel, DBQueryMulti, DBQueryMultiInTransaction, DBQueryMultiInTransactionWithOptions, DBQueryMultiTransactional, DBQueryMultiTransactionalWithOptions, DBQueryMultiWithOptions, DBQueryAudited, DBGetTables, DBTableExists, DBGetAllColumns, DBGetDatabases, DBGetColumns, DBGetTriggers, DBShowCreateTable, CancelQuery, DBRollbackTransactionWithTrigger, GenerateQueryID, WriteSQLFile, ExportSQLFile, InspectElasticsearchConsole, ExecuteElasticsearchConsole } from '../../wailsjs/go/app/App';
 import { GONAVI_ROW_KEY } from './DataGrid';
 import { EventsOn, LogError, LogInfo } from '../../wailsjs/runtime';
 import {
@@ -132,9 +132,18 @@ import {
 } from '../utils/sqlFileTabDrafts';
 import {
     clearQueryEditorResultSession,
-    saveQueryEditorResultSession,
+    saveQueryEditorResultSessionForOpenTab,
     takeQueryEditorResultSession,
 } from '../utils/queryEditorResultSessionCache';
+import { useQueryEditorResultSessionLifecycle } from './queryEditor/queryEditorResultSessionLifecycle';
+import {
+    QUERY_EDITOR_RESULT_HISTORY_MAX_BYTES,
+    QUERY_EDITOR_RESULT_HISTORY_MAX_RESULTS,
+    QUERY_EDITOR_RESULT_HISTORY_MAX_ROWS,
+    applyQueryEditorResultHistoryBudget,
+} from './queryEditor/queryEditorResultHistory';
+import { buildQueryEditorResultBudgetOptions } from './queryEditor/queryEditorResultBudget';
+import { useQueryEditorResultHistoryBudget } from './queryEditor/useQueryEditorResultHistoryBudget';
 import { buildEditableTriggerSql } from '../utils/triggerEditSql';
 import {
     isTableDesignerTriggerCreateStatement as isQueryEditorTriggerCreateStatement,
@@ -179,7 +188,7 @@ import QueryEditorResultsPanel, {
     resolveEffectiveActiveResultKey,
     type QueryEditorResultSet,
 } from './QueryEditorResultsPanel';
-import { expandCompactQueryResult, invokeCompactDBQueryMulti } from './queryEditor/queryResultTransport';
+import { expandCompactQueryResult, invokeBudgetedDBQueryMulti, invokeCompactDBQueryMulti } from './queryEditor/queryResultTransport';
 import { showCountdownDangerConfirm } from './common/countdownDangerConfirm';
 import ResultDiffWizard from './resultDiff/ResultDiffWizard';
 import ResultDiffPanel from './resultDiff/ResultDiffPanel';
@@ -229,6 +238,14 @@ import {
     supportsQueryEditorSchemaSelection,
 } from './queryEditor/queryEditorSchemaContext';
 import { useSqlEditorTransactionController } from './useSqlEditorTransactionController';
+import {
+    buildQueryEditorLazyTablesCacheKey as buildBoundedLazyTablesCacheKey,
+    buildQueryEditorMetadataCacheScope,
+    clearQueryEditorMetadataCaches,
+    invalidateQueryEditorMetadataCaches,
+    queryEditorColumnsCache as boundedColumnsCache,
+    queryEditorLazyTablesCache as boundedLazyTablesCache,
+} from './queryEditor/queryEditorMetadataCaches';
 import {
     type CompletionColumnMeta,
     type CompletionPackageMeta,
@@ -1222,9 +1239,9 @@ let sharedTriggersData: CompletionTriggerMeta[] = [];
 let sharedRoutinesData: CompletionRoutineMeta[] = [];
 let sharedSequencesData: CompletionSequenceMeta[] = [];
 let sharedPackagesData: CompletionPackageMeta[] = [];
-let sharedColumnsCacheData: Record<string, any[]> = {};
 let sharedActiveEditorModelUri = '';
-const sharedLazyTablesCache: Record<string, CompletionTableMeta[] | undefined> = {};
+// 表/列元数据改为带容量与 TTL 的共享缓存（#1254）：此前是无限增长的普通对象，
+// 访问过的库越多驻留越久，且没有任何失效入口。
 const sharedLazyTablesInFlight: Record<string, Promise<CompletionTableMeta[]> | undefined> = {};
 // Revisions prevent an already-running lazy metadata request from writing its
 // stale result back after a schema refresh. The global metadata generation is
@@ -1286,10 +1303,22 @@ const getSharedLazyTablesRevision = (cacheKey: string): number => (
     sharedLazyTablesRevisionByKey[cacheKey] || 0
 );
 
+// 每编辑器仍持有自己的 columns ref（用于失效），同时把当前连接的条目镜像进
+// 共享的带容量缓存：#1254 之前这里是全量赋值给一个无限增长的普通对象。
+const mirrorColumnsCacheIntoBoundedCache = (cache: Record<string, ColumnDefinition[]>) => {
+    const connectionId = String(sharedCurrentConnectionId || '').trim();
+    if (!connectionId) return;
+    const scope = buildQueryEditorMetadataCacheScope(connectionId, '');
+    Object.entries(cache).forEach(([key, value]) => {
+        if (!Array.isArray(value)) return;
+        boundedColumnsCache.set(key, scope, value);
+    });
+};
+
 const invalidateSharedLazyTablesCacheKey = (cacheKey: string) => {
     const normalizedCacheKey = String(cacheKey || '').trim();
     if (!normalizedCacheKey) return;
-    delete sharedLazyTablesCache[normalizedCacheKey];
+    boundedLazyTablesCache.delete(normalizedCacheKey);
     sharedLazyTablesRevisionByKey[normalizedCacheKey] = getSharedLazyTablesRevision(normalizedCacheKey) + 1;
     Object.keys(sharedLazyTablesInFlight).forEach((inFlightKey) => {
         const inFlightCacheKey = inFlightKey.replace(/\|\d+$/, '');
@@ -1304,7 +1333,6 @@ const invalidateSharedLazyTablesCache = (connectionId: string, dbName?: string) 
     if (!normalizedConnectionId) return;
 
     const cacheKeys = new Set([
-        ...Object.keys(sharedLazyTablesCache),
         ...Object.keys(sharedLazyTablesRevisionByKey),
     ]);
     Object.keys(sharedLazyTablesInFlight).forEach((inFlightKey) => {
@@ -1829,9 +1857,9 @@ const resetSharedQueryEditorMetadata = (releaseHoverDdlState = false) => {
     sharedRoutinesData = [];
     sharedSequencesData = [];
     sharedPackagesData = [];
-    sharedColumnsCacheData = {};
+    boundedColumnsCache.clear();
     sharedActiveEditorModelUri = '';
-    clearRecord(sharedLazyTablesCache);
+    clearQueryEditorMetadataCaches();
     clearRecord(sharedLazyTablesInFlight);
     clearRecord(sharedLazyTablesRevisionByKey);
     if (releaseHoverDdlState) {
@@ -1982,11 +2010,30 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
   // Result Sets (session cache survives detach/attach remounts)
   const restoredResultSessionRef = useRef(takeQueryEditorResultSession(tab.id));
+  // A restored session may predate the current history budget, so bound it on the
+  // way in: the trimmed set is what the editor mounts with, not just what it saves.
+  const restoredResultHistoryRef = useRef<{
+      resultSets: ResultSet[];
+      evictedKeys: string[];
+  } | null>(null);
+  if (restoredResultHistoryRef.current === null) {
+      const restoredActiveKey = restoredResultSessionRef.current?.activeResultKey || '';
+      restoredResultHistoryRef.current = applyQueryEditorResultHistoryBudget(
+          restoredResultSessionRef.current?.resultSets || [],
+          restoredActiveKey ? [restoredActiveKey] : [],
+      );
+  }
   const [resultSets, setResultSets] = useState<ResultSet[]>(
-    () => restoredResultSessionRef.current?.resultSets || [],
+    () => restoredResultHistoryRef.current?.resultSets || [],
   );
   const [activeResultKey, setActiveResultKey] = useState<string>(
-    () => restoredResultSessionRef.current?.activeResultKey || '',
+    () => {
+        const restoredActiveKey = restoredResultSessionRef.current?.activeResultKey || '';
+        const restoredResults = restoredResultHistoryRef.current?.resultSets || [];
+        return restoredResults.some((result) => result.key === restoredActiveKey)
+            ? restoredActiveKey
+            : restoredResults[0]?.key || '';
+    },
   );
   const [resultDataPreviewRequest, setResultDataPreviewRequest] = useState<{
       resultKey: string;
@@ -2003,6 +2050,24 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   >());
   resultSetsRef.current = resultSets;
   activeResultKeyRef.current = activeResultKey;
+  const notifyResultHistoryTrimmed = useCallback(() => {
+      void message.info(translate('query_editor.results_panel.message.history_trimmed', {
+          results: QUERY_EDITOR_RESULT_HISTORY_MAX_RESULTS,
+          rows: QUERY_EDITOR_RESULT_HISTORY_MAX_ROWS,
+          size: Math.round(QUERY_EDITOR_RESULT_HISTORY_MAX_BYTES / 1024 / 1024),
+      }));
+  }, []);
+  useEffect(() => {
+      if ((restoredResultHistoryRef.current?.evictedKeys.length || 0) === 0) return;
+      notifyResultHistoryTrimmed();
+  }, [notifyResultHistoryTrimmed]);
+  useQueryEditorResultHistoryBudget({
+      resultSets,
+      protectedActiveKey: activeResultKey === QUERY_EDITOR_SQL_LOG_TAB_KEY ? '' : activeResultKey,
+      resultSetsRef,
+      setResultSets,
+      onTrimmed: notifyResultHistoryTrimmed,
+  });
   const [loading, setLoading] = useState(false);
   const [queryEditorMetadataReloadTick, setQueryEditorMetadataReloadTick] = useState(0);
   // 事件驱动的结构变更重载必须绕过 fetchKey 去重（服务端结构可能已变，前端无从感知）
@@ -2413,11 +2478,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const captureSession = (event: Event) => {
           const requestedTabId = String((event as CustomEvent).detail?.tabId || '').trim();
           if (requestedTabId !== tab.id) return;
-          saveQueryEditorResultSession(tab.id, {
+          saveQueryEditorResultSessionForOpenTab(tab.id, {
               resultSets: resultSetsRef.current,
               activeResultKey: activeResultKeyRef.current,
               isResultPanelVisible: isResultPanelVisibleRef.current,
-          });
+          }, useStore.getState().tabs);
       };
       window.addEventListener('gonavi:capture-query-result-session', captureSession);
       return () => {
@@ -2425,25 +2490,17 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       };
   }, [tab.id]);
 
-  useEffect(() => {
-      // Keep result panel state across detach/attach remounts of the same tab.
-      return () => {
-          saveQueryEditorResultSession(tab.id, {
-              resultSets: resultSetsRef.current,
-              activeResultKey: activeResultKeyRef.current,
-              isResultPanelVisible: isResultPanelVisibleRef.current,
-          });
-      };
-  }, [tab.id]);
-
-  useEffect(() => {
-      if (!publishesDetachedResultSession) return;
-      saveQueryEditorResultSession(tab.id, {
-          resultSets,
-          activeResultKey,
-          isResultPanelVisible,
-      });
-  }, [activeResultKey, isResultPanelVisible, publishesDetachedResultSession, resultSets, tab.id]);
+  useQueryEditorResultSessionLifecycle({
+      tabId: tab.id,
+      resultSets,
+      activeResultKey,
+      isResultPanelVisible,
+      publishesDetachedResultSession,
+      resultSetsRef,
+      activeResultKeyRef,
+      isResultPanelVisibleRef,
+      editorRef,
+  });
   const shortcutOptions = useStore(state => state.shortcutOptions);
   const activeShortcutPlatform = getShortcutPlatform(isMacLikePlatform());
   const runQueryShortcutBinding = useMemo(
@@ -3391,11 +3448,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           ?? '',
       ).trim();
       const metadataDialect = normalizeMetadataDialect(conn);
-      const lazyTablesEntry = sharedLazyTablesCache[buildSharedLazyTablesCacheKey(
+      const lazyTablesEntry = boundedLazyTablesCache.get(buildBoundedLazyTablesCacheKey(
           resolvedConnectionId,
           currentDbName,
           metadataDialect,
-      )];
+      ));
 
       // 大库下全量合并可达数十万条且每次补全请求都会调用；依赖引用未变时复用上次结果，
       // 同时保持 tables/columns 数组身份稳定，让下游按数组身份缓存的索引也能跨请求复用。
@@ -3595,7 +3652,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                           tablesRef.current = [...nextTableByKey.values()];
                           sharedTablesData = tablesRef.current;
                           if (getSharedLazyTablesRevision(lazyTablesCacheKey) === lazyTablesCacheRevision) {
-                              sharedLazyTablesCache[lazyTablesCacheKey] = fetchedTables;
+                              boundedLazyTablesCache.set(
+                                  lazyTablesCacheKey,
+                                  buildQueryEditorMetadataCacheScope(
+                                      connectionId,
+                                      buildQueryEditorMetadataIdentityKey(metadataDialect, dbName),
+                                  ),
+                                  fetchedTables,
+                              );
                           }
                       }
                   }
@@ -3729,7 +3793,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       sharedRoutinesData = routinesRef.current;
       sharedSequencesData = sequencesRef.current;
       sharedPackagesData = packagesRef.current;
-      sharedColumnsCacheData = columnsCacheRef.current;
+      mirrorColumnsCacheIntoBoundedCache(columnsCacheRef.current);
       sharedActiveEditorModelUri = String(editorRef.current?.getModel?.()?.uri?.toString?.() || '');
   }, [isActive, currentDb, currentConnectionId, currentSchema, connections, tab.id]);
 
@@ -4062,7 +4126,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       aiContextCacheRef.current = null;
       sharedTablesData = tablesRef.current;
       sharedAllColumnsData = allColumnsRef.current;
-      sharedColumnsCacheData = columnsCacheRef.current;
+      mirrorColumnsCacheIntoBoundedCache(columnsCacheRef.current);
       refreshObjectDecorations(QUERY_EDITOR_LIVE_DECORATION_MAX_TEXT_LENGTH);
   }, [refreshObjectDecorations]);
 
@@ -8043,8 +8107,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   dbName,
                   metadataDialect,
               );
-              if (sharedLazyTablesCache[cacheKey]) {
-                  return sharedLazyTablesCache[cacheKey];
+              const boundedCachedTables = boundedLazyTablesCache.get(cacheKey);
+              if (boundedCachedTables) {
+                  return boundedCachedTables;
               }
               const cacheRevision = getSharedLazyTablesRevision(cacheKey);
                   const metadataSnapshot: QueryEditorMetadataRequestSnapshot = {
@@ -8088,7 +8153,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                                   metadataDialect,
                               ))
                               .filter((table): table is CompletionTableMeta => !!table);
-                          sharedLazyTablesCache[cacheKey] = tables;
+                          boundedLazyTablesCache.set(
+                              cacheKey,
+                              buildQueryEditorMetadataCacheScope(
+                                  connId,
+                                  buildMetadataIdentityKey(metadataDialect, dbName),
+                              ),
+                              tables,
+                          );
                           if (tables.length > 0) {
                               const lazyTableByKey = new Map(tables.map((table) => [
                                   buildCompletionTableMetadataIdentityKey(
@@ -8233,7 +8305,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                       buildQueryEditorMetadataIdentityKey(activeDialect, lookupDbName),
                       normalizeQueryEditorTableTargetName(lookupTableName, activeDialect),
                   ].join('|');
-                  const cached = sharedColumnsCacheData[key] as ColumnDefinition[] | undefined;
+                  const cached = boundedColumnsCache.get(key) as ColumnDefinition[] | undefined;
                   if (cached) {
                       const cachedColumns = toCompletionColumns(cached, targetDb, targetTable);
                       mergeSharedCompletionColumns(cachedColumns);
@@ -8255,7 +8327,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                   }
                   if (res?.success && Array.isArray(res.data)) {
                       const cols = res.data as ColumnDefinition[];
-                      sharedColumnsCacheData[key] = cols;
+                      boundedColumnsCache.set(
+                          key,
+                          buildQueryEditorMetadataCacheScope(sharedCurrentConnectionId, ''),
+                          cols,
+                      );
                       const completionColumns = toCompletionColumns(cols, targetDb, targetTable);
                       mergeSharedCompletionColumns(completionColumns);
                       return completionColumns;
@@ -9704,6 +9780,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               || String(executionConfig.connectionParams || '')
                   === String(currentContextConfig.connectionParams || '')
           );
+      const resultBudget = buildQueryEditorResultBudgetOptions(queryOptions?.maxRows);
       const pendingTransaction = pendingSqlTransactionRef.current;
       if (
           pendingTransaction
@@ -9713,7 +9790,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           if (paramBindings && paramBindings.length > 0) {
               return DBQueryMultiWithParamsInTransaction(pendingTransaction.id, sql, queryId, paramBindings);
           }
-          return DBQueryMultiInTransaction(pendingTransaction.id, sql, queryId);
+          return DBQueryMultiInTransactionWithOptions(pendingTransaction.id, sql, queryId, resultBudget);
       }
       const rpcConfig = buildRpcConnectionConfig(executionConfig) as any;
       if (paramBindings && paramBindings.length > 0) {
@@ -9723,9 +9800,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               () => DBQueryMultiWithParams(rpcConfig, dbName, sql, queryId, paramBindings),
           );
       }
-      return invokeCompactDBQueryMulti([rpcConfig, dbName, sql, queryId], () => DBQueryMulti(rpcConfig, dbName, sql, queryId), invokeRequestScopedApp)
+      return invokeBudgetedDBQueryMulti(
+          [rpcConfig, dbName, sql, queryId, resultBudget],
+          () => DBQueryMultiWithOptions(rpcConfig, dbName, sql, queryId, resultBudget),
+          invokeRequestScopedApp,
+      )
           .then(expandCompactQueryResult);
-  }, [buildSqlExecutionConnectionConfig, invokeRequestScopedApp]);
+  }, [buildSqlExecutionConnectionConfig, invokeRequestScopedApp, queryOptions?.maxRows]);
 
   // 精准重查询单个结果集（提交事务 / 刷新按钮使用），不会重跑整个编辑器 SQL
   const handleReloadResult = async (
@@ -11076,6 +11157,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
 
             let res: any = undefined;
             const startTime = Date.now();
+            const resultBudget = buildQueryEditorResultBudgetOptions(queryOptions?.maxRows);
             setExecutionTimingActive(true);
             try {
                 res = useManagedTransaction
@@ -11087,11 +11169,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                             queryId,
                             paramBindings,
                         )
-                        : await DBQueryMultiTransactional(
+                        : await DBQueryMultiTransactionalWithOptions(
                             buildRpcConnectionConfig(executionConfig) as any,
                             executionDbName,
                             fullSQL,
                             queryId,
+                            resultBudget,
                         ))
                     : await executeSqlEditorMultiQuery(
                         config,
@@ -11435,7 +11518,9 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
                     });
                 } else {
                     let rows = Array.isArray(rsData.rows) ? rsData.rows : [];
-                    let truncated = false;
+                    // The backend scanner reports its own truncation; the client-side
+                    // slice below only covers the injected-LIMIT fallback.
+                    let truncated = rsData?.truncated === true;
                     // 仅当前端自动注入了 LIMIT 时才做兜底截断；用户手写 LIMIT 时尊重原始结果
                     if (anyLimitApplied && Number.isFinite(maxRows) && maxRows > 0 && rows.length > maxRows) {
                         truncated = true;
