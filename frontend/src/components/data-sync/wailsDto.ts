@@ -998,6 +998,12 @@ export const decodeRunRecord = (
     optionalNumber(run.rowsInserted, 'run.rowsInserted') +
     optionalNumber(run.rowsUpdated, 'run.rowsUpdated') +
     optionalNumber(run.rowsDeleted, 'run.rowsDeleted');
+  // 进度是「已处理/总对象数」：备份按表计，同步按映射计，二者共用
+  // RunProgress.Current/Total。此前这一列被硬编码为空串，表格因此恒显示 —，
+  // 而后端其实一直在上报这两个字段。
+  const current = optionalNumber(run.currentItem, 'run.currentItem');
+  const total = optionalNumber(run.totalItems, 'run.totalItems');
+  const progress = total > 0 ? `${Math.min(current, total)}/${total}` : '';
   return {
     id: string(run.id, 'run.id', false),
     taskId,
@@ -1019,7 +1025,7 @@ export const decodeRunRecord = (
     rowsWritten,
     rowsFailed: optionalNumber(run.rowsFailed, 'run.rowsFailed'),
     throughput: 0,
-    checkpoint: '',
+    checkpoint: progress,
   };
 };
 

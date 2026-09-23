@@ -607,4 +607,44 @@ describe('data sync Wails DTO boundary', () => {
     const noSnapshotRun = decodeRunRecord(baseRun, new Map());
     expect(noSnapshotRun.compareMode).toBeUndefined();
   });
+
+  it('renders the reported object progress instead of a hardcoded dash', () => {
+    // 后端一直在上报 currentItem/totalItems（备份按表计、同步按映射计），
+    // 但这一列曾被硬编码成空串，表格永远显示 —。
+    const baseRun = {
+      id: 'run-1',
+      jobId: 'job-1',
+      status: 'running',
+      trigger: 'manual',
+      attempt: 1,
+      resumable: false,
+      queuedAt: 0,
+      rowsInserted: 0,
+      rowsUpdated: 0,
+      rowsDeleted: 0,
+      rowsFailed: 0,
+    };
+    expect(
+      decodeRunRecord({ ...baseRun, currentItem: 3, totalItems: 5 }, new Map()).checkpoint,
+    ).toBe('3/5');
+
+    // 备份任务已完成时 current 会等于 total。
+    expect(
+      decodeRunRecord(
+        { ...baseRun, status: 'succeeded', currentItem: 5, totalItems: 5 },
+        new Map(),
+      ).checkpoint,
+    ).toBe('5/5');
+
+    // 进度未被上报时保持空串，调用方渲染为占位符而不是 0/0。
+    expect(decodeRunRecord(baseRun, new Map()).checkpoint).toBe('');
+    expect(
+      decodeRunRecord({ ...baseRun, currentItem: 0, totalItems: 0 }, new Map()).checkpoint,
+    ).toBe('');
+
+    // 上报值不一致时按总数为准，避免出现 7/5 这类读数。
+    expect(
+      decodeRunRecord({ ...baseRun, currentItem: 7, totalItems: 5 }, new Map()).checkpoint,
+    ).toBe('5/5');
+  });
 });
