@@ -736,10 +736,12 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
           );
         }
         const runPageRequest = requestRunPage(null, 10);
-        if (!workbenchFamily) {
+        if (workbenchFamily !== 'compare') {
           // Schedule rows aggregate from this fresh task snapshot; the
           // schedule projection and per-task run history load inside the
-          // schedule control.
+          // schedule control. Only the compare workbench lacks a schedules
+          // view, so any other family (including the default 'sync') must seed
+          // it here — nothing else populates the list on first mount.
           void scheduleControl.ingestSnapshot(loadedTasks);
         }
         const pendingRequests:
@@ -2090,6 +2092,10 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
               onClick={() => {
                 setActiveView(view);
                 setTaskRailOpen(false);
+                // Schedule rows live in the schedule control, not in this
+                // component's state: entering the view must pull a fresh
+                // snapshot so the list can never render a stale or empty set.
+                if (view === 'schedules') void scheduleControl.refresh();
               }}
             >
               {t(`nav.${view}`)}
