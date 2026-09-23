@@ -421,6 +421,8 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
   const [nextRunCursor, setNextRunCursor] = useState<DataSyncRunCursor | null>(null);
   const [runTotal, setRunTotal] = useState(0);
   const runPageRequestEpochRef = useRef(0);
+  const runPagePollEpochRef = useRef(0);
+  const runPageNavigationInFlightRef = useRef(0);
   const selectedRunRequestEpochRef = useRef(0);
   const runEventsRequestEpochRef = useRef(0);
   const [cdcSources, setCdcSources] = useState<DataSyncCdcSourceStatus[]>([]);
@@ -493,13 +495,37 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
     );
   };
 
+  // 用户发起的翻页请求。此处递增 runPageRequestEpochRef 会作废更早的用户请求，
+  // 但背景轮询用的是独立的 runPagePollEpochRef，二者互不干扰。
   const requestRunPage = async (
     cursor: DataSyncRunCursor | null,
     pageSize: DataSyncRunPageSize,
   ): Promise<DataSyncRunPage | null> => {
     const requestEpoch = ++runPageRequestEpochRef.current;
+    // 同时作废在途的轮询响应：否则一个早于本次翻页发出、晚于本次翻页返回的
+    // 轮询结果，会带着旧的页码与游标把视图覆盖回上一页。
+    runPagePollEpochRef.current += 1;
+    runPageNavigationInFlightRef.current += 1;
+    try {
+      const page = await gatewayRef.current!.listRunsPage(cursor, pageSize);
+      return requestEpoch === runPageRequestEpochRef.current ? page : null;
+    } finally {
+      runPageNavigationInFlightRef.current -= 1;
+    }
+  };
+
+  // 背景轮询专用。它只让更早的轮询响应失效，绝不能作废用户正在进行的翻页：
+  // 两者若共用同一个 epoch 计数器，轮询 tick 恰好落在翻页请求飞行途中时，
+  // 翻页响应会被判为过期而丢弃，页面停在原地 —— 表现为「上一页点了没反应」。
+  // 翻页进行中也跳过本轮轮询，避免用旧页的数据覆盖刚翻到的页。
+  const requestRunPageForPoll = async (
+    cursor: DataSyncRunCursor | null,
+    pageSize: DataSyncRunPageSize,
+  ): Promise<DataSyncRunPage | null> => {
+    if (runPageNavigationInFlightRef.current > 0) return null;
+    const pollEpoch = ++runPagePollEpochRef.current;
     const page = await gatewayRef.current!.listRunsPage(cursor, pageSize);
-    return requestEpoch === runPageRequestEpochRef.current ? page : null;
+    return pollEpoch === runPagePollEpochRef.current ? page : null;
   };
 
   const reloadFirstRunPage = async () => {
@@ -828,7 +854,7 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
     const hasActiveRun = runs.some((run) => ACTIVE_RUN_STATUSES.has(run.status));
     if (!hasActiveRun) return undefined;
     const timer = globalThis.setInterval(() => {
-      void requestRunPage(runPageCursors[runPageIndex], runPageSize)
+      void requestRunPageForPoll(runPageCursors[runPageIndex], runPageSize)
         .then((page) => {
           if (page) applyRunPage(page, runPageIndex, runPageCursors);
         })

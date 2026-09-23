@@ -87,6 +87,149 @@ describe('DataSyncWorkbenchShell', () => {
     vi.unstubAllGlobals();
   });
 
+  // 回归护栏：运行记录表格位于 overflow:auto 的 flex 列容器内。按 flex 规范
+  // 只有该表格容器（自身也 overflow:auto）的 min-height:auto 会解析为 0，
+  // 于是它独自吸收全部负空间：每页 10 条被压到约 3 行、只能在内部滚动，
+  // 而下方空状态区域仍占大片高度。必须让它不参与收缩。
+  it('keeps the run history table from being flex-shrunk to a few rows', () => {
+    expect(dataSyncWorkbenchCss).toMatch(
+      /\.gn-data-sync-operational-view\s*>\s*\.gn-data-sync-table-scroll\s*\{[^}]*flex:\s*0\s+0\s+auto;/s,
+    );
+  });
+
+  it('does not let an in-flight poll overwrite a completed page change', async () => {
+    // 轮询可能在翻页之前发出、在翻页之后返回。它的载荷带的是旧页码与旧
+    // 游标，若直接落地就会把视图弹回上一页。
+    const task = buildTask();
+    const runs: DataSyncRunRecord[] = Array.from({ length: 27 }, (_, index) => ({
+      id: `run-stale-poll-${index + 1}`,
+      taskId: task.id,
+      taskName: task.name,
+      status: index === 0 ? ('running' as const) : ('succeeded' as const),
+      trigger: 'manual',
+      attempt: 1,
+      resumable: false,
+      message: '',
+      startedAt: '2026-08-08T01:00:00.000Z',
+      finishedAt: '2026-08-08T01:01:00.000Z',
+      rowsRead: 1,
+      rowsWritten: 1,
+      rowsFailed: 0,
+      throughput: 1,
+      checkpoint: '',
+    }));
+    const baseGateway = createStaticDataSyncWorkbenchGateway({ tasks: [task], runs });
+    const pollPage = deferred<Awaited<ReturnType<typeof baseGateway.listRunsPage>>>();
+    let holdFirstPoll = false;
+    let pollCalls = 0;
+    const listRunsPage = vi.fn(async (cursor, pageSize) => {
+      // 首次挂起的轮询：第 1 页。
+      if (holdFirstPoll && cursor === null) {
+        pollCalls += 1;
+        if (pollCalls === 1) return pollPage.promise;
+      }
+      return baseGateway.listRunsPage(cursor, pageSize);
+    });
+    const gateway = { ...baseGateway, listRunsPage };
+
+    vi.useFakeTimers();
+    const renderer = TestRenderer.create(
+      <DataSyncWorkbenchShell initialTasks={[task]} gateway={gateway} locale="zh-CN" />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    act(() => {
+      renderer.root
+        .findAllByType('button')
+        .find((button) => button.children.includes('运行记录'))!
+        .props.onClick();
+    });
+
+    // 触发轮询并让它悬空。
+    holdFirstPoll = true;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+      await Promise.resolve();
+    });
+
+    // 用户翻到第 2 页并完成。
+    await act(async () => {
+      renderer.root
+        .findAllByType('button')
+        .find((button) => button.children.includes('下一页'))!
+        .props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(renderer.root.findAllByProps({ children: '第 2 页' })).toHaveLength(1);
+
+    // 迟到的第 1 页轮询响应此刻才返回，不得把视图弹回第 1 页。
+    await act(async () => {
+      pollPage.resolve({
+        runs: runs.slice(0, 10).map((run) => ({ ...run })),
+        nextCursor: { createdAt: 0, id: 'run-stale-poll-10' },
+        total: runs.length,
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(renderer.root.findAllByProps({ children: '第 2 页' })).toHaveLength(1);
+    act(() => renderer.unmount());
+    vi.useRealTimers();
+  });
+
+  it('reserves a full page of height for the run history table', async () => {
+    // 末页行数不足时表格若塌陷，分页按钮会整体上移，用户刚点过的位置就空了。
+    const task = buildTask();
+    const runs: DataSyncRunRecord[] = Array.from({ length: 27 }, (_, index) => ({
+      id: `run-height-${index + 1}`,
+      taskId: task.id,
+      taskName: task.name,
+      status: 'succeeded',
+      trigger: 'manual',
+      attempt: 1,
+      resumable: false,
+      message: '',
+      startedAt: '2026-08-08T01:00:00.000Z',
+      finishedAt: '2026-08-08T01:01:00.000Z',
+      rowsRead: 1,
+      rowsWritten: 1,
+      rowsFailed: 0,
+      throughput: 1,
+      checkpoint: '',
+    }));
+    const gateway = createStaticDataSyncWorkbenchGateway({ tasks: [task], runs });
+    const renderer = TestRenderer.create(
+      <DataSyncWorkbenchShell initialTasks={[task]} gateway={gateway} locale="zh-CN" />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    act(() => {
+      renderer.root
+        .findAllByType('button')
+        .find((button) => button.children.includes('运行记录'))!
+        .props.onClick();
+    });
+
+    const runTable = renderer.root.findAllByProps({
+      'data-data-sync-run-history': 'true',
+    })[0]!;
+    const scroller = runTable
+      .findAllByProps({ className: 'gn-data-sync-table-scroll' })
+      .find((node) => node.props.style)!;
+    expect(scroller.props.style['--gn-ds-run-page-rows']).toBe('10');
+
+    act(() => renderer.unmount());
+    expect(dataSyncWorkbenchCss).toMatch(
+      /\.gn-data-sync-operational-view\[data-data-sync-run-history='true'\]\s*>\s*\.gn-data-sync-table-scroll\s*\{[^}]*min-height:\s*calc\(/s,
+    );
+  });
+
   it('keeps step connectors out of stage labels', () => {
     expect(dataSyncWorkbenchCss).toMatch(
       /\.gn-data-sync-stage-nav\s*\{[^}]*grid-auto-flow:\s*column;[^}]*grid-auto-columns:\s*minmax\(0, 1fr\);/s,
@@ -1771,6 +1914,95 @@ describe('DataSyncWorkbenchShell', () => {
       (select) => select.props.value === 50,
     )).toBe(true);
     expect(renderer.root.findByType('tbody').findAllByType('tr')).toHaveLength(27);
+  });
+
+  it('keeps the run paging controls usable when a poll lands mid-transition', async () => {
+    // 复现：运行记录里存在一个活跃运行时，3 秒轮询会持续请求当前页。
+    // 轮询与手动翻页共用同一个 runPageRequestEpochRef，轮询一旦在翻页
+    // 请求飞行途中触发，就会把翻页请求的 epoch 作废，翻页响应被丢弃，
+    // 页面停在原地 —— 表现为「点了上一页没反应」。
+    const task = buildTask();
+    const runs: DataSyncRunRecord[] = Array.from({ length: 27 }, (_, index) => ({
+      id: `run-poll-${index + 1}`,
+      taskId: task.id,
+      taskName: task.name,
+      // 第一页存在活跃运行，轮询因此保持开启。
+      status: index === 0 ? ('running' as const) : ('succeeded' as const),
+      trigger: 'manual',
+      attempt: 1,
+      resumable: false,
+      message: '',
+      startedAt: '2026-08-08T01:00:00.000Z',
+      finishedAt: '2026-08-08T01:01:00.000Z',
+      rowsRead: 1,
+      rowsWritten: 1,
+      rowsFailed: 0,
+      throughput: 1,
+      checkpoint: '',
+    }));
+    const baseGateway = createStaticDataSyncWorkbenchGateway({ tasks: [task], runs });
+    const paging = deferred<Awaited<ReturnType<typeof baseGateway.listRunsPage>>>();
+    let holdNextPage = false;
+    const listRunsPage = vi.fn(async (cursor, pageSize) => {
+      if (holdNextPage && cursor) return paging.promise;
+      return baseGateway.listRunsPage(cursor, pageSize);
+    });
+    const gateway = { ...baseGateway, listRunsPage };
+
+    vi.useFakeTimers();
+    const renderer = TestRenderer.create(
+      <DataSyncWorkbenchShell initialTasks={[task]} gateway={gateway} locale="zh-CN" />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    act(() => {
+      renderer.root
+        .findAllByType('button')
+        .find((button) => button.children.includes('运行记录'))!
+        .props.onClick();
+    });
+    expect(renderer.root.findByType('tbody').findAllByType('tr')).toHaveLength(10);
+
+    // 翻到第 2 页，页面在第 2 页上。
+    holdNextPage = true;
+    await act(async () => {
+      renderer.root
+        .findAllByType('button')
+        .find((button) => button.children.includes('下一页'))!
+        .props.onClick();
+      await Promise.resolve();
+    });
+    // 第 2 页的请求仍悬在空中，此时轮询触发。
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+    // 放行第 2 页响应。
+    await act(async () => {
+      paging.resolve({
+        runs: runs.slice(10, 20).map((run) => ({ ...run })),
+        nextCursor: { createdAt: 0, id: 'run-poll-20' },
+        total: runs.length,
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // 翻页必须真的生效，且「上一页」必须可用。
+    const previous = renderer.root
+      .findAllByType('button')
+      .find((button) => button.children.includes('上一页'))!;
+    expect(previous.props.disabled).toBe(false);
+
+    await act(async () => {
+      previous.props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(renderer.root.findAllByProps({ children: '第 1 页' })).toHaveLength(1);
+    act(() => renderer.unmount());
+    vi.useRealTimers();
   });
 
   it('reloads the authoritative first run page after starting a task', async () => {

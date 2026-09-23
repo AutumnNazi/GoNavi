@@ -1414,6 +1414,33 @@ textarea.gn-data-sync-control {
   border: 0.5px solid var(--gn-br-2, rgba(15, 23, 42, 0.12));
 }
 
+/*
+ * 运行记录/错误行表格位于 .gn-data-sync-operational-view 这个 flex 列容器里。
+ * 该容器 overflow:auto，而本容器自身也 overflow:auto —— 按 flex 规范，
+ * 只有本容器的 min-height:auto 会解析为 0，于是它成了唯一可收缩的兄弟项，
+ * 把全部负空间都吸走：每页 10 条被压到约 3 行，只能在内部滚动，而下方
+ * 空状态区域仍占着大片高度。改为不参与收缩、高度随内容，滚动交还给外层视图。
+ */
+.gn-data-sync-operational-view > .gn-data-sync-table-scroll {
+  flex: 0 0 auto;
+}
+
+/*
+ * 运行记录表格按当前页大小预留满页高度（表头 + 页大小 × 行高），
+ * 末页行数不足时也不再塌陷。否则翻到末页表格会整体上跳一行多的高度，
+ * 刚点过的「上一页」按钮跟着挪位，看起来像按钮消失了。
+ * --gn-ds-run-page-rows 由 DataSyncRunHistory 按当前页大小内联写入，
+ * 行高与表头高度取自 .gn-data-sync-history-table 的既有规则。
+ * 只作用于运行记录视图；错误行等其他滚动容器不在选择器范围内。
+ */
+.gn-data-sync-operational-view[data-data-sync-run-history='true']
+  > .gn-data-sync-table-scroll {
+  min-height: calc(
+    var(--gn-control-height, 32px) +
+      var(--gn-ds-run-page-rows, 0) * (var(--gn-control-height, 32px) + 8px)
+  );
+}
+
 .gn-data-sync-mapping-table,
 .gn-data-sync-field-table,
 .gn-data-sync-history-table {
