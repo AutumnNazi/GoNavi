@@ -1,6 +1,8 @@
 package app
 
-import "GoNavi-Wails/internal/connection"
+import (
+	"GoNavi-Wails/internal/connection"
+)
 
 // mainWindowDisplayArea 描述一块显示器工作区（已排除菜单栏/任务栏），统一使用
 // **全局左上原点**坐标：x/y 是工作区左上角，y 向下增长。
@@ -19,18 +21,27 @@ type mainWindowDisplayArea struct {
 
 type mainWindowDisplayLayout struct {
 	Displays []mainWindowDisplayArea `json:"displays"`
-	// PositionIsGlobal 说明本平台 WindowGetPosition/WindowSetPosition 是否已使用
-	// 全局坐标。Windows/Linux 是，macOS 不是（需要前端按 Current 工作区原点换算）。
+	// PositionIsGlobal 说明 WindowGetPosition 是否使用全局坐标。
+	// Windows/Linux 是，macOS 则按当前工作区原点换算。
 	PositionIsGlobal bool `json:"positionIsGlobal"`
+	// Wails Windows/macOS SetPosition 使用当前显示器工作区的局部坐标；
+	// Windows GetPosition 则返回全局坐标。
+	SetPositionIsLocal bool `json:"setPositionIsLocal,omitempty"`
 }
 
 // GetMainWindowDisplayLayout 枚举主窗口可用的显示器工作区，供前端按全局坐标
 // 记住并恢复窗口位置；不支持枚举的平台返回空列表，前端回退到按当前屏处理。
 func (a *App) GetMainWindowDisplayLayout() connection.QueryResult {
+	var displays []mainWindowDisplayArea
+	if a != nil && a.ctx != nil && !a.webRuntime && !a.headlessRuntime {
+		displays = mainWindowDisplayAreas(a.ctx)
+	}
+	layout := buildMainWindowDisplayLayout(displays, mainWindowPositionIsGlobal)
+	layout.SetPositionIsLocal = mainWindowSetPositionIsLocal
 	return connection.QueryResult{
 		Success: true,
 		Message: "window display layout",
-		Data:    buildMainWindowDisplayLayout(mainWindowDisplayAreas(), mainWindowPositionIsGlobal),
+		Data:    layout,
 	}
 }
 

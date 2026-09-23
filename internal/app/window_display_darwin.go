@@ -96,11 +96,14 @@ static int gonaviGetDisplayAreas(GoNaviDisplayArea *items, int capacity) {
 */
 import "C"
 
+import "context"
+
 // macOS 的 WindowGetPosition 返回的是相对当前显示器可见区的局部坐标，
 // 必须由前端按 Current 工作区原点换算成全局坐标。
 const mainWindowPositionIsGlobal = false
+const mainWindowSetPositionIsLocal = true
 
-func mainWindowDisplayAreas() []mainWindowDisplayArea {
+func mainWindowDisplayAreas(_ context.Context) []mainWindowDisplayArea {
 	const maximumDisplays = 32
 	rawAreas := make([]C.GoNaviDisplayArea, maximumDisplays)
 	count := int(C.gonaviGetDisplayAreas(&rawAreas[0], C.int(len(rawAreas))))

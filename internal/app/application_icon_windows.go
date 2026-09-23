@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"syscall"
 	"unsafe"
 
 	"GoNavi-Wails/internal/logger"
@@ -67,6 +68,58 @@ var (
 	windowsApplicationIconDestroyCall          = destroyWindowsApplicationIcon
 	windowsUpdateCurrentApplicationShortcuts   = updateCurrentWindowsApplicationShortcuts
 )
+
+const mainWindowSetPositionIsLocal = true
+const mainWindowPositionIsGlobal = true
+
+type windowsDisplayRect struct {
+	Left, Top, Right, Bottom int32
+}
+
+type windowsDisplayMonitorInfo struct {
+	Size    uint32
+	Monitor windowsDisplayRect
+	Work    windowsDisplayRect
+	Flags   uint32
+}
+
+func mainWindowDisplayAreas(ctx context.Context) []mainWindowDisplayArea {
+	user32 := windows.NewLazySystemDLL("user32.dll")
+	enumerate := user32.NewProc("EnumDisplayMonitors")
+	getInfo := user32.NewProc("GetMonitorInfoW")
+	monitorFromWindow := user32.NewProc("MonitorFromWindow")
+	var current uintptr
+	if ctx != nil {
+		if hwnd, err := resolveWailsMainWindowHandle(ctx); err == nil {
+			current, _, _ = monitorFromWindow.Call(hwnd, 2) // MONITOR_DEFAULTTONEAREST
+		}
+	}
+	areas := make([]mainWindowDisplayArea, 0, 2)
+	callback := syscall.NewCallback(func(monitor, _, _, _ uintptr) uintptr {
+		info := windowsDisplayMonitorInfo{Size: uint32(unsafe.Sizeof(windowsDisplayMonitorInfo{}))}
+		ok, _, _ := getInfo.Call(monitor, uintptr(unsafe.Pointer(&info)))
+		if ok == 0 {
+			return 1
+		}
+		work := info.Work
+		areas = append(areas, mainWindowDisplayArea{
+			X: int(work.Left), Y: int(work.Top),
+			Width: int(work.Right - work.Left), Height: int(work.Bottom - work.Top),
+			Primary: info.Flags&1 != 0, Current: monitor == current,
+		})
+		return 1
+	})
+	enumerate.Call(0, 0, callback, 0)
+	if current == 0 {
+		for index := range areas {
+			if areas[index].Primary {
+				areas[index].Current = true
+				break
+			}
+		}
+	}
+	return areas
+}
 
 // applyPersistedWindowsApplicationIcon binds the last selected ICO before
 // Wails shows the first window. The frontend state is hydrated too late to be

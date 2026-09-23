@@ -1,11 +1,14 @@
-//go:build !darwin || !cgo
+//go:build !windows && (!darwin || !cgo)
 
 package app
 
-// Windows/Linux 的 WindowGetPosition 已经返回全局坐标，保存的记忆位置本身
-// 就带显示器信息，无需额外枚举显示器工作区。
+import "context"
+
+const mainWindowSetPositionIsLocal = false
+
+// Linux 的 WindowGetPosition 返回全局坐标；无显示器列表时保留原回退逻辑。
 const mainWindowPositionIsGlobal = true
 
-func mainWindowDisplayAreas() []mainWindowDisplayArea {
+func mainWindowDisplayAreas(_ context.Context) []mainWindowDisplayArea {
 	return nil
 }
