@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"runtime"
+	"sync"
 	"testing"
 )
 
@@ -19,6 +20,9 @@ func TestWindowsDisplayLayoutIncludesAvailableWorkAreas(t *testing.T) {
 		if area.Width <= 0 || area.Height <= 0 {
 			t.Fatalf("invalid display work area: %+v", area)
 		}
+		if area.DPI <= 0 {
+			t.Fatalf("display DPI is missing: %+v", area)
+		}
 		if area.Primary && area.Current {
 			primary = true
 		}
@@ -30,6 +34,38 @@ func TestWindowsDisplayLayoutIncludesAvailableWorkAreas(t *testing.T) {
 	if !ok || !layout.PositionIsGlobal || !layout.SetPositionIsLocal || len(layout.Displays) != len(areas) {
 		t.Fatalf("Windows display contract = %+v, want global GetPosition, local SetPosition and %d displays", layout, len(areas))
 	}
+}
+
+func TestWindowsDisplayLayoutCanBeEnumeratedRepeatedly(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows monitor enumeration")
+	}
+	// Go retains syscall.NewCallback trampolines for the life of the process.
+	for range 2500 {
+		if len(mainWindowDisplayAreas(nil)) == 0 {
+			t.Fatal("display enumeration returned no work areas")
+		}
+	}
+}
+
+func TestWindowsDisplayLayoutConcurrentEnumeration(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows monitor enumeration")
+	}
+	var workers sync.WaitGroup
+	for range 8 {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for range 100 {
+				if len(mainWindowDisplayAreas(nil)) == 0 {
+					t.Error("concurrent display enumeration returned no work areas")
+					return
+				}
+			}
+		}()
+	}
+	workers.Wait()
 }
 
 func TestMainWindowDisplayLayoutDoesNotExposeServerMonitorsToWebOrHeadlessClients(t *testing.T) {

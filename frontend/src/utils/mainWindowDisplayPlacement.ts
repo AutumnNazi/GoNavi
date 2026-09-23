@@ -6,6 +6,8 @@ export type WindowDisplayWorkArea = {
   y: number;
   width: number;
   height: number;
+  /** Windows physical-pixel work areas use this effective monitor DPI. */
+  dpi?: number;
   primary?: boolean;
   current?: boolean;
 };
@@ -42,6 +44,7 @@ const normalizeDisplay = (value: unknown): WindowDisplayWorkArea | null => {
   if (area.width <= 0 || area.height <= 0) {
     return null;
   }
+  if (Number.isFinite(raw.dpi) && Number(raw.dpi) > 0) area.dpi = toFiniteInteger(raw.dpi);
   if (raw.primary === true) area.primary = true;
   if (raw.current === true) area.current = true;
   return area;
@@ -84,8 +87,9 @@ export const resolveCurrentWindowDisplay = (
 );
 
 const intersectArea = (left: WindowRestoreBounds, right: WindowDisplayWorkArea): number => {
-  const overlapWidth = Math.min(left.x + left.width, right.x + right.width) - Math.max(left.x, right.x);
-  const overlapHeight = Math.min(left.y + left.height, right.y + right.height) - Math.max(left.y, right.y);
+  const physical = toPhysicalWindowBounds(left, right);
+  const overlapWidth = Math.min(physical.x + physical.width, right.x + right.width) - Math.max(physical.x, right.x);
+  const overlapHeight = Math.min(physical.y + physical.height, right.y + right.height) - Math.max(physical.y, right.y);
   if (overlapWidth <= 0 || overlapHeight <= 0) {
     return 0;
   }
@@ -93,13 +97,38 @@ const intersectArea = (left: WindowRestoreBounds, right: WindowDisplayWorkArea):
 };
 
 const distanceSquared = (bounds: WindowRestoreBounds, display: WindowDisplayWorkArea): number => {
-  const gapX = bounds.x + bounds.width < display.x
-    ? display.x - (bounds.x + bounds.width)
-    : (display.x + display.width < bounds.x ? bounds.x - (display.x + display.width) : 0);
-  const gapY = bounds.y + bounds.height < display.y
-    ? display.y - (bounds.y + bounds.height)
-    : (display.y + display.height < bounds.y ? bounds.y - (display.y + display.height) : 0);
+  const physical = toPhysicalWindowBounds(bounds, display);
+  const gapX = physical.x + physical.width < display.x
+    ? display.x - (physical.x + physical.width)
+    : (display.x + display.width < physical.x ? physical.x - (display.x + display.width) : 0);
+  const gapY = physical.y + physical.height < display.y
+    ? display.y - (physical.y + physical.height)
+    : (display.y + display.height < physical.y ? physical.y - (display.y + display.height) : 0);
   return gapX * gapX + gapY * gapY;
+};
+
+const toPhysicalWindowBounds = (bounds: WindowRestoreBounds, display: WindowDisplayWorkArea): WindowRestoreBounds => {
+  const scale = (display.dpi || 96) / 96;
+  return { ...bounds, width: Math.trunc(bounds.width * scale), height: Math.trunc(bounds.height * scale) };
+};
+
+const clampWindowToDisplay = (bounds: WindowRestoreBounds, display: WindowDisplayWorkArea): WindowRestoreBounds => {
+  const physical = resolveVisibleStartupWindowBounds(toPhysicalWindowBounds(bounds, display), {
+    availWidth: display.width,
+    availHeight: display.height,
+    availLeft: display.x,
+    availTop: display.y,
+  });
+  const originalPhysical = toPhysicalWindowBounds(bounds, display);
+  if (physical.width === originalPhysical.width && physical.height === originalPhysical.height) {
+    return { ...bounds, x: physical.x, y: physical.y };
+  }
+  const dpi = display.dpi || 96;
+  return {
+    ...physical,
+    width: Math.trunc(physical.width * 96 / dpi),
+    height: Math.trunc(physical.height * 96 / dpi),
+  };
 };
 
 /**
@@ -151,12 +180,7 @@ export const resolveVisibleGlobalWindowBounds = (
   if (!display) {
     return null;
   }
-  return resolveVisibleStartupWindowBounds(bounds, {
-    availWidth: display.width,
-    availHeight: display.height,
-    availLeft: display.x,
-    availTop: display.y,
-  });
+  return clampWindowToDisplay(bounds, display);
 };
 
 /** Preserve the last normal size while anchoring maximised startup to its current display. */
@@ -169,15 +193,10 @@ export const resolveMaximisedWindowRestoreBounds = (
     || resolvePlacementDisplay(bounds, layout) === display) return null;
   const repositioned = {
     ...bounds,
-    x: display.x + Math.max(0, Math.trunc((display.width - bounds.width) / 2)),
-    y: display.y + Math.max(0, Math.trunc((display.height - bounds.height) / 2)),
+    x: display.x + Math.max(0, Math.trunc((display.width - toPhysicalWindowBounds(bounds, display).width) / 2)),
+    y: display.y + Math.max(0, Math.trunc((display.height - toPhysicalWindowBounds(bounds, display).height) / 2)),
   };
-  return resolveVisibleStartupWindowBounds(repositioned, {
-    availWidth: display.width,
-    availHeight: display.height,
-    availLeft: display.x,
-    availTop: display.y,
-  });
+  return clampWindowToDisplay(repositioned, display);
 };
 
 /**
@@ -262,6 +281,24 @@ export const resolveRuntimeWindowPlacement = (
     position,
     persistedBounds: nextBounds,
   };
+};
+
+/** On Windows, move first so Wails sizes the window using its destination monitor DPI. */
+export const applyRuntimeWindowPlacement = (
+  placement: { bounds: WindowRestoreBounds; position: { x: number; y: number } },
+  isWindows: boolean,
+  setSize: (width: number, height: number) => void,
+  setPosition: (x: number, y: number) => void,
+): void => {
+  const move = () => setPosition(placement.position.x, placement.position.y);
+  const resize = () => setSize(placement.bounds.width, placement.bounds.height);
+  if (isWindows) {
+    move();
+    resize();
+  } else {
+    resize();
+    move();
+  }
 };
 
 type MainWindowPlacementRuntime = {

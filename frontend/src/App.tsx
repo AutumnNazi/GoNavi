@@ -264,6 +264,7 @@ import {
 } from './utils/windowStateUi';
 import { resolveVisibleStartupWindowBounds } from './utils/windowRestoreBounds';
 import {
+  applyRuntimeWindowPlacement,
   loadMainWindowDisplayLayout,
   resolveDisplayAwareLayout,
   resolveGlobalWindowBounds,
@@ -2035,8 +2036,7 @@ function App() {
                   to: nextBounds,
               });
           }
-          WindowSetSize(nextBounds.width, nextBounds.height);
-          WindowSetPosition(placement.position.x, placement.position.y);
+          applyRuntimeWindowPlacement(placement, isWindowsPlatform(), WindowSetSize, WindowSetPosition);
           state.setWindowBounds(nextBounds);
           return nextBounds;
       };
@@ -2307,8 +2307,7 @@ function App() {
                   from: currentBounds,
                   to: nextBounds,
               });
-              WindowSetSize(nextBounds.width, nextBounds.height);
-              WindowSetPosition(placement.position.x, placement.position.y);
+              applyRuntimeWindowPlacement(placement, isWindowsPlatform(), WindowSetSize, WindowSetPosition);
               // 持久化用全局坐标：macOS 的窗口位置是当前屏局部坐标，直接落盘会丢
               // 失“在哪块显示器上”的信息。换算失败时保留设备侧坐标，行为不回退。
               const persistedBounds = placement.persistedBounds;
