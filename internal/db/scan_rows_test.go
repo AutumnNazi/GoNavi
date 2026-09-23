@@ -52,6 +52,16 @@ func (scanRowsDuplicateConn) QueryContext(_ context.Context, query string, args 
 			},
 		}, nil
 	}
+	if query == "SELECT long_columns" {
+		// Oracle 11g 的 ALL_VIEWS.TEXT 是 LONG，go-ora 以 string 返回。
+		return &scanRowsDuplicateRows{
+			columns:     []string{"ddl"},
+			columnTypes: []string{"LONG"},
+			rows: [][]driver.Value{
+				{buildScanRowsOracleLongViewText()},
+			},
+		}, nil
+	}
 	if query == "SELECT date_columns" {
 		return &scanRowsDuplicateRows{
 			columns:     []string{"ship_date", "created_at"},

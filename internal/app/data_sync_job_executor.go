@@ -35,6 +35,9 @@ func (executor appDataSyncJobExecutor) Execute(ctx context.Context, request sync
 		return syncjob.ExecutionOutcome{}, errors.New("application is unavailable")
 	}
 	definition := request.Definition
+	if definition.Kind == syncjob.JobKindBackup {
+		return executor.app.executeBackupJob(ctx, request, reporter)
+	}
 	source, err := executor.app.resolveDataSyncJobEndpoint(definition.Source.ConnectionID, definition.Source.Database, definition.Source.Schema)
 	if err != nil {
 		return syncjob.ExecutionOutcome{}, fmt.Errorf("resolve source connection: %w", err)

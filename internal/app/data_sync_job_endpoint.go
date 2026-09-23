@@ -236,5 +236,5 @@ func dataSyncJobNeedsProductionApproval(endpoint resolvedDataSyncJobEndpoint) bo
 }
 
 func dataSyncJobRequiresExecutionApproval(definition syncjob.JobDefinition, endpoint resolvedDataSyncJobEndpoint) bool {
-	return definition.Kind != syncjob.JobKindCompare && dataSyncJobNeedsProductionApproval(endpoint)
+	return definition.Kind != syncjob.JobKindCompare && definition.Kind != syncjob.JobKindBackup && dataSyncJobNeedsProductionApproval(endpoint)
 }

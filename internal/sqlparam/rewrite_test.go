@@ -324,6 +324,21 @@ func TestBindQuotedCurlyParameterRewritesWholeLiteral(t *testing.T) {
 	}
 }
 
+func TestBindQuotedDollarTemplateDropsDollarPrefix(t *testing.T) {
+	result, err := Bind("SELECT '${year}' || '-' || LPAD(LEVEL, 2, '0') AS yearMonth FROM dual", "oracle", map[string]TypedValue{
+		"year": {Type: TypeString, Value: "2026"},
+	})
+	if err != nil {
+		t.Fatalf("Bind 返回错误: %v", err)
+	}
+	if result.SQL != "SELECT :1 || '-' || LPAD(LEVEL, 2, '0') AS yearMonth FROM dual" {
+		t.Fatalf("重写结果异常: %q", result.SQL)
+	}
+	if !reflect.DeepEqual(result.Args, []any{"2026"}) {
+		t.Fatalf("渲染值应去掉 ${} 的美元符号: %#v", result.Args)
+	}
+}
+
 func TestBindQuotedTemplateRendersSuffixText(t *testing.T) {
 	// 用户场景：'{u_startDate} 00:00:00' → 占位符绑定 "2025-01-01 00:00:00"
 	result, err := Bind("WHERE f_trade_date >= '{u_startDate} 00:00:00'", "mysql", map[string]TypedValue{

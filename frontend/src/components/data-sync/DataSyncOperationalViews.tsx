@@ -170,7 +170,18 @@ export const DataSyncRunHistory: React.FC<{
       />
     ) : compareDetailOpen ? null : (
       <>
-      <div className="gn-data-sync-table-scroll">
+      <div
+        className="gn-data-sync-table-scroll"
+        // 翻页时行数变少（末页），高度若随内容走，表格和下面的分页控件
+        // 会整体上跳一截，用户刚点过的按钮位置就变了。按当前页大小预留
+        // 满页高度，翻页只换行、不搬位置。行高与表头高度见 CSS 中的
+        // .gn-data-sync-history-table 规则。
+        style={
+          {
+            '--gn-ds-run-page-rows': String(runPageSize),
+          } as React.CSSProperties
+        }
+      >
         <table className="gn-data-sync-history-table">
           <thead>
             <tr>

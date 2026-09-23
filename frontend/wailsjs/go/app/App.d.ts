@@ -376,6 +376,8 @@ export function GetGlobalProxyConfig():Promise<connection.QueryResult>;
 
 export function GetImportJob(arg1:string):Promise<connection.QueryResult>;
 
+export function GetMainWindowDisplayLayout():Promise<connection.QueryResult>;
+
 export function GetRequestDiagnostic(arg1:string):Promise<connection.QueryResult>;
 
 export function GetRequestDiagnostics(arg1:requesttrace.Filter):Promise<connection.QueryResult>;
@@ -582,8 +584,6 @@ export function OpenSavedQueryDirectory():Promise<connection.QueryResult>;
 
 export function PreflightDatabaseSQLImport(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
-export function PrepareWindowsBrandIconRestart(arg1:string):Promise<connection.QueryResult>;
-
 export function PreviewChanges(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:connection.ChangeSet):Promise<connection.QueryResult>;
 
 export function PreviewImportFile(arg1:string):Promise<connection.QueryResult>;
@@ -722,6 +722,8 @@ export function SaveQuery(arg1:connection.SavedQuery):Promise<connection.SavedQu
 
 export function SaveSavedQueryGroup(arg1:connection.SavedQueryGroup):Promise<connection.SavedQueryGroup>;
 
+export function SelectBackupDirectory(arg1:string):Promise<connection.QueryResult>;
+
 export function SelectCertificateFile(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
 export function SelectDataRootDirectory(arg1:string):Promise<connection.QueryResult>;
@@ -745,8 +747,6 @@ export function SelectSSHKeyFile(arg1:string):Promise<connection.QueryResult>;
 export function SelectSSHKnownHostsFile(arg1:string):Promise<connection.QueryResult>;
 
 export function SelectSavedQueryDirectory(arg1:string):Promise<connection.QueryResult>;
-
-export function SetApplicationBrandIcon(arg1:string):Promise<connection.QueryResult>;
 
 export function SetLanguage(arg1:string):Promise<void>;
 

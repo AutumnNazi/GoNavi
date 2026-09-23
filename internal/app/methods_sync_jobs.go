@@ -170,6 +170,9 @@ func (a *App) DataSyncJobSave(definition syncjob.JobDefinition, approvalToken st
 	} else {
 		definition.Approval = nil
 	}
+	if err := a.prepareDataSyncSchedule(definition); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
 	saved, err := manager.PutJob(context.Background(), definition)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -253,24 +256,26 @@ func (a *App) DataSyncRunStart(jobID string, expectedRevision int64, approvalTok
 	if expectedRevision > 0 && job.Revision != expectedRevision {
 		return connection.QueryResult{Success: false, Message: fmt.Sprintf("data sync job revision changed: expected %d, current %d", expectedRevision, job.Revision)}
 	}
-	target, err := a.resolveDataSyncJobEndpoint(job.Target.ConnectionID, job.Target.Database, job.Target.Schema)
-	if err != nil {
-		return connection.QueryResult{Success: false, Message: err.Error()}
-	}
-	if dataSyncJobRequiresExecutionApproval(job, target) {
-		if strings.TrimSpace(approvalToken) != "" {
-			approval, consumeErr := a.consumeDataSyncJobApproval(approvalToken, job, target.Fingerprint, time.Now())
-			if consumeErr != nil {
-				return connection.QueryResult{Success: false, Message: consumeErr.Error()}
+	if job.Kind != syncjob.JobKindBackup {
+		target, err := a.resolveDataSyncJobEndpoint(job.Target.ConnectionID, job.Target.Database, job.Target.Schema)
+		if err != nil {
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
+		if dataSyncJobRequiresExecutionApproval(job, target) {
+			if strings.TrimSpace(approvalToken) != "" {
+				approval, consumeErr := a.consumeDataSyncJobApproval(approvalToken, job, target.Fingerprint, time.Now())
+				if consumeErr != nil {
+					return connection.QueryResult{Success: false, Message: consumeErr.Error()}
+				}
+				job.Approval = &approval
+				saved, saveErr := manager.PutJob(context.Background(), job)
+				if saveErr != nil {
+					return connection.QueryResult{Success: false, Message: saveErr.Error()}
+				}
+				job = saved
+			} else if approvalErr := a.validateStoredDataSyncJobApproval(job, target.Fingerprint); approvalErr != nil {
+				return connection.QueryResult{Success: false, Message: approvalErr.Error()}
 			}
-			job.Approval = &approval
-			saved, saveErr := manager.PutJob(context.Background(), job)
-			if saveErr != nil {
-				return connection.QueryResult{Success: false, Message: saveErr.Error()}
-			}
-			job = saved
-		} else if approvalErr := a.validateStoredDataSyncJobApproval(job, target.Fingerprint); approvalErr != nil {
-			return connection.QueryResult{Success: false, Message: approvalErr.Error()}
 		}
 	}
 	run, err := manager.StartRun(context.Background(), job.ID)

@@ -55,6 +55,8 @@ type ManagerHooks struct {
 }
 
 type ManagerOptions struct {
+	// Passive leaves scheduling and execution to a separate worker process.
+	Passive            bool
 	SchedulerInterval  time.Duration
 	LeaseTTL           time.Duration
 	HeartbeatInterval  time.Duration
@@ -120,24 +122,12 @@ func NewManager(ctx context.Context, store *Store, executor Executor, options Ma
 		active:   make(map[string]activeExecution),
 		done:     make(chan struct{}),
 	}
-	now := options.Now()
-	acquired, err := store.AcquireSchedulerLease(ctx, "data-sync-scheduler", options.LeaseOwner, now, options.LeaseTTL)
-	if err != nil {
-		cancel(err)
-		return nil, err
-	}
-	if acquired {
-		if err := manager.recoverInterrupted(ctx); err != nil {
-			_ = store.ReleaseSchedulerLease(context.Background(), "data-sync-scheduler", options.LeaseOwner)
+	if !options.Passive {
+		if err := manager.startRuntime(ctx); err != nil {
 			cancel(err)
 			return nil, err
 		}
-		manager.lastRecoveryAt = now
 	}
-	manager.wg.Add(2)
-	go manager.dispatchLoop()
-	go manager.schedulerLoop()
-	manager.signalWake()
 	return manager, nil
 }
 

@@ -467,6 +467,18 @@ const findCteBodyStart = (sql: string, dbType: string): number => {
   return 0;
 };
 
+// limitOracleCteMainQuery 只限制 CTE 的主查询。
+// Oracle 12c 之前不认识 FETCH FIRST，直接追加会得到 ORA-00933。
+// 把整个 WITH 塞进 ROWNUM 内联视图也不行：子查询因子化必须留在查询块最外层。
+const limitOracleCteMainQuery = (executableMain: string, dbType: string, maxRows: number): string | null => {
+  if (getLeadingKeyword(executableMain, dbType) !== 'with') return null;
+  const bodyStart = findCteBodyStart(executableMain, dbType);
+  if (bodyStart <= 0) return null;
+  const mainQuery = executableMain.slice(bodyStart).trim();
+  if (!mainQuery || hasOracleSequencePseudoColumn(mainQuery)) return null;
+  return `${executableMain.slice(0, bodyStart)}SELECT * FROM (${mainQuery}) WHERE ROWNUM <= ${maxRows}`;
+};
+
 /**
  * 语句是否以 SELECT 结果集收尾 —— CTE 语句看其主查询，而不是 literal 的
  * leading keyword。`getLeadingKeyword(x) === 'select'` 会把 `WITH ... SELECT`
@@ -539,11 +551,10 @@ export const applyQueryAutoLimit = (
     if (offsetPos >= 0 && (fromPos < 0 || offsetPos > fromPos)) return { sql: executableSql, applied: false, maxRows };
     const forPos = findTopLevelKeyword(executableMain, 'for', normalizedType);
     if (forPos >= 0 && (fromPos < 0 || forPos > fromPos)) return { sql: executableSql, applied: false, maxRows };
-    // CTE 主查询不能用 ROWNUM 包装：那会把 `WITH` 塞进内联视图，而子查询因子化
-    // 只在查询块起始处合法，是否被接受取决于数据库版本，风险高于收益。
-    // FETCH FIRST 直接追加在主查询末尾，CTE 保持顶层，无此问题。
     if (normalizedType === 'oracle' && cteBodyStart > 0) {
-      return { sql: `${executableMain} FETCH FIRST ${maxRows} ROWS ONLY${tail}`, applied: true, maxRows };
+      const limitedCte = limitOracleCteMainQuery(executableMain, normalizedType, maxRows);
+      if (!limitedCte) return { sql: executableSql, applied: false, maxRows };
+      return { sql: `${limitedCte}${tail}`, applied: true, maxRows };
     }
     // Oracle-compatible databases reject NEXTVAL/CURRVAL when the ROWNUM cap
     // moves the original SELECT into a subquery.

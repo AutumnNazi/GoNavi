@@ -18,9 +18,12 @@ import (
 // optionalAgentConnectionInfo 是 connect 响应中的连接级信息。
 // ProtocolSchema 由新版 agent 回显，旧版 agent 不携带该字段（解码为空串），
 // 客户端据此做参数绑定等协议能力的门控。
+// InFlightCancel 是 agent 对在途查询取消通道的显式声明：只有它为 true 时，
+// 主进程才会用取消通知代替杀进程（见 optional_driver_agent_cancel.go）。
 type optionalAgentConnectionInfo struct {
 	ElasticsearchServerMajor int    `json:"elasticsearchServerMajor,omitempty"`
 	ProtocolSchema           string `json:"protocolSchema,omitempty"`
+	InFlightCancel           bool   `json:"inFlightCancel,omitempty"`
 }
 
 // OptionalDriverAgentProtocolSchemaV2 是携带参数绑定通道（Args）的协议版本。

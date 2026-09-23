@@ -383,7 +383,7 @@ func (f *fakeAgentSessionStreamDB) OpenSessionExecer(ctx context.Context) (db.St
 
 func TestQueryWithOptionalTimeout_UsesQueryContext(t *testing.T) {
 	fake := &fakeAgentTimeoutDB{}
-	data, fields, err := queryWithOptionalTimeout(fake, "SELECT 1", int64((2 * time.Second).Milliseconds()))
+	data, fields, err := queryWithOptionalTimeout(context.Background(), fake, "SELECT 1", int64((2 * time.Second).Milliseconds()))
 	if err != nil {
 		t.Fatalf("queryWithOptionalTimeout 返回错误: %v", err)
 	}
@@ -400,7 +400,7 @@ func TestQueryWithOptionalTimeout_UsesQueryContext(t *testing.T) {
 
 func TestExecWithOptionalTimeout_UsesExecContext(t *testing.T) {
 	fake := &fakeAgentTimeoutDB{}
-	affected, err := execWithOptionalTimeout(fake, "DELETE FROM t", int64((2 * time.Second).Milliseconds()))
+	affected, err := execWithOptionalTimeout(context.Background(), fake, "DELETE FROM t", int64((2 * time.Second).Milliseconds()))
 	if err != nil {
 		t.Fatalf("execWithOptionalTimeout 返回错误: %v", err)
 	}
@@ -421,7 +421,7 @@ func TestQueryWithOptionalTimeout_ClickHouseLegacyModeUsesQueryContext(t *testin
 	defer func() { agentDriverType = old }()
 
 	fake := &fakeAgentTimeoutDB{}
-	_, _, err := queryWithOptionalTimeout(fake, "SELECT 1", 0)
+	_, _, err := queryWithOptionalTimeout(context.Background(), fake, "SELECT 1", 0)
 	if err != nil {
 		t.Fatalf("queryWithOptionalTimeout 返回错误: %v", err)
 	}
@@ -1018,12 +1018,12 @@ func TestHandleStreamRequest_UsesSessionStreamerAndWritesChunks(t *testing.T) {
 
 	var out bytes.Buffer
 	writer := bufio.NewWriter(&out)
-	if err := handleStreamRequest(runtimeState, agentRequest{
+	if err := handleStreamRequest(context.Background(), runtimeState, agentRequest{
 		ID:        9,
 		Method:    agentMethodStreamQuery,
 		Query:     "SELECT * FROM person_info",
 		TimeoutMs: int64((2 * time.Second).Milliseconds()),
-	}, writer); err != nil {
+	}, newAgentResponseWriter(writer)); err != nil {
 		t.Fatalf("handleStreamRequest 返回错误: %v", err)
 	}
 

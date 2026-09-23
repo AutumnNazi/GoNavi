@@ -4706,6 +4706,20 @@ export namespace sync {
 
 export namespace syncjob {
 	
+	export class BackupSpec {
+	    directory: string;
+	    content: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new BackupSpec(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.directory = source["directory"];
+	        this.content = source["content"];
+	    }
+	}
 	export class CDCSpec {
 	    adapter?: string;
 	    startPosition?: string;
@@ -4951,6 +4965,7 @@ export namespace syncjob {
 	    incrementalMode: string;
 	    source: EndpointRef;
 	    target: EndpointRef;
+	    backup?: BackupSpec;
 	    sourceQuery?: string;
 	    mappings: TableMapping[];
 	    options: ExecutionOptions;
@@ -4982,6 +4997,7 @@ export namespace syncjob {
 	        this.incrementalMode = source["incrementalMode"];
 	        this.source = this.convertValues(source["source"], EndpointRef);
 	        this.target = this.convertValues(source["target"], EndpointRef);
+	        this.backup = this.convertValues(source["backup"], BackupSpec);
 	        this.sourceQuery = source["sourceQuery"];
 	        this.mappings = this.convertValues(source["mappings"], TableMapping);
 	        this.options = this.convertValues(source["options"], ExecutionOptions);

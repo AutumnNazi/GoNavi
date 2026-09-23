@@ -6,15 +6,17 @@ import (
 )
 
 const (
-	windowsFrontendReadyEvent  = "gonavi:frontend-ready"
-	windowsStartupShowFallback = 4 * time.Second
+	startupFrontendReadyEvent = "gonavi:frontend-ready"
+	startupWindowShowFallback = 4 * time.Second
 )
 
-// windowsStartupWindowGate keeps the first Windows HWND hidden until either the
-// frontend has painted or a fallback timer fires. Showing on DOMContentLoaded
-// used to present Wails' empty white client area because bootstrap.ts still had
-// to load catalogs and React had not hydrated.
-type windowsStartupWindowGate struct {
+// startupWindowGate keeps the main window hidden until either the frontend has
+// painted its final startup geometry or a fallback timer fires. Showing on
+// DOMContentLoaded used to present Wails' empty white client area because
+// bootstrap.ts still had to load catalogs and React had not hydrated; on macOS
+// it also exposed the remembered-bounds/maximise transition as a visible
+// "small window then full screen" animation.
+type startupWindowGate struct {
 	mu            sync.Mutex
 	iconReady     bool
 	frontendReady bool
@@ -24,15 +26,15 @@ type windowsStartupWindowGate struct {
 	fallback      *time.Timer
 }
 
-func newWindowsStartupWindowGate() *windowsStartupWindowGate {
-	return &windowsStartupWindowGate{}
+func newStartupWindowGate() *startupWindowGate {
+	return &startupWindowGate{}
 }
 
-func shouldShowWindowsStartupWindow(iconReady, frontendReady, timedOut, showBound bool) bool {
+func shouldShowStartupWindow(iconReady, frontendReady, timedOut, showBound bool) bool {
 	return showBound && iconReady && (frontendReady || timedOut)
 }
 
-func (g *windowsStartupWindowGate) bindShow(show func()) {
+func (g *startupWindowGate) bindShow(show func()) {
 	if g == nil {
 		return
 	}
@@ -42,7 +44,7 @@ func (g *windowsStartupWindowGate) bindShow(show func()) {
 	g.tryShow()
 }
 
-func (g *windowsStartupWindowGate) markIconReady() {
+func (g *startupWindowGate) markIconReady() {
 	if g == nil {
 		return
 	}
@@ -52,7 +54,7 @@ func (g *windowsStartupWindowGate) markIconReady() {
 	g.tryShow()
 }
 
-func (g *windowsStartupWindowGate) markFrontendReady() {
+func (g *startupWindowGate) markFrontendReady() {
 	if g == nil {
 		return
 	}
@@ -62,7 +64,7 @@ func (g *windowsStartupWindowGate) markFrontendReady() {
 	g.tryShow()
 }
 
-func (g *windowsStartupWindowGate) markTimedOut() {
+func (g *startupWindowGate) markTimedOut() {
 	if g == nil {
 		return
 	}
@@ -72,7 +74,7 @@ func (g *windowsStartupWindowGate) markTimedOut() {
 	g.tryShow()
 }
 
-func (g *windowsStartupWindowGate) startFallback(timeout time.Duration, onTimeout func()) {
+func (g *startupWindowGate) startFallback(timeout time.Duration, onTimeout func()) {
 	if g == nil {
 		return
 	}
@@ -98,13 +100,13 @@ func (g *windowsStartupWindowGate) startFallback(timeout time.Duration, onTimeou
 	g.mu.Unlock()
 }
 
-func (g *windowsStartupWindowGate) tryShow() {
+func (g *startupWindowGate) tryShow() {
 	if g == nil {
 		return
 	}
 	g.mu.Lock()
 	show := g.show
-	ready := shouldShowWindowsStartupWindow(g.iconReady, g.frontendReady, g.timedOut, show != nil)
+	ready := shouldShowStartupWindow(g.iconReady, g.frontendReady, g.timedOut, show != nil)
 	if !ready || g.presented {
 		g.mu.Unlock()
 		return

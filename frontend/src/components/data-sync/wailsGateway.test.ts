@@ -50,6 +50,7 @@ const success = (data?: unknown) => ({ success: true, message: '', data });
 const apiFixture = (
   overrides: Partial<WailsDataSyncApi> = {},
 ): WailsDataSyncApi => ({
+  SelectBackupDirectory: vi.fn(async () => success('')),
   GetSavedConnections: vi.fn(async () => [
     {
       id: 'source-id',

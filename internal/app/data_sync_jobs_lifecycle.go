@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"GoNavi-Wails/internal/logger"
@@ -22,15 +23,27 @@ func (a *App) dataSyncJobDatabasePath() string {
 	return filepath.Join(root, "data_sync", "sync_jobs.db")
 }
 
-func (a *App) initializeDataSyncJobs(context.Context) {
-	if _, err := a.ensureDataSyncJobManager(); err != nil {
+func (a *App) initializeDataSyncJobs(ctx context.Context) {
+	manager, err := a.ensureDataSyncJobManager()
+	if err != nil {
 		logger.Warnf("初始化数据同步任务管理器失败：%v", err)
+		return
+	}
+	if err := a.registerExistingDataSyncSchedules(ctx, manager); err != nil {
+		logger.Warnf("注册已有定时任务的后台启动失败：%v", err)
 	}
 }
 
 func (a *App) ensureDataSyncJobManager() (*syncjob.Manager, error) {
 	if a == nil {
 		return nil, fmt.Errorf("application is unavailable")
+	}
+	if err := a.beginDataSyncJobsOperation(); err != nil {
+		return nil, err
+	}
+	defer a.dataSyncJobsOperations.Done()
+	if err := a.ensureDataSyncWorker(); err != nil {
+		return nil, err
 	}
 	a.dataSyncJobsMu.Lock()
 	defer a.dataSyncJobsMu.Unlock()
@@ -46,6 +59,7 @@ func (a *App) ensureDataSyncJobManager() (*syncjob.Manager, error) {
 	}
 	manager, err := syncjob.NewManager(context.Background(), store, appDataSyncJobExecutor{app: a}, syncjob.ManagerOptions{
 		LeaseOwner: a.dataSyncJobLeaseOwner,
+		Passive:    a.usesDataSyncWorker(),
 		Hooks: syncjob.ManagerHooks{
 			OnRunEvent: func(event syncjob.RunEvent) {
 				uievents.Emit(a.ctx, "sync:run-event", event)
@@ -65,6 +79,10 @@ func (a *App) shutdownDataSyncJobs() {
 	if a == nil {
 		return
 	}
+	a.dataSyncJobsMu.Lock()
+	a.dataSyncJobsSuspended = true
+	a.dataSyncJobsMu.Unlock()
+	a.dataSyncJobsOperations.Wait()
 	a.dataSyncJobsMu.Lock()
 	manager := a.dataSyncJobManager
 	store := a.dataSyncJobStore
@@ -93,21 +111,36 @@ func (a *App) shutdownDataSyncJobs() {
 	a.dataSyncJobsMu.Unlock()
 }
 
-func (a *App) suspendDataSyncJobs() (bool, error) {
+// suspendDataSyncJobs returns an idempotent rollback owned by this suspension.
+// A rejected concurrent maintenance request must not reopen another caller's gate.
+func (a *App) suspendDataSyncJobs() (func(), error) {
+	resume := func() {}
 	if a == nil {
-		return false, nil
+		return resume, nil
 	}
 	a.dataSyncJobsMu.Lock()
-	if a.dataSyncJobsDraining {
+	if a.dataSyncJobsDraining || a.dataSyncJobsSuspended {
 		a.dataSyncJobsMu.Unlock()
-		return false, fmt.Errorf("data sync job manager is already shutting down")
+		return resume, fmt.Errorf("data sync job manager is already shutting down")
 	}
-	wasActive := a.dataSyncJobManager != nil || a.dataSyncJobStore != nil
+	a.dataSyncJobsSuspended = true
+	a.dataSyncJobsMu.Unlock()
+	// Block new requests before waiting, so an in-flight startup cannot race Stop.
+	a.dataSyncJobsOperations.Wait()
+	a.dataSyncJobsMu.Lock()
+	wasActive := a.dataSyncJobManager != nil || a.dataSyncJobStore != nil || a.usesDataSyncWorker()
+	a.dataSyncJobsMu.Unlock()
+	var resumeOnce sync.Once
+	resume = func() { resumeOnce.Do(func() { a.resumeDataSyncJobs(wasActive) }) }
+	if err := a.stopDataSyncWorkerForMaintenance(); err != nil {
+		return resume, err
+	}
+	a.dataSyncJobsMu.Lock()
 	manager := a.dataSyncJobManager
 	store := a.dataSyncJobStore
 	a.dataSyncJobManager = nil
 	a.dataSyncJobStore = nil
-	a.dataSyncJobsDraining = wasActive
+	a.dataSyncJobsDraining = manager != nil || store != nil
 	a.dataSyncJobsMu.Unlock()
 	if manager != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), dataSyncJobShutdownTimeout)
@@ -115,21 +148,18 @@ func (a *App) suspendDataSyncJobs() (bool, error) {
 		cancel()
 		if err != nil {
 			a.finishDataSyncJobDrainInBackground(manager, store)
-			return false, err
+			return resume, err
 		}
 	}
+	var closeErr error
 	if store != nil {
-		if err := store.Close(); err != nil {
-			a.dataSyncJobsMu.Lock()
-			a.dataSyncJobsDraining = false
-			a.dataSyncJobsMu.Unlock()
-			return false, err
-		}
+		closeErr = store.Close()
 	}
 	a.dataSyncJobsMu.Lock()
 	a.dataSyncJobsDraining = false
 	a.dataSyncJobsMu.Unlock()
-	return wasActive, nil
+	// Keep the gate closed until the caller finishes migrating and calls resume.
+	return resume, closeErr
 }
 
 func (a *App) finishDataSyncJobDrainInBackground(manager *syncjob.Manager, store *syncjob.Store) {
@@ -149,10 +179,11 @@ func (a *App) finishDataSyncJobDrainInBackground(manager *syncjob.Manager, store
 }
 
 func (a *App) resumeDataSyncJobs(wasActive bool) {
+	a.dataSyncJobsMu.Lock()
+	a.dataSyncJobsSuspended = false
+	a.dataSyncJobsMu.Unlock()
 	if !wasActive {
 		return
 	}
-	if _, err := a.ensureDataSyncJobManager(); err != nil {
-		logger.Warnf("恢复数据同步任务管理器失败：%v", err)
-	}
+	a.initializeDataSyncJobs(context.Background())
 }

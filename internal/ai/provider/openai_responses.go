@@ -44,7 +44,7 @@ func NewOpenAIResponsesProvider(config ai.ProviderConfig) (Provider, error) {
 
 	maxTokens := config.MaxTokens
 	if maxTokens <= 0 {
-		maxTokens = defaultOpenAIMaxTokens
+		maxTokens = openAIResponsesDefaultMaxOutputTokens(model)
 	}
 	temperature := config.Temperature
 	if temperature <= 0 {
