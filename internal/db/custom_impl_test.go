@@ -603,6 +603,36 @@ func TestCustomDBGetTablesEscapesPGLikeSchemaLiteral(t *testing.T) {
 	}
 }
 
+func TestCustomDBGetTablesEscapesOracleOwnerLiteral(t *testing.T) {
+	conn := openCustomMetadataTestDB(t, []string{"OWNER", "TABLE_NAME"}, [][]driver.Value{
+		{"ldf_server", "ldf_application_type"},
+	})
+
+	if _, err := (&CustomDB{conn: conn, driver: "oracle"}).GetTables("tenant's"); err != nil {
+		t.Fatalf("GetTables returned error: %v", err)
+	}
+
+	got := customMetadataLastQuery()
+	if !strings.Contains(got, "WHERE owner = 'TENANT''S'") {
+		t.Fatalf("expected escaped Oracle owner literal, got %s", got)
+	}
+	if strings.Contains(got, "owner = 'TENANT'S'") {
+		t.Fatalf("Oracle owner literal must be escaped, got %s", got)
+	}
+}
+
+func TestCustomDBGetTablesEscapesDaMengOwnerLiteral(t *testing.T) {
+	conn := openCustomMetadataTestDB(t, []string{"OWNER", "TABLE_NAME"}, nil)
+
+	if _, err := (&CustomDB{conn: conn, driver: "dm"}).GetTables("ldf'server"); err != nil {
+		t.Fatalf("GetTables returned error: %v", err)
+	}
+
+	if got := customMetadataLastQuery(); !strings.Contains(got, "WHERE owner = 'LDF''SERVER'") {
+		t.Fatalf("expected escaped DaMeng owner literal, got %s", got)
+	}
+}
+
 func TestCustomDBGetTablesPreservesPGLikeQualifiedIdentifierEscaping(t *testing.T) {
 	registerCustomGetTablesDriverOnce.Do(func() {
 		sql.Register(customGetTablesDriverName, customGetTablesDriver{})
