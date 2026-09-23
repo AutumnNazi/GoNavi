@@ -11016,6 +11016,8 @@
   "data_sync.backup.title": "資料庫備份",
   "data_sync.backup.description": "將所選資料表的結構和資料備份為 SQL 檔案，支援排程執行。",
   "data_sync.backup.directory": "備份目錄",
+  "data_sync.backup.run_mode": "備份方式",
+  "data_sync.backup.full_snapshot_help": "目前僅支援完整備份，每次執行都會完整匯出所選資料表。可另行設定手動或排程執行。",
   "data_sync.backup.directory_help": "選擇本機已存在的絕對目錄。備份依 年/月/日 分層存放於該目錄下，檔名帶啟動時間；既有備份不會被覆寫或自動刪除。",
   "data_sync.backup.directory_dialog_title": "選擇備份目錄",
   "data_sync.backup.directory_browse": "瀏覽…",

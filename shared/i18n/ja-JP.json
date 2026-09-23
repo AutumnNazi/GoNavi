@@ -11016,6 +11016,8 @@
   "data_sync.backup.title": "データベースのバックアップ",
   "data_sync.backup.description": "選択したテーブルの構造とデータを SQL ファイルにバックアップします。定期実行にも対応します。",
   "data_sync.backup.directory": "バックアップ先",
+  "data_sync.backup.run_mode": "バックアップ方式",
+  "data_sync.backup.full_snapshot_help": "現在はフルバックアップのみ対応しています。実行ごとに選択したテーブル全体を出力します。手動実行と定期実行は別途設定できます。",
   "data_sync.backup.directory_help": "このコンピューター上の既存の絶対ディレクトリを選択してください。バックアップは 年/月/日 の階層に保存され、ファイル名に開始時刻が入ります。既存のバックアップは上書きも自動削除もされません。",
   "data_sync.backup.directory_dialog_title": "バックアップディレクトリを選択",
   "data_sync.backup.directory_browse": "参照…",

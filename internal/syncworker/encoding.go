@@ -54,9 +54,9 @@ func taskXMLCandidates(task string) ([][]byte, error) {
 	return [][]byte{encoded, []byte(task)}, nil
 }
 
-// firstAcceptedEncoding 依次尝试各候选编码，返回第一个被接受的那份。
+// firstAcceptedEncoding 依次尝试各候选任务定义，返回第一个被接受的那份。
 //
-// 全部被拒时把每一份的输出都带上：编码只是可能的原因之一，逐份列出各家
+// 全部被拒时把每一份的输出都带上：编码和账户标识都可能导致注册失败，逐份列出
 // schtasks 的实际输出，才能让「权限不足」「账户无法解析」这类真正的原因显形。
 func firstAcceptedEncoding(candidates [][]byte, attempt func([]byte) error) ([]byte, error) {
 	var failures []string
@@ -67,7 +67,7 @@ func firstAcceptedEncoding(candidates [][]byte, attempt func([]byte) error) ([]b
 		}
 		return content, nil
 	}
-	return nil, fmt.Errorf("all %d task XML encodings were rejected: %s", len(candidates), strings.Join(failures, "; "))
+	return nil, fmt.Errorf("all %d task XML candidates were rejected: %s", len(candidates), strings.Join(failures, "; "))
 }
 
 // matchesAnyCandidate 判断 marker 里记录的定义是否仍与当前的某一个候选编码一致。

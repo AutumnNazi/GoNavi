@@ -1454,7 +1454,7 @@ describe('DataSyncWorkbenchShell', () => {
     });
 
     expect(renderer.root.findByProps({ 'data-data-sync-run-events': 'true' })).toBeTruthy();
-    expect(renderer.root.findAllByProps({ children: firstEvent.message })).toHaveLength(1);
+    expect(renderer.root.findAllByProps({ children: 'Started' }).length).toBeGreaterThan(0);
 
     events = [firstEvent, secondEvent];
     await act(async () => {

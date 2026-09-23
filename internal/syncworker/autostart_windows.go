@@ -28,6 +28,39 @@ func taskXML(executable, root, username string) string {
 	return `<?xml version="1.0" encoding="UTF-8"?><Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"><Triggers><LogonTrigger><Enabled>true</Enabled><UserId>` + xmlText(username) + `</UserId></LogonTrigger></Triggers><Principals><Principal id="Author"><UserId>` + xmlText(username) + `</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals><Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><StartWhenAvailable>true</StartWhenAvailable><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><RestartOnFailure><Interval>PT1M</Interval><Count>3</Count></RestartOnFailure></Settings><Actions Context="Author"><Exec><Command>` + xmlText(executable) + `</Command><Arguments>` + xmlText(arguments) + `</Arguments></Exec></Actions></Task>`
 }
 
+func taskUserIdentifiers(account *user.User) []string {
+	if account == nil {
+		return nil
+	}
+	identifiers := make([]string, 0, 2)
+	if sid := strings.TrimSpace(account.Uid); strings.HasPrefix(strings.ToUpper(sid), "S-") {
+		identifiers = append(identifiers, sid)
+	}
+	if username := strings.TrimSpace(account.Username); username != "" && (len(identifiers) == 0 || !strings.EqualFold(username, identifiers[0])) {
+		identifiers = append(identifiers, username)
+	}
+	if len(identifiers) == 0 {
+		return nil
+	}
+	return identifiers
+}
+
+func taskXMLCandidatesForUser(executable, root string, account *user.User) ([][]byte, error) {
+	identifiers := taskUserIdentifiers(account)
+	if len(identifiers) == 0 {
+		return nil, errors.New("current Windows user has no Task Scheduler identifier")
+	}
+	var candidates [][]byte
+	for _, identifier := range identifiers {
+		encodedCandidates, err := taskXMLCandidates(taskXML(executable, root, identifier))
+		if err != nil {
+			return nil, err
+		}
+		candidates = append(candidates, encodedCandidates...)
+	}
+	return candidates, nil
+}
+
 // runSchtasks 执行 schtasks.exe 并保留它的输出。
 //
 // 失败原因只出现在 schtasks 自己的输出里（`ERROR: ...`），裸 Run() 只留下
@@ -51,7 +84,7 @@ func Register(ctx context.Context, root, executable string) error {
 	if err != nil {
 		return err
 	}
-	candidates, err := taskXMLCandidates(taskXML(executable, root, account.Username))
+	candidates, err := taskXMLCandidatesForUser(executable, root, account)
 	if err != nil {
 		return err
 	}

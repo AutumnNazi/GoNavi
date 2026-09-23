@@ -2,7 +2,7 @@ import { resolveDataSyncWorkbenchLocale } from './textLocale';
 export { resolveDataSyncWorkbenchLocale } from './textLocale';
 export type { DataSyncWorkbenchLocale } from './textLocale';
 import { backupTexts } from './textBackup';
-import { dataSyncScheduleTextsEnUS, dataSyncScheduleTextsZhCN } from './textSchedules';
+import { dataSyncRunEventTextsEnUS, dataSyncRunEventTextsZhCN, dataSyncScheduleTextsEnUS, dataSyncScheduleTextsZhCN } from './textSchedules';
 import {
   dataSyncValidationTextsEnUS,
   dataSyncValidationTextsZhCN,
@@ -474,7 +474,7 @@ const zhCN = {
   'common.details': '查看详情',
   'common.retry': '重试',
   'common.cancel': '取消',
-  ...dataSyncScheduleTextsZhCN,
+  ...dataSyncScheduleTextsZhCN, ...dataSyncRunEventTextsZhCN,
   ...dataSyncValidationTextsZhCN,
   'cdc.title': '持续同步状态',
   'cdc.subtitle': '这里显示源库是否已准备好持续同步，以及任务当前进度。后端没上报延迟时不会猜测。',
@@ -980,7 +980,7 @@ const enUS: Record<DataSyncWorkbenchTextKey, string> = {
   'common.details': 'View details',
   'common.retry': 'Retry',
   'common.cancel': 'Cancel',
-  ...dataSyncScheduleTextsEnUS,
+  ...dataSyncScheduleTextsEnUS, ...dataSyncRunEventTextsEnUS,
   ...dataSyncValidationTextsEnUS,
   'cdc.title': 'CDC source status',
   'cdc.subtitle': 'Status comes from adapter probes and task checkpoints. Lag is never inferred when the backend does not report it.',

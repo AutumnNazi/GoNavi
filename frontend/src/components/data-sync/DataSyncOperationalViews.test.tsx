@@ -5,8 +5,24 @@ import { describe, expect, it } from 'vitest';
 import { DataSyncRunHistory } from './DataSyncOperationalViews';
 import type { DataSyncCompareResult, DataSyncRunRecord } from './model';
 import { createDataSyncWorkbenchTranslate } from './text';
+import { formatDataSyncRunEvent } from './textSchedules';
 
 describe('DataSyncRunHistory compare output', () => {
+  it('localizes persisted event types, stages and known messages in either locale', () => {
+    const event = { runId: 'run-1', sequence: 1, type: 'progress' as const,
+      stage: 'watermark', table: 'orders', message: 'running watermark mapping 2/3', createdAt: '2026-09-23T00:00:00Z' };
+    expect(formatDataSyncRunEvent(event, createDataSyncWorkbenchTranslate('zh-CN'))).toEqual({
+      type: '运行进度', stage: '水位线增量', message: '正在处理水位线对象 2/3',
+    });
+    expect(formatDataSyncRunEvent(event, createDataSyncWorkbenchTranslate('en-US'))).toEqual({
+      type: 'Progress', stage: 'Watermark sync', message: 'Running watermark object 2/3',
+    });
+    expect(formatDataSyncRunEvent({ ...event, type: 'failed', stage: 'unknown-stage', message: 'driver timeout at server:3306' },
+      createDataSyncWorkbenchTranslate('zh-CN'))).toEqual({ type: '运行失败', stage: 'unknown-stage', message: 'driver timeout at server:3306' });
+    expect(formatDataSyncRunEvent({ ...event, message: '__proto__' },
+      createDataSyncWorkbenchTranslate('zh-CN')).message).toBe('__proto__');
+  });
+
   it('uses structured column differences instead of repeating schema summary text', () => {
     const run: DataSyncRunRecord = {
       id: 'compare-run',
@@ -57,7 +73,7 @@ describe('DataSyncRunHistory compare output', () => {
         hasPreviousRunPage={false}
         hasNextRunPage={false}
         selectedRunId={run.id}
-        runEvents={[]}
+        runEvents={[{ runId: run.id, sequence: 1, type: 'started', stage: 'running', message: 'started', createdAt: run.startedAt }]}
         errorRows={[]}
         compareResult={compareResult}
         compareMode="both"
@@ -103,6 +119,9 @@ describe('DataSyncRunHistory compare output', () => {
     expect(markup).toContain('AI 分析差异');
     expect(markup).toContain('同步差异');
     expect(markup).toContain('运行过程');
+    expect(markup).toContain('已开始');
+    expect(markup).not.toContain('>started<');
+    expect(markup).not.toContain('>running<');
     expect(markup).toContain('data-data-sync-run-events="true"');
     expect(markup.match(/varchar\(255\)/g)).toHaveLength(1);
   });

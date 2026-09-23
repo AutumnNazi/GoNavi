@@ -2,3 +2,7 @@
 .gn-data-sync-backup-objects li { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--gn-border-color, #ddd); }
 [data-backup-editor] .gn-data-sync-section { max-width: 1000px; }
 [data-backup-editor] .gn-data-sync-field { margin-bottom: 20px; }
+[data-backup-editor] .gn-data-sync-backup-output { padding-right: 140px; }
+[data-backup-editor] .gn-data-sync-backup-directory-control { position: relative; display: block; width: 100%; }
+[data-backup-editor] .gn-data-sync-backup-directory-control .gn-data-sync-control { width: 100%; }
+[data-backup-editor] .gn-data-sync-backup-directory-control .gn-data-sync-button { position: absolute; left: calc(100% + 8px); top: 0; }

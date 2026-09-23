@@ -31,10 +31,10 @@ export const DataSyncBackupOutput: React.FC<DataSyncBackupEditorProps> = ({ task
     }
   }, [backup, gateway, onPatch, tr]);
 
-  return <section className="gn-data-sync-section">
+  return <section className="gn-data-sync-section gn-data-sync-backup-output">
     <h2>{tr('data_sync.backup.directory')}</h2>
     <label className="gn-data-sync-field"><span>{tr('data_sync.backup.directory')}</span>
-      <div className="gn-data-sync-inline-control">
+      <div className="gn-data-sync-inline-control gn-data-sync-backup-directory-control">
         <input className="gn-data-sync-control" value={backup.directory} onChange={(event) => onPatch({ backup: { ...backup, directory: event.target.value } })} />
         <button type="button" className="gn-data-sync-button" disabled={picking} onClick={() => { void pickDirectory(); }}>{tr('data_sync.backup.directory_browse')}</button>
       </div>

@@ -11016,6 +11016,8 @@
   "data_sync.backup.title": "Datenbanksicherung",
   "data_sync.backup.description": "Struktur und Daten ausgewählter Tabellen manuell oder zeitgesteuert als SQL-Dateien sichern.",
   "data_sync.backup.directory": "Sicherungsverzeichnis",
+  "data_sync.backup.run_mode": "Sicherungsmodus",
+  "data_sync.backup.full_snapshot_help": "Derzeit sind nur Vollsicherungen möglich. Bei jedem Lauf werden alle ausgewählten Tabellen exportiert. Manuelle und geplante Ausführungen werden separat eingestellt.",
   "data_sync.backup.directory_help": "Wählen Sie ein vorhandenes absolutes Verzeichnis auf diesem Computer. Backups liegen darin in Jahr/Monat/Tag-Unterordnern, der Dateiname enthält die Startzeit. Vorhandene Backups werden weder überschrieben noch automatisch gelöscht.",
   "data_sync.backup.directory_dialog_title": "Backup-Verzeichnis auswählen",
   "data_sync.backup.directory_browse": "Durchsuchen…",
