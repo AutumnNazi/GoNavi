@@ -83,7 +83,7 @@ describe('settings center tool entries', () => {
     const startupRestoreStart = appSource.indexOf('const restoreWindowState = async');
     const startupRestoreEnd = appSource.indexOf('if (useStore.persist.hasHydrated())', startupRestoreStart);
     const startupRestoreSource = appSource.slice(startupRestoreStart, startupRestoreEnd);
-    const restoreNormalBoundsBeforeMaximise = startupRestoreSource.indexOf('applyRestoredWindowBounds(bounds);');
+    const restoreNormalBoundsBeforeMaximise = startupRestoreSource.indexOf('applyRestoredWindowBounds(bounds');
     const startupMaximiseCall = startupRestoreSource.indexOf('applyStartupWindowChrome(1);');
 
     expect(startupRestoreStart).toBeGreaterThanOrEqual(0);
@@ -118,7 +118,7 @@ describe('settings center tool entries', () => {
     const restoreNormalStart = appSource.indexOf('const restoreNormalWindowBounds = async');
     const restoreNormalEnd = appSource.indexOf('const restoreWindowState = async', restoreNormalStart);
     const restoreNormalSource = appSource.slice(restoreNormalStart, restoreNormalEnd);
-    const applyBounds = restoreNormalSource.indexOf('applyRestoredWindowBounds(bounds);');
+    const applyBounds = restoreNormalSource.indexOf('applyRestoredWindowBounds(bounds');
     const waitForBounds = restoreNormalSource.indexOf('await waitForNativeWindowBounds(appliedBounds);');
     const refreshSurface = restoreNormalSource.indexOf('await tryRefreshStartupWebViewBounds();');
 

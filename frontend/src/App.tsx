@@ -263,6 +263,15 @@ import {
   type WindowsScaleCheckTrigger,
 } from './utils/windowStateUi';
 import { resolveVisibleStartupWindowBounds } from './utils/windowRestoreBounds';
+import {
+  loadMainWindowDisplayLayout,
+  resolveDisplayAwareLayout,
+  resolveGlobalWindowBounds,
+  resolveVisibleGlobalWindowBounds,
+  resolveWailsWindowPosition,
+  type MainWindowDisplayLayout,
+} from './utils/mainWindowDisplayPlacement';
+import { markStartupWindowGeometrySettled } from './utils/mainWindowStartup';
 import { resolveWailsWindowSetPosition, resolveWailsWindowVisibleViewport } from './utils/wailsWindowViewport';
 import {
   DEFAULT_AI_PANEL_WIDTH,
@@ -1884,6 +1893,8 @@ function App() {
           // 启动偏好成功后立刻同步实际窗口态，避免 settle 宽限期留下瞬态 normal。
           useStore.getState().setWindowState('maximized');
           clearStartupWindowRestorePending();
+          // 最大化已落到最终几何，放行主窗口首屏显示。
+          markStartupWindowGeometrySettled();
       };
 
       /** Maximise 多次失败时：退回普通窗口并铺满工作区，避免残留默认半窗。 */
@@ -1928,6 +1939,7 @@ function App() {
               void emitWindowDiagnostic('adjust:startup-work-area-fill-fallback', {
                   to: nextBounds,
               });
+              markStartupWindowGeometrySettled();
               return true;
           } catch (e) {
               console.warn('Failed to apply Windows work-area fill fallback', e);
@@ -1985,18 +1997,54 @@ function App() {
                               void emitWindowDiagnostic('error:startup-work-area-fill-fallback-failed');
                           }
                           clearStartupWindowRestorePending();
+                          // 启动偏好最终没能生效：仍放行首屏，避免窗口一直隐藏。
+                          markStartupWindowGeometrySettled();
                       }
                   });
           }, delayMs);
       };
 
-      const applyRestoredWindowBounds = (bounds: {
-          width: number;
-          height: number;
-          x: number;
-          y: number;
-      }) => {
+      const applyRestoredWindowBounds = (
+          bounds: {
+              width: number;
+              height: number;
+              x: number;
+              y: number;
+          },
+          displayLayout?: MainWindowDisplayLayout | null,
+      ) => {
           const state = useStore.getState();
+          const displayAware = resolveDisplayAwareLayout(displayLayout);
+          if (displayAware) {
+              // 记忆位置是全局坐标：先裁进目标显示器工作区，再换算成
+              // WindowSetPosition 需要的当前屏局部坐标。
+              const globalBounds = resolveVisibleGlobalWindowBounds(bounds, displayAware);
+              const setPosition = globalBounds
+                  ? resolveWailsWindowPosition(globalBounds, displayAware)
+                  : null;
+              if (!globalBounds || !setPosition) {
+                  void emitWindowDiagnostic('warn:startup-window-display-unavailable', {
+                      from: bounds,
+                  });
+                  return bounds;
+              }
+              if (
+                  globalBounds.x !== bounds.x ||
+                  globalBounds.y !== bounds.y ||
+                  globalBounds.width !== bounds.width ||
+                  globalBounds.height !== bounds.height
+              ) {
+                  void emitWindowDiagnostic('adjust:startup-window-bounds', {
+                      from: bounds,
+                      to: globalBounds,
+                  });
+              }
+              WindowSetSize(globalBounds.width, globalBounds.height);
+              WindowSetPosition(setPosition.x, setPosition.y);
+              state.setWindowBounds(globalBounds);
+              return globalBounds;
+          }
+
           const viewport = readCurrentVisibleViewport();
           const nextBounds = resolveVisibleStartupWindowBounds(bounds, viewport);
           if (
@@ -2019,12 +2067,15 @@ function App() {
           return nextBounds;
       };
 
-      const restoreNormalWindowBounds = async (bounds: {
-          width: number;
-          height: number;
-          x: number;
-          y: number;
-      }) => {
+      const restoreNormalWindowBounds = async (
+          bounds: {
+              width: number;
+              height: number;
+              x: number;
+              y: number;
+          },
+          layout: MainWindowDisplayLayout | null,
+      ) => {
           try {
               if (await WindowIsFullscreen()) {
                   WindowUnfullscreen();
@@ -2037,7 +2088,7 @@ function App() {
           } catch (e) {
               console.warn('Failed to restore normal window chrome', e);
           }
-          const appliedBounds = applyRestoredWindowBounds(bounds);
+          const appliedBounds = applyRestoredWindowBounds(bounds, layout);
           // Wails can finish the native normal-window transition before the
           // WebView2 controller receives its first size update. Wait for the
           // native rect, then explicitly resize the controller just as the
@@ -2059,9 +2110,14 @@ function App() {
               return;
           }
           restoredOnce = true;
+          await applyStartupWindowState();
+      };
 
+      const applyStartupWindowState = async () => {
           const state = useStore.getState();
           const bounds = state.windowBounds;
+          const layout = await loadMainWindowDisplayLayout();
+          if (cancelled) return;
           const restoreMode = resolveStartupWindowRestoreMode(
               state.startupFullscreen,
               state.windowState,
@@ -2075,7 +2131,7 @@ function App() {
                       // reload may already be maximised: SetSize in that state
                       // shrinks the HWND while its client area stays maximised.
                       if (!await WindowIsMaximised() && !await WindowIsFullscreen() && !cancelled) {
-                          const appliedBounds = applyRestoredWindowBounds(bounds);
+                          const appliedBounds = applyRestoredWindowBounds(bounds, layout);
                           await waitForNativeWindowBounds(appliedBounds);
                       }
                   } catch (e) {
@@ -2095,7 +2151,7 @@ function App() {
               if (!bounds || bounds.width < 400 || bounds.height < 300) {
                   if (isWindowsPlatform()) {
                       const nextBounds = resolveDefaultStartupWindowBounds(viewport);
-                      await restoreNormalWindowBounds(nextBounds);
+                      await restoreNormalWindowBounds(nextBounds, layout);
                       void emitWindowDiagnostic('adjust:startup-default-window-bounds', {
                           to: nextBounds,
                       });
@@ -2104,11 +2160,12 @@ function App() {
                   }
                   return;
               }
-              await restoreNormalWindowBounds(bounds);
+              await restoreNormalWindowBounds(bounds, layout);
           } catch (e) {
               console.warn('Failed to restore window bounds', e);
           } finally {
               clearStartupWindowRestorePending();
+              markStartupWindowGeometrySettled();
           }
       };
 
@@ -2181,13 +2238,21 @@ function App() {
               const y = Math.trunc(Number(pos.y || 0));
                if (w < 400 || h < 300) return;
 
-               const key = `${w},${h},${x},${y}`;
+               // macOS 的 WindowGetPosition 是当前屏局部坐标，必须换算成全局坐标
+               // 才能记住窗口在哪块显示器上；换算失败时按原值保存，行为不回退。
+               const layout = await loadMainWindowDisplayLayout();
+               const savedBounds = resolveGlobalWindowBounds(
+                   { width: w, height: h, x, y },
+                   layout,
+               ) ?? { width: w, height: h, x, y };
+
+               const key = `${savedBounds.width},${savedBounds.height},${savedBounds.x},${savedBounds.y}`;
                if (key === lastSaved) return;
                lastSaved = key;
-               if (Math.abs(x) > 5000 || Math.abs(y) > 5000) {
-                   void emitWindowDiagnostic('anomaly:windowBounds', { width: w, height: h, x, y });
+               if (Math.abs(savedBounds.x) > 5000 || Math.abs(savedBounds.y) > 5000) {
+                   void emitWindowDiagnostic('anomaly:windowBounds', savedBounds);
                }
-               store.setWindowBounds({ width: w, height: h, x, y });
+               store.setWindowBounds(savedBounds);
             } catch (e) {
                 // 静默忽略
             }
@@ -2258,8 +2323,13 @@ function App() {
                   useMonitorLocalOrigin: isWindowsPlatform(),
               });
               WindowSetPosition(setPosition.x, setPosition.y);
-              lastSaved = `${nextBounds.width},${nextBounds.height},${nextBounds.x},${nextBounds.y}`;
-              useStore.getState().setWindowBounds(nextBounds);
+              // 持久化用全局坐标：macOS 的窗口位置是当前屏局部坐标，直接落盘会丢
+              // 失“在哪块显示器上”的信息。换算失败时保留设备侧坐标，行为不回退。
+              const persistedBounds = await loadMainWindowDisplayLayout()
+                  .then((layout) => resolveGlobalWindowBounds(nextBounds, layout) ?? nextBounds)
+                  .catch(() => nextBounds);
+              lastSaved = `${persistedBounds.width},${persistedBounds.height},${persistedBounds.x},${persistedBounds.y}`;
+              useStore.getState().setWindowBounds(persistedBounds);
               window.dispatchEvent(new Event('resize'));
           } catch {
               // Wails runtime window APIs are best-effort here.

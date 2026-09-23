@@ -730,6 +730,10 @@ export function GetImportJob(arg1) {
   return window['go']['app']['App']['GetImportJob'](arg1);
 }
 
+export function GetMainWindowDisplayLayout() {
+  return window['go']['app']['App']['GetMainWindowDisplayLayout']();
+}
+
 export function GetRequestDiagnostic(arg1) {
   return window['go']['app']['App']['GetRequestDiagnostic'](arg1);
 }

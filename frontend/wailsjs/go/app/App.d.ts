@@ -376,6 +376,8 @@ export function GetGlobalProxyConfig():Promise<connection.QueryResult>;
 
 export function GetImportJob(arg1:string):Promise<connection.QueryResult>;
 
+export function GetMainWindowDisplayLayout():Promise<connection.QueryResult>;
+
 export function GetRequestDiagnostic(arg1:string):Promise<connection.QueryResult>;
 
 export function GetRequestDiagnostics(arg1:requesttrace.Filter):Promise<connection.QueryResult>;
