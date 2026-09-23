@@ -139,6 +139,25 @@ describe('DataGridColumnTitle', () => {
     expect(markup).toContain('display:inline-flex;width:100%;max-width:100%;min-width:0;overflow:hidden');
   });
 
+  it('right-aligns the title block when the column aligns right', () => {
+    const markup = renderToStaticMarkup(
+      <DataGridColumnTitle
+        columnName="amount"
+        columnMeta={{ type: 'decimal(10,2)' }}
+        showColumnType
+        showColumnComment={false}
+        metaFontSize={11}
+        columnMetaHintColor="#999"
+        columnMetaTooltipColor="#fff"
+        darkMode={false}
+        align="right"
+      />,
+    );
+
+    expect(markup).toContain('align-items:flex-end');
+    expect(markup).not.toContain('align-items:flex-start');
+  });
+
   it('keeps column metadata tooltip readable in light theme', () => {
     const markup = renderToStaticMarkup(
       <DataGridColumnTitle

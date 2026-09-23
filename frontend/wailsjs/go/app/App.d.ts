@@ -376,6 +376,8 @@ export function GetGlobalProxyConfig():Promise<connection.QueryResult>;
 
 export function GetImportJob(arg1:string):Promise<connection.QueryResult>;
 
+export function GetMainWindowDisplayLayout():Promise<connection.QueryResult>;
+
 export function GetRequestDiagnostic(arg1:string):Promise<connection.QueryResult>;
 
 export function GetRequestDiagnostics(arg1:requesttrace.Filter):Promise<connection.QueryResult>;
@@ -719,6 +721,8 @@ export function SaveGlobalProxy(arg1:connection.SaveGlobalProxyInput):Promise<co
 export function SaveQuery(arg1:connection.SavedQuery):Promise<connection.SavedQuery>;
 
 export function SaveSavedQueryGroup(arg1:connection.SavedQueryGroup):Promise<connection.SavedQueryGroup>;
+
+export function SelectBackupDirectory(arg1:string):Promise<connection.QueryResult>;
 
 export function SelectCertificateFile(arg1:string,arg2:string):Promise<connection.QueryResult>;
 

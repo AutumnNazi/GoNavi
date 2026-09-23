@@ -26,6 +26,17 @@ const streamRowsPeriodicGCInterval = 50000
 // they cross the Wails bridge. The streaming export path stays unbounded.
 const interactiveOracleLargeObjectPreviewBytes = 4 * 1024
 
+// oracleInteractiveTextPreviewBytes 返回本次扫描对 Oracle 文本大对象（CLOB/LONG）
+// 的预览上限。绑定单字段预算时返回 0：由通用字段预算统一收口（桌面查询 ≤1MB），
+// 避免 LONG 承载的视图 SQL 在 4KB 处被误截断；未绑定预算的调用（查看定义、
+// 浏览表数据等）继续沿用 4KB 桥接兜底。
+func oracleInteractiveTextPreviewBytes(maxFieldBytes int) int {
+	if maxFieldBytes > 0 {
+		return 0
+	}
+	return interactiveOracleLargeObjectPreviewBytes
+}
+
 func scanRows(rows *sql.Rows) ([]map[string]interface{}, []string, error) {
 	return scanRowsForDialect(rows, "")
 }
@@ -45,6 +56,9 @@ type queryRowScanner struct {
 	values      []interface{}
 	normalized  []interface{}
 	valuePtrs   []interface{}
+	// oracleTextPreviewBytes 是本次扫描使用的 Oracle 文本大对象预览上限，
+	// 0 表示交由通用字段预算收口。见 oracleInteractiveTextPreviewBytes。
+	oracleTextPreviewBytes int
 }
 
 type queryRowsScanner interface {
@@ -81,6 +95,7 @@ func scanRowsForDialectWithPreview(rows *sql.Rows, dialect string, boundOracleLa
 	}
 
 	scanner := newQueryRowScanner(columns, colTypes, dialect)
+	scanner.oracleTextPreviewBytes = oracleInteractiveTextPreviewBytes(budget.MaxFieldBytes())
 	return scanRowsWithScanner(rows, columns, scanner, boundOracleLargeObjects, budget)
 }
 
@@ -319,7 +334,7 @@ func (s *queryRowScanner) scanCurrentRowValuesWithPreview(rows *sql.Rows, boundO
 	}
 	for i := range s.columns {
 		if boundOracleLargeObjects {
-			s.normalized[i] = normalizeInteractiveQueryValue(s.values[i], s.dbTypeNames[i], s.dialect)
+			s.normalized[i] = normalizeInteractiveQueryValue(s.values[i], s.dbTypeNames[i], s.dialect, s.oracleTextPreviewBytes)
 		} else {
 			s.normalized[i] = normalizeQueryValueWithDBTypeAndDialect(s.values[i], s.dbTypeNames[i], s.dialect)
 		}
@@ -327,7 +342,7 @@ func (s *queryRowScanner) scanCurrentRowValuesWithPreview(rows *sql.Rows, boundO
 	return s.normalized, nil
 }
 
-func normalizeInteractiveQueryValue(value interface{}, databaseTypeName, dialect string) interface{} {
+func normalizeInteractiveQueryValue(value interface{}, databaseTypeName, dialect string, textPreviewBytes int) interface{} {
 	switch typedValue := value.(type) {
 	case []byte:
 		if len(typedValue) > interactiveOracleLargeObjectPreviewBytes && isOracleBinaryLargeObjectType(databaseTypeName) {
@@ -348,8 +363,8 @@ func normalizeInteractiveQueryValue(value interface{}, databaseTypeName, dialect
 			)
 		}
 	case string:
-		if len(typedValue) > interactiveOracleLargeObjectPreviewBytes && isOracleTextLargeObjectType(databaseTypeName) {
-			preview := truncateUTF8Prefix(typedValue, interactiveOracleLargeObjectPreviewBytes)
+		if textPreviewBytes > 0 && len(typedValue) > textPreviewBytes && isOracleTextLargeObjectType(databaseTypeName) {
+			preview := truncateUTF8Prefix(typedValue, textPreviewBytes)
 			return fmt.Sprintf(
 				"[CLOB preview: %d/%d bytes] %s",
 				len(preview),

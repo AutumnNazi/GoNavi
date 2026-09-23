@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -12,8 +13,17 @@ import (
 	"GoNavi-Wails/internal/syncjob"
 )
 
+// preflightDataSyncJob 是不带调用方 ctx 的入口，供桌面端 Wails 绑定使用。
+//
+// 桌面端的绑定不带 signal，驱动 Connect/Ping 阻塞时前端无法取消，界面只会在
+// finally 里解锁 —— 无上界的等待会让「启用任务」「检查并运行」「保存」永久停在
+// 转圈状态。这里统一套一层超时，让每个入口都必然返回一个可操作的结果。
+// web 端走 dataSyncJobPreflightContext，其 ctx 已带超时；WithTimeout 取更早的
+// 截止时间，叠加是安全的。
 func (a *App) preflightDataSyncJob(input syncjob.JobDefinition, now time.Time) DataSyncJobPreflightResult {
-	return a.preflightDataSyncJobContext(context.Background(), input, now)
+	ctx, cancel := context.WithTimeout(context.Background(), dataSyncJobPreflightTimeout)
+	defer cancel()
+	return a.preflightDataSyncJobContext(ctx, input, now)
 }
 
 func (a *App) preflightDataSyncJobContext(ctx context.Context, input syncjob.JobDefinition, now time.Time) DataSyncJobPreflightResult {
@@ -34,14 +44,21 @@ func (a *App) preflightDataSyncJobContext(ctx context.Context, input syncjob.Job
 		CheckedAt:  now.UnixMilli(),
 	}
 	stopIfCancelled := func(stage string) bool {
-		if err := ctx.Err(); err != nil {
-			if hasPreflightIssueCode(result.Issues, "request_cancelled") {
-				return true
-			}
-			result.Issues = append(result.Issues, preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, stage, err.Error(), ""))
+		err := ctx.Err()
+		if err == nil {
+			return false
+		}
+		code := "request_cancelled"
+		if errors.Is(err, context.DeadlineExceeded) {
+			// 超时与用户取消是两回事：前者意味着端点迟迟不响应，重试有意义；
+			// 后者是用户主动放弃，不该建议重试。
+			code = "preflight_timeout"
+		}
+		if hasPreflightIssueCode(result.Issues, code) {
 			return true
 		}
-		return false
+		result.Issues = append(result.Issues, preflightIssue(code, DataSyncJobPreflightBlocker, stage, err.Error(), ""))
+		return true
 	}
 	if stopIfCancelled("preflight") {
 		return finishDataSyncJobPreflight(result)
@@ -119,7 +136,10 @@ func (a *App) preflightDataSyncJobContext(ctx context.Context, input syncjob.Job
 	if stopIfCancelled("endpoints") {
 		return finishDataSyncJobPreflight(result)
 	}
-	sourceDB, dbErr := a.getDatabaseSynchronouslyWithContext(ctx, normalizeMetadataRunConfig(source.Config, source.Database), false)
+	// 用可取消版本：驱动 Connect/Ping 不监听 ctx，同步版本会在 SSH 转发下
+	// 无限期阻塞，而预检在桌面端没有 signal 可取消 —— 界面就停在转圈。
+	// 这里每一步后面都紧跟 stopIfCancelled，本函数契合可取消语义。
+	sourceDB, dbErr := a.getDatabaseWithContext(ctx, normalizeMetadataRunConfig(source.Config, source.Database), false)
 	if stopIfCancelled("endpoints") {
 		return finishDataSyncJobPreflight(result)
 	}
@@ -137,7 +157,8 @@ func (a *App) preflightDataSyncJobContext(ctx context.Context, input syncjob.Job
 	if stopIfCancelled("endpoints") {
 		return finishDataSyncJobPreflight(result)
 	}
-	targetDB, dbErr := a.getDatabaseSynchronouslyWithContext(ctx, normalizeMetadataRunConfig(target.Config, target.Database), false)
+	// 同 sourceDB：目标端卡住同样会让预检永返回不了。
+	targetDB, dbErr := a.getDatabaseWithContext(ctx, normalizeMetadataRunConfig(target.Config, target.Database), false)
 	if stopIfCancelled("endpoints") {
 		return finishDataSyncJobPreflight(result)
 	}
@@ -344,11 +365,18 @@ func appendOnlyTargetPreflightIssues(definition syncjob.JobDefinition, capabilit
 	return issues
 }
 
-func (a *App) preflightDataSyncMappings(definition syncjob.JobDefinition, source, target resolvedDataSyncJobEndpoint) []DataSyncJobPreflightIssue {
-	return a.preflightDataSyncMappingsContext(context.Background(), definition, source, target)
-}
-
+// preflightDataSyncMappingsContext 校验全部映射。
+//
+// 整个映射循环共用一个元数据会话。此前每张表都调一次 runWebMetadataWithContext，
+// 而该函数每次新建连接缓存为空的会话并在返回时关闭全部连接，于是「N 张表」变成
+// 「N 次完整建连」（SSH 转发下单次约 3.4 秒），预检长时间停在 mappings 阶段。
 func (a *App) preflightDataSyncMappingsContext(ctx context.Context, definition syncjob.JobDefinition, source, target resolvedDataSyncJobEndpoint) []DataSyncJobPreflightIssue {
+	session := newMetadataSessionWithMode(a, ctx, true)
+	if session == nil {
+		return []DataSyncJobPreflightIssue{preflightIssue("metadata_session_unavailable", DataSyncJobPreflightBlocker, "mappings", errMetadataSessionUnavailable.Error(), "")}
+	}
+	defer session.Close()
+
 	issues := make([]DataSyncJobPreflightIssue, 0)
 	for _, mapping := range definition.Mappings {
 		if err := ctx.Err(); err != nil {
@@ -363,7 +391,7 @@ func (a *App) preflightDataSyncMappingsContext(ctx context.Context, definition s
 			if !readOnly {
 				issues = append(issues, preflightIssue("source_query_not_read_only", DataSyncJobPreflightBlocker, "mappings", "sourceQuery must be a single read-only query", mappingID))
 			}
-			targetIssues := a.preflightDataSyncQueryTargetContext(ctx, definition, mapping, target)
+			targetIssues := a.preflightDataSyncQueryTargetContext(ctx, session, definition, mapping, target)
 			issues = append(issues, targetIssues...)
 			if err := ctx.Err(); err != nil {
 				if hasPreflightIssueCode(issues, "request_cancelled") {
@@ -385,9 +413,7 @@ func (a *App) preflightDataSyncMappingsContext(ctx context.Context, definition s
 			continue
 		}
 		sourceTable := qualifyDataSyncJobObject(mapping.SourceSchema, mapping.SourceTable)
-		sourceResult := a.runWebMetadataWithContext(ctx, func(session *App) connection.QueryResult {
-			return session.DBGetColumns(source.Config, source.Database, sourceTable)
-		})
+		sourceResult := session.app.DBGetColumns(source.Config, source.Database, sourceTable)
 		if !sourceResult.Success {
 			if err := ctx.Err(); err != nil {
 				return append(issues, preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID))
@@ -408,9 +434,7 @@ func (a *App) preflightDataSyncMappingsContext(ctx context.Context, definition s
 			}
 		}
 		targetTable := qualifyDataSyncJobObject(mapping.TargetSchema, mapping.TargetTable)
-		existsResult := a.runWebMetadataWithContext(ctx, func(session *App) connection.QueryResult {
-			return session.DBTableExists(target.Config, target.Database, targetTable)
-		})
+		existsResult := session.app.DBTableExists(target.Config, target.Database, targetTable)
 		if !existsResult.Success {
 			if err := ctx.Err(); err != nil {
 				return append(issues, preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID))
@@ -428,13 +452,11 @@ func (a *App) preflightDataSyncMappingsContext(ctx context.Context, definition s
 				issues = append(issues, preflightIssue("target_table_missing", DataSyncJobPreflightBlocker, "mappings", "target table does not exist and this mapping cannot auto-create it", mappingID))
 			} else {
 				issues = append(issues, preflightIssue("target_table_will_be_created", DataSyncJobPreflightInfo, "mappings", "target table will be created by the migration planner", mappingID))
-				issues = append(issues, a.preflightUnmigratedIndexesContext(ctx, definition, source, target, mapping)...)
+				issues = append(issues, a.preflightUnmigratedIndexesContext(ctx, session, definition, source, target, mapping)...)
 			}
 			continue
 		}
-		targetResult := a.runWebMetadataWithContext(ctx, func(session *App) connection.QueryResult {
-			return session.DBGetColumns(target.Config, target.Database, targetTable)
-		})
+		targetResult := session.app.DBGetColumns(target.Config, target.Database, targetTable)
 		if !targetResult.Success {
 			if err := ctx.Err(); err != nil {
 				return append(issues, preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID))
@@ -481,11 +503,9 @@ func dataSyncJobSourceIndexLocation(source resolvedDataSyncJobEndpoint, mapping 
 	return strings.TrimSpace(schema), strings.TrimSpace(mapping.SourceTable)
 }
 
-func (a *App) preflightUnmigratedIndexes(definition syncjob.JobDefinition, source, target resolvedDataSyncJobEndpoint, mapping syncjob.TableMapping) []DataSyncJobPreflightIssue {
-	return a.preflightUnmigratedIndexesContext(context.Background(), definition, source, target, mapping)
-}
-
-func (a *App) preflightUnmigratedIndexesContext(ctx context.Context, definition syncjob.JobDefinition, source, target resolvedDataSyncJobEndpoint, mapping syncjob.TableMapping) []DataSyncJobPreflightIssue {
+// preflightUnmigratedIndexesContext 复用调用方已建立的元数据会话，
+// 与映射校验共享连接，不再为每个映射单独建连。
+func (a *App) preflightUnmigratedIndexesContext(ctx context.Context, session *metadataSession, definition syncjob.JobDefinition, source, target resolvedDataSyncJobEndpoint, mapping syncjob.TableMapping) []DataSyncJobPreflightIssue {
 	mappingID := dataSyncJobMappingLabel(mapping)
 	if err := ctx.Err(); err != nil {
 		return []DataSyncJobPreflightIssue{preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID)}
@@ -497,11 +517,9 @@ func (a *App) preflightUnmigratedIndexesContext(ctx context.Context, definition 
 	if err != nil {
 		return []DataSyncJobPreflightIssue{preflightIssue("mapping_compile_failed", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID)}
 	}
-	session := newMetadataSessionWithMode(a, ctx, true)
 	if session == nil {
-		return []DataSyncJobPreflightIssue{preflightIssue("metadata_session_unavailable", DataSyncJobPreflightBlocker, "mappings", "metadata session is unavailable", mappingID)}
+		return []DataSyncJobPreflightIssue{preflightIssue("metadata_session_unavailable", DataSyncJobPreflightBlocker, "mappings", errMetadataSessionUnavailable.Error(), mappingID)}
 	}
-	defer session.Close()
 	sourceDB, sourceErr := session.app.getDatabase(normalizeMetadataRunConfig(source.Config, source.Database))
 	if err := ctx.Err(); err != nil {
 		return []DataSyncJobPreflightIssue{preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID)}
@@ -549,17 +567,15 @@ func (a *App) preflightUnmigratedIndexesContext(ctx context.Context, definition 
 	return issues
 }
 
-func (a *App) preflightDataSyncQueryTarget(definition syncjob.JobDefinition, mapping syncjob.TableMapping, target resolvedDataSyncJobEndpoint) []DataSyncJobPreflightIssue {
-	return a.preflightDataSyncQueryTargetContext(context.Background(), definition, mapping, target)
-}
-
-func (a *App) preflightDataSyncQueryTargetContext(ctx context.Context, definition syncjob.JobDefinition, mapping syncjob.TableMapping, target resolvedDataSyncJobEndpoint) []DataSyncJobPreflightIssue {
+// preflightDataSyncQueryTargetContext 复用调用方已建立的元数据会话。
+func (a *App) preflightDataSyncQueryTargetContext(ctx context.Context, session *metadataSession, definition syncjob.JobDefinition, mapping syncjob.TableMapping, target resolvedDataSyncJobEndpoint) []DataSyncJobPreflightIssue {
 	mappingID := dataSyncJobMappingLabel(mapping)
 	issues := make([]DataSyncJobPreflightIssue, 0)
+	if session == nil {
+		return append(issues, preflightIssue("metadata_session_unavailable", DataSyncJobPreflightBlocker, "mappings", errMetadataSessionUnavailable.Error(), mappingID))
+	}
 	targetTable := qualifyDataSyncJobObject(mapping.TargetSchema, mapping.TargetTable)
-	existsResult := a.runWebMetadataWithContext(ctx, func(session *App) connection.QueryResult {
-		return session.DBTableExists(target.Config, target.Database, targetTable)
-	})
+	existsResult := session.app.DBTableExists(target.Config, target.Database, targetTable)
 	if !existsResult.Success {
 		if err := ctx.Err(); err != nil {
 			return append(issues, preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID))
@@ -573,9 +589,7 @@ func (a *App) preflightDataSyncQueryTargetContext(ctx context.Context, definitio
 	if !targetExists {
 		return append(issues, preflightIssue("target_table_missing", DataSyncJobPreflightBlocker, "mappings", "query sink requires an existing target table", mappingID))
 	}
-	targetResult := a.runWebMetadataWithContext(ctx, func(session *App) connection.QueryResult {
-		return session.DBGetColumns(target.Config, target.Database, targetTable)
-	})
+	targetResult := session.app.DBGetColumns(target.Config, target.Database, targetTable)
 	if !targetResult.Success {
 		if err := ctx.Err(); err != nil {
 			return append(issues, preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID))
@@ -590,9 +604,7 @@ func (a *App) preflightDataSyncQueryTargetContext(ctx context.Context, definitio
 		}
 	}
 	if dataSyncJobUsesInsertUpdate(definition) {
-		indexResult := a.runWebMetadataWithContext(ctx, func(session *App) connection.QueryResult {
-			return session.DBGetIndexes(target.Config, target.Database, targetTable)
-		})
+		indexResult := session.app.DBGetIndexes(target.Config, target.Database, targetTable)
 		if !indexResult.Success {
 			if err := ctx.Err(); err != nil {
 				return append(issues, preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID))
@@ -605,13 +617,13 @@ func (a *App) preflightDataSyncQueryTargetContext(ctx context.Context, definitio
 	return issues
 }
 
-// preflightDataSyncQueryColumns asks the source for result metadata without
-// fetching any data. Running the same query only after a task starts turned a
-// simple column alias typo into a failed write run.
-func (a *App) preflightDataSyncQueryColumns(source resolvedDataSyncJobEndpoint, sourceQuery string) ([]string, error) {
-	return a.preflightDataSyncQueryColumnsContext(context.Background(), source, sourceQuery)
-}
-
+// preflightDataSyncQueryColumnsContext asks the source for result metadata
+// without fetching any data. Running the same query only after a task starts
+// turned a simple column alias typo into a failed write run.
+//
+// 这里刻意走 dbQueryIsolatedContext 而不是共用元数据会话：探测需要以数据查询
+// 身份执行用户 SQL，与元数据连接的权限与清理路径不同，混用会让共用会话承担
+// 用户查询的连接生命周期。
 func (a *App) preflightDataSyncQueryColumnsContext(ctx context.Context, source resolvedDataSyncJobEndpoint, sourceQuery string) ([]string, error) {
 	result := a.dbQueryIsolatedContext(ctx, source.Config, source.Database, dataSyncJobQueryMetadataProbeSQL(source.Config, sourceQuery))
 	if !result.Success {

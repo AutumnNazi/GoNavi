@@ -8,7 +8,7 @@ import {
   resolveQueryExecutionSpeedIcon,
   resolveReportedQueryDurationMs,
   useQueryExecutionElapsed,
-} from './QueryEditorToolbar';
+} from './queryEditor/queryEditorExecutionTimer';
 
 describe('QueryEditorToolbar layout', () => {
   it('keeps the v2 toolbar on a single scrollable row in small windows', () => {
@@ -332,6 +332,7 @@ describe('QueryEditorToolbar layout', () => {
 
   it('keeps live and completed execution time at the editor bottom-left', () => {
     const toolbarSource = readFileSync(new URL('./QueryEditorToolbar.tsx', import.meta.url), 'utf8');
+    const timerSource = readFileSync(new URL('./queryEditor/queryEditorExecutionTimer.ts', import.meta.url), 'utf8');
     const editorSource = readFileSync(new URL('./QueryEditor.tsx', import.meta.url), 'utf8');
     const css = readV2ThemeCss();
     const statusbarCss = css.slice(
@@ -343,8 +344,8 @@ describe('QueryEditorToolbar layout', () => {
       css.indexOf('body[data-ui-version="v2"] .gn-v2-query-resizer {'),
     );
 
-    expect(toolbarSource).toContain('globalThis.setInterval(updateElapsed, QUERY_EXECUTION_TIMER_INTERVAL_MS)');
-    expect(toolbarSource).toContain('startedAtRef.current = null');
+    expect(timerSource).toContain('globalThis.setInterval(updateElapsed, QUERY_EXECUTION_TIMER_INTERVAL_MS)');
+    expect(timerSource).toContain('startedAtRef.current = null');
     expect(toolbarSource).not.toContain('gn-query-toolbar-execution-slot');
     expect(editorSource).toContain('className="gn-query-execution-statusbar"');
     expect(editorSource).toContain('className="gn-query-execution-timer"');

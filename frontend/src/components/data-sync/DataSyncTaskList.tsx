@@ -31,7 +31,10 @@ export const DataSyncTaskList: React.FC<{
   onSearchChange: (value: string) => void;
   onSelectTask: (taskId: string) => void;
   onNewTask: () => void;
-  onClose?: () => void;
+  /** Deletes the selected task; absent while no task is selected. */
+  onDeleteTask?: () => void;
+  deleteDisabled?: boolean;
+  deleting?: boolean;
 }> = ({
   id,
   containerRef,
@@ -42,7 +45,9 @@ export const DataSyncTaskList: React.FC<{
   onSearchChange,
   onSelectTask,
   onNewTask,
-  onClose,
+  onDeleteTask,
+  deleteDisabled,
+  deleting,
 }) => (
   <aside
     ref={containerRef}
@@ -62,13 +67,14 @@ export const DataSyncTaskList: React.FC<{
         >
           +
         </button>
-        {onClose ? (
+        {onDeleteTask ? (
           <button
             type="button"
-            className="gn-data-sync-icon-button gn-data-sync-task-list__close"
-            aria-label={t('common.dismiss')}
-            title={t('common.dismiss')}
-            onClick={onClose}
+            className="gn-data-sync-icon-button"
+            aria-label={deleting ? t('workbench.deleting') : t('workbench.delete')}
+            title={deleting ? t('workbench.deleting') : t('workbench.delete')}
+            disabled={deleteDisabled || deleting}
+            onClick={onDeleteTask}
           >
             ×
           </button>

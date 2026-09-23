@@ -110,6 +110,15 @@ func (a *App) dataSyncCDCProbeContext(ctx context.Context, connectionID, databas
 }
 
 func (a *App) dataSyncJobPreflightContext(ctx context.Context, definition syncjob.JobDefinition) connection.QueryResult {
+	// 预检是用户显式等待的交互操作，必须有上界：桌面端的 Wails 绑定不带 signal，
+	// 驱动 Connect/Ping 阻塞时调用方无法取消，前端也只会在 finally 里解锁界面。
+	// 无上界的等待会让「启用任务」与「检查并运行」永久停在转圈状态。
+	//
+	// 注意这只是给调用方一个确定的返回时刻，并不真正中断已阻塞的 Connect
+	// （见 getDatabaseSynchronouslyWithContext 的说明），因此上报为阻塞问题让
+	// 用户重试，而不是伪装成取消。
+	ctx, cancel := context.WithTimeout(ctx, dataSyncJobPreflightTimeout)
+	defer cancel()
 	result := a.preflightDataSyncJobContext(ctx, definition, time.Now())
 	message := "data sync job preflight passed"
 	if !result.Success {

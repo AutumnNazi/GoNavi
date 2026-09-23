@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func TestShouldShowWindowsStartupWindow(t *testing.T) {
+func TestShouldShowStartupWindow(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -27,7 +27,7 @@ func TestShouldShowWindowsStartupWindow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := shouldShowWindowsStartupWindow(tt.iconReady, tt.frontendReady, tt.timedOut, tt.showBound)
+			got := shouldShowStartupWindow(tt.iconReady, tt.frontendReady, tt.timedOut, tt.showBound)
 			if got != tt.want {
 				t.Fatalf("shouldShow = %v, want %v", got, tt.want)
 			}
@@ -35,11 +35,11 @@ func TestShouldShowWindowsStartupWindow(t *testing.T) {
 	}
 }
 
-func TestWindowsStartupWindowGateWaitsForFrontendPaint(t *testing.T) {
+func TestStartupWindowGateWaitsForFrontendPaint(t *testing.T) {
 	t.Parallel()
 
 	var shown atomic.Int32
-	gate := newWindowsStartupWindowGate()
+	gate := newStartupWindowGate()
 	gate.markFrontendReady()
 	gate.bindShow(func() { shown.Add(1) })
 	if got := shown.Load(); got != 0 {
@@ -56,11 +56,11 @@ func TestWindowsStartupWindowGateWaitsForFrontendPaint(t *testing.T) {
 	}
 }
 
-func TestWindowsStartupWindowGateTimeoutPresentsAfterIcon(t *testing.T) {
+func TestStartupWindowGateTimeoutPresentsAfterIcon(t *testing.T) {
 	t.Parallel()
 
 	var shown atomic.Int32
-	gate := newWindowsStartupWindowGate()
+	gate := newStartupWindowGate()
 	gate.bindShow(func() { shown.Add(1) })
 	gate.markIconReady()
 	if got := shown.Load(); got != 0 {
@@ -72,11 +72,11 @@ func TestWindowsStartupWindowGateTimeoutPresentsAfterIcon(t *testing.T) {
 	}
 }
 
-func TestWindowsStartupWindowGateFallbackTimer(t *testing.T) {
+func TestStartupWindowGateFallbackTimer(t *testing.T) {
 	t.Parallel()
 
 	var shown atomic.Int32
-	gate := newWindowsStartupWindowGate()
+	gate := newStartupWindowGate()
 	gate.bindShow(func() { shown.Add(1) })
 	gate.markIconReady()
 	done := make(chan struct{})

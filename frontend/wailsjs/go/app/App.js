@@ -730,6 +730,10 @@ export function GetImportJob(arg1) {
   return window['go']['app']['App']['GetImportJob'](arg1);
 }
 
+export function GetMainWindowDisplayLayout() {
+  return window['go']['app']['App']['GetMainWindowDisplayLayout']();
+}
+
 export function GetRequestDiagnostic(arg1) {
   return window['go']['app']['App']['GetRequestDiagnostic'](arg1);
 }
@@ -1416,6 +1420,10 @@ export function SaveQuery(arg1) {
 
 export function SaveSavedQueryGroup(arg1) {
   return window['go']['app']['App']['SaveSavedQueryGroup'](arg1);
+}
+
+export function SelectBackupDirectory(arg1) {
+  return window['go']['app']['App']['SelectBackupDirectory'](arg1);
 }
 
 export function SelectCertificateFile(arg1, arg2) {

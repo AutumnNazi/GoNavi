@@ -121,6 +121,10 @@ func main() {
 		return
 	}
 	isWindowsDesktop := strings.EqualFold(strings.TrimSpace(runtime.GOOS), "windows")
+	// macOS 之前只在 Windows 上隐藏启动，用户会看到“先按默认尺寸摆普通窗、
+	// 再切到记忆 bounds/最大化”的两段式动画。这里让两端都先隐藏，等前端把
+	// 启动几何应用到最终状态后再显示。
+	hideWindowUntilFrontendReady := isWindowsDesktop || strings.EqualFold(strings.TrimSpace(runtime.GOOS), "darwin")
 	// The process identity must be fixed before Wails creates its HWND. If it
 	// is assigned from OnStartup, Explorer may already have grouped the window
 	// under the executable's default identity and keep its old taskbar icon.
@@ -188,7 +192,7 @@ func main() {
 		signalStartupNativeIconReadyOnce.Do(func() { close(startupNativeIconReady) })
 	}
 	var showInitialWindowOnce sync.Once
-	windowsStartupGate := newWindowsStartupWindowGate()
+	startupGate := newStartupWindowGate()
 
 	// Create application with options
 	err = wails.Run(&options.App{
@@ -201,7 +205,7 @@ func main() {
 		MinWidth:           900,
 		MinHeight:          600,
 		WindowStartState:   resolveInitialWindowStartState(runtime.GOOS),
-		StartHidden:        isWindowsDesktop,
+		StartHidden:        hideWindowUntilFrontendReady,
 		Frameless:          windowChrome.Frameless,
 		// 打开 Wails 原生文件拖放：查询编辑器接收操作系统 .sql 文件拖入
 		// （frontend/src/components/queryEditor/useExternalSqlFileDrop.ts），
@@ -217,12 +221,33 @@ func main() {
 		OnStartup: func(ctx context.Context) {
 			defer signalStartupNativeIconReady()
 			runtimeCtx = ctx
-			if isWindowsDesktop {
+			if hideWindowUntilFrontendReady {
 				// Subscribe before startup continues so a fast first paint cannot
 				// emit gonavi:frontend-ready into an empty event bus.
-				wailsRuntime.EventsOn(ctx, windowsFrontendReadyEvent, func(...interface{}) {
-					windowsStartupGate.markFrontendReady()
+				wailsRuntime.EventsOn(ctx, startupFrontendReadyEvent, func(...interface{}) {
+					startupGate.markFrontendReady()
 				})
+				// 显示回调与兜底定时器都在 OnStartup 绑定：OnDomReady 依赖 WebView
+				// 成功导航，页面加载失败时不会触发，绑定放在那里会让窗口一直隐藏。
+				startupGate.bindShow(func() {
+					showInitialWindowOnce.Do(func() {
+						// WebView2 控制器边界刷新只有 Windows 需要，macOS 调用会返回失败，
+						// 不能让它污染启动日志。
+						if isWindowsDesktop {
+							result := application.RefreshWebViewBounds()
+							if !result.Success && strings.TrimSpace(result.Message) != "" {
+								logger.Warnf("启动时刷新 WebView2 窗口边界失败：%s", result.Message)
+							}
+						}
+						wailsRuntime.WindowShow(ctx)
+					})
+				})
+				startupGate.startFallback(startupWindowShowFallback, func() {
+					logger.Warnf("前端首屏握手超时，仍显示主窗口以免一直不可见")
+					startupGate.markTimedOut()
+				})
+			}
+			if isWindowsDesktop {
 				if err := app.MigrateLegacyApplicationShortcuts(application); err != nil {
 					logger.Warnf("迁移 Windows 应用快捷方式失败：%v", err)
 				}
@@ -232,6 +257,9 @@ func main() {
 			// second-instance activations only after this barrier as they may show
 			// the native window immediately.
 			signalStartupNativeIconReady()
+			if hideWindowUntilFrontendReady {
+				startupGate.markIconReady()
+			}
 			primaryActivator.bindRuntimeContext(ctx)
 			lifecycleCtx := ctx
 			if nativeWindowManager != nil {
@@ -253,23 +281,6 @@ func main() {
 			// 但后端事务仍开着并持有行锁：不清理的话，重新执行同一条 DML 会卡满
 			// innodb_lock_wait_timeout 并报 Error 1205，只能重启应用恢复。
 			app.HandleFrontendDomReady(application)
-			if isWindowsDesktop {
-				<-startupNativeIconReady
-				windowsStartupGate.bindShow(func() {
-					showInitialWindowOnce.Do(func() {
-						result := application.RefreshWebViewBounds()
-						if !result.Success && strings.TrimSpace(result.Message) != "" {
-							logger.Warnf("启动时刷新 WebView2 窗口边界失败：%s", result.Message)
-						}
-						wailsRuntime.WindowShow(ctx)
-					})
-				})
-				windowsStartupGate.markIconReady()
-				windowsStartupGate.startFallback(windowsStartupShowFallback, func() {
-					logger.Warnf("前端首屏握手超时，仍显示主窗口以免一直不可见")
-					windowsStartupGate.markTimedOut()
-				})
-			}
 		},
 		OnShutdown: func(ctx context.Context) {
 			app.StartWindowsRuntimeProcessReaper()
