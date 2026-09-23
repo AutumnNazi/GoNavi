@@ -87,6 +87,9 @@ func shouldEnableWindowsMSISingleInstance(goos string, executablePath string) bo
 }
 
 func main() {
+	if app.HandleWindowsRuntimeReaperArgs(os.Args[1:]) {
+		return
+	}
 	// 大结果集导出（88W+ 行）时，JSON 编解码会产生 5-8 倍内存副本，
 	// Go 默认 GOGC=100 下堆翻倍才触发 GC，叠加 Windows MADV_FREE 不归还 RSS，
 	// 会导致 RSS 单调爬升到峰值后不下降。这里收紧到 50，让 GC 更早触发。
@@ -143,6 +146,10 @@ func main() {
 			defer releaseSingleInstance()
 		}
 	}
+	// Clear WebView2 processes left behind by an earlier exit before this
+	// process creates its own browser, then arm a reaper for the next exit.
+	app.ReapOrphanedWindowsWebViewProcesses()
+	app.StartWindowsRuntimeProcessReaper()
 	// Create an instance of the app structure
 	application := app.NewApp()
 	aiService := aiservice.NewServiceWithConfigChangeHandler(app.NewCloudBackupChangeHandler(application))
@@ -265,6 +272,7 @@ func main() {
 			}
 		},
 		OnShutdown: func(ctx context.Context) {
+			app.StartWindowsRuntimeProcessReaper()
 			nativewindow.ShutdownLifecycle(nativeWindowManager)
 			aiservice.ShutdownWithContext(aiService, ctx)
 			application.Shutdown()
