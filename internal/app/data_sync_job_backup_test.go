@@ -148,6 +148,35 @@ func TestBackupFailureCancellationAndDriftLeaveNoCompletedFile(t *testing.T) {
 	}
 }
 
+// 失败备份收回自己的日期目录时，必须止步于「非空即停」。
+// 同一天先有成功备份、后有一次失败备份时，清理失败的那次不能连带删掉
+// 当天的成功产物与日期目录 —— 那会把用户的恢复依据变成孤儿文件。
+func TestBackupFailureKeepsSameDaySuccessfulBackup(t *testing.T) {
+	application, definition := setupBackupTest(t)
+	checked := application.preflightBackupJob(context.Background(), definition, time.Now())
+	if !checked.Success {
+		t.Fatalf("preflight: %+v", checked.Issues)
+	}
+	successReporter := &backupReporter{}
+	if _, err := application.executeBackupJob(context.Background(), syncjob.ExecutionRequest{Definition: checked.Definition}, successReporter); err != nil {
+		t.Fatal(err)
+	}
+
+	failed := checked.Definition
+	failed.Mappings = append([]syncjob.TableMapping(nil), checked.Definition.Mappings...)
+	failed.Mappings[0].SourceTable = "missing_table"
+	if _, err := application.executeBackupJob(context.Background(), syncjob.ExecutionRequest{Definition: failed}, &backupReporter{}); err == nil {
+		t.Fatal("expected failure")
+	}
+
+	if _, err := os.Stat(successReporter.path); err != nil {
+		t.Fatalf("failed run's cleanup removed the successful backup: %v", err)
+	}
+	if _, err := os.Stat(filepath.Dir(successReporter.path)); err != nil {
+		t.Fatalf("failed run's cleanup removed the day directory: %v", err)
+	}
+}
+
 func TestBackupSaveAndRunThroughPublicAPI(t *testing.T) {
 	application, definition := setupBackupTest(t)
 	saved := application.DataSyncJobSave(definition, "")

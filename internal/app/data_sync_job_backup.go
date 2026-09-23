@@ -179,30 +179,40 @@ func (a *App) executeBackupJob(ctx context.Context, request syncjob.ExecutionReq
 	// 便于按天归档与保留策略；日期用本机时区，与用户查看备份时的认知一致。
 	// 时间戳用 `-` 而不是 `:`：该文件名要跨平台存在，NTFS 不接受冒号。
 	startedAt := time.Now()
+	backupRoot := strings.TrimSpace(definition.Backup.Directory)
 	directory := filepath.Join(
-		strings.TrimSpace(definition.Backup.Directory),
+		backupRoot,
 		startedAt.Format("2006"),
 		startedAt.Format("01"),
 		startedAt.Format("02"),
 	)
-	if err := os.MkdirAll(directory, 0o755); err != nil {
-		return outcome, fmt.Errorf("create backup run directory: %w", err)
-	}
-	path, err := reserveBackupPath(directory, startedAt)
-	if err != nil {
-		return outcome, err
-	}
 	// 占位文件在导出提交时被原子改名覆盖。失败或取消时它必须消失：
 	// 备份是用户的恢复依据，留下 0 字节文件会让恢复操作选中一个空备份。
+	// 日期目录同理：失败备份不该留下 2026/09/23 这样的空壳，否则用户会在
+	// 备份根目录看到本次运行并不存在的归属日期，按日期归档与保留策略也会
+	// 被空目录干扰。清理注册在 MkdirAll 之前 —— 建目录成功但占位失败时
+	// 同样要收回目录。
+	path := ""
 	committed := false
 	defer func() {
 		if committed {
 			return
 		}
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			logger.Warnf("清理未完成备份占位文件失败：%v", err)
+		if path != "" {
+			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				logger.Warnf("清理未完成备份占位文件失败：%v", err)
+			}
 		}
+		pruneEmptyBackupDirectories(backupRoot, directory)
 	}()
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		return outcome, fmt.Errorf("create backup run directory: %w", err)
+	}
+	reserved, err := reserveBackupPath(directory, startedAt)
+	if err != nil {
+		return outcome, err
+	}
+	path = reserved
 	tables := make([]string, 0, len(definition.Mappings))
 	for _, mapping := range definition.Mappings {
 		if mapping.Enabled {
@@ -231,6 +241,34 @@ func (a *App) executeBackupJob(ctx context.Context, request syncjob.ExecutionReq
 		return outcome, err
 	}
 	return outcome, reporter.ReportProgress(syncjob.RunProgress{Current: len(tables), Total: len(tables), Stage: "completed", Message: path})
+}
+
+// pruneEmptyBackupDirectories 收回一次失败备份独立创建的空日期目录。
+//
+// 只用 os.Remove 逐级上溯：它拒绝删除非空目录，因此同一天其它任务已写入的
+// 备份、或用户自己放进目录的文件都不会被误删 —— 删除失败即停止上溯。
+// 上溯止于 backupRoot，绝不触碰用户指定的备份根目录本身。
+func pruneEmptyBackupDirectories(backupRoot, directory string) {
+	if strings.TrimSpace(backupRoot) == "" {
+		return
+	}
+	rootAbs, err := filepath.Abs(backupRoot)
+	if err != nil {
+		return
+	}
+	current, err := filepath.Abs(directory)
+	if err != nil {
+		return
+	}
+	for {
+		if current == rootAbs || !strings.HasPrefix(current, rootAbs+string(filepath.Separator)) {
+			return
+		}
+		if err := os.Remove(current); err != nil {
+			return
+		}
+		current = filepath.Dir(current)
+	}
 }
 
 // reserveBackupPath 返回一个本进程已独占创建的备份文件路径。
