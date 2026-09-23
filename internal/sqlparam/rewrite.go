@@ -167,24 +167,59 @@ func renderTemplate(content string, values map[string]TypedValue) (string, error
 	var b strings.Builder
 	b.Grow(len(content) + 16)
 	for i := 0; i < len(content); i++ {
+		// DBeaver / PL/SQL Developer 的 '${name}' 会把整个 ${name} 换成值。
+		// 这里的词法只认 {name}，若不吞掉紧挨着的 $，渲染结果会多出一个美元符号。
+		if content[i] == '$' {
+			if name, end, ok := templateParamAt(content, i+1); ok {
+				rendered, err := templateParamValue(name, values)
+				if err != nil {
+					return "", err
+				}
+				b.WriteString(rendered)
+				i = end
+				continue
+			}
+		}
 		if content[i] != '{' {
 			b.WriteByte(content[i])
 			continue
 		}
-		end := strings.IndexByte(content[i:], '}')
-		if end <= 1 {
+		name, end, ok := templateParamAt(content, i)
+		if !ok {
 			b.WriteByte(content[i])
 			continue
 		}
-		name := content[i+1 : i+end]
-		typed, ok := values[name]
-		if !ok {
-			return "", fmt.Errorf("%w：%s", ErrMissingParameter, name)
+		rendered, err := templateParamValue(name, values)
+		if err != nil {
+			return "", err
 		}
-		b.WriteString(renderRawValue(typed.Value))
-		i += end
+		b.WriteString(rendered)
+		i = end
 	}
 	return b.String(), nil
+}
+
+func templateParamAt(content string, start int) (string, int, bool) {
+	if start < 0 || start >= len(content) || content[start] != '{' {
+		return "", 0, false
+	}
+	end := strings.IndexByte(content[start:], '}')
+	if end <= 1 {
+		return "", 0, false
+	}
+	name := content[start+1 : start+end]
+	if !isQuotedParamName(name) {
+		return "", 0, false
+	}
+	return name, start + end, true
+}
+
+func templateParamValue(name string, values map[string]TypedValue) (string, error) {
+	typed, ok := values[name]
+	if !ok {
+		return "", fmt.Errorf("%w：%s", ErrMissingParameter, name)
+	}
+	return renderRawValue(typed.Value), nil
 }
 
 // renderRawValue 把参数原始输入渲染为字符串（JSON 反序列化形态 → 文本）。
