@@ -2230,7 +2230,17 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
               setShowKindSelector(true);
               closeTaskRailAndRestoreFocus();
             }}
-            onClose={closeTaskRailAndRestoreFocus}
+            // 面板头部以删除当前任务取代原先的「收起」：宽屏下任务栏本就
+            // 常驻，「收起」点了没有任何视觉变化，看起来像按钮坏了。
+            onDeleteTask={
+              selectedTask && !showKindSelector
+                ? requestDeleteSelectedTask
+                : undefined
+            }
+            deleteDisabled={
+              operationBusy === 'delete' || saving || preflighting
+            }
+            deleting={operationBusy === 'delete'}
           />
           <main ref={editorColumnRef} className="gn-data-sync-editor-column">
             {showKindSelector || !selectedTask ? (

@@ -1505,6 +1505,55 @@ describe('DataSyncWorkbenchShell', () => {
     ).toBeTruthy();
   });
 
+  // 回归护栏：任务面板头部的 × 曾是「收起任务栏」。宽屏（>860px 容器查询
+  // 断点）下任务栏本就常驻，「收起」不产生任何视觉变化，用户看到的是
+  // 「点了没反应」。现在该按钮删除当前选中任务，并复用同一确认流程。
+  it('deletes the selected task from the task list header', async () => {
+    const task = buildTask();
+    const other = { ...buildTask(), id: 'other-task', name: '其他任务' };
+    const deleteSpy = vi.fn(async () => {});
+    const gateway = {
+      ...createStaticDataSyncWorkbenchGateway({ tasks: [task, other] }),
+      deleteTask: deleteSpy,
+    };
+    const renderer = TestRenderer.create(
+      <DataSyncWorkbenchShell
+        initialTasks={[task, other]}
+        gateway={gateway}
+        locale="en-US"
+      />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // 头部 × 由 aria-label 定位；编辑区的「Delete task」按钮另有一处。
+    const headerDelete = () =>
+      renderer.root
+        .findAllByType('button')
+        .find((button) => button.props['aria-label'] === 'Delete task')!;
+    expect(headerDelete()).toBeDefined();
+
+    await act(async () => {
+      headerDelete().props.onClick();
+      await Promise.resolve();
+    });
+    expect(latestConfirmation()).toMatchObject({ title: 'Delete task' });
+    expect(deleteSpy).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await latestConfirmation().onOk();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(deleteSpy).toHaveBeenCalledWith(task.id);
+    expect(
+      renderer.root.findAllByProps({ 'data-task-id': task.id }),
+    ).toHaveLength(0);
+  });
+
   it('saves a draft as ready without exposing a separate publish action', async () => {
     const task = buildTask();
     const baseGateway = createStaticDataSyncWorkbenchGateway({

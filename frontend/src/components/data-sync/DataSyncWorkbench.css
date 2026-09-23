@@ -127,8 +127,7 @@
   color: var(--gn-toolbar-button-hover-fg, var(--gn-fg-1, #0c1322));
 }
 
-.gn-data-sync-task-rail-toggle,
-.gn-data-sync-task-list__close {
+.gn-data-sync-task-rail-toggle {
   display: none;
 }
 
@@ -3352,7 +3351,6 @@ textarea.gn-data-sync-control {
   }
   .gn-data-sync-workbench__header-actions { grid-column: 2; grid-row: 1; }
   .gn-data-sync-task-rail-toggle { display: inline-flex; }
-  .gn-data-sync-task-list__close { display: inline-grid; }
 
   .gn-data-sync-workspace-grid {
     grid-template-columns: minmax(0, 1fr);
