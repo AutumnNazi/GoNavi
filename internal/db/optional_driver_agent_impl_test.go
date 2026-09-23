@@ -590,7 +590,7 @@ func TestOptionalDriverAgentCancellationAfterGateAcquisitionDoesNotStartOperatio
 		client := &optionalDriverAgentClient{driver: "dameng"}
 		operationStarted := false
 
-		err := client.runWithContext(ctx, optionalAgentMethodPing, func() error {
+		err := client.runWithContext(ctx, optionalAgentMethodPing, func(int64) error {
 			operationStarted = true
 			return nil
 		})

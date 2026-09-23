@@ -72,8 +72,15 @@ func normalizeAgentResponseData(value interface{}) interface{} {
 	}
 }
 
-func agentQueryRequestContext(timeoutMs int64, options *db.RowBudgetOptions) (context.Context, context.CancelFunc, *db.RowBudget) {
-	ctx := context.Background()
+// agentQueryRequestContext 以请求生命周期上下文为父构建查询上下文。
+//
+// parent 会由取消通知取消，因此即使没有配置超时，查询上下文也是可取消的：这是「停止」
+// 能传递到驱动层（如 SQL Server 的 TDS attention）的前提，而不是等查询自然结束。
+func agentQueryRequestContext(parent context.Context, timeoutMs int64, options *db.RowBudgetOptions) (context.Context, context.CancelFunc, *db.RowBudget) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx := parent
 	cancel := func() {}
 	if timeoutMs > 0 {
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
@@ -84,6 +91,18 @@ func agentQueryRequestContext(timeoutMs int64, options *db.RowBudgetOptions) (co
 		ctx = db.ContextWithRowBudget(ctx, budget)
 	}
 	return ctx, cancel, budget
+}
+
+// agentStreamRequestContext 与 agentQueryRequestContext 同样以请求上下文为父，
+// 供流式查询与写入复用。
+func agentStreamRequestContext(parent context.Context, timeoutMs int64) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	if timeoutMs > 0 {
+		return context.WithTimeout(parent, time.Duration(timeoutMs)*time.Millisecond)
+	}
+	return parent, func() {}
 }
 
 func applyAgentBudgetResponse(response *agentResponse, budget *db.RowBudget) {
