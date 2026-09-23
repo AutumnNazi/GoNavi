@@ -267,6 +267,8 @@ import {
   loadMainWindowDisplayLayout,
   resolveDisplayAwareLayout,
   resolveGlobalWindowBounds,
+  resolveMaximisedWindowRestoreBounds,
+  resolveRuntimeWindowPlacement,
   resolveVisibleGlobalWindowBounds,
   resolveWailsWindowPosition,
   type MainWindowDisplayLayout,
@@ -2014,39 +2016,14 @@ function App() {
           displayLayout?: MainWindowDisplayLayout | null,
       ) => {
           const state = useStore.getState();
-          const displayAware = resolveDisplayAwareLayout(displayLayout);
-          if (displayAware) {
-              // 记忆位置是全局坐标：先裁进目标显示器工作区，再换算成
-              // WindowSetPosition 需要的当前屏局部坐标。
-              const globalBounds = resolveVisibleGlobalWindowBounds(bounds, displayAware);
-              const setPosition = globalBounds
-                  ? resolveWailsWindowPosition(globalBounds, displayAware)
-                  : null;
-              if (!globalBounds || !setPosition) {
-                  void emitWindowDiagnostic('warn:startup-window-display-unavailable', {
-                      from: bounds,
-                  });
-                  return bounds;
-              }
-              if (
-                  globalBounds.x !== bounds.x ||
-                  globalBounds.y !== bounds.y ||
-                  globalBounds.width !== bounds.width ||
-                  globalBounds.height !== bounds.height
-              ) {
-                  void emitWindowDiagnostic('adjust:startup-window-bounds', {
-                      from: bounds,
-                      to: globalBounds,
-                  });
-              }
-              WindowSetSize(globalBounds.width, globalBounds.height);
-              WindowSetPosition(setPosition.x, setPosition.y);
-              state.setWindowBounds(globalBounds);
-              return globalBounds;
+          const placement = resolveRuntimeWindowPlacement(
+              bounds, displayLayout ?? null, readCurrentVisibleViewport(), isWindowsPlatform(), true,
+          );
+          if (!placement) {
+              void emitWindowDiagnostic('warn:startup-window-display-unavailable', { from: bounds });
+              return bounds;
           }
-
-          const viewport = readCurrentVisibleViewport();
-          const nextBounds = resolveVisibleStartupWindowBounds(bounds, viewport);
+          const nextBounds = placement.bounds;
           if (
               nextBounds.x !== bounds.x ||
               nextBounds.y !== bounds.y ||
@@ -2059,10 +2036,7 @@ function App() {
               });
           }
           WindowSetSize(nextBounds.width, nextBounds.height);
-          const setPosition = resolveWailsWindowSetPosition(nextBounds, viewport, {
-              useMonitorLocalOrigin: isWindowsPlatform(),
-          });
-          WindowSetPosition(setPosition.x, setPosition.y);
+          WindowSetPosition(placement.position.x, placement.position.y);
           state.setWindowBounds(nextBounds);
           return nextBounds;
       };
@@ -2224,8 +2198,19 @@ function App() {
                   store.setWindowState(newState);
               }
 
-              // 只在普通窗口模式下保存尺寸和位置
-              if (isFs || isMax) return;
+              // Windows 最大化时只记录所在显示器：不把最大化尺寸写成普通窗口的还原尺寸。
+              if (isFs || isMax) {
+                  if (isWindowsPlatform() && isMax && !isFs) {
+                      const layout = await loadMainWindowDisplayLayout();
+                      if (cancelled || isStartupWindowRestorePending()) return;
+                      const nextBounds = resolveMaximisedWindowRestoreBounds(store.windowBounds, layout);
+                      if (nextBounds) {
+                          lastSaved = `${nextBounds.width},${nextBounds.height},${nextBounds.x},${nextBounds.y}`;
+                          store.setWindowBounds(nextBounds);
+                      }
+                  }
+                  return;
+              }
 
               const [size, pos] = await Promise.all([
                   safeWindowRuntimeCall(() => WindowGetSize(), null),
@@ -2304,13 +2289,17 @@ function App() {
               if (currentBounds.width <= 0 || currentBounds.height <= 0) {
                   return;
               }
-              const viewport = readCurrentVisibleViewport();
-              const nextBounds = resolveVisibleStartupWindowBounds(currentBounds, viewport);
+              const layout = await loadMainWindowDisplayLayout();
+              if (cancelled || isStartupWindowRestorePending()) return;
+              const placement = resolveRuntimeWindowPlacement(currentBounds, layout, readCurrentVisibleViewport(), isWindowsPlatform());
+              if (!placement) return;
+              const nextBounds = placement.bounds;
+              const originalGlobal = resolveGlobalWindowBounds(currentBounds, layout) ?? currentBounds;
               if (
-                  nextBounds.x === currentBounds.x &&
-                  nextBounds.y === currentBounds.y &&
-                  nextBounds.width === currentBounds.width &&
-                  nextBounds.height === currentBounds.height
+                  nextBounds.x === originalGlobal.x &&
+                  nextBounds.y === originalGlobal.y &&
+                  nextBounds.width === originalGlobal.width &&
+                  nextBounds.height === originalGlobal.height
               ) {
                   return;
               }
@@ -2319,15 +2308,10 @@ function App() {
                   to: nextBounds,
               });
               WindowSetSize(nextBounds.width, nextBounds.height);
-              const setPosition = resolveWailsWindowSetPosition(nextBounds, viewport, {
-                  useMonitorLocalOrigin: isWindowsPlatform(),
-              });
-              WindowSetPosition(setPosition.x, setPosition.y);
+              WindowSetPosition(placement.position.x, placement.position.y);
               // 持久化用全局坐标：macOS 的窗口位置是当前屏局部坐标，直接落盘会丢
               // 失“在哪块显示器上”的信息。换算失败时保留设备侧坐标，行为不回退。
-              const persistedBounds = await loadMainWindowDisplayLayout()
-                  .then((layout) => resolveGlobalWindowBounds(nextBounds, layout) ?? nextBounds)
-                  .catch(() => nextBounds);
+              const persistedBounds = placement.persistedBounds;
               lastSaved = `${persistedBounds.width},${persistedBounds.height},${persistedBounds.x},${persistedBounds.y}`;
               useStore.getState().setWindowBounds(persistedBounds);
               window.dispatchEvent(new Event('resize'));

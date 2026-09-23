@@ -1,4 +1,5 @@
 import { resolveVisibleStartupWindowBounds, type WindowRestoreBounds } from './windowRestoreBounds';
+import { resolveWailsWindowSetPosition, type WailsWindowVisibleViewport } from './wailsWindowViewport';
 
 export type WindowDisplayWorkArea = {
   x: number;
@@ -12,11 +13,14 @@ export type WindowDisplayWorkArea = {
 export type MainWindowDisplayLayout = {
   displays: WindowDisplayWorkArea[];
   positionIsGlobal: boolean;
+  /** Windows GetPosition is global, but Wails SetPosition is current-monitor-local. */
+  setPositionIsLocal?: boolean;
 };
 
 type DisplayLayoutPayload = {
   displays?: unknown;
   positionIsGlobal?: unknown;
+  setPositionIsLocal?: unknown;
 };
 
 const toFiniteInteger = (value: unknown, fallback = 0): number => {
@@ -59,6 +63,7 @@ export const normalizeMainWindowDisplayLayout = (
   return {
     displays,
     positionIsGlobal: raw.positionIsGlobal === true,
+    ...(raw.setPositionIsLocal === true ? { setPositionIsLocal: true } : {}),
   };
 };
 
@@ -154,6 +159,27 @@ export const resolveVisibleGlobalWindowBounds = (
   });
 };
 
+/** Preserve the last normal size while anchoring maximised startup to its current display. */
+export const resolveMaximisedWindowRestoreBounds = (
+  bounds: WindowRestoreBounds | null,
+  layout: MainWindowDisplayLayout | null,
+): WindowRestoreBounds | null => {
+  const display = layout && resolveCurrentWindowDisplay(layout);
+  if (!bounds || !display || bounds.width < 400 || bounds.height < 300
+    || resolvePlacementDisplay(bounds, layout) === display) return null;
+  const repositioned = {
+    ...bounds,
+    x: display.x + Math.max(0, Math.trunc((display.width - bounds.width) / 2)),
+    y: display.y + Math.max(0, Math.trunc((display.height - bounds.height) / 2)),
+  };
+  return resolveVisibleStartupWindowBounds(repositioned, {
+    availWidth: display.width,
+    availHeight: display.height,
+    availLeft: display.x,
+    availTop: display.y,
+  });
+};
+
 /**
  * 把平台返回的窗口位置换算成全局左上原点坐标。
  *
@@ -186,7 +212,8 @@ export const resolveGlobalWindowBounds = (
 
 /**
  * 把全局坐标换算成 WindowSetPosition 需要的入参。
- * macOS 传入的是当前显示器可见区内的局部坐标，需要减去当前屏工作区原点。
+ * macOS 和 Windows 的 SetPosition 都接收当前工作区内的局部坐标，
+ * 但 Windows 的 GetPosition 已经是全局坐标。
  */
 export const resolveWailsWindowPosition = (
   bounds: WindowRestoreBounds,
@@ -196,7 +223,7 @@ export const resolveWailsWindowPosition = (
   if (!awareLayout) {
     return null;
   }
-  if (awareLayout.positionIsGlobal) {
+  if (awareLayout.positionIsGlobal && !awareLayout.setPositionIsLocal) {
     return { x: bounds.x, y: bounds.y };
   }
 
@@ -207,6 +234,33 @@ export const resolveWailsWindowPosition = (
   return {
     x: bounds.x - current.x,
     y: bounds.y - current.y,
+  };
+};
+
+/** Resolve the same display-aware bounds for runtime correction and persistence. */
+export const resolveRuntimeWindowPlacement = (
+  bounds: WindowRestoreBounds,
+  layout: MainWindowDisplayLayout | null,
+  viewport: WailsWindowVisibleViewport,
+  isWindows: boolean,
+  inputIsGlobal = false,
+): { bounds: WindowRestoreBounds; position: { x: number; y: number }; persistedBounds: WindowRestoreBounds } | null => {
+  const aware = resolveDisplayAwareLayout(layout);
+  const globalBounds = aware && !aware.positionIsGlobal && !inputIsGlobal
+    ? resolveGlobalWindowBounds(bounds, aware) ?? bounds
+    : bounds;
+  const nextBounds = aware
+    ? resolveVisibleGlobalWindowBounds(globalBounds, aware)
+    : resolveVisibleStartupWindowBounds(bounds, viewport);
+  if (!nextBounds) return null;
+  const position = aware
+    ? resolveWailsWindowPosition(nextBounds, aware)
+    : resolveWailsWindowSetPosition(nextBounds, viewport, { useMonitorLocalOrigin: isWindows });
+  if (!position) return null;
+  return {
+    bounds: nextBounds,
+    position,
+    persistedBounds: nextBounds,
   };
 };
 

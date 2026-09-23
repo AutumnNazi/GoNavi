@@ -1,6 +1,50 @@
 package app
 
-import "testing"
+import (
+	"context"
+	"runtime"
+	"testing"
+)
+
+func TestWindowsDisplayLayoutIncludesAvailableWorkAreas(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows monitor enumeration")
+	}
+	areas := mainWindowDisplayAreas(nil)
+	if len(areas) == 0 {
+		t.Fatal("Windows display layout omitted the visible work area")
+	}
+	primary := false
+	for _, area := range areas {
+		if area.Width <= 0 || area.Height <= 0 {
+			t.Fatalf("invalid display work area: %+v", area)
+		}
+		if area.Primary && area.Current {
+			primary = true
+		}
+	}
+	if !primary {
+		t.Fatal("layout did not identify the primary screen as current without a Wails context")
+	}
+	layout, ok := (&App{ctx: context.Background()}).GetMainWindowDisplayLayout().Data.(mainWindowDisplayLayout)
+	if !ok || !layout.PositionIsGlobal || !layout.SetPositionIsLocal || len(layout.Displays) != len(areas) {
+		t.Fatalf("Windows display contract = %+v, want global GetPosition, local SetPosition and %d displays", layout, len(areas))
+	}
+}
+
+func TestMainWindowDisplayLayoutDoesNotExposeServerMonitorsToWebOrHeadlessClients(t *testing.T) {
+	for _, app := range []*App{
+		{ctx: context.Background(), webRuntime: true},
+		{ctx: context.Background(), headlessRuntime: true},
+		{},
+	} {
+		result := app.GetMainWindowDisplayLayout()
+		layout, ok := result.Data.(mainWindowDisplayLayout)
+		if !result.Success || !ok || len(layout.Displays) != 0 {
+			t.Fatalf("non-desktop layout = %#v, want no server display information", result)
+		}
+	}
+}
 
 func TestBuildMainWindowDisplayLayoutKeepsUsableDisplays(t *testing.T) {
 	layout := buildMainWindowDisplayLayout([]mainWindowDisplayArea{
