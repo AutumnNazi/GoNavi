@@ -6,6 +6,7 @@ type QueryResultPromise = Promise<WailsQueryResultLike>;
 /** Narrow seam around Wails so protocol handling can be tested without a runtime. */
 export interface WailsDataSyncApi {
   GetSavedConnections(): Promise<unknown>;
+  SelectBackupDirectory(currentDirectory: string): QueryResultPromise;
   DataSyncDatabaseList(connectionId: string): QueryResultPromise;
   DataSyncObjectList(
     connectionId: string,

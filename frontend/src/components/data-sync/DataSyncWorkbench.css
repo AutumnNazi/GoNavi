@@ -1159,6 +1159,28 @@ textarea.gn-data-sync-control {
   margin: 0 0 6px;
 }
 
+.gn-data-sync-inline-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gn-data-sync-inline-control .gn-data-sync-control {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.gn-data-sync-inline-control .gn-data-sync-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.gn-data-sync-inline-error {
+  color: var(--gn-danger, #dc2626);
+  font-size: var(--gn-font-size-xs, 11px);
+  line-height: 1.5;
+}
+
 .gn-data-sync-delivery-main {
   display: grid;
   max-width: 980px;

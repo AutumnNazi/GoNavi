@@ -1142,10 +1142,6 @@ export function PreflightDatabaseSQLImport(arg1, arg2, arg3) {
   return window['go']['app']['App']['PreflightDatabaseSQLImport'](arg1, arg2, arg3);
 }
 
-export function PrepareWindowsBrandIconRestart(arg1) {
-  return window['go']['app']['App']['PrepareWindowsBrandIconRestart'](arg1);
-}
-
 export function PreviewChanges(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['PreviewChanges'](arg1, arg2, arg3, arg4);
 }
@@ -1422,6 +1418,10 @@ export function SaveSavedQueryGroup(arg1) {
   return window['go']['app']['App']['SaveSavedQueryGroup'](arg1);
 }
 
+export function SelectBackupDirectory(arg1) {
+  return window['go']['app']['App']['SelectBackupDirectory'](arg1);
+}
+
 export function SelectCertificateFile(arg1, arg2) {
   return window['go']['app']['App']['SelectCertificateFile'](arg1, arg2);
 }
@@ -1468,10 +1468,6 @@ export function SelectSSHKnownHostsFile(arg1) {
 
 export function SelectSavedQueryDirectory(arg1) {
   return window['go']['app']['App']['SelectSavedQueryDirectory'](arg1);
-}
-
-export function SetApplicationBrandIcon(arg1) {
-  return window['go']['app']['App']['SetApplicationBrandIcon'](arg1);
 }
 
 export function SetLanguage(arg1) {

@@ -1,5 +1,6 @@
 import * as WailsApp from '../../../wailsjs/go/app/App';
 import { syncjob } from '../../../wailsjs/go/models';
+import { BACKEND_CANCELLED_MESSAGE } from '../../utils/connectionExport';
 import {
   invokeAppWithSignal,
   isWebRPCAbortError,
@@ -252,6 +253,22 @@ export const createWailsDataSyncWorkbenchGateway = (
         connectionTypes.set(connection.id, connection.type);
       });
       return connections;
+    },
+
+    // The picker is a desktop-only affordance: cancellation returns the
+    // backend's cancelled sentinel and must not surface as a failure, and a
+    // missing path is treated the same way so the field keeps its value.
+    async selectBackupDirectory(currentDirectory) {
+      const result = await api.SelectBackupDirectory(currentDirectory);
+      if (!result?.success) {
+        if (result?.message === BACKEND_CANCELLED_MESSAGE) return null;
+        throw new DataSyncGatewayProtocolError(
+          'SelectBackupDirectory',
+          String(result?.message || 'backend rejected the directory picker'),
+        );
+      }
+      const selected = String(result.data ?? '').trim();
+      return selected || null;
     },
 
     async listDatabases(connectionId, requestOptions) {
