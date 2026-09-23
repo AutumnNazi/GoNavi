@@ -1,78 +1,7 @@
 export const DATA_SYNC_TASK_SCHEMA_VERSION = 1 as const;
 
-export type DataSyncTaskKind =
-  | 'migration'
-  | 'reconcile'
-  | 'querySink'
-  | 'compare'
-  | 'cdc';
-
-export type DataSyncTaskLifecycle =
-  | 'draft'
-  | 'ready'
-  | 'enabled'
-  | 'paused'
-  | 'archived';
-
-export type DataSyncTaskStage =
-  | 'endpoints'
-  | 'mappings'
-  | 'delivery'
-  | 'trigger'
-  | 'preflight';
-
-export const DATA_SYNC_TASK_STAGES: readonly DataSyncTaskStage[] = [
-  'endpoints',
-  'mappings',
-  'delivery',
-  'trigger',
-  'preflight',
-];
-
-export const DATA_SYNC_COMPARE_STAGES: readonly DataSyncTaskStage[] = [
-  'endpoints',
-  'mappings',
-];
-
-export const dataSyncTaskStages = (
-  kind: DataSyncTaskKind,
-): readonly DataSyncTaskStage[] =>
-  kind === 'compare' ? DATA_SYNC_COMPARE_STAGES : DATA_SYNC_TASK_STAGES;
-
-export type DataSyncCompareMode = 'schema' | 'data' | 'both';
-
-/** Workbench family: sync kinds vs read-only compare kinds. */
-export type DataSyncWorkbenchFamily = 'sync' | 'compare';
-
-export type DataSyncTaskKindChoice = {
-  kind: DataSyncTaskKind;
-  compareMode?: Exclude<DataSyncCompareMode, 'both'>;
-};
-
-export const DATA_SYNC_FAMILY_KIND_CHOICES: Record<
-  DataSyncWorkbenchFamily,
-  readonly DataSyncTaskKindChoice[]
-> = {
-  sync: [
-    { kind: 'migration' },
-    { kind: 'reconcile' },
-    { kind: 'querySink' },
-    { kind: 'cdc' },
-  ],
-  compare: [
-    { kind: 'compare', compareMode: 'schema' },
-    { kind: 'compare', compareMode: 'data' },
-  ],
-};
-
-export const dataSyncTaskBelongsToFamily = (
-  task: { kind: DataSyncTaskKind },
-  family: DataSyncWorkbenchFamily,
-): boolean => (family === 'compare' ? task.kind === 'compare' : task.kind !== 'compare');
-
-/** Content selected by a writable migration task. */
-export type DataSyncContent = 'data' | 'schema' | 'both';
-
+import type { DataSyncTaskKind, DataSyncTaskLifecycle, DataSyncTaskStage, DataSyncCompareMode, DataSyncContent } from './modelTaskKinds';
+export * from './modelTaskKinds';
 export type DataSyncEndpointRef = {
   connectionId: string;
   connectionName: string;
@@ -211,6 +140,7 @@ export type DataSyncTaskDefinition = {
   lifecycle: DataSyncTaskLifecycle;
   compareMode?: DataSyncCompareMode;
   content?: DataSyncContent;
+  backup?: { directory: string; content: DataSyncContent };
   sourceMode: 'tables' | 'query';
   sourceQuery: string;
   source: DataSyncEndpointRef;
@@ -228,6 +158,7 @@ export type DataSyncTaskDefinition = {
 export type DataSyncValidationSeverity = 'blocker' | 'warning' | 'info';
 
 export type DataSyncValidationCode =
+  | 'backup_directory_required'
   | 'definition_invalid'
   | 'definition_hash_failed'
   | 'task_name_required'
@@ -842,7 +773,7 @@ export const autoMatchDataSyncFields = (
 const defaultWriteMode = (
   kind: DataSyncTaskKind,
 ): DataSyncDeliveryPolicy['writeMode'] => {
-  if (kind === 'compare') return 'none';
+  if (kind === 'compare' || kind === 'backup') return 'none';
   if (kind === 'querySink') return 'append';
   return 'upsert';
 };
@@ -865,6 +796,7 @@ export const createDataSyncTaskDraft = ({
   lifecycle: 'draft',
   compareMode: kind === 'compare' ? compareMode || 'data' : undefined,
   content: kind === 'migration' ? content || 'both' : undefined,
+  backup: kind === 'backup' ? { directory: '', content: 'both' } : undefined,
   sourceMode: kind === 'querySink' ? 'query' : 'tables',
   sourceQuery: '',
   source: emptyEndpoint(sourceConnectionId),

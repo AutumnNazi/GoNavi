@@ -151,7 +151,7 @@ func (a *App) ApplyDataRootDirectory(directory string, migrate bool) connection.
 	// migration never copies a live WAL or starts the same scheduled run twice.
 	resumeDataSyncJobs, suspendSyncErr := a.suspendDataSyncJobs()
 	if suspendSyncErr != nil {
-		a.resumeDataSyncJobs(resumeDataSyncJobs)
+		resumeDataSyncJobs()
 		return connection.QueryResult{
 			Success: false,
 			Message: dataRootErrorWithDetail(
@@ -163,7 +163,7 @@ func (a *App) ApplyDataRootDirectory(directory string, migrate bool) connection.
 			).Error(),
 		}
 	}
-	defer a.resumeDataSyncJobs(resumeDataSyncJobs)
+	defer resumeDataSyncJobs()
 
 	resumeSQLAudit, suspendErr := a.suspendSQLAudit()
 	if suspendErr != nil {

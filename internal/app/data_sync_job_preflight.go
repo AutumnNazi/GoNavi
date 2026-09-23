@@ -21,6 +21,9 @@ func (a *App) preflightDataSyncJobContext(ctx context.Context, input syncjob.Job
 		ctx = context.Background()
 	}
 	definition := syncjob.NormalizeDefinition(input)
+	if definition.Kind == syncjob.JobKindBackup {
+		return a.preflightBackupJob(ctx, definition, now)
+	}
 	// Approval is backend-owned evidence. Never echo or validate a caller-
 	// supplied approval object; only one-time tokens can mint this state.
 	definition.Approval = nil
@@ -1086,24 +1089,4 @@ func dataSyncJobSameColumnSet(left, right []string) bool {
 
 func resultSupportsAutoCreate(capability sync.MigrationCapability) bool {
 	return capability.SupportsAutoCreate
-}
-
-func previewDataSyncJobSchedule(definition syncjob.JobDefinition, now time.Time, count int) []int64 {
-	if count < 1 || count > 20 {
-		count = 5
-	}
-	result := make([]int64, 0, count)
-	after := now
-	for len(result) < count {
-		next := syncjob.NextRunAt(definition, after)
-		if next <= 0 {
-			break
-		}
-		result = append(result, next)
-		after = time.UnixMilli(next)
-		if definition.Schedule.Kind == syncjob.ScheduleOnce {
-			break
-		}
-	}
-	return result
 }

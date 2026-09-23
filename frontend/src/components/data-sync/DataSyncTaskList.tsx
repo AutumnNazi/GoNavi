@@ -105,7 +105,7 @@ export const DataSyncTaskList: React.FC<{
               <span className="gn-data-sync-task-row__route">
                 {endpointName(task, 'source', t('route.pending_source'))}
                 <span aria-hidden="true">→</span>
-                {endpointName(task, 'target', t('route.pending_target'))}
+                {task.kind === 'backup' ? task.backup?.directory || t('stage.backup_output') : endpointName(task, 'target', t('route.pending_target'))}
               </span>
               <span className="gn-data-sync-task-row__meta">
                 {t(dataSyncTaskKindTextKey(task))} ·{' '}
@@ -126,6 +126,7 @@ export const DataSyncTaskList: React.FC<{
 );
 
 const FALLBACK_KIND_CHOICES: readonly DataSyncTaskKindChoice[] = [
+  { kind: 'backup' },
   { kind: 'migration' },
   { kind: 'reconcile' },
   { kind: 'querySink' },

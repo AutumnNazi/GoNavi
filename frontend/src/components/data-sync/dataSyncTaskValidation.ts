@@ -94,7 +94,7 @@ export const validateDataSyncTask = (
   if (!normalize(task.source.connectionId)) {
     issues.push(issue('source_connection_required', 'blocker', 'endpoints'));
   }
-  if (!normalize(task.target.connectionId)) {
+  if (task.kind !== 'backup' && !normalize(task.target.connectionId)) {
     issues.push(issue('target_connection_required', 'blocker', 'endpoints'));
   }
   if (
@@ -109,6 +109,9 @@ export const validateDataSyncTask = (
     issues.push(issue('source_query_required', 'blocker', 'endpoints'));
   }
 
+  if (task.kind === 'backup' && !normalize(task.backup?.directory)) {
+    issues.push(issue('backup_directory_required', 'blocker', 'delivery'));
+  }
   const enabledMappings = task.mappings.filter((mapping) => mapping.enabled);
   if (enabledMappings.length === 0) {
     issues.push(issue('mapping_required', 'blocker', 'mappings'));
@@ -138,11 +141,11 @@ export const validateDataSyncTask = (
       }
     }
     const targetObject = normalize(mapping.targetObject);
-    if (!targetObject) {
+    if (!targetObject && task.kind !== 'backup') {
       issues.push(
         issue('target_object_required', 'blocker', 'mappings', mapping.id),
       );
-    } else {
+    } else if (targetObject) {
       const targetKey = targetObject.toLowerCase();
       if (targetKeys.has(targetKey)) {
         issues.push(
@@ -174,7 +177,7 @@ export const validateDataSyncTask = (
   ) {
     issues.push(issue('commit_every_invalid', 'blocker', 'delivery'));
   }
-  if (task.kind !== 'compare' && task.delivery.writeMode === 'none') {
+  if (task.kind !== 'compare' && task.kind !== 'backup' && task.delivery.writeMode === 'none') {
     issues.push(issue('write_mode_required', 'blocker', 'delivery'));
   }
   if (

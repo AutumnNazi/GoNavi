@@ -7,7 +7,7 @@ import {
 } from './DataSyncOperationalViews';
 import { DataSyncPreflightPanel } from './DataSyncPreflightPanel';
 import { DataSyncScheduleTable } from './DataSyncScheduleTable';
-import { DataSyncTaskEditor } from './DataSyncTaskEditor';
+import { DataSyncTaskEditor } from './DataSyncEditorRouter';
 import {
   DataSyncTaskKindSelector,
   DataSyncTaskList,

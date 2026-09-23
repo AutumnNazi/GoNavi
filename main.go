@@ -340,6 +340,10 @@ func runSpecialMode(args []string) (bool, error) {
 
 	mode := strings.ToLower(strings.TrimSpace(args[0]))
 	switch mode {
+	case "sync-worker":
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		return true, app.RunSyncWorker(ctx, args[1:])
 	case "mcp-server", "--mcp-server":
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()

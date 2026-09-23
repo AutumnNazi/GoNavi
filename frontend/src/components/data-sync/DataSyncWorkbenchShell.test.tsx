@@ -920,7 +920,7 @@ describe('DataSyncWorkbenchShell', () => {
     const kinds = renderer.root
       .findAllByProps({ className: 'gn-data-sync-kind-row' })
       .map((node) => node.props['data-task-kind']);
-    expect(kinds).toEqual(['migration', 'reconcile', 'querySink', 'cdc']);
+    expect(kinds).toEqual(['backup', 'migration', 'reconcile', 'querySink', 'cdc']);
     const navLabels = renderer.root
       .findByProps({ className: 'gn-data-sync-global-nav' })
       .findAllByType('button')

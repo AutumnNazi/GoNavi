@@ -1,0 +1,4 @@
+.gn-data-sync-backup-objects { list-style: none; padding: 0; }
+.gn-data-sync-backup-objects li { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--gn-border-color, #ddd); }
+[data-backup-editor] .gn-data-sync-section { max-width: 1000px; }
+[data-backup-editor] .gn-data-sync-field { margin-bottom: 20px; }

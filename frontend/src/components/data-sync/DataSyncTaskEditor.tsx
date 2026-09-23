@@ -1,3 +1,5 @@
+import { toLocalDateTimeInput, fromLocalDateTimeInput } from './dataSyncDateTime';
+import { DataSyncBackgroundNotice } from './DataSyncBackgroundNotice';
 import React, { useEffect, useRef, useState } from 'react';
 import { isWebRPCAbortError } from '../../utils/webRpc';
 
@@ -76,19 +78,6 @@ const createTrigger = (
   }
   if (mode === 'manual') return { mode: 'manual' };
   return { mode: 'continuous' };
-};
-
-const toLocalDateTimeInput = (value: string): string => {
-  const date = new Date(value);
-  if (!value || !Number.isFinite(date.getTime())) return '';
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
-};
-
-const fromLocalDateTimeInput = (value: string): string => {
-  if (!value) return '';
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date.toISOString() : '';
 };
 
 const createIncremental = (
@@ -770,7 +759,7 @@ const DeliveryStage: React.FC<{
   );
 };
 
-const TriggerStage: React.FC<{
+export const TriggerStage: React.FC<{
   task: DataSyncTaskDefinition;
   gateway: DataSyncWorkbenchGateway;
   capability: DataSyncRouteCapability;
@@ -835,6 +824,7 @@ const TriggerStage: React.FC<{
       <div>
         <h2>{t('trigger.title')}</h2>
         <p>{t('trigger.help')}</p>
+        <DataSyncBackgroundNotice />
       </div>
     </header>
     <div className="gn-data-sync-field-grid gn-data-sync-field-grid--policy">
@@ -858,6 +848,7 @@ const TriggerStage: React.FC<{
       <Field label={t('incremental.mode')}>
         <select
           className="gn-data-sync-control"
+          disabled={task.kind === 'backup'}
           value={incremental.mode}
           onChange={(event) => {
             const mode = event.target.value as DataSyncIncrementalPolicy['mode'];
