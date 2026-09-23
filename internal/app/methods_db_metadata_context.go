@@ -228,8 +228,13 @@ var errMetadataSessionUnavailable = errors.New("metadata session is unavailable"
 // 下单次建连约 3.4 秒，几十张表的映射校验就会长时间停在预检阶段。
 //
 // 连接仍绑定本次 ctx，取消与超时语义不变；operation 返回后所有连接统一关闭。
+//
+// synchronous 必须为 false：取 true 时会话内的连接走
+// getDatabaseSynchronouslyWithContext，而它同步等待 Connect，不响应 ctx。
+// 驱动在 SSH 转发下卡住时，调用方的超时形同虚设 —— 预检会一直转圈到用户
+// 强杀进程。异步版本在 ctx 超时后即返回，让上层的超时真正生效。
 func (a *App) withWebMetadataSession(ctx context.Context, operation func(session *App) error) error {
-	session := newMetadataSessionWithMode(a, ctx, true)
+	session := newMetadataSessionWithMode(a, ctx, false)
 	if session == nil {
 		return errMetadataSessionUnavailable
 	}

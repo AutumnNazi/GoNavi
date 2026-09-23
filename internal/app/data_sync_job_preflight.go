@@ -13,8 +13,17 @@ import (
 	"GoNavi-Wails/internal/syncjob"
 )
 
+// preflightDataSyncJob 是不带调用方 ctx 的入口，供桌面端 Wails 绑定使用。
+//
+// 桌面端的绑定不带 signal，驱动 Connect/Ping 阻塞时前端无法取消，界面只会在
+// finally 里解锁 —— 无上界的等待会让「启用任务」「检查并运行」「保存」永久停在
+// 转圈状态。这里统一套一层超时，让每个入口都必然返回一个可操作的结果。
+// web 端走 dataSyncJobPreflightContext，其 ctx 已带超时；WithTimeout 取更早的
+// 截止时间，叠加是安全的。
 func (a *App) preflightDataSyncJob(input syncjob.JobDefinition, now time.Time) DataSyncJobPreflightResult {
-	return a.preflightDataSyncJobContext(context.Background(), input, now)
+	ctx, cancel := context.WithTimeout(context.Background(), dataSyncJobPreflightTimeout)
+	defer cancel()
+	return a.preflightDataSyncJobContext(ctx, input, now)
 }
 
 func (a *App) preflightDataSyncJobContext(ctx context.Context, input syncjob.JobDefinition, now time.Time) DataSyncJobPreflightResult {
@@ -127,7 +136,10 @@ func (a *App) preflightDataSyncJobContext(ctx context.Context, input syncjob.Job
 	if stopIfCancelled("endpoints") {
 		return finishDataSyncJobPreflight(result)
 	}
-	sourceDB, dbErr := a.getDatabaseSynchronouslyWithContext(ctx, normalizeMetadataRunConfig(source.Config, source.Database), false)
+	// 用可取消版本：驱动 Connect/Ping 不监听 ctx，同步版本会在 SSH 转发下
+	// 无限期阻塞，而预检在桌面端没有 signal 可取消 —— 界面就停在转圈。
+	// 这里每一步后面都紧跟 stopIfCancelled，本函数契合可取消语义。
+	sourceDB, dbErr := a.getDatabaseWithContext(ctx, normalizeMetadataRunConfig(source.Config, source.Database), false)
 	if stopIfCancelled("endpoints") {
 		return finishDataSyncJobPreflight(result)
 	}
@@ -145,7 +157,8 @@ func (a *App) preflightDataSyncJobContext(ctx context.Context, input syncjob.Job
 	if stopIfCancelled("endpoints") {
 		return finishDataSyncJobPreflight(result)
 	}
-	targetDB, dbErr := a.getDatabaseSynchronouslyWithContext(ctx, normalizeMetadataRunConfig(target.Config, target.Database), false)
+	// 同 sourceDB：目标端卡住同样会让预检永返回不了。
+	targetDB, dbErr := a.getDatabaseWithContext(ctx, normalizeMetadataRunConfig(target.Config, target.Database), false)
 	if stopIfCancelled("endpoints") {
 		return finishDataSyncJobPreflight(result)
 	}

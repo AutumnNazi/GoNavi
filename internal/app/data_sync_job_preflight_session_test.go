@@ -5,6 +5,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strconv"
 	"sync"
 	"testing"
@@ -173,5 +174,75 @@ func TestDataSyncPreflightConnectionCountIsIndependentOfMappings(t *testing.T) {
 	many := measure(t, 8)
 	if many != single {
 		t.Fatalf("connection count scales with mappings: 1 table=%d, 8 tables=%d", single, many)
+	}
+}
+
+// blockingDriver 的 Connect 永不返回，用来模拟 SSH 转发下驱动卡死。
+type blockingDriver struct {
+	db.SQLiteDB
+	release chan struct{}
+}
+
+func (driver *blockingDriver) Connect(config connection.ConnectionConfig) error {
+	<-driver.release
+	return errors.New("released")
+}
+
+// 桌面端的预检入口必须自带超时上界。
+//
+// Wails 绑定不携带 signal，驱动 Connect/Ping 阻塞时前端无法取消，界面只会
+// 永久停在转圈状态（「确定启用任务吗？」确认后一直转圈）。web 端走
+// dataSyncJobPreflightContext 已有超时，但桌面端走 preflightDataSyncJob，
+// 此前是 context.Background()，没有任何上界。
+func TestDesktopPreflightReturnsWhenTheDriverBlocks(t *testing.T) {
+	release := make(chan struct{})
+	previousFactory := newDatabaseFunc
+	newDatabaseFunc = func(kind string) (db.Database, error) {
+		if kind != "sqlite" {
+			return previousFactory(kind)
+		}
+		return &blockingDriver{release: release}, nil
+	}
+	t.Cleanup(func() {
+		newDatabaseFunc = previousFactory
+		close(release)
+	})
+	application := NewAppWithSecretStore(newFakeAppSecretStore())
+	application.configDir = t.TempDir()
+	t.Cleanup(application.Shutdown)
+
+	file := t.TempDir() + "/source.db"
+	seed, err := sql.Open("sqlite", file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := seed.Exec("CREATE TABLE t1 (id INTEGER PRIMARY KEY)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := application.SaveConnection(connection.SavedConnectionInput{ID: "blocked-source", Name: "blocked", Config: connection.ConnectionConfig{ID: "blocked-source", Type: "sqlite", Database: file}}); err != nil {
+		t.Fatal(err)
+	}
+	definition := syncjob.NormalizeDefinition(syncjob.JobDefinition{
+		Name: "blocked", Kind: syncjob.JobKindBackup, Lifecycle: syncjob.JobLifecycleReady,
+		Source:   syncjob.EndpointRef{ConnectionID: "blocked-source", Database: file},
+		Backup:   &syncjob.BackupSpec{Directory: t.TempDir(), Content: "both"},
+		Mappings: []syncjob.TableMapping{{SourceTable: "t1", Enabled: true}},
+	})
+
+	done := make(chan DataSyncJobPreflightResult, 1)
+	go func() {
+		done <- application.preflightDataSyncJob(definition, time.Now())
+	}()
+
+	select {
+	case result := <-done:
+		if result.Success {
+			t.Fatal("preflight reported success while the driver never returned")
+		}
+	case <-time.After(dataSyncJobPreflightTimeout + 10*time.Second):
+		t.Fatalf("desktop preflight never returned within %s", dataSyncJobPreflightTimeout)
 	}
 }
