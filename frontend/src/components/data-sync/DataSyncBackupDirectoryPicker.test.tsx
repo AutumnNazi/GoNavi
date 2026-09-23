@@ -1,4 +1,5 @@
 import React from 'react';
+import { readFileSync } from 'node:fs';
 import TestRenderer, { act } from 'react-test-renderer';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { setCurrentLanguage } from '../../i18n';
@@ -63,6 +64,18 @@ const renderDelivery = async (gateway: DataSyncWorkbenchGateway) => {
 
 describe('backup directory picker', () => {
   beforeEach(() => setCurrentLanguage('zh-CN'));
+
+  it('keeps the path full-width with Browse in the same row', async () => {
+    const { renderer } = await renderDelivery(withPicker(async () => null));
+    const row = renderer.root.findByProps({ className: 'gn-data-sync-inline-control gn-data-sync-backup-directory-control' });
+    expect(row.findAllByType('input')).toHaveLength(1);
+    expect(row.findAllByType('button')).toHaveLength(1);
+    const css = readFileSync(new URL('./DataSyncBackupEditor.css', import.meta.url), 'utf8');
+    expect(css).toMatch(/\.gn-data-sync-backup-directory-control\s*\{[^}]*width:\s*100%;/s);
+    expect(css).toMatch(/\.gn-data-sync-backup-directory-control \.gn-data-sync-button\s*\{[^}]*left:\s*calc\(100% \+ 8px\);/s);
+    expect(css).toMatch(/\.gn-data-sync-backup-output\s*\{[^}]*padding-right:\s*140px;/s);
+    await act(async () => renderer.unmount());
+  });
 
   it('writes the selected directory into the task', async () => {
     const pick = vi.fn(async () => '/Volumes/Archive/2026');

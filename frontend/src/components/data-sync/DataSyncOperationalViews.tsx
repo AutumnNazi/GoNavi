@@ -13,6 +13,7 @@ import type {
   DataSyncWorkbenchFamily,
 } from './model';
 import { tableHasCompareDiff } from './compareRepairSql';
+import { formatDataSyncRunEvent } from './textSchedules';
 import type { DataSyncWorkbenchTranslate } from './text';
 
 export const EmptyState: React.FC<{
@@ -45,6 +46,26 @@ export const formatDataSyncTime = (value: string): string => {
     `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
   );
 };
+
+const RunEventTimeline: React.FC<{
+  events: DataSyncRunEvent[];
+  t: DataSyncWorkbenchTranslate;
+}> = ({ events, t }) => (
+  <ol className="gn-data-sync-run-events__timeline">
+    {events.map((event) => {
+      const translated = formatDataSyncRunEvent(event, t);
+      const scope = [translated.stage, event.table].filter(Boolean).join(' · ');
+      return <li key={event.sequence} data-event-sequence={event.sequence}>
+        <div className="gn-data-sync-run-events__marker" aria-hidden="true" />
+        <div className="gn-data-sync-run-events__content">
+          <header><strong>{translated.type}</strong><time>{formatDataSyncTime(event.createdAt)}</time></header>
+          {scope ? <p className="gn-data-sync-run-events__meta">{scope}</p> : null}
+          {translated.message ? <p>{translated.message}</p> : null}
+        </div>
+      </li>;
+    })}
+  </ol>
+);
 
 const canDeleteRunHistory = (status: DataSyncRunRecord['status']): boolean =>
   ['succeeded', 'partial', 'failed', 'canceled', 'cancelled', 'interrupted'].includes(
@@ -321,26 +342,7 @@ export const DataSyncRunHistory: React.FC<{
       ) : runEvents.length === 0 ? (
         <p>{t('events.empty')}</p>
       ) : (
-        <ol className="gn-data-sync-run-events__timeline">
-          {runEvents.map((event) => {
-            const scope = [event.stage, event.table].filter(Boolean).join(' · ');
-            return (
-              <li key={event.sequence} data-event-sequence={event.sequence}>
-                <div className="gn-data-sync-run-events__marker" aria-hidden="true" />
-                <div className="gn-data-sync-run-events__content">
-                  <header>
-                    <strong>{event.type}</strong>
-                    <time>{formatDataSyncTime(event.createdAt)}</time>
-                  </header>
-                  {scope ? (
-                    <p className="gn-data-sync-run-events__meta">{scope}</p>
-                  ) : null}
-                  {event.message ? <p>{event.message}</p> : null}
-                </div>
-              </li>
-            );
-          })}
-        </ol>
+        <RunEventTimeline events={runEvents} t={t} />
       )}
     </section>
     )}
@@ -473,26 +475,7 @@ export const DataSyncRunHistory: React.FC<{
           {runEvents.length === 0 ? (
             <p>{t('events.empty')}</p>
           ) : (
-            <ol className="gn-data-sync-run-events__timeline">
-              {runEvents.map((event) => {
-                const scope = [event.stage, event.table].filter(Boolean).join(' · ');
-                return (
-                  <li key={event.sequence} data-event-sequence={event.sequence}>
-                    <div className="gn-data-sync-run-events__marker" aria-hidden="true" />
-                    <div className="gn-data-sync-run-events__content">
-                      <header>
-                        <strong>{event.type}</strong>
-                        <time>{formatDataSyncTime(event.createdAt)}</time>
-                      </header>
-                      {scope ? (
-                        <p className="gn-data-sync-run-events__meta">{scope}</p>
-                      ) : null}
-                      {event.message ? <p>{event.message}</p> : null}
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
+            <RunEventTimeline events={runEvents} t={t} />
           )}
         </details>
       ) : null}

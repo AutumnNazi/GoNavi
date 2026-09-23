@@ -1,5 +1,8 @@
+import type { DataSyncRunEvent } from './model';
+import type { DataSyncWorkbenchTranslate } from './text';
+
 /**
- * Schedule-list copy owned by the data sync workbench. Kept beside the
+ * Schedule and run-event copy owned by the data sync workbench. Kept beside the
  * schedule control so the fast-growing main catalog does not absorb these
  * keys; `text.ts` spreads both maps into its language catalogs.
  */
@@ -71,4 +74,124 @@ export const dataSyncScheduleTextsEnUS: Record<DataSyncScheduleTextKey, string> 
   'schedules.task_missing': 'The task no longer exists; refresh the schedule list.',
   'schedules.unsaved_edits':
     'The task has unsaved edits; save or discard them in the editor first.',
+};
+
+export const dataSyncRunEventTextsZhCN = {
+  'metadata.saved_connection_missing': '原连接已不存在，请重新选择已保存连接。',
+  'events.type.queued': '已排队',
+  'events.type.started': '已开始',
+  'events.type.progress': '运行进度',
+  'events.type.checkpoint': '进度已保存',
+  'events.type.error_row': '错误行',
+  'events.type.log': '运行日志',
+  'events.type.cancelling': '正在取消',
+  'events.type.canceled': '已取消',
+  'events.type.succeeded': '运行成功',
+  'events.type.partial': '部分完成',
+  'events.type.failed': '运行失败',
+  'events.type.interrupted': '运行中断',
+  'events.stage.running': '运行中',
+  'events.stage.completed': '已完成',
+  'events.stage.watermark': '水位线增量',
+  'events.stage.streaming': '持续同步',
+  'events.stage.checkpoint': '保存进度',
+  'events.stage.mapping_completed': '对象已完成',
+  'events.stage.write': '写入中',
+  'events.message.checkpoint_saved': '同步进度已保存',
+  'events.message.job_completed': '数据同步任务已完成',
+  'events.message.watermark_completed': '水位线同步任务已完成',
+  'events.message.cancellation_requested': '已请求取消运行',
+  'events.message.cancellation_archived': '任务归档，已请求取消运行',
+  'events.message.canceled_archived': '任务归档，运行已取消',
+  'events.message.canceled_before_execution': '运行开始前已取消',
+  'events.message.canceled_after_restart': '管理器重启后运行已取消',
+  'events.message.interrupted_after_restart': '管理器重启后运行已中断',
+  'events.message.resume_not_queued': '未能自动排队继续运行',
+  'events.message.stopped_before_execution': '运行开始前管理器已停止',
+  'events.message.stopped_during_execution': '运行中管理器已停止',
+  'events.message.retry_mapping': '对象重试第 {current} 次',
+  'events.message.retry_watermark': '水位线重试第 {current} 次',
+  'events.message.mapping': '正在处理对象 {current}/{total}',
+  'events.message.watermark': '正在处理水位线对象 {current}/{total}',
+  'events.message.cdc_committed': 'CDC 事务 {current} 已提交',
+} as const;
+
+export const dataSyncRunEventTextsEnUS: Record<keyof typeof dataSyncRunEventTextsZhCN, string> = {
+  'metadata.saved_connection_missing': 'The saved connection no longer exists. Select another saved connection.',
+  'events.type.queued': 'Queued',
+  'events.type.started': 'Started',
+  'events.type.progress': 'Progress',
+  'events.type.checkpoint': 'Checkpoint saved',
+  'events.type.error_row': 'Error row',
+  'events.type.log': 'Run log',
+  'events.type.cancelling': 'Cancelling',
+  'events.type.canceled': 'Canceled',
+  'events.type.succeeded': 'Succeeded',
+  'events.type.partial': 'Partially completed',
+  'events.type.failed': 'Failed',
+  'events.type.interrupted': 'Interrupted',
+  'events.stage.running': 'Running',
+  'events.stage.completed': 'Completed',
+  'events.stage.watermark': 'Watermark sync',
+  'events.stage.streaming': 'Streaming',
+  'events.stage.checkpoint': 'Saving checkpoint',
+  'events.stage.mapping_completed': 'Object completed',
+  'events.stage.write': 'Writing',
+  'events.message.checkpoint_saved': 'Checkpoint saved',
+  'events.message.job_completed': 'Data sync job completed',
+  'events.message.watermark_completed': 'Watermark sync job completed',
+  'events.message.cancellation_requested': 'Cancellation requested',
+  'events.message.cancellation_archived': 'Cancellation requested because the task was archived',
+  'events.message.canceled_archived': 'Canceled because the task was archived',
+  'events.message.canceled_before_execution': 'Canceled before execution',
+  'events.message.canceled_after_restart': 'Canceled after manager restart',
+  'events.message.interrupted_after_restart': 'Interrupted after manager restart',
+  'events.message.resume_not_queued': 'Automatic resume was not queued',
+  'events.message.stopped_before_execution': 'Manager stopped before execution',
+  'events.message.stopped_during_execution': 'Manager stopped during execution',
+  'events.message.retry_mapping': 'Mapping retry attempt {current}',
+  'events.message.retry_watermark': 'Watermark retry attempt {current}',
+  'events.message.mapping': 'Running object {current}/{total}',
+  'events.message.watermark': 'Running watermark object {current}/{total}',
+  'events.message.cdc_committed': 'CDC transaction {current} committed',
+};
+
+const standardMessages: Record<string, keyof typeof dataSyncRunEventTextsZhCN> = {
+  queued: 'events.type.queued',
+  started: 'events.type.started',
+  'run started': 'events.type.started',
+  'checkpoint saved': 'events.message.checkpoint_saved',
+  'data sync job completed': 'events.message.job_completed',
+  'watermark data sync job completed': 'events.message.watermark_completed',
+  'cancellation requested': 'events.message.cancellation_requested',
+  'cancellation requested because task was archived': 'events.message.cancellation_archived',
+  'canceled because task was archived': 'events.message.canceled_archived',
+  'canceled before execution': 'events.message.canceled_before_execution',
+  'canceled after manager restart': 'events.message.canceled_after_restart',
+  'interrupted after manager restart': 'events.message.interrupted_after_restart',
+  'automatic resume was not queued': 'events.message.resume_not_queued',
+  'manager stopped before execution': 'events.message.stopped_before_execution',
+  'manager stopped during execution': 'events.message.stopped_during_execution',
+  canceled: 'events.type.canceled',
+};
+
+export const formatDataSyncRunEvent = (event: DataSyncRunEvent, t: DataSyncWorkbenchTranslate) => {
+  const stageKey = `events.stage.${event.stage}` as keyof typeof dataSyncRunEventTextsZhCN;
+  const stage = event.stage && stageKey in dataSyncRunEventTextsZhCN ? t(stageKey) : event.stage || '';
+  let message = event.message;
+  const standardKey = Object.prototype.hasOwnProperty.call(standardMessages, message)
+    ? standardMessages[message] : undefined;
+  if (standardKey) message = t(standardKey);
+  else if (message === event.stage && stage) message = stage;
+  else {
+    const mapping = /^running (watermark )?mapping (\d+)\/(\d+)$/.exec(message);
+    const cdc = /^CDC transaction (\d+) committed$/.exec(message);
+    const retry = /^(watermark|mapping) attempt (\d+) failed; retrying$/.exec(message);
+    if (mapping) message = t(mapping[1] ? 'events.message.watermark' : 'events.message.mapping', {
+      current: mapping[2], total: mapping[3],
+    });
+    else if (cdc) message = t('events.message.cdc_committed', { current: cdc[1] });
+    else if (retry) message = t(retry[1] === 'watermark' ? 'events.message.retry_watermark' : 'events.message.retry_mapping', { current: retry[2] });
+  }
+  return { type: t(`events.type.${event.type}`), stage, message };
 };

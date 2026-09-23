@@ -386,10 +386,15 @@ export const createWailsDataSyncWorkbenchGateway = (
     },
 
     async resolveCapability(task, requestOptions) {
-      if (task.kind === 'backup') return { ...UNKNOWN_CAPABILITY, level: 'full', canExecute: Boolean(task.source.connectionId) };
-      if (!task.source.connectionId || !task.target.connectionId) {
+      if (!task.source.connectionId || (task.kind !== 'backup' && !task.target.connectionId)) {
         return { ...UNKNOWN_CAPABILITY };
       }
+      const savedConnections = await gateway.listSavedConnections();
+      if (!savedConnections.some((connection) => connection.id === task.source.connectionId)
+        || (task.kind !== 'backup' && !savedConnections.some((connection) => connection.id === task.target.connectionId))) {
+        return { ...UNKNOWN_CAPABILITY };
+      }
+      if (task.kind === 'backup') return { ...UNKNOWN_CAPABILITY, level: 'full', canExecute: true };
       const base = decodeRouteCapability(
         requireWailsQueryData(
           await invokeAppWithSignal(

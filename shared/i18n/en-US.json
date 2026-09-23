@@ -11016,6 +11016,8 @@
   "data_sync.backup.title": "Database backup",
   "data_sync.backup.description": "Back up selected table structures and data to SQL files, manually or on a schedule.",
   "data_sync.backup.directory": "Backup directory",
+  "data_sync.backup.run_mode": "Backup mode",
+  "data_sync.backup.full_snapshot_help": "Only full backups are supported. Each run exports all selected tables; manual and scheduled triggers are configured separately.",
   "data_sync.backup.directory_help": "Choose an existing absolute directory on this computer. Backups are stored under it in year/month/day folders with the start time in the file name; existing backups are never overwritten or deleted automatically.",
   "data_sync.backup.directory_dialog_title": "Select backup directory",
   "data_sync.backup.directory_browse": "Browse…",

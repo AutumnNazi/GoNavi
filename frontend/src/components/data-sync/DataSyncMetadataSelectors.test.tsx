@@ -1,6 +1,6 @@
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   createStaticDataSyncWorkbenchGateway,
@@ -44,6 +44,35 @@ const stageButton = (renderer: TestRenderer.ReactTestRenderer, label: string) =>
     )!;
 
 describe('data sync metadata selectors', () => {
+  it('marks a deleted task endpoint for reselection without probing its metadata', async () => {
+    const task = createDataSyncTaskDraft({ id: 'old-compare', kind: 'compare' });
+    const stale = reviseDataSyncTask(task, {
+      source: { ...task.source, connectionId: '1778032424921', connectionName: 'Old MySQL', type: 'mysql' },
+      target: { ...task.target, connectionId: 'target', connectionName: 'Target', type: 'mysql' },
+    });
+    const requestedConnections: string[] = [];
+    const listDatabases = vi.fn(async (connectionId: string) => {
+      requestedConnections.push(connectionId);
+      return [];
+    });
+    const gateway = {
+      ...createStaticDataSyncWorkbenchGateway({
+        tasks: [stale],
+        savedConnections: [{ id: 'target', name: 'Target', type: 'mysql', readable: true, writable: true }],
+      }),
+      listDatabases,
+    };
+    const renderer = TestRenderer.create(
+      <DataSyncWorkbenchShell initialTasks={[stale]} gateway={gateway} locale="zh-CN" workbenchFamily="compare" />,
+    );
+    await flush();
+    expect(renderer.root.findByProps({ 'data-endpoint-role': 'source' }).findAllByProps({ 'data-missing-connection': 'true' })).toHaveLength(1);
+    expect(renderer.root.findByProps({ 'data-guide-step': 'source' }).props['data-complete']).toBe('false');
+    expect(renderer.root.findByProps({ 'data-guide-continue': 'true' }).props.disabled).toBe(true);
+    expect(requestedConnections).not.toContain('1778032424921');
+    await act(async () => renderer.unmount());
+  });
+
   it('reveals database controls after selecting a connection without exposing prompt rows', async () => {
     const task = createDataSyncTaskDraft({
       id: 'empty-endpoint-options',

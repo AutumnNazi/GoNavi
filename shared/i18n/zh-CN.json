@@ -11016,6 +11016,8 @@
   "data_sync.backup.title": "数据库备份",
   "data_sync.backup.description": "将所选表的结构和数据备份为 SQL 文件，支持定时执行。",
   "data_sync.backup.directory": "备份目录",
+  "data_sync.backup.run_mode": "备份方式",
+  "data_sync.backup.full_snapshot_help": "目前只支持全量备份，每次运行都会完整导出所选表。可单独设置手动或定时运行。",
   "data_sync.backup.directory_help": "选择本机已存在的绝对目录。备份按 年/月/日 分层存放在该目录下，文件名带启动时间；已有备份不会被覆盖或自动删除。",
   "data_sync.backup.directory_dialog_title": "选择备份目录",
   "data_sync.backup.directory_browse": "浏览…",

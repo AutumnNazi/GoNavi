@@ -69,6 +69,8 @@ export const DataSyncEndpointSelector: React.FC<{
   const selectableConnections = connections.items.filter((connection) =>
     role === 'source' ? connection.readable : connection.writable,
   );
+  const missingConnection = connections.status === 'ready' && Boolean(endpoint.connectionId)
+    && !connections.items.some((connection) => connection.id === endpoint.connectionId);
   const currentDatabaseKnown = databases.items.some(
     (database) => database.name === endpoint.database,
   );
@@ -162,13 +164,16 @@ export const DataSyncEndpointSelector: React.FC<{
         loadingText={t('metadata.loading_connections')}
         t={t}
       />
+      {missingConnection ? <p className="gn-data-sync-inline-hint" data-tone="warning" data-missing-connection="true">
+        {t('metadata.saved_connection_missing')}
+      </p> : null}
       <MetadataStatus
         scope={`${role}-databases`}
         state={databases}
         loadingText={t('metadata.loading_databases')}
         t={t}
       />
-      {connections.status === 'ready' && selectableConnections.length === 0 ? (
+      {connections.status === 'ready' && selectableConnections.length === 0 && !missingConnection ? (
         <p className="gn-data-sync-inline-hint" data-tone="warning">
           {t('metadata.no_eligible_connections')}
         </p>

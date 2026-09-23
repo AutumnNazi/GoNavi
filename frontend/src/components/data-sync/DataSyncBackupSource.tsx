@@ -8,7 +8,8 @@ import { useDataSyncSavedConnections, useDataSyncDatabases } from './useDataSync
 export const DataSyncBackupSource: React.FC<DataSyncBackupEditorProps> = ({ task, gateway, connectionTree = [], t, onPatch }) => {
   const tr = useOptionalI18n()?.t || translate;
   const connections = useDataSyncSavedConnections(gateway);
-  const databases = useDataSyncDatabases(gateway, task.source.connectionId);
+  const databases = useDataSyncDatabases(gateway, task.source.connectionId,
+    connections.items.some((connection) => connection.id === task.source.connectionId));
   return <section className="gn-data-sync-section">
     <h2>{tr('data_sync.backup.title')}</h2>
     <p>{tr('data_sync.backup.source_help')}</p>
