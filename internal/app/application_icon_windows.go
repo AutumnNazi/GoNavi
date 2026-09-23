@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"unsafe"
 
@@ -83,42 +84,71 @@ type windowsDisplayMonitorInfo struct {
 	Flags   uint32
 }
 
+type windowsDisplayEnumeration struct {
+	current uintptr
+	areas   []mainWindowDisplayArea
+}
+
+var (
+	windowsDisplayEnumProc       = windowsApplicationIconUser32.NewProc("EnumDisplayMonitors")
+	windowsDisplayGetInfoProc    = windowsApplicationIconUser32.NewProc("GetMonitorInfoW")
+	windowsDisplayFromWindowProc = windowsApplicationIconUser32.NewProc("MonitorFromWindow")
+	windowsDisplayDPIProc        = windows.NewLazySystemDLL("shcore.dll").NewProc("GetDpiForMonitor")
+	windowsDisplayEnumCallback   = syscall.NewCallback(appendWindowsDisplayArea)
+	windowsDisplayStates         sync.Map
+	windowsDisplaySequence       atomic.Uint64
+)
+
+func appendWindowsDisplayArea(monitor, _, _, data uintptr) uintptr {
+	value, ok := windowsDisplayStates.Load(data)
+	if !ok {
+		return 0
+	}
+	state := value.(*windowsDisplayEnumeration)
+	info := windowsDisplayMonitorInfo{Size: uint32(unsafe.Sizeof(windowsDisplayMonitorInfo{}))}
+	success, _, _ := windowsDisplayGetInfoProc.Call(monitor, uintptr(unsafe.Pointer(&info)))
+	if success == 0 {
+		return 1
+	}
+	dpi := currentWindowsSystemDPI()
+	if windowsDisplayDPIProc.Find() == nil {
+		var dpiX, dpiY uint32
+		status, _, _ := windowsDisplayDPIProc.Call(monitor, 0, uintptr(unsafe.Pointer(&dpiX)), uintptr(unsafe.Pointer(&dpiY)))
+		if status == 0 && dpiX > 0 {
+			dpi = int(dpiX)
+		}
+	}
+	work := info.Work
+	state.areas = append(state.areas, mainWindowDisplayArea{
+		X: int(work.Left), Y: int(work.Top),
+		Width: int(work.Right - work.Left), Height: int(work.Bottom - work.Top), DPI: dpi,
+		Primary: info.Flags&1 != 0, Current: monitor == state.current,
+	})
+	return 1
+}
+
 func mainWindowDisplayAreas(ctx context.Context) []mainWindowDisplayArea {
-	user32 := windows.NewLazySystemDLL("user32.dll")
-	enumerate := user32.NewProc("EnumDisplayMonitors")
-	getInfo := user32.NewProc("GetMonitorInfoW")
-	monitorFromWindow := user32.NewProc("MonitorFromWindow")
 	var current uintptr
 	if ctx != nil {
 		if hwnd, err := resolveWailsMainWindowHandle(ctx); err == nil {
-			current, _, _ = monitorFromWindow.Call(hwnd, 2) // MONITOR_DEFAULTTONEAREST
+			current, _, _ = windowsDisplayFromWindowProc.Call(hwnd, 2) // MONITOR_DEFAULTTONEAREST
 		}
 	}
-	areas := make([]mainWindowDisplayArea, 0, 2)
-	callback := syscall.NewCallback(func(monitor, _, _, _ uintptr) uintptr {
-		info := windowsDisplayMonitorInfo{Size: uint32(unsafe.Sizeof(windowsDisplayMonitorInfo{}))}
-		ok, _, _ := getInfo.Call(monitor, uintptr(unsafe.Pointer(&info)))
-		if ok == 0 {
-			return 1
-		}
-		work := info.Work
-		areas = append(areas, mainWindowDisplayArea{
-			X: int(work.Left), Y: int(work.Top),
-			Width: int(work.Right - work.Left), Height: int(work.Bottom - work.Top),
-			Primary: info.Flags&1 != 0, Current: monitor == current,
-		})
-		return 1
-	})
-	enumerate.Call(0, 0, callback, 0)
+	state := &windowsDisplayEnumeration{current: current, areas: make([]mainWindowDisplayArea, 0, 2)}
+	// Keep the callback stable and pass a per-call ID, not a Go pointer, through Win32.
+	id := uintptr(windowsDisplaySequence.Add(1))
+	windowsDisplayStates.Store(id, state)
+	defer windowsDisplayStates.Delete(id)
+	windowsDisplayEnumProc.Call(0, 0, windowsDisplayEnumCallback, id)
 	if current == 0 {
-		for index := range areas {
-			if areas[index].Primary {
-				areas[index].Current = true
+		for index := range state.areas {
+			if state.areas[index].Primary {
+				state.areas[index].Current = true
 				break
 			}
 		}
 	}
-	return areas
+	return state.areas
 }
 
 // applyPersistedWindowsApplicationIcon binds the last selected ICO before

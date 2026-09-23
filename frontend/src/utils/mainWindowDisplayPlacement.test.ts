@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  applyRuntimeWindowPlacement,
   loadMainWindowDisplayLayout,
   normalizeMainWindowDisplayLayout,
   resolveGlobalWindowBounds,
@@ -96,6 +97,17 @@ describe('resolveGlobalWindowBounds', () => {
 });
 
 describe('resolveWailsWindowPosition', () => {
+  it('moves before resizing on Windows and preserves size-before-move elsewhere', () => {
+    const order: string[] = [];
+    const setSize = (width: number, height: number) => order.push('size:' + width + ',' + height);
+    const setPosition = (x: number, y: number) => order.push('position:' + x + ',' + y);
+    const placement = { bounds: { x: 2100, y: 60, width: 1000, height: 700 }, position: { x: 180, y: 60 } };
+    applyRuntimeWindowPlacement(placement, true, setSize, setPosition);
+    expect(order).toEqual(['position:180,60', 'size:1000,700']);
+    order.length = 0;
+    applyRuntimeWindowPlacement(placement, false, setSize, setPosition);
+    expect(order).toEqual(['size:1000,700', 'position:180,60']);
+  });
   it('uses the current Windows monitor work-area origin when moving to another monitor', () => {
     const layout = {
       displays: [PRIMARY, SECONDARY],
@@ -135,6 +147,42 @@ describe('resolveWailsWindowPosition', () => {
       persistedBounds: saved,
     });
     expect(resolveRuntimeWindowPlacement(saved, unplugged, viewport, true, true)?.bounds).toEqual(fallback);
+  });
+  it('constrains Wails logical size to a 150% scaled physical work area', () => {
+    const layout: MainWindowDisplayLayout = {
+      displays: [{ x: 0, y: 0, width: 1920, height: 1040, dpi: 144, current: true, primary: true }],
+      positionIsGlobal: true,
+      setPositionIsLocal: true,
+    };
+    const saved = { x: 2200, y: 0, width: 1600, height: 900 };
+    const placement = resolveRuntimeWindowPlacement(saved, layout, {
+      availWidth: 1920, availHeight: 1040, availLeft: 0, availTop: 0,
+    }, true, true);
+    expect(placement?.bounds).toEqual({ x: 0, y: 0, width: 1280, height: 693 });
+    expect(placement?.bounds.width! * 1.5).toBeLessThanOrEqual(1920);
+    expect(placement?.bounds.height! * 1.5).toBeLessThanOrEqual(1040);
+  });
+  it('keeps an already visible logical size intact on a 125% scaled monitor', () => {
+    const layout: MainWindowDisplayLayout = {
+      displays: [{ x: 1920, y: 0, width: 1600, height: 900, dpi: 120, current: true }],
+      positionIsGlobal: true,
+      setPositionIsLocal: true,
+    };
+    const saved = { x: 2050, y: 60, width: 801, height: 601 };
+    expect(resolveVisibleGlobalWindowBounds(saved, layout)).toEqual(saved);
+  });
+  it('uses the target screen DPI, not the current screen DPI, when restoring a secondary position', () => {
+    const layout: MainWindowDisplayLayout = {
+      displays: [
+        { x: 0, y: 0, width: 1920, height: 1040, dpi: 144, current: true },
+        { x: 1920, y: 0, width: 1600, height: 900, dpi: 96 },
+      ],
+      positionIsGlobal: true,
+      setPositionIsLocal: true,
+    };
+    const saved = { x: 2050, y: 60, width: 1200, height: 700 };
+    expect(resolveVisibleGlobalWindowBounds(saved, layout)).toEqual(saved);
+    expect(resolveWailsWindowPosition(saved, layout)).toEqual({ x: 2050, y: 60 });
   });
   it('converts a global target back to macOS monitor-local input', () => {
     expect(resolveWailsWindowPosition(
@@ -189,6 +237,19 @@ describe('resolveVisibleGlobalWindowBounds', () => {
     )).toEqual({ width: 1000, height: 700, x: 2176, y: 125 });
     expect(resolveMaximisedWindowRestoreBounds(saved, null)).toBeNull();
   });
+  it('keeps maximised restore bounds within a 150% scaled display', () => {
+    const layout: MainWindowDisplayLayout = {
+      displays: [
+        { x: -1600, y: 0, width: 1600, height: 900, dpi: 96 },
+        { x: 0, y: 0, width: 1920, height: 1040, dpi: 144, current: true },
+      ],
+      positionIsGlobal: true,
+      setPositionIsLocal: true,
+    };
+    expect(resolveMaximisedWindowRestoreBounds(
+      { x: -1500, y: 0, width: 1600, height: 900 }, layout,
+    )).toEqual({ x: 0, y: 0, width: 1280, height: 693 });
+  });
   it('keeps a remembered secondary-display position instead of pulling it back to the primary screen', () => {
     expect(resolveVisibleGlobalWindowBounds(
       { width: 1200, height: 800, x: 2100, y: 90 },
@@ -230,10 +291,10 @@ describe('loadMainWindowDisplayLayout', () => {
 
   it('preserves Windows current-monitor-relative SetPosition semantics', () => {
     expect(normalizeMainWindowDisplayLayout({
-      displays: [PRIMARY, SECONDARY],
+      displays: [{ ...PRIMARY, dpi: 144 }, SECONDARY],
       positionIsGlobal: true,
       setPositionIsLocal: true,
-    })).toMatchObject({ setPositionIsLocal: true });
+    })).toMatchObject({ setPositionIsLocal: true, displays: [{ dpi: 144 }, {}] });
   });
 
   it('returns null when the binding is missing or reports failure', async () => {
