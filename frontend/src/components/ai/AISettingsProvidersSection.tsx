@@ -599,7 +599,7 @@ const AISettingsProvidersSection: React.FC<AISettingsProvidersSectionProps> = ({
           key: 'hualong',
           label: copy('app.about.project.hualong.title'),
           logoSrc: '/sponsors/hualong-icon.png',
-          url: 'https://api.hualong.online/register?promo=GONAVI%26HUALONG',
+          url: 'https://gonavi.hualong.online/',
           baseUrl: 'https://api.hualong.online/v1',
           benefit: copy('ai_settings.provider.partner.hualong.benefit'),
           promoCode: 'GONAVI&HUALONG',

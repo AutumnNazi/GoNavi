@@ -130,24 +130,24 @@
       <sub>统一 AI 模型 API · OpenAI 兼容</sub>
     </td>
     <td align="center" valign="top" width="50%">
-      <a href="https://api.hualong.online/">
+      <a href="https://gonavi.hualong.online/">
         <img src="assets/sponsors/hualong-mark.png" height="120" alt="華龍算力" />
       </a><br/>
-      <b><a href="https://api.hualong.online/">華龍算力</a></b><br/>
+      <b><a href="https://gonavi.hualong.online/">華龍算力</a></b><br/>
       <sub>AI API Gateway · 多模型统一接入 · 国内直连高速端点</sub>
     </td>
   </tr>
 </table>
 
-特别感谢 **[APISmart](https://www.apismart.ai/)** 与 **[華龍算力](https://api.hualong.online/)** 赞助 GoNavi 开源开发。
+特别感谢 **[APISmart](https://www.apismart.ai/)** 与 **[華龍算力](https://gonavi.hualong.online/)** 赞助 GoNavi 开源开发。
 
 | 赞助商 | 提供什么 | 为什么适合 GoNavi |
 |---|---|---|
 | **[APISmart](https://www.apismart.ai/)** | APISmart 通过一个 API 提供对主流 AI 模型的统一访问。开发者只需一个 API Key，即可通过兼容 OpenAI 的接口接入大语言模型、图像和视频模型，无需分别管理多个服务商。智能路由与自动故障切换有助于提升可靠性，集中式账单使使用管理更加轻松。借助 APISmart，开发者能以更精简的平台更快构建并扩展 AI 应用。 | 开发者和 Agent 工作流无需分别接入各家服务商，也能使用多种 AI 能力。 |
-| **[華龍算力](https://api.hualong.online/)** | 華龍算力是一家面向重度 AI 开发者、专注官方直连的高品质模型 API 中转服务商。主要营业 Codex 系列模型，100% 官方源直供，不掺假不注水，欢迎检验。计费透明，Token 级账单可逐笔核验。同时支持企业级高并发，并为企业客户提供专业的管理平台；企业客户可签订正式合同并开具发票，更多详情请进入官网获取联系方式。GPT 系列最低至 0.08 倍率，更有 0.15 倍率的 Pro 稳定分组；邀请好友双向赠送，邀请奖励无上限。 | 稳定的模型通道是 GoNavi 的 AI 助手、MCP 与日常开发工作流的基础设施。 |
+| **[華龍算力](https://gonavi.hualong.online/)** | 華龍算力是一家面向重度 AI 开发者、专注官方直连的高品质模型 API 中转服务商。主要营业 Codex 系列模型，100% 官方源直供，不掺假不注水，欢迎检验。计费透明，Token 级账单可逐笔核验。同时支持企业级高并发，并为企业客户提供专业的管理平台；企业客户可签订正式合同并开具发票，更多详情请进入官网获取联系方式。GPT 系列最低至 0.08 倍率，更有 0.15 倍率的 Pro 稳定分组；邀请好友双向赠送，邀请奖励无上限。 | 稳定的模型通道是 GoNavi 的 AI 助手、MCP 与日常开发工作流的基础设施。 |
 
 - APISmart：[https://www.apismart.ai/](https://www.apismart.ai/) — 统一 AI 模型 API，兼容 OpenAI 接口。
-- 華龍算力：[https://api.hualong.online/](https://api.hualong.online/) — 控制台、文档与国内高速端点。
+- 華龍算力：[https://gonavi.hualong.online/](https://gonavi.hualong.online/) — 控制台、文档与国内高速端点。
 
 > 華龍算力另向本仓库赞助了 **共享 500 亿（50B）token** 额度，供 GoNavi **共建者** 以 **API Key** 方式协作开发使用（非整库人均 50B）。申请与规则见共建入口：[Issue #671](https://github.com/Syngnat/GoNavi/issues/671)。
 
@@ -604,7 +604,7 @@ fc-cache -fv
 ## 友情链接
 
 - [APISmart](https://www.apismart.ai/) — 统一 AI 模型 API（GoNavi 赞助商）
-- [華龍算力](https://api.hualong.online/) — AI API Gateway（GoNavi 赞助商）
+- [華龍算力](https://gonavi.hualong.online/) — AI API Gateway（GoNavi 赞助商）
 - [linux.do](https://linux.do/)
 - [AI全书](https://aibook.ren/)
 

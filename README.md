@@ -131,24 +131,24 @@ Each image is a **full GoNavi application window**, scaled proportionally for RE
       <sub>Unified AI model API · OpenAI-compatible</sub>
     </td>
     <td align="center" valign="top" width="50%">
-      <a href="https://api.hualong.online/">
+      <a href="https://gonavi.hualong.online/">
         <img src="assets/sponsors/hualong-mark.png" height="120" alt="HuaLongAI" />
       </a><br/>
-      <b><a href="https://api.hualong.online/">HuaLongAI</a></b><br/>
+      <b><a href="https://gonavi.hualong.online/">HuaLongAI</a></b><br/>
       <sub>AI API Gateway · multi-model routing · domestic high-speed endpoint</sub>
     </td>
   </tr>
 </table>
 
-Special thanks to **[APISmart](https://www.apismart.ai/)** and **[HuaLongAI](https://api.hualong.online/)** for sponsoring GoNavi open-source development.
+Special thanks to **[APISmart](https://www.apismart.ai/)** and **[HuaLongAI](https://gonavi.hualong.online/)** for sponsoring GoNavi open-source development.
 
 | Sponsor | What they offer | Why it fits GoNavi |
 |---|---|---|
 | **[APISmart](https://www.apismart.ai/)** | APISmart provides unified access to leading AI models through a single API. Developers can connect to LLM, image, and video models using one API key and an OpenAI-compatible interface. This eliminates the need to manage multiple providers separately. Intelligent routing and automatic failover help improve reliability, while centralized billing makes usage easier to manage. With APISmart, developers can build and scale AI applications faster through one streamlined platform. | Lets developers and agent workflows use multiple AI capabilities without separately integrating each provider. |
-| **[HuaLongAI](https://api.hualong.online/)** | HuaLongAI is a premium model API relay provider for power AI developers, focused on official direct connectivity. It primarily offers Codex-series models supplied directly from official sources, with no substitutions or dilution, and invites verification. Billing is transparent, with token-level itemized records available for review. It supports enterprise-grade high concurrency and provides enterprise customers with a professional management platform, formal contracts, and invoices; visit the website for contact details. GPT-series models start at a 0.08 rate, with a stable Pro group at 0.15, two-way referral gifts, and uncapped referral rewards. | Stable model access is core infrastructure for GoNavi's schema-aware assistants, MCP, and day-to-day development. |
+| **[HuaLongAI](https://gonavi.hualong.online/)** | HuaLongAI is a premium model API relay provider for power AI developers, focused on official direct connectivity. It primarily offers Codex-series models supplied directly from official sources, with no substitutions or dilution, and invites verification. Billing is transparent, with token-level itemized records available for review. It supports enterprise-grade high concurrency and provides enterprise customers with a professional management platform, formal contracts, and invoices; visit the website for contact details. GPT-series models start at a 0.08 rate, with a stable Pro group at 0.15, two-way referral gifts, and uncapped referral rewards. | Stable model access is core infrastructure for GoNavi's schema-aware assistants, MCP, and day-to-day development. |
 
 - APISmart: [https://www.apismart.ai/](https://www.apismart.ai/) — unified AI model API with an OpenAI-compatible interface.
-- HuaLongAI: [https://api.hualong.online/](https://api.hualong.online/) — console, docs, and the domestic high-speed endpoint.
+- HuaLongAI: [https://gonavi.hualong.online/](https://gonavi.hualong.online/) — console, docs, and the domestic high-speed endpoint.
 
 > HuaLongAI also sponsored a **shared 50B token pool** for GoNavi **co-maintainers**, used via **API Key** (not 50B per person). Rules and how to apply: [Issue #671](https://github.com/Syngnat/GoNavi/issues/671).
 
@@ -603,7 +603,7 @@ Issues and PRs welcome. Branch from **`dev`**, PR against **`dev`**.
 ## Links
 
 - [APISmart](https://www.apismart.ai/) — Unified AI model API (GoNavi sponsor)
-- [HuaLongAI](https://api.hualong.online/) — AI API Gateway (GoNavi sponsor)
+- [HuaLongAI](https://gonavi.hualong.online/) — AI API Gateway (GoNavi sponsor)
 - [linux.do](https://linux.do/)
 - [AIBook](https://aibook.ren/)
 

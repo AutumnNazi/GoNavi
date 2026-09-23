@@ -50,7 +50,7 @@ describe('AIProviderPresetSelect', () => {
     const props = {
       value: 'openai',
       presets: [{ key: 'openai', label: 'OpenAI' }],
-      partners: [{ key: 'hualong', label: '華龍算力', logoSrc: '/sponsors/hualong-icon.png', url: 'https://api.hualong.online/register?promo=GONAVI%26HUALONG', baseUrl: 'https://api.hualong.online/v1', benefit: '1USD体验额度', promoCode: 'GONAVI&HUALONG' }],
+      partners: [{ key: 'hualong', label: '華龍算力', logoSrc: '/sponsors/hualong-icon.png', url: 'https://gonavi.hualong.online/', baseUrl: 'https://api.hualong.online/v1', benefit: '1USD体验额度', promoCode: 'GONAVI&HUALONG' }],
       canSelect: () => true,
       builtinLabel: '内置支持',
       partnerLabel: '赞助商',
@@ -78,7 +78,7 @@ describe('AIProviderPresetSelect', () => {
     expect(offer.findAllByProps({ role: 'status' })).toHaveLength(0);
     const visit = offer.findByProps({ className: 'gonavi-ai-provider-partner-visit' });
     act(() => visit.props.onClick());
-    expect(onOpenPartner).toHaveBeenCalledWith('https://api.hualong.online/register?promo=GONAVI%26HUALONG');
+    expect(onOpenPartner).toHaveBeenCalledWith('https://gonavi.hualong.online/');
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -86,7 +86,7 @@ describe('AIProviderPresetSelect', () => {
     const renderer = create(<AIProviderPresetSelect
       value="openai"
       presets={[{ key: 'openai', label: 'OpenAI' }]}
-      partners={[{ key: 'hualong', label: '華龍算力', logoSrc: '/sponsors/hualong-icon.png', url: 'https://api.hualong.online/register?promo=GONAVI%26HUALONG', baseUrl: 'https://api.hualong.online/v1', benefit: '1USD体验额度', promoCode: 'GONAVI&HUALONG' }]}
+      partners={[{ key: 'hualong', label: '華龍算力', logoSrc: '/sponsors/hualong-icon.png', url: 'https://gonavi.hualong.online/', baseUrl: 'https://api.hualong.online/v1', benefit: '1USD体验额度', promoCode: 'GONAVI&HUALONG' }]}
       canSelect={() => true}
       builtinLabel="内置支持"
       partnerLabel="赞助商"
@@ -106,7 +106,7 @@ describe('AIProviderPresetSelect', () => {
     const renderer = create(<AIProviderPresetSelect
       value="openai"
       presets={[{ key: 'openai', label: 'OpenAI' }]}
-      partners={[{ key: 'hualong', label: '華龍算力', logoSrc: '/sponsors/hualong-icon.png', url: 'https://api.hualong.online/register?promo=GONAVI%26HUALONG', baseUrl: 'https://api.hualong.online/v1', benefit: '1USD体验额度', promoCode: 'GONAVI&HUALONG' }]}
+      partners={[{ key: 'hualong', label: '華龍算力', logoSrc: '/sponsors/hualong-icon.png', url: 'https://gonavi.hualong.online/', baseUrl: 'https://api.hualong.online/v1', benefit: '1USD体验额度', promoCode: 'GONAVI&HUALONG' }]}
       canSelect={() => true}
       builtinLabel="内置支持"
       partnerLabel="赞助商"

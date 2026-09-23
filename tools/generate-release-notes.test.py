@@ -73,9 +73,9 @@ class GenerateReleaseNotesTests(unittest.TestCase):
         self.assertIn("3.8折", body)
         self.assertIn("1.9折", body)
         self.assertIn("華龍算力AI中转站活动加码：充88得100，每人限1单哦", body)
-        self.assertIn("https://api.hualong.online/register?promo=GONAVI%26HUALONG", body)
+        self.assertIn("https://gonavi.hualong.online/", body)
         self.assertNotIn("GONAVI&HUALONG", body)
-        self.assertNotIn("](https://api.hualong.online/)", body)
+        self.assertNotIn("https://api.hualong.online/", body)
 
     def test_empty_commit_list_still_keeps_sponsor_notice(self) -> None:
         body = MODULE.render_release_notes(
