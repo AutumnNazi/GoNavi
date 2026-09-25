@@ -72,7 +72,14 @@ func refreshWindowsTaskbarButton(hwnd uintptr) error {
 		return err
 	}
 	if err := callWindowsTaskbarWindowMethod("register", taskbar.vtable.addTab, taskbar, hwnd); err != nil {
-		return err
+		// Delete 已成功而 Add 失败会让窗口失去任务栏按钮。Explorer 可能在重建
+		// 托盘（比如刚恢复会话），重新 HrInit 后再尝试一次注册。
+		if initErr := callWindowsTaskbarMethod("initialise", taskbar.vtable.hrInit, taskbar); initErr != nil {
+			return initErr
+		}
+		if retryErr := callWindowsTaskbarWindowMethod("register", taskbar.vtable.addTab, taskbar, hwnd); retryErr != nil {
+			return retryErr
+		}
 	}
 	return nil
 }

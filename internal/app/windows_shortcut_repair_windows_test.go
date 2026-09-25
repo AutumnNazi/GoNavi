@@ -275,17 +275,25 @@ if ($null -ne $portablePlainItem -and -not [string]::Equals([string]$portablePla
 $env:GONAVI_BRAND_MATCH_TARGET_ONLY = '1'
 $portableMatchedIcon = Join-Path $portableRoot 'gonavi-brand-matched.ico'
 [IO.File]::WriteAllBytes($portableMatchedIcon, [byte[]](0, 0, 1, 0, 0, 0))
+# 模拟用户机器上另一安装（D:\tools 类）留下的固定项：目标他处、图标与本实例无关
+$portableForeignPin = Join-Path $portablePins 'GoNavi-foreign-install.lnk'
+New-TestShortcut $portableForeignPin $portableInstalledTarget ''
 $matchedOnlyCount = Set-GoNaviShortcutBrandIcon -TargetPath $portableTarget -IconPath $portableMatchedIcon -ShortcutDirectories @($portablePins) -TaskbarDirectory $portablePins
 if ($matchedOnlyCount -ne 3) {
 	throw ('unexpected portable match-only update count: ' + $matchedOnlyCount)
 }
-$portableHistoryAfterMatchOnly = $shell.CreateShortcut($portableShortcutPath)
-if (-not (Test-ShortcutIconLocation $portableHistoryAfterMatchOnly.IconLocation $portableMatchedIcon)) {
-	throw ('old GoNavi portable identity was not normalized: ' + $portableHistoryAfterMatchOnly.IconLocation)
-}
 $portableStableAfterMatchOnly = $shell.CreateShortcut($portableStablePath)
 if (-not (Test-ShortcutIconLocation $portableStableAfterMatchOnly.IconLocation $portableMatchedIcon)) {
     throw ('match-only portable update skipped the current executable pin: ' + $portableStableAfterMatchOnly.IconLocation)
+}
+# 归属收窄：指向其他安装、且图标不属于本实例数据目录的固定项，Portable
+# 不得改写（历史事故：测试实例曾把用户安装版的固定项图标改写进沙箱目录）。
+$foreignPinAfterMatchOnly = $shell.CreateShortcut($portableForeignPin)
+if (Test-ShortcutIconLocation $foreignPinAfterMatchOnly.IconLocation $portableMatchedIcon) {
+    throw ('match-only portable update hijacked a foreign GoNavi pin: ' + $foreignPinAfterMatchOnly.IconLocation)
+}
+if (-not (Test-SameFilePath $foreignPinAfterMatchOnly.TargetPath $portableInstalledTarget)) {
+    throw ('match-only portable update redirected a foreign pin target: ' + $foreignPinAfterMatchOnly.TargetPath)
 }
 $env:GONAVI_BRAND_MATCH_TARGET_ONLY = ''
 

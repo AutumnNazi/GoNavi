@@ -1115,11 +1115,10 @@ function App() {
       };
   }, [brandIconId, brandAssetRevision, runtimePlatform, t]);
 
-  const brandAssetsLoadingRef = useRef(false);
+  const brandAssetsLoadingRef = useRef<Promise<boolean> | null>(null);
   const loadBrandAssets = useCallback(async (): Promise<boolean> => {
-      if (brandAssetsLoadingRef.current) return false;
-      brandAssetsLoadingRef.current = true;
-      try {
+      if (brandAssetsLoadingRef.current) return brandAssetsLoadingRef.current;
+      const task = (async (): Promise<boolean> => {
           const loaded: Partial<Record<BrandIconId, string>> = {};
           await Promise.all(BRAND_ICONS.filter((icon) => !icon.bundled).map(async (icon) => {
               try {
@@ -1134,8 +1133,12 @@ function App() {
           setBrandAssetRevision((revision) => revision + 1);
           window.dispatchEvent(new Event('gonavi-brand-assets-ready'));
           return true;
+      })();
+      brandAssetsLoadingRef.current = task;
+      try {
+          return await task;
       } finally {
-          brandAssetsLoadingRef.current = false;
+          brandAssetsLoadingRef.current = null;
       }
   }, []);
   useEffect(() => {
@@ -3532,13 +3535,14 @@ function App() {
       windowsBrandIconApplyingRef.current = id;
       setBrandIconId(id);
       try {
-          const source = resolveBrandDockSrc(id);
+          let source = resolveBrandDockSrc(id);
           if (!source) {
               // 远程缎带资源可能还没下载完成（首屏加载失败/离线）。重试一次；
               // 仍不可用就必须如实回退并警告——绝不能弹「已应用」却什么都不改。
               await loadBrandAssets();
-              if (!resolveBrandDockSrc(id)) {
-                  throw new Error(t('app.settings.entry.brand_icon.asset_not_ready'));
+              source = resolveBrandDockSrc(id);
+              if (!source) {
+                  throw Object.assign(new Error(t('app.settings.entry.brand_icon.asset_not_ready')), { assetNotReady: true });
               }
           }
           // Windows fills the whole taskbar tile; the macOS Dock safe-area
@@ -3555,10 +3559,12 @@ function App() {
           message.success(t('app.settings.entry.brand_icon.applied'));
       } catch (error) {
           setBrandIconId(previousId);
-          const detail = error instanceof Error ? error.message : String(error);
-          console.warn('Failed to apply the Windows brand icon:', error);
-          if (detail === t('app.settings.entry.brand_icon.asset_not_ready')) {
-              message.warning(detail);
+          const isAssetNotReady = typeof error === 'object' && error !== null && (error as { assetNotReady?: boolean }).assetNotReady === true;
+          if (!isAssetNotReady) {
+              console.warn('Failed to apply the Windows brand icon:', error);
+          }
+          if (isAssetNotReady) {
+              message.warning(error instanceof Error ? error.message : t('app.settings.entry.brand_icon.asset_not_ready'));
           } else {
               message.error(t('app.settings.entry.brand_icon.native_sync_failed'));
           }

@@ -663,11 +663,6 @@ function Set-GoNaviShortcutBrandIcon {
                         $isGoNaviTaskbarShortcut = $looksLikeGoNaviPin -or
                             ((Get-GoNaviShortcutAppUserModelID $shortcutFile.FullName) -match '^Syngnat\.GoNavi(?:\.Icon\.[0-9a-f]+)?$')
                     }
-                    # A portable/temp build may be running beside an older pin
-                    # whose target is another GoNavi copy. The old GoNavi AUMID
-                    # still proves ownership of the pin, so normalize its identity
-                    # instead of skipping it and leaving a duplicate taskbar
-                    # group after restart. Non-MSI pins keep their valid target.
                     # Ownership gate. MSI installs are the authoritative owner of
                     # the GoNavi pin family and may repair legacy rotated
                     # identities. A portable or development build may only claim
@@ -675,10 +670,15 @@ function Set-GoNaviShortcutBrandIcon {
                     # THIS instance's brand-icon directory — name and AUMID
                     # matches alone also hit every other GoNavi installation on
                     # the machine, and claiming those hijacks foreign pins.
-                    if ($onlyMatchingTarget) {
-                        $ownedByThisInstance = $matchesTarget -or (Test-ShortcutOwnedByIconDirectory -ShortcutPath $shortcutFile.FullName -IconDirectory (Split-Path -Parent $normalizedIconPath))
-                        if (-not $ownedByThisInstance) {
-                            Write-ShortcutRepairLog ("skip foreign GoNavi taskbar pin: " + $shortcutFile.FullName)
+                    if ($onlyMatchingTarget -and -not $matchesTarget) {
+                        # 廉价预过滤：只有名称像 GoNavi 的快捷方式才可能是本实例
+                        # 的残留固定项，避免对全系统 .lnk 逐一跑昂贵的 COM 归属判定。
+                        $shortcutName = [IO.Path]::GetFileNameWithoutExtension($shortcutFile.Name)
+                        if (-not $shortcutName.StartsWith('GoNavi', [StringComparison]::OrdinalIgnoreCase)) {
+                            continue
+                        }
+                        if (-not (Test-ShortcutOwnedByIconDirectory -ShortcutPath $shortcutFile.FullName -IconDirectory (Split-Path -Parent $normalizedIconPath))) {
+                            Write-ShortcutRepairLog ("skip foreign GoNavi shortcut: " + $shortcutFile.FullName)
                             continue
                         }
                     } elseif (-not $matchesTarget -and -not $pinLaunchBroken -and -not $isGoNaviTaskbarShortcut) {

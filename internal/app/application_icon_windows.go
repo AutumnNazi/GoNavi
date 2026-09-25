@@ -28,7 +28,6 @@ const (
 	windowsIconBig                       = 1
 	windowsClassIconLarge                = -14
 	windowsClassIconSmall                = -34
-	windowsShortcutIdentityStateFileName = ".taskbar-identity-v1"
 	// SHCNE_ASSOCCHANGED with SHCNF_IDLIST asks Explorer to discard cached
 	// per-path icons and re-read associations. It is the documented way to
 	// make a freshly written .ico visible without rotating the file identity
@@ -91,8 +90,10 @@ func applyPersistedWindowsApplicationIcon(runtimeContext context.Context, config
 	if strings.TrimSpace(iconPath) == "" {
 		return clearPersistedWindowsApplicationIcon(configDir)
 	}
-	repairPersistedWindowsApplicationShortcutsOnce(iconPath, configDir)
-	_, err = setCurrentWindowsApplicationIcon(runtimeContext, iconPath)
+	// 每次启动都幂等执行固定项修复：没有一次性标记，失败（文件被占用、
+	// Explorer 重启等）总会在下次启动重试。
+	repairPersistedWindowsApplicationShortcuts(iconPath)
+	_, err = setCurrentWindowsApplicationIcon(runtimeContext, iconPath, false)
 	if err != nil {
 		return err
 	}
@@ -105,65 +106,13 @@ func applyPersistedWindowsApplicationIcon(runtimeContext context.Context, config
 	return nil
 }
 
-func repairPersistedWindowsApplicationShortcutsOnce(iconPath, configDir string) {
-	state, ok := currentWindowsShortcutIdentityState(iconPath)
-	if !ok {
-		return
-	}
-	statePath := filepath.Join(configDir, windowsApplicationIconDirectoryName, windowsShortcutIdentityStateFileName)
-	// The marker only records the last successful attempt. It cannot prove that
-	// Explorer's pinned .lnk still has the stable AUMID: another installer,
-	// Explorer repair, or an older build may have rewritten the shortcut after
-	// the marker was created. Re-run the idempotent repair on every startup so a
-	// stale pin can never survive a restart and split into a second button.
-	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
-		logger.Warnf("创建 Windows 任务栏身份迁移目录失败：%v", err)
-		return
-	}
-	if err := clearWindowsShortcutIdentityState(statePath); err != nil {
-		logger.Warnf("清除旧的 Windows 快捷方式修复状态失败：%v", err)
-		return
-	}
+// repairPersistedWindowsApplicationShortcuts rewrites existing GoNavi
+// shortcuts and taskbar pins to the selected icon. Ownership rules inside the
+// repair script confine a portable/development build to its own shortcuts, so
+// running it on every startup can never hijack another installation's pins.
+func repairPersistedWindowsApplicationShortcuts(iconPath string) {
 	if err := windowsUpdateCurrentApplicationShortcuts(iconPath); err != nil {
 		logger.Warnf("更新 Windows 应用快捷方式图标失败：%v", err)
-		return
-	}
-	if err := os.WriteFile(statePath, []byte(state), 0o600); err != nil {
-		logger.Warnf("记录 Windows 任务栏身份迁移状态失败：%v", err)
-	}
-}
-
-func currentWindowsShortcutIdentityState(iconPath string) (string, bool) {
-	executablePath := strings.TrimSpace(updateResolveInstallTarget())
-	// Both install modes repair their pins on each startup. The script also
-	// normalizes legacy taskbar identities and broken launch targets.
-	mode := resolveUpdateInstallModeForExecutable("windows", executablePath)
-	if mode != updateInstallModeMSI && mode != updateInstallModePortable {
-		return "", false
-	}
-	return strings.Join([]string{
-		strings.TrimSpace(getCurrentVersion()),
-		windowsApplicationUserModelIDForIconPath(iconPath),
-		strings.ToLower(filepath.Clean(iconPath)),
-		strings.ToLower(filepath.Clean(executablePath)),
-	}, "\n") + "\n", true
-}
-
-func clearWindowsShortcutIdentityState(statePath string) error {
-	if err := os.Remove(statePath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("remove shortcut repair state: %w", err)
-	}
-	return nil
-}
-
-func recordCurrentWindowsShortcutIdentityState(iconPath, configDir string) {
-	state, ok := currentWindowsShortcutIdentityState(iconPath)
-	if !ok {
-		return
-	}
-	statePath := filepath.Join(configDir, windowsApplicationIconDirectoryName, windowsShortcutIdentityStateFileName)
-	if err := os.WriteFile(statePath, []byte(state), 0o600); err != nil {
-		logger.Warnf("记录 Windows 任务栏身份迁移状态失败：%v", err)
 	}
 }
 
@@ -178,26 +127,19 @@ func setApplicationIconPNG(pngBytes []byte, configDir string, runtimeContext con
 	if err != nil {
 		return err
 	}
-	if _, ok := currentWindowsShortcutIdentityState(iconPath); ok {
-		statePath := filepath.Join(configDir, windowsApplicationIconDirectoryName, windowsShortcutIdentityStateFileName)
-		if err := clearWindowsShortcutIdentityState(statePath); err != nil {
-			return err
-		}
-	}
 	// Update shortcuts before refreshing the live window icon. The update is
 	// synchronous so quitting cannot leave a half-written pin. Both the shortcut
 	// and live window use the stable GoNavi identity.
 	if err := windowsUpdateCurrentApplicationShortcuts(iconPath); err != nil {
 		return err
 	}
-	_, err = setCurrentWindowsApplicationIcon(runtimeContext, iconPath)
+	_, err = setCurrentWindowsApplicationIcon(runtimeContext, iconPath, true)
 	if err != nil {
 		return err
 	}
 	if err := activatePersistedWindowsApplicationIcon(iconPath, configDir); err != nil {
 		return err
 	}
-	recordCurrentWindowsShortcutIdentityState(iconPath, configDir)
 	return nil
 }
 
@@ -212,12 +154,6 @@ func prepareWindowsBrandIconRestartPNG(pngBytes []byte, configDir string) error 
 	if err != nil {
 		return err
 	}
-	if _, ok := currentWindowsShortcutIdentityState(iconPath); ok {
-		statePath := filepath.Join(configDir, windowsApplicationIconDirectoryName, windowsShortcutIdentityStateFileName)
-		if err := clearWindowsShortcutIdentityState(statePath); err != nil {
-			return err
-		}
-	}
 	// Update existing shortcuts in place. Only activate the pointer after the
 	// shortcut transaction succeeds, so a failed selection cannot change the
 	// icon used by the next process launch.
@@ -230,11 +166,10 @@ func prepareWindowsBrandIconRestartPNG(pngBytes []byte, configDir string) error 
 	if err := activatePersistedWindowsApplicationIcon(iconPath, configDir); err != nil {
 		return err
 	}
-	recordCurrentWindowsShortcutIdentityState(iconPath, configDir)
 	return nil
 }
 
-func setCurrentWindowsApplicationIcon(runtimeContext context.Context, iconPath string) (uintptr, error) {
+func setCurrentWindowsApplicationIcon(runtimeContext context.Context, iconPath string, refreshTaskbar bool) (uintptr, error) {
 	if err := migrateWindowsApplicationIconFile(iconPath); err != nil {
 		return 0, err
 	}
@@ -255,7 +190,7 @@ func setCurrentWindowsApplicationIcon(runtimeContext context.Context, iconPath s
 		windowsApplicationIconDestroyCall(large)
 		return 0, fmt.Errorf("resolve Windows application window: %w", err)
 	}
-	applyErr := applyWindowsApplicationIcon(mainWindow, iconPath, small, large)
+	applyErr := applyWindowsApplicationIcon(mainWindow, iconPath, small, large, refreshTaskbar)
 
 	// WM_SETICON / class icon calls transfer live references to these handles.
 	// Keep them alive even when Explorer's taskbar refresh reports an error.
@@ -309,7 +244,7 @@ func resolveWailsMainWindowHandle(runtimeContext context.Context) (handle uintpt
 	return handle, nil
 }
 
-func applyWindowsApplicationIcon(hwnd uintptr, iconPath string, small, large uintptr) error {
+func applyWindowsApplicationIcon(hwnd uintptr, iconPath string, small, large uintptr, refreshTaskbar bool) error {
 	if hwnd == 0 {
 		return errors.New("Windows application window handle is zero")
 	}
@@ -337,9 +272,13 @@ func applyWindowsApplicationIcon(hwnd uintptr, iconPath string, small, large uin
 		return fmt.Errorf("set Windows taskbar icon properties: %w", err)
 	}
 	// Explorer caches the icon on the existing taskbar button. Re-register the
-	// top-level window so Windows 10 and Windows 11 both display the new icon.
-	if err := windowsRefreshTaskbarButton(hwnd); err != nil {
-		return fmt.Errorf("refresh Windows taskbar icon: %w", err)
+	// top-level window so both Windows 10 and Windows 11 display the new icon.
+	// 启动路径跳过重建：按钮刚随窗口创建，本就读取新窗口图标；只有切换路径
+	// 需要重建来对抗 Explorer 的图标缓存。
+	if refreshTaskbar {
+		if err := windowsRefreshTaskbarButton(hwnd); err != nil {
+			return fmt.Errorf("refresh Windows taskbar icon: %w", err)
+		}
 	}
 	return nil
 }
@@ -395,7 +334,8 @@ func updateCurrentWindowsApplicationShortcuts(iconPath string) error {
 	script := windowsShortcutRepairPowerShellScript + `
 
 $ErrorActionPreference = 'Stop'
-[void](Set-GoNaviShortcutBrandIcon -TargetPath $env:GONAVI_BRAND_TARGET -IconPath $env:GONAVI_BRAND_ICON -ApplicationUserModelID $env:GONAVI_BRAND_AUMID)
+$updated = Set-GoNaviShortcutBrandIcon -TargetPath $env:GONAVI_BRAND_TARGET -IconPath $env:GONAVI_BRAND_ICON -ApplicationUserModelID $env:GONAVI_BRAND_AUMID
+Write-Output ("UPDATED=" + $updated)
 `
 	if _, err := temporary.WriteString(strings.ReplaceAll(script, "\n", "\r\n")); err != nil {
 		_ = temporary.Close()
@@ -420,9 +360,11 @@ $ErrorActionPreference = 'Stop'
 		"GONAVI_BRAND_ICON="+iconPath,
 		"GONAVI_BRAND_AUMID="+windowsApplicationUserModelIDForIconPath(iconPath),
 		"GONAVI_BRAND_MATCH_TARGET_ONLY="+windowsBrandShortcutMatchTargetOnlyEnv(executablePath),
+		"GONAVI_BRAND_REPAIR_LOG="+filepath.Join(filepath.Dir(iconPath), "shortcut-repair.log"),
 	)
 	configureWindowsUpdateCommand(cmd)
-	if output, err := cmd.CombinedOutput(); err != nil {
+	output, err := cmd.CombinedOutput()
+	if err != nil {
 		detail := strings.TrimSpace(string(output))
 		if detail != "" {
 			return fmt.Errorf("update Windows application shortcuts: %w: %s", err, detail)
@@ -431,8 +373,11 @@ $ErrorActionPreference = 'Stop'
 	}
 	// The shortcut IconLocations now reference a new content-addressed .ico.
 	// Ask Explorer to drop its per-path icon cache so desktop and Start-menu
-	// entries repaint without waiting for the next logon.
-	windowsApplicationIconNotifyShellChange()
+	// entries repaint without waiting for the next logon. 0 updates (nothing
+	// matched) must not trigger a system-wide association flush.
+	if !strings.Contains(string(output), "UPDATED=0") {
+		windowsApplicationIconNotifyShellChange()
+	}
 	return nil
 }
 
