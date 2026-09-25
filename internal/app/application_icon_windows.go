@@ -29,24 +29,36 @@ const (
 	windowsClassIconLarge                = -14
 	windowsClassIconSmall                = -34
 	windowsShortcutIdentityStateFileName = ".taskbar-identity-v1"
+	// SHCNE_ASSOCCHANGED with SHCNF_IDLIST asks Explorer to discard cached
+	// per-path icons and re-read associations. It is the documented way to
+	// make a freshly written .ico visible without rotating the file identity
+	// or the taskbar AUMID.
+	windowsShellChangeAssociateChanged = 0x08000000
+	windowsShellChangeNotifyFlags      = 0x0000
 )
 
 var (
-	windowsApplicationIconUser32           = windows.NewLazySystemDLL("user32.dll")
-	windowsApplicationIconLoadImage        = windowsApplicationIconUser32.NewProc("LoadImageW")
-	windowsApplicationIconGetDpiForSystem  = windowsApplicationIconUser32.NewProc("GetDpiForSystem")
-	windowsApplicationIconGetWindowLong    = windowsApplicationIconUser32.NewProc("GetWindowLongW")
-	windowsApplicationIconSetWindowLong    = windowsApplicationIconUser32.NewProc("SetWindowLongW")
-	windowsApplicationIconGetWindowLongPtr = windowsApplicationIconUser32.NewProc("GetWindowLongPtrW")
-	windowsApplicationIconSetWindowLongPtr = windowsApplicationIconUser32.NewProc("SetWindowLongPtrW")
-	windowsApplicationIconRtlGetVersion    = windows.NewLazySystemDLL("ntdll.dll").NewProc("RtlGetVersion")
-	windowsApplicationIconSendMessage      = windowsApplicationIconUser32.NewProc("SendMessageW")
-	windowsApplicationIconSetClassLong     = windowsApplicationIconUser32.NewProc("SetClassLongW")
-	windowsApplicationIconSetClassLongPtr  = windowsApplicationIconUser32.NewProc("SetClassLongPtrW")
-	windowsApplicationIconDestroy          = windowsApplicationIconUser32.NewProc("DestroyIcon")
-	windowsApplicationIconHandleMu         sync.Mutex
-	windowsApplicationIconSmallHandle      uintptr
-	windowsApplicationIconLargeHandle      uintptr
+	windowsApplicationIconUser32          = windows.NewLazySystemDLL("user32.dll")
+	windowsApplicationIconLoadImage       = windowsApplicationIconUser32.NewProc("LoadImageW")
+	windowsApplicationIconGetDpiForSystem = windowsApplicationIconUser32.NewProc("GetDpiForSystem")
+	windowsApplicationIconSendMessage     = windowsApplicationIconUser32.NewProc("SendMessageW")
+	windowsApplicationIconSetClassLong    = windowsApplicationIconUser32.NewProc("SetClassLongW")
+	windowsApplicationIconSetClassLongPtr = windowsApplicationIconUser32.NewProc("SetClassLongPtrW")
+	windowsApplicationIconDestroy         = windowsApplicationIconUser32.NewProc("DestroyIcon")
+	windowsApplicationIconShell32         = windows.NewLazySystemDLL("shell32.dll")
+	windowsApplicationIconChangeNotify    = windowsApplicationIconShell32.NewProc("SHChangeNotify")
+	windowsApplicationIconHandleMu        sync.Mutex
+	windowsApplicationIconSmallHandle     uintptr
+	windowsApplicationIconLargeHandle     uintptr
+
+	windowsApplicationIconNotifyShellChange = func() {
+		windowsApplicationIconChangeNotify.Call(
+			windowsShellChangeAssociateChanged,
+			windowsShellChangeNotifyFlags,
+			0,
+			0,
+		)
+	}
 
 	windowsApplicationIconSendMessageCall = func(hwnd, message, wParam, lParam uintptr) uintptr {
 		result, _, _ := windowsApplicationIconSendMessage.Call(hwnd, message, wParam, lParam)
@@ -62,8 +74,7 @@ var (
 	windowsApplicationIconSetTaskbarProperties = setWindowsTaskbarProperties
 	windowsApplicationIconLoad                 = loadWindowsApplicationIcon
 	windowsApplicationIconSystemDPI            = currentWindowsSystemDPI
-	windowsApplicationBuildNumber              = currentWindowsBuildNumber
-	windowsRefreshLegacyTaskbarButton          = refreshWindows10TaskbarButton
+	windowsRefreshTaskbarButton                = refreshWindowsTaskbarButton
 	windowsApplicationIconDestroyCall          = destroyWindowsApplicationIcon
 	windowsUpdateCurrentApplicationShortcuts   = updateCurrentWindowsApplicationShortcuts
 )
@@ -100,16 +111,17 @@ func repairPersistedWindowsApplicationShortcutsOnce(iconPath, configDir string) 
 		return
 	}
 	statePath := filepath.Join(configDir, windowsApplicationIconDirectoryName, windowsShortcutIdentityStateFileName)
-	currentState, err := os.ReadFile(statePath)
-	if err == nil && string(currentState) == state {
-		return
-	}
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		logger.Warnf("检查 Windows 任务栏身份迁移状态失败：%v", err)
-		return
-	}
+	// The marker only records the last successful attempt. It cannot prove that
+	// Explorer's pinned .lnk still has the stable AUMID: another installer,
+	// Explorer repair, or an older build may have rewritten the shortcut after
+	// the marker was created. Re-run the idempotent repair on every startup so a
+	// stale pin can never survive a restart and split into a second button.
 	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
 		logger.Warnf("创建 Windows 任务栏身份迁移目录失败：%v", err)
+		return
+	}
+	if err := clearWindowsShortcutIdentityState(statePath); err != nil {
+		logger.Warnf("清除旧的 Windows 快捷方式修复状态失败：%v", err)
 		return
 	}
 	if err := windowsUpdateCurrentApplicationShortcuts(iconPath); err != nil {
@@ -123,9 +135,8 @@ func repairPersistedWindowsApplicationShortcutsOnce(iconPath, configDir string) 
 
 func currentWindowsShortcutIdentityState(iconPath string) (string, bool) {
 	executablePath := strings.TrimSpace(updateResolveInstallTarget())
-	// Both installs refresh their own pins once per version. The script only
-	// changes IconLocation, and it rewrites a target when that target is
-	// already missing or points at a brand ICO.
+	// Both install modes repair their pins on each startup. The script also
+	// normalizes legacy taskbar identities and broken launch targets.
 	mode := resolveUpdateInstallModeForExecutable("windows", executablePath)
 	if mode != updateInstallModeMSI && mode != updateInstallModePortable {
 		return "", false
@@ -133,8 +144,16 @@ func currentWindowsShortcutIdentityState(iconPath string) (string, bool) {
 	return strings.Join([]string{
 		strings.TrimSpace(getCurrentVersion()),
 		windowsApplicationUserModelIDForIconPath(iconPath),
+		strings.ToLower(filepath.Clean(iconPath)),
 		strings.ToLower(filepath.Clean(executablePath)),
 	}, "\n") + "\n", true
+}
+
+func clearWindowsShortcutIdentityState(statePath string) error {
+	if err := os.Remove(statePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove shortcut repair state: %w", err)
+	}
+	return nil
 }
 
 func recordCurrentWindowsShortcutIdentityState(iconPath, configDir string) {
@@ -159,20 +178,26 @@ func setApplicationIconPNG(pngBytes []byte, configDir string, runtimeContext con
 	if err != nil {
 		return err
 	}
+	if _, ok := currentWindowsShortcutIdentityState(iconPath); ok {
+		statePath := filepath.Join(configDir, windowsApplicationIconDirectoryName, windowsShortcutIdentityStateFileName)
+		if err := clearWindowsShortcutIdentityState(statePath); err != nil {
+			return err
+		}
+	}
 	// Update shortcuts before refreshing the live window icon. The update is
-	// synchronous so quitting cannot leave a half-written pin. The taskbar
-	// identity is not changed.
+	// synchronous so quitting cannot leave a half-written pin. Both the shortcut
+	// and live window use the stable GoNavi identity.
 	if err := windowsUpdateCurrentApplicationShortcuts(iconPath); err != nil {
+		return err
+	}
+	_, err = setCurrentWindowsApplicationIcon(runtimeContext, iconPath)
+	if err != nil {
 		return err
 	}
 	if err := activatePersistedWindowsApplicationIcon(iconPath, configDir); err != nil {
 		return err
 	}
 	recordCurrentWindowsShortcutIdentityState(iconPath, configDir)
-	_, err = setCurrentWindowsApplicationIcon(runtimeContext, iconPath)
-	if err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -186,6 +211,12 @@ func prepareWindowsBrandIconRestartPNG(pngBytes []byte, configDir string) error 
 	iconPath, err := persistWindowsApplicationIcon(pngBytes, configDir)
 	if err != nil {
 		return err
+	}
+	if _, ok := currentWindowsShortcutIdentityState(iconPath); ok {
+		statePath := filepath.Join(configDir, windowsApplicationIconDirectoryName, windowsShortcutIdentityStateFileName)
+		if err := clearWindowsShortcutIdentityState(statePath); err != nil {
+			return err
+		}
 	}
 	// Update existing shortcuts in place. Only activate the pointer after the
 	// shortcut transaction succeeds, so a failed selection cannot change the
@@ -305,72 +336,12 @@ func applyWindowsApplicationIcon(hwnd uintptr, iconPath string, small, large uin
 	if err := windowsApplicationIconSetTaskbarProperties(hwnd, iconPath); err != nil {
 		return fmt.Errorf("set Windows taskbar icon properties: %w", err)
 	}
-	// Windows 10 keeps the taskbar button that was created with the original
-	// icon. Rebuilding that button is what makes a logo switch visible there.
-	// Windows 11 already repaints from WM_SETICON, so it must not flicker.
-	windowsRefreshLegacyTaskbarButton(hwnd)
+	// Explorer caches the icon on the existing taskbar button. Re-register the
+	// top-level window so Windows 10 and Windows 11 both display the new icon.
+	if err := windowsRefreshTaskbarButton(hwnd); err != nil {
+		return fmt.Errorf("refresh Windows taskbar icon: %w", err)
+	}
 	return nil
-}
-
-const (
-	windowsGWLExStyle     int32 = -20
-	windowsWSExToolWindow       = uintptr(0x00000080)
-)
-
-func currentWindowsBuildNumber() uint32 {
-	if windowsApplicationIconRtlGetVersion.Find() != nil {
-		return 0
-	}
-	type osVersionInfo struct {
-		size                          uint32
-		major, minor, build, platform uint32
-		servicePack                   [128]uint16
-	}
-	info := osVersionInfo{size: uint32(unsafe.Sizeof(osVersionInfo{}))}
-	if result, _, _ := windowsApplicationIconRtlGetVersion.Call(uintptr(unsafe.Pointer(&info))); result != 0 {
-		return 0
-	}
-	return info.build
-}
-
-func windowsWindowLongProc(ptrProc, fallbackProc *windows.LazyProc) *windows.LazyProc {
-	if unsafe.Sizeof(uintptr(0)) == 4 {
-		return fallbackProc
-	}
-	return ptrProc
-}
-
-// windowsLongIndex converts a signed index such as GWL_EXSTYLE (-20) after it
-// is stored in a variable. A negative constant cannot convert to uintptr.
-func windowsLongIndex(index int32) uintptr {
-	return uintptr(index)
-}
-
-func windowsGetWindowExStyle(hwnd uintptr) uintptr {
-	proc := windowsWindowLongProc(windowsApplicationIconGetWindowLongPtr, windowsApplicationIconGetWindowLong)
-	style, _, _ := proc.Call(hwnd, windowsLongIndex(windowsGWLExStyle))
-	return style
-}
-
-func windowsSetWindowExStyle(hwnd uintptr, style uintptr) {
-	proc := windowsWindowLongProc(windowsApplicationIconSetWindowLongPtr, windowsApplicationIconSetWindowLong)
-	proc.Call(hwnd, windowsLongIndex(windowsGWLExStyle), style)
-}
-
-// refreshWindows10TaskbarButton drops the taskbar button and puts it back so
-// Explorer copies the icon just applied with WM_SETICON. Windows 11 does not
-// need this, and hiding the button there would flicker a working icon.
-func refreshWindows10TaskbarButton(hwnd uintptr) {
-	build := windowsApplicationBuildNumber()
-	if hwnd == 0 || build == 0 || build >= 22000 {
-		return
-	}
-	style := windowsGetWindowExStyle(hwnd)
-	if style == 0 {
-		return
-	}
-	windowsSetWindowExStyle(hwnd, style|windowsWSExToolWindow)
-	windowsSetWindowExStyle(hwnd, style)
 }
 
 func currentWindowsSystemDPI() int {
@@ -458,6 +429,10 @@ $ErrorActionPreference = 'Stop'
 		}
 		return fmt.Errorf("update Windows application shortcuts: %w", err)
 	}
+	// The shortcut IconLocations now reference a new content-addressed .ico.
+	// Ask Explorer to drop its per-path icon cache so desktop and Start-menu
+	// entries repaint without waiting for the next logon.
+	windowsApplicationIconNotifyShellChange()
 	return nil
 }
 

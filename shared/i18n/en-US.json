@@ -3243,6 +3243,7 @@
   "app.settings.entry.brand_icon.description": "Choose the GoNavi mascot icon shown inside the app.",
   "app.settings.entry.brand_icon.help": "Pick a mascot for the title bar, About page, and web favicon. macOS also updates the Dock icon; Windows updates open windows and shortcuts that target the current GoNavi executable. Linux taskbar icons still follow the installed package.",
   "app.settings.entry.brand_icon.applied": "Brand icon updated",
+  "app.settings.entry.brand_icon.asset_not_ready": "Remote icon assets are not ready yet — the previous icon was kept. Check your network and retry, or pick a bundled mascot icon.",
   "app.settings.entry.brand_icon.native_sync_failed": "The system application icon could not be updated.",
   "app.settings.entry.brand_icon.windows_restart.title": "Restart GoNavi to apply the icon",
   "app.settings.entry.brand_icon.windows_restart.description": "Windows shortcuts were updated in place. Restart GoNavi to refresh the taskbar and desktop icons.",

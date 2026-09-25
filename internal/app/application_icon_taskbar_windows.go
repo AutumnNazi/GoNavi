@@ -100,9 +100,8 @@ type nativeWindowsWindowPropertyStoreVTable struct {
 }
 
 // setWindowsTaskbarProperties updates the relaunch icon of the live taskbar
-// group. AppUserModel.ID stays Syngnat.GoNavi, the same value as the MSI
-// shortcuts; writing that same ID last tells Explorer to re-read the icon
-// path without moving the window into a second taskbar button.
+// group. The AppUserModel.ID remains the stable GoNavi identity so Explorer
+// keeps the live window grouped with the pinned shortcut.
 func setWindowsTaskbarProperties(hwnd uintptr, iconPath string) error {
 	if hwnd == 0 {
 		return errors.New("set Windows taskbar properties: window handle is zero")

@@ -53,10 +53,12 @@ func TestApplyWindowsApplicationIconVerifiesMainWindowReadback(t *testing.T) {
 	originalSend := windowsApplicationIconSendMessageCall
 	originalSetClass := windowsApplicationIconSetClassIcon
 	originalSetTaskbarProperties := windowsApplicationIconSetTaskbarProperties
+	originalRefreshTaskbar := windowsRefreshTaskbarButton
 	t.Cleanup(func() {
 		windowsApplicationIconSendMessageCall = originalSend
 		windowsApplicationIconSetClassIcon = originalSetClass
 		windowsApplicationIconSetTaskbarProperties = originalSetTaskbarProperties
+		windowsRefreshTaskbarButton = originalRefreshTaskbar
 	})
 
 	current := map[uintptr]uintptr{}
@@ -89,6 +91,11 @@ func TestApplyWindowsApplicationIconVerifiesMainWindowReadback(t *testing.T) {
 		taskbarIconPath = iconPath
 		return nil
 	}
+	var refreshedHWND uintptr
+	windowsRefreshTaskbarButton = func(actualHWND uintptr) error {
+		refreshedHWND = actualHWND
+		return nil
+	}
 
 	const iconPath = `C:\Users\tester\gonavi-brand.ico`
 	if err := applyWindowsApplicationIcon(hwnd, iconPath, small, large); err != nil {
@@ -106,16 +113,21 @@ func TestApplyWindowsApplicationIconVerifiesMainWindowReadback(t *testing.T) {
 	if taskbarHWND != hwnd || taskbarIconPath != iconPath {
 		t.Fatalf("taskbar properties = (%#x, %q), want (%#x, %q)", taskbarHWND, taskbarIconPath, hwnd, iconPath)
 	}
+	if refreshedHWND != hwnd {
+		t.Fatalf("refreshed taskbar HWND = %#x, want %#x", refreshedHWND, hwnd)
+	}
 }
 
 func TestApplyWindowsApplicationIconRejectsSilentSetFailure(t *testing.T) {
 	originalSend := windowsApplicationIconSendMessageCall
 	originalSetClass := windowsApplicationIconSetClassIcon
 	originalSetTaskbarProperties := windowsApplicationIconSetTaskbarProperties
+	originalRefreshTaskbar := windowsRefreshTaskbarButton
 	t.Cleanup(func() {
 		windowsApplicationIconSendMessageCall = originalSend
 		windowsApplicationIconSetClassIcon = originalSetClass
 		windowsApplicationIconSetTaskbarProperties = originalSetTaskbarProperties
+		windowsRefreshTaskbarButton = originalRefreshTaskbar
 	})
 	windowsApplicationIconSendMessageCall = func(_, message, _, _ uintptr) uintptr {
 		if message == windowsGetIconMessage {
@@ -142,10 +154,12 @@ func TestApplyWindowsApplicationIconReturnsTaskbarPropertyFailure(t *testing.T) 
 	originalSend := windowsApplicationIconSendMessageCall
 	originalSetClass := windowsApplicationIconSetClassIcon
 	originalSetTaskbarProperties := windowsApplicationIconSetTaskbarProperties
+	originalRefreshTaskbar := windowsRefreshTaskbarButton
 	t.Cleanup(func() {
 		windowsApplicationIconSendMessageCall = originalSend
 		windowsApplicationIconSetClassIcon = originalSetClass
 		windowsApplicationIconSetTaskbarProperties = originalSetTaskbarProperties
+		windowsRefreshTaskbarButton = originalRefreshTaskbar
 	})
 	windowsApplicationIconSendMessageCall = func(_, message, iconType, icon uintptr) uintptr {
 		if message == windowsGetIconMessage {
@@ -160,10 +174,46 @@ func TestApplyWindowsApplicationIconReturnsTaskbarPropertyFailure(t *testing.T) 
 	windowsApplicationIconSetTaskbarProperties = func(uintptr, string) error {
 		return errors.New("shell rejected taskbar properties")
 	}
+	windowsRefreshTaskbarButton = func(uintptr) error {
+		t.Fatal("taskbar button must not refresh when properties fail")
+		return nil
+	}
 
 	err := applyWindowsApplicationIcon(0x1234, `C:\brand.ico`, 0x2001, 0x2002)
 	if err == nil || !strings.Contains(err.Error(), "taskbar") {
 		t.Fatalf("expected taskbar property error, got %v", err)
+	}
+}
+
+func TestApplyWindowsApplicationIconReturnsTaskbarRefreshFailure(t *testing.T) {
+	originalSend := windowsApplicationIconSendMessageCall
+	originalSetClass := windowsApplicationIconSetClassIcon
+	originalSetTaskbarProperties := windowsApplicationIconSetTaskbarProperties
+	originalRefreshTaskbar := windowsRefreshTaskbarButton
+	t.Cleanup(func() {
+		windowsApplicationIconSendMessageCall = originalSend
+		windowsApplicationIconSetClassIcon = originalSetClass
+		windowsApplicationIconSetTaskbarProperties = originalSetTaskbarProperties
+		windowsRefreshTaskbarButton = originalRefreshTaskbar
+	})
+	windowsApplicationIconSendMessageCall = func(_, message, iconType, icon uintptr) uintptr {
+		if message == windowsGetIconMessage {
+			if iconType == windowsIconSmall {
+				return 0x2001
+			}
+			return 0x2002
+		}
+		return icon
+	}
+	windowsApplicationIconSetClassIcon = func(uintptr, int32, uintptr) {}
+	windowsApplicationIconSetTaskbarProperties = func(uintptr, string) error { return nil }
+	windowsRefreshTaskbarButton = func(uintptr) error {
+		return errors.New("Explorer rejected taskbar refresh")
+	}
+
+	err := applyWindowsApplicationIcon(0x1234, `C:\brand.ico`, 0x2001, 0x2002)
+	if err == nil || !strings.Contains(err.Error(), "refresh Windows taskbar icon") {
+		t.Fatalf("expected taskbar refresh failure, got %v", err)
 	}
 }
 
@@ -210,6 +260,7 @@ func TestInitializePersistedNativeBrandIconAppliesActiveIcon(t *testing.T) {
 	originalSend := windowsApplicationIconSendMessageCall
 	originalSetClass := windowsApplicationIconSetClassIcon
 	originalSetTaskbarProperties := windowsApplicationIconSetTaskbarProperties
+	originalRefreshTaskbar := windowsRefreshTaskbarButton
 	originalUpdateShortcuts := windowsUpdateCurrentApplicationShortcuts
 	originalResolveInstallTarget := updateResolveInstallTarget
 	originalVersion := AppVersion
@@ -226,6 +277,7 @@ func TestInitializePersistedNativeBrandIconAppliesActiveIcon(t *testing.T) {
 		windowsApplicationIconSendMessageCall = originalSend
 		windowsApplicationIconSetClassIcon = originalSetClass
 		windowsApplicationIconSetTaskbarProperties = originalSetTaskbarProperties
+		windowsRefreshTaskbarButton = originalRefreshTaskbar
 		windowsUpdateCurrentApplicationShortcuts = originalUpdateShortcuts
 		updateResolveInstallTarget = originalResolveInstallTarget
 		AppVersion = originalVersion
@@ -291,6 +343,13 @@ func TestInitializePersistedNativeBrandIconAppliesActiveIcon(t *testing.T) {
 		identityEvents = append(identityEvents, "window")
 		return nil
 	}
+	windowsRefreshTaskbarButton = func(actualHWND uintptr) error {
+		if actualHWND != hwnd {
+			t.Fatalf("refresh taskbar HWND = %#x, want %#x", actualHWND, hwnd)
+		}
+		identityEvents = append(identityEvents, "refresh")
+		return nil
+	}
 
 	if err := InitializePersistedNativeBrandIcon(application, ctx); err != nil {
 		t.Fatalf("initialize persisted native brand icon: %v", err)
@@ -304,14 +363,14 @@ func TestInitializePersistedNativeBrandIconAppliesActiveIcon(t *testing.T) {
 	if shortcutIconPath != iconPath {
 		t.Fatalf("shortcut icon path = %q, want %q", shortcutIconPath, iconPath)
 	}
-	if got := strings.Join(identityEvents, ","); got != "shortcut,window" {
-		t.Fatalf("startup identity order = %q, want shortcut,window", got)
+	if got := strings.Join(identityEvents, ","); got != "shortcut,window,refresh" {
+		t.Fatalf("startup identity order = %q, want shortcut,window,refresh", got)
 	}
 	if err := InitializePersistedNativeBrandIcon(application, ctx); err != nil {
 		t.Fatalf("initialize persisted native brand icon again: %v", err)
 	}
-	if shortcutUpdateCount != 1 {
-		t.Fatalf("shortcut update count = %d, want one-time MSI migration", shortcutUpdateCount)
+	if shortcutUpdateCount != 2 {
+		t.Fatalf("shortcut update count = %d, want repair on every startup", shortcutUpdateCount)
 	}
 	migrationPath := filepath.Join(configDir, windowsApplicationIconDirectoryName, ".taskbar-identity-v1")
 	migrationState, err := os.ReadFile(migrationPath)
@@ -319,19 +378,19 @@ func TestInitializePersistedNativeBrandIconAppliesActiveIcon(t *testing.T) {
 		t.Fatalf("taskbar identity migration state: %v", err)
 	}
 	wantIdentity := windowsApplicationUserModelIDForIconPath(iconPath)
-	if state := string(migrationState); !containsAll(state, AppVersion, wantIdentity, strings.ToLower(filepath.Join(installDir, "GoNavi.exe"))) {
+	if state := string(migrationState); !containsAll(state, AppVersion, wantIdentity, strings.ToLower(filepath.Clean(iconPath)), strings.ToLower(filepath.Join(installDir, "GoNavi.exe"))) {
 		t.Fatalf("taskbar identity migration state = %q", state)
 	}
 	AppVersion = "1.0.1"
 	if err := InitializePersistedNativeBrandIcon(application, ctx); err != nil {
 		t.Fatalf("initialize persisted native brand icon after MSI update: %v", err)
 	}
-	if shortcutUpdateCount != 2 {
-		t.Fatalf("shortcut update count after MSI update = %d, want 2", shortcutUpdateCount)
+	if shortcutUpdateCount != 3 {
+		t.Fatalf("shortcut update count after MSI update = %d, want 3", shortcutUpdateCount)
 	}
 }
 
-func TestRepairPersistedWindowsApplicationShortcutsOnceRepairsPortablePin(t *testing.T) {
+func TestRepairPersistedWindowsApplicationShortcutsRepairsPortablePinOnEveryStartup(t *testing.T) {
 	originalUpdateShortcuts := windowsUpdateCurrentApplicationShortcuts
 	originalResolveInstallTarget := updateResolveInstallTarget
 	originalVersion := AppVersion
@@ -354,8 +413,59 @@ func TestRepairPersistedWindowsApplicationShortcutsOnceRepairsPortablePin(t *tes
 	configDir := t.TempDir()
 	repairPersistedWindowsApplicationShortcutsOnce(`C:\icons\gonavi-brand.ico`, configDir)
 	repairPersistedWindowsApplicationShortcutsOnce(`C:\icons\gonavi-brand.ico`, configDir)
-	if called != 1 {
-		t.Fatalf("portable shortcut repair count = %d, want 1", called)
+	if called != 2 {
+		t.Fatalf("portable shortcut repair count = %d, want 2", called)
+	}
+}
+
+func TestRepairPersistedWindowsApplicationShortcutsRetriesAfterFailure(t *testing.T) {
+	originalUpdateShortcuts := windowsUpdateCurrentApplicationShortcuts
+	originalResolveInstallTarget := updateResolveInstallTarget
+	originalVersion := AppVersion
+	t.Cleanup(func() {
+		windowsUpdateCurrentApplicationShortcuts = originalUpdateShortcuts
+		updateResolveInstallTarget = originalResolveInstallTarget
+		AppVersion = originalVersion
+	})
+
+	installDir := t.TempDir()
+	updateResolveInstallTarget = func() string {
+		return filepath.Join(installDir, "GoNavi.exe")
+	}
+	AppVersion = "1.2.3"
+	configDir := t.TempDir()
+	statePath := filepath.Join(configDir, windowsApplicationIconDirectoryName, windowsShortcutIdentityStateFileName)
+	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statePath, []byte("stale success state"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	updateCalls := 0
+	windowsUpdateCurrentApplicationShortcuts = func(string) error {
+		updateCalls++
+		if updateCalls == 1 {
+			return errors.New("simulated partial shortcut failure")
+		}
+		return nil
+	}
+	iconPath := filepath.Join(installDir, "icons", "brand.ico")
+	repairPersistedWindowsApplicationShortcutsOnce(iconPath, configDir)
+	if _, err := os.Stat(statePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("repair state after failed update still exists: err=%v", err)
+	}
+
+	repairPersistedWindowsApplicationShortcutsOnce(iconPath, configDir)
+	if updateCalls != 2 {
+		t.Fatalf("shortcut repair calls = %d, want retry after failure", updateCalls)
+	}
+	state, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("read repaired shortcut state: %v", err)
+	}
+	if !strings.Contains(string(state), strings.ToLower(filepath.Clean(iconPath))) {
+		t.Fatalf("shortcut repair state does not identify the selected icon path: %q", state)
 	}
 }
 

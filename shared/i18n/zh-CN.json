@@ -3243,6 +3243,7 @@
   "app.settings.entry.brand_icon.description": "选择应用内显示的 GoNavi 吉祥物图标。",
   "app.settings.entry.brand_icon.help": "选择一款吉祥物作为 ICON（标题栏、关于页、网页 favicon；macOS 会同步更新 Dock 图标，Windows 会同步更新运行中窗口及当前 GoNavi 快捷方式）。Linux 的任务栏图标仍由安装包决定。",
   "app.settings.entry.brand_icon.applied": "品牌图标已更新",
+  "app.settings.entry.brand_icon.asset_not_ready": "远程图标资源尚未就绪，已保持原图标。请检查网络后重试，或选择随包的吉祥物图标。",
   "app.settings.entry.brand_icon.native_sync_failed": "无法更新系统应用图标。",
   "app.settings.entry.brand_icon.windows_restart.title": "需要重启 GoNavi",
   "app.settings.entry.brand_icon.windows_restart.description": "Windows 快捷方式图标已更新。请重启 GoNavi，让任务栏和桌面图标刷新。",

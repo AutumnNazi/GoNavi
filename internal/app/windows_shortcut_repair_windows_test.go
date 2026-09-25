@@ -159,10 +159,17 @@ if (-not (Test-SameFilePath $alternateShortcut.TargetPath $target)) {
 }
 $alternateItem = $shellApplication.Namespace((Split-Path (Join-Path $pins 'GoNavi.lnk') -Parent)).ParseName('GoNavi.lnk')
 if ($null -ne $alternateItem) {
-    $alternateRelaunchCommand = [string]$alternateItem.ExtendedProperty('System.AppUserModel.RelaunchCommand')
-    if ($alternateRelaunchCommand -match '(?i)\.ico') {
-        throw ('taskbar pin relaunch command was pointed at an icon: ' + $alternateRelaunchCommand)
-    }
+	if (-not [string]::Equals([string]$alternateItem.ExtendedProperty('System.AppUserModel.ID'), 'Syngnat.GoNavi', [StringComparison]::OrdinalIgnoreCase)) {
+		throw ('MSI GoNavi pin identity was not normalized: ' + $alternateItem.ExtendedProperty('System.AppUserModel.ID'))
+	}
+	$alternateRelaunchCommand = [string]$alternateItem.ExtendedProperty('System.AppUserModel.RelaunchCommand')
+	if (-not [string]::Equals($alternateRelaunchCommand, ('"' + $target + '"'), [StringComparison]::OrdinalIgnoreCase)) {
+		throw ('taskbar pin relaunch command did not target GoNavi.exe: ' + $alternateRelaunchCommand)
+	}
+	$alternateRelaunchIcon = [string]$alternateItem.ExtendedProperty('System.AppUserModel.RelaunchIconResource')
+	if (-not (Test-ShortcutIconLocation $alternateRelaunchIcon $brandIcon)) {
+		throw ('taskbar pin relaunch icon was not updated: ' + $alternateRelaunchIcon)
+	}
 }
 $rotatedShortcut = $shell.CreateShortcut((Join-Path $pins 'GoNavi-rotated.lnk'))
 if (-not (Test-ShortcutIconLocation $rotatedShortcut.IconLocation $brandIcon)) {
@@ -172,8 +179,13 @@ if (-not (Test-SameFilePath $rotatedShortcut.TargetPath $target)) {
     throw ('rotated-identity MSI pin target was not repaired: ' + $rotatedShortcut.TargetPath)
 }
 $rotatedItemBefore = $shellApplication.Namespace($pins).ParseName('GoNavi-rotated.lnk')
-if ($null -ne $rotatedItemBefore -and ([string]$rotatedItemBefore.ExtendedProperty('System.AppUserModel.RelaunchCommand')) -match '(?i)\.ico') {
-    throw ('rotated pin relaunch command was pointed at an icon: ' + $rotatedItemBefore.ExtendedProperty('System.AppUserModel.RelaunchCommand'))
+if ($null -ne $rotatedItemBefore) {
+	if (-not [string]::Equals([string]$rotatedItemBefore.ExtendedProperty('System.AppUserModel.ID'), 'Syngnat.GoNavi', [StringComparison]::OrdinalIgnoreCase)) {
+		throw ('rotated pin identity was not normalized: ' + $rotatedItemBefore.ExtendedProperty('System.AppUserModel.ID'))
+	}
+	if (-not [string]::Equals([string]$rotatedItemBefore.ExtendedProperty('System.AppUserModel.RelaunchCommand'), ('"' + $target + '"'), [StringComparison]::OrdinalIgnoreCase)) {
+		throw ('rotated pin relaunch command did not target GoNavi.exe: ' + $rotatedItemBefore.ExtendedProperty('System.AppUserModel.RelaunchCommand'))
+	}
 }
 $duplicateShortcut = $shell.CreateShortcut((Join-Path $pins 'GoNavi (2).lnk'))
 if (-not (Test-SameFilePath $duplicateShortcut.TargetPath $target)) {
@@ -257,19 +269,19 @@ if ($null -ne $portableStableItem) {
     }
 }
 $portablePlainItem = $shellApplication.Namespace($portablePins).ParseName('GoNavi-plain.lnk')
-if ($null -ne $portablePlainItem -and -not [string]::IsNullOrWhiteSpace([string]$portablePlainItem.ExtendedProperty('System.AppUserModel.ID'))) {
-    throw ('portable pin without an identity was assigned one: ' + $portablePlainItem.ExtendedProperty('System.AppUserModel.ID'))
+if ($null -ne $portablePlainItem -and -not [string]::Equals([string]$portablePlainItem.ExtendedProperty('System.AppUserModel.ID'), 'Syngnat.GoNavi', [StringComparison]::OrdinalIgnoreCase)) {
+    throw ('portable pin matching the current executable did not receive the stable identity: ' + $portablePlainItem.ExtendedProperty('System.AppUserModel.ID'))
 }
 $env:GONAVI_BRAND_MATCH_TARGET_ONLY = '1'
 $portableMatchedIcon = Join-Path $portableRoot 'gonavi-brand-matched.ico'
 [IO.File]::WriteAllBytes($portableMatchedIcon, [byte[]](0, 0, 1, 0, 0, 0))
 $matchedOnlyCount = Set-GoNaviShortcutBrandIcon -TargetPath $portableTarget -IconPath $portableMatchedIcon -ShortcutDirectories @($portablePins) -TaskbarDirectory $portablePins
-if ($matchedOnlyCount -ne 2) {
-    throw ('unexpected portable match-only update count: ' + $matchedOnlyCount)
+if ($matchedOnlyCount -ne 3) {
+	throw ('unexpected portable match-only update count: ' + $matchedOnlyCount)
 }
 $portableHistoryAfterMatchOnly = $shell.CreateShortcut($portableShortcutPath)
-if (-not (Test-ShortcutIconLocation $portableHistoryAfterMatchOnly.IconLocation $portableIcon)) {
-    throw ('match-only portable update rewrote a different install pin: ' + $portableHistoryAfterMatchOnly.IconLocation)
+if (-not (Test-ShortcutIconLocation $portableHistoryAfterMatchOnly.IconLocation $portableMatchedIcon)) {
+	throw ('old GoNavi portable identity was not normalized: ' + $portableHistoryAfterMatchOnly.IconLocation)
 }
 $portableStableAfterMatchOnly = $shell.CreateShortcut($portableStablePath)
 if (-not (Test-ShortcutIconLocation $portableStableAfterMatchOnly.IconLocation $portableMatchedIcon)) {
@@ -345,11 +357,10 @@ if (-not (Test-SameFilePath $restoredMatchingShortcut.TargetPath $target)) {
 	}
 }
 
-// Shared Start Menu shortcuts under ProgramData are created by the installer and
-// are not writable for a standard user. Their presence must not turn a whole brand
-// icon update into a failure: the writable pins still update and the process must
-// report success so the caller can persist the new identity.
-func TestWindowsShortcutBrandIconSkipsUnwritableShortcut(t *testing.T) {
+// Shared Start Menu shortcuts under ProgramData may not be writable for a
+// standard user. A partially applied batch must fail so the caller does not
+// activate an icon while some shortcuts still refer to the previous one.
+func TestWindowsShortcutBrandIconFailsOnUnwritableShortcut(t *testing.T) {
 	powerShell, err := exec.LookPath("powershell.exe")
 	if err != nil {
 		t.Skip("powershell.exe is unavailable")
@@ -421,9 +432,7 @@ if (-not [string]::Equals($staleReadBack, $readonlyStaleIcon, [StringComparison]
 
 # Deny writes for the current user so WScript.Shell.Save fails like it does for
 # a ProgramData Start Menu shortcut owned by the installer. The read-only entry
-# lives outside the taskbar directory on purpose: the real ProgramData Start
-# Menu path is not a taskbar shortcut, and it must be skipped rather than fail
-# the whole batch.
+# lives outside the taskbar directory on purpose.
 #
 # Only WriteData is denied. Denying the broader Write/Modify set would also block
 # reading the shortcut, and COM would then resolve it to an empty shell whose empty
@@ -465,21 +474,27 @@ if (-not $lockThrew) {
 $brandIcon = Join-Path $env:GONAVI_TEST_ROOT 'gonavi-brand-abcdefabcdefabcdefabcdef.ico'
 [IO.File]::WriteAllBytes($brandIcon, [byte[]](0, 0, 1, 0, 0, 0))
 
-# A read-only shortcut must be skipped instead of failing the whole batch.
-$updateCount = Set-GoNaviShortcutBrandIcon -TargetPath $target -IconPath $brandIcon -ShortcutDirectories @($shortcuts) -TaskbarDirectory $taskbar
-if ($updateCount -ne 1) {
-    throw ('expected only the writable shortcut to update, got ' + $updateCount)
+# A read-only shortcut must fail the whole batch even if another shortcut was
+# already updated. This prevents the caller from activating an incomplete update.
+$batchFailed = $false
+try {
+    [void](Set-GoNaviShortcutBrandIcon -TargetPath $target -IconPath $brandIcon -ShortcutDirectories @($shortcuts) -TaskbarDirectory $taskbar)
+} catch {
+    $batchFailed = $true
+}
+if (-not $batchFailed) {
+    throw 'read-only shortcut was silently skipped and the batch reported success'
 }
 $updatedShortcut = $shell.CreateShortcut($writableShortcut)
 if (-not [string]::Equals([string]$updatedShortcut.IconLocation, ($brandIcon + ',0'), [StringComparison]::OrdinalIgnoreCase)) {
     throw ('writable shortcut icon was not applied: ' + $updatedShortcut.IconLocation)
 }
-$skipLog = @($script:GoNaviRepairLog | Where-Object { $_ -like '*skipped read-only shortcut icon update*' })
-if ($skipLog.Count -lt 1) {
-    throw ('the read-only shortcut was not skipped: ' + [string]::Join(' | ', $script:GoNaviRepairLog))
+$failureLog = @($script:GoNaviRepairLog | Where-Object { $_ -like '*shortcut is not writable*' })
+if ($failureLog.Count -lt 1) {
+    throw ('the read-only shortcut failure was not logged: ' + [string]::Join(' | ', $script:GoNaviRepairLog))
 }
-if (-not ($skipLog[0] -like ('*' + $readonlyShortcut + '*'))) {
-    throw ('the skip log did not name the read-only shortcut: ' + $skipLog[0])
+if (-not ($failureLog[0] -like ('*' + $readonlyShortcut + '*'))) {
+    throw ('the failure log did not name the read-only shortcut: ' + $failureLog[0])
 }`
 	scriptPath := filepath.Join(tempDir, "brand-icon-readonly-test.ps1")
 	if err := os.WriteFile(scriptPath, []byte(strings.ReplaceAll(harness, "\n", "\r\n")), 0o644); err != nil {
@@ -494,6 +509,6 @@ if (-not ($skipLog[0] -like ('*' + $readonlyShortcut + '*'))) {
 		"GONAVI_TEST_ROOT="+tempDir,
 	)
 	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("read-only shortcut brand icon update failed: %v\n%s", err, output)
+		t.Fatalf("read-only shortcut brand icon batch did not fail as expected: %v\n%s", err, output)
 	}
 }

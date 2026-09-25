@@ -1115,27 +1115,32 @@ function App() {
       };
   }, [brandIconId, brandAssetRevision, runtimePlatform, t]);
 
-  useEffect(() => {
-      let cancelled = false;
-      const loadBrandAssets = async () => {
+  const brandAssetsLoadingRef = useRef(false);
+  const loadBrandAssets = useCallback(async (): Promise<boolean> => {
+      if (brandAssetsLoadingRef.current) return false;
+      brandAssetsLoadingRef.current = true;
+      try {
           const loaded: Partial<Record<BrandIconId, string>> = {};
           await Promise.all(BRAND_ICONS.filter((icon) => !icon.bundled).map(async (icon) => {
               try {
                   const source = await GetBrandIconDataURL(icon.id);
                   if (source) loaded[icon.id] = source;
               } catch {
-                  // The compact in-memory fallback keeps the UI usable offline.
+                  // 离线或镜像不可达时保持内存占位，UI 依旧可用。
               }
           }));
-          if (!cancelled && Object.keys(loaded).length > 0) {
-              setLoadedBrandIconSources(loaded);
-              setBrandAssetRevision((revision) => revision + 1);
-              window.dispatchEvent(new Event('gonavi-brand-assets-ready'));
-          }
-      };
-      void loadBrandAssets();
-      return () => { cancelled = true; };
+          if (Object.keys(loaded).length === 0) return false;
+          setLoadedBrandIconSources(loaded);
+          setBrandAssetRevision((revision) => revision + 1);
+          window.dispatchEvent(new Event('gonavi-brand-assets-ready'));
+          return true;
+      } finally {
+          brandAssetsLoadingRef.current = false;
+      }
   }, []);
+  useEffect(() => {
+      void loadBrandAssets();
+  }, [loadBrandAssets]);
 
   const selectPresetTheme = useCallback((preference: ThemePreference) => {
       // Custom CSS is an independent skin layer. Selecting a built-in preset
@@ -3521,18 +3526,20 @@ function App() {
       }
 
       // Windows writes the new ICO onto existing shortcuts and the live window.
-      // AppUserModelID stays Syngnat.GoNavi, so a pinned taskbar button keeps
-      // launching this process instead of splitting into a second button.
+      // The process, live window, and recognized GoNavi pin all keep the same
+      // stable Syngnat.GoNavi AppUserModelID — only the icon bitmap changes, so
+      // pinned buttons keep launching this process instead of splitting.
       windowsBrandIconApplyingRef.current = id;
       setBrandIconId(id);
       try {
           const source = resolveBrandDockSrc(id);
           if (!source) {
-              // Remote ribbon assets are still warming the cache. The compact
-              // GN fallback must never be written to the Windows icon cache;
-              // the dock sync effect applies the verified asset once it lands.
-              message.success(t('app.settings.entry.brand_icon.applied'));
-              return;
+              // 远程缎带资源可能还没下载完成（首屏加载失败/离线）。重试一次；
+              // 仍不可用就必须如实回退并警告——绝不能弹「已应用」却什么都不改。
+              await loadBrandAssets();
+              if (!resolveBrandDockSrc(id)) {
+                  throw new Error(t('app.settings.entry.brand_icon.asset_not_ready'));
+              }
           }
           // Windows fills the whole taskbar tile; the macOS Dock safe-area
           // inset would shrink the ICO mark relative to neighbouring apps.
@@ -3548,14 +3555,19 @@ function App() {
           message.success(t('app.settings.entry.brand_icon.applied'));
       } catch (error) {
           setBrandIconId(previousId);
+          const detail = error instanceof Error ? error.message : String(error);
           console.warn('Failed to apply the Windows brand icon:', error);
-          message.error(t('app.settings.entry.brand_icon.native_sync_failed'));
+          if (detail === t('app.settings.entry.brand_icon.asset_not_ready')) {
+              message.warning(detail);
+          } else {
+              message.error(t('app.settings.entry.brand_icon.native_sync_failed'));
+          }
       } finally {
           if (windowsBrandIconApplyingRef.current === id) {
               windowsBrandIconApplyingRef.current = null;
           }
       }
-  }, [brandIconId, runtimePlatform, setBrandIconId, t]);
+  }, [brandIconId, loadBrandAssets, runtimePlatform, setBrandIconId, t]);
 
   const handleInstallUpdateRequest = useCallback(async () => {
       let pendingCloseInstanceCount: number | null = null;

@@ -1,9 +1,21 @@
 function Write-ShortcutRepairLog {
     param([string]$Message)
 
+    # Brand-icon repair runs outside the updater, where Write-UpdateLog does
+    # not exist. Persist failures next to the icon selection so a silently
+    # skipped taskbar pin can be diagnosed after the fact.
     try {
         if (Get-Command -Name Write-UpdateLog -CommandType Function -ErrorAction SilentlyContinue) {
             Write-UpdateLog $Message
+            return
+        }
+        $logPath = [string]$env:GONAVI_BRAND_REPAIR_LOG
+        if (-not [string]::IsNullOrWhiteSpace($logPath)) {
+            $logDirectory = Split-Path -Parent $logPath
+            if (-not [string]::IsNullOrWhiteSpace($logDirectory) -and -not (Test-Path -LiteralPath $logDirectory -PathType Container)) {
+                [void](New-Item -ItemType Directory -Path $logDirectory -Force)
+            }
+            Add-Content -LiteralPath $logPath -Value ("[" + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + "] " + $Message)
         }
     } catch {
         # Shortcut repair logging must never affect the update.
@@ -318,10 +330,25 @@ using System.Runtime.InteropServices;
 
 public static class GoNaviShortcutPropertyStore
 {
-    private const uint GPS_READWRITE = 0x00000002;
     private const ushort VT_LPWSTR = 31;
-    private static readonly Guid IID_IPropertyStore = new Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99");
     private static readonly Guid PKEY_AppUserModel = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3");
+
+    [ComImport]
+    [Guid("00021401-0000-0000-C000-000000000046")]
+    private class ShellLink { }
+
+    [ComImport]
+    [Guid("0000010B-0000-0000-C000-000000000046")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IPersistFile
+    {
+        void GetClassID(out Guid classId);
+        [PreserveSig] int IsDirty();
+        void Load([MarshalAs(UnmanagedType.LPWStr)] string fileName, uint mode);
+        void Save([MarshalAs(UnmanagedType.LPWStr)] string fileName, bool remember);
+        void SaveCompleted([MarshalAs(UnmanagedType.LPWStr)] string fileName);
+        void GetCurFile([MarshalAs(UnmanagedType.LPWStr)] out string fileName);
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct PROPERTYKEY
@@ -355,14 +382,6 @@ public static class GoNaviShortcutPropertyStore
         [PreserveSig] int Commit();
     }
 
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-    private static extern int SHGetPropertyStoreFromParsingName(
-        string path,
-        IntPtr bindContext,
-        uint flags,
-        ref Guid interfaceId,
-        [MarshalAs(UnmanagedType.Interface)] out IPropertyStore store);
-
     private static void SetString(IPropertyStore store, PROPERTYKEY key, string value)
     {
         IntPtr text = Marshal.StringToCoTaskMemUni(value ?? String.Empty);
@@ -383,17 +402,12 @@ public static class GoNaviShortcutPropertyStore
         {
             applicationUserModelID = "Syngnat.GoNavi";
         }
-        IPropertyStore store = null;
-        Guid interfaceId = IID_IPropertyStore;
-        int result = SHGetPropertyStoreFromParsingName(
-            shortcutPath,
-            IntPtr.Zero,
-            GPS_READWRITE,
-            ref interfaceId,
-            out store);
-        Marshal.ThrowExceptionForHR(result);
+        object shellLink = new ShellLink();
         try
         {
+            IPersistFile persistence = (IPersistFile)shellLink;
+            persistence.Load(shortcutPath, 2);
+            IPropertyStore store = (IPropertyStore)shellLink;
             // AppUserModel.ID must be written last. Windows uses that write to
             // notify the taskbar that the preceding relaunch values changed.
             SetString(store, new PROPERTYKEY(PKEY_AppUserModel, 2), "\"" + targetPath + "\"");
@@ -401,14 +415,12 @@ public static class GoNaviShortcutPropertyStore
             SetString(store, new PROPERTYKEY(PKEY_AppUserModel, 4), "GoNavi");
             SetString(store, new PROPERTYKEY(PKEY_AppUserModel, 5), applicationUserModelID);
             Marshal.ThrowExceptionForHR(store.Commit());
+            persistence.Save(shortcutPath, true);
             return true;
         }
         finally
         {
-            if (store != null)
-            {
-                Marshal.ReleaseComObject(store);
-            }
+            Marshal.ReleaseComObject(shellLink);
         }
     }
 }
@@ -488,6 +500,50 @@ function Repair-LegacyGoNaviTaskbarPins {
     return $repairCount
 }
 
+function Test-ShortcutOwnedByIconDirectory {
+    param(
+        [string]$ShortcutPath,
+        [string]$IconDirectory
+    )
+
+    # Ownership by icon directory: a pin belongs to THIS install only when its
+    # classic IconLocation or its relaunch icon resource lives inside the
+    # running instance's brand-icon directory. Name and AUMID family matches
+    # also hit every other GoNavi installation on the machine, so a portable
+    # or development build must not use them to claim foreign pins.
+    try {
+        if ([string]::IsNullOrWhiteSpace($IconDirectory)) {
+            return $false
+        }
+        $iconDirectory = Get-NormalizedFilePath $IconDirectory
+        if ([string]::IsNullOrWhiteSpace($iconDirectory)) {
+            return $false
+        }
+        if (-not $iconDirectory.EndsWith([IO.Path]::DirectorySeparatorChar)) {
+            $iconDirectory += [IO.Path]::DirectorySeparatorChar
+        }
+        $shell = New-Object -ComObject WScript.Shell
+        $classicIcon = Get-NormalizedFilePath (([string]$shell.CreateShortcut($ShortcutPath).IconLocation) -replace ',\d+$', '')
+        if (-not [string]::IsNullOrWhiteSpace($classicIcon) -and $classicIcon.StartsWith($iconDirectory, [StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+        $folderPath = Split-Path -LiteralPath $ShortcutPath -Parent
+        $fileName = Split-Path -LiteralPath $ShortcutPath -Leaf
+        $namespace = (New-Object -ComObject Shell.Application).Namespace($folderPath)
+        if ($null -eq $namespace) {
+            return $false
+        }
+        $item = $namespace.ParseName($fileName)
+        if ($null -eq $item) {
+            return $false
+        }
+        $relaunchIcon = Get-NormalizedFilePath (([string]$item.ExtendedProperty('System.AppUserModel.RelaunchIconResource')) -replace ',\d+$', '')
+        return (-not [string]::IsNullOrWhiteSpace($relaunchIcon) -and $relaunchIcon.StartsWith($iconDirectory, [StringComparison]::OrdinalIgnoreCase))
+    } catch {
+        return $false
+    }
+}
+
 function Get-GoNaviShortcutAppUserModelID {
     param([string]$ShortcutPath)
 
@@ -517,9 +573,8 @@ function Set-GoNaviShortcutBrandIcon {
         [string]$TaskbarDirectory
     )
 
-    # Fold every requested identity back to the MSI shortcut value. A per-icon
-    # ID (Syngnat.GoNavi.Icon.<hash>) makes Explorer split a pinned MSI button
-    # or delete a portable pin. The bitmap changes through IconLocation.
+    # Keep every GoNavi pin in the installer identity. A per-icon AUMID makes
+    # Explorer create a second taskbar button and leaves the old pin behind.
     $ApplicationUserModelID = 'Syngnat.GoNavi'
     # Portable launches must not retouch a pin that points at another copy,
     # such as an MSI install beside the portable exe.
@@ -569,6 +624,11 @@ function Set-GoNaviShortcutBrandIcon {
                 continue
             }
             $visitedDirectories[$normalizedDirectory] = $true
+            # Taskbar pins must be fully enumerated because an inaccessible pin
+            # would otherwise be mistaken for a completed update. Other roots
+            # can contain unrelated protected folders, so preserve their
+            # best-effort discovery behavior and fail only when a matching link
+            # itself cannot be saved.
             $enumerationErrorAction = if (Test-SameFilePath $normalizedDirectory $taskbarDirectory) { 'Stop' } else { 'SilentlyContinue' }
             $shortcuts = Get-ChildItem -LiteralPath $normalizedDirectory -Filter '*.lnk' -File -Recurse -Force -ErrorAction $enumerationErrorAction
             foreach ($shortcutFile in $shortcuts) {
@@ -586,9 +646,6 @@ function Set-GoNaviShortcutBrandIcon {
                     # from that command, and a broken or icon path shows up as
                     # "the item no longer exists" after GoNavi exits.
                     $pinLaunchBroken = $isTaskbarShortcut -and ($targetMissing -or $targetIsIcon)
-                    if ($onlyMatchingTarget -and -not $matchesTarget -and -not $pinLaunchBroken) {
-                        continue
-                    }
                     $isGoNaviTaskbarShortcut = $false
                     # Recognize pins created by older releases that rotated the
                     # identity inside the Syngnat.GoNavi family. An MSI launch
@@ -606,18 +663,40 @@ function Set-GoNaviShortcutBrandIcon {
                         $isGoNaviTaskbarShortcut = $looksLikeGoNaviPin -or
                             ((Get-GoNaviShortcutAppUserModelID $shortcutFile.FullName) -match '^Syngnat\.GoNavi(?:\.Icon\.[0-9a-f]+)?$')
                     }
-                    if (-not $matchesTarget -and -not $isGoNaviTaskbarShortcut) {
+                    # A portable/temp build may be running beside an older pin
+                    # whose target is another GoNavi copy. The old GoNavi AUMID
+                    # still proves ownership of the pin, so normalize its identity
+                    # instead of skipping it and leaving a duplicate taskbar
+                    # group after restart. Non-MSI pins keep their valid target.
+                    # Ownership gate. MSI installs are the authoritative owner of
+                    # the GoNavi pin family and may repair legacy rotated
+                    # identities. A portable or development build may only claim
+                    # a pin that targets this executable or whose icon lives in
+                    # THIS instance's brand-icon directory — name and AUMID
+                    # matches alone also hit every other GoNavi installation on
+                    # the machine, and claiming those hijacks foreign pins.
+                    if ($onlyMatchingTarget) {
+                        $ownedByThisInstance = $matchesTarget -or (Test-ShortcutOwnedByIconDirectory -ShortcutPath $shortcutFile.FullName -IconDirectory (Split-Path -Parent $normalizedIconPath))
+                        if (-not $ownedByThisInstance) {
+                            Write-ShortcutRepairLog ("skip foreign GoNavi taskbar pin: " + $shortcutFile.FullName)
+                            continue
+                        }
+                    } elseif (-not $matchesTarget -and -not $pinLaunchBroken -and -not $isGoNaviTaskbarShortcut) {
                         continue
                     }
                     if ($isTaskbarShortcut) {
-                        # Do not write System.AppUserModel.Relaunch* here.
-                        # Windows 11 uses that command instead of the shortcut
-                        # target. Pointing it at a brand ICO, or committing the
-                        # property store over the pin, makes the pinned button
-                        # report that GoNavi no longer exists. Desktop shortcuts
-                        # only change IconLocation and keep launching; taskbar
-                        # pins must do the same. Save() drops a bad relaunch
-                        # command left by an older build and keeps TargetPath.
+                        # Keep the launch target valid while normalizing the pin
+                        # to the stable GoNavi identity. A plain portable pin
+                        # without an existing GoNavi identity must keep its
+                        # implicit ID; assigning one can detach it from its
+                        # executable.
+                        $existingAumid = [string](Get-GoNaviShortcutAppUserModelID $shortcutFile.FullName)
+                        $hasGoNaviIdentity = $existingAumid -match '^Syngnat\.GoNavi(?:\.Icon\.[0-9a-fA-F]+)?$'
+                        # A matching portable pin may have no explicit AUMID yet.
+                        # Normalize it too, otherwise the next launch uses the
+                        # executable's implicit identity and creates a second
+                        # taskbar button after the current process exits.
+                        $shouldWriteIdentity = $isMSITarget -or $matchesTarget -or $hasGoNaviIdentity -or $isGoNaviTaskbarShortcut
                         if ($pinLaunchBroken -or ($isMSITarget -and -not $matchesTarget)) {
                             $shortcut.TargetPath = $normalizedTargetPath
                             $shortcut.WorkingDirectory = [IO.Path]::GetDirectoryName($normalizedTargetPath)
@@ -631,9 +710,13 @@ function Set-GoNaviShortcutBrandIcon {
                         $shortcut.IconLocation = $normalizedIconPath + ',0'
                         if (Test-GoNaviShortcutWritable $shortcutFile.FullName) {
                             $shortcut.Save()
+                            if ($shouldWriteIdentity -and -not (Set-GoNaviShortcutRelaunchProperties -ShortcutPath $shortcutFile.FullName -TargetPath $shortcut.TargetPath -IconPath $normalizedIconPath -ApplicationUserModelID $ApplicationUserModelID)) {
+                                throw ('failed to update taskbar identity: ' + $shortcutFile.FullName)
+                            }
                             $updatedCount++
                         } else {
-                            Write-ShortcutRepairLog ("skipped read-only shortcut save: " + $shortcutFile.FullName)
+                            Write-ShortcutRepairLog ("failed to save read-only shortcut: " + $shortcutFile.FullName)
+                            throw ('shortcut is not writable: ' + $shortcutFile.FullName)
                         }
                         Send-ShellItemUpdatedNotification $shortcutFile.FullName
                         continue
@@ -645,14 +728,15 @@ function Set-GoNaviShortcutBrandIcon {
                         $needsSave = $true
                     }
                     if ($needsSave) {
-                        # Shared Start Menu shortcuts are read-only for a standard user:
-                        # skip the save instead of failing the whole batch, while still
-                        # notifying Explorer about the entry.
+                        # A matching shared Start Menu shortcut may be read-only for a
+                        # standard user. Surface that failure so the caller cannot
+                        # activate an icon while this entry still shows the old one.
                         if (Test-GoNaviShortcutWritable $shortcutFile.FullName) {
                             $shortcut.Save()
                             $updatedCount++
                         } else {
-                            Write-ShortcutRepairLog ("skipped read-only shortcut icon update: " + $shortcutFile.FullName)
+                            Write-ShortcutRepairLog ("failed to update read-only shortcut icon: " + $shortcutFile.FullName)
+                            throw ('shortcut is not writable: ' + $shortcutFile.FullName)
                         }
                     }
                     Send-ShellItemUpdatedNotification $shortcutFile.FullName

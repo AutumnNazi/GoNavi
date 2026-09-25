@@ -3243,6 +3243,7 @@
   "app.settings.entry.brand_icon.description": "アプリ内に表示する GoNavi のマスコットアイコンを選択します。",
   "app.settings.entry.brand_icon.help": "タイトルバー、About、Web favicon に使用するマスコットを選択します。macOS では Dock アイコン、Windows では実行中のウィンドウと現在の GoNavi 実行ファイルを指すショートカットも同期して更新されます。Linux のタスクバーアイコンは引き続きインストール済みパッケージに従います。",
   "app.settings.entry.brand_icon.applied": "ブランドアイコンを更新しました",
+  "app.settings.entry.brand_icon.asset_not_ready": "リモートのアイコンリソースがまだ準備できていないため、以前のアイコンを維持しました。ネットワークを確認して再試行するか、同梱のマスコットアイコンを選択してください。",
   "app.settings.entry.brand_icon.native_sync_failed": "システムのアプリケーションアイコンを更新できませんでした。",
   "app.settings.entry.brand_icon.windows_restart.title": "アイコンを反映するには GoNavi を再起動してください",
   "app.settings.entry.brand_icon.windows_restart.description": "Windows のショートカットはその場で更新されました。タスクバーとデスクトップのアイコンを反映するには GoNavi を再起動してください。",
