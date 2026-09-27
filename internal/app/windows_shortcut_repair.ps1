@@ -710,13 +710,22 @@ function Set-GoNaviShortcutBrandIcon {
                     if (-not $matchesTarget -and $isTaskbarShortcut) {
                         $shortcutName = [IO.Path]::GetFileNameWithoutExtension($shortcutFile.Name)
                         $targetName = [IO.Path]::GetFileName($existingTargetRaw)
+                        # 认领条件收紧为「固定项名称必须以 GoNavi 开头」。名称是
+                        # 唯一可靠的归属信号：File Explorer 等系统固定项、其他
+                        # 应用的固定项，即使图标被历史事故改写过，也不属于本
+                        # 应用的认领范围（历史事故：测试实例曾把用户 File
+                        # Explorer 固定项误认领并改写，任务栏图标错乱）。
                         $namedGoNaviPin = $shortcutName -match '^GoNavi(?:[-_.].*|\s*\(\d+\))?$'
+                        $targetName = [IO.Path]::GetFileName($existingTargetRaw)
                         $looksLikeGoNaviPin = $namedGoNaviPin -and (
                             $targetName -match '^GoNavi(?:[-_.].*|\s*\(\d+\))?\.exe$' -or
                             $pinLaunchBroken
                         )
+                        # AUMID 族匹配仅作为 GoNavi 命名固定项的补充证据，不再
+                        # 独立构成认领条件。
                         $isGoNaviTaskbarShortcut = $looksLikeGoNaviPin -or
-                            ((Get-GoNaviShortcutAppUserModelID $shortcutFile.FullName) -match '^Syngnat\.GoNavi(?:\.Icon\.[0-9a-f]+)?$')
+                            ($namedGoNaviPin -and
+                            ((Get-GoNaviShortcutAppUserModelID $shortcutFile.FullName) -match '^Syngnat\.GoNavi(?:\.Icon\.[0-9a-f]+)?$'))
                     }
                     # Ownership gate. MSI installs are the authoritative owner of
                     # the GoNavi pin family and may repair legacy rotated

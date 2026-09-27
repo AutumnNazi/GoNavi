@@ -98,7 +98,7 @@ func TestApplyWindowsApplicationIconVerifiesMainWindowReadback(t *testing.T) {
 	}
 
 	const iconPath = `C:\Users\tester\gonavi-brand.ico`
-	if err := applyWindowsApplicationIcon(hwnd, iconPath, small, large, true); err != nil {
+	if err := applyWindowsApplicationIcon(hwnd, iconPath, small, large); err != nil {
 		t.Fatalf("apply Windows application icon: %v", err)
 	}
 	if len(calls) != 4 {
@@ -141,7 +141,7 @@ func TestApplyWindowsApplicationIconRejectsSilentSetFailure(t *testing.T) {
 		return nil
 	}
 
-	err := applyWindowsApplicationIcon(0x1234, `C:\brand.ico`, 0x2001, 0x2002, true)
+	err := applyWindowsApplicationIcon(0x1234, `C:\brand.ico`, 0x2001, 0x2002)
 	if err == nil {
 		t.Fatal("expected readback mismatch to fail")
 	}
@@ -179,7 +179,7 @@ func TestApplyWindowsApplicationIconReturnsTaskbarPropertyFailure(t *testing.T) 
 		return nil
 	}
 
-	err := applyWindowsApplicationIcon(0x1234, `C:\brand.ico`, 0x2001, 0x2002, true)
+	err := applyWindowsApplicationIcon(0x1234, `C:\brand.ico`, 0x2001, 0x2002)
 	if err == nil || !strings.Contains(err.Error(), "taskbar") {
 		t.Fatalf("expected taskbar property error, got %v", err)
 	}
@@ -211,7 +211,7 @@ func TestApplyWindowsApplicationIconReturnsTaskbarRefreshFailure(t *testing.T) {
 		return errors.New("Explorer rejected taskbar refresh")
 	}
 
-	err := applyWindowsApplicationIcon(0x1234, `C:\brand.ico`, 0x2001, 0x2002, true)
+	err := applyWindowsApplicationIcon(0x1234, `C:\brand.ico`, 0x2001, 0x2002)
 	if err == nil || !strings.Contains(err.Error(), "refresh Windows taskbar icon") {
 		t.Fatalf("expected taskbar refresh failure, got %v", err)
 	}
@@ -363,8 +363,8 @@ func TestInitializePersistedNativeBrandIconAppliesActiveIcon(t *testing.T) {
 	if shortcutIconPath != iconPath {
 		t.Fatalf("shortcut icon path = %q, want %q", shortcutIconPath, iconPath)
 	}
-	if got := strings.Join(identityEvents, ","); got != "shortcut,window" {
-		t.Fatalf("startup identity order = %q, want shortcut,window", got)
+	if got := strings.Join(identityEvents, ","); got != "shortcut,window,refresh" {
+		t.Fatalf("startup identity order = %q, want shortcut,window,refresh", got)
 	}
 	if err := InitializePersistedNativeBrandIcon(application, ctx); err != nil {
 		t.Fatalf("initialize persisted native brand icon again: %v", err)

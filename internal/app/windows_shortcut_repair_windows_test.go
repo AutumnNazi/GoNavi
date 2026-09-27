@@ -106,6 +106,10 @@ New-TestShortcut (Join-Path $pins 'GoNavi (2).lnk') $duplicateGoNaviTarget ''
 # identity in the Syngnat.GoNavi family.
 New-TestShortcut (Join-Path $pins 'GoNavi-rotated.lnk') $alternateGoNaviTarget ''
 [void](Set-GoNaviShortcutRelaunchProperties -ShortcutPath (Join-Path $pins 'GoNavi-rotated.lnk') -TargetPath $alternateGoNaviTarget -IconPath $missingIcon -ApplicationUserModelID 'Syngnat.GoNavi.Icon.deadbeefdeadbeefdeadbeef')
+# 系统固定项回归防护：File Explorer 固定项（历史事故中被测试实例误认领）
+# 永远不属于 GoNavi 的认领范围。
+New-TestShortcut (Join-Path $pins 'File Explorer.lnk') "$env:windir\explorer.exe" ''
+[void](Set-GoNaviShortcutRelaunchProperties -ShortcutPath (Join-Path $pins 'File Explorer.lnk') -TargetPath "$env:windir\explorer.exe" -IconPath $missingIcon -ApplicationUserModelID 'Microsoft.Windows.Explorer')
 $blankIconBefore = $shell.CreateShortcut((Join-Path $pins 'blank-icon.lnk')).IconLocation
 $otherMissingIconBefore = $shell.CreateShortcut((Join-Path $pins 'other-missing-icon.lnk')).IconLocation
 
