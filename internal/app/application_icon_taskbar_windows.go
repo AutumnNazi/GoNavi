@@ -139,7 +139,11 @@ func setWindowsTaskbarProperties(hwnd uintptr, iconPath string) error {
 	properties := []windowsWindowProperty{
 		{key: windowsAppUserModelRelaunchCommandKey, value: relaunchCommand},
 		{key: windowsAppUserModelRelaunchDisplayNameKey, value: windowsApplicationDisplayName},
-		{key: windowsAppUserModelRelaunchIconKey, value: iconPath + ",0"},
+		// RelaunchIconResource 必须是纯 .ico 路径：带 ",0" 后缀时 Explorer
+		// 按 PE 资源索引提取 .ico 会失败，按钮退化为空白文档图标（实测
+		// 26200）；纯路径直接加载成功。固定项的 IconLocation 仍用 "path,0"
+		// 格式，两者格式要求不同。
+		{key: windowsAppUserModelRelaunchIconKey, value: iconPath},
 		{key: windowsAppUserModelIDKey, value: windowsApplicationUserModelID},
 	}
 	for _, property := range properties {

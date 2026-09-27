@@ -410,8 +410,10 @@ public static class GoNaviShortcutPropertyStore
             IPropertyStore store = (IPropertyStore)shellLink;
             // AppUserModel.ID must be written last. Windows uses that write to
             // notify the taskbar that the preceding relaunch values changed.
+            // RelaunchIconResource 用纯 .ico 路径：",0" 后缀会让 Explorer 按
+            // PE 资源索引提取失败，任务栏按钮退化为空白文档图标。
             SetString(store, new PROPERTYKEY(PKEY_AppUserModel, 2), "\"" + targetPath + "\"");
-            SetString(store, new PROPERTYKEY(PKEY_AppUserModel, 3), iconPath + ",0");
+            SetString(store, new PROPERTYKEY(PKEY_AppUserModel, 3), iconPath);
             SetString(store, new PROPERTYKEY(PKEY_AppUserModel, 4), "GoNavi");
             SetString(store, new PROPERTYKEY(PKEY_AppUserModel, 5), applicationUserModelID);
             Marshal.ThrowExceptionForHR(store.Commit());

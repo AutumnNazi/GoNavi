@@ -167,7 +167,9 @@ if ($null -ne $alternateItem) {
 		throw ('taskbar pin relaunch command did not target GoNavi.exe: ' + $alternateRelaunchCommand)
 	}
 	$alternateRelaunchIcon = [string]$alternateItem.ExtendedProperty('System.AppUserModel.RelaunchIconResource')
-	if (-not (Test-ShortcutIconLocation $alternateRelaunchIcon $brandIcon)) {
+	# RelaunchIconResource 是纯路径（无 ",0" 后缀）——带后缀会让 Explorer 按
+	# PE 资源索引提取 .ico 失败，按钮退化为空白文档图标。
+	if (-not (Test-SameFilePath ($alternateRelaunchIcon -replace ',\d+$', '') $brandIcon)) {
 		throw ('taskbar pin relaunch icon was not updated: ' + $alternateRelaunchIcon)
 	}
 }
