@@ -132,10 +132,13 @@ func setWindowsTaskbarProperties(hwnd uintptr, iconPath string) error {
 	}
 	defer store.release()
 
+	// RelaunchIconResource 故意不设置：Win11 对 "path,0" 形式的 .ico 资源串
+	// 解析失败时会压制窗口自身图标，任务栏按钮退化为通用文档图标（实测
+	// 26200）。未固定按钮的图标由 WM_SETICON 的窗口图标承担，固定项图标
+	// 由 .lnk 的 IconLocation/属性包承担，两条链路都不需要这个属性。
 	properties := []windowsWindowProperty{
 		{key: windowsAppUserModelRelaunchCommandKey, value: relaunchCommand},
 		{key: windowsAppUserModelRelaunchDisplayNameKey, value: windowsApplicationDisplayName},
-		{key: windowsAppUserModelRelaunchIconKey, value: iconPath + ",0"},
 		{key: windowsAppUserModelIDKey, value: windowsApplicationUserModelID},
 	}
 	for _, property := range properties {
