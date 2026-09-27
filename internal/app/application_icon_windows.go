@@ -123,38 +123,16 @@ func repairPersistedWindowsApplicationShortcuts(iconPath string) {
 }
 
 const (
-	// 实测（Win11 26200）：Explorer 的固定按钮图标在第一次改写后经常不重
-	// 渲染（第二次切换才生效）；取消固定后按钮立即退化为空白图标。两者
-	// 都通过「延迟重应用」与「固定项目录监视」补偿：检测到变化就重新执行
-	// 完整的应用链路（WM_SETICON/属性/重注册），幂等。
-	windowsIconReapplyDelayMs     = 1600
-	windowsPinsWatcherPollMs      = 2000
-	windowsPinsWatcherSuppressMs  = 4000
+	// 实测（Win11 26200）：快捷方式 IconLocation 改写后，Explorer 需要短暂
+	// 时间重新提取新 .ico 的图标；立即重注册任务栏按钮会采样到旧图标。
+	windowsShortcutDigestDelay = 600 * time.Millisecond
+	windowsPinsWatcherPollMs   = 2000
 )
 
 var (
-	windowsIconReapplyMu       sync.Mutex
-	windowsPinsWatcherOnce     sync.Once
-	windowsPinsWatcherLastSet  string
+	windowsPinsWatcherOnce    sync.Once
+	windowsPinsWatcherLastSet string
 )
-
-// scheduleWindowsIconReapply re-applies the persisted icon once, shortly
-// after the current application completes. Explorer frequently skips the
-// first pinned-button repaint after a brand change; the delayed pass makes
-// the first switch visible immediately.
-func scheduleWindowsIconReapply(runtimeContext context.Context, configDir string) {
-	time.AfterFunc(time.Duration(windowsIconReapplyDelayMs)*time.Millisecond, func() {
-		applicationBrandIconMu.Lock()
-		defer applicationBrandIconMu.Unlock()
-		iconPath, err := loadPersistedWindowsApplicationIcon(configDir)
-		if err != nil || strings.TrimSpace(iconPath) == "" {
-			return
-		}
-		if _, err := setCurrentWindowsApplicationIcon(runtimeContext, iconPath); err != nil {
-			logger.Warnf("延迟重应用 Windows 品牌图标失败：%v", err)
-		}
-	})
-}
 
 // startWindowsPinsWatcher watches the taskbar pins directory and re-applies
 // the current brand icon when the pin set changes (user pins or unpins the
@@ -222,23 +200,33 @@ func setApplicationIconPNG(pngBytes []byte, configDir string, runtimeContext con
 	if err != nil {
 		return err
 	}
-	// Update shortcuts before refreshing the live window icon. The update is
-	// synchronous so quitting cannot leave a half-written pin. Both the shortcut
+	// Update shortcuts before refreshing the live window icon. Both the shortcut
 	// and live window use the stable GoNavi identity.
 	if err := windowsUpdateCurrentApplicationShortcuts(iconPath); err != nil {
 		return err
 	}
-	_, err = setCurrentWindowsApplicationIcon(runtimeContext, iconPath)
+	// 实测（Win11 26200）：Explorer 在快捷方式改写后需要短暂消化才会重新
+	// 提取新 .ico 的图标；紧接着执行按钮重注册会采样到旧图标（表现为
+	// 「第一次切换无效、第二次才生效」）。这里等待 Explorer 完成图标提取
+	// 后再执行窗口链路，单次切换只需一遍。
+	time.Sleep(windowsShortcutDigestDelay)
+	hwnd, err := setCurrentWindowsApplicationIcon(runtimeContext, iconPath)
 	if err != nil {
 		return err
 	}
 	if err := activatePersistedWindowsApplicationIcon(iconPath, configDir); err != nil {
 		return err
 	}
-	// 实测（Win11 26200）：固定到任务栏后的第一次切换，Explorer 常不重渲染
-	// 固定按钮的图标（第二次切换才生效）。安排一次延迟重应用，让第一次
-	// 切换也能即时生效；幂等且与后续切换互斥（applicationBrandIconMu）。
-	scheduleWindowsIconReapply(runtimeContext, configDir)
+	// 安全网：Explorer 偶尔在重注册后仍采样到旧图标（首次切换失效）。
+	// 1.5s 后仅补一次廉价的按钮重注册（纯 COM 调用，不含任何图标重载），
+	// 强制按钮重采样当前窗口图标。
+	time.AfterFunc(1500*time.Millisecond, func() {
+		applicationBrandIconMu.Lock()
+		defer applicationBrandIconMu.Unlock()
+		if err := windowsRefreshTaskbarButton(hwnd); err != nil {
+			logger.Warnf("延迟重注册任务栏按钮失败：%v", err)
+		}
+	})
 	return nil
 }
 
