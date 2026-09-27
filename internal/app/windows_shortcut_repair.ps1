@@ -564,6 +564,59 @@ function Get-GoNaviShortcutAppUserModelID {
     }
 }
 
+function Ensure-GoNaviAumidShortcut {
+    param(
+        [string]$TargetPath,
+        [string]$IconPath,
+        [string]$ApplicationUserModelID = 'Syngnat.GoNavi'
+    )
+
+    # 任务栏按钮图标来源于 AUMID 解析到的快捷方式：解析不到时按钮停留在
+    # 通用窗口图标，且不跟随 WM_SETICON（Win11 26200 实测）。MSI 安装的
+    # 快捷方式由安装器创建；便携/开发实例没有安装器，这里在用户开始菜单
+    # 补建一个声明 AUMID 的快捷方式，后续切换由 IconLocation 改写跟随。
+    $programs = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
+    $commonPrograms = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonPrograms)
+    if (-not [string]::IsNullOrWhiteSpace($env:GONAVI_TEST_ROOT)) {
+        $programs = Join-Path $env:GONAVI_TEST_ROOT 'aumid-shortcut-programs'
+        [void](New-Item -ItemType Directory -Path $programs -Force)
+    }
+
+    foreach ($candidate in @((Join-Path $programs 'GoNavi.lnk'), (Join-Path $commonPrograms 'GoNavi.lnk'))) {
+        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
+        $app = New-Object -ComObject Shell.Application
+        $item = $app.Namespace((Split-Path -Parent $candidate)).ParseName((Split-Path -Leaf $candidate))
+        if ($null -eq $item) { continue }
+        $existingAumid = ''
+        try { $existingAumid = [string]$item.ExtendedProperty('System.AppUserModel.ID') } catch {}
+        if ($existingAumid -match '^Syngnat\.GoNavi') {
+            # 已有声明本应用 AUMID 的快捷方式，无需补建。
+            return $false
+        }
+    }
+
+    $shortcutPath = Join-Path $programs 'GoNavi.lnk'
+    if (Test-Path -LiteralPath $shortcutPath -PathType Leaf) {
+        # 同名快捷方式存在但既不属于本应用 AUMID 族也不是已有声明（避免覆盖
+        # 用户自建的同名快捷方式）。
+        Write-ShortcutRepairLog ("skip AUMID shortcut creation, name occupied: " + $shortcutPath)
+        return $false
+    }
+
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($shortcutPath)
+    $shortcut.TargetPath = $TargetPath
+    $shortcut.WorkingDirectory = [IO.Path]::GetDirectoryName($TargetPath)
+    $shortcut.IconLocation = "$IconPath,0"
+    $shortcut.Save()
+    if (-not (Set-GoNaviShortcutRelaunchProperties -ShortcutPath $shortcutPath -TargetPath $TargetPath -IconPath $IconPath -ApplicationUserModelID $ApplicationUserModelID)) {
+        Write-ShortcutRepairLog ("AUMID shortcut relaunch properties failed: " + $shortcutPath)
+    }
+    Write-ShortcutRepairLog ("created AUMID shortcut: " + $shortcutPath)
+    Send-ShellItemUpdatedNotification $shortcutPath
+    return $true
+}
+
 function Set-GoNaviShortcutBrandIcon {
     param(
         [string]$TargetPath,
@@ -757,6 +810,12 @@ function Set-GoNaviShortcutBrandIcon {
     }
     if ($failureMessages.Count -gt 0) {
         throw ('one or more GoNavi shortcut updates failed: ' + [string]::Join('; ', $failureMessages))
+    }
+    try {
+        Ensure-GoNaviAumidShortcut -TargetPath $normalizedTargetPath -IconPath $normalizedIconPath | Out-Null
+    } catch {
+        # 补建 AUMID 快捷方式是增量改进，失败不影响本次图标更新。
+        Write-ShortcutRepairLog ("AUMID shortcut ensure failed: " + $_.Exception.Message)
     }
     return $updatedCount
 }
