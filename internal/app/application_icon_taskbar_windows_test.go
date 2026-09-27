@@ -57,11 +57,9 @@ func TestSetWindowsTaskbarPropertiesWritesIdentityLastAndCommits(t *testing.T) {
 	want := []windowsWindowProperty{
 		{key: windowsAppUserModelRelaunchCommandKey, value: `"C:\Program Files\GoNavi\GoNavi.exe"`},
 		{key: windowsAppUserModelRelaunchDisplayNameKey, value: windowsApplicationDisplayName},
+		{key: windowsAppUserModelRelaunchIconKey, value: `C:\Users\tester\gonavi-brand-a1b2c3d4e5f6a7b8c9d0e1f2.ico,0`},
 		{key: windowsAppUserModelIDKey, value: windowsApplicationUserModelID},
 	}
-	// RelaunchIconResource 故意缺失：Win11 解析 "path,0" 形式的 .ico 资源串
-	// 失败时会压制窗口图标，任务栏按钮退化为通用文档图标。窗口按钮图标由
-	// WM_SETICON 承担，固定项图标由 .lnk 属性包承担。
 	if !reflect.DeepEqual(store.values, want) {
 		t.Fatalf("window properties = %#v, want %#v", store.values, want)
 	}
