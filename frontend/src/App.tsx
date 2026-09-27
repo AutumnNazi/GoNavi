@@ -881,6 +881,9 @@ function App() {
   // applying the same icon through the native bridge, so the shortcut update
   // and window identity rotation run exactly once.
   const windowsBrandIconApplyingRef = useRef<BrandIconId | null>(null);
+  // 最近一次成功应用到原生表面的品牌 ID：选择流程完成后 brandAssetRevision
+  // 的自增会重跑同步 effect，没有这个记录就会对同一图标再应用一次。
+  const lastNativeAppliedBrandIdRef = useRef<BrandIconId | null>(null);
   const connectionModalWarmupDoneRef = useRef(false);
   const windowState = useStore(state => state.windowState);
   const themeMode = useStore(state => state.theme);
@@ -1077,6 +1080,11 @@ function App() {
       if (runtimePlatform === 'windows' && windowsBrandIconApplyingRef.current === brandIconId) {
           return;
       }
+      // 同一品牌已经成功应用过（选择流程或上一轮同步），brandAssetRevision
+      // 的自增不需要再对同一图标重复应用。
+      if (runtimePlatform === 'windows' && lastNativeAppliedBrandIdRef.current === brandIconId) {
+          return;
+      }
 
       let cancelled = false;
       const applyNativeIcon = async () => {
@@ -1101,6 +1109,9 @@ function App() {
               if (!result.success && !cancelled) {
                   console.warn('Failed to update the native application icon:', result.message);
                   message.warning(t('app.settings.entry.brand_icon.native_sync_failed'));
+              }
+              if (result.success) {
+                  lastNativeAppliedBrandIdRef.current = brandIconId as BrandIconId;
               }
           } catch (error) {
               if (!cancelled) {
@@ -3556,6 +3567,7 @@ function App() {
           if (!result || result.success === false) {
               throw new Error(result?.message || 'Windows brand icon update failed');
           }
+          lastNativeAppliedBrandIdRef.current = id;
           message.success(t('app.settings.entry.brand_icon.applied'));
       } catch (error) {
           setBrandIconId(previousId);
