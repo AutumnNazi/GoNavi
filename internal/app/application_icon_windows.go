@@ -10,8 +10,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 	"unsafe"
 
 	"GoNavi-Wails/internal/logger"
@@ -97,6 +99,10 @@ func applyPersistedWindowsApplicationIcon(runtimeContext context.Context, config
 	if err != nil {
 		return err
 	}
+	// 监视任务栏固定项变化（用户固定/取消固定），变化后重应用当前品牌
+	// 图标：取消固定会让按钮失去图标来源（Explorer 不重采样窗口图标），
+	// 需要一次完整的重应用链路才能恢复显示。
+	startWindowsPinsWatcher(runtimeContext, configDir)
 	// Persist the compatibility fallback too. This makes later failed
 	// selections transactional: the active pointer remains authoritative and
 	// an unactivated candidate cannot win the next startup scan.
@@ -114,6 +120,95 @@ func repairPersistedWindowsApplicationShortcuts(iconPath string) {
 	if err := windowsUpdateCurrentApplicationShortcuts(iconPath); err != nil {
 		logger.Warnf("更新 Windows 应用快捷方式图标失败：%v", err)
 	}
+}
+
+const (
+	// 实测（Win11 26200）：Explorer 的固定按钮图标在第一次改写后经常不重
+	// 渲染（第二次切换才生效）；取消固定后按钮立即退化为空白图标。两者
+	// 都通过「延迟重应用」与「固定项目录监视」补偿：检测到变化就重新执行
+	// 完整的应用链路（WM_SETICON/属性/重注册），幂等。
+	windowsIconReapplyDelayMs     = 1600
+	windowsPinsWatcherPollMs      = 2000
+	windowsPinsWatcherSuppressMs  = 4000
+)
+
+var (
+	windowsIconReapplyMu       sync.Mutex
+	windowsPinsWatcherOnce     sync.Once
+	windowsPinsWatcherLastSet  string
+)
+
+// scheduleWindowsIconReapply re-applies the persisted icon once, shortly
+// after the current application completes. Explorer frequently skips the
+// first pinned-button repaint after a brand change; the delayed pass makes
+// the first switch visible immediately.
+func scheduleWindowsIconReapply(runtimeContext context.Context, configDir string) {
+	time.AfterFunc(time.Duration(windowsIconReapplyDelayMs)*time.Millisecond, func() {
+		applicationBrandIconMu.Lock()
+		defer applicationBrandIconMu.Unlock()
+		iconPath, err := loadPersistedWindowsApplicationIcon(configDir)
+		if err != nil || strings.TrimSpace(iconPath) == "" {
+			return
+		}
+		if _, err := setCurrentWindowsApplicationIcon(runtimeContext, iconPath); err != nil {
+			logger.Warnf("延迟重应用 Windows 品牌图标失败：%v", err)
+		}
+	})
+}
+
+// startWindowsPinsWatcher watches the taskbar pins directory and re-applies
+// the current brand icon when the pin set changes (user pins or unpins the
+// running instance). Without this, a freshly unpinned button renders as a
+// blank document until the next brand switch.
+func startWindowsPinsWatcher(runtimeContext context.Context, configDir string) {
+	windowsPinsWatcherOnce.Do(func() {
+		pinsDir := windowsTaskbarPinsDirectory()
+		if pinsDir == "" {
+			return
+		}
+			go func() {
+				last := windowsReadPinsNameSet(pinsDir)
+				for {
+					time.Sleep(time.Duration(windowsPinsWatcherPollMs) * time.Millisecond)
+					current := windowsReadPinsNameSet(pinsDir)
+					if current == last {
+						continue
+					}
+					last = current
+					applicationBrandIconMu.Lock()
+					iconPath, err := loadPersistedWindowsApplicationIcon(configDir)
+					if err == nil && strings.TrimSpace(iconPath) != "" {
+						if _, err := setCurrentWindowsApplicationIcon(runtimeContext, iconPath); err != nil {
+							logger.Warnf("固定项变化后重应用 Windows 品牌图标失败：%v", err)
+						}
+					}
+					applicationBrandIconMu.Unlock()
+				}
+			}()
+	})
+}
+
+func windowsTaskbarPinsDirectory() string {
+	appData, err := os.UserConfigDir()
+	if err != nil || strings.TrimSpace(appData) == "" {
+		return ""
+	}
+	return filepath.Join(appData, "Microsoft", "Internet Explorer", "Quick Launch", "User Pinned", "TaskBar")
+}
+
+func windowsReadPinsNameSet(pinsDir string) string {
+	entries, err := os.ReadDir(pinsDir)
+	if err != nil {
+		return ""
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".lnk") {
+			names = append(names, strings.ToLower(entry.Name()))
+		}
+	}
+	sort.Strings(names)
+	return strings.Join(names, "\n")
 }
 
 func setApplicationIconPNG(pngBytes []byte, configDir string, runtimeContext context.Context) error {
@@ -140,6 +235,10 @@ func setApplicationIconPNG(pngBytes []byte, configDir string, runtimeContext con
 	if err := activatePersistedWindowsApplicationIcon(iconPath, configDir); err != nil {
 		return err
 	}
+	// 实测（Win11 26200）：固定到任务栏后的第一次切换，Explorer 常不重渲染
+	// 固定按钮的图标（第二次切换才生效）。安排一次延迟重应用，让第一次
+	// 切换也能即时生效；幂等且与后续切换互斥（applicationBrandIconMu）。
+	scheduleWindowsIconReapply(runtimeContext, configDir)
 	return nil
 }
 
@@ -269,6 +368,7 @@ func applyWindowsApplicationIcon(hwnd uintptr, iconPath string, small, large uin
 		)
 	}
 	if err := windowsApplicationIconSetTaskbarProperties(hwnd, iconPath); err != nil {
+		logger.Warnf("应用 Windows 任务栏图标属性失败：%v", err)
 		return fmt.Errorf("set Windows taskbar icon properties: %w", err)
 	}
 	// Explorer caches the icon on the existing taskbar button and does NOT
@@ -276,8 +376,10 @@ func applyWindowsApplicationIcon(hwnd uintptr, iconPath string, small, large uin
 	// 实测：启动期应用图标后若不重注册，按钮停留在通用窗口图标）。首次应用
 	// 与每次切换都必须重注册，Windows 10/11 才会显示新图标。
 	if err := windowsRefreshTaskbarButton(hwnd); err != nil {
+		logger.Warnf("重注册 Windows 任务栏按钮失败：%v", err)
 		return fmt.Errorf("refresh Windows taskbar icon: %w", err)
 	}
+	logger.Infof("Windows 图标应用完成：WM_SETICON/类图标/任务栏属性/按钮重注册均成功，ico=%s", iconPath)
 	return nil
 }
 
