@@ -93,7 +93,7 @@ func applyPersistedWindowsApplicationIcon(runtimeContext context.Context, config
 	// 每次启动都幂等执行固定项修复：没有一次性标记，失败（文件被占用、
 	// Explorer 重启等）总会在下次启动重试。
 	repairPersistedWindowsApplicationShortcuts(iconPath)
-	_, err = setCurrentWindowsApplicationIcon(runtimeContext, iconPath, false)
+	_, err = setCurrentWindowsApplicationIcon(runtimeContext, iconPath)
 	if err != nil {
 		return err
 	}
@@ -133,7 +133,7 @@ func setApplicationIconPNG(pngBytes []byte, configDir string, runtimeContext con
 	if err := windowsUpdateCurrentApplicationShortcuts(iconPath); err != nil {
 		return err
 	}
-	_, err = setCurrentWindowsApplicationIcon(runtimeContext, iconPath, true)
+	_, err = setCurrentWindowsApplicationIcon(runtimeContext, iconPath)
 	if err != nil {
 		return err
 	}
@@ -169,7 +169,7 @@ func prepareWindowsBrandIconRestartPNG(pngBytes []byte, configDir string) error 
 	return nil
 }
 
-func setCurrentWindowsApplicationIcon(runtimeContext context.Context, iconPath string, refreshTaskbar bool) (uintptr, error) {
+func setCurrentWindowsApplicationIcon(runtimeContext context.Context, iconPath string) (uintptr, error) {
 	if err := migrateWindowsApplicationIconFile(iconPath); err != nil {
 		return 0, err
 	}
@@ -190,7 +190,7 @@ func setCurrentWindowsApplicationIcon(runtimeContext context.Context, iconPath s
 		windowsApplicationIconDestroyCall(large)
 		return 0, fmt.Errorf("resolve Windows application window: %w", err)
 	}
-	applyErr := applyWindowsApplicationIcon(mainWindow, iconPath, small, large, refreshTaskbar)
+	applyErr := applyWindowsApplicationIcon(mainWindow, iconPath, small, large)
 
 	// WM_SETICON / class icon calls transfer live references to these handles.
 	// Keep them alive even when Explorer's taskbar refresh reports an error.
@@ -244,7 +244,7 @@ func resolveWailsMainWindowHandle(runtimeContext context.Context) (handle uintpt
 	return handle, nil
 }
 
-func applyWindowsApplicationIcon(hwnd uintptr, iconPath string, small, large uintptr, refreshTaskbar bool) error {
+func applyWindowsApplicationIcon(hwnd uintptr, iconPath string, small, large uintptr) error {
 	if hwnd == 0 {
 		return errors.New("Windows application window handle is zero")
 	}
@@ -271,14 +271,12 @@ func applyWindowsApplicationIcon(hwnd uintptr, iconPath string, small, large uin
 	if err := windowsApplicationIconSetTaskbarProperties(hwnd, iconPath); err != nil {
 		return fmt.Errorf("set Windows taskbar icon properties: %w", err)
 	}
-	// Explorer caches the icon on the existing taskbar button. Re-register the
-	// top-level window so both Windows 10 and Windows 11 display the new icon.
-	// 启动路径跳过重建：按钮刚随窗口创建，本就读取新窗口图标；只有切换路径
-	// 需要重建来对抗 Explorer 的图标缓存。
-	if refreshTaskbar {
-		if err := windowsRefreshTaskbarButton(hwnd); err != nil {
-			return fmt.Errorf("refresh Windows taskbar icon: %w", err)
-		}
+	// Explorer caches the icon on the existing taskbar button and does NOT
+	// re-read a later WM_SETICON for a button it already created（Win11 26200
+	// 实测：启动期应用图标后若不重注册，按钮停留在通用窗口图标）。首次应用
+	// 与每次切换都必须重注册，Windows 10/11 才会显示新图标。
+	if err := windowsRefreshTaskbarButton(hwnd); err != nil {
+		return fmt.Errorf("refresh Windows taskbar icon: %w", err)
 	}
 	return nil
 }
