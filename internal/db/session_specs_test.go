@@ -1,6 +1,7 @@
 package db
 
 import (
+	"strings"
 	"testing"
 
 	"GoNavi-Wails/internal/connection"
@@ -64,6 +65,24 @@ func TestSessionCapabilityFor(t *testing.T) {
 				t.Fatalf("reason = %q, want %q", capability.ReasonCode, test.reason)
 			}
 		})
+	}
+}
+
+func TestTrinoSessionSpecUsesLiveQueryTableColumns(t *testing.T) {
+	t.Parallel()
+
+	query := strings.ToLower(trinoSessionSpec().listQuery)
+	if strings.Contains(query, "catalog as database_or_tenant") {
+		t.Fatal("Trino runtime.queries must not reference a nonexistent catalog column")
+	}
+	for _, fragment := range []string{
+		"'' as database_or_tenant",
+		"from system.runtime.queries",
+		"where end is null",
+	} {
+		if !strings.Contains(query, fragment) {
+			t.Fatalf("Trino session query missing %q: %s", fragment, query)
+		}
 	}
 }
 

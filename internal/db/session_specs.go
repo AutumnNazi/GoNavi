@@ -190,10 +190,16 @@ func trinoSessionSpec() sessionSpec {
 	return sessionSpec{
 		engine:     "trino",
 		capability: supportedSessionCapability(true, connection.SessionActionTargetQueryID, false, ""),
-		listQuery: `SELECT query_id, catalog AS database_or_tenant, user AS user_name,
+		// system.runtime.queries does not expose a catalog column. Fall back to
+		// the selected catalog/schema from ConnectionConfig during row
+		// normalization instead of issuing a query that fails on every Trino
+		// server. Completed queries are excluded because this workbench lists
+		// live server-side work only.
+		listQuery: `SELECT query_id, '' AS database_or_tenant, user AS user_name,
 state, CAST(date_diff('millisecond', created, current_timestamp) AS bigint) AS duration_ms,
 query AS statement
 FROM system.runtime.queries
+WHERE end IS NULL
 ORDER BY created DESC`,
 		durationUnit: sessionDurationMilliseconds,
 	}
