@@ -1,9 +1,11 @@
 package db
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -16,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"GoNavi-Wails/internal/connection"
 
@@ -195,12 +198,82 @@ func TestPulsarPingWithoutDefaultTopicChecksBrokerAndAdmin(t *testing.T) {
 
 type pulsarReaderProbe struct {
 	pulsar.Reader
-	err    error
-	closed bool
+	err     error
+	closed  bool
+	message pulsar.Message
 }
 
-func (r *pulsarReaderProbe) Next(context.Context) (pulsar.Message, error) { return nil, r.err }
-func (r *pulsarReaderProbe) Close()                                       { r.closed = true }
+func (r *pulsarReaderProbe) Next(context.Context) (pulsar.Message, error) {
+	if r.message != nil {
+		message := r.message
+		r.message = nil
+		return message, nil
+	}
+	return nil, r.err
+}
+func (r *pulsarReaderProbe) Close() { r.closed = true }
+
+type pulsarMessageProbe struct {
+	pulsar.Message
+	payload []byte
+}
+
+func (m *pulsarMessageProbe) Payload() []byte               { return m.payload }
+func (m *pulsarMessageProbe) Topic() string                 { return "orders" }
+func (m *pulsarMessageProbe) ID() pulsar.MessageID          { return pulsar.EarliestMessageID() }
+func (m *pulsarMessageProbe) PublishTime() time.Time        { return time.Unix(0, 0) }
+func (m *pulsarMessageProbe) EventTime() time.Time          { return time.Unix(0, 0) }
+func (m *pulsarMessageProbe) Key() string                   { return "" }
+func (m *pulsarMessageProbe) Properties() map[string]string { return nil }
+func (m *pulsarMessageProbe) RedeliveryCount() uint32       { return 0 }
+
+func TestPulsarPreviewBinaryPayloadSurvivesJSONTransport(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		payload []byte
+	}{
+		{name: "binary", payload: []byte{0x00, 0xff, 0xfe, 0x80, 0x61}},
+		{name: "invalid UTF-8 in JSON string", payload: []byte{'"', 0xff, '"'}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reader := &pulsarReaderProbe{message: &pulsarMessageProbe{payload: tc.payload}}
+			p := &PulsarDB{client: &pulsarClientProbe{reader: reader}}
+			rows, columns, err := p.QueryContext(context.Background(), "SELECT * FROM orders LIMIT 1")
+			if err != nil || len(rows) != 1 || !reader.closed {
+				t.Fatalf("preview and cleanup: rows=%v closed=%v err=%v", rows, reader.closed, err)
+			}
+			if rows[0]["payload_encoding"] != "base64" || !containsString(columns, "payload_encoding") {
+				t.Fatalf("missing binary encoding marker: rows=%v columns=%v", rows, columns)
+			}
+			transport, err := json.Marshal(rows)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var received []map[string]interface{}
+			if err := json.Unmarshal(transport, &received); err != nil {
+				t.Fatal(err)
+			}
+			encoded, ok := received[0]["value"].(string)
+			if !ok {
+				t.Fatalf("binary preview value is not a string: %#v", received[0]["value"])
+			}
+			restored, err := base64.StdEncoding.DecodeString(encoded)
+			if err != nil || !bytes.Equal(restored, tc.payload) {
+				t.Fatalf("binary payload changed through JSON transport: got=%x want=%x err=%v", restored, tc.payload, err)
+			}
+			definitions, err := p.GetColumns("topics", "orders")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, definition := range definitions {
+				if definition.Name == "payload_encoding" {
+					return
+				}
+			}
+			t.Fatal("column metadata is missing payload_encoding")
+		})
+	}
+}
 
 func TestPulsarPreviewEmptyAndErrors(t *testing.T) {
 	for _, tc := range []struct {
@@ -341,7 +414,10 @@ func TestPulsarTopicListerUsesConfiguredCAAndClientCertificate(t *testing.T) {
 }
 
 func TestPulsarDecodePayloadPreservesLargeJSONNumbers(t *testing.T) {
-	value := pulsarDecodePayload([]byte(`{"id":9007199254740993,"decimal":9007199254740993.0,"exponent":9.007199254740993e15,"huge":9223372036854775808,"small":7,"nested":[-9007199254740993]}`))
+	value, encoding := pulsarDecodePayload([]byte(`{"id":9007199254740993,"decimal":9007199254740993.0,"exponent":9.007199254740993e15,"huge":9223372036854775808,"small":7,"nested":[-9007199254740993]}`))
+	if encoding != "json" {
+		t.Fatalf("JSON payload encoding = %q", encoding)
+	}
 	object, ok := value.(map[string]interface{})
 	if !ok || object["id"] != "9007199254740993" || object["decimal"] != "9007199254740993.0" || object["exponent"] != "9.007199254740993e15" || object["huge"] != "9223372036854775808" || object["nested"].([]interface{})[0] != "-9007199254740993" {
 		t.Fatalf("decoded value = %#v", value)
@@ -361,15 +437,15 @@ func TestPulsarDecodePayloadRequiresSingleCompleteJSONValue(t *testing.T) {
 		{name: "whitespace", payload: "{\"a\":1} \n\t"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			decoded := pulsarDecodePayload([]byte(tc.payload))
+			decoded, encoding := pulsarDecodePayload([]byte(tc.payload))
 			if tc.wantRaw {
-				if decoded != tc.payload {
-					t.Fatalf("payload changed: %#v", decoded)
+				if decoded != tc.payload || encoding != "text" {
+					t.Fatalf("payload changed: value=%#v encoding=%q", decoded, encoding)
 				}
 				return
 			}
-			if _, ok := decoded.(map[string]interface{}); !ok {
-				t.Fatalf("complete JSON was not decoded: %#v", decoded)
+			if _, ok := decoded.(map[string]interface{}); !ok || encoding != "json" {
+				t.Fatalf("complete JSON was not decoded: value=%#v encoding=%q", decoded, encoding)
 			}
 		})
 	}

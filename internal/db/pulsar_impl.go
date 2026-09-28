@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"GoNavi-Wails/internal/connection"
 
@@ -292,6 +294,7 @@ func (p *PulsarDB) GetColumns(_, _ string) ([]connection.ColumnDefinition, error
 		{Name: "event_time", Type: "timestamp"},
 		{Name: "key", Type: "string"},
 		{Name: "value", Type: "json"},
+		{Name: "payload_encoding", Type: "string", Comment: "json / text / base64"},
 		{Name: "properties", Type: "json"},
 		{Name: "redelivery_count", Type: "integer"},
 	}, nil
@@ -473,29 +476,32 @@ func (p *PulsarDB) readMessages(ctx context.Context, topic string, limit int, la
 	return rows, pulsarColumns(), nil
 }
 func pulsarMessageRow(message pulsar.Message) map[string]interface{} {
-	value := pulsarDecodePayload(message.Payload())
+	value, encoding := pulsarDecodePayload(message.Payload())
 	return map[string]interface{}{
 		"topic": message.Topic(), "message_id": fmt.Sprint(message.ID()),
 		"publish_time": message.PublishTime().Format(time.RFC3339Nano),
 		"event_time":   message.EventTime().Format(time.RFC3339Nano),
-		"key":          message.Key(), "value": value,
+		"key":          message.Key(), "value": value, "payload_encoding": encoding,
 		"properties": message.Properties(), "redelivery_count": message.RedeliveryCount(),
 	}
 }
 func pulsarColumns() []string {
-	return []string{"topic", "message_id", "publish_time", "event_time", "key", "value", "properties", "redelivery_count"}
+	return []string{"topic", "message_id", "publish_time", "event_time", "key", "value", "payload_encoding", "properties", "redelivery_count"}
 }
-func pulsarDecodePayload(payload []byte) interface{} {
+func pulsarDecodePayload(payload []byte) (interface{}, string) {
+	if !utf8.Valid(payload) {
+		return base64.StdEncoding.EncodeToString(payload), "base64"
+	}
 	var value interface{}
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.UseNumber()
 	if decoder.Decode(&value) == nil {
 		var trailing interface{}
 		if errors.Is(decoder.Decode(&trailing), io.EOF) {
-			return pulsarJSONValue(value)
+			return pulsarJSONValue(value), "json"
 		}
 	}
-	return string(payload)
+	return string(payload), "text"
 }
 
 func pulsarJSONValue(value interface{}) interface{} {
