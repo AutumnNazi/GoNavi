@@ -3,6 +3,7 @@
 package app
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -104,14 +105,73 @@ func TestHandleWindowsRuntimeReaperArgsDoesNotStealNormalStartup(t *testing.T) {
 	if HandleWindowsRuntimeReaperArgs(nil) {
 		t.Fatal("empty args were treated as the runtime reaper")
 	}
+	if HandleWindowsUpdateCleanupArgs(nil) {
+		t.Fatal("empty args were treated as the update cleanup helper")
+	}
 	if HandleWindowsRuntimeReaperArgs([]string{"--detached-window"}) {
 		t.Fatal("detached-window mode was treated as the runtime reaper")
+	}
+	if HandleWindowsUpdateCleanupArgs([]string{"--detached-window"}) {
+		t.Fatal("detached-window mode was treated as the update cleanup helper")
 	}
 	if !HandleWindowsRuntimeReaperArgs([]string{windowsRuntimeReaperArgument}) {
 		t.Fatal("reaper mode without a parent pid fell through")
 	}
 	if !HandleWindowsRuntimeReaperArgs([]string{windowsRuntimeReaperArgument, "0"}) {
 		t.Fatal("reaper mode with an invalid parent pid fell through")
+	}
+}
+
+func TestWindowsUpdateCleanupWaitsForUpdaterBeforeRemovingWorkspace(t *testing.T) {
+	localAppData := t.TempDir()
+	t.Setenv("LOCALAPPDATA", localAppData)
+	cleanupDir := filepath.Join(localAppData, "GoNavi", "updates", "1.2.3")
+	if err := os.MkdirAll(cleanupDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll cleanup directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cleanupDir, "update.log"), []byte("ready"), 0o644); err != nil {
+		t.Fatalf("WriteFile cleanup marker: %v", err)
+	}
+	helperPath := filepath.Join(t.TempDir(), "cleanup-parent.exe")
+	build := exec.Command("go", "build", "-ldflags=-H=windowsgui", "-o", helperPath, "./testdata/windows_reaper_helper")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build cleanup parent helper: %v\n%s", err, output)
+	}
+	parent := startWindowsReaperHelper(t, helperPath, "")
+	done := make(chan error, 1)
+	go func() { done <- runWindowsUpdateCleanup(parent.Process.Pid, cleanupDir) }()
+	time.Sleep(100 * time.Millisecond)
+	if _, err := os.Stat(cleanupDir); err != nil {
+		t.Fatalf("cleanup directory removed before updater exited: %v", err)
+	}
+	if err := parent.Process.Kill(); err != nil {
+		t.Fatalf("kill updater helper: %v", err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("runWindowsUpdateCleanup: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for update cleanup")
+	}
+	if _, err := os.Stat(cleanupDir); !os.IsNotExist(err) {
+		t.Fatalf("cleanup directory still exists, stat err=%v", err)
+	}
+}
+
+func TestParseWindowsUpdateCleanupArgsRejectsBroadOrForeignDirectory(t *testing.T) {
+	localAppData := t.TempDir()
+	t.Setenv("LOCALAPPDATA", localAppData)
+	root := filepath.Join(localAppData, "GoNavi", "updates")
+	valid := filepath.Join(root, "1.2.3")
+	if _, got, err := parseWindowsUpdateCleanupArgs([]string{windowsUpdateCleanupArgument, "12345"}, valid); err != nil || got != valid {
+		t.Fatalf("valid cleanup args = (%q, %v), want %q", got, err, valid)
+	}
+	for _, path := range []string{root, localAppData, filepath.Join(localAppData, "foreign", "1.2.3")} {
+		if _, _, err := parseWindowsUpdateCleanupArgs([]string{windowsUpdateCleanupArgument, "12345"}, path); err == nil {
+			t.Fatalf("unsafe cleanup path %q was accepted", path)
+		}
 	}
 }
 

@@ -1331,6 +1331,7 @@
                     "mqtt":  "message-manual-total",
                     "kafka":  "message",
                     "rabbitmq":  "message-vhost",
+                    "pulsar":  "message",
                     "mariadb":  "sql-mysql",
                     "oceanbase":  "sql-mysql",
                     "diros":  "sql-doris",

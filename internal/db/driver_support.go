@@ -25,6 +25,7 @@ var coreBuiltinDrivers = map[string]struct{}{
 	"mqtt":     {},
 	"kafka":    {},
 	"rabbitmq": {},
+	"pulsar":   {},
 }
 
 // optionalGoDrivers 表示需要用户“安装启用”后才能使用的纯 Go 驱动。
@@ -109,6 +110,8 @@ func normalizeRuntimeDriverType(driverType string) string {
 		return "kafka"
 	case "rabbitmq", "rabbit-mq", "rabbit_mq":
 		return "rabbitmq"
+	case "pulsar", "apache-pulsar", "apache_pulsar":
+		return "pulsar"
 	default:
 		return normalized
 	}
@@ -184,6 +187,8 @@ func driverDisplayName(driverType string) string {
 		return "Kafka"
 	case "rabbitmq":
 		return "RabbitMQ"
+	case "pulsar":
+		return "Pulsar"
 	default:
 		return strings.ToUpper(strings.TrimSpace(driverType))
 	}

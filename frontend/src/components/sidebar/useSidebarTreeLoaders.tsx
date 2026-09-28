@@ -21,6 +21,7 @@ import {
 import type { SavedConnection, SavedQuery, JVMCapability, JVMResourceSummary } from '../../types';
 import { useStore } from '../../store';
 import { t } from '../../i18n';
+import { resolveSidebarMessageQueueProfile, type SidebarMessageQueueProfile, type SidebarMessageObjectKind } from './sidebarMessageProfiles';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import {
   getDataSourceCapabilities,
@@ -277,85 +278,6 @@ const resolveSavedConnectionDriverType = (conn: SavedConnection | undefined): st
     return type;
   }
   return normalizeDriverType(conn?.config?.driver || '');
-};
-
-type SidebarMessageQueueType = 'mqtt' | 'kafka' | 'rocketmq' | 'rabbitmq';
-type SidebarMessageObjectKind = 'topic-filter' | 'topic' | 'queue' | 'exchange';
-type SidebarMessageNamespaceKind = 'topic-filter' | 'topic' | 'vhost';
-
-type SidebarMessageObjectGroupProfile = {
-  kind: SidebarMessageObjectKind;
-  groupKey: 'queues' | 'exchanges';
-  titleKey: string;
-};
-
-type SidebarMessageQueueProfile = {
-  type: SidebarMessageQueueType;
-  namespaceKind: SidebarMessageNamespaceKind;
-  namespaceTitle: (databaseName: string) => string;
-  resolveObjectKind: (rawType: string) => SidebarMessageObjectKind | null;
-  groups?: SidebarMessageObjectGroupProfile[];
-};
-
-const normalizeSidebarMessageObjectType = (value: unknown): string => (
-  String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
-);
-
-const SIDEBAR_MESSAGE_QUEUE_PROFILES: Record<SidebarMessageQueueType, SidebarMessageQueueProfile> = {
-  mqtt: {
-    type: 'mqtt',
-    namespaceKind: 'topic-filter',
-    namespaceTitle: () => t('sidebar.message_queue.namespace.topic_filters'),
-    resolveObjectKind: (rawType) => normalizeSidebarMessageObjectType(rawType) === 'topic'
-      ? 'topic-filter'
-      : null,
-  },
-  kafka: {
-    type: 'kafka',
-    namespaceKind: 'topic',
-    namespaceTitle: () => t('sidebar.message_queue.namespace.topics'),
-    resolveObjectKind: (rawType) => normalizeSidebarMessageObjectType(rawType) === 'topic'
-      ? 'topic'
-      : null,
-  },
-  rocketmq: {
-    type: 'rocketmq',
-    namespaceKind: 'topic',
-    namespaceTitle: () => t('sidebar.message_queue.namespace.topics'),
-    resolveObjectKind: (rawType) => normalizeSidebarMessageObjectType(rawType) === 'topic'
-      ? 'topic'
-      : null,
-  },
-  rabbitmq: {
-    type: 'rabbitmq',
-    namespaceKind: 'vhost',
-    namespaceTitle: (databaseName) => databaseName,
-    resolveObjectKind: (rawType) => {
-      const normalizedType = normalizeSidebarMessageObjectType(rawType);
-      return normalizedType === 'queue' || normalizedType === 'exchange'
-        ? normalizedType
-        : null;
-    },
-    groups: [
-      {
-        kind: 'queue',
-        groupKey: 'queues',
-        titleKey: 'sidebar.message_queue.group.queues',
-      },
-      {
-        kind: 'exchange',
-        groupKey: 'exchanges',
-        titleKey: 'sidebar.message_queue.group.exchanges',
-      },
-    ],
-  },
-};
-
-const resolveSidebarMessageQueueProfile = (
-  config: SavedConnection['config'] | undefined,
-): SidebarMessageQueueProfile | null => {
-  const type = resolveDataSourceType(config) as SidebarMessageQueueType;
-  return SIDEBAR_MESSAGE_QUEUE_PROFILES[type] || null;
 };
 
 const sidebarMessageObjectIcon = (kind: SidebarMessageObjectKind): React.ReactNode => (

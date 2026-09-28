@@ -822,7 +822,7 @@ export const buildSidebarNodeMenuItems = (
         // Regular database connection menu
         const connectionCapabilities = getDataSourceCapabilities((node.dataRef as SavedConnection)?.config);
         const isElasticsearch = connectionCapabilities.type === 'elasticsearch';
-        const isMessageQueue = ['mqtt', 'kafka', 'rocketmq', 'rabbitmq'].includes(connectionCapabilities.type);
+        const isMessageQueue = ['mqtt', 'kafka', 'rocketmq', 'rabbitmq', 'pulsar'].includes(connectionCapabilities.type);
         const messagePublishTarget = isMessageQueue ? resolveMessagePublishTarget(node) : null;
         return [
             ...((connectionCapabilities.supportsCreateDatabase || connectionCapabilities.supportsCreateIndex) ? [{
