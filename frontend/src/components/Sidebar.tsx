@@ -162,6 +162,7 @@ import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import { buildSqlAnalysisWorkbenchTab } from '../utils/sqlAnalysisTab';
 import { buildSqlAuditWorkbenchTab } from '../utils/sqlAuditTab';
 import { buildDMLSnapshotWorkbenchTab } from '../utils/dmlSnapshotTab';
+import SessionWorkbenchRailButton from './sidebar/SessionWorkbenchRailButton';
 import {
     normalizeSidebarDatabaseListRefreshRequest,
     normalizeSidebarDatabaseRefreshRequest,
@@ -4484,6 +4485,8 @@ const Sidebar: React.FC<{
     canLocateActiveTab,
     showObjectActions: false,
     showLocateAction: false,
+    showWorkbenchActions: true,
+    workbenchActions: <SessionWorkbenchRailButton />,
     sidebarExpandAction: !collapsedSidebarActionsTarget && onExpandSidebar && expandSidebarLabel ? {
       label: expandSidebarLabel,
       onClick: onExpandSidebar,

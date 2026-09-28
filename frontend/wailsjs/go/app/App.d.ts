@@ -92,6 +92,8 @@ export function DBCommitTransactionWithTrigger(arg1:string,arg2:string):Promise<
 
 export function DBConnect(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
 
+export function DBExecuteSessionAction(arg1:connection.ConnectionConfig,arg2:string,arg3:connection.SessionActionRequest):Promise<connection.QueryResult>;
+
 export function DBGetAllColumns(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
 export function DBGetAllColumnsContext(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:string):Promise<connection.QueryResult>;
@@ -141,6 +143,8 @@ export function DBGetTriggersContext(arg1:context.Context,arg2:connection.Connec
 export function DBGetViews(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
 export function DBGetViewsContext(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:string):Promise<connection.QueryResult>;
+
+export function DBListSessions(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
 export function DBQuery(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
 

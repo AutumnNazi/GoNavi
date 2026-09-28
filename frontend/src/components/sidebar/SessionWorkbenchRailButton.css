@@ -1,0 +1,23 @@
+.gn-session-workbench-rail-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--gn-tx-2, #5f6368);
+  background: transparent;
+  cursor: pointer;
+}
+
+.gn-session-workbench-rail-button:hover {
+  color: var(--gn-accent, #1677ff);
+  background: var(--gn-hover-bg, rgba(22, 119, 255, 0.08));
+}
+
+.gn-session-workbench-rail-button:focus-visible {
+  outline: 2px solid var(--gn-accent, #1677ff);
+  outline-offset: 1px;
+}

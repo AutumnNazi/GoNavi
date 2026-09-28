@@ -32,6 +32,7 @@ const SettingsCenterWorkbench = React.lazy(() => import('./settings/SettingsCent
 const RequestDiagnosticsWorkbench = React.lazy(() => import('./requestDiagnostics/RequestDiagnosticsWorkbench'));
 const DMLSnapshotWorkbench = React.lazy(() => import('./dmlSnapshot/DMLSnapshotWorkbench'));
 const MessageQueueWorkbench = React.lazy(() => import('./MessageQueueWorkbench'));
+const SessionWorkbench = React.lazy(() => import('./sessionWorkbench/SessionWorkbench'));
 
 const QueryWorkbenchContent: React.FC<{ tab: TabData; isActive: boolean }> = React.memo(({
   tab,
@@ -176,6 +177,8 @@ export const WorkbenchTabContent: React.FC<WorkbenchTabContentProps> = React.mem
     content = <RequestDiagnosticsWorkbench tab={tab} isActive={isActive} />;
   } else if (tab.type === 'message-queue') {
     content = <MessageQueueWorkbench tab={tab} isActive={isActive} />;
+  } else if (tab.type === 'session-workbench') {
+    content = <SessionWorkbench tab={tab} isActive={isActive} />;
   } else if (tab.type === 'jvm-overview') {
     content = <JVMOverview tab={tab} />;
   } else if (tab.type === 'jvm-resource') {
