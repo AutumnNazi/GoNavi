@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { buildMessagePublishCommand, createDefaultMessagePublishDraft, getMessagePublishPresentation } from './messagePublish';
 import { buildMessageConsumeCommand, resolveMessageConsumeProfile } from './messageConsume';
-import { parseUriToValues, buildUriFromValues } from '../components/connectionModal/connectionModalUri';
+import { parseUriToValues, buildUriFromValues, getPulsarPortAfterSSLChange } from '../components/connectionModal/connectionModalUri';
+import { buildConnectionConfig } from '../components/connectionModal/connectionModalConfig';
 import { isMessageQueueDataSource } from './dataSourceCapabilities';
 import { getConnectionTypeDefaultPort, getAllConnectionTypeCatalogItems } from './connectionTypeCatalog';
 import { PRIMARY_USERNAME_OPTIONAL_TYPES, supportsSSLForType } from './connectionTypeCapabilities';
@@ -32,5 +33,34 @@ describe('Pulsar integration', () => {
   it('round trips TLS, topic and escaped authentication in URI mode', () => {
     const uri = buildUriFromValues({ ...config, host: 'localhost', port: 6651, user: 'user', password: 'p+a/ss', useSSL: true, sslMode: 'required' });
     expect(parseUriToValues(uri, 'pulsar')).toMatchObject({ host: 'localhost', port: 6651, database: config.database, password: 'p+a/ss', useSSL: true });
+  });
+  it('uses the TLS broker port when no port was entered, while preserving explicit ports', () => {
+    expect(new URL(buildUriFromValues({ type: 'pulsar', host: 'localhost', useSSL: true })).port).toBe('6651');
+    expect(new URL(buildUriFromValues({ type: 'pulsar', host: 'localhost', port: 7665, useSSL: true })).port).toBe('7665');
+    expect(parseUriToValues('pulsar://localhost?tls=true', 'pulsar')).toMatchObject({ port: 6651, useSSL: true });
+    expect(parseUriToValues('pulsar://localhost:6650?tls=true', 'pulsar')).toMatchObject({ port: 6650, useSSL: true });
+    expect(getPulsarPortAfterSSLChange(6650, true, false)).toBe(6651);
+    expect(getPulsarPortAfterSSLChange(6651, false, false)).toBe(6650);
+    expect(getPulsarPortAfterSSLChange(6650, true, true)).toBe(6650);
+    expect(getPulsarPortAfterSSLChange(7665, true, false)).toBe(7665);
+  });
+  it('uses the TLS broker port in saved configs when no port was entered', async () => {
+    const result = await buildConnectionConfig({
+      values: { ...config, host: 'localhost', useSSL: true },
+      forPersist: false,
+      translate: (key: string) => key,
+    });
+    expect(result).toMatchObject({ port: 6651, useSSL: true });
+  });
+  it('does not submit hidden tunnels after switching to Pulsar', async () => {
+    const result = await buildConnectionConfig({
+      values: {
+        ...config, host: 'localhost', port: 6650, useSSH: true, sshHost: 'ssh.local',
+        useProxy: true, proxyHost: 'proxy.local', useHttpTunnel: true, httpTunnelHost: 'https://tunnel.local',
+      },
+      forPersist: false,
+      translate: (key: string) => key,
+    });
+    expect(result).toMatchObject({ useSSH: false, useProxy: false, useHttpTunnel: false });
   });
 });

@@ -35,6 +35,18 @@ const MAX_CONNECTION_PARAMS_LENGTH = 4096;
 const MAX_URI_HOSTS = 32;
 const MAX_TIMEOUT_SECONDS = 3600;
 
+export const getPulsarDefaultPort = (useSSL: boolean) =>
+  useSSL ? 6651 : getDefaultPortByType("pulsar");
+
+export const getPulsarPortAfterSSLChange = (
+  currentPort: number,
+  useSSL: boolean,
+  manuallyEdited: boolean,
+) =>
+  manuallyEdited || currentPort !== getPulsarDefaultPort(!useSSL)
+    ? currentPort
+    : getPulsarDefaultPort(useSSL);
+
 export const normalizeClickHouseProtocolValue = (
   value: unknown,
 ): ClickHouseProtocolChoice => {
@@ -1120,10 +1132,12 @@ export const parseUriToValues = (
   }
 
   if (type === "pulsar") {
-    const defaultPort = trimmedUri.toLowerCase().startsWith("pulsar+ssl://") ? 6651 : getDefaultPortByType(type);
+    const tlsParams = new URLSearchParams(trimmedUri.split("?")[1] || "");
+    const tlsEnabled = trimmedUri.toLowerCase().startsWith("pulsar+ssl://") ||
+      normalizeUriBool(tlsParams.get("tls") || tlsParams.get("ssl"));
+    const defaultPort = getPulsarDefaultPort(tlsEnabled);
     const parsed = parseSingleHostUri(trimmedUri, ["pulsar", "pulsar+ssl"], defaultPort);
     if (!parsed) return null;
-    const tlsEnabled = trimmedUri.toLowerCase().startsWith("pulsar+ssl://") || normalizeUriBool(parsed.params.get("tls") || parsed.params.get("ssl"));
     return {
       host: parsed.host,
       port: parsed.port,
@@ -1377,7 +1391,9 @@ export const buildUriFromValues = (values: any) => {
   const type = String(values.type || "")
     .trim()
     .toLowerCase();
-  const defaultPort = getDefaultPortByType(type);
+  const defaultPort = type === "pulsar"
+    ? getPulsarDefaultPort(!!values.useSSL)
+    : getDefaultPortByType(type);
   const host = String(values.host || "localhost").trim();
   const port = Number(values.port || defaultPort);
   const user = String(values.user || "").trim();

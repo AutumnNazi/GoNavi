@@ -59,6 +59,7 @@ import {
 } from "../../utils/jvmConnectionConfig";
 import { resolveJVMModeMeta } from "../../utils/jvmRuntimePresentation";
 import {
+  getPulsarPortAfterSSLChange,
   getConnectionParamsPlaceholder,
   getUriPlaceholder,
 } from "./connectionModalUri";
@@ -201,6 +202,19 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
     useSSL,
   } = props;
   useKafkaSecuritySync(form, isKafka, setUseSSL);
+  const pulsarPortEditedRef = React.useRef(false);
+
+  React.useEffect(() => {
+    pulsarPortEditedRef.current = false;
+  }, [dbType, initialValues?.id]);
+
+  React.useEffect(() => {
+    if (!isPulsar) return;
+    form.setFieldsValue({ useSSH: false, useProxy: false, useHttpTunnel: false });
+    setUseSSH(false);
+    setUseProxy(false);
+    setUseHttpTunnel(false);
+  }, [form, isPulsar, setUseHttpTunnel, setUseProxy, setUseSSH]);
 
   // 默认折叠生产保护，避免默认表单内容溢出触发滚动条；保留用户按需展开的交互。
   const [readOnlyProtectionExpanded, setReadOnlyProtectionExpanded] =
@@ -2834,6 +2848,9 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
         jvmJmxPassword: "",
       }}
       onValuesChange={(changed) => {
+        if (isPulsar && changed.port !== undefined) {
+          pulsarPortEditedRef.current = true;
+        }
         if (testResult) {
           setTestResult(null);
           setTestErrorLogOpen(false);
@@ -2847,6 +2864,17 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
           setUriFeedback(null);
         }
         if (changed.useSSL !== undefined) {
+          if (isPulsar) {
+            const currentPort = Number(form.getFieldValue("port"));
+            const nextPort = getPulsarPortAfterSSLChange(
+              currentPort,
+              !!changed.useSSL,
+              pulsarPortEditedRef.current,
+            );
+            if (Number.isFinite(currentPort) && nextPort !== currentPort) {
+              form.setFieldValue("port", nextPort);
+            }
+          }
           if (isKafka) {
             const params = form.getFieldValue("connectionParams");
             const uri = form.getFieldValue("uri");
