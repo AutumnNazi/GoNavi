@@ -181,7 +181,8 @@ body[data-ui-version='v2'] .gn-v2-titlebar .gn-v2-titlebar-about-slot .gn-v2-tit
 
 body[data-ui-version='v2'] .gn-v2-titlebar .gn-v2-titlebar-about-slot .gn-v2-titlebar-quick-action:hover,
 body[data-ui-version='v2'] .gn-v2-titlebar .gn-v2-titlebar-about-slot .gn-v2-titlebar-quick-action:focus-visible {
-  background: var(--gn-bg-hover, rgba(15, 23, 42, 0.05));
+  /* 与相邻的「设置 / 主题」一致：标题栏按钮不做悬停 / 选中底色。 */
+  background: transparent;
   color: var(--gn-fg-1, inherit);
   outline: none;
 }

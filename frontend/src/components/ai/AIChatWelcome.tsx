@@ -1,5 +1,6 @@
 import React from 'react';
-import { ApiOutlined, DatabaseOutlined, FileTextOutlined, RobotOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { ApiOutlined, DatabaseOutlined, FileTextOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import AiSparkOutlined from '../icons/AiSparkOutlined';
 import type { OverlayWorkbenchTheme } from '../../utils/overlayWorkbenchTheme';
 import { useI18n } from '../../i18n/provider';
 
@@ -50,7 +51,7 @@ export const AIChatWelcome: React.FC<AIChatWelcomeProps> = ({
         <div className="ai-chat-welcome" style={{ padding: '30px 20px', alignItems: 'flex-start', textAlign: 'left' }}>
             <div className="gn-v2-ai-welcome-title" style={{ color: overlayTheme.titleText, fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
                 <span className="gn-v2-ai-welcome-icon">
-                    <RobotOutlined style={{ color: overlayTheme.iconColor }} />
+                    <AiSparkOutlined style={{ color: overlayTheme.iconColor }} />
                 </span>
                 <strong>{t('ai_chat.welcome.title')}</strong>
             </div>
@@ -86,7 +87,7 @@ export const AIChatWelcome: React.FC<AIChatWelcomeProps> = ({
                 </div>
                 {promptSuggestions.map((prompt) => (
                     <button key={prompt} type="button" onClick={() => onQuickAction(prompt)}>
-                        <RobotOutlined />
+                        <AiSparkOutlined />
                         <span>{prompt}</span>
                     </button>
                 ))}

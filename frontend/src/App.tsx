@@ -2,7 +2,8 @@ import Modal from './components/common/ResizableDraggableModal';
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import { withAISettingsLeaveGuard, type AISettingsLeaveGuard } from './utils/aiSettingsLeaveGuard';
 import { Layout, Button, ConfigProvider, theme, message, notification, Spin, Slider, Switch, Input, InputNumber, Select, Segmented, Tooltip, Alert } from 'antd';
-import { UploadOutlined, DownloadOutlined, CloudDownloadOutlined, BugOutlined, GlobalOutlined, InfoCircleOutlined, GithubOutlined, SkinOutlined, CheckOutlined, SettingOutlined, LinkOutlined, BgColorsOutlined, AppstoreOutlined, RobotOutlined, FolderOpenOutlined, HddOutlined, SafetyCertificateOutlined, SwitcherOutlined, CodeOutlined, RightOutlined, TableOutlined, MenuOutlined, PoweroffOutlined, UserOutlined, MessageOutlined, FileTextOutlined, SyncOutlined, SendOutlined, AuditOutlined, ThunderboltOutlined, ApiOutlined, WechatOutlined, CopyOutlined } from '@ant-design/icons';
+import { UploadOutlined, DownloadOutlined, CloudDownloadOutlined, BugOutlined, GlobalOutlined, InfoCircleOutlined, GithubOutlined, SkinOutlined, CheckOutlined, SettingOutlined, LinkOutlined, BgColorsOutlined, AppstoreOutlined, FolderOpenOutlined, HddOutlined, SafetyCertificateOutlined, SwitcherOutlined, CodeOutlined, RightOutlined, TableOutlined, MenuOutlined, PoweroffOutlined, UserOutlined, MessageOutlined, FileTextOutlined, SyncOutlined, SendOutlined, AuditOutlined, ThunderboltOutlined, ApiOutlined, WechatOutlined, CopyOutlined } from '@ant-design/icons';
+import AiSparkOutlined from './components/icons/AiSparkOutlined';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -7965,7 +7966,7 @@ function App() {
               },
               {
                   key: 'ai',
-                  icon: <RobotOutlined />,
+                  icon: <AiSparkOutlined />,
                   title: t('app.settings.entry.ai.title'),
                   description: t('app.settings.entry.ai.description'),
                   onClick: () => {
@@ -8150,13 +8151,13 @@ function App() {
 
   const handleToggleThemeMode = () => selectPresetTheme(themeMode === 'dark' ? 'light' : 'dark');
   useMacNativeMenuBridge({ enabled: useNativeMacWindowControls && !isWebRuntime, language, onOpenPreferences: handleOpenSettingsModal, onToggleTheme: handleToggleThemeMode, onOpenAbout: () => handleTitleBarSettingsNavigation({ group: 'about', pane: 'about-go-navi' }) });
+  // 驱动管理 / 关于的 portal 槽位：非 macOS 在标题栏胶囊中间，macOS 在工具条 AI 之后。
+  const titleBarTrailingSlot = <div id="gonavi-titlebar-about-action" className="gonavi-titlebar-quick-actions-slot gn-v2-titlebar-about-slot" />;
   const titleBarSystemActionsNode = ( // 非 macOS 放右区；macOS 走原生菜单栏
     <TitleBarSystemActions
-      aiAssistantLabel={t('app.sidebar.ai_assistant')}
       settingsLabel={t('app.sidebar.settings')}
-      aiActive={aiPanelVisible}
-      onToggleAI={handleToggleOrFocusAIPanel}
       onOpenSettings={handleOpenSettingsModal}
+      trailingSlot={titleBarTrailingSlot}
       themeLabel={t('app.titlebar.theme')}
       isDarkTheme={themeMode === 'dark'}
       onToggleTheme={handleToggleThemeMode}
@@ -8321,12 +8322,8 @@ function App() {
               onConnectionGroupManagement={() => setIsConnectionGroupManagementOpen(true)}
             />
             <div id="gonavi-titlebar-quick-actions" className="gonavi-titlebar-quick-actions-slot" />
-            {!useNativeMacWindowControls && (
-              <div id="gonavi-titlebar-about-action" className="gonavi-titlebar-quick-actions-slot gn-v2-titlebar-about-slot" />
-            )}
-            {useNativeMacWindowControls && (
-              <TitleBarToolBarAiAction label={t('app.titlebar.toolbar.ai')} title={t('app.sidebar.ai_assistant')} active={aiPanelVisible} onClick={handleToggleOrFocusAIPanel} />
-            )}
+            <TitleBarToolBarAiAction label={t('app.titlebar.toolbar.ai')} title={t('app.sidebar.ai_assistant')} active={aiPanelVisible} onClick={handleToggleOrFocusAIPanel} />
+            {useNativeMacWindowControls && titleBarTrailingSlot}
           </TitleBarToolBar>
 
           {showLinuxCJKFontBanner && (
@@ -8717,7 +8714,7 @@ function App() {
                       },
                       {
                         key: 'data-root-agent',
-                        icon: <RobotOutlined />,
+                        icon: <AiSparkOutlined />,
                         title: t('app.data_root.agent_data.title'),
                         description: t('app.data_root.agent_data.description'),
                         onClick: () => handleOpenToolCenterPane('config', 'data-root-agent'),

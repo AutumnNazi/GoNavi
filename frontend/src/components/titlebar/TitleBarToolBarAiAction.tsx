@@ -11,7 +11,7 @@ export interface TitleBarToolBarAiActionProps {
 /**
  * 工具条里的 AI 入口（图标 + 文字）。
  *
- * macOS 把 AI 从标题栏挪到这里；样式沿用工具条按钮的通用类名，激活态与
+ * 各平台统一放在工具条「SQL 工具」右侧；样式沿用工具条按钮的通用类名，激活态与
  * 「驱动管理」共用同一个 data 标记。
  */
 export default function TitleBarToolBarAiAction({ label, title, active, onClick }: TitleBarToolBarAiActionProps) {

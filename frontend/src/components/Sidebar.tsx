@@ -1,7 +1,7 @@
 import SidebarConnectionRail from './sidebar/SidebarConnectionRail';
 import Modal from './common/ResizableDraggableModal';
 import { type TitleBarQuickAction } from './TitleBarQuickActions';
-import { TitlebarGearIcon, TitlebarGraphIcon, TitlebarInfoIcon, TitlebarSqlToolIcon } from './titlebar/gonaviTitlebarIcons';
+import { TitlebarDriverIcon, TitlebarGraphIcon, TitlebarInfoIcon, TitlebarSqlToolIcon } from './titlebar/gonaviTitlebarIcons';
 import TitleBarQuickActionsHost from './TitleBarQuickActionsHost';
 import { type DataSyncEntryModeAlias } from './dataSyncEntryMode';
 import type { DatabaseCharsetOption, DatabaseCollationOption } from '../utils/databaseCharset';
@@ -4322,16 +4322,16 @@ const Sidebar: React.FC<{
         },
       ],
     },
+  ];
+  // 尾部操作：非 macOS 渲染到标题栏「设置 │ … │ 主题」胶囊中间，macOS 留在工具条 AI 之后。
+  const v2TitlebarTrailingActions: TitleBarQuickAction[] = [
     {
       key: 'drivers',
       label: t('app.tools.entry.drivers.title'),
-      icon: <TitlebarGearIcon size="100%" />,
+      icon: <TitlebarDriverIcon size="100%" />,
       active: activeSettingsCenterPaneKey === 'drivers', // 打开驱动管理时点亮
       onClick: () => onOpenSettingsNavigation?.({ group: 'workspace', action: 'drivers' }),
     },
-  ];
-  // 关于 GoNavi 作为工具条独立按钮；macOS 上改走原生菜单栏，此处不渲染。
-  const v2TitlebarAboutActions: TitleBarQuickAction[] = [
     {
       key: 'about-go-navi',
       label: t('app.settings.group.about.title'),
@@ -4339,7 +4339,9 @@ const Sidebar: React.FC<{
       onClick: () => onOpenSettingsNavigation?.({ group: 'about', pane: 'about-go-navi' }),
     },
   ];
-  if (hideTitlebarAboutAction) v2TitlebarAboutActions.length = 0; // macOS 走原生菜单栏
+  const v2TitlebarVisibleTrailingActions = hideTitlebarAboutAction // macOS 的「关于」走原生菜单栏
+    ? v2TitlebarTrailingActions.filter((action) => action.key !== 'about-go-navi')
+    : v2TitlebarTrailingActions;
 
   const getCommandSearchCopyOptions = useCallback((item: V2CommandSearchItem): V2CommandSearchCopyOption[] => {
     if (item.kind === 'action') return [];
@@ -4696,7 +4698,7 @@ const Sidebar: React.FC<{
         <TitleBarQuickActionsHost
           label={v2RailObjectActionsLabel}
           actions={v2TitlebarQuickActions}
-          trailingActions={v2TitlebarAboutActions}
+          trailingActions={v2TitlebarVisibleTrailingActions}
         />
 
         {contextMenu?.kind && typeof document !== 'undefined' && createPortal(

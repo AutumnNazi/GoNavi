@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button, Tooltip } from 'antd';
-import { HistoryOutlined, RobotOutlined, ClearOutlined, SettingOutlined, CloseOutlined, ExportOutlined, PlusOutlined, ThunderboltOutlined, ExpandOutlined, CompressOutlined } from '@ant-design/icons';
+import { HistoryOutlined, ClearOutlined, SettingOutlined, CloseOutlined, ExportOutlined, PlusOutlined, ThunderboltOutlined, ExpandOutlined, CompressOutlined } from '@ant-design/icons';
+import AiSparkOutlined from '../icons/AiSparkOutlined';
 import type { OverlayWorkbenchTheme } from '../../utils/overlayWorkbenchTheme';
 import type { AIChatMessage } from '../../types';
 import { t as catalogTranslate } from '../../i18n/catalog';
@@ -94,7 +95,7 @@ export const AIChatHeader: React.FC<AIChatHeaderProps> = ({
             <div className="gn-v2-ai-header-top">
                 <div className="ai-chat-header-left gn-v2-ai-brand" style={{ gap: 8 }}>
                     <div className="ai-logo" style={{ background: overlayTheme.iconBg, color: overlayTheme.iconColor, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: 6, fontSize: 12 }}>
-                        <RobotOutlined />
+                        <AiSparkOutlined />
                     </div>
                     <div className="ai-title-stack">
                         <span className="ai-title" style={{ color: textColor, fontSize: 13, fontWeight: 600 }}>GoNavi AI</span>
@@ -137,7 +138,7 @@ export const AIChatHeader: React.FC<AIChatHeaderProps> = ({
                     className={activeMode === 'chat' ? 'is-active' : undefined}
                     onClick={() => onModeChange?.('chat')}
                 >
-                    <RobotOutlined />
+                    <AiSparkOutlined />
                     <span>{t('ai_chat.header.mode.chat')}</span>
                 </button>
                 <button

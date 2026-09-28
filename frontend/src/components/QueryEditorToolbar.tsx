@@ -12,12 +12,12 @@ import {
   FileTextOutlined,
   FormatPainterOutlined,
   PlayCircleOutlined,
-  RobotOutlined,
   SearchOutlined,
   SaveOutlined,
   SettingOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
+import AiSparkOutlined from "./icons/AiSparkOutlined";
 
 import { t as defaultTranslate } from '../i18n';
 import { useOptionalI18n } from '../i18n/provider';
@@ -330,7 +330,7 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
         {
           key: "ai-inline-completion",
           label: triggerSqlAiCompletionLabel,
-          icon: <RobotOutlined />,
+          icon: <AiSparkOutlined />,
           onClick: onTriggerSqlAiCompletion,
         },
         { type: "divider" as const },
@@ -379,7 +379,7 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
         },
       ];
   const templateActionMenuItems = normalizeV2ActionMenuItems(templateMenuItems, <FileTextOutlined />);
-  const aiActionMenuItems = normalizeV2ActionMenuItems(aiMenuItems, <RobotOutlined />);
+  const aiActionMenuItems = normalizeV2ActionMenuItems(aiMenuItems, <AiSparkOutlined />);
   const moreActionMenuItems = normalizeV2ActionMenuItems(moreMenuItems, <EllipsisOutlined />);
   const selectedFormatKeys = new Set(formatSettingsSelectedKeys);
   const markSelectedFormatItems = (items: MenuProps['items']): MenuProps['items'] => (items ?? []).map((item) => {
@@ -601,7 +601,7 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
               >
                 <Button
                   className="gn-v2-query-toolbar-icon-action gn-v2-query-toolbar-ai-action"
-                  icon={<RobotOutlined />}
+                  icon={<AiSparkOutlined />}
                   aria-label={aiMoreTitle}
                   aria-haspopup="menu"
                   aria-expanded={openToolbarMenu === "ai"}
@@ -617,7 +617,7 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
                 <Button
                   aria-label={triggerSqlAiCompletionLabel}
                   className="gn-v2-query-toolbar-icon-action gn-v2-query-toolbar-ai-action"
-                  icon={<RobotOutlined />}
+                  icon={<AiSparkOutlined />}
                   onMouseDown={onCaptureEditorCursorPosition}
                   onClick={onTriggerSqlAiCompletion}
                 />

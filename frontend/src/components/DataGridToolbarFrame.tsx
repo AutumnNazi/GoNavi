@@ -14,7 +14,6 @@ import {
   ImportOutlined,
   PlusOutlined,
   ReloadOutlined,
-  RobotOutlined,
   SaveOutlined,
   SelectOutlined,
   SnippetsOutlined,
@@ -22,6 +21,7 @@ import {
   UndoOutlined,
   VerticalAlignBottomOutlined,
 } from '@ant-design/icons';
+import AiSparkOutlined from './icons/AiSparkOutlined';
 import { hasActiveGridFilters } from './dataGridFilterActivity';
 import type { FilterCondition } from '../utils/sql';
 
@@ -613,7 +613,7 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
             <Button
               className="gn-v2-data-grid-toolbar-action gn-v2-ai-insight-button"
               aria-label={translate('data_grid.toolbar.ai_insight_short')}
-              icon={<RobotOutlined />}
+              icon={<AiSparkOutlined />}
               onClick={onRequestAiInsight}
             />
           </Tooltip>

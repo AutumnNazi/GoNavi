@@ -6,11 +6,11 @@ import {
   ClockCircleOutlined,
   CloseCircleFilled,
   LoadingOutlined,
-  RobotOutlined,
   SafetyCertificateOutlined,
   StopFilled,
   SyncOutlined,
 } from '@ant-design/icons';
+import AiSparkOutlined from '../../icons/AiSparkOutlined';
 
 import type { AIChatRunActivity } from '../../../types';
 import { t as catalogTranslate } from '../../../i18n/catalog';
@@ -52,7 +52,7 @@ const ActivityStatusIcon: React.FC<{ status: AIChatRunActivity['status'] }> = ({
 const ActivityKindIcon: React.FC<{ kind: AIChatRunActivity['kind'] }> = ({ kind }) => {
   const style = { fontSize: 12 };
   switch (kind) {
-    case 'model': return <RobotOutlined style={style} />;
+    case 'model': return <AiSparkOutlined style={style} />;
     case 'tool': return <ApiOutlined style={style} />;
     case 'approval': return <SafetyCertificateOutlined style={style} />;
     case 'retry': return <SyncOutlined style={style} />;

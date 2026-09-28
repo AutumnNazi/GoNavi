@@ -1,6 +1,7 @@
+import type React from 'react';
 import { Button, Tooltip } from 'antd';
 
-import { TitlebarSettingsIcon, TitlebarSunIcon } from './gonaviTitlebarIcons';
+import { TitlebarMoonIcon, TitlebarSettingsIcon, TitlebarSunIcon } from './gonaviTitlebarIcons';
 import './titleBarPreferencesPill.css';
 
 export interface TitleBarPreferencesPillProps {
@@ -14,15 +15,16 @@ export interface TitleBarPreferencesPillProps {
   onToggleTheme: () => void;
   /** 主题按钮的 tooltip，例如「切换到浅色」。 */
   themeTooltip?: string;
+  /** 插在「偏好设置」与「主题」之间的内容（如驱动管理、关于）。 */
+  middle?: React.ReactNode;
   preferencesTestId?: string;
   themeTestId?: string;
 }
 
 /**
- * 标题栏右侧的「偏好设置 │ 主题」分段胶囊。
+ * 标题栏右侧的「偏好设置 … 主题」分段胶囊。
  *
- * 参考稿里这两段共用一个白色圆角容器，中间以细竖线分隔；
- * 主题段是一键切换明暗，不弹菜单。
+ * 各段并排、不加分隔线；主题段是一键切换明暗，不弹菜单。
  */
 export default function TitleBarPreferencesPill({
   preferencesLabel,
@@ -31,6 +33,7 @@ export default function TitleBarPreferencesPill({
   onOpenPreferences,
   onToggleTheme,
   themeTooltip,
+  middle,
   preferencesTestId = 'gonavi-titlebar-preferences-action',
   themeTestId = 'gonavi-titlebar-theme-action',
 }: TitleBarPreferencesPillProps) {
@@ -45,7 +48,10 @@ export default function TitleBarPreferencesPill({
       aria-pressed={isDarkTheme}
       onClick={onToggleTheme}
     >
-      <TitlebarSunIcon className="gn-preferences-pill-icon" />
+      {/* 图标表示当前模式：亮色为太阳，暗色为月亮。 */}
+      {isDarkTheme
+        ? <TitlebarMoonIcon className="gn-preferences-pill-icon" />
+        : <TitlebarSunIcon className="gn-preferences-pill-icon" />}
       <span className="gn-preferences-pill-label">{themeLabel}</span>
     </Button>
   );
@@ -64,7 +70,7 @@ export default function TitleBarPreferencesPill({
         <TitlebarSettingsIcon className="gn-preferences-pill-icon" />
         <span className="gn-preferences-pill-label">{preferencesLabel}</span>
       </Button>
-      <span className="gn-preferences-pill-divider" aria-hidden="true" />
+      {middle}
       {themeTooltip ? (
         <Tooltip title={themeTooltip}>{themeButton}</Tooltip>
       ) : (

@@ -1,7 +1,7 @@
 import Modal from './common/ResizableDraggableModal';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Form, message as antdMessage } from 'antd';
-import { RobotOutlined } from '@ant-design/icons';
+import AiSparkOutlined from './icons/AiSparkOutlined';
 import { v4 as uuidv4 } from 'uuid';
 import type { AIProviderConfig, AIProviderType, AISafetyLevel, AIContextLevel, AIResultMaskingSettings, AIUserPromptSettings, AIMCPServerConfig, AIMCPToolDescriptor, AIMCPHTTPServerStatus, AISkillConfig } from '../types';
 import type { ai } from '../../wailsjs/go/models';
@@ -1671,7 +1671,7 @@ const AISettingsModal: React.FC<AISettingsModalProps> = ({ open, onClose, darkMo
                         width: 38, height: 38, borderRadius: 12, display: 'grid', placeItems: 'center',
                         background: overlayTheme.iconBg, color: overlayTheme.iconColor, fontSize: 18, flexShrink: 0,
                     }}>
-                        <RobotOutlined />
+                        <AiSparkOutlined />
                     </div>
                     <div>
                         <div style={{ fontSize: 16, fontWeight: 800, color: overlayTheme.titleText }}>{t('ai_settings.title')}</div>

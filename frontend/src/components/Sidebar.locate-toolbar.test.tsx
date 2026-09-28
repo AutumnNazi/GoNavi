@@ -1128,7 +1128,7 @@ describe('Sidebar locate toolbar', () => {
     expect(css).not.toContain('.gn-v2-active-connection-header');
   });
 
-  it('places driver management in the titlebar and does not render a More overflow', () => {
+  it('moves driver management next to about as trailing titlebar actions and does not render a More overflow', () => {
     const source = readSourceFile('./Sidebar.tsx');
     const actionsStart = source.indexOf('const v2TitlebarQuickActions: TitleBarQuickAction[] = [');
     const actionsEnd = source.indexOf('\n  ];', actionsStart);
@@ -1137,7 +1137,6 @@ describe('Sidebar locate toolbar', () => {
     expect(actionsEnd).toBeGreaterThan(actionsStart);
 
     const actionsSource = source.slice(actionsStart, actionsEnd);
-    const driverIndex = actionsSource.indexOf("key: 'drivers'");
 
     expect(actionsSource).toContain("key: 'data-workflow'");
     expect(actionsSource).toContain('label: v2DataWorkflowLabel');
@@ -1152,27 +1151,29 @@ describe('Sidebar locate toolbar', () => {
     expect(actionsSource).toContain("action: 'sync'");
     expect(actionsSource).not.toContain("key: 'batch-actions'");
     expect(actionsSource).toContain("key: 'sql-tools'");
-    expect(driverIndex).toBeGreaterThan(actionsSource.indexOf("key: 'sql-tools'"));
+    expect(actionsSource).not.toContain("key: 'drivers'");
     expect(actionsSource).not.toContain("key: 'settings-about'");
     expect(actionsSource).not.toContain("key: 'settings-workspace'");
     expect(actionsSource).not.toContain("key: 'settings-preferences'");
     expect(actionsSource).not.toContain("key: 'open-external-sql-file'");
     expect(actionsSource).not.toContain("priority: 'secondary'");
-    expect(actionsSource).toContain("label: t('app.tools.entry.drivers.title')");
-    expect(actionsSource).toContain("action: 'drivers'");
 
-    const aboutActionsStart = source.indexOf('const v2TitlebarAboutActions: TitleBarQuickAction[] = [');
-    const aboutActionsEnd = source.indexOf('\n  ];', aboutActionsStart);
-    expect(aboutActionsStart).toBeGreaterThan(actionsEnd);
-    expect(aboutActionsEnd).toBeGreaterThan(aboutActionsStart);
+    const trailingActionsStart = source.indexOf('const v2TitlebarTrailingActions: TitleBarQuickAction[] = [');
+    const trailingActionsEnd = source.indexOf('\n  ];', trailingActionsStart);
+    expect(trailingActionsStart).toBeGreaterThan(actionsEnd);
+    expect(trailingActionsEnd).toBeGreaterThan(trailingActionsStart);
 
-    const aboutActionsSource = source.slice(aboutActionsStart, aboutActionsEnd);
-    expect(aboutActionsSource).toContain("key: 'about-go-navi'");
-    expect(aboutActionsSource).toContain("label: t('app.settings.group.about.title')");
-    expect(aboutActionsSource).toContain("{ group: 'about', pane: 'about-go-navi' }");
+    const trailingActionsSource = source.slice(trailingActionsStart, trailingActionsEnd);
+    expect(trailingActionsSource.indexOf("key: 'drivers'")).toBeGreaterThanOrEqual(0);
+    expect(trailingActionsSource.indexOf("key: 'drivers'")).toBeLessThan(trailingActionsSource.indexOf("key: 'about-go-navi'"));
+    expect(trailingActionsSource).toContain("label: t('app.tools.entry.drivers.title')");
+    expect(trailingActionsSource).toContain("action: 'drivers'");
+    expect(trailingActionsSource).toContain("label: t('app.settings.group.about.title')");
+    expect(trailingActionsSource).toContain("{ group: 'about', pane: 'about-go-navi' }");
 
-    const renderSource = source.slice(aboutActionsEnd);
-    expect(renderSource).toContain('trailingActions={v2TitlebarAboutActions}');
+    const renderSource = source.slice(trailingActionsEnd);
+    expect(renderSource).toContain("action.key !== 'about-go-navi'");
+    expect(renderSource).toContain('trailingActions={v2TitlebarVisibleTrailingActions}');
     expect(renderSource).not.toContain('moreLabel=');
 
     const titlebarQuickActionsSource = readSourceFile('./TitleBarQuickActions.tsx');

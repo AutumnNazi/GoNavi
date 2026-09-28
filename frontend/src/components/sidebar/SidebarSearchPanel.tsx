@@ -1,7 +1,8 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { ConfigProvider, Input, Tooltip } from 'antd';
-import { CloseOutlined, CopyOutlined, SearchOutlined, TableOutlined, RobotOutlined } from '@ant-design/icons';
+import { CloseOutlined, CopyOutlined, SearchOutlined, TableOutlined } from '@ant-design/icons';
+import AiSparkOutlined from '../icons/AiSparkOutlined';
 import { noAutoCapInputProps } from '../../utils/inputAutoCap';
 import { t } from '../../i18n';
 import { APP_COMMAND_PALETTE_Z_INDEX } from '../../utils/overlayZIndex';
@@ -274,7 +275,7 @@ const SidebarSearchPanel = <TItem extends V2CommandSearchItemLike>({
           <span><kbd>↑</kbd><kbd>↓</kbd>{t('sidebar.command_search.footer.navigate')}</span>
           <span><kbd>↵</kbd>{t('sidebar.command_search.footer.select')}</span>
           <span><TableOutlined /> <kbd>@</kbd>{t('sidebar.command_search.footer.object_only')}</span>
-          <span><RobotOutlined /> <kbd>?</kbd>{t('sidebar.command_search.footer.ask_ai')}</span>
+          <span><AiSparkOutlined /> <kbd>?</kbd>{t('sidebar.command_search.footer.ask_ai')}</span>
         </div>
       </div>
     </div>

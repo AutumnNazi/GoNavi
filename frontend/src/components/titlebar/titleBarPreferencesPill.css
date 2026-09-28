@@ -22,15 +22,6 @@ body[data-theme='dark'][data-ui-version='v2'] .gn-preferences-pill {
   background: transparent;
 }
 
-/* 段间细竖线。 */
-body[data-ui-version='v2'] .gn-preferences-pill-divider {
-  flex: 0 0 auto;
-  width: 1px;
-  height: calc(16px * var(--gn-ui-scale, 1));
-  margin: 0 calc(2px * var(--gn-ui-scale, 1));
-  background: var(--gn-br-2, rgba(15, 23, 42, 0.14));
-}
-
 body[data-ui-version='v2'] .gn-preferences-pill .gn-preferences-pill-segment.ant-btn {
   display: inline-flex;
   align-items: center;
@@ -63,4 +54,9 @@ body[data-ui-version='v2'] .gn-preferences-pill .gn-preferences-pill-icon {
 
 body[data-ui-version='v2'] .gn-preferences-pill .gn-preferences-pill-label {
   white-space: nowrap;
+}
+
+/* 胶囊中间插入的「驱动管理 / 关于」与两侧分段同高。 */
+body[data-ui-version='v2'] .gn-v2-titlebar .gn-preferences-pill .gn-v2-titlebar-about-slot .gn-v2-titlebar-quick-action {
+  height: calc(26px * var(--gn-ui-scale, 1));
 }

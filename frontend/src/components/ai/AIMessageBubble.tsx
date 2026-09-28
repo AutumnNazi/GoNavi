@@ -8,9 +8,9 @@ import {
   FileTextOutlined,
   ReloadOutlined,
   WarningOutlined,
-  RobotOutlined,
   UserOutlined,
 } from '@ant-design/icons';
+import AiSparkOutlined from '../icons/AiSparkOutlined';
 
 import type { AIChatMessage } from '../../types';
 import { useStore } from '../../store';
@@ -353,7 +353,7 @@ export const AIMessageBubble: React.FC<AIMessageBubbleProps> = React.memo(({
           <div>
             {isUser
               ? <><UserOutlined /> <span>{copy('ai_chat.message.role.user')}</span></>
-              : <><RobotOutlined style={{ color: overlayTheme.iconColor }} /> <span>GoNavi AI</span></>}
+              : <><AiSparkOutlined style={{ color: overlayTheme.iconColor }} /> <span>GoNavi AI</span></>}
           </div>
           <AIMessageActionBar
             msg={msg}

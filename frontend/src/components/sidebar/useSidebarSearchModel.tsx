@@ -12,11 +12,11 @@ import {
   KeyOutlined,
   LinkOutlined,
   PlusOutlined,
-  RobotOutlined,
   TableOutlined,
   TagOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
+import AiSparkOutlined from '../icons/AiSparkOutlined';
 
 import { type SqlLog, useStore } from '../../store';
 import type { SavedConnection } from '../../types';
@@ -509,7 +509,7 @@ export const useSidebarSearchModel = ({
       title: t('sidebar.command_search.action.open_ai.title'),
       meta: t('sidebar.command_search.action.open_ai.meta'),
       shortcut: resolveShortcutDisplay(shortcutOptions, 'toggleAIPanel', activeShortcutPlatform),
-      icon: <RobotOutlined />,
+      icon: <AiSparkOutlined />,
       onRun: () => onToggleAI?.(),
     },
     {
@@ -560,7 +560,7 @@ export const useSidebarSearchModel = ({
       title: t('sidebar.command_search.action.ask_ai.title'),
       meta: v2CommandSearchQuery.aiPrompt,
       shortcut: '↵',
-      icon: <RobotOutlined />,
+      icon: <AiSparkOutlined />,
       onRun: () => {
         const wasClosed = !useStore.getState().aiPanelVisible;
         if (wasClosed) setAIPanelVisible(true);
