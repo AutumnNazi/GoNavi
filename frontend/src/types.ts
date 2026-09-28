@@ -544,7 +544,8 @@ export interface TabData {
     | "jvm-resource"
     | "jvm-audit"
     | "jvm-diagnostic"
-    | "jvm-monitoring";
+    | "jvm-monitoring"
+    | "session-workbench";
   connectionId: string;
   dbName?: string;
   tableName?: string;

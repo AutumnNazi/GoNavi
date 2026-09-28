@@ -162,6 +162,10 @@ export function DBConnect(arg1) {
   return window['go']['app']['App']['DBConnect'](arg1);
 }
 
+export function DBExecuteSessionAction(arg1, arg2, arg3) {
+  return window['go']['app']['App']['DBExecuteSessionAction'](arg1, arg2, arg3);
+}
+
 export function DBGetAllColumns(arg1, arg2) {
   return window['go']['app']['App']['DBGetAllColumns'](arg1, arg2);
 }
@@ -260,6 +264,10 @@ export function DBGetViews(arg1, arg2) {
 
 export function DBGetViewsContext(arg1, arg2, arg3) {
   return window['go']['app']['App']['DBGetViewsContext'](arg1, arg2, arg3);
+}
+
+export function DBListSessions(arg1, arg2) {
+  return window['go']['app']['App']['DBListSessions'](arg1, arg2);
 }
 
 export function DBQuery(arg1, arg2, arg3) {
