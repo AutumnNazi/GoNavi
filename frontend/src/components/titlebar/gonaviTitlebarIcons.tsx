@@ -387,3 +387,41 @@ export function TitlebarSparkColorIcon({ size, className }: GonaviTitlebarIconPr
     </svg>
   );
 }
+
+/**
+ * 人像 + 盾牌（用户管理）：主体色人像表示账号，右下强调色盾牌表示权限。
+ * 盾牌描白边，保证在人像之上叠放时轮廓清晰。
+ */
+export function TitlebarUserManagementIcon({ size, className }: GonaviTitlebarIconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={resolveSize(size)}
+      height={resolveSize(size)}
+      className={className}
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle cx="9.6" cy="7.4" r="3.9" style={{ fill: GONAVI_TITLEBAR_ICON_COLORS.primary }} />
+      <path
+        d="M2.6 20.4c0-4.1 3.1-7.2 7-7.2 1.9 0 3.6.7 4.9 1.9V20.4Z"
+        style={{ fill: GONAVI_TITLEBAR_ICON_COLORS.primary }}
+      />
+      <path
+        d="M17.8 11.6 22 13.2v3.4c0 2.5-1.7 4.5-4.2 5.4-2.5-.9-4.2-2.9-4.2-5.4v-3.4Z"
+        stroke="#fff"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+        style={{ fill: GONAVI_TITLEBAR_ICON_COLORS.accent }}
+      />
+      <path
+        d="M16.1 16.7l1.2 1.2 2.3-2.4"
+        stroke="#fff"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    </svg>
+  );
+}

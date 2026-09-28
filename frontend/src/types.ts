@@ -1,3 +1,5 @@
+import type { WorkbenchTabType } from './tabTypes';
+
 export interface SSHConfig {
   host: string;
   port: number;
@@ -512,40 +514,7 @@ export interface TableExportHistoryEntry {
 export interface TabData {
   id: string;
   title: string;
-  type:
-    | "query"
-    | "table"
-    | "design"
-    | "data-sync"
-    | "sql-file-execution"
-    | "sql-analysis"
-    | "sql-audit"
-    | "dml-snapshot"
-    | "driver-manager"
-    | "settings-center"
-    | "request-diagnostics"
-    | "message-queue"
-    | "redis-keys"
-    | "redis-command"
-    | "redis-monitor"
-    | "nacos-config"
-    | "nacos-services"
-    | "trigger"
-    | "view-def"
-    | "event-def"
-    | "routine-def"
-    | "sequence-def"
-    | "package-def"
-    | "database-link-def"
-    | "table-overview"
-    | "table-export"
-    | "data-import"
-    | "jvm-overview"
-    | "jvm-resource"
-    | "jvm-audit"
-    | "jvm-diagnostic"
-    | "jvm-monitoring"
-    | "session-workbench";
+  type: WorkbenchTabType;
   connectionId: string;
   dbName?: string;
   tableName?: string;

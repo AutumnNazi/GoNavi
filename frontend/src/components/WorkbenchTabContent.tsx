@@ -31,6 +31,7 @@ const DriverManagerWorkbench = React.lazy(() => import('./DriverManagerWorkbench
 const SettingsCenterWorkbench = React.lazy(() => import('./settings/SettingsCenterWorkbench'));
 const RequestDiagnosticsWorkbench = React.lazy(() => import('./requestDiagnostics/RequestDiagnosticsWorkbench'));
 const DMLSnapshotWorkbench = React.lazy(() => import('./dmlSnapshot/DMLSnapshotWorkbench'));
+const UserManagementWorkbench = React.lazy(() => import('./userManagement/UserManagementWorkbench'));
 const MessageQueueWorkbench = React.lazy(() => import('./MessageQueueWorkbench'));
 const SessionWorkbench = React.lazy(() => import('./sessionWorkbench/SessionWorkbench'));
 
@@ -163,6 +164,8 @@ export const WorkbenchTabContent: React.FC<WorkbenchTabContentProps> = React.mem
     content = <SqlAuditWorkbench tab={tab} isActive={isActive} />;
   } else if (tab.type === 'dml-snapshot') {
     content = <DMLSnapshotWorkbench isActive={isActive} />;
+  } else if (tab.type === 'user-management') {
+    content = <UserManagementWorkbench tab={tab} isActive={isActive} />;
   } else if (tab.type === 'driver-manager') {
     content = (
       <DriverManagerWorkbench

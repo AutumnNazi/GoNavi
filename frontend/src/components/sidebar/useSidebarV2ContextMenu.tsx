@@ -496,6 +496,7 @@ export const useSidebarV2ContextMenu = ({
               supportsQueryEditor={capabilities.supportsQueryEditor}
               isMessageQueue={isMessageQueue}
               supportsMessagePublish={capabilities.supportsMessagePublish}
+              supportsUserManagement={capabilities.supportsUserManagement}
               tags={connectionTags.map((tag) => ({
                   id: tag.id,
                   name: tag.name,

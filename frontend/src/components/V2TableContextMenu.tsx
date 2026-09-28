@@ -36,11 +36,17 @@ import {
   UndoOutlined,
   SortAscendingOutlined,
   SortDescendingOutlined,
+  TeamOutlined,
   VerticalAlignBottomOutlined,
 } from '@ant-design/icons';
 import { getCurrentLanguage, t } from '../i18n';
 import { getPrimaryShortcutDisplayLabel, type ShortcutPlatform } from '../utils/shortcuts';
 import { formatSidebarTableSize } from './sidebar/sidebarHelpers';
+import {
+  renderV2ContextMenuItems,
+  V2ContextMenuHeader,
+  type V2TableContextMenuItemConfig,
+} from './v2ContextMenu/v2ContextMenuPrimitives';
 
 export type V2TableContextMenuActionKey =
   | 'pin-table'
@@ -77,17 +83,6 @@ export type V2TableContextMenuStats = {
   unavailable?: boolean;
 };
 
-type V2TableContextMenuItemConfig = {
-  action: string;
-  icon: React.ReactNode;
-  title: string;
-  kbd?: string;
-  featured?: boolean;
-  selected?: boolean;
-  disabled?: boolean;
-  tone?: 'default' | 'ai' | 'danger';
-};
-
 export const formatV2TableContextMenuRows = (count?: number): string => {
   if (count === undefined || count === null || !Number.isFinite(count) || count < 0) {
     return t('sidebar.v2_table_menu.meta.rows_empty');
@@ -112,62 +107,6 @@ const resolveV2TableContextMenuMeta = (stats?: V2TableContextMenuStats): string 
     indexes: formatV2TableContextMenuSize(stats?.indexLength),
   });
 };
-
-const V2TableContextMenuItem: React.FC<{
-  item: V2TableContextMenuItemConfig;
-  onAction?: (action: string) => void;
-}> = ({ item, onAction }) => (
-  <button
-    type="button"
-    className={[
-      'gn-v2-context-menu-item',
-      item.featured ? 'is-featured' : '',
-      item.selected ? 'is-selected' : '',
-      item.tone === 'ai' ? 'is-ai' : '',
-      item.tone === 'danger' ? 'is-danger' : '',
-      item.tone === 'default' ? 'is-default' : '',
-      item.disabled ? 'is-disabled' : '',
-    ].filter(Boolean).join(' ')}
-    role="menuitem"
-    disabled={item.disabled}
-    aria-disabled={item.disabled || undefined}
-    onClick={(event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (item.disabled) return;
-      onAction?.(item.action);
-    }}
-  >
-    <span className="gn-v2-context-menu-item-icon">{item.icon}</span>
-    <span className="gn-v2-context-menu-item-title">{item.title}</span>
-    {item.kbd && <span className="gn-v2-context-menu-kbd">{item.kbd}</span>}
-  </button>
-);
-
-const V2ContextMenuHeader: React.FC<{
-  icon: React.ReactNode;
-  title: string;
-  meta: string;
-  pill?: string;
-}> = ({ icon, title, meta, pill }) => (
-  <div className="gn-v2-context-menu-header">
-    <span className="gn-v2-context-menu-table-icon">{icon}</span>
-    <span className="gn-v2-context-menu-heading">
-      <strong title={title}>{title}</strong>
-      <small>{meta}</small>
-    </span>
-    {pill && (
-      <span className="gn-v2-context-menu-engine-pill">{pill}</span>
-    )}
-  </div>
-);
-
-const renderV2ContextMenuItems = (
-  items: V2TableContextMenuItemConfig[],
-  onAction?: (action: string) => void,
-) => items.map((item) => (
-  <V2TableContextMenuItem key={item.action} item={item} onAction={onAction} />
-));
 
 export const V2TableContextMenuView: React.FC<{
   tableName: string;
@@ -543,6 +482,7 @@ export type V2ConnectionContextMenuActionKey =
   | 'open-sql-file'
   | 'new-command'
   | 'open-monitor'
+  | 'user-management'
   | 'edit'
   | 'copy-connection'
   | 'batch-connections'
@@ -614,6 +554,7 @@ export const V2ConnectionContextMenuView: React.FC<{
   supportsQueryEditor?: boolean;
   isMessageQueue?: boolean;
   supportsMessagePublish?: boolean;
+  supportsUserManagement?: boolean;
   tags?: V2ConnectionContextMenuTagItem[];
   onAction?: (action: V2ConnectionContextMenuActionKey) => void;
 }> = ({
@@ -629,6 +570,7 @@ export const V2ConnectionContextMenuView: React.FC<{
   supportsQueryEditor = true,
   isMessageQueue = false,
   supportsMessagePublish = false,
+  supportsUserManagement = false,
   tags = [],
   onAction,
 }) => {
@@ -675,6 +617,7 @@ export const V2ConnectionContextMenuView: React.FC<{
         <div className="gn-v2-context-menu-section-title">{t('connection.sidebar.menu.section')}</div>
         {renderItems([
           ...(supportsVisibility ? [{ action: 'visibility' as const, icon: <EyeInvisibleOutlined />, title: t('sidebar.database_schema_visibility.menu.manage') }] : []),
+          ...(supportsUserManagement ? [{ action: 'user-management' as const, icon: <TeamOutlined />, title: t('sidebar.action.user_management') }] : []),
           { action: 'edit', icon: <EditOutlined />, title: t('sidebar.menu.edit_connection'), kbd: 'F2' },
           { action: 'copy-connection', icon: <CopyOutlined />, title: t('connection.sidebar.menu.copy') },
           { action: 'batch-connections', icon: <AppstoreOutlined />, title: t('sidebar.action.batch_connections') },

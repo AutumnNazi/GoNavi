@@ -159,9 +159,7 @@ import { useAutoFetchVisibility } from '../utils/autoFetchVisibility';
 import { useWorkbenchTabs } from '../hooks/useWorkbenchTabs';
 import FindInDatabaseModal from './FindInDatabaseModal';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
-import { buildSqlAnalysisWorkbenchTab } from '../utils/sqlAnalysisTab';
-import { buildSqlAuditWorkbenchTab } from '../utils/sqlAuditTab';
-import { buildDMLSnapshotWorkbenchTab } from '../utils/dmlSnapshotTab';
+import { useSidebarWorkbenchLaunchers } from './sidebar/useSidebarWorkbenchLaunchers';
 import SessionWorkbenchRailButton from './sidebar/SessionWorkbenchRailButton';
 import {
     normalizeSidebarDatabaseListRefreshRequest,
@@ -4235,22 +4233,9 @@ const Sidebar: React.FC<{
     openDataImportWorkbench({ connectionId, dbName, tableName, mode });
   }, [activeContext?.connectionId, activeContext?.dbName, activeTabId, openDataImportWorkbench, tabs]);
 
-  const handleOpenSlowQueryWorkbench = useCallback(() => {
-    if (!activeTabHasConnection || !activeTab?.connectionId) return;
-    addTab(buildSqlAnalysisWorkbenchTab({
-      connectionId: activeTab.connectionId,
-      dbName: activeTab.dbName,
-      view: 'slow-query',
-    }));
-  }, [activeTab?.connectionId, activeTab?.dbName, activeTabHasConnection, addTab]);
-
-  const handleOpenSqlAuditWorkbench = useCallback(() => {
-    addTab(buildSqlAuditWorkbenchTab());
-  }, [addTab]);
-
-  const handleOpenDMLSnapshotWorkbench = useCallback(() => {
-    addTab(buildDMLSnapshotWorkbenchTab());
-  }, [addTab]);
+  const { openSlowQueryWorkbench, openSqlAuditWorkbench, openDMLSnapshotWorkbench, userManagementAction } = useSidebarWorkbenchLaunchers({
+    activeTab, activeTabHasConnection, activeConnection, addTab,
+  });
 
   const v2TitlebarQuickActions: TitleBarQuickAction[] = [
     {
@@ -4306,23 +4291,24 @@ const Sidebar: React.FC<{
           key: 'slow-query',
           label: v2SlowQueryLabel,
           icon: <HistoryOutlined aria-hidden="true" />,
-          onClick: handleOpenSlowQueryWorkbench,
+          onClick: openSlowQueryWorkbench,
           disabled: !activeTabHasConnection,
         },
         {
           key: 'sql-audit',
           label: v2SqlAuditLabel,
           icon: <AuditOutlined aria-hidden="true" />,
-          onClick: handleOpenSqlAuditWorkbench,
+          onClick: openSqlAuditWorkbench,
         },
         {
           key: 'dml-snapshot',
           label: t('dml_snapshot.workbench.title'),
           icon: <SafetyCertificateOutlined aria-hidden="true" />,
-          onClick: handleOpenDMLSnapshotWorkbench,
+          onClick: openDMLSnapshotWorkbench,
         },
       ],
     },
+    userManagementAction,
   ];
   // 尾部操作：非 macOS 渲染到标题栏「设置 │ … │ 主题」胶囊中间，macOS 留在工具条 AI 之后。
   const v2TitlebarTrailingActions: TitleBarQuickAction[] = [

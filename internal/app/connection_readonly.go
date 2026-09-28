@@ -169,6 +169,7 @@ var readOnlyConnectionActionTextKeys = map[string]string{
 	"connection.backend.action.data_sync_structure":        "connection.backend.action.data_sync_structure",
 	"数据同步写入":                                               "connection.backend.action.data_sync_write",
 	"connection.backend.action.data_sync_write":            "connection.backend.action.data_sync_write",
+	"connection.backend.action.user_management":            "connection.backend.action.user_management",
 	"connection.backend.action.cancel_database_query":      "connection.backend.action.cancel_database_query",
 	"connection.backend.action.terminate_database_session": "connection.backend.action.terminate_database_session",
 }

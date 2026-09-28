@@ -223,6 +223,7 @@ export type DataSourceUICapabilityFlags = {
   preferManualTotalCount?: boolean;
   supportsApproximateTableCount?: boolean;
   supportsApproximateTotalPages?: boolean;
+  userManagement?: boolean;
 };
 
 export type DataSourceCapabilityContract = {
@@ -319,6 +320,8 @@ export type DataSourceCapabilities = {
   supportsApproximateTableCount: boolean;
   supportsApproximateTotalPages: boolean;
   supportsRelationalObjectKindFilter: boolean;
+  // 用户管理入口：自定义连接一律关闭（方言由用户驱动决定）；结构修改受限时仍可只读查看。
+  supportsUserManagement: boolean;
 };
 
 export const getDataSourceCapabilities = (config: ConnectionLike): DataSourceCapabilities => {
@@ -368,5 +371,6 @@ export const getDataSourceCapabilities = (config: ConnectionLike): DataSourceCap
     supportsApproximateTotalPages: ui.supportsApproximateTotalPages === true,
     supportsRelationalObjectKindFilter:
       contract.schema.supported && !isMessageQueueDataSource(config),
+    supportsUserManagement: !customConnection && ui.userManagement === true,
   };
 };
