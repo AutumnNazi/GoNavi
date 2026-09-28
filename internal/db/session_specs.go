@@ -199,7 +199,7 @@ func trinoSessionSpec() sessionSpec {
 state, CAST(date_diff('millisecond', created, current_timestamp) AS bigint) AS duration_ms,
 query AS statement
 FROM system.runtime.queries
-WHERE end IS NULL
+WHERE "end" IS NULL
 ORDER BY created DESC`,
 		durationUnit: sessionDurationMilliseconds,
 	}

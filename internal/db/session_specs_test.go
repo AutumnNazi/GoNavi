@@ -78,7 +78,7 @@ func TestTrinoSessionSpecUsesLiveQueryTableColumns(t *testing.T) {
 	for _, fragment := range []string{
 		"'' as database_or_tenant",
 		"from system.runtime.queries",
-		"where end is null",
+		"where \"end\" is null",
 	} {
 		if !strings.Contains(query, fragment) {
 			t.Fatalf("Trino session query missing %q: %s", fragment, query)
