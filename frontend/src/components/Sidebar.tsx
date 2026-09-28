@@ -160,6 +160,7 @@ import { useWorkbenchTabs } from '../hooks/useWorkbenchTabs';
 import FindInDatabaseModal from './FindInDatabaseModal';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import { useSidebarWorkbenchLaunchers } from './sidebar/useSidebarWorkbenchLaunchers';
+import SessionWorkbenchRailButton from './sidebar/SessionWorkbenchRailButton';
 import {
     normalizeSidebarDatabaseListRefreshRequest,
     normalizeSidebarDatabaseRefreshRequest,
@@ -4483,6 +4484,8 @@ const Sidebar: React.FC<{
     canLocateActiveTab,
     showObjectActions: false,
     showLocateAction: false,
+    showWorkbenchActions: true,
+    workbenchActions: <SessionWorkbenchRailButton />,
     sidebarExpandAction: !collapsedSidebarActionsTarget && onExpandSidebar && expandSidebarLabel ? {
       label: expandSidebarLabel,
       onClick: onExpandSidebar,

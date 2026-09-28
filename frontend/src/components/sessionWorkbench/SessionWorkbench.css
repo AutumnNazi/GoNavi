@@ -1,0 +1,135 @@
+.gn-session-workbench {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  padding: 18px 22px;
+  gap: 14px;
+  background: var(--gn-workbench-bg, var(--gn-bg, #fff));
+}
+
+.gn-session-workbench-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.gn-session-workbench-header .ant-typography {
+  margin: 0;
+}
+
+.gn-session-workbench-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--gn-br-1, #e5e7eb);
+  border-radius: 8px;
+  background: var(--gn-panel-bg, #fff);
+}
+
+.gn-session-workbench-toolbar-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gn-session-workbench-toolbar-label {
+  white-space: nowrap;
+}
+
+.gn-session-workbench-connection-select {
+  min-width: 220px;
+}
+
+.gn-session-workbench-database-input {
+  min-width: 280px;
+  max-width: 460px;
+}
+
+.gn-session-workbench-filter {
+  display: flex;
+  align-items: center;
+  min-width: 280px;
+}
+
+.gn-session-workbench-filter .ant-input {
+  max-width: 420px;
+}
+
+.gn-session-workbench-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.gn-session-workbench-loading {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+}
+
+.gn-session-workbench-table .ant-table-cell {
+  vertical-align: top;
+}
+
+.gn-session-workbench-confirm-grid {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.35fr) minmax(0, 1fr);
+  gap: 10px 14px;
+  align-items: start;
+}
+
+.gn-session-workbench-statement-value {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gn-session-workbench-statement-value .ant-typography {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.gn-session-workbench-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.gn-session-workbench-action-chooser {
+  width: 100%;
+}
+
+.gn-session-workbench-action-chooser .ant-radio-button-wrapper {
+  display: block;
+  height: auto;
+  padding: 12px 14px;
+  white-space: normal;
+}
+
+.gn-session-workbench-action-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+@media (max-width: 840px) {
+  .gn-session-workbench {
+    padding: 12px;
+  }
+
+  .gn-session-workbench-connection-select,
+  .gn-session-workbench-database-input {
+    min-width: min(100%, 320px);
+    max-width: 100%;
+  }
+
+  .gn-session-workbench-confirm-grid {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}

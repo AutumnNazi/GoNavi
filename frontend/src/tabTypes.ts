@@ -35,4 +35,5 @@ export type WorkbenchTabType =
   | "jvm-resource"
   | "jvm-audit"
   | "jvm-diagnostic"
-  | "jvm-monitoring";
+  | "jvm-monitoring"
+  | "session-workbench";

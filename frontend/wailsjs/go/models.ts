@@ -3118,6 +3118,26 @@ export namespace connection {
 	}
 	
 	
+	export class SessionActionRequest {
+	    action: string;
+	    sessionId?: string;
+	    queryId?: string;
+	    instanceId?: string;
+	    serialNumber?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new SessionActionRequest(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.action = source["action"];
+	        this.sessionId = source["sessionId"];
+	        this.queryId = source["queryId"];
+	        this.instanceId = source["instanceId"];
+	        this.serialNumber = source["serialNumber"];
+	    }
+	}
 	export class TestGlobalProxyInput {
 	    proxy: SaveGlobalProxyInput;
 	    url: string;
