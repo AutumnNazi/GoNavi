@@ -279,9 +279,10 @@ Elasticsearch 连接复用查询工作区，并按服务端版本提供受控 RE
 
 ### 前置要求
 
-- [Go](https://go.dev/dl/) 1.21+
+- [Go](https://go.dev/dl/) 1.25+
 - [Node.js](https://nodejs.org/) 18+
 - [Wails CLI](https://wails.io/docs/gettingstarted/installation)
+- 仅 Linux：C 编译器、pkg-config，以及 GTK3 / WebKitGTK 开发包
 
 ```bash
 go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
@@ -306,6 +307,21 @@ wails build -clean   # 发布前推荐
 ```
 
 产物位于 `build/bin`。
+
+Linux 上请先安装构建依赖（按发行版任选其一）：
+
+```bash
+# Debian 12+ / Ubuntu 22.04+
+sudo apt-get install -y build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+# Fedora / OpenCloudOS 9
+sudo dnf install -y gcc pkgconf-pkg-config gtk3-devel webkit2gtk4.1-devel
+# RHEL / Rocky / AlmaLinux 9（仅提供 WebKitGTK 4.0）
+sudo dnf install -y gcc pkgconf-pkg-config gtk3-devel webkit2gtk3-devel
+# Arch Linux
+sudo pacman -S --needed base-devel gtk3 webkit2gtk-4.1
+```
+
+构建会自动识别本机装的是 WebKitGTK 4.1 还是 4.0。前端编译峰值约需 3 GB 内存。
 
 ### 只想直接用？
 

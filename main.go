@@ -363,6 +363,10 @@ func runSpecialMode(args []string) (bool, error) {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		return true, app.RunSyncWorker(ctx, args[1:])
+	case "run-sync-job":
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		return true, app.RunScheduledJobOnce(ctx, args[1:])
 	case "mcp-server", "--mcp-server":
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()

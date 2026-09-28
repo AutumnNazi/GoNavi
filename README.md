@@ -280,9 +280,10 @@ Elasticsearch connections reuse the query workspace as a version-aware REST cons
 
 ### Prerequisites
 
-- [Go](https://go.dev/dl/) 1.21+
+- [Go](https://go.dev/dl/) 1.25+
 - [Node.js](https://nodejs.org/) 18+
 - [Wails CLI](https://wails.io/docs/gettingstarted/installation)
+- Linux only: a C compiler, pkg-config, and the GTK3 / WebKitGTK development packages
 
 ```bash
 go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
@@ -307,6 +308,21 @@ wails build -clean   # clean build before release
 ```
 
 Artifacts → `build/bin`.
+
+On Linux, install the build dependencies first (pick one):
+
+```bash
+# Debian 12+ / Ubuntu 22.04+
+sudo apt-get install -y build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+# Fedora / OpenCloudOS 9
+sudo dnf install -y gcc pkgconf-pkg-config gtk3-devel webkit2gtk4.1-devel
+# RHEL / Rocky / AlmaLinux 9 (WebKitGTK 4.0 only)
+sudo dnf install -y gcc pkgconf-pkg-config gtk3-devel webkit2gtk3-devel
+# Arch Linux
+sudo pacman -S --needed base-devel gtk3 webkit2gtk-4.1
+```
+
+The build detects whether WebKitGTK 4.1 or 4.0 is installed. The frontend build peaks at about 3 GB of memory.
 
 ### Prefer a binary?
 

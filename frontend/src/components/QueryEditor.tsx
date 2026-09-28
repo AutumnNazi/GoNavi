@@ -135,7 +135,10 @@ import {
     saveQueryEditorResultSessionForOpenTab,
     takeQueryEditorResultSession,
 } from '../utils/queryEditorResultSessionCache';
-import { useQueryEditorResultSessionLifecycle } from './queryEditor/queryEditorResultSessionLifecycle';
+import {
+    installQueryEditorViewStateMemory,
+    useQueryEditorResultSessionLifecycle,
+} from './queryEditor/queryEditorResultSessionLifecycle';
 import {
     QUERY_EDITOR_RESULT_HISTORY_MAX_BYTES,
     QUERY_EDITOR_RESULT_HISTORY_MAX_RESULTS,
@@ -2513,6 +2516,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       activeResultKeyRef,
       isResultPanelVisibleRef,
       editorRef,
+      isActive,
   });
   const shortcutOptions = useStore(state => state.shortcutOptions);
   const activeShortcutPlatform = getShortcutPlatform(isMacLikePlatform());
@@ -6095,6 +6099,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const handleEditorDidMount: OnMount = (editor, monaco) => {
       editorRef.current = editor;
       monacoRef.current = monaco;
+      installQueryEditorViewStateMemory(
+          tab.id,
+          editor,
+          restoredResultSessionRef.current?.editorViewState,
+      );
       // CompletionItemLabel is rendered by Monaco's DOM suggest widget. Keep
       // the original string label for non-DOM adapters used by older hosts.
       const useStructuredCompletionLabel = typeof editor?.getDomNode?.()?.querySelector === 'function';

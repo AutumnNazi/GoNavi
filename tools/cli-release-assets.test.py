@@ -370,11 +370,12 @@ class CLIReleaseAssetsTest(unittest.TestCase):
         self.assertIn("tools/validate-gui-update-manifest.py", source)
         self.assertIn("--channel dev", source)
 
-    def test_wails_config_has_a_non_default_product_version(self) -> None:
+    def test_wails_config_matches_cli_package_version(self) -> None:
         config = json.loads((ROOT / "wails.json").read_text(encoding="utf-8"))
+        package = json.loads((ROOT / "npm" / "gonavi-cli" / "package.json").read_text(encoding="utf-8"))
         product_version = config["info"]["productVersion"]
         self.assertRegex(product_version, r"^\d+\.\d+\.\d+$")
-        self.assertNotEqual(product_version, "1.0.0")
+        self.assertEqual(product_version, package["version"])
 
     def test_publish_workflow_keeps_cli_separate_from_gui_manifest(self) -> None:
         source = (ROOT / ".github" / "workflows" / "publish-release.yml").read_text(encoding="utf-8")
