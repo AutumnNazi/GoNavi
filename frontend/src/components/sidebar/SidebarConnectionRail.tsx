@@ -7,8 +7,8 @@ import {
   ImportOutlined,
   FileAddOutlined,
   AimOutlined,
-  MenuUnfoldOutlined,
 } from '@ant-design/icons';
+import SidebarPanelOutlined from '../icons/SidebarPanelOutlined';
 
 // V2 Connection Rail 子组件（从 Sidebar.tsx 抽取）。
 //
@@ -81,7 +81,7 @@ const SidebarConnectionRail: React.FC<SidebarConnectionRailProps> = ({
                 aria-expanded={false}
                 onClick={sidebarExpandAction.onClick}
               >
-                <MenuUnfoldOutlined />
+                <SidebarPanelOutlined />
               </button>
             </Tooltip>
           </div>

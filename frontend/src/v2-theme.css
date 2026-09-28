@@ -3316,6 +3316,11 @@ body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-switcher:hover {
   color: var(--gn-fg-2) !important;
 }
 
+/* 整行已有 hover / 选中底色，antd 在展开箭头上再叠一层 hover 框显得多余，直接去掉。 */
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-switcher::before {
+  display: none;
+}
+
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-switcher-noop .ant-tree-switcher-icon {
   visibility: hidden;
 }

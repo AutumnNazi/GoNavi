@@ -138,12 +138,11 @@ import { createSidebarResizeAwareFrameScheduler } from '../utils/sidebarResizeLi
   WarningOutlined,
   AimOutlined,
   MoreOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
   VerticalAlignTopOutlined,
   SafetyCertificateOutlined,
   SkinOutlined,
 	} from '@ant-design/icons';
+import SidebarPanelOutlined from './icons/SidebarPanelOutlined';
 import { useStore } from '../store';
 import { buildOverlayWorkbenchTheme } from '../utils/overlayWorkbenchTheme';
 import {
@@ -802,7 +801,7 @@ export const V2ExplorerToolbarActions: React.FC<{
           aria-label={toggleAction.label}
           aria-controls="gonavi-sidebar-tree-panel"
           aria-expanded={toggleAction.expanded}
-          icon={toggleAction.expanded ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
+          icon={<SidebarPanelOutlined />}
           onClick={toggleAction.onClick}
         />
       </Tooltip>
