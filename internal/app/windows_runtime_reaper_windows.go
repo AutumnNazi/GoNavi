@@ -22,6 +22,7 @@ import (
 )
 
 const windowsRuntimeReaperArgument = "--gonavi-reap-runtime-processes"
+const windowsUpdateCleanupArgument = "--gonavi-clean-update-dir"
 
 const maxProcessCommandLineBytes = 32 * 1024
 
@@ -47,6 +48,67 @@ func HandleWindowsRuntimeReaperArgs(args []string) bool {
 		logger.Errorf("回收脱离宿主的 WebView 进程失败：%v", err)
 	}
 	return true
+}
+
+// HandleWindowsUpdateCleanupArgs waits for the updater script to exit, then
+// removes only a validated, version-scoped GoNavi update workspace.
+func HandleWindowsUpdateCleanupArgs(args []string) bool {
+	if len(args) == 0 || args[0] != windowsUpdateCleanupArgument {
+		return false
+	}
+	pid, cleanupDir, err := parseWindowsUpdateCleanupArgs(args, os.Getenv("GONAVI_UPDATE_ROOT_DIR"))
+	if err != nil {
+		logger.Errorf("Windows 更新清理器参数无效：%v", err)
+		return true
+	}
+	if err := runWindowsUpdateCleanup(pid, cleanupDir); err != nil {
+		logger.Errorf("清理 Windows 更新工作区失败：%v", err)
+	}
+	return true
+}
+
+func parseWindowsUpdateCleanupArgs(args []string, cleanupDir string) (int, string, error) {
+	if len(args) != 2 {
+		return 0, "", fmt.Errorf("expected updater process id")
+	}
+	pid, err := strconv.Atoi(args[1])
+	if err != nil || pid <= 4 {
+		return 0, "", fmt.Errorf("invalid updater process id %q", args[1])
+	}
+	cleanupDir, err = validateWindowsUpdateCleanupDir(cleanupDir)
+	if err != nil {
+		return 0, "", err
+	}
+	return pid, cleanupDir, nil
+}
+
+func validateWindowsUpdateCleanupDir(cleanupDir string) (string, error) {
+	cleanupDir, err := absoluteUpdatePath(cleanupDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve cleanup directory: %w", err)
+	}
+	for _, rootDir := range allowedUpdateRootDirs() {
+		if isDirectChildUpdatePath(cleanupDir, rootDir) {
+			return cleanupDir, nil
+		}
+	}
+	return "", fmt.Errorf("cleanup directory %q is outside the update roots", cleanupDir)
+}
+
+func runWindowsUpdateCleanup(updaterPID int, cleanupDir string) error {
+	if err := waitForWindowsProcessExit(updaterPID); err != nil {
+		return fmt.Errorf("wait for updater process %d: %w", updaterPID, err)
+	}
+	var lastErr error
+	for attempt := 0; attempt < 20; attempt++ {
+		if err := os.RemoveAll(cleanupDir); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	return fmt.Errorf("remove update directory %q: %w", cleanupDir, lastErr)
 }
 
 func parseWindowsRuntimeReaperParentPID(args []string) (int, error) {
