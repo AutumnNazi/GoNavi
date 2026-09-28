@@ -42,10 +42,7 @@ func NewOpenAIResponsesProvider(config ai.ProviderConfig) (Provider, error) {
 		return nil, fmt.Errorf("model ID is required; select or enter a model in Settings")
 	}
 
-	maxTokens := config.MaxTokens
-	if maxTokens <= 0 {
-		maxTokens = openAIResponsesDefaultMaxOutputTokens(model)
-	}
+	maxTokens := normalizeOpenAIResponsesMaxOutputTokensForEndpoint(model, baseURL, config.MaxTokens)
 	temperature := config.Temperature
 	if temperature <= 0 {
 		temperature = defaultOpenAITemperature
@@ -595,31 +592,20 @@ func (p *OpenAIResponsesProvider) buildRequest(req ai.ChatRequest, stream bool) 
 	if temperature <= 0 {
 		temperature = p.config.Temperature
 	}
-	maxOutputTokens := req.MaxTokens
-	if maxOutputTokens <= 0 {
-		maxOutputTokens = p.config.MaxTokens
-	}
 	body := openAIResponsesRequest{
 		Model:           p.config.Model,
 		Input:           marshalOpenAIResponsesInput(buildOpenAIResponsesInput(requestMessages, p.baseURL)),
 		Temperature:     temperature,
-		MaxOutputTokens: maxOutputTokens,
+		MaxOutputTokens: openAIResponsesRequestMaxOutputTokens(p.config.Model, p.baseURL, req.MaxTokens, p.config.MaxTokens),
 		Stream:          stream,
 		Tools:           buildOpenAIResponsesTools(req.Tools),
+		Reasoning:       openAIResponsesRequestReasoning(p.config.Model, p.baseURL, p.config.ThinkingIntensity),
 	}
 	if !isDeepSeekResponsesBaseURL(p.baseURL) {
 		body.Store = boolPointer(false)
 	}
 	if !isDeepSeekResponsesBaseURL(p.baseURL) {
 		body.Include = []string{"reasoning.encrypted_content"}
-	}
-	if intensity := NormalizeThinkingIntensity(p.config.ThinkingIntensity); intensity != "" {
-		if effort := openAIReasoningEffort(intensity); effort != "" {
-			body.Reasoning = &openAIResponsesReasoning{Effort: effort}
-			if !isDeepSeekResponsesBaseURL(p.baseURL) {
-				body.Reasoning.Summary = "auto"
-			}
-		}
 	}
 	return body
 }
