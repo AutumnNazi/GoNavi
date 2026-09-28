@@ -1193,7 +1193,6 @@ func (a *App) buildCancellationUnsupportedExecutionResult(result connection.Quer
 	return result
 }
 
-
 // writeExecutionOutcomeUnknown covers both a driver-level ambiguous response
 // and a caller cancellation observed while a write was in flight. The latter
 // must be treated as unknown even when a driver returns an opaque error rather
@@ -2849,8 +2848,7 @@ func (a *App) DBGetTables(config connection.ConnectionConfig, dbName string) con
 		}
 	}
 	if err != nil {
-		logger.Error(err, "DBGetTables 获取表列表失败：%s", formatConnSummary(runConfig))
-		return connection.QueryResult{Success: false, Message: err.Error()}
+		return a.tableMetadataErrorResult(runConfig, tables, err)
 	}
 	tables = dedupeMetadataTableNames(tables)
 

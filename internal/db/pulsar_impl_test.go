@@ -244,6 +244,25 @@ func TestPulsarShowTopicsListsAllTopicsWithoutDefaultTopic(t *testing.T) {
 	}
 }
 
+func TestPulsarGetTablesRetainsDefaultTopicWhenAdminDiscoveryFails(t *testing.T) {
+	adminErr := errors.New("admin topic listing denied")
+	p := &PulsarDB{
+		defaultTopic: "persistent://public/default/orders",
+		listTopics: func(context.Context) ([]string, error) {
+			return nil, adminErr
+		},
+	}
+	topics, err := p.GetTables("topics")
+	if !errors.Is(err, adminErr) || len(topics) != 1 || topics[0] != p.defaultTopic {
+		t.Fatalf("default topic and discovery error = %v, %v", topics, err)
+	}
+	p.defaultTopic = ""
+	topics, err = p.GetTables("topics")
+	if !errors.Is(err, adminErr) || len(topics) != 0 {
+		t.Fatalf("missing default topic must keep discovery failure: %v, %v", topics, err)
+	}
+}
+
 func TestPulsarTopicNamespace(t *testing.T) {
 	for _, tc := range []struct {
 		topic, tenant, namespace string
@@ -329,5 +348,29 @@ func TestPulsarDecodePayloadPreservesLargeJSONNumbers(t *testing.T) {
 	}
 	if small, ok := object["small"].(json.Number); !ok || small != "7" {
 		t.Fatalf("small number changed type or value: %T %v", object["small"], object["small"])
+	}
+}
+
+func TestPulsarDecodePayloadRequiresSingleCompleteJSONValue(t *testing.T) {
+	for _, tc := range []struct {
+		name, payload string
+		wantRaw       bool
+	}{
+		{name: "tail", payload: `{"a":1}tail`, wantRaw: true},
+		{name: "second value", payload: `{"a":1} {"b":2}`, wantRaw: true},
+		{name: "whitespace", payload: "{\"a\":1} \n\t"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			decoded := pulsarDecodePayload([]byte(tc.payload))
+			if tc.wantRaw {
+				if decoded != tc.payload {
+					t.Fatalf("payload changed: %#v", decoded)
+				}
+				return
+			}
+			if _, ok := decoded.(map[string]interface{}); !ok {
+				t.Fatalf("complete JSON was not decoded: %#v", decoded)
+			}
+		})
 	}
 }

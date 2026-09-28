@@ -1,12 +1,53 @@
 package app
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/db"
+	"GoNavi-Wails/internal/secretstore"
 )
+
+type pulsarPartialMetadataDB struct {
+	*fakeMetadataRetryDB
+	topic string
+	err   error
+}
+
+func (p *pulsarPartialMetadataDB) GetTables(string) ([]string, error) {
+	return []string{p.topic}, p.err
+}
+
+func TestPulsarObjectMetadataKeepsDefaultTopicWithDiscoveryWarning(t *testing.T) {
+	previousFactory := newDatabaseFunc
+	t.Cleanup(func() { newDatabaseFunc = previousFactory })
+	instance := &pulsarPartialMetadataDB{
+		fakeMetadataRetryDB: &fakeMetadataRetryDB{},
+		topic:               "persistent://public/default/orders",
+		err:                 errors.New("admin topic listing denied"),
+	}
+	newDatabaseFunc = func(string) (db.Database, error) { return instance, nil }
+	application := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	result := application.DBGetObjects(
+		connection.ConnectionConfig{Type: "pulsar", Host: "localhost", Port: 6650}, "topics",
+	)
+	objects, ok := result.Data.([]connection.DatabaseObject)
+	if !result.Success || !result.Partial || !result.Retryable || !ok || len(objects) != 1 || objects[0].Name != instance.topic {
+		t.Fatalf("partial Pulsar metadata lost default topic: %#v", result)
+	}
+	if result.Message != application.appText("sidebar.message.pulsar_topic_discovery_partial", nil) || result.Message == "sidebar.message.pulsar_topic_discovery_partial" {
+		t.Fatalf("missing explicit discovery warning: %q", result.Message)
+	}
+	tables := application.DBGetTables(
+		connection.ConnectionConfig{Type: "pulsar", Host: "localhost", Port: 6650}, "topics",
+	)
+	rows, ok := tables.Data.([]map[string]string)
+	if !tables.Success || !tables.Partial || !tables.Retryable || !ok || len(rows) != 1 || rows[0]["Table"] != instance.topic {
+		t.Fatalf("partial Pulsar table list lost default topic: %#v", tables)
+	}
+}
 
 func TestPulsarRegistrationAndMetadata(t *testing.T) {
 	for _, kind := range []string{"pulsar", "apache-pulsar", "apache_pulsar"} {

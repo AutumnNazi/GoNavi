@@ -1,6 +1,7 @@
 package db
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -255,6 +256,9 @@ func (p *PulsarDB) GetTables(dbName string) ([]string, error) {
 	if p.listTopics != nil {
 		topics, err := p.listTopics(metadataContextFor(p))
 		if err != nil {
+			if p.defaultTopic != "" {
+				return []string{p.defaultTopic}, err
+			}
 			return nil, err
 		}
 		return topics, nil
@@ -483,10 +487,13 @@ func pulsarColumns() []string {
 }
 func pulsarDecodePayload(payload []byte) interface{} {
 	var value interface{}
-	decoder := json.NewDecoder(strings.NewReader(string(payload)))
+	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.UseNumber()
 	if decoder.Decode(&value) == nil {
-		return pulsarJSONValue(value)
+		var trailing interface{}
+		if errors.Is(decoder.Decode(&trailing), io.EOF) {
+			return pulsarJSONValue(value)
+		}
 	}
 	return string(payload)
 }

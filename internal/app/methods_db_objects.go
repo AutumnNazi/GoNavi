@@ -53,6 +53,14 @@ func (a *App) DBGetObjects(config connection.ConnectionConfig, dbName string) co
 	tables, tableErr := dbInst.GetTables(dbName)
 	if tableErr != nil {
 		logger.Warnf("DBGetObjects 获取基础对象失败：%s err=%v", formatConnSummary(runConfig), tableErr)
+		if dbType == "pulsar" && len(tables) > 0 {
+			warning := a.appText("sidebar.message.pulsar_topic_discovery_partial", nil)
+			return connection.QueryResult{
+				Success: true, Partial: true, Retryable: true,
+				Message: warning, Warnings: []string{warning}, FailedObjectTypes: []string{tableType},
+				Data: buildNamedObjects(dbName, tableType, dedupeMetadataTableNames(tables)),
+			}
+		}
 		return failedObjectMetadataResult(tableType, tableErr)
 	}
 	tables = dedupeMetadataTableNames(tables)
@@ -128,6 +136,23 @@ func failedObjectMetadataResult(objectType string, err error) connection.QueryRe
 		FailedObjectTypes: []string{objectType},
 		Retryable:         true,
 	}
+}
+
+func (a *App) tableMetadataErrorResult(config connection.ConnectionConfig, tables []string, err error) connection.QueryResult {
+	if normalizeDriverType(config.Type) == "pulsar" && len(tables) > 0 {
+		logger.Warnf("DBGetTables Pulsar 主题发现不完整：%s err=%v", formatConnSummary(config), err)
+		rows := make([]map[string]string, 0, len(tables))
+		for _, name := range dedupeMetadataTableNames(tables) {
+			rows = append(rows, map[string]string{"Table": name})
+		}
+		warning := a.appText("sidebar.message.pulsar_topic_discovery_partial", nil)
+		return connection.QueryResult{
+			Success: true, Partial: true, Retryable: true, ScannedCount: len(rows),
+			Message: warning, Warnings: []string{warning}, FailedObjectTypes: []string{"topic"}, Data: rows,
+		}
+	}
+	logger.Error(err, "DBGetTables 获取表列表失败：%s", formatConnSummary(config))
+	return connection.QueryResult{Success: false, Message: err.Error()}
 }
 
 func tableObjectTypeForDB(dbType string) string {
