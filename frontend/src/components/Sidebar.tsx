@@ -1,6 +1,7 @@
 import SidebarConnectionRail from './sidebar/SidebarConnectionRail';
 import Modal from './common/ResizableDraggableModal';
 import { type TitleBarQuickAction } from './TitleBarQuickActions';
+import { TitlebarGearIcon, TitlebarGraphIcon, TitlebarInfoIcon, TitlebarSqlToolIcon } from './titlebar/gonaviTitlebarIcons';
 import TitleBarQuickActionsHost from './TitleBarQuickActionsHost';
 import { type DataSyncEntryModeAlias } from './dataSyncEntryMode';
 import type { DatabaseCharsetOption, DatabaseCollationOption } from '../utils/databaseCharset';
@@ -823,6 +824,8 @@ const Sidebar: React.FC<{
     pane?: string;
     action?: 'import-connections' | 'export-connections' | 'schema-compare' | 'data-compare' | 'compare' | 'sync' | 'drivers' | 'sql-audit';
   }) => void;
+  activeSettingsCenterPaneKey?: string | null; // 设置中心当前面板 key，用于点亮工具条入口
+  hideTitlebarAboutAction?: boolean; // macOS 的「关于」走原生菜单栏，不再渲染到工具条
   /** Whether web-only settings entries (e.g. browser auth) should appear. */
   isWebRuntime?: boolean;
   onOpenDataSyncWorkbench?: (entryMode: DataSyncEntryModeAlias) => void;
@@ -846,6 +849,8 @@ const Sidebar: React.FC<{
   onEditConnection,
   onOpenSettings,
   onOpenSettingsNavigation,
+  activeSettingsCenterPaneKey,
+  hideTitlebarAboutAction = false,
   isWebRuntime = false,
   onToggleAI,
   onToggleLogPanel,
@@ -4251,6 +4256,7 @@ const Sidebar: React.FC<{
     {
       key: 'data-workflow',
       label: v2DataWorkflowLabel,
+      icon: <TitlebarGraphIcon size="100%" />,
       menu: [
         {
           key: 'batch-connections',
@@ -4293,6 +4299,8 @@ const Sidebar: React.FC<{
     {
       key: 'sql-tools',
       label: v2SqlToolsLabel,
+      dividerBefore: true, // 「数据工作流」与「SQL 工具」之间的分组竖线
+      icon: <TitlebarSqlToolIcon size="100%" />,
       menu: [
         {
           key: 'slow-query',
@@ -4318,17 +4326,21 @@ const Sidebar: React.FC<{
     {
       key: 'drivers',
       label: t('app.tools.entry.drivers.title'),
+      icon: <TitlebarGearIcon size="100%" />,
+      active: activeSettingsCenterPaneKey === 'drivers', // 打开驱动管理时点亮
       onClick: () => onOpenSettingsNavigation?.({ group: 'workspace', action: 'drivers' }),
     },
   ];
-  // 关于 GoNavi 作为标题栏独立按钮，和数据工作流 / SQL 工具并列。
+  // 关于 GoNavi 作为工具条独立按钮；macOS 上改走原生菜单栏，此处不渲染。
   const v2TitlebarAboutActions: TitleBarQuickAction[] = [
     {
       key: 'about-go-navi',
       label: t('app.settings.group.about.title'),
+      icon: <TitlebarInfoIcon size="100%" />,
       onClick: () => onOpenSettingsNavigation?.({ group: 'about', pane: 'about-go-navi' }),
     },
   ];
+  if (hideTitlebarAboutAction) v2TitlebarAboutActions.length = 0; // macOS 走原生菜单栏
 
   const getCommandSearchCopyOptions = useCallback((item: V2CommandSearchItem): V2CommandSearchCopyOption[] => {
     if (item.kind === 'action') return [];

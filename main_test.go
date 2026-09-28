@@ -12,6 +12,7 @@ import (
 	"GoNavi-Wails/internal/ai/runharness"
 	aiservice "GoNavi-Wails/internal/ai/service"
 	"GoNavi-Wails/internal/app"
+	"GoNavi-Wails/shared/i18n"
 
 	"github.com/wailsapp/wails/v2/pkg/menu"
 	"github.com/wailsapp/wails/v2/pkg/menu/keys"
@@ -259,6 +260,76 @@ func TestResolveWindowVisualOptions(t *testing.T) {
 				t.Fatalf("WebView2 missing-runtime message = %q", windowsOptions.Messages.Webview2NotInstalled)
 			}
 		})
+	}
+}
+
+func TestBuildMacApplicationMenuAppendsPreferencesAndAboutMenus(t *testing.T) {
+	localizer, err := i18n.NewLocalizer(i18n.LanguageZhCN)
+	if err != nil {
+		t.Fatalf("NewLocalizer() error = %v", err)
+	}
+	var emitted []string
+	preferences := newMacPreferencesMenu(localizer, func(event string) {
+		emitted = append(emitted, event)
+	})
+	appMenu := buildMacApplicationMenu(nil, true, preferences.topLevelItems()...)
+
+	// AppMenu / Edit / SQL / GoNavi 设置 / 主题 / 关于
+	if len(appMenu.Items) != 6 {
+		t.Fatalf("expected 6 top-level menu items, got %d", len(appMenu.Items))
+	}
+	settingsRoot, themeRoot, aboutRoot := appMenu.Items[3], appMenu.Items[4], appMenu.Items[5]
+	if settingsRoot.Label != "设置" || themeRoot.Label != "主题" || aboutRoot.Label != "关于" {
+		t.Fatalf("top-level labels = %q / %q / %q", settingsRoot.Label, themeRoot.Label, aboutRoot.Label)
+	}
+	// 顶层菜单必须挂子菜单，否则 macOS 菜单栏上的点击不会触发动作。
+	single := func(root *menu.MenuItem, wantLabel string) *menu.MenuItem {
+		t.Helper()
+		if root.SubMenu == nil || len(root.SubMenu.Items) != 1 || root.SubMenu.Items[0].Label != wantLabel {
+			t.Fatalf("menu %q must hold a single %q item", root.Label, wantLabel)
+		}
+		return root.SubMenu.Items[0]
+	}
+	preferencesItem := single(settingsRoot, "偏好设置")
+	themeItem := single(themeRoot, "切换主题")
+	aboutItem := single(aboutRoot, "关于 GoNavi")
+
+	for _, item := range []*menu.MenuItem{preferencesItem, themeItem, aboutItem} {
+		// 不绑加速键：⌘, 等组合键由前端可自定义的快捷键系统负责。
+		if item.Accelerator != nil {
+			t.Fatalf("menu item %q must not bind a native accelerator", item.Label)
+		}
+		item.Click(&menu.CallbackData{MenuItem: item})
+	}
+	wantEvents := []string{nativeOpenPreferencesEvent, nativeToggleThemeEvent, nativeOpenAboutEvent}
+	if strings.Join(emitted, ",") != strings.Join(wantEvents, ",") {
+		t.Fatalf("emitted events = %v, want %v", emitted, wantEvents)
+	}
+
+	if !preferences.setLanguage("en-US") {
+		t.Fatal("setLanguage(en-US) = false, want relabel")
+	}
+	if settingsRoot.Label != "Settings" || themeRoot.Label != "Theme" || aboutRoot.Label != "About" || aboutItem.Label != "About GoNavi" {
+		t.Fatalf("relabel failed: %q / %q / %q / %q", settingsRoot.Label, themeRoot.Label, aboutRoot.Label, aboutItem.Label)
+	}
+	if preferences.setLanguage("en-US") {
+		t.Fatal("setLanguage with the same language should be a no-op")
+	}
+	if preferences.setLanguage("xx-YY") {
+		t.Fatal("setLanguage with an unsupported language should be a no-op")
+	}
+}
+
+func TestResolveStartupMenuLanguage(t *testing.T) {
+	t.Setenv("LC_ALL", "")
+	t.Setenv("LC_MESSAGES", "")
+	t.Setenv("LANG", "zh_CN.UTF-8")
+	if got := resolveStartupMenuLanguage(); got != i18n.LanguageZhCN {
+		t.Fatalf("LANG=zh_CN.UTF-8 -> %q, want %q", got, i18n.LanguageZhCN)
+	}
+	t.Setenv("LANG", "")
+	if got := resolveStartupMenuLanguage(); got != i18n.LanguageEnUS {
+		t.Fatalf("empty locale -> %q, want %q", got, i18n.LanguageEnUS)
 	}
 }
 

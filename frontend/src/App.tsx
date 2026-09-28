@@ -12,8 +12,9 @@ import TitleBarPrimaryActions, {
   resolveTitleBarPrimaryActionShortcut,
 } from './components/TitleBarPrimaryActions';
 import TitleBarSystemActions from './components/TitleBarSystemActions';
-import TitleBarViewMenu from './components/TitleBarViewMenu';
-import { useTitleBarViewMenuEntries } from './components/useTitleBarViewMenuEntries';
+import TitleBarToolBar from './components/titlebar/TitleBarToolBar';
+import TitleBarToolBarAiAction from './components/titlebar/TitleBarToolBarAiAction';
+import { useMacNativeMenuBridge } from './hooks/useMacNativeMenuBridge';
 import ConnectionGroupManagementModal from './components/sidebar/ConnectionGroupManagementModal';
 import TabManager from './components/TabManager';
 import FloatingWorkbenchWindows from './components/FloatingWorkbenchWindows';
@@ -53,7 +54,6 @@ import {
 } from './brand/brandIcons';
 import CustomThemeManager from './components/settings/CustomThemeManager';
 import ToolbarButtonAppearanceSettings from './components/settings/ToolbarButtonAppearanceSettings';
-import TitlebarMenuStyleSettings from './components/settings/TitlebarMenuStyleSettings';
 import SettingsCenterTreeNav, {
   findSettingsCenterTreeItem,
 } from './components/settings/SettingsCenterTreeNav';
@@ -4395,19 +4395,6 @@ function App() {
           openSecurityUpdateSettings();
       }
   }, [openSecurityUpdateSettings, securityUpdateRepairSource]);
-  const titleBarViewMenuEntries = useTitleBarViewMenuEntries({
-      activeTabType: activeWorkbenchTab?.type,
-      aiPanelVisible,
-      fullscreen: windowState === 'fullscreen',
-      isMacRuntime,
-      onCloseSettings: closeSettingsCenterWorkbenchTab,
-      onCollapseSidebar: handleCollapseSidebarPanel,
-      onExpandSidebar: handleExpandSidebarPanel,
-      onOpenSettings: handleOpenSettingsModal,
-      onToggleAI: handleToggleOrFocusAIPanel,
-      settingsOpen: isSettingsModalOpen,
-      sidebarCollapsed: isSidebarCollapsed,
-  });
   const handleCancelSettingsCenterPane = useCallback(() => withAISettingsLeaveGuard(aiSettingsLeaveGuardRef.current, () => {
       const leavingAI = activeSettingsCenterPane?.key === 'ai';
       if (isConnectionPackageSettingsPaneKey(activeSettingsCenterPane?.key)) {
@@ -7209,11 +7196,6 @@ function App() {
                                   options?.hideSectionTabs ? null : t('app.theme.nav.appearance.title'),
                                   <>
                                       {renderThemeSettingsRow({
-                                          label: t('app.theme.appearance.titlebar_menu_style_title'),
-                                          stacked: true,
-                                          control: <TitlebarMenuStyleSettings />,
-                                      })}
-                                      {renderThemeSettingsRow({
                                           label: t('app.theme.appearance.ui_scale_title'),
                                           hint: t('app.theme.appearance.ui_scale_hint'),
                                           stacked: true,
@@ -8165,6 +8147,22 @@ function App() {
     event.preventDefault();
   }, [allowDebugNativeContextMenu]);
 
+  const handleToggleThemeMode = () => selectPresetTheme(themeMode === 'dark' ? 'light' : 'dark');
+  useMacNativeMenuBridge({ enabled: useNativeMacWindowControls && !isWebRuntime, language, onOpenPreferences: handleOpenSettingsModal, onToggleTheme: handleToggleThemeMode, onOpenAbout: () => handleTitleBarSettingsNavigation({ group: 'about', pane: 'about-go-navi' }) });
+  const titleBarSystemActionsNode = ( // 非 macOS 放右区；macOS 走原生菜单栏
+    <TitleBarSystemActions
+      aiAssistantLabel={t('app.sidebar.ai_assistant')}
+      settingsLabel={t('app.sidebar.settings')}
+      aiActive={aiPanelVisible}
+      onToggleAI={handleToggleOrFocusAIPanel}
+      onOpenSettings={handleOpenSettingsModal}
+      themeLabel={t('app.titlebar.theme')}
+      isDarkTheme={themeMode === 'dark'}
+      onToggleTheme={handleToggleThemeMode}
+      themeTooltip={t(themeMode === 'dark' ? 'app.titlebar.theme.to_light' : 'app.titlebar.theme.to_dark')}
+    />
+  );
+
   return (
     <ConfigProvider
         locale={getAntdLocale(language)}
@@ -8243,26 +8241,6 @@ function App() {
                   >
                       <span>GoNavi</span>
                   </div>
-                  <TitleBarPrimaryActions
-                    newQueryLabel={t(primaryActionIsMessageQueue
-                      ? 'message_queue_workbench.action.open'
-                      : 'query.new')}
-                    newConnectionLabel={t('connection.new')}
-                    newQueryShortcut={titleBarNewQueryShortcut}
-                    newConnectionShortcut={titleBarNewConnectionShortcut}
-                    onNewQuery={handleNewQuery}
-                    onNewConnection={handleCreateConnection}
-                    connectionGroupLabel={t('connection.sidebar.management.title')}
-                    onConnectionGroupManagement={() => setIsConnectionGroupManagementOpen(true)}
-                  />
-                  <div id="gonavi-titlebar-quick-actions" className="gonavi-titlebar-quick-actions-slot" />
-                  {appearance.titlebarMenuStyle === 'view-menu' && (
-                      <TitleBarViewMenu
-                        label={t('app.view_menu.trigger')}
-                        entries={titleBarViewMenuEntries}
-                      />
-                  )}
-                  <div id="gonavi-titlebar-about-action" className="gonavi-titlebar-quick-actions-slot gn-v2-titlebar-about-slot" />
               </div>
               {shouldDockCollapsedSidebarActionsInTitlebar && (
                   <div
@@ -8278,13 +8256,7 @@ function App() {
               )}
               {/* Collapsed sidebar titlebar actions end */}
               <div className="gn-v2-titlebar-right">
-                  <TitleBarSystemActions
-                    aiAssistantLabel={t('app.sidebar.ai_assistant')}
-                    settingsLabel={t('app.sidebar.settings')}
-                    aiActive={aiPanelVisible}
-                    onToggleAI={handleToggleOrFocusAIPanel}
-                    onOpenSettings={handleOpenSettingsModal}
-                  />
+                  {!useNativeMacWindowControls && titleBarSystemActionsNode}
                   {isWebRuntime ? (
                       <div
                         onDoubleClick={(e) => e.stopPropagation()}
@@ -8333,6 +8305,28 @@ function App() {
                   )}
               </div>
           </div>
+
+          <TitleBarToolBar ariaLabel={t('app.titlebar.toolbar.aria')}>{/* 不套 mac 红绿灯留白 */}
+            <TitleBarPrimaryActions
+              newQueryLabel={t(primaryActionIsMessageQueue
+                ? 'message_queue_workbench.action.open'
+                : 'query.new')}
+              newConnectionLabel={t('connection.new')}
+              newQueryShortcut={titleBarNewQueryShortcut}
+              newConnectionShortcut={titleBarNewConnectionShortcut}
+              onNewQuery={handleNewQuery}
+              onNewConnection={handleCreateConnection}
+              connectionGroupLabel={t('connection.sidebar.management.title')}
+              onConnectionGroupManagement={() => setIsConnectionGroupManagementOpen(true)}
+            />
+            <div id="gonavi-titlebar-quick-actions" className="gonavi-titlebar-quick-actions-slot" />
+            {!useNativeMacWindowControls && (
+              <div id="gonavi-titlebar-about-action" className="gonavi-titlebar-quick-actions-slot gn-v2-titlebar-about-slot" />
+            )}
+            {useNativeMacWindowControls && (
+              <TitleBarToolBarAiAction label={t('app.titlebar.toolbar.ai')} title={t('app.sidebar.ai_assistant')} active={aiPanelVisible} onClick={handleToggleOrFocusAIPanel} />
+            )}
+          </TitleBarToolBar>
 
           {showLinuxCJKFontBanner && (
               <LinuxCJKFontBanner
@@ -8385,6 +8379,8 @@ function App() {
                             onEditConnection={handleEditConnection}
                             onOpenSettings={handleOpenSettingsModal}
                             onOpenSettingsNavigation={handleTitleBarSettingsNavigation}
+                            activeSettingsCenterPaneKey={activeSettingsCenterPane?.key}
+                            hideTitlebarAboutAction={useNativeMacWindowControls}
                             isWebRuntime={isWebRuntime}
                             onOpenDataSyncWorkbench={handleOpenDataSyncWorkbench}
                             onToggleAI={handleToggleOrFocusAIPanel}

@@ -1,0 +1,59 @@
+import { useEffect, useRef } from 'react';
+
+import { EventsEmit, EventsOn } from '../../wailsjs/runtime';
+
+/** 与 Go 侧 mac_preferences_menu.go 中的事件名一一对应。 */
+export const MAC_NATIVE_MENU_EVENTS = {
+  openPreferences: 'gonavi:native-open-preferences',
+  toggleTheme: 'gonavi:native-toggle-theme',
+  openAbout: 'gonavi:native-open-about',
+  language: 'gonavi:native-menu-language',
+} as const;
+
+export interface MacNativeMenuBridgeOptions {
+  /** 仅 macOS 桌面运行时有原生菜单栏；其余环境整个 hook 不做任何事。 */
+  enabled: boolean;
+  /** 当前界面语言，变化时同步给原生菜单重打标签。 */
+  language: string;
+  onOpenPreferences: () => void;
+  onToggleTheme: () => void;
+  onOpenAbout: () => void;
+}
+
+/**
+ * 把 macOS 菜单栏「GoNavi 设置」菜单接到前端已有的处理函数上。
+ *
+ * 原生菜单只负责发事件，行为全部复用标题栏按钮的回调，两处入口不会走偏。
+ * 回调走 ref：订阅只在 enabled 变化时重建，不会因为父组件每次渲染生成新
+ * 闭包而反复注销/注册 Wails 事件。
+ */
+export function useMacNativeMenuBridge({
+  enabled,
+  language,
+  onOpenPreferences,
+  onToggleTheme,
+  onOpenAbout,
+}: MacNativeMenuBridgeOptions): void {
+  const handlersRef = useRef({ onOpenPreferences, onToggleTheme, onOpenAbout });
+  handlersRef.current = { onOpenPreferences, onToggleTheme, onOpenAbout };
+
+  useEffect(() => {
+    if (!enabled) {
+      return undefined;
+    }
+    const offs = [
+      EventsOn(MAC_NATIVE_MENU_EVENTS.openPreferences, () => handlersRef.current.onOpenPreferences()),
+      EventsOn(MAC_NATIVE_MENU_EVENTS.toggleTheme, () => handlersRef.current.onToggleTheme()),
+      EventsOn(MAC_NATIVE_MENU_EVENTS.openAbout, () => handlersRef.current.onOpenAbout()),
+    ];
+    return () => {
+      offs.forEach((off) => off());
+    };
+  }, [enabled]);
+
+  useEffect(() => {
+    if (enabled && language) {
+      EventsEmit(MAC_NATIVE_MENU_EVENTS.language, language);
+    }
+  }, [enabled, language]);
+}
