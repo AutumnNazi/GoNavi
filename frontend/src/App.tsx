@@ -70,6 +70,7 @@ import CustomThemeStyleHost, {
   type CustomThemeAntTokenSnapshot,
 } from './components/theme/CustomThemeStyleHost';
 import ToolbarAppearanceStyleHost from './components/theme/ToolbarAppearanceStyleHost';
+import { suppressThemeSwitchTransitions } from './components/theme/themeSwitchTransition';
 import {
   AUTO_CHECK_FOR_UPDATES_INTERVAL_OPTIONS,
   DEFAULT_APPEARANCE,
@@ -883,7 +884,7 @@ function App() {
   const setThemePreference = useStore(state => state.setThemePreference);
   const customThemes = useCustomThemeStore(state => state.themes);
   const activeCustomThemeId = useCustomThemeStore(state => state.activeThemeId);
-  const selectCustomTheme = useCustomThemeStore(state => state.selectCustomTheme);
+  const activateRememberedCustomTheme = useCustomThemeStore(state => state.activateRememberedCustomTheme);
   const appearance = useStore(state => state.appearance);
   const setAppearance = useStore(state => state.setAppearance);
   const uiScale = useStore(state => state.uiScale);
@@ -1063,14 +1064,14 @@ function App() {
   }, [brandIconId]);
 
   const selectPresetTheme = useCallback((preference: ThemePreference) => {
-      // Custom CSS is an independent skin layer. Selecting a built-in preset
-      // first disables that layer, then preserves the existing 3-mode contract.
-      if (activeCustomTheme) {
-          const result = selectCustomTheme(null);
-          if (!result.ok) message.warning(t('app.theme.custom.error.storage_failed'));
-      }
+      suppressThemeSwitchTransitions();
+      // 亮 / 暗各自恢复上次应用的主题（无记忆则回到基础主题）；跟随系统始终回到基础主题。
+      const result = activateRememberedCustomTheme(preference);
+      if (!result.ok) message.warning(t('app.theme.custom.error.storage_failed'));
       setThemePreference(preference);
-  }, [activeCustomTheme, selectCustomTheme, setThemePreference, t]);
+      // 与偏好同批提交解析后的明暗，避免再由 effect 触发第二轮整树渲染。
+      setTheme(preference === 'system' ? systemThemeMode : preference);
+  }, [activateRememberedCustomTheme, setTheme, setThemePreference, systemThemeMode, t]);
   const setTabDisplaySettings = useCallback((settings: Partial<TabDisplaySettings>) => {
       setAppearance({
           tabDisplay: applyTabDisplaySettingsPatch(tabDisplaySettings, settings),
