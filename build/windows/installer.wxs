@@ -20,6 +20,22 @@
          Always replace installer-owned files instead of leaving a related product's key path in place. -->
     <Property Id="REINSTALLMODE" Value="amus" />
     <Property Id="INSTALLDESKTOPSHORTCUT" Value="1" Secure="yes" />
+    <!-- MajorUpgrade identifies the related product but does not restore its chosen directory.
+         Reuse the standard ARP InstallLocation written by every previous GoNavi MSI, while
+         preserving an explicit INSTALLFOLDER supplied by the online updater or administrator. -->
+    <Property Id="PREVIOUSINSTALLFOLDER" Secure="yes">
+      <RegistrySearch Id="PreviousInstallFolder"
+                      Root="HKLM"
+                      Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\[WIX_UPGRADE_DETECTED]"
+                      Name="InstallLocation"
+                      Type="directory"
+                      Bitness="always64" />
+    </Property>
+    <SetProperty Id="INSTALLFOLDER"
+                 Value="[PREVIOUSINSTALLFOLDER]"
+                 After="AppSearch"
+                 Sequence="first"
+                 Condition="NOT INSTALLFOLDER AND PREVIOUSINSTALLFOLDER" />
     <SetProperty Id="ARPINSTALLLOCATION" Value="[INSTALLFOLDER]" After="CostFinalize" />
     <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
 
