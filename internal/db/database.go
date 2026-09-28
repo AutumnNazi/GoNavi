@@ -1139,21 +1139,10 @@ var databaseFactories = map[string]databaseFactory{
 	"milvus": func() Database {
 		return &MilvusDB{}
 	},
-	"rocketmq": func() Database {
-		return &RocketMQDB{}
-	},
-	"mqtt": func() Database {
-		return &MQTTDB{}
-	},
-	"kafka": func() Database {
-		return &KafkaDB{}
-	},
-	"rabbitmq": func() Database {
-		return &RabbitMQDB{}
-	},
 }
 
 func init() {
+	registerMessageDatabaseFactories()
 	registerOptionalDatabaseFactories()
 }
 
@@ -1203,6 +1192,8 @@ func normalizeDatabaseType(dbType string) string {
 		return "kafka"
 	case "rabbitmq", "rabbit-mq", "rabbit_mq":
 		return "rabbitmq"
+	case "pulsar", "apache-pulsar", "apache_pulsar":
+		return "pulsar"
 	default:
 		return normalized
 	}

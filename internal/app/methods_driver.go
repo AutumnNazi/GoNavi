@@ -1778,6 +1778,8 @@ func normalizeDriverType(driverType string) string {
 		return "mqtt"
 	case "kafka", "apache-kafka", "apache_kafka":
 		return "kafka"
+	case "pulsar", "apache-pulsar", "apache_pulsar":
+		return "pulsar"
 	case "rabbitmq", "rabbit-mq", "rabbit_mq":
 		return "rabbitmq"
 	case "intersystems", "intersystemsiris", "inter-systems-iris", "inter-systems":
@@ -1847,17 +1849,7 @@ func resolveDriverDefinitionWithPackages(driverType string, packages map[string]
 }
 
 func allDriverDefinitionsWithPackages(packages map[string]pinnedDriverPackage) []driverDefinition {
-	return []driverDefinition{
-		{Type: "mysql", Name: "MySQL", Engine: driverEngineGo, BuiltIn: true},
-		{Type: "goldendb", Name: "GoldenDB", Engine: driverEngineGo, BuiltIn: true},
-		{Type: "oracle", Name: "Oracle", Engine: driverEngineGo, BuiltIn: true},
-		{Type: "redis", Name: "Redis", Engine: driverEngineGo, BuiltIn: true},
-		{Type: "postgres", Name: "PostgreSQL", Engine: driverEngineGo, BuiltIn: true},
-		{Type: "rocketmq", Name: "RocketMQ", Engine: driverEngineGo, BuiltIn: true},
-		{Type: "mqtt", Name: "MQTT", Engine: driverEngineGo, BuiltIn: true},
-		{Type: "kafka", Name: "Kafka", Engine: driverEngineGo, BuiltIn: true},
-		{Type: "rabbitmq", Name: "RabbitMQ", Engine: driverEngineGo, BuiltIn: true},
-
+	return append(builtInDriverDefinitions(), []driverDefinition{
 		// 其他数据源需要先在驱动管理中“安装启用”。
 		buildOptionalGoDriverDefinition("mariadb", "MariaDB", packages),
 		buildOptionalGoDriverDefinition("oceanbase", "OceanBase", packages),
@@ -1881,7 +1873,7 @@ func allDriverDefinitionsWithPackages(packages map[string]pinnedDriverPackage) [
 		buildOptionalGoDriverDefinition("clickhouse", "ClickHouse", packages),
 		buildOptionalGoDriverDefinition("elasticsearch", "Elasticsearch", packages),
 		buildOptionalGoDriverDefinition("trino", "Trino", packages),
-	}
+	}...)
 }
 
 func buildOptionalGoDriverDefinition(driverType string, driverName string, packages map[string]pinnedDriverPackage) driverDefinition {

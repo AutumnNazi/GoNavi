@@ -84,6 +84,10 @@ const normalizeDataSourceToken = (raw: string): string => {
     case 'rabbit-mq':
     case 'rabbit_mq':
       return 'rabbitmq';
+    case 'pulsar':
+    case 'apache-pulsar':
+    case 'apache_pulsar':
+      return 'pulsar';
     case 'intersystems':
     case 'intersystemsiris':
     case 'inter-systems':
@@ -128,6 +132,7 @@ const MESSAGE_QUEUE_DATA_SOURCE_TYPES = new Set([
   'kafka',
   'rocketmq',
   'rabbitmq',
+  'pulsar',
 ]);
 
 /**

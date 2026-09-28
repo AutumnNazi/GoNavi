@@ -2515,7 +2515,7 @@ const Sidebar: React.FC<{
       }
 
       const isMessageQueueConnection = node.type === 'connection'
-          && ['mqtt', 'kafka', 'rocketmq', 'rabbitmq'].includes(
+          && ['mqtt', 'kafka', 'rocketmq', 'rabbitmq', 'pulsar'].includes(
               resolveDataSourceType(node.dataRef?.config),
           );
       if (isMessageQueueConnection || node.type === 'message-namespace') {
