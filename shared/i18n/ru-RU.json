@@ -1,4 +1,11 @@
 {
+  "connection_modal.step1.hint.pulsar": "Broker / Topic",
+  "connection_modal.pulsar.defaultTopic.label": "Топик по умолчанию",
+  "connection_modal.pulsar.defaultTopic.placeholder": "Пример: persistent://public/default/orders",
+  "message_consume.presentation.pulsar.destination_placeholder": "Введите топик Pulsar",
+  "message_consume.presentation.pulsar.alert": "Предпросмотр использует независимый Reader и не создаёт и не перемещает курсоры постоянных подписок.",
+  "message_publish.presentation.pulsar.alert": "Сообщения будут отправлены в указанный топик Pulsar.",
+  "message_publish.presentation.pulsar.success_hint": "Сообщение отправлено в топик Pulsar.",
   "app.shortcuts.action.optimizeQueryWithAI.label": "Оптимизация ИИ",
   "app.shortcuts.action.optimizeQueryWithAI.description": "Отправить выделенный SQL или весь текст редактора на панель ИИ для оптимизации",
   "ai.service.mcp_client.claude_code.config_dir_create_failed": "Не удалось создать каталог конфигурации Claude Code: {{detail}}",

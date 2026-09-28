@@ -1,4 +1,11 @@
 {
+  "connection_modal.step1.hint.pulsar": "Broker / Topic",
+  "connection_modal.pulsar.defaultTopic.label": "既定のトピック",
+  "connection_modal.pulsar.defaultTopic.placeholder": "例: persistent://public/default/orders",
+  "message_consume.presentation.pulsar.destination_placeholder": "Pulsar トピックを入力",
+  "message_consume.presentation.pulsar.alert": "プレビューは独立した Reader を使用し、永続サブスクリプションのカーソルを作成・更新しません。",
+  "message_publish.presentation.pulsar.alert": "指定した Pulsar トピックにメッセージを送信します。",
+  "message_publish.presentation.pulsar.success_hint": "Pulsar トピックにメッセージを送信しました。",
   "app.shortcuts.action.optimizeQueryWithAI.label": "AI 最適化",
   "app.shortcuts.action.optimizeQueryWithAI.description": "選択した SQL またはエディター全体を AI パネルに送信して最適化",
   "ai.service.mcp_client.claude_code.config_dir_create_failed": "Claude Code 設定ディレクトリの作成に失敗しました: {{detail}}",

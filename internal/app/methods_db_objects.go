@@ -18,7 +18,7 @@ type objectMetadataQuerySpec struct {
 
 func (a *App) DBGetObjects(config connection.ConnectionConfig, dbName string) connection.QueryResult {
 	runConfig := normalizeMetadataRunConfig(config, dbName)
-	dbType := resolveDDLDBType(runConfig)
+	dbType := normalizeDriverType(resolveDDLDBType(runConfig))
 
 	if strings.EqualFold(strings.TrimSpace(runConfig.Type), "redis") {
 		keys := a.DBGetTables(config, dbName)
@@ -91,7 +91,7 @@ func (a *App) DBGetObjects(config connection.ConnectionConfig, dbName string) co
 		appendMetadataObjects("exchange", metadataObjects, metadataErr)
 	}
 	switch dbType {
-	case "mqtt", "kafka", "rocketmq", "rabbitmq":
+	case "mqtt", "kafka", "rocketmq", "rabbitmq", "pulsar":
 		return buildResult()
 	}
 
@@ -131,10 +131,10 @@ func failedObjectMetadataResult(objectType string, err error) connection.QueryRe
 }
 
 func tableObjectTypeForDB(dbType string) string {
-	switch strings.ToLower(strings.TrimSpace(dbType)) {
+	switch normalizeDriverType(dbType) {
 	case "rabbitmq":
 		return "queue"
-	case "rocketmq", "kafka", "mqtt":
+	case "rocketmq", "kafka", "mqtt", "pulsar":
 		return "topic"
 	default:
 		return "table"
@@ -315,9 +315,9 @@ func splitObjectSchemaName(raw string) (string, string) {
 }
 
 func databaseObjectIdentifiersAreCaseSensitive(dbType string) bool {
-	switch resolveDDLDBType(connection.ConnectionConfig{Type: dbType}) {
+	switch normalizeDriverType(resolveDDLDBType(connection.ConnectionConfig{Type: dbType})) {
 	case "postgres", "kingbase", "highgo", "vastbase", "opengauss", "gaussdb", "oracle", "dameng",
-		"mqtt", "kafka", "rocketmq", "rabbitmq":
+		"mqtt", "kafka", "rocketmq", "rabbitmq", "pulsar":
 		return true
 	default:
 		return false

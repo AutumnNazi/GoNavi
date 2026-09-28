@@ -43,6 +43,7 @@ import {
 import ConnectionModalMongoSections from "../ConnectionModalMongoSections";
 import ConnectionModalKafkaAuth, { ConnectionModalAdditionalParams, ConnectionModalKafkaCredentials, readKafkaSecurityProtocol, readKafkaAuthMechanism, writeKafkaSecurityProtocol, useKafkaSecuritySync } from "./ConnectionModalKafkaAuth";
 import { t } from "../../i18n";
+import { PRIMARY_USERNAME_OPTIONAL_TYPES } from "../../utils/connectionTypeCapabilities";
 import {
   supportsConnectionReadOnlyMode,
 } from "../../utils/connectionReadOnly";
@@ -87,18 +88,6 @@ const OCEANBASE_PROTOCOL_OPTIONS: Array<{
   { value: "oracle", label: "Oracle" },
 ];
 
-const PRIMARY_USERNAME_OPTIONAL_TYPES = new Set([
-  "mongodb",
-  "elasticsearch",
-  "chroma",
-  "qdrant",
-  "milvus",
-  "rocketmq",
-  "mqtt",
-  "kafka",
-  "rabbitmq",
-  "nacos",
-]);
 
 // URI 操作反馈统一保留 4 秒，便于用户读取后自动回收空间。
 const URI_FEEDBACK_AUTO_DISMISS_MS = 4000;
@@ -145,6 +134,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
     isOceanBaseOracle,
     isRedis,
     isRocketMQ,
+    isPulsar,
     isSSLType,
     jvmDiagnosticEnabled,
     jvmDiagnosticTransport,
@@ -1323,18 +1313,18 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
               </div>
             )}
 
-            {dbType === "kafka" && (
+            {(dbType === "kafka" || isPulsar) && (
               <div className="gn-conn-f-row">
                 {denseLabel(
                   t("connection.modal.dense.topic"),
-                  t("connection.modal.messageQueue.kafka.defaultTopic.label"),
+                  t(isPulsar ? "connection_modal.pulsar.defaultTopic.label" : "connection.modal.messageQueue.kafka.defaultTopic.label"),
                 )}
                 <div className="gn-conn-f-ctrl">
                   <Form.Item name="database" style={{ marginBottom: 0 }}>
                     <Input
                       {...noAutoCapInputProps}
                       placeholder={t(
-                        "connection.modal.messageQueue.kafka.defaultTopic.placeholder",
+                        isPulsar ? "connection_modal.pulsar.defaultTopic.placeholder" : "connection.modal.messageQueue.kafka.defaultTopic.placeholder",
                       )}
                     />
                   </Form.Item>
@@ -1657,7 +1647,7 @@ const ConnectionModalStep2: React.FC<ConnectionModalStep2Props> = (props) => {
             )}
 
             {/* 固定库范围保留精确匹配语义，避免历史下划线库名被通配符规则放宽。 */}
-            {!isFileDb && !isRedis && !isKafka && (
+            {!isFileDb && !isRedis && !isKafka && !isPulsar && (
               <>
                 <div className="gn-conn-f-row">
                   {denseLabel(

@@ -1,4 +1,11 @@
 {
+  "connection_modal.step1.hint.pulsar": "Broker / Topic",
+  "connection_modal.pulsar.defaultTopic.label": "Standard-Topic",
+  "connection_modal.pulsar.defaultTopic.placeholder": "Beispiel: persistent://public/default/orders",
+  "message_consume.presentation.pulsar.destination_placeholder": "Pulsar-Topic eingeben",
+  "message_consume.presentation.pulsar.alert": "Die Vorschau verwendet einen unabhängigen Reader und erstellt oder verschiebt keine dauerhaften Abonnement-Cursor.",
+  "message_publish.presentation.pulsar.alert": "Nachrichten werden an das angegebene Pulsar-Topic gesendet.",
+  "message_publish.presentation.pulsar.success_hint": "Nachricht an das Pulsar-Topic gesendet.",
   "app.shortcuts.action.optimizeQueryWithAI.label": "KI-Optimierung",
   "app.shortcuts.action.optimizeQueryWithAI.description": "Ausgewähltes SQL oder den gesamten Editorinhalt zur Optimierung an das KI-Panel senden",
   "ai.service.mcp_client.claude_code.config_dir_create_failed": "Claude Code-Konfigurationsverzeichnis konnte nicht erstellt werden: {{detail}}",
