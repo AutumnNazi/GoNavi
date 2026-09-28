@@ -11,6 +11,7 @@ import {jvm} from '../models';
 import {db} from '../models';
 import {redis} from '../models';
 import {resultdiff} from '../models';
+import {dbuser} from '../models';
 
 export function AnalyzeQueryParameters(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<app.QueryParameterAnalysis>;
 
@@ -787,6 +788,20 @@ export function TrustSSHHostKeyForConnection(arg1:connection.ConnectionConfig,ar
 export function UpdateConnectionVisibility(arg1:connection.ConnectionVisibilityInput):Promise<connection.SavedConnectionView>;
 
 export function UpdateSQLAuditSettings(arg1:sqlaudit.Settings):Promise<connection.QueryResult>;
+
+export function UserMgmtApply(arg1:connection.ConnectionConfig,arg2:dbuser.ChangeRequest,arg3:string):Promise<connection.QueryResult>;
+
+export function UserMgmtDescribePrincipal(arg1:connection.ConnectionConfig,arg2:dbuser.DescribeQuery):Promise<connection.QueryResult>;
+
+export function UserMgmtDropImpact(arg1:connection.ConnectionConfig,arg2:dbuser.PrincipalRef):Promise<connection.QueryResult>;
+
+export function UserMgmtExportDDL(arg1:connection.ConnectionConfig,arg2:dbuser.PrincipalRef):Promise<connection.QueryResult>;
+
+export function UserMgmtOverview(arg1:connection.ConnectionConfig,arg2:dbuser.ListQuery):Promise<connection.QueryResult>;
+
+export function UserMgmtPreview(arg1:connection.ConnectionConfig,arg2:dbuser.ChangeRequest):Promise<connection.QueryResult>;
+
+export function UserMgmtSyncConnectionPassword(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
 export function VerifySQLAuditIntegrity():Promise<connection.QueryResult>;
 

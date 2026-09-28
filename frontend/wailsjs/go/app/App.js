@@ -1554,6 +1554,34 @@ export function UpdateSQLAuditSettings(arg1) {
   return window['go']['app']['App']['UpdateSQLAuditSettings'](arg1);
 }
 
+export function UserMgmtApply(arg1, arg2, arg3) {
+  return window['go']['app']['App']['UserMgmtApply'](arg1, arg2, arg3);
+}
+
+export function UserMgmtDescribePrincipal(arg1, arg2) {
+  return window['go']['app']['App']['UserMgmtDescribePrincipal'](arg1, arg2);
+}
+
+export function UserMgmtDropImpact(arg1, arg2) {
+  return window['go']['app']['App']['UserMgmtDropImpact'](arg1, arg2);
+}
+
+export function UserMgmtExportDDL(arg1, arg2) {
+  return window['go']['app']['App']['UserMgmtExportDDL'](arg1, arg2);
+}
+
+export function UserMgmtOverview(arg1, arg2) {
+  return window['go']['app']['App']['UserMgmtOverview'](arg1, arg2);
+}
+
+export function UserMgmtPreview(arg1, arg2) {
+  return window['go']['app']['App']['UserMgmtPreview'](arg1, arg2);
+}
+
+export function UserMgmtSyncConnectionPassword(arg1, arg2) {
+  return window['go']['app']['App']['UserMgmtSyncConnectionPassword'](arg1, arg2);
+}
+
 export function VerifySQLAuditIntegrity() {
   return window['go']['app']['App']['VerifySQLAuditIntegrity']();
 }

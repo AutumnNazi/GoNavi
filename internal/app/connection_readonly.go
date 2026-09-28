@@ -165,6 +165,7 @@ var readOnlyConnectionActionTextKeys = map[string]string{
 	"connection.backend.action.data_sync_structure":        "connection.backend.action.data_sync_structure",
 	"数据同步写入":                                               "connection.backend.action.data_sync_write",
 	"connection.backend.action.data_sync_write":            "connection.backend.action.data_sync_write",
+	"connection.backend.action.user_management":            "connection.backend.action.user_management",
 }
 
 func supportsConnectionReadOnlyMode(config connection.ConnectionConfig) bool {
