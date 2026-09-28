@@ -622,6 +622,10 @@ export function ExportDatabasesSQLWithOptions(arg1, arg2, arg3, arg4) {
   return window['go']['app']['App']['ExportDatabasesSQLWithOptions'](arg1, arg2, arg3, arg4);
 }
 
+export function ExportDriverPackage(arg1, arg2) {
+  return window['go']['app']['App']['ExportDriverPackage'](arg1, arg2);
+}
+
 export function ExportImportErrorRows(arg1) {
   return window['go']['app']['App']['ExportImportErrorRows'](arg1);
 }
@@ -832,6 +836,10 @@ export function ImportLegacyGlobalProxy(arg1) {
 
 export function ImportSavedQueries(arg1) {
   return window['go']['app']['App']['ImportSavedQueries'](arg1);
+}
+
+export function InspectDriverPackage(arg1, arg2) {
+  return window['go']['app']['App']['InspectDriverPackage'](arg1, arg2);
 }
 
 export function InspectElasticsearchConsole(arg1, arg2, arg3) {

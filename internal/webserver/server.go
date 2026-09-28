@@ -74,6 +74,8 @@ var desktopOnlyAppMethods = map[string]struct{}{
 	"SelectDriverDownloadDirectory":  {},
 	"SelectDriverPackageFile":        {},
 	"SelectDriverPackageDirectory":   {},
+	// 导出走本机保存对话框，Web 运行时没有等价能力。
+	"ExportDriverPackage": {},
 	"OpenSQLFile":                    {},
 	"SelectSQLFileForExecution":      {},
 	"SelectSQLDirectory":             {},

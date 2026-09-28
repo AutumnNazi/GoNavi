@@ -322,6 +322,8 @@ export function ExportDatabaseSQLWithOptions(arg1:connection.ConnectionConfig,ar
 
 export function ExportDatabasesSQLWithOptions(arg1:connection.ConnectionConfig,arg2:Array<string>,arg3:boolean,arg4:app.ExportFileOptions):Promise<connection.QueryResult>;
 
+export function ExportDriverPackage(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
 export function ExportImportErrorRows(arg1:string):Promise<connection.QueryResult>;
 
 export function ExportQuery(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:string):Promise<connection.QueryResult>;
@@ -427,6 +429,8 @@ export function ImportLegacyConnections(arg1:Array<connection.SavedConnectionInp
 export function ImportLegacyGlobalProxy(arg1:connection.SaveGlobalProxyInput):Promise<connection.GlobalProxyView>;
 
 export function ImportSavedQueries(arg1:connection.SavedQueryImportPayload):Promise<Array<connection.SavedQuery>>;
+
+export function InspectDriverPackage(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
 export function InspectElasticsearchConsole(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<app.ElasticsearchConsoleInspection>;
 

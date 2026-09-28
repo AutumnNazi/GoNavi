@@ -105,9 +105,20 @@ describe('DriverManagerModal embedded layout', () => {
     expect(appCss).toMatch(/\.driver-manager-detail-controls\s*\{/);
     // Bulk operations live on a slim bar above the panes.
     expect(appCss).toMatch(/\.driver-manager-bulkbar\s*\{[^}]*display:\s*flex/s);
-    expect(appCss).toMatch(
-      /\.driver-manager-bulkbar-dir\s*\{[^}]*margin-left:\s*auto/s,
-    );
+    // 目录类操作紧跟主按钮组：不推到最右，否则按钮独占一行时中间留大片空白。
+    const bulkbarDirBlock = appCss.match(/\.driver-manager-bulkbar-dir\s*\{([^}]*)\}/)?.[1];
+    expect(bulkbarDirBlock).toBeTruthy();
+    expect(bulkbarDirBlock).toMatch(/margin-left:\s*0/);
+    expect(bulkbarDirBlock).not.toMatch(/margin-left:\s*auto/);
+    // 导入驱动目录是 antd 的 Dropdown.Button，内部 Space.Compact 带 -block 类，
+    // antd 给该类写死 width: 100%；工具条按内容定宽时这个 100% 会被解析成整条
+    // 工具条的宽度，把同排后面的「导出/导入驱动包」顶出可视区。必须改回按内容定宽。
+    const importDropdownBlock = appCss.match(
+      /\.driver-manager-bulkbar-dir\s+\.driver-manager-import-directory-dropdown\s*\{([^}]*)\}/,
+    )?.[1];
+    expect(importDropdownBlock).toBeTruthy();
+    expect(importDropdownBlock).toMatch(/width:\s*auto/);
+    expect(importDropdownBlock).not.toMatch(/width:\s*100%/);
     // Footer: ambient network status left, action buttons right.
     expect(appCss).toMatch(
       /\.driver-manager-footer-actions\s*\{[^}]*justify-content:\s*space-between/s,
@@ -179,6 +190,25 @@ describe('DriverManagerModal embedded layout', () => {
     expect(appCss).toMatch(
       /\.driver-manager-progress\.ant-progress-line\s*\{[^}]*width:\s*100%[^}]*min-width:\s*0/s,
     );
+  });
+
+  it('keeps the two-pane side-by-side layout on narrow containers', () => {
+    // 小屏只收窄左栏，不折叠成上下两段：容器查询里必须仍是两列，
+    // 左栏用 clamp 同时保住可读下限与断点处的连续过渡。
+    const narrowContainerBlock = appCss.match(
+      /@container \(max-width:\s*960px\)\s*\{([\s\S]*?)\n\}/,
+    )?.[1];
+    expect(narrowContainerBlock).toBeTruthy();
+    expect(narrowContainerBlock).toMatch(
+      /\.driver-manager-columns\s*\{[^}]*grid-template-columns:\s*clamp\([^)]+\)\s*minmax\(0, 1fr\)/s,
+    );
+    // 旧行为（单列堆叠）不得回归。
+    expect(narrowContainerBlock).not.toMatch(
+      /\.driver-manager-columns\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)\s*;/s,
+    );
+    // 列表栏的分隔线与内边距在窄屏下继续保留（左右分栏的视觉前提）。
+    expect(narrowContainerBlock).not.toMatch(/\.driver-manager-list-pane\s*\{/);
+    expect(narrowContainerBlock).not.toMatch(/\.driver-manager-detail\s*\{[^}]*padding-left:\s*0\s*;/s);
   });
 
   it('uses the settings body font for driver detail actions, paths, and logs', () => {
