@@ -27,6 +27,7 @@ import { resolveConnectionAccentColor, resolveConnectionIconType } from '../../u
 import { getDbIcon } from '../DatabaseIcons';
 import {
   isV2SidebarObjectNode,
+  isSidebarSearchableNacosGroupNode,
   matchesSidebarSearchText,
   parseV2CommandSearchQuery,
   type V2ExplorerFilter,
@@ -313,7 +314,7 @@ export const useSidebarSearchModel = ({
     const title = String(node.title || '');
     if (
       scopes.includes('database')
-      && (node.type === 'database' || node.type === 'message-namespace')
+      && (node.type === 'database' || node.type === 'message-namespace' || node.type === 'nacos-namespace')
       && matchesSidebarSearchText(title, keyword)
     ) {
       return true;
@@ -326,7 +327,7 @@ export const useSidebarSearchModel = ({
     }
     if (
       scopes.includes('object')
-      && (isV2SidebarObjectNode(node) || node.type === 'object-group' || node.type === 'message-object-group')
+      && (isV2SidebarObjectNode(node) || isSidebarSearchableNacosGroupNode(node) || node.type === 'object-group' || node.type === 'message-object-group')
       && (matchesSidebarSearchText(title, keyword) || matchesSidebarSearchText(getObjectCommentSearchText(node), keyword))
     ) {
       return true;
@@ -409,14 +410,27 @@ export const useSidebarSearchModel = ({
             icon: getDbIcon(resolveConnectionIconType(conn), resolveConnectionAccentColor(conn), 16),
             node,
           });
-        } else if (node.type === 'database' || node.type === 'message-namespace') {
+        } else if (node.type === 'database' || node.type === 'message-namespace' || node.type === 'nacos-namespace') {
           const conn = connectionById.get(String(dataRef.id || ''));
           result.push({
             key: `node-${node.key}`,
             kind: 'node',
-            title: String(node.title || dataRef.dbName || t('database.unnamed')),
+            title: String(node.title || dataRef.nacosNamespaceName || dataRef.dbName || t('database.unnamed')),
             meta: conn?.name || dataRef.id || t('database.label'),
             icon: <DatabaseOutlined />,
+            node,
+          });
+        } else if (isSidebarSearchableNacosGroupNode(node)) {
+          const conn = connectionById.get(String(dataRef.id || ''));
+          result.push({
+            key: `node-${node.key}`,
+            kind: 'node',
+            title: String(node.title || dataRef.nacosGroup || '').trim(),
+            meta: [conn?.name || dataRef.id, dataRef.nacosNamespaceName || dataRef.nacosNamespaceId,
+              t(node.type === 'nacos-config-group'
+                ? 'sidebar.command_search.object_kind.nacos_configs'
+                : 'sidebar.command_search.object_kind.nacos_services')].filter(Boolean).join(' · '),
+            icon: node.icon || <DatabaseOutlined />,
             node,
           });
         } else if (isV2SidebarObjectNode(node)) {
