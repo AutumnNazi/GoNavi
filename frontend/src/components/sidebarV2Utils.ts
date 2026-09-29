@@ -17,6 +17,7 @@ import { t } from '../i18n';
 import { t as catalogTranslate } from '../i18n/catalog';
 import {
   matchesSidebarSearchText,
+  isSidebarCommandSearchObjectNode,
   normalizeSidebarSearchText,
 } from './sidebar/sidebarHelpers';
 
@@ -1012,14 +1013,6 @@ export const parseV2CommandSearchQuery = (value: unknown): V2CommandSearchQuery 
   };
 };
 
-const isV2CommandSearchObjectNode = (node: SidebarTreeNode): boolean => {
-  return node.type === 'table'
-    || node.type === 'view'
-    || node.type === 'materialized-view'
-    || node.type === 'sequence' || node.type === 'package'
-    || node.type === 'database-link' || node.type === 'message-object';
-};
-
 export const V2_COMMAND_SEARCH_INITIAL_TREE_LIMIT = 24;
 export const V2_COMMAND_SEARCH_MAX_TREE_RESULTS = 120;
 
@@ -1073,7 +1066,7 @@ export const buildV2CommandSearchTreeIndex = (
       normalizedObjectText: normalizeSidebarSearchText(
         `${normalizedPrimaryObjectText} ${String(dataRef.tableComment || '').trim()} ${normalizedTitle}`,
       ),
-      objectNode: isV2CommandSearchObjectNode(item.node),
+      objectNode: isSidebarCommandSearchObjectNode(item.node),
     }];
   });
 };
