@@ -107,6 +107,7 @@ import { createSidebarResizeAwareFrameScheduler } from '../utils/sidebarResizeLi
 	  EyeOutlined,
 	  GlobalOutlined,
 	  HistoryOutlined,
+	  LoadingOutlined,
 	  TableOutlined,
 	  SwitcherOutlined,
 	  UploadOutlined,
@@ -329,54 +330,17 @@ export {
 } from './sidebarV2Utils';
 export type { SidebarDropDomHit, SidebarTreeDropPlacement, V2CommandSearchItem, V2RailConnectionGroup } from './sidebarV2Utils';
 
-type SidebarTreeSwitcherNodeLike = {
-  key?: React.Key;
-  data?: TreeNode;
-  isLeaf?: boolean;
-  loading?: boolean;
-};
-
-export const resolveSidebarSwitcherLoadKey = (node: SidebarTreeSwitcherNodeLike | null | undefined): string | null => {
-  const treeNode = node?.data;
-  const dataRef = treeNode?.dataRef;
-  if (!treeNode) {
-    return null;
-  }
-
-  if (treeNode.type === 'connection') {
-    const connectionId = String(dataRef?.id || treeNode.key || node?.key || '').trim();
-    return connectionId ? `dbs-${connectionId}` : null;
-  }
-
-  if (treeNode.type === 'database' || treeNode.type === 'message-namespace') {
-    const connectionId = String(dataRef?.id || '').trim();
-    const dbName = String(dataRef?.dbName || '').trim();
-    return connectionId && dbName ? `tables-${connectionId}-${dbName}` : null;
-  }
-
-  if (treeNode.type === 'jvm-mode' || treeNode.type === 'jvm-resource') {
-    const connectionId = String(dataRef?.id || '').trim();
-    const providerMode = String(dataRef?.providerMode || '').trim().toLowerCase();
-    const parentPath = treeNode.type === 'jvm-resource' ? String(dataRef?.resourcePath || '').trim() : '';
-    return connectionId && providerMode ? `jvm-resources-${connectionId}-${providerMode}-${parentPath}` : null;
-  }
-
-  return null;
-};
-
-export const shouldKeepSidebarSwitcherCollapsedWhileLoading = (
-  node: SidebarTreeSwitcherNodeLike | null | undefined,
-  loadingKeys: ReadonlySet<string>,
-): boolean => {
-  if (!node || node.isLeaf) {
-    return false;
-  }
-  if (node.loading) {
-    return true;
-  }
-  const loadKey = resolveSidebarSwitcherLoadKey(node);
-  return !!loadKey && loadingKeys.has(loadKey);
-};
+// 懒加载节点的 key 映射与加载态判定统一放在 ./sidebar/sidebarSwitcherState，
+// 这里只保留转出以维持既有引用（含 Sidebar.locate-toolbar.test.tsx）。
+export {
+  resolveSidebarSwitcherLoadKey,
+  shouldKeepSidebarSwitcherCollapsedWhileLoading,
+  type SidebarTreeSwitcherNodeLike,
+} from './sidebar/sidebarSwitcherState';
+import {
+  isSidebarSwitcherLoading,
+  type SidebarTreeSwitcherNodeLike,
+} from './sidebar/sidebarSwitcherState';
 
 const { Search } = Input;
 const SIDEBAR_CACHED_DATABASE_TREE_LIMIT = 12;
@@ -2648,8 +2612,12 @@ const Sidebar: React.FC<{
       if (node.isLeaf) {
           return null;
       }
-      const keepCollapsed = shouldKeepSidebarSwitcherCollapsedWhileLoading(node, loadingNodesRef.current);
-      return <CaretDownFilled rotate={keepCollapsed ? -90 : undefined} />;
+      // 懒加载期间给出转圈反馈；Nacos 命名空间下双击「配置管理」「服务管理」
+      // 走手动 onLoadData，rc-tree 的 node.loading 不会置位，只能靠 loadingNodesRef。
+      if (isSidebarSwitcherLoading(node, loadingNodesRef.current)) {
+          return <LoadingOutlined className="gn-v2-tree-switcher-loading" spin />;
+      }
+      return <CaretDownFilled />;
   }, []);
 
 
