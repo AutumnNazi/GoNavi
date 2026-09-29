@@ -30,6 +30,7 @@ export default function SessionActionChooser({
   return (
     <Modal
       open={open}
+      className="gn-session-workbench-modal"
       title={t('session_workbench.action.choose')}
       onCancel={onCancel}
       footer={null}

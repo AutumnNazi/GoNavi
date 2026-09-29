@@ -6,7 +6,31 @@
   height: 100%;
   padding: 18px 22px;
   gap: 14px;
-  background: var(--gn-workbench-bg, var(--gn-bg, #fff));
+  background: var(--gn-bg-panel-2);
+  color: var(--gn-fg-1);
+  font-family: var(--gn-font-sans);
+  font-size: var(--gn-font-size, 14px);
+}
+
+body[data-ui-version="v2"] .gn-session-workbench,
+body[data-ui-version="v2"] .gn-session-workbench .ant-table,
+body[data-ui-version="v2"] .gn-session-workbench .ant-btn,
+body[data-ui-version="v2"] .gn-session-workbench .ant-tag,
+body[data-ui-version="v2"] .gn-session-workbench .ant-input,
+body[data-ui-version="v2"] .gn-session-workbench .ant-select,
+body[data-ui-version="v2"] .gn-session-workbench .ant-typography,
+body[data-ui-version="v2"] .gn-session-workbench .ant-pagination {
+  font-family: var(--gn-font-sans) !important;
+}
+
+.gn-session-workbench .ant-typography,
+.gn-session-workbench-modal .ant-typography {
+  color: var(--gn-fg-1) !important;
+}
+
+.gn-session-workbench .ant-typography.ant-typography-secondary,
+.gn-session-workbench-modal .ant-typography.ant-typography-secondary {
+  color: var(--gn-fg-4) !important;
 }
 
 .gn-session-workbench-header {
@@ -24,9 +48,10 @@
   flex-direction: column;
   gap: 10px;
   padding: 12px;
-  border: 1px solid var(--gn-br-1, #e5e7eb);
+  border: 1px solid var(--gn-br-1);
   border-radius: 8px;
-  background: var(--gn-panel-bg, #fff);
+  background: var(--gn-bg-panel-2);
+  color: var(--gn-fg-1);
 }
 
 .gn-session-workbench-toolbar-row {
@@ -36,7 +61,8 @@
   gap: 8px;
 }
 
-.gn-session-workbench-toolbar-label {
+.gn-session-workbench .gn-session-workbench-toolbar-label.ant-typography {
+  color: var(--gn-fg-2) !important;
   white-space: nowrap;
 }
 
@@ -59,6 +85,19 @@
   max-width: 420px;
 }
 
+/* 全局输入框用 --gn-bg-input，浅色主题里它是纯白，和页面的 panel-2 对不上。 */
+body[data-ui-version="v2"] .gn-session-workbench .ant-select-selector,
+body[data-ui-version="v2"] .gn-session-workbench .ant-input,
+body[data-ui-version="v2"] .gn-session-workbench .ant-input-affix-wrapper,
+body[data-ui-version="v2"] .gn-session-workbench .ant-input-number {
+  background: var(--gn-bg-panel-2) !important;
+}
+
+body[data-ui-version="v2"] .gn-session-workbench .ant-input-affix-wrapper > input.ant-input,
+body[data-ui-version="v2"] .gn-session-workbench .ant-input-affix-wrapper .ant-input {
+  background: transparent !important;
+}
+
 .gn-session-workbench-body {
   flex: 1 1 auto;
   min-height: 0;
@@ -71,8 +110,126 @@
   place-items: center;
 }
 
-.gn-session-workbench-table .ant-table-cell {
-  vertical-align: top;
+.gn-session-workbench-table,
+.gn-session-workbench-table .ant-spin-nested-loading,
+.gn-session-workbench-table .ant-spin-container,
+.gn-session-workbench-table .ant-table,
+.gn-session-workbench-table .ant-table-container,
+.gn-session-workbench-table .ant-table-content,
+.gn-session-workbench-table .ant-table-body,
+.gn-session-workbench-table .ant-table-tbody > tr > td,
+.gn-session-workbench-table .ant-table-tbody > tr > .ant-table-cell,
+.gn-session-workbench-table .ant-table-placeholder,
+.gn-session-workbench-table .ant-table-cell-fix-left,
+.gn-session-workbench-table .ant-table-cell-fix-right {
+  background: var(--gn-bg-panel-2) !important;
+  color: var(--gn-fg-1) !important;
+}
+
+.gn-session-workbench-table,
+.gn-session-workbench-table .ant-table,
+.gn-session-workbench-table table {
+  width: 100%;
+}
+
+body[data-ui-version="v2"] .gn-session-workbench .ant-table-thead > tr > th,
+body[data-ui-version="v2"] .gn-session-workbench .ant-table-tbody > tr > td {
+  font-family: var(--gn-font-sans) !important;
+  text-align: left;
+  vertical-align: middle;
+}
+
+body[data-ui-version="v2"] .gn-session-workbench .ant-table-thead > tr > th {
+  overflow: hidden;
+  font-size: var(--gn-font-size-sm, 12px) !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-ui-version="v2"] .gn-session-workbench .ant-table-tbody > tr > td {
+  font-size: var(--gn-font-size, 14px) !important;
+}
+
+.gn-session-statement-cell {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-ui-version="v2"] .gn-session-workbench .gn-session-state-tag.ant-tag {
+  margin-inline-end: 0;
+  border-style: solid !important;
+  border-width: 1px !important;
+  font-family: var(--gn-font-sans) !important;
+  font-size: var(--gn-font-size-sm, 12px) !important;
+}
+
+body[data-ui-version="v2"] .gn-session-workbench .gn-session-state-tag.is-idle.ant-tag {
+  color: var(--gn-info) !important;
+  background: var(--gn-info-soft) !important;
+  border-color: color-mix(in srgb, var(--gn-info) 42%, transparent) !important;
+}
+
+body[data-ui-version="v2"] .gn-session-workbench .gn-session-state-tag.is-active.ant-tag {
+  color: var(--gn-accent-2, var(--gn-accent)) !important;
+  background: var(--gn-accent-soft) !important;
+  border-color: color-mix(in srgb, var(--gn-accent) 42%, transparent) !important;
+}
+
+body[data-ui-version="v2"] .gn-session-workbench .gn-session-state-tag.is-busy.ant-tag {
+  color: var(--gn-warn) !important;
+  background: var(--gn-warn-soft) !important;
+  border-color: color-mix(in srgb, var(--gn-warn) 42%, transparent) !important;
+}
+
+body[data-ui-version="v2"] .gn-session-workbench .gn-session-state-tag.is-danger.ant-tag {
+  color: var(--gn-danger) !important;
+  background: color-mix(in srgb, var(--gn-danger) 14%, transparent) !important;
+  border-color: color-mix(in srgb, var(--gn-danger) 42%, transparent) !important;
+}
+
+body[data-ui-version="v2"] .gn-session-workbench .gn-session-state-tag.is-neutral.ant-tag {
+  color: var(--gn-purple, var(--gn-fg-2)) !important;
+  background: var(--gn-purple-soft, var(--gn-bg-active)) !important;
+  border-color: color-mix(in srgb, var(--gn-purple, var(--gn-fg-4)) 42%, transparent) !important;
+}
+
+body[data-ui-version="v2"] .gn-session-workbench .gn-session-action-btn.ant-btn {
+  font-family: var(--gn-font-sans) !important;
+  font-size: var(--gn-font-size-sm, 12px) !important;
+}
+
+body[data-ui-version="v2"] .gn-session-workbench .gn-session-action-btn.is-choose.ant-btn,
+body[data-ui-version="v2"] .gn-session-workbench .gn-session-action-btn.is-terminate.ant-btn {
+  color: var(--gn-danger) !important;
+  background: color-mix(in srgb, var(--gn-danger) 12%, var(--gn-bg-panel-2)) !important;
+  border-color: color-mix(in srgb, var(--gn-danger) 48%, transparent) !important;
+}
+
+body[data-ui-version="v2"] .gn-session-workbench .gn-session-action-btn.is-choose.ant-btn:hover,
+body[data-ui-version="v2"] .gn-session-workbench .gn-session-action-btn.is-terminate.ant-btn:hover {
+  color: var(--gn-on-danger, #fff) !important;
+  background: var(--gn-danger) !important;
+  border-color: var(--gn-danger) !important;
+}
+
+body[data-ui-version="v2"] .gn-session-workbench .gn-session-action-btn.is-cancel.ant-btn {
+  color: var(--gn-warn) !important;
+  background: var(--gn-warn-soft) !important;
+  border-color: color-mix(in srgb, var(--gn-warn) 48%, transparent) !important;
+}
+
+body[data-ui-version="v2"] .gn-session-workbench .gn-session-action-btn.is-cancel.ant-btn:hover {
+  color: var(--gn-fg-1) !important;
+  background: color-mix(in srgb, var(--gn-warn) 28%, var(--gn-bg-panel-2)) !important;
+  border-color: var(--gn-warn) !important;
+}
+
+.gn-session-workbench .ant-pagination-item a,
+.gn-session-workbench .ant-pagination-options,
+.gn-session-workbench .ant-pagination-total-text {
+  color: var(--gn-fg-2) !important;
 }
 
 .gn-session-workbench-confirm-grid {
@@ -89,9 +246,10 @@
   gap: 4px;
 }
 
-.gn-session-workbench-statement-value .ant-typography {
-  white-space: pre-wrap;
-  word-break: break-word;
+.gn-session-workbench-modal .ant-typography code {
+  background: var(--gn-bg-input) !important;
+  border: 1px solid var(--gn-br-1);
+  color: var(--gn-fg-1) !important;
 }
 
 .gn-session-workbench-confirm-actions {

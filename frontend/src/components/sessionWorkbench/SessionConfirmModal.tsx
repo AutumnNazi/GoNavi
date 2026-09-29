@@ -75,6 +75,7 @@ export default function SessionConfirmModal({
   return (
     <Modal
       open={open}
+      className="gn-session-workbench-modal"
       title={t(actionConfirmTitleKey(action))}
       onCancel={onCancel}
       footer={null}

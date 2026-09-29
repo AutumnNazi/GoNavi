@@ -56,7 +56,35 @@ export const SESSION_ACTIONS: readonly SessionAction[] = [
   'terminateSession',
 ];
 
+export type SessionStateTone = 'idle' | 'active' | 'busy' | 'danger' | 'neutral';
+
 const text = (value: unknown): string => String(value ?? '').trim();
+
+const stateIncludes = (value: string, tokens: readonly string[]): boolean => (
+  tokens.some((token) => value === token || value.includes(token))
+);
+
+/** Map engine-specific session status text onto a stable color tone. */
+export const sessionStateTone = (state: string | undefined): SessionStateTone => {
+  const value = text(state).toLowerCase();
+  if (!value) return 'neutral';
+  if (stateIncludes(value, ['killed', 'killing', 'sniped', 'aborted', 'abort', 'error', 'failed'])) {
+    return 'danger';
+  }
+  if (
+    value.includes('idle in transaction')
+    || stateIncludes(value, ['lock', 'locked', 'blocked', 'blocking', 'suspended'])
+  ) {
+    return 'busy';
+  }
+  if (stateIncludes(value, ['sleep', 'sleeping', 'idle', 'inactive', 'dormant', 'cached'])) {
+    return 'idle';
+  }
+  if (stateIncludes(value, ['active', 'running', 'query', 'execute', 'executing', 'connect'])) {
+    return 'active';
+  }
+  return 'neutral';
+};
 
 const record = (value: unknown): Record<string, unknown> => (
   value && typeof value === 'object' ? value as Record<string, unknown> : {}

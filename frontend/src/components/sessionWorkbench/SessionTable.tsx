@@ -6,10 +6,61 @@ import {
   availableSessionActions,
   displaySessionValue,
   formatSessionDuration,
+  sessionStateTone,
   type DatabaseSession,
   type SessionAction,
   type SessionCapability,
 } from './sessionWorkbenchModel';
+
+const actionButtonClass = (kind: 'choose' | 'cancel' | 'terminate'): string => (
+  `gn-session-action-btn is-${kind}`
+);
+
+function SessionActions({
+  session,
+  capability,
+  onAction,
+  label,
+}: {
+  session: DatabaseSession;
+  capability: SessionCapability;
+  onAction: (session: DatabaseSession, action: SessionAction) => void;
+  label: (key: string) => string;
+}) {
+  const actions = availableSessionActions(capability, session);
+  if (actions.length > 1) {
+    // Dual-capability engines must enter the dedicated action chooser
+    // instead of presenting two immediate-looking danger buttons.
+    return (
+      <Button
+        size="small"
+        className={actionButtonClass('choose')}
+        onClick={() => onAction(session, actions[0])}
+        title={label('session_workbench.action.choose')}
+      >
+        {label('session_workbench.action.choose')}
+      </Button>
+    );
+  }
+  if (actions.length === 0) {
+    return <Typography.Text type="secondary">{label('session_workbench.value.empty')}</Typography.Text>;
+  }
+  return (
+    <>
+      {actions.map((action) => (
+        <Button
+          key={action}
+          size="small"
+          className={actionButtonClass(action === 'terminateSession' ? 'terminate' : 'cancel')}
+          onClick={() => onAction(session, action)}
+          title={label(actionLabelKey(action))}
+        >
+          {label(actionLabelKey(action))}
+        </Button>
+      ))}
+    </>
+  );
+}
 
 export interface SessionTableProps {
   sessions: DatabaseSession[];
@@ -63,10 +114,14 @@ export default function SessionTable({
       title: t('session_workbench.table.statement'),
       dataIndex: 'statement',
       key: 'statement',
-      ellipsis: true,
+      width: 240,
       render: (value: string) => {
         const shown = displaySessionValue(value, t);
-        return <Tooltip title={value || undefined}><span>{shown}</span></Tooltip>;
+        return (
+          <Tooltip title={value || undefined}>
+            <span className="gn-session-statement-cell">{shown}</span>
+          </Tooltip>
+        );
       },
     },
     {
@@ -75,7 +130,7 @@ export default function SessionTable({
       key: 'state',
       width: 120,
       render: (value: string) => value
-        ? <Tag>{value}</Tag>
+        ? <Tag className={`gn-session-state-tag is-${sessionStateTone(value)}`}>{value}</Tag>
         : t('session_workbench.value.empty'),
     },
     {
@@ -95,41 +150,15 @@ export default function SessionTable({
     {
       title: t('session_workbench.table.actions'),
       key: 'actions',
-      fixed: 'right',
-      width: 220,
+      width: 168,
       render: (_value: unknown, session: DatabaseSession) => (
         <Space wrap size={4}>
-          {(() => {
-            const actions = availableSessionActions(capability, session);
-            if (actions.length > 1) {
-              // Dual-capability engines must enter the dedicated action
-              // chooser instead of presenting two immediate-looking danger
-              // buttons in the row.
-              return (
-                <Button
-                  size="small"
-                  onClick={() => onAction(session, actions[0])}
-                  title={t('session_workbench.action.choose')}
-                >
-                  {t('session_workbench.action.choose')}
-                </Button>
-              );
-            }
-            if (actions.length === 0) {
-              return <Typography.Text type="secondary">{t('session_workbench.value.empty')}</Typography.Text>;
-            }
-            return actions.map((action) => (
-              <Button
-                key={action}
-                size="small"
-                danger={action === 'terminateSession'}
-                onClick={() => onAction(session, action)}
-                title={t(actionLabelKey(action))}
-              >
-                {t(actionLabelKey(action))}
-              </Button>
-            ));
-          })()}
+          <SessionActions
+            session={session}
+            capability={capability}
+            onAction={onAction}
+            label={t}
+          />
         </Space>
       ),
     },
@@ -143,7 +172,7 @@ export default function SessionTable({
       columns={columns}
       dataSource={sessions}
       pagination={{ pageSize: 50, showSizeChanger: true }}
-      scroll={{ x: 1240 }}
+      tableLayout="fixed"
       size="small"
       locale={{ emptyText: <Typography.Text type="secondary">{t('session_workbench.empty.no_sessions')}</Typography.Text> }}
     />

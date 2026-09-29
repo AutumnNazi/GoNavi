@@ -7,6 +7,7 @@ import {
   isRedisConnection,
   normalizeSessionPayload,
   resolveSessionActionTarget,
+  sessionStateTone,
   sessionConnections,
   sessionActionDisplayId,
   truncateSessionStatement,
@@ -111,6 +112,17 @@ describe('sessionWorkbenchModel', () => {
       instanceId: '1',
       serialNumber: '7',
     })).toBe('42,7,@1');
+  });
+
+  it('colors session states by lifecycle instead of one flat tag', () => {
+    expect(sessionStateTone('Sleep')).toBe('idle');
+    expect(sessionStateTone('idle')).toBe('idle');
+    expect(sessionStateTone('idle in transaction')).toBe('busy');
+    expect(sessionStateTone('Query')).toBe('active');
+    expect(sessionStateTone('ACTIVE')).toBe('active');
+    expect(sessionStateTone('Killed')).toBe('danger');
+    expect(sessionStateTone('Daemon')).toBe('neutral');
+    expect(sessionStateTone(undefined)).toBe('neutral');
   });
 
   it('filters Redis out of the shared session connection selector', () => {
