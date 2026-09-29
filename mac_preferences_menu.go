@@ -10,13 +10,14 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/menu"
 )
 
-// macOS 菜单栏「GoNavi 设置」菜单向前端派发的事件。
+// macOS 菜单栏「GoNavi 设置」「主题」「驱动管理」「关于」菜单向前端派发的事件。
 //
 // 原生菜单只能放文字菜单项（Wails v2 的 MenuItem 没有图标字段），点击后
 // 由前端复用标题栏同名按钮的处理函数，保证两处入口行为一致。
 const (
 	nativeOpenPreferencesEvent = "gonavi:native-open-preferences"
 	nativeToggleThemeEvent     = "gonavi:native-toggle-theme"
+	nativeOpenDriversEvent     = "gonavi:native-open-drivers"
 	nativeCheckUpdateEvent     = "gonavi:native-check-update"
 	nativeOpenAboutEvent       = "gonavi:native-open-about"
 	// nativeMenuLanguageEvent 由前端在界面语言变化时发出，携带语言代码。
@@ -25,22 +26,24 @@ const (
 	nativeMenuLanguageEvent = "gonavi:native-menu-language"
 )
 
-// macPreferencesMenu 是菜单栏上并列的三个顶层菜单：GoNavi 设置 / 主题 / 关于。
+// macPreferencesMenu 是菜单栏上并列的四个顶层菜单：GoNavi 设置 / 主题 / 驱动管理 / 关于。
 //
-// macOS 菜单栏顶层项必须挂子菜单才能响应点击，所以「主题」只有一个子项，
-// 动作放在子项上；「关于」有两个子项：检查更新、打开关于页。
+// macOS 菜单栏顶层项必须挂子菜单才能响应点击，所以「主题」「驱动管理」各自只有
+// 一个子项，动作放在子项上；「关于」有两个子项：检查更新、打开关于页。
 type macPreferencesMenu struct {
 	root        *menu.MenuItem
 	preferences *menu.MenuItem
 	themeRoot   *menu.MenuItem
 	theme       *menu.MenuItem
+	driversRoot *menu.MenuItem
+	drivers     *menu.MenuItem
 	aboutRoot   *menu.MenuItem
 	checkUpdate *menu.MenuItem
 	about       *menu.MenuItem
 	localizer   *i18n.Localizer
 }
 
-// newMacPreferencesMenu 构建菜单栏里的「GoNavi 设置」「主题」「关于」三个顶层菜单。
+// newMacPreferencesMenu 构建菜单栏里的「GoNavi 设置」「主题」「驱动管理」「关于」四个顶层菜单。
 //
 // 刻意不绑定快捷键：⌘, 已被前端的「快捷键管理」占用，且前端快捷键可由用户
 // 自定义；原生加速键会在 WebView 之前截获按键，写死在这里会让用户的自定义失效。
@@ -55,12 +58,14 @@ func newMacPreferencesMenu(localizer *i18n.Localizer, emit func(event string)) *
 	m := &macPreferencesMenu{
 		preferences: menu.Text("", nil, emitOnClick(nativeOpenPreferencesEvent)),
 		theme:       menu.Text("", nil, emitOnClick(nativeToggleThemeEvent)),
+		drivers:     menu.Text("", nil, emitOnClick(nativeOpenDriversEvent)),
 		checkUpdate: menu.Text("", nil, emitOnClick(nativeCheckUpdateEvent)),
 		about:       menu.Text("", nil, emitOnClick(nativeOpenAboutEvent)),
 		localizer:   localizer,
 	}
 	m.root = menu.SubMenu("", menu.NewMenuFromItems(m.preferences))
 	m.themeRoot = menu.SubMenu("", menu.NewMenuFromItems(m.theme))
+	m.driversRoot = menu.SubMenu("", menu.NewMenuFromItems(m.drivers))
 	m.aboutRoot = menu.SubMenu("", menu.NewMenuFromItems(m.checkUpdate, m.about))
 	m.relabel()
 	return m
@@ -71,7 +76,7 @@ func (m *macPreferencesMenu) topLevelItems() []*menu.MenuItem {
 	if m == nil {
 		return nil
 	}
-	return []*menu.MenuItem{m.root, m.themeRoot, m.aboutRoot}
+	return []*menu.MenuItem{m.root, m.themeRoot, m.driversRoot, m.aboutRoot}
 }
 
 // setLanguage 切换菜单语言；返回 true 表示标签有变化，调用方需刷新原生菜单。
@@ -99,6 +104,10 @@ func (m *macPreferencesMenu) relabel() {
 	m.preferences.SetLabel(t("app.settings.group.preferences.title"))
 	m.themeRoot.SetLabel(t("app.titlebar.theme"))
 	m.theme.SetLabel(t("app.shortcuts.action.toggleTheme.label"))
+	// 顶层与子项复用同一个文案：驱动管理没有「切换」「关于 GoNavi」那样的动词/
+	// 限定语，标题栏按钮用的也是这个 key，两处入口叫法保持一致。
+	m.driversRoot.SetLabel(t("app.tools.entry.drivers.title"))
+	m.drivers.SetLabel(t("app.tools.entry.drivers.title"))
 	m.aboutRoot.SetLabel(t("app.settings.group.about.title"))
 	// 检查更新复用关于页「检查更新」按钮的文案，两处入口叫法一致。
 	m.checkUpdate.SetLabel(t("app.about.action.check_updates"))

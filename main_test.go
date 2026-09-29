@@ -263,7 +263,7 @@ func TestResolveWindowVisualOptions(t *testing.T) {
 	}
 }
 
-func TestBuildMacApplicationMenuAppendsPreferencesAndAboutMenus(t *testing.T) {
+func TestBuildMacApplicationMenuAppendsPreferencesDriversAndAboutMenus(t *testing.T) {
 	localizer, err := i18n.NewLocalizer(i18n.LanguageZhCN)
 	if err != nil {
 		t.Fatalf("NewLocalizer() error = %v", err)
@@ -274,13 +274,13 @@ func TestBuildMacApplicationMenuAppendsPreferencesAndAboutMenus(t *testing.T) {
 	})
 	appMenu := buildMacApplicationMenu(nil, true, preferences.topLevelItems()...)
 
-	// AppMenu / Edit / SQL / GoNavi 设置 / 主题 / 关于
-	if len(appMenu.Items) != 6 {
-		t.Fatalf("expected 6 top-level menu items, got %d", len(appMenu.Items))
+	// AppMenu / Edit / SQL / GoNavi 设置 / 主题 / 驱动管理 / 关于（驱动管理紧贴关于左侧）
+	if len(appMenu.Items) != 7 {
+		t.Fatalf("expected 7 top-level menu items, got %d", len(appMenu.Items))
 	}
-	settingsRoot, themeRoot, aboutRoot := appMenu.Items[3], appMenu.Items[4], appMenu.Items[5]
-	if settingsRoot.Label != "设置" || themeRoot.Label != "主题" || aboutRoot.Label != "关于" {
-		t.Fatalf("top-level labels = %q / %q / %q", settingsRoot.Label, themeRoot.Label, aboutRoot.Label)
+	settingsRoot, themeRoot, driversRoot, aboutRoot := appMenu.Items[3], appMenu.Items[4], appMenu.Items[5], appMenu.Items[6]
+	if settingsRoot.Label != "设置" || themeRoot.Label != "主题" || driversRoot.Label != "驱动管理" || aboutRoot.Label != "关于" {
+		t.Fatalf("top-level labels = %q / %q / %q / %q", settingsRoot.Label, themeRoot.Label, driversRoot.Label, aboutRoot.Label)
 	}
 	// 顶层菜单必须挂子菜单，否则 macOS 菜单栏上的点击不会触发动作。
 	single := func(root *menu.MenuItem, wantLabel string) *menu.MenuItem {
@@ -292,6 +292,7 @@ func TestBuildMacApplicationMenuAppendsPreferencesAndAboutMenus(t *testing.T) {
 	}
 	preferencesItem := single(settingsRoot, "偏好设置")
 	themeItem := single(themeRoot, "切换主题")
+	driversItem := single(driversRoot, "驱动管理")
 	// 「关于」有两个子项：先检查更新，再打开关于页。
 	if aboutRoot.SubMenu == nil || len(aboutRoot.SubMenu.Items) != 2 {
 		t.Fatalf("menu %q must hold check-update and about items", aboutRoot.Label)
@@ -301,14 +302,14 @@ func TestBuildMacApplicationMenuAppendsPreferencesAndAboutMenus(t *testing.T) {
 		t.Fatalf("about menu items = %q / %q", checkUpdateItem.Label, aboutItem.Label)
 	}
 
-	for _, item := range []*menu.MenuItem{preferencesItem, themeItem, checkUpdateItem, aboutItem} {
+	for _, item := range []*menu.MenuItem{preferencesItem, themeItem, driversItem, checkUpdateItem, aboutItem} {
 		// 不绑加速键：⌘, 等组合键由前端可自定义的快捷键系统负责。
 		if item.Accelerator != nil {
 			t.Fatalf("menu item %q must not bind a native accelerator", item.Label)
 		}
 		item.Click(&menu.CallbackData{MenuItem: item})
 	}
-	wantEvents := []string{nativeOpenPreferencesEvent, nativeToggleThemeEvent, nativeCheckUpdateEvent, nativeOpenAboutEvent}
+	wantEvents := []string{nativeOpenPreferencesEvent, nativeToggleThemeEvent, nativeOpenDriversEvent, nativeCheckUpdateEvent, nativeOpenAboutEvent}
 	if strings.Join(emitted, ",") != strings.Join(wantEvents, ",") {
 		t.Fatalf("emitted events = %v, want %v", emitted, wantEvents)
 	}
@@ -316,8 +317,8 @@ func TestBuildMacApplicationMenuAppendsPreferencesAndAboutMenus(t *testing.T) {
 	if !preferences.setLanguage("en-US") {
 		t.Fatal("setLanguage(en-US) = false, want relabel")
 	}
-	if settingsRoot.Label != "Settings" || themeRoot.Label != "Theme" || aboutRoot.Label != "About" || checkUpdateItem.Label != "Check for Updates" || aboutItem.Label != "About GoNavi" {
-		t.Fatalf("relabel failed: %q / %q / %q / %q / %q", settingsRoot.Label, themeRoot.Label, aboutRoot.Label, checkUpdateItem.Label, aboutItem.Label)
+	if settingsRoot.Label != "Settings" || themeRoot.Label != "Theme" || driversRoot.Label != "Driver Manager" || driversItem.Label != "Driver Manager" || aboutRoot.Label != "About" || checkUpdateItem.Label != "Check for Updates" || aboutItem.Label != "About GoNavi" {
+		t.Fatalf("relabel failed: %q / %q / %q / %q / %q / %q / %q", settingsRoot.Label, themeRoot.Label, driversRoot.Label, driversItem.Label, aboutRoot.Label, checkUpdateItem.Label, aboutItem.Label)
 	}
 	if preferences.setLanguage("en-US") {
 		t.Fatal("setLanguage with the same language should be a no-op")

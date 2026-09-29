@@ -823,6 +823,7 @@ const Sidebar: React.FC<{
   }) => void;
   activeSettingsCenterPaneKey?: string | null; // 设置中心当前面板 key，用于点亮工具条入口
   hideTitlebarAboutAction?: boolean; // macOS 的「关于」走原生菜单栏，不再渲染到工具条
+  hideTitlebarDriverAction?: boolean; // macOS 的「驱动管理」走原生菜单栏，不再渲染到工具条
   /** Whether web-only settings entries (e.g. browser auth) should appear. */
   isWebRuntime?: boolean;
   onOpenDataSyncWorkbench?: (entryMode: DataSyncEntryModeAlias) => void;
@@ -848,6 +849,7 @@ const Sidebar: React.FC<{
   onOpenSettingsNavigation,
   activeSettingsCenterPaneKey,
   hideTitlebarAboutAction = false,
+  hideTitlebarDriverAction = false,
   isWebRuntime = false,
   onToggleAI,
   onToggleLogPanel,
@@ -4332,9 +4334,10 @@ const Sidebar: React.FC<{
       onClick: () => onOpenSettingsNavigation?.({ group: 'about', pane: 'about-go-navi' }),
     },
   ];
-  const v2TitlebarVisibleTrailingActions = hideTitlebarAboutAction // macOS 的「关于」走原生菜单栏
-    ? v2TitlebarTrailingActions.filter((action) => action.key !== 'about-go-navi')
-    : v2TitlebarTrailingActions;
+  // macOS 的「关于」「驱动管理」走原生菜单栏
+  const v2TitlebarVisibleTrailingActions = v2TitlebarTrailingActions
+    .filter((action) => !hideTitlebarAboutAction || action.key !== 'about-go-navi')
+    .filter((action) => !hideTitlebarDriverAction || action.key !== 'drivers');
 
   const getCommandSearchCopyOptions = useCallback((item: V2CommandSearchItem): V2CommandSearchCopyOption[] => {
     if (item.kind === 'action') return [];

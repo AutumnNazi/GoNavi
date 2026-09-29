@@ -6,6 +6,7 @@ import { EventsEmit, EventsOn } from '../../wailsjs/runtime';
 export const MAC_NATIVE_MENU_EVENTS = {
   openPreferences: 'gonavi:native-open-preferences',
   toggleTheme: 'gonavi:native-toggle-theme',
+  openDrivers: 'gonavi:native-open-drivers',
   checkUpdate: 'gonavi:native-check-update',
   openAbout: 'gonavi:native-open-about',
   language: 'gonavi:native-menu-language',
@@ -18,12 +19,13 @@ export interface MacNativeMenuBridgeOptions {
   language: string;
   onOpenPreferences: () => void;
   onToggleTheme: () => void;
+  onOpenDrivers: () => void;
   onCheckUpdate: () => void;
   onOpenAbout: () => void;
 }
 
 /**
- * 把 macOS 菜单栏「GoNavi 设置」菜单接到前端已有的处理函数上。
+ * 把 macOS 菜单栏「GoNavi 设置」「主题」「驱动管理」「关于」（检查更新 / 打开关于页）菜单接到前端已有的处理函数上。
  *
  * 原生菜单只负责发事件，行为全部复用标题栏按钮的回调，两处入口不会走偏。
  * 回调走 ref：订阅只在 enabled 变化时重建，不会因为父组件每次渲染生成新
@@ -34,11 +36,12 @@ export function useMacNativeMenuBridge({
   language,
   onOpenPreferences,
   onToggleTheme,
+  onOpenDrivers,
   onCheckUpdate,
   onOpenAbout,
 }: MacNativeMenuBridgeOptions): void {
-  const handlersRef = useRef({ onOpenPreferences, onToggleTheme, onCheckUpdate, onOpenAbout });
-  handlersRef.current = { onOpenPreferences, onToggleTheme, onCheckUpdate, onOpenAbout };
+  const handlersRef = useRef({ onOpenPreferences, onToggleTheme, onOpenDrivers, onCheckUpdate, onOpenAbout });
+  handlersRef.current = { onOpenPreferences, onToggleTheme, onOpenDrivers, onCheckUpdate, onOpenAbout };
 
   useEffect(() => {
     if (!enabled) {
@@ -47,6 +50,7 @@ export function useMacNativeMenuBridge({
     const offs = [
       EventsOn(MAC_NATIVE_MENU_EVENTS.openPreferences, () => handlersRef.current.onOpenPreferences()),
       EventsOn(MAC_NATIVE_MENU_EVENTS.toggleTheme, () => handlersRef.current.onToggleTheme()),
+      EventsOn(MAC_NATIVE_MENU_EVENTS.openDrivers, () => handlersRef.current.onOpenDrivers()),
       EventsOn(MAC_NATIVE_MENU_EVENTS.checkUpdate, () => handlersRef.current.onCheckUpdate()),
       EventsOn(MAC_NATIVE_MENU_EVENTS.openAbout, () => handlersRef.current.onOpenAbout()),
     ];

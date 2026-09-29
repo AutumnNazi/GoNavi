@@ -1173,6 +1173,7 @@ describe('Sidebar locate toolbar', () => {
 
     const renderSource = source.slice(trailingActionsEnd);
     expect(renderSource).toContain("action.key !== 'about-go-navi'");
+    expect(renderSource).toContain("action.key !== 'drivers'");
     expect(renderSource).toContain('trailingActions={v2TitlebarVisibleTrailingActions}');
     expect(renderSource).not.toContain('moreLabel=');
 
