@@ -83,22 +83,46 @@ func TestWindowsShortcutBrandIconDoesNotWriteUnsupportedWScriptAUMID(t *testing.
 	}
 	for _, token := range []string{
 		`function Set-GoNaviShortcutRelaunchProperties`,
-		`SHGetPropertyStoreFromParsingName`,
-		`GPS_READWRITE`,
+		`GoNaviShortcutPropertyStore`,
 		`SetRelaunchProperties`,
 		`$isTaskbarShortcut`,
+		// Legacy pins repaired by the dedicated MSI pass go through $pin.FullName.
 		`Set-GoNaviShortcutRelaunchProperties -ShortcutPath $pin.FullName`,
 		`$useTaskbarPropertyStore`,
 		`repaired legacy taskbar pin properties`,
-		`Do not write System.AppUserModel.Relaunch*`,
+		// The single-pass loop writes the relaunch identity to a pin only when
+		// ownership evidence (matching target, MSI install, or GoNavi identity)
+		// exists; a portable build must never rewrite a foreign pin identity.
+		`if ($shouldWriteIdentity -and -not (Set-GoNaviShortcutRelaunchProperties`,
+		// A single failing shortcut is logged and isolated, never aborts the batch.
 		`continue`,
 	} {
 		if !strings.Contains(script, token) {
 			t.Fatalf("taskbar pin migration missing %q:\n%s", token, script)
 		}
 	}
-	if strings.Contains(script, `Set-GoNaviShortcutRelaunchProperties -ShortcutPath $shortcutFile.FullName`) {
-		t.Fatalf("brand icon updates must not write relaunch properties onto taskbar pins:\n%s", script)
+	// Empirically verified on Windows 11 (build 26200) by writing known probe
+	// values and reading them back through System.AppUserModel.*: within this
+	// property set pid 3 is RelaunchIconResource and pid 4 is
+	// RelaunchDisplayNameResource. The icon path must land on pid 3 and the
+	// display name on pid 4, with the ID (pid 5) written last because Windows
+	// uses that write to notify the taskbar about relaunch changes.
+	pid2 := strings.Index(script, `new PROPERTYKEY(PKEY_AppUserModel, 2), "\"" + targetPath + "\"")`)
+	pid3 := strings.Index(script, `new PROPERTYKEY(PKEY_AppUserModel, 3), iconPath)`)
+	pid4 := strings.Index(script, `new PROPERTYKEY(PKEY_AppUserModel, 4), "GoNavi")`)
+	pid5 := strings.Index(script, `new PROPERTYKEY(PKEY_AppUserModel, 5), applicationUserModelID)`)
+	if pid2 < 0 || pid3 < 0 || pid4 < 0 || pid5 < 0 {
+		t.Fatalf("relaunch property writes missing:\n%s", script)
+	}
+	if !(pid2 < pid3 && pid3 < pid4 && pid4 < pid5) {
+		t.Fatalf("relaunch properties must be written before AppUserModel.ID:\n%s", script)
+	}
+	// The property store helper has exactly three legitimate call sites: the
+	// legacy pin repair pass, the AUMID shortcut creation, and the guarded
+	// taskbar branch of the single-pass loop. Any new call site must be
+	// reviewed for ownership gates before this count is raised.
+	if got := strings.Count(script, `Set-GoNaviShortcutRelaunchProperties -ShortcutPath`); got != 3 {
+		t.Fatalf("unexpected relaunch property call site count %d:\n%s", got, script)
 	}
 }
 

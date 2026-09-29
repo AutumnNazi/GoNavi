@@ -717,9 +717,8 @@ function Set-GoNaviShortcutBrandIcon {
                         # The name is the only reliable ownership signal: system pins
                         # (File Explorer) and other apps' pins are never ours, even if
                         # their icons were rewritten by the historical incident.
-                        # (A test instance once claimed the user's File Explorer
+                        # (A test instance once claimed the user's File Explorer pin.)
                         $namedGoNaviPin = $shortcutName -match '^GoNavi(?:[-_.].*|\s*\(\d+\))?$'
-                        $targetName = [IO.Path]::GetFileName($existingTargetRaw)
                         $looksLikeGoNaviPin = $namedGoNaviPin -and (
                             $targetName -match '^GoNavi(?:[-_.].*|\s*\(\d+\))?\.exe$' -or
                             $pinLaunchBroken
@@ -734,10 +733,11 @@ function Set-GoNaviShortcutBrandIcon {
                     # the GoNavi pin family and may repair legacy rotated
                     # identities. A portable or development build may only claim
                     # a pin that targets this executable or whose icon lives in
-                        # Cheap prefilter: only GoNavi-named shortcuts can be this
+                    # this instance's icon directory; name or AUMID family
                     # matches alone also hit every other GoNavi installation on
                     # the machine, and claiming those hijacks foreign pins.
                     if ($onlyMatchingTarget -and -not $matchesTarget) {
+                        # Cheap prefilter: only GoNavi-named shortcuts can be this
                         # instance's leftover pins; skip the expensive COM ownership
                         # check for every unrelated .lnk on the system.
                         $shortcutName = [IO.Path]::GetFileNameWithoutExtension($shortcutFile.Name)
@@ -749,10 +749,10 @@ function Set-GoNaviShortcutBrandIcon {
                             continue
                         }
                     } elseif (-not $matchesTarget -and -not $isGoNaviTaskbarShortcut) {
-                    # MSI-mode claims also require GoNavi evidence (name/AUMID).
-                    # pinLaunchBroken alone only means the target is dead; letting
-                    # it through hijacks dead pins left by uninstalled foreign
-                    # apps (e.g. Steam.lnk) as GoNavi launchers (observed).
+                        # MSI-mode claims also require GoNavi evidence (name/AUMID).
+                        # pinLaunchBroken alone only means the target is dead; letting
+                        # it through hijacks dead pins left by uninstalled foreign
+                        # apps (e.g. Steam.lnk) as GoNavi launchers (observed).
                         continue
                     }
                     if ($isTaskbarShortcut) {
@@ -838,7 +838,8 @@ function Set-GoNaviShortcutBrandIcon {
     try {
         Ensure-GoNaviAumidShortcut -TargetPath $normalizedTargetPath -IconPath $normalizedIconPath | Out-Null
     } catch {
-        # Creating the AUMID shortcut is an incremental improvement; its
+            # Creating the AUMID shortcut is an incremental improvement; a
+            # failure is logged and never blocks the icon switch.
         Write-ShortcutRepairLog ("AUMID shortcut ensure failed: " + $_.Exception.Message)
     }
     return $updatedCount
