@@ -805,6 +805,8 @@ function Set-GoNaviShortcutBrandIcon {
                     }
                     Send-ShellItemUpdatedNotification $shortcutFile.FullName
                 } catch {
+                    # 单项失败只记录不中止：一个只读的系统快捷方式不应让
+                    # 其余可写快捷方式的图标更新一起失败。
                     $failureMessage = "brand icon update failed for " + $shortcutFile.FullName + ": " + $_.Exception.Message
                     Write-ShortcutRepairLog $failureMessage
                     [void]$failureMessages.Add($failureMessage)
@@ -819,8 +821,10 @@ function Set-GoNaviShortcutBrandIcon {
         Write-ShortcutRepairLog ("brand icon shortcut update failed: " + $_.Exception.Message)
         throw
     }
+    # 单项失败（如标准用户写不了机器级快捷方式）不中止整批：已更新的部分
+    # 保留，失败项已逐条写入修复日志。整批失败只在上游扫描本身出错时发生。
     if ($failureMessages.Count -gt 0) {
-        throw ('one or more GoNavi shortcut updates failed: ' + [string]::Join('; ', $failureMessages))
+        Write-ShortcutRepairLog ([string]::Join('; ', $failureMessages))
     }
     try {
         Ensure-GoNaviAumidShortcut -TargetPath $normalizedTargetPath -IconPath $normalizedIconPath | Out-Null
