@@ -11477,5 +11477,6 @@
   "app.titlebar.short_label.data_workflow": "工作流",
   "app.titlebar.short_label.sql_tools": "SQL",
   "app.titlebar.short_label.user_management": "使用者",
-  "app.titlebar.short_label.drivers": "驅動"
+  "app.titlebar.short_label.drivers": "驅動",
+  "app.titlebar.short_label.session_workbench": "工作階段"
 }

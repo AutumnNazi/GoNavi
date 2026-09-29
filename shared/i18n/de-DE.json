@@ -11477,5 +11477,6 @@
   "app.titlebar.short_label.data_workflow": "Workflows",
   "app.titlebar.short_label.sql_tools": "SQL",
   "app.titlebar.short_label.user_management": "Benutzer",
-  "app.titlebar.short_label.drivers": "Treiber"
+  "app.titlebar.short_label.drivers": "Treiber",
+  "app.titlebar.short_label.session_workbench": "Sitzungen"
 }

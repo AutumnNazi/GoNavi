@@ -11477,5 +11477,6 @@
   "app.titlebar.short_label.data_workflow": "ワークフロー",
   "app.titlebar.short_label.sql_tools": "SQL",
   "app.titlebar.short_label.user_management": "ユーザー",
-  "app.titlebar.short_label.drivers": "ドライバー"
+  "app.titlebar.short_label.drivers": "ドライバー",
+  "app.titlebar.short_label.session_workbench": "セッション"
 }

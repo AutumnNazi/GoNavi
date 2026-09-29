@@ -11477,5 +11477,6 @@
   "app.titlebar.short_label.data_workflow": "Потоки",
   "app.titlebar.short_label.sql_tools": "SQL",
   "app.titlebar.short_label.user_management": "Пользователи",
-  "app.titlebar.short_label.drivers": "Драйверы"
+  "app.titlebar.short_label.drivers": "Драйверы",
+  "app.titlebar.short_label.session_workbench": "Сеансы"
 }

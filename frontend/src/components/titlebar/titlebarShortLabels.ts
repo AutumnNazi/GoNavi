@@ -12,6 +12,8 @@ export const resolveTitlebarQuickActionShortLabel = (key: string, t: Translate):
       return t('app.titlebar.short_label.sql_tools');
     case 'user-management':
       return t('app.titlebar.short_label.user_management');
+    case 'session-workbench':
+      return t('app.titlebar.short_label.session_workbench');
     case 'drivers':
       return t('app.titlebar.short_label.drivers');
     default:
