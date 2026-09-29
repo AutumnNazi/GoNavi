@@ -329,6 +329,8 @@ export function ExportDatabasesSQLWithOptions(arg1:connection.ConnectionConfig,a
 
 export function ExportDriverPackage(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
+export function ExportDriverPackageSelection(arg1:string,arg2:string,arg3:Array<string>):Promise<connection.QueryResult>;
+
 export function ExportImportErrorRows(arg1:string):Promise<connection.QueryResult>;
 
 export function ExportQuery(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:string):Promise<connection.QueryResult>;

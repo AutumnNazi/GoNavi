@@ -33,6 +33,7 @@ import {
 import { useDriverDownloadCancellation } from './driverManager/useDriverDownloadCancellation';
 import { useDriverLocalInstall } from './driverManager/useDriverLocalInstall';
 import { useDriverPackageTransfer } from './driverManager/useDriverPackageTransfer';
+import DriverPackageExportPicker from './driverManager/DriverPackageExportPicker';
 import DriverPackageImportModal from './driverManager/DriverPackageImportModal';
 import { DriverBatchProgressBar } from './driverManager/DriverBatchProgressBar';
 import DriverPackageExportProgress from './driverManager/DriverPackageExportProgress';
@@ -1561,6 +1562,10 @@ const DriverManagerModal: React.FC<{
     forceOverwrite: driverPackageForceOverwrite,
     setForceOverwrite: setDriverPackageForceOverwrite,
     installedDriverCount,
+    exportPickerOpen: driverPackageExportPickerOpen,
+    installedExportDrivers: driverPackageExportDrivers,
+    closeExportPicker: closeDriverPackageExportPicker,
+    confirmExportDriverPackage: confirmDriverPackageExport,
     requestExportDriverPackage,
     requestImportDriverPackage,
     confirmImportDriverPackage,
@@ -2873,6 +2878,15 @@ const DriverManagerModal: React.FC<{
   // 驱动包导入确认弹窗必须挂在两支上：embedded（设置中心内嵌页）此前只返回
   // driverManagerContent，弹窗不在其中 —— 选完 ZIP 后 setPendingPackage 正常执行，
   // 但弹窗永远不会挂载，表现为「点了导入没有任何反应」。
+  const driverPackageExportPicker = (
+    <DriverPackageExportPicker
+      open={driverPackageExportPickerOpen}
+      drivers={driverPackageExportDrivers}
+      onCancel={closeDriverPackageExportPicker}
+      onConfirm={(driverTypes) => { void confirmDriverPackageExport(driverTypes); }}
+    />
+  );
+
   const driverPackageImportModal = (
     <DriverPackageImportModal
       open={driverPackagePending !== null}
@@ -2907,6 +2921,7 @@ const DriverManagerModal: React.FC<{
       <>
         {driverManagerContent}
         {driverPackageImportModal}
+        {driverPackageExportPicker}
       </>
     );
   }
@@ -2962,6 +2977,7 @@ const DriverManagerModal: React.FC<{
     >
       {driverManagerContent}
       {driverPackageImportModal}
+      {driverPackageExportPicker}
     </Modal>
   );
 };

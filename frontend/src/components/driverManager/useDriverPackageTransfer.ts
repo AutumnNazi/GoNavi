@@ -4,6 +4,7 @@ import React from 'react';
 import { t } from '../../i18n';
 import { isBackendCancelledResult } from '../../utils/connectionExport';
 import { SelectDriverPackageFile } from '../../../wailsjs/go/app/App';
+import type { DriverPackageExportChoice } from './DriverPackageExportPicker';
 import {
   buildDriverPackageExportJobId,
   exportDriverPackage,
@@ -66,16 +67,25 @@ export function useDriverPackageTransfer<TRow extends DriverLocalInstallRow>({
   runAfterDriverInterruptionConfirmation,
 }: UseDriverPackageTransferParams<TRow>) {
   const [exporting, setExporting] = React.useState(false);
+  const [exportPickerOpen, setExportPickerOpen] = React.useState(false);
   const [exportJobId, setExportJobId] = React.useState('');
   const [inspecting, setInspecting] = React.useState(false);
   const [importing, setImporting] = React.useState(false);
   const [pendingPackage, setPendingPackage] = React.useState<DriverPackageInspectSummary | null>(null);
   const [forceOverwrite, setForceOverwrite] = React.useState(false);
 
-  const installedDriverCount = React.useMemo(
-    () => rows.filter((row) => !row.builtIn && row.packageInstalled).length,
+  const installedExportDrivers = React.useMemo<DriverPackageExportChoice[]>(
+    () => rows
+      .filter((row) => !row.builtIn && row.packageInstalled)
+      .map((row) => ({
+        type: String(row.type || '').trim(),
+        name: String(row.name || row.type || '').trim(),
+        version: String(row.installedVersion || '').trim() || undefined,
+      }))
+      .filter((row) => row.type !== ''),
     [rows],
   );
+  const installedDriverCount = installedExportDrivers.length;
 
   const {
     progress: importProgress,
@@ -87,17 +97,32 @@ export function useDriverPackageTransfer<TRow extends DriverLocalInstallRow>({
     resolveRowName: (row) => String(row.name || row.type || '').trim(),
   });
 
-  const requestExportDriverPackage = React.useCallback(async () => {
+  const requestExportDriverPackage = React.useCallback(() => {
     if (isDriverBusy() || exporting) {
       return;
     }
+    setExportPickerOpen(true);
+  }, [exporting, isDriverBusy]);
+
+  const closeExportPicker = React.useCallback(() => {
+    if (exporting) {
+      return;
+    }
+    setExportPickerOpen(false);
+  }, [exporting]);
+
+  const confirmExportDriverPackage = React.useCallback(async (driverTypes: string[]) => {
+    if (isDriverBusy() || exporting) {
+      return;
+    }
+    setExportPickerOpen(false);
     const jobId = buildDriverPackageExportJobId();
     setExporting(true);
     // jobId 一落，进度条就挂上（组件内部自带占位态），
     // 不必等后端第一条事件 —— 保存对话框期间的空窗期因此可见。
     setExportJobId(jobId);
     try {
-      await exportDriverPackage(downloadDir, jobId);
+      await exportDriverPackage(downloadDir, jobId, driverTypes);
     } finally {
       setExporting(false);
       setExportJobId('');
@@ -111,7 +136,6 @@ export function useDriverPackageTransfer<TRow extends DriverLocalInstallRow>({
     }
     setInspecting(true);
     try {
-      // 复用既有的驱动包选择对话框：它不做扩展名过滤，返回 {path}，正是这里需要的。
       const picked = await SelectDriverPackageFile(downloadDir);
       if (!picked?.success) {
         // 用户取消不提示错误。
@@ -264,6 +288,10 @@ export function useDriverPackageTransfer<TRow extends DriverLocalInstallRow>({
   return {
     exporting,
     exportJobId,
+    exportPickerOpen,
+    installedExportDrivers,
+    closeExportPicker,
+    confirmExportDriverPackage,
     inspecting,
     importing,
     importProgress,

@@ -73,22 +73,30 @@ type driverPackageSupportFile struct {
 //
 // jobID 由前端生成，用于把进度事件归属到本次导出并支持运行期取消；为空时
 // 退化为不可取消（beginCancelableExportTask 的既有约定）。
+func (a *App) ExportDriverPackage(downloadDir string, jobID string) connection.QueryResult {
+	return a.exportDriverPackage(downloadDir, jobID, nil)
+}
+
+// ExportDriverPackageSelection 只打包 driverTypes 里的已安装驱动。
+// 空列表与 ExportDriverPackage 相同，表示导出全部。
+func (a *App) ExportDriverPackageSelection(downloadDir string, jobID string, driverTypes []string) connection.QueryResult {
+	return a.exportDriverPackage(downloadDir, jobID, driverTypes)
+}
+
+// exportDriverPackage 执行导出。driverTypes 为空时导出全部已安装可选驱动。
 //
 // 保存对话框刻意放在锁之外：全类型排他锁一旦持有，安装/删除/下载全部阻塞，
 // 用户在模态框停留多久就会阻塞它们多久。代价是对话框期间驱动可能被增删，
 // 因此在锁内重新收集一次候选，以锁内快照为准。
-func (a *App) ExportDriverPackage(downloadDir string, jobID string) connection.QueryResult {
+func (a *App) exportDriverPackage(downloadDir string, jobID string, driverTypes []string) connection.QueryResult {
 	resolvedDir, err := resolveDriverDownloadDirectory(downloadDir)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
 	// 先做一次无锁探测：没有可导出驱动时直接失败，不让用户白填一遍保存对话框。
-	if candidates, _, _ := collectDriverPackageCandidates(resolvedDir); len(candidates) == 0 {
-		return connection.QueryResult{
-			Success: false,
-			Message: a.appText("driver_manager.backend.error.package_no_installed_drivers", nil),
-		}
+	if candidates, _, _ := loadDriverPackageExportSet(resolvedDir, driverTypes); len(candidates) == 0 {
+		return a.driverPackageExportEmptyResult(driverTypes)
 	}
 
 	targetPath, err := a.showSaveFileDialog(wailsRuntime.SaveDialogOptions{
@@ -114,12 +122,9 @@ func (a *App) ExportDriverPackage(downloadDir string, jobID string) connection.Q
 	defer releaseExport()
 
 	// 锁内重收集：对话框可能开了很久，期间的增删以此处为准。
-	candidates, skipped, totalBytes := collectDriverPackageCandidates(resolvedDir)
+	candidates, skipped, totalBytes := loadDriverPackageExportSet(resolvedDir, driverTypes)
 	if len(candidates) == 0 {
-		return connection.QueryResult{
-			Success: false,
-			Message: a.appText("driver_manager.backend.error.package_no_installed_drivers", nil),
-		}
+		return a.driverPackageExportEmptyResult(driverTypes)
 	}
 
 	reporter := newDriverPackageExportReporter(a, jobID, totalBytes)

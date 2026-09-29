@@ -591,6 +591,77 @@ func TestInspectDriverPackageEmptyArchiveFails(t *testing.T) {
 	}
 }
 
+func TestExportDriverPackageSelectionKeepsOnlyRequestedDrivers(t *testing.T) {
+	root := t.TempDir()
+	installFakeDriverPackage(t, root, "mariadb", "1.9.3", "src-0a451007282c8777")
+	installFakeDriverPackage(t, root, "diros", "1.2.3", "src-c5fd0ab228bd5474")
+
+	target := filepath.Join(t.TempDir(), "drivers.zip")
+	app := NewApp()
+	result := exportDriverPackageSelectionTo(t, app, root, target, []string{"mariadb"})
+	if !result.Success {
+		t.Fatalf("按选择导出应成功，实际: %#v", result)
+	}
+
+	entries := readDriverPackageZipEntries(t, target)
+	platformDir := optionalDriverBundlePlatformDir(stdRuntime.GOOS)
+	mariadbEntry := platformDir + "/mariadb-driver-agent-" + stdRuntime.GOOS + "-" + stdRuntime.GOARCH
+	dorisEntry := platformDir + "/doris-driver-agent-" + stdRuntime.GOOS + "-" + stdRuntime.GOARCH
+	if _, ok := entries[mariadbEntry]; !ok {
+		t.Fatalf("导出包缺少 %s，实际条目: %v", mariadbEntry, entries)
+	}
+	if _, ok := entries[dorisEntry]; ok {
+		t.Fatalf("未选择的 doris 不应出现在导出包中，实际条目: %v", entries)
+	}
+	if count, ok := result.Data.(map[string]interface{})["driverCount"]; !ok || count != 1 {
+		t.Fatalf("driverCount = %#v，期望 1", result.Data)
+	}
+}
+
+func TestExportDriverPackageSelectionEmptyExportsAll(t *testing.T) {
+	root := t.TempDir()
+	installFakeDriverPackage(t, root, "mariadb", "1.9.3", "src-0a451007282c8777")
+	installFakeDriverPackage(t, root, "diros", "1.2.3", "src-c5fd0ab228bd5474")
+
+	target := filepath.Join(t.TempDir(), "drivers.zip")
+	app := NewApp()
+	result := exportDriverPackageSelectionTo(t, app, root, target, nil)
+	if !result.Success {
+		t.Fatalf("空选择应导出全部，实际: %#v", result)
+	}
+	if count, ok := result.Data.(map[string]interface{})["driverCount"]; !ok || count != 2 {
+		t.Fatalf("driverCount = %#v，期望 2", result.Data)
+	}
+}
+
+func TestExportDriverPackageSelectionMissingDriverSkipsDialog(t *testing.T) {
+	root := t.TempDir()
+	installFakeDriverPackage(t, root, "mariadb", "1.9.3", "src-0a451007282c8777")
+
+	app := NewApp()
+	app.SetLanguage("en-US")
+	app.saveFileDialog = func(context.Context, runtime.SaveDialogOptions) (string, error) {
+		t.Fatal("所选驱动不可导出时不应弹出保存对话框")
+		return "", nil
+	}
+	result := app.ExportDriverPackageSelection(root, "", []string{"clickhouse"})
+	if result.Success {
+		t.Fatalf("未安装的选择应失败，实际: %#v", result)
+	}
+	want := app.appText("driver_manager.backend.error.package_no_selected_drivers", nil)
+	if result.Message != want {
+		t.Fatalf("提示文案不匹配，want=%q got=%q", want, result.Message)
+	}
+}
+
+func exportDriverPackageSelectionTo(t *testing.T, app *App, root string, target string, driverTypes []string) connection.QueryResult {
+	t.Helper()
+	app.saveFileDialog = func(context.Context, runtime.SaveDialogOptions) (string, error) {
+		return target, nil
+	}
+	return app.ExportDriverPackageSelection(root, "", driverTypes)
+}
+
 func TestExportDriverPackageWithoutInstalledDriversFails(t *testing.T) {
 	root := t.TempDir()
 	app := NewApp()

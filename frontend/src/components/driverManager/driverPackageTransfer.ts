@@ -165,8 +165,47 @@ export const isDriverPackageExportCanceled = (result: unknown): boolean => (
   isDriverPackageExportRunCanceled(result) || isBackendCancelledResult(result)
 );
 
+type DriverPackageQueryResult = {
+  success?: boolean;
+  message?: string;
+  data?: unknown;
+};
+
+type DriverPackageExportSelection = (
+  downloadDir: string,
+  jobId: string,
+  driverTypes: string[],
+) => Promise<DriverPackageQueryResult>;
+
+type WailsDriverPackageApp = {
+  ExportDriverPackageSelection?: DriverPackageExportSelection;
+};
+
+const wailsDriverPackageApp = (): WailsDriverPackageApp | undefined => {
+  const runtime = window as Window & {
+    go?: { app?: { App?: WailsDriverPackageApp } };
+  };
+  return runtime.go?.app?.App;
+};
+
+const invokeExportDriverPackage = (
+  downloadDir: string,
+  jobId: string,
+  driverTypes: string[],
+): Promise<DriverPackageQueryResult> => {
+  const selected = driverTypes.map((driverType) => driverType.trim()).filter(Boolean);
+  if (selected.length === 0) {
+    return ExportDriverPackage(downloadDir, jobId);
+  }
+  const exportSelection = wailsDriverPackageApp()?.ExportDriverPackageSelection;
+  if (!exportSelection) {
+    return Promise.reject(new Error('ExportDriverPackageSelection unavailable'));
+  }
+  return exportSelection(downloadDir, jobId, selected);
+};
+
 /**
- * 导出本机全部已安装的可选驱动。
+ * 导出已安装的可选驱动。driverTypes 为空时导出全部。
  * 返回 null 表示用户取消（不弹错误提示）。
  *
  * jobId 由调用方生成并透传：前端据此订阅 driver:package-export-progress 进度事件
@@ -175,9 +214,10 @@ export const isDriverPackageExportCanceled = (result: unknown): boolean => (
 export const exportDriverPackage = async (
   downloadDir: string,
   jobId: string,
+  driverTypes: string[] = [],
 ): Promise<DriverPackageExportSummary | null> => {
   try {
-    const result = await ExportDriverPackage(downloadDir, jobId);
+    const result = await invokeExportDriverPackage(downloadDir, jobId, driverTypes);
     if (!result?.success) {
       if (isDriverPackageExportCanceled(result)) {
         // 只有运行期取消才回执：进度条已经消失，不给一句反馈用户同样不知道
