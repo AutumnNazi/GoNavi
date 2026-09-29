@@ -1,5 +1,5 @@
 import type React from 'react';
-import { Button, Tooltip } from 'antd';
+import { Button } from 'antd';
 
 import { TitlebarMoonIcon, TitlebarSettingsIcon, TitlebarSunIcon } from './gonaviTitlebarIcons';
 import './titleBarPreferencesPill.css';
@@ -13,8 +13,6 @@ export interface TitleBarPreferencesPillProps {
   isDarkTheme: boolean;
   onOpenPreferences: () => void;
   onToggleTheme: () => void;
-  /** 主题按钮的 tooltip，例如「切换到浅色」。 */
-  themeTooltip?: string;
   /** 插在「偏好设置」与「主题」之间的内容（如驱动管理、关于）。 */
   middle?: React.ReactNode;
   preferencesTestId?: string;
@@ -32,7 +30,6 @@ export default function TitleBarPreferencesPill({
   isDarkTheme,
   onOpenPreferences,
   onToggleTheme,
-  themeTooltip,
   middle,
   preferencesTestId = 'gonavi-titlebar-preferences-action',
   themeTestId = 'gonavi-titlebar-theme-action',
@@ -71,11 +68,7 @@ export default function TitleBarPreferencesPill({
         <span className="gn-preferences-pill-label">{preferencesLabel}</span>
       </Button>
       {middle}
-      {themeTooltip ? (
-        <Tooltip title={themeTooltip}>{themeButton}</Tooltip>
-      ) : (
-        themeButton
-      )}
+      {themeButton}
     </div>
   );
 }

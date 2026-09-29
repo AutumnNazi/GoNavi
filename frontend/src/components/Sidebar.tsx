@@ -141,6 +141,7 @@ import { createSidebarResizeAwareFrameScheduler } from '../utils/sidebarResizeLi
   VerticalAlignTopOutlined,
   SafetyCertificateOutlined,
   SkinOutlined,
+  InfoCircleOutlined,
 	} from '@ant-design/icons';
 import SidebarPanelOutlined from './icons/SidebarPanelOutlined';
 import { useStore } from '../store';
@@ -4331,7 +4332,15 @@ const Sidebar: React.FC<{
       key: 'about-go-navi',
       label: t('app.settings.group.about.title'),
       icon: <TitlebarInfoIcon size="100%" />,
-      onClick: () => onOpenSettingsNavigation?.({ group: 'about', pane: 'about-go-navi' }),
+      // 与 macOS 菜单栏「关于 → 关于 GoNavi」一致：点按钮先展开下拉，再点子项进入关于页。
+      menu: [
+        {
+          key: 'about-go-navi-item',
+          label: t('app.native_menu.about'),
+          icon: <InfoCircleOutlined aria-hidden="true" />,
+          onClick: () => onOpenSettingsNavigation?.({ group: 'about', pane: 'about-go-navi' }),
+        },
+      ],
     },
   ];
   // macOS 的「关于」「驱动管理」走原生菜单栏

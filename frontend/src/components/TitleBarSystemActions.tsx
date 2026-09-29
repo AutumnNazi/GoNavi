@@ -11,7 +11,6 @@ type TitleBarSystemActionsProps = {
   themeLabel?: string;
   isDarkTheme?: boolean;
   onToggleTheme?: () => void;
-  themeTooltip?: string;
   /** 插在「设置」与「主题」之间的内容，通常是驱动管理 / 关于的 portal 槽位。 */
   trailingSlot?: React.ReactNode;
 };
@@ -22,7 +21,6 @@ const TitleBarSystemActions: React.FC<TitleBarSystemActionsProps> = ({
   themeLabel,
   isDarkTheme = false,
   onToggleTheme,
-  themeTooltip,
   trailingSlot,
 }) => (
   <div
@@ -40,7 +38,6 @@ const TitleBarSystemActions: React.FC<TitleBarSystemActionsProps> = ({
         isDarkTheme={isDarkTheme}
         onOpenPreferences={onOpenSettings}
         onToggleTheme={onToggleTheme}
-        themeTooltip={themeTooltip}
         middle={trailingSlot}
       />
     ) : (

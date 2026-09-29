@@ -7956,7 +7956,6 @@ function App() {
       themeLabel={t('app.titlebar.theme')}
       isDarkTheme={themeMode === 'dark'}
       onToggleTheme={handleToggleThemeMode}
-      themeTooltip={t(themeMode === 'dark' ? 'app.titlebar.theme.to_light' : 'app.titlebar.theme.to_dark')}
     />
   );
   const titleBarActionsInline = appearance.titlebarActionsPlacement === 'titlebar'; // 功能入口行：默认工具条，可切到 GoNavi 右侧
