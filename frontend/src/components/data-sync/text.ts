@@ -1030,35 +1030,7 @@ export const createDataSyncWorkbenchTranslate = (
 };
 
 /**
- * Stable validation codes are the localization contract. The codes below are
- * categories whose actionable cause exists only in the backend message, so the
- * diagnostic is appended instead of dropped:
- * - CDC probing is environment-specific (replica-set setup, binlog privileges,
- *   publication state).
- * - `definition_invalid` wraps every backend ValidateDefinition failure (Cron
- *   field count, unsupported enum, batch range), so the localized sentence
- *   alone leaves the user unable to locate the fault.
+ * Stable validation codes are the localization contract; the rendering rules
+ * live in `textValidationIssue.ts` so this catalog keeps to copy only.
  */
-const BACKEND_DIAGNOSTIC_ISSUE_CODES = new Set([
-  'definition_invalid',
-  'cdc_probe_failed',
-  'cdc_adapter_not_ready',
-]);
-
-export const dataSyncValidationIssueText = (
-  issue: { code: string; message?: string },
-  t: DataSyncWorkbenchTranslate,
-): string => {
-  const key = `validation.${issue.code}` as DataSyncWorkbenchTextKey;
-  const localized = t(key);
-  if (localized !== key) {
-    if (
-      BACKEND_DIAGNOSTIC_ISSUE_CODES.has(issue.code) &&
-      String(issue.message || '').trim()
-    ) {
-      return `${localized} ${String(issue.message).trim()}`;
-    }
-    return localized;
-  }
-  return String(issue.message || '').trim() || t('validation.unknown');
-};
+export { dataSyncValidationIssueText } from './textValidationIssue';
