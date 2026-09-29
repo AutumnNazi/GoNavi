@@ -6,6 +6,8 @@ import { renderV2ActionMenuPopup } from './common/V2ActionMenuPopup';
 export interface TitleBarQuickAction {
   key: string;
   label: string;
+  /** 标题栏「图标 + 文字」模式的精简名称；显示与否由样式按模式决定。 */
+  shortLabel?: string;
   icon?: React.ReactNode;
   onClick?: () => void;
   disabled?: boolean;
@@ -62,7 +64,8 @@ const TitleBarQuickActions: React.FC<TitleBarQuickActionsProps> = ({ label, acti
           {action.icon}
         </span>
       )}
-      <span className="gn-titlebar-toolbar-item-label">{action.label}</span>
+      <span className={`gn-titlebar-toolbar-item-label${action.shortLabel ? ' has-short-label' : ''}`}>{action.label}</span>
+      {action.shortLabel && <span className="gn-titlebar-toolbar-item-short-label" aria-hidden="true">{action.shortLabel}</span>}
     </>
   );
 

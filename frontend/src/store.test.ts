@@ -710,6 +710,67 @@ describe('store appearance persistence', () => {
     expect(reloaded.useStore.getState().appearance.autoAddTableAlias).toBe(true);
   });
 
+  it('defaults new installs to the title bar and keeps upgraded users on the toolbar', async () => {
+    // 新用户：本地没有任何配置，使用标题栏 + 图标 + 精简名称。
+    const { useStore } = await importStore();
+
+    expect(useStore.getState().appearance.titlebarActionsPlacement).toBe('titlebar');
+    expect(useStore.getState().appearance.titlebarActionsDisplay).toBe('icon-text');
+
+    useStore.getState().setAppearance({ titlebarActionsPlacement: 'toolbar', titlebarActionsDisplay: 'icon' });
+    const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}').state.appearance;
+    expect(persisted.titlebarActionsPlacement).toBe('toolbar');
+    expect(persisted.titlebarActionsDisplay).toBe('icon');
+
+    vi.resetModules();
+    let reloaded = await importStore();
+    expect(reloaded.useStore.getState().appearance.titlebarActionsPlacement).toBe('toolbar');
+    expect(reloaded.useStore.getState().appearance.titlebarActionsDisplay).toBe('icon');
+
+    // 老用户：已有配置但没有这些字段（或写入了未知值），保持升级前的工具条，切到标题栏时默认纯文字。
+    for (const appearance of [{ titlebarActionsPlacement: 'menu', titlebarActionsDisplay: 'emoji' }, {}]) {
+      storage.setItem('lite-db-storage', JSON.stringify({ state: { appearance }, version: 21 }));
+      vi.resetModules();
+      reloaded = await importStore();
+      expect(reloaded.useStore.getState().appearance.titlebarActionsPlacement).toBe('toolbar');
+      expect(reloaded.useStore.getState().appearance.titlebarActionsDisplay).toBe('text');
+    }
+  });
+
+  it('keeps data grid and SQL editor typography slices when sanitizing appearance', async () => {
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: {
+        appearance: {
+          showDataTableVerticalBorders: true,
+          showDataTableRowNumber: false,
+          dataTableDensity: 'compact',
+          dataTableFontSize: 13,
+          dataTableFontSizeFollowGlobal: false,
+          sidebarTreeFontSize: 15,
+          sidebarTreeFontSizeFollowGlobal: false,
+          sqlEditorFontSize: 16,
+          sqlEditorFontSizeFollowGlobal: false,
+        },
+      },
+      version: 21,
+    }));
+    const { useStore } = await importStore();
+
+    expect(useStore.getState().appearance).toMatchObject({
+      showDataTableVerticalBorders: true,
+      showDataTableRowNumber: false,
+      dataTableDensity: 'compact',
+      dataTableFontSize: 13,
+      dataTableFontSizeFollowGlobal: false,
+      sidebarTreeFontSize: 15,
+      sidebarTreeFontSizeFollowGlobal: false,
+      sqlEditorFontSize: 16,
+      sqlEditorFontSizeFollowGlobal: false,
+      titlebarActionsPlacement: 'toolbar',
+      titlebarActionsDisplay: 'text',
+    });
+  });
+
   it('persists v2 sidebar search preferences and sanitizes filter text', async () => {
     const { useStore } = await importStore();
 

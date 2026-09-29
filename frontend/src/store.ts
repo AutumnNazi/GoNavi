@@ -79,6 +79,11 @@ import {
   type SqlEditorTypographySettings,
 } from "./utils/sqlEditorTypography";
 import {
+  DEFAULT_TITLEBAR_ACTIONS_PLACEMENT_SETTINGS,
+  sanitizeTitlebarActionsPlacementSettings,
+  type TitlebarActionsPlacementSettings,
+} from "./utils/titlebarActionsPlacement";
+import {
   normalizeOceanBaseProtocol,
   resolveOceanBaseProtocolFromConfig,
   resolveOceanBaseProtocolFromQueryText,
@@ -201,7 +206,7 @@ export type ThemePreference = ThemeMode | "system";
 export type AIChatOpenMode = "dock" | "detached";
 
 export interface AppearanceSettings
-  extends DataGridDisplaySettings, SqlEditorTypographySettings {
+  extends DataGridDisplaySettings, SqlEditorTypographySettings, TitlebarActionsPlacementSettings {
   enabled: boolean;
   opacity: number;
   blur: number;
@@ -254,6 +259,7 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   redisDbAliases: DEFAULT_REDIS_DB_ALIASES,
   ...DEFAULT_DATA_GRID_DISPLAY_SETTINGS,
   ...DEFAULT_SQL_EDITOR_TYPOGRAPHY_SETTINGS,
+  ...DEFAULT_TITLEBAR_ACTIONS_PLACEMENT_SETTINGS,
 };
 const DEFAULT_UI_SCALE = 1.0;
 const MIN_UI_SCALE = 0.8;
@@ -3389,19 +3395,10 @@ const sanitizeAppearance = (
       ? sanitizeTabDisplaySettings(DEFAULT_TAB_DISPLAY_SETTINGS)
       : sanitizeTabDisplaySettings(appearance.tabDisplay),
     redisDbAliases: sanitizeRedisDbAliases(appearance.redisDbAliases),
-    showDataTableVerticalBorders:
-      dataGridDisplaySettings.showDataTableVerticalBorders,
-    showDataTableRowNumber: dataGridDisplaySettings.showDataTableRowNumber,
-    dataTableDensity: dataGridDisplaySettings.dataTableDensity,
-    dataTableFontSize: dataGridDisplaySettings.dataTableFontSize,
-    dataTableFontSizeFollowGlobal:
-      dataGridDisplaySettings.dataTableFontSizeFollowGlobal,
-    sqlEditorFontSize: sqlEditorTypographySettings.sqlEditorFontSize,
-    sqlEditorFontSizeFollowGlobal:
-      sqlEditorTypographySettings.sqlEditorFontSizeFollowGlobal,
-    sidebarTreeFontSize: dataGridDisplaySettings.sidebarTreeFontSize,
-    sidebarTreeFontSizeFollowGlobal:
-      dataGridDisplaySettings.sidebarTreeFontSizeFollowGlobal,
+    // 各设置分片的归一化函数只返回自身字段，直接展开。
+    ...dataGridDisplaySettings,
+    ...sqlEditorTypographySettings,
+    ...sanitizeTitlebarActionsPlacementSettings(appearance),
   };
   if (version < 2 && isLegacyDefaultAppearance(appearance)) {
     return { ...DEFAULT_APPEARANCE };
