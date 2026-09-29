@@ -1,4 +1,3 @@
-import { ClusterOutlined } from '@ant-design/icons';
 import { useCallback, useMemo } from 'react';
 
 import { t } from '../../i18n';
@@ -11,7 +10,7 @@ import { buildSessionWorkbenchTab } from '../../utils/sessionWorkbenchTab';
 import { buildUserManagementWorkbenchTab } from '../../utils/userManagementTab';
 import { isRedisConnection } from '../sessionWorkbench/sessionWorkbenchModel';
 import type { TitleBarQuickAction } from '../TitleBarQuickActions';
-import { TitlebarUserManagementIcon } from '../titlebar/gonaviTitlebarIcons';
+import { TitlebarSessionIcon, TitlebarUserManagementIcon } from '../titlebar/gonaviTitlebarWorkbenchIcons';
 
 type UseSidebarWorkbenchLaunchersInput = {
   activeTab: TabData | null;
@@ -67,7 +66,7 @@ export const useSidebarWorkbenchLaunchers = ({
   const sessionWorkbenchAction = useMemo<TitleBarQuickAction>(() => ({
     key: 'session-workbench',
     label: t('session_workbench.title'),
-    icon: <ClusterOutlined aria-hidden="true" />,
+    icon: <TitlebarSessionIcon size="100%" />,
     active: activeTab?.type === 'session-workbench',
     onClick: openSessionWorkbench,
   }), [activeTab?.type, openSessionWorkbench]);

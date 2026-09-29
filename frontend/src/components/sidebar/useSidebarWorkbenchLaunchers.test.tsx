@@ -4,6 +4,7 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
 import type { SavedConnection, TabData } from '../../types';
+import { TitlebarSessionIcon, TitlebarUserManagementIcon } from '../titlebar/gonaviTitlebarWorkbenchIcons';
 import { useSidebarWorkbenchLaunchers, type SidebarWorkbenchLaunchers } from './useSidebarWorkbenchLaunchers';
 
 const mysql = { id: 'm1', name: 'mysql', config: { type: 'mysql', host: 'h', port: 3306, user: 'root' } } as unknown as SavedConnection;
@@ -24,6 +25,14 @@ const renderLaunchers = (activeConnection: SavedConnection | null, addTab: (tab:
 
 describe('useSidebarWorkbenchLaunchers user management action', () => {
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+
+  it('uses the hand-drawn titlebar icon set for workbench entries', () => {
+    const launchers = renderLaunchers(mysql, vi.fn());
+
+    // 与工具条其它入口同一套 2px 圆润实心图标，不混用 antd 细线图标。
+    expect((launchers.sessionWorkbenchAction.icon as React.ReactElement).type).toBe(TitlebarSessionIcon);
+    expect((launchers.userManagementAction.icon as React.ReactElement).type).toBe(TitlebarUserManagementIcon);
+  });
 
   it('opens the session workbench with the active supported connection', () => {
     const addTab = vi.fn();
