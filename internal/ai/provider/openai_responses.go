@@ -42,7 +42,6 @@ func NewOpenAIResponsesProvider(config ai.ProviderConfig) (Provider, error) {
 		return nil, fmt.Errorf("model ID is required; select or enter a model in Settings")
 	}
 
-	maxTokens := normalizeOpenAIResponsesMaxOutputTokensForEndpoint(model, baseURL, config.MaxTokens)
 	temperature := config.Temperature
 	if temperature <= 0 {
 		temperature = defaultOpenAITemperature
@@ -51,7 +50,6 @@ func NewOpenAIResponsesProvider(config ai.ProviderConfig) (Provider, error) {
 	normalized := config
 	normalized.BaseURL = baseURL
 	normalized.Model = model
-	normalized.MaxTokens = maxTokens
 	normalized.Temperature = temperature
 	profile := ResolveThinkingProfile(config.Type, config.APIFormat, baseURL, model)
 	normalized.ThinkingIntensity = string(clampThinkingIntensityToProfile(config.ThinkingIntensity, profile))
@@ -114,15 +112,18 @@ func (p *OpenAIResponsesProvider) Validate() error {
 }
 
 type openAIResponsesRequest struct {
-	Model           string                    `json:"model"`
-	Input           []json.RawMessage         `json:"input"`
-	Temperature     float64                   `json:"temperature,omitempty"`
-	MaxOutputTokens int                       `json:"max_output_tokens,omitempty"`
-	Stream          bool                      `json:"stream"`
-	Store           *bool                     `json:"store,omitempty"`
-	Include         []string                  `json:"include,omitempty"`
-	Tools           []openAIResponsesTool     `json:"tools,omitempty"`
-	Reasoning       *openAIResponsesReasoning `json:"reasoning,omitempty"`
+	Model           string            `json:"model"`
+	Input           []json.RawMessage `json:"input"`
+	Temperature     float64           `json:"temperature,omitempty"`
+	MaxOutputTokens int               `json:"max_output_tokens,omitempty"`
+	// implicitMaxOutputTokens 标记 MaxOutputTokens 是默认值而非用户显式给的；
+	// 只有默认值被上游拒绝时才允许自动调整，显式值从不改写。
+	implicitMaxOutputTokens bool
+	Stream                  bool                      `json:"stream"`
+	Store                   *bool                     `json:"store,omitempty"`
+	Include                 []string                  `json:"include,omitempty"`
+	Tools                   []openAIResponsesTool     `json:"tools,omitempty"`
+	Reasoning               *openAIResponsesReasoning `json:"reasoning,omitempty"`
 }
 
 type openAIResponsesSessionState struct {
@@ -601,6 +602,8 @@ func (p *OpenAIResponsesProvider) buildRequest(req ai.ChatRequest, stream bool) 
 		Tools:           buildOpenAIResponsesTools(req.Tools),
 		Reasoning:       openAIResponsesRequestReasoning(p.config.Model, p.baseURL, p.config.ThinkingIntensity),
 	}
+	_, explicit := explicitOutputTokens(req.MaxTokens, p.config.MaxTokens)
+	body.implicitMaxOutputTokens = !explicit && body.MaxOutputTokens > 0
 	if !isDeepSeekResponsesBaseURL(p.baseURL) {
 		body.Store = boolPointer(false)
 	}
@@ -1131,6 +1134,14 @@ func (p *OpenAIResponsesProvider) retryClientRejectedRequest(
 	imagesStripped := false
 	for {
 		switch {
+		case body.implicitMaxOutputTokens && body.MaxOutputTokens > 0 && isOutputTokenLimitRejection(err):
+			// 默认填的上限超过了该模型的能力：用上游报错里给出的上限重试；
+			// 报错里没有可用数字就不再发送上限，交给上游自己的默认值。
+			capValue, _ := outputTokenCapFromRejection(err, body.MaxOutputTokens)
+			rememberOutputTokenCap(p.baseURL, p.config.Model, capValue)
+			body.MaxOutputTokens = capValue
+			body.implicitMaxOutputTokens = false
+			fmt.Printf("[OpenAI Responses] 默认输出上限被上游拒绝，改用 %d 重试（0 表示不发送上限）\n", capValue)
 		case len(body.Include) > 0 && isOpenAIResponsesUnsupportedIncludeError(err):
 			body.Include = nil
 			fmt.Println("[OpenAI Responses] 上游不支持 include，自动降级为不请求加密推理内容")

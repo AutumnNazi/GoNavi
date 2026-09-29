@@ -6,14 +6,25 @@ import (
 	"GoNavi-Wails/internal/ai"
 )
 
-// openAIResponsesRequestMaxOutputTokens resolves the per-turn budget without
-// allowing an omitted or negative request override to erase the model-aware
-// provider default.
+// openAIResponsesRequestMaxOutputTokens resolves the per-turn output budget.
+//
+// The policy is "no limit by default" (see output_token_budget.go): an explicit
+// positive request/config value is sent as-is, otherwise nothing is sent and
+// the model uses its own maximum. Native DeepSeek endpoints are the exception:
+// omitting the field there means only 8K/64K, so the documented maximum is
+// sent explicitly. A cap learned from an earlier rejection takes precedence
+// over that default.
 func openAIResponsesRequestMaxOutputTokens(model, baseURL string, requestMaxTokens, configuredMaxTokens int) int {
-	if requestMaxTokens > 0 {
-		return requestMaxTokens
+	if explicit, ok := explicitOutputTokens(requestMaxTokens, configuredMaxTokens); ok {
+		return explicit
 	}
-	return normalizeOpenAIResponsesMaxOutputTokensForEndpoint(model, baseURL, configuredMaxTokens)
+	if learned, ok := learnedOutputTokenCap(baseURL, model); ok {
+		return learned
+	}
+	if isDeepSeekResponsesBaseURL(baseURL) {
+		return deepSeekMaxOutputTokens
+	}
+	return 0
 }
 
 // openAIResponsesRequestReasoning maps the persisted thinking preference to a

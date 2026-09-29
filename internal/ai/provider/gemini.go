@@ -34,10 +34,6 @@ func NewGeminiProvider(config ai.ProviderConfig) (Provider, error) {
 	if model == "" {
 		return nil, fmt.Errorf("model ID is required; select or enter a model in Settings")
 	}
-	maxTokens := config.MaxTokens
-	if maxTokens <= 0 {
-		maxTokens = defaultOpenAIMaxTokens
-	}
 	temperature := config.Temperature
 	if temperature <= 0 {
 		temperature = defaultOpenAITemperature
@@ -46,7 +42,6 @@ func NewGeminiProvider(config ai.ProviderConfig) (Provider, error) {
 	normalized := config
 	normalized.BaseURL = baseURL
 	normalized.Model = model
-	normalized.MaxTokens = maxTokens
 	normalized.Temperature = temperature
 	profile := ResolveThinkingProfile(config.Type, config.APIFormat, baseURL, model)
 	normalized.ThinkingIntensity = string(clampThinkingIntensityToProfile(config.ThinkingIntensity, profile))
