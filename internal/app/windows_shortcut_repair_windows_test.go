@@ -539,3 +539,86 @@ if (-not ($failureLog[0] -like ('*' + $readonlyShortcut + '*'))) {
 		t.Fatalf("read-only shortcut brand icon batch did not fail as expected: %v\n%s", err, output)
 	}
 }
+
+func TestWindowsShortcutRepairCreatesUserLevelAumidShortcutBesideMachineShortcut(t *testing.T) {
+	powerShell, err := exec.LookPath("powershell.exe")
+	if err != nil {
+		t.Skip("powershell.exe is unavailable")
+	}
+
+	tempDir := t.TempDir()
+	targetPath := filepath.Join(tempDir, "install", "GoNavi.exe")
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(targetPath, []byte("test"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	brandIcon := filepath.Join(tempDir, "gonavi-brand-b00b00b00b00b00b00b00b00.ico")
+	if err := os.WriteFile(brandIcon, []byte("icon"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	harness := windowsShortcutRepairPowerShellScript + `
+$ErrorActionPreference = 'Stop'
+$shell = New-Object -ComObject WScript.Shell
+
+$target = $env:GONAVI_TEST_TARGET
+$brandIcon = $env:GONAVI_TEST_ICON
+$userPrograms = Join-Path $env:GONAVI_TEST_ROOT 'aumid-shortcut-programs'
+$machinePrograms = Join-Path $env:GONAVI_TEST_ROOT 'aumid-shortcut-common-programs'
+[void](New-Item -ItemType Directory -Path $machinePrograms -Force)
+$machineShortcut = Join-Path $machinePrograms 'GoNavi.lnk'
+
+# Machine-level shortcut declaring the AUMID: on real MSI installs this lives
+# in CommonPrograms and is read-only for a standard user, so the AUMID ensure
+# must not treat it as "already satisfied" - Explorer anchors the taskbar
+# button to its IconLocation and brand switches would freeze on a stale icon.
+$machine = $shell.CreateShortcut($machineShortcut)
+$machine.TargetPath = $target
+$machine.Save()
+[void](Set-GoNaviShortcutRelaunchProperties -ShortcutPath $machineShortcut -TargetPath $target -IconPath $brandIcon)
+
+$created = Ensure-GoNaviAumidShortcut -TargetPath $target -IconPath $brandIcon
+if ($created -ne $true) {
+    throw 'user-level AUMID shortcut was not created beside the machine shortcut'
+}
+$userShortcut = Join-Path $userPrograms 'GoNavi.lnk'
+if (-not (Test-Path -LiteralPath $userShortcut -PathType Leaf)) {
+    throw ('user-level AUMID shortcut is missing: ' + $userShortcut)
+}
+$readBack = $shell.CreateShortcut($userShortcut)
+if (-not [string]::Equals([string]$readBack.TargetPath, $target, [StringComparison]::OrdinalIgnoreCase)) {
+    throw ('user-level AUMID shortcut has the wrong target: ' + $readBack.TargetPath)
+}
+if (-not [string]::Equals([string]$readBack.IconLocation, ($brandIcon + ',0'), [StringComparison]::OrdinalIgnoreCase)) {
+    throw ('user-level AUMID shortcut has the wrong icon: ' + $readBack.IconLocation)
+}
+$namespace = (New-Object -ComObject Shell.Application).Namespace($userPrograms)
+$userAumid = [string]$namespace.ParseName('GoNavi.lnk').ExtendedProperty('System.AppUserModel.ID')
+if ($userAumid -ne 'Syngnat.GoNavi') {
+    throw ('user-level AUMID shortcut does not declare the AUMID: ' + $userAumid)
+}
+$machineReadBack = $shell.CreateShortcut($machineShortcut)
+if (-not [string]::Equals([string]$machineReadBack.IconLocation, ',0', [StringComparison]::OrdinalIgnoreCase)) {
+    throw ('machine shortcut was modified: ' + $machineReadBack.IconLocation)
+}
+$second = Ensure-GoNaviAumidShortcut -TargetPath $target -IconPath $brandIcon
+if ($second -ne $false) {
+    throw 'second AUMID ensure call did not skip when the user-level shortcut exists'
+}`
+	scriptPath := filepath.Join(tempDir, "aumid-user-level-test.ps1")
+	if err := os.WriteFile(scriptPath, []byte(strings.ReplaceAll(harness, "\n", "\r\n")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	command := exec.Command(powerShell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned", "-File", scriptPath)
+	command.Env = append(os.Environ(),
+		"GONAVI_TEST_TARGET="+targetPath,
+		"GONAVI_TEST_ICON="+brandIcon,
+		"GONAVI_TEST_ROOT="+tempDir,
+	)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("user-level AUMID shortcut was not created beside the machine shortcut: %v\n%s", err, output)
+	}
+}

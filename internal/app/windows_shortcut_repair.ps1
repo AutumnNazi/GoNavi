@@ -585,9 +585,13 @@ function Ensure-GoNaviAumidShortcut {
     if (-not [string]::IsNullOrWhiteSpace($env:GONAVI_TEST_ROOT)) {
         $programs = Join-Path $env:GONAVI_TEST_ROOT 'aumid-shortcut-programs'
         [void](New-Item -ItemType Directory -Path $programs -Force)
+        $commonPrograms = Join-Path $env:GONAVI_TEST_ROOT 'aumid-shortcut-common-programs'
+        [void](New-Item -ItemType Directory -Path $commonPrograms -Force)
     }
+    $userShortcutPath = Join-Path $programs 'GoNavi.lnk'
+    $machineShortcutPath = Join-Path $commonPrograms 'GoNavi.lnk'
 
-    foreach ($candidate in @((Join-Path $programs 'GoNavi.lnk'), (Join-Path $commonPrograms 'GoNavi.lnk'))) {
+    foreach ($candidate in @($userShortcutPath, $machineShortcutPath)) {
         if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
         $app = New-Object -ComObject Shell.Application
         $item = $app.Namespace((Split-Path -Parent $candidate)).ParseName((Split-Path -Leaf $candidate))
@@ -595,12 +599,21 @@ function Ensure-GoNaviAumidShortcut {
         $existingAumid = ''
         try { $existingAumid = [string]$item.ExtendedProperty('System.AppUserModel.ID') } catch {}
         if ($existingAumid -match '^Syngnat\.GoNavi') {
-            # A shortcut already declaring our AUMID exists; nothing to create.
-            return $false
+            if ($candidate -ieq $userShortcutPath) {
+                # A writable per-user shortcut already declares the AUMID;
+                # brand switches follow through its IconLocation rewrite.
+                return $false
+            }
+            # A per-machine shortcut is read-only for a standard user, and
+            # Explorer anchors the taskbar button to its IconLocation, so the
+            # button would freeze on a stale brand icon while switches keep
+            # failing with "shortcut is not writable" (observed on MSI
+            # installs, Win11 26200). Fall through and create the writable
+            # per-user shortcut that Explorer resolves first for the AUMID.
         }
     }
 
-    $shortcutPath = Join-Path $programs 'GoNavi.lnk'
+    $shortcutPath = $userShortcutPath
     if (Test-Path -LiteralPath $shortcutPath -PathType Leaf) {
         # A same-named shortcut exists but belongs to neither our AUMID family
         # nor an existing declaration; never overwrite a user shortcut.
