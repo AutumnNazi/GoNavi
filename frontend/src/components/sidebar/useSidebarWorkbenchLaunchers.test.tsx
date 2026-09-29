@@ -25,6 +25,35 @@ const renderLaunchers = (activeConnection: SavedConnection | null, addTab: (tab:
 describe('useSidebarWorkbenchLaunchers user management action', () => {
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
+  it('opens the session workbench with the active supported connection', () => {
+    const addTab = vi.fn();
+    const launchers = renderLaunchers(mysql, addTab);
+
+    expect(launchers.sessionWorkbenchAction.key).toBe('session-workbench');
+    launchers.sessionWorkbenchAction.onClick?.();
+
+    expect(addTab).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'session-workbench-center',
+      connectionId: 'm1',
+    }));
+  });
+
+  it('opens the session workbench without preselecting Redis', () => {
+    const redis = {
+      id: 'r1',
+      name: 'redis',
+      config: { type: 'redis', host: 'h', port: 6379, user: '' },
+    } as unknown as SavedConnection;
+    const addTab = vi.fn();
+
+    renderLaunchers(redis, addTab).sessionWorkbenchAction.onClick?.();
+
+    expect(addTab).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'session-workbench-center',
+      connectionId: '',
+    }));
+  });
+
   it('opens the active connection user management tab when supported', () => {
     const addTab = vi.fn();
     const launchers = renderLaunchers(mysql, addTab);

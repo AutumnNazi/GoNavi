@@ -160,7 +160,6 @@ import { useWorkbenchTabs } from '../hooks/useWorkbenchTabs';
 import FindInDatabaseModal from './FindInDatabaseModal';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import { useSidebarWorkbenchLaunchers } from './sidebar/useSidebarWorkbenchLaunchers';
-import SessionWorkbenchRailButton from './sidebar/SessionWorkbenchRailButton';
 import {
     normalizeSidebarDatabaseListRefreshRequest,
     normalizeSidebarDatabaseRefreshRequest,
@@ -4233,7 +4232,13 @@ const Sidebar: React.FC<{
     openDataImportWorkbench({ connectionId, dbName, tableName, mode });
   }, [activeContext?.connectionId, activeContext?.dbName, activeTabId, openDataImportWorkbench, tabs]);
 
-  const { openSlowQueryWorkbench, openSqlAuditWorkbench, openDMLSnapshotWorkbench, userManagementAction } = useSidebarWorkbenchLaunchers({
+  const {
+    openSlowQueryWorkbench,
+    openSqlAuditWorkbench,
+    openDMLSnapshotWorkbench,
+    sessionWorkbenchAction,
+    userManagementAction,
+  } = useSidebarWorkbenchLaunchers({
     activeTab, activeTabHasConnection, activeConnection, addTab,
   });
 
@@ -4308,6 +4313,7 @@ const Sidebar: React.FC<{
         },
       ],
     },
+    sessionWorkbenchAction,
     userManagementAction,
   ];
   // 尾部操作：非 macOS 渲染到标题栏「设置 │ … │ 主题」胶囊中间，macOS 留在工具条 AI 之后。
@@ -4484,8 +4490,9 @@ const Sidebar: React.FC<{
     canLocateActiveTab,
     showObjectActions: false,
     showLocateAction: false,
-    showWorkbenchActions: true,
-    workbenchActions: <SessionWorkbenchRailButton />,
+    // The session workbench is exposed as a titlebar action so it remains
+    // reachable while the expanded explorer hides the fixed rail.
+    showWorkbenchActions: false,
     sidebarExpandAction: !collapsedSidebarActionsTarget && onExpandSidebar && expandSidebarLabel ? {
       label: expandSidebarLabel,
       onClick: onExpandSidebar,

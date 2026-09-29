@@ -1232,6 +1232,7 @@ describe('Sidebar locate toolbar', () => {
     expect(source).toContain("app.tools.group.workflow.title");
     expect(source).toContain("key: 'sql-tools'");
     expect(source).toContain("sidebar.action.sql_tools");
+    expect(source).toContain('sessionWorkbenchAction');
     expect(source).toContain("key: 'compare'");
     expect(source).toContain("onOpenSettingsNavigation?.({ group: 'workflow', action: 'compare' })");
     expect(source).not.toContain("key: 'schema-compare'");

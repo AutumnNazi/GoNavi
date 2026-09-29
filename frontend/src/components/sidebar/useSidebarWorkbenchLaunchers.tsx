@@ -1,3 +1,4 @@
+import { ClusterOutlined } from '@ant-design/icons';
 import { useCallback, useMemo } from 'react';
 
 import { t } from '../../i18n';
@@ -6,7 +7,9 @@ import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
 import { buildDMLSnapshotWorkbenchTab } from '../../utils/dmlSnapshotTab';
 import { buildSqlAnalysisWorkbenchTab } from '../../utils/sqlAnalysisTab';
 import { buildSqlAuditWorkbenchTab } from '../../utils/sqlAuditTab';
+import { buildSessionWorkbenchTab } from '../../utils/sessionWorkbenchTab';
 import { buildUserManagementWorkbenchTab } from '../../utils/userManagementTab';
+import { isRedisConnection } from '../sessionWorkbench/sessionWorkbenchModel';
 import type { TitleBarQuickAction } from '../TitleBarQuickActions';
 import { TitlebarUserManagementIcon } from '../titlebar/gonaviTitlebarIcons';
 
@@ -21,6 +24,7 @@ export type SidebarWorkbenchLaunchers = {
   openSlowQueryWorkbench: () => void;
   openSqlAuditWorkbench: () => void;
   openDMLSnapshotWorkbench: () => void;
+  sessionWorkbenchAction: TitleBarQuickAction;
   userManagementAction: TitleBarQuickAction;
 };
 
@@ -51,6 +55,23 @@ export const useSidebarWorkbenchLaunchers = ({
     addTab(buildDMLSnapshotWorkbenchTab());
   }, [addTab]);
 
+  const openSessionWorkbench = useCallback(() => {
+    addTab(buildSessionWorkbenchTab({
+      connectionId: activeConnection && !isRedisConnection(activeConnection)
+        ? activeConnection.id
+        : '',
+      dbName: activeTab?.dbName,
+    }));
+  }, [activeConnection, activeTab?.dbName, addTab]);
+
+  const sessionWorkbenchAction = useMemo<TitleBarQuickAction>(() => ({
+    key: 'session-workbench',
+    label: t('session_workbench.title'),
+    icon: <ClusterOutlined aria-hidden="true" />,
+    active: activeTab?.type === 'session-workbench',
+    onClick: openSessionWorkbench,
+  }), [activeTab?.type, openSessionWorkbench]);
+
   // 当前连接支持时直接打开其用户管理；否则打开选择器标签，由工作台内选择连接。
   const openUserManagementWorkbench = useCallback(() => {
     const supported = activeConnection && getDataSourceCapabilities(activeConnection.config).supportsUserManagement;
@@ -69,6 +90,7 @@ export const useSidebarWorkbenchLaunchers = ({
     openSlowQueryWorkbench,
     openSqlAuditWorkbench,
     openDMLSnapshotWorkbench,
+    sessionWorkbenchAction,
     userManagementAction,
   };
 };
