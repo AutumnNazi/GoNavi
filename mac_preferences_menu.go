@@ -17,6 +17,7 @@ import (
 const (
 	nativeOpenPreferencesEvent = "gonavi:native-open-preferences"
 	nativeToggleThemeEvent     = "gonavi:native-toggle-theme"
+	nativeCheckUpdateEvent     = "gonavi:native-check-update"
 	nativeOpenAboutEvent       = "gonavi:native-open-about"
 	// nativeMenuLanguageEvent 由前端在界面语言变化时发出，携带语言代码。
 	// 语言偏好只存在前端持久化里，Go 启动时拿不到，所以菜单先按环境变量
@@ -26,14 +27,15 @@ const (
 
 // macPreferencesMenu 是菜单栏上并列的三个顶层菜单：GoNavi 设置 / 主题 / 关于。
 //
-// macOS 菜单栏顶层项必须挂子菜单才能响应点击，所以「主题」「关于」各自只有
-// 一个子项，动作放在子项上。
+// macOS 菜单栏顶层项必须挂子菜单才能响应点击，所以「主题」只有一个子项，
+// 动作放在子项上；「关于」有两个子项：检查更新、打开关于页。
 type macPreferencesMenu struct {
 	root        *menu.MenuItem
 	preferences *menu.MenuItem
 	themeRoot   *menu.MenuItem
 	theme       *menu.MenuItem
 	aboutRoot   *menu.MenuItem
+	checkUpdate *menu.MenuItem
 	about       *menu.MenuItem
 	localizer   *i18n.Localizer
 }
@@ -53,12 +55,13 @@ func newMacPreferencesMenu(localizer *i18n.Localizer, emit func(event string)) *
 	m := &macPreferencesMenu{
 		preferences: menu.Text("", nil, emitOnClick(nativeOpenPreferencesEvent)),
 		theme:       menu.Text("", nil, emitOnClick(nativeToggleThemeEvent)),
+		checkUpdate: menu.Text("", nil, emitOnClick(nativeCheckUpdateEvent)),
 		about:       menu.Text("", nil, emitOnClick(nativeOpenAboutEvent)),
 		localizer:   localizer,
 	}
 	m.root = menu.SubMenu("", menu.NewMenuFromItems(m.preferences))
 	m.themeRoot = menu.SubMenu("", menu.NewMenuFromItems(m.theme))
-	m.aboutRoot = menu.SubMenu("", menu.NewMenuFromItems(m.about))
+	m.aboutRoot = menu.SubMenu("", menu.NewMenuFromItems(m.checkUpdate, m.about))
 	m.relabel()
 	return m
 }
@@ -97,6 +100,8 @@ func (m *macPreferencesMenu) relabel() {
 	m.themeRoot.SetLabel(t("app.titlebar.theme"))
 	m.theme.SetLabel(t("app.shortcuts.action.toggleTheme.label"))
 	m.aboutRoot.SetLabel(t("app.settings.group.about.title"))
+	// 检查更新复用关于页「检查更新」按钮的文案，两处入口叫法一致。
+	m.checkUpdate.SetLabel(t("app.about.action.check_updates"))
 	m.about.SetLabel(t("app.native_menu.about"))
 }
 

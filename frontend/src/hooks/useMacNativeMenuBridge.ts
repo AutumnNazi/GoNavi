@@ -6,6 +6,7 @@ import { EventsEmit, EventsOn } from '../../wailsjs/runtime';
 export const MAC_NATIVE_MENU_EVENTS = {
   openPreferences: 'gonavi:native-open-preferences',
   toggleTheme: 'gonavi:native-toggle-theme',
+  checkUpdate: 'gonavi:native-check-update',
   openAbout: 'gonavi:native-open-about',
   language: 'gonavi:native-menu-language',
 } as const;
@@ -17,6 +18,7 @@ export interface MacNativeMenuBridgeOptions {
   language: string;
   onOpenPreferences: () => void;
   onToggleTheme: () => void;
+  onCheckUpdate: () => void;
   onOpenAbout: () => void;
 }
 
@@ -32,10 +34,11 @@ export function useMacNativeMenuBridge({
   language,
   onOpenPreferences,
   onToggleTheme,
+  onCheckUpdate,
   onOpenAbout,
 }: MacNativeMenuBridgeOptions): void {
-  const handlersRef = useRef({ onOpenPreferences, onToggleTheme, onOpenAbout });
-  handlersRef.current = { onOpenPreferences, onToggleTheme, onOpenAbout };
+  const handlersRef = useRef({ onOpenPreferences, onToggleTheme, onCheckUpdate, onOpenAbout });
+  handlersRef.current = { onOpenPreferences, onToggleTheme, onCheckUpdate, onOpenAbout };
 
   useEffect(() => {
     if (!enabled) {
@@ -44,6 +47,7 @@ export function useMacNativeMenuBridge({
     const offs = [
       EventsOn(MAC_NATIVE_MENU_EVENTS.openPreferences, () => handlersRef.current.onOpenPreferences()),
       EventsOn(MAC_NATIVE_MENU_EVENTS.toggleTheme, () => handlersRef.current.onToggleTheme()),
+      EventsOn(MAC_NATIVE_MENU_EVENTS.checkUpdate, () => handlersRef.current.onCheckUpdate()),
       EventsOn(MAC_NATIVE_MENU_EVENTS.openAbout, () => handlersRef.current.onOpenAbout()),
     ];
     return () => {

@@ -13,6 +13,7 @@ import { resolveTitleBarPrimaryActionShortcut } from './components/TitleBarPrima
 import TitleBarSystemActions from './components/TitleBarSystemActions';
 import TitleBarActionRow from './components/titlebar/TitleBarActionRow';
 import { useMacNativeMenuBridge } from './hooks/useMacNativeMenuBridge';
+import { useNativeMenuUpdateCheck } from './hooks/useNativeMenuUpdateCheck';
 import ConnectionGroupManagementModal from './components/sidebar/ConnectionGroupManagementModal';
 import TabManager from './components/TabManager';
 import FloatingWorkbenchWindows from './components/FloatingWorkbenchWindows';
@@ -7943,7 +7944,8 @@ function App() {
   }, [allowDebugNativeContextMenu]);
 
   const handleToggleThemeMode = () => selectPresetTheme(themeMode === 'dark' ? 'light' : 'dark');
-  useMacNativeMenuBridge({ enabled: useNativeMacWindowControls && !isWebRuntime, language, onOpenPreferences: handleOpenSettingsModal, onToggleTheme: handleToggleThemeMode, onOpenAbout: () => handleTitleBarSettingsNavigation({ group: 'about', pane: 'about-go-navi' }) });
+  const handleNativeMenuCheckUpdate = useNativeMenuUpdateCheck(checkForUpdates, t);
+  useMacNativeMenuBridge({ enabled: useNativeMacWindowControls && !isWebRuntime, language, onOpenPreferences: handleOpenSettingsModal, onToggleTheme: handleToggleThemeMode, onCheckUpdate: handleNativeMenuCheckUpdate, onOpenAbout: () => handleTitleBarSettingsNavigation({ group: 'about', pane: 'about-go-navi' }) });
   // 驱动管理 / 关于的 portal 槽位：非 macOS 在标题栏胶囊中间，macOS 跟在功能入口行 AI 之后。
   const titleBarTrailingSlot = <div id="gonavi-titlebar-about-action" className="gonavi-titlebar-quick-actions-slot gn-v2-titlebar-about-slot" />;
   const titleBarSystemActionsNode = ( // 非 macOS 放右区；macOS 走原生菜单栏

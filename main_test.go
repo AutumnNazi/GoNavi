@@ -292,16 +292,23 @@ func TestBuildMacApplicationMenuAppendsPreferencesAndAboutMenus(t *testing.T) {
 	}
 	preferencesItem := single(settingsRoot, "偏好设置")
 	themeItem := single(themeRoot, "切换主题")
-	aboutItem := single(aboutRoot, "关于 GoNavi")
+	// 「关于」有两个子项：先检查更新，再打开关于页。
+	if aboutRoot.SubMenu == nil || len(aboutRoot.SubMenu.Items) != 2 {
+		t.Fatalf("menu %q must hold check-update and about items", aboutRoot.Label)
+	}
+	checkUpdateItem, aboutItem := aboutRoot.SubMenu.Items[0], aboutRoot.SubMenu.Items[1]
+	if checkUpdateItem.Label != "检查更新" || aboutItem.Label != "关于 GoNavi" {
+		t.Fatalf("about menu items = %q / %q", checkUpdateItem.Label, aboutItem.Label)
+	}
 
-	for _, item := range []*menu.MenuItem{preferencesItem, themeItem, aboutItem} {
+	for _, item := range []*menu.MenuItem{preferencesItem, themeItem, checkUpdateItem, aboutItem} {
 		// 不绑加速键：⌘, 等组合键由前端可自定义的快捷键系统负责。
 		if item.Accelerator != nil {
 			t.Fatalf("menu item %q must not bind a native accelerator", item.Label)
 		}
 		item.Click(&menu.CallbackData{MenuItem: item})
 	}
-	wantEvents := []string{nativeOpenPreferencesEvent, nativeToggleThemeEvent, nativeOpenAboutEvent}
+	wantEvents := []string{nativeOpenPreferencesEvent, nativeToggleThemeEvent, nativeCheckUpdateEvent, nativeOpenAboutEvent}
 	if strings.Join(emitted, ",") != strings.Join(wantEvents, ",") {
 		t.Fatalf("emitted events = %v, want %v", emitted, wantEvents)
 	}
@@ -309,8 +316,8 @@ func TestBuildMacApplicationMenuAppendsPreferencesAndAboutMenus(t *testing.T) {
 	if !preferences.setLanguage("en-US") {
 		t.Fatal("setLanguage(en-US) = false, want relabel")
 	}
-	if settingsRoot.Label != "Settings" || themeRoot.Label != "Theme" || aboutRoot.Label != "About" || aboutItem.Label != "About GoNavi" {
-		t.Fatalf("relabel failed: %q / %q / %q / %q", settingsRoot.Label, themeRoot.Label, aboutRoot.Label, aboutItem.Label)
+	if settingsRoot.Label != "Settings" || themeRoot.Label != "Theme" || aboutRoot.Label != "About" || checkUpdateItem.Label != "Check for Updates" || aboutItem.Label != "About GoNavi" {
+		t.Fatalf("relabel failed: %q / %q / %q / %q / %q", settingsRoot.Label, themeRoot.Label, aboutRoot.Label, checkUpdateItem.Label, aboutItem.Label)
 	}
 	if preferences.setLanguage("en-US") {
 		t.Fatal("setLanguage with the same language should be a no-op")
