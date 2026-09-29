@@ -3,12 +3,12 @@ import React from 'react';
 
 import { t } from '../../i18n';
 import { isBackendCancelledResult } from '../../utils/connectionExport';
-import { SelectDriverPackageFile } from '../../../wailsjs/go/app/App';
 import type { DriverPackageExportChoice } from './DriverPackageExportPicker';
 import {
   buildDriverPackageExportJobId,
   exportDriverPackage,
   inspectDriverPackage,
+  selectDriverPackageZipFile,
   summarizeDriverPackageImport,
 } from './driverPackageTransfer';
 import { useDriverBatchImport } from './useDriverBatchImport';
@@ -136,7 +136,8 @@ export function useDriverPackageTransfer<TRow extends DriverLocalInstallRow>({
     }
     setInspecting(true);
     try {
-      const picked = await SelectDriverPackageFile(downloadDir);
+      // 只允许选择 .zip，避免把 yaml、sql 等普通文件送进导入流程。
+      const picked = await selectDriverPackageZipFile(downloadDir);
       if (!picked?.success) {
         // 用户取消不提示错误。
         if (!isBackendCancelledResult(picked)) {

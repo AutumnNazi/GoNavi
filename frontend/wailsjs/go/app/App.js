@@ -1470,6 +1470,10 @@ export function SelectDriverPackageFile(arg1) {
   return window['go']['app']['App']['SelectDriverPackageFile'](arg1);
 }
 
+export function SelectDriverPackageZipFile(arg1) {
+  return window['go']['app']['App']['SelectDriverPackageZipFile'](arg1);
+}
+
 export function SelectLogDirectory(arg1) {
   return window['go']['app']['App']['SelectLogDirectory'](arg1);
 }

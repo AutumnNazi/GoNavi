@@ -939,6 +939,30 @@ func (a *App) localizedDriverNeedsUpdateTexts(actual string, expected string, af
 }
 
 func (a *App) SelectDriverPackageFile(currentPath string) connection.QueryResult {
+	return a.selectDriverPackageFile(currentPath, false)
+}
+
+// SelectDriverPackageZipFile 只用于「导入驱动包（ZIP）」。
+// 单驱动的本地文件选择仍走 SelectDriverPackageFile，因为那里还要能选非 Jar 的二进制。
+func (a *App) SelectDriverPackageZipFile(currentPath string) connection.QueryResult {
+	return a.selectDriverPackageFile(currentPath, true)
+}
+
+func driverPackageFileDialogOptions(title string, defaultDir string, zipOnly bool) runtime.OpenDialogOptions {
+	options := runtime.OpenDialogOptions{
+		Title:            title,
+		DefaultDirectory: defaultDir,
+	}
+	if zipOnly {
+		options.Filters = []runtime.FileFilter{{
+			DisplayName: "ZIP (*.zip)",
+			Pattern:     "*.zip",
+		}}
+	}
+	return options
+}
+
+func (a *App) selectDriverPackageFile(currentPath string, zipOnly bool) connection.QueryResult {
 	defaultDir := strings.TrimSpace(currentPath)
 	if defaultDir == "" {
 		defaultDir = defaultDriverDownloadDirectory()
@@ -952,10 +976,15 @@ func (a *App) SelectDriverPackageFile(currentPath string) connection.QueryResult
 		}
 	}
 
-	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
-		Title:            a.appText("driver_manager.backend.dialog.select_package_file", nil),
-		DefaultDirectory: defaultDir,
-	})
+	titleKey := "driver_manager.backend.dialog.select_package_file"
+	if zipOnly {
+		titleKey = "driver_manager.backend.dialog.select_package_zip"
+	}
+	selection, err := runtime.OpenFileDialog(a.ctx, driverPackageFileDialogOptions(
+		a.appText(titleKey, nil),
+		defaultDir,
+		zipOnly,
+	))
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
@@ -965,6 +994,12 @@ func (a *App) SelectDriverPackageFile(currentPath string) connection.QueryResult
 
 	if abs, err := filepath.Abs(selection); err == nil {
 		selection = abs
+	}
+	if zipOnly && !strings.EqualFold(filepath.Ext(selection), ".zip") {
+		return connection.QueryResult{
+			Success: false,
+			Message: a.appText("driver_manager.backend.error.package_not_zip", nil),
+		}
 	}
 	if err := a.localizeLocalDriverPackagePathError(validateLocalDriverPackagePath(selection)); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}

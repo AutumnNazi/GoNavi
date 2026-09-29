@@ -177,8 +177,11 @@ type DriverPackageExportSelection = (
   driverTypes: string[],
 ) => Promise<DriverPackageQueryResult>;
 
+type DriverPackageZipPicker = (currentPath: string) => Promise<DriverPackageQueryResult>;
+
 type WailsDriverPackageApp = {
   ExportDriverPackageSelection?: DriverPackageExportSelection;
+  SelectDriverPackageZipFile?: DriverPackageZipPicker;
 };
 
 const wailsDriverPackageApp = (): WailsDriverPackageApp | undefined => {
@@ -186,6 +189,14 @@ const wailsDriverPackageApp = (): WailsDriverPackageApp | undefined => {
     go?: { app?: { App?: WailsDriverPackageApp } };
   };
   return runtime.go?.app?.App;
+};
+
+export const selectDriverPackageZipFile = (downloadDir: string): Promise<DriverPackageQueryResult> => {
+  const selectZip = wailsDriverPackageApp()?.SelectDriverPackageZipFile;
+  if (!selectZip) {
+    return Promise.reject(new Error('SelectDriverPackageZipFile unavailable'));
+  }
+  return selectZip(downloadDir);
 };
 
 const invokeExportDriverPackage = (

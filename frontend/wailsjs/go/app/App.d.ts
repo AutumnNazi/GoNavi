@@ -747,6 +747,8 @@ export function SelectDriverPackageDirectory(arg1:string):Promise<connection.Que
 
 export function SelectDriverPackageFile(arg1:string):Promise<connection.QueryResult>;
 
+export function SelectDriverPackageZipFile(arg1:string):Promise<connection.QueryResult>;
+
 export function SelectLogDirectory(arg1:string):Promise<connection.QueryResult>;
 
 export function SelectSQLDirectory(arg1:string):Promise<connection.QueryResult>;
