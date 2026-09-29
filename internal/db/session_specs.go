@@ -24,6 +24,11 @@ type sessionSpec struct {
 	capability   connection.SessionCapability
 	listQuery    string
 	durationUnit sessionDurationUnit
+	// rowDatabaseAuthoritative marks engines whose list query reports each
+	// session's own database. An empty value then means "no database selected"
+	// and must stay empty instead of borrowing the connection's default
+	// database, which would present the session as belonging to it.
+	rowDatabaseAuthoritative bool
 }
 
 // SessionCapabilityFor returns the normalized engine name and its server-side
@@ -90,7 +95,8 @@ USER AS user_name, COMMAND AS state, TIME * 1000 AS duration_ms, INFO AS stateme
 FROM INFORMATION_SCHEMA.PROCESSLIST
 WHERE ID <> CONNECTION_ID()
 ORDER BY TIME DESC`,
-		durationUnit: sessionDurationMilliseconds,
+		durationUnit:             sessionDurationMilliseconds,
+		rowDatabaseAuthoritative: true,
 	}
 }
 
@@ -100,8 +106,23 @@ func mysqlCompatibleAnalyticsSessionSpec(engine string) sessionSpec {
 		capability:   supportedSessionCapability(true, connection.SessionActionTargetQueryID, true, connection.SessionActionTargetSessionID),
 		listQuery:    "SHOW FULL PROCESSLIST",
 		durationUnit: sessionDurationSeconds,
+		// SHOW FULL PROCESSLIST reports Db per session.
+		rowDatabaseAuthoritative: true,
 	}
 }
+
+// postgresDurationAnchor picks the timestamp the "duration" column counts
+// from. A session that is still working is interesting for how long its
+// current statement has been running, so the anchor is query_start. An idle
+// session has no running statement at all: query_start still points at the
+// statement it finished, sometimes days ago, which made idle rows read as
+// "36 d 15 h" and buried the genuinely stuck ones. For those, state_change
+// (when the session last left the running state) is the meaningful value.
+const postgresDurationAnchor = `CASE
+	WHEN COALESCE(state, '') IN ('active', 'idle in transaction', 'idle in transaction (aborted)', 'fastpath function call') THEN COALESCE(query_start, state_change, backend_start)
+	WHEN COALESCE(state, '') = 'idle' THEN COALESCE(state_change, query_start, backend_start)
+	ELSE COALESCE(query_start, state_change, backend_start)
+END`
 
 func postgresSessionSpec(engine string) sessionSpec {
 	return sessionSpec{
@@ -109,12 +130,30 @@ func postgresSessionSpec(engine string) sessionSpec {
 		capability: supportedSessionCapability(true, connection.SessionActionTargetSessionID, true, connection.SessionActionTargetSessionID),
 		listQuery: `SELECT pid AS session_id, datname AS database_or_tenant,
 usename AS user_name, COALESCE(state, '') AS state,
-GREATEST(0, EXTRACT(EPOCH FROM (clock_timestamp() - COALESCE(query_start, backend_start))) * 1000)::bigint AS duration_ms,
+GREATEST(0, EXTRACT(EPOCH FROM (clock_timestamp() - ` + postgresDurationAnchor + `)) * 1000)::bigint AS duration_ms,
 COALESCE(query, '') AS statement
 FROM pg_stat_activity
-WHERE pid <> pg_backend_pid()
-ORDER BY query_start NULLS LAST`,
-		durationUnit: sessionDurationMilliseconds,
+WHERE pid <> pg_backend_pid()` + postgresClientOnlyFilter(engine) + `
+ORDER BY state_change NULLS LAST`,
+		durationUnit:             sessionDurationMilliseconds,
+		rowDatabaseAuthoritative: true,
+	}
+}
+
+// postgresClientOnlyFilter hides server processes (checkpointer, autovacuum,
+// scheduler workers, ...). pg_stat_activity lists them next to client
+// sessions, but they have no client socket (client_port IS NULL; a Unix-socket
+// client reports -1) and are not sessions a user can meaningfully cancel or
+// terminate: the server answers false/ignores the request.
+// Only PostgreSQL-lineage engines get the filter: openGauss-derived engines
+// keep their own pg_stat_activity shape, so they stay unfiltered rather than
+// risk an empty list.
+func postgresClientOnlyFilter(engine string) string {
+	switch engine {
+	case "postgres", "kingbase", "highgo":
+		return "\nAND client_port IS NOT NULL"
+	default:
+		return ""
 	}
 }
 
@@ -158,7 +197,8 @@ LEFT JOIN sys.dm_exec_requests r ON r.session_id = s.session_id
 OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) t
 WHERE s.is_user_process = 1 AND s.session_id <> @@SPID
 ORDER BY COALESCE(r.total_elapsed_time, 0) DESC`,
-		durationUnit: sessionDurationMilliseconds,
+		durationUnit:             sessionDurationMilliseconds,
+		rowDatabaseAuthoritative: true,
 	}
 }
 
@@ -182,7 +222,8 @@ func clickHouseSessionSpec() sessionSpec {
 FROM system.processes
 WHERE query_id != currentQueryID()
 ORDER BY elapsed DESC`,
-		durationUnit: sessionDurationMilliseconds,
+		durationUnit:             sessionDurationMilliseconds,
+		rowDatabaseAuthoritative: true,
 	}
 }
 

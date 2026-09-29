@@ -39,8 +39,31 @@ body[data-ui-version="v2"] .gn-session-workbench .ant-pagination {
   justify-content: space-between;
 }
 
+.gn-session-workbench-header {
+  gap: 16px;
+}
+
 .gn-session-workbench-header .ant-typography {
   margin: 0;
+}
+
+.gn-session-workbench .gn-session-workbench-description.ant-typography {
+  display: block;
+  max-width: 760px;
+  margin-top: 4px;
+  line-height: 1.6;
+}
+
+.gn-session-workbench-engine.ant-tag {
+  flex: none;
+  margin-inline-end: 0;
+  font-family: var(--gn-font-mono, var(--gn-font-sans));
+}
+
+.gn-session-workbench .gn-session-workbench-summary.ant-typography {
+  display: block;
+  margin-bottom: 8px;
+  font-size: var(--gn-font-size-sm, 12px);
 }
 
 .gn-session-workbench-toolbar {
@@ -66,13 +89,14 @@ body[data-ui-version="v2"] .gn-session-workbench .ant-pagination {
   white-space: nowrap;
 }
 
-.gn-session-workbench-connection-select {
+.gn-session-workbench-connection-select.gn-data-sync-connection-tree-select {
+  width: 280px;
   min-width: 220px;
 }
 
-.gn-session-workbench-database-input {
-  min-width: 280px;
-  max-width: 460px;
+.gn-session-workbench-database-select.ant-select {
+  min-width: 200px;
+  max-width: 280px;
 }
 
 .gn-session-workbench-filter {
@@ -155,6 +179,13 @@ body[data-ui-version="v2"] .gn-session-workbench .ant-table-tbody > tr > td {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The duration column carries two different meanings, so its header advertises
+   the explanation instead of relying on the reader to hover by accident. */
+.gn-session-duration-header {
+  cursor: help;
+  border-bottom: 1px dotted var(--gn-fg-4);
 }
 
 body[data-ui-version="v2"] .gn-session-workbench .gn-session-state-tag.ant-tag {
@@ -259,20 +290,53 @@ body[data-ui-version="v2"] .gn-session-workbench .gn-session-action-btn.is-cance
 }
 
 .gn-session-workbench-action-chooser {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   width: 100%;
-}
-
-.gn-session-workbench-action-chooser .ant-radio-button-wrapper {
-  display: block;
-  height: auto;
-  padding: 12px 14px;
-  white-space: normal;
 }
 
 .gn-session-workbench-action-option {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 4px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--gn-br-2);
+  border-radius: 8px;
+  background: var(--gn-bg-panel);
+  color: var(--gn-fg-1);
+  font-family: var(--gn-font-sans);
+  font-size: var(--gn-font-size, 14px);
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.gn-session-workbench-action-option:focus-visible {
+  outline: 2px solid var(--gn-accent);
+  outline-offset: 2px;
+}
+
+.gn-session-workbench-action-option.is-cancel:hover {
+  border-color: var(--gn-warn);
+  background: var(--gn-warn-soft);
+}
+
+.gn-session-workbench-action-option.is-terminate:hover {
+  border-color: var(--gn-danger);
+  background: color-mix(in srgb, var(--gn-danger) 10%, var(--gn-bg-panel));
+}
+
+.gn-session-workbench-action-option-title {
+  font-weight: 600;
+}
+
+.gn-session-workbench-action-option-helper {
+  color: var(--gn-fg-4);
+  font-size: var(--gn-font-size-sm, 12px);
 }
 
 @media (max-width: 840px) {
@@ -280,8 +344,7 @@ body[data-ui-version="v2"] .gn-session-workbench .gn-session-action-btn.is-cance
     padding: 12px;
   }
 
-  .gn-session-workbench-connection-select,
-  .gn-session-workbench-database-input {
+  .gn-session-workbench-connection-select.gn-data-sync-connection-tree-select {
     min-width: min(100%, 320px);
     max-width: 100%;
   }

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"GoNavi-Wails/internal/connection"
@@ -54,7 +55,60 @@ func (a *App) dbListSessionsContext(
 			Message: a.appText("session_workbench.backend.error.list_failed", map[string]any{"detail": sessionWorkbenchErrorDetail(err)}),
 		}
 	}
+	payload.ScopedDatabase = strings.TrimSpace(runConfig.Database)
 	return connection.QueryResult{Success: true, Data: payload}
+}
+
+// DBListSessionDatabases returns the databases the connection can read sessions
+// from, for the workbench's database picker.
+//
+// It is a separate call because it is a second server round trip that only the
+// picker needs, and because naming a database in DBListSessions already scopes
+// the rows on PostgreSQL-lineage servers. The picker pays for this once when it
+// is opened, instead of every refresh paying for it.
+func (a *App) DBListSessionDatabases(
+	config connection.ConnectionConfig,
+	dbName string,
+) connection.QueryResult {
+	return a.dbListSessionDatabasesContext(a.sessionWorkbenchParentContext(), config, dbName)
+}
+
+func (a *App) dbListSessionDatabasesContext(
+	parent context.Context,
+	config connection.ConnectionConfig,
+	dbName string,
+) connection.QueryResult {
+	runConfig := normalizeRunConfig(config, dbName)
+	_, capability := db.SessionCapabilityFor(runConfig)
+	if !capability.Supported {
+		return connection.QueryResult{Success: true, Data: []string{}}
+	}
+
+	database, _, cleanup, err := a.openSessionWorkbenchDatabase(parent, runConfig)
+	if err != nil {
+		logger.Error(err, "DBListSessionDatabases 获取隔离连接失败：%s", formatConnSummary(runConfig))
+		return connection.QueryResult{
+			Success: false,
+			Message: a.appText("session_workbench.backend.error.list_failed", map[string]any{"detail": sessionWorkbenchErrorDetail(err)}),
+		}
+	}
+	defer cleanup()
+
+	names, err := database.GetDatabases()
+	if err != nil {
+		logger.Error(err, "DBListSessionDatabases 查询库清单失败：%s", formatConnSummary(runConfig))
+		return connection.QueryResult{
+			Success: false,
+			Message: a.appText("session_workbench.backend.error.list_failed", map[string]any{"detail": sessionWorkbenchErrorDetail(err)}),
+		}
+	}
+	cleaned := make([]string, 0, len(names))
+	for _, name := range names {
+		if trimmed := strings.TrimSpace(name); trimmed != "" {
+			cleaned = append(cleaned, trimmed)
+		}
+	}
+	return connection.QueryResult{Success: true, Data: cleaned}
 }
 
 // DBExecuteSessionAction cancels one server query or terminates one server
@@ -117,6 +171,9 @@ func (a *App) dbExecuteSessionActionContext(
 	defer cleanup()
 
 	if err := db.NewSessionOperator(database, runConfig).ExecuteSessionAction(queryContext, request); err != nil {
+		if errors.Is(err, db.ErrSessionActionRejected) {
+			return a.sessionActionRejected(actionKey, runConfig, err)
+		}
 		return a.sessionActionFailure(actionKey, runConfig, err)
 	}
 	return connection.QueryResult{
@@ -161,6 +218,22 @@ func (a *App) sessionActionFailure(
 		Message: a.appText("session_workbench.backend.error.action_failed", map[string]any{
 			"action": a.appText(actionKey, nil),
 			"detail": sessionWorkbenchErrorDetail(err),
+		}),
+	}
+}
+
+// sessionActionRejected reports a server that answered but did nothing, which
+// almost always means the listed session had already ended.
+func (a *App) sessionActionRejected(
+	actionKey string,
+	config connection.ConnectionConfig,
+	err error,
+) connection.QueryResult {
+	logger.Error(err, "DBExecuteSessionAction 服务器未执行：%s", formatConnSummary(config))
+	return connection.QueryResult{
+		Success: false,
+		Message: a.appText("session_workbench.backend.error.action_rejected", map[string]any{
+			"action": a.appText(actionKey, nil),
 		}),
 	}
 }

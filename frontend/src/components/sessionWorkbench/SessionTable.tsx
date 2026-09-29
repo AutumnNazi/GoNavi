@@ -1,6 +1,7 @@
 import { Button, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useI18n } from '../../i18n/provider';
+import { displaySessionState } from './sessionStateLabel';
 import {
   actionLabelKey,
   availableSessionActions,
@@ -36,9 +37,9 @@ function SessionActions({
         size="small"
         className={actionButtonClass('choose')}
         onClick={() => onAction(session, actions[0])}
-        title={label('session_workbench.action.choose')}
+        title={label('session_workbench.action.manage')}
       >
-        {label('session_workbench.action.choose')}
+        {label('session_workbench.action.manage')}
       </Button>
     );
   }
@@ -65,8 +66,6 @@ function SessionActions({
 export interface SessionTableProps {
   sessions: DatabaseSession[];
   capability: SessionCapability;
-  connectionName: string;
-  databaseName: string;
   loading: boolean;
   onAction: (session: DatabaseSession, action: SessionAction) => void;
 }
@@ -74,8 +73,6 @@ export interface SessionTableProps {
 export default function SessionTable({
   sessions,
   capability,
-  connectionName,
-  databaseName,
   loading,
   onAction,
 }: SessionTableProps) {
@@ -84,17 +81,11 @@ export default function SessionTable({
   const hasQueryId = sessions.some((session) => Boolean(session.queryId));
   const columns: ColumnsType<DatabaseSession> = [
     {
-      title: t('session_workbench.table.connection'),
-      key: 'connection',
-      width: 160,
-      render: () => connectionName || t('session_workbench.value.empty'),
-    },
-    {
       title: t('session_workbench.table.database'),
       dataIndex: 'databaseOrTenant',
       key: 'databaseOrTenant',
       width: 150,
-      render: (value: string) => displaySessionValue(value || databaseName, t),
+      render: (value: string) => displaySessionValue(value, t),
     },
     ...(hasSessionId ? [{
       title: t('session_workbench.table.session_id'),
@@ -130,11 +121,27 @@ export default function SessionTable({
       key: 'state',
       width: 120,
       render: (value: string) => value
-        ? <Tag className={`gn-session-state-tag is-${sessionStateTone(value)}`}>{value}</Tag>
+        ? (
+          // The tooltip keeps the raw engine value (e.g. "Daemon") visible.
+          <Tag
+            className={`gn-session-state-tag is-${sessionStateTone(value)}`}
+            title={value}
+          >
+            {displaySessionState(value, t)}
+          </Tag>
+        )
         : t('session_workbench.value.empty'),
     },
     {
-      title: t('session_workbench.table.duration'),
+      // The two values this column can show mean different things, so the
+      // header carries the distinction instead of a longer column name.
+      title: (
+        <Tooltip title={t('session_workbench.table.duration.hint')}>
+          <span className="gn-session-duration-header">
+            {t('session_workbench.table.duration')}
+          </span>
+        </Tooltip>
+      ),
       dataIndex: 'durationMs',
       key: 'durationMs',
       width: 110,
@@ -151,6 +158,9 @@ export default function SessionTable({
       title: t('session_workbench.table.actions'),
       key: 'actions',
       width: 168,
+      // Pinned so the only interactive column stays reachable when the
+      // tab is narrower than the summed column widths.
+      fixed: 'right',
       render: (_value: unknown, session: DatabaseSession) => (
         <Space wrap size={4}>
           <SessionActions
@@ -164,6 +174,8 @@ export default function SessionTable({
     },
   ];
 
+  const scrollX = columns.reduce((sum, column) => sum + Number(column.width || 0), 0);
+
   return (
     <Table<DatabaseSession>
       className="gn-session-workbench-table"
@@ -173,6 +185,7 @@ export default function SessionTable({
       dataSource={sessions}
       pagination={{ pageSize: 50, showSizeChanger: true }}
       tableLayout="fixed"
+      scroll={{ x: scrollX }}
       size="small"
       locale={{ emptyText: <Typography.Text type="secondary">{t('session_workbench.empty.no_sessions')}</Typography.Text> }}
     />

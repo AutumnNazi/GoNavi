@@ -145,6 +145,8 @@ export function DBGetViews(arg1:connection.ConnectionConfig,arg2:string):Promise
 
 export function DBGetViewsContext(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:string):Promise<connection.QueryResult>;
 
+export function DBListSessionDatabases(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
+
 export function DBListSessions(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
 export function DBQuery(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;

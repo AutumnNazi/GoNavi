@@ -14,6 +14,11 @@ import (
 const maxSessionIdentifierLength = 512
 
 var (
+	// ErrSessionActionRejected means the server ran the statement but reported
+	// that it did nothing, e.g. pg_terminate_backend(pid) returned false because
+	// the process already exited or is not a client backend.
+	ErrSessionActionRejected = errors.New("database server rejected the session action")
+
 	errSessionActionUnsupported = errors.New("session action is not supported")
 	errSessionIdentifierMissing = errors.New("required session identifier is missing")
 )
@@ -304,7 +309,7 @@ func executeSessionActionStatement(
 			return err
 		}
 		if !firstSessionBoolean(rows) {
-			return errors.New("database server rejected the session action")
+			return ErrSessionActionRejected
 		}
 		return nil
 	}

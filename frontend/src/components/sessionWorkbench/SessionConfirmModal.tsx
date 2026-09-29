@@ -19,7 +19,6 @@ export interface SessionConfirmModalProps {
   session: DatabaseSession | null;
   capability: SessionCapability;
   connectionName: string;
-  databaseName: string;
   production: boolean;
   loading: boolean;
   onCancel: () => void;
@@ -32,7 +31,6 @@ export default function SessionConfirmModal({
   session,
   capability,
   connectionName,
-  databaseName,
   production,
   loading,
   onCancel,
@@ -66,7 +64,7 @@ export default function SessionConfirmModal({
   const targetId = sessionActionDisplayId(capability, action, session);
   const statement = String(session.statement || '').trim();
   const statementSummary = expanded ? statement : truncateSessionStatement(statement);
-  const rowDatabaseName = String(session.databaseOrTenant || databaseName || '').trim();
+  const rowDatabaseName = String(session.databaseOrTenant || '').trim();
   const requiresProductionAcknowledgement = production && action === 'terminateSession';
   const submitDisabled = !targetId || loading || (
     requiresProductionAcknowledgement && !productionAcknowledged

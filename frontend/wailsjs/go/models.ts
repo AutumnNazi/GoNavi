@@ -3124,11 +3124,11 @@ export namespace connection {
 	    queryId?: string;
 	    instanceId?: string;
 	    serialNumber?: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new SessionActionRequest(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.action = source["action"];

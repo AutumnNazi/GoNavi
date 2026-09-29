@@ -51,8 +51,6 @@ const renderActions = (
       <SessionTable
         sessions={[session]}
         capability={capability}
-        connectionName="Test DB"
-        databaseName="analytics"
         loading={false}
         onAction={vi.fn()}
       />,
@@ -72,7 +70,7 @@ describe('SessionTable action entry', () => {
     const buttons = renderer.root.findAllByType('button');
 
     expect(buttons).toHaveLength(1);
-    expect(buttons[0].children.join('')).toBe('session_workbench.action.choose');
+    expect(buttons[0].children.join('')).toBe('session_workbench.action.manage');
   });
 
   it('keeps a single-capability row on its direct action button', () => {

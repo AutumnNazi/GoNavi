@@ -73,7 +73,6 @@ const renderModal = (production: boolean): ReactTestRenderer => {
         }}
         capability={capability}
         connectionName="Production DB"
-        databaseName="analytics"
         production={production}
         loading={false}
         onCancel={vi.fn()}
@@ -111,7 +110,6 @@ describe('SessionConfirmModal', () => {
           session={{ ...session, queryId: 'query-42' }}
           capability={{ ...capability, canCancelQuery: true, cancelTarget: 'queryId' }}
           connectionName="Test DB"
-          databaseName="analytics"
           production={false}
           loading={false}
           onCancel={onCancel}
@@ -167,7 +165,6 @@ describe('SessionConfirmModal', () => {
             terminateRequiresInstanceAndSerial: true,
           }}
           connectionName="Oracle DB"
-          databaseName="stale-selected-tenant"
           production={false}
           loading={false}
           onCancel={vi.fn()}

@@ -86,3 +86,19 @@ func TestBuildDatabaseSessionKeyKeepsIdentifiersSeparate(t *testing.T) {
 		t.Fatalf("fallback key = %q", got)
 	}
 }
+
+func TestNormalizeSessionRowsKeepsEmptyDatabaseForAuthoritativeEngines(t *testing.T) {
+	t.Parallel()
+
+	rows := []map[string]interface{}{{"session_id": 5, "user_name": "event_scheduler"}}
+	authoritative := normalizeSessionRows(sessionSpec{engine: "mysql", rowDatabaseAuthoritative: true}, rows, "default_db")
+	if got := authoritative[0].DatabaseOrTenant; got != "" {
+		t.Fatalf("authoritative engine borrowed the connection database: %q", got)
+	}
+	// Engines whose query cannot report a database keep showing the
+	// connection's database as context.
+	fallback := normalizeSessionRows(sessionSpec{engine: "trino"}, rows, "default_db")
+	if got := fallback[0].DatabaseOrTenant; got != "default_db" {
+		t.Fatalf("fallback database = %q", got)
+	}
+}

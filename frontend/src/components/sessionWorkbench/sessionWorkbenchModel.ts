@@ -33,6 +33,8 @@ export interface SessionListPayload {
   engine: string;
   capability: SessionCapability;
   sessions: DatabaseSession[];
+  /** Database this listing was read from; PostgreSQL-lineage servers scope here. */
+  scopedDatabase: string;
 }
 
 export interface SessionActionRequest {
@@ -131,6 +133,21 @@ export const normalizeDatabaseSession = (value: unknown, index: number): Databas
   };
 };
 
+/** Normalize the database catalog returned by DBListSessionDatabases. */
+export const normalizeSessionDatabaseNames = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const names: string[] = [];
+  value.forEach((entry) => {
+    const name = text(entry);
+    if (name && !seen.has(name)) {
+      seen.add(name);
+      names.push(name);
+    }
+  });
+  return names;
+};
+
 export const normalizeSessionPayload = (value: unknown): SessionListPayload => {
   const source = record(value);
   const rawSessions = Array.isArray(source.sessions) ? source.sessions : [];
@@ -138,6 +155,7 @@ export const normalizeSessionPayload = (value: unknown): SessionListPayload => {
     engine: text(source.engine),
     capability: normalizeSessionCapability(source.capability),
     sessions: rawSessions.map(normalizeDatabaseSession),
+    scopedDatabase: text(source.scopedDatabase),
   };
 };
 
@@ -177,11 +195,21 @@ export const resolveSessionActionTarget = (
   return '';
 };
 
+/**
+ * MySQL-family servers list internal threads (e.g. the event scheduler) with
+ * COMMAND = 'Daemon'. The server rejects KILL on them with "Unknown thread
+ * id", so offering an action would only ever produce an error.
+ */
+export const isServerInternalSession = (session: DatabaseSession): boolean => (
+  text(session.state).toLowerCase() === 'daemon'
+);
+
 export const canRunSessionAction = (
   capability: SessionCapability,
   action: SessionAction,
   session: DatabaseSession,
 ): boolean => {
+  if (isServerInternalSession(session)) return false;
   const enabled = action === 'cancelQuery'
     ? capability.supported && capability.canCancelQuery
     : capability.supported && capability.canTerminateSession;
@@ -213,10 +241,16 @@ export const buildSessionActionRequest = (
   };
 };
 
-export const filterSessions = (sessions: DatabaseSession[], filter: string): DatabaseSession[] => {
+export const filterSessions = (
+  sessions: DatabaseSession[],
+  filter: string,
+  /** Localized state text, so the filter matches what the table shows. */
+  stateLabel?: (state: string | undefined) => string,
+): DatabaseSession[] => {
   const query = text(filter).toLowerCase();
   if (!query) return sessions;
   return sessions.filter((session) => [
+    stateLabel?.(session.state),
     session.key,
     session.databaseOrTenant,
     session.sessionId,
@@ -235,6 +269,35 @@ export const truncateSessionStatement = (statement: string | undefined, maxLengt
   return `${value.slice(0, Math.max(0, maxLength - 1))}…`;
 };
 
+const LONG_DURATION_UNITS: ReadonlyArray<{ key: string; seconds: number }> = [
+  { key: 'session_workbench.duration.days', seconds: 86_400 },
+  { key: 'session_workbench.duration.hours', seconds: 3_600 },
+  { key: 'session_workbench.duration.minutes', seconds: 60 },
+  { key: 'session_workbench.duration.seconds', seconds: 1 },
+];
+
+/**
+ * Durations of a minute or more read as the two most significant non-zero
+ * units ("1 d 6 h", "12 min 30 s") instead of one long decimal such as
+ * "1830.8 min".
+ */
+const formatLongSessionDuration = (
+  durationMs: number,
+  translate: SessionTranslate,
+): string => {
+  let remaining = Math.round(durationMs / 1_000);
+  const parts: string[] = [];
+  for (const unit of LONG_DURATION_UNITS) {
+    const value = Math.floor(remaining / unit.seconds);
+    remaining -= value * unit.seconds;
+    if (value > 0) parts.push(translate(unit.key, { value }));
+    if (parts.length === 2) break;
+    // Only the unit directly below the leading one is worth showing.
+    if (parts.length === 1 && value === 0) break;
+  }
+  return parts.join(' ');
+};
+
 export const formatSessionDuration = (
   durationMs: number | undefined,
   translate: SessionTranslate,
@@ -242,11 +305,7 @@ export const formatSessionDuration = (
   if (durationMs === undefined || !Number.isFinite(durationMs) || durationMs < 0) {
     return translate('session_workbench.value.empty');
   }
-  if (durationMs >= 60_000) {
-    return translate('session_workbench.duration.minutes', {
-      value: (durationMs / 60_000).toFixed(1),
-    });
-  }
+  if (durationMs >= 60_000) return formatLongSessionDuration(durationMs, translate);
   if (durationMs >= 1_000) {
     return translate('session_workbench.duration.seconds', {
       value: (durationMs / 1_000).toFixed(1),

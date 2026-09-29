@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../../store';
 import type { SavedConnection } from '../../types';
 import {
-  normalizeSessionPayload,
   readSessionPayload,
   sessionConnections,
   type DatabaseSession,
@@ -13,6 +12,7 @@ import {
 import {
   executeDatabaseSessionAction,
   listDatabaseSessions,
+  listSessionDatabases,
 } from './sessionWorkbenchRpc';
 import { useSessionWorkbenchScope } from './useSessionWorkbenchScope';
 
@@ -26,13 +26,35 @@ export interface SessionWorkbenchState {
   selectedConnection: SavedConnection | null;
   selectedConnectionId: string;
   setSelectedConnectionId: (connectionId: string) => void;
-  dbName: string;
-  /** The database/tenant used by the last successful server request. */
+  /**
+   * The connection's own database, kept in sync with the selected connection.
+   * It is only the initial scope for engines that need a database to connect;
+   * the listed sessions are instance-wide and are narrowed with
+   * the running-only shortcut instead.
+   */
   databaseName: string;
-  setDbName: (dbName: string) => void;
-  applyDatabase: () => Promise<boolean>;
+  /**
+   * Switch the server-side database scope. PostgreSQL-lineage servers only
+   * expose the connected database's sessions, so this reconnects and reloads
+   * instead of narrowing the rows already on screen. An empty name means "the
+   * connection's own default database".
+   */
+  selectDatabase: (databaseName: string) => void;
   filter: string;
   setFilter: (filter: string) => void;
+  /** Client-side "only executing sessions" shortcut over the loaded sessions. */
+  runningOnly: boolean;
+  setRunningOnly: (runningOnly: boolean) => void;
+  /**
+   * Databases the connection can read sessions from. Loaded on demand, because
+   * reading the catalog is a second server round trip that only the picker
+   * needs. Empty until `loadDatabases` is called.
+   */
+  databases: string[];
+  /** Fetch the catalog for the current scope. Safe to call repeatedly. */
+  loadDatabases: () => Promise<void>;
+  /** The catalog request for the current connection is still running. */
+  databasesLoading: boolean;
   payload: SessionListPayload | null;
   loading: boolean;
   error: string;
@@ -45,7 +67,6 @@ export interface SessionWorkbenchState {
 interface SessionScopeSnapshot {
   connectionId: string;
   databaseName: string;
-  draftDatabaseName: string;
   revision: number;
 }
 
@@ -61,16 +82,18 @@ export const useSessionWorkbench = (
     selectedConnection,
     selectedConnectionId,
     setSelectedConnectionIdState,
-    dbName,
-    setDbName: setScopeDbName,
     databaseName,
     setDatabaseName,
+    selectDatabase: selectScopeDatabase,
     scopeRevision: renderedScopeRevision,
     autoRefreshRevision,
     invalidateScope: invalidateScopeState,
   } = scope;
   const [filter, setFilter] = useState('');
+  const [runningOnly, setRunningOnly] = useState(false);
   const [payload, setPayload] = useState<SessionListPayload | null>(null);
+  const [databases, setDatabases] = useState<string[]>([]);
+  const [databasesLoading, setDatabasesLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -79,13 +102,11 @@ export const useSessionWorkbench = (
   // only on state captured by a callback is not enough here.
   const connectionsRef = useRef(connections);
   const selectedConnectionIdRef = useRef(selectedConnectionId);
-  const draftDatabaseNameRef = useRef(dbName);
   const appliedDatabaseNameRef = useRef(databaseName);
   const requestRevision = useRef(0);
   const scopeRevisionRef = useRef(renderedScopeRevision);
   connectionsRef.current = connections;
   selectedConnectionIdRef.current = selectedConnectionId;
-  draftDatabaseNameRef.current = dbName;
   appliedDatabaseNameRef.current = databaseName;
   // The local invalidation helper can advance this ref before the scope hook
   // state has rendered. Never move it backwards when that state catches up.
@@ -104,7 +125,6 @@ export const useSessionWorkbench = (
     scopeRevisionRef.current === snapshot.revision
       && selectedConnectionIdRef.current === snapshot.connectionId
       && appliedDatabaseNameRef.current === snapshot.databaseName
-      && draftDatabaseNameRef.current === snapshot.draftDatabaseName
   ), []);
 
   const refreshSessions = useCallback(async (
@@ -115,23 +135,18 @@ export const useSessionWorkbench = (
 
     const requestId = ++requestRevision.current;
     const requestedConnectionId = selectedConnectionIdRef.current;
-    const requestedDraftDatabaseName = draftDatabaseNameRef.current;
     const requestedDatabaseName = normalized(
-      databaseOverride === undefined
-        ? (appliedDatabaseNameRef.current || requestedDraftDatabaseName)
-        : databaseOverride,
+      databaseOverride === undefined ? appliedDatabaseNameRef.current : databaseOverride,
     );
     const requestScope: SessionScopeSnapshot = {
       connectionId: requestedConnectionId,
       databaseName: requestedDatabaseName,
-      draftDatabaseName: requestedDraftDatabaseName,
       revision: scopeRevisionRef.current,
     };
     const isRequestCurrent = (): boolean => (
       requestRevision.current === requestId
         && scopeRevisionRef.current === requestScope.revision
         && selectedConnectionIdRef.current === requestScope.connectionId
-        && draftDatabaseNameRef.current === requestScope.draftDatabaseName
     );
     const connection = connectionsRef.current.find(
       (candidate) => candidate.id === requestedConnectionId,
@@ -181,46 +196,93 @@ export const useSessionWorkbench = (
     if (lastAutoRefreshRevisionRef.current === autoRefreshRevision) return;
     lastAutoRefreshRevisionRef.current = autoRefreshRevision;
     setFilter('');
+    setRunningOnly(false);
     void refreshRef.current();
   }, [autoRefreshRevision]);
+
+  // The picker's catalog is deliberately not part of `refreshSessions`: it is
+  // a second server round trip that only the picker needs, and re-reading it
+  // on every refresh would double the cost of the common case. The rows still
+  // contribute their own databases as a fallback, so a failed catalog call
+  // degrades to "only databases that currently own a session".
+  const loadDatabases = useCallback(async (): Promise<void> => {
+    const connectionId = selectedConnectionIdRef.current;
+    const connection = connectionsRef.current.find(
+      (candidate) => candidate.id === connectionId,
+    );
+    if (!connection) {
+      setDatabases([]);
+      return;
+    }
+    const revision = scopeRevisionRef.current;
+    setDatabasesLoading(true);
+    try {
+      const names = await listSessionDatabases(
+        connection.config,
+        appliedDatabaseNameRef.current,
+      );
+      // A catalog for the previous scope must not repopulate the picker.
+      if (!isScopeCurrent({ connectionId, databaseName: '', revision })) return;
+      setDatabases(names);
+    } catch {
+      if (!isScopeCurrent({ connectionId, databaseName: '', revision })) return;
+      setDatabases([]);
+    } finally {
+      if (scopeRevisionRef.current === revision) setDatabasesLoading(false);
+    }
+  }, [isScopeCurrent]);
+
+  // The catalog is fetched per connection scope, not per refresh: it changes
+  // only when the connection does, and a refresh must stay a single round trip.
+  const loadDatabasesRef = useRef(loadDatabases);
+  loadDatabasesRef.current = loadDatabases;
+  useEffect(() => {
+    if (!selectedConnectionId) return;
+    setDatabases([]);
+    void loadDatabasesRef.current();
+  }, [selectedConnectionId]);
 
   const setSelectedConnectionId = useCallback((connectionId: string) => {
     const nextConnectionId = normalized(connectionId);
     if (nextConnectionId === selectedConnectionIdRef.current) return;
-    const nextConnection = connectionsRef.current.find(
-      (candidate) => candidate.id === nextConnectionId,
-    );
     invalidateCurrentScope();
     setSelectedConnectionIdState(nextConnectionId);
-    setScopeDbName(normalized(nextConnection?.config.database));
+    // The scope hook re-resolves the database from the new connection; clearing
+    // it here only stops the previous connection's database from being reused
+    // for a request that has not been re-scoped yet.
     setDatabaseName('');
+    setPayload(null);
+    setDatabases([]);
+    setError('');
+    setFilter('');
+    setRunningOnly(false);
+  }, [invalidateCurrentScope, setDatabaseName, setSelectedConnectionIdState]);
+
+  // Switching the database is a server-side rescope: PostgreSQL-lineage
+  // servers expose only the connected database's sessions, so the new scope
+  // has to be read from the server. The reload is driven by the scope hook's
+  // auto-refresh revision rather than a manual request here: a manual request
+  // would bump the revision a second time and discard its own response.
+  const selectDatabase = useCallback((value: string) => {
+    const next = normalized(value);
+    if (next === appliedDatabaseNameRef.current) return;
+    // The scope hook may already hold this value (it resolves a connection's
+    // default database), in which case selecting it is a no-op.
+    selectScopeDatabase(next);
     setPayload(null);
     setError('');
     setFilter('');
-  }, [invalidateCurrentScope, setDatabaseName, setScopeDbName, setSelectedConnectionIdState]);
-
-  const setDbName = useCallback((value: string) => {
-    const next = normalized(value);
-    if (next === draftDatabaseNameRef.current) return;
-    invalidateCurrentScope();
-    setScopeDbName(next);
-  }, [invalidateCurrentScope, setScopeDbName]);
-
-  const applyDatabase = useCallback(
-    (): Promise<boolean> => refresh(draftDatabaseNameRef.current),
-    [refresh],
-  );
+    setRunningOnly(false);
+  }, [selectScopeDatabase]);
 
   const executeAction = useCallback(async (
     request: SessionActionRequest,
   ): Promise<SessionQueryResult> => {
     const requestedConnectionId = selectedConnectionIdRef.current;
     const requestedDatabaseName = appliedDatabaseNameRef.current;
-    const requestedDraftDatabaseName = draftDatabaseNameRef.current;
     const actionScope: SessionScopeSnapshot = {
       connectionId: requestedConnectionId,
       databaseName: requestedDatabaseName,
-      draftDatabaseName: requestedDraftDatabaseName,
       revision: scopeRevisionRef.current,
     };
     const connection = connectionsRef.current.find(
@@ -240,9 +302,8 @@ export const useSessionWorkbench = (
         request,
       );
       if (!isScopeCurrent(actionScope)) return staleResult(result);
-      // Refresh the same applied scope used for the action. The input field
-      // may contain an unapplied database/tenant while a confirmation modal
-      // is open; refreshing from that draft would switch context silently.
+      // Refresh the exact scope the action ran against, so a connection switch
+      // while the confirmation modal was open cannot load the wrong server.
       if (result.success === true) {
         await refreshSessions(requestedDatabaseName, false);
         if (!isScopeCurrent(actionScope)) return staleResult(result);
@@ -262,13 +323,16 @@ export const useSessionWorkbench = (
     selectedConnection,
     selectedConnectionId,
     setSelectedConnectionId,
-    dbName,
     databaseName,
-    setDbName,
-    applyDatabase,
+    selectDatabase,
     filter,
     setFilter,
-    payload: payload ? normalizeSessionPayload(payload) : null,
+    runningOnly,
+    setRunningOnly,
+    databases,
+    loadDatabases,
+    databasesLoading,
+    payload,
     loading,
     error,
     scopeRevision: scopeRevisionRef.current,

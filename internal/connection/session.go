@@ -53,6 +53,12 @@ type SessionListPayload struct {
 	Engine     string            `json:"engine"`
 	Capability SessionCapability `json:"capability"`
 	Sessions   []DatabaseSession `json:"sessions"`
+	// ScopedDatabase reports the database this listing was read from, because
+	// PostgreSQL-lineage servers only expose sessions of the connected
+	// database. The UI states it so an empty list is not mistaken for "the
+	// server has no sessions". The database catalog is served separately by
+	// DBListSessionDatabases, which only the picker needs.
+	ScopedDatabase string `json:"scopedDatabase,omitempty"`
 }
 
 // SessionActionRequest carries the exact identifiers from one normalized row.

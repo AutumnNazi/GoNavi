@@ -161,3 +161,56 @@ func TestSessionCapabilityActionTargetsMatchAdapterContract(t *testing.T) {
 		})
 	}
 }
+
+func TestPostgresSessionDurationAnchorsIdleRowsAtStateChange(t *testing.T) {
+	t.Parallel()
+
+	for _, engine := range []string{"postgres", "kingbase", "vastbase", "opengauss", "gaussdb", "highgo"} {
+		engine := engine
+		t.Run(engine, func(t *testing.T) {
+			t.Parallel()
+			query := strings.ToLower(sessionSpecFor(connection.ConnectionConfig{Type: engine}).listQuery)
+			// An idle session must not keep reporting how long ago its last
+			// statement started, which is what turned idle rows into "36 d".
+			if !strings.Contains(query, "when coalesce(state, '') = 'idle' then coalesce(state_change") {
+				t.Fatalf("idle rows must count from state_change:\n%s", query)
+			}
+			if !strings.Contains(query, "when coalesce(state, '') in ('active'") {
+				t.Fatalf("running rows must keep counting from query_start:\n%s", query)
+			}
+			if !strings.Contains(query, "order by state_change") {
+				t.Fatalf("longest-running rows must sort first:\n%s", query)
+			}
+		})
+	}
+}
+
+func TestPostgresSessionListHidesServerProcessesOnlyForPostgresLineage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		engine     string
+		wantFilter bool
+	}{
+		{engine: "postgres", wantFilter: true},
+		{engine: "kingbase", wantFilter: true},
+		{engine: "highgo", wantFilter: true},
+		// openGauss-derived engines keep the unfiltered query.
+		{engine: "opengauss", wantFilter: false},
+		{engine: "gaussdb", wantFilter: false},
+		{engine: "vastbase", wantFilter: false},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.engine, func(t *testing.T) {
+			t.Parallel()
+			spec := sessionSpecFor(connection.ConnectionConfig{Type: test.engine})
+			if got := strings.Contains(spec.listQuery, "client_port IS NOT NULL"); got != test.wantFilter {
+				t.Fatalf("client filter present = %v, want %v\n%s", got, test.wantFilter, spec.listQuery)
+			}
+			if !strings.Contains(spec.listQuery, "pid <> pg_backend_pid()") {
+				t.Fatalf("query must still exclude its own backend:\n%s", spec.listQuery)
+			}
+		})
+	}
+}

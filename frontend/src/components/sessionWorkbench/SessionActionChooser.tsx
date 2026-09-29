@@ -1,4 +1,4 @@
-import { Modal, Radio, Space, Typography } from 'antd';
+import { Modal } from 'antd';
 import { useI18n } from '../../i18n/provider';
 import {
   actionHelperKey,
@@ -36,24 +36,28 @@ export default function SessionActionChooser({
       footer={null}
       destroyOnClose
     >
-      <Radio.Group
+      {/*
+        Native buttons on purpose: the v2 theme pins .ant-radio-button-wrapper
+        and .ant-btn to a fixed 28px height with !important, which clipped the
+        two-line option (label + helper) and hid the helper text.
+      */}
+      <div
         className="gn-session-workbench-action-chooser"
-        onChange={(event) => onSelect(event.target.value as SessionAction)}
+        role="group"
+        aria-label={t('session_workbench.action.choose')}
       >
-        <Space direction="vertical" size={12}>
-          {actions.map((action) => (
-            <Radio.Button
-              key={action}
-              value={action}
-            >
-              <span className="gn-session-workbench-action-option">
-                <strong>{t(actionLabelKey(action))}</strong>
-                <Typography.Text type="secondary">{t(actionHelperKey(action))}</Typography.Text>
-              </span>
-            </Radio.Button>
-          ))}
-        </Space>
-      </Radio.Group>
+        {actions.map((action) => (
+          <button
+            key={action}
+            type="button"
+            className={`gn-session-workbench-action-option is-${action === 'terminateSession' ? 'terminate' : 'cancel'}`}
+            onClick={() => onSelect(action)}
+          >
+            <strong className="gn-session-workbench-action-option-title">{t(actionLabelKey(action))}</strong>
+            <span className="gn-session-workbench-action-option-helper">{t(actionHelperKey(action))}</span>
+          </button>
+        ))}
+      </div>
     </Modal>
   );
 }

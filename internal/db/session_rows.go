@@ -36,7 +36,7 @@ func normalizeSessionRows(
 			User: sessionString(values,
 				"username", "loginname", "usename", "user"),
 		}
-		if session.DatabaseOrTenant == "" {
+		if session.DatabaseOrTenant == "" && !spec.rowDatabaseAuthoritative {
 			session.DatabaseOrTenant = strings.TrimSpace(fallbackDatabase)
 		}
 		session.DurationMs = sessionDuration(values, spec.durationUnit)

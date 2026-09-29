@@ -10,10 +10,16 @@ export interface SessionWorkbenchScope {
   selectedConnection: SavedConnection | null;
   selectedConnectionId: string;
   setSelectedConnectionIdState: (connectionId: string) => void;
-  dbName: string;
-  setDbName: (dbName: string) => void;
+  /** Database the next server request connects with, resolved per connection. */
   databaseName: string;
   setDatabaseName: (databaseName: string) => void;
+  /**
+   * Select a database and load it. Marking the change as auto-refreshing keeps
+   * the revision bump and the request in one step; bumping the revision and
+   * then requesting manually invalidates the request twice, so its response is
+   * always discarded.
+   */
+  selectDatabase: (databaseName: string) => void;
   /**
    * Monotonic value for any connection/database scope mutation. Consumers use
    * it to reject responses that belong to an older workbench context.
@@ -89,6 +95,16 @@ export const useSessionWorkbenchScope = (
     if (databaseName === next) return;
     setDatabaseName(next);
     markScopeChanged(false);
+  }, [databaseName, markScopeChanged]);
+
+  // Selecting a database both changes the scope and asks for a reload. Doing
+  // that through the auto-refresh channel keeps it a single revision bump, so
+  // the request that follows is still considered current when it returns.
+  const selectTrackedDatabaseName = useCallback((value: string) => {
+    const next = normalized(value);
+    if (databaseName === next) return;
+    setDatabaseName(next);
+    markScopeChanged(true);
   }, [databaseName, markScopeChanged]);
 
   const invalidateScope = useCallback(() => {
@@ -197,10 +213,9 @@ export const useSessionWorkbenchScope = (
     selectedConnection,
     selectedConnectionId,
     setSelectedConnectionIdState: setSelectedConnectionId,
-    dbName,
-    setDbName: setTrackedDbName,
     databaseName,
     setDatabaseName: setTrackedDatabaseName,
+    selectDatabase: selectTrackedDatabaseName,
     scopeRevision,
     autoRefreshRevision,
     invalidateScope,

@@ -1,6 +1,7 @@
 import type { ConnectionConfig } from '../../types';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import { invokeAppMethodDynamic } from '../../utils/webRpc';
+import { normalizeSessionDatabaseNames } from './sessionWorkbenchModel';
 import type {
   SessionActionRequest,
   SessionQueryResult,
@@ -8,6 +9,10 @@ import type {
 
 interface SessionWailsApp {
   DBListSessions: (config: unknown, dbName: string) => Promise<SessionQueryResult>;
+  DBListSessionDatabases: (
+    config: unknown,
+    dbName: string,
+  ) => Promise<SessionQueryResult>;
   DBExecuteSessionAction: (
     config: unknown,
     dbName: string,
@@ -42,6 +47,20 @@ const invokeSessionMethod = <T>(
   const webResult = invokeAppMethodDynamic<T>(method, args);
   if (webResult) return webResult;
   return fallback(getSessionApp());
+};
+
+export const listSessionDatabases = async (
+  config: ConnectionConfig,
+  dbName: string,
+): Promise<string[]> => {
+  const rpcConfig = buildRpcConnectionConfig(config);
+  const result = await invokeSessionMethod(
+    'DBListSessionDatabases',
+    [rpcConfig, dbName],
+    (app) => app.DBListSessionDatabases(rpcConfig, dbName),
+  );
+  if (result?.success !== true) return [];
+  return normalizeSessionDatabaseNames(result.data);
 };
 
 export const listDatabaseSessions = async (

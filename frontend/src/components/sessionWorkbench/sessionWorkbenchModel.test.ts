@@ -5,6 +5,7 @@ import {
   filterSessions,
   formatSessionDuration,
   isRedisConnection,
+  isServerInternalSession,
   normalizeSessionPayload,
   resolveSessionActionTarget,
   sessionStateTone,
@@ -114,6 +115,26 @@ describe('sessionWorkbenchModel', () => {
     })).toBe('42,7,@1');
   });
 
+  it('offers no action on server-internal daemon threads', () => {
+    // MySQL rejects KILL on the event scheduler thread ("Unknown thread id").
+    const scheduler = {
+      key: 'mysql:5',
+      sessionId: '5',
+      user: 'event_scheduler',
+      state: 'Daemon',
+    };
+    const mysqlCapability: SessionCapability = {
+      ...dualCapability,
+      cancelTarget: 'sessionId',
+    };
+    expect(isServerInternalSession(scheduler)).toBe(true);
+    expect(isServerInternalSession({ ...scheduler, state: 'Sleep' })).toBe(false);
+    expect(availableSessionActions(mysqlCapability, scheduler)).toEqual([]);
+    expect(buildSessionActionRequest(mysqlCapability, 'terminateSession', scheduler)).toBeNull();
+    expect(availableSessionActions(mysqlCapability, { ...scheduler, state: 'Sleep' }))
+      .toEqual(['cancelQuery', 'terminateSession']);
+  });
+
   it('colors session states by lifecycle instead of one flat tag', () => {
     expect(sessionStateTone('Sleep')).toBe('idle');
     expect(sessionStateTone('idle')).toBe('idle');
@@ -133,6 +154,20 @@ describe('sessionWorkbenchModel', () => {
     expect(isRedisConnection(redis)).toBe(true);
     expect(isRedisConnection(customRedis)).toBe(true);
     expect(sessionConnections([mysql, redis, customRedis])).toEqual([mysql]);
+  });
+
+  it('formats long durations as the two leading units instead of decimal minutes', () => {
+    const unit = (key: string, params?: Record<string, unknown>): string => (
+      `${params?.value}${key.split('.').pop()}`
+    );
+    const ms = (seconds: number): number => seconds * 1000;
+    expect(formatSessionDuration(ms(4.2), unit)).toBe('4.2seconds');
+    expect(formatSessionDuration(ms(90), unit)).toBe('1minutes 30seconds');
+    expect(formatSessionDuration(ms(3600), unit)).toBe('1hours');
+    expect(formatSessionDuration(ms(3665), unit)).toBe('1hours 1minutes');
+    // 1830.8 min from the real event_scheduler row.
+    expect(formatSessionDuration(1830.8 * 60_000, unit)).toBe('1days 6hours');
+    expect(formatSessionDuration(ms(86_430), unit)).toBe('1days');
   });
 
   it('filters across the normalized list fields and formats summaries', () => {

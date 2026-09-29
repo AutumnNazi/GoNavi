@@ -1,31 +1,45 @@
-import { DatabaseOutlined, ReloadOutlined } from '@ant-design/icons';
-import { Button, Input, Select, Space, Typography } from 'antd';
+import { ReloadOutlined } from '@ant-design/icons';
+import { Button, Checkbox, Input, Select, Space, Typography } from 'antd';
 import type { SavedConnection } from '../../types';
 import { useI18n } from '../../i18n/provider';
+import SessionConnectionSelect from './SessionConnectionSelect';
 
 export interface SessionToolbarProps {
   connections: SavedConnection[];
   selectedConnectionId: string;
-  dbName: string;
+  /**
+   * Databases the connection can read sessions from. Selecting one is a
+   * server-side rescope on engines that scope the session list (PostgreSQL
+   * lineage), and a narrowing filter elsewhere.
+   */
+  databaseOptions: string[];
+  /** Empty means "the connection's own default database". */
+  databaseName: string;
   filter: string;
+  runningOnly: boolean;
   loading: boolean;
+  /** The catalog request for the current connection is still running. */
+  databaseLoading: boolean;
   onConnectionChange: (connectionId: string) => void;
-  onDbNameChange: (dbName: string) => void;
-  onApplyDatabase: () => void;
+  onDatabaseChange: (databaseName: string) => void;
   onFilterChange: (filter: string) => void;
+  onRunningOnlyChange: (runningOnly: boolean) => void;
   onRefresh: () => void;
 }
 
 export default function SessionToolbar({
   connections,
   selectedConnectionId,
-  dbName,
+  databaseOptions,
+  databaseName,
+  databaseLoading,
   filter,
+  runningOnly,
   loading,
   onConnectionChange,
-  onDbNameChange,
-  onApplyDatabase,
+  onDatabaseChange,
   onFilterChange,
+  onRunningOnlyChange,
   onRefresh,
 }: SessionToolbarProps) {
   const { t } = useI18n();
@@ -35,30 +49,28 @@ export default function SessionToolbar({
         <Typography.Text className="gn-session-workbench-toolbar-label">
           {t('session_workbench.connection.label')}
         </Typography.Text>
-        <Select
-          aria-label={t('session_workbench.connection.label')}
-          className="gn-session-workbench-connection-select"
-          value={selectedConnectionId || undefined}
-          placeholder={t('session_workbench.connection.placeholder')}
-          options={connections.map((connection) => ({
-            value: connection.id,
-            label: connection.name,
-          }))}
+        <SessionConnectionSelect
+          connections={connections}
+          value={selectedConnectionId}
           onChange={onConnectionChange}
-          showSearch
-          optionFilterProp="label"
         />
+        {/* Always rendered: hiding it whenever the catalog was empty made the
+            picker unreachable exactly when it was needed. */}
         <Typography.Text className="gn-session-workbench-toolbar-label">
           {t('session_workbench.database.label')}
         </Typography.Text>
-        <Input.Search
+        <Select
+          allowClear
+          showSearch
+          className="gn-session-workbench-database-select"
           aria-label={t('session_workbench.database.label')}
-          className="gn-session-workbench-database-input"
-          value={dbName}
-          placeholder={t('session_workbench.database.placeholder')}
-          enterButton={t('session_workbench.database.apply')}
-          onChange={(event) => onDbNameChange(event.target.value)}
-          onSearch={onApplyDatabase}
+          value={databaseName || undefined}
+          placeholder={databaseLoading
+            ? t('session_workbench.loading')
+            : t('session_workbench.database.placeholder')}
+          loading={databaseLoading}
+          options={databaseOptions.map((name) => ({ value: name, label: name }))}
+          onChange={(next) => onDatabaseChange(next ?? '')}
         />
         <Button
           type="default"
@@ -70,8 +82,7 @@ export default function SessionToolbar({
           {t('session_workbench.refresh')}
         </Button>
       </div>
-      <Space className="gn-session-workbench-filter" size={8}>
-        <DatabaseOutlined aria-hidden="true" />
+      <Space className="gn-session-workbench-filter" size={8} wrap>
         <Typography.Text>{t('session_workbench.filter.label')}</Typography.Text>
         <Input
           allowClear
@@ -80,6 +91,12 @@ export default function SessionToolbar({
           placeholder={t('session_workbench.filter.placeholder')}
           onChange={(event) => onFilterChange(event.target.value)}
         />
+        <Checkbox
+          checked={runningOnly}
+          onChange={(event) => onRunningOnlyChange(event.target.checked)}
+        >
+          {t('session_workbench.filter.running_only')}
+        </Checkbox>
       </Space>
     </div>
   );

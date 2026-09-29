@@ -1,13 +1,17 @@
-import { Alert, Empty, Spin, Typography, message } from 'antd';
-import { useMemo } from 'react';
+import { Alert, Empty, Spin, message } from 'antd';
+import { useMemo, useState } from 'react';
 import type { TabData } from '../../types';
 import { useI18n } from '../../i18n/provider';
 import { resolveConnectionEnvironmentType } from '../../utils/connectionEnvironment';
 import SessionActionChooser from './SessionActionChooser';
 import SessionConfirmModal from './SessionConfirmModal';
+import SessionHeader from './SessionHeader';
+import SessionSummary from './SessionSummary';
 import SessionTable from './SessionTable';
 import SessionToolbar from './SessionToolbar';
-import { filterSessions } from './sessionWorkbenchModel';
+import { displaySessionState } from './sessionStateLabel';
+import { sessionDatabaseOptions } from './sessionDatabaseFilter';
+import { filterSessions, sessionStateTone } from './sessionWorkbenchModel';
 import { useSessionWorkbench } from './useSessionWorkbench';
 import { useSessionWorkbenchDialogs } from './useSessionWorkbenchDialogs';
 import './SessionWorkbench.css';
@@ -33,9 +37,24 @@ export default function SessionWorkbench({ tab }: SessionWorkbenchProps) {
     initialConnectionId: tab.connectionId,
     initialDbName: tab.dbName,
   });
+  const [runningOnly, setRunningOnly] = useState(false);
+  const databaseOptions = useMemo(
+    () => sessionDatabaseOptions(
+      workbench.payload?.sessions || [],
+      workbench.databases,
+    ),
+    [workbench.databases, workbench.payload?.sessions],
+  );
   const filteredSessions = useMemo(
-    () => filterSessions(workbench.payload?.sessions || [], workbench.filter),
-    [workbench.filter, workbench.payload?.sessions],
+    () => {
+      const scoped = workbench.runningOnly
+        ? (workbench.payload?.sessions || []).filter(
+          (session) => sessionStateTone(session.state) === 'active',
+        )
+        : (workbench.payload?.sessions || []);
+      return filterSessions(scoped, workbench.filter, (state) => displaySessionState(state, t));
+    },
+    [t, workbench.filter, workbench.payload?.sessions, workbench.runningOnly],
   );
   const capability = workbench.payload?.capability || {
     supported: false,
@@ -43,9 +62,6 @@ export default function SessionWorkbench({ tab }: SessionWorkbenchProps) {
     canTerminateSession: false,
   };
   const selectedConnectionName = workbench.selectedConnection?.name || '';
-  const selectedDatabaseName = workbench.databaseName
-    || workbench.selectedConnection?.config.database
-    || '';
   const isProduction = resolveConnectionEnvironmentType(workbench.selectedConnection) === 'production';
   const dialogs = useSessionWorkbenchDialogs({
     capability,
@@ -58,24 +74,20 @@ export default function SessionWorkbench({ tab }: SessionWorkbenchProps) {
   return (
     <div className="gn-session-workbench">
       {messageContextHolder}
-      <div className="gn-session-workbench-header">
-        <div>
-          <Typography.Title level={4}>{t('session_workbench.title')}</Typography.Title>
-          <Typography.Text type="secondary">
-            {workbench.payload?.engine ? workbench.payload.engine : t('session_workbench.title')}
-          </Typography.Text>
-        </div>
-      </div>
+      <SessionHeader engine={workbench.payload?.engine} />
       <SessionToolbar
         connections={workbench.connections}
         selectedConnectionId={workbench.selectedConnectionId}
-        dbName={workbench.dbName}
+        databaseOptions={databaseOptions}
+        databaseName={workbench.databaseName}
         filter={workbench.filter}
+        runningOnly={runningOnly}
         loading={workbench.loading}
+        databaseLoading={workbench.databasesLoading}
         onConnectionChange={workbench.setSelectedConnectionId}
-        onDbNameChange={workbench.setDbName}
-        onApplyDatabase={() => { void workbench.applyDatabase(); }}
+        onDatabaseChange={workbench.selectDatabase}
         onFilterChange={workbench.setFilter}
+        onRunningOnlyChange={setRunningOnly}
         onRefresh={() => { void workbench.refresh(); }}
       />
       <div className="gn-session-workbench-body">
@@ -101,18 +113,26 @@ export default function SessionWorkbench({ tab }: SessionWorkbenchProps) {
               : 'session_workbench.empty.unsupported',
           )} />
         ) : filteredSessions.length === 0 ? (
-          <Empty description={workbench.payload.sessions.length === 0
-            ? t('session_workbench.empty.no_sessions')
-            : t('session_workbench.empty.no_match')} />
+          <Empty description={workbench.payload.sessions.length === 0 ? (
+            // PostgreSQL-lineage servers only report the connected database's
+            // sessions, so name that database: an empty list then reads as
+            // "nothing in this database" instead of "the server is idle".
+            workbench.payload.scopedDatabase
+              ? t('session_workbench.empty.no_sessions_in_database', {
+                database: workbench.payload.scopedDatabase,
+              })
+              : t('session_workbench.empty.no_sessions')
+          ) : t('session_workbench.empty.no_match')} />
         ) : (
-          <SessionTable
-            sessions={filteredSessions}
-            capability={capability}
-            connectionName={selectedConnectionName}
-            databaseName={selectedDatabaseName}
-            loading={workbench.loading}
-            onAction={dialogs.handleRowAction}
-          />
+          <>
+            <SessionSummary sessions={filteredSessions} />
+            <SessionTable
+              sessions={filteredSessions}
+              capability={capability}
+              loading={workbench.loading}
+              onAction={dialogs.handleRowAction}
+            />
+          </>
         )}
       </div>
       <SessionActionChooser
@@ -128,7 +148,6 @@ export default function SessionWorkbench({ tab }: SessionWorkbenchProps) {
         session={dialogs.confirmRow}
         capability={capability}
         connectionName={selectedConnectionName}
-        databaseName={workbench.databaseName || selectedDatabaseName}
         production={isProduction}
         loading={workbench.loading || dialogs.confirmLoading}
         onCancel={dialogs.closeConfirmation}

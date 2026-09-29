@@ -22,6 +22,7 @@ type sessionWorkbenchRecordingDB struct {
 	connected    atomic.Bool
 	query        func(context.Context, string) ([]map[string]interface{}, []string, error)
 	exec         func(context.Context, string) (int64, error)
+	getDatabases func() ([]string, error)
 	queryContext chan context.Context
 	execSQL      chan string
 }
@@ -39,6 +40,16 @@ func (database *sessionWorkbenchRecordingDB) Close() error {
 }
 
 func (database *sessionWorkbenchRecordingDB) Ping() error { return nil }
+
+// GetDatabases backs the workbench's database picker. Listing sessions reads
+// the catalog from the same isolated connection, so the fake has to answer it
+// instead of panicking on the embedded nil interface.
+func (database *sessionWorkbenchRecordingDB) GetDatabases() ([]string, error) {
+	if database.getDatabases != nil {
+		return database.getDatabases()
+	}
+	return nil, nil
+}
 
 func (database *sessionWorkbenchRecordingDB) Query(query string) ([]map[string]interface{}, []string, error) {
 	return database.QueryContext(context.Background(), query)
@@ -136,6 +147,9 @@ func TestDBListSessionsReturnsRowsAndClosesIsolatedConnection(t *testing.T) {
 				"statement":          "SELECT 1",
 			}}, []string{"session_id"}, nil
 		},
+		getDatabases: func() ([]string, error) {
+			return []string{"analytics", "shop", "  "}, nil
+		},
 	}
 	app := sessionWorkbenchTestApp(t, database)
 	config := sessionWorkbenchConfig("postgres")
@@ -148,6 +162,11 @@ func TestDBListSessionsReturnsRowsAndClosesIsolatedConnection(t *testing.T) {
 	payload, ok := result.Data.(connection.SessionListPayload)
 	if !ok || len(payload.Sessions) != 1 {
 		t.Fatalf("payload = %#v", result.Data)
+	}
+	// The listing states which database the rows were read from, because
+	// PostgreSQL-lineage servers only report the connected database's sessions.
+	if payload.ScopedDatabase != "analytics" {
+		t.Fatalf("payload scoped database = %q, want %q", payload.ScopedDatabase, "analytics")
 	}
 	if got := payload.Sessions[0]; got.SessionID != "42" || got.DatabaseOrTenant != "analytics" || got.QueryID != "" {
 		t.Fatalf("normalized session = %+v", got)
@@ -162,6 +181,61 @@ func TestDBListSessionsReturnsRowsAndClosesIsolatedConnection(t *testing.T) {
 	case <-database.queryContext:
 	default:
 		t.Fatal("QueryContext was not called")
+	}
+}
+
+// The database catalog is a separate call so a refresh does not pay for a
+// second round trip that only the picker needs.
+func TestDBListSessionDatabasesReturnsTrimmedCatalogAndClosesConnection(t *testing.T) {
+	database := &sessionWorkbenchRecordingDB{
+		getDatabases: func() ([]string, error) {
+			return []string{"analytics", " shop ", "", "   "}, nil
+		},
+	}
+	app := sessionWorkbenchTestApp(t, database)
+
+	result := app.DBListSessionDatabases(sessionWorkbenchConfig("postgres"), "analytics")
+	if !result.Success {
+		t.Fatalf("DBListSessionDatabases failed: %q", result.Message)
+	}
+	names, ok := result.Data.([]string)
+	if !ok {
+		t.Fatalf("result.Data type = %T, want []string", result.Data)
+	}
+	if got := strings.Join(names, ","); got != "analytics,shop" {
+		t.Fatalf("catalog = %q, want %q", got, "analytics,shop")
+	}
+	if got := database.connectCalls.Load(); got != 1 {
+		t.Fatalf("Connect calls = %d, want 1", got)
+	}
+	if got := database.closeCalls.Load(); got != 1 {
+		t.Fatalf("Close calls = %d, want 1", got)
+	}
+}
+
+// An engine without a session adapter must not open a connection just to
+// answer the picker.
+func TestDBListSessionDatabasesSkipsUnsupportedEngines(t *testing.T) {
+	// Installs the cleanup that restores the package-level driver hooks. Without
+	// it the stubbed factory leaks into every later test in this package.
+	installDatabaseCacheConcurrencyTestHooks(t)
+	factoryCalls := atomic.Int32{}
+	newDatabaseFunc = func(string) (db.Database, error) {
+		factoryCalls.Add(1)
+		return &sessionWorkbenchRecordingDB{}, nil
+	}
+
+	result := newDatabaseCacheConcurrencyTestApp().
+		DBListSessionDatabases(sessionWorkbenchConfig("redis"), "0")
+	if !result.Success {
+		t.Fatalf("DBListSessionDatabases failed: %q", result.Message)
+	}
+	names, ok := result.Data.([]string)
+	if !ok || len(names) != 0 {
+		t.Fatalf("unsupported catalog = %#v, want empty", result.Data)
+	}
+	if got := factoryCalls.Load(); got != 0 {
+		t.Fatalf("unsupported catalog opened %d connections", got)
 	}
 }
 
@@ -312,5 +386,34 @@ func TestDBExecuteSessionActionRecordsFixedSessionWorkbenchAuditSource(t *testin
 	}
 	if events[0].Source != "session_workbench" || events[0].Status != "success" {
 		t.Fatalf("unexpected session workbench audit event: %#v", events[0])
+	}
+}
+
+func TestDBExecuteSessionActionExplainsServerRejection(t *testing.T) {
+	database := &sessionWorkbenchRecordingDB{
+		query: func(_ context.Context, query string) ([]map[string]interface{}, []string, error) {
+			if !strings.Contains(query, "pg_terminate_backend(42)") {
+				return nil, nil, errors.New("unexpected session action SQL")
+			}
+			// The server answered, but reported that nothing was terminated.
+			return []map[string]interface{}{{"action_succeeded": false}}, nil, nil
+		},
+	}
+	app := sessionWorkbenchTestApp(t, database)
+	result := app.DBExecuteSessionAction(sessionWorkbenchConfig("postgres"), "analytics", connection.SessionActionRequest{
+		Action:    connection.SessionActionTerminateSession,
+		SessionID: "42",
+	})
+	if result.Success {
+		t.Fatal("a rejected server action must not report success")
+	}
+	if strings.Contains(result.Message, "database server rejected") {
+		t.Fatalf("message leaks the raw driver error: %q", result.Message)
+	}
+	if !strings.Contains(result.Message, "已经结束") && !strings.Contains(result.Message, "already ended") {
+		t.Fatalf("message does not explain the likely cause: %q", result.Message)
+	}
+	if got := database.closeCalls.Load(); got != 1 {
+		t.Fatalf("Close calls = %d, want 1", got)
 	}
 }
