@@ -273,11 +273,17 @@ try {
     }
     Write-UpdateLog 'update finished'
 
+    $CleanupCommand = 'Start-Sleep -Seconds 2; Remove-Item -LiteralPath $env:GONAVI_UPDATE_ROOT_DIR -Recurse -Force -ErrorAction SilentlyContinue'
+    $EncodedCleanupCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($CleanupCommand))
     $CleanupWorkingDirectory = [IO.Path]::GetTempPath()
     try {
-        Start-Process -FilePath $Target -WorkingDirectory $CleanupWorkingDirectory -WindowStyle Hidden -ArgumentList @(
-            '--gonavi-clean-update-dir',
-            [string]$PID
+        Start-Process -FilePath 'powershell.exe' -WorkingDirectory $CleanupWorkingDirectory -WindowStyle Hidden -ArgumentList @(
+            '-NoProfile',
+            '-NonInteractive',
+            '-ExecutionPolicy',
+            'Bypass',
+            '-EncodedCommand',
+            $EncodedCleanupCommand
         ) -ErrorAction Stop | Out-Null
     } catch {
         Write-UpdateLog ("cleanup scheduler failed: " + $_.Exception.Message)

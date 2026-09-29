@@ -88,9 +88,6 @@ func shouldEnableWindowsMSISingleInstance(goos string, executablePath string) bo
 }
 
 func main() {
-	if app.HandleWindowsUpdateCleanupArgs(os.Args[1:]) {
-		return
-	}
 	if app.HandleWindowsRuntimeReaperArgs(os.Args[1:]) {
 		return
 	}

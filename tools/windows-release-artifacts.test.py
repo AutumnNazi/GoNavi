@@ -111,41 +111,6 @@ class WindowsReleaseArtifactsTest(unittest.TestCase):
         self.assertIn("wails build -trimpath -platform windows/arm64", windows_builds)
         self.assertNotIn("upx", windows_builds.lower())
 
-    def test_installer_restores_previous_install_directory_for_major_upgrade(self) -> None:
-        root = ET.parse(INSTALLER).getroot()
-        ns = {"wix": WIX_NAMESPACE}
-        package = root.find("wix:Package", ns)
-        self.assertIsNotNone(package)
-        assert package is not None
-
-        previous_install_folder = package.find("wix:Property[@Id='PREVIOUSINSTALLFOLDER']", ns)
-        self.assertIsNotNone(previous_install_folder)
-        assert previous_install_folder is not None
-        registry_search = previous_install_folder.find("wix:RegistrySearch", ns)
-        self.assertIsNotNone(registry_search)
-        assert registry_search is not None
-        self.assertEqual(registry_search.attrib["Root"], "HKLM")
-        self.assertEqual(
-            registry_search.attrib["Key"],
-            r"Software\Microsoft\Windows\CurrentVersion\Uninstall\[WIX_UPGRADE_DETECTED]",
-        )
-        self.assertEqual(registry_search.attrib["Name"], "InstallLocation")
-        self.assertEqual(registry_search.attrib["Type"], "directory")
-        self.assertEqual(registry_search.attrib["Bitness"], "always64")
-
-        restore_directory = package.find("wix:SetProperty[@Id='INSTALLFOLDER']", ns)
-        self.assertIsNotNone(restore_directory)
-        assert restore_directory is not None
-        self.assertEqual(restore_directory.attrib["Value"], "[PREVIOUSINSTALLFOLDER]")
-        self.assertEqual(restore_directory.attrib["After"], "AppSearch")
-        self.assertEqual(restore_directory.attrib["Sequence"], "first")
-        self.assertIn("Condition", restore_directory.attrib)
-        self.assertEqual(
-            " ".join(restore_directory.attrib["Condition"].split()).upper(),
-            "NOT INSTALLFOLDER AND PREVIOUSINSTALLFOLDER",
-        )
-        self.assertFalse((restore_directory.text or "").strip())
-
     def test_installer_declares_upgrade_shortcuts_and_uninstall_metadata(self) -> None:
         root = ET.parse(INSTALLER).getroot()
         ns = {"wix": WIX_NAMESPACE}

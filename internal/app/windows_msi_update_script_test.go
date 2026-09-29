@@ -34,9 +34,7 @@ func TestBuildWindowsMSIUpdatePowerShellScriptInstallsRelaunchesAndCleans(t *tes
 		`update maintenance lock could not be released before relaunch`,
 		`Start-Process -FilePath $Target -WorkingDirectory $TargetDir`,
 		`Remove-UpdateArtifact $Source`,
-		`Start-Process -FilePath $Target -WorkingDirectory $CleanupWorkingDirectory -WindowStyle Hidden -ArgumentList @(`,
-		`'--gonavi-clean-update-dir'`,
-		`[string]$PID`,
+		`Remove-Item -LiteralPath $env:GONAVI_UPDATE_ROOT_DIR`,
 		`MSI package retained for manual install`,
 		`previous application relaunched after MSI failure`,
 	}
@@ -62,15 +60,10 @@ func TestBuildWindowsMSIUpdatePowerShellScriptInstallsRelaunchesAndCleans(t *tes
 	if releaseIndex < repairIndex || releaseIndex > relaunchIndex {
 		t.Fatalf("maintenance lock must be released after install repair and before relaunch\n%s", script)
 	}
-	cleanupIndex := strings.Index(script, `Start-Process -FilePath $Target -WorkingDirectory $CleanupWorkingDirectory -WindowStyle Hidden`)
+	cleanupIndex := strings.Index(script, `$CleanupCommand = 'Start-Sleep -Seconds 2; Remove-Item -LiteralPath $env:GONAVI_UPDATE_ROOT_DIR`)
 	failureIndex := strings.LastIndex(script, `} catch {`)
 	if cleanupIndex < relaunchIndex || failureIndex < cleanupIndex {
 		t.Fatalf("MSI updates cleanup must be scheduled only after relaunch on the success path\n%s", script)
-	}
-	for _, forbidden := range []string{`-EncodedCommand`, `'Bypass'`, `$CleanupCommand`, `Start-Process -FilePath 'powershell.exe'`} {
-		if strings.Contains(script, forbidden) {
-			t.Fatalf("MSI updater must not route cleanup through %q\n%s", forbidden, script)
-		}
 	}
 	for _, r := range script {
 		if r > 0x7f {
