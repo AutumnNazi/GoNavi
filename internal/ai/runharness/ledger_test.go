@@ -553,7 +553,14 @@ func TestLeaseFenceRejectsStaleOwnerWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	leaseA, err := l.AcquireLease(ctx, run.ID, "owner-a", 20*time.Millisecond)
+	// The lease must stay valid across the state transition below, so it gets
+	// the same roomy TTL every other lease test in this package uses. A short
+	// TTL here made the transition itself racy: on a loaded CI runner the lease
+	// could expire between AcquireLease and TransitionRun, and the test failed
+	// with ErrLeaseLost before reaching the fencing assertions. Staleness is
+	// established deterministically further down by zeroing owner_expires_at,
+	// so no wall-clock race is needed to get there.
+	leaseA, err := l.AcquireLease(ctx, run.ID, "owner-a", time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
