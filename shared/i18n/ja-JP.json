@@ -10553,6 +10553,7 @@
   "nacos.backend.error.tls_setup_failed": "TLS 設定に失敗しました: {{detail}}",
   "nacos.backend.error.build_request": "リクエストの構築に失敗しました: {{detail}}",
   "nacos.backend.error.request_failed": "Nacos リクエストに失敗しました: {{detail}}",
+  "nacos.backend.error.ssh_tunnel_remote_dial_failed": "Nacos リクエストに失敗しました: SSH トンネルは確立されましたが、踏み台ホストから {{remoteAddr}} に接続できませんでした（{{remoteError}}）。ローカル接続エラー: {{detail}}",
   "nacos.backend.error.read_body": "レスポンス本文の読み取りに失敗しました: {{detail}}",
   "connection_modal.step1.group.config_center": "設定センター",
   "connection_modal.step1.hint.nacos": "複数ネームスペースの設定閲覧と公開",

@@ -10553,6 +10553,7 @@
   "nacos.backend.error.tls_setup_failed": "Ошибка настройки TLS: {{detail}}",
   "nacos.backend.error.build_request": "Не удалось создать запрос: {{detail}}",
   "nacos.backend.error.request_failed": "Запрос к Nacos не выполнен: {{detail}}",
+  "nacos.backend.error.ssh_tunnel_remote_dial_failed": "Запрос к Nacos не выполнен: SSH-туннель установлен, но узел-посредник не смог подключиться к {{remoteAddr}} ({{remoteError}}); ошибка локального подключения: {{detail}}",
   "nacos.backend.error.read_body": "Не удалось прочитать тело ответа: {{detail}}",
   "connection_modal.step1.group.config_center": "Центры конфигурации",
   "connection_modal.step1.hint.nacos": "Просмотр и публикация конфигураций по namespace",

@@ -10553,6 +10553,7 @@
   "nacos.backend.error.tls_setup_failed": "TLS setup failed: {{detail}}",
   "nacos.backend.error.build_request": "Failed to build request: {{detail}}",
   "nacos.backend.error.request_failed": "Nacos request failed: {{detail}}",
+  "nacos.backend.error.ssh_tunnel_remote_dial_failed": "Nacos request failed: the SSH tunnel is up, but the jump host could not reach {{remoteAddr}} ({{remoteError}}); local connection error: {{detail}}",
   "nacos.backend.error.read_body": "Failed to read response body: {{detail}}",
   "connection_modal.step1.group.config_center": "Config centers",
   "connection_modal.step1.hint.nacos": "Browse and publish configs across namespaces",

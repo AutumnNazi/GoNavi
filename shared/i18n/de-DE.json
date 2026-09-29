@@ -10553,6 +10553,7 @@
   "nacos.backend.error.tls_setup_failed": "TLS-Einrichtung fehlgeschlagen: {{detail}}",
   "nacos.backend.error.build_request": "Anfrage konnte nicht erstellt werden: {{detail}}",
   "nacos.backend.error.request_failed": "Nacos-Anfrage fehlgeschlagen: {{detail}}",
+  "nacos.backend.error.ssh_tunnel_remote_dial_failed": "Nacos-Anfrage fehlgeschlagen: Der SSH-Tunnel steht, aber der Sprunghost konnte {{remoteAddr}} nicht erreichen ({{remoteError}}); lokaler Verbindungsfehler: {{detail}}",
   "nacos.backend.error.read_body": "Antwortkörper konnte nicht gelesen werden: {{detail}}",
   "connection_modal.step1.group.config_center": "Konfigurationszentren",
   "connection_modal.step1.hint.nacos": "Konfigurationen über Namespaces anzeigen und veröffentlichen",

@@ -10553,6 +10553,7 @@
   "nacos.backend.error.tls_setup_failed": "TLS 配置失败：{{detail}}",
   "nacos.backend.error.build_request": "构建请求失败：{{detail}}",
   "nacos.backend.error.request_failed": "请求 Nacos 失败：{{detail}}",
+  "nacos.backend.error.ssh_tunnel_remote_dial_failed": "请求 Nacos 失败：SSH 隧道已建立，但跳板机无法连接 {{remoteAddr}}（{{remoteError}}）；本地连接错误：{{detail}}",
   "nacos.backend.error.read_body": "读取响应失败：{{detail}}",
   "connection_modal.step1.group.config_center": "配置中心",
   "connection_modal.step1.hint.nacos": "多命名空间配置浏览与发布",
