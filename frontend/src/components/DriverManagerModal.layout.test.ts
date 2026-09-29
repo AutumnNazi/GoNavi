@@ -12,6 +12,10 @@ const driverManagerWorkbenchCss = readFileSync(
   fileURLToPath(new globalThis.URL('./DriverManagerWorkbench.css', import.meta.url)),
   'utf8',
 );
+const downloadSourceSelectCss = readFileSync(
+  fileURLToPath(new globalThis.URL('./DownloadSourceSelect.css', import.meta.url)),
+  'utf8',
+);
 const downloadSourceCatalogs = ['de-DE', 'en-US', 'ja-JP', 'ru-RU', 'zh-CN', 'zh-TW'].map((locale) => ({
   locale,
   messages: JSON.parse(readFileSync(
@@ -142,23 +146,18 @@ describe('DriverManagerModal embedded layout', () => {
     expect(appCss).toMatch(
       /\.driver-manager-mirror-chip-copy\s*\{[^}]*display:\s*flex[^}]*min-width:\s*0[^}]*flex:\s*0 1 auto/s,
     );
-    expect(appCss).toMatch(
-      /\.driver-manager-mirror-chip-source\s*\{[^}]*min-width:\s*0[^}]*flex:\s*0 1 auto[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/s,
+    // The mirror dropdown's selected label truncates instead of reserving a fixed slot.
+    expect(downloadSourceSelectCss).toMatch(
+      /\.gn-download-source-value-name\s*\{[^}]*min-width:\s*0[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/s,
     );
-    expect(appCss).not.toMatch(
-      /\.driver-manager-mirror-chip-source\s*\{[^}]*(?:width|max-width|flex):\s*[^;}]*11ch/s,
+    expect(downloadSourceSelectCss).not.toMatch(
+      /\.gn-download-source-value-name\s*\{[^}]*(?:width|max-width|flex):\s*[^;}]*11ch/s,
     );
-    expect(appCss).toMatch(
-      /\.driver-manager-mirror-chip-switch\.ant-btn\s*\{[^}]*flex-shrink:\s*0/s,
-    );
-    expect(driverManagerWorkbenchCss).toMatch(
-      /\.preview-settings-source-name\s*\{[^}]*min-width:\s*0[^}]*flex:\s*0 1 auto[^}]*overflow:\s*hidden[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/s,
-    );
-    expect(driverManagerWorkbenchCss).not.toMatch(
-      /\.preview-settings-source-name\s*\{[^}]*(?:width|max-width|flex):\s*[^;}]*11ch/s,
+    expect(downloadSourceSelectCss).toMatch(
+      /\.gn-download-source-dot\s*\{[^}]*width:\s*8px[^}]*height:\s*8px[^}]*flex:\s*0 0 auto/s,
     );
     expect(driverManagerWorkbenchCss).toMatch(
-      /\.preview-settings-source-action\s*\{[^}]*flex:\s*0 0 auto/s,
+      /\.preview-settings-source-select\.ant-select\s*\{[^}]*min-width:\s*140px[^}]*flex:\s*0 0 auto/s,
     );
     expect(appCss).toMatch(
       /\.gonavi-about-download-source\s*\{[^}]*flex-wrap:\s*wrap[^}]*width:\s*max-content[^}]*max-width:\s*100%/s,
@@ -177,7 +176,7 @@ describe('DriverManagerModal embedded layout', () => {
       /body \.gonavi-about-field-control \.ant-switch\s*\{[^}]*width:\s*44px !important/s,
     );
     expect(appCss).toMatch(
-      /\.driver-manager-mirror-chip\.is-compact\s*>\s*\.ant-btn,\s*\.gonavi-about-download-source\s*>\s*\.ant-btn\s*\{[^}]*margin-left:\s*auto/s,
+      /\.driver-manager-mirror-chip\.is-compact\s*>\s*\.ant-select,\s*\.gonavi-about-download-source\s*>\s*\.ant-select\s*\{[^}]*margin-left:\s*auto/s,
     );
     expect(appCss).toMatch(/\.driver-manager-filterbar\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/s);
     expect(appCss).toMatch(/\.driver-manager-filter-chip\s*\{[^}]*padding:\s*6px 8px/s);

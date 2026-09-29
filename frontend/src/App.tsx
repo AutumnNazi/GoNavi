@@ -2,7 +2,7 @@ import Modal from './components/common/ResizableDraggableModal';
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import { withAISettingsLeaveGuard, type AISettingsLeaveGuard } from './utils/aiSettingsLeaveGuard';
 import { Layout, Button, ConfigProvider, theme, message, notification, Spin, Slider, Switch, Input, InputNumber, Select, Segmented, Tooltip, Alert } from 'antd';
-import { UploadOutlined, DownloadOutlined, CloudDownloadOutlined, BugOutlined, GlobalOutlined, InfoCircleOutlined, GithubOutlined, SkinOutlined, CheckOutlined, SettingOutlined, LinkOutlined, BgColorsOutlined, AppstoreOutlined, FolderOpenOutlined, HddOutlined, SafetyCertificateOutlined, SwitcherOutlined, CodeOutlined, RightOutlined, TableOutlined, MenuOutlined, PoweroffOutlined, UserOutlined, MessageOutlined, FileTextOutlined, SyncOutlined, SendOutlined, AuditOutlined, ThunderboltOutlined, ApiOutlined, WechatOutlined, CopyOutlined } from '@ant-design/icons';
+import { UploadOutlined, DownloadOutlined, CloudDownloadOutlined, BugOutlined, GlobalOutlined, InfoCircleOutlined, GithubOutlined, SkinOutlined, CheckOutlined, SettingOutlined, LinkOutlined, BgColorsOutlined, AppstoreOutlined, FolderOpenOutlined, HddOutlined, SafetyCertificateOutlined, SwitcherOutlined, CodeOutlined, RightOutlined, TableOutlined, MenuOutlined, PoweroffOutlined, UserOutlined, MessageOutlined, FileTextOutlined, SyncOutlined, SendOutlined, AuditOutlined, WechatOutlined, CopyOutlined } from '@ant-design/icons';
 import AiSparkOutlined from './components/icons/AiSparkOutlined';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -139,7 +139,6 @@ import {
 import { buildDataSyncWorkbenchTab, resolveExistingDataSyncWorkbenchTabId } from './utils/dataSyncTab';
 import {
   DOWNLOAD_SOURCE_CHANGED_EVENT,
-  getNextDownloadSource,
   normalizeDownloadSource,
   notifyDownloadSourceChanged,
   OPEN_GLOBAL_PROXY_SETTINGS_EVENT,
@@ -183,6 +182,7 @@ import {
   stripLegacyPersistedConnectionById,
 } from './utils/legacyConnectionStorage';
 import { DEFAULT_QUERY_TEMPLATE } from './components/queryEditor/QueryEditorHelpers';
+import DownloadSourceSelect from './components/DownloadSourceSelect';
 import {
   DEFAULT_SIDEBAR_TABLE_METADATA_FIELDS,
   SIDEBAR_TABLE_METADATA_FIELDS,
@@ -6217,56 +6217,6 @@ function App() {
       utilityPanelStyle,
       viewportWidth,
   ]);
-  const downloadSourceItems: ReadonlyArray<{
-      id: DownloadSourceId;
-      labelKey: string;
-      descKey: string;
-      guideKey: string;
-      tagKey: string;
-      icon: React.ReactNode;
-      iconColor: string;
-      iconBg: string;
-      tagColor: string;
-      tagBg: string;
-  }> = [
-      {
-          id: 'cst',
-          labelKey: 'app.download_source.option.cst',
-          descKey: 'app.download_source.option.cst.desc',
-          guideKey: 'app.download_source.option.cst.guide',
-          tagKey: 'app.download_source.option.cst.tag',
-          icon: <ThunderboltOutlined />,
-          iconColor: '#f59e0b',
-          iconBg: 'rgba(245, 158, 11, 0.14)',
-          tagColor: '#b45309',
-          tagBg: 'rgba(245, 158, 11, 0.12)',
-      },
-      {
-          id: 'bero',
-          labelKey: 'app.download_source.option.bero',
-          descKey: 'app.download_source.option.bero.desc',
-          guideKey: 'app.download_source.option.bero.guide',
-          tagKey: 'app.download_source.option.bero.tag',
-          icon: <ApiOutlined />,
-          iconColor: '#0ea5e9',
-          iconBg: 'rgba(14, 165, 233, 0.14)',
-          tagColor: '#0369a1',
-          tagBg: 'rgba(14, 165, 233, 0.12)',
-      },
-      {
-          id: 'github',
-          labelKey: 'app.download_source.option.github',
-          descKey: 'app.download_source.option.github.desc',
-          guideKey: 'app.download_source.option.github.guide',
-          tagKey: 'app.download_source.option.github.tag',
-          icon: <GithubOutlined />,
-          iconColor: darkMode ? '#cbd5e1' : '#475569',
-          iconBg: darkMode ? 'rgba(203, 213, 225, 0.14)' : 'rgba(71, 85, 105, 0.14)',
-          tagColor: darkMode ? '#e2e8f0' : '#1f2937',
-          tagBg: darkMode ? 'rgba(203, 213, 225, 0.12)' : 'rgba(71, 85, 105, 0.12)',
-      },
-  ];
-
   const renderDownloadSourceSettingsContent = useCallback(() => {
       return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '12px 0' }}>
@@ -6274,149 +6224,13 @@ function App() {
                   <div style={{ ...utilityMutedTextStyle, marginBottom: 14, lineHeight: 1.7 }}>
                       {t('app.download_source.description')}
                   </div>
-                  <div
-                      role="radiogroup"
-                      aria-label={t('app.download_source.title')}
-                      style={{
-                          display: 'grid',
-                          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))',
-                          gap: 12,
-                      }}
-                  >
-                      {downloadSourceItems.map((source) => {
-                          const isSelected = downloadSource === source.id;
-                          const isDisabled = downloadSourceSaving;
-                          const baseBorderColor = isSelected
-                              ? overlayTheme.selectedText
-                              : overlayTheme.divider;
-                          const hoverBorderColor = overlayTheme.selectedText;
-                          const selectedBackground = darkMode
-                              ? 'rgba(255, 255, 255, 0.05)'
-                              : 'rgba(22, 119, 255, 0.05)';
-                          return (
-                              <button
-                                  key={source.id}
-                                  type="button"
-                                  role="radio"
-                                  aria-checked={isSelected}
-                                  disabled={isDisabled}
-                                  onClick={() => void handleDownloadSourceChange(source.id)}
-                                  data-download-source-card={source.id}
-                                  data-selected={isSelected ? 'true' : 'false'}
-                                  className="gonavi-download-source-card"
-                                  style={{
-                                      display: 'flex',
-                                      flexDirection: 'column',
-                                      gap: 12,
-                                      padding: 14,
-                                      borderRadius: 12,
-                                      border: `2px solid ${baseBorderColor}`,
-                                      background: isSelected ? selectedBackground : 'transparent',
-                                      cursor: isDisabled ? 'not-allowed' : 'pointer',
-                                      textAlign: 'left',
-                                      transition: 'border-color 160ms ease, background 160ms ease, box-shadow 160ms ease',
-                                      opacity: isDisabled ? 0.6 : 1,
-                                      fontFamily: 'inherit',
-                                      outline: 'none',
-                                      minHeight: 132,
-                                      boxShadow: isSelected
-                                          ? `0 0 0 4px ${darkMode ? 'rgba(22,119,255,0.18)' : 'rgba(22,119,255,0.10)'}`
-                                          : 'none',
-                                      color: overlayTheme.titleText,
-                                  }}
-                                  onMouseEnter={(event) => {
-                                      if (!isSelected && !isDisabled) {
-                                          event.currentTarget.style.borderColor = hoverBorderColor;
-                                          event.currentTarget.style.background = selectedBackground;
-                                      }
-                                  }}
-                                  onMouseLeave={(event) => {
-                                      if (!isSelected && !isDisabled) {
-                                          event.currentTarget.style.borderColor = baseBorderColor;
-                                          event.currentTarget.style.background = 'transparent';
-                                      }
-                                  }}
-                                  onFocus={(event) => {
-                                      if (!isSelected && !isDisabled) {
-                                          event.currentTarget.style.borderColor = hoverBorderColor;
-                                      }
-                                  }}
-                                  onBlur={(event) => {
-                                      if (!isSelected && !isDisabled) {
-                                          event.currentTarget.style.borderColor = baseBorderColor;
-                                      }
-                                  }}
-                              >
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                      <div
-                                          style={{
-                                              width: 36,
-                                              height: 36,
-                                              borderRadius: 10,
-                                              display: 'grid',
-                                              placeItems: 'center',
-                                              background: source.iconBg,
-                                              color: source.iconColor,
-                                              fontSize: 18,
-                                          }}
-                                      >
-                                          {source.icon}
-                                      </div>
-                                      {isSelected ? (
-                                          <span
-                                              style={{
-                                                  display: 'inline-flex',
-                                                  alignItems: 'center',
-                                                  gap: 4,
-                                                  padding: '3px 9px',
-                                                  borderRadius: 999,
-                                                  background: overlayTheme.selectedText,
-                                                  color: '#fff',
-                                                  fontSize: 11,
-                                                  fontWeight: 600,
-                                              }}
-                                          >
-                                              <CheckOutlined style={{ fontSize: 10 }} />
-                                              {t('app.download_source.selected_badge')}
-                                          </span>
-                                      ) : null}
-                                  </div>
-                                  <div style={{ minWidth: 0 }}>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                          <span style={{ fontSize: 14, fontWeight: 700, color: overlayTheme.titleText }}>
-                                              {t(source.labelKey)}
-                                          </span>
-                                          <span
-                                              style={{
-                                                  fontSize: 11,
-                                                  fontWeight: 600,
-                                                  padding: '1px 8px',
-                                                  borderRadius: 999,
-                                                  background: source.tagBg,
-                                                  color: source.tagColor,
-                                              }}
-                                          >
-                                              {t(source.tagKey)}
-                                          </span>
-                                      </div>
-                                      <div style={{ marginTop: 8, fontSize: 13, fontWeight: 600, lineHeight: 1.6 }}>
-                                          {t(source.guideKey)}
-                                      </div>
-                                      <div
-                                          style={{
-                                              marginTop: 6,
-                                              fontSize: 12,
-                                              color: overlayTheme.mutedText,
-                                              lineHeight: 1.6,
-                                          }}
-                                      >
-                                          {t(source.descKey)}
-                                      </div>
-                                  </div>
-                              </button>
-                          );
-                      })}
-                  </div>
+                  <DownloadSourceSelect
+                      value={downloadSource}
+                      darkMode={darkMode}
+                      saving={downloadSourceSaving}
+                      onChange={(source) => void handleDownloadSourceChange(source)}
+                      style={{ width: '100%', maxWidth: 360 }}
+                  />
                   <div
                       style={{
                           marginTop: 14,
@@ -6442,10 +6256,8 @@ function App() {
       downloadSource,
       downloadSourceSaving,
       handleDownloadSourceChange,
-      overlayTheme.divider,
       overlayTheme.mutedText,
       overlayTheme.selectedText,
-      overlayTheme.titleText,
       t,
       utilityMutedTextStyle,
       utilityPanelStyle,
@@ -6807,10 +6619,6 @@ function App() {
               : []),
       ];
 
-      const aboutDownloadSourceDot = (darkMode
-          ? { cst: '#f59e0b', bero: '#38bdf8', github: '#cbd5e1' }
-          : { cst: '#d97706', bero: '#0284c7', github: '#475569' })[downloadSource] || '#94a3b8';
-
       return (
           <div className="gonavi-about-pane">
               <section className="gonavi-about-identity" aria-label="GoNavi">
@@ -6903,27 +6711,17 @@ function App() {
                         background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
                     }}
                   >
-                    <span
-                      aria-hidden="true"
-                      className="gonavi-about-download-source-dot"
-                      style={{ background: aboutDownloadSourceDot }}
-                    />
                     <span className="gonavi-about-download-source-label" style={{ color: mutedText }}>
                         {t('driver_manager.mirror_source.label')}
                     </span>
-                    <span className="gonavi-about-download-source-value" style={{ color: overlayTheme.titleText }}>
-                        {t(`app.download_source.option.${downloadSource}`)}
-                    </span>
-                    <Button
-                      type="link"
-                      size="small"
-                      onClick={() => void handleDownloadSourceChange(getNextDownloadSource(downloadSource))}
-                      loading={downloadSourceSaving}
-                      disabled={downloadSourceSaving}
-                      className="gonavi-about-download-source-switch"
-                    >
-                        {t('driver_manager.mirror_source.switch')}
-                    </Button>
+                    <DownloadSourceSelect
+                      value={downloadSource}
+                      darkMode={darkMode}
+                      saving={downloadSourceSaving}
+                      onChange={(source) => void handleDownloadSourceChange(source)}
+                      borderless
+                      className="gonavi-about-download-source-select"
+                    />
                   </div>
               </section>
 
@@ -9057,7 +8855,7 @@ function App() {
                       open
                       onClose={handleCancelSettingsCenterPane}
                       onOpenGlobalProxySettings={() => handleOpenSettingsCenterPane('services', 'proxy')}
-                      onSwitchDownloadSource={() => void handleDownloadSourceChange(getNextDownloadSource(downloadSource))}
+                      onChangeDownloadSource={(source) => void handleDownloadSourceChange(source)}
                       downloadSourceSwitching={downloadSourceSaving}
                       downloadSource={downloadSource}
                     />

@@ -3049,29 +3049,10 @@ body[data-ui-version="v2"] .gn-v2-titlebar .titlebar-window-controls > .ant-btn.
     box-sizing: border-box;
 }
 
-.gonavi-about-download-source-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 999px;
-    flex-shrink: 0;
-}
-
-.gonavi-about-download-source-label,
-.gonavi-about-download-source-value {
+.gonavi-about-download-source-label {
     font-size: 13px;
     line-height: 1.2;
     white-space: nowrap;
-}
-
-.gonavi-about-download-source-value {
-    font-weight: 600;
-}
-
-.gonavi-about-download-source-switch.ant-btn {
-    padding: 0;
-    height: auto;
-    font-weight: 600;
-    flex-shrink: 0;
 }
 
 /* 弹窗内的镜像源条：无描边的浅底色条，仅保留左侧来源色条。 */
@@ -3141,20 +3122,8 @@ body[data-theme='dark'] .gonavi-about-download-source:hover {
     white-space: nowrap;
 }
 
-.driver-manager-mirror-chip-source {
-    min-width: 0;
-    flex: 0 1 auto;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.driver-manager-mirror-chip-switch.ant-btn {
-    flex-shrink: 0;
-}
-
-.driver-manager-mirror-chip.is-compact > .ant-btn,
-.gonavi-about-download-source > .ant-btn {
+.driver-manager-mirror-chip.is-compact > .ant-select,
+.gonavi-about-download-source > .ant-select {
     margin-left: auto;
 }
 
