@@ -410,8 +410,9 @@ public static class GoNaviShortcutPropertyStore
             IPropertyStore store = (IPropertyStore)shellLink;
             // AppUserModel.ID must be written last. Windows uses that write to
             // notify the taskbar that the preceding relaunch values changed.
-            // RelaunchIconResource 用纯 .ico 路径：",0" 后缀会让 Explorer 按
-            // PE 资源索引提取失败，任务栏按钮退化为空白文档图标。
+            // RelaunchIconResource uses the plain .ico path: a trailing ',0'
+            // makes Explorer parse it as a PE resource index, which fails for
+            // .ico files and blanks the taskbar button.
             SetString(store, new PROPERTYKEY(PKEY_AppUserModel, 2), "\"" + targetPath + "\"");
             SetString(store, new PROPERTYKEY(PKEY_AppUserModel, 3), iconPath);
             SetString(store, new PROPERTYKEY(PKEY_AppUserModel, 4), "GoNavi");
@@ -573,10 +574,12 @@ function Ensure-GoNaviAumidShortcut {
         [string]$ApplicationUserModelID = 'Syngnat.GoNavi'
     )
 
-    # 任务栏按钮图标来源于 AUMID 解析到的快捷方式：解析不到时按钮停留在
-    # 通用窗口图标，且不跟随 WM_SETICON（Win11 26200 实测）。MSI 安装的
-    # 快捷方式由安装器创建；便携/开发实例没有安装器，这里在用户开始菜单
-    # 补建一个声明 AUMID 的快捷方式，后续切换由 IconLocation 改写跟随。
+    # The taskbar button icon comes from the shortcut resolved via AUMID: when
+    # no shortcut declares the AUMID, the button falls back to a generic window
+    # icon and does not follow WM_SETICON (Win11 26200 observed). MSI installs
+    # get their shortcuts from the installer; portable/dev instances have no
+    # installer, so create one in the user's Start Menu declaring the AUMID,
+    # and let subsequent switches follow via the IconLocation rewrite.
     $programs = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
     $commonPrograms = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonPrograms)
     if (-not [string]::IsNullOrWhiteSpace($env:GONAVI_TEST_ROOT)) {
@@ -592,15 +595,15 @@ function Ensure-GoNaviAumidShortcut {
         $existingAumid = ''
         try { $existingAumid = [string]$item.ExtendedProperty('System.AppUserModel.ID') } catch {}
         if ($existingAumid -match '^Syngnat\.GoNavi') {
-            # 已有声明本应用 AUMID 的快捷方式，无需补建。
+            # A shortcut already declaring our AUMID exists; nothing to create.
             return $false
         }
     }
 
     $shortcutPath = Join-Path $programs 'GoNavi.lnk'
     if (Test-Path -LiteralPath $shortcutPath -PathType Leaf) {
-        # 同名快捷方式存在但既不属于本应用 AUMID 族也不是已有声明（避免覆盖
-        # 用户自建的同名快捷方式）。
+        # A same-named shortcut exists but belongs to neither our AUMID family
+        # nor an existing declaration; never overwrite a user shortcut.
         Write-ShortcutRepairLog ("skip AUMID shortcut creation, name occupied: " + $shortcutPath)
         return $false
     }
@@ -710,19 +713,19 @@ function Set-GoNaviShortcutBrandIcon {
                     if (-not $matchesTarget -and $isTaskbarShortcut) {
                         $shortcutName = [IO.Path]::GetFileNameWithoutExtension($shortcutFile.Name)
                         $targetName = [IO.Path]::GetFileName($existingTargetRaw)
-                        # 认领条件收紧为「固定项名称必须以 GoNavi 开头」。名称是
-                        # 唯一可靠的归属信号：File Explorer 等系统固定项、其他
-                        # 应用的固定项，即使图标被历史事故改写过，也不属于本
-                        # 应用的认领范围（历史事故：测试实例曾把用户 File
-                        # Explorer 固定项误认领并改写，任务栏图标错乱）。
+                        # Ownership tightened: the pin name must start with GoNavi.
+                        # The name is the only reliable ownership signal: system pins
+                        # (File Explorer) and other apps' pins are never ours, even if
+                        # their icons were rewritten by the historical incident.
+                        # (A test instance once claimed the user's File Explorer
                         $namedGoNaviPin = $shortcutName -match '^GoNavi(?:[-_.].*|\s*\(\d+\))?$'
                         $targetName = [IO.Path]::GetFileName($existingTargetRaw)
                         $looksLikeGoNaviPin = $namedGoNaviPin -and (
                             $targetName -match '^GoNavi(?:[-_.].*|\s*\(\d+\))?\.exe$' -or
                             $pinLaunchBroken
                         )
-                        # AUMID 族匹配仅作为 GoNavi 命名固定项的补充证据，不再
-                        # 独立构成认领条件。
+                        # AUMID family matching is only corroborating evidence for
+                        # GoNavi-named pins, never a standalone claim condition.
                         $isGoNaviTaskbarShortcut = $looksLikeGoNaviPin -or
                             ($namedGoNaviPin -and
                             ((Get-GoNaviShortcutAppUserModelID $shortcutFile.FullName) -match '^Syngnat\.GoNavi(?:\.Icon\.[0-9a-f]+)?$'))
@@ -731,12 +734,12 @@ function Set-GoNaviShortcutBrandIcon {
                     # the GoNavi pin family and may repair legacy rotated
                     # identities. A portable or development build may only claim
                     # a pin that targets this executable or whose icon lives in
-                    # THIS instance's brand-icon directory — name and AUMID
+                        # Cheap prefilter: only GoNavi-named shortcuts can be this
                     # matches alone also hit every other GoNavi installation on
                     # the machine, and claiming those hijacks foreign pins.
                     if ($onlyMatchingTarget -and -not $matchesTarget) {
-                        # 廉价预过滤：只有名称像 GoNavi 的快捷方式才可能是本实例
-                        # 的残留固定项，避免对全系统 .lnk 逐一跑昂贵的 COM 归属判定。
+                        # instance's leftover pins; skip the expensive COM ownership
+                        # check for every unrelated .lnk on the system.
                         $shortcutName = [IO.Path]::GetFileNameWithoutExtension($shortcutFile.Name)
                         if (-not $shortcutName.StartsWith('GoNavi', [StringComparison]::OrdinalIgnoreCase)) {
                             continue
@@ -745,7 +748,11 @@ function Set-GoNaviShortcutBrandIcon {
                             Write-ShortcutRepairLog ("skip foreign GoNavi shortcut: " + $shortcutFile.FullName)
                             continue
                         }
-                    } elseif (-not $matchesTarget -and -not $pinLaunchBroken -and -not $isGoNaviTaskbarShortcut) {
+                    } elseif (-not $matchesTarget -and -not $isGoNaviTaskbarShortcut) {
+                    # MSI-mode claims also require GoNavi evidence (name/AUMID).
+                    # pinLaunchBroken alone only means the target is dead; letting
+                    # it through hijacks dead pins left by uninstalled foreign
+                    # apps (e.g. Steam.lnk) as GoNavi launchers (observed).
                         continue
                     }
                     if ($isTaskbarShortcut) {
@@ -805,8 +812,8 @@ function Set-GoNaviShortcutBrandIcon {
                     }
                     Send-ShellItemUpdatedNotification $shortcutFile.FullName
                 } catch {
-                    # 单项失败只记录不中止：一个只读的系统快捷方式不应让
-                    # 其余可写快捷方式的图标更新一起失败。
+                    # A single failure is logged, never fatal: one read-only system
+                    # shortcut must not sink the writable ones with it.
                     $failureMessage = "brand icon update failed for " + $shortcutFile.FullName + ": " + $_.Exception.Message
                     Write-ShortcutRepairLog $failureMessage
                     [void]$failureMessages.Add($failureMessage)
@@ -821,15 +828,17 @@ function Set-GoNaviShortcutBrandIcon {
         Write-ShortcutRepairLog ("brand icon shortcut update failed: " + $_.Exception.Message)
         throw
     }
-    # 单项失败（如标准用户写不了机器级快捷方式）不中止整批：已更新的部分
-    # 保留，失败项已逐条写入修复日志。整批失败只在上游扫描本身出错时发生。
+    # A single failure (e.g. a standard user cannot write a machine-level
+    # shortcut) does not abort the batch: updated entries stay updated and
+    # failures are reported via the script variable and the repair log.
+    $script:GoNaviBrandFailureCount = $failureMessages.Count
     if ($failureMessages.Count -gt 0) {
         Write-ShortcutRepairLog ([string]::Join('; ', $failureMessages))
     }
     try {
         Ensure-GoNaviAumidShortcut -TargetPath $normalizedTargetPath -IconPath $normalizedIconPath | Out-Null
     } catch {
-        # 补建 AUMID 快捷方式是增量改进，失败不影响本次图标更新。
+        # Creating the AUMID shortcut is an incremental improvement; its
         Write-ShortcutRepairLog ("AUMID shortcut ensure failed: " + $_.Exception.Message)
     }
     return $updatedCount

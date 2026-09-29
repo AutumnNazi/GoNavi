@@ -110,6 +110,11 @@ New-TestShortcut (Join-Path $pins 'GoNavi-rotated.lnk') $alternateGoNaviTarget '
 # 永远不属于 GoNavi 的认领范围。
 New-TestShortcut (Join-Path $pins 'File Explorer.lnk') "$env:windir\explorer.exe" ''
 [void](Set-GoNaviShortcutRelaunchProperties -ShortcutPath (Join-Path $pins 'File Explorer.lnk') -TargetPath "$env:windir\explorer.exe" -IconPath $missingIcon -ApplicationUserModelID 'Microsoft.Windows.Explorer')
+# 外部应用死固定项防护（审查实测复现的事故）：用户卸载其他应用后残留的
+# 目标失效 pin，MSI 模式下也绝不能被认领改写为 GoNavi 启动器。
+$steamDeadTarget = Join-Path $env:GONAVI_TEST_ROOT 'missing-foreign\Steam\steam.exe'
+New-TestShortcut (Join-Path $pins 'Steam.lnk') $steamDeadTarget ''
+$steamIconBefore = $shell.CreateShortcut((Join-Path $pins 'Steam.lnk')).IconLocation
 $blankIconBefore = $shell.CreateShortcut((Join-Path $pins 'blank-icon.lnk')).IconLocation
 $otherMissingIconBefore = $shell.CreateShortcut((Join-Path $pins 'other-missing-icon.lnk')).IconLocation
 
@@ -153,6 +158,14 @@ foreach ($shortcutName in @('missing-icon.lnk', 'existing-icon.lnk', 'blank-icon
 }
 if (-not (Test-ShortcutIconLocation $shell.CreateShortcut((Join-Path $pins 'foreign-target.lnk')).IconLocation $missingIcon)) {
     throw 'brand icon update modified a foreign target shortcut'
+}
+# 外部应用死固定项（目标失效）也不得被劫持：目标与图标都必须原样保留。
+$steamShortcut = $shell.CreateShortcut((Join-Path $pins 'Steam.lnk'))
+if (-not (Test-SameFilePath $steamShortcut.TargetPath $steamDeadTarget)) {
+    throw ('brand icon update hijacked a dead foreign pin target: ' + $steamShortcut.TargetPath)
+}
+if (-not [string]::Equals([string]$steamShortcut.IconLocation, $steamIconBefore, [StringComparison]::OrdinalIgnoreCase)) {
+    throw ('brand icon update hijacked a dead foreign pin icon: ' + $steamShortcut.IconLocation)
 }
 $alternateShortcut = $shell.CreateShortcut((Join-Path $pins 'GoNavi.lnk'))
 if (-not (Test-ShortcutIconLocation $alternateShortcut.IconLocation $brandIcon)) {
@@ -488,16 +501,16 @@ if (-not $lockThrew) {
 $brandIcon = Join-Path $env:GONAVI_TEST_ROOT 'gonavi-brand-abcdefabcdefabcdefabcdef.ico'
 [IO.File]::WriteAllBytes($brandIcon, [byte[]](0, 0, 1, 0, 0, 0))
 
-# A read-only shortcut must fail the whole batch even if another shortcut was
-# already updated. This prevents the caller from activating an incomplete update.
-$batchFailed = $false
-try {
-    [void](Set-GoNaviShortcutBrandIcon -TargetPath $target -IconPath $brandIcon -ShortcutDirectories @($shortcuts) -TaskbarDirectory $taskbar)
-} catch {
-    $batchFailed = $true
+# 部分成功语义：只读快捷方式（标准用户写机器级快捷方式被拒的常态）跳过
+# 并记录，可写的照常更新——不能让一个只读项拖垮整批（否则 MSI 标准用户
+# 场景下所有表面都无法更新）。失败计数必须暴露给调用方。
+$script:GoNaviBrandFailureCount = 0
+$updatedCount2 = Set-GoNaviShortcutBrandIcon -TargetPath $target -IconPath $brandIcon -ShortcutDirectories @($shortcuts) -TaskbarDirectory $taskbar
+if ($updatedCount2 -lt 1) {
+    throw ('read-only shortcut suppressed all writable shortcut updates: ' + $updatedCount2)
 }
-if (-not $batchFailed) {
-    throw 'read-only shortcut was silently skipped and the batch reported success'
+if ([int]$script:GoNaviBrandFailureCount -lt 1) {
+    throw 'read-only shortcut failure was not counted for the caller'
 }
 $updatedShortcut = $shell.CreateShortcut($writableShortcut)
 if (-not [string]::Equals([string]$updatedShortcut.IconLocation, ($brandIcon + ',0'), [StringComparison]::OrdinalIgnoreCase)) {

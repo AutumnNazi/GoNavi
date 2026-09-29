@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -35,7 +36,10 @@ const (
 	// make a freshly written .ico visible without rotating the file identity
 	// or the taskbar AUMID.
 	windowsShellChangeAssociateChanged = 0x08000000
-	windowsShellChangeNotifyFlags      = 0x0000
+	// SHCNF_IDLIST|SHCNF_FLUSH：IDLIST 是 ASSOCCHANGED 的文档强制格式；
+	// FLUSH 让通知投递到所有受影响组件（含任务栏图标缓存）后才返回，
+	// 用来在窗口链路前建立「缓存已失效」的顺序保证，替代纯定时猜测。
+	windowsShellChangeNotifyFlags = 0x0000 | 0x1000
 )
 
 var (
@@ -130,8 +134,7 @@ const (
 )
 
 var (
-	windowsPinsWatcherOnce    sync.Once
-	windowsPinsWatcherLastSet string
+	windowsPinsWatcherOnce sync.Once
 )
 
 // startWindowsPinsWatcher watches the taskbar pins directory and re-applies
@@ -144,25 +147,37 @@ func startWindowsPinsWatcher(runtimeContext context.Context, configDir string) {
 		if pinsDir == "" {
 			return
 		}
-			go func() {
-				last := windowsReadPinsNameSet(pinsDir)
-				for {
-					time.Sleep(time.Duration(windowsPinsWatcherPollMs) * time.Millisecond)
-					current := windowsReadPinsNameSet(pinsDir)
-					if current == last {
-						continue
-					}
-					last = current
-					applicationBrandIconMu.Lock()
-					iconPath, err := loadPersistedWindowsApplicationIcon(configDir)
-					if err == nil && strings.TrimSpace(iconPath) != "" {
-						if _, err := setCurrentWindowsApplicationIcon(runtimeContext, iconPath); err != nil {
-							logger.Warnf("固定项变化后重应用 Windows 品牌图标失败：%v", err)
-						}
-					}
-					applicationBrandIconMu.Unlock()
+		go func() {
+			last, err := windowsReadPinsNameSet(pinsDir)
+			if err != nil {
+				return
+			}
+			for {
+				select {
+				case <-runtimeContext.Done():
+					return
+				case <-time.After(time.Duration(windowsPinsWatcherPollMs) * time.Millisecond):
 				}
-			}()
+				current, err := windowsReadPinsNameSet(pinsDir)
+				// 读取失败（目录暂时锁定等）保留上次集合并跳过本轮，避免
+				// 误判变化触发一整轮无谓的图标重应用。
+				if err != nil {
+					continue
+				}
+				if current == last {
+					continue
+				}
+				last = current
+				applicationBrandIconMu.Lock()
+				iconPath, err := loadPersistedWindowsApplicationIcon(configDir)
+				if err == nil && strings.TrimSpace(iconPath) != "" {
+					if _, err := setCurrentWindowsApplicationIcon(runtimeContext, iconPath); err != nil {
+						logger.Warnf("固定项变化后重应用 Windows 品牌图标失败：%v", err)
+					}
+				}
+				applicationBrandIconMu.Unlock()
+			}
+		}()
 	})
 }
 
@@ -174,10 +189,10 @@ func windowsTaskbarPinsDirectory() string {
 	return filepath.Join(appData, "Microsoft", "Internet Explorer", "Quick Launch", "User Pinned", "TaskBar")
 }
 
-func windowsReadPinsNameSet(pinsDir string) string {
+func windowsReadPinsNameSet(pinsDir string) (string, error) {
 	entries, err := os.ReadDir(pinsDir)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
@@ -186,7 +201,7 @@ func windowsReadPinsNameSet(pinsDir string) string {
 		}
 	}
 	sort.Strings(names)
-	return strings.Join(names, "\n")
+	return strings.Join(names, "\n"), nil
 }
 
 func setApplicationIconPNG(pngBytes []byte, configDir string, runtimeContext context.Context) error {
@@ -207,11 +222,12 @@ func setApplicationIconPNG(pngBytes []byte, configDir string, runtimeContext con
 	}
 	// 实测（Win11 26200）：Explorer 在快捷方式改写后需要短暂消化才会重新
 	// 提取新 .ico 的图标；紧接着执行按钮重注册会采样到旧图标（表现为
-	// 「第一次切换无效、第二次才生效」）。这里等待 Explorer 完成图标提取
-	// 后再执行窗口链路，单次切换只需一遍。
+	// 「第一次切换无效、第二次才生效」）。先用 SHCNF_FLUSH 阻塞投递一次
+	// 关联变更（等 Explorer 图标缓存确实失效后再继续），再保留短消化期，
+	// 让按钮重注册必然采样到新图标。
+	windowsApplicationIconNotifyShellChange()
 	time.Sleep(windowsShortcutDigestDelay)
-	hwnd, err := setCurrentWindowsApplicationIcon(runtimeContext, iconPath)
-	if err != nil {
+	if _, err := setCurrentWindowsApplicationIcon(runtimeContext, iconPath); err != nil {
 		return err
 	}
 	if err := activatePersistedWindowsApplicationIcon(iconPath, configDir); err != nil {
@@ -219,11 +235,16 @@ func setApplicationIconPNG(pngBytes []byte, configDir string, runtimeContext con
 	}
 	// 安全网：Explorer 偶尔在重注册后仍采样到旧图标（首次切换失效）。
 	// 1.5s 后仅补一次廉价的按钮重注册（纯 COM 调用，不含任何图标重载），
-	// 强制按钮重采样当前窗口图标。
+	// 强制按钮重采样当前窗口图标。回调内重取窗口句柄并校验存活，防止
+	// 旧句柄复用把无关窗口注册进任务栏。
 	time.AfterFunc(1500*time.Millisecond, func() {
 		applicationBrandIconMu.Lock()
 		defer applicationBrandIconMu.Unlock()
-		if err := windowsRefreshTaskbarButton(hwnd); err != nil {
+		freshHwnd, err := resolveWailsMainWindowHandle(runtimeContext)
+		if err != nil || freshHwnd == 0 {
+			return
+		}
+		if err := windowsRefreshTaskbarButton(freshHwnd); err != nil {
 			logger.Warnf("延迟重注册任务栏按钮失败：%v", err)
 		}
 	})
@@ -423,7 +444,9 @@ func updateCurrentWindowsApplicationShortcuts(iconPath string) error {
 
 $ErrorActionPreference = 'Stop'
 $updated = Set-GoNaviShortcutBrandIcon -TargetPath $env:GONAVI_BRAND_TARGET -IconPath $env:GONAVI_BRAND_ICON -ApplicationUserModelID $env:GONAVI_BRAND_AUMID
-Write-Output ("UPDATED=" + $updated)
+$failed = 0
+if ($null -ne $script:GoNaviBrandFailureCount) { $failed = [int]$script:GoNaviBrandFailureCount }
+Write-Output ("UPDATED=" + $updated + " FAILED=" + $failed)
 `
 	if _, err := temporary.WriteString(strings.ReplaceAll(script, "\n", "\r\n")); err != nil {
 		_ = temporary.Close()
@@ -451,7 +474,23 @@ Write-Output ("UPDATED=" + $updated)
 		"GONAVI_BRAND_REPAIR_LOG="+filepath.Join(filepath.Dir(iconPath), "shortcut-repair.log"),
 	)
 	configureWindowsUpdateCommand(cmd)
+	// 启动路径同步等待本脚本；powershell 被 AV/策略挂起时绝不能拖死
+	// OnStartup（否则 4s 窗口显示兜底永不启动，应用表现为启动了但无窗口）。
+	// CommandContext 不改已配置的 Dir/Env/属性，只注入超时取消。
+	const windowsShortcutUpdateTimeout = 45 * time.Second
+	timeoutCtx, cancelTimeout := context.WithTimeout(context.Background(), windowsShortcutUpdateTimeout)
+	defer cancelTimeout()
+	commandContextCmd := exec.CommandContext(timeoutCtx, "powershell.exe")
+	commandContextCmd.Path = cmd.Path
+	commandContextCmd.Args = cmd.Args
+	commandContextCmd.Dir = cmd.Dir
+	commandContextCmd.Env = cmd.Env
+	configureWindowsUpdateCommand(commandContextCmd)
+	cmd = commandContextCmd
 	output, err := cmd.CombinedOutput()
+	if errors.Is(timeoutCtx.Err(), context.DeadlineExceeded) {
+		logger.Warnf("Windows 快捷方式更新脚本执行超时（%v），按失败继续", windowsShortcutUpdateTimeout)
+	}
 	if err != nil {
 		detail := strings.TrimSpace(string(output))
 		if detail != "" {
@@ -459,14 +498,36 @@ Write-Output ("UPDATED=" + $updated)
 		}
 		return fmt.Errorf("update Windows application shortcuts: %w", err)
 	}
-	// The shortcut IconLocations now reference a new content-addressed .ico.
-	// Ask Explorer to drop its per-path icon cache so desktop and Start-menu
-	// entries repaint without waiting for the next logon. 0 updates (nothing
-	// matched) must not trigger a system-wide association flush.
-	if !strings.Contains(string(output), "UPDATED=0") {
-		windowsApplicationIconNotifyShellChange()
+	outputText := string(output)
+	// 关联变更通知（含图标缓存失效）由脚本内部在确有更新时以 FLUSH 发送；
+	// Go 侧不再重复广播。窗口链路前还有一次 FLUSH 投递建立顺序保证。
+	// 单项失败（标准用户写机器级快捷方式被拒等）不中止，但必须可见：
+	// 明细已写入 shortcut-repair.log，这里记一条汇总便于事后诊断。
+	if m := windowsShortcutUpdateFailedCount(outputText); m > 0 {
+		logger.Warnf("Windows 快捷方式图标更新有 %d 项失败（详见 shortcut-repair.log）", m)
 	}
 	return nil
+}
+
+// windowsShortcutUpdateFailedCount extracts the FAILED=N marker emitted by the
+// shortcut update script; returns 0 when the marker is absent.
+func windowsShortcutUpdateFailedCount(output string) int {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "UPDATED=") {
+			continue
+		}
+		idx := strings.Index(line, "FAILED=")
+		if idx < 0 {
+			return 0
+		}
+		count, err := strconv.Atoi(strings.TrimSpace(line[idx+len("FAILED="):]))
+		if err != nil || count < 0 {
+			return 0
+		}
+		return count
+	}
+	return 0
 }
 
 // removeStaleWindowsShortcutUpdateScripts deletes PowerShell payloads left in

@@ -17,7 +17,11 @@ func InitializePersistedNativeBrandIcon(a *App, ctx context.Context) error {
 	// The WebView can call SetApplicationBrandIcon while OnStartup is still
 	// restoring the persisted icon. Publish the runtime context first, then use
 	// the same lock as the Wails method so both updates run in a defined order.
-	a.ctx = ctx
+	// a.ctx 只在此处发布一次：latch 打开后 app.startup 还会无锁写 a.ctx
+	//（app.go:511），若这里之后再写会产生数据竞争（审查发现）。
+	if a.ctx == nil {
+		a.ctx = ctx
+	}
 	applicationBrandIconMu.Lock()
 	defer applicationBrandIconMu.Unlock()
 

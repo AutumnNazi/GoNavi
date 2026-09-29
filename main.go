@@ -249,6 +249,13 @@ func main() {
 			// innodb_lock_wait_timeout 并报 Error 1205，只能重启应用恢复。
 			app.HandleFrontendDomReady(application)
 			if isWindowsDesktop {
+				// 4s 窗口显示兜底必须在等待品牌图标链路之前武装：若
+				// powershell 被 AV 挂起导致 startupNativeIconReady 永不关闭，
+				// 兜底仍然能按时显示窗口（审查发现的启动不可见缺口）。
+				windowsStartupGate.startFallback(windowsStartupShowFallback, func() {
+					logger.Warnf("前端首屏握手超时，仍显示主窗口以免一直不可见")
+					windowsStartupGate.markTimedOut()
+				})
 				<-startupNativeIconReady
 				windowsStartupGate.bindShow(func() {
 					showInitialWindowOnce.Do(func() {
@@ -260,10 +267,6 @@ func main() {
 					})
 				})
 				windowsStartupGate.markIconReady()
-				windowsStartupGate.startFallback(windowsStartupShowFallback, func() {
-					logger.Warnf("前端首屏握手超时，仍显示主窗口以免一直不可见")
-					windowsStartupGate.markTimedOut()
-				})
 			}
 		},
 		OnShutdown: func(ctx context.Context) {
