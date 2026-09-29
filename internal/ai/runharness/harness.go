@@ -1711,7 +1711,7 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 	}
 	execution.setToolCatalog(frozenToolDescriptors)
 	toolRounds, failedToolRounds := h.resumeToolCounters(ctx, run.ID)
-	modelRetries, malformedRetries := 0, 0
+	modelRetries, malformedRetries, outputContinuations := 0, 0, 0
 	providerState := json.RawMessage(nil)
 	conversationCursor := ""
 	if resume.Checkpoint != nil {
@@ -1996,15 +1996,23 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 			return
 		}
 		modelRetries = 0
+		// 被输出长度上限截断的一轮：工具调用参数可能只写了一半，不可信，直接丢弃；
+		// 已生成的文本照常提交，稍后追加一条提示让模型接着写。
+		droppedToolCall := false
+		if result.Truncated && len(result.ToolCalls) > 0 {
+			droppedToolCall = true
+			result.ToolCalls = nil
+		}
 		if malformed := validateRunToolIntents(result.ToolCalls, descriptors, allowToolsForTurn); malformed != nil {
 			_ = h.releaseModelReservation(h.durableContext(), run.ID, reservation.ID, execution.ownerToken())
 			h.emitError(h.durableContext(), run, "malformed_tool_call", malformed.Error(), execution)
 			if malformedRetries < 1 {
 				malformedRetries++
-				// Keep the repair signal structured and outside the tool-call
-				// transcript. A synthetic tool message/call ID can itself poison
-				// providers that validate tool-call pairing.
-				repair := Message{ID: uuid.NewString(), SessionID: run.SessionID, RunID: run.ID, Role: "system", Content: `{"error":"malformed_tool_call","action":"repair"}`, Metadata: json.RawMessage(`{"code":"malformed_tool_call"}`), CreatedAt: time.Now().UTC()}
+				// Keep the repair signal outside the tool-call transcript. A
+				// synthetic tool message/call ID can itself poison providers that
+				// validate tool-call pairing. The text names the concrete reason:
+				// a bare error code tells the model nothing about what to fix.
+				repair := Message{ID: uuid.NewString(), SessionID: run.SessionID, RunID: run.ID, Role: "system", Content: malformedToolCallRepairPrompt(malformed), Metadata: json.RawMessage(`{"code":"malformed_tool_call"}`), CreatedAt: time.Now().UTC()}
 				if appended, appendErr := h.ledger.AppendMessage(h.durableContext(), repair); appendErr == nil {
 					messages = append(messages, appended)
 				}
@@ -2074,6 +2082,24 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 		// Advance the provider cursor only after the model turn has crossed the
 		// atomic ledger boundary.
 		conversationCursor = committed.Checkpoint.ConversationCursor
+		if result.Truncated {
+			// 截断不是失败：保留已生成的部分，提示模型从中断处继续，而不是让整个对话中断。
+			// 连续多次仍被截断说明单次输出确实过长，才放弃并给出明确的错误类别。
+			if outputContinuations >= maxOutputContinuations {
+				h.failRun(h.durableContext(), run, ModelErrorOutputLimit, errOutputContinuationsExhausted, execution)
+				return
+			}
+			outputContinuations++
+			nudge := Message{ID: uuid.NewString(), SessionID: run.SessionID, RunID: run.ID, Role: "system", Content: outputContinuationPrompt(droppedToolCall), Metadata: json.RawMessage(`{"code":"output_truncated"}`), CreatedAt: time.Now().UTC()}
+			appended, appendErr := h.ledger.AppendMessage(h.durableContext(), nudge)
+			if appendErr != nil {
+				h.failRun(h.durableContext(), run, "ledger", appendErr, execution)
+				return
+			}
+			messages = append(messages, appended)
+			continue
+		}
+		outputContinuations = 0
 		if len(result.ToolCalls) == 0 {
 			h.finishTerminal(h.durableContext(), run.ID, RunStateCompleted, "completed", "", execution)
 			return

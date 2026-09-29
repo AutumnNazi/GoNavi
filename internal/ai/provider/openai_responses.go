@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -762,7 +763,11 @@ func openAIResponsesIncompleteError(result openAIResponsesResponse) error {
 	if reason == "" {
 		return fmt.Errorf("OpenAI Responses response incomplete")
 	}
-	return fmt.Errorf("OpenAI Responses response incomplete: %s", reason)
+	message := fmt.Sprintf("OpenAI Responses response incomplete: %s", reason)
+	if strings.EqualFold(reason, "max_output_tokens") {
+		return &ai.OutputLimitError{Message: message}
+	}
+	return errors.New(message)
 }
 
 // openAIResponsesTerminalError validates the final response envelope before
@@ -851,6 +856,15 @@ func (p *OpenAIResponsesProvider) ChatWithState(
 	state json.RawMessage,
 	req ai.ChatRequest,
 ) (*ai.ChatResponse, json.RawMessage, error) {
+	response, next, err := p.chatWithState(ctx, state, req)
+	return response, next, outputLimitErrorForRequest(err, req)
+}
+
+func (p *OpenAIResponsesProvider) chatWithState(
+	ctx context.Context,
+	state json.RawMessage,
+	req ai.ChatRequest,
+) (*ai.ChatResponse, json.RawMessage, error) {
 	if err := p.Validate(); err != nil {
 		return nil, state, err
 	}
@@ -912,6 +926,27 @@ func (p *OpenAIResponsesProvider) ChatStream(ctx context.Context, req ai.ChatReq
 }
 
 func (p *OpenAIResponsesProvider) ChatStreamWithState(
+	ctx context.Context,
+	state json.RawMessage,
+	req ai.ChatRequest,
+	callback func(ai.StreamChunk),
+) (json.RawMessage, error) {
+	next, err := p.chatStreamWithState(ctx, state, req, callback)
+	return next, outputLimitErrorForRequest(err, req)
+}
+
+// outputLimitErrorForRequest keeps the typed truncation error only for callers
+// that asked for it (agent runs that can continue). Everyone else keeps the
+// plain error text they always got.
+func outputLimitErrorForRequest(err error, req ai.ChatRequest) error {
+	var limit *ai.OutputLimitError
+	if err != nil && !req.ReportOutputLimit && errors.As(err, &limit) {
+		return errors.New(limit.Message)
+	}
+	return err
+}
+
+func (p *OpenAIResponsesProvider) chatStreamWithState(
 	ctx context.Context,
 	state json.RawMessage,
 	req ai.ChatRequest,

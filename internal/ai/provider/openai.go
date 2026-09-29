@@ -570,6 +570,7 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, req ai.ChatRequest, cal
 	defer respBody.Close()
 
 	receivedContent := false
+	truncated := false
 	var activeToolCalls []ai.ToolCall
 	var streamUsage *ai.TokenUsage
 
@@ -591,6 +592,10 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, req ai.ChatRequest, cal
 		}
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
+			if truncated && req.ReportOutputLimit {
+				callback(ai.StreamChunk{Usage: streamUsage})
+				return &ai.OutputLimitError{Message: "OpenAI response incomplete: finish_reason=length"}
+			}
 			callback(ai.StreamChunk{Done: true, Usage: streamUsage})
 			return nil
 		}
@@ -653,6 +658,9 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, req ai.ChatRequest, cal
 				if *choice.FinishReason == "tool_calls" {
 					callback(ai.StreamChunk{ToolCalls: activeToolCalls})
 				}
+				if *choice.FinishReason == "length" {
+					truncated = true
+				}
 			}
 		}
 	}
@@ -667,6 +675,10 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, req ai.ChatRequest, cal
 		return nil
 	}
 
+	if truncated && req.ReportOutputLimit {
+		callback(ai.StreamChunk{Usage: streamUsage})
+		return &ai.OutputLimitError{Message: "OpenAI response incomplete: finish_reason=length"}
+	}
 	callback(ai.StreamChunk{Done: true, Usage: streamUsage})
 	return nil
 }

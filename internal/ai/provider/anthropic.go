@@ -394,6 +394,7 @@ type anthropicStreamEvent struct {
 		Text        string `json:"text,omitempty"`
 		Thinking    string `json:"thinking,omitempty"`
 		PartialJSON string `json:"partial_json,omitempty"`
+		StopReason  string `json:"stop_reason,omitempty"`
 	} `json:"delta,omitempty"`
 	Message *struct {
 		Usage anthropicUsage `json:"usage"`
@@ -577,6 +578,7 @@ func (p *AnthropicProvider) ChatStream(ctx context.Context, req ai.ChatRequest, 
 	}
 	activeBlocks := make(map[int]*activeToolUse) // index -> block
 	var streamUsage *ai.TokenUsage
+	truncated := false
 	mergeUsage := func(raw anthropicUsage) {
 		normalized := normalizeAnthropicUsage(raw)
 		if streamUsage == nil {
@@ -618,6 +620,9 @@ func (p *AnthropicProvider) ChatStream(ctx context.Context, req ai.ChatRequest, 
 		case "message_delta":
 			if event.Usage != nil {
 				mergeUsage(*event.Usage)
+			}
+			if event.Delta != nil && event.Delta.StopReason == "max_tokens" {
+				truncated = true
 			}
 
 		case "content_block_start":
@@ -673,6 +678,10 @@ func (p *AnthropicProvider) ChatStream(ctx context.Context, req ai.ChatRequest, 
 			}
 
 		case "message_stop":
+			if truncated && req.ReportOutputLimit {
+				callback(ai.StreamChunk{Usage: streamUsage})
+				return &ai.OutputLimitError{Message: "Anthropic response incomplete: stop_reason=max_tokens"}
+			}
 			callback(ai.StreamChunk{Done: true, Usage: streamUsage})
 			return nil
 		}
@@ -680,6 +689,10 @@ func (p *AnthropicProvider) ChatStream(ctx context.Context, req ai.ChatRequest, 
 
 	if err := scanner.Err(); err != nil {
 		return err
+	}
+	if truncated && req.ReportOutputLimit {
+		callback(ai.StreamChunk{Usage: streamUsage})
+		return &ai.OutputLimitError{Message: "Anthropic response incomplete: stop_reason=max_tokens"}
 	}
 	callback(ai.StreamChunk{Done: true, Usage: streamUsage})
 	return nil

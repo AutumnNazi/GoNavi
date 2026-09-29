@@ -44,6 +44,24 @@ type ChatRequest struct {
 	Tools               []Tool    `json:"tools,omitempty"`
 	ImageFallbackPrompt string    `json:"-"`
 	ImageOmittedNotice  string    `json:"-"`
+	// ReportOutputLimit 要求 provider 在输出被模型的长度上限截断时返回 *OutputLimitError，
+	// 而不是把被截断的内容当作正常结束。只有调用方没有显式设置上限、并且能处理截断
+	// （agent 续写）时才打开；行内补全等场景用很小的显式上限，本来就期望被截断。
+	ReportOutputLimit bool `json:"-"`
+}
+
+// OutputLimitError 表示模型输出被长度上限截断（Responses 的 incomplete / max_output_tokens、
+// Chat Completions 的 finish_reason=length、Anthropic 的 stop_reason=max_tokens、Gemini 的 MAX_TOKENS）。
+// 已经流出的内容仍然有效，调用方可以据此续写。
+type OutputLimitError struct {
+	Message string
+}
+
+func (e *OutputLimitError) Error() string {
+	if e == nil || e.Message == "" {
+		return "model output was cut off by the output length limit"
+	}
+	return e.Message
 }
 
 // ChatSendOptions 表示一次对话调用的临时覆盖选项，不写回 Provider 配置。

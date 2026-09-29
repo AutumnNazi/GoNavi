@@ -135,6 +135,7 @@ type geminiResponse struct {
 				Text string `json:"text"`
 			} `json:"parts"`
 		} `json:"content"`
+		FinishReason string `json:"finishReason,omitempty"`
 	} `json:"candidates"`
 	UsageMetadata *geminiUsageMetadata `json:"usageMetadata"`
 	Error         *struct {
@@ -224,6 +225,7 @@ func (p *GeminiProvider) ChatStream(ctx context.Context, req ai.ChatRequest, cal
 	defer respBody.Close()
 
 	var streamUsage *ai.TokenUsage
+	truncated := false
 	scanner := bufio.NewScanner(respBody)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -244,6 +246,9 @@ func (p *GeminiProvider) ChatStream(ctx context.Context, req ai.ChatRequest, cal
 				}
 			}
 		}
+		if len(chunk.Candidates) > 0 && chunk.Candidates[0].FinishReason == "MAX_TOKENS" {
+			truncated = true
+		}
 		if chunk.UsageMetadata != nil {
 			usage := normalizeGeminiUsage(chunk.UsageMetadata)
 			streamUsage = &usage
@@ -252,6 +257,10 @@ func (p *GeminiProvider) ChatStream(ctx context.Context, req ai.ChatRequest, cal
 
 	if err := scanner.Err(); err != nil {
 		return err
+	}
+	if truncated && req.ReportOutputLimit {
+		callback(ai.StreamChunk{Usage: streamUsage})
+		return &ai.OutputLimitError{Message: "Gemini response incomplete: finishReason=MAX_TOKENS"}
 	}
 	callback(ai.StreamChunk{Done: true, Usage: streamUsage})
 	return nil

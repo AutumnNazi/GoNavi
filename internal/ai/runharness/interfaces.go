@@ -103,6 +103,9 @@ type ModelTurnResult struct {
 	Usage         Usage
 	ProviderState json.RawMessage
 	Completed     bool
+	// Truncated 表示这一轮输出被模型的输出长度上限截断。已生成的 Text / Reasoning
+	// 可以保留，但同一轮里的工具调用参数可能只写了一半，harness 会丢弃而不是执行。
+	Truncated bool
 }
 
 // ToolCatalog is the single source of tool definitions and execution rules.
