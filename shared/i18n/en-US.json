@@ -11460,5 +11460,9 @@
   "user_management.backend.impact.owned_schemas_in_database": "Owns {{count}} schema(s) in database {{database}}; transfer ownership first (ALTER AUTHORIZATION)",
   "user_management.backend.error.password_sync_failed": "Failed to update the saved connection password",
   "user_management.backend.error.password_sync_opaque": "This connection stores its password inside a URI/DSN; update it manually in the connection settings",
-  "user_management.backend.message.password_synced": "The saved connection password was updated"
+  "user_management.backend.message.password_synced": "The saved connection password was updated",
+  "app.theme.titlebar_actions_placement.title": "Feature Entry Placement",
+  "app.theme.titlebar_actions_placement.hint": "The row with New Connection, New Query and Manage connection groups appears in a separate toolbar below the title bar by default (icons + labels). Move it to the title bar to show it next to GoNavi as text only and hide the toolbar, saving vertical space.",
+  "app.theme.titlebar_actions_placement.toolbar": "Separate toolbar (icons + labels)",
+  "app.theme.titlebar_actions_placement.titlebar": "Title bar, next to GoNavi (text only)"
 }

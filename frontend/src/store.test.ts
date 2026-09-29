@@ -710,6 +710,60 @@ describe('store appearance persistence', () => {
     expect(reloaded.useStore.getState().appearance.autoAddTableAlias).toBe(true);
   });
 
+  it('persists the titlebar actions placement and falls back to the toolbar for unknown values', async () => {
+    const { useStore } = await importStore();
+
+    expect(useStore.getState().appearance.titlebarActionsPlacement).toBe('toolbar');
+
+    useStore.getState().setAppearance({ titlebarActionsPlacement: 'titlebar' });
+    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').state.appearance.titlebarActionsPlacement).toBe('titlebar');
+
+    vi.resetModules();
+    let reloaded = await importStore();
+    expect(reloaded.useStore.getState().appearance.titlebarActionsPlacement).toBe('titlebar');
+
+    // 老配置里没有该字段、或写入了未知值时都回到工具条，升级后界面不突变。
+    for (const appearance of [{ titlebarActionsPlacement: 'menu' }, {}]) {
+      storage.setItem('lite-db-storage', JSON.stringify({ state: { appearance }, version: 21 }));
+      vi.resetModules();
+      reloaded = await importStore();
+      expect(reloaded.useStore.getState().appearance.titlebarActionsPlacement).toBe('toolbar');
+    }
+  });
+
+  it('keeps data grid and SQL editor typography slices when sanitizing appearance', async () => {
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: {
+        appearance: {
+          showDataTableVerticalBorders: true,
+          showDataTableRowNumber: false,
+          dataTableDensity: 'compact',
+          dataTableFontSize: 13,
+          dataTableFontSizeFollowGlobal: false,
+          sidebarTreeFontSize: 15,
+          sidebarTreeFontSizeFollowGlobal: false,
+          sqlEditorFontSize: 16,
+          sqlEditorFontSizeFollowGlobal: false,
+        },
+      },
+      version: 21,
+    }));
+    const { useStore } = await importStore();
+
+    expect(useStore.getState().appearance).toMatchObject({
+      showDataTableVerticalBorders: true,
+      showDataTableRowNumber: false,
+      dataTableDensity: 'compact',
+      dataTableFontSize: 13,
+      dataTableFontSizeFollowGlobal: false,
+      sidebarTreeFontSize: 15,
+      sidebarTreeFontSizeFollowGlobal: false,
+      sqlEditorFontSize: 16,
+      sqlEditorFontSizeFollowGlobal: false,
+      titlebarActionsPlacement: 'toolbar',
+    });
+  });
+
   it('persists v2 sidebar search preferences and sanitizes filter text', async () => {
     const { useStore } = await importStore();
 

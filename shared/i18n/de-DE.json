@@ -11460,5 +11460,9 @@
   "user_management.backend.impact.owned_schemas_in_database": "Besitzt {{count}} Schema(s) in Datenbank {{database}}; übertragen Sie zuerst den Besitz (ALTER AUTHORIZATION)",
   "user_management.backend.error.password_sync_failed": "Das gespeicherte Verbindungspasswort konnte nicht aktualisiert werden",
   "user_management.backend.error.password_sync_opaque": "Diese Verbindung speichert das Passwort in einer URI/DSN; ändern Sie es manuell in den Verbindungseinstellungen",
-  "user_management.backend.message.password_synced": "Das gespeicherte Verbindungspasswort wurde aktualisiert"
+  "user_management.backend.message.password_synced": "Das gespeicherte Verbindungspasswort wurde aktualisiert",
+  "app.theme.titlebar_actions_placement.title": "Position der Funktionseinstiege",
+  "app.theme.titlebar_actions_placement.hint": "Die Zeile mit „Neue Verbindung“, „Neue Abfrage“ und „Verbindungsgruppen verwalten“ erscheint standardmäßig in einer eigenen Symbolleiste unter der Titelleiste (Symbole + Beschriftung). In der Titelleiste wird sie rechts neben GoNavi nur als Text angezeigt und die Symbolleiste ausgeblendet, was vertikalen Platz spart.",
+  "app.theme.titlebar_actions_placement.toolbar": "Eigene Symbolleiste (Symbole + Beschriftung)",
+  "app.theme.titlebar_actions_placement.titlebar": "Titelleiste rechts neben GoNavi (nur Text)"
 }

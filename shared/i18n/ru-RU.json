@@ -11460,5 +11460,9 @@
   "user_management.backend.impact.owned_schemas_in_database": "Владеет схемами в базе {{database}}: {{count}}; сначала передайте владение (ALTER AUTHORIZATION)",
   "user_management.backend.error.password_sync_failed": "Не удалось обновить сохранённый пароль подключения",
   "user_management.backend.error.password_sync_opaque": "Пароль этого подключения хранится в URI/DSN; измените его вручную в настройках подключения",
-  "user_management.backend.message.password_synced": "Сохранённый пароль подключения обновлён"
+  "user_management.backend.message.password_synced": "Сохранённый пароль подключения обновлён",
+  "app.theme.titlebar_actions_placement.title": "Расположение кнопок функций",
+  "app.theme.titlebar_actions_placement.hint": "Строка с кнопками «Новое подключение», «Новый запрос» и «Управление группами подключений» по умолчанию находится на отдельной панели под заголовком окна (значки + подписи). При переносе в заголовок она отображается справа от GoNavi только текстом, а панель скрывается, освобождая место по вертикали.",
+  "app.theme.titlebar_actions_placement.toolbar": "Отдельная панель (значки + подписи)",
+  "app.theme.titlebar_actions_placement.titlebar": "Заголовок окна, справа от GoNavi (только текст)"
 }

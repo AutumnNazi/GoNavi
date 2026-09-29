@@ -11460,5 +11460,9 @@
   "user_management.backend.impact.owned_schemas_in_database": "在库 {{database}} 中拥有 {{count}} 个架构，删除前需要先转移所有权（ALTER AUTHORIZATION）",
   "user_management.backend.error.password_sync_failed": "更新连接保存的口令失败",
   "user_management.backend.error.password_sync_opaque": "该连接的口令保存在 URI/DSN 中，请在连接配置中手动修改",
-  "user_management.backend.message.password_synced": "已更新连接保存的口令"
+  "user_management.backend.message.password_synced": "已更新连接保存的口令",
+  "app.theme.titlebar_actions_placement.title": "功能入口位置",
+  "app.theme.titlebar_actions_placement.hint": "「新建连接、新建查询、管理连接分组」这一行入口默认显示在标题栏下方的独立工具条（图标 + 文字）；切换到标题栏后，这一行移到 GoNavi 右侧并只显示文字，同时隐藏工具条，节省纵向空间。",
+  "app.theme.titlebar_actions_placement.toolbar": "独立工具条（图标 + 文字）",
+  "app.theme.titlebar_actions_placement.titlebar": "标题栏 GoNavi 右侧（纯文字）"
 }

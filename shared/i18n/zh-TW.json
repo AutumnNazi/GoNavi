@@ -11460,5 +11460,9 @@
   "user_management.backend.impact.owned_schemas_in_database": "在資料庫 {{database}} 中擁有 {{count}} 個結構描述，刪除前需要先轉移擁有權（ALTER AUTHORIZATION）",
   "user_management.backend.error.password_sync_failed": "更新連線儲存的密碼失敗",
   "user_management.backend.error.password_sync_opaque": "此連線的密碼儲存在 URI/DSN 中，請在連線設定中手動修改",
-  "user_management.backend.message.password_synced": "已更新連線儲存的密碼"
+  "user_management.backend.message.password_synced": "已更新連線儲存的密碼",
+  "app.theme.titlebar_actions_placement.title": "功能入口位置",
+  "app.theme.titlebar_actions_placement.hint": "「新增連線、新增查詢、管理連線分組」這一列入口預設顯示在標題列下方的獨立工具列（圖示 + 文字）；切換到標題列後，這一列會移到 GoNavi 右側並只顯示文字，同時隱藏工具列，節省縱向空間。",
+  "app.theme.titlebar_actions_placement.toolbar": "獨立工具列（圖示 + 文字）",
+  "app.theme.titlebar_actions_placement.titlebar": "標題列 GoNavi 右側（純文字）"
 }

@@ -9,12 +9,9 @@ import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } 
 import { CSS } from '@dnd-kit/utilities';
 import { BrowserOpenURL, Environment, EventsOn, WindowFullscreen, WindowGetPosition, WindowGetSize, WindowIsFullscreen, WindowIsMaximised, WindowIsMinimised, WindowIsNormal, WindowMaximise, WindowMinimise, WindowSetDarkTheme, WindowSetLightTheme, WindowSetPosition, WindowSetSize, WindowSetSystemDefaultTheme, WindowUnfullscreen, WindowUnmaximise } from '../wailsjs/runtime';
 import Sidebar from './components/Sidebar';
-import TitleBarPrimaryActions, {
-  resolveTitleBarPrimaryActionShortcut,
-} from './components/TitleBarPrimaryActions';
+import { resolveTitleBarPrimaryActionShortcut } from './components/TitleBarPrimaryActions';
 import TitleBarSystemActions from './components/TitleBarSystemActions';
-import TitleBarToolBar from './components/titlebar/TitleBarToolBar';
-import TitleBarToolBarAiAction from './components/titlebar/TitleBarToolBarAiAction';
+import TitleBarActionRow from './components/titlebar/TitleBarActionRow';
 import { useMacNativeMenuBridge } from './hooks/useMacNativeMenuBridge';
 import ConnectionGroupManagementModal from './components/sidebar/ConnectionGroupManagementModal';
 import TabManager from './components/TabManager';
@@ -55,6 +52,7 @@ import {
 } from './brand/brandIcons';
 import CustomThemeManager from './components/settings/CustomThemeManager';
 import ToolbarButtonAppearanceSettings from './components/settings/ToolbarButtonAppearanceSettings';
+import TitlebarActionsPlacementSettings from './components/settings/TitlebarActionsPlacementSettings';
 import SettingsCenterTreeNav, {
   findSettingsCenterTreeItem,
 } from './components/settings/SettingsCenterTreeNav';
@@ -7168,6 +7166,11 @@ function App() {
                                   t('app.theme.toolbar_buttons.description'),
                               )}
                               {renderThemeSettingsSection(
+                                  t('app.theme.titlebar_actions_placement.title'),
+                                  <TitlebarActionsPlacementSettings />,
+                                  t('app.theme.titlebar_actions_placement.hint'),
+                              )}
+                              {renderThemeSettingsSection(
                                   t('app.theme.ui_version.sidebar_search.title'),
                                   <div className="gonavi-settings-pills" role="group" aria-label={t('app.theme.ui_version.sidebar_search.title')}>
                                       {([
@@ -8151,7 +8154,7 @@ function App() {
 
   const handleToggleThemeMode = () => selectPresetTheme(themeMode === 'dark' ? 'light' : 'dark');
   useMacNativeMenuBridge({ enabled: useNativeMacWindowControls && !isWebRuntime, language, onOpenPreferences: handleOpenSettingsModal, onToggleTheme: handleToggleThemeMode, onOpenAbout: () => handleTitleBarSettingsNavigation({ group: 'about', pane: 'about-go-navi' }) });
-  // 驱动管理 / 关于的 portal 槽位：非 macOS 在标题栏胶囊中间，macOS 在工具条 AI 之后。
+  // 驱动管理 / 关于的 portal 槽位：非 macOS 在标题栏胶囊中间，macOS 跟在功能入口行 AI 之后。
   const titleBarTrailingSlot = <div id="gonavi-titlebar-about-action" className="gonavi-titlebar-quick-actions-slot gn-v2-titlebar-about-slot" />;
   const titleBarSystemActionsNode = ( // 非 macOS 放右区；macOS 走原生菜单栏
     <TitleBarSystemActions
@@ -8162,6 +8165,18 @@ function App() {
       isDarkTheme={themeMode === 'dark'}
       onToggleTheme={handleToggleThemeMode}
       themeTooltip={t(themeMode === 'dark' ? 'app.titlebar.theme.to_light' : 'app.titlebar.theme.to_dark')}
+    />
+  );
+  const titleBarActionsInline = appearance.titlebarActionsPlacement === 'titlebar'; // 功能入口行：默认工具条，可切到 GoNavi 右侧
+  const titleBarActionRow = (
+    <TitleBarActionRow
+      placement={titleBarActionsInline ? 'titlebar' : 'toolbar'}
+      messageQueuePrimary={primaryActionIsMessageQueue}
+      newQueryShortcut={titleBarNewQueryShortcut} newConnectionShortcut={titleBarNewConnectionShortcut}
+      onNewQuery={handleNewQuery} onNewConnection={handleCreateConnection}
+      onManageConnectionGroups={() => setIsConnectionGroupManagementOpen(true)}
+      aiActive={aiPanelVisible} onToggleAI={handleToggleOrFocusAIPanel}
+      trailingSlot={useNativeMacWindowControls ? titleBarTrailingSlot : undefined}
     />
   );
 
@@ -8243,6 +8258,7 @@ function App() {
                   >
                       <span>GoNavi</span>
                   </div>
+                  {titleBarActionsInline && titleBarActionRow}
               </div>
               {shouldDockCollapsedSidebarActionsInTitlebar && (
                   <div
@@ -8308,23 +8324,7 @@ function App() {
               </div>
           </div>
 
-          <TitleBarToolBar ariaLabel={t('app.titlebar.toolbar.aria')}>{/* 不套 mac 红绿灯留白 */}
-            <TitleBarPrimaryActions
-              newQueryLabel={t(primaryActionIsMessageQueue
-                ? 'message_queue_workbench.action.open'
-                : 'query.new')}
-              newConnectionLabel={t('connection.new')}
-              newQueryShortcut={titleBarNewQueryShortcut}
-              newConnectionShortcut={titleBarNewConnectionShortcut}
-              onNewQuery={handleNewQuery}
-              onNewConnection={handleCreateConnection}
-              connectionGroupLabel={t('connection.sidebar.management.title')}
-              onConnectionGroupManagement={() => setIsConnectionGroupManagementOpen(true)}
-            />
-            <div id="gonavi-titlebar-quick-actions" className="gonavi-titlebar-quick-actions-slot" />
-            <TitleBarToolBarAiAction label={t('app.titlebar.toolbar.ai')} title={t('app.sidebar.ai_assistant')} active={aiPanelVisible} onClick={handleToggleOrFocusAIPanel} />
-            {useNativeMacWindowControls && titleBarTrailingSlot}
-          </TitleBarToolBar>
+          {!titleBarActionsInline && titleBarActionRow}{/* 工具条不套 mac 红绿灯留白 */}
 
           {showLinuxCJKFontBanner && (
               <LinuxCJKFontBanner

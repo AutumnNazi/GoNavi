@@ -1,0 +1,23 @@
+/*
+ * 功能入口放在标题栏 GoNavi 右侧时的补充规则。
+ *
+ * 容器本身不生成盒子，按钮直接排进 .gonavi-titlebar-leading，
+ * 继续使用 App.css 中改版前的标题栏胶囊 / 文字按钮样式。
+ */
+.gonavi-titlebar-inline-actions {
+  display: contents;
+}
+
+/*
+ * 与改版前一致只显示文字。选择器比 titleBarToolBar.css 里
+ * 「关于」槽位的图标规则多一个类，macOS 随行移入的驱动管理 / 关于同样隐藏图标。
+ */
+body[data-ui-version='v2'] .gn-v2-titlebar .gonavi-titlebar-inline-actions[data-titlebar-actions-placement='titlebar'] .gn-titlebar-toolbar-item-icon {
+  display: none;
+}
+
+/* AI / 驱动管理打开时的激活态：工具条的淡紫底只在工具条作用域内，这里沿用改版前标题栏按钮的 is-active。 */
+body[data-ui-version='v2'] .gn-v2-titlebar .gonavi-titlebar-inline-actions[data-titlebar-actions-placement='titlebar'] [data-titlebar-toolbar-item-active='true'] {
+  background: color-mix(in srgb, var(--gn-accent) 14%, var(--gn-bg-active));
+  color: var(--gn-accent);
+}
