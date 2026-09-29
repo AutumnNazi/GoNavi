@@ -138,7 +138,6 @@ import {
 } from './utils/connectionExcelGroups';
 import { buildDataSyncWorkbenchTab, resolveExistingDataSyncWorkbenchTabId } from './utils/dataSyncTab';
 import {
-  buildDriverManagerWorkbenchTab,
   DOWNLOAD_SOURCE_CHANGED_EVENT,
   getNextDownloadSource,
   normalizeDownloadSource,
@@ -289,7 +288,6 @@ import { waitForWindowCondition } from './utils/windowTransition';
 import {
   hasNativeDetachedWindowManager,
   openNativeAIChatWindow,
-  openNativeWorkbenchTabWindow,
   toggleOrFocusNativeAIChatFromMainWindow,
 } from './utils/nativeDetachedWindowHost';
 import {
@@ -308,6 +306,7 @@ import {
 import { useAppUpdateManager } from './hooks/useAppUpdateManager';
 import { useAppLogPanelResize } from './hooks/useAppLogPanelResize';
 import { useAppSidebarCollapse } from './hooks/useAppSidebarCollapse';
+import { isDriverManagerVisible, useDriverManagerSidebarAutoCollapse, useOpenDriverManagerWorkbench } from './hooks/useDriverManagerWorkbench';
 import { useAppSidebarResize } from './hooks/useAppSidebarResize';
 import { resolveSidebarResizeHitGeometry } from './utils/sidebarLayout';
 import { canInheritNewQueryTableContext, resolveNewQueryContext } from './utils/newQueryContext';
@@ -2615,15 +2614,7 @@ function App() {
   });
 
   const addTab = useStore(state => state.addTab);
-  const handleOpenDriverManagerWorkbench = useCallback(() => {
-      const tab = buildDriverManagerWorkbenchTab();
-      const wasDetached = useStore.getState().isWorkbenchTabDetached(tab.id);
-      addTab(tab);
-      if (!wasDetached) return;
-      void openNativeWorkbenchTabWindow(tab.id).catch((error) => {
-          message.error(error instanceof Error ? error.message : String(error));
-      });
-  }, [addTab]);
+  const handleOpenDriverManagerWorkbench = useOpenDriverManagerWorkbench();
   const activeContext = useStore(state => state.activeContext);
   const connections = useStore(state => state.connections);
   const connectionTags = useStore(state => state.connectionTags);
@@ -2655,6 +2646,7 @@ function App() {
       () => activeTabId ? tabs.find(tab => tab.id === activeTabId) : undefined,
       [activeTabId, tabs],
   );
+  useDriverManagerSidebarAutoCollapse(isDriverManagerVisible(activeWorkbenchTab, activeSettingsCenterPane?.key), isSidebarCollapsed, setIsSidebarCollapsed);
   const titlebarContext = useMemo(
       () => resolveTitlebarContext({
           activeContext,
