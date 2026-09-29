@@ -43,6 +43,10 @@ export interface SidebarSearchPanelProps<TItem extends V2CommandSearchItemLike =
   sections: {
     goTo: TItem[];
     ai: TItem[];
+    /** Open tabs, saved queries and settings; empty for a blank query. */
+    tabs?: TItem[];
+    savedQueries?: TItem[];
+    settings?: TItem[];
     actions: TItem[];
     recent: TItem[];
   };
@@ -265,6 +269,9 @@ const SidebarSearchPanel = <TItem extends V2CommandSearchItemLike>({
         <div className="gn-v2-command-list">
           {renderSection(t('sidebar.command_search.section.goto'), sections.goTo)}
           {renderSection(t('sidebar.command_search.section.ai'), sections.ai)}
+          {renderSection(t('sidebar.command_search.section.tabs'), sections.tabs ?? [])}
+          {renderSection(t('sidebar.command_search.section.saved_queries'), sections.savedQueries ?? [])}
+          {renderSection(t('sidebar.command_search.section.settings'), sections.settings ?? [])}
           {renderSection(t('sidebar.command_search.section.actions'), sections.actions)}
           {renderSection(t('sidebar.command_search.section.recent'), sections.recent, true)}
           {flatItems.length === 0 ? (

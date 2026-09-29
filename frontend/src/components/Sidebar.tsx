@@ -5,12 +5,11 @@ import { TitlebarDriverIcon, TitlebarGraphIcon, TitlebarInfoIcon, TitlebarSqlToo
 import TitleBarQuickActionsHost from './TitleBarQuickActionsHost';
 import { type DataSyncEntryModeAlias } from './dataSyncEntryMode';
 import type { DatabaseCharsetOption, DatabaseCollationOption } from '../utils/databaseCharset';
-import SidebarSearchPanel, {
-  type SidebarSearchPanelProps,
-  type V2CommandSearchCopyAction,
-  type V2CommandSearchCopyOption,
-} from './sidebar/SidebarSearchPanel';
+import SidebarSearchPanel, { type SidebarSearchPanelProps } from './sidebar/SidebarSearchPanel';
 import { buildSidebarNodeMenuItems } from './sidebar/sidebarNodeMenu';
+import { useSidebarCommandSearchCopy } from './sidebar/useSidebarCommandSearchCopy';
+import { useCommandSearchDestinations } from './sidebar/useCommandSearchDestinations';
+import type { SettingsCenterNavigationTarget } from './settings/settingsCenterMenuCatalog';
 import {
   getMetadataDialect,
   loadSchemas,
@@ -781,11 +780,7 @@ const Sidebar: React.FC<{
    * Open a settings-center group/pane, tool-center entry, or run a settings action
    * (import/export connections, data-sync, driver manager, sql audit). Mirrors 设置 left-nav groups.
    */
-  onOpenSettingsNavigation?: (spec: {
-    group: 'preferences' | 'services' | 'config' | 'workflow' | 'workspace' | 'about';
-    pane?: string;
-    action?: 'import-connections' | 'export-connections' | 'schema-compare' | 'data-compare' | 'compare' | 'sync' | 'drivers' | 'sql-audit';
-  }) => void;
+  onOpenSettingsNavigation?: (spec: SettingsCenterNavigationTarget) => void;
   activeSettingsCenterPaneKey?: string | null; // 设置中心当前面板 key，用于点亮工具条入口
   hideTitlebarAboutAction?: boolean; // macOS 的「关于」走原生菜单栏，不再渲染到工具条
   hideTitlebarDriverAction?: boolean; // macOS 的「驱动管理」走原生菜单栏，不再渲染到工具条
@@ -3398,7 +3393,6 @@ const Sidebar: React.FC<{
       filteredCommandSearchActionItems,
       filteredCommandSearchRecentItems,
       commandSearchAiItem,
-      commandSearchFlatItems,
       flattenConnectionNodes,
       activeConnection,
       v2VisibleTreeData,
@@ -3432,6 +3426,16 @@ const Sidebar: React.FC<{
       onToggleLogPanel,
       setAIPanelVisible,
       extractObjectName,
+  });
+  const { destinationSections: commandSearchDestinations, flatItems: commandSearchFlatItems } = useCommandSearchDestinations({
+      isOpen: isV2CommandSearchOpen,
+      searchValue: deferredV2CommandSearchValue,
+      isWebRuntime,
+      onOpenSettingsNavigation,
+      aiItems: commandSearchAiItem,
+      treeItems: filteredCommandSearchTreeItems,
+      actionItems: filteredCommandSearchActionItems,
+      recentItems: filteredCommandSearchRecentItems,
   });
   // The tree never scrolls horizontally: long labels ellipsize and the user
   // widens the sidebar to read them. Wheel input only drives vertical scroll.
@@ -4316,104 +4320,7 @@ const Sidebar: React.FC<{
     .filter((action) => !hideTitlebarAboutAction || action.key !== 'about-go-navi')
     .filter((action) => !hideTitlebarDriverAction || action.key !== 'drivers');
 
-  const getCommandSearchCopyOptions = useCallback((item: V2CommandSearchItem): V2CommandSearchCopyOption[] => {
-    if (item.kind === 'action') return [];
-
-    if (item.kind === 'recent') {
-      const options: V2CommandSearchCopyOption[] = [];
-      if (String(item.sql || '').trim()) {
-        options.push({
-          action: 'sql',
-          label: t('sidebar.command_search.context_menu.copy_sql'),
-        });
-      }
-      if (String(item.dbName || '').trim()) {
-        options.push({
-          action: 'database-name',
-          label: t('sidebar.command_search.context_menu.copy_database_name'),
-        });
-      }
-      const connectionId = String(item.connectionId || '').trim();
-      const connectionName = connections.find((connection) => connection.id === connectionId)?.name?.trim() || '';
-      if (connectionName) {
-        options.push({
-          action: 'connection-name',
-          label: t('sidebar.command_search.context_menu.copy_connection_name'),
-        });
-      }
-      return options;
-    }
-
-    const node = item.node;
-    const nodeType = String(node?.type || '');
-    const options: V2CommandSearchCopyOption[] = [];
-    if (isV2SidebarObjectNode(node)) {
-      options.push({
-        action: 'object-name',
-        label: t('sidebar.command_search.context_menu.copy_object_name'),
-      });
-    }
-    if (nodeType !== 'connection') {
-      options.push({
-        action: 'database-name',
-        label: t('sidebar.command_search.context_menu.copy_database_name'),
-      });
-    }
-    const connectionId = resolveSidebarNodeConnectionId(node, connectionIds);
-    const connectionName = connections.find((connection) => connection.id === connectionId)?.name?.trim() || '';
-    if (connectionName) {
-      options.push({
-        action: 'connection-name',
-        label: t('sidebar.command_search.context_menu.copy_connection_name'),
-      });
-    }
-    return options.filter((option) => {
-      if (option.action === 'object-name') return Boolean(resolveSidebarTableNameForCopy(node));
-      if (option.action === 'database-name') return Boolean(resolveSidebarDatabaseNameForCopy(node));
-      return true;
-    });
-  }, [connectionIds, connections]);
-
-  const handleCopyCommandSearchItem = useCallback(async (
-    item: V2CommandSearchItem,
-    action: V2CommandSearchCopyAction,
-  ): Promise<void> => {
-    let value = '';
-    if (item.kind === 'recent') {
-      if (action === 'sql') value = item.sql;
-      if (action === 'database-name') value = String(item.dbName || '');
-      if (action === 'connection-name') {
-        const connectionId = String(item.connectionId || '').trim();
-        value = connections.find((connection) => connection.id === connectionId)?.name || '';
-      }
-    } else if (item.kind === 'node') {
-      if (action === 'object-name') value = resolveSidebarTableNameForCopy(item.node);
-      if (action === 'database-name') value = resolveSidebarDatabaseNameForCopy(item.node);
-      if (action === 'connection-name') {
-        const connectionId = resolveSidebarNodeConnectionId(item.node, connectionIds);
-        value = connections.find((connection) => connection.id === connectionId)?.name || '';
-      }
-    }
-
-    const normalizedValue = String(value || '').trim();
-    if (!normalizedValue) {
-      message.warning(t('sidebar.copy_object_name.empty', {
-        label: t(`sidebar.command_search.context_menu.copy_${action.replace('-', '_')}`),
-      }));
-      return;
-    }
-
-    try {
-      const clipboard = typeof navigator === 'undefined' ? undefined : navigator.clipboard;
-      if (!clipboard?.writeText) throw new Error('Clipboard API unavailable');
-      await clipboard.writeText(value);
-      message.success(t('sidebar.command_search.copy_success'));
-    } catch (error: any) {
-      message.error(t('sidebar.command_search.copy_failed', {
-        error: error?.message || String(error),
-      }));
-    }
-  }, [connectionIds, connections]);
+  const { getCommandSearchCopyOptions, handleCopyCommandSearchItem } = useSidebarCommandSearchCopy({ connections, connectionIds });
 
   const v2CommandSearchPanelProps: SidebarSearchPanelProps<V2CommandSearchItem> = {
     isOpen: isV2CommandSearchOpen,
@@ -4427,6 +4334,9 @@ const Sidebar: React.FC<{
     sections: {
       goTo: filteredCommandSearchTreeItems,
       ai: commandSearchAiItem,
+      tabs: commandSearchDestinations.tabs,
+      savedQueries: commandSearchDestinations.savedQueries,
+      settings: commandSearchDestinations.settings,
       actions: filteredCommandSearchActionItems,
       recent: filteredCommandSearchRecentItems,
     },

@@ -151,6 +151,8 @@ import {
 } from './utils/settingsCenterTab';
 import { SettingsCenterWorkbenchRegistrar } from './components/settings/SettingsCenterWorkbenchBridge';
 import { buildSqlAuditWorkbenchTab } from './utils/sqlAuditTab';
+import type { SettingsCenterNavigationTarget } from './components/settings/settingsCenterMenuCatalog';
+import { SETTINGS_WORKBENCH_TAB_BUILDERS, resolveAISettingsSection, resolveThemeSettingsSection } from './components/settings/settingsCenterNavigationTargets';
 import { buildRequestDiagnosticsWorkbenchTab } from './utils/requestDiagnosticsTab';
 import { buildDMLSnapshotWorkbenchTab } from './utils/dmlSnapshotTab';
 import {
@@ -4476,11 +4478,7 @@ function App() {
       openSettingsCenterWorkbenchTab();
   }), [clearSettingsCenterTransientPaneState]);
   /** Title-bar / explorer settings entries → settings center navigation. */
-  const handleTitleBarSettingsNavigation = useCallback((spec: {
-    group: 'preferences' | 'services' | 'config' | 'workflow' | 'workspace' | 'about';
-    pane?: string;
-    action?: 'import-connections' | 'export-connections' | 'schema-compare' | 'data-compare' | 'compare' | 'sync' | 'drivers' | 'sql-audit';
-  }) => withAISettingsLeaveGuard(aiSettingsLeaveGuardRef.current, () => {
+  const handleTitleBarSettingsNavigation = useCallback((spec: SettingsCenterNavigationTarget) => withAISettingsLeaveGuard(aiSettingsLeaveGuardRef.current, () => {
       if (spec.action === 'import-connections') {
           handleOpenToolCenterPane('config', 'import');
           return;
@@ -4505,9 +4503,10 @@ function App() {
           handleOpenToolCenterPane('workspace', 'drivers');
           return;
       }
-      if (spec.action === 'sql-audit') {
+      const buildWorkbenchTab = spec.action ? SETTINGS_WORKBENCH_TAB_BUILDERS[spec.action] : undefined;
+      if (buildWorkbenchTab) {
           handleCancelSettingsCenterPane();
-          addTab(buildSqlAuditWorkbenchTab());
+          addTab(buildWorkbenchTab());
           return;
       }
       if (!spec.pane) {
@@ -4523,14 +4522,14 @@ function App() {
           return;
       }
       if (spec.group === 'preferences' && spec.pane === 'theme') {
-          setThemeModalSection('theme');
+          setThemeModalSection(resolveThemeSettingsSection(spec.section));
           handleOpenSettingsCenterPane('preferences', 'theme');
           return;
       }
       if (spec.group === 'services' && spec.pane === 'ai') {
           setSecurityUpdateRepairSource(null);
           setFocusedAIProviderId(undefined);
-          setAiSettingsSection('providers');
+          setAiSettingsSection(resolveAISettingsSection(spec.section));
           setAiSettingsProviderView('workspace');
           handleOpenSettingsCenterPane('services', 'ai');
           return;

@@ -1202,7 +1202,7 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).toContain('data-v2-command-search-icon-only="true"');
     expect(markup).not.toContain('gn-v2-explorer-filter-action');
     expect(markup).not.toContain('重置侧栏筛选');
-    expect(markup).not.toContain('搜索表、连接、动作... 或问 AI');
+    expect(markup).not.toContain(t('sidebar.command_search.placeholder'));
     expect(markup).not.toContain('gn-v2-search-shortcut');
     expect(markup).not.toContain('<kbd>⌘</kbd>');
     expect(markup).not.toContain('<kbd>K</kbd>');
