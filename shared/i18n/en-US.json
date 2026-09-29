@@ -11462,7 +11462,20 @@
   "user_management.backend.error.password_sync_opaque": "This connection stores its password inside a URI/DSN; update it manually in the connection settings",
   "user_management.backend.message.password_synced": "The saved connection password was updated",
   "app.theme.titlebar_actions_placement.title": "Feature Entry Placement",
-  "app.theme.titlebar_actions_placement.hint": "The row with New Connection, New Query and Manage connection groups appears in a separate toolbar below the title bar by default (icons + labels). Move it to the title bar to show it next to GoNavi as text only and hide the toolbar, saving vertical space.",
+  "app.theme.titlebar_actions_placement.hint": "The row with New Connection, New Query and Manage connection groups can sit in the title bar next to GoNavi or in a separate toolbar below it (icons + labels). In the title bar it takes no extra vertical space, and you can choose text only, icons only, or icons + labels.",
   "app.theme.titlebar_actions_placement.toolbar": "Separate toolbar (icons + labels)",
-  "app.theme.titlebar_actions_placement.titlebar": "Title bar, next to GoNavi (text only)"
+  "app.theme.titlebar_actions_placement.titlebar": "Title bar, next to GoNavi",
+  "app.theme.titlebar_actions_placement.display_title": "Title bar display",
+  "app.theme.titlebar_actions_placement.display_hint": "In Icons only and Icons + labels modes, hover a button to see its full name; Icons + labels uses shortened names to save space.",
+  "app.theme.titlebar_actions_placement.display.text": "Text only",
+  "app.theme.titlebar_actions_placement.display.icon": "Icons only",
+  "app.theme.titlebar_actions_placement.display.icon_text": "Icons + labels",
+  "app.titlebar.short_label.new_connection": "Connect",
+  "app.titlebar.short_label.new_query": "Query",
+  "app.titlebar.short_label.message_workbench": "Messages",
+  "app.titlebar.short_label.connection_groups": "Groups",
+  "app.titlebar.short_label.data_workflow": "Workflows",
+  "app.titlebar.short_label.sql_tools": "SQL",
+  "app.titlebar.short_label.user_management": "Users",
+  "app.titlebar.short_label.drivers": "Drivers"
 }

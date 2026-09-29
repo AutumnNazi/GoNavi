@@ -175,10 +175,11 @@ describe('TitleBarPrimaryActions', () => {
       'gonavi-titlebar-primary-action',
     ]);
     expect(buttons.map((button) => button.props['data-titlebar-action-kind'])).toEqual([undefined, undefined, undefined]);
+    // 标题栏纯图标模式只能靠悬浮提示识别，「管理连接分组」同样带完整名称。
     expect(buttons.map((button) => button.props.title)).toEqual([
       '新建连接 · ⌘⇧N',
       '新建查询 · ⌘N',
-      undefined,
+      '管理连接分组',
     ]);
     // 按钮内容是 [图标, 文案] 两段，文案永远是最后一个子节点。
     expect(buttons.map((button) => button.findAllByProps({ className: 'gn-titlebar-toolbar-item-label' })[0].children))

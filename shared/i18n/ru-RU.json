@@ -11462,7 +11462,20 @@
   "user_management.backend.error.password_sync_opaque": "Пароль этого подключения хранится в URI/DSN; измените его вручную в настройках подключения",
   "user_management.backend.message.password_synced": "Сохранённый пароль подключения обновлён",
   "app.theme.titlebar_actions_placement.title": "Расположение кнопок функций",
-  "app.theme.titlebar_actions_placement.hint": "Строка с кнопками «Новое подключение», «Новый запрос» и «Управление группами подключений» по умолчанию находится на отдельной панели под заголовком окна (значки + подписи). При переносе в заголовок она отображается справа от GoNavi только текстом, а панель скрывается, освобождая место по вертикали.",
+  "app.theme.titlebar_actions_placement.hint": "Строку с кнопками «Новое подключение», «Новый запрос» и «Управление группами подключений» можно разместить в заголовке окна справа от GoNavi или на отдельной панели под ним (значки + подписи). В заголовке она не занимает дополнительного места по вертикали, а вид можно выбрать: только текст, только значки или значки + подписи.",
   "app.theme.titlebar_actions_placement.toolbar": "Отдельная панель (значки + подписи)",
-  "app.theme.titlebar_actions_placement.titlebar": "Заголовок окна, справа от GoNavi (только текст)"
+  "app.theme.titlebar_actions_placement.titlebar": "Заголовок окна, справа от GoNavi",
+  "app.theme.titlebar_actions_placement.display_title": "Вид в заголовке окна",
+  "app.theme.titlebar_actions_placement.display_hint": "В режимах «Только значки» и «Значки + подписи» полное название показывается во всплывающей подсказке; в режиме «Значки + подписи» используются краткие названия для экономии места.",
+  "app.theme.titlebar_actions_placement.display.text": "Только текст",
+  "app.theme.titlebar_actions_placement.display.icon": "Только значки",
+  "app.theme.titlebar_actions_placement.display.icon_text": "Значки + подписи",
+  "app.titlebar.short_label.new_connection": "Подключение",
+  "app.titlebar.short_label.new_query": "Запрос",
+  "app.titlebar.short_label.message_workbench": "Сообщения",
+  "app.titlebar.short_label.connection_groups": "Группы",
+  "app.titlebar.short_label.data_workflow": "Потоки",
+  "app.titlebar.short_label.sql_tools": "SQL",
+  "app.titlebar.short_label.user_management": "Пользователи",
+  "app.titlebar.short_label.drivers": "Драйверы"
 }

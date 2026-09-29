@@ -1,7 +1,7 @@
 import React from 'react';
 
 import { useI18n } from '../../i18n/provider';
-import type { TitlebarActionsPlacement } from '../../utils/titlebarActionsPlacement';
+import type { TitlebarActionsDisplay, TitlebarActionsPlacement } from '../../utils/titlebarActionsPlacement';
 import TitleBarPrimaryActions from '../TitleBarPrimaryActions';
 import TitleBarToolBar from './TitleBarToolBar';
 import TitleBarToolBarAiAction from './TitleBarToolBarAiAction';
@@ -13,6 +13,8 @@ export const TITLEBAR_QUICK_ACTIONS_SLOT_ID = 'gonavi-titlebar-quick-actions';
 
 export interface TitleBarActionRowProps {
   placement: TitlebarActionsPlacement;
+  /** 仅标题栏形态生效：纯文字 / 纯图标 / 图标 + 精简名称；工具条固定图标 + 文字。 */
+  display?: TitlebarActionsDisplay;
   /** 当前主操作是消息队列工作台时，「新建查询」换成「打开消息队列」。 */
   messageQueuePrimary: boolean;
   newQueryShortcut?: string;
@@ -32,10 +34,12 @@ export interface TitleBarActionRowProps {
  * - toolbar：包进标题栏下方的独立工具条，图标 + 文字。
  * - titlebar：内联到标题栏 GoNavi 右侧。容器用 display: contents，
  *   子元素直接参与 .gonavi-titlebar-leading 的弹性布局，
- *   App.css 里改版前的标题栏样式原样生效，图标由作用域样式隐藏。
+ *   App.css 里改版前的标题栏样式原样生效；图标、完整名称与精简名称的
+ *   显隐由容器上的 data-titlebar-actions-display 驱动作用域样式切换。
  */
 export default function TitleBarActionRow({
   placement,
+  display = 'text',
   messageQueuePrimary,
   newQueryShortcut,
   newConnectionShortcut,
@@ -47,6 +51,12 @@ export default function TitleBarActionRow({
   trailingSlot,
 }: TitleBarActionRowProps) {
   const { t } = useI18n();
+  const inline = placement === 'titlebar';
+  const shortLabels = inline ? {
+    newConnection: t('app.titlebar.short_label.new_connection'),
+    newQuery: t(messageQueuePrimary ? 'app.titlebar.short_label.message_workbench' : 'app.titlebar.short_label.new_query'),
+    connectionGroup: t('app.titlebar.short_label.connection_groups'),
+  } : undefined;
   const actions = (
     <>
       <TitleBarPrimaryActions
@@ -58,6 +68,7 @@ export default function TitleBarActionRow({
         onNewConnection={onNewConnection}
         connectionGroupLabel={t('connection.sidebar.management.title')}
         onConnectionGroupManagement={onManageConnectionGroups}
+        shortLabels={shortLabels}
       />
       <div id={TITLEBAR_QUICK_ACTIONS_SLOT_ID} className="gonavi-titlebar-quick-actions-slot" />
       <TitleBarToolBarAiAction
@@ -70,11 +81,12 @@ export default function TitleBarActionRow({
     </>
   );
 
-  if (placement === 'titlebar') {
+  if (inline) {
     return (
       <div
         className="gonavi-titlebar-inline-actions"
         data-titlebar-actions-placement="titlebar"
+        data-titlebar-actions-display={display}
         role="group"
         aria-label={t('app.titlebar.toolbar.aria')}
       >

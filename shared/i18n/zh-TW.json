@@ -11462,7 +11462,20 @@
   "user_management.backend.error.password_sync_opaque": "此連線的密碼儲存在 URI/DSN 中，請在連線設定中手動修改",
   "user_management.backend.message.password_synced": "已更新連線儲存的密碼",
   "app.theme.titlebar_actions_placement.title": "功能入口位置",
-  "app.theme.titlebar_actions_placement.hint": "「新增連線、新增查詢、管理連線分組」這一列入口預設顯示在標題列下方的獨立工具列（圖示 + 文字）；切換到標題列後，這一列會移到 GoNavi 右側並只顯示文字，同時隱藏工具列，節省縱向空間。",
+  "app.theme.titlebar_actions_placement.hint": "「新增連線、新增查詢、管理連線分組」這一列入口可以放在標題列 GoNavi 右側，或放在標題列下方的獨立工具列（圖示 + 文字）；放在標題列時不佔用額外縱向空間，並可選擇純文字、純圖示或圖示 + 文字。",
   "app.theme.titlebar_actions_placement.toolbar": "獨立工具列（圖示 + 文字）",
-  "app.theme.titlebar_actions_placement.titlebar": "標題列 GoNavi 右側（純文字）"
+  "app.theme.titlebar_actions_placement.titlebar": "標題列 GoNavi 右側",
+  "app.theme.titlebar_actions_placement.display_title": "標題列顯示方式",
+  "app.theme.titlebar_actions_placement.display_hint": "純圖示與圖示 + 文字模式下，滑鼠停留在按鈕上可查看完整名稱；圖示 + 文字使用精簡名稱以節省空間。",
+  "app.theme.titlebar_actions_placement.display.text": "純文字",
+  "app.theme.titlebar_actions_placement.display.icon": "純圖示",
+  "app.theme.titlebar_actions_placement.display.icon_text": "圖示 + 文字",
+  "app.titlebar.short_label.new_connection": "連線",
+  "app.titlebar.short_label.new_query": "查詢",
+  "app.titlebar.short_label.message_workbench": "訊息",
+  "app.titlebar.short_label.connection_groups": "分組",
+  "app.titlebar.short_label.data_workflow": "工作流",
+  "app.titlebar.short_label.sql_tools": "SQL",
+  "app.titlebar.short_label.user_management": "使用者",
+  "app.titlebar.short_label.drivers": "驅動"
 }

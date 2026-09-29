@@ -8170,7 +8170,7 @@ function App() {
   const titleBarActionsInline = appearance.titlebarActionsPlacement === 'titlebar'; // 功能入口行：默认工具条，可切到 GoNavi 右侧
   const titleBarActionRow = (
     <TitleBarActionRow
-      placement={titleBarActionsInline ? 'titlebar' : 'toolbar'}
+      placement={titleBarActionsInline ? 'titlebar' : 'toolbar'} display={appearance.titlebarActionsDisplay}
       messageQueuePrimary={primaryActionIsMessageQueue}
       newQueryShortcut={titleBarNewQueryShortcut} newConnectionShortcut={titleBarNewConnectionShortcut}
       onNewQuery={handleNewQuery} onNewConnection={handleCreateConnection}

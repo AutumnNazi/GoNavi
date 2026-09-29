@@ -1,9 +1,11 @@
 import { useLayoutEffect, useReducer } from 'react';
 import { createPortal } from 'react-dom';
 
+import { useOptionalI18n } from '../i18n/provider';
 import { useStore } from '../store';
 import TitleBarQuickActions, { type TitleBarQuickAction } from './TitleBarQuickActions';
 import { TITLEBAR_QUICK_ACTIONS_SLOT_ID } from './titlebar/TitleBarActionRow';
+import { resolveTitlebarQuickActionShortLabel } from './titlebar/titlebarShortLabels';
 
 interface TitleBarQuickActionsHostProps {
   label: string;
@@ -26,10 +28,19 @@ const findSlot = (id: string): HTMLElement | null => (
  */
 export default function TitleBarQuickActionsHost({
   label,
-  actions,
-  trailingActions,
+  actions: sourceActions,
+  trailingActions: sourceTrailingActions,
 }: TitleBarQuickActionsHostProps) {
-  useStore((state) => state.appearance?.titlebarActionsPlacement);
+  const placement = useStore((state) => state.appearance?.titlebarActionsPlacement);
+  const t = useOptionalI18n()?.t;
+  // 只有内联到标题栏时才可能用到精简名称，工具条保持原有结构。
+  const withShortLabels = (items: TitleBarQuickAction[] | undefined) => (
+    placement === 'titlebar' && t && items
+      ? items.map((item) => ({ ...item, shortLabel: resolveTitlebarQuickActionShortLabel(item.key, t) }))
+      : items
+  );
+  const actions = withShortLabels(sourceActions) ?? [];
+  const trailingActions = withShortLabels(sourceTrailingActions);
   const [, refreshSlots] = useReducer((count: number) => count + 1, 0);
   const quickTarget = findSlot(TITLEBAR_QUICK_ACTIONS_SLOT_ID);
   const aboutTarget = findSlot(ABOUT_SLOT_ID);
