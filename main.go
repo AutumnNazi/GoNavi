@@ -239,6 +239,14 @@ func main() {
 						wailsRuntime.MenuUpdateApplicationMenu(ctx)
 					}
 				})
+				wailsRuntime.EventsOn(ctx, nativeMenuThemeEvent, func(data ...interface{}) {
+					if len(data) == 0 {
+						return
+					}
+					if mode, ok := data[0].(string); ok && preferencesMenu.setTheme(mode) {
+						wailsRuntime.MenuUpdateApplicationMenu(ctx)
+					}
+				})
 			}
 			if hideWindowUntilFrontendReady {
 				// Subscribe before startup continues so a fast first paint cannot

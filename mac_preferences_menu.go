@@ -4,6 +4,7 @@ package main
 
 import (
 	"os"
+	"strings"
 
 	"GoNavi-Wails/shared/i18n"
 
@@ -15,32 +16,40 @@ import (
 // 原生菜单只能放文字菜单项（Wails v2 的 MenuItem 没有图标字段），点击后
 // 由前端复用标题栏同名按钮的处理函数，保证两处入口行为一致。
 const (
-	nativeOpenPreferencesEvent = "gonavi:native-open-preferences"
-	nativeToggleThemeEvent     = "gonavi:native-toggle-theme"
-	nativeOpenDriversEvent     = "gonavi:native-open-drivers"
-	nativeCheckUpdateEvent     = "gonavi:native-check-update"
-	nativeOpenAboutEvent       = "gonavi:native-open-about"
+	nativeOpenPreferencesEvent   = "gonavi:native-open-preferences"
+	nativeToggleThemeEvent       = "gonavi:native-toggle-theme"
+	nativeOpenThemeSettingsEvent = "gonavi:native-open-theme-settings"
+	nativeOpenDriversEvent       = "gonavi:native-open-drivers"
+	nativeCheckUpdateEvent       = "gonavi:native-check-update"
+	nativeOpenAboutEvent         = "gonavi:native-open-about"
 	// nativeMenuLanguageEvent 由前端在界面语言变化时发出，携带语言代码。
 	// 语言偏好只存在前端持久化里，Go 启动时拿不到，所以菜单先按环境变量
 	// 猜一个语言渲染，前端就绪后再按这个事件校正标签。
 	nativeMenuLanguageEvent = "gonavi:native-menu-language"
+	// nativeMenuThemeEvent 由前端在主题模式变化时发出，携带 "light" / "dark"。
+	// 「切换主题」子项的标签要说明点击后会切到哪个模式，所以菜单需要知道当前模式。
+	nativeMenuThemeEvent = "gonavi:native-menu-theme"
 )
 
 // macPreferencesMenu 是菜单栏上并列的四个顶层菜单：GoNavi 设置 / 主题 / 驱动管理 / 关于。
 //
-// macOS 菜单栏顶层项必须挂子菜单才能响应点击，所以「主题」「驱动管理」各自只有
-// 一个子项，动作放在子项上；「关于」有两个子项：检查更新、打开关于页。
+// macOS 菜单栏顶层项必须挂子菜单才能响应点击，所以「驱动管理」只有一个子项，
+// 动作放在子项上；「主题」有两个子项：切换亮暗模式、打开主题设置；「关于」有两个
+// 子项：检查更新、打开关于页。
 type macPreferencesMenu struct {
-	root        *menu.MenuItem
-	preferences *menu.MenuItem
-	themeRoot   *menu.MenuItem
-	theme       *menu.MenuItem
-	driversRoot *menu.MenuItem
-	drivers     *menu.MenuItem
-	aboutRoot   *menu.MenuItem
-	checkUpdate *menu.MenuItem
-	about       *menu.MenuItem
-	localizer   *i18n.Localizer
+	root          *menu.MenuItem
+	preferences   *menu.MenuItem
+	themeRoot     *menu.MenuItem
+	theme         *menu.MenuItem
+	themeSettings *menu.MenuItem
+	driversRoot   *menu.MenuItem
+	drivers       *menu.MenuItem
+	aboutRoot     *menu.MenuItem
+	checkUpdate   *menu.MenuItem
+	about         *menu.MenuItem
+	localizer     *i18n.Localizer
+	// darkMode 是前端最近一次同步过来的主题模式；启动时前端还没就绪，先按亮色渲染。
+	darkMode bool
 }
 
 // newMacPreferencesMenu 构建菜单栏里的「GoNavi 设置」「主题」「驱动管理」「关于」四个顶层菜单。
@@ -56,15 +65,16 @@ func newMacPreferencesMenu(localizer *i18n.Localizer, emit func(event string)) *
 		}
 	}
 	m := &macPreferencesMenu{
-		preferences: menu.Text("", nil, emitOnClick(nativeOpenPreferencesEvent)),
-		theme:       menu.Text("", nil, emitOnClick(nativeToggleThemeEvent)),
-		drivers:     menu.Text("", nil, emitOnClick(nativeOpenDriversEvent)),
-		checkUpdate: menu.Text("", nil, emitOnClick(nativeCheckUpdateEvent)),
-		about:       menu.Text("", nil, emitOnClick(nativeOpenAboutEvent)),
-		localizer:   localizer,
+		preferences:   menu.Text("", nil, emitOnClick(nativeOpenPreferencesEvent)),
+		theme:         menu.Text("", nil, emitOnClick(nativeToggleThemeEvent)),
+		themeSettings: menu.Text("", nil, emitOnClick(nativeOpenThemeSettingsEvent)),
+		drivers:       menu.Text("", nil, emitOnClick(nativeOpenDriversEvent)),
+		checkUpdate:   menu.Text("", nil, emitOnClick(nativeCheckUpdateEvent)),
+		about:         menu.Text("", nil, emitOnClick(nativeOpenAboutEvent)),
+		localizer:     localizer,
 	}
 	m.root = menu.SubMenu("", menu.NewMenuFromItems(m.preferences))
-	m.themeRoot = menu.SubMenu("", menu.NewMenuFromItems(m.theme))
+	m.themeRoot = menu.SubMenu("", menu.NewMenuFromItems(m.theme, m.themeSettings))
 	m.driversRoot = menu.SubMenu("", menu.NewMenuFromItems(m.drivers))
 	m.aboutRoot = menu.SubMenu("", menu.NewMenuFromItems(m.checkUpdate, m.about))
 	m.relabel()
@@ -77,6 +87,21 @@ func (m *macPreferencesMenu) topLevelItems() []*menu.MenuItem {
 		return nil
 	}
 	return []*menu.MenuItem{m.root, m.themeRoot, m.driversRoot, m.aboutRoot}
+}
+
+// setTheme 同步前端当前主题模式（"dark" 之外一律按亮色处理）；返回 true 表示
+// 「切换主题」的标签有变化，调用方需刷新原生菜单。
+func (m *macPreferencesMenu) setTheme(mode string) bool {
+	if m == nil {
+		return false
+	}
+	dark := strings.EqualFold(strings.TrimSpace(mode), "dark")
+	if dark == m.darkMode {
+		return false
+	}
+	m.darkMode = dark
+	m.relabel()
+	return true
 }
 
 // setLanguage 切换菜单语言；返回 true 表示标签有变化，调用方需刷新原生菜单。
@@ -103,7 +128,13 @@ func (m *macPreferencesMenu) relabel() {
 	m.root.SetLabel(t("app.sidebar.settings"))
 	m.preferences.SetLabel(t("app.settings.group.preferences.title"))
 	m.themeRoot.SetLabel(t("app.titlebar.theme"))
-	m.theme.SetLabel(t("app.shortcuts.action.toggleTheme.label"))
+	// 标签直接说明点击后的结果：当前是亮色就叫「切换暗色模式」，反之亦然。
+	if m.darkMode {
+		m.theme.SetLabel(t("app.native_menu.theme.to_light"))
+	} else {
+		m.theme.SetLabel(t("app.native_menu.theme.to_dark"))
+	}
+	m.themeSettings.SetLabel(t("app.native_menu.theme_settings"))
 	// 顶层与子项复用同一个文案：驱动管理没有「切换」「关于 GoNavi」那样的动词/
 	// 限定语，标题栏按钮用的也是这个 key，两处入口叫法保持一致。
 	m.driversRoot.SetLabel(t("app.tools.entry.drivers.title"))

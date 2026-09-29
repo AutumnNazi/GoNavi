@@ -6,10 +6,12 @@ import { EventsEmit, EventsOn } from '../../wailsjs/runtime';
 export const MAC_NATIVE_MENU_EVENTS = {
   openPreferences: 'gonavi:native-open-preferences',
   toggleTheme: 'gonavi:native-toggle-theme',
+  openThemeSettings: 'gonavi:native-open-theme-settings',
   openDrivers: 'gonavi:native-open-drivers',
   checkUpdate: 'gonavi:native-check-update',
   openAbout: 'gonavi:native-open-about',
   language: 'gonavi:native-menu-language',
+  theme: 'gonavi:native-menu-theme',
 } as const;
 
 export interface MacNativeMenuBridgeOptions {
@@ -17,8 +19,11 @@ export interface MacNativeMenuBridgeOptions {
   enabled: boolean;
   /** 当前界面语言，变化时同步给原生菜单重打标签。 */
   language: string;
+  /** 当前主题模式，变化时同步给原生菜单，让「切换主题」标签说明点击后会切到哪个模式。 */
+  themeMode: 'light' | 'dark';
   onOpenPreferences: () => void;
   onToggleTheme: () => void;
+  onOpenThemeSettings: () => void;
   onOpenDrivers: () => void;
   onCheckUpdate: () => void;
   onOpenAbout: () => void;
@@ -34,14 +39,16 @@ export interface MacNativeMenuBridgeOptions {
 export function useMacNativeMenuBridge({
   enabled,
   language,
+  themeMode,
   onOpenPreferences,
   onToggleTheme,
+  onOpenThemeSettings,
   onOpenDrivers,
   onCheckUpdate,
   onOpenAbout,
 }: MacNativeMenuBridgeOptions): void {
-  const handlersRef = useRef({ onOpenPreferences, onToggleTheme, onOpenDrivers, onCheckUpdate, onOpenAbout });
-  handlersRef.current = { onOpenPreferences, onToggleTheme, onOpenDrivers, onCheckUpdate, onOpenAbout };
+  const handlersRef = useRef({ onOpenPreferences, onToggleTheme, onOpenThemeSettings, onOpenDrivers, onCheckUpdate, onOpenAbout });
+  handlersRef.current = { onOpenPreferences, onToggleTheme, onOpenThemeSettings, onOpenDrivers, onCheckUpdate, onOpenAbout };
 
   useEffect(() => {
     if (!enabled) {
@@ -50,6 +57,7 @@ export function useMacNativeMenuBridge({
     const offs = [
       EventsOn(MAC_NATIVE_MENU_EVENTS.openPreferences, () => handlersRef.current.onOpenPreferences()),
       EventsOn(MAC_NATIVE_MENU_EVENTS.toggleTheme, () => handlersRef.current.onToggleTheme()),
+      EventsOn(MAC_NATIVE_MENU_EVENTS.openThemeSettings, () => handlersRef.current.onOpenThemeSettings()),
       EventsOn(MAC_NATIVE_MENU_EVENTS.openDrivers, () => handlersRef.current.onOpenDrivers()),
       EventsOn(MAC_NATIVE_MENU_EVENTS.checkUpdate, () => handlersRef.current.onCheckUpdate()),
       EventsOn(MAC_NATIVE_MENU_EVENTS.openAbout, () => handlersRef.current.onOpenAbout()),
@@ -64,4 +72,10 @@ export function useMacNativeMenuBridge({
       EventsEmit(MAC_NATIVE_MENU_EVENTS.language, language);
     }
   }, [enabled, language]);
+
+  useEffect(() => {
+    if (enabled) {
+      EventsEmit(MAC_NATIVE_MENU_EVENTS.theme, themeMode);
+    }
+  }, [enabled, themeMode]);
 }

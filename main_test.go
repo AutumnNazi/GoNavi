@@ -291,7 +291,14 @@ func TestBuildMacApplicationMenuAppendsPreferencesDriversAndAboutMenus(t *testin
 		return root.SubMenu.Items[0]
 	}
 	preferencesItem := single(settingsRoot, "偏好设置")
-	themeItem := single(themeRoot, "切换主题")
+	// 「主题」有两个子项：切换亮暗模式（标签随当前模式变化）、打开主题设置。
+	if themeRoot.SubMenu == nil || len(themeRoot.SubMenu.Items) != 2 {
+		t.Fatalf("menu %q must hold toggle and settings items", themeRoot.Label)
+	}
+	themeItem, themeSettingsItem := themeRoot.SubMenu.Items[0], themeRoot.SubMenu.Items[1]
+	if themeItem.Label != "切换暗色模式" || themeSettingsItem.Label != "打开主题设置" {
+		t.Fatalf("theme menu items = %q / %q", themeItem.Label, themeSettingsItem.Label)
+	}
 	driversItem := single(driversRoot, "驱动管理")
 	// 「关于」有两个子项：先检查更新，再打开关于页。
 	if aboutRoot.SubMenu == nil || len(aboutRoot.SubMenu.Items) != 2 {
@@ -302,23 +309,45 @@ func TestBuildMacApplicationMenuAppendsPreferencesDriversAndAboutMenus(t *testin
 		t.Fatalf("about menu items = %q / %q", checkUpdateItem.Label, aboutItem.Label)
 	}
 
-	for _, item := range []*menu.MenuItem{preferencesItem, themeItem, driversItem, checkUpdateItem, aboutItem} {
+	for _, item := range []*menu.MenuItem{preferencesItem, themeItem, themeSettingsItem, driversItem, checkUpdateItem, aboutItem} {
 		// 不绑加速键：⌘, 等组合键由前端可自定义的快捷键系统负责。
 		if item.Accelerator != nil {
 			t.Fatalf("menu item %q must not bind a native accelerator", item.Label)
 		}
 		item.Click(&menu.CallbackData{MenuItem: item})
 	}
-	wantEvents := []string{nativeOpenPreferencesEvent, nativeToggleThemeEvent, nativeOpenDriversEvent, nativeCheckUpdateEvent, nativeOpenAboutEvent}
+	wantEvents := []string{nativeOpenPreferencesEvent, nativeToggleThemeEvent, nativeOpenThemeSettingsEvent, nativeOpenDriversEvent, nativeCheckUpdateEvent, nativeOpenAboutEvent}
 	if strings.Join(emitted, ",") != strings.Join(wantEvents, ",") {
 		t.Fatalf("emitted events = %v, want %v", emitted, wantEvents)
+	}
+
+	// 前端同步主题模式后，切换项的标签说明点击后会到达的模式。
+	if preferences.setTheme("light") {
+		t.Fatal("setTheme(light) should be a no-op while the menu already shows the light state")
+	}
+	if !preferences.setTheme("dark") {
+		t.Fatal("setTheme(dark) = false, want relabel")
+	}
+	if themeItem.Label != "切换亮色模式" {
+		t.Fatalf("dark mode toggle label = %q, want 切换亮色模式", themeItem.Label)
+	}
+	if preferences.setTheme(" DARK ") {
+		t.Fatal("setTheme with the same mode should be a no-op regardless of case and spaces")
+	}
+	if !preferences.setTheme("light") || themeItem.Label != "切换暗色模式" {
+		t.Fatalf("light mode toggle label = %q, want 切换暗色模式", themeItem.Label)
+	}
+	// 非法取值按亮色处理，不会把菜单卡在暗色状态。
+	preferences.setTheme("dark")
+	if !preferences.setTheme("mystery") || themeItem.Label != "切换暗色模式" {
+		t.Fatalf("unknown mode should fall back to light, got %q", themeItem.Label)
 	}
 
 	if !preferences.setLanguage("en-US") {
 		t.Fatal("setLanguage(en-US) = false, want relabel")
 	}
-	if settingsRoot.Label != "Settings" || themeRoot.Label != "Theme" || driversRoot.Label != "Driver Manager" || driversItem.Label != "Driver Manager" || aboutRoot.Label != "About" || checkUpdateItem.Label != "Check for Updates" || aboutItem.Label != "About GoNavi" {
-		t.Fatalf("relabel failed: %q / %q / %q / %q / %q / %q / %q", settingsRoot.Label, themeRoot.Label, driversRoot.Label, driversItem.Label, aboutRoot.Label, checkUpdateItem.Label, aboutItem.Label)
+	if settingsRoot.Label != "Settings" || themeRoot.Label != "Theme" || driversRoot.Label != "Driver Manager" || driversItem.Label != "Driver Manager" || themeItem.Label != "Switch to Dark Mode" || themeSettingsItem.Label != "Open Theme Settings" || aboutRoot.Label != "About" || checkUpdateItem.Label != "Check for Updates" || aboutItem.Label != "About GoNavi" {
+		t.Fatalf("relabel failed: %q / %q / %q / %q / %q / %q / %q / %q / %q", settingsRoot.Label, themeRoot.Label, themeItem.Label, themeSettingsItem.Label, driversRoot.Label, driversItem.Label, aboutRoot.Label, checkUpdateItem.Label, aboutItem.Label)
 	}
 	if preferences.setLanguage("en-US") {
 		t.Fatal("setLanguage with the same language should be a no-op")
