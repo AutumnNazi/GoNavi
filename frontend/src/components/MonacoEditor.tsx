@@ -14,6 +14,7 @@ import {
   MONACO_CLIPBOARD_HANDLER_REVISION,
   type MonacoClipboardReadFailure,
 } from '../utils/monacoClipboard';
+import { GONAVI_MONACO_LANGUAGE_LOADERS } from './monacoLanguageLoaders';
 
 export type { BeforeMount, OnMount } from '@monaco-editor/react';
 export type GonaviMonacoTypography = 'code' | 'data' | 'sql';
@@ -903,14 +904,9 @@ const ensureMonacoConfigured = (): Promise<void> => {
         import('monaco-editor/esm/vs/editor/editor.api.js'),
         import('monaco-editor/esm/vs/editor/editor.worker?worker'),
         import('monaco-editor/esm/vs/language/json/json.worker?worker'),
-        // 编辑器组件与内置语言高亮按需引入(纯副作用)。刻意不引整包
-        // monaco-editor:其 editor.main 附带 TS/CSS/HTML 语言服务及对应
-        // worker(约 8MB),而本应用只用 sql/mysql/redis/json 语言。
+        // 编辑器组件按需引入(纯副作用);语言高亮清单见 monacoLanguageLoaders.ts。
         import('monaco-editor/esm/vs/editor/editor.all.js'),
-        import('monaco-editor/esm/vs/basic-languages/sql/sql.contribution.js'),
-        import('monaco-editor/esm/vs/basic-languages/mysql/mysql.contribution.js'),
-        import('monaco-editor/esm/vs/basic-languages/redis/redis.contribution.js'),
-        import('monaco-editor/esm/vs/language/json/monaco.contribution.js'),
+        ...GONAVI_MONACO_LANGUAGE_LOADERS.map((load) => load()),
       ]))
       .then(([monaco, editorWorker, jsonWorker]) => {
         installMonacoWorkerEnvironment(globalThis as unknown as Record<string, any>, {

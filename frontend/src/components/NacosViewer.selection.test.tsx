@@ -874,6 +874,46 @@ describe('NacosViewer config selection actions', () => {
     renderer!.unmount();
   });
 
+  it('passes the config type to the editor so yaml/json config bodies highlight', async () => {
+    nacosBackend.NacosGetConfig.mockImplementation(
+      (_config: unknown, _namespace: string, _group: string, dataId: string) => {
+        const row = rows.find((item) => item.dataId === dataId)!;
+        return Promise.resolve({
+          success: true,
+          data: { ...row, content: 'server: value', md5: `${row.type}-md5` },
+        });
+      },
+    );
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <NacosViewer connectionId="nacos-1" namespaceId="dev" namespaceName="dev" />,
+      );
+    });
+    await flushEffects();
+
+    await act(async () => {
+      latestConfigTableProps().onRow(rows[0]).onClick();
+    });
+    await flushEffects();
+
+    expect(
+      renderer!.root.find((node) => (node.type as any) === 'nacos-editor').props.language,
+    ).toBe('yaml');
+
+    await act(async () => {
+      latestConfigTableProps().onRow(rows[1]).onClick();
+    });
+    await flushEffects();
+
+    expect(
+      renderer!.root.find((node) => (node.type as any) === 'nacos-editor').props.language,
+    ).toBe('json');
+
+    renderer!.unmount();
+  });
+
   it('does not flash an internal dirty badge while publishing edited content', async () => {
     const pendingPublish = deferred<any>();
     nacosBackend.NacosPublishConfig.mockReturnValue(pendingPublish.promise);
