@@ -222,6 +222,7 @@ import { peekDatabaseServerVersion } from './queryEditor/queryEditorServerVersio
 import { useQueryEditorTabExecutionBroadcast } from './queryEditor/queryEditorTabExecutionState';
 import {
     buildQueryEditorLifecycleAffectedRowsResult,
+    isQueryEditorAwaitingDriver,
     isQueryEditorCancelledRpcError,
     queryEditorExecutionTimerStatusI18nKey,
     shouldFinishQueryEditorRunAfterCancelMiss,
@@ -2102,10 +2103,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const [executionRunToken, setExecutionRunToken] = useState(0);
   const [executionTimingActive, setExecutionTimingActive] = useState(false);
   const [completedExecutionElapsedMs, setCompletedExecutionElapsedMs] = useState<number | null>(null);
+  const executionAwaitingDriverRef = useRef(false);
   const executionElapsedMs = useQueryExecutionElapsed(
       executionTimingActive && loading,
       executionRunToken,
       completedExecutionElapsedMs,
+      executionAwaitingDriverRef,
   );
   const executionElapsedText = formatQueryExecutionElapsed(executionElapsedMs);
   const executionElapsedLabel = translate('query_editor.execution.elapsed', {
@@ -2949,6 +2952,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   useQueryEditorTabExecutionBroadcast(tab.id, loading, executionLifecycle.status, isActive);
   const executionLifecycleRef = useRef(executionLifecycle);
   executionLifecycleRef.current = executionLifecycle;
+  executionAwaitingDriverRef.current = isQueryEditorAwaitingDriver(executionLifecycle);
   const executionStatusKey = queryEditorExecutionTimerStatusI18nKey(executionTimingActive && loading, executionLifecycle);
   const executionStatusText = executionStatusKey ? translate(executionStatusKey) : '';
   const toggleResultPanelVisibility = useCallback(() => {

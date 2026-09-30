@@ -239,11 +239,14 @@ describe('QueryEditorToolbar layout', () => {
     expect(css).toContain('gap: 6px;');
   });
 
-  it('formats live query execution time with stable tenths-of-a-second precision', () => {
-    expect(formatQueryExecutionElapsed(0)).toBe('00:00.0');
-    expect(formatQueryExecutionElapsed(61_299)).toBe('01:01.2');
-    expect(formatQueryExecutionElapsed(3_661_999)).toBe('01:01:01.9');
-    expect(formatQueryExecutionElapsed(Number.NaN)).toBe('00:00.0');
+  it('formats query duration with one shared unit for status bar and log rows', () => {
+    expect(formatQueryExecutionElapsed(0)).toBe('0ms');
+    expect(formatQueryExecutionElapsed(219)).toBe('219ms');
+    expect(formatQueryExecutionElapsed(1_000)).toBe('1s');
+    expect(formatQueryExecutionElapsed(1_230)).toBe('1.23s');
+    expect(formatQueryExecutionElapsed(61_299)).toBe('1m 01s');
+    expect(formatQueryExecutionElapsed(3_661_999)).toBe('1h 01m 01s');
+    expect(formatQueryExecutionElapsed(Number.NaN)).toBe('0ms');
   });
 
   it('prefers backend SQL duration over frontend wall-clock fallback', () => {

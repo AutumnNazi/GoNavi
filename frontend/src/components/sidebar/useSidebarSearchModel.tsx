@@ -41,6 +41,7 @@ import {
   type SidebarTreeNode as TreeNode,
   type V2CommandSearchItem,
 } from '../sidebarV2Utils';
+import { formatQueryDuration } from '../../utils/queryDurationFormat';
 
 const SEARCH_SCOPE_OPTIONS: Array<{ value: SearchScope; labelKey: string }> = [
   { value: 'smart', labelKey: 'sidebar.command_search.scope.smart' },
@@ -489,7 +490,7 @@ export const useSidebarSearchModel = ({
       key: `recent-${log.id}`,
       kind: 'recent',
       title: log.sql.replace(/\s+/g, ' ').trim() || t('sidebar.command_search.recent_sql_fallback'),
-      meta: `${new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${log.duration}ms${log.dbName ? ` · ${log.dbName}` : ''}`,
+      meta: `${new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · ${formatQueryDuration(log.duration)}${log.dbName ? ` · ${log.dbName}` : ''}`,
       icon: <ClockCircleOutlined />,
       logId: log.id,
       sql: log.sql,
