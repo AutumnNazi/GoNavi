@@ -11547,5 +11547,14 @@
   "nacos.pin.pin_group": "置顶配置分组",
   "nacos.pin.unpin_group": "取消置顶配置分组",
   "nacos.pin.pin_config": "置顶配置",
-  "nacos.pin.unpin_config": "取消置顶配置"
+  "nacos.pin.unpin_config": "取消置顶配置",
+  "nacos.history.compare_current": "与当前版本比较",
+  "nacos.history.view_only": "仅查看历史",
+  "nacos.history.historical_content": "历史内容",
+  "nacos.history.current_published_content": "当前已发布内容",
+  "nacos.history.no_changes": "历史版本与当前已发布版本无差异",
+  "nacos.history.diff_view": "差异视图",
+  "nacos.history.inline_diff": "行内差异",
+  "nacos.history.split_diff": "并排差异",
+  "nacos.history.no_changes_title": "无差异"
 }

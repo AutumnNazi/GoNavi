@@ -48,6 +48,8 @@ const nacosBackend = vi.hoisted(() => ({
   NacosImportConfigs: vi.fn(),
   NacosDeleteConfig: vi.fn(),
   NacosGetConfig: vi.fn(),
+  NacosListConfigHistory: vi.fn(),
+  NacosGetConfigHistory: vi.fn(),
   NacosPublishConfig: vi.fn(),
   NacosGetBetaConfig: vi.fn(),
   NacosStartConfigListen: vi.fn(),
@@ -913,6 +915,32 @@ describe('NacosViewer config selection actions', () => {
       renderer!.root.find((node) => (node.type as any) === 'nacos-editor').props.language,
     ).toBe('json');
 
+    renderer!.unmount();
+  });
+
+  it('shows YAML history in a read-only highlighted editor', async () => {
+    const history = { id: '203', dataId: 'app.yaml', group: 'DEFAULT_GROUP', content: 'server:\n  port: 8080' };
+    nacosBackend.NacosListConfigHistory.mockResolvedValue({ success: true, data: {
+      totalCount: 1, pageNumber: 1, pagesAvailable: 1, pageItems: [history],
+    } });
+    nacosBackend.NacosGetConfigHistory.mockResolvedValue({ success: true, data: history });
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<NacosViewer connectionId="nacos-1" namespaceId="dev" namespaceName="dev" />);
+    });
+    await flushEffects();
+    await act(async () => latestConfigTableProps().onRow(rows[0]).onClick());
+    await flushEffects();
+    await act(async () => findButtonByExactText(renderer!, 'History')!.props.onClick());
+    await flushEffects();
+    const historyTable = [...antdState.tableProps].reverse().find((props) => props.rowKey?.(history) === '203');
+    const actions = historyTable.columns.find((column: any) => column.key === 'actions').render(undefined, history);
+    await act(async () => actions.props.children[0].props.onClick());
+    await flushEffects();
+    const editor = renderer!.root.findAll((node) => (node.type as any) === 'nacos-editor'
+      && node.props.value === history.content)[0];
+    expect(editor?.props.language).toBe('yaml');
+    expect(editor?.props.options.readOnly).toBe(true);
     renderer!.unmount();
   });
 

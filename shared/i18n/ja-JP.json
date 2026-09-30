@@ -11547,5 +11547,14 @@
   "nacos.pin.pin_group": "設定グループを固定",
   "nacos.pin.unpin_group": "設定グループの固定を解除",
   "nacos.pin.pin_config": "設定を固定",
-  "nacos.pin.unpin_config": "設定の固定を解除"
+  "nacos.pin.unpin_config": "設定の固定を解除",
+  "nacos.history.compare_current": "現在のバージョンと比較",
+  "nacos.history.view_only": "履歴のみ表示",
+  "nacos.history.historical_content": "履歴の内容",
+  "nacos.history.current_published_content": "現在公開済みの内容",
+  "nacos.history.no_changes": "この履歴バージョンと現在公開済みのバージョンに差異はありません",
+  "nacos.history.diff_view": "差分表示",
+  "nacos.history.inline_diff": "行内差分",
+  "nacos.history.split_diff": "左右差分",
+  "nacos.history.no_changes_title": "差異なし"
 }

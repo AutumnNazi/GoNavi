@@ -11547,5 +11547,14 @@
   "nacos.pin.pin_group": "Закрепить группу конфигураций",
   "nacos.pin.unpin_group": "Открепить группу конфигураций",
   "nacos.pin.pin_config": "Закрепить конфигурацию",
-  "nacos.pin.unpin_config": "Открепить конфигурацию"
+  "nacos.pin.unpin_config": "Открепить конфигурацию",
+  "nacos.history.compare_current": "Сравнить с текущей версией",
+  "nacos.history.view_only": "Только история",
+  "nacos.history.historical_content": "Историческое содержимое",
+  "nacos.history.current_published_content": "Текущее опубликованное содержимое",
+  "nacos.history.no_changes": "Нет различий между этой исторической и текущей опубликованной версией",
+  "nacos.history.diff_view": "Вид сравнения",
+  "nacos.history.inline_diff": "Встроенные различия",
+  "nacos.history.split_diff": "Различия рядом",
+  "nacos.history.no_changes_title": "Нет различий"
 }

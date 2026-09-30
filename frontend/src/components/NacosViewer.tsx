@@ -32,6 +32,8 @@ import {
 import { v4 as uuidv4 } from 'uuid';
 import Editor from './MonacoEditor';
 import { NacosConfigRow, useNacosConfigPinning } from './nacos/NacosConfigPinning';
+import NacosHistoryDetailModal from './NacosHistoryDetailModal';
+import { formatNacosHistoryTime } from './nacos/nacosHistoryTime';
 import RedisResizableDivider from './RedisResizableDivider';
 import { buildRedisWorkbenchTheme } from './redisViewerWorkbenchTheme';
 import { EventsOn } from '../../wailsjs/runtime';
@@ -234,6 +236,11 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
   const [historyDetailOpen, setHistoryDetailOpen] = useState(false);
   const [historyDetail, setHistoryDetail] = useState<NacosHistoryItem | null>(null);
   const [historyDetailLoading, setHistoryDetailLoading] = useState(false);
+  const historyDataId = historyDetail?.dataId || detail?.dataId || '';
+  const historyType = detail?.dataId === historyDataId ? detail?.type : '';
+  const historyEditorLanguage = resolveEditorLanguage(historyType) === 'plaintext'
+    ? resolveEditorLanguage(historyDataId.split('.').pop())
+    : resolveEditorLanguage(historyType);
   const [rollingBack, setRollingBack] = useState(false);
   const [remoteChanged, setRemoteChanged] = useState(false);
   const [listenActive, setListenActive] = useState(false);
@@ -1863,7 +1870,7 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
               dataIndex: 'modifiedTime',
               key: 'modifiedTime',
               width: 200,
-              render: (_: string, row: NacosHistoryItem) => row.modifiedTime || row.createdTime || '-',
+              render: (_: string, row: NacosHistoryItem) => formatNacosHistoryTime(row.modifiedTime || row.createdTime),
             },
             {
               title: tr('nacos_viewer.column.md5'),
@@ -1902,50 +1909,23 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
         />
       </Modal>
 
-      <Modal
-        title={tr('nacos_viewer.action.view_history')}
+      <NacosHistoryDetailModal
         open={historyDetailOpen}
-        onCancel={() => setHistoryDetailOpen(false)}
-        width={720}
-        footer={
-          <Space>
-            <Button onClick={() => setHistoryDetailOpen(false)}>{t('common.cancel', undefined, i18nLanguage)}</Button>
-            <Popconfirm
-              title={tr('nacos_viewer.message.confirm_rollback', {
-                group: detail?.group || '',
-                dataId: detail?.dataId || '',
-                id: historyDetail?.id || '',
-              })}
-              disabled={readOnly || !historyDetail}
-              onConfirm={() => historyDetail && void handleRollback(historyDetail)}
-            >
-              <Button type="primary" disabled={readOnly || !historyDetail} loading={rollingBack}>
-                {tr('nacos_viewer.action.rollback')}
-              </Button>
-            </Popconfirm>
-          </Space>
-        }
-      >
-        {historyDetailLoading ? (
-          <div style={{ minHeight: 200, display: 'grid', placeItems: 'center' }}>
-            <Spin />
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <Space wrap>
-              <Tag>{historyDetail?.id}</Tag>
-              <Tag>{historyDetail?.opType || '-'}</Tag>
-              <Tag>{historyDetail?.modifiedTime || historyDetail?.createdTime || '-'}</Tag>
-            </Space>
-            <Input.TextArea
-              value={historyDetail?.content ?? ''}
-              readOnly
-              rows={16}
-              {...noAutoCapInputProps}
-            />
-          </div>
-        )}
-      </Modal>
+        loading={historyDetailLoading}
+        history={historyDetail}
+        currentConfig={detail}
+        language={historyEditorLanguage}
+        loadCurrentContent={async (record) => {
+          const result = await (window as any).go.app.App.NacosGetConfig(rpcConfig, namespaceId || '', record.group, record.dataId);
+          if (!result?.success) throw new Error(result?.message || tr('nacos_viewer.message.load_failed', { detail: '' }));
+          return String(result.data?.content ?? '');
+        }}
+        readOnly={readOnly}
+        rollingBack={rollingBack}
+        onClose={() => setHistoryDetailOpen(false)}
+        onRollback={(item) => { void handleRollback(item); }}
+        tr={tr}
+      />
 
       <Modal
         title={tr('nacos_viewer.action.import')}
