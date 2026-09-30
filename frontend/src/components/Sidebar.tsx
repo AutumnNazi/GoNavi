@@ -1,7 +1,10 @@
 import SidebarConnectionRail from './sidebar/SidebarConnectionRail';
 import Modal from './common/ResizableDraggableModal';
 import { type TitleBarQuickAction } from './TitleBarQuickActions';
-import { TitlebarDriverIcon, TitlebarGraphIcon, TitlebarInfoIcon, TitlebarSqlToolIcon } from './titlebar/gonaviTitlebarIcons';
+import { TitlebarGraphIcon, TitlebarSqlToolIcon } from './titlebar/gonaviTitlebarIcons';
+import { buildTitlebarTrailingActions } from './sidebar/titlebarTrailingActions';
+import { renderSidebarObjectIcon } from './sidebar/sidebarObjectIcons';
+import { GnDatabaseIcon, GnFieldsIcon, GnFolderIcon, GnFolderOpenIcon, GnIndexIcon, GnLinkIcon, GnSqlDocIcon } from './icons/gnIcons';
 import TitleBarQuickActionsHost from './TitleBarQuickActionsHost';
 import { type DataSyncEntryModeAlias } from './dataSyncEntryMode';
 import type { DatabaseCharsetOption, DatabaseCollationOption } from '../utils/databaseCharset';
@@ -112,20 +115,13 @@ import { createSidebarResizeAwareFrameScheduler } from '../utils/sidebarResizeLi
 	  UploadOutlined,
 	  ConsoleSqlOutlined,
   HddOutlined,
-  FolderOutlined,
-  FolderOpenOutlined,
-  FileTextOutlined,
   CopyOutlined,
   ExportOutlined,
   FolderAddOutlined,
   SaveOutlined,
   EditOutlined,
   SearchOutlined,
-  KeyOutlined,
-  ThunderboltOutlined,
-  UnorderedListOutlined,
   FunctionOutlined,
-  LinkOutlined,
   FileAddOutlined,
   ImportOutlined,
   ReloadOutlined,
@@ -138,7 +134,6 @@ import { createSidebarResizeAwareFrameScheduler } from '../utils/sidebarResizeLi
   WarningOutlined,
   SafetyCertificateOutlined,
   SkinOutlined,
-  InfoCircleOutlined,
 	} from '@ant-design/icons';
 import { V2ExplorerSearchAction, V2ExplorerToolbarActions, V2RailExplorerActions } from './sidebar/SidebarExplorerToolbar';
 import { useStore } from '../store';
@@ -439,7 +434,7 @@ export const buildAllSavedQueriesTreeNode = (
   const createQueryNode = (query: SavedQuery): TreeNode => ({
       title: query.name || t('sidebar.tree.untitled_query'),
       key: `all-saved-query-${query.id}`,
-      icon: <FileTextOutlined />,
+      icon: <GnSqlDocIcon />,
       type: 'saved-query',
       dataRef: query,
       isLeaf: true,
@@ -453,7 +448,7 @@ export const buildAllSavedQueriesTreeNode = (
       return Array.from(groupedByDatabase.entries()).map(([dbName, items]) => ({
           title: dbName,
           key: `${keyPrefix}-db-${encodeURIComponent(dbName)}`,
-          icon: <DatabaseOutlined />,
+          icon: <GnDatabaseIcon />,
           type: 'saved-query-group',
           selectable: false,
           isLeaf: false,
@@ -510,7 +505,7 @@ export const buildAllSavedQueriesTreeNode = (
               children: Array.from(groupedByOriginalConnection.entries()).map(([connectionLabel, items]) => ({
                   title: connectionLabel,
                   key: `all-saved-queries-unmatched-${encodeURIComponent(connectionLabel)}`,
-                  icon: <FolderOpenOutlined />,
+                  icon: <GnFolderOpenIcon />,
                   type: 'saved-query-group',
                   selectable: false,
                   isLeaf: false,
@@ -543,7 +538,7 @@ export const buildAllSavedQueriesTreeNode = (
       return {
           title: group.name || t('sidebar.saved_query_group.untitled'),
           key: `saved-query-manual-group-${group.id}`,
-          icon: <FolderOutlined />,
+          icon: <GnFolderIcon />,
           type: 'saved-query-manual-group',
           dataRef: group,
           selectable: false,
@@ -565,7 +560,7 @@ export const buildAllSavedQueriesTreeNode = (
       children.push({
           title: t('sidebar.tree.ungrouped_saved_queries'),
           key: 'all-saved-queries-ungrouped',
-          icon: <FolderOpenOutlined />,
+          icon: <GnFolderOpenIcon />,
           type: 'saved-query-group',
           selectable: false,
           isLeaf: false,
@@ -578,7 +573,7 @@ export const buildAllSavedQueriesTreeNode = (
       key: 'all-saved-queries',
       icon: (
         <span className="gn-v2-tree-folder-icon" data-sidebar-tree-folder-icon="true">
-          <FolderOpenOutlined />
+          <GnFolderOpenIcon />
         </span>
       ),
       type: 'all-saved-queries',
@@ -674,6 +669,7 @@ const Sidebar: React.FC<{
    * (import/export connections, data-sync, driver manager, sql audit). Mirrors 设置 left-nav groups.
    */
   onOpenSettingsNavigation?: (spec: SettingsCenterNavigationTarget) => void;
+  onCheckUpdate?: () => void; // 标题栏「关于 → 检查更新」，与 macOS 菜单栏一致
   activeSettingsCenterPaneKey?: string | null; // 设置中心当前面板 key，用于点亮工具条入口
   hideTitlebarAboutAction?: boolean; // macOS 的「关于」走原生菜单栏，不再渲染到工具条
   hideTitlebarDriverAction?: boolean; // macOS 的「驱动管理」走原生菜单栏，不再渲染到工具条
@@ -702,6 +698,7 @@ const Sidebar: React.FC<{
   onOpenSettings,
   onOpenSettingsNavigation,
   activeSettingsCenterPaneKey,
+  onCheckUpdate,
   hideTitlebarAboutAction = false,
   hideTitlebarDriverAction = false,
   isWebRuntime = false,
@@ -1328,7 +1325,7 @@ const Sidebar: React.FC<{
               className="gn-v2-tree-folder-icon"
               data-sidebar-tree-folder-icon="true"
             >
-              <FolderOutlined />
+              <GnFolderIcon />
             </span>
           ),
           type: 'tag',
@@ -1644,15 +1641,15 @@ const Sidebar: React.FC<{
         case 'external-sql-root':
           return (
             <span className="gn-v2-tree-folder-icon" data-sidebar-tree-folder-icon="true">
-              <FolderOpenOutlined />
+              <GnFolderOpenIcon />
             </span>
           );
         case 'external-sql-directory':
           return node.dataRef.directoryStatus === 'missing' ? <WarningOutlined /> : <HddOutlined />;
         case 'external-sql-folder':
-          return <FolderOutlined />;
+          return <GnFolderIcon />;
         default:
-          return <FileTextOutlined />;
+          return <GnSqlDocIcon />;
       }
     })();
 
@@ -2064,7 +2061,7 @@ const Sidebar: React.FC<{
             {
                 title: t('sidebar.table_folder.columns'),
                 key: `${key}-columns`,
-                icon: <UnorderedListOutlined />,
+                icon: <GnFieldsIcon />,
                 type: 'folder-columns',
                 isLeaf: true,
                 dataRef: conn
@@ -2072,7 +2069,7 @@ const Sidebar: React.FC<{
             {
                 title: t('sidebar.table_folder.indexes'),
                 key: `${key}-indexes`,
-                icon: <KeyOutlined style={{ transform: 'rotate(45deg)' }} />,
+                icon: <GnIndexIcon />,
                 type: 'folder-indexes',
                 isLeaf: true,
                 dataRef: conn
@@ -2080,7 +2077,7 @@ const Sidebar: React.FC<{
             {
                 title: t('sidebar.table_folder.foreign_keys'),
                 key: `${key}-fks`,
-                icon: <LinkOutlined />,
+                icon: <GnLinkIcon />,
                 type: 'folder-fks',
                 isLeaf: true,
                 dataRef: conn
@@ -2088,7 +2085,7 @@ const Sidebar: React.FC<{
             {
                 title: t('sidebar.table_folder.triggers'),
                 key: `${key}-triggers`,
-                icon: <ThunderboltOutlined />,
+                icon: renderSidebarObjectIcon('trigger'),
                 type: 'folder-triggers',
                 isLeaf: true,
                 dataRef: conn
@@ -4192,33 +4189,14 @@ const Sidebar: React.FC<{
     userManagementAction,
   ];
   // 尾部操作：非 macOS 渲染到标题栏「设置 │ … │ 主题」胶囊中间，macOS 留在工具条 AI 之后。
-  const v2TitlebarTrailingActions: TitleBarQuickAction[] = [
-    {
-      key: 'drivers',
-      label: t('app.tools.entry.drivers.title'),
-      icon: <TitlebarDriverIcon size="100%" />,
-      active: activeSettingsCenterPaneKey === 'drivers', // 打开驱动管理时点亮
-      onClick: () => onOpenSettingsNavigation?.({ group: 'workspace', action: 'drivers' }),
-    },
-    {
-      key: 'about-go-navi',
-      label: t('app.settings.group.about.title'),
-      icon: <TitlebarInfoIcon size="100%" />,
-      // 与 macOS 菜单栏「关于 → 关于 GoNavi」一致：点按钮先展开下拉，再点子项进入关于页。
-      menu: [
-        {
-          key: 'about-go-navi-item',
-          label: t('app.native_menu.about'),
-          icon: <InfoCircleOutlined aria-hidden="true" />,
-          onClick: () => onOpenSettingsNavigation?.({ group: 'about', pane: 'about-go-navi' }),
-        },
-      ],
-    },
-  ];
-  // macOS 的「关于」「驱动管理」走原生菜单栏
-  const v2TitlebarVisibleTrailingActions = v2TitlebarTrailingActions
-    .filter((action) => !hideTitlebarAboutAction || action.key !== 'about-go-navi')
-    .filter((action) => !hideTitlebarDriverAction || action.key !== 'drivers');
+  const v2TitlebarVisibleTrailingActions = buildTitlebarTrailingActions({
+    t,
+    activeSettingsCenterPaneKey,
+    onOpenSettingsNavigation,
+    onCheckUpdate,
+    hideAbout: hideTitlebarAboutAction,
+    hideDrivers: hideTitlebarDriverAction,
+  });
 
   const { getCommandSearchCopyOptions, handleCopyCommandSearchItem } = useSidebarCommandSearchCopy({ connections, connectionIds });
 

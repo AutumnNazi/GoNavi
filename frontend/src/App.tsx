@@ -8162,7 +8162,7 @@ function App() {
                             onOpenSettings={handleOpenSettingsModal}
                             onOpenSettingsNavigation={handleTitleBarSettingsNavigation}
                             activeSettingsCenterPaneKey={activeSettingsCenterPane?.key}
-                            hideTitlebarAboutAction={useNativeMacWindowControls}
+                            hideTitlebarAboutAction={useNativeMacWindowControls} onCheckUpdate={handleNativeMenuCheckUpdate}
                             hideTitlebarDriverAction={useNativeMacWindowControls && !isWebRuntime}
                             isWebRuntime={isWebRuntime}
                             onOpenDataSyncWorkbench={handleOpenDataSyncWorkbench}

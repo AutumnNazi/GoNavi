@@ -5,6 +5,7 @@ import { createRenderer as createShallowRenderer } from 'react-test-renderer/sha
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readV2ThemeCss } from '../test/readV2ThemeCss';
 
+import { GnSqlDocIcon } from './icons/gnIcons';
 import Sidebar, {
   applySidebarDatabasePinning,
   buildAllSavedQueriesTreeNode,
@@ -787,6 +788,8 @@ describe('Sidebar locate toolbar', () => {
       title: 'Orders',
       type: 'saved-query',
     });
+    // 与连接下「已存查询」共用同一枚 SQL 文档图标，避免两处长得不一样。
+    expect((tree?.children?.[0].children?.[0].children?.[0].icon as React.ReactElement).type).toBe(GnSqlDocIcon);
     const unmatchedGroup = tree?.children?.find((child) => child.key === 'all-saved-queries-unmatched');
     expect(unmatchedGroup?.title).toBe('未匹配');
     expect(unmatchedGroup?.children?.[0]).toMatchObject({
@@ -1158,22 +1161,20 @@ describe('Sidebar locate toolbar', () => {
     expect(actionsSource).not.toContain("key: 'open-external-sql-file'");
     expect(actionsSource).not.toContain("priority: 'secondary'");
 
-    const trailingActionsStart = source.indexOf('const v2TitlebarTrailingActions: TitleBarQuickAction[] = [');
-    const trailingActionsEnd = source.indexOf('\n  ];', trailingActionsStart);
-    expect(trailingActionsStart).toBeGreaterThan(actionsEnd);
-    expect(trailingActionsEnd).toBeGreaterThan(trailingActionsStart);
-
-    const trailingActionsSource = source.slice(trailingActionsStart, trailingActionsEnd);
+    // The trailing entries (drivers, about) are built in their own module.
+    const trailingActionsSource = readSourceFile('./sidebar/titlebarTrailingActions.tsx');
     expect(trailingActionsSource.indexOf("key: 'drivers'")).toBeGreaterThanOrEqual(0);
     expect(trailingActionsSource.indexOf("key: 'drivers'")).toBeLessThan(trailingActionsSource.indexOf("key: 'about-go-navi'"));
     expect(trailingActionsSource).toContain("label: t('app.tools.entry.drivers.title')");
     expect(trailingActionsSource).toContain("action: 'drivers'");
     expect(trailingActionsSource).toContain("label: t('app.settings.group.about.title')");
     expect(trailingActionsSource).toContain("{ group: 'about', pane: 'about-go-navi' }");
+    expect(trailingActionsSource).toContain("action.key !== 'about-go-navi'");
+    expect(trailingActionsSource).toContain("action.key !== 'drivers'");
 
-    const renderSource = source.slice(trailingActionsEnd);
-    expect(renderSource).toContain("action.key !== 'about-go-navi'");
-    expect(renderSource).toContain("action.key !== 'drivers'");
+    const trailingCallStart = source.indexOf('const v2TitlebarVisibleTrailingActions = buildTitlebarTrailingActions({');
+    expect(trailingCallStart).toBeGreaterThan(actionsEnd);
+    const renderSource = source.slice(trailingCallStart);
     expect(renderSource).toContain('trailingActions={v2TitlebarVisibleTrailingActions}');
     expect(renderSource).not.toContain('moreLabel=');
 

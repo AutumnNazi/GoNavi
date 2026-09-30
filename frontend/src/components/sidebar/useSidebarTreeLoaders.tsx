@@ -5,10 +5,7 @@ import {
   CloudOutlined,
   DashboardOutlined,
   DatabaseOutlined,
-  FileTextOutlined,
-  FolderOpenOutlined,
   HddOutlined,
-  KeyOutlined,
   LinkOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons';
@@ -16,6 +13,7 @@ import type { SavedConnection, SavedQuery, JVMCapability, JVMResourceSummary } f
 import { useStore } from '../../store';
 import { t } from '../../i18n';
 import { renderSidebarObjectIcon } from './sidebarObjectIcons';
+import { GnDatabaseIcon, GnFieldsIcon, GnFolderOpenIcon, GnIndexIcon, GnLinkIcon, GnSqlDocIcon } from '../icons/gnIcons';
 import { buildNacosNamespaceTreeNode as buildNamespaceNode } from './nacosNamespaceTreeNode';
 import { buildPinnedNacosConfigGroups } from './nacosConfigGroupNodes';
 import { resolveSidebarMessageQueueProfile, type SidebarMessageQueueProfile, type SidebarMessageObjectKind } from './sidebarMessageProfiles';
@@ -329,7 +327,7 @@ const buildSidebarMessageObjectNodes = (
     return {
       title: t(group.titleKey),
       key: `${parentKey}-message-group-${group.groupKey}`,
-      icon: <FolderOpenOutlined />,
+      icon: <GnFolderOpenIcon />,
       type: 'message-object-group',
       dataRef: {
         ...conn,
@@ -943,7 +941,7 @@ export const useSidebarTreeLoaders = ({
                     : {
 	                    title: databaseName,
                         key: `${currentConnection.id}-${databaseName}`,
-                        icon: <DatabaseOutlined />,
+                        icon: <GnDatabaseIcon />,
                         type: 'database' as const,
                         dataRef: { ...currentConnection, dbName: databaseName },
                         isLeaf: false,
@@ -1063,7 +1061,7 @@ export const useSidebarTreeLoaders = ({
               const resourceNodes: TreeNode[] = resourceRows.map((item) => ({
                   title: item.name || item.path || item.id,
                   key: `${conn.id}-jvm-resource-${providerMode}-${item.path}`,
-                  icon: item.hasChildren ? <FolderOpenOutlined /> : <HddOutlined />,
+                  icon: item.hasChildren ? <GnFolderOpenIcon /> : <HddOutlined />,
                   type: 'jvm-resource',
                   dataRef: {
                       ...conn,
@@ -1143,13 +1141,13 @@ export const useSidebarTreeLoaders = ({
       const queriesNode: TreeNode = {
           title: t('sidebar.tree.saved_queries'),
           key: `${key}-queries`,
-          icon: <FolderOpenOutlined />,
+          icon: <GnFolderOpenIcon />,
           type: 'queries-folder',
           isLeaf: dbQueries.length === 0,
           children: dbQueries.map(q => ({
               title: resolveSavedQueryDisplayName(q.name),
               key: q.id,
-              icon: <FileTextOutlined />,
+              icon: <GnSqlDocIcon />,
               type: 'saved-query',
               dataRef: q,
               isLeaf: true
@@ -1783,7 +1781,7 @@ export const useSidebarTreeLoaders = ({
 	                        {
 	                            title: t('sidebar.table_folder.columns'),
 	                            key: `${nodeKey}-columns`,
-	                            icon: <UnorderedListOutlined />,
+	                            icon: <GnFieldsIcon />,
 	                            type: 'folder-columns',
 	                            isLeaf: true,
 	                            dataRef: tableDataRef,
@@ -1791,7 +1789,7 @@ export const useSidebarTreeLoaders = ({
 	                        {
 	                            title: t('sidebar.table_folder.indexes'),
 	                            key: `${nodeKey}-indexes`,
-	                            icon: <KeyOutlined style={{ transform: 'rotate(45deg)' }} />,
+	                            icon: <GnIndexIcon />,
 	                            type: 'folder-indexes',
 	                            isLeaf: true,
 	                            dataRef: tableDataRef,
@@ -1799,7 +1797,7 @@ export const useSidebarTreeLoaders = ({
 	                        {
 	                            title: t('sidebar.table_folder.foreign_keys'),
 	                            key: `${nodeKey}-fks`,
-	                            icon: <LinkOutlined />,
+	                            icon: <GnLinkIcon />,
 	                            type: 'folder-fks',
 	                            isLeaf: true,
 	                            dataRef: tableDataRef,
@@ -1815,7 +1813,7 @@ export const useSidebarTreeLoaders = ({
 	                        {
 	                            title: t('sidebar.table_folder.partitions'),
 	                            key: `${nodeKey}-partitions`,
-	                            icon: <FolderOpenOutlined />,
+	                            icon: <GnFolderOpenIcon />,
 	                            type: 'object-group',
 	                            isLeaf: false,
 	                            selectable: false,
@@ -2013,7 +2011,7 @@ export const useSidebarTreeLoaders = ({
 	                        return {
 	                            title: schemaTitle,
 	                            key: schemaNodeKey,
-	                            icon: <FolderOpenOutlined />,
+	                            icon: <GnFolderOpenIcon />,
 	                            type: 'object-group' as const,
 	                            isLeaf: groupedNodes.length === 0,
 	                            children: groupedNodes,

@@ -307,7 +307,8 @@ body[data-ui-version="v2"] .ant-tree .ant-tree-iconEle .anticon-function {
   color: var(--gn-accent);
 }
 
-body[data-ui-version="v2"] .ant-tree .ant-tree-iconEle .anticon-database {
+body[data-ui-version="v2"] .ant-tree .ant-tree-iconEle .anticon-database,
+body[data-ui-version="v2"] .ant-tree .ant-tree-iconEle .gn-icon-database {
   color: var(--gn-info);
 }
 
@@ -3446,6 +3447,27 @@ body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-iconEle [data-db
   max-height: 16px !important;
 }
 
+/* 树节点的字体图标（antd 与自绘线性图标）跟随侧栏树字号缩放：默认 13px 字号下 17px，
+   图标槽 20px，与文件夹、连接图标同宽，整棵树的图标大小才一致。
+   连接 logo 等图片图标不走这条规则，仍受上面的 16px 上限约束。 */
+body[data-ui-version="v2"] {
+  --gn-tree-icon-size: calc(var(--gn-sidebar-tree-font-size, var(--gn-font-size-sm, 12px)) * 17 / 13);
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-iconEle:has(> .anticon) {
+  width: calc(var(--gn-tree-icon-size) + 3px) !important;
+  min-width: calc(var(--gn-tree-icon-size) + 3px) !important;
+  height: calc(var(--gn-tree-icon-size) + 3px) !important;
+  font-size: var(--gn-tree-icon-size);
+}
+
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-iconEle > .anticon,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-iconEle > .anticon svg {
+  max-width: none !important;
+  max-height: none !important;
+  font-size: var(--gn-tree-icon-size);
+}
+
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-title.is-connection) .ant-tree-iconEle,
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-title.is-connection-group) .ant-tree-iconEle,
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-title[data-node-type="all-saved-queries"]) .ant-tree-iconEle,
@@ -3501,7 +3523,9 @@ body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .gn-v2-tree-folder-icon {
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .gn-v2-tree-folder-icon .anticon-folder,
-body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .gn-v2-tree-folder-icon .anticon-folder-open {
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .gn-v2-tree-folder-icon .anticon-folder-open,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .gn-v2-tree-folder-icon .gn-icon-folder,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .gn-v2-tree-folder-icon .gn-icon-folder-open {
   color: #d48806;
   font-size: 17px;
   line-height: 1;
@@ -3512,7 +3536,13 @@ body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-title[data-node-type="all-saved-queries"]) .ant-tree-iconEle .anticon-folder,
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-title[data-node-type="all-saved-queries"]) .ant-tree-iconEle .anticon-folder-open,
 body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-title[data-node-type="external-sql-root"]) .ant-tree-iconEle .anticon-folder,
-body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-title[data-node-type="external-sql-root"]) .ant-tree-iconEle .anticon-folder-open {
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-title[data-node-type="external-sql-root"]) .ant-tree-iconEle .anticon-folder-open,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-title.is-connection-group) .ant-tree-iconEle .gn-icon-folder,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-title.is-connection-group) .ant-tree-iconEle .gn-icon-folder-open,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-title[data-node-type="all-saved-queries"]) .ant-tree-iconEle .gn-icon-folder,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-title[data-node-type="all-saved-queries"]) .ant-tree-iconEle .gn-icon-folder-open,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-title[data-node-type="external-sql-root"]) .ant-tree-iconEle .gn-icon-folder,
+body[data-ui-version="v2"] .gn-v2-explorer-tree-shell .ant-tree-treenode:has(.gn-v2-tree-title[data-node-type="external-sql-root"]) .ant-tree-iconEle .gn-icon-folder-open {
   color: #d48806;
   font-size: 17px;
   line-height: 1;
@@ -3984,6 +4014,28 @@ body[data-ui-version="v2"] .gn-v2-tree-table-comment {
   font-size: clamp(10px, calc(var(--gn-sidebar-tree-font-size, var(--gn-font-size-sm, 12px)) - 1px), 16px);
   font-weight: 400 !important;
   opacity: 0.78;
+}
+
+/* 表节点：表名优先完整显示。空间不够时先收缩备注，再收缩行数等元数据，
+   最后才截断表名（表名本身不参与收缩）。 */
+body[data-ui-version="v2"] .gn-v2-tree-title[data-node-type="table"] .gn-v2-tree-label {
+  /* 不参与收缩：哪怕只被挤掉 0.1px，浏览器也会给表名画出省略号。
+     整行放不下时由 max-width 兜底，才截断表名。 */
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+
+body[data-ui-version="v2"] .gn-v2-tree-title[data-node-type="table"] .gn-v2-tree-table-comment {
+  flex-shrink: 1000;
+  min-width: 0;
+}
+
+body[data-ui-version="v2"] .gn-v2-tree-title[data-node-type="table"] .gn-v2-tree-count {
+  flex-shrink: 100;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 body[data-ui-version="v2"] .gn-v2-tab-hover-tooltip .ant-tooltip-inner {
@@ -5193,6 +5245,24 @@ body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn-p
   border-color: var(--gn-toolbar-action-primary-disabled-border) !important;
 }
 
+/* 工具栏图标统一大小：随主题字号缩放（默认 14px 字号下为 17px），
+   SQL 编辑器、数据预览上下工具栏共用，不再各自写死。 */
+body[data-ui-version="v2"] {
+  --gn-toolbar-icon-size: calc(var(--gn-font-size, 14px) * 17 / 14);
+}
+
+body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn .anticon,
+body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn .anticon svg {
+  font-size: var(--gn-toolbar-icon-size);
+}
+
+body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn .ant-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
 body[data-ui-version="v2"] .gn-v2-data-grid .gn-v2-data-grid-toolbar-action {
   display: inline-flex;
   align-items: center;
@@ -5245,24 +5315,6 @@ body[data-ui-version="v2"] .gn-v2-data-grid-toolbar-title small {
   overflow: hidden;
   color: var(--gn-fg-4);
   font-family: var(--gn-font-mono);
-/* 工具栏图标统一大小：随主题字号缩放（默认 14px 字号下为 17px），
-   SQL 编辑器、数据预览上下工具栏共用，不再各自写死。 */
-body[data-ui-version="v2"] {
-  --gn-toolbar-icon-size: calc(var(--gn-font-size, 14px) * 17 / 14);
-}
-
-body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn .anticon,
-body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn .anticon svg {
-  font-size: var(--gn-toolbar-icon-size);
-}
-
-body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-toolbar-scroll .ant-btn .ant-btn-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-}
-
   font-size: 10.5px;
   font-weight: 400;
   text-overflow: ellipsis;
@@ -6438,6 +6490,10 @@ body[data-ui-version="v2"] .gn-v2-data-grid-statusbar .anticon svg {
   display: block;
 }
 
+body[data-ui-version="v2"] .gn-v2-data-grid-statusbar .anticon {
+  font-size: var(--gn-toolbar-icon-size);
+}
+
 body[data-ui-version="v2"] .gn-v2-data-grid-pagination-wrap .data-grid-pagination-summary {
   display: inline-flex;
   align-items: center;
@@ -6490,10 +6546,6 @@ body[data-ui-version="v2"] .gn-v2-data-grid-pagination-wrap [data-grid-paginatio
   min-width: max-content !important;
   max-width: none !important;
   flex: 0 0 auto;
-body[data-ui-version="v2"] .gn-v2-data-grid-statusbar .anticon {
-  font-size: var(--gn-toolbar-icon-size);
-}
-
   gap: 4px;
   padding: 0 8px !important;
   white-space: nowrap;
