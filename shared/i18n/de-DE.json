@@ -11528,5 +11528,9 @@
   "app.titlebar.short_label.sql_tools": "SQL",
   "app.titlebar.short_label.user_management": "Benutzer",
   "app.titlebar.short_label.drivers": "Treiber",
-  "app.titlebar.short_label.session_workbench": "Sitzungen"
+  "app.titlebar.short_label.session_workbench": "Sitzungen",
+  "nacos.history.compare_current": "Mit aktueller Version vergleichen",
+  "nacos.history.view_only": "Nur Verlauf anzeigen",
+  "nacos.history.historical_content": "Historischer Inhalt",
+  "nacos.history.current_published_content": "Aktuell veröffentlichter Inhalt"
 }

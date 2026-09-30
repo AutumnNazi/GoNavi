@@ -11528,5 +11528,9 @@
   "app.titlebar.short_label.sql_tools": "SQL",
   "app.titlebar.short_label.user_management": "Users",
   "app.titlebar.short_label.drivers": "Drivers",
-  "app.titlebar.short_label.session_workbench": "Sessions"
+  "app.titlebar.short_label.session_workbench": "Sessions",
+  "nacos.history.compare_current": "Compare with current version",
+  "nacos.history.view_only": "View history only",
+  "nacos.history.historical_content": "Historical content",
+  "nacos.history.current_published_content": "Current published content"
 }

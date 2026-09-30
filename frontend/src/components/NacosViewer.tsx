@@ -32,6 +32,7 @@ import {
 import { v4 as uuidv4 } from 'uuid';
 import Editor from './MonacoEditor';
 import NacosHistoryDetailModal from './NacosHistoryDetailModal';
+import { formatNacosHistoryTime } from './nacos/nacosHistoryTime';
 import RedisResizableDivider from './RedisResizableDivider';
 import { buildRedisWorkbenchTheme } from './redisViewerWorkbenchTheme';
 import { EventsOn } from '../../wailsjs/runtime';
@@ -1881,7 +1882,7 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
               dataIndex: 'modifiedTime',
               key: 'modifiedTime',
               width: 200,
-              render: (_: string, row: NacosHistoryItem) => row.modifiedTime || row.createdTime || '-',
+              render: (_: string, row: NacosHistoryItem) => formatNacosHistoryTime(row.modifiedTime || row.createdTime),
             },
             {
               title: tr('nacos_viewer.column.md5'),
@@ -1926,6 +1927,11 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
         history={historyDetail}
         currentConfig={detail}
         language={historyEditorLanguage}
+        loadCurrentContent={async (record) => {
+          const result = await (window as any).go.app.App.NacosGetConfig(rpcConfig, namespaceId || '', record.group, record.dataId);
+          if (!result?.success) throw new Error(result?.message || tr('nacos_viewer.message.load_failed', { detail: '' }));
+          return String(result.data?.content ?? '');
+        }}
         readOnly={readOnly}
         rollingBack={rollingBack}
         onClose={() => setHistoryDetailOpen(false)}

@@ -11528,5 +11528,9 @@
   "app.titlebar.short_label.sql_tools": "SQL",
   "app.titlebar.short_label.user_management": "用户",
   "app.titlebar.short_label.drivers": "驱动",
-  "app.titlebar.short_label.session_workbench": "会话"
+  "app.titlebar.short_label.session_workbench": "会话",
+  "nacos.history.compare_current": "与当前版本比较",
+  "nacos.history.view_only": "仅查看历史",
+  "nacos.history.historical_content": "历史内容",
+  "nacos.history.current_published_content": "当前已发布内容"
 }

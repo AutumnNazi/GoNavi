@@ -848,7 +848,7 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
   });
 };
 
-const ensureMonacoConfigured = (): Promise<void> => {
+export const ensureMonacoConfigured = (): Promise<void> => {
   if (isTestRuntime()) {
     return Promise.resolve();
   }

@@ -11528,5 +11528,9 @@
   "app.titlebar.short_label.sql_tools": "SQL",
   "app.titlebar.short_label.user_management": "ユーザー",
   "app.titlebar.short_label.drivers": "ドライバー",
-  "app.titlebar.short_label.session_workbench": "セッション"
+  "app.titlebar.short_label.session_workbench": "セッション",
+  "nacos.history.compare_current": "現在のバージョンと比較",
+  "nacos.history.view_only": "履歴のみ表示",
+  "nacos.history.historical_content": "履歴の内容",
+  "nacos.history.current_published_content": "現在公開済みの内容"
 }

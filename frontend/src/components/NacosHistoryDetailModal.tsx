@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button, Modal, Popconfirm, Space, Spin, Tag } from 'antd';
 
 import { type I18nParams } from '../i18n';
 import Editor from './MonacoEditor';
+import NacosHistoryDiff from './nacos/NacosHistoryDiff';
+import { formatNacosHistoryTime } from './nacos/nacosHistoryTime';
 
 type HistoryRecord = {
   id: string;
@@ -20,6 +22,7 @@ type Props = {
   history: HistoryRecord | null;
   currentConfig: { dataId: string; group: string } | null;
   language: string;
+  loadCurrentContent: (record: HistoryRecord) => Promise<string>;
   readOnly: boolean;
   rollingBack: boolean;
   onClose: () => void;
@@ -29,15 +32,37 @@ type Props = {
 
 const NacosHistoryDetailModal: React.FC<Props> = ({
   open, loading, history, currentConfig, language, readOnly, rollingBack,
-  onClose, onRollback, tr,
+  onClose, onRollback, tr, loadCurrentContent,
 }) => {
+  const [comparison, setComparison] = useState<string | null>(null);
+  const [comparing, setComparing] = useState(false);
+  const [compareError, setCompareError] = useState('');
+  const requestRef = useRef(0);
+  useEffect(() => {
+    requestRef.current += 1;
+    setComparison(null); setComparing(false); setCompareError('');
+    return () => { requestRef.current += 1; };
+  }, [open, history?.id, history?.dataId, history?.group]);
+  const compare = async () => {
+    if (!history) return;
+    const request = ++requestRef.current;
+    setComparing(true); setCompareError('');
+    try {
+      const content = await loadCurrentContent(history);
+      if (requestRef.current === request) setComparison(content);
+    } catch (error) {
+      if (requestRef.current === request) setCompareError(String(error instanceof Error ? error.message : error));
+    } finally {
+      if (requestRef.current === request) setComparing(false);
+    }
+  };
 
   return (
     <Modal
       title={tr('nacos_viewer.action.view_history')}
       open={open}
       onCancel={onClose}
-      width={720}
+      width={comparison === null ? 720 : 1100}
       destroyOnHidden
       footer={
         <Space>
@@ -65,9 +90,21 @@ const NacosHistoryDetailModal: React.FC<Props> = ({
           <Space wrap>
             <Tag>{history?.id}</Tag>
             <Tag>{history?.opType || '-'}</Tag>
-            <Tag>{history?.modifiedTime || history?.createdTime || '-'}</Tag>
+            <Tag>{formatNacosHistoryTime(history?.modifiedTime || history?.createdTime)}</Tag>
+            <Button disabled={!history || comparing} loading={comparing} onClick={() => {
+              if (comparison !== null) { requestRef.current += 1; setComparison(null); } else { void compare(); }
+            }}>{tr(comparison === null ? 'nacos.history.compare_current' : 'nacos.history.view_only')}</Button>
           </Space>
-          <Editor
+          {compareError ? <div role="alert">{compareError}</div> : null}
+          {comparison !== null ? (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-around' }}>
+                <span>{tr('nacos.history.historical_content')}</span>
+                <span>{tr('nacos.history.current_published_content')}</span>
+              </div>
+              <NacosHistoryDiff original={history?.content ?? ''} modified={comparison} language={language} />
+            </>
+          ) : (<Editor
             height={360}
             gonaviTypography="data"
             language={language}
@@ -81,7 +118,7 @@ const NacosHistoryDetailModal: React.FC<Props> = ({
               scrollBeyondLastLine: false,
               automaticLayout: true,
             }}
-          />
+          />)}
         </div>
       )}
     </Modal>
