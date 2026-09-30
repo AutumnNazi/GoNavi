@@ -31,6 +31,7 @@ import {
 } from '@ant-design/icons';
 import { v4 as uuidv4 } from 'uuid';
 import Editor from './MonacoEditor';
+import { NacosConfigRow, useNacosConfigPinning } from './nacos/NacosConfigPinning';
 import RedisResizableDivider from './RedisResizableDivider';
 import { buildRedisWorkbenchTheme } from './redisViewerWorkbenchTheme';
 import { EventsOn } from '../../wailsjs/runtime';
@@ -206,6 +207,7 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [items, setItems] = useState<NacosConfigItem[]>([]);
+  const pinnedItems = useNacosConfigPinning(items, connectionId, namespaceId);
   const [totalCount, setTotalCount] = useState(0);
   const [pageNo, setPageNo] = useState(1);
   const [pageSize, setPageSize] = useState(50);
@@ -1267,21 +1269,7 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
       key: 'config',
       ellipsis: true,
       render: (_: unknown, row: NacosConfigItem) => (
-        <div className="gn-nacos-config-row">
-          <div className="gn-nacos-config-row__main">
-            <div className="gn-nacos-config-row__id" title={row.dataId}>
-              {row.dataId}
-            </div>
-            <div className="gn-nacos-config-row__group" title={row.group}>
-              {row.group || 'DEFAULT_GROUP'}
-            </div>
-          </div>
-          {row.type ? (
-            <Tag className="gn-nacos-config-row__type" bordered={false} title={row.type}>
-              {row.type}
-            </Tag>
-          ) : null}
-        </div>
+        <NacosConfigRow row={row} connectionId={connectionId} namespaceId={namespaceId} tr={tr} />
       ),
     },
   ];
@@ -1527,7 +1515,7 @@ const NacosViewer: React.FC<NacosViewerProps> = ({
               showHeader={false}
               rowKey={nacosConfigSelectionKey}
               loading={loadingList}
-              dataSource={items}
+              dataSource={pinnedItems}
               columns={columns as any}
               rowSelection={{
                 selectedRowKeys: selectedRowKeys,

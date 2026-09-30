@@ -10605,6 +10605,8 @@
   "nacos_viewer.history.column.time": "Time",
   "nacos.namespace.menu.create": "Create namespace",
   "nacos.namespace.menu.edit": "Edit namespace",
+  "nacos.namespace.menu.pin": "Pin namespace",
+  "nacos.namespace.menu.unpin": "Unpin namespace",
   "nacos.namespace.menu.delete": "Delete namespace",
   "nacos.namespace.field.id": "Namespace ID",
   "nacos.namespace.field.name": "Display name",
@@ -11541,5 +11543,9 @@
   "app.titlebar.short_label.sql_tools": "SQL",
   "app.titlebar.short_label.user_management": "Users",
   "app.titlebar.short_label.drivers": "Drivers",
-  "app.titlebar.short_label.session_workbench": "Sessions"
+  "app.titlebar.short_label.session_workbench": "Sessions",
+  "nacos.pin.pin_group": "Pin config group",
+  "nacos.pin.unpin_group": "Unpin config group",
+  "nacos.pin.pin_config": "Pin config",
+  "nacos.pin.unpin_config": "Unpin config"
 }

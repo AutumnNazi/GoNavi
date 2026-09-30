@@ -10605,6 +10605,8 @@
   "nacos_viewer.history.column.time": "時刻",
   "nacos.namespace.menu.create": "ネームスペースを作成",
   "nacos.namespace.menu.edit": "ネームスペースを編集",
+  "nacos.namespace.menu.pin": "ネームスペースを固定",
+  "nacos.namespace.menu.unpin": "ネームスペースの固定を解除",
   "nacos.namespace.menu.delete": "ネームスペースを削除",
   "nacos.namespace.field.id": "Namespace ID",
   "nacos.namespace.field.name": "表示名",
@@ -11541,5 +11543,9 @@
   "app.titlebar.short_label.sql_tools": "SQL",
   "app.titlebar.short_label.user_management": "ユーザー",
   "app.titlebar.short_label.drivers": "ドライバー",
-  "app.titlebar.short_label.session_workbench": "セッション"
+  "app.titlebar.short_label.session_workbench": "セッション",
+  "nacos.pin.pin_group": "設定グループを固定",
+  "nacos.pin.unpin_group": "設定グループの固定を解除",
+  "nacos.pin.pin_config": "設定を固定",
+  "nacos.pin.unpin_config": "設定の固定を解除"
 }

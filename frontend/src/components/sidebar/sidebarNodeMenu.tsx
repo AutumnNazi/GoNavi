@@ -53,6 +53,8 @@ import { noAutoCapInputProps } from '../../utils/inputAutoCap';
 import { confirmProductionMutation } from '../../utils/productionRiskConfirm';
 import { supportsOracleObjectCompilation } from './oracleObjectCompilation';
 import { buildSidebarCopyObjectNameMenuItem } from './sidebarCopyObjectNameMenu';
+import { buildNacosNamespacePinMenuItem } from './nacosNamespacePinMenu';
+import { buildNacosConfigGroupMenu } from './nacosConfigGroupMenu';
 import {
   buildNacosServicesTabData,
   resolveNacosNamespaceDiscoveryModeFromTreeNode,
@@ -1003,6 +1005,9 @@ export const buildSidebarNodeMenuItems = (
                     });
                 },
             },
+            buildNacosNamespacePinMenuItem(String(id || ''), nsKey, () => {
+                void loadDatabases(parentConnectionNode, { ensureFresh: true });
+            }),
             {
                 key: 'edit-nacos-namespace',
                 label: t('nacos.namespace.menu.edit'),
@@ -1115,41 +1120,7 @@ export const buildSidebarNodeMenuItems = (
             },
         ];
     } else if (node.type === 'nacos-config-group') {
-        const {
-            id,
-            nacosNamespaceId = '',
-            nacosNamespaceName = '',
-            nacosGroup = '',
-            nacosAllConfigs = false,
-        } = node.dataRef || {};
-        const nsName = nacosNamespaceName || nacosNamespaceId || 'public';
-        const nsKey = nacosNamespaceId || 'public';
-        const isAll = !!nacosAllConfigs;
-        const groupName = isAll ? '' : (String(nacosGroup || '').trim() || 'DEFAULT_GROUP');
-        return [
-            {
-                key: 'open-nacos-group',
-                label: isAll
-                    ? t('nacos_viewer.action.open_all_configs')
-                    : t('nacos_viewer.action.open_group_configs'),
-                icon: <FileTextOutlined />,
-                onClick: () => {
-                    addTab({
-                        id: isAll
-                            ? `nacos-config-${id}-ns-${nsKey}`
-                            : `nacos-config-${id}-ns-${nsKey}-g-${encodeURIComponent(groupName)}`,
-                        title: isAll
-                            ? `${nsName} · ${t('nacos_viewer.label.all')}`
-                            : `${nsName} · ${groupName}`,
-                        type: 'nacos-config',
-                        connectionId: id,
-                        nacosNamespaceId: nacosNamespaceId || '',
-                        nacosNamespaceName: nsName,
-                        ...(isAll ? {} : { nacosGroup: groupName }),
-                    });
-                },
-            },
-        ];
+        return buildNacosConfigGroupMenu(node, addTab, treeDataRef, setTreeData);
     } else if (node.type === 'nacos-service-group') {
         return [
             {

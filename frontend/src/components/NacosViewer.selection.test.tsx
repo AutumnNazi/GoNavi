@@ -30,6 +30,8 @@ const storeState = vi.hoisted(() => ({
       },
     },
   ],
+  pinnedSidebarTables: [] as string[],
+  setSidebarTablePinned: vi.fn(),
   theme: 'light',
   appearance: {
     enabled: true,
