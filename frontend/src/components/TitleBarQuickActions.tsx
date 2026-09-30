@@ -3,6 +3,8 @@ import { Dropdown, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
 import { renderV2ActionMenuPopup } from './common/V2ActionMenuPopup';
 
+import './titlebarQuickMenu.css';
+
 export interface TitleBarQuickAction {
   key: string;
   label: string;
@@ -20,6 +22,8 @@ export interface TitleBarQuickAction {
   active?: boolean;
   /** 前插一条竖分隔线；参考稿用它在「数据工作流」与「SQL 工具」之间分组。 */
   dividerBefore?: boolean;
+  /** Additional class for sizing or styling one popup without changing other menus. */
+  popupClassName?: string;
   menu?: TitleBarQuickAction[];
 }
 
@@ -82,7 +86,7 @@ const TitleBarQuickActions: React.FC<TitleBarQuickActionsProps> = ({ label, acti
           menu={{ items: buildMenuItems(action.menu), className: 'gn-v2-titlebar-quick-menu' }}
           trigger={['click']}
           placement="bottomLeft"
-          rootClassName="gn-v2-titlebar-quick-dropdown gn-v2-action-menu-popup-host"
+          rootClassName={`gn-v2-titlebar-quick-dropdown gn-v2-action-menu-popup-host${action.popupClassName ? ` ${action.popupClassName}` : ''}`}
           popupRender={(menu) => renderV2ActionMenuPopup(menu, true, {
             title: action.label,
             meta: label,

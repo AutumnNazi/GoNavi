@@ -56,6 +56,7 @@ export const buildTitlebarTrailingActions = ({
     key: 'about-go-navi',
     label: t('app.settings.group.about.title'),
     icon: <TitlebarInfoIcon size="100%" />,
+    popupClassName: 'gn-v2-titlebar-about-dropdown',
     menu: aboutMenu,
   };
   return [drivers, about]

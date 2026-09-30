@@ -24,6 +24,7 @@ describe('titlebar trailing actions', () => {
     const about = build().find((action) => action.key === 'about-go-navi');
 
     expect(about?.menu?.map((item) => item.label)).toEqual(['About GoNavi', 'Check for Updates']);
+    expect(about?.popupClassName).toBe('gn-v2-titlebar-about-dropdown');
   });
 
   it('routes each About item to its own handler', () => {
