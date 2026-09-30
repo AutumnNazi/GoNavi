@@ -281,6 +281,7 @@ import {
 import { markStartupWindowGeometrySettled } from './utils/mainWindowStartup';
 import { resolveWailsWindowSetPosition, resolveWailsWindowVisibleViewport } from './utils/wailsWindowViewport';
 import {
+  clampAIPanelDockWidth,
   DEFAULT_AI_PANEL_WIDTH,
   resolveFullscreenAIPanelOverlayWidth,
   resolveOverlayAIPanelWidth,
@@ -1259,6 +1260,8 @@ function App() {
       : 0;
   const renderedSidebarWidth = isSidebarCollapsed ? sidebarCollapsedWidth : sidebarWidth;
   const aiPanelVisible = useStore(state => state.aiPanelVisible);
+  const aiPanelWidth = useStore(state => state.aiPanelWidth);
+  const setAIPanelWidth = useStore(state => state.setAIPanelWidth);
   const detachedAIChatWindow = useStore(state => state.detachedAIChatWindow);
   const detachAIChatPanel = useStore(state => state.detachAIChatPanel);
   const aiChatDetached = Boolean(detachedAIChatWindow);
@@ -4121,10 +4124,12 @@ function App() {
   const [savedQueryDirectoryApplying, setSavedQueryDirectoryApplying] = useState(false);
   const directorySettingsApplying = dataRootApplying || logDirectoryApplying || savedQueryDirectoryApplying;
 
+  // 拖拽后的宽度已持久化；窗口变窄时按当前视口再收一次，避免工作台被挤没。
+  const aiPanelDockWidth = clampAIPanelDockWidth(aiPanelWidth, viewportWidth);
   const aiPanelOverlayActive = aiPanelVisible && shouldOverlayAIPanel({
       viewportWidth,
       sidebarWidth: renderedSidebarWidth,
-      panelWidth: DEFAULT_AI_PANEL_WIDTH,
+      panelWidth: aiPanelDockWidth,
   });
   const aiPanelFullscreenOverlay = aiPanelOverlayActive && shouldUseFullscreenAIPanelOverlay(viewportWidth);
   const aiPanelRenderWidth = aiPanelFullscreenOverlay
@@ -4133,9 +4138,9 @@ function App() {
           ? resolveOverlayAIPanelWidth({
           viewportWidth,
           sidebarWidth: renderedSidebarWidth,
-          panelWidth: DEFAULT_AI_PANEL_WIDTH,
+          panelWidth: aiPanelDockWidth,
           })
-          : DEFAULT_AI_PANEL_WIDTH;
+          : aiPanelDockWidth;
   const appliedGlobalProxyDraft = useMemo(() => (
       createGlobalProxyComparableDraft(globalProxy)
   ), [
@@ -8393,6 +8398,7 @@ function App() {
                         >
                           <LazyAIChatPanel
                             width={aiPanelRenderWidth}
+                            onWidthChange={setAIPanelWidth}
                             darkMode={darkMode}
                             bgColor={bgContent}
                             presentation="dock"

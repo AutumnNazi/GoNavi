@@ -151,6 +151,10 @@ import {
 } from "./utils/queryEditorSplitLayout";
 import { sanitizeSidebarWidth } from "./utils/sidebarLayout";
 import {
+  DEFAULT_AI_PANEL_WIDTH,
+  sanitizeAIPanelWidth,
+} from "./utils/aiPanelLayout";
+import {
   DEFAULT_SIDEBAR_TABLE_METADATA_FIELDS,
   applySidebarTableMetadataFieldOrder,
   resolveSidebarTableMetadataFieldOrder,
@@ -2057,6 +2061,8 @@ interface AppState {
 
   // AI 运行时投影。会话和消息的持久化由 Agent Run Harness Ledger 管理。
   aiPanelVisible: boolean;
+  /** AI 面板停靠宽度：拖拽后记住，重启保持。 */
+  aiPanelWidth: number;
   /** 打开 AI 时的默认形态：侧栏 dock 或独立窗口 detached（持久化） */
   aiChatOpenMode: AIChatOpenMode;
   aiChatHistory: Record<string, AIChatMessage[]>; // sessionId -> messages
@@ -2311,6 +2317,7 @@ interface AppState {
   }) => void;
   setWindowState: (state: "normal" | "fullscreen" | "maximized") => void;
   setSidebarWidth: (width: number) => void;
+  setAIPanelWidth: (width: number) => void;
 
   // AI actions
   toggleAIPanel: () => void;
@@ -3651,6 +3658,7 @@ const PERSISTED_STATE_DEPENDENCY_KEYS = [
   "windowBounds",
   "windowState",
   "sidebarWidth",
+  "aiPanelWidth",
   "connections",
 ] as const satisfies readonly (keyof AppState)[];
 
@@ -3723,6 +3731,7 @@ const buildPersistedStateProjection = (
     windowBounds: state.windowBounds,
     windowState: state.windowState,
     sidebarWidth: state.sidebarWidth,
+    aiPanelWidth: sanitizeAIPanelWidth(state.aiPanelWidth),
   };
 
   if (hasLegacyConnectionSecrets(state.connections)) {
@@ -3872,6 +3881,7 @@ export const useStore = create<AppState>()(
       windowBounds: null,
       windowState: "normal" as const,
       sidebarWidth: 330,
+      aiPanelWidth: DEFAULT_AI_PANEL_WIDTH,
 
       // AI 运行状态
       aiPanelVisible: false,
@@ -5859,6 +5869,8 @@ export const useStore = create<AppState>()(
 
       setSidebarWidth: (width) =>
         set({ sidebarWidth: sanitizeSidebarWidth(width) }),
+      setAIPanelWidth: (width: number) =>
+        set({ aiPanelWidth: sanitizeAIPanelWidth(width) }),
 
       // AI actions
       toggleAIPanel: () =>
@@ -6379,6 +6391,7 @@ export const useStore = create<AppState>()(
         nextState.windowBounds = sanitizeWindowBounds(state.windowBounds);
         nextState.windowState = sanitizeWindowState(state.windowState);
         nextState.sidebarWidth = sanitizeSidebarWidth(state.sidebarWidth);
+        nextState.aiPanelWidth = sanitizeAIPanelWidth(state.aiPanelWidth);
         nextState.aiChatOpenMode = sanitizeAIChatOpenMode(state.aiChatOpenMode);
         nextState.aiChatDetachedBoundsMemory = sanitizeAIChatDetachedBoundsMemory(
           state.aiChatDetachedBoundsMemory,
@@ -6494,6 +6507,7 @@ export const useStore = create<AppState>()(
           windowBounds: sanitizeWindowBounds(state.windowBounds),
           windowState: sanitizeWindowState(state.windowState),
           sidebarWidth: sanitizeSidebarWidth(state.sidebarWidth),
+          aiPanelWidth: sanitizeAIPanelWidth(state.aiPanelWidth),
           aiChatOpenMode: sanitizeAIChatOpenMode(state.aiChatOpenMode),
           aiChatDetachedBoundsMemory: sanitizeAIChatDetachedBoundsMemory(
             state.aiChatDetachedBoundsMemory,
