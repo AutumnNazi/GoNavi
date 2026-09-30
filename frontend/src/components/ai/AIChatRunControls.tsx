@@ -19,6 +19,7 @@ import type {
   AIRunRecoveryState,
   AIRunWorkspaceState,
 } from './aiRunEventProjection';
+import { aiPx } from './aiScale';
 
 export type AIRunRecoveryAction = 'recover' | 'mark_completed' | 'abort_recovery';
 export type AIRunWorkspaceAction = 'use_stale_workspace';
@@ -58,11 +59,11 @@ const ControlMeta: React.FC<{
   copy: (key: string, params?: I18nParams) => string;
 }> = ({ toolName, effect, callId, mutedColor, copy }) => (
   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minWidth: 0 }}>
-    {toolName ? <code style={{ color: mutedColor, fontSize: 12 }}>{toolName}</code> : null}
+    {toolName ? <code style={{ color: mutedColor, fontSize: aiPx(12) }}>{toolName}</code> : null}
     {effect ? <Tag color="orange" style={{ margin: 0 }}>{effect}</Tag> : null}
     {callId ? (
       <Tooltip title={copy('ai_chat.run.control.call_id_tooltip', { callId })}>
-        <code style={{ color: mutedColor, fontSize: 11, maxWidth: 170, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <code style={{ color: mutedColor, fontSize: aiPx(11), maxWidth: 170, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {copy('ai_chat.run.control.call_id', { callId })}
         </code>
       </Tooltip>

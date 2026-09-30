@@ -29,6 +29,7 @@ import { AIThinkingBlock, AIToolCallingBlock } from './messageBubble/AIMessageSt
 import { formatAIChatAttachmentSize } from './aiChatAttachments';
 import type { AIToolResultIndex } from './aiToolResultIndex';
 import { useAIChatTypewriter } from './useAIChatTypewriter';
+import { aiPx } from './aiScale';
 
 interface AIMessageBubbleProps {
   msg: AIChatMessage;
@@ -85,7 +86,7 @@ const AIMessageAttachmentSummary: React.FC<{
             border: overlayTheme.shellBorder,
             color: overlayTheme.titleText,
             background: 'rgba(0,0,0,0.03)',
-            fontSize: 12,
+            fontSize: aiPx(12),
           }}
         >
           <FileTextOutlined />
@@ -181,7 +182,7 @@ const AIRawErrorButton: React.FC<{
       }}
       id={`raw-err-btn-${messageId}`}
       style={{
-        fontSize: 12,
+        fontSize: aiPx(12),
         padding: '3px 10px',
         borderRadius: 6,
         cursor: 'pointer',
@@ -305,7 +306,7 @@ export const AIMessageBubble: React.FC<AIMessageBubbleProps> = React.memo(({
               <div className="ai-wave-pulse">
                 <span /> <span /> <span />
               </div>
-              <span style={{ fontSize: 13, opacity: 0.8 }}>{msg.content || waitStatus}</span>
+              <span style={{ fontSize: aiPx(13), opacity: 0.8 }}>{msg.content || waitStatus}</span>
             </div>
           )}
 
@@ -338,11 +339,7 @@ export const AIMessageBubble: React.FC<AIMessageBubbleProps> = React.memo(({
 
   return (
     <div className="ai-ide-message" style={{ borderBottom: 'none', padding: '8px 16px' }}>
-      <div style={{
-        background: isUser ? (darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') : (darkMode ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)'),
-        borderRadius: 12,
-        padding: '14px 16px',
-      }}>
+      <div className={`ai-ide-message-card ${isUser ? 'is-user' : 'is-assistant'}`}>
         <div className="ai-ide-message-header" style={{
           color: isUser ? overlayTheme.mutedText : overlayTheme.titleText,
           marginBottom: isUser ? 6 : 10,
@@ -404,7 +401,7 @@ export const AIMessageBubble: React.FC<AIMessageBubbleProps> = React.memo(({
           )}
 
           {isUser ? (
-            <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 13 }}>{msg.content}</div>
+            <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: aiPx(13) }}>{msg.content}</div>
           ) : (
             <AIMessageMarkdown
               content={displayContent}
@@ -527,7 +524,7 @@ export const AIMessageBubble: React.FC<AIMessageBubbleProps> = React.memo(({
                 paddingTop: 8,
                 borderTop: overlayTheme.shellBorder,
                 color: overlayTheme.mutedText,
-                fontSize: 11,
+                fontSize: aiPx(11),
                 lineHeight: 1.4,
               }}
             >

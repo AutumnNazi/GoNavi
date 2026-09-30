@@ -1,6 +1,7 @@
 import React from 'react';
 import { Tag } from 'antd';
-import { DownOutlined, PlusOutlined, TableOutlined } from '@ant-design/icons';
+import { DownOutlined } from '@ant-design/icons';
+import { GnPlusIcon, GnTableIcon } from '../icons/gnIcons';
 
 import { t as catalogTranslate } from '../../i18n/catalog';
 import { useOptionalI18n } from '../../i18n/provider';
@@ -30,7 +31,7 @@ const renderContextTableChips = (
     className={className}
     style={style}
   >
-    <TableOutlined />
+    <GnTableIcon />
     <span>{ctx.tableName}</span>
   </Tag>
 ));
@@ -57,13 +58,13 @@ export const AIChatContextPreview: React.FC<AIChatContextPreviewProps> = ({
           onClick={onToggleExpanded}
           aria-expanded={contextExpanded}
         >
-          <TableOutlined />
+          <GnTableIcon />
           <span>{contextLabel}</span>
           <strong>{activeContextItems.length}</strong>
           <DownOutlined />
         </button>
         <button type="button" className="gn-v2-ai-context-add" onClick={onOpenContext}>
-          <PlusOutlined />
+          <GnPlusIcon />
           <span>{t('ai_chat.input.context.add')}</span>
         </button>
       </div>
