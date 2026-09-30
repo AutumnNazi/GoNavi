@@ -64,6 +64,7 @@ import { buildAIChatReadinessSnapshot } from './ai/aiChatReadiness';
 import { useAIInjectedPrompt } from './ai/useAIInjectedPrompt';
 import { useAIChatRuntimeResources } from './ai/useAIChatRuntimeResources';
 import { useAIChatAutoContext } from './ai/useAIChatAutoContext';
+import { useAIEditorSelection } from './ai/aiEditorSelectionContext';
 import { useAIChatPanelResize } from './ai/useAIChatPanelResize';
 import { useAIChatSessionState } from './ai/useAIChatSessionState';
 import { useWorkbenchTabs } from '../hooks/useWorkbenchTabs';
@@ -206,6 +207,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
     const connections = useStore(state => state.connections);
     const tabs = useWorkbenchTabs();
     const activeTabId = useStore(state => state.activeTabId);
+    const activeEditorSelection = useAIEditorSelection(activeTabId);
     const sqlLogs = useStore(state => state.sqlLogs);
     const setAIActiveSessionId = useStore(state => state.setAIActiveSessionId);
     const aiPanelVisible = useStore(state => state.aiPanelVisible);
@@ -1243,6 +1245,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
                 handleKeyDown={handleKeyDown}
                 activeConnName={activeConnName}
                 activeContext={activeContext}
+                activeEditorSelection={activeEditorSelection}
                 activeProvider={activeProvider}
                 providers={providers}
                 providerModels={providerModels}

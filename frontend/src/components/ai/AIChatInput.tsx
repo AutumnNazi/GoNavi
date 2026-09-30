@@ -24,9 +24,10 @@ import { buildAIChatReadinessSnapshot } from './aiChatReadiness';
 import { useAIChatContextBinding } from './useAIChatContextBinding';
 import { useAIChatDraftAttachments } from './useAIChatDraftAttachments';
 import { useAISlashCommandMenu } from './useAISlashCommandMenu';
-import type { AIChatAttachment } from '../../types';
+import type { AIChatAttachment, AIEditorSelection } from '../../types';
 import type { AIRunDispatchMode } from './aiRunHarnessClient';
 import { AIChatContextMeter } from './AIChatContextMeter';
+import { isAIEditorSelectionContext } from './aiEditorSelectionContext';
 
 interface AIChatInputProps {
     input: string;
@@ -43,6 +44,7 @@ interface AIChatInputProps {
     handleKeyDown: (e: React.KeyboardEvent) => void;
     activeConnName: string;
     activeContext: { connectionId?: string | null; dbName?: string | null } | null;
+    activeEditorSelection?: AIEditorSelection | null;
     activeProvider: AIProviderConfig | null;
     providers?: AIProviderConfig[];
     providerModels?: Record<string, string[]>;
@@ -74,7 +76,7 @@ export const AIChatInput: React.FC<AIChatInputProps> = ({
     input, setInput, draftAttachments, setDraftAttachments, sending, dispatchMode = 'queue', hasActiveRun = false,
     stopRequestPending = false,
     onDispatchModeChange, onSend, onStop, handleKeyDown,
-    activeConnName, activeContext, activeProvider, providers, providerModels, dynamicModels, loadingModels,
+    activeConnName, activeContext, activeEditorSelection, activeProvider, providers, providerModels, dynamicModels, loadingModels,
     sendShortcutBinding, shortcutPlatform = 'windows', composerNotice, onComposerAction,
     onModelChange, onProviderModelChange, onManageProvider, onFetchModels, onFetchProviderModels, thinkingIntensity, onThinkingIntensityChange,
     cliCapability, cliCatalog,
@@ -89,6 +91,13 @@ export const AIChatInput: React.FC<AIChatInputProps> = ({
     const removeAIContext = useStore(state => state.removeAIContext);
 
     const connectionKey = activeContext?.connectionId ? `${activeContext.connectionId}:${activeContext.dbName || ''}` : 'default';
+    const editorSelectionForContext = activeEditorSelection
+        && (!activeContext?.connectionId || !activeEditorSelection.connectionId
+            || activeEditorSelection.connectionId === activeContext.connectionId)
+        && (!activeContext?.dbName || !activeEditorSelection.dbName
+            || activeEditorSelection.dbName === activeContext.dbName)
+        ? activeEditorSelection
+        : null;
     const activeContextItems = aiContexts[connectionKey] || [];
     const composerReadiness = React.useMemo(() => buildAIChatReadinessSnapshot({
         activeProvider,
@@ -106,24 +115,32 @@ export const AIChatInput: React.FC<AIChatInputProps> = ({
         dbList,
         filteredTables,
         handleAppendContext,
+        handleBindEditorSelection,
         handleDbChange,
         handleOpenContext,
         handleRemoveContextItem,
         searchText,
         selectedDbName,
+        selectedEditorSelection,
         selectedTableKeys,
         setContextExpanded,
         setContextOpen,
         setSearchText,
+        setSelectedEditorSelection,
         setSelectedTableKeys,
     } = useAIChatContextBinding({
         activeContext,
+        activeEditorSelection: editorSelectionForContext,
         activeContextItems,
         connectionKey,
         addAIContext,
         removeAIContext,
         translate: t,
     });
+    const editorSelectionBound = Boolean(editorSelectionForContext)
+        && activeContextItems.some((item) => isAIEditorSelectionContext(item)
+            && item.source?.tabId === editorSelectionForContext?.tabId
+            && String(item.content || item.ddl || '') === editorSelectionForContext?.text);
 
     const {
         fileInputRef,
@@ -189,6 +206,9 @@ export const AIChatInput: React.FC<AIChatInputProps> = ({
                     onToggleExpanded={() => setContextExpanded(!contextExpanded)}
                     onOpenContext={handleOpenContext}
                     onRemoveContext={handleRemoveContextItem}
+                    activeEditorSelection={editorSelectionForContext}
+                    editorSelectionBound={editorSelectionBound}
+                    onBindEditorSelection={handleBindEditorSelection}
                 />
                 <AIChatAttachmentStrip
                     attachments={draftAttachments}
@@ -307,11 +327,14 @@ export const AIChatInput: React.FC<AIChatInputProps> = ({
                 searchText={searchText}
                 filteredTables={filteredTables}
                 selectedTableKeys={selectedTableKeys}
+                activeEditorSelection={editorSelectionForContext}
+                selectedEditorSelection={selectedEditorSelection}
                 onCancel={() => setContextOpen(false)}
                 onConfirm={handleAppendContext}
                 onDbChange={handleDbChange}
                 onSearchTextChange={setSearchText}
                 onSelectedTableKeysChange={setSelectedTableKeys}
+                onSelectedEditorSelectionChange={setSelectedEditorSelection}
             />
         </div>
     );

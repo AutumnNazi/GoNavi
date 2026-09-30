@@ -31,6 +31,7 @@ vi.mock('@ant-design/icons', async () => {
   const makeIcon = (name: string) => () => React.createElement('span', { 'data-icon': name });
   return {
     DownOutlined: makeIcon('down'),
+    CodeOutlined: makeIcon('code'),
     PlusOutlined: makeIcon('plus'),
     TableOutlined: makeIcon('table'),
   };
@@ -90,5 +91,28 @@ describe('AIChatContextPreview i18n source guards', () => {
     expect(markup).toContain('Current context · 2');
     expect(markup).toContain('orders');
     expect(markup).not.toContain('ai_chat.input.context.label');
+  });
+
+  it('shows a direct binding action when the editor has a selection', () => {
+    const markup = renderToStaticMarkup(
+      <I18nProvider
+        preference="zh-CN"
+        systemLanguages={['zh-CN']}
+        onPreferenceChange={() => undefined}
+      >
+        <AIChatContextPreview
+          activeContextItems={activeContextItems}
+          contextExpanded={false}
+          onToggleExpanded={() => undefined}
+          onOpenContext={() => undefined}
+          onRemoveContext={() => undefined}
+          activeEditorSelection={{ tabId: 'query-1', text: 'select * from orders' }}
+          editorSelectionBound={false}
+          onBindEditorSelection={() => undefined}
+        />
+      </I18nProvider>,
+    );
+
+    expect(markup).toContain('绑定选中内容');
   });
 });

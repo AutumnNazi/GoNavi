@@ -717,6 +717,28 @@ export type AIProviderAuthMode = "api-key" | "bearer" | "local-cli";
 export type AISafetyLevel = "readonly" | "readwrite" | "full";
 export type AIContextLevel = "schema_only" | "with_samples" | "with_results";
 
+/**
+ * A context item is either a durable schema attachment or an explicitly
+ * attached editor selection.  The optional fields keep the legacy table
+ * contract (`dbName`, `tableName`, `ddl`) JSON-compatible while allowing the
+ * composer to describe other bounded sources without another store.
+ */
+export type AIContextItemKind = "table_schema" | "editor_selection";
+
+export interface AIEditorSelection {
+  tabId: string;
+  tabTitle?: string;
+  connectionId?: string;
+  dbName?: string;
+  language?: string;
+  text: string;
+  startLine?: number;
+  startColumn?: number;
+  endLine?: number;
+  endColumn?: number;
+  truncated?: boolean;
+}
+
 export interface AIResultMaskingSettings {
   enabled: boolean;
   fullMaskFields: string[];
@@ -727,6 +749,13 @@ export interface AIContextItem {
   dbName: string;
   tableName: string;
   ddl: string;
+  kind?: AIContextItemKind;
+  /** Human-readable source label shown in the composer chip. */
+  label?: string;
+  /** Original bounded content for non-table context items. */
+  content?: string;
+  source?: Pick<AIEditorSelection, "tabId" | "tabTitle" | "connectionId" | "dbName" | "language"
+    | "startLine" | "startColumn" | "endLine" | "endColumn" | "truncated">;
 }
 
 export interface AIProviderConfig {

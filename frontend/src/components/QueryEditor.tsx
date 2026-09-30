@@ -355,6 +355,11 @@ import { dispatchSavedQueryLocateFallback, resolveQueryEditorLineTableLocate } f
 import { duplicateCurrentLineInEditor } from './queryEditor/queryEditorDuplicateLine';
 import { registerQueryEditorShortcutAction } from './queryEditor/queryEditorShortcutRegistration';
 import { useQueryEditorAIAction } from './queryEditor/useQueryEditorAIAction';
+import {
+    clearAIEditorSelection,
+    publishQueryEditorSelection,
+} from './queryEditor/queryEditorAiSelection';
+import { bindAIEditorSelectionContext } from './ai/bindAIEditorSelectionContext';
 import { registerQueryEditorCommentAction, resolveToggleLineCommentBindingPlan, runMonacoToggleLineComment } from './queryEditor/queryEditorCommentActions';
 import { finalizeQueryEditorSqlServerResultSets, resolveQueryEditorExecutionSuccessToast } from './queryEditor/queryEditorSqlServerResultMessages';
 import {
@@ -3359,6 +3364,21 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   }, [currentDb]);
 
   useEffect(() => {
+      const editor = editorRef.current;
+      if (!editor) {
+          return;
+      }
+      publishQueryEditorSelection({
+          editor,
+          tabId: tab.id,
+          tabTitle: tab.title,
+          connectionId: currentConnectionId || tab.connectionId,
+          dbName: currentDb || tab.dbName,
+          language: queryEditorMonacoLanguage,
+      });
+  }, [currentConnectionId, currentDb, queryEditorMonacoLanguage, tab.connectionId, tab.dbName, tab.id, tab.title]);
+
+  useEffect(() => {
       currentSchemaRef.current = currentSchema;
   }, [currentSchema]);
 
@@ -4572,21 +4592,29 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           id: 'ai.generateSQL',
           label: `AI ${translate('query_editor.action.ai_generate_sql_menu')}`,
           prompt: translate('query_editor.ai_prompt.generate'),
+          bindSelection: false,
       },
       {
           id: 'ai.explainSQL',
           label: `AI ${translate('query_editor.action.ai_explain_sql_menu')}`,
           useSelection: true,
           prompt: translate('query_editor.ai_prompt.explain', { sql: QUERY_EDITOR_SQL_PROMPT_PLACEHOLDER }),
+          bindSelection: false,
       },
       {
           id: 'ai.optimizeSQL',
           label: `AI ${translate('query_editor.action.ai_optimize_sql_menu')}`,
           useSelection: true,
           prompt: translate('query_editor.ai_prompt.optimize', { sql: QUERY_EDITOR_SQL_PROMPT_PLACEHOLDER }),
+          bindSelection: false,
       },
-  ]), []);
-
+      {
+          id: 'ai.bindSelectionContext',
+          label: `AI ${translate('ai_chat.input.context.bind_selection')}`,
+          prompt: '',
+          bindSelection: true,
+      },
+  ]), [translate]);
   const disposeQueryEditorAiContextMenuActions = useCallback(() => {
       aiContextMenuActionDisposablesRef.current.forEach((disposable) => disposable?.dispose?.());
       aiContextMenuActionDisposablesRef.current = [];
@@ -4603,7 +4631,48 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               label: action.label,
               contextMenuGroupId: '9_ai',
               contextMenuOrder: 1,
+              ...(action.bindSelection ? { precondition: 'editorHasSelection' } : {}),
               run: async (ed: any) => {
+                  if (action.bindSelection) {
+                      const selection = publishQueryEditorSelection({
+                          editor: ed,
+                          tabId: tab.id,
+                          tabTitle: tab.title,
+                          connectionId: currentConnectionIdRef.current || tab.connectionId,
+                          dbName: currentDbRef.current || tab.dbName,
+                          language: queryEditorMonacoLanguage,
+                      });
+                      const connectionId = String(currentConnectionIdRef.current || tab.connectionId || '').trim();
+                      if (!selection) {
+                          message.warning(translate('ai_chat.input.message.select_editor_text_first'));
+                          return;
+                      }
+                      if (!connectionId) {
+                          message.warning(translate('ai_chat.input.message.select_database_context_first'));
+                          return;
+                      }
+                      const dbName = String(currentDbRef.current || tab.dbName || '').trim();
+                      const connectionKey = `${connectionId}:${dbName}`;
+                      const state = useStore.getState();
+                      const result = bindAIEditorSelectionContext({
+                          selection,
+                          connectionKey,
+                          contextItems: state.aiContexts[connectionKey] || [],
+                          addAIContext: state.addAIContext,
+                          removeAIContext: state.removeAIContext,
+                      });
+                      if (state.activeContext?.connectionId !== connectionId
+                          || state.activeContext?.dbName !== dbName) {
+                          state.setActiveContext({ connectionId, dbName });
+                      }
+                      state.setAIPanelVisible(true);
+                      if (result === 'added') {
+                          message.success(translate('ai_chat.input.message.context_selection_added'));
+                      } else if (result === 'unchanged') {
+                          message.info(translate('ai_chat.input.message.context_selection_unchanged'));
+                      }
+                      return;
+                  }
                   const selection = ed.getModel()?.getValueInRange(ed.getSelection());
                   let prompt = action.prompt;
                   if (action.useSelection && selection) {
@@ -4617,7 +4686,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               },
           })
       ));
-  }, [buildQueryEditorAiContextMenuActions, disposeQueryEditorAiContextMenuActions, isElasticsearchMode]);
+  }, [buildQueryEditorAiContextMenuActions, disposeQueryEditorAiContextMenuActions, isElasticsearchMode, queryEditorMonacoLanguage, tab.connectionId, tab.dbName, tab.id, tab.title]);
 
   const buildQueryEditorSlashCommandDefs = useCallback(() => ([
       {
@@ -7092,6 +7161,18 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           }
       });
 
+      const publishCurrentEditorSelection = () => publishQueryEditorSelection({
+          editor,
+          tabId: tab.id,
+          tabTitle: tab.title,
+          connectionId: currentConnectionIdRef.current || tab.connectionId,
+          dbName: currentDbRef.current || tab.dbName,
+          language: queryEditorMonacoLanguage,
+      });
+
+      editor.onDidChangeCursorSelection?.(publishCurrentEditorSelection);
+      publishCurrentEditorSelection();
+
       const recoverTriggerSqlAiCompletionFallback = (event: any): boolean => {
           if (triggerSqlAiCompletionFallbackApplyingRef.current) {
               return true;
@@ -7534,6 +7615,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       });
 
       editor.onDidDispose?.(() => {
+          clearAIEditorSelection(tab.id);
           cancelPendingSqlReferencedMetadataRefresh();
           cancelPendingObjectDecorationRefresh();
           clearQueryEditorLinkDecorations(editor, linkDecorationIdsRef);
