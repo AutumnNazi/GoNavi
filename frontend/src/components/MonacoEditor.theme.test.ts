@@ -54,6 +54,11 @@ describe('GoNavi Monaco themes', () => {
       });
     }
 
+    for (const token of ['string', 'number', 'number.float', 'number.hex', 'number.octal', 'number.infinity', 'number.nan', 'number.date']) {
+      expect(lightRules.find((rule: any) => rule.token === token + '.yaml')).toMatchObject({ foreground: '0451A5' });
+      expect(darkRules.find((rule: any) => rule.token === token + '.yaml')).toMatchObject({ foreground: 'CE9178' });
+    }
+
     for (const preset of BUILTIN_CUSTOM_THEME_PRESETS) {
       const keyword = (preset.baseMode === 'dark' ? darkRules : lightRules)
         .find((rule: any) => rule.token === 'keyword.sql');

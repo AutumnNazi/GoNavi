@@ -15,6 +15,8 @@ import {
   type MonacoClipboardReadFailure,
 } from '../utils/monacoClipboard';
 import { GONAVI_MONACO_LANGUAGE_LOADERS } from './monacoLanguageLoaders';
+import { registerGonaviMonacoThemes } from './monacoThemes';
+export { registerGonaviMonacoThemes } from './monacoThemes';
 
 export type { BeforeMount, OnMount } from '@monaco-editor/react';
 export type GonaviMonacoTypography = 'code' | 'data' | 'sql';
@@ -31,7 +33,6 @@ const PRINTABLE_INPUT_FALLBACK_DELAY_MS = 80;
 const SHORTCUT_INPUT_GUARD_WINDOW_MS = 250;
 const NON_PRINTABLE_INPUT_PATTERN = /[\u0000-\u001f\u007f]/;
 let monacoConfiguredPromise: Promise<void> | null = null;
-let transparentThemesRegistered = false;
 
 const isTestRuntime = (): boolean => {
   const env = (import.meta as unknown as { env?: Record<string, unknown> }).env || {};
@@ -845,52 +846,6 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
     input.removeEventListener('focus', handleInputFocus);
     input.removeEventListener('blur', handleInputBlur);
   });
-};
-
-export const registerGonaviMonacoThemes: BeforeMount = (monaco) => {
-  if (transparentThemesRegistered) {
-    return;
-  }
-
-  monaco.editor.defineTheme('transparent-dark', {
-    base: 'vs-dark',
-    inherit: true,
-    rules: [
-      { token: 'keyword.sql', foreground: 'C792EA', fontStyle: 'bold' },
-      { token: 'keyword.try.sql', foreground: 'C792EA', fontStyle: 'bold' },
-      { token: 'keyword.catch.sql', foreground: 'C792EA', fontStyle: 'bold' },
-      { token: 'keyword.block.sql', foreground: 'C792EA', fontStyle: 'bold' },
-      { token: 'keyword.choice.sql', foreground: 'C792EA', fontStyle: 'bold' },
-    ],
-    colors: {
-      'editor.background': '#00000000',
-      'editor.lineHighlightBackground': '#ffffff10',
-      'editorGutter.background': '#00000000',
-      // Transparent sticky scroll so panel/theme bg shows through (CSS may also paint --gn-bg-panel).
-      'editorStickyScroll.background': '#00000000',
-      'editorStickyScrollHover.background': '#ffffff12',
-    },
-  });
-  monaco.editor.defineTheme('transparent-light', {
-    base: 'vs',
-    inherit: true,
-    rules: [
-      { token: 'keyword.sql', foreground: '6D28D9', fontStyle: 'bold' },
-      { token: 'keyword.try.sql', foreground: '6D28D9', fontStyle: 'bold' },
-      { token: 'keyword.catch.sql', foreground: '6D28D9', fontStyle: 'bold' },
-      { token: 'keyword.block.sql', foreground: '6D28D9', fontStyle: 'bold' },
-      { token: 'keyword.choice.sql', foreground: '6D28D9', fontStyle: 'bold' },
-    ],
-    colors: {
-      'editor.background': '#00000000',
-      'editor.lineHighlightBackground': '#00000010',
-      'editorGutter.background': '#00000000',
-      'editorStickyScroll.background': '#00000000',
-      'editorStickyScrollHover.background': '#00000010',
-    },
-  });
-
-  transparentThemesRegistered = true;
 };
 
 const ensureMonacoConfigured = (): Promise<void> => {
