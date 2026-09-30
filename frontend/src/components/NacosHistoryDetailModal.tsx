@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import type { OnMount, DiffOnMount } from '@monaco-editor/react';
 import { Button, Modal, Popconfirm, Space, Spin, Tag } from 'antd';
 
 import { type I18nParams } from '../i18n';
@@ -38,6 +39,8 @@ const NacosHistoryDetailModal: React.FC<Props> = ({
   const [comparing, setComparing] = useState(false);
   const [compareError, setCompareError] = useState('');
   const requestRef = useRef(0);
+  const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
+  const diffRef = useRef<Parameters<DiffOnMount>[0] | null>(null);
   useEffect(() => {
     requestRef.current += 1;
     setComparison(null); setComparing(false); setCompareError('');
@@ -64,6 +67,20 @@ const NacosHistoryDetailModal: React.FC<Props> = ({
       onCancel={onClose}
       width={comparison === null ? 720 : 1100}
       destroyOnHidden
+      modalRender={(modal) => (
+        <div onKeyDownCapture={(event) => {
+          if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== 'f') return;
+          const diff = comparison !== null ? diffRef.current : null;
+          const editor = diff
+            ? (diff.getOriginalEditor().hasWidgetFocus() ? diff.getOriginalEditor() : diff.getModifiedEditor())
+            : editorRef.current;
+          if (!editor || loading) return;
+          event.preventDefault();
+          event.stopPropagation();
+          editor.focus();
+          editor.trigger('nacos-history', 'actions.find', null);
+        }}>{modal}</div>
+      )}
       footer={
         <Space>
           <Button onClick={onClose}>{tr('common.cancel')}</Button>
@@ -98,13 +115,15 @@ const NacosHistoryDetailModal: React.FC<Props> = ({
           {compareError ? <div role="alert">{compareError}</div> : null}
           {comparison !== null ? (
             <>
-              <NacosHistoryDiff original={history?.content ?? ''} modified={comparison} language={language} tr={tr} />
+              <NacosHistoryDiff original={history?.content ?? ''} modified={comparison} language={language} tr={tr}
+                onMount={(editor) => { diffRef.current = editor; }} />
             </>
           ) : (<Editor
             height={360}
             gonaviTypography="data"
             language={language}
             value={history?.content ?? ''}
+            onMount={(editor) => { editorRef.current = editor; }}
             options={{
               readOnly: true,
               domReadOnly: true,
