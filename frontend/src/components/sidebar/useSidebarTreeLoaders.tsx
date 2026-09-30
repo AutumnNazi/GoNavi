@@ -3,24 +3,19 @@ import { Button, message } from 'antd';
 import {
   AppstoreOutlined,
   CloudOutlined,
-  CodeOutlined,
-  ClockCircleOutlined,
   DashboardOutlined,
   DatabaseOutlined,
-  EyeOutlined,
   FileTextOutlined,
   FolderOpenOutlined,
-  FunctionOutlined,
   HddOutlined,
   KeyOutlined,
   LinkOutlined,
-  TableOutlined,
-  ThunderboltOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons';
 import type { SavedConnection, SavedQuery, JVMCapability, JVMResourceSummary } from '../../types';
 import { useStore } from '../../store';
 import { t } from '../../i18n';
+import { renderSidebarObjectIcon } from './sidebarObjectIcons';
 import { resolveSidebarMessageQueueProfile, type SidebarMessageQueueProfile, type SidebarMessageObjectKind } from './sidebarMessageProfiles';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import {
@@ -1842,7 +1837,7 @@ export const useSidebarTreeLoaders = ({
 	                        {
 	                            title: t('sidebar.table_folder.triggers'),
 	                            key: `${nodeKey}-triggers`,
-	                            icon: <ThunderboltOutlined />,
+	                            icon: renderSidebarObjectIcon('trigger'),
 	                            type: 'folder-triggers',
 	                            isLeaf: true,
 	                            dataRef: tableDataRef,
@@ -1866,7 +1861,7 @@ export const useSidebarTreeLoaders = ({
 	                return {
 	                    title: entry.displayName,
 	                    key: nodeKey,
-	                    icon: <TableOutlined />,
+	                    icon: renderSidebarObjectIcon('table'),
 	                    type: 'table',
 	                    dataRef: tableDataRef,
 	                    ...(children ? { children } : {}),
@@ -1879,7 +1874,7 @@ export const useSidebarTreeLoaders = ({
 	                return {
 	                    title: entry.displayName,
 	                    key: `${conn.id}-${conn.dbName}-view-${keyName}`,
-	                    icon: <EyeOutlined />,
+	                    icon: renderSidebarObjectIcon('view'),
 	                    type: 'view',
 	                    dataRef: { ...conn, viewName: entry.viewName, tableName: entry.viewName, schemaName: entry.schemaName },
 	                    isLeaf: true,
@@ -1891,7 +1886,7 @@ export const useSidebarTreeLoaders = ({
 	                return {
 	                    title: entry.displayName,
 	                    key: `${conn.id}-${conn.dbName}-materialized-view-${keyName}`,
-	                    icon: <ThunderboltOutlined />,
+	                    icon: renderSidebarObjectIcon('materializedView'),
 	                    type: 'materialized-view',
 	                    dataRef: { ...conn, viewName: entry.viewName, tableName: entry.viewName, schemaName: entry.schemaName, objectKind: 'materialized-view' },
 	                    isLeaf: true,
@@ -1901,7 +1896,7 @@ export const useSidebarTreeLoaders = ({
             const buildTriggerNode = (entry: { triggerName: string; tableName: string; schemaName: string; displayName: string; objectStatus?: string }): TreeNode => ({
 	                title: entry.displayName,
 	                key: `${conn.id}-${conn.dbName}-trigger-${entry.triggerName}-${entry.tableName}`,
-	                icon: <FunctionOutlined />,
+	                icon: renderSidebarObjectIcon('trigger'),
 	                type: 'db-trigger',
                 dataRef: { ...conn, triggerName: entry.triggerName, triggerTableName: entry.tableName, tableName: entry.tableName, schemaName: entry.schemaName, ...(entry.objectStatus ? { objectStatus: entry.objectStatus } : {}) },
 	                isLeaf: true,
@@ -1914,7 +1909,7 @@ export const useSidebarTreeLoaders = ({
 	                    title: entry.displayName,
 	                    // 必须带 routineType：同名函数/过程否则 key 冲突，虚拟列表会叠成“同一函数无限重复”
 	                    key: `${conn.id}-${conn.dbName}-routine-${typeToken}-${keyName}`,
-	                    icon: <CodeOutlined />,
+	                    icon: renderSidebarObjectIcon('routine'),
 	                    type: 'routine',
                     dataRef: { ...conn, routineName: entry.routineName, routineType: entry.routineType, schemaName: entry.schemaName, ...(entry.objectStatus ? { objectStatus: entry.objectStatus } : {}) },
 	                    isLeaf: true,
@@ -1926,7 +1921,7 @@ export const useSidebarTreeLoaders = ({
 	                return {
 	                    title: entry.displayName,
 	                    key: `${conn.id}-${conn.dbName}-sequence-${keyName}`,
-	                    icon: <KeyOutlined />,
+	                    icon: renderSidebarObjectIcon('sequence'),
 	                    type: 'sequence',
 	                    dataRef: { ...conn, sequenceName: entry.sequenceName, schemaName: entry.schemaName },
 	                    isLeaf: true,
@@ -1938,7 +1933,7 @@ export const useSidebarTreeLoaders = ({
 	                return {
 	                    title: entry.displayName,
 	                    key: `${conn.id}-${conn.dbName}-package-${keyName}`,
-	                    icon: <CodeOutlined />,
+	                    icon: renderSidebarObjectIcon('package'),
 	                    type: 'package',
 	                    dataRef: { ...conn, packageName: entry.packageName, schemaName: entry.schemaName },
 	                    isLeaf: true,
@@ -1948,7 +1943,7 @@ export const useSidebarTreeLoaders = ({
             const buildEventNode = (entry: { eventName: string; schemaName: string; displayName: string; eventType?: string; status?: string }): TreeNode => ({
 	                title: entry.displayName,
 	                key: `${conn.id}-${conn.dbName}-event-${entry.schemaName}-${entry.eventName}`,
-	                icon: <ClockCircleOutlined />,
+	                icon: renderSidebarObjectIcon('event'),
 	                type: 'db-event',
 	                dataRef: { ...conn, eventName: entry.eventName, schemaName: entry.schemaName, eventType: entry.eventType, eventStatus: entry.status },
 	                isLeaf: true,
@@ -2034,14 +2029,14 @@ export const useSidebarTreeLoaders = ({
 	                    const schemaNodeKey = `${key}-schema-${encodeURIComponent(schemaIdentity)}`;
 	                    const schemaTitle = bucket.schemaName || t('sidebar.tree.default_schema');
 	                        const groupedNodes: TreeNode[] = [
-	                            buildObjectGroup(schemaNodeKey, 'tables', t('sidebar.object_group.tables'), <TableOutlined />, bucket.tables, { schemaName: bucket.schemaName }),
-	                            buildObjectGroup(schemaNodeKey, 'views', t('sidebar.object_group.views'), <EyeOutlined />, bucket.views, { schemaName: bucket.schemaName }),
-	                            ...(includeMaterializedViews ? [buildObjectGroup(schemaNodeKey, 'materializedViews', t('sidebar.object_group.materialized_views'), <ThunderboltOutlined />, bucket.materializedViews, { schemaName: bucket.schemaName })] : []),
-	                            ...(includeSequences ? [buildObjectGroup(schemaNodeKey, 'sequences', t('sidebar.object_group.sequences'), <KeyOutlined />, bucket.sequences, { schemaName: bucket.schemaName })] : []),
-	                            buildObjectGroup(schemaNodeKey, 'routines', t('sidebar.object_group.routines'), <CodeOutlined />, bucket.routines, { schemaName: bucket.schemaName }),
-	                            ...(includeOracleObjects ? [buildObjectGroup(schemaNodeKey, 'packages', t('sidebar.object_group.packages'), <CodeOutlined />, bucket.packages, { schemaName: bucket.schemaName })] : []),
-	                            buildObjectGroup(schemaNodeKey, 'triggers', t('sidebar.object_group.triggers'), <FunctionOutlined />, bucket.triggers, { schemaName: bucket.schemaName }),
-	                            ...(includeEvents ? [buildObjectGroup(schemaNodeKey, 'events', t('sidebar.object_group.events'), <ClockCircleOutlined />, bucket.events, { schemaName: bucket.schemaName })] : []),
+	                            buildObjectGroup(schemaNodeKey, 'tables', t('sidebar.object_group.tables'), renderSidebarObjectIcon('table'), bucket.tables, { schemaName: bucket.schemaName }),
+	                            buildObjectGroup(schemaNodeKey, 'views', t('sidebar.object_group.views'), renderSidebarObjectIcon('view'), bucket.views, { schemaName: bucket.schemaName }),
+	                            ...(includeMaterializedViews ? [buildObjectGroup(schemaNodeKey, 'materializedViews', t('sidebar.object_group.materialized_views'), renderSidebarObjectIcon('materializedView'), bucket.materializedViews, { schemaName: bucket.schemaName })] : []),
+	                            ...(includeSequences ? [buildObjectGroup(schemaNodeKey, 'sequences', t('sidebar.object_group.sequences'), renderSidebarObjectIcon('sequence'), bucket.sequences, { schemaName: bucket.schemaName })] : []),
+	                            buildObjectGroup(schemaNodeKey, 'routines', t('sidebar.object_group.routines'), renderSidebarObjectIcon('routine'), bucket.routines, { schemaName: bucket.schemaName }),
+	                            ...(includeOracleObjects ? [buildObjectGroup(schemaNodeKey, 'packages', t('sidebar.object_group.packages'), renderSidebarObjectIcon('package'), bucket.packages, { schemaName: bucket.schemaName })] : []),
+	                            buildObjectGroup(schemaNodeKey, 'triggers', t('sidebar.object_group.triggers'), renderSidebarObjectIcon('trigger'), bucket.triggers, { schemaName: bucket.schemaName }),
+	                            ...(includeEvents ? [buildObjectGroup(schemaNodeKey, 'events', t('sidebar.object_group.events'), renderSidebarObjectIcon('event'), bucket.events, { schemaName: bucket.schemaName })] : []),
 	                            ...(dialect === 'oracle' ? [buildOracleDatabaseLinkGroup(objectGroupConnection, schemaNodeKey, t('sidebar.object_group.database_links'), bucket.databaseLinks, bucket.schemaName)] : []),
 	                        ];
 
@@ -2064,14 +2059,14 @@ export const useSidebarTreeLoaders = ({
 	                const includeSequences = supportsDatabaseSequences(conn as SavedConnection);
 	                const includeEvents = supportsDatabaseEvents(conn as SavedConnection);
 	                const groupedNodes: TreeNode[] = [
-	                    buildObjectGroup(key as string, 'tables', t('sidebar.object_group.tables'), <TableOutlined />, sortedTableEntries.map(buildTableNode)),
-	                    buildObjectGroup(key as string, 'views', t('sidebar.object_group.views'), <EyeOutlined />, viewEntries.map(buildViewNode)),
-	                    ...(includeMaterializedViews ? [buildObjectGroup(key as string, 'materializedViews', t('sidebar.object_group.materialized_views'), <ThunderboltOutlined />, materializedViewEntries.map(buildMaterializedViewNode))] : []),
-	                    ...(includeSequences ? [buildObjectGroup(key as string, 'sequences', t('sidebar.object_group.sequences'), <KeyOutlined />, sequenceEntries.map(buildSequenceNode))] : []),
-	                    buildObjectGroup(key as string, 'routines', t('sidebar.object_group.routines'), <CodeOutlined />, routineEntries.map(buildRoutineNode)),
-	                    ...(includeOracleObjects ? [buildObjectGroup(key as string, 'packages', t('sidebar.object_group.packages'), <CodeOutlined />, packageEntries.map(buildPackageNode))] : []),
-	                    buildObjectGroup(key as string, 'triggers', t('sidebar.object_group.triggers'), <FunctionOutlined />, triggerEntries.map(buildTriggerNode)),
-	                    ...(includeEvents ? [buildObjectGroup(key as string, 'events', t('sidebar.object_group.events'), <ClockCircleOutlined />, eventEntries.map(buildEventNode))] : []),
+	                    buildObjectGroup(key as string, 'tables', t('sidebar.object_group.tables'), renderSidebarObjectIcon('table'), sortedTableEntries.map(buildTableNode)),
+	                    buildObjectGroup(key as string, 'views', t('sidebar.object_group.views'), renderSidebarObjectIcon('view'), viewEntries.map(buildViewNode)),
+	                    ...(includeMaterializedViews ? [buildObjectGroup(key as string, 'materializedViews', t('sidebar.object_group.materialized_views'), renderSidebarObjectIcon('materializedView'), materializedViewEntries.map(buildMaterializedViewNode))] : []),
+	                    ...(includeSequences ? [buildObjectGroup(key as string, 'sequences', t('sidebar.object_group.sequences'), renderSidebarObjectIcon('sequence'), sequenceEntries.map(buildSequenceNode))] : []),
+	                    buildObjectGroup(key as string, 'routines', t('sidebar.object_group.routines'), renderSidebarObjectIcon('routine'), routineEntries.map(buildRoutineNode)),
+	                    ...(includeOracleObjects ? [buildObjectGroup(key as string, 'packages', t('sidebar.object_group.packages'), renderSidebarObjectIcon('package'), packageEntries.map(buildPackageNode))] : []),
+	                    buildObjectGroup(key as string, 'triggers', t('sidebar.object_group.triggers'), renderSidebarObjectIcon('trigger'), triggerEntries.map(buildTriggerNode)),
+	                    ...(includeEvents ? [buildObjectGroup(key as string, 'events', t('sidebar.object_group.events'), renderSidebarObjectIcon('event'), eventEntries.map(buildEventNode))] : []),
 	                    ...(dialect === 'oracle' ? [buildOracleDatabaseLinkGroup(objectGroupConnection, key as string, t('sidebar.object_group.database_links'), databaseLinkEntries)] : []),
 	                ];
 

@@ -1,26 +1,27 @@
 import React from 'react';
 import { AutoComplete, Button, Checkbox, Dropdown, Input, Select, Tooltip } from 'antd';
 import type { ButtonProps, MenuProps } from 'antd';
+import { ClearOutlined, CloseOutlined, PlusOutlined } from '@ant-design/icons';
 import {
-  ClearOutlined,
-  ControlOutlined,
-  CloseOutlined,
-  ConsoleSqlOutlined,
-  CopyOutlined,
-  DeleteOutlined,
-  EditOutlined,
-  ExportOutlined,
-  FilterOutlined,
-  ImportOutlined,
-  PlusOutlined,
-  ReloadOutlined,
-  SaveOutlined,
-  SelectOutlined,
-  SnippetsOutlined,
-  TableOutlined,
-  UndoOutlined,
-  VerticalAlignBottomOutlined,
-} from '@ant-design/icons';
+  GnAddRowIcon,
+  GnCellSelectIcon,
+  GnClipboardIcon,
+  GnCopyIcon,
+  GnExportIcon,
+  GnFillDownIcon,
+  GnFilterIcon,
+  GnImportIcon,
+  GnPencilIcon,
+  GnRefreshIcon,
+  GnRollbackIcon,
+  GnSaveIcon,
+  GnSigmaIcon,
+  GnSlidersIcon,
+  GnSqlDocIcon,
+  GnTableIcon,
+  GnTrashIcon,
+  GnUndoIcon,
+} from './icons/gnIcons';
 import AiSparkOutlined from './icons/AiSparkOutlined';
 import { hasActiveGridFilters } from './dataGridFilterActivity';
 import type { FilterCondition } from '../utils/sql';
@@ -362,7 +363,7 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
       >
         <>
             <div className="gn-v2-data-grid-toolbar-title">
-              <TableOutlined className="gn-v2-data-grid-icon" />
+              <GnTableIcon className="gn-v2-data-grid-icon" />
               <strong title={toolbarTitle}>{toolbarTitle}</strong>
               {dbName && <small title={dbName}>· {dbName}</small>}
             </div>
@@ -371,7 +372,7 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
         {onReload && (
           renderToolbarAction({
             label: translate('data_grid.toolbar.refresh'),
-            icon: <ReloadOutlined />,
+            icon: <GnRefreshIcon />,
             disabled: loading,
             onClick: onRefresh,
           })
@@ -382,7 +383,7 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
             {renderToolbarDivider()}
             {renderToolbarAction({
               label: translate('data_grid.toolbar.filter'),
-              icon: <FilterOutlined />,
+              icon: <GnFilterIcon />,
               type: filterEntryActive ? 'primary' : 'default',
               'aria-pressed': filterEntryActive,
               dataGridAction: 'filter',
@@ -396,7 +397,7 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
             {renderToolbarDivider()}
             {renderToolbarAction({
               label: translate('data_grid.toolbar.add_row'),
-              icon: <PlusOutlined />,
+              icon: <GnAddRowIcon />,
               onClick: onAddRow,
             })}
             {allSelectedAreDeleted ? (
@@ -405,7 +406,7 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
                 tooltip: deleteTargetRowCount > 0
                   ? `${translate('data_grid.toolbar.undo_delete')} · ${translate('data_grid.toolbar.selected_count', { count: deleteTargetRowCount })}`
                   : translate('data_grid.toolbar.undo_delete'),
-                icon: <UndoOutlined />,
+                icon: <GnUndoIcon />,
                 disabled: deleteTargetRowCount === 0,
                 onClick: onUndoDeleteSelected,
               })
@@ -415,7 +416,7 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
                 tooltip: deleteTargetRowCount > 0
                   ? `${translate('data_grid.toolbar.delete_selected')} · ${translate('data_grid.toolbar.selected_count', { count: deleteTargetRowCount })}`
                   : translate('data_grid.toolbar.delete_selected'),
-                icon: <DeleteOutlined />,
+                icon: <GnTrashIcon />,
                 danger: true,
                 disabled: deleteTargetRowCount === 0,
                 onClick: onDeleteSelected,
@@ -430,7 +431,7 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
                 className="gn-v2-data-grid-toolbar-action"
                 aria-label={cellSelectionModeLabel}
                 aria-pressed={cellEditMode}
-                icon={<SelectOutlined />}
+                icon={<GnCellSelectIcon />}
                 type={cellEditMode ? 'primary' : 'default'}
                 onClick={onToggleCellEditMode}
               />
@@ -441,7 +442,7 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
                 {renderToolbarAction({
                   label: translate('data_grid.toolbar.copy_selection', { count: selectedCellsSize }),
                   dataGridAction: 'copy-selection',
-                  icon: <CopyOutlined />,
+                  icon: <GnCopyIcon />,
                   onClick: onCopySelectedCellsToClipboard,
                 })}
                 {renderToolbarAction({
@@ -449,14 +450,14 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
                   tooltip: copyFillTemplateTooltip,
                   disabledReason: canCopyFillTemplate ? undefined : copyFillTemplateTooltip,
                   dataGridAction: 'copy-fill-template',
-                  icon: <SnippetsOutlined />,
+                  icon: <GnClipboardIcon />,
                   disabled: !canCopyFillTemplate,
                   onClick: onCopySelectedColumnsFromRow,
                 })}
                 {renderToolbarAction({
                   label: translate('data_grid.toolbar.batch_fill', { count: selectedCellsSize }),
                   dataGridAction: 'batch-fill',
-                  icon: <EditOutlined />,
+                  icon: <GnPencilIcon />,
                   'aria-haspopup': 'dialog',
                   onClick: onOpenBatchEditModal,
                 })}
@@ -469,7 +470,7 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
                   tooltip: applyFillTemplateTooltip,
                   disabledReason: fillTemplateTargetRowCount === 0 ? selectFillTemplateTargetsHint : undefined,
                   dataGridAction: 'apply-fill-template',
-                  icon: <VerticalAlignBottomOutlined />,
+                  icon: <GnFillDownIcon />,
                   disabled: fillTemplateTargetRowCount === 0,
                   onClick: onPasteCopiedColumnsToSelectedRows,
                 })}
@@ -480,19 +481,19 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
               label: translate('data_grid.toolbar.commit_label'),
               tooltip: translate('data_grid.toolbar.commit', { count: pendingChangeCount }),
               className: 'gn-v2-commit-button',
-              icon: <SaveOutlined />,
+              icon: <GnSaveIcon />,
               type: 'primary',
               disabled: !hasChanges,
               onClick: onCommit,
             })}
             {hasChanges && renderToolbarAction({
                 label: translate('data_grid.toolbar.preview_sql'),
-                icon: <ConsoleSqlOutlined />,
+                icon: <GnSqlDocIcon />,
                 onClick: onPreviewChanges,
             })}
             {hasChanges && renderToolbarAction({
               label: translate('data_grid.toolbar.rollback'),
-              icon: <UndoOutlined />,
+              icon: <GnRollbackIcon />,
               onClick: onResetPendingChanges,
             })}
             <Tooltip
@@ -523,7 +524,7 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
                       aria-label={commitModeLabel}
                       aria-haspopup="menu"
                       aria-expanded={openToolbarMenu === 'commit-mode'}
-                      icon={<ControlOutlined />}
+                      icon={<GnSlidersIcon />}
                     />
                   </Dropdown>
                 </span>
@@ -550,12 +551,12 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
             {renderToolbarDivider()}
             {canImport && renderToolbarAction({
               label: translate('data_grid.toolbar.import'),
-              icon: <ImportOutlined />,
+              icon: <GnImportIcon />,
               onClick: onImport,
             })}
             {canExport && renderToolbarAction({
               label: translate('data_grid.toolbar.export'),
-              icon: <ExportOutlined />,
+              icon: <GnExportIcon />,
               onClick: onOpenExportModal,
             })}
           </>
@@ -583,7 +584,7 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
                       aria-label={translate('data_grid.toolbar.copy')}
                       aria-haspopup="menu"
                       aria-expanded={openToolbarMenu === 'query-copy'}
-                      icon={<CopyOutlined />}
+                      icon={<GnCopyIcon />}
                       disabled={!canCopyQueryResult}
                     />
                   </Dropdown>
@@ -600,7 +601,7 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
                 data-grid-copy-selection-action="true"
                 className="gn-v2-data-grid-toolbar-action"
                 aria-label={translate('data_grid.toolbar.copy_selection', { count: selectedCellsSize })}
-                icon={<CopyOutlined />}
+                icon={<GnCopyIcon />}
                 onClick={onCopySelectedCellsToClipboard}
               />
             </Tooltip>
@@ -639,7 +640,7 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
                     ? (totalCountUnavailableLabel || translate('data_grid.toolbar.count_total'))
                     : (paginationTotalCountLoading ? translate('data_grid.toolbar.cancel_count') : translate('data_grid.toolbar.count_total'))}
                   disabled={Boolean(totalCountUnavailableReason) && !paginationTotalCountLoading}
-                  icon={paginationTotalCountLoading ? <CloseOutlined /> : <VerticalAlignBottomOutlined />}
+                  icon={paginationTotalCountLoading ? <CloseOutlined /> : <GnSigmaIcon />}
                   onClick={onToggleTotalCount}
                 />
               </span>

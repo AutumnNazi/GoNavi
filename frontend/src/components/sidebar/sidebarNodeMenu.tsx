@@ -1,4 +1,5 @@
 import { Input, message, type MenuProps } from 'antd';
+import { GnNewConnectionIcon, GnNewQueryIcon } from '../icons/gnIcons';
 import Modal from '../common/ResizableDraggableModal';
 import {
   AppstoreOutlined,
@@ -419,7 +420,7 @@ export const buildSidebarNodeMenuItems = (
             {
                 key: 'new-query',
                 label: t('sidebar.menu.new_query'),
-                icon: <ConsoleSqlOutlined />,
+                icon: <GnNewQueryIcon />,
                 onClick: () => handleV2DatabaseContextMenuAction(node, 'new-query'),
             },
             {
@@ -575,7 +576,7 @@ export const buildSidebarNodeMenuItems = (
                 {
                     key: 'new-connection-in-tag',
                     label: t('connection.new'),
-                    icon: <PlusOutlined />,
+                    icon: <GnNewConnectionIcon />,
                     onClick: () => onCreateConnectionInGroup?.(tagId),
                 },
                 { type: 'divider' },
@@ -882,7 +883,7 @@ export const buildSidebarNodeMenuItems = (
                  {
                    key: 'new-query',
                    label: t('sidebar.menu.new_query'),
-                   icon: <ConsoleSqlOutlined />,
+                   icon: <GnNewQueryIcon />,
                    onClick: () => {
                        addTab({
                            id: `query-${Date.now()}`,
@@ -1265,7 +1266,7 @@ export const buildSidebarNodeMenuItems = (
             {
                 key: 'new-query',
                 label: t('sidebar.menu.new_query'),
-                icon: <ConsoleSqlOutlined />,
+                icon: <GnNewQueryIcon />,
                 onClick: () => handleV2DatabaseContextMenuAction(node, 'new-query')
             },
             {
@@ -1365,7 +1366,7 @@ export const buildSidebarNodeMenuItems = (
             {
                 key: 'new-query',
                 label: t('sidebar.menu.new_query'),
-                icon: <ConsoleSqlOutlined />,
+                icon: <GnNewQueryIcon />,
                 onClick: () => {
                     addTab({
                         id: `query-${Date.now()}`,
@@ -1427,7 +1428,7 @@ export const buildSidebarNodeMenuItems = (
             {
                 key: 'new-query',
                 label: t('sidebar.menu.new_query'),
-                icon: <ConsoleSqlOutlined />,
+                icon: <GnNewQueryIcon />,
                 onClick: () => {
                     void (async () => {
                         const tableName = String(node.dataRef?.tableName || node.dataRef?.viewName || '');
@@ -1630,7 +1631,7 @@ export const buildSidebarNodeMenuItems = (
             {
                 key: 'new-query',
                 label: t('sidebar.menu.new_query'),
-                icon: <ConsoleSqlOutlined />,
+                icon: <GnNewQueryIcon />,
                 onClick: () => {
                    void (async () => {
                        const tableName = String(node.dataRef?.tableName || '').trim();

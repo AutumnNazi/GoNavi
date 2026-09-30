@@ -5,18 +5,15 @@ import {
   CheckOutlined,
   ClockCircleOutlined,
   CloudOutlined,
-  CodeOutlined,
   DatabaseOutlined,
-  EyeOutlined,
   FilterOutlined,
-  KeyOutlined,
   LinkOutlined,
-  PlusOutlined,
-  TableOutlined,
   TagOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
 import AiSparkOutlined from '../icons/AiSparkOutlined';
+import { GnNewConnectionIcon, GnNewQueryIcon } from '../icons/gnIcons';
+import { renderSidebarObjectIcon } from './sidebarObjectIcons';
 
 import { type SqlLog, useStore } from '../../store';
 import type { SavedConnection } from '../../types';
@@ -60,7 +57,7 @@ const SEARCH_SCOPE_LABEL_KEY_MAP: Record<SearchScope, string> = SEARCH_SCOPE_OPT
 
 const SEARCH_SCOPE_ICON_MAP: Record<SearchScope, React.ReactNode> = {
   smart: <ThunderboltOutlined />,
-  object: <TableOutlined />,
+  object: renderSidebarObjectIcon('table'),
   database: <DatabaseOutlined />,
   host: <CloudOutlined />,
   tag: <TagOutlined />,
@@ -462,14 +459,16 @@ export const useSidebarSearchModel = ({
               tableComment,
             ].filter(Boolean).join(' — '),
             icon: node.type === 'table'
-              ? <TableOutlined />
+              ? renderSidebarObjectIcon('table')
               : node.type === 'sequence'
-                ? <KeyOutlined />
+                ? renderSidebarObjectIcon('sequence')
                 : node.type === 'database-link'
                   ? <LinkOutlined />
                   : node.type === 'db-event'
-                    ? <ClockCircleOutlined />
-                    : ((node.type === 'routine' || node.type === 'package') ? <CodeOutlined /> : <EyeOutlined />),
+                    ? renderSidebarObjectIcon('event')
+                    : node.type === 'routine'
+                      ? renderSidebarObjectIcon('routine')
+                      : node.type === 'package' ? renderSidebarObjectIcon('package') : renderSidebarObjectIcon('view'),
             node,
           });
         }
@@ -505,7 +504,7 @@ export const useSidebarSearchModel = ({
       title: t('query.new'),
       meta: t('sidebar.command_search.action.new_query.meta'),
       shortcut: resolveShortcutDisplay(shortcutOptions, 'newQueryTab', activeShortcutPlatform),
-      icon: <PlusOutlined />,
+      icon: <GnNewQueryIcon />,
       onRun: () => window.dispatchEvent(new CustomEvent('gonavi:create-query-tab')),
     },
     {
@@ -514,7 +513,7 @@ export const useSidebarSearchModel = ({
       title: t('sidebar.command_search.action.new_connection.title'),
       meta: t('sidebar.command_search.action.new_connection.meta'),
       shortcut: resolveShortcutDisplay(shortcutOptions, 'newConnection', activeShortcutPlatform),
-      icon: <ThunderboltOutlined />,
+      icon: <GnNewConnectionIcon />,
       onRun: () => onCreateConnection?.(),
     },
     {

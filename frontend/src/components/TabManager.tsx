@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { Button, Dropdown, message, Tabs, Tooltip } from 'antd';
 import { ArrowLeftOutlined, ArrowRightOutlined, CloseCircleOutlined, CloseOutlined, ConsoleSqlOutlined, DatabaseOutlined, EditOutlined, ExportOutlined, FileTextOutlined, FolderOpenOutlined, HistoryOutlined, PlusOutlined, PushpinOutlined, RightOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons';
 import AiSparkOutlined from './icons/AiSparkOutlined';
+import { GnNewConnectionIcon, GnNewQueryIcon, GnSearchIcon } from './icons/gnIcons';
 import type { MenuProps, TabsProps } from 'antd';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent, DragMoveEvent, DragStartEvent } from '@dnd-kit/core';
@@ -1707,14 +1708,14 @@ const TabManager: React.FC<TabManagerProps> = React.memo<TabManagerProps>(({ onF
         <h1>{t('tab_manager.empty.hero.title')}</h1>
         <p>{t('tab_manager.empty.hero.description')}</p>
         <div className="gn-v2-empty-actions">
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenConnectionModal}>
+          <Button type="primary" icon={<GnNewConnectionIcon />} onClick={handleOpenConnectionModal}>
             {t('connection.new')}
           </Button>
-          <Button icon={<ConsoleSqlOutlined />} onClick={() => window.dispatchEvent(new CustomEvent('gonavi:create-query-tab'))}>
+          <Button icon={<GnNewQueryIcon />} onClick={() => window.dispatchEvent(new CustomEvent('gonavi:create-query-tab'))}>
             {t('query.new')}
           </Button>
           <Tooltip title={t('tab_manager.empty.quick.search.description')}>
-            <Button icon={<SearchOutlined />} onClick={handleFocusObjectSearch}>
+            <Button icon={<GnSearchIcon />} onClick={handleFocusObjectSearch}>
               {t('tab_manager.empty.quick.search.title')}
             </Button>
           </Tooltip>
