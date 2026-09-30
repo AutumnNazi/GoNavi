@@ -42,6 +42,8 @@ export function AIGetMCPHTTPServerStatus():Promise<ai.MCPHTTPServerStatus>;
 
 export function AIGetMCPServers():Promise<Array<ai.MCPServerConfig>>;
 
+export function AIGetModelContextProfile(arg1:ai.ProviderConfig):Promise<ai.ModelContextProfile>;
+
 export function AIGetProviders():Promise<Array<ai.ProviderConfig>>;
 
 export function AIGetResultMaskingSettings():Promise<ai.ResultMaskingSettings>;

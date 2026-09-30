@@ -136,6 +136,10 @@ type ProviderConfig struct {
 	// Optional model-picker preferences. They do not alter CLI login or account permissions.
 	DisabledModels []string          `json:"disabledModels,omitempty"`
 	CustomModels   []string          `json:"customModels,omitempty"`
+	// RemovedModels 是用户从模型列表里删除的模型。与 DisabledModels 的区别：
+	// 停用只是置灰不可选，删除是从列表里彻底移除（含内置预设与上游同步来的模型，
+	// 因此必须持久化，否则下次同步又会回来）。required 模型不允许移除。
+	RemovedModels []string `json:"removedModels,omitempty"`
 	APIFormat      string            `json:"apiFormat,omitempty"` // openai | openai-responses | anthropic | gemini | cursor-agent | cursor-cli | codex-cli | claude-cli | codebuddy-cli | grok-cli
 	Headers        map[string]string `json:"headers,omitempty"`
 	MaxTokens      int               `json:"maxTokens,omitempty"`

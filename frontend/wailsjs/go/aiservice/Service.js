@@ -78,6 +78,10 @@ export function AIGetMCPServers() {
   return window['go']['aiservice']['Service']['AIGetMCPServers']();
 }
 
+export function AIGetModelContextProfile(arg1) {
+  return window['go']['aiservice']['Service']['AIGetModelContextProfile'](arg1);
+}
+
 export function AIGetProviders() {
   return window['go']['aiservice']['Service']['AIGetProviders']();
 }

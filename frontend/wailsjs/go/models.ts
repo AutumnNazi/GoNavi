@@ -208,6 +208,20 @@ export namespace ai {
 	        this.inputSchema = source["inputSchema"];
 	    }
 	}
+	export class ModelContextProfile {
+	    defaultWindow: number;
+	    options: number[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ModelContextProfile(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.defaultWindow = source["defaultWindow"];
+	        this.options = source["options"];
+	    }
+	}
 	export class ProviderConfig {
 	    id: string;
 	    type: string;
@@ -222,6 +236,7 @@ export namespace ai {
 	    models?: string[];
 	    disabledModels?: string[];
 	    customModels?: string[];
+	    removedModels?: string[];
 	    apiFormat?: string;
 	    headers?: Record<string, string>;
 	    maxTokens?: number;
@@ -251,6 +266,7 @@ export namespace ai {
 	        this.models = source["models"];
 	        this.disabledModels = source["disabledModels"];
 	        this.customModels = source["customModels"];
+	        this.removedModels = source["removedModels"];
 	        this.apiFormat = source["apiFormat"];
 	        this.headers = source["headers"];
 	        this.maxTokens = source["maxTokens"];

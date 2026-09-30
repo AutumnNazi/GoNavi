@@ -1013,7 +1013,8 @@ func normalizeProviderConfig(config ai.ProviderConfig) ai.ProviderConfig {
 	if isMiniMaxAnthropicProvider(config) && (model == "" || strings.HasPrefix(strings.ToLower(model), "minimax-text-")) {
 		config.Model = miniMaxAnthropicModels[0]
 	}
-	return config
+	// 三个模型名单（删除 / 停用 / 自定义）在这里统一收敛，保存在任何入口都一致。
+	return normalizeProviderModelPreferences(config)
 }
 
 func isDeepSeekResponsesProvider(config ai.ProviderConfig) bool {
@@ -1570,6 +1571,12 @@ func (s *Service) AIGetContextLevel() string {
 // 它不得自己维护一份值域副本——那会随上游 CLI 版本漂移而失真。
 func (s *Service) AIGetCLICapabilities() []ai.CLICapabilityView {
 	return provider.CLICapabilityViews()
+}
+
+// AIGetModelContextProfile 返回模型的默认上下文窗口与可选档位（token）。
+// 数值只在 Go 侧的规则表里维护，前端据此显示上限并决定是否出现档位切换。
+func (s *Service) AIGetModelContextProfile(config ai.ProviderConfig) ai.ModelContextProfile {
+	return ai.ResolveModelContextProfile(config.Model)
 }
 
 // AIListCLIModels 保留列表接口；新设置页使用含来源的 AIGetCLIModelCatalog。

@@ -48,7 +48,7 @@ import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import type { AIComposerNoticeDescriptor } from '../utils/aiComposerNotice';
 import { buildAIComposerNotice } from '../utils/aiComposerNotice';
 import { consumeAIChatSendShortcutOnKeyDown } from '../utils/aiChatSendShortcut';
-import { getDynamicMaxContextChars } from '../utils/aiChatRuntime';
+import { resolveEffectiveContextWindow } from '../utils/aiChatRuntime';
 import { getShortcutPlatform, resolveShortcutBinding } from '../utils/shortcuts';
 import { isMacLikePlatform } from '../utils/appearance';
 import {
@@ -167,6 +167,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         handleProviderModelChange,
         handleOpenSettingsFromPanel,
         loadingModels,
+        modelContextProfile,
         providers,
         providerModels,
         providerCatalogs,
@@ -1282,7 +1283,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
                 mutedColor={mutedColor}
                 overlayTheme={overlayTheme}
                 contextUsageChars={contextUsageChars}
-                maxContextChars={getDynamicMaxContextChars(activeProvider?.model)}
+                maxContextChars={resolveEffectiveContextWindow(modelContextProfile, activeProvider?.contextWindow)}
             />
 
             <AIHistoryDrawer

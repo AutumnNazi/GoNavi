@@ -1,6 +1,6 @@
 import React from 'react';
 import { Input, Tooltip } from 'antd';
-import { DatabaseOutlined } from '@ant-design/icons';
+import { GnDatabaseIcon } from '../icons/gnIcons';
 import { useStore } from '../../store';
 import type { OverlayWorkbenchTheme } from '../../utils/overlayWorkbenchTheme';
 import type { AIComposerNotice, AIComposerNoticeAction } from '../../utils/aiComposerNotice';
@@ -26,6 +26,7 @@ import { useAIChatDraftAttachments } from './useAIChatDraftAttachments';
 import { useAISlashCommandMenu } from './useAISlashCommandMenu';
 import type { AIChatAttachment } from '../../types';
 import type { AIRunDispatchMode } from './aiRunHarnessClient';
+import { AIChatContextMeter } from './AIChatContextMeter';
 
 interface AIChatInputProps {
     input: string;
@@ -78,7 +79,7 @@ export const AIChatInput: React.FC<AIChatInputProps> = ({
     onModelChange, onProviderModelChange, onManageProvider, onFetchModels, onFetchProviderModels, thinkingIntensity, onThinkingIntensityChange,
     cliCapability, cliCatalog,
     textareaRef, darkMode, textColor, mutedColor, overlayTheme,
-    contextUsageChars, maxContextChars
+    contextUsageChars, maxContextChars,
 }) => {
     const i18n = useOptionalI18n();
     const t = i18n?.t ?? ((key: string, params?: Record<string, string | number | boolean | null | undefined>) =>
@@ -161,12 +162,6 @@ export const AIChatInput: React.FC<AIChatInputProps> = ({
         });
     }, [sendShortcutBinding?.combo, sendShortcutBinding?.enabled, shortcutPlatform, t]);
     const connectionTooltipLabel = t('ai_chat.input.context.connection_tooltip');
-    const memoryLimitLabel = maxContextChars !== undefined
-        ? `${(maxContextChars / 1000).toFixed(0)}k`
-        : '';
-    const memoryTooltipLabel = memoryLimitLabel
-        ? t('ai_chat.input.context.memory_tooltip', { limit: memoryLimitLabel })
-        : '';
     const composerActionHandler = typeof onComposerAction === 'function' ? onComposerAction : undefined;
     const composerNoticeActionHandler = composerNotice?.action?.key && composerActionHandler
         ? handleComposerNoticeAction
@@ -263,7 +258,7 @@ export const AIChatInput: React.FC<AIChatInputProps> = ({
                         <Tooltip title={connectionTooltipLabel}>
                             <div className="gn-v2-ai-context-chip">
                                 <span className="gn-v2-ai-context-live-dot" />
-                                <DatabaseOutlined />
+                                <GnDatabaseIcon />
                                 <span className="gn-v2-ai-context-chip-text">
                                     {activeConnName}{activeContext?.dbName ? ` / ${activeContext.dbName}` : ''}
                                 </span>
@@ -290,16 +285,7 @@ export const AIChatInput: React.FC<AIChatInputProps> = ({
                         cliCatalog={cliCatalog}
                     />
                     {contextUsageChars !== undefined && maxContextChars !== undefined && (
-                        <Tooltip title={memoryTooltipLabel}>
-                            <div className={`gn-v2-ai-token-meter${contextUsageChars > maxContextChars * 0.8 ? ' is-warn' : ''}`}>
-                                <span className="gn-v2-ai-token-bar" aria-hidden="true">
-                                    <span style={{ width: `${Math.min(100, (contextUsageChars / Math.max(1, maxContextChars)) * 100)}%` }} />
-                                </span>
-                                <span className="gn-v2-ai-token-meter-text">
-                                    {(contextUsageChars / 1000).toFixed(1)}k/{(maxContextChars / 1000).toFixed(0)}k
-                                </span>
-                            </div>
-                        </Tooltip>
+                        <AIChatContextMeter usageChars={contextUsageChars} maxChars={maxContextChars} />
                     )}
                 </div>
             </div>

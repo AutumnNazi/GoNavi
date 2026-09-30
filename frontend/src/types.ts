@@ -744,6 +744,11 @@ export interface AIProviderConfig {
   /** Per-configuration suggestions only; absent fields preserve legacy behavior. */
   disabledModels?: string[];
   customModels?: string[];
+  /**
+   * 用户从模型列表里删除的模型：删除后不再出现在列表里（含内置预设与上游同步来的同名项），
+   * 因此需要持久化。与 disabledModels 的区别是「删除」而非「停用」。
+   */
+  removedModels?: string[];
   apiFormat?: string; // openai 可选 openai-responses；custom 支持 openai/anthropic/gemini/CLI 等格式
   headers?: Record<string, string>;
   maxTokens: number;
