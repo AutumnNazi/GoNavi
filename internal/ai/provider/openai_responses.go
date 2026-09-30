@@ -227,16 +227,17 @@ type openAIResponsesUsage struct {
 }
 
 type openAIResponsesStreamEvent struct {
-	Type        string                    `json:"type"`
-	Code        string                    `json:"code,omitempty"`
-	Message     string                    `json:"message,omitempty"`
-	Delta       string                    `json:"delta,omitempty"`
-	Arguments   string                    `json:"arguments,omitempty"`
-	Name        string                    `json:"name,omitempty"`
-	OutputIndex int                       `json:"output_index,omitempty"`
-	Item        openAIResponsesOutputItem `json:"item,omitempty"`
-	Response    openAIResponsesResponse   `json:"response,omitempty"`
-	Error       json.RawMessage           `json:"error,omitempty"`
+	Type         string                    `json:"type"`
+	Code         string                    `json:"code,omitempty"`
+	Message      string                    `json:"message,omitempty"`
+	Delta        string                    `json:"delta,omitempty"`
+	Arguments    string                    `json:"arguments,omitempty"`
+	Name         string                    `json:"name,omitempty"`
+	OutputIndex  int                       `json:"output_index,omitempty"`
+	SummaryIndex int                       `json:"summary_index,omitempty"`
+	Item         openAIResponsesOutputItem `json:"item,omitempty"`
+	Response     openAIResponsesResponse   `json:"response,omitempty"`
+	Error        json.RawMessage           `json:"error,omitempty"`
 }
 
 func decodeOpenAIResponsesStreamError(raw json.RawMessage) openAIResponsesError {
@@ -636,7 +637,7 @@ func parseOpenAIResponsesOutput(result openAIResponsesResponse) *ai.ChatResponse
 		case "reasoning":
 			for _, part := range item.Summary {
 				if part.Text != "" {
-					reasoning.WriteString(part.Text)
+					writeReasoningSummaryPart(&reasoning, part.Text)
 				}
 			}
 			for _, part := range item.Content {
@@ -1040,6 +1041,12 @@ func (p *OpenAIResponsesProvider) chatStreamWithState(
 				streamedContent.WriteString(event.Delta)
 				callback(ai.StreamChunk{Content: event.Delta})
 			}
+		case "response.reasoning_summary_part.added":
+			// Parts of one summary are separate nodes; keep a blank line between them.
+			if event.SummaryIndex > 0 && streamedReasoning.Len() > 0 {
+				streamedReasoning.WriteString(reasoningSummaryPartSeparator)
+				callback(ai.StreamChunk{Thinking: reasoningSummaryPartSeparator, ReasoningContent: reasoningSummaryPartSeparator})
+			}
 		case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
 			if event.Delta != "" {
 				receivedReasoning = true
@@ -1177,6 +1184,8 @@ func (p *OpenAIResponsesProvider) retryClientRejectedRequest(
 			body.MaxOutputTokens = capValue
 			body.implicitMaxOutputTokens = false
 			fmt.Printf("[OpenAI Responses] 默认输出上限被上游拒绝，改用 %d 重试（0 表示不发送上限）\n", capValue)
+		case downgradeUnsupportedReasoningSummary(&body, err):
+			fmt.Println("[OpenAI Responses] 上游不支持 detailed 推理摘要，自动降级为 auto")
 		case len(body.Include) > 0 && isOpenAIResponsesUnsupportedIncludeError(err):
 			body.Include = nil
 			fmt.Println("[OpenAI Responses] 上游不支持 include，自动降级为不请求加密推理内容")
@@ -1204,34 +1213,6 @@ func (p *OpenAIResponsesProvider) retryClientRejectedRequest(
 		}
 		err = retryErr
 	}
-}
-
-func isOpenAIResponsesUnsupportedIncludeError(err error) bool {
-	return isOpenAIResponsesUnsupportedCapabilityError(err, "include")
-}
-
-func isOpenAIResponsesUnsupportedToolsError(err error) bool {
-	return isOpenAIResponsesUnsupportedCapabilityError(
-		err,
-		"tools",
-		"functions",
-		"function calling",
-		"function-calling",
-		"tool calling",
-		"tool-calling",
-		"tool use",
-	)
-}
-
-func isOpenAIResponsesUnsupportedImagesError(err error) bool {
-	return isOpenAIResponsesUnsupportedCapabilityError(
-		err,
-		"images",
-		"image input",
-		"input_image",
-		"image_url",
-		"vision",
-	)
 }
 
 func isOpenAIResponsesUnsupportedCapabilityError(err error, capabilityTerms ...string) bool {

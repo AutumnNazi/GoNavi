@@ -429,6 +429,20 @@ export namespace aiservice {
 		    return a;
 		}
 	}
+	export class AutoApprovalSettings {
+	    global: boolean;
+	    sessionIds: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new AutoApprovalSettings(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.global = source["global"];
+	        this.sessionIds = source["sessionIds"];
+	    }
+	}
 
 }
 

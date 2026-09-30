@@ -215,11 +215,14 @@ type HarnessConfig struct {
 	ContextBuilder ContextBuilder
 	Tools          ToolCatalog
 	Approvals      ApprovalHandler
-	Events         EventSink
-	RootContext    context.Context
-	OwnerID        string
-	LeaseDuration  time.Duration
-	PollInterval   time.Duration
+	// AutoApproval, when set, approves side-effecting tool calls the host has
+	// chosen to always allow instead of waiting for a person.
+	AutoApproval  AutoApprovalPolicy
+	Events        EventSink
+	RootContext   context.Context
+	OwnerID       string
+	LeaseDuration time.Duration
+	PollInterval  time.Duration
 	// Runtime contains the live coordination settings. The legacy individual
 	// fields below remain accepted for source compatibility with low-level
 	// adapters; when Runtime is provided it takes precedence.

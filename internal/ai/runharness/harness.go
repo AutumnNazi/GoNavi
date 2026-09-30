@@ -46,6 +46,7 @@ type AgentRunHarness struct {
 	contextBuilder ContextBuilder
 	tools          ToolCatalog
 	approvals      ApprovalHandler
+	autoApproval   AutoApprovalPolicy
 	events         EventSink
 	root           context.Context
 	cancel         context.CancelFunc
@@ -175,7 +176,7 @@ func NewAgentRunHarness(config HarnessConfig, options ...HarnessOption) (*AgentR
 	}
 	return &AgentRunHarness{
 		ledger: config.Ledger, model: config.Model, inputBinder: config.InputBinder, contextBuilder: contextBuilder, tools: config.Tools,
-		approvals: config.Approvals, events: config.Events, root: root,
+		approvals: config.Approvals, autoApproval: config.AutoApproval, events: config.Events, root: root,
 		cancel: cancel, ownerID: ownerID, leaseTTL: leaseTTL,
 		shutdownGrace: shutdownGrace, defaultPolicy: DefaultRunPolicy(),
 		runtime: runtime, runs: make(map[string]*runExecution),
@@ -2521,25 +2522,6 @@ func (h *AgentRunHarness) listTools(ctx context.Context) ([]ToolDescriptor, erro
 	return items, nil
 }
 
-// projectModelDeltaToolIntents keeps intermediate provider fragments out of
-// the durable event envelope. A streaming provider may emit `{"query":`
-// before completing a tool call; json.RawMessage rejects that fragment during
-// event serialization. The original intent remains untouched so final-turn
-// validation still returns malformed_tool_call rather than treating it as {}.
-func projectModelDeltaToolIntents(intents []ToolIntent) []ToolIntent {
-	if len(intents) == 0 {
-		return nil
-	}
-	projected := make([]ToolIntent, len(intents))
-	copy(projected, intents)
-	for index := range projected {
-		if len(projected[index].Arguments) > 0 && !json.Valid(projected[index].Arguments) {
-			projected[index].Arguments = nil
-		}
-	}
-	return projected
-}
-
 func (h *AgentRunHarness) executeModel(ctx context.Context, request ModelTurnRequest, run RunSnapshot, execution *runExecution) (ModelTurnResult, error) {
 	if h.model == nil {
 		return ModelTurnResult{}, errors.New("model adapter is unavailable")
@@ -2695,7 +2677,7 @@ func (h *AgentRunHarness) executeModel(ctx context.Context, request ModelTurnReq
 			reasoningBuffer.WriteString(delta.Reasoning)
 		}
 		if len(delta.ToolCalls) > 0 {
-			pendingCalls = append(pendingCalls, delta.ToolCalls...)
+			pendingCalls = mergeModelDeltaToolIntents(pendingCalls, delta.ToolCalls)
 		}
 		if idleReset != nil {
 			select {
@@ -2901,7 +2883,7 @@ func (h *AgentRunHarness) awaitApproval(ctx context.Context, run RunSnapshot, in
 	argsHash := ArgsHash(approvalArgs)
 	var err error
 	if current.State != RunStateAwaitingApproval {
-		_, err = h.appendState(ctx, current, EventApproval, RunStateAwaitingApproval, newApprovalEvent(approvalID, intent.CallID, intent.ToolName, intent.Effect, argsHash, "pending"), execution, "")
+		_, err = h.appendState(ctx, current, EventApproval, RunStateAwaitingApproval, newApprovalEvent(approvalID, intent.CallID, intent.ToolName, intent.Effect, argsHash, h.initialApprovalDecision(ctx, run, intent)), execution, "")
 		if err != nil {
 			return false, err
 		}
@@ -2954,6 +2936,7 @@ func (h *AgentRunHarness) awaitApproval(ctx context.Context, run RunSnapshot, in
 			})
 			return false, ErrRunSteered
 		}
+		h.settleAutoApproval(ctx, run, intent, approval, current.Revision)
 		// Commands can arrive from a different desktop/CLI process while the
 		// approval card is open.
 		h.consumeControlCommands(ctx, execution)
@@ -2985,33 +2968,6 @@ func (h *AgentRunHarness) awaitApproval(ctx context.Context, run RunSnapshot, in
 			timer.Stop()
 		case <-timer.C:
 		}
-	}
-}
-
-// newApprovalEvent keeps the adapter-facing approval projection deliberately
-// separate from encrypted approval arguments. Its summary only communicates
-// the effect class, so a SQL statement or any other tool parameter cannot
-// cross the Wails/CLI event boundary by accident.
-func newApprovalEvent(approvalID, callID, toolName string, effect ToolEffect, argsHash, decision string) ApprovalEvent {
-	return ApprovalEvent{
-		ApprovalID: approvalID,
-		CallID:     callID,
-		ToolName:   toolName,
-		Effect:     effect,
-		ArgsHash:   argsHash,
-		Decision:   decision,
-		Summary:    approvalDisplaySummary(effect),
-	}
-}
-
-func approvalDisplaySummary(effect ToolEffect) string {
-	switch effect {
-	case ToolEffectSideEffect:
-		return "This tool can change data or external state."
-	case ToolEffectSideEffectUnknown:
-		return "This tool may change data or external state."
-	default:
-		return "This tool requires approval before it can run."
 	}
 }
 

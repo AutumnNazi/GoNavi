@@ -508,7 +508,7 @@ func (s *Service) initializeAgentHarness(ctx context.Context) error {
 			s.emitAgentRunEvent(event)
 		},
 	}
-	harness, err := runharness.NewAgentRunHarness(config)
+	harness, err := runharness.NewAgentRunHarness(config, runharness.WithAutoApprovalPolicy(serviceAutoApprovalPolicy{service: s}))
 	if err == nil {
 		err = harness.SetDefaultPolicy(policySnapshot.Policy)
 	}

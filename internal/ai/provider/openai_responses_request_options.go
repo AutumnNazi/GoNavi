@@ -48,7 +48,9 @@ func openAIResponsesRequestReasoning(model, baseURL, rawIntensity string) *openA
 
 	reasoning := &openAIResponsesReasoning{Effort: effort}
 	if !isDeepSeekResponsesBaseURL(baseURL) && !strings.Contains(strings.ToLower(model), "deepseek") {
-		reasoning.Summary = "auto"
+		// Ask for the detailed summary so each reasoning node comes with its own
+		// explanation; a gateway that rejects it is retried with "auto".
+		reasoning.Summary = reasoningSummaryDetailed
 	}
 	return reasoning
 }
