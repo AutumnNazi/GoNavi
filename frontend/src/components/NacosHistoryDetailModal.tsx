@@ -98,11 +98,7 @@ const NacosHistoryDetailModal: React.FC<Props> = ({
           {compareError ? <div role="alert">{compareError}</div> : null}
           {comparison !== null ? (
             <>
-              <div style={{ display: 'flex', justifyContent: 'space-around' }}>
-                <span>{tr('nacos.history.historical_content')}</span>
-                <span>{tr('nacos.history.current_published_content')}</span>
-              </div>
-              <NacosHistoryDiff original={history?.content ?? ''} modified={comparison} language={language} />
+              <NacosHistoryDiff original={history?.content ?? ''} modified={comparison} language={language} tr={tr} />
             </>
           ) : (<Editor
             height={360}

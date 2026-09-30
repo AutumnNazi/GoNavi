@@ -21,6 +21,12 @@ export const registerGonaviMonacoThemes: BeforeMount = (monaco) => {
     ],
     colors: {
       'editor.background': '#00000000',
+      'diffEditor.insertedLineBackground': '#23863633',
+      'diffEditor.removedLineBackground': '#F8514933',
+      'diffEditor.insertedTextBackground': '#23863666',
+      'diffEditor.removedTextBackground': '#F8514966',
+      'diffEditorGutter.insertedLineBackground': '#23863666',
+      'diffEditorGutter.removedLineBackground': '#F8514966',
       'editor.lineHighlightBackground': '#ffffff10',
       'editorGutter.background': '#00000000',
       // Transparent sticky scroll so panel/theme bg shows through (CSS may also paint --gn-bg-panel).
@@ -41,6 +47,12 @@ export const registerGonaviMonacoThemes: BeforeMount = (monaco) => {
     ],
     colors: {
       'editor.background': '#00000000',
+      'diffEditor.insertedLineBackground': '#2DA44E26',
+      'diffEditor.removedLineBackground': '#CF222E26',
+      'diffEditor.insertedTextBackground': '#2DA44E4D',
+      'diffEditor.removedTextBackground': '#CF222E4D',
+      'diffEditorGutter.insertedLineBackground': '#2DA44E4D',
+      'diffEditorGutter.removedLineBackground': '#CF222E4D',
       'editor.lineHighlightBackground': '#00000010',
       'editorGutter.background': '#00000000',
       'editorStickyScroll.background': '#00000000',

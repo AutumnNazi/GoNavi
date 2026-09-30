@@ -11532,5 +11532,10 @@
   "nacos.history.compare_current": "Mit aktueller Version vergleichen",
   "nacos.history.view_only": "Nur Verlauf anzeigen",
   "nacos.history.historical_content": "Historischer Inhalt",
-  "nacos.history.current_published_content": "Aktuell veröffentlichter Inhalt"
+  "nacos.history.current_published_content": "Aktuell veröffentlichter Inhalt",
+  "nacos.history.no_changes": "Keine Unterschiede zwischen dieser historischen und der aktuell veröffentlichten Version",
+  "nacos.history.diff_view": "Differenzansicht",
+  "nacos.history.inline_diff": "Inline-Differenz",
+  "nacos.history.split_diff": "Nebeneinander",
+  "nacos.history.no_changes_title": "Keine Unterschiede"
 }

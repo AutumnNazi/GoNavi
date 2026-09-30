@@ -11532,5 +11532,10 @@
   "nacos.history.compare_current": "與目前版本比較",
   "nacos.history.view_only": "僅檢視歷史",
   "nacos.history.historical_content": "歷史內容",
-  "nacos.history.current_published_content": "目前已發佈內容"
+  "nacos.history.current_published_content": "目前已發佈內容",
+  "nacos.history.no_changes": "歷史版本與目前已發佈版本無差異",
+  "nacos.history.diff_view": "差異檢視",
+  "nacos.history.inline_diff": "行內差異",
+  "nacos.history.split_diff": "並排差異",
+  "nacos.history.no_changes_title": "無差異"
 }
