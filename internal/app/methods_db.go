@@ -1406,7 +1406,7 @@ func (a *App) dbQueryWithCancel(
 		true,
 		optionalDriverTypeForConnectionConfig(runConfig),
 	)
-	lifecycle := a.beginQueryExecutionLifecycle(queryID)
+	lifecycle := a.beginQueryExecutionLifecycleWithConnection(queryID)
 	defer func() {
 		lifecycle.complete(result)
 		cancel()
@@ -1424,6 +1424,7 @@ func (a *App) dbQueryWithCancel(
 		logger.Error(err, "DBQuery 获取连接失败：%s", formatConnSummary(runConfig))
 		return buildQueryConnectionFailure(err, queryID, auditOptions.classifyConnectionErrors)
 	}
+	lifecycle.markExecuting()
 
 	isReadQuery := isReadOnlySQLQuery(runConfig.Type, query)
 	tryQueryFirst := shouldTryQueryResultFirst(runConfig.Type, query)
@@ -1673,7 +1674,7 @@ func (a *App) dbQueryMulti(
 		true,
 		optionalDriverTypeForConnectionConfig(runConfig),
 	)
-	lifecycle := a.beginQueryExecutionLifecycle(queryID)
+	lifecycle := a.beginQueryExecutionLifecycleWithConnection(queryID)
 	defer func() {
 		lifecycle.complete(result)
 		cancel()
@@ -1691,6 +1692,7 @@ func (a *App) dbQueryMulti(
 		logger.Error(err, "DBQueryMulti 获取连接失败：%s", formatConnSummary(runConfig))
 		return buildQueryConnectionFailure(err, queryID, auditOptions.classifyConnectionErrors)
 	}
+	lifecycle.markExecuting()
 	defer func() {
 		// A successful SQL round trip is at least as strong a health signal as Ping.
 		if result.Success && queryExecuted {
