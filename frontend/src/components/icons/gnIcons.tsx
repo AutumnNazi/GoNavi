@@ -361,6 +361,78 @@ export const GnTextViewIcon = createGnIcon('text-view', (
 
 export const GnPlusIcon = createGnIcon('plus', <path d="M12 5v14M5 12h14" />);
 
+/** 文件夹：合上的。 */
+export const GnFolderIcon = createGnIcon('folder', (
+  <path d="M3.5 7.4A2.4 2.4 0 0 1 5.9 5h3.5a2 2 0 0 1 1.5.7l1 1.2a2 2 0 0 0 1.5.7h4.7a2.4 2.4 0 0 1 2.4 2.4v7.6a2.4 2.4 0 0 1-2.4 2.4H5.9a2.4 2.4 0 0 1-2.4-2.4z" />
+));
+
+/** 文件夹：打开的，前面一片斜掀起。 */
+export const GnFolderOpenIcon = createGnIcon('folder-open', (
+  <>
+    <path d="M3.5 17.4V6.9A2.4 2.4 0 0 1 5.9 4.5h3.5a2 2 0 0 1 1.5.7l.9 1.1a2 2 0 0 0 1.5.7h3.7a2.4 2.4 0 0 1 2.4 2.4v1.4" />
+    <path d="M3.6 19h14.2a1.7 1.7 0 0 0 1.6-1.2l1.9-5.6a1.2 1.2 0 0 0-1.1-1.6H7.6a1.7 1.7 0 0 0-1.6 1.2z" />
+  </>
+));
+
+/** 索引：按顺序排列的行 + 向下的箭头。 */
+export const GnIndexIcon = createGnIcon('index', (
+  <>
+    <path d="M4 6.5h9M4 12h6.5M4 17.5h4" />
+    <path d="M18 6v12M14.8 15l3.2 3.2 3.2-3.2" />
+  </>
+));
+
+/** 外键 / 关联：两环相扣的链节。 */
+export const GnLinkIcon = createGnIcon('link', (
+  <>
+    <path d="M9.8 14.2a3.6 3.6 0 0 0 5.1 0l3.2-3.2a3.6 3.6 0 0 0-5.1-5.1l-1 1" />
+    <path d="M14.2 9.8a3.6 3.6 0 0 0-5.1 0L5.9 13a3.6 3.6 0 0 0 5.1 5.1l1-1" />
+  </>
+));
+
+/** 下拉箭头：菜单/下拉触发器。 */
+export const GnChevronDownIcon = createGnIcon('chevron-down', <path d="m5 9 7 7 7-7" />);
+
+/** 更多：横向三点，点用粗描边画成实心圆点。 */
+export const GnMoreIcon = createGnIcon('more', <path strokeWidth={4} d="M5.5 12h.01M12 12h.01M18.5 12h.01" />);
+
+/** 自动换行：两行文字，第二行折返并带回车箭头。 */
+export const GnWrapIcon = createGnIcon('wrap', (
+  <>
+    <path d="M4 6h16" />
+    <path d="M4 12h12.5a3.25 3.25 0 0 1 0 6.5H12" />
+    <path d="m14.6 16.4-2.6 2.1 2.6 2.1" />
+    <path d="M4 18.5h4" />
+  </>
+));
+
+/** 美化：魔术棒 + 星光，和“自动换行”的多行图形、AI 的星标区分开。 */
+export const GnFormatIcon = createGnIcon('format', (
+  <>
+    <path d="M4.2 19.8 13 11" />
+    <path d="M17.2 3.2c.4 2.5 1.7 3.8 4.2 4.2-2.5.4-3.8 1.7-4.2 4.2-.4-2.5-1.7-3.8-4.2-4.2 2.5-.4 3.8-1.7 4.2-4.2z" />
+    <path strokeWidth={2.8} d="M6.4 6.2h.01M19.2 17.4h.01" />
+  </>
+));
+
+/** 全屏：四角向外。 */
+export const GnFullscreenIcon = createGnIcon('fullscreen', (
+  <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />
+));
+
+/** 退出全屏：四角向内。 */
+export const GnFullscreenExitIcon = createGnIcon('fullscreen-exit', (
+  <path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5" />
+));
+
+/** 时钟：延迟提交。 */
+export const GnClockIcon = createGnIcon('clock', (
+  <>
+    <circle cx="12" cy="12" r="8.6" />
+    <path d="M12 7.4V12l3.1 1.9" />
+  </>
+));
+
 export const GnCloseIcon = createGnIcon('close', <path d="m6.2 6.2 11.6 11.6M17.8 6.2 6.2 17.8" />);
 
 /** 设置：八齿齿轮 + 中心孔。 */
