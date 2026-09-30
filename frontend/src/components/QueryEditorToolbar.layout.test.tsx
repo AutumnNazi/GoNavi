@@ -373,8 +373,9 @@ describe('QueryEditorToolbar layout', () => {
     );
     expect(wordWrapCss).toContain('align-items: center;');
     expect(wordWrapCss).toContain('justify-content: center;');
-    expect(wordWrapCss).toContain('width: 16px;');
-    expect(wordWrapCss).toContain('height: 16px;');
+    // The icon is the shared line-icon family now: it sizes with the font, like every other toolbar icon.
+    expect(wordWrapCss).toContain('font-size: var(--gn-toolbar-icon-size, 17px);');
+    expect(toolbarSource).toContain('GnWrapIcon');
     expect(wordWrapCss).not.toContain('translateY');
   });
 

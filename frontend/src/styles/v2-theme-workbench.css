@@ -225,11 +225,11 @@ body[data-ui-version="v2"] .gn-v2-query-toolbar-icon-select .ant-select-arrow {
 
 body[data-ui-version="v2"] .gn-v2-query-toolbar-select-icon {
   display: inline-flex;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
+  font-size: var(--gn-toolbar-icon-size, 17px);
 }
 
 body[data-ui-version="v2"] .gn-v2-query-toolbar .ant-select-selector {
@@ -353,11 +353,25 @@ body[data-ui-version="v2"] .gn-v2-query-toolbar-word-wrap-action .ant-btn-icon {
   line-height: 1;
 }
 
-.gn-query-toolbar-word-wrap-icon {
+/* 工具栏图标按钮里的自绘线性图标统一 17px，线宽随字号，保证同一族的视觉重量。 */
+body[data-ui-version="v2"] .gn-v2-query-toolbar .gn-v2-query-toolbar-icon-action .ant-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+body[data-ui-version="v2"] .gn-v2-query-toolbar .gn-v2-query-toolbar-icon-action .gn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--gn-toolbar-icon-size, 17px);
+  line-height: 1;
+  vertical-align: middle;
+}
+
+body[data-ui-version="v2"] .gn-v2-query-toolbar .gn-v2-query-toolbar-icon-action .gn-icon svg {
   display: block;
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
 }
 
 body[data-ui-version="v2"] .gn-v2-query-toolbar-action-group {
@@ -472,7 +486,7 @@ body[data-custom-theme][data-ui-version="v2"] .gn-v2-query-toolbar .gn-v2-query-
 body[data-ui-version="v2"] .gn-v2-query-toolbar .gn-v2-query-toolbar-save-action.ant-btn:not(:disabled):not(.ant-btn-disabled) .anticon,
 body[data-custom-theme][data-ui-version="v2"] .gn-v2-query-toolbar .gn-v2-query-toolbar-save-action.ant-btn:not(:disabled):not(.ant-btn-disabled) .anticon {
   color: inherit !important;
-  font-size: 15px !important;
+  font-size: var(--gn-toolbar-icon-size, 17px) !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-query-toolbar .gn-v2-query-toolbar-save-action.ant-btn:not(:disabled):not(.ant-btn-disabled):hover,
