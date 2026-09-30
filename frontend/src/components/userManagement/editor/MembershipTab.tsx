@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Checkbox, Empty, Input, Tag } from 'antd';
-import { SearchOutlined } from '@ant-design/icons';
+import { Checkbox, Input, Tag } from 'antd';
 import { useI18n } from '../../../i18n/provider';
+import { GnSearchIcon } from '../../icons/gnIcons';
+import UserManagementEmpty from '../UserManagementEmpty';
+import { GnUsersIcon } from '../userManagementIcons';
 import { principalDisplayName, roleKey } from '../userManagementModel';
 import type { PrincipalDraft } from '../userManagementDraft';
 import type { PrincipalRef, UMMembership, UMPrincipal, UMServerProfile } from '../userManagementTypes';
@@ -58,9 +60,9 @@ export default function MembershipTab({ profile, draft, principals, members, wri
 
   return (
     <div className="gn-user-mgmt-tab-body">
-      <Input allowClear prefix={<SearchOutlined />} placeholder={t('user_management.membership.search')} value={keyword} onChange={(event) => setKeyword(event.target.value)} />
-      {visible.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('user_management.membership.empty')} /> : (
-        <table className="gn-user-mgmt-matrix-table">
+      <Input allowClear prefix={<GnSearchIcon />} placeholder={t('user_management.membership.search')} value={keyword} onChange={(event) => setKeyword(event.target.value)} />
+      {visible.length === 0 ? <UserManagementEmpty compact icon={<GnUsersIcon />} text={t('user_management.membership.empty')} /> : (
+        <div className="gn-user-mgmt-table-card"><table className="gn-user-mgmt-matrix-table">
           <thead>
             <tr>
               <th>{t('user_management.membership.column.role')}</th>
@@ -86,7 +88,7 @@ export default function MembershipTab({ profile, draft, principals, members, wri
               );
             })}
           </tbody>
-        </table>
+        </table></div>
       )}
       {draft.kind === 'role' && members.length > 0 && (
         <div className="gn-user-mgmt-members">

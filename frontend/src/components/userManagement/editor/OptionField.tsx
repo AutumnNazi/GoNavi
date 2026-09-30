@@ -1,7 +1,8 @@
 import { Input, InputNumber, Select, Switch, Tag, Tooltip } from 'antd';
-import { InfoCircleOutlined } from '@ant-design/icons';
 import { useI18n } from '../../../i18n/provider';
 import { userManagementChoiceLabel, userManagementOptionLabel } from '../userManagementFieldLabels';
+import { GnInfoIcon } from '../userManagementIcons';
+import DateTimeField from './DateTimeField';
 import type { UMOptionDescriptor } from '../userManagementTypes';
 
 interface OptionFieldProps {
@@ -66,7 +67,7 @@ export default function OptionField({ descriptor, value, disabled, onChange }: O
       case 'text':
         return <Input.TextArea value={value} disabled={disabled} autoSize={{ minRows: 2, maxRows: 8 }} onChange={(event) => onChange(event.target.value)} aria-label={label} />;
       case 'datetime':
-        return <Input value={value} disabled={disabled} placeholder="YYYY-MM-DD HH:mm:ss" onChange={(event) => onChange(event.target.value)} aria-label={label} />;
+        return <DateTimeField value={value} disabled={disabled} label={label} onChange={onChange} />;
       default:
         return <Input value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} aria-label={label} />;
     }
@@ -78,7 +79,7 @@ export default function OptionField({ descriptor, value, disabled, onChange }: O
         {label}
         {hint && (
           <Tooltip title={hint}>
-            <InfoCircleOutlined className="gn-user-mgmt-field-hint-icon" />
+            <GnInfoIcon className="gn-user-mgmt-field-hint-icon" />
           </Tooltip>
         )}
       </label>

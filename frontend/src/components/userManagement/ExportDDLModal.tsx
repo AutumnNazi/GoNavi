@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Alert, Button, Spin, message } from 'antd';
-import { CopyOutlined } from '@ant-design/icons';
+import { GnCopyIcon } from '../icons/gnIcons';
 import { useI18n } from '../../i18n/provider';
 import type { RpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import Modal from '../common/ResizableDraggableModal';
@@ -64,7 +64,7 @@ export default function ExportDDLModal({ principal, backend, config, onClose }: 
       title={t('user_management.export.title', { name: principalDisplayName(principal.ref) })}
       onCancel={onClose}
       footer={[
-        <Button key="copy" icon={<CopyOutlined />} disabled={!ddl} onClick={() => void copy()}>{t('user_management.export.copy')}</Button>,
+        <Button key="copy" icon={<GnCopyIcon />} disabled={!ddl} onClick={() => void copy()}>{t('user_management.export.copy')}</Button>,
         <Button key="close" type="primary" onClick={onClose}>{t('user_management.apply.close')}</Button>,
       ]}
     >

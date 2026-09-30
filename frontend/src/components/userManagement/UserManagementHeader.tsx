@@ -1,10 +1,11 @@
 import { Alert, Button, Select, Space, Tag, Tooltip } from 'antd';
-import { ReloadOutlined, TeamOutlined } from '@ant-design/icons';
 import { useI18n } from '../../i18n/provider';
 import { useStore } from '../../store';
 import type { SavedConnection } from '../../types';
 import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
 import { buildUserManagementWorkbenchTab } from '../../utils/userManagementTab';
+import { GnRefreshIcon } from '../icons/gnIcons';
+import { GnInfoIcon, GnUsersIcon } from './userManagementIcons';
 import type { UMNotice, UMServerProfile } from './userManagementTypes';
 
 interface UserManagementHeaderProps {
@@ -17,7 +18,7 @@ interface UserManagementHeaderProps {
   onRefresh: () => void;
 }
 
-const noticeType = (notice: UMNotice) => (notice.level === 'danger' ? 'error' : notice.level === 'warning' ? 'warning' : 'info');
+const noticeLevel = (notice: UMNotice) => (notice.level === 'danger' ? 'danger' : notice.level === 'warning' ? 'warning' : 'info');
 
 /** 头部：连接切换、服务端版本徽标、当前账号、按库作用域选择与提示条。 */
 export default function UserManagementHeader({
@@ -39,7 +40,7 @@ export default function UserManagementHeader({
   return (
     <div className="gn-user-mgmt-header">
       <div className="gn-user-mgmt-header-row">
-        <span className="gn-user-mgmt-title-icon"><TeamOutlined /></span>
+        <span className="gn-user-mgmt-title-icon"><GnUsersIcon /></span>
         <Select
           className="gn-user-mgmt-connection-select"
           value={connection.id}
@@ -75,7 +76,7 @@ export default function UserManagementHeader({
             />
           )}
           <Tooltip title={t('user_management.action.refresh')}>
-            <Button icon={<ReloadOutlined />} loading={loading} onClick={onRefresh} aria-label={t('user_management.action.refresh')} />
+            <Button icon={<GnRefreshIcon />} loading={loading} onClick={onRefresh} aria-label={t('user_management.action.refresh')} />
           </Tooltip>
         </div>
       </div>
@@ -83,11 +84,14 @@ export default function UserManagementHeader({
         <Alert type="warning" showIcon message={profile.unsupportedReason.text || t('user_management.error.unsupported')} />
       )}
       {notices.length > 0 && (
-        <div className="gn-user-mgmt-notices">
+        <ul className="gn-user-mgmt-notices">
           {notices.map((notice) => (
-            <Alert key={notice.code} type={noticeType(notice)} showIcon banner message={notice.text || notice.code} />
+            <li key={notice.code} className={`gn-user-mgmt-notice is-${noticeLevel(notice)}`}>
+              <GnInfoIcon className="gn-user-mgmt-notice-icon" />
+              <span>{notice.text || notice.code}</span>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );

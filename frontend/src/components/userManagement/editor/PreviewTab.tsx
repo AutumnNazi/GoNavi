@@ -1,7 +1,9 @@
-import { Alert, Empty, Spin, Tag } from 'antd';
+import { Alert, Spin, Tag } from 'antd';
 import { useI18n } from '../../../i18n/provider';
 import { useStore } from '../../../store';
 import TableDesignerSqlPreview from '../../TableDesignerSqlPreview';
+import UserManagementEmpty from '../UserManagementEmpty';
+import { GnCheckCircleIcon } from '../userManagementIcons';
 import type { UMPlan } from '../userManagementTypes';
 
 interface PreviewTabProps {
@@ -25,7 +27,7 @@ export const joinPlanStatements = (plan: UMPlan, family: string): string => {
 export default function PreviewTab({ family, plan, loading, error, hasChanges, height = '320px' }: PreviewTabProps) {
   const { t } = useI18n();
   const darkMode = useStore((state) => state.theme) === 'dark';
-  if (!hasChanges) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('user_management.preview.no_changes')} />;
+  if (!hasChanges) return <UserManagementEmpty icon={<GnCheckCircleIcon />} text={t('user_management.preview.no_changes')} />;
   if (error) return <Alert type="error" showIcon message={error} />;
   if (!plan) return <div className="gn-user-mgmt-preview-loading"><Spin spinning={loading} /></div>;
   const hasDanger = plan.statements.some((statement) => statement.risk === 'danger');

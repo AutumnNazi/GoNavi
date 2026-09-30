@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
-import { Button, Checkbox, Empty, Space, Tag, Tooltip } from 'antd';
+import { Button, Checkbox, Space, Tag, Tooltip } from 'antd';
 import { useI18n } from '../../../i18n/provider';
+import UserManagementEmpty from '../UserManagementEmpty';
+import { GnShieldIcon } from '../userManagementIcons';
 import type { UMGrant, UMPrivilegeDescriptor } from '../userManagementTypes';
 
 interface PrivilegeMatrixProps {
@@ -51,7 +53,7 @@ export default function PrivilegeMatrix({
   };
 
   if (privileges.length === 0) {
-    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('user_management.privileges.none')} />;
+    return <UserManagementEmpty compact icon={<GnShieldIcon />} text={t('user_management.privileges.none')} />;
   }
 
   return (
@@ -60,7 +62,7 @@ export default function PrivilegeMatrix({
         <Button size="small" disabled={!writable} onClick={() => setAll(true)}>{t('user_management.privileges.select_all')}</Button>
         <Button size="small" disabled={!writable} onClick={() => setAll(false)}>{t('user_management.privileges.clear_all')}</Button>
       </Space>
-      <table className="gn-user-mgmt-matrix-table">
+      <div className="gn-user-mgmt-table-card"><table className="gn-user-mgmt-matrix-table">
         <thead>
           <tr>
             <th>{t('user_management.privileges.column.privilege')}</th>
@@ -117,7 +119,7 @@ export default function PrivilegeMatrix({
             );
           })}
         </tbody>
-      </table>
+      </table></div>
     </div>
   );
 }

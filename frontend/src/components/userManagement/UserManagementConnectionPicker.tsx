@@ -1,12 +1,15 @@
 import { useMemo, useState } from 'react';
-import { Empty, Input, Tag } from 'antd';
-import { SearchOutlined, TeamOutlined } from '@ant-design/icons';
+import { Input, Tag } from 'antd';
 import { useI18n } from '../../i18n/provider';
 import { useStore } from '../../store';
 import { resolveConnectionAccentColor, resolveConnectionIconType } from '../../utils/connectionVisual';
 import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
 import { buildUserManagementWorkbenchTab, USER_MANAGEMENT_PICKER_TAB_ID } from '../../utils/userManagementTab';
 import { getDbIcon } from '../DatabaseIcons';
+import { GnDatabaseIcon, GnSearchIcon } from '../icons/gnIcons';
+import './UserManagementConnectionPicker.css';
+import UserManagementEmpty from './UserManagementEmpty';
+import { GnUsersIcon } from './userManagementIcons';
 
 interface UserManagementConnectionPickerProps {
   currentTabId: string;
@@ -36,7 +39,7 @@ export default function UserManagementConnectionPicker({ currentTabId }: UserMan
   return (
     <div className="gn-user-mgmt gn-user-mgmt-picker">
       <div className="gn-user-mgmt-picker-head">
-        <span className="gn-user-mgmt-title-icon"><TeamOutlined /></span>
+        <span className="gn-user-mgmt-title-icon"><GnUsersIcon /></span>
         <div>
           <h2>{t('user_management.picker.title')}</h2>
           <p>{t('user_management.picker.description')}</p>
@@ -44,14 +47,14 @@ export default function UserManagementConnectionPicker({ currentTabId }: UserMan
       </div>
       <Input
         allowClear
-        prefix={<SearchOutlined />}
+        prefix={<GnSearchIcon />}
         placeholder={t('user_management.picker.search')}
         value={keyword}
         onChange={(event) => setKeyword(event.target.value)}
         className="gn-user-mgmt-picker-search"
       />
       {items.length === 0 ? (
-        <Empty description={t('user_management.picker.empty')} />
+        <UserManagementEmpty icon={<GnDatabaseIcon />} text={t('user_management.picker.empty')} />
       ) : (
         <div className="gn-user-mgmt-picker-grid" role="list">
           {items.map(({ connection, supported }) => (

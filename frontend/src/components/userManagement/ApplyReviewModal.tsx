@@ -1,6 +1,6 @@
 import { Alert, Button, List, Tag } from 'antd';
 import Modal from '../common/ResizableDraggableModal';
-import { CheckCircleFilled, CloseCircleFilled, MinusCircleOutlined } from '@ant-design/icons';
+import { GnCheckCircleIcon, GnCloseCircleIcon, GnMinusCircleIcon } from './userManagementIcons';
 import { useI18n } from '../../i18n/provider';
 import PreviewTab from './editor/PreviewTab';
 import type { UserManagementApplyOutcome } from './useUserManagementApply';
@@ -45,7 +45,7 @@ export default function ApplyReviewModal({ open, family, plan, previewLoading, p
               dataSource={outcome.report.results}
               renderItem={(item) => (
                 <List.Item className="gn-user-mgmt-outcome-item">
-                  {item.success ? <CheckCircleFilled className="is-success" /> : item.skipped ? <MinusCircleOutlined className="is-skipped" /> : <CloseCircleFilled className="is-failed" />}
+                  {item.success ? <GnCheckCircleIcon className="is-success" /> : item.skipped ? <GnMinusCircleIcon className="is-skipped" /> : <GnCloseCircleIcon className="is-failed" />}
                   <code>{item.display}</code>
                   {item.node && <Tag>{item.node}</Tag>}
                   {item.error && <div className="gn-user-mgmt-outcome-error">{item.error}</div>}

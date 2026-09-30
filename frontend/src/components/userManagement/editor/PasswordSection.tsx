@@ -1,8 +1,9 @@
-import { Button, Checkbox, Input, Progress, Tooltip } from 'antd';
-import { ThunderboltOutlined } from '@ant-design/icons';
+import { Button, Checkbox, Input, Tooltip } from 'antd';
 import { useI18n } from '../../../i18n/provider';
+import { GnBoltIcon } from '../../icons/gnIcons';
 import { checkPasswordPolicy, estimatePasswordStrength, generatePassword } from '../passwordGenerator';
 import type { PasswordDraft, PrincipalDraft } from '../userManagementDraft';
+import { GnEyeIcon, GnEyeOffIcon } from '../userManagementIcons';
 import type { UMServerProfile } from '../userManagementTypes';
 
 interface PasswordSectionProps {
@@ -12,8 +13,8 @@ interface PasswordSectionProps {
   onChange: (patch: Partial<PasswordDraft>) => void;
 }
 
-const STRENGTH_PERCENT = [0, 25, 50, 75, 100];
-const STRENGTH_COLOR = ['#d9d9d9', '#ff4d4f', '#faad14', '#52c41a', '#389e0d'];
+const STRENGTH_STEPS = [1, 2, 3, 4];
+const passwordIcon = (visible: boolean) => (visible ? <GnEyeIcon /> : <GnEyeOffIcon />);
 
 /** 口令编辑：生成、强度、服务端策略预检、当前口令与双口令选项。 */
 export default function PasswordSection({ profile, draft, writable, onChange }: PasswordSectionProps) {
@@ -31,19 +32,16 @@ export default function PasswordSection({ profile, draft, writable, onChange }: 
   };
 
   return (
-    <div className="gn-user-mgmt-password">
-      <div className="gn-user-mgmt-section-title">
-        {t('user_management.password.title')}
-        {draft.mode === 'edit' && (
-          <Checkbox
-            checked={password.set}
-            disabled={!writable}
-            onChange={(event) => onChange({ set: event.target.checked, value: '', confirm: '', current: '' })}
-          >
-            {t('user_management.password.change')}
-          </Checkbox>
-        )}
-      </div>
+    <div className="gn-user-mgmt-password" role="group" aria-label={t('user_management.password.title')}>
+      {draft.mode === 'edit' && (
+        <Checkbox
+          checked={password.set}
+          disabled={!writable}
+          onChange={(event) => onChange({ set: event.target.checked, value: '', confirm: '', current: '' })}
+        >
+          {t('user_management.password.change')}
+        </Checkbox>
+      )}
       {editing && (
         <div className="gn-user-mgmt-form-grid">
           <div className="gn-user-mgmt-field">
@@ -54,13 +52,16 @@ export default function PasswordSection({ profile, draft, writable, onChange }: 
                 autoComplete="new-password"
                 value={password.value}
                 disabled={!writable}
+                iconRender={passwordIcon}
                 onChange={(event) => onChange({ set: true, value: event.target.value })}
               />
               <Tooltip title={t('user_management.password.generate')}>
-                <Button icon={<ThunderboltOutlined />} disabled={!writable} onClick={fill} aria-label={t('user_management.password.generate')} />
+                <Button icon={<GnBoltIcon />} disabled={!writable} onClick={fill} aria-label={t('user_management.password.generate')} />
               </Tooltip>
             </div>
-            <Progress percent={STRENGTH_PERCENT[strength]} showInfo={false} size="small" strokeColor={STRENGTH_COLOR[strength]} />
+            <div className={`gn-user-mgmt-strength level-${strength}`} aria-hidden="true">
+              {STRENGTH_STEPS.map((step) => <span key={step} className={step <= strength ? 'is-on' : ''} />)}
+            </div>
           </div>
           <div className="gn-user-mgmt-field">
             <label className="gn-user-mgmt-field-label" htmlFor="gn-user-mgmt-password-confirm">{t('user_management.password.confirm')}</label>
@@ -70,6 +71,7 @@ export default function PasswordSection({ profile, draft, writable, onChange }: 
               value={password.confirm}
               status={mismatch ? 'error' : undefined}
               disabled={!writable}
+              iconRender={passwordIcon}
               onChange={(event) => onChange({ confirm: event.target.value })}
             />
             {mismatch && <div className="gn-user-mgmt-field-error">{t('user_management.password.mismatch')}</div>}
@@ -82,6 +84,7 @@ export default function PasswordSection({ profile, draft, writable, onChange }: 
                 autoComplete="current-password"
                 value={password.current}
                 disabled={!writable}
+                iconRender={passwordIcon}
                 placeholder={t('user_management.password.current_placeholder')}
                 onChange={(event) => onChange({ current: event.target.value })}
               />
