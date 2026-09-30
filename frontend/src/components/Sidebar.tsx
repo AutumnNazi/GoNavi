@@ -136,14 +136,11 @@ import { createSidebarResizeAwareFrameScheduler } from '../utils/sidebarResizeLi
   FilterOutlined,
   DashboardOutlined,
   WarningOutlined,
-  AimOutlined,
-  MoreOutlined,
-  VerticalAlignTopOutlined,
   SafetyCertificateOutlined,
   SkinOutlined,
   InfoCircleOutlined,
 	} from '@ant-design/icons';
-import SidebarPanelOutlined from './icons/SidebarPanelOutlined';
+import { V2ExplorerSearchAction, V2ExplorerToolbarActions, V2RailExplorerActions } from './sidebar/SidebarExplorerToolbar';
 import { useStore } from '../store';
 import { buildOverlayWorkbenchTheme } from '../utils/overlayWorkbenchTheme';
 import {
@@ -661,115 +658,11 @@ export const V2ExplorerContextSummary: React.FC<{ context: V2ExplorerContext }> 
   </Tooltip>
 );
 
-export type V2ExplorerToolbarActionLabels = {
-  objectActions: string;
-  locateCurrentTable: string;
-  locateCurrentTableUnavailable: string;
-  scrollToTop: string;
-  connectionActions: string;
-};
-
-export type V2ExplorerToolbarToggleAction = {
-  label: string;
-  onClick: () => void;
-  buttonRef?: React.Ref<HTMLButtonElement>;
-  placement: 'explorer-toolbar' | 'collapsed-titlebar';
-  expanded: boolean;
-};
-
-export const V2ExplorerToolbarActions: React.FC<{
-  labels: V2ExplorerToolbarActionLabels;
-  canLocateActiveTab: boolean;
-  hasActiveConnection: boolean;
-  onLocateCurrentTable: () => void;
-  onScrollToTop: () => void;
-  onOpenConnectionActions: (event: React.MouseEvent<HTMLElement>) => void;
-  toggleAction?: V2ExplorerToolbarToggleAction;
-}> = ({
-  labels,
-  canLocateActiveTab,
-  hasActiveConnection,
-  onLocateCurrentTable,
-  onScrollToTop,
-  onOpenConnectionActions,
-  toggleAction,
-}) => (
-  <>
-    <div className="gn-v2-explorer-action-group is-navigation" role="group" aria-label={labels.objectActions}>
-      <Tooltip
-        title={canLocateActiveTab ? labels.locateCurrentTable : labels.locateCurrentTableUnavailable}
-        placement="bottom"
-        mouseEnterDelay={0.35}
-      >
-        <span
-          className="gn-v2-explorer-action-wrap"
-          tabIndex={canLocateActiveTab ? undefined : 0}
-          aria-label={canLocateActiveTab ? undefined : labels.locateCurrentTableUnavailable}
-        >
-          <Button
-            size="small"
-            type="text"
-            className="gn-v2-explorer-tool"
-            icon={<AimOutlined />}
-            aria-label={labels.locateCurrentTable}
-            data-sidebar-locate-current-tab-action="true"
-            disabled={!canLocateActiveTab}
-            onClick={onLocateCurrentTable}
-          />
-        </span>
-      </Tooltip>
-      <Tooltip title={labels.scrollToTop} placement="bottom" mouseEnterDelay={0.35}>
-        <Button
-          size="small"
-          type="text"
-          className="gn-v2-explorer-tool"
-          icon={<VerticalAlignTopOutlined />}
-          aria-label={labels.scrollToTop}
-          data-sidebar-scroll-to-top-action="true"
-          onClick={onScrollToTop}
-        />
-      </Tooltip>
-    </div>
-    <div className="gn-v2-explorer-action-group is-connection" role="group" aria-label={labels.connectionActions}>
-      <Tooltip title={labels.connectionActions} placement="bottom" mouseEnterDelay={0.35}>
-        <span
-          className="gn-v2-explorer-action-wrap"
-          tabIndex={hasActiveConnection ? undefined : 0}
-          aria-label={hasActiveConnection ? undefined : labels.connectionActions}
-        >
-          <Button
-            size="small"
-            type="text"
-            className="gn-v2-explorer-tool"
-            icon={<MoreOutlined />}
-            aria-label={labels.connectionActions}
-            aria-haspopup="menu"
-            data-sidebar-active-connection-actions="true"
-            disabled={!hasActiveConnection}
-            onClick={onOpenConnectionActions}
-          />
-        </span>
-      </Tooltip>
-    </div>
-    {toggleAction && (
-      <Tooltip title={toggleAction.label} placement="bottom" mouseEnterDelay={0.35}>
-        <Button
-          ref={toggleAction.buttonRef}
-          size="small"
-          type="text"
-          className="gonavi-sidebar-collapse-trigger gn-v2-explorer-tool"
-          data-sidebar-collapse-trigger="true"
-          data-sidebar-toggle-placement={toggleAction.placement}
-          aria-label={toggleAction.label}
-          aria-controls="gonavi-sidebar-tree-panel"
-          aria-expanded={toggleAction.expanded}
-          icon={<SidebarPanelOutlined />}
-          onClick={toggleAction.onClick}
-        />
-      </Tooltip>
-    )}
-  </>
-);
+export { V2ExplorerToolbarActions } from './sidebar/SidebarExplorerToolbar';
+export type {
+  V2ExplorerToolbarActionLabels,
+  V2ExplorerToolbarToggleAction,
+} from './sidebar/SidebarExplorerToolbar';
 
 const Sidebar: React.FC<{
   onCreateConnection?: () => void;
@@ -790,6 +683,7 @@ const Sidebar: React.FC<{
   onToggleAI?: () => void;
   onToggleLogPanel?: () => void;
   v2ExplorerContext?: V2ExplorerContext;
+  /** 标题栏第二行的工具条宿主；存在时搜索/定位/回顶/更多按钮常驻此处，explorer 头部不再渲染（折叠按钮由 App 持有）。 */
   collapsedSidebarActionsTarget?: HTMLElement | null;
   onTitlebarSnapshotChange?: (snapshot: React.SetStateAction<TitlebarSidebarSnapshot>) => void;
   onFocusCommandSearch?: () => void;
@@ -4163,6 +4057,12 @@ const Sidebar: React.FC<{
   const scrollV2ExplorerToTop = () => {
     treeRef.current?.scrollTo?.({ index: 0, align: 'top' });
   };
+  // Docked / rail actions stay reachable while the explorer is collapsed, so reveal it before scrolling.
+  const scrollV2ExplorerToTopExpanded = () => {
+    onEnsureSidebarExpanded?.();
+    scrollV2ExplorerToTop();
+  };
+  const sidebarActionsInRail = appearance.sidebarActionsPlacement === 'rail';
 
   const v2ExplorerToolbarActionProps = {
     labels: {
@@ -4383,15 +4283,32 @@ const Sidebar: React.FC<{
     // The session workbench is exposed as a titlebar action so it remains
     // reachable while the expanded explorer hides the fixed rail.
     showWorkbenchActions: false,
-    sidebarExpandAction: !collapsedSidebarActionsTarget && onExpandSidebar && expandSidebarLabel ? {
+    sidebarExpandAction: !collapsedSidebarActionsTarget && !sidebarActionsInRail && onExpandSidebar && expandSidebarLabel ? {
       label: expandSidebarLabel,
       onClick: onExpandSidebar,
       buttonRef: expandSidebarButtonRef,
     } : undefined,
+    explorerActions: sidebarActionsInRail ? (
+      <V2RailExplorerActions
+        label={v2RailSystemActionsLabel}
+        searchAction={usePersistentSidebarFilter ? undefined : { label: v2CommandSearchLabel, onClick: () => openV2CommandSearch() }}
+        toolbar={{ ...v2ExplorerToolbarActionProps, onScrollToTop: scrollV2ExplorerToTopExpanded }}
+        collapseAction={onCollapseSidebar && collapseSidebarLabel
+          ? { label: collapseSidebarLabel, onClick: onCollapseSidebar, buttonRef: collapseSidebarButtonRef }
+          : undefined}
+        expandAction={onExpandSidebar && expandSidebarLabel
+          ? { label: expandSidebarLabel, onClick: onExpandSidebar, buttonRef: expandSidebarButtonRef }
+          : undefined}
+      />
+    ) : undefined,
   };
 
   return (
-    <div className="gn-v2-sidebar-redesign" style={{ display: 'flex', height: '100%', minHeight: 0 }}>
+    <div
+        className="gn-v2-sidebar-redesign"
+        data-sidebar-actions-rail={sidebarActionsInRail ? 'true' : undefined}
+        style={{ display: 'flex', height: '100%', minHeight: 0 }}
+    >
         {exportProgressModal}
         <SidebarConnectionRail {...v2ConnectionRailProps} />
         <div
@@ -4407,40 +4324,29 @@ const Sidebar: React.FC<{
                 data-sidebar-explorer-actions="true"
             >
                 {v2ExplorerContext && <V2ExplorerContextSummary context={v2ExplorerContext} />}
-                {!usePersistentSidebarFilter && (
-                    <div
-                        className="gn-v2-explorer-action-group is-search"
-                        role="group"
-                        aria-label={v2CommandSearchLabel}
-                        data-v2-sidebar-search-mode="command"
-                    >
-                        <Tooltip title={v2CommandSearchLabel} placement="bottom" mouseEnterDelay={0.35}>
-                            <Button
-                                size="small"
-                                type="text"
-                                className="gn-v2-explorer-tool"
-                                icon={<SearchOutlined />}
-                                aria-label={v2CommandSearchLabel}
-                                data-sidebar-command-search-action="true"
-                                data-v2-command-search-icon-only="true"
+                {!collapsedSidebarActionsTarget && !sidebarActionsInRail && (
+                    <>
+                        {!usePersistentSidebarFilter && (
+                            <V2ExplorerSearchAction
+                                label={v2CommandSearchLabel}
                                 onClick={() => {
                                     openV2CommandSearch();
                                     onFocusCommandSearch?.();
                                 }}
                             />
-                        </Tooltip>
-                    </div>
+                        )}
+                        <V2ExplorerToolbarActions
+                            {...v2ExplorerToolbarActionProps}
+                            toggleAction={onCollapseSidebar && collapseSidebarLabel ? {
+                              label: collapseSidebarLabel,
+                              onClick: onCollapseSidebar,
+                              buttonRef: collapseSidebarButtonRef,
+                              placement: 'explorer-toolbar',
+                              expanded: true,
+                            } : undefined}
+                        />
+                    </>
                 )}
-                <V2ExplorerToolbarActions
-                    {...v2ExplorerToolbarActionProps}
-                    toggleAction={onCollapseSidebar && collapseSidebarLabel ? {
-                      label: collapseSidebarLabel,
-                      onClick: onCollapseSidebar,
-                      buttonRef: collapseSidebarButtonRef,
-                      placement: 'explorer-toolbar',
-                      expanded: true,
-                    } : undefined}
-                />
         </div>
 
         {usePersistentSidebarFilter && (
@@ -4561,23 +4467,15 @@ const Sidebar: React.FC<{
         <SidebarSearchPanel {...v2CommandSearchPanelProps} />
 
         {collapsedSidebarActionsTarget && createPortal(
-          <V2ExplorerToolbarActions
-            {...v2ExplorerToolbarActionProps}
-            onLocateCurrentTable={() => {
-              handleLocateActiveTabInSidebar();
-            }}
-            onScrollToTop={() => {
-              onExpandSidebar?.();
-              scrollV2ExplorerToTop();
-            }}
-            toggleAction={onExpandSidebar && expandSidebarLabel ? {
-              label: expandSidebarLabel,
-              onClick: onExpandSidebar,
-              buttonRef: expandSidebarButtonRef,
-              placement: 'collapsed-titlebar',
-              expanded: false,
-            } : undefined}
-          />,
+          <>
+            {!usePersistentSidebarFilter && (
+              <V2ExplorerSearchAction label={v2CommandSearchLabel} onClick={() => openV2CommandSearch()} />
+            )}
+            <V2ExplorerToolbarActions
+              {...v2ExplorerToolbarActionProps}
+              onScrollToTop={scrollV2ExplorerToTopExpanded}
+            />
+          </>,
           collapsedSidebarActionsTarget,
         )}
 

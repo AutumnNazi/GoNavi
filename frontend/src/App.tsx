@@ -9,6 +9,7 @@ import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } 
 import { CSS } from '@dnd-kit/utilities';
 import { BrowserOpenURL, Environment, EventsOn, WindowFullscreen, WindowGetPosition, WindowGetSize, WindowIsFullscreen, WindowIsMaximised, WindowIsMinimised, WindowIsNormal, WindowMaximise, WindowMinimise, WindowSetDarkTheme, WindowSetLightTheme, WindowSetPosition, WindowSetSize, WindowSetSystemDefaultTheme, WindowUnfullscreen, WindowUnmaximise } from '../wailsjs/runtime';
 import Sidebar from './components/Sidebar';
+import { DockedSidebarActionsHost } from './components/sidebar/SidebarExplorerToolbar';
 import { resolveTitleBarPrimaryActionShortcut } from './components/TitleBarPrimaryActions';
 import TitleBarSystemActions from './components/TitleBarSystemActions';
 import TitleBarActionRow from './components/titlebar/TitleBarActionRow';
@@ -54,6 +55,7 @@ import {
 import CustomThemeManager from './components/settings/CustomThemeManager';
 import ToolbarButtonAppearanceSettings from './components/settings/ToolbarButtonAppearanceSettings';
 import TitlebarActionsPlacementSettings from './components/settings/TitlebarActionsPlacementSettings';
+import { SidebarActionsPlacementSettings, SidebarSearchModeSettings } from './components/settings/SidebarLayoutSettings';
 import SettingsCenterTreeNav, {
   findSettingsCenterTreeItem,
 } from './components/settings/SettingsCenterTreeNav';
@@ -341,7 +343,6 @@ import { getAntdLocale } from './i18n/frameworkLocale';
 import { useI18n } from './i18n/provider';
 import {
   normalizeTitlebarRuntimePlatform,
-  resolveDockedTitleBarBandOffset,
   resolveDocumentPlatform,
   resolveTitleBarLayout,
   resolveTitlebarRuntimePlatform,
@@ -1229,6 +1230,7 @@ function App() {
       runtimePlatform,
       navigatorPlatform,
       isWebRuntime,
+      appearance.sidebarActionsPlacement === 'rail',
   );
   const {
       collapsedSidebarActionsTarget,
@@ -1243,9 +1245,12 @@ function App() {
       sidebarContentRef,
       sidebarExplorerToggleRef,
   } = useAppSidebarCollapse(shouldDockCollapsedSidebarActionsInTitlebar);
+  const titleBarActionsInline = appearance.titlebarActionsPlacement === 'titlebar'; // 功能入口行：默认工具条，可切到 GoNavi 右侧
+  // 内联形态下工具条常驻标题栏第二行；独立工具条形态下改放在工具条下方，标题栏不再预留第二行。
+  const dockActionsInTitlebarBand = shouldDockCollapsedSidebarActionsInTitlebar && titleBarActionsInline;
   const titleBarLayout = resolveTitleBarLayout(
       effectiveUiScale,
-      isCollapsedSidebarActionsDocked,
+      dockActionsInTitlebarBand,
       effectiveSidebarRailScale,
   );
   const titleBarHeight = titleBarLayout.height;
@@ -6961,26 +6966,13 @@ function App() {
                                   t('app.theme.titlebar_actions_placement.hint'),
                               )}
                               {renderThemeSettingsSection(
+                                  t('app.theme.sidebar_actions_placement.title'),
+                                  <SidebarActionsPlacementSettings />,
+                                  t('app.theme.sidebar_actions_placement.hint'),
+                              )}
+                              {renderThemeSettingsSection(
                                   t('app.theme.ui_version.sidebar_search.title'),
-                                  <div className="gonavi-settings-pills" role="group" aria-label={t('app.theme.ui_version.sidebar_search.title')}>
-                                      {([
-                                          { value: 'command' as const, label: t('app.theme.ui_version.sidebar_search.command') },
-                                          { value: 'filter' as const, label: t('app.theme.ui_version.sidebar_search.filter') },
-                                      ]).map((item) => {
-                                          const active = (appearance.v2SidebarSearchMode ?? 'command') === item.value;
-                                          return (
-                                              <button
-                                                  key={item.value}
-                                                  type="button"
-                                                  className={`gonavi-settings-pill${active ? ' is-active' : ''}`}
-                                                  aria-pressed={active}
-                                                  onClick={() => setAppearance({ v2SidebarSearchMode: item.value })}
-                                              >
-                                                  {item.label}
-                                              </button>
-                                          );
-                                      })}
-                                  </div>,
+                                  <SidebarSearchModeSettings />,
                                   t('app.theme.ui_version.sidebar_search.hint'),
                               )}
                           </div>
@@ -7957,7 +7949,6 @@ function App() {
       onToggleTheme={handleToggleThemeMode}
     />
   );
-  const titleBarActionsInline = appearance.titlebarActionsPlacement === 'titlebar'; // 功能入口行：默认工具条，可切到 GoNavi 右侧
   const titleBarActionRow = (
     <TitleBarActionRow
       placement={titleBarActionsInline ? 'titlebar' : 'toolbar'} display={appearance.titlebarActionsDisplay}
@@ -7969,6 +7960,18 @@ function App() {
       trailingSlot={useNativeMacWindowControls ? titleBarTrailingSlot : undefined}
     />
   );
+
+  const dockedSidebarActionsHost = shouldDockCollapsedSidebarActionsInTitlebar ? (
+    <DockedSidebarActionsHost
+      label={t('sidebar.rail.system_actions')}
+      slotRef={setCollapsedSidebarActionsTarget}
+      placement={titleBarActionsInline ? 'titlebar' : 'below-toolbar'}
+      collapsed={isSidebarCollapsed}
+      toggleLabel={sidebarPanelToggleLabel}
+      onToggle={isSidebarCollapsed ? handleExpandSidebarPanel : handleCollapseSidebarPanel}
+      toggleButtonRef={sidebarCollapsedToggleRef}
+    />
+  ) : null;
 
   return (
     <ConfigProvider
@@ -7987,9 +7990,6 @@ function App() {
           onContextMenu={handleAppContextMenu}
           data-gonavi-close-shortcut-scope="workspace"
           data-empty-workbench={tabs.length === 0 ? 'true' : 'false'}
-          data-collapsed-sidebar-actions-docked={
-              isCollapsedSidebarActionsDocked ? 'true' : 'false'
-          }
           data-security-update-banner-visible={isSecurityUpdateBannerVisible ? 'true' : 'false'}
           style={{
             height: '100vh',
@@ -8001,7 +8001,6 @@ function App() {
             clipPath: showLinuxResizeHandles ? 'none' : 'inset(0 round var(--gonavi-border-radius))',
             backdropFilter: blurFilter,
             WebkitBackdropFilter: blurFilter,
-            ['--gn-v2-empty-workbench-titlebar-overlap' as any]: `${resolveDockedTitleBarBandOffset(effectiveUiScale, effectiveSidebarRailScale)}px`,
           }}
         >
           <input
@@ -8016,7 +8015,7 @@ function App() {
             className={[
               'gn-v2-titlebar',
               useNativeMacWindowControls ? 'gn-v2-titlebar-native-mac' : '',
-              isCollapsedSidebarActionsDocked ? 'gn-v2-titlebar-collapsed-docked' : '',
+              dockActionsInTitlebarBand ? 'gn-v2-titlebar-collapsed-docked' : '',
             ].filter(Boolean).join(' ')}
             onDoubleClick={handleTitleBarDoubleClick}
             style={{
@@ -8050,18 +8049,7 @@ function App() {
                   </div>
                   {titleBarActionsInline && titleBarActionRow}
               </div>
-              {shouldDockCollapsedSidebarActionsInTitlebar && (
-                  <div
-                    ref={setCollapsedSidebarActionsTarget}
-                    hidden={!isCollapsedSidebarActionsDocked}
-                    className="gn-v2-collapsed-sidebar-actions"
-                    data-collapsed-sidebar-actions="true"
-                    data-no-titlebar-toggle="true"
-                    role="toolbar"
-                    aria-label={t('sidebar.rail.system_actions')}
-                    onDoubleClick={(event) => event.stopPropagation()}
-                  />
-              )}
+              {titleBarActionsInline && dockedSidebarActionsHost}
               {/* Collapsed sidebar titlebar actions end */}
               <div className="gn-v2-titlebar-right">
                   {!useNativeMacWindowControls && titleBarSystemActionsNode}
@@ -8115,6 +8103,7 @@ function App() {
           </div>
 
           {!titleBarActionsInline && titleBarActionRow}{/* 工具条不套 mac 红绿灯留白 */}
+          {!titleBarActionsInline && dockedSidebarActionsHost}
 
           {showLinuxCJKFontBanner && (
               <LinuxCJKFontBanner

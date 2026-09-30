@@ -1,44 +1,9 @@
 import { useI18n } from '../../i18n/provider';
 import { useStore } from '../../store';
 import type { TitlebarActionsDisplay, TitlebarActionsPlacement } from '../../utils/titlebarActionsPlacement';
+import SettingsPills, { type PillOption } from './SettingsPills';
 
 import './TitlebarActionsPlacementSettings.css';
-
-interface PillOption<T extends string> {
-  value: T;
-  label: string;
-}
-
-interface SettingsPillsProps<T extends string> {
-  ariaLabel: string;
-  dataAttribute: string;
-  options: PillOption<T>[];
-  value: T;
-  onChange: (value: T) => void;
-}
-
-/** 与「新版左侧搜索模式」一致的分段按钮。 */
-function SettingsPills<T extends string>({ ariaLabel, dataAttribute, options, value, onChange }: SettingsPillsProps<T>) {
-  return (
-    <div className="gonavi-settings-pills" role="group" aria-label={ariaLabel}>
-      {options.map((option) => {
-        const active = value === option.value;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            className={`gonavi-settings-pill${active ? ' is-active' : ''}`}
-            aria-pressed={active}
-            {...{ [dataAttribute]: option.value }}
-            onClick={() => onChange(option.value)}
-          >
-            {option.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 /**
  * 功能入口位置：独立工具条（图标 + 文字）或标题栏 GoNavi 右侧。

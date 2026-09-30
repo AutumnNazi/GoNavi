@@ -107,7 +107,7 @@ describe('TitleBarPrimaryActions', () => {
     expect(appSource).toMatch(
       /--gn-titlebar-native-content-offset[^\n]*getMacNativeTitlebarContentOffset\(titleBarHeight, useNativeMacWindowControls\)/,
     );
-    expect(appSource).toContain("isCollapsedSidebarActionsDocked ? 'gn-v2-titlebar-collapsed-docked' : ''");
+    expect(appSource).toContain("dockActionsInTitlebarBand ? 'gn-v2-titlebar-collapsed-docked' : ''");
     const collapsedActionBandRule = v2ThemeCss.match(
       /\.gn-v2-titlebar-collapsed-docked \.gn-v2-collapsed-sidebar-actions\s*\{(?<body>[^}]*)\}/s,
     );

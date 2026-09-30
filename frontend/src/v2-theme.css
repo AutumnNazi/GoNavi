@@ -2203,6 +2203,33 @@ body[data-ui-version="v2"] .gn-v2-rail-sidebar-toggle:focus-visible {
   outline-offset: 1px;
 }
 
+/* Sidebar-rail placement: the rail stays visible while the explorer is expanded
+   (App.css hides it by default) and carries the search / locate / scroll-to-top /
+   connection-menu / collapse actions as a vertical column. */
+body[data-ui-version='v2'] .ant-layout-sider[data-sidebar-collapsed='false'] .gn-v2-sidebar-redesign[data-sidebar-actions-rail='true'] > .gn-v2-connection-rail {
+  display: flex;
+}
+
+body[data-ui-version="v2"] .gn-v2-rail-explorer-actions {
+  width: 100%;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(4px * var(--gn-v2-rail-scale));
+}
+
+body[data-ui-version="v2"] .gn-v2-rail-explorer-actions .gn-v2-explorer-action-group {
+  flex-direction: column;
+  gap: calc(4px * var(--gn-v2-rail-scale));
+}
+
+/* The collapse and expand toggles share one slot; the Sider state picks the visible one. */
+body[data-ui-version="v2"] .ant-layout-sider[data-sidebar-collapsed='false'] .gn-v2-rail-explorer-actions .gn-v2-explorer-tool[data-sidebar-toggle-placement='rail-expand'],
+body[data-ui-version="v2"] .ant-layout-sider[data-sidebar-collapsed='true'] .gn-v2-rail-explorer-actions .gn-v2-explorer-tool[data-sidebar-toggle-placement='rail-collapse'] {
+  display: none !important;
+}
+
 body[data-ui-version="v2"] .gn-v2-rail-items {
   flex: 1 1 auto;
   min-height: 0;
@@ -4486,30 +4513,6 @@ body[data-ui-version="v2"] .gn-v2-empty-resource-empty .ant-btn {
   }
 }
 
-/* The docked collapsed toolbar needs a second titlebar band. The empty
-   workbench already has clear space above its heading, so let that one screen
-   reclaim the band instead of shifting every landing-page element downward. */
-body[data-ui-version="v2"]
-  [data-gonavi-close-shortcut-scope="workspace"][data-empty-workbench='true'][data-collapsed-sidebar-actions-docked='true'][data-security-update-banner-visible='false']
-  > .ant-layout {
-  margin-top: calc(-1 * var(--gn-v2-empty-workbench-titlebar-overlap, 0px));
-}
-
-/* Only the eyebrow crosses the docked toolbar row. Keep the headline and all
-   following content on their normal left edge while moving this short label
-   just past the six scaled toolbar actions. */
-body[data-ui-version="v2"]
-  [data-gonavi-close-shortcut-scope="workspace"][data-empty-workbench='true'][data-collapsed-sidebar-actions-docked='true'][data-security-update-banner-visible='false']
-  .gn-v2-empty-eyebrow {
-  padding-left: max(
-    0px,
-    calc(
-      (182px * var(--gn-ui-scale, 1) * var(--gn-sidebar-rail-scale, 1))
-      - var(--gn-v2-empty-hero-padding-inline-start, 30px)
-    )
-  );
-}
-
 /* ─── Full V2 workbench shell: app / topbar / workspace ─ */
 body[data-ui-version="v2"] .gn-v2-app-root {
   background: var(--gn-bg-app) !important;
@@ -4524,9 +4527,10 @@ body[data-ui-version="v2"] .gn-v2-titlebar {
   box-shadow: none !important;
 }
 
-/* When the V2 explorer is collapsed on macOS or Windows, reuse the otherwise
-   empty lower titlebar band for the same six scaled actions shown by the
-   expanded explorer toolbar. Keep the Windows window controls out of its way. */
+/* On macOS and Windows the explorer actions (search, locate, scroll to top,
+   connection menu, sidebar toggle) live permanently in the lower titlebar band,
+   so collapsing or expanding the explorer never moves them. Keep the Windows
+   window controls out of its way. */
 body[data-ui-version="v2"] .gn-v2-titlebar-collapsed-docked .gn-v2-collapsed-sidebar-actions {
   --gn-v2-explorer-scale: calc(var(--gn-ui-scale, 1) * var(--gn-sidebar-rail-scale, 1));
   position: absolute;
@@ -4553,7 +4557,40 @@ body[data-ui-version="v2"] .gn-v2-titlebar-collapsed-docked .gn-v2-collapsed-sid
   display: none;
 }
 
+/* The explorer portals its actions into this slot; let them lay out as direct
+   flex items of the toolbar so the toggle button stays last. */
+body[data-ui-version="v2"] .gn-v2-collapsed-sidebar-actions-slot {
+  display: contents;
+}
+
+/* Standalone toolbar mode: the titlebar stays compact and the same actions sit
+   in their own row directly below the toolbar, left-aligned with its items. */
+body[data-ui-version="v2"] .gn-v2-collapsed-sidebar-actions.is-below-toolbar {
+  --gn-v2-explorer-scale: calc(var(--gn-ui-scale, 1) * var(--gn-sidebar-rail-scale, 1));
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  height: calc(34px * var(--gn-v2-explorer-scale));
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: calc(2px * var(--gn-v2-explorer-scale));
+  padding: calc(4px * var(--gn-v2-explorer-scale)) calc(14px * var(--gn-ui-scale, 1));
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  background: var(--gn-bg-titlebar, transparent);
+  -webkit-app-region: no-drag;
+  --wails-draggable: no-drag;
+}
+
+body[data-ui-version="v2"] .gn-v2-collapsed-sidebar-actions.is-below-toolbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Keep the shared focus ring inside the scrolling titlebar host. */
+body[data-ui-version="v2"] .gn-v2-collapsed-sidebar-actions.is-below-toolbar .gn-v2-explorer-tool.ant-btn:focus-visible,
+body[data-ui-version="v2"] .gn-v2-collapsed-sidebar-actions.is-below-toolbar .gn-v2-explorer-action-wrap:focus-visible,
 body[data-ui-version="v2"] .gn-v2-titlebar-collapsed-docked .gn-v2-collapsed-sidebar-actions .gn-v2-explorer-tool.ant-btn:focus-visible,
 body[data-ui-version="v2"] .gn-v2-titlebar-collapsed-docked .gn-v2-collapsed-sidebar-actions .gn-v2-explorer-action-wrap:focus-visible {
   outline-offset: -3px;
