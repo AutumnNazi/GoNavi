@@ -143,6 +143,24 @@ describe('AI run harness client', () => {
     });
   });
 
+  it('shows the run active time on the merged assistant reply once the run is finished', () => {
+    const messages = toAIChatMessages({
+      runs: [
+        { runId: 'run-done', state: 'completed', activeDurationMs: 41_250 },
+        { runId: 'run-live', state: 'running_model', activeDurationMs: 9_000 },
+      ],
+      messages: [
+        { id: 'a-1', runId: 'run-done', role: 'assistant', content: 'first', createdAt: 1 },
+        { id: 'a-2', runId: 'run-done', role: 'assistant', content: 'second', createdAt: 2 },
+        { id: 'b-1', runId: 'run-live', role: 'assistant', content: 'partial', createdAt: 3 },
+      ],
+    });
+
+    expect(messages).toHaveLength(2);
+    expect(messages[0].processingMs).toBe(41_250);
+    expect(messages[1].processingMs).toBeUndefined();
+  });
+
   it('flattens nested shortcut bindings to the Go map[string]string contract', () => {
     expect(serializeShortcutOptionsForWorkspace({
       runQuery: {

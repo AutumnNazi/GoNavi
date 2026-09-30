@@ -926,6 +926,8 @@ export interface AIChatMessage {
   tokenUsage?: AIChatTokenUsage;
   /** Redacted, ordered execution steps retained with this assistant message. */
   runActivities?: AIChatRunActivity[];
+  /** Time the AI actually spent on this reply (model and tools, approval waits excluded). */
+  processingMs?: number;
   tool_call_id?: string;
   tool_name?: string; // used for UI display
   rawError?: string; // 存储未清洗的原始错误信息，用于用户复制排查

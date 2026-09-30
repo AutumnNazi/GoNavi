@@ -73,7 +73,8 @@ describe('AIChatContextPreview i18n source guards', () => {
     const markup = renderContextPreview();
 
     expect(markup).toContain('Attached context');
-    expect(markup).toContain('Add');
+    expect(markup).toContain('Add tables');
+    expect(markup).toContain('Choose tables whose structure the AI can see');
     expect(markup).toContain('Current context · 2');
     expect(markup).toContain('orders');
     expect(markup).toContain('customers');
@@ -84,7 +85,8 @@ describe('AIChatContextPreview i18n source guards', () => {
 
     const markup = renderContextPreviewWithoutProvider();
     expect(markup).toContain('Attached context');
-    expect(markup).toContain('Add');
+    expect(markup).toContain('Add tables');
+    expect(markup).toContain('Choose tables whose structure the AI can see');
     expect(markup).toContain('Current context · 2');
     expect(markup).toContain('orders');
     expect(markup).not.toContain('ai_chat.input.context.label');

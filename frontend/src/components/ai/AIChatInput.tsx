@@ -136,10 +136,13 @@ export const AIChatInput: React.FC<AIChatInputProps> = ({
     });
 
     const {
+        activeSlashCmd,
         filteredSlashCmds,
         handleComposerInputChange,
         handleOpenSlashMenu,
         handleSelectSlashCommand,
+        handleSlashKeyDown,
+        setActiveSlashCmd,
         showSlashMenu,
     } = useAISlashCommandMenu({
         setInput,
@@ -213,6 +216,8 @@ export const AIChatInput: React.FC<AIChatInputProps> = ({
                         darkMode={darkMode}
                         textColor={textColor}
                         mutedColor={mutedColor}
+                        activeCmd={activeSlashCmd}
+                        onActiveChange={setActiveSlashCmd}
                         className="gn-v2-ai-slash-menu"
                         style={{
                             background: darkMode ? '#2a2a2a' : '#fff',
@@ -226,7 +231,7 @@ export const AIChatInput: React.FC<AIChatInputProps> = ({
                             ref={textareaRef as any}
                             value={input}
                             onChange={(e) => handleComposerInputChange(e.target.value)}
-                            onKeyDown={handleKeyDown as any}
+                            onKeyDown={(event) => { if (!handleSlashKeyDown(event)) handleKeyDown(event); }}
                             placeholder={t('ai_chat.input.placeholder_compact', { shortcut: sendShortcutLabel })}
                             variant="borderless"
                             autoSize={{ minRows: 3, maxRows: 8 }}

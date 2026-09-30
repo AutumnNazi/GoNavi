@@ -17,6 +17,7 @@ import { collectBusyAISessionIds } from './ai/AIChatSessionSwitcher';
 import AIChatRunControls, {
     type AIRunRecoveryAction,
 } from './ai/AIChatRunControls';
+import { useAIChatApprovalDecision } from './ai/useAIChatApprovalDecision';
 import { useAIChatRunEventSubscription } from './ai/useAIChatRunEventSubscription';
 import {
     controlAgentRun,
@@ -657,21 +658,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         }
     }, [addAIChatMessage, refreshRunProjection, resolveRunRevision, sid, t]);
 
-    const handleApprovalDecision = useCallback((
-        approval: AIRunApprovalState,
-        decision: 'approved' | 'denied',
-    ) => {
-        void handleRunControl(
-            approval.runId,
-            decision === 'approved' ? 'approve' : 'deny',
-            {
-                approvalId: approval.approvalId,
-                callId: approval.callId,
-                argsHash: approval.argsHash,
-                busyKey: `${approval.runId}:${decision === 'approved' ? 'approve' : 'deny'}:${approval.approvalId}`,
-            },
-        );
-    }, [handleRunControl]);
+    const handleApprovalDecision = useAIChatApprovalDecision(handleRunControl);
 
     const handleRecoveryAction = useCallback((
         recovery: AIRunRecoveryState,

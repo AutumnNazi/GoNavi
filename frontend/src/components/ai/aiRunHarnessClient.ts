@@ -1,5 +1,6 @@
 import type { AIChatAttachment, AIChatMessage, AIChatTokenUsage, AIToolCall } from '../../types';
 import { decodeRawJSON, decodeRawJSONWithStatus } from './aiRawMessage';
+import { collectRunProcessingTimes } from './aiRunProcessingTime';
 
 export type AIRunDispatchMode = 'queue' | 'steer';
 export type AgentTaskKind = 'chat' | 'query_editor_generation';
@@ -490,6 +491,11 @@ export const toAIChatMessages = (projection: SessionProjectionResult | null | un
       assistantByRun.set(uiMessage.runId, uiMessage);
     }
     messages.push(uiMessage);
+  });
+  const processingTimes = collectRunProcessingTimes(projection.runs);
+  assistantByRun.forEach((message, runId) => {
+    const processingMs = processingTimes.get(runId);
+    if (processingMs) message.processingMs = processingMs;
   });
   return messages;
 };

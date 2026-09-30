@@ -63,7 +63,13 @@ export const AIChatContextPreview: React.FC<AIChatContextPreviewProps> = ({
           <strong>{activeContextItems.length}</strong>
           <DownOutlined />
         </button>
-        <button type="button" className="gn-v2-ai-context-add" onClick={onOpenContext}>
+        <button
+          type="button"
+          className="gn-v2-ai-context-add"
+          onClick={onOpenContext}
+          title={t('ai_chat.input.context.add_tooltip')}
+          aria-label={t('ai_chat.input.context.add_tooltip')}
+        >
           <GnPlusIcon />
           <span>{t('ai_chat.input.context.add')}</span>
         </button>
