@@ -130,7 +130,14 @@ export const filterSettingsCenterTreeGroups = (
   });
 };
 
-/** Wrap the first occurrence of the query in `<mark>` so hits are visible. */
+/** Characters kept before a hit deep inside a long label, so the ellipsis never hides it. */
+const SNIPPET_LEAD_LENGTH = 8;
+
+/**
+ * Wrap the first occurrence of the query in `<mark>` so hits are visible. A hit
+ * far into a long label (page copy such as hints) is shown with only a short
+ * lead-in, since the tree row truncates the end of the text.
+ */
 export const renderSettingsCenterTreeLabel = (
   title: string,
   normalizedQuery: string,
@@ -143,9 +150,11 @@ export const renderSettingsCenterTreeLabel = (
     return title;
   }
   const end = start + normalizedQuery.length;
+  const leadStart = start > SNIPPET_LEAD_LENGTH ? start - SNIPPET_LEAD_LENGTH : 0;
   return (
     <>
-      {title.slice(0, start)}
+      {leadStart > 0 ? '…' : ''}
+      {title.slice(leadStart, start)}
       <mark className="gonavi-settings-center-tree-highlight">{title.slice(start, end)}</mark>
       {title.slice(end)}
     </>
