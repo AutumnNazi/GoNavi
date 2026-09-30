@@ -21,6 +21,8 @@ import {
 import type { SavedConnection, SavedQuery, JVMCapability, JVMResourceSummary } from '../../types';
 import { useStore } from '../../store';
 import { t } from '../../i18n';
+import { buildNacosNamespaceTreeNode as buildNamespaceNode } from './nacosNamespaceTreeNode';
+import { buildPinnedNacosConfigGroups } from './nacosConfigGroupNodes';
 import { resolveSidebarMessageQueueProfile, type SidebarMessageQueueProfile, type SidebarMessageObjectKind } from './sidebarMessageProfiles';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import {
@@ -775,50 +777,6 @@ export const useSidebarTreeLoaders = ({
                   }
                   return currentConnection;
               };
-              type NacosNamespaceDiscoveryMode = 'listed' | 'configured';
-              const buildNamespaceNode = (
-                  sourceConnection: SavedConnection,
-                  namespaceId: string,
-                  showName: string,
-                  configCount: number,
-                  discoveryMode: NacosNamespaceDiscoveryMode,
-              ): TreeNode => {
-                  const nodeKeyId = namespaceId || 'public';
-                  const nsDataRef = {
-                      ...sourceConnection,
-                      nacosNamespaceId: namespaceId,
-                      nacosNamespaceName: showName,
-                      nacosConfigCount: Number.isFinite(configCount) ? configCount : 0,
-                      nacosNamespaceDiscoveryMode: discoveryMode,
-                  };
-                  return {
-                      title: showName,
-                      key: `${conn.id}-nacos-ns-${nodeKeyId}`,
-                      icon: <DatabaseOutlined style={{ color: '#2E6BE6' }} />,
-                      type: 'nacos-namespace',
-                      dataRef: nsDataRef,
-                      isLeaf: false,
-                      children: [
-                          {
-                              title: t('nacos_viewer.title.config_explorer'),
-                              key: `${conn.id}-nacos-ns-${nodeKeyId}-config`,
-                              icon: <DatabaseOutlined style={{ color: '#2E6BE6' }} />,
-                              type: 'nacos-config-entry',
-                              dataRef: nsDataRef,
-                              // Expand to load Group list.
-                              isLeaf: false,
-                          },
-                          {
-                              title: t('nacos_service.title.service_explorer'),
-                              key: `${conn.id}-nacos-ns-${nodeKeyId}-services`,
-                              icon: <CloudOutlined style={{ color: '#13C2C2' }} />,
-                              type: 'nacos-services-entry',
-                              dataRef: nsDataRef,
-                              isLeaf: false,
-                          },
-                      ],
-                  };
-              };
               try {
                   const res = await (window as any).go.app.App.NacosListNamespaces(buildRpcConnectionConfig(config));
                   const currentConnection = resolveCurrentRequestConnection();
@@ -839,7 +797,13 @@ export const useSidebarTreeLoaders = ({
                               'listed',
                           );
                       });
-                      replaceTreeNodeChildren(node.key, namespaces, {
+                      replaceTreeNodeChildren(node.key, buildV2SidebarDatabaseSectionedChildren(
+                          String(node.key),
+                          applySidebarDatabasePinning(namespaces, {
+                              connectionId: conn.id,
+                              pinnedSidebarDatabases: useStore.getState().pinnedSidebarDatabases || pinnedSidebarDatabases,
+                          }),
+                      ), {
                           ...currentConnection,
                           nacosNamespaceDiscoveryMode: 'listed',
                       });
@@ -860,7 +824,13 @@ export const useSidebarTreeLoaders = ({
                               0,
                               'configured',
                           );
-                          replaceTreeNodeChildren(node.key, [namespace], {
+                          replaceTreeNodeChildren(node.key, buildV2SidebarDatabaseSectionedChildren(
+                              String(node.key),
+                              applySidebarDatabasePinning([namespace], {
+                                  connectionId: conn.id,
+                                  pinnedSidebarDatabases: useStore.getState().pinnedSidebarDatabases || pinnedSidebarDatabases,
+                              }),
+                          ), {
                               ...currentConnection,
                               nacosNamespaceDiscoveryMode: 'configured',
                           });
@@ -2216,36 +2186,9 @@ export const useSidebarTreeLoaders = ({
               return;
           }
           const groups: string[] = Array.isArray(res.data) ? res.data.map((g: any) => String(g || '').trim()).filter(Boolean) : [];
-          // Always offer "全部" so users can open the namespace without a group filter.
-          const allNode: TreeNode = {
-              title: t('nacos_viewer.label.all'),
-              key: `${connectionId}-nacos-ns-${nodeKeyId}-group-__all__`,
-              icon: <AppstoreOutlined style={{ color: '#2E6BE6' }} />,
-              type: 'nacos-config-group' as const,
-              dataRef: {
-                  ...dataRef,
-                  nacosNamespaceId: namespaceId,
-                  nacosNamespaceName: namespaceName,
-                  nacosGroup: '',
-                  nacosAllConfigs: true,
-              },
-              isLeaf: true,
-          };
-          const groupNodes: TreeNode[] = groups.map((group) => ({
-              title: group,
-              key: `${connectionId}-nacos-ns-${nodeKeyId}-group-${encodeURIComponent(group)}`,
-              icon: <FolderOpenOutlined style={{ color: '#2E6BE6' }} />,
-              type: 'nacos-config-group' as const,
-              dataRef: {
-                  ...dataRef,
-                  nacosNamespaceId: namespaceId,
-                  nacosNamespaceName: namespaceName,
-                  nacosGroup: group,
-                  nacosAllConfigs: false,
-              },
-              isLeaf: true,
-          }));
-          replaceTreeNodeChildren(node.key, [allNode, ...groupNodes], dataRef);
+          replaceTreeNodeChildren(node.key, buildPinnedNacosConfigGroups(
+              dataRef, groups, useStore.getState().pinnedSidebarDatabases || pinnedSidebarDatabases,
+          ), dataRef);
           if (groups.length === 0) {
               message.info({
                   content: t('nacos_viewer.message.no_groups'),

@@ -10601,6 +10601,8 @@
   "nacos_viewer.history.column.time": "時間",
   "nacos.namespace.menu.create": "新建命名空間",
   "nacos.namespace.menu.edit": "編輯命名空間",
+  "nacos.namespace.menu.pin": "釘選命名空間",
+  "nacos.namespace.menu.unpin": "取消釘選命名空間",
   "nacos.namespace.menu.delete": "刪除命名空間",
   "nacos.namespace.field.id": "Namespace ID",
   "nacos.namespace.field.name": "顯示名稱",
@@ -11528,5 +11530,9 @@
   "app.titlebar.short_label.sql_tools": "SQL",
   "app.titlebar.short_label.user_management": "使用者",
   "app.titlebar.short_label.drivers": "驅動",
-  "app.titlebar.short_label.session_workbench": "工作階段"
+  "app.titlebar.short_label.session_workbench": "工作階段",
+  "nacos.pin.pin_group": "釘選設定群組",
+  "nacos.pin.unpin_group": "取消釘選設定群組",
+  "nacos.pin.pin_config": "釘選設定",
+  "nacos.pin.unpin_config": "取消釘選設定"
 }

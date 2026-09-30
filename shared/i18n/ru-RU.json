@@ -10601,6 +10601,8 @@
   "nacos_viewer.history.column.time": "Время",
   "nacos.namespace.menu.create": "Создать namespace",
   "nacos.namespace.menu.edit": "Редактировать namespace",
+  "nacos.namespace.menu.pin": "Закрепить пространство имён",
+  "nacos.namespace.menu.unpin": "Открепить пространство имён",
   "nacos.namespace.menu.delete": "Удалить namespace",
   "nacos.namespace.field.id": "ID namespace",
   "nacos.namespace.field.name": "Отображаемое имя",
@@ -11528,5 +11530,9 @@
   "app.titlebar.short_label.sql_tools": "SQL",
   "app.titlebar.short_label.user_management": "Пользователи",
   "app.titlebar.short_label.drivers": "Драйверы",
-  "app.titlebar.short_label.session_workbench": "Сеансы"
+  "app.titlebar.short_label.session_workbench": "Сеансы",
+  "nacos.pin.pin_group": "Закрепить группу конфигураций",
+  "nacos.pin.unpin_group": "Открепить группу конфигураций",
+  "nacos.pin.pin_config": "Закрепить конфигурацию",
+  "nacos.pin.unpin_config": "Открепить конфигурацию"
 }

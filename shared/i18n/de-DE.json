@@ -10601,6 +10601,8 @@
   "nacos_viewer.history.column.time": "Zeit",
   "nacos.namespace.menu.create": "Namespace erstellen",
   "nacos.namespace.menu.edit": "Namespace bearbeiten",
+  "nacos.namespace.menu.pin": "Namespace anheften",
+  "nacos.namespace.menu.unpin": "Namespace lösen",
   "nacos.namespace.menu.delete": "Namespace löschen",
   "nacos.namespace.field.id": "Namespace-ID",
   "nacos.namespace.field.name": "Anzeigename",
@@ -11528,5 +11530,9 @@
   "app.titlebar.short_label.sql_tools": "SQL",
   "app.titlebar.short_label.user_management": "Benutzer",
   "app.titlebar.short_label.drivers": "Treiber",
-  "app.titlebar.short_label.session_workbench": "Sitzungen"
+  "app.titlebar.short_label.session_workbench": "Sitzungen",
+  "nacos.pin.pin_group": "Konfigurationsgruppe anheften",
+  "nacos.pin.unpin_group": "Konfigurationsgruppe lösen",
+  "nacos.pin.pin_config": "Konfiguration anheften",
+  "nacos.pin.unpin_config": "Konfiguration lösen"
 }
