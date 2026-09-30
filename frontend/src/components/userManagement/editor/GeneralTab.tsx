@@ -1,4 +1,4 @@
-import { AutoComplete, Input } from 'antd';
+import { AutoComplete, Input, Select } from 'antd';
 import { useI18n } from '../../../i18n/provider';
 import type { PasswordDraft, PrincipalDraft } from '../userManagementDraft';
 import type { UMServerProfile } from '../userManagementTypes';
@@ -9,6 +9,8 @@ interface GeneralTabProps {
   profile: UMServerProfile;
   draft: PrincipalDraft;
   writable: boolean;
+  /** 已有库清单；为空时（未加载 / 加载失败）退化为手输。 */
+  databases: string[];
   onIdentityChange: (patch: Partial<Pick<PrincipalDraft, 'name' | 'host' | 'database'>>) => void;
   onPasswordChange: (patch: Partial<PasswordDraft>) => void;
   onOptionChange: (id: string, value: string) => void;
@@ -17,7 +19,7 @@ interface GeneralTabProps {
 const HOST_PRESETS = ['%', 'localhost', '127.0.0.1', '::1', '10.%', '172.16.%', '192.168.%'];
 
 /** 常规页：身份（名称/主机/认证库）、口令与常规属性。 */
-export default function GeneralTab({ profile, draft, writable, onIdentityChange, onPasswordChange, onOptionChange }: GeneralTabProps) {
+export default function GeneralTab({ profile, draft, writable, databases, onIdentityChange, onPasswordChange, onOptionChange }: GeneralTabProps) {
   const { t } = useI18n();
   const kind = profile.kinds.find((item) => item.kind === draft.kind);
   const identity = kind?.identityFields ?? ['name'];
@@ -52,12 +54,24 @@ export default function GeneralTab({ profile, draft, writable, onIdentityChange,
         {identity.includes('database') && (
           <div className="gn-user-mgmt-field">
             <label className="gn-user-mgmt-field-label" htmlFor="gn-user-mgmt-database">{t('user_management.field.database')}</label>
-            <Input
-              id="gn-user-mgmt-database"
-              value={draft.database}
-              disabled={!writable || draft.mode === 'edit'}
-              onChange={(event) => onIdentityChange({ database: event.target.value })}
-            />
+            {databases.length > 0 ? (
+              <Select
+                id="gn-user-mgmt-database"
+                showSearch
+                optionFilterProp="label"
+                value={draft.database || undefined}
+                disabled={!writable || draft.mode === 'edit'}
+                options={(databases.includes(draft.database) || !draft.database ? databases : [draft.database, ...databases]).map((name) => ({ value: name, label: name }))}
+                onChange={(value) => onIdentityChange({ database: value ?? '' })}
+              />
+            ) : (
+              <Input
+                id="gn-user-mgmt-database"
+                value={draft.database}
+                disabled={!writable || draft.mode === 'edit'}
+                onChange={(event) => onIdentityChange({ database: event.target.value })}
+              />
+            )}
           </div>
         )}
       </div>

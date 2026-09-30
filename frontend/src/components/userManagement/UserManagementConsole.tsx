@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Alert, Button, Empty, Spin } from 'antd';
+import { Alert, Button, Spin } from 'antd';
 import { useI18n } from '../../i18n/provider';
 import type { SavedConnection } from '../../types';
 import ApplyReviewModal from './ApplyReviewModal';
@@ -10,7 +10,9 @@ import ExportDDLModal from './ExportDDLModal';
 import PasswordSyncModal from './PasswordSyncModal';
 import PrincipalEditor from './PrincipalEditor';
 import PrincipalListPanel from './PrincipalListPanel';
+import UserManagementEmpty from './UserManagementEmpty';
 import UserManagementHeader from './UserManagementHeader';
+import { GnUsersIcon } from './userManagementIcons';
 import type { UserManagementBackend } from './userManagementRpc';
 import type { UMPrincipal } from './userManagementTypes';
 import { useUserManagementConsole } from './useUserManagementConsole';
@@ -25,8 +27,12 @@ export default function UserManagementConsole({ connection, backend }: UserManag
   const { t } = useI18n();
   const state = useUserManagementConsole(connection, backend, t);
   const { profile, draftState, detailState, preview } = state;
-  const catalogEnabled = Boolean(profile?.supported && (profile.editorTabs.includes('object-privileges') || profile.features.databaseScoped));
-  const catalog = useObjectCatalog(backend, state.config, catalogEnabled);
+  const catalogEnabled = Boolean(profile?.supported && (
+    profile.editorTabs.includes('object-privileges')
+    || profile.features.databaseScoped
+    || profile.kinds.some((item) => item.identityFields.includes('database'))
+  ));
+  const catalog = useObjectCatalog(backend, state.config, catalogEnabled, connection, profile?.objectScopes ?? []);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [dropTarget, setDropTarget] = useState<UMPrincipal | null>(null);
   const [exportTarget, setExportTarget] = useState<UMPrincipal | null>(null);
@@ -68,7 +74,7 @@ export default function UserManagementConsole({ connection, backend }: UserManag
           <div className="gn-user-mgmt-editor-pane">
             {detailState.error && <Alert type="error" showIcon message={detailState.error} />}
             {detailState.loading && <div className="gn-user-mgmt-loading"><Spin /></div>}
-            {!draft && !detailState.loading && <Empty className="gn-user-mgmt-empty" description={t('user_management.editor.empty')} />}
+            {!draft && !detailState.loading && <UserManagementEmpty className="gn-user-mgmt-empty" icon={<GnUsersIcon />} text={t('user_management.editor.empty')} />}
             {draft && (
               <PrincipalEditor
                 profile={profile}
@@ -81,6 +87,7 @@ export default function UserManagementConsole({ connection, backend }: UserManag
                 databases={catalog.databases}
                 loadTables={catalog.loadTables}
                 loadColumns={catalog.loadColumns}
+                loadObjects={catalog.loadObjects}
                 preview={preview}
                 readOnlyReason={detailState.detail?.principal.readOnly ? detailState.detail.principal.readOnlyReason || t('user_management.editor.principal_read_only') : undefined}
               />

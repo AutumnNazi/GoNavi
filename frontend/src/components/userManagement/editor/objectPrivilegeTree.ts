@@ -71,3 +71,67 @@ export const tableTarget = (layout: ObjectTreeLayout, database: string, qualifie
   if (schema) target.schema = schema;
   return target;
 };
+
+export interface ManualTargetInput {
+  scope: string;
+  /** 库（database / database-schema 布局）或模式属主（schema 布局）。 */
+  container: string;
+  /** 对象名；database-schema 布局下可写成 schema.object，schema 授权时为模式名。 */
+  object: string;
+  objectType?: string;
+}
+
+/** 该授权层级是否还需要填写对象名（库级 / Oracle 系模式级只有容器）。 */
+export const manualTargetNeedsObject = (layout: ObjectTreeLayout, scope: string): boolean => (
+  scope === 'database' ? false : !(layout === 'schema' && scope === 'schema')
+);
+
+/** 由手动选择的层级 / 容器 / 对象组装授权目标；信息不全返回 null。 */
+export const buildManualTarget = (layout: ObjectTreeLayout, input: ManualTargetInput): UMGrant | null => {
+  const container = input.container.trim();
+  const object = input.object.trim();
+  if (!container) return null;
+  const base: UMGrant = { privilege: '', scope: input.scope };
+  if (layout === 'schema') {
+    if (input.scope === 'schema') return { ...base, schema: container };
+    if (!object) return null;
+    return { ...base, schema: container, object, ...(input.objectType ? { objectType: input.objectType } : {}) };
+  }
+  if (input.scope === 'database') return { ...base, database: container };
+  if (!object) return null;
+  if (input.scope === 'schema') return { ...base, database: container, schema: object };
+  const { schema, table } = layout === 'database-schema' ? splitQualifiedTable(object) : { schema: '', table: object };
+  return {
+    ...base,
+    database: container,
+    ...(schema ? { schema, object: table } : { object }),
+    ...(input.objectType ? { objectType: input.objectType } : {}),
+  };
+};
+
+/** 树里除表以外可授权的对象：视图、序列、函数 / 存储过程。 */
+export interface CatalogObject {
+  kind: 'view' | 'sequence' | 'routine';
+  /** 所属模式；database / schema 布局下为空（容器本身就是归属）。 */
+  schema: string;
+  name: string;
+  objectType?: 'FUNCTION' | 'PROCEDURE';
+}
+
+/** 某个容器（库 / 模式）节点下应展示的非表对象。 */
+export const catalogObjectsFor = (layout: ObjectTreeLayout, objects: CatalogObject[], schema: string): CatalogObject[] => (
+  layout === 'database-schema' ? objects.filter((item) => item.schema === schema) : objects
+);
+
+export const catalogObjectTarget = (layout: ObjectTreeLayout, container: string, item: CatalogObject): UMGrant => {
+  if (item.kind === 'view') return tableTarget(layout, container, item.schema ? `${item.schema}.${item.name}` : item.name);
+  const base: UMGrant = { privilege: '', scope: item.kind };
+  if (layout === 'schema') return { ...base, schema: container, object: item.name, ...(item.objectType ? { objectType: item.objectType } : {}) };
+  return {
+    ...base,
+    database: container,
+    ...(item.schema && layout === 'database-schema' ? { schema: item.schema } : {}),
+    object: item.name,
+    ...(item.objectType ? { objectType: item.objectType } : {}),
+  };
+};

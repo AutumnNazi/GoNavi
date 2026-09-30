@@ -4,6 +4,7 @@ import { useI18n } from '../../i18n/provider';
 import GeneralTab from './editor/GeneralTab';
 import MembershipTab from './editor/MembershipTab';
 import ObjectPrivilegesTab from './editor/ObjectPrivilegesTab';
+import type { CatalogObject } from './editor/objectPrivilegeTree';
 import OptionsForm from './editor/OptionsForm';
 import PreviewTab from './editor/PreviewTab';
 import RedisAclRulesTab from './editor/RedisAclRulesTab';
@@ -23,13 +24,14 @@ interface PrincipalEditorProps {
   databases: string[];
   loadTables: (database: string) => Promise<string[]>;
   loadColumns: (database: string, table: string) => Promise<string[]>;
+  loadObjects: (database: string) => Promise<CatalogObject[]>;
   preview: { plan: UMPlan | null; loading: boolean; error: string };
   readOnlyReason?: string;
 }
 
 /** 主体编辑器：按服务端版本下发的标签页组合各编辑面板。 */
 export default function PrincipalEditor(props: PrincipalEditorProps) {
-  const { profile, controller, principals, inherited, members, writable, database, databases, loadTables, loadColumns, preview, readOnlyReason } = props;
+  const { profile, controller, principals, inherited, members, writable, database, databases, loadTables, loadColumns, loadObjects, preview, readOnlyReason } = props;
   const { t } = useI18n();
   const draft = controller.draft;
   const [activeTab, setActiveTab] = useState('general');
@@ -45,6 +47,7 @@ export default function PrincipalEditor(props: PrincipalEditorProps) {
             profile={profile}
             draft={draft}
             writable={writable}
+            databases={databases}
             onIdentityChange={controller.update}
             onPasswordChange={controller.setPassword}
             onOptionChange={controller.setOption}
@@ -65,6 +68,7 @@ export default function PrincipalEditor(props: PrincipalEditorProps) {
             databases={databases}
             loadTables={loadTables}
             loadColumns={loadColumns}
+            loadObjects={loadObjects}
             onGrantsChange={controller.setGrants}
           />
         );
@@ -83,6 +87,7 @@ export default function PrincipalEditor(props: PrincipalEditorProps) {
     <div className="gn-user-mgmt-editor">
       {readOnlyReason && <Alert type="warning" showIcon message={readOnlyReason} className="gn-user-mgmt-editor-alert" />}
       <Tabs
+        className="gn-user-mgmt-editor-tabs"
         activeKey={tabs.includes(activeTab) ? activeTab : tabs[0]}
         onChange={setActiveTab}
         items={tabs.map((tab) => ({ key: tab, label: userManagementEditorTabLabel(tab, t), children: renderTab(tab) }))}
