@@ -37,6 +37,7 @@ import QueryEditorTransactionSettings, {
 import { renderV2ActionMenuPopup } from './common/V2ActionMenuPopup';
 import { QueryEditorToolbarRunAction } from './queryEditor/QueryEditorToolbarRunAction';
 import QueryEditorToolbarMaxRowsSelect from './queryEditor/QueryEditorToolbarMaxRowsSelect';
+import { QueryEditorToolbarAnalysisAction } from './queryEditor/QueryEditorToolbarAnalysisAction';
 
 export type QueryEditorMode = "sql" | "elasticsearch";
 
@@ -75,6 +76,8 @@ export type QueryEditorToolbarProps = {
   contextSelectionDisabled?: boolean;
   runDisabled?: boolean;
   saveMoreMenuItems: MenuProps["items"];
+  /** 「历史与诊断」入口菜单项；缺省时不渲染该入口 */
+  analysisMenuItems?: MenuProps["items"];
   formatSettingsMenu: MenuProps["items"];
   formatSettingsSelectedKeys?: string[];
   templateMenuItems?: MenuProps["items"];
@@ -110,7 +113,7 @@ type FullNameSelectOption = {
   fullName: string;
 };
 
-type QueryToolbarMenuKey = "ai" | "more" | "format" | "templates";
+type QueryToolbarMenuKey = "ai" | "more" | "format" | "templates" | "analysis";
 
 const normalizeV2ActionMenuItems = (
   items: MenuProps["items"],
@@ -192,6 +195,7 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
   contextSelectionDisabled = false,
   runDisabled = false,
   saveMoreMenuItems,
+  analysisMenuItems,
   formatSettingsMenu,
   formatSettingsSelectedKeys = [],
   templateMenuItems,
@@ -640,6 +644,15 @@ const QueryEditorToolbar: React.FC<QueryEditorToolbarProps> = ({
                 </span>
               </Tooltip>
             </div>
+            {analysisMenuItems && (
+              <QueryEditorToolbarAnalysisAction
+                items={analysisMenuItems}
+                open={openToolbarMenu === "analysis"}
+                label={t("query_editor.action.analysis")}
+                tooltip={t("query_editor.action.analysis_tooltip")}
+                onOpenChange={(open) => updateToolbarMenuOpen("analysis", open)}
+              />
+            )}
             <Tooltip
               title={t("query_editor.action.more")}
               open={openToolbarMenu === "more" ? false : undefined}

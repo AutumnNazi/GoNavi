@@ -7563,6 +7563,8 @@
   "query_editor.action.hide_results_panel_with_shortcut": "Ergebnisbereich ausblenden ({{shortcut}})",
   "query_editor.action.insert_sql_snippet": "SQL-Snippet einfügen",
   "query_editor.action.more": "Mehr",
+  "query_editor.action.analysis": "Verlauf & Diagnose",
+  "query_editor.action.analysis_tooltip": "Ausführungsverlauf · SQL-Diagnose · Langsame SQL-Historie",
   "query_editor.action.rename_query": "Abfrage umbenennen",
   "query_editor.action.resize_editor": "Höhe durch Ziehen ändern",
   "query_editor.action.results": "Ergebnisse",

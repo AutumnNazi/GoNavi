@@ -5,14 +5,11 @@ import { message, Input, Form, MenuProps, Button, Segmented, type InputRef } fro
 import {
     ApiOutlined,
     CodeOutlined,
-    ClockCircleOutlined,
     EditOutlined,
     ExportOutlined,
     FileTextOutlined,
-    HistoryOutlined,
     KeyOutlined,
     SaveOutlined,
-    SearchOutlined,
     UndoOutlined,
 } from '@ant-design/icons';
 import { format } from 'sql-formatter';
@@ -360,6 +357,7 @@ import {
     publishQueryEditorSelection,
 } from './queryEditor/queryEditorAiSelection';
 import { bindAIEditorSelectionContext } from './ai/bindAIEditorSelectionContext';
+import { buildQueryEditorAnalysisMenuItems } from './queryEditor/queryEditorAnalysisMenuItems';
 import { registerQueryEditorCommentAction, resolveToggleLineCommentBindingPlan, runMonacoToggleLineComment } from './queryEditor/queryEditorCommentActions';
 import { finalizeQueryEditorSqlServerResultSets, resolveQueryEditorExecutionSuccessToast } from './queryEditor/queryEditorSqlServerResultMessages';
 import {
@@ -4615,6 +4613,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           bindSelection: true,
       },
   ]), [translate]);
+
   const disposeQueryEditorAiContextMenuActions = useCallback(() => {
       aiContextMenuActionDisposablesRef.current.forEach((disposable) => disposable?.dispose?.());
       aiContextMenuActionDisposablesRef.current = [];
@@ -12873,51 +12872,18 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               },
           ],
       },
-      {
-          type: 'group',
-          key: 'analysis-actions',
-          label: translate('tab_manager.kind_badge.sql_analysis'),
-          children: [
-              {
-                  key: 'show-query-history',
-                  icon: <ClockCircleOutlined />,
-                  label: translate('query_history.action.open'),
-                  onClick: openQueryHistoryWorkbench,
-              },
-              {
-                  key: 'diagnose-query',
-                  icon: <SearchOutlined />,
-                  label: (
-                      <span className="gn-v2-context-menu-item-title">
-                          {translate('app.shortcuts.action.diagnoseQuery.label' as any)}
-                          {diagnoseQueryShortcutBinding?.enabled && diagnoseQueryShortcutBinding.combo && (
-                              <span className="gn-v2-context-menu-kbd">
-                                  {getShortcutDisplayLabel(diagnoseQueryShortcutBinding.combo, activeShortcutPlatform)}
-                              </span>
-                          )}
-                      </span>
-                  ),
-                  disabled: !currentConnectionCapabilities.supportsExplainDiagnosis,
-                  onClick: () => openSqlAnalysisWorkbench('diagnose', getCurrentQuery()),
-              },
-              {
-                  key: 'show-slow-queries',
-                  icon: <HistoryOutlined />,
-                  label: (
-                      <span className="gn-v2-context-menu-item-title">
-                          {translate('app.shortcuts.action.showSlowQueries.label' as any)}
-                          {showSlowQueriesShortcutBinding?.enabled && showSlowQueriesShortcutBinding.combo && (
-                              <span className="gn-v2-context-menu-kbd">
-                                  {getShortcutDisplayLabel(showSlowQueriesShortcutBinding.combo, activeShortcutPlatform)}
-                              </span>
-                          )}
-                      </span>
-                  ),
-                  onClick: () => openSqlAnalysisWorkbench('slow-query'),
-              },
-          ],
-      },
   ];
+
+  const analysisMenuItems = buildQueryEditorAnalysisMenuItems({
+      translate,
+      activeShortcutPlatform,
+      diagnoseQueryShortcutBinding,
+      showSlowQueriesShortcutBinding,
+      supportsExplainDiagnosis: currentConnectionCapabilities.supportsExplainDiagnosis,
+      onOpenQueryHistory: openQueryHistoryWorkbench,
+      onDiagnoseQuery: () => openSqlAnalysisWorkbench('diagnose', getCurrentQuery()),
+      onOpenSlowQueries: () => openSqlAnalysisWorkbench('slow-query'),
+  });
 
   useEffect(() => {
       const handleFindShortcut = (event: KeyboardEvent) => {
@@ -13576,6 +13542,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         loading={loading}
         runDisabled={canSelectQuerySchema && schemaLoading}
         saveMoreMenuItems={saveMoreMenuItems}
+        analysisMenuItems={analysisMenuItems}
         formatSettingsMenu={formatSettingsMenu}
         formatSettingsSelectedKeys={[sqlFormatOptions.keywordCase]}
         templateMenuItems={elasticsearchTemplateMenuItems}

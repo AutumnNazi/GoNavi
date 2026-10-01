@@ -7563,6 +7563,8 @@
   "query_editor.action.hide_results_panel_with_shortcut": "隱藏結果區（{{shortcut}}）",
   "query_editor.action.insert_sql_snippet": "插入 SQL 片段",
   "query_editor.action.more": "更多",
+  "query_editor.action.analysis": "歷史與診斷",
+  "query_editor.action.analysis_tooltip": "執行歷史 · SQL 診斷 · 慢 SQL 歷史",
   "query_editor.action.rename_query": "重新命名查詢",
   "query_editor.action.resize_editor": "拖曳以調整高度",
   "query_editor.action.results": "結果",

@@ -7563,6 +7563,8 @@
   "query_editor.action.hide_results_panel_with_shortcut": "Скрыть область результатов ({{shortcut}})",
   "query_editor.action.insert_sql_snippet": "Вставить SQL-сниппет",
   "query_editor.action.more": "Еще",
+  "query_editor.action.analysis": "История и диагностика",
+  "query_editor.action.analysis_tooltip": "История выполнения · SQL-диагностика · Медленные SQL",
   "query_editor.action.rename_query": "Переименовать запрос",
   "query_editor.action.resize_editor": "Перетащите, чтобы изменить высоту",
   "query_editor.action.results": "Результаты",
