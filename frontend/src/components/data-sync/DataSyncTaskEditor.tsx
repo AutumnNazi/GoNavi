@@ -281,21 +281,18 @@ const normalizeDataSyncObjectName = (value: string): string =>
     .toLowerCase();
 
 const hasIdentityMigrationMappings = (task: DataSyncTaskDefinition): boolean => {
+  // 结构型迁移，以及可选开启「自动补字段」的对账（差异同步）任务，都允许同名表 + 识别列的隐式路径。
   const structureMigration =
-    task.kind === 'migration' &&
-    (task.content === 'schema' || task.content === 'both');
+    (task.kind === 'migration' &&
+      (task.content === 'schema' || task.content === 'both')) ||
+    (task.kind === 'reconcile' && task.incremental.mode === 'snapshot');
   const mappings = task.mappings.filter((mapping) => mapping.enabled);
   return (
     structureMigration &&
     mappings.length > 0 &&
     mappings.every((mapping) => {
-      if (
-        mapping.fields.length > 0 ||
-        (!structureMigration &&
-          mapping.keyColumns.some((column) => column.trim().length > 0))
-      ) {
-        return false;
-      }
+      // 外层已保证 structureMigration 为真，识别列允许存在（后端预检会校验它等于源物理主键）。
+      if (mapping.fields.length > 0) return false;
       return Boolean(
         normalizeDataSyncObjectName(mapping.sourceObject) &&
           normalizeDataSyncObjectName(mapping.targetObject),
@@ -345,12 +342,13 @@ const DeliveryStage: React.FC<{
   const schemaOnlyMigration =
     task.kind === 'migration' && task.content === 'schema';
   const canConfigureMigrationStructure =
-    task.kind === 'migration' &&
+    (task.kind === 'migration' || task.kind === 'reconcile') &&
     capability.canExecute &&
     (identityMigrationMappings || schemaOnlyMigration);
   const canAutoAddColumns =
     canConfigureMigrationStructure && capability.supportsAutoAddColumns === true;
   const canCreateIndexes =
+    task.kind === 'migration' &&
     canConfigureMigrationStructure &&
     capability.supportsAutoCreate &&
     capability.requiresExistingTarget !== true &&

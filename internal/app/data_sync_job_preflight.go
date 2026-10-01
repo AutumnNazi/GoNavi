@@ -725,7 +725,11 @@ func dataSyncJobHasUniqueIndexForColumns(indexes []connection.IndexDefinition, c
 }
 
 func preflightUnsupportedTargetSchemaIssues(definition syncjob.JobDefinition, mapping syncjob.TableMapping, sourceColumns, targetColumns []connection.ColumnDefinition, sourceType, targetType, mappingID string) []DataSyncJobPreflightIssue {
-	if definition.Kind != syncjob.JobKindMigration || !dataSyncJobMigrationAllowsSchemaChanges(definition) {
+	if !dataSyncJobStructureSyncEnabled(definition) {
+		return nil
+	}
+	// 对账任务带显式字段映射时走仅数据路径（引擎不会检查结构差异），预检不能比运行时更严。
+	if definition.Kind == syncjob.JobKindReconcile && dataSyncJobMappingNeedsExplicitProjection(definition, mapping) {
 		return nil
 	}
 	unsupported := sync.UnsupportedExistingTargetSchemaDiffs(sourceColumns, targetColumns, sourceType, targetType)
