@@ -311,8 +311,8 @@ import {
 } from './utils/overlayZIndex';
 import { useAppUpdateManager } from './hooks/useAppUpdateManager';
 import { useAppLogPanelResize } from './hooks/useAppLogPanelResize';
-import { useAppSidebarCollapse } from './hooks/useAppSidebarCollapse';
-import { isDriverManagerVisible, useDriverManagerSidebarAutoCollapse, useOpenDriverManagerWorkbench } from './hooks/useDriverManagerWorkbench';
+import { useAppSidebarCollapse, useWorkbenchSidebarAutoCollapse } from './hooks/useAppSidebarCollapse';
+import { useOpenDriverManagerWorkbench } from './hooks/useDriverManagerWorkbench';
 import { useAppSidebarResize } from './hooks/useAppSidebarResize';
 import { resolveSidebarResizeHitGeometry } from './utils/sidebarLayout';
 import { canInheritNewQueryTableContext, resolveNewQueryContext } from './utils/newQueryContext';
@@ -2657,7 +2657,7 @@ function App() {
       () => activeTabId ? tabs.find(tab => tab.id === activeTabId) : undefined,
       [activeTabId, tabs],
   );
-  useDriverManagerSidebarAutoCollapse(isDriverManagerVisible(activeWorkbenchTab, activeSettingsCenterPane?.key), isSidebarCollapsed, setIsSidebarCollapsed);
+  useWorkbenchSidebarAutoCollapse(activeWorkbenchTab?.type, isSidebarCollapsed, setIsSidebarCollapsed);
   const titlebarContext = useMemo(
       () => resolveTitlebarContext({
           activeContext,
