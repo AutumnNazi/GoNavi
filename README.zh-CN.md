@@ -100,19 +100,52 @@
 
 ### 产品截图
 
-每张均为 **完整 GoNavi 应用窗口**，再通过 README 宽度控件等比例缩小展示。
+每张均为 **完整 GoNavi 应用窗口**（1440×900），取自最新 dev 构建，再通过 README 宽度控件等比例缩小展示。
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/01-home-workbench.png" alt="GoNavi 全窗口 — 连接、查询与工作台" width="560" />
-  &nbsp;
-  <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/04-ai-assistant.png" alt="GoNavi 全窗口 — 带表结构上下文的 AI 助手" width="560" />
-</p>
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/01-home-workbench.png" alt="GoNavi 全窗口 — 连接、已存查询与快捷操作的工作台" width="100%" />
+      <br /><sub><b>工作台</b> — 连接、已存查询、快捷操作</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/02-query-editor.png" alt="GoNavi 全窗口 — SQL 编辑器、结果表格与对象树" width="100%" />
+      <br /><sub><b>SQL 编辑器</b> — 语法高亮、结果表格、对象树</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/04-ai-assistant.png" alt="GoNavi 全窗口 — 带表结构上下文并生成 SQL 的 AI 助手" width="100%" />
+      <br /><sub><b>AI 助手</b> — 感知表结构的对话，生成 SQL 可插入 / 执行 / 预览</sub>
+    </td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/05-ai-settings.png" alt="GoNavi 全窗口 — AI 设置中的内置工具与推荐流程" width="100%" />
+      <br /><sub><b>AI 设置</b> — 内置工具与推荐排查流程</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/06-new-connection.png" alt="GoNavi 全窗口 — 新建连接的数据源选择器" width="100%" />
+      <br /><sub><b>新建连接</b> — 可搜索、分类的数据源选择器</sub>
+    </td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/08-sql-execution-history.png" alt="GoNavi 全窗口 — 带筛选与详情面板的 SQL 执行历史" width="100%" />
+      <br /><sub><b>SQL 执行历史</b> — 筛选、查看详情、一键填回编辑器</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/09-sql-audit.png" alt="GoNavi 全窗口 — SQL 审计中心" width="100%" />
+      <br /><sub><b>SQL 审计中心</b> — 跨连接的脱敏 SQL 审计证据</sub>
+    </td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/07-settings-themes.png" alt="GoNavi 全窗口 — 含内置主题的设置中心" width="100%" />
+      <br /><sub><b>设置中心</b> — 内置主题、字体、工作区等</sub>
+    </td>
+  </tr>
+</table>
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/06-new-connection.png" alt="GoNavi 全窗口 — 新建连接的数据源选择器" width="560" />
-</p>
-
-<p align="center"><sub>真实桌面全窗口截图</sub></p>
+<p align="center"><sub>演示数据来自本地实验库 · 连接地址、密钥与供应商配置均未展示</sub></p>
 
 ---
 

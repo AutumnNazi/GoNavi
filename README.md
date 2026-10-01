@@ -101,19 +101,52 @@ Most database GUIs are Electron shells with megabytes of tax. GoNavi takes a dif
 
 ### Product screenshots
 
-Each image is a **full GoNavi application window**, scaled proportionally for README display.
+Each image is a **full GoNavi application window** (1440×900) captured from the latest dev build, scaled proportionally for README display.
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/01-home-workbench.png" alt="GoNavi full window — connections, queries, and workbench" width="560" />
-  &nbsp;
-  <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/04-ai-assistant.png" alt="GoNavi full window — AI assistant with schema context" width="560" />
-</p>
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/01-home-workbench.png" alt="GoNavi full window — workbench with connections, saved queries, and quick actions" width="100%" />
+      <br /><sub><b>Workbench</b> — connections, saved queries, quick actions</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/02-query-editor.png" alt="GoNavi full window — SQL editor with result grid and object tree" width="100%" />
+      <br /><sub><b>SQL editor</b> — highlighting, result grid, object tree</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/04-ai-assistant.png" alt="GoNavi full window — AI assistant with schema context and generated SQL" width="100%" />
+      <br /><sub><b>AI assistant</b> — schema-aware chat, insert / run / preview generated SQL</sub>
+    </td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/05-ai-settings.png" alt="GoNavi full window — AI settings, built-in tools and recommended flows" width="100%" />
+      <br /><sub><b>AI settings</b> — built-in tools and recommended inspection flows</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/06-new-connection.png" alt="GoNavi full window — new connection data-source selector" width="100%" />
+      <br /><sub><b>New connection</b> — searchable, categorized data-source picker</sub>
+    </td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/08-sql-execution-history.png" alt="GoNavi full window — SQL execution history with filters and detail panel" width="100%" />
+      <br /><sub><b>SQL execution history</b> — filter, inspect, refill into the editor</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/09-sql-audit.png" alt="GoNavi full window — SQL audit center" width="100%" />
+      <br /><sub><b>SQL audit center</b> — desensitized SQL evidence across connections</sub>
+    </td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/07-settings-themes.png" alt="GoNavi full window — settings center with built-in themes" width="100%" />
+      <br /><sub><b>Settings</b> — built-in themes, fonts, workspace, and more</sub>
+    </td>
+  </tr>
+</table>
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/Syngnat/GoNavi/dev/assets/screenshots/06-new-connection.png" alt="GoNavi full window — new connection data-source selector" width="560" />
-</p>
-
-<p align="center"><sub>Real desktop captures · full window</sub></p>
+<p align="center"><sub>Sample data from a local lab database · connection addresses, keys, and provider configuration are not shown</sub></p>
 
 ---
 
