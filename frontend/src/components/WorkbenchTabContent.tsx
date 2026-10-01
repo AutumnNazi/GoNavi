@@ -27,6 +27,7 @@ const JVMDiagnosticConsole = React.lazy(() => import('./JVMDiagnosticConsole'));
 const JVMMonitoringDashboard = React.lazy(() => import('./JVMMonitoringDashboard'));
 const SqlAnalysisWorkbench = React.lazy(() => import('./explain/SqlAnalysisWorkbench'));
 const SqlAuditWorkbench = React.lazy(() => import('./audit/SqlAuditWorkbench'));
+const QueryHistoryWorkbench = React.lazy(() => import('./queryHistory/QueryHistoryWorkbench'));
 const DriverManagerWorkbench = React.lazy(() => import('./DriverManagerWorkbench'));
 const SettingsCenterWorkbench = React.lazy(() => import('./settings/SettingsCenterWorkbench'));
 const RequestDiagnosticsWorkbench = React.lazy(() => import('./requestDiagnostics/RequestDiagnosticsWorkbench'));
@@ -161,7 +162,9 @@ export const WorkbenchTabContent: React.FC<WorkbenchTabContentProps> = React.mem
   } else if (tab.type === 'sql-analysis') {
     content = <SqlAnalysisWorkbench tab={tab} />;
   } else if (tab.type === 'sql-audit') {
-    content = <SqlAuditWorkbench tab={tab} isActive={isActive} />;
+    content = tab.sqlAuditView === 'query-history'
+      ? <QueryHistoryWorkbench tab={tab} isActive={isActive} />
+      : <SqlAuditWorkbench tab={tab} isActive={isActive} />;
   } else if (tab.type === 'dml-snapshot') {
     content = <DMLSnapshotWorkbench isActive={isActive} />;
   } else if (tab.type === 'user-management') {
