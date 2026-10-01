@@ -38,7 +38,10 @@ func TestEnqueueDueJobRunExecutesTargetRunToTerminal(t *testing.T) {
 		return ExecutionOutcome{RowsInserted: 1}, nil
 	})
 	// Now 前移 10 分钟：任务的 NextRunAt（创建后 60 秒）必然到期。
+	// SchedulerDisabled 与一次性执行进程一致：调度循环启动时会立刻扫描到期任务并抢先入队，
+	// 与下面显式的 EnqueueDueJobRun 竞争，导致 enqueued 为 false 或返回已完成的运行。
 	manager, err := NewManager(context.Background(), store, executor, ManagerOptions{
+		SchedulerDisabled: true,
 		SchedulerInterval: time.Hour,
 		HeartbeatInterval: time.Hour,
 		Now:               func() time.Time { return created.Add(10 * time.Minute) },
@@ -78,6 +81,44 @@ func TestEnqueueDueJobRunExecutesTargetRunToTerminal(t *testing.T) {
 	}
 	if final.Status != RunStatusSucceeded {
 		t.Fatalf("终态 = %q, 期望 succeeded", final.Status)
+	}
+}
+
+// 调度器关闭的管理器只执行显式入队的运行，不会自己扫描并入队到期任务
+// （一次性进程不应顺带拉起其他到期任务，持续型任务更归在线主应用）。
+func TestSchedulerDisabledManagerDoesNotEnqueueDueJobsOnItsOwn(t *testing.T) {
+	store := openTestStore(t)
+	created := time.Now()
+	definition := putScheduledTestJob(t, store, 60, created)
+	executor := ExecutorFunc(func(ctx context.Context, request ExecutionRequest, _ RunReporter) (ExecutionOutcome, error) {
+		t.Errorf("调度器关闭时不应自行执行运行：%s", request.Run.ID)
+		return ExecutionOutcome{}, nil
+	})
+	manager, err := NewManager(context.Background(), store, executor, ManagerOptions{
+		SchedulerDisabled: true,
+		SchedulerInterval: time.Millisecond,
+		HeartbeatInterval: time.Hour,
+		Now:               func() time.Time { return created.Add(10 * time.Minute) },
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := manager.Shutdown(ctx); err != nil {
+			t.Errorf("shutdown manager: %v", err)
+		}
+	})
+
+	// 调度循环若开启，首轮扫描在启动时立即发生，之后每毫秒再扫一次；留足时间让它有机会入队。
+	time.Sleep(300 * time.Millisecond)
+	runs, err := store.ListRuns(context.Background(), definition.ID, 10)
+	if err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	if len(runs) != 0 {
+		t.Fatalf("调度器关闭的管理器自行入队了 %d 个运行，期望 0", len(runs))
 	}
 }
 

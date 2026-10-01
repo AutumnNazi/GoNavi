@@ -136,8 +136,10 @@ func syncJobDueForRun(ctx context.Context, databasePath, jobID string) bool {
 	return false
 }
 
-// newDataSyncJobManager 为一次性执行进程构建活动调度管理器。与主应用的
-// ensureDataSyncJobManager 相同的执行器与租约配置，但不触发常驻 worker。
+// newDataSyncJobManager 为一次性执行进程构建执行管理器。与主应用的
+// ensureDataSyncJobManager 相同的执行器与租约配置，但不触发常驻 worker，
+// 也不自行扫描到期任务：只执行 EnqueueDueJobRun 入队的那一个任务，
+// 其余到期任务（含持续型）归各自的触发器或在线主应用。
 func (a *App) newDataSyncJobManager(ctx context.Context) (*syncjob.Manager, *syncjob.Store, error) {
 	if err := a.beginDataSyncJobsOperation(); err != nil {
 		return nil, nil, err
@@ -148,7 +150,8 @@ func (a *App) newDataSyncJobManager(ctx context.Context) (*syncjob.Manager, *syn
 		return nil, nil, err
 	}
 	manager, err := syncjob.NewManager(ctx, store, appDataSyncJobExecutor{app: a}, syncjob.ManagerOptions{
-		LeaseOwner: a.dataSyncJobLeaseOwner,
+		LeaseOwner:        a.dataSyncJobLeaseOwner,
+		SchedulerDisabled: true,
 		Hooks: syncjob.ManagerHooks{
 			OnRunEvent: func(event syncjob.RunEvent) {
 				uievents.Emit(a.ctx, "sync:run-event", event)
