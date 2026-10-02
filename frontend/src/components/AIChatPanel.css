@@ -50,17 +50,6 @@
     gap: calc(10 * var(--gn-ai-unit, 1px));
 }
 
-.ai-chat-header-left .ai-logo {
-    width: calc(28 * var(--gn-ai-unit, 1px));
-    height: calc(28 * var(--gn-ai-unit, 1px));
-    border-radius: 8px;
-    display: grid;
-    place-items: center;
-    font-size: calc(16 * var(--gn-ai-unit, 1px));
-    font-weight: 700;
-    flex-shrink: 0;
-}
-
 .ai-chat-header-left .ai-title {
     font-size: calc(14 * var(--gn-ai-unit, 1px));
     font-weight: 700;

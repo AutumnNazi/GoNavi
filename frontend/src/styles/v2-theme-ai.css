@@ -28,9 +28,7 @@ body[data-ui-version="v2"] .gn-v2-ai-suggestion-list button,
 body[data-ui-version="v2"] .gn-v2-ai-context-row,
 body[data-ui-version="v2"] .gn-v2-ai-context-toggle,
 body[data-ui-version="v2"] .gn-v2-ai-context-add,
-body[data-ui-version="v2"] .gn-v2-ai-input-actions,
-body[data-ui-version="v2"] .gn-v2-ai-token-meter,
-body[data-ui-version="v2"] .gn-v2-ai-token-bar {
+body[data-ui-version="v2"] .gn-v2-ai-input-actions {
   display: flex;
   align-items: center;
 }
@@ -73,17 +71,6 @@ body[data-ui-version="v2"] .gn-v2-ai-header-actions .ant-btn {
 body[data-ui-version="v2"] .gn-v2-ai-header-actions .ant-btn:hover {
   background: var(--gn-bg-hover) !important;
   color: var(--gn-fg-1) !important;
-}
-
-body[data-ui-version="v2"] .gn-v2-ai-panel .ai-logo {
-  width: calc(32 * var(--gn-ai-unit, 1px)) !important;
-  height: calc(32 * var(--gn-ai-unit, 1px)) !important;
-  flex: 0 0 auto;
-  border-radius: calc(10 * var(--gn-ai-unit, 1px)) !important;
-  background: linear-gradient(140deg, color-mix(in srgb, var(--gn-accent) 88%, #fff) 0%, var(--gn-accent-strong, var(--gn-accent)) 100%) !important;
-  color: var(--gn-on-accent, #fff) !important;
-  font-size: calc(16 * var(--gn-ai-unit, 1px)) !important;
-  box-shadow: 0 calc(4 * var(--gn-ai-unit, 1px)) calc(10 * var(--gn-ai-unit, 1px)) color-mix(in srgb, var(--gn-accent) 30%, transparent), inset 0 0.5px 0 rgba(255,255,255,0.4);
 }
 
 body[data-ui-version="v2"] .gn-v2-ai-panel .ai-title {
@@ -788,8 +775,7 @@ body[data-ui-version="v2"] .gn-v2-ai-model-bar {
   overflow: visible;
 }
 
-body[data-ui-version="v2"] .gn-v2-ai-context-chip,
-body[data-ui-version="v2"] .gn-v2-ai-token-meter {
+body[data-ui-version="v2"] .gn-v2-ai-context-chip {
   height: calc(28 * var(--gn-ai-unit, 1px));
   display: inline-flex;
   align-items: center;
@@ -824,22 +810,6 @@ body[data-ui-version="v2"] .gn-v2-ai-model-bar > span {
 body[data-ui-version="v2"] .gn-v2-ai-model-bar > span:has(.gn-v2-ai-context-chip) {
   max-width: 112px;
   flex: 0 1 auto;
-}
-
-body[data-ui-version="v2"] .gn-v2-ai-model-bar > span:has(.gn-v2-ai-token-meter) {
-  flex: 0 0 auto;
-  max-width: none;
-  margin-left: auto;
-}
-
-body[data-ui-version="v2"] .gn-v2-ai-token-meter {
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
-
-/* 无 Tooltip 包裹时 token 也靠右 */
-body[data-ui-version="v2"] .gn-v2-ai-model-bar > .gn-v2-ai-token-meter {
-  margin-left: auto;
 }
 
 body[data-ui-version="v2"] .gn-v2-ai-context-chip > .anticon {
@@ -1010,37 +980,6 @@ body[data-ui-version="v2"] .gn-v2-ai-thinking-select .ant-select-arrow {
   inset-inline-end: 7px !important;
   color: var(--gn-fg-4) !important;
   font-size: calc(11 * var(--gn-ai-unit, 1px));
-}
-
-body[data-ui-version="v2"] .gn-v2-ai-token-meter {
-  flex: 0 0 auto;
-  white-space: nowrap;
-  gap: calc(5 * var(--gn-ai-unit, 1px)) !important;
-}
-
-body[data-ui-version="v2"] .gn-v2-ai-token-meter-text {
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
-
-body[data-ui-version="v2"] .gn-v2-ai-token-meter.is-warn {
-  border-color: color-mix(in srgb, var(--gn-warn) 35%, transparent) !important;
-  color: var(--gn-warn) !important;
-}
-
-body[data-ui-version="v2"] .gn-v2-ai-token-bar {
-  width: calc(32 * var(--gn-ai-unit, 1px));
-  height: calc(4 * var(--gn-ai-unit, 1px));
-  overflow: hidden;
-  border-radius: 2px;
-  background: var(--gn-bg-active);
-}
-
-body[data-ui-version="v2"] .gn-v2-ai-token-bar span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--gn-accent);
 }
 
 body[data-ui-version="v2"] .gn-v2-ai-panel .ai-chat-send-btn {
