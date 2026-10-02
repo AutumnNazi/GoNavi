@@ -1896,46 +1896,12 @@ func (h *AgentRunHarness) run(execution *runExecution) {
 			}
 		}
 
-		// Build the provider projection only after the newest durable transcript
-		// and workspace snapshot are available. ContextLimit is handled before any
-		// token reservation or provider call, so failed builds cannot leak budget.
-		var providerBinding *ProviderBinding
-		contextWindowTokens, reservedOutputTokens := 0, 0
-		// Provider configuration is accepted as an encrypted, immutable run
-		// contract. Load it before context projection so provider-specific limits
-		// come from the same frozen configuration that executes the model turn.
-		if strings.TrimSpace(run.Provider) != "" {
-			binding, bindingErr := h.ledger.GetProviderBinding(ctx, run.ID)
-			if bindingErr != nil {
-				h.failRun(h.durableContext(), run, "provider_binding", bindingErr, execution)
-				return
-			}
-			contextWindowTokens, reservedOutputTokens, bindingErr = providerContextLimits(binding)
-			if bindingErr != nil {
-				h.failRun(h.durableContext(), run, "provider_binding", bindingErr, execution)
-				return
-			}
-			providerBinding = cloneProviderBinding(&binding)
-		}
-		built, buildErr := h.contextBuilder.Build(ctx, ContextBuildRequest{
-			Run:                  run,
-			Messages:             messages,
-			Tools:                descriptors,
-			WorkspaceSnapshot:    workspaceSnapshot,
-			WorkspaceReference:   workspaceReference,
-			ConversationCursor:   conversationCursor,
-			ProviderState:        providerState,
-			ContextWindowTokens:  contextWindowTokens,
-			ReservedOutputTokens: reservedOutputTokens,
+		built, providerBinding, ok := h.buildModelContext(ctx, run, execution, modelContextInput{
+			Messages: messages, Tools: descriptors,
+			WorkspaceSnapshot: workspaceSnapshot, WorkspaceReference: workspaceReference,
+			ConversationCursor: conversationCursor, ProviderState: providerState,
 		})
-		if buildErr != nil {
-			if errors.Is(buildErr, ErrContextLimit) {
-				h.failRun(h.durableContext(), run, "context_limit", buildErr, execution)
-			} else if errors.Is(buildErr, context.Canceled) || errors.Is(buildErr, context.DeadlineExceeded) {
-				h.finishCanceled(h.durableContext(), run.ID, "canceled", execution)
-			} else {
-				h.failRun(h.durableContext(), run, "context", buildErr, execution)
-			}
+		if !ok {
 			return
 		}
 		request := built.Request

@@ -98,26 +98,7 @@ func (s *Service) bindAgentProviderInput(request *runharness.AgentInputRequest) 
 	}
 
 	requestedID := strings.TrimSpace(request.Provider)
-	s.mu.RLock()
-	activeID := strings.TrimSpace(s.activeProvider)
-	if activeID == "" && len(s.providers) > 0 {
-		activeID = strings.TrimSpace(s.providers[0].ID)
-	}
-	var selected ai.ProviderConfig
-	for _, candidate := range s.providers {
-		candidateID := strings.TrimSpace(candidate.ID)
-		if requestedID != "" {
-			if candidateID != requestedID && !strings.EqualFold(candidateID, requestedID) && !strings.EqualFold(strings.TrimSpace(candidate.Name), requestedID) {
-				continue
-			}
-		} else if candidateID != activeID {
-			continue
-		}
-		selected = cloneAgentProviderConfig(candidate)
-		break
-	}
-	localizer := s.serviceLocalizerForLanguageLocked()
-	s.mu.RUnlock()
+	selected, localizer, _ := s.selectAgentProvider(requestedID)
 
 	if strings.TrimSpace(selected.ID) == "" {
 		if requestedID == "" {
@@ -130,21 +111,18 @@ func (s *Service) bindAgentProviderInput(request *runharness.AgentInputRequest) 
 		}
 		return fmt.Errorf("agent provider %q is not configured", requestedID)
 	}
-	resolved, err := s.resolveProviderConfigSecrets(selected)
+	var resolved ai.ProviderConfig
+	var err error
+	builtin := isBuiltinAIProviderConfig(selected)
+	if builtin {
+		resolved, err = s.resolveBuiltinAIProvider(selected, localizer)
+	} else {
+		resolved, err = s.resolveProviderConfigSecrets(selected)
+	}
 	if err != nil {
 		return err
 	}
-	options := ai.ChatSendOptions{Model: request.Model, ThinkingIntensity: request.Thinking}
-	resolved = normalizeProviderConfig(applyChatSendOptionsToProviderConfig(resolved, options))
-	// 上下文档位是按模型选的：请求临时换了模型时，旧模型的档位不再适用。
-	resolved.ContextWindow = ai.ResolveModelContextProfile(resolved.Model).NormalizeWindow(resolved.ContextWindow)
-	if request.Temperature != nil {
-		resolved.Temperature = *request.Temperature
-	}
-	if request.MaxTokens != nil {
-		resolved.MaxTokens = *request.MaxTokens
-	}
-	resolved = cloneAgentProviderConfig(resolved)
+	resolved = finishAgentProviderConfig(resolved, *request, builtin)
 	binding, err := runharness.NewProviderBinding(resolved.ID, resolved)
 	if err != nil {
 		return fmt.Errorf("bind agent provider: %w", err)
@@ -710,7 +688,15 @@ func (s *Service) resolveAgentProvider(ctx context.Context, request runharness.M
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return provider.NewProvider(cloneAgentProviderConfig(resolved))
+	agentProvider, err := provider.NewProvider(cloneAgentProviderConfig(resolved))
+	if err != nil {
+		return nil, err
+	}
+	if resolved.ID == builtinAIProviderID {
+		// The hosted small model needs the workspace presented as plain text.
+		return builtinAIPromptProvider{agentProvider}, nil
+	}
+	return agentProvider, nil
 }
 
 // resolveAgentImagePrompts preserves the localized image fallback behavior of
