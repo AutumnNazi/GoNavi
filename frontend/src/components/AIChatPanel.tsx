@@ -47,7 +47,7 @@ import {
 } from './ai/useAIWorkspaceSnapshot';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import type { AIComposerNoticeDescriptor } from '../utils/aiComposerNotice';
-import { buildAIComposerNotice } from '../utils/aiComposerNotice';
+import { buildAIComposerNotice, type AIComposerNoticeAction } from '../utils/aiComposerNotice';
 import { consumeAIChatSendShortcutOnKeyDown } from '../utils/aiChatSendShortcut';
 import { resolveEffectiveContextWindow } from '../utils/aiChatRuntime';
 import { getShortcutPlatform, resolveShortcutBinding } from '../utils/shortcuts';
@@ -1104,7 +1104,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         [activePanelMode],
     );
 
-    const handleComposerActionWithNoticeReset = useCallback((actionKey: 'open-settings' | 'reload-models') => {
+    const handleComposerActionWithNoticeReset = useCallback((actionKey: AIComposerNoticeAction) => {
         setComposerNoticeState(null);
         handleComposerAction(actionKey);
     }, [handleComposerAction]);
