@@ -723,7 +723,8 @@ export type AIContextLevel = "schema_only" | "with_samples" | "with_results";
  * contract (`dbName`, `tableName`, `ddl`) JSON-compatible while allowing the
  * composer to describe other bounded sources without another store.
  */
-export type AIContextItemKind = "table_schema" | "editor_selection";
+// "chat_quote" is a passage the person quoted from an earlier answer.
+export type AIContextItemKind = "table_schema" | "editor_selection" | "chat_quote";
 
 export interface AIEditorSelection {
   tabId: string;
@@ -754,6 +755,8 @@ export interface AIContextItem {
   label?: string;
   /** Original bounded content for non-table context items. */
   content?: string;
+  /** For a quoted passage: the message it came from. */
+  quoteOf?: string;
   source?: Pick<AIEditorSelection, "tabId" | "tabTitle" | "connectionId" | "dbName" | "language"
     | "startLine" | "startColumn" | "endLine" | "endColumn" | "truncated">;
 }
@@ -782,6 +785,8 @@ export interface AIProviderConfig {
   headers?: Record<string, string>;
   maxTokens: number;
   contextWindow?: number;
+  /** false: the model reads text only, so images are not sent to it (the desktop recognizes their text instead). */
+  supportsImages?: boolean;
   cliPath?: string;
   cliEnv?: Record<string, string>;
   temperature: number;
@@ -885,7 +890,8 @@ export interface AIToolCall {
   };
 }
 
-export type AIChatAttachmentKind = "image" | "markdown" | "text" | "pdf" | "word" | "excel" | "document";
+// "context" is a bound editor selection or table schema shown as a chip on the message.
+export type AIChatAttachmentKind = "image" | "markdown" | "text" | "pdf" | "word" | "excel" | "document" | "context";
 
 export interface AIChatAttachment {
   id: string;
@@ -897,6 +903,20 @@ export interface AIChatAttachment {
   text?: string;
   textTruncated?: boolean;
   extractWarning?: string;
+  /** Set when kind is "context". */
+  contextKind?: "editor_selection" | "table_schema" | "chat_quote";
+  contextLines?: number;
+  /** Text recognized in an image for a model that cannot see images (see components/ai/ocr). */
+  ocr?: AIChatAttachmentOcr;
+}
+
+export type AIChatAttachmentOcrStatus = "waiting" | "needs_install" | "running" | "done" | "no_text" | "failed";
+
+export interface AIChatAttachmentOcr {
+  status: AIChatAttachmentOcrStatus;
+  /** The recognized text, once status is "done". */
+  text?: string;
+  error?: string;
 }
 
 export type ChatPhase =

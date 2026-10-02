@@ -35,8 +35,7 @@ import AISettingsSafetySection from './ai/AISettingsSafetySection';
 import AISettingsContextSection from './ai/AISettingsContextSection';
 import AISettingsRunPolicySection from './ai/AISettingsRunPolicySection';
 import AISettingsProvidersSection from './ai/AISettingsProvidersSection';
-import AISettingsAnalysisSection from './ai/AISettingsAnalysisSection';
-import AISettingsRequestEventsSection from './ai/AISettingsRequestEventsSection';
+import AISettingsInsightSection from './ai/AISettingsInsightSection';
 import AISettingsPromptsSection from './ai/AISettingsPromptsSection';
 import AISettingsSkillsSection from './ai/AISettingsSkillsSection';
 import {
@@ -748,7 +747,7 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
             valuesModel: model,
         });
         const apiKeyInput = authMode === 'local-cli' ? '' : values.apiKey;
-        if (!isProviderSecretRequirementSatisfied({ apiKeyInput, currentAuthMode: authMode, editingProvider, allowEmptySecret: presetKey === 'codebuddy' })) {
+        if (!isProviderSecretRequirementSatisfied({ apiKeyInput, currentAuthMode: authMode, editingProvider, allowEmptySecret: presetKey === 'codebuddy' || presetKey === 'gonavi-ai' })) {
             throw new Error(t(purpose === 'test' ? 'ai_settings.message.test_requires_new_api_key' : 'ai_settings.form.api_key_required'));
         }
         const secret = resolveProviderSecretDraft({
@@ -1502,24 +1501,16 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
                         dirty={providerDirty}
                     />
                 ))}
-                {renderSectionPanel('analysis', (
-                    <AISettingsAnalysisSection
-                        active={active && activeSection === 'analysis'}
+                {(['analysis', 'request_events', 'image_recognition'] as const).map((section) => renderSectionPanel(section, (
+                    <AISettingsInsightSection
+                        section={section}
+                        active={active && activeSection === section}
                         providers={providers}
                         overlayTheme={overlayTheme}
                         cardBg={cardBg}
                         cardBorder={cardBorder}
                     />
-                ))}
-                {renderSectionPanel('request_events', (
-                    <AISettingsRequestEventsSection
-                        active={active && activeSection === 'request_events'}
-                        providers={providers}
-                        overlayTheme={overlayTheme}
-                        cardBg={cardBg}
-                        cardBorder={cardBorder}
-                    />
-                ))}
+                )))}
                 {renderSectionPanel('safety', (
                     <AISettingsSafetySection
                         safetyLevel={safetyLevel}
