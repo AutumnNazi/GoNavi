@@ -318,6 +318,7 @@ import { resolveSidebarResizeHitGeometry } from './utils/sidebarLayout';
 import { canInheritNewQueryTableContext, resolveNewQueryContext } from './utils/newQueryContext';
 import { useAppUtilityStyles } from './hooks/useAppUtilityStyles';
 import { useWorkbenchTabs } from './hooks/useWorkbenchTabs';
+import { useWorkbenchSessionRestore } from './hooks/useWorkbenchSessionRestore';
 import { useAIWorkspaceSnapshot } from './components/ai/useAIWorkspaceSnapshot';
 import { isWailsDevNativeContextMenu, shouldAllowNativeContextMenu } from './utils/nativeContextMenu';
 import AgentDataSettingsPanel from './components/ai/AgentDataSettingsPanel';
@@ -2658,6 +2659,7 @@ function App() {
       [activeTabId, tabs],
   );
   useWorkbenchSidebarAutoCollapse(activeWorkbenchTab?.type, isSidebarCollapsed, setIsSidebarCollapsed);
+  useWorkbenchSessionRestore(isStoreHydrated && hasLoadedSecureConfig);
   const titlebarContext = useMemo(
       () => resolveTitlebarContext({
           activeContext,
@@ -8216,8 +8218,6 @@ function App() {
                         </div>
                     )}
                 </div>
-
-
             </div>
             {!isSidebarCollapsed && <div
                 data-sidebar-resize-handle="true"
