@@ -450,7 +450,7 @@ func (s *Service) AIGetProviders() []ai.ProviderConfig {
 
 	result := make([]ai.ProviderConfig, len(s.providers))
 	for i := range s.providers {
-		result[i] = providerMetadataView(s.providers[i])
+		result[i] = s.builtinProviderMetadata(providerMetadataView(s.providers[i]))
 	}
 	return result
 }
@@ -469,6 +469,9 @@ func (s *Service) AIGetEditableProvider(id string) (ai.ProviderConfig, error) {
 	s.mu.RUnlock()
 
 	if strings.TrimSpace(found.ID) != "" {
+		if isBuiltinAIProviderConfig(found) {
+			return s.builtinProviderMetadata(found), nil
+		}
 		resolved, err := s.resolveProviderConfigSecrets(found)
 		if err != nil {
 			return ai.ProviderConfig{}, s.serviceError("ai_service.backend.error.provider_secret_read_failed", nil, err)
@@ -485,6 +488,10 @@ func (s *Service) AISaveProvider(config ai.ProviderConfig) error {
 	defer s.mu.Unlock()
 
 	config = normalizeProviderConfig(config)
+	if isBuiltinAIProviderConfig(config) {
+		// Built-in credentials live in the account store, never in a provider record.
+		return s.saveBuiltinAIProviderLocked(config)
+	}
 	if err := s.validateProviderModelPreferencesLocked(config); err != nil {
 		return err
 	}
@@ -625,6 +632,9 @@ func (s *Service) AIDeleteProvider(id string) error {
 // AITestProvider 返回实际执行的检查范围。本机认证 CLI 不发送聊天消息；
 // 其他兼容路径可能发送最小探测请求，只有读到模型回复才标记 modelVerified。
 func (s *Service) AITestProvider(config ai.ProviderConfig) map[string]interface{} {
+	if isBuiltinAIProviderConfig(config) {
+		return s.testBuiltinAIProvider()
+	}
 	localCLIAuth := isLocalCLIAuthProvider(config)
 	if localCLIAuth {
 		config = clearLocalCLIProviderSecrets(config)
@@ -1222,6 +1232,9 @@ func (s *Service) AISetActiveProvider(id string) error {
 			break
 		}
 	}
+	if !found && id == builtinAIProviderID {
+		found = s.addBuiltinAIProviderLocked()
+	}
 	if !found {
 		return s.serviceErrorLocked("ai_service.backend.error.active_provider_not_found", nil, errors.New("provider not found"))
 	}
@@ -1266,74 +1279,6 @@ func (s *Service) AISaveUserPromptSettings(settings ai.UserPromptSettings) error
 
 	s.userPromptSettings = normalizeUserPromptSettings(settings)
 	return s.saveConfig()
-}
-
-// AIListModels 获取当前活跃 Provider 的可用模型列表
-func (s *Service) AIListModels() map[string]interface{} {
-	s.mu.RLock()
-	var config ai.ProviderConfig
-	found := false
-	localizer := s.serviceLocalizerForLanguageLocked()
-	for _, p := range s.providers {
-		if p.ID == s.activeProvider {
-			config = p
-			found = true
-			break
-		}
-	}
-	s.mu.RUnlock()
-
-	if !found {
-		return map[string]interface{}{
-			"success": false,
-			"models":  []string{},
-			"error":   serviceTextFromLocalizer(localizer, "ai_service.backend.error.active_provider_not_found", nil),
-		}
-	}
-
-	config = normalizeProviderConfig(config)
-	return listProviderModels(config, localizer, true)
-}
-
-// AIListProviderModels refreshes model choices for an unsaved provider draft.
-// It never writes the draft or changes the active provider; saved credentials
-// are resolved by ID when the editor intentionally retains its existing secret.
-func (s *Service) AIListProviderModels(config ai.ProviderConfig) map[string]interface{} {
-	localizer := s.serviceLocalizerForLanguage()
-	resolved, err := s.resolveProviderConfigSecrets(config)
-	if err != nil {
-		return map[string]interface{}{"success": false, "models": []string{}, "error": err.Error()}
-	}
-	return listProviderModels(normalizeProviderConfig(resolved), localizer, false)
-}
-
-func listProviderModels(config ai.ProviderConfig, localizer *i18n.Localizer, allowConfiguredFallback bool) map[string]interface{} {
-	if isLocalCLIAuthProvider(config) || normalizedProviderType(config) == "codebuddy-cli" {
-		return map[string]interface{}{
-			"success": true,
-			"models":  selectableProviderModels(config, config.Models),
-			"source":  "static",
-		}
-	}
-	if staticModels := defaultStaticModelsForProvider(config); len(staticModels) > 0 {
-		return map[string]interface{}{"success": true, "models": selectableProviderModels(config, staticModels), "source": "static"}
-	}
-
-	models, err := fetchModelsFunc(config, localizer)
-	if err != nil {
-		// 回退到配置中的静态模型列表
-		if allowConfiguredFallback && (len(config.Models) > 0 || len(config.CustomModels) > 0) {
-			return map[string]interface{}{"success": true, "models": selectableProviderModels(config, config.Models), "source": "static"}
-		}
-		return map[string]interface{}{"success": false, "models": []string{}, "error": err.Error()}
-	}
-
-	models, err = filterFetchedModelsForProvider(config, models, localizer)
-	if err != nil {
-		return map[string]interface{}{"success": false, "models": []string{}, "error": err.Error()}
-	}
-
-	return map[string]interface{}{"success": true, "models": selectableProviderModels(config, models), "source": "api"}
 }
 
 // fetchModels 从供应商 API 获取可用模型列表
@@ -1636,33 +1581,6 @@ func (s *Service) getActiveProvider() (provider.Provider, error) {
 	return p, err
 }
 
-func (s *Service) getActiveProviderRuntime() (provider.Provider, ai.ProviderConfig, error) {
-	return s.getActiveProviderRuntimeWithOptions(ai.ChatSendOptions{})
-}
-
-func (s *Service) getActiveProviderRuntimeWithOptions(options ai.ChatSendOptions) (provider.Provider, ai.ProviderConfig, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	localizer := s.serviceLocalizerForLanguageLocked()
-
-	if s.activeProvider == "" && len(s.providers) > 0 {
-		s.activeProvider = s.providers[0].ID
-	}
-
-	for _, cfg := range s.providers {
-		if cfg.ID == s.activeProvider {
-			normalized := normalizeProviderConfig(applyChatSendOptionsToProviderConfig(cfg, options))
-			p, err := provider.NewProvider(normalized)
-			return p, normalized, err
-		}
-	}
-
-	return nil, ai.ProviderConfig{}, localizedAIServiceError{
-		key:     "ai_service.backend.error.provider_not_configured",
-		message: serviceTextFromLocalizer(localizer, "ai_service.backend.error.provider_not_configured", nil),
-	}
-}
-
 // --- 配置持久化 ---
 
 func (s *Service) loadConfig() {
@@ -1674,6 +1592,7 @@ func (s *Service) loadConfig() {
 
 	s.providers = snapshot.Providers
 	s.activeProvider = snapshot.ActiveProvider
+	s.migrateBuiltinAIProviders()
 	s.safetyLevel = snapshot.SafetyLevel
 	s.guard.SetPermissionLevel(s.safetyLevel)
 	s.contextLevel = snapshot.ContextLevel

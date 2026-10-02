@@ -158,6 +158,7 @@ func main() {
 	// Create an instance of the app structure
 	application := app.NewApp()
 	aiService := aiservice.NewServiceWithConfigChangeHandler(app.NewCloudBackupChangeHandler(application))
+	aiservice.SetBuiltinAIClientVersion(app.CurrentVersion())
 	agentTools, agentToolsErr := newDesktopAgentToolCatalog(application, aiService)
 	if agentToolsErr != nil {
 		logger.Warnf("初始化 AI Agent 工具目录失败：%v", agentToolsErr)
