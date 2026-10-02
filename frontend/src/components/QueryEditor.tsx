@@ -355,6 +355,7 @@ import { useQueryEditorAIAction } from './queryEditor/useQueryEditorAIAction';
 import {
     clearAIEditorSelection,
     publishQueryEditorSelection,
+    bindQueryEditorSelectionPublisher,
 } from './queryEditor/queryEditorAiSelection';
 import { bindAIEditorSelectionContext } from './ai/bindAIEditorSelectionContext';
 import { buildQueryEditorAnalysisMenuItems } from './queryEditor/queryEditorAnalysisMenuItems';
@@ -7160,17 +7161,13 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           }
       });
 
-      const publishCurrentEditorSelection = () => publishQueryEditorSelection({
-          editor,
+      bindQueryEditorSelectionPublisher(editor, () => ({
           tabId: tab.id,
           tabTitle: tab.title,
           connectionId: currentConnectionIdRef.current || tab.connectionId,
           dbName: currentDbRef.current || tab.dbName,
           language: queryEditorMonacoLanguage,
-      });
-
-      editor.onDidChangeCursorSelection?.(publishCurrentEditorSelection);
-      publishCurrentEditorSelection();
+      }));
 
       const recoverTriggerSqlAiCompletionFallback = (event: any): boolean => {
           if (triggerSqlAiCompletionFallbackApplyingRef.current) {
