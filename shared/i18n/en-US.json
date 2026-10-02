@@ -345,8 +345,6 @@
   "ai_chat.input.context.connection_tooltip": "Current data query context",
   "ai_chat.input.context.current_count": "Current context · {{count}}",
   "ai_chat.input.context.label": "Attached context",
-  "ai_chat.input.context.memory_tooltip": "Current session memory usage. Auto-compression starts when it reaches the {{limit}} limit.",
-  "ai_chat.input.context_window.menu_title": "Context window",
   "ai_chat.input.context.selector.cancel": "Cancel",
   "ai_chat.input.context.selector.confirm": "Sync selected tables to context",
   "ai_chat.input.context.selector.database_placeholder": "Switch database",

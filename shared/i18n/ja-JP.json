@@ -345,8 +345,6 @@
   "ai_chat.input.context.connection_tooltip": "現在のデータ照会コンテキスト",
   "ai_chat.input.context.current_count": "現在のコンテキスト · {{count}}",
   "ai_chat.input.context.label": "関連コンテキスト",
-  "ai_chat.input.context.memory_tooltip": "現在のセッションメモリ使用量です。{{limit}} の制限に達すると自動圧縮が開始されます。",
-  "ai_chat.input.context_window.menu_title": "コンテキストウィンドウ",
   "ai_chat.input.context.selector.cancel": "キャンセル",
   "ai_chat.input.context.selector.confirm": "選択したテーブルをコンテキストに同期",
   "ai_chat.input.context.selector.database_placeholder": "データベースを切り替え",

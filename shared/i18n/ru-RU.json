@@ -345,8 +345,6 @@
   "ai_chat.input.context.connection_tooltip": "Текущий контекст запроса данных",
   "ai_chat.input.context.current_count": "Текущий контекст · {{count}}",
   "ai_chat.input.context.label": "Связанный контекст",
-  "ai_chat.input.context.memory_tooltip": "Использование памяти текущего сеанса. При достижении лимита {{limit}} начнется автоматическое сжатие.",
-  "ai_chat.input.context_window.menu_title": "Контекстное окно",
   "ai_chat.input.context.selector.cancel": "Отмена",
   "ai_chat.input.context.selector.confirm": "Синхронизировать выбранные таблицы в контекст",
   "ai_chat.input.context.selector.database_placeholder": "Переключить базу данных",

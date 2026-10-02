@@ -345,8 +345,6 @@
   "ai_chat.input.context.connection_tooltip": "Aktueller Datenabfragekontext",
   "ai_chat.input.context.current_count": "Aktueller Kontext · {{count}}",
   "ai_chat.input.context.label": "Verknüpfter Kontext",
-  "ai_chat.input.context.memory_tooltip": "Aktuelle Speichernutzung der Sitzung. Bei Erreichen der Grenze von {{limit}} startet die automatische Komprimierung.",
-  "ai_chat.input.context_window.menu_title": "Kontextfenster",
   "ai_chat.input.context.selector.cancel": "Abbrechen",
   "ai_chat.input.context.selector.confirm": "Ausgewählte Tabellen in den Kontext übernehmen",
   "ai_chat.input.context.selector.database_placeholder": "Datenbank wechseln",

@@ -338,8 +338,6 @@
   "ai_chat.input.context.connection_tooltip": "当前数据查询上下文",
   "ai_chat.input.context.current_count": "当前上下文 · {{count}}",
   "ai_chat.input.context.label": "关联上下文",
-  "ai_chat.input.context.memory_tooltip": "当前会话记忆已用字符。达到 {{limit}} 限制时将触发自动压缩。",
-  "ai_chat.input.context_window.menu_title": "上下文窗口",
   "ai_chat.input.context.selector.cancel": "取消",
   "ai_chat.input.context.selector.confirm": "同步所选表到上下文",
   "ai_chat.input.context.selector.database_placeholder": "切换数据库",
