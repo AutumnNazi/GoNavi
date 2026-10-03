@@ -96,6 +96,7 @@ func guardBuiltinAIToolCalls(calls []ai.ToolCall, content string, notice string)
 type builtinAITarget struct {
 	connectionID string
 	dbName       string
+	schemaName   string
 }
 
 // builtinAITargetOf reads the target from the workspace message, before it is presented as text.
@@ -111,7 +112,7 @@ func builtinAITargetOf(messages []ai.Message) builtinAITarget {
 		}
 		if json.Unmarshal([]byte(message.Content), &envelope) == nil {
 			active := envelope.Snapshot.ActiveContext
-			return builtinAITarget{connectionID: promptText(active["connectionId"]), dbName: promptText(active["dbName"])}
+			return builtinAITarget{connectionID: promptText(active["connectionId"]), dbName: promptText(active["dbName"]), schemaName: promptText(active["schemaName"])}
 		}
 	}
 	return builtinAITarget{}

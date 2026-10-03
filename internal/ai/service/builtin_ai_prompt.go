@@ -19,16 +19,29 @@ import (
 // plain fenced text, in the message that carries the question.
 
 // builtinAIPromptProvider wraps the built-in provider for agent runs: the context presented for a
-// small model, its short list of tools, and the read-only rule for the queries it runs.
+// small model (with the real table names), its short list of tools, and the read-only rule for
+// the queries it runs.
 type builtinAIPromptProvider struct {
 	provider.Provider
 	// readOnlyNotice says, in the person's language, why a query was not run.
 	readOnlyNotice string
+	// tables lists the tables of the person's database (see builtin_ai_tables.go); nil for none.
+	tables func(context.Context, builtinAITarget) []string
+}
+
+// present is the request as the small model gets it.
+func (p builtinAIPromptProvider) present(ctx context.Context, req ai.ChatRequest, target builtinAITarget) ai.ChatRequest {
+	tablesLine := ""
+	if p.tables != nil {
+		tablesLine = builtinAITablesLine(p.tables(ctx, target), target.schemaName)
+	}
+	req.Messages, req.Tools = presentBuiltinAIContextWithTables(req.Messages, tablesLine), builtinAITools(req.Tools)
+	return req
 }
 
 func (p builtinAIPromptProvider) Chat(ctx context.Context, req ai.ChatRequest) (*ai.ChatResponse, error) {
 	target := builtinAITargetOf(req.Messages)
-	req.Messages, req.Tools = presentBuiltinAIContext(req.Messages), builtinAITools(req.Tools)
+	req = p.present(ctx, req, target)
 	response, err := p.Provider.Chat(ctx, req)
 	if response != nil {
 		response.ToolCalls, response.Content = guardBuiltinAIToolCalls(target.complete(response.ToolCalls), response.Content, p.readOnlyNotice)
@@ -37,8 +50,9 @@ func (p builtinAIPromptProvider) Chat(ctx context.Context, req ai.ChatRequest) (
 }
 
 func (p builtinAIPromptProvider) ChatStream(ctx context.Context, req ai.ChatRequest, callback func(ai.StreamChunk)) error {
-	guard := newBuiltinAIStreamGuard(callback, p.readOnlyNotice, builtinAITargetOf(req.Messages))
-	req.Messages, req.Tools = presentBuiltinAIContext(req.Messages), builtinAITools(req.Tools)
+	target := builtinAITargetOf(req.Messages)
+	guard := newBuiltinAIStreamGuard(callback, p.readOnlyNotice, target)
+	req = p.present(ctx, req, target)
 	err := p.Provider.ChatStream(ctx, req, guard.push)
 	guard.finish()
 	return err
@@ -47,8 +61,9 @@ func (p builtinAIPromptProvider) ChatStream(ctx context.Context, req ai.ChatRequ
 // ChatStreamWithState keeps the wrapped provider's session support: the harness
 // asks for it by interface.
 func (p builtinAIPromptProvider) ChatStreamWithState(ctx context.Context, state json.RawMessage, req ai.ChatRequest, callback func(ai.StreamChunk)) (json.RawMessage, error) {
-	guard := newBuiltinAIStreamGuard(callback, p.readOnlyNotice, builtinAITargetOf(req.Messages))
-	req.Messages, req.Tools = presentBuiltinAIContext(req.Messages), builtinAITools(req.Tools)
+	target := builtinAITargetOf(req.Messages)
+	guard := newBuiltinAIStreamGuard(callback, p.readOnlyNotice, target)
+	req = p.present(ctx, req, target)
 	defer guard.finish()
 	if stateful, ok := p.Provider.(provider.SessionStreamProvider); ok {
 		return stateful.ChatStreamWithState(ctx, state, req, guard.push)
@@ -61,6 +76,11 @@ func (p builtinAIPromptProvider) ChatStreamWithState(ctx context.Context, state 
 // to the question far better than a separate system message (and the Gateway turns a client's
 // system messages into data anyway). Anything it does not recognize is left exactly as it was.
 func presentBuiltinAIContext(messages []ai.Message) []ai.Message {
+	return presentBuiltinAIContextWithTables(messages, "")
+}
+
+// presentBuiltinAIContextWithTables also gives the model the line listing the database's tables.
+func presentBuiltinAIContextWithTables(messages []ai.Message, tablesLine string) []ai.Message {
 	instructions, rendered := "", ""
 	rest := make([]ai.Message, 0, len(messages))
 	for _, message := range messages {
@@ -76,7 +96,7 @@ func presentBuiltinAIContext(messages []ai.Message) []ai.Message {
 				} `json:"snapshot"`
 			}
 			if json.Unmarshal([]byte(message.Content), &envelope) == nil {
-				rendered = renderBuiltinAIContext(envelope.Snapshot.ActiveContext)
+				rendered = renderBuiltinAIContext(envelope.Snapshot.ActiveContext, tablesLine)
 				continue // nothing the model can use stays out of its small window
 			}
 		}
@@ -102,12 +122,15 @@ func presentBuiltinAIContext(messages []ai.Message) []ai.Message {
 	return append([]ai.Message{{Role: "system", Content: block}}, rest...)
 }
 
-// renderBuiltinAIContext describes the active database and what the person
-// attached. It returns "" when there is nothing worth telling the model.
-func renderBuiltinAIContext(active map[string]any) string {
+// renderBuiltinAIContext describes the active database, its tables and what the
+// person attached. It returns "" when there is nothing worth telling the model.
+func renderBuiltinAIContext(active map[string]any, tablesLine string) string {
 	var out []string
 	if line := databaseLine(active); line != "" {
 		out = append(out, line)
+	}
+	if tablesLine != "" {
+		out = append(out, tablesLine)
 	}
 	items, _ := active["attachedItems"].([]any)
 	for _, raw := range items {
@@ -133,6 +156,9 @@ func databaseLine(active map[string]any) string {
 	}
 	if schema := promptText(active["schemaName"]); schema != "" {
 		parts = append(parts, "Schema: "+schema)
+	}
+	if table := promptText(active["tableName"]); table != "" {
+		parts = append(parts, "Selected table: "+table)
 	}
 	if version := promptText(active["databaseVersion"]); version != "" {
 		parts = append(parts, "Version: "+version)

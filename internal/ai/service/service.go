@@ -56,6 +56,7 @@ type Service struct {
 	// actually uses an Agent feature.
 	agentPendingWorkspaceSnapshots map[string]runharness.WorkspaceSnapshot
 	agentToolCatalog               runharness.ToolCatalog
+	builtinTableCache              builtinAITableCache // see builtin_ai_tables.go
 	agentApprovalHandler           runharness.ApprovalHandler
 	autoApproval                   autoApprovalState
 	agentHarnessInitialized        bool
