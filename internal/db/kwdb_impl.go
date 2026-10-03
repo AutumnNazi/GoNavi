@@ -176,22 +176,3 @@ func (k *KWDB) isTimeSeriesTable(tableName string) bool {
 	}
 	return strings.Contains(strings.ToUpper(fmt.Sprint(firstMapValueOf(rows[0], "table_type"))), "TIME SERIES")
 }
-
-func isTruthy(value interface{}) bool {
-	switch typed := value.(type) {
-	case bool:
-		return typed
-	case nil:
-		return false
-	default:
-		text := strings.ToLower(strings.TrimSpace(fmt.Sprint(typed)))
-		return text == "true" || text == "t" || text == "yes" || text == "1"
-	}
-}
-
-func yesNo(value bool) string {
-	if value {
-		return "YES"
-	}
-	return "NO"
-}

@@ -10,7 +10,7 @@ import (
 // parseTiDBExplain 解析 TiDB 的表格式 EXPLAIN / EXPLAIN ANALYZE。
 // TiDB 不支持 MySQL 的 FORMAT=JSON，计划是 id/estRows/task/access object/operator info
 // 五列，id 列用 "├─"、"└─"、"│ " 前缀表达树层级（每层两个字符）。
-func parseTiDBExplain(sourceSQL, raw string) connection.ExplainResult {
+func parseTiDBExplain(sourceSQL, raw string, text explainText) connection.ExplainResult {
 	result := connection.ExplainResult{
 		DBType:     "tidb",
 		SourceSQL:  sourceSQL,
@@ -20,7 +20,7 @@ func parseTiDBExplain(sourceSQL, raw string) connection.ExplainResult {
 	header, rows := parseExplainTSVRows(raw)
 	idCol := lookupTSVColumn(header, "id")
 	if idCol < 0 || len(rows) == 0 {
-		result.Warnings = []string{"未识别到 TiDB 执行计划列，请查看原文"}
+		result.Warnings = []string{text("sql_analysis.backend.warning.plan_columns_missing", map[string]any{"name": "TiDB"})}
 		return result
 	}
 	columns := tidbExplainColumns{
@@ -57,7 +57,7 @@ func parseTiDBExplain(sourceSQL, raw string) connection.ExplainResult {
 		parents = append(parents[:depth], nodeID)
 	}
 	if len(result.Nodes) == 0 {
-		result.Warnings = []string{"未识别到 TiDB 计划算子，请查看原文"}
+		result.Warnings = []string{text("sql_analysis.backend.warning.plan_nodes_missing", map[string]any{"name": "TiDB"})}
 		return result
 	}
 	finalizeExplainStats(&result)

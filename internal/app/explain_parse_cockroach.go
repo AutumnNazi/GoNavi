@@ -11,7 +11,7 @@ import (
 //   - CockroachDB 21.1+：单列 info 文本树，"• scan" 是节点，"key: value" 是节点属性，
 //     末尾可能带 "index recommendations"；
 //   - KWDB 与 CockroachDB 20.x：tree | field | description 表格，tree 列有节点名时开新节点。
-func parseCockroachExplain(dbType, sourceSQL, raw string) connection.ExplainResult {
+func parseCockroachExplain(dbType, sourceSQL, raw string, text explainText) connection.ExplainResult {
 	result := connection.ExplainResult{
 		DBType:     dbType,
 		SourceSQL:  sourceSQL,
@@ -23,50 +23,24 @@ func parseCockroachExplain(dbType, sourceSQL, raw string) connection.ExplainResu
 	case lookupTSVColumn(header, "tree") >= 0 && lookupTSVColumn(header, "field") >= 0:
 		parseCockroachTableExplain(&result, header, rows)
 	case lookupTSVColumn(header, "info") >= 0:
-		parseCockroachTextExplain(&result, rows)
+		parseCockroachTextExplain(&result, rows, text)
 	}
 	if len(result.Nodes) == 0 {
-		result.Warnings = append(result.Warnings, "未识别到 CockroachDB 计划算子，请查看原文")
+		result.Warnings = append(result.Warnings, text("sql_analysis.backend.warning.plan_nodes_missing", map[string]any{"name": "CockroachDB"}))
 		return result
 	}
 	finalizeExplainStats(&result)
 	return result
 }
 
-// cockroachPlanBuilder 按缩进层级维护当前路径上的父节点。
-type cockroachPlanBuilder struct {
-	result  *connection.ExplainResult
-	parents []string
-	current int
+func addCockroachPlanProperty(builder *indentedPlanBuilder, key, value string) {
+	if node := builder.currentNode(); node != nil {
+		applyCockroachPlanProperty(node, key, value)
+	}
 }
 
-func (b *cockroachPlanBuilder) addNode(depth int, operator string) {
-	if depth > len(b.parents) {
-		depth = len(b.parents)
-	}
-	parentID := ""
-	if depth > 0 {
-		parentID = b.parents[depth-1]
-	}
-	node := connection.ExplainNode{
-		OpType:   classifyCockroachOperator(operator),
-		OpDetail: operator,
-		Extra:    map[string]any{"operator": operator},
-	}
-	nodeID := appendExplainChild(b.result, parentID, node)
-	b.parents = append(b.parents[:depth], nodeID)
-	b.current = len(b.result.Nodes) - 1
-}
-
-func (b *cockroachPlanBuilder) addProperty(key, value string) {
-	if b.current < 0 {
-		return
-	}
-	applyCockroachPlanProperty(&b.result.Nodes[b.current], key, value)
-}
-
-func parseCockroachTextExplain(result *connection.ExplainResult, rows [][]string) {
-	builder := cockroachPlanBuilder{result: result, current: -1}
+func parseCockroachTextExplain(result *connection.ExplainResult, rows [][]string, text explainText) {
+	builder := newIndentedPlanBuilder(result, classifyCockroachOperator)
 	inRecommendations := false
 	for _, row := range rows {
 		if len(row) == 0 {
@@ -80,17 +54,16 @@ func parseCockroachTextExplain(result *connection.ExplainResult, rows [][]string
 		}
 		if inRecommendations {
 			if command, ok := strings.CutPrefix(trimmed, "SQL commands:"); ok {
-				result.Warnings = append(result.Warnings, "索引建议："+strings.TrimSpace(command))
+				result.Warnings = append(result.Warnings, text("sql_analysis.backend.warning.index_recommendation", map[string]any{"sql": strings.TrimSpace(command)}))
 			}
 			continue
 		}
 		if bullet := strings.IndexRune(line, '•'); bullet >= 0 {
-			depth := len([]rune(line[:bullet])) / 4
-			builder.addNode(depth, strings.TrimSpace(line[bullet+len("•"):]))
+			builder.addNode(len([]rune(line[:bullet])), strings.TrimSpace(line[bullet+len("•"):]))
 			continue
 		}
-		if key, value, ok := strings.Cut(trimmed, ":"); ok && builder.current >= 0 {
-			builder.addProperty(strings.TrimSpace(key), strings.TrimSpace(value))
+		if key, value, ok := strings.Cut(trimmed, ":"); ok {
+			addCockroachPlanProperty(builder, strings.TrimSpace(key), strings.TrimSpace(value))
 		}
 	}
 }
@@ -99,7 +72,7 @@ func parseCockroachTableExplain(result *connection.ExplainResult, header []strin
 	treeCol := lookupTSVColumn(header, "tree")
 	fieldCol := lookupTSVColumn(header, "field")
 	descCol := lookupTSVColumn(header, "description")
-	builder := cockroachPlanBuilder{result: result, current: -1}
+	builder := newIndentedPlanBuilder(result, classifyCockroachOperator)
 	for _, row := range rows {
 		tree := ""
 		if treeCol < len(row) {
@@ -111,12 +84,12 @@ func parseCockroachTableExplain(result *connection.ExplainResult, header []strin
 			start++
 		}
 		if start < len(runes) {
-			builder.addNode(start/5, strings.TrimSpace(string(runes[start:])))
+			builder.addNode(start, strings.TrimSpace(string(runes[start:])))
 			continue
 		}
 		field := strings.TrimSpace(tidbExplainCell(row, fieldCol))
 		if field != "" {
-			builder.addProperty(field, strings.TrimSpace(tidbExplainCell(row, descCol)))
+			addCockroachPlanProperty(builder, field, strings.TrimSpace(tidbExplainCell(row, descCol)))
 		}
 	}
 }

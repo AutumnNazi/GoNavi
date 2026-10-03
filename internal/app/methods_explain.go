@@ -613,7 +613,7 @@ func parseExplainRawWithText(dbType, sourceSQL, raw string, format connection.Ex
 		text = defaultExplainBackendText
 	}
 	if dialect, ok := registryExplainDialects[dbType]; ok {
-		return dialect.parse(dbType, sourceSQL, raw), nil
+		return dialect.parse(dbType, sourceSQL, raw, text), nil
 	}
 	switch dbType {
 	case "mysql", "mariadb", "oceanbase":

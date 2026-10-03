@@ -58,6 +58,10 @@ export const isDataSourceFamily = (value: unknown, family: string): boolean =>
 export const getDataSourceSpecByDialect = (dialect: unknown): DataSourceSpec | undefined =>
   specsByDialect.get(normalizeName(dialect));
 
+/** 描述表为某个方言声明的侧栏元数据查询（按顺序回退）；没有声明时返回空数组。 */
+export const listRegistryMetadataQueries = (dialect: unknown, kind: 'views'): string[] =>
+  getDataSourceSpecByDialect(dialect)?.ui?.metadataQueries?.[kind] ?? [];
+
 /** 方言键所属的兼容家族；不是描述表方言时返回 undefined。 */
 export const getDataSourceDialectFamily = (dialect: unknown): string | undefined =>
   getDataSourceSpecByDialect(dialect)?.family;

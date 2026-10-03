@@ -11813,5 +11813,13 @@
   "datasource.variant.kwdb.v2": "关系库与时序库；不支持 CREATE TS DATABASE IF NOT EXISTS",
   "datasource.variant.kwdb.v3": "支持 CREATE TS DATABASE IF NOT EXISTS 等新语法",
   "db.backend.error.kwdb_timeseries_row_edit_unsupported": "KWDB 时序表只能追加写入，不支持按行修改或删除；请通过 SQL 写入新数据",
-  "db.backend.message.connect_success_variant_mismatch": "连接成功 · {{name}} {{version}} · 驱动版本：{{variant}}（与服务端版本不匹配，建议改为「{{suggested}}」或自动识别）"
+  "db.backend.message.connect_success_variant_mismatch": "连接成功 · {{name}} {{version}} · 驱动版本：{{variant}}（与服务端版本不匹配，建议改为「{{suggested}}」或自动识别）",
+  "connection_modal.step1.hint.questdb": "时序数据库 / PostgreSQL 协议",
+  "datasource.variant.questdb.v7": "没有 SHOW CREATE TABLE，DDL 按表结构合成；不支持视图与物化视图",
+  "datasource.variant.questdb.v8": "支持 SHOW CREATE TABLE，8.3 起支持物化视图",
+  "datasource.variant.questdb.v10": "普通视图、物化视图与 SHOW CREATE VIEW 全部可用",
+  "db.backend.error.questdb_row_edit_unsupported": "QuestDB 没有主键且不支持 DELETE，无法按行编辑；请在 SQL 编辑器中用 INSERT / UPDATE 写入",
+  "sql_analysis.backend.warning.plan_columns_missing": "未识别到 {{name}} 执行计划列，请查看原文",
+  "sql_analysis.backend.warning.plan_nodes_missing": "未识别到 {{name}} 计划算子，请查看原文",
+  "sql_analysis.backend.warning.index_recommendation": "索引建议：{{sql}}"
 }

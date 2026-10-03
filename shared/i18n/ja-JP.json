@@ -11813,5 +11813,13 @@
   "datasource.variant.kwdb.v2": "リレーショナル DB と時系列 DB。CREATE TS DATABASE IF NOT EXISTS は非対応",
   "datasource.variant.kwdb.v3": "CREATE TS DATABASE IF NOT EXISTS などの新しい構文に対応",
   "db.backend.error.kwdb_timeseries_row_edit_unsupported": "KWDB の時系列テーブルは追記専用のため、行単位の更新・削除はできません。SQL で新しいデータを書き込んでください",
-  "db.backend.message.connect_success_variant_mismatch": "接続に成功しました · {{name}} {{version}} · ドライバーバージョン：{{variant}}（サーバーのバージョンと一致しません。「{{suggested}}」または自動判別を選択してください）"
+  "db.backend.message.connect_success_variant_mismatch": "接続に成功しました · {{name}} {{version}} · ドライバーバージョン：{{variant}}（サーバーのバージョンと一致しません。「{{suggested}}」または自動判別を選択してください）",
+  "connection_modal.step1.hint.questdb": "時系列データベース / PostgreSQL プロトコル",
+  "datasource.variant.questdb.v7": "SHOW CREATE TABLE がないため DDL はテーブル構造から合成。ビューとマテリアライズドビューは非対応",
+  "datasource.variant.questdb.v8": "SHOW CREATE TABLE に対応。8.3 以降はマテリアライズドビューに対応",
+  "datasource.variant.questdb.v10": "ビュー、マテリアライズドビュー、SHOW CREATE VIEW をすべて利用可能",
+  "db.backend.error.questdb_row_edit_unsupported": "QuestDB には主キーがなく DELETE も非対応のため、行単位では編集できません。SQL エディターで INSERT / UPDATE を使用してください",
+  "sql_analysis.backend.warning.plan_columns_missing": "{{name}} の実行計画の列を認識できませんでした。原文を確認してください",
+  "sql_analysis.backend.warning.plan_nodes_missing": "{{name}} の計画オペレーターを認識できませんでした。原文を確認してください",
+  "sql_analysis.backend.warning.index_recommendation": "インデックスの推奨：{{sql}}"
 }

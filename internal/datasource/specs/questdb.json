@@ -1,0 +1,83 @@
+{
+  "type": "questdb",
+  "aliases": [
+    "quest-db",
+    "quest_db"
+  ],
+  "displayName": "QuestDB",
+  "group": "timeseries",
+  "order": 40,
+  "defaultPort": 8812,
+  "wire": "postgres",
+  "dialect": "questdb",
+  "objectKind": "table",
+  "protection": true,
+  "versionQuery": "SELECT build() AS version",
+  "agent": {
+    "buildTag": "gonavi_questdb_driver",
+    "goModule": "github.com/lib/pq",
+    "version": "1.11.1",
+    "sourcePrefixes": [
+      "questdb",
+      "registry",
+      "postgres",
+      "pg"
+    ]
+  },
+  "variants": {
+    "auto": true,
+    "default": "auto",
+    "items": [
+      {
+        "id": "v7",
+        "label": "QuestDB 6.x – 7.x",
+        "descriptionKey": "datasource.variant.questdb.v7",
+        "maxServer": "8.0"
+      },
+      {
+        "id": "v8",
+        "label": "QuestDB 8.x – 9.x",
+        "descriptionKey": "datasource.variant.questdb.v8",
+        "minServer": "8.0",
+        "maxServer": "10.0"
+      },
+      {
+        "id": "v10",
+        "label": "QuestDB 10.x +",
+        "descriptionKey": "datasource.variant.questdb.v10",
+        "minServer": "10.0"
+      }
+    ]
+  },
+  "ui": {
+    "defaultUser": "admin",
+    "formatDdl": false,
+    "uriSchemes": [
+      "questdb",
+      "postgresql",
+      "postgres"
+    ],
+    "hiddenObjectGroups": [
+      "sequences",
+      "routines",
+      "triggers",
+      "events"
+    ],
+    "metadataQueries": {
+      "views": [
+        "SELECT view_name FROM views() UNION ALL SELECT view_name FROM materialized_views()",
+        "SELECT view_name FROM materialized_views()",
+        "SELECT table_name AS view_name FROM information_schema.tables WHERE table_type IN ('VIEW', 'MATERIALIZED VIEW')"
+      ]
+    },
+    "pagination": "limit-range",
+    "quoting": "pg",
+    "ssl": true,
+    "connectionParams": true,
+    "hint": "Time-series / PostgreSQL wire",
+    "icon": {
+      "color": "#D14671",
+      "text": "Q"
+    }
+  }
+}

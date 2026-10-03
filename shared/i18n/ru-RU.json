@@ -11813,5 +11813,13 @@
   "datasource.variant.kwdb.v2": "Реляционные базы и базы временных рядов; CREATE TS DATABASE IF NOT EXISTS не поддерживается",
   "datasource.variant.kwdb.v3": "Новый синтаксис, например CREATE TS DATABASE IF NOT EXISTS",
   "db.backend.error.kwdb_timeseries_row_edit_unsupported": "Таблицы временных рядов KWDB допускают только добавление и не поддерживают построчное изменение или удаление; записывайте новые данные через SQL",
-  "db.backend.message.connect_success_variant_mismatch": "Подключение выполнено · {{name}} {{version}} · Версия драйвера: {{variant}} (не соответствует версии сервера; выберите «{{suggested}}» или автоопределение)"
+  "db.backend.message.connect_success_variant_mismatch": "Подключение выполнено · {{name}} {{version}} · Версия драйвера: {{variant}} (не соответствует версии сервера; выберите «{{suggested}}» или автоопределение)",
+  "connection_modal.step1.hint.questdb": "Временные ряды / протокол PostgreSQL",
+  "datasource.variant.questdb.v7": "Нет SHOW CREATE TABLE, DDL строится по структуре таблицы; нет представлений и материализованных представлений",
+  "datasource.variant.questdb.v8": "SHOW CREATE TABLE; материализованные представления с 8.3",
+  "datasource.variant.questdb.v10": "Доступны представления, материализованные представления и SHOW CREATE VIEW",
+  "db.backend.error.questdb_row_edit_unsupported": "В QuestDB нет первичных ключей и не поддерживается DELETE, поэтому строки нельзя редактировать в таблице; используйте INSERT / UPDATE в SQL-редакторе",
+  "sql_analysis.backend.warning.plan_columns_missing": "Не удалось распознать столбцы плана {{name}}; см. исходный вывод",
+  "sql_analysis.backend.warning.plan_nodes_missing": "Не удалось распознать операторы плана {{name}}; см. исходный вывод",
+  "sql_analysis.backend.warning.index_recommendation": "Рекомендация по индексу: {{sql}}"
 }

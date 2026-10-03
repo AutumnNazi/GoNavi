@@ -26,7 +26,7 @@ const tidbAnalyzePlanFixture = "id\testRows\tactRows\ttask\taccess object\texecu
 	"  └─TableFullScan_5\t10000.00\t10000\tcop[tikv]\ttable:a\ttikv_task:{time:1.28ms, loops:0}\tkeep order:false\tN/A\tN/A\n"
 
 func TestParseTiDBExplainBuildsTree(t *testing.T) {
-	result := parseTiDBExplain("SELECT ...", tidbJoinPlanFixture)
+	result := parseTiDBExplain("SELECT ...", tidbJoinPlanFixture, defaultExplainBackendText)
 	if len(result.Warnings) > 0 || len(result.Nodes) != 10 {
 		t.Fatalf("nodes=%d warnings=%v", len(result.Nodes), result.Warnings)
 	}
@@ -61,7 +61,7 @@ func TestParseTiDBExplainBuildsTree(t *testing.T) {
 }
 
 func TestParseTiDBExplainAnalyzeKeepsActualRows(t *testing.T) {
-	result := parseTiDBExplain("SELECT ...", tidbAnalyzePlanFixture)
+	result := parseTiDBExplain("SELECT ...", tidbAnalyzePlanFixture, defaultExplainBackendText)
 	if len(result.Nodes) != 3 {
 		t.Fatalf("nodes = %d", len(result.Nodes))
 	}
@@ -78,7 +78,7 @@ func TestParseTiDBExplainAnalyzeKeepsActualRows(t *testing.T) {
 }
 
 func TestParseTiDBExplainRejectsUnknownLayout(t *testing.T) {
-	result := parseTiDBExplain("SELECT 1", "QUERY PLAN\nSeq Scan on t\n")
+	result := parseTiDBExplain("SELECT 1", "QUERY PLAN\nSeq Scan on t\n", defaultExplainBackendText)
 	if len(result.Nodes) != 0 || len(result.Warnings) == 0 {
 		t.Fatalf("expected warning, got %#v", result)
 	}

@@ -51,8 +51,14 @@ export type DataSourceUISpec = {
   layout?: string;
   // 标识符引号：缺省按兼容家族（mysql → 反引号，postgres → 按需双引号），其余为双引号。
   quoting?: 'backtick' | 'pg' | 'double' | 'bracket';
+  // 展示 DDL 时是否用 sql-formatter 重排：服务端 DDL 已排好版且语法不在格式化器支持范围内时设为 false。
+  formatDdl?: boolean;
+  // 新建连接时预填的用户名（缺省 root）。
+  defaultUser?: string;
   // 侧栏不显示的对象分组（routines、triggers、events、sequences 等）：借用方言里有、该数据源没有的对象。
   hiddenObjectGroups?: string[];
+  // 侧栏元数据查询（未借用方言的数据源）：按顺序尝试，第一条成功的结果生效；views 需返回 view_name 列。
+  metadataQueries?: { views?: string[] };
   // 表别名语法：缺省 oracle 家族为 bare，其余为 as；非 SQL 查询语言用 none。
   tableAlias?: 'as' | 'bare' | 'none';
   // 数据浏览分页语法：缺省 LIMIT n OFFSET m。

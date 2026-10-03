@@ -11813,5 +11813,13 @@
   "datasource.variant.kwdb.v2": "Relational and time-series databases; CREATE TS DATABASE IF NOT EXISTS is not supported",
   "datasource.variant.kwdb.v3": "Newer syntax such as CREATE TS DATABASE IF NOT EXISTS",
   "db.backend.error.kwdb_timeseries_row_edit_unsupported": "KWDB time-series tables are append-only and cannot be updated or deleted row by row; write new data with SQL instead",
-  "db.backend.message.connect_success_variant_mismatch": "Connection succeeded · {{name}} {{version}} · Driver version: {{variant}} (does not match the server; choose \"{{suggested}}\" or auto-detect)"
+  "db.backend.message.connect_success_variant_mismatch": "Connection succeeded · {{name}} {{version}} · Driver version: {{variant}} (does not match the server; choose \"{{suggested}}\" or auto-detect)",
+  "connection_modal.step1.hint.questdb": "Time-series / PostgreSQL wire",
+  "datasource.variant.questdb.v7": "No SHOW CREATE TABLE, so DDL is rebuilt from the table structure; no views or materialized views",
+  "datasource.variant.questdb.v8": "SHOW CREATE TABLE; materialized views from 8.3",
+  "datasource.variant.questdb.v10": "Views, materialized views and SHOW CREATE VIEW are all available",
+  "db.backend.error.questdb_row_edit_unsupported": "QuestDB has no primary keys and does not support DELETE, so rows cannot be edited in the grid; use INSERT / UPDATE in the SQL editor",
+  "sql_analysis.backend.warning.plan_columns_missing": "No {{name}} plan columns were recognized; see the raw output",
+  "sql_analysis.backend.warning.plan_nodes_missing": "No {{name}} plan operators were recognized; see the raw output",
+  "sql_analysis.backend.warning.index_recommendation": "Index recommendation: {{sql}}"
 }

@@ -28,6 +28,7 @@
     "version": "1.11.1",
     "sourcePrefixes": [
       "cockroachdb",
+      "registry",
       "postgres",
       "pg"
     ]

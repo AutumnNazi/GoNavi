@@ -27,6 +27,7 @@
     "version": "1.11.1",
     "sourcePrefixes": [
       "kwdb",
+      "registry",
       "cockroachdb",
       "postgres",
       "pg"

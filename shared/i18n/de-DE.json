@@ -11813,5 +11813,13 @@
   "datasource.variant.kwdb.v2": "Relationale und Zeitreihen-Datenbanken; CREATE TS DATABASE IF NOT EXISTS wird nicht unterstützt",
   "datasource.variant.kwdb.v3": "Neuere Syntax wie CREATE TS DATABASE IF NOT EXISTS",
   "db.backend.error.kwdb_timeseries_row_edit_unsupported": "KWDB-Zeitreihentabellen sind nur anhängbar und können nicht zeilenweise geändert oder gelöscht werden; schreiben Sie neue Daten per SQL",
-  "db.backend.message.connect_success_variant_mismatch": "Verbindung erfolgreich · {{name}} {{version}} · Treiberversion: {{variant}} (passt nicht zur Serverversion; wählen Sie „{{suggested}}“ oder die automatische Erkennung)"
+  "db.backend.message.connect_success_variant_mismatch": "Verbindung erfolgreich · {{name}} {{version}} · Treiberversion: {{variant}} (passt nicht zur Serverversion; wählen Sie „{{suggested}}“ oder die automatische Erkennung)",
+  "connection_modal.step1.hint.questdb": "Zeitreihen / PostgreSQL-Protokoll",
+  "datasource.variant.questdb.v7": "Kein SHOW CREATE TABLE, DDL wird aus der Tabellenstruktur erzeugt; keine Views oder materialisierten Views",
+  "datasource.variant.questdb.v8": "SHOW CREATE TABLE; materialisierte Views ab 8.3",
+  "datasource.variant.questdb.v10": "Views, materialisierte Views und SHOW CREATE VIEW sind verfügbar",
+  "db.backend.error.questdb_row_edit_unsupported": "QuestDB hat keine Primärschlüssel und unterstützt kein DELETE, Zeilen können daher nicht im Raster bearbeitet werden; verwenden Sie INSERT / UPDATE im SQL-Editor",
+  "sql_analysis.backend.warning.plan_columns_missing": "Keine {{name}}-Planspalten erkannt; siehe Rohausgabe",
+  "sql_analysis.backend.warning.plan_nodes_missing": "Keine {{name}}-Planoperatoren erkannt; siehe Rohausgabe",
+  "sql_analysis.backend.warning.index_recommendation": "Indexempfehlung: {{sql}}"
 }

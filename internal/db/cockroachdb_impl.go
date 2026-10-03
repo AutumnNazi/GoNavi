@@ -190,14 +190,3 @@ func (c *CockroachDB) GetTriggers(schemaName, tableName string) ([]connection.Tr
 	}
 	return triggers, nil
 }
-
-func firstMapValueOf(row map[string]interface{}, keys ...string) interface{} {
-	for _, key := range keys {
-		for name, value := range row {
-			if strings.EqualFold(name, key) {
-				return value
-			}
-		}
-	}
-	return nil
-}

@@ -1,6 +1,7 @@
 import { DBQuery } from "../../../wailsjs/go/app/App";
 import { buildRpcConnectionConfig } from "../../utils/connectionRpcConfig";
 import { buildMySQLCompatibleViewMetadataSqls } from "../../utils/sidebarMetadata";
+import { listRegistryMetadataQueries } from "../../utils/dataSourceRegistry";
 import { isPostgresSchemaDialect } from "../sidebarCoreUtils";
 import {
   type MetadataQuerySpec,
@@ -78,7 +79,7 @@ export const buildViewsMetadataQuerySpecs = (
         },
       ];
     default:
-      return [];
+      return listRegistryMetadataQueries(dialect, "views").map((sql) => ({ sql }));
   }
 };
 

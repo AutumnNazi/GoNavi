@@ -11813,5 +11813,13 @@
   "datasource.variant.kwdb.v2": "關聯庫與時序庫；不支援 CREATE TS DATABASE IF NOT EXISTS",
   "datasource.variant.kwdb.v3": "支援 CREATE TS DATABASE IF NOT EXISTS 等新語法",
   "db.backend.error.kwdb_timeseries_row_edit_unsupported": "KWDB 時序表只能附加寫入，不支援逐列修改或刪除；請透過 SQL 寫入新資料",
-  "db.backend.message.connect_success_variant_mismatch": "連線成功 · {{name}} {{version}} · 驅動版本：{{variant}}（與伺服器版本不符，建議改為「{{suggested}}」或自動識別）"
+  "db.backend.message.connect_success_variant_mismatch": "連線成功 · {{name}} {{version}} · 驅動版本：{{variant}}（與伺服器版本不符，建議改為「{{suggested}}」或自動識別）",
+  "connection_modal.step1.hint.questdb": "時序資料庫 / PostgreSQL 協定",
+  "datasource.variant.questdb.v7": "沒有 SHOW CREATE TABLE，DDL 依表結構合成；不支援檢視與實體化檢視",
+  "datasource.variant.questdb.v8": "支援 SHOW CREATE TABLE，8.3 起支援實體化檢視",
+  "datasource.variant.questdb.v10": "一般檢視、實體化檢視與 SHOW CREATE VIEW 全部可用",
+  "db.backend.error.questdb_row_edit_unsupported": "QuestDB 沒有主鍵且不支援 DELETE，無法逐列編輯；請在 SQL 編輯器中用 INSERT / UPDATE 寫入",
+  "sql_analysis.backend.warning.plan_columns_missing": "未識別到 {{name}} 執行計畫欄位，請查看原文",
+  "sql_analysis.backend.warning.plan_nodes_missing": "未識別到 {{name}} 計畫運算子，請查看原文",
+  "sql_analysis.backend.warning.index_recommendation": "索引建議：{{sql}}"
 }

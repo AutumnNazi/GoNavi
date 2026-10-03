@@ -73,7 +73,7 @@ func opsByID(result connection.ExplainResult) map[string]connection.ExplainNode 
 }
 
 func TestParseCockroachTextExplain(t *testing.T) {
-	result := parseCockroachExplain("cockroachdb", "SELECT ...", cockroachTextPlanFixture)
+	result := parseCockroachExplain("cockroachdb", "SELECT ...", cockroachTextPlanFixture, defaultExplainBackendText)
 	if len(result.Nodes) != 6 {
 		t.Fatalf("nodes = %d: %#v", len(result.Nodes), result.Nodes)
 	}
@@ -97,7 +97,7 @@ func TestParseCockroachTextExplain(t *testing.T) {
 }
 
 func TestParseCockroachTableExplain(t *testing.T) {
-	result := parseCockroachExplain("kwdb", "SELECT ...", cockroachTablePlanFixture)
+	result := parseCockroachExplain("kwdb", "SELECT ...", cockroachTablePlanFixture, defaultExplainBackendText)
 	if len(result.Nodes) != 7 {
 		t.Fatalf("nodes = %d: %#v", len(result.Nodes), result.Nodes)
 	}
@@ -130,7 +130,7 @@ func TestCockroachExplainRouting(t *testing.T) {
 }
 
 func TestParseCockroachExplainUnknownLayout(t *testing.T) {
-	result := parseCockroachExplain("cockroachdb", "SELECT 1", "QUERY PLAN\nSeq Scan on t")
+	result := parseCockroachExplain("cockroachdb", "SELECT 1", "QUERY PLAN\nSeq Scan on t", defaultExplainBackendText)
 	if len(result.Nodes) != 0 || len(result.Warnings) == 0 {
 		t.Fatalf("expected warning, got %#v", result)
 	}
