@@ -18,8 +18,8 @@ import (
 const validBrandIconPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL9dgAAAABJRU5ErkJggg=="
 
 // Wails v2 packages build/appicon.png. Keep it aligned with the default
-// 03-ribbon-graphite-glow brand instead of allowing Wails to restore its W icon.
-const defaultBrandAppIconSHA256 = "7665b786544b7dae594f38f998c4e8cc8ff99c35f73d2a225884c12b0dc8d32e"
+// 01-ribbon-graphite-air brand instead of allowing Wails to restore its W icon.
+const defaultBrandAppIconSHA256 = "5a75c96f2e3e9046fbca0adf4302404330e26d93dd9d5b82ca748ae2ba5341e9"
 
 func TestWailsBuildIconMatchesDefaultBrand(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)

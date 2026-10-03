@@ -343,11 +343,14 @@ public static class GoNaviShortcutShellAssociation
 }
 
 function Restart-GoNaviStartMenuHost {
-    # Win11 的开始菜单「所有应用」列表把每个快捷方式的图标快照进自己的
-    # 数据库，对单项/目录/全局关联通知一概不响应（Win11 26200 用户实测：
-    # 整文件替换 + ASSOCCHANGED 后列表仍显示旧图标，重启电脑才刷新）。
-    # 重启列表宿主进程是唯一可靠的实时刷新方式：进程由系统按需自动拉起，
-    # 只影响开始菜单本身（若正打开会瞬时重载），桌面与任务栏不受影响。
+    # The Win11 Start menu all-apps list snapshots each shortcut's icon into
+    # its own database and ignores every notification: per-item, per-folder
+    # and the global ASSOCCHANGED flush alike (observed on Windows 11 26200:
+    # after whole-file replacement the list kept the old icon, and only a
+    # reboot refreshed it). Restarting the list's host process is the only
+    # reliable real-time refresh: the system respawns it on demand, only the
+    # Start menu itself blinks (reloading instantly when open); desktop and
+    # taskbar are unaffected.
     try {
         $startMenuHost = Get-Process -Name 'StartMenuExperienceHost' -ErrorAction SilentlyContinue
         if ($null -ne $startMenuHost) {
@@ -622,10 +625,12 @@ function Ensure-GoNaviAumidShortcut {
         [string]$ApplicationUserModelID = 'Syngnat.GoNavi'
     )
 
-    # SFX 便携实例把 exe 解压到临时目录、退出即清理：由此创建的开始菜单
-    # 快捷方式注定指向不存在的文件——非任务栏分支只重写 IconLocation 不
-    # 重写 Target，同名占位守卫又不允许重建，死链永不自愈。Go 侧检测到
-    # exe 位于临时目录时设置 GONAVI_BRAND_ENSURE_SHORTCUTS_DISABLED=1。
+    # SFX portable instances extract the exe into a temporary directory that
+    # is deleted on exit: a Start Menu shortcut created for it would point at
+    # a missing file forever - the non-taskbar branch only rewrites
+    # IconLocation, never Target, and the name-occupied guard refuses to
+    # rebuild it. The Go side sets GONAVI_BRAND_ENSURE_SHORTCUTS_DISABLED=1
+    # when the executable runs from a temporary directory.
     if ($env:GONAVI_BRAND_ENSURE_SHORTCUTS_DISABLED -eq '1') {
         Write-ShortcutRepairLog ("skip AUMID shortcut creation, executable runs from a temporary directory: " + $TargetPath)
         return $false
@@ -732,14 +737,15 @@ function Set-GoNaviMachineShortcutMigration {
             try {
                 $shortcut = $shell.CreateShortcut($shortcutFile.FullName)
                 if (-not (Test-SameFilePath $shortcut.TargetPath $TargetPath)) {
-                    # 名字像 GoNavi 但目标不是本实例的机器层条目不属于本次
-                    # 迁移范围，保持原样。
+                    # GoNavi-named machine entries targeting a different
+                    # executable are not part of this migration; leave them.
                     continue
                 }
                 $userShortcutPath = Join-Path $userDirectory $shortcutFile.Name
                 if (Test-Path -LiteralPath $userShortcutPath -PathType Leaf) {
-                    # 用户层已有同名条目（如 Ensure 兜底创建），机器层条目
-                    # 已无增量价值，删除即可关闭其修改授权面。
+                    # A same-named user entry already exists (e.g. created by
+                    # the Ensure fallback); deleting the machine file still
+                    # closes its per-file modify-grant exposure.
                     Remove-Item -LiteralPath $shortcutFile.FullName -Force
                     Write-ShortcutRepairLog ("removed machine shortcut shadowed by user entry: " + $shortcutFile.FullName)
                 } else {
@@ -820,10 +826,12 @@ function Set-GoNaviShortcutBrandIcon {
         $script:GoNaviMigratedCommonDesktop = $false
         $commonDesktopDirectory = Get-NormalizedFilePath ([Environment]::GetFolderPath([Environment+SpecialFolder]::CommonDesktopDirectory))
 
-        # 启动期迁移模式：从未切换过品牌图标的实例也在启动时把机器层快捷
-        # 方式收敛到用户层（关闭安装器授予的跨用户修改面）。整个图标更新
-        # 流程在此短路——迁移按字节移动文件、不重写任何属性；Ensure 仍会
-        # 兜底缺失的用户层开始菜单入口（图标用 exe 自带图标）。
+        # Startup migration mode: converge machine-layer shortcuts to the
+        # user layer even when no brand icon was ever selected (closes the
+        # installer's cross-user modify grant). The whole icon update flow
+        # short-circuits here - migration moves files byte-for-byte and
+        # rewrites no properties; Ensure still backfills a missing
+        # user-level Start Menu entry (with the executable's own icon).
         if ($env:GONAVI_BRAND_MIGRATE_ONLY -eq '1') {
             $migrated = Set-GoNaviMachineShortcutMigration -TargetPath $normalizedTargetPath `
                 -CommonDesktopDirectory $commonDesktopDirectory `
@@ -837,8 +845,9 @@ function Set-GoNaviShortcutBrandIcon {
                 # failure is logged and never blocks the icon switch.
                 Write-ShortcutRepairLog ("AUMID shortcut ensure failed: " + $_.Exception.Message)
             }
-            # 迁移让所有应用列表出现「机器层条目消失 + 用户层条目新增」，
-            # 宿主重启让它重建为单一正确条目。
+            # Migration makes the all-apps list see a machine entry disappear
+            # and a user entry appear; the host restart rebuilds both into one
+            # correct entry.
             if ($migrated -gt 0 -and $env:GONAVI_BRAND_RESTART_STARTMENU -ne '0') {
                 Restart-GoNaviStartMenuHost
             }
