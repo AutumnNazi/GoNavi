@@ -16,6 +16,7 @@
   "ai_service.backend.builtin.quota_exhausted_daily_no_reset": "Бесплатная дневная квота GoNavi AI исчерпана. Повторите попытку завтра.",
   "ai_service.backend.builtin.quota_exhausted_rolling": "5-часовая квота GoNavi AI исчерпана. Она начнёт восстанавливаться с {{resetAt}}.",
   "ai_service.backend.builtin.quota_exhausted_rolling_no_reset": "5-часовая квота GoNavi AI исчерпана. Повторите попытку позже.",
+  "ai_service.backend.builtin.readonly_sql_refused": "Встроенный ИИ может выполнять только запросы на чтение, поэтому приведённая ниже инструкция, изменяющая данные или структуру, не была выполнена. Проверьте её и выполните сами в SQL-редакторе:",
   "ai_service.backend.builtin.service_error": "Сервис GoNavi AI вернул ошибку (HTTP {{status}}). Повторите попытку позже.",
   "ai_service.backend.builtin.service_unavailable": "Сейчас у GoNavi AI нет доступных узлов модели. Повторите попытку позже.",
   "ai_service.backend.builtin.unknown_error": "Запрос к GoNavi AI не выполнен: {{detail}}",

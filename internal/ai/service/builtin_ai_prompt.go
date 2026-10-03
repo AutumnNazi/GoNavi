@@ -8,6 +8,7 @@ import (
 
 	"GoNavi-Wails/internal/ai"
 	"GoNavi-Wails/internal/ai/provider"
+	"GoNavi-Wails/internal/ai/runharness"
 )
 
 // The agent harness hands every provider the desktop's workspace as one generic
@@ -17,65 +18,87 @@ import (
 // small model reads them: the database, the SQL or schemas the person attached as
 // plain fenced text, in the message that carries the question.
 
-// builtinAIPromptProvider wraps the built-in provider for agent runs.
-type builtinAIPromptProvider struct{ provider.Provider }
+// builtinAIPromptProvider wraps the built-in provider for agent runs: the context presented for a
+// small model, its short list of tools, and the read-only rule for the queries it runs.
+type builtinAIPromptProvider struct {
+	provider.Provider
+	// readOnlyNotice says, in the person's language, why a query was not run.
+	readOnlyNotice string
+}
 
 func (p builtinAIPromptProvider) Chat(ctx context.Context, req ai.ChatRequest) (*ai.ChatResponse, error) {
-	req.Messages = presentBuiltinAIContext(req.Messages)
-	return p.Provider.Chat(ctx, req)
+	req.Messages, req.Tools = presentBuiltinAIContext(req.Messages), builtinAITools(req.Tools)
+	response, err := p.Provider.Chat(ctx, req)
+	if response != nil {
+		response.ToolCalls, response.Content = guardBuiltinAIToolCalls(response.ToolCalls, response.Content, p.readOnlyNotice)
+	}
+	return response, err
 }
 
 func (p builtinAIPromptProvider) ChatStream(ctx context.Context, req ai.ChatRequest, callback func(ai.StreamChunk)) error {
-	req.Messages = presentBuiltinAIContext(req.Messages)
-	return p.Provider.ChatStream(ctx, req, callback)
+	req.Messages, req.Tools = presentBuiltinAIContext(req.Messages), builtinAITools(req.Tools)
+	guard := newBuiltinAIStreamGuard(callback, p.readOnlyNotice)
+	err := p.Provider.ChatStream(ctx, req, guard.push)
+	guard.finish()
+	return err
 }
 
 // ChatStreamWithState keeps the wrapped provider's session support: the harness
 // asks for it by interface.
 func (p builtinAIPromptProvider) ChatStreamWithState(ctx context.Context, state json.RawMessage, req ai.ChatRequest, callback func(ai.StreamChunk)) (json.RawMessage, error) {
-	req.Messages = presentBuiltinAIContext(req.Messages)
+	req.Messages, req.Tools = presentBuiltinAIContext(req.Messages), builtinAITools(req.Tools)
+	guard := newBuiltinAIStreamGuard(callback, p.readOnlyNotice)
+	defer guard.finish()
 	if stateful, ok := p.Provider.(provider.SessionStreamProvider); ok {
-		return stateful.ChatStreamWithState(ctx, state, req, callback)
+		return stateful.ChatStreamWithState(ctx, state, req, guard.push)
 	}
-	return nil, p.Provider.ChatStream(ctx, req, callback)
+	return nil, p.Provider.ChatStream(ctx, req, guard.push)
 }
 
-// presentBuiltinAIContext replaces the workspace JSON message with readable text
-// merged into the latest user message. Anything it does not recognize is left
-// exactly as it was.
+// presentBuiltinAIContext replaces the workspace JSON message, and the standing instructions,
+// with readable text merged into the latest user message: a small model follows what sits next
+// to the question far better than a separate system message (and the Gateway turns a client's
+// system messages into data anyway). Anything it does not recognize is left exactly as it was.
 func presentBuiltinAIContext(messages []ai.Message) []ai.Message {
-	at, rendered := -1, ""
-	for i, message := range messages {
-		if message.Role != "system" || !strings.HasPrefix(strings.TrimSpace(message.Content), `{"kind":"workspace_snapshot"`) {
+	instructions, rendered := "", ""
+	rest := make([]ai.Message, 0, len(messages))
+	for _, message := range messages {
+		content := strings.TrimSpace(message.Content)
+		if message.Role == "system" && strings.HasPrefix(content, runharness.InstructionsHeader) {
+			instructions = strings.TrimSpace(strings.TrimPrefix(content, runharness.InstructionsHeader))
 			continue
 		}
-		var envelope struct {
-			Snapshot struct {
-				ActiveContext map[string]any `json:"activeContext"`
-			} `json:"snapshot"`
+		if message.Role == "system" && strings.HasPrefix(content, `{"kind":"workspace_snapshot"`) {
+			var envelope struct {
+				Snapshot struct {
+					ActiveContext map[string]any `json:"activeContext"`
+				} `json:"snapshot"`
+			}
+			if json.Unmarshal([]byte(message.Content), &envelope) == nil {
+				rendered = renderBuiltinAIContext(envelope.Snapshot.ActiveContext)
+				continue // nothing the model can use stays out of its small window
+			}
 		}
-		if json.Unmarshal([]byte(message.Content), &envelope) != nil {
-			return messages
-		}
-		at, rendered = i, renderBuiltinAIContext(envelope.Snapshot.ActiveContext)
-		break
+		rest = append(rest, message)
 	}
-	if at < 0 {
-		return messages
+	var blocks []string
+	if instructions != "" {
+		blocks = append(blocks, "### Instructions\n"+instructions)
 	}
-	rest := make([]ai.Message, 0, len(messages))
-	rest = append(rest, messages[:at]...)
-	rest = append(rest, messages[at+1:]...)
-	if rendered == "" {
-		return rest // nothing the model can use: do not spend its small window on it
+	if rendered != "" {
+		blocks = append(blocks, "### Context\n"+rendered)
 	}
+	if len(blocks) == 0 {
+		return rest
+	}
+	block := strings.Join(blocks, "\n\n")
 	for i := len(rest) - 1; i >= 0; i-- {
 		if rest[i].Role == "user" {
-			rest[i].Content = "### Context\n" + rendered + "\n\n### Request\n" + rest[i].Content
+			rest[i].Content = block + "\n\n### Request\n" + rest[i].Content
 			return rest
 		}
 	}
-	return append([]ai.Message{{Role: "system", Content: rendered}}, rest...)
+	return append([]ai.Message{{Role: "system", Content: block}}, rest...)
 }
 
 // renderBuiltinAIContext describes the active database and what the person
@@ -102,6 +125,13 @@ func databaseLine(active map[string]any) string {
 	var parts []string
 	if name := promptText(active["dbName"]); name != "" {
 		parts = append(parts, "Database: "+name)
+	}
+	// The tools address a database through its saved connection: the model needs the id.
+	if id := promptText(active["connectionId"]); id != "" {
+		parts = append(parts, "Connection id (for tools): "+id)
+	}
+	if schema := promptText(active["schemaName"]); schema != "" {
+		parts = append(parts, "Schema: "+schema)
 	}
 	if version := promptText(active["databaseVersion"]); version != "" {
 		parts = append(parts, "Version: "+version)

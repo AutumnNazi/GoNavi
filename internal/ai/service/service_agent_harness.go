@@ -694,8 +694,10 @@ func (s *Service) resolveAgentProvider(ctx context.Context, request runharness.M
 		return nil, err
 	}
 	if resolved.ID == builtinAIProviderID {
-		// The hosted small model needs the workspace presented as plain text.
-		return builtinAIPromptProvider{agentProvider}, nil
+		// The hosted small model gets its context as plain text, a short list of read-only
+		// tools, and its queries checked before they run (see builtin_ai_prompt.go).
+		notice := serviceTextFromLocalizer(s.serviceLocalizerForLanguage(), "ai_service.backend.builtin.readonly_sql_refused", nil)
+		return builtinAIPromptProvider{Provider: agentProvider, readOnlyNotice: notice}, nil
 	}
 	return agentProvider, nil
 }

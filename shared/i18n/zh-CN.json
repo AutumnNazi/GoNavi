@@ -16,6 +16,7 @@
   "ai_service.backend.builtin.quota_exhausted_daily_no_reset": "今日 GoNavi AI 免费额度已用完，请明天再试。",
   "ai_service.backend.builtin.quota_exhausted_rolling": "GoNavi AI 5 小时额度已用完，将从 {{resetAt}} 起逐步恢复。",
   "ai_service.backend.builtin.quota_exhausted_rolling_no_reset": "GoNavi AI 5 小时额度已用完，请稍后再试。",
+  "ai_service.backend.builtin.readonly_sql_refused": "内置 AI 只能运行只读查询，下面这条会修改数据或结构的语句没有执行。请检查后自行在 SQL 编辑器中运行：",
   "ai_service.backend.builtin.service_error": "GoNavi AI 服务返回异常（HTTP {{status}}），请稍后重试。",
   "ai_service.backend.builtin.service_unavailable": "GoNavi AI 当前没有可用的模型节点，请稍后重试。",
   "ai_service.backend.builtin.unknown_error": "GoNavi AI 请求失败：{{detail}}",

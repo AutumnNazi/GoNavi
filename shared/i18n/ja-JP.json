@@ -16,6 +16,7 @@
   "ai_service.backend.builtin.quota_exhausted_daily_no_reset": "本日の GoNavi AI 無料枠を使い切りました。明日もう一度お試しください。",
   "ai_service.backend.builtin.quota_exhausted_rolling": "GoNavi AI の 5 時間枠を使い切りました。{{resetAt}} から順次回復します。",
   "ai_service.backend.builtin.quota_exhausted_rolling_no_reset": "GoNavi AI の 5 時間枠を使い切りました。しばらくしてからもう一度お試しください。",
+  "ai_service.backend.builtin.readonly_sql_refused": "内蔵 AI は読み取り専用のクエリしか実行できないため、データや構造を変更する以下のステートメントは実行されませんでした。内容を確認し、SQL エディターでご自身で実行してください：",
   "ai_service.backend.builtin.service_error": "GoNavi AI サービスがエラーを返しました（HTTP {{status}}）。しばらくしてからもう一度お試しください。",
   "ai_service.backend.builtin.service_unavailable": "現在、GoNavi AI で利用可能なモデルノードがありません。しばらくしてからもう一度お試しください。",
   "ai_service.backend.builtin.unknown_error": "GoNavi AI のリクエストに失敗しました: {{detail}}",

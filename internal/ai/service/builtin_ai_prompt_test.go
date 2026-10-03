@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"GoNavi-Wails/internal/ai"
+	"GoNavi-Wails/internal/ai/runharness"
 )
 
 func workspaceMessage(t *testing.T, active map[string]any) ai.Message {
@@ -71,10 +72,45 @@ func TestOnlyTheLatestUserMessageCarriesTheContext(t *testing.T) {
 }
 
 func TestAWorkspaceWithNothingUsableIsDroppedNotSent(t *testing.T) {
-	messages := []ai.Message{workspaceMessage(t, map[string]any{"connectionId": "conn-1"}), {Role: "user", Content: "hi"}}
+	messages := []ai.Message{workspaceMessage(t, map[string]any{"attachedItems": []any{}}), {Role: "user", Content: "hi"}}
 	got := presentBuiltinAIContext(messages)
 	if len(got) != 1 || got[0].Content != "hi" {
 		t.Fatalf("an empty context must cost the small window nothing: %+v", got)
+	}
+}
+
+func TestTheModelIsToldWhichConnectionItsToolsAddress(t *testing.T) {
+	messages := []ai.Message{workspaceMessage(t, map[string]any{"connectionId": "conn-1", "dbName": "shop", "schemaName": "public"}), {Role: "user", Content: "hi"}}
+	got := presentBuiltinAIContext(messages)
+	if len(got) != 1 || !strings.Contains(got[0].Content, "Connection id (for tools): conn-1") || !strings.Contains(got[0].Content, "Schema: public") {
+		t.Fatalf("the tools need the connection id: %+v", got)
+	}
+}
+
+func TestTheInstructionsComeFirstNextToTheQuestion(t *testing.T) {
+	messages := []ai.Message{
+		{Role: "system", Content: runharness.InstructionsHeader + "\nYou are GoNavi's SQL assistant.\n\n## The user's own instructions\nAnswer briefly."},
+		workspaceMessage(t, map[string]any{"dbName": "shop"}),
+		{Role: "user", Content: "hi"},
+	}
+	got := presentBuiltinAIContext(messages)
+	if len(got) != 1 || got[0].Role != "user" {
+		t.Fatalf("the instructions and the workspace both go into the question: %+v", got)
+	}
+	want := "### Instructions\nYou are GoNavi's SQL assistant.\n\n## The user's own instructions\nAnswer briefly.\n\n### Context\nDatabase: shop\n\n### Request\nhi"
+	if got[0].Content != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got[0].Content, want)
+	}
+	if strings.Contains(got[0].Content, runharness.InstructionsHeader) {
+		t.Fatalf("the header is for recognizing the message, not for the model: %q", got[0].Content)
+	}
+}
+
+func TestInstructionsWithoutAQuestionStayASystemMessage(t *testing.T) {
+	messages := []ai.Message{{Role: "system", Content: runharness.InstructionsHeader + "\nBe brief."}, {Role: "assistant", Content: "ok"}}
+	got := presentBuiltinAIContext(messages)
+	if len(got) != 2 || got[0].Role != "system" || got[0].Content != "### Instructions\nBe brief." || got[1].Content != "ok" {
+		t.Fatalf("got %+v", got)
 	}
 }
 
