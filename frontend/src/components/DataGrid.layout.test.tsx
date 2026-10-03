@@ -29,6 +29,8 @@ import { cloneShortcutOptions, DEFAULT_SHORTCUT_OPTIONS } from '../utils/shortcu
 
 const readDataGridSource = () => [
   './useDataGridBatchActions.ts',
+  './dataGrid/batchActions/cellSelectionInteraction.ts',
+  './dataGrid/batchActions/cellSelectionHandlers.ts',
   './DataGrid.tsx',
   // DataGrid.tsx 拆出的常量模块与 hook
   './dataGrid/dataGridPagingOptions.ts',
