@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -121,11 +120,17 @@ var (
 // the first source of truth for the Windows taskbar button.
 func applyPersistedWindowsApplicationIcon(runtimeContext context.Context, configDir string) error {
 	removeStaleWindowsShortcutUpdateScripts(configDir)
+	removeStaleWindowsShortcutReplacementFiles()
 	iconPath, err := loadPersistedWindowsApplicationIcon(configDir)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(iconPath) == "" {
+		// 从未切换过品牌图标也要在启动时把机器层快捷方式收敛到用户层：
+		// 安装器授予的单文件 Users-Modify 修改权是跨用户篡改面，迁移完成
+		// 即关闭；MSI 修复/升级重建机器层条目后，下次启动再次迁移，其他
+		// 用户的开始菜单入口也借此自愈。后台执行，失败不阻塞启动。
+		go repairDefaultWindowsApplicationShortcuts()
 		return clearPersistedWindowsApplicationIcon(configDir)
 	}
 	// 每次启动都幂等执行固定项修复：没有一次性标记，失败（文件被占用、
@@ -639,80 +644,7 @@ func updateCurrentWindowsApplicationShortcuts(iconPath string) error {
 	if err != nil {
 		return fmt.Errorf("resolve Windows application executable: %w", err)
 	}
-	scriptDir := filepath.Dir(iconPath)
-	temporary, err := os.CreateTemp(scriptDir, ".gonavi-brand-shortcuts-*.ps1")
-	if err != nil {
-		return fmt.Errorf("create Windows shortcut update script: %w", err)
-	}
-	scriptPath := temporary.Name()
-	defer os.Remove(scriptPath)
-	script := windowsShortcutRepairPowerShellScript + `
-
-$ErrorActionPreference = 'Stop'
-$updated = Set-GoNaviShortcutBrandIcon -TargetPath $env:GONAVI_BRAND_TARGET -IconPath $env:GONAVI_BRAND_ICON -ApplicationUserModelID $env:GONAVI_BRAND_AUMID
-$failed = 0
-if ($null -ne $script:GoNaviBrandFailureCount) { $failed = [int]$script:GoNaviBrandFailureCount }
-Write-Output ("UPDATED=" + $updated + " FAILED=" + $failed)
-`
-	if _, err := temporary.WriteString(strings.ReplaceAll(script, "\n", "\r\n")); err != nil {
-		_ = temporary.Close()
-		return fmt.Errorf("write Windows shortcut update script: %w", err)
-	}
-	if err := temporary.Close(); err != nil {
-		return fmt.Errorf("close Windows shortcut update script: %w", err)
-	}
-
-	cmd := exec.Command(
-		"powershell.exe",
-		"-NoProfile",
-		"-NonInteractive",
-		"-ExecutionPolicy",
-		windowsUpdatePowerShellExecutionPolicy,
-		"-File",
-		scriptPath,
-	)
-	cmd.Dir = scriptDir
-	cmd.Env = append(cmd.Environ(),
-		"GONAVI_BRAND_TARGET="+executablePath,
-		"GONAVI_BRAND_ICON="+iconPath,
-		"GONAVI_BRAND_AUMID="+windowsApplicationUserModelIDForIconPath(iconPath),
-		"GONAVI_BRAND_MATCH_TARGET_ONLY="+windowsBrandShortcutMatchTargetOnlyEnv(executablePath),
-		"GONAVI_BRAND_REPAIR_LOG="+filepath.Join(filepath.Dir(iconPath), "shortcut-repair.log"),
-	)
-	configureWindowsUpdateCommand(cmd)
-	// 启动路径同步等待本脚本；powershell 被 AV/策略挂起时绝不能拖死
-	// OnStartup（否则 4s 窗口显示兜底永不启动，应用表现为启动了但无窗口）。
-	// CommandContext 不改已配置的 Dir/Env/属性，只注入超时取消。
-	const windowsShortcutUpdateTimeout = 45 * time.Second
-	timeoutCtx, cancelTimeout := context.WithTimeout(context.Background(), windowsShortcutUpdateTimeout)
-	defer cancelTimeout()
-	commandContextCmd := exec.CommandContext(timeoutCtx, "powershell.exe")
-	commandContextCmd.Path = cmd.Path
-	commandContextCmd.Args = cmd.Args
-	commandContextCmd.Dir = cmd.Dir
-	commandContextCmd.Env = cmd.Env
-	configureWindowsUpdateCommand(commandContextCmd)
-	cmd = commandContextCmd
-	output, err := cmd.CombinedOutput()
-	if errors.Is(timeoutCtx.Err(), context.DeadlineExceeded) {
-		logger.Warnf("Windows 快捷方式更新脚本执行超时（%v），按失败继续", windowsShortcutUpdateTimeout)
-	}
-	if err != nil {
-		detail := strings.TrimSpace(string(output))
-		if detail != "" {
-			return fmt.Errorf("update Windows application shortcuts: %w: %s", err, detail)
-		}
-		return fmt.Errorf("update Windows application shortcuts: %w", err)
-	}
-	outputText := string(output)
-	// 关联变更通知（含图标缓存失效）由脚本内部在确有更新时以 FLUSH 发送；
-	// Go 侧不再重复广播。窗口链路前还有一次 FLUSH 投递建立顺序保证。
-	// 单项失败（标准用户写机器级快捷方式被拒等）不中止，但必须可见：
-	// 明细已写入 shortcut-repair.log，这里记一条汇总便于事后诊断。
-	if m := windowsShortcutUpdateFailedCount(outputText); m > 0 {
-		logger.Warnf("Windows 快捷方式图标更新有 %d 项失败（详见 shortcut-repair.log）", m)
-	}
-	return nil
+	return runWindowsShortcutUpdateScript(executablePath, iconPath, filepath.Dir(iconPath), filepath.Dir(iconPath), nil)
 }
 
 // windowsShortcutUpdateFailedCount extracts the FAILED=N marker emitted by the

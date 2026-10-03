@@ -718,3 +718,57 @@ func TestWindowsSendShortcutRefreshNotificationsSkipsAssociationForForeignPin(t 
 		t.Fatalf("association change notification sent %d times, want 0 for foreign pin", associations)
 	}
 }
+
+// 45s 超时硬杀会绕过脚本自身的清理路径，桌面/开始菜单目录里会留下
+// "GoNavi-gonavi-update-<8hex>.lnk" 替换残渣；启动清理必须删除它们且不
+// 碰正常快捷方式。
+func TestRemoveStaleWindowsShortcutReplacementFiles(t *testing.T) {
+	dir := t.TempDir()
+	stale := filepath.Join(dir, "GoNavi-gonavi-update-1a2b3c4d.lnk")
+	variantStale := filepath.Join(dir, "GoNavi (2)-gonavi-update-deadbeef.lnk")
+	keep := filepath.Join(dir, "GoNavi.lnk")
+	notHex := filepath.Join(dir, "GoNavi-gonavi-update-zzzzzzzz.lnk")
+	for _, path := range []string{stale, variantStale, keep, notHex} {
+		if err := os.WriteFile(path, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	previousDirectories := windowsKnownGoNaviShortcutDirectories
+	defer func() { windowsKnownGoNaviShortcutDirectories = previousDirectories }()
+	windowsKnownGoNaviShortcutDirectories = func() []string { return []string{dir} }
+
+	removeStaleWindowsShortcutReplacementFiles()
+
+	for _, path := range []string{stale, variantStale} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("stale replacement file was not removed: %s", path)
+		}
+	}
+	for _, path := range []string{keep, notHex} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("unrelated file was removed: %s", path)
+		}
+	}
+}
+
+func TestWindowsShortcutUpdateFailedCount(t *testing.T) {
+	testCases := []struct {
+		name   string
+		output string
+		want   int
+	}{
+		{name: "marker absent", output: "some noise only\n", want: 0},
+		{name: "zero failures", output: "UPDATED=5 FAILED=0\n", want: 0},
+		{name: "with failures", output: "noise\nUPDATED=3 FAILED=2\r\nmore", want: 2},
+		{name: "missing failed marker", output: "UPDATED=3\n", want: 0},
+		{name: "negative count", output: "UPDATED=3 FAILED=-1", want: 0},
+		{name: "non numeric count", output: "UPDATED=3 FAILED=many", want: 0},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := windowsShortcutUpdateFailedCount(tc.output); got != tc.want {
+				t.Fatalf("windowsShortcutUpdateFailedCount(%q) = %d, want %d", tc.output, got, tc.want)
+			}
+		})
+	}
+}

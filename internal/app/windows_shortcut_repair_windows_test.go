@@ -622,3 +622,124 @@ if ($second -ne $false) {
 		t.Fatalf("user-level AUMID shortcut was not created beside the machine shortcut: %v\n%s", err, output)
 	}
 }
+
+// 启动期迁移模式（GONAVI_BRAND_MIGRATE_ONLY=1）把机器层 GoNavi 快捷方式按
+// 字节移动到用户层：外观与 AppUserModel 属性包必须原样保留，外来目标与
+// 被用户层同名条目遮蔽的场景各有明确行为。同时覆盖审查发现的 SFX 死链
+// 防护：Ensure 必须跳过位于临时目录的可执行文件。
+func TestWindowsMachineShortcutMigrationMovesEntriesToUserScope(t *testing.T) {
+	powerShell, err := exec.LookPath("powershell.exe")
+	if err != nil {
+		t.Skip("powershell.exe is unavailable")
+	}
+
+	tempDir := t.TempDir()
+	targetPath := filepath.Join(tempDir, "install", "GoNavi.exe")
+	foreignTargetPath := filepath.Join(tempDir, "foreign", "GoNavi.exe")
+	commonPrograms := filepath.Join(tempDir, "common-programs")
+	userPrograms := filepath.Join(tempDir, "user-programs")
+	commonDesktop := filepath.Join(tempDir, "common-desktop")
+	userDesktop := filepath.Join(tempDir, "user-desktop")
+	for _, directory := range []string{
+		filepath.Dir(targetPath),
+		filepath.Dir(foreignTargetPath),
+		commonPrograms,
+		userPrograms,
+		commonDesktop,
+		userDesktop,
+	} {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(targetPath, []byte("test"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(foreignTargetPath, []byte("test"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	installerIcon := filepath.Join(tempDir, "installer", "GoNaviIcon.ico")
+	if err := os.MkdirAll(filepath.Dir(installerIcon), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(installerIcon, []byte("icon"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	harness := windowsShortcutRepairPowerShellScript + `
+$ErrorActionPreference = 'Stop'
+$shell = New-Object -ComObject WScript.Shell
+$shellApplication = New-Object -ComObject Shell.Application
+
+function New-TestShortcut {
+    param([string]$Path, [string]$TargetPath, [string]$IconLocation)
+    $shortcut = $shell.CreateShortcut($Path)
+    $shortcut.TargetPath = $TargetPath
+    if (-not [string]::IsNullOrEmpty($IconLocation)) { $shortcut.IconLocation = $IconLocation }
+    $shortcut.Save()
+}
+
+$machineShortcut = Join-Path $env:GONAVI_TEST_COMMON_PROGRAMS 'GoNavi.lnk'
+New-TestShortcut $machineShortcut $env:GONAVI_TEST_TARGET ($env:GONAVI_TEST_INSTALLER_ICON + ',0')
+[void](Set-GoNaviShortcutRelaunchProperties -ShortcutPath $machineShortcut -TargetPath $env:GONAVI_TEST_TARGET -IconPath $env:GONAVI_TEST_INSTALLER_ICON -ApplicationUserModelID 'Syngnat.GoNavi')
+$variantShortcut = Join-Path $env:GONAVI_TEST_COMMON_PROGRAMS 'GoNavi (2).lnk'
+New-TestShortcut $variantShortcut $env:GONAVI_TEST_TARGET ''
+$foreignNamedShortcut = Join-Path $env:GONAVI_TEST_COMMON_PROGRAMS 'GoNaviElsewhere.lnk'
+New-TestShortcut $foreignNamedShortcut $env:GONAVI_TEST_FOREIGN_TARGET ''
+$shadowedShortcut = Join-Path $env:GONAVI_TEST_COMMON_DESKTOP 'GoNavi.lnk'
+New-TestShortcut $shadowedShortcut $env:GONAVI_TEST_TARGET ''
+New-TestShortcut (Join-Path $env:GONAVI_TEST_USER_DESKTOP 'GoNavi.lnk') $env:GONAVI_TEST_TARGET ''
+
+$migrated = Set-GoNaviMachineShortcutMigration -TargetPath $env:GONAVI_TEST_TARGET -CommonDesktopDirectory $env:GONAVI_TEST_COMMON_DESKTOP -CommonProgramsDirectory $env:GONAVI_TEST_COMMON_PROGRAMS -UserDesktopDirectory $env:GONAVI_TEST_USER_DESKTOP -UserProgramsDirectory $env:GONAVI_TEST_USER_PROGRAMS
+if ($migrated -ne 3) { throw ('unexpected migration count: ' + $migrated) }
+
+if (Test-Path -LiteralPath $machineShortcut -PathType Leaf) { throw 'machine start menu shortcut was not moved' }
+$movedPath = Join-Path $env:GONAVI_TEST_USER_PROGRAMS 'GoNavi.lnk'
+$moved = $shell.CreateShortcut($movedPath)
+if (-not (Test-SameFilePath $moved.TargetPath $env:GONAVI_TEST_TARGET)) { throw 'moved shortcut lost its target' }
+if ($moved.IconLocation -notlike ($env:GONAVI_TEST_INSTALLER_ICON + '*')) { throw ('moved shortcut lost its installer icon: ' + $moved.IconLocation) }
+$movedItem = $shellApplication.Namespace((Split-Path -Parent $movedPath)).ParseName('GoNavi.lnk')
+if ($null -eq $movedItem) {
+    throw 'moved shortcut is not visible to the shell'
+}
+if (-not [string]::Equals([string]$movedItem.ExtendedProperty('System.AppUserModel.ID'), 'Syngnat.GoNavi', [StringComparison]::OrdinalIgnoreCase)) {
+    throw ('moved shortcut lost its AUMID property bag: ' + $movedItem.ExtendedProperty('System.AppUserModel.ID'))
+}
+
+if (Test-Path -LiteralPath $variantShortcut -PathType Leaf) { throw 'variant machine shortcut was not moved' }
+if (-not (Test-Path -LiteralPath (Join-Path $env:GONAVI_TEST_USER_PROGRAMS 'GoNavi (2).lnk') -PathType Leaf)) { throw 'variant shortcut did not arrive in user scope' }
+
+if (-not (Test-Path -LiteralPath $foreignNamedShortcut -PathType Leaf)) { throw 'foreign-targeted GoNavi-named shortcut must stay untouched' }
+
+if (Test-Path -LiteralPath $shadowedShortcut -PathType Leaf) { throw 'shadowed machine shortcut was not removed' }
+$keptUserDesktop = $shell.CreateShortcut((Join-Path $env:GONAVI_TEST_USER_DESKTOP 'GoNavi.lnk'))
+if (-not (Test-SameFilePath $keptUserDesktop.TargetPath $env:GONAVI_TEST_TARGET)) { throw 'existing user desktop shortcut was modified' }
+
+# SFX 死链防护：Go 侧检测到 exe 位于临时目录时会设置禁用标记，Ensure
+# 必须拒绝创建开始菜单快捷方式（SFX 退出即清理临时目录，创建即死链且
+# 永不自愈）。
+$env:GONAVI_BRAND_ENSURE_SHORTCUTS_DISABLED = '1'
+if (Ensure-GoNaviAumidShortcut -TargetPath $env:GONAVI_TEST_TARGET -IconPath $env:GONAVI_TEST_TARGET) {
+    throw 'Ensure must skip when shortcut creation is disabled for temporary executables'
+}
+`
+	scriptPath := filepath.Join(tempDir, "machine-migration-test.ps1")
+	if err := os.WriteFile(scriptPath, []byte(strings.ReplaceAll(harness, "\n", "\r\n")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	command := exec.Command(powerShell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned", "-File", scriptPath)
+	command.Env = append(os.Environ(),
+		"GONAVI_TEST_TARGET="+targetPath,
+		"GONAVI_TEST_FOREIGN_TARGET="+foreignTargetPath,
+		"GONAVI_TEST_COMMON_PROGRAMS="+commonPrograms,
+		"GONAVI_TEST_USER_PROGRAMS="+userPrograms,
+		"GONAVI_TEST_COMMON_DESKTOP="+commonDesktop,
+		"GONAVI_TEST_USER_DESKTOP="+userDesktop,
+		"GONAVI_TEST_INSTALLER_ICON="+installerIcon,
+		"GONAVI_TEST_ROOT="+tempDir,
+	)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("machine shortcut migration integration failed: %v\n%s", err, output)
+	}
+}

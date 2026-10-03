@@ -605,6 +605,15 @@ function Ensure-GoNaviAumidShortcut {
         [string]$ApplicationUserModelID = 'Syngnat.GoNavi'
     )
 
+    # SFX 便携实例把 exe 解压到临时目录、退出即清理：由此创建的开始菜单
+    # 快捷方式注定指向不存在的文件——非任务栏分支只重写 IconLocation 不
+    # 重写 Target，同名占位守卫又不允许重建，死链永不自愈。Go 侧检测到
+    # exe 位于临时目录时设置 GONAVI_BRAND_ENSURE_SHORTCUTS_DISABLED=1。
+    if ($env:GONAVI_BRAND_ENSURE_SHORTCUTS_DISABLED -eq '1') {
+        Write-ShortcutRepairLog ("skip AUMID shortcut creation, executable runs from a temporary directory: " + $TargetPath)
+        return $false
+    }
+
     # The taskbar button icon comes from the shortcut resolved via AUMID: when
     # no shortcut declares the AUMID, the button falls back to a generic window
     # icon and does not follow WM_SETICON (Win11 26200 observed). MSI installs
@@ -667,6 +676,75 @@ function Ensure-GoNaviAumidShortcut {
     return $true
 }
 
+function Set-GoNaviMachineShortcutMigration {
+    param(
+        [string]$TargetPath,
+        [string]$CommonDesktopDirectory,
+        [string]$CommonProgramsDirectory,
+        [string]$UserDesktopDirectory,
+        [string]$UserProgramsDirectory
+    )
+
+    # Startup migration mode (GONAVI_BRAND_MIGRATE_ONLY=1): move machine-layer
+    # GoNavi shortcuts to the user layer byte-for-byte. Nothing inside the
+    # shortcut is rewritten, so the installer appearance and the AppUserModel
+    # property bag survive, and the file-replacement mechanism works on them
+    # from then on. This closes the installer's per-file Users-Modify grant
+    # exposure at first launch instead of the first brand switch, and re-serves
+    # every other profile's Start Menu entry after an MSI repair/upgrade
+    # recreated the machine shortcuts. Top-level only: the installer creates
+    # flat entries, and a nested move would need subdirectory mirroring.
+    $pairs = @(
+        @{ Machine = $CommonProgramsDirectory; User = $UserProgramsDirectory },
+        @{ Machine = $CommonDesktopDirectory; User = $UserDesktopDirectory }
+    )
+    $migratedCount = 0
+    $failureMessages = [Collections.Generic.List[string]]::new()
+    $shell = New-Object -ComObject WScript.Shell
+    foreach ($pair in $pairs) {
+        $machineDirectory = Get-NormalizedFilePath $pair.Machine
+        $userDirectory = Get-NormalizedFilePath $pair.User
+        if ([string]::IsNullOrWhiteSpace($machineDirectory) -or
+            [string]::IsNullOrWhiteSpace($userDirectory) -or
+            [string]::Equals($machineDirectory, $userDirectory, [StringComparison]::OrdinalIgnoreCase) -or
+            -not (Test-Path -LiteralPath $machineDirectory -PathType Container)) {
+            continue
+        }
+        $machineShortcuts = Get-ChildItem -LiteralPath $machineDirectory -Filter 'GoNavi*.lnk' -File -ErrorAction SilentlyContinue
+        foreach ($shortcutFile in $machineShortcuts) {
+            try {
+                $shortcut = $shell.CreateShortcut($shortcutFile.FullName)
+                if (-not (Test-SameFilePath $shortcut.TargetPath $TargetPath)) {
+                    # 名字像 GoNavi 但目标不是本实例的机器层条目不属于本次
+                    # 迁移范围，保持原样。
+                    continue
+                }
+                $userShortcutPath = Join-Path $userDirectory $shortcutFile.Name
+                if (Test-Path -LiteralPath $userShortcutPath -PathType Leaf) {
+                    # 用户层已有同名条目（如 Ensure 兜底创建），机器层条目
+                    # 已无增量价值，删除即可关闭其修改授权面。
+                    Remove-Item -LiteralPath $shortcutFile.FullName -Force
+                    Write-ShortcutRepairLog ("removed machine shortcut shadowed by user entry: " + $shortcutFile.FullName)
+                } else {
+                    Move-Item -LiteralPath $shortcutFile.FullName -Destination $userShortcutPath
+                    Send-ShellItemUpdatedNotification $userShortcutPath
+                    Write-ShortcutRepairLog ("moved machine shortcut to user scope: " + $userShortcutPath)
+                }
+                Send-ShellDirectoryUpdatedNotification $userDirectory
+                Send-ShellDirectoryUpdatedNotification $machineDirectory
+                $migratedCount++
+            } catch {
+                $failureMessages.Add("machine shortcut migration failed for " + $shortcutFile.FullName + ": " + $_.Exception.Message)
+            }
+        }
+    }
+    $script:GoNaviBrandFailureCount = $failureMessages.Count
+    if ($failureMessages.Count -gt 0) {
+        Write-ShortcutRepairLog ([string]::Join('; ', $failureMessages))
+    }
+    return $migratedCount
+}
+
 function Set-GoNaviShortcutBrandIcon {
     param(
         [string]$TargetPath,
@@ -724,6 +802,27 @@ function Set-GoNaviShortcutBrandIcon {
         # users); the user-level desktop shortcut is created after the loop.
         $script:GoNaviMigratedCommonDesktop = $false
         $commonDesktopDirectory = Get-NormalizedFilePath ([Environment]::GetFolderPath([Environment+SpecialFolder]::CommonDesktopDirectory))
+
+        # 启动期迁移模式：从未切换过品牌图标的实例也在启动时把机器层快捷
+        # 方式收敛到用户层（关闭安装器授予的跨用户修改面）。整个图标更新
+        # 流程在此短路——迁移按字节移动文件、不重写任何属性；Ensure 仍会
+        # 兜底缺失的用户层开始菜单入口（图标用 exe 自带图标）。
+        if ($env:GONAVI_BRAND_MIGRATE_ONLY -eq '1') {
+            $migrated = Set-GoNaviMachineShortcutMigration -TargetPath $normalizedTargetPath `
+                -CommonDesktopDirectory $commonDesktopDirectory `
+                -CommonProgramsDirectory (Get-NormalizedFilePath ([Environment]::GetFolderPath([Environment+SpecialFolder]::CommonPrograms))) `
+                -UserDesktopDirectory (Get-NormalizedFilePath ([Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory))) `
+                -UserProgramsDirectory (Get-NormalizedFilePath ([Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)))
+            try {
+                Ensure-GoNaviAumidShortcut -TargetPath $normalizedTargetPath -IconPath $normalizedIconPath | Out-Null
+            } catch {
+                # Creating the AUMID shortcut is an incremental improvement; a
+                # failure is logged and never blocks the icon switch.
+                Write-ShortcutRepairLog ("AUMID shortcut ensure failed: " + $_.Exception.Message)
+            }
+            return $migrated
+        }
+
         foreach ($directory in $ShortcutDirectories) {
             $normalizedDirectory = Get-NormalizedFilePath $directory
             if ([string]::IsNullOrWhiteSpace($normalizedDirectory) -or
