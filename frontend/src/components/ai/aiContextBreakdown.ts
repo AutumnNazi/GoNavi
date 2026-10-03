@@ -11,10 +11,10 @@ import type { AgentContextPreview } from './aiContextPreviewClient';
  * adds a short policy of its own.
  */
 
-export type AIContextSegmentId = 'workspace' | 'bound' | 'skills' | 'user' | 'assistant' | 'toolResults';
+export type AIContextSegmentId = 'instructions' | 'workspace' | 'bound' | 'skills' | 'user' | 'assistant' | 'toolResults';
 
 export const AI_CONTEXT_SEGMENT_ORDER: readonly AIContextSegmentId[] = [
-  'workspace', 'bound', 'skills', 'user', 'assistant', 'toolResults',
+  'instructions', 'workspace', 'bound', 'skills', 'user', 'assistant', 'toolResults',
 ];
 
 /** The id, session, sequence, role and timestamp that wrap every durable message. */
@@ -141,6 +141,8 @@ export const buildAIContextBreakdown = (input: AIContextBreakdownInput): AIConte
   const budget = windowSize - reserved;
   const draft = input.draftText.trim() ? measureMessageContent(input.draftText) : 0;
   const sizes: Record<AIContextSegmentId, number> = {
+    // Only Go knows the role prompt and the person's own prompts as they will be sent.
+    instructions: 0,
     workspace: Math.max(0, Math.round(input.workspaceBytes)),
     bound: Math.max(0, Math.round(input.boundBytes)),
     // Skills are configured but never added to the agent's context today.
@@ -177,6 +179,7 @@ export const buildAIContextBreakdownFromPreview = (
   const reserved = Math.min(windowSize, Math.max(0, Math.round(enforced ? preview.reservedOutputTokens : fallback.reservedOutput)));
   const budget = windowSize - reserved;
   const sizes: Record<AIContextSegmentId, number> = {
+    instructions: preview.instructionsBytes,
     workspace: preview.workspaceBytes,
     bound: preview.boundBytes,
     skills: 0,

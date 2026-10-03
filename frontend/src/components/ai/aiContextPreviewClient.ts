@@ -9,6 +9,8 @@ export interface AgentContextPreview {
   /** 0 when the provider's model has no window the agent enforces. */
   windowTokens: number;
   reservedOutputTokens: number;
+  /** GoNavi's role prompt and the person's own prompts, sent first with every turn. */
+  instructionsBytes: number;
   /** The workspace as sent (after any trimming), without what was bound. */
   workspaceBytes: number;
   boundBytes: number;
@@ -44,6 +46,7 @@ export const previewAgentContext = async (
   return {
     windowTokens: count(result.windowTokens),
     reservedOutputTokens: count(result.reservedOutputTokens),
+    instructionsBytes: count(result.instructionsBytes),
     workspaceBytes: count(result.workspaceBytes),
     boundBytes: count(result.boundBytes),
     userBytes: count(result.userBytes),

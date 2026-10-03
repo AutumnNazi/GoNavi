@@ -87,7 +87,11 @@ func TestAWorkspaceThatDoesNotFitIsMeasuredAsTrimmedNotAsPublished(t *testing.T)
 		t.Fatalf("a 4k window must trim the workspace: %+v", small)
 	}
 	budget := 4096 - 1024
-	if small.WorkspaceBytes > budget*workspaceBudgetNumerator/workspaceBudgetDenominator {
+	// Only the active connection line, the least that is kept, may take more than the background share.
+	if small.WorkspaceTrimmed != WorkspaceTrimMinimal || small.WorkspaceBytes == 0 {
+		t.Fatalf("a 4k window still sends the active connection: %+v", small)
+	}
+	if small.WorkspaceBytes > budget*attachedBudgetNumerator/attachedBudgetDenominator {
 		t.Fatalf("the workspace as sent (%d) cannot exceed its share of the budget %d", small.WorkspaceBytes, budget)
 	}
 	if total(small) > budget {

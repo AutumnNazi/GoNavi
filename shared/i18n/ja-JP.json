@@ -378,6 +378,7 @@
   "ai_chat.context_ring.title": "コンテキスト使用量",
   "ai_chat.context_ring.summary": "約 {{used}} / {{budget}}（{{percent}}%）",
   "ai_chat.context_ring.window": "コンテキストウィンドウ {{window}}（一部は返信用に確保）。",
+  "ai_chat.context_ring.segment.instructions": "プロンプト（ロールとカスタム）",
   "ai_chat.context_ring.segment.workspace": "ワークスペース",
   "ai_chat.context_ring.segment.bound": "バインドしたコンテキスト",
   "ai_chat.context_ring.segment.skills": "スキル",

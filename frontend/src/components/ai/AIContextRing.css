@@ -163,6 +163,7 @@
   color: var(--gn-danger, #e75d66);
 }
 
+.gn-ai-ctx-bar-part[data-seg="instructions"], .gn-ai-ctx-dot[data-seg="instructions"] { background: #7d8aa3; }
 .gn-ai-ctx-bar-part[data-seg="workspace"], .gn-ai-ctx-dot[data-seg="workspace"] { background: #5b8def; }
 .gn-ai-ctx-bar-part[data-seg="bound"],     .gn-ai-ctx-dot[data-seg="bound"]     { background: #9b6bdf; }
 .gn-ai-ctx-bar-part[data-seg="skills"],    .gn-ai-ctx-dot[data-seg="skills"]    { background: #2fb8a6; }

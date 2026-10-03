@@ -476,11 +476,12 @@ func (s *Service) initializeAgentHarness(ctx context.Context) error {
 		InputBinder: func(_ context.Context, request *runharness.AgentInputRequest) error {
 			return s.bindAgentProviderInput(request)
 		},
-		Tools:       s.agentToolCatalog,
-		Approvals:   s.agentApprovalHandler,
-		Runtime:     policySnapshot.Runtime,
-		RootContext: ctx,
-		OwnerID:     "gonavi-desktop-" + uuid.NewString(),
+		Tools:        s.agentToolCatalog,
+		Instructions: s.agentInstructions,
+		Approvals:    s.agentApprovalHandler,
+		Runtime:      policySnapshot.Runtime,
+		RootContext:  ctx,
+		OwnerID:      "gonavi-desktop-" + uuid.NewString(),
 		Events: func(event runharness.RunEvent) {
 			// The harness invokes this only after the Ledger transaction commits.
 			s.emitAgentRunEvent(event)

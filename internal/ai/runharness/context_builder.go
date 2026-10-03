@@ -40,6 +40,8 @@ type ContextBuildRequest struct {
 	// message are then not sent, and the model is told they exist (see
 	// projectAttachments).
 	OmitImages bool
+	// Instructions are the turn's standing instructions (see context_instructions.go).
+	Instructions string
 }
 
 // ContextBuildResult contains both the full immutable transcript and the
@@ -65,15 +67,17 @@ type ContextCompressionMetadata struct {
 	// ProviderBytes and ProviderTokens include the synthetic workspace system
 	// message when one is present. TranscriptBytes/Tokens describe only durable
 	// ledger messages.
-	ProviderBytes     int                         `json:"providerBytes"`
-	ProviderTokens    int                         `json:"providerTokens"`
-	TranscriptBytes   int                         `json:"transcriptBytes"`
-	TranscriptTokens  int                         `json:"transcriptTokens"`
-	WorkspaceIncluded bool                        `json:"workspaceIncluded"`
+	ProviderBytes     int  `json:"providerBytes"`
+	ProviderTokens    int  `json:"providerTokens"`
+	TranscriptBytes   int  `json:"transcriptBytes"`
+	TranscriptTokens  int  `json:"transcriptTokens"`
+	WorkspaceIncluded bool `json:"workspaceIncluded"`
+	// InstructionsIncluded is set when the projection starts with the standing instructions.
+	InstructionsIncluded bool `json:"instructionsIncluded,omitempty"`
 	// WorkspaceTrimmed names how far the workspace was cut to fit the provider
 	// window (see the WorkspaceTrim* levels); empty when it was sent whole.
-	WorkspaceTrimmed string `json:"workspaceTrimmed,omitempty"`
-	Workspace         *WorkspaceSnapshotReference `json:"workspace,omitempty"`
+	WorkspaceTrimmed string                      `json:"workspaceTrimmed,omitempty"`
+	Workspace        *WorkspaceSnapshotReference `json:"workspace,omitempty"`
 
 	// Omitted bounds describe durable transcript entries that were omitted from
 	// the provider request. Retained bounds cover the durable part of the
@@ -161,7 +165,7 @@ func (b *DeterministicContextBuilder) Build(ctx context.Context, input ContextBu
 		}
 	}
 
-	projection := make([]Message, 0, len(transcript)+1)
+	projection := make([]Message, 0, len(transcript)+2)
 	estimate := b.EstimateTokens
 	if estimate == nil {
 		estimate = defaultContextTokenEstimate
@@ -170,8 +174,19 @@ func (b *DeterministicContextBuilder) Build(ctx context.Context, input ContextBu
 	if len(providerTranscript) > 0 {
 		newestMessage = &providerTranscript[len(providerTranscript)-1]
 	}
+	// The standing instructions come first and are never dropped: what they take is not
+	// available to the conversation, and the workspace has to fit beside them.
+	instructions, hasInstructions := instructionsMessage(input.Instructions)
+	var instructionsSize contextMessageSizeResult
+	if hasInstructions {
+		instructionsSize = measureContextMessage(instructions, estimate)
+		if contextLimitExceeded(instructionsSize.bytes, instructionsSize.tokens, b.MaxBytes, maxTokens) {
+			return ContextBuildResult{}, fmt.Errorf("%w: instructions", ErrContextLimit)
+		}
+		projection = append(projection, instructions)
+	}
 	// What the person bound when sending travels with the message; merge it back in.
-	workspace, err := b.fitWorkspace(withMessageContext(input.WorkspaceSnapshot, transcript), workspaceReference, newestMessage, maxTokens, estimate)
+	workspace, err := b.fitWorkspace(withMessageContext(input.WorkspaceSnapshot, transcript), workspaceReference, newestMessage, instructionsSize, maxTokens, estimate)
 	if err != nil {
 		return ContextBuildResult{}, err
 	}
@@ -186,10 +201,11 @@ func (b *DeterministicContextBuilder) Build(ctx context.Context, input ContextBu
 		transcriptBytes += transcriptSizes[index].bytes
 		transcriptTokens += transcriptSizes[index].tokens
 	}
-	baseBytes, baseTokens := 0, 0
+	baseBytes, baseTokens := instructionsSize.bytes, instructionsSize.tokens
 	if hasWorkspace {
 		workspaceSize := measureContextMessage(workspaceMessage, estimate)
-		baseBytes, baseTokens = workspaceSize.bytes, workspaceSize.tokens
+		baseBytes += workspaceSize.bytes
+		baseTokens += workspaceSize.tokens
 	}
 	if contextLimitExceeded(baseBytes, baseTokens, b.MaxBytes, maxTokens) {
 		return ContextBuildResult{}, fmt.Errorf("%w: workspace context", ErrContextLimit)
@@ -215,16 +231,17 @@ func (b *DeterministicContextBuilder) Build(ctx context.Context, input ContextBu
 	projection = append(projection, cloneContextMessages(providerTranscript[selectedStart:])...)
 
 	metadata := ContextCompressionMetadata{
-		Applied:           selectedStart > 0,
-		MaxBytes:          b.MaxBytes,
-		MaxTokens:         maxTokens,
-		ProviderBytes:     projectedBytes,
-		ProviderTokens:    projectedTokens,
-		TranscriptBytes:   transcriptBytes,
-		TranscriptTokens:  transcriptTokens,
-		WorkspaceIncluded: hasWorkspace,
-		WorkspaceTrimmed:  workspace.trimmed,
-		Workspace:         cloneWorkspaceSnapshotReference(workspaceReference),
+		Applied:              selectedStart > 0,
+		MaxBytes:             b.MaxBytes,
+		MaxTokens:            maxTokens,
+		ProviderBytes:        projectedBytes,
+		ProviderTokens:       projectedTokens,
+		TranscriptBytes:      transcriptBytes,
+		TranscriptTokens:     transcriptTokens,
+		WorkspaceIncluded:    hasWorkspace,
+		InstructionsIncluded: hasInstructions,
+		WorkspaceTrimmed:     workspace.trimmed,
+		Workspace:            cloneWorkspaceSnapshotReference(workspaceReference),
 	}
 	populateContextCursor(&metadata, transcript, selectedStart)
 

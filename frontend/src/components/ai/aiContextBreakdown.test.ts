@@ -167,7 +167,7 @@ describe('workspace snapshot measure', () => {
 });
 
 const preview = (overrides: Partial<AgentContextPreview> = {}): AgentContextPreview => ({
-  windowTokens: 16_000, reservedOutputTokens: 2_000, workspaceBytes: 3_000, boundBytes: 1_000, userBytes: 500, assistantBytes: 1_500,
+  windowTokens: 16_000, reservedOutputTokens: 2_000, instructionsBytes: 0, workspaceBytes: 3_000, boundBytes: 1_000, userBytes: 500, assistantBytes: 1_500,
   toolBytes: 0, retainedMessages: 4, omittedMessages: 0, overflow: false, ...overrides,
 });
 
@@ -179,9 +179,15 @@ describe('buildAIContextBreakdownFromPreview', () => {
     expect(breakdown.used).toBe(6_000);
     expect(breakdown.free).toBe(8_000);
     expect(breakdown.segments.map((segment) => [segment.id, segment.size])).toEqual([
-      ['workspace', 3_000], ['bound', 1_000], ['skills', 0], ['user', 500], ['assistant', 1_500], ['toolResults', 0],
+      ['instructions', 0], ['workspace', 3_000], ['bound', 1_000], ['skills', 0], ['user', 500], ['assistant', 1_500], ['toolResults', 0],
     ]);
     expect(breakdown.level).toBe('ok');
+  });
+
+  it('counts the prompts sent first with every turn', () => {
+    const breakdown = buildAIContextBreakdownFromPreview(preview({ instructionsBytes: 2_400 }), { windowSize: 16_000, reservedOutput: 2_000 });
+    expect(breakdown.segments[0]).toEqual({ id: 'instructions', size: 2_400 });
+    expect(breakdown.used).toBe(8_400);
   });
 
   it('uses the window of the panel where the agent enforces none', () => {

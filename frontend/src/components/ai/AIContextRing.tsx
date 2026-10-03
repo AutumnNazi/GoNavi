@@ -14,6 +14,7 @@ interface AIContextRingProps {
 }
 
 const SEGMENT_LABEL_KEYS: Record<AIContextSegmentId, string> = {
+  instructions: 'ai_chat.context_ring.segment.instructions',
   workspace: 'ai_chat.context_ring.segment.workspace',
   bound: 'ai_chat.context_ring.segment.bound',
   skills: 'ai_chat.context_ring.segment.skills',

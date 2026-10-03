@@ -45,6 +45,7 @@ type AgentRunHarness struct {
 	inputBinder    AgentInputBinder
 	contextBuilder ContextBuilder
 	tools          ToolCatalog
+	instructions   InstructionsResolver
 	approvals      ApprovalHandler
 	autoApproval   AutoApprovalPolicy
 	events         EventSink
@@ -176,7 +177,8 @@ func NewAgentRunHarness(config HarnessConfig, options ...HarnessOption) (*AgentR
 	}
 	return &AgentRunHarness{
 		ledger: config.Ledger, model: config.Model, inputBinder: config.InputBinder, contextBuilder: contextBuilder, tools: config.Tools,
-		approvals: config.Approvals, autoApproval: config.AutoApproval, events: config.Events, root: root,
+		instructions: config.Instructions,
+		approvals:    config.Approvals, autoApproval: config.AutoApproval, events: config.Events, root: root,
 		cancel: cancel, ownerID: ownerID, leaseTTL: leaseTTL,
 		shutdownGrace: shutdownGrace, defaultPolicy: DefaultRunPolicy(),
 		runtime: runtime, runs: make(map[string]*runExecution),

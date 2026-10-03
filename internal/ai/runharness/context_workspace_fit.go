@@ -12,7 +12,9 @@ import (
 // fixed order of increasing loss until it does.
 //
 // What the person attached on purpose (a selected piece of SQL, table schemas)
-// is the last thing to go: it is cut down to fit, never dropped whole.
+// is the last thing to go: it is cut down to fit, never dropped whole. Nor is the
+// active connection and database, while it fits at all: without it the model
+// cannot address its tools.
 //
 // Trimming only changes the provider-facing projection. The stored snapshot and
 // the reference to it are untouched.
@@ -67,16 +69,19 @@ func shareOfLimit(limit, numerator, denominator int) int {
 }
 
 // fitWorkspace returns the richest projection of the snapshot that fits the
-// limits and still leaves room for the newest durable message. With no limits
-// configured the full snapshot is always returned.
-func (b *DeterministicContextBuilder) fitWorkspace(snapshot *WorkspaceSnapshot, reference *WorkspaceSnapshotReference, newest *Message, maxTokens int, estimate TokenEstimator) (workspaceFit, error) {
+// limits and still leaves room for the newest durable message. fixed is what is
+// sent regardless (the standing instructions): it does not shrink the
+// workspace's share of the budget, but the whole still has to fit. With no
+// limits configured the full snapshot is always returned.
+func (b *DeterministicContextBuilder) fitWorkspace(snapshot *WorkspaceSnapshot, reference *WorkspaceSnapshotReference, newest *Message, fixed contextMessageSizeResult, maxTokens int, estimate TokenEstimator) (workspaceFit, error) {
 	if snapshot == nil {
 		return workspaceFit{}, nil
 	}
-	newestBytes, newestTokens := 0, 0
+	newestBytes, newestTokens := fixed.bytes, fixed.tokens
 	if newest != nil {
 		size := measureContextMessage(*newest, estimate)
-		newestBytes, newestTokens = size.bytes, size.tokens
+		newestBytes += size.bytes
+		newestTokens += size.tokens
 	}
 	// try measures one candidate against its share of the budget; it returns the
 	// message when it fits.
@@ -120,7 +125,9 @@ func (b *DeterministicContextBuilder) fitWorkspace(snapshot *WorkspaceSnapshot, 
 		}
 	}
 	base.ActiveContext = withAttachedItems(snapshot.ActiveContext, nil)
-	if message, ok, err := try(base, WorkspaceTrimMinimal, workspaceBudgetNumerator, workspaceBudgetDenominator); err != nil {
+	// The connection line is small in content but carries the snapshot's envelope, which alone
+	// outgrows the background share of a 4k window: it may take the share the attachments get.
+	if message, ok, err := try(base, WorkspaceTrimMinimal, attachedBudgetNumerator, attachedBudgetDenominator); err != nil {
 		return workspaceFit{}, err
 	} else if ok {
 		return workspaceFit{message: message, included: true, trimmed: WorkspaceTrimMinimal}, nil

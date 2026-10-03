@@ -378,6 +378,7 @@
   "ai_chat.context_ring.title": "Использование контекста",
   "ai_chat.context_ring.summary": "≈ {{used}} из {{budget}} ({{percent}}%)",
   "ai_chat.context_ring.window": "Окно контекста {{window}}; часть зарезервирована под ответ.",
+  "ai_chat.context_ring.segment.instructions": "Промпты (роль и свои)",
   "ai_chat.context_ring.segment.workspace": "Рабочая область",
   "ai_chat.context_ring.segment.bound": "Привязанный контекст",
   "ai_chat.context_ring.segment.skills": "Навыки",

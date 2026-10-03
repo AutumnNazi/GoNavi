@@ -371,6 +371,7 @@
   "ai_chat.context_ring.title": "上下文用量",
   "ai_chat.context_ring.summary": "约 {{used}} / {{budget}}（{{percent}}%）",
   "ai_chat.context_ring.window": "上下文窗口 {{window}}，其中一部分留给回复。",
+  "ai_chat.context_ring.segment.instructions": "提示词（角色与自定义）",
   "ai_chat.context_ring.segment.workspace": "工作区",
   "ai_chat.context_ring.segment.bound": "已绑定的上下文",
   "ai_chat.context_ring.segment.skills": "技能",

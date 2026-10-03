@@ -73,7 +73,7 @@ describe('AIContextRing', () => {
 
   it('says what was left out or cut, so a full-looking ring is understood', () => {
     const measured = (overrides: Record<string, unknown>) => draw(buildAIContextBreakdownFromPreview({
-      windowTokens: 16_000, reservedOutputTokens: 2_000, workspaceBytes: 3_000, boundBytes: 0, userBytes: 500, assistantBytes: 0,
+      windowTokens: 16_000, reservedOutputTokens: 2_000, instructionsBytes: 0, workspaceBytes: 3_000, boundBytes: 0, userBytes: 500, assistantBytes: 0,
       toolBytes: 0, retainedMessages: 1, omittedMessages: 0, overflow: false, ...overrides,
     } as any, { windowSize: 16_000, reservedOutput: 2_000 }));
     const plain = json(measured({}));
@@ -88,5 +88,10 @@ describe('AIContextRing', () => {
     const overflow = measured({ overflow: true, userBytes: 40_000 });
     expect(json(overflow)).toContain('ai_chat.context_ring.note.overflow');
     expect(overflow.root.findByType('button').props['data-level']).toBe('full');
+
+    const prompted = measured({ instructionsBytes: 1_200 });
+    const rows = prompted.root.findAll((node) => node.type === 'li').map((node) => node.props['data-seg']);
+    expect(rows[0]).toBe('instructions');
+    expect(json(prompted)).toContain('ai_chat.context_ring.segment.instructions');
   });
 });

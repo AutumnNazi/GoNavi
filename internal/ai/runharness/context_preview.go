@@ -23,6 +23,10 @@ type ContextPreviewRequest struct {
 	ContextWindowTokens  int  `json:"contextWindowTokens"`
 	ReservedOutputTokens int  `json:"reservedOutputTokens"`
 	OmitImages           bool `json:"omitImages,omitempty"`
+
+	// Provider and TaskKind choose the standing instructions, as for a run.
+	Provider string        `json:"provider,omitempty"`
+	TaskKind AgentTaskKind `json:"taskKind,omitempty"`
 }
 
 // ContextPreview is what a run built from that input would send, in the unit the
@@ -32,6 +36,9 @@ type ContextPreviewRequest struct {
 type ContextPreview struct {
 	WindowTokens         int `json:"windowTokens"`
 	ReservedOutputTokens int `json:"reservedOutputTokens"`
+
+	// InstructionsBytes is the standing instructions: GoNavi's role prompt and the person's own.
+	InstructionsBytes int `json:"instructionsBytes"`
 
 	// WorkspaceBytes is the workspace snapshot as sent, without the items the person
 	// bound (BoundBytes: selections, quoted passages, table schemas).
@@ -77,7 +84,9 @@ func (h *AgentRunHarness) PreviewContext(ctx context.Context, request ContextPre
 	}
 
 	preview := ContextPreview{WindowTokens: request.ContextWindowTokens, ReservedOutputTokens: request.ReservedOutputTokens}
+	instructions := h.instructionsFor(ctx, InstructionsRequest{TaskKind: request.TaskKind.Normalize(), Provider: request.Provider, Workspace: snapshot})
 	built, err := h.contextBuilder.Build(ctx, ContextBuildRequest{
+		Instructions:         instructions,
 		Run:                  RunSnapshot{SessionID: request.SessionID},
 		Messages:             messages,
 		WorkspaceSnapshot:    snapshot,
@@ -100,7 +109,12 @@ func (h *AgentRunHarness) PreviewContext(ctx context.Context, request ContextPre
 
 	preview.WorkspaceTrimmed = built.Compression.WorkspaceTrimmed
 	preview.OmittedMessages = built.Compression.OmittedMessageCount
-	for index, message := range built.Request.Messages {
+	messages = built.Request.Messages
+	if built.Compression.InstructionsIncluded && len(messages) > 0 {
+		preview.InstructionsBytes = messageBytes(messages[0])
+		messages = messages[1:]
+	}
+	for index, message := range messages {
 		if index == 0 && built.Compression.WorkspaceIncluded {
 			total, bound := messageBytes(message), boundItemsBytes(message)
 			preview.WorkspaceBytes, preview.BoundBytes = total-bound, bound

@@ -378,6 +378,7 @@
   "ai_chat.context_ring.title": "Kontextnutzung",
   "ai_chat.context_ring.summary": "≈ {{used}} von {{budget}} ({{percent}} %)",
   "ai_chat.context_ring.window": "Kontextfenster {{window}}; ein Teil bleibt für die Antwort reserviert.",
+  "ai_chat.context_ring.segment.instructions": "Prompts (Rolle und eigene)",
   "ai_chat.context_ring.segment.workspace": "Arbeitsbereich",
   "ai_chat.context_ring.segment.bound": "Gebundener Kontext",
   "ai_chat.context_ring.segment.skills": "Skills",

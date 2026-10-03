@@ -4013,6 +4013,7 @@ export namespace runharness {
 	export class ContextPreview {
 	    windowTokens: number;
 	    reservedOutputTokens: number;
+	    instructionsBytes: number;
 	    workspaceBytes: number;
 	    boundBytes: number;
 	    userBytes: number;
@@ -4031,6 +4032,7 @@ export namespace runharness {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.windowTokens = source["windowTokens"];
 	        this.reservedOutputTokens = source["reservedOutputTokens"];
+	        this.instructionsBytes = source["instructionsBytes"];
 	        this.workspaceBytes = source["workspaceBytes"];
 	        this.boundBytes = source["boundBytes"];
 	        this.userBytes = source["userBytes"];

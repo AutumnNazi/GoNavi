@@ -43,6 +43,8 @@ func (s *Service) AIPreviewAgentContext(request runharness.AgentInputRequest) (r
 		ContextWindowTokens:     provider.ContextWindow,
 		ReservedOutputTokens:    provider.MaxTokens,
 		OmitImages:              provider.SupportsImages != nil && !*provider.SupportsImages,
+		Provider:                provider.ID,
+		TaskKind:                request.TaskKind,
 	})
 }
 

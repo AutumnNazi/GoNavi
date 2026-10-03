@@ -43,7 +43,9 @@ func (h *AgentRunHarness) buildModelContext(ctx context.Context, run RunSnapshot
 		omitImages = providerOmitsImages(stored)
 		binding = cloneProviderBinding(&stored)
 	}
+	instructions := h.instructionsFor(ctx, InstructionsRequest{TaskKind: run.TaskKind, Provider: run.Provider, Workspace: in.WorkspaceSnapshot})
 	built, buildErr := h.contextBuilder.Build(ctx, ContextBuildRequest{
+		Instructions:         instructions,
 		Run:                  run,
 		Messages:             in.Messages,
 		Tools:                in.Tools,

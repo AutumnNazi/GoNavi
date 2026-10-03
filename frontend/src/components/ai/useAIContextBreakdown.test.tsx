@@ -15,7 +15,7 @@ import type { AIContextBreakdown } from './aiContextBreakdown';
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const preview = (overrides: Partial<AgentContextPreview> = {}): AgentContextPreview => ({
-  windowTokens: 16_384, reservedOutputTokens: 2_048, workspaceBytes: 3_000, boundBytes: 0, userBytes: 0, assistantBytes: 0,
+  windowTokens: 16_384, reservedOutputTokens: 2_048, instructionsBytes: 0, workspaceBytes: 3_000, boundBytes: 0, userBytes: 0, assistantBytes: 0,
   toolBytes: 0, retainedMessages: 0, omittedMessages: 0, overflow: false, ...overrides,
 });
 
