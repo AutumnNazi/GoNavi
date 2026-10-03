@@ -11821,5 +11821,9 @@
   "db.backend.error.questdb_row_edit_unsupported": "QuestDB 沒有主鍵且不支援 DELETE，無法逐列編輯；請在 SQL 編輯器中用 INSERT / UPDATE 寫入",
   "sql_analysis.backend.warning.plan_columns_missing": "未識別到 {{name}} 執行計畫欄位，請查看原文",
   "sql_analysis.backend.warning.plan_nodes_missing": "未識別到 {{name}} 計畫運算子，請查看原文",
-  "sql_analysis.backend.warning.index_recommendation": "索引建議：{{sql}}"
+  "sql_analysis.backend.warning.index_recommendation": "索引建議：{{sql}}",
+  "connection_modal.step1.hint.greptimedb": "時序資料庫 / MySQL 協定",
+  "datasource.variant.greptimedb.v0": "0.x 預發布系列：SHOW TABLES 欄位名稱與系統表欄位隨版本變化",
+  "datasource.variant.greptimedb.v1": "1.x 正式版：檢視、Flow 與索引中繼資料穩定可用",
+  "db.backend.error.greptimedb_row_edit_unsupported": "GreptimeDB 不支援 UPDATE，無法逐列編輯；請在 SQL 編輯器中用 INSERT（相同主鍵與時間會覆寫舊列）或 DELETE 寫入"
 }

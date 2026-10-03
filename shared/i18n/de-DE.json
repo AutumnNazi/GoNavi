@@ -11821,5 +11821,9 @@
   "db.backend.error.questdb_row_edit_unsupported": "QuestDB hat keine Primärschlüssel und unterstützt kein DELETE, Zeilen können daher nicht im Raster bearbeitet werden; verwenden Sie INSERT / UPDATE im SQL-Editor",
   "sql_analysis.backend.warning.plan_columns_missing": "Keine {{name}}-Planspalten erkannt; siehe Rohausgabe",
   "sql_analysis.backend.warning.plan_nodes_missing": "Keine {{name}}-Planoperatoren erkannt; siehe Rohausgabe",
-  "sql_analysis.backend.warning.index_recommendation": "Indexempfehlung: {{sql}}"
+  "sql_analysis.backend.warning.index_recommendation": "Indexempfehlung: {{sql}}",
+  "connection_modal.step1.hint.greptimedb": "Zeitreihen / MySQL-Protokoll",
+  "datasource.variant.greptimedb.v0": "0.x-Vorabversionen: Spaltennamen von SHOW TABLES und Systemtabellenfelder ändern sich je nach Version",
+  "datasource.variant.greptimedb.v1": "1.x GA: Views, Flows und Indexmetadaten sind stabil",
+  "db.backend.error.greptimedb_row_edit_unsupported": "GreptimeDB unterstützt kein UPDATE, Zeilen können daher nicht im Raster bearbeitet werden; verwenden Sie INSERT (gleicher Schlüssel und Zeitstempel überschreibt) oder DELETE im SQL-Editor"
 }

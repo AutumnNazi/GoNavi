@@ -58,9 +58,16 @@ export const isDataSourceFamily = (value: unknown, family: string): boolean =>
 export const getDataSourceSpecByDialect = (dialect: unknown): DataSourceSpec | undefined =>
   specsByDialect.get(normalizeName(dialect));
 
-/** 描述表为某个方言声明的侧栏元数据查询（按顺序回退）；没有声明时返回空数组。 */
-export const listRegistryMetadataQueries = (dialect: unknown, kind: 'views'): string[] =>
-  getDataSourceSpecByDialect(dialect)?.ui?.metadataQueries?.[kind] ?? [];
+/**
+ * 描述表为某个方言声明的侧栏元数据查询（按顺序回退）；没有声明时返回空数组。
+ * 语句里的 {{database}} 替换为当前库名（按 SQL 字符串字面量转义）。
+ */
+export const listRegistryMetadataQueries = (dialect: unknown, kind: 'views', database = ''): string[] => {
+  const literal = String(database ?? '').replace(/'/g, "''");
+  return (getDataSourceSpecByDialect(dialect)?.ui?.metadataQueries?.[kind] ?? []).map((sql) =>
+    sql.split('{{database}}').join(literal),
+  );
+};
 
 /** 方言键所属的兼容家族；不是描述表方言时返回 undefined。 */
 export const getDataSourceDialectFamily = (dialect: unknown): string | undefined =>

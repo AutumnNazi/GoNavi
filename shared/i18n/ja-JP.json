@@ -11821,5 +11821,9 @@
   "db.backend.error.questdb_row_edit_unsupported": "QuestDB には主キーがなく DELETE も非対応のため、行単位では編集できません。SQL エディターで INSERT / UPDATE を使用してください",
   "sql_analysis.backend.warning.plan_columns_missing": "{{name}} の実行計画の列を認識できませんでした。原文を確認してください",
   "sql_analysis.backend.warning.plan_nodes_missing": "{{name}} の計画オペレーターを認識できませんでした。原文を確認してください",
-  "sql_analysis.backend.warning.index_recommendation": "インデックスの推奨：{{sql}}"
+  "sql_analysis.backend.warning.index_recommendation": "インデックスの推奨：{{sql}}",
+  "connection_modal.step1.hint.greptimedb": "時系列データベース / MySQL プロトコル",
+  "datasource.variant.greptimedb.v0": "0.x プレリリース系列。SHOW TABLES の列名やシステムテーブルの項目がバージョンで異なります",
+  "datasource.variant.greptimedb.v1": "1.x 正式版。ビュー、Flow、インデックスのメタデータが安定して利用可能",
+  "db.backend.error.greptimedb_row_edit_unsupported": "GreptimeDB は UPDATE に対応していないため行単位で編集できません。SQL エディターで INSERT（同じキーと時刻は上書き）または DELETE を使用してください"
 }

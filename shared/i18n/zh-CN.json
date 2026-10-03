@@ -11821,5 +11821,9 @@
   "db.backend.error.questdb_row_edit_unsupported": "QuestDB 没有主键且不支持 DELETE，无法按行编辑；请在 SQL 编辑器中用 INSERT / UPDATE 写入",
   "sql_analysis.backend.warning.plan_columns_missing": "未识别到 {{name}} 执行计划列，请查看原文",
   "sql_analysis.backend.warning.plan_nodes_missing": "未识别到 {{name}} 计划算子，请查看原文",
-  "sql_analysis.backend.warning.index_recommendation": "索引建议：{{sql}}"
+  "sql_analysis.backend.warning.index_recommendation": "索引建议：{{sql}}",
+  "connection_modal.step1.hint.greptimedb": "时序数据库 / MySQL 协议",
+  "datasource.variant.greptimedb.v0": "0.x 预发布系列：SHOW TABLES 列名与系统表字段随版本变化",
+  "datasource.variant.greptimedb.v1": "1.x 正式版：视图、Flow 与索引元数据稳定可用",
+  "db.backend.error.greptimedb_row_edit_unsupported": "GreptimeDB 不支持 UPDATE，无法按行编辑；请在 SQL 编辑器中用 INSERT（同主键与时间会覆盖旧行）或 DELETE 写入"
 }

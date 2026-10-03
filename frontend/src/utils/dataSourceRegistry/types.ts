@@ -57,7 +57,8 @@ export type DataSourceUISpec = {
   defaultUser?: string;
   // 侧栏不显示的对象分组（routines、triggers、events、sequences 等）：借用方言里有、该数据源没有的对象。
   hiddenObjectGroups?: string[];
-  // 侧栏元数据查询（未借用方言的数据源）：按顺序尝试，第一条成功的结果生效；views 需返回 view_name 列。
+  // 侧栏元数据查询（未借用方言的数据源）：按顺序尝试，第一条成功的结果生效；views 需返回 view_name 列，
+  // 语句里可用 {{database}} 引用当前库名。
   metadataQueries?: { views?: string[] };
   // 表别名语法：缺省 oracle 家族为 bare，其余为 as；非 SQL 查询语言用 none。
   tableAlias?: 'as' | 'bare' | 'none';

@@ -79,7 +79,7 @@ export const buildViewsMetadataQuerySpecs = (
         },
       ];
     default:
-      return listRegistryMetadataQueries(dialect, "views").map((sql) => ({ sql }));
+      return listRegistryMetadataQueries(dialect, "views", dbName).map((sql) => ({ sql }));
   }
 };
 

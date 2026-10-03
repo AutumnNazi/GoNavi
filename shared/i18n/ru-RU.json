@@ -11821,5 +11821,9 @@
   "db.backend.error.questdb_row_edit_unsupported": "В QuestDB нет первичных ключей и не поддерживается DELETE, поэтому строки нельзя редактировать в таблице; используйте INSERT / UPDATE в SQL-редакторе",
   "sql_analysis.backend.warning.plan_columns_missing": "Не удалось распознать столбцы плана {{name}}; см. исходный вывод",
   "sql_analysis.backend.warning.plan_nodes_missing": "Не удалось распознать операторы плана {{name}}; см. исходный вывод",
-  "sql_analysis.backend.warning.index_recommendation": "Рекомендация по индексу: {{sql}}"
+  "sql_analysis.backend.warning.index_recommendation": "Рекомендация по индексу: {{sql}}",
+  "connection_modal.step1.hint.greptimedb": "Временные ряды / протокол MySQL",
+  "datasource.variant.greptimedb.v0": "Предварительные версии 0.x: имена столбцов SHOW TABLES и поля системных таблиц зависят от версии",
+  "datasource.variant.greptimedb.v1": "1.x GA: представления, Flow и метаданные индексов стабильны",
+  "db.backend.error.greptimedb_row_edit_unsupported": "GreptimeDB не поддерживает UPDATE, поэтому строки нельзя редактировать в таблице; используйте INSERT (тот же ключ и время перезаписывают строку) или DELETE в SQL-редакторе"
 }

@@ -19,6 +19,8 @@ var registryExplainDialects = map[string]registryExplainDialect{
 	"kwdb":        {format: connection.ExplainFormatText, parse: parseCockroachExplain},
 	// QuestDB 的 EXPLAIN 是单列 QUERY PLAN 缩进文本。
 	"questdb": {format: connection.ExplainFormatText, parse: parseQuestDBExplain},
+	// GreptimeDB 的 EXPLAIN 是 plan_type / plan 两列，逻辑计划为 DataFusion 缩进文本。
+	"greptimedb": {format: connection.ExplainFormatTable, parse: parseGreptimeDBExplain},
 }
 
 // isRegistryExplainDialect 报告诊断入口是否支持该描述表类型的执行计划。
