@@ -3241,7 +3241,7 @@
   "app.settings.entry.theme.description": "Helles oder dunkles Theme wechseln und die Oberfläche anpassen.",
   "app.settings.entry.brand_icon.title": "Laufzeitsymbol ändern",
   "app.settings.entry.brand_icon.description": "Wähle das GoNavi-Maskottchen aus, das in der App angezeigt wird.",
-  "app.settings.entry.brand_icon.help": "Wähle ein Maskottchen für Titelleiste, Infofenster und Web-Favicon aus. macOS aktualisiert auch das Dock-Symbol; Windows aktualisiert geöffnete Fenster und Verknüpfungen zur aktuellen GoNavi-Datei; ein angeheftetes Taskleistensymbol wird beim nächsten App-Start aktualisiert. Unter Linux richtet sich das Taskleistensymbol weiterhin nach dem installierten Paket.",
+  "app.settings.entry.brand_icon.help": "Wähle ein Maskottchen für Titelleiste, Infofenster und Web-Favicon aus. macOS aktualisiert auch das Dock-Symbol; Windows aktualisiert geöffnete Fenster und Verknüpfungen zur aktuellen GoNavi-Datei; ein angeheftetes Taskleistensymbol zieht innerhalb von etwa 1,5 Sekunden nach, und wenn angeheftete Elemente existieren, zeichnen sich die Desktop-Symbole dabei einmal komplett neu. Unter Linux richtet sich das Taskleistensymbol weiterhin nach dem installierten Paket.",
   "app.settings.entry.brand_icon.applied": "Markensymbol aktualisiert",
   "app.settings.entry.brand_icon.asset_not_ready": "Remote-Symbolressourcen sind noch nicht bereit — das bisherige Symbol wurde beibehalten. Überprüfen Sie das Netzwerk und versuchen Sie es erneut, oder wählen Sie ein mitgeliefertes Maskottchen-Symbol.",
   "app.settings.entry.brand_icon.native_sync_failed": "Das System-Anwendungssymbol konnte nicht aktualisiert werden.",
