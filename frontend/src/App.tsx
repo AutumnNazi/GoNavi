@@ -319,6 +319,7 @@ import { canInheritNewQueryTableContext, resolveNewQueryContext } from './utils/
 import { useAppUtilityStyles } from './hooks/useAppUtilityStyles';
 import { useWorkbenchTabs } from './hooks/useWorkbenchTabs';
 import { useWorkbenchSessionRestore } from './hooks/useWorkbenchSessionRestore';
+import { discardApplicationQuitUnsavedSQLChanges } from './utils/sqlEditorQuitDiscard';
 import { useAIWorkspaceSnapshot } from './components/ai/useAIWorkspaceSnapshot';
 import { isWailsDevNativeContextMenu, shouldAllowNativeContextMenu } from './utils/nativeContextMenu';
 import AgentDataSettingsPanel from './components/ai/AgentDataSettingsPanel';
@@ -3402,7 +3403,7 @@ function App() {
                         onClick={() => {
                             destroyConfirm?.();
                             applicationQuitConfirmRef.current = null;
-                            void runConfirmedActionAndFinish();
+                            void discardApplicationQuitUnsavedSQLChanges().then(runConfirmedActionAndFinish);
                         }}
                       >
                           {t('app.quit.unsaved_sql.confirm_exit')}
@@ -3446,7 +3447,6 @@ function App() {
           applicationQuitConfirmRef.current = confirmRef;
       });
   }, [applicationQuitModalZIndex, ensureSavedQueriesLoaded, forceQuitApplication, resetApplicationQuitRequest, saveQuery, t]);
-
 
   const handleInstallUpdateRequest = useCallback(async () => {
       let pendingCloseInstanceCount: number | null = null;
