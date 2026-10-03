@@ -21,9 +21,11 @@ const normalizeName = (value: unknown): string => String(value ?? '').trim().toL
 
 const specsByCanonicalType = new Map<string, DataSourceSpec>();
 const canonicalByName = new Map<string, string>();
+const specsByDialect = new Map<string, DataSourceSpec>();
 
 for (const spec of registrySpecs) {
   specsByCanonicalType.set(spec.type, spec);
+  specsByDialect.set(spec.dialect, spec);
   for (const name of [spec.type, ...(spec.aliases ?? [])]) {
     canonicalByName.set(normalizeName(name), spec.type);
   }
@@ -51,6 +53,14 @@ export const isRegistryDataSource = (value: unknown): boolean => resolveDataSour
 /** 判断描述表类型是否声明了某个兼容家族（mysql、postgres、oracle、sqlite 等）。 */
 export const isDataSourceFamily = (value: unknown, family: string): boolean =>
   getDataSourceSpec(value)?.family === family;
+
+/** 按编辑器方言键查找描述（resolveSqlDialect 对描述表类型返回 spec.dialect）。 */
+export const getDataSourceSpecByDialect = (dialect: unknown): DataSourceSpec | undefined =>
+  specsByDialect.get(normalizeName(dialect));
+
+/** 方言键所属的兼容家族；不是描述表方言时返回 undefined。 */
+export const getDataSourceDialectFamily = (dialect: unknown): string | undefined =>
+  getDataSourceSpecByDialect(dialect)?.family;
 
 export const listDataSourceSpecsInGroup = (group: DataSourceCatalogGroup): DataSourceSpec[] =>
   registrySpecs.filter((spec) => spec.group === group);

@@ -1,3 +1,4 @@
+import { buildRegistryPaginatedSelectSQL, resolveRegistryQuoting } from './dataSourceRegistry/sqlBehavior';
 import { splitQualifiedNameSegments, stripIdentifierQuotes } from './qualifiedName';
 
 export type FilterValueSelection = {
@@ -35,13 +36,14 @@ export const quoteIdentPart = (dbType: string, ident: string) => {
   const raw = normalizeIdentPart(ident);
   if (!raw) return raw;
   const dbTypeLower = (dbType || '').toLowerCase();
+  const registryQuoting = resolveRegistryQuoting(dbTypeLower);
 
-  if (dbTypeLower === 'mysql' || dbTypeLower === 'goldendb' || dbTypeLower === 'mariadb' || dbTypeLower === 'oceanbase' || dbTypeLower === 'diros' || dbTypeLower === 'starrocks' || dbTypeLower === 'sphinx' || dbTypeLower === 'tdengine' || dbTypeLower === 'iotdb' || dbTypeLower === 'clickhouse') {
+  if (registryQuoting === 'backtick' || dbTypeLower === 'mysql' || dbTypeLower === 'goldendb' || dbTypeLower === 'mariadb' || dbTypeLower === 'oceanbase' || dbTypeLower === 'diros' || dbTypeLower === 'starrocks' || dbTypeLower === 'sphinx' || dbTypeLower === 'tdengine' || dbTypeLower === 'iotdb' || dbTypeLower === 'clickhouse') {
     return `\`${raw.replace(/`/g, '``')}\``;
   }
 
   // 对于 KingBase/PostgreSQL，只在必要时加引号
-  if (dbTypeLower === 'kingbase' || dbTypeLower === 'postgres' || dbTypeLower === 'opengauss' || dbTypeLower === 'gaussdb') {
+  if (registryQuoting === 'pg' || dbTypeLower === 'kingbase' || dbTypeLower === 'postgres' || dbTypeLower === 'opengauss' || dbTypeLower === 'gaussdb') {
     if (needsQuote(raw)) {
       return `"${raw.replace(/"/g, '""')}"`;
     }
@@ -50,7 +52,7 @@ export const quoteIdentPart = (dbType: string, ident: string) => {
   }
 
   // SQL Server 使用 [bracket] 标识符
-  if (dbTypeLower === 'sqlserver' || dbTypeLower === 'mssql') {
+  if (registryQuoting === 'bracket' || dbTypeLower === 'sqlserver' || dbTypeLower === 'mssql') {
     return `[${raw.replace(/]/g, ']]')}]`;
   }
 
@@ -341,6 +343,8 @@ export const buildPaginatedSelectSQL = (
   if (!base || safeLimit <= 0) {
     return `${base}${orderBy}`;
   }
+  const registrySql = buildRegistryPaginatedSelectSQL(normalizedType, base, orderBy, safeLimit, safeOffset);
+  if (registrySql !== undefined) return registrySql;
 
   switch (normalizedType) {
     case 'oracle': {

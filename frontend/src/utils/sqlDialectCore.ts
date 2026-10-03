@@ -1,3 +1,4 @@
+import { getDataSourceDialectFamily, getDataSourceSpec, getDataSourceSpecByDialect } from './dataSourceRegistry';
 import { resolveOceanBaseProtocolForDialect } from './oceanBaseProtocol';
 import { splitQualifiedNameSegmentsDetailed, splitQualifiedNameSegments } from './qualifiedName';
 
@@ -65,6 +66,8 @@ export const resolveSqlDialect = (
   if (source === 'oceanbase' && normalizeOceanBaseSqlProtocol(options?.oceanBaseProtocol) === 'oracle') {
     return 'oracle';
   }
+  const registrySpec = getDataSourceSpec(source);
+  if (registrySpec) return registrySpec.dialect;
 
   switch (source) {
     case 'postgresql':
@@ -223,14 +226,17 @@ export const resolveSqlDialect = (
 
 export const isMysqlFamilyDialect = (dbType: string): boolean => (
   ['mysql', 'mariadb', 'oceanbase', 'diros', 'starrocks', 'sphinx', 'tidb'].includes(resolveSqlDialect(dbType))
+  || getDataSourceDialectFamily(resolveSqlDialect(dbType)) === 'mysql'
 );
 
 export const isPgLikeDialect = (dbType: string): boolean => (
   ['postgres', 'kingbase', 'highgo', 'vastbase', 'opengauss', 'gaussdb'].includes(resolveSqlDialect(dbType))
+  || getDataSourceDialectFamily(resolveSqlDialect(dbType)) === 'postgres'
 );
 
 export const isOracleLikeDialect = (dbType: string): boolean => (
   ['oracle', 'dameng', 'dm'].includes(resolveSqlDialect(dbType))
+  || getDataSourceDialectFamily(resolveSqlDialect(dbType)) === 'oracle'
 );
 
 export const isSqlServerDialect = (dbType: string): boolean => resolveSqlDialect(dbType) === 'sqlserver';
@@ -248,6 +254,10 @@ export const resolveTableAliasSyntax = (dbType: string): TableAliasSyntax => {
   }
   if (['oracle', 'dameng', 'sphinx', 'iris'].includes(dialect)) {
     return 'bare';
+  }
+  const registrySpec = getDataSourceSpecByDialect(dialect);
+  if (registrySpec) {
+    return registrySpec.ui?.tableAlias ?? (registrySpec.family === 'oracle' ? 'bare' : 'as');
   }
   return 'none';
 };
