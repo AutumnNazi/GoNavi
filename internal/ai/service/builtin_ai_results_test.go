@@ -106,3 +106,35 @@ func (p *tableRecordingProvider) Chat(_ context.Context, req ai.ChatRequest) (*a
 	p.request = req
 	return &ai.ChatResponse{Content: p.answer}, nil
 }
+
+// Regression (2026-10-03): the preview showed register_date as 2021-05-19T00:00:00Z and created_at
+// as 2026-08-31T08:00:41.460282Z, where GoNavi's result grid shows the date and the time.
+func TestDatesAndTimesAreShownAsTheResultGridShowsThem(t *testing.T) {
+	for in, want := range map[string]string{
+		"2021-05-19T00:00:00Z":        "2021-05-19",
+		"2026-08-31T08:00:41.460282Z": "2026-08-31 08:00:41.460282",
+		"2026-08-31T08:00:41Z":        "2026-08-31 08:00:41",
+		"2026-08-31T00:00:00.5Z":      "2026-08-31 00:00:00.5",
+		"2026-08-31T08:00:41+08:00":   "2026-08-31 08:00:41+08:00",
+		"2026-08-31T00:00:00+08:00":   "2026-08-31 00:00:00+08:00",
+		"2026-08-31T08:00:41.1+00:00": "2026-08-31 08:00:41.1",
+		"2026-08-31":                  "2026-08-31",
+		"会议 2026-08-31T08:00:41Z":     "会议 2026-08-31T08:00:41Z",
+		"0000-00-00T00:00:00Z extra":  "0000-00-00T00:00:00Z extra",
+	} {
+		if got := readableTimestamp(in); got != want {
+			t.Errorf("%q: got %q, want %q", in, got, want)
+		}
+	}
+	encoded, _ := json.Marshal(map[string]any{"results": []any{map[string]any{
+		"columns": []string{"register_date", "created_at"}, "rowCount": 1,
+		"rows": []any{map[string]any{"register_date": "2021-05-19T00:00:00Z", "created_at": "2026-08-31T08:00:41.460282Z"}},
+	}}})
+	preview := builtinAIResultPreview([]ai.Message{{Role: "tool", Content: string(encoded)}}, previewHeading)
+	if !strings.HasSuffix(preview, "| 2021-05-19 | 2026-08-31 08:00:41.460282 |") {
+		t.Fatalf("got:\n%s", preview)
+	}
+	if compact := compactBuiltinAIToolResult(string(encoded)); !strings.Contains(compact, `"created_at":"2026-08-31 08:00:41.460282"`) || !strings.Contains(compact, `"register_date":"2021-05-19"`) {
+		t.Fatalf("the model reads them the same way: %s", compact)
+	}
+}

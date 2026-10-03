@@ -277,9 +277,24 @@ func compactBuiltinAIToolResult(content string) string {
 		if !ok {
 			continue
 		}
-		if rows, ok := set["rows"].([]any); ok && len(rows) > builtinAIToolRows {
-			set["rows"] = rows[:builtinAIToolRows]
+		rows, ok := set["rows"].([]any)
+		if !ok {
+			continue
+		}
+		if len(rows) > builtinAIToolRows {
+			rows = rows[:builtinAIToolRows]
+			set["rows"] = rows
 			set["shownRows"] = builtinAIToolRows
+		}
+		// Dates as people write them (and as the person sees them), in fewer tokens.
+		for _, raw := range rows {
+			if row, ok := raw.(map[string]any); ok {
+				for column, value := range row {
+					if text, ok := value.(string); ok {
+						row[column] = readableTimestamp(text)
+					}
+				}
+			}
 		}
 	}
 	for _, key := range []string{"queryId", "requestId", "statements", "statementCount"} {

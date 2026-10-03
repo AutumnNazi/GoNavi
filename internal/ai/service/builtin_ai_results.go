@@ -3,6 +3,7 @@ package aiservice
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -74,7 +75,7 @@ func previewCell(value any) string {
 	case nil:
 		text = "NULL"
 	case string:
-		text = v
+		text = readableTimestamp(v)
 	default:
 		text = fmt.Sprint(v)
 	}
@@ -88,4 +89,26 @@ func previewCell(value any) string {
 // showsTable reports whether an answer already shows a markdown table.
 func showsTable(text string) bool {
 	return strings.Contains(text, "|---") || strings.Contains(text, "| ---") || strings.Contains(text, "|:--")
+}
+
+// timestampPattern is a date and time as Go writes it in JSON: "2026-08-31T08:00:41.460282Z".
+var timestampPattern = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$`)
+
+// readableTimestamp shows a date and time the way GoNavi's result grid does: "2026-08-31
+// 08:00:41.460282", not "2026-08-31T08:00:41.460282Z". The Z is the driver's label on a value
+// stored without a time zone, which is the wall-clock time as stored; any other offset is kept. A
+// value at midnight with no fraction (a DATE column, such as register_date) is shown as the date.
+func readableTimestamp(text string) string {
+	match := timestampPattern.FindStringSubmatch(text)
+	if match == nil {
+		return text
+	}
+	date, clock, fraction, zone := match[1], match[2], match[3], match[4]
+	if zone == "Z" || zone == "+00:00" || zone == "+0000" {
+		zone = ""
+	}
+	if clock == "00:00:00" && fraction == "" && zone == "" {
+		return date
+	}
+	return date + " " + clock + fraction + zone
 }
