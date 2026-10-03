@@ -2418,6 +2418,7 @@ export namespace connection {
 	    uri?: string;
 	    clickHouseProtocol?: string;
 	    oceanBaseProtocol?: string;
+	    driverVariant?: string;
 	    hosts?: string[];
 	    topology?: string;
 	    mysqlReplicaUser?: string;
@@ -2473,6 +2474,7 @@ export namespace connection {
 	        this.uri = source["uri"];
 	        this.clickHouseProtocol = source["clickHouseProtocol"];
 	        this.oceanBaseProtocol = source["oceanBaseProtocol"];
+	        this.driverVariant = source["driverVariant"];
 	        this.hosts = source["hosts"];
 	        this.topology = source["topology"];
 	        this.mysqlReplicaUser = source["mysqlReplicaUser"];
