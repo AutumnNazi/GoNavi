@@ -59,6 +59,11 @@
       "tidb",
       "mysql"
     ],
+    "hiddenObjectGroups": [
+      "routines",
+      "triggers",
+      "events"
+    ],
     "ssl": true,
     "sslCAPath": true,
     "sslClientCert": true,

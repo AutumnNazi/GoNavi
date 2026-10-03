@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { SavedConnection } from '../../types';
 import { resolveSidebarMetadataDialect } from '../../utils/sidebarMetadata';
 import { getSidebarTableDisplayName } from './sidebarMetadataBasics';
+import { filterRegistryObjectGroups } from './sidebarRegistryObjectGroups';
 import {
   buildFunctionsMetadataQuerySpecs,
   buildSchemasMetadataQuerySpecs,
@@ -12,6 +13,17 @@ import {
 const connectionOf = (type: string) => ({ config: { type } }) as unknown as SavedConnection;
 
 describe('sidebar metadata queries for registry data sources', () => {
+  it('hides object groups a registry data source does not support', () => {
+    const groups = ['tables', 'views', 'routines', 'triggers', 'events'].map((groupKey) => ({
+      key: groupKey,
+      title: groupKey,
+      dataRef: { groupKey },
+    }));
+    expect(filterRegistryObjectGroups(connectionOf('tidb'), groups).map((group) => group.key)).toEqual(['tables', 'views']);
+    expect(filterRegistryObjectGroups(connectionOf('cockroachdb'), groups)).toHaveLength(5);
+    expect(filterRegistryObjectGroups(connectionOf('mysql'), groups)).toHaveLength(5);
+  });
+
   it('groups PostgreSQL-family registry tables by schema like PostgreSQL', () => {
     expect(getSidebarTableDisplayName(connectionOf('cockroachdb'), 'public.customers')).toBe('customers');
     expect(getSidebarTableDisplayName(connectionOf('kwdb'), 'public.sensors')).toBe('sensors');

@@ -22,6 +22,7 @@ import {
 import type { SidebarLoadedTableEntry, SidebarTreeLoadOptions } from './sidebarTreeLoaderHelpers';
 import { GnFieldsIcon, GnIndexIcon, GnLinkIcon, GnFolderOpenIcon } from '../icons/gnIcons';
 import { renderSidebarObjectIcon } from './sidebarObjectIcons';
+import { filterRegistryObjectGroups } from './sidebarRegistryObjectGroups';
 import {
   createSidebarObjectGroupBuilder, buildOracleDatabaseLinkGroup,
 } from './sidebarObjectGroup';
@@ -565,7 +566,7 @@ export const createSidebarDatabaseChildrenBuilder = ({
           const schemaIdentity = `${bucket.schemaName.length}:${bucket.schemaName}`;
           const schemaNodeKey = `${key}-schema-${encodeURIComponent(schemaIdentity)}`;
           const schemaTitle = bucket.schemaName || t('sidebar.tree.default_schema');
-              const groupedNodes: TreeNode[] = [
+              const groupedNodes: TreeNode[] = filterRegistryObjectGroups(conn as SavedConnection, [
                   buildObjectGroup(schemaNodeKey, 'tables', t('sidebar.object_group.tables'), renderSidebarObjectIcon('table'), bucket.tables, { schemaName: bucket.schemaName }),
                   buildObjectGroup(schemaNodeKey, 'views', t('sidebar.object_group.views'), renderSidebarObjectIcon('view'), bucket.views, { schemaName: bucket.schemaName }),
                   ...(includeMaterializedViews ? [buildObjectGroup(schemaNodeKey, 'materializedViews', t('sidebar.object_group.materialized_views'), renderSidebarObjectIcon('materializedView'), bucket.materializedViews, { schemaName: bucket.schemaName })] : []),
@@ -575,7 +576,7 @@ export const createSidebarDatabaseChildrenBuilder = ({
                   buildObjectGroup(schemaNodeKey, 'triggers', t('sidebar.object_group.triggers'), renderSidebarObjectIcon('trigger'), bucket.triggers, { schemaName: bucket.schemaName }),
                   ...(includeEvents ? [buildObjectGroup(schemaNodeKey, 'events', t('sidebar.object_group.events'), renderSidebarObjectIcon('event'), bucket.events, { schemaName: bucket.schemaName })] : []),
                   ...(dialect === 'oracle' ? [buildOracleDatabaseLinkGroup(objectGroupConnection, schemaNodeKey, t('sidebar.object_group.database_links'), bucket.databaseLinks, bucket.schemaName)] : []),
-              ];
+              ]);
 
               return {
                   title: schemaTitle,
@@ -595,7 +596,7 @@ export const createSidebarDatabaseChildrenBuilder = ({
       const includeOracleObjects = dialect === 'oracle' || dialect === 'dm';
       const includeSequences = supportsDatabaseSequences(conn as SavedConnection);
       const includeEvents = supportsDatabaseEvents(conn as SavedConnection);
-      const groupedNodes: TreeNode[] = [
+      const groupedNodes: TreeNode[] = filterRegistryObjectGroups(conn as SavedConnection, [
           buildObjectGroup(key as string, 'tables', t('sidebar.object_group.tables'), renderSidebarObjectIcon('table'), sortedTableEntries.map(buildTableNode)),
           buildObjectGroup(key as string, 'views', t('sidebar.object_group.views'), renderSidebarObjectIcon('view'), viewEntries.map(buildViewNode)),
           ...(includeMaterializedViews ? [buildObjectGroup(key as string, 'materializedViews', t('sidebar.object_group.materialized_views'), renderSidebarObjectIcon('materializedView'), materializedViewEntries.map(buildMaterializedViewNode))] : []),
@@ -605,7 +606,7 @@ export const createSidebarDatabaseChildrenBuilder = ({
           buildObjectGroup(key as string, 'triggers', t('sidebar.object_group.triggers'), renderSidebarObjectIcon('trigger'), triggerEntries.map(buildTriggerNode)),
           ...(includeEvents ? [buildObjectGroup(key as string, 'events', t('sidebar.object_group.events'), renderSidebarObjectIcon('event'), eventEntries.map(buildEventNode))] : []),
           ...(dialect === 'oracle' ? [buildOracleDatabaseLinkGroup(objectGroupConnection, key as string, t('sidebar.object_group.database_links'), databaseLinkEntries)] : []),
-      ];
+      ]);
 
       renderedDatabaseChildren = [queriesNode, ...groupedNodes];
   }
