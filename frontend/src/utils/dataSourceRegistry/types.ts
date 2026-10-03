@@ -55,11 +55,22 @@ export type DataSourceUISpec = {
   formatDdl?: boolean;
   // 新建连接时预填的用户名（缺省 root）。
   defaultUser?: string;
+  // 侧栏、对象列表与导出不显示的 schema 前缀（扩展的内部 schema，如 TimescaleDB 的 _timescaledb_ / timescaledb_）。
+  hiddenSchemaPrefixes?: string[];
+  // 函数列表不含 CREATE EXTENSION 带入的函数（TimescaleDB 在 public 下装了上百个 time_bucket 等函数）。
+  hideExtensionRoutines?: boolean;
+  // PostgreSQL 系表统计表达式（行数 / 总大小 / 索引大小），按顺序取第一条服务端版本区间匹配的项，带区间的项只在
+  // 版本已知时匹配，都不匹配时用 PostgreSQL 默认表达式；{{oid}} 是表的 pg_class.oid，{{reltuples}} 是默认行数估计。
+  tableStats?: Array<{ minServer?: string; maxServer?: string; rows?: string; size?: string; indexSize?: string }>;
   // 侧栏不显示的对象分组（routines、triggers、events、sequences 等）：借用方言里有、该数据源没有的对象。
   hiddenObjectGroups?: string[];
-  // 侧栏元数据查询（未借用方言的数据源）：按顺序尝试，第一条成功的结果生效；views 需返回 view_name 列，
-  // 语句里可用 {{database}} 引用当前库名。
-  metadataQueries?: { views?: string[] };
+  // 侧栏元数据查询（未借用方言的数据源）：views 按顺序尝试，第一条成功的结果生效，需返回 view_name 列；
+  // tableStatus 是侧栏表状态与对象概览共用的整条查询（table_name、table_comment、table_rows、data_length、
+  // index_length 等列），按服务端版本区间取第一条匹配项。语句里可用 {{database}} 引用当前库名。
+  metadataQueries?: {
+    views?: string[];
+    tableStatus?: Array<{ minServer?: string; maxServer?: string; sql: string }>;
+  };
   // 表别名语法：缺省 oracle 家族为 bare，其余为 as；非 SQL 查询语言用 none。
   tableAlias?: 'as' | 'bare' | 'none';
   // 数据浏览分页语法：缺省 LIMIT n OFFSET m。

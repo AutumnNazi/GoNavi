@@ -1,4 +1,4 @@
-//go:build gonavi_full_drivers || gonavi_cockroachdb_driver || gonavi_kwdb_driver || gonavi_questdb_driver || gonavi_greptimedb_driver
+//go:build gonavi_full_drivers || gonavi_cockroachdb_driver || gonavi_kwdb_driver || gonavi_questdb_driver || gonavi_greptimedb_driver || gonavi_timescaledb_driver
 
 package db
 

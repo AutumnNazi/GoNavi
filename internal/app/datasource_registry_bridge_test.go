@@ -127,3 +127,12 @@ func TestRegistryPostgresWireReadQueriesAvoidNativeMultiResult(t *testing.T) {
 		t.Fatal("TiDB reuses the MySQL driver and keeps native multi-result batches")
 	}
 }
+
+func TestRegistryExplainFallsBackToBorrowedDialect(t *testing.T) {
+	cases := map[string]string{"tidb": "tidb", "cockroachdb": "cockroachdb", "questdb": "questdb", "timescaledb": "postgres"}
+	for dbType, want := range cases {
+		if got := resolveExplainDBType(connection.ConnectionConfig{Type: dbType}); got != want {
+			t.Fatalf("resolveExplainDBType(%s) = %s, want %s", dbType, got, want)
+		}
+	}
+}

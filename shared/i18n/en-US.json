@@ -11825,5 +11825,9 @@
   "connection_modal.step1.hint.greptimedb": "Time-series / MySQL wire",
   "datasource.variant.greptimedb.v0": "0.x pre-releases: SHOW TABLES column names and system table fields vary by version",
   "datasource.variant.greptimedb.v1": "1.x GA: views, flows and index metadata are stable",
-  "db.backend.error.greptimedb_row_edit_unsupported": "GreptimeDB does not support UPDATE, so rows cannot be edited in the grid; use INSERT (same key and timestamp overwrites the row) or DELETE in the SQL editor"
+  "db.backend.error.greptimedb_row_edit_unsupported": "GreptimeDB does not support UPDATE, so rows cannot be edited in the grid; use INSERT (same key and timestamp overwrites the row) or DELETE in the SQL editor",
+  "connection_modal.step1.hint.timescaledb": "PostgreSQL + time-series extension",
+  "datasource.variant.timescaledb.v1": "Hypertable metadata lives in _timescaledb_catalog; continuous aggregates use CREATE VIEW ... WITH (timescaledb.continuous)",
+  "datasource.variant.timescaledb.v2": "timescaledb_information views; create_hypertable(table, time_column, chunk_time_interval => ...) syntax",
+  "datasource.variant.timescaledb.v213": "by_range / by_hash dimension builders and the newer compression (columnstore) settings are available"
 }

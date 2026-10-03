@@ -1332,6 +1332,7 @@
                                                      }
                  },
     "drivers":  {
+                    "timescaledb":  "sql-postgres",
                     "greptimedb":  "sql-greptimedb",
                     "questdb":  "sql-questdb",
                     "kwdb":  "sql-postgres-wire",

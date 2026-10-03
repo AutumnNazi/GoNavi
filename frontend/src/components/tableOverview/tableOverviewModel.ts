@@ -3,7 +3,8 @@ import type {
     TableOverviewSortField,
     TableOverviewSortOrder,
 } from '../../utils/tableOverviewFilter';
-import { normalizeOceanBaseProtocol } from '../../utils/oceanBaseProtocol';
+import { resolveObjectMetadataDialect } from '../../utils/objectMetadataDialect';
+import { resolvePgTableStatsSql, resolveRegistryTableStatusSql } from '../../utils/dataSourceRegistry/tableStats';
 import { extractTableNameFromMetadataRow } from '../../utils/tableMetadataRows';
 import { stripSchemaFromTabObjectLabel } from '../../utils/tabDisplay';
 
@@ -94,22 +95,8 @@ export const isOverviewTablePinned = (
     return !!key && pinnedKeys.includes(key);
 };
 
-export const getMetadataDialect = (connType: string, driver?: string, oceanBaseProtocol?: string): string => {
-    const type = (connType || '').trim().toLowerCase();
-    if (type === 'custom') {
-        const d = (driver || '').trim().toLowerCase();
-        if (d === 'diros' || d === 'doris') return 'mysql';
-        if (d === 'goldendb' || d === 'greatdb' || d === 'gdb') return 'mysql';
-        if (d === 'oceanbase') return normalizeOceanBaseProtocol(oceanBaseProtocol) === 'oracle' ? 'oracle' : 'mysql';
-        if (d === 'opengauss' || d === 'open_gauss' || d === 'open-gauss') return 'opengauss';
-        if (d === 'gaussdb' || d === 'gauss_db' || d === 'gauss-db') return 'gaussdb';
-        return d;
-    }
-    if (type === 'oceanbase' && normalizeOceanBaseProtocol(oceanBaseProtocol) === 'oracle') return 'oracle';
-    if (type === 'goldendb' || type === 'mariadb' || type === 'oceanbase' || type === 'diros' || type === 'sphinx') return 'mysql';
-    if (type === 'dameng') return 'dm';
-    return type;
-};
+// 与定义查看器共用的方言归类（描述表数据源按借用方言或兼容家族查）。
+export const getMetadataDialect = resolveObjectMetadataDialect;
 
 export const isSchemaScopedTableOverviewDialect = (dialect: string): boolean => [
     'postgres',
@@ -126,7 +113,7 @@ export const getTableOverviewDisplayName = (dialect: string, tableName: string):
     return stripSchemaFromTabObjectLabel(rawName) || rawName;
 };
 
-export const buildTableStatusSQL = (dialect: string, dbName: string, schemaName?: string): string => {
+export const buildTableStatusSQL = (dialect: string, dbName: string, schemaName?: string, connType?: string, serverVersion?: string): string => {
         const escapeLiteral = (s: string) => s.replace(/'/g, "''");
         const iotdbDevicePattern = (name: string) => {
             const normalized = String(name || '').trim().replace(/[`"]/g, '');
@@ -157,13 +144,14 @@ ORDER BY table_name`;
         case 'opengauss':
         case 'gaussdb': {
             const schema = schemaName || 'public';
+            const stats = resolvePgTableStatsSql(connType, serverVersion);
             return `
 SELECT
     n.nspname || '.' || c.relname AS table_name,
     obj_description(c.oid, 'pg_class') AS table_comment,
-    c.reltuples::bigint AS table_rows,
-    pg_total_relation_size(c.oid) AS data_length,
-    pg_indexes_size(c.oid) AS index_length
+    ${stats.rows} AS table_rows,
+    ${stats.size} AS data_length,
+    ${stats.indexSize} AS index_length
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind = 'r'
@@ -200,7 +188,7 @@ ORDER BY s.name, t.name`;
             return `SELECT table_name, comments AS table_comment, num_rows AS table_rows, NULL AS data_length, NULL AS index_length FROM all_tab_comments JOIN all_tables USING (table_name, owner) WHERE owner = '${escapeLiteral(owner)}' ORDER BY table_name`;
         }
         default:
-            return `SELECT table_name, '' AS table_comment, 0 AS table_rows, NULL AS data_length, NULL AS index_length FROM information_schema.tables WHERE table_schema = '${escapeLiteral(dbName)}' AND table_type = 'BASE TABLE' ORDER BY table_name`;
+            return resolveRegistryTableStatusSql(connType, dbName, serverVersion) || `SELECT table_name, '' AS table_comment, 0 AS table_rows, NULL AS data_length, NULL AS index_length FROM information_schema.tables WHERE table_schema = '${escapeLiteral(dbName)}' AND table_type = 'BASE TABLE' ORDER BY table_name`;
     }
 };
 

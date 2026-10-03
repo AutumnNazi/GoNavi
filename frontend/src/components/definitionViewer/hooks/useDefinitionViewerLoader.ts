@@ -8,6 +8,7 @@ import { buildRpcConnectionConfig } from '../../../utils/connectionRpcConfig';
 import { buildDisplayDefinitionSql } from '../definitionViewerSql';
 import { formatDdlForDisplay } from '../../../utils/ddlFormat';
 import { resolveDefinitionViewerObjectMeta } from '../../definitionViewerObjectMeta';
+import { usesBackendViewDefinition } from '../../definitionViewerDialect';
 import type { DefinitionViewerStateApi } from './useDefinitionViewerState';
 import type { DefinitionViewerProps } from '../../DefinitionViewer';
 
@@ -274,7 +275,7 @@ export const useDefinitionViewerLoader = ({
           resolvedObjectName = routineName;
       }
 
-      if (!queries.length || String(queries[0] || '').startsWith('--')) {
+      if ((!queries.length || String(queries[0] || '').startsWith('--')) && !(tab.type === 'view-def' && usesBackendViewDefinition(conn, dialect))) {
           return {
               success: true,
               definition: String(
@@ -293,7 +294,7 @@ export const useDefinitionViewerLoader = ({
               ssh: conn.config.ssh || { host: '', port: 22, user: '', password: '', keyPath: '' }
           };
 
-          if (tab.type === 'view-def' && dialect === 'oracle') {
+          if (tab.type === 'view-def' && usesBackendViewDefinition(conn, dialect)) {
               const result = await DBShowCreateTable(
                   buildRpcConnectionConfig(config) as any,
                   dbName,

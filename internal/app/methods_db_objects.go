@@ -82,7 +82,7 @@ func (a *App) DBGetObjects(config connection.ConnectionConfig, dbName string) co
 		partial := len(failedObjectTypes) > 0
 		result := connection.QueryResult{
 			Success:           true,
-			Data:              dedupeSortDatabaseObjects(objects, databaseObjectIdentifiersAreCaseSensitive(dbType)),
+			Data:              dedupeSortDatabaseObjects(filterRegistryHiddenObjects(runConfig.Type, objects), databaseObjectIdentifiersAreCaseSensitive(dbType)),
 			Partial:           partial,
 			Warnings:          warnings,
 			FailedObjectTypes: failedObjectTypes,
@@ -109,7 +109,11 @@ func (a *App) DBGetObjects(config connection.ConnectionConfig, dbName string) co
 	appendMetadataObjects("materialized_view", metadataObjects, metadataErr)
 	metadataObjects, metadataErr = listObjectsByQueries(dbInst, runConfig, dbName, "trigger", buildObjectTriggerMetadataQueries(dbType, dbName))
 	appendMetadataObjects("trigger", metadataObjects, metadataErr)
-	metadataObjects, metadataErr = listRoutineObjects(dbInst, runConfig, dbName, buildObjectRoutineMetadataQueries(dbType, dbName))
+	routineSpecs := buildObjectRoutineMetadataQueries(dbType, dbName)
+	if registryHidesExtensionRoutines(runConfig.Type) {
+		routineSpecs = pgObjectRoutineQueries(pgNotExtensionProcFilter, pgNotExtensionRoutineFilter)
+	}
+	metadataObjects, metadataErr = listRoutineObjects(dbInst, runConfig, dbName, routineSpecs)
 	appendMetadataObjects("routine", metadataObjects, metadataErr)
 	metadataObjects, metadataErr = listObjectsByQueries(dbInst, runConfig, dbName, "sequence", buildObjectSequenceMetadataQueries(dbType, dbName))
 	appendMetadataObjects("sequence", metadataObjects, metadataErr)
@@ -187,6 +191,22 @@ func buildNamedObjects(dbName string, objectType string, names []string) []conne
 		})
 	}
 	return objects
+}
+
+// 排除 CREATE EXTENSION 带入的函数：pg_proc 查询按 oid 关联 pg_depend，information_schema 回退查询按 specific_name（proname_oid）关联。
+const (
+	pgNotExtensionProcFilter    = ` AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e')`
+	pgNotExtensionRoutineFilter = ` AND NOT EXISTS (SELECT 1 FROM pg_depend d JOIN pg_proc p ON p.oid = d.objid WHERE d.classid = 'pg_proc'::regclass AND d.deptype = 'e' AND r.specific_name = p.proname || '_' || p.oid)`
+)
+
+// pgObjectRoutineQueries 返回 PostgreSQL 系的函数/过程列表查询；procFilter 与 routineFilter 追加在
+// pg_proc 查询与 information_schema.routines 查询的 WHERE 末尾。
+func pgObjectRoutineQueries(procFilter, routineFilter string) []objectMetadataQuerySpec {
+	return []objectMetadataQuerySpec{
+		{sql: `SELECT n.nspname AS schema_name, p.proname AS routine_name, CASE WHEN p.prokind = 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END AS routine_type FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg|_%' ESCAPE '|'` + procFilter + ` ORDER BY n.nspname, routine_type, p.proname`},
+		{sql: `SELECT r.routine_schema AS schema_name, r.routine_name AS routine_name, COALESCE(NULLIF(UPPER(r.routine_type), ''), 'FUNCTION') AS routine_type FROM information_schema.routines r WHERE r.routine_schema NOT IN ('pg_catalog', 'information_schema') AND r.routine_schema NOT LIKE 'pg|_%' ESCAPE '|'` + routineFilter + ` ORDER BY r.routine_schema, routine_type, r.routine_name`},
+		{sql: `SELECT n.nspname AS schema_name, p.proname AS routine_name, 'FUNCTION' AS routine_type FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg|_%' ESCAPE '|'` + procFilter + ` ORDER BY n.nspname, p.proname`},
+	}
 }
 
 func listObjectsByQueries(dbInst db.Database, config connection.ConnectionConfig, dbName string, objectType string, specs []objectMetadataQuerySpec) ([]connection.DatabaseObject, error) {
@@ -497,11 +517,7 @@ func buildObjectRoutineMetadataQueries(dbType string, dbName string) []objectMet
 			{sql: procedureStatusQuery, inferredType: "PROCEDURE"},
 		}
 	case "postgres", "kingbase", "highgo", "vastbase", "opengauss", "gaussdb":
-		return []objectMetadataQuerySpec{
-			{sql: `SELECT n.nspname AS schema_name, p.proname AS routine_name, CASE WHEN p.prokind = 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END AS routine_type FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg|_%' ESCAPE '|' ORDER BY n.nspname, routine_type, p.proname`},
-			{sql: `SELECT r.routine_schema AS schema_name, r.routine_name AS routine_name, COALESCE(NULLIF(UPPER(r.routine_type), ''), 'FUNCTION') AS routine_type FROM information_schema.routines r WHERE r.routine_schema NOT IN ('pg_catalog', 'information_schema') AND r.routine_schema NOT LIKE 'pg|_%' ESCAPE '|' ORDER BY r.routine_schema, routine_type, r.routine_name`},
-			{sql: `SELECT n.nspname AS schema_name, p.proname AS routine_name, 'FUNCTION' AS routine_type FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg|_%' ESCAPE '|' ORDER BY n.nspname, p.proname`},
-		}
+		return pgObjectRoutineQueries("", "")
 	case "sqlserver":
 		return []objectMetadataQuerySpec{{sql: `SELECT s.name AS schema_name, o.name AS routine_name, CASE o.type WHEN 'P' THEN 'PROCEDURE' WHEN 'FN' THEN 'FUNCTION' WHEN 'IF' THEN 'FUNCTION' WHEN 'TF' THEN 'FUNCTION' END AS routine_type FROM sys.objects o JOIN sys.schemas s ON o.schema_id = s.schema_id WHERE o.type IN ('P','FN','IF','TF') ORDER BY o.type, s.name, o.name`}}
 	case "oracle", "dameng":

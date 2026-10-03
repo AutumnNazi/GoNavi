@@ -68,6 +68,19 @@
         "SELECT view_name FROM views() UNION ALL SELECT view_name FROM materialized_views()",
         "SELECT view_name FROM materialized_views()",
         "SELECT table_name AS view_name FROM information_schema.tables WHERE table_type IN ('VIEW', 'MATERIALIZED VIEW')"
+      ],
+      "tableStatus": [
+        {
+          "minServer": "10.0",
+          "sql": "SELECT t.table_name AS table_name, '' AS table_comment, s.rowCount AS table_rows, s.diskSize AS data_length, NULL AS index_length FROM tables() t LEFT JOIN table_storage() s ON s.tableName = t.table_name WHERE t.table_type = 'T' ORDER BY t.table_name"
+        },
+        {
+          "minServer": "8.3",
+          "sql": "SELECT t.table_name AS table_name, '' AS table_comment, s.rowCount AS table_rows, s.diskSize AS data_length, NULL AS index_length FROM tables() t LEFT JOIN table_storage() s ON s.tableName = t.table_name WHERE NOT t.matView ORDER BY t.table_name"
+        },
+        {
+          "sql": "SELECT table_name, '' AS table_comment, NULL AS table_rows, NULL AS data_length, NULL AS index_length FROM tables() ORDER BY table_name"
+        }
       ]
     },
     "pagination": "limit-range",

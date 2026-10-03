@@ -74,6 +74,13 @@
     "icon": {
       "color": "#6933FF",
       "text": "Cr"
-    }
+    },
+    "tableStats": [
+      {
+        "rows": "(SELECT s.estimated_row_count FROM crdb_internal.table_row_statistics s WHERE s.table_id = {{oid}}::INT8)",
+        "size": "NULL::INT8",
+        "indexSize": "NULL::INT8"
+      }
+    ]
   }
 }

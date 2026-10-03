@@ -11825,5 +11825,9 @@
   "connection_modal.step1.hint.greptimedb": "Временные ряды / протокол MySQL",
   "datasource.variant.greptimedb.v0": "Предварительные версии 0.x: имена столбцов SHOW TABLES и поля системных таблиц зависят от версии",
   "datasource.variant.greptimedb.v1": "1.x GA: представления, Flow и метаданные индексов стабильны",
-  "db.backend.error.greptimedb_row_edit_unsupported": "GreptimeDB не поддерживает UPDATE, поэтому строки нельзя редактировать в таблице; используйте INSERT (тот же ключ и время перезаписывают строку) или DELETE в SQL-редакторе"
+  "db.backend.error.greptimedb_row_edit_unsupported": "GreptimeDB не поддерживает UPDATE, поэтому строки нельзя редактировать в таблице; используйте INSERT (тот же ключ и время перезаписывают строку) или DELETE в SQL-редакторе",
+  "connection_modal.step1.hint.timescaledb": "PostgreSQL + расширение для временных рядов",
+  "datasource.variant.timescaledb.v1": "Метаданные гипертаблиц в _timescaledb_catalog; непрерывные агрегаты через CREATE VIEW ... WITH (timescaledb.continuous)",
+  "datasource.variant.timescaledb.v2": "Представления timescaledb_information; синтаксис create_hypertable(таблица, столбец времени, chunk_time_interval => ...)",
+  "datasource.variant.timescaledb.v213": "Доступны построители измерений by_range / by_hash и новые настройки сжатия (columnstore)"
 }

@@ -4,7 +4,6 @@ package db
 
 import (
 	"context"
-	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -68,16 +67,7 @@ func withQuestDBDefaults(config connection.ConnectionConfig) connection.Connecti
 	if strings.TrimSpace(config.Database) == "" {
 		config.Database = defaultQuestDBDatabase
 	}
-	params := connectionParamsFromText(config.ConnectionParams)
-	if params.Get("search_path") != "" || connectionParamsFromURI(config.URI, "postgresql", "postgres").Get("search_path") != "" {
-		return config
-	}
-	if params == nil {
-		params = url.Values{}
-	}
-	params.Set("search_path", "public")
-	config.ConnectionParams = params.Encode()
-	return config
+	return withDefaultSearchPath(config, "public")
 }
 
 // parseQuestDBVersion 从 "Build Information: QuestDB 8.3.3, JDK 17.0.11, ..." 里取版本号。

@@ -5,7 +5,6 @@ package db
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"strings"
 
 	"GoNavi-Wails/internal/connection"
@@ -88,16 +87,7 @@ func (c *CockroachDB) Connect(config connection.ConnectionConfig) error {
 
 // withCockroachSearchPath 在用户没有通过连接参数或 URI 指定 search_path 时写入会话默认值。
 func withCockroachSearchPath(config connection.ConnectionConfig) connection.ConnectionConfig {
-	params := connectionParamsFromText(config.ConnectionParams)
-	if params.Get("search_path") != "" || connectionParamsFromURI(config.URI, "postgresql", "postgres").Get("search_path") != "" {
-		return config
-	}
-	if params == nil {
-		params = url.Values{}
-	}
-	params.Set("search_path", cockroachDefaultSearchPath)
-	config.ConnectionParams = params.Encode()
-	return config
+	return withDefaultSearchPath(config, cockroachDefaultSearchPath)
 }
 
 // extractCockroachVersion 从 "CockroachDB CCL v24.3.36 (x86_64-...)"、"KaiwuDB 3.2.2 (...)" 里取版本号。

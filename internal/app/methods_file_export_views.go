@@ -164,6 +164,9 @@ func listViewNameLookupWithStatus(dbInst db.Database, config connection.Connecti
 				continue
 			}
 			schemaName := exportRowValueCI(row, "schema_name", "table_schema", "owner", "schema", "db")
+			if registryHidesSchema(config.Type, schemaName) {
+				continue
+			}
 			viewName := exportRowValueCI(row, "object_name", "view_name", "table_name", "name")
 			if viewName == "" {
 				viewName = exportInferObjectName(row)
@@ -258,6 +261,9 @@ func tryGetViewCreateStatement(
 	schemaName string,
 	viewName string,
 ) (string, bool) {
+	if ddl, ok := registryDriverViewCreateStatement(dbInst, config.Type, schemaName, viewName); ok {
+		return ensureSQLTerminator(ddl), true
+	}
 	queries := buildViewCreateQueries(config, dbName, schemaName, viewName)
 	for _, query := range queries {
 		if strings.TrimSpace(query) == "" {

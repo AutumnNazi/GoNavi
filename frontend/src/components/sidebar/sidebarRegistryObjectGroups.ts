@@ -2,6 +2,14 @@ import type { SavedConnection } from '../../types';
 import { getDataSourceSpec } from '../../utils/dataSourceRegistry';
 import type { SidebarTreeNode } from './sidebarV2TreeNodes';
 
+/** 描述表声明为隐藏的 schema（扩展内部 schema，如 TimescaleDB 的 _timescaledb_catalog）。 */
+export const isRegistryHiddenSchema = (conn: SavedConnection | undefined, schemaName: string): boolean => {
+  const prefixes = getDataSourceSpec(conn?.config?.type)?.ui?.hiddenSchemaPrefixes;
+  if (!prefixes || prefixes.length === 0) return false;
+  const normalized = String(schemaName || '').trim().toLowerCase();
+  return normalized !== '' && prefixes.some((prefix) => normalized.startsWith(prefix.toLowerCase()));
+};
+
 /**
  * 去掉描述表声明为不支持的对象分组（如 TiDB 没有存储过程、触发器与事件），
  * 避免借用 MySQL / PostgreSQL 方言的数据源在侧栏出现永远为空的分组。

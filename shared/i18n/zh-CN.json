@@ -11825,5 +11825,9 @@
   "connection_modal.step1.hint.greptimedb": "时序数据库 / MySQL 协议",
   "datasource.variant.greptimedb.v0": "0.x 预发布系列：SHOW TABLES 列名与系统表字段随版本变化",
   "datasource.variant.greptimedb.v1": "1.x 正式版：视图、Flow 与索引元数据稳定可用",
-  "db.backend.error.greptimedb_row_edit_unsupported": "GreptimeDB 不支持 UPDATE，无法按行编辑；请在 SQL 编辑器中用 INSERT（同主键与时间会覆盖旧行）或 DELETE 写入"
+  "db.backend.error.greptimedb_row_edit_unsupported": "GreptimeDB 不支持 UPDATE，无法按行编辑；请在 SQL 编辑器中用 INSERT（同主键与时间会覆盖旧行）或 DELETE 写入",
+  "connection_modal.step1.hint.timescaledb": "PostgreSQL + 时序扩展",
+  "datasource.variant.timescaledb.v1": "超表元数据在 _timescaledb_catalog；连续聚合用 CREATE VIEW ... WITH (timescaledb.continuous)",
+  "datasource.variant.timescaledb.v2": "timescaledb_information 视图；create_hypertable(表, 时间列, chunk_time_interval => ...) 语法",
+  "datasource.variant.timescaledb.v213": "by_range / by_hash 维度构造器、新版压缩（列存）设置全部可用"
 }

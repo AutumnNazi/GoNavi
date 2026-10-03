@@ -5,6 +5,8 @@
 // 再回落到本包，所以新增类型只需声明一次。
 package datasource
 
+import "strings"
+
 // CatalogGroup 是新建连接时类型卡片所在的分组键，与前端 connection_modal.step1.group.* 对齐。
 type CatalogGroup string
 
@@ -72,6 +74,30 @@ type Spec struct {
 	// ModuleAliases 是驱动管理里展示历史版本时额外查询的 Go module 路径。
 	ModuleAliases []string   `json:"moduleAliases,omitempty"`
 	Variants      VariantSet `json:"variants"`
+	// UI 是前端展示配置；Go 只读取影响对象列表的字段，让导出、对象列表与 AI 工具和侧栏保持一致。
+	UI UISpec `json:"ui"`
+}
+
+// UISpec 是描述表 ui 段里 Go 侧需要的子集。ui 段不计入驱动代理修订号，代理里的过滤逻辑不能依赖它。
+type UISpec struct {
+	// HiddenSchemaPrefixes 是扩展内部 schema 的前缀（如 TimescaleDB 的 _timescaledb_），对象列表与导出跳过其中的对象。
+	HiddenSchemaPrefixes []string `json:"hiddenSchemaPrefixes,omitempty"`
+	// HideExtensionRoutines 为 true 时函数列表不含 CREATE EXTENSION 带入的函数（pg_depend.deptype = 'e'）。
+	HideExtensionRoutines bool `json:"hideExtensionRoutines,omitempty"`
+}
+
+// HidesSchema 报告 schema 是否属于 HiddenSchemaPrefixes 声明的扩展内部 schema。
+func (u UISpec) HidesSchema(schema string) bool {
+	lower := strings.ToLower(strings.TrimSpace(schema))
+	if lower == "" {
+		return false
+	}
+	for _, prefix := range u.HiddenSchemaPrefixes {
+		if normalized := strings.ToLower(strings.TrimSpace(prefix)); normalized != "" && strings.HasPrefix(lower, normalized) {
+			return true
+		}
+	}
+	return false
 }
 
 // SyncSpec 声明数据同步的参与方式。

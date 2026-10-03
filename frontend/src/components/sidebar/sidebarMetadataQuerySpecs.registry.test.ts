@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { SavedConnection } from '../../types';
 import { resolveSidebarMetadataDialect } from '../../utils/sidebarMetadata';
 import { getSidebarTableDisplayName } from './sidebarMetadataBasics';
-import { filterRegistryObjectGroups } from './sidebarRegistryObjectGroups';
+import { filterRegistryObjectGroups, isRegistryHiddenSchema } from './sidebarRegistryObjectGroups';
 import {
   buildFunctionsMetadataQuerySpecs,
   buildSchemasMetadataQuerySpecs,
@@ -22,6 +22,14 @@ describe('sidebar metadata queries for registry data sources', () => {
     expect(filterRegistryObjectGroups(connectionOf('tidb'), groups).map((group) => group.key)).toEqual(['tables', 'views']);
     expect(filterRegistryObjectGroups(connectionOf('cockroachdb'), groups)).toHaveLength(5);
     expect(filterRegistryObjectGroups(connectionOf('mysql'), groups)).toHaveLength(5);
+  });
+
+  it('hides extension-internal schemas declared by the registry', () => {
+    const timescale = connectionOf('timescaledb');
+    expect(isRegistryHiddenSchema(timescale, '_timescaledb_catalog')).toBe(true);
+    expect(isRegistryHiddenSchema(timescale, 'timescaledb_information')).toBe(true);
+    expect(isRegistryHiddenSchema(timescale, 'public')).toBe(false);
+    expect(isRegistryHiddenSchema(connectionOf('postgres'), '_timescaledb_catalog')).toBe(false);
   });
 
   it('groups PostgreSQL-family registry tables by schema like PostgreSQL', () => {

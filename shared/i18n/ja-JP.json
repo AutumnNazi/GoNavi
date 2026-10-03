@@ -11825,5 +11825,9 @@
   "connection_modal.step1.hint.greptimedb": "時系列データベース / MySQL プロトコル",
   "datasource.variant.greptimedb.v0": "0.x プレリリース系列。SHOW TABLES の列名やシステムテーブルの項目がバージョンで異なります",
   "datasource.variant.greptimedb.v1": "1.x 正式版。ビュー、Flow、インデックスのメタデータが安定して利用可能",
-  "db.backend.error.greptimedb_row_edit_unsupported": "GreptimeDB は UPDATE に対応していないため行単位で編集できません。SQL エディターで INSERT（同じキーと時刻は上書き）または DELETE を使用してください"
+  "db.backend.error.greptimedb_row_edit_unsupported": "GreptimeDB は UPDATE に対応していないため行単位で編集できません。SQL エディターで INSERT（同じキーと時刻は上書き）または DELETE を使用してください",
+  "connection_modal.step1.hint.timescaledb": "PostgreSQL + 時系列拡張",
+  "datasource.variant.timescaledb.v1": "ハイパーテーブルのメタデータは _timescaledb_catalog。連続集計は CREATE VIEW ... WITH (timescaledb.continuous)",
+  "datasource.variant.timescaledb.v2": "timescaledb_information ビュー。create_hypertable(テーブル, 時刻列, chunk_time_interval => ...) 構文",
+  "datasource.variant.timescaledb.v213": "by_range / by_hash のディメンション構築関数と新しい圧縮（カラムストア）設定を利用可能"
 }

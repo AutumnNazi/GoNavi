@@ -2,10 +2,12 @@ import type { SavedConnection } from "../../types";
 import { splitQualifiedNameSegmentsDetailed } from "../../utils/qualifiedName";
 import { quoteSqlIdentifierPart, resolveSqlDialect } from "../../utils/sqlDialect";
 import { getMetadataDialect, escapeSQLLiteral } from "./sidebarMetadataBasics";
+import { resolvePgTableStatsSql, resolveRegistryTableStatusSql } from "../../utils/dataSourceRegistry/tableStats";
 
 export const buildSidebarTableStatusSQL = (
   conn: SavedConnection,
   dbName: string,
+  serverVersion = "",
 ): string => {
   const dialect = getMetadataDialect(conn);
   const safeDbName = escapeSQLLiteral(dbName);
@@ -36,17 +38,18 @@ export const buildSidebarTableStatusSQL = (
     case "vastbase":
     case "highgo":
     case "opengauss":
-    case "gaussdb":
+    case "gaussdb": {
+      const stats = resolvePgTableStatsSql(conn?.config?.type, serverVersion);
       return [
         "SELECT n.nspname || '.' || c.relname AS table_name, obj_description(c.oid, 'pg_class') AS table_comment,",
-        "CASE WHEN c.relkind = 'p' THEN NULL ELSE c.reltuples::bigint END AS table_rows,",
+        `CASE WHEN c.relkind = 'p' THEN NULL ELSE ${stats.rows} END AS table_rows,`,
         "(SELECT parent_n.nspname || '.' || parent_c.relname",
         " FROM pg_inherits inheritance",
         " JOIN pg_class parent_c ON parent_c.oid = inheritance.inhparent AND parent_c.relkind = 'p'",
         " JOIN pg_namespace parent_n ON parent_n.oid = parent_c.relnamespace",
         " WHERE inheritance.inhrelid = c.oid",
         " ORDER BY inheritance.inhseqno LIMIT 1) AS partition_parent_table,",
-        "pg_total_relation_size(c.oid) AS table_size, NULL::text AS create_time, NULL::text AS update_time",
+        `${stats.size} AS table_size, NULL::text AS create_time, NULL::text AS update_time`,
         "FROM pg_class c",
         "JOIN pg_namespace n ON n.oid = c.relnamespace",
         "WHERE c.relkind IN ('r', 'p')",
@@ -54,6 +57,7 @@ export const buildSidebarTableStatusSQL = (
         "AND n.nspname NOT LIKE 'pg\\_%' ESCAPE '\\'",
         "ORDER BY n.nspname, c.relname",
       ].join("\n");
+    }
     case "sqlserver": {
       // Azure SQL Database rejects or hangs on three-part names such as
       // [db].sys.tables. The metadata connection is already opened with
@@ -93,7 +97,7 @@ export const buildSidebarTableStatusSQL = (
       ].join("\n");
     }
     default:
-      return "";
+      return resolveRegistryTableStatusSql(conn?.config?.type, dbName, serverVersion);
   }
 };
 

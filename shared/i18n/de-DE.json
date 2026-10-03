@@ -11825,5 +11825,9 @@
   "connection_modal.step1.hint.greptimedb": "Zeitreihen / MySQL-Protokoll",
   "datasource.variant.greptimedb.v0": "0.x-Vorabversionen: Spaltennamen von SHOW TABLES und Systemtabellenfelder ändern sich je nach Version",
   "datasource.variant.greptimedb.v1": "1.x GA: Views, Flows und Indexmetadaten sind stabil",
-  "db.backend.error.greptimedb_row_edit_unsupported": "GreptimeDB unterstützt kein UPDATE, Zeilen können daher nicht im Raster bearbeitet werden; verwenden Sie INSERT (gleicher Schlüssel und Zeitstempel überschreibt) oder DELETE im SQL-Editor"
+  "db.backend.error.greptimedb_row_edit_unsupported": "GreptimeDB unterstützt kein UPDATE, Zeilen können daher nicht im Raster bearbeitet werden; verwenden Sie INSERT (gleicher Schlüssel und Zeitstempel überschreibt) oder DELETE im SQL-Editor",
+  "connection_modal.step1.hint.timescaledb": "PostgreSQL + Zeitreihen-Erweiterung",
+  "datasource.variant.timescaledb.v1": "Hypertable-Metadaten liegen in _timescaledb_catalog; kontinuierliche Aggregate nutzen CREATE VIEW ... WITH (timescaledb.continuous)",
+  "datasource.variant.timescaledb.v2": "timescaledb_information-Views; Syntax create_hypertable(Tabelle, Zeitspalte, chunk_time_interval => ...)",
+  "datasource.variant.timescaledb.v213": "Dimensionsbuilder by_range / by_hash und neuere Komprimierungs-(Columnstore-)Einstellungen sind verfügbar"
 }

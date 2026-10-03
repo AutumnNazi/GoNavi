@@ -119,7 +119,7 @@ func resolveCreateStatementWithFallbackWithText(dbInst db.Database, config conne
 		ddlTableName,
 		fallbackDDL,
 	)
-	return fallbackDDL, nil
+	return appendRegistryCreateStatementSupplement(dbInst, config, metadataSchemaName, metadataTableName, fallbackDDL), nil
 }
 
 func tryGetOceanBaseOracleShowCreateStatement(dbInst db.Database, schemaName string, tableName string) (string, bool) {
@@ -211,7 +211,8 @@ func hasCreateTableOrViewHead(sqlText string) bool {
 		lower := strings.ToLower(line)
 		return strings.HasPrefix(lower, "create table") ||
 			strings.HasPrefix(lower, "create view") ||
-			strings.HasPrefix(lower, "create or replace view")
+			strings.HasPrefix(lower, "create or replace view") ||
+			strings.HasPrefix(lower, "create materialized view")
 	}
 	return false
 }

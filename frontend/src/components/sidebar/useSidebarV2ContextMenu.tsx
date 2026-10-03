@@ -26,6 +26,8 @@ import { resolveConnectionHostSummary } from '../../utils/tabDisplay';
 import { resolveConnectionIconType } from '../../utils/connectionVisual';
 import { resolveSidebarTreeMetaText } from './sidebarTreeMetaText';
 import { formatSidebarRowCount } from './sidebarHelpers';
+import { resolvePgTableStatsSql } from '../../utils/dataSourceRegistry/tableStats';
+import { peekTableStatsServerVersion } from './sidebarTableStatsVersion';
 import {
   isSidebarDatabasePinned,
   isSidebarTablePinned,
@@ -191,8 +193,9 @@ export const buildV2TableStatusSQL = ({
       case 'opengauss':
       case 'gaussdb': {
           const schema = schemaName || 'public';
+          const stats = resolvePgTableStatsSql(conn?.config?.type, peekTableStatsServerVersion(conn));
           return [
-              "SELECT c.reltuples::bigint AS table_rows, pg_total_relation_size(c.oid) AS data_length, pg_indexes_size(c.oid) AS index_length, 'heap' AS engine",
+              `SELECT ${stats.rows} AS table_rows, ${stats.size} AS data_length, ${stats.indexSize} AS index_length, 'heap' AS engine`,
               'FROM pg_class c',
               'JOIN pg_namespace n ON n.oid = c.relnamespace',
               "WHERE c.relkind = 'r'",

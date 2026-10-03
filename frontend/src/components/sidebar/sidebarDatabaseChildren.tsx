@@ -22,7 +22,7 @@ import {
 import type { SidebarLoadedTableEntry, SidebarTreeLoadOptions } from './sidebarTreeLoaderHelpers';
 import { GnFieldsIcon, GnIndexIcon, GnLinkIcon, GnFolderOpenIcon } from '../icons/gnIcons';
 import { renderSidebarObjectIcon } from './sidebarObjectIcons';
-import { filterRegistryObjectGroups } from './sidebarRegistryObjectGroups';
+import { filterRegistryObjectGroups, isRegistryHiddenSchema } from './sidebarRegistryObjectGroups';
 import {
   createSidebarObjectGroupBuilder, buildOracleDatabaseLinkGroup,
 } from './sidebarObjectGroup';
@@ -555,7 +555,7 @@ export const createSidebarDatabaseChildrenBuilder = ({
   		                        schemaVisibilityRule,
   		                        bucket.schemaName,
   		                        schemaIdentifierOptions,
-  		                    ))
+  		                    ) && !isRegistryHiddenSchema(conn as SavedConnection, bucket.schemaName))
           .sort((a, b) => {
               if (!a.schemaName && !b.schemaName) return 0;
               if (!a.schemaName) return -1;

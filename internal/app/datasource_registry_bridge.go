@@ -1,18 +1,24 @@
 package app
 
 import (
+	"strings"
+
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/db"
 )
 
 // app 层对数据源描述表的读取入口。各处历史分支先判断旧类型，未命中时回落到这里，
-// 新数据源因此只需在 internal/datasource/datasources.json 声明一次。
+// 新数据源因此只需在 internal/datasource/specs/<type>.json 声明一次。
 
-// resolveExplainDBType 选择执行计划的方言解析器。描述表类型按自身类型名分发：
-// 它们的计划格式通常与兼容协议的母方言不同（例如 TiDB 走 MySQL 协议但不支持 FORMAT=JSON）。
+// resolveExplainDBType 选择执行计划的方言解析器。有专属解析器的描述表类型按自身类型名分发
+// （例如 TiDB 走 MySQL 协议但不支持 FORMAT=JSON）；没有专属解析器、借用方言的类型
+// （例如 TimescaleDB 就是 PostgreSQL）沿用借用方言的 EXPLAIN。
 func resolveExplainDBType(config connection.ConnectionConfig) string {
 	if spec, ok := db.DataSourceSpec(config.Type); ok {
-		return spec.Type
+		if isRegistryExplainDialect(spec.Type) || spec.DDLDialect == "" {
+			return spec.Type
+		}
+		return spec.DDLDialect
 	}
 	return resolveDDLDBType(config)
 }
@@ -67,4 +73,57 @@ func registryPrefersPlainReadQuery(driverType string) bool {
 func registryUsesDriverProxy(driverType string) bool {
 	spec, ok := db.DataSourceSpec(driverType)
 	return ok && spec.UsesDriverProxy()
+}
+
+// registryHidesSchema 报告描述表是否把 schema 声明为扩展内部 schema（侧栏、对象列表与导出都跳过）。
+func registryHidesSchema(driverType, schema string) bool {
+	spec, ok := db.DataSourceSpec(driverType)
+	return ok && spec.UI.HidesSchema(schema)
+}
+
+// registryHidesExtensionRoutines 报告函数列表是否排除扩展带入的函数（TimescaleDB 在 public 下装了上百个）。
+func registryHidesExtensionRoutines(driverType string) bool {
+	spec, ok := db.DataSourceSpec(driverType)
+	return ok && spec.UI.HideExtensionRoutines
+}
+
+// filterRegistryHiddenObjects 去掉描述表声明的扩展内部 schema 下的对象（如 TimescaleDB 的信息视图与内部函数）。
+func filterRegistryHiddenObjects(driverType string, objects []connection.DatabaseObject) []connection.DatabaseObject {
+	spec, ok := db.DataSourceSpec(driverType)
+	if !ok || len(spec.UI.HiddenSchemaPrefixes) == 0 {
+		return objects
+	}
+	visible := make([]connection.DatabaseObject, 0, len(objects))
+	for _, object := range objects {
+		if !spec.UI.HidesSchema(object.Schema) {
+			visible = append(visible, object)
+		}
+	}
+	return visible
+}
+
+// registryDriverViewCreateStatement 先让描述表驱动给出视图 DDL（CockroachDB 的 SHOW CREATE、QuestDB / GreptimeDB 的
+// SHOW CREATE VIEW、TimescaleDB 连续聚合的 CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous)）；
+// 驱动给不出 CREATE ... VIEW 语句时返回 false，由调用方回落到方言查询（如 pg_get_viewdef）。
+func registryDriverViewCreateStatement(dbInst db.Database, driverType, schemaName, viewName string) (string, bool) {
+	if _, ok := db.DataSourceSpec(driverType); !ok {
+		return "", false
+	}
+	ddl, err := dbInst.GetCreateStatement(schemaName, viewName)
+	if err != nil || !isCreateViewStatement(ddl) {
+		return "", false
+	}
+	return strings.TrimSpace(ddl), true
+}
+
+// isCreateViewStatement 报告 DDL 是否在创建视图（含物化视图，以及 MySQL 的 ALGORITHM / DEFINER 前缀）。
+func isCreateViewStatement(ddl string) bool {
+	head := strings.ToUpper(strings.TrimSpace(ddl))
+	if !strings.HasPrefix(head, "CREATE ") {
+		return false
+	}
+	if end := strings.Index(head, " AS"); end > 0 {
+		head = head[:end]
+	}
+	return strings.Contains(head+" ", " VIEW ")
 }
