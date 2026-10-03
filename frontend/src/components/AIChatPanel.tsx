@@ -17,6 +17,7 @@ import { collectBusyAISessionIds } from './ai/AIChatSessionSwitcher';
 import AIChatRunControls, {
     type AIRunRecoveryAction,
 } from './ai/AIChatRunControls';
+import { useAIChatApprovalDecision } from './ai/useAIChatApprovalDecision';
 import { useAIChatRunEventSubscription } from './ai/useAIChatRunEventSubscription';
 import {
     controlAgentRun,
@@ -30,7 +31,6 @@ import {
     readAgentSession,
     submitAgentInput,
     toAIChatMessages,
-    type AgentAttachment,
     type AIRunDispatchMode,
     type AIRunHarnessService,
 } from './ai/aiRunHarnessClient';
@@ -46,23 +46,29 @@ import {
 } from './ai/useAIWorkspaceSnapshot';
 import { buildRpcConnectionConfig } from '../utils/connectionRpcConfig';
 import type { AIComposerNoticeDescriptor } from '../utils/aiComposerNotice';
-import { buildAIComposerNotice } from '../utils/aiComposerNotice';
+import { buildAIComposerNotice, type AIComposerNoticeAction } from '../utils/aiComposerNotice';
+import { composerNoticeDescriptorFor } from './ai/composerNoticeForReadiness';
 import { consumeAIChatSendShortcutOnKeyDown } from '../utils/aiChatSendShortcut';
-import { getDynamicMaxContextChars } from '../utils/aiChatRuntime';
+import { resolveEffectiveContextWindow } from '../utils/aiChatRuntime';
 import { getShortcutPlatform, resolveShortcutBinding } from '../utils/shortcuts';
 import { isMacLikePlatform } from '../utils/appearance';
 import {
     buildAIChatInsights,
     buildAIChatInlineHistorySessions,
-    calculateAIContextUsageChars,
     collectAIChatContextTableNames,
     inferAIChatConnectionContext,
     resolveAIChatPanelMode,
 } from './ai/aiChatPanelDerivedState';
 import { buildAIChatReadinessSnapshot } from './ai/aiChatReadiness';
+import { measureAIChatHistory } from './ai/aiContextBreakdown';
+import { isOcrPending, toAgentAttachments } from './ai/aiAgentAttachments';
 import { useAIInjectedPrompt } from './ai/useAIInjectedPrompt';
 import { useAIChatRuntimeResources } from './ai/useAIChatRuntimeResources';
 import { useAIChatAutoContext } from './ai/useAIChatAutoContext';
+import { useAIEditorSelection } from './ai/aiEditorSelectionContext';
+import { buildContextChipAttachments, isContextChipAttachment, isTransientContextItem } from './ai/aiContextChips';
+import { AIReplySelectionToolbar } from './ai/AIReplySelectionToolbar';
+import { useAIQuoteFromReply } from './ai/useAIQuoteFromReply';
 import { useAIChatPanelResize } from './ai/useAIChatPanelResize';
 import { useAIChatSessionState } from './ai/useAIChatSessionState';
 import { useWorkbenchTabs } from '../hooks/useWorkbenchTabs';
@@ -94,15 +100,6 @@ const genId = () => `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}
 
 const createRunStopFailureMessageId = (runId: string): string =>
     `agent-run-${runId}-stop-error`;
-
-const toAgentAttachments = (attachments: AIChatAttachment[]): AgentAttachment[] =>
-    attachments
-        .map((attachment) => ({
-            name: String(attachment.name || '').trim(),
-            mediaType: String(attachment.mimeType || 'application/octet-stream'),
-            data: String(attachment.dataUrl || attachment.text || ''),
-        }))
-        .filter((attachment) => Boolean(attachment.name));
 
 const isTerminalRunState = (state: string | undefined): boolean =>
     state === 'completed'
@@ -167,10 +164,11 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         handleProviderModelChange,
         handleOpenSettingsFromPanel,
         loadingModels,
+        modelContextProfile,
         providers,
         providerModels,
         providerCatalogs,
-    } = useAIChatRuntimeResources({ onOpenSettings });
+    } = useAIChatRuntimeResources({ onOpenSettings, translate: t });
     const activeCLICapability = useMemo(() => (cliCapabilities || []).find((capability) =>
         capability.apiFormat === String(activeProvider?.apiFormat || '').trim()), [activeProvider?.apiFormat, cliCapabilities]);
     const activeCLIModelCatalog = activeProvider ? providerCatalogs?.[activeProvider.id] : undefined;
@@ -204,6 +202,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
     const connections = useStore(state => state.connections);
     const tabs = useWorkbenchTabs();
     const activeTabId = useStore(state => state.activeTabId);
+    const activeEditorSelection = useAIEditorSelection(activeTabId);
     const sqlLogs = useStore(state => state.sqlLogs);
     const setAIActiveSessionId = useStore(state => state.setAIActiveSessionId);
     const aiPanelVisible = useStore(state => state.aiPanelVisible);
@@ -350,7 +349,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
             }
             : null;
         setInput(msg.content);
-        setDraftAttachments(msg.attachments || []);
+        setDraftAttachments((msg.attachments || []).filter((attachment) => !isContextChipAttachment(attachment)));
         setTimeout(() => textareaRef.current?.focus(), 50);
     }, [orderedAISessions, sid]);
 
@@ -656,21 +655,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         }
     }, [addAIChatMessage, refreshRunProjection, resolveRunRevision, sid, t]);
 
-    const handleApprovalDecision = useCallback((
-        approval: AIRunApprovalState,
-        decision: 'approved' | 'denied',
-    ) => {
-        void handleRunControl(
-            approval.runId,
-            decision === 'approved' ? 'approve' : 'deny',
-            {
-                approvalId: approval.approvalId,
-                callId: approval.callId,
-                argsHash: approval.argsHash,
-                busyKey: `${approval.runId}:${decision === 'approved' ? 'approve' : 'deny'}:${approval.approvalId}`,
-            },
-        );
-    }, [handleRunControl]);
+    const handleApprovalDecision = useAIChatApprovalDecision(handleRunControl);
 
     const handleRecoveryAction = useCallback((
         recovery: AIRunRecoveryState,
@@ -831,14 +816,20 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
     }, [addAIChatMessage, interactionDisabled, orderedAISessions, sending, sid, submitHarnessRun, t]);
 
     const handleSend = useCallback(async () => {
-        const text = input.trim();
-        if ((!text && draftAttachments.length === 0) || interactionDisabled) return;
+        const connectionKey = activeContext?.connectionId ? `${activeContext.connectionId}:${activeContext.dbName || ''}` : 'default';
+        // A bound editor selection is a message by itself: with nothing typed, ask the
+        // obvious question about it (shown in the chat as the person's message).
+        const boundItems = (aiContexts[connectionKey] || []).filter(isTransientContextItem);
+        const onlyQuotes = boundItems.length > 0 && boundItems.every((item) => item.kind === 'chat_quote');
+        const text = input.trim() || (boundItems.length > 0
+            ? t(onlyQuotes ? 'ai_chat.input.default_quote_prompt' : 'ai_chat.input.default_selection_prompt')
+            : '');
+        if ((!text && draftAttachments.length === 0) || interactionDisabled || draftAttachments.some(isOcrPending)) return;
         // A running harness can still accept a durable queued input or a
         // high-priority steer. Keep the old guard only for a stale local
         // sending flag that has no active Ledger run behind it.
         if (sending && !hasActiveRun) return;
 
-        const connectionKey = activeContext?.connectionId ? `${activeContext.connectionId}:${activeContext.dbName || ''}` : 'default';
         const readiness = buildAIChatReadinessSnapshot({
             activeProvider,
             dynamicModels,
@@ -847,21 +838,12 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
             activeContextItems: aiContexts[connectionKey] || [],
         });
 
-        if (readiness.status === 'missing_provider') {
-            setComposerNoticeState({ kind: 'missing_provider' });
-            return;
-        }
-        if (readiness.status === 'provider_incomplete') {
-            setComposerNoticeState({ kind: 'provider_incomplete', issues: readiness.issues });
-            return;
-        }
-        if (readiness.status === 'missing_model' || readiness.status === 'loading_models') {
-            setComposerNoticeState({ kind: 'missing_model' });
-            return;
-        }
-        setComposerNoticeState(null);
+        const readinessNotice = composerNoticeDescriptorFor(readiness);
+        setComposerNoticeState(readinessNotice);
+        if (readinessNotice) return;
 
-        const currentAttachments = [...draftAttachments];
+        // What is bound travels with the message so the chat can show it as chips.
+        const currentAttachments = [...draftAttachments, ...buildContextChipAttachments(aiContexts[connectionKey] || [])];
         // Existing sessions are addressed by their durable ID. A newly opened
         // local session has no Ledger row yet; omitting the ID lets Go create
         // one atomically and return the canonical session ID.
@@ -890,6 +872,9 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
             if (branch && pendingConversationBranchRef.current === branch) {
                 pendingConversationBranchRef.current = null;
             }
+            // What was bound for this message belongs to it (it shows as chips on the message):
+            // clear it from the composer now that the message is on its way.
+            boundItems.forEach((item) => useStore.getState().removeAIContext(connectionKey, item.dbName, item.tableName));
         } catch (error) {
             console.error('Failed to submit AI agent input', error);
             const detail = error instanceof Error ? error.message : String(error);
@@ -1081,10 +1066,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         const connection = connections.find(item => item.id === inferredConnectionId);
         return connection ? buildRpcConnectionConfig(connection.config) : undefined;
     }, [inferredConnectionId, connections]);
-    const contextUsageChars = useMemo(
-        () => calculateAIContextUsageChars(messages),
-        [messages],
-    );
+    const contextHistory = useMemo(() => measureAIChatHistory(messages), [messages]);
     const contextTableNames = useMemo(
         () => collectAIChatContextTableNames({
             aiContexts,
@@ -1114,7 +1096,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         [activePanelMode],
     );
 
-    const handleComposerActionWithNoticeReset = useCallback((actionKey: 'open-settings' | 'reload-models') => {
+    const handleComposerActionWithNoticeReset = useCallback((actionKey: AIComposerNoticeAction) => {
         setComposerNoticeState(null);
         handleComposerAction(actionKey);
     }, [handleComposerAction]);
@@ -1124,6 +1106,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
         void handleModelChange(model);
     }, [handleModelChange]);
 
+    const handleQuoteFromReply = useAIQuoteFromReply(activeContext, textareaRef);
     const isDetachedPresentation = presentation === 'detached';
 
     return (
@@ -1240,6 +1223,8 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
                 onWorkspaceAction={handleWorkspaceAction}
             />
 
+            <AIReplySelectionToolbar rootRef={panelRef} onQuote={handleQuoteFromReply} copy={t} />
+
             <AIChatInput
                 input={input}
                 setInput={setInput}
@@ -1255,6 +1240,7 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
                 handleKeyDown={handleKeyDown}
                 activeConnName={activeConnName}
                 activeContext={activeContext}
+                activeEditorSelection={activeEditorSelection}
                 activeProvider={activeProvider}
                 providers={providers}
                 providerModels={providerModels}
@@ -1281,8 +1267,9 @@ export const AIChatPanel: React.FC<AIChatPanelProps> = ({
                 textColor={textColor}
                 mutedColor={mutedColor}
                 overlayTheme={overlayTheme}
-                contextUsageChars={contextUsageChars}
-                maxContextChars={getDynamicMaxContextChars(activeProvider?.model)}
+                contextHistory={contextHistory}
+                contextSessionId={sid === 'session-fallback' ? undefined : sid}
+                contextWindow={resolveEffectiveContextWindow(modelContextProfile, activeProvider?.contextWindow)}
             />
 
             <AIHistoryDrawer

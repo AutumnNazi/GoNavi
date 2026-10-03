@@ -490,7 +490,11 @@ vi.mock('../store', async (importOriginal) => {
       () => selector(storeState),
       () => selector(storeState),
     ),
-    { getState: () => storeState },
+    {
+      getState: () => storeState,
+      // queryEditorResultSessionLifecycle 用 useStore.subscribe 监听 activeTabId；这里的用例不切换标签。
+      subscribe: () => () => undefined,
+    },
   );
   return { ...actual, useStore };
 });
@@ -636,6 +640,8 @@ vi.mock('@ant-design/icons', () => {
     EyeOutlined: Icon,
     FileTextOutlined: Icon,
     FormatPainterOutlined: Icon,
+    FullscreenExitOutlined: Icon,
+    FullscreenOutlined: Icon,
     HistoryOutlined: Icon,
     KeyOutlined: Icon,
     LoadingOutlined: Icon,
@@ -10094,8 +10100,11 @@ describe('QueryEditor external SQL save', () => {
         vi.runAllTimers();
       });
 
+      const diagnoseError = formatSqlExecutionError('You have an error in your SQL syntax at line 1');
+      // 诊断提示词首行是「库名 · 错误首行」标题（截断到 80 字符），用作 AI 会话标题。
+      const diagnoseHeadline = ['main', diagnoseError.split('\n')[0].trim()].join(' · ').slice(0, 80);
       expect(getLastInjectedPrompt()).toBe(
-        `Context: mysql "local", selected database "main", database version 5.7.44-log.\nI got an error while executing this SQL:\n\`\`\`sql\nselect * from broken_table where id = ;\n\`\`\`\n\nThe database returned this error:\n\`\`\`text\n${formatSqlExecutionError('You have an error in your SQL syntax at line 1')}\n\`\`\`\n\nAnalyze the cause and suggest a fix.`,
+        `${diagnoseHeadline}\nContext: mysql "local", selected database "main", database version 5.7.44-log.\nI got an error while executing this SQL:\n\`\`\`sql\nselect * from broken_table where id = ;\n\`\`\`\n\nThe database returned this error:\n\`\`\`text\n${diagnoseError}\n\`\`\`\n\nAnalyze the cause and suggest a fix.`,
       );
       expect(getLastInjectedPrompt()).not.toContain('first_table');
       expect(getLastInjectedPrompt()).not.toContain('我在执行以下 SQL 时遇到了错误');
@@ -16496,7 +16505,24 @@ WHERE GRANTEE = 'APPUSER';`;
     expect(dataGridState.latestProps?.data).toEqual(expect.arrayContaining([expect.objectContaining({ a: 1 })]));
   });
 
-  it('shows "Select a database first." in English before running without a database', async () => {
+  it('shows "Select a database first." in English before running database-dependent SQL without a database', async () => {
+    storeState.languagePreference = 'en-US';
+    setCurrentLanguage('en-US');
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ dbName: '', query: 'select * from orders;' })} />);
+    });
+
+    await act(async () => {
+      await findButton(renderer, 'Run').props.onClick();
+    });
+
+    expect(messageApi.error).toHaveBeenCalledWith('Select a database first.');
+    expect(messageApi.error).not.toHaveBeenCalledWith('请先选择数据库');
+  });
+
+  it('runs database-free SQL without a selected database', async () => {
     storeState.languagePreference = 'en-US';
     setCurrentLanguage('en-US');
 
@@ -16509,8 +16535,10 @@ WHERE GRANTEE = 'APPUSER';`;
       await findButton(renderer, 'Run').props.onClick();
     });
 
-    expect(messageApi.error).toHaveBeenCalledWith('Select a database first.');
-    expect(messageApi.error).not.toHaveBeenCalledWith('请先选择数据库');
+    expect(messageApi.error).not.toHaveBeenCalledWith('Select a database first.');
+    expect(backendApp.DBQueryMulti).toHaveBeenCalledTimes(1);
+    const executedSql = String(backendApp.DBQueryMulti.mock.calls[0][2]);
+    expect(executedSql).toContain('select 1');
   });
 
   it('shows "Connection not found." in English before running without a matching connection', async () => {

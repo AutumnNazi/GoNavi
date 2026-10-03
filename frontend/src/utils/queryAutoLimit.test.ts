@@ -287,14 +287,31 @@ ORDER BY rfm.avg_monetary DESC`;
       expect(result.sql).not.toContain('SELECT TOP 1 c.id');
     });
 
-    it('keeps the CTE at top level for Oracle by appending FETCH FIRST', () => {
+    it('keeps the CTE at top level for Oracle by limiting the main query with ROWNUM', () => {
       const result = applyQueryAutoLimit(cteSQL, 'oracle', 1);
 
       expect(result.applied).toBe(true);
-      // ROWNUM 包装会把 `WITH` 塞进内联视图，那里子查询因子化不合法的风险很高。
-      expect(result.sql).not.toContain('ROWNUM');
       expect(result.sql.startsWith('WITH rfm AS (')).toBe(true);
-      expect(result.sql.endsWith('FETCH FIRST 1 ROWS ONLY')).toBe(true);
+      expect(result.sql).not.toContain('FETCH FIRST');
+      expect(result.sql).not.toMatch(/SELECT \* FROM \(\s*WITH\b/);
+      expect(result.sql.indexOf('ORDER BY')).toBeLessThan(result.sql.indexOf('WHERE ROWNUM <= 1'));
+      expect(result.sql.endsWith(') WHERE ROWNUM <= 1')).toBe(true);
+    });
+
+    it('limits an Oracle hierarchical CTE without FETCH FIRST', () => {
+      const sql = `WITH months AS (
+    SELECT '\${year}' || '-' || LPAD(LEVEL, 2, '0') AS yearMonth
+    FROM dual CONNECT BY LEVEL < 13
+)
+SELECT * FROM months`;
+      const result = applyQueryAutoLimit(sql, 'oracle', 100);
+
+      expect(result.applied).toBe(true);
+      expect(result.sql).toBe(`WITH months AS (
+    SELECT '\${year}' || '-' || LPAD(LEVEL, 2, '0') AS yearMonth
+    FROM dual CONNECT BY LEVEL < 13
+)
+SELECT * FROM (SELECT * FROM months) WHERE ROWNUM <= 100`);
     });
 
     it('never injects a row limit into a non-select CTE body', () => {

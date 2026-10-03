@@ -1,7 +1,7 @@
 import Modal from './common/ResizableDraggableModal';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Form, message as antdMessage } from 'antd';
-import { RobotOutlined } from '@ant-design/icons';
+import AiSparkOutlined from './icons/AiSparkOutlined';
 import { v4 as uuidv4 } from 'uuid';
 import type { AIProviderConfig, AIProviderType, AISafetyLevel, AIContextLevel, AIResultMaskingSettings, AIUserPromptSettings, AIMCPServerConfig, AIMCPToolDescriptor, AIMCPHTTPServerStatus, AISkillConfig } from '../types';
 import type { ai } from '../../wailsjs/go/models';
@@ -35,8 +35,7 @@ import AISettingsSafetySection from './ai/AISettingsSafetySection';
 import AISettingsContextSection from './ai/AISettingsContextSection';
 import AISettingsRunPolicySection from './ai/AISettingsRunPolicySection';
 import AISettingsProvidersSection from './ai/AISettingsProvidersSection';
-import AISettingsAnalysisSection from './ai/AISettingsAnalysisSection';
-import AISettingsRequestEventsSection from './ai/AISettingsRequestEventsSection';
+import AISettingsInsightSection from './ai/AISettingsInsightSection';
 import AISettingsPromptsSection from './ai/AISettingsPromptsSection';
 import AISettingsSkillsSection from './ai/AISettingsSkillsSection';
 import {
@@ -649,7 +648,7 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
                 valuesApiFormat: editableProvider.apiFormat,
                 valuesModel: editableProvider.model,
             });
-            const { models: _removedModels, maxTokens: _removedMaxTokens, contextWindow: _removedContextWindow, ...editableFields } = editableProvider;
+            const { models: _removedModels, maxTokens: _removedMaxTokens, ...editableFields } = editableProvider;
             applyProviderEditorSession(buildEditProviderEditorSession({
                 provider: { ...editableProvider, presetKey: matchedPreset.key } as any,
                 formValues: {
@@ -714,8 +713,7 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
         // validateFields only returns mounted fields. Removed controls must not
         // leak legacy values back into a saved provider.
         values = { ...form.getFieldsValue(true), ...values };
-        const { headerRows, cliEnvRows, models: _removedModels, maxTokens: _removedMaxTokens,
-            contextWindow: _removedContextWindow, ...formFields } = values;
+        const { headerRows, cliEnvRows, models: _removedModels, maxTokens: _removedMaxTokens, ...formFields } = values;
         const presetKey = normalizeProviderPresetKey(values.presetKey || 'openai');
         const preset = findPreset(presetKey);
         const selectedMode = getProviderPresetMode(preset, formFields.connectionMode);
@@ -749,7 +747,7 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
             valuesModel: model,
         });
         const apiKeyInput = authMode === 'local-cli' ? '' : values.apiKey;
-        if (!isProviderSecretRequirementSatisfied({ apiKeyInput, currentAuthMode: authMode, editingProvider, allowEmptySecret: presetKey === 'codebuddy' })) {
+        if (!isProviderSecretRequirementSatisfied({ apiKeyInput, currentAuthMode: authMode, editingProvider, allowEmptySecret: presetKey === 'codebuddy' || presetKey === 'gonavi-ai' })) {
             throw new Error(t(purpose === 'test' ? 'ai_settings.message.test_requires_new_api_key' : 'ai_settings.form.api_key_required'));
         }
         const secret = resolveProviderSecretDraft({
@@ -773,7 +771,8 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
             inlineCompletionModel: String(values.inlineCompletionModel || '').trim(),
             maxTokens: 0,
             temperature: Number.isFinite(Number(values.temperature)) ? Number(values.temperature) : 0.7,
-            contextWindow: 0,
+            // 供应商的上下文档位：按当前模型校验，落不到可选档位就回默认（0）
+            contextWindow: Math.max(0, Math.trunc(Number(values.contextWindow) || 0)),
             headers: authMode === 'local-cli' ? {} : recordFromRows(headerRows),
             cliPath: authMode === 'local-cli' ? String(values.cliPath || '').trim() : '',
             cliEnv: authMode === 'local-cli' ? recordFromRows(cliEnvRows) : {},
@@ -1502,24 +1501,16 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
                         dirty={providerDirty}
                     />
                 ))}
-                {renderSectionPanel('analysis', (
-                    <AISettingsAnalysisSection
-                        active={active && activeSection === 'analysis'}
+                {(['analysis', 'request_events', 'image_recognition'] as const).map((section) => renderSectionPanel(section, (
+                    <AISettingsInsightSection
+                        section={section}
+                        active={active && activeSection === section}
                         providers={providers}
                         overlayTheme={overlayTheme}
                         cardBg={cardBg}
                         cardBorder={cardBorder}
                     />
-                ))}
-                {renderSectionPanel('request_events', (
-                    <AISettingsRequestEventsSection
-                        active={active && activeSection === 'request_events'}
-                        providers={providers}
-                        overlayTheme={overlayTheme}
-                        cardBg={cardBg}
-                        cardBorder={cardBorder}
-                    />
-                ))}
+                )))}
                 {renderSectionPanel('safety', (
                     <AISettingsSafetySection
                         safetyLevel={safetyLevel}
@@ -1671,7 +1662,7 @@ const AISettingsModal: React.FC<AISettingsModalProps> = ({ open, onClose, darkMo
                         width: 38, height: 38, borderRadius: 12, display: 'grid', placeItems: 'center',
                         background: overlayTheme.iconBg, color: overlayTheme.iconColor, fontSize: 18, flexShrink: 0,
                     }}>
-                        <RobotOutlined />
+                        <AiSparkOutlined />
                     </div>
                     <div>
                         <div style={{ fontSize: 16, fontWeight: 800, color: overlayTheme.titleText }}>{t('ai_settings.title')}</div>

@@ -8,7 +8,7 @@ import {
   resolveQueryExecutionSpeedIcon,
   resolveReportedQueryDurationMs,
   useQueryExecutionElapsed,
-} from './QueryEditorToolbar';
+} from './queryEditor/queryEditorExecutionTimer';
 
 describe('QueryEditorToolbar layout', () => {
   it('keeps the v2 toolbar on a single scrollable row in small windows', () => {
@@ -239,11 +239,14 @@ describe('QueryEditorToolbar layout', () => {
     expect(css).toContain('gap: 6px;');
   });
 
-  it('formats live query execution time with stable tenths-of-a-second precision', () => {
-    expect(formatQueryExecutionElapsed(0)).toBe('00:00.0');
-    expect(formatQueryExecutionElapsed(61_299)).toBe('01:01.2');
-    expect(formatQueryExecutionElapsed(3_661_999)).toBe('01:01:01.9');
-    expect(formatQueryExecutionElapsed(Number.NaN)).toBe('00:00.0');
+  it('formats query duration with one shared unit for status bar and log rows', () => {
+    expect(formatQueryExecutionElapsed(0)).toBe('0ms');
+    expect(formatQueryExecutionElapsed(219)).toBe('219ms');
+    expect(formatQueryExecutionElapsed(1_000)).toBe('1s');
+    expect(formatQueryExecutionElapsed(1_230)).toBe('1.23s');
+    expect(formatQueryExecutionElapsed(61_299)).toBe('1m 01s');
+    expect(formatQueryExecutionElapsed(3_661_999)).toBe('1h 01m 01s');
+    expect(formatQueryExecutionElapsed(Number.NaN)).toBe('0ms');
   });
 
   it('prefers backend SQL duration over frontend wall-clock fallback', () => {
@@ -332,6 +335,7 @@ describe('QueryEditorToolbar layout', () => {
 
   it('keeps live and completed execution time at the editor bottom-left', () => {
     const toolbarSource = readFileSync(new URL('./QueryEditorToolbar.tsx', import.meta.url), 'utf8');
+    const timerSource = readFileSync(new URL('./queryEditor/queryEditorExecutionTimer.ts', import.meta.url), 'utf8');
     const editorSource = readFileSync(new URL('./QueryEditor.tsx', import.meta.url), 'utf8');
     const css = readV2ThemeCss();
     const statusbarCss = css.slice(
@@ -343,8 +347,8 @@ describe('QueryEditorToolbar layout', () => {
       css.indexOf('body[data-ui-version="v2"] .gn-v2-query-resizer {'),
     );
 
-    expect(toolbarSource).toContain('globalThis.setInterval(updateElapsed, QUERY_EXECUTION_TIMER_INTERVAL_MS)');
-    expect(toolbarSource).toContain('startedAtRef.current = null');
+    expect(timerSource).toContain('globalThis.setInterval(updateElapsed, QUERY_EXECUTION_TIMER_INTERVAL_MS)');
+    expect(timerSource).toContain('startedAtRef.current = null');
     expect(toolbarSource).not.toContain('gn-query-toolbar-execution-slot');
     expect(editorSource).toContain('className="gn-query-execution-statusbar"');
     expect(editorSource).toContain('className="gn-query-execution-timer"');
@@ -372,8 +376,9 @@ describe('QueryEditorToolbar layout', () => {
     );
     expect(wordWrapCss).toContain('align-items: center;');
     expect(wordWrapCss).toContain('justify-content: center;');
-    expect(wordWrapCss).toContain('width: 16px;');
-    expect(wordWrapCss).toContain('height: 16px;');
+    // The icon is the shared line-icon family now: it sizes with the font, like every other toolbar icon.
+    expect(wordWrapCss).toContain('font-size: var(--gn-toolbar-icon-size, 17px);');
+    expect(toolbarSource).toContain('GnWrapIcon');
     expect(wordWrapCss).not.toContain('translateY');
   });
 

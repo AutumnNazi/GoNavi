@@ -24,6 +24,8 @@ const (
 	JobKindReconcile JobKind = "reconcile"
 	JobKindQuerySink JobKind = "query_sink"
 	JobKindCompare   JobKind = "compare"
+	// JobKindBackup exports source tables to a local SQL backup.
+	JobKindBackup JobKind = "backup"
 )
 
 type IncrementalMode string
@@ -165,6 +167,7 @@ type JobDefinition struct {
 	IncrementalMode   IncrementalMode    `json:"incrementalMode"`
 	Source            EndpointRef        `json:"source"`
 	Target            EndpointRef        `json:"target"`
+	Backup            *BackupSpec        `json:"backup,omitempty"`
 	SourceQuery       string             `json:"sourceQuery,omitempty"`
 	Mappings          []TableMapping     `json:"mappings"`
 	Options           ExecutionOptions   `json:"options"`

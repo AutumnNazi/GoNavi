@@ -158,6 +158,11 @@ func (s *ProviderConfigStore) Save(snapshot ProviderConfigStoreSnapshot) error {
 	providers := make([]ai.ProviderConfig, 0, len(snapshot.Providers))
 	for _, providerConfig := range snapshot.Providers {
 		runtimeConfig := clearRemovedProviderEditorFields(normalizeProviderConfig(clearRemovedProviderEditorFields(providerConfig)))
+		if isBuiltinAIProviderConfig(runtimeConfig) {
+			runtimeConfig.HasSecret, runtimeConfig.SecretRef, runtimeConfig.APIKey, runtimeConfig.Headers = false, "", "", nil
+			providers = append(providers, runtimeConfig)
+			continue
+		}
 		meta, bundle := splitProviderSecrets(runtimeConfig)
 		if bundle.hasAny() {
 			storedMeta, err := persistProviderSecretBundleWithLocalizer(s.dailySecrets, meta, bundle, s.localizer)
@@ -258,13 +263,17 @@ func (s *ProviderConfigStore) readStoredSnapshot() (aiConfig, ProviderConfigStor
 }
 
 func providerHasRemovedEditorFields(config ai.ProviderConfig) bool {
-	return len(config.Models) > 0 || config.MaxTokens != 0 || config.ContextWindow != 0
+	return len(config.Models) > 0 || config.MaxTokens != 0
 }
 
+// clearRemovedProviderEditorFields 清掉供应商编辑器已移除的字段。
+// ContextWindow 不在其中：它现在是聊天输入区里为当前模型选的上下文档位，
+// 只保留落在该模型可选档位内的值（见 ai.ModelContextProfile.NormalizeWindow），
+// 其余一律归零，表示跟随模型默认。
 func clearRemovedProviderEditorFields(config ai.ProviderConfig) ai.ProviderConfig {
 	config.Models = nil
 	config.MaxTokens = 0
-	config.ContextWindow = 0
+	config.ContextWindow = ai.ResolveModelContextProfile(config.Model).NormalizeWindow(config.ContextWindow)
 	return config
 }
 
@@ -302,6 +311,12 @@ func (s *ProviderConfigStore) persistMCPHTTPServerToken(token string) error {
 }
 
 func (s *ProviderConfigStore) loadStoredProviderConfig(config ai.ProviderConfig) (ai.ProviderConfig, bool, error) {
+	if isBuiltinAIProviderConfig(config) {
+		// Account tokens are not provider secrets (see builtinAIAccountKey).
+		rewritten := config.HasSecret || strings.TrimSpace(config.SecretRef) != "" || strings.TrimSpace(config.APIKey) != ""
+		config.HasSecret, config.SecretRef, config.APIKey, config.Headers = false, "", "", nil
+		return config, rewritten, nil
+	}
 	meta, bundle := splitProviderSecrets(config)
 	if bundle.hasAny() {
 		storedMeta, err := persistProviderSecretBundleWithLocalizer(s.dailySecrets, meta, bundle, s.localizer)

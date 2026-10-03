@@ -10,7 +10,7 @@ import { useStore } from './store'
 import { cloneBrowserMockValue, duplicateBrowserMockConnection, resolveBrowserMockSecretFlag } from './utils/browserMockConnections'
 import RootErrorBoundary from './components/RootErrorBoundary'
 import { hideBootSplash } from './utils/bootSplash'
-import { signalMainWindowFrontendReady, waitForMainWindowContentPaint } from './utils/mainWindowStartup'
+import { signalMainWindowFrontendReady, waitForMainWindowContentPaint, waitForStartupWindowGeometrySettled } from './utils/mainWindowStartup'
 import { configureAntdStaticOverlayLayer } from './utils/overlayZIndex'
 import { normalizeConnectionEnvironmentType } from './utils/connectionEnvironment'
 import { resolveBrandIconRemoteSrc } from './brand/brandIcons'
@@ -1339,6 +1339,11 @@ if (
                     mockActiveProviderId = id;
                 },
                 AIGetCLICapabilities: async () => [],
+                AIGetModelContextProfile: async (provider: { model?: string }) => (
+                    String(provider?.model || '').toLowerCase().includes('gpt-5')
+                        ? { defaultWindow: 1000000, options: [500000, 1000000] }
+                        : { defaultWindow: 258000, options: [128000, 200000, 258000, 500000, 1000000, 2000000] }
+                ),
                 AIGetCLIModelCatalog: async () => ({ models: [], source: 'none', stale: false }),
                 AIListCLIModels: async () => [],
                 AIGetSafetyLevel: async () => mockAISafetyLevel,
@@ -1738,9 +1743,14 @@ const Root = ({ rootComponent }: { rootComponent: React.ReactNode }) => {
             return;
         }
         let cancelled = false;
+        // 先撤启动遮罩（Web 模式没有原生窗口可等），再等启动窗口几何落到最终
+        // 状态后才发首屏握手：主窗口此时仍隐藏，用户看不到“小窗 → 全屏”的过渡。
         void waitForMainWindowContentPaint().then(() => {
             if (cancelled) return;
             hideBootSplash();
+            return waitForStartupWindowGeometrySettled();
+        }).then(() => {
+            if (cancelled) return;
             signalMainWindowFrontendReady();
         });
         return () => {

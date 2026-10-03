@@ -137,6 +137,7 @@ import {
     type TemporalConnectionLike,
     type TemporalPickerType,
 } from './dataGridTemporal';
+import { resolveGridColumnAlign, type GridColumnAlign } from './dataGridColumnAlign';
 import {
     buildEffectiveFilterConditions,
     resolveWhereConditionSelectedValue,
@@ -497,6 +498,8 @@ const DataGrid: React.FC<DataGridProps> = ({
   const canModifyData = !readOnly && !!tableName && !!effectiveEditLocator && !effectiveEditLocator.readOnly && effectiveEditLocator.strategy !== 'none';
   const showColumnComment = queryOptions?.showColumnComment ?? true;
   const showColumnType = queryOptions?.showColumnType ?? true;
+  // 默认全部左对齐；开启后仅数值/日期时间列的数据格右对齐，表头始终左对齐。
+  const alignNumericTemporalRight = queryOptions?.alignNumericTemporalCellsRight ?? false;
 
   // --- Display Columns Order & Visibility Management ---
   const layoutMemoryKey = connectionId && dbName && tableName ? `${connectionId}-${dbName}-${tableName}` : '';
@@ -1272,6 +1275,18 @@ const DataGrid: React.FC<DataGridProps> = ({
       });
       return next;
   }, [displayColumnNames, columnMetaMap, columnTypeMapByLowerName]);
+
+  // 仅数据格右对齐：数值与日期时间列右对齐，其余保持左对齐；表头不受影响。
+  // 由显示设置开关控制，默认关闭（全左）。
+  const gridColumnAlignMap = useMemo<Record<string, GridColumnAlign>>(() => {
+      const next: Record<string, GridColumnAlign> = {};
+      displayColumnNames.forEach((columnName) => {
+          next[columnName] = alignNumericTemporalRight
+              ? resolveGridColumnAlign(displayColumnTypeMap[columnName], dbType, currentConnConfig)
+              : 'left';
+      });
+      return next;
+  }, [displayColumnNames, displayColumnTypeMap, dbType, currentConnConfig, alignNumericTemporalRight]);
 
   const insertSQLColumnTypes = useMemo(() => {
       const next: Record<string, string> = {};
@@ -3414,6 +3429,8 @@ const DataGrid: React.FC<DataGridProps> = ({
                   'data-col-name': dataIndex,
                   'data-cell-modified': isModifiedCell ? 'true' : undefined,
                   'data-cell-editing': isVirtualInlineEditingCell ? 'true' : undefined,
+                  // 数值/日期时间列数据右对齐；其余列与表头保持左对齐。
+                  style: gridColumnAlignMap[dataIndex] === 'right' ? { textAlign: 'right' } : undefined,
               };
               if (!enableVirtual && dataPanelOpenRef.current) {
                   // 非虚拟表保留最直接的点击同步；虚拟表改走容器级事件委托，避免每格闭包。
@@ -3602,7 +3619,7 @@ const DataGrid: React.FC<DataGridProps> = ({
               return originalRenderContent;
           }
       };
-  }), [cancelVirtualInlinePickerInteraction, closeVirtualInlineEditor, columns, commitVirtualInlinePickerValue, currentConnConfig, dbType, deletedRowKeys, displayColumnTypeMap, enableInlineEditableCell, enableVirtual, form, handleCellSave, handleSharedCellContextMenu, handleSharedCellDoubleClick, handleVirtualCellActivate, inputCellPadding, isVirtualEditingSessionCurrent, lockVirtualInlineTableScroll, modifiedColumns, openCellEditor, rowKeyStr, saveVirtualInlineEditor, scheduleVirtualInlinePickerInteraction, updateFocusedCell, useInlineEditableBodyCell, virtualEditingCellForRender]);
+  }), [cancelVirtualInlinePickerInteraction, closeVirtualInlineEditor, columns, commitVirtualInlinePickerValue, currentConnConfig, dbType, deletedRowKeys, displayColumnTypeMap, gridColumnAlignMap, enableInlineEditableCell, enableVirtual, form, handleCellSave, handleSharedCellContextMenu, handleSharedCellDoubleClick, handleVirtualCellActivate, inputCellPadding, isVirtualEditingSessionCurrent, lockVirtualInlineTableScroll, modifiedColumns, openCellEditor, rowKeyStr, saveVirtualInlineEditor, scheduleVirtualInlinePickerInteraction, updateFocusedCell, useInlineEditableBodyCell, virtualEditingCellForRender]);
 
   const rowNumberColumnWidth = useMemo(() => {
       const manual = columnWidths[GONAVI_ROW_NUMBER_COLUMN_KEY];
@@ -4351,6 +4368,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           darkMode={darkMode}
           showColumnComment={showColumnComment}
           showColumnType={showColumnType}
+          alignNumericTemporalRight={alignNumericTemporalRight}
           showRowNumberColumn={resolvedShowRowNumberColumn}
           columnSearchText={columnSearchText}
           allOrderedColumnNames={allOrderedColumnNames}
@@ -4362,6 +4380,7 @@ const DataGrid: React.FC<DataGridProps> = ({
           translate={translateDataGrid}
           onShowColumnCommentChange={(checked) => setQueryOptions({ showColumnComment: checked })}
           onShowColumnTypeChange={(checked) => setQueryOptions({ showColumnType: checked })}
+          onAlignNumericTemporalRightChange={(checked) => setQueryOptions({ alignNumericTemporalCellsRight: checked })}
           onShowRowNumberColumnChange={(checked) => setAppearance({ showDataTableRowNumber: checked })}
           onToggleAllColumnsVisibility={toggleAllColumnsVisibility}
           onColumnSearchTextChange={setColumnSearchText}

@@ -31,6 +31,7 @@ describe('DataGridColumnInfoPopoverContent', () => {
         darkMode={false}
         showColumnComment
         showColumnType
+        alignNumericTemporalRight={false}
         showRowNumberColumn
         columnSearchText=""
         allOrderedColumnNames={['id', 'name']}
@@ -42,6 +43,7 @@ describe('DataGridColumnInfoPopoverContent', () => {
         translate={(key) => key === 'app.theme.data_table.row_number' ? 'Show row numbers' : key}
         onShowColumnCommentChange={() => {}}
         onShowColumnTypeChange={() => {}}
+        onAlignNumericTemporalRightChange={() => {}}
         onShowRowNumberColumnChange={onShowRowNumberColumnChange}
         onToggleAllColumnsVisibility={() => {}}
         onColumnSearchTextChange={() => {}}
@@ -59,5 +61,46 @@ describe('DataGridColumnInfoPopoverContent', () => {
 
     act(() => rowNumberCheckbox?.props.onChange({ target: { checked: false } }));
     expect(onShowRowNumberColumnChange).toHaveBeenCalledWith(false);
+  });
+
+  it('toggles numeric/temporal cell right alignment from the display settings', () => {
+    const onAlignNumericTemporalRightChange = vi.fn();
+    const renderer = create(
+      <DataGridColumnInfoPopoverContent
+        darkMode={false}
+        showColumnComment
+        showColumnType
+        alignNumericTemporalRight={false}
+        showRowNumberColumn
+        columnSearchText=""
+        allOrderedColumnNames={['id', 'name']}
+        localHiddenColumns={[]}
+        enableColumnOrderMemory={false}
+        enableHiddenColumnMemory={false}
+        canResetOrder={false}
+        canResetHidden={false}
+        translate={(key) => key === 'data_grid.column_settings.align_numeric_temporal_right' ? 'Right align numeric' : key}
+        onShowColumnCommentChange={() => {}}
+        onShowColumnTypeChange={() => {}}
+        onAlignNumericTemporalRightChange={onAlignNumericTemporalRightChange}
+        onShowRowNumberColumnChange={() => {}}
+        onToggleAllColumnsVisibility={() => {}}
+        onColumnSearchTextChange={() => {}}
+        onToggleColumnVisibility={() => {}}
+        onEnableColumnOrderMemoryChange={() => {}}
+        onEnableHiddenColumnMemoryChange={() => {}}
+        onResetOrder={() => {}}
+        onResetHidden={() => {}}
+      />,
+    );
+
+    const alignCheckbox = renderer.root.findAllByType('input')
+      .find((input) => input.props['data-label'] === 'Right align numeric');
+    expect(alignCheckbox).toBeDefined();
+    // 默认关闭（全左对齐）
+    expect(alignCheckbox?.props.checked).toBe(false);
+
+    act(() => alignCheckbox?.props.onChange({ target: { checked: true } }));
+    expect(onAlignNumericTemporalRightChange).toHaveBeenCalledWith(true);
   });
 });

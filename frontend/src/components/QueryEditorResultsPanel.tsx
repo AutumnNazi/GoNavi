@@ -128,6 +128,9 @@ interface QueryEditorResultsPanelProps {
     currentConnectionId: string;
     maxRows?: number;
     dataPreviewRequest?: { resultKey: string; requestId: string } | null;
+    /** ES 结果 table/raw 视图模式。状态由调用方持有，结果面板因隐藏/全屏重挂时不丢失。 */
+    elasticsearchViewModes?: Record<string, 'table' | 'raw'>;
+    onElasticsearchViewModeChange?: (key: string, mode: 'table' | 'raw') => void;
     toggleShortcutLabel: string;
     diagnoseShortcutLabel?: string;
     onActiveResultKeyChange: (key: string) => void;
@@ -197,6 +200,8 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
     currentConnectionId,
     maxRows,
     dataPreviewRequest,
+    elasticsearchViewModes,
+    onElasticsearchViewModeChange,
     toggleShortcutLabel,
     diagnoseShortcutLabel,
     onActiveResultKeyChange,
@@ -224,7 +229,6 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
     const globalHiddenColumns = useGlobalHiddenColumns();
     const [draggingResultKey, setDraggingResultKey] = useState<string | null>(null);
     const [detachDragPreview, setDetachDragPreview] = useState<DetachDragPreviewState | null>(null);
-    const [elasticsearchViewModes, setElasticsearchViewModes] = useState<Record<string, 'table' | 'raw'>>({});
     const resultTabDragRef = useRef<{
         key: string;
         title: string;
@@ -453,8 +457,8 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
     };
 
     const handleElasticsearchViewModeChange = useCallback((key: string, mode: 'table' | 'raw') => {
-        setElasticsearchViewModes((current) => ({ ...current, [key]: mode }));
-    }, []);
+        onElasticsearchViewModeChange?.(key, mode);
+    }, [onElasticsearchViewModeChange]);
 
     const handleMessageTextareaKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'a') {
@@ -675,7 +679,7 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
                 maxRows={maxRows}
                 globalHiddenColumns={globalHiddenColumns}
                 dataPreviewRequest={dataPreviewRequest}
-                elasticsearchViewMode={elasticsearchViewModes[rs.key]}
+                elasticsearchViewMode={elasticsearchViewModes?.[rs.key]}
                 onElasticsearchViewModeChange={handleElasticsearchViewModeChange}
                 actionsRef={resultTabActionsRef}
             />

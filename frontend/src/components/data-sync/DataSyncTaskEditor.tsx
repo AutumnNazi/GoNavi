@@ -1,3 +1,5 @@
+import { toLocalDateTimeInput, fromLocalDateTimeInput } from './dataSyncDateTime';
+import { DataSyncBackgroundNotice } from './DataSyncBackgroundNotice';
 import React, { useEffect, useRef, useState } from 'react';
 import { isWebRPCAbortError } from '../../utils/webRpc';
 
@@ -6,6 +8,7 @@ import { DataSyncEndpointSelector } from './DataSyncEndpointSelector';
 import { DataSyncField as Field } from './DataSyncField';
 import { DataSyncFieldMappingEditor } from './DataSyncFieldMappingEditor';
 import { DataSyncMappingTable } from './DataSyncMappingTable';
+import { dataSyncMappingKey } from './dataSyncMappingKey';
 import { DataSyncRouteBar } from './DataSyncRouteBar';
 import type { DataSyncWorkbenchGateway } from './gateway';
 import {
@@ -78,19 +81,6 @@ const createTrigger = (
   return { mode: 'continuous' };
 };
 
-const toLocalDateTimeInput = (value: string): string => {
-  const date = new Date(value);
-  if (!value || !Number.isFinite(date.getTime())) return '';
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
-};
-
-const fromLocalDateTimeInput = (value: string): string => {
-  if (!value) return '';
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date.toISOString() : '';
-};
-
 const createIncremental = (
   mode: DataSyncIncrementalPolicy['mode'],
 ): DataSyncIncrementalPolicy => {
@@ -129,8 +119,10 @@ const EndpointStage: React.FC<{
   onContinue: () => void;
 }> = ({ task, gateway, connectionTree, t, onPatch, onContinue }) => {
   const connections = useDataSyncSavedConnections(gateway);
-  const sourceDatabases = useDataSyncDatabases(gateway, task.source.connectionId);
-  const targetDatabases = useDataSyncDatabases(gateway, task.target.connectionId);
+  const sourceDatabases = useDataSyncDatabases(gateway, task.source.connectionId,
+    connections.items.some((connection) => connection.id === task.source.connectionId));
+  const targetDatabases = useDataSyncDatabases(gateway, task.target.connectionId,
+    connections.items.some((connection) => connection.id === task.target.connectionId));
 
   const selectConnection = (
     side: 'source' | 'target',
@@ -171,8 +163,8 @@ const EndpointStage: React.FC<{
     });
   };
 
-  const sourceReady = Boolean(task.source.connectionId.trim());
-  const targetReady = Boolean(task.target.connectionId.trim());
+  const sourceReady = connections.items.some((connection) => connection.id === task.source.connectionId && connection.readable);
+  const targetReady = connections.items.some((connection) => connection.id === task.target.connectionId && connection.writable);
   const canContinue = sourceReady && targetReady;
 
   return (
@@ -289,21 +281,18 @@ const normalizeDataSyncObjectName = (value: string): string =>
     .toLowerCase();
 
 const hasIdentityMigrationMappings = (task: DataSyncTaskDefinition): boolean => {
+  // 结构型迁移，以及可选开启「自动补字段」的对账（差异同步）任务，都允许同名表 + 识别列的隐式路径。
   const structureMigration =
-    task.kind === 'migration' &&
-    (task.content === 'schema' || task.content === 'both');
+    (task.kind === 'migration' &&
+      (task.content === 'schema' || task.content === 'both')) ||
+    (task.kind === 'reconcile' && task.incremental.mode === 'snapshot');
   const mappings = task.mappings.filter((mapping) => mapping.enabled);
   return (
     structureMigration &&
     mappings.length > 0 &&
     mappings.every((mapping) => {
-      if (
-        mapping.fields.length > 0 ||
-        (!structureMigration &&
-          mapping.keyColumns.some((column) => column.trim().length > 0))
-      ) {
-        return false;
-      }
+      // 外层已保证 structureMigration 为真，识别列允许存在（后端预检会校验它等于源物理主键）。
+      if (mapping.fields.length > 0) return false;
       return Boolean(
         normalizeDataSyncObjectName(mapping.sourceObject) &&
           normalizeDataSyncObjectName(mapping.targetObject),
@@ -353,12 +342,13 @@ const DeliveryStage: React.FC<{
   const schemaOnlyMigration =
     task.kind === 'migration' && task.content === 'schema';
   const canConfigureMigrationStructure =
-    task.kind === 'migration' &&
+    (task.kind === 'migration' || task.kind === 'reconcile') &&
     capability.canExecute &&
     (identityMigrationMappings || schemaOnlyMigration);
   const canAutoAddColumns =
     canConfigureMigrationStructure && capability.supportsAutoAddColumns === true;
   const canCreateIndexes =
+    task.kind === 'migration' &&
     canConfigureMigrationStructure &&
     capability.supportsAutoCreate &&
     capability.requiresExistingTarget !== true &&
@@ -770,7 +760,7 @@ const DeliveryStage: React.FC<{
   );
 };
 
-const TriggerStage: React.FC<{
+export const TriggerStage: React.FC<{
   task: DataSyncTaskDefinition;
   gateway: DataSyncWorkbenchGateway;
   capability: DataSyncRouteCapability;
@@ -835,6 +825,7 @@ const TriggerStage: React.FC<{
       <div>
         <h2>{t('trigger.title')}</h2>
         <p>{t('trigger.help')}</p>
+        <DataSyncBackgroundNotice />
       </div>
     </header>
     <div className="gn-data-sync-field-grid gn-data-sync-field-grid--policy">
@@ -855,9 +846,10 @@ const TriggerStage: React.FC<{
           <option value="continuous" disabled={task.kind !== 'cdc'}>{t('trigger.continuous')}</option>
         </select>
       </Field>
-      <Field label={t('incremental.mode')}>
+      <Field label={task.kind === 'backup' ? t('backup.run_mode') : t('incremental.mode')}>
         <select
           className="gn-data-sync-control"
+          disabled={task.kind === 'backup'}
           value={incremental.mode}
           onChange={(event) => {
             const mode = event.target.value as DataSyncIncrementalPolicy['mode'];
@@ -899,10 +891,11 @@ const TriggerStage: React.FC<{
           }}
         >
           <option value="snapshot" disabled={task.kind === 'cdc'}>{t('incremental.snapshot')}</option>
-          <option value="watermark" disabled={task.kind === 'cdc'}>{t('incremental.watermark')}</option>
-          <option value="cdc" disabled={task.kind !== 'cdc'}>{t('incremental.cdc')}</option>
+          {task.kind !== 'backup' ? <option value="watermark" disabled={task.kind === 'cdc'}>{t('incremental.watermark')}</option> : null}
+          {task.kind !== 'backup' ? <option value="cdc" disabled={task.kind !== 'cdc'}>{t('incremental.cdc')}</option> : null}
         </select>
       </Field>
+      {task.kind === 'backup' ? <p className="gn-data-sync-inline-note" role="note">{t('backup.full_snapshot_help')}</p> : null}
       {trigger.mode === 'once' ? (
         <>
           <Field label={t('trigger.run_at')}>
@@ -1146,6 +1139,12 @@ export const DataSyncTaskEditor: React.FC<{
   preflight: DataSyncPreflightSnapshot | null;
   preflightStale: boolean;
   preflightContent?: React.ReactNode;
+  /**
+   * 预检问题点「定位」时传入的映射标识。本地校验给出的是映射行 id，
+   * 后端问题给出的是稳定键（`源 -> 目标`），两种情况都要能定位到行。
+   */
+  focusMappingRef?: string;
+  onMappingLocated?: () => void;
   t: DataSyncWorkbenchTranslate;
   onStageChange: (stage: DataSyncTaskStage) => void;
   onPatch: (patch: TaskPatchUpdater) => void;
@@ -1158,6 +1157,8 @@ export const DataSyncTaskEditor: React.FC<{
   preflight,
   preflightStale,
   preflightContent,
+  focusMappingRef,
+  onMappingLocated,
   t,
   onStageChange,
   onPatch,
@@ -1193,6 +1194,25 @@ export const DataSyncTaskEditor: React.FC<{
   } | null>(null);
   const inspectedMapping =
     task.mappings.find((mapping) => mapping.id === inspectedMappingId) || null;
+
+  /**
+   * 把预检问题的映射引用解析成映射行 id。
+   *
+   * 两套标识并存：本地校验给出的是映射行 id（`${taskId}:mapping:...`），后端
+   * 给出的是稳定键（`源 -> 目标`）。先按行 id 试，再按稳定键比对 —— 后者需要
+   * 用任务级 schema 补齐，才能与后端算法算出同一个值。
+   */
+  const resolvedFocusMappingId = (() => {
+    const reference = (focusMappingRef || '').trim();
+    if (!reference) return undefined;
+    if (task.mappings.some((mapping) => mapping.id === reference)) return reference;
+    const matched = task.mappings.find(
+      (mapping) =>
+        dataSyncMappingKey(mapping, task.source.schema, task.target.schema) ===
+        reference.toLowerCase(),
+    );
+    return matched?.id;
+  })();
 
   useEffect(() => {
     setInspectedMappingId('');
@@ -1693,6 +1713,8 @@ export const DataSyncTaskEditor: React.FC<{
             mappings={task.mappings}
             taskKind={task.kind}
             compareMode={task.compareMode}
+            focusMappingId={resolvedFocusMappingId}
+            onLocated={onMappingLocated}
             sourceObjects={sourceObjects}
             targetObjects={targetObjects}
             endpointsReady={Boolean(

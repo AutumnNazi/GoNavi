@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 
+	appcore "GoNavi-Wails/internal/app"
+
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -89,6 +91,10 @@ func ParseChildOptions(args []string) (ChildOptions, error) {
 	return result, nil
 }
 
+func prepareDetachedChildRuntimeReaper() {
+	appcore.StartWindowsRuntimeProcessReaper()
+}
+
 func validateChildOptions(options ChildOptions) error {
 	if strings.TrimSpace(options.Token) == "" || strings.TrimSpace(options.ID) == "" {
 		return fmt.Errorf("detached-window token and id are required")
@@ -141,6 +147,7 @@ func RunChild(parentCtx context.Context, assetFS fs.FS, args []string) error {
 		http.Error(w, fmt.Sprintf("detached parent is unavailable: %v", proxyErr), http.StatusBadGateway)
 	}
 
+	prepareDetachedChildRuntimeReaper()
 	bridge := newBridge(childOptions)
 	control := newControl(bridge)
 	bridge.setReadyHandler(control.markFrontendReady)
@@ -196,6 +203,7 @@ func RunChild(parentCtx context.Context, assetFS fs.FS, args []string) error {
 			return control.handleBeforeClose(ctx)
 		},
 		OnShutdown: func(context.Context) {
+			prepareDetachedChildRuntimeReaper()
 			bridge.notifyClosing()
 			bridge.stop()
 		},

@@ -8,7 +8,7 @@ export const SIDEBAR_LOCATE_ACTIVE_QUERY_TABLE_EVENT = 'gonavi:locate-active-que
 
 export type SidebarActiveTabLocateAction =
   | { kind: 'object'; request: SidebarLocateObjectRequest }
-  | { kind: 'query-line-table' }
+  | { kind: 'query-line-table'; fallbackRequest?: SidebarLocateObjectRequest }
   | { kind: 'unavailable' };
 
 const toTrimmedString = (value: unknown): string => String(value ?? '').trim();
@@ -21,13 +21,18 @@ export const resolveSidebarActiveTabLocateAction = ({
   hasConnection: boolean;
 }): SidebarActiveTabLocateAction => {
   const request = normalizeSidebarLocateObjectRequestFromTab(tab);
-  if (request) {
-    return { kind: 'object', request };
+  const isQueryTab = tab?.type === 'query' && !toTrimmedString(tab.filePath);
+  if (isQueryTab && hasConnection && (
+    request?.objectGroup === 'savedQueries' || (!request && toTrimmedString(tab.dbName))
+  )) {
+    return {
+      kind: 'query-line-table',
+      ...(request?.objectGroup === 'savedQueries' ? { fallbackRequest: request } : {}),
+    };
   }
 
-  const isUnsavedQueryTab = tab?.type === 'query' && !toTrimmedString(tab.filePath);
-  if (isUnsavedQueryTab && hasConnection && toTrimmedString(tab.dbName)) {
-    return { kind: 'query-line-table' };
+  if (request) {
+    return { kind: 'object', request };
   }
 
   return { kind: 'unavailable' };
@@ -36,6 +41,14 @@ export const resolveSidebarActiveTabLocateAction = ({
 export const canLocateSidebarActiveTab = (
   action: SidebarActiveTabLocateAction,
 ): boolean => action.kind !== 'unavailable';
+
+export const dispatchSidebarActiveQueryTableLocate = (
+  action: Extract<SidebarActiveTabLocateAction, { kind: 'query-line-table' }>,
+): void => {
+  window.dispatchEvent(new CustomEvent(SIDEBAR_LOCATE_ACTIVE_QUERY_TABLE_EVENT, {
+    detail: action.fallbackRequest,
+  }));
+};
 
 /** Short, user-safe description of an unexpected locate failure (never a stack trace). */
 export const describeSidebarLocateFailure = (error: unknown): string => {

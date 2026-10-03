@@ -824,6 +824,30 @@ describe('shortcut defaults', () => {
     expect(options.sendAIChatMessage.windows).toEqual({ combo: 'Enter', enabled: true });
   });
 
+  it('registers editor fullscreen toggle as a query editor shortcut without conflicting native fullscreen', () => {
+    expect(DEFAULT_SHORTCUT_OPTIONS.toggleEditorFullscreen).toEqual({
+      mac: { combo: 'Ctrl+F11', enabled: true },
+      windows: { combo: 'F11', enabled: true },
+    });
+    expect(SHORTCUT_ACTION_META.toggleEditorFullscreen).toMatchObject({
+      label: '编辑器全屏',
+      scope: 'queryEditor',
+      allowInEditable: true,
+      allowWithoutModifier: true,
+    });
+    // 验收要求：与既有「切换原生全屏」快捷键不冲突
+    for (const platform of ['mac', 'windows'] as const) {
+      expect(findEnabledActionConflicts(
+        DEFAULT_SHORTCUT_OPTIONS,
+        'toggleEditorFullscreen',
+        normalizeShortcutCombo(DEFAULT_SHORTCUT_OPTIONS.toggleEditorFullscreen[platform].combo),
+        platform,
+      )).toEqual([]);
+    }
+    expect(canRecordShortcutForAction('toggleEditorFullscreen', 'F11')).toBe(true);
+    expect(canRecordShortcutForAction('toggleEditorFullscreen', 'Ctrl+F11')).toBe(true);
+  });
+
   it('resolves and displays platform-specific bindings', () => {
     const options = sanitizeShortcutOptions({
       newQueryTab: {

@@ -12,8 +12,19 @@ import (
 	"GoNavi-Wails/internal/syncjob"
 )
 
+// preflightDataSyncJob 是不带调用方 ctx 的入口，供桌面端 Wails 绑定使用。
+//
+// 桌面端的绑定不带 signal，驱动 Connect/Ping 阻塞时前端无法取消，界面只会在
+// finally 里解锁 —— 无上界的等待会让「启用任务」「检查并运行」「保存」永久停在
+// 转圈状态。这里统一套一层超时，让每个入口都必然返回一个可操作的结果。
+// web 端走 dataSyncJobPreflightContext，其 ctx 已带超时；WithTimeout 取更早的
+// 截止时间，叠加是安全的。
 func (a *App) preflightDataSyncJob(input syncjob.JobDefinition, now time.Time) DataSyncJobPreflightResult {
-	return a.preflightDataSyncJobContext(context.Background(), input, now)
+	// 预算按映射规模放宽：固定 60 秒会让 Oracle 等慢元数据源端在大任务上必然超时。
+	definition := syncjob.NormalizeDefinition(input)
+	ctx, cancel := context.WithTimeout(context.Background(), dataSyncJobPreflightTimeoutFor(definition))
+	defer cancel()
+	return a.preflightDataSyncJobContext(ctx, input, now)
 }
 
 func (a *App) preflightDataSyncJobContext(ctx context.Context, input syncjob.JobDefinition, now time.Time) DataSyncJobPreflightResult {
@@ -21,6 +32,9 @@ func (a *App) preflightDataSyncJobContext(ctx context.Context, input syncjob.Job
 		ctx = context.Background()
 	}
 	definition := syncjob.NormalizeDefinition(input)
+	if definition.Kind == syncjob.JobKindBackup {
+		return a.preflightBackupJob(ctx, definition, now)
+	}
 	// Approval is backend-owned evidence. Never echo or validate a caller-
 	// supplied approval object; only one-time tokens can mint this state.
 	definition.Approval = nil
@@ -30,15 +44,23 @@ func (a *App) preflightDataSyncJobContext(ctx context.Context, input syncjob.Job
 		NextRunAt:  []int64{},
 		CheckedAt:  now.UnixMilli(),
 	}
+	// mappingProgress 只在映射校验阶段非 nil，用于把超时定位到具体那一行。
+	var mappingProgress *DataSyncJobPreflightProgress
 	stopIfCancelled := func(stage string) bool {
-		if err := ctx.Err(); err != nil {
-			if hasPreflightIssueCode(result.Issues, "request_cancelled") {
-				return true
-			}
-			result.Issues = append(result.Issues, preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, stage, err.Error(), ""))
+		err := ctx.Err()
+		if err == nil {
+			return false
+		}
+		code := dataSyncJobContextIssueCode(err)
+		if hasPreflightIssueCode(result.Issues, code) {
 			return true
 		}
-		return false
+		issue := preflightIssue(code, DataSyncJobPreflightBlocker, stage, err.Error(), "")
+		if mappingProgress != nil {
+			issue.Detail = &DataSyncJobPreflightIssueDetail{PreflightProgress: mappingProgress}
+		}
+		result.Issues = append(result.Issues, issue)
+		return true
 	}
 	if stopIfCancelled("preflight") {
 		return finishDataSyncJobPreflight(result)
@@ -83,7 +105,7 @@ func (a *App) preflightDataSyncJobContext(ctx context.Context, input syncjob.Job
 
 	for _, mapping := range definition.Mappings {
 		if mapping.Enabled && sameDataSyncJobObject(definition, mapping) {
-			result.Issues = append(result.Issues, preflightIssue("same_object", DataSyncJobPreflightBlocker, "mappings", "source and target resolve to the same physical object", dataSyncJobMappingLabel(mapping)))
+			result.Issues = append(result.Issues, preflightIssue("same_object", DataSyncJobPreflightBlocker, "mappings", "source and target resolve to the same physical object", dataSyncJobMappingKey(mapping)))
 		}
 	}
 	if !result.Capability.CanExecute {
@@ -98,16 +120,16 @@ func (a *App) preflightDataSyncJobContext(ctx context.Context, input syncjob.Job
 			}
 			config, buildErr := buildDataSyncJobEngineConfig(definition, "preflight", source, target, mapping)
 			if buildErr != nil {
-				result.Issues = append(result.Issues, preflightIssue("mapping_compile_failed", DataSyncJobPreflightBlocker, "mappings", buildErr.Error(), dataSyncJobMappingLabel(mapping)))
+				result.Issues = append(result.Issues, preflightIssue("mapping_compile_failed", DataSyncJobPreflightBlocker, "mappings", buildErr.Error(), dataSyncJobMappingKey(mapping)))
 				continue
 			}
 			if protectionErr := ensureDataSyncTargetProtection(config); protectionErr != nil {
-				result.Issues = append(result.Issues, preflightIssue("target_protection_blocked", DataSyncJobPreflightBlocker, "delivery", protectionErr.Error(), dataSyncJobMappingLabel(mapping)))
+				result.Issues = append(result.Issues, preflightIssue("target_protection_blocked", DataSyncJobPreflightBlocker, "delivery", protectionErr.Error(), dataSyncJobMappingKey(mapping)))
 			}
 			if definition.Options.ErrorPolicy == syncjob.ErrorPolicySkipRow && definition.IncrementalMode == syncjob.IncrementalSnapshot {
 				config.OnRowError = func(context.Context, sync.ChangeEventRowError) error { return nil }
 				if validationErr := sync.ValidateSnapshotRowErrorConfig(config); validationErr != nil {
-					result.Issues = append(result.Issues, preflightIssue("row_error_isolation_unsupported", DataSyncJobPreflightBlocker, "delivery", validationErr.Error(), dataSyncJobMappingLabel(mapping)))
+					result.Issues = append(result.Issues, preflightIssue("row_error_isolation_unsupported", DataSyncJobPreflightBlocker, "delivery", validationErr.Error(), dataSyncJobMappingKey(mapping)))
 				}
 			}
 		}
@@ -116,7 +138,10 @@ func (a *App) preflightDataSyncJobContext(ctx context.Context, input syncjob.Job
 	if stopIfCancelled("endpoints") {
 		return finishDataSyncJobPreflight(result)
 	}
-	sourceDB, dbErr := a.getDatabaseSynchronouslyWithContext(ctx, normalizeMetadataRunConfig(source.Config, source.Database), false)
+	// 用可取消版本：驱动 Connect/Ping 不监听 ctx，同步版本会在 SSH 转发下
+	// 无限期阻塞，而预检在桌面端没有 signal 可取消 —— 界面就停在转圈。
+	// 这里每一步后面都紧跟 stopIfCancelled，本函数契合可取消语义。
+	sourceDB, dbErr := a.getDatabaseWithContext(ctx, normalizeMetadataRunConfig(source.Config, source.Database), false)
 	if stopIfCancelled("endpoints") {
 		return finishDataSyncJobPreflight(result)
 	}
@@ -134,7 +159,8 @@ func (a *App) preflightDataSyncJobContext(ctx context.Context, input syncjob.Job
 	if stopIfCancelled("endpoints") {
 		return finishDataSyncJobPreflight(result)
 	}
-	targetDB, dbErr := a.getDatabaseSynchronouslyWithContext(ctx, normalizeMetadataRunConfig(target.Config, target.Database), false)
+	// 同 sourceDB：目标端卡住同样会让预检永返回不了。
+	targetDB, dbErr := a.getDatabaseWithContext(ctx, normalizeMetadataRunConfig(target.Config, target.Database), false)
 	if stopIfCancelled("endpoints") {
 		return finishDataSyncJobPreflight(result)
 	}
@@ -150,22 +176,29 @@ func (a *App) preflightDataSyncJobContext(ctx context.Context, input syncjob.Job
 		}
 	}
 
+	// 进度用于把超时报成可定位的问题：只说「超时」而不说查到哪一张，
+	// 用户无法区分任务太大与源端真卡住。
+	progress := DataSyncJobPreflightProgress{Checked: 0, Total: countEnabledDataSyncMappings(definition)}
 	if !hasPreflightBlocker(result.Issues) {
-		result.Issues = append(result.Issues, a.preflightDataSyncMappingsContext(ctx, definition, source, target)...)
+		mappingProgress = &progress
+		result.Issues = append(result.Issues, a.preflightDataSyncMappingsWithProgress(ctx, definition, source, target, &progress)...)
 	}
+	// 映射阶段的中止在这里才收敛：内层返回后 ctx 可能刚过期，所以进度详情
+	// 必须保留到这次判断之后，否则超时报文里就没有「卡在哪张表」。
 	if stopIfCancelled("mappings") {
 		return finishDataSyncJobPreflight(result)
 	}
+	mappingProgress = nil
 	if definition.IncrementalMode == syncjob.IncrementalWatermark {
 		for _, mapping := range definition.Mappings {
 			if !mapping.Enabled || mapping.Watermark == nil {
 				continue
 			}
 			if len(mapping.Watermark.TieBreakerColumns) == 0 && len(mapping.KeyColumns) == 0 {
-				result.Issues = append(result.Issues, preflightIssue("watermark_tie_breaker_required", DataSyncJobPreflightBlocker, "trigger", "watermark tasks require a stable tie-breaker or key column", dataSyncJobMappingLabel(mapping)))
+				result.Issues = append(result.Issues, preflightIssue("watermark_tie_breaker_required", DataSyncJobPreflightBlocker, "trigger", "watermark tasks require a stable tie-breaker or key column", dataSyncJobMappingKey(mapping)))
 			}
 			if len(mapping.Watermark.InitialValue) > 0 {
-				result.Issues = append(result.Issues, preflightIssue("watermark_initial_value_unsupported", DataSyncJobPreflightBlocker, "trigger", "watermark initialValue is not implemented; remove it instead of silently starting from the beginning", dataSyncJobMappingLabel(mapping)))
+				result.Issues = append(result.Issues, preflightIssue("watermark_initial_value_unsupported", DataSyncJobPreflightBlocker, "trigger", "watermark initialValue is not implemented; remove it instead of silently starting from the beginning", dataSyncJobMappingKey(mapping)))
 			}
 			config, buildErr := buildDataSyncJobEngineConfig(definition, "preflight", source, target, mapping)
 			if buildErr == nil {
@@ -180,7 +213,7 @@ func (a *App) preflightDataSyncJobContext(ctx context.Context, input syncjob.Job
 					TieBreakerColumns: ties,
 					BatchSize:         definition.Options.BatchSize,
 				}); validationErr != nil {
-					result.Issues = append(result.Issues, preflightIssue("watermark_runtime_unsupported", DataSyncJobPreflightBlocker, "trigger", validationErr.Error(), dataSyncJobMappingLabel(mapping)))
+					result.Issues = append(result.Issues, preflightIssue("watermark_runtime_unsupported", DataSyncJobPreflightBlocker, "trigger", validationErr.Error(), dataSyncJobMappingKey(mapping)))
 				}
 			}
 		}
@@ -257,7 +290,7 @@ func (a *App) preflightDataSyncJobContext(ctx context.Context, input syncjob.Job
 		}
 		for _, mapping := range definition.Mappings {
 			if mapping.Enabled && len(mapping.Columns) == 0 {
-				result.Issues = append(result.Issues, preflightIssue("cdc_authoritative_columns_required", DataSyncJobPreflightBlocker, "mappings", "CDC requires explicit source-to-target columns so removed document fields are cleared instead of leaving stale target values", dataSyncJobMappingLabel(mapping)))
+				result.Issues = append(result.Issues, preflightIssue("cdc_authoritative_columns_required", DataSyncJobPreflightBlocker, "mappings", "CDC requires explicit source-to-target columns so removed document fields are cleared instead of leaving stale target values", dataSyncJobMappingKey(mapping)))
 			}
 		}
 		if definition.CDC.InitialSnapshot {
@@ -341,274 +374,13 @@ func appendOnlyTargetPreflightIssues(definition syncjob.JobDefinition, capabilit
 	return issues
 }
 
-func (a *App) preflightDataSyncMappings(definition syncjob.JobDefinition, source, target resolvedDataSyncJobEndpoint) []DataSyncJobPreflightIssue {
-	return a.preflightDataSyncMappingsContext(context.Background(), definition, source, target)
-}
-
-func (a *App) preflightDataSyncMappingsContext(ctx context.Context, definition syncjob.JobDefinition, source, target resolvedDataSyncJobEndpoint) []DataSyncJobPreflightIssue {
-	issues := make([]DataSyncJobPreflightIssue, 0)
-	for _, mapping := range definition.Mappings {
-		if err := ctx.Err(); err != nil {
-			return append(issues, preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), dataSyncJobMappingLabel(mapping)))
-		}
-		if !mapping.Enabled {
-			continue
-		}
-		mappingID := dataSyncJobMappingLabel(mapping)
-		if definition.Kind == syncjob.JobKindQuerySink {
-			readOnly := isReadOnlySQLQuery(source.Config.Type, definition.SourceQuery)
-			if !readOnly {
-				issues = append(issues, preflightIssue("source_query_not_read_only", DataSyncJobPreflightBlocker, "mappings", "sourceQuery must be a single read-only query", mappingID))
-			}
-			targetIssues := a.preflightDataSyncQueryTargetContext(ctx, definition, mapping, target)
-			issues = append(issues, targetIssues...)
-			if err := ctx.Err(); err != nil {
-				if hasPreflightIssueCode(issues, "request_cancelled") {
-					return issues
-				}
-				return append(issues, preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID))
-			}
-			if readOnly && !hasPreflightBlocker(targetIssues) {
-				queryColumns, queryErr := a.preflightDataSyncQueryColumnsContext(ctx, source, definition.SourceQuery)
-				if queryErr != nil {
-					if err := ctx.Err(); err != nil {
-						return append(issues, preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID))
-					}
-					issues = append(issues, preflightIssue("query_schema_probe_failed", DataSyncJobPreflightBlocker, "mappings", queryErr.Error(), mappingID))
-				} else {
-					issues = append(issues, preflightQuerySourceColumnIssues(mapping, queryColumns, mappingID)...)
-				}
-			}
-			continue
-		}
-		sourceTable := qualifyDataSyncJobObject(mapping.SourceSchema, mapping.SourceTable)
-		sourceResult := a.runWebMetadataWithContext(ctx, func(session *App) connection.QueryResult {
-			return session.DBGetColumns(source.Config, source.Database, sourceTable)
-		})
-		if !sourceResult.Success {
-			if err := ctx.Err(); err != nil {
-				return append(issues, preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID))
-			}
-			issues = append(issues, preflightIssue("source_columns_failed", DataSyncJobPreflightBlocker, "mappings", sourceResult.Message, mappingID))
-			continue
-		}
-		sourceColumns, _ := sourceResult.Data.([]connection.ColumnDefinition)
-		sourceColumnSet := dataSyncJobColumnSet(sourceColumns)
-		for _, key := range mapping.KeyColumns {
-			if _, exists := sourceColumnSet[strings.ToLower(strings.TrimSpace(key))]; !exists {
-				issues = append(issues, preflightIssue("key_column_missing", DataSyncJobPreflightBlocker, "mappings", fmt.Sprintf("source key column %s does not exist", key), mappingID))
-			}
-		}
-		if mapping.Watermark != nil {
-			if _, exists := sourceColumnSet[strings.ToLower(strings.TrimSpace(mapping.Watermark.Column))]; !exists {
-				issues = append(issues, preflightIssue("watermark_column_missing", DataSyncJobPreflightBlocker, "trigger", fmt.Sprintf("watermark column %s does not exist", mapping.Watermark.Column), mappingID))
-			}
-		}
-		targetTable := qualifyDataSyncJobObject(mapping.TargetSchema, mapping.TargetTable)
-		existsResult := a.runWebMetadataWithContext(ctx, func(session *App) connection.QueryResult {
-			return session.DBTableExists(target.Config, target.Database, targetTable)
-		})
-		if !existsResult.Success {
-			if err := ctx.Err(); err != nil {
-				return append(issues, preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID))
-			}
-			issues = append(issues, preflightIssue("target_table_check_failed", DataSyncJobPreflightBlocker, "mappings", existsResult.Message, mappingID))
-			continue
-		}
-		targetExists := false
-		if payload, ok := existsResult.Data.(map[string]bool); ok {
-			targetExists = payload["exists"]
-		}
-		if !targetExists {
-			targetStrategy := dataSyncJobEffectiveTargetTableStrategy(definition, mapping)
-			if dataSyncJobMappingNeedsExplicitProjection(definition, mapping) || targetStrategy == "existing_only" || !resultSupportsAutoCreate(sync.ResolveMigrationCapability(source.Config, target.Config)) {
-				issues = append(issues, preflightIssue("target_table_missing", DataSyncJobPreflightBlocker, "mappings", "target table does not exist and this mapping cannot auto-create it", mappingID))
-			} else {
-				issues = append(issues, preflightIssue("target_table_will_be_created", DataSyncJobPreflightInfo, "mappings", "target table will be created by the migration planner", mappingID))
-				issues = append(issues, a.preflightUnmigratedIndexesContext(ctx, definition, source, target, mapping)...)
-			}
-			continue
-		}
-		targetResult := a.runWebMetadataWithContext(ctx, func(session *App) connection.QueryResult {
-			return session.DBGetColumns(target.Config, target.Database, targetTable)
-		})
-		if !targetResult.Success {
-			if err := ctx.Err(); err != nil {
-				return append(issues, preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID))
-			}
-			issues = append(issues, preflightIssue("target_columns_failed", DataSyncJobPreflightBlocker, "mappings", targetResult.Message, mappingID))
-			continue
-		}
-		targetColumns, _ := targetResult.Data.([]connection.ColumnDefinition)
-		issues = append(issues, preflightSourceComparisonKeyIssues(definition, mapping, sourceColumns, targetColumns, targetExists, mappingID)...)
-		issues = append(issues, preflightUnsupportedTargetSchemaIssues(
-			definition,
-			mapping,
-			sourceColumns,
-			targetColumns,
-			source.Config.Type,
-			target.Config.Type,
-			mappingID,
-		)...)
-		issues = append(issues, preflightImplicitTargetColumnIssues(
-			definition,
-			mapping,
-			sourceColumns,
-			targetColumns,
-			sync.ResolveMigrationCapability(source.Config, target.Config),
-			mappingID,
-		)...)
-		targetColumnSet := dataSyncJobColumnSet(targetColumns)
-		for _, column := range mapping.Columns {
-			if column.Source != "" {
-				if _, exists := sourceColumnSet[strings.ToLower(strings.TrimSpace(column.Source))]; !exists && len(column.DefaultValue) == 0 {
-					issues = append(issues, preflightIssue("source_column_missing", DataSyncJobPreflightBlocker, "mappings", fmt.Sprintf("source column %s does not exist", column.Source), mappingID))
-				}
-			}
-			if _, exists := targetColumnSet[strings.ToLower(strings.TrimSpace(column.Target))]; !exists {
-				issues = append(issues, preflightIssue("target_column_missing", DataSyncJobPreflightBlocker, "mappings", fmt.Sprintf("target column %s does not exist", column.Target), mappingID))
-			}
-		}
-	}
-	return issues
-}
-
-func dataSyncJobSourceIndexLocation(source resolvedDataSyncJobEndpoint, mapping syncjob.TableMapping) (string, string) {
-	schema := firstNonEmptySyncJob(mapping.SourceSchema, source.Schema, source.Database)
-	return strings.TrimSpace(schema), strings.TrimSpace(mapping.SourceTable)
-}
-
-func (a *App) preflightUnmigratedIndexes(definition syncjob.JobDefinition, source, target resolvedDataSyncJobEndpoint, mapping syncjob.TableMapping) []DataSyncJobPreflightIssue {
-	return a.preflightUnmigratedIndexesContext(context.Background(), definition, source, target, mapping)
-}
-
-func (a *App) preflightUnmigratedIndexesContext(ctx context.Context, definition syncjob.JobDefinition, source, target resolvedDataSyncJobEndpoint, mapping syncjob.TableMapping) []DataSyncJobPreflightIssue {
-	mappingID := dataSyncJobMappingLabel(mapping)
-	if err := ctx.Err(); err != nil {
-		return []DataSyncJobPreflightIssue{preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID)}
-	}
-	if !definition.Options.CreateIndexes {
-		return nil
-	}
-	config, err := buildDataSyncJobEngineConfig(definition, "preflight", source, target, mapping)
-	if err != nil {
-		return []DataSyncJobPreflightIssue{preflightIssue("mapping_compile_failed", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID)}
-	}
-	session := newMetadataSessionWithMode(a, ctx, true)
-	if session == nil {
-		return []DataSyncJobPreflightIssue{preflightIssue("metadata_session_unavailable", DataSyncJobPreflightBlocker, "mappings", "metadata session is unavailable", mappingID)}
-	}
-	defer session.Close()
-	sourceDB, sourceErr := session.app.getDatabase(normalizeMetadataRunConfig(source.Config, source.Database))
-	if err := ctx.Err(); err != nil {
-		return []DataSyncJobPreflightIssue{preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID)}
-	}
-	if sourceErr != nil {
-		return []DataSyncJobPreflightIssue{preflightIssue("source_connect_failed", DataSyncJobPreflightBlocker, "endpoints", sourceErr.Error(), mappingID)}
-	}
-	sourceSchema, sourceTable := dataSyncJobSourceIndexLocation(source, mapping)
-	if _, indexErr := sourceDB.GetIndexes(sourceSchema, sourceTable); indexErr != nil {
-		if err := ctx.Err(); err != nil {
-			return []DataSyncJobPreflightIssue{preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID)}
-		}
-		return []DataSyncJobPreflightIssue{preflightIssue("index_inspection_failed", DataSyncJobPreflightWarning, "mappings", indexErr.Error(), mappingID)}
-	}
-	targetDB, targetErr := session.app.getDatabase(normalizeMetadataRunConfig(target.Config, target.Database))
-	if err := ctx.Err(); err != nil {
-		return []DataSyncJobPreflightIssue{preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID)}
-	}
-	if targetErr != nil {
-		return []DataSyncJobPreflightIssue{preflightIssue("target_connect_failed", DataSyncJobPreflightBlocker, "endpoints", targetErr.Error(), mappingID)}
-	}
-	qualifiedSourceTable := strings.TrimSpace(mapping.SourceTable)
-	if strings.TrimSpace(mapping.SourceSchema) != "" {
-		qualifiedSourceTable = strings.TrimSpace(mapping.SourceSchema) + "." + qualifiedSourceTable
-	}
-	plan, planErr := sync.InspectSchemaMigrationPlan(config, qualifiedSourceTable, sourceDB, targetDB)
-	if planErr != nil {
-		if err := ctx.Err(); err != nil {
-			return []DataSyncJobPreflightIssue{preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID)}
-		}
-		return []DataSyncJobPreflightIssue{preflightIssue("schema_inspection_failed", DataSyncJobPreflightWarning, "mappings", planErr.Error(), mappingID)}
-	}
-	issues := make([]DataSyncJobPreflightIssue, 0, len(plan.UnmigratedIndexes))
-	for _, index := range plan.UnmigratedIndexes {
-		indexCopy := index
-		issues = append(issues, DataSyncJobPreflightIssue{
-			Code:      "unmigrated_index",
-			Severity:  DataSyncJobPreflightWarning,
-			Stage:     "mappings",
-			Message:   index.Reason,
-			MappingID: mappingID,
-			Detail:    &DataSyncJobPreflightIssueDetail{UnmigratedIndex: &indexCopy},
-		})
-	}
-	return issues
-}
-
-func (a *App) preflightDataSyncQueryTarget(definition syncjob.JobDefinition, mapping syncjob.TableMapping, target resolvedDataSyncJobEndpoint) []DataSyncJobPreflightIssue {
-	return a.preflightDataSyncQueryTargetContext(context.Background(), definition, mapping, target)
-}
-
-func (a *App) preflightDataSyncQueryTargetContext(ctx context.Context, definition syncjob.JobDefinition, mapping syncjob.TableMapping, target resolvedDataSyncJobEndpoint) []DataSyncJobPreflightIssue {
-	mappingID := dataSyncJobMappingLabel(mapping)
-	issues := make([]DataSyncJobPreflightIssue, 0)
-	targetTable := qualifyDataSyncJobObject(mapping.TargetSchema, mapping.TargetTable)
-	existsResult := a.runWebMetadataWithContext(ctx, func(session *App) connection.QueryResult {
-		return session.DBTableExists(target.Config, target.Database, targetTable)
-	})
-	if !existsResult.Success {
-		if err := ctx.Err(); err != nil {
-			return append(issues, preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID))
-		}
-		return append(issues, preflightIssue("target_table_check_failed", DataSyncJobPreflightBlocker, "mappings", existsResult.Message, mappingID))
-	}
-	targetExists := false
-	if payload, ok := existsResult.Data.(map[string]bool); ok {
-		targetExists = payload["exists"]
-	}
-	if !targetExists {
-		return append(issues, preflightIssue("target_table_missing", DataSyncJobPreflightBlocker, "mappings", "query sink requires an existing target table", mappingID))
-	}
-	targetResult := a.runWebMetadataWithContext(ctx, func(session *App) connection.QueryResult {
-		return session.DBGetColumns(target.Config, target.Database, targetTable)
-	})
-	if !targetResult.Success {
-		if err := ctx.Err(); err != nil {
-			return append(issues, preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID))
-		}
-		return append(issues, preflightIssue("target_columns_failed", DataSyncJobPreflightBlocker, "mappings", targetResult.Message, mappingID))
-	}
-	targetColumns, _ := targetResult.Data.([]connection.ColumnDefinition)
-	targetColumnSet := dataSyncJobColumnSet(targetColumns)
-	for _, column := range mapping.Columns {
-		if _, exists := targetColumnSet[strings.ToLower(strings.TrimSpace(column.Target))]; !exists {
-			issues = append(issues, preflightIssue("target_column_missing", DataSyncJobPreflightBlocker, "mappings", fmt.Sprintf("target column %s does not exist", column.Target), mappingID))
-		}
-	}
-	if dataSyncJobUsesInsertUpdate(definition) {
-		indexResult := a.runWebMetadataWithContext(ctx, func(session *App) connection.QueryResult {
-			return session.DBGetIndexes(target.Config, target.Database, targetTable)
-		})
-		if !indexResult.Success {
-			if err := ctx.Err(); err != nil {
-				return append(issues, preflightIssue("request_cancelled", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID))
-			}
-			return append(issues, preflightIssue("target_indexes_failed", DataSyncJobPreflightBlocker, "mappings", indexResult.Message, mappingID))
-		}
-		targetIndexes, _ := indexResult.Data.([]connection.IndexDefinition)
-		issues = append(issues, preflightQueryComparisonKeyIssuesWithIndexes(mapping, targetColumns, targetIndexes, mappingID)...)
-	}
-	return issues
-}
-
-// preflightDataSyncQueryColumns asks the source for result metadata without
-// fetching any data. Running the same query only after a task starts turned a
-// simple column alias typo into a failed write run.
-func (a *App) preflightDataSyncQueryColumns(source resolvedDataSyncJobEndpoint, sourceQuery string) ([]string, error) {
-	return a.preflightDataSyncQueryColumnsContext(context.Background(), source, sourceQuery)
-}
-
+// preflightDataSyncQueryColumnsContext asks the source for result metadata
+// without fetching any data. Running the same query only after a task starts
+// turned a simple column alias typo into a failed write run.
+//
+// 这里刻意走 dbQueryIsolatedContext 而不是共用元数据会话：探测需要以数据查询
+// 身份执行用户 SQL，与元数据连接的权限与清理路径不同，混用会让共用会话承担
+// 用户查询的连接生命周期。
 func (a *App) preflightDataSyncQueryColumnsContext(ctx context.Context, source resolvedDataSyncJobEndpoint, sourceQuery string) ([]string, error) {
 	result := a.dbQueryIsolatedContext(ctx, source.Config, source.Database, dataSyncJobQueryMetadataProbeSQL(source.Config, sourceQuery))
 	if !result.Success {
@@ -953,7 +725,11 @@ func dataSyncJobHasUniqueIndexForColumns(indexes []connection.IndexDefinition, c
 }
 
 func preflightUnsupportedTargetSchemaIssues(definition syncjob.JobDefinition, mapping syncjob.TableMapping, sourceColumns, targetColumns []connection.ColumnDefinition, sourceType, targetType, mappingID string) []DataSyncJobPreflightIssue {
-	if definition.Kind != syncjob.JobKindMigration || !dataSyncJobMigrationAllowsSchemaChanges(definition) {
+	if !dataSyncJobStructureSyncEnabled(definition) {
+		return nil
+	}
+	// 对账任务带显式字段映射时走仅数据路径（引擎不会检查结构差异），预检不能比运行时更严。
+	if definition.Kind == syncjob.JobKindReconcile && dataSyncJobMappingNeedsExplicitProjection(definition, mapping) {
 		return nil
 	}
 	unsupported := sync.UnsupportedExistingTargetSchemaDiffs(sourceColumns, targetColumns, sourceType, targetType)
@@ -1086,24 +862,4 @@ func dataSyncJobSameColumnSet(left, right []string) bool {
 
 func resultSupportsAutoCreate(capability sync.MigrationCapability) bool {
 	return capability.SupportsAutoCreate
-}
-
-func previewDataSyncJobSchedule(definition syncjob.JobDefinition, now time.Time, count int) []int64 {
-	if count < 1 || count > 20 {
-		count = 5
-	}
-	result := make([]int64, 0, count)
-	after := now
-	for len(result) < count {
-		next := syncjob.NextRunAt(definition, after)
-		if next <= 0 {
-			break
-		}
-		result = append(result, next)
-		after = time.UnixMilli(next)
-		if definition.Schedule.Kind == syncjob.ScheduleOnce {
-			break
-		}
-	}
-	return result
 }

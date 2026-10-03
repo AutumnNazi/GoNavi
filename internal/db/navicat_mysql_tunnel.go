@@ -574,7 +574,13 @@ func navicatMySQLTunnelResultSets(results []*navicatMySQLTunnelResult, budget *R
 				if columnIndex < len(row) {
 					value = row[columnIndex]
 				}
-				entry[column] = normalizeInteractiveQueryValue(value, result.fields[columnIndex].databaseTy, "mysql")
+				// 该隧道只连接 MySQL，Oracle 文本大对象分支不会命中，保留原有预览上限。
+				entry[column] = normalizeInteractiveQueryValue(
+					value,
+					result.fields[columnIndex].databaseTy,
+					"mysql",
+					interactiveOracleLargeObjectPreviewBytes,
+				)
 			}
 			rows = append(rows, entry)
 		}

@@ -65,6 +65,7 @@ vi.mock('../store', () => ({
     queryOptions: {
       showColumnComment: false,
       showColumnType: false,
+      alignNumericTemporalCellsRight: false,
     },
     setQueryOptions: vi.fn(),
     dataEditTransactionOptions: {
@@ -260,6 +261,60 @@ describe('DataGrid layout', () => {
     expect(markup).not.toContain('class="ant-pagination');
     expect(markup).not.toContain('class="data-grid-pagination-kicker"');
     expect(markup).not.toContain('当前页查找...');
+  });
+
+  it('keeps every column header left-aligned regardless of column type', () => {
+    const markup = renderDataGridWithI18n(
+      <DataGrid
+        data={[
+          {
+            __gonavi_row_key__: 'row-1',
+            id: 1,
+            amount: 9.5,
+            name: 'alpha',
+            created_at: '2026-01-01 00:00:00',
+          },
+        ]}
+        columnNames={['id', 'amount', 'name', 'created_at']}
+        initialColumnMetaMap={{
+          id: { type: 'int' },
+          amount: { type: 'decimal(10,2)' },
+          name: { type: 'varchar(255)' },
+          created_at: { type: 'datetime' },
+        } as any}
+        loading={false}
+        tableName="users"
+        dbName="main"
+        connectionId="conn-1"
+        readOnly
+        pagination={{
+          current: 1,
+          pageSize: 100,
+          total: 1,
+        }}
+        onPageChange={() => {}}
+      />,
+    );
+
+    const columnTitleBlock = (columnName: string) =>
+      markup.match(new RegExp(`<div class="gn-v2-column-title[^"]*" data-column-name="${columnName}"[^>]*style="[^"]*"`))?.[0] || '';
+
+    // 数值/日期时间/字符串列的表头列名一律左对齐，且不引入 #1353 的表头右对齐类。
+    expect(columnTitleBlock('id')).toContain('align-items:flex-start');
+    expect(columnTitleBlock('amount')).toContain('align-items:flex-start');
+    expect(columnTitleBlock('created_at')).toContain('align-items:flex-start');
+    expect(columnTitleBlock('name')).toContain('align-items:flex-start');
+    expect(markup).not.toContain('is-align-right');
+  });
+
+  it('right-aligns numeric and datetime body cells through cell props, not the header', () => {
+    const source = readDataGridSource();
+    // 数据格右对齐仅通过 onCell 的 style 作用于 body 单元格（SSR 不渲染 body 行，故校验源码接线）。
+    expect(source).toContain('resolveGridColumnAlign');
+    // 由显示设置开关控制：仅当开启时注入 textAlign:right。
+    expect(source).toContain("gridColumnAlignMap[dataIndex] === 'right' ? { textAlign: 'right' } : undefined");
+    // 默认值与安全兜底均为 false（默认全左对齐）。
+    expect(source).toContain('alignNumericTemporalCellsRight');
   });
 
   it('refreshes DataGrid localized chrome when the language preference changes', () => {
@@ -1159,8 +1214,6 @@ describe('DataGrid layout', () => {
         canOpenObjectDesigner={false}
         viewMode="table"
         ddlLoading={false}
-        showColumnComment={false}
-        showColumnType={false}
         resultViewSwitcher={<span>view switcher</span>}
         columnInfoSettingContent={<span>column settings</span>}
         columnQuickFindContent={<span>quick find</span>}

@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && node scripts/zip-dist.mjs",
+    "build": "node scripts/build-frontend.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "postinstall": "patch-package --error-on-fail",
@@ -36,6 +36,7 @@
     "recharts": "^3.8.1",
     "remark-gfm": "^4.0.1",
     "sql-formatter": "^15.7.0",
+    "tesseract.js": "7.0.0",
     "uuid": "^9.0.1",
     "zustand": "^4.4.7"
   },

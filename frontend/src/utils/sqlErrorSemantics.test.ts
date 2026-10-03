@@ -18,6 +18,19 @@ describe('formatSqlExecutionError', () => {
     expect(formatted).toContain('Raw error: ERROR: relation "orders" does not exist');
   });
 
+  it('recognizes no-database-selected errors', () => {
+    const formatted = formatSqlExecutionError('Error 1046 (3D000): No database selected');
+
+    expect(formatted).toContain('Semantic meaning: No database selected');
+    expect(formatted).toContain('Raw error: Error 1046 (3D000): No database selected');
+  });
+
+  it('recognizes postgres no-schema-selected errors as no-database-selected semantics', () => {
+    const formatted = formatSqlExecutionError('ERROR: no schema has been selected to search in');
+
+    expect(formatted).toContain('Semantic meaning: No database selected');
+  });
+
   it('recognizes duplicate key errors with statement prefix', () => {
     const formatted = formatSqlExecutionError('Duplicate entry "1" for key "PRIMARY"', {
       prefix: 'Statement 2 failed:',

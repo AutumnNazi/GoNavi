@@ -54,18 +54,6 @@ type ManagerHooks struct {
 	OnRunEvent func(RunEvent)
 }
 
-type ManagerOptions struct {
-	SchedulerInterval  time.Duration
-	LeaseTTL           time.Duration
-	HeartbeatInterval  time.Duration
-	RecoveryStaleAfter time.Duration
-	RecoveryInterval   time.Duration
-	MaxConcurrentRuns  int
-	LeaseOwner         string
-	Hooks              ManagerHooks
-	Now                func() time.Time
-}
-
 type Manager struct {
 	store    *Store
 	executor Executor
@@ -120,24 +108,12 @@ func NewManager(ctx context.Context, store *Store, executor Executor, options Ma
 		active:   make(map[string]activeExecution),
 		done:     make(chan struct{}),
 	}
-	now := options.Now()
-	acquired, err := store.AcquireSchedulerLease(ctx, "data-sync-scheduler", options.LeaseOwner, now, options.LeaseTTL)
-	if err != nil {
-		cancel(err)
-		return nil, err
-	}
-	if acquired {
-		if err := manager.recoverInterrupted(ctx); err != nil {
-			_ = store.ReleaseSchedulerLease(context.Background(), "data-sync-scheduler", options.LeaseOwner)
+	if !options.Passive {
+		if err := manager.startRuntime(ctx); err != nil {
 			cancel(err)
 			return nil, err
 		}
-		manager.lastRecoveryAt = now
 	}
-	manager.wg.Add(2)
-	go manager.dispatchLoop()
-	go manager.schedulerLoop()
-	manager.signalWake()
 	return manager, nil
 }
 
@@ -170,34 +146,6 @@ func (m *Manager) recoverInterrupted(ctx context.Context) error {
 		}
 	}
 	return nil
-}
-
-func normalizeManagerOptions(options ManagerOptions) ManagerOptions {
-	if options.SchedulerInterval <= 0 {
-		options.SchedulerInterval = time.Second
-	}
-	if options.LeaseTTL <= 0 {
-		options.LeaseTTL = 10 * time.Second
-	}
-	if options.HeartbeatInterval <= 0 {
-		options.HeartbeatInterval = 5 * time.Second
-	}
-	if options.RecoveryStaleAfter <= 0 {
-		options.RecoveryStaleAfter = 3 * options.HeartbeatInterval
-	}
-	if options.RecoveryInterval <= 0 {
-		options.RecoveryInterval = options.RecoveryStaleAfter
-	}
-	if options.MaxConcurrentRuns <= 0 {
-		options.MaxConcurrentRuns = 4
-	}
-	if options.Now == nil {
-		options.Now = time.Now
-	}
-	if strings.TrimSpace(options.LeaseOwner) == "" {
-		options.LeaseOwner = "sync-scheduler-" + uuid.NewString()
-	}
-	return options
 }
 
 func (m *Manager) PutJob(ctx context.Context, definition JobDefinition) (JobDefinition, error) {

@@ -441,6 +441,7 @@ func TestRepairPersistedWindowsApplicationShortcutsRetriesAfterFailure(t *testin
 	}
 }
 
+
 func TestSetApplicationIconPNGDoesNotActivateAfterShortcutFailure(t *testing.T) {
 	source := image.NewNRGBA(image.Rect(0, 0, 2, 2))
 	source.SetNRGBA(0, 0, color.NRGBA{R: 0x44, G: 0x88, B: 0xcc, A: 0xff})

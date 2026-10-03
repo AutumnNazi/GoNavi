@@ -28,7 +28,7 @@ export type BrandIconDefinition = {
   bundled?: boolean;
 };
 
-export const DEFAULT_BRAND_ICON_ID: BrandIconId = '03';
+export const DEFAULT_BRAND_ICON_ID: BrandIconId = '01';
 // The remote ribbon SVGs frame their tile at ~80% of the rendered canvas
 // (measured 0.797-0.805 across 01-06, designers keep a breathing margin).
 // Bundled mascot previews must size their white tile to the same fraction so
@@ -51,8 +51,9 @@ export const BRAND_ICONS: BrandIconDefinition[] = [
     slug: 'ribbon-graphite-air',
     titleZh: '石墨碳白',
     titleEn: 'Graphite air',
-    iconPath: BRAND_ICON_FALLBACK_SRC,
-    aboutPath: BRAND_ICON_FALLBACK_SRC,
+    iconPath: '/brand-fallback.svg',
+    aboutPath: '/brand-fallback.svg',
+    bundled: true,
   },
   {
     id: '02',
@@ -199,7 +200,7 @@ export function sanitizeBrandIconId(value: unknown): BrandIconId {
 }
 
 export function resolveBrandIcon(id?: unknown): BrandIconDefinition {
-  return BRAND_ICON_BY_ID.get(sanitizeBrandIconId(id)) || BRAND_ICONS[2];
+  return BRAND_ICON_BY_ID.get(sanitizeBrandIconId(id)) || BRAND_ICONS[0];
 }
 
 /** Browser-only harnesses use the same immutable assets as the native cache;

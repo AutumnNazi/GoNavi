@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   SIDEBAR_RESIZE_MAX_WIDTH,
   SIDEBAR_RESIZE_MIN_WIDTH,
@@ -9,6 +9,7 @@ import {
   SIDEBAR_TRANSITIONING_ATTRIBUTE,
   notifySidebarResizeSettled,
 } from '../utils/sidebarResizeLifecycle';
+import { createSidebarTreePanelFreeze } from './sidebarTreePanelFreeze';
 
 type SidebarResizeBounds = { minWidth: number; maxWidth: number };
 type SidebarResizeDragState = SidebarResizeBounds & {
@@ -78,6 +79,7 @@ export const useAppSidebarResize = ({
   const latestMouseX = useRef<number>(0);
   const setSidebarWidthRef = useRef(setSidebarWidth);
   setSidebarWidthRef.current = setSidebarWidth;
+  const [treePanelFreeze] = useState(createSidebarTreePanelFreeze);
   const sidebarResizeHandleWidth = Math.max(16, Math.round(16 * effectiveUiScale));
 
   const cancelClearResizingFrame = useCallback(() => {
@@ -144,11 +146,12 @@ export const useAppSidebarResize = ({
     if (!sidebarTransitionActiveRef.current) return;
 
     sidebarTransitionActiveRef.current = false;
+    if (!previousSidebarCollapsedRef.current) treePanelFreeze.release();
     if (typeof document !== 'undefined') {
       document.body.removeAttribute(SIDEBAR_TRANSITIONING_ATTRIBUTE);
     }
     notifySidebarResizeSettled();
-  }, []);
+  }, [treePanelFreeze]);
 
   const beginSidebarCollapseTransition = useCallback(() => {
     const sider = siderRef.current;
@@ -179,12 +182,21 @@ export const useAppSidebarResize = ({
     };
   }, [finishSidebarCollapseTransition]);
 
+  useEffect(() => {
+    treePanelFreeze.observe(siderRef.current);
+    return () => treePanelFreeze.dispose();
+  }, [treePanelFreeze]);
+
   useLayoutEffect(() => {
     if (sidebarCollapsed === undefined) return;
     if (previousSidebarCollapsedRef.current === sidebarCollapsed) return;
     previousSidebarCollapsedRef.current = sidebarCollapsed;
+    if (sidebarCollapsed) {
+      treePanelFreeze.observe(siderRef.current);
+      treePanelFreeze.freeze();
+    }
     beginSidebarCollapseTransition();
-  }, [beginSidebarCollapseTransition, sidebarCollapsed]);
+  }, [beginSidebarCollapseTransition, sidebarCollapsed, treePanelFreeze]);
 
   const detachSidebarResizeListeners = useCallback(() => {
     const listeners = sidebarResizeListenersRef.current;

@@ -22,6 +22,7 @@ import (
 	"GoNavi-Wails/internal/mcpserver"
 	"GoNavi-Wails/internal/nativewindow"
 	"GoNavi-Wails/internal/webserver"
+	"GoNavi-Wails/shared/i18n"
 
 	"github.com/wailsapp/wails/v2"
 	wailslogger "github.com/wailsapp/wails/v2/pkg/logger"
@@ -87,6 +88,9 @@ func shouldEnableWindowsMSISingleInstance(goos string, executablePath string) bo
 }
 
 func main() {
+	if app.HandleWindowsRuntimeReaperArgs(os.Args[1:]) {
+		return
+	}
 	// 大结果集导出（88W+ 行）时，JSON 编解码会产生 5-8 倍内存副本，
 	// Go 默认 GOGC=100 下堆翻倍才触发 GC，叠加 Windows MADV_FREE 不归还 RSS，
 	// 会导致 RSS 单调爬升到峰值后不下降。这里收紧到 50，让 GC 更早触发。
@@ -109,6 +113,10 @@ func main() {
 			return
 		}
 	}
+	// Started by a "Return to GoNavi" link while GoNavi is already open: wake it and leave.
+	if handOffDeepLink(os.Args[1:], executablePath) {
+		return
+	}
 	handled, err := runSpecialMode(os.Args[1:])
 	if handled {
 		if err != nil && !isNormalSpecialModeExit(err) {
@@ -118,6 +126,10 @@ func main() {
 		return
 	}
 	isWindowsDesktop := strings.EqualFold(strings.TrimSpace(runtime.GOOS), "windows")
+	// macOS 之前只在 Windows 上隐藏启动，用户会看到“先按默认尺寸摆普通窗、
+	// 再切到记忆 bounds/最大化”的两段式动画。这里让两端都先隐藏，等前端把
+	// 启动几何应用到最终状态后再显示。
+	hideWindowUntilFrontendReady := isWindowsDesktop || strings.EqualFold(strings.TrimSpace(runtime.GOOS), "darwin")
 	// The process identity must be fixed before Wails creates its HWND. If it
 	// is assigned from OnStartup, Explorer may already have grouped the window
 	// under the executable's default identity and keep its old taskbar icon.
@@ -143,9 +155,16 @@ func main() {
 			defer releaseSingleInstance()
 		}
 	}
+	deepLinks := &deepLinkWaker{activator: primaryActivator}
+	defer startDeepLinks(executablePath, deepLinks)()
+	// Clear WebView2 processes left behind by an earlier exit before this
+	// process creates its own browser, then arm a reaper for the next exit.
+	app.ReapOrphanedWindowsWebViewProcesses()
+	app.StartWindowsRuntimeProcessReaper()
 	// Create an instance of the app structure
 	application := app.NewApp()
 	aiService := aiservice.NewServiceWithConfigChangeHandler(app.NewCloudBackupChangeHandler(application))
+	aiservice.SetBuiltinAIClientVersion(app.CurrentVersion())
 	agentTools, agentToolsErr := newDesktopAgentToolCatalog(application, aiService)
 	if agentToolsErr != nil {
 		logger.Warnf("初始化 AI Agent 工具目录失败：%v", agentToolsErr)
@@ -165,25 +184,31 @@ func main() {
 	windowChrome := resolveMainWindowChrome(runtime.GOOS)
 	var runtimeCtx context.Context
 	var appMenu *menu.Menu
+	var preferencesMenu *macPreferencesMenu
 	if strings.EqualFold(strings.TrimSpace(runtime.GOOS), "darwin") {
-		appMenu = buildMacApplicationMenu(func() {
-			if runtimeCtx == nil {
-				return
+		emitNative := func(event string) {
+			if runtimeCtx != nil {
+				wailsRuntime.EventsEmit(runtimeCtx, event)
 			}
-			wailsRuntime.EventsEmit(runtimeCtx, nativeSelectCurrentLineEvent)
-		}, windowChrome.Frameless)
+		}
+		menuLocalizer, localizerErr := i18n.NewLocalizer(resolveStartupMenuLanguage())
+		if localizerErr != nil {
+			logger.Warnf("加载菜单栏多语言目录失败：%v", localizerErr)
+		}
+		preferencesMenu = newMacPreferencesMenu(menuLocalizer, emitNative)
+		appMenu = buildMacApplicationMenu(func() {
+			emitNative(nativeSelectCurrentLineEvent)
+		}, windowChrome.Frameless, preferencesMenu.topLevelItems()...)
 	}
 
-	// Keep the first native window hidden until the selected Windows icon has
-	// been bound. This prevents the taskbar from caching Wails' embedded icon
-	// while the frontend is still hydrating its persisted brand selection.
+	// Keep the native startup barrier before showing the packaged application icon.
 	startupNativeIconReady := make(chan struct{})
 	var signalStartupNativeIconReadyOnce sync.Once
 	signalStartupNativeIconReady := func() {
 		signalStartupNativeIconReadyOnce.Do(func() { close(startupNativeIconReady) })
 	}
 	var showInitialWindowOnce sync.Once
-	windowsStartupGate := newWindowsStartupWindowGate()
+	startupGate := newStartupWindowGate()
 
 	// Create application with options
 	err = wails.Run(&options.App{
@@ -196,7 +221,7 @@ func main() {
 		MinWidth:           900,
 		MinHeight:          600,
 		WindowStartState:   resolveInitialWindowStartState(runtime.GOOS),
-		StartHidden:        isWindowsDesktop,
+		StartHidden:        hideWindowUntilFrontendReady,
 		Frameless:          windowChrome.Frameless,
 		// 打开 Wails 原生文件拖放：查询编辑器接收操作系统 .sql 文件拖入
 		// （frontend/src/components/queryEditor/useExternalSqlFileDrop.ts），
@@ -212,12 +237,51 @@ func main() {
 		OnStartup: func(ctx context.Context) {
 			defer signalStartupNativeIconReady()
 			runtimeCtx = ctx
-			if isWindowsDesktop {
-				// Subscribe before brand-icon I/O so a fast first paint cannot
-				// emit gonavi:frontend-ready into an empty event bus.
-				wailsRuntime.EventsOn(ctx, windowsFrontendReadyEvent, func(...interface{}) {
-					windowsStartupGate.markFrontendReady()
+			if preferencesMenu != nil {
+				wailsRuntime.EventsOn(ctx, nativeMenuLanguageEvent, func(data ...interface{}) {
+					if len(data) == 0 {
+						return
+					}
+					if language, ok := data[0].(string); ok && preferencesMenu.setLanguage(language) {
+						wailsRuntime.MenuUpdateApplicationMenu(ctx)
+					}
 				})
+				wailsRuntime.EventsOn(ctx, nativeMenuThemeEvent, func(data ...interface{}) {
+					if len(data) == 0 {
+						return
+					}
+					if mode, ok := data[0].(string); ok && preferencesMenu.setTheme(mode) {
+						wailsRuntime.MenuUpdateApplicationMenu(ctx)
+					}
+				})
+			}
+			if hideWindowUntilFrontendReady {
+				// Subscribe before startup continues so a fast first paint cannot
+				// emit gonavi:frontend-ready into an empty event bus.
+				wailsRuntime.EventsOn(ctx, startupFrontendReadyEvent, func(...interface{}) {
+					startupGate.markFrontendReady()
+				})
+				// 显示回调与兜底定时器都在 OnStartup 绑定：OnDomReady 依赖 WebView
+				// 成功导航，页面加载失败时不会触发，绑定放在那里会让窗口一直隐藏。
+				startupGate.bindShow(func() {
+					showInitialWindowOnce.Do(func() {
+						// WebView2 控制器边界刷新只有 Windows 需要，macOS 调用会返回失败，
+						// 不能让它污染启动日志。
+						if isWindowsDesktop {
+							result := application.RefreshWebViewBounds()
+							if !result.Success && strings.TrimSpace(result.Message) != "" {
+								logger.Warnf("启动时刷新 WebView2 窗口边界失败：%s", result.Message)
+							}
+						}
+						wailsRuntime.WindowShow(ctx)
+					})
+				})
+				startupGate.startFallback(startupWindowShowFallback, func() {
+					logger.Warnf("前端首屏握手超时，仍显示主窗口以免一直不可见")
+					startupGate.markTimedOut()
+				})
+			}
+			if isWindowsDesktop {
 				if err := app.InitializePersistedNativeBrandIcon(application, ctx); err != nil {
 					logger.Warnf("启动时应用已保存的 Windows 品牌图标失败：%v", err)
 				}
@@ -227,7 +291,11 @@ func main() {
 			// second-instance activations only after this barrier as they may show
 			// the native window immediately.
 			signalStartupNativeIconReady()
+			if hideWindowUntilFrontendReady {
+				startupGate.markIconReady()
+			}
 			primaryActivator.bindRuntimeContext(ctx)
+			deepLinks.bind(ctx)
 			lifecycleCtx := ctx
 			if nativeWindowManager != nil {
 				if err := nativewindow.InitializeLifecycle(nativeWindowManager, ctx); err != nil {
@@ -248,28 +316,9 @@ func main() {
 			// 但后端事务仍开着并持有行锁：不清理的话，重新执行同一条 DML 会卡满
 			// innodb_lock_wait_timeout 并报 Error 1205，只能重启应用恢复。
 			app.HandleFrontendDomReady(application)
-			if isWindowsDesktop {
-				// 4s 窗口显示兜底必须在等待品牌图标链路之前武装：若
-				// powershell 被 AV 挂起导致 startupNativeIconReady 永不关闭，
-				// 兜底仍然能按时显示窗口（审查发现的启动不可见缺口）。
-				windowsStartupGate.startFallback(windowsStartupShowFallback, func() {
-					logger.Warnf("前端首屏握手超时，仍显示主窗口以免一直不可见")
-					windowsStartupGate.markTimedOut()
-				})
-				<-startupNativeIconReady
-				windowsStartupGate.bindShow(func() {
-					showInitialWindowOnce.Do(func() {
-						result := application.RefreshWebViewBounds()
-						if !result.Success && strings.TrimSpace(result.Message) != "" {
-							logger.Warnf("启动时刷新 WebView2 窗口边界失败：%s", result.Message)
-						}
-						wailsRuntime.WindowShow(ctx)
-					})
-				})
-				windowsStartupGate.markIconReady()
-			}
 		},
 		OnShutdown: func(ctx context.Context) {
+			app.StartWindowsRuntimeProcessReaper()
 			nativewindow.ShutdownLifecycle(nativeWindowManager)
 			aiservice.ShutdownWithContext(aiService, ctx)
 			application.Shutdown()
@@ -281,6 +330,7 @@ func main() {
 			TitleBar:             windowChrome.TitleBar,
 			WebviewIsTransparent: true,
 			WindowIsTranslucent:  true,
+			OnUrlOpen:            deepLinks.openURL,
 		},
 	})
 
@@ -321,7 +371,8 @@ func newDesktopAgentToolCatalog(application *app.App, aiService *aiservice.Servi
 	), nil
 }
 
-func buildMacApplicationMenu(onNativeSelectCurrentLine func(), frameless bool) *menu.Menu {
+// buildMacApplicationMenu 组装 macOS 菜单栏；extraMenus 按顺序追加在 SQL 之后。
+func buildMacApplicationMenu(onNativeSelectCurrentLine func(), frameless bool, extraMenus ...*menu.MenuItem) *menu.Menu {
 	result := menu.NewMenuFromItems(
 		menu.AppMenu(),
 		menu.EditMenu(),
@@ -335,6 +386,11 @@ func buildMacApplicationMenu(onNativeSelectCurrentLine func(), frameless bool) *
 			onNativeSelectCurrentLine()
 		}
 	})
+	for _, extra := range extraMenus {
+		if extra != nil {
+			result.Append(extra)
+		}
+	}
 	return result
 }
 
@@ -345,6 +401,14 @@ func runSpecialMode(args []string) (bool, error) {
 
 	mode := strings.ToLower(strings.TrimSpace(args[0]))
 	switch mode {
+	case "sync-worker":
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		return true, app.RunSyncWorker(ctx, args[1:])
+	case "run-sync-job":
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		return true, app.RunScheduledJobOnce(ctx, args[1:])
 	case "mcp-server", "--mcp-server":
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()

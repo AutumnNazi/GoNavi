@@ -1,5 +1,8 @@
 import type { AIChatAttachment, AIChatMessage, AIChatTokenUsage, AIToolCall } from '../../types';
 import { decodeRawJSON, decodeRawJSONWithStatus } from './aiRawMessage';
+import { CONTEXT_CHIP_MEDIA_TYPE, parseContextChipAttachment } from './aiContextChips';
+import { OCR_TEXT_MEDIA_TYPE } from './aiAgentAttachments';
+import { collectRunProcessingTimes } from './aiRunProcessingTime';
 
 export type AIRunDispatchMode = 'queue' | 'steer';
 export type AgentTaskKind = 'chat' | 'query_editor_generation';
@@ -161,6 +164,7 @@ export interface AgentLedgerStatus {
 
 export interface AIRunHarnessService {
   AISubmitAgentInput?: (request: AgentInputRequest) => Promise<AgentInputReceipt>;
+  AIPreviewAgentContext?: (request: AgentInputRequest) => Promise<unknown>;
   AIControlAgentRun?: (request: RunControlRequest) => Promise<RunSnapshot>;
   AIReadAgentRun?: (request: RunReadRequest) => Promise<RunReadResult>;
   AIListAgentSessions?: (request: SessionListRequest) => Promise<SessionListResult>;
@@ -389,8 +393,8 @@ const mergeTokenUsage = (
   return merged;
 };
 
-const mergeDurableAssistant = (target: AIChatMessage, incoming: AIChatMessage): void => {
-  target.content = appendDurableTurn(target.content, incoming.content);
+const mergeDurableAssistant = (target: AIChatMessage, incoming: AIChatMessage, continuation = false): void => {
+  target.content = continuation ? `${target.content}${incoming.content}` : appendDurableTurn(target.content, incoming.content);
   target.reasoning_content = appendDurableTurn(
     String(target.reasoning_content || ''),
     String(incoming.reasoning_content || ''),
@@ -409,16 +413,38 @@ const mergeDurableAssistant = (target: AIChatMessage, incoming: AIChatMessage): 
   }
 };
 
+/**
+ * harness 写进 ledger 的内部控制消息（提示模型接着写、重发格式错误的工具调用），
+ * 只给模型看，不属于聊天记录。用元数据里的机器可读 code 识别，不看文案。
+ */
+const INTERNAL_CONTROL_CODES: ReadonlySet<string> = new Set(['output_truncated', 'malformed_tool_call']);
+
+const internalControlCode = (role: string, metadata: unknown): string => {
+  if (role !== 'system') return '';
+  const decoded = decodeRawJSON(metadata);
+  if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) return '';
+  const code = String((decoded as Record<string, unknown>).code || '').trim();
+  return INTERNAL_CONTROL_CODES.has(code) ? code : '';
+};
+
 /** Convert an encrypted-ledger session projection into the UI message shape. */
 export const toAIChatMessages = (projection: SessionProjectionResult | null | undefined): AIChatMessage[] => {
   if (!projection || !Array.isArray(projection.messages)) return [];
   const messages: AIChatMessage[] = [];
   const assistantByRun = new Map<string, AIChatMessage>();
+  // 被截断后续写的 run：下一条 assistant 是从截断处接着写的，合并时直接拼接。
+  const continuedRuns = new Set<string>();
   projection.messages.forEach((raw): void => {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return;
     const message = raw as Record<string, unknown>;
     const role = String(message.role || '').trim();
     if (role !== 'user' && role !== 'assistant' && role !== 'system' && role !== 'tool') return;
+    const controlCode = internalControlCode(role, message.metadata);
+    if (controlCode) {
+      const controlRunId = String(message.runId || message.RunID || '').trim();
+      if (controlCode === 'output_truncated' && controlRunId) continuedRuns.add(controlRunId);
+      return;
+    }
     const toolCalls = parseToolCalls(message.toolCalls ?? message.tool_calls);
     const id = String(message.id || '').trim();
     if (!id) return;
@@ -430,6 +456,12 @@ export const toAIChatMessages = (projection: SessionProjectionResult | null | un
         if (!name) return [];
         const mimeType = String(attachment.mediaType || attachment.mimeType || 'application/octet-stream');
         const data = String(attachment.data || attachment.dataUrl || attachment.text || '');
+        if (mimeType === CONTEXT_CHIP_MEDIA_TYPE) {
+          const chip = parseContextChipAttachment(String(attachment.id || `ledger-att-${id}-${name}`), name, data);
+          return chip ? [chip] : [];
+        }
+        // The text read from an image is for the model; the chat shows the image itself.
+        if (mimeType === OCR_TEXT_MEDIA_TYPE) return [];
         const kind = mimeType.startsWith('image/') ? 'image' : 'document';
         return [{
           id: String(attachment.id || `ledger-att-${id}-${name}`),
@@ -462,12 +494,17 @@ export const toAIChatMessages = (projection: SessionProjectionResult | null | un
     if (role === 'assistant' && uiMessage.runId) {
       const existing = assistantByRun.get(uiMessage.runId);
       if (existing) {
-        mergeDurableAssistant(existing, uiMessage);
+        mergeDurableAssistant(existing, uiMessage, continuedRuns.delete(uiMessage.runId));
         return;
       }
       assistantByRun.set(uiMessage.runId, uiMessage);
     }
     messages.push(uiMessage);
+  });
+  const processingTimes = collectRunProcessingTimes(projection.runs);
+  assistantByRun.forEach((message, runId) => {
+    const processingMs = processingTimes.get(runId);
+    if (processingMs) message.processingMs = processingMs;
   });
   return messages;
 };

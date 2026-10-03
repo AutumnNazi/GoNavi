@@ -2,18 +2,19 @@ import Modal from './components/common/ResizableDraggableModal';
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import { withAISettingsLeaveGuard, type AISettingsLeaveGuard } from './utils/aiSettingsLeaveGuard';
 import { Layout, Button, ConfigProvider, theme, message, notification, Spin, Slider, Switch, Input, InputNumber, Select, Segmented, Tooltip, Alert } from 'antd';
-import { UploadOutlined, DownloadOutlined, CloudDownloadOutlined, BugOutlined, GlobalOutlined, InfoCircleOutlined, GithubOutlined, SkinOutlined, CheckOutlined, SettingOutlined, LinkOutlined, BgColorsOutlined, AppstoreOutlined, RobotOutlined, FolderOpenOutlined, HddOutlined, SafetyCertificateOutlined, SwitcherOutlined, CodeOutlined, RightOutlined, TableOutlined, MenuOutlined, PoweroffOutlined, UserOutlined, MessageOutlined, FileTextOutlined, SyncOutlined, SendOutlined, AuditOutlined, ThunderboltOutlined, ApiOutlined, WechatOutlined, CopyOutlined } from '@ant-design/icons';
+import { UploadOutlined, DownloadOutlined, CloudDownloadOutlined, BugOutlined, GlobalOutlined, InfoCircleOutlined, GithubOutlined, SkinOutlined, CheckOutlined, SettingOutlined, LinkOutlined, BgColorsOutlined, AppstoreOutlined, FolderOpenOutlined, HddOutlined, SafetyCertificateOutlined, SwitcherOutlined, CodeOutlined, RightOutlined, TableOutlined, MenuOutlined, PoweroffOutlined, UserOutlined, MessageOutlined, FileTextOutlined, SyncOutlined, SendOutlined, AuditOutlined, WechatOutlined, CopyOutlined } from '@ant-design/icons';
+import AiSparkOutlined from './components/icons/AiSparkOutlined';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { BrowserOpenURL, Environment, EventsOn, WindowFullscreen, WindowGetPosition, WindowGetSize, WindowIsFullscreen, WindowIsMaximised, WindowIsMinimised, WindowIsNormal, WindowMaximise, WindowMinimise, WindowSetDarkTheme, WindowSetLightTheme, WindowSetPosition, WindowSetSize, WindowSetSystemDefaultTheme, WindowUnfullscreen, WindowUnmaximise } from '../wailsjs/runtime';
 import Sidebar from './components/Sidebar';
-import TitleBarPrimaryActions, {
-  resolveTitleBarPrimaryActionShortcut,
-} from './components/TitleBarPrimaryActions';
+import { DockedSidebarActionsHost } from './components/sidebar/SidebarExplorerToolbar';
+import { resolveTitleBarPrimaryActionShortcut } from './components/TitleBarPrimaryActions';
 import TitleBarSystemActions from './components/TitleBarSystemActions';
-import TitleBarViewMenu from './components/TitleBarViewMenu';
-import { useTitleBarViewMenuEntries } from './components/useTitleBarViewMenuEntries';
+import TitleBarActionRow from './components/titlebar/TitleBarActionRow';
+import { useMacNativeMenuBridge } from './hooks/useMacNativeMenuBridge';
+import { useNativeMenuUpdateCheck } from './hooks/useNativeMenuUpdateCheck';
 import ConnectionGroupManagementModal from './components/sidebar/ConnectionGroupManagementModal';
 import TabManager from './components/TabManager';
 import FloatingWorkbenchWindows from './components/FloatingWorkbenchWindows';
@@ -48,12 +49,15 @@ import SecurityUpdateSettingsModal from './components/SecurityUpdateSettingsModa
 import LanguageSettingsPanel from './components/LanguageSettingsPanel';
 import WebAuthSettingsPanel from './components/WebAuthSettingsPanel';
 import CloudBackupSettings from './components/CloudBackupSettings';
+import {
+  resolveBrandIconSrc,
+} from './brand/brandIcons';
 import BrandIconPicker from './components/BrandIconPicker';
-import { resolveBrandAboutSrc } from './brand/brandIcons';
 import { useBrandIconSync } from './brand/useBrandIconSync';
 import CustomThemeManager from './components/settings/CustomThemeManager';
 import ToolbarButtonAppearanceSettings from './components/settings/ToolbarButtonAppearanceSettings';
-import TitlebarMenuStyleSettings from './components/settings/TitlebarMenuStyleSettings';
+import TitlebarActionsPlacementSettings from './components/settings/TitlebarActionsPlacementSettings';
+import { SidebarActionsPlacementSettings, SidebarSearchModeSettings } from './components/settings/SidebarLayoutSettings';
 import SettingsCenterTreeNav, {
   findSettingsCenterTreeItem,
 } from './components/settings/SettingsCenterTreeNav';
@@ -70,6 +74,7 @@ import CustomThemeStyleHost, {
   type CustomThemeAntTokenSnapshot,
 } from './components/theme/CustomThemeStyleHost';
 import ToolbarAppearanceStyleHost from './components/theme/ToolbarAppearanceStyleHost';
+import { suppressThemeSwitchTransitions } from './components/theme/themeSwitchTransition';
 import {
   AUTO_CHECK_FOR_UPDATES_INTERVAL_OPTIONS,
   DEFAULT_APPEARANCE,
@@ -138,9 +143,7 @@ import {
 } from './utils/connectionExcelGroups';
 import { buildDataSyncWorkbenchTab, resolveExistingDataSyncWorkbenchTabId } from './utils/dataSyncTab';
 import {
-  buildDriverManagerWorkbenchTab,
   DOWNLOAD_SOURCE_CHANGED_EVENT,
-  getNextDownloadSource,
   normalizeDownloadSource,
   notifyDownloadSourceChanged,
   OPEN_GLOBAL_PROXY_SETTINGS_EVENT,
@@ -152,6 +155,8 @@ import {
 } from './utils/settingsCenterTab';
 import { SettingsCenterWorkbenchRegistrar } from './components/settings/SettingsCenterWorkbenchBridge';
 import { buildSqlAuditWorkbenchTab } from './utils/sqlAuditTab';
+import type { SettingsCenterNavigationTarget } from './components/settings/settingsCenterMenuCatalog';
+import { SETTINGS_WORKBENCH_TAB_BUILDERS, resolveAISettingsSection, resolveThemeSettingsSection } from './components/settings/settingsCenterNavigationTargets';
 import { buildRequestDiagnosticsWorkbenchTab } from './utils/requestDiagnosticsTab';
 import { buildDMLSnapshotWorkbenchTab } from './utils/dmlSnapshotTab';
 import {
@@ -184,6 +189,7 @@ import {
   stripLegacyPersistedConnectionById,
 } from './utils/legacyConnectionStorage';
 import { DEFAULT_QUERY_TEMPLATE } from './components/queryEditor/QueryEditorHelpers';
+import DownloadSourceSelect from './components/DownloadSourceSelect';
 import {
   DEFAULT_SIDEBAR_TABLE_METADATA_FIELDS,
   SIDEBAR_TABLE_METADATA_FIELDS,
@@ -262,9 +268,22 @@ import {
   type WindowScaleFixReason,
   type WindowsScaleCheckTrigger,
 } from './utils/windowStateUi';
-import { resolveVisibleStartupWindowBounds } from './utils/windowRestoreBounds';
+import { resolveVisibleStartupWindowBounds, type WindowRestoreBounds } from './utils/windowRestoreBounds';
+import {
+  applyRuntimeWindowPlacement,
+  loadMainWindowDisplayLayout,
+  resolveDisplayAwareLayout,
+  resolveGlobalWindowBounds,
+  resolveMaximisedWindowRestoreBounds,
+  resolveRuntimeWindowPlacement,
+  resolveVisibleGlobalWindowBounds,
+  resolveWailsWindowPosition,
+  type MainWindowDisplayLayout,
+} from './utils/mainWindowDisplayPlacement';
+import { markStartupWindowGeometrySettled } from './utils/mainWindowStartup';
 import { resolveWailsWindowSetPosition, resolveWailsWindowVisibleViewport } from './utils/wailsWindowViewport';
 import {
+  clampAIPanelDockWidth,
   DEFAULT_AI_PANEL_WIDTH,
   resolveFullscreenAIPanelOverlayWidth,
   resolveOverlayAIPanelWidth,
@@ -277,7 +296,6 @@ import { waitForWindowCondition } from './utils/windowTransition';
 import {
   hasNativeDetachedWindowManager,
   openNativeAIChatWindow,
-  openNativeWorkbenchTabWindow,
   toggleOrFocusNativeAIChatFromMainWindow,
 } from './utils/nativeDetachedWindowHost';
 import {
@@ -295,11 +313,15 @@ import {
 } from './utils/overlayZIndex';
 import { useAppUpdateManager } from './hooks/useAppUpdateManager';
 import { useAppLogPanelResize } from './hooks/useAppLogPanelResize';
+import { useAppSidebarCollapse, useWorkbenchSidebarAutoCollapse } from './hooks/useAppSidebarCollapse';
+import { useOpenDriverManagerWorkbench } from './hooks/useDriverManagerWorkbench';
 import { useAppSidebarResize } from './hooks/useAppSidebarResize';
 import { resolveSidebarResizeHitGeometry } from './utils/sidebarLayout';
 import { canInheritNewQueryTableContext, resolveNewQueryContext } from './utils/newQueryContext';
 import { useAppUtilityStyles } from './hooks/useAppUtilityStyles';
 import { useWorkbenchTabs } from './hooks/useWorkbenchTabs';
+import { useWorkbenchSessionRestore } from './hooks/useWorkbenchSessionRestore';
+import { discardApplicationQuitUnsavedSQLChanges } from './utils/sqlEditorQuitDiscard';
 import { useAIWorkspaceSnapshot } from './components/ai/useAIWorkspaceSnapshot';
 import { isWailsDevNativeContextMenu, shouldAllowNativeContextMenu } from './utils/nativeContextMenu';
 import AgentDataSettingsPanel from './components/ai/AgentDataSettingsPanel';
@@ -645,13 +667,13 @@ type ToolCenterPaneKey =
   | 'snippet-settings'
   | 'shortcut-settings';
 
-type SettingsCenterGroupKey = 'preferences' | 'services' | ToolCenterGroupKey | 'about';
+type SettingsCenterGroupKey = 'preferences' | 'services' | ToolCenterGroupKey | 'about' | 'brand-icon';
 type SettingsCenterPaneKey =
   | 'language'
   | 'theme'
-  | 'brand-icon'
   | 'sidebar-metadata'
   | 'sidebar-objects'
+  | 'brand-icon'
   | 'proxy'
   | 'download-source'
   | 'web-auth'
@@ -870,7 +892,7 @@ function App() {
   const setThemePreference = useStore(state => state.setThemePreference);
   const customThemes = useCustomThemeStore(state => state.themes);
   const activeCustomThemeId = useCustomThemeStore(state => state.activeThemeId);
-  const selectCustomTheme = useCustomThemeStore(state => state.selectCustomTheme);
+  const activateRememberedCustomTheme = useCustomThemeStore(state => state.activateRememberedCustomTheme);
   const appearance = useStore(state => state.appearance);
   const setAppearance = useStore(state => state.setAppearance);
   const uiScale = useStore(state => state.uiScale);
@@ -1037,14 +1059,14 @@ function App() {
   }, [effectiveThemePreference, resolvedThemeMode, setTheme, themeMode]);
 
   const selectPresetTheme = useCallback((preference: ThemePreference) => {
-      // Custom CSS is an independent skin layer. Selecting a built-in preset
-      // first disables that layer, then preserves the existing 3-mode contract.
-      if (activeCustomTheme) {
-          const result = selectCustomTheme(null);
-          if (!result.ok) message.warning(t('app.theme.custom.error.storage_failed'));
-      }
+      suppressThemeSwitchTransitions();
+      // 亮 / 暗各自恢复上次应用的主题（无记忆则回到基础主题）；跟随系统始终回到基础主题。
+      const result = activateRememberedCustomTheme(preference);
+      if (!result.ok) message.warning(t('app.theme.custom.error.storage_failed'));
       setThemePreference(preference);
-  }, [activeCustomTheme, selectCustomTheme, setThemePreference, t]);
+      // 与偏好同批提交解析后的明暗，避免再由 effect 触发第二轮整树渲染。
+      setTheme(preference === 'system' ? systemThemeMode : preference);
+  }, [activateRememberedCustomTheme, setTheme, setThemePreference, systemThemeMode, t]);
   const setTabDisplaySettings = useCallback((settings: Partial<TabDisplaySettings>) => {
       setAppearance({
           tabDisplay: applyTabDisplaySettingsPatch(tabDisplaySettings, settings),
@@ -1193,12 +1215,6 @@ function App() {
   const LazyAISettingsContent = useMemo(createLazyAISettingsContent, [aiSettingsRenderNonce]);
   const sidebarWidth = useStore(state => state.sidebarWidth);
   const setSidebarWidth = useStore(state => state.setSidebarWidth);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [collapsedSidebarActionsTarget, setCollapsedSidebarActionsTarget] = useState<HTMLDivElement | null>(null);
-  const sidebarContentRef = useRef<HTMLDivElement>(null);
-  const sidebarCollapsedToggleRef = useRef<HTMLButtonElement>(null);
-  const sidebarExplorerToggleRef = useRef<HTMLButtonElement>(null);
-  const pendingSidebarToggleFocusRef = useRef<'collapsed' | 'explorer' | null>(null);
   const navigatorPlatform = detectNavigatorPlatform();
   const documentPlatform = resolveDocumentPlatform(runtimePlatform, navigatorPlatform);
   const titlebarRuntimePlatform = resolveTitlebarRuntimePlatform(runtimePlatform, navigatorPlatform);
@@ -1207,45 +1223,27 @@ function App() {
       runtimePlatform,
       navigatorPlatform,
       isWebRuntime,
+      appearance.sidebarActionsPlacement === 'rail',
   );
-  const isCollapsedSidebarActionsDocked = isSidebarCollapsed && shouldDockCollapsedSidebarActionsInTitlebar;
-  useLayoutEffect(() => {
-      const sidebarContent = sidebarContentRef.current;
-      if (!sidebarContent) return;
-      // aria-hidden alone does not remove focusable tree wrappers from the tab order.
-      sidebarContent.inert = isCollapsedSidebarActionsDocked;
-  }, [isCollapsedSidebarActionsDocked]);
-  const handleCollapseSidebarPanel = useCallback(() => {
-      if (typeof document !== 'undefined') {
-          const activeElement = document.activeElement as HTMLElement | null;
-          if (activeElement?.closest?.('[data-sidebar-content="true"]')) {
-              activeElement.blur();
-          }
-      }
-      pendingSidebarToggleFocusRef.current = 'collapsed';
-      setIsSidebarCollapsed(true);
-  }, []);
-  const handleExpandSidebarPanel = useCallback(() => {
-      pendingSidebarToggleFocusRef.current = 'explorer';
-      setIsSidebarCollapsed(false);
-  }, []);
-  const handleTitlebarSidebarToggle = useCallback(() => {
-      setIsSidebarCollapsed((collapsed) => !collapsed);
-  }, []);
-  useLayoutEffect(() => {
-      const target = pendingSidebarToggleFocusRef.current;
-      if (!target) return;
-      if (
-          target === 'collapsed'
-          && isCollapsedSidebarActionsDocked
-          && !collapsedSidebarActionsTarget
-      ) return;
-      pendingSidebarToggleFocusRef.current = null;
-      (target === 'collapsed' ? sidebarCollapsedToggleRef : sidebarExplorerToggleRef).current?.focus();
-  }, [collapsedSidebarActionsTarget, isCollapsedSidebarActionsDocked, isSidebarCollapsed]);
+  const {
+      collapsedSidebarActionsTarget,
+      handleCollapseSidebarPanel,
+      handleEnsureSidebarExpanded,
+      handleExpandSidebarPanel,
+      isCollapsedSidebarActionsDocked,
+      isSidebarCollapsed,
+      setCollapsedSidebarActionsTarget,
+      setIsSidebarCollapsed,
+      sidebarCollapsedToggleRef,
+      sidebarContentRef,
+      sidebarExplorerToggleRef,
+  } = useAppSidebarCollapse(shouldDockCollapsedSidebarActionsInTitlebar);
+  const titleBarActionsInline = appearance.titlebarActionsPlacement === 'titlebar'; // 功能入口行：默认工具条，可切到 GoNavi 右侧
+  // 内联形态下工具条常驻标题栏第二行；独立工具条形态下改放在工具条下方，标题栏不再预留第二行。
+  const dockActionsInTitlebarBand = shouldDockCollapsedSidebarActionsInTitlebar && titleBarActionsInline;
   const titleBarLayout = resolveTitleBarLayout(
       effectiveUiScale,
-      isCollapsedSidebarActionsDocked,
+      dockActionsInTitlebarBand,
       effectiveSidebarRailScale,
   );
   const titleBarHeight = titleBarLayout.height;
@@ -1254,6 +1252,8 @@ function App() {
       : 0;
   const renderedSidebarWidth = isSidebarCollapsed ? sidebarCollapsedWidth : sidebarWidth;
   const aiPanelVisible = useStore(state => state.aiPanelVisible);
+  const aiPanelWidth = useStore(state => state.aiPanelWidth);
+  const setAIPanelWidth = useStore(state => state.setAIPanelWidth);
   const detachedAIChatWindow = useStore(state => state.detachedAIChatWindow);
   const detachAIChatPanel = useStore(state => state.detachAIChatPanel);
   const aiChatDetached = Boolean(detachedAIChatWindow);
@@ -1872,6 +1872,8 @@ function App() {
           // 启动偏好成功后立刻同步实际窗口态，避免 settle 宽限期留下瞬态 normal。
           useStore.getState().setWindowState('maximized');
           clearStartupWindowRestorePending();
+          // 最大化已落到最终几何，放行主窗口首屏显示。
+          markStartupWindowGeometrySettled();
       };
 
       /** Maximise 多次失败时：退回普通窗口并铺满工作区，避免残留默认半窗。 */
@@ -1916,6 +1918,7 @@ function App() {
               void emitWindowDiagnostic('adjust:startup-work-area-fill-fallback', {
                   to: nextBounds,
               });
+              markStartupWindowGeometrySettled();
               return true;
           } catch (e) {
               console.warn('Failed to apply Windows work-area fill fallback', e);
@@ -1973,20 +1976,26 @@ function App() {
                               void emitWindowDiagnostic('error:startup-work-area-fill-fallback-failed');
                           }
                           clearStartupWindowRestorePending();
+                          // 启动偏好最终没能生效：仍放行首屏，避免窗口一直隐藏。
+                          markStartupWindowGeometrySettled();
                       }
                   });
           }, delayMs);
       };
 
-      const applyRestoredWindowBounds = (bounds: {
-          width: number;
-          height: number;
-          x: number;
-          y: number;
-      }) => {
+      const applyRestoredWindowBounds = (
+          bounds: WindowRestoreBounds,
+          displayLayout?: MainWindowDisplayLayout | null,
+      ) => {
           const state = useStore.getState();
-          const viewport = readCurrentVisibleViewport();
-          const nextBounds = resolveVisibleStartupWindowBounds(bounds, viewport);
+          const placement = resolveRuntimeWindowPlacement(
+              bounds, displayLayout ?? null, readCurrentVisibleViewport(), isWindowsPlatform(), true,
+          );
+          if (!placement) {
+              void emitWindowDiagnostic('warn:startup-window-display-unavailable', { from: bounds });
+              return bounds;
+          }
+          const nextBounds = placement.bounds;
           if (
               nextBounds.x !== bounds.x ||
               nextBounds.y !== bounds.y ||
@@ -1998,21 +2007,15 @@ function App() {
                   to: nextBounds,
               });
           }
-          WindowSetSize(nextBounds.width, nextBounds.height);
-          const setPosition = resolveWailsWindowSetPosition(nextBounds, viewport, {
-              useMonitorLocalOrigin: isWindowsPlatform(),
-          });
-          WindowSetPosition(setPosition.x, setPosition.y);
+          applyRuntimeWindowPlacement(placement, isWindowsPlatform(), WindowSetSize, WindowSetPosition);
           state.setWindowBounds(nextBounds);
           return nextBounds;
       };
 
-      const restoreNormalWindowBounds = async (bounds: {
-          width: number;
-          height: number;
-          x: number;
-          y: number;
-      }) => {
+      const restoreNormalWindowBounds = async (
+          bounds: WindowRestoreBounds,
+          layout: MainWindowDisplayLayout | null,
+      ) => {
           try {
               if (await WindowIsFullscreen()) {
                   WindowUnfullscreen();
@@ -2025,7 +2028,7 @@ function App() {
           } catch (e) {
               console.warn('Failed to restore normal window chrome', e);
           }
-          const appliedBounds = applyRestoredWindowBounds(bounds);
+          const appliedBounds = applyRestoredWindowBounds(bounds, layout);
           // Wails can finish the native normal-window transition before the
           // WebView2 controller receives its first size update. Wait for the
           // native rect, then explicitly resize the controller just as the
@@ -2047,9 +2050,14 @@ function App() {
               return;
           }
           restoredOnce = true;
+          await applyStartupWindowState();
+      };
 
+      const applyStartupWindowState = async () => {
           const state = useStore.getState();
           const bounds = state.windowBounds;
+          const layout = await loadMainWindowDisplayLayout();
+          if (cancelled) return;
           const restoreMode = resolveStartupWindowRestoreMode(
               state.startupFullscreen,
               state.windowState,
@@ -2063,7 +2071,7 @@ function App() {
                       // reload may already be maximised: SetSize in that state
                       // shrinks the HWND while its client area stays maximised.
                       if (!await WindowIsMaximised() && !await WindowIsFullscreen() && !cancelled) {
-                          const appliedBounds = applyRestoredWindowBounds(bounds);
+                          const appliedBounds = applyRestoredWindowBounds(bounds, layout);
                           await waitForNativeWindowBounds(appliedBounds);
                       }
                   } catch (e) {
@@ -2083,7 +2091,7 @@ function App() {
               if (!bounds || bounds.width < 400 || bounds.height < 300) {
                   if (isWindowsPlatform()) {
                       const nextBounds = resolveDefaultStartupWindowBounds(viewport);
-                      await restoreNormalWindowBounds(nextBounds);
+                      await restoreNormalWindowBounds(nextBounds, layout);
                       void emitWindowDiagnostic('adjust:startup-default-window-bounds', {
                           to: nextBounds,
                       });
@@ -2092,11 +2100,12 @@ function App() {
                   }
                   return;
               }
-              await restoreNormalWindowBounds(bounds);
+              await restoreNormalWindowBounds(bounds, layout);
           } catch (e) {
               console.warn('Failed to restore window bounds', e);
           } finally {
               clearStartupWindowRestorePending();
+              markStartupWindowGeometrySettled();
           }
       };
 
@@ -2155,8 +2164,19 @@ function App() {
                   store.setWindowState(newState);
               }
 
-              // 只在普通窗口模式下保存尺寸和位置
-              if (isFs || isMax) return;
+              // Windows 最大化时只记录所在显示器：不把最大化尺寸写成普通窗口的还原尺寸。
+              if (isFs || isMax) {
+                  if (isWindowsPlatform() && isMax && !isFs) {
+                      const layout = await loadMainWindowDisplayLayout();
+                      if (cancelled || isStartupWindowRestorePending()) return;
+                      const nextBounds = resolveMaximisedWindowRestoreBounds(store.windowBounds, layout);
+                      if (nextBounds) {
+                          lastSaved = `${nextBounds.width},${nextBounds.height},${nextBounds.x},${nextBounds.y},${nextBounds.dpi || ''}`;
+                          store.setWindowBounds(nextBounds);
+                      }
+                  }
+                  return;
+              }
 
               const [size, pos] = await Promise.all([
                   safeWindowRuntimeCall(() => WindowGetSize(), null),
@@ -2169,13 +2189,21 @@ function App() {
               const y = Math.trunc(Number(pos.y || 0));
                if (w < 400 || h < 300) return;
 
-               const key = `${w},${h},${x},${y}`;
+               // macOS 的 WindowGetPosition 是当前屏局部坐标，必须换算成全局坐标
+               // 才能记住窗口在哪块显示器上；换算失败时按原值保存，行为不回退。
+               const layout = await loadMainWindowDisplayLayout();
+               const savedBounds = resolveGlobalWindowBounds(
+                   { width: w, height: h, x, y },
+                   layout,
+               ) ?? { width: w, height: h, x, y };
+
+               const key = `${savedBounds.width},${savedBounds.height},${savedBounds.x},${savedBounds.y},${savedBounds.dpi || ''}`;
                if (key === lastSaved) return;
                lastSaved = key;
-               if (Math.abs(x) > 5000 || Math.abs(y) > 5000) {
-                   void emitWindowDiagnostic('anomaly:windowBounds', { width: w, height: h, x, y });
+               if (Math.abs(savedBounds.x) > 5000 || Math.abs(savedBounds.y) > 5000) {
+                   void emitWindowDiagnostic('anomaly:windowBounds', savedBounds);
                }
-               store.setWindowBounds({ width: w, height: h, x, y });
+               store.setWindowBounds(savedBounds);
             } catch (e) {
                 // 静默忽略
             }
@@ -2227,13 +2255,20 @@ function App() {
               if (currentBounds.width <= 0 || currentBounds.height <= 0) {
                   return;
               }
-              const viewport = readCurrentVisibleViewport();
-              const nextBounds = resolveVisibleStartupWindowBounds(currentBounds, viewport);
+              const layout = await loadMainWindowDisplayLayout();
+              if (cancelled || isStartupWindowRestorePending()) return;
+              const placement = resolveRuntimeWindowPlacement(currentBounds, layout, readCurrentVisibleViewport(), isWindowsPlatform());
+              if (!placement) return;
+              const nextBounds = placement.bounds;
+              const resolvedOriginal = resolveGlobalWindowBounds(currentBounds, layout);
+              const originalGlobal = resolvedOriginal ?? currentBounds;
+              const originalDpi = resolvedOriginal?.dpi;
               if (
-                  nextBounds.x === currentBounds.x &&
-                  nextBounds.y === currentBounds.y &&
-                  nextBounds.width === currentBounds.width &&
-                  nextBounds.height === currentBounds.height
+                  nextBounds.x === originalGlobal.x &&
+                  nextBounds.y === originalGlobal.y &&
+                  nextBounds.width === originalGlobal.width &&
+                  nextBounds.height === originalGlobal.height &&
+                  nextBounds.dpi === originalDpi
               ) {
                   return;
               }
@@ -2241,13 +2276,12 @@ function App() {
                   from: currentBounds,
                   to: nextBounds,
               });
-              WindowSetSize(nextBounds.width, nextBounds.height);
-              const setPosition = resolveWailsWindowSetPosition(nextBounds, viewport, {
-                  useMonitorLocalOrigin: isWindowsPlatform(),
-              });
-              WindowSetPosition(setPosition.x, setPosition.y);
-              lastSaved = `${nextBounds.width},${nextBounds.height},${nextBounds.x},${nextBounds.y}`;
-              useStore.getState().setWindowBounds(nextBounds);
+              applyRuntimeWindowPlacement(placement, isWindowsPlatform(), WindowSetSize, WindowSetPosition);
+              // 持久化用全局坐标：macOS 的窗口位置是当前屏局部坐标，直接落盘会丢
+              // 失“在哪块显示器上”的信息。换算失败时保留设备侧坐标，行为不回退。
+              const persistedBounds = placement.persistedBounds;
+              lastSaved = `${persistedBounds.width},${persistedBounds.height},${persistedBounds.x},${persistedBounds.y},${persistedBounds.dpi || ''}`;
+              useStore.getState().setWindowBounds(persistedBounds);
               window.dispatchEvent(new Event('resize'));
           } catch {
               // Wails runtime window APIs are best-effort here.
@@ -2583,15 +2617,7 @@ function App() {
   });
 
   const addTab = useStore(state => state.addTab);
-  const handleOpenDriverManagerWorkbench = useCallback(() => {
-      const tab = buildDriverManagerWorkbenchTab();
-      const wasDetached = useStore.getState().isWorkbenchTabDetached(tab.id);
-      addTab(tab);
-      if (!wasDetached) return;
-      void openNativeWorkbenchTabWindow(tab.id).catch((error) => {
-          message.error(error instanceof Error ? error.message : String(error));
-      });
-  }, [addTab]);
+  const handleOpenDriverManagerWorkbench = useOpenDriverManagerWorkbench();
   const activeContext = useStore(state => state.activeContext);
   const connections = useStore(state => state.connections);
   const connectionTags = useStore(state => state.connectionTags);
@@ -2623,6 +2649,8 @@ function App() {
       () => activeTabId ? tabs.find(tab => tab.id === activeTabId) : undefined,
       [activeTabId, tabs],
   );
+  useWorkbenchSidebarAutoCollapse(activeWorkbenchTab?.type, isSidebarCollapsed, setIsSidebarCollapsed);
+  useWorkbenchSessionRestore(isStoreHydrated && hasLoadedSecureConfig);
   const titlebarContext = useMemo(
       () => resolveTitlebarContext({
           activeContext,
@@ -3365,7 +3393,7 @@ function App() {
                         onClick={() => {
                             destroyConfirm?.();
                             applicationQuitConfirmRef.current = null;
-                            void runConfirmedActionAndFinish();
+                            void discardApplicationQuitUnsavedSQLChanges().then(runConfirmedActionAndFinish);
                         }}
                       >
                           {t('app.quit.unsaved_sql.confirm_exit')}
@@ -3738,6 +3766,8 @@ function App() {
           selectedConnectionIds: connections.map((item) => item.id),
       });
   };
+  const handleExportConnectionsRef = useRef(handleExportConnections);
+  handleExportConnectionsRef.current = handleExportConnections;
 
   // === Excel 批量导入（issue #1226）：统一入口按格式分流 ===
   // Excel 导入结果里分组按连接名声明；导入完成后按名字→ID 映射把连接挂入
@@ -4086,10 +4116,12 @@ function App() {
   const [savedQueryDirectoryApplying, setSavedQueryDirectoryApplying] = useState(false);
   const directorySettingsApplying = dataRootApplying || logDirectoryApplying || savedQueryDirectoryApplying;
 
+  // 拖拽后的宽度已持久化；窗口变窄时按当前视口再收一次，避免工作台被挤没。
+  const aiPanelDockWidth = clampAIPanelDockWidth(aiPanelWidth, viewportWidth);
   const aiPanelOverlayActive = aiPanelVisible && shouldOverlayAIPanel({
       viewportWidth,
       sidebarWidth: renderedSidebarWidth,
-      panelWidth: DEFAULT_AI_PANEL_WIDTH,
+      panelWidth: aiPanelDockWidth,
   });
   const aiPanelFullscreenOverlay = aiPanelOverlayActive && shouldUseFullscreenAIPanelOverlay(viewportWidth);
   const aiPanelRenderWidth = aiPanelFullscreenOverlay
@@ -4098,9 +4130,9 @@ function App() {
           ? resolveOverlayAIPanelWidth({
           viewportWidth,
           sidebarWidth: renderedSidebarWidth,
-          panelWidth: DEFAULT_AI_PANEL_WIDTH,
+          panelWidth: aiPanelDockWidth,
           })
-          : DEFAULT_AI_PANEL_WIDTH;
+          : aiPanelDockWidth;
   const appliedGlobalProxyDraft = useMemo(() => (
       createGlobalProxyComparableDraft(globalProxy)
   ), [
@@ -4360,19 +4392,6 @@ function App() {
           openSecurityUpdateSettings();
       }
   }, [openSecurityUpdateSettings, securityUpdateRepairSource]);
-  const titleBarViewMenuEntries = useTitleBarViewMenuEntries({
-      activeTabType: activeWorkbenchTab?.type,
-      aiPanelVisible,
-      fullscreen: windowState === 'fullscreen',
-      isMacRuntime,
-      onCloseSettings: closeSettingsCenterWorkbenchTab,
-      onCollapseSidebar: handleCollapseSidebarPanel,
-      onExpandSidebar: handleExpandSidebarPanel,
-      onOpenSettings: handleOpenSettingsModal,
-      onToggleAI: handleToggleOrFocusAIPanel,
-      settingsOpen: isSettingsModalOpen,
-      sidebarCollapsed: isSidebarCollapsed,
-  });
   const handleCancelSettingsCenterPane = useCallback(() => withAISettingsLeaveGuard(aiSettingsLeaveGuardRef.current, () => {
       const leavingAI = activeSettingsCenterPane?.key === 'ai';
       if (isConnectionPackageSettingsPaneKey(activeSettingsCenterPane?.key)) {
@@ -4461,17 +4480,13 @@ function App() {
       openSettingsCenterWorkbenchTab();
   }), [clearSettingsCenterTransientPaneState]);
   /** Title-bar / explorer settings entries → settings center navigation. */
-  const handleTitleBarSettingsNavigation = useCallback((spec: {
-    group: 'preferences' | 'services' | 'config' | 'workflow' | 'workspace' | 'about';
-    pane?: string;
-    action?: 'import-connections' | 'export-connections' | 'schema-compare' | 'data-compare' | 'compare' | 'sync' | 'drivers' | 'sql-audit';
-  }) => withAISettingsLeaveGuard(aiSettingsLeaveGuardRef.current, () => {
+  const handleTitleBarSettingsNavigation = useCallback((spec: SettingsCenterNavigationTarget) => withAISettingsLeaveGuard(aiSettingsLeaveGuardRef.current, () => {
       if (spec.action === 'import-connections') {
           handleOpenToolCenterPane('config', 'import');
           return;
       }
       if (spec.action === 'export-connections') {
-          void handleExportConnections('config');
+          void handleExportConnectionsRef.current('config');
           return;
       }
       if (
@@ -4490,9 +4505,10 @@ function App() {
           handleOpenToolCenterPane('workspace', 'drivers');
           return;
       }
-      if (spec.action === 'sql-audit') {
+      const buildWorkbenchTab = spec.action ? SETTINGS_WORKBENCH_TAB_BUILDERS[spec.action] : undefined;
+      if (buildWorkbenchTab) {
           handleCancelSettingsCenterPane();
-          addTab(buildSqlAuditWorkbenchTab());
+          addTab(buildWorkbenchTab());
           return;
       }
       if (!spec.pane) {
@@ -4508,14 +4524,14 @@ function App() {
           return;
       }
       if (spec.group === 'preferences' && spec.pane === 'theme') {
-          setThemeModalSection('theme');
+          setThemeModalSection(resolveThemeSettingsSection(spec.section));
           handleOpenSettingsCenterPane('preferences', 'theme');
           return;
       }
       if (spec.group === 'services' && spec.pane === 'ai') {
           setSecurityUpdateRepairSource(null);
           setFocusedAIProviderId(undefined);
-          setAiSettingsSection('providers');
+          setAiSettingsSection(resolveAISettingsSection(spec.section));
           setAiSettingsProviderView('workspace');
           handleOpenSettingsCenterPane('services', 'ai');
           return;
@@ -4524,7 +4540,6 @@ function App() {
   }), [
       addTab,
       handleCancelSettingsCenterPane,
-      handleExportConnections,
       handleOpenDataSyncWorkbench,
       handleOpenSettingsCenterPane,
       handleOpenSettingsModal,
@@ -6204,56 +6219,6 @@ function App() {
       utilityPanelStyle,
       viewportWidth,
   ]);
-  const downloadSourceItems: ReadonlyArray<{
-      id: DownloadSourceId;
-      labelKey: string;
-      descKey: string;
-      guideKey: string;
-      tagKey: string;
-      icon: React.ReactNode;
-      iconColor: string;
-      iconBg: string;
-      tagColor: string;
-      tagBg: string;
-  }> = [
-      {
-          id: 'cst',
-          labelKey: 'app.download_source.option.cst',
-          descKey: 'app.download_source.option.cst.desc',
-          guideKey: 'app.download_source.option.cst.guide',
-          tagKey: 'app.download_source.option.cst.tag',
-          icon: <ThunderboltOutlined />,
-          iconColor: '#f59e0b',
-          iconBg: 'rgba(245, 158, 11, 0.14)',
-          tagColor: '#b45309',
-          tagBg: 'rgba(245, 158, 11, 0.12)',
-      },
-      {
-          id: 'bero',
-          labelKey: 'app.download_source.option.bero',
-          descKey: 'app.download_source.option.bero.desc',
-          guideKey: 'app.download_source.option.bero.guide',
-          tagKey: 'app.download_source.option.bero.tag',
-          icon: <ApiOutlined />,
-          iconColor: '#0ea5e9',
-          iconBg: 'rgba(14, 165, 233, 0.14)',
-          tagColor: '#0369a1',
-          tagBg: 'rgba(14, 165, 233, 0.12)',
-      },
-      {
-          id: 'github',
-          labelKey: 'app.download_source.option.github',
-          descKey: 'app.download_source.option.github.desc',
-          guideKey: 'app.download_source.option.github.guide',
-          tagKey: 'app.download_source.option.github.tag',
-          icon: <GithubOutlined />,
-          iconColor: darkMode ? '#cbd5e1' : '#475569',
-          iconBg: darkMode ? 'rgba(203, 213, 225, 0.14)' : 'rgba(71, 85, 105, 0.14)',
-          tagColor: darkMode ? '#e2e8f0' : '#1f2937',
-          tagBg: darkMode ? 'rgba(203, 213, 225, 0.12)' : 'rgba(71, 85, 105, 0.12)',
-      },
-  ];
-
   const renderDownloadSourceSettingsContent = useCallback(() => {
       return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '12px 0' }}>
@@ -6261,149 +6226,13 @@ function App() {
                   <div style={{ ...utilityMutedTextStyle, marginBottom: 14, lineHeight: 1.7 }}>
                       {t('app.download_source.description')}
                   </div>
-                  <div
-                      role="radiogroup"
-                      aria-label={t('app.download_source.title')}
-                      style={{
-                          display: 'grid',
-                          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))',
-                          gap: 12,
-                      }}
-                  >
-                      {downloadSourceItems.map((source) => {
-                          const isSelected = downloadSource === source.id;
-                          const isDisabled = downloadSourceSaving;
-                          const baseBorderColor = isSelected
-                              ? overlayTheme.selectedText
-                              : overlayTheme.divider;
-                          const hoverBorderColor = overlayTheme.selectedText;
-                          const selectedBackground = darkMode
-                              ? 'rgba(255, 255, 255, 0.05)'
-                              : 'rgba(22, 119, 255, 0.05)';
-                          return (
-                              <button
-                                  key={source.id}
-                                  type="button"
-                                  role="radio"
-                                  aria-checked={isSelected}
-                                  disabled={isDisabled}
-                                  onClick={() => void handleDownloadSourceChange(source.id)}
-                                  data-download-source-card={source.id}
-                                  data-selected={isSelected ? 'true' : 'false'}
-                                  className="gonavi-download-source-card"
-                                  style={{
-                                      display: 'flex',
-                                      flexDirection: 'column',
-                                      gap: 12,
-                                      padding: 14,
-                                      borderRadius: 12,
-                                      border: `2px solid ${baseBorderColor}`,
-                                      background: isSelected ? selectedBackground : 'transparent',
-                                      cursor: isDisabled ? 'not-allowed' : 'pointer',
-                                      textAlign: 'left',
-                                      transition: 'border-color 160ms ease, background 160ms ease, box-shadow 160ms ease',
-                                      opacity: isDisabled ? 0.6 : 1,
-                                      fontFamily: 'inherit',
-                                      outline: 'none',
-                                      minHeight: 132,
-                                      boxShadow: isSelected
-                                          ? `0 0 0 4px ${darkMode ? 'rgba(22,119,255,0.18)' : 'rgba(22,119,255,0.10)'}`
-                                          : 'none',
-                                      color: overlayTheme.titleText,
-                                  }}
-                                  onMouseEnter={(event) => {
-                                      if (!isSelected && !isDisabled) {
-                                          event.currentTarget.style.borderColor = hoverBorderColor;
-                                          event.currentTarget.style.background = selectedBackground;
-                                      }
-                                  }}
-                                  onMouseLeave={(event) => {
-                                      if (!isSelected && !isDisabled) {
-                                          event.currentTarget.style.borderColor = baseBorderColor;
-                                          event.currentTarget.style.background = 'transparent';
-                                      }
-                                  }}
-                                  onFocus={(event) => {
-                                      if (!isSelected && !isDisabled) {
-                                          event.currentTarget.style.borderColor = hoverBorderColor;
-                                      }
-                                  }}
-                                  onBlur={(event) => {
-                                      if (!isSelected && !isDisabled) {
-                                          event.currentTarget.style.borderColor = baseBorderColor;
-                                      }
-                                  }}
-                              >
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                      <div
-                                          style={{
-                                              width: 36,
-                                              height: 36,
-                                              borderRadius: 10,
-                                              display: 'grid',
-                                              placeItems: 'center',
-                                              background: source.iconBg,
-                                              color: source.iconColor,
-                                              fontSize: 18,
-                                          }}
-                                      >
-                                          {source.icon}
-                                      </div>
-                                      {isSelected ? (
-                                          <span
-                                              style={{
-                                                  display: 'inline-flex',
-                                                  alignItems: 'center',
-                                                  gap: 4,
-                                                  padding: '3px 9px',
-                                                  borderRadius: 999,
-                                                  background: overlayTheme.selectedText,
-                                                  color: '#fff',
-                                                  fontSize: 11,
-                                                  fontWeight: 600,
-                                              }}
-                                          >
-                                              <CheckOutlined style={{ fontSize: 10 }} />
-                                              {t('app.download_source.selected_badge')}
-                                          </span>
-                                      ) : null}
-                                  </div>
-                                  <div style={{ minWidth: 0 }}>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                          <span style={{ fontSize: 14, fontWeight: 700, color: overlayTheme.titleText }}>
-                                              {t(source.labelKey)}
-                                          </span>
-                                          <span
-                                              style={{
-                                                  fontSize: 11,
-                                                  fontWeight: 600,
-                                                  padding: '1px 8px',
-                                                  borderRadius: 999,
-                                                  background: source.tagBg,
-                                                  color: source.tagColor,
-                                              }}
-                                          >
-                                              {t(source.tagKey)}
-                                          </span>
-                                      </div>
-                                      <div style={{ marginTop: 8, fontSize: 13, fontWeight: 600, lineHeight: 1.6 }}>
-                                          {t(source.guideKey)}
-                                      </div>
-                                      <div
-                                          style={{
-                                              marginTop: 6,
-                                              fontSize: 12,
-                                              color: overlayTheme.mutedText,
-                                              lineHeight: 1.6,
-                                          }}
-                                      >
-                                          {t(source.descKey)}
-                                      </div>
-                                  </div>
-                              </button>
-                          );
-                      })}
-                  </div>
+                  <DownloadSourceSelect
+                      value={downloadSource}
+                      darkMode={darkMode}
+                      saving={downloadSourceSaving}
+                      onChange={(source) => void handleDownloadSourceChange(source)}
+                      style={{ width: '100%', maxWidth: 360 }}
+                  />
                   <div
                       style={{
                           marginTop: 14,
@@ -6429,10 +6258,8 @@ function App() {
       downloadSource,
       downloadSourceSaving,
       handleDownloadSourceChange,
-      overlayTheme.divider,
       overlayTheme.mutedText,
       overlayTheme.selectedText,
-      overlayTheme.titleText,
       t,
       utilityMutedTextStyle,
       utilityPanelStyle,
@@ -6794,10 +6621,6 @@ function App() {
               : []),
       ];
 
-      const aboutDownloadSourceDot = (darkMode
-          ? { cst: '#f59e0b', bero: '#38bdf8', github: '#cbd5e1' }
-          : { cst: '#d97706', bero: '#0284c7', github: '#475569' })[downloadSource] || '#94a3b8';
-
       return (
           <div className="gonavi-about-pane">
               <section className="gonavi-about-identity" aria-label="GoNavi">
@@ -6890,27 +6713,17 @@ function App() {
                         background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
                     }}
                   >
-                    <span
-                      aria-hidden="true"
-                      className="gonavi-about-download-source-dot"
-                      style={{ background: aboutDownloadSourceDot }}
-                    />
                     <span className="gonavi-about-download-source-label" style={{ color: mutedText }}>
                         {t('driver_manager.mirror_source.label')}
                     </span>
-                    <span className="gonavi-about-download-source-value" style={{ color: overlayTheme.titleText }}>
-                        {t(`app.download_source.option.${downloadSource}`)}
-                    </span>
-                    <Button
-                      type="link"
-                      size="small"
-                      onClick={() => void handleDownloadSourceChange(getNextDownloadSource(downloadSource))}
-                      loading={downloadSourceSaving}
-                      disabled={downloadSourceSaving}
-                      className="gonavi-about-download-source-switch"
-                    >
-                        {t('driver_manager.mirror_source.switch')}
-                    </Button>
+                    <DownloadSourceSelect
+                      value={downloadSource}
+                      darkMode={darkMode}
+                      saving={downloadSourceSaving}
+                      onChange={(source) => void handleDownloadSourceChange(source)}
+                      borderless
+                      className="gonavi-about-download-source-select"
+                    />
                   </div>
               </section>
 
@@ -7145,26 +6958,18 @@ function App() {
                                   t('app.theme.toolbar_buttons.description'),
                               )}
                               {renderThemeSettingsSection(
+                                  t('app.theme.titlebar_actions_placement.title'),
+                                  <TitlebarActionsPlacementSettings />,
+                                  t('app.theme.titlebar_actions_placement.hint'),
+                              )}
+                              {renderThemeSettingsSection(
+                                  t('app.theme.sidebar_actions_placement.title'),
+                                  <SidebarActionsPlacementSettings />,
+                                  t('app.theme.sidebar_actions_placement.hint'),
+                              )}
+                              {renderThemeSettingsSection(
                                   t('app.theme.ui_version.sidebar_search.title'),
-                                  <div className="gonavi-settings-pills" role="group" aria-label={t('app.theme.ui_version.sidebar_search.title')}>
-                                      {([
-                                          { value: 'command' as const, label: t('app.theme.ui_version.sidebar_search.command') },
-                                          { value: 'filter' as const, label: t('app.theme.ui_version.sidebar_search.filter') },
-                                      ]).map((item) => {
-                                          const active = (appearance.v2SidebarSearchMode ?? 'command') === item.value;
-                                          return (
-                                              <button
-                                                  key={item.value}
-                                                  type="button"
-                                                  className={`gonavi-settings-pill${active ? ' is-active' : ''}`}
-                                                  aria-pressed={active}
-                                                  onClick={() => setAppearance({ v2SidebarSearchMode: item.value })}
-                                              >
-                                                  {item.label}
-                                              </button>
-                                          );
-                                      })}
-                                  </div>,
+                                  <SidebarSearchModeSettings />,
                                   t('app.theme.ui_version.sidebar_search.hint'),
                               )}
                           </div>
@@ -7174,11 +6979,6 @@ function App() {
                                   // 设置中心侧栏已显示「显示与字体」，内容区不再重复分区标题
                                   options?.hideSectionTabs ? null : t('app.theme.nav.appearance.title'),
                                   <>
-                                      {renderThemeSettingsRow({
-                                          label: t('app.theme.appearance.titlebar_menu_style_title'),
-                                          stacked: true,
-                                          control: <TitlebarMenuStyleSettings />,
-                                      })}
                                       {renderThemeSettingsRow({
                                           label: t('app.theme.appearance.ui_scale_title'),
                                           hint: t('app.theme.appearance.ui_scale_hint'),
@@ -7897,13 +7697,6 @@ function App() {
                   })),
               },
               {
-                  key: 'brand-icon',
-                  icon: <AppstoreOutlined />,
-                  title: t('app.settings.entry.brand_icon.title'),
-                  description: t('app.settings.entry.brand_icon.description'),
-                  onClick: () => handleOpenSettingsCenterPane('preferences', 'brand-icon'),
-              },
-              {
                   key: 'sidebar-metadata',
                   icon: <TableOutlined />,
                   title: t('app.settings.sidebar_metadata.title'),
@@ -7916,6 +7709,13 @@ function App() {
                   title: t('app.settings.sidebar_objects.title'),
                   description: t('app.settings.sidebar_objects.description'),
                   onClick: () => handleOpenSettingsCenterPane('preferences', 'sidebar-objects'),
+              },
+              {
+                  key: 'brand-icon',
+                  icon: <AppstoreOutlined />,
+                  title: t('app.settings.entry.brand_icon.title'),
+                  description: t('app.settings.entry.brand_icon.description'),
+                  onClick: () => handleOpenSettingsCenterPane('preferences', 'brand-icon'),
               },
           ],
       },
@@ -7955,7 +7755,7 @@ function App() {
               },
               {
                   key: 'ai',
-                  icon: <RobotOutlined />,
+                  icon: <AiSparkOutlined />,
                   title: t('app.settings.entry.ai.title'),
                   description: t('app.settings.entry.ai.description'),
                   onClick: () => {
@@ -8030,6 +7830,19 @@ function App() {
       if (!activeSettingsCenterPane) {
           return null;
       }
+      if (activeSettingsCenterPane.key === 'brand-icon') {
+          return (
+              <div style={{ padding: '16px 0 20px' }}>
+                  <BrandIconPicker
+                    value={brandIconId}
+                    darkMode={darkMode}
+                    accentColor={overlayTheme.selectedText}
+                    ariaLabel={t('app.settings.entry.brand_icon.title')}
+                    onChange={handleBrandIconChange}
+                  />
+              </div>
+          );
+      }
       if (activeSettingsCenterPane.key === 'language') {
           return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '12px 0' }}>
@@ -8043,19 +7856,6 @@ function App() {
           return (
               <div style={{ height: '100%', minHeight: 0 }}>
                   {renderThemeSettingsContent({ hideSectionTabs: true })}
-              </div>
-          );
-      }
-      if (activeSettingsCenterPane.key === 'brand-icon') {
-          return (
-              <div style={{ padding: '16px 0 20px' }}>
-                  <BrandIconPicker
-                    value={brandIconId}
-                    darkMode={darkMode}
-                    accentColor={overlayTheme.selectedText}
-                    ariaLabel={t('app.settings.entry.brand_icon.title')}
-                    onChange={handleBrandIconChange}
-                  />
               </div>
           );
       }
@@ -8151,6 +7951,45 @@ function App() {
     event.preventDefault();
   }, [allowDebugNativeContextMenu]);
 
+  const handleToggleThemeMode = () => selectPresetTheme(themeMode === 'dark' ? 'light' : 'dark');
+  const handleNativeMenuCheckUpdate = useNativeMenuUpdateCheck(checkForUpdates, t);
+  useMacNativeMenuBridge({ enabled: useNativeMacWindowControls && !isWebRuntime, language, themeMode, onOpenPreferences: handleOpenSettingsModal, onToggleTheme: handleToggleThemeMode, onOpenThemeSettings: () => handleTitleBarSettingsNavigation({ group: 'preferences', pane: 'theme' }), onOpenDrivers: () => handleTitleBarSettingsNavigation({ group: 'workspace', action: 'drivers' }), onCheckUpdate: handleNativeMenuCheckUpdate, onOpenAbout: () => handleTitleBarSettingsNavigation({ group: 'about', pane: 'about-go-navi' }) });
+  // 驱动管理 / 关于的 portal 槽位：非 macOS 在标题栏胶囊中间，macOS 跟在功能入口行 AI 之后。
+  const titleBarTrailingSlot = <div id="gonavi-titlebar-about-action" className="gonavi-titlebar-quick-actions-slot gn-v2-titlebar-about-slot" />;
+  const titleBarSystemActionsNode = ( // 非 macOS 放右区；macOS 走原生菜单栏
+    <TitleBarSystemActions
+      settingsLabel={t('app.sidebar.settings')}
+      onOpenSettings={handleOpenSettingsModal}
+      trailingSlot={titleBarTrailingSlot}
+      themeLabel={t('app.titlebar.theme')}
+      isDarkTheme={themeMode === 'dark'}
+      onToggleTheme={handleToggleThemeMode}
+    />
+  );
+  const titleBarActionRow = (
+    <TitleBarActionRow
+      placement={titleBarActionsInline ? 'titlebar' : 'toolbar'} display={appearance.titlebarActionsDisplay}
+      messageQueuePrimary={primaryActionIsMessageQueue}
+      newQueryShortcut={titleBarNewQueryShortcut} newConnectionShortcut={titleBarNewConnectionShortcut}
+      onNewQuery={handleNewQuery} onNewConnection={handleCreateConnection}
+      onManageConnectionGroups={() => setIsConnectionGroupManagementOpen(true)}
+      aiActive={aiPanelVisible} onToggleAI={handleToggleOrFocusAIPanel}
+      trailingSlot={useNativeMacWindowControls ? titleBarTrailingSlot : undefined}
+    />
+  );
+
+  const dockedSidebarActionsHost = shouldDockCollapsedSidebarActionsInTitlebar ? (
+    <DockedSidebarActionsHost
+      label={t('sidebar.rail.system_actions')}
+      slotRef={setCollapsedSidebarActionsTarget}
+      placement={titleBarActionsInline ? 'titlebar' : 'below-toolbar'}
+      collapsed={isSidebarCollapsed}
+      toggleLabel={sidebarPanelToggleLabel}
+      onToggle={isSidebarCollapsed ? handleExpandSidebarPanel : handleCollapseSidebarPanel}
+      toggleButtonRef={sidebarCollapsedToggleRef}
+    />
+  ) : null;
+
   return (
     <ConfigProvider
         locale={getAntdLocale(language)}
@@ -8168,9 +8007,6 @@ function App() {
           onContextMenu={handleAppContextMenu}
           data-gonavi-close-shortcut-scope="workspace"
           data-empty-workbench={tabs.length === 0 ? 'true' : 'false'}
-          data-collapsed-sidebar-actions-docked={
-              isCollapsedSidebarActionsDocked ? 'true' : 'false'
-          }
           data-security-update-banner-visible={isSecurityUpdateBannerVisible ? 'true' : 'false'}
           style={{
             height: '100vh',
@@ -8182,7 +8018,6 @@ function App() {
             clipPath: showLinuxResizeHandles ? 'none' : 'inset(0 round var(--gonavi-border-radius))',
             backdropFilter: blurFilter,
             WebkitBackdropFilter: blurFilter,
-            ['--gn-v2-empty-workbench-titlebar-overlap' as any]: `${titleBarLayout.emptyWorkbenchTopOffset}px`,
           }}
         >
           <input
@@ -8197,7 +8032,7 @@ function App() {
             className={[
               'gn-v2-titlebar',
               useNativeMacWindowControls ? 'gn-v2-titlebar-native-mac' : '',
-              isCollapsedSidebarActionsDocked ? 'gn-v2-titlebar-collapsed-docked' : '',
+              dockActionsInTitlebarBand ? 'gn-v2-titlebar-collapsed-docked' : '',
             ].filter(Boolean).join(' ')}
             onDoubleClick={handleTitleBarDoubleClick}
             style={{
@@ -8229,47 +8064,12 @@ function App() {
                   >
                       <span>GoNavi</span>
                   </div>
-                  <TitleBarPrimaryActions
-                    newQueryLabel={t(primaryActionIsMessageQueue
-                      ? 'message_queue_workbench.action.open'
-                      : 'query.new')}
-                    newConnectionLabel={t('connection.new')}
-                    newQueryShortcut={titleBarNewQueryShortcut}
-                    newConnectionShortcut={titleBarNewConnectionShortcut}
-                    onNewQuery={handleNewQuery}
-                    onNewConnection={handleCreateConnection}
-                    connectionGroupLabel={t('connection.sidebar.management.title')}
-                    onConnectionGroupManagement={() => setIsConnectionGroupManagementOpen(true)}
-                  />
-                  <div id="gonavi-titlebar-quick-actions" className="gonavi-titlebar-quick-actions-slot" />
-                  {appearance.titlebarMenuStyle === 'view-menu' && (
-                      <TitleBarViewMenu
-                        label={t('app.view_menu.trigger')}
-                        entries={titleBarViewMenuEntries}
-                      />
-                  )}
-                  <div id="gonavi-titlebar-about-action" className="gonavi-titlebar-quick-actions-slot gn-v2-titlebar-about-slot" />
+                  {titleBarActionsInline && titleBarActionRow}
               </div>
-              {isCollapsedSidebarActionsDocked && (
-                  <div
-                    ref={setCollapsedSidebarActionsTarget}
-                    className="gn-v2-collapsed-sidebar-actions"
-                    data-collapsed-sidebar-actions="true"
-                    data-no-titlebar-toggle="true"
-                    role="toolbar"
-                    aria-label={t('sidebar.rail.system_actions')}
-                    onDoubleClick={(event) => event.stopPropagation()}
-                  />
-              )}
+              {titleBarActionsInline && dockedSidebarActionsHost}
               {/* Collapsed sidebar titlebar actions end */}
               <div className="gn-v2-titlebar-right">
-                  <TitleBarSystemActions
-                    aiAssistantLabel={t('app.sidebar.ai_assistant')}
-                    settingsLabel={t('app.sidebar.settings')}
-                    aiActive={aiPanelVisible}
-                    onToggleAI={handleToggleOrFocusAIPanel}
-                    onOpenSettings={handleOpenSettingsModal}
-                  />
+                  {!useNativeMacWindowControls && titleBarSystemActionsNode}
                   {isWebRuntime ? (
                       <div
                         onDoubleClick={(e) => e.stopPropagation()}
@@ -8318,6 +8118,9 @@ function App() {
                   )}
               </div>
           </div>
+
+          {!titleBarActionsInline && titleBarActionRow}{/* 工具条不套 mac 红绿灯留白 */}
+          {!titleBarActionsInline && dockedSidebarActionsHost}
 
           {showLinuxCJKFontBanner && (
               <LinuxCJKFontBanner
@@ -8370,6 +8173,9 @@ function App() {
                             onEditConnection={handleEditConnection}
                             onOpenSettings={handleOpenSettingsModal}
                             onOpenSettingsNavigation={handleTitleBarSettingsNavigation}
+                            activeSettingsCenterPaneKey={activeSettingsCenterPane?.key}
+                            hideTitlebarAboutAction={useNativeMacWindowControls} onCheckUpdate={handleNativeMenuCheckUpdate}
+                            hideTitlebarDriverAction={useNativeMacWindowControls && !isWebRuntime}
                             isWebRuntime={isWebRuntime}
                             onOpenDataSyncWorkbench={handleOpenDataSyncWorkbench}
                             onToggleAI={handleToggleOrFocusAIPanel}
@@ -8379,7 +8185,7 @@ function App() {
                             onFocusCommandSearch={handleFocusSidebarSearch}
                             onCollapseSidebar={handleCollapseSidebarPanel}
                             onExpandSidebar={handleExpandSidebarPanel}
-                            onEnsureSidebarExpanded={isSidebarCollapsed ? handleExpandSidebarPanel : undefined}
+                            onEnsureSidebarExpanded={handleEnsureSidebarExpanded}
                             onTitlebarSnapshotChange={setSidebarTitlebarSnapshot}
                             collapseSidebarLabel={sidebarPanelCollapseLabel}
                             collapseSidebarButtonRef={sidebarExplorerToggleRef}
@@ -8422,8 +8228,6 @@ function App() {
                         </div>
                     )}
                 </div>
-
-
             </div>
             {!isSidebarCollapsed && <div
                 data-sidebar-resize-handle="true"
@@ -8604,6 +8408,7 @@ function App() {
                         >
                           <LazyAIChatPanel
                             width={aiPanelRenderWidth}
+                            onWidthChange={setAIPanelWidth}
                             darkMode={darkMode}
                             bgColor={bgContent}
                             presentation="dock"
@@ -8705,7 +8510,7 @@ function App() {
                       },
                       {
                         key: 'data-root-agent',
-                        icon: <RobotOutlined />,
+                        icon: <AiSparkOutlined />,
                         title: t('app.data_root.agent_data.title'),
                         description: t('app.data_root.agent_data.description'),
                         onClick: () => handleOpenToolCenterPane('config', 'data-root-agent'),
@@ -9056,7 +8861,7 @@ function App() {
                       open
                       onClose={handleCancelSettingsCenterPane}
                       onOpenGlobalProxySettings={() => handleOpenSettingsCenterPane('services', 'proxy')}
-                      onSwitchDownloadSource={() => void handleDownloadSourceChange(getNextDownloadSource(downloadSource))}
+                      onChangeDownloadSource={(source) => void handleDownloadSourceChange(source)}
                       downloadSourceSwitching={downloadSourceSaving}
                       downloadSource={downloadSource}
                     />

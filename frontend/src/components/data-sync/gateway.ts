@@ -31,6 +31,14 @@ export interface DataSyncWorkbenchGateway {
   };
   /** Returns credential-free connection summaries only. */
   listSavedConnections(): Promise<DataSyncSavedConnectionView[]>;
+  /**
+   * Opens the host directory picker and resolves the chosen absolute path.
+   * Returns null when the user cancels, so callers can leave the current
+   * value untouched instead of surfacing an error.
+   */
+  selectBackupDirectory(
+    currentDirectory: string,
+  ): Promise<string | null>;
   listDatabases(
     connectionId: string,
     options?: WebRPCRequestOptions,
@@ -282,6 +290,11 @@ export const createStaticDataSyncWorkbenchGateway = (
     capabilities: { errorRowRetry: false },
     async listSavedConnections() {
       return savedConnections.map(copy);
+    },
+    // The browser/static backend has no host filesystem, so the picker is
+    // reported as cancelled and the manual input stays the only way in.
+    async selectBackupDirectory() {
+      return null;
     },
     async listDatabases(connectionId) {
       return (databases[connectionId] || []).map(copy);

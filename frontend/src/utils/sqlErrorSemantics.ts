@@ -55,6 +55,17 @@ const SQL_ERROR_RULES: SqlErrorSemanticRule[] = [
     ],
   },
   {
+    key: 'database_not_selected',
+    fallbackLabel: 'No database selected',
+    fallbackExplanation: 'The connection is running without a default database, and this statement needs one to resolve the unqualified object it references.',
+    fallbackSuggestion: 'Select a database in the query editor toolbar, qualify the object with its database name (db.table), or run USE db first.',
+    patterns: [
+      /no database selected/i,
+      /error\s+1046\b/i,
+      /no schema has been selected to search in/i,
+    ],
+  },
+  {
     key: 'column_missing',
     fallbackLabel: 'Column does not exist',
     fallbackExplanation: 'The SQL references a column that is not in the result set, is spelled differently, or does not exist on the current table.',

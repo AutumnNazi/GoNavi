@@ -355,3 +355,107 @@ func TestWebAuthManagerChangePasswordConsumesRecoveryCode(t *testing.T) {
 		t.Fatalf("expected one recovery code to be consumed, got %d remaining", summary.RecoveryCodesRemaining)
 	}
 }
+
+func TestConsumeTOTPCodeForLoginRejectsReplayWithinWindow(t *testing.T) {
+	manager, err := newWebAuthManager(t.TempDir())
+	if err != nil {
+		t.Fatalf("newWebAuthManager failed: %v", err)
+	}
+	secret := "JBSWY3DPEHPK3PXP"
+	now := time.Unix(1_720_000_000, 0).UTC()
+	code, err := generateTOTPCodeAt(secret, now)
+	if err != nil {
+		t.Fatalf("generateTOTPCodeAt failed: %v", err)
+	}
+	if !manager.consumeTOTPCodeForLogin(secret, code, now) {
+		t.Fatalf("expected first use of a valid TOTP code to be accepted")
+	}
+	if manager.consumeTOTPCodeForLogin(secret, code, now) {
+		t.Fatalf("expected a replayed TOTP code to be rejected inside the validation window")
+	}
+	if manager.consumeTOTPCodeForLogin(secret, "000000", now) {
+		t.Fatalf("expected an invalid TOTP code to stay rejected")
+	}
+	// The previous step's code is still inside the ±1 window: accepted once,
+	// then rejected on replay, exactly like the current step's code.
+	previousCode, err := generateTOTPCodeAt(secret, now.Add(-webTOTPPeriodSeconds*time.Second))
+	if err != nil {
+		t.Fatalf("generateTOTPCodeAt failed: %v", err)
+	}
+	if !manager.consumeTOTPCodeForLogin(secret, previousCode, now) {
+		t.Fatalf("expected the previous step's code to be accepted once")
+	}
+	if manager.consumeTOTPCodeForLogin(secret, previousCode, now) {
+		t.Fatalf("expected a replayed previous-step code to be rejected")
+	}
+}
+
+func TestWebAuthManagerTOTPLoginRejectsReplayedCode(t *testing.T) {
+	manager, err := newWebAuthManager(t.TempDir())
+	if err != nil {
+		t.Fatalf("newWebAuthManager failed: %v", err)
+	}
+	now := time.Unix(1_720_000_123, 0).UTC()
+	manager.now = func() time.Time { return now }
+
+	setup, err := manager.BeginSetup("127.0.0.1:34115")
+	if err != nil {
+		t.Fatalf("BeginSetup failed: %v", err)
+	}
+	code, err := generateTOTPCodeAt(setup.Secret, now)
+	if err != nil {
+		t.Fatalf("generateTOTPCodeAt failed: %v", err)
+	}
+	// Setup keeps using the pure validator: it is a one-time flow, and the very
+	// first login typically replays the same code inside the same 30s step.
+	if _, _, err := manager.CompleteSetup(setup.SetupToken, "strong-password-123", code, true, 30, 24, 7); err != nil {
+		t.Fatalf("CompleteSetup failed: %v", err)
+	}
+
+	if _, _, _, _, err := manager.Login("strong-password-123", code, ""); err != nil {
+		t.Fatalf("expected first login with the setup code to succeed, got %v", err)
+	}
+	if _, _, _, _, err := manager.Login("strong-password-123", code, ""); !errors.Is(err, errWebAuthInvalidCredentials) {
+		t.Fatalf("expected a replayed TOTP code to fail with invalid credentials, got %v", err)
+	}
+	// The recovery-code fallback must stay intact after a rejected replay.
+	if _, _, _, _, err := manager.Login("strong-password-123", setup.RecoveryCodes[0], ""); err != nil {
+		t.Fatalf("expected recovery code login to still succeed, got %v", err)
+	}
+}
+
+func TestWebAuthManagerTOTPLoginAcceptsNextStepCode(t *testing.T) {
+	manager, err := newWebAuthManager(t.TempDir())
+	if err != nil {
+		t.Fatalf("newWebAuthManager failed: %v", err)
+	}
+	now := time.Unix(1_720_000_123, 0).UTC()
+	manager.now = func() time.Time { return now }
+
+	setup, err := manager.BeginSetup("127.0.0.1:34115")
+	if err != nil {
+		t.Fatalf("BeginSetup failed: %v", err)
+	}
+	code, err := generateTOTPCodeAt(setup.Secret, now)
+	if err != nil {
+		t.Fatalf("generateTOTPCodeAt failed: %v", err)
+	}
+	if _, _, err := manager.CompleteSetup(setup.SetupToken, "strong-password-123", code, true, 30, 24, 7); err != nil {
+		t.Fatalf("CompleteSetup failed: %v", err)
+	}
+	if _, _, _, _, err := manager.Login("strong-password-123", code, ""); err != nil {
+		t.Fatalf("expected first login to succeed, got %v", err)
+	}
+
+	// One step later the authenticator rotates to a fresh code: the replay
+	// cache must not reject normal rotation.
+	next := now.Add(webTOTPPeriodSeconds * time.Second)
+	manager.now = func() time.Time { return next }
+	nextCode, err := generateTOTPCodeAt(setup.Secret, next)
+	if err != nil {
+		t.Fatalf("generateTOTPCodeAt failed: %v", err)
+	}
+	if _, _, _, _, err := manager.Login("strong-password-123", nextCode, ""); err != nil {
+		t.Fatalf("expected the next step's code to be accepted, got %v", err)
+	}
+}

@@ -1,5 +1,6 @@
 import type { SqlLog } from '../../store';
-import type { AIChatMessage, AIContextItem } from '../../types';
+import type { AIContextItem } from '../../types';
+import { isAITableSchemaContext } from './aiEditorSelectionContext';
 import { t as translateCatalog, type I18nParams } from '../../i18n';
 import type { AIChatInlineHistorySession, AIChatInsightItem, AIChatPanelMode } from './AIChatPanelModeContent';
 
@@ -30,23 +31,15 @@ export const inferAIChatConnectionContext = ({
   };
 };
 
-export const calculateAIContextUsageChars = (messages: AIChatMessage[]) =>
-  messages.reduce(
-    (sum, item) =>
-      sum
-      + (item.content?.length || 0)
-      + (item.reasoning_content?.length || 0)
-      + JSON.stringify(item.tool_calls || []).length,
-    0,
-  );
-
 export const collectAIChatContextTableNames = ({
   aiContexts,
   activeConnectionId,
   activeDbName,
 }: CollectAIChatContextTableNamesArgs) => {
   const contextKey = activeConnectionId ? `${activeConnectionId}:${activeDbName || ''}` : 'default';
-  return (aiContexts[contextKey] || []).map((item) => `${item.dbName}.${item.tableName}`);
+  return (aiContexts[contextKey] || [])
+    .filter(isAITableSchemaContext)
+    .map((item) => `${item.dbName}.${item.tableName}`);
 };
 
 export const buildAIChatInsights = ({

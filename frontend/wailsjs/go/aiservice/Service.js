@@ -18,6 +18,10 @@ export function AIClearAgentData() {
   return window['go']['aiservice']['Service']['AIClearAgentData']();
 }
 
+export function AIClearSessionAutoApprovals() {
+  return window['go']['aiservice']['Service']['AIClearSessionAutoApprovals']();
+}
+
 export function AIControlAgentRun(arg1) {
   return window['go']['aiservice']['Service']['AIControlAgentRun'](arg1);
 }
@@ -44,6 +48,18 @@ export function AIGetAgentDataDirectoryInfo() {
 
 export function AIGetAgentLedgerStatus() {
   return window['go']['aiservice']['Service']['AIGetAgentLedgerStatus']();
+}
+
+export function AIGetAutoApprovalSettings() {
+  return window['go']['aiservice']['Service']['AIGetAutoApprovalSettings']();
+}
+
+export function AIGetBuiltinAIProvider() {
+  return window['go']['aiservice']['Service']['AIGetBuiltinAIProvider']();
+}
+
+export function AIGetBuiltinAIStatus() {
+  return window['go']['aiservice']['Service']['AIGetBuiltinAIStatus']();
 }
 
 export function AIGetBuiltinPrompts() {
@@ -76,6 +92,10 @@ export function AIGetMCPHTTPServerStatus() {
 
 export function AIGetMCPServers() {
   return window['go']['aiservice']['Service']['AIGetMCPServers']();
+}
+
+export function AIGetModelContextProfile(arg1) {
+  return window['go']['aiservice']['Service']['AIGetModelContextProfile'](arg1);
 }
 
 export function AIGetProviders() {
@@ -154,6 +174,10 @@ export function AIListProviderModels(arg1) {
   return window['go']['aiservice']['Service']['AIListProviderModels'](arg1);
 }
 
+export function AILogoutBuiltinAI() {
+  return window['go']['aiservice']['Service']['AILogoutBuiltinAI']();
+}
+
 export function AIMutateAgentSession(arg1) {
   return window['go']['aiservice']['Service']['AIMutateAgentSession'](arg1);
 }
@@ -164,6 +188,14 @@ export function AIOpenAgentDataDirectory() {
 
 export function AIOptimizeAgentData() {
   return window['go']['aiservice']['Service']['AIOptimizeAgentData']();
+}
+
+export function AIPollBuiltinAILogin(arg1) {
+  return window['go']['aiservice']['Service']['AIPollBuiltinAILogin'](arg1);
+}
+
+export function AIPreviewAgentContext(arg1) {
+  return window['go']['aiservice']['Service']['AIPreviewAgentContext'](arg1);
 }
 
 export function AIReadAgentRun(arg1) {
@@ -210,12 +242,24 @@ export function AISetContextLevel(arg1) {
   return window['go']['aiservice']['Service']['AISetContextLevel'](arg1);
 }
 
+export function AISetGlobalAutoApproval(arg1) {
+  return window['go']['aiservice']['Service']['AISetGlobalAutoApproval'](arg1);
+}
+
 export function AISetLanguage(arg1) {
   return window['go']['aiservice']['Service']['AISetLanguage'](arg1);
 }
 
 export function AISetSafetyLevel(arg1) {
   return window['go']['aiservice']['Service']['AISetSafetyLevel'](arg1);
+}
+
+export function AISetSessionAutoApproval(arg1, arg2) {
+  return window['go']['aiservice']['Service']['AISetSessionAutoApproval'](arg1, arg2);
+}
+
+export function AIStartBuiltinAILogin() {
+  return window['go']['aiservice']['Service']['AIStartBuiltinAILogin']();
 }
 
 export function AIStartMCPHTTPServer(arg1) {

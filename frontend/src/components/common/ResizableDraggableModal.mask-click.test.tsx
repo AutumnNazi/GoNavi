@@ -96,6 +96,49 @@ describe('ResizableDraggableModal confirm mask clicks during the enter animation
     expect(onOk).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps guarding a wrap click while the enter motion class is still present past the legacy fallback (issue #1297)', async () => {
+    const onOk = vi.fn(async () => undefined);
+    const onCancel = vi.fn();
+
+    act(() => {
+      Modal.confirm({
+        title: 'Delete task',
+        content: 'Delete this task?',
+        okText: 'Delete',
+        cancelText: 'Cancel',
+        centered: true,
+        closable: true,
+        maskClosable: true,
+        okButtonProps: { danger: true, type: 'primary' },
+        onOk,
+        onCancel,
+      });
+    });
+    await flush(50);
+
+    const dialog = confirmTitles()[0].closest('.ant-modal-confirm')!;
+    const modalNode = dialog.closest('.ant-modal')!;
+
+    // Simulate a stretched-out web entry: the motion class is still present after
+    // the legacy 500ms fallback has fired.
+    await flush(450);
+    modalNode.classList.add('ant-zoom-appear');
+    await flush(50);
+
+    await clickElement(maskOf(dialog)!);
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(onOk).not.toHaveBeenCalled();
+    expect(confirmTitles()).toHaveLength(1);
+
+    // Past the hard cap the guard degrades to stock antd behaviour.
+    await flush(2000);
+    await clickElement(maskOf(dialog)!);
+    await flush(50);
+
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(confirmTitles()).toHaveLength(0);
+  });
+
   it('honors a mask click again once the dialog has settled', async () => {
     const onCancel = vi.fn();
 

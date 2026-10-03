@@ -345,7 +345,11 @@ vi.mock('../store', async (importOriginal) => {
       () => selector(storeState),
       () => selector(storeState),
     ),
-    { getState: () => storeState },
+    {
+      getState: () => storeState,
+      // queryEditorResultSessionLifecycle 用 useStore.subscribe 监听 activeTabId；这里的用例不切换标签。
+      subscribe: () => () => undefined,
+    },
   );
   return { ...actual, useStore };
 });
@@ -480,6 +484,8 @@ vi.mock('@ant-design/icons', () => {
     SaveOutlined: Icon,
     UndoOutlined: Icon,
     FormatPainterOutlined: Icon,
+    FullscreenExitOutlined: Icon,
+    FullscreenOutlined: Icon,
     SettingOutlined: Icon,
     CloseOutlined: Icon,
     StopOutlined: Icon,
@@ -2904,13 +2910,13 @@ describe('QueryEditor external SQL save', () => {
     expect(dataGridState.latestProps?.data).toEqual(expect.arrayContaining([expect.objectContaining({ a: 1 })]));
   });
 
-  it('shows "Select a database first." in English before running without a database', async () => {
+  it('shows "Select a database first." in English before running database-dependent SQL without a database', async () => {
     storeState.languagePreference = 'en-US';
     setCurrentLanguage('en-US');
 
     let renderer!: ReactTestRenderer;
     await act(async () => {
-      renderer = create(<QueryEditor tab={createTab({ dbName: '', query: 'select 1;' })} />);
+      renderer = create(<QueryEditor tab={createTab({ dbName: '', query: 'select * from orders;' })} />);
     });
 
     await act(async () => {

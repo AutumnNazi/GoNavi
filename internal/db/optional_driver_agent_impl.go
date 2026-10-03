@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -72,8 +71,8 @@ type optionalAgentRequest struct {
 	// StreamSSHProgress is an explicit protocol capability. Older agents ignore
 	// it, while newer agents preserve the historical one-response contract until
 	// a supporting client opts in.
-	StreamSSHProgress    bool                         `json:"streamSSHProgress,omitempty"`
-	Query                string                       `json:"query,omitempty"`
+	StreamSSHProgress bool   `json:"streamSSHProgress,omitempty"`
+	Query             string `json:"query,omitempty"`
 	// Args 是按占位符顺序排列的位置绑定参数，仅在 json-lines-v2 及以上协议
 	// 中发送（omitempty 保证旧协议报文不携带该字段）。
 	Args                 []any                        `json:"args,omitempty"`
@@ -85,6 +84,8 @@ type optionalAgentRequest struct {
 	AttachSpec           *ExternalAttachSpec          `json:"attachSpec,omitempty"`
 	Alias                string                       `json:"alias,omitempty"`
 	ElasticsearchRequest *ElasticsearchConsoleRequest `json:"elasticsearchRequest,omitempty"`
+	// TargetID 仅用于取消通知：指向要中止的在途请求 ID，旧版 agent 不会收到该字段。
+	TargetID int64 `json:"targetId,omitempty"`
 	// sshProgressReporter remains in the main process and is never serialized
 	// into the driver-agent request.
 	sshProgressReporter connection.SSHProgressReporter `json:"-"`
@@ -119,7 +120,6 @@ type optionalDriverAgentClient struct {
 	stdin           io.WriteCloser
 	stdout          io.ReadCloser
 	reader          *bufio.Reader
-	nextID          int64
 	callGateOnce    sync.Once
 	callGate        chan struct{}
 	stateMu         sync.Mutex
@@ -131,6 +131,15 @@ type optionalDriverAgentClient struct {
 	shutdownTimeout time.Duration
 	// protocolSchema 来自 connect 响应；旧版 agent 不回显（空串）。
 	protocolSchema string
+	// inFlightCancel 来自 connect 响应；旧版 agent 不回显（false）。
+	inFlightCancel bool
+	// nextRequestID 与 inFlightRequestID 供取消通知定位目标请求：前者是请求 ID 计数，
+	// 后者是当前持有串行传输的请求。二者都由 requestMu 保护，因为取消通知由
+	// 独立的 watcher goroutine 发出，不再只在持锁的调用线程里读写。
+	requestMu         sync.Mutex
+	nextRequestID     int64
+	inFlightRequestID int64
+	writeMu           sync.Mutex
 }
 
 // schema 返回 connect 响应回显的协议版本，供参数绑定等能力门控读取。
@@ -236,8 +245,8 @@ func (c *optionalDriverAgentClient) stderrText() string {
 }
 
 func (c *optionalDriverAgentClient) call(req optionalAgentRequest, out interface{}, fields *[]string, messages *[]string, rowsAffected *int64) error {
-	return c.runWithContext(context.Background(), req.Method, func() error {
-		return c.callLocked(req, out, fields, messages, rowsAffected)
+	return c.runWithContext(context.Background(), req.Method, func(requestID int64) error {
+		return c.callLocked(requestID, req, out, fields, messages, rowsAffected)
 	})
 }
 
@@ -248,13 +257,12 @@ func markOptionalAgentApplyChangesTransportUnknown(req optionalAgentRequest, err
 	return err
 }
 
-func (c *optionalDriverAgentClient) callLocked(req optionalAgentRequest, out interface{}, fields *[]string, messages *[]string, rowsAffected *int64) error {
+func (c *optionalDriverAgentClient) callLocked(requestID int64, req optionalAgentRequest, out interface{}, fields *[]string, messages *[]string, rowsAffected *int64) error {
 	if err := c.stoppedError(); err != nil {
 		return fmt.Errorf("%s 驱动代理传输不可用：%w", driverDisplayName(c.driver), err)
 	}
 
-	c.nextID++
-	req.ID = c.nextID
+	req.ID = requestID
 
 	payload, err := json.Marshal(req)
 	if err != nil {
@@ -265,7 +273,7 @@ func (c *optionalDriverAgentClient) callLocked(req optionalAgentRequest, out int
 		_ = c.forceTerminate(ErrOptionalDriverAgentJSONLineTooLarge)
 		return markOptionalAgentApplyChangesTransportUnknown(req, fmt.Errorf("发送 %s 驱动代理请求失败：%w", driverDisplayName(c.driver), ErrOptionalDriverAgentJSONLineTooLarge))
 	}
-	if _, err := c.stdin.Write(payload); err != nil {
+	if err := c.writeRequestFrame(payload); err != nil {
 		stderrText := c.stderrText()
 		if stderrText == "" {
 			return markOptionalAgentApplyChangesTransportUnknown(req, fmt.Errorf("调用 %s 驱动代理失败：%w", driverDisplayName(c.driver), err))
@@ -351,12 +359,15 @@ func (c *optionalDriverAgentClient) rejectProtocolViolation(req optionalAgentReq
 }
 
 func (c *optionalDriverAgentClient) callContext(ctx context.Context, req optionalAgentRequest, out interface{}, fields *[]string, messages *[]string, rowsAffected *int64) error {
-	return c.runWithContext(ctx, req.Method, func() error {
-		return c.callLocked(req, out, fields, messages, rowsAffected)
+	return c.runWithContext(ctx, req.Method, func(requestID int64) error {
+		return c.callLocked(requestID, req, out, fields, messages, rowsAffected)
 	})
 }
 
-func (c *optionalDriverAgentClient) runWithContext(ctx context.Context, method string, operation func() error) error {
+// runWithContext 在串行传输上执行一次请求，并把请求上下文生命周期与传输生命周期解耦。
+//
+// operation 的入参是本次请求的 ID：它已提前登记为在途请求，取消通知据此定位目标。
+func (c *optionalDriverAgentClient) runWithContext(ctx context.Context, method string, operation func(requestID int64) error) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -371,8 +382,11 @@ func (c *optionalDriverAgentClient) runWithContext(ctx context.Context, method s
 		return optionalAgentContextError(c.driver, method, err)
 	}
 
+	requestID, releaseRequest := c.beginRequest()
+	defer releaseRequest()
+
 	if ctx.Done() == nil {
-		return operation()
+		return operation(requestID)
 	}
 
 	// Anonymous pipes do not reliably support deadlines on every target OS.
@@ -380,17 +394,20 @@ func (c *optionalDriverAgentClient) runWithContext(ctx context.Context, method s
 	// A caller whose context expires while waiting for the gate returns above
 	// without interrupting the legitimate long-running request ahead of it.
 	// context.AfterFunc avoids leaving one watcher goroutine behind per call.
-	terminateDone := make(chan struct{})
-	stopTerminate := context.AfterFunc(ctx, func() {
-		defer close(terminateDone)
-		_ = c.forceTerminate(ctx.Err())
+	operationDone := make(chan struct{})
+	watcherDone := make(chan struct{})
+	stopWatcher := context.AfterFunc(ctx, func() {
+		defer close(watcherDone)
+		c.cancelInFlightRequest(ctx, requestID, operationDone)
 	})
 
-	err := operation()
-	if stopTerminate() {
+	err := operation(requestID)
+	close(operationDone)
+	if stopWatcher() {
 		return err
 	}
-	<-terminateDone
+	// watcher 可能仍在宽限期内等待本次请求自行结束；operationDone 已关闭，它会立刻返回。
+	<-watcherDone
 	return optionalAgentContextError(c.driver, method, ctx.Err())
 }
 
@@ -612,7 +629,7 @@ func (d *OptionalDriverAgentDB) Connect(config connection.ConnectionConfig) erro
 	d.client = client
 	d.pingTimeout = connectTimeout
 	d.serverMajor = connectionInfo.ElasticsearchServerMajor
-	client.setSchema(strings.TrimSpace(connectionInfo.ProtocolSchema))
+	client.setConnectionCapabilities(connectionInfo)
 	d.ensureKingbaseSearchPath(config)
 	return nil
 }
@@ -1265,232 +1282,6 @@ func (d *OptionalDriverAgentDB) requireClient() (*optionalDriverAgentClient, err
 		return nil, fmt.Errorf("连接未打开")
 	}
 	return d.client, nil
-}
-
-func (d *OptionalDriverAgentDB) ensureKingbaseSearchPath(config connection.ConnectionConfig) {
-	if !strings.EqualFold(d.driverType, "kingbase") {
-		return
-	}
-	client, err := d.requireClient()
-	if err != nil || client == nil {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	schemas, err := d.listKingbaseSchemas(ctx)
-	if err != nil || len(schemas) == 0 {
-		if err != nil {
-			logger.Warnf("人大金仓驱动代理探测 schema 失败：%v", err)
-		}
-		return
-	}
-
-	searchPath := buildKingbaseSearchPathFromSchemas(schemas)
-	if strings.TrimSpace(searchPath) == "" {
-		return
-	}
-	d.kingbaseSearchPath = searchPath
-
-	if _, err := d.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s", searchPath)); err != nil {
-		logger.Warnf("人大金仓驱动代理设置 search_path 失败：%v", err)
-		return
-	}
-	logger.Infof("人大金仓驱动代理已设置默认 search_path：%s", searchPath)
-}
-
-func (d *OptionalDriverAgentDB) listKingbaseSchemas(ctx context.Context) ([]string, error) {
-	query := `SELECT nspname FROM pg_namespace
-		WHERE nspname NOT IN ('pg_catalog', 'information_schema')
-		  AND nspname NOT LIKE 'pg|_%' ESCAPE '|'
-		ORDER BY nspname`
-	rows, _, err := d.QueryContext(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-
-	schemas := make([]string, 0, len(rows))
-	for _, row := range rows {
-		for key, val := range row {
-			if strings.EqualFold(key, "nspname") || strings.EqualFold(key, "schema") {
-				name := strings.TrimSpace(fmt.Sprintf("%v", val))
-				if name != "" {
-					schemas = append(schemas, name)
-				}
-				break
-			}
-		}
-		if len(row) == 1 {
-			for _, val := range row {
-				name := strings.TrimSpace(fmt.Sprintf("%v", val))
-				if name != "" {
-					schemas = append(schemas, name)
-				}
-				break
-			}
-		}
-	}
-	return schemas, nil
-}
-
-func buildKingbaseSearchPathFromSchemas(schemas []string) string {
-	searchPath, _ := buildKingbaseSearchPathCommon(schemas)
-	return searchPath
-}
-
-func quoteKingbaseAgentIdent(name string) string {
-	n := normalizeKingbaseAgentIdent(name)
-	if n == "" {
-		return "\"\""
-	}
-	n = strings.ReplaceAll(n, `"`, `""`)
-	return `"` + n + `"`
-}
-
-func normalizeKingbaseAgentTableName(raw string) string {
-	schema, table := splitKingbaseQualifiedNameCommon(raw)
-	if table == "" {
-		return ""
-	}
-	if schema == "" {
-		return table
-	}
-	return schema + "." + table
-}
-
-func normalizeKingbaseAgentIdent(raw string) string {
-	return normalizeKingbaseIdentCommon(raw)
-}
-
-type kingbaseAgentColumnIndex struct {
-	exact   map[string]string
-	compact map[string]string
-}
-
-func buildKingbaseAgentColumnIndex(columns []string) kingbaseAgentColumnIndex {
-	exact := make(map[string]string, len(columns))
-	compact := make(map[string]string, len(columns))
-	compactSeen := make(map[string]string, len(columns))
-	compactDup := make(map[string]struct{}, len(columns))
-
-	for _, col := range columns {
-		name := normalizeKingbaseAgentIdent(col)
-		if name == "" {
-			continue
-		}
-		lower := strings.ToLower(name)
-		if _, ok := exact[lower]; !ok {
-			exact[lower] = name
-		}
-		key := normalizeKingbaseAgentCompactKey(name)
-		if key == "" {
-			continue
-		}
-		if prev, ok := compactSeen[key]; ok && !strings.EqualFold(prev, name) {
-			compactDup[key] = struct{}{}
-			continue
-		}
-		compactSeen[key] = name
-	}
-
-	if len(compactDup) > 0 {
-		for key := range compactDup {
-			delete(compactSeen, key)
-		}
-	}
-	for key, value := range compactSeen {
-		compact[key] = value
-	}
-	return kingbaseAgentColumnIndex{exact: exact, compact: compact}
-}
-
-func normalizeKingbaseAgentCompactKey(raw string) string {
-	name := normalizeKingbaseAgentIdent(raw)
-	if name == "" {
-		return ""
-	}
-	name = strings.ToLower(strings.TrimSpace(name))
-	name = strings.Join(strings.Fields(name), "")
-	name = strings.ReplaceAll(name, "_", "")
-	return name
-}
-
-func resolveKingbaseAgentColumnName(name string, index kingbaseAgentColumnIndex) string {
-	cleaned := normalizeKingbaseAgentIdent(name)
-	if cleaned == "" {
-		return name
-	}
-	lower := strings.ToLower(cleaned)
-	if actual, ok := index.exact[lower]; ok {
-		return actual
-	}
-	compact := normalizeKingbaseAgentCompactKey(cleaned)
-	if actual, ok := index.compact[compact]; ok {
-		return actual
-	}
-	return cleaned
-}
-
-func normalizeKingbaseAgentChangeSetByColumns(changes connection.ChangeSet, columns []string) (connection.ChangeSet, error) {
-	index := buildKingbaseAgentColumnIndex(columns)
-	if len(index.exact) == 0 && len(index.compact) == 0 {
-		return changes, nil
-	}
-
-	mapRow := func(row map[string]interface{}) (map[string]interface{}, error) {
-		if row == nil {
-			return row, nil
-		}
-		out := make(map[string]interface{}, len(row))
-		for key, value := range row {
-			nextKey := resolveKingbaseAgentColumnName(key, index)
-			if existing, ok := out[nextKey]; ok && !reflect.DeepEqual(existing, value) {
-				return nil, fmt.Errorf("duplicate mapped column %q", nextKey)
-			}
-			out[nextKey] = value
-		}
-		return out, nil
-	}
-
-	next := connection.ChangeSet{
-		Inserts: make([]map[string]interface{}, 0, len(changes.Inserts)),
-		Updates: make([]connection.UpdateRow, 0, len(changes.Updates)),
-		Deletes: make([]map[string]interface{}, 0, len(changes.Deletes)),
-	}
-
-	for _, row := range changes.Inserts {
-		mapped, err := mapRow(row)
-		if err != nil {
-			return changes, err
-		}
-		next.Inserts = append(next.Inserts, mapped)
-	}
-
-	for _, upd := range changes.Updates {
-		keys, err := mapRow(upd.Keys)
-		if err != nil {
-			return changes, err
-		}
-		values, err := mapRow(upd.Values)
-		if err != nil {
-			return changes, err
-		}
-		next.Updates = append(next.Updates, connection.UpdateRow{
-			Keys:   keys,
-			Values: values,
-		})
-	}
-
-	for _, row := range changes.Deletes {
-		mapped, err := mapRow(row)
-		if err != nil {
-			return changes, err
-		}
-		next.Deletes = append(next.Deletes, mapped)
-	}
-
-	return next, nil
 }
 
 func (d *OptionalDriverAgentDB) normalizeKingbaseAgentChangeSet(tableName string, changes connection.ChangeSet) (connection.ChangeSet, error) {

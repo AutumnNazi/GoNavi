@@ -50,6 +50,7 @@ const success = (data?: unknown) => ({ success: true, message: '', data });
 const apiFixture = (
   overrides: Partial<WailsDataSyncApi> = {},
 ): WailsDataSyncApi => ({
+  SelectBackupDirectory: vi.fn(async () => success('')),
   GetSavedConnections: vi.fn(async () => [
     {
       id: 'source-id',
@@ -62,6 +63,11 @@ const apiFixture = (
         readOnly: false,
         protection: {},
       },
+    },
+    {
+      id: 'target-id',
+      name: 'Target',
+      config: { type: 'postgresql', readOnly: false, protection: {} },
     },
   ]),
   DataSyncDatabaseList: vi.fn(async () =>
@@ -182,6 +188,25 @@ const preflightData = (task = taskFixture(), approvalRequired = true) => ({
 });
 
 describe('real Wails data sync gateway', () => {
+  it('does not resolve capability against an orphaned task connection', async () => {
+    const task = taskFixture();
+    const api = apiFixture({
+      GetSavedConnections: vi.fn(async () => [{ id: 'target-id', name: 'Target', config: { type: 'postgresql' } }]),
+    });
+    const gateway = createWailsDataSyncWorkbenchGateway({ api });
+    await expect(gateway.resolveCapability(task)).resolves.toMatchObject({ level: 'unknown', canExecute: false });
+    expect(api.DataSyncCapabilityResolve).not.toHaveBeenCalled();
+  });
+
+  it('does not advertise backup execution for an orphaned source connection', async () => {
+    const draft = createDataSyncTaskDraft({ id: 'backup-missing-source', kind: 'backup' });
+    const task = reviseDataSyncTask(draft, { source: { ...draft.source, connectionId: 'deleted' } });
+    const api = apiFixture({ GetSavedConnections: vi.fn(async () => []) });
+    const gateway = createWailsDataSyncWorkbenchGateway({ api });
+    await expect(gateway.resolveCapability(task)).resolves.toMatchObject({ level: 'unknown', canExecute: false });
+    expect(api.DataSyncCapabilityResolve).not.toHaveBeenCalled();
+  });
+
   it('returns the CDC probe reason for an adapter that is registered but not ready', async () => {
     const base = createDataSyncTaskDraft({ id: 'mongo-cdc', kind: 'cdc' });
     const task = reviseDataSyncTask(base, {

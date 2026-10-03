@@ -25,8 +25,8 @@ const (
 const callStreamQueryGCInterval = 50000
 
 func (c *optionalDriverAgentClient) callStreamQuery(req optionalAgentRequest, consumer QueryStreamConsumer) error {
-	return c.runWithContext(context.Background(), req.Method, func() error {
-		return c.callStreamQueryLocked(req, consumer)
+	return c.runWithContext(context.Background(), req.Method, func(requestID int64) error {
+		return c.callStreamQueryLocked(requestID, req, consumer)
 	})
 }
 
@@ -35,7 +35,7 @@ func (c *optionalDriverAgentClient) callStreamQuery(req optionalAgentRequest, co
 // 传输是行分帧的单向管道：客户端中途放弃消费（列设置、行消费、行解码失败）时，
 // agent 仍会把该请求剩余分片写完。剩余帧必须就地排空，否则下一个请求会把它们
 // 当作自己的响应，形成跨请求结果串线。排空不可行时强制终止 transport。
-func (c *optionalDriverAgentClient) callStreamQueryLocked(req optionalAgentRequest, consumer QueryStreamConsumer) error {
+func (c *optionalDriverAgentClient) callStreamQueryLocked(requestID int64, req optionalAgentRequest, consumer QueryStreamConsumer) error {
 	if consumer == nil {
 		return fmt.Errorf("query stream consumer required")
 	}
@@ -44,8 +44,7 @@ func (c *optionalDriverAgentClient) callStreamQueryLocked(req optionalAgentReque
 		return fmt.Errorf("%s 驱动代理传输不可用：%w", driverDisplayName(c.driver), err)
 	}
 
-	c.nextID++
-	req.ID = c.nextID
+	req.ID = requestID
 
 	payload, err := json.Marshal(req)
 	if err != nil {
@@ -56,7 +55,7 @@ func (c *optionalDriverAgentClient) callStreamQueryLocked(req optionalAgentReque
 		_ = c.forceTerminate(ErrOptionalDriverAgentJSONLineTooLarge)
 		return fmt.Errorf("发送 %s 驱动代理请求失败：%w", driverDisplayName(c.driver), ErrOptionalDriverAgentJSONLineTooLarge)
 	}
-	if _, err := c.stdin.Write(payload); err != nil {
+	if err := c.writeRequestFrame(payload); err != nil {
 		stderrText := c.stderrText()
 		if stderrText == "" {
 			return fmt.Errorf("调用 %s 驱动代理失败：%w", driverDisplayName(c.driver), err)
@@ -203,7 +202,7 @@ func decodeOptionalAgentRowValueBatch(data []byte) ([][]interface{}, error) {
 }
 
 func (c *optionalDriverAgentClient) callStreamQueryContext(ctx context.Context, req optionalAgentRequest, consumer QueryStreamConsumer) error {
-	return c.runWithContext(ctx, req.Method, func() error {
-		return c.callStreamQueryLocked(req, consumer)
+	return c.runWithContext(ctx, req.Method, func(requestID int64) error {
+		return c.callStreamQueryLocked(requestID, req, consumer)
 	})
 }

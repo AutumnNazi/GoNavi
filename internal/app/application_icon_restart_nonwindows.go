@@ -14,3 +14,4 @@ func prepareWindowsBrandIconRestartPNG(_ []byte, _ string) error {
 func applyPersistedWindowsApplicationIcon(_ context.Context, _ string) error {
 	return nil
 }
+

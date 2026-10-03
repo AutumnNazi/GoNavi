@@ -3,6 +3,8 @@ export type WindowRestoreBounds = {
   height: number;
   x: number;
   y: number;
+  /** DPI used by Wails when the logical window size was captured. */
+  dpi?: number;
 };
 
 type VisibleViewport = {

@@ -128,6 +128,10 @@ func (a *App) DataSyncJobSave(definition syncjob.JobDefinition, approvalToken st
 		if err != nil {
 			return connection.QueryResult{Success: false, Message: err.Error()}
 		}
+		// 停用/归档同样要对齐 OS 计划任务注册（Windows 上注销被停用任务的注册）。
+		if err := a.prepareDataSyncSchedule(enriched); err != nil {
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
 		return connection.QueryResult{Success: true, Message: "data sync inactive job saved", Data: publicDataSyncJobDefinition(saved)}
 	}
 	preflight := a.preflightDataSyncJob(definition, time.Now())
@@ -172,6 +176,10 @@ func (a *App) DataSyncJobSave(definition syncjob.JobDefinition, approvalToken st
 	}
 	saved, err := manager.PutJob(context.Background(), definition)
 	if err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	// 注册动作放在保存成功之后：按存储中的最终状态对齐 OS 计划任务注册。
+	if err := a.prepareDataSyncSchedule(definition); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 	return connection.QueryResult{Success: true, Message: "data sync job saved", Data: publicDataSyncJobDefinition(saved)}
@@ -231,6 +239,9 @@ func (a *App) DataSyncJobDelete(jobID string) connection.QueryResult {
 	if err := manager.PurgeJob(context.Background(), strings.TrimSpace(jobID)); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
+	if err := a.unregisterDataSyncJobSchedule(strings.TrimSpace(jobID)); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
 	return connection.QueryResult{Success: true, Message: "data sync job deleted"}
 }
 
@@ -253,24 +264,26 @@ func (a *App) DataSyncRunStart(jobID string, expectedRevision int64, approvalTok
 	if expectedRevision > 0 && job.Revision != expectedRevision {
 		return connection.QueryResult{Success: false, Message: fmt.Sprintf("data sync job revision changed: expected %d, current %d", expectedRevision, job.Revision)}
 	}
-	target, err := a.resolveDataSyncJobEndpoint(job.Target.ConnectionID, job.Target.Database, job.Target.Schema)
-	if err != nil {
-		return connection.QueryResult{Success: false, Message: err.Error()}
-	}
-	if dataSyncJobRequiresExecutionApproval(job, target) {
-		if strings.TrimSpace(approvalToken) != "" {
-			approval, consumeErr := a.consumeDataSyncJobApproval(approvalToken, job, target.Fingerprint, time.Now())
-			if consumeErr != nil {
-				return connection.QueryResult{Success: false, Message: consumeErr.Error()}
+	if job.Kind != syncjob.JobKindBackup {
+		target, err := a.resolveDataSyncJobEndpoint(job.Target.ConnectionID, job.Target.Database, job.Target.Schema)
+		if err != nil {
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
+		if dataSyncJobRequiresExecutionApproval(job, target) {
+			if strings.TrimSpace(approvalToken) != "" {
+				approval, consumeErr := a.consumeDataSyncJobApproval(approvalToken, job, target.Fingerprint, time.Now())
+				if consumeErr != nil {
+					return connection.QueryResult{Success: false, Message: consumeErr.Error()}
+				}
+				job.Approval = &approval
+				saved, saveErr := manager.PutJob(context.Background(), job)
+				if saveErr != nil {
+					return connection.QueryResult{Success: false, Message: saveErr.Error()}
+				}
+				job = saved
+			} else if approvalErr := a.validateStoredDataSyncJobApproval(job, target.Fingerprint); approvalErr != nil {
+				return connection.QueryResult{Success: false, Message: approvalErr.Error()}
 			}
-			job.Approval = &approval
-			saved, saveErr := manager.PutJob(context.Background(), job)
-			if saveErr != nil {
-				return connection.QueryResult{Success: false, Message: saveErr.Error()}
-			}
-			job = saved
-		} else if approvalErr := a.validateStoredDataSyncJobApproval(job, target.Fingerprint); approvalErr != nil {
-			return connection.QueryResult{Success: false, Message: approvalErr.Error()}
 		}
 	}
 	run, err := manager.StartRun(context.Background(), job.ID)

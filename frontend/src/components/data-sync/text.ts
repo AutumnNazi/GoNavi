@@ -1,10 +1,15 @@
-import { dataSyncScheduleTextsEnUS, dataSyncScheduleTextsZhCN } from './textSchedules';
+import { resolveDataSyncWorkbenchLocale } from './textLocale';
+export { resolveDataSyncWorkbenchLocale } from './textLocale';
+export type { DataSyncWorkbenchLocale } from './textLocale';
+import { backupTexts } from './textBackup';
+import { dataSyncRunEventTextsEnUS, dataSyncRunEventTextsZhCN, dataSyncScheduleTextsEnUS, dataSyncScheduleTextsZhCN } from './textSchedules';
 import {
   dataSyncValidationTextsEnUS,
   dataSyncValidationTextsZhCN,
 } from './textValidation';
 
 const zhCN = {
+  ...backupTexts('zh-CN'),
   'workbench.title': '数据迁移与同步',
   'workbench.title_short': '数据同步',
   'workbench.title_compare': '数据对比',
@@ -308,7 +313,7 @@ const zhCN = {
   'delivery.performance_title': '性能与重试',
   'delivery.performance_help': '默认值适合多数任务；仅在明确了解目标端负载和幂等性时调整。',
   'delivery.structure_title': '目标结构',
-  'delivery.structure_help': '一次性迁移或结构同步可补齐目标端缺失字段；仅新增字段，不修改或删除已有字段。',
+  'delivery.structure_help': '一次性迁移、结构同步和差异同步（对账）任务可补齐目标端缺失字段；仅新增字段，不修改或删除已有字段，也不会自动建表。',
   'delivery.auto_add_columns': '自动新增缺失字段',
   'delivery.auto_add_columns_desc': '仅新增目标端缺少的字段，不修改或删除已有字段；执行 DDL 时可能短暂锁定目标表。',
   'delivery.create_indexes': '同步表附属对象',
@@ -469,7 +474,7 @@ const zhCN = {
   'common.details': '查看详情',
   'common.retry': '重试',
   'common.cancel': '取消',
-  ...dataSyncScheduleTextsZhCN,
+  ...dataSyncScheduleTextsZhCN, ...dataSyncRunEventTextsZhCN,
   ...dataSyncValidationTextsZhCN,
   'cdc.title': '持续同步状态',
   'cdc.subtitle': '这里显示源库是否已准备好持续同步，以及任务当前进度。后端没上报延迟时不会猜测。',
@@ -509,6 +514,7 @@ export const DATA_SYNC_WORKBENCH_TEXT_KEYS: readonly DataSyncWorkbenchTextKey[] 
   Object.freeze(Object.keys(zhCN) as DataSyncWorkbenchTextKey[]);
 
 const enUS: Record<DataSyncWorkbenchTextKey, string> = {
+  ...backupTexts('en-US'),
   'workbench.title': 'Data migration and sync',
   'workbench.title_short': 'Data sync',
   'workbench.title_compare': 'Data compare',
@@ -812,7 +818,7 @@ const enUS: Record<DataSyncWorkbenchTextKey, string> = {
   'delivery.performance_title': 'Performance and retries',
   'delivery.performance_help': 'The defaults fit most tasks. Adjust only when you understand target load and retry idempotency.',
   'delivery.structure_title': 'Target schema',
-  'delivery.structure_help': 'One-time migrations and schema-sync tasks can add missing target columns; existing columns are never modified or deleted.',
+  'delivery.structure_help': 'One-time migrations, schema-sync tasks and reconcile (diff sync) tasks can add missing target columns; existing columns are never modified or deleted, and no tables are created automatically.',
   'delivery.auto_add_columns': 'Add missing target columns',
   'delivery.auto_add_columns_desc': 'Only adds columns missing from the target; existing columns are not changed or removed. DDL may briefly lock the target table.',
   'delivery.create_indexes': 'Copy table dependents',
@@ -974,7 +980,7 @@ const enUS: Record<DataSyncWorkbenchTextKey, string> = {
   'common.details': 'View details',
   'common.retry': 'Retry',
   'common.cancel': 'Cancel',
-  ...dataSyncScheduleTextsEnUS,
+  ...dataSyncScheduleTextsEnUS, ...dataSyncRunEventTextsEnUS,
   ...dataSyncValidationTextsEnUS,
   'cdc.title': 'CDC source status',
   'cdc.subtitle': 'Status comes from adapter probes and task checkpoints. Lag is never inferred when the backend does not report it.',
@@ -1003,56 +1009,17 @@ const enUS: Record<DataSyncWorkbenchTextKey, string> = {
   'status.interrupted': 'Interrupted',
 };
 
-export type DataSyncWorkbenchLocale = 'zh-CN' | 'en-US';
-
-export const resolveDataSyncWorkbenchLocale = (
-  language?: string,
-): DataSyncWorkbenchLocale =>
-  String(language || '').toLowerCase().startsWith('zh') ? 'zh-CN' : 'en-US';
-
 export type DataSyncWorkbenchTranslate = (
   key: DataSyncWorkbenchTextKey,
   params?: Record<string, string | number>,
 ) => string;
 
-export const dataSyncTaskKindTextKey = (
-  task: {
-    kind: import('./model').DataSyncTaskKind;
-    compareMode?: import('./model').DataSyncCompareMode;
-  },
-): DataSyncWorkbenchTextKey => {
-  if (task.kind === 'compare') {
-    return task.compareMode === 'schema'
-      ? 'task_kind.compare_schema'
-      : 'task_kind.compare_data';
-  }
-  return `task_kind.${task.kind}` as DataSyncWorkbenchTextKey;
-};
-
-export const dataSyncTaskKindChoiceTextKey = (
-  choice: import('./model').DataSyncTaskKindChoice,
-): DataSyncWorkbenchTextKey => dataSyncTaskKindTextKey(choice);
-
-export const dataSyncStageTextKey = (
-  stage: import('./model').DataSyncTaskStage,
-  kind: import('./model').DataSyncTaskKind,
-  compareMode?: import('./model').DataSyncCompareMode,
-): DataSyncWorkbenchTextKey => {
-  if (kind === 'compare' && stage === 'mappings') {
-    return compareMode === 'schema'
-      ? 'stage.mappings_schema_compare'
-      : 'stage.mappings_data_compare';
-  }
-  if (kind === 'compare' && stage === 'preflight') {
-    return 'stage.preflight_compare';
-  }
-  return `stage.${stage}` as DataSyncWorkbenchTextKey;
-};
+export { dataSyncTaskKindTextKey, dataSyncTaskKindChoiceTextKey, dataSyncStageTextKey } from './textTaskKeys';
 
 export const createDataSyncWorkbenchTranslate = (
   language?: string,
 ): DataSyncWorkbenchTranslate => {
-  const catalog = resolveDataSyncWorkbenchLocale(language) === 'zh-CN' ? zhCN : enUS;
+  const catalog = { ...(resolveDataSyncWorkbenchLocale(language) === 'zh-CN' ? zhCN : enUS), ...backupTexts(language || 'en-US') };
   return (key, params) => {
     let value = catalog[key] || key;
     Object.entries(params || {}).forEach(([name, replacement]) => {
@@ -1063,35 +1030,7 @@ export const createDataSyncWorkbenchTranslate = (
 };
 
 /**
- * Stable validation codes are the localization contract. The codes below are
- * categories whose actionable cause exists only in the backend message, so the
- * diagnostic is appended instead of dropped:
- * - CDC probing is environment-specific (replica-set setup, binlog privileges,
- *   publication state).
- * - `definition_invalid` wraps every backend ValidateDefinition failure (Cron
- *   field count, unsupported enum, batch range), so the localized sentence
- *   alone leaves the user unable to locate the fault.
+ * Stable validation codes are the localization contract; the rendering rules
+ * live in `textValidationIssue.ts` so this catalog keeps to copy only.
  */
-const BACKEND_DIAGNOSTIC_ISSUE_CODES = new Set([
-  'definition_invalid',
-  'cdc_probe_failed',
-  'cdc_adapter_not_ready',
-]);
-
-export const dataSyncValidationIssueText = (
-  issue: { code: string; message?: string },
-  t: DataSyncWorkbenchTranslate,
-): string => {
-  const key = `validation.${issue.code}` as DataSyncWorkbenchTextKey;
-  const localized = t(key);
-  if (localized !== key) {
-    if (
-      BACKEND_DIAGNOSTIC_ISSUE_CODES.has(issue.code) &&
-      String(issue.message || '').trim()
-    ) {
-      return `${localized} ${String(issue.message).trim()}`;
-    }
-    return localized;
-  }
-  return String(issue.message || '').trim() || t('validation.unknown');
-};
+export { dataSyncValidationIssueText } from './textValidationIssue';

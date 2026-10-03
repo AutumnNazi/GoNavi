@@ -590,7 +590,7 @@ func TestOptionalDriverAgentCancellationAfterGateAcquisitionDoesNotStartOperatio
 		client := &optionalDriverAgentClient{driver: "dameng"}
 		operationStarted := false
 
-		err := client.runWithContext(ctx, optionalAgentMethodPing, func() error {
+		err := client.runWithContext(ctx, optionalAgentMethodPing, func(int64) error {
 			operationStarted = true
 			return nil
 		})
@@ -933,6 +933,9 @@ func TestDamengOptionalDriverAgentSupportsManagedTransactions(t *testing.T) {
 	}
 	if _, ok := damengDB.(TransactionExecerProvider); !ok {
 		t.Fatal("expected Dameng optional driver database to expose managed transactions")
+	}
+	if _, ok := damengDB.(SessionExecerProvider); !ok {
+		t.Fatal("expected Dameng optional driver database to expose pinned sessions")
 	}
 
 	for _, dbType := range []string{"sqlserver", "kingbase"} {

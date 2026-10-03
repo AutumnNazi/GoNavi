@@ -1,5 +1,6 @@
 import * as WailsApp from '../../../wailsjs/go/app/App';
 import { syncjob } from '../../../wailsjs/go/models';
+import { BACKEND_CANCELLED_MESSAGE } from '../../utils/connectionExport';
 import {
   invokeAppWithSignal,
   isWebRPCAbortError,
@@ -48,89 +49,8 @@ import {
   type WailsQueryResultLike,
 } from './wailsDto';
 
-type QueryResultPromise = Promise<WailsQueryResultLike>;
-
-/** Narrow seam around Wails so protocol handling can be tested without a runtime. */
-export interface WailsDataSyncApi {
-  GetSavedConnections(): Promise<unknown>;
-  DataSyncDatabaseList(connectionId: string): QueryResultPromise;
-  DataSyncObjectList(
-    connectionId: string,
-    database: string,
-    schema: string,
-  ): QueryResultPromise;
-  DataSyncFieldList(
-    connectionId: string,
-    database: string,
-    schema: string,
-    objectName: string,
-  ): QueryResultPromise;
-  DataSyncCapabilityResolve(
-    sourceConnectionId: string,
-    sourceDatabase: string,
-    sourceSchema: string,
-    targetConnectionId: string,
-    targetDatabase: string,
-    targetSchema: string,
-  ): QueryResultPromise;
-  DataSyncCDCAdapterList(): QueryResultPromise;
-  DataSyncCDCProbe(
-    connectionId: string,
-    database: string,
-    schema: string,
-    adapter: string,
-  ): QueryResultPromise;
-  DataSyncCheckpointGet(taskId: string): QueryResultPromise;
-  DataSyncCheckpointReset(
-    taskId: string,
-    expectedJobRevision: number,
-  ): QueryResultPromise;
-  DataSyncErrorRowDiscard(errorRowId: string): QueryResultPromise;
-  DataSyncErrorRowRetry(
-    errorRowId: string,
-    expectedJobRevision: number,
-    approvalToken: string,
-  ): QueryResultPromise;
-  DataSyncErrorRowList(
-    runId: string,
-    status: string,
-    limit: number,
-  ): QueryResultPromise;
-  DataSyncJobApprovalBegin(definition: syncjob.JobDefinition): QueryResultPromise;
-  DataSyncJobApprove(
-    definition: syncjob.JobDefinition,
-    challenge: string,
-  ): QueryResultPromise;
-  DataSyncJobDelete(jobId: string): QueryResultPromise;
-  DataSyncJobList(): QueryResultPromise;
-  DataSyncJobPreflight(definition: syncjob.JobDefinition): QueryResultPromise;
-  DataSyncJobSave(
-    definition: syncjob.JobDefinition,
-    approvalToken: string,
-  ): QueryResultPromise;
-  DataSyncRunCancel(runId: string): QueryResultPromise;
-  DataSyncRunEventList(
-    runId: string,
-    afterSequence: number,
-    limit: number,
-  ): QueryResultPromise;
-  DataSyncRunList(taskId: string, limit: number): QueryResultPromise;
-  DataSyncRunPage(
-    taskId: string,
-    beforeCreatedAt: number,
-    beforeId: string,
-    limit: number,
-  ): QueryResultPromise;
-  DataSyncRunDelete(runId: string): QueryResultPromise;
-  DataSyncRunClearTerminal(taskId: string): QueryResultPromise;
-  DataSyncRunResume(runId: string): QueryResultPromise;
-  DataSyncRunRetry(runId: string): QueryResultPromise;
-  DataSyncRunStart(
-    taskId: string,
-    expectedRevision: number,
-    approvalToken: string,
-  ): QueryResultPromise;
-}
+import type { WailsDataSyncApi } from './wailsGatewayApi';
+export type { WailsDataSyncApi } from './wailsGatewayApi';
 
 type GatewayOptions = {
   api?: WailsDataSyncApi;
@@ -335,6 +255,22 @@ export const createWailsDataSyncWorkbenchGateway = (
       return connections;
     },
 
+    // The picker is a desktop-only affordance: cancellation returns the
+    // backend's cancelled sentinel and must not surface as a failure, and a
+    // missing path is treated the same way so the field keeps its value.
+    async selectBackupDirectory(currentDirectory) {
+      const result = await api.SelectBackupDirectory(currentDirectory);
+      if (!result?.success) {
+        if (result?.message === BACKEND_CANCELLED_MESSAGE) return null;
+        throw new DataSyncGatewayProtocolError(
+          'SelectBackupDirectory',
+          String(result?.message || 'backend rejected the directory picker'),
+        );
+      }
+      const selected = String(result.data ?? '').trim();
+      return selected || null;
+    },
+
     async listDatabases(connectionId, requestOptions) {
       return decodeDatabaseMetadata(
         requireWailsQueryData(
@@ -450,9 +386,15 @@ export const createWailsDataSyncWorkbenchGateway = (
     },
 
     async resolveCapability(task, requestOptions) {
-      if (!task.source.connectionId || !task.target.connectionId) {
+      if (!task.source.connectionId || (task.kind !== 'backup' && !task.target.connectionId)) {
         return { ...UNKNOWN_CAPABILITY };
       }
+      const savedConnections = await gateway.listSavedConnections();
+      if (!savedConnections.some((connection) => connection.id === task.source.connectionId)
+        || (task.kind !== 'backup' && !savedConnections.some((connection) => connection.id === task.target.connectionId))) {
+        return { ...UNKNOWN_CAPABILITY };
+      }
+      if (task.kind === 'backup') return { ...UNKNOWN_CAPABILITY, level: 'full', canExecute: true };
       const base = decodeRouteCapability(
         requireWailsQueryData(
           await invokeAppWithSignal(

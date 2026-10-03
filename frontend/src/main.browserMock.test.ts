@@ -186,7 +186,8 @@ describe('main browser mock', () => {
 
     const sources = await Promise.all(['01', '02', '03', '04', '05', '06'].map((id) => app!.GetBrandIconDataURL(id)));
     expect(new Set(sources).size).toBe(6);
-    expect(sources.every((source) => source.startsWith('https://origin-download.syngnat.top:8443/gonavi/brand-assets/v1/'))).toBe(true);
+    expect(sources[0]).toBe('/brand-fallback.svg');
+    expect(sources.slice(1).every((source) => source.startsWith('https://origin-download.syngnat.top:8443/gonavi/brand-assets/v1/'))).toBe(true);
     const bundledSources = await Promise.all(['07', '08', '09', '10', '11', '12', '13', '14', '15', '16'].map((id) => app!.GetBrandIconDataURL(id)));
     expect(bundledSources).toEqual([
       '/brand-icons/07-database-hug.webp',

@@ -12,6 +12,8 @@ export function AICheckSQL(arg1:string):Promise<ai.SafetyResult>;
 
 export function AIClearAgentData():Promise<aiservice.AgentDataMaintenanceResult>;
 
+export function AIClearSessionAutoApprovals():Promise<aiservice.AutoApprovalSettings>;
+
 export function AIControlAgentRun(arg1:runharness.RunControlRequest):Promise<runharness.RunSnapshot>;
 
 export function AIDeleteMCPServer(arg1:string):Promise<void>;
@@ -25,6 +27,12 @@ export function AIGetActiveProvider():Promise<string>;
 export function AIGetAgentDataDirectoryInfo():Promise<aiservice.AgentDataDirectoryInfo>;
 
 export function AIGetAgentLedgerStatus():Promise<runharness.LedgerStatus>;
+
+export function AIGetAutoApprovalSettings():Promise<aiservice.AutoApprovalSettings>;
+
+export function AIGetBuiltinAIProvider():Promise<ai.ProviderConfig>;
+
+export function AIGetBuiltinAIStatus():Promise<ai.BuiltinAIStatus>;
 
 export function AIGetBuiltinPrompts():Promise<Record<string, string>>;
 
@@ -41,6 +49,8 @@ export function AIGetMCPClientInstallStatuses():Promise<Array<ai.MCPClientInstal
 export function AIGetMCPHTTPServerStatus():Promise<ai.MCPHTTPServerStatus>;
 
 export function AIGetMCPServers():Promise<Array<ai.MCPServerConfig>>;
+
+export function AIGetModelContextProfile(arg1:ai.ProviderConfig):Promise<ai.ModelContextProfile>;
 
 export function AIGetProviders():Promise<Array<ai.ProviderConfig>>;
 
@@ -80,11 +90,17 @@ export function AIListModels():Promise<Record<string, any>>;
 
 export function AIListProviderModels(arg1:ai.ProviderConfig):Promise<Record<string, any>>;
 
+export function AILogoutBuiltinAI():Promise<void>;
+
 export function AIMutateAgentSession(arg1:runharness.SessionMutationRequest):Promise<runharness.SessionProjection>;
 
 export function AIOpenAgentDataDirectory():Promise<void>;
 
 export function AIOptimizeAgentData():Promise<aiservice.AgentDataMaintenanceResult>;
+
+export function AIPollBuiltinAILogin(arg1:string):Promise<ai.BuiltinAILoginResult>;
+
+export function AIPreviewAgentContext(arg1:runharness.AgentInputRequest):Promise<runharness.ContextPreview>;
 
 export function AIReadAgentRun(arg1:runharness.RunReadRequest):Promise<runharness.RunReadResult>;
 
@@ -108,9 +124,15 @@ export function AISetActiveProvider(arg1:string):Promise<void>;
 
 export function AISetContextLevel(arg1:string):Promise<void>;
 
+export function AISetGlobalAutoApproval(arg1:boolean):Promise<aiservice.AutoApprovalSettings>;
+
 export function AISetLanguage(arg1:string):Promise<void>;
 
 export function AISetSafetyLevel(arg1:string):Promise<void>;
+
+export function AISetSessionAutoApproval(arg1:string,arg2:boolean):Promise<aiservice.AutoApprovalSettings>;
+
+export function AIStartBuiltinAILogin():Promise<ai.BuiltinAIDeviceCode>;
 
 export function AIStartMCPHTTPServer(arg1:ai.MCPHTTPServerOptions):Promise<ai.MCPHTTPServerStatus>;
 

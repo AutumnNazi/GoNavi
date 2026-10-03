@@ -91,12 +91,13 @@ export const useDataSyncSavedConnections = (
 export const useDataSyncDatabases = (
   gateway: DataSyncWorkbenchGateway,
   connectionId: string,
+  available = true,
 ): DataSyncMetadataResult<DataSyncDatabaseMetadata> => {
   const normalizedConnectionId = connectionId.trim();
   return useMetadataCollection(
     gateway,
     normalizedConnectionId,
-    Boolean(normalizedConnectionId),
+    Boolean(normalizedConnectionId && available),
     (options) => gateway.listDatabases(normalizedConnectionId, options),
   );
 };

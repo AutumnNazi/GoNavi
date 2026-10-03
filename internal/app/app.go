@@ -30,7 +30,6 @@ import (
 	"GoNavi-Wails/internal/sqlaudit"
 	syncbackend "GoNavi-Wails/internal/sync"
 	"GoNavi-Wails/internal/synccdc"
-	"GoNavi-Wails/internal/syncjob"
 	"GoNavi-Wails/internal/uievents"
 	"GoNavi-Wails/shared/i18n"
 	"github.com/google/uuid"
@@ -197,12 +196,15 @@ type App struct {
 	importTasksClosing            bool
 	driverDownloadTaskMu          sync.RWMutex
 	driverDownloadTasks           map[string]DriverDownloadTaskStatus
-	driverDownloadActiveTaskID    string
+	// 按驱动类型索引的活动任务：同一类型只能有一个在跑，不同类型可并行。
+	// 此前是单个全局 taskID，等价于「全局只允许一个安装任务」，是驱动并行安装的闸门。
+	driverDownloadActiveTaskIDByType map[string]string
 	driverDownloadTaskRunner      driverDownloadTaskRunner
 	driverDownloadTaskControls    map[string]driverDownloadTaskControl
 	exportTaskMu                  sync.Mutex
 	exportTasks                   map[string]*exportTaskRegistration
-	driverInstallMu               sync.Mutex
+	// 驱动安装锁：按驱动类型分片，替代此前的全局单锁（见 driver_install_lock.go）。
+	driverInstallLock             driverInstallLockManager
 	driverMaintenance             map[string]int
 	dataRootApplyMu               sync.Mutex
 	configDir                     string
@@ -269,13 +271,10 @@ type App struct {
 	dataSyncJobApprovalDelay      time.Duration
 	dataSyncFingerprintMu         sync.Mutex
 	dataSyncFingerprintKey        []byte
-	dataSyncJobsMu                sync.Mutex
-	dataSyncJobStore              *syncjob.Store
-	dataSyncJobManager            *syncjob.Manager
-	dataSyncJobLeaseOwner         string
-	dataSyncJobsDraining          bool
-	dataSyncCDCRegistry           *synccdc.Registry
-	dataSyncChangeEventRunner     func(context.Context, syncbackend.ChangeEventRequest) syncbackend.ChangeEventResult
+	dataSyncJobsState
+	dataSyncJobLeaseOwner     string
+	dataSyncCDCRegistry       *synccdc.Registry
+	dataSyncChangeEventRunner func(context.Context, syncbackend.ChangeEventRequest) syncbackend.ChangeEventResult
 }
 
 // NewApp creates a new App application struct

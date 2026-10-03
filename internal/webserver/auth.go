@@ -45,6 +45,10 @@ const (
 	webAuthPasswordEnvName           = "GONAVI_WEB_PASSWORD"
 	webTOTPPeriodSeconds             = 30
 	webTOTPDigits                    = 6
+	// webUsedTOTPCodeCap bounds the replay cache: entries live for the ±1-step
+	// validation window, so a cap far above any honest concurrent login volume
+	// only sweeps expired entries and never turns away a first-use code.
+	webUsedTOTPCodeCap = 128
 )
 
 var (
@@ -374,6 +378,7 @@ type webAuthManager struct {
 	pending                      map[string]pendingSetup
 	sessions                     *webSessionManager
 	loginAttempts                *loginAttemptTracker
+	usedTOTPCodes                map[string]time.Time
 	now                          func() time.Time
 	passwordManagedByEnvironment bool
 }
@@ -639,7 +644,7 @@ func (m *webAuthManager) Login(password string, code string, remoteIP string) (w
 			wait := m.loginAttempts.recordFailure(remoteIP, now)
 			return webAuthConfig{}, "", false, wait, errWebAuthInvalidCredentials
 		}
-		if !validateTOTPCode(cfg.TOTPSecret, normalizedCode, now) {
+		if !m.consumeTOTPCodeForLogin(cfg.TOTPSecret, normalizedCode, now) {
 			nextCfg, consumed := consumeRecoveryCode(cfg, normalizedCode)
 			if !consumed {
 				wait := m.loginAttempts.recordFailure(remoteIP, now)
@@ -689,6 +694,11 @@ func (m *webAuthManager) ChangePassword(currentPassword string, code string, nex
 		if normalizedCode == "" {
 			return webAuthConfig{}, "", false, errWebAuthInvalidCredentials
 		}
+		// NB: the plain validator, not the login replay guard. A password change
+		// already requires the current password, and a user who changes their
+		// password then signs in again inside the same TOTP step legitimately
+		// reuses the code; rejecting that here would break a normal flow for no
+		// security gain the login path does not already cover.
 		if !validateTOTPCode(cfg.TOTPSecret, normalizedCode, now) {
 			nextCfg, consumed := consumeRecoveryCode(cfg, normalizedCode)
 			if !consumed {
@@ -852,6 +862,50 @@ func validateTOTPCode(secret string, code string, now time.Time) bool {
 		}
 	}
 	return false
+}
+
+// consumeTOTPCodeForLogin 校验 TOTP 码并登记防重放：同一码在 ±1 步窗口内只接受一次，
+// 与恢复码"消费即失效"的标准对齐。纯 validateTOTPCode 本身不记状态，CompleteSetup
+// 这类一次性流程继续使用它。
+//
+// 调用方须持有 m.mu（Login 全程持锁）：本方法不自行加锁，且会在持锁状态下读写
+// m.usedTOTPCodes。
+//
+// 重放码返回 false 而非单独错误：调用方对失败码本就回退到恢复码校验，最终以
+// errWebAuthInvalidCredentials 作答，不向探测方泄露"该码曾有效"。
+func (m *webAuthManager) consumeTOTPCodeForLogin(secret string, code string, now time.Time) bool {
+	if !validateTOTPCode(secret, code, now) {
+		return false
+	}
+	key := totpReplayKey(secret, code)
+	// ±1 步窗口意味着最早可在两步后重放同一码，TTL 覆盖两步即可。
+	expiresAt := now.Add(2 * webTOTPPeriodSeconds * time.Second)
+	if m.usedTOTPCodes == nil {
+		m.usedTOTPCodes = make(map[string]time.Time)
+	}
+	if usedAt, ok := m.usedTOTPCodes[key]; ok && now.Before(usedAt) {
+		return false
+	}
+	m.usedTOTPCodes[key] = expiresAt
+	if len(m.usedTOTPCodes) > webUsedTOTPCodeCap {
+		m.sweepExpiredTOTPCodesLocked(now)
+	}
+	return true
+}
+
+// totpReplayKey 以 (secret, code) 的哈希作为缓存键：map 里不落明文码，
+// 且同一账号轮换 secret 后旧码的键自然失效。
+func totpReplayKey(secret string, code string) string {
+	sum := sha256.Sum256([]byte(secret + ":" + code))
+	return hex.EncodeToString(sum[:])
+}
+
+func (m *webAuthManager) sweepExpiredTOTPCodesLocked(now time.Time) {
+	for key, expiresAt := range m.usedTOTPCodes {
+		if !now.Before(expiresAt) {
+			delete(m.usedTOTPCodes, key)
+		}
+	}
 }
 
 func generateTOTPCodeAt(secret string, now time.Time) (string, error) {

@@ -15,6 +15,7 @@ export interface DataGridColumnInfoPopoverContentProps {
   darkMode: boolean;
   showColumnComment: boolean;
   showColumnType: boolean;
+  alignNumericTemporalRight: boolean;
   showRowNumberColumn: boolean;
   columnSearchText: string;
   allOrderedColumnNames: string[];
@@ -26,6 +27,7 @@ export interface DataGridColumnInfoPopoverContentProps {
   translate?: DataGridColumnInfoTranslate;
   onShowColumnCommentChange: (checked: boolean) => void;
   onShowColumnTypeChange: (checked: boolean) => void;
+  onAlignNumericTemporalRightChange: (checked: boolean) => void;
   onShowRowNumberColumnChange: (checked: boolean) => void;
   onToggleAllColumnsVisibility: (visible: boolean) => void;
   onColumnSearchTextChange: (value: string) => void;
@@ -42,6 +44,7 @@ const DataGridColumnInfoPopoverContent: React.FC<DataGridColumnInfoPopoverConten
   darkMode,
   showColumnComment,
   showColumnType,
+  alignNumericTemporalRight,
   showRowNumberColumn,
   columnSearchText,
   allOrderedColumnNames,
@@ -53,6 +56,7 @@ const DataGridColumnInfoPopoverContent: React.FC<DataGridColumnInfoPopoverConten
   translate = defaultTranslate,
   onShowColumnCommentChange,
   onShowColumnTypeChange,
+  onAlignNumericTemporalRightChange,
   onShowRowNumberColumnChange,
   onToggleAllColumnsVisibility,
   onColumnSearchTextChange,
@@ -94,6 +98,9 @@ const DataGridColumnInfoPopoverContent: React.FC<DataGridColumnInfoPopoverConten
       </Checkbox>
       <Checkbox checked={showColumnType} onChange={(e) => onShowColumnTypeChange(e.target.checked)}>
         {translate('data_grid.column_settings.show_types')}
+      </Checkbox>
+      <Checkbox checked={alignNumericTemporalRight} onChange={(e) => onAlignNumericTemporalRightChange(e.target.checked)}>
+        {translate('data_grid.column_settings.align_numeric_temporal_right')}
       </Checkbox>
       <div style={{ height: 1, backgroundColor: darkMode ? '#424242' : '#f0f0f0', margin: '4px 0' }} />
 

@@ -11,6 +11,7 @@ import {
   type DataSyncFieldMetadata,
   type DataSyncObjectMetadata,
   type DataSyncIndexColumn,
+  type DataSyncPreflightProgress,
   type DataSyncPreflightSnapshot,
   type DataSyncRouteCapability,
   type DataSyncRunEvent,
@@ -35,143 +36,9 @@ export type WailsQueryResultLike = {
 
 export type WailsDataSyncJobDefinition = Record<string, unknown>;
 
-export class DataSyncGatewayProtocolError extends Error {
-  constructor(operation: string, detail: string) {
-    super(`${operation}: ${detail}`);
-    this.name = 'DataSyncGatewayProtocolError';
-  }
-}
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value && typeof value === 'object' && !Array.isArray(value));
-
-const record = (value: unknown, path: string): Record<string, unknown> => {
-  if (!isRecord(value)) throw new DataSyncGatewayProtocolError(path, 'expected object');
-  return value;
-};
-
-const array = (value: unknown, path: string): unknown[] => {
-  if (!Array.isArray(value)) throw new DataSyncGatewayProtocolError(path, 'expected array');
-  return value;
-};
-
-const string = (value: unknown, path: string, allowEmpty = true): string => {
-  if (typeof value !== 'string') {
-    throw new DataSyncGatewayProtocolError(path, 'expected string');
-  }
-  if (!allowEmpty && !value.trim()) {
-    throw new DataSyncGatewayProtocolError(path, 'expected non-empty string');
-  }
-  return value;
-};
-
-const optionalString = (value: unknown, path: string): string =>
-  value === undefined || value === null ? '' : string(value, path);
-
-const number = (value: unknown, path: string): number => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new DataSyncGatewayProtocolError(path, 'expected finite number');
-  }
-  return value;
-};
-
-const optionalNumber = (value: unknown, path: string, fallback = 0): number =>
-  value === undefined || value === null ? fallback : number(value, path);
-
-const optionalMetadataNumber = (
-  value: unknown,
-  path: string,
-): number | undefined => {
-  if (value === undefined || value === null || value === '') return undefined;
-  const decoded =
-    typeof value === 'string' && value.trim()
-      ? Number(value)
-      : number(value, path);
-  if (!Number.isFinite(decoded) || decoded < 0 || !Number.isSafeInteger(decoded)) {
-    throw new DataSyncGatewayProtocolError(
-      path,
-      'expected non-negative safe integer',
-    );
-  }
-  return decoded;
-};
-
-const boolean = (value: unknown, path: string): boolean => {
-  if (typeof value !== 'boolean') {
-    throw new DataSyncGatewayProtocolError(path, 'expected boolean');
-  }
-  return value;
-};
-
-const optionalBoolean = (
-  value: unknown,
-  path: string,
-  fallback = false,
-): boolean => (value === undefined || value === null ? fallback : boolean(value, path));
-
-const enumValue = <T extends string>(
-  value: unknown,
-  allowed: readonly T[],
-  path: string,
-): T => {
-  const decoded = string(value, path);
-  if (!allowed.includes(decoded as T)) {
-    throw new DataSyncGatewayProtocolError(path, `unsupported value ${decoded}`);
-  }
-  return decoded as T;
-};
-
-const fromMillis = (value: unknown, path: string): string => {
-  const millis = optionalNumber(value, path);
-  if (millis <= 0) return '';
-  const date = new Date(millis);
-  if (!Number.isFinite(date.getTime())) {
-    throw new DataSyncGatewayProtocolError(path, 'invalid timestamp');
-  }
-  return date.toISOString();
-};
-
-const toMillis = (value: string): number => {
-  if (!value.trim()) return 0;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-};
-
-const rawJSONText = (value: unknown, path: string): string => {
-  if (value === undefined || value === null) return '';
-  if (typeof value === 'string') {
-    if (!value.trim()) return '';
-    try {
-      JSON.parse(value);
-      return value;
-    } catch {
-      throw new DataSyncGatewayProtocolError(path, 'invalid JSON string');
-    }
-  }
-  if (Array.isArray(value) && value.every((item) => Number.isInteger(item))) {
-    try {
-      const decoded = new TextDecoder().decode(new Uint8Array(value as number[]));
-      JSON.parse(decoded);
-      return decoded;
-    } catch {
-      throw new DataSyncGatewayProtocolError(path, 'invalid JSON bytes');
-    }
-  }
-  try {
-    return JSON.stringify(value);
-  } catch {
-    throw new DataSyncGatewayProtocolError(path, 'JSON value is not serializable');
-  }
-};
-
-const toRawJSON = (value: string, path: string): unknown => {
-  if (!value.trim()) return undefined;
-  try {
-    return JSON.parse(value);
-  } catch {
-    throw new DataSyncGatewayProtocolError(path, 'invalid JSON argument');
-  }
-};
+import { DataSyncGatewayProtocolError, isRecord, record, array, string, optionalString, number, optionalNumber, optionalMetadataNumber, boolean, optionalBoolean, enumValue, fromMillis, toMillis, rawJSONText, toRawJSON } from './wailsDtoPrimitives';
+export { DataSyncGatewayProtocolError } from './wailsDtoPrimitives';
+import { qualifiedObject, splitQualifiedObject } from './dataSyncMappingKey';
 
 export const requireWailsQueryData = (
   result: WailsQueryResultLike,
@@ -299,24 +166,6 @@ const endpointFromWire = (value: unknown, path: string) => {
     type: optionalString(endpoint.connectionType, `${path}.connectionType`),
     database: optionalString(endpoint.database, `${path}.database`),
     schema: optionalString(endpoint.schema, `${path}.schema`),
-  };
-};
-
-const qualifiedObject = (schema: string, name: string): string =>
-  schema.trim() ? `${schema.trim()}.${name.trim()}` : name.trim();
-
-const splitQualifiedObject = (
-  value: string,
-  fallbackSchema: string,
-): { schema: string; name: string } => {
-  const normalized = value.trim();
-  const separator = normalized.lastIndexOf('.');
-  if (separator <= 0 || separator === normalized.length - 1) {
-    return { schema: fallbackSchema.trim(), name: normalized };
-  }
-  return {
-    schema: normalized.slice(0, separator).trim(),
-    name: normalized.slice(separator + 1).trim(),
   };
 };
 
@@ -480,7 +329,7 @@ export const decodeDataSyncJobDefinition = (
   const id = string(job.id, 'job.id', false);
   const kind = enumValue(
     job.kind,
-    ['migration', 'reconcile', 'query_sink', 'compare'] as const,
+    ['migration', 'reconcile', 'query_sink', 'compare', 'backup'] as const,
     'job.kind',
   );
   const incrementalMode = enumValue(
@@ -568,6 +417,7 @@ export const decodeDataSyncJobDefinition = (
       kind === 'compare'
         ? content
         : undefined,
+    backup: kind === 'backup' && isRecord(job.backup) ? { directory: optionalString(job.backup.directory, 'job.backup.directory'), content: enumValue(job.backup.content, ['schema', 'data', 'both'] as const, 'job.backup.content') } : undefined,
     sourceMode: kind === 'query_sink' ? 'query' : 'tables',
     sourceQuery: optionalString(job.sourceQuery, 'job.sourceQuery'),
     source,
@@ -575,7 +425,7 @@ export const decodeDataSyncJobDefinition = (
     mappings,
     delivery: {
       writeMode:
-        kind === 'compare'
+        (kind === 'compare' || kind === 'backup')
           ? 'none'
           : syncMode === 'insert_only'
             ? 'append'
@@ -733,7 +583,7 @@ export const encodeDataSyncJobDefinition = (
   task: DataSyncTaskDefinition,
   previous?: WailsDataSyncJobDefinition,
 ): WailsDataSyncJobDefinition => {
-  if (task.kind !== 'compare' && task.delivery.writeMode === 'none') {
+  if (task.kind !== 'compare' && task.kind !== 'backup' && task.delivery.writeMode === 'none') {
     throw new DataSyncGatewayProtocolError(
       'task.delivery.writeMode',
       'a writable data sync task requires an explicit delivery mode',
@@ -813,6 +663,7 @@ export const encodeDataSyncJobDefinition = (
       schema: task.target.schema,
       fingerprint: optionalString(previousTarget.fingerprint, 'previous.target.fingerprint'),
     },
+    ...(task.kind === 'backup' ? { backup: task.backup } : {}),
     sourceQuery: task.kind === 'querySink' ? task.sourceQuery : '',
     mappings: task.mappings.map((mapping, index) =>
       tableMappingToWire(task, mapping, index),
@@ -941,14 +792,7 @@ export const decodeDataSyncPreflight = (
       ),
       mappingId: optionalString(issue.mappingId, 'issue.mappingId') || undefined,
       message: optionalString(issue.message, 'issue.message') || undefined,
-      detail: isRecord(issue.detail) && issue.detail.unmigratedIndex
-        ? {
-            unmigratedIndex: decodeUnmigratedIndex(
-              issue.detail.unmigratedIndex,
-              `DataSyncJobPreflight.data.issues[${index}].detail.unmigratedIndex`,
-            ),
-          }
-        : undefined,
+      detail: decodePreflightIssueDetail(issue.detail, index),
     };
   });
   let capability: DataSyncRouteCapability;
@@ -1131,6 +975,12 @@ export const decodeRunRecord = (
     optionalNumber(run.rowsInserted, 'run.rowsInserted') +
     optionalNumber(run.rowsUpdated, 'run.rowsUpdated') +
     optionalNumber(run.rowsDeleted, 'run.rowsDeleted');
+  // 进度是「已处理/总对象数」：备份按表计，同步按映射计，二者共用
+  // RunProgress.Current/Total。此前这一列被硬编码为空串，表格因此恒显示 —，
+  // 而后端其实一直在上报这两个字段。
+  const current = optionalNumber(run.currentItem, 'run.currentItem');
+  const total = optionalNumber(run.totalItems, 'run.totalItems');
+  const progress = total > 0 ? `${Math.min(current, total)}/${total}` : '';
   return {
     id: string(run.id, 'run.id', false),
     taskId,
@@ -1152,7 +1002,7 @@ export const decodeRunRecord = (
     rowsWritten,
     rowsFailed: optionalNumber(run.rowsFailed, 'run.rowsFailed'),
     throughput: 0,
-    checkpoint: '',
+    checkpoint: progress,
   };
 };
 
@@ -1209,6 +1059,33 @@ const decodeUnmigratedIndex = (value: unknown, path: string): DataSyncUnmigrated
     ).map((statement, indexOffset) =>
       string(statement, `${path}.remediationStatements[${indexOffset}]`, false),
     ),
+  };
+};
+
+const decodePreflightIssueDetail = (
+  value: unknown,
+  issueIndex: number,
+): DataSyncValidationIssue['detail'] => {
+  if (!isRecord(value)) return undefined;
+  const path = `DataSyncJobPreflight.data.issues[${issueIndex}].detail`;
+  let unmigratedIndex: DataSyncUnmigratedIndex | undefined;
+  if (value.unmigratedIndex) {
+    unmigratedIndex = decodeUnmigratedIndex(value.unmigratedIndex, `${path}.unmigratedIndex`);
+  }
+  let preflightProgress: DataSyncPreflightProgress | undefined;
+  if (isRecord(value.preflightProgress)) {
+    const progress = value.preflightProgress;
+    preflightProgress = {
+      checked: optionalNumber(progress.checked, `${path}.preflightProgress.checked`),
+      total: optionalNumber(progress.total, `${path}.preflightProgress.total`),
+      mappingKey: optionalString(progress.mappingKey, `${path}.preflightProgress.mappingKey`) || undefined,
+      mappingLabel: optionalString(progress.mappingLabel, `${path}.preflightProgress.mappingLabel`) || undefined,
+    };
+  }
+  if (!unmigratedIndex && !preflightProgress) return undefined;
+  return {
+    ...(unmigratedIndex ? { unmigratedIndex } : {}),
+    ...(preflightProgress ? { preflightProgress } : {}),
   };
 };
 

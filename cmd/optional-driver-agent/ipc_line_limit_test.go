@@ -192,7 +192,7 @@ func TestWriteResponseEnforcesFrameLimit(t *testing.T) {
 func TestAgentStreamResponseWriterKeepsLargeChunkWithinFrameLimit(t *testing.T) {
 	var out bytes.Buffer
 	writer := bufio.NewWriter(&out)
-	stream := newAgentStreamResponseWriter(writer, 3)
+	stream := newAgentStreamResponseWriter(newAgentResponseWriter(writer), 3)
 	if err := stream.SetColumns([]string{"payload"}); err != nil {
 		t.Fatalf("写出流式列定义失败：%v", err)
 	}
@@ -216,7 +216,7 @@ func TestAgentStreamResponseWriterSplitsOversizedBatchByBytes(t *testing.T) {
 	const rowCount = 40
 	var out bytes.Buffer
 	writer := bufio.NewWriter(&out)
-	stream := newAgentStreamResponseWriter(writer, 4)
+	stream := newAgentStreamResponseWriter(newAgentResponseWriter(writer), 4)
 	if err := stream.SetColumns([]string{"payload"}); err != nil {
 		t.Fatalf("写出流式列定义失败：%v", err)
 	}

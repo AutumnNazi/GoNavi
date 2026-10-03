@@ -169,7 +169,7 @@ describe('ai provider preset helpers', () => {
 
   it('uses the current DeepSeek Responses endpoint and model as the preset defaults', () => {
     expect(DEEPSEEK_RESPONSES_BASE_URL).toBe('https://api.deepseek.com');
-    expect(DEEPSEEK_DEFAULT_MODEL).toBe('deepseek-v4-flash');
+    expect(DEEPSEEK_DEFAULT_MODEL).toBe('deepseek-flash');
   });
 
   it('maps Coding Plan Claude CLI config back to the dedicated Coding Plan preset', () => {
@@ -463,6 +463,16 @@ describe('resolveProviderPresetKey', () => {
       authMode: 'local-cli',
       baseUrl: '',
     }, PRESETS, 'custom')).toBe('openai');
+  });
+
+  it('recognizes the built-in GoNavi AI provider by its stable ID', () => {
+    expect(resolveProviderPresetKey({
+      id: 'gonavi-ai',
+      type: 'custom',
+      apiFormat: 'openai',
+      authMode: 'bearer',
+      baseUrl: 'https://ai.example.test/v1',
+    }, PRESETS, 'custom')).toBe('gonavi-ai');
   });
 
   it('区分 Claude 订阅与带端点和密钥的千问 Claude CLI', () => {

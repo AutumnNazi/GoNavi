@@ -5,14 +5,11 @@ import { message, Input, Form, MenuProps, Button, Segmented, type InputRef } fro
 import {
     ApiOutlined,
     CodeOutlined,
-    ClockCircleOutlined,
     EditOutlined,
     ExportOutlined,
     FileTextOutlined,
-    HistoryOutlined,
     KeyOutlined,
     SaveOutlined,
-    SearchOutlined,
     UndoOutlined,
 } from '@ant-design/icons';
 import { format } from 'sql-formatter';
@@ -135,7 +132,10 @@ import {
     saveQueryEditorResultSessionForOpenTab,
     takeQueryEditorResultSession,
 } from '../utils/queryEditorResultSessionCache';
-import { useQueryEditorResultSessionLifecycle } from './queryEditor/queryEditorResultSessionLifecycle';
+import {
+    installQueryEditorViewStateMemory,
+    useQueryEditorResultSessionLifecycle,
+} from './queryEditor/queryEditorResultSessionLifecycle';
 import {
     QUERY_EDITOR_RESULT_HISTORY_MAX_BYTES,
     QUERY_EDITOR_RESULT_HISTORY_MAX_RESULTS,
@@ -205,12 +205,10 @@ import {
 import { SQL_EDITOR_AUTO_COMMIT_DELAY_OPTIONS } from './QueryEditorTransactionSettings';
 import QueryEditorTransactionToolbar from './QueryEditorTransactionToolbar';
 import { decorateV2MonacoContextMenu } from './common/V2ActionMenuPopup';
-import QueryEditorToolbar, {
-    formatQueryExecutionElapsed,
-    resolveQueryExecutionSpeedIcon,
-    resolveReportedQueryDurationMs,
-    useQueryExecutionElapsed,
-} from './QueryEditorToolbar';
+import QueryEditorToolbar from './QueryEditorToolbar';
+import { formatQueryExecutionElapsed, resolveQueryExecutionSpeedIcon, resolveReportedQueryDurationMs, useQueryExecutionElapsed } from './queryEditor/queryEditorExecutionTimer';
+import { useQueryEditorFullscreen } from './queryEditor/useQueryEditorFullscreen';
+import { QueryEditorToolbarFullscreenAction } from './queryEditor/QueryEditorToolbarFullscreenAction';
 import { useQueryEditorExecutionLifecycle } from './queryEditor/useQueryEditorExecutionLifecycle';
 import { useQueryEditorSqlErrorLocator } from './queryEditor/useQueryEditorSqlErrorLocator';
 import { useQueryEditorErrorDiagnose } from './queryEditor/useQueryEditorErrorDiagnose';
@@ -221,6 +219,7 @@ import { peekDatabaseServerVersion } from './queryEditor/queryEditorServerVersio
 import { useQueryEditorTabExecutionBroadcast } from './queryEditor/queryEditorTabExecutionState';
 import {
     buildQueryEditorLifecycleAffectedRowsResult,
+    isQueryEditorAwaitingDriver,
     isQueryEditorCancelledRpcError,
     queryEditorExecutionTimerStatusI18nKey,
     shouldFinishQueryEditorRunAfterCancelMiss,
@@ -340,7 +339,6 @@ import {
     resolveQueryEditorHoverTarget,
     resolveQueryEditorNavigationDecorations,
     resolveQueryEditorNavigationTarget,
-    resolveNextQueryEditorTableLocateIndex,
     rankQueryEditorCompletionCandidate,
     resolveQueryLocatorPlan,
     rewriteLeadingSelectTableReference,
@@ -350,9 +348,17 @@ import {
     stripCompletionIdentifierQuotes,
     shouldHandleQueryEditorRunShortcutFallback,
 } from './queryEditor/QueryEditorHelpers';
+import { dispatchSavedQueryLocateFallback, resolveQueryEditorLineTableLocate } from './queryEditor/queryEditorLineTableLocate';
 import { duplicateCurrentLineInEditor } from './queryEditor/queryEditorDuplicateLine';
 import { registerQueryEditorShortcutAction } from './queryEditor/queryEditorShortcutRegistration';
 import { useQueryEditorAIAction } from './queryEditor/useQueryEditorAIAction';
+import {
+    clearAIEditorSelection,
+    publishQueryEditorSelection,
+    bindQueryEditorSelectionPublisher,
+} from './queryEditor/queryEditorAiSelection';
+import { bindAIEditorSelectionContext } from './ai/bindAIEditorSelectionContext';
+import { buildQueryEditorAnalysisMenuItems } from './queryEditor/queryEditorAnalysisMenuItems';
 import { registerQueryEditorCommentAction, resolveToggleLineCommentBindingPlan, runMonacoToggleLineComment } from './queryEditor/queryEditorCommentActions';
 import { finalizeQueryEditorSqlServerResultSets, resolveQueryEditorExecutionSuccessToast } from './queryEditor/queryEditorSqlServerResultMessages';
 import {
@@ -381,6 +387,7 @@ export {
     resolveQueryEditorNavigationDecorations,
     resolveQueryEditorNavigationTarget,
 } from './queryEditor/QueryEditorHelpers';
+import { canExecuteQueryEditorSQLWithoutDatabase } from './queryEditor/queryEditorDatabaseRequirement';
 import {
     collectOracleCompileTargets,
     formatOracleCompileErrors,
@@ -1358,9 +1365,17 @@ const isConnectionScopedQueryEditorMetadata = (connection: any): boolean => (
     ) === 'sqlite'
 );
 
-const canUseQueryEditorDatabaseContext = (connection: any, dbName: unknown): boolean => (
-    Boolean(String(dbName ?? '').trim()) || isConnectionScopedQueryEditorMetadata(connection)
-);
+const canUseQueryEditorDatabaseContext = (connection: any, dbName: unknown, sql?: string): boolean => {
+    if (Boolean(String(dbName ?? '').trim())) return true;
+    if (isConnectionScopedQueryEditorMetadata(connection)) return true;
+    if (!sql || !sql.trim()) return false;
+    // 未选库时放行整段都免库的 SQL（SHOW DATABASES、SELECT 1、USE 等，见 issue #1355）。
+    return canExecuteQueryEditorSQLWithoutDatabase(sql, resolveSqlDialect(
+        String(connection?.config?.type || ''),
+        String(connection?.config?.driver || ''),
+        { oceanBaseProtocol: connection?.config?.oceanBaseProtocol },
+    ));
+};
 
 // Monaco language providers are registered globally, while each QueryEditor
 // owns a separate model. Ignore callbacks for a non-active model so the active
@@ -2040,6 +2055,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       resultKey: string;
       requestId: string;
   } | null>(null);
+  // ES 结果 table/raw 视图模式：提升到编辑器层，结果面板因隐藏/全屏重挂时不丢失。
+  const [elasticsearchViewModes, setElasticsearchViewModes] = useState<Record<string, 'table' | 'raw'>>({});
+  const handleElasticsearchViewModeChange = useCallback((key: string, mode: 'table' | 'raw') => {
+      setElasticsearchViewModes((current) => ({ ...current, [key]: mode }));
+  }, []);
   const resultSetsRef = useRef(resultSets);
   const activeResultKeyRef = useRef(activeResultKey);
   // 参数面板可用性快照：监听器闭包内不能读 paramsState（effect 不随分析刷新，
@@ -2087,10 +2107,12 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const [executionRunToken, setExecutionRunToken] = useState(0);
   const [executionTimingActive, setExecutionTimingActive] = useState(false);
   const [completedExecutionElapsedMs, setCompletedExecutionElapsedMs] = useState<number | null>(null);
+  const executionAwaitingDriverRef = useRef(false);
   const executionElapsedMs = useQueryExecutionElapsed(
       executionTimingActive && loading,
       executionRunToken,
       completedExecutionElapsedMs,
+      executionAwaitingDriverRef,
   );
   const executionElapsedText = formatQueryExecutionElapsed(executionElapsedMs);
   const executionElapsedLabel = translate('query_editor.execution.elapsed', {
@@ -2501,6 +2523,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       activeResultKeyRef,
       isResultPanelVisibleRef,
       editorRef,
+      isActive,
   });
   const shortcutOptions = useStore(state => state.shortcutOptions);
   const activeShortcutPlatform = getShortcutPlatform(isMacLikePlatform());
@@ -2771,6 +2794,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       () => resolveShortcutBinding(shortcutOptions, 'toggleQueryResultsPanel', activeShortcutPlatform),
       [activeShortcutPlatform, shortcutOptions],
   );
+  const editorFullscreen = useQueryEditorFullscreen({ isActive, shortcutOptions, activeShortcutPlatform, editorRef, rootRef: queryEditorRootRef, editorHeight, resultsPanelVisible: isResultPanelVisible });
   const findInEditorShortcutCombo = useMemo(
       () => activeShortcutPlatform === 'mac' ? 'Meta+F' : 'Ctrl+F',
       [activeShortcutPlatform],
@@ -2932,6 +2956,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   useQueryEditorTabExecutionBroadcast(tab.id, loading, executionLifecycle.status, isActive);
   const executionLifecycleRef = useRef(executionLifecycle);
   executionLifecycleRef.current = executionLifecycle;
+  executionAwaitingDriverRef.current = isQueryEditorAwaitingDriver(executionLifecycle);
   const executionStatusKey = queryEditorExecutionTimerStatusI18nKey(executionTimingActive && loading, executionLifecycle);
   const executionStatusText = executionStatusKey ? translate(executionStatusKey) : '';
   const toggleResultPanelVisibility = useCallback(() => {
@@ -3336,6 +3361,21 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   useEffect(() => {
       currentDbRef.current = currentDb;
   }, [currentDb]);
+
+  useEffect(() => {
+      const editor = editorRef.current;
+      if (!editor) {
+          return;
+      }
+      publishQueryEditorSelection({
+          editor,
+          tabId: tab.id,
+          tabTitle: tab.title,
+          connectionId: currentConnectionId || tab.connectionId,
+          dbName: currentDb || tab.dbName,
+          language: queryEditorMonacoLanguage,
+      });
+  }, [currentConnectionId, currentDb, queryEditorMonacoLanguage, tab.connectionId, tab.dbName, tab.id, tab.title]);
 
   useEffect(() => {
       currentSchemaRef.current = currentSchema;
@@ -4551,20 +4591,29 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           id: 'ai.generateSQL',
           label: `AI ${translate('query_editor.action.ai_generate_sql_menu')}`,
           prompt: translate('query_editor.ai_prompt.generate'),
+          bindSelection: false,
       },
       {
           id: 'ai.explainSQL',
           label: `AI ${translate('query_editor.action.ai_explain_sql_menu')}`,
           useSelection: true,
           prompt: translate('query_editor.ai_prompt.explain', { sql: QUERY_EDITOR_SQL_PROMPT_PLACEHOLDER }),
+          bindSelection: false,
       },
       {
           id: 'ai.optimizeSQL',
           label: `AI ${translate('query_editor.action.ai_optimize_sql_menu')}`,
           useSelection: true,
           prompt: translate('query_editor.ai_prompt.optimize', { sql: QUERY_EDITOR_SQL_PROMPT_PLACEHOLDER }),
+          bindSelection: false,
       },
-  ]), []);
+      {
+          id: 'ai.bindSelectionContext',
+          label: `AI ${translate('ai_chat.input.context.bind_selection')}`,
+          prompt: '',
+          bindSelection: true,
+      },
+  ]), [translate]);
 
   const disposeQueryEditorAiContextMenuActions = useCallback(() => {
       aiContextMenuActionDisposablesRef.current.forEach((disposable) => disposable?.dispose?.());
@@ -4582,7 +4631,48 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               label: action.label,
               contextMenuGroupId: '9_ai',
               contextMenuOrder: 1,
+              ...(action.bindSelection ? { precondition: 'editorHasSelection' } : {}),
               run: async (ed: any) => {
+                  if (action.bindSelection) {
+                      const selection = publishQueryEditorSelection({
+                          editor: ed,
+                          tabId: tab.id,
+                          tabTitle: tab.title,
+                          connectionId: currentConnectionIdRef.current || tab.connectionId,
+                          dbName: currentDbRef.current || tab.dbName,
+                          language: queryEditorMonacoLanguage,
+                      });
+                      const connectionId = String(currentConnectionIdRef.current || tab.connectionId || '').trim();
+                      if (!selection) {
+                          message.warning(translate('ai_chat.input.message.select_editor_text_first'));
+                          return;
+                      }
+                      if (!connectionId) {
+                          message.warning(translate('ai_chat.input.message.select_database_context_first'));
+                          return;
+                      }
+                      const dbName = String(currentDbRef.current || tab.dbName || '').trim();
+                      const connectionKey = `${connectionId}:${dbName}`;
+                      const state = useStore.getState();
+                      const result = bindAIEditorSelectionContext({
+                          selection,
+                          connectionKey,
+                          contextItems: state.aiContexts[connectionKey] || [],
+                          addAIContext: state.addAIContext,
+                          removeAIContext: state.removeAIContext,
+                      });
+                      if (state.activeContext?.connectionId !== connectionId
+                          || state.activeContext?.dbName !== dbName) {
+                          state.setActiveContext({ connectionId, dbName });
+                      }
+                      state.setAIPanelVisible(true);
+                      if (result === 'added') {
+                          message.success(translate('ai_chat.input.message.context_selection_added'));
+                      } else if (result === 'unchanged') {
+                          message.info(translate('ai_chat.input.message.context_selection_unchanged'));
+                      }
+                      return;
+                  }
                   const selection = ed.getModel()?.getValueInRange(ed.getSelection());
                   let prompt = action.prompt;
                   if (action.useSelection && selection) {
@@ -4596,7 +4686,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               },
           })
       ));
-  }, [buildQueryEditorAiContextMenuActions, disposeQueryEditorAiContextMenuActions, isElasticsearchMode]);
+  }, [buildQueryEditorAiContextMenuActions, disposeQueryEditorAiContextMenuActions, isElasticsearchMode, queryEditorMonacoLanguage, tab.connectionId, tab.dbName, tab.id, tab.title]);
 
   const buildQueryEditorSlashCommandDefs = useCallback(() => ([
       {
@@ -5590,7 +5680,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   }, [queryEditorEditorHeightRatio, resolveEditorSplitAvailableHeight]);
 
   useEffect(() => {
-      if (!isResultPanelVisible || !isActive) return;
+      if (editorFullscreen.active || !isResultPanelVisible || !isActive) return;
       let frame: number | null = null;
       const requestFrame = typeof window.requestAnimationFrame === 'function'
           ? window.requestAnimationFrame.bind(window)
@@ -5622,7 +5712,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           resizeObserver?.disconnect();
           window.removeEventListener('resize', scheduleApply);
       };
-  }, [applyEditorHeightRatio, isActive, isResultPanelVisible, tab.id]);
+  }, [applyEditorHeightRatio, editorFullscreen.active, isActive, isResultPanelVisible, tab.id]);
 
   const applyEditorHeightToDom = useCallback(() => {
       const nextHeight = pendingEditorHeightRef.current;
@@ -5696,14 +5786,19 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       document.addEventListener('mouseup', handleMouseUp);
   }, [editorHeight, handleMouseMove, handleMouseUp]);
 
-  useEffect(() => {
-      return () => {
-          dragRef.current = null;
-          cancelEditorResizeFrame();
-          document.removeEventListener('mousemove', handleMouseMove);
-          document.removeEventListener('mouseup', handleMouseUp);
-      };
+  const abortEditorSplitDrag = useCallback(() => {
+      dragRef.current = null;
+      cancelEditorResizeFrame();
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
   }, [cancelEditorResizeFrame, handleMouseMove, handleMouseUp]);
+
+  useEffect(() => () => abortEditorSplitDrag(), [abortEditorSplitDrag]);
+
+  // 进入全屏时中止拖拽：监听在 document 上，残留 mousemove 会写内联 height 并在 mouseup 改写进入前比例。
+  useEffect(() => {
+      if (editorFullscreen.active) abortEditorSplitDrag();
+  }, [abortEditorSplitDrag, editorFullscreen.active]);
 
   const openRoutineObjectEditTab = useCallback(async (
       navigationTarget: Extract<QueryEditorNavigationTarget, { type: 'routine' }>,
@@ -6077,6 +6172,11 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   const handleEditorDidMount: OnMount = (editor, monaco) => {
       editorRef.current = editor;
       monacoRef.current = monaco;
+      installQueryEditorViewStateMemory(
+          tab.id,
+          editor,
+          restoredResultSessionRef.current?.editorViewState,
+      );
       // CompletionItemLabel is rendered by Monaco's DOM suggest widget. Keep
       // the original string label for non-DOM adapters used by older hosts.
       const useStructuredCompletionLabel = typeof editor?.getDomNode?.()?.querySelector === 'function';
@@ -7061,6 +7161,14 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           }
       });
 
+      bindQueryEditorSelectionPublisher(editor, () => ({
+          tabId: tab.id,
+          tabTitle: tab.title,
+          connectionId: currentConnectionIdRef.current || tab.connectionId,
+          dbName: currentDbRef.current || tab.dbName,
+          language: queryEditorMonacoLanguage,
+      }));
+
       const recoverTriggerSqlAiCompletionFallback = (event: any): boolean => {
           if (triggerSqlAiCompletionFallbackApplyingRef.current) {
               return true;
@@ -7503,6 +7611,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       });
 
       editor.onDidDispose?.(() => {
+          clearAIEditorSelection(tab.id);
           cancelPendingSqlReferencedMetadataRefresh();
           cancelPendingObjectDecorationRefresh();
           clearQueryEditorLinkDecorations(editor, linkDecorationIdsRef);
@@ -9823,7 +9932,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const executionDbName = executionContext?.executionDbName
           ?? currentResult?.executionDbName
           ?? currentDb;
-      if (!sql?.trim() || !canUseQueryEditorDatabaseContext(conn, executionDbName)) return;
+      if (!sql?.trim() || !canUseQueryEditorDatabaseContext(conn, executionDbName, sql)) return;
       const statementResultIndex = Math.max(
           1,
           Number(executionContext?.statementResultIndex ?? currentResult?.statementResultIndex ?? 1),
@@ -9962,7 +10071,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const conn = connections.find(c => c.id === executionConnectionId);
       if (!conn) return;
       const executionDbName = target?.executionDbName ?? currentDb;
-      if (!target?.page?.baseSql || !canUseQueryEditorDatabaseContext(conn, executionDbName) || resultTotalCountRequestsRef.current[resultKey]) return;
+      if (!target?.page?.baseSql || !canUseQueryEditorDatabaseContext(conn, executionDbName, target.page.baseSql) || resultTotalCountRequestsRef.current[resultKey]) return;
       const config = {
           ...conn.config,
           port: Number(conn.config.port),
@@ -10136,7 +10245,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       const conn = connections.find(c => c.id === executionConnectionId);
       if (!conn) return;
       const executionDbName = target?.executionDbName ?? currentDb;
-      if (!target?.page?.baseSql || !canUseQueryEditorDatabaseContext(conn, executionDbName)) return;
+      if (!target?.page?.baseSql || !canUseQueryEditorDatabaseContext(conn, executionDbName, target.page.baseSql)) return;
       const safePageSize = pageSize === 0
           ? 0
           : Math.max(1, Math.floor(Number(pageSize) || target.page.pageSize || 1));
@@ -10640,7 +10749,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
     }
     const executionDbName = currentDbRef.current;
     const executionSchemaName = currentSchemaRef.current;
-    if (!canUseQueryEditorDatabaseContext(currentConnection, executionDbName)) {
+    if (!canUseQueryEditorDatabaseContext(currentConnection, executionDbName, executableSQL)) {
         message.error(translate('query_editor.message.select_database_first'));
         return;
     }
@@ -12249,14 +12358,16 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
   }, [activeShortcutPlatform, languagePreference, toggleQueryResultsPanelShortcutBinding, toggleResultPanelVisibility]);
 
   useEffect(() => {
-      const handleLocateActiveQueryTable = () => {
+      const handleLocateActiveQueryTable = (event: Event) => {
           if (!isActive) return;
+          const fallbackRequest = (event as CustomEvent<Record<string, unknown> | undefined>).detail;
           const editor = editorRef.current;
           const model = editor?.getModel?.();
           const position = normalizeEditorPosition(editor?.getPosition?.() || lastEditorCursorPositionRef.current);
           const connectionId = String(currentConnectionIdRef.current || '').trim();
           const dbName = String(currentDbRef.current || '').trim();
           if (!model || !position || !connectionId || !dbName) {
+              if (dispatchSavedQueryLocateFallback(fallbackRequest)) return;
               void message.warning(translate('query_editor.message.locate_table_unavailable'));
               return;
           }
@@ -12266,38 +12377,33 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               String(currentConnectionConfig?.driver || ''),
               { oceanBaseProtocol: currentConnectionConfig?.oceanBaseProtocol },
           );
-          const references = collectQueryEditorTableReferences(lineContent, dialect);
-          const targets = references.map((reference) => resolveQueryEditorNavigationTarget(
-              `FROM ${reference.tableIdent}`,
-              6,
-              dbName,
-              visibleDbsRef.current,
-              tablesRef.current,
-              viewsRef.current,
-              materializedViewsRef.current,
-              triggersRef.current,
-              routinesRef.current,
-              sequencesRef.current,
-              packagesRef.current,
-              true,
-              undefined,
-              currentSchemaRef.current,
-              dialect,
-          )).filter((target): target is Extract<QueryEditorNavigationTarget, { type: 'table' }> => target?.type === 'table');
-          if (targets.length === 0) {
+          const located = resolveQueryEditorLineTableLocate({
+              lineContent, lineNumber: position.lineNumber, dialect, previous: queryTableLocateCycleRef.current,
+              resolveTarget: (reference) => resolveQueryEditorNavigationTarget(
+                  `FROM ${reference.tableIdent}`,
+                  6,
+                  dbName,
+                  visibleDbsRef.current,
+                  tablesRef.current,
+                  viewsRef.current,
+                  materializedViewsRef.current,
+                  triggersRef.current,
+                  routinesRef.current,
+                  sequencesRef.current,
+                  packagesRef.current,
+                  true,
+                  undefined,
+                  currentSchemaRef.current,
+                  dialect,
+              ),
+          });
+          if (!located) {
+              if (dispatchSavedQueryLocateFallback(fallbackRequest)) return;
               void message.warning(translate('query_editor.message.locate_table_unavailable'));
               return;
           }
-          const signature = targets.map((target) => `${target.dbName}\u0000${target.schemaName || ''}\u0000${target.tableName}`).join('\u0001');
-          const cycle = queryTableLocateCycleRef.current;
-          const index = resolveNextQueryEditorTableLocateIndex(
-              cycle,
-              position.lineNumber,
-              signature,
-              targets.length,
-          );
-          const target = targets[index];
-          queryTableLocateCycleRef.current = { lineNumber: position.lineNumber, signature, index };
+          const { target } = located;
+          queryTableLocateCycleRef.current = located.cycle;
           dispatchQueryEditorSidebarLocate({
               connectionId,
               dbName: target.dbName,
@@ -12763,51 +12869,18 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
               },
           ],
       },
-      {
-          type: 'group',
-          key: 'analysis-actions',
-          label: translate('tab_manager.kind_badge.sql_analysis'),
-          children: [
-              {
-                  key: 'show-query-history',
-                  icon: <ClockCircleOutlined />,
-                  label: translate('query_history.action.open'),
-                  onClick: openQueryHistoryWorkbench,
-              },
-              {
-                  key: 'diagnose-query',
-                  icon: <SearchOutlined />,
-                  label: (
-                      <span className="gn-v2-context-menu-item-title">
-                          {translate('app.shortcuts.action.diagnoseQuery.label' as any)}
-                          {diagnoseQueryShortcutBinding?.enabled && diagnoseQueryShortcutBinding.combo && (
-                              <span className="gn-v2-context-menu-kbd">
-                                  {getShortcutDisplayLabel(diagnoseQueryShortcutBinding.combo, activeShortcutPlatform)}
-                              </span>
-                          )}
-                      </span>
-                  ),
-                  disabled: !currentConnectionCapabilities.supportsExplainDiagnosis,
-                  onClick: () => openSqlAnalysisWorkbench('diagnose', getCurrentQuery()),
-              },
-              {
-                  key: 'show-slow-queries',
-                  icon: <HistoryOutlined />,
-                  label: (
-                      <span className="gn-v2-context-menu-item-title">
-                          {translate('app.shortcuts.action.showSlowQueries.label' as any)}
-                          {showSlowQueriesShortcutBinding?.enabled && showSlowQueriesShortcutBinding.combo && (
-                              <span className="gn-v2-context-menu-kbd">
-                                  {getShortcutDisplayLabel(showSlowQueriesShortcutBinding.combo, activeShortcutPlatform)}
-                              </span>
-                          )}
-                      </span>
-                  ),
-                  onClick: () => openSqlAnalysisWorkbench('slow-query'),
-              },
-          ],
-      },
   ];
+
+  const analysisMenuItems = buildQueryEditorAnalysisMenuItems({
+      translate,
+      activeShortcutPlatform,
+      diagnoseQueryShortcutBinding,
+      showSlowQueriesShortcutBinding,
+      supportsExplainDiagnosis: currentConnectionCapabilities.supportsExplainDiagnosis,
+      onOpenQueryHistory: openQueryHistoryWorkbench,
+      onDiagnoseQuery: () => openSqlAnalysisWorkbench('diagnose', getCurrentQuery()),
+      onOpenSlowQueries: () => openSqlAnalysisWorkbench('slow-query'),
+  });
 
   useEffect(() => {
       const handleFindShortcut = (event: KeyboardEvent) => {
@@ -13411,28 +13484,16 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           onFinish={(action) => void handleFinishPendingSqlTransaction(action)}
       />
   );
-  const queryEditorStageStyle: React.CSSProperties = isResultPanelVisible
-      ? {
-          height: editorHeight,
-          minHeight: '100px',
-      }
-      : {
-          flex: '1 1 auto',
-          minHeight: 0,
-      };
-  const resolvedQueryEditorStageStyle: React.CSSProperties = {
-          ...queryEditorStageStyle,
-      } as React.CSSProperties;
-
   return (
     <div ref={queryEditorRootRef} className="gn-v2-query-editor" style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <div
         ref={editorPaneRef}
         className="gn-v2-query-editor-pane"
-        style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: isResultPanelVisible ? '0 0 auto' : '1 1 auto' }}
+        style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: editorFullscreen.resultsAreaMounted ? '0 0 auto' : '1 1 auto' }}
       >
       <QueryEditorToolbar
         editorMode={isElasticsearchMode ? 'elasticsearch' : 'sql'}
+        editorFullscreenAction={<QueryEditorToolbarFullscreenAction active={editorFullscreen.active} shortcutBinding={editorFullscreen.shortcutBinding} activeShortcutPlatform={activeShortcutPlatform} onToggle={editorFullscreen.toggle} />}
         currentConnectionId={currentConnectionId}
         currentDb={currentDb}
         queryCapableConnections={queryCapableConnections}
@@ -13478,6 +13539,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         loading={loading}
         runDisabled={canSelectQuerySchema && schemaLoading}
         saveMoreMenuItems={saveMoreMenuItems}
+        analysisMenuItems={analysisMenuItems}
         formatSettingsMenu={formatSettingsMenu}
         formatSettingsSelectedKeys={[sqlFormatOptions.keywordCase]}
         templateMenuItems={elasticsearchTemplateMenuItems}
@@ -13529,7 +13591,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       <div
         ref={editorStageRef}
         className="gn-v2-query-monaco-stage gn-query-monaco-stage"
-        style={resolvedQueryEditorStageStyle}
+        style={editorFullscreen.stageStyle}
       >
         <div
           ref={editorShellRef}
@@ -13579,7 +13641,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
         </div>
       </div>
 
-      {isResultPanelVisible && (
+      {editorFullscreen.resultsAreaMounted && (
         <div
           className="gn-v2-query-resizer"
           onMouseDown={handleMouseDown}
@@ -13595,7 +13657,7 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
       )}
       </div>
 
-      {isResultPanelVisible && (
+      {editorFullscreen.resultsAreaMounted && (
         <QueryEditorResultsPanel
           workbenchTabId={tab.id}
           resultSets={resultSets}
@@ -13610,6 +13672,8 @@ const QueryEditor: React.FC<{ tab: TabData; isActive?: boolean }> = ({ tab, isAc
           currentConnectionId={currentConnectionId}
           maxRows={queryOptions?.maxRows ?? 5000}
           dataPreviewRequest={resultDataPreviewRequest}
+          elasticsearchViewModes={elasticsearchViewModes}
+          onElasticsearchViewModeChange={handleElasticsearchViewModeChange}
           toggleShortcutLabel={toggleQueryResultsPanelShortcutLabel}
           onActiveResultKeyChange={setActiveResultKey}
           onHide={() => updateResultPanelVisibility(false)}

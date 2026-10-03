@@ -7,7 +7,7 @@ import {
 } from './DataSyncOperationalViews';
 import { DataSyncPreflightPanel } from './DataSyncPreflightPanel';
 import { DataSyncScheduleTable } from './DataSyncScheduleTable';
-import { DataSyncTaskEditor } from './DataSyncTaskEditor';
+import { DataSyncTaskEditor } from './DataSyncEditorRouter';
 import {
   DataSyncTaskKindSelector,
   DataSyncTaskList,
@@ -357,6 +357,8 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
   const selectedTaskIdRef = useRef(selectedTaskId);
   selectedTaskIdRef.current = selectedTaskId;
   const [activeStage, setActiveStage] = useState<DataSyncTaskStage>('endpoints');
+  // 预检问题「定位」时携带的映射引用；由编辑器解析成具体行并回报清空。
+  const [focusMappingRef, setFocusMappingRef] = useState('');
   const [search, setSearch] = useState('');
   const [showKindSelector, setShowKindSelector] = useState(false);
   const [taskRailOpen, setTaskRailOpen] = useState(false);
@@ -421,6 +423,8 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
   const [nextRunCursor, setNextRunCursor] = useState<DataSyncRunCursor | null>(null);
   const [runTotal, setRunTotal] = useState(0);
   const runPageRequestEpochRef = useRef(0);
+  const runPagePollEpochRef = useRef(0);
+  const runPageNavigationInFlightRef = useRef(0);
   const selectedRunRequestEpochRef = useRef(0);
   const runEventsRequestEpochRef = useRef(0);
   const [cdcSources, setCdcSources] = useState<DataSyncCdcSourceStatus[]>([]);
@@ -493,13 +497,37 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
     );
   };
 
+  // 用户发起的翻页请求。此处递增 runPageRequestEpochRef 会作废更早的用户请求，
+  // 但背景轮询用的是独立的 runPagePollEpochRef，二者互不干扰。
   const requestRunPage = async (
     cursor: DataSyncRunCursor | null,
     pageSize: DataSyncRunPageSize,
   ): Promise<DataSyncRunPage | null> => {
     const requestEpoch = ++runPageRequestEpochRef.current;
+    // 同时作废在途的轮询响应：否则一个早于本次翻页发出、晚于本次翻页返回的
+    // 轮询结果，会带着旧的页码与游标把视图覆盖回上一页。
+    runPagePollEpochRef.current += 1;
+    runPageNavigationInFlightRef.current += 1;
+    try {
+      const page = await gatewayRef.current!.listRunsPage(cursor, pageSize);
+      return requestEpoch === runPageRequestEpochRef.current ? page : null;
+    } finally {
+      runPageNavigationInFlightRef.current -= 1;
+    }
+  };
+
+  // 背景轮询专用。它只让更早的轮询响应失效，绝不能作废用户正在进行的翻页：
+  // 两者若共用同一个 epoch 计数器，轮询 tick 恰好落在翻页请求飞行途中时，
+  // 翻页响应会被判为过期而丢弃，页面停在原地 —— 表现为「上一页点了没反应」。
+  // 翻页进行中也跳过本轮轮询，避免用旧页的数据覆盖刚翻到的页。
+  const requestRunPageForPoll = async (
+    cursor: DataSyncRunCursor | null,
+    pageSize: DataSyncRunPageSize,
+  ): Promise<DataSyncRunPage | null> => {
+    if (runPageNavigationInFlightRef.current > 0) return null;
+    const pollEpoch = ++runPagePollEpochRef.current;
     const page = await gatewayRef.current!.listRunsPage(cursor, pageSize);
-    return requestEpoch === runPageRequestEpochRef.current ? page : null;
+    return pollEpoch === runPagePollEpochRef.current ? page : null;
   };
 
   const reloadFirstRunPage = async () => {
@@ -736,10 +764,12 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
           );
         }
         const runPageRequest = requestRunPage(null, 10);
-        if (!workbenchFamily) {
+        if (workbenchFamily !== 'compare') {
           // Schedule rows aggregate from this fresh task snapshot; the
           // schedule projection and per-task run history load inside the
-          // schedule control.
+          // schedule control. Only the compare workbench lacks a schedules
+          // view, so any other family (including the default 'sync') must seed
+          // it here — nothing else populates the list on first mount.
           void scheduleControl.ingestSnapshot(loadedTasks);
         }
         const pendingRequests:
@@ -826,7 +856,7 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
     const hasActiveRun = runs.some((run) => ACTIVE_RUN_STATUSES.has(run.status));
     if (!hasActiveRun) return undefined;
     const timer = globalThis.setInterval(() => {
-      void requestRunPage(runPageCursors[runPageIndex], runPageSize)
+      void requestRunPageForPoll(runPageCursors[runPageIndex], runPageSize)
         .then((page) => {
           if (page) applyRunPage(page, runPageIndex, runPageCursors);
         })
@@ -1635,10 +1665,13 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
     }
   };
 
-  const locateIssue = (stage: DataSyncTaskStage) => {
+  const locateIssue = (stage: DataSyncTaskStage, mappingRef?: string) => {
     setActiveView('tasks');
     setShowKindSelector(false);
     setActiveStage(stage);
+    // 映射引用交给编辑器解析：本地校验给行 id，后端给稳定键，只有编辑器
+    // 同时掌握两套标识与任务级 schema。
+    setFocusMappingRef((mappingRef || '').trim());
   };
 
   const transitionLifecycle = (
@@ -2090,6 +2123,10 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
               onClick={() => {
                 setActiveView(view);
                 setTaskRailOpen(false);
+                // Schedule rows live in the schedule control, not in this
+                // component's state: entering the view must pull a fresh
+                // snapshot so the list can never render a stale or empty set.
+                if (view === 'schedules') void scheduleControl.refresh();
               }}
             >
               {t(`nav.${view}`)}
@@ -2224,7 +2261,17 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
               setShowKindSelector(true);
               closeTaskRailAndRestoreFocus();
             }}
-            onClose={closeTaskRailAndRestoreFocus}
+            // 面板头部以删除当前任务取代原先的「收起」：宽屏下任务栏本就
+            // 常驻，「收起」点了没有任何视觉变化，看起来像按钮坏了。
+            onDeleteTask={
+              selectedTask && !showKindSelector
+                ? requestDeleteSelectedTask
+                : undefined
+            }
+            deleteDisabled={
+              operationBusy === 'delete' || saving || preflighting
+            }
+            deleting={operationBusy === 'delete'}
           />
           <main ref={editorColumnRef} className="gn-data-sync-editor-column">
             {showKindSelector || !selectedTask ? (
@@ -2243,6 +2290,8 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
                   activeStage={activeStage}
                   preflight={selectedPreflight}
                   preflightStale={preflightStale}
+                  focusMappingRef={focusMappingRef}
+                  onMappingLocated={() => setFocusMappingRef('')}
                   preflightContent={(
                     <DataSyncPreflightPanel
                       snapshot={selectedPreflight}

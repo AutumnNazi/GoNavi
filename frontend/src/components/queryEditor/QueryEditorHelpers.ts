@@ -4376,7 +4376,7 @@ export const dispatchQueryEditorSidebarLocate = (detail: Record<string, unknown>
     const connectionId = String(detail.connectionId || '').trim();
     const dbName = String(detail.dbName || '').trim();
     const objectName = String(detail.tableName || detail.viewName || detail.triggerName || detail.routineName || detail.objectName || '').trim();
-    if (!connectionId || !dbName || !objectName) {
+    if ((!connectionId || !dbName || !objectName) && !String(detail.savedQueryId || '').trim()) {
         return;
     }
     window.dispatchEvent(new CustomEvent('gonavi:locate-sidebar-object', {

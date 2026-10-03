@@ -236,7 +236,12 @@ func (c *CustomDB) GetTables(dbName string) ([]string, error) {
 	} else if driverName == "oracle" || driverName == "dm" {
 		query = "SELECT table_name FROM user_tables"
 		if dbName != "" {
-			query = fmt.Sprintf("SELECT owner, table_name FROM all_tables WHERE owner = '%s' ORDER BY table_name", strings.ToUpper(dbName))
+			// Owner names come from the server (all_users / user_oracle_objects),
+			// so a hostile or merely quirky schema name must not break out of the
+			// literal. Same escaping the dedicated Oracle driver uses for this
+			// query, and the same treatment the mysql/pg branches above already
+			// give dbName.
+			query = fmt.Sprintf("SELECT owner, table_name FROM all_tables WHERE owner = '%s' ORDER BY table_name", escapeOracleMetadataLiteral(dbName))
 		}
 	}
 
