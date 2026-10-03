@@ -866,7 +866,6 @@ function App() {
   const themeMode = useStore(state => state.theme);
   const themePreference = useStore(state => state.themePreference);
   const brandIconId = useStore(state => state.brandIconId);
-  const setBrandIconId = useStore(state => state.setBrandIconId);
   const setTheme = useStore(state => state.setTheme);
   const setThemePreference = useStore(state => state.setThemePreference);
   const customThemes = useCustomThemeStore(state => state.themes);

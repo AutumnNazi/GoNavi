@@ -64,7 +64,9 @@ func repairDefaultWindowsApplicationShortcuts() {
 		return
 	}
 	if !applicationBrandIconMu.TryLock() {
-		// 切换进行中其完整链路会覆盖同样表面；下次启动仍会重试。
+		// Initialize 派生本协程时父协程通常仍持锁，首轮常在此跳过：下次
+		// 启动自动重试，篡改面在若干次启动内收敛。
+		logger.Infof("启动期快捷方式迁移与图标切换并发，本轮跳过，下次启动重试")
 		return
 	}
 	defer applicationBrandIconMu.Unlock()
@@ -80,8 +82,15 @@ func repairDefaultWindowsApplicationShortcuts() {
 // the name-occupied guard never rebuilds.
 func windowsEnsureShortcutsDisabledEnv(executablePath string) string {
 	tempRoot := os.TempDir()
-	if tempRoot != "" && strings.HasPrefix(strings.ToLower(executablePath), strings.ToLower(tempRoot)) {
-		return "1"
+	if tempRoot != "" {
+		// 补齐尾部分隔符再比较，避免 Temp 兄弟目录（如 ...\TempExtras\）
+		// 被前缀误判为临时目录。
+		if !strings.HasSuffix(tempRoot, string(os.PathSeparator)) && !strings.HasSuffix(tempRoot, "/") {
+			tempRoot += string(os.PathSeparator)
+		}
+		if strings.HasPrefix(strings.ToLower(executablePath), strings.ToLower(tempRoot)) {
+			return "1"
+		}
 	}
 	return "0"
 }
