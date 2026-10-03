@@ -11887,5 +11887,19 @@
   "db.backend.error.presto_password_requires_https": "Presto 的密碼驗證只能走 HTTPS：請啟用 SSL，或改用存取權杖（accessToken 連線參數）",
   "db.backend.error.presto_namespace_required": "Presto 的資料庫名稱必須是 catalog.schema 形式（目前為「{{name}}」），也可以在連線中設定預設資料庫",
   "db.backend.error.presto_ddl_empty": "Presto 沒有傳回「{{name}}」的建表語句",
-  "db.backend.error.presto_unexpected_response": "Presto 傳回了無法解析的回應（位址可能不是 Presto 協調節點）：{{detail}}"
+  "db.backend.error.presto_unexpected_response": "Presto 傳回了無法解析的回應（位址可能不是 Presto 協調節點）：{{detail}}",
+  "datasource.variant.etcd.v2": "v2 API（HTTP /v2/keys）：etcd 2.x，或在開啟 --enable-v2 的 3.x 上瀏覽舊的 v2 鍵空間（與 v3 鍵空間互不可見）",
+  "datasource.variant.etcd.v3": "v3 API（gRPC）：etcd 3.x，支援範圍分頁、租約、交易與修訂號；租約清單需要 3.3 起",
+  "db.backend.error.etcd_command_empty": "請輸入 etcd 命令，例如 get /app --prefix",
+  "db.backend.error.etcd_command_unclosed_quote": "etcd 命令中的引號沒有閉合",
+  "db.backend.error.etcd_command_flag_invalid": "etcd 命令選項 --{{flag}} 的值「{{value}}」無效",
+  "db.backend.error.etcd_command_usage": "etcd 命令用法：{{usage}}",
+  "db.backend.error.etcd_command_unknown": "不支援的 etcd 命令「{{command}}」：可用 get、put、del、watch、lease、member、endpoint、alarm、user、role、compaction（v2 檔位用 ls、get、set、mk、mkdir、update、rm、rmdir、watch）",
+  "db.backend.error.etcd_lease_list_unsupported": "etcd {{version}} 不支援列出租約（LeaseLeases 從 3.3 起才有），可用 lease timetolive <id> 查看單個租約",
+  "db.backend.error.etcd_change_conflict": "提交失敗：鍵已存在，或在讀取後被其他用戶端修改／刪除，請重新整理後重試",
+  "db.backend.error.etcd_key_required": "etcd 的每一列都需要填寫 key",
+  "db.backend.error.etcd_v2_request_failed": "etcd v2 請求失敗（HTTP {{status}}）：{{detail}}",
+  "db.backend.error.etcd_list_permission_denied": "目前使用者無權讀取前綴「{{prefix}}」下的全部鍵：請在連線參數中用 prefix=<有權限的前綴>（如 prefix=/app）限定瀏覽範圍",
+  "db.backend.error.etcd_auth_required": "此 etcd 叢集已開啟驗證，請填寫使用者名稱和密碼",
+  "db.backend.error.etcd_auth_failed": "etcd 驗證失敗：使用者名稱或密碼不正確"
 }

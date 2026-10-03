@@ -132,8 +132,8 @@ func normalizeSchemaAndTable(config connection.ConnectionConfig, dbName string, 
 	dbType := normalizeDriverType(resolveDDLDBType(config))
 
 	// Elasticsearch：索引名可能含多个点（如 iot_pro_biz_operate_log.index.20240626），
-	// 不能按点分割，直接返回原始数据库名和完整表名。
-	if dbType == "elasticsearch" || dbType == "iotdb" || dbType == "rocketmq" || dbType == "mqtt" || dbType == "kafka" || dbType == "rabbitmq" || dbType == "pulsar" || dbType == "trino" {
+	// 不能按点分割，直接返回原始数据库名和完整表名；描述表里声明 flatObjectNames 的类型（etcd 键路径）同理。
+	if registryUsesFlatObjectNames(dbType) || dbType == "elasticsearch" || dbType == "iotdb" || dbType == "rocketmq" || dbType == "mqtt" || dbType == "kafka" || dbType == "rabbitmq" || dbType == "pulsar" || dbType == "trino" {
 		return rawDB, rawTable
 	}
 

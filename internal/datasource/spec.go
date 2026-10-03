@@ -84,6 +84,8 @@ type UISpec struct {
 	HiddenSchemaPrefixes []string `json:"hiddenSchemaPrefixes,omitempty"`
 	// HideExtensionRoutines 为 true 时函数列表不含 CREATE EXTENSION 带入的函数（pg_depend.deptype = 'e'）。
 	HideExtensionRoutines bool `json:"hideExtensionRoutines,omitempty"`
+	// FlatObjectNames 为 true 时对象名（etcd 键路径、znode 路径）整体是一个标识符，不能按点拆成 schema.table。
+	FlatObjectNames bool `json:"flatObjectNames,omitempty"`
 }
 
 // HidesSchema 报告 schema 是否属于 HiddenSchemaPrefixes 声明的扩展内部 schema。

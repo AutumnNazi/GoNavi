@@ -11887,5 +11887,19 @@
   "db.backend.error.presto_password_requires_https": "Presto-Passwortauthentifizierung erfordert HTTPS: SSL aktivieren oder ein Zugriffstoken verwenden (Verbindungsparameter accessToken)",
   "db.backend.error.presto_namespace_required": "Ein Presto-Datenbankname muss catalog.schema lauten (erhalten: „{{name}}“); alternativ eine Standarddatenbank in der Verbindung festlegen",
   "db.backend.error.presto_ddl_empty": "Presto hat keine CREATE-Anweisung für „{{name}}“ zurückgegeben",
-  "db.backend.error.presto_unexpected_response": "Presto hat eine nicht auswertbare Antwort geliefert (die Adresse ist evtl. kein Presto-Koordinator): {{detail}}"
+  "db.backend.error.presto_unexpected_response": "Presto hat eine nicht auswertbare Antwort geliefert (die Adresse ist evtl. kein Presto-Koordinator): {{detail}}",
+  "datasource.variant.etcd.v2": "v2-API (HTTP /v2/keys): etcd 2.x oder der alte v2-Schlüsselraum auf 3.x-Servern mit --enable-v2 (für die v3-API nicht sichtbar)",
+  "datasource.variant.etcd.v3": "v3-API (gRPC): etcd 3.x mit Bereichs-Paging, Leases, Transaktionen und Revisionen; Lease-Liste ab 3.3",
+  "db.backend.error.etcd_command_empty": "Bitte einen etcd-Befehl eingeben, z. B. get /app --prefix",
+  "db.backend.error.etcd_command_unclosed_quote": "Der etcd-Befehl enthält ein nicht geschlossenes Anführungszeichen",
+  "db.backend.error.etcd_command_flag_invalid": "Ungültiger Wert „{{value}}“ für die etcd-Option --{{flag}}",
+  "db.backend.error.etcd_command_usage": "Verwendung des etcd-Befehls: {{usage}}",
+  "db.backend.error.etcd_command_unknown": "Nicht unterstützter etcd-Befehl „{{command}}“: verwenden Sie get, put, del, watch, lease, member, endpoint, alarm, user, role oder compaction (die v2-Variante nutzt ls, get, set, mk, mkdir, update, rm, rmdir, watch)",
+  "db.backend.error.etcd_lease_list_unsupported": "etcd {{version}} kann keine Leases auflisten (LeaseLeases gibt es ab 3.3); einzelne Leases mit lease timetolive <id> prüfen",
+  "db.backend.error.etcd_change_conflict": "Übernahme fehlgeschlagen: Der Schlüssel existiert bereits oder wurde nach dem Lesen von einem anderen Client geändert bzw. gelöscht; aktualisieren und erneut versuchen",
+  "db.backend.error.etcd_key_required": "Jede etcd-Zeile benötigt einen key",
+  "db.backend.error.etcd_v2_request_failed": "etcd-v2-Anfrage fehlgeschlagen (HTTP {{status}}): {{detail}}",
+  "db.backend.error.etcd_list_permission_denied": "Der Benutzer darf nicht alle Schlüssel unter „{{prefix}}“ lesen: Verbindungsparameter prefix auf ein erlaubtes Präfix setzen (z. B. prefix=/app)",
+  "db.backend.error.etcd_auth_required": "Auf diesem etcd-Cluster ist die Authentifizierung aktiviert; Benutzername und Passwort eingeben",
+  "db.backend.error.etcd_auth_failed": "etcd-Authentifizierung fehlgeschlagen: falscher Benutzername oder falsches Passwort"
 }

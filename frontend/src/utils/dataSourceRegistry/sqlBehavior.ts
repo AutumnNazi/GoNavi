@@ -15,6 +15,9 @@ export const resolveRegistryQuoting = (type: unknown): RegistryQuoting | undefin
   return 'double';
 };
 
+/** 对象名整体是一个标识符的描述表类型（ui.flatObjectNames，如 etcd 键路径）：引用时不按点拆分。 */
+export const usesRegistryFlatObjectNames = (type: unknown): boolean => Boolean(getDataSourceSpec(type)?.ui?.flatObjectNames);
+
 /** Presto / Trino 的分页：OFFSET 必须写在 LIMIT 之前，LIMIT n OFFSET m 在它们的语法里是错误。 */
 export const buildOffsetLimitSelectSQL = (base: string, orderBy: string, limit: number, offset: number): string =>
   offset > 0 ? `${base}${orderBy} OFFSET ${offset} LIMIT ${limit}` : `${base}${orderBy} LIMIT ${limit}`;

@@ -70,6 +70,12 @@ func registryPrefersPlainReadQuery(driverType string) bool {
 	return ok && (spec.Wire == "postgres" || spec.Wire == "http")
 }
 
+// registryUsesFlatObjectNames 报告描述表类型的对象名是否整体作为一个标识符（键路径等可能含点），不能按点拆分。
+func registryUsesFlatObjectNames(driverType string) bool {
+	spec, ok := db.DataSourceSpec(driverType)
+	return ok && spec.UI.FlatObjectNames
+}
+
 // registryUsesDriverProxy 报告描述表类型是否由驱动自己处理连接代理（不在主进程改写为本地转发地址）。
 func registryUsesDriverProxy(driverType string) bool {
 	spec, ok := db.DataSourceSpec(driverType)

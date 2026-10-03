@@ -1,5 +1,6 @@
 // 非 SQL 查询语言的描述表数据源按方言判定语句是否只读（只读保护、写操作提示与事务托管共用）。
-// 规则与 Go 侧一致：Weaviate 见 internal/db/weaviate_command.go，InfluxDB 见 internal/db/influxdb_command.go。
+// 规则与 Go 侧一致：Weaviate 见 internal/db/weaviate_command.go，InfluxDB 见 internal/db/influxdb_command.go，
+// etcd 见 internal/db/etcd_command.go。
 // 分类器返回 undefined 表示交给通用 SQL 规则（如 InfluxQL、InfluxDB 3.x 的 SQL）。
 
 type ReadOnlyClassifier = (statement: string) => boolean | undefined;
@@ -37,9 +38,27 @@ const classifyInfluxDBStatement = (statement: string): boolean | undefined => (
   isInfluxFluxQuery(statement) ? !FLUX_WRITE_CALL.test(statement) : undefined
 );
 
+const ETCD_READ_COMMANDS = new Set(['get', 'ls', 'version', 'watch', 'select']);
+const ETCD_READ_SUBCOMMANDS: Record<string, string[]> = {
+  lease: ['list', 'timetolive'],
+  member: ['list'],
+  endpoint: ['status', 'health', 'hashkv'],
+  alarm: ['list'],
+  user: ['list', 'get'],
+  role: ['list', 'get'],
+};
+
+/** etcd：etcdctl 风格命令，get / ls / watch / version、数据浏览的 SELECT 与各类 list / status 查询为只读。 */
+export const isReadOnlyEtcdCommand = (statement: string): boolean => {
+  const [name = '', sub = ''] = String(statement || '').trim().split(/\s+/, 2).map((token) => token.toLowerCase());
+  if (ETCD_READ_COMMANDS.has(name)) return true;
+  return (ETCD_READ_SUBCOMMANDS[name] ?? []).includes(sub);
+};
+
 const REGISTRY_READ_ONLY_CLASSIFIERS: Record<string, ReadOnlyClassifier> = {
   weaviate: isReadOnlyWeaviateCommand,
   influxdb: classifyInfluxDBStatement,
+  etcd: isReadOnlyEtcdCommand,
 };
 
 /** 返回该方言的只读判定函数；SQL 方言返回 undefined，交给通用 SQL 规则。 */

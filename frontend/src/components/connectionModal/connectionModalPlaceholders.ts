@@ -122,6 +122,8 @@ export const getConnectionParamsPlaceholder = (
       return "session_properties=query_max_execution_time:30m&query_timeout=30s";
     case "presto":
       return "session.query_max_run_time=30m&timeZone=Asia%2FShanghai&clientTags=gonavi";
+    case "etcd":
+      return "prefix=/app&endpoints=10.0.0.2:2379,10.0.0.3:2379&delimiter=/";
     case "mongodb":
       return "retryWrites=true&readPreference=secondaryPreferred";
     case "chroma":

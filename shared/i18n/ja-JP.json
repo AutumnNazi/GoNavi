@@ -11887,5 +11887,19 @@
   "db.backend.error.presto_password_requires_https": "Presto のパスワード認証は HTTPS でのみ使用できます。SSL を有効にするか、アクセストークン（接続パラメーター accessToken）を使用してください",
   "db.backend.error.presto_namespace_required": "Presto のデータベース名は catalog.schema 形式である必要があります（現在：「{{name}}」）。接続で既定のデータベースを設定することもできます",
   "db.backend.error.presto_ddl_empty": "Presto が「{{name}}」の CREATE 文を返しませんでした",
-  "db.backend.error.presto_unexpected_response": "Presto から解析できない応答が返されました（アドレスが Presto コーディネーターではない可能性があります）：{{detail}}"
+  "db.backend.error.presto_unexpected_response": "Presto から解析できない応答が返されました（アドレスが Presto コーディネーターではない可能性があります）：{{detail}}",
+  "datasource.variant.etcd.v2": "v2 API（HTTP /v2/keys）：etcd 2.x、または --enable-v2 で起動した 3.x 上の旧 v2 キー空間（v3 API からは見えません）",
+  "datasource.variant.etcd.v3": "v3 API（gRPC）：etcd 3.x。範囲ページング、リース、トランザクション、リビジョンに対応。リース一覧は 3.3 以降",
+  "db.backend.error.etcd_command_empty": "etcd コマンドを入力してください（例：get /app --prefix）",
+  "db.backend.error.etcd_command_unclosed_quote": "etcd コマンドの引用符が閉じられていません",
+  "db.backend.error.etcd_command_flag_invalid": "etcd オプション --{{flag}} の値「{{value}}」が無効です",
+  "db.backend.error.etcd_command_usage": "etcd コマンドの使い方：{{usage}}",
+  "db.backend.error.etcd_command_unknown": "未対応の etcd コマンド「{{command}}」です。get、put、del、watch、lease、member、endpoint、alarm、user、role、compaction を使用してください（v2 では ls、get、set、mk、mkdir、update、rm、rmdir、watch）",
+  "db.backend.error.etcd_lease_list_unsupported": "etcd {{version}} はリース一覧に対応していません（LeaseLeases は 3.3 以降）。lease timetolive <id> で個別に確認してください",
+  "db.backend.error.etcd_change_conflict": "コミットに失敗しました：キーが既に存在するか、読み取り後に他のクライアントが変更・削除しました。更新してから再試行してください",
+  "db.backend.error.etcd_key_required": "etcd の各行に key が必要です",
+  "db.backend.error.etcd_v2_request_failed": "etcd v2 リクエストに失敗しました（HTTP {{status}}）：{{detail}}",
+  "db.backend.error.etcd_list_permission_denied": "現在のユーザーは「{{prefix}}」以下のすべてのキーを読み取れません。接続パラメーター prefix に権限のあるプレフィックス（例：prefix=/app）を指定してください",
+  "db.backend.error.etcd_auth_required": "この etcd クラスターは認証が有効です。ユーザー名とパスワードを入力してください",
+  "db.backend.error.etcd_auth_failed": "etcd の認証に失敗しました：ユーザー名またはパスワードが正しくありません"
 }

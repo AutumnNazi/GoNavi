@@ -1,4 +1,4 @@
-import { buildOffsetLimitSelectSQL, buildRegistryPaginatedSelectSQL, resolveRegistryQuoting } from './dataSourceRegistry/sqlBehavior';
+import { buildOffsetLimitSelectSQL, buildRegistryPaginatedSelectSQL, resolveRegistryQuoting, usesRegistryFlatObjectNames } from './dataSourceRegistry/sqlBehavior';
 import { splitQualifiedNameSegments, stripIdentifierQuotes } from './qualifiedName';
 import { isElasticsearchFamilyType } from './elasticsearchFamily';
 
@@ -65,7 +65,7 @@ export const quoteQualifiedIdent = (dbType: string, ident: string) => {
   const raw = (ident || '').trim();
   if (!raw) return raw;
   const normalizedType = (dbType || '').trim().toLowerCase();
-  if (['rocketmq', 'mqtt', 'kafka', 'rabbitmq', 'pulsar'].includes(normalizedType)) {
+  if (['rocketmq', 'mqtt', 'kafka', 'rabbitmq', 'pulsar'].includes(normalizedType) || usesRegistryFlatObjectNames(normalizedType)) {
     return quoteIdentPart(dbType, raw);
   }
   const parts = splitQualifiedNameSegments(raw).filter(Boolean);

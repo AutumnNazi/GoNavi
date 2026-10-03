@@ -11887,5 +11887,19 @@
   "db.backend.error.presto_password_requires_https": "Парольная аутентификация Presto работает только через HTTPS: включите SSL или используйте токен доступа (параметр подключения accessToken)",
   "db.backend.error.presto_namespace_required": "Имя базы Presto должно иметь вид catalog.schema (получено «{{name}}»); можно также задать базу по умолчанию в подключении",
   "db.backend.error.presto_ddl_empty": "Presto не вернул оператор CREATE для «{{name}}»",
-  "db.backend.error.presto_unexpected_response": "Presto вернул ответ, который не удалось разобрать (возможно, адрес не является координатором Presto): {{detail}}"
+  "db.backend.error.presto_unexpected_response": "Presto вернул ответ, который не удалось разобрать (возможно, адрес не является координатором Presto): {{detail}}",
+  "datasource.variant.etcd.v2": "API v2 (HTTP /v2/keys): etcd 2.x или старое пространство ключей v2 на серверах 3.x с --enable-v2 (не видно через API v3)",
+  "datasource.variant.etcd.v3": "API v3 (gRPC): etcd 3.x с постраничным чтением диапазонов, арендами, транзакциями и ревизиями; список аренд — с 3.3",
+  "db.backend.error.etcd_command_empty": "Введите команду etcd, например get /app --prefix",
+  "db.backend.error.etcd_command_unclosed_quote": "В команде etcd не закрыта кавычка",
+  "db.backend.error.etcd_command_flag_invalid": "Недопустимое значение «{{value}}» для параметра etcd --{{flag}}",
+  "db.backend.error.etcd_command_usage": "Использование команды etcd: {{usage}}",
+  "db.backend.error.etcd_command_unknown": "Неподдерживаемая команда etcd «{{command}}»: используйте get, put, del, watch, lease, member, endpoint, alarm, user, role или compaction (вариант v2: ls, get, set, mk, mkdir, update, rm, rmdir, watch)",
+  "db.backend.error.etcd_lease_list_unsupported": "etcd {{version}} не умеет выводить список аренд (LeaseLeases появился в 3.3); используйте lease timetolive <id>",
+  "db.backend.error.etcd_change_conflict": "Не удалось применить изменения: ключ уже существует либо был изменён или удалён другим клиентом после чтения; обновите данные и повторите",
+  "db.backend.error.etcd_key_required": "Для каждой строки etcd нужен key",
+  "db.backend.error.etcd_v2_request_failed": "Ошибка запроса etcd v2 (HTTP {{status}}): {{detail}}",
+  "db.backend.error.etcd_list_permission_denied": "Пользователь не может читать все ключи под «{{prefix}}»: задайте параметр подключения prefix с разрешённым префиксом (например prefix=/app)",
+  "db.backend.error.etcd_auth_required": "В этом кластере etcd включена аутентификация; укажите имя пользователя и пароль",
+  "db.backend.error.etcd_auth_failed": "Ошибка аутентификации etcd: неверное имя пользователя или пароль"
 }

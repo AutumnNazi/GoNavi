@@ -71,6 +71,8 @@ export type DataSourceUISpec = {
     views?: string[];
     tableStatus?: Array<{ minServer?: string; maxServer?: string; sql: string }>;
   };
+  // 对象名（etcd 键路径、znode 路径）整体是一个标识符，引用时不按点拆成 schema.table。
+  flatObjectNames?: boolean;
   // 表别名语法：缺省 oracle 家族为 bare，其余为 as；非 SQL 查询语言用 none。
   tableAlias?: 'as' | 'bare' | 'none';
   // 数据浏览分页语法：缺省 LIMIT n OFFSET m。

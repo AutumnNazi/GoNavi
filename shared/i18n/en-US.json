@@ -11887,5 +11887,19 @@
   "db.backend.error.presto_password_requires_https": "Presto password authentication requires HTTPS: enable SSL or use an access token (accessToken connection parameter)",
   "db.backend.error.presto_namespace_required": "A Presto database name must be catalog.schema (got \"{{name}}\"); you can also set a default database on the connection",
   "db.backend.error.presto_ddl_empty": "Presto returned no CREATE statement for \"{{name}}\"",
-  "db.backend.error.presto_unexpected_response": "Presto returned a response that could not be parsed (the address may not be a Presto coordinator): {{detail}}"
+  "db.backend.error.presto_unexpected_response": "Presto returned a response that could not be parsed (the address may not be a Presto coordinator): {{detail}}",
+  "datasource.variant.etcd.v2": "v2 API (HTTP /v2/keys): etcd 2.x, or the legacy v2 keyspace on 3.x servers started with --enable-v2 (not visible to the v3 API)",
+  "datasource.variant.etcd.v3": "v3 API (gRPC): etcd 3.x with range paging, leases, transactions and revisions; listing leases needs 3.3 or later",
+  "db.backend.error.etcd_command_empty": "Enter an etcd command, for example get /app --prefix",
+  "db.backend.error.etcd_command_unclosed_quote": "The etcd command has an unclosed quote",
+  "db.backend.error.etcd_command_flag_invalid": "Invalid value \"{{value}}\" for etcd option --{{flag}}",
+  "db.backend.error.etcd_command_usage": "etcd command usage: {{usage}}",
+  "db.backend.error.etcd_command_unknown": "Unsupported etcd command \"{{command}}\": use get, put, del, watch, lease, member, endpoint, alarm, user, role or compaction (the v2 variant uses ls, get, set, mk, mkdir, update, rm, rmdir, watch)",
+  "db.backend.error.etcd_lease_list_unsupported": "etcd {{version}} cannot list leases (LeaseLeases was added in 3.3); use lease timetolive <id> to inspect a lease",
+  "db.backend.error.etcd_change_conflict": "Commit failed: the key already exists or was changed or deleted by another client after it was read; refresh and try again",
+  "db.backend.error.etcd_key_required": "Every etcd row needs a key",
+  "db.backend.error.etcd_v2_request_failed": "etcd v2 request failed (HTTP {{status}}): {{detail}}",
+  "db.backend.error.etcd_list_permission_denied": "The user may not read every key under \"{{prefix}}\": set the prefix connection parameter to a permitted prefix (for example prefix=/app)",
+  "db.backend.error.etcd_auth_required": "Authentication is enabled on this etcd cluster; enter a user name and password",
+  "db.backend.error.etcd_auth_failed": "etcd authentication failed: wrong user name or password"
 }
