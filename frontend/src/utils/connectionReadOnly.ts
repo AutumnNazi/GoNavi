@@ -369,9 +369,9 @@ const isConnectionReadOnlyStatement = (
   if (dialect === "mongodb") {
     return isReadOnlyMongoStatement(statement);
   }
-  const registryClassifier = resolveRegistryReadOnlyClassifier(dialect);
-  if (registryClassifier) {
-    return registryClassifier(statement);
+  const registryVerdict = resolveRegistryReadOnlyClassifier(dialect)?.(statement);
+  if (registryVerdict !== undefined) {
+    return registryVerdict;
   }
   return isReadOnlySqlStatement(statement, dialect);
 };

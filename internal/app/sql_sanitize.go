@@ -468,6 +468,11 @@ func isReadOnlySQLQuery(dbType string, query string) bool {
 		return err == nil && !batch.Blocked && !batch.ContainsWrite && !batch.ContainsScript
 	case "weaviate":
 		return db.IsWeaviateReadCommand(query)
+	case "influxdb":
+		// Flux 按 to() 判写；InfluxQL 与 3.x 的 SQL 继续走下面的通用规则（SELECT ... INTO 视为写）。
+		if db.IsInfluxFluxQuery(query) {
+			return !db.InfluxFluxQueryWrites(query)
+		}
 	}
 	if hasExecutableSQLComment(dbType, query) {
 		return false

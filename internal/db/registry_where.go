@@ -355,3 +355,52 @@ func normalizeRegistryDate(text string) (string, bool) {
 	}
 	return "", false
 }
+
+// registrySelectClauses 是简单 SELECT 的 WHERE / ORDER BY 原文与 LIMIT / OFFSET。
+type registrySelectClauses struct {
+	where   string
+	orderBy string
+	limit   int
+	offset  int
+	// hasLimit 报告原文是否写了 LIMIT。
+	hasLimit bool
+}
+
+// splitRegistrySelectClauses 按关键字切出 SELECT 的各子句（跳过引号内文本）；没写 LIMIT 时用 defaultLimit。
+func splitRegistrySelectClauses(text string, defaultLimit int) registrySelectClauses {
+	clauses := registrySelectClauses{limit: defaultLimit}
+	fromAt := findSQLKeyword(text, "FROM", 0)
+	if fromAt < 0 {
+		return clauses
+	}
+	whereAt := findSQLKeyword(text, "WHERE", fromAt)
+	orderAt := findSQLOrderBy(text, fromAt)
+	limitAt := findSQLKeyword(text, "LIMIT", fromAt)
+	offsetAt := findSQLKeyword(text, "OFFSET", fromAt)
+	clauseEnd := func(start int) int {
+		end := len(text)
+		for _, index := range []int{whereAt, orderAt, limitAt, offsetAt} {
+			if index > start && index < end {
+				end = index
+			}
+		}
+		return end
+	}
+	if whereAt >= 0 {
+		clauses.where = strings.TrimSpace(text[whereAt+len("WHERE") : clauseEnd(whereAt)])
+	}
+	if orderAt >= 0 {
+		byAt := findSQLKeyword(text, "BY", orderAt+len("ORDER"))
+		if byAt >= 0 {
+			clauses.orderBy = strings.TrimSpace(text[byAt+len("BY") : clauseEnd(orderAt)])
+		}
+	}
+	if limit, ok := parseSQLLimitClause(text[fromAt:]); ok {
+		clauses.limit = limit
+		clauses.hasLimit = true
+	}
+	if offset, ok := parseSQLUnsignedOffset(text[fromAt:]); ok {
+		clauses.offset = offset
+	}
+	return clauses
+}

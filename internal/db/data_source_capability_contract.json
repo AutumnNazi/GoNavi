@@ -767,6 +767,54 @@
                                                           "schemaIdentifierCaseSensitive":  false
                                                       }
                                    },
+                     "timeseries-influxdb":  {
+                                       "query":  {
+                                                     "supported":  true
+                                                 },
+                                       "metadata":  {
+                                                        "supported":  true
+                                                    },
+                                       "transaction":  {
+                                                           "supported":  false,
+                                                           "reason":  "transaction_not_supported",
+                                                           "alternative":  "execute-statement-directly",
+                                                           "messageKey":  "query_editor.message.unsupported_source"
+                                                       },
+                                       "pagination":  {
+                                                          "supported":  true
+                                                      },
+                                       "cancel":  {
+                                                      "supported":  true,
+                                                      "runtimeProbe":  true
+                                                  },
+                                       "schema":  {
+                                                      "supported":  false,
+                                                      "reason":  "schema_designer_not_supported",
+                                                      "alternative":  "use-database-metadata",
+                                                      "messageKey":  "query_editor.message.unsupported_source"
+                                                  },
+                                       "sampling":  {
+                                                        "supported":  true
+                                                    },
+                                       "streaming":  {
+                                                         "supported":  false,
+                                                         "reason":  "not_streaming_data_source",
+                                                         "alternative":  "use-paginated-query",
+                                                         "messageKey":  "query_editor.message.unsupported_source"
+                                                     },
+                                       "dangerousOperations":  {
+                                                                   "supported":  true
+                                                               },
+                                       "ui":  {
+                                                  "forceReadOnlyStructureDesigner":  true
+                                              },
+                                       "navigation":  {
+                                                          "primaryVisibilitySupported":  true,
+                                                          "primaryKind":  "database",
+                                                          "secondarySchemaVisibilitySupported":  false,
+                                                          "schemaIdentifierCaseSensitive":  false
+                                                      }
+                                   },
                      "message-manual-total":  {
                                                   "query":  {
                                                                 "supported":  true
@@ -1346,6 +1394,7 @@
                     "qdrant":  "document-vector-single-root",
                     "milvus":  "document-vector",
                     "weaviate":  "document-vector",
+                    "influxdb":  "timeseries-influxdb",
                     "rocketmq":  "message-manual-total",
                     "mqtt":  "message-manual-total",
                     "kafka":  "message",

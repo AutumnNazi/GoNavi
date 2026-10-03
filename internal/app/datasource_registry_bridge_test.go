@@ -51,6 +51,19 @@ func TestRegistryTypesClassifyStatementsWithBorrowedDialect(t *testing.T) {
 	if !isReadOnlySQLQuery("tidb", "SELECT * FROM orders") || isReadOnlySQLQuery("tidb", "UPDATE orders SET qty = 1") {
 		t.Fatal("TiDB statements must classify with the MySQL rules")
 	}
+	for query, want := range map[string]bool{
+		`from(bucket: "b") |> range(start: -1h)`:                  true,
+		`from(bucket: "a") |> range(start: 0) |> to(bucket: "b")`: false,
+		`SELECT * FROM "cpu" WHERE "host" = 'a'`:                  true,
+		`SHOW MEASUREMENTS`:                                       true,
+		`SELECT * INTO "copy" FROM "cpu"`:                         false,
+		`INSERT cpu,host=a usage=1`:                               false,
+		`DROP MEASUREMENT "cpu"`:                                  false,
+	} {
+		if got := isReadOnlySQLQuery("influxdb", query); got != want {
+			t.Fatalf("isReadOnlySQLQuery(influxdb, %q) = %v, want %v", query, got, want)
+		}
+	}
 }
 
 func TestRegistryAgentsAppearInDriverManager(t *testing.T) {

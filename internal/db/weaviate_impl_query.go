@@ -70,7 +70,7 @@ func (w *WeaviateDB) querySQL(ctx context.Context, text string) ([]map[string]in
 	if err != nil {
 		return nil, nil, err
 	}
-	clauses := splitWeaviateSQLClauses(text)
+	clauses := splitRegistrySelectClauses(text, weaviateDefaultSelectLimit)
 	var filter gqlObject
 	if clauses.where != "" {
 		node, err := parseRegistryWhere(clauses.where)
@@ -125,50 +125,6 @@ func (w *WeaviateDB) querySQL(ctx context.Context, text string) ([]map[string]in
 		rows = append(rows, projected)
 	}
 	return rows, selection.columns, nil
-}
-
-type weaviateSQLClauses struct {
-	where   string
-	orderBy string
-	limit   int
-	offset  int
-}
-
-func splitWeaviateSQLClauses(text string) weaviateSQLClauses {
-	clauses := weaviateSQLClauses{limit: weaviateDefaultSelectLimit}
-	fromAt := findSQLKeyword(text, "FROM", 0)
-	if fromAt < 0 {
-		return clauses
-	}
-	whereAt := findSQLKeyword(text, "WHERE", fromAt)
-	orderAt := findSQLOrderBy(text, fromAt)
-	limitAt := findSQLKeyword(text, "LIMIT", fromAt)
-	offsetAt := findSQLKeyword(text, "OFFSET", fromAt)
-	clauseEnd := func(start int) int {
-		end := len(text)
-		for _, index := range []int{whereAt, orderAt, limitAt, offsetAt} {
-			if index > start && index < end {
-				end = index
-			}
-		}
-		return end
-	}
-	if whereAt >= 0 {
-		clauses.where = strings.TrimSpace(text[whereAt+len("WHERE") : clauseEnd(whereAt)])
-	}
-	if orderAt >= 0 {
-		byAt := findSQLKeyword(text, "BY", orderAt+len("ORDER"))
-		if byAt >= 0 {
-			clauses.orderBy = strings.TrimSpace(text[byAt+len("BY") : clauseEnd(orderAt)])
-		}
-	}
-	if limit, ok := parseSQLLimitClause(text[fromAt:]); ok {
-		clauses.limit = limit
-	}
-	if offset, ok := parseSQLUnsignedOffset(text[fromAt:]); ok {
-		clauses.offset = offset
-	}
-	return clauses
 }
 
 // parseProjection 解析 SELECT 列：* 展开为 _id、全部属性与时间戳；_vector / _vectors 只有显式选择时才返回。
