@@ -56,6 +56,17 @@ const readDataGridSource = () => [
   './dataGridStylesScrollbars.ts',
   './dataGridStylesPagination.ts',
   './DataGridCore.tsx',
+  // DataGridCore.tsx 拆出的 dataGrid/core 模块
+  './dataGrid/core/dataGridTypes.ts',
+  './dataGrid/core/dataGridCellStyles.ts',
+  './dataGrid/core/DataGridErrorBoundary.tsx',
+  './dataGrid/core/dataGridCellKeys.ts',
+  './dataGrid/core/dataGridCellValues.ts',
+  './dataGrid/core/dataGridCellDisplay.tsx',
+  './dataGrid/core/DataGridHeaderCells.tsx',
+  './dataGrid/core/EditableCell.tsx',
+  './dataGrid/core/dataGridGridFilters.tsx',
+  './dataGrid/core/dataGridCommitChangeSet.ts',
   './DataGridShell.tsx',
 ].map((file) => readFileSync(new URL(file, import.meta.url), 'utf8')).join('\n');
 const readDataGridSecondaryActionsSource = (): string =>
