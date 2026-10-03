@@ -146,7 +146,24 @@ const flushConnectionTestTick = async () => {
 
 const source = readFileSync(new URL("./ConnectionModal.tsx", import.meta.url), "utf8");
 const appCssSource = readFileSync(new URL("../App.css", import.meta.url), "utf8");
-const step2Source = readFileSync(new URL("./connectionModal/ConnectionModalStep2.tsx", import.meta.url), "utf8");
+// ConnectionModalStep2.tsx 已拆成多个子模块，源码扫描需一并聚合。
+const step2Source = [
+  "ConnectionModalStep2.tsx",
+  "connectionStep2Constants.ts",
+  "useConnectionStep2State.ts",
+  "connectionStep2Protection.ts",
+  "connectionStep2UriBlock.tsx",
+  "connectionStep2DenseRows.tsx",
+  "connectionStep2Sections.tsx",
+  "connectionStep2FormHandlers.ts",
+  "ConnectionStep2JvmModeCards.tsx",
+  "ConnectionStep2JvmDetailCards.tsx",
+  "ConnectionStep2HostFields.tsx",
+  "ConnectionStep2AuthFields.tsx",
+  "ConnectionStep2ModeFields.tsx",
+  "ConnectionStep2MongoRedisFields.tsx",
+  "ConnectionStep2ProtectionFields.tsx",
+].map((file) => readFileSync(new URL(`./connectionModal/${file}`, import.meta.url), "utf8")).join("\n");
 const networkSecuritySource = readFileSync(
   new URL("./connectionModal/ConnectionModalNetworkSecuritySection.tsx", import.meta.url),
   "utf8",
@@ -159,8 +176,28 @@ const uriSource = [
   "connectionModalUriParse.ts",
   "connectionModalUriBuild.ts",
 ].map((file) => readFileSync(new URL(`./connectionModal/${file}`, import.meta.url), "utf8")).join("\n");
+// ConnectionModal.tsx 已拆成 connectionModal/ 下的 hook 与子组件，源码扫描需一并聚合。
+const connectionModalPartsSource = [
+  "connectionModalHelpers.tsx",
+  "useConnectionModalState.ts",
+  "useConnectionModalLifecycle.ts",
+  "useConnectionModalSectionRenderers.tsx",
+  "useConnectionModalChoices.tsx",
+  "useConnectionModalDriverStatus.ts",
+  "useConnectionModalUriActions.ts",
+  "useConnectionModalFormSync.ts",
+  "useConnectionModalSaveAndTest.ts",
+  "useConnectionModalSshAndMongo.ts",
+  "useConnectionModalTypeSelect.ts",
+  "useConnectionModalTypeCatalog.ts",
+  "useConnectionModalSteps.tsx",
+  "useConnectionModalChrome.tsx",
+  "ConnectionModalSSHHostKeyTrustDialog.tsx",
+  "ConnectionModalTestFailureLogModal.tsx",
+].map((file) => readFileSync(new URL(`./connectionModal/${file}`, import.meta.url), "utf8")).join("\n");
 const combinedConnectionModalSource = [
   source,
+  connectionModalPartsSource,
   step2Source,
   networkSecuritySource,
   uriSource,
@@ -1862,7 +1899,7 @@ describe("ConnectionModal i18n", () => {
     );
     expect(networkSecuritySource).not.toContain('name="httpTunnelPort"');
     expect(step2Source).toContain("httpTunnelEncodeBase64: true");
-    expect(source).toContain("config.httpTunnel?.encodeBase64 !== false");
+    expect(combinedConnectionModalSource).toContain("config.httpTunnel?.encodeBase64 !== false");
   });
 
   it("renders English URI feedback and file picker error shell while preserving raw detail", async () => {
