@@ -185,7 +185,7 @@ func shouldPreferPlainReadQueryResult(dbType string) bool {
 		// Skipping that probe prevents a successful SELECT from becoming an empty result.
 		return true
 	default:
-		return false
+		return registryPrefersPlainReadQuery(dbType)
 	}
 }
 

@@ -116,3 +116,14 @@ func TestDriverProxyModeKeepsOriginalTarget(t *testing.T) {
 		t.Fatal("legacy types are not registry types")
 	}
 }
+
+func TestRegistryPostgresWireReadQueriesAvoidNativeMultiResult(t *testing.T) {
+	for _, dbType := range []string{"cockroachdb", "kwdb", "questdb"} {
+		if !shouldPreferPlainReadQueryResult(dbType) || shouldUseNativeMultiResultBatch(dbType, []string{"SELECT 1"}, true) {
+			t.Fatalf("%s read queries must use the plain query path", dbType)
+		}
+	}
+	if shouldPreferPlainReadQueryResult("tidb") {
+		t.Fatal("TiDB reuses the MySQL driver and keeps native multi-result batches")
+	}
+}

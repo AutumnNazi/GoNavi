@@ -56,6 +56,13 @@ func registryDBNameSelectsDatabase(driverType string) bool {
 	return ok && !spec.SyntheticDatabase
 }
 
+// registryPrefersPlainReadQuery 报告描述表类型的只读查询是否走普通查询接口：PostgreSQL 协议的驱动
+// （CockroachDB、KWDB、QuestDB 等复用 PostgresDB）不提供多结果集接口，与 PostgreSQL 一样逐条查询。
+func registryPrefersPlainReadQuery(driverType string) bool {
+	spec, ok := db.DataSourceSpec(driverType)
+	return ok && spec.Wire == "postgres"
+}
+
 // registryUsesDriverProxy 报告描述表类型是否由驱动自己处理连接代理（不在主进程改写为本地转发地址）。
 func registryUsesDriverProxy(driverType string) bool {
 	spec, ok := db.DataSourceSpec(driverType)
