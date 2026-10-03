@@ -76,6 +76,34 @@ hash_file() {
   exit 1
 }
 
+hash_stdin() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{print $1}'
+    return
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{print $1}'
+    return
+  fi
+  echo "未找到 sha256sum 或 shasum" >&2
+  exit 1
+}
+
+# 仓库内源码按索引内容（LF）计算哈希：Windows 上 core.autocrlf=true 会把工作区检出为 CRLF，
+# 直接哈希会得到与 CI（LF 检出）不同的 revision。模块缓存里的依赖源码不受 autocrlf 影响，按原样哈希。
+hash_source_file() {
+  local target="$1"
+  local identity="$2"
+  case "$identity" in
+    gomod/*)
+      hash_file "$target"
+      ;;
+    *)
+      tr -d '\r' <"$target" | hash_stdin
+      ;;
+  esac
+}
+
 files_equal() {
   local left="$1"
   local right="$2"
@@ -513,7 +541,7 @@ fingerprint_driver() {
     file="${file//\\//}"
     [[ -n "$file" && -f "$file" ]] || continue
     identity="$(source_identity "$file")"
-    file_hash="$(hash_file "$file")"
+    file_hash="$(hash_source_file "$file" "$identity")"
     printf '%s  %s\n' "$file_hash" "$identity" >>"$hash_entries"
   done <"$included_files"
   LC_ALL=C sort -k2,2 "$hash_entries" >>"$tmp"
