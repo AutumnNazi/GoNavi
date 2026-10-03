@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { setCurrentLanguage } from "../i18n";
 import { getAllConnectionTypeCatalogItems } from "../utils/connectionTypeCatalog";
@@ -39,6 +39,11 @@ vi.mock("@ant-design/icons", async () => (await import('./connectionModalI18nTes
 vi.mock("antd", async () => (await import('./connectionModalI18nTestSupport')).mockModule6());
 
 describe("ConnectionModal i18n", () => {
+  beforeAll(async () => {
+    // 预热组件模块树的转换缓存：本文件首个用例的动态 import 不应在 5s 用例超时内承担冷编译耗时。
+    await import("./ConnectionModal");
+  }, 30000);
+
   beforeEach(setUpConnectionModalI18nTest);
 
   it("renders English network, appearance, and raw-preserving copy for v2 ui", async () => {
