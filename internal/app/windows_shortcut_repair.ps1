@@ -845,12 +845,55 @@ function Set-GoNaviShortcutBrandIcon {
                         # standard user. Surface that failure so the caller cannot
                         # activate an icon while this entry still shows the old one.
                         if (Test-GoNaviShortcutWritable $shortcutFile.FullName) {
-                            $shortcut.Save()
+                            # The Start menu snapshots each shortcut's icon when it
+                            # enumerates the folder and never re-reads an in-place
+                            # IconLocation rewrite - not on UPDATEITEM, UPDATEDIR or
+                            # ASSOCCHANGED (observed on Windows 11 26200: the all-apps
+                            # entry kept the previous brand icon through every
+                            # notification, while the same shortcut recreated by the
+                            # MSI installer refreshed immediately). Replacing the file
+                            # is what the installer does, so do the same: build the
+                            # replacement next to the target and move it over. The
+                            # replacement inherits the parent directory's ACEs, so a
+                            # standard user replacing a machine shortcut keeps write
+                            # access through CREATOR OWNER.
+                            $replaced = $false
+                            $replacementPath = ''
+                            try {
+                                $replacementPath = Join-Path $normalizedDirectory ($shortcutFile.BaseName + '-gonavi-update-' + [Guid]::NewGuid().ToString('N').Substring(0, 8) + '.lnk')
+                                $replacement = $shell.CreateShortcut($replacementPath)
+                                $replacement.TargetPath = $shortcut.TargetPath
+                                $replacement.Arguments = $shortcut.Arguments
+                                $replacement.WorkingDirectory = $shortcut.WorkingDirectory
+                                $replacement.WindowStyle = $shortcut.WindowStyle
+                                $replacement.Description = $shortcut.Description
+                                $replacement.IconLocation = $wantedIconLocation
+                                $replacement.Save()
+                                Move-Item -LiteralPath $replacementPath -Destination $shortcutFile.FullName -Force
+                                $replaced = $true
+                            } catch {
+                                if ($replacementPath -and (Test-Path -LiteralPath $replacementPath -PathType Leaf)) {
+                                    [void](Remove-Item -LiteralPath $replacementPath -Force -ErrorAction SilentlyContinue)
+                                }
+                                Write-ShortcutRepairLog ("shortcut replacement failed, falling back to in-place save: " + $shortcutFile.FullName + ": " + $_.Exception.Message)
+                            }
+                            if (-not $replaced) {
+                                $shortcut.Save()
+                            }
                             $updatedCount++
                         } else {
                             Write-ShortcutRepairLog ("failed to update read-only shortcut icon: " + $shortcutFile.FullName)
                             throw ('shortcut is not writable: ' + $shortcutFile.FullName)
                         }
+                    }
+                    # WScript.Shell.Save drops the AppUserModel property bag on every
+                    # rewrite, and a replaced file starts without one. The installer
+                    # declared System.AppUserModel.ID on these shortcuts, so restore
+                    # the identity after the write; matching the target means the
+                    # identity belongs to this application. A failure is logged and
+                    # never fatal: the icon itself is already updated.
+                    if (-not (Set-GoNaviShortcutRelaunchProperties -ShortcutPath $shortcutFile.FullName -TargetPath $shortcut.TargetPath -IconPath $normalizedIconPath -ApplicationUserModelID $ApplicationUserModelID)) {
+                        Write-ShortcutRepairLog ("shortcut identity restore failed: " + $shortcutFile.FullName)
                     }
                     Send-ShellItemUpdatedNotification $shortcutFile.FullName
                     Send-ShellDirectoryUpdatedNotification ([IO.Path]::GetDirectoryName($shortcutFile.FullName))

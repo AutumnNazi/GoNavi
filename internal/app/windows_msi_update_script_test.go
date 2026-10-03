@@ -117,12 +117,28 @@ func TestWindowsShortcutBrandIconDoesNotWriteUnsupportedWScriptAUMID(t *testing.
 	if !(pid2 < pid3 && pid3 < pid4 && pid4 < pid5) {
 		t.Fatalf("relaunch properties must be written before AppUserModel.ID:\n%s", script)
 	}
-	// The property store helper has exactly three legitimate call sites: the
-	// legacy pin repair pass, the AUMID shortcut creation, and the guarded
-	// taskbar branch of the single-pass loop. Any new call site must be
-	// reviewed for ownership gates before this count is raised.
-	if got := strings.Count(script, `Set-GoNaviShortcutRelaunchProperties -ShortcutPath`); got != 3 {
+	// The property store helper has exactly four legitimate call sites: the
+	// legacy pin repair pass, the AUMID shortcut creation, the guarded taskbar
+	// branch of the single-pass loop, and the non-taskbar identity restore
+	// after a shortcut write (WScript.Shell.Save drops the AppUserModel
+	// property bag). Any new call site must be reviewed for ownership gates
+	// before this count is raised.
+	if got := strings.Count(script, `Set-GoNaviShortcutRelaunchProperties -ShortcutPath`); got != 4 {
 		t.Fatalf("unexpected relaunch property call site count %d:\n%s", got, script)
+	}
+	// The Start menu never re-reads an in-place IconLocation rewrite (observed
+	// on Windows 11 26200), so non-taskbar shortcuts must be replaced by a new
+	// file - the same mechanism that makes an MSI install refresh the Start
+	// menu icon.
+	for _, token := range []string{
+		`$replacement.Save()`,
+		`Move-Item -LiteralPath $replacementPath -Destination $shortcutFile.FullName -Force`,
+		`shortcut replacement failed, falling back to in-place save`,
+		`shortcut identity restore failed`,
+	} {
+		if !strings.Contains(script, token) {
+			t.Fatalf("start menu shortcut replacement missing %q:\n%s", token, script)
+		}
 	}
 	// The Start menu ignores per-item notifications for rewritten .lnk files
 	// (observed on Windows 11 26200), so every shortcut update must also send
