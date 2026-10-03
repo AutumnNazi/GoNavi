@@ -119,8 +119,67 @@ const readQueryEditorSource = (): string =>
     readFileSync(new URL(`../components/${file}`, import.meta.url), "utf8"),
   ).join("\n");
 
+// App.tsx 已拆成 hook / 子组件 / 辅助模块（src/appShell），源码扫描按原顺序聚合。
+const APP_SOURCE_MODULES = [
+  "App.tsx",
+  "appShell/appSettingsConstants.ts",
+  "appShell/ThemeSettingsSlider.tsx",
+  "appShell/appEnvironment.ts",
+  "appShell/connectionPackageImport.ts",
+  "appShell/settingsCenterPanes.ts",
+  "appShell/globalProxySettings.ts",
+  "appShell/aboutSettingsFormat.ts",
+  "appShell/SidebarMetadataSortableRow.tsx",
+  "appShell/appLayoutParts.ts",
+  "appShell/settingsCenterNavigation.ts",
+  "appShell/hooks/useAppCoreState.ts",
+  "appShell/hooks/useAppShellState.ts",
+  "appShell/hooks/useAppBootstrapEffects.ts",
+  "appShell/hooks/useAppStartupEffects.tsx",
+  "appShell/hooks/useAppWindowEffects.ts",
+  "appShell/hooks/useAppSecurityUpdate.ts",
+  "appShell/hooks/useAppUpdateAndDiagnostics.ts",
+  "appShell/hooks/useAppQuitAndUpdate.tsx",
+  "appShell/hooks/useAppConnectionImportExport.ts",
+  "appShell/hooks/useAppProxySettings.ts",
+  "appShell/hooks/useAppSettingsNavigation.ts",
+  "appShell/hooks/useAppDirectorySettingsRender.tsx",
+  "appShell/hooks/useAppWorkbenchActions.ts",
+  "appShell/hooks/useAppLayoutEffects.ts",
+  "appShell/hooks/useAppAntdTheme.tsx",
+  "appShell/hooks/useAppSettingsPanesRender.tsx",
+  "appShell/hooks/useAppAboutSettingsRender.tsx",
+  "appShell/hooks/useAppThemeSettingsRender.tsx",
+  "appShell/settings/ThemeModeSettingsSection.tsx",
+  "appShell/settings/ThemeAppearanceSettingsSection.tsx",
+  "appShell/settings/TabDisplaySettingsSection.tsx",
+  "appShell/settings/DataTableSettingsFields.tsx",
+  "appShell/hooks/useAppSettingsCenterRender.tsx",
+  "appShell/layout/AppTitleBar.tsx",
+  "appShell/layout/AppSider.tsx",
+  "appShell/layout/AppContent.tsx",
+  "appShell/settings/renderAppSettingsCenterModal.tsx",
+  "appShell/settings/toolCenterGroups.tsx",
+  "appShell/settings/toolCenterPaneRenderer.tsx",
+  "appShell/layout/AppGlobalDialogs.tsx",
+];
+
 const readAppSource = (): string =>
-  readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
+  APP_SOURCE_MODULES.map((file) =>
+    readFileSync(new URL(`../${file}`, import.meta.url), "utf8"),
+  ).join("\n");
+
+// 主题设置面板已拆为 useAppThemeSettingsRender 与各分区组件
+const readAppThemeSettingsSource = (): string =>
+  [
+    "appShell/hooks/useAppThemeSettingsRender.tsx",
+    "appShell/settings/ThemeModeSettingsSection.tsx",
+    "appShell/settings/ThemeAppearanceSettingsSection.tsx",
+    "appShell/settings/TabDisplaySettingsSection.tsx",
+    "appShell/settings/DataTableSettingsFields.tsx",
+  ].map((file) =>
+    readFileSync(new URL(`../${file}`, import.meta.url), "utf8"),
+  ).join("\n");
 
 // QueryEditorHelpers.ts 已按主题拆成多个模块，源码扫描需按原顺序聚合。
 const QUERY_EDITOR_HELPER_MODULES = [
@@ -493,12 +552,7 @@ describe("i18n catalog", () => {
   });
 
   it("renders the table alias setting in theme settings", () => {
-    const source = readAppSource();
-    const v2Source = sliceBetween(
-      source,
-      "const renderThemeSettingsContentV2 =",
-      "const renderThemeSettingsContent =",
-    );
+    const v2Source = readAppThemeSettingsSource();
 
     expect(v2Source).toContain("app.theme.table_alias.title");
     expect(v2Source).toContain("app.theme.table_alias.description");
