@@ -67,6 +67,7 @@ export interface ConnectionConfig {
   uri?: string; // Connection URI for copy/paste
   clickHouseProtocol?: "auto" | "http" | "native"; // ClickHouse connection protocol override
   oceanBaseProtocol?: "mysql" | "oracle"; // OceanBase tenant compatibility protocol
+  driverVariant?: string; // Registry data sources: "auto" or a declared driver variant id
   hosts?: string[]; // Multi-host addresses: host:port
   topology?: "single" | "replica" | "cluster" | "sentinel";
   redisSentinelMaster?: string;
