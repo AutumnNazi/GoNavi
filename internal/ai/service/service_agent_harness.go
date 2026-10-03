@@ -696,8 +696,12 @@ func (s *Service) resolveAgentProvider(ctx context.Context, request runharness.M
 	if resolved.ID == builtinAIProviderID {
 		// The hosted small model gets its context as plain text, a short list of read-only
 		// tools, and its queries checked before they run (see builtin_ai_prompt.go).
-		notice := serviceTextFromLocalizer(s.serviceLocalizerForLanguage(), "ai_service.backend.builtin.readonly_sql_refused", nil)
-		return builtinAIPromptProvider{Provider: agentProvider, readOnlyNotice: notice, tables: s.builtinAITables}, nil
+		localizer := s.serviceLocalizerForLanguage()
+		notice := serviceTextFromLocalizer(localizer, "ai_service.backend.builtin.readonly_sql_refused", nil)
+		heading := func(shown, total int) string {
+			return serviceTextFromLocalizer(localizer, "ai_service.backend.builtin.result_preview", map[string]any{"shown": shown, "total": total})
+		}
+		return builtinAIPromptProvider{Provider: agentProvider, readOnlyNotice: notice, lookup: s.builtinAIContextFor, resultHeading: heading}, nil
 	}
 	return agentProvider, nil
 }

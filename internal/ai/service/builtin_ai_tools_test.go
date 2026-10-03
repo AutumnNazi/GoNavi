@@ -3,6 +3,7 @@ package aiservice
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -166,12 +167,28 @@ func toolCall(name, arguments string) ai.ToolCall {
 }
 
 func TestTheTargetIsReadFromTheWorkspace(t *testing.T) {
-	messages := []ai.Message{workspaceMessage(t, map[string]any{"connectionId": "1775889710138", "dbName": "missav_bot"}), {Role: "user", Content: "q"}}
-	if got := builtinAITargetOf(messages); got != (builtinAITarget{connectionID: "1775889710138", dbName: "missav_bot"}) {
+	messages := []ai.Message{workspaceMessage(t, map[string]any{"connectionId": "1775889710138", "dbName": "missav_bot", "schemaName": "public"}), {Role: "user", Content: "q"}}
+	if got := builtinAITargetOf(messages); got.connectionID != "1775889710138" || got.dbName != "missav_bot" || got.schemaName != "public" {
 		t.Fatalf("got %+v", got)
 	}
-	if got := builtinAITargetOf([]ai.Message{{Role: "user", Content: "q"}}); got != (builtinAITarget{}) {
+	if got := builtinAITargetOf([]ai.Message{{Role: "user", Content: "q"}}); got.connectionID != "" || got.dbName != "" {
 		t.Fatalf("no workspace, no target: %+v", got)
+	}
+}
+
+// Regression (2026-10-03): with no connection selected the model called execute_sql on
+// "your_connection_id". A call on a connection that does not exist goes to the turn's target.
+func TestACallOnAConnectionThatDoesNotExistGoesToTheTarget(t *testing.T) {
+	target := builtinAITarget{connectionID: "1789133301866", known: map[string]bool{"1789133301866": true, "1775889710138": true}}
+	got := target.complete([]ai.ToolCall{
+		toolCall("execute_sql", `{"connectionId": "your_connection_id", "sql": "SELECT 1"}`),
+		toolCall("get_tables", `{"connectionId": "1775889710138"}`),
+	})
+	if got[0].Function.Arguments != `{"connectionId":"1789133301866","sql":"SELECT 1"}` {
+		t.Errorf("an invented connection goes to the target: %s", got[0].Function.Arguments)
+	}
+	if got[1].Function.Arguments != `{"connectionId": "1775889710138"}` {
+		t.Errorf("another saved connection is left as it is: %s", got[1].Function.Arguments)
 	}
 }
 
@@ -218,5 +235,52 @@ func TestAStreamedCallIsCompletedBeforeItIsPassedOn(t *testing.T) {
 	guard.push(ai.StreamChunk{ToolCalls: []ai.ToolCall{toolCall("get_tables", `{"connectionId":"c1"}`)}, Done: true})
 	if len(got) != 2 || len(got[0].ToolCalls) != 1 || got[0].ToolCalls[0].Function.Arguments != `{"connectionId":"c1","dbName":"shop"}` {
 		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestTheSmallModelReadsTheFirstRowsOfAResult(t *testing.T) {
+	var rows []map[string]any
+	for i := 1; i <= 100; i++ {
+		rows = append(rows, map[string]any{"id": i, "name": fmt.Sprintf("客户%d", i)})
+	}
+	encoded, _ := json.Marshal(map[string]any{
+		"connectionId": "kb", "dbName": "gonavi_kingbase_lab", "queryId": "q-1", "requestId": "r-1", "readOnly": true,
+		"statementCount": 1, "statements": []any{map[string]any{"index": 1, "keyword": "select"}},
+		"results": []any{map[string]any{"columns": []string{"id", "name"}, "rowCount": 100, "rows": rows}},
+	})
+	got := compactBuiltinAIToolResult(string(encoded))
+	var compact struct {
+		QueryID string `json:"queryId"`
+		Results []struct {
+			RowCount  int              `json:"rowCount"`
+			ShownRows int              `json:"shownRows"`
+			Rows      []map[string]any `json:"rows"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(got), &compact); err != nil {
+		t.Fatal(err)
+	}
+	if compact.QueryID != "" || len(compact.Results) != 1 || compact.Results[0].RowCount != 100 || compact.Results[0].ShownRows != builtinAIToolRows || len(compact.Results[0].Rows) != builtinAIToolRows {
+		t.Fatalf("got %s", got)
+	}
+	if len(got) > len(encoded)/3 {
+		t.Fatalf("the model should read far less: %d of %d bytes", len(got), len(encoded))
+	}
+	for _, other := range []string{`{"error":"approval_denied"}`, `{"tables":["a"]}`, "not json"} {
+		if compactBuiltinAIToolResult(other) != other {
+			t.Errorf("%q must be left as it was", other)
+		}
+	}
+}
+
+func TestToolResultsAreCompactedForTheModel(t *testing.T) {
+	var rows []any
+	for i := 0; i < 30; i++ {
+		rows = append(rows, map[string]any{"id": i})
+	}
+	encoded, _ := json.Marshal(map[string]any{"results": []any{map[string]any{"rowCount": 30, "rows": rows}}})
+	got := presentBuiltinAIContext([]ai.Message{{Role: "user", Content: "q"}, {Role: "tool", ToolCallID: "c1", Content: string(encoded)}})
+	if !strings.Contains(got[1].Content, `"shownRows":20`) {
+		t.Fatalf("got %s", got[1].Content)
 	}
 }

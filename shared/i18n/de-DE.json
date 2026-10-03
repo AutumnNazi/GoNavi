@@ -17,6 +17,7 @@
   "ai_service.backend.builtin.quota_exhausted_rolling": "Das 5-Stunden-Kontingent von GoNavi AI ist aufgebraucht. Es erholt sich ab {{resetAt}}.",
   "ai_service.backend.builtin.quota_exhausted_rolling_no_reset": "Das 5-Stunden-Kontingent von GoNavi AI ist aufgebraucht. Bitte versuchen Sie es später erneut.",
   "ai_service.backend.builtin.readonly_sql_refused": "Die integrierte KI darf nur lesende Abfragen ausführen. Die folgende Anweisung, die Daten oder Struktur ändern würde, wurde daher nicht ausgeführt. Prüfen Sie sie und führen Sie sie selbst im SQL-Editor aus:",
+  "ai_service.backend.builtin.result_preview": "Die Abfrage lieferte {{total}} Zeilen; hier die ersten {{shown}}:",
   "ai_service.backend.builtin.service_error": "Der GoNavi-AI-Dienst hat einen Fehler gemeldet (HTTP {{status}}). Bitte versuchen Sie es später erneut.",
   "ai_service.backend.builtin.service_unavailable": "GoNavi AI hat derzeit keinen verfügbaren Modellknoten. Bitte versuchen Sie es später erneut.",
   "ai_service.backend.builtin.unknown_error": "GoNavi-AI-Anfrage fehlgeschlagen: {{detail}}",

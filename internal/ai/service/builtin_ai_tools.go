@@ -97,6 +97,11 @@ type builtinAITarget struct {
 	connectionID string
 	dbName       string
 	schemaName   string
+	// known are the saved connections' ids, when they could be read: a call naming any other
+	// connection (the small model writes "your_connection_id") is put on the target instead.
+	known map[string]bool
+	// opened are the databases the person has tabs open on, by connection id.
+	opened map[string][]string
 }
 
 // builtinAITargetOf reads the target from the workspace message, before it is presented as text.
@@ -108,11 +113,25 @@ func builtinAITargetOf(messages []ai.Message) builtinAITarget {
 		var envelope struct {
 			Snapshot struct {
 				ActiveContext map[string]any `json:"activeContext"`
+				Tabs          []struct {
+					ConnectionID string `json:"connectionId"`
+					Database     string `json:"database"`
+				} `json:"tabs"`
 			} `json:"snapshot"`
 		}
 		if json.Unmarshal([]byte(message.Content), &envelope) == nil {
 			active := envelope.Snapshot.ActiveContext
-			return builtinAITarget{connectionID: promptText(active["connectionId"]), dbName: promptText(active["dbName"]), schemaName: promptText(active["schemaName"])}
+			target := builtinAITarget{connectionID: promptText(active["connectionId"]), dbName: promptText(active["dbName"]), schemaName: promptText(active["schemaName"])}
+			for _, tab := range envelope.Snapshot.Tabs {
+				if tab.ConnectionID == "" || tab.Database == "" {
+					continue
+				}
+				if target.opened == nil {
+					target.opened = map[string][]string{}
+				}
+				target.opened[tab.ConnectionID] = append(target.opened[tab.ConnectionID], tab.Database)
+			}
+			return target
 		}
 	}
 	return builtinAITarget{}
@@ -122,9 +141,10 @@ func builtinAITargetOf(messages []ai.Message) builtinAITarget {
 var builtinAIToolsWithoutDatabase = map[string]bool{"get_server_version": true, "get_databases": true}
 
 // complete fills in what the small model leaves out of a call: the connection, when it names
-// none, and the database, when the call is on the person's connection and names none. Without
-// the database a MySQL connection with no default answers "no tables", and the model reports
-// that the database is empty. A call that names another connection or database is left as is.
+// none or one that does not exist, and the database, when the call is on the person's connection
+// and names none. Without the database a MySQL connection with no default answers "no tables",
+// and the model reports that the database is empty. A call that names another saved connection
+// or another database is left as is.
 func (t builtinAITarget) complete(calls []ai.ToolCall) []ai.ToolCall {
 	if t.connectionID == "" || len(calls) == 0 {
 		return calls
@@ -155,6 +175,9 @@ func (t builtinAITarget) complete(calls []ai.ToolCall) []ai.ToolCall {
 		case nil:
 			args["connectionId"], changed = t.connectionID, true
 		}
+		if id, _ := args["connectionId"].(string); len(t.known) > 0 && !t.known[id] {
+			args["connectionId"], changed = t.connectionID, true
+		}
 		if id, _ := args["connectionId"].(string); id == t.connectionID && t.dbName != "" && !builtinAIToolsWithoutDatabase[name] {
 			if db, _ := args["dbName"].(string); strings.TrimSpace(db) == "" {
 				args["dbName"], changed = t.dbName, true
@@ -178,6 +201,10 @@ type builtinAIStreamGuard struct {
 	target   builtinAITarget
 	calls    []ai.ToolCall
 	released bool
+	// preview is added before the end of an answer that makes no call and shows no table.
+	preview string
+	tail    string // the end of the answer so far, enough to see a table start
+	table   bool
 }
 
 func newBuiltinAIStreamGuard(callback func(ai.StreamChunk), notice string, target builtinAITarget) *builtinAIStreamGuard {
@@ -192,8 +219,19 @@ func (g *builtinAIStreamGuard) push(chunk ai.StreamChunk) {
 			return
 		}
 	}
+	if chunk.Content != "" && !g.table {
+		g.tail += chunk.Content
+		g.table = showsTable(g.tail)
+		if len(g.tail) > 64 {
+			g.tail = g.tail[len(g.tail)-64:]
+		}
+	}
 	if chunk.Done || chunk.Error != "" {
 		g.release()
+	}
+	if chunk.Done && chunk.Error == "" && g.preview != "" && len(g.calls) == 0 && !g.table {
+		g.callback(ai.StreamChunk{Content: "\n\n" + g.preview})
+		g.preview = ""
 	}
 	g.callback(chunk)
 }
@@ -213,4 +251,43 @@ func (g *builtinAIStreamGuard) release() {
 	if len(allowed) > 0 {
 		g.callback(ai.StreamChunk{ToolCalls: allowed})
 	}
+}
+
+// builtinAIToolRows is how many rows of each result set the small model reads; the person sees
+// them all. A hundred rows of eight columns took the model on the slow node most of a minute to
+// read, and it then answered "got the data" without showing any.
+const builtinAIToolRows = 20
+
+// compactBuiltinAIToolResult is a query result as the small model reads it: the first rows of each
+// result set, with how many it holds in all, and without the bookkeeping fields. Anything that is
+// not such a result is left as it was.
+func compactBuiltinAIToolResult(content string) string {
+	var result map[string]any
+	decoder := json.NewDecoder(strings.NewReader(content))
+	decoder.UseNumber()
+	if decoder.Decode(&result) != nil {
+		return content
+	}
+	sets, ok := result["results"].([]any)
+	if !ok {
+		return content
+	}
+	for _, raw := range sets {
+		set, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if rows, ok := set["rows"].([]any); ok && len(rows) > builtinAIToolRows {
+			set["rows"] = rows[:builtinAIToolRows]
+			set["shownRows"] = builtinAIToolRows
+		}
+	}
+	for _, key := range []string{"queryId", "requestId", "statements", "statementCount"} {
+		delete(result, key)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return content
+	}
+	return string(encoded)
 }

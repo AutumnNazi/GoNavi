@@ -17,6 +17,7 @@
   "ai_service.backend.builtin.quota_exhausted_rolling": "The GoNavi AI 5-hour quota is used up. It starts recovering at {{resetAt}}.",
   "ai_service.backend.builtin.quota_exhausted_rolling_no_reset": "The GoNavi AI 5-hour quota is used up. Please try again later.",
   "ai_service.backend.builtin.readonly_sql_refused": "The built-in AI can only run read-only queries, so the statement below, which would change data or schema, was not run. Review it and run it yourself in the SQL editor:",
+  "ai_service.backend.builtin.result_preview": "The query returned {{total}} rows; here are the first {{shown}}:",
   "ai_service.backend.builtin.service_error": "The GoNavi AI service returned an error (HTTP {{status}}). Please try again later.",
   "ai_service.backend.builtin.service_unavailable": "GoNavi AI has no healthy model node right now. Please try again later.",
   "ai_service.backend.builtin.unknown_error": "GoNavi AI request failed: {{detail}}",
