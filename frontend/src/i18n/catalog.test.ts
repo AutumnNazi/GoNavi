@@ -53,8 +53,29 @@ const readQueryEditorSource = (): string =>
 const readAppSource = (): string =>
   readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
 
+// QueryEditorHelpers.ts 已按主题拆成多个模块，源码扫描需按原顺序聚合。
+const QUERY_EDITOR_HELPER_MODULES = [
+  "QueryEditorHelpers.ts",
+  "queryEditorCompletionCandidates.ts",
+  "queryEditorResultMessages.ts",
+  "queryEditorSelectRewrite.ts",
+  "queryEditorCompletionMetadata.ts",
+  "queryEditorEditorState.ts",
+  "queryEditorIdentifierPaths.ts",
+  "queryEditorSqlScan.ts",
+  "queryEditorReferenceIdentity.ts",
+  "queryEditorTableReferences.ts",
+  "queryEditorExecutionContext.ts",
+  "queryEditorNavigationTarget.ts",
+  "queryEditorHoverTarget.ts",
+  "queryEditorNavigationDecorations.ts",
+  "queryEditorLocatorPlan.ts",
+];
+
 const readQueryEditorHelpersSource = (): string =>
-  readFileSync(new URL("../components/queryEditor/QueryEditorHelpers.ts", import.meta.url), "utf8");
+  QUERY_EDITOR_HELPER_MODULES.map((file) =>
+    readFileSync(new URL(`../components/queryEditor/${file}`, import.meta.url), "utf8"),
+  ).join("\n");
 
 const readQueryEditorAiContextSource = (): string =>
   readFileSync(new URL("../components/queryEditor/queryEditorAiContext.ts", import.meta.url), "utf8");
@@ -65,8 +86,11 @@ const readQueryEditorAiSqlInsertSource = (): string =>
 const readQueryEditorResultsPanelSource = (): string =>
   readFileSync(new URL("../components/QueryEditorResultsPanel.tsx", import.meta.url), "utf8");
 
+// sqlDialect.ts 已按主题拆成多个模块，源码扫描需按原顺序聚合。
 const readSqlDialectSource = (): string =>
-  readFileSync(new URL("../utils/sqlDialect.ts", import.meta.url), "utf8");
+  ["sqlDialect.ts", "sqlDialectCore.ts", "sqlDialectColumnTypes.ts", "sqlDialectKeywords.ts", "sqlDialectFunctions.ts"]
+    .map((file) => readFileSync(new URL(`../utils/${file}`, import.meta.url), "utf8"))
+    .join("\n");
 
 const readRowLocatorSource = (): string =>
   readFileSync(new URL("../utils/rowLocator.ts", import.meta.url), "utf8");

@@ -97,6 +97,11 @@ const readSidebarSource = () => [
   readSourceFile('./sidebar/SidebarSearchPanel.tsx'),
   readSourceFile('./sidebar/sidebarNodeMenu.tsx'),
   readSourceFile('./sidebar/sidebarMetadataLoaders.ts'),
+  readSourceFile('./sidebar/sidebarMetadataBasics.ts'),
+  readSourceFile('./sidebar/sidebarMetadataNames.ts'),
+  readSourceFile('./sidebar/sidebarMetadataQuerySpecs.ts'),
+  readSourceFile('./sidebar/sidebarMetadataObjectLoaders.ts'),
+  readSourceFile('./sidebar/sidebarMetadataRoutineLoaders.ts'),
   readSourceFile('./sidebar/useSidebarBatchExport.ts'),
   readSourceFile('./sidebar/SidebarExternalSqlWorkflow.tsx'),
   readSourceFile('./sidebar/useSidebarTreeLoaders.tsx'),
@@ -110,6 +115,14 @@ const readSidebarSource = () => [
   readSourceFile('./sidebar/useSidebarCommandSearchRunner.ts'),
   readSourceFile('./sidebar/useSidebarTitleRender.tsx'),
   readSourceFile('./sidebarV2Utils.ts'),
+  // sidebarV2Utils.ts 拆出的主题模块
+  readSourceFile('./sidebar/sidebarV2TreeNodes.ts'),
+  readSourceFile('./sidebar/sidebarV2NacosServices.ts'),
+  readSourceFile('./sidebar/sidebarV2TableSections.ts'),
+  readSourceFile('./sidebar/sidebarV2ConnectionGroups.ts'),
+  readSourceFile('./sidebar/sidebarV2CommandSearch.ts'),
+  readSourceFile('./sidebar/sidebarV2TreeDrop.ts'),
+  readSourceFile('./sidebar/sidebarV2TreeExpansion.ts'),
 ].join('\n');
 const readNodeMenuSource = () => readSourceFile('./sidebar/sidebarNodeMenu.tsx');
 

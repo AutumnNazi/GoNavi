@@ -34,6 +34,10 @@ const readDataGridSource = () => [
   './useDataGridMetadata.ts',
   './useDataGridColumnResize.ts',
   './dataGridStyles.ts',
+  './dataGridStylesTable.ts',
+  './dataGridStylesBody.ts',
+  './dataGridStylesScrollbars.ts',
+  './dataGridStylesPagination.ts',
   './DataGridCore.tsx',
   './DataGridShell.tsx',
 ].map((file) => readFileSync(new URL(file, import.meta.url), 'utf8')).join('\n');

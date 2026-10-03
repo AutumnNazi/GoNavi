@@ -151,7 +151,14 @@ const networkSecuritySource = readFileSync(
   new URL("./connectionModal/ConnectionModalNetworkSecuritySection.tsx", import.meta.url),
   "utf8",
 );
-const uriSource = readFileSync(new URL("./connectionModal/connectionModalUri.ts", import.meta.url), "utf8");
+const uriSource = [
+  "connectionModalUri.ts",
+  "connectionModalUriHosts.ts",
+  "connectionModalUriParams.ts",
+  "connectionModalUriSchemes.ts",
+  "connectionModalUriParse.ts",
+  "connectionModalUriBuild.ts",
+].map((file) => readFileSync(new URL(`./connectionModal/${file}`, import.meta.url), "utf8")).join("\n");
 const combinedConnectionModalSource = [
   source,
   step2Source,
