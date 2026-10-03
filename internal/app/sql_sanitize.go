@@ -1,6 +1,7 @@
 package app
 
 import (
+	"GoNavi-Wails/internal/db"
 	"GoNavi-Wails/internal/esconsole"
 	"strings"
 	"unicode"
@@ -465,6 +466,8 @@ func isReadOnlySQLQuery(dbType string, query string) bool {
 	case "elasticsearch":
 		batch, err := esconsole.ParseSource(query, "gonavi-default-index")
 		return err == nil && !batch.Blocked && !batch.ContainsWrite && !batch.ContainsScript
+	case "weaviate":
+		return db.IsWeaviateReadCommand(query)
 	}
 	if hasExecutableSQLComment(dbType, query) {
 		return false

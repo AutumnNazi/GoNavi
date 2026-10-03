@@ -7,7 +7,7 @@ import {
   supportsConnectionParamsForType,
 } from "../../utils/connectionTypeCapabilities";
 import { buildRedisUriFromValues } from "../../utils/redisConnectionUri";
-import { getRegistryUriScheme } from "../../utils/dataSourceRegistry/uriScheme";
+import { getRegistryUriScheme, usesHttpRegistryUri } from "../../utils/dataSourceRegistry/uriScheme";
 import { extractNacosConnectionScope } from "../../utils/nacosConnectionScope";
 import {
   getPulsarDefaultPort,
@@ -333,7 +333,7 @@ export const buildUriFromValues = (values: any) => {
       ? "gaussdb"
       : type === "postgres"
       ? "postgresql"
-      : type === "chroma" || type === "qdrant" || type === "milvus" || isElasticsearchFamilyType(type)
+      : type === "chroma" || type === "qdrant" || type === "milvus" || isElasticsearchFamilyType(type) || usesHttpRegistryUri(type)
         ? values.useSSL
           ? "https"
           : "http"
@@ -393,7 +393,7 @@ export const buildUriFromValues = (values: any) => {
       if (mode === "skip-verify" || mode === "preferred") {
         params.set("skip_verify", "true");
       }
-    } else if (type === "chroma" || type === "qdrant" || type === "milvus") {
+    } else if (type === "chroma" || type === "qdrant" || type === "milvus" || usesHttpRegistryUri(type)) {
       if (mode === "skip-verify" || mode === "preferred") {
         params.set("skip_verify", "true");
       }

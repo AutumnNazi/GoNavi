@@ -7,7 +7,7 @@ import {
   supportsSSLForType,
 } from "../../utils/connectionTypeCapabilities";
 import { parseRedisUriToFormValues } from "../../utils/redisConnectionUri";
-import { findRegistryUriScheme } from "../../utils/dataSourceRegistry/uriScheme";
+import { findRegistryUriScheme, usesHttpRegistryUri } from "../../utils/dataSourceRegistry/uriScheme";
 import { extractNacosConnectionScope } from "../../utils/nacosConnectionScope";
 import {
   MAX_URI_LENGTH,
@@ -661,7 +661,7 @@ export const parseUriToValues = (
           parsedValues.useSSL = false;
           parsedValues.sslMode = "disable";
         }
-      } else if (type === "chroma" || type === "qdrant" || type === "milvus" || isElasticsearchFamilyType(type)) {
+      } else if (type === "chroma" || type === "qdrant" || type === "milvus" || isElasticsearchFamilyType(type) || usesHttpRegistryUri(type)) {
         const tls = String(
           parsed.params.get("tls") ||
             parsed.params.get("ssl") ||

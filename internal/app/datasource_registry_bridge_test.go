@@ -135,8 +135,8 @@ func TestDriverProxyModeKeepsOriginalTarget(t *testing.T) {
 	}
 }
 
-func TestRegistryPostgresWireReadQueriesAvoidNativeMultiResult(t *testing.T) {
-	for _, dbType := range []string{"cockroachdb", "kwdb", "questdb"} {
+func TestRegistryPostgresAndHTTPWireReadQueriesAvoidNativeMultiResult(t *testing.T) {
+	for _, dbType := range []string{"cockroachdb", "kwdb", "questdb", "weaviate", "opensearch"} {
 		if !shouldPreferPlainReadQueryResult(dbType) || shouldUseNativeMultiResultBatch(dbType, []string{"SELECT 1"}, true) {
 			t.Fatalf("%s read queries must use the plain query path", dbType)
 		}

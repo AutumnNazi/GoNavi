@@ -146,8 +146,8 @@ export const getConnectionConfigLayoutKindLabel = (
   }
 };
 
-// 描述表 ui.layout 借用的既有表单布局：search → Elasticsearch 的索引类表单。
-const REGISTRY_LAYOUT_TYPES: Record<string, string> = { search: 'elasticsearch' };
+// 描述表 ui.layout 借用的既有表单布局：search → Elasticsearch 的索引类表单，vector → 向量库表单。
+const REGISTRY_LAYOUT_TYPES: Record<string, string> = { search: 'elasticsearch', vector: 'qdrant' };
 
 export const resolveConnectionConfigLayout = (
   rawType: string,

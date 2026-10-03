@@ -1345,6 +1345,7 @@
                     "chroma":  "document-vector",
                     "qdrant":  "document-vector-single-root",
                     "milvus":  "document-vector",
+                    "weaviate":  "document-vector",
                     "rocketmq":  "message-manual-total",
                     "mqtt":  "message-manual-total",
                     "kafka":  "message",
