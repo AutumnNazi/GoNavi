@@ -1364,6 +1364,7 @@
                     "clickhouse":  "sql-clickhouse",
                     "elasticsearch":  "document-index-readonly",
                     "trino":  "sql-trino",
+                    "tidb":  "sql-mysql",
                     "nacos":  "dedicated-workbench",
                     "jvm":  "dedicated-workbench"
                 }

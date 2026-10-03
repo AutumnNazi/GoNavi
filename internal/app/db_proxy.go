@@ -315,6 +315,7 @@ func defaultPortByType(driverType string) int {
 	case "nacos":
 		return 8848
 	default:
-		return 0
+		port, _ := registryDefaultPort(driverType)
+		return port
 	}
 }

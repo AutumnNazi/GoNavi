@@ -62,14 +62,6 @@ type agentResponse struct {
 	PartialData bool `json:"partialData,omitempty"`
 }
 
-type agentConnectionInfo struct {
-	ElasticsearchServerMajor int    `json:"elasticsearchServerMajor,omitempty"`
-	ProtocolSchema           string `json:"protocolSchema,omitempty"`
-	// InFlightCancel 声明本 agent 支持在途查询取消通道：主进程据此决定停止查询时
-	// 是先发取消通知，还是沿用杀进程的旧路径。旧版主进程忽略该字段。
-	InFlightCancel bool `json:"inFlightCancel,omitempty"`
-}
-
 const (
 	agentMethodConnect             = "connect"
 	agentMethodClose               = "close"
@@ -207,11 +199,7 @@ func handleRequestWithContext(requestCtx context.Context, runtimeState *agentRun
 			return failWithSSHHostKeyTrust(resp, err)
 		}
 		runtimeState.inst = next
-		connectionInfo := agentConnectionInfo{ProtocolSchema: agentProtocolSchemaV2, InFlightCancel: true}
-		if versionProvider, ok := next.(db.ElasticsearchServerVersionProvider); ok {
-			connectionInfo.ElasticsearchServerMajor = versionProvider.ElasticsearchServerMajor()
-		}
-		resp.Data = connectionInfo
+		resp.Data = newAgentConnectionInfo(next)
 		return resp
 	case agentMethodClose:
 		if runtimeState.inst != nil {

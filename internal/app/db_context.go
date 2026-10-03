@@ -50,6 +50,9 @@ func normalizeRunConfig(config connection.ConnectionConfig, dbName string) conne
 	default:
 		// sqlite: 无需设置 Database
 		// 其他 custom: 语义不明确，避免污染缓存 key
+		if registryDBNameSelectsDatabase(config.Type) {
+			runConfig.Database = name
+		}
 	}
 
 	return runConfig

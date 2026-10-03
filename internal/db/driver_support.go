@@ -113,7 +113,7 @@ func normalizeRuntimeDriverType(driverType string) string {
 	case "pulsar", "apache-pulsar", "apache_pulsar":
 		return "pulsar"
 	default:
-		return normalized
+		return registryRuntimeDriverType(normalized)
 	}
 }
 
@@ -190,6 +190,9 @@ func driverDisplayName(driverType string) string {
 	case "pulsar":
 		return "Pulsar"
 	default:
+		if name, ok := registryDriverDisplayName(driverType); ok {
+			return name
+		}
 		return strings.ToUpper(strings.TrimSpace(driverType))
 	}
 }

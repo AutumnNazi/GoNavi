@@ -162,6 +162,9 @@ func tableObjectTypeForDB(dbType string) string {
 	case "rocketmq", "kafka", "mqtt", "pulsar":
 		return "topic"
 	default:
+		if kind, ok := registryObjectKind(dbType); ok {
+			return kind
+		}
 		return "table"
 	}
 }
@@ -345,7 +348,8 @@ func databaseObjectIdentifiersAreCaseSensitive(dbType string) bool {
 		"mqtt", "kafka", "rocketmq", "rabbitmq", "pulsar":
 		return true
 	default:
-		return false
+		sensitive, _ := registryIdentifiersCaseSensitive(dbType)
+		return sensitive
 	}
 }
 

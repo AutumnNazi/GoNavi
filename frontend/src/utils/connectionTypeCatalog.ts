@@ -1,3 +1,9 @@
+import {
+  getRegistryDefaultPort,
+  getRegistryTypeHint,
+  withRegistryDataSources,
+} from './connectionTypeCatalogRegistry';
+
 export type ConnectionTypeCatalogItem = {
   key: string;
   name: string;
@@ -52,7 +58,7 @@ const translateCatalogCopy = (
   return translated && translated !== key ? translated : fallback;
 };
 
-export const CONNECTION_TYPE_GROUPS: ConnectionTypeCatalogGroup[] = [
+export const CONNECTION_TYPE_GROUPS: ConnectionTypeCatalogGroup[] = withRegistryDataSources([
   {
     labelKey: 'connection_modal.step1.group.relational',
     label: 'Relational databases',
@@ -139,7 +145,7 @@ export const CONNECTION_TYPE_GROUPS: ConnectionTypeCatalogGroup[] = [
       { key: 'custom', name: 'Custom', nameKey: 'connection_modal.db_icon_label.custom' },
     ],
   },
-];
+]);
 
 export const buildConnectionTypeGroups = (
   translate?: ConnectionTypeCatalogTranslator,
@@ -228,7 +234,7 @@ export const getConnectionTypeDefaultPort = (type: string): number => {
     case 'duckdb':
       return 0;
     default:
-      return 3306;
+      return getRegistryDefaultPort(type) ?? 3306;
   }
 };
 
@@ -306,12 +312,15 @@ export const getConnectionTypeHint = (
       return translateCatalogCopy(translate, 'connection_modal.step1.hint.file', 'Local file connection');
     case 'trino':
       return 'HTTP / HTTPS / catalog.schema';
-    default:
+    default: {
+      const registryHint = getRegistryTypeHint(type);
+      if (registryHint) return translateCatalogCopy(translate, registryHint.key, registryHint.fallback);
       return translateCatalogCopy(
         translate,
         'connection_modal.step1.hint.standard',
         'Standard connection configuration',
       );
+    }
   }
 };
 
