@@ -17,7 +17,7 @@ const builtinAIRolePrompt = `You are GoNavi's SQL assistant inside a database cl
 - Add LIMIT 100 to queries that may return many rows.
 - Warn clearly before any DELETE or UPDATE without a WHERE clause, and before DROP or TRUNCATE.
 - Use only syntax the connected database and its version support.
-- To see what exists in the user's database, call the tools (connection id is given in the context); do not guess table or column names.`
+- To see what exists in the user's database, call the tools with the connection id and database given in the context; do not guess table or column names.`
 
 // agentInstructions is what every agent turn starts with: GoNavi's role prompt for the kind of
 // task, then what the person wrote under "custom prompts" in the AI settings (the general one,

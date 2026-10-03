@@ -71,7 +71,7 @@ func TestAnAnswerWithOnlyQueriesIsUntouched(t *testing.T) {
 
 func TestAStreamedCallIsJudgedWhenComplete(t *testing.T) {
 	var got []ai.StreamChunk
-	guard := newBuiltinAIStreamGuard(func(chunk ai.StreamChunk) { got = append(got, chunk) }, "NOT RUN:")
+	guard := newBuiltinAIStreamGuard(func(chunk ai.StreamChunk) { got = append(got, chunk) }, "NOT RUN:", builtinAITarget{})
 	// The provider reports the call as it builds up; nothing goes out until it is complete.
 	guard.push(ai.StreamChunk{ToolCalls: []ai.ToolCall{sqlCall("c", "UPDATE")}})
 	guard.push(ai.StreamChunk{ToolCalls: []ai.ToolCall{sqlCall("c", "UPDATE orders SET paid = 1")}})
@@ -91,7 +91,7 @@ func TestAStreamedCallIsJudgedWhenComplete(t *testing.T) {
 
 func TestAStreamedQueryIsPassedOnBeforeTheEnd(t *testing.T) {
 	var got []ai.StreamChunk
-	guard := newBuiltinAIStreamGuard(func(chunk ai.StreamChunk) { got = append(got, chunk) }, "NOT RUN:")
+	guard := newBuiltinAIStreamGuard(func(chunk ai.StreamChunk) { got = append(got, chunk) }, "NOT RUN:", builtinAITarget{})
 	guard.push(ai.StreamChunk{Content: "Checking."})
 	guard.push(ai.StreamChunk{ToolCalls: []ai.ToolCall{sqlCall("b", "SELECT 1")}, Done: true})
 	guard.finish()
@@ -103,7 +103,7 @@ func TestAStreamedQueryIsPassedOnBeforeTheEnd(t *testing.T) {
 
 func TestAStreamThatStopsWithoutAnEndStillReleasesItsCalls(t *testing.T) {
 	var got []ai.StreamChunk
-	guard := newBuiltinAIStreamGuard(func(chunk ai.StreamChunk) { got = append(got, chunk) }, "NOT RUN:")
+	guard := newBuiltinAIStreamGuard(func(chunk ai.StreamChunk) { got = append(got, chunk) }, "NOT RUN:", builtinAITarget{})
 	guard.push(ai.StreamChunk{ToolCalls: []ai.ToolCall{sqlCall("b", "SELECT 1")}})
 	guard.finish()
 	guard.finish()
@@ -158,5 +158,65 @@ func TestTheBuiltinWrapperCuratesToolsAndGuardsBothPaths(t *testing.T) {
 	}
 	if len(chunks) != 2 || !strings.Contains(chunks[0].Content, "TRUNCATE orders") || !chunks[1].Done {
 		t.Fatalf("stream: %+v", chunks)
+	}
+}
+
+func toolCall(name, arguments string) ai.ToolCall {
+	return ai.ToolCall{ID: name, Type: "function", Function: ai.ToolCallFunction{Name: name, Arguments: arguments}}
+}
+
+func TestTheTargetIsReadFromTheWorkspace(t *testing.T) {
+	messages := []ai.Message{workspaceMessage(t, map[string]any{"connectionId": "1775889710138", "dbName": "missav_bot"}), {Role: "user", Content: "q"}}
+	if got := builtinAITargetOf(messages); got != (builtinAITarget{connectionID: "1775889710138", dbName: "missav_bot"}) {
+		t.Fatalf("got %+v", got)
+	}
+	if got := builtinAITargetOf([]ai.Message{{Role: "user", Content: "q"}}); got != (builtinAITarget{}) {
+		t.Fatalf("no workspace, no target: %+v", got)
+	}
+}
+
+// Regression (production, 2026-10-03): asked "which tables are in this database", the model called
+// get_tables with the connection only; the MySQL connection has no default database, the tool
+// listed nothing, and the model answered that the database had no tables.
+func TestACallOnThePersonsConnectionGetsTheirDatabase(t *testing.T) {
+	target := builtinAITarget{connectionID: "1775889710138", dbName: "missav_bot"}
+	got := target.complete([]ai.ToolCall{
+		toolCall("get_tables", `{"connectionId": "1775889710138"}`),
+		toolCall("get_columns", `{"tableName": "users"}`),
+		toolCall("execute_sql", `{"connectionId": 1775889710138, "sql": "SELECT 1"}`),
+		toolCall("get_databases", `{"connectionId": "1775889710138"}`),
+		toolCall("get_tables", `{"connectionId": "1775889710138", "dbName": "other"}`),
+		toolCall("get_tables", `{"connectionId": "another"}`),
+		toolCall("get_server_version", ``),
+	})
+	want := []string{
+		`{"connectionId":"1775889710138","dbName":"missav_bot"}`,
+		`{"connectionId":"1775889710138","dbName":"missav_bot","tableName":"users"}`,
+		`{"connectionId":"1775889710138","dbName":"missav_bot","sql":"SELECT 1"}`,
+		`{"connectionId": "1775889710138"}`,
+		`{"connectionId": "1775889710138", "dbName": "other"}`,
+		`{"connectionId": "another"}`,
+		`{"connectionId":"1775889710138"}`,
+	}
+	for i := range want {
+		if got[i].Function.Arguments != want[i] {
+			t.Errorf("call %d (%s): got %s, want %s", i, got[i].Function.Name, got[i].Function.Arguments, want[i])
+		}
+	}
+}
+
+func TestWithoutATargetCallsAreLeftAlone(t *testing.T) {
+	calls := []ai.ToolCall{toolCall("get_tables", `{}`)}
+	if got := (builtinAITarget{}).complete(calls); got[0].Function.Arguments != `{}` {
+		t.Fatalf("got %s", got[0].Function.Arguments)
+	}
+}
+
+func TestAStreamedCallIsCompletedBeforeItIsPassedOn(t *testing.T) {
+	var got []ai.StreamChunk
+	guard := newBuiltinAIStreamGuard(func(chunk ai.StreamChunk) { got = append(got, chunk) }, "NOT RUN:", builtinAITarget{connectionID: "c1", dbName: "shop"})
+	guard.push(ai.StreamChunk{ToolCalls: []ai.ToolCall{toolCall("get_tables", `{"connectionId":"c1"}`)}, Done: true})
+	if len(got) != 2 || len(got[0].ToolCalls) != 1 || got[0].ToolCalls[0].Function.Arguments != `{"connectionId":"c1","dbName":"shop"}` {
+		t.Fatalf("got %+v", got)
 	}
 }

@@ -27,17 +27,18 @@ type builtinAIPromptProvider struct {
 }
 
 func (p builtinAIPromptProvider) Chat(ctx context.Context, req ai.ChatRequest) (*ai.ChatResponse, error) {
+	target := builtinAITargetOf(req.Messages)
 	req.Messages, req.Tools = presentBuiltinAIContext(req.Messages), builtinAITools(req.Tools)
 	response, err := p.Provider.Chat(ctx, req)
 	if response != nil {
-		response.ToolCalls, response.Content = guardBuiltinAIToolCalls(response.ToolCalls, response.Content, p.readOnlyNotice)
+		response.ToolCalls, response.Content = guardBuiltinAIToolCalls(target.complete(response.ToolCalls), response.Content, p.readOnlyNotice)
 	}
 	return response, err
 }
 
 func (p builtinAIPromptProvider) ChatStream(ctx context.Context, req ai.ChatRequest, callback func(ai.StreamChunk)) error {
+	guard := newBuiltinAIStreamGuard(callback, p.readOnlyNotice, builtinAITargetOf(req.Messages))
 	req.Messages, req.Tools = presentBuiltinAIContext(req.Messages), builtinAITools(req.Tools)
-	guard := newBuiltinAIStreamGuard(callback, p.readOnlyNotice)
 	err := p.Provider.ChatStream(ctx, req, guard.push)
 	guard.finish()
 	return err
@@ -46,8 +47,8 @@ func (p builtinAIPromptProvider) ChatStream(ctx context.Context, req ai.ChatRequ
 // ChatStreamWithState keeps the wrapped provider's session support: the harness
 // asks for it by interface.
 func (p builtinAIPromptProvider) ChatStreamWithState(ctx context.Context, state json.RawMessage, req ai.ChatRequest, callback func(ai.StreamChunk)) (json.RawMessage, error) {
+	guard := newBuiltinAIStreamGuard(callback, p.readOnlyNotice, builtinAITargetOf(req.Messages))
 	req.Messages, req.Tools = presentBuiltinAIContext(req.Messages), builtinAITools(req.Tools)
-	guard := newBuiltinAIStreamGuard(callback, p.readOnlyNotice)
 	defer guard.finish()
 	if stateful, ok := p.Provider.(provider.SessionStreamProvider); ok {
 		return stateful.ChatStreamWithState(ctx, state, req, guard.push)

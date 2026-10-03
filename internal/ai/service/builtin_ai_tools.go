@@ -91,18 +91,96 @@ func guardBuiltinAIToolCalls(calls []ai.ToolCall, content string, notice string)
 	return allowed, text.String()
 }
 
+// builtinAITarget is the connection and database the person is working in, as the turn's
+// workspace names them.
+type builtinAITarget struct {
+	connectionID string
+	dbName       string
+}
+
+// builtinAITargetOf reads the target from the workspace message, before it is presented as text.
+func builtinAITargetOf(messages []ai.Message) builtinAITarget {
+	for _, message := range messages {
+		if message.Role != "system" || !strings.HasPrefix(strings.TrimSpace(message.Content), `{"kind":"workspace_snapshot"`) {
+			continue
+		}
+		var envelope struct {
+			Snapshot struct {
+				ActiveContext map[string]any `json:"activeContext"`
+			} `json:"snapshot"`
+		}
+		if json.Unmarshal([]byte(message.Content), &envelope) == nil {
+			active := envelope.Snapshot.ActiveContext
+			return builtinAITarget{connectionID: promptText(active["connectionId"]), dbName: promptText(active["dbName"])}
+		}
+	}
+	return builtinAITarget{}
+}
+
+// builtinAIToolsWithoutDatabase are the curated tools that take no database.
+var builtinAIToolsWithoutDatabase = map[string]bool{"get_server_version": true, "get_databases": true}
+
+// complete fills in what the small model leaves out of a call: the connection, when it names
+// none, and the database, when the call is on the person's connection and names none. Without
+// the database a MySQL connection with no default answers "no tables", and the model reports
+// that the database is empty. A call that names another connection or database is left as is.
+func (t builtinAITarget) complete(calls []ai.ToolCall) []ai.ToolCall {
+	if t.connectionID == "" || len(calls) == 0 {
+		return calls
+	}
+	completed := make([]ai.ToolCall, len(calls))
+	for i, call := range calls {
+		completed[i] = call
+		name := strings.TrimSpace(call.Function.Name)
+		if !builtinAIToolNames[name] {
+			continue
+		}
+		args := map[string]any{}
+		if raw := strings.TrimSpace(call.Function.Arguments); raw != "" {
+			decoder := json.NewDecoder(strings.NewReader(raw))
+			decoder.UseNumber()
+			if decoder.Decode(&args) != nil || args == nil {
+				continue
+			}
+		}
+		changed := false
+		switch id := args["connectionId"].(type) {
+		case json.Number: // the model wrote the id without quotes; the tools take it as text
+			args["connectionId"], changed = id.String(), true
+		case string:
+			if strings.TrimSpace(id) == "" {
+				args["connectionId"], changed = t.connectionID, true
+			}
+		case nil:
+			args["connectionId"], changed = t.connectionID, true
+		}
+		if id, _ := args["connectionId"].(string); id == t.connectionID && t.dbName != "" && !builtinAIToolsWithoutDatabase[name] {
+			if db, _ := args["dbName"].(string); strings.TrimSpace(db) == "" {
+				args["dbName"], changed = t.dbName, true
+			}
+		}
+		if changed {
+			if encoded, err := json.Marshal(args); err == nil {
+				completed[i].Function.Arguments = string(encoded)
+			}
+		}
+	}
+	return completed
+}
+
 // builtinAIStreamGuard holds a streamed answer's tool calls until it ends: the provider reports
-// the calls as they build up, and only the complete ones can be judged. They are then passed on,
-// or (for a refused query) replaced by the note.
+// the calls as they build up, and only the complete ones can be judged. They are then completed
+// and passed on, or (for a refused query) replaced by the note.
 type builtinAIStreamGuard struct {
 	callback func(ai.StreamChunk)
 	notice   string
+	target   builtinAITarget
 	calls    []ai.ToolCall
 	released bool
 }
 
-func newBuiltinAIStreamGuard(callback func(ai.StreamChunk), notice string) *builtinAIStreamGuard {
-	return &builtinAIStreamGuard{callback: callback, notice: notice}
+func newBuiltinAIStreamGuard(callback func(ai.StreamChunk), notice string, target builtinAITarget) *builtinAIStreamGuard {
+	return &builtinAIStreamGuard{callback: callback, notice: notice, target: target}
 }
 
 func (g *builtinAIStreamGuard) push(chunk ai.StreamChunk) {
@@ -127,7 +205,7 @@ func (g *builtinAIStreamGuard) release() {
 		return
 	}
 	g.released = true
-	allowed, text := guardBuiltinAIToolCalls(g.calls, "", g.notice)
+	allowed, text := guardBuiltinAIToolCalls(g.target.complete(g.calls), "", g.notice)
 	if text != "" {
 		g.callback(ai.StreamChunk{Content: text})
 	}
