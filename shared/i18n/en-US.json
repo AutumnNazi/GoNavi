@@ -11804,5 +11804,13 @@
   "connection_modal.field.driverVariant.auto": "Auto-detect",
   "connection_modal.field.driverVariant.autoDescription": "Reads the server version when connecting and picks the matching driver version",
   "connection_modal.field.driverVariant.help": "Older and newer servers differ in protocol, metadata and syntax. Choose the driver version that matches the server, or auto-detect if unsure.",
-  "connection_modal.field.driverVariant.separateAgent": "Separate driver install"
+  "connection_modal.field.driverVariant.separateAgent": "Separate driver install",
+  "connection_modal.step1.hint.cockroachdb": "PostgreSQL wire / distributed SQL",
+  "connection_modal.step1.hint.kwdb": "Relational + time-series / PostgreSQL wire",
+  "datasource.variant.cockroachdb.v21": "CockroachDB 21.x – 22.x: user-defined functions from 22.2; no stored procedures or triggers",
+  "datasource.variant.cockroachdb.v23": "CockroachDB 23.x – 24.x: stored procedures from 23.2; triggers from 24.3",
+  "datasource.variant.cockroachdb.v25": "CockroachDB 25.x and later: triggers, stored procedures and other new features",
+  "datasource.variant.kwdb.v2": "KWDB 2.x: relational and time-series databases; CREATE TS DATABASE IF NOT EXISTS is not supported",
+  "datasource.variant.kwdb.v3": "KWDB 3.x and later: newer syntax such as CREATE TS DATABASE IF NOT EXISTS",
+  "db.backend.error.kwdb_timeseries_row_edit_unsupported": "KWDB time-series tables are append-only and cannot be updated or deleted row by row; write new data with SQL instead"
 }

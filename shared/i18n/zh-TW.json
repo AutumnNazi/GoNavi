@@ -11804,5 +11804,13 @@
   "connection_modal.field.driverVariant.auto": "自動識別",
   "connection_modal.field.driverVariant.autoDescription": "連線時讀取伺服器版本，自動選擇相符的驅動版本",
   "connection_modal.field.driverVariant.help": "新舊伺服器在協定、中繼資料與語法上存在差異，請選擇與伺服器相符的驅動版本；不確定時選擇自動識別。",
-  "connection_modal.field.driverVariant.separateAgent": "需另行安裝驅動"
+  "connection_modal.field.driverVariant.separateAgent": "需另行安裝驅動",
+  "connection_modal.step1.hint.cockroachdb": "PostgreSQL 協定 / 分散式 SQL",
+  "connection_modal.step1.hint.kwdb": "關聯 + 時序多模 / PostgreSQL 協定",
+  "datasource.variant.cockroachdb.v21": "CockroachDB 21.x – 22.x：22.2 起支援自訂函數，無預存程序與觸發器",
+  "datasource.variant.cockroachdb.v23": "CockroachDB 23.x – 24.x：23.2 起支援預存程序，24.3 起支援觸發器",
+  "datasource.variant.cockroachdb.v25": "CockroachDB 25.x 及以上：觸發器、預存程序等新特性全部可用",
+  "datasource.variant.kwdb.v2": "KWDB 2.x：關聯庫與時序庫；不支援 CREATE TS DATABASE IF NOT EXISTS",
+  "datasource.variant.kwdb.v3": "KWDB 3.x 及以上：支援 CREATE TS DATABASE IF NOT EXISTS 等新語法",
+  "db.backend.error.kwdb_timeseries_row_edit_unsupported": "KWDB 時序表只能附加寫入，不支援逐列修改或刪除；請透過 SQL 寫入新資料"
 }

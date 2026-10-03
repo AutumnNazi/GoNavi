@@ -44,7 +44,6 @@ var explainSupportedDBTypes = map[string]bool{
 	"oracle":     true, // 含 OceanBase Oracle 协议（resolveDDLDBType 已归一化）
 	"sqlserver":  true,
 	"oceanbase":  true, // MySQL 协议走 MySQL 语法
-	"tidb":       true, // 表格式计划，见 explain_parse_tidb.go
 }
 
 // defaultExplainStatementTimeout 是未配置连接超时时的诊断上限。
@@ -85,7 +84,7 @@ func (a *App) diagnoseQueryContext(ctx context.Context, config connection.Connec
 	if !isSafeExplainQuery(dbType, query) {
 		return connection.QueryResult{Success: false, Message: a.appText("sql_analysis.backend.error.select_only", nil)}
 	}
-	if !explainSupportedDBTypes[dbType] {
+	if !explainSupportedDBTypes[dbType] && !isRegistryExplainDialect(dbType) {
 		return connection.QueryResult{
 			Success: false,
 			Message: a.appText("sql_analysis.backend.error.unsupported_db_type", map[string]any{"dbType": dbType}),
@@ -613,13 +612,14 @@ func parseExplainRawWithText(dbType, sourceSQL, raw string, format connection.Ex
 	if text == nil {
 		text = defaultExplainBackendText
 	}
+	if dialect, ok := registryExplainDialects[dbType]; ok {
+		return dialect.parse(dbType, sourceSQL, raw), nil
+	}
 	switch dbType {
 	case "mysql", "mariadb", "oceanbase":
 		return parseMySQLExplain(dbType, sourceSQL, raw, format)
 	case "diros", "starrocks":
 		return parseDistributedMySQLTextExplain(dbType, sourceSQL, raw, format), nil
-	case "tidb":
-		return parseTiDBExplain(sourceSQL, raw), nil
 	case "postgres", "gaussdb", "opengauss", "kingbase", "highgo", "vastbase":
 		return parsePostgresExplain(dbType, sourceSQL, raw, format)
 	case "sqlite":
@@ -661,13 +661,16 @@ func buildExplainQueryWithText(dbType, query string, text func(string, map[strin
 		text = defaultExplainBackendText
 	}
 	sql := strings.TrimRight(strings.TrimSpace(query), ";")
+	if dialect, ok := registryExplainDialects[dbType]; ok {
+		return fmt.Sprintf("EXPLAIN %s", sql), nil, dialect.format, nil, nil
+	}
 	switch dbType {
 	case "mysql", "mariadb", "oceanbase":
 		// MySQL 8.0+ 和 OceanBase 都支持 FORMAT=JSON
 		// 5.7 在 collectExplainRaw 阶段会拿到语法错误，由调用方降级处理（PR2 加重试逻辑）
 		return fmt.Sprintf("EXPLAIN FORMAT=JSON %s", sql), nil, connection.ExplainFormatJSON, nil, nil
-	case "diros", "starrocks", "tidb":
-		// Doris/StarRocks/TiDB 不支持 MySQL 的 FORMAT=JSON，使用原生表格式 EXPLAIN
+	case "diros", "starrocks":
+		// Doris/StarRocks 不支持 FORMAT=JSON，使用原生 EXPLAIN（返回表格 + 一些文本块）
 		return fmt.Sprintf("EXPLAIN %s", sql), nil, connection.ExplainFormatTable, nil, nil
 	case "postgres", "gaussdb", "opengauss", "kingbase", "highgo", "vastbase":
 		// 默认仅生成估算计划。ANALYZE 会真实执行原查询，不适合作为一次点击即可触发的默认行为。

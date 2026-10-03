@@ -11804,5 +11804,13 @@
   "connection_modal.field.driverVariant.auto": "Определять автоматически",
   "connection_modal.field.driverVariant.autoDescription": "При подключении считывает версию сервера и выбирает подходящую версию драйвера",
   "connection_modal.field.driverVariant.help": "Старые и новые серверы различаются протоколом, метаданными и синтаксисом. Выберите версию драйвера, соответствующую серверу, или автоопределение, если не уверены.",
-  "connection_modal.field.driverVariant.separateAgent": "Требуется отдельная установка драйвера"
+  "connection_modal.field.driverVariant.separateAgent": "Требуется отдельная установка драйвера",
+  "connection_modal.step1.hint.cockroachdb": "Протокол PostgreSQL / распределенный SQL",
+  "connection_modal.step1.hint.kwdb": "Реляционные + временные ряды / протокол PostgreSQL",
+  "datasource.variant.cockroachdb.v21": "CockroachDB 21.x – 22.x: пользовательские функции с 22.2; нет хранимых процедур и триггеров",
+  "datasource.variant.cockroachdb.v23": "CockroachDB 23.x – 24.x: хранимые процедуры с 23.2; триггеры с 24.3",
+  "datasource.variant.cockroachdb.v25": "CockroachDB 25.x и новее: триггеры, хранимые процедуры и другие новые функции",
+  "datasource.variant.kwdb.v2": "KWDB 2.x: реляционные базы и базы временных рядов; CREATE TS DATABASE IF NOT EXISTS не поддерживается",
+  "datasource.variant.kwdb.v3": "KWDB 3.x и новее: новый синтаксис, например CREATE TS DATABASE IF NOT EXISTS",
+  "db.backend.error.kwdb_timeseries_row_edit_unsupported": "Таблицы временных рядов KWDB допускают только добавление и не поддерживают построчное изменение или удаление; записывайте новые данные через SQL"
 }

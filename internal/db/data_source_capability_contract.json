@@ -1,6 +1,7 @@
 {
     "version":  2,
     "profiles":  {
+                     "sql-postgres-wire":  {"query": {"supported": true}, "metadata": {"supported": true}, "transaction": {"supported": true}, "pagination": {"supported": true}, "cancel": {"supported": true, "runtimeProbe": true}, "schema": {"supported": true}, "sampling": {"supported": true}, "streaming": {"supported": false, "reason": "not_streaming_data_source", "alternative": "use-paginated-query", "messageKey": "query_editor.message.unsupported_source"}, "dangerousOperations": {"supported": true}, "ui": {"userManagement": false, "parameterBinding": true, "explainDiagnosis": true, "sqlQueryExport": true, "copyInsert": true, "createDatabase": true, "renameDatabase": true, "dropDatabase": true}, "navigation": {"primaryVisibilitySupported": true, "primaryKind": "database", "secondarySchemaVisibilitySupported": true, "schemaIdentifierCaseSensitive": true}},
                      "sql-mysql":  {
                                        "query":  {
                                                      "supported":  true
@@ -1329,6 +1330,8 @@
                                                      }
                  },
     "drivers":  {
+                    "kwdb":  "sql-postgres-wire",
+                    "cockroachdb":  "sql-postgres-wire",
                     "mysql":  "sql-mysql",
                     "goldendb":  "sql-mysql",
                     "redis":  "redis",

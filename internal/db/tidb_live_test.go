@@ -120,10 +120,3 @@ func assertTiDBMetadata(t *testing.T, client *TiDBDB, schema string) {
 		t.Fatalf("triggers %#v: %v", triggers, err)
 	}
 }
-
-func mustExec(t *testing.T, client Database, statement string) {
-	t.Helper()
-	if _, err := client.Exec(statement); err != nil {
-		t.Fatalf("exec %q: %v", statement, err)
-	}
-}

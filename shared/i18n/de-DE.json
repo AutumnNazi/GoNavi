@@ -11804,5 +11804,13 @@
   "connection_modal.field.driverVariant.auto": "Automatisch erkennen",
   "connection_modal.field.driverVariant.autoDescription": "Liest beim Verbinden die Serverversion und wählt die passende Treiberversion",
   "connection_modal.field.driverVariant.help": "Ältere und neuere Server unterscheiden sich in Protokoll, Metadaten und Syntax. Wählen Sie die passende Treiberversion oder im Zweifel die automatische Erkennung.",
-  "connection_modal.field.driverVariant.separateAgent": "Separate Treiberinstallation"
+  "connection_modal.field.driverVariant.separateAgent": "Separate Treiberinstallation",
+  "connection_modal.step1.hint.cockroachdb": "PostgreSQL-Protokoll / verteiltes SQL",
+  "connection_modal.step1.hint.kwdb": "Relational + Zeitreihen / PostgreSQL-Protokoll",
+  "datasource.variant.cockroachdb.v21": "CockroachDB 21.x – 22.x: benutzerdefinierte Funktionen ab 22.2; keine Stored Procedures oder Trigger",
+  "datasource.variant.cockroachdb.v23": "CockroachDB 23.x – 24.x: Stored Procedures ab 23.2; Trigger ab 24.3",
+  "datasource.variant.cockroachdb.v25": "CockroachDB 25.x und neuer: Trigger, Stored Procedures und weitere neue Funktionen",
+  "datasource.variant.kwdb.v2": "KWDB 2.x: relationale und Zeitreihen-Datenbanken; CREATE TS DATABASE IF NOT EXISTS wird nicht unterstützt",
+  "datasource.variant.kwdb.v3": "KWDB 3.x und neuer: neuere Syntax wie CREATE TS DATABASE IF NOT EXISTS",
+  "db.backend.error.kwdb_timeseries_row_edit_unsupported": "KWDB-Zeitreihentabellen sind nur anhängbar und können nicht zeilenweise geändert oder gelöscht werden; schreiben Sie neue Daten per SQL"
 }
