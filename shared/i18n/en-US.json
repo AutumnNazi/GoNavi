@@ -11844,7 +11844,7 @@
   "db.backend.error.weaviate_graphql_failed": "Weaviate GraphQL query failed: {{detail}}",
   "db.backend.error.weaviate_class_not_found": "Collection {{class}} does not exist",
   "db.backend.error.weaviate_tenant_required": "Collection {{class}} has multi-tenancy enabled: open it under a tenant in the navigation tree, or set the tenant connection parameter",
-  "db.backend.error.weaviate_where_unsupported": "Unsupported WHERE syntax near: {{token}}",
+  "db.backend.error.where_syntax_unsupported": "Unsupported WHERE syntax near: {{token}}",
   "db.backend.error.weaviate_property_not_found": "Collection {{class}} has no property {{property}}",
   "db.backend.error.weaviate_filter_unsupported": "Property {{property}} ({{dataType}}) cannot be used in WHERE filters or sorting",
   "db.backend.error.weaviate_filter_value_invalid": "Value {{value}} is not a valid {{dataType}} for property {{property}}",

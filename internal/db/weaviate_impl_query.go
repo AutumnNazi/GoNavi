@@ -73,7 +73,7 @@ func (w *WeaviateDB) querySQL(ctx context.Context, text string) ([]map[string]in
 	clauses := splitWeaviateSQLClauses(text)
 	var filter gqlObject
 	if clauses.where != "" {
-		node, err := parseWeaviateWhere(clauses.where)
+		node, err := parseRegistryWhere(clauses.where)
 		if err != nil {
 			return nil, nil, err
 		}

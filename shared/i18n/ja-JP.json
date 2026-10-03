@@ -11844,7 +11844,7 @@
   "db.backend.error.weaviate_graphql_failed": "Weaviate GraphQL クエリが失敗しました: {{detail}}",
   "db.backend.error.weaviate_class_not_found": "コレクション {{class}} は存在しません",
   "db.backend.error.weaviate_tenant_required": "コレクション {{class}} はマルチテナンシーが有効です: ナビゲーションツリーでテナントを開いてからアクセスするか、接続パラメーターに tenant を設定してください",
-  "db.backend.error.weaviate_where_unsupported": "サポートされていない WHERE 構文です: {{token}}",
+  "db.backend.error.where_syntax_unsupported": "サポートされていない WHERE 構文です: {{token}}",
   "db.backend.error.weaviate_property_not_found": "コレクション {{class}} にプロパティ {{property}} はありません",
   "db.backend.error.weaviate_filter_unsupported": "プロパティ {{property}}（{{dataType}}）は WHERE の絞り込みや並べ替えに使用できません",
   "db.backend.error.weaviate_filter_value_invalid": "値 {{value}} はプロパティ {{property}} に必要な {{dataType}} 型ではありません",

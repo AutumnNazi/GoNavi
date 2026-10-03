@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"GoNavi-Wails/internal/connection"
-	"GoNavi-Wails/internal/logger"
 	"GoNavi-Wails/internal/ssh"
 )
 
@@ -67,14 +66,14 @@ func (w *WeaviateDB) Connect(config connection.ConnectionConfig) (err error) {
 
 	runConfig := normalizeWeaviateConfig(config)
 	if runConfig.UseSSH {
-		if runConfig, err = w.forwardThroughSSH(runConfig); err != nil {
+		if runConfig, w.forwarder, err = forwardRegistryHTTPThroughSSH(runConfig, "Weaviate"); err != nil {
 			return err
 		}
 	}
 
-	w.baseURL = buildWeaviateBaseURL(runConfig)
+	w.baseURL = registryHTTPBaseURL(runConfig)
 	w.authHeaders = weaviateAuthHeaders(runConfig)
-	w.client = buildWeaviateHTTPClient(runConfig)
+	w.client = buildRegistryHTTPClient(runConfig)
 	w.tenant = weaviateTenantFromConfig(runConfig)
 
 	ctx, cancel := context.WithTimeout(context.Background(), getConnectTimeout(runConfig))
@@ -98,12 +97,8 @@ func (w *WeaviateDB) serverVersion(ctx context.Context) (string, error) {
 
 // Close 释放 SSH 转发并清空元数据缓存。
 func (w *WeaviateDB) Close() error {
-	if w.forwarder != nil {
-		if err := w.forwarder.Release(); err != nil {
-			logger.Warnf("关闭 Weaviate SSH 端口转发失败：%v", err)
-		}
-		w.forwarder = nil
-	}
+	releaseRegistryHTTPForwarder(w.forwarder, "Weaviate")
+	w.forwarder = nil
 	w.client = nil
 	w.invalidateSchema()
 	return nil

@@ -6,11 +6,9 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
-	"time"
-	"unicode"
 )
 
-// 数据网格的筛选器生成标准 SQL 条件（值一律带引号，如 qty > '5'），这里按集合 schema 的数据类型
+// 把 registry_where.go 解析出的网格筛选条件按集合 schema 的数据类型
 // 翻译成 Weaviate 的 where 过滤器：IN 拆成 Or 等值、BETWEEN 拆成区间（旧版本没有 ContainsAny / Not），
 // NOT LIKE 等只能用 Not 表达的条件交给服务端判断是否支持。
 
@@ -79,337 +77,6 @@ func renderGraphQLValue(b *strings.Builder, value interface{}) {
 	}
 }
 
-type weaviateTokenKind int
-
-const (
-	weaviateTokWord weaviateTokenKind = iota
-	weaviateTokQuotedIdent
-	weaviateTokString
-	weaviateTokNumber
-	weaviateTokOperator
-	weaviateTokLParen
-	weaviateTokRParen
-	weaviateTokComma
-)
-
-type weaviateToken struct {
-	kind weaviateTokenKind
-	text string
-}
-
-func tokenizeWeaviateWhere(text string) ([]weaviateToken, error) {
-	tokens := make([]weaviateToken, 0, 16)
-	for i := 0; i < len(text); {
-		ch := text[i]
-		switch {
-		case ch < 0x80 && unicode.IsSpace(rune(ch)):
-			i++
-		case ch == '(':
-			tokens = append(tokens, weaviateToken{weaviateTokLParen, "("})
-			i++
-		case ch == ')':
-			tokens = append(tokens, weaviateToken{weaviateTokRParen, ")"})
-			i++
-		case ch == ',':
-			tokens = append(tokens, weaviateToken{weaviateTokComma, ","})
-			i++
-		case ch == '\'':
-			value, next, ok := readWeaviateQuoted(text, i, '\'')
-			if !ok {
-				return nil, weaviateWhereError(text[i:])
-			}
-			tokens = append(tokens, weaviateToken{weaviateTokString, value})
-			i = next
-		case ch == '"' || ch == '`':
-			value, next, ok := readWeaviateQuoted(text, i, ch)
-			if !ok {
-				return nil, weaviateWhereError(text[i:])
-			}
-			tokens = append(tokens, weaviateToken{weaviateTokQuotedIdent, value})
-			i = next
-		case ch == '[':
-			end := strings.IndexByte(text[i:], ']')
-			if end < 0 {
-				return nil, weaviateWhereError(text[i:])
-			}
-			tokens = append(tokens, weaviateToken{weaviateTokQuotedIdent, text[i+1 : i+end]})
-			i += end + 1
-		case strings.ContainsRune("=<>!", rune(ch)):
-			start := i
-			i++
-			if i < len(text) && (text[i] == '=' || (ch == '<' && text[i] == '>')) {
-				i++
-			}
-			op := text[start:i]
-			if op == "!" {
-				return nil, weaviateWhereError(op)
-			}
-			tokens = append(tokens, weaviateToken{weaviateTokOperator, op})
-		case ch == '-' || ch == '+' || ch == '.' || (ch >= '0' && ch <= '9'):
-			start := i
-			i++
-			for i < len(text) && (isSQLWordByte(text[i]) || text[i] == '.' || ((text[i] == '-' || text[i] == '+') && (text[i-1] == 'e' || text[i-1] == 'E'))) {
-				i++
-			}
-			raw := text[start:i]
-			if _, err := strconv.ParseFloat(raw, 64); err != nil {
-				return nil, weaviateWhereError(raw)
-			}
-			tokens = append(tokens, weaviateToken{weaviateTokNumber, raw})
-		case isSQLWordByte(ch) || ch >= 0x80:
-			start := i
-			for i < len(text) && (isSQLWordByte(text[i]) || text[i] == '.' || text[i] >= 0x80) {
-				i++
-			}
-			tokens = append(tokens, weaviateToken{weaviateTokWord, text[start:i]})
-		default:
-			return nil, weaviateWhereError(string(ch))
-		}
-	}
-	return tokens, nil
-}
-
-// readWeaviateQuoted 读取引号包裹的内容，支持重复引号转义（'it”s'）与字符串里的反斜杠转义。
-func readWeaviateQuoted(text string, start int, quote byte) (string, int, bool) {
-	var b strings.Builder
-	for i := start + 1; i < len(text); i++ {
-		ch := text[i]
-		if ch == '\\' && quote == '\'' && i+1 < len(text) {
-			b.WriteByte(text[i+1])
-			i++
-			continue
-		}
-		if ch == quote {
-			if i+1 < len(text) && text[i+1] == quote {
-				b.WriteByte(quote)
-				i++
-				continue
-			}
-			return b.String(), i + 1, true
-		}
-		b.WriteByte(ch)
-	}
-	return "", len(text), false
-}
-
-func weaviateWhereError(near string) error {
-	if len(near) > 40 {
-		near = near[:40]
-	}
-	return localizedDatabaseRuntimeError("db.backend.error.weaviate_where_unsupported", map[string]any{"token": strings.TrimSpace(near)})
-}
-
-type weaviateLiteral struct {
-	kind weaviateTokenKind // weaviateTokString / weaviateTokNumber / weaviateTokWord（TRUE、FALSE）
-	text string
-}
-
-type weaviateCondition struct {
-	field  string
-	op     string
-	values []weaviateLiteral
-}
-
-type weaviateLogical struct {
-	op       string // And / Or / Not
-	operands []interface{}
-}
-
-type weaviateWhereParser struct {
-	tokens []weaviateToken
-	pos    int
-}
-
-func parseWeaviateWhere(text string) (interface{}, error) {
-	tokens, err := tokenizeWeaviateWhere(text)
-	if err != nil {
-		return nil, err
-	}
-	if len(tokens) == 0 {
-		return nil, weaviateWhereError(text)
-	}
-	parser := weaviateWhereParser{tokens: tokens}
-	node, err := parser.parseOr()
-	if err != nil {
-		return nil, err
-	}
-	if parser.pos != len(tokens) {
-		return nil, weaviateWhereError(tokens[parser.pos].text)
-	}
-	return node, nil
-}
-
-func (p *weaviateWhereParser) peekKeyword(keyword string) bool {
-	return p.pos < len(p.tokens) && p.tokens[p.pos].kind == weaviateTokWord && strings.EqualFold(p.tokens[p.pos].text, keyword)
-}
-
-func (p *weaviateWhereParser) acceptKeyword(keyword string) bool {
-	if p.peekKeyword(keyword) {
-		p.pos++
-		return true
-	}
-	return false
-}
-
-func (p *weaviateWhereParser) accept(kind weaviateTokenKind) (weaviateToken, bool) {
-	if p.pos < len(p.tokens) && p.tokens[p.pos].kind == kind {
-		token := p.tokens[p.pos]
-		p.pos++
-		return token, true
-	}
-	return weaviateToken{}, false
-}
-
-func (p *weaviateWhereParser) errorHere() error {
-	if p.pos < len(p.tokens) {
-		return weaviateWhereError(p.tokens[p.pos].text)
-	}
-	return weaviateWhereError("")
-}
-
-func (p *weaviateWhereParser) parseOr() (interface{}, error) {
-	return p.parseChain("OR", "Or", p.parseAnd)
-}
-
-func (p *weaviateWhereParser) parseAnd() (interface{}, error) {
-	return p.parseChain("AND", "And", p.parseNot)
-}
-
-func (p *weaviateWhereParser) parseChain(keyword, op string, next func() (interface{}, error)) (interface{}, error) {
-	first, err := next()
-	if err != nil {
-		return nil, err
-	}
-	operands := []interface{}{first}
-	for p.acceptKeyword(keyword) {
-		operand, err := next()
-		if err != nil {
-			return nil, err
-		}
-		operands = append(operands, operand)
-	}
-	if len(operands) == 1 {
-		return first, nil
-	}
-	return weaviateLogical{op: op, operands: operands}, nil
-}
-
-func (p *weaviateWhereParser) parseNot() (interface{}, error) {
-	if p.acceptKeyword("NOT") {
-		operand, err := p.parseNot()
-		if err != nil {
-			return nil, err
-		}
-		return weaviateLogical{op: "Not", operands: []interface{}{operand}}, nil
-	}
-	if _, ok := p.accept(weaviateTokLParen); ok {
-		node, err := p.parseOr()
-		if err != nil {
-			return nil, err
-		}
-		if _, ok := p.accept(weaviateTokRParen); !ok {
-			return nil, p.errorHere()
-		}
-		return node, nil
-	}
-	return p.parseCondition()
-}
-
-func (p *weaviateWhereParser) parseCondition() (interface{}, error) {
-	fieldToken, ok := p.accept(weaviateTokQuotedIdent)
-	if !ok {
-		fieldToken, ok = p.accept(weaviateTokWord)
-	}
-	if !ok {
-		return nil, p.errorHere()
-	}
-	condition := weaviateCondition{field: fieldToken.text}
-	if token, ok := p.accept(weaviateTokOperator); ok {
-		condition.op = token.text
-		if condition.op == "<>" {
-			condition.op = "!="
-		}
-		value, err := p.parseLiteral()
-		if err != nil {
-			return nil, err
-		}
-		condition.values = []weaviateLiteral{value}
-		return condition, nil
-	}
-	if p.acceptKeyword("IS") {
-		condition.op = "IS NULL"
-		if p.acceptKeyword("NOT") {
-			condition.op = "IS NOT NULL"
-		}
-		if !p.acceptKeyword("NULL") {
-			return nil, p.errorHere()
-		}
-		return condition, nil
-	}
-	negated := p.acceptKeyword("NOT")
-	prefix := ""
-	if negated {
-		prefix = "NOT "
-	}
-	switch {
-	case p.acceptKeyword("LIKE"):
-		value, err := p.parseLiteral()
-		if err != nil {
-			return nil, err
-		}
-		condition.op, condition.values = prefix+"LIKE", []weaviateLiteral{value}
-	case p.acceptKeyword("IN"):
-		if _, ok := p.accept(weaviateTokLParen); !ok {
-			return nil, p.errorHere()
-		}
-		for {
-			value, err := p.parseLiteral()
-			if err != nil {
-				return nil, err
-			}
-			condition.values = append(condition.values, value)
-			if _, ok := p.accept(weaviateTokComma); !ok {
-				break
-			}
-		}
-		if _, ok := p.accept(weaviateTokRParen); !ok {
-			return nil, p.errorHere()
-		}
-		condition.op = prefix + "IN"
-	case p.acceptKeyword("BETWEEN"):
-		low, err := p.parseLiteral()
-		if err != nil {
-			return nil, err
-		}
-		if !p.acceptKeyword("AND") {
-			return nil, p.errorHere()
-		}
-		high, err := p.parseLiteral()
-		if err != nil {
-			return nil, err
-		}
-		condition.op, condition.values = prefix+"BETWEEN", []weaviateLiteral{low, high}
-	default:
-		return nil, p.errorHere()
-	}
-	return condition, nil
-}
-
-func (p *weaviateWhereParser) parseLiteral() (weaviateLiteral, error) {
-	if token, ok := p.accept(weaviateTokString); ok {
-		return weaviateLiteral{kind: weaviateTokString, text: token.text}, nil
-	}
-	if token, ok := p.accept(weaviateTokNumber); ok {
-		return weaviateLiteral{kind: weaviateTokNumber, text: token.text}, nil
-	}
-	if p.peekKeyword("TRUE") || p.peekKeyword("FALSE") {
-		token := p.tokens[p.pos]
-		p.pos++
-		return weaviateLiteral{kind: weaviateTokWord, text: strings.ToLower(token.text)}, nil
-	}
-	return weaviateLiteral{}, p.errorHere()
-}
-
 // weaviateFilterField 是过滤条件左侧解析出的路径与值类型。
 type weaviateFilterField struct {
 	path     string
@@ -459,7 +126,7 @@ func (w *WeaviateDB) valueKey(dataType string) string {
 	return "valueText"
 }
 
-func weaviateFilterValue(field weaviateFilterField, literal weaviateLiteral) (interface{}, error) {
+func weaviateFilterValue(field weaviateFilterField, literal registryWhereLiteral) (interface{}, error) {
 	invalid := func() error {
 		return localizedDatabaseRuntimeError("db.backend.error.weaviate_filter_value_invalid", map[string]any{"property": field.property, "dataType": field.dataType, "value": literal.text})
 	}
@@ -489,7 +156,7 @@ func weaviateFilterValue(field weaviateFilterField, literal weaviateLiteral) (in
 		}
 		return nil, invalid()
 	case "date":
-		value, ok := normalizeWeaviateDate(text)
+		value, ok := normalizeRegistryDate(text)
 		if !ok {
 			return nil, invalid()
 		}
@@ -499,22 +166,9 @@ func weaviateFilterValue(field weaviateFilterField, literal weaviateLiteral) (in
 	}
 }
 
-// normalizeWeaviateDate 把常见日期写法转成 Weaviate 要求的 RFC3339；无时区时按 UTC。
-func normalizeWeaviateDate(text string) (string, bool) {
-	if parsed, err := time.Parse(time.RFC3339Nano, text); err == nil {
-		return parsed.Format(time.RFC3339Nano), true
-	}
-	for _, layout := range []string{"2006-01-02T15:04:05", "2006-01-02 15:04:05", "2006-01-02 15:04:05.999999999", "2006-01-02"} {
-		if parsed, err := time.Parse(layout, text); err == nil {
-			return parsed.UTC().Format(time.RFC3339Nano), true
-		}
-	}
-	return "", false
-}
-
 func (w *WeaviateDB) renderFilter(class weaviateClass, node interface{}) (gqlObject, error) {
 	switch typed := node.(type) {
-	case weaviateLogical:
+	case registryWhereLogical:
 		operands := make([]gqlObject, 0, len(typed.operands))
 		for _, operand := range typed.operands {
 			rendered, err := w.renderFilter(class, operand)
@@ -524,25 +178,25 @@ func (w *WeaviateDB) renderFilter(class weaviateClass, node interface{}) (gqlObj
 			operands = append(operands, rendered)
 		}
 		return gqlObject{{"operator", gqlEnum(typed.op)}, {"operands", operands}}, nil
-	case weaviateCondition:
+	case registryWhereCondition:
 		return w.renderCondition(class, typed)
 	}
-	return nil, weaviateWhereError("")
+	return nil, registryWhereError("")
 }
 
-func (w *WeaviateDB) renderCondition(class weaviateClass, condition weaviateCondition) (gqlObject, error) {
+func (w *WeaviateDB) renderCondition(class weaviateClass, condition registryWhereCondition) (gqlObject, error) {
 	field, err := w.resolveFilterField(class, condition.field)
 	if err != nil {
 		return nil, err
 	}
-	leaf := func(operator string, literal weaviateLiteral) (gqlObject, error) {
+	leaf := func(operator string, literal registryWhereLiteral) (gqlObject, error) {
 		value, err := weaviateFilterValue(field, literal)
 		if err != nil {
 			return nil, err
 		}
 		return gqlObject{{"path", []string{field.path}}, {"operator", gqlEnum(operator)}, {w.valueKey(field.dataType), value}}, nil
 	}
-	combine := func(op string, operator string, literals []weaviateLiteral) (gqlObject, error) {
+	combine := func(op string, operator string, literals []registryWhereLiteral) (gqlObject, error) {
 		operands := make([]gqlObject, 0, len(literals))
 		for _, literal := range literals {
 			rendered, err := leaf(operator, literal)
@@ -589,20 +243,20 @@ func (w *WeaviateDB) renderCondition(class weaviateClass, condition weaviateCond
 	if operator, ok := comparisons[condition.op]; ok {
 		return leaf(operator, condition.values[0])
 	}
-	return nil, weaviateWhereError(condition.op)
+	return nil, registryWhereError(condition.op)
 }
 
 // parseWeaviateOrderBy 解析 ORDER BY 列表为 Weaviate sort 参数。
 func (w *WeaviateDB) parseWeaviateOrderBy(class weaviateClass, text string) ([]gqlObject, error) {
-	tokens, err := tokenizeWeaviateWhere(text)
+	tokens, err := tokenizeRegistryWhere(text)
 	if err != nil {
 		return nil, err
 	}
 	sorts := make([]gqlObject, 0, 2)
 	for i := 0; i < len(tokens); {
 		token := tokens[i]
-		if token.kind != weaviateTokWord && token.kind != weaviateTokQuotedIdent {
-			return nil, weaviateWhereError(token.text)
+		if token.kind != registryWhereTokWord && token.kind != registryWhereTokQuotedIdent {
+			return nil, registryWhereError(token.text)
 		}
 		field, err := w.resolveFilterField(class, token.text)
 		if err != nil {
@@ -610,7 +264,7 @@ func (w *WeaviateDB) parseWeaviateOrderBy(class weaviateClass, text string) ([]g
 		}
 		order := "asc"
 		i++
-		if i < len(tokens) && tokens[i].kind == weaviateTokWord {
+		if i < len(tokens) && tokens[i].kind == registryWhereTokWord {
 			switch strings.ToUpper(tokens[i].text) {
 			case "ASC":
 				i++
@@ -621,8 +275,8 @@ func (w *WeaviateDB) parseWeaviateOrderBy(class weaviateClass, text string) ([]g
 		}
 		sorts = append(sorts, gqlObject{{"path", []string{field.path}}, {"order", gqlEnum(order)}})
 		if i < len(tokens) {
-			if tokens[i].kind != weaviateTokComma {
-				return nil, weaviateWhereError(tokens[i].text)
+			if tokens[i].kind != registryWhereTokComma {
+				return nil, registryWhereError(tokens[i].text)
 			}
 			i++
 		}

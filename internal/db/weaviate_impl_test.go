@@ -114,9 +114,9 @@ func renderTestFilter(t *testing.T, client *WeaviateDB, where string) string {
 	if err != nil {
 		t.Fatalf("findClass() error = %v", err)
 	}
-	node, err := parseWeaviateWhere(where)
+	node, err := parseRegistryWhere(where)
 	if err != nil {
-		t.Fatalf("parseWeaviateWhere(%q) error = %v", where, err)
+		t.Fatalf("parseRegistryWhere(%q) error = %v", where, err)
 	}
 	filter, err := client.renderFilter(class, node)
 	if err != nil {
@@ -151,7 +151,7 @@ func TestWeaviateWhereRejectsInvalidFilters(t *testing.T) {
 	client := newWeaviateTestDB(t, &weaviateMock{version: "1.39.8", classes: weaviateTestClasses()}, "")
 	class, _ := client.findClass(t.Context(), "Article")
 	for _, where := range []string{`"views" > 'many'`, `"missing" = 1`, `"author" = 'x'`, `"title" = `, `("views" > 1`} {
-		node, err := parseWeaviateWhere(where)
+		node, err := parseRegistryWhere(where)
 		if err == nil {
 			_, err = client.renderFilter(class, node)
 		}

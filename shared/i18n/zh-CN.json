@@ -11844,7 +11844,7 @@
   "db.backend.error.weaviate_graphql_failed": "Weaviate GraphQL 查询失败：{{detail}}",
   "db.backend.error.weaviate_class_not_found": "集合 {{class}} 不存在",
   "db.backend.error.weaviate_tenant_required": "集合 {{class}} 启用了多租户：请在导航树中展开租户后再访问，或在连接参数里设置 tenant",
-  "db.backend.error.weaviate_where_unsupported": "不支持的 WHERE 写法，位置：{{token}}",
+  "db.backend.error.where_syntax_unsupported": "不支持的 WHERE 写法，位置：{{token}}",
   "db.backend.error.weaviate_property_not_found": "集合 {{class}} 没有属性 {{property}}",
   "db.backend.error.weaviate_filter_unsupported": "属性 {{property}}（{{dataType}}）不能用于 WHERE 过滤或排序",
   "db.backend.error.weaviate_filter_value_invalid": "值 {{value}} 不是属性 {{property}} 需要的 {{dataType}} 类型",

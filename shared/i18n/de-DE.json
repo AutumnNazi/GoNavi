@@ -11844,7 +11844,7 @@
   "db.backend.error.weaviate_graphql_failed": "Weaviate-GraphQL-Abfrage fehlgeschlagen: {{detail}}",
   "db.backend.error.weaviate_class_not_found": "Collection {{class}} existiert nicht",
   "db.backend.error.weaviate_tenant_required": "Für Collection {{class}} ist Mandantenfähigkeit aktiviert: Öffnen Sie sie im Navigationsbaum unter einem Mandanten oder setzen Sie den Verbindungsparameter tenant",
-  "db.backend.error.weaviate_where_unsupported": "Nicht unterstützte WHERE-Syntax bei: {{token}}",
+  "db.backend.error.where_syntax_unsupported": "Nicht unterstützte WHERE-Syntax bei: {{token}}",
   "db.backend.error.weaviate_property_not_found": "Collection {{class}} hat keine Eigenschaft {{property}}",
   "db.backend.error.weaviate_filter_unsupported": "Eigenschaft {{property}} ({{dataType}}) kann nicht in WHERE-Filtern oder zur Sortierung verwendet werden",
   "db.backend.error.weaviate_filter_value_invalid": "Wert {{value}} ist kein gültiger {{dataType}}-Wert für die Eigenschaft {{property}}",

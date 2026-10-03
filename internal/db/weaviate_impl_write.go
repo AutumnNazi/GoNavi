@@ -431,7 +431,7 @@ func weaviateCoerceScalar(property weaviateProperty, base string, value interfac
 		if typed, ok := value.(time.Time); ok {
 			return typed.Format(time.RFC3339Nano), nil
 		}
-		if date, ok := normalizeWeaviateDate(text); ok {
+		if date, ok := normalizeRegistryDate(text); ok {
 			return date, nil
 		}
 		return nil, weaviateValueError(property, value)

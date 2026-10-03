@@ -11844,7 +11844,7 @@
   "db.backend.error.weaviate_graphql_failed": "Ошибка GraphQL-запроса Weaviate: {{detail}}",
   "db.backend.error.weaviate_class_not_found": "Коллекция {{class}} не существует",
   "db.backend.error.weaviate_tenant_required": "Для коллекции {{class}} включена мультиарендность: откройте её под арендатором в дереве навигации или задайте параметр подключения tenant",
-  "db.backend.error.weaviate_where_unsupported": "Неподдерживаемый синтаксис WHERE возле: {{token}}",
+  "db.backend.error.where_syntax_unsupported": "Неподдерживаемый синтаксис WHERE возле: {{token}}",
   "db.backend.error.weaviate_property_not_found": "В коллекции {{class}} нет свойства {{property}}",
   "db.backend.error.weaviate_filter_unsupported": "Свойство {{property}} ({{dataType}}) нельзя использовать в фильтрах WHERE и сортировке",
   "db.backend.error.weaviate_filter_value_invalid": "Значение {{value}} не является допустимым {{dataType}} для свойства {{property}}",

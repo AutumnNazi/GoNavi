@@ -6,19 +6,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
-	"time"
 
 	"GoNavi-Wails/internal/connection"
-	"GoNavi-Wails/internal/logger"
-	proxytunnel "GoNavi-Wails/internal/proxy"
-	"GoNavi-Wails/internal/ssh"
 )
 
 // weaviateHTTPError 是服务端已返回的 HTTP 错误；传输层错误不是这个类型，写入时据此判断结果是否未知。
@@ -31,65 +24,11 @@ func (e *weaviateHTTPError) Error() string { return e.message }
 
 // normalizeWeaviateConfig 解析 http(s):// 与 weaviate:// 连接串，补默认主机与端口。
 func normalizeWeaviateConfig(config connection.ConnectionConfig) connection.ConnectionConfig {
-	runConfig := applyWeaviateURI(rewriteURIScheme(config, "http", "weaviate"))
-	if strings.TrimSpace(runConfig.Host) == "" {
-		runConfig.Host = "localhost"
-	}
-	if runConfig.Port <= 0 {
-		runConfig.Port = defaultWeaviatePort
-	}
-	if strings.TrimSpace(runConfig.SSLMode) == "" && runConfig.UseSSL {
-		runConfig.SSLMode = "required"
-	}
-	return runConfig
-}
-
-func applyWeaviateURI(config connection.ConnectionConfig) connection.ConnectionConfig {
-	text := strings.TrimSpace(config.URI)
-	if text == "" {
-		return config
-	}
-	parsed, err := url.Parse(text)
-	if err != nil {
-		return config
-	}
-	scheme := strings.ToLower(parsed.Scheme)
-	if scheme != "http" && scheme != "https" {
-		return config
-	}
-	if scheme == "https" {
-		config.UseSSL = true
-	}
-	if parsed.User != nil {
-		if pass, ok := parsed.User.Password(); ok && config.Password == "" {
-			config.Password = pass
-		}
-	}
-	if host := parsed.Hostname(); host != "" {
-		config.Host = host
-		config.Port = 0
-		if port, err := strconv.Atoi(parsed.Port()); err == nil && port > 0 {
-			config.Port = port
-		} else if scheme == "https" && parsed.Port() == "" {
-			config.Port = 443
-		}
-	}
-	return config
-}
-
-func buildWeaviateBaseURL(config connection.ConnectionConfig) string {
-	scheme := "http"
-	if config.UseSSL {
-		scheme = "https"
-	}
-	return fmt.Sprintf("%s://%s", scheme, net.JoinHostPort(strings.TrimSpace(config.Host), strconv.Itoa(config.Port)))
+	return normalizeRegistryHTTPConfig(config, defaultWeaviatePort, "weaviate")
 }
 
 func weaviateConnectionParams(config connection.ConnectionConfig) url.Values {
-	params := url.Values{}
-	mergeConnectionParamValues(params, connectionParamsFromURI(config.URI, "http", "https", "weaviate"))
-	mergeConnectionParamValues(params, connectionParamsFromText(config.ConnectionParams))
-	return params
+	return registryHTTPConnectionParams(config, "weaviate")
 }
 
 // weaviateTenantFromConfig 返回当前租户：导航树选中的库（default 表示不指定租户），其次是 tenant 连接参数。
@@ -118,51 +57,10 @@ func weaviateAuthHeaders(config connection.ConnectionConfig) map[string]string {
 	if apiKey != "" {
 		headers["Authorization"] = "Bearer " + apiKey
 	}
-	for name, values := range params {
-		if len(name) <= len("header.") || !strings.EqualFold(name[:len("header.")], "header.") || len(values) == 0 {
-			continue
-		}
-		headerName := strings.TrimSpace(name[len("header."):])
-		if value := strings.TrimSpace(values[0]); value != "" && isSafeConnectionParamKey(headerName) && !strings.Contains(headerName, " ") {
-			headers[headerName] = value
-		}
+	for name, value := range registryHTTPHeaderParams(params) {
+		headers[name] = value
 	}
 	return headers
-}
-
-func buildWeaviateHTTPClient(config connection.ConnectionConfig) *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	dialTimeout := getConnectTimeout(config)
-	transport.DialContext = (&net.Dialer{Timeout: dialTimeout, KeepAlive: 30 * time.Second}).DialContext
-	if tlsConfig, err := resolveGenericTLSConfig(config); err == nil && tlsConfig != nil {
-		transport.TLSClientConfig = tlsConfig
-	}
-	if config.UseProxy {
-		proxyCfg := config.Proxy
-		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-			dialCtx, cancel := context.WithTimeout(ctx, dialTimeout)
-			defer cancel()
-			return proxytunnel.DialContext(dialCtx, proxyCfg, network, addr)
-		}
-	}
-	return &http.Client{Transport: transport}
-}
-
-// forwardThroughSSH 建立 SSH 本地转发，返回改写为本地地址的配置。
-func (w *WeaviateDB) forwardThroughSSH(config connection.ConnectionConfig) (connection.ConnectionConfig, error) {
-	forwarder, err := ssh.AcquireLocalForwarder(config.SSH, config.Host, config.Port)
-	if err != nil {
-		return config, localizedDatabaseRuntimeError("db.backend.error.ssh_tunnel_create_failed", map[string]any{"detail": err.Error()})
-	}
-	w.forwarder = forwarder
-	host, portText, splitErr := net.SplitHostPort(forwarder.LocalAddr)
-	port, convErr := strconv.Atoi(portText)
-	if splitErr != nil || convErr != nil {
-		return config, localizedDatabaseRuntimeError("db.backend.error.ssh_local_forward_addr_invalid", map[string]any{"address": forwarder.LocalAddr})
-	}
-	logger.Infof("Weaviate 通过本地端口转发连接：%s -> %s:%d", forwarder.LocalAddr, config.Host, config.Port)
-	config.Host, config.Port, config.UseSSH = host, port, false
-	return config, nil
 }
 
 // doRaw 发出请求并返回 2xx 响应体；body 为 nil 时不带请求体。
