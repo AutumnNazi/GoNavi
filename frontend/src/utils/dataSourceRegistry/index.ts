@@ -54,7 +54,7 @@ export const isRegistryDataSource = (value: unknown): boolean => resolveDataSour
 export const isDataSourceFamily = (value: unknown, family: string): boolean =>
   getDataSourceSpec(value)?.family === family;
 
-/** 按编辑器方言键查找描述（resolveSqlDialect 对描述表类型返回 spec.dialect）。 */
+/** 按方言键查找描述（resolveSqlDialect 对未借用方言的描述表类型返回 spec.dialect）。 */
 export const getDataSourceSpecByDialect = (dialect: unknown): DataSourceSpec | undefined =>
   specsByDialect.get(normalizeName(dialect));
 

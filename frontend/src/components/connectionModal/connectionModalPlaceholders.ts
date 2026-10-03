@@ -1,13 +1,14 @@
 import { t } from '../../i18n';
 import { isMySQLCompatibleType, isFileDatabaseType } from '../../utils/connectionTypeCapabilities';
 import { getConnectionTypeDefaultPort as getDefaultPortByType } from '../../utils/connectionTypeCatalog';
+import { getRegistryUriScheme } from '../../utils/dataSourceRegistry/uriScheme';
 import type { OceanBaseProtocolChoice } from './connectionModalUri';
 
 export const getUriPlaceholder = (dbType: string) => {
   if (isMySQLCompatibleType(dbType)) {
     const defaultPort = getDefaultPortByType(dbType);
     const scheme =
-      dbType === "diros" ? "doris" : dbType === "starrocks" ? "starrocks" : dbType === "oceanbase" ? "oceanbase" : dbType === "goldendb" ? "goldendb" : "mysql";
+      getRegistryUriScheme(dbType) ?? (dbType === "diros" ? "doris" : dbType === "starrocks" ? "starrocks" : dbType === "oceanbase" ? "oceanbase" : dbType === "goldendb" ? "goldendb" : "mysql");
     if (dbType === "oceanbase") {
       return `${scheme}://sys%40oracle001:pass@127.0.0.1:${defaultPort}?protocol=oracle`;
     }
@@ -80,8 +81,11 @@ export const getUriPlaceholder = (dbType: string) => {
   if (dbType === "gaussdb") {
     return "gaussdb://user:pass@127.0.0.1:5432/db_name";
   }
+  const registryScheme = getRegistryUriScheme(dbType);
   return t("connection.modal.example", {
-    value: "postgres://user:pass@127.0.0.1:5432/db_name",
+    value: registryScheme
+      ? `${registryScheme}://user:pass@127.0.0.1:${getDefaultPortByType(dbType)}/db_name`
+      : "postgres://user:pass@127.0.0.1:5432/db_name",
   });
 };
 

@@ -1,5 +1,6 @@
 import type { SavedConnection } from "../../types";
 import { buildRpcConnectionConfig } from "../../utils/connectionRpcConfig";
+import { isDataSourceFamily } from "../../utils/dataSourceRegistry";
 import { splitQualifiedNameLast } from "../../utils/qualifiedName";
 import {
   resolveSidebarRuntimeDatabase,
@@ -63,6 +64,8 @@ export const shouldHideSchemaPrefix = (conn: SavedConnection | undefined): boole
     .trim()
     .toLowerCase();
   if (SIDEBAR_SCHEMA_DB_TYPES.has(dbType)) return true;
+  // 描述表里 PostgreSQL 家族的数据源（CockroachDB、KWDB）与 PostgreSQL 一样按 schema 分组显示表名。
+  if (isDataSourceFamily(dbType, "postgres")) return true;
   if (dbType !== "custom") return false;
 
   const customDriver = String(conn?.config?.driver || "")

@@ -7,6 +7,7 @@ import {
   supportsSSLForType,
 } from "../../utils/connectionTypeCapabilities";
 import { parseRedisUriToFormValues } from "../../utils/redisConnectionUri";
+import { findRegistryUriScheme } from "../../utils/dataSourceRegistry/uriScheme";
 import { extractNacosConnectionScope } from "../../utils/nacosConnectionScope";
 import {
   MAX_URI_LENGTH,
@@ -47,6 +48,7 @@ export const parseUriToValues = (
 
   if (isMySQLCompatibleType(type)) {
     const mysqlDefaultPort = getDefaultPortByType(type);
+    const registryScheme = findRegistryUriScheme(type, trimmedUri);
     const parsed =
       parseMultiHostUri(trimmedUri, "mysql") ||
       parseMultiHostUri(trimmedUri, "goldendb") ||
@@ -58,7 +60,8 @@ export const parseUriToValues = (
       parseMultiHostUri(trimmedUri, "starrocks") ||
       parseMultiHostUri(trimmedUri, "jdbc:starrocks") ||
       parseMultiHostUri(trimmedUri, "diros") ||
-      parseMultiHostUri(trimmedUri, "doris");
+      parseMultiHostUri(trimmedUri, "doris") ||
+      (registryScheme ? parseMultiHostUri(trimmedUri, registryScheme) : null);
     if (!parsed) {
       return null;
     }

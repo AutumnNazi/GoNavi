@@ -10,6 +10,10 @@ import {
   buildSidebarRuntimeConfig,
 } from "./sidebarMetadataBasics";
 
+// PostgreSQL 家族的系统 schema；CockroachDB / KWDB 另有 crdb_internal / kwdb_internal（内置函数与虚拟表），
+// PostgreSQL 不会出现这两个名字。
+const PG_SYSTEM_SCHEMAS = "'pg_catalog', 'information_schema', 'crdb_internal', 'kwdb_internal'";
+
 export const buildViewsMetadataQuerySpecs = (
   dialect: string,
   dbName: string,
@@ -192,15 +196,15 @@ export const buildFunctionsMetadataQuerySpecs = (
       return normalizeMetadataQuerySpecs([
         {
           // PostgreSQL 11+ / 部分 PG-like：通过 prokind 区分 FUNCTION/PROCEDURE
-          sql: `SELECT n.nspname AS schema_name, p.proname AS routine_name, CASE WHEN p.prokind = 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END AS routine_type FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg|_%' ESCAPE '|' ORDER BY n.nspname, routine_type, p.proname`,
+          sql: `SELECT n.nspname AS schema_name, p.proname AS routine_name, CASE WHEN p.prokind = 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END AS routine_type FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname NOT IN (${PG_SYSTEM_SCHEMAS}) AND n.nspname NOT LIKE 'pg|_%' ESCAPE '|' ORDER BY n.nspname, routine_type, p.proname`,
         },
         {
           // PostgreSQL 10 / 不支持 prokind 的兼容路径
-          sql: `SELECT r.routine_schema AS schema_name, r.routine_name AS routine_name, COALESCE(NULLIF(UPPER(r.routine_type), ''), 'FUNCTION') AS routine_type FROM information_schema.routines r WHERE r.routine_schema NOT IN ('pg_catalog', 'information_schema') AND r.routine_schema NOT LIKE 'pg|_%' ESCAPE '|' ORDER BY r.routine_schema, routine_type, r.routine_name`,
+          sql: `SELECT r.routine_schema AS schema_name, r.routine_name AS routine_name, COALESCE(NULLIF(UPPER(r.routine_type), ''), 'FUNCTION') AS routine_type FROM information_schema.routines r WHERE r.routine_schema NOT IN (${PG_SYSTEM_SCHEMAS}) AND r.routine_schema NOT LIKE 'pg|_%' ESCAPE '|' ORDER BY r.routine_schema, routine_type, r.routine_name`,
         },
         {
           // 最后兜底：仅函数列表，确保 prokind/routines 视图异常时仍可展示
-          sql: `SELECT n.nspname AS schema_name, p.proname AS routine_name, 'FUNCTION' AS routine_type FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg|_%' ESCAPE '|' ORDER BY n.nspname, p.proname`,
+          sql: `SELECT n.nspname AS schema_name, p.proname AS routine_name, 'FUNCTION' AS routine_type FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname NOT IN (${PG_SYSTEM_SCHEMAS}) AND n.nspname NOT LIKE 'pg|_%' ESCAPE '|' ORDER BY n.nspname, p.proname`,
         },
       ]);
     case "sqlserver": {
@@ -329,7 +333,7 @@ export const buildSchemasMetadataQuerySpecs = (
   if (isPostgresSchemaDialect(dialect)) {
     return [
       {
-        sql: `SELECT nspname AS schema_name FROM pg_namespace WHERE nspname NOT IN ('pg_catalog', 'information_schema') AND nspname NOT LIKE 'pg|_%' ESCAPE '|' ORDER BY nspname`,
+        sql: `SELECT nspname AS schema_name FROM pg_namespace WHERE nspname NOT IN (${PG_SYSTEM_SCHEMAS}) AND nspname NOT LIKE 'pg|_%' ESCAPE '|' ORDER BY nspname`,
       },
     ];
   }

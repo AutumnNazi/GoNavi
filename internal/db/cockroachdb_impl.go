@@ -5,6 +5,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"GoNavi-Wails/internal/connection"
@@ -12,6 +13,10 @@ import (
 )
 
 const defaultCockroachPort = 26257
+
+// cockroachDefaultSearchPath 与 CockroachDB / KWDB 会话默认值一致。显式写入后 PostgresDB 不再把库里全部
+// schema（含 crdb_internal / kwdb_internal）拼成 search_path，编辑器的默认 schema 保持为 public。
+const cockroachDefaultSearchPath = "$user,public"
 
 // cockroachFlavor 区分 CockroachDB 与基于其早期版本的 KWDB：内部 schema 名、
 // URI scheme 与元数据语句的可用性不同。
@@ -61,7 +66,7 @@ func (c *CockroachDB) currentFlavor() cockroachFlavor {
 // Connect 复用 PostgreSQL 连接链路（SSL、SSH、代理），默认端口 26257，并识别服务端版本确定档位。
 func (c *CockroachDB) Connect(config connection.ConnectionConfig) error {
 	flavor := c.currentFlavor()
-	runConfig := rewriteURIScheme(config, "postgresql", flavor.uriSchemes...)
+	runConfig := withCockroachSearchPath(rewriteURIScheme(config, "postgresql", flavor.uriSchemes...))
 	if runConfig.Port <= 0 {
 		runConfig.Port = defaultCockroachPort
 	}
@@ -79,6 +84,20 @@ func (c *CockroachDB) Connect(config connection.ConnectionConfig) error {
 		return err
 	}
 	return nil
+}
+
+// withCockroachSearchPath 在用户没有通过连接参数或 URI 指定 search_path 时写入会话默认值。
+func withCockroachSearchPath(config connection.ConnectionConfig) connection.ConnectionConfig {
+	params := connectionParamsFromText(config.ConnectionParams)
+	if params.Get("search_path") != "" || connectionParamsFromURI(config.URI, "postgresql", "postgres").Get("search_path") != "" {
+		return config
+	}
+	if params == nil {
+		params = url.Values{}
+	}
+	params.Set("search_path", cockroachDefaultSearchPath)
+	config.ConnectionParams = params.Encode()
+	return config
 }
 
 // extractCockroachVersion 从 "CockroachDB CCL v24.3.36 (x86_64-...)"、"KaiwuDB 3.2.2 (...)" 里取版本号。

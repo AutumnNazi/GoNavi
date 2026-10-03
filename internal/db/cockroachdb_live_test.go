@@ -27,6 +27,11 @@ func seedPGWireRelational(t *testing.T, admin Database, database string) {
 
 func assertPGWireRelationalMetadata(t *testing.T, client Database, internalSchema string) {
 	t.Helper()
+	// 连接时写入的 search_path 不能带上内部 schema，否则编辑器默认 schema 会落到内部 schema 上。
+	rows, _, err := client.Query("SELECT current_schema() AS schema_name")
+	if err != nil || len(rows) != 1 || fmt.Sprint(rows[0]["schema_name"]) != "public" {
+		t.Fatalf("current schema %v: %v", rows, err)
+	}
 	tables, err := client.GetTables("")
 	if err != nil || strings.Join(tables, ",") != "public.orders,public.users" {
 		t.Fatalf("tables %v: %v (internal schema %s must be hidden)", tables, err, internalSchema)

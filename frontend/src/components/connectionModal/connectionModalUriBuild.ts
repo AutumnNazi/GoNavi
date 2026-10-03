@@ -7,6 +7,7 @@ import {
   supportsConnectionParamsForType,
 } from "../../utils/connectionTypeCapabilities";
 import { buildRedisUriFromValues } from "../../utils/redisConnectionUri";
+import { getRegistryUriScheme } from "../../utils/dataSourceRegistry/uriScheme";
 import { extractNacosConnectionScope } from "../../utils/nacosConnectionScope";
 import {
   getPulsarDefaultPort,
@@ -148,7 +149,7 @@ export const buildUriFromValues = (values: any) => {
     const dbPath = database ? `/${encodeURIComponent(database)}` : "/";
     const query = params.toString();
     const scheme =
-      type === "diros" ? "doris" : type === "starrocks" ? "starrocks" : type === "oceanbase" ? "oceanbase" : type === "goldendb" ? "goldendb" : "mysql";
+      getRegistryUriScheme(type) ?? (type === "diros" ? "doris" : type === "starrocks" ? "starrocks" : type === "oceanbase" ? "oceanbase" : type === "goldendb" ? "goldendb" : "mysql");
     return `${scheme}://${encodedAuth}${hosts.join(",")}${dbPath}${query ? `?${query}` : ""}`;
   }
 

@@ -86,12 +86,14 @@ def agent_units(spec: dict) -> list[tuple[str, dict]]:
 
 
 def unit_entry_hash(spec: dict, unit: str) -> str:
-    """单元指纹：该数据源整条描述（含全部档位）的规范化 JSON 哈希，加上代理键。
+    """单元指纹：该数据源描述（含全部档位）的规范化 JSON 哈希，加上代理键。
 
     描述表通过 go:embed 进入代理，修订号脚本只哈希 Go 源码，所以要把描述本身纳入指纹；
-    只用本条描述，其他数据源的改动不会要求重装本驱动。
+    只用本条描述，其他数据源的改动不会要求重装本驱动。ui 段只给连接表单用、代理不读取，
+    不计入指纹，调整表单声明不会让用户重装驱动。
     """
-    canonical = json.dumps(spec, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    agent_relevant = {key: value for key, value in spec.items() if key != "ui"}
+    canonical = json.dumps(agent_relevant, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     payload = unit + "|" + canonical
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 

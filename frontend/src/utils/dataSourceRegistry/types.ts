@@ -1,4 +1,4 @@
-// 与 internal/datasource/datasources.json 保持字段一致；Go 侧读取同一份文档。
+// 与 internal/datasource/specs/<type>.json 保持字段一致；Go 侧读取同一批文件。
 
 export type DataSourceCatalogGroup =
   | 'relational'

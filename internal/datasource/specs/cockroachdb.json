@@ -64,6 +64,8 @@
     "connectionParams": true,
     "uriSchemes": [
       "cockroachdb",
+      "cockroach",
+      "crdb",
       "postgresql",
       "postgres"
     ],

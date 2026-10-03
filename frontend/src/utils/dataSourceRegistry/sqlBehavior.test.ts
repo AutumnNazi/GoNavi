@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { buildRegistryPaginatedSelectSQL, resolveRegistryQuoting } from './sqlBehavior';
 import { buildPaginatedSelectSQL, quoteIdentPart } from '../sql';
 import { isMysqlFamilyDialect, isPgLikeDialect, resolveSqlDialect, resolveTableAliasSyntax } from '../sqlDialectCore';
+import { resolveSidebarMetadataDialect } from '../sidebarMetadata';
 
 describe('registry SQL behavior', () => {
   it('quotes identifiers by compatibility family', () => {
@@ -20,7 +21,10 @@ describe('registry SQL behavior', () => {
   });
 
   it('resolves registry dialects and their families', () => {
-    expect(resolveSqlDialect('crdb')).toBe('cockroachdb');
+    expect(resolveSqlDialect('tidb')).toBe('mysql');
+    expect(resolveSqlDialect('crdb')).toBe('postgres');
+    expect(resolveSqlDialect('kaiwudb')).toBe('postgres');
+    expect(resolveSidebarMetadataDialect('tidb')).toBe('mysql');
     expect(isPgLikeDialect('cockroachdb')).toBe(true);
     expect(isPgLikeDialect('kwdb')).toBe(true);
     expect(isMysqlFamilyDialect('tidb')).toBe(true);

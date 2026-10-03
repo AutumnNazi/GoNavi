@@ -66,8 +66,9 @@ export const resolveSqlDialect = (
   if (source === 'oceanbase' && normalizeOceanBaseSqlProtocol(options?.oceanBaseProtocol) === 'oracle') {
     return 'oracle';
   }
+  // 借用方言的描述表数据源（TiDB → mysql、CockroachDB → postgres）在编辑器、侧栏与表设计器里按兼容方言处理。
   const registrySpec = getDataSourceSpec(source);
-  if (registrySpec) return registrySpec.dialect;
+  if (registrySpec) return registrySpec.ddlDialect || registrySpec.dialect;
 
   switch (source) {
     case 'postgresql':
