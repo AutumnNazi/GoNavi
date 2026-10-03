@@ -1959,7 +1959,18 @@ describe('TableExportWorkbench', () => {
   });
 
   it('offers DROP IF EXISTS only for SQL exports that include schema', () => {
-    const source = readFileSync(new URL('./TableExportWorkbench.tsx', import.meta.url), 'utf8');
+    // 配置区已拆为 tableExport/ 下的分区组件，按原顺序聚合源码
+    const source = [
+      './TableExportWorkbench.tsx',
+      './tableExport/TableExportIntentSection.tsx',
+      './tableExport/TableExportSingleScopeFields.tsx',
+      './tableExport/TableExportDirectSqlFields.tsx',
+      './tableExport/TableExportBatchTablesFields.tsx',
+      './tableExport/TableExportBatchDatabasesFields.tsx',
+      './tableExport/TableExportWorkbenchActions.tsx',
+    ]
+      .map((file) => readFileSync(new URL(file, import.meta.url), 'utf8'))
+      .join('\n');
     expect(source.match(/disabled=\{isConfigurationLocked\}/g)?.length || 0).toBeGreaterThanOrEqual(10);
   });
 
