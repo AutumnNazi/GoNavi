@@ -124,6 +124,14 @@ const readSidebarSource = () => [
   readSourceFile('./sidebar/SidebarConnectionRail.tsx'),
   readSourceFile('./sidebar/SidebarSearchPanel.tsx'),
   readSourceFile('./sidebar/sidebarNodeMenu.tsx'),
+  readSourceFile('./sidebar/sidebarNodeMenuHelpers.tsx'),
+  readSourceFile('./sidebar/sidebarNodeMenuObjectGroups.tsx'),
+  readSourceFile('./sidebar/sidebarNodeMenuConnection.tsx'),
+  readSourceFile('./sidebar/sidebarNodeMenuNacos.tsx'),
+  readSourceFile('./sidebar/sidebarNodeMenuDatabase.tsx'),
+  readSourceFile('./sidebar/sidebarNodeMenuObjects.tsx'),
+  readSourceFile('./sidebar/sidebarNodeMenuSavedQueries.tsx'),
+  readSourceFile('./sidebar/sidebarNodeMenuExternalSql.tsx'),
   readSourceFile('./sidebar/sidebarMetadataLoaders.ts'),
   readSourceFile('./sidebar/sidebarMetadataBasics.ts'),
   readSourceFile('./sidebar/sidebarMetadataNames.ts'),
@@ -132,12 +140,33 @@ const readSidebarSource = () => [
   readSourceFile('./sidebar/sidebarMetadataRoutineLoaders.ts'),
   readSourceFile('./sidebar/useSidebarBatchExport.ts'),
   readSourceFile('./sidebar/SidebarExternalSqlWorkflow.tsx'),
+  readSourceFile('./sidebar/sidebarExternalSqlLaunch.ts'),
+  readSourceFile('./sidebar/sidebarExternalSqlHelpers.ts'),
+  readSourceFile('./sidebar/SidebarExternalSqlModals.tsx'),
+  readSourceFile('./sidebar/useExternalSqlExecution.ts'),
+  readSourceFile('./sidebar/useExternalSqlBinding.ts'),
+  readSourceFile('./sidebar/useExternalSqlFileModal.ts'),
+  readSourceFile('./sidebar/useExternalSqlDirectoryActions.ts'),
   readSourceFile('./sidebar/useSidebarTreeLoaders.tsx'),
+  readSourceFile('./sidebar/sidebarTreeLoaderHelpers.tsx'),
+  readSourceFile('./sidebar/useSidebarTreeLoadState.ts'),
+  readSourceFile('./sidebar/useSidebarDatabaseLoader.tsx'),
+  readSourceFile('./sidebar/useSidebarJvmResourceLoader.tsx'),
+  readSourceFile('./sidebar/useSidebarTableLoader.tsx'),
+  readSourceFile('./sidebar/sidebarDatabaseChildren.tsx'),
+  readSourceFile('./sidebar/useSidebarNacosLoaders.tsx'),
   readSourceFile('./sidebar/SidebarEntityModals.tsx'),
   readSourceFile('./sidebar/SidebarTreeTitle.tsx'),
   readSourceFile('./sidebar/sidebarTreeDragOrder.ts'),
   readSourceFile('./sidebar/useSidebarV2ContextMenu.tsx'),
   readSourceFile('./sidebar/useSidebarObjectActions.tsx'),
+  readSourceFile('./sidebar/sidebarObjectActionHelpers.ts'),
+  readSourceFile('./sidebar/useSidebarCopyExportActions.tsx'),
+  readSourceFile('./sidebar/useSidebarDatabaseSchemaActions.tsx'),
+  readSourceFile('./sidebar/useSidebarTableAndViewActions.tsx'),
+  readSourceFile('./sidebar/useSidebarSavedQueryActions.tsx'),
+  readSourceFile('./sidebar/useSidebarRoutineActions.tsx'),
+  readSourceFile('./sidebar/useSidebarMessageQueueActions.tsx'),
   readSourceFile('./sidebar/useSidebarSearchModel.tsx'),
   readSourceFile('./sidebar/useSidebarV2ActionHandlers.tsx'),
   readSourceFile('./sidebar/useSidebarCommandSearchRunner.ts'),
@@ -152,7 +181,9 @@ const readSidebarSource = () => [
   readSourceFile('./sidebar/sidebarV2TreeDrop.ts'),
   readSourceFile('./sidebar/sidebarV2TreeExpansion.ts'),
 ].join('\n');
-const readNodeMenuSource = () => readSourceFile('./sidebar/sidebarNodeMenu.tsx');
+const readNodeMenuSource = () => ['sidebarNodeMenu.tsx', 'sidebarNodeMenuHelpers.tsx', 'sidebarNodeMenuObjectGroups.tsx', 'sidebarNodeMenuConnection.tsx', 'sidebarNodeMenuNacos.tsx', 'sidebarNodeMenuDatabase.tsx', 'sidebarNodeMenuObjects.tsx', 'sidebarNodeMenuSavedQueries.tsx', 'sidebarNodeMenuExternalSql.tsx']
+  .map((file) => readSourceFile(`./sidebar/${file}`))
+  .join('\n');
 
 const mocks = vi.hoisted(() => ({
   noop: vi.fn(),
@@ -2405,7 +2436,9 @@ describe('Sidebar locate toolbar', () => {
   it('wires database pin actions to persistence and in-memory tree reordering', () => {
     const actionSource = readSourceFile('./sidebar/useSidebarV2ActionHandlers.tsx');
     const contextMenuSource = readSourceFile('./sidebar/useSidebarV2ContextMenu.tsx');
-    const loaderSource = readSourceFile('./sidebar/useSidebarTreeLoaders.tsx');
+    const loaderSource = ['useSidebarTreeLoaders.tsx', 'sidebarTreeLoaderHelpers.tsx', 'useSidebarTreeLoadState.ts', 'useSidebarDatabaseLoader.tsx', 'useSidebarJvmResourceLoader.tsx', 'useSidebarTableLoader.tsx', 'sidebarDatabaseChildren.tsx', 'useSidebarNacosLoaders.tsx']
+      .map((file) => readSourceFile(`./sidebar/${file}`))
+      .join('\n');
 
     expect(actionSource).toContain("case 'pin-database':");
     expect(actionSource).toContain("case 'unpin-database':");
