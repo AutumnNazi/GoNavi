@@ -184,6 +184,10 @@ func shouldPreferPlainReadQueryResult(dbType string) bool {
 		// exposes a transport-level multi-result method, but reports it unsupported.
 		// Skipping that probe prevents a successful SELECT from becoming an empty result.
 		return true
+	case "trino":
+		// Trino（以及借用其方言的 Presto）一条语句就是一次 HTTP 查询，驱动没有多结果集接口；
+		// 带结果预算时代理会直接拒绝多结果集调用，只读语句必须走普通查询接口。
+		return true
 	default:
 		return registryPrefersPlainReadQuery(dbType)
 	}

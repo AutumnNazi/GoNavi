@@ -7,7 +7,7 @@ import {
   supportsSSLForType,
 } from "../../utils/connectionTypeCapabilities";
 import { parseRedisUriToFormValues } from "../../utils/redisConnectionUri";
-import { findRegistryUriScheme, usesHttpRegistryUri } from "../../utils/dataSourceRegistry/uriScheme";
+import { findRegistryUriScheme, usesHttpRegistryUri, usesTrinoStyleConnection } from "../../utils/dataSourceRegistry/uriScheme";
 import { extractNacosConnectionScope } from "../../utils/nacosConnectionScope";
 import {
   MAX_URI_LENGTH,
@@ -451,8 +451,8 @@ export const parseUriToValues = (
     };
   }
 
-  if (type === "trino") {
-    return parseTrinoUriToValues(trimmedUri);
+  if (usesTrinoStyleConnection(type)) {
+    return parseTrinoUriToValues(trimmedUri, type);
   }
 
   if (type === "clickhouse") {

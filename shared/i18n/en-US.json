@@ -11875,5 +11875,17 @@
   "db.backend.error.influxdb_delete_ambiguous": "This point has no tag {{tags}}; an InfluxDB 2.x delete predicate cannot exclude other series that have it, so the delete was refused to avoid removing them",
   "db.backend.error.influxdb_statement_unsupported": "SQL on InfluxDB 3.x is read-only: write with INSERT <line protocol>; CREATE / DROP DATABASE and DROP TABLE are supported for management",
   "db.backend.error.influxdb_time_required": "Locating the point requires a value in the time column",
-  "db.backend.error.influxdb_changes_partial": "Failed after applying {{applied}} of {{total}} changes (InfluxDB has no transactions, so applied changes are not rolled back): {{detail}}"
+  "db.backend.error.influxdb_changes_partial": "Failed after applying {{applied}} of {{total}} changes (InfluxDB has no transactions, so applied changes are not rolled back): {{detail}}",
+  "datasource.variant.presto.legacy": "PrestoDB 0.256 and earlier: no OFFSET clause, so data browsing pages are rewritten to LIMIT and leading rows are skipped on the client",
+  "datasource.variant.presto.prestodb": "PrestoDB 0.257 and later: OFFSET paging is enabled with the offset_clause_enabled session property on connect",
+  "datasource.variant.presto.prestosql": "PrestoSQL 300–350 (before the Trino rename): native OFFSET (from 310), temporal values returned at their declared precision",
+  "db.backend.error.presto_query_failed": "Presto query failed ({{name}}): {{message}}",
+  "db.backend.error.presto_query_failed_at": "Presto query failed ({{name}}, line {{line}}, column {{column}}): {{message}}",
+  "db.backend.error.presto_http_failed": "Presto request failed (HTTP {{status}}): {{detail}}",
+  "db.backend.error.presto_auth_failed": "Presto authentication failed (HTTP {{status}}); check the user name, password or access token: {{detail}}",
+  "db.backend.error.presto_user_required": "A Presto connection needs a user name (sent as X-Presto-User)",
+  "db.backend.error.presto_password_requires_https": "Presto password authentication requires HTTPS: enable SSL or use an access token (accessToken connection parameter)",
+  "db.backend.error.presto_namespace_required": "A Presto database name must be catalog.schema (got \"{{name}}\"); you can also set a default database on the connection",
+  "db.backend.error.presto_ddl_empty": "Presto returned no CREATE statement for \"{{name}}\"",
+  "db.backend.error.presto_unexpected_response": "Presto returned a response that could not be parsed (the address may not be a Presto coordinator): {{detail}}"
 }

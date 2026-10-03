@@ -11875,5 +11875,17 @@
   "db.backend.error.influxdb_delete_ambiguous": "このポイントには tag {{tags}} がありません。InfluxDB 2.x の削除条件ではそれを持つ他の series を除外できないため、誤削除を避けて拒否しました",
   "db.backend.error.influxdb_statement_unsupported": "InfluxDB 3.x の SQL は読み取り専用です。書き込みは INSERT <line protocol>、管理は CREATE / DROP DATABASE と DROP TABLE に対応しています",
   "db.backend.error.influxdb_time_required": "ポイントを特定するには time 列の値が必要です",
-  "db.backend.error.influxdb_changes_partial": "{{total}} 件中 {{applied}} 件の変更を適用した後に失敗しました（InfluxDB はトランザクション非対応のため、適用済みの変更は元に戻りません）: {{detail}}"
+  "db.backend.error.influxdb_changes_partial": "{{total}} 件中 {{applied}} 件の変更を適用した後に失敗しました（InfluxDB はトランザクション非対応のため、適用済みの変更は元に戻りません）: {{detail}}",
+  "datasource.variant.presto.legacy": "PrestoDB 0.256 以前：OFFSET 句がないため、データ閲覧のページングは LIMIT に書き換え、先頭の行をクライアント側で読み飛ばします",
+  "datasource.variant.presto.prestodb": "PrestoDB 0.257 以降：接続時にセッションプロパティ offset_clause_enabled で OFFSET ページングを有効にします",
+  "datasource.variant.presto.prestosql": "PrestoSQL 300–350（Trino への改名前）：ネイティブ OFFSET（310 以降）、時刻値は列の実際の精度で返されます",
+  "db.backend.error.presto_query_failed": "Presto のクエリに失敗しました（{{name}}）：{{message}}",
+  "db.backend.error.presto_query_failed_at": "Presto のクエリに失敗しました（{{name}}、{{line}} 行 {{column}} 列）：{{message}}",
+  "db.backend.error.presto_http_failed": "Presto へのリクエストに失敗しました（HTTP {{status}}）：{{detail}}",
+  "db.backend.error.presto_auth_failed": "Presto の認証に失敗しました（HTTP {{status}}）。ユーザー名、パスワード、アクセストークンを確認してください：{{detail}}",
+  "db.backend.error.presto_user_required": "Presto 接続にはユーザー名が必要です（X-Presto-User として送信されます）",
+  "db.backend.error.presto_password_requires_https": "Presto のパスワード認証は HTTPS でのみ使用できます。SSL を有効にするか、アクセストークン（接続パラメーター accessToken）を使用してください",
+  "db.backend.error.presto_namespace_required": "Presto のデータベース名は catalog.schema 形式である必要があります（現在：「{{name}}」）。接続で既定のデータベースを設定することもできます",
+  "db.backend.error.presto_ddl_empty": "Presto が「{{name}}」の CREATE 文を返しませんでした",
+  "db.backend.error.presto_unexpected_response": "Presto から解析できない応答が返されました（アドレスが Presto コーディネーターではない可能性があります）：{{detail}}"
 }

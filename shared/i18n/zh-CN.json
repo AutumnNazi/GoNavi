@@ -11875,5 +11875,17 @@
   "db.backend.error.influxdb_delete_ambiguous": "这个点没有 tag {{tags}}，InfluxDB 2.x 的删除条件无法排除带这些 tag 的其他 series，为避免误删已拒绝",
   "db.backend.error.influxdb_statement_unsupported": "InfluxDB 3.x 的 SQL 只读：写入请用 INSERT <line protocol>，库表管理支持 CREATE / DROP DATABASE 与 DROP TABLE",
   "db.backend.error.influxdb_time_required": "定位点需要 time 列的值",
-  "db.backend.error.influxdb_changes_partial": "已提交 {{applied}} / {{total}} 项改动后失败（InfluxDB 不支持事务，已提交的改动不会回滚）：{{detail}}"
+  "db.backend.error.influxdb_changes_partial": "已提交 {{applied}} / {{total}} 项改动后失败（InfluxDB 不支持事务，已提交的改动不会回滚）：{{detail}}",
+  "datasource.variant.presto.legacy": "PrestoDB 0.256 及更早：没有 OFFSET 子句，数据浏览翻页改写为 LIMIT 后在客户端跳过前面的行",
+  "datasource.variant.presto.prestodb": "PrestoDB 0.257 起：连接时通过会话属性 offset_clause_enabled 打开 OFFSET 分页",
+  "datasource.variant.presto.prestosql": "PrestoSQL 300–350（改名 Trino 之前）：原生 OFFSET（310 起），按列的实际精度返回时间值",
+  "db.backend.error.presto_query_failed": "Presto 查询失败（{{name}}）：{{message}}",
+  "db.backend.error.presto_query_failed_at": "Presto 查询失败（{{name}}，第 {{line}} 行第 {{column}} 列）：{{message}}",
+  "db.backend.error.presto_http_failed": "Presto 请求失败（HTTP {{status}}）：{{detail}}",
+  "db.backend.error.presto_auth_failed": "Presto 认证失败（HTTP {{status}}），请检查用户名、密码或访问令牌：{{detail}}",
+  "db.backend.error.presto_user_required": "Presto 连接需要填写用户名（作为 X-Presto-User 发送）",
+  "db.backend.error.presto_password_requires_https": "Presto 的密码认证只能走 HTTPS：请启用 SSL，或改用访问令牌（accessToken 连接参数）",
+  "db.backend.error.presto_namespace_required": "Presto 的库名必须是 catalog.schema 形式（当前为“{{name}}”），也可以在连接里设置默认库",
+  "db.backend.error.presto_ddl_empty": "Presto 没有返回“{{name}}”的建表语句",
+  "db.backend.error.presto_unexpected_response": "Presto 返回了无法解析的响应（地址可能不是 Presto 协调节点）：{{detail}}"
 }

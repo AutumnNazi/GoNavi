@@ -157,6 +157,11 @@ func TestRegistryPostgresAndHTTPWireReadQueriesAvoidNativeMultiResult(t *testing
 	if shouldPreferPlainReadQueryResult("tidb") {
 		t.Fatal("TiDB reuses the MySQL driver and keeps native multi-result batches")
 	}
+	// 执行路径传入的是借用方言：Presto 归一为 trino，与 Trino 一样没有多结果集接口。
+	presto := resolveDDLDBType(connection.ConnectionConfig{Type: "presto"})
+	if presto != "trino" || shouldUseNativeMultiResultBatch(presto, []string{"SELECT 1"}, true) {
+		t.Fatalf("presto (%s) read queries must use the plain query path", presto)
+	}
 }
 
 func TestRegistryExplainFallsBackToBorrowedDialect(t *testing.T) {

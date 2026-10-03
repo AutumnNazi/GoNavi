@@ -11875,5 +11875,17 @@
   "db.backend.error.influxdb_delete_ambiguous": "Dieser Punkt hat das Tag {{tags}} nicht; ein Löschprädikat in InfluxDB 2.x kann andere Series mit diesem Tag nicht ausschließen – Löschen abgelehnt",
   "db.backend.error.influxdb_statement_unsupported": "SQL in InfluxDB 3.x ist schreibgeschützt: schreiben Sie mit INSERT <Line Protocol>; zur Verwaltung werden CREATE / DROP DATABASE und DROP TABLE unterstützt",
   "db.backend.error.influxdb_time_required": "Zum Auffinden des Punkts ist ein Wert in der Spalte time erforderlich",
-  "db.backend.error.influxdb_changes_partial": "Fehler nach {{applied}} von {{total}} Änderungen (InfluxDB unterstützt keine Transaktionen, übernommene Änderungen werden nicht zurückgesetzt): {{detail}}"
+  "db.backend.error.influxdb_changes_partial": "Fehler nach {{applied}} von {{total}} Änderungen (InfluxDB unterstützt keine Transaktionen, übernommene Änderungen werden nicht zurückgesetzt): {{detail}}",
+  "datasource.variant.presto.legacy": "PrestoDB 0.256 und älter: keine OFFSET-Klausel; das Blättern beim Datenbrowsen wird in LIMIT umgeschrieben und führende Zeilen werden clientseitig übersprungen",
+  "datasource.variant.presto.prestodb": "PrestoDB ab 0.257: OFFSET-Paginierung wird beim Verbinden über die Sitzungseigenschaft offset_clause_enabled aktiviert",
+  "datasource.variant.presto.prestosql": "PrestoSQL 300–350 (vor der Umbenennung in Trino): natives OFFSET (ab 310), Zeitwerte in der deklarierten Genauigkeit",
+  "db.backend.error.presto_query_failed": "Presto-Abfrage fehlgeschlagen ({{name}}): {{message}}",
+  "db.backend.error.presto_query_failed_at": "Presto-Abfrage fehlgeschlagen ({{name}}, Zeile {{line}}, Spalte {{column}}): {{message}}",
+  "db.backend.error.presto_http_failed": "Presto-Anfrage fehlgeschlagen (HTTP {{status}}): {{detail}}",
+  "db.backend.error.presto_auth_failed": "Presto-Authentifizierung fehlgeschlagen (HTTP {{status}}); Benutzername, Passwort oder Zugriffstoken prüfen: {{detail}}",
+  "db.backend.error.presto_user_required": "Eine Presto-Verbindung benötigt einen Benutzernamen (wird als X-Presto-User gesendet)",
+  "db.backend.error.presto_password_requires_https": "Presto-Passwortauthentifizierung erfordert HTTPS: SSL aktivieren oder ein Zugriffstoken verwenden (Verbindungsparameter accessToken)",
+  "db.backend.error.presto_namespace_required": "Ein Presto-Datenbankname muss catalog.schema lauten (erhalten: „{{name}}“); alternativ eine Standarddatenbank in der Verbindung festlegen",
+  "db.backend.error.presto_ddl_empty": "Presto hat keine CREATE-Anweisung für „{{name}}“ zurückgegeben",
+  "db.backend.error.presto_unexpected_response": "Presto hat eine nicht auswertbare Antwort geliefert (die Adresse ist evtl. kein Presto-Koordinator): {{detail}}"
 }

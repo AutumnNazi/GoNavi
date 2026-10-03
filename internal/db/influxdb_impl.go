@@ -113,15 +113,6 @@ func influxAuthHeaders(config connection.ConnectionConfig, params map[string][]s
 	return headers
 }
 
-func firstNonEmptyParam(params map[string][]string, names ...string) string {
-	for _, name := range names {
-		if values := params[name]; len(values) > 0 && strings.TrimSpace(values[0]) != "" {
-			return values[0]
-		}
-	}
-	return ""
-}
-
 func (x *InfluxDB) detectVersion(ctx context.Context) (string, error) {
 	status, header, body, err := x.request(ctx, http.MethodGet, "/ping", nil, nil)
 	if err != nil {

@@ -1,3 +1,5 @@
+import { getDataSourceSpec } from '../utils/dataSourceRegistry';
+
 export type TableDataDangerActionKind = 'truncate' | 'clear';
 
 type TableDataDangerActionTranslator = (key: string) => string;
@@ -90,6 +92,11 @@ const resolveCustomDriverDialect = (driver: string): string => {
 
 export const resolveTableDataActionDBType = (type: string, driver?: string): string => {
   const normalizedType = String(type || '').trim().toLowerCase();
+  // 借用方言的描述表类型（TiDB → mysql、CockroachDB → postgres、Presto → trino）按借用方言提供清空 / 截断。
+  const borrowedDialect = getDataSourceSpec(normalizedType)?.ddlDialect;
+  if (borrowedDialect) {
+    return borrowedDialect;
+  }
   if (normalizedType !== 'custom') {
     return resolveCustomDriverDialect(normalizedType);
   }

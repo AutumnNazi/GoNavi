@@ -1,4 +1,4 @@
-import { buildRegistryPaginatedSelectSQL, resolveRegistryQuoting } from './dataSourceRegistry/sqlBehavior';
+import { buildOffsetLimitSelectSQL, buildRegistryPaginatedSelectSQL, resolveRegistryQuoting } from './dataSourceRegistry/sqlBehavior';
 import { splitQualifiedNameSegments, stripIdentifierQuotes } from './qualifiedName';
 import { isElasticsearchFamilyType } from './elasticsearchFamily';
 
@@ -369,6 +369,9 @@ export const buildPaginatedSelectSQL = (
     case 'mssql': {
       return buildSqlServerPaginatedSelectSQL(base, orderBy, safeLimit, safeOffset);
     }
+    case 'trino':
+      // 查询结果翻页按方言拼装，借用 Trino 方言的 Presto 也走这里。
+      return buildOffsetLimitSelectSQL(base, orderBy, safeLimit, safeOffset);
     default:
       return `${base}${orderBy} LIMIT ${safeLimit} OFFSET ${safeOffset}`;
   }

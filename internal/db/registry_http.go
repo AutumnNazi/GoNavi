@@ -40,6 +40,10 @@ func applyRegistryHTTPURI(config connection.ConnectionConfig) connection.Connect
 	if text == "" {
 		return config
 	}
+	// JDBC 连接串（jdbc:presto://…）改写 scheme 后仍带 jdbc: 前缀，解析前去掉。
+	if len(text) > len("jdbc:") && strings.EqualFold(text[:len("jdbc:")], "jdbc:") {
+		text = text[len("jdbc:"):]
+	}
 	parsed, err := url.Parse(text)
 	if err != nil {
 		return config
@@ -100,6 +104,16 @@ func registryHTTPHeaderParams(params url.Values) map[string]string {
 		}
 	}
 	return headers
+}
+
+// firstNonEmptyParam 按顺序取第一个非空的参数值（同一参数常有多种拼写，如 accessToken / access_token）。
+func firstNonEmptyParam(params map[string][]string, names ...string) string {
+	for _, name := range names {
+		if values := params[name]; len(values) > 0 && strings.TrimSpace(values[0]) != "" {
+			return values[0]
+		}
+	}
+	return ""
 }
 
 func buildRegistryHTTPClient(config connection.ConnectionConfig) *http.Client {

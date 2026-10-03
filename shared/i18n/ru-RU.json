@@ -11875,5 +11875,17 @@
   "db.backend.error.influxdb_delete_ambiguous": "У этой точки нет тега {{tags}}; предикат удаления InfluxDB 2.x не может исключить другие series с ним, поэтому удаление отклонено",
   "db.backend.error.influxdb_statement_unsupported": "SQL в InfluxDB 3.x только для чтения: пишите через INSERT <line protocol>; для управления поддерживаются CREATE / DROP DATABASE и DROP TABLE",
   "db.backend.error.influxdb_time_required": "Чтобы найти точку, нужно значение в столбце time",
-  "db.backend.error.influxdb_changes_partial": "Ошибка после применения {{applied}} из {{total}} изменений (InfluxDB не поддерживает транзакции, применённые изменения не откатываются): {{detail}}"
+  "db.backend.error.influxdb_changes_partial": "Ошибка после применения {{applied}} из {{total}} изменений (InfluxDB не поддерживает транзакции, применённые изменения не откатываются): {{detail}}",
+  "datasource.variant.presto.legacy": "PrestoDB 0.256 и старше: нет предложения OFFSET, поэтому постраничный просмотр переписывается в LIMIT, а начальные строки пропускаются на клиенте",
+  "datasource.variant.presto.prestodb": "PrestoDB 0.257 и новее: постраничный вывод через OFFSET включается свойством сеанса offset_clause_enabled при подключении",
+  "datasource.variant.presto.prestosql": "PrestoSQL 300–350 (до переименования в Trino): встроенный OFFSET (с 310), значения времени возвращаются с объявленной точностью",
+  "db.backend.error.presto_query_failed": "Ошибка запроса Presto ({{name}}): {{message}}",
+  "db.backend.error.presto_query_failed_at": "Ошибка запроса Presto ({{name}}, строка {{line}}, столбец {{column}}): {{message}}",
+  "db.backend.error.presto_http_failed": "Ошибка запроса к Presto (HTTP {{status}}): {{detail}}",
+  "db.backend.error.presto_auth_failed": "Ошибка аутентификации Presto (HTTP {{status}}); проверьте имя пользователя, пароль или токен доступа: {{detail}}",
+  "db.backend.error.presto_user_required": "Для подключения к Presto нужно имя пользователя (отправляется как X-Presto-User)",
+  "db.backend.error.presto_password_requires_https": "Парольная аутентификация Presto работает только через HTTPS: включите SSL или используйте токен доступа (параметр подключения accessToken)",
+  "db.backend.error.presto_namespace_required": "Имя базы Presto должно иметь вид catalog.schema (получено «{{name}}»); можно также задать базу по умолчанию в подключении",
+  "db.backend.error.presto_ddl_empty": "Presto не вернул оператор CREATE для «{{name}}»",
+  "db.backend.error.presto_unexpected_response": "Presto вернул ответ, который не удалось разобрать (возможно, адрес не является координатором Presto): {{detail}}"
 }

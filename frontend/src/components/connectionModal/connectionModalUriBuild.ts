@@ -7,7 +7,7 @@ import {
   supportsConnectionParamsForType,
 } from "../../utils/connectionTypeCapabilities";
 import { buildRedisUriFromValues } from "../../utils/redisConnectionUri";
-import { getRegistryUriScheme, usesHttpRegistryUri } from "../../utils/dataSourceRegistry/uriScheme";
+import { getRegistryUriScheme, usesHttpRegistryUri, usesTrinoStyleConnection } from "../../utils/dataSourceRegistry/uriScheme";
 import { extractNacosConnectionScope } from "../../utils/nacosConnectionScope";
 import {
   getPulsarDefaultPort,
@@ -48,7 +48,7 @@ export const buildUriFromValues = (values: any) => {
     ? `${encodeURIComponent(user)}${password ? `:${encodeURIComponent(password)}` : ""}@`
     : "";
 
-  if (type === "trino") {
+  if (usesTrinoStyleConnection(type)) {
     const params = new URLSearchParams();
     mergeConnectionParams(params, values.connectionParams);
 

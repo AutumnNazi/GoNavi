@@ -15,6 +15,10 @@ export const resolveRegistryQuoting = (type: unknown): RegistryQuoting | undefin
   return 'double';
 };
 
+/** Presto / Trino 的分页：OFFSET 必须写在 LIMIT 之前，LIMIT n OFFSET m 在它们的语法里是错误。 */
+export const buildOffsetLimitSelectSQL = (base: string, orderBy: string, limit: number, offset: number): string =>
+  offset > 0 ? `${base}${orderBy} OFFSET ${offset} LIMIT ${limit}` : `${base}${orderBy} LIMIT ${limit}`;
+
 /**
  * 按描述表声明的分页语法拼装数据浏览 SQL；不是描述表类型或声明为默认 LIMIT/OFFSET 时返回 undefined。
  * base 已含 WHERE，orderBy 以空格开头或为空。
@@ -33,8 +37,7 @@ export const buildRegistryPaginatedSelectSQL = (
       // QuestDB：LIMIT lo, hi 返回第 lo+1 到第 hi 行。
       return `${base}${orderBy} LIMIT ${offset}, ${offset + limit}`;
     case 'offset-limit':
-      // Presto / Trino：OFFSET 必须写在 LIMIT 之前。
-      return offset > 0 ? `${base}${orderBy} OFFSET ${offset} LIMIT ${limit}` : `${base}${orderBy} LIMIT ${limit}`;
+      return buildOffsetLimitSelectSQL(base, orderBy, limit, offset);
     case 'limit-start':
       // SurrealDB：LIMIT n START m。
       return `${base}${orderBy} LIMIT ${limit} START ${offset}`;

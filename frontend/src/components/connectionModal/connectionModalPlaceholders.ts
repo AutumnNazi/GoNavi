@@ -1,7 +1,7 @@
 import { t } from '../../i18n';
 import { isMySQLCompatibleType, isFileDatabaseType } from '../../utils/connectionTypeCapabilities';
 import { getConnectionTypeDefaultPort as getDefaultPortByType } from '../../utils/connectionTypeCatalog';
-import { getRegistryUriScheme } from '../../utils/dataSourceRegistry/uriScheme';
+import { getRegistryUriScheme, usesTrinoStyleConnection } from '../../utils/dataSourceRegistry/uriScheme';
 import type { OceanBaseProtocolChoice } from './connectionModalUri';
 
 export const getUriPlaceholder = (dbType: string) => {
@@ -25,7 +25,7 @@ export const getUriPlaceholder = (dbType: string) => {
   if (dbType === "clickhouse") {
     return "clickhouse://default:pass@127.0.0.1:9000/default";
   }
-  if (dbType === "trino") {
+  if (usesTrinoStyleConnection(dbType)) {
     return "http://user@127.0.0.1:8080?catalog=hive&schema=default&source=GoNavi";
   }
   if (dbType === "chroma") {
@@ -120,6 +120,8 @@ export const getConnectionParamsPlaceholder = (
       return "max_execution_time=60&compress=lz4";
     case "trino":
       return "session_properties=query_max_execution_time:30m&query_timeout=30s";
+    case "presto":
+      return "session.query_max_run_time=30m&timeZone=Asia%2FShanghai&clientTags=gonavi";
     case "mongodb":
       return "retryWrites=true&readPreference=secondaryPreferred";
     case "chroma":

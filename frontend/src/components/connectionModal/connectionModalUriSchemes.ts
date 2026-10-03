@@ -1,4 +1,5 @@
 import { getConnectionTypeDefaultPort as getDefaultPortByType } from "../../utils/connectionTypeCatalog";
+import { listRegistryUriSchemes } from "../../utils/dataSourceRegistry/uriScheme";
 import {
   supportsSSLCAPathForType,
   supportsSSLClientCertificateForType,
@@ -199,14 +200,18 @@ const joinTrinoNamespace = (catalog: string, schema: string) => {
   return `${safeCatalog}.${safeSchema}`;
 };
 
+// Trino 与使用 Trino 表单的描述表类型（Presto）共用：catalog / schema 可写在参数里，
+// 也可写成路径 /catalog.schema 或 JDBC 风格的 /catalog/schema（jdbc: 前缀可省略）。
 export const parseTrinoUriToValues = (
   uriText: string,
+  type = "trino",
 ): Record<string, any> | null => {
-  const trimmed = String(uriText || "").trim();
+  const trimmed = String(uriText || "").trim().replace(/^jdbc:/i, "");
+  const schemes = type === "trino" ? ["trino", "http", "https"] : [...listRegistryUriSchemes(type)];
   const parsed = parseSingleHostUri(
     trimmed,
-    ["trino", "http", "https"],
-    getDefaultPortByType("trino"),
+    schemes,
+    getDefaultPortByType(type),
   );
   if (!parsed) {
     return null;
@@ -223,8 +228,12 @@ export const parseTrinoUriToValues = (
   params.delete("skip_verify");
   params.delete("skipVerify");
 
-  const namespace =
-    joinTrinoNamespace(catalog, schema) || String(parsed.database || "").trim();
+  const pathNamespace = String(parsed.database || "")
+    .split("/")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(".");
+  const namespace = joinTrinoNamespace(catalog, schema) || pathNamespace;
   return {
     host: parsed.host,
     port: parsed.port,
@@ -235,7 +244,7 @@ export const parseTrinoUriToValues = (
     sslMode: trimmed.toLowerCase().startsWith("https://")
       ? (skipVerify ? "skip-verify" : "required")
       : "disable",
-    ...extractSSLPathValuesFromParams(params, "trino"),
+    ...extractSSLPathValuesFromParams(params, type),
     connectionParams: serializeConnectionParams(params),
   };
 };

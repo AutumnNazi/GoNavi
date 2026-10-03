@@ -21,3 +21,8 @@ export const findRegistryUriScheme = (type: unknown, uri: unknown): string | und
   const text = normalize(uri);
   return listRegistryUriSchemes(type).find((scheme) => text.startsWith(`${scheme}://`));
 };
+
+/** 使用 Trino 连接表单的类型（Trino 本身与 ui.layout 为 trino 的描述表类型，如 Presto）：默认库是 catalog.schema，
+ * 连接串用 http(s):// 加 catalog / schema 参数。 */
+export const usesTrinoStyleConnection = (type: unknown): boolean =>
+  normalize(type) === 'trino' || getDataSourceSpec(type)?.ui?.layout === 'trino';
