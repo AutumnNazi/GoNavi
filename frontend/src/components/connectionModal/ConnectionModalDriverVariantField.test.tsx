@@ -25,7 +25,7 @@ const renderField = async (dbType: string, initial?: string) => {
     form = instance;
     return (
       <Form form={instance} initialValues={{ [DRIVER_VARIANT_FIELD]: initial }}>
-        <ConnectionModalDriverVariantField dbType={dbType} />
+        <ConnectionModalDriverVariantField dbType={dbType} form={instance} />
       </Form>
     );
   }

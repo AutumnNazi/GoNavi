@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from "react";
-import { Form, Select, Tag } from "antd";
+import { Form, Select, Tag, type FormInstance } from "antd";
 
 import { t } from "../../i18n";
 import {
@@ -14,6 +14,8 @@ export const DRIVER_VARIANT_FIELD = "driverVariant";
 
 type ConnectionModalDriverVariantFieldProps = {
   dbType: string;
+  // 由连接弹窗传入的表单实例（与其他 Step2 分区组件一致，不依赖 Form 上下文 hook）。
+  form: Pick<FormInstance, "getFieldValue" | "setFieldsValue">;
   // 选择变化时清掉上一次测试连接的结果（档位不同，结论不再成立）。
   onChange?: () => void;
 };
@@ -39,16 +41,16 @@ const VariantOptionLabel: React.FC<{ option: DriverVariantOption }> = ({ option 
  */
 export const ConnectionModalDriverVariantField: React.FC<ConnectionModalDriverVariantFieldProps> = ({
   dbType,
+  form,
   onChange,
 }) => {
-  const form = Form.useFormInstance();
   const options = useMemo(() => buildDriverVariantOptions(dbType), [dbType]);
 
   useEffect(() => {
     const current = form.getFieldValue(DRIVER_VARIANT_FIELD);
     const normalized = normalizeDriverVariantValue(dbType, current);
     if (normalized !== current) {
-      form.setFieldValue(DRIVER_VARIANT_FIELD, normalized);
+      form.setFieldsValue({ [DRIVER_VARIANT_FIELD]: normalized });
     }
   }, [dbType, form]);
 
