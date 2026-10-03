@@ -70,11 +70,22 @@ const readDataGridSource = () => [
   './dataGrid/core/dataGridGridFilters.tsx',
   './dataGrid/core/dataGridCommitChangeSet.ts',
   './DataGridShell.tsx',
+  './dataGrid/shell/DataGridTableSurface.tsx',
+  './dataGrid/shell/useDataGridShellRenderers.tsx',
+  './dataGrid/shell/DataGridShellToolbar.tsx',
+  './dataGrid/shell/DataGridShellBody.tsx',
+  './dataGrid/shell/DataGridShellRowEditorModal.tsx',
 ].map((file) => readFileSync(new URL(file, import.meta.url), 'utf8')).join('\n');
 const readDataGridSecondaryActionsSource = (): string =>
   readFileSync(new URL('./DataGridSecondaryActions.tsx', import.meta.url), 'utf8');
-const readDataGridShellSource = (): string =>
-  readFileSync(new URL('./DataGridShell.tsx', import.meta.url), 'utf8');
+const readDataGridShellSource = (): string => [
+  './DataGridShell.tsx',
+  './dataGrid/shell/DataGridTableSurface.tsx',
+  './dataGrid/shell/useDataGridShellRenderers.tsx',
+  './dataGrid/shell/DataGridShellToolbar.tsx',
+  './dataGrid/shell/DataGridShellBody.tsx',
+  './dataGrid/shell/DataGridShellRowEditorModal.tsx',
+].map((file) => readFileSync(new URL(file, import.meta.url), 'utf8')).join('\n');
 const readDataGridColumnResizeSource = (): string =>
   readFileSync(new URL('./useDataGridColumnResize.ts', import.meta.url), 'utf8');
 
