@@ -307,6 +307,10 @@ function Send-ShellDirectoryUpdatedNotification {
 }
 
 function Send-ShellAssociationChangedNotification {
+    # RETIRED: with whole-file shortcut replacement the per-item/per-folder
+    # notifications cover every observed surface, and the global flush this
+    # performs redraws the entire desktop (visible flash on each switch).
+    # Kept for a surface that provably needs the global flush; not called.
     # Windows 11 keeps drawing a pinned taskbar button from its in-memory
     # copy. UPDATEITEM refreshes a desktop .lnk; the taskbar needs the
     # association flush before it shows the new IconLocation.
@@ -968,9 +972,13 @@ function Set-GoNaviShortcutBrandIcon {
                 }
             }
         }
-        if ($updatedCount -gt 0) {
-            Send-ShellAssociationChangedNotification
-        }
+        # SHCNE_ASSOCCHANGED is intentionally NOT sent: the global icon cache
+        # flush makes Explorer redraw every icon on the desktop (a visible
+        # flash on each brand switch), and since every shortcut is replaced as
+        # a whole file the per-item and per-folder notifications above are
+        # enough for the shell to re-read them (observed on Windows 11 26200).
+        # Send-ShellAssociationChangedNotification stays available for a
+        # surface that provably needs the global flush.
     } catch {
         Write-ShortcutRepairLog ("brand icon shortcut update failed: " + $_.Exception.Message)
         throw

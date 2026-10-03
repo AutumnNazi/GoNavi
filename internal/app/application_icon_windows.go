@@ -199,19 +199,31 @@ func windowsKnownGoNaviShortcutDirectories() []string {
 	return directories
 }
 
-// windowsSendShortcutRefreshNotifications re-sends item/folder/association
-// shell notifications for every GoNavi shortcut location. Pure shell calls:
-// no icon reload, no window mutation, safe to run without holding the brand
-// icon mutex.
+// windowsSendShortcutRefreshNotifications re-sends targeted shell change
+// notifications (item + folder) for every GoNavi shortcut location.
+// SHCNE_ASSOCCHANGED (the global icon cache flush that redraws the whole
+// desktop, a visible flash) is sent ONLY when a GoNavi taskbar pin exists:
+// the pinned taskbar button re-reads its icon exclusively on the association
+// flush (observed on Windows 11 26200 - targeted notifications never move
+// it), while every other surface follows the whole-file shortcut replacement
+// through the targeted notifications alone. Users without a pinned GoNavi
+// never see a flash. Pure shell calls: no icon reload, no window mutation,
+// safe to run without holding the brand icon mutex.
 func windowsSendShortcutRefreshNotifications() {
+	pinExists := false
 	for _, directory := range windowsKnownGoNaviShortcutDirectories() {
 		shortcut := filepath.Join(directory, "GoNavi.lnk")
 		if info, err := os.Stat(shortcut); err == nil && !info.IsDir() {
 			windowsApplicationIconNotifyItemChanged(shortcut)
+			if strings.EqualFold(directory, windowsTaskbarPinsDirectory()) {
+				pinExists = true
+			}
 		}
 		windowsApplicationIconNotifyDirectoryChanged(directory)
 	}
-	windowsApplicationIconNotifyShellChange()
+	if pinExists {
+		windowsApplicationIconNotifyShellChange()
+	}
 }
 
 func windowsScheduleDelayedShellRefresh() {
@@ -371,12 +383,13 @@ func setApplicationIconPNG(pngBytes []byte, configDir string, runtimeContext con
 	if err := windowsUpdateCurrentApplicationShortcuts(iconPath); err != nil {
 		return err
 	}
-	// 实测（Win11 26200）：Explorer 在快捷方式改写后需要短暂消化才会重新
+	// 实测（Win11 26200）：Explorer 在快捷方式替换后需要短暂消化才会重新
 	// 提取新 .ico 的图标；紧接着执行按钮重注册会采样到旧图标（表现为
-	// 「第一次切换无效、第二次才生效」）。先用 SHCNF_FLUSH 阻塞投递一次
-	// 关联变更（等 Explorer 图标缓存确实失效后再继续），再保留短消化期，
-	// 让按钮重注册必然采样到新图标。
-	windowsApplicationIconNotifyShellChange()
+	// 「第一次切换无效、第二次才生效」）。保留短消化期让按钮重注册采样
+	// 到新图标。SHCNE_ASSOCCHANGED 全局广播已移除：整个桌面所有图标会
+	// 因此重绘（每次切换可见的闪烁），而快捷方式以整文件替换后，定向的
+	// 单项/目录通知加上 1.5s 延迟补发已覆盖全部表面（开始菜单对整文件
+	// 替换的响应与 MSI 安装一致，本就不依赖全局广播）。
 	time.Sleep(windowsShortcutDigestDelay)
 	if _, err := setCurrentWindowsApplicationIcon(runtimeContext, iconPath); err != nil {
 		return err

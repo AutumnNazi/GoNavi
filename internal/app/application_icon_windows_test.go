@@ -583,8 +583,21 @@ func TestWindowsSendShortcutRefreshNotificationsUsesKnownFolders(t *testing.T) {
 
 	windowsSendShortcutRefreshNotifications()
 
-	if associations != 1 {
-		t.Fatalf("association change notification sent %d times, want 1", associations)
+	// The global association flush redraws the whole desktop (visible flash),
+	// so the refresh pass sends it only when a GoNavi taskbar pin exists (the
+	// pinned button re-reads its icon exclusively on that flush). The test
+	// machine may or may not have the pin, so derive the expectation from the
+	// same directories the pass walks.
+	wantAssociations := 0
+	for _, dir := range directories {
+		if strings.EqualFold(dir, windowsTaskbarPinsDirectory()) {
+			if info, err := os.Stat(filepath.Join(dir, "GoNavi.lnk")); err == nil && !info.IsDir() {
+				wantAssociations = 1
+			}
+		}
+	}
+	if associations != wantAssociations {
+		t.Fatalf("association change notification sent %d times, want %d", associations, wantAssociations)
 	}
 	if len(directories) == 0 {
 		t.Fatal("no folder notifications were sent")
