@@ -80,6 +80,24 @@ func TestTestConnectionResultReportsVariant(t *testing.T) {
 		t.Fatalf("message %q must mention version and variant", result.Message)
 	}
 
+	if payload.SuggestedVariant != "" {
+		t.Fatalf("auto detection must not suggest another variant, got %q", payload.SuggestedVariant)
+	}
+
+	pinned := connection.ConnectionConfig{Type: "tidb", DriverVariant: "v5"}
+	mismatch := captureTestConnectionVariant(pinned, fakeVariantReporter{variant: "v5", version: "8.5.8"})
+	if mismatch == nil || mismatch.SuggestedVariant != "v8" {
+		t.Fatalf("a pinned variant outside the server range must suggest v8, got %#v", mismatch)
+	}
+	warned := application.testConnectionSuccessResult(pinned, mismatch)
+	if !warned.Success || !strings.Contains(warned.Message, mismatch.SuggestedVariantLabel) {
+		t.Fatalf("mismatch message %q must name the suggested variant", warned.Message)
+	}
+	matched := captureTestConnectionVariant(pinned, fakeVariantReporter{variant: "v5", version: "5.4.3"})
+	if matched == nil || matched.SuggestedVariant != "" {
+		t.Fatalf("a pinned variant matching the server must not suggest another one, got %#v", matched)
+	}
+
 	legacy := captureTestConnectionVariant(connection.ConnectionConfig{Type: "mysql"}, fakeVariantReporter{variant: "", version: ""})
 	if legacy != nil {
 		t.Fatalf("legacy types must keep the plain result, got %#v", legacy)

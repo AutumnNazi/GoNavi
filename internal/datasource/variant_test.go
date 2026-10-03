@@ -80,3 +80,24 @@ func TestResolveVariant(t *testing.T) {
 		t.Fatalf("runtime variant agent = %q", got)
 	}
 }
+
+func TestMatchVariant(t *testing.T) {
+	registry := loadFixtures(t, map[string]string{"influxdb.json": influxFixture, "cassandra.json": cassandraFixture})
+	influx, _ := registry.Lookup("influxdb")
+	cases := map[string]string{"1.11.9": "v1", "2.7.9": "v2", "3.9.6-core": "v3", "0.13": "v1", "v9.0": "v3"}
+	for server, want := range cases {
+		got, ok := influx.MatchVariant(server)
+		if !ok || got.ID != want {
+			t.Fatalf("match(%q) = %q, %v; want %q", server, got.ID, ok, want)
+		}
+	}
+	for _, server := range []string{"", "unknown"} {
+		if _, ok := influx.MatchVariant(server); ok {
+			t.Fatalf("match(%q) must report no match", server)
+		}
+	}
+	cassandra, _ := registry.Lookup("cassandra")
+	if got, ok := cassandra.MatchVariant("1.2.19"); !ok || got.ID != "legacy" {
+		t.Fatalf("separate build variants must still match by range, got %q, %v", got.ID, ok)
+	}
+}

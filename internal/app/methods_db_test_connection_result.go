@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"GoNavi-Wails/internal/connection"
+	"GoNavi-Wails/internal/datasource"
 	"GoNavi-Wails/internal/db"
 )
 
@@ -14,6 +15,9 @@ type testConnectionVariantInfo struct {
 	DriverVariant      string `json:"driverVariant,omitempty"`
 	DriverVariantLabel string `json:"driverVariantLabel,omitempty"`
 	RequestedVariant   string `json:"requestedVariant,omitempty"`
+	// SuggestedVariant 是与服务端版本匹配、但与用户手动选择不同的档位；匹配时为空。
+	SuggestedVariant      string `json:"suggestedVariant,omitempty"`
+	SuggestedVariantLabel string `json:"suggestedVariantLabel,omitempty"`
 }
 
 // captureTestConnectionVariant 在关闭临时连接前读取代理回报的档位信息。
@@ -35,6 +39,11 @@ func captureTestConnectionVariant(config connection.ConnectionConfig, inst db.Da
 	if variant, found := spec.Variants.Item(variantID); found {
 		info.DriverVariantLabel = variant.Label
 	}
+	if info.RequestedVariant != datasource.VariantAuto {
+		if suggested, matched := spec.MatchVariant(info.ServerVersion); matched && suggested.ID != variantID {
+			info.SuggestedVariant, info.SuggestedVariantLabel = suggested.ID, suggested.Label
+		}
+	}
 	return info
 }
 
@@ -45,8 +54,15 @@ func (a *App) testConnectionSuccessResult(config connection.ConnectionConfig, in
 		return result
 	}
 	spec, _ := db.DataSourceSpec(config.Type)
-	params := map[string]any{"name": spec.DisplayName, "version": info.ServerVersion, "variant": info.DriverVariantLabel}
+	params := map[string]any{
+		"name":      spec.DisplayName,
+		"version":   info.ServerVersion,
+		"variant":   info.DriverVariantLabel,
+		"suggested": info.SuggestedVariantLabel,
+	}
 	switch {
+	case info.SuggestedVariantLabel != "" && info.DriverVariantLabel != "":
+		result.Message = a.appText("db.backend.message.connect_success_variant_mismatch", params)
 	case info.ServerVersion != "" && info.DriverVariantLabel != "":
 		result.Message = a.appText("db.backend.message.connect_success_with_version", params)
 	case info.DriverVariantLabel != "":

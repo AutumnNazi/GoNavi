@@ -87,17 +87,26 @@ func (s Spec) ResolveVariant(requested, serverVersion string) (Variant, error) {
 	if !s.Variants.Auto {
 		return Variant{}, fmt.Errorf("%s does not support automatic driver variant selection", s.DisplayName)
 	}
+	if item, ok := s.MatchVariant(serverVersion); ok {
+		return item, nil
+	}
+	return s.Variants.Items[len(s.Variants.Items)-1], nil
+}
+
+// MatchVariant 返回服务端版本适用的档位：按区间匹配，低于最旧档位取最旧档位，其余取最新档位。
+// 版本为空或无法解析时返回 false。
+func (s Spec) MatchVariant(serverVersion string) (Variant, bool) {
 	items := s.Variants.Items
-	if strings.TrimSpace(serverVersion) == "" || ParseServerVersion(serverVersion) == nil {
-		return items[len(items)-1], nil
+	if len(items) == 0 || strings.TrimSpace(serverVersion) == "" || ParseServerVersion(serverVersion) == nil {
+		return Variant{}, false
 	}
 	for _, item := range items {
 		if item.Contains(serverVersion) {
-			return item, nil
+			return item, true
 		}
 	}
 	if first := items[0]; first.MinServer != "" && CompareServerVersions(serverVersion, first.MinServer) < 0 {
-		return first, nil
+		return first, true
 	}
-	return items[len(items)-1], nil
+	return items[len(items)-1], true
 }
