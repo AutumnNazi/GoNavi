@@ -65,7 +65,8 @@
     "connectionParams": true,
     "hint": "MySQL compatible / distributed HTAP",
     "icon": {
-      "color": "#E30C34"
+      "color": "#E30C34",
+      "text": "Ti"
     }
   },
   "order": 10

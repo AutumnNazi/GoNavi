@@ -55,3 +55,9 @@ func registryDBNameSelectsDatabase(driverType string) bool {
 	spec, ok := db.DataSourceSpec(driverType)
 	return ok && !spec.SyntheticDatabase
 }
+
+// registryUsesDriverProxy 报告描述表类型是否由驱动自己处理连接代理（不在主进程改写为本地转发地址）。
+func registryUsesDriverProxy(driverType string) bool {
+	spec, ok := db.DataSourceSpec(driverType)
+	return ok && spec.UsesDriverProxy()
+}

@@ -11791,5 +11791,18 @@
   "ai_settings.provider_preset.gonavi_ai.waiting_browser": "Ожидание подтверждения в браузере. Код устройства {{code}}: убедитесь, что на странице показан тот же код.",
   "ai_settings.provider_preset.gonavi_ai.reopen_browser": "Открыть страницу снова",
   "ai_chat.composer_notice.builtin_login_pending.title": "Завершите вход в браузере",
-  "ai_chat.composer_notice.builtin_login_pending.description": "Код устройства {{code}}: убедитесь, что на странице показан тот же код. После этого нажмите на странице «Return to GoNavi»."
+  "ai_chat.composer_notice.builtin_login_pending.description": "Код устройства {{code}}: убедитесь, что на странице показан тот же код. После этого нажмите на странице «Return to GoNavi».",
+  "db.backend.message.connect_success_with_version": "Подключение выполнено · {{name}} {{version}} · Версия драйвера: {{variant}}",
+  "db.backend.message.connect_success_with_variant": "Подключение выполнено · Версия драйвера: {{variant}}",
+  "connection_modal.step1.group.search": "Поисковые движки",
+  "connection_modal.step1.group.bigdata": "Большие данные и облачные хранилища",
+  "connection_modal.step1.hint.tidb": "Совместимость с MySQL / распределенный HTAP",
+  "datasource.variant.tidb.v5": "TiDB 4.x – 5.x: внешние ключи не применяются; нет политик размещения и групп ресурсов",
+  "datasource.variant.tidb.v6": "TiDB 6.x – 7.x: политики размещения; внешние ключи с 6.6; группы ресурсов с 7.1",
+  "datasource.variant.tidb.v8": "TiDB 8.x и новее: внешние ключи, группы ресурсов, векторные типы и другие новые функции",
+  "connection_modal.field.driverVariant.label": "Версия драйвера",
+  "connection_modal.field.driverVariant.auto": "Определять автоматически",
+  "connection_modal.field.driverVariant.autoDescription": "При подключении считывает версию сервера и выбирает подходящую версию драйвера",
+  "connection_modal.field.driverVariant.help": "Старые и новые серверы различаются протоколом, метаданными и синтаксисом. Выберите версию драйвера, соответствующую серверу, или автоопределение, если не уверены.",
+  "connection_modal.field.driverVariant.separateAgent": "Требуется отдельная установка драйвера"
 }

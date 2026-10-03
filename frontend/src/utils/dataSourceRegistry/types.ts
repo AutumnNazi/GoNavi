@@ -49,7 +49,8 @@ export type DataSourceUISpec = {
   // 允许展示的网络安全分区（ssl、ssh、proxy、httpTunnel）；缺省表示全部。
   networkSections?: string[];
   layout?: string;
-  icon?: { color: string; scale?: number; asset?: string };
+  // 图标：asset 指向官方 logo；缺省时使用 /db-icons/<type>.svg（可由 tools/generate-datasource-icons.py 生成字母徽标）。
+  icon?: { color: string; text?: string; scale?: number; asset?: string };
 };
 
 export type DataSourceSpec = {

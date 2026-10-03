@@ -307,6 +307,9 @@ func optionalDriverBuildTag(driverType string, selectedVersion string) (string, 
 	case "pulsar":
 		return "gonavi_pulsar_driver", nil
 	default:
+		if tag, ok := registryDriverBuildTag(driverType); ok {
+			return tag, nil
+		}
 		return "", newLocalizedDriverBackendError("driver_manager.backend.error.source_build_tag_unconfigured", map[string]any{"driverType": driverType}, nil)
 	}
 }

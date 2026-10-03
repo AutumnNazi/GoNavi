@@ -50,6 +50,9 @@ func normalizeDriverType(driverType string) string {
 	case "milvusdb", "milvus-db":
 		return "milvus"
 	default:
+		if canonical, ok := registryCanonicalDriverType(normalized); ok {
+			return canonical
+		}
 		return normalized
 	}
 }
@@ -110,7 +113,7 @@ func resolveDriverDefinitionWithPackages(driverType string, packages map[string]
 }
 
 func allDriverDefinitionsWithPackages(packages map[string]pinnedDriverPackage) []driverDefinition {
-	return append(builtInDriverDefinitions(), []driverDefinition{
+	return append(append(builtInDriverDefinitions(), []driverDefinition{
 		// 其他数据源需要先在驱动管理中“安装启用”。
 		buildOptionalGoDriverDefinition("mariadb", "MariaDB", packages),
 		buildOptionalGoDriverDefinition("oceanbase", "OceanBase", packages),
@@ -138,7 +141,7 @@ func allDriverDefinitionsWithPackages(packages map[string]pinnedDriverPackage) [
 		buildOptionalGoDriverDefinition("kafka", "Kafka", packages),
 		buildOptionalGoDriverDefinition("rocketmq", "RocketMQ", packages),
 		buildOptionalGoDriverDefinition("pulsar", "Apache Pulsar", packages),
-	}...)
+	}...), registryDriverDefinitions(packages)...)
 }
 
 func buildOptionalGoDriverDefinition(driverType string, driverName string, packages map[string]pinnedDriverPackage) driverDefinition {

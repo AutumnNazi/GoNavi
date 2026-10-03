@@ -11791,5 +11791,18 @@
   "ai_settings.provider_preset.gonavi_ai.waiting_browser": "Warte auf Ihre Freigabe im Browser. Gerätecode {{code}}: Prüfen Sie, ob die Seite denselben Code zeigt.",
   "ai_settings.provider_preset.gonavi_ai.reopen_browser": "Seite erneut öffnen",
   "ai_chat.composer_notice.builtin_login_pending.title": "Anmeldung im Browser abschließen",
-  "ai_chat.composer_notice.builtin_login_pending.description": "Gerätecode {{code}}: Prüfen Sie, ob die Seite denselben Code zeigt. Klicken Sie danach auf der Seite auf „Return to GoNavi“."
+  "ai_chat.composer_notice.builtin_login_pending.description": "Gerätecode {{code}}: Prüfen Sie, ob die Seite denselben Code zeigt. Klicken Sie danach auf der Seite auf „Return to GoNavi“.",
+  "db.backend.message.connect_success_with_version": "Verbindung erfolgreich · {{name}} {{version}} · Treiberversion: {{variant}}",
+  "db.backend.message.connect_success_with_variant": "Verbindung erfolgreich · Treiberversion: {{variant}}",
+  "connection_modal.step1.group.search": "Suchmaschinen",
+  "connection_modal.step1.group.bigdata": "Big Data & Cloud-Warehouses",
+  "connection_modal.step1.hint.tidb": "MySQL-kompatibel / verteiltes HTAP",
+  "datasource.variant.tidb.v5": "TiDB 4.x – 5.x: Fremdschlüssel werden nicht erzwungen; keine Placement-Policies oder Ressourcengruppen",
+  "datasource.variant.tidb.v6": "TiDB 6.x – 7.x: Placement-Policies; Fremdschlüssel ab 6.6 erzwungen; Ressourcengruppen ab 7.1",
+  "datasource.variant.tidb.v8": "TiDB 8.x und neuer: Fremdschlüssel, Ressourcengruppen, Vektortypen und weitere neue Funktionen",
+  "connection_modal.field.driverVariant.label": "Treiberversion",
+  "connection_modal.field.driverVariant.auto": "Automatisch erkennen",
+  "connection_modal.field.driverVariant.autoDescription": "Liest beim Verbinden die Serverversion und wählt die passende Treiberversion",
+  "connection_modal.field.driverVariant.help": "Ältere und neuere Server unterscheiden sich in Protokoll, Metadaten und Syntax. Wählen Sie die passende Treiberversion oder im Zweifel die automatische Erkennung.",
+  "connection_modal.field.driverVariant.separateAgent": "Separate Treiberinstallation"
 }

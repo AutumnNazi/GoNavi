@@ -11791,5 +11791,18 @@
   "ai_settings.provider_preset.gonavi_ai.waiting_browser": "Waiting for you to authorize in the browser. Device code {{code}}: check that the page shows the same code.",
   "ai_settings.provider_preset.gonavi_ai.reopen_browser": "Open the page again",
   "ai_chat.composer_notice.builtin_login_pending.title": "Finish signing in in your browser",
-  "ai_chat.composer_notice.builtin_login_pending.description": "Device code {{code}}: check that the page shows the same code. When you are done, click \"Return to GoNavi\" on the page."
+  "ai_chat.composer_notice.builtin_login_pending.description": "Device code {{code}}: check that the page shows the same code. When you are done, click \"Return to GoNavi\" on the page.",
+  "db.backend.message.connect_success_with_version": "Connection succeeded · {{name}} {{version}} · Driver version: {{variant}}",
+  "db.backend.message.connect_success_with_variant": "Connection succeeded · Driver version: {{variant}}",
+  "connection_modal.step1.group.search": "Search engines",
+  "connection_modal.step1.group.bigdata": "Big data & cloud warehouses",
+  "connection_modal.step1.hint.tidb": "MySQL compatible / distributed HTAP",
+  "datasource.variant.tidb.v5": "TiDB 4.x – 5.x: foreign keys are not enforced; no placement policies or resource groups",
+  "datasource.variant.tidb.v6": "TiDB 6.x – 7.x: placement policies; foreign keys enforced from 6.6; resource groups from 7.1",
+  "datasource.variant.tidb.v8": "TiDB 8.x and later: foreign keys, resource groups, vector types and other new features",
+  "connection_modal.field.driverVariant.label": "Driver version",
+  "connection_modal.field.driverVariant.auto": "Auto-detect",
+  "connection_modal.field.driverVariant.autoDescription": "Reads the server version when connecting and picks the matching driver version",
+  "connection_modal.field.driverVariant.help": "Older and newer servers differ in protocol, metadata and syntax. Choose the driver version that matches the server, or auto-detect if unsure.",
+  "connection_modal.field.driverVariant.separateAgent": "Separate driver install"
 }

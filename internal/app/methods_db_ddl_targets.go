@@ -40,6 +40,9 @@ func resolveDDLDBType(config connection.ConnectionConfig) string {
 	if dbType == "oceanbase" && isOceanBaseOracleProtocol(config) {
 		return "oracle"
 	}
+	if dialect, ok := registryDDLDialect(dbType); ok {
+		return dialect
+	}
 	if dbType != "custom" {
 		return dbType
 	}

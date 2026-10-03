@@ -11791,5 +11791,18 @@
   "ai_settings.provider_preset.gonavi_ai.waiting_browser": "正在等待瀏覽器中的授權。裝置碼 {{code}}，請核對與瀏覽器頁面中顯示的一致。",
   "ai_settings.provider_preset.gonavi_ai.reopen_browser": "重新開啟授權頁",
   "ai_chat.composer_notice.builtin_login_pending.title": "請在瀏覽器中完成授權",
-  "ai_chat.composer_notice.builtin_login_pending.description": "裝置碼 {{code}}，請核對與瀏覽器頁面中顯示的一致。授權後點擊頁面上的「返回 GoNavi」。"
+  "ai_chat.composer_notice.builtin_login_pending.description": "裝置碼 {{code}}，請核對與瀏覽器頁面中顯示的一致。授權後點擊頁面上的「返回 GoNavi」。",
+  "db.backend.message.connect_success_with_version": "連線成功 · {{name}} {{version}} · 驅動版本：{{variant}}",
+  "db.backend.message.connect_success_with_variant": "連線成功 · 驅動版本：{{variant}}",
+  "connection_modal.step1.group.search": "搜尋引擎",
+  "connection_modal.step1.group.bigdata": "大數據與雲端數倉",
+  "connection_modal.step1.hint.tidb": "MySQL 相容 / 分散式 HTAP",
+  "datasource.variant.tidb.v5": "TiDB 4.x – 5.x：不執行外鍵約束，無放置策略與資源組",
+  "datasource.variant.tidb.v6": "TiDB 6.x – 7.x：支援放置策略，6.6 起執行外鍵約束，7.1 起支援資源組",
+  "datasource.variant.tidb.v8": "TiDB 8.x 及以上：外鍵、資源組與向量類型等新特性全部可用",
+  "connection_modal.field.driverVariant.label": "驅動版本",
+  "connection_modal.field.driverVariant.auto": "自動識別",
+  "connection_modal.field.driverVariant.autoDescription": "連線時讀取伺服器版本，自動選擇相符的驅動版本",
+  "connection_modal.field.driverVariant.help": "新舊伺服器在協定、中繼資料與語法上存在差異，請選擇與伺服器相符的驅動版本；不確定時選擇自動識別。",
+  "connection_modal.field.driverVariant.separateAgent": "需另行安裝驅動"
 }

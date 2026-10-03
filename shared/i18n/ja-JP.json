@@ -11791,5 +11791,18 @@
   "ai_settings.provider_preset.gonavi_ai.waiting_browser": "ブラウザーでの承認を待っています。デバイスコード {{code}}：ページに同じコードが表示されていることを確認してください。",
   "ai_settings.provider_preset.gonavi_ai.reopen_browser": "ページをもう一度開く",
   "ai_chat.composer_notice.builtin_login_pending.title": "ブラウザーでサインインを完了してください",
-  "ai_chat.composer_notice.builtin_login_pending.description": "デバイスコード {{code}}：ページに同じコードが表示されていることを確認してください。完了したら、ページの「Return to GoNavi」をクリックしてください。"
+  "ai_chat.composer_notice.builtin_login_pending.description": "デバイスコード {{code}}：ページに同じコードが表示されていることを確認してください。完了したら、ページの「Return to GoNavi」をクリックしてください。",
+  "db.backend.message.connect_success_with_version": "接続に成功しました · {{name}} {{version}} · ドライバーバージョン：{{variant}}",
+  "db.backend.message.connect_success_with_variant": "接続に成功しました · ドライバーバージョン：{{variant}}",
+  "connection_modal.step1.group.search": "検索エンジン",
+  "connection_modal.step1.group.bigdata": "ビッグデータとクラウド DWH",
+  "connection_modal.step1.hint.tidb": "MySQL 互換 / 分散 HTAP",
+  "datasource.variant.tidb.v5": "TiDB 4.x – 5.x：外部キー制約は適用されず、配置ポリシーとリソースグループはありません",
+  "datasource.variant.tidb.v6": "TiDB 6.x – 7.x：配置ポリシーに対応。6.6 以降は外部キーを適用、7.1 以降はリソースグループに対応",
+  "datasource.variant.tidb.v8": "TiDB 8.x 以降：外部キー、リソースグループ、ベクトル型などの新機能をすべて利用可能",
+  "connection_modal.field.driverVariant.label": "ドライバーバージョン",
+  "connection_modal.field.driverVariant.auto": "自動検出",
+  "connection_modal.field.driverVariant.autoDescription": "接続時にサーバーのバージョンを取得し、適合するドライバーバージョンを自動で選択します",
+  "connection_modal.field.driverVariant.help": "サーバーのバージョンによってプロトコル、メタデータ、構文が異なります。サーバーに合うドライバーバージョンを選択し、不明な場合は自動検出を選んでください。",
+  "connection_modal.field.driverVariant.separateAgent": "ドライバーの個別インストールが必要"
 }

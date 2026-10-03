@@ -17,6 +17,19 @@ type OptionalDriverAgentDB struct {
 	kingbaseSearchPath string
 	pingTimeout        time.Duration
 	serverMajor        int
+	// driverVariant / serverVersion 由描述表数据源的代理在 connect 时回报。
+	driverVariant string
+	serverVersion string
+}
+
+var _ DriverVariantReporter = (*OptionalDriverAgentDB)(nil)
+
+// DriverVariantInfo 返回代理回报的驱动版本档位与服务端版本；历史驱动的代理不回报，均为空串。
+func (d *OptionalDriverAgentDB) DriverVariantInfo() (string, string) {
+	if d == nil {
+		return "", ""
+	}
+	return d.driverVariant, d.serverVersion
 }
 
 func (d *OptionalDriverAgentDB) ElasticsearchServerMajor() int {
@@ -81,17 +94,19 @@ func newOptionalDriverAgentTransactionalDatabase(driverType string) databaseFact
 func (d *OptionalDriverAgentDB) Connect(config connection.ConnectionConfig) error {
 	d.kingbaseSearchPath = ""
 	d.serverMajor = 0
+	d.driverVariant, d.serverVersion = "", ""
 	if d.client != nil {
 		_ = d.client.close()
 		d.client = nil
 	}
 
-	executablePath, err := ResolveOptionalDriverAgentExecutablePath("", d.driverType)
+	agentKey := RegistryAgentKeyForConfig(d.driverType, config.DriverVariant)
+	executablePath, err := resolveOptionalDriverAgentExecutableForConfig(d.driverType, config)
 	if err != nil {
 		return err
 	}
-	logger.Infof("%s 驱动代理路径：%s", driverDisplayName(d.driverType), executablePath)
-	client, err := newOptionalDriverAgentClient(d.driverType, executablePath)
+	logger.Infof("%s 驱动代理路径：%s", driverDisplayName(agentKey), executablePath)
+	client, err := newOptionalDriverAgentClient(agentKey, executablePath)
 	if err != nil {
 		return err
 	}
@@ -110,6 +125,7 @@ func (d *OptionalDriverAgentDB) Connect(config connection.ConnectionConfig) erro
 	d.client = client
 	d.pingTimeout = connectTimeout
 	d.serverMajor = connectionInfo.ElasticsearchServerMajor
+	d.driverVariant, d.serverVersion = connectionInfo.DriverVariant, connectionInfo.ServerVersion
 	client.setConnectionCapabilities(connectionInfo)
 	d.ensureKingbaseSearchPath(config)
 	return nil

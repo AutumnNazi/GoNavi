@@ -11791,5 +11791,18 @@
   "ai_settings.provider_preset.gonavi_ai.waiting_browser": "正在等待浏览器中的授权。设备码 {{code}}，请核对与浏览器页面中显示的一致。",
   "ai_settings.provider_preset.gonavi_ai.reopen_browser": "重新打开授权页",
   "ai_chat.composer_notice.builtin_login_pending.title": "请在浏览器中完成授权",
-  "ai_chat.composer_notice.builtin_login_pending.description": "设备码 {{code}}，请核对与浏览器页面中显示的一致。授权后点击页面上的“返回 GoNavi”。"
+  "ai_chat.composer_notice.builtin_login_pending.description": "设备码 {{code}}，请核对与浏览器页面中显示的一致。授权后点击页面上的“返回 GoNavi”。",
+  "db.backend.message.connect_success_with_version": "连接成功 · {{name}} {{version}} · 驱动版本：{{variant}}",
+  "db.backend.message.connect_success_with_variant": "连接成功 · 驱动版本：{{variant}}",
+  "connection_modal.step1.group.search": "搜索引擎",
+  "connection_modal.step1.group.bigdata": "大数据与云数仓",
+  "connection_modal.step1.hint.tidb": "MySQL 兼容 / 分布式 HTAP",
+  "datasource.variant.tidb.v5": "TiDB 4.x – 5.x：不执行外键约束，无放置策略与资源组",
+  "datasource.variant.tidb.v6": "TiDB 6.x – 7.x：支持放置策略，6.6 起执行外键约束，7.1 起支持资源组",
+  "datasource.variant.tidb.v8": "TiDB 8.x 及以上：外键、资源组与向量类型等新特性全部可用",
+  "connection_modal.field.driverVariant.label": "驱动版本",
+  "connection_modal.field.driverVariant.auto": "自动识别",
+  "connection_modal.field.driverVariant.autoDescription": "连接时读取服务端版本，自动选择匹配的驱动版本",
+  "connection_modal.field.driverVariant.help": "新老服务端在协议、元数据与语法上存在差异，请选择与服务端匹配的驱动版本；不确定时选择自动识别。",
+  "connection_modal.field.driverVariant.separateAgent": "需单独安装驱动"
 }
