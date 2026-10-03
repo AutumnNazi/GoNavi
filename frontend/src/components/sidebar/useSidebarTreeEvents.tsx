@@ -33,6 +33,7 @@ import type { SidebarStoreStateApi } from './useSidebarStoreState';
 import type { SidebarSearchStateApi } from './useSidebarSearchState';
 import type { SidebarTreeViewStateApi } from './useSidebarTreeViewState';
 import type { SidebarTitlebarSyncApi } from './useSidebarTitlebarSync';
+import { isElasticsearchFamilyType } from '../../utils/elasticsearchFamily';
 
 export interface UseSidebarTreeEventsInput {
   loadDatabases: ReturnType<typeof useSidebarTreeLoaders>['loadDatabases'];
@@ -151,7 +152,7 @@ export const useSidebarTreeEvents = ({
       const conn = connections.find(c => c.id === connectionId);
       if (!conn) return false;
       const dbType = resolveDataSourceType(conn.config);
-      return dbType === 'elasticsearch' || dbType === 'mongodb' || dbType === 'redis' || dbType === 'iotdb';
+      return isElasticsearchFamilyType(dbType) || dbType === 'mongodb' || dbType === 'redis' || dbType === 'iotdb';
   };
 
   const openDesign = (node: any, initialTab: string, readOnly: boolean = false) => {

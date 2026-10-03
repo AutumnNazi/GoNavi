@@ -1371,6 +1371,7 @@
                     "iotdb":  "sql-iotdb",
                     "clickhouse":  "sql-clickhouse",
                     "elasticsearch":  "document-index-readonly",
+                    "opensearch":  "document-index-readonly",
                     "trino":  "sql-trino",
                     "tidb":  "sql-mysql",
                     "nacos":  "dedicated-workbench",

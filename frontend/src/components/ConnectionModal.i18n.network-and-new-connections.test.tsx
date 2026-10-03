@@ -755,7 +755,7 @@ describe("ConnectionModal i18n", () => {
       findConnectionTypeButtons(renderer!).map(
         (node) => node.props["data-connection-type-key"],
       ),
-    ).toEqual(["mongodb", "redis", "elasticsearch"]);
+    ).toEqual(["mongodb", "redis"]);
 
     await act(async () => {
       findInputByPlaceholder(

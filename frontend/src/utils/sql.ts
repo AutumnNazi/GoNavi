@@ -1,5 +1,6 @@
 import { buildRegistryPaginatedSelectSQL, resolveRegistryQuoting } from './dataSourceRegistry/sqlBehavior';
 import { splitQualifiedNameSegments, stripIdentifierQuotes } from './qualifiedName';
+import { isElasticsearchFamilyType } from './elasticsearchFamily';
 
 export type FilterValueSelection = {
   values: string[];
@@ -140,7 +141,7 @@ export const buildOrderBySQL = (
   fallbackColumns: string[] = [],
 ) => {
   const dbTypeLower = String(dbType || '').trim().toLowerCase();
-  const isElasticsearch = dbTypeLower === 'elasticsearch' || dbTypeLower === 'elastic';
+  const isElasticsearch = isElasticsearchFamilyType(dbTypeLower);
   const items = normalizeSortInfoItems(sortInfo);
   const seen = new Set<string>();
   const sortParts: string[] = [];

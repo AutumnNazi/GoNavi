@@ -3,6 +3,7 @@ import type { TabData } from '../../types';
 import { resolveSqlDialect, isMysqlFamilyDialect } from '../../utils/sqlDialect';
 import { hasQueryTabDraft, getQueryTabDraft } from '../../utils/sqlFileTabDrafts';
 import { normalizeMetadataDialect } from './queryEditorCompletionMetadata';
+import { isElasticsearchFamilyType } from '../../utils/elasticsearchFamily';
 
 export const resolveQueryEditorConnectionTimeout = (config: Record<string, any>): number => {
     const rawTimeout = Number(config?.timeout);
@@ -14,7 +15,7 @@ export type QueryEditorMonacoLanguage = 'sql' | 'mysql' | 'elasticsearch-console
 export const resolveQueryEditorMonacoLanguage = (conn: any): QueryEditorMonacoLanguage => {
     const connectionType = String(conn?.config?.type || '').trim().toLowerCase();
     const connectionDriver = String(conn?.config?.driver || '').trim().toLowerCase();
-    if (connectionType === 'elasticsearch' || connectionType === 'elastic' || connectionDriver === 'elasticsearch' || connectionDriver === 'elastic') {
+    if (isElasticsearchFamilyType(connectionType) || isElasticsearchFamilyType(connectionDriver)) {
         return 'elasticsearch-console';
     }
     const dialect = resolveSqlDialect(

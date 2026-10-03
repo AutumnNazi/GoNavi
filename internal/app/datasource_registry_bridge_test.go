@@ -35,6 +35,24 @@ func TestRegistryTypesBorrowExistingDialects(t *testing.T) {
 	}
 }
 
+// DBQuery 按原始类型分流读写：OpenSearch 控制台的读请求必须走查询路径，否则 AI 工具拿不到结果行。
+func TestRegistryTypesClassifyStatementsWithBorrowedDialect(t *testing.T) {
+	for query, want := range map[string]bool{
+		"GET /orders/_search\n{\"query\": {\"match_all\": {}}}":        true,
+		"POST /_plugins/_sql\n{\"query\": \"SELECT sku FROM orders\"}": true,
+		"DELETE /orders": false,
+		"POST /_plugins/_sql\n{\"query\": \"DELETE FROM orders\"}": false,
+		"POST /orders/_doc\n{\"sku\": \"A-1\"}":                    false,
+	} {
+		if got := isReadOnlySQLQuery("opensearch", query); got != want {
+			t.Fatalf("isReadOnlySQLQuery(opensearch, %q) = %v, want %v", query, got, want)
+		}
+	}
+	if !isReadOnlySQLQuery("tidb", "SELECT * FROM orders") || isReadOnlySQLQuery("tidb", "UPDATE orders SET qty = 1") {
+		t.Fatal("TiDB statements must classify with the MySQL rules")
+	}
+}
+
 func TestRegistryAgentsAppearInDriverManager(t *testing.T) {
 	definitions := allDriverDefinitionsWithPackages(nil)
 	found := map[string]driverDefinition{}

@@ -33,6 +33,7 @@ import {
   normalizeNacosContextPath,
 } from "./connectionModalUriSchemes";
 import { normalizeFileDbPath, resolveOracleConnectionTarget } from "./connectionModalUriParams";
+import { isElasticsearchFamilyType } from "../../utils/elasticsearchFamily";
 
 export const parseUriToValues = (
   uriText: string,
@@ -660,7 +661,7 @@ export const parseUriToValues = (
           parsedValues.useSSL = false;
           parsedValues.sslMode = "disable";
         }
-      } else if (type === "chroma" || type === "qdrant" || type === "milvus") {
+      } else if (type === "chroma" || type === "qdrant" || type === "milvus" || isElasticsearchFamilyType(type)) {
         const tls = String(
           parsed.params.get("tls") ||
             parsed.params.get("ssl") ||

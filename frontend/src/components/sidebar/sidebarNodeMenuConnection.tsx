@@ -14,6 +14,7 @@ import {
 import type { MenuProps } from 'antd';
 import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
 import { buildElasticsearchConsoleTemplates } from '../../utils/elasticsearchConsole';
+import { isElasticsearchFamilyType } from '../../utils/elasticsearchFamily';
 import { GnNewQueryIcon } from '../icons/gnIcons';
 
 export interface BuildConnectionNodeMenuItemsInput {
@@ -225,7 +226,7 @@ export const buildConnectionNodeMenuItems = ({ isRedis, refreshConnectionResourc
 
   // Regular database connection menu
   const connectionCapabilities = getDataSourceCapabilities((node.dataRef as SavedConnection)?.config);
-  const isElasticsearch = connectionCapabilities.type === 'elasticsearch';
+  const isElasticsearch = isElasticsearchFamilyType(connectionCapabilities.type);
   const isMessageQueue = ['mqtt', 'kafka', 'rocketmq', 'rabbitmq', 'pulsar'].includes(connectionCapabilities.type);
   const messagePublishTarget = isMessageQueue ? resolveMessagePublishTarget(node) : null;
   return [

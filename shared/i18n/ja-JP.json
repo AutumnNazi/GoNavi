@@ -11829,5 +11829,9 @@
   "connection_modal.step1.hint.timescaledb": "PostgreSQL + 時系列拡張",
   "datasource.variant.timescaledb.v1": "ハイパーテーブルのメタデータは _timescaledb_catalog。連続集計は CREATE VIEW ... WITH (timescaledb.continuous)",
   "datasource.variant.timescaledb.v2": "timescaledb_information ビュー。create_hypertable(テーブル, 時刻列, chunk_time_interval => ...) 構文",
-  "datasource.variant.timescaledb.v213": "by_range / by_hash のディメンション構築関数と新しい圧縮（カラムストア）設定を利用可能"
+  "datasource.variant.timescaledb.v213": "by_range / by_hash のディメンション構築関数と新しい圧縮（カラムストア）設定を利用可能",
+  "connection_modal.step1.hint.opensearch": "インデックス閲覧、DSL / SQL / PPL コンソール",
+  "datasource.variant.opensearch.v1": "Elasticsearch 7.10 からのフォーク。_plugins と旧 _opendistro エンドポイントが共存",
+  "datasource.variant.opensearch.v2": "マッピングの type パラメータを廃止。2.12 以降、セキュリティプラグインには初期管理者パスワードが必要",
+  "datasource.variant.opensearch.v3": "Lucene 10 と JDK 21 ベース。非推奨の旧エンドポイントと設定を削除"
 }

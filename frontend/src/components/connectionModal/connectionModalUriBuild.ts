@@ -29,6 +29,7 @@ import {
   appendSSLPathParamsForUri,
   encodeNacosContextPath,
 } from "./connectionModalUriSchemes";
+import { isElasticsearchFamilyType } from "../../utils/elasticsearchFamily";
 
 export const buildUriFromValues = (values: any) => {
   const type = String(values.type || "")
@@ -332,7 +333,7 @@ export const buildUriFromValues = (values: any) => {
       ? "gaussdb"
       : type === "postgres"
       ? "postgresql"
-      : type === "chroma" || type === "qdrant" || type === "milvus"
+      : type === "chroma" || type === "qdrant" || type === "milvus" || isElasticsearchFamilyType(type)
         ? values.useSSL
           ? "https"
           : "http"

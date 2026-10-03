@@ -11829,5 +11829,9 @@
   "connection_modal.step1.hint.timescaledb": "PostgreSQL + расширение для временных рядов",
   "datasource.variant.timescaledb.v1": "Метаданные гипертаблиц в _timescaledb_catalog; непрерывные агрегаты через CREATE VIEW ... WITH (timescaledb.continuous)",
   "datasource.variant.timescaledb.v2": "Представления timescaledb_information; синтаксис create_hypertable(таблица, столбец времени, chunk_time_interval => ...)",
-  "datasource.variant.timescaledb.v213": "Доступны построители измерений by_range / by_hash и новые настройки сжатия (columnstore)"
+  "datasource.variant.timescaledb.v213": "Доступны построители измерений by_range / by_hash и новые настройки сжатия (columnstore)",
+  "connection_modal.step1.hint.opensearch": "Просмотр индексов, консоль DSL / SQL / PPL",
+  "datasource.variant.opensearch.v1": "Ответвление от Elasticsearch 7.10; конечные точки _plugins и старые _opendistro работают параллельно",
+  "datasource.variant.opensearch.v2": "Типы маппинга удалены; с плагином безопасности с версии 2.12 нужен начальный пароль администратора",
+  "datasource.variant.opensearch.v3": "На базе Lucene 10 и JDK 21; устаревшие конечные точки и настройки удалены"
 }

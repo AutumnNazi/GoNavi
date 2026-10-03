@@ -29,6 +29,7 @@ import { filterVisibleDatabaseNames } from '../../utils/databaseVisibility';
 import { resolveSidebarMessageQueueProfile } from './sidebarMessageProfiles';
 import { GnDatabaseIcon } from '../icons/gnIcons';
 import { resolveDataSourceType } from '../../utils/dataSourceCapabilities';
+import { isElasticsearchFamilyType } from '../../utils/elasticsearchFamily';
 import type { SidebarTreeLoadStateApi } from './useSidebarTreeLoadState';
 import type { UseSidebarTreeLoadersOptions } from './useSidebarTreeLoaders';
 
@@ -480,7 +481,7 @@ export const useSidebarDatabaseLoader = ({
                   // 空列表：清理 loadedKeys 以允许重新加载，不设置 children = []
                   setLoadedKeys(prev => prev.filter(k => k !== node.key));
                   const isEmptyElasticsearchCluster =
-                      resolveDataSourceType(currentConnection.config) === 'elasticsearch'
+                      isElasticsearchFamilyType(resolveDataSourceType(currentConnection.config))
                       && returnedDatabaseNames.length === 0;
                   if (isEmptyElasticsearchCluster) {
                       // Clear stale index nodes after the last index is deleted while

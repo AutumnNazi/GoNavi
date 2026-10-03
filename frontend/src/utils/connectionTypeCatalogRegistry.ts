@@ -9,9 +9,9 @@ type CatalogGroup = { labelKey: string; label: string; items: CatalogItem[] };
 
 const GROUP_LABEL_KEY_PREFIX = 'connection_modal.step1.group.';
 
-// 描述表新增分组的位置：插在指定既有分组之后；分组为空时不出现，避免空卡片区。
-const REGISTRY_ONLY_GROUPS: Array<{ group: DataSourceCatalogGroup; label: string; after: string }> = [
-  { group: 'search', label: 'Search engines', after: 'nosql' },
+// 描述表新增分组的位置：插在指定既有分组之后；分组为空时不出现，避免空卡片区。builtin 是迁入该分组的既有类型。
+const REGISTRY_ONLY_GROUPS: Array<{ group: DataSourceCatalogGroup; label: string; after: string; builtin?: CatalogItem[] }> = [
+  { group: 'search', label: 'Search engines', after: 'nosql', builtin: [{ key: 'elasticsearch', name: 'Elasticsearch' }] },
   { group: 'bigdata', label: 'Big data & cloud warehouses', after: 'timeseries' },
 ];
 
@@ -33,7 +33,7 @@ export const withRegistryDataSources = (groups: CatalogGroup[]): CatalogGroup[] 
     items: [...group.items, ...registryItemsFor(groupKeyOf(group))],
   }));
   for (const extra of REGISTRY_ONLY_GROUPS) {
-    const items = registryItemsFor(extra.group);
+    const items = [...(extra.builtin ?? []), ...registryItemsFor(extra.group)];
     if (items.length === 0) continue;
     const anchor = merged.findIndex((group) => groupKeyOf(group) === extra.after);
     const entry = { labelKey: `${GROUP_LABEL_KEY_PREFIX}${extra.group}`, label: extra.label, items };

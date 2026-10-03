@@ -365,6 +365,10 @@ func normalizeSQLClassifierDBType(dbType string) string {
 	case "cache", "caché", "intersystems cache", "intersystems caché", "intersystems-cache", "intersystems-caché", "intersystemscache", "intersystemscaché", "inter-systems-cache", "inter-systems-caché", "intersystems-cache-database", "cache-db", "cachedb":
 		return "iris"
 	default:
+		// 描述表类型按借用方言分类（TiDB → mysql、OpenSearch → elasticsearch），与 resolveDDLDBType 一致。
+		if dialect, ok := registryDDLDialect(normalized); ok {
+			return dialect
+		}
 		return normalized
 	}
 }

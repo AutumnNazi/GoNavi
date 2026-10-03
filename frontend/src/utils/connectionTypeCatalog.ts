@@ -99,7 +99,6 @@ export const CONNECTION_TYPE_GROUPS: ConnectionTypeCatalogGroup[] = withRegistry
     items: [
       { key: 'mongodb', name: 'MongoDB' },
       { key: 'redis', name: 'Redis' },
-      { key: 'elasticsearch', name: 'Elasticsearch' },
     ],
   },
   {

@@ -33,7 +33,7 @@ func (d *OptionalDriverAgentDB) DriverVariantInfo() (string, string) {
 }
 
 func (d *OptionalDriverAgentDB) ElasticsearchServerMajor() int {
-	if d == nil || normalizeRuntimeDriverType(d.driverType) != "elasticsearch" {
+	if d == nil || !IsElasticsearchFamily(d.driverType) {
 		return 0
 	}
 	return d.serverMajor
@@ -240,7 +240,7 @@ var _ ExternalDatabaseAttacher = (*OptionalDriverAgentDB)(nil)
 var _ ExternalAttachmentLister = (*OptionalDriverAgentDB)(nil)
 
 func (d *OptionalDriverAgentDB) ExecuteElasticsearchConsoleRequest(ctx context.Context, request ElasticsearchConsoleRequest) (ElasticsearchConsoleResponse, error) {
-	if normalizeRuntimeDriverType(d.driverType) != "elasticsearch" {
+	if !IsElasticsearchFamily(d.driverType) {
 		return ElasticsearchConsoleResponse{}, fmt.Errorf("当前驱动不支持 Elasticsearch Console")
 	}
 	if ctx == nil {

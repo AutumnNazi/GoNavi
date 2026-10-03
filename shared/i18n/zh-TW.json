@@ -11829,5 +11829,9 @@
   "connection_modal.step1.hint.timescaledb": "PostgreSQL + 時序擴充",
   "datasource.variant.timescaledb.v1": "超表中繼資料在 _timescaledb_catalog；連續聚合用 CREATE VIEW ... WITH (timescaledb.continuous)",
   "datasource.variant.timescaledb.v2": "timescaledb_information 檢視；create_hypertable(表, 時間欄, chunk_time_interval => ...) 語法",
-  "datasource.variant.timescaledb.v213": "by_range / by_hash 維度建構器、新版壓縮（欄存）設定全部可用"
+  "datasource.variant.timescaledb.v213": "by_range / by_hash 維度建構器、新版壓縮（欄存）設定全部可用",
+  "connection_modal.step1.hint.opensearch": "索引瀏覽、DSL / SQL / PPL 主控台",
+  "datasource.variant.opensearch.v1": "從 Elasticsearch 7.10 分出，_plugins 與舊 _opendistro 端點並存",
+  "datasource.variant.opensearch.v2": "移除映射 type 參數；2.12 起啟用安全外掛需設定初始管理員密碼",
+  "datasource.variant.opensearch.v3": "基於 Lucene 10 與 JDK 21，移除已棄用的舊端點與設定"
 }

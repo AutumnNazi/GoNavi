@@ -53,6 +53,17 @@ func DataSourceSpec(driverType string) (datasource.Spec, bool) {
 	return datasource.Lookup(strings.TrimSpace(driverType))
 }
 
+// IsElasticsearchFamily 报告驱动是否走 Elasticsearch 实现：Elasticsearch 本身，或借用其方言的描述表类型（如 OpenSearch），
+// 这些驱动都提供 Elasticsearch Console 与服务端主版本。
+func IsElasticsearchFamily(driverType string) bool {
+	normalized := normalizeRuntimeDriverType(driverType)
+	if normalized == "elasticsearch" {
+		return true
+	}
+	spec, ok := datasource.Lookup(normalized)
+	return ok && spec.DDLDialect == "elasticsearch"
+}
+
 // RegistryAgentKeyForConfig 返回连接要启动的代理驱动键：描述表类型按连接上选择的驱动版本档位
 // 决定（独立构建档位对应独立的代理键），其他类型返回原类型。
 func RegistryAgentKeyForConfig(driverType, requestedVariant string) string {

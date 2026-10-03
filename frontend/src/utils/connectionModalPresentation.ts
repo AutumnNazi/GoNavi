@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { getDataSourceSpec } from './dataSourceRegistry';
 
 type StoredSecretPlaceholderOptions = {
   hasStoredSecret?: boolean;
@@ -145,10 +146,14 @@ export const getConnectionConfigLayoutKindLabel = (
   }
 };
 
+// 描述表 ui.layout 借用的既有表单布局：search → Elasticsearch 的索引类表单。
+const REGISTRY_LAYOUT_TYPES: Record<string, string> = { search: 'elasticsearch' };
+
 export const resolveConnectionConfigLayout = (
   rawType: string,
 ): ConnectionConfigLayout => {
-  const type = String(rawType || '').trim().toLowerCase();
+  const normalizedType = String(rawType || '').trim().toLowerCase();
+  const type = REGISTRY_LAYOUT_TYPES[getDataSourceSpec(normalizedType)?.ui?.layout ?? ''] ?? normalizedType;
 
   if (type === 'jvm') {
     return {

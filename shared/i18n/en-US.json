@@ -11829,5 +11829,9 @@
   "connection_modal.step1.hint.timescaledb": "PostgreSQL + time-series extension",
   "datasource.variant.timescaledb.v1": "Hypertable metadata lives in _timescaledb_catalog; continuous aggregates use CREATE VIEW ... WITH (timescaledb.continuous)",
   "datasource.variant.timescaledb.v2": "timescaledb_information views; create_hypertable(table, time_column, chunk_time_interval => ...) syntax",
-  "datasource.variant.timescaledb.v213": "by_range / by_hash dimension builders and the newer compression (columnstore) settings are available"
+  "datasource.variant.timescaledb.v213": "by_range / by_hash dimension builders and the newer compression (columnstore) settings are available",
+  "connection_modal.step1.hint.opensearch": "Index browsing, DSL / SQL / PPL console",
+  "datasource.variant.opensearch.v1": "Forked from Elasticsearch 7.10; _plugins and legacy _opendistro endpoints coexist",
+  "datasource.variant.opensearch.v2": "Mapping types removed; with the security plugin, 2.12+ requires an initial admin password",
+  "datasource.variant.opensearch.v3": "Built on Lucene 10 and JDK 21; deprecated legacy endpoints and settings removed"
 }
