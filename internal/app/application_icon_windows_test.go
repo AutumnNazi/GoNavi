@@ -532,3 +532,77 @@ func TestRemoveStaleWindowsShortcutUpdateScriptsKeepsIconState(t *testing.T) {
 		}
 	}
 }
+
+func TestWindowsDiffPinsNameSets(t *testing.T) {
+	added, removed := windowsDiffPinsNameSets("gonavi.lnk\nsteam.lnk", "explorer.lnk\ngonavi.lnk")
+	if len(added) != 1 || added[0] != "explorer.lnk" {
+		t.Fatalf("unexpected added set: %v", added)
+	}
+	if len(removed) != 1 || removed[0] != "steam.lnk" {
+		t.Fatalf("unexpected removed set: %v", removed)
+	}
+	added, removed = windowsDiffPinsNameSets("", "")
+	if len(added) != 0 || len(removed) != 0 {
+		t.Fatalf("empty sets must not diff: %v %v", added, removed)
+	}
+}
+
+func TestWindowsPinsChangeAffectsGoNavi(t *testing.T) {
+	cases := []struct {
+		name    string
+		added   []string
+		removed []string
+		want    bool
+	}{
+		{name: "our pin added", added: []string{"gonavi.lnk"}, want: true},
+		{name: "our rotated pin removed", removed: []string{"gonavi (2).lnk"}, want: true},
+		{name: "foreign pins only", added: []string{"chrome.lnk"}, removed: []string{"steam.lnk"}, want: false},
+		{name: "nothing changed", want: false},
+	}
+	for _, tc := range cases {
+		if got := windowsPinsChangeAffectsGoNavi(tc.added, tc.removed); got != tc.want {
+			t.Fatalf("%s: got %v want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestWindowsSendShortcutRefreshNotificationsUsesKnownFolders(t *testing.T) {
+	var items, directories []string
+	var associations int
+	previousItem := windowsApplicationIconNotifyItemChanged
+	previousDirectory := windowsApplicationIconNotifyDirectoryChanged
+	previousAssociation := windowsApplicationIconNotifyShellChange
+	defer func() {
+		windowsApplicationIconNotifyItemChanged = previousItem
+		windowsApplicationIconNotifyDirectoryChanged = previousDirectory
+		windowsApplicationIconNotifyShellChange = previousAssociation
+	}()
+	windowsApplicationIconNotifyItemChanged = func(path string) { items = append(items, path) }
+	windowsApplicationIconNotifyDirectoryChanged = func(path string) { directories = append(directories, path) }
+	windowsApplicationIconNotifyShellChange = func() { associations++ }
+
+	windowsSendShortcutRefreshNotifications()
+
+	if associations != 1 {
+		t.Fatalf("association change notification sent %d times, want 1", associations)
+	}
+	if len(directories) == 0 {
+		t.Fatal("no folder notifications were sent")
+	}
+	seenPrograms := false
+	for _, dir := range directories {
+		if strings.HasSuffix(strings.ToLower(dir), `start menu\programs`) {
+			seenPrograms = true
+		}
+	}
+	if !seenPrograms {
+		t.Fatalf("Start Menu Programs folder missing from refresh pass: %v", directories)
+	}
+	// Item notifications only fire for existing GoNavi.lnk files; on a clean
+	// machine none exist, which must not error or notify.
+	for _, item := range items {
+		if !strings.HasSuffix(strings.ToLower(item), "gonavi.lnk") {
+			t.Fatalf("unexpected item notification target: %s", item)
+		}
+	}
+}

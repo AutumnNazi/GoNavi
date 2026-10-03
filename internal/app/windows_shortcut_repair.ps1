@@ -248,18 +248,18 @@ function Restore-GoNaviDesktopShortcutState {
     return $succeeded
 }
 
-function Send-ShellItemUpdatedNotification {
-    param([string]$Path)
-
-    try {
-        if (-not ('GoNaviShortcutShellNotification' -as [type])) {
-            Add-Type -TypeDefinition @'
+function Ensure-GoNaviShortcutShellNotificationType {
+    if ('GoNaviShortcutShellNotification' -as [type]) {
+        return
+    }
+    Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 
 public static class GoNaviShortcutShellNotification
 {
     private const uint SHCNE_UPDATEITEM = 0x00002000;
+    private const uint SHCNE_UPDATEDIR = 0x04000000;
     private const uint SHCNF_PATHW = 0x0005;
     private const uint SHCNF_FLUSH = 0x1000;
 
@@ -270,12 +270,39 @@ public static class GoNaviShortcutShellNotification
     {
         SHChangeNotify(SHCNE_UPDATEITEM, SHCNF_PATHW | SHCNF_FLUSH, path, IntPtr.Zero);
     }
+
+    public static void NotifyDirectoryUpdated(string path)
+    {
+        SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_PATHW | SHCNF_FLUSH, path, IntPtr.Zero);
+    }
 }
 '@
-        }
+}
+
+function Send-ShellItemUpdatedNotification {
+    param([string]$Path)
+
+    try {
+        Ensure-GoNaviShortcutShellNotificationType
         [GoNaviShortcutShellNotification]::NotifyItemUpdated($Path)
     } catch {
         Write-ShortcutRepairLog ("shell shortcut refresh failed for " + $Path + ": " + $_.Exception.Message)
+    }
+}
+
+function Send-ShellDirectoryUpdatedNotification {
+    # The Start menu keeps its own per-folder icon snapshot and ignores
+    # UPDATEITEM for a single .lnk (observed on Windows 11 26200: the all-apps
+    # entry kept the previous brand icon after in-place IconLocation rewrites).
+    # UPDATEDIR on the containing folder is the documented folder-level refresh
+    # that StartMenuExperienceHost honours.
+    param([string]$Path)
+
+    try {
+        Ensure-GoNaviShortcutShellNotificationType
+        [GoNaviShortcutShellNotification]::NotifyDirectoryUpdated($Path)
+    } catch {
+        Write-ShortcutRepairLog ("shell directory refresh failed for " + $Path + ": " + $_.Exception.Message)
     }
 }
 
@@ -530,8 +557,8 @@ function Test-ShortcutOwnedByIconDirectory {
         if (-not [string]::IsNullOrWhiteSpace($classicIcon) -and $classicIcon.StartsWith($iconDirectory, [StringComparison]::OrdinalIgnoreCase)) {
             return $true
         }
-        $folderPath = Split-Path -LiteralPath $ShortcutPath -Parent
-        $fileName = Split-Path -LiteralPath $ShortcutPath -Leaf
+        $folderPath = [IO.Path]::GetDirectoryName($ShortcutPath)
+        $fileName = [IO.Path]::GetFileName($ShortcutPath)
         $namespace = (New-Object -ComObject Shell.Application).Namespace($folderPath)
         if ($null -eq $namespace) {
             return $false
@@ -551,8 +578,8 @@ function Get-GoNaviShortcutAppUserModelID {
     param([string]$ShortcutPath)
 
     try {
-        $folderPath = Split-Path -LiteralPath $ShortcutPath -Parent
-        $fileName = Split-Path -LiteralPath $ShortcutPath -Leaf
+        $folderPath = [IO.Path]::GetDirectoryName($ShortcutPath)
+        $fileName = [IO.Path]::GetFileName($ShortcutPath)
         $namespace = (New-Object -ComObject Shell.Application).Namespace($folderPath)
         if ($null -eq $namespace) {
             return ''
@@ -632,6 +659,7 @@ function Ensure-GoNaviAumidShortcut {
     }
     Write-ShortcutRepairLog ("created AUMID shortcut: " + $shortcutPath)
     Send-ShellItemUpdatedNotification $shortcutPath
+    Send-ShellDirectoryUpdatedNotification ([IO.Path]::GetDirectoryName($ShortcutPath))
     return $true
 }
 
@@ -803,6 +831,7 @@ function Set-GoNaviShortcutBrandIcon {
                             throw ('shortcut is not writable: ' + $shortcutFile.FullName)
                         }
                         Send-ShellItemUpdatedNotification $shortcutFile.FullName
+                        Send-ShellDirectoryUpdatedNotification ([IO.Path]::GetDirectoryName($shortcutFile.FullName))
                         continue
                     }
                     $wantedIconLocation = $normalizedIconPath + ',0'
@@ -824,6 +853,7 @@ function Set-GoNaviShortcutBrandIcon {
                         }
                     }
                     Send-ShellItemUpdatedNotification $shortcutFile.FullName
+                    Send-ShellDirectoryUpdatedNotification ([IO.Path]::GetDirectoryName($shortcutFile.FullName))
                 } catch {
                     # A single failure is logged, never fatal: one read-only system
                     # shortcut must not sink the writable ones with it.

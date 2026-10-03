@@ -124,6 +124,32 @@ func TestWindowsShortcutBrandIconDoesNotWriteUnsupportedWScriptAUMID(t *testing.
 	if got := strings.Count(script, `Set-GoNaviShortcutRelaunchProperties -ShortcutPath`); got != 3 {
 		t.Fatalf("unexpected relaunch property call site count %d:\n%s", got, script)
 	}
+	// The Start menu ignores per-item notifications for rewritten .lnk files
+	// (observed on Windows 11 26200), so every shortcut update must also send
+	// a folder-level UPDATEDIR and the notification type must expose it.
+	for _, token := range []string{
+		`function Send-ShellDirectoryUpdatedNotification`,
+		`NotifyDirectoryUpdated`,
+		`Send-ShellDirectoryUpdatedNotification ([IO.Path]::GetDirectoryName($shortcutFile.FullName))`,
+		`Send-ShellDirectoryUpdatedNotification ([IO.Path]::GetDirectoryName($ShortcutPath))`,
+	} {
+		if !strings.Contains(script, token) {
+			t.Fatalf("start menu folder refresh missing %q:\n%s", token, script)
+		}
+	}
+	// Windows PowerShell 5.1 only allows Split-Path -LiteralPath together with
+	// -Resolve; -Parent/-Leaf/-Qualifier throw AmbiguousParameterSet at runtime
+	// (silently swallowed by catch blocks). The script must keep using
+	// System.IO.Path helpers for literal paths.
+	for _, token := range []string{
+		`Split-Path -LiteralPath $ShortcutPath -Parent`,
+		`Split-Path -LiteralPath $ShortcutPath -Leaf`,
+		`Split-Path -LiteralPath $shortcutFile.FullName`,
+	} {
+		if strings.Contains(script, token) {
+			t.Fatalf("PowerShell 5.1-incompatible Split-Path usage found %q:\n%s", token, script)
+		}
+	}
 }
 
 func TestBuildWindowsMSILaunchCommandPreservesPathsInEnvironment(t *testing.T) {
