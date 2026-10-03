@@ -47,8 +47,77 @@ const readDataGridSecondaryActionsSource = (): string =>
 const readDataGridV2DdlWorkspaceSource = (): string =>
   readFileSync(new URL("../components/DataGridV2DdlWorkspace.tsx", import.meta.url), "utf8");
 
+// QueryEditor.tsx 已拆成 hook / 子组件 / 辅助模块，源码扫描按原顺序聚合。
+const QUERY_EDITOR_COMPONENT_MODULES = [
+  "QueryEditor.tsx",
+  "queryEditor/queryEditorRunHelpers.ts",
+  "queryEditor/queryEditorObjectEditSql.ts",
+  "queryEditor/queryEditorObjectDefinitionQueries.ts",
+  "queryEditor/queryEditorCompletionState.ts",
+  "queryEditor/queryEditorCompletionColumns.ts",
+  "queryEditor/queryEditorLazyTablesCache.ts",
+  "queryEditor/queryEditorHoverDdl.ts",
+  "queryEditor/queryEditorCompletionTables.ts",
+  "queryEditor/queryEditorResultSort.ts",
+  "queryEditor/hooks/useQueryEditorCoreState.ts",
+  "queryEditor/hooks/useQueryEditorConnectionContext.ts",
+  "queryEditor/hooks/useQueryEditorShortcutsAndSnippets.ts",
+  "queryEditor/hooks/useQueryEditorAiCompletionTriggers.ts",
+  "queryEditor/hooks/useQueryEditorExecutionStatus.ts",
+  "queryEditor/hooks/useQueryEditorQueryContext.ts",
+  "queryEditor/hooks/useQueryEditorDraftSync.ts",
+  "queryEditor/hooks/useQueryEditorAiContext.ts",
+  "queryEditor/hooks/useQueryEditorObjectDecorations.ts",
+  "queryEditor/hooks/useQueryEditorDropAndLineEdits.ts",
+  "queryEditor/hooks/useQueryEditorAiAssistActions.ts",
+  "queryEditor/hooks/useQueryEditorMetadataLoading.ts",
+  "queryEditor/metadata/queryEditorMetadataRowCollectors.ts",
+  "queryEditor/hooks/useQueryEditorEditorSplit.ts",
+  "queryEditor/hooks/useQueryEditorObjectEditTabs.ts",
+  "queryEditor/hooks/useQueryEditorMonacoMount.ts",
+  "queryEditor/monaco/queryEditorAiInlineGhostState.ts",
+  "queryEditor/monaco/queryEditorAiInlineGhostActions.ts",
+  "queryEditor/monaco/queryEditorNavigationHover.ts",
+  "queryEditor/monaco/queryEditorImeAndDropHandlers.ts",
+  "queryEditor/monaco/queryEditorEditorEventBindings.ts",
+  "queryEditor/monaco/queryEditorMouseAndDisposeBindings.ts",
+  "queryEditor/monaco/queryEditorKeyBindings.ts",
+  "queryEditor/monaco/queryEditorSqlLanguageProviders.ts",
+  "queryEditor/sqlCompletion/sqlCompletionDialectContext.ts",
+  "queryEditor/sqlCompletion/sqlCompletionSuggestionBuilders.ts",
+  "queryEditor/sqlCompletion/sqlCompletionMetadataLookups.ts",
+  "queryEditor/sqlCompletion/sqlCompletionStatementContext.ts",
+  "queryEditor/sqlCompletion/sqlCompletionQualifierSuggestions.ts",
+  "queryEditor/sqlCompletion/sqlCompletionRankingContext.ts",
+  "queryEditor/sqlCompletion/sqlCompletionGlobalSuggestions.ts",
+  "queryEditor/monaco/queryEditorSlashCommandBinding.ts",
+  "queryEditor/hooks/useQueryEditorFormatting.tsx",
+  "queryEditor/hooks/useQueryEditorResultSetModel.ts",
+  "queryEditor/hooks/useQueryEditorResultReload.ts",
+  "queryEditor/hooks/useQueryEditorResultPaging.ts",
+  "queryEditor/hooks/useQueryEditorElasticsearchRun.tsx",
+  "queryEditor/hooks/useQueryEditorRun.ts",
+  "queryEditor/run/queryEditorMongoRun.ts",
+  "queryEditor/run/queryEditorSqlRun.ts",
+  "queryEditor/run/queryEditorRunFailure.ts",
+  "queryEditor/run/queryEditorRunResultSets.ts",
+  "queryEditor/hooks/useQueryEditorEditorActions.ts",
+  "queryEditor/hooks/useQueryEditorActiveTabShortcuts.ts",
+  "queryEditor/hooks/useQueryEditorSaveActions.ts",
+  "queryEditor/hooks/useQueryEditorToolbarMenus.tsx",
+  "queryEditor/hooks/useQueryEditorKeyboardShortcuts.ts",
+  "queryEditor/hooks/useQueryEditorResultTabs.tsx",
+  "queryEditor/QueryEditorEditorPane.tsx",
+  "queryEditor/QueryEditorResultsArea.tsx",
+  "queryEditor/QueryEditorResultDiffViews.tsx",
+  "queryEditor/QueryEditorDialogs.tsx",
+  "queryEditor/monaco/queryEditorMouseCursor.ts",
+];
+
 const readQueryEditorSource = (): string =>
-  readFileSync(new URL("../components/QueryEditor.tsx", import.meta.url), "utf8");
+  QUERY_EDITOR_COMPONENT_MODULES.map((file) =>
+    readFileSync(new URL(`../components/${file}`, import.meta.url), "utf8"),
+  ).join("\n");
 
 const readAppSource = (): string =>
   readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
@@ -980,7 +1049,7 @@ describe("i18n catalog", () => {
     const objectInfoActionSource = sliceBetween(
       source,
       "      objectHoverActionRef.current = editor.addAction({",
-      "      editor.onDidChangeCursorPosition?.((event: any) => {",
+      "    editor.onDidChangeCursorPosition?.((event: any) => {",
     );
 
     for (const language of SUPPORTED_LANGUAGES) {
@@ -1533,13 +1602,13 @@ describe("i18n catalog", () => {
     const source = readQueryEditorSource();
     const databaseQualifiedTableCompletionSource = sliceBetween(
       source,
-      "                  // 首先检查 qualifier 是否是数据库名（跨库表提示）",
-      "                  // qualifier 是 schema（如 dbo/public）时，仅补全表名，避免输入 dbo. 后再补成 dbo.dbo.table",
+      "    // 首先检查 qualifier 是否是数据库名（跨库表提示）",
+      "    // qualifier 是 schema（如 dbo/public）时，仅补全表名，避免输入 dbo. 后再补成 dbo.dbo.table",
     );
     const databaseQualifiedTableDetailSource = sliceBetween(
       databaseQualifiedTableCompletionSource,
-      "                          detail: appendCommentToDetail(",
-      "                          documentation: buildCompletionDocumentation(table.comment),",
+      "                    detail: appendCommentToDetail(",
+      "                    documentation: buildCompletionDocumentation(table.comment),",
     );
 
     for (const language of SUPPORTED_LANGUAGES) {
@@ -1559,13 +1628,13 @@ describe("i18n catalog", () => {
     const source = readQueryEditorSource();
     const schemaQualifiedTableCompletionSource = sliceBetween(
       source,
-      "                  // qualifier 是 schema（如 dbo/public）时，仅补全表名，避免输入 dbo. 后再补成 dbo.dbo.table",
-      "                  // 否则检查是否是表别名或表名，提示列",
+      "    // qualifier 是 schema（如 dbo/public）时，仅补全表名，避免输入 dbo. 后再补成 dbo.dbo.table",
+      "    // 否则检查是否是表别名或表名，提示列",
     );
     const schemaQualifiedTableDetailSource = sliceBetween(
       schemaQualifiedTableCompletionSource,
-      "                          detail: appendCommentToDetail(",
-      "                          documentation: buildCompletionDocumentation(table.comment),",
+      "                detail: appendCommentToDetail(",
+      "                documentation: buildCompletionDocumentation(table.comment),",
     );
 
     for (const language of SUPPORTED_LANGUAGES) {
@@ -1585,13 +1654,13 @@ describe("i18n catalog", () => {
     const source = readQueryEditorSource();
     const globalCrossDbTableCompletionSource = sliceBetween(
       source,
-      "              // 表提示：当前库智能处理 schema.table 格式",
-      "                      const hasDuplicate = (",
+      "    // 表提示：当前库智能处理 schema.table 格式",
+      "            const hasDuplicate = (",
     );
     const globalCrossDbTableDetailSource = sliceBetween(
       globalCrossDbTableCompletionSource,
-      "                              detail: appendCommentToDetail(",
-      "                              documentation: buildCompletionDocumentation(table.comment),",
+      "                    detail: appendCommentToDetail(",
+      "                    documentation: buildCompletionDocumentation(table.comment),",
     );
 
     for (const language of SUPPORTED_LANGUAGES) {
@@ -1611,13 +1680,13 @@ describe("i18n catalog", () => {
     const source = readQueryEditorSource();
     const currentDbTableCompletionSource = sliceBetween(
       source,
-      "                      const hasDuplicate = (",
-      "              const buildGlobalViewBatch =",
+      "            const hasDuplicate = (",
+      "    const buildGlobalViewBatch =",
     );
     const currentDbTableDetailSource = sliceBetween(
       currentDbTableCompletionSource,
-      "                      detail: appendCommentToDetail(",
-      "                      documentation: buildCompletionDocumentation(table.comment),",
+      "                detail: appendCommentToDetail(",
+      "                documentation: buildCompletionDocumentation(table.comment),",
     );
 
     for (const language of SUPPORTED_LANGUAGES) {
@@ -1637,13 +1706,13 @@ describe("i18n catalog", () => {
     const source = readQueryEditorSource();
     const databaseSuggestionSource = sliceBetween(
       source,
-      "              // 数据库提示",
-      "              // 关键字提示",
+      "    // 数据库提示",
+      "    // 关键字提示",
     );
     const databaseSuggestionDetailSource = sliceBetween(
       databaseSuggestionSource,
-      "                      detail:",
-      "                      range,",
+      "            detail:",
+      "            range,",
     );
 
     for (const language of SUPPORTED_LANGUAGES) {
@@ -1903,7 +1972,7 @@ describe("i18n catalog", () => {
       sliceBetween(
         source,
         "      objectHoverActionRef.current = editor.addAction({",
-        "      editor.onDidChangeCursorPosition?.((event: any) => {",
+        "    editor.onDidChangeCursorPosition?.((event: any) => {",
       ),
       sliceBetween(
         source,
@@ -1912,8 +1981,8 @@ describe("i18n catalog", () => {
       ),
       sliceBetween(
         source,
-        "      // Register runQuery shortcut inside Monaco so it overrides Monaco's default keybinding",
-        "      // HMR 重载或测试重置时，以全局状态为准，避免本地闭包状态和 provider 列表不同步。",
+        "    // Register runQuery shortcut inside Monaco so it overrides Monaco's default keybinding",
+        "    // HMR 重载或测试重置时，以全局状态为准，避免本地闭包状态和 provider 列表不同步。",
       ),
       sliceBetween(
         source,
