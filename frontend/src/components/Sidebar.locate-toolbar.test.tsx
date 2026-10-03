@@ -90,8 +90,36 @@ const readCssRuleBlock = (css: string, selector: string) => {
   expect(match, `Missing CSS rule for ${selector}`).not.toBeNull();
   return match?.groups?.body ?? '';
 };
+// Sidebar.tsx 已拆成 sidebar/ 下的 hook 与子组件，紧随其后按拆分顺序聚合。
+const SIDEBAR_COMPONENT_PARTS = [
+  'sidebarProps.ts',
+  'sidebarRootHelpers.ts',
+  'sidebarSavedQueriesTreeNode.tsx',
+  'V2ExplorerContextSummary.tsx',
+  'useSidebarStoreState.tsx',
+  'useSidebarSearchState.ts',
+  'useSidebarTreeViewState.ts',
+  'useSidebarTitlebarSync.tsx',
+  'useSidebarTreeData.tsx',
+  'useSidebarLocate.ts',
+  'useSidebarTreeEvents.tsx',
+  'useSidebarJvmAndSavedQueries.tsx',
+  'useSidebarConnectionRefresh.ts',
+  'useSidebarVisibility.ts',
+  'useSidebarObjectMenuActions.tsx',
+  'useSidebarContextMenus.tsx',
+  'useSidebarTreeDnd.ts',
+  'useSidebarToolbarModel.tsx',
+  'SidebarObjectExplorer.tsx',
+];
+// hook 在前、组件 JSX 在后，与运行时的执行顺序一致
+const readSidebarComponentSource = () => [
+  ...SIDEBAR_COMPONENT_PARTS.map((file) => readSourceFile(`./sidebar/${file}`)),
+  readSourceFile('./Sidebar.tsx'),
+].join('\n');
 const readSidebarSource = () => [
   readSourceFile('./Sidebar.tsx'),
+  ...SIDEBAR_COMPONENT_PARTS.map((file) => readSourceFile(`./sidebar/${file}`)),
   readSourceFile('./sidebar/sidebarHelpers.ts'),
   readSourceFile('./sidebar/SidebarConnectionRail.tsx'),
   readSourceFile('./sidebar/SidebarSearchPanel.tsx'),
@@ -895,7 +923,7 @@ describe('Sidebar locate toolbar', () => {
   });
 
   it('expands a collapsed sidebar before resolving a locate request', () => {
-    const source = readSourceFile('./Sidebar.tsx');
+    const source = readSidebarComponentSource();
     const locateStart = source.indexOf('const locateObjectInSidebar = async');
     const locateEnd = source.indexOf('\n  const handleLocateActiveTabInSidebar', locateStart);
     const locateSource = source.slice(locateStart, locateEnd);
@@ -965,7 +993,7 @@ describe('Sidebar locate toolbar', () => {
   });
 
   it('reveals command-search objects with an exact-key centered tree scroll', () => {
-    const source = readSourceFile('./Sidebar.tsx');
+    const source = readSidebarComponentSource();
     const scrollSource = readSourceFile('./sidebar/sidebarTreeScrollRequest.ts');
 
     expect(source).toContain("querySelectorAll<HTMLElement>('[data-sidebar-node-key]')");
@@ -1117,7 +1145,7 @@ describe('Sidebar locate toolbar', () => {
   });
 
   it('keeps expanded v2 actions out of the collapsed-only connection rail', () => {
-    const source = readSourceFile('./Sidebar.tsx');
+    const source = readSidebarComponentSource();
     const propsStart = source.indexOf('const v2ConnectionRailProps = {');
     const propsEnd = source.indexOf('\n  return (', propsStart);
 
@@ -1127,7 +1155,7 @@ describe('Sidebar locate toolbar', () => {
   });
 
   it('keeps the expanded v2 explorer actions usable in narrow containers', () => {
-    const source = readSourceFile('./Sidebar.tsx');
+    const source = readSidebarComponentSource();
     const appCss = readSourceFile('../App.css');
     const css = readV2ThemeCss();
     expect(source).toContain('<SidebarConnectionRail {...v2ConnectionRailProps} />');
@@ -1145,7 +1173,7 @@ describe('Sidebar locate toolbar', () => {
   });
 
   it('moves driver management next to about as trailing titlebar actions and does not render a More overflow', () => {
-    const source = readSourceFile('./Sidebar.tsx');
+    const source = readSidebarComponentSource();
     const actionsStart = source.indexOf('const v2TitlebarQuickActions: TitleBarQuickAction[] = [');
     const actionsEnd = source.indexOf('\n  ];', actionsStart);
 
@@ -1748,7 +1776,7 @@ describe('Sidebar locate toolbar', () => {
 
   it('uses native tree scrollbars and keeps the overlay track only as a fallback', () => {
     const css = readV2ThemeCss();
-    const source = readSourceFile('./Sidebar.tsx');
+    const source = readSidebarComponentSource();
 
     expect(source).toContain('onWheelCapture={handleTreeWheel}');
     expect(source).toContain('onTouchMoveCapture={markTreeScrollActivity}');
@@ -1762,7 +1790,7 @@ describe('Sidebar locate toolbar', () => {
   });
 
   it('uses exact row geometry for the V2 tree virtual scrolling fast path', () => {
-    const source = readSourceFile('./Sidebar.tsx');
+    const source = readSidebarComponentSource();
     const treePatch = readSourceFile('../../patches/rc-tree+5.13.1.patch');
     const virtualListPatch = readSourceFile('../../patches/rc-virtual-list+3.19.2.patch');
 
@@ -2077,7 +2105,7 @@ describe('Sidebar locate toolbar', () => {
   });
 
   it('uses V2-only capture DnD with a compact preview and stable whole-row states', () => {
-    const source = `${readSourceFile('./Sidebar.tsx')}\n${readSourceFile('./sidebar/sidebarTreeDragOrder.ts')}`;
+    const source = `${readSidebarComponentSource()}\n${readSourceFile('./sidebar/sidebarTreeDragOrder.ts')}`;
     const css = readV2ThemeCss();
 
     expect(source).toContain('onDragOverCapture={handleSidebarTreeDragOverCapture}');
@@ -2390,7 +2418,7 @@ describe('Sidebar locate toolbar', () => {
   });
 
   it('preserves schema context when opening table designer tabs', () => {
-    const source = readSourceFile('./Sidebar.tsx');
+    const source = readSidebarComponentSource();
 
     expect(source).toMatch(/const openDesign = \(node: any,[\s\S]*?schemaName[\s\S]*?type: 'design',[\s\S]*?schemaName,/);
     expect(source).toMatch(/const openNewTableDesign = \(node: any\)[\s\S]*?schemaName[\s\S]*?type: 'design',[\s\S]*?schemaName,/);

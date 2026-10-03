@@ -10,10 +10,31 @@ const appCss = readFileSync(
   fileURLToPath(new globalThis.URL('./App.css', import.meta.url)),
   'utf8',
 );
-const sidebarSource = readFileSync(
-  fileURLToPath(new globalThis.URL('./components/Sidebar.tsx', import.meta.url)),
-  'utf8',
-);
+// Sidebar.tsx 已拆成 components/sidebar/ 下的 hook 与子组件，源码扫描需一并聚合。
+const SIDEBAR_COMPONENT_PARTS = [
+  'sidebarProps.ts',
+  'sidebarRootHelpers.ts',
+  'sidebarSavedQueriesTreeNode.tsx',
+  'V2ExplorerContextSummary.tsx',
+  'useSidebarStoreState.tsx',
+  'useSidebarSearchState.ts',
+  'useSidebarTreeViewState.ts',
+  'useSidebarTitlebarSync.tsx',
+  'useSidebarTreeData.tsx',
+  'useSidebarLocate.ts',
+  'useSidebarTreeEvents.tsx',
+  'useSidebarJvmAndSavedQueries.tsx',
+  'useSidebarConnectionRefresh.ts',
+  'useSidebarVisibility.ts',
+  'useSidebarObjectMenuActions.tsx',
+  'useSidebarContextMenus.tsx',
+  'useSidebarTreeDnd.ts',
+  'useSidebarToolbarModel.tsx',
+  'SidebarObjectExplorer.tsx',
+];
+const sidebarSource = ['./components/Sidebar.tsx', ...SIDEBAR_COMPONENT_PARTS.map((file) => `./components/sidebar/${file}`)]
+  .map((file) => readFileSync(fileURLToPath(new globalThis.URL(file, import.meta.url)), 'utf8'))
+  .join('\n');
 const driverWorkbenchSource = readFileSync(
   fileURLToPath(new globalThis.URL('./components/DriverManagerWorkbench.tsx', import.meta.url)),
   'utf8',
