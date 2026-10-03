@@ -11778,5 +11778,9 @@
   "ai_builtin_terms.notes.item2": "Model output is for reference only. Check any SQL before running it, especially statements that change or delete data.",
   "ai_builtin_terms.notes.item3": "Accounts that break these rules may be restricted or disabled.",
   "ai_builtin_terms.decline": "Not now",
-  "ai_builtin_terms.accept": "Agree and sign in"
+  "ai_builtin_terms.accept": "Agree and sign in",
+  "ai_settings.provider_preset.gonavi_ai.waiting_browser": "Waiting for you to authorize in the browser. Device code {{code}}: check that the page shows the same code.",
+  "ai_settings.provider_preset.gonavi_ai.reopen_browser": "Open the page again",
+  "ai_chat.composer_notice.builtin_login_pending.title": "Finish signing in in your browser",
+  "ai_chat.composer_notice.builtin_login_pending.description": "Device code {{code}}: check that the page shows the same code. When you are done, click \"Return to GoNavi\" on the page."
 }

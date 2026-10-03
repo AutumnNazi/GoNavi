@@ -11778,5 +11778,9 @@
   "ai_builtin_terms.notes.item2": "模型输出仅供参考，执行前请自行核对 SQL，尤其是会修改或删除数据的语句。",
   "ai_builtin_terms.notes.item3": "违反以上规定的账号可能被限制或停用。",
   "ai_builtin_terms.decline": "暂不使用",
-  "ai_builtin_terms.accept": "同意并继续登录"
+  "ai_builtin_terms.accept": "同意并继续登录",
+  "ai_settings.provider_preset.gonavi_ai.waiting_browser": "正在等待浏览器中的授权。设备码 {{code}}，请核对与浏览器页面中显示的一致。",
+  "ai_settings.provider_preset.gonavi_ai.reopen_browser": "重新打开授权页",
+  "ai_chat.composer_notice.builtin_login_pending.title": "请在浏览器中完成授权",
+  "ai_chat.composer_notice.builtin_login_pending.description": "设备码 {{code}}，请核对与浏览器页面中显示的一致。授权后点击页面上的“返回 GoNavi”。"
 }

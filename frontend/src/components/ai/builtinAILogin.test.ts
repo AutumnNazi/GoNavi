@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { builtinAIStatusMessageKey, runBuiltinAILogin, type BuiltinAILoginService } from './builtinAILogin';
+import {
+  builtinAIStatusMessageKey,
+  notifyBuiltinAILoginWake,
+  runBuiltinAILogin,
+  waitUnlessWoken,
+  type BuiltinAILoginService,
+} from './builtinAILogin';
 
 const device = { deviceCode: 'dev-1', userCode: 'ABCD-EFGH', verificationUri: 'https://ai.example/device', verificationUriComplete: 'https://ai.example/device?user_code=ABCD-EFGH', expiresInSeconds: 600, intervalSeconds: 5 };
 
@@ -178,6 +184,59 @@ describe('runBuiltinAILogin and the usage rules', () => {
   it('signs in as before for a caller that passes no rules to ask', async () => {
     const outcome = await runBuiltinAILogin(signedOut() as unknown as BuiltinAILoginService, { openURL: vi.fn(), wait: instant });
     expect(outcome.kind).toBe('authorized');
+  });
+});
+
+describe('the browser step of the sign-in', () => {
+  it('hands over the code to show in GoNavi, so the person can compare it with the page', async () => {
+    const service = {
+      AIGetBuiltinAIStatus: vi.fn().mockResolvedValue({ authenticated: false, state: 'login_required' }),
+      AIStartBuiltinAILogin: vi.fn().mockResolvedValue(device),
+      AIPollBuiltinAILogin: vi.fn().mockResolvedValue({ status: 'authorized', authenticated: true }),
+    } as unknown as BuiltinAILoginService;
+    const onPending = vi.fn();
+    const openURL = vi.fn();
+
+    await runBuiltinAILogin(service, { openURL, wait: instant, onPending });
+
+    expect(onPending).toHaveBeenCalledTimes(1);
+    expect(onPending).toHaveBeenCalledWith({ userCode: 'ABCD-EFGH', verificationURL: device.verificationUriComplete });
+    // The browser is opened first, then the code is shown: both say the same thing.
+    expect(openURL.mock.invocationCallOrder[0]).toBeLessThan(onPending.mock.invocationCallOrder[0]);
+  });
+
+  it('shows no code when no browser step happens', async () => {
+    const onPending = vi.fn();
+    await runBuiltinAILogin({
+      AIGetBuiltinAIStatus: vi.fn().mockResolvedValue({ authenticated: true, state: 'ready' }),
+      AIStartBuiltinAILogin: vi.fn(),
+      AIPollBuiltinAILogin: vi.fn(),
+    } as unknown as BuiltinAILoginService, { openURL: vi.fn(), wait: instant, onPending });
+    expect(onPending).not.toHaveBeenCalled();
+  });
+
+  it('stops waiting as soon as the browser sends the person back to GoNavi', async () => {
+    vi.useFakeTimers();
+    try {
+      let finished = false;
+      const waiting = waitUnlessWoken(5_000).then(() => { finished = true; });
+      await vi.advanceTimersByTimeAsync(100);
+      expect(finished).toBe(false);
+      notifyBuiltinAILoginWake();
+      await vi.advanceTimersByTimeAsync(0);
+      await waiting;
+      expect(finished).toBe(true);
+      // A wake with nobody waiting is harmless, and a later wait still runs its full time.
+      notifyBuiltinAILoginWake();
+      let later = false;
+      void waitUnlessWoken(1_000).then(() => { later = true; });
+      await vi.advanceTimersByTimeAsync(999);
+      expect(later).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(later).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

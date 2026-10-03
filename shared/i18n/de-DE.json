@@ -11778,5 +11778,9 @@
   "ai_builtin_terms.notes.item2": "Die Ausgaben des Modells dienen nur als Anhaltspunkt. Prüfen Sie SQL vor der Ausführung, besonders Anweisungen, die Daten ändern oder löschen.",
   "ai_builtin_terms.notes.item3": "Konten, die gegen diese Regeln verstoßen, können eingeschränkt oder deaktiviert werden.",
   "ai_builtin_terms.decline": "Nicht jetzt",
-  "ai_builtin_terms.accept": "Zustimmen und anmelden"
+  "ai_builtin_terms.accept": "Zustimmen und anmelden",
+  "ai_settings.provider_preset.gonavi_ai.waiting_browser": "Warte auf Ihre Freigabe im Browser. Gerätecode {{code}}: Prüfen Sie, ob die Seite denselben Code zeigt.",
+  "ai_settings.provider_preset.gonavi_ai.reopen_browser": "Seite erneut öffnen",
+  "ai_chat.composer_notice.builtin_login_pending.title": "Anmeldung im Browser abschließen",
+  "ai_chat.composer_notice.builtin_login_pending.description": "Gerätecode {{code}}: Prüfen Sie, ob die Seite denselben Code zeigt. Klicken Sie danach auf der Seite auf „Return to GoNavi“."
 }

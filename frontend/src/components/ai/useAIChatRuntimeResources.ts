@@ -7,7 +7,7 @@ import type {
   AIUserPromptSettings,
 } from '../../types';
 import type { AIComposerNotice, AIComposerNoticeAction, AIComposerNoticeTranslator } from '../../utils/aiComposerNotice';
-import { buildBuiltinLoginFailedNotice, buildModelFetchFailedNotice } from '../../utils/aiComposerNotice';
+import { buildBuiltinLoginFailedNotice, buildBuiltinLoginPendingNotice, buildModelFetchFailedNotice } from '../../utils/aiComposerNotice';
 import { parseModelContextProfile, type AIModelContextProfile } from '../../utils/aiChatRuntime';
 import { parseCLIModelCatalog, type CLIModelCatalog } from '../../utils/aiProviderManagement';
 import { isLocalCLISubscriptionProvider } from '../../utils/aiProviderPresets';
@@ -387,12 +387,21 @@ export const useAIChatRuntimeResources = ({
     const service = getAIService();
     if (!service) return;
     setComposerNotice(null);
-    const outcome = await runBuiltinAILogin(service, { openURL: openBuiltinAIVerificationURL, requireTerms: () => requestBuiltinAITerms() });
+    const outcome = await runBuiltinAILogin(service, {
+      openURL: openBuiltinAIVerificationURL,
+      requireTerms: () => requestBuiltinAITerms(),
+      // While the browser is open, show the code to compare with the page.
+      onPending: ({ userCode }) => setComposerNotice(buildBuiltinLoginPendingNotice(translate, userCode)),
+    });
     switch (outcome.kind) {
       case 'ready':
       case 'authorized':
+        setComposerNotice(null);
         // The provider-changed listener re-reads the provider list.
         notifyAIProviderChanged();
+        break;
+      case 'cancelled':
+        setComposerNotice(null);
         break;
       case 'retry':
         setComposerNotice(buildBuiltinLoginFailedNotice(translate, outcome.status.message));

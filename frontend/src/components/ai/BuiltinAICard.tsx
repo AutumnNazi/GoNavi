@@ -27,7 +27,7 @@ const getService = async (): Promise<BuiltinAILoginService | null> =>
  */
 export const BuiltinAICard: React.FC<BuiltinAICardProps> = ({ copy, onChanged }) => {
   const [status, setStatus] = useState<ai.BuiltinAIStatus | null>(null);
-  const { loading, login, logout, refreshStatus } = useBuiltinAILogin({
+  const { loading, pending, login, logout, refreshStatus } = useBuiltinAILogin({
     getService,
     openURL: openBuiltinAIVerificationURL,
     notify: message,
@@ -57,6 +57,16 @@ export const BuiltinAICard: React.FC<BuiltinAICardProps> = ({ copy, onChanged })
       <strong>{copy('ai_settings.provider_preset.gonavi_ai.label')}</strong>
       <span>{copy(builtinAIStatusMessageKey(status))}</span>
       {showDetail && <small className="gonavi-ai-provider-builtin-detail">{status?.message}</small>}
+      {pending && (
+        <small className="gonavi-ai-provider-builtin-pending" data-pending-code={pending.userCode}>
+          {copy('ai_settings.provider_preset.gonavi_ai.waiting_browser', { code: pending.userCode })}
+          {pending.verificationURL && (
+            <Button type="link" size="small" onClick={() => openBuiltinAIVerificationURL(pending.verificationURL)}>
+              {copy('ai_settings.provider_preset.gonavi_ai.reopen_browser')}
+            </Button>
+          )}
+        </small>
+      )}
       {status?.quota && <small>{copy('ai_settings.provider_preset.gonavi_ai.quota', {
         dailyUsed: status.quota.dailyTokensUsed,
         dailyLimit: status.quota.dailyTokenLimit,

@@ -11778,5 +11778,9 @@
   "ai_builtin_terms.notes.item2": "モデルの出力は参考情報です。実行前に SQL を必ずご確認ください。特にデータを変更・削除する文にご注意ください。",
   "ai_builtin_terms.notes.item3": "上記に違反したアカウントは、制限または停止されることがあります。",
   "ai_builtin_terms.decline": "今はしない",
-  "ai_builtin_terms.accept": "同意してサインイン"
+  "ai_builtin_terms.accept": "同意してサインイン",
+  "ai_settings.provider_preset.gonavi_ai.waiting_browser": "ブラウザーでの承認を待っています。デバイスコード {{code}}：ページに同じコードが表示されていることを確認してください。",
+  "ai_settings.provider_preset.gonavi_ai.reopen_browser": "ページをもう一度開く",
+  "ai_chat.composer_notice.builtin_login_pending.title": "ブラウザーでサインインを完了してください",
+  "ai_chat.composer_notice.builtin_login_pending.description": "デバイスコード {{code}}：ページに同じコードが表示されていることを確認してください。完了したら、ページの「Return to GoNavi」をクリックしてください。"
 }

@@ -3,6 +3,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useAIChatRuntimeResources } from './useAIChatRuntimeResources';
+import { notifyBuiltinAILoginWake } from './builtinAILogin';
 import {
   acceptBuiltinAITerms,
   declineBuiltinAITerms,
@@ -165,6 +166,31 @@ describe('useAIChatRuntimeResources', () => {
       await act(async () => { acceptBuiltinAITerms(); });
       await flushAsyncWork();
       expect(runtimeService.AIStartBuiltinAILogin).toHaveBeenCalledTimes(1);
+      await act(async () => { renderer!.unmount(); });
+    });
+
+    it('shows the device code while the browser step is open and clears it once signed in', async () => {
+      signedOut();
+      acceptBuiltinAITerms();
+      let finishPoll: (value: unknown) => void = () => undefined;
+      runtimeService.AIPollBuiltinAILogin.mockReturnValue(new Promise((resolve) => { finishPoll = resolve; }));
+      let renderer: ReactTestRenderer;
+      await act(async () => { renderer = create(<Harness />); });
+      await flushAsyncWork();
+
+      let login!: Promise<void>;
+      await act(async () => { login = Promise.resolve(latestHook!.handleComposerAction('builtin-login')); });
+      await flushAsyncWork();
+      expect(latestHook!.composerNotice?.description).toContain('ABCD-EFGH');
+
+      // The browser sends the person back: the wait ends at once and the poll answers.
+      await act(async () => {
+        notifyBuiltinAILoginWake();
+        finishPoll({ status: 'authorized', authenticated: true });
+        await login;
+      });
+      await flushAsyncWork();
+      expect(latestHook!.composerNotice).toBeNull();
       await act(async () => { renderer!.unmount(); });
     });
 

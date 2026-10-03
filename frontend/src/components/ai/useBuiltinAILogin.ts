@@ -4,6 +4,7 @@ import type { ai } from '../../../wailsjs/go/models';
 import {
   notifyAIProviderChanged,
   runBuiltinAILogin,
+  type BuiltinAILoginPending,
   type BuiltinAILoginService,
 } from './builtinAILogin';
 import { requestBuiltinAITerms } from './builtinTerms/builtinAITermsStore';
@@ -32,6 +33,8 @@ interface UseBuiltinAILoginOptions {
  */
 export const useBuiltinAILogin = ({ getService, openURL, notify, translate, onStatus, onChanged }: UseBuiltinAILoginOptions) => {
   const [loading, setLoading] = useState(false);
+  // While the browser step is open: the code to compare with the page, and the page itself.
+  const [pending, setPending] = useState<BuiltinAILoginPending | null>(null);
   const cancelledRef = useRef(false);
   const loadingRef = useRef(false);
 
@@ -74,6 +77,7 @@ export const useBuiltinAILogin = ({ getService, openURL, notify, translate, onSt
         openURL,
         isCancelled: () => cancelledRef.current,
         requireTerms: () => requestBuiltinAITerms(),
+        onPending: (next) => { if (!cancelledRef.current) setPending(next); },
       });
       switch (outcome.kind) {
         case 'ready':
@@ -107,7 +111,10 @@ export const useBuiltinAILogin = ({ getService, openURL, notify, translate, onSt
       notify.error(String((error as { message?: string } | null)?.message || error));
     } finally {
       loadingRef.current = false;
-      if (!cancelledRef.current) setLoading(false);
+      if (!cancelledRef.current) {
+        setLoading(false);
+        setPending(null);
+      }
     }
   }, [announceChange, getService, notify, openURL, refreshStatus, translate]);
 
@@ -127,5 +134,5 @@ export const useBuiltinAILogin = ({ getService, openURL, notify, translate, onSt
     }
   }, [announceChange, getService, notify, refreshStatus, translate]);
 
-  return { loading, login, logout, refreshStatus };
+  return { loading, pending, login, logout, refreshStatus };
 };

@@ -10,6 +10,10 @@ vi.mock('antd', async (importOriginal) => ({
   ...(await importOriginal<typeof import('antd')>()),
   // The static message API needs a DOM; the toast itself is not under test here.
   message: { success: vi.fn(), error: vi.fn() },
+  // A button that is loading draws antd's spinner icon, whose style hook needs a DOM.
+  Button: ({ children, onClick, loading }: { children?: React.ReactNode; onClick?: () => void; loading?: boolean }) => (
+    <button type="button" onClick={onClick} data-loading={loading ? 'true' : undefined}>{children}</button>
+  ),
 }));
 
 const service = vi.hoisted(() => ({
@@ -86,6 +90,28 @@ describe('BuiltinAICard', () => {
     expect(textOf(renderer)).toContain('ai_settings.provider_preset.gonavi_ai.state.network_error');
     expect(textOf(renderer)).toContain('Cannot reach the GoNavi AI service');
     expect(buttonLabels(renderer)[0]).toBe('ai_settings.provider_preset.gonavi_ai.retry');
+  });
+
+  it('shows the device code while the browser step is open, and offers to reopen the page', async () => {
+    // The usage rules were accepted before (node has no localStorage: a stand-in holds that).
+    const accepted = JSON.stringify({ version: 1 });
+    vi.stubGlobal('localStorage', { getItem: () => accepted, setItem: () => undefined, removeItem: () => undefined });
+    service.AIGetBuiltinAIStatus.mockResolvedValue({ enabled: true, authenticated: false, state: 'login_required' });
+    service.AIStartBuiltinAILogin.mockResolvedValue({
+      deviceCode: 'dev-1', userCode: 'RQFU-8BZX', verificationUri: 'https://ai.example/device',
+      verificationUriComplete: 'https://ai.example/device?user_code=RQFU-8BZX', expiresInSeconds: 600, intervalSeconds: 5,
+    });
+    let finishPoll: (value: unknown) => void = () => undefined;
+    service.AIPollBuiltinAILogin.mockReturnValue(new Promise((resolve) => { finishPoll = resolve; }));
+
+    const renderer = await render();
+    await act(async () => { renderer.root.findAllByType(Button)[0].props.onClick(); });
+    await flush();
+    // The poll waits five seconds before asking; the code is already on screen.
+    expect(textOf(renderer)).toContain('ai_settings.provider_preset.gonavi_ai.waiting_browser|{\\"code\\":\\"RQFU-8BZX\\"}');
+    expect(buttonLabels(renderer)).toContain('ai_settings.provider_preset.gonavi_ai.reopen_browser');
+    finishPoll({ status: 'authorized', authenticated: true });
+    act(() => renderer.unmount());
   });
 
   it('signs out through the backend, refreshes its own state and tells the provider list', async () => {

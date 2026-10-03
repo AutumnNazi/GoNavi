@@ -113,6 +113,22 @@ export const buildBuiltinLoginNotice = (t?: AIComposerNoticeTranslator): AICompo
   ),
 });
 
+/** Shown while the browser step of the sign-in is open: the code to compare with the page. */
+export const buildBuiltinLoginPendingNotice = (t: AIComposerNoticeTranslator | undefined, code: string): AIComposerNotice => ({
+  tone: 'warning',
+  title: translateWithFallback(
+    t,
+    'ai_chat.composer_notice.builtin_login_pending.title',
+    catalogTranslateEn('ai_chat.composer_notice.builtin_login_pending.title'),
+  ),
+  description: translateWithFallback(
+    t,
+    'ai_chat.composer_notice.builtin_login_pending.description',
+    catalogTranslateEn('ai_chat.composer_notice.builtin_login_pending.description', { code }),
+    { code },
+  ),
+});
+
 export const buildBuiltinLoginFailedNotice = (t?: AIComposerNoticeTranslator, detail?: string): AIComposerNotice => {
   const cleanDetail = String(detail ?? '').trim();
   return {

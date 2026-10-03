@@ -11778,5 +11778,9 @@
   "ai_builtin_terms.notes.item2": "Ответы модели носят справочный характер. Проверяйте SQL перед выполнением, особенно запросы, изменяющие или удаляющие данные.",
   "ai_builtin_terms.notes.item3": "Учётные записи, нарушающие эти правила, могут быть ограничены или отключены.",
   "ai_builtin_terms.decline": "Не сейчас",
-  "ai_builtin_terms.accept": "Согласиться и войти"
+  "ai_builtin_terms.accept": "Согласиться и войти",
+  "ai_settings.provider_preset.gonavi_ai.waiting_browser": "Ожидание подтверждения в браузере. Код устройства {{code}}: убедитесь, что на странице показан тот же код.",
+  "ai_settings.provider_preset.gonavi_ai.reopen_browser": "Открыть страницу снова",
+  "ai_chat.composer_notice.builtin_login_pending.title": "Завершите вход в браузере",
+  "ai_chat.composer_notice.builtin_login_pending.description": "Код устройства {{code}}: убедитесь, что на странице показан тот же код. После этого нажмите на странице «Return to GoNavi»."
 }

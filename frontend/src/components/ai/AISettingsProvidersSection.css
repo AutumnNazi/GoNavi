@@ -869,3 +869,6 @@ body[data-ui-version] .gonavi-ai-provider-form-popup .ant-select-item-option-sel
 .gonavi-ai-provider-builtin-card > span,
 .gonavi-ai-provider-builtin-card > small { color: var(--gn-fg-4, var(--provider-muted, #6b7280)); }
 .gonavi-ai-provider-builtin-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* The device code is what the person compares with the browser page: keep it legible. */
+.gonavi-ai-provider-builtin-pending { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.gonavi-ai-provider-builtin-pending .ant-btn-link { height: auto; padding: 0; }

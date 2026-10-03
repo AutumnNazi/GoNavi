@@ -1,5 +1,5 @@
 import type { ai } from '../../../wailsjs/go/models';
-import { BrowserOpenURL } from '../../../wailsjs/runtime';
+import { BrowserOpenURL, EventsOn } from '../../../wailsjs/runtime';
 
 /** Fixed id of the GoNavi-hosted provider. The backend owns its identity. */
 export const BUILTIN_AI_PROVIDER_ID = 'gonavi-ai';
@@ -26,8 +26,19 @@ export type BuiltinAILoginOutcome =
   | { kind: 'cancelled' }
   | { kind: 'unavailable' };
 
+/** Sent by the desktop when the browser's "Return to GoNavi" link brought the window back. */
+export const BUILTIN_AI_LOGIN_WAKE_EVENT = 'gonavi:deeplink:ai-login';
+
+/** The code the person checks against the one on the browser page, and where that page is. */
+export interface BuiltinAILoginPending {
+  userCode: string;
+  verificationURL: string;
+}
+
 export interface BuiltinAILoginOptions {
   openURL: (url: string) => void;
+  /** Called once the browser has been sent to the Gateway: the code to show while waiting. */
+  onPending?: (pending: BuiltinAILoginPending) => void;
   /**
    * Asked before a new sign-in begins (the usage rules): false means the person declined, and
    * nothing is started. Not asked when an existing login is still good.
@@ -40,7 +51,37 @@ export interface BuiltinAILoginOptions {
 
 const MAX_CONSECUTIVE_POLL_FAILURES = 3;
 
-const defaultWait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const wakeListeners = new Set<() => void>();
+let wakeSubscribed = false;
+
+/** Lets a wait in progress end now (the browser just sent the person back). */
+export const notifyBuiltinAILoginWake = (): void => {
+  [...wakeListeners].forEach((listener) => listener());
+};
+
+const subscribeToDesktopWake = (): void => {
+  if (wakeSubscribed) return;
+  try {
+    EventsOn(BUILTIN_AI_LOGIN_WAKE_EVENT, notifyBuiltinAILoginWake);
+    wakeSubscribed = true;
+  } catch {
+    // No desktop runtime (tests, the browser build): the poll interval alone applies.
+  }
+};
+
+/** Waits ms, or less if the browser sends the person back to GoNavi in the meantime. */
+export const waitUnlessWoken = (ms: number): Promise<void> => new Promise<void>((resolve) => {
+  subscribeToDesktopWake();
+  const done = () => {
+    clearTimeout(timer);
+    wakeListeners.delete(done);
+    resolve();
+  };
+  const timer = setTimeout(done, ms);
+  wakeListeners.add(done);
+});
+
+const defaultWait = waitUnlessWoken;
 
 const errorText = (error: unknown): string =>
   String((error as { message?: string } | null)?.message || error || '').trim();
@@ -80,6 +121,7 @@ export const runBuiltinAILogin = async (
   }
   const verificationURL = device.verificationUriComplete || device.verificationUri;
   if (verificationURL) options.openURL(verificationURL);
+  options.onPending?.({ userCode: String(device.userCode || '').trim(), verificationURL: verificationURL || '' });
 
   const baseIntervalSeconds = Math.max(1, Number(device.intervalSeconds) || 5);
   const deadline = now() + Math.max(30, Number(device.expiresInSeconds) || 600) * 1000;

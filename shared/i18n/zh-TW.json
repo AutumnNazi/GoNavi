@@ -11778,5 +11778,9 @@
   "ai_builtin_terms.notes.item2": "模型輸出僅供參考，執行前請自行核對 SQL，尤其是會修改或刪除資料的語句。",
   "ai_builtin_terms.notes.item3": "違反以上規定的帳號可能被限制或停用。",
   "ai_builtin_terms.decline": "暫不使用",
-  "ai_builtin_terms.accept": "同意並繼續登入"
+  "ai_builtin_terms.accept": "同意並繼續登入",
+  "ai_settings.provider_preset.gonavi_ai.waiting_browser": "正在等待瀏覽器中的授權。裝置碼 {{code}}，請核對與瀏覽器頁面中顯示的一致。",
+  "ai_settings.provider_preset.gonavi_ai.reopen_browser": "重新開啟授權頁",
+  "ai_chat.composer_notice.builtin_login_pending.title": "請在瀏覽器中完成授權",
+  "ai_chat.composer_notice.builtin_login_pending.description": "裝置碼 {{code}}，請核對與瀏覽器頁面中顯示的一致。授權後點擊頁面上的「返回 GoNavi」。"
 }
