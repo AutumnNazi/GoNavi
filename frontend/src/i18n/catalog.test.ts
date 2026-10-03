@@ -8,8 +8,31 @@ import { SUPPORTED_LANGUAGES } from "./resolveLanguage";
 const getPlaceholders = (value: string): string[] =>
   Array.from(value.matchAll(/\{\{([A-Za-z0-9_]+)\}\}/g), (match) => match[1]).sort();
 
+// DataGrid.tsx 已拆出 dataGrid/ 下的常量模块与 hook，源码扫描按原顺序聚合。
+const DATA_GRID_COMPONENT_MODULES = [
+  "DataGrid.tsx",
+  "dataGrid/dataGridPagingOptions.ts",
+  "dataGrid/dataGridScrollTiming.ts",
+  "dataGrid/hooks/useDataGridCoreState.ts",
+  "dataGrid/hooks/useDataGridCellEditorState.ts",
+  "dataGrid/hooks/useDataGridTableMetrics.ts",
+  "dataGrid/hooks/useDataGridColumnTitles.tsx",
+  "dataGrid/hooks/useDataGridCellEditing.ts",
+  "dataGrid/hooks/useDataGridInlineEditor.ts",
+  "dataGrid/hooks/useDataGridRowEditors.ts",
+  "dataGrid/hooks/useDataGridColumns.tsx",
+  "dataGrid/hooks/useDataGridRowActions.tsx",
+  "dataGrid/hooks/useDataGridCommit.ts",
+  "dataGrid/hooks/useDataGridHorizontalVirtualScroll.tsx",
+  "dataGrid/hooks/useDataGridPageFind.ts",
+  "dataGrid/hooks/useDataGridExternalScroll.ts",
+  "dataGrid/hooks/useDataGridLayoutEffects.ts",
+];
+
 const readDataGridSource = (): string =>
-  readFileSync(new URL("../components/DataGrid.tsx", import.meta.url), "utf8");
+  DATA_GRID_COMPONENT_MODULES.map((file) =>
+    readFileSync(new URL(`../components/${file}`, import.meta.url), "utf8"),
+  ).join("\n");
 
 const readDataGridColumnInfoPopoverContentSource = (): string =>
   readFileSync(new URL("../components/DataGridColumnInfoPopoverContent.tsx", import.meta.url), "utf8");

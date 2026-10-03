@@ -30,6 +30,23 @@ import { cloneShortcutOptions, DEFAULT_SHORTCUT_OPTIONS } from '../utils/shortcu
 const readDataGridSource = () => [
   './useDataGridBatchActions.ts',
   './DataGrid.tsx',
+  // DataGrid.tsx 拆出的常量模块与 hook
+  './dataGrid/dataGridPagingOptions.ts',
+  './dataGrid/dataGridScrollTiming.ts',
+  './dataGrid/hooks/useDataGridCoreState.ts',
+  './dataGrid/hooks/useDataGridCellEditorState.ts',
+  './dataGrid/hooks/useDataGridTableMetrics.ts',
+  './dataGrid/hooks/useDataGridColumnTitles.tsx',
+  './dataGrid/hooks/useDataGridCellEditing.ts',
+  './dataGrid/hooks/useDataGridInlineEditor.ts',
+  './dataGrid/hooks/useDataGridRowEditors.ts',
+  './dataGrid/hooks/useDataGridColumns.tsx',
+  './dataGrid/hooks/useDataGridRowActions.tsx',
+  './dataGrid/hooks/useDataGridCommit.ts',
+  './dataGrid/hooks/useDataGridHorizontalVirtualScroll.tsx',
+  './dataGrid/hooks/useDataGridPageFind.ts',
+  './dataGrid/hooks/useDataGridExternalScroll.ts',
+  './dataGrid/hooks/useDataGridLayoutEffects.ts',
   './useDataGridV2Actions.ts',
   './useDataGridMetadata.ts',
   './useDataGridColumnResize.ts',
@@ -2088,7 +2105,7 @@ describe('DataGrid layout', () => {
   });
 
   it('enters fixed-row virtual scrolling before a user can scroll the V2 data table', () => {
-    const source = readFileSync(new URL('./DataGrid.tsx', import.meta.url), 'utf8');
+    const source = readDataGridSource();
     const css = readV2ThemeCss();
 
     expect(css).toContain('height: calc(28px * var(--gn-ui-scale, 1));');
