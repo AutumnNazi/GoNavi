@@ -185,6 +185,7 @@ func (s *Service) AIStartBuiltinAILogin() (ai.BuiltinAIDeviceCode, error) {
 	if err != nil {
 		return ai.BuiltinAIDeviceCode{}, err
 	}
+	runBuiltinAILoginStartHook()
 	request := map[string]string{"client_id": config.clientID, "scope": "gonavi.ai"}
 	if hostname, hostErr := os.Hostname(); hostErr == nil && strings.TrimSpace(hostname) != "" {
 		request["device_name"] = hostname

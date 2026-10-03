@@ -113,6 +113,10 @@ func main() {
 			return
 		}
 	}
+	// Started by a "Return to GoNavi" link while GoNavi is already open: wake it and leave.
+	if handOffDeepLink(os.Args[1:], executablePath) {
+		return
+	}
 	handled, err := runSpecialMode(os.Args[1:])
 	if handled {
 		if err != nil && !isNormalSpecialModeExit(err) {
@@ -151,6 +155,8 @@ func main() {
 			defer releaseSingleInstance()
 		}
 	}
+	deepLinks := &deepLinkWaker{activator: primaryActivator}
+	defer startDeepLinks(executablePath, deepLinks)()
 	// Clear WebView2 processes left behind by an earlier exit before this
 	// process creates its own browser, then arm a reaper for the next exit.
 	app.ReapOrphanedWindowsWebViewProcesses()
@@ -289,6 +295,7 @@ func main() {
 				startupGate.markIconReady()
 			}
 			primaryActivator.bindRuntimeContext(ctx)
+			deepLinks.bind(ctx)
 			lifecycleCtx := ctx
 			if nativeWindowManager != nil {
 				if err := nativewindow.InitializeLifecycle(nativeWindowManager, ctx); err != nil {
@@ -323,6 +330,7 @@ func main() {
 			TitleBar:             windowChrome.TitleBar,
 			WebviewIsTransparent: true,
 			WindowIsTranslucent:  true,
+			OnUrlOpen:            deepLinks.openURL,
 		},
 	})
 
