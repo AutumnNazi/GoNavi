@@ -67,8 +67,9 @@
     "connectionParams": true,
     "hint": "Time-series / MySQL wire",
     "icon": {
-      "color": "#00A49A",
-      "text": "Gt"
+      "color": "#8322FF",
+      "text": "Gt",
+      "scale": 0.72
     }
   }
 }

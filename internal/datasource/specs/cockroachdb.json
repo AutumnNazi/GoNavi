@@ -73,7 +73,8 @@
     "hint": "PostgreSQL wire / distributed SQL",
     "icon": {
       "color": "#6933FF",
-      "text": "Cr"
+      "text": "Cr",
+      "scale": 0.72
     },
     "tableStats": [
       {

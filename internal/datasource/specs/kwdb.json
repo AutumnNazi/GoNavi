@@ -65,7 +65,8 @@
     "hint": "Relational + time-series / PostgreSQL wire",
     "icon": {
       "color": "#1B5BD1",
-      "text": "KW"
+      "text": "KW",
+      "scale": 0.72
     },
     "tableStats": [
       {

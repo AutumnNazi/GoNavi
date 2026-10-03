@@ -90,7 +90,8 @@
     "hint": "Time-series / PostgreSQL wire",
     "icon": {
       "color": "#D14671",
-      "text": "Q"
+      "text": "Q",
+      "scale": 0.72
     }
   }
 }

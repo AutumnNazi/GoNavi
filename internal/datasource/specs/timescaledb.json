@@ -92,7 +92,8 @@
     "hint": "PostgreSQL + time-series extension",
     "icon": {
       "color": "#FDB515",
-      "text": "Ts"
+      "text": "Ts",
+      "scale": 0.72
     }
   }
 }
