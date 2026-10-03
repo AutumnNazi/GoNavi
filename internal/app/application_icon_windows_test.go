@@ -11,6 +11,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -591,7 +592,7 @@ func TestWindowsSendShortcutRefreshNotificationsUsesKnownFolders(t *testing.T) {
 	wantAssociations := 0
 	for _, dir := range directories {
 		if strings.EqualFold(dir, windowsTaskbarPinsDirectory()) {
-			if info, err := os.Stat(filepath.Join(dir, "GoNavi.lnk")); err == nil && !info.IsDir() {
+			if len(windowsGoNaviShortcutNamesIn(dir)) > 0 {
 				wantAssociations = 1
 			}
 		}
@@ -611,11 +612,109 @@ func TestWindowsSendShortcutRefreshNotificationsUsesKnownFolders(t *testing.T) {
 	if !seenPrograms {
 		t.Fatalf("Start Menu Programs folder missing from refresh pass: %v", directories)
 	}
-	// Item notifications only fire for existing GoNavi.lnk files; on a clean
-	// machine none exist, which must not error or notify.
+	// Item notifications only fire for existing GoNavi-prefixed .lnk files
+	// (the same name set the repair script claims); on a clean machine none
+	// exist, which must not error or notify.
 	for _, item := range items {
-		if !strings.HasSuffix(strings.ToLower(item), "gonavi.lnk") {
+		base := strings.ToLower(filepath.Base(item))
+		if !strings.HasSuffix(base, ".lnk") || !strings.HasPrefix(base, "gonavi") {
 			t.Fatalf("unexpected item notification target: %s", item)
 		}
+	}
+}
+
+func TestWindowsGoNaviShortcutNamesInClaimsVariantNames(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"GoNavi.lnk", "GoNavi (2).lnk", "GoNavi-rotated.lnk", "File Explorer.lnk", "notes.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, "GoNavi-directory.lnk"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got := windowsGoNaviShortcutNamesIn(dir)
+	want := []string{"GoNavi (2).lnk", "GoNavi-rotated.lnk", "GoNavi.lnk"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("claimed names = %v, want %v", got, want)
+	}
+	if missing := windowsGoNaviShortcutNamesIn(filepath.Join(dir, "not-exist")); missing != nil {
+		t.Fatalf("missing directory should claim nothing, got %v", missing)
+	}
+}
+
+func TestWindowsSendShortcutRefreshNotificationsSendsAssociationForVariantPin(t *testing.T) {
+	var items, directories []string
+	var associations int
+	previousItem := windowsApplicationIconNotifyItemChanged
+	previousDirectory := windowsApplicationIconNotifyDirectoryChanged
+	previousAssociation := windowsApplicationIconNotifyShellChange
+	previousDirectories := windowsKnownGoNaviShortcutDirectories
+	previousPins := windowsTaskbarPinsDirectory
+	defer func() {
+		windowsApplicationIconNotifyItemChanged = previousItem
+		windowsApplicationIconNotifyDirectoryChanged = previousDirectory
+		windowsApplicationIconNotifyShellChange = previousAssociation
+		windowsKnownGoNaviShortcutDirectories = previousDirectories
+		windowsTaskbarPinsDirectory = previousPins
+	}()
+	windowsApplicationIconNotifyItemChanged = func(path string) { items = append(items, path) }
+	windowsApplicationIconNotifyDirectoryChanged = func(path string) { directories = append(directories, path) }
+	windowsApplicationIconNotifyShellChange = func() { associations++ }
+
+	pinsDir := t.TempDir()
+	windowsTaskbarPinsDirectory = func() string { return pinsDir }
+	windowsKnownGoNaviShortcutDirectories = func() []string { return []string{pinsDir} }
+
+	// 复现审查发现的场景：固定项不叫 GoNavi.lnk（如副本 GoNavi (2).lnk）。
+	// 固定按钮的图标重读只认全局关联广播，字面名单一判定会让这类 pin
+	// 停留在旧图标。
+	variantPin := filepath.Join(pinsDir, "GoNavi (2).lnk")
+	if err := os.WriteFile(variantPin, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	windowsSendShortcutRefreshNotifications()
+
+	if associations != 1 {
+		t.Fatalf("association change notification sent %d times, want 1 for variant-named pin", associations)
+	}
+	if len(items) != 1 || items[0] != variantPin {
+		t.Fatalf("item notifications = %v, want [%s]", items, variantPin)
+	}
+	if len(directories) != 1 || directories[0] != pinsDir {
+		t.Fatalf("directory notifications = %v, want [%s]", directories, pinsDir)
+	}
+}
+
+func TestWindowsSendShortcutRefreshNotificationsSkipsAssociationForForeignPin(t *testing.T) {
+	var associations int
+	previousItem := windowsApplicationIconNotifyItemChanged
+	previousDirectory := windowsApplicationIconNotifyDirectoryChanged
+	previousAssociation := windowsApplicationIconNotifyShellChange
+	previousDirectories := windowsKnownGoNaviShortcutDirectories
+	previousPins := windowsTaskbarPinsDirectory
+	defer func() {
+		windowsApplicationIconNotifyItemChanged = previousItem
+		windowsApplicationIconNotifyDirectoryChanged = previousDirectory
+		windowsApplicationIconNotifyShellChange = previousAssociation
+		windowsKnownGoNaviShortcutDirectories = previousDirectories
+		windowsTaskbarPinsDirectory = previousPins
+	}()
+	windowsApplicationIconNotifyItemChanged = func(path string) {}
+	windowsApplicationIconNotifyDirectoryChanged = func(path string) {}
+	windowsApplicationIconNotifyShellChange = func() { associations++ }
+
+	pinsDir := t.TempDir()
+	windowsTaskbarPinsDirectory = func() string { return pinsDir }
+	windowsKnownGoNaviShortcutDirectories = func() []string { return []string{pinsDir} }
+	if err := os.WriteFile(filepath.Join(pinsDir, "File Explorer.lnk"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	windowsSendShortcutRefreshNotifications()
+
+	if associations != 0 {
+		t.Fatalf("association change notification sent %d times, want 0 for foreign pin", associations)
 	}
 }

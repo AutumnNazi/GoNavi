@@ -178,7 +178,7 @@ var (
 // repair script enumerates (desktop, common desktop, user/machine Start Menu
 // Programs, taskbar pins) so the delayed shell refresh can notify on exactly
 // the paths the script may have rewritten.
-func windowsKnownGoNaviShortcutDirectories() []string {
+var windowsKnownGoNaviShortcutDirectories = func() []string {
 	known := []*windows.KNOWNFOLDERID{
 		windows.FOLDERID_Desktop,
 		windows.FOLDERID_PublicDesktop,
@@ -209,13 +209,38 @@ func windowsKnownGoNaviShortcutDirectories() []string {
 // through the targeted notifications alone. Users without a pinned GoNavi
 // never see a flash. Pure shell calls: no icon reload, no window mutation,
 // safe to run without holding the brand icon mutex.
+// windowsGoNaviShortcutNamesIn returns the .lnk names in directory that the
+// shortcut repair would claim as GoNavi's (case-insensitive GoNavi prefix,
+// e.g. "GoNavi (2).lnk"). The refresh pass must notify the same name set the
+// repair script rewrites: a variant-named taskbar pin only ever re-reads its
+// icon on the global association flush, so a literal "GoNavi.lnk" check would
+// leave that pin stuck on the previous icon.
+func windowsGoNaviShortcutNamesIn(directory string) []string {
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		lower := strings.ToLower(entry.Name())
+		if strings.HasSuffix(lower, ".lnk") && strings.HasPrefix(lower, "gonavi") {
+			names = append(names, entry.Name())
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
 func windowsSendShortcutRefreshNotifications() {
 	pinExists := false
+	pinsDirectory := windowsTaskbarPinsDirectory()
 	for _, directory := range windowsKnownGoNaviShortcutDirectories() {
-		shortcut := filepath.Join(directory, "GoNavi.lnk")
-		if info, err := os.Stat(shortcut); err == nil && !info.IsDir() {
-			windowsApplicationIconNotifyItemChanged(shortcut)
-			if strings.EqualFold(directory, windowsTaskbarPinsDirectory()) {
+		for _, name := range windowsGoNaviShortcutNamesIn(directory) {
+			windowsApplicationIconNotifyItemChanged(filepath.Join(directory, name))
+			if pinsDirectory != "" && strings.EqualFold(directory, pinsDirectory) {
 				pinExists = true
 			}
 		}
@@ -246,57 +271,71 @@ func startWindowsPinsWatcher(runtimeContext context.Context, configDir string) {
 	windowsPinsWatcherOnce.Do(func() {
 		pinsDir := windowsTaskbarPinsDirectory()
 		if pinsDir == "" {
+			logger.Warnf("无法解析任务栏固定项目录，固定项监视未启动")
 			return
 		}
 		go func() {
+			// 目录暂不可读不等于没有固定项：按空集起步，目录恢复后首轮
+			// diff 会把实际存在的 GoNavi 固定项当作新增处理。
 			last, err := windowsReadPinsNameSet(pinsDir)
 			if err != nil {
-				return
+				logger.Warnf("任务栏固定项目录初读失败，按空集监视：%v", err)
+				last = ""
 			}
+			// time.After 在循环里会泄漏 timer（GO_STYLE 8.6），改用可复用
+			// 的 NewTimer 并在每轮末尾 Reset。
+			pollInterval := time.Duration(windowsPinsWatcherPollMs) * time.Millisecond
+			timer := time.NewTimer(pollInterval)
+			defer timer.Stop()
 			for {
 				select {
 				case <-runtimeContext.Done():
 					return
-				case <-time.After(time.Duration(windowsPinsWatcherPollMs) * time.Millisecond):
+				case <-timer.C:
 				}
-				current, err := windowsReadPinsNameSet(pinsDir)
-				// 读取失败（目录暂时锁定等）保留上次集合并跳过本轮，避免
-				// 误判变化触发一整轮无谓的图标重应用。
-				if err != nil {
-					continue
+				if current, err := windowsReadPinsNameSet(pinsDir); err != nil {
+					// 读取失败（目录暂时锁定等）保留上次集合并跳过本轮，避免
+					// 误判变化触发一整轮无谓的图标重应用。
+					logger.Warnf("读取任务栏固定项目录失败，本轮跳过：%v", err)
+				} else if current != last {
+					added, removed := windowsDiffPinsNameSets(last, current)
+					last = current
+					windowsHandlePinsChange(runtimeContext, configDir, added, removed)
 				}
-				if current == last {
-					continue
-				}
-				added, removed := windowsDiffPinsNameSets(last, current)
-				last = current
-				if !windowsPinsChangeAffectsGoNavi(added, removed) {
-					continue
-				}
-				// 切换进行中时其完整链路会同时覆盖快捷方式与窗口，跳过本
-				// 轮避免与它竞态。
-				if !applicationBrandIconMu.TryLock() {
-					logger.Infof("固定项变化时图标切换正在进行，跳过本轮重应用")
-					continue
-				}
-				iconPath, err := loadPersistedWindowsApplicationIcon(configDir)
-				if err == nil && strings.TrimSpace(iconPath) != "" {
-					if len(added) > 0 {
-						if err := windowsUpdateCurrentApplicationShortcuts(iconPath); err != nil {
-							logger.Warnf("固定项新增后重写 Windows 快捷方式图标失败：%v", err)
-						}
-					} else {
-						if _, err := setCurrentWindowsApplicationIcon(runtimeContext, iconPath); err != nil {
-							logger.Warnf("固定项移除后重应用 Windows 品牌图标失败：%v", err)
-						}
-					}
-					windowsApplicationIconNotifyShellChange()
-					windowsScheduleDelayedShellRefresh()
-				}
-				applicationBrandIconMu.Unlock()
+				timer.Reset(pollInterval)
 			}
 		}()
 	})
+}
+
+// windowsHandlePinsChange reacts to one pin set change while holding the
+// brand icon mutex (skipped when a brand switch is in flight).
+func windowsHandlePinsChange(runtimeContext context.Context, configDir string, added, removed []string) {
+	if !windowsPinsChangeAffectsGoNavi(added, removed) {
+		return
+	}
+	// 切换进行中时其完整链路会同时覆盖快捷方式与窗口，跳过本
+	// 轮避免与它竞态。
+	if !applicationBrandIconMu.TryLock() {
+		logger.Infof("固定项变化时图标切换正在进行，跳过本轮重应用")
+		return
+	}
+	defer applicationBrandIconMu.Unlock()
+	iconPath, err := loadPersistedWindowsApplicationIcon(configDir)
+	if err != nil || strings.TrimSpace(iconPath) == "" {
+		return
+	}
+	if len(added) > 0 {
+		if err := windowsUpdateCurrentApplicationShortcuts(iconPath); err != nil {
+			logger.Warnf("固定项新增后重写 Windows 快捷方式图标失败：%v", err)
+		}
+	} else {
+		if _, err := setCurrentWindowsApplicationIcon(runtimeContext, iconPath); err != nil {
+			logger.Warnf("固定项移除后重应用 Windows 品牌图标失败：%v", err)
+		}
+	}
+	windowsApplicationIconNotifyShellChange()
+	windowsScheduleDelayedShellRefresh()
 }
 
 // windowsDiffPinsNameSets compares two newline-joined sorted name sets and
@@ -344,7 +383,7 @@ func windowsPinsChangeAffectsGoNavi(added, removed []string) bool {
 	return false
 }
 
-func windowsTaskbarPinsDirectory() string {
+var windowsTaskbarPinsDirectory = func() string {
 	appData, err := os.UserConfigDir()
 	if err != nil || strings.TrimSpace(appData) == "" {
 		return ""
