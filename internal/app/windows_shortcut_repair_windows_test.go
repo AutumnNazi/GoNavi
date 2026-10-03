@@ -743,3 +743,31 @@ if (Ensure-GoNaviAumidShortcut -TargetPath $env:GONAVI_TEST_TARGET -IconPath $en
 		t.Fatalf("machine shortcut migration integration failed: %v\n%s", err, output)
 	}
 }
+
+// 「所有应用」列表的图标快照只在其宿主进程启动时重建（三项 shell 通知
+// 全部无效，用户实测确认），因此切换收尾必须在 UPDATED>0 时重启
+// StartMenuExperienceHost；迁移分发同样如此。静态断言防止该调用被误删。
+func TestWindowsShortcutScriptRestartsStartMenuHostForAllAppsList(t *testing.T) {
+	if !strings.Contains(windowsShortcutRepairPowerShellScript, "function Restart-GoNaviStartMenuHost") {
+		t.Fatal("repair script must define Restart-GoNaviStartMenuHost for the all-apps list refresh")
+	}
+	if !strings.Contains(windowsShortcutRepairPowerShellScript, "Stop-Process -InputObject $startMenuHost -Force") {
+		t.Fatal("Restart-GoNaviStartMenuHost must stop the StartMenuExperienceHost process")
+	}
+	for _, marker := range []string{
+		"Restart-GoNaviStartMenuHost",
+		"$updated -gt 0",
+		"GONAVI_BRAND_RESTART_STARTMENU",
+	} {
+		if !strings.Contains(windowsShortcutUpdateEpilogue, marker) {
+			t.Fatalf("brand update epilogue must restart the Start menu host on update (missing %q)", marker)
+		}
+	}
+	if !strings.Contains(windowsShortcutRepairPowerShellScript, "if ($migrated -gt 0 -and $env:GONAVI_BRAND_RESTART_STARTMENU -ne '0')") {
+		t.Fatal("migration mode must restart the Start menu host after moving machine shortcuts")
+	}
+	// 函数定义 + 迁移分发调用：嵌入脚本中至少出现两次。
+	if got := strings.Count(windowsShortcutRepairPowerShellScript, "Restart-GoNaviStartMenuHost"); got < 2 {
+		t.Fatalf("Restart-GoNaviStartMenuHost references = %d, want >= 2 (definition + migration dispatch)", got)
+	}
+}

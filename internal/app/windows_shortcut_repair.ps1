@@ -342,6 +342,23 @@ public static class GoNaviShortcutShellAssociation
     }
 }
 
+function Restart-GoNaviStartMenuHost {
+    # Win11 的开始菜单「所有应用」列表把每个快捷方式的图标快照进自己的
+    # 数据库，对单项/目录/全局关联通知一概不响应（Win11 26200 用户实测：
+    # 整文件替换 + ASSOCCHANGED 后列表仍显示旧图标，重启电脑才刷新）。
+    # 重启列表宿主进程是唯一可靠的实时刷新方式：进程由系统按需自动拉起，
+    # 只影响开始菜单本身（若正打开会瞬时重载），桌面与任务栏不受影响。
+    try {
+        $startMenuHost = Get-Process -Name 'StartMenuExperienceHost' -ErrorAction SilentlyContinue
+        if ($null -ne $startMenuHost) {
+            Stop-Process -InputObject $startMenuHost -Force -ErrorAction SilentlyContinue
+            Write-ShortcutRepairLog ("restarted StartMenuExperienceHost to refresh the all-apps list")
+        }
+    } catch {
+        Write-ShortcutRepairLog ("StartMenuExperienceHost restart failed: " + $_.Exception.Message)
+    }
+}
+
 function Set-GoNaviShortcutRelaunchProperties {
     param(
         [string]$ShortcutPath,
@@ -819,6 +836,11 @@ function Set-GoNaviShortcutBrandIcon {
                 # Creating the AUMID shortcut is an incremental improvement; a
                 # failure is logged and never blocks the icon switch.
                 Write-ShortcutRepairLog ("AUMID shortcut ensure failed: " + $_.Exception.Message)
+            }
+            # 迁移让所有应用列表出现「机器层条目消失 + 用户层条目新增」，
+            # 宿主重启让它重建为单一正确条目。
+            if ($migrated -gt 0 -and $env:GONAVI_BRAND_RESTART_STARTMENU -ne '0') {
+                Restart-GoNaviStartMenuHost
             }
             return $migrated
         }

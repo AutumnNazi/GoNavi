@@ -110,6 +110,25 @@ func migrateWindowsMachineShortcutsToUserLayer(executablePath string) error {
 		[][2]string{{"GONAVI_BRAND_MIGRATE_ONLY", "1"}})
 }
 
+// windowsShortcutUpdateEpilogue is appended to the embedded repair script for
+// every brand-icon run: it drives Set-GoNaviShortcutBrandIcon with the brand
+// environment and reports UPDATED/FAILED. When any shortcut was rewritten the
+// Start menu host restarts so the all-apps list rebuilds its icon snapshot —
+// that list ignores every shell notification (item, directory and the global
+// association flush; observed on Windows 11 26200) and only rereads shortcuts
+// when its host process starts.
+const windowsShortcutUpdateEpilogue = `
+
+$ErrorActionPreference = 'Stop'
+$updated = Set-GoNaviShortcutBrandIcon -TargetPath $env:GONAVI_BRAND_TARGET -IconPath $env:GONAVI_BRAND_ICON -ApplicationUserModelID $env:GONAVI_BRAND_AUMID
+$failed = 0
+if ($null -ne $script:GoNaviBrandFailureCount) { $failed = [int]$script:GoNaviBrandFailureCount }
+Write-Output ("UPDATED=" + $updated + " FAILED=" + $failed)
+if ($updated -gt 0 -and $env:GONAVI_BRAND_RESTART_STARTMENU -ne '0') {
+    Restart-GoNaviStartMenuHost
+}
+`
+
 // runWindowsShortcutUpdateScript materializes the embedded repair script and
 // runs it with the standard brand environment plus extraEnv. scriptDir hosts
 // the temporary .ps1 (the icon directory for every caller, so standard users
@@ -121,14 +140,7 @@ func runWindowsShortcutUpdateScript(executablePath, iconPath, scriptDir, logDir 
 	}
 	scriptPath := temporary.Name()
 	defer os.Remove(scriptPath)
-	script := windowsShortcutRepairPowerShellScript + `
-
-$ErrorActionPreference = 'Stop'
-$updated = Set-GoNaviShortcutBrandIcon -TargetPath $env:GONAVI_BRAND_TARGET -IconPath $env:GONAVI_BRAND_ICON -ApplicationUserModelID $env:GONAVI_BRAND_AUMID
-$failed = 0
-if ($null -ne $script:GoNaviBrandFailureCount) { $failed = [int]$script:GoNaviBrandFailureCount }
-Write-Output ("UPDATED=" + $updated + " FAILED=" + $failed)
-`
+	script := windowsShortcutRepairPowerShellScript + windowsShortcutUpdateEpilogue
 	if _, err := temporary.WriteString(strings.ReplaceAll(script, "\n", "\r\n")); err != nil {
 		_ = temporary.Close()
 		return fmt.Errorf("write Windows shortcut update script: %w", err)
