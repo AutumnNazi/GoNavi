@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import TestRenderer, { act } from 'react-test-renderer';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -28,11 +26,9 @@ import {
 } from './DataSyncWorkbenchShell';
 import { setDataSyncHandoff } from '../../utils/dataSyncHandoff';
 import { getDirtyWorkbenchTabCloseGuards } from '../../utils/workbenchTabCloseProtection';
+import { readCssWithImports } from '../../test/readCssWithImports';
 
-const dataSyncWorkbenchCss = readFileSync(
-  new URL('./DataSyncWorkbench.css', import.meta.url),
-  'utf8',
-);
+const dataSyncWorkbenchCss = readCssWithImports(new URL('./DataSyncWorkbench.css', import.meta.url));
 
 const buildTask = () => {
   const draft = createDataSyncTaskDraft({

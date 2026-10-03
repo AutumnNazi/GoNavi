@@ -12,6 +12,7 @@ import {
   resolveTitleBarLayout,
   shouldDockCollapsedSidebarActionsInTitlebar,
 } from './utils/titlebarLayout';
+import { readCssWithImports } from './test/readCssWithImports';
 
 // App.tsx 已拆成 hook / 子组件 / 辅助模块（src/appShell），源码扫描按原顺序聚合。
 const APP_SOURCE_MODULES = [
@@ -60,8 +61,8 @@ const APP_SOURCE_MODULES = [
 const appSource = APP_SOURCE_MODULES
   .map((file) => readFileSync(new URL(`./${file}`, import.meta.url), 'utf8'))
   .join('\n');
-const appCss = readFileSync(new URL('./App.css', import.meta.url), 'utf8');
-const v2ThemeCss = readFileSync(new URL('./v2-theme.css', import.meta.url), 'utf8');
+const appCss = readCssWithImports(new URL('./App.css', import.meta.url));
+const v2ThemeCss = readCssWithImports(new URL('./v2-theme.css', import.meta.url));
 // Sidebar.tsx 已拆成 components/sidebar/ 下的 hook 与子组件，源码扫描需一并聚合。
 const SIDEBAR_COMPONENT_PARTS = [
   'sidebarProps.ts',

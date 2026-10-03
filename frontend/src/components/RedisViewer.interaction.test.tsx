@@ -1,12 +1,12 @@
 import React from 'react';
-import { readFileSync } from 'node:fs';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import RedisViewer from './RedisViewer';
+import { readCssWithImports } from '../test/readCssWithImports';
 
-const appCss = readFileSync(new URL('../App.css', import.meta.url), 'utf8');
-const v2WorkbenchCss = readFileSync(new URL('../styles/v2-theme-workbench.css', import.meta.url), 'utf8');
+const appCss = readCssWithImports(new URL('../App.css', import.meta.url));
+const v2WorkbenchCss = readCssWithImports(new URL('../styles/v2-theme-workbench.css', import.meta.url));
 
 const storeState = vi.hoisted(() => ({
   connections: [

@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { setCurrentLanguage } from "../i18n";
 import { getAllConnectionTypeCatalogItems } from "../utils/connectionTypeCatalog";
 import { getCustomConnectionDriverHelp } from "../utils/driverImportGuidance";
+import { readCssWithImports } from '../test/readCssWithImports';
 
 const storeState = {
   addConnection: vi.fn(),
@@ -145,7 +146,7 @@ const flushConnectionTestTick = async () => {
 };
 
 const source = readFileSync(new URL("./ConnectionModal.tsx", import.meta.url), "utf8");
-const appCssSource = readFileSync(new URL("../App.css", import.meta.url), "utf8");
+const appCssSource = readCssWithImports(new URL("../App.css", import.meta.url));
 // ConnectionModalStep2.tsx 已拆成多个子模块，源码扫描需一并聚合。
 const step2Source = [
   "ConnectionModalStep2.tsx",

@@ -72,6 +72,7 @@ import {
 } from '../utils/shortcuts';
 import { SUPPORTED_LANGUAGES, getCurrentLanguage, setCurrentLanguage, t } from '../i18n';
 import { I18nProvider } from '../i18n/provider';
+import { readCssWithImports } from '../test/readCssWithImports';
 import {
   V2ConnectionGroupContextMenuView,
   V2ConnectionContextMenuView,
@@ -1187,7 +1188,7 @@ describe('Sidebar locate toolbar', () => {
 
   it('keeps the expanded v2 explorer actions usable in narrow containers', () => {
     const source = readSidebarComponentSource();
-    const appCss = readSourceFile('../App.css');
+    const appCss = readCssWithImports(new URL('../App.css', import.meta.url));
     const css = readV2ThemeCss();
     expect(source).toContain('<SidebarConnectionRail {...v2ConnectionRailProps} />');
     expect(appCss).toMatch(/body\[data-ui-version=(["'])v2\1\]\s+\.ant-layout-sider\[data-sidebar-collapsed=(["'])false\2\]\s+\.gn-v2-connection-rail\s*\{[^}]*display:\s*none;/s);

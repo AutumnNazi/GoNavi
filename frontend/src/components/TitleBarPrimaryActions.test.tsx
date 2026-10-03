@@ -1,4 +1,3 @@
-import React from 'react';
 import { readFileSync } from 'node:fs';
 import { create } from 'react-test-renderer';
 import { describe, expect, it, vi } from 'vitest';
@@ -10,8 +9,9 @@ import {
   cloneShortcutOptions,
   DEFAULT_SHORTCUT_OPTIONS,
 } from '../utils/shortcuts';
+import { readCssWithImports } from '../test/readCssWithImports';
 
-const appCss = readFileSync(new URL('../App.css', import.meta.url), 'utf8');
+const appCss = readCssWithImports(new URL('../App.css', import.meta.url));
 // App.tsx 已拆成 hook / 子组件 / 辅助模块（src/appShell），源码扫描按原顺序聚合。
 const APP_SOURCE_MODULES = [
   'App.tsx',
@@ -59,7 +59,7 @@ const APP_SOURCE_MODULES = [
 const appSource = APP_SOURCE_MODULES
   .map((file) => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8'))
   .join('\n');
-const v2ThemeCss = readFileSync(new URL('../v2-theme.css', import.meta.url), 'utf8');
+const v2ThemeCss = readCssWithImports(new URL('../v2-theme.css', import.meta.url));
 
 vi.mock('@ant-design/icons', () => {
   const Icon = () => <span data-icon="true" />;
