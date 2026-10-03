@@ -49,21 +49,8 @@ import LanguageSettingsPanel from './components/LanguageSettingsPanel';
 import WebAuthSettingsPanel from './components/WebAuthSettingsPanel';
 import CloudBackupSettings from './components/CloudBackupSettings';
 import BrandIconPicker from './components/BrandIconPicker';
-import {
-  resolveBrandAboutSrc,
-  resolveBrandDockSrc,
-  resolveBrandIconSrc,
-  resolveBrandIcon,
-  setLoadedBrandIconSources,
-  BRAND_ICONS,
-  type BrandIconId,
-} from './brand/brandIcons';
-import {
-  composeMacOSDockIconBase64,
-  composeWindowsNativeIconBase64,
-  LEGACY_MASCOT_DOCK_ICON_INSET,
-  shouldSyncApplicationBrandIcon,
-} from './brand/macDockIcon';
+import { resolveBrandAboutSrc } from './brand/brandIcons';
+import { useBrandIconSync } from './brand/useBrandIconSync';
 import CustomThemeManager from './components/settings/CustomThemeManager';
 import ToolbarButtonAppearanceSettings from './components/settings/ToolbarButtonAppearanceSettings';
 import TitlebarMenuStyleSettings from './components/settings/TitlebarMenuStyleSettings';
@@ -333,8 +320,6 @@ import {
   SelectDataRootDirectory,
   SelectLogDirectory,
   SelectSavedQueryDirectory,
-  SetApplicationBrandIcon,
-  GetBrandIconDataURL,
   SetWindowTranslucency,
 } from '../wailsjs/go/app/App';
 import { getAntdLocale } from './i18n/frameworkLocale';
@@ -871,19 +856,11 @@ function App() {
   // snapshot while the panel is hidden, detached, or being remounted.
   useAIWorkspaceSnapshot({ enabled: true });
   const [notificationApi, notificationContextHolder] = notification.useNotification();
-  const [brandAssetRevision, setBrandAssetRevision] = useState(0);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isConnectionModalMounted, setIsConnectionModalMounted] = useState(false);
   const [editingConnection, setEditingConnection] = useState<SavedConnection | null>(null);
   const [connectionHealthTargetIds, setConnectionHealthTargetIds] = useState<string[]>([]);
   const pendingConnectionTagIdRef = useRef<string | null>(null);
-  // Suppresses the brand-icon sync effect while the explicit selection flow is
-  // applying the same icon through the native bridge, so the shortcut update
-  // and window identity rotation run exactly once.
-  const windowsBrandIconApplyingRef = useRef<BrandIconId | null>(null);
-  // 最近一次成功应用到原生表面的品牌 ID：选择流程完成后 brandAssetRevision
-  // 的自增会重跑同步 effect，没有这个记录就会对同一图标再应用一次。
-  const lastNativeAppliedBrandIdRef = useRef<BrandIconId | null>(null);
   const connectionModalWarmupDoneRef = useRef(false);
   const windowState = useStore(state => state.windowState);
   const themeMode = useStore(state => state.theme);
@@ -921,6 +898,9 @@ function App() {
   const resetShortcutOptions = useStore(state => state.resetShortcutOptions);
   const [systemThemeMode, setSystemThemeMode] = useState<'light' | 'dark'>(() => getSystemThemeMode());
   const [runtimePlatform, setRuntimePlatform] = useState('');
+  // 品牌图标领域逻辑（favicon、原生图标同步、资源加载、设置面板选择流程）
+  // 抽到独立 hook：App.tsx 只保留接线。
+  const { handleBrandIconChange } = useBrandIconSync(runtimePlatform);
   const [runtimeBuildType, setRuntimeBuildType] = useState('');
   const [isLinuxRuntime, setIsLinuxRuntime] = useState(false);
   const activeCustomTheme = useMemo(
@@ -1056,105 +1036,6 @@ function App() {
       }
       void safeWindowRuntimeCall(() => WindowSetLightTheme(), undefined);
   }, [effectiveThemePreference, resolvedThemeMode, setTheme, themeMode]);
-
-  // Apply the selected brand mascot to the favicon and supported native OS surfaces.
-  useEffect(() => {
-      if (typeof document === 'undefined') return;
-      const href = resolveBrandIconSrc(brandIconId);
-      let link = document.querySelector<HTMLLinkElement>("link[rel='icon'][data-brand-icon='true']");
-      if (!link) {
-          link = document.createElement('link');
-          link.rel = 'icon';
-          link.setAttribute('data-brand-icon', 'true');
-          document.head.appendChild(link);
-      }
-      // The current ribbon assets are SVG, while the restored 0.9.7 mascot
-      // assets are lossless WebP files. Keep the favicon MIME in sync with
-      // the selected asset so browsers do not discard the mascot icon.
-      link.type = /\.webp(?:[?#]|$)/i.test(href) ? 'image/webp' : 'image/svg+xml';
-      link.href = href;
-
-      // The selection flow below updates the live window icon itself;
-      // skip this sync while that apply is in flight so the shortcut update
-      // and window icon refresh run exactly once.
-      if (runtimePlatform === 'windows' && windowsBrandIconApplyingRef.current === brandIconId) {
-          return;
-      }
-      // 同一品牌已经成功应用过（选择流程或上一轮同步），brandAssetRevision
-      // 的自增不需要再对同一图标重复应用。
-      if (runtimePlatform === 'windows' && lastNativeAppliedBrandIdRef.current === brandIconId) {
-          return;
-      }
-
-      let cancelled = false;
-      const applyNativeIcon = async () => {
-          try {
-              const environment = await Environment();
-              if (cancelled || !shouldSyncApplicationBrandIcon(environment)) {
-                  return;
-              }
-              const dockHref = resolveBrandDockSrc(brandIconId);
-              // The compact fallback is suitable for UI placeholders, but it
-              // must never become the cached Windows taskbar or macOS Dock icon.
-              if (!dockHref) return;
-              const b64 = runtimePlatform === 'windows'
-                  ? await composeWindowsNativeIconBase64(dockHref, {
-                      transparentMark: resolveBrandIcon(brandIconId).bundled ? true : undefined,
-                  })
-                  : await composeMacOSDockIconBase64(dockHref, {
-                      inset: resolveBrandIcon(brandIconId).bundled ? LEGACY_MASCOT_DOCK_ICON_INSET : undefined,
-                  });
-              if (cancelled) return;
-              const result = await SetApplicationBrandIcon(b64);
-              if (!result.success && !cancelled) {
-                  console.warn('Failed to update the native application icon:', result.message);
-                  message.warning(t('app.settings.entry.brand_icon.native_sync_failed'));
-              }
-              if (result.success) {
-                  lastNativeAppliedBrandIdRef.current = brandIconId as BrandIconId;
-              }
-          } catch (error) {
-              if (!cancelled) {
-                  console.warn('Failed to update the native application icon:', error);
-                  message.warning(t('app.settings.entry.brand_icon.native_sync_failed'));
-              }
-          }
-      };
-      void applyNativeIcon();
-      return () => {
-          cancelled = true;
-      };
-  }, [brandIconId, brandAssetRevision, runtimePlatform, t]);
-
-  const brandAssetsLoadingRef = useRef<Promise<boolean> | null>(null);
-  const loadBrandAssets = useCallback(async (): Promise<boolean> => {
-      if (brandAssetsLoadingRef.current) return brandAssetsLoadingRef.current;
-      const task = (async (): Promise<boolean> => {
-          const loaded: Partial<Record<BrandIconId, string>> = {};
-          await Promise.all(BRAND_ICONS.filter((icon) => !icon.bundled).map(async (icon) => {
-              try {
-                  const source = await GetBrandIconDataURL(icon.id);
-                  if (source) loaded[icon.id] = source;
-              } catch {
-                  // 离线或镜像不可达时保持内存占位，UI 依旧可用。
-              }
-          }));
-          if (Object.keys(loaded).length === 0) return false;
-          setLoadedBrandIconSources(loaded);
-          setBrandAssetRevision((revision) => revision + 1);
-          window.dispatchEvent(new Event('gonavi-brand-assets-ready'));
-          return true;
-      })();
-      brandAssetsLoadingRef.current = task;
-      try {
-          return await task;
-      } finally {
-          brandAssetsLoadingRef.current = null;
-      }
-  }, []);
-  useEffect(() => {
-      void loadBrandAssets();
-  }, [loadBrandAssets]);
 
   const selectPresetTheme = useCallback((preference: ThemePreference) => {
       // Custom CSS is an independent skin layer. Selecting a built-in preset
@@ -3529,63 +3410,6 @@ function App() {
           applicationQuitConfirmRef.current = confirmRef;
       });
   }, [applicationQuitModalZIndex, ensureSavedQueriesLoaded, forceQuitApplication, resetApplicationQuitRequest, saveQuery, t]);
-
-  const handleBrandIconChange = useCallback(async (id: BrandIconId) => {
-      if (id === brandIconId) return;
-      const previousId = brandIconId;
-      if (runtimePlatform !== 'windows') {
-          setBrandIconId(id);
-          message.success(t('app.settings.entry.brand_icon.applied'));
-          return;
-      }
-
-      // Windows writes the new ICO onto existing shortcuts and the live window.
-      // The process, live window, and recognized GoNavi pin all keep the same
-      // stable Syngnat.GoNavi AppUserModelID — only the icon bitmap changes, so
-      // pinned buttons keep launching this process instead of splitting.
-      windowsBrandIconApplyingRef.current = id;
-      setBrandIconId(id);
-      try {
-          let source = resolveBrandDockSrc(id);
-          if (!source) {
-              // 远程缎带资源可能还没下载完成（首屏加载失败/离线）。重试一次；
-              // 仍不可用就必须如实回退并警告——绝不能弹「已应用」却什么都不改。
-              await loadBrandAssets();
-              source = resolveBrandDockSrc(id);
-              if (!source) {
-                  throw Object.assign(new Error(t('app.settings.entry.brand_icon.asset_not_ready')), { assetNotReady: true });
-              }
-          }
-          // Windows fills the whole taskbar tile; the macOS Dock safe-area
-          // inset would shrink the ICO mark relative to neighbouring apps.
-          // Bundled mascots drop the white tile and the GoNavi word mark —
-          // the cut-out dog itself becomes the whole icon, no background.
-          const b64 = await composeWindowsNativeIconBase64(source, {
-              transparentMark: resolveBrandIcon(id).bundled ? true : undefined,
-          });
-          const result = await SetApplicationBrandIcon(b64);
-          if (!result || result.success === false) {
-              throw new Error(result?.message || 'Windows brand icon update failed');
-          }
-          lastNativeAppliedBrandIdRef.current = id;
-          message.success(t('app.settings.entry.brand_icon.applied'));
-      } catch (error) {
-          setBrandIconId(previousId);
-          const isAssetNotReady = typeof error === 'object' && error !== null && (error as { assetNotReady?: boolean }).assetNotReady === true;
-          if (!isAssetNotReady) {
-              console.warn('Failed to apply the Windows brand icon:', error);
-          }
-          if (isAssetNotReady) {
-              message.warning(error instanceof Error ? error.message : t('app.settings.entry.brand_icon.asset_not_ready'));
-          } else {
-              message.error(t('app.settings.entry.brand_icon.native_sync_failed'));
-          }
-      } finally {
-          if (windowsBrandIconApplyingRef.current === id) {
-              windowsBrandIconApplyingRef.current = null;
-          }
-      }
-  }, [brandIconId, loadBrandAssets, runtimePlatform, setBrandIconId, t]);
 
   const handleInstallUpdateRequest = useCallback(async () => {
       let pendingCloseInstanceCount: number | null = null;
