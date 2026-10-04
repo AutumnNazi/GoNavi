@@ -8,6 +8,7 @@ require (
 	github.com/BurntSushi/toml v1.1.0
 	github.com/ClickHouse/clickhouse-go/v2 v2.43.0
 	github.com/HuaweiCloudDeveloper/gaussdb-go v1.0.0-rc1
+	github.com/andybalholm/brotli v1.2.0
 	github.com/apache/iotdb-client-go v1.3.7
 	github.com/apache/pulsar-client-go v0.21.0
 	github.com/apache/rocketmq-client-go/v2 v2.1.2
@@ -122,7 +123,6 @@ require (
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
 	github.com/99designs/keyring v1.2.2
 	github.com/ClickHouse/ch-go v0.71.0
-	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/apache/arrow-go/v18 v18.5.1 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
