@@ -50,6 +50,18 @@ export const canonicalizeDataSourceType = (value: unknown): string =>
 
 export const isRegistryDataSource = (value: unknown): boolean => resolveDataSourceType(value) !== undefined;
 
+/**
+ * 描述表类型按 excelImport（表数据导入）/ sqlFileImport（运行 SQL 文件、从备份恢复）声明导入入口；
+ * 历史类型不受影响（返回 true，由后端导入能力决定）。
+ */
+export const registryAllowsImport = (value: unknown, mode: 'table' | 'sqlFile'): boolean => {
+  const spec = getDataSourceSpec(value);
+  if (!spec) {
+    return true;
+  }
+  return mode === 'table' ? spec.excelImport === true : spec.sqlFileImport === true;
+};
+
 /** 判断描述表类型是否声明了某个兼容家族（mysql、postgres、oracle、sqlite 等）。 */
 export const isDataSourceFamily = (value: unknown, family: string): boolean =>
   getDataSourceSpec(value)?.family === family;

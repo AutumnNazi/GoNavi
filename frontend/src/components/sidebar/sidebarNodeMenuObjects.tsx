@@ -95,12 +95,12 @@ export const buildTableNodeMenuItems = ({ node, context }: BuildTableNodeMenuIte
           icon: <CopyOutlined />,
           onClick: () => handleCopyTable(node)
       }] : []),
-      {
+      ...(getDataSourceCapabilities(node.dataRef?.config).supportsSqlQueryExport ? [{
           key: 'backup-table',
           label: t('sidebar.menu.backup_table_sql'),
           icon: <SaveOutlined />,
           onClick: () => handleExport(node, { format: 'sql' })
-      },
+      }] : []),
       {
           key: 'rename-table',
           label: t('sidebar.menu.rename_table'),

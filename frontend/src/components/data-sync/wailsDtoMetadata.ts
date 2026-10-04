@@ -14,6 +14,7 @@ import {
   string,
   optionalMetadataNumber,
 } from './wailsDtoPrimitives';
+import { getDataSourceSpec } from '../../utils/dataSourceRegistry';
 
 export type WailsQueryResultLike = {
   success?: unknown;
@@ -67,12 +68,15 @@ export const decodeSavedConnectionViews = (
         protection.restrictDataImport,
         `GetSavedConnections[${index}].config.protection.restrictDataImport`,
       );
+    const type = string(config.type, `GetSavedConnections[${index}].config.type`, false);
+    // 描述表类型按 sync 声明决定能否作为源 / 目标（后端同步内核同样据此放行），未声明的不提供选择。
+    const registrySpec = getDataSourceSpec(type);
     return {
       id: string(view.id, `GetSavedConnections[${index}].id`, false),
       name: string(view.name, `GetSavedConnections[${index}].name`, false),
-      type: string(config.type, `GetSavedConnections[${index}].config.type`, false),
-      readable: true,
-      writable: !readOnly && !restrictWrite,
+      type,
+      readable: !registrySpec || registrySpec.sync?.source === true,
+      writable: !readOnly && !restrictWrite && (!registrySpec || registrySpec.sync?.target === true),
     };
   });
 

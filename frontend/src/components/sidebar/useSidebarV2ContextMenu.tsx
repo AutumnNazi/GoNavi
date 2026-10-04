@@ -21,6 +21,7 @@ import { t } from '../../i18n';
 import { DBQuery } from '../../../wailsjs/go/app/App';
 import { getCaseInsensitiveRawValue, getCaseInsensitiveValue, getMetadataDialect, splitQualifiedName, escapeSQLLiteral, parseSidebarTableRowCount } from './sidebarMetadataLoaders';
 import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
+import { registryAllowsImport } from '../../utils/dataSourceRegistry';
 import { isConnectionDataEditRestricted } from '../../utils/connectionReadOnly';
 import { resolveConnectionHostSummary } from '../../utils/tabDisplay';
 import { resolveConnectionIconType } from '../../utils/connectionVisual';
@@ -379,6 +380,7 @@ export const useSidebarV2ContextMenu = ({
               supportsStarRocksRollup={isStarRocks}
               supportsMessagePublish={supportsMessagePublish}
               supportsBatchTables={dataSourceCapabilities.supportsSqlQueryExport}
+              supportsSqlExport={dataSourceCapabilities.supportsSqlQueryExport}
               onAction={(action) => {
                   setContextMenu(null);
                   handleV2TableContextMenuAction(node, action);
@@ -425,6 +427,7 @@ export const useSidebarV2ContextMenu = ({
               supportsRenameDatabase={capabilities.supportsRenameDatabase}
               supportsDropDatabase={capabilities.supportsDropDatabase}
               supportsBatchWorkbench={capabilities.supportsSqlQueryExport}
+              supportsRunSqlFile={registryAllowsImport((node.dataRef as SavedConnection)?.config?.type, 'sqlFile')}
               isPinned={isPinned}
               onAction={(action) => {
                   setContextMenu(null);
@@ -497,6 +500,7 @@ export const useSidebarV2ContextMenu = ({
               supportsCreateDatabase={capabilities.supportsCreateDatabase}
               supportsVisibility={supportsConnectionVisibility(conn)}
               supportsQueryEditor={capabilities.supportsQueryEditor}
+              supportsRunSqlFile={registryAllowsImport(conn?.config?.type, 'sqlFile')}
               isMessageQueue={isMessageQueue}
               supportsMessagePublish={capabilities.supportsMessagePublish}
               supportsUserManagement={capabilities.supportsUserManagement}

@@ -30,13 +30,14 @@ export interface TableExportSingleScopeFieldsProps {
   setSelectedColumns: TableExportStateApi['setSelectedColumns'];
   xlsxMaxRowsPerSheet: TableExportStateApi['xlsxMaxRowsPerSheet'];
   setXlsxMaxRowsPerSheet: TableExportStateApi['setXlsxMaxRowsPerSheet'];
+  supportsSqlFormat?: boolean;
 }
 
 export const TableExportSingleScopeFields = ({
   secondaryTextColor, scope, isConfigurationLocked, scopeOptions, setScope, activeScopeOption,
   format, setFormat, activeScopeQuery, includeDropIfExists, setIncludeDropIfExists,
   availableColumns, selectedColumns, loadingColumns, setSelectedColumns, xlsxMaxRowsPerSheet,
-  setXlsxMaxRowsPerSheet,
+  setXlsxMaxRowsPerSheet, supportsSqlFormat = true,
 }: TableExportSingleScopeFieldsProps) => (
   <>
     <div>
@@ -65,7 +66,7 @@ export const TableExportSingleScopeFields = ({
         style={{ width: '100%' }}
         value={format}
         disabled={isConfigurationLocked}
-        options={createTableExportFormatOptions()}
+        options={createTableExportFormatOptions(supportsSqlFormat)}
         onChange={(next) => setFormat(next as DataExportFormat)}
       />
     </div>

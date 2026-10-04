@@ -22,6 +22,7 @@ import {
   resolveBatchDatabaseModeMeta,
 } from '../tableExportWorkbenchModel';
 import { getDataSourceCapabilities } from '../../../utils/dataSourceCapabilities';
+import { getDataSourceSpec } from '../../../utils/dataSourceRegistry';
 import { buildExportWorkbenchHistoryKey } from '../../../utils/tableExportTab';
 import type { TableExportScope } from '../../../types';
 import {
@@ -133,7 +134,11 @@ export const useTableExportState = ({ tab }: UseTableExportStateInput) => {
     () => (connection ? normalizeConnectionConfig(connection) : null),
     [connection],
   );
-  const supportsDatabaseContextOption = String(connectionConfig?.type || '').trim().toLowerCase() === 'mysql';
+  // 写 USE / CREATE DATABASE 的选项：MySQL 与借用 MySQL 方言的描述表类型（TiDB、GBase 8a）。
+  const supportsDatabaseContextOption = (() => {
+    const type = String(connectionConfig?.type || '').trim().toLowerCase();
+    return type === 'mysql' || getDataSourceSpec(type)?.ddlDialect === 'mysql';
+  })();
   const connectionCapabilities = useMemo(
     () => getDataSourceCapabilities(connection?.config),
     [connection?.config],
@@ -163,6 +168,12 @@ export const useTableExportState = ({ tab }: UseTableExportStateInput) => {
   const [scope, setScope] = useState<TableExportScope>(() => resolveInitialScope(scopeOptions, tab.tableExportInitialScope));
   const [format, setFormat] = useState<DataExportFormat>(DEFAULT_DATA_EXPORT_FORMAT);
   const [xlsxMaxRowsPerSheet, setXlsxMaxRowsPerSheet] = useState<number>(DEFAULT_XLSX_ROWS_PER_SHEET);
+  useEffect(() => {
+    // 非 SQL 数据源不提供 SQL 格式（从“备份 / 复制 INSERT”等入口带进来的 sql 格式改回默认格式）。
+    if (format === 'sql' && connection && !connectionCapabilities.supportsSqlQueryExport) {
+      setFormat(DEFAULT_DATA_EXPORT_FORMAT);
+    }
+  }, [connection, connectionCapabilities.supportsSqlQueryExport, format]);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const {
     state: progressState,

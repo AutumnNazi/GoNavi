@@ -119,6 +119,9 @@ export type DataSourceSpec = {
   proxyMode?: 'forward' | 'driver';
   protection?: boolean;
   excelImport?: boolean;
+  sqlFileImport?: boolean;
+  // sync 声明能否作为数据同步 / 迁移的源与目标；未声明的类型不出现在同步的连接选择里。
+  sync?: { source?: boolean; target?: boolean };
   agent: DataSourceAgentBuild;
   variants: DataSourceVariantSet;
   ui?: DataSourceUISpec;

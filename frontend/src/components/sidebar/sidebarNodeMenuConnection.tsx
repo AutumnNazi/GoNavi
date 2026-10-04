@@ -16,6 +16,7 @@ import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
 import { buildElasticsearchConsoleTemplates } from '../../utils/elasticsearchConsole';
 import { isElasticsearchFamilyType } from '../../utils/elasticsearchFamily';
 import { GnNewQueryIcon } from '../icons/gnIcons';
+import { registryAllowsImport } from '../../utils/dataSourceRegistry';
 
 export interface BuildConnectionNodeMenuItemsInput {
   isRedis: boolean;
@@ -299,12 +300,12 @@ export const buildConnectionNodeMenuItems = ({ isRedis, refreshConnectionResourc
                  });
              }
            },
-           {
+           ...(registryAllowsImport((node.dataRef as SavedConnection)?.config?.type, 'sqlFile') ? [{
                key: 'open-sql-file',
                label: t('sidebar.sql_file_exec.title'),
                icon: <FileAddOutlined />,
                onClick: () => handleRunSQLFile(node)
-           },
+           }] : []),
            ]),
        ] : []),
        { type: 'divider' },
