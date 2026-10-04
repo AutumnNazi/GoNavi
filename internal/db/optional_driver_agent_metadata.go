@@ -34,7 +34,8 @@ func (d *OptionalDriverAgentDB) GetTables(dbName string) ([]string, error) {
 		Method: optionalAgentMethodGetTables,
 		DBName: dbName,
 	}, &tables, nil, nil, nil, optionalAgentControlCallTimeout); err != nil {
-		return nil, err
+		// 代理在失败时可能带回部分结果（PartialData），与进程内驱动一样一并返回。
+		return tables, err
 	}
 	return tables, nil
 }

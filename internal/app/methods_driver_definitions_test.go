@@ -149,19 +149,34 @@ func TestIoTDBDriverDefinitionUsesOptionalAgent(t *testing.T) {
 	}
 }
 
-func TestKafkaDriverDefinitionIsBuiltIn(t *testing.T) {
-	definition, ok := resolveDriverDefinition("apache-kafka")
-	if !ok {
-		t.Fatal("expected kafka driver definition")
+func TestMessageQueueDriverDefinitionsUseOptionalAgent(t *testing.T) {
+	cases := []struct {
+		alias   string
+		name    string
+		version string
+		module  string
+	}{
+		{alias: "apache-kafka", name: "Kafka", version: "0.4.51", module: "github.com/segmentio/kafka-go"},
+		{alias: "rmq", name: "RocketMQ", version: "2.1.2", module: "github.com/apache/rocketmq-client-go/v2"},
+		{alias: "apache-pulsar", name: "Apache Pulsar", version: "0.21.0", module: "github.com/apache/pulsar-client-go"},
 	}
-	if definition.Name != "Kafka" {
-		t.Fatalf("unexpected kafka driver name: %q", definition.Name)
-	}
-	if !definition.BuiltIn {
-		t.Fatal("expected kafka to be a built-in driver")
-	}
-	if definition.PinnedVersion != "" || definition.DefaultDownloadURL != "" {
-		t.Fatalf("expected kafka builtin definition to omit optional-agent metadata: %#v", definition)
+	for _, tc := range cases {
+		definition, ok := resolveDriverDefinition(tc.alias)
+		if !ok {
+			t.Fatalf("expected %s driver definition", tc.alias)
+		}
+		if definition.Name != tc.name || definition.BuiltIn {
+			t.Fatalf("expected %s to be the optional driver agent %q: %#v", tc.alias, tc.name, definition)
+		}
+		if definition.PinnedVersion != tc.version {
+			t.Fatalf("unexpected %s pinned version: %q", tc.alias, definition.PinnedVersion)
+		}
+		if driverGoModulePathMap[definition.Type] != tc.module {
+			t.Fatalf("unexpected %s go module path: %q", tc.alias, driverGoModulePathMap[definition.Type])
+		}
+		if tag, err := optionalDriverBuildTag(definition.Type, ""); err != nil || tag != "gonavi_"+definition.Type+"_driver" {
+			t.Fatalf("unexpected %s build tag: %q, %v", tc.alias, tag, err)
+		}
 	}
 }
 
@@ -178,22 +193,6 @@ func TestMQTTDriverDefinitionIsBuiltIn(t *testing.T) {
 	}
 	if definition.PinnedVersion != "" || definition.DefaultDownloadURL != "" {
 		t.Fatalf("expected mqtt builtin definition to omit optional-agent metadata: %#v", definition)
-	}
-}
-
-func TestRocketMQDriverDefinitionIsBuiltIn(t *testing.T) {
-	definition, ok := resolveDriverDefinition("rmq")
-	if !ok {
-		t.Fatal("expected rocketmq driver definition")
-	}
-	if definition.Name != "RocketMQ" {
-		t.Fatalf("unexpected rocketmq driver name: %q", definition.Name)
-	}
-	if !definition.BuiltIn {
-		t.Fatal("expected rocketmq to be a built-in driver")
-	}
-	if definition.PinnedVersion != "" || definition.DefaultDownloadURL != "" {
-		t.Fatalf("expected rocketmq builtin definition to omit optional-agent metadata: %#v", definition)
 	}
 }
 

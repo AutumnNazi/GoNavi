@@ -300,6 +300,12 @@ func optionalDriverBuildTag(driverType string, selectedVersion string) (string, 
 		return "gonavi_elasticsearch_driver", nil
 	case "trino":
 		return "gonavi_trino_driver", nil
+	case "kafka":
+		return "gonavi_kafka_driver", nil
+	case "rocketmq":
+		return "gonavi_rocketmq_driver", nil
+	case "pulsar":
+		return "gonavi_pulsar_driver", nil
 	default:
 		return "", newLocalizedDriverBackendError("driver_manager.backend.error.source_build_tag_unconfigured", map[string]any{"driverType": driverType}, nil)
 	}

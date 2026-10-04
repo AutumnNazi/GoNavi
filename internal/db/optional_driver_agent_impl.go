@@ -96,6 +96,8 @@ type optionalAgentResponse struct {
 	RowsAffected              int64                         `json:"rowsAffected,omitempty"`
 	Truncated                 bool                          `json:"truncated,omitempty"`
 	BudgetExhausted           bool                          `json:"budgetExhausted,omitempty"`
+	// PartialData 表示失败响应仍携带部分结果；客户端解析数据后照常返回错误。
+	PartialData bool `json:"partialData,omitempty"`
 }
 
 type OptionalDriverAgentMetadata struct {

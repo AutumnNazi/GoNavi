@@ -57,6 +57,9 @@ type agentResponse struct {
 	RowsAffected              int64                         `json:"rowsAffected,omitempty"`
 	Truncated                 bool                          `json:"truncated,omitempty"`
 	BudgetExhausted           bool                          `json:"budgetExhausted,omitempty"`
+	// PartialData 表示失败响应仍携带部分结果（如 Pulsar 主题发现失败时的已知主题）；
+	// 旧版主进程忽略该字段，只看到错误。
+	PartialData bool `json:"partialData,omitempty"`
 }
 
 type agentConnectionInfo struct {
@@ -419,7 +422,12 @@ func handleRequestWithContext(requestCtx context.Context, runtimeState *agentRun
 	case agentMethodGetTables:
 		data, err := runtimeState.inst.GetTables(req.DBName)
 		if err != nil {
-			return fail(resp, err.Error())
+			failed := fail(resp, err.Error())
+			if len(data) > 0 {
+				failed.Data = data
+				failed.PartialData = true
+			}
+			return failed
 		}
 		resp.Data = data
 	case agentMethodTableExists:

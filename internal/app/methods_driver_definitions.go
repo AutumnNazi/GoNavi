@@ -134,6 +134,10 @@ func allDriverDefinitionsWithPackages(packages map[string]pinnedDriverPackage) [
 		buildOptionalGoDriverDefinition("clickhouse", "ClickHouse", packages),
 		buildOptionalGoDriverDefinition("elasticsearch", "Elasticsearch", packages),
 		buildOptionalGoDriverDefinition("trino", "Trino", packages),
+		// 消息队列客户端体积大（Pulsar 连带 k8s/athenz/prometheus），同样按需下载驱动代理。
+		buildOptionalGoDriverDefinition("kafka", "Kafka", packages),
+		buildOptionalGoDriverDefinition("rocketmq", "RocketMQ", packages),
+		buildOptionalGoDriverDefinition("pulsar", "Apache Pulsar", packages),
 	}...)
 }
 
