@@ -542,8 +542,9 @@ func TestInspectDriverPackageReportsRevisionMismatch(t *testing.T) {
 	if item.PackageRevision != "src-deadbeefdeadbeef" {
 		t.Fatalf("应回放包内 revision，实际: %q", item.PackageRevision)
 	}
-	if item.ExpectedRevision != "src-0a451007282c8777" {
-		t.Fatalf("应给出当前构建期望的 revision，实际: %q", item.ExpectedRevision)
+	// 期望值随 driver_agent_revisions_gen.go 重新生成而变化，不能写死。
+	if want := db.OptionalDriverAgentRevision("mariadb"); want == "" || item.ExpectedRevision != want {
+		t.Fatalf("应给出当前构建期望的 revision %q，实际: %q", want, item.ExpectedRevision)
 	}
 }
 
