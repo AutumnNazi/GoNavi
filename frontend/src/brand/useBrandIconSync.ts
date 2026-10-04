@@ -76,9 +76,7 @@ export function useBrandIconSync(runtimePlatform: string) {
         // must never become the cached Windows taskbar or macOS Dock icon.
         if (!dockHref) return;
         const b64 = runtimePlatform === 'windows'
-          ? await composeWindowsNativeIconBase64(dockHref, {
-            transparentMark: resolveBrandIcon(brandIconId).mascot ? true : undefined,
-          })
+          ? await composeWindowsNativeIconBase64(dockHref)
           : await composeMacOSDockIconBase64(dockHref, {
             inset: resolveBrandIcon(brandIconId).mascot ? LEGACY_MASCOT_DOCK_ICON_INSET : undefined,
           });
@@ -137,11 +135,11 @@ export function useBrandIconSync(runtimePlatform: string) {
       }
       // Windows fills the whole taskbar tile; the macOS Dock safe-area
       // inset would shrink the ICO mark relative to neighbouring apps.
-      // Bundled mascots drop the white tile and the GoNavi word mark —
-      // the cut-out dog itself becomes the whole icon, no background.
-      const b64 = await composeWindowsNativeIconBase64(source, {
-        transparentMark: resolveBrandIcon(id).mascot ? true : undefined,
-      });
+      // The composed ICO is shared by the window, the taskbar and every
+      // shortcut, so bundled mascots keep their full artwork (tile and
+      // word mark) exactly as shown in the picker - cutting the tile away
+      // made the desktop and Start Menu shortcuts look unfinished.
+      const b64 = await composeWindowsNativeIconBase64(source);
       const result = await SetApplicationBrandIcon(b64);
       if (!result || result.success === false) {
         throw new Error(result?.message || 'Windows brand icon update failed');
