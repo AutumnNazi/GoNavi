@@ -31,6 +31,7 @@ func init() {
 		"pulsar":        "src-7f064e360a5cc531",
 		"cockroachdb":   "src-e1af992a3ef02ed7",
 		"etcd":          "src-2b38544717253018",
+		"firebird":      "src-bf06bc98061718d7",
 		"gbase8a":       "src-f1d6ef57586922be",
 		"gbase8c":       "src-fd450c13135aceb8",
 		"gbase8s":       "src-512a7404a081bb07",
