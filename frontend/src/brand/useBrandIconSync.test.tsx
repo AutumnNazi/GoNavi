@@ -18,6 +18,7 @@ const storeState = vi.hoisted(() => ({
 
 const setApplicationBrandIcon = vi.hoisted(() => vi.fn());
 
+const ensureBrandAssetsMock = vi.hoisted(() => vi.fn(async () => true));
 const composeMacOSDockIcon = vi.hoisted(() => vi.fn(async () => 'b64'));
 const composeWindowsNativeIcon = vi.hoisted(() => vi.fn(async () => 'b64'));
 // 可配置的运行环境与品牌定义：默认保持原生同步不触发，避免影响既有用例。
@@ -45,10 +46,11 @@ vi.mock('./brandIcons', () => ({
   resolveBrandDockSrc: (id: string) => `dock:${id}`,
   resolveBrandIcon: () => brandDefinitionState.value,
   brandAssetKeysFor: () => [],
-  startupBrandAssetKeys: () => [],
+  startupBrandAssetKeys: () => ['startup-keys'],
+  previewBrandAssetKeys: () => ['preview-keys'],
 }));
 vi.mock('./brandAssetLoader', () => ({
-  ensureBrandAssets: vi.fn(async () => true),
+  ensureBrandAssets: ensureBrandAssetsMock,
   subscribeBrandAssets: () => () => {},
   getBrandAssetsRevision: () => 0,
 }));
@@ -66,6 +68,26 @@ const Harness = (): null => {
   capturedHandler = handleBrandIconChange;
   return null;
 };
+
+describe('useBrandIconSync startup asset prefetch', () => {
+  beforeEach(() => {
+    ensureBrandAssetsMock.mockClear();
+  });
+
+  it('prefetches startup keys and the full picker preview set on mount', async () => {
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(React.createElement(Harness));
+    });
+    await act(async () => {});
+    void renderer;
+
+    expect(ensureBrandAssetsMock).toHaveBeenCalledWith(['startup-keys']);
+    // 首装首次打开选择器时吉祥物必须已就绪或处于骨架态，
+    // 不能渲染深色兜底剪影——启动即后台补齐全部预览资源。
+    expect(ensureBrandAssetsMock).toHaveBeenCalledWith(['preview-keys']);
+  });
+});
 
 describe('useBrandIconSync handleBrandIconChange', () => {
   beforeEach(() => {

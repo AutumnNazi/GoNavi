@@ -6,6 +6,7 @@ import { useI18n } from '../i18n/provider';
 import { useStore } from '../store';
 import {
   brandAssetKeysFor,
+  previewBrandAssetKeys,
   resolveBrandDockSrc,
   resolveBrandIconSrc,
   resolveBrandIcon,
@@ -102,9 +103,13 @@ export function useBrandIconSync(runtimePlatform: string) {
     };
   }, [brandIconId, brandAssetRevision, runtimePlatform, t]);
 
-  // 启动时只拉取缎带 SVG 与当前选中图标的资源；其余吉祥物等打开选择器时再加载。
+  // 启动即拉取缎带 SVG、当前选中图标的资源，并后台补齐选择器全部预览资源：
+  // 若吉祥物等到打开选择器才下载，首次打开会先渲染一排深色占位剪影，
+  // 资源到达后才突变为真图。预取走 GetBrandIconDataURL 的磁盘缓存，
+  // 只有首次安装或清缓存后才真正联网；about / titlebar 仍只在选中后拉取。
   useEffect(() => {
     void ensureBrandAssets(startupBrandAssetKeys(brandIconId));
+    void ensureBrandAssets(previewBrandAssetKeys());
   }, [brandIconId]);
 
   const handleBrandIconChange = useCallback(async (id: BrandIconId) => {
