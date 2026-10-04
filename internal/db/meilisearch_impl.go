@@ -22,8 +22,6 @@ const (
 	defaultMeilisearchPort         = 7700
 	meilisearchDatabaseName        = "default"
 	defaultMeilisearchQueryTimeout = 60 * time.Second
-	// meilisearchDefaultSelectLimit 是控制台 SELECT 未写 LIMIT 时的行数上限；数据网格总会带 LIMIT。
-	meilisearchDefaultSelectLimit = 1000
 	// meilisearchPageSize 是逐页读取索引列表与文档时的每页条数。
 	meilisearchPageSize = 1000
 	// meilisearchScanLimit 是客户端筛选 / 排序时最多扫描的文档数：超过时要求把字段设为可过滤 / 可排序。

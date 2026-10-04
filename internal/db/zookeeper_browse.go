@@ -39,7 +39,8 @@ const (
 	zookeeperColumnMzxid          = "mzxid"
 	zookeeperColumnPzxid          = "pzxid"
 
-	zookeeperDefaultSelectLimit = 500
+	// zookeeperDefaultSelectLimit 是 SELECT 没写 LIMIT 时的行数：读取全部（遍历仍受 zookeeperScanCap 限制）。
+	zookeeperDefaultSelectLimit = math.MaxInt32
 	// zookeeperScanCap 是一次遍历最多访问的节点数（每个节点一次请求），防止浏览大树时拉全量。
 	zookeeperScanCap = 50000
 	// zookeeperParallelism 是并发请求数（go-zookeeper 在同一连接上流水线发送）。

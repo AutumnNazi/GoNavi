@@ -114,8 +114,13 @@ func gbase8sDecimalType(name string, length int) string {
 	return fmt.Sprintf("%s(%d,%d)", name, precision, scale)
 }
 
+// gbase8sVarcharType 解码 VARCHAR / NVARCHAR 的 collength：Informix 是 预留*256 + 最大长度，
+// GBase 8s 8.8 是 预留*65536 + 最大长度（最大长度不超过 255，高位出现在 16 位以上时按后者解码）。
 func gbase8sVarcharType(name string, length int) string {
 	maxSize, minSize := length&0xFF, length>>8
+	if length > 0xFFFF {
+		maxSize, minSize = length&0xFFFF, length>>16
+	}
 	if minSize > 0 {
 		return fmt.Sprintf("%s(%d,%d)", name, maxSize, minSize)
 	}

@@ -16,8 +16,8 @@ const (
 	defaultWeaviatePort         = 8080
 	weaviateDefaultNamespace    = "default"
 	defaultWeaviateQueryTimeout = 60 * time.Second
-	// weaviateDefaultSelectLimit 是控制台 SELECT 未写 LIMIT 时的行数上限；数据网格总会带 LIMIT。
-	weaviateDefaultSelectLimit = 1000
+	// weaviatePageSize 是逐页读取对象时每次 Get 的条数；SELECT 没写 LIMIT 时读取全部对象。
+	weaviatePageSize = 1000
 	// weaviateMaxNamespaces 限制导航树列出的租户数量，租户上万的集合不在树上逐个展开。
 	weaviateMaxNamespaces  = 1000
 	weaviateSchemaCacheTTL = 15 * time.Second

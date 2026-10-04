@@ -19,6 +19,7 @@ func TestGBase8sColumnTypeDecoding(t *testing.T) {
 		{gbase8sColumnInfo{coltype: 262, collength: 4}, "SERIAL"},
 		{gbase8sColumnInfo{coltype: 269, collength: 100}, "VARCHAR(100)"},
 		{gbase8sColumnInfo{coltype: 13, collength: 10*256 + 50}, "VARCHAR(50,10)"},
+		{gbase8sColumnInfo{coltype: 13, collength: 10*65536 + 100}, "VARCHAR(100,10)"},
 		{gbase8sColumnInfo{coltype: 5, collength: 3074}, "DECIMAL(12,2)"},
 		{gbase8sColumnInfo{coltype: 5, collength: 16*256 + 255}, "DECIMAL(16)"},
 		{gbase8sColumnInfo{coltype: 8, collength: 10*256 + 2}, "MONEY(10,2)"},
@@ -106,5 +107,14 @@ func TestGBase8sQuoteIdentAndGeneratedConstraints(t *testing.T) {
 	}
 	if got := gbase8sIndexColumnList([]int{2, -3}, map[int]string{2: "gid", 3: "made"}); got != "gid, made DESC" {
 		t.Fatalf("index columns %s", got)
+	}
+}
+
+func TestGBase8sBooleanValueUsesTF(t *testing.T) {
+	cases := map[interface{}]interface{}{true: "t", false: "f", "true": "t", "FALSE": "f", "1": "t", "0": "f", int64(1): "t", "": nil, "maybe": "maybe"}
+	for in, want := range cases {
+		if got := gbase8sBooleanValue(in); got != want {
+			t.Errorf("%v: got %v, want %v", in, got, want)
+		}
 	}
 }

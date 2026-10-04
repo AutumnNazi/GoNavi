@@ -3,6 +3,7 @@
 package db
 
 import (
+	"math"
 	"sort"
 	"strings"
 )
@@ -19,7 +20,11 @@ const (
 	etcdColumnLease          = "lease"
 	etcdColumnTTL            = "ttl"
 	etcdColumnDir            = "dir"
-	etcdDefaultSelectLimit   = 500
+	// etcdDefaultSelectLimit 是 SELECT 没写 LIMIT 时的行数：读取全部（导出、备份与迁移按全表读取；控制台的 SELECT
+	// 由编辑器自动补上 LIMIT）。
+	etcdDefaultSelectLimit = math.MaxInt32
+	// etcdDDLScriptLimit 是建表语句页重建脚本里最多写出的键数。
+	etcdDDLScriptLimit = 500
 	// etcdScanCap 是带客户端过滤或非键排序时最多扫描的键数，防止一次浏览拉全库。
 	etcdScanCap = 200000
 )

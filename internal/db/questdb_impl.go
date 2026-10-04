@@ -169,10 +169,19 @@ func (q *QuestDB) GetTableComment(string, string) (string, error) {
 	return "", nil
 }
 
-// ApplyChangesContext 拒绝表格编辑：QuestDB 没有主键也不支持 DELETE，按行改写无法定位到唯一一行；
-// 写入请在 SQL 编辑器里用 INSERT / UPDATE。
-func (q *QuestDB) ApplyChangesContext(context.Context, string, connection.ChangeSet) error {
-	return localizedDatabaseRuntimeError("db.backend.error.questdb_row_edit_unsupported", nil)
+// ApplyChangesContext 只接受新增（导入数据、跨库迁移）：QuestDB 没有主键也不支持 DELETE，按行改写无法
+// 定位到唯一一行，修改与删除请在 SQL 编辑器里写 UPDATE。新增逐行 INSERT（旧版本不支持多行 VALUES）。
+func (q *QuestDB) ApplyChangesContext(ctx context.Context, tableName string, changes connection.ChangeSet) error {
+	reject := localizedDatabaseRuntimeError("db.backend.error.questdb_row_edit_unsupported", nil)
+	if len(changes.Updates) > 0 || len(changes.Deletes) > 0 {
+		return reject
+	}
+	columns, _ := q.GetColumns("", tableName)
+	return applyInsertOnlyChanges(ctx, q.PostgresDB.ExecContext, columns, tableName, changes, insertOnlyDialect{
+		quoteTable:       quoteQuestDBIdentifier,
+		quoteIdent:       quoteQuestDBIdentifier,
+		rowsPerStatement: 1,
+	}, reject)
 }
 
 // ApplyChanges 与 ApplyChangesContext 保持一致。

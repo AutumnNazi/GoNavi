@@ -22,6 +22,13 @@ func (g *GBase8sDB) ApplyChangesContext(ctx context.Context, tableName string, c
 		return localizedDatabaseRuntimeError("db.backend.error.connection_not_open", nil)
 	}
 	table := gbase8sQuoteIdent(strings.Trim(strings.TrimSpace(tableName), `"`))
+	booleans := g.booleanColumns(strings.Trim(strings.TrimSpace(tableName), `"`))
+	writeValue := func(column string, value interface{}) interface{} {
+		if booleans[strings.ToLower(column)] {
+			return gbase8sBooleanValue(value)
+		}
+		return gbase8sWriteValue(value)
+	}
 	tx, err := g.conn.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -63,7 +70,7 @@ func (g *GBase8sDB) ApplyChangesContext(ctx context.Context, tableName string, c
 		args := make([]interface{}, 0, len(columns)+len(whereArgs))
 		for i, column := range columns {
 			sets[i] = gbase8sQuoteIdent(column) + " = ?"
-			args = append(args, gbase8sWriteValue(update.Values[column]))
+			args = append(args, writeValue(column, update.Values[column]))
 		}
 		if err := exec("UPDATE "+table+" SET "+strings.Join(sets, ", ")+" WHERE "+where, append(args, whereArgs...), true); err != nil {
 			return err
@@ -78,7 +85,7 @@ func (g *GBase8sDB) ApplyChangesContext(ctx context.Context, tableName string, c
 		args := make([]interface{}, len(columns))
 		for i, column := range columns {
 			names[i] = gbase8sQuoteIdent(column)
-			args[i] = gbase8sWriteValue(row[column])
+			args[i] = writeValue(column, row[column])
 		}
 		query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", table, strings.Join(names, ", "), strings.TrimSuffix(strings.Repeat("?, ", len(columns)), ", "))
 		if err := exec(query, args, false); err != nil {
@@ -125,6 +132,50 @@ func gbase8sWriteValue(value interface{}) interface{} {
 		if data, err := json.Marshal(typed); err == nil {
 			return string(data)
 		}
+	}
+	return value
+}
+
+// booleanColumns 返回表里 BOOLEAN 列（小写列名）；读不到列信息时返回空集合，值原样绑定。
+func (g *GBase8sDB) booleanColumns(tableName string) map[string]bool {
+	result := map[string]bool{}
+	columns, err := g.GetColumns("", tableName)
+	if err != nil {
+		return result
+	}
+	for _, column := range columns {
+		if strings.EqualFold(strings.TrimSpace(column.Type), "BOOLEAN") {
+			result[strings.ToLower(strings.TrimSpace(column.Name))] = true
+		}
+	}
+	return result
+}
+
+// gbase8sBooleanValue 把布尔值写成 GBase 8s 认识的 't' / 'f'：BOOLEAN 列不接受 true / false / 1 / 0 文本
+// （导入的 CSV、网格编辑传来的都是文本），识别不了的值原样绑定，由服务端报错。
+func gbase8sBooleanValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case bool:
+		if typed {
+			return "t"
+		}
+		return "f"
+	case string:
+		switch strings.ToLower(strings.TrimSpace(typed)) {
+		case "true", "t", "1", "yes", "y":
+			return "t"
+		case "false", "f", "0", "no", "n":
+			return "f"
+		case "":
+			return nil
+		}
+	case int, int64, int32, float64:
+		if fmt.Sprint(typed) == "0" {
+			return "f"
+		}
+		return "t"
 	}
 	return value
 }

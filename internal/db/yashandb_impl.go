@@ -30,6 +30,8 @@ const (
 type YashanDB struct {
 	OracleDB
 	driverVariantState
+	// defaultSchema 是未限定的表名所属的 Schema（连接的默认库，留空时为登录用户）。
+	defaultSchema string
 }
 
 var (
@@ -90,6 +92,10 @@ func (y *YashanDB) Connect(config connection.ConnectionConfig) (err error) {
 	configureSQLConnectionPool(pool, "oracle")
 	y.conn = pool
 	y.scanDialect = yashanDBScanDialect
+	y.defaultSchema = strings.TrimSpace(runConfig.Database)
+	if y.defaultSchema == "" && !strings.HasPrefix(strings.TrimSpace(runConfig.User), `"`) {
+		y.defaultSchema = strings.ToUpper(strings.TrimSpace(runConfig.User))
+	}
 	y.resetOracleMetadataCache()
 	if err := y.Ping(); err != nil {
 		return localizedDatabaseRuntimeError("db.backend.error.yashandb_connect_failed", map[string]any{"detail": err.Error()})
@@ -161,6 +167,10 @@ func (y *YashanDB) ApplyChanges(tableName string, changes connection.ChangeSet) 
 func (y *YashanDB) ApplyChangesContext(ctx context.Context, tableName string, changes connection.ChangeSet) (err error) {
 	if y.conn == nil {
 		return localizedDatabaseRuntimeError("db.backend.error.connection_not_open", nil)
+	}
+	// 导入等入口传来的表名可能不带 Schema：先补上默认 Schema，Oracle 的列元数据回退查询（同义词）崖山不认。
+	if schema, table := splitOracleQualifiedTableName(tableName); schema == "" && table != "" && y.defaultSchema != "" {
+		tableName = y.defaultSchema + "." + tableName
 	}
 	columnTypeMap, err := y.loadColumnTypeMap(tableName)
 	if err != nil {

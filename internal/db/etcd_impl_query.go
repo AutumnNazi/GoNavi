@@ -148,7 +148,7 @@ func (e *EtcdDB) GetCreateStatement(dbName, tableName string) (string, error) {
 	ctx, cancel := e.requestContext()
 	defer cancel()
 	selection := etcdSelect{
-		kvSelect:  kvSelect{table: tableName, limit: etcdDefaultSelectLimit},
+		kvSelect:  kvSelect{table: tableName, limit: etcdDDLScriptLimit},
 		keyRanges: etcdTableRanges(tableName, e.delimiter),
 	}
 	var (

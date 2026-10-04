@@ -64,6 +64,10 @@ func (e *ElasticsearchDB) queryWithContext(ctx context.Context, query string) ([
 	if request.IsWrite || request.Risk != esconsole.RiskRead {
 		return nil, nil, fmt.Errorf("旧 Elasticsearch 查询入口仅允许只读请求")
 	}
+	if compat, err := esconsole.ParseSimplifiedSelect(query); err == nil && !compat.Count && compat.Limit == 0 &&
+		(request.Route == "/_search" || request.Route == "/{target}/_search") {
+		return e.scrollSimplifiedSelect(ctx, request, compat.Offset, compat.Columns)
+	}
 	response, err := e.ExecuteElasticsearchConsoleRequest(ctx, ElasticsearchConsoleRequest{
 		Method:   request.Method,
 		Path:     request.Path,

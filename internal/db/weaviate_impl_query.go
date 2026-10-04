@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -70,7 +71,7 @@ func (w *WeaviateDB) querySQL(ctx context.Context, text string) ([]map[string]in
 	if err != nil {
 		return nil, nil, err
 	}
-	clauses := splitRegistrySelectClauses(text, weaviateDefaultSelectLimit)
+	clauses := splitRegistrySelectClauses(text, weaviatePageSize)
 	var filter gqlObject
 	if clauses.where != "" {
 		node, err := parseRegistryWhere(clauses.where)
@@ -93,10 +94,7 @@ func (w *WeaviateDB) querySQL(ctx context.Context, text string) ([]map[string]in
 	if err != nil {
 		return nil, nil, err
 	}
-	args := gqlObject{{"limit", clauses.limit}}
-	if clauses.offset > 0 {
-		args = append(args, gqlField{"offset", clauses.offset})
-	}
+	var args gqlObject
 	if filter != nil {
 		args = append(args, gqlField{"where", filter})
 	}
@@ -110,11 +108,17 @@ func (w *WeaviateDB) querySQL(ctx context.Context, text string) ([]map[string]in
 	if tenant != "" {
 		args = append(args, gqlField{"tenant", tenant})
 	}
-	data, err := w.graphQL(ctx, buildWeaviateClassQuery("Get", class.Class, args, w.selectionFields(class, selection)))
+	limit := clauses.limit
+	if !clauses.hasLimit {
+		// 没写 LIMIT 时读取全部对象（导出、备份与迁移按全表读取；控制台的 SELECT 由编辑器自动补上 LIMIT）。
+		limit = math.MaxInt32
+	}
+	// 没有条件、排序与偏移的整表读取用游标（after，1.18 起）分页，不受 offset + limit 的上限（默认 10000）约束。
+	cursor := !clauses.hasLimit && filter == nil && clauses.orderBy == "" && clauses.offset == 0 && w.atLeast("1.18")
+	objects, err := w.getObjects(ctx, class, args, w.selectionFields(class, selection), clauses.offset, limit, cursor)
 	if err != nil {
 		return nil, nil, err
 	}
-	objects := weaviateClassResults(data, "Get", class.Class)
 	rows := make([]map[string]interface{}, 0, len(objects))
 	for _, object := range objects {
 		row := weaviateGraphQLObjectRow(object)
@@ -125,6 +129,39 @@ func (w *WeaviateDB) querySQL(ctx context.Context, text string) ([]map[string]in
 		rows = append(rows, projected)
 	}
 	return rows, selection.columns, nil
+}
+
+// getObjects 分页执行 Get，读取 [offset, offset+limit) 的对象：cursor 为 true 时按对象 ID 用 after 翻页，
+// 否则按 offset 翻页；一页装得下时只发一次请求。
+func (w *WeaviateDB) getObjects(ctx context.Context, class weaviateClass, args gqlObject, fields string, offset, limit int, cursor bool) ([]map[string]interface{}, error) {
+	objects := make([]map[string]interface{}, 0, min(limit, weaviatePageSize))
+	after := ""
+	for len(objects) < limit {
+		size := min(limit-len(objects), weaviatePageSize)
+		pageArgs := gqlObject{{"limit", size}}
+		switch {
+		case cursor && after != "":
+			pageArgs = append(pageArgs, gqlField{"after", after})
+		case !cursor && offset+len(objects) > 0:
+			pageArgs = append(pageArgs, gqlField{"offset", offset + len(objects)})
+		}
+		pageArgs = append(pageArgs, args...)
+		data, err := w.graphQL(ctx, buildWeaviateClassQuery("Get", class.Class, pageArgs, fields))
+		if err != nil {
+			return nil, err
+		}
+		page := weaviateClassResults(data, "Get", class.Class)
+		objects = append(objects, page...)
+		if len(page) < size {
+			break
+		}
+		last, _ := weaviateGraphQLObjectRow(page[len(page)-1])[weaviateIDColumn].(string)
+		if cursor && last == "" {
+			break
+		}
+		after = last
+	}
+	return objects, nil
 }
 
 // parseProjection 解析 SELECT 列：* 展开为 _id、全部属性与时间戳；_vector / _vectors 只有显式选择时才返回。

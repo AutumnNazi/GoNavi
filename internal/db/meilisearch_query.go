@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -119,7 +120,8 @@ func (m *MeilisearchDB) parseSelect(ctx context.Context, text string) (meilisear
 	if err != nil {
 		return meilisearchSelect{}, false, err
 	}
-	clauses := splitRegistrySelectClauses(text, meilisearchDefaultSelectLimit)
+	// 没写 LIMIT 时读取全部文档（导出、备份与迁移按全表读取；控制台的 SELECT 由编辑器自动补上 LIMIT）。
+	clauses := splitRegistrySelectClauses(text, math.MaxInt32)
 	selection := meilisearchSelect{meta: meta, offset: clauses.offset, limit: clauses.limit}
 	if clauses.where != "" {
 		if selection.where, err = parseRegistryWhere(clauses.where); err != nil {
@@ -146,14 +148,18 @@ func (m *MeilisearchDB) fetchWindow(ctx context.Context, selection meilisearchSe
 		return []map[string]interface{}{}, nil
 	}
 	if selection.where == nil && len(selection.sort) == 0 {
-		return m.listDocuments(ctx, meta.uid, selection.offset, selection.limit)
+		return meilisearchPaged(selection.offset, selection.limit, func(offset, limit int) ([]map[string]interface{}, error) {
+			return m.listDocuments(ctx, meta.uid, offset, limit)
+		})
 	}
 	filter, filterOK := m.nativeFilter(meta, selection.where)
 	sorts, sortOK := m.nativeSort(meta, selection.sort)
 	if filterOK && sortOK {
 		switch {
 		case m.supportsDocumentSort() || (len(sorts) == 0 && m.supportsDocumentFilter()):
-			return m.fetchDocuments(ctx, meta.uid, filter, sorts, selection.offset, selection.limit)
+			return meilisearchPaged(selection.offset, selection.limit, func(offset, limit int) ([]map[string]interface{}, error) {
+				return m.fetchDocuments(ctx, meta.uid, filter, sorts, offset, limit)
+			})
 		case selection.offset+selection.limit <= meta.maxTotalHits:
 			return m.searchDocuments(ctx, meta.uid, filter, sorts, selection.offset, selection.limit)
 		}
@@ -171,6 +177,23 @@ func (m *MeilisearchDB) fetchWindow(ctx context.Context, selection meilisearchSe
 		window = append(window, copyDocument(document))
 	}
 	return window, nil
+}
+
+// meilisearchPaged 按 meilisearchPageSize 分页读取 [offset, offset+limit) 的文档，直到读满或没有更多文档。
+func meilisearchPaged(offset, limit int, fetch func(offset, limit int) ([]map[string]interface{}, error)) ([]map[string]interface{}, error) {
+	documents := make([]map[string]interface{}, 0, min(limit, meilisearchPageSize))
+	for len(documents) < limit {
+		size := min(limit-len(documents), meilisearchPageSize)
+		page, err := fetch(offset+len(documents), size)
+		if err != nil {
+			return nil, err
+		}
+		documents = append(documents, page...)
+		if len(page) < size {
+			break
+		}
+	}
+	return documents, nil
 }
 
 // count 返回满足条件的文档数：无条件时取统计，1.2 起用带过滤的文档接口，0.30 起用搜索的精确总数

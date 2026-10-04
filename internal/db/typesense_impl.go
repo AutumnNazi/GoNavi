@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -22,8 +23,9 @@ const (
 	defaultTypesensePort         = 8108
 	typesenseDatabaseName        = "default"
 	defaultTypesenseQueryTimeout = 60 * time.Second
-	// typesenseDefaultSelectLimit 是控制台 SELECT 未写 LIMIT 时的行数上限；数据网格总会带 LIMIT。
-	typesenseDefaultSelectLimit = 1000
+	// typesenseDefaultSelectLimit 是 SELECT 没写 LIMIT 时的行数：读取全部（导出、备份与迁移按全表读取；
+	// 控制台的 SELECT 由编辑器自动补上 LIMIT），按每页 250 条分段读取。
+	typesenseDefaultSelectLimit = math.MaxInt32
 	// typesenseMaxPerPage 是搜索接口每页条数上限（服务端限制 250）。
 	typesenseMaxPerPage = 250
 	// typesenseScanLimit 是客户端筛选 / 排序时最多扫描的文档数：超过时要求改用可过滤 / 可排序的字段。

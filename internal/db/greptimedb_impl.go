@@ -197,10 +197,35 @@ func quoteGreptimeDBIdentifier(dbName, name string) string {
 	return quote(dbName) + "." + quote(name)
 }
 
-// ApplyChangesContext 拒绝表格编辑：GreptimeDB 不支持 UPDATE，同主键与时间的写入会覆盖旧行；
-// 写入请在 SQL 编辑器里用 INSERT（覆盖）/ DELETE。
-func (g *GreptimeDB) ApplyChangesContext(context.Context, string, connection.ChangeSet) error {
-	return localizedDatabaseRuntimeError("db.backend.error.greptimedb_row_edit_unsupported", nil)
+// ApplyChangesContext 只接受新增（导入数据、跨库迁移）：GreptimeDB 不支持 UPDATE，同主键与时间的写入会覆盖
+// 旧行，修改与删除请在 SQL 编辑器里写 INSERT（覆盖）/ DELETE。新增按多行 VALUES 批量写入。
+func (g *GreptimeDB) ApplyChangesContext(ctx context.Context, tableName string, changes connection.ChangeSet) error {
+	reject := localizedDatabaseRuntimeError("db.backend.error.greptimedb_row_edit_unsupported", nil)
+	if len(changes.Updates) > 0 || len(changes.Deletes) > 0 {
+		return reject
+	}
+	dbName, table := splitGreptimeDBTableName(tableName)
+	if dbName == "" {
+		if rows, _, err := g.MySQLDB.QueryContext(ctx, "SELECT DATABASE() AS db"); err == nil {
+			dbName = strings.TrimSpace(FirstQueryRowValue(rows))
+		}
+	}
+	columns, _ := g.GetColumns(dbName, table)
+	return applyInsertOnlyChanges(ctx, g.MySQLDB.ExecContext, columns, table, changes, insertOnlyDialect{
+		quoteTable:       func(name string) string { return quoteGreptimeDBIdentifier(dbName, name) },
+		quoteIdent:       func(name string) string { return quoteGreptimeDBIdentifier("", name) },
+		escapeBackslash:  true,
+		rowsPerStatement: 200,
+	}, reject)
+}
+
+// splitGreptimeDBTableName 拆出 库.表 形式的库名；表名本身不含点。
+func splitGreptimeDBTableName(tableName string) (string, string) {
+	name := strings.Trim(strings.TrimSpace(tableName), "`")
+	if index := strings.Index(name, "."); index > 0 {
+		return strings.Trim(name[:index], "`"), strings.Trim(name[index+1:], "`")
+	}
+	return "", name
 }
 
 // ApplyChanges 与 ApplyChangesContext 保持一致。
