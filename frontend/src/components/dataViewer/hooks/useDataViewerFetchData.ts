@@ -358,7 +358,7 @@ export const useDataViewerFetchData = ({
 
     const orderBySQL = isMongoDB
       ? ''
-      : buildOrderBySQL(dbType, sortInfo, resolveDataViewerOrderFallbackColumns(editLocatorForQuery, pkColumnsForQuery));
+      : buildOrderBySQL(dbType, sortInfo, resolveDataViewerOrderFallbackColumns(editLocatorForQuery, pkColumnsForQuery, dbType));
     const totalRows = refreshedTotal ?? Number(pagination.total);
     const hasFiniteTotal = Number.isFinite(totalRows) && totalRows >= 0;
     const totalKnown = refreshedTotal !== null || (!refreshTotal && pagination.totalKnown && hasFiniteTotal);
@@ -487,7 +487,7 @@ export const useDataViewerFetchData = ({
 
             if (safeSelect) {
                 let fallbackSql = `SELECT ${safeSelect} FROM ${quoteQualifiedIdent(dbType, tableName)} ${whereSQL}`;
-                fallbackSql = buildPaginatedSelectSQL(dbType, fallbackSql, buildOrderBySQL(dbType, sortInfo, resolveDataViewerOrderFallbackColumns(editLocatorForQuery, pkColumnsForQuery)), size + 1, offset);
+                fallbackSql = buildPaginatedSelectSQL(dbType, fallbackSql, buildOrderBySQL(dbType, sortInfo, resolveDataViewerOrderFallbackColumns(editLocatorForQuery, pkColumnsForQuery, dbType)), size + 1, offset);
                 executedSql = fallbackSql;
                 resData = await executeDataQuery(fallbackSql, tr('data_viewer.sql_log.phase.complex_type_fallback_retry'));
             }

@@ -93,6 +93,8 @@ export type DataSourceUISpec = {
   indexDesign?: { kinds?: string[]; methods: string[] };
   // 表别名语法：缺省 oracle 家族为 bare，其余为 as；非 SQL 查询语言用 none。
   tableAlias?: 'as' | 'bare' | 'none';
+  // 数据浏览未指定排序时不追加主键排序：引擎自身的顺序已稳定，且主键不能由服务端排序（Meilisearch、Typesense）。
+  naturalOrder?: boolean;
   // 数据浏览分页语法：缺省 LIMIT n OFFSET m。
   pagination?: 'limit-offset' | 'limit-range' | 'offset-limit' | 'limit-start' | 'skip-first' | 'rows-to' | 'offset-fetch';
   // 图标：asset 指向官方 logo；缺省时使用 /db-icons/<type>.svg（可由 tools/generate-datasource-icons.py 生成字母徽标）。

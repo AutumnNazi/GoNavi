@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildUriFromValues, parseUriToValues } from '../../components/connectionModal/connectionModalUri';
 import { getRegistryIconConfig } from '../../components/databaseIconsRegistry';
+import { resolveDataViewerOrderFallbackColumns } from '../../components/dataViewer/dataViewerQuerySql';
 import { usesTableListOverview } from '../../components/tableOverview/tableOverviewModel';
 import { CONNECTION_TYPE_GROUPS, getConnectionTypeDefaultPort } from '../connectionTypeCatalog';
 import { resolveConnectionConfigLayout } from '../connectionModalPresentation';
@@ -26,6 +27,9 @@ describe('Meilisearch registry behavior', () => {
     expect(quoteIdentPart('meilisearch', 'movies')).toBe('"movies"');
     expect(buildPaginatedSelectSQL('meilisearch', 'SELECT * FROM "movies"', '', 50, 100)).toBe('SELECT * FROM "movies" LIMIT 50 OFFSET 100');
     expect(usesTableListOverview('meilisearch', 'meilisearch')).toBe(true);
+    // 未指定排序时不追加主键排序：主键不能由服务端排序，追加后会退化为客户端全量排序。
+    expect(resolveDataViewerOrderFallbackColumns(undefined, ['id'], 'meilisearch')).toEqual([]);
+    expect(resolveDataViewerOrderFallbackColumns(undefined, ['id'], 'mysql')).toEqual(['id']);
   });
 
   it('parses and builds http(s) connection URIs', () => {
