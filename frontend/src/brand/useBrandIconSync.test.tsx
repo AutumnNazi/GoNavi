@@ -44,6 +44,7 @@ vi.mock('../i18n/provider', () => ({
 vi.mock('./brandIcons', () => ({
   resolveBrandIconSrc: () => 'asset:icon',
   resolveBrandDockSrc: (id: string) => `dock:${id}`,
+  resolveBrandNativeSrc: (id: string) => `dock:${id}`,
   resolveBrandIcon: () => brandDefinitionState.value,
   brandAssetKeysFor: () => [],
   startupBrandAssetKeys: () => ['startup-keys'],
