@@ -7,7 +7,7 @@ cd "$SCRIPT_DIR"
 SCRIPT_DIR_WINDOWS="$(pwd -W 2>/dev/null || true)"
 SCRIPT_DIR_WINDOWS="${SCRIPT_DIR_WINDOWS//\\//}"
 
-DEFAULT_DRIVERS=(mariadb oceanbase diros starrocks sphinx sqlserver sqlite duckdb dameng kingbase highgo vastbase opengauss gaussdb iris cache mongodb tdengine iotdb clickhouse elasticsearch trino)
+DEFAULT_DRIVERS=(mariadb oceanbase diros starrocks sphinx sqlserver sqlite duckdb dameng kingbase highgo vastbase opengauss gaussdb iris cache mongodb tdengine iotdb clickhouse elasticsearch trino kafka rocketmq pulsar)
 OUTPUT_FILE="internal/db/driver_agent_revisions_gen.go"
 
 usage() {
@@ -31,7 +31,7 @@ normalize_driver() {
     opengauss|open_gauss|open-gauss) echo "opengauss" ;;
     gaussdb|gauss_db|gauss-db) echo "gaussdb" ;;
     elasticsearch|elastic) echo "elasticsearch" ;;
-    mariadb|diros|starrocks|sphinx|sqlserver|sqlite|duckdb|dameng|kingbase|highgo|vastbase|gaussdb|iris|cache|mongodb|tdengine|iotdb|clickhouse|trino)
+    mariadb|diros|starrocks|sphinx|sqlserver|sqlite|duckdb|dameng|kingbase|highgo|vastbase|gaussdb|iris|cache|mongodb|tdengine|iotdb|clickhouse|trino|kafka|rocketmq|pulsar)
       echo "$value"
       ;;
     *)
@@ -148,6 +148,11 @@ driver_source_prefixes() {
     highgo) echo "highgo pg" ;;
     vastbase) echo "vastbase pg" ;;
     cache) echo "cache iris" ;;
+    # 消息队列借用 chroma_impl_rows.go 的取值小工具与 mysql_impl_dsn.go 的 host:port 解析，
+    # 按文件名精确纳入，避免整组 mysql 改动牵连消息队列 agent 的 revision。
+    kafka) echo "kafka message_queue_helpers chroma_impl_rows mysql_impl_dsn" ;;
+    rocketmq) echo "rocketmq message_queue_helpers chroma_impl_rows mysql_impl_dsn" ;;
+    pulsar) echo "pulsar chroma_impl_rows" ;;
     *) echo "$1" ;;
   esac
 }

@@ -20,37 +20,37 @@ const (
 	driverReleaseLatestAPIURL            = "https://api.github.com/repos/" + driverReleaseRepo + "/releases/latest"
 	driverReleaseDevTag                  = "dev-latest"
 	// 总包自 v1.0.2 起为 LZMA2 固实 7z（ZIP 总包已逼近 GitHub 单资产 2 GiB 上限）。
-	optionalDriverBundleAssetName        = "GoNavi-DriverAgents.7z"
-	optionalDriverBundleIndexAssetName   = "GoNavi-DriverAgents-Index.json"
-	optionalDriverBundleDownloadTimeout  = 15 * time.Minute
-	optionalDriverBundleCacheMaxAge      = 7 * 24 * time.Hour
-	optionalDriverBundleCacheMaxFiles    = 4
-	driverManifestCacheTTL               = 5 * time.Minute
-	driverReleaseAssetSizeCacheTTL       = 30 * time.Minute
-	driverReleaseAssetSizeErrorCacheTTL  = 30 * time.Second
-	driverReleaseAssetSizeProbeTimeout   = 4 * time.Second
-	driverReleaseListProbeTimeout        = 6 * time.Second
-	driverModuleLatestCacheTTL           = 6 * time.Hour
-	driverModuleLatestErrorCacheTTL      = 2 * time.Minute
-	driverModuleLatestProbeTimeout       = 4 * time.Second
-	driverModuleVersionInspectLimit      = 30
-	driverModuleVersionListMaxSize       = 4 << 20
-	driverRecentVersionLimit             = 5
-	driverModuleVersionFetchLimit        = 64
-	driverVersionWarmupMinInterval       = 30 * time.Second
-	driverBundleIndexMaxSize             = 1 << 20
-	driverManifestMaxSize                = 2 << 20
-	driverNetworkProbeTimeout            = 4 * time.Second
-	driverNetworkProbeTCPTimeout         = 3 * time.Second
-	localDriverDirectoryScanMaxEntries   = 20000
-	driverChecksumPolicyStrict           = "strict"
-	driverChecksumPolicyWarn             = "warn"
-	driverChecksumPolicyOff              = "off"
-	driverEngineGo                       = "go"
-	driverEngineExternal                 = "external"
-	duckDBWindowsLibraryVersion          = "v1.4.4"
-	duckDBWindowsLibraryArchiveURL       = "https://github.com/duckdb/duckdb/releases/download/" + duckDBWindowsLibraryVersion + "/libduckdb-windows-amd64.zip"
-	duckDBWindowsSupportDLLName          = "duckdb.dll"
+	optionalDriverBundleAssetName       = "GoNavi-DriverAgents.7z"
+	optionalDriverBundleIndexAssetName  = "GoNavi-DriverAgents-Index.json"
+	optionalDriverBundleDownloadTimeout = 15 * time.Minute
+	optionalDriverBundleCacheMaxAge     = 7 * 24 * time.Hour
+	optionalDriverBundleCacheMaxFiles   = 4
+	driverManifestCacheTTL              = 5 * time.Minute
+	driverReleaseAssetSizeCacheTTL      = 30 * time.Minute
+	driverReleaseAssetSizeErrorCacheTTL = 30 * time.Second
+	driverReleaseAssetSizeProbeTimeout  = 4 * time.Second
+	driverReleaseListProbeTimeout       = 6 * time.Second
+	driverModuleLatestCacheTTL          = 6 * time.Hour
+	driverModuleLatestErrorCacheTTL     = 2 * time.Minute
+	driverModuleLatestProbeTimeout      = 4 * time.Second
+	driverModuleVersionInspectLimit     = 30
+	driverModuleVersionListMaxSize      = 4 << 20
+	driverRecentVersionLimit            = 5
+	driverModuleVersionFetchLimit       = 64
+	driverVersionWarmupMinInterval      = 30 * time.Second
+	driverBundleIndexMaxSize            = 1 << 20
+	driverManifestMaxSize               = 2 << 20
+	driverNetworkProbeTimeout           = 4 * time.Second
+	driverNetworkProbeTCPTimeout        = 3 * time.Second
+	localDriverDirectoryScanMaxEntries  = 20000
+	driverChecksumPolicyStrict          = "strict"
+	driverChecksumPolicyWarn            = "warn"
+	driverChecksumPolicyOff             = "off"
+	driverEngineGo                      = "go"
+	driverEngineExternal                = "external"
+	duckDBWindowsLibraryVersion         = "v1.4.4"
+	duckDBWindowsLibraryArchiveURL      = "https://github.com/duckdb/duckdb/releases/download/" + duckDBWindowsLibraryVersion + "/libduckdb-windows-amd64.zip"
+	duckDBWindowsSupportDLLName         = "duckdb.dll"
 )
 
 const builtinDriverManifestJSON = `{
@@ -79,7 +79,10 @@ const builtinDriverManifestJSON = `{
     "iotdb":     { "engine": "go", "version": "1.3.7", "checksumPolicy": "off", "downloadUrl": "builtin://activate/iotdb" },
     "clickhouse": { "engine": "go", "version": "2.43.1", "checksumPolicy": "off", "downloadUrl": "builtin://activate/clickhouse" },
     "elasticsearch": { "engine": "go", "version": "8.19.6", "checksumPolicy": "off", "downloadUrl": "builtin://activate/elasticsearch" },
-    "trino": { "engine": "go", "version": "0.333.0", "checksumPolicy": "off", "downloadUrl": "builtin://activate/trino" }
+    "trino": { "engine": "go", "version": "0.333.0", "checksumPolicy": "off", "downloadUrl": "builtin://activate/trino" },
+    "kafka": { "engine": "go", "version": "0.4.51", "checksumPolicy": "off", "downloadUrl": "builtin://activate/kafka" },
+    "rocketmq": { "engine": "go", "version": "2.1.2", "checksumPolicy": "off", "downloadUrl": "builtin://activate/rocketmq" },
+    "pulsar": { "engine": "go", "version": "0.21.0", "checksumPolicy": "off", "downloadUrl": "builtin://activate/pulsar" }
   }
 }`
 
@@ -151,6 +154,9 @@ var latestDriverVersionMap = map[string]string{
 	"clickhouse":    "2.43.1",
 	"elasticsearch": "8.19.6",
 	"trino":         "0.333.0",
+	"kafka":         "0.4.51",
+	"rocketmq":      "2.1.2",
+	"pulsar":        "0.21.0",
 	"oracle":        "2.9.0",
 	"postgres":      "1.11.2",
 	"redis":         "9.17.3",
@@ -180,6 +186,9 @@ var driverGoModulePathMap = map[string]string{
 	"clickhouse":    "github.com/ClickHouse/clickhouse-go/v2",
 	"elasticsearch": "github.com/elastic/go-elasticsearch/v8",
 	"trino":         "github.com/trinodb/trino-go-client",
+	"kafka":         "github.com/segmentio/kafka-go",
+	"rocketmq":      "github.com/apache/rocketmq-client-go/v2",
+	"pulsar":        "github.com/apache/pulsar-client-go",
 }
 
 var driverGoModuleAliasPathMap = map[string][]string{

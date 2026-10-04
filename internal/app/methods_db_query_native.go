@@ -179,8 +179,8 @@ func shouldPreferPlainReadQueryResult(dbType string) bool {
 		"gaussdb", "gauss_db", "gauss-db",
 		"dameng", "dm", "dm8":
 		return true
-	case "tdengine":
-		// TDengine only implements the plain query API. The optional driver-agent
+	case "tdengine", "kafka", "rocketmq", "pulsar":
+		// These only implement the plain query API. The optional driver-agent
 		// exposes a transport-level multi-result method, but reports it unsupported.
 		// Skipping that probe prevents a successful SELECT from becoming an empty result.
 		return true

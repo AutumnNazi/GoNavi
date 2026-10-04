@@ -7,7 +7,7 @@ cd "$SCRIPT_DIR"
 SCRIPT_DIR_WINDOWS="$(pwd -W 2>/dev/null || true)"
 SCRIPT_DIR_WINDOWS="${SCRIPT_DIR_WINDOWS//\\//}"
 
-DEFAULT_DRIVERS=(mariadb oceanbase doris starrocks sphinx sqlserver sqlite duckdb dameng kingbase highgo vastbase opengauss gaussdb iris cache mongodb tdengine iotdb clickhouse elasticsearch trino)
+DEFAULT_DRIVERS=(mariadb oceanbase doris starrocks sphinx sqlserver sqlite duckdb dameng kingbase highgo vastbase opengauss gaussdb iris cache mongodb tdengine iotdb clickhouse elasticsearch trino kafka rocketmq pulsar)
 TARGET_PLATFORMS=(darwin/amd64 darwin/arm64 windows/amd64 windows/arm64 linux/amd64 linux/arm64)
 
 usage() {
@@ -54,7 +54,7 @@ normalize_driver() {
     open_gauss|open-gauss) echo "opengauss" ;;
     gaussdb|gauss_db|gauss-db) echo "gaussdb" ;;
     elastic|elasticsearch) echo "elasticsearch" ;;
-    mariadb|oceanbase|starrocks|sphinx|sqlserver|sqlite|duckdb|dameng|kingbase|highgo|vastbase|opengauss|gaussdb|iris|cache|mongodb|tdengine|iotdb|clickhouse|trino)
+    mariadb|oceanbase|starrocks|sphinx|sqlserver|sqlite|duckdb|dameng|kingbase|highgo|vastbase|opengauss|gaussdb|iris|cache|mongodb|tdengine|iotdb|clickhouse|trino|kafka|rocketmq|pulsar)
       echo "$value"
       ;;
     *)
@@ -167,6 +167,15 @@ driver_tokens_from_text() {
   case "$text" in *clickhouse*) emit_driver_token clickhouse ;; esac
   case "$text" in *elasticsearch*) emit_driver_token elasticsearch ;; esac
   case "$text" in *trino*) emit_driver_token trino ;; esac
+  case "$text" in *kafka*) emit_driver_token kafka ;; esac
+  case "$text" in *rocketmq*) emit_driver_token rocketmq ;; esac
+  case "$text" in *pulsar*) emit_driver_token pulsar ;; esac
+  case "$text" in
+    *message_queue_helpers*)
+      emit_driver_token kafka
+      emit_driver_token rocketmq
+      ;;
+  esac
 
   case "$text" in
     *github.com/go-sql-driver/mysql*)
@@ -202,6 +211,9 @@ driver_tokens_from_text() {
   case "$text" in *github.com/clickhouse/clickhouse-go/v2*|*github.com/clickhouse/ch-go*) emit_driver_token clickhouse ;; esac
   case "$text" in *github.com/elastic/go-elasticsearch/v8*) emit_driver_token elasticsearch ;; esac
   case "$text" in *github.com/trinodb/trino-go-client*) emit_driver_token trino ;; esac
+  case "$text" in *github.com/segmentio/kafka-go*) emit_driver_token kafka ;; esac
+  case "$text" in *github.com/apache/rocketmq-client-go*) emit_driver_token rocketmq ;; esac
+  case "$text" in *github.com/apache/pulsar-client-go*) emit_driver_token pulsar ;; esac
 }
 
 emit_driver_token() {

@@ -230,6 +230,10 @@ func (c *optionalDriverAgentClient) callLocked(requestID int64, req optionalAgen
 			if resp.ExternalAttachNotAttached {
 				return fmt.Errorf("%s: %w", errText, ErrExternalAttachNotAttached)
 			}
+			if resp.PartialData && out != nil && len(resp.Data) > 0 {
+				// 部分结果解析失败时退回只返回错误，与旧协议行为一致。
+				_ = decodeJSONWithUseNumber(resp.Data, out)
+			}
 			err := errors.New(errText)
 			if resp.OutcomeUnknown {
 				return MarkWriteOutcomeUnknown(err)

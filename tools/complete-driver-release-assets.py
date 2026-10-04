@@ -38,6 +38,9 @@ DRIVERS = [
     "clickhouse",
     "elasticsearch",
     "trino",
+    "kafka",
+    "rocketmq",
+    "pulsar",
 ]
 
 # Releases before v1.0.2 only carry the deflate ZIP bundle.

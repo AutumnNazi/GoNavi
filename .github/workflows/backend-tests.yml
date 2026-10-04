@@ -63,6 +63,11 @@ jobs:
           CGO_ENABLED: 1
         run: go test -tags gonavi_duckdb_driver ./internal/db/ ./internal/app/ -run 'DuckDB|Attach|Slugify|SavedConnection|ConnectionSecret|BuildDuckDB|SameExternal|ParseDuckDB|SecretCleanup' -count=1 -timeout=30m
 
+      # Kafka、RocketMQ、Pulsar 改为驱动代理后带各自的构建标签，主套件不再编译这批
+      # 文件；单独跑一遍保留原有覆盖。
+      - name: Run message queue driver tests
+        run: go test -tags gonavi_kafka_driver,gonavi_rocketmq_driver,gonavi_pulsar_driver ./internal/db/ -count=1 -timeout=30m
+
   platform-sensitive:
     name: Platform-sensitive tests (${{ matrix.os }})
     strategy:
