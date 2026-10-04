@@ -11939,5 +11939,8 @@
   "db.backend.error.gbase8a_rows_mismatch": "コミットに失敗しました：{{expected}} 行が対象のはずが {{actual}} 行でした（他のクライアントが変更した可能性があります）。ロールバックしました。更新してから再試行してください",
   "db.backend.error.gbase8a_update_requires_key": "GBase 8a のデータ変更には主キー条件が必要です：テーブルに主キーを設定するか、SQL エディターで UPDATE 文を記述してください",
   "db.backend.error.gbase8a_table_locked_in_transaction": "GBase 8a のトランザクションでは、同じテーブルに UPDATE／DELETE した後は書き込めず、INSERT の後も UPDATE／DELETE できません。複数のトランザクションに分けてください（{{detail}}）",
-  "db.backend.error.gbase8a_update_too_large": "{{rows}} 行の変更をまとめた UPDATE がプリペアドステートメントのパラメーター上限を超えています。1 回あたりの行数を減らしてください（データ同期ではバッチサイズを小さくします）"
+  "db.backend.error.gbase8a_update_too_large": "{{rows}} 行の変更をまとめた UPDATE がプリペアドステートメントのパラメーター上限を超えています。1 回あたりの行数を減らしてください（データ同期ではバッチサイズを小さくします）",
+  "datasource.variant.gbase8c.v5": "openGauss カーネル：GBase 8c V5（S3.0 / S5.0、集中型と分散型）、sha256 / sm3 / md5 認証に対応。A・B・PG 互換モードはデータベースごとに自動対応",
+  "connection_modal.step1.hint.gbase8c": "openGauss カーネル / sha256・SM3 認証",
+  "db.backend.error.gbase8c_connect_failed": "GBase 8c に接続できません：{{detail}}"
 }

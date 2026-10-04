@@ -393,11 +393,17 @@ export const useTableDesignerDialectSupport = ({
 
     const getIndexTypeOptions = (kind?: IndexKind) => {
         const registryDesign = getRegistryIndexDesignForTab();
-        if (registryDesign) {
-            return registryDesign.methods.map(method => ({ label: method, value: method }));
-        }
         const dbType = getDbType();
         const k = kind || 'NORMAL';
+        if (registryDesign) {
+            if (isPgLikeDialect(dbType) && (k === 'PRIMARY' || k === 'UNIQUE') && registryDesign.methods.includes('BTREE')) {
+                return [{ label: 'BTREE', value: 'BTREE' }];
+            }
+            return registryDesign.methods.map(method => ({
+                label: method === 'DEFAULT' ? t('table_designer.option.default', undefined, i18nLanguage) : method,
+                value: method,
+            }));
+        }
         if (isMysqlLikeDialect(dbType)) {
             // MySQL InnoDB: 所有索引均为固定方法类型
             if (k === 'FULLTEXT') return [{ label: 'FULLTEXT', value: 'FULLTEXT' }];

@@ -11939,5 +11939,8 @@
   "db.backend.error.gbase8a_rows_mismatch": "提交失敗：應影響 {{expected}} 列，實際影響 {{actual}} 列（資料可能已被其他用戶端修改），已回復，請重新整理後重試",
   "db.backend.error.gbase8a_update_requires_key": "GBase 8a 修改資料需要主鍵條件：請為資料表設定主鍵，或在 SQL 編輯器中撰寫 UPDATE 陳述式",
   "db.backend.error.gbase8a_table_locked_in_transaction": "GBase 8a 的一個交易中，同一張資料表在 UPDATE／DELETE 之後不能再寫入，INSERT 之後也不能再 UPDATE／DELETE：請拆成多個交易（{{detail}}）",
-  "db.backend.error.gbase8a_update_too_large": "一次修改的 {{rows}} 列合成的 UPDATE 超過預處理陳述式的參數上限：請減少每批列數（資料同步可調小批次大小）"
+  "db.backend.error.gbase8a_update_too_large": "一次修改的 {{rows}} 列合成的 UPDATE 超過預處理陳述式的參數上限：請減少每批列數（資料同步可調小批次大小）",
+  "datasource.variant.gbase8c.v5": "openGauss 核心：GBase 8c V5（S3.0 / S5.0，集中式與分散式），支援 sha256 / sm3 / md5 認證；A、B、PG 相容模式依資料庫自動適配",
+  "connection_modal.step1.hint.gbase8c": "openGauss 核心 / sha256 與國密 sm3 認證",
+  "db.backend.error.gbase8c_connect_failed": "無法連線 GBase 8c：{{detail}}"
 }

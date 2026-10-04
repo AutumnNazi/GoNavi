@@ -6,6 +6,7 @@ import {
   isSidebarViewTableType,
   normalizeSidebarViewMetadataEntry,
 } from "../../utils/sidebarMetadata";
+import { getDataSourceSpec } from "../../utils/dataSourceRegistry";
 import { normalizeOracleObjectCompileStatus } from "./oracleObjectCompilation";
 import {
   type MetadataLoadState,
@@ -17,6 +18,7 @@ import {
   normalizeMetadataQuerySpecs,
 } from "./sidebarMetadataBasics";
 import {
+  buildNonExtensionViewsMetadataQuerySpecs,
   buildViewsMetadataQuerySpecs,
   queryMetadataRowsBySpecs,
   buildTriggersMetadataQuerySpecs,
@@ -29,7 +31,9 @@ export const loadViews = async (
 ): Promise<{ views: SidebarViewMetadataEntry[] } & MetadataLoadState> => {
   const savedConn = conn as SavedConnection;
   const dialect = getMetadataDialect(savedConn);
-  const querySpecs = buildViewsMetadataQuerySpecs(dialect, dbName);
+  const querySpecs = getDataSourceSpec(savedConn?.config?.type)?.ui?.hideExtensionViews
+    ? buildNonExtensionViewsMetadataQuerySpecs()
+    : buildViewsMetadataQuerySpecs(dialect, dbName);
   const { results, hasSuccessfulQuery, failureMessage } = await queryMetadataRowsBySpecs(
     conn,
     dbName,

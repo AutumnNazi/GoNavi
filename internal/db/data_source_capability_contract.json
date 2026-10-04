@@ -1429,6 +1429,7 @@
                                                      }
                  },
     "drivers":  {
+                    "gbase8c":  "sql-postgres-compatible",
                     "gbase8a":  "sql-gbase8a",
                     "zookeeper":  "kv",
                     "timescaledb":  "sql-postgres",

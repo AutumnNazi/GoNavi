@@ -28,6 +28,7 @@ import {
 } from './oracleObjectCompilation';
 import type { SidebarCopyExportActionsApi } from './useSidebarCopyExportActions';
 import type { UseSidebarObjectActionsArgs } from './useSidebarObjectActions';
+import { buildPgRoutineDefinitionQuery } from '../../utils/pgRoutineDefinition';
 
 export interface UseSidebarRoutineActionsInput {
   addTab: UseSidebarObjectActionsArgs['addTab'];
@@ -172,7 +173,7 @@ export const useSidebarRoutineActions = ({
           break;
         case 'postgres': case 'kingbase': case 'highgo': case 'vastbase': case 'opengauss': case 'gaussdb': {
           const schemaRef = schema || 'public';
-          query = `SELECT pg_get_functiondef(p.oid) AS routine_definition FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname = '${escapeSQLLiteral(schemaRef)}' AND p.proname = '${escapeSQLLiteral(name)}' LIMIT 1`;
+          query = buildPgRoutineDefinitionQuery(dialect, escapeSQLLiteral(schemaRef), escapeSQLLiteral(name));
           break;
         }
         case 'sqlserver':

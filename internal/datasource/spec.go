@@ -85,17 +85,26 @@ type Spec struct {
 type UISpec struct {
 	// HiddenSchemaPrefixes 是扩展内部 schema 的前缀（如 TimescaleDB 的 _timescaledb_），对象列表与导出跳过其中的对象。
 	HiddenSchemaPrefixes []string `json:"hiddenSchemaPrefixes,omitempty"`
+	// HiddenSchemas 是按全名隐藏的内部 schema（如 GBase 8c 的 blockchain、sys），与前缀规则一起生效。
+	HiddenSchemas []string `json:"hiddenSchemas,omitempty"`
 	// HideExtensionRoutines 为 true 时函数列表不含 CREATE EXTENSION 带入的函数（pg_depend.deptype = 'e'）。
 	HideExtensionRoutines bool `json:"hideExtensionRoutines,omitempty"`
+	// HideExtensionViews 为 true 时视图列表不含扩展带入的视图（如 GBase 8c Oracle 兼容扩展建在 public 下的 dual）。
+	HideExtensionViews bool `json:"hideExtensionViews,omitempty"`
 	// FlatObjectNames 为 true 时对象名（etcd 键路径、znode 路径）整体是一个标识符，不能按点拆成 schema.table。
 	FlatObjectNames bool `json:"flatObjectNames,omitempty"`
 }
 
-// HidesSchema 报告 schema 是否属于 HiddenSchemaPrefixes 声明的扩展内部 schema。
+// HidesSchema 报告 schema 是否属于 HiddenSchemas / HiddenSchemaPrefixes 声明的内部 schema。
 func (u UISpec) HidesSchema(schema string) bool {
 	lower := strings.ToLower(strings.TrimSpace(schema))
 	if lower == "" {
 		return false
+	}
+	for _, name := range u.HiddenSchemas {
+		if strings.EqualFold(strings.TrimSpace(name), lower) {
+			return true
+		}
 	}
 	for _, prefix := range u.HiddenSchemaPrefixes {
 		if normalized := strings.ToLower(strings.TrimSpace(prefix)); normalized != "" && strings.HasPrefix(lower, normalized) {

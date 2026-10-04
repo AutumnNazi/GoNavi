@@ -94,10 +94,22 @@ func registryHidesExtensionRoutines(driverType string) bool {
 	return ok && spec.UI.HideExtensionRoutines
 }
 
+// registryNotExtensionViewsQuery 列出不属于扩展的视图（GBase 8c 的 orafce 在 public 下建了 dual 等视图）。
+const registryNotExtensionViewsQuery = `SELECT n.nspname AS schema_name, c.relname AS object_name FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'v' AND n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg|_%' ESCAPE '|' AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d WHERE d.classid = 'pg_catalog.pg_class'::regclass AND d.objid = c.oid AND d.deptype = 'e') ORDER BY n.nspname, c.relname`
+
+// registryListViewQueries 返回描述表要求排除扩展视图时的视图列表查询。
+func registryListViewQueries(driverType string) ([]string, bool) {
+	spec, ok := db.DataSourceSpec(driverType)
+	if !ok || !spec.UI.HideExtensionViews {
+		return nil, false
+	}
+	return []string{registryNotExtensionViewsQuery}, true
+}
+
 // filterRegistryHiddenObjects 去掉描述表声明的扩展内部 schema 下的对象（如 TimescaleDB 的信息视图与内部函数）。
 func filterRegistryHiddenObjects(driverType string, objects []connection.DatabaseObject) []connection.DatabaseObject {
 	spec, ok := db.DataSourceSpec(driverType)
-	if !ok || len(spec.UI.HiddenSchemaPrefixes) == 0 {
+	if !ok || len(spec.UI.HiddenSchemaPrefixes)+len(spec.UI.HiddenSchemas) == 0 {
 		return objects
 	}
 	visible := make([]connection.DatabaseObject, 0, len(objects))

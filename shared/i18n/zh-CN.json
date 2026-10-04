@@ -11939,5 +11939,8 @@
   "db.backend.error.gbase8a_rows_mismatch": "提交失败：应影响 {{expected}} 行，实际影响 {{actual}} 行（数据可能已被其他客户端修改），已回滚，请刷新后重试",
   "db.backend.error.gbase8a_update_requires_key": "GBase 8a 修改数据需要主键条件：请为表设置主键，或在 SQL 编辑器里写 UPDATE 语句",
   "db.backend.error.gbase8a_table_locked_in_transaction": "GBase 8a 的一个事务里，同一张表在 UPDATE / DELETE 之后不能再写入，INSERT 之后也不能再 UPDATE / DELETE：请拆成多个事务（{{detail}}）",
-  "db.backend.error.gbase8a_update_too_large": "一次修改的 {{rows}} 行合成的 UPDATE 超过预处理语句的参数上限：请减少每批行数（数据同步可调小批大小）"
+  "db.backend.error.gbase8a_update_too_large": "一次修改的 {{rows}} 行合成的 UPDATE 超过预处理语句的参数上限：请减少每批行数（数据同步可调小批大小）",
+  "datasource.variant.gbase8c.v5": "openGauss 内核：GBase 8c V5（S3.0 / S5.0，集中式与分布式），支持 sha256 / sm3 / md5 认证；A、B、PG 兼容模式按库自动适配",
+  "connection_modal.step1.hint.gbase8c": "openGauss 内核 / sha256 与国密 sm3 认证",
+  "db.backend.error.gbase8c_connect_failed": "无法连接 GBase 8c：{{detail}}"
 }

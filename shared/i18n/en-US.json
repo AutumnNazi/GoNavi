@@ -11939,5 +11939,8 @@
   "db.backend.error.gbase8a_rows_mismatch": "Commit failed: expected {{expected}} affected rows but got {{actual}} (the data may have been changed by another client); rolled back, refresh and try again",
   "db.backend.error.gbase8a_update_requires_key": "Updating GBase 8a rows needs a primary key condition: add a primary key to the table, or write an UPDATE statement in the SQL editor",
   "db.backend.error.gbase8a_table_locked_in_transaction": "In a GBase 8a transaction a table accepts no writes after an UPDATE / DELETE, and no UPDATE / DELETE after an INSERT: split the work into several transactions ({{detail}})",
-  "db.backend.error.gbase8a_update_too_large": "The UPDATE merged from {{rows}} rows exceeds the prepared-statement parameter limit: commit fewer rows at a time (lower the batch size for data sync)"
+  "db.backend.error.gbase8a_update_too_large": "The UPDATE merged from {{rows}} rows exceeds the prepared-statement parameter limit: commit fewer rows at a time (lower the batch size for data sync)",
+  "datasource.variant.gbase8c.v5": "openGauss kernel: GBase 8c V5 (S3.0 / S5.0, centralized and distributed) with sha256 / sm3 / md5 authentication; A, B and PG compatibility modes are handled per database",
+  "connection_modal.step1.hint.gbase8c": "openGauss kernel / sha256 & SM3 auth",
+  "db.backend.error.gbase8c_connect_failed": "Cannot connect to GBase 8c: {{detail}}"
 }

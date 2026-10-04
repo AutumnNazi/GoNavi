@@ -194,6 +194,9 @@ func listViewNameLookupWithStatus(dbInst db.Database, config connection.Connecti
 }
 
 func buildListViewQueries(config connection.ConnectionConfig, dbName string) []string {
+	if queries, ok := registryListViewQueries(config.Type); ok {
+		return queries
+	}
 	dbType := resolveDDLDBType(config)
 	escapedDbName := escapeSQLLiteral(dbName)
 	switch dbType {

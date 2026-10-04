@@ -93,6 +93,13 @@ export const buildViewsMetadataQuerySpecs = (
   }
 };
 
+// 排除扩展带入的视图（描述表 ui.hideExtensionViews，如 GBase 8c 的 orafce 建在 public 下的 dual）。
+export const buildNonExtensionViewsMetadataQuerySpecs = (): MetadataQuerySpec[] => [
+  {
+    sql: `SELECT n.nspname AS schema_name, c.relname AS view_name FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'v' AND n.nspname NOT IN (${PG_SYSTEM_SCHEMAS}) AND n.nspname NOT LIKE 'pg|_%' ESCAPE '|' AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d WHERE d.classid = 'pg_catalog.pg_class'::regclass AND d.objid = c.oid AND d.deptype = 'e') ORDER BY n.nspname, c.relname`,
+  },
+];
+
 export const buildTriggersMetadataQuerySpecs = (
   dialect: string,
   dbName: string,

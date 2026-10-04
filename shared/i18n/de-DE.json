@@ -11939,5 +11939,8 @@
   "db.backend.error.gbase8a_rows_mismatch": "Übernahme fehlgeschlagen: {{expected}} betroffene Zeilen erwartet, aber {{actual}} erhalten (Daten wurden evtl. von einem anderen Client geändert); zurückgerollt, bitte aktualisieren und erneut versuchen",
   "db.backend.error.gbase8a_update_requires_key": "Zum Ändern von GBase-8a-Zeilen ist eine Primärschlüsselbedingung nötig: Tabelle mit Primärschlüssel versehen oder im SQL-Editor eine UPDATE-Anweisung schreiben",
   "db.backend.error.gbase8a_table_locked_in_transaction": "In einer GBase-8a-Transaktion sind nach UPDATE / DELETE keine weiteren Schreibvorgänge auf dieselbe Tabelle möglich und nach INSERT kein UPDATE / DELETE: Arbeit auf mehrere Transaktionen aufteilen ({{detail}})",
-  "db.backend.error.gbase8a_update_too_large": "Das aus {{rows}} Zeilen zusammengefasste UPDATE überschreitet die Parametergrenze vorbereiteter Anweisungen: weniger Zeilen auf einmal übernehmen (bei Datensynchronisation die Batchgröße senken)"
+  "db.backend.error.gbase8a_update_too_large": "Das aus {{rows}} Zeilen zusammengefasste UPDATE überschreitet die Parametergrenze vorbereiteter Anweisungen: weniger Zeilen auf einmal übernehmen (bei Datensynchronisation die Batchgröße senken)",
+  "datasource.variant.gbase8c.v5": "openGauss-Kernel: GBase 8c V5 (S3.0 / S5.0, zentral und verteilt) mit sha256- / sm3- / md5-Authentifizierung; A-, B- und PG-Kompatibilitätsmodus werden je Datenbank berücksichtigt",
+  "connection_modal.step1.hint.gbase8c": "openGauss-Kernel / sha256- und SM3-Authentifizierung",
+  "db.backend.error.gbase8c_connect_failed": "Verbindung zu GBase 8c nicht möglich: {{detail}}"
 }

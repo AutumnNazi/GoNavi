@@ -8,6 +8,7 @@ import { DBQuery } from '../../../../wailsjs/go/app/App';
 import { buildRpcConnectionConfig } from '../../../utils/connectionRpcConfig';
 import { normalizeMySQLViewDDL } from '../definitionViewerSql';
 import type { DefinitionViewerProps } from '../../DefinitionViewer';
+import { buildPgRoutineDefinitionQuery } from '../../../utils/pgRoutineDefinition';
 
 export interface UseDefinitionViewerStateInput {
   tab: DefinitionViewerProps['tab'];
@@ -189,7 +190,7 @@ export const useDefinitionViewerState = ({ tab }: UseDefinitionViewerStateInput)
           case 'opengauss':
           case 'gaussdb': {
               const schemaRef = schema || 'public';
-              return [`SELECT pg_get_functiondef(p.oid) AS routine_definition FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname = '${escapeSQLLiteral(schemaRef)}' AND p.proname = '${safeName}' LIMIT 1`];
+              return [buildPgRoutineDefinitionQuery(dialect, escapeSQLLiteral(schemaRef), safeName)];
           }
           case 'sqlserver':
               return buildSqlServerObjectDefinitionQueries('routine', routineName, dbName, 'routine_definition');

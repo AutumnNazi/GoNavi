@@ -11939,5 +11939,8 @@
   "db.backend.error.gbase8a_rows_mismatch": "Не удалось применить изменения: ожидалось {{expected}} затронутых строк, фактически {{actual}} (данные могли изменить другие клиенты); изменения отменены, обновите данные и повторите",
   "db.backend.error.gbase8a_update_requires_key": "Для изменения строк GBase 8a нужно условие по первичному ключу: задайте таблице первичный ключ или напишите оператор UPDATE в редакторе SQL",
   "db.backend.error.gbase8a_table_locked_in_transaction": "В транзакции GBase 8a после UPDATE / DELETE в ту же таблицу нельзя писать, а после INSERT нельзя выполнять UPDATE / DELETE: разделите работу на несколько транзакций ({{detail}})",
-  "db.backend.error.gbase8a_update_too_large": "Оператор UPDATE, объединённый из {{rows}} строк, превышает лимит параметров подготовленного оператора: фиксируйте меньше строк за раз (для синхронизации уменьшите размер пакета)"
+  "db.backend.error.gbase8a_update_too_large": "Оператор UPDATE, объединённый из {{rows}} строк, превышает лимит параметров подготовленного оператора: фиксируйте меньше строк за раз (для синхронизации уменьшите размер пакета)",
+  "datasource.variant.gbase8c.v5": "Ядро openGauss: GBase 8c V5 (S3.0 / S5.0, централизованная и распределённая), аутентификация sha256 / sm3 / md5; режимы совместимости A, B и PG учитываются для каждой базы",
+  "connection_modal.step1.hint.gbase8c": "Ядро openGauss / аутентификация sha256 и SM3",
+  "db.backend.error.gbase8c_connect_failed": "Не удаётся подключиться к GBase 8c: {{detail}}"
 }

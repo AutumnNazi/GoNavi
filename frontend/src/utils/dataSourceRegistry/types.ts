@@ -57,8 +57,12 @@ export type DataSourceUISpec = {
   defaultUser?: string;
   // 侧栏、对象列表与导出不显示的 schema 前缀（扩展的内部 schema，如 TimescaleDB 的 _timescaledb_ / timescaledb_）。
   hiddenSchemaPrefixes?: string[];
+  // 按全名隐藏的内部 schema（GBase 8c 的 blockchain、sys 等），与前缀规则一起生效。
+  hiddenSchemas?: string[];
   // 函数列表不含 CREATE EXTENSION 带入的函数（TimescaleDB 在 public 下装了上百个 time_bucket 等函数）。
   hideExtensionRoutines?: boolean;
+  // 视图列表不含扩展带入的视图（GBase 8c Oracle 兼容扩展建在 public 下的 dual 等）。
+  hideExtensionViews?: boolean;
   // PostgreSQL 系表统计表达式（行数 / 总大小 / 索引大小），按顺序取第一条服务端版本区间匹配的项，带区间的项只在
   // 版本已知时匹配，都不匹配时用 PostgreSQL 默认表达式；{{oid}} 是表的 pg_class.oid，{{reltuples}} 是默认行数估计。
   tableStats?: Array<{ minServer?: string; maxServer?: string; rows?: string; size?: string; indexSize?: string }>;

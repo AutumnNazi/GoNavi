@@ -59,3 +59,34 @@ func TestTimescaleDBViewListSkipsInformationViews(t *testing.T) {
 		t.Fatalf("views = %v", names)
 	}
 }
+
+func TestGBase8cObjectListsSkipInternalSchemasAndExtensionViews(t *testing.T) {
+	objects := []connection.DatabaseObject{
+		{Schema: "sales", Name: "orders", Type: "table"},
+		{Schema: "public", Name: "metrics", Type: "table"},
+		{Schema: "dbe_perf", Name: "session_stat", Type: "view"},
+		{Schema: "dbms_output", Name: "put_line", Type: "function"},
+		{Schema: "blockchain", Name: "gs_global_chain", Type: "table"},
+		{Schema: "sys", Name: "dual", Type: "view"},
+		{Schema: "system_data", Name: "kept", Type: "table"},
+	}
+	visible := filterRegistryHiddenObjects("gbase8c", objects)
+	names := make([]string, 0, len(visible))
+	for _, object := range visible {
+		names = append(names, object.Schema+"."+object.Name)
+	}
+	if strings.Join(names, ",") != "sales.orders,public.metrics,system_data.kept" {
+		t.Fatalf("visible objects = %v", names)
+	}
+
+	queries, ok := registryListViewQueries("gbase8c")
+	if !ok || len(queries) != 1 || !strings.Contains(queries[0], "deptype = 'e'") {
+		t.Fatalf("GBase 8c view list must skip extension views: %v", queries)
+	}
+	if _, ok := registryListViewQueries("timescaledb"); ok {
+		t.Fatal("TimescaleDB keeps the borrowed PostgreSQL view query")
+	}
+	if got := buildListViewQueries(connection.ConnectionConfig{Type: "gbase8c"}, "postgres"); len(got) != 1 || got[0] != queries[0] {
+		t.Fatalf("view list queries = %v", got)
+	}
+}

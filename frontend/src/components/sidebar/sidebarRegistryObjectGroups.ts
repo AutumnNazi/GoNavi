@@ -2,12 +2,13 @@ import type { SavedConnection } from '../../types';
 import { getDataSourceSpec } from '../../utils/dataSourceRegistry';
 import type { SidebarTreeNode } from './sidebarV2TreeNodes';
 
-/** 描述表声明为隐藏的 schema（扩展内部 schema，如 TimescaleDB 的 _timescaledb_catalog）。 */
+/** 描述表声明为隐藏的 schema（扩展内部 schema，如 TimescaleDB 的 _timescaledb_catalog、GBase 8c 的 dbe_perf）。 */
 export const isRegistryHiddenSchema = (conn: SavedConnection | undefined, schemaName: string): boolean => {
-  const prefixes = getDataSourceSpec(conn?.config?.type)?.ui?.hiddenSchemaPrefixes;
-  if (!prefixes || prefixes.length === 0) return false;
+  const ui = getDataSourceSpec(conn?.config?.type)?.ui;
   const normalized = String(schemaName || '').trim().toLowerCase();
-  return normalized !== '' && prefixes.some((prefix) => normalized.startsWith(prefix.toLowerCase()));
+  if (!ui || normalized === '') return false;
+  return (ui.hiddenSchemas ?? []).some((name) => name.toLowerCase() === normalized)
+    || (ui.hiddenSchemaPrefixes ?? []).some((prefix) => normalized.startsWith(prefix.toLowerCase()));
 };
 
 /**
