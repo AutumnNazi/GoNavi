@@ -250,7 +250,7 @@ function brandAssetFileName(key: string): string {
   const definition = BRAND_ICON_BY_ID.get(id);
   if (!definition) return '';
   if (!definition.mascot) return kind === 'icon' ? `${definition.id}-${definition.slug}.svg` : '';
-  if (kind === 'about') return `${definition.id}-${definition.slug}-about.png`;
+  if (kind === 'about') return `${definition.id}-${definition.slug}-about-v2.png`;
   if (kind === 'titlebar') return definition.remoteTitlebar ? `${definition.id}-${definition.slug}-transparent.png` : '';
   return `${definition.id}-${definition.slug}.webp`;
 }

@@ -203,7 +203,7 @@ describe('main browser mock', () => {
       `${mascotBase}/15-terminal-sit.webp`,
       `${mascotBase}/16-compass-bandana.webp`,
     ]);
-    await expect(app!.GetBrandIconDataURL('08-about')).resolves.toBe(`${mascotBase}/08-database-search-about.png`);
+    await expect(app!.GetBrandIconDataURL('08-about')).resolves.toBe(`${mascotBase}/08-database-search-about-v2.png`);
     await expect(app!.GetBrandIconDataURL('unknown')).resolves.toBe('');
     await expect((globalThis as any).window.runtime.Environment()).resolves.toMatchObject({
       platform: 'browser',

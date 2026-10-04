@@ -84,7 +84,7 @@ describe('brand icon asset resolution', () => {
     expect(resolveBrandIconRemoteSrc('01')).toBe('/brand-fallback.svg');
     expect(resolveBrandIconRemoteSrc('02')).toBe(`${BRAND_ICON_REMOTE_BASE_URL}/02-ribbon-graphite.svg`);
     expect(resolveBrandIconRemoteSrc('16')).toBe(`${BRAND_ICON_REMOTE_BASE_URL}/16-compass-bandana.webp`);
-    expect(resolveBrandIconRemoteSrc('16-about')).toBe(`${BRAND_ICON_REMOTE_BASE_URL}/16-compass-bandana-about.png`);
+    expect(resolveBrandIconRemoteSrc('16-about')).toBe(`${BRAND_ICON_REMOTE_BASE_URL}/16-compass-bandana-about-v2.png`);
     expect(resolveBrandIconRemoteSrc('08-titlebar')).toBe(`${BRAND_ICON_REMOTE_BASE_URL}/08-database-search-transparent.png`);
     expect(resolveBrandIconRemoteSrc('07-titlebar')).toBe('');
     expect(resolveBrandIconRemoteSrc('unknown')).toBe('');
