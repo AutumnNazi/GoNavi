@@ -11942,5 +11942,19 @@
   "db.backend.error.gbase8a_update_too_large": "一次修改的 {{rows}} 列合成的 UPDATE 超過預處理陳述式的參數上限：請減少每批列數（資料同步可調小批次大小）",
   "datasource.variant.gbase8c.v5": "openGauss 核心：GBase 8c V5（S3.0 / S5.0，集中式與分散式），支援 sha256 / sm3 / md5 認證；A、B、PG 相容模式依資料庫自動適配",
   "connection_modal.step1.hint.gbase8c": "openGauss 核心 / sha256 與國密 sm3 認證",
-  "db.backend.error.gbase8c_connect_failed": "無法連線 GBase 8c：{{detail}}"
+  "db.backend.error.gbase8c_connect_failed": "無法連線 GBase 8c：{{detail}}",
+  "datasource.variant.gbase8s.v8": "Informix 核心：GBase 8s V8.7 / V8.8，透過本機安裝的 GBase 8s CSDK（ODBC 驅動程式庫）連線，用戶端以 UTF-8 收發",
+  "connection_modal.step1.hint.gbase8s": "Informix 核心 / 需於本機安裝 CSDK",
+  "connection_modal.field.gbase8s.client_dir": "CSDK 目錄",
+  "connection_modal.field.gbase8s.client_dir.help": "GBase 8s Client-SDK 的安裝目錄（含 bin、lib、gls），留空時使用環境變數 GBASEDBTDIR / INFORMIXDIR",
+  "connection_modal.field.gbase8s.server": "服務名稱",
+  "connection_modal.field.gbase8s.server.help": "伺服器端的 DBSERVERNAME（GBASEDBTSERVER），留空時自動識別",
+  "db.backend.error.gbase8s_client_missing": "找不到 GBase 8s CSDK：請在連線中填寫 CSDK 目錄，或設定環境變數 GBASEDBTDIR",
+  "db.backend.error.gbase8s_client_library_missing": "CSDK 目錄 {{dir}} 下沒有 ODBC 驅動程式庫（Windows 為 bin\\iclit09b.dll，Linux 為 lib/cli/iclit09b.so），請確認安裝的是 GBase 8s Client-SDK",
+  "db.backend.error.gbase8s_client_load_failed": "載入 GBase 8s ODBC 驅動程式庫失敗（{{path}}）：{{detail}}。Linux 上請確認 CSDK 的 lib、lib/esql、lib/cli 目錄完整，且 CSDK 與本機架構一致",
+  "db.backend.error.gbase8s_connect_failed": "無法連線 GBase 8s：{{detail}}",
+  "db.backend.error.gbase8s_rows_mismatch": "修改或刪除應恰好影響 1 列，實際影響 {{actual}} 列，已整體回復（資料可能已被他人修改，請重新整理後再試）",
+  "db.backend.error.gbase8s_update_requires_key": "這張表沒有可用於定位列的主鍵，無法在表格中修改",
+  "db.backend.error.gbase8s_object_not_found": "目前資料庫中沒有物件 {{name}}",
+  "table_designer.sql.informix_drop_primary_key_manual": "GBase 8s / Informix 刪除主鍵需要約束名稱：請先在 DDL 中找到 PRIMARY KEY 的約束名稱，執行 ALTER TABLE 表名 DROP CONSTRAINT 約束名稱"
 }

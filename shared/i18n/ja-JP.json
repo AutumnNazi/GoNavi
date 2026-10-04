@@ -11942,5 +11942,19 @@
   "db.backend.error.gbase8a_update_too_large": "{{rows}} 行の変更をまとめた UPDATE がプリペアドステートメントのパラメーター上限を超えています。1 回あたりの行数を減らしてください（データ同期ではバッチサイズを小さくします）",
   "datasource.variant.gbase8c.v5": "openGauss カーネル：GBase 8c V5（S3.0 / S5.0、集中型と分散型）、sha256 / sm3 / md5 認証に対応。A・B・PG 互換モードはデータベースごとに自動対応",
   "connection_modal.step1.hint.gbase8c": "openGauss カーネル / sha256・SM3 認証",
-  "db.backend.error.gbase8c_connect_failed": "GBase 8c に接続できません：{{detail}}"
+  "db.backend.error.gbase8c_connect_failed": "GBase 8c に接続できません：{{detail}}",
+  "datasource.variant.gbase8s.v8": "Informix カーネル：GBase 8s V8.7 / V8.8。ローカルにインストールした GBase 8s CSDK（ODBC ドライバライブラリ）経由で接続し、クライアント側は UTF-8 で送受信",
+  "connection_modal.step1.hint.gbase8s": "Informix カーネル / ローカルに CSDK が必要",
+  "connection_modal.field.gbase8s.client_dir": "CSDK ディレクトリ",
+  "connection_modal.field.gbase8s.client_dir.help": "GBase 8s Client-SDK のインストール先（bin、lib、gls を含む）。空欄の場合は環境変数 GBASEDBTDIR / INFORMIXDIR を使用",
+  "connection_modal.field.gbase8s.server": "サーバー名",
+  "connection_modal.field.gbase8s.server.help": "サーバーの DBSERVERNAME（GBASEDBTSERVER）。空欄の場合は自動で検出",
+  "db.backend.error.gbase8s_client_missing": "GBase 8s CSDK が見つかりません。接続設定で CSDK ディレクトリを指定するか、環境変数 GBASEDBTDIR を設定してください",
+  "db.backend.error.gbase8s_client_library_missing": "CSDK ディレクトリ {{dir}} に ODBC ドライバライブラリがありません（Windows は bin\\iclit09b.dll、Linux は lib/cli/iclit09b.so）。GBase 8s Client-SDK がインストールされているか確認してください",
+  "db.backend.error.gbase8s_client_load_failed": "GBase 8s ODBC ドライバライブラリの読み込みに失敗しました（{{path}}）：{{detail}}。Linux では CSDK の lib、lib/esql、lib/cli が揃っており、アーキテクチャが一致しているか確認してください",
+  "db.backend.error.gbase8s_connect_failed": "GBase 8s に接続できません：{{detail}}",
+  "db.backend.error.gbase8s_rows_mismatch": "更新・削除は 1 行だけに影響するはずが {{actual}} 行に影響したため、すべてロールバックしました（データが変更された可能性があります。再読み込みしてやり直してください）",
+  "db.backend.error.gbase8s_update_requires_key": "このテーブルには行を特定するキーがないため、グリッドで編集できません",
+  "db.backend.error.gbase8s_object_not_found": "現在のデータベースにオブジェクト {{name}} はありません",
+  "table_designer.sql.informix_drop_primary_key_manual": "GBase 8s / Informix で主キーを削除するには制約名が必要です。DDL で PRIMARY KEY の制約名を確認し、ALTER TABLE <テーブル> DROP CONSTRAINT <制約名> を実行してください"
 }

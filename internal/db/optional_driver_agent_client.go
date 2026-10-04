@@ -61,7 +61,8 @@ func (c *optionalDriverAgentClient) setSchema(schema string) {
 	}
 }
 
-func newOptionalDriverAgentClient(driverType string, executablePath string) (*optionalDriverAgentClient, error) {
+// extraEnv 追加到代理进程环境变量（如用户自备客户端库的目录与动态库搜索路径），为空时继承当前进程环境。
+func newOptionalDriverAgentClient(driverType string, executablePath string, extraEnv ...string) (*optionalDriverAgentClient, error) {
 	pathText := strings.TrimSpace(executablePath)
 	if pathText == "" {
 		return nil, fmt.Errorf("%s 驱动代理路径为空", driverDisplayName(driverType))
@@ -75,6 +76,9 @@ func newOptionalDriverAgentClient(driverType string, executablePath string) (*op
 	}
 
 	cmd := exec.Command(pathText)
+	if len(extraEnv) > 0 {
+		cmd.Env = append(os.Environ(), extraEnv...)
+	}
 	configureAgentProcess(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

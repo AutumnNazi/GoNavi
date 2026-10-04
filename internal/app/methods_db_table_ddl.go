@@ -24,6 +24,10 @@ func (a *App) RenameTable(config connection.ConnectionConfig, dbName string, old
 	if strings.Contains(newTableName, ".") {
 		return connection.QueryResult{Success: false, Message: a.appText("db.backend.error.table_new_name_no_qualifier", nil)}
 	}
+	if sql, ok := registryObjectStatement(config.Type, "renameTable", map[string]string{"old": oldTableName, "new": newTableName}); ok {
+		auditSQL = sql
+		return a.execRegistryObjectStatement(config, dbName, sql, "db.backend.message.table_renamed")
+	}
 
 	dbType := resolveDDLDBType(config)
 	switch dbType {
@@ -75,6 +79,10 @@ func (a *App) DropTable(config connection.ConnectionConfig, dbName string, table
 	if err := ensureConnectionAllowsStructureEdit(config, "connection.backend.action.drop_table"); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
+	if sql, ok := registryObjectStatement(config.Type, "dropTable", map[string]string{"table": tableName}); ok {
+		auditSQL = sql
+		return a.execRegistryObjectStatement(config, dbName, sql, "db.backend.message.table_dropped")
+	}
 
 	dbType := resolveDDLDBType(config)
 	switch dbType {
@@ -110,6 +118,10 @@ func (a *App) DropView(config connection.ConnectionConfig, dbName string, viewNa
 	}
 	if err := ensureConnectionAllowsStructureEdit(config, "connection.backend.action.drop_view"); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	if sql, ok := registryObjectStatement(config.Type, "dropView", map[string]string{"view": viewName}); ok {
+		auditSQL = sql
+		return a.execRegistryObjectStatement(config, dbName, sql, "db.backend.message.view_dropped")
 	}
 
 	dbType := resolveDDLDBType(config)
@@ -150,6 +162,14 @@ func (a *App) DropFunction(config connection.ConnectionConfig, dbName string, ro
 	}
 	if routineType != "FUNCTION" && routineType != "PROCEDURE" {
 		routineType = "FUNCTION"
+	}
+	if sql, ok := registryObjectStatement(config.Type, "dropRoutine", map[string]string{"name": routineName, "type": routineType}); ok {
+		auditSQL = sql
+		successKey := "db.backend.message.function_dropped"
+		if routineType == "PROCEDURE" {
+			successKey = "db.backend.message.procedure_dropped"
+		}
+		return a.execRegistryObjectStatement(config, dbName, sql, successKey)
 	}
 
 	dbType := resolveDDLDBType(config)

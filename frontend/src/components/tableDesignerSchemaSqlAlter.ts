@@ -29,6 +29,8 @@ import {
   collectPrimaryKeyColumnKeys,
   defaultDefinitionChanged,
 } from './tableDesignerSchemaSqlColumns';
+import { buildInformixAlterPreviewSql } from './tableDesignerSchemaSqlInformix';
+import { getDataSourceDialectFamily } from '../utils/dataSourceRegistry';
 
 const buildMySqlAlterPreviewSql = (input: BuildAlterTablePreviewInput, dbType: string): string => {
   const tableName = quoteIdentifierPath(input.tableName, dbType);
@@ -447,6 +449,7 @@ const buildLimitedBacktickAlterPreviewSql = (input: BuildAlterTablePreviewInput,
 
 export const buildAlterTablePreviewSql = (input: BuildAlterTablePreviewInput): string => {
   const dbType = resolveSqlDialect(input.dbType);
+  if (getDataSourceDialectFamily(dbType) === 'informix') return buildInformixAlterPreviewSql({ ...input, dbType }, dbType);
   if (isPgLikeDialect(dbType)) return buildPgLikeAlterPreviewSql({ ...input, dbType }, dbType);
   if (isOracleLikeDialect(dbType)) return buildOracleLikeAlterPreviewSql({ ...input, dbType }, dbType);
   if (isSqlServerDialect(dbType)) return buildSqlServerAlterPreviewSql({ ...input, dbType });

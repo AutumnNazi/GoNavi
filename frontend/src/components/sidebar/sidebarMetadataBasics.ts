@@ -1,6 +1,6 @@
 import type { SavedConnection } from "../../types";
 import { buildRpcConnectionConfig } from "../../utils/connectionRpcConfig";
-import { isDataSourceFamily } from "../../utils/dataSourceRegistry";
+import { isDataSourceFamily, listRegistryMetadataQueries } from "../../utils/dataSourceRegistry";
 import { splitQualifiedNameLast } from "../../utils/qualifiedName";
 import {
   resolveSidebarRuntimeDatabase,
@@ -110,7 +110,9 @@ export const supportsDatabaseEvents = (conn: SavedConnection | undefined): boole
 
 export const supportsDatabaseSequences = (conn: SavedConnection | undefined): boolean => {
   const dialect = getMetadataDialect(conn);
-  return dialect === "oracle" || dialect === "dm" || isPostgresSchemaDialect(dialect);
+  // 未借用方言的描述表数据源声明了序列查询时（如 GBase 8s）同样展示序列分组。
+  return dialect === "oracle" || dialect === "dm" || isPostgresSchemaDialect(dialect)
+    || listRegistryMetadataQueries(dialect, "sequences").length > 0;
 };
 
 export const escapeSQLLiteral = (raw: string): string =>

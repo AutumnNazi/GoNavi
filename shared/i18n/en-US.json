@@ -11942,5 +11942,19 @@
   "db.backend.error.gbase8a_update_too_large": "The UPDATE merged from {{rows}} rows exceeds the prepared-statement parameter limit: commit fewer rows at a time (lower the batch size for data sync)",
   "datasource.variant.gbase8c.v5": "openGauss kernel: GBase 8c V5 (S3.0 / S5.0, centralized and distributed) with sha256 / sm3 / md5 authentication; A, B and PG compatibility modes are handled per database",
   "connection_modal.step1.hint.gbase8c": "openGauss kernel / sha256 & SM3 auth",
-  "db.backend.error.gbase8c_connect_failed": "Cannot connect to GBase 8c: {{detail}}"
+  "db.backend.error.gbase8c_connect_failed": "Cannot connect to GBase 8c: {{detail}}",
+  "datasource.variant.gbase8s.v8": "Informix kernel: GBase 8s V8.7 / V8.8 through the locally installed GBase 8s CSDK (ODBC driver library); the client always exchanges UTF-8",
+  "connection_modal.step1.hint.gbase8s": "Informix kernel / requires a local CSDK",
+  "connection_modal.field.gbase8s.client_dir": "CSDK directory",
+  "connection_modal.field.gbase8s.client_dir.help": "Installation directory of the GBase 8s Client-SDK (with bin, lib and gls); leave empty to use the GBASEDBTDIR / INFORMIXDIR environment variable",
+  "connection_modal.field.gbase8s.server": "Server name",
+  "connection_modal.field.gbase8s.server.help": "The server's DBSERVERNAME (GBASEDBTSERVER); detected automatically when left empty",
+  "db.backend.error.gbase8s_client_missing": "GBase 8s CSDK not found: set the CSDK directory in the connection or the GBASEDBTDIR environment variable",
+  "db.backend.error.gbase8s_client_library_missing": "No ODBC driver library under the CSDK directory {{dir}} (bin\\iclit09b.dll on Windows, lib/cli/iclit09b.so on Linux); make sure the GBase 8s Client-SDK is installed there",
+  "db.backend.error.gbase8s_client_load_failed": "Failed to load the GBase 8s ODBC driver library ({{path}}): {{detail}}. On Linux make sure the CSDK lib, lib/esql and lib/cli directories are complete and match this machine's architecture",
+  "db.backend.error.gbase8s_connect_failed": "Cannot connect to GBase 8s: {{detail}}",
+  "db.backend.error.gbase8s_rows_mismatch": "Each update or delete should affect exactly 1 row but affected {{actual}}; all changes were rolled back (the data may have changed, refresh and try again)",
+  "db.backend.error.gbase8s_update_requires_key": "This table has no key to locate rows, so it cannot be edited in the grid",
+  "db.backend.error.gbase8s_object_not_found": "Object {{name}} does not exist in the current database",
+  "table_designer.sql.informix_drop_primary_key_manual": "Dropping a primary key on GBase 8s / Informix needs the constraint name: find the PRIMARY KEY constraint in the DDL and run ALTER TABLE <table> DROP CONSTRAINT <name>"
 }

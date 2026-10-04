@@ -310,7 +310,8 @@ export const quoteSqlIdentifierPart = (dbType: string, part: string): string => 
   if (isSqlServerDialect(dialect)) {
     return `[${escapeBracketIdentifier(ident)}]`;
   }
-  if (isPgLikeDialect(dialect)) {
+  // 描述表声明“按需加引号”的自有方言（如 GBase 8s）与 PostgreSQL 规则一致。
+  if (isPgLikeDialect(dialect) || getDataSourceSpecByDialect(dialect)?.ui?.quoting === 'pg') {
     return needsPgLikeQuote(ident) ? `"${escapeDoubleQuoteIdentifier(ident)}"` : ident;
   }
   return `"${escapeDoubleQuoteIdentifier(ident)}"`;

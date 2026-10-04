@@ -11942,5 +11942,19 @@
   "db.backend.error.gbase8a_update_too_large": "Оператор UPDATE, объединённый из {{rows}} строк, превышает лимит параметров подготовленного оператора: фиксируйте меньше строк за раз (для синхронизации уменьшите размер пакета)",
   "datasource.variant.gbase8c.v5": "Ядро openGauss: GBase 8c V5 (S3.0 / S5.0, централизованная и распределённая), аутентификация sha256 / sm3 / md5; режимы совместимости A, B и PG учитываются для каждой базы",
   "connection_modal.step1.hint.gbase8c": "Ядро openGauss / аутентификация sha256 и SM3",
-  "db.backend.error.gbase8c_connect_failed": "Не удаётся подключиться к GBase 8c: {{detail}}"
+  "db.backend.error.gbase8c_connect_failed": "Не удаётся подключиться к GBase 8c: {{detail}}",
+  "datasource.variant.gbase8s.v8": "Ядро Informix: GBase 8s V8.7 / V8.8 через локально установленный GBase 8s CSDK (библиотека драйвера ODBC); клиент всегда обменивается данными в UTF-8",
+  "connection_modal.step1.hint.gbase8s": "Ядро Informix / нужен локальный CSDK",
+  "connection_modal.field.gbase8s.client_dir": "Каталог CSDK",
+  "connection_modal.field.gbase8s.client_dir.help": "Каталог установки GBase 8s Client-SDK (с bin, lib и gls); оставьте пустым, чтобы использовать переменную окружения GBASEDBTDIR / INFORMIXDIR",
+  "connection_modal.field.gbase8s.server": "Имя сервера",
+  "connection_modal.field.gbase8s.server.help": "DBSERVERNAME сервера (GBASEDBTSERVER); определяется автоматически, если поле пустое",
+  "db.backend.error.gbase8s_client_missing": "GBase 8s CSDK не найден: укажите каталог CSDK в подключении или переменную окружения GBASEDBTDIR",
+  "db.backend.error.gbase8s_client_library_missing": "В каталоге CSDK {{dir}} нет библиотеки драйвера ODBC (в Windows bin\\iclit09b.dll, в Linux lib/cli/iclit09b.so); проверьте, что там установлен GBase 8s Client-SDK",
+  "db.backend.error.gbase8s_client_load_failed": "Не удалось загрузить библиотеку драйвера ODBC GBase 8s ({{path}}): {{detail}}. В Linux проверьте, что каталоги CSDK lib, lib/esql и lib/cli полные и соответствуют архитектуре машины",
+  "db.backend.error.gbase8s_connect_failed": "Не удаётся подключиться к GBase 8s: {{detail}}",
+  "db.backend.error.gbase8s_rows_mismatch": "Каждое изменение или удаление должно затрагивать ровно 1 строку, затронуто {{actual}}; все изменения откатены (данные могли измениться, обновите и повторите)",
+  "db.backend.error.gbase8s_update_requires_key": "У таблицы нет ключа для определения строк, редактировать её в сетке нельзя",
+  "db.backend.error.gbase8s_object_not_found": "Объект {{name}} отсутствует в текущей базе данных",
+  "table_designer.sql.informix_drop_primary_key_manual": "Для удаления первичного ключа в GBase 8s / Informix нужно имя ограничения: найдите ограничение PRIMARY KEY в DDL и выполните ALTER TABLE <таблица> DROP CONSTRAINT <имя>"
 }

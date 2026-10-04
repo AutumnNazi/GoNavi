@@ -174,7 +174,7 @@ export const buildTriggersMetadataQuerySpecs = (
     case "duckdb":
       return [];
     default:
-      return [];
+      return listRegistryMetadataQueries(dialect, "triggers", dbName).map((sql) => ({ sql }));
   }
 };
 
@@ -265,7 +265,7 @@ export const buildFunctionsMetadataQuerySpecs = (
         },
       ];
     default:
-      return [];
+      return listRegistryMetadataQueries(dialect, "routines", dbName).map((sql) => ({ sql }));
   }
 };
 
@@ -301,7 +301,7 @@ export const buildSequencesMetadataQuerySpecs = (
         },
       ]);
     default:
-      return [];
+      return listRegistryMetadataQueries(dialect, "sequences", dbName).map((sql) => ({ sql }));
   }
 };
 

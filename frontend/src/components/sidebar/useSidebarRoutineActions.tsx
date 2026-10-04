@@ -14,7 +14,7 @@ import {
   extractSqlServerDefinitionRows,
 } from './sidebarMetadataLoaders';
 import type { SavedConnection } from '../../types';
-import { DBQuery, DropFunction } from '../../../wailsjs/go/app/App';
+import { DBQuery, DBShowCreateTable, DropFunction } from '../../../wailsjs/go/app/App';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import { buildSqlServerObjectDefinitionQueries } from '../../utils/sqlServerObjectDefinition';
 import Modal from '../common/ResizableDraggableModal';
@@ -29,6 +29,7 @@ import {
 import type { SidebarCopyExportActionsApi } from './useSidebarCopyExportActions';
 import type { UseSidebarObjectActionsArgs } from './useSidebarObjectActions';
 import { buildPgRoutineDefinitionQuery } from '../../utils/pgRoutineDefinition';
+import { usesDriverObjectDefinition } from '../definitionViewerDialect';
 
 export interface UseSidebarRoutineActionsInput {
   addTab: UseSidebarObjectActionsArgs['addTab'];
@@ -194,7 +195,12 @@ export const useSidebarRoutineActions = ({
           break;
         }
       }
-      const queries = dialect === 'sqlserver'
+      if (usesDriverObjectDefinition(conn)) {
+        const result = await DBShowCreateTable(buildRpcConnectionConfig(config) as any, dbName, name);
+        if (result.success && String(result.data || '').trim()) template = `${sqlTemplateHeader}
+${String(result.data)}`;
+      }
+      const queries = usesDriverObjectDefinition(conn) ? [] : dialect === 'sqlserver'
         ? buildSqlServerObjectDefinitionQueries('routine', routineName, dbName, 'routine_definition')
         : [query].filter(Boolean);
       for (const queryText of queries) {

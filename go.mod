@@ -15,6 +15,7 @@ require (
 	github.com/bodgit/sevenzip v1.6.1
 	github.com/caretdev/go-irisnative v0.2.1
 	github.com/duckdb/duckdb-go/v2 v2.5.5
+	github.com/ebitengine/purego v0.10.0
 	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/elastic/go-elasticsearch/v8 v8.19.6
 	github.com/go-sql-driver/mysql v1.9.3

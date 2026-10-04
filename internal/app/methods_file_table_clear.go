@@ -30,6 +30,10 @@ func buildTableDataClearSQL(config connection.ConnectionConfig, objectName strin
 }
 
 func buildTableDataClearSQLWithText(config connection.ConnectionConfig, objectName string, mode tableDataClearMode, text fileBackendTextFunc) (string, error) {
+	registryAction := map[tableDataClearMode]string{tableDataClearModeTruncate: "truncateTable", tableDataClearModeDeleteAll: "clearTable"}[mode]
+	if sql, ok := registryObjectStatement(config.Type, registryAction, map[string]string{"table": objectName}); ok {
+		return sql, nil
+	}
 	dbType := resolveDDLDBType(config)
 	quotedObject := quoteQualifiedIdentByType(dbType, objectName)
 

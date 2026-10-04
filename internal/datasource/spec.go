@@ -72,6 +72,8 @@ type Spec struct {
 	// DriverTransactions 为 true 时 SQL 编辑器的托管事务走驱动接口（OpenTransactionExecer），
 	// 用于文本 BEGIN / START TRANSACTION 不生效的库（如 GBase 8a 需要关闭自动提交）。
 	DriverTransactions bool `json:"driverTransactions,omitempty"`
+	// ClientLibrary 声明驱动依赖的用户自备客户端库（如 GBase 8s 的 CSDK），启动驱动代理时据此注入环境变量。
+	ClientLibrary *ClientLibrarySpec `json:"clientLibrary,omitempty"`
 	// Agent 是默认驱动代理；其 Key 恒等于 Type。
 	Agent AgentSpec `json:"agent"`
 	// ModuleAliases 是驱动管理里展示历史版本时额外查询的 Go module 路径。
@@ -93,6 +95,11 @@ type UISpec struct {
 	HideExtensionViews bool `json:"hideExtensionViews,omitempty"`
 	// FlatObjectNames 为 true 时对象名（etcd 键路径、znode 路径）整体是一个标识符，不能按点拆成 schema.table。
 	FlatObjectNames bool `json:"flatObjectNames,omitempty"`
+	// Quoting 是标识符引号规则（pg：只在需要时加双引号；double、backtick、bracket），与前端一致。
+	Quoting string `json:"quoting,omitempty"`
+	// ObjectStatements 是未借用方言的数据源的对象操作语句模板（renameTable、dropTable、dropView、dropRoutine、
+	// truncateTable、clearTable），占位符 {table}、{old}、{new}、{view}、{name} 按 Quoting 加引号，{type} 原样替换。
+	ObjectStatements map[string]string `json:"objectStatements,omitempty"`
 }
 
 // HidesSchema 报告 schema 是否属于 HiddenSchemas / HiddenSchemaPrefixes 声明的内部 schema。
@@ -112,6 +119,16 @@ func (u UISpec) HidesSchema(schema string) bool {
 		}
 	}
 	return false
+}
+
+// ClientLibrarySpec 描述用户自备的客户端库目录：连接参数 Param 优先，其次依次读取 HomeEnv 里的环境变量。
+// 动态库在进程启动后才设置 LD_LIBRARY_PATH 不生效，所以由应用在启动代理进程时注入：HomeEnv 的第一个变量
+// 指向客户端目录，LibraryDirs（Windows 用 WindowsLibraryDirs）里的子目录加到动态库搜索路径前面。
+type ClientLibrarySpec struct {
+	Param              string   `json:"param"`
+	HomeEnv            []string `json:"homeEnv"`
+	LibraryDirs        []string `json:"libraryDirs,omitempty"`
+	WindowsLibraryDirs []string `json:"windowsLibraryDirs,omitempty"`
 }
 
 // SyncSpec 声明数据同步的参与方式。

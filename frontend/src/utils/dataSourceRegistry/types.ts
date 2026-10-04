@@ -73,12 +73,20 @@ export type DataSourceUISpec = {
   // index_length 等列），按服务端版本区间取第一条匹配项。语句里可用 {{database}} 引用当前库名。
   metadataQueries?: {
     views?: string[];
+    // 触发器（trigger_name、table_name）、函数与存储过程（routine_name、routine_type）、序列（sequence_name），规则同 views。
+    triggers?: string[];
+    routines?: string[];
+    sequences?: string[];
     tableStatus?: Array<{ minServer?: string; maxServer?: string; sql: string }>;
   };
   // 对象名（etcd 键路径、znode 路径）整体是一个标识符，引用时不按点拆成 schema.table。
   flatObjectNames?: boolean;
   // 连接串里第一个之外的节点存到哪个连接参数（如 ZooKeeper 的 servers），生成连接串时再并回主机段。
   extraHostsParam?: string;
+  // 未借用方言的数据源的对象操作语句（renameTable、dropTable、dropView、dropRoutine、truncateTable、clearTable），由后端执行。
+  objectStatements?: Record<string, string>;
+  // 连接表单里的专用参数字段（值存在连接参数文本里），如 GBase 8s 的 CSDK 目录 clientDir。
+  paramFields?: Array<{ key: string; labelKey: string; helpKey?: string; placeholder?: string }>;
   // 表设计器的索引限制：可建的索引类别（NORMAL / UNIQUE / PRIMARY …）与索引方法（首项为默认），如 GBase 8a 只有普通 HASH 索引。
   indexDesign?: { kinds?: string[]; methods: string[] };
   // 表别名语法：缺省 oracle 家族为 bare，其余为 as；非 SQL 查询语言用 none。

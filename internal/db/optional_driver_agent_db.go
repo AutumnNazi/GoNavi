@@ -106,7 +106,7 @@ func (d *OptionalDriverAgentDB) Connect(config connection.ConnectionConfig) erro
 		return err
 	}
 	logger.Infof("%s 驱动代理路径：%s", driverDisplayName(agentKey), executablePath)
-	client, err := newOptionalDriverAgentClient(agentKey, executablePath)
+	client, err := newOptionalDriverAgentClient(agentKey, executablePath, agentClientLibraryEnv(d.driverType, config)...)
 	if err != nil {
 		return err
 	}

@@ -11942,5 +11942,19 @@
   "db.backend.error.gbase8a_update_too_large": "Das aus {{rows}} Zeilen zusammengefasste UPDATE überschreitet die Parametergrenze vorbereiteter Anweisungen: weniger Zeilen auf einmal übernehmen (bei Datensynchronisation die Batchgröße senken)",
   "datasource.variant.gbase8c.v5": "openGauss-Kernel: GBase 8c V5 (S3.0 / S5.0, zentral und verteilt) mit sha256- / sm3- / md5-Authentifizierung; A-, B- und PG-Kompatibilitätsmodus werden je Datenbank berücksichtigt",
   "connection_modal.step1.hint.gbase8c": "openGauss-Kernel / sha256- und SM3-Authentifizierung",
-  "db.backend.error.gbase8c_connect_failed": "Verbindung zu GBase 8c nicht möglich: {{detail}}"
+  "db.backend.error.gbase8c_connect_failed": "Verbindung zu GBase 8c nicht möglich: {{detail}}",
+  "datasource.variant.gbase8s.v8": "Informix-Kernel: GBase 8s V8.7 / V8.8 über das lokal installierte GBase 8s CSDK (ODBC-Treiberbibliothek); der Client tauscht immer UTF-8 aus",
+  "connection_modal.step1.hint.gbase8s": "Informix-Kernel / lokales CSDK erforderlich",
+  "connection_modal.field.gbase8s.client_dir": "CSDK-Verzeichnis",
+  "connection_modal.field.gbase8s.client_dir.help": "Installationsverzeichnis des GBase 8s Client-SDK (mit bin, lib und gls); leer lassen, um die Umgebungsvariable GBASEDBTDIR / INFORMIXDIR zu verwenden",
+  "connection_modal.field.gbase8s.server": "Servername",
+  "connection_modal.field.gbase8s.server.help": "DBSERVERNAME (GBASEDBTSERVER) des Servers; wird automatisch erkannt, wenn das Feld leer bleibt",
+  "db.backend.error.gbase8s_client_missing": "GBase 8s CSDK nicht gefunden: CSDK-Verzeichnis in der Verbindung oder die Umgebungsvariable GBASEDBTDIR festlegen",
+  "db.backend.error.gbase8s_client_library_missing": "Im CSDK-Verzeichnis {{dir}} fehlt die ODBC-Treiberbibliothek (Windows: bin\\iclit09b.dll, Linux: lib/cli/iclit09b.so); prüfen Sie, ob dort das GBase 8s Client-SDK installiert ist",
+  "db.backend.error.gbase8s_client_load_failed": "Laden der GBase 8s ODBC-Treiberbibliothek fehlgeschlagen ({{path}}): {{detail}}. Unter Linux prüfen, ob lib, lib/esql und lib/cli des CSDK vollständig sind und zur Architektur passen",
+  "db.backend.error.gbase8s_connect_failed": "Verbindung zu GBase 8s nicht möglich: {{detail}}",
+  "db.backend.error.gbase8s_rows_mismatch": "Jede Änderung oder Löschung sollte genau 1 Zeile betreffen, betraf aber {{actual}}; alle Änderungen wurden zurückgerollt (Daten evtl. geändert, bitte aktualisieren und erneut versuchen)",
+  "db.backend.error.gbase8s_update_requires_key": "Diese Tabelle hat keinen Schlüssel zur Zeilenidentifikation und kann im Raster nicht bearbeitet werden",
+  "db.backend.error.gbase8s_object_not_found": "Objekt {{name}} existiert in der aktuellen Datenbank nicht",
+  "table_designer.sql.informix_drop_primary_key_manual": "Zum Löschen eines Primärschlüssels unter GBase 8s / Informix wird der Constraint-Name benötigt: PRIMARY-KEY-Constraint in der DDL suchen und ALTER TABLE <Tabelle> DROP CONSTRAINT <Name> ausführen"
 }

@@ -8,7 +8,7 @@ import { buildRpcConnectionConfig } from '../../../utils/connectionRpcConfig';
 import { buildDisplayDefinitionSql } from '../definitionViewerSql';
 import { formatDdlForDisplay } from '../../../utils/ddlFormat';
 import { resolveDefinitionViewerObjectMeta } from '../../definitionViewerObjectMeta';
-import { usesBackendViewDefinition } from '../../definitionViewerDialect';
+import { usesDriverObjectDefinition, usesBackendViewDefinition } from '../../definitionViewerDialect';
 import type { DefinitionViewerStateApi } from './useDefinitionViewerState';
 import type { DefinitionViewerProps } from '../../DefinitionViewer';
 
@@ -210,6 +210,7 @@ export const useDefinitionViewerLoader = ({
       let extractFn: (dialect: string, data: any[]) => string;
       let resolvedObjectLabel: string;
       let resolvedObjectName = '';
+      let backendRoutine = false;
 
       if (tab.type === 'view-def') {
           const viewName = tab.viewName || '';
@@ -270,12 +271,14 @@ export const useDefinitionViewerLoader = ({
               return { success: false, error: t('definition_viewer.error.routine_name_empty') };
           }
           queries = buildShowRoutineQueries(dialect, routineName, routineType, dbName);
+          backendRoutine = usesDriverObjectDefinition(conn);
           extractFn = extractRoutineDefinition;
           resolvedObjectLabel = t('definition_viewer.object.routine');
           resolvedObjectName = routineName;
       }
 
-      if ((!queries.length || String(queries[0] || '').startsWith('--')) && !(tab.type === 'view-def' && usesBackendViewDefinition(conn, dialect))) {
+      const backendView = tab.type === 'view-def' && usesBackendViewDefinition(conn, dialect);
+      if ((!queries.length || String(queries[0] || '').startsWith('--')) && !backendView && !backendRoutine) {
           return {
               success: true,
               definition: String(
@@ -294,7 +297,15 @@ export const useDefinitionViewerLoader = ({
               ssh: conn.config.ssh || { host: '', port: 22, user: '', password: '', keyPath: '' }
           };
 
-          if (tab.type === 'view-def' && usesBackendViewDefinition(conn, dialect)) {
+          if (backendRoutine) {
+              // 自有方言的描述表数据源（如 GBase 8s 的 SPL 例程）由驱动按对象名给出原文，不做 SQL 格式化。
+              const result = await DBShowCreateTable(buildRpcConnectionConfig(config) as any, dbName, resolvedObjectName);
+              return result.success && String(result.data || '').trim()
+                  ? { success: true, definition: String(result.data) }
+                  : { success: false, error: result.message || t('definition_viewer.error.query_failed') };
+          }
+
+          if (backendView) {
               const result = await DBShowCreateTable(
                   buildRpcConnectionConfig(config) as any,
                   dbName,
