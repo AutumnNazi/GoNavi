@@ -1,6 +1,8 @@
 package sync
 
 import (
+	"context"
+
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/db"
 )
@@ -29,4 +31,25 @@ func (s *SyncEngine) applyChangesByKind(config SyncConfig, res *SyncResult, targ
 		}
 	}
 	return total, nil
+}
+
+// applySyncChangesByKindContext 供增量（watermark）与变更事件路径使用：singleKind 为 true 时按删除、修改、
+// 新增顺序分别提交，否则整批提交。
+func applySyncChangesByKindContext(ctx context.Context, applier db.BatchApplier, tableName string, changes connection.ChangeSet, singleKind bool) error {
+	if !singleKind {
+		return applySyncChangesContext(ctx, applier, tableName, changes)
+	}
+	for _, part := range []connection.ChangeSet{
+		{LocatorStrategy: changes.LocatorStrategy, Deletes: changes.Deletes},
+		{LocatorStrategy: changes.LocatorStrategy, Updates: changes.Updates},
+		{LocatorStrategy: changes.LocatorStrategy, Inserts: changes.Inserts},
+	} {
+		if len(part.Deletes) == 0 && len(part.Updates) == 0 && len(part.Inserts) == 0 {
+			continue
+		}
+		if err := applySyncChangesContext(ctx, applier, tableName, part); err != nil {
+			return err
+		}
+	}
+	return nil
 }

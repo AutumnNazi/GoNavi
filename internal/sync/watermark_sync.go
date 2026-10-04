@@ -226,7 +226,7 @@ func (s *SyncEngine) RunWatermarkSync(ctx context.Context, request WatermarkSync
 		batchInserted := len(changeSet.Inserts)
 		batchUpdated := len(changeSet.Updates)
 		if batchInserted > 0 || batchUpdated > 0 {
-			if err := applySyncChangesContext(runCtx, applier, plan.applyTableName, changeSet); err != nil {
+			if err := applySyncChangesByKindContext(runCtx, applier, plan.applyTableName, changeSet, targetNeedsSingleKindBatches(config.TargetConfig)); err != nil {
 				result.Cursor = cloneWatermarkCursor(durableCursor)
 				result.OutcomeUnknown = db.IsWriteOutcomeUnknown(err)
 				return failWatermarkSync(result, runCtx, fmt.Errorf("应用 watermark 目标批次失败: %w", err))

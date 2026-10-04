@@ -117,7 +117,7 @@ func buildPGLikeToPGLikeCreateTablePlan(targetType string, config SyncConfig, ta
 	byteLengthWidener := newByteLengthWidener(resolveMigrationDBType(config.SourceConfig), targetType)
 	for _, col := range sourceCols {
 		col = byteLengthWidener.Adapt(col)
-		def, colWarnings := buildPGLikeToPGLikeColumnDefinition(col)
+		def, colWarnings := buildPGLikeToPGLikeColumnDefinition(col, isCockroachFamilyEndpoint(config.TargetConfig))
 		warnings = append(warnings, colWarnings...)
 		columnDefs = append(columnDefs, fmt.Sprintf("%s %s", quoteIdentByType(targetType, col.Name), def))
 		if strings.EqualFold(col.Key, "PRI") || strings.EqualFold(col.Key, "PK") {
@@ -200,7 +200,10 @@ func buildPGLikeToPGLikeCreateTablePlan(targetType string, config SyncConfig, ta
 	return createSQL, postSQL, dedupeStrings(warnings), dedupeStrings(unsupported), created, skipped, nil
 }
 
-func buildPGLikeToPGLikeColumnDefinition(col connection.ColumnDefinition) (string, []string) {
+func buildPGLikeToPGLikeColumnDefinition(col connection.ColumnDefinition, cockroachTarget bool) (string, []string) {
+	if !cockroachTarget {
+		col.Type = adaptCockroachColumnType(col.Type)
+	}
 	targetType := sanitizePGLikeColumnType(col.Type)
 	parts := []string{targetType}
 	warnings := make([]string, 0)
@@ -210,7 +213,9 @@ func buildPGLikeToPGLikeColumnDefinition(col connection.ColumnDefinition) (strin
 		} else {
 			warnings = append(warnings, fmt.Sprintf("字段 %s 的类型 %s 不适合保留 identity/sequence 语义，已跳过", col.Name, targetType))
 		}
-	} else if defaultSQL, ok, warningText := mapPGLikeDefaultToPGLike(col, targetType); warningText != "" {
+	} else if adapted, adaptWarning := adaptCockroachDefault(col, cockroachTarget); adaptWarning != "" {
+		warnings = append(warnings, adaptWarning)
+	} else if defaultSQL, ok, warningText := mapPGLikeDefaultToPGLike(adapted, targetType); warningText != "" {
 		warnings = append(warnings, warningText)
 	} else if ok {
 		parts = append(parts, "DEFAULT "+defaultSQL)
@@ -335,6 +340,10 @@ func buildPGLikeTriggerSQL(targetType, targetQueryTable string, sourceDB db.Data
 		}
 		if strings.ContainsAny(statement, ";") {
 			unsupported = append(unsupported, fmt.Sprintf("触发器 %s 语句包含多条命令，已跳过以免误执行", name))
+			continue
+		}
+		if isExtensionInternalTrigger(statement) {
+			// TimescaleDB 超表自带的 ts_insert_blocker 等触发器属于扩展内部实现，目标库没有对应函数。
 			continue
 		}
 		orientation := strings.ToUpper(strings.TrimSpace(trigger.Orientation))
