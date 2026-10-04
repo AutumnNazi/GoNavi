@@ -8,6 +8,8 @@ import sys
 import zipfile
 from pathlib import Path
 
+from driver_bundle_7z import BUNDLE_NAME, create_bundle
+
 
 ROOT = Path(__file__).resolve().parent.parent
 LEGAL_FILENAMES = ("LICENSE", "NOTICE")
@@ -76,7 +78,7 @@ def main():
         missing = ", ".join(str(path) for path in missing_legal_files)
         raise SystemExit(f"legal notice files not found: {missing}")
 
-    out_name = "GoNavi-DriverAgents.zip"
+    out_name = BUNDLE_NAME
     index_name = "GoNavi-DriverAgents-Index.json"
     manifest_name = "GoNavi-DriverAgents-Manifest.json"
 
@@ -93,27 +95,26 @@ def main():
     entry_index = {}
     individual_archives = []
     source_assets = []
-    with zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for asset in sorted(drivers_dir.rglob("*")):
-            if not asset.is_file():
-                continue
-            arcname = asset.relative_to(drivers_dir).as_posix()
-            if any(existing.name == asset.name for existing, _ in source_assets):
-                raise RuntimeError(f"driver asset name conflict: {asset.name}")
-            # Dedicated source packages are regenerated below from their raw
-            # agent and support files. Keeping a zip inside the CI bundle only
-            # wastes space and is not needed by the completion step.
-            if asset.suffix.lower() == ".zip":
-                continue
-            zf.write(asset, arcname)
-            source_assets.append((asset, arcname))
+    for asset in sorted(drivers_dir.rglob("*")):
+        if not asset.is_file():
+            continue
+        arcname = asset.relative_to(drivers_dir).as_posix()
+        if any(existing.name == asset.name for existing, _ in source_assets):
+            raise RuntimeError(f"driver asset name conflict: {asset.name}")
+        # Dedicated source packages are regenerated below from their raw
+        # agent and support files. Keeping a zip inside the CI bundle only
+        # wastes space and is not needed by the completion step.
+        if asset.suffix.lower() == ".zip":
+            continue
+        source_assets.append((asset, arcname))
 
-        for legal_file in legal_files:
-            zf.write(legal_file, legal_file.name)
-            standalone_path = output_dir / legal_file.name
-            if standalone_path.exists():
-                raise RuntimeError(f"release asset already exists: {standalone_path}")
-            shutil.copy2(legal_file, standalone_path)
+    create_bundle(out_path, drivers_dir, [arcname for _, arcname in source_assets], legal_files)
+
+    for legal_file in legal_files:
+        standalone_path = output_dir / legal_file.name
+        if standalone_path.exists():
+            raise RuntimeError(f"release asset already exists: {standalone_path}")
+        shutil.copy2(legal_file, standalone_path)
 
     for asset, arcname in source_assets:
         if not DRIVER_AGENT_RE.fullmatch(asset.name):

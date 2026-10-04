@@ -1,7 +1,6 @@
 package app
 
 import (
-	"archive/zip"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -132,7 +131,12 @@ func optionalDriverBundleCachePath(bundleURL string) (string, error) {
 		return "", err
 	}
 	sum := sha256.Sum256([]byte(strings.TrimSpace(bundleURL)))
-	return filepath.Join(cacheDir, hex.EncodeToString(sum[:])+".zip"), nil
+	// 缓存文件按总包格式命名，便于排查；读取时仍按文件头识别格式。
+	extension := ".zip"
+	if strings.Contains(strings.ToLower(bundleURL), ".7z") {
+		extension = ".7z"
+	}
+	return filepath.Join(cacheDir, hex.EncodeToString(sum[:])+extension), nil
 }
 
 func cleanupOptionalDriverBundleCache(keepPaths ...string) {
@@ -185,7 +189,7 @@ func cleanupOptionalDriverBundleCache(keepPaths ...string) {
 			}
 			continue
 		}
-		if !strings.HasSuffix(name, ".zip") {
+		if !isDriverPackageArchivePath(name) {
 			continue
 		}
 		if now.Sub(info.ModTime()) > optionalDriverBundleCacheMaxAge {
@@ -234,12 +238,12 @@ func downloadOptionalDriverBundleToCachePreferred(bundleURL string, onProgress f
 		_ = os.Remove(tempPath)
 		return "", err
 	}
-	reader, err := zip.OpenReader(cachePath)
+	archive, err := openDriverPackageArchive(cachePath)
 	if err != nil {
 		_ = os.Remove(cachePath)
 		return "", fmt.Errorf("open driver bundle failed: %w", err)
 	}
-	if err := reader.Close(); err != nil {
+	if err := archive.Close(); err != nil {
 		_ = os.Remove(cachePath)
 		return "", fmt.Errorf("close driver bundle failed: %w", err)
 	}

@@ -3,7 +3,7 @@ export const zhCNDriverMessages: Record<string, string> = {
   "driver.guidance.localImportDirectoryHelp":
     "如果应用内下载链路失败，可先手动下载驱动包到该目录，再使用“导入驱动包”或“导入驱动目录”完成安装。",
   "driver.guidance.localImportSingleFileHelp":
-    "行内“导入驱动包”仅用于单个驱动文件/总包（如 `mariadb-driver-agent`、`mariadb-driver-agent.exe`、`GoNavi-DriverAgents.zip`），不支持直接导入 JDBC Jar；批量导入请使用上方“导入驱动目录”。",
+    "行内“导入驱动包”仅用于单个驱动文件/总包（如 `mariadb-driver-agent`、`mariadb-driver-agent.exe`、`GoNavi-DriverAgents.7z`），不支持直接导入 JDBC Jar；批量导入请使用上方“导入驱动目录”。",
   "driver.guidance.customConnectionDriverHelp":
     "已支持: mysql, starrocks, oceanbase, postgres, opengauss, sqlite, oracle, dm, kingbase, clickhouse；别名支持 postgresql/pgx、open_gauss/open-gauss、dm8、kingbase8/kingbasees/kingbasev8。ClickHouse 自定义连接可填写 clickhouse://、http(s)://、jdbc:clickhouse:// 或 jdbc:ch:// DSN，并复用 GoNavi ClickHouse driver-agent，不会加载 JDBC Jar。其他驱动请填写 GoNavi 已注册的 Go database/sql 驱动名，不能直接填写系统 ODBC/JDBC 驱动名。",
   "driver.modal.title": "驱动管理",

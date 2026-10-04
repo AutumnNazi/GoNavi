@@ -55,7 +55,7 @@ func (a *App) SelectDriverPackageFile(currentPath string) connection.QueryResult
 	return a.selectDriverPackageFile(currentPath, false)
 }
 
-// SelectDriverPackageZipFile 只用于「导入驱动包（ZIP）」。
+// SelectDriverPackageZipFile 只用于「导入驱动包（ZIP / 7z）」，方法名沿用已生成的绑定。
 // 单驱动的本地文件选择仍走 SelectDriverPackageFile，因为那里还要能选非 Jar 的二进制。
 func (a *App) SelectDriverPackageZipFile(currentPath string) connection.QueryResult {
 	return a.selectDriverPackageFile(currentPath, true)
@@ -68,8 +68,8 @@ func driverPackageFileDialogOptions(title string, defaultDir string, zipOnly boo
 	}
 	if zipOnly {
 		options.Filters = []runtime.FileFilter{{
-			DisplayName: "ZIP (*.zip)",
-			Pattern:     "*.zip",
+			DisplayName: "ZIP / 7z (*.zip;*.7z)",
+			Pattern:     "*.zip;*.7z",
 		}}
 	}
 	return options
@@ -108,7 +108,7 @@ func (a *App) selectDriverPackageFile(currentPath string, zipOnly bool) connecti
 	if abs, err := filepath.Abs(selection); err == nil {
 		selection = abs
 	}
-	if zipOnly && !strings.EqualFold(filepath.Ext(selection), ".zip") {
+	if zipOnly && !isDriverPackageArchivePath(selection) {
 		return connection.QueryResult{
 			Success: false,
 			Message: a.appText("driver_manager.backend.error.package_not_zip", nil),

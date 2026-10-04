@@ -19,7 +19,8 @@ const (
 	driverReleaseMirrorDevLatestIndexURL = "https://download-dispatch.syngnat.top/v1/resolve?path=%2Fdrivers%2Fdev%2Freleases%2Flatest%2FGoNavi-DriverAgents-Index.json"
 	driverReleaseLatestAPIURL            = "https://api.github.com/repos/" + driverReleaseRepo + "/releases/latest"
 	driverReleaseDevTag                  = "dev-latest"
-	optionalDriverBundleAssetName        = "GoNavi-DriverAgents.zip"
+	// 总包自 v1.0.2 起为 LZMA2 固实 7z（ZIP 总包已逼近 GitHub 单资产 2 GiB 上限）。
+	optionalDriverBundleAssetName        = "GoNavi-DriverAgents.7z"
 	optionalDriverBundleIndexAssetName   = "GoNavi-DriverAgents-Index.json"
 	optionalDriverBundleDownloadTimeout  = 15 * time.Minute
 	optionalDriverBundleCacheMaxAge      = 7 * 24 * time.Hour

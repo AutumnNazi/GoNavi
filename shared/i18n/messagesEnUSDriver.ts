@@ -3,7 +3,7 @@ export const enUSDriverMessages: Record<string, string> = {
   "driver.guidance.localImportDirectoryHelp":
     "If the in-app download chain fails, download the driver package into this directory first, then use \"Import driver package\" or \"Import driver directory\" to finish installation.",
   "driver.guidance.localImportSingleFileHelp":
-    "The inline \"Import driver package\" action only accepts a single driver file or bundle (for example `mariadb-driver-agent`, `mariadb-driver-agent.exe`, `GoNavi-DriverAgents.zip`). It does not import JDBC Jar directly. Use \"Import driver directory\" above for batch import.",
+    "The inline \"Import driver package\" action only accepts a single driver file or bundle (for example `mariadb-driver-agent`, `mariadb-driver-agent.exe`, `GoNavi-DriverAgents.7z`). It does not import JDBC Jar directly. Use \"Import driver directory\" above for batch import.",
   "driver.guidance.customConnectionDriverHelp":
     "Supported: mysql, starrocks, oceanbase, postgres, opengauss, sqlite, oracle, dm, kingbase, clickhouse; aliases include postgresql/pgx, open_gauss/open-gauss, dm8, kingbase8/kingbasees/kingbasev8. ClickHouse custom connections accept clickhouse://, http(s)://, jdbc:clickhouse://, or jdbc:ch:// DSNs and reuse the GoNavi ClickHouse driver-agent; no JDBC Jar is loaded. For other drivers, enter a Go database/sql driver name already registered by GoNavi, not a system ODBC/JDBC driver name.",
   "driver.modal.title": "Driver Manager",

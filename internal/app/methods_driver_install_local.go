@@ -282,8 +282,8 @@ func installOptionalDriverAgentFromLocalPath(a *App, definition driverDefinition
 		}
 	}
 
-	if !info.IsDir() && strings.EqualFold(filepath.Ext(pathText), ".zip") {
-		entryName, extractErr := installOptionalDriverAgentFromLocalZip(pathText, definition, stagingPath, selectedVersion)
+	if !info.IsDir() && isDriverPackageArchivePath(pathText) {
+		entryName, extractErr := installOptionalDriverAgentFromLocalArchive(pathText, definition, stagingPath, selectedVersion)
 		if extractErr != nil {
 			return installedDriverPackage{}, extractErr
 		}

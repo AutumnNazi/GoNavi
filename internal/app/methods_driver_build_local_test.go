@@ -98,7 +98,7 @@ func TestInstallOptionalDriverAgentFromLocalZipExtractsDuckDBDLL(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		t.Fatalf("create install dir failed: %v", err)
 	}
-	entryName, err := installOptionalDriverAgentFromLocalZip(zipPath, driverDefinition{Type: "duckdb", Name: "DuckDB"}, target, "")
+	entryName, err := installOptionalDriverAgentFromLocalArchive(zipPath, driverDefinition{Type: "duckdb", Name: "DuckDB"}, target, "")
 	if err != nil {
 		t.Fatalf("install local DuckDB zip failed: %v", err)
 	}
