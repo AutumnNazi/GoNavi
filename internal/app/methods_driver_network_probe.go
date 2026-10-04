@@ -40,7 +40,8 @@ func buildDriverNetworkFallbackProbeItems(a *App) []driverNetworkProbeItem {
 		{
 			ProbeCode: driverNetworkProbeCodeGitHubRelease,
 			Name:      a.appText("driver_manager.backend.network.probe.github_driver_release", nil),
-			URL:       driverReleaseLatestDownloadURLForCurrentChannel(optionalDriverBundleAssetName),
+			// 探测小体积索引：新旧发布都带它，总包已从 ZIP 改为 7z，探测总包会在旧发布上 404。
+			URL:       driverReleaseLatestDownloadURLForCurrentChannel(optionalDriverBundleIndexAssetName),
 		},
 		{
 			ProbeCode: driverNetworkProbeCodeGitHubReleaseAsset,

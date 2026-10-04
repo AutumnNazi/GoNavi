@@ -1,7 +1,6 @@
 package app
 
 import (
-	"archive/zip"
 	"context"
 	"errors"
 	"fmt"
@@ -59,7 +58,7 @@ func downloadOptionalDriverAgentBinaryWithMetadata(ctx context.Context, a *App, 
 			}
 		}
 
-		if _, err := installOptionalDriverAgentFromLocalZip(tempPath, definition, executablePath, selectedVersion); err != nil {
+		if _, err := installOptionalDriverAgentFromLocalArchive(tempPath, definition, executablePath, selectedVersion); err != nil {
 			_ = os.Remove(tempPath)
 			_ = os.Remove(executablePath)
 			for _, supportName := range optionalDriverSupportFileNames(driverType) {
@@ -166,44 +165,16 @@ func downloadOptionalDriverAgentFromBundle(a *App, definition driverDefinition, 
 		return "", "", newLocalizedDriverBackendError("driver_manager.backend.error.bundle_download_failed", nil, err)
 	}
 
-	reader, err := zip.OpenReader(bundlePath)
+	archive, err := openDriverPackageArchive(bundlePath)
 	if err != nil {
 		return "", "", newLocalizedDriverBackendError("driver_manager.backend.error.open_bundle_failed", nil, err)
 	}
-	defer reader.Close()
+	defer archive.Close()
 
 	entryPath := optionalDriverBundleEntryPath(driverType)
 	entryPaths := optionalDriverBundleEntryPaths(driverType)
 	expectedBaseNames := optionalDriverReleaseAssetNames(driverType)
-	findEntry := func() *zip.File {
-		for _, file := range reader.File {
-			name := filepath.ToSlash(strings.TrimPrefix(strings.TrimSpace(file.Name), "./"))
-			for _, expectedPath := range entryPaths {
-				if name == expectedPath {
-					return file
-				}
-			}
-		}
-		for _, file := range reader.File {
-			name := filepath.ToSlash(strings.TrimPrefix(strings.TrimSpace(file.Name), "./"))
-			for _, expectedPath := range entryPaths {
-				if strings.EqualFold(name, expectedPath) {
-					return file
-				}
-			}
-		}
-		for _, file := range reader.File {
-			name := filepath.ToSlash(strings.TrimPrefix(strings.TrimSpace(file.Name), "./"))
-			for _, expectedName := range expectedBaseNames {
-				if strings.EqualFold(filepath.Base(name), expectedName) {
-					return file
-				}
-			}
-		}
-		return nil
-	}
-
-	entry := findEntry()
+	entry := findDriverPackageArchiveEntry(archive.Entries, entryPaths, expectedBaseNames)
 	if entry == nil {
 		return "", "", newLocalizedDriverBackendError("driver_manager.backend.error.bundle_entry_missing", map[string]any{
 			"name": displayName,
@@ -251,7 +222,7 @@ func downloadOptionalDriverAgentFromBundle(a *App, definition driverDefinition, 
 	if chmodErr := os.Chmod(executablePath, 0o755); chmodErr != nil && stdRuntime.GOOS != "windows" {
 		return "", "", newLocalizedDriverBackendError("driver_manager.backend.error.chmod_agent_failed", nil, chmodErr)
 	}
-	if supportErr := extractOptionalDriverSupportFilesFromZip(reader.File, driverType, entry.Name, filepath.Dir(executablePath)); supportErr != nil {
+	if supportErr := extractOptionalDriverSupportFilesFromArchive(archive.Entries, driverType, entry.Name, filepath.Dir(executablePath)); supportErr != nil {
 		_ = os.Remove(executablePath)
 		return "", "", supportErr
 	}

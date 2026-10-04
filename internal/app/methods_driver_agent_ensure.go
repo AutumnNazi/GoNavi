@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -366,16 +365,16 @@ func isOptionalDriverDownloadZipURL(urlText string) bool {
 		return false
 	}
 	if assetPath, ok := downloadDispatcherAssetPath(trimmedURL); ok {
-		return strings.EqualFold(path.Ext(assetPath), ".zip")
+		return isDriverPackageArchivePath(assetPath)
 	}
 	if parsed, err := url.Parse(trimmedURL); err == nil {
-		if strings.TrimSpace(parsed.Path) != "" && strings.EqualFold(path.Ext(parsed.Path), ".zip") {
+		if strings.TrimSpace(parsed.Path) != "" && isDriverPackageArchivePath(parsed.Path) {
 			return true
 		}
-		if strings.TrimSpace(parsed.Fragment) != "" && strings.EqualFold(path.Ext(parsed.Fragment), ".zip") {
+		if strings.TrimSpace(parsed.Fragment) != "" && isDriverPackageArchivePath(parsed.Fragment) {
 			return true
 		}
 		return false
 	}
-	return strings.EqualFold(filepath.Ext(trimmedURL), ".zip")
+	return isDriverPackageArchivePath(trimmedURL)
 }

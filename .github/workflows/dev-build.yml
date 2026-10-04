@@ -25,6 +25,17 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
+      - name: Install 7-Zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 驱动总包是 LZMA2 固实 7z（tools/driver_bundle_7z.py），打包、补齐与其测试都依赖 7z 命令行。
+          if ! command -v 7zz >/dev/null 2>&1 && ! command -v 7z >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq 7zip || sudo apt-get install -y -qq p7zip-full
+          fi
+          echo "Using 7-Zip: $(command -v 7zz || command -v 7z)"
+
       - name: Test release asset contracts
         run: |
           go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -pyflakes= \
@@ -1427,6 +1438,17 @@ jobs:
             echo "⚠️ 上一版 driver manifest 不可用；未重建资产将由 manifest 生成阶段拒绝"
           fi
 
+      - name: Install 7-Zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 驱动总包是 LZMA2 固实 7z（tools/driver_bundle_7z.py），打包、补齐与其测试都依赖 7z 命令行。
+          if ! command -v 7zz >/dev/null 2>&1 && ! command -v 7z >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq 7zip || sudo apt-get install -y -qq p7zip-full
+          fi
+          echo "Using 7-Zip: $(command -v 7zz || command -v 7z)"
+
       - name: Complete Driver Agent Assets
         if: needs.driver_agents.outputs.has_changes == 'true'
         env:
@@ -1455,7 +1477,7 @@ jobs:
             exit 0
           fi
 
-          echo "📦 打包驱动总包：GoNavi-DriverAgents.zip"
+          echo "📦 打包驱动总包：GoNavi-DriverAgents.7z"
           python3 ../tools/package-driver-release-assets.py \
             drivers \
             ../driver-release-assets
@@ -1940,7 +1962,7 @@ jobs:
             jq \
               --arg tag "${DEV_VERSION}" \
               --arg mirror_tag "${DEV_VERSION}" \
-              '.tagName = $tag | del(.mirrorTagName) | del(.assets["GoNavi-DriverAgents.zip"]) | del(.assetSha256)' \
+              '.tagName = $tag | del(.mirrorTagName) | del(.assets["GoNavi-DriverAgents.7z"], .assets["GoNavi-DriverAgents.zip"]) | del(.assetSha256)' \
               "${driver_dir}/GoNavi-DriverAgents-Index.json" \
               > "${RUNNER_TEMP}/driver-dev-version-index-base.json"
             while IFS= read -r name; do

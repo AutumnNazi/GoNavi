@@ -662,10 +662,10 @@ func exportDriverPackageSelectionTo(t *testing.T, app *App, root string, target 
 	return app.ExportDriverPackageSelection(root, "", driverTypes)
 }
 
-func TestDriverPackageZipDialogAllowsOnlyZip(t *testing.T) {
-	zipDialog := driverPackageFileDialogOptions("选择驱动包（ZIP）", "/tmp", true)
-	if len(zipDialog.Filters) != 1 || zipDialog.Filters[0].Pattern != "*.zip" {
-		t.Fatalf("ZIP 导入对话框应只允许 *.zip，实际: %#v", zipDialog.Filters)
+func TestDriverPackageZipDialogAllowsOnlyArchives(t *testing.T) {
+	zipDialog := driverPackageFileDialogOptions("选择驱动包（ZIP / 7z）", "/tmp", true)
+	if len(zipDialog.Filters) != 1 || zipDialog.Filters[0].Pattern != "*.zip;*.7z" {
+		t.Fatalf("驱动包导入对话框应只允许 *.zip 与 *.7z，实际: %#v", zipDialog.Filters)
 	}
 	plainDialog := driverPackageFileDialogOptions("选择驱动包文件", "/tmp", false)
 	if len(plainDialog.Filters) != 0 {

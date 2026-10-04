@@ -12,6 +12,8 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+from driver_bundle_7z import BUNDLE_NAME, LEGACY_BUNDLE_NAME, extract_members, list_members
+
 
 DRIVERS = [
     "mariadb",
@@ -38,7 +40,8 @@ DRIVERS = [
     "trino",
 ]
 
-BUNDLE_NAME = "GoNavi-DriverAgents.zip"
+# Releases before v1.0.2 only carry the deflate ZIP bundle.
+BUNDLE_NAMES = (BUNDLE_NAME, LEGACY_BUNDLE_NAME)
 
 
 def asset_download_url(asset):
@@ -130,12 +133,29 @@ def asset_map(release):
     return result
 
 
-def copy_missing_from_bundle(bundle_path, target_root):
-    copied = 0
-    required = {
+def required_bundle_members():
+    return {
         (Path(platform) / file_name).as_posix()
         for platform, file_name in required_assets()
     }
+
+
+def copy_missing_from_7z_bundle(bundle_path, target_root):
+    members = list_members(bundle_path)
+    missing = [
+        item
+        for item in sorted(required_bundle_members())
+        if item in members and not (target_root / item).exists()
+    ]
+    extract_members(bundle_path, missing, target_root)
+    return len(missing)
+
+
+def copy_missing_from_bundle(bundle_path, target_root):
+    if Path(bundle_path).suffix.lower() == ".7z":
+        return copy_missing_from_7z_bundle(bundle_path, target_root)
+    copied = 0
+    required = required_bundle_members()
     with zipfile.ZipFile(bundle_path) as zf:
         members = {
             Path(info.filename).as_posix(): info
@@ -211,11 +231,11 @@ def main():
 
         releases_assets = asset_map(release)
         copied = 0
-        bundle_asset = releases_assets.get(BUNDLE_NAME)
-        if bundle_asset:
+        bundle_name = next((name for name in BUNDLE_NAMES if name in releases_assets), "")
+        if bundle_name:
             with tempfile.TemporaryDirectory(prefix="gonavi-driver-release-") as tmp:
-                bundle_path = Path(tmp) / BUNDLE_NAME
-                download_asset(bundle_asset, bundle_path)
+                bundle_path = Path(tmp) / bundle_name
+                download_asset(releases_assets[bundle_name], bundle_path)
                 copied += copy_missing_from_bundle(bundle_path, driver_root)
         copied += copy_missing_standalone(releases_assets, driver_root)
         total_copied += copied
