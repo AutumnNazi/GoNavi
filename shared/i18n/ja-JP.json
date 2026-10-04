@@ -11995,5 +11995,21 @@
   "db.backend.error.meilisearch_document_exists": "主キーが {{id}} のドキュメントはすでに存在します",
   "db.backend.error.meilisearch_document_not_found": "主キーが {{id}} のドキュメントは存在しません（削除された可能性があります）",
   "db.backend.error.meilisearch_key_required": "{{action}}には主キー {{field}} の値が必要です",
-  "db.backend.error.meilisearch_value_invalid": "フィールド {{field}} の値 {{value}} は有効な {{type}} ではありません"
+  "db.backend.error.meilisearch_value_invalid": "フィールド {{field}} の値 {{value}} は有効な {{type}} ではありません",
+  "datasource.variant.typesense.v0": "Typesense 0.20 – 0.23：フィルターは && でしか組み合わせられず、|| と括弧は使えない。0.23 より前は文字列の完全一致フィルターに facet フィールドが必要",
+  "datasource.variant.typesense.v1": "Typesense 0.24 – 0.25：フィルターで || と括弧が使える。0.25 からは数値フィールドで != が使え、検索が offset / limit に対応",
+  "datasource.variant.typesense.v2": "Typesense 26+：id フィールドで != が使え、29 からは truncate でコレクションを空にできる",
+  "connection_modal.step1.hint.typesense": "コレクションの閲覧と REST コンソール。パスワード欄に API key を入力します",
+  "db.backend.error.typesense_request_failed": "Typesense リクエスト {{method}} {{path}} に失敗しました：{{detail}}",
+  "db.backend.error.typesense_query_unsupported": "Typesense のクエリは SELECT … FROM コレクションと読み取り専用の REST リクエスト（GET /collections、GET /collections/books/documents/search?q=*&query_by=title、または次の行に JSON 本文を続けた POST /multi_search など）に対応しています",
+  "db.backend.error.typesense_write_unsupported": "Typesense への書き込みには REST リクエスト（POST / PUT / PATCH / DELETE /collections/… の後に JSON 本文。インポート API の本文は JSON Lines）か、DROP TABLE / TRUNCATE TABLE / DELETE FROM コレクションを使ってください",
+  "db.backend.error.typesense_body_invalid": "リクエスト本文が有効な JSON ではありません",
+  "db.backend.error.typesense_collection_not_found": "コレクション {{collection}} は存在しません",
+  "db.backend.error.typesense_scan_too_large": "コレクション {{collection}} のドキュメントは {{count}} 件で、クライアント側の絞り込み / 並べ替えの上限 {{limit}} を超えています：インデックスのある schema フィールドだけで絞り込み（文字列は等しい / IN、数値は大小比較）、並べ替えには並べ替え可能なフィールド（数値、または sort: true の文字列）を使ってください",
+  "db.backend.error.typesense_import_failed": "インポートした {{total}} 件のうち {{failed}} 件が失敗しました。最初の理由：{{detail}}",
+  "db.backend.error.typesense_changes_partial": "{{applied}} / {{total}} 件の変更を適用した後に失敗しました（Typesense にはトランザクションがなく、適用済みの変更は取り消されません）：{{detail}}",
+  "db.backend.error.typesense_document_exists": "id が {{id}} のドキュメントはすでに存在します",
+  "db.backend.error.typesense_document_not_found": "id が {{id}} のドキュメントは存在しません（削除された可能性があります）",
+  "db.backend.error.typesense_id_required": "{{action}}には id 列の値が必要です",
+  "db.backend.error.typesense_value_invalid": "フィールド {{field}} の値 {{value}} は有効な {{type}} ではありません"
 }

@@ -1530,6 +1530,7 @@
                     "elasticsearch":  "document-index-readonly",
                     "opensearch":  "document-index-readonly",
                     "meilisearch":  "search-document",
+                    "typesense":  "search-document",
                     "trino":  "sql-trino",
                     "presto":  "sql-trino",
                     "tidb":  "sql-mysql",

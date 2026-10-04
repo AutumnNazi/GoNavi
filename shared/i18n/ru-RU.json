@@ -11995,5 +11995,21 @@
   "db.backend.error.meilisearch_document_exists": "Документ с первичным ключом {{id}} уже существует",
   "db.backend.error.meilisearch_document_not_found": "Документ с первичным ключом {{id}} не существует (возможно, он удалён)",
   "db.backend.error.meilisearch_key_required": "Для операции «{{action}}» нужно значение первичного ключа {{field}}",
-  "db.backend.error.meilisearch_value_invalid": "Значение {{value}} поля {{field}} не является допустимым значением типа {{type}}"
+  "db.backend.error.meilisearch_value_invalid": "Значение {{value}} поля {{field}} не является допустимым значением типа {{type}}",
+  "datasource.variant.typesense.v0": "Typesense 0.20 – 0.23: фильтры объединяются только через &&, без || и скобок; до 0.23 точный фильтр по строке требует facet-поле",
+  "datasource.variant.typesense.v1": "Typesense 0.24 – 0.25: фильтры с || и скобками; с 0.25 числовые поля поддерживают !=, а поиск — offset / limit",
+  "datasource.variant.typesense.v2": "Typesense 26+: поле id поддерживает !=, с 29 коллекцию можно очистить через truncate",
+  "connection_modal.step1.hint.typesense": "Просмотр коллекций и REST-консоль; в поле пароля укажите API key",
+  "db.backend.error.typesense_request_failed": "Запрос Typesense {{method}} {{path}} не выполнен: {{detail}}",
+  "db.backend.error.typesense_query_unsupported": "Запросы Typesense поддерживают SELECT … FROM коллекция и читающие REST-запросы (например, GET /collections, GET /collections/books/documents/search?q=*&query_by=title или POST /multi_search с JSON-телом на следующих строках)",
+  "db.backend.error.typesense_write_unsupported": "Для записи в Typesense используйте REST-запросы (POST / PUT / PATCH / DELETE /collections/… с JSON-телом; эндпоинт импорта принимает JSON Lines) или DROP TABLE / TRUNCATE TABLE / DELETE FROM коллекция",
+  "db.backend.error.typesense_body_invalid": "Тело запроса не является корректным JSON",
+  "db.backend.error.typesense_collection_not_found": "Коллекция {{collection}} не существует",
+  "db.backend.error.typesense_scan_too_large": "В коллекции {{collection}} {{count}} документов — больше лимита фильтрации / сортировки на клиенте ({{limit}}): фильтруйте только по индексированным полям схемы (строки — равенство / IN, числа — сравнения) и сортируйте по сортируемым полям (числа или строки с sort: true)",
+  "db.backend.error.typesense_import_failed": "Не импортировано {{failed}} из {{total}} документов; первая причина: {{detail}}",
+  "db.backend.error.typesense_changes_partial": "Ошибка после применения {{applied}} / {{total}} изменений (в Typesense нет транзакций, применённые изменения не откатываются): {{detail}}",
+  "db.backend.error.typesense_document_exists": "Документ с id {{id}} уже существует",
+  "db.backend.error.typesense_document_not_found": "Документ с id {{id}} не существует (возможно, он удалён)",
+  "db.backend.error.typesense_id_required": "Для операции «{{action}}» нужно значение в столбце id",
+  "db.backend.error.typesense_value_invalid": "Значение {{value}} поля {{field}} не является допустимым значением типа {{type}}"
 }

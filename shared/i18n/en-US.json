@@ -11995,5 +11995,21 @@
   "db.backend.error.meilisearch_document_exists": "A document with primary key {{id}} already exists",
   "db.backend.error.meilisearch_document_not_found": "The document with primary key {{id}} does not exist (it may have been deleted)",
   "db.backend.error.meilisearch_key_required": "{{action}} needs a value for the primary key {{field}}",
-  "db.backend.error.meilisearch_value_invalid": "Value {{value}} of field {{field}} is not a valid {{type}}"
+  "db.backend.error.meilisearch_value_invalid": "Value {{value}} of field {{field}} is not a valid {{type}}",
+  "datasource.variant.typesense.v0": "Typesense 0.20 – 0.23: filters can only be combined with &&, without || or parentheses; before 0.23 exact string filters need facet fields",
+  "datasource.variant.typesense.v1": "Typesense 0.24 – 0.25: filters support || and parentheses; from 0.25 numeric fields accept != and search supports offset / limit",
+  "datasource.variant.typesense.v2": "Typesense 26+: the id field accepts !=, and from 29 collections can be emptied with truncate",
+  "connection_modal.step1.hint.typesense": "Collection browsing and REST console; put the API key in the password field",
+  "db.backend.error.typesense_request_failed": "Typesense request {{method}} {{path}} failed: {{detail}}",
+  "db.backend.error.typesense_query_unsupported": "Typesense queries support SELECT … FROM collection and read-only REST requests (such as GET /collections, GET /collections/books/documents/search?q=*&query_by=title, or POST /multi_search followed by a JSON body)",
+  "db.backend.error.typesense_write_unsupported": "Write to Typesense with REST requests (POST / PUT / PATCH / DELETE /collections/… followed by a JSON body; the import endpoint takes JSON Lines), or DROP TABLE / TRUNCATE TABLE / DELETE FROM collection",
+  "db.backend.error.typesense_body_invalid": "The request body is not valid JSON",
+  "db.backend.error.typesense_collection_not_found": "Collection {{collection}} does not exist",
+  "db.backend.error.typesense_scan_too_large": "Collection {{collection}} has {{count}} documents, more than the client-side filter / sort limit of {{limit}}: filter only on indexed schema fields (strings with equals / IN, numbers with comparisons) and sort on sortable fields (numbers, or strings with sort: true)",
+  "db.backend.error.typesense_import_failed": "{{failed}} of {{total}} imported documents failed; first reason: {{detail}}",
+  "db.backend.error.typesense_changes_partial": "Failed after {{applied}} / {{total}} changes were applied (Typesense has no transactions; applied changes are not rolled back): {{detail}}",
+  "db.backend.error.typesense_document_exists": "A document with id {{id}} already exists",
+  "db.backend.error.typesense_document_not_found": "The document with id {{id}} does not exist (it may have been deleted)",
+  "db.backend.error.typesense_id_required": "{{action}} needs a value in the id column",
+  "db.backend.error.typesense_value_invalid": "Value {{value}} of field {{field}} is not a valid {{type}}"
 }

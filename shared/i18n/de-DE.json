@@ -11995,5 +11995,21 @@
   "db.backend.error.meilisearch_document_exists": "Ein Dokument mit dem Primärschlüssel {{id}} existiert bereits",
   "db.backend.error.meilisearch_document_not_found": "Das Dokument mit dem Primärschlüssel {{id}} existiert nicht (es wurde möglicherweise gelöscht)",
   "db.backend.error.meilisearch_key_required": "{{action}} braucht einen Wert für den Primärschlüssel {{field}}",
-  "db.backend.error.meilisearch_value_invalid": "Der Wert {{value}} von Feld {{field}} ist kein gültiger Wert vom Typ {{type}}"
+  "db.backend.error.meilisearch_value_invalid": "Der Wert {{value}} von Feld {{field}} ist kein gültiger Wert vom Typ {{type}}",
+  "datasource.variant.typesense.v0": "Typesense 0.20 – 0.23: Filter lassen sich nur mit && kombinieren, ohne || und Klammern; vor 0.23 brauchen exakte Zeichenkettenfilter Facet-Felder",
+  "datasource.variant.typesense.v1": "Typesense 0.24 – 0.25: Filter mit || und Klammern; ab 0.25 erlauben Zahlenfelder != und die Suche unterstützt offset / limit",
+  "datasource.variant.typesense.v2": "Typesense 26+: Das id-Feld erlaubt !=, ab 29 lassen sich Collections mit truncate leeren",
+  "connection_modal.step1.hint.typesense": "Collections durchsuchen und REST-Konsole; API-Key ins Passwortfeld eintragen",
+  "db.backend.error.typesense_request_failed": "Typesense-Anfrage {{method}} {{path}} fehlgeschlagen: {{detail}}",
+  "db.backend.error.typesense_query_unsupported": "Typesense-Abfragen unterstützen SELECT … FROM Collection sowie lesende REST-Anfragen (etwa GET /collections, GET /collections/books/documents/search?q=*&query_by=title oder POST /multi_search mit folgendem JSON-Body)",
+  "db.backend.error.typesense_write_unsupported": "Schreiben Sie in Typesense mit REST-Anfragen (POST / PUT / PATCH / DELETE /collections/… mit folgendem JSON-Body; der Import-Endpunkt erwartet JSON Lines) oder mit DROP TABLE / TRUNCATE TABLE / DELETE FROM Collection",
+  "db.backend.error.typesense_body_invalid": "Der Anfrage-Body ist kein gültiges JSON",
+  "db.backend.error.typesense_collection_not_found": "Collection {{collection}} existiert nicht",
+  "db.backend.error.typesense_scan_too_large": "Collection {{collection}} enthält {{count}} Dokumente und damit mehr als das clientseitige Filter- / Sortierlimit von {{limit}}: Filtern Sie nur auf indizierten Schema-Feldern (Zeichenketten mit Gleich / IN, Zahlen mit Vergleichen) und sortieren Sie nach sortierbaren Feldern (Zahlen oder Zeichenketten mit sort: true)",
+  "db.backend.error.typesense_import_failed": "{{failed}} von {{total}} importierten Dokumenten sind fehlgeschlagen; erster Grund: {{detail}}",
+  "db.backend.error.typesense_changes_partial": "Fehler, nachdem {{applied}} / {{total}} Änderungen übernommen wurden (Typesense kennt keine Transaktionen; übernommene Änderungen werden nicht zurückgerollt): {{detail}}",
+  "db.backend.error.typesense_document_exists": "Ein Dokument mit der id {{id}} existiert bereits",
+  "db.backend.error.typesense_document_not_found": "Das Dokument mit der id {{id}} existiert nicht (es wurde möglicherweise gelöscht)",
+  "db.backend.error.typesense_id_required": "{{action}} braucht einen Wert in der id-Spalte",
+  "db.backend.error.typesense_value_invalid": "Der Wert {{value}} von Feld {{field}} ist kein gültiger Wert vom Typ {{type}}"
 }

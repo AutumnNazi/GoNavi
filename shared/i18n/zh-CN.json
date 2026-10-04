@@ -11995,5 +11995,21 @@
   "db.backend.error.meilisearch_document_exists": "主键为 {{id}} 的文档已存在",
   "db.backend.error.meilisearch_document_not_found": "主键为 {{id}} 的文档不存在（可能已被删除）",
   "db.backend.error.meilisearch_key_required": "{{action}}需要主键 {{field}} 的值",
-  "db.backend.error.meilisearch_value_invalid": "字段 {{field}} 的值 {{value}} 不是有效的 {{type}}"
+  "db.backend.error.meilisearch_value_invalid": "字段 {{field}} 的值 {{value}} 不是有效的 {{type}}",
+  "datasource.variant.typesense.v0": "Typesense 0.20 – 0.23：过滤只能用 && 组合，没有 || 与括号；0.23 之前字符串精确过滤要求 facet 字段",
+  "datasource.variant.typesense.v1": "Typesense 0.24 – 0.25：过滤支持 || 与括号；0.25 起数值字段可用 !=、搜索支持 offset / limit",
+  "datasource.variant.typesense.v2": "Typesense 26+：id 字段可用 !=，29 起可用 truncate 清空集合",
+  "connection_modal.step1.hint.typesense": "集合浏览、REST 控制台；密码处填写 API key",
+  "db.backend.error.typesense_request_failed": "Typesense 请求 {{method}} {{path}} 失败：{{detail}}",
+  "db.backend.error.typesense_query_unsupported": "Typesense 查询支持 SELECT … FROM 集合，以及只读的 REST 请求（如 GET /collections、GET /collections/books/documents/search?q=*&query_by=title，或 POST /multi_search 换行后跟 JSON 请求体）",
+  "db.backend.error.typesense_write_unsupported": "Typesense 写入请使用 REST 请求（POST / PUT / PATCH / DELETE /collections/…，换行后跟 JSON 请求体；导入接口的请求体是 JSON Lines），或 DROP TABLE / TRUNCATE TABLE / DELETE FROM 集合",
+  "db.backend.error.typesense_body_invalid": "请求体不是有效的 JSON",
+  "db.backend.error.typesense_collection_not_found": "集合 {{collection}} 不存在",
+  "db.backend.error.typesense_scan_too_large": "集合 {{collection}} 有 {{count}} 个文档，超过客户端筛选 / 排序上限 {{limit}}：请只用 schema 里建了索引的字段过滤（字符串用等于 / IN，数值可比较大小），排序字段需可排序（数值字段，或 sort: true 的字符串）",
+  "db.backend.error.typesense_import_failed": "导入的 {{total}} 个文档中有 {{failed}} 个失败，第一条原因：{{detail}}",
+  "db.backend.error.typesense_changes_partial": "已提交 {{applied}} / {{total}} 项改动后失败（Typesense 不支持事务，已提交的改动不会回滚）：{{detail}}",
+  "db.backend.error.typesense_document_exists": "id 为 {{id}} 的文档已存在",
+  "db.backend.error.typesense_document_not_found": "id 为 {{id}} 的文档不存在（可能已被删除）",
+  "db.backend.error.typesense_id_required": "{{action}}需要 id 列的值",
+  "db.backend.error.typesense_value_invalid": "字段 {{field}} 的值 {{value}} 不是有效的 {{type}}"
 }

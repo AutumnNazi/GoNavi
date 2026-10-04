@@ -1,7 +1,7 @@
 // 非 SQL 查询语言的描述表数据源按方言判定语句是否只读（只读保护、写操作提示与事务托管共用）。
 // 规则与 Go 侧一致：Weaviate 见 internal/db/weaviate_command.go，InfluxDB 见 internal/db/influxdb_command.go，
 // etcd 见 internal/db/etcd_command.go，ZooKeeper 见 internal/db/zookeeper_command.go，
-// Meilisearch 见 internal/db/meilisearch_command.go。
+// Meilisearch 见 internal/db/meilisearch_command.go，Typesense 见 internal/db/typesense_command.go。
 // 分类器返回 undefined 表示交给通用 SQL 规则（如 InfluxQL、InfluxDB 3.x 的 SQL）。
 
 type ReadOnlyClassifier = (statement: string) => boolean | undefined;
@@ -91,12 +91,29 @@ export const isReadOnlyMeilisearchCommand = (statement: string): boolean => {
   });
 };
 
+/** Typesense：每个「METHOD /path」请求行都是 GET / HEAD（含搜索与导出）或 POST /multi_search 时只读；非 REST 文本只有 SELECT 只读。 */
+export const isReadOnlyTypesenseCommand = (statement: string): boolean => {
+  const text = String(statement || '').trim();
+  const lines = text.split(/\r?\n/);
+  if (!WEAVIATE_REST_LINE.test(lines[0].trim())) {
+    return /^select\b/i.test(text);
+  }
+  return lines
+    .map((line) => WEAVIATE_REST_LINE.exec(line.trim()))
+    .filter((match): match is RegExpExecArray => match !== null)
+    .every((match) => {
+      const method = match[1].toUpperCase();
+      return method === 'GET' || method === 'HEAD' || (method === 'POST' && match[2].split('?')[0].replace(/\/$/, '') === '/multi_search');
+    });
+};
+
 const REGISTRY_READ_ONLY_CLASSIFIERS: Record<string, ReadOnlyClassifier> = {
   weaviate: isReadOnlyWeaviateCommand,
   influxdb: classifyInfluxDBStatement,
   etcd: isReadOnlyEtcdCommand,
   zookeeper: isReadOnlyZooKeeperCommand,
   meilisearch: isReadOnlyMeilisearchCommand,
+  typesense: isReadOnlyTypesenseCommand,
 };
 
 /** 返回该方言的只读判定函数；SQL 方言返回 undefined，交给通用 SQL 规则。 */

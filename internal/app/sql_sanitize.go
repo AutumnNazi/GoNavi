@@ -470,6 +470,8 @@ func isReadOnlySQLQuery(dbType string, query string) bool {
 		return db.IsWeaviateReadCommand(query)
 	case "meilisearch":
 		return db.IsMeilisearchReadCommand(query)
+	case "typesense":
+		return db.IsTypesenseReadCommand(query)
 	case "etcd":
 		return db.IsEtcdReadCommand(query)
 	case "zookeeper":
