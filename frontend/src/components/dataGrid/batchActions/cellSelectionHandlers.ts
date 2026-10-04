@@ -3,6 +3,11 @@ import { canSelectGridCellForClipboard } from '../../dataGridSelectionCopy';
 import {
   parseDataGridClipboardData, buildDataGridClipboardPasteRows,
 } from '../../dataGridClipboardPaste';
+import {
+  DATA_GRID_PASTE_OVERFLOW_MESSAGE_KEY, DATA_GRID_PASTE_SKIP_MESSAGE_KEYS,
+  countDataGridPasteOverflow, resolveDataGridPasteGateReason, resolveDataGridPasteMatrixReason,
+  traceDataGridPaste, type DataGridPasteSkipReason,
+} from '../../dataGridClipboardPasteFeedback';
 import type {
   CellSelectionAutoScrollViewport, CellSelectionAutoScrollController, DataGridBatchActionsContext,
 } from '../../useDataGridBatchActions';
@@ -220,22 +225,62 @@ export const createCellSelectionHandlers = ({
     });
   };
 
+  const reportPasteSkipped = (
+    reason: DataGridPasteSkipReason,
+    e: ClipboardEvent,
+    activeElement: HTMLElement | null,
+  ) => {
+    traceDataGridPaste(`skipped: ${reason}`, {
+      clipboardTypes: e.clipboardData?.types,
+      activeElement,
+      canModifyData,
+      cellEditMode: cellEditModeRef.current,
+      hasAnchor: !!selectionStartRef.current,
+    });
+    void message.info(translateDataGrid(DATA_GRID_PASTE_SKIP_MESSAGE_KEYS[reason]));
+  };
+
   const onPaste = (e: ClipboardEvent) => {
-    if (!canModifyData || !selectionStartRef.current) return;
+    const start = selectionStartRef.current;
     const activeElement = document.activeElement as HTMLElement | null;
     const eventTarget = e.target instanceof HTMLElement ? e.target : null;
     const nativePasteGuard = 'input, textarea, select, [contenteditable="true"], .ant-modal, .ant-dropdown, .ant-select-dropdown, .ant-picker-dropdown, .ant-popover';
-    if (activeElement?.closest(nativePasteGuard) || eventTarget?.closest(nativePasteGuard)) return;
+    if (activeElement?.closest(nativePasteGuard) || eventTarget?.closest(nativePasteGuard)) {
+      if (start) {
+        traceDataGridPaste('skipped: focus is in a native editable target', {
+          clipboardTypes: e.clipboardData?.types,
+          activeElement,
+        });
+      }
+      return;
+    }
+
+    const gateReason = resolveDataGridPasteGateReason({
+      canModifyData,
+      hasAnchor: !!start,
+      cellEditMode: cellEditModeRef.current,
+    });
+    if (gateReason === 'ignore') return;
+    if (gateReason !== null || !start) {
+      reportPasteSkipped(gateReason ?? 'no-anchor', e, activeElement);
+      return;
+    }
 
     const clipboardData = e.clipboardData;
+    traceDataGridPaste('received', { clipboardTypes: clipboardData?.types, activeElement });
     const matrix = parseDataGridClipboardData(clipboardData);
-    if (matrix.length === 0) return;
 
     const currentRows = displayDataRef.current;
-    const start = selectionStartRef.current;
     const startRowIndex = currentRows.findIndex((row) => rowKeyStr(row?.[GONAVI_ROW_KEY]) === start.rowKey);
     const startColumnIndex = columnIndexMap.get(start.colName) ?? -1;
-    if (startRowIndex === -1 || startColumnIndex === -1) return;
+    const matrixReason = resolveDataGridPasteMatrixReason({
+      matrix,
+      anchorResolved: startRowIndex !== -1 && startColumnIndex !== -1,
+    });
+    if (matrixReason) {
+      reportPasteSkipped(matrixReason, e, activeElement);
+      return;
+    }
 
     let targetCells: Array<{ rowIndex: number; columnIndex: number }> | undefined;
     if (matrix.length === 1 && matrix[0]?.length === 1 && currentSelectionRef.current.size > 1) {
@@ -310,6 +355,18 @@ export const createCellSelectionHandlers = ({
       rows: result.rows.length,
       cells: result.updatedCellCount,
     }));
+
+    // 单值填充选区不受边界约束；矩阵粘贴超出表格范围的行列没有落点，需要明确告知。
+    const overflow = targetCells ? { rows: 0, columns: 0 } : countDataGridPasteOverflow({
+      matrix,
+      startRowIndex,
+      startColumnIndex,
+      rowCount: currentRows.length,
+      columnCount: displayColumnNames.length,
+    });
+    if (overflow.rows > 0 || overflow.columns > 0) {
+      void message.warning(translateDataGrid(DATA_GRID_PASTE_OVERFLOW_MESSAGE_KEY, overflow));
+    }
   };
   return {
     onKeyDown, onMouseDown, onMouseMove, onMouseUp, onClickCapture, onScroll, onPaste,
