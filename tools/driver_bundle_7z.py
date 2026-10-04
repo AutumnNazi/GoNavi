@@ -2,8 +2,11 @@
 
 The deflate ZIP bundle grew past GitHub's 2 GiB release asset limit. LZMA2 with a
 large dictionary lets agents of the same platform share their Go runtime and
-library code across files; on real windows-amd64 agents the solid 7z is ~27% of
-the deflate size.
+library code across files. The fast preset (-mx=1, hash-chain match finder) keeps
+that cross-file gain while staying faster than the former single-threaded ZIP
+bundle: on the real windows-amd64 agents with 4 threads it wrote 31% of the
+deflate size in 23s versus 89s for the ZIP; -mx=9 only reached 25% and took 245s.
+A 128 MiB dictionary compresses as well as 256 MiB and halves decoder memory.
 
 The GoNavi app reads the bundle with github.com/bodgit/sevenzip, so the filters
 used here must stay within what that reader decodes: x86 BCJ is supported, the
@@ -23,7 +26,7 @@ BUNDLE_NAME = "GoNavi-DriverAgents.7z"
 LEGACY_BUNDLE_NAME = "GoNavi-DriverAgents.zip"
 SEVEN_ZIP_ENV = "GONAVI_7Z"
 SEVEN_ZIP_CANDIDATES = ("7zz", "7z", "7za", "7zr")
-COMPRESSION_ARGS = ("-t7z", "-m0=lzma2", "-mx=9", "-md=256m", "-ms=on", "-mmt=on")
+COMPRESSION_ARGS = ("-t7z", "-m0=lzma2", "-mx=1", "-md=128m", "-ms=on", "-mmt=on")
 FILTER_BY_ARCH = {"amd64": "BCJ", "arm64": "off"}
 ARCH_RE = re.compile(r"-(amd64|arm64)(?:\.exe)?$", re.IGNORECASE)
 WINDOWS_AMD64_SUPPORT_FILES = {"duckdb.dll"}
