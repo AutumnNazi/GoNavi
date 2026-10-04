@@ -11964,5 +11964,16 @@
   "db.backend.error.yashandb_client_library_missing": "客户端目录 {{dir}} 下没有 yacli 库（Windows 为 lib\\yascli.dll，Linux 为 lib/libyascli.so），请确认安装的是崖山客户端",
   "db.backend.error.yashandb_client_load_failed": "加载崖山客户端库失败（{{path}}）：{{detail}}。请确认客户端 lib 目录完整，且客户端与本机架构一致",
   "db.backend.error.yashandb_connect_failed": "无法连接崖山：{{detail}}",
-  "table_designer.sql.informix_drop_primary_key_manual": "GBase 8s / Informix 删除主键需要约束名：请先在 DDL 里找到 PRIMARY KEY 的约束名，执行 ALTER TABLE 表名 DROP CONSTRAINT 约束名"
+  "datasource.variant.firebird.v25": "Firebird 2.5：默认按 Legacy_Auth 认证；没有标识列、布尔类型、PSQL 函数与包",
+  "datasource.variant.firebird.v30": "Firebird 3.0：Srp 认证与线路加密，支持标识列、布尔类型、PSQL 函数与包",
+  "datasource.variant.firebird.v40": "Firebird 4.0 / 5.0：Srp256 认证，支持带时区的时间类型、INT128、DECFLOAT、BINARY / VARBINARY",
+  "connection_modal.step1.hint.firebird": "开源关系型数据库 / Firebird 2.5 – 5.0",
+  "connection_modal.field.firebird.database": "数据库",
+  "connection_modal.field.firebird.database.help": "服务端上的数据库文件路径（如 /var/lib/firebird/data/app.fdb、C:\\data\\app.fdb）或 databases.conf 里的别名",
+  "db.backend.error.firebird_database_required": "请填写 Firebird 数据库文件路径或别名",
+  "db.backend.error.firebird_connect_failed": "无法连接 Firebird：{{detail}}",
+  "db.backend.error.firebird_object_not_found": "数据库里没有对象 {{name}}",
+  "db.backend.error.grid_update_requires_key": "这张表没有可用于定位行的主键，无法在网格里修改",
+  "table_designer.sql.informix_drop_primary_key_manual": "GBase 8s / Informix 删除主键需要约束名：请先在 DDL 里找到 PRIMARY KEY 的约束名，执行 ALTER TABLE 表名 DROP CONSTRAINT 约束名",
+  "table_designer.sql.firebird_drop_primary_key_manual": "Firebird 删除主键需要约束名：请先在 DDL 里找到 PRIMARY KEY 的约束名，执行 ALTER TABLE 表名 DROP CONSTRAINT 约束名"
 }

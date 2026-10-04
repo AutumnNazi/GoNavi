@@ -17,3 +17,9 @@ export const usesDriverObjectDefinition = (conn: any): boolean => {
   const spec = getDataSourceSpec(String(conn?.config?.type || ''));
   return Boolean(spec && (spec.ui?.driverObjectDefinitions || (!spec.ddlDialect && spec.wire !== 'http')));
 };
+
+// 序列定义是否交给驱动：只用于声明 ui.driverObjectDefinitions、且前端没有该方言序列查询的数据源（如 Firebird 的生成器）。
+export const usesDriverSequenceDefinition = (conn: any, queries: string[]): boolean => (
+  Boolean(getDataSourceSpec(String(conn?.config?.type || ''))?.ui?.driverObjectDefinitions)
+  && (!queries.length || String(queries[0] || '').startsWith('--'))
+);

@@ -134,8 +134,8 @@ export const resolveTableDesignerTableInfo = ({
       schema = '';
     } else if (isSqlServerDialect(dialect)) {
       schema = 'dbo';
-    } else if (getDataSourceDialectFamily(dialect) === 'informix') {
-      // Informix 的 a.b 是 owner.table，库名不能当限定符；连接本身已经选定库。
+    } else if (['informix', 'firebird'].includes(getDataSourceDialectFamily(dialect) ?? '')) {
+      // Informix 的 a.b 是 owner.table、Firebird 没有 schema，库名都不能当限定符；连接本身已经选定库。
       schema = '';
     } else if (isOracleLikeDialect(dialect)) {
       schema = stripIdentifierQuotes(rawDb, dialect);

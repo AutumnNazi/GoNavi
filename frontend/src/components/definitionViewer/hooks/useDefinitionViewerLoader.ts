@@ -8,7 +8,7 @@ import { buildRpcConnectionConfig } from '../../../utils/connectionRpcConfig';
 import { buildDisplayDefinitionSql } from '../definitionViewerSql';
 import { formatDdlForDisplay } from '../../../utils/ddlFormat';
 import { resolveDefinitionViewerObjectMeta } from '../../definitionViewerObjectMeta';
-import { usesDriverObjectDefinition, usesBackendViewDefinition } from '../../definitionViewerDialect';
+import { usesDriverObjectDefinition, usesDriverSequenceDefinition, usesBackendViewDefinition } from '../../definitionViewerDialect';
 import type { DefinitionViewerStateApi } from './useDefinitionViewerState';
 import type { DefinitionViewerProps } from '../../DefinitionViewer';
 
@@ -238,6 +238,7 @@ export const useDefinitionViewerLoader = ({
               return { success: false, error: t('definition_viewer.error.sequence_name_empty') };
           }
           queries = buildShowSequenceQueries(dialect, sequenceName, dbName);
+          backendRoutine = usesDriverSequenceDefinition(conn, queries);
           extractFn = extractSequenceDefinition;
           resolvedObjectLabel = t('definition_viewer.object.sequence');
           resolvedObjectName = sequenceName;

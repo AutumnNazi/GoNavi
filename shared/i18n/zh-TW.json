@@ -11964,5 +11964,16 @@
   "db.backend.error.yashandb_client_library_missing": "用戶端目錄 {{dir}} 下沒有 yacli 程式庫（Windows 為 lib\\yascli.dll，Linux 為 lib/libyascli.so），請確認安裝的是崖山用戶端",
   "db.backend.error.yashandb_client_load_failed": "載入崖山用戶端程式庫失敗（{{path}}）：{{detail}}。請確認用戶端 lib 目錄完整，且用戶端與本機架構一致",
   "db.backend.error.yashandb_connect_failed": "無法連線崖山：{{detail}}",
-  "table_designer.sql.informix_drop_primary_key_manual": "GBase 8s / Informix 刪除主鍵需要約束名稱：請先在 DDL 中找到 PRIMARY KEY 的約束名稱，執行 ALTER TABLE 表名 DROP CONSTRAINT 約束名稱"
+  "datasource.variant.firebird.v25": "Firebird 2.5：預設以 Legacy_Auth 驗證；沒有識別欄、布林型別、PSQL 函式與套件",
+  "datasource.variant.firebird.v30": "Firebird 3.0：Srp 驗證與線路加密，支援識別欄、布林型別、PSQL 函式與套件",
+  "datasource.variant.firebird.v40": "Firebird 4.0 / 5.0：Srp256 驗證，支援帶時區的時間型別、INT128、DECFLOAT、BINARY / VARBINARY",
+  "connection_modal.step1.hint.firebird": "開源關聯式資料庫 / Firebird 2.5 – 5.0",
+  "connection_modal.field.firebird.database": "資料庫",
+  "connection_modal.field.firebird.database.help": "伺服端上的資料庫檔案路徑（如 /var/lib/firebird/data/app.fdb、C:\\data\\app.fdb）或 databases.conf 中的別名",
+  "db.backend.error.firebird_database_required": "請填寫 Firebird 資料庫檔案路徑或別名",
+  "db.backend.error.firebird_connect_failed": "無法連線 Firebird：{{detail}}",
+  "db.backend.error.firebird_object_not_found": "資料庫中沒有物件 {{name}}",
+  "db.backend.error.grid_update_requires_key": "這張表沒有可用於定位列的主鍵，無法在網格中修改",
+  "table_designer.sql.informix_drop_primary_key_manual": "GBase 8s / Informix 刪除主鍵需要約束名稱：請先在 DDL 中找到 PRIMARY KEY 的約束名稱，執行 ALTER TABLE 表名 DROP CONSTRAINT 約束名稱",
+  "table_designer.sql.firebird_drop_primary_key_manual": "Firebird 刪除主鍵需要約束名稱：請先在 DDL 中找到 PRIMARY KEY 的約束名稱，執行 ALTER TABLE 表名 DROP CONSTRAINT 約束名稱"
 }

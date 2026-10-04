@@ -11964,5 +11964,16 @@
   "db.backend.error.yashandb_client_library_missing": "В каталоге клиента {{dir}} нет библиотеки yacli (lib\\yascli.dll в Windows, lib/libyascli.so в Linux); проверьте, что там установлен клиент YashanDB",
   "db.backend.error.yashandb_client_load_failed": "Не удалось загрузить библиотеку клиента YashanDB ({{path}}): {{detail}}. Проверьте, что каталог lib клиента полный и соответствует архитектуре машины",
   "db.backend.error.yashandb_connect_failed": "Не удаётся подключиться к YashanDB: {{detail}}",
-  "table_designer.sql.informix_drop_primary_key_manual": "Для удаления первичного ключа в GBase 8s / Informix нужно имя ограничения: найдите ограничение PRIMARY KEY в DDL и выполните ALTER TABLE <таблица> DROP CONSTRAINT <имя>"
+  "datasource.variant.firebird.v25": "Firebird 2.5: по умолчанию аутентификация Legacy_Auth; нет столбцов идентификации, BOOLEAN, функций PSQL и пакетов",
+  "datasource.variant.firebird.v30": "Firebird 3.0: аутентификация Srp и шифрование канала; столбцы идентификации, BOOLEAN, функции PSQL и пакеты",
+  "datasource.variant.firebird.v40": "Firebird 4.0 / 5.0: аутентификация Srp256; типы времени с часовым поясом, INT128, DECFLOAT, BINARY / VARBINARY",
+  "connection_modal.step1.hint.firebird": "СУБД с открытым исходным кодом / Firebird 2.5 – 5.0",
+  "connection_modal.field.firebird.database": "База данных",
+  "connection_modal.field.firebird.database.help": "Путь к файлу базы данных на сервере (например, /var/lib/firebird/data/app.fdb или C:\\data\\app.fdb) или псевдоним из databases.conf",
+  "db.backend.error.firebird_database_required": "Укажите путь к файлу базы данных Firebird или псевдоним",
+  "db.backend.error.firebird_connect_failed": "Не удаётся подключиться к Firebird: {{detail}}",
+  "db.backend.error.firebird_object_not_found": "Объект {{name}} не найден в базе данных",
+  "db.backend.error.grid_update_requires_key": "У таблицы нет первичного ключа для определения строк, поэтому её нельзя редактировать в сетке",
+  "table_designer.sql.informix_drop_primary_key_manual": "Для удаления первичного ключа в GBase 8s / Informix нужно имя ограничения: найдите ограничение PRIMARY KEY в DDL и выполните ALTER TABLE <таблица> DROP CONSTRAINT <имя>",
+  "table_designer.sql.firebird_drop_primary_key_manual": "Для удаления первичного ключа в Firebird нужно имя ограничения: найдите ограничение PRIMARY KEY в DDL и выполните ALTER TABLE <таблица> DROP CONSTRAINT <имя>"
 }

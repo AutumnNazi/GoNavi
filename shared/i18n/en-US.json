@@ -11964,5 +11964,16 @@
   "db.backend.error.yashandb_client_library_missing": "No yacli library in the client directory {{dir}} (lib\\yascli.dll on Windows, lib/libyascli.so on Linux); make sure the YashanDB client is installed there",
   "db.backend.error.yashandb_client_load_failed": "Failed to load the YashanDB client library ({{path}}): {{detail}}. Make sure the client lib directory is complete and matches this machine's architecture",
   "db.backend.error.yashandb_connect_failed": "Cannot connect to YashanDB: {{detail}}",
-  "table_designer.sql.informix_drop_primary_key_manual": "Dropping a primary key on GBase 8s / Informix needs the constraint name: find the PRIMARY KEY constraint in the DDL and run ALTER TABLE <table> DROP CONSTRAINT <name>"
+  "datasource.variant.firebird.v25": "Firebird 2.5: authenticates with Legacy_Auth by default; no identity columns, BOOLEAN, PSQL functions or packages",
+  "datasource.variant.firebird.v30": "Firebird 3.0: Srp authentication and wire encryption; identity columns, BOOLEAN, PSQL functions and packages",
+  "datasource.variant.firebird.v40": "Firebird 4.0 / 5.0: Srp256 authentication; time zone types, INT128, DECFLOAT, BINARY / VARBINARY",
+  "connection_modal.step1.hint.firebird": "Open-source RDBMS / Firebird 2.5 – 5.0",
+  "connection_modal.field.firebird.database": "Database",
+  "connection_modal.field.firebird.database.help": "Database file path on the server (e.g. /var/lib/firebird/data/app.fdb or C:\\data\\app.fdb) or an alias from databases.conf",
+  "db.backend.error.firebird_database_required": "Enter the Firebird database file path or alias",
+  "db.backend.error.firebird_connect_failed": "Cannot connect to Firebird: {{detail}}",
+  "db.backend.error.firebird_object_not_found": "Object {{name}} does not exist in the database",
+  "db.backend.error.grid_update_requires_key": "This table has no primary key to identify rows, so it cannot be edited in the grid",
+  "table_designer.sql.informix_drop_primary_key_manual": "Dropping a primary key on GBase 8s / Informix needs the constraint name: find the PRIMARY KEY constraint in the DDL and run ALTER TABLE <table> DROP CONSTRAINT <name>",
+  "table_designer.sql.firebird_drop_primary_key_manual": "Dropping a primary key on Firebird needs the constraint name: find the PRIMARY KEY constraint in the DDL and run ALTER TABLE <table> DROP CONSTRAINT <name>"
 }

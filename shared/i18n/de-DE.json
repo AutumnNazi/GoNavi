@@ -11964,5 +11964,16 @@
   "db.backend.error.yashandb_client_library_missing": "Keine yacli-Bibliothek im Client-Verzeichnis {{dir}} (lib\\yascli.dll unter Windows, lib/libyascli.so unter Linux); prüfen, ob dort der YashanDB-Client installiert ist",
   "db.backend.error.yashandb_client_load_failed": "Laden der YashanDB-Clientbibliothek fehlgeschlagen ({{path}}): {{detail}}. Prüfen, ob das lib-Verzeichnis des Clients vollständig ist und zur Architektur passt",
   "db.backend.error.yashandb_connect_failed": "Verbindung zu YashanDB nicht möglich: {{detail}}",
-  "table_designer.sql.informix_drop_primary_key_manual": "Zum Löschen eines Primärschlüssels unter GBase 8s / Informix wird der Constraint-Name benötigt: PRIMARY-KEY-Constraint in der DDL suchen und ALTER TABLE <Tabelle> DROP CONSTRAINT <Name> ausführen"
+  "datasource.variant.firebird.v25": "Firebird 2.5: standardmäßig Legacy_Auth-Authentifizierung; keine Identity-Spalten, BOOLEAN, PSQL-Funktionen oder Packages",
+  "datasource.variant.firebird.v30": "Firebird 3.0: Srp-Authentifizierung und Verbindungsverschlüsselung; Identity-Spalten, BOOLEAN, PSQL-Funktionen und Packages",
+  "datasource.variant.firebird.v40": "Firebird 4.0 / 5.0: Srp256-Authentifizierung; Zeittypen mit Zeitzone, INT128, DECFLOAT, BINARY / VARBINARY",
+  "connection_modal.step1.hint.firebird": "Open-Source-RDBMS / Firebird 2.5 – 5.0",
+  "connection_modal.field.firebird.database": "Datenbank",
+  "connection_modal.field.firebird.database.help": "Pfad der Datenbankdatei auf dem Server (z. B. /var/lib/firebird/data/app.fdb oder C:\\data\\app.fdb) oder ein Alias aus databases.conf",
+  "db.backend.error.firebird_database_required": "Pfad oder Alias der Firebird-Datenbank angeben",
+  "db.backend.error.firebird_connect_failed": "Verbindung zu Firebird nicht möglich: {{detail}}",
+  "db.backend.error.firebird_object_not_found": "Objekt {{name}} existiert nicht in der Datenbank",
+  "db.backend.error.grid_update_requires_key": "Die Tabelle hat keinen Primärschlüssel zur Identifizierung von Zeilen und kann nicht im Raster bearbeitet werden",
+  "table_designer.sql.informix_drop_primary_key_manual": "Zum Löschen eines Primärschlüssels unter GBase 8s / Informix wird der Constraint-Name benötigt: PRIMARY-KEY-Constraint in der DDL suchen und ALTER TABLE <Tabelle> DROP CONSTRAINT <Name> ausführen",
+  "table_designer.sql.firebird_drop_primary_key_manual": "Zum Löschen eines Primärschlüssels in Firebird wird der Constraint-Name benötigt: PRIMARY-KEY-Constraint in der DDL suchen und ALTER TABLE <Tabelle> DROP CONSTRAINT <Name> ausführen"
 }

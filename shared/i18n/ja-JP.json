@@ -11964,5 +11964,16 @@
   "db.backend.error.yashandb_client_library_missing": "クライアントディレクトリ {{dir}} に yacli ライブラリがありません（Windows は lib\\yascli.dll、Linux は lib/libyascli.so）。YashanDB クライアントがインストールされているか確認してください",
   "db.backend.error.yashandb_client_load_failed": "YashanDB クライアントライブラリの読み込みに失敗しました（{{path}}）：{{detail}}。クライアントの lib が揃っており、アーキテクチャが一致しているか確認してください",
   "db.backend.error.yashandb_connect_failed": "YashanDB に接続できません：{{detail}}",
-  "table_designer.sql.informix_drop_primary_key_manual": "GBase 8s / Informix で主キーを削除するには制約名が必要です。DDL で PRIMARY KEY の制約名を確認し、ALTER TABLE <テーブル> DROP CONSTRAINT <制約名> を実行してください"
+  "datasource.variant.firebird.v25": "Firebird 2.5：既定で Legacy_Auth 認証。ID 列、BOOLEAN、PSQL 関数、パッケージなし",
+  "datasource.variant.firebird.v30": "Firebird 3.0：Srp 認証と通信暗号化。ID 列、BOOLEAN、PSQL 関数、パッケージに対応",
+  "datasource.variant.firebird.v40": "Firebird 4.0 / 5.0：Srp256 認証。タイムゾーン付き時刻型、INT128、DECFLOAT、BINARY / VARBINARY に対応",
+  "connection_modal.step1.hint.firebird": "オープンソース RDBMS / Firebird 2.5 – 5.0",
+  "connection_modal.field.firebird.database": "データベース",
+  "connection_modal.field.firebird.database.help": "サーバー上のデータベースファイルのパス（例：/var/lib/firebird/data/app.fdb、C:\\data\\app.fdb）または databases.conf のエイリアス",
+  "db.backend.error.firebird_database_required": "Firebird のデータベースファイルのパスまたはエイリアスを入力してください",
+  "db.backend.error.firebird_connect_failed": "Firebird に接続できません：{{detail}}",
+  "db.backend.error.firebird_object_not_found": "データベースにオブジェクト {{name}} がありません",
+  "db.backend.error.grid_update_requires_key": "このテーブルには行を特定できる主キーがないため、グリッドで編集できません",
+  "table_designer.sql.informix_drop_primary_key_manual": "GBase 8s / Informix で主キーを削除するには制約名が必要です。DDL で PRIMARY KEY の制約名を確認し、ALTER TABLE <テーブル> DROP CONSTRAINT <制約名> を実行してください",
+  "table_designer.sql.firebird_drop_primary_key_manual": "Firebird で主キーを削除するには制約名が必要です。DDL で PRIMARY KEY の制約名を確認し、ALTER TABLE <テーブル> DROP CONSTRAINT <制約名> を実行してください"
 }
