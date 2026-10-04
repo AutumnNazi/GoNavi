@@ -41,7 +41,11 @@ export default function BrandIconPicker({ value, onChange, darkMode = false, acc
     >
       {BRAND_ICONS.map((item, itemIndex) => {
         const active = value === item.id;
-        const usesBundledPreview = item.mascot === true;
+        // The bundled dark-tile icon shares the mascot-style preview (white
+        // backing sized to the ribbon tile fraction) even though it must not
+        // carry the mascot flag: that flag drives the macOS Dock safe-area
+        // inset and would shrink the running default icon.
+        const usesBundledPreview = item.mascot === true || item.bundled === true;
         return (
           <button
             key={item.id}
