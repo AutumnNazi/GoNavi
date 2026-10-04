@@ -4,7 +4,6 @@ package db
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"GoNavi-Wails/internal/connection"
@@ -12,19 +11,6 @@ import (
 
 // etcdColumns 是网格的固定列；v2 API 的 createdIndex / modifiedIndex 映射到两个修订号列，版本与租约为空。
 var etcdColumns = []string{etcdColumnKey, etcdColumnValue, etcdColumnCreateRevision, etcdColumnModRevision, etcdColumnVersion, etcdColumnLease, etcdColumnTTL}
-
-func etcdText(value interface{}) string {
-	switch typed := value.(type) {
-	case nil:
-		return ""
-	case string:
-		return typed
-	case []byte:
-		return string(typed)
-	default:
-		return fmt.Sprint(typed)
-	}
-}
 
 func etcdRowMap(row etcdKeyValue, columns []string) map[string]interface{} {
 	values := map[string]interface{}{
@@ -161,7 +147,10 @@ func (e *EtcdDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWith
 func (e *EtcdDB) GetCreateStatement(dbName, tableName string) (string, error) {
 	ctx, cancel := e.requestContext()
 	defer cancel()
-	selection := etcdSelect{table: tableName, keyRanges: etcdTableRanges(tableName, e.delimiter), limit: etcdDefaultSelectLimit}
+	selection := etcdSelect{
+		kvSelect:  kvSelect{table: tableName, limit: etcdDefaultSelectLimit},
+		keyRanges: etcdTableRanges(tableName, e.delimiter),
+	}
 	var (
 		rows []etcdKeyValue
 		err  error
@@ -176,25 +165,13 @@ func (e *EtcdDB) GetCreateStatement(dbName, tableName string) (string, error) {
 	}
 	var builder strings.Builder
 	for _, row := range rows {
-		builder.WriteString("put " + quoteEtcdArgument(row.key) + " " + quoteEtcdArgument(string(row.value)))
+		builder.WriteString("put " + quoteShellArgument(row.key) + " " + quoteShellArgument(string(row.value)))
 		if row.lease != 0 {
 			builder.WriteString(" --lease=" + formatEtcdLease(row.lease).(string))
 		}
 		builder.WriteString(";\n")
 	}
 	return builder.String(), nil
-}
-
-// quoteEtcdArgument 把参数写成控制台可解析的单行形式：普通值原样，带空格的用单引号，
-// 含换行、制表符或单引号的用双引号并转义。
-func quoteEtcdArgument(text string) string {
-	if text != "" && !strings.ContainsAny(text, " \t\r\n'\";\\") {
-		return text
-	}
-	if !strings.ContainsAny(text, "'\r\n\t") {
-		return "'" + text + "'"
-	}
-	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\t", `\t`, "\r", `\r`).Replace(text) + `"`
 }
 
 func (e *EtcdDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefinition, error) {

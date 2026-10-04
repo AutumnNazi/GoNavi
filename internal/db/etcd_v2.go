@@ -312,7 +312,7 @@ func (e *EtcdDB) v2Command(ctx context.Context, command etcdCommand) ([]map[stri
 // applyChanges 逐条写入：新增要求键不存在（prevExist=false），修改与删除以 modifiedIndex 为前提（prevIndex）。
 func (c *etcdV2Client) applyChanges(ctx context.Context, changes connection.ChangeSet) error {
 	for _, row := range changes.Deletes {
-		key := etcdText(row[etcdColumnKey])
+		key := kvText(row[etcdColumnKey])
 		if key == "" {
 			return localizedDatabaseRuntimeError("db.backend.error.etcd_key_required", nil)
 		}
@@ -321,7 +321,7 @@ func (c *etcdV2Client) applyChanges(ctx context.Context, changes connection.Chan
 		}
 	}
 	for _, update := range changes.Updates {
-		oldKey := etcdText(update.Keys[etcdColumnKey])
+		oldKey := kvText(update.Keys[etcdColumnKey])
 		current, err := c.get(ctx, oldKey, false)
 		if err != nil {
 			return err
@@ -358,17 +358,17 @@ func (c *etcdV2Client) applyChanges(ctx context.Context, changes connection.Chan
 
 func etcdV2Form(values map[string]interface{}, key, value string, ttl int64) (url.Values, string, error) {
 	if raw, ok := values[etcdColumnKey]; ok {
-		key = etcdText(raw)
+		key = kvText(raw)
 	}
 	if strings.TrimSpace(key) == "" {
 		return nil, "", localizedDatabaseRuntimeError("db.backend.error.etcd_key_required", nil)
 	}
 	if raw, ok := values[etcdColumnValue]; ok {
-		value = etcdText(raw)
+		value = kvText(raw)
 	}
 	form := url.Values{"value": {value}}
 	if raw, ok := values[etcdColumnTTL]; ok {
-		text := strings.TrimSpace(etcdText(raw))
+		text := strings.TrimSpace(kvText(raw))
 		if text != "" {
 			parsed, err := strconv.ParseInt(text, 10, 64)
 			if err != nil || parsed < 0 {

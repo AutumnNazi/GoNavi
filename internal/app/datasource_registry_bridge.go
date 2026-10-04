@@ -62,12 +62,12 @@ func registryDBNameSelectsDatabase(driverType string) bool {
 	return ok && !spec.SyntheticDatabase
 }
 
-// registryPrefersPlainReadQuery 报告描述表类型的只读查询是否走普通查询接口：PostgreSQL 协议的驱动
-// （CockroachDB、KWDB、QuestDB 等复用 PostgresDB）与 HTTP 协议的驱动（Weaviate 等一次请求一个结果）
-// 都不提供多结果集接口，与 PostgreSQL 一样逐条查询。
+// registryPrefersPlainReadQuery 报告描述表类型的只读查询是否走普通查询接口：只有复用 MySQL 驱动的类型
+// （TiDB 等）提供多结果集接口；PostgreSQL 协议（CockroachDB、KWDB、QuestDB 等复用 PostgresDB）、HTTP 协议
+// （Weaviate 等一次请求一个结果）与原生协议（ZooKeeper 等）的驱动都与 PostgreSQL 一样逐条查询。
 func registryPrefersPlainReadQuery(driverType string) bool {
 	spec, ok := db.DataSourceSpec(driverType)
-	return ok && (spec.Wire == "postgres" || spec.Wire == "http")
+	return ok && spec.Wire != "mysql"
 }
 
 // registryUsesFlatObjectNames 报告描述表类型的对象名是否整体作为一个标识符（键路径等可能含点），不能按点拆分。

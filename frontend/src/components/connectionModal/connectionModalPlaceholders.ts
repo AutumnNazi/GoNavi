@@ -124,6 +124,8 @@ export const getConnectionParamsPlaceholder = (
       return "session.query_max_run_time=30m&timeZone=Asia%2FShanghai&clientTags=gonavi";
     case "etcd":
       return "prefix=/app&endpoints=10.0.0.2:2379,10.0.0.3:2379&delimiter=/";
+    case "zookeeper":
+      return "servers=10.0.0.2:2181,10.0.0.3:2181&chroot=/app&acl=auth::cdrwa";
     case "mongodb":
       return "retryWrites=true&readPreference=secondaryPreferred";
     case "chroma":

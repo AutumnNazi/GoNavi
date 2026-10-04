@@ -1,28 +1,27 @@
 {
-  "type": "etcd",
+  "type": "zookeeper",
   "aliases": [
-    "etcd3",
-    "etcd-v3",
-    "etcdv3"
+    "zk",
+    "apache-zookeeper"
   ],
-  "displayName": "etcd",
+  "displayName": "ZooKeeper",
   "group": "config_center",
-  "order": 10,
-  "defaultPort": 2379,
-  "wire": "http",
-  "dialect": "etcd",
-  "objectKind": "key",
+  "order": 20,
+  "defaultPort": 2181,
+  "wire": "native",
+  "dialect": "zookeeper",
+  "objectKind": "node",
   "caseSensitiveIdentifiers": true,
   "syntheticDatabase": true,
   "proxyMode": "driver",
   "protection": true,
   "versionQuery": "version",
   "agent": {
-    "buildTag": "gonavi_etcd_driver",
-    "goModule": "go.etcd.io/etcd/client/v3",
-    "version": "3.6.14",
+    "buildTag": "gonavi_zookeeper_driver",
+    "goModule": "github.com/go-zookeeper/zk",
+    "version": "1.0.4",
     "sourcePrefixes": [
-      "etcd",
+      "zookeeper",
       "kv",
       "registry"
     ]
@@ -32,26 +31,26 @@
     "default": "auto",
     "items": [
       {
-        "id": "v2",
-        "label": "etcd v2 API",
-        "descriptionKey": "datasource.variant.etcd.v2",
-        "maxServer": "3.0"
+        "id": "v34",
+        "label": "ZooKeeper 3.4",
+        "descriptionKey": "datasource.variant.zookeeper.v34",
+        "maxServer": "3.5"
       },
       {
-        "id": "v3",
-        "label": "etcd v3 API",
-        "descriptionKey": "datasource.variant.etcd.v3",
-        "minServer": "3.0"
+        "id": "v35",
+        "label": "ZooKeeper 3.5+",
+        "descriptionKey": "datasource.variant.zookeeper.v35",
+        "minServer": "3.5"
       }
     ]
   },
   "ui": {
     "usernameOptional": true,
     "uriSchemes": [
-      "etcd",
-      "http",
-      "https"
+      "zookeeper",
+      "zk"
     ],
+    "extraHostsParam": "servers",
     "hiddenObjectGroups": [
       "views",
       "materializedViews",
@@ -69,11 +68,11 @@
     "tableAlias": "none",
     "formatDdl": false,
     "quoting": "double",
-    "hint": "Key-value store / etcdctl-style console",
+    "hint": "Coordination service / zkCli-style console",
     "icon": {
-      "color": "#419EDA",
-      "text": "e",
-      "scale": 0.72
+      "asset": "/db-icons/zookeeper.png",
+      "color": "#5B8C32",
+      "scale": 0.9
     }
   }
 }

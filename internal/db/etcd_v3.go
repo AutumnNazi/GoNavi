@@ -347,7 +347,7 @@ func formatEtcdLease(lease int64) interface{} {
 }
 
 func parseEtcdLease(value interface{}) (int64, error) {
-	text := strings.ToLower(strings.TrimSpace(etcdText(value)))
+	text := strings.ToLower(strings.TrimSpace(kvText(value)))
 	if text == "" || text == "0" {
 		return 0, nil
 	}

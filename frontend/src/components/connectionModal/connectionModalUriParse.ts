@@ -7,7 +7,13 @@ import {
   supportsSSLForType,
 } from "../../utils/connectionTypeCapabilities";
 import { parseRedisUriToFormValues } from "../../utils/redisConnectionUri";
-import { findRegistryUriScheme, usesHttpRegistryUri, usesTrinoStyleConnection } from "../../utils/dataSourceRegistry/uriScheme";
+import {
+  findRegistryUriScheme,
+  getRegistryExtraHostsParam,
+  usesHttpRegistryUri,
+  usesTrinoStyleConnection,
+  withRegistryUriScheme,
+} from "../../utils/dataSourceRegistry/uriScheme";
 import { extractNacosConnectionScope } from "../../utils/nacosConnectionScope";
 import {
   MAX_URI_LENGTH,
@@ -31,6 +37,7 @@ import {
   parseTrinoUriToValues,
   parseClickHouseHTTPUriToValues,
   normalizeNacosContextPath,
+  mergeRegistryExtraHosts,
 } from "./connectionModalUriSchemes";
 import { normalizeFileDbPath, resolveOracleConnectionTarget } from "./connectionModalUriParams";
 import { isElasticsearchFamilyType } from "../../utils/elasticsearchFamily";
@@ -39,7 +46,7 @@ export const parseUriToValues = (
   uriText: string,
   type: string,
 ): Record<string, any> | null => {
-  const trimmedUri = String(uriText || "").trim();
+  const trimmedUri = withRegistryUriScheme(type, String(uriText || "").trim());
   if (!trimmedUri) {
     return null;
   }
@@ -529,6 +536,7 @@ export const parseUriToValues = (
       ...(oracleTarget ? { oracleMode: oracleTarget.mode } : {}),
     };
     if (supportsConnectionParamsForType(type)) {
+      mergeRegistryExtraHosts(parsed.params, getRegistryExtraHostsParam(type), parsed.hosts, getDefaultPortByType(type));
       parsedValues.connectionParams = serializeConnectionParams(parsed.params);
     }
 

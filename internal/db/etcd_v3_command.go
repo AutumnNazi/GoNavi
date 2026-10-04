@@ -417,7 +417,7 @@ func (e *EtcdDB) v3ApplyChanges(ctx context.Context, changes connection.ChangeSe
 		return nil
 	}
 	for _, row := range changes.Deletes {
-		key := etcdText(row[etcdColumnKey])
+		key := kvText(row[etcdColumnKey])
 		if key == "" {
 			return localizedDatabaseRuntimeError("db.backend.error.etcd_key_required", nil)
 		}
@@ -426,7 +426,7 @@ func (e *EtcdDB) v3ApplyChanges(ctx context.Context, changes connection.ChangeSe
 		}
 	}
 	for _, update := range changes.Updates {
-		oldKey := etcdText(update.Keys[etcdColumnKey])
+		oldKey := kvText(update.Keys[etcdColumnKey])
 		current, err := e.v3.Get(ctx, oldKey)
 		if err != nil {
 			return err
@@ -462,13 +462,13 @@ func (e *EtcdDB) v3ApplyChanges(ctx context.Context, changes connection.ChangeSe
 // v3PutOp 根据网格的列值生成 put：value / lease / ttl 缺省时沿用原值；填写 ttl（秒）会授予新租约。
 func (e *EtcdDB) v3PutOp(ctx context.Context, values map[string]interface{}, key, value string, lease int64) (clientv3.Op, string, error) {
 	if raw, ok := values[etcdColumnKey]; ok {
-		key = etcdText(raw)
+		key = kvText(raw)
 	}
 	if strings.TrimSpace(key) == "" {
 		return clientv3.Op{}, "", localizedDatabaseRuntimeError("db.backend.error.etcd_key_required", nil)
 	}
 	if raw, ok := values[etcdColumnValue]; ok {
-		value = etcdText(raw)
+		value = kvText(raw)
 	}
 	if raw, ok := values[etcdColumnLease]; ok {
 		parsed, err := parseEtcdLease(raw)
@@ -477,10 +477,10 @@ func (e *EtcdDB) v3PutOp(ctx context.Context, values map[string]interface{}, key
 		}
 		lease = parsed
 	}
-	if raw, ok := values[etcdColumnTTL]; ok && strings.TrimSpace(etcdText(raw)) != "" {
-		ttl, err := strconv.ParseInt(strings.TrimSpace(etcdText(raw)), 10, 64)
+	if raw, ok := values[etcdColumnTTL]; ok && strings.TrimSpace(kvText(raw)) != "" {
+		ttl, err := strconv.ParseInt(strings.TrimSpace(kvText(raw)), 10, 64)
 		if err != nil || ttl < 0 {
-			return clientv3.Op{}, "", etcdFlagError(etcdColumnTTL, etcdText(raw))
+			return clientv3.Op{}, "", etcdFlagError(etcdColumnTTL, kvText(raw))
 		}
 		lease = 0
 		if ttl > 0 {

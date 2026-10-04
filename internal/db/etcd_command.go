@@ -1,8 +1,8 @@
 package db
 
 import (
+	"errors"
 	"strings"
-	"unicode"
 )
 
 // etcd 控制台命令沿用 etcdctl 的写法，v3 与 v2 API 共用一套解析：
@@ -47,7 +47,10 @@ func (c etcdCommand) subcommand() string {
 
 // parseEtcdCommand 解析一条控制台命令；引号外的结尾分号（脚本里的语句分隔符）会被忽略。
 func parseEtcdCommand(text string) (etcdCommand, error) {
-	tokens, err := tokenizeEtcdCommand(trimEtcdTerminator(text))
+	tokens, err := tokenizeShellCommand(trimShellTerminator(text))
+	if errors.Is(err, errShellUnclosedQuote) {
+		return etcdCommand{}, localizedDatabaseRuntimeError("db.backend.error.etcd_command_unclosed_quote", nil)
+	}
 	if err != nil {
 		return etcdCommand{}, err
 	}
@@ -74,114 +77,6 @@ func parseEtcdCommand(text string) (etcdCommand, error) {
 		command.flags[name] = value
 	}
 	return command, nil
-}
-
-// trimEtcdTerminator 去掉位于引号之外的结尾分号。
-func trimEtcdTerminator(text string) string {
-	text = strings.TrimSpace(text)
-	for strings.HasSuffix(text, ";") {
-		inSingle, inDouble := false, false
-		for i := 0; i < len(text)-1; i++ {
-			switch {
-			case inDouble && text[i] == '\\':
-				i++
-			case !inDouble && text[i] == '\'':
-				inSingle = !inSingle
-			case !inSingle && text[i] == '"':
-				inDouble = !inDouble
-			case !inSingle && !inDouble && text[i] == '\\':
-				i++
-			}
-		}
-		if inSingle || inDouble {
-			return text
-		}
-		text = strings.TrimSpace(text[:len(text)-1])
-	}
-	return text
-}
-
-type etcdToken struct {
-	text   string
-	quoted bool
-}
-
-// tokenizeEtcdCommand 按 shell 规则切分：空白分隔，单引号内原样，双引号内与引号外支持反斜杠转义。
-func tokenizeEtcdCommand(text string) ([]etcdToken, error) {
-	var tokens []etcdToken
-	var current strings.Builder
-	inToken, quoted := false, false
-	runes := []rune(strings.TrimSpace(text))
-	flush := func() {
-		if inToken {
-			tokens = append(tokens, etcdToken{text: current.String(), quoted: quoted})
-		}
-		current.Reset()
-		inToken, quoted = false, false
-	}
-	for i := 0; i < len(runes); i++ {
-		r := runes[i]
-		switch {
-		case r == '\'':
-			end := indexRune(runes, i+1, '\'')
-			if end < 0 {
-				return nil, localizedDatabaseRuntimeError("db.backend.error.etcd_command_unclosed_quote", nil)
-			}
-			current.WriteString(string(runes[i+1 : end]))
-			inToken, quoted, i = true, true, end
-		case r == '"':
-			inToken, quoted = true, true
-			closed := false
-			for i++; i < len(runes); i++ {
-				if runes[i] == '\\' && i+1 < len(runes) {
-					i++
-					current.WriteRune(unescapeEtcdRune(runes[i]))
-					continue
-				}
-				if runes[i] == '"' {
-					closed = true
-					break
-				}
-				current.WriteRune(runes[i])
-			}
-			if !closed {
-				return nil, localizedDatabaseRuntimeError("db.backend.error.etcd_command_unclosed_quote", nil)
-			}
-		case r == '\\' && i+1 < len(runes):
-			i++
-			current.WriteRune(unescapeEtcdRune(runes[i]))
-			inToken = true
-		case unicode.IsSpace(r):
-			flush()
-		default:
-			current.WriteRune(r)
-			inToken = true
-		}
-	}
-	flush()
-	return tokens, nil
-}
-
-func indexRune(runes []rune, from int, target rune) int {
-	for i := from; i < len(runes); i++ {
-		if runes[i] == target {
-			return i
-		}
-	}
-	return -1
-}
-
-func unescapeEtcdRune(r rune) rune {
-	switch r {
-	case 'n':
-		return '\n'
-	case 't':
-		return '\t'
-	case 'r':
-		return '\r'
-	default:
-		return r
-	}
 }
 
 // etcdReadSubcommands 是只读的二级命令（lease list、member list 等）。

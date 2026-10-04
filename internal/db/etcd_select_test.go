@@ -92,7 +92,7 @@ func TestSplitEtcdSegment(t *testing.T) {
 
 func TestQuoteEtcdArgumentRoundTrips(t *testing.T) {
 	for _, value := range []string{"plain", "with space", `{"a": 1}`, "it's", "multi\nline 'q' \"d\"", ""} {
-		command, err := parseEtcdCommand("put k " + quoteEtcdArgument(value))
+		command, err := parseEtcdCommand("put k " + quoteShellArgument(value))
 		if err != nil || len(command.args) != 2 || command.args[1] != value {
 			t.Errorf("round trip %q: %+v %v", value, command.args, err)
 		}

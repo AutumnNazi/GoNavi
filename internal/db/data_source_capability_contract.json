@@ -1428,6 +1428,7 @@
                                                      }
                  },
     "drivers":  {
+                    "zookeeper":  "kv",
                     "timescaledb":  "sql-postgres",
                     "greptimedb":  "sql-greptimedb",
                     "questdb":  "sql-questdb",

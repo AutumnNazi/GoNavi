@@ -73,6 +73,8 @@ export type DataSourceUISpec = {
   };
   // 对象名（etcd 键路径、znode 路径）整体是一个标识符，引用时不按点拆成 schema.table。
   flatObjectNames?: boolean;
+  // 连接串里第一个之外的节点存到哪个连接参数（如 ZooKeeper 的 servers），生成连接串时再并回主机段。
+  extraHostsParam?: string;
   // 表别名语法：缺省 oracle 家族为 bare，其余为 as；非 SQL 查询语言用 none。
   tableAlias?: 'as' | 'bare' | 'none';
   // 数据浏览分页语法：缺省 LIMIT n OFFSET m。

@@ -1,6 +1,6 @@
 // 非 SQL 查询语言的描述表数据源按方言判定语句是否只读（只读保护、写操作提示与事务托管共用）。
 // 规则与 Go 侧一致：Weaviate 见 internal/db/weaviate_command.go，InfluxDB 见 internal/db/influxdb_command.go，
-// etcd 见 internal/db/etcd_command.go。
+// etcd 见 internal/db/etcd_command.go，ZooKeeper 见 internal/db/zookeeper_command.go。
 // 分类器返回 undefined 表示交给通用 SQL 规则（如 InfluxQL、InfluxDB 3.x 的 SQL）。
 
 type ReadOnlyClassifier = (statement: string) => boolean | undefined;
@@ -55,10 +55,27 @@ export const isReadOnlyEtcdCommand = (statement: string): boolean => {
   return (ETCD_READ_SUBCOMMANDS[name] ?? []).includes(sub);
 };
 
+const ZOOKEEPER_READ_COMMANDS = new Set([
+  'ls', 'ls2', 'get', 'stat', 'getacl', 'sync', 'addauth', 'version', 'config', 'getallchildrennumber', 'getephemerals',
+  'listquota', 'select',
+]);
+// 四字命令里只有 crst / srst（重置服务端统计）是写操作。
+const ZOOKEEPER_READ_FOUR_LETTER_WORDS = new Set([
+  'srvr', 'stat', 'ruok', 'conf', 'envi', 'mntr', 'cons', 'wchs', 'wchc', 'wchp', 'dump', 'isro', 'dirs', 'gtmk',
+]);
+
+/** ZooKeeper：zkCli 风格命令，ls / get / stat / getAcl 等查询、只读四字命令与数据浏览的 SELECT 为只读。 */
+export const isReadOnlyZooKeeperCommand = (statement: string): boolean => {
+  const [name = '', word = ''] = String(statement || '').trim().split(/\s+/, 2).map((token) => token.toLowerCase());
+  if (name === '4lw') return ZOOKEEPER_READ_FOUR_LETTER_WORDS.has(word);
+  return ZOOKEEPER_READ_COMMANDS.has(name) || ZOOKEEPER_READ_FOUR_LETTER_WORDS.has(name);
+};
+
 const REGISTRY_READ_ONLY_CLASSIFIERS: Record<string, ReadOnlyClassifier> = {
   weaviate: isReadOnlyWeaviateCommand,
   influxdb: classifyInfluxDBStatement,
   etcd: isReadOnlyEtcdCommand,
+  zookeeper: isReadOnlyZooKeeperCommand,
 };
 
 /** 返回该方言的只读判定函数；SQL 方言返回 undefined，交给通用 SQL 规则。 */

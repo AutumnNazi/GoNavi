@@ -33,7 +33,7 @@ describe('etcd registry behavior', () => {
   it('parses http(s) and etcd:// endpoints', () => {
     expect(parseUriToValues('https://etcd-0.example.com:2379', 'etcd')).toMatchObject({ host: 'etcd-0.example.com', port: 2379, useSSL: true });
     expect(buildUriFromValues({ type: 'etcd', host: '127.0.0.1', port: 2379 }).startsWith('http://127.0.0.1:2379')).toBe(true);
-    expect(getConnectionParamsPlaceholder('etcd')).toContain('prefix=/app');
+    expect(getConnectionParamsPlaceholder('etcd', 'mysql')).toContain('prefix=/app');
   });
 
   it('classifies etcdctl-style commands like the Go driver', () => {

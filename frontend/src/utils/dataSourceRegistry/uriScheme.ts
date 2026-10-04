@@ -16,6 +16,16 @@ export const usesHttpRegistryUri = (type: unknown): boolean => {
   return spec?.wire === 'http' && schemes.includes('http') && schemes.includes('https');
 };
 
+/** 连接串里第一个之外的节点存放的连接参数（ui.extraHostsParam，如 ZooKeeper 的 servers）；未声明时返回 undefined。 */
+export const getRegistryExtraHostsParam = (type: unknown): string | undefined =>
+  getDataSourceSpec(type)?.ui?.extraHostsParam || undefined;
+
+/** 声明了 extraHostsParam 的类型接受不带 scheme 的原生节点串（如 zk1:2181,zk2:2181/kafka），解析前补上自己的 scheme。 */
+export const withRegistryUriScheme = (type: unknown, uri: string): string => {
+  const scheme = getRegistryUriScheme(type);
+  return uri && scheme && getRegistryExtraHostsParam(type) && !uri.includes('://') ? `${scheme}://${uri}` : uri;
+};
+
 /** 连接串使用了描述表声明的哪个 scheme，供借用家族解析的分支（如 MySQL 多主机解析）追加识别。 */
 export const findRegistryUriScheme = (type: unknown, uri: unknown): string | undefined => {
   const text = normalize(uri);

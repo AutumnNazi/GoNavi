@@ -149,7 +149,7 @@ func TestDriverProxyModeKeepsOriginalTarget(t *testing.T) {
 }
 
 func TestRegistryPostgresAndHTTPWireReadQueriesAvoidNativeMultiResult(t *testing.T) {
-	for _, dbType := range []string{"cockroachdb", "kwdb", "questdb", "weaviate", "opensearch"} {
+	for _, dbType := range []string{"cockroachdb", "kwdb", "questdb", "weaviate", "opensearch", "etcd", "zookeeper"} {
 		if !shouldPreferPlainReadQueryResult(dbType) || shouldUseNativeMultiResultBatch(dbType, []string{"SELECT 1"}, true) {
 			t.Fatalf("%s read queries must use the plain query path", dbType)
 		}
@@ -169,6 +169,20 @@ func TestRegistryExplainFallsBackToBorrowedDialect(t *testing.T) {
 	for dbType, want := range cases {
 		if got := resolveExplainDBType(connection.ConnectionConfig{Type: dbType}); got != want {
 			t.Fatalf("resolveExplainDBType(%s) = %s, want %s", dbType, got, want)
+		}
+	}
+}
+
+func TestRegistryConsoleReadOnlyClassification(t *testing.T) {
+	cases := map[string]map[string]bool{
+		"etcd":      {"get /app --prefix": true, "member list": true, "put /app x": false, "del /app --prefix": false},
+		"zookeeper": {"ls -R /": true, "get -s /app": true, "srvr": true, "create /app": false, "deleteall /app": false, "4lw srst": false},
+	}
+	for dbType, queries := range cases {
+		for query, want := range queries {
+			if got := isReadOnlySQLQuery(dbType, query); got != want {
+				t.Fatalf("%s %q read-only = %v, want %v", dbType, query, got, want)
+			}
 		}
 	}
 }
