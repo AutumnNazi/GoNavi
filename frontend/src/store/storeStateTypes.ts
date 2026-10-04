@@ -194,6 +194,7 @@ export interface AppState {
   themePreference: ThemePreference;
   /** Built-in brand mascot icon id (01-10), used in title bar / about / favicon. */
   brandIconId: string;
+  setBrandIconId: (brandIconId: string) => void;
   languagePreference: LanguagePreference;
   appearance: AppearanceSettings;
   uiScale: number;

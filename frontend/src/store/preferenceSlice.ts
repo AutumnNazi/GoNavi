@@ -14,7 +14,7 @@ import {
   runWithExplicitShortcutPersistence,
   appendRuntimeSqlLog,
 } from "./storeSettingsSanitizers";
-import { PERSIST_VERSION, DEFAULT_GLOBAL_PROXY } from "./storeConstants";
+import { PERSIST_VERSION, DEFAULT_GLOBAL_PROXY, sanitizeBrandIconIdLocal } from "./storeConstants";
 import { setRedisDbAlias as applyRedisDbAlias } from "../utils/redisDbAlias";
 import { writePersistedStatePatch } from "./storeConnectionSanitizers";
 import {
@@ -29,6 +29,7 @@ import type { StoreGet, StoreSet } from "./storeSliceTypes";
 export type PreferenceSliceState = Pick<AppState, 
   | 'setTheme'
   | 'setThemePreference'
+  | 'setBrandIconId'
   | 'setLanguagePreference'
   | 'setAppearance'
   | 'setRedisDbAlias'
@@ -60,6 +61,10 @@ export const createPreferenceSlice = (set: StoreSet, _get: StoreGet): Preference
   setThemePreference: (themePreference) =>
     set({
       themePreference: sanitizeThemePreference(themePreference),
+    }),
+  setBrandIconId: (brandIconId) =>
+    set({
+      brandIconId: sanitizeBrandIconIdLocal(brandIconId),
     }),
   setLanguagePreference: (languagePreference) =>
     set({

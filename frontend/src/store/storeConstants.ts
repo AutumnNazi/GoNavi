@@ -1,5 +1,5 @@
 import { GlobalProxyConfig } from "../types";
-import { DEFAULT_BRAND_ICON_ID } from "../brand/brandIcons";
+import { DEFAULT_BRAND_ICON_ID, sanitizeBrandIconId } from "../brand/brandIcons";
 import { DEFAULT_DATA_GRID_DISPLAY_SETTINGS } from "../utils/dataGridDisplay";
 import { DEFAULT_SQL_EDITOR_TYPOGRAPHY_SETTINGS } from "../utils/sqlEditorTypography";
 import { DEFAULT_TITLEBAR_ACTIONS_PLACEMENT_SETTINGS } from "../utils/titlebarActionsPlacement";
@@ -13,8 +13,8 @@ import type {
   QueryTableCtrlClickAction,
 } from "./storeStateTypes";
 
-export const sanitizeBrandIconIdLocal = (_value: unknown): string =>
-  DEFAULT_BRAND_ICON_ID;
+export const sanitizeBrandIconIdLocal = (value: unknown): string =>
+  sanitizeBrandIconId(value) || DEFAULT_BRAND_ICON_ID;
 
 export const DEFAULT_V2_SIDEBAR_RAIL_SCALE = 1.0;
 export const MIN_V2_SIDEBAR_RAIL_SCALE = 1.0;

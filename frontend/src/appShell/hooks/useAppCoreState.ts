@@ -52,7 +52,7 @@ import {
   WindowSetDarkTheme,
   WindowSetLightTheme,
 } from '../../../wailsjs/runtime';
-import { resolveBrandIconSrc } from '../../brand/brandIcons';
+import { useBrandIconSync } from '../../brand/useBrandIconSync';
 import { suppressThemeSwitchTransitions } from '../../components/theme/themeSwitchTransition';
 
 export interface UseAppCoreStateInput {
@@ -75,7 +75,6 @@ export const useAppCoreState = ({ setFocusedTabDisplayElementKey }: UseAppCoreSt
   const windowState = useStore(state => state.windowState);
   const themeMode = useStore(state => state.theme);
   const themePreference = useStore(state => state.themePreference);
-  const brandIconId = useStore(state => state.brandIconId);
   const setTheme = useStore(state => state.setTheme);
   const setThemePreference = useStore(state => state.setThemePreference);
   const customThemes = useCustomThemeStore(state => state.themes);
@@ -107,6 +106,8 @@ export const useAppCoreState = ({ setFocusedTabDisplayElementKey }: UseAppCoreSt
   const resetShortcutOptions = useStore(state => state.resetShortcutOptions);
   const [systemThemeMode, setSystemThemeMode] = useState<'light' | 'dark'>(() => getSystemThemeMode());
   const [runtimePlatform, setRuntimePlatform] = useState('');
+  // 品牌图标领域逻辑（favicon、原生图标同步、资源加载、设置面板选择流程）在独立 hook 中。
+  const { brandIconId, handleBrandIconChange } = useBrandIconSync(runtimePlatform);
   const [runtimeBuildType, setRuntimeBuildType] = useState('');
   const [isLinuxRuntime, setIsLinuxRuntime] = useState(false);
   const activeCustomTheme = useMemo(
@@ -243,22 +244,6 @@ export const useAppCoreState = ({ setFocusedTabDisplayElementKey }: UseAppCoreSt
       void safeWindowRuntimeCall(() => WindowSetLightTheme(), undefined);
   }, [effectiveThemePreference, resolvedThemeMode, setTheme, themeMode]);
 
-  // Use the bundled application brand for the browser favicon.
-  useEffect(() => {
-      if (typeof document === 'undefined') return;
-      const href = resolveBrandIconSrc(brandIconId);
-      let link = document.querySelector<HTMLLinkElement>("link[rel='icon'][data-brand-icon='true']");
-      if (!link) {
-          link = document.createElement('link');
-          link.rel = 'icon';
-          link.setAttribute('data-brand-icon', 'true');
-          document.head.appendChild(link);
-      }
-      link.type = 'image/svg+xml';
-      link.href = href;
-
-  }, [brandIconId]);
-
   const selectPresetTheme = useCallback((preference: ThemePreference) => {
       suppressThemeSwitchTransitions();
       // 亮 / 暗各自恢复上次应用的主题（无记忆则回到基础主题）；跟随系统始终回到基础主题。
@@ -358,7 +343,7 @@ export const useAppCoreState = ({ setFocusedTabDisplayElementKey }: UseAppCoreSt
     sidebarMetadataDragSensors, tabDisplaySettings, tabDisplayElementOrder,
     visibleTabDisplayElementKeys, getTabDisplayElementLabel, getTabDisplayElementDescription,
     selectPresetTheme, setTabDisplayLayout, updateTabDisplayElementVisibility,
-    moveTabDisplayElement, setTabDisplayElementRow,
+    moveTabDisplayElement, setTabDisplayElementRow, brandIconId, handleBrandIconChange,
   };
 };
 

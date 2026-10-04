@@ -13,12 +13,13 @@ export type ToolCenterPaneKey =
   | 'snippet-settings'
   | 'shortcut-settings';
 
-export type SettingsCenterGroupKey = 'preferences' | 'services' | ToolCenterGroupKey | 'about';
+export type SettingsCenterGroupKey = 'preferences' | 'services' | ToolCenterGroupKey | 'about' | 'brand-icon';
 export type SettingsCenterPaneKey =
   | 'language'
   | 'theme'
   | 'sidebar-metadata'
   | 'sidebar-objects'
+  | 'brand-icon'
   | 'proxy'
   | 'download-source'
   | 'web-auth'

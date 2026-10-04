@@ -7,6 +7,7 @@ import {
   CloudDownloadOutlined,
   SafetyCertificateOutlined,
   InfoCircleOutlined,
+  AppstoreOutlined,
 } from '@ant-design/icons';
 import React, { useCallback } from 'react';
 import { Alert, Button, Spin } from 'antd';
@@ -15,6 +16,7 @@ import { AI_SETTINGS_NAV_ITEMS } from '../../components/ai/AISettingsSidebar';
 import LanguageSettingsPanel from '../../components/LanguageSettingsPanel';
 import WebAuthSettingsPanel from '../../components/WebAuthSettingsPanel';
 import CloudBackupSettings from '../../components/CloudBackupSettings';
+import BrandIconPicker from '../../components/BrandIconPicker';
 import AIPanelErrorBoundary from '../../components/ai/AIPanelErrorBoundary';
 import {
   isWailsDevNativeContextMenu,
@@ -95,6 +97,8 @@ export interface UseAppSettingsCenterRenderInput {
   handleExpandSidebarPanel: AppShellStateApi['handleExpandSidebarPanel'];
   handleCollapseSidebarPanel: AppShellStateApi['handleCollapseSidebarPanel'];
   sidebarCollapsedToggleRef: AppShellStateApi['sidebarCollapsedToggleRef'];
+  brandIconId: AppCoreStateApi['brandIconId'];
+  handleBrandIconChange: AppCoreStateApi['handleBrandIconChange'];
 }
 
 export const useAppSettingsCenterRender = ({
@@ -114,7 +118,7 @@ export const useAppSettingsCenterRender = ({
   handleNewQuery, handleCreateConnection, setIsConnectionGroupManagementOpen, aiPanelVisible,
   handleToggleOrFocusAIPanel, shouldDockCollapsedSidebarActionsInTitlebar,
   setCollapsedSidebarActionsTarget, handleExpandSidebarPanel, handleCollapseSidebarPanel,
-  sidebarCollapsedToggleRef,
+  sidebarCollapsedToggleRef, brandIconId, handleBrandIconChange,
 }: UseAppSettingsCenterRenderInput) => {
   const settingsCenterGroups: SettingsCenterNavigationGroup[] = [
       {
@@ -167,6 +171,13 @@ export const useAppSettingsCenterRender = ({
                   title: t('app.settings.sidebar_objects.title'),
                   description: t('app.settings.sidebar_objects.description'),
                   onClick: () => handleOpenSettingsCenterPane('preferences', 'sidebar-objects'),
+              },
+              {
+                  key: 'brand-icon',
+                  icon: <AppstoreOutlined />,
+                  title: t('app.settings.entry.brand_icon.title'),
+                  description: t('app.settings.entry.brand_icon.description'),
+                  onClick: () => handleOpenSettingsCenterPane('preferences', 'brand-icon'),
               },
           ],
       },
@@ -280,6 +291,19 @@ export const useAppSettingsCenterRender = ({
   const renderSettingsCenterPane = () => {
       if (!activeSettingsCenterPane) {
           return null;
+      }
+      if (activeSettingsCenterPane.key === 'brand-icon') {
+          return (
+              <div style={{ padding: '16px 0 20px' }}>
+                  <BrandIconPicker
+                    value={brandIconId}
+                    darkMode={darkMode}
+                    accentColor={overlayTheme.selectedText}
+                    ariaLabel={t('app.settings.entry.brand_icon.title')}
+                    onChange={handleBrandIconChange}
+                  />
+              </div>
+          );
       }
       if (activeSettingsCenterPane.key === 'language') {
           return (

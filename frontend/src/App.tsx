@@ -63,7 +63,7 @@ function App() {
     sidebarMetadataDragSensors, tabDisplaySettings, tabDisplayElementOrder,
     visibleTabDisplayElementKeys, getTabDisplayElementLabel, getTabDisplayElementDescription,
     selectPresetTheme, setTabDisplayLayout, updateTabDisplayElementVisibility,
-    moveTabDisplayElement, setTabDisplayElementRow,
+    moveTabDisplayElement, setTabDisplayElementRow, brandIconId, handleBrandIconChange,
   } = useAppCoreState({
     setFocusedTabDisplayElementKey: setFocusedTabDisplayElementKeyLate.call,
   });
@@ -390,7 +390,8 @@ function App() {
     titleBarNewConnectionShortcut, handleNewQuery, handleCreateConnection,
     setIsConnectionGroupManagementOpen, aiPanelVisible, handleToggleOrFocusAIPanel,
     shouldDockCollapsedSidebarActionsInTitlebar, setCollapsedSidebarActionsTarget,
-    handleExpandSidebarPanel, handleCollapseSidebarPanel, sidebarCollapsedToggleRef,
+    handleExpandSidebarPanel, handleCollapseSidebarPanel, sidebarCollapsedToggleRef, brandIconId,
+    handleBrandIconChange,
   });
 
   return (
