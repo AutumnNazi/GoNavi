@@ -61,8 +61,11 @@ export const BRAND_ICONS: BrandIconDefinition[] = [
     titleEn: 'Graphite air',
     iconPath: '/brand-fallback.svg',
     aboutPath: '/brand-fallback.svg',
+    // Dark-tile artwork cropped to a full-bleed viewBox. Never flag it as a
+    // mascot: that flag drives the macOS white-tile Dock safe-area inset,
+    // which would shrink the running default icon a ring smaller than the
+    // bundled icns and neighbouring apps.
     bundled: true,
-    mascot: true,
   },
   {
     id: '02',

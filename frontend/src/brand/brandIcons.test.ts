@@ -8,6 +8,7 @@ import {
   resolveBrandAboutSrc,
   resolveBrandDockSrc,
   resolveBrandFullSrc,
+  resolveBrandIcon,
   resolveBrandIconSrc,
   resolveBrandIconRemoteSrc,
   resolveBrandTitlebarSrc,
@@ -91,9 +92,16 @@ describe('brand icon asset resolution', () => {
 
   it('keeps 0.9.7 mascot styling separate from where the artwork is stored', () => {
     expect(BRAND_ICONS.filter((icon) => icon.mascot).map((icon) => icon.id)).toEqual([
-      '01', '07', '08', '09', '10', '11', '12', '13', '14', '15', '16',
+      '07', '08', '09', '10', '11', '12', '13', '14', '15', '16',
     ]);
     expect(BRAND_ICONS.filter((icon) => icon.remoteTitlebar).map((icon) => icon.id)).toEqual(['08']);
+  });
+
+  it('keeps the bundled default dark-tile icon out of the white-tile mascot family', () => {
+    // #01 composes full-bleed on macOS; the mascot flag would apply the
+    // white-tile Dock safe-area inset and shrink the running default icon.
+    expect(resolveBrandIcon('01').mascot).toBeFalsy();
+    expect(resolveBrandIcon('01').bundled).toBe(true);
   });
 
   it('fetches only ribbons and the selected icon at startup, mascot previews on demand', () => {

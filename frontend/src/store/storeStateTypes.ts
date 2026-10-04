@@ -192,7 +192,7 @@ export interface AppState {
   pinnedConnectionTypes: string[];
   theme: ThemeMode;
   themePreference: ThemePreference;
-  /** Built-in brand mascot icon id (01-10), used in title bar / about / favicon. */
+  /** Built-in brand icon id ("01"-"16"), used in title bar / about / favicon. */
   brandIconId: string;
   setBrandIconId: (brandIconId: string) => void;
   languagePreference: LanguagePreference;
