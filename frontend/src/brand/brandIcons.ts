@@ -296,6 +296,18 @@ export function resolveBrandTitlebarSrc(id?: unknown): string {
  * taskbar icon while the real asset update is still queued. Bundled
  * compatibility assets are already verified by being shipped with the app.
  */
+/** Native icon composition source: mascots compose from the trimmed
+ * transparent v2 artwork (tile and background already gone server-side),
+ * ribbons keep composing from their SVG. Returns '' while the mascot's
+ * about asset is still downloading - the brand asset revision re-runs the
+ * composition once it lands. */
+export function resolveBrandNativeSrc(id?: unknown): string {
+  const definition = resolveBrandIcon(id);
+  if (definition.mascot && !definition.bundled) {
+    return loadedBrandAssetSources.get(brandAssetKey(definition.id, 'about')) || '';
+  }
+  return resolveBrandDockSrc(id);
+}
 export function resolveBrandDockSrc(id?: unknown): string {
   const definition = resolveBrandIcon(id);
   return loadedBrandAssetSources.get(definition.id) || (definition.bundled ? definition.iconPath : '');
