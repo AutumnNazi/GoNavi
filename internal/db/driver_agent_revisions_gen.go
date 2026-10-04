@@ -38,6 +38,7 @@ func init() {
 		"greptimedb":    "src-7f93f462896850c2",
 		"influxdb":      "src-1edde4541b42d41c",
 		"kwdb":          "src-1611981eb02fccfd",
+		"meilisearch":   "src-08d0a60b75267fe3",
 		"opensearch":    "src-ae2fd7583bd553d8",
 		"presto":        "src-6cf779eab3d14114",
 		"questdb":       "src-2a0a566d5275e0ae",
