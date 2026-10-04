@@ -35,9 +35,14 @@ vi.mock('../i18n/provider', () => ({
 vi.mock('./brandIcons', () => ({
   resolveBrandIconSrc: () => 'asset:icon',
   resolveBrandDockSrc: (id: string) => `dock:${id}`,
-  resolveBrandIcon: () => ({ bundled: true }),
-  setLoadedBrandIconSources: vi.fn(),
-  BRAND_ICONS: [],
+  resolveBrandIcon: () => ({ mascot: true }),
+  brandAssetKeysFor: () => [],
+  startupBrandAssetKeys: () => [],
+}));
+vi.mock('./brandAssetLoader', () => ({
+  ensureBrandAssets: vi.fn(async () => true),
+  subscribeBrandAssets: () => () => {},
+  getBrandAssetsRevision: () => 0,
 }));
 vi.mock('./macDockIcon', () => ({
   composeWindowsNativeIconBase64: vi.fn(async () => 'b64'),

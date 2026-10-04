@@ -1,17 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import { message } from 'antd';
-import { SetApplicationBrandIcon, GetBrandIconDataURL } from '../../wailsjs/go/app/App';
+import { SetApplicationBrandIcon } from '../../wailsjs/go/app/App';
 import { Environment } from '../../wailsjs/runtime';
 import { useI18n } from '../i18n/provider';
 import { useStore } from '../store';
 import {
-  BRAND_ICONS,
+  brandAssetKeysFor,
   resolveBrandDockSrc,
   resolveBrandIconSrc,
   resolveBrandIcon,
-  setLoadedBrandIconSources,
+  startupBrandAssetKeys,
   type BrandIconId,
 } from './brandIcons';
+import { ensureBrandAssets, getBrandAssetsRevision, subscribeBrandAssets } from './brandAssetLoader';
 import {
   composeMacOSDockIconBase64,
   composeWindowsNativeIconBase64,
@@ -20,12 +21,12 @@ import {
 } from './macDockIcon';
 
 // 品牌图标的原生同步领域逻辑：favicon、Windows/macOS 原生图标应用、
-// 远程缎带资源加载与设置面板的选择流程。App.tsx 只保留接线。
+// 远端品牌资源加载与设置面板的选择流程。App.tsx 只保留接线。
 export function useBrandIconSync(runtimePlatform: string) {
   const { t } = useI18n();
   const brandIconId = useStore(state => state.brandIconId);
   const setBrandIconId = useStore(state => state.setBrandIconId);
-  const [brandAssetRevision, setBrandAssetRevision] = useState(0);
+  const brandAssetRevision = useSyncExternalStore(subscribeBrandAssets, getBrandAssetsRevision);
   // Suppresses the brand-icon sync effect while the explicit selection flow is
   // applying the same icon through the native bridge, so the shortcut update
   // and window identity rotation run exactly once.
@@ -76,10 +77,10 @@ export function useBrandIconSync(runtimePlatform: string) {
         if (!dockHref) return;
         const b64 = runtimePlatform === 'windows'
           ? await composeWindowsNativeIconBase64(dockHref, {
-            transparentMark: resolveBrandIcon(brandIconId).bundled ? true : undefined,
+            transparentMark: resolveBrandIcon(brandIconId).mascot ? true : undefined,
           })
           : await composeMacOSDockIconBase64(dockHref, {
-            inset: resolveBrandIcon(brandIconId).bundled ? LEGACY_MASCOT_DOCK_ICON_INSET : undefined,
+            inset: resolveBrandIcon(brandIconId).mascot ? LEGACY_MASCOT_DOCK_ICON_INSET : undefined,
           });
         if (cancelled) return;
         const result = await SetApplicationBrandIcon(b64);
@@ -103,35 +104,10 @@ export function useBrandIconSync(runtimePlatform: string) {
     };
   }, [brandIconId, brandAssetRevision, runtimePlatform, t]);
 
-  const brandAssetsLoadingRef = useRef<Promise<boolean> | null>(null);
-  const loadBrandAssets = useCallback(async (): Promise<boolean> => {
-    if (brandAssetsLoadingRef.current) return brandAssetsLoadingRef.current;
-    const task = (async (): Promise<boolean> => {
-      const loaded: Partial<Record<BrandIconId, string>> = {};
-      await Promise.all(BRAND_ICONS.filter((icon) => !icon.bundled).map(async (icon) => {
-        try {
-          const source = await GetBrandIconDataURL(icon.id);
-          if (source) loaded[icon.id] = source;
-        } catch {
-          // 离线或镜像不可达时保持内存占位，UI 依旧可用。
-        }
-      }));
-      if (Object.keys(loaded).length === 0) return false;
-      setLoadedBrandIconSources(loaded);
-      setBrandAssetRevision((revision) => revision + 1);
-      window.dispatchEvent(new Event('gonavi-brand-assets-ready'));
-      return true;
-    })();
-    brandAssetsLoadingRef.current = task;
-    try {
-      return await task;
-    } finally {
-      brandAssetsLoadingRef.current = null;
-    }
-  }, []);
+  // 启动时只拉取缎带 SVG 与当前选中图标的资源；其余吉祥物等打开选择器时再加载。
   useEffect(() => {
-    void loadBrandAssets();
-  }, [loadBrandAssets]);
+    void ensureBrandAssets(startupBrandAssetKeys(brandIconId));
+  }, [brandIconId]);
 
   const handleBrandIconChange = useCallback(async (id: BrandIconId) => {
     if (id === brandIconId) return;
@@ -151,9 +127,9 @@ export function useBrandIconSync(runtimePlatform: string) {
     try {
       let source = resolveBrandDockSrc(id);
       if (!source) {
-        // 远程缎带资源可能还没下载完成（首屏加载失败/离线）。重试一次；
+        // 远端品牌资源可能还没下载完成（首屏加载失败/离线）。重试一次；
         // 仍不可用就必须如实回退并警告——绝不能弹「已应用」却什么都不改。
-        await loadBrandAssets();
+        await ensureBrandAssets(brandAssetKeysFor(id));
         source = resolveBrandDockSrc(id);
         if (!source) {
           throw Object.assign(new Error(t('app.settings.entry.brand_icon.asset_not_ready')), { assetNotReady: true });
@@ -164,7 +140,7 @@ export function useBrandIconSync(runtimePlatform: string) {
       // Bundled mascots drop the white tile and the GoNavi word mark —
       // the cut-out dog itself becomes the whole icon, no background.
       const b64 = await composeWindowsNativeIconBase64(source, {
-        transparentMark: resolveBrandIcon(id).bundled ? true : undefined,
+        transparentMark: resolveBrandIcon(id).mascot ? true : undefined,
       });
       const result = await SetApplicationBrandIcon(b64);
       if (!result || result.success === false) {
@@ -193,7 +169,7 @@ export function useBrandIconSync(runtimePlatform: string) {
         windowsBrandIconApplyingRef.current = null;
       }
     }
-  }, [brandIconId, loadBrandAssets, runtimePlatform, setBrandIconId, t]);
+  }, [brandIconId, runtimePlatform, setBrandIconId, t]);
 
   return { brandIconId, handleBrandIconChange };
 }

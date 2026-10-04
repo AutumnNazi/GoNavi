@@ -3,9 +3,11 @@ import {
   BUNDLED_BRAND_ICON_ZOOM,
   BRAND_ICONS,
   RIBBON_TILE_ART_FRACTION,
+  previewBrandAssetKeys,
   resolveBrandIconSrc,
   type BrandIconId,
 } from '../brand/brandIcons';
+import { ensureBrandAssets, getBrandAssetsRevision, subscribeBrandAssets } from '../brand/brandAssetLoader';
 
 type BrandIconPickerProps = {
   value: string;
@@ -19,6 +21,11 @@ export default function BrandIconPicker({ value, onChange, darkMode = false, acc
   const border = darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(16,24,40,0.12)';
   const muted = darkMode ? 'rgba(255,255,255,0.55)' : 'rgba(16,24,40,0.55)';
   const title = darkMode ? 'rgba(255,255,255,0.88)' : 'rgba(16,24,40,0.88)';
+  // 吉祥物预览图不随安装包内嵌：打开选择器时按需拉取并缓存，到达后随加载修订号重绘。
+  React.useSyncExternalStore(subscribeBrandAssets, getBrandAssetsRevision);
+  React.useEffect(() => {
+    void ensureBrandAssets(previewBrandAssetKeys());
+  }, []);
 
   return (
     <div
@@ -34,7 +41,7 @@ export default function BrandIconPicker({ value, onChange, darkMode = false, acc
     >
       {BRAND_ICONS.map((item, itemIndex) => {
         const active = value === item.id;
-        const usesBundledPreview = item.bundled === true;
+        const usesBundledPreview = item.mascot === true;
         return (
           <button
             key={item.id}
