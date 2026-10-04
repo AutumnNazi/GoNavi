@@ -1,8 +1,10 @@
 import React from 'react';
+import { Skeleton } from 'antd';
 import {
   BUNDLED_BRAND_ICON_ZOOM,
   BRAND_ICONS,
   RIBBON_TILE_ART_FRACTION,
+  isBrandAssetLoaded,
   previewBrandAssetKeys,
   resolveBrandIconSrc,
   type BrandIconId,
@@ -46,6 +48,10 @@ export default function BrandIconPicker({ value, onChange, darkMode = false, acc
         // carry the mascot flag: that flag drives the macOS Dock safe-area
         // inset and would shrink the running default icon.
         const usesBundledPreview = item.mascot === true || item.bundled === true;
+        // 吉祥物资源未就绪时渲染中性骨架，而不是 GN 深色兜底 SVG——
+        // 深色剪影会在资源到达后突变为白底真图，观感像图标坏掉了。
+        // bundled 资源随包分发，视为始终就绪。
+        const previewReady = item.bundled === true || isBrandAssetLoaded(item.id);
         return (
           <button
             key={item.id}
@@ -123,19 +129,23 @@ export default function BrandIconPicker({ value, onChange, darkMode = false, acc
                     boxShadow: `0 0 0 1px ${border}`,
                   }}
                 >
-                  <img
-                    src={resolveBrandIconSrc(item.id)}
-                    alt={item.titleZh}
-                    style={{
-                      maxWidth: 'none',
-                      maxHeight: 'none',
-                      width: `${BUNDLED_BRAND_ICON_ZOOM * 100}%`,
-                      height: `${BUNDLED_BRAND_ICON_ZOOM * 100}%`,
-                      objectFit: 'cover',
-                      display: 'block',
-                    }}
-                    draggable={false}
-                  />
+                  {previewReady ? (
+                    <img
+                      src={resolveBrandIconSrc(item.id)}
+                      alt={item.titleZh}
+                      style={{
+                        maxWidth: 'none',
+                        maxHeight: 'none',
+                        width: `${BUNDLED_BRAND_ICON_ZOOM * 100}%`,
+                        height: `${BUNDLED_BRAND_ICON_ZOOM * 100}%`,
+                        objectFit: 'cover',
+                        display: 'block',
+                      }}
+                      draggable={false}
+                    />
+                  ) : (
+                    <Skeleton.Node active style={{ width: '100%', height: '100%' }} />
+                  )}
                 </div>
               ) : (
                 <img
