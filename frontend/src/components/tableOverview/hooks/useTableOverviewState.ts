@@ -13,6 +13,7 @@ import {
   isSchemaScopedTableOverviewDialect,
   parseTableStats,
   buildTableStatusSQL,
+  usesTableListOverview,
   getTableOverviewDisplayName,
   isOverviewTablePinned,
   type OverviewTableSection,
@@ -119,14 +120,7 @@ export const useTableOverviewState = ({ tab }: UseTableOverviewStateInput) => {
               useSSH: connection.config.useSSH || false,
               ssh: connection.config.ssh || { host: '', port: 22, user: '', password: '', keyPath: '' },
           };
-          if (
-              metadataDialect === 'tdengine' ||
-              metadataDialect === 'sqlite' ||
-              metadataDialect === 'sqlite3' ||
-              metadataDialect === 'milvus' ||
-              metadataDialect === 'milvusdb' ||
-              metadataDialect === 'milvus-db'
-          ) {
+          if (usesTableListOverview(metadataDialect, connection?.config?.type)) {
               const res = await DBGetTables(buildRpcConnectionConfig(config) as any, tab.dbName || '');
               if (!isLatestRequest()) return;
               if (res.success && Array.isArray(res.data)) {

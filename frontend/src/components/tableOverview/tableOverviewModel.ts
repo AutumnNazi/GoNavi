@@ -5,6 +5,8 @@ import type {
 } from '../../utils/tableOverviewFilter';
 import { resolveObjectMetadataDialect } from '../../utils/objectMetadataDialect';
 import { resolvePgTableStatsSql, resolveRegistryTableStatusSql } from '../../utils/dataSourceRegistry/tableStats';
+import { getDataSourceSpec } from '../../utils/dataSourceRegistry';
+import { resolveRegistryReadOnlyClassifier } from '../../utils/dataSourceRegistry/commandReadOnly';
 import { extractTableNameFromMetadataRow } from '../../utils/tableMetadataRows';
 import { stripSchemaFromTabObjectLabel } from '../../utils/tabDisplay';
 
@@ -106,6 +108,17 @@ export const isSchemaScopedTableOverviewDialect = (dialect: string): boolean => 
     'opengauss',
     'gaussdb',
 ].includes(dialect);
+
+const TABLE_LIST_OVERVIEW_DIALECTS = new Set(['tdengine', 'sqlite', 'sqlite3', 'milvus', 'milvusdb', 'milvus-db']);
+
+/** 表概览改用 DBGetTables 表名列表的方言：没有 information_schema 的 TDengine / SQLite / Milvus，
+ * 以及非 SQL 查询语言、也没有声明表状态查询的描述表数据源（etcd、ZooKeeper、Weaviate、InfluxDB 等）。 */
+export const usesTableListOverview = (dialect: string, connType?: string): boolean => {
+    if (TABLE_LIST_OVERVIEW_DIALECTS.has(dialect)) return true;
+    return Boolean(getDataSourceSpec(connType))
+        && !resolveRegistryTableStatusSql(connType, '')
+        && Boolean(resolveRegistryReadOnlyClassifier(dialect));
+};
 
 export const getTableOverviewDisplayName = (dialect: string, tableName: string): string => {
     const rawName = String(tableName || '').trim();
