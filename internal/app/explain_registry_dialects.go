@@ -21,6 +21,8 @@ var registryExplainDialects = map[string]registryExplainDialect{
 	"questdb": {format: connection.ExplainFormatText, parse: parseQuestDBExplain},
 	// GreptimeDB 的 EXPLAIN 是 plan_type / plan 两列，逻辑计划为 DataFusion 缩进文本。
 	"greptimedb": {format: connection.ExplainFormatTable, parse: parseGreptimeDBExplain},
+	// 崖山的 EXPLAIN 直接返回与 DBMS_XPLAN 相近的文本表格（不写 plan_table）。
+	"yashandb": {format: connection.ExplainFormatText, parse: parseYashanDBExplain},
 }
 
 // isRegistryExplainDialect 报告诊断入口是否支持该描述表类型的执行计划。

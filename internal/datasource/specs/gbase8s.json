@@ -39,7 +39,8 @@
       "windows/amd64"
     ],
     "sourcePrefixes": [
-      "gbase8s"
+      "gbase8s",
+      "purego_library"
     ]
   },
   "variants": {

@@ -36,6 +36,7 @@ import { buildEditableTriggerSql } from '../../../utils/triggerEditSql';
 import type { QueryEditorConnectionContextApi } from './useQueryEditorConnectionContext';
 import type { QueryEditorProps } from '../../QueryEditor';
 import { buildPgRoutineDefinitionQuery } from '../../../utils/pgRoutineDefinition';
+import { usesDriverObjectDefinition } from '../../definitionViewerDialect';
 
 export interface UseQueryEditorObjectEditTabsInput {
     tab: QueryEditorProps['tab'];
@@ -124,7 +125,11 @@ export const useQueryEditorObjectEditTabs = ({ tab, connectionsRef, addTab }: Us
                 }
             })();
 
-            for (const queryText of queries) {
+            if (usesDriverObjectDefinition(conn)) {
+                const result = await DBShowCreateTable(buildRpcConnectionConfig(config) as any, targetDbName, routineObjectName);
+                if (result.success && String(result.data || '').trim()) editSql = `${sqlTemplateHeader}\n${String(result.data)}`;
+            }
+            for (const queryText of usesDriverObjectDefinition(conn) ? [] : queries) {
                 try {
                     const result = await DBQuery(buildRpcConnectionConfig(config) as any, targetDbName, queryText);
                     if (!result.success || !Array.isArray(result.data) || result.data.length === 0) {

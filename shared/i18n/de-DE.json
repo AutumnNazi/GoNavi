@@ -11956,5 +11956,13 @@
   "db.backend.error.gbase8s_rows_mismatch": "Jede Änderung oder Löschung sollte genau 1 Zeile betreffen, betraf aber {{actual}}; alle Änderungen wurden zurückgerollt (Daten evtl. geändert, bitte aktualisieren und erneut versuchen)",
   "db.backend.error.gbase8s_update_requires_key": "Diese Tabelle hat keinen Schlüssel zur Zeilenidentifikation und kann im Raster nicht bearbeitet werden",
   "db.backend.error.gbase8s_object_not_found": "Objekt {{name}} existiert in der aktuellen Datenbank nicht",
+  "datasource.variant.yashandb.v23": "YashanDB 23.x (23.1 – 23.4): Verbindung über den lokal installierten YashanDB-Client (yacli-Bibliothek); Oracle-kompatibles Data Dictionary",
+  "connection_modal.step1.hint.yashandb": "Oracle-kompatibel / benötigt lokal installierten YashanDB-Client",
+  "connection_modal.field.yashandb.client_dir": "Client-Verzeichnis",
+  "connection_modal.field.yashandb.client_dir.help": "Verzeichnis des YashanDB-Clients (oder der Server-Installation), dessen lib-Ordner libyascli.so / yascli.dll enthält; leer lassen, um die Umgebungsvariable YASDB_HOME und danach ~/.yashandb/client zu verwenden",
+  "db.backend.error.yashandb_client_missing": "YashanDB-Client nicht gefunden: Client-Verzeichnis in der Verbindung oder die Umgebungsvariable YASDB_HOME festlegen oder den Client nach ~/.yashandb/client entpacken",
+  "db.backend.error.yashandb_client_library_missing": "Keine yacli-Bibliothek im Client-Verzeichnis {{dir}} (lib\\yascli.dll unter Windows, lib/libyascli.so unter Linux); prüfen, ob dort der YashanDB-Client installiert ist",
+  "db.backend.error.yashandb_client_load_failed": "Laden der YashanDB-Clientbibliothek fehlgeschlagen ({{path}}): {{detail}}. Prüfen, ob das lib-Verzeichnis des Clients vollständig ist und zur Architektur passt",
+  "db.backend.error.yashandb_connect_failed": "Verbindung zu YashanDB nicht möglich: {{detail}}",
   "table_designer.sql.informix_drop_primary_key_manual": "Zum Löschen eines Primärschlüssels unter GBase 8s / Informix wird der Constraint-Name benötigt: PRIMARY-KEY-Constraint in der DDL suchen und ALTER TABLE <Tabelle> DROP CONSTRAINT <Name> ausführen"
 }

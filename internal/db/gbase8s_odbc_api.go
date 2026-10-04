@@ -120,7 +120,7 @@ func loadODBCAPI(path string) (*odbcAPI, error) {
 	if api := odbcAPICache[path]; api != nil {
 		return api, nil
 	}
-	lib, err := loadODBCLibrary(path)
+	lib, err := loadNativeLibrary(path)
 	if err != nil {
 		return nil, localizedDatabaseRuntimeError("db.backend.error.gbase8s_client_load_failed", map[string]any{"path": path, "detail": err.Error()})
 	}

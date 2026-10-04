@@ -11956,5 +11956,13 @@
   "db.backend.error.gbase8s_rows_mismatch": "更新・削除は 1 行だけに影響するはずが {{actual}} 行に影響したため、すべてロールバックしました（データが変更された可能性があります。再読み込みしてやり直してください）",
   "db.backend.error.gbase8s_update_requires_key": "このテーブルには行を特定するキーがないため、グリッドで編集できません",
   "db.backend.error.gbase8s_object_not_found": "現在のデータベースにオブジェクト {{name}} はありません",
+  "datasource.variant.yashandb.v23": "YashanDB 23.x（23.1 – 23.4）：ローカルにインストールした YashanDB クライアント（yacli ライブラリ）経由で接続。Oracle 互換のデータディクショナリ",
+  "connection_modal.step1.hint.yashandb": "Oracle 互換 / YashanDB クライアントのインストールが必要",
+  "connection_modal.field.yashandb.client_dir": "クライアントディレクトリ",
+  "connection_modal.field.yashandb.client_dir.help": "YashanDB クライアント（またはサーバーのインストール先）のディレクトリ。lib に libyascli.so / yascli.dll があること。空欄の場合は環境変数 YASDB_HOME、次に ~/.yashandb/client を使用",
+  "db.backend.error.yashandb_client_missing": "YashanDB クライアントが見つかりません。接続設定でクライアントディレクトリを指定するか、環境変数 YASDB_HOME を設定するか、クライアントを ~/.yashandb/client に展開してください",
+  "db.backend.error.yashandb_client_library_missing": "クライアントディレクトリ {{dir}} に yacli ライブラリがありません（Windows は lib\\yascli.dll、Linux は lib/libyascli.so）。YashanDB クライアントがインストールされているか確認してください",
+  "db.backend.error.yashandb_client_load_failed": "YashanDB クライアントライブラリの読み込みに失敗しました（{{path}}）：{{detail}}。クライアントの lib が揃っており、アーキテクチャが一致しているか確認してください",
+  "db.backend.error.yashandb_connect_failed": "YashanDB に接続できません：{{detail}}",
   "table_designer.sql.informix_drop_primary_key_manual": "GBase 8s / Informix で主キーを削除するには制約名が必要です。DDL で PRIMARY KEY の制約名を確認し、ALTER TABLE <テーブル> DROP CONSTRAINT <制約名> を実行してください"
 }

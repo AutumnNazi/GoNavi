@@ -247,6 +247,7 @@ export const useDefinitionViewerLoader = ({
               return { success: false, error: t('definition_viewer.error.package_name_empty') };
           }
           queries = buildShowPackageQueries(dialect, packageName, dbName);
+          backendRoutine = usesDriverObjectDefinition(conn);
           extractFn = extractPackageDefinition;
           resolvedObjectLabel = t('definition_viewer.object.package');
           resolvedObjectName = packageName;

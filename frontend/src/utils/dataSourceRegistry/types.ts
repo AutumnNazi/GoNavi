@@ -85,6 +85,8 @@ export type DataSourceUISpec = {
   extraHostsParam?: string;
   // 未借用方言的数据源的对象操作语句（renameTable、dropTable、dropView、dropRoutine、truncateTable、clearTable），由后端执行。
   objectStatements?: Record<string, string>;
+  // 例程、触发器与包的定义改由驱动给出（借用方言的系统视图与该数据源不符时，如崖山的 ALL_SOURCE 没有 LINE 列）。
+  driverObjectDefinitions?: boolean;
   // 连接表单里的专用参数字段（值存在连接参数文本里），如 GBase 8s 的 CSDK 目录 clientDir。
   paramFields?: Array<{ key: string; labelKey: string; helpKey?: string; placeholder?: string }>;
   // 表设计器的索引限制：可建的索引类别（NORMAL / UNIQUE / PRIMARY …）与索引方法（首项为默认），如 GBase 8a 只有普通 HASH 索引。

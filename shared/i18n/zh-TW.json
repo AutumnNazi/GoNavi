@@ -11956,5 +11956,13 @@
   "db.backend.error.gbase8s_rows_mismatch": "修改或刪除應恰好影響 1 列，實際影響 {{actual}} 列，已整體回復（資料可能已被他人修改，請重新整理後再試）",
   "db.backend.error.gbase8s_update_requires_key": "這張表沒有可用於定位列的主鍵，無法在表格中修改",
   "db.backend.error.gbase8s_object_not_found": "目前資料庫中沒有物件 {{name}}",
+  "datasource.variant.yashandb.v23": "YashanDB 23.x（23.1 – 23.4）：透過本機安裝的崖山用戶端（yacli 程式庫）連線，Oracle 相容的資料字典",
+  "connection_modal.step1.hint.yashandb": "Oracle 相容 / 需本機安裝崖山用戶端",
+  "connection_modal.field.yashandb.client_dir": "用戶端目錄",
+  "connection_modal.field.yashandb.client_dir.help": "崖山用戶端（或伺服端安裝目錄）所在目錄，其下的 lib 內含 libyascli.so / yascli.dll；留空時依序使用環境變數 YASDB_HOME 與 ~/.yashandb/client",
+  "db.backend.error.yashandb_client_missing": "找不到崖山用戶端：請在連線中填寫用戶端目錄，或設定環境變數 YASDB_HOME，或將用戶端解壓縮到 ~/.yashandb/client",
+  "db.backend.error.yashandb_client_library_missing": "用戶端目錄 {{dir}} 下沒有 yacli 程式庫（Windows 為 lib\\yascli.dll，Linux 為 lib/libyascli.so），請確認安裝的是崖山用戶端",
+  "db.backend.error.yashandb_client_load_failed": "載入崖山用戶端程式庫失敗（{{path}}）：{{detail}}。請確認用戶端 lib 目錄完整，且用戶端與本機架構一致",
+  "db.backend.error.yashandb_connect_failed": "無法連線崖山：{{detail}}",
   "table_designer.sql.informix_drop_primary_key_manual": "GBase 8s / Informix 刪除主鍵需要約束名稱：請先在 DDL 中找到 PRIMARY KEY 的約束名稱，執行 ALTER TABLE 表名 DROP CONSTRAINT 約束名稱"
 }

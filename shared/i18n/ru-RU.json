@@ -11956,5 +11956,13 @@
   "db.backend.error.gbase8s_rows_mismatch": "Каждое изменение или удаление должно затрагивать ровно 1 строку, затронуто {{actual}}; все изменения откатены (данные могли измениться, обновите и повторите)",
   "db.backend.error.gbase8s_update_requires_key": "У таблицы нет ключа для определения строк, редактировать её в сетке нельзя",
   "db.backend.error.gbase8s_object_not_found": "Объект {{name}} отсутствует в текущей базе данных",
+  "datasource.variant.yashandb.v23": "YashanDB 23.x (23.1 – 23.4): подключение через локально установленный клиент YashanDB (библиотека yacli); Oracle-совместимый словарь данных",
+  "connection_modal.step1.hint.yashandb": "Совместим с Oracle / требуется локально установленный клиент YashanDB",
+  "connection_modal.field.yashandb.client_dir": "Каталог клиента",
+  "connection_modal.field.yashandb.client_dir.help": "Каталог клиента YashanDB (или установки сервера), в папке lib которого лежит libyascli.so / yascli.dll; оставьте пустым, чтобы использовать переменную окружения YASDB_HOME, затем ~/.yashandb/client",
+  "db.backend.error.yashandb_client_missing": "Клиент YashanDB не найден: укажите каталог клиента в подключении, задайте переменную окружения YASDB_HOME или распакуйте клиент в ~/.yashandb/client",
+  "db.backend.error.yashandb_client_library_missing": "В каталоге клиента {{dir}} нет библиотеки yacli (lib\\yascli.dll в Windows, lib/libyascli.so в Linux); проверьте, что там установлен клиент YashanDB",
+  "db.backend.error.yashandb_client_load_failed": "Не удалось загрузить библиотеку клиента YashanDB ({{path}}): {{detail}}. Проверьте, что каталог lib клиента полный и соответствует архитектуре машины",
+  "db.backend.error.yashandb_connect_failed": "Не удаётся подключиться к YashanDB: {{detail}}",
   "table_designer.sql.informix_drop_primary_key_manual": "Для удаления первичного ключа в GBase 8s / Informix нужно имя ограничения: найдите ограничение PRIMARY KEY в DDL и выполните ALTER TABLE <таблица> DROP CONSTRAINT <имя>"
 }

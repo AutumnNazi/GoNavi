@@ -11956,5 +11956,13 @@
   "db.backend.error.gbase8s_rows_mismatch": "Each update or delete should affect exactly 1 row but affected {{actual}}; all changes were rolled back (the data may have changed, refresh and try again)",
   "db.backend.error.gbase8s_update_requires_key": "This table has no key to locate rows, so it cannot be edited in the grid",
   "db.backend.error.gbase8s_object_not_found": "Object {{name}} does not exist in the current database",
+  "datasource.variant.yashandb.v23": "YashanDB 23.x (23.1 – 23.4): connects through the locally installed YashanDB client (yacli library); Oracle-compatible data dictionary",
+  "connection_modal.step1.hint.yashandb": "Oracle compatible / needs the YashanDB client installed locally",
+  "connection_modal.field.yashandb.client_dir": "Client directory",
+  "connection_modal.field.yashandb.client_dir.help": "Directory of the YashanDB client (or server installation) whose lib folder holds libyascli.so / yascli.dll; leave empty to use the YASDB_HOME environment variable, then ~/.yashandb/client",
+  "db.backend.error.yashandb_client_missing": "YashanDB client not found: set the client directory in the connection, set the YASDB_HOME environment variable, or extract the client to ~/.yashandb/client",
+  "db.backend.error.yashandb_client_library_missing": "No yacli library in the client directory {{dir}} (lib\\yascli.dll on Windows, lib/libyascli.so on Linux); make sure the YashanDB client is installed there",
+  "db.backend.error.yashandb_client_load_failed": "Failed to load the YashanDB client library ({{path}}): {{detail}}. Make sure the client lib directory is complete and matches this machine's architecture",
+  "db.backend.error.yashandb_connect_failed": "Cannot connect to YashanDB: {{detail}}",
   "table_designer.sql.informix_drop_primary_key_manual": "Dropping a primary key on GBase 8s / Informix needs the constraint name: find the PRIMARY KEY constraint in the DDL and run ALTER TABLE <table> DROP CONSTRAINT <name>"
 }

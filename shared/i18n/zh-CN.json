@@ -11956,5 +11956,13 @@
   "db.backend.error.gbase8s_rows_mismatch": "修改或删除应恰好影响 1 行，实际影响 {{actual}} 行，已整体回滚（数据可能已被他人修改，请刷新后重试）",
   "db.backend.error.gbase8s_update_requires_key": "这张表没有可用于定位行的主键，无法在网格里修改",
   "db.backend.error.gbase8s_object_not_found": "当前库里没有对象 {{name}}",
+  "datasource.variant.yashandb.v23": "YashanDB 23.x（23.1 – 23.4）：通过本机安装的崖山客户端（yacli 库）连接，Oracle 兼容的数据字典",
+  "connection_modal.step1.hint.yashandb": "Oracle 兼容 / 需本机安装崖山客户端",
+  "connection_modal.field.yashandb.client_dir": "客户端目录",
+  "connection_modal.field.yashandb.client_dir.help": "崖山客户端（或服务端安装目录）所在目录，其下的 lib 里有 libyascli.so / yascli.dll；留空时依次使用环境变量 YASDB_HOME 与 ~/.yashandb/client",
+  "db.backend.error.yashandb_client_missing": "未找到崖山客户端：请在连接里填写客户端目录，或设置环境变量 YASDB_HOME，或把客户端解压到 ~/.yashandb/client",
+  "db.backend.error.yashandb_client_library_missing": "客户端目录 {{dir}} 下没有 yacli 库（Windows 为 lib\\yascli.dll，Linux 为 lib/libyascli.so），请确认安装的是崖山客户端",
+  "db.backend.error.yashandb_client_load_failed": "加载崖山客户端库失败（{{path}}）：{{detail}}。请确认客户端 lib 目录完整，且客户端与本机架构一致",
+  "db.backend.error.yashandb_connect_failed": "无法连接崖山：{{detail}}",
   "table_designer.sql.informix_drop_primary_key_manual": "GBase 8s / Informix 删除主键需要约束名：请先在 DDL 里找到 PRIMARY KEY 的约束名，执行 ALTER TABLE 表名 DROP CONSTRAINT 约束名"
 }

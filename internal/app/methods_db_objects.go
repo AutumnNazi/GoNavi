@@ -526,9 +526,9 @@ func buildObjectRoutineMetadataQueries(dbType string, dbName string) []objectMet
 			objectStatusProjection = ", STATUS AS object_status"
 		}
 		if strings.TrimSpace(dbName) == "" {
-			return []objectMetadataQuerySpec{{sql: fmt.Sprintf(`SELECT OBJECT_NAME AS routine_name, OBJECT_TYPE AS routine_type%s FROM USER_OBJECTS WHERE OBJECT_TYPE IN ('FUNCTION','PROCEDURE') ORDER BY OBJECT_TYPE, OBJECT_NAME`, objectStatusProjection)}}
+			return []objectMetadataQuerySpec{{sql: fmt.Sprintf(`SELECT OBJECT_NAME AS routine_name, %s%s FROM USER_OBJECTS WHERE OBJECT_TYPE IN %s ORDER BY OBJECT_TYPE, OBJECT_NAME`, oracleRoutineTypeColumn, objectStatusProjection, oracleRoutineObjectTypes)}}
 		}
-		return []objectMetadataQuerySpec{{sql: fmt.Sprintf("SELECT OWNER AS schema_name, OBJECT_NAME AS routine_name, OBJECT_TYPE AS routine_type%s FROM ALL_OBJECTS WHERE OWNER = '%s' AND OBJECT_TYPE IN ('FUNCTION','PROCEDURE') ORDER BY OBJECT_TYPE, OBJECT_NAME", objectStatusProjection, strings.ToUpper(safeDbName))}}
+		return []objectMetadataQuerySpec{{sql: fmt.Sprintf("SELECT OWNER AS schema_name, OBJECT_NAME AS routine_name, %s%s FROM ALL_OBJECTS WHERE OWNER = '%s' AND OBJECT_TYPE IN %s ORDER BY OBJECT_TYPE, OBJECT_NAME", oracleRoutineTypeColumn, objectStatusProjection, strings.ToUpper(safeDbName), oracleRoutineObjectTypes)}}
 	case "duckdb":
 		return []objectMetadataQuerySpec{{sql: `SELECT schema_name, function_name AS routine_name, 'FUNCTION' AS routine_type FROM duckdb_functions() WHERE internal = false AND lower(function_type) = 'macro' AND COALESCE(macro_definition, '') <> '' ORDER BY schema_name, function_name`, inferredType: "FUNCTION"}}
 	default:
