@@ -244,26 +244,42 @@ func TestTypesenseSelectPushesFilterAndSortToSearch(t *testing.T) {
 }
 
 func TestTypesenseLegacyVersionsPageAndFallBackToExport(t *testing.T) {
-	mock := newTypesenseMock(t, "0.20.0")
-	client := newTypesenseTestDB(t, mock)
-	if _, _, err := client.Query(`SELECT * FROM "books" WHERE "genre" = 'a' LIMIT 50 OFFSET 100`); err != nil {
+	// 0.24 / 0.25 前没有 offset / limit：按页码读取，窗口不对齐时取覆盖窗口的页再截取。
+	paged := newTypesenseMock(t, "0.24.1")
+	pagedClient := newTypesenseTestDB(t, paged)
+	if _, _, err := pagedClient.Query(`SELECT * FROM "books" WHERE "genre" = 'a' LIMIT 50 OFFSET 100`); err != nil {
 		t.Fatalf("Query() error = %v", err)
 	}
-	query := mock.lastQuery("GET /collections/books/documents/search")
-	if query.Get("page") != "3" || query.Get("per_page") != "50" || query.Get("filter_by") != "genre:=a" || query.Has("offset") {
-		t.Fatalf("legacy search = %v", query)
+	query := paged.lastQuery("GET /collections/books/documents/search")
+	if query.Get("page") != "3" || query.Get("per_page") != "50" || query.Get("filter_by") != "genre:=`a`" || query.Has("offset") {
+		t.Fatalf("page-based search = %v", query)
 	}
-	rows, _, err := client.Query(`SELECT "id" FROM "books" LIMIT 30 OFFSET 240`)
+	rows, _, err := pagedClient.Query(`SELECT "id" FROM "books" LIMIT 30 OFFSET 240`)
 	if err != nil || len(rows) != 30 || rows[0]["id"] != "241" || rows[29]["id"] != "270" {
 		t.Fatalf("unaligned window rows = %v, err = %v", rows, err)
 	}
+
+	// 0.20 的搜索结果跨页不稳定：集合不大时网格改用导出在客户端分页，条件与排序也在客户端处理。
+	mock := newTypesenseMock(t, "0.20.0")
+	client := newTypesenseTestDB(t, mock)
+	if _, err := client.GetColumns("default", "books"); err != nil {
+		t.Fatalf("GetColumns() error = %v", err)
+	}
 	searchesBefore := len(mock.queries["GET /collections/books/documents/search"])
+	rows, _, err = client.Query(`SELECT * FROM "books" WHERE "genre" = 'a' LIMIT 50 OFFSET 50`)
+	if err != nil || len(rows) != 50 || rows[0]["genre"] != "a" || len(mock.queries["GET /collections/books/documents/export"]) != 1 ||
+		len(mock.queries["GET /collections/books/documents/search"]) != searchesBefore {
+		t.Fatalf("0.20 browsing must page on the client from the export: rows = %d, err = %v", len(rows), err)
+	}
 	rows, _, err = client.Query(`SELECT * FROM "books" WHERE ("title" = 'book 7') OR ("year" = '1991') ORDER BY "year" DESC LIMIT 5 OFFSET 0`)
-	if err != nil || len(mock.queries["GET /collections/books/documents/export"]) != 1 || len(mock.queries["GET /collections/books/documents/search"]) != searchesBefore {
+	if err != nil || len(mock.queries["GET /collections/books/documents/search"]) != searchesBefore {
 		t.Fatalf("OR / non-facet strings on 0.20 must be filtered on the client from the export: err = %v", err)
 	}
 	if len(rows) != 5 || rows[0]["id"] != "7" || rows[1]["id"] != "1" {
 		t.Fatalf("client-side rows = %v", rows)
+	}
+	if total, _, err := client.Query(`SELECT COUNT(*) FROM "books" WHERE "genre" = 'a'`); err != nil || total[0]["total"] != int64(400) {
+		t.Fatalf("count still uses the native filter on 0.20: %v, err = %v", total, err)
 	}
 	ddl, err := client.GetCreateStatement("default", "books")
 	if err != nil || !strings.HasPrefix(ddl, "POST /collections\n{\n  \"name\": \"books\",\n  \"fields\": [") || strings.Contains(ddl, "num_documents") ||

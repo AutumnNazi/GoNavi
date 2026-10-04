@@ -62,10 +62,26 @@ func (t *TypesenseDB) scan(ctx context.Context, meta *typesenseCollectionMeta, w
 	return matched, nil
 }
 
-// visitDocuments 用导出接口流式读出整个集合，逐个文档回调。0.24 之前导出较慢（2500 个文档约 3 秒），
-// 但搜索接口按页读取在这些版本上不稳定（同序的文档跨页会重复或遗漏），只能用导出。
+// visitDocuments 逐个文档回调整个集合：0.24 起流式读取导出接口；0.23 的导出较慢（2500 个文档约 2.5 秒），
+// 搜索接口按页读取在这个版本上稳定且快 4 倍；更早的版本搜索跨页不稳定（同序的文档会重复或遗漏），只能用导出。
 func (t *TypesenseDB) visitDocuments(ctx context.Context, collection string, visit func(map[string]interface{}) error) error {
-	return t.exportDocuments(ctx, collection, visit)
+	if t.supportsOrFilter() || !t.stableSearchPaging() {
+		return t.exportDocuments(ctx, collection, visit)
+	}
+	for page := 1; ; page++ {
+		result, err := t.searchDocuments(ctx, collection, typesenseSearch{page: page, perPage: typesenseMaxPerPage})
+		if err != nil {
+			return err
+		}
+		for _, document := range result.documents {
+			if err := visit(document); err != nil {
+				return err
+			}
+		}
+		if len(result.documents) < typesenseMaxPerPage {
+			return nil
+		}
+	}
 }
 
 // exportDocuments 流式读取导出接口（JSON Lines），逐个文档回调。

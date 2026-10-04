@@ -162,7 +162,9 @@ func (t *TypesenseDB) fetchWindow(ctx context.Context, selection typesenseSelect
 	}
 	filter, filterOK := t.nativeFilter(selection.meta, selection.where)
 	sortBy, sortOK := t.nativeSort(selection.meta, selection.sort)
-	if filterOK && sortOK {
+	// 0.23 之前搜索结果跨页不稳定（同序的文档会重复或遗漏），集合不大时改在客户端按导出顺序分页。
+	stable := t.stableSearchPaging() || selection.meta.documents > typesenseScanLimit
+	if filterOK && sortOK && stable {
 		return t.searchWindow(ctx, selection.meta.name, filter, sortBy, selection.offset, selection.limit)
 	}
 	matched, err := t.scan(ctx, selection.meta, selection.where, selection.sort)

@@ -151,7 +151,7 @@ func (t *TypesenseDB) Ping() error {
 	return err
 }
 
-// 各版本接口差异：0.23 起非 facet 字符串可精确过滤、id 可过滤、导出可带 filter_by、部分更新写 null 即删除字段；
+// 各版本接口差异：0.23 起搜索结果跨页稳定、非 facet 字符串可精确过滤、id 可过滤、导出可带 filter_by、部分更新写 null 即删除字段；
 // 0.24 起过滤支持 || 与括号；0.25 起数值字段可用 !=、搜索支持 offset / limit；26 起 id 可用 !=；29 起可 truncate 清空。
 
 func (t *TypesenseDB) supportsExactFilter() bool  { return t.atLeast("0.23") }
@@ -161,6 +161,7 @@ func (t *TypesenseDB) supportsOffsetLimit() bool  { return t.atLeast("0.25") }
 func (t *TypesenseDB) supportsIDNotEq() bool      { return t.atLeast("26.0") }
 func (t *TypesenseDB) supportsTruncate() bool     { return t.atLeast("29.0") }
 func (t *TypesenseDB) nullRemovesOptional() bool  { return t.atLeast("0.23") }
+func (t *TypesenseDB) stableSearchPaging() bool   { return t.atLeast("0.23") }
 
 // newRequest 组装带认证头的请求；contentType 为空时不带请求体类型。
 func (t *TypesenseDB) newRequest(ctx context.Context, method, path string, body []byte, contentType string) (*http.Request, error) {
