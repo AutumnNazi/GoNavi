@@ -131,11 +131,11 @@ jobs:
           set -euo pipefail
           mkdir -p frontend/dist
           printf '<!doctype html><title>GoNavi</title>\n' > frontend/dist/index.html
-          cp tools/stub-dist.zip frontend/dist.zip
+          cp tools/stub-dist.tar.br frontend/dist.tar.br
           wails generate module
           node frontend/scripts/wails-frontend-install.mjs
           npm --prefix frontend run build
-          test -s frontend/dist.zip
+          test -s frontend/dist.tar.br
 
       - name: Test frontend virtual scrolling
         run: npm --prefix frontend test -- src/components/dataGridVirtualScroll.test.ts src/components/DataGrid.layout.test.tsx
@@ -143,10 +143,10 @@ jobs:
       - name: Pack frontend dist
         shell: bash
         run: |
-          test -s frontend/dist.zip
+          test -s frontend/dist.tar.br
           # 注意 GNU tar 的 -C 是叠加语义,拆成两条命令避免相对路径踩坑
           tar -cf frontend-dist.tar -C frontend/dist .
-          tar -rf frontend-dist.tar -C frontend dist.zip
+          tar -rf frontend-dist.tar -C frontend dist.tar.br
 
       - name: Upload frontend dist
         uses: actions/upload-artifact@v6
@@ -624,9 +624,9 @@ jobs:
           test -s frontend-artifact/frontend-dist.tar
           tar -xf frontend-artifact/frontend-dist.tar -C frontend/dist
           test -s frontend/dist/index.html
-          # dist.zip 与 dist 内容一起打在 tar 里,移到 frontend/ 下供 go:embed
-          mv frontend/dist/dist.zip frontend/dist.zip
-          test -s frontend/dist.zip
+          # dist.tar.br 与 dist 内容一起打在 tar 里,移到 frontend/ 下供 go:embed
+          mv frontend/dist/dist.tar.br frontend/dist.tar.br
+          test -s frontend/dist.tar.br
 
       - name: Install WiX Toolset (Windows)
         if: contains(matrix.platform, 'windows')
