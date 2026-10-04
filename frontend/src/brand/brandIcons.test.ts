@@ -8,6 +8,7 @@ import {
   resolveBrandAboutSrc,
   resolveBrandDockSrc,
   resolveBrandFullSrc,
+  resolveBrandIcon,
   resolveBrandIconSrc,
   resolveBrandIconRemoteSrc,
   resolveBrandTitlebarSrc,
@@ -83,7 +84,7 @@ describe('brand icon asset resolution', () => {
     expect(resolveBrandIconRemoteSrc('01')).toBe('/brand-fallback.svg');
     expect(resolveBrandIconRemoteSrc('02')).toBe(`${BRAND_ICON_REMOTE_BASE_URL}/02-ribbon-graphite.svg`);
     expect(resolveBrandIconRemoteSrc('16')).toBe(`${BRAND_ICON_REMOTE_BASE_URL}/16-compass-bandana.webp`);
-    expect(resolveBrandIconRemoteSrc('16-about')).toBe(`${BRAND_ICON_REMOTE_BASE_URL}/16-compass-bandana-about.png`);
+    expect(resolveBrandIconRemoteSrc('16-about')).toBe(`${BRAND_ICON_REMOTE_BASE_URL}/16-compass-bandana-about-v2.png`);
     expect(resolveBrandIconRemoteSrc('08-titlebar')).toBe(`${BRAND_ICON_REMOTE_BASE_URL}/08-database-search-transparent.png`);
     expect(resolveBrandIconRemoteSrc('07-titlebar')).toBe('');
     expect(resolveBrandIconRemoteSrc('unknown')).toBe('');
@@ -91,9 +92,16 @@ describe('brand icon asset resolution', () => {
 
   it('keeps 0.9.7 mascot styling separate from where the artwork is stored', () => {
     expect(BRAND_ICONS.filter((icon) => icon.mascot).map((icon) => icon.id)).toEqual([
-      '01', '07', '08', '09', '10', '11', '12', '13', '14', '15', '16',
+      '07', '08', '09', '10', '11', '12', '13', '14', '15', '16',
     ]);
     expect(BRAND_ICONS.filter((icon) => icon.remoteTitlebar).map((icon) => icon.id)).toEqual(['08']);
+  });
+
+  it('keeps the bundled default dark-tile icon out of the white-tile mascot family', () => {
+    // #01 composes full-bleed on macOS; the mascot flag would apply the
+    // white-tile Dock safe-area inset and shrink the running default icon.
+    expect(resolveBrandIcon('01').mascot).toBeFalsy();
+    expect(resolveBrandIcon('01').bundled).toBe(true);
   });
 
   it('fetches only ribbons and the selected icon at startup, mascot previews on demand', () => {

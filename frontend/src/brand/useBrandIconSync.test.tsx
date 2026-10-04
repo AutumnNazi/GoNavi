@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useBrandIconSync } from './useBrandIconSync';
 import type { BrandIconId } from './brandIcons';
@@ -18,6 +18,14 @@ const storeState = vi.hoisted(() => ({
 
 const setApplicationBrandIcon = vi.hoisted(() => vi.fn());
 
+const composeMacOSDockIcon = vi.hoisted(() => vi.fn(async () => 'b64'));
+const composeWindowsNativeIcon = vi.hoisted(() => vi.fn(async () => 'b64'));
+// 可配置的运行环境与品牌定义：默认保持原生同步不触发，避免影响既有用例。
+const environmentState = vi.hoisted(() => ({ shouldSync: false, platform: 'windows' }));
+const brandDefinitionState = vi.hoisted(() => ({
+  value: { mascot: true } as { mascot?: boolean; bundled?: boolean },
+}));
+
 vi.mock('antd', () => ({ message: messageApi }));
 vi.mock('../store', () => ({
   useStore: (selector: (state: unknown) => unknown) => selector(storeState),
@@ -27,7 +35,7 @@ vi.mock('../../wailsjs/go/app/App', () => ({
   GetBrandIconDataURL: vi.fn(),
 }));
 vi.mock('../../wailsjs/runtime', () => ({
-  Environment: vi.fn(async () => ({ platform: 'windows' })),
+  Environment: vi.fn(async () => ({ platform: environmentState.platform, buildType: 'production' })),
 }));
 vi.mock('../i18n/provider', () => ({
   useI18n: () => ({ t: (key: string) => key, language: 'zh-CN' }),
@@ -35,7 +43,7 @@ vi.mock('../i18n/provider', () => ({
 vi.mock('./brandIcons', () => ({
   resolveBrandIconSrc: () => 'asset:icon',
   resolveBrandDockSrc: (id: string) => `dock:${id}`,
-  resolveBrandIcon: () => ({ mascot: true }),
+  resolveBrandIcon: () => brandDefinitionState.value,
   brandAssetKeysFor: () => [],
   startupBrandAssetKeys: () => [],
 }));
@@ -45,10 +53,10 @@ vi.mock('./brandAssetLoader', () => ({
   getBrandAssetsRevision: () => 0,
 }));
 vi.mock('./macDockIcon', () => ({
-  composeWindowsNativeIconBase64: vi.fn(async () => 'b64'),
-  composeMacOSDockIconBase64: vi.fn(async () => 'b64'),
-  LEGACY_MASCOT_DOCK_ICON_INSET: 0,
-  shouldSyncApplicationBrandIcon: () => false,
+  composeWindowsNativeIconBase64: composeWindowsNativeIcon,
+  composeMacOSDockIconBase64: composeMacOSDockIcon,
+  LEGACY_MASCOT_DOCK_ICON_INSET: 100,
+  shouldSyncApplicationBrandIcon: () => environmentState.shouldSync,
 }));
 
 let capturedHandler: (id: BrandIconId) => Promise<void>;
@@ -136,5 +144,65 @@ describe('useBrandIconSync handleBrandIconChange', () => {
     expect(storeState.setBrandIconId).toHaveBeenCalledWith('aurora');
     expect(messageApi.success).toHaveBeenCalledTimes(1);
     expect(messageApi.error).not.toHaveBeenCalled();
+  });
+});
+
+describe('useBrandIconSync native dock icon composition', () => {
+  const DarwinHarness = (): null => {
+    useBrandIconSync('darwin');
+    return null;
+  };
+
+  beforeEach(() => {
+    storeState.brandIconId = 'legacy';
+    setApplicationBrandIcon.mockReset();
+    setApplicationBrandIcon.mockResolvedValue({ success: true });
+    composeMacOSDockIcon.mockClear();
+    composeWindowsNativeIcon.mockClear();
+    environmentState.shouldSync = true;
+    environmentState.platform = 'darwin';
+    brandDefinitionState.value = { mascot: false, bundled: true };
+    // node 测试环境没有 document：提供最小的 favicon 存根，
+    // 让同步 effect 越过入口守卫走到原生合成。
+    vi.stubGlobal('document', {
+      querySelector: () => null,
+      createElement: () => ({ setAttribute: () => {} }),
+      head: { appendChild: () => {} },
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    environmentState.shouldSync = false;
+    environmentState.platform = 'windows';
+    brandDefinitionState.value = { mascot: true };
+  });
+
+  it('composes the bundled dark-tile default full-bleed without the mascot safe-area inset', async () => {
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(React.createElement(DarwinHarness));
+    });
+    await act(async () => {});
+    void renderer;
+
+    expect(composeMacOSDockIcon).toHaveBeenCalledTimes(1);
+    expect(composeMacOSDockIcon).toHaveBeenCalledWith('dock:legacy', { inset: undefined });
+    expect(composeWindowsNativeIcon).not.toHaveBeenCalled();
+    expect(setApplicationBrandIcon).toHaveBeenCalledWith('b64');
+  });
+
+  it('keeps the white-tile mascot safe-area inset on macOS', async () => {
+    brandDefinitionState.value = { mascot: true, bundled: false };
+    let renderer: ReactTestRenderer | undefined;
+    await act(async () => {
+      renderer = create(React.createElement(DarwinHarness));
+    });
+    await act(async () => {});
+    void renderer;
+
+    expect(composeMacOSDockIcon).toHaveBeenCalledTimes(1);
+    expect(composeMacOSDockIcon).toHaveBeenCalledWith('dock:legacy', { inset: 100 });
+    expect(setApplicationBrandIcon).toHaveBeenCalledWith('b64');
   });
 });
