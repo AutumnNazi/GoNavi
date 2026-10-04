@@ -468,6 +468,8 @@ func isReadOnlySQLQuery(dbType string, query string) bool {
 		return err == nil && !batch.Blocked && !batch.ContainsWrite && !batch.ContainsScript
 	case "weaviate":
 		return db.IsWeaviateReadCommand(query)
+	case "meilisearch":
+		return db.IsMeilisearchReadCommand(query)
 	case "etcd":
 		return db.IsEtcdReadCommand(query)
 	case "zookeeper":

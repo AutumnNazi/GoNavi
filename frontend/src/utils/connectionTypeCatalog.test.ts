@@ -80,7 +80,7 @@ describe('connectionTypeCatalog', () => {
     expect(keys).toContain('redis');
     expect(keys).toContain('elasticsearch');
     expect(CONNECTION_TYPE_GROUPS.find((group) => group.labelKey.endsWith('.search'))?.items.map((item) => item.key))
-      .toEqual(['elasticsearch', 'opensearch']);
+      .toEqual(['elasticsearch', 'opensearch', 'meilisearch']);
     expect(keys).toContain('chroma');
     expect(keys).toContain('qdrant');
     expect(keys).toContain('milvus');
