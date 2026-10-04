@@ -3,14 +3,12 @@
 package db
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
-	"sort"
 	"strings"
 )
 
@@ -26,11 +24,11 @@ func (m *MeilisearchDB) QueryContext(ctx context.Context, query string) ([]map[s
 		return nil, nil, localizedDatabaseRuntimeError("db.backend.error.connection_not_open", nil)
 	}
 	text := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(query), ";"))
-	if requests, ok := parseMeilisearchRESTRequests(text); ok {
+	if requests, ok := parseDocumentRESTRequests(text); ok {
 		var body []byte
-		var last meilisearchRESTRequest
+		var last documentRESTRequest
 		for _, request := range requests {
-			if !request.isRead() {
+			if !meilisearchRequestIsRead(request) {
 				return nil, nil, localizedDatabaseRuntimeError("db.backend.error.meilisearch_query_unsupported", nil)
 			}
 			if request.body != nil && !json.Valid(request.body) {
@@ -42,7 +40,7 @@ func (m *MeilisearchDB) QueryContext(ctx context.Context, query string) ([]map[s
 			}
 			last = request
 		}
-		rows, columns := meilisearchRESTRows(body, m.restColumnOrder(ctx, last.path))
+		rows, columns := documentRESTRows(body, m.restColumnOrder(ctx, last.path), nil, "results", "hits")
 		return rows, columns, nil
 	}
 	if strings.HasPrefix(strings.ToLower(text), "select") {
@@ -68,86 +66,6 @@ func (m *MeilisearchDB) restColumnOrder(ctx context.Context, path string) []stri
 		return nil
 	}
 	return meta.fields
-}
-
-// meilisearchRESTRows 把 REST 响应转成表格：数组逐项一行，带 results / hits 列表的响应展开列表，其余对象作为单行。
-// leading 是优先排在前面的列（索引字段顺序），其余列按名称排序，下划线开头的元数据列（_formatted、_rankingScore 等）在最后。
-func meilisearchRESTRows(body []byte, leading []string) ([]map[string]interface{}, []string) {
-	var payload interface{}
-	if len(bytes.TrimSpace(body)) == 0 || decodeJSONWithUseNumber(body, &payload) != nil {
-		row := map[string]interface{}{"response": string(body)}
-		return []map[string]interface{}{row}, []string{"response"}
-	}
-	rows := make([]map[string]interface{}, 0)
-	appendItems := func(items []interface{}) {
-		for _, item := range items {
-			if object, ok := item.(map[string]interface{}); ok {
-				rows = append(rows, object)
-			} else {
-				rows = append(rows, map[string]interface{}{"value": item})
-			}
-		}
-	}
-	switch typed := payload.(type) {
-	case []interface{}:
-		appendItems(typed)
-	case map[string]interface{}:
-		items, ok := typed["results"].([]interface{})
-		if !ok {
-			items, ok = typed["hits"].([]interface{})
-		}
-		if ok {
-			appendItems(items)
-		} else {
-			rows = append(rows, typed)
-		}
-	default:
-		rows = append(rows, map[string]interface{}{"value": typed})
-	}
-	columns := meilisearchRowColumns(rows, leading)
-	fillDocumentRows(rows, columns)
-	return rows, columns
-}
-
-func meilisearchRowColumns(rows []map[string]interface{}, leading []string) []string {
-	seen := map[string]bool{}
-	for _, row := range rows {
-		for key := range row {
-			seen[key] = true
-		}
-	}
-	columns := make([]string, 0, len(seen))
-	placed := map[string]bool{}
-	for _, name := range append(append([]string{}, leading...), "uid", "id") {
-		if seen[name] && !placed[name] {
-			placed[name] = true
-			columns = append(columns, name)
-		}
-	}
-	rest, meta := make([]string, 0, len(seen)), make([]string, 0)
-	for name := range seen {
-		switch {
-		case placed[name]:
-		case strings.HasPrefix(name, "_"):
-			meta = append(meta, name)
-		default:
-			rest = append(rest, name)
-		}
-	}
-	sort.Strings(rest)
-	sort.Strings(meta)
-	return append(append(columns, rest...), meta...)
-}
-
-// fillDocumentRows 让每行都含全部列：文档缺失的字段补 nil，结果表格显示 NULL 而不是 undefined。
-func fillDocumentRows(rows []map[string]interface{}, columns []string) {
-	for _, row := range rows {
-		for _, column := range columns {
-			if _, ok := row[column]; !ok {
-				row[column] = nil
-			}
-		}
-	}
 }
 
 // meilisearchSelect 是解析后的 SELECT。
@@ -179,7 +97,7 @@ func (m *MeilisearchDB) querySelect(ctx context.Context, text string) ([]map[str
 	}
 	columns := selection.fields
 	if len(columns) == 0 {
-		columns = meilisearchRowColumns(documents, selection.meta.fields)
+		columns = documentRowColumns(documents, selection.meta.fields)
 	}
 	rows := make([]map[string]interface{}, 0, len(documents))
 	for _, document := range documents {
@@ -341,12 +259,4 @@ func decodeMeilisearchDocuments(body []byte) ([]map[string]interface{}, error) {
 		documents = append(documents, document)
 	}
 	return documents, nil
-}
-
-func copyDocument(document map[string]interface{}) map[string]interface{} {
-	copied := make(map[string]interface{}, len(document))
-	for key, value := range document {
-		copied[key] = value
-	}
-	return copied
 }

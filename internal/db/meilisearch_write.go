@@ -28,7 +28,7 @@ func (m *MeilisearchDB) ExecContext(ctx context.Context, query string) (int64, e
 		return 0, localizedDatabaseRuntimeError("db.backend.error.connection_not_open", nil)
 	}
 	text := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(query), ";"))
-	if requests, ok := parseMeilisearchRESTRequests(text); ok {
+	if requests, ok := parseDocumentRESTRequests(text); ok {
 		var total int64
 		for _, request := range requests {
 			if request.body != nil && !json.Valid(request.body) {

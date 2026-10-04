@@ -21,6 +21,7 @@
       "meilisearch",
       "registry",
       "document_filter",
+      "document_rest",
       "vector_sql_where"
     ]
   },
