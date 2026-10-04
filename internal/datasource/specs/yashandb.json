@@ -15,6 +15,7 @@
   "objectKind": "table",
   "protection": true,
   "excelImport": true,
+  "sqlFileImport": true,
   "versionQuery": "SELECT banner AS version FROM v$version",
   "driverTransactions": true,
   "sync": {

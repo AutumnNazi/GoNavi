@@ -13,6 +13,7 @@
   "caseSensitiveIdentifiers": true,
   "syntheticDatabase": true,
   "protection": true,
+  "excelImport": true,
   "agent": {
     "buildTag": "gonavi_typesense_driver",
     "version": "1.0.0",

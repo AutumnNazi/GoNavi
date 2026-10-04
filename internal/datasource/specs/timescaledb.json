@@ -16,6 +16,7 @@
   "caseSensitiveIdentifiers": true,
   "protection": true,
   "excelImport": true,
+  "sqlFileImport": true,
   "versionQuery": "SELECT extversion AS version FROM pg_extension WHERE extname = 'timescaledb'",
   "sync": {
     "source": true,

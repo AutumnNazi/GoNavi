@@ -13,6 +13,8 @@
   "objectKind": "table",
   "protection": true,
   "versionQuery": "SELECT build() AS version",
+  "excelImport": true,
+  "sqlFileImport": true,
   "agent": {
     "buildTag": "gonavi_questdb_driver",
     "goModule": "github.com/lib/pq",

@@ -13,6 +13,8 @@
   "objectKind": "table",
   "protection": true,
   "versionQuery": "SELECT version() AS version",
+  "excelImport": true,
+  "sqlFileImport": true,
   "agent": {
     "buildTag": "gonavi_greptimedb_driver",
     "goModule": "github.com/go-sql-driver/mysql",

@@ -65,10 +65,13 @@ type Spec struct {
 	// 导航树选中的库名不得覆盖连接配置里的 Database。
 	SyntheticDatabase bool `json:"syntheticDatabase,omitempty"`
 	// ProxyMode 为空等同 forward。
-	ProxyMode   string    `json:"proxyMode,omitempty"`
-	Protection  bool      `json:"protection,omitempty"`
-	ExcelImport bool      `json:"excelImport,omitempty"`
-	Sync        *SyncSpec `json:"sync,omitempty"`
+	ProxyMode  string `json:"proxyMode,omitempty"`
+	Protection bool   `json:"protection,omitempty"`
+	// ExcelImport 为 true 时开放表数据导入（CSV / JSON / Excel，经驱动的 ApplyChanges 写入）。
+	ExcelImport bool `json:"excelImport,omitempty"`
+	// SQLFileImport 为 true 时开放运行 SQL 文件 / 从 SQL 备份恢复（按方言切分语句，在固定会话里执行）。
+	SQLFileImport bool      `json:"sqlFileImport,omitempty"`
+	Sync          *SyncSpec `json:"sync,omitempty"`
 	// DriverTransactions 为 true 时 SQL 编辑器的托管事务走驱动接口（OpenTransactionExecer），
 	// 用于文本 BEGIN / START TRANSACTION 不生效的库（如 GBase 8a 需要关闭自动提交）。
 	DriverTransactions bool `json:"driverTransactions,omitempty"`
@@ -139,6 +142,9 @@ type SyncSpec struct {
 	// SingleKindBatches 为 true 时同步把删除、修改、新增分开提交：目标库的一个事务里同一张表只能做一类写入
 	// （如 GBase 8a 在 UPDATE / DELETE 之后不能再写同一张表）。
 	SingleKindBatches bool `json:"singleKindBatches,omitempty"`
+	// HashIndexesOnly 为 true 时目标库只支持 HASH 普通索引（如 GBase 8a）：同步建索引时普通索引改用 USING HASH，
+	// 唯一索引跳过并提示。
+	HashIndexesOnly bool `json:"hashIndexesOnly,omitempty"`
 }
 
 // AgentSpec 描述一个可选驱动代理构建。

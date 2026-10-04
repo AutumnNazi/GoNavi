@@ -15,13 +15,15 @@
   "objectKind": "table",
   "protection": true,
   "excelImport": true,
+  "sqlFileImport": true,
   "driverTransactions": true,
   "versionQuery": "SELECT VERSION() AS version",
   "sync": {
     "source": true,
     "target": true,
     "model": "relational",
-    "singleKindBatches": true
+    "singleKindBatches": true,
+    "hashIndexesOnly": true
   },
   "agent": {
     "buildTag": "gonavi_gbase8a_driver",

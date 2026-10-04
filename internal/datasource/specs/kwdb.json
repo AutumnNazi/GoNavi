@@ -15,6 +15,7 @@
   "caseSensitiveIdentifiers": true,
   "protection": true,
   "excelImport": true,
+  "sqlFileImport": true,
   "versionQuery": "SELECT version() AS version",
   "sync": {
     "source": true,

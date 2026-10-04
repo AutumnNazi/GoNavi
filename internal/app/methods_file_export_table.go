@@ -42,7 +42,7 @@ func (a *App) ExportTableWithOptions(config connection.ConnectionConfig, dbName 
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 	format := options.Format
-	defaultFilename := fmt.Sprintf("%s.%s", tableName, format)
+	defaultFilename := fmt.Sprintf("%s.%s", sanitizeExportFileStem(tableName), format)
 	filename := ""
 	var err error
 	var webTarget *webDownloadTarget

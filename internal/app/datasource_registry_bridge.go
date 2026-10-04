@@ -76,6 +76,13 @@ func registryUsesFlatObjectNames(driverType string) bool {
 	return ok && spec.UI.FlatObjectNames
 }
 
+// registryUsesBareTableNames 报告描述表类型在 SQL 里是否只写表名：未借用方言的类型（QuestDB、Firebird、GBase 8s
+// 与非 SQL 数据源）的库是连接级上下文（虚拟库或连接时选定的库），写成 库.表 会被当成别的对象。
+func registryUsesBareTableNames(driverType string) bool {
+	spec, ok := db.DataSourceSpec(driverType)
+	return ok && spec.DDLDialect == ""
+}
+
 // registryUsesDriverProxy 报告描述表类型是否由驱动自己处理连接代理（不在主进程改写为本地转发地址）。
 func registryUsesDriverProxy(driverType string) bool {
 	spec, ok := db.DataSourceSpec(driverType)
@@ -145,4 +152,28 @@ func isCreateViewStatement(ddl string) bool {
 		head = head[:end]
 	}
 	return strings.Contains(head+" ", " VIEW ")
+}
+
+// registryUsesBooleanKeywords 报告自有方言的描述表类型是否只接受 TRUE / FALSE 布尔字面量
+// （QuestDB、GreptimeDB、Firebird 3+ 不会把 1 / 0 写进布尔列），SQL 导出与导入据此输出布尔值。
+func registryUsesBooleanKeywords(dbType string) bool {
+	spec, ok := db.DataSourceSpec(dbType)
+	if !ok || spec.DDLDialect != "" {
+		return false
+	}
+	switch spec.Type {
+	case "questdb", "greptimedb", "firebird":
+		return true
+	default:
+		return false
+	}
+}
+
+// oracleObjectMissingSQLCode 是 Oracle 系“表或视图不存在”的 SQLCODE：Oracle 为 -942（ORA-00942），
+// 借用 Oracle 方言的崖山为 2012（YAS-02012，崖山的 SQLCODE 是正数）。SQL 备份里的删除保护块据此忽略对象不存在的错误。
+func oracleObjectMissingSQLCode(config connection.ConnectionConfig) int {
+	if spec, ok := db.DataSourceSpec(config.Type); ok && spec.Type == "yashandb" {
+		return 2012
+	}
+	return -942
 }

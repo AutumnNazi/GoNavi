@@ -13,6 +13,7 @@
   "objectKind": "table",
   "protection": true,
   "excelImport": true,
+  "sqlFileImport": true,
   "versionQuery": "SELECT DBINFO('version', 'full') AS version FROM sysmaster:sysdual",
   "clientLibrary": {
     "param": "clientDir",

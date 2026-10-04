@@ -17,6 +17,7 @@
   "proxyMode": "driver",
   "protection": true,
   "versionQuery": "version",
+  "excelImport": true,
   "agent": {
     "buildTag": "gonavi_etcd_driver",
     "goModule": "go.etcd.io/etcd/client/v3",

@@ -126,6 +126,11 @@ func normalizeSchemaAndTableByType(dbType string, dbName string, tableName strin
 		return rawDB, rawTable
 	}
 
+	// 未借用方言的描述表类型只写表名（对象名整体是一个标识符，可能含点或路径），见 registryUsesBareTableNames。
+	if registryUsesBareTableNames(dbType) {
+		return "", rawTable
+	}
+
 	// Elasticsearch / RocketMQ / MQTT / RabbitMQ / Kafka / Trino 与 flatObjectNames 的描述表类型：对象名可能含多个点或路径，不能按点分割
 	if registryUsesFlatObjectNames(dbType) || dbType == "elasticsearch" || dbType == "rocketmq" || dbType == "mqtt" || dbType == "kafka" || dbType == "rabbitmq" || dbType == "trino" {
 		return rawDB, rawTable

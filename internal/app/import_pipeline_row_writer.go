@@ -332,5 +332,13 @@ func (w *importDatabaseRowWriter) ValidateColumns(columns []string) error {
 
 func isMySQLDuplicateKeyError(err error) bool {
 	var mysqlError *mysqlDriver.MySQLError
-	return errors.As(err, &mysqlError) && (mysqlError.Number == 1062 || mysqlError.Number == 1586)
+	if errors.As(err, &mysqlError) {
+		return mysqlError.Number == 1062 || mysqlError.Number == 1586
+	}
+	// 经驱动代理（TiDB、GBase 8a、MariaDB 等）返回的错误只剩文本：按驱动的 "Error 1062 (23000): Duplicate entry" 格式识别。
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return strings.Contains(message, "Error 1062") || strings.Contains(message, "Error 1586")
 }

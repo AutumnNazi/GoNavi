@@ -13,6 +13,7 @@
   "objectKind": "table",
   "protection": true,
   "excelImport": true,
+  "sqlFileImport": true,
   "syntheticDatabase": true,
   "versionQuery": "SELECT rdb$get_context('SYSTEM', 'ENGINE_VERSION') AS version FROM rdb$database",
   "driverTransactions": true,

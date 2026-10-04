@@ -16,6 +16,7 @@
   "proxyMode": "driver",
   "protection": true,
   "versionQuery": "version",
+  "excelImport": true,
   "agent": {
     "buildTag": "gonavi_zookeeper_driver",
     "goModule": "github.com/go-zookeeper/zk",
