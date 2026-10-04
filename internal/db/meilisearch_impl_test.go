@@ -386,3 +386,31 @@ func TestMeilisearchFieldsFollowSampleOrder(t *testing.T) {
 		t.Fatalf("types = %v", types)
 	}
 }
+
+func TestMeilisearchPreviewChangesListsRequests(t *testing.T) {
+	client := newMeilisearchTestDB(t, newMeilisearchMock(t, "1.54.3"))
+	deletes, updates, inserts := client.PreviewChanges("movies", connection.ChangeSet{
+		Deletes: []map[string]interface{}{{"id": float64(1)}},
+		Updates: []connection.UpdateRow{
+			{Keys: map[string]interface{}{"id": float64(2)}, Values: map[string]interface{}{"year": "2006"}},
+			{Keys: map[string]interface{}{"id": float64(3)}, Values: map[string]interface{}{"id": "30"}},
+			{Keys: map[string]interface{}{"id": float64(1)}, Values: map[string]interface{}{"year": "soon"}},
+		},
+		Inserts: []map[string]interface{}{{"id": "9", "title": "New", "price": nil}},
+	})
+	if len(deletes) != 1 || deletes[0] != "POST /indexes/movies/documents/delete-batch\n[\n  1\n]" {
+		t.Fatalf("deletes = %q", deletes)
+	}
+	if len(updates) != 3 || !strings.HasPrefix(updates[0], "PUT /indexes/movies/documents\n") || !strings.Contains(updates[0], `"year": 2006`) {
+		t.Fatalf("partial update = %q", updates)
+	}
+	if !strings.Contains(updates[1], `"title": "Gamma"`) || !strings.Contains(updates[1], `"id": 30`) || !strings.HasSuffix(updates[1], "delete-batch\n[\n  3\n]") {
+		t.Fatalf("primary key change = %q", updates[1])
+	}
+	if !strings.HasPrefix(updates[2], "# ") || !strings.Contains(updates[2], "soon") {
+		t.Fatalf("invalid value = %q", updates[2])
+	}
+	if len(inserts) != 1 || !strings.Contains(inserts[0], `"id": 9`) || strings.Contains(inserts[0], "price") {
+		t.Fatalf("inserts = %q", inserts)
+	}
+}

@@ -308,43 +308,11 @@ func (z *ZooKeeperDB) ApplyChangesContext(ctx context.Context, tableName string,
 		return localizedDatabaseRuntimeError("db.backend.error.connection_not_open", nil)
 	}
 	defer z.cache.clear()
-	table := normalizeZooKeeperPath(tableName)
-	if table == "" {
-		table = z.scope
+	plan, err := z.changePlan(tableName, changes)
+	if err != nil {
+		return err
 	}
-	var ops []interface{}
-	deletes := make([]string, 0, len(changes.Deletes))
-	for _, row := range changes.Deletes {
-		path := normalizeZooKeeperPath(kvText(row[zookeeperColumnPath]))
-		if path == "" {
-			return localizedDatabaseRuntimeError("db.backend.error.zookeeper_path_required", nil)
-		}
-		deletes = append(deletes, path)
-	}
-	sort.SliceStable(deletes, func(i, j int) bool { return strings.Count(deletes[i], "/") > strings.Count(deletes[j], "/") })
-	for _, path := range deletes {
-		ops = append(ops, &zk.DeleteRequest{Path: path, Version: -1})
-	}
-	pending := map[string]bool{}
-	for _, update := range changes.Updates {
-		updateOps, err := z.updateOps(update, pending)
-		if err != nil {
-			return err
-		}
-		ops = append(ops, updateOps...)
-	}
-	for _, row := range changes.Inserts {
-		path := zookeeperResolvePath(kvText(row[zookeeperColumnPath]), table)
-		if path == "" {
-			return localizedDatabaseRuntimeError("db.backend.error.zookeeper_path_required", nil)
-		}
-		parents, err := z.parentOps(path, pending)
-		if err != nil {
-			return err
-		}
-		ops = append(append(ops, parents...), &zk.CreateRequest{Path: path, Data: zookeeperDataValue(row[zookeeperColumnData]), Acl: z.acl})
-		pending[path] = true
-	}
+	ops := plan.ops()
 	for start := 0; start < len(ops); start += zookeeperMaxMultiOps {
 		end := min(start+zookeeperMaxMultiOps, len(ops))
 		responses, err := z.conn.Multi(ops[start:end]...)

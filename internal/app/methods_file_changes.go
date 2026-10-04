@@ -102,6 +102,11 @@ func splitDamengChangeTarget(dbName, tableName string) (string, string) {
 }
 
 func buildChangePreview(dbInst db.Database, config connection.ConnectionConfig, tableName string, changes connection.ChangeSet) ChangePreview {
+	if trier, ok := dbInst.(db.ChangePreviewTrier); ok {
+		if deletes, updates, inserts, ok := trier.TryPreviewChanges(tableName, changes); ok {
+			return ChangePreview{Deletes: deletes, Updates: updates, Inserts: inserts}
+		}
+	}
 	if previewer, ok := dbInst.(db.ChangePreviewer); ok {
 		deletes, updates, inserts := previewer.PreviewChanges(tableName, changes)
 		return ChangePreview{Deletes: deletes, Updates: updates, Inserts: inserts}

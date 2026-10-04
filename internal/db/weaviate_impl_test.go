@@ -387,3 +387,40 @@ func TestIsWeaviateReadCommand(t *testing.T) {
 		}
 	}
 }
+
+func TestWeaviatePreviewChangesListsRequests(t *testing.T) {
+	mock := &weaviateMock{version: "1.39.8", classes: weaviateTestClasses()}
+	client := newWeaviateTestDB(t, mock, "")
+	deletes, updates, inserts := client.PreviewChanges("Article", connection.ChangeSet{
+		Deletes: []map[string]interface{}{{"_id": "d1"}},
+		Updates: []connection.UpdateRow{
+			{Keys: map[string]interface{}{"_id": "u1"}, Values: map[string]interface{}{"views": "11"}},
+			{Keys: map[string]interface{}{"_id": "u2"}, Values: map[string]interface{}{"title": nil}},
+			{Keys: map[string]interface{}{"_id": "u3"}, Values: map[string]interface{}{"views": "eleven"}},
+		},
+		Inserts: []map[string]interface{}{{"_id": "n1", "title": "new"}},
+	})
+	if len(deletes) != 1 || deletes[0] != "DELETE /v1/objects/Article/d1" {
+		t.Fatalf("deletes = %q", deletes)
+	}
+	if len(updates) != 3 || !strings.HasPrefix(updates[0], "PATCH /v1/objects/Article/u1\n") || !strings.Contains(updates[0], `"views": 11`) {
+		t.Fatalf("PATCH preview = %q", updates)
+	}
+	if !strings.HasPrefix(updates[1], "PUT /v1/objects/Article/u2\n") || strings.Contains(updates[1], `"title"`) || !strings.Contains(updates[1], `"vector"`) {
+		t.Fatalf("PUT preview = %q", updates[1])
+	}
+	if !strings.HasPrefix(updates[2], "# ") {
+		t.Fatalf("invalid value preview = %q", updates[2])
+	}
+	if len(inserts) != 1 || !strings.HasPrefix(inserts[0], "POST /v1/batch/objects\n") || !strings.Contains(inserts[0], `"id": "n1"`) {
+		t.Fatalf("inserts = %q", inserts)
+	}
+	for _, request := range mock.requests {
+		if request.method != http.MethodGet && request.method != http.MethodPost {
+			t.Fatalf("preview must not write: %s %s", request.method, request.path)
+		}
+		if request.method == http.MethodPost && request.path != "/v1/graphql" {
+			t.Fatalf("preview must not write: %s %s", request.method, request.path)
+		}
+	}
+}

@@ -204,11 +204,7 @@ func (w *WeaviateDB) ApplyChangesContext(ctx context.Context, tableName string, 
 			if err != nil {
 				return fail(err)
 			}
-			object := payload.body(class.Class, tenant, false)
-			if id, ok := row[weaviateIDColumn]; ok && id != nil && strings.TrimSpace(fmt.Sprint(id)) != "" {
-				object["id"] = strings.TrimSpace(fmt.Sprint(id))
-			}
-			objects = append(objects, object)
+			objects = append(objects, weaviateInsertObject(class, tenant, row, payload))
 		}
 		var raw json.RawMessage
 		if err := w.doJSON(ctx, http.MethodPost, "/v1/batch/objects", map[string]interface{}{"objects": objects}, &raw); err != nil {
@@ -219,6 +215,15 @@ func (w *WeaviateDB) ApplyChangesContext(ctx context.Context, tableName string, 
 		}
 	}
 	return nil
+}
+
+// weaviateInsertObject 是批量写入里的一个新对象；网格填了 _id 时使用该 id。
+func weaviateInsertObject(class weaviateClass, tenant string, row map[string]interface{}, payload weaviateObjectPayload) map[string]interface{} {
+	object := payload.body(class.Class, tenant, false)
+	if id, ok := row[weaviateIDColumn]; ok && id != nil && strings.TrimSpace(fmt.Sprint(id)) != "" {
+		object["id"] = strings.TrimSpace(fmt.Sprint(id))
+	}
+	return object
 }
 
 func weaviateRowID(keys map[string]interface{}, action rowMutationAction) (string, error) {
@@ -313,12 +318,19 @@ func (w *WeaviateDB) objectPayload(class weaviateClass, values map[string]interf
 
 // updateObject 用 PATCH 合并改动；有单元格清空为 NULL 时 PATCH 无法删除属性，改为读出对象后整体 PUT（保留原向量）。
 func (w *WeaviateDB) updateObject(ctx context.Context, class weaviateClass, tenant, id string, payload weaviateObjectPayload) error {
+	method, path, body, err := w.updateRequest(ctx, class, tenant, id, payload)
+	if err != nil {
+		return err
+	}
+	return w.doJSON(ctx, method, path, body, nil)
+}
+
+// updateRequest 生成更新对象的请求：只改属性时用 PATCH 合并；清空属性（PATCH 做不到）时读出当前对象，
+// 合并后用 PUT 整体替换（保留向量）。
+func (w *WeaviateDB) updateRequest(ctx context.Context, class weaviateClass, tenant, id string, payload weaviateObjectPayload) (string, string, map[string]interface{}, error) {
 	path := "/v1/objects/" + weaviateEscapePath(class.Class) + "/" + weaviateEscapePath(id)
 	if !payload.clears {
-		if err := w.doJSON(ctx, http.MethodPatch, path, payload.body(class.Class, tenant, false), nil); err != nil {
-			return err
-		}
-		return nil
+		return http.MethodPatch, path, payload.body(class.Class, tenant, false), nil
 	}
 	query := "?include=vector"
 	if tenant != "" {
@@ -326,7 +338,7 @@ func (w *WeaviateDB) updateObject(ctx context.Context, class weaviateClass, tena
 	}
 	var current map[string]interface{}
 	if err := w.doJSON(ctx, http.MethodGet, path+query, nil, &current); err != nil {
-		return err
+		return "", "", nil, err
 	}
 	properties, _ := current["properties"].(map[string]interface{})
 	if properties == nil {
@@ -354,7 +366,7 @@ func (w *WeaviateDB) updateObject(ctx context.Context, class weaviateClass, tena
 	if payload.vectors != nil {
 		body["vectors"] = payload.vectors
 	}
-	return w.doJSON(ctx, http.MethodPut, path, body, nil)
+	return http.MethodPut, path, body, nil
 }
 
 // weaviateDecodeJSONValue 把网格里以 JSON 文本编辑的数组 / 对象还原成结构化值。

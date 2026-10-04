@@ -94,10 +94,16 @@ func liveInfluxScenario(t *testing.T, client *InfluxDB, major string) {
 		t.Fatalf("point a %v: %v", rows, err)
 	}
 	keyTime := rows[0]["time"]
-	if err := client.ApplyChanges(measurement, connection.ChangeSet{
+	gridChanges := connection.ChangeSet{
 		Updates: []connection.UpdateRow{{Keys: map[string]interface{}{"time": keyTime, "host": "a", "region": "us"}, Values: map[string]interface{}{"usage": "0.9"}}},
 		Inserts: []map[string]interface{}{{"time": "2023-11-14T22:15:20Z", "host": "c", "region": "ap", "usage": "1.5", "count": "7", "ok": "true", "label": "z"}},
-	}); err != nil {
+	}
+	_, previewUpdates, previewInserts := client.PreviewChanges(measurement, gridChanges)
+	if len(previewUpdates) != 1 || previewUpdates[0] != "INSERT "+measurement+",host=a,region=us usage=0.9 1700000000000000000" ||
+		len(previewInserts) != 1 || !strings.HasPrefix(previewInserts[0], "INSERT "+measurement+",host=c,region=ap ") || !strings.HasSuffix(previewInserts[0], " 1700000120000000000") {
+		t.Fatalf("preview updates=%q inserts=%q", previewUpdates, previewInserts)
+	}
+	if err := client.ApplyChanges(measurement, gridChanges); err != nil {
 		t.Fatalf("grid update + insert: %v", err)
 	}
 	rows, _, err = client.Query(`SELECT * FROM ` + quoted + ` WHERE "host" = 'a'`)
@@ -108,7 +114,13 @@ func liveInfluxScenario(t *testing.T, client *InfluxDB, major string) {
 		t.Fatalf("count after insert %v: %v", rows, err)
 	}
 
-	deleteErr := client.ApplyChanges(measurement, connection.ChangeSet{Deletes: []map[string]interface{}{{"time": "2023-11-14T22:15:20Z", "host": "c", "region": "ap"}}})
+	deleteChanges := connection.ChangeSet{Deletes: []map[string]interface{}{{"time": "2023-11-14T22:15:20Z", "host": "c", "region": "ap"}}}
+	previewDeletes, _, _ := client.PreviewChanges(measurement, deleteChanges)
+	wantDeletePrefix := map[string]string{"1": "DELETE FROM", "2": "POST /api/v2/delete?", "3": "# "}[major]
+	if len(previewDeletes) != 1 || !strings.HasPrefix(previewDeletes[0], wantDeletePrefix) {
+		t.Fatalf("preview deletes = %q", previewDeletes)
+	}
+	deleteErr := client.ApplyChanges(measurement, deleteChanges)
 	if major == "3" {
 		if deleteErr == nil {
 			t.Fatal("InfluxDB 3 must refuse point deletes")

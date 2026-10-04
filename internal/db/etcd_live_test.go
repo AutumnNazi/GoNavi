@@ -82,14 +82,22 @@ func TestEtcdLiveSmoke(t *testing.T) {
 				}
 			}
 
-			if err := client.ApplyChanges("/gonavi-live/app1", connection.ChangeSet{
+			gridChanges := connection.ChangeSet{
 				Inserts: []map[string]interface{}{{"key": "/gonavi-live/app1/new", "value": "fresh", "ttl": "120"}},
 				Updates: []connection.UpdateRow{
 					{Keys: map[string]interface{}{"key": "/gonavi-live/app1/db/url"}, Values: map[string]interface{}{"value": "jdbc:mysql://db2:3306/app"}},
 					{Keys: map[string]interface{}{"key": "/gonavi-live/app1/db/user"}, Values: map[string]interface{}{"key": "/gonavi-live/app1/db/username"}},
 				},
 				Deletes: []map[string]interface{}{{"key": "/gonavi-live/app1/name"}},
-			}); err != nil {
+			}
+			previewDeletes, previewUpdates, previewInserts := client.PreviewChanges("/gonavi-live/app1", gridChanges)
+			if strings.Join(previewDeletes, "|") != "del /gonavi-live/app1/name" ||
+				previewUpdates[0] != "put /gonavi-live/app1/db/url jdbc:mysql://db2:3306/app" ||
+				previewUpdates[1] != "put /gonavi-live/app1/db/username gonavi\ndel /gonavi-live/app1/db/user" ||
+				previewInserts[0] != "lease grant 120\nput /gonavi-live/app1/new fresh --lease=<lease-id>" {
+				t.Fatalf("preview deletes=%q updates=%q inserts=%q", previewDeletes, previewUpdates, previewInserts)
+			}
+			if err := client.ApplyChanges("/gonavi-live/app1", gridChanges); err != nil {
 				t.Fatalf("apply changes: %v", err)
 			}
 			rows, _, err := client.Query(`SELECT * FROM "/gonavi-live/app1" ORDER BY "key"`)
@@ -179,10 +187,14 @@ func TestEtcdV2LiveSmoke(t *testing.T) {
 			if err != nil || len(rows) != 2 || rows[1]["ttl"] == nil {
 				t.Fatalf("rows %v: %v", rows, err)
 			}
-			if err := client.ApplyChanges("/gonavi-v2/app", connection.ChangeSet{
+			v2Changes := connection.ChangeSet{
 				Inserts: []map[string]interface{}{{"key": "/gonavi-v2/app/env", "value": "prod"}},
 				Updates: []connection.UpdateRow{{Keys: map[string]interface{}{"key": "/gonavi-v2/app/name"}, Values: map[string]interface{}{"value": "App V2b"}}},
-			}); err != nil {
+			}
+			if _, previewUpdates, previewInserts := client.PreviewChanges("/gonavi-v2/app", v2Changes); previewUpdates[0] != "set /gonavi-v2/app/name 'App V2b'" || previewInserts[0] != "set /gonavi-v2/app/env prod" {
+				t.Fatalf("v2 preview updates=%q inserts=%q", previewUpdates, previewInserts)
+			}
+			if err := client.ApplyChanges("/gonavi-v2/app", v2Changes); err != nil {
 				t.Fatalf("apply changes: %v", err)
 			}
 			if keys := etcdLiveKeys(t, client, `SELECT * FROM "/gonavi-v2/app" WHERE "value" = 'App V2b'`); strings.Join(keys, ",") != "/gonavi-v2/app/name" {

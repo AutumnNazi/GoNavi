@@ -192,32 +192,13 @@ func (x *InfluxDB) ApplyChangesContext(ctx context.Context, tableName string, ch
 
 	lines := make([]string, 0, len(changes.Updates)+len(changes.Inserts))
 	for _, update := range changes.Updates {
-		timestamp, tags, err := influxPointIdentity(schema, update.Keys)
+		line, err := influxUpdateLine(tableName, schema, update)
 		if err != nil {
 			return fail(err)
 		}
-		point := influxPoint{measurement: tableName, tags: tags, fields: map[string]interface{}{}, fieldTypes: map[string]string{}, timestamp: &timestamp}
-		for name, value := range update.Values {
-			if strings.EqualFold(name, influxTimeColumn) || schema.hasTag(name) {
-				return fail(localizedDatabaseRuntimeError("db.backend.error.influxdb_identity_change_unsupported", map[string]any{"column": name}))
-			}
-			if value == nil {
-				return fail(localizedDatabaseRuntimeError("db.backend.error.influxdb_field_clear_unsupported", map[string]any{"field": name}))
-			}
-			converted, fieldType, err := influxCoerceField(name, schema, value)
-			if err != nil {
-				return fail(err)
-			}
-			point.fields[name], point.fieldTypes[name] = converted, fieldType
+		if line != "" {
+			lines = append(lines, line)
 		}
-		if len(point.fields) == 0 {
-			continue
-		}
-		line, err := point.encode()
-		if err != nil {
-			return fail(err)
-		}
-		lines = append(lines, line)
 	}
 	for _, row := range changes.Inserts {
 		point, err := influxInsertPoint(tableName, schema, row)
@@ -234,6 +215,33 @@ func (x *InfluxDB) ApplyChangesContext(ctx context.Context, tableName string, ch
 		return fail(err)
 	}
 	return nil
+}
+
+// influxUpdateLine 把一行更新写成 line protocol：同一 series 同一时间写入新的字段值；没有字段改动时返回空串。
+// 改 tag 或时间等于换一个点，字段也不能清空为 NULL，这两种改动直接报错。
+func influxUpdateLine(measurement string, schema influxMeasurementSchema, update connection.UpdateRow) (string, error) {
+	timestamp, tags, err := influxPointIdentity(schema, update.Keys)
+	if err != nil {
+		return "", err
+	}
+	point := influxPoint{measurement: measurement, tags: tags, fields: map[string]interface{}{}, fieldTypes: map[string]string{}, timestamp: &timestamp}
+	for name, value := range update.Values {
+		if strings.EqualFold(name, influxTimeColumn) || schema.hasTag(name) {
+			return "", localizedDatabaseRuntimeError("db.backend.error.influxdb_identity_change_unsupported", map[string]any{"column": name})
+		}
+		if value == nil {
+			return "", localizedDatabaseRuntimeError("db.backend.error.influxdb_field_clear_unsupported", map[string]any{"field": name})
+		}
+		converted, fieldType, err := influxCoerceField(name, schema, value)
+		if err != nil {
+			return "", err
+		}
+		point.fields[name], point.fieldTypes[name] = converted, fieldType
+	}
+	if len(point.fields) == 0 {
+		return "", nil
+	}
+	return point.encode()
 }
 
 // influxPointIdentity 从主键取出时间与全部 tag（没有值的 tag 记为空串，表示该点不带这个 tag）。
@@ -282,15 +290,29 @@ func influxInsertPoint(measurement string, schema influxMeasurementSchema, row m
 	return point, nil
 }
 
-// deletePoint 删除一个点：1.x 用 InfluxQL DELETE（tag 全部写明，空串匹配不带该 tag 的 series），
-// 2.x 用 /api/v2/delete（谓词无法表达“不带某 tag”，有空 tag 时拒绝以免误删其他 series），3.x 不支持按点删除。
+// deletePoint 删除一个点（请求见 deleteRequest）。
 func (x *InfluxDB) deletePoint(ctx context.Context, measurement string, schema influxMeasurementSchema, timestamp int64, tags map[string]string) error {
+	statement, path, body, err := x.deleteRequest(measurement, schema, timestamp, tags)
+	if err != nil {
+		return err
+	}
+	if path != "" {
+		return influxWriteError(x.doJSON(ctx, http.MethodPost, path, body, nil))
+	}
+	_, err = x.influxQL(ctx, x.database, statement, true)
+	return influxWriteError(err)
+}
+
+// deleteRequest 生成删除一个点的请求：1.x 是 InfluxQL DELETE（tag 全部写明，空串匹配不带该 tag 的 series），
+// 2.x 是 /api/v2/delete 的路径与请求体（谓词无法表达“不带某 tag”，有空 tag 时拒绝以免误删其他 series），
+// 3.x 不支持按点删除。
+func (x *InfluxDB) deleteRequest(measurement string, schema influxMeasurementSchema, timestamp int64, tags map[string]string) (string, string, map[string]string, error) {
 	switch {
 	case x.isV3():
-		return localizedDatabaseRuntimeError("db.backend.error.influxdb_delete_unsupported", nil)
+		return "", "", nil, localizedDatabaseRuntimeError("db.backend.error.influxdb_delete_unsupported", nil)
 	case x.isV2():
 		if x.org == "" {
-			return localizedDatabaseRuntimeError("db.backend.error.influxdb_org_required", nil)
+			return "", "", nil, localizedDatabaseRuntimeError("db.backend.error.influxdb_org_required", nil)
 		}
 		predicate := []string{`_measurement="` + influxPredicateEscape(measurement) + `"`}
 		empty := make([]string, 0)
@@ -302,7 +324,7 @@ func (x *InfluxDB) deletePoint(ctx context.Context, measurement string, schema i
 			predicate = append(predicate, tag+`="`+influxPredicateEscape(tags[tag])+`"`)
 		}
 		if len(empty) > 0 {
-			return localizedDatabaseRuntimeError("db.backend.error.influxdb_delete_ambiguous", map[string]any{"tags": strings.Join(empty, ", ")})
+			return "", "", nil, localizedDatabaseRuntimeError("db.backend.error.influxdb_delete_ambiguous", map[string]any{"tags": strings.Join(empty, ", ")})
 		}
 		start := time.Unix(0, timestamp).UTC()
 		body := map[string]string{
@@ -310,8 +332,7 @@ func (x *InfluxDB) deletePoint(ctx context.Context, measurement string, schema i
 			"stop":      start.Add(time.Nanosecond).Format(time.RFC3339Nano),
 			"predicate": strings.Join(predicate, " AND "),
 		}
-		path := "/api/v2/delete?" + url.Values{"org": {x.org}, "bucket": {x.database}}.Encode()
-		return influxWriteError(x.doJSON(ctx, http.MethodPost, path, body, nil))
+		return "", "/api/v2/delete?" + url.Values{"org": {x.org}, "bucket": {x.database}}.Encode(), body, nil
 	}
 	conditions := make([]string, 0, len(schema.tags)+1)
 	tagNames := append([]string(nil), schema.tags...)
@@ -320,9 +341,7 @@ func (x *InfluxDB) deletePoint(ctx context.Context, measurement string, schema i
 		conditions = append(conditions, influxQuoteIdent(tag)+" = "+influxQuoteString(tags[tag]))
 	}
 	conditions = append(conditions, fmt.Sprintf("time = %d", timestamp))
-	statement := "DELETE FROM " + influxQuoteIdent(measurement) + " WHERE " + strings.Join(conditions, " AND ")
-	_, err := x.influxQL(ctx, x.database, statement, true)
-	return influxWriteError(err)
+	return "DELETE FROM " + influxQuoteIdent(measurement) + " WHERE " + strings.Join(conditions, " AND "), "", nil, nil
 }
 
 func influxPredicateEscape(value string) string {

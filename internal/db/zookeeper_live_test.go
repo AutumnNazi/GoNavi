@@ -118,15 +118,23 @@ func TestZooKeeperLiveSmoke(t *testing.T) {
 				t.Fatalf("ordered by data %v", rows)
 			}
 
-			// 网格增删改：相对路径、自动创建父节点、改名、删除在同一个 multi 里提交。
-			if err := client.ApplyChanges("/gonavi-live/app1", connection.ChangeSet{
+			// 网格增删改：相对路径、自动创建父节点、改名、删除在同一个 multi 里提交；预览给出同样的 zkCli 命令。
+			gridChanges := connection.ChangeSet{
 				Inserts: []map[string]interface{}{{"path": "cache/redis/host", "data": "redis:6379"}},
 				Updates: []connection.UpdateRow{
 					{Keys: map[string]interface{}{"path": "/gonavi-live/app1/db/url"}, Values: map[string]interface{}{"data": "jdbc:mysql://db2:3306/app"}},
 					{Keys: map[string]interface{}{"path": "/gonavi-live/app1/db/user"}, Values: map[string]interface{}{"path": "username"}},
 				},
 				Deletes: []map[string]interface{}{{"path": "/gonavi-live/app2/x"}},
-			}); err != nil {
+			}
+			previewDeletes, previewUpdates, previewInserts := client.PreviewChanges("/gonavi-live/app1", gridChanges)
+			if strings.Join(previewDeletes, "|") != "delete /gonavi-live/app2/x" ||
+				previewUpdates[0] != "set -v 0 /gonavi-live/app1/db/url jdbc:mysql://db2:3306/app" ||
+				!strings.HasPrefix(previewUpdates[1], "create /gonavi-live/app1/db/username") || !strings.HasSuffix(previewUpdates[1], "delete -v 0 /gonavi-live/app1/db/user") ||
+				previewInserts[0] != "create /gonavi-live/app1/cache\ncreate /gonavi-live/app1/cache/redis\ncreate /gonavi-live/app1/cache/redis/host redis:6379" {
+				t.Fatalf("preview deletes=%q updates=%q inserts=%q", previewDeletes, previewUpdates, previewInserts)
+			}
+			if err := client.ApplyChanges("/gonavi-live/app1", gridChanges); err != nil {
 				t.Fatalf("apply changes: %v", err)
 			}
 			if rows := zookeeperLiveRows(t, client, "get /gonavi-live/app1/db/url"); rows[0]["data"] != "jdbc:mysql://db2:3306/app" {

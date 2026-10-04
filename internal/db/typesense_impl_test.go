@@ -385,3 +385,28 @@ func TestTypesenseConnectWithoutDebugPermission(t *testing.T) {
 		t.Fatal("a wrong key must fail to connect")
 	}
 }
+
+func TestTypesensePreviewChangesListsRequests(t *testing.T) {
+	client := newTypesenseTestDB(t, newTypesenseMock(t, "29.0"))
+	deletes, updates, inserts := client.PreviewChanges("books", connection.ChangeSet{
+		Deletes: []map[string]interface{}{{"id": "1"}},
+		Updates: []connection.UpdateRow{
+			{Keys: map[string]interface{}{"id": "2"}, Values: map[string]interface{}{"year": "2006", "rating": nil}},
+			{Keys: map[string]interface{}{"id": "3"}, Values: map[string]interface{}{"id": "3003"}},
+		},
+		Inserts: []map[string]interface{}{{"id": float64(5000), "title": "new", "year": "2020", "genre": "a"}},
+	})
+	if len(deletes) != 1 || deletes[0] != "DELETE /collections/books/documents/1" {
+		t.Fatalf("deletes = %q", deletes)
+	}
+	if len(updates) != 2 || updates[0] != "PATCH /collections/books/documents/2\n{\n  \"rating\": null,\n  \"year\": 2006\n}" {
+		t.Fatalf("partial update = %q", updates)
+	}
+	if !strings.HasPrefix(updates[1], "POST /collections/books/documents\n") || !strings.Contains(updates[1], `"title": "book 3"`) ||
+		!strings.HasSuffix(updates[1], "DELETE /collections/books/documents/3") {
+		t.Fatalf("id change = %q", updates[1])
+	}
+	if len(inserts) != 1 || !strings.Contains(inserts[0], `"id": "5000"`) || !strings.Contains(inserts[0], `"year": 2020`) {
+		t.Fatalf("inserts = %q", inserts)
+	}
+}

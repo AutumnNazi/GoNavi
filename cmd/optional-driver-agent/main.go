@@ -536,6 +536,8 @@ func handleRequestWithContext(requestCtx context.Context, runtimeState *agentRun
 		}
 		resp.Data = attachments
 		return resp
+	case agentMethodPreviewChanges:
+		return handlePreviewChanges(runtimeState.inst, req, resp)
 	case agentMethodApplyChanges:
 		if req.Changes == nil {
 			return fail(resp, "变更集为空")
