@@ -11931,5 +11931,13 @@
   "connection_modal.step1.hint.presto": "分散 SQL／catalog.schema",
   "connection_modal.step1.hint.etcd": "キーバリューストア／etcdctl 形式のコンソール",
   "connection_modal.step1.hint.zookeeper": "コーディネーションサービス／zkCli 形式のコンソール",
-  "db.backend.error.zookeeper_handshake_failed": "ZooKeeper（{{servers}}）とセッションを確立できません：{{detail}}。ポートと SSL 設定が一致しているか確認してください（secureClientPort では SSL を有効に、通常ポートでは無効にします）"
+  "db.backend.error.zookeeper_handshake_failed": "ZooKeeper（{{servers}}）とセッションを確立できません：{{detail}}。ポートと SSL 設定が一致しているか確認してください（secureClientPort では SSL を有効に、通常ポートでは無効にします）",
+  "datasource.variant.gbase8a.v8": "MySQL プロトコル：GBase 8a 8.6 と 9.5（マルチ VC 環境ではアカウントの既定 VC を参照）。トランザクションは自動コミットを無効にして実現し、インデックスは HASH のみ対応",
+  "connection_modal.step1.hint.gbase8a": "MPP 分析型／MySQL プロトコル",
+  "db.backend.error.gbase8a_connect_failed": "GBase 8a に接続できません：{{detail}}",
+  "db.backend.error.gbase8a_mixed_changes": "GBase 8a のトランザクションでは、同じテーブルに UPDATE／DELETE を実行した後は他の書き込みができません。追加・変更・削除は別々にコミットしてください",
+  "db.backend.error.gbase8a_rows_mismatch": "コミットに失敗しました：{{expected}} 行が対象のはずが {{actual}} 行でした（他のクライアントが変更した可能性があります）。ロールバックしました。更新してから再試行してください",
+  "db.backend.error.gbase8a_update_requires_key": "GBase 8a のデータ変更には主キー条件が必要です：テーブルに主キーを設定するか、SQL エディターで UPDATE 文を記述してください",
+  "db.backend.error.gbase8a_table_locked_in_transaction": "GBase 8a のトランザクションでは、同じテーブルに UPDATE／DELETE した後は書き込めず、INSERT の後も UPDATE／DELETE できません。複数のトランザクションに分けてください（{{detail}}）",
+  "db.backend.error.gbase8a_update_too_large": "{{rows}} 行の変更をまとめた UPDATE がプリペアドステートメントのパラメーター上限を超えています。1 回あたりの行数を減らしてください（データ同期ではバッチサイズを小さくします）"
 }

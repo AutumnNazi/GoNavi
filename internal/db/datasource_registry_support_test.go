@@ -41,9 +41,19 @@ func TestRegistryTypesAreOptionalAgentDrivers(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewDatabase(%q): %v", name, err)
 			}
-			agent, ok := inst.(*OptionalDriverAgentDB)
-			if !ok || agent.driverType != spec.Type {
+			var agent *OptionalDriverAgentDB
+			switch typed := inst.(type) {
+			case *OptionalDriverAgentDB:
+				agent = typed
+			case *optionalDriverAgentTransactionalDB:
+				agent = typed.OptionalDriverAgentDB
+			}
+			if agent == nil || agent.driverType != spec.Type {
 				t.Fatalf("NewDatabase(%q) = %T, want agent proxy for %q", name, inst, spec.Type)
+			}
+			// 声明了驱动事务的类型（如 GBase 8a）用带托管事务接口的代理，其余类型不带。
+			if _, transactional := inst.(TransactionExecerProvider); transactional != spec.DriverTransactions {
+				t.Fatalf("NewDatabase(%q) transactional = %v, want %v", name, transactional, spec.DriverTransactions)
 			}
 		}
 		if got := driverDisplayName(spec.Type); got != spec.DisplayName {

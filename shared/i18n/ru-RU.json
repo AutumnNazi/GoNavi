@@ -11931,5 +11931,13 @@
   "connection_modal.step1.hint.presto": "Распределённый SQL / catalog.schema",
   "connection_modal.step1.hint.etcd": "Хранилище ключ-значение / консоль в стиле etcdctl",
   "connection_modal.step1.hint.zookeeper": "Сервис координации / консоль в стиле zkCli",
-  "db.backend.error.zookeeper_handshake_failed": "Не удалось установить сеанс ZooKeeper с {{servers}}: {{detail}}. Проверьте, что порт соответствует настройке SSL (для secureClientPort SSL нужно включить, для обычного порта — выключить)"
+  "db.backend.error.zookeeper_handshake_failed": "Не удалось установить сеанс ZooKeeper с {{servers}}: {{detail}}. Проверьте, что порт соответствует настройке SSL (для secureClientPort SSL нужно включить, для обычного порта — выключить)",
+  "datasource.variant.gbase8a.v8": "Протокол MySQL: GBase 8a 8.6 и 9.5 (в кластерах с несколькими VC просматривается VC учётной записи по умолчанию); транзакции через отключение autocommit, поддерживаются только индексы HASH",
+  "connection_modal.step1.hint.gbase8a": "MPP-аналитика / протокол MySQL",
+  "db.backend.error.gbase8a_connect_failed": "Не удалось подключиться к GBase 8a: {{detail}}",
+  "db.backend.error.gbase8a_mixed_changes": "В транзакции GBase 8a после UPDATE / DELETE таблица не принимает других изменений: фиксируйте вставки, изменения и удаления по отдельности",
+  "db.backend.error.gbase8a_rows_mismatch": "Не удалось применить изменения: ожидалось {{expected}} затронутых строк, фактически {{actual}} (данные могли изменить другие клиенты); изменения отменены, обновите данные и повторите",
+  "db.backend.error.gbase8a_update_requires_key": "Для изменения строк GBase 8a нужно условие по первичному ключу: задайте таблице первичный ключ или напишите оператор UPDATE в редакторе SQL",
+  "db.backend.error.gbase8a_table_locked_in_transaction": "В транзакции GBase 8a после UPDATE / DELETE в ту же таблицу нельзя писать, а после INSERT нельзя выполнять UPDATE / DELETE: разделите работу на несколько транзакций ({{detail}})",
+  "db.backend.error.gbase8a_update_too_large": "Оператор UPDATE, объединённый из {{rows}} строк, превышает лимит параметров подготовленного оператора: фиксируйте меньше строк за раз (для синхронизации уменьшите размер пакета)"
 }

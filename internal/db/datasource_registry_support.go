@@ -21,7 +21,11 @@ func init() {
 		names := make([]string, 0, len(spec.Aliases)+1)
 		names = append(names, spec.Type)
 		names = append(names, spec.Aliases...)
-		registerDatabaseFactory(newOptionalDriverAgentDatabase(spec.Type), names...)
+		factory := newOptionalDriverAgentDatabase(spec.Type)
+		if spec.DriverTransactions {
+			factory = newOptionalDriverAgentTransactionalDatabase(spec.Type)
+		}
+		registerDatabaseFactory(factory, names...)
 	}
 }
 

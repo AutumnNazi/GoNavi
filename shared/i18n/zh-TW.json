@@ -11931,5 +11931,13 @@
   "connection_modal.step1.hint.presto": "分散式 SQL／catalog.schema",
   "connection_modal.step1.hint.etcd": "鍵值儲存／etcdctl 風格主控台",
   "connection_modal.step1.hint.zookeeper": "協調服務／zkCli 風格主控台",
-  "db.backend.error.zookeeper_handshake_failed": "無法與 ZooKeeper（{{servers}}）建立工作階段：{{detail}}。請確認連接埠與 SSL 設定相符（secureClientPort 需要開啟 SSL，一般連接埠需要關閉）"
+  "db.backend.error.zookeeper_handshake_failed": "無法與 ZooKeeper（{{servers}}）建立工作階段：{{detail}}。請確認連接埠與 SSL 設定相符（secureClientPort 需要開啟 SSL，一般連接埠需要關閉）",
+  "datasource.variant.gbase8a.v8": "MySQL 協定：GBase 8a 8.6 與 9.5（多 VC 環境依帳號的預設 VC 瀏覽）；交易透過關閉自動提交實作，索引只支援 HASH",
+  "connection_modal.step1.hint.gbase8a": "MPP 分析型／MySQL 協定",
+  "db.backend.error.gbase8a_connect_failed": "無法連線 GBase 8a：{{detail}}",
+  "db.backend.error.gbase8a_mixed_changes": "GBase 8a 的一個交易中，同一張資料表執行 UPDATE／DELETE 後不能再有其他寫入：請把新增、修改、刪除分開提交",
+  "db.backend.error.gbase8a_rows_mismatch": "提交失敗：應影響 {{expected}} 列，實際影響 {{actual}} 列（資料可能已被其他用戶端修改），已回復，請重新整理後重試",
+  "db.backend.error.gbase8a_update_requires_key": "GBase 8a 修改資料需要主鍵條件：請為資料表設定主鍵，或在 SQL 編輯器中撰寫 UPDATE 陳述式",
+  "db.backend.error.gbase8a_table_locked_in_transaction": "GBase 8a 的一個交易中，同一張資料表在 UPDATE／DELETE 之後不能再寫入，INSERT 之後也不能再 UPDATE／DELETE：請拆成多個交易（{{detail}}）",
+  "db.backend.error.gbase8a_update_too_large": "一次修改的 {{rows}} 列合成的 UPDATE 超過預處理陳述式的參數上限：請減少每批列數（資料同步可調小批次大小）"
 }

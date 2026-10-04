@@ -11931,5 +11931,13 @@
   "connection_modal.step1.hint.presto": "Distributed SQL / catalog.schema",
   "connection_modal.step1.hint.etcd": "Key-value store / etcdctl-style console",
   "connection_modal.step1.hint.zookeeper": "Coordination service / zkCli-style console",
-  "db.backend.error.zookeeper_handshake_failed": "Cannot establish a ZooKeeper session with {{servers}}: {{detail}}. Check that the port matches the SSL setting (secureClientPort needs SSL enabled, the plain port needs it disabled)"
+  "db.backend.error.zookeeper_handshake_failed": "Cannot establish a ZooKeeper session with {{servers}}: {{detail}}. Check that the port matches the SSL setting (secureClientPort needs SSL enabled, the plain port needs it disabled)",
+  "datasource.variant.gbase8a.v8": "MySQL wire: GBase 8a 8.6 and 9.5 (multi-VC clusters are browsed in the account's default VC); transactions use autocommit off, and only HASH indexes are supported",
+  "connection_modal.step1.hint.gbase8a": "MPP analytics / MySQL wire",
+  "db.backend.error.gbase8a_connect_failed": "Cannot connect to GBase 8a: {{detail}}",
+  "db.backend.error.gbase8a_mixed_changes": "In a GBase 8a transaction a table accepts no further writes after an UPDATE / DELETE: commit inserts, updates and deletes separately",
+  "db.backend.error.gbase8a_rows_mismatch": "Commit failed: expected {{expected}} affected rows but got {{actual}} (the data may have been changed by another client); rolled back, refresh and try again",
+  "db.backend.error.gbase8a_update_requires_key": "Updating GBase 8a rows needs a primary key condition: add a primary key to the table, or write an UPDATE statement in the SQL editor",
+  "db.backend.error.gbase8a_table_locked_in_transaction": "In a GBase 8a transaction a table accepts no writes after an UPDATE / DELETE, and no UPDATE / DELETE after an INSERT: split the work into several transactions ({{detail}})",
+  "db.backend.error.gbase8a_update_too_large": "The UPDATE merged from {{rows}} rows exceeds the prepared-statement parameter limit: commit fewer rows at a time (lower the batch size for data sync)"
 }

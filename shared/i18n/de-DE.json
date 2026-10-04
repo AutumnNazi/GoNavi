@@ -11931,5 +11931,13 @@
   "connection_modal.step1.hint.presto": "Verteiltes SQL / catalog.schema",
   "connection_modal.step1.hint.etcd": "Key-Value-Speicher / Konsole im etcdctl-Stil",
   "connection_modal.step1.hint.zookeeper": "Koordinationsdienst / Konsole im zkCli-Stil",
-  "db.backend.error.zookeeper_handshake_failed": "Keine ZooKeeper-Sitzung mit {{servers}} möglich: {{detail}}. Prüfen, ob Port und SSL-Einstellung zusammenpassen (secureClientPort erfordert SSL, der normale Port nicht)"
+  "db.backend.error.zookeeper_handshake_failed": "Keine ZooKeeper-Sitzung mit {{servers}} möglich: {{detail}}. Prüfen, ob Port und SSL-Einstellung zusammenpassen (secureClientPort erfordert SSL, der normale Port nicht)",
+  "datasource.variant.gbase8a.v8": "MySQL-Protokoll: GBase 8a 8.6 und 9.5 (Multi-VC-Cluster werden im Standard-VC des Kontos durchsucht); Transaktionen über ausgeschaltetes Autocommit, nur HASH-Indizes",
+  "connection_modal.step1.hint.gbase8a": "MPP-Analytik / MySQL-Protokoll",
+  "db.backend.error.gbase8a_connect_failed": "Keine Verbindung zu GBase 8a: {{detail}}",
+  "db.backend.error.gbase8a_mixed_changes": "In einer GBase-8a-Transaktion akzeptiert eine Tabelle nach UPDATE / DELETE keine weiteren Schreibvorgänge: Einfügen, Ändern und Löschen getrennt übernehmen",
+  "db.backend.error.gbase8a_rows_mismatch": "Übernahme fehlgeschlagen: {{expected}} betroffene Zeilen erwartet, aber {{actual}} erhalten (Daten wurden evtl. von einem anderen Client geändert); zurückgerollt, bitte aktualisieren und erneut versuchen",
+  "db.backend.error.gbase8a_update_requires_key": "Zum Ändern von GBase-8a-Zeilen ist eine Primärschlüsselbedingung nötig: Tabelle mit Primärschlüssel versehen oder im SQL-Editor eine UPDATE-Anweisung schreiben",
+  "db.backend.error.gbase8a_table_locked_in_transaction": "In einer GBase-8a-Transaktion sind nach UPDATE / DELETE keine weiteren Schreibvorgänge auf dieselbe Tabelle möglich und nach INSERT kein UPDATE / DELETE: Arbeit auf mehrere Transaktionen aufteilen ({{detail}})",
+  "db.backend.error.gbase8a_update_too_large": "Das aus {{rows}} Zeilen zusammengefasste UPDATE überschreitet die Parametergrenze vorbereiteter Anweisungen: weniger Zeilen auf einmal übernehmen (bei Datensynchronisation die Batchgröße senken)"
 }

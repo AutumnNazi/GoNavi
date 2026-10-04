@@ -69,6 +69,9 @@ type Spec struct {
 	Protection  bool      `json:"protection,omitempty"`
 	ExcelImport bool      `json:"excelImport,omitempty"`
 	Sync        *SyncSpec `json:"sync,omitempty"`
+	// DriverTransactions 为 true 时 SQL 编辑器的托管事务走驱动接口（OpenTransactionExecer），
+	// 用于文本 BEGIN / START TRANSACTION 不生效的库（如 GBase 8a 需要关闭自动提交）。
+	DriverTransactions bool `json:"driverTransactions,omitempty"`
 	// Agent 是默认驱动代理；其 Key 恒等于 Type。
 	Agent AgentSpec `json:"agent"`
 	// ModuleAliases 是驱动管理里展示历史版本时额外查询的 Go module 路径。
@@ -107,6 +110,9 @@ type SyncSpec struct {
 	Source bool   `json:"source"`
 	Target bool   `json:"target"`
 	Model  string `json:"model,omitempty"`
+	// SingleKindBatches 为 true 时同步把删除、修改、新增分开提交：目标库的一个事务里同一张表只能做一类写入
+	// （如 GBase 8a 在 UPDATE / DELETE 之后不能再写同一张表）。
+	SingleKindBatches bool `json:"singleKindBatches,omitempty"`
 }
 
 // AgentSpec 描述一个可选驱动代理构建。
