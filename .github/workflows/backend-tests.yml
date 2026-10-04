@@ -40,7 +40,7 @@ jobs:
         run: |
           mkdir -p frontend/dist
           printf '<!doctype html><title>GoNavi test</title>\n' > frontend/dist/index.html
-          cp tools/stub-dist.zip frontend/dist.zip
+          cp tools/stub-dist.tar.br frontend/dist.tar.br
 
       - name: Install Wails Linux build dependencies
         # assets_prod_test.go 引入 wails/v2/pkg/assetserver，linux 上经
