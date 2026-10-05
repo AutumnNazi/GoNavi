@@ -4789,6 +4789,32 @@ export namespace runharness {
 
 export namespace sessionassets {
 	
+	export class AssetFilter {
+	    query: string;
+	    sourceId: string;
+	    projectDir: string;
+	    provider: string;
+	    sourceStatus: string;
+	    backupStatus: string;
+	    page: number;
+	    pageSize: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AssetFilter(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.query = source["query"];
+	        this.sourceId = source["sourceId"];
+	        this.projectDir = source["projectDir"];
+	        this.provider = source["provider"];
+	        this.sourceStatus = source["sourceStatus"];
+	        this.backupStatus = source["backupStatus"];
+	        this.page = source["page"];
+	        this.pageSize = source["pageSize"];
+	    }
+	}
 	export class DetectInput {
 	    kind: string;
 	    commandPath: string;

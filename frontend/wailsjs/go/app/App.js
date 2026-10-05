@@ -1526,6 +1526,14 @@ export function SelectSavedQueryDirectory(arg1) {
   return window['go']['app']['App']['SelectSavedQueryDirectory'](arg1);
 }
 
+export function SessionAssetsContinueSession(arg1) {
+  return window['go']['app']['App']['SessionAssetsContinueSession'](arg1);
+}
+
+export function SessionAssetsDeleteAsset(arg1) {
+  return window['go']['app']['App']['SessionAssetsDeleteAsset'](arg1);
+}
+
 export function SessionAssetsDetect(arg1) {
   return window['go']['app']['App']['SessionAssetsDetect'](arg1);
 }
@@ -1538,8 +1546,44 @@ export function SessionAssetsEnable(arg1) {
   return window['go']['app']['App']['SessionAssetsEnable'](arg1);
 }
 
+export function SessionAssetsExportAsset(arg1, arg2, arg3) {
+  return window['go']['app']['App']['SessionAssetsExportAsset'](arg1, arg2, arg3);
+}
+
+export function SessionAssetsGetAssetDetail(arg1) {
+  return window['go']['app']['App']['SessionAssetsGetAssetDetail'](arg1);
+}
+
+export function SessionAssetsHandoffCapability(arg1) {
+  return window['go']['app']['App']['SessionAssetsHandoffCapability'](arg1);
+}
+
+export function SessionAssetsLaunchInteractive(arg1) {
+  return window['go']['app']['App']['SessionAssetsLaunchInteractive'](arg1);
+}
+
+export function SessionAssetsListAssets(arg1, arg2) {
+  return window['go']['app']['App']['SessionAssetsListAssets'](arg1, arg2);
+}
+
 export function SessionAssetsListIntegrations() {
   return window['go']['app']['App']['SessionAssetsListIntegrations']();
+}
+
+export function SessionAssetsPrepareHandoff(arg1, arg2) {
+  return window['go']['app']['App']['SessionAssetsPrepareHandoff'](arg1, arg2);
+}
+
+export function SessionAssetsReadHistory(arg1, arg2, arg3) {
+  return window['go']['app']['App']['SessionAssetsReadHistory'](arg1, arg2, arg3);
+}
+
+export function SessionAssetsRefreshSources(arg1) {
+  return window['go']['app']['App']['SessionAssetsRefreshSources'](arg1);
+}
+
+export function SessionAssetsSelectExportDirectory() {
+  return window['go']['app']['App']['SessionAssetsSelectExportDirectory']();
 }
 
 export function SetApplicationBrandIcon(arg1) {

@@ -776,13 +776,35 @@ export function SelectSSHKnownHostsFile(arg1:string):Promise<connection.QueryRes
 
 export function SelectSavedQueryDirectory(arg1:string):Promise<connection.QueryResult>;
 
+export function SessionAssetsContinueSession(arg1:string):Promise<connection.QueryResult>;
+
+export function SessionAssetsDeleteAsset(arg1:string):Promise<connection.QueryResult>;
+
 export function SessionAssetsDetect(arg1:sessionassets.DetectInput):Promise<connection.QueryResult>;
 
 export function SessionAssetsDisable(arg1:string):Promise<connection.QueryResult>;
 
 export function SessionAssetsEnable(arg1:sessionassets.EnableInput):Promise<connection.QueryResult>;
 
+export function SessionAssetsExportAsset(arg1:string,arg2:string,arg3:string):Promise<connection.QueryResult>;
+
+export function SessionAssetsGetAssetDetail(arg1:string):Promise<connection.QueryResult>;
+
+export function SessionAssetsHandoffCapability(arg1:string):Promise<connection.QueryResult>;
+
+export function SessionAssetsLaunchInteractive(arg1:string):Promise<connection.QueryResult>;
+
+export function SessionAssetsListAssets(arg1:string,arg2:sessionassets.AssetFilter):Promise<connection.QueryResult>;
+
 export function SessionAssetsListIntegrations():Promise<connection.QueryResult>;
+
+export function SessionAssetsPrepareHandoff(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
+export function SessionAssetsReadHistory(arg1:string,arg2:number,arg3:number):Promise<connection.QueryResult>;
+
+export function SessionAssetsRefreshSources(arg1:string):Promise<connection.QueryResult>;
+
+export function SessionAssetsSelectExportDirectory():Promise<connection.QueryResult>;
 
 export function SetApplicationBrandIcon(arg1:string):Promise<connection.QueryResult>;
 

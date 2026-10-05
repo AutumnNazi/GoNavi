@@ -314,3 +314,60 @@ func (c *Catalog) FindSourceRefByThread(ctx context.Context, sourceID, nativeThr
 	}
 	return ref, nil
 }
+
+// QueryAssets 按筛选条件分页查询资产列表：标题/项目/provider 基础检索、
+// 来源状态维度筛选；按源更新时间倒序（备份时间不扰动排序，V-07）。
+func (c *Catalog) QueryAssets(ctx context.Context, integrationID string, filter AssetFilter) ([]Asset, int, error) {
+	where := []string{"integration_id = ?", "deleted = 0"}
+	args := []any{integrationID}
+	if trimmed := strings.TrimSpace(filter.Query); trimmed != "" {
+		like := "%" + strings.ToLower(trimmed) + "%"
+		where = append(where, "(LOWER(title) LIKE ? OR LOWER(project_dir) LIKE ? OR LOWER(provider) LIKE ?)")
+		args = append(args, like, like, like)
+	}
+	if trimmed := strings.TrimSpace(filter.ProjectDir); trimmed != "" {
+		where = append(where, "LOWER(project_dir) LIKE ?")
+		args = append(args, "%"+strings.ToLower(trimmed)+"%")
+	}
+	if trimmed := strings.TrimSpace(filter.Provider); trimmed != "" {
+		where = append(where, "LOWER(provider) = ?")
+		args = append(args, strings.ToLower(trimmed))
+	}
+	if trimmed := strings.TrimSpace(filter.BackupStatus); trimmed != "" {
+		where = append(where, "backup_status = ?")
+		args = append(args, trimmed)
+	}
+	whereClause := strings.Join(where, " AND ")
+
+	var total int
+	if err := c.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM assets WHERE `+whereClause, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count assets: %w", err)
+	}
+	page, size := normalizePage(filter.Page, filter.PageSize)
+	args = append(args, size, (page-1)*size)
+	rows, err := c.db.QueryContext(ctx, assetSelect+` WHERE `+whereClause+` ORDER BY updated_at DESC LIMIT ? OFFSET ?`, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("query assets: %w", err)
+	}
+	defer rows.Close()
+	assets := make([]Asset, 0, size)
+	for rows.Next() {
+		var asset Asset
+		if err := rows.Scan(asset.scanDest()...); err != nil {
+			return nil, 0, fmt.Errorf("scan asset: %w", err)
+		}
+		assets = append(assets, asset)
+	}
+	return assets, total, rows.Err()
+}
+
+func normalizePage(page, size int) (int, int) {
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 || size > 200 {
+		size = 50
+	}
+	return page, size
+}
