@@ -9700,6 +9700,7 @@
   "table_designer.message.no_changes_detected": "未偵測到變更",
   "table_designer.message.no_sql_statement": "沒有可執行的 SQL 語句",
   "table_designer.message.no_target_tables": "目前資料庫沒有可複製到的其他表",
+  "table_designer.message.structure_changed_elsewhere": "資料表結構已在別處發生變化，目前的修改以舊結構為基礎，請先重新整理再儲存",
   "table_designer.message.trigger_restored_after_failure": "{{detail}}；原觸發器已自動還原",
   "table_designer.message.trigger_restore_failed": "{{detail}}；原觸發器自動還原失敗：{{restoreDetail}}，請立即檢查",
   "table_designer.message.trigger_restore_unavailable": "{{detail}}；無法自動還原原觸發器定義，請立即檢查",

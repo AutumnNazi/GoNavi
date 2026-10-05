@@ -9700,6 +9700,7 @@
   "table_designer.message.no_changes_detected": "没有检测到变更",
   "table_designer.message.no_sql_statement": "没有可执行的 SQL 语句",
   "table_designer.message.no_target_tables": "当前库没有可复制到的其他表",
+  "table_designer.message.structure_changed_elsewhere": "表结构已在别处发生变化，当前修改基于旧结构，请先刷新再保存",
   "table_designer.message.trigger_restored_after_failure": "{{detail}}；原触发器已自动恢复",
   "table_designer.message.trigger_restore_failed": "{{detail}}；原触发器自动恢复失败：{{restoreDetail}}，请立即检查",
   "table_designer.message.trigger_restore_unavailable": "{{detail}}；无法自动恢复原触发器定义，请立即检查",

@@ -114,6 +114,11 @@ export class QueryEditorSessionResource<T> {
     return { value: entry.value, stale };
   }
 
+  /** Stores a value the caller loaded on its own. */
+  write(key: string, scope: QueryEditorMetadataCacheScope, value: T): void {
+    this.cache.set(key, normalizeScope(scope), { value, checkedAt: this.now() });
+  }
+
   /**
    * Loads the value, joining a load another editor already started. Call
    * `release` when the result is no longer wanted. A `keepAlive` load runs to
@@ -229,6 +234,13 @@ export const queryEditorSchemaContextSession = new QueryEditorSessionResource<Qu
   stopWhenUnused: false,
 });
 
+/** Backend responses describing one table (columns, indexes, ...), kept for the table designer. */
+export const tableStructureSession = new QueryEditorSessionResource<unknown>({
+  maxEntries: 512,
+  maxEntriesPerConnection: 256,
+  maxBytes: 16 * 1024 * 1024,
+});
+
 /** Database names compare case-insensitively here: invalidating too much only costs one reload. */
 export const buildQueryEditorSessionMetadataScope = (
   connectionId: string,
@@ -257,12 +269,14 @@ export const invalidateQueryEditorSessionMetadata = (connectionId: string, dbNam
   queryEditorDatabaseMetadataSession.invalidate(scope.connectionId, scope.databaseKey);
   queryEditorSynonymSession.invalidate(scope.connectionId, scope.databaseKey);
   queryEditorSchemaContextSession.invalidate(scope.connectionId, scope.databaseKey);
+  tableStructureSession.invalidate(scope.connectionId, scope.databaseKey);
 };
 
 export const clearQueryEditorSessionMetadata = (): void => {
   queryEditorDatabaseMetadataSession.clear();
   queryEditorSynonymSession.clear();
   queryEditorSchemaContextSession.clear();
+  tableStructureSession.clear();
 };
 
 let invalidationListenerTarget: Window | null = null;
