@@ -279,3 +279,38 @@ func (c *Catalog) UpdateSourceRefStatus(ctx context.Context, assetID, sourceID s
 	}
 	return nil
 }
+
+// FindSourceRef 读取资产在某来源下的当前引用（不存在时返回 ErrNotFound）。
+func (c *Catalog) FindSourceRef(ctx context.Context, assetID, sourceID string) (SourceRef, error) {
+	row := c.db.QueryRowContext(ctx,
+		`SELECT asset_id, source_id, native_path, source_status, last_seen_at
+		 FROM source_refs WHERE asset_id = ? AND source_id = ?`, assetID, sourceID)
+	var ref SourceRef
+	err := row.Scan(&ref.AssetID, &ref.SourceID, &ref.NativePath, &ref.SourceStatus, &ref.LastSeenAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SourceRef{}, ErrNotFound
+	}
+	if err != nil {
+		return SourceRef{}, fmt.Errorf("find source ref: %w", err)
+	}
+	return ref, nil
+}
+
+// FindSourceRefByThread 按原生会话 ID 与来源查引用（发现流程在纳入前
+// 读取旧状态使用）。
+func (c *Catalog) FindSourceRefByThread(ctx context.Context, sourceID, nativeThreadID string) (SourceRef, error) {
+	row := c.db.QueryRowContext(ctx,
+		`SELECT r.asset_id, r.source_id, r.native_path, r.source_status, r.last_seen_at
+		 FROM source_refs r JOIN assets a ON a.id = r.asset_id
+		 WHERE r.source_id = ? AND a.native_thread_id = ? AND a.deleted = 0`,
+		sourceID, nativeThreadID)
+	var ref SourceRef
+	err := row.Scan(&ref.AssetID, &ref.SourceID, &ref.NativePath, &ref.SourceStatus, &ref.LastSeenAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SourceRef{}, ErrNotFound
+	}
+	if err != nil {
+		return SourceRef{}, fmt.Errorf("find source ref by thread: %w", err)
+	}
+	return ref, nil
+}

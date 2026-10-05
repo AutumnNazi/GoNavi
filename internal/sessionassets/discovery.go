@@ -49,6 +49,11 @@ func (s *Service) SyncSource(ctx context.Context, source Source, sessions []Disc
 			continue
 		}
 		seenThreadIDs[threadID] = true
+		// 旧引用状态要在纳入前取：UpsertAsset 会把引用刷成本轮观测。
+		previous, err := s.catalog.FindSourceRefByThread(ctx, source.ID, threadID)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return report, err
+		}
 		status := SourceStatusActive
 		if session.Archived {
 			status = SourceStatusArchived
@@ -72,12 +77,12 @@ func (s *Service) SyncSource(ctx context.Context, source Source, sessions []Disc
 			return report, fmt.Errorf("sync discovered session: %w", err)
 		}
 		report.UpdatedRefs++
-		if session.Archived {
-			backfilled, err := s.backfillArchivedAsset(ctx, asset.ID, source.ID, session)
+		if session.Archived && shouldCaptureArchive(previous, session) {
+			queued, err := s.captureArchivedAsset(ctx, asset.ID, source.ID, session)
 			if err != nil {
 				return report, err
 			}
-			if backfilled {
+			if queued {
 				report.Backfilled++
 			}
 		}
@@ -96,16 +101,26 @@ func (s *Service) SyncSource(ctx context.Context, source Source, sessions []Disc
 	return report, nil
 }
 
-// backfillArchivedAsset 对已有归档触发首次保全：仅当资产还没有 latest
-// 且没有进行中的任务（FR-06 / V-08）。
-func (s *Service) backfillArchivedAsset(ctx context.Context, assetID, sourceID string, session DiscoveredSession) (bool, error) {
-	asset, err := s.catalog.GetAsset(ctx, assetID)
-	if err != nil {
-		return false, err
+// shouldCaptureArchive 判断一次全量扫描中的归档会话是否需要保全。
+// 无既有引用（首次发现）或由其他状态转为归档都视为归档事件；
+// 已归档的会话仅当材料版本（路径、修改时间）变化时重新保全。
+func shouldCaptureArchive(previous SourceRef, session DiscoveredSession) bool {
+	if previous.SourceID == "" {
+		return true
 	}
-	if asset.LatestGenerationID != "" {
-		return false, nil
+	if previous.SourceStatus != string(SourceStatusArchived) {
+		return true
 	}
+	if previous.NativePath != session.NativePath {
+		return true
+	}
+	return session.ModifiedAt != 0 && previous.LastSeenAt != 0 &&
+		session.ModifiedAt > previous.LastSeenAt
+}
+
+// captureArchivedAsset 为归档会话安排保全：进行中的任务不重复排队
+// （FR-06/FR-07/V-08）。重归档与首次补保存共用同一条替换事务。
+func (s *Service) captureArchivedAsset(ctx context.Context, assetID, sourceID string, session DiscoveredSession) (bool, error) {
 	active, err := s.catalog.HasActiveCaptureJob(ctx, assetID)
 	if err != nil {
 		return false, err
