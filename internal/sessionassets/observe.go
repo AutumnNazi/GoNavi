@@ -16,7 +16,7 @@ import (
 // 观察参数。归档意图立即入队（不故意推迟首次复制，技术方案 §5），
 // 同路径重复事件由任务去重兜底。
 const (
-	observerEventBuffer  = 64   // fsnotify 事件通道缓冲：吸收突发目录事件
+	observerEventBuffer  = 64 // fsnotify 事件通道缓冲：吸收突发目录事件
 	observerQuietWindow  = 300 * time.Millisecond
 	observerLoopInterval = 200 * time.Millisecond
 )

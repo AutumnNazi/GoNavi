@@ -24,11 +24,11 @@ import (
 // 未知类型与字段原样保留在材料中，读取层只抽取可解释的元数据。
 
 const (
-	activeSessionsDirName  = "sessions"
+	activeSessionsDirName   = "sessions"
 	archivedSessionsDirName = "archived_sessions"
-	rolloutFilePrefix      = "rollout-"
-	rolloutFileSuffix      = ".jsonl"
-	sessionMetaLineType    = "session_meta"
+	rolloutFilePrefix       = "rollout-"
+	rolloutFileSuffix       = ".jsonl"
+	sessionMetaLineType     = "session_meta"
 	// headerReadLimit 限制头部读取量：元数据在首行，不解析正文。
 	headerReadLimit = 1 << 20
 )
