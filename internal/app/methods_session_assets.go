@@ -92,6 +92,7 @@ func (a *App) SessionAssetsEnable(input sessionassets.EnableInput) (result conne
 		return sessionAssetsError(a, "session_assets.error.enable_failed", err)
 	}
 	logger.Infof("会话资产集成已启用：kind=%s dataDir=%s", kind, detection.DataDir)
+	a.resumeSessionAssetSources(service)
 	view := a.buildDetectionView(kind, detection)
 	view.IntegrationID = integration.ID
 	view.IntegrationStatus = sessionassets.IntegrationStatusEnabled

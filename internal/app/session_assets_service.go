@@ -66,13 +66,16 @@ func (a *App) initializeSessionAssets() {
 		// 从未启用过：不创建材料库。
 		return
 	}
-	if _, err := a.ensureSessionAssetsService(); err != nil {
+	service, err := a.ensureSessionAssetsService()
+	if err != nil {
 		if errors.Is(err, sessionassets.ErrLibraryLocked) {
 			logger.Warnf("会话资产材料库被其他 GoNavi 实例占用，本次运行不提供保全：path=%s", materialsRoot)
 			return
 		}
 		logger.Error(err, "恢复会话资产服务失败")
+		return
 	}
+	a.resumeSessionAssetSources(service)
 }
 
 // shutdownSessionAssets 在应用退出时停止保存并释放材料库锁。

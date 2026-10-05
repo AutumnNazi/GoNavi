@@ -277,3 +277,78 @@ func TestArchiveEventObservationTriggersBackfill(t *testing.T) {
 	}
 	t.Fatalf("archive event did not produce asset+job within deadline")
 }
+
+// TestM3CheckpointArchivePreserveThenSourceRemoved 是 M3 检查点：
+// 启用 → 发现 → 归档事件 → 保全提交 → 移除隔离原源 → 仅凭副本核对
+// hash/范围/源状态。
+func TestM3CheckpointArchivePreserveThenSourceRemoved(t *testing.T) {
+	service := newTestService(t)
+	ctx := context.Background()
+	integrationID, sourceID := enableCodex(t, service)
+	source, err := service.catalog.GetSource(ctx, sourceID)
+	if err != nil {
+		t.Fatalf("load source: %v", err)
+	}
+	archiveDir := filepath.Join(source.RootPath, "archived_sessions")
+	session := seedRealSession(t, archiveDir, "thread-checkpoint", true)
+	discoverer := &fakeDiscoverer{sessions: []DiscoveredSession{session}}
+
+	// 1) 发现并补保存。
+	if _, err := service.SyncSource(ctx, source, discoverer.sessions, true); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	runQueue(t, service)
+	var asset Asset
+	assets, _ := service.catalog.ListAssets(ctx, integrationID)
+	for _, item := range assets {
+		if item.NativeThreadID == "thread-checkpoint" {
+			asset = item
+		}
+	}
+	if asset.ID == "" || asset.LatestGenerationID == "" {
+		t.Fatalf("checkpoint asset not committed: %+v", asset)
+	}
+	if refs, _ := service.catalog.ListSourceRefs(ctx, asset.ID); refs[0].SourceStatus != string(SourceStatusArchived) {
+		t.Fatalf("ref status = %s, want archived", refs[0].SourceStatus)
+	}
+
+	// 2) 提交副本与源文件逐字节一致（hash 已在提交时校验）。
+	committed, err := os.ReadFile(filepath.Join(service.paths.GenerationDir(asset.ID, asset.LatestGenerationID), "raw", "rollout.jsonl"))
+	if err != nil {
+		t.Fatalf("read committed copy: %v", err)
+	}
+	original, err := os.ReadFile(session.NativePath)
+	if err != nil {
+		t.Fatalf("read original: %v", err)
+	}
+	if string(committed) != string(original) {
+		t.Fatalf("committed copy differs from original")
+	}
+
+	// 3) 移除隔离原源，标记明确删除。
+	if err := os.RemoveAll(source.RootPath); err != nil {
+		t.Fatalf("remove source root: %v", err)
+	}
+	if _, err := service.SyncSource(ctx, source, nil, true); err != nil {
+		t.Fatalf("sync after removal: %v", err)
+	}
+	if refs, _ := service.catalog.ListSourceRefs(ctx, asset.ID); refs[0].SourceStatus != string(SourceStatusDeleted) {
+		t.Fatalf("ref status after removal = %s, want deleted", refs[0].SourceStatus)
+	}
+
+	// 4) 仅凭副本核对：清单完整、文件可验证。
+	manifest, err := readManifestJSON(service.paths.GenerationDir(asset.ID, asset.LatestGenerationID))
+	if err != nil {
+		t.Fatalf("read manifest without source: %v", err)
+	}
+	if !manifest.Complete || manifest.Source.Path != session.NativePath {
+		t.Fatalf("manifest coverage wrong: %+v", manifest)
+	}
+	if err := verifyGenerationFiles(service.paths.GenerationDir(asset.ID, asset.LatestGenerationID), manifest); err != nil {
+		t.Fatalf("standalone copy verification failed: %v", err)
+	}
+	updated, _ := service.catalog.GetAsset(ctx, asset.ID)
+	if updated.BackupStatus != string(BackupStatusVerified) || !updated.LatestComplete {
+		t.Fatalf("asset projection must stay verified after source removal: %+v", updated)
+	}
+}
