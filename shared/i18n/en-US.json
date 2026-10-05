@@ -9700,6 +9700,7 @@
   "table_designer.message.no_changes_detected": "No changes detected",
   "table_designer.message.no_sql_statement": "No SQL statement to execute",
   "table_designer.message.no_target_tables": "No other tables are available in this database",
+  "table_designer.message.structure_changed_elsewhere": "The table structure changed elsewhere. Your edits are based on the old structure; refresh before saving.",
   "table_designer.message.trigger_restored_after_failure": "{{detail}}; the original trigger was restored automatically",
   "table_designer.message.trigger_restore_failed": "{{detail}}; automatic trigger restoration failed: {{restoreDetail}}. Check the trigger immediately",
   "table_designer.message.trigger_restore_unavailable": "{{detail}}; the original trigger could not be restored automatically. Check it immediately",

@@ -9700,6 +9700,7 @@
   "table_designer.message.no_changes_detected": "変更は検出されませんでした",
   "table_designer.message.no_sql_statement": "実行する SQL 文がありません",
   "table_designer.message.no_target_tables": "このデータベースにコピー先となる他のテーブルはありません",
+  "table_designer.message.structure_changed_elsewhere": "テーブル構造が別の場所で変更されました。現在の編集は古い構造に基づいているため、保存する前に更新してください。",
   "table_designer.message.trigger_restored_after_failure": "{{detail}}；元のトリガーを自動的に復元しました",
   "table_designer.message.trigger_restore_failed": "{{detail}}；トリガーの自動復元に失敗しました：{{restoreDetail}}。直ちに確認してください",
   "table_designer.message.trigger_restore_unavailable": "{{detail}}；元のトリガーを自動的に復元できませんでした。直ちに確認してください",

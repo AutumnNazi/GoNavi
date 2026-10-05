@@ -9700,6 +9700,7 @@
   "table_designer.message.no_changes_detected": "Keine Änderungen erkannt",
   "table_designer.message.no_sql_statement": "Keine SQL-Anweisung zum Ausführen",
   "table_designer.message.no_target_tables": "In dieser Datenbank sind keine anderen Tabellen verfügbar",
+  "table_designer.message.structure_changed_elsewhere": "Die Tabellenstruktur wurde an anderer Stelle geändert. Ihre Änderungen basieren auf der alten Struktur; aktualisieren Sie vor dem Speichern.",
   "table_designer.message.trigger_restored_after_failure": "{{detail}}; der ursprüngliche Trigger wurde automatisch wiederhergestellt",
   "table_designer.message.trigger_restore_failed": "{{detail}}; automatische Trigger-Wiederherstellung fehlgeschlagen: {{restoreDetail}}. Prüfen Sie den Trigger sofort",
   "table_designer.message.trigger_restore_unavailable": "{{detail}}; der ursprüngliche Trigger konnte nicht automatisch wiederhergestellt werden. Prüfen Sie ihn sofort",

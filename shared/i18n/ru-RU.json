@@ -9700,6 +9700,7 @@
   "table_designer.message.no_changes_detected": "Изменения не обнаружены",
   "table_designer.message.no_sql_statement": "Нет SQL-инструкции для выполнения",
   "table_designer.message.no_target_tables": "В этой базе нет других таблиц для копирования",
+  "table_designer.message.structure_changed_elsewhere": "Структура таблицы была изменена в другом месте. Ваши правки основаны на старой структуре; обновите её перед сохранением.",
   "table_designer.message.trigger_restored_after_failure": "{{detail}}; исходный триггер автоматически восстановлен",
   "table_designer.message.trigger_restore_failed": "{{detail}}; автоматическое восстановление триггера не удалось: {{restoreDetail}}. Немедленно проверьте триггер",
   "table_designer.message.trigger_restore_unavailable": "{{detail}}; исходный триггер не удалось автоматически восстановить. Немедленно проверьте его",
