@@ -33,9 +33,9 @@ type Service struct {
 	workerWG     sync.WaitGroup
 	closed       bool
 
-	observerMu   sync.Mutex
-	observers    map[string]*SourceObserver
-	lifecycleCtx context.Context
+	observerMu      sync.Mutex
+	observers       map[string]*SourceObserver
+	lifecycleCtx    context.Context
 	lifecycleCancel context.CancelFunc
 }
 
