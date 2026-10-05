@@ -32,6 +32,11 @@ type Service struct {
 	workerCancel context.CancelFunc
 	workerWG     sync.WaitGroup
 	closed       bool
+
+	observerMu   sync.Mutex
+	observers    map[string]*SourceObserver
+	lifecycleCtx context.Context
+	lifecycleCancel context.CancelFunc
 }
 
 // Open 打开（必要时初始化）材料库并执行启动核对。核对在返回前完成，
@@ -58,7 +63,15 @@ func Open(materialsRoot string) (*Service, error) {
 		_ = lock.Close()
 		return nil, err
 	}
-	service := &Service{paths: paths, catalog: catalog, lock: lock}
+	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
+	service := &Service{
+		paths:           paths,
+		catalog:         catalog,
+		lock:            lock,
+		observers:       make(map[string]*SourceObserver),
+		lifecycleCtx:    lifecycleCtx,
+		lifecycleCancel: lifecycleCancel,
+	}
 	if err := service.Reconcile(context.Background()); err != nil {
 		_ = catalog.Close()
 		_ = lock.Close()
@@ -95,11 +108,35 @@ func (s *Service) Close() error {
 			logger.Warnf("session assets worker did not stop within %s", workerStopTimeout)
 		}
 	}
+	s.observerMu.Lock()
+	observers := s.observers
+	s.observers = map[string]*SourceObserver{}
+	s.observerMu.Unlock()
+	for _, observer := range observers {
+		observer.Close()
+	}
+	if s.lifecycleCancel != nil {
+		s.lifecycleCancel()
+	}
 	return errors.Join(s.catalog.Close(), s.lock.Close())
 }
 
 // Paths 返回材料库路径集合（只读视图）。
 func (s *Service) Paths() LibraryPaths { return s.paths }
+
+// Catalog 返回目录索引，供绑定层查询；服务关闭后返回 nil。
+func (s *Service) Catalog() *Catalog { return s.catalog }
+
+// lifecycleContext 返回服务级生命周期上下文：观察与后台回调共用，
+// Close 时取消。
+func (s *Service) lifecycleContext() context.Context {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.lifecycleCtx == nil {
+		return context.Background()
+	}
+	return s.lifecycleCtx
+}
 
 // StartWorker 启动后台保存 worker。重复启动是空操作；禁用集成应改用
 // 停止 worker 或不入队，而不是关闭服务。

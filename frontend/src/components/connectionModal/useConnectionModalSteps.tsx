@@ -11,8 +11,10 @@ import {
   getDbIcon,
 } from "../DatabaseIcons";
 import { supportsSSLForType } from "../../utils/connectionTypeCapabilities";
+import { isAgentConnectionType } from "../../utils/agentConnectionTypes";
 import { getConnectionTypeHint } from "../../utils/connectionTypeCatalog";
 import ConnectionModalStep2 from "./ConnectionModalStep2";
+import AgentSetupPanel from "../agentConnections/AgentSetupPanel";
 import { buildRedisDatabaseList, normalizeRedisDatabaseSelection } from "./connectionModalHelpers";
 import type { ConnectionModalStateApi } from "./useConnectionModalState";
 import type { ConnectionModalTypeCatalogApi } from "./useConnectionModalTypeCatalog";
@@ -26,6 +28,7 @@ import type { ConnectionModalProps } from "../ConnectionModal";
 
 export interface UseConnectionModalStepsInput {
   onOpenDriverManager: ConnectionModalProps['onOpenDriverManager'];
+  onClose: ConnectionModalProps['onClose'];
   typeSelectWarning: ConnectionModalStateApi['typeSelectWarning'];
   setTypeSelectWarning: ConnectionModalStateApi['setTypeSelectWarning'];
   dbTypeQuery: ConnectionModalStateApi['dbTypeQuery'];
@@ -145,6 +148,7 @@ export interface UseConnectionModalStepsInput {
 
 export const useConnectionModalSteps = ({
   onOpenDriverManager,
+  onClose,
   typeSelectWarning,
   setTypeSelectWarning,
   dbTypeQuery,
@@ -482,7 +486,12 @@ export const useConnectionModalSteps = ({
     </div>
   );
 
-  const renderStep2 = () => (
+  const renderStep2 = () => {
+    // 智能体类型：检测/启用面板替代数据库表单（S-02）。
+    if (isAgentConnectionType(dbType)) {
+      return <AgentSetupPanel kind={dbType} onClose={onClose} />;
+    }
+    return (
     <ConnectionModalStep2
       {...{
         activeConfigSection,
@@ -592,7 +601,8 @@ export const useConnectionModalSteps = ({
         useSSL,
       }}
     />
-  );
+    );
+  };
   return { renderStep1, renderStep2 };
 };
 

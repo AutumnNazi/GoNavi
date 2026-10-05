@@ -22,6 +22,7 @@ import {
   type ShortcutPlatformBinding,
   type ShortcutPlatform,
 } from "../utils/shortcuts";
+import type { AgentIntegrationSummaryView } from "../utils/agentConnectionTypes";
 import type { DataGridDisplaySettings } from "../utils/dataGridDisplay";
 import type { SqlEditorTypographySettings } from "../utils/sqlEditorTypography";
 import type { TitlebarActionsPlacementSettings } from "../utils/titlebarActionsPlacement";
@@ -263,6 +264,10 @@ export interface AppState {
     chunks: JVMDiagnosticEventChunk[],
   ) => void;
   clearJVMDiagnosticOutput: (tabId: string) => void;
+
+  agentIntegrations: AgentIntegrationSummaryView[];
+  agentIntegrationsLoading: boolean;
+  refreshAgentIntegrations: () => Promise<void>;
 
   addConnection: (conn: SavedConnection) => void;
   updateConnection: (conn: SavedConnection) => void;

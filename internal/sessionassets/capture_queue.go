@@ -176,3 +176,20 @@ func (c *Catalog) CancelQueuedJobsForAsset(ctx context.Context, assetID string) 
 	}
 	return nil
 }
+
+// HasActiveCaptureJob 报告资产是否已有排队或执行中的保全任务。事件重复
+// 或补核对重复触发时避免创建重复任务（V-08）。
+func (c *Catalog) HasActiveCaptureJob(ctx context.Context, assetID string) (bool, error) {
+	var one int
+	err := c.db.QueryRowContext(ctx,
+		`SELECT 1 FROM capture_jobs WHERE asset_id = ? AND status IN (?, ?) LIMIT 1`,
+		assetID, string(CaptureStatusQueued), string(CaptureStatusRunning)).Scan(&one)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, sql.ErrNoRows):
+		return false, nil
+	default:
+		return false, fmt.Errorf("check active capture job: %w", err)
+	}
+}

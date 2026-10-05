@@ -33,6 +33,8 @@ import type { SidebarSearchStateApi } from './useSidebarSearchState';
 import type { SidebarStoreStateApi } from './useSidebarStoreState';
 import type { SidebarTreeViewStateApi } from './useSidebarTreeViewState';
 import type { SidebarProps } from '../Sidebar';
+import { buildAgentRootTreeNode } from './sidebarAgentTreeNodes';
+import { useStore } from '../../store';
 
 export interface UseSidebarTitlebarSyncInput {
   connectionReloadSignaturesRef: SidebarSearchStateApi['connectionReloadSignaturesRef'];
@@ -66,6 +68,7 @@ export const useSidebarTitlebarSync = ({
   connectionIds, onTitlebarSnapshotChange, selectedSidebarKeyRef, selectedKeys, treeData,
   selectedNodesRef, connectionStates,
 }: UseSidebarTitlebarSyncInput) => {
+  const agentIntegrations = useStore((state) => state.agentIntegrations);
   useEffect(() => {
     const previousSignatures = connectionReloadSignaturesRef.current;
     const nextSignatures: Record<string, string> = {};
@@ -184,9 +187,11 @@ export const useSidebarTitlebarSync = ({
         orderedNodes.push(allSavedQueriesNode);
       }
       const externalSQLRootNode = prev.find((node) => node.type === 'external-sql-root');
-      return externalSQLRootNode ? [...orderedNodes, externalSQLRootNode] : orderedNodes;
+      const agentRootNode = buildAgentRootTreeNode(agentIntegrations);
+      const nodesWithAgentRoot = agentRootNode ? [...orderedNodes, agentRootNode] : orderedNodes;
+      return externalSQLRootNode ? [...nodesWithAgentRoot, externalSQLRootNode] : nodesWithAgentRoot;
     });
-  }, [connections, connectionTags, sidebarRootOrder, rootSortMode, rootConnectionSortMode, allSavedQueriesNode]);
+  }, [connections, connectionTags, sidebarRootOrder, rootSortMode, rootConnectionSortMode, allSavedQueriesNode, agentIntegrations]);
 
   const handleDuplicateConnection = async (conn: SavedConnection) => {
     if (!conn?.id) return;

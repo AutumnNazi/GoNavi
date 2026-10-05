@@ -11,13 +11,13 @@ import (
 	"GoNavi-Wails/internal/db"
 	"GoNavi-Wails/internal/importjob"
 	"GoNavi-Wails/internal/jvm"
-	"GoNavi-Wails/internal/logger"
 	nacosbackend "GoNavi-Wails/internal/nacos"
 	proxytunnel "GoNavi-Wails/internal/proxy"
 	redisbackend "GoNavi-Wails/internal/redis"
 	"GoNavi-Wails/internal/requesttrace"
 	"GoNavi-Wails/internal/resultdiff"
 	"GoNavi-Wails/internal/secretstore"
+	"GoNavi-Wails/internal/sessionassets"
 	"GoNavi-Wails/internal/sqlaudit"
 	syncbackend "GoNavi-Wails/internal/sync"
 	"GoNavi-Wails/internal/synccdc"
@@ -41,9 +41,6 @@ var (
 	resolveDialConfigWithProxyFunc = resolveDialConfigWithProxy
 	driverRuntimeSupportStatusFunc = db.DriverRuntimeSupportStatus
 	verifyDriverAgentRevisionFunc  = verifyRuntimeOptionalDriverAgentRevision
-	defaultAppTextMu               sync.RWMutex
-	defaultAppTextLanguage         = i18n.LanguageEnUS
-	defaultAppTextLocalizer        *i18n.Localizer
 )
 
 var (
@@ -159,6 +156,8 @@ type App struct {
 	webRuntime                    bool
 	headlessRuntime               bool
 	startedAt                     time.Time
+	sessionAssetsMu               sync.Mutex
+	sessionAssets                 *sessionassets.Service
 	dbCache                       map[string]cachedDatabase // Cache for DB connections
 	connectFailures               map[string]cachedConnectFailure
 	dbConnectGroup                singleflight.Group
@@ -338,54 +337,6 @@ func NewAppWithSecretStore(store secretstore.SecretStore) *App {
 	}
 }
 
-func newAppLocalizer() *i18n.Localizer {
-	localizer, err := i18n.NewLocalizer(i18n.LanguageEnUS)
-	if err != nil {
-		logger.Warnf("加载应用多语言目录失败：%v", err)
-		return nil
-	}
-	return localizer
-}
-
-func setDefaultAppLanguage(language i18n.Language) {
-	defaultAppTextMu.Lock()
-	defer defaultAppTextMu.Unlock()
-
-	defaultAppTextLanguage = language
-	if defaultAppTextLocalizer == nil {
-		localizer, err := i18n.NewLocalizer(language)
-		if err != nil {
-			logger.Warnf("加载默认多语言目录失败：%v", err)
-			return
-		}
-		defaultAppTextLocalizer = localizer
-		return
-	}
-	defaultAppTextLocalizer.SetLanguage(language)
-}
-
-func defaultAppText(key string, params map[string]any) string {
-	defaultAppTextMu.RLock()
-	if defaultAppTextLocalizer != nil {
-		text := defaultAppTextLocalizer.T(key, params)
-		defaultAppTextMu.RUnlock()
-		return text
-	}
-	defaultAppTextMu.RUnlock()
-
-	defaultAppTextMu.Lock()
-	defer defaultAppTextMu.Unlock()
-	if defaultAppTextLocalizer == nil {
-		localizer, err := i18n.NewLocalizer(defaultAppTextLanguage)
-		if err != nil {
-			logger.Warnf("加载默认多语言目录失败：%v", err)
-			return key
-		}
-		defaultAppTextLocalizer = localizer
-	}
-	return defaultAppTextLocalizer.T(key, params)
-}
-
 func (a *App) SetLanguage(language string) {
 	normalized, ok := i18n.NormalizeLanguage(language)
 	if !ok {
@@ -406,27 +357,4 @@ func (a *App) SetLanguage(language string) {
 	redisbackend.SetBackendLanguage(normalized)
 	nacosbackend.SetBackendLanguage(normalized)
 	syncbackend.SetBackendLanguage(normalized)
-}
-
-func (a *App) appText(key string, params map[string]any) string {
-	if a == nil {
-		return key
-	}
-	a.i18nMu.RLock()
-	if a.localizer != nil {
-		text := a.localizer.T(key, params)
-		a.i18nMu.RUnlock()
-		return text
-	}
-	a.i18nMu.RUnlock()
-
-	a.i18nMu.Lock()
-	defer a.i18nMu.Unlock()
-	if a.localizer == nil {
-		a.localizer = newAppLocalizer()
-	}
-	if a.localizer == nil {
-		return key
-	}
-	return a.localizer.T(key, params)
 }

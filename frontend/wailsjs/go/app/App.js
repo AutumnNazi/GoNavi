@@ -1526,6 +1526,22 @@ export function SelectSavedQueryDirectory(arg1) {
   return window['go']['app']['App']['SelectSavedQueryDirectory'](arg1);
 }
 
+export function SessionAssetsDetect(arg1) {
+  return window['go']['app']['App']['SessionAssetsDetect'](arg1);
+}
+
+export function SessionAssetsDisable(arg1) {
+  return window['go']['app']['App']['SessionAssetsDisable'](arg1);
+}
+
+export function SessionAssetsEnable(arg1) {
+  return window['go']['app']['App']['SessionAssetsEnable'](arg1);
+}
+
+export function SessionAssetsListIntegrations() {
+  return window['go']['app']['App']['SessionAssetsListIntegrations']();
+}
+
 export function SetApplicationBrandIcon(arg1) {
   return window['go']['app']['App']['SetApplicationBrandIcon'](arg1);
 }

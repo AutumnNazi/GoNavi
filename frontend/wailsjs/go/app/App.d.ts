@@ -11,6 +11,7 @@ import {jvm} from '../models';
 import {db} from '../models';
 import {redis} from '../models';
 import {resultdiff} from '../models';
+import {sessionassets} from '../models';
 import {dbuser} from '../models';
 
 export function AnalyzeQueryParameters(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<app.QueryParameterAnalysis>;
@@ -774,6 +775,14 @@ export function SelectSSHKeyFile(arg1:string):Promise<connection.QueryResult>;
 export function SelectSSHKnownHostsFile(arg1:string):Promise<connection.QueryResult>;
 
 export function SelectSavedQueryDirectory(arg1:string):Promise<connection.QueryResult>;
+
+export function SessionAssetsDetect(arg1:sessionassets.DetectInput):Promise<connection.QueryResult>;
+
+export function SessionAssetsDisable(arg1:string):Promise<connection.QueryResult>;
+
+export function SessionAssetsEnable(arg1:sessionassets.EnableInput):Promise<connection.QueryResult>;
+
+export function SessionAssetsListIntegrations():Promise<connection.QueryResult>;
 
 export function SetApplicationBrandIcon(arg1:string):Promise<connection.QueryResult>;
 

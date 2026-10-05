@@ -237,6 +237,8 @@ export const mockModule5 = () => {
     RightOutlined: Icon,
     SearchOutlined: Icon,
     PushpinOutlined: Icon,
+    ExclamationCircleFilled: Icon,
+    ReloadOutlined: Icon,
   };
 };
 

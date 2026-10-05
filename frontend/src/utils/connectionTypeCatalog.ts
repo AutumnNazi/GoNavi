@@ -137,6 +137,13 @@ export const CONNECTION_TYPE_GROUPS: ConnectionTypeCatalogGroup[] = withRegistry
     ],
   },
   {
+    labelKey: 'connection_modal.step1.group.agent',
+    label: 'Agents',
+    items: [
+      { key: 'codex', name: 'Codex' },
+    ],
+  },
+  {
     labelKey: 'connection_modal.step1.group.other',
     label: 'Other',
     items: [

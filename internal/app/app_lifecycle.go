@@ -111,6 +111,7 @@ func (a *App) startup(ctx context.Context) {
 	a.startConnectionKeepAliveLoop()
 	a.initializeDataSyncJobs(ctx)
 	a.initializeCloudBackup(ctx)
+	a.initializeSessionAssets()
 	logger.Infof("应用启动完成（首次连接保护窗口=%s，最多重试=%d 次）", startupConnectRetryWindow, startupConnectRetryAttempts)
 }
 
@@ -185,6 +186,7 @@ func (a *App) Shutdown() {
 	}
 	a.shutdownCloudBackup()
 	a.shutdownDataSyncJobs()
+	a.shutdownSessionAssets()
 	if !a.cancelAndWaitImportTasks(5 * time.Second) {
 		logger.Warnf("导入任务未能在关闭超时内全部退出；将继续释放数据库资源")
 	}

@@ -1,5 +1,6 @@
 import { summarizeConnectionTestFailureMessage } from "../../utils/connectionModalPresentation";
 import { t } from "../../i18n";
+import { isAgentConnectionType } from "../../utils/agentConnectionTypes";
 import { Button, Space } from "antd";
 import {
   ArrowLeftOutlined,
@@ -62,6 +63,10 @@ export const useConnectionModalChrome = ({
 }: UseConnectionModalChromeInput) => {
   const getFooter = () => {
     if (step === 1) {
+      return null;
+    }
+    // 智能体检测/启用页自带动作区，不渲染保存/测试页脚。
+    if (isAgentConnectionType(dbType)) {
       return null;
     }
     const typeName = dbTypes.find((t) => t.key === dbType)?.name || dbType;

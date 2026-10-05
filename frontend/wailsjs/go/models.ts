@@ -911,6 +911,7 @@ export namespace app {
 	    connections: connection.SavedConnectionView[];
 	    redisDbAliases?: Record<string, any>;
 	    excelGroups?: ConnectionExcelGroupAssignment[];
+	    skippedCount?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new ConnectionPackageImportResult(source);
@@ -921,6 +922,7 @@ export namespace app {
 	        this.connections = this.convertValues(source["connections"], connection.SavedConnectionView);
 	        this.redisDbAliases = source["redisDbAliases"];
 	        this.excelGroups = this.convertValues(source["excelGroups"], ConnectionExcelGroupAssignment);
+	        this.skippedCount = source["skippedCount"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -4781,6 +4783,45 @@ export namespace runharness {
 		    }
 		    return a;
 		}
+	}
+
+}
+
+export namespace sessionassets {
+	
+	export class DetectInput {
+	    kind: string;
+	    commandPath: string;
+	    dataDir: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DetectInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.commandPath = source["commandPath"];
+	        this.dataDir = source["dataDir"];
+	    }
+	}
+	export class EnableInput {
+	    kind: string;
+	    commandPath: string;
+	    dataDir: string;
+	    materialsRoot: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new EnableInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.commandPath = source["commandPath"];
+	        this.dataDir = source["dataDir"];
+	        this.materialsRoot = source["materialsRoot"];
+	    }
 	}
 
 }

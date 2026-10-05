@@ -253,3 +253,29 @@ func (a *Asset) scanDest() []any {
 		&a.BackupStatus, &a.MaterialStatus, &a.LatestGenerationID, &a.LatestComplete, &a.LastBackupAt,
 	}
 }
+
+// CountAssets 统计集成下的资产数量（主页分组节点徽标使用）。
+func (c *Catalog) CountAssets(ctx context.Context, integrationID string) (int, error) {
+	var count int
+	err := c.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM assets WHERE integration_id = ? AND deleted = 0`, integrationID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count assets: %w", err)
+	}
+	return count, nil
+}
+
+// UpdateSourceRefStatus 更新资产在某来源下的观测状态（active/archived/
+// deleted/unreachable/unknown）。来源消失的判定只改元数据维度。
+func (c *Catalog) UpdateSourceRefStatus(ctx context.Context, assetID, sourceID string, status SourceStatus) error {
+	result, err := c.db.ExecContext(ctx,
+		`UPDATE source_refs SET source_status = ?, last_seen_at = ? WHERE asset_id = ? AND source_id = ?`,
+		string(status), time.Now().Unix(), assetID, sourceID)
+	if err != nil {
+		return fmt.Errorf("update source ref status: %w", err)
+	}
+	if rows, err := result.RowsAffected(); err == nil && rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
