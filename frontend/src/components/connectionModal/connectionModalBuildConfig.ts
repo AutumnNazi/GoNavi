@@ -23,6 +23,7 @@ import {
   buildDefaultJVMConnectionValues,
 } from "../../utils/jvmConnectionConfig";
 import { resolveRedisConfigDraft } from "../../utils/redisConnectionUri";
+import { normalizeDriverVariantValue } from "../../utils/dataSourceRegistry/driverVariant";
 import { setNacosConnectionScope } from "../../utils/nacosConnectionScope";
 import {
   parseUriToValues,
@@ -724,6 +725,7 @@ export const buildConnectionConfig = async ({
         : undefined,
     oceanBaseProtocol:
       type === "oceanbase" ? selectedOceanBaseProtocol : undefined,
+    driverVariant: normalizeDriverVariantValue(type, mergedValues.driverVariant),
     hosts: hosts,
     topology: topology,
     mysqlReplicaUser: mysqlReplicaUser,

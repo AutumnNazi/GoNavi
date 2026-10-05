@@ -42,6 +42,7 @@ import {
     findDesignerColumnNameInput,
 } from '../../tableDesignerColumnFocus';
 import type { TableDesignerProps } from '../../TableDesigner';
+import { isElasticsearchFamilyType } from '../../../utils/elasticsearchFamily';
 
 export interface UseTableDesignerStateInput {
     tab: TableDesignerProps['tab'];
@@ -173,7 +174,7 @@ export const useTableDesignerState = ({ tab }: UseTableDesignerStateInput) => {
 
     const isMysqlLikeDialect = (dbType: string): boolean => isMysqlFamilySqlDialect(dbType);
 
-    const isNonRelationalDialect = (dbType: string): boolean => dbType === 'redis' || dbType === 'mongodb' || dbType === 'elasticsearch';
+    const isNonRelationalDialect = (dbType: string): boolean => dbType === 'redis' || dbType === 'mongodb' || isElasticsearchFamilyType(dbType);
 
     const lacksAlterForeignKeySupport = (dbType: string): boolean => dbType === 'sqlite' || dbType === 'duckdb' || dbType === 'tdengine';
 

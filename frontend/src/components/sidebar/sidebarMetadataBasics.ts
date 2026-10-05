@@ -1,5 +1,6 @@
 import type { SavedConnection } from "../../types";
 import { buildRpcConnectionConfig } from "../../utils/connectionRpcConfig";
+import { isDataSourceFamily, listRegistryMetadataQueries } from "../../utils/dataSourceRegistry";
 import { splitQualifiedNameLast } from "../../utils/qualifiedName";
 import {
   resolveSidebarRuntimeDatabase,
@@ -63,6 +64,8 @@ export const shouldHideSchemaPrefix = (conn: SavedConnection | undefined): boole
     .trim()
     .toLowerCase();
   if (SIDEBAR_SCHEMA_DB_TYPES.has(dbType)) return true;
+  // 描述表里 PostgreSQL 家族的数据源（CockroachDB、KWDB）与 PostgreSQL 一样按 schema 分组显示表名。
+  if (isDataSourceFamily(dbType, "postgres")) return true;
   if (dbType !== "custom") return false;
 
   const customDriver = String(conn?.config?.driver || "")
@@ -107,7 +110,9 @@ export const supportsDatabaseEvents = (conn: SavedConnection | undefined): boole
 
 export const supportsDatabaseSequences = (conn: SavedConnection | undefined): boolean => {
   const dialect = getMetadataDialect(conn);
-  return dialect === "oracle" || dialect === "dm" || isPostgresSchemaDialect(dialect);
+  // 未借用方言的描述表数据源声明了序列查询时（如 GBase 8s）同样展示序列分组。
+  return dialect === "oracle" || dialect === "dm" || isPostgresSchemaDialect(dialect)
+    || listRegistryMetadataQueries(dialect, "sequences").length > 0;
 };
 
 export const escapeSQLLiteral = (raw: string): string =>

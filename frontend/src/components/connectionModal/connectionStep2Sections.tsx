@@ -7,6 +7,8 @@ import { ConnectionStep2JvmModeCards } from "./ConnectionStep2JvmModeCards";
 import { ConnectionStep2JvmDetailCards } from "./ConnectionStep2JvmDetailCards";
 import { ConnectionStep2HostFields } from "./ConnectionStep2HostFields";
 import { ConnectionStep2AuthFields } from "./ConnectionStep2AuthFields";
+import { ConnectionModalDriverVariantField } from "./ConnectionModalDriverVariantField";
+import { ConnectionModalRegistryParamFields } from "./ConnectionModalRegistryParamFields";
 import { ConnectionStep2ModeFields } from "./ConnectionStep2ModeFields";
 import { ConnectionStep2MongoRedisFields } from "./ConnectionStep2MongoRedisFields";
 import { ConnectionStep2ProtectionFields } from "./ConnectionStep2ProtectionFields";
@@ -337,6 +339,14 @@ export const createConnectionStep2Sections = ({
               isOceanBaseOracle={isOceanBaseOracle}
               oracleMode={oracleMode}
             />
+
+            <ConnectionModalDriverVariantField
+              dbType={dbType}
+              form={form}
+              onChange={clearConnectionTestResultForChoice}
+            />
+
+            <ConnectionModalRegistryParamFields dbType={dbType} onChange={clearConnectionTestResultForChoice} />
 
             <ConnectionStep2AuthFields
               isKafka={isKafka}

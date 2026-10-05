@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -159,6 +160,24 @@ func (o *OracleDB) ApplyChangesContext(ctx context.Context, tableName string, ch
 		}
 	}()
 
+	if err := o.execOracleChanges(ctx, conn, tableName, changes, columnTypeMap); err != nil {
+		return err
+	}
+
+	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+		return MarkWriteOutcomeUnknown(fmt.Errorf("事务提交失败：%w", err))
+	}
+	transactionFinished = true
+	return nil
+}
+
+// oracleChangeExecer 是执行网格改动语句的连接或事务（*sql.Conn / *sql.Tx）。
+type oracleChangeExecer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// execOracleChanges 按删除、更新、插入的顺序执行网格改动（:n 占位符，ROWID 定位时按 ROWID 匹配），不负责提交。
+func (o *OracleDB) execOracleChanges(ctx context.Context, conn oracleChangeExecer, tableName string, changes connection.ChangeSet, columnTypeMap map[string]string) error {
 	quoteIdent := func(name string) string {
 		n := strings.TrimSpace(name)
 		n = strings.Trim(n, "\"")
@@ -277,10 +296,5 @@ func (o *OracleDB) ApplyChangesContext(ctx context.Context, tableName string, ch
 			return fmt.Errorf("插入未生效：未影响任何行")
 		}
 	}
-
-	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
-		return MarkWriteOutcomeUnknown(fmt.Errorf("事务提交失败：%w", err))
-	}
-	transactionFinished = true
 	return nil
 }

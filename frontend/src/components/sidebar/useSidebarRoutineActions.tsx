@@ -14,7 +14,7 @@ import {
   extractSqlServerDefinitionRows,
 } from './sidebarMetadataLoaders';
 import type { SavedConnection } from '../../types';
-import { DBQuery, DropFunction } from '../../../wailsjs/go/app/App';
+import { DBQuery, DBShowCreateTable, DropFunction } from '../../../wailsjs/go/app/App';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import { buildSqlServerObjectDefinitionQueries } from '../../utils/sqlServerObjectDefinition';
 import Modal from '../common/ResizableDraggableModal';
@@ -28,6 +28,8 @@ import {
 } from './oracleObjectCompilation';
 import type { SidebarCopyExportActionsApi } from './useSidebarCopyExportActions';
 import type { UseSidebarObjectActionsArgs } from './useSidebarObjectActions';
+import { buildPgRoutineDefinitionQuery } from '../../utils/pgRoutineDefinition';
+import { usesDriverObjectDefinition } from '../definitionViewerDialect';
 
 export interface UseSidebarRoutineActionsInput {
   addTab: UseSidebarObjectActionsArgs['addTab'];
@@ -172,7 +174,7 @@ export const useSidebarRoutineActions = ({
           break;
         case 'postgres': case 'kingbase': case 'highgo': case 'vastbase': case 'opengauss': case 'gaussdb': {
           const schemaRef = schema || 'public';
-          query = `SELECT pg_get_functiondef(p.oid) AS routine_definition FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname = '${escapeSQLLiteral(schemaRef)}' AND p.proname = '${escapeSQLLiteral(name)}' LIMIT 1`;
+          query = buildPgRoutineDefinitionQuery(dialect, escapeSQLLiteral(schemaRef), escapeSQLLiteral(name));
           break;
         }
         case 'sqlserver':
@@ -193,7 +195,12 @@ export const useSidebarRoutineActions = ({
           break;
         }
       }
-      const queries = dialect === 'sqlserver'
+      if (usesDriverObjectDefinition(conn)) {
+        const result = await DBShowCreateTable(buildRpcConnectionConfig(config) as any, dbName, name);
+        if (result.success && String(result.data || '').trim()) template = `${sqlTemplateHeader}
+${String(result.data)}`;
+      }
+      const queries = usesDriverObjectDefinition(conn) ? [] : dialect === 'sqlserver'
         ? buildSqlServerObjectDefinitionQueries('routine', routineName, dbName, 'routine_definition')
         : [query].filter(Boolean);
       for (const queryText of queries) {

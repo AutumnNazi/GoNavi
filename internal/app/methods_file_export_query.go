@@ -32,7 +32,7 @@ func (a *App) ExportDataWithOptions(data []map[string]interface{}, columns []str
 	}
 	format := options.Format
 	logger.Infof("ExportData 开始：rows=%d cols=%d format=%s defaultName=%s", len(data), len(columns), strings.ToLower(strings.TrimSpace(format)), strings.TrimSpace(defaultName))
-	defaultFilename := fmt.Sprintf("%s.%s", defaultName, strings.ToLower(format))
+	defaultFilename := fmt.Sprintf("%s.%s", sanitizeExportFileStem(defaultName), strings.ToLower(format))
 	filename := ""
 	var err error
 	var webTarget *webDownloadTarget
@@ -124,7 +124,7 @@ func (a *App) ExportQueryWithOptions(config connection.ConnectionConfig, dbName 
 	}
 	format := options.Format
 
-	defaultFilename := fmt.Sprintf("%s.%s", defaultName, strings.ToLower(format))
+	defaultFilename := fmt.Sprintf("%s.%s", sanitizeExportFileStem(defaultName), strings.ToLower(format))
 	filename := ""
 	var err error
 	var webTarget *webDownloadTarget

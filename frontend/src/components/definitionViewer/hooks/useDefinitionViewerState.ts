@@ -1,13 +1,14 @@
 import { useState, useRef } from 'react';
 import { useStore } from '../../../store';
 import { useI18n } from '../../../i18n/provider';
-import { normalizeOceanBaseProtocol } from '../../../utils/oceanBaseProtocol';
+import { resolveDefinitionViewerDialect } from '../../definitionViewerDialect';
 import { splitQualifiedNameLast } from '../../../utils/qualifiedName';
 import { buildSqlServerObjectDefinitionQueries } from '../../../utils/sqlServerObjectDefinition';
 import { DBQuery } from '../../../../wailsjs/go/app/App';
 import { buildRpcConnectionConfig } from '../../../utils/connectionRpcConfig';
 import { normalizeMySQLViewDDL } from '../definitionViewerSql';
 import type { DefinitionViewerProps } from '../../DefinitionViewer';
+import { buildPgRoutineDefinitionQuery } from '../../../utils/pgRoutineDefinition';
 
 export interface UseDefinitionViewerStateInput {
   tab: DefinitionViewerProps['tab'];
@@ -45,22 +46,7 @@ export const useDefinitionViewerState = ({ tab }: UseDefinitionViewerStateInput)
 
   const escapeSQLLiteral = (raw: string): string => String(raw || '').replace(/'/g, "''");
 
-  const getMetadataDialect = (conn: any): string => {
-      const type = String(conn?.config?.type || '').trim().toLowerCase();
-      if (type === 'custom') {
-          const driver = String(conn?.config?.driver || '').trim().toLowerCase();
-          if (driver === 'diros' || driver === 'doris') return 'mysql';
-          if (driver === 'goldendb' || driver === 'greatdb' || driver === 'gdb') return 'mysql';
-          if (driver === 'oceanbase') return normalizeOceanBaseProtocol(conn?.config?.oceanBaseProtocol) === 'oracle' ? 'oracle' : 'mysql';
-          if (driver === 'opengauss' || driver === 'open_gauss' || driver === 'open-gauss') return 'opengauss';
-          if (driver === 'gaussdb' || driver === 'gauss_db' || driver === 'gauss-db') return 'gaussdb';
-          return driver;
-      }
-      if (type === 'oceanbase' && normalizeOceanBaseProtocol(conn?.config?.oceanBaseProtocol) === 'oracle') return 'oracle';
-      if (type === 'goldendb' || type === 'mariadb' || type === 'oceanbase' || type === 'diros' || type === 'sphinx') return 'mysql';
-      if (type === 'dameng') return 'dm';
-      return type;
-  };
+  const getMetadataDialect = (conn: any): string => resolveDefinitionViewerDialect(conn);
 
   const isSphinxConnection = (conn: any): boolean => {
       const type = String(conn?.config?.type || '').trim().toLowerCase();
@@ -204,7 +190,7 @@ export const useDefinitionViewerState = ({ tab }: UseDefinitionViewerStateInput)
           case 'opengauss':
           case 'gaussdb': {
               const schemaRef = schema || 'public';
-              return [`SELECT pg_get_functiondef(p.oid) AS routine_definition FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname = '${escapeSQLLiteral(schemaRef)}' AND p.proname = '${safeName}' LIMIT 1`];
+              return [buildPgRoutineDefinitionQuery(dialect, escapeSQLLiteral(schemaRef), safeName)];
           }
           case 'sqlserver':
               return buildSqlServerObjectDefinitionQueries('routine', routineName, dbName, 'routine_definition');

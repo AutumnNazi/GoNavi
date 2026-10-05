@@ -299,6 +299,7 @@ export const useConnectionModalFormSync = ({
             configType === "oceanbase"
               ? resolveOceanBaseProtocolForConfig(config)
               : "mysql",
+          driverVariant: config.driverVariant,
           includeDatabases: initialValues.includeDatabases,
           includeDatabasePatterns: initialValues.includeDatabasePatterns,
           excludeDatabasePatterns: initialValues.excludeDatabasePatterns,

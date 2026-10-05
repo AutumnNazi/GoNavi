@@ -2,6 +2,7 @@ import { DBQuery } from '../../../wailsjs/go/app/App';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import { resolveSqlDialect, quoteSqlIdentifierPart } from '../../utils/sqlDialect';
 import { buildMySQLCompatibleViewMetadataSqls } from '../../utils/sidebarMetadata';
+import { ORACLE_ROUTINE_OBJECT_TYPES, ORACLE_ROUTINE_TYPE_COLUMN } from '../../utils/oracleRoutineObjects';
 import {
     type MetadataIdentityMode,
     getMetadataIdentityMode,
@@ -429,15 +430,15 @@ export const buildCompletionFunctionsMetadataQuerySpecs = (
         case 'oracle':
             if (options?.includeCurrentOwnerFallback === false && safeDbName) {
                 return [{
-                    sql: `SELECT OWNER AS schema_name, OBJECT_NAME AS routine_name, OBJECT_TYPE AS routine_type FROM ALL_OBJECTS WHERE OWNER = '${safeDbName.toUpperCase()}' AND OBJECT_TYPE IN ('FUNCTION','PROCEDURE') ORDER BY OBJECT_TYPE, OBJECT_NAME`,
+                    sql: `SELECT OWNER AS schema_name, OBJECT_NAME AS routine_name, ${ORACLE_ROUTINE_TYPE_COLUMN} FROM ALL_OBJECTS WHERE OWNER = '${safeDbName.toUpperCase()}' AND OBJECT_TYPE IN ${ORACLE_ROUTINE_OBJECT_TYPES} ORDER BY OBJECT_TYPE, OBJECT_NAME`,
                 }];
             }
             return normalizeMetadataQuerySpecs([
-                { sql: `SELECT OBJECT_NAME AS routine_name, OBJECT_TYPE AS routine_type FROM USER_OBJECTS WHERE OBJECT_TYPE IN ('FUNCTION','PROCEDURE') ORDER BY OBJECT_TYPE, OBJECT_NAME` },
-                { sql: `SELECT OWNER AS schema_name, OBJECT_NAME AS routine_name, OBJECT_TYPE AS routine_type FROM ALL_OBJECTS WHERE OWNER = USER AND OBJECT_TYPE IN ('FUNCTION','PROCEDURE') ORDER BY OBJECT_TYPE, OBJECT_NAME` },
+                { sql: `SELECT OBJECT_NAME AS routine_name, ${ORACLE_ROUTINE_TYPE_COLUMN} FROM USER_OBJECTS WHERE OBJECT_TYPE IN ${ORACLE_ROUTINE_OBJECT_TYPES} ORDER BY OBJECT_TYPE, OBJECT_NAME` },
+                { sql: `SELECT OWNER AS schema_name, OBJECT_NAME AS routine_name, ${ORACLE_ROUTINE_TYPE_COLUMN} FROM ALL_OBJECTS WHERE OWNER = USER AND OBJECT_TYPE IN ${ORACLE_ROUTINE_OBJECT_TYPES} ORDER BY OBJECT_TYPE, OBJECT_NAME` },
                 {
                     sql: safeDbName
-                        ? `SELECT OWNER AS schema_name, OBJECT_NAME AS routine_name, OBJECT_TYPE AS routine_type FROM ALL_OBJECTS WHERE OWNER = '${safeDbName.toUpperCase()}' AND OBJECT_TYPE IN ('FUNCTION','PROCEDURE') ORDER BY OBJECT_TYPE, OBJECT_NAME`
+                        ? `SELECT OWNER AS schema_name, OBJECT_NAME AS routine_name, ${ORACLE_ROUTINE_TYPE_COLUMN} FROM ALL_OBJECTS WHERE OWNER = '${safeDbName.toUpperCase()}' AND OBJECT_TYPE IN ${ORACLE_ROUTINE_OBJECT_TYPES} ORDER BY OBJECT_TYPE, OBJECT_NAME`
                         : '',
                 },
             ]);

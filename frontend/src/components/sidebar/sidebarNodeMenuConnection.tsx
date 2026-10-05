@@ -14,7 +14,9 @@ import {
 import type { MenuProps } from 'antd';
 import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
 import { buildElasticsearchConsoleTemplates } from '../../utils/elasticsearchConsole';
+import { isElasticsearchFamilyType } from '../../utils/elasticsearchFamily';
 import { GnNewQueryIcon } from '../icons/gnIcons';
+import { registryAllowsImport } from '../../utils/dataSourceRegistry';
 
 export interface BuildConnectionNodeMenuItemsInput {
   isRedis: boolean;
@@ -225,7 +227,7 @@ export const buildConnectionNodeMenuItems = ({ isRedis, refreshConnectionResourc
 
   // Regular database connection menu
   const connectionCapabilities = getDataSourceCapabilities((node.dataRef as SavedConnection)?.config);
-  const isElasticsearch = connectionCapabilities.type === 'elasticsearch';
+  const isElasticsearch = isElasticsearchFamilyType(connectionCapabilities.type);
   const isMessageQueue = ['mqtt', 'kafka', 'rocketmq', 'rabbitmq', 'pulsar'].includes(connectionCapabilities.type);
   const messagePublishTarget = isMessageQueue ? resolveMessagePublishTarget(node) : null;
   return [
@@ -298,12 +300,12 @@ export const buildConnectionNodeMenuItems = ({ isRedis, refreshConnectionResourc
                  });
              }
            },
-           {
+           ...(registryAllowsImport((node.dataRef as SavedConnection)?.config?.type, 'sqlFile') ? [{
                key: 'open-sql-file',
                label: t('sidebar.sql_file_exec.title'),
                icon: <FileAddOutlined />,
                onClick: () => handleRunSQLFile(node)
-           },
+           }] : []),
            ]),
        ] : []),
        { type: 'divider' },

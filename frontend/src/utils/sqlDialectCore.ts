@@ -1,3 +1,4 @@
+import { getDataSourceDialectFamily, getDataSourceSpec, getDataSourceSpecByDialect } from './dataSourceRegistry';
 import { resolveOceanBaseProtocolForDialect } from './oceanBaseProtocol';
 import { splitQualifiedNameSegmentsDetailed, splitQualifiedNameSegments } from './qualifiedName';
 
@@ -65,6 +66,9 @@ export const resolveSqlDialect = (
   if (source === 'oceanbase' && normalizeOceanBaseSqlProtocol(options?.oceanBaseProtocol) === 'oracle') {
     return 'oracle';
   }
+  // 借用方言的描述表数据源（TiDB → mysql、CockroachDB → postgres）在编辑器、侧栏与表设计器里按兼容方言处理。
+  const registrySpec = getDataSourceSpec(source);
+  if (registrySpec) return registrySpec.ddlDialect || registrySpec.dialect;
 
   switch (source) {
     case 'postgresql':
@@ -223,14 +227,17 @@ export const resolveSqlDialect = (
 
 export const isMysqlFamilyDialect = (dbType: string): boolean => (
   ['mysql', 'mariadb', 'oceanbase', 'diros', 'starrocks', 'sphinx', 'tidb'].includes(resolveSqlDialect(dbType))
+  || getDataSourceDialectFamily(resolveSqlDialect(dbType)) === 'mysql'
 );
 
 export const isPgLikeDialect = (dbType: string): boolean => (
   ['postgres', 'kingbase', 'highgo', 'vastbase', 'opengauss', 'gaussdb'].includes(resolveSqlDialect(dbType))
+  || getDataSourceDialectFamily(resolveSqlDialect(dbType)) === 'postgres'
 );
 
 export const isOracleLikeDialect = (dbType: string): boolean => (
   ['oracle', 'dameng', 'dm'].includes(resolveSqlDialect(dbType))
+  || getDataSourceDialectFamily(resolveSqlDialect(dbType)) === 'oracle'
 );
 
 export const isSqlServerDialect = (dbType: string): boolean => resolveSqlDialect(dbType) === 'sqlserver';
@@ -248,6 +255,10 @@ export const resolveTableAliasSyntax = (dbType: string): TableAliasSyntax => {
   }
   if (['oracle', 'dameng', 'sphinx', 'iris'].includes(dialect)) {
     return 'bare';
+  }
+  const registrySpec = getDataSourceSpecByDialect(dialect);
+  if (registrySpec) {
+    return registrySpec.ui?.tableAlias ?? (registrySpec.family === 'oracle' ? 'bare' : 'as');
   }
   return 'none';
 };
@@ -299,7 +310,8 @@ export const quoteSqlIdentifierPart = (dbType: string, part: string): string => 
   if (isSqlServerDialect(dialect)) {
     return `[${escapeBracketIdentifier(ident)}]`;
   }
-  if (isPgLikeDialect(dialect)) {
+  // 描述表声明“按需加引号”的自有方言（如 GBase 8s）与 PostgreSQL 规则一致。
+  if (isPgLikeDialect(dialect) || getDataSourceSpecByDialect(dialect)?.ui?.quoting === 'pg') {
     return needsPgLikeQuote(ident) ? `"${escapeDoubleQuoteIdentifier(ident)}"` : ident;
   }
   return `"${escapeDoubleQuoteIdentifier(ident)}"`;

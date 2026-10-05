@@ -6,6 +6,11 @@ import { ExportQueryWithOptions } from '../../../../wailsjs/go/app/App';
 import type { DataGridExportScope } from '../../DataGridCore';
 import type { DataGridV2ColumnActionsApi } from './useDataGridV2ColumnActions';
 import type { DataGridV2ActionsContext } from '../../useDataGridV2Actions';
+import { getDataSourceSpec } from '../../../utils/dataSourceRegistry';
+
+// 与数据浏览一致：自然顺序的数据源（ui.naturalOrder）未指定排序时不追加主键排序，否则会退化为客户端全量排序。
+const resolveExportOrderFallbackColumns = (dbType: string, pkColumns: string[]): string[] =>
+  getDataSourceSpec(dbType)?.ui?.naturalOrder ? [] : pkColumns;
 
 export interface UseDataGridV2CopyExportInput {
   supportsCopyInsert: DataGridV2ActionsContext['supportsCopyInsert'];
@@ -277,7 +282,7 @@ export const useDataGridV2CopyExport = ({
           columnNames: displayOutputColumnNames,
           whereSql: whereSQL,
       });
-      const orderBySQL = buildOrderBySQL(dbType, sortInfo, pkColumns);
+      const orderBySQL = buildOrderBySQL(dbType, sortInfo, resolveExportOrderFallbackColumns(dbType, pkColumns));
       const normalizedType = String(dbType || '').trim().toLowerCase();
       const hasSortForBuffer = hasExplicitSort(sortInfo);
       const offset = (pagination.current - 1) * pagination.pageSize;
@@ -308,7 +313,7 @@ export const useDataGridV2CopyExport = ({
           columnNames: displayOutputColumnNames,
           whereSql: whereSQL,
       });
-      sql += buildOrderBySQL(dbType, sortInfo, pkColumns);
+      sql += buildOrderBySQL(dbType, sortInfo, resolveExportOrderFallbackColumns(dbType, pkColumns));
       const normalizedType = String(dbType || '').trim().toLowerCase();
       const hasSortForBuffer = hasExplicitSort(sortInfo);
       if (hasSortForBuffer && (normalizedType === 'mysql' || normalizedType === 'mariadb')) {

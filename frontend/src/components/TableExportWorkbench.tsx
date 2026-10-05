@@ -227,6 +227,7 @@ const TableExportWorkbenchBody: React.FC<TableExportWorkbenchBodyProps> = ({ tab
                 loadingColumns={loadingColumns} setSelectedColumns={setSelectedColumns}
                 xlsxMaxRowsPerSheet={xlsxMaxRowsPerSheet}
                 setXlsxMaxRowsPerSheet={setXlsxMaxRowsPerSheet}
+                supportsSqlFormat={connectionCapabilities.supportsSqlQueryExport}
               />
             ) : isDirectSQLWorkbench ? (
               <TableExportDirectSqlFields

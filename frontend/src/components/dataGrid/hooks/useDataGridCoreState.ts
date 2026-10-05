@@ -42,6 +42,7 @@ import { buildDataGridPaginationPageSizeOptions } from '../dataGridPagingOptions
 import Modal from '../../common/ResizableDraggableModal';
 import { useExportProgressDialog } from '../../ExportProgressModal';
 import type { DataGridProps } from '../../DataGridCore';
+import { registryAllowsImport } from '../../../utils/dataSourceRegistry';
 
 export interface UseDataGridCoreStateInput {
     connectionParamsOverride: DataGridProps['connectionParamsOverride'];
@@ -318,7 +319,8 @@ export const useDataGridCoreState = ({
     const supportsCopyInsert = dataSourceCaps.supportsCopyInsert;
     const supportsSqlQueryExport = dataSourceCaps.supportsSqlQueryExport;
     const isQueryResultExport = exportScope === 'queryResult';
-    const canImport = exportScope === 'table' && !!tableName && !importRestricted;
+    const canImport = exportScope === 'table' && !!tableName && !importRestricted
+        && registryAllowsImport(currentConnConfig?.type, 'table');
     const canExport = !!connectionId && (isQueryResultExport || !!tableName);
     const resolvedDdlDbName = isQueryResultExport ? ddlDbName : (ddlDbName ?? dbName);
     const resolvedDdlTableName = isQueryResultExport ? ddlTableName : (ddlTableName ?? tableName);

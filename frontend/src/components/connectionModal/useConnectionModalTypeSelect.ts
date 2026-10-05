@@ -2,6 +2,7 @@ import { normalizeDriverType } from "../../utils/connectionDriverType";
 import { t } from "../../i18n";
 import { getConnectionTypeDefaultPort as getDefaultPortByType } from "../../utils/connectionTypeCatalog";
 import { buildDefaultJVMConnectionValues } from "../../utils/jvmConnectionConfig";
+import { getDataSourceSpec } from "../../utils/dataSourceRegistry";
 import { DEFAULT_KEEPALIVE_INTERVAL_MINUTES } from "./connectionModalHelpers";
 import {
   isFileDatabaseType,
@@ -214,11 +215,12 @@ export const useConnectionModalTypeSelect = ({
       });
     } else if (type !== "custom") {
       const defaultUser =
-        type === "clickhouse"
+        getDataSourceSpec(type)?.ui?.defaultUser ??
+        (type === "clickhouse"
           ? "default"
           : PRIMARY_USERNAME_OPTIONAL_TYPES.has(type)
             ? ""
-            : "root";
+            : "root");
       const sslCapableType = supportsSSLForType(type);
       setUseSSL(false);
       setUseHttpTunnel(false);

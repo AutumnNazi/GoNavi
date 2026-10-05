@@ -2,6 +2,7 @@ package sync
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"GoNavi-Wails/internal/connection"
@@ -179,12 +180,15 @@ func buildPGLikeToMySQLCreateTablePlan(config SyncConfig, targetQueryTable strin
 }
 
 func buildPGLikeToMySQLColumnDefinition(col connection.ColumnDefinition) (string, []string) {
+	col.Type = adaptCockroachColumnType(col.Type)
 	targetType, warnings := mapPGLikeColumnToMySQL(col)
 	parts := []string{targetType}
 	if strings.Contains(strings.ToLower(strings.TrimSpace(col.Extra)), "auto_increment") && canUseMySQLAutoIncrement(targetType) {
 		parts = append(parts, "AUTO_INCREMENT")
 	}
-	if defaultSQL, ok, warningText := mapPGLikeDefaultToMySQL(col, targetType); warningText != "" {
+	if adapted, adaptWarning := adaptCockroachDefault(col, false); adaptWarning != "" {
+		warnings = append(warnings, adaptWarning)
+	} else if defaultSQL, ok, warningText := mapPGLikeDefaultToMySQL(adapted, targetType); warningText != "" {
 		warnings = append(warnings, warningText)
 	} else if ok {
 		parts = append(parts, "DEFAULT "+defaultSQL)
@@ -230,10 +234,11 @@ func mapPGLikeColumnToMySQL(col connection.ColumnDefinition) (string, []string) 
 		return "longblob", warnings
 	case raw == "date":
 		return "date", warnings
-	case strings.HasPrefix(raw, "time"):
-		return "time", warnings
+	// timestamp 必须先于 time 判断：两者前缀相同，先判 time 会把 timestamp 列建成 MySQL 的 TIME。
 	case strings.HasPrefix(raw, "timestamp"):
-		return "datetime", warnings
+		return "datetime" + pgTemporalPrecisionSuffix(raw), warnings
+	case strings.HasPrefix(raw, "time"):
+		return "time" + pgTemporalPrecisionSuffix(raw), warnings
 	case strings.HasPrefix(raw, "uuid"):
 		warnings = append(warnings, fmt.Sprintf("字段 %s 类型 uuid 已映射为 varchar(36)", col.Name))
 		return "varchar(36)", warnings
@@ -251,6 +256,23 @@ func mapPGLikeColumnToMySQL(col connection.ColumnDefinition) (string, []string) 
 		warnings = append(warnings, fmt.Sprintf("字段 %s 类型 %s 暂无专门映射，已降级为 text", col.Name, col.Type))
 		return "text", warnings
 	}
+}
+
+// pgTemporalPrecisionSuffix 取 timestamp(n) / time(n) 的小数秒精度（MySQL 最多 6 位）。
+func pgTemporalPrecisionSuffix(raw string) string {
+	open := strings.Index(raw, "(")
+	end := strings.Index(raw, ")")
+	if open < 0 || end <= open+1 {
+		return ""
+	}
+	precision, err := strconv.Atoi(strings.TrimSpace(raw[open+1 : end]))
+	if err != nil || precision <= 0 {
+		return ""
+	}
+	if precision > 6 {
+		precision = 6
+	}
+	return "(" + strconv.Itoa(precision) + ")"
 }
 
 func canUseMySQLAutoIncrement(targetType string) bool {

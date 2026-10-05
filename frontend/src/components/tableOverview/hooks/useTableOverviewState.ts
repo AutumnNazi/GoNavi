@@ -13,6 +13,7 @@ import {
   isSchemaScopedTableOverviewDialect,
   parseTableStats,
   buildTableStatusSQL,
+  usesTableListOverview,
   getTableOverviewDisplayName,
   isOverviewTablePinned,
   type OverviewTableSection,
@@ -28,6 +29,7 @@ import {
   resolveTableOverviewVisibleRows,
 } from '../../../utils/tableOverviewFilter';
 import { getDataSourceCapabilities } from '../../../utils/dataSourceCapabilities';
+import { ensureTableStatsServerVersion } from '../../sidebar/sidebarTableStatsVersion';
 import { supportsTableClearAction } from '../../tableDataDangerActions';
 import { isConnectionDataEditRestricted } from '../../../utils/connectionReadOnly';
 import { useAutoFetchVisibility } from '../../../utils/autoFetchVisibility';
@@ -118,14 +120,7 @@ export const useTableOverviewState = ({ tab }: UseTableOverviewStateInput) => {
               useSSH: connection.config.useSSH || false,
               ssh: connection.config.ssh || { host: '', port: 22, user: '', password: '', keyPath: '' },
           };
-          if (
-              metadataDialect === 'tdengine' ||
-              metadataDialect === 'sqlite' ||
-              metadataDialect === 'sqlite3' ||
-              metadataDialect === 'milvus' ||
-              metadataDialect === 'milvusdb' ||
-              metadataDialect === 'milvus-db'
-          ) {
+          if (usesTableListOverview(metadataDialect, connection?.config?.type)) {
               const res = await DBGetTables(buildRpcConnectionConfig(config) as any, tab.dbName || '');
               if (!isLatestRequest()) return;
               if (res.success && Array.isArray(res.data)) {
@@ -152,7 +147,7 @@ export const useTableOverviewState = ({ tab }: UseTableOverviewStateInput) => {
               }
               return;
           }
-          const sql = buildTableStatusSQL(metadataDialect, tab.dbName || '', schemaName);
+          const sql = buildTableStatusSQL(metadataDialect, tab.dbName || '', schemaName, connection?.config?.type, await ensureTableStatsServerVersion(connection));
           const res = await DBQuery(buildRpcConnectionConfig(config) as any, tab.dbName || '', sql);
           if (!isLatestRequest()) return;
           if (res.success && Array.isArray(res.data)) {

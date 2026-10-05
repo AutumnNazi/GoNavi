@@ -1,6 +1,8 @@
 import { DBQuery } from "../../../wailsjs/go/app/App";
 import { buildRpcConnectionConfig } from "../../utils/connectionRpcConfig";
 import { buildMySQLCompatibleViewMetadataSqls } from "../../utils/sidebarMetadata";
+import { listRegistryMetadataQueries } from "../../utils/dataSourceRegistry";
+import { ORACLE_ROUTINE_OBJECT_TYPES, ORACLE_ROUTINE_TYPE_COLUMN } from "../../utils/oracleRoutineObjects";
 import { isPostgresSchemaDialect } from "../sidebarCoreUtils";
 import {
   type MetadataQuerySpec,
@@ -9,6 +11,20 @@ import {
   type MetadataQueryResult,
   buildSidebarRuntimeConfig,
 } from "./sidebarMetadataBasics";
+
+// PostgreSQL 家族的系统 schema；CockroachDB / KWDB 另有 crdb_internal / kwdb_internal（内置函数与虚拟表），
+// PostgreSQL 不会出现这两个名字。
+const PG_SYSTEM_SCHEMAS = "'pg_catalog', 'information_schema', 'crdb_internal', 'kwdb_internal'";
+// 排除 CREATE EXTENSION 带入的函数：pg_proc 查询按 oid 关联 pg_depend，information_schema 回退查询按 specific_name（proname_oid）关联。
+const PG_NOT_EXTENSION_PROC =
+  " AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e')";
+const PG_NOT_EXTENSION_ROUTINE =
+  " AND NOT EXISTS (SELECT 1 FROM pg_depend d JOIN pg_proc p ON p.oid = d.objid WHERE d.classid = 'pg_proc'::regclass AND d.deptype = 'e' AND r.specific_name = p.proname || '_' || p.oid)";
+
+export type FunctionsMetadataQueryOptions = {
+  // 隐藏扩展成员函数（描述表 ui.hideExtensionRoutines）。
+  excludeExtensionMembers?: boolean;
+};
 
 export const buildViewsMetadataQuerySpecs = (
   dialect: string,
@@ -74,9 +90,16 @@ export const buildViewsMetadataQuerySpecs = (
         },
       ];
     default:
-      return [];
+      return listRegistryMetadataQueries(dialect, "views", dbName).map((sql) => ({ sql }));
   }
 };
+
+// 排除扩展带入的视图（描述表 ui.hideExtensionViews，如 GBase 8c 的 orafce 建在 public 下的 dual）。
+export const buildNonExtensionViewsMetadataQuerySpecs = (): MetadataQuerySpec[] => [
+  {
+    sql: `SELECT n.nspname AS schema_name, c.relname AS view_name FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'v' AND n.nspname NOT IN (${PG_SYSTEM_SCHEMAS}) AND n.nspname NOT LIKE 'pg|_%' ESCAPE '|' AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d WHERE d.classid = 'pg_catalog.pg_class'::regclass AND d.objid = c.oid AND d.deptype = 'e') ORDER BY n.nspname, c.relname`,
+  },
+];
 
 export const buildTriggersMetadataQuerySpecs = (
   dialect: string,
@@ -152,15 +175,18 @@ export const buildTriggersMetadataQuerySpecs = (
     case "duckdb":
       return [];
     default:
-      return [];
+      return listRegistryMetadataQueries(dialect, "triggers", dbName).map((sql) => ({ sql }));
   }
 };
 
 export const buildFunctionsMetadataQuerySpecs = (
   dialect: string,
   dbName: string,
+  options: FunctionsMetadataQueryOptions = {},
 ): MetadataQuerySpec[] => {
   const safeDbName = escapeSQLLiteral(dbName);
+  const procFilter = options.excludeExtensionMembers ? PG_NOT_EXTENSION_PROC : "";
+  const routineFilter = options.excludeExtensionMembers ? PG_NOT_EXTENSION_ROUTINE : "";
   switch (dialect) {
     case "mysql":
     case "starrocks":
@@ -192,15 +218,15 @@ export const buildFunctionsMetadataQuerySpecs = (
       return normalizeMetadataQuerySpecs([
         {
           // PostgreSQL 11+ / 部分 PG-like：通过 prokind 区分 FUNCTION/PROCEDURE
-          sql: `SELECT n.nspname AS schema_name, p.proname AS routine_name, CASE WHEN p.prokind = 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END AS routine_type FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg|_%' ESCAPE '|' ORDER BY n.nspname, routine_type, p.proname`,
+          sql: `SELECT n.nspname AS schema_name, p.proname AS routine_name, CASE WHEN p.prokind = 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END AS routine_type FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname NOT IN (${PG_SYSTEM_SCHEMAS}) AND n.nspname NOT LIKE 'pg|_%' ESCAPE '|'${procFilter} ORDER BY n.nspname, routine_type, p.proname`,
         },
         {
           // PostgreSQL 10 / 不支持 prokind 的兼容路径
-          sql: `SELECT r.routine_schema AS schema_name, r.routine_name AS routine_name, COALESCE(NULLIF(UPPER(r.routine_type), ''), 'FUNCTION') AS routine_type FROM information_schema.routines r WHERE r.routine_schema NOT IN ('pg_catalog', 'information_schema') AND r.routine_schema NOT LIKE 'pg|_%' ESCAPE '|' ORDER BY r.routine_schema, routine_type, r.routine_name`,
+          sql: `SELECT r.routine_schema AS schema_name, r.routine_name AS routine_name, COALESCE(NULLIF(UPPER(r.routine_type), ''), 'FUNCTION') AS routine_type FROM information_schema.routines r WHERE r.routine_schema NOT IN (${PG_SYSTEM_SCHEMAS}) AND r.routine_schema NOT LIKE 'pg|_%' ESCAPE '|'${routineFilter} ORDER BY r.routine_schema, routine_type, r.routine_name`,
         },
         {
           // 最后兜底：仅函数列表，确保 prokind/routines 视图异常时仍可展示
-          sql: `SELECT n.nspname AS schema_name, p.proname AS routine_name, 'FUNCTION' AS routine_type FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg|_%' ESCAPE '|' ORDER BY n.nspname, p.proname`,
+          sql: `SELECT n.nspname AS schema_name, p.proname AS routine_name, 'FUNCTION' AS routine_type FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname NOT IN (${PG_SYSTEM_SCHEMAS}) AND n.nspname NOT LIKE 'pg|_%' ESCAPE '|'${procFilter} ORDER BY n.nspname, p.proname`,
         },
       ]);
     case "sqlserver": {
@@ -219,16 +245,16 @@ export const buildFunctionsMetadataQuerySpecs = (
         // account rather than the schema selected in the sidebar.
         return [
           {
-            sql: `SELECT OWNER AS schema_name, OBJECT_NAME AS routine_name, OBJECT_TYPE AS routine_type${objectStatusProjection} FROM ALL_OBJECTS WHERE OWNER = '${safeDbName.toUpperCase()}' AND OBJECT_TYPE IN ('FUNCTION','PROCEDURE') ORDER BY OBJECT_TYPE, OBJECT_NAME`,
+            sql: `SELECT OWNER AS schema_name, OBJECT_NAME AS routine_name, ${ORACLE_ROUTINE_TYPE_COLUMN}${objectStatusProjection} FROM ALL_OBJECTS WHERE OWNER = '${safeDbName.toUpperCase()}' AND OBJECT_TYPE IN ${ORACLE_ROUTINE_OBJECT_TYPES} ORDER BY OBJECT_TYPE, OBJECT_NAME`,
           },
         ];
       }
       return normalizeMetadataQuerySpecs([
         {
-          sql: `SELECT OBJECT_NAME AS routine_name, OBJECT_TYPE AS routine_type${objectStatusProjection} FROM USER_OBJECTS WHERE OBJECT_TYPE IN ('FUNCTION','PROCEDURE') ORDER BY OBJECT_TYPE, OBJECT_NAME`,
+          sql: `SELECT OBJECT_NAME AS routine_name, ${ORACLE_ROUTINE_TYPE_COLUMN}${objectStatusProjection} FROM USER_OBJECTS WHERE OBJECT_TYPE IN ${ORACLE_ROUTINE_OBJECT_TYPES} ORDER BY OBJECT_TYPE, OBJECT_NAME`,
         },
         {
-          sql: `SELECT OWNER AS schema_name, OBJECT_NAME AS routine_name, OBJECT_TYPE AS routine_type${objectStatusProjection} FROM ALL_OBJECTS WHERE OWNER = USER AND OBJECT_TYPE IN ('FUNCTION','PROCEDURE') ORDER BY OBJECT_TYPE, OBJECT_NAME`,
+          sql: `SELECT OWNER AS schema_name, OBJECT_NAME AS routine_name, ${ORACLE_ROUTINE_TYPE_COLUMN}${objectStatusProjection} FROM ALL_OBJECTS WHERE OWNER = USER AND OBJECT_TYPE IN ${ORACLE_ROUTINE_OBJECT_TYPES} ORDER BY OBJECT_TYPE, OBJECT_NAME`,
         },
       ]);
     }
@@ -240,7 +266,7 @@ export const buildFunctionsMetadataQuerySpecs = (
         },
       ];
     default:
-      return [];
+      return listRegistryMetadataQueries(dialect, "routines", dbName).map((sql) => ({ sql }));
   }
 };
 
@@ -276,7 +302,7 @@ export const buildSequencesMetadataQuerySpecs = (
         },
       ]);
     default:
-      return [];
+      return listRegistryMetadataQueries(dialect, "sequences", dbName).map((sql) => ({ sql }));
   }
 };
 
@@ -329,7 +355,7 @@ export const buildSchemasMetadataQuerySpecs = (
   if (isPostgresSchemaDialect(dialect)) {
     return [
       {
-        sql: `SELECT nspname AS schema_name FROM pg_namespace WHERE nspname NOT IN ('pg_catalog', 'information_schema') AND nspname NOT LIKE 'pg|_%' ESCAPE '|' ORDER BY nspname`,
+        sql: `SELECT nspname AS schema_name FROM pg_namespace WHERE nspname NOT IN (${PG_SYSTEM_SCHEMAS}) AND nspname NOT LIKE 'pg|_%' ESCAPE '|' ORDER BY nspname`,
       },
     ];
   }

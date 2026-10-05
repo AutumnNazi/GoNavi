@@ -155,7 +155,7 @@ export const useDataViewerActions = ({
     if (!whereSQL) return '';
 
     let sql = `SELECT * FROM ${quoteQualifiedIdent(dbType, tableName)} ${whereSQL}`;
-    sql += buildOrderBySQL(dbType, sortInfo, resolveDataViewerOrderFallbackColumns(editLocator, pkColumns));
+    sql += buildOrderBySQL(dbType, sortInfo, resolveDataViewerOrderFallbackColumns(editLocator, pkColumns, dbType));
     const normalizedType = dbType.toLowerCase();
     const hasSortForBuffer = hasExplicitSort(sortInfo);
     if (hasSortForBuffer && (normalizedType === 'mysql' || normalizedType === 'mariadb')) {

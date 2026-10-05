@@ -10,6 +10,7 @@ import {
 import { GnNewQueryIcon } from '../icons/gnIcons';
 import { type SidebarNodeMenuContext, openRedisDbAliasModal } from './sidebarNodeMenuHelpers';
 import type { MenuProps } from 'antd';
+import { registryAllowsImport } from '../../utils/dataSourceRegistry';
 
 export interface BuildDatabaseNodeMenuItemsInput {
   node: any;
@@ -78,12 +79,12 @@ export const buildDatabaseNodeMenuItems = ({ node, context }: BuildDatabaseNodeM
            icon: <GnNewQueryIcon />,
            onClick: () => handleV2DatabaseContextMenuAction(node, 'new-query')
        },
-       {
+       ...(registryAllowsImport(databaseConn?.config?.type, 'sqlFile') ? [{
            key: 'run-sql',
            label: t('sidebar.sql_file_exec.title'),
            icon: <FileAddOutlined />,
            onClick: () => handleV2DatabaseContextMenuAction(node, 'run-sql')
-       },
+       }] : []),
        { type: 'divider' },
        ...(capabilities.supportsRenameDatabase ? [{
            key: 'rename-db',
@@ -111,19 +112,19 @@ export const buildDatabaseNodeMenuItems = ({ node, context }: BuildDatabaseNodeM
            icon: <ReloadOutlined />,
            onClick: () => handleV2DatabaseContextMenuAction(node, 'refresh')
        },
-       {
-           key: 'export-db-schema',
-           label: t('sidebar.v2_database_menu.export_all_table_schema_sql'),
-           icon: <ExportOutlined />,
-           onClick: () => handleV2DatabaseContextMenuAction(node, 'export-db-schema')
-       },
-       {
-           key: 'backup-db-sql',
-           label: t('sidebar.v2_database_menu.backup_all_tables_sql'),
-           icon: <SaveOutlined />,
-           onClick: () => handleV2DatabaseContextMenuAction(node, 'backup-db-sql')
-       },
        ...(capabilities.supportsSqlQueryExport ? [
+           {
+               key: 'export-db-schema',
+               label: t('sidebar.v2_database_menu.export_all_table_schema_sql'),
+               icon: <ExportOutlined />,
+               onClick: () => handleV2DatabaseContextMenuAction(node, 'export-db-schema')
+           },
+           {
+               key: 'backup-db-sql',
+               label: t('sidebar.v2_database_menu.backup_all_tables_sql'),
+               icon: <SaveOutlined />,
+               onClick: () => handleV2DatabaseContextMenuAction(node, 'backup-db-sql')
+           },
            {
                key: 'batch-tables',
                label: t('sidebar.action.batch_tables'),

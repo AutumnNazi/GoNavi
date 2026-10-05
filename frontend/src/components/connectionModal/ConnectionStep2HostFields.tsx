@@ -1,6 +1,7 @@
 import { t } from "../../i18n";
 import { Form, Input, Button, InputNumber, Select, Radio } from "antd";
 import { noAutoCapInputProps } from "../../utils/inputAutoCap";
+import { usesTrinoStyleConnection } from "../../utils/dataSourceRegistry/uriScheme";
 import {
   CLICKHOUSE_PROTOCOL_OPTIONS,
   OCEANBASE_PROTOCOL_OPTIONS,
@@ -114,7 +115,7 @@ export const ConnectionStep2HostFields = ({
             dbType === "vastbase" ||
             dbType === "opengauss" ||
             dbType === "gaussdb" ||
-            dbType === "trino" ||
+            usesTrinoStyleConnection(dbType) ||
             dbType === "mongodb") && (
             <div className="gn-conn-w gn-conn-w-db">
               <Form.Item name="database" style={{ marginBottom: 0 }}>

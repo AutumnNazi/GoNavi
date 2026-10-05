@@ -27,6 +27,7 @@ import {
 } from '../../tableDesignerIndexUtils';
 import { buildAlterTableCommentSql } from '../../tableDesignerTableCommentSql';
 import { buildIndexCreateSqlPreview } from '../../tableDesignerIndexSql';
+import { getRegistryIndexDesign } from '../../../utils/dataSourceRegistry/indexDesign';
 import type { TableDesignerStateApi } from './useTableDesignerState';
 import type { TableDesignerTriggerListApi } from './useTableDesignerTriggerList';
 import type { TableDesignerDialectSupportApi } from './useTableDesignerDialectSupport';
@@ -263,11 +264,12 @@ export const useTableDesignerIndexEdits = ({
 
     const openCreateIndexModal = () => {
         setIndexModalMode('create');
+        const registryDesign = getRegistryIndexDesign(connections.find(c => c.id === tab.connectionId)?.config?.type);
         setIndexForm({
             name: '',
             columnNames: [],
             kind: 'NORMAL',
-            indexType: 'DEFAULT',
+            indexType: registryDesign?.methods[0] ?? 'DEFAULT',
         });
         setIsIndexModalOpen(true);
     };

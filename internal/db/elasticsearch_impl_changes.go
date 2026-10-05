@@ -1,4 +1,4 @@
-//go:build gonavi_full_drivers || gonavi_elasticsearch_driver
+//go:build gonavi_full_drivers || gonavi_elasticsearch_driver || gonavi_opensearch_driver
 
 package db
 
@@ -19,11 +19,12 @@ import (
 )
 
 // esBulkActionMeta 构建 ES _bulk API 的 action 行元数据。
-// ES 6.x 需要 _type 字段，ES 7.x+ 已废弃。
+// 只有 ES 6.x 及更早版本必须带 _type；ES 7 起可省略，ES 8 与 OpenSearch 2.x 起携带会被整批拒绝，
+// 因此版本未知时按 7.x 以后的写法省略。
 func (e *ElasticsearchDB) esBulkActionMeta(action, indexName string, docID string) map[string]interface{} {
-	meta := map[string]interface{}{
-		"_index": indexName,
-		"_type":  "_doc",
+	meta := map[string]interface{}{"_index": indexName}
+	if e.serverMajor > 0 && e.serverMajor < 7 {
+		meta["_type"] = "_doc"
 	}
 	if docID != "" {
 		meta["_id"] = docID
@@ -192,9 +193,12 @@ func (e *ElasticsearchDB) ApplyChangesContext(ctx context.Context, tableName str
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
+	// 数据网格提交后会立即重新查询：不刷新分片时，默认 1 秒刷新间隔内查到的仍是旧文档。
+	// 不用 wait_for，避免 refresh_interval=-1 的索引一直等到超时。
 	res, err := e.client.Bulk(
 		bytes.NewReader(bulkBody.Bytes()),
 		e.client.Bulk.WithContext(ctx),
+		e.client.Bulk.WithRefresh("true"),
 	)
 	if err != nil {
 		return fmt.Errorf("ES 批量操作失败：%w", err)

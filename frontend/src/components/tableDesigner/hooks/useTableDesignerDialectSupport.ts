@@ -34,6 +34,7 @@ import type { TableDesignerStateApi } from './useTableDesignerState';
 import type { TableDesignerColumnEditsApi } from './useTableDesignerColumnEdits';
 import type { TableDesignerTriggerListApi } from './useTableDesignerTriggerList';
 import type { TableDesignerProps } from '../../TableDesigner';
+import { filterIndexKindsByDesign, getRegistryIndexDesign } from '../../../utils/dataSourceRegistry/indexDesign';
 
 export interface UseTableDesignerDialectSupportInput {
     fks: TableDesignerStateApi['fks'];
@@ -366,7 +367,14 @@ export const useTableDesignerDialectSupport = ({
 
     const supportsTableCommentOps = (): boolean => supportsTableDesignerTableComment(getDbType());
 
-    const getIndexKindOptions = () => {
+    // 描述表声明的索引限制（如 GBase 8a 只能建普通 HASH 索引）优先于借用方言的规则。
+    const getRegistryIndexDesignForTab = () => getRegistryIndexDesign(
+        connections.find(c => c.id === tab.connectionId)?.config?.type,
+    );
+
+    const getIndexKindOptions = () => filterIndexKindsByDesign(getDialectIndexKindOptions(), getRegistryIndexDesignForTab());
+
+    const getDialectIndexKindOptions = () => {
         const dbType = getDbType();
         if (isMysqlLikeDialect(dbType)) {
             return [
@@ -384,8 +392,18 @@ export const useTableDesignerDialectSupport = ({
     };
 
     const getIndexTypeOptions = (kind?: IndexKind) => {
+        const registryDesign = getRegistryIndexDesignForTab();
         const dbType = getDbType();
         const k = kind || 'NORMAL';
+        if (registryDesign) {
+            if (isPgLikeDialect(dbType) && (k === 'PRIMARY' || k === 'UNIQUE') && registryDesign.methods.includes('BTREE')) {
+                return [{ label: 'BTREE', value: 'BTREE' }];
+            }
+            return registryDesign.methods.map(method => ({
+                label: method === 'DEFAULT' ? t('table_designer.option.default', undefined, i18nLanguage) : method,
+                value: method,
+            }));
+        }
         if (isMysqlLikeDialect(dbType)) {
             // MySQL InnoDB: 所有索引均为固定方法类型
             if (k === 'FULLTEXT') return [{ label: 'FULLTEXT', value: 'FULLTEXT' }];
@@ -408,6 +426,10 @@ export const useTableDesignerDialectSupport = ({
 
     /** 根据索引类别返回固定的索引方法类型，可选类别返回 undefined */
     const getFixedIndexType = (kind: IndexKind): string | undefined => {
+        const registryDesign = getRegistryIndexDesignForTab();
+        if (registryDesign?.methods.length === 1) {
+            return registryDesign.methods[0];
+        }
         const dbType = getDbType();
         if (isMysqlLikeDialect(dbType)) {
             if (kind === 'PRIMARY') return 'BTREE';

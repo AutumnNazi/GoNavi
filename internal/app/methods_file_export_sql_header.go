@@ -41,6 +41,10 @@ func quoteQualifiedIdentByType(dbType string, ident string) string {
 	}
 
 	dbType = resolveDDLDBType(connection.ConnectionConfig{Type: dbType})
+	if registryUsesFlatObjectNames(dbType) {
+		// etcd 键路径、znode 路径整体是一个标识符，路径里的点不是限定符。
+		return quoteIdentByType(dbType, raw)
+	}
 	if dbType == "trino" {
 		segments := db.SplitSQLIdentifierPathForDialect(raw, dbType)
 		parts := make([]string, 0, len(segments))
@@ -186,12 +190,18 @@ func writeSQLHeaderWithDatabaseBootstrap(
 	return nil
 }
 
+// supportsMySQLDatabaseContext 报告 SQL 导出能否写 USE / CREATE DATABASE：MySQL 与借用 MySQL 方言的描述表类型。
 func supportsMySQLDatabaseContext(config connection.ConnectionConfig) bool {
-	return strings.EqualFold(strings.TrimSpace(config.Type), "mysql")
+	dbType := strings.ToLower(strings.TrimSpace(config.Type))
+	if dbType == "mysql" {
+		return true
+	}
+	dialect, ok := registryDDLDialect(dbType)
+	return ok && dialect == "mysql"
 }
 
 func writeSQLFooter(w *bufio.Writer, config connection.ConnectionConfig) error {
-	if strings.ToLower(strings.TrimSpace(config.Type)) == "mysql" {
+	if supportsMySQLDatabaseContext(config) {
 		if _, err := w.WriteString("\nSET FOREIGN_KEY_CHECKS=1;\n"); err != nil {
 			return err
 		}
@@ -240,9 +250,15 @@ func buildSQLDropIfExistsStatementWithDatabaseContext(
 	if dbType == "oracle" {
 		dropSQL := fmt.Sprintf("DROP %s %s", objectType, qualifiedObject)
 		return fmt.Sprintf(
-			"BEGIN\n  EXECUTE IMMEDIATE '%s';\nEXCEPTION\n  WHEN OTHERS THEN\n    IF SQLCODE != -942 THEN\n      RAISE;\n    END IF;\nEND;\n/",
+			"BEGIN\n  EXECUTE IMMEDIATE '%s';\nEXCEPTION\n  WHEN OTHERS THEN\n    IF SQLCODE != %d THEN\n      RAISE;\n    END IF;\nEND;\n/",
 			escapeSQLLiteral(dropSQL),
+			oracleObjectMissingSQLCode(config),
 		)
+	}
+
+	// Firebird（6.0 之前）没有 DROP ... IF EXISTS：用 EXECUTE BLOCK 先查 RDB$RELATIONS（表与视图都在这里）。
+	if dbType == "firebird" {
+		return firebirdDropBlockPrefix + firebirdDropGuard(objectType, qualifiedObject, pureObjectName) + firebirdDropBlockSuffix
 	}
 
 	return fmt.Sprintf("DROP %s IF EXISTS %s;", objectType, qualifiedObject)
@@ -283,6 +299,10 @@ func writeSQLDropIfExistsPreambleWithDatabaseContext(
 		return nil
 	}
 
+	// Firebird 的 DDL 是事务性的：所有删除放进同一个 EXECUTE BLOCK，任一对象因依赖（存储过程、触发器引用）
+	// 删不掉时整块回滚，不会删到一半就停下。
+	firebird := resolveDDLDBType(config) == "firebird"
+	var firebirdGuards []string
 	wroteStatement := false
 	for index := len(objects) - 1; index >= 0; index-- {
 		objectName := strings.TrimSpace(objects[index])
@@ -301,6 +321,10 @@ func writeSQLDropIfExistsPreambleWithDatabaseContext(
 		if statement == "" {
 			continue
 		}
+		if firebird {
+			firebirdGuards = append(firebirdGuards, strings.TrimSuffix(strings.TrimPrefix(statement, firebirdDropBlockPrefix), firebirdDropBlockSuffix))
+			continue
+		}
 		if !wroteStatement {
 			if _, err := w.WriteString("\n-- Drop existing objects before recreation\n"); err != nil {
 				return err
@@ -311,11 +335,32 @@ func writeSQLDropIfExistsPreambleWithDatabaseContext(
 			return err
 		}
 	}
+	if len(firebirdGuards) > 0 {
+		block := "\n-- Drop existing objects before recreation\nEXECUTE BLOCK AS BEGIN\n  " + strings.Join(firebirdGuards, "\n  ") + "\nEND;\n"
+		if _, err := w.WriteString(block); err != nil {
+			return err
+		}
+		wroteStatement = true
+	}
 	if wroteStatement {
 		_, err := w.WriteString("\n")
 		return err
 	}
 	return nil
+}
+
+const (
+	firebirdDropBlockPrefix = "EXECUTE BLOCK AS BEGIN "
+	firebirdDropBlockSuffix = " END;"
+)
+
+// firebirdDropGuard 是 Firebird 删除保护块里的一条：对象存在时才执行 DROP。
+func firebirdDropGuard(objectType, qualifiedObject, pureObjectName string) string {
+	return fmt.Sprintf(
+		"IF (EXISTS(SELECT 1 FROM RDB$RELATIONS WHERE RDB$RELATION_NAME = '%s')) THEN EXECUTE STATEMENT '%s';",
+		escapeSQLLiteral(pureObjectName),
+		escapeSQLLiteral(fmt.Sprintf("DROP %s %s", objectType, qualifiedObject)),
+	)
 }
 
 func qualifyTable(schemaName, tableName string) string {

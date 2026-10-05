@@ -119,7 +119,7 @@ func resolveCreateStatementWithFallbackWithText(dbInst db.Database, config conne
 		ddlTableName,
 		fallbackDDL,
 	)
-	return fallbackDDL, nil
+	return appendRegistryCreateStatementSupplement(dbInst, config, metadataSchemaName, metadataTableName, fallbackDDL), nil
 }
 
 func tryGetOceanBaseOracleShowCreateStatement(dbInst db.Database, schemaName string, tableName string) (string, bool) {
@@ -211,7 +211,8 @@ func hasCreateTableOrViewHead(sqlText string) bool {
 		lower := strings.ToLower(line)
 		return strings.HasPrefix(lower, "create table") ||
 			strings.HasPrefix(lower, "create view") ||
-			strings.HasPrefix(lower, "create or replace view")
+			strings.HasPrefix(lower, "create or replace view") ||
+			strings.HasPrefix(lower, "create materialized view")
 	}
 	return false
 }
@@ -498,8 +499,10 @@ func sameFallbackColumnNameList(a []string, b []string) bool {
 	if len(a) == 0 || len(a) != len(b) {
 		return false
 	}
+	// 主键列名是按方言引用过的（"id"、`id`、[id]），索引列名是原样的：比较前去掉引号。
+	unquote := func(name string) string { return strings.Trim(strings.TrimSpace(name), "\"`[]") }
 	for i := range a {
-		if !strings.EqualFold(strings.TrimSpace(a[i]), strings.TrimSpace(b[i])) {
+		if !strings.EqualFold(unquote(a[i]), unquote(b[i])) {
 			return false
 		}
 	}

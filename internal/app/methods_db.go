@@ -153,6 +153,7 @@ func (a *App) testConnection(config connection.ConnectionConfig, report connecti
 		logger.Error(err, "TestConnection 连接测试失败：耗时=%s %s", time.Since(started).Round(time.Millisecond), formatConnSummary(testConfig))
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
+	variantInfo := captureTestConnectionVariant(testConfig, dbInst)
 	if dbInst != nil {
 		if closeErr := dbInst.Close(); closeErr != nil {
 			if report != nil {
@@ -167,7 +168,7 @@ func (a *App) testConnection(config connection.ConnectionConfig, report connecti
 		report("database_connected", "success")
 	}
 	logger.Infof("TestConnection 连接测试成功：耗时=%s %s", time.Since(started).Round(time.Millisecond), formatConnSummary(testConfig))
-	return connection.QueryResult{Success: true, Message: a.appText("db.backend.message.connect_success", nil)}
+	return a.testConnectionSuccessResult(testConfig, variantInfo)
 }
 
 func (a *App) retryIsolatedTestConnectionAfterMySQLMaxUserConnections(config connection.ConnectionConfig, err error) (db.Database, error) {

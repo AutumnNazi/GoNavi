@@ -5,8 +5,18 @@ import {
   ORACLE_ROWID_LOCATOR_COLUMN,
 } from '../../utils/rowLocator';
 import { splitQualifiedNameSegments, splitQualifiedNameLast } from '../../utils/qualifiedName';
+import { getDataSourceSpec } from '../../utils/dataSourceRegistry';
 
-export const resolveDataViewerOrderFallbackColumns = (locator: EditRowLocator | undefined, pkColumns: string[]): string[] => {
+// 未指定排序时按主键 / 行定位列排序以稳定分页；描述表声明 ui.naturalOrder 的数据源（搜索引擎类）引擎自身的顺序已稳定，
+// 主键往往不能由服务端排序，追加主键排序会退化为客户端全量排序，因此不追加。
+export const resolveDataViewerOrderFallbackColumns = (
+  locator: EditRowLocator | undefined,
+  pkColumns: string[],
+  dbType?: string,
+): string[] => {
+  if (getDataSourceSpec(dbType)?.ui?.naturalOrder) {
+    return [];
+  }
   if (locator && !locator.readOnly && locator.strategy !== 'oracle-rowid') {
     return locator.valueColumns.length > 0 ? locator.valueColumns : locator.columns;
   }

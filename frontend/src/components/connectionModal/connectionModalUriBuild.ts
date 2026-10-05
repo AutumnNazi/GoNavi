@@ -7,6 +7,12 @@ import {
   supportsConnectionParamsForType,
 } from "../../utils/connectionTypeCapabilities";
 import { buildRedisUriFromValues } from "../../utils/redisConnectionUri";
+import {
+  getRegistryExtraHostsParam,
+  getRegistryUriScheme,
+  usesHttpRegistryUri,
+  usesTrinoStyleConnection,
+} from "../../utils/dataSourceRegistry/uriScheme";
 import { extractNacosConnectionScope } from "../../utils/nacosConnectionScope";
 import {
   getPulsarDefaultPort,
@@ -27,7 +33,9 @@ import {
   splitTrinoNamespace,
   appendSSLPathParamsForUri,
   encodeNacosContextPath,
+  takeRegistryExtraHosts,
 } from "./connectionModalUriSchemes";
+import { isElasticsearchFamilyType } from "../../utils/elasticsearchFamily";
 
 export const buildUriFromValues = (values: any) => {
   const type = String(values.type || "")
@@ -46,7 +54,7 @@ export const buildUriFromValues = (values: any) => {
     ? `${encodeURIComponent(user)}${password ? `:${encodeURIComponent(password)}` : ""}@`
     : "";
 
-  if (type === "trino") {
+  if (usesTrinoStyleConnection(type)) {
     const params = new URLSearchParams();
     mergeConnectionParams(params, values.connectionParams);
 
@@ -148,7 +156,7 @@ export const buildUriFromValues = (values: any) => {
     const dbPath = database ? `/${encodeURIComponent(database)}` : "/";
     const query = params.toString();
     const scheme =
-      type === "diros" ? "doris" : type === "starrocks" ? "starrocks" : type === "oceanbase" ? "oceanbase" : type === "goldendb" ? "goldendb" : "mysql";
+      getRegistryUriScheme(type) ?? (type === "diros" ? "doris" : type === "starrocks" ? "starrocks" : type === "oceanbase" ? "oceanbase" : type === "goldendb" ? "goldendb" : "mysql");
     return `${scheme}://${encodedAuth}${hosts.join(",")}${dbPath}${query ? `?${query}` : ""}`;
   }
 
@@ -331,7 +339,7 @@ export const buildUriFromValues = (values: any) => {
       ? "gaussdb"
       : type === "postgres"
       ? "postgresql"
-      : type === "chroma" || type === "qdrant" || type === "milvus"
+      : type === "chroma" || type === "qdrant" || type === "milvus" || isElasticsearchFamilyType(type) || usesHttpRegistryUri(type)
         ? values.useSSL
           ? "https"
           : "http"
@@ -391,7 +399,7 @@ export const buildUriFromValues = (values: any) => {
       if (mode === "skip-verify" || mode === "preferred") {
         params.set("skip_verify", "true");
       }
-    } else if (type === "chroma" || type === "qdrant" || type === "milvus") {
+    } else if (type === "chroma" || type === "qdrant" || type === "milvus" || usesHttpRegistryUri(type)) {
       if (mode === "skip-verify" || mode === "preferred") {
         params.set("skip_verify", "true");
       }
@@ -413,6 +421,9 @@ export const buildUriFromValues = (values: any) => {
   if (supportsConnectionParamsForType(type)) {
     mergeConnectionParams(params, values.connectionParams);
   }
+  const primaryAddress = toAddress(host, port, defaultPort);
+  const extraHosts = takeRegistryExtraHosts(params, getRegistryExtraHostsParam(type), defaultPort)
+    .filter((address) => address !== primaryAddress);
   let query = params.toString();
   if (type === "oracle") {
     query = oracleSIDMode
@@ -434,5 +445,5 @@ export const buildUriFromValues = (values: any) => {
     const query = params.toString();
     return `${values.useSSL ? "pulsar+ssl" : "pulsar"}://${encodedAuth}${address}${topicPath}${query ? `?${query}` : ""}`;
   }
-  return `${scheme}://${encodedAuth}${toAddress(host, port, defaultPort)}${dbPath}${query ? `?${query}` : ""}`;
+  return `${scheme}://${encodedAuth}${[primaryAddress, ...extraHosts].join(",")}${dbPath}${query ? `?${query}` : ""}`;
 };

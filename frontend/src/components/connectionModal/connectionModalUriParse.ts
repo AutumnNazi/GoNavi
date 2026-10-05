@@ -7,6 +7,13 @@ import {
   supportsSSLForType,
 } from "../../utils/connectionTypeCapabilities";
 import { parseRedisUriToFormValues } from "../../utils/redisConnectionUri";
+import {
+  findRegistryUriScheme,
+  getRegistryExtraHostsParam,
+  usesHttpRegistryUri,
+  usesTrinoStyleConnection,
+  withRegistryUriScheme,
+} from "../../utils/dataSourceRegistry/uriScheme";
 import { extractNacosConnectionScope } from "../../utils/nacosConnectionScope";
 import {
   MAX_URI_LENGTH,
@@ -30,14 +37,16 @@ import {
   parseTrinoUriToValues,
   parseClickHouseHTTPUriToValues,
   normalizeNacosContextPath,
+  mergeRegistryExtraHosts,
 } from "./connectionModalUriSchemes";
 import { normalizeFileDbPath, resolveOracleConnectionTarget } from "./connectionModalUriParams";
+import { isElasticsearchFamilyType } from "../../utils/elasticsearchFamily";
 
 export const parseUriToValues = (
   uriText: string,
   type: string,
 ): Record<string, any> | null => {
-  const trimmedUri = String(uriText || "").trim();
+  const trimmedUri = withRegistryUriScheme(type, String(uriText || "").trim());
   if (!trimmedUri) {
     return null;
   }
@@ -47,6 +56,7 @@ export const parseUriToValues = (
 
   if (isMySQLCompatibleType(type)) {
     const mysqlDefaultPort = getDefaultPortByType(type);
+    const registryScheme = findRegistryUriScheme(type, trimmedUri);
     const parsed =
       parseMultiHostUri(trimmedUri, "mysql") ||
       parseMultiHostUri(trimmedUri, "goldendb") ||
@@ -58,7 +68,8 @@ export const parseUriToValues = (
       parseMultiHostUri(trimmedUri, "starrocks") ||
       parseMultiHostUri(trimmedUri, "jdbc:starrocks") ||
       parseMultiHostUri(trimmedUri, "diros") ||
-      parseMultiHostUri(trimmedUri, "doris");
+      parseMultiHostUri(trimmedUri, "doris") ||
+      (registryScheme ? parseMultiHostUri(trimmedUri, registryScheme) : null);
     if (!parsed) {
       return null;
     }
@@ -447,8 +458,8 @@ export const parseUriToValues = (
     };
   }
 
-  if (type === "trino") {
-    return parseTrinoUriToValues(trimmedUri);
+  if (usesTrinoStyleConnection(type)) {
+    return parseTrinoUriToValues(trimmedUri, type);
   }
 
   if (type === "clickhouse") {
@@ -525,6 +536,7 @@ export const parseUriToValues = (
       ...(oracleTarget ? { oracleMode: oracleTarget.mode } : {}),
     };
     if (supportsConnectionParamsForType(type)) {
+      mergeRegistryExtraHosts(parsed.params, getRegistryExtraHostsParam(type), parsed.hosts, getDefaultPortByType(type));
       parsedValues.connectionParams = serializeConnectionParams(parsed.params);
     }
 
@@ -657,7 +669,7 @@ export const parseUriToValues = (
           parsedValues.useSSL = false;
           parsedValues.sslMode = "disable";
         }
-      } else if (type === "chroma" || type === "qdrant" || type === "milvus") {
+      } else if (type === "chroma" || type === "qdrant" || type === "milvus" || isElasticsearchFamilyType(type) || usesHttpRegistryUri(type)) {
         const tls = String(
           parsed.params.get("tls") ||
             parsed.params.get("ssl") ||

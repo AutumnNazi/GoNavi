@@ -8,6 +8,10 @@ SCRIPT_DIR_WINDOWS="$(pwd -W 2>/dev/null || true)"
 SCRIPT_DIR_WINDOWS="${SCRIPT_DIR_WINDOWS//\\//}"
 
 DEFAULT_DRIVERS=(mariadb oceanbase diros starrocks sphinx sqlserver sqlite duckdb dameng kingbase highgo vastbase opengauss gaussdb iris cache mongodb tdengine iotdb clickhouse elasticsearch trino kafka rocketmq pulsar)
+# shellcheck source=tools/datasource-registry.sh
+source "$SCRIPT_DIR/tools/datasource-registry.sh"
+load_datasource_registry "$SCRIPT_DIR"
+DEFAULT_DRIVERS+=("${REGISTRY_DRIVERS[@]}")
 OUTPUT_FILE="internal/db/driver_agent_revisions_gen.go"
 
 usage() {
@@ -35,7 +39,7 @@ normalize_driver() {
       echo "$value"
       ;;
     *)
-      return 1
+      registry_normalize_driver "$value"
       ;;
   esac
 }
@@ -46,9 +50,12 @@ build_driver_name() {
 
 driver_build_tags() {
   local driver="$1"
-  local build_driver tag
+  local build_driver tag registry_tag
   build_driver="$(build_driver_name "$driver")"
   tag="gonavi_${build_driver}_driver"
+  if registry_tag="$(registry_driver_build_tag "$driver")"; then
+    tag="$registry_tag"
+  fi
   if [[ "$driver" == "duckdb" && "$goos" == "windows" && "$goarch" == "amd64" ]]; then
     tag="$tag duckdb_use_lib"
   fi
@@ -67,6 +74,34 @@ hash_file() {
   fi
   echo "未找到 sha256sum 或 shasum" >&2
   exit 1
+}
+
+hash_stdin() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{print $1}'
+    return
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{print $1}'
+    return
+  fi
+  echo "未找到 sha256sum 或 shasum" >&2
+  exit 1
+}
+
+# 仓库内源码按索引内容（LF）计算哈希：Windows 上 core.autocrlf=true 会把工作区检出为 CRLF，
+# 直接哈希会得到与 CI（LF 检出）不同的 revision。模块缓存里的依赖源码不受 autocrlf 影响，按原样哈希。
+hash_source_file() {
+  local target="$1"
+  local identity="$2"
+  case "$identity" in
+    gomod/*)
+      hash_file "$target"
+      ;;
+    *)
+      tr -d '\r' <"$target" | hash_stdin
+      ;;
+  esac
 }
 
 files_equal() {
@@ -153,7 +188,7 @@ driver_source_prefixes() {
     kafka) echo "kafka message_queue_helpers chroma_impl_rows mysql_impl_dsn" ;;
     rocketmq) echo "rocketmq message_queue_helpers chroma_impl_rows mysql_impl_dsn" ;;
     pulsar) echo "pulsar chroma_impl_rows" ;;
-    *) echo "$1" ;;
+    *) registry_driver_source_prefixes "$1" || echo "$1" ;;
   esac
 }
 
@@ -203,6 +238,11 @@ should_include_source_file() {
   case "$identity" in
     cmd/optional-driver-agent/*)
       return 0
+      ;;
+    internal/datasource/*.go)
+      # 描述表加载与档位解析逻辑只影响描述表驱动；历史驱动的指纹不纳入。
+      registry_driver_entry_hash "$driver" >/dev/null
+      return
       ;;
   esac
   if [[ "$identity" == internal/db/* ]]; then
@@ -415,11 +455,11 @@ run_go_list_deps() {
 fingerprint_driver() {
   local driver="$1"
   local build_driver tag cgo_enabled tmp dependency_files included_files external_imports external_dependency_files hash_entries
-  local file identity import_path file_hash revision
+  local file identity import_path file_hash revision registry_entry
   local -a direct_external_imports=()
   build_driver="$(build_driver_name "$driver")"
   tag="$(driver_build_tags "$driver")"
-  cgo_enabled=0
+  cgo_enabled="$(registry_driver_cgo "$driver")"
   if [[ "$driver" == "duckdb" ]]; then
     cgo_enabled=1
   fi
@@ -430,6 +470,10 @@ fingerprint_driver() {
     printf 'build_tag=%s\n' "$tag"
     printf 'goos=%s\n' "$goos"
     printf 'goarch=%s\n' "$goarch"
+    if registry_entry="$(registry_driver_entry_hash "$driver")"; then
+      # 描述表经 go:embed 进入代理，只哈希 Go 源码会漏掉档位等声明的变化。
+      printf 'registry_entry=%s\n' "$registry_entry"
+    fi
   } >"$tmp"
 
   dependency_files="$(mktemp "${TMPDIR:-/tmp}/gonavi-agent-dependencies.XXXXXX")"
@@ -497,7 +541,7 @@ fingerprint_driver() {
     file="${file//\\//}"
     [[ -n "$file" && -f "$file" ]] || continue
     identity="$(source_identity "$file")"
-    file_hash="$(hash_file "$file")"
+    file_hash="$(hash_source_file "$file" "$identity")"
     printf '%s  %s\n' "$file_hash" "$identity" >>"$hash_entries"
   done <"$included_files"
   LC_ALL=C sort -k2,2 "$hash_entries" >>"$tmp"

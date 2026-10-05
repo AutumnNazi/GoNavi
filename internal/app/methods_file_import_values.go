@@ -227,7 +227,7 @@ func isPgLikeBooleanDBType(dbType string) bool {
 	case "postgres", "postgresql", "pg", "pq", "pgx", "kingbase", "kingbase8", "kingbasees", "kingbasev8", "highgo", "vastbase", "opengauss", "open_gauss", "open-gauss", "gaussdb", "gauss_db", "gauss-db":
 		return true
 	default:
-		return false
+		return registryUsesBooleanKeywords(dbType)
 	}
 }
 
@@ -339,6 +339,9 @@ func formatImportSQLValue(dbType, columnType string, value interface{}) string {
 		return "NULL"
 	}
 	if literal, ok := formatImportCompositeJSONSQLValue(dbType, value); ok {
+		return literal
+	}
+	if literal, ok := formatOracleTemporalSQLValue(dbType, columnType, value); ok {
 		return literal
 	}
 

@@ -13,9 +13,10 @@ import { type DataExportFormat, DATA_EXPORT_FORMAT_OPTIONS } from '../DataExport
 
 export const { Text, Paragraph, Title } = Typography;
 export const EMPTY_HISTORY: TableExportHistoryEntry[] = [];
-export const createTableExportFormatOptions = (): Array<{ value: DataExportFormat; label: string }> => [
+// includeSql 为 false 时不提供 SQL 格式：非 SQL 数据源生成的 INSERT 无法回灌。
+export const createTableExportFormatOptions = (includeSql = true): Array<{ value: DataExportFormat; label: string }> => [
   ...DATA_EXPORT_FORMAT_OPTIONS,
-  { value: 'sql', label: t('data_export.label.sql_file') },
+  ...(includeSql ? [{ value: 'sql' as DataExportFormat, label: t('data_export.label.sql_file') }] : []),
 ];
 
 export type ExportWorkbenchMode = NonNullable<TabData['exportWorkbenchMode']>;

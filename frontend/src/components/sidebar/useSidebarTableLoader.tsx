@@ -13,6 +13,8 @@ import {
   DBRefreshTableStats,
 } from '../../../wailsjs/go/app/App';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
+import { ensureTableStatsServerVersion } from './sidebarTableStatsVersion';
+import { needsServerVersionForTableStats } from '../../utils/dataSourceRegistry/tableStats';
 import { useStore } from '../../store';
 import {
   buildSidebarMessageObjectNodes,
@@ -211,7 +213,9 @@ export const useSidebarTableLoader = ({
   	          // Table stats and the schema list only depend on the database, so they leave
   	          // together with the table list instead of after it (one round trip less on
   	          // remote links; on the serial driver-agent transport they simply queue behind).
-  	          const tableStatusSql = buildSidebarTableStatusSQL(conn as SavedConnection, conn.dbName);
+  	          // 只有表统计表达式按版本区分的数据源（TimescaleDB）才先取版本，其余类型不多等一个微任务。
+  	          const statsVersion = needsServerVersionForTableStats(conn?.config?.type) ? await ensureTableStatsServerVersion(conn) : '';
+  	          const tableStatusSql = buildSidebarTableStatusSQL(conn as SavedConnection, conn.dbName, statsVersion);
   	          const tableStatsPromise = tableStatusSql
   	              ? DBQuery(buildRpcConnectionConfig(config) as any, conn.dbName, tableStatusSql).catch(() => ({ success: false, data: [] as any[] }))
   	              : Promise.resolve({ success: false, data: [] as any[] });
