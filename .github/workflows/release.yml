@@ -859,6 +859,9 @@ jobs:
           # driver agent 经 internal/db 间接嵌入 shared/i18n，catalog.zip 漂移
           # 同样会让其编译进过期目录；先重新生成再编译。
           go generate ./shared/i18n
+          # 数据源描述表里声明的驱动（TiDB、崖山等）按描述表归一、取构建标签与发布平台。
+          source ./tools/datasource-registry.sh
+          load_datasource_registry "$PWD"
           REVISION_HASH="$(python3 - <<'PY'
           import hashlib
           from pathlib import Path
@@ -882,6 +885,9 @@ jobs:
                 echo "$value"
                 ;;
               *)
+                if registry_normalize_driver "$value"; then
+                  return 0
+                fi
                 echo "❌ 不支持的 driver-agent：${1:-}" >&2
                 return 1
                 ;;
@@ -899,7 +905,12 @@ jobs:
           declare -a DRIVERS=()
           IFS=',' read -r -a RAW_DRIVERS <<< "$CHANGED_DRIVER_AGENTS"
           for RAW_DRIVER in "${RAW_DRIVERS[@]}"; do
-            DRIVER="$(normalize_driver_token "$RAW_DRIVER")" || continue
+            [[ -n "${RAW_DRIVER//[[:space:]]/}" ]] || continue
+            # 清单里出现无法识别的驱动时直接失败：此前这里静默跳过，新驱动整批漏发而 CI 仍然是绿的。
+            if ! DRIVER="$(normalize_driver_token "$RAW_DRIVER")"; then
+              echo "❌ 驱动构建清单里有无法识别的 driver-agent：${RAW_DRIVER}" >&2
+              exit 1
+            fi
             DRIVERS+=("$DRIVER")
           done
           if [ ${#DRIVERS[@]} -eq 0 ]; then
@@ -968,12 +979,17 @@ jobs:
               echo "⚠️ 跳过 DuckDB driver（当前平台 ${GOOS}/${GOARCH} 不受支持，仅支持 windows/amd64）"
               continue
             fi
+            if ! registry_driver_platform_supported "$DRIVER" "$TARGET_PLATFORM"; then
+              echo "⚠️ 跳过 ${DRIVER} driver（描述表未声明 ${TARGET_PLATFORM} 平台）"
+              continue
+            fi
+            DRIVER_CGO="$(registry_driver_cgo "$DRIVER" 2>/dev/null || echo 0)"
             DRIVER_VARIANTS=("")
             if [ "$DRIVER" = "mongodb" ]; then
               DRIVER_VARIANTS=("v1" "v2" "")
             fi
             for DRIVER_VARIANT in "${DRIVER_VARIANTS[@]}"; do
-              TAG="gonavi_${BUILD_DRIVER}_driver"
+              TAG="$(registry_driver_build_tag "$DRIVER" 2>/dev/null || echo "gonavi_${BUILD_DRIVER}_driver")"
               BUILD_TAGS="$TAG"
               OUTPUT_STEM="${DRIVER}-driver-agent"
               if [ "$DRIVER" = "mongodb" ]; then
@@ -1021,7 +1037,7 @@ jobs:
                     ./cmd/optional-driver-agent
                 fi
               else
-                CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build \
+                CGO_ENABLED="${DRIVER_CGO:-0}" GOOS="$GOOS" GOARCH="$GOARCH" go build \
                   -tags "${BUILD_TAGS}" \
                   -trimpath \
                   -ldflags "-s -w" \
