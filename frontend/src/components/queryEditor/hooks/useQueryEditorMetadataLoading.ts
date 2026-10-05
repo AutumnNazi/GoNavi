@@ -41,10 +41,10 @@ import {
 import { isConnectionScopedQueryEditorMetadata } from '../queryEditorLazyTablesCache';
 import {
     fetchQueryEditorDatabaseMetadata,
-    fetchQueryEditorSchemaContext,
     fetchQueryEditorSynonymMetadata,
     type QueryEditorMetadataFetchContext,
 } from '../metadata/queryEditorDatabaseMetadataFetch';
+import { fetchQueryEditorSchemaContext } from '../metadata/queryEditorSchemaContextFetch';
 import {
     buildQueryEditorSessionMetadataKey,
     buildQueryEditorSessionMetadataScope,

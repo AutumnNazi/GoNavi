@@ -177,6 +177,38 @@ describe('QueryEditor metadata reuse across query tabs', () => {
     expect(backendApp.DBGetTables).toHaveBeenCalledTimes(2);
   });
 
+  it('starts loading the columns on Ctrl+click and opens the table as soon as they arrive', async () => {
+    mockPostgresCatalog(() => ['public.users']);
+    const tab = await openQueryTab('tab-1');
+    await flush();
+    // The existence check is still on its way; columns coming back already prove the table is there.
+    backendApp.DBTableExists.mockImplementation(() => new Promise(() => undefined));
+    backendApp.DBGetColumns.mockResolvedValue({ success: true, data: [{ name: 'id', type: 'bigint' }] });
+
+    expect(tab.ctrlClick(USERS_COLUMN)).toBe(true);
+    expect(backendApp.DBGetColumns).toHaveBeenCalledWith(expect.anything(), 'main', 'public.users');
+    await flush();
+
+    expect(storeState.addTab).toHaveBeenCalledWith(expect.objectContaining({ type: 'table', tableName: 'public.users' }));
+  });
+
+  it('still waits for the existence check when the columns request tells nothing', async () => {
+    mockPostgresCatalog(() => ['public.users']);
+    const tab = await openQueryTab('tab-1');
+    await flush();
+    const validation = deferred<unknown>();
+    backendApp.DBTableExists.mockImplementation(() => validation.promise);
+    backendApp.DBGetColumns.mockResolvedValue({ success: true, data: [] });
+
+    expect(tab.ctrlClick(USERS_COLUMN)).toBe(true);
+    await flush();
+    expect(storeState.addTab).not.toHaveBeenCalled();
+
+    validation.resolve({ success: true, data: { exists: false } });
+    await flush();
+    expect(storeState.addTab).not.toHaveBeenCalled();
+  });
+
   it('serves an old catalog at once and refreshes it in the background', async () => {
     let tables = ['public.users'];
     mockPostgresCatalog(() => tables);
