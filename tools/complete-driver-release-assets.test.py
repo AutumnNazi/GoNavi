@@ -65,6 +65,22 @@ class CompleteDriverReleaseAssetsTests(unittest.TestCase):
         self.assertEqual(requests[0][0], asset["browser_download_url"])
         self.assertNotIn("Authorization", requests[0][1])
 
+    def test_requires_registry_driver_assets_only_on_declared_platforms(self):
+        required = set(MODULE.required_assets())
+        # 描述表驱动未声明平台时发布全部六个平台。
+        for platform_dir, name in [
+            ("Windows", "tidb-driver-agent-windows-amd64.exe"),
+            ("Windows", "tidb-driver-agent-windows-arm64.exe"),
+            ("MacOS", "meilisearch-driver-agent-darwin-arm64"),
+            ("Linux", "zookeeper-driver-agent-linux-arm64"),
+        ]:
+            self.assertIn((platform_dir, name), required)
+        # 崖山、GBase 8s 只声明了 linux/amd64、linux/arm64、windows/amd64。
+        self.assertIn(("Linux", "yashandb-driver-agent-linux-arm64"), required)
+        self.assertIn(("Windows", "gbase8s-driver-agent-windows-amd64.exe"), required)
+        self.assertNotIn(("MacOS", "yashandb-driver-agent-darwin-arm64"), required)
+        self.assertNotIn(("Windows", "gbase8s-driver-agent-windows-arm64.exe"), required)
+
     def test_prefers_7z_bundle_and_keeps_legacy_zip_bundle(self):
         self.assertEqual(MODULE.BUNDLE_NAMES, ("GoNavi-DriverAgents.7z", "GoNavi-DriverAgents.zip"))
 

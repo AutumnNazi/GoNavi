@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
 import argparse
+import functools
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import urllib.error
@@ -46,6 +48,42 @@ DRIVERS = [
 # Releases before v1.0.2 only carry the deflate ZIP bundle.
 BUNDLE_NAMES = (BUNDLE_NAME, LEGACY_BUNDLE_NAME)
 
+ALL_PLATFORMS = (
+    "windows/amd64",
+    "windows/arm64",
+    "darwin/amd64",
+    "darwin/arm64",
+    "linux/amd64",
+    "linux/arm64",
+)
+PLATFORM_DIRS = {"windows": "Windows", "darwin": "MacOS", "linux": "Linux"}
+
+
+@functools.lru_cache(maxsize=1)
+def load_registry_drivers():
+    """Drivers declared in internal/datasource/specs, with the platforms they ship on.
+
+    The data-source registry is the single source of truth for drivers added after
+    the hard-coded list above; an empty platform list means all six platforms.
+    """
+    script = Path(__file__).resolve().with_name("datasource-registry.py")
+    output = subprocess.run(
+        [sys.executable, str(script), "json"],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    ).stdout
+    return tuple((entry["driver"], tuple(entry.get("platforms") or ALL_PLATFORMS)) for entry in json.loads(output))
+
+
+def platform_asset(driver, platform):
+    goos, goarch = platform.split("/", 1)
+    name = f"{driver}-driver-agent-{goos}-{goarch}"
+    if goos == "windows":
+        name += ".exe"
+    return PLATFORM_DIRS[goos], name
+
 
 def asset_download_url(asset):
     """Prefer the public release URL over the API asset endpoint.
@@ -76,6 +114,8 @@ def required_assets():
             assets.append(("Windows", "duckdb.dll"))
         else:
             assets.append(("Windows", f"{driver}-driver-agent-windows-arm64.exe"))
+    for driver, platforms in load_registry_drivers():
+        assets.extend(platform_asset(driver, platform) for platform in platforms)
     return assets
 
 
