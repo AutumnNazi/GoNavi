@@ -33,6 +33,16 @@ func AcquireFileLock(path string) (*bootstrapFileLock, error) {
 	return acquireBootstrapFileLock(path)
 }
 
+// ErrFileLockHeld 表示非阻塞加锁时目标文件已被其他持有者锁定。
+var ErrFileLockHeld = errors.New("file lock is held by another process")
+
+// TryAcquireFileLock 以非阻塞方式获取排他文件锁：锁被占用时立即返回
+// ErrFileLockHeld 而不是等待，供长持有锁的服务快速失败并向用户展示
+// 占用状态。
+func TryAcquireFileLock(path string) (*bootstrapFileLock, error) {
+	return tryAcquireBootstrapFileLock(path)
+}
+
 // AtomicReplaceFile replaces target with source using the platform-specific
 // durable rename implementation used by the bootstrap configuration.
 func AtomicReplaceFile(source string, target string) error {

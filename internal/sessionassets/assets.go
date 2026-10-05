@@ -1,0 +1,255 @@
+package sessionassets
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+)
+
+// AssetInput 是发现流程上报的资产元数据。除 ID 类字段外都允许未知
+// （空值），不从文件名猜测缺失字段（需求 §4.2）。
+type AssetInput struct {
+	IntegrationID      string
+	NativeThreadID     string
+	SourceID           string
+	NativePath         string
+	SourceStatus       SourceStatus
+	Title              string
+	ProjectDir         string
+	Provider           string
+	Model              string
+	CreatedAt          int64
+	UpdatedAt          int64
+	ForkParentThreadID string
+}
+
+// UpsertAsset 幂等纳入一个会话资产：同集成内相同 native_thread_id 合并为
+// 同一资产并补充来源引用；用户删除过的身份返回 ErrSuppressed，禁止扫描
+// 自动重新纳入（FR-20）。元数据只被更新的观测覆盖，不被空值抹掉。
+func (c *Catalog) UpsertAsset(ctx context.Context, input AssetInput) (Asset, error) {
+	input.NativeThreadID = strings.TrimSpace(input.NativeThreadID)
+	input.IntegrationID = strings.TrimSpace(input.IntegrationID)
+	if input.IntegrationID == "" || input.NativeThreadID == "" {
+		return Asset{}, fmt.Errorf("asset integration and native thread id are required")
+	}
+	if input.SourceStatus == "" {
+		input.SourceStatus = SourceStatusUnknown
+	}
+	now := time.Now().Unix()
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Asset{}, fmt.Errorf("begin upsert asset: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	suppressed, err := checkSuppressedTx(ctx, tx, input.IntegrationID, input.NativeThreadID)
+	if err != nil {
+		return Asset{}, err
+	}
+	if suppressed {
+		return Asset{}, ErrSuppressed
+	}
+	var asset Asset
+	err = tx.QueryRowContext(ctx, assetSelect+` WHERE integration_id = ? AND native_thread_id = ? AND deleted = 0`,
+		input.IntegrationID, input.NativeThreadID).Scan(asset.scanDest()...)
+	switch {
+	case err == nil:
+		if err := updateAssetMetadataTx(ctx, tx, &asset, input, now); err != nil {
+			return Asset{}, err
+		}
+	case errors.Is(err, sql.ErrNoRows):
+		asset, err = insertAssetTx(ctx, tx, input, now)
+		if err != nil {
+			return Asset{}, err
+		}
+	default:
+		return Asset{}, fmt.Errorf("scan existing asset: %w", err)
+	}
+	if input.SourceID != "" {
+		if err := upsertSourceRefTx(ctx, tx, asset.ID, input, now); err != nil {
+			return Asset{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return Asset{}, fmt.Errorf("commit upsert asset: %w", err)
+	}
+	return asset, nil
+}
+
+func insertAssetTx(ctx context.Context, tx *sql.Tx, input AssetInput, now int64) (Asset, error) {
+	id, err := newID()
+	if err != nil {
+		return Asset{}, err
+	}
+	sessionCreated := input.CreatedAt
+	if sessionCreated == 0 {
+		sessionCreated = now
+	}
+	sessionUpdated := input.UpdatedAt
+	if sessionUpdated == 0 {
+		sessionUpdated = sessionCreated
+	}
+	asset := Asset{
+		ID: id, IntegrationID: input.IntegrationID, NativeThreadID: input.NativeThreadID,
+		Title: input.Title, ProjectDir: input.ProjectDir, Provider: input.Provider, Model: input.Model,
+		CreatedAt: sessionCreated, UpdatedAt: sessionUpdated,
+		FirstSeenAt: now, LastSeenAt: now, ForkParentThreadID: input.ForkParentThreadID,
+		BackupStatus: string(BackupStatusNone), MaterialStatus: string(MaterialStatusNotPrepared),
+	}
+	_, err = tx.ExecContext(ctx,
+		`INSERT INTO assets (id, integration_id, native_thread_id, title, project_dir, provider, model,
+		   created_at, updated_at, first_seen_at, last_seen_at, fork_parent_thread_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		asset.ID, asset.IntegrationID, asset.NativeThreadID, asset.Title, asset.ProjectDir, asset.Provider, asset.Model,
+		asset.CreatedAt, asset.UpdatedAt, asset.FirstSeenAt, asset.LastSeenAt, asset.ForkParentThreadID,
+	)
+	if err != nil {
+		return Asset{}, fmt.Errorf("insert asset: %w", err)
+	}
+	return asset, nil
+}
+
+// updateAssetMetadataTx 用最新观测更新元数据；空值保留旧观测，时间只前进。
+func updateAssetMetadataTx(ctx context.Context, tx *sql.Tx, asset *Asset, input AssetInput, now int64) error {
+	if input.Title != "" {
+		asset.Title = input.Title
+	}
+	if input.ProjectDir != "" {
+		asset.ProjectDir = input.ProjectDir
+	}
+	if input.Provider != "" {
+		asset.Provider = input.Provider
+	}
+	if input.Model != "" {
+		asset.Model = input.Model
+	}
+	if input.ForkParentThreadID != "" {
+		asset.ForkParentThreadID = input.ForkParentThreadID
+	}
+	if input.CreatedAt > 0 && (asset.CreatedAt == 0 || input.CreatedAt < asset.CreatedAt) {
+		asset.CreatedAt = input.CreatedAt
+	}
+	if input.UpdatedAt > asset.UpdatedAt {
+		asset.UpdatedAt = input.UpdatedAt
+	}
+	if asset.LastSeenAt < now {
+		asset.LastSeenAt = now
+	}
+	_, err := tx.ExecContext(ctx,
+		`UPDATE assets SET title = ?, project_dir = ?, provider = ?, model = ?,
+		   created_at = ?, updated_at = ?, last_seen_at = ?, fork_parent_thread_id = ?
+		 WHERE id = ?`,
+		asset.Title, asset.ProjectDir, asset.Provider, asset.Model,
+		asset.CreatedAt, asset.UpdatedAt, asset.LastSeenAt, asset.ForkParentThreadID, asset.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("update asset metadata: %w", err)
+	}
+	return nil
+}
+
+func upsertSourceRefTx(ctx context.Context, tx *sql.Tx, assetID string, input AssetInput, now int64) error {
+	_, err := tx.ExecContext(ctx,
+		`INSERT INTO source_refs (asset_id, source_id, native_path, source_status, last_seen_at)
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(asset_id, source_id) DO UPDATE SET
+		   native_path = CASE WHEN ? <> '' THEN ? ELSE native_path END,
+		   source_status = excluded.source_status,
+		   last_seen_at = excluded.last_seen_at`,
+		assetID, input.SourceID, input.NativePath, string(input.SourceStatus), now,
+		input.NativePath, input.NativePath,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert source ref: %w", err)
+	}
+	return nil
+}
+
+// GetAsset 按 ID 读取资产（不含已删除记录）。
+func (c *Catalog) GetAsset(ctx context.Context, id string) (Asset, error) {
+	row := c.db.QueryRowContext(ctx, assetSelect+` WHERE id = ? AND deleted = 0`, id)
+	var asset Asset
+	if err := row.Scan(asset.scanDest()...); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Asset{}, ErrNotFound
+		}
+		return Asset{}, fmt.Errorf("scan asset: %w", err)
+	}
+	return asset, nil
+}
+
+// ListAssets 返回集成下的全部资产（含各状态维度，默认视图不按来源状态
+// 过滤——交互设计 §1）。
+func (c *Catalog) ListAssets(ctx context.Context, integrationID string) ([]Asset, error) {
+	rows, err := c.db.QueryContext(ctx, assetSelect+` WHERE integration_id = ? AND deleted = 0 ORDER BY updated_at DESC`, integrationID)
+	if err != nil {
+		return nil, fmt.Errorf("list assets: %w", err)
+	}
+	defer rows.Close()
+	assets := make([]Asset, 0)
+	for rows.Next() {
+		var asset Asset
+		if err := rows.Scan(asset.scanDest()...); err != nil {
+			return nil, fmt.Errorf("scan asset: %w", err)
+		}
+		assets = append(assets, asset)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate assets: %w", err)
+	}
+	return assets, nil
+}
+
+// ListSourceRefs 返回资产的全部来源引用。
+func (c *Catalog) ListSourceRefs(ctx context.Context, assetID string) ([]SourceRef, error) {
+	rows, err := c.db.QueryContext(ctx,
+		`SELECT asset_id, source_id, native_path, source_status, last_seen_at
+		 FROM source_refs WHERE asset_id = ? ORDER BY last_seen_at DESC`, assetID)
+	if err != nil {
+		return nil, fmt.Errorf("list source refs: %w", err)
+	}
+	defer rows.Close()
+	refs := make([]SourceRef, 0)
+	for rows.Next() {
+		var ref SourceRef
+		if err := rows.Scan(&ref.AssetID, &ref.SourceID, &ref.NativePath, &ref.SourceStatus, &ref.LastSeenAt); err != nil {
+			return nil, fmt.Errorf("scan source ref: %w", err)
+		}
+		refs = append(refs, ref)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate source refs: %w", err)
+	}
+	return refs, nil
+}
+
+// UpdateAssetProjection 写入备份投影字段。reconcile 用提交清单重建这些值；
+// 这里不做状态推导，推导在提交与核对逻辑中完成。
+func (c *Catalog) UpdateAssetProjection(ctx context.Context, assetID string, backup BackupStatus, material MaterialStatus, generationID string, complete bool, backedUpAt int64) error {
+	result, err := c.db.ExecContext(ctx,
+		`UPDATE assets SET backup_status = ?, material_status = ?, latest_generation_id = ?,
+		   latest_complete = ?, last_backup_at = ? WHERE id = ? AND deleted = 0`,
+		string(backup), string(material), generationID, boolToInt(complete), backedUpAt, assetID)
+	if err != nil {
+		return fmt.Errorf("update asset projection: %w", err)
+	}
+	if rows, err := result.RowsAffected(); err == nil && rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+const assetSelect = `SELECT id, integration_id, native_thread_id, title, project_dir, provider, model,
+	created_at, updated_at, first_seen_at, last_seen_at, fork_parent_thread_id,
+	backup_status, material_status, latest_generation_id, latest_complete, last_backup_at
+	FROM assets`
+
+func (a *Asset) scanDest() []any {
+	return []any{
+		&a.ID, &a.IntegrationID, &a.NativeThreadID, &a.Title, &a.ProjectDir, &a.Provider, &a.Model,
+		&a.CreatedAt, &a.UpdatedAt, &a.FirstSeenAt, &a.LastSeenAt, &a.ForkParentThreadID,
+		&a.BackupStatus, &a.MaterialStatus, &a.LatestGenerationID, &a.LatestComplete, &a.LastBackupAt,
+	}
+}
