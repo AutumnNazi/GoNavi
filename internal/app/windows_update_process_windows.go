@@ -29,17 +29,6 @@ const (
 	windowsProcessInspectAttempts = 4
 )
 
-// windowsMainWindowClass is the class of a GoNavi (Wails) application window;
-// it identifies a GUI instance even while that window is still hidden.
-const windowsMainWindowClass = "wailsWindow"
-
-var (
-	windowsUser32          = windows.NewLazySystemDLL("user32.dll")
-	windowsPostMessage     = windowsUser32.NewProc("PostMessageW")
-	windowsIsWindowVisible = windowsUser32.NewProc("IsWindowVisible")
-	windowsGetClassName    = windowsUser32.NewProc("GetClassNameW")
-)
-
 var (
 	windowsProcessImageKernel32         = windows.NewLazySystemDLL("kernel32.dll")
 	windowsProcessGetImageFileName      = windowsProcessImageKernel32.NewProc("K32GetProcessImageFileNameW")
@@ -121,6 +110,7 @@ func findOtherWindowsUpdateInstances(targetPaths []string, currentPID int) ([]wi
 			return nil, fmt.Errorf("read running processes: %w", err)
 		}
 	}
+	markWindowsUpdateInteractiveInstances(result)
 	return result, nil
 }
 
@@ -219,39 +209,6 @@ func closeWindowsUpdateInstances(processes []windowsUpdateProcess) error {
 		}
 	}
 	return errors.Join(closeErrors...)
-}
-
-// requestWindowsProcessesClose posts WM_CLOSE to every top-level window of the
-// given processes and reports which of them own an application window (a
-// visible window or the Wails main window), i.e. can close gracefully.
-func requestWindowsProcessesClose(processes map[uint32]windowsUpdateProcess) map[uint32]bool {
-	interactive := make(map[uint32]bool, len(processes))
-	callback := syscall.NewCallback(func(hwnd uintptr, _ uintptr) uintptr {
-		var pid uint32
-		if _, err := windows.GetWindowThreadProcessId(windows.HWND(hwnd), &pid); err == nil {
-			if _, ok := processes[pid]; ok {
-				if !interactive[pid] && isWindowsApplicationWindow(hwnd) {
-					interactive[pid] = true
-				}
-				windowsPostMessage.Call(hwnd, windowsCloseMessage, 0, 0)
-			}
-		}
-		return 1
-	})
-	_ = windows.EnumWindows(callback, nil)
-	return interactive
-}
-
-// isWindowsApplicationWindow tells an application window apart from the
-// hidden helper windows (IME, GDI+ hook) that every process loading user32
-// owns, headless ones included.
-func isWindowsApplicationWindow(hwnd uintptr) bool {
-	if visible, _, _ := windowsIsWindowVisible.Call(hwnd); visible != 0 {
-		return true
-	}
-	buffer := make([]uint16, 64)
-	length, _, _ := windowsGetClassName.Call(hwnd, uintptr(unsafe.Pointer(&buffer[0])), uintptr(len(buffer)))
-	return length > 0 && windows.UTF16ToString(buffer[:length]) == windowsMainWindowClass
 }
 
 type openedWindowsUpdateProcess struct {
