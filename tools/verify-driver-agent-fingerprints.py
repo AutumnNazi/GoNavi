@@ -28,6 +28,7 @@ mongodb v1 变体（mongodb-driver-agent-v1-*）不在 revision map 覆盖范围
 """
 
 import argparse
+import functools
 import json
 import re
 import stat
@@ -62,9 +63,34 @@ def normalize_driver(name):
     return DRIVER_ALIASES.get(name, name)
 
 
+@functools.lru_cache(maxsize=1)
+def registry_driver_platforms():
+    """Platforms each driver declared in internal/datasource/specs ships on.
+
+    The revision map lists every driver for every platform, but a registry
+    driver that declares agent platforms (YashanDB, GBase 8s) is only built and
+    published for those. Drivers missing here ship on every release platform.
+    """
+    script = Path(__file__).resolve().with_name("datasource-registry.py")
+    output = subprocess.run(
+        [sys.executable, str(script), "json"],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    ).stdout
+    return {
+        normalize_driver(entry["driver"]): frozenset(entry.get("platforms") or ())
+        for entry in json.loads(output)
+    }
+
+
 def is_driver_supported_on_platform(driver, platform):
     """Return whether the platform is expected to ship this driver agent."""
-    return not (driver == "duckdb" and platform == "windows/arm64")
+    if driver == "duckdb" and platform == "windows/arm64":
+        return False
+    declared = registry_driver_platforms().get(normalize_driver(driver))
+    return not declared or platform in declared
 
 
 def parse_revision_maps(pairs):

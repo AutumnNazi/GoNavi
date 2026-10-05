@@ -471,6 +471,41 @@ class VerifyDriverAgentFingerprintsPublishedTest(unittest.TestCase):
             self.assertEqual(0, checked)
             self.assertEqual([], failures)
 
+    def test_skips_registry_drivers_on_platforms_they_do_not_declare(self):
+        module = load_module()
+        module.registry_driver_platforms = lambda: {
+            "yashandb": frozenset({"linux/amd64", "windows/amd64"}),
+        }
+        with tempfile.TemporaryDirectory(prefix="gonavi-fingerprint-test-") as tmp:
+            manifest = Path(tmp) / "manifest.json"
+            manifest.write_text(
+                json.dumps(self.build_manifest({})),
+                encoding="utf-8",
+            )
+
+            checked, failures = module.verify_published(
+                manifest,
+                {
+                    "darwin/arm64": {"yashandb": SPHINX_REVISION},
+                    "windows/arm64": {"yashandb": SPHINX_REVISION},
+                    "windows/amd64": {"yashandb": SPHINX_REVISION},
+                },
+            )
+
+            self.assertEqual(0, checked)
+            self.assertEqual(1, len(failures))
+            self.assertIn("windows/amd64 yashandb", failures[0])
+
+    def test_reads_declared_platforms_from_the_data_source_registry(self):
+        module = load_module()
+        platforms = module.registry_driver_platforms()
+
+        self.assertIn("linux/amd64", platforms["gbase8s"])
+        self.assertNotIn("darwin/arm64", platforms["gbase8s"])
+        self.assertFalse(module.is_driver_supported_on_platform("yashandb", "darwin/amd64"))
+        self.assertTrue(module.is_driver_supported_on_platform("yashandb", "linux/arm64"))
+        self.assertTrue(module.is_driver_supported_on_platform("mysql", "darwin/arm64"))
+
     def test_cli_reports_mismatch_with_nonzero_exit(self):
         with tempfile.TemporaryDirectory(prefix="gonavi-fingerprint-test-") as tmp:
             tmpdir = Path(tmp)
