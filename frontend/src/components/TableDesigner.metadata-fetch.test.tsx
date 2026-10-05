@@ -3,6 +3,7 @@ import React from 'react';
 import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requestTableMetadata, resetTableMetadataRequestCacheForTests } from '../utils/tableMetadataRequestCache';
 
 // The embedded "fields" (表设计) view builds the designer's `tab` as an inline
 // object literal, so its identity changes on every parent render. The designer
@@ -13,6 +14,7 @@ let columnFixture: Array<Record<string, unknown>> = [];
 beforeEach(() => {
   columnFetchCalls.length = 0;
   columnFixture = [];
+  resetTableMetadataRequestCacheForTests();
 });
 
 beforeAll(() => {
@@ -123,6 +125,51 @@ describe('TableDesigner metadata fetch lifetime', () => {
       await flush();
     }
     expect(columnFetchCalls.length).toBe(afterMount);
+
+    await act(async () => { root.unmount(); });
+    container.remove();
+  }, 20000);
+
+  it('shows the fields from a request that was already started for the table instead of asking again', async () => {
+    const { default: TableDesigner } = await import('./TableDesigner');
+    const { DBGetColumns } = await import('../../wailsjs/go/app/App');
+    columnFixture = [{ name: 'id', type: 'bigint', nullable: 'NO', key: 'PRI', extra: '' }];
+    // What a Ctrl/Cmd+click does before the tab exists.
+    void requestTableMetadata(
+      { connectionId: 'conn-1', dbName: 'demo', tableName: 'users', kind: 'columns' },
+      () => (DBGetColumns as any)({}, 'demo', 'users'),
+    );
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => { root.render(<TableDesigner embedded tab={buildEmbeddedTab('users')} />); });
+    await flush();
+
+    expect(columnFetchCalls.length).toBe(1);
+    expect(container.querySelector('.ant-table-tbody')?.textContent).toContain('id');
+
+    await act(async () => { root.unmount(); });
+    container.remove();
+  }, 20000);
+
+  it('asks again when the request it would reuse had failed', async () => {
+    const { default: TableDesigner } = await import('./TableDesigner');
+    columnFixture = [{ name: 'id', type: 'bigint', nullable: 'NO', key: 'PRI', extra: '' }];
+    await requestTableMetadata(
+      { connectionId: 'conn-1', dbName: 'demo', tableName: 'users', kind: 'columns' },
+      () => Promise.resolve({ success: false, message: 'temporary failure', data: [] }),
+    );
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => { root.render(<TableDesigner embedded tab={buildEmbeddedTab('users')} />); });
+    await flush();
+    await flush();
+
+    expect(columnFetchCalls.length).toBe(1);
+    expect(container.querySelector('.ant-table-tbody')?.textContent).toContain('id');
 
     await act(async () => { root.unmount(); });
     container.remove();

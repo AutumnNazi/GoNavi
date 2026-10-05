@@ -34,6 +34,7 @@ import {
 import { ColumnDefinition, IndexDefinition } from '../../../types';
 import { resolveIndexMetadataResponse } from '../../tableDesignerIndexUtils';
 import { parseTableCommentFromDDL } from '../../tableDesignerExecutionSql';
+import { requestTableMetadata, type TableMetadataRequestKind } from '../../../utils/tableMetadataRequestCache';
 import type { TableDesignerStateApi } from './useTableDesignerState';
 import type { TableDesignerProps } from '../../TableDesigner';
 
@@ -353,7 +354,10 @@ export const useTableDesignerDataLoad = ({
       return String(error || '');
     };
 
-    const fetchData = async () => {
+    // 打开设计器时与数据网格、预取共用同一批字段 / 索引 / 外键请求（reuseRecentRequests），
+    // 其余调用都发生在刷新或执行 DDL 之后，必须重新请求。
+    const fetchData = async (options?: { reuseRecentRequests?: boolean }) => {
+      const requestOptions = { force: options?.reuseRecentRequests !== true };
       const requestSeq = metadataLoadSeqRef.current + 1;
       metadataLoadSeqRef.current = requestSeq;
       const isCurrentRequest = () => metadataLoadSeqRef.current === requestSeq;
@@ -386,6 +390,18 @@ export const useTableDesignerDataLoad = ({
             ? tableInfo.qualifiedName
             : (tab.tableName || '');
         const tableName = resolvedTableName || tab.tableName || '';
+        const metadataKey = (kind: TableMetadataRequestKind) => ({
+            connectionId: tab.connectionId, dbName, tableName, kind,
+        });
+        // 复用到的若是一次失败的响应，就自己再请求一遍，不把别处的瞬时失败带进设计器。
+        const requestMetadata = <T extends { success?: boolean }>(
+            kind: TableMetadataRequestKind,
+            loader: () => Promise<T>,
+        ): Promise<T> => requestTableMetadata(metadataKey(kind), loader, requestOptions).then((result) => (
+            result?.success || requestOptions.force
+                ? result
+                : requestTableMetadata(metadataKey(kind), loader, { force: true })
+        ));
 
         setColumnsLoading(true);
       setIndexesLoading(true);
@@ -393,7 +409,7 @@ export const useTableDesignerDataLoad = ({
       setTriggersLoading(true);
       setDdlLoading(true);
 
-      const loadColumns = DBGetColumns(rpcConfig, dbName, tableName)
+      const loadColumns = requestMetadata('columns', () => DBGetColumns(rpcConfig, dbName, tableName))
           .then((colsRes) => {
               if (!isCurrentRequest()) return;
               if (colsRes.success) {
@@ -420,7 +436,7 @@ export const useTableDesignerDataLoad = ({
       await loadColumns;
       if (!isCurrentRequest()) return;
 
-      const loadIndexes = DBGetIndexes(rpcConfig, dbName, tableName)
+      const loadIndexes = requestMetadata('indexes', () => DBGetIndexes(rpcConfig, dbName, tableName))
           .then((idxRes) => {
               if (!isCurrentRequest()) return;
               const result = resolveIndexMetadataResponse<IndexDefinition>(idxRes);
@@ -442,7 +458,7 @@ export const useTableDesignerDataLoad = ({
               if (isCurrentRequest()) setIndexesLoading(false);
           });
 
-      const loadForeignKeys = DBGetForeignKeys(rpcConfig, dbName, tableName)
+      const loadForeignKeys = requestMetadata('foreignKeys', () => DBGetForeignKeys(rpcConfig, dbName, tableName))
           .then((fkRes) => {
               if (!isCurrentRequest()) return;
               setFks(fkRes.success && Array.isArray(fkRes.data) ? fkRes.data : []);
@@ -486,7 +502,7 @@ export const useTableDesignerDataLoad = ({
     };
 
     useEffect(() => {
-      fetchData();
+      fetchData({ reuseRecentRequests: true });
       // Depend on the identity fields fetchData actually reads instead of the whole
       // `tab` object: hosts such as DataGridShell pass an inline literal, so a new
       // object identity on every parent render would otherwise re-run all five
