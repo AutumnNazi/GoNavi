@@ -9,6 +9,7 @@ import { resetQueryEditorTabSplitRatiosForTests } from '../utils/queryEditorSpli
 import { clearQueryTabDraft, clearSQLFileTabDraft } from '../utils/sqlFileTabDrafts';
 import { clearQueryEditorInlineRuntimeReadinessCache } from './queryEditor/QueryEditorAiAssist';
 import { resetDatabaseServerVersionCache } from './queryEditor/queryEditorServerVersion';
+import { clearQueryEditorSessionMetadata } from './queryEditor/metadata/queryEditorSessionMetadataStore';
 import {
     mountedRenderers,
     storeState,
@@ -31,6 +32,7 @@ import {
 export const setUpQueryEditorExternalSqlSaveTest = () => {
     resetQueryEditorTabSplitRatiosForTests();
     resetDatabaseServerVersionCache();
+    clearQueryEditorSessionMetadata();
     clearQueryEditorInlineRuntimeReadinessCache();
     const completionState = (globalThis as any).__gonaviSqlCompletionState;
     if (completionState) {
