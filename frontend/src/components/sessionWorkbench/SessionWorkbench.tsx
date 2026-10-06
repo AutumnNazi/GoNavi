@@ -1,5 +1,5 @@
 import { Alert, Empty, Spin, message } from 'antd';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import type { TabData } from '../../types';
 import { useI18n } from '../../i18n/provider';
 import { resolveConnectionEnvironmentType } from '../../utils/connectionEnvironment';
@@ -37,7 +37,6 @@ export default function SessionWorkbench({ tab }: SessionWorkbenchProps) {
     initialConnectionId: tab.connectionId,
     initialDbName: tab.dbName,
   });
-  const [runningOnly, setRunningOnly] = useState(false);
   const databaseOptions = useMemo(
     () => sessionDatabaseOptions(
       workbench.payload?.sessions || [],
@@ -81,13 +80,13 @@ export default function SessionWorkbench({ tab }: SessionWorkbenchProps) {
         databaseOptions={databaseOptions}
         databaseName={workbench.databaseName}
         filter={workbench.filter}
-        runningOnly={runningOnly}
+        runningOnly={workbench.runningOnly}
         loading={workbench.loading}
         databaseLoading={workbench.databasesLoading}
         onConnectionChange={workbench.setSelectedConnectionId}
         onDatabaseChange={workbench.selectDatabase}
         onFilterChange={workbench.setFilter}
-        onRunningOnlyChange={setRunningOnly}
+        onRunningOnlyChange={workbench.setRunningOnly}
         onRefresh={() => { void workbench.refresh(); }}
       />
       <div className="gn-session-workbench-body">

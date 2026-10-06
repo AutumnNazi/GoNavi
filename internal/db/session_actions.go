@@ -37,7 +37,9 @@ func buildSessionActionStatement(
 	}
 
 	switch spec.engine {
-	case "mysql", "mariadb", "goldendb", "oceanbase-mysql":
+	case "mysql", "mariadb", "goldendb", "oceanbase-mysql", "oceanbase-oracle":
+		// OceanBase kills by client session ID with KILL [QUERY] in both
+		// tenant modes; Oracle's 'sid,serial#,@inst' form does not apply.
 		return buildMySQLSessionAction(request)
 	case "doris":
 		return buildDorisSessionAction(request)
@@ -46,8 +48,6 @@ func buildSessionActionStatement(
 	case "postgres", "kingbase", "highgo", "vastbase", "opengauss", "gaussdb":
 		return buildPostgresSessionAction(request)
 	case "oracle":
-		return buildOracleSessionAction(request)
-	case "oceanbase-oracle":
 		return buildOracleSessionAction(request)
 	case "sqlserver":
 		return buildSQLServerSessionAction(request)
