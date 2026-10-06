@@ -37,6 +37,9 @@ type Service struct {
 	observers       map[string]*SourceObserver
 	lifecycleCtx    context.Context
 	lifecycleCancel context.CancelFunc
+
+	dependencyMu sync.RWMutex
+	dependencies DependencyResolver
 }
 
 // Open 打开（必要时初始化）材料库并执行启动核对。核对在返回前完成，
@@ -200,4 +203,30 @@ func (s *Service) ensureOpen() error {
 		return ErrClosed
 	}
 	return nil
+}
+
+// SetDependencyResolver 注入依赖解析器（adapter 实现）；未注入时按
+// 自包含处理（不伪造祖先）。
+func (s *Service) SetDependencyResolver(resolver DependencyResolver) {
+	s.dependencyMu.Lock()
+	defer s.dependencyMu.Unlock()
+	s.dependencies = resolver
+}
+
+// resolveDependencies 解析会话依赖；未注入解析器时返回空结果。
+// 解析失败按保守处理：标注未知缺失，候选不标完整。
+func (s *Service) resolveDependencies(ctx context.Context, source Source, session DiscoveredSession) DependencyResolution {
+	s.dependencyMu.RLock()
+	resolver := s.dependencies
+	s.dependencyMu.RUnlock()
+	if resolver == nil {
+		return DependencyResolution{}
+	}
+	resolution, err := resolver.ResolveDependencies(ctx, source.RootPath, session.NativePath)
+	if err != nil {
+		return DependencyResolution{
+			Missing: []MissingRecord{{Reason: string(MissingUnknownEntry), Detail: "dependency resolution failed"}},
+		}
+	}
+	return resolution
 }

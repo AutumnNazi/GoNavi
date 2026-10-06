@@ -104,7 +104,7 @@ func (s *Service) SyncSource(ctx context.Context, source Source, result SourceSc
 		}
 		report.UpdatedRefs++
 		if session.Archived && shouldCaptureArchive(previous, session) {
-			queued, err := s.captureArchivedAsset(ctx, asset.ID, source.ID, session)
+			queued, err := s.captureArchivedAsset(ctx, source, asset.ID, session)
 			if err != nil {
 				return report, err
 			}
@@ -162,7 +162,7 @@ func shouldCaptureArchive(previous SourceRef, session DiscoveredSession) bool {
 
 // captureArchivedAsset 为归档会话安排保全：进行中的任务不重复排队
 // （FR-06/FR-07/V-08）。重归档与首次补保存共用同一条替换事务。
-func (s *Service) captureArchivedAsset(ctx context.Context, assetID, sourceID string, session DiscoveredSession) (bool, error) {
+func (s *Service) captureArchivedAsset(ctx context.Context, source Source, assetID string, session DiscoveredSession) (bool, error) {
 	active, err := s.catalog.HasActiveCaptureJob(ctx, assetID)
 	if err != nil {
 		return false, err
@@ -170,7 +170,8 @@ func (s *Service) captureArchivedAsset(ctx context.Context, assetID, sourceID st
 	if active {
 		return false, nil
 	}
-	_, err = s.EnqueueCapture(ctx, BuildSessionCaptureRequest(assetID, sourceID, session))
+	resolution := s.resolveDependencies(ctx, source, session)
+	_, err = s.EnqueueCapture(ctx, BuildSessionCaptureRequest(assetID, source.ID, session, resolution))
 	if err != nil {
 		return false, err
 	}
@@ -206,9 +207,37 @@ func (s *Service) markMissingRefsGone(ctx context.Context, source Source, seenTh
 	return gone, nil
 }
 
-// BuildSessionCaptureRequest 构造单文件会话保全请求（rollout 自包含：
-// 内嵌消息与附件，无外部依赖时 ancestors/attachments 为空）。
-func BuildSessionCaptureRequest(assetID, sourceID string, session DiscoveredSession) CaptureRequest {
+// BuildSessionCaptureRequest 构造会话保全请求：rollout 主体自包含，
+// 依赖解析发现的祖先文件与附件追加进请求；祖先文件未全部落地或存在
+// 缺失项时通过 Missing 标注（候选不得标完整，FR-09）。
+func BuildSessionCaptureRequest(assetID, sourceID string, session DiscoveredSession, resolution DependencyResolution) CaptureRequest {
+	files := []MaterialFile{{
+		RelPath:         "raw/rollout.jsonl",
+		SourcePath:      session.NativePath,
+		Role:            string(MaterialRolePrimary),
+		ExpectedSize:    session.Size,
+		ExpectedModTime: session.ModifiedAt,
+	}}
+	files = append(files, resolution.ExtraFiles...)
+	missing := append([]MissingRecord(nil), resolution.Missing...)
+	landed := make([]AncestorDependency, 0, len(resolution.Ancestors))
+	for _, ancestor := range resolution.Ancestors {
+		ready := make([]MaterialFile, 0, len(ancestor.Files))
+		for _, file := range ancestor.Files {
+			if strings.TrimSpace(file.SourcePath) != "" {
+				ready = append(ready, file)
+				continue
+			}
+			missing = append(missing, MissingRecord{
+				Reason: string(MissingAncestor),
+				Detail: "ancestor " + ancestor.NativeThreadID + " file not found",
+			})
+		}
+		if len(ready) > 0 {
+			ancestor.Files = ready
+			landed = append(landed, ancestor)
+		}
+	}
 	return CaptureRequest{
 		AssetID:        assetID,
 		SourceID:       sourceID,
@@ -217,12 +246,9 @@ func BuildSessionCaptureRequest(assetID, sourceID string, session DiscoveredSess
 		SourcePath:     session.NativePath,
 		SourceSize:     session.Size,
 		SourceModTime:  session.ModifiedAt,
-		Files: []MaterialFile{{
-			RelPath:         "raw/rollout.jsonl",
-			SourcePath:      session.NativePath,
-			Role:            string(MaterialRolePrimary),
-			ExpectedSize:    session.Size,
-			ExpectedModTime: session.ModifiedAt,
-		}},
+		Files:          files,
+		Ancestors:      landed,
+		Attachments:    resolution.Attachments,
+		Missing:        missing,
 	}
 }

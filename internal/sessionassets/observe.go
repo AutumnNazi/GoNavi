@@ -163,7 +163,7 @@ func (s *Service) archiveEventhandler(source Source, discoverer SourceDiscoverer
 		if err != nil {
 			return
 		}
-		_, _ = s.captureArchivedAsset(ctx, asset.ID, source.ID, session)
+		_, _ = s.captureArchivedAsset(ctx, source, asset.ID, session)
 	}
 }
 

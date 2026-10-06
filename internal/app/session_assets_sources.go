@@ -14,6 +14,8 @@ import (
 // resumeSessionAssetSources 对全部启用集成的启用来源做一次补核对并启动
 // 观察。单来源失败只记录，不阻断其他来源（V-12：能补的补）。
 func (a *App) resumeSessionAssetSources(service *sessionassets.Service) {
+	// 依赖解析器：rollout 引用/fork 祖先与附件线索（P0-05）。
+	service.SetDependencyResolver(codex.Discoverer{})
 	catalog := service.Catalog()
 	integrations, err := catalog.ListIntegrations(context.Background())
 	if err != nil {

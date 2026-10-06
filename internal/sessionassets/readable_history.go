@@ -107,3 +107,18 @@ func FormatCoverageTime(unix int64) string {
 	}
 	return time.Unix(unix, 0).Format("2006-01-02 15:04")
 }
+
+// DependencyResolution 是 adapter 依赖解析的领域视图。
+type DependencyResolution struct {
+	Ancestors   []AncestorDependency
+	Attachments []AttachmentRecord
+	ExtraFiles  []MaterialFile
+	Missing     []MissingRecord
+}
+
+// DependencyResolver 解析会话的 fork 祖先与附件依赖（adapter 实现）。
+// 识别不到依赖时返回空结果（保持自包含判定）；识别到但缺失时必须
+// 写入 Missing（候选不得标完整，FR-09）。
+type DependencyResolver interface {
+	ResolveDependencies(ctx context.Context, dataDir, sessionPath string) (DependencyResolution, error)
+}
