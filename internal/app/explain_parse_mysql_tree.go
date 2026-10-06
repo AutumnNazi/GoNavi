@@ -140,6 +140,9 @@ func buildMySQLTreeNode(text string, isRoot bool) connection.ExplainNode {
 		// Reading back MySQL's own temporary/derived result is not a missing index.
 		node.Flags = removeExplainFlags(node.Flags, connection.ExplainFlagFullScan, connection.ExplainFlagNoIndex)
 		node.Flags = appendExplainFlag(node.Flags, connection.ExplainFlagTempTable)
+		if node.OpType == connection.ExplainOpScan {
+			node.OpType = connection.ExplainOpOther
+		}
 		setExplainExtra(&node, "internalTable", internalTable)
 	}
 	if neverExecuted {

@@ -113,7 +113,7 @@ func TestParseMySQLTreeExplainSkipsInternalTemporaryScan(t *testing.T) {
 		t.Fatalf("parse: %v", err)
 	}
 	scan := result.Nodes[0]
-	if scan.Table != "" || hasFlag(scan.Flags, connection.ExplainFlagFullScan) || !hasFlag(scan.Flags, connection.ExplainFlagTempTable) {
+	if scan.Table != "" || scan.OpType == connection.ExplainOpScan || hasFlag(scan.Flags, connection.ExplainFlagFullScan) || !hasFlag(scan.Flags, connection.ExplainFlagTempTable) {
 		t.Fatalf("reading MySQL's own temp table is not a full scan: %+v", scan)
 	}
 	if len(result.Nodes) != 2 || result.Nodes[1].ParentID != scan.ID {
