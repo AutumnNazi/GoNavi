@@ -11,6 +11,7 @@ import DiagnoseSqlInput from './DiagnoseSqlInput'
 import { ExplainReportView } from './ExplainWorkbench'
 import { SlowQueryPanelContent } from './SlowQueryPanel'
 import type { SlowQueryRecord } from './slowQueryModel'
+import { useExplainAnalyzeConfirm } from './useExplainAnalyzeConfirm'
 import './SqlAnalysisWorkbench.css'
 
 const { Title } = Typography
@@ -50,13 +51,17 @@ export default function SqlAnalysisWorkbench({ tab }: { tab: TabData }) {
   const [sqlDraft, setSqlDraft] = useState(() => String(tab.query || ''))
   const [submittedSql, setSubmittedSql] = useState(() => String(tab.query || ''))
   const [diagnoseRunKey, setDiagnoseRunKey] = useState(0)
+  // The run behind diagnoseRunKey measures the query for real instead of only estimating.
+  const [diagnoseAnalyze, setDiagnoseAnalyze] = useState(false)
   const [editorCollapsed, setEditorCollapsed] = useState(false)
+  const confirmAnalyze = useExplainAnalyzeConfirm(connection)
 
   useEffect(() => {
     const nextView = resolveRequestedView(tab)
     const nextSql = String(tab.query || '')
     setActiveView(nextView)
     setSqlDraft(nextSql)
+    setDiagnoseAnalyze(false)
     if (nextView === 'diagnose' && nextSql.trim()) {
       setSubmittedSql(nextSql)
       setDiagnoseRunKey((previous) => previous + 1)
@@ -86,9 +91,19 @@ export default function SqlAnalysisWorkbench({ tab }: { tab: TabData }) {
     }
     setActiveView('diagnose')
     setSubmittedSql(sqlDraft)
+    setDiagnoseAnalyze(false)
     setDiagnoseRunKey((previous) => previous + 1)
     setEditorCollapsed(true)
   }, [sqlDraft, supportsDiagnosis, t])
+
+  // Measures the SQL of the report on screen, not an edited draft.
+  const requestAnalyze = useCallback(() => {
+    if (!submittedSql.trim()) return
+    confirmAnalyze(() => {
+      setDiagnoseAnalyze(true)
+      setDiagnoseRunKey((previous) => previous + 1)
+    })
+  }, [confirmAnalyze, submittedSql])
 
   const handlePickSlowQuery = useCallback((sql: string) => {
     const nextSql = String(sql || '')
@@ -214,6 +229,8 @@ export default function SqlAnalysisWorkbench({ tab }: { tab: TabData }) {
                 dbName={dbName}
                 sql={submittedSql}
                 runKey={diagnoseRunKey > 0 ? diagnoseRunKey : null}
+                analyze={diagnoseAnalyze}
+                onAnalyze={requestAnalyze}
               />
             </div>
           </div>

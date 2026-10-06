@@ -12,11 +12,11 @@ interface ExplainHotspotStripProps {
   onSelectNode: (nodeId: string) => void
 }
 
-/** "Start here": the few steps that carry most of the plan's estimated work. */
+/** "Start here": the few steps that carry most of the plan's work, estimated or measured. */
 export default function ExplainHotspotStrip({ nodes, basis, selectedNodeId, onSelectNode }: ExplainHotspotStripProps) {
   const { t } = useI18n()
   const hotspots = rankExplainHotspots(nodes)
-  if (hotspots.length === 0 || (basis !== 'cost' && basis !== 'rows')) return null
+  if (hotspots.length === 0 || (basis !== 'cost' && basis !== 'rows' && basis !== 'time')) return null
   return (
     <div className="gn-explain-hotspots" role="group" aria-label={t(`sql_analysis.explain_hotspot.title.${basis}`)}>
       <Tooltip title={t(`sql_analysis.explain_hotspot.hint.${basis}`)}>

@@ -208,3 +208,49 @@
   margin-bottom: 2px;
   color: var(--gn-fg-1);
 }
+
+/* Measured plans: the badge and the button beside the view switcher. */
+.gn-explain-analyze {
+  display: inline-flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.gn-explain-analyze__badge {
+  padding: 1px 8px;
+  color: var(--gn-accent);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--gn-accent) 14%, var(--gn-bg-panel));
+}
+
+.gn-explain-analyze__summary.ant-typography {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gn-explain-node__never {
+  color: var(--gn-fg-4);
+  font-style: italic;
+}
+
+.gn-explain-node__actual.is-misestimated,
+.gn-explain-node__actual.is-misestimated strong {
+  color: var(--gn-warn);
+}
+
+.gn-explain-analyze-confirm p {
+  margin: 0 0 8px;
+}
+
+.gn-explain-analyze-confirm__production {
+  color: var(--gn-danger);
+  font-weight: 600;
+}

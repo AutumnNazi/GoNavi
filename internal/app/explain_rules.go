@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"GoNavi-Wails/internal/connection"
@@ -229,14 +230,23 @@ func ruleHighEstimationSkew(_ connection.ExplainResult, node connection.ExplainN
 	if node.EstRows <= 0 || node.ActualRows <= 0 {
 		return nil
 	}
+	// A measured plan already judged each step, including how many rows the
+	// miss involved over all loops; follow that verdict.
+	if node.EstimateFactor > 0 && !hasFlag(node.Flags, connection.ExplainFlagUccWarn) {
+		return nil
+	}
 	ratio := float64(node.ActualRows) / float64(node.EstRows)
 	if ratio < ruleEstimationSkewRatio && ratio > 1.0/ruleEstimationSkewRatio {
 		return nil
 	}
+	rows := fmt.Sprintf("估算 %d 行 / 实际 %d 行", node.EstRows, node.ActualRows)
+	if node.Loops > 1 {
+		rows += fmt.Sprintf("（每次循环，共 %d 次）", node.Loops)
+	}
 	return &connection.IndexSuggestion{
 		Severity:       connection.SeverityInfo,
 		Rule:           "high_estimation_skew",
-		Reason:         fmt.Sprintf("估算 %d 行 / 实际 %d 行（偏差 %.1fx）；统计信息可能过期，考虑 ANALYZE TABLE", node.EstRows, node.ActualRows, ratio),
+		Reason:         fmt.Sprintf("%s，相差约 %.0f 倍；统计信息可能过期，考虑 ANALYZE TABLE", rows, math.Max(ratio, 1/ratio)),
 		AffectedNodeID: node.ID,
 		AffectedTable:  node.Table,
 		EstRows:        node.EstRows,

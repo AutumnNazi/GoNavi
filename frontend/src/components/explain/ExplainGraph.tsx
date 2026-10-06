@@ -18,6 +18,7 @@ import './ExplainAnalysis.css'
 import type { ExplainEdge, ExplainNode } from '../../utils/explainTypes'
 import { useI18n } from '../../i18n/provider'
 import { ExplainGraphNodeRenderer, type ExplainGraphNodeData } from './ExplainGraphNode'
+import { explainActualRows } from './explainActuals'
 import {
   explainEdgeWidth,
   explainHotPath,
@@ -39,6 +40,8 @@ interface ExplainGraphProps {
   onSelectNode?: (nodeId: string | null) => void
   /** TB: result on top, scans at the bottom. LR: scans on the left, data flowing right to the result. */
   direction?: ExplainLayoutDirection
+  /** The plan was measured: nodes show actual rows and time, edges the rows really handed up. */
+  analyzed?: boolean
 }
 
 export default function ExplainGraph(props: ExplainGraphProps) {
@@ -49,7 +52,7 @@ export default function ExplainGraph(props: ExplainGraphProps) {
   )
 }
 
-function ExplainGraphInner({ nodes, edges, selectedNodeId, onSelectNode, direction = 'TB' }: ExplainGraphProps) {
+function ExplainGraphInner({ nodes, edges, selectedNodeId, onSelectNode, direction = 'TB', analyzed }: ExplainGraphProps) {
   const { language, t } = useI18n()
   // Selection is deliberately excluded: highlighting a node must not run dagre again.
   const { rfNodes, rfEdges } = useMemo(() => {
@@ -58,13 +61,13 @@ function ExplainGraphInner({ nodes, edges, selectedNodeId, onSelectNode, directi
     return {
       rfNodes: layout.rfNodes.map((node) => ({
         ...node,
-        data: { ...node.data, direction, onHotPath: hotPath.has(node.id) },
+        data: { ...node.data, direction, onHotPath: hotPath.has(node.id), analyzed },
       })),
       rfEdges: decorateExplainEdges(layout.rfEdges, nodes, hotPath, (rows) => (
         t('sql_analysis.explain_graph.edge.rows', { rows: formatCompactRows(rows, language) })
-      )),
+      ), analyzed),
     }
-  }, [direction, edges, language, nodes, t])
+  }, [analyzed, direction, edges, language, nodes, t])
 
   const [nodeState, setNodeState, onNodesChange] = useNodesState(
     applyGraphNodeState(rfNodes, selectedNodeId, onSelectNode),
@@ -189,10 +192,15 @@ export function decorateExplainEdges(
   nodes: ExplainNode[],
   hotPath: Set<string>,
   formatRows: (rows: number) => string,
+  analyzed?: boolean,
 ): Edge[] {
   const byId = new Map(nodes.map((node) => [node.id, node]))
   // MySQL reports per-lookup rows; the rows a step hands up are in extra.rowsProduced.
+  // A measured step reports rows per loop, so it hands up rows times loops.
   const rowsOf = (node?: ExplainNode) => {
+    if (analyzed && node && (node.loops ?? 0) > 0) {
+      return (explainActualRows(node, true) ?? 0) * (node.loops ?? 1)
+    }
     const produced = node?.extra?.rowsProduced
     return typeof produced === 'number' ? produced : (node?.actualRows ?? node?.estRows)
   }

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { ApartmentOutlined, CodeOutlined, UnorderedListOutlined } from '@ant-design/icons'
-import { Segmented, Typography } from 'antd'
+import { ApartmentOutlined, CodeOutlined, ExperimentOutlined, UnorderedListOutlined } from '@ant-design/icons'
+import { Button, Segmented, Tooltip, Typography } from 'antd'
 import { useI18n } from '../../i18n/provider'
-import type { DiagnoseReport, ExplainNode, IndexSuggestion } from '../../utils/explainTypes'
+import { formatMs, type DiagnoseReport, type ExplainNode, type IndexSuggestion } from '../../utils/explainTypes'
 import ExplainGraph from './ExplainGraph'
 import ExplainHotspotStrip from './ExplainHotspotStrip'
 import ExplainSidebar from './ExplainSidebar'
@@ -20,6 +20,34 @@ interface ExplainReportBodyProps {
   selectedNode?: ExplainNode
   onSelectNode: (nodeId: string | null) => void
   onSelectSuggestion: (suggestion: IndexSuggestion) => void
+  /** Run the query for real to compare the plan with what happens; offered when the data source supports it. */
+  onAnalyze?: () => void
+  analyzing?: boolean
+}
+
+/** "Measured, ran in 12.3ms" for a measured plan, and the button that measures (again). */
+function AnalyzeControls({ report, onAnalyze, analyzing }: Pick<ExplainReportBodyProps, 'report' | 'onAnalyze' | 'analyzing'>) {
+  const { language, t } = useI18n()
+  const analyzed = report.plan.analyzed === true
+  return (
+    <span className="gn-explain-analyze">
+      {analyzed ? (
+        <>
+          <span className="gn-explain-analyze__badge">{t('sql_analysis.analyze.badge')}</span>
+          <Text type="secondary" className="gn-explain-analyze__summary">
+            {t('sql_analysis.analyze.summary', { duration: formatMs(report.plan.stats.totalDurationMs, language) })}
+          </Text>
+        </>
+      ) : null}
+      {report.analyzeSupported && onAnalyze ? (
+        <Tooltip title={t('sql_analysis.analyze.action.hint')}>
+          <Button size="small" icon={<ExperimentOutlined aria-hidden="true" />} loading={analyzing} onClick={onAnalyze}>
+            {t(analyzed ? 'sql_analysis.analyze.action.rerun' : 'sql_analysis.analyze.action.run')}
+          </Button>
+        </Tooltip>
+      ) : null}
+    </span>
+  )
 }
 
 function ViewLabel({ icon, text }: { icon: React.ReactNode; text: string }) {
@@ -39,6 +67,8 @@ export default function ExplainReportBody({
   selectedNode,
   onSelectNode,
   onSelectSuggestion,
+  onAnalyze,
+  analyzing,
 }: ExplainReportBodyProps) {
   const { t } = useI18n()
   const [activeView, setActiveView] = useState<ExplainReportViewMode>('plan')
@@ -74,6 +104,7 @@ export default function ExplainReportBody({
             ]}
           />
         ) : null}
+        <AnalyzeControls report={report} onAnalyze={onAnalyze} analyzing={analyzing} />
         <Text type="secondary" className="gn-explain-report-switcher-meta">
           {t('sql_analysis.explain.meta.node_count', { count: report.plan.nodes.length })}
           <span className="gn-explain-report-switcher-meta-separator">/</span>
@@ -103,9 +134,15 @@ export default function ExplainReportBody({
                   selectedNodeId={selectedNodeId ?? undefined}
                   onSelectNode={onSelectNode}
                   direction={direction}
+                  analyzed={report.plan.analyzed}
                 />
               ) : (
-                <ExplainStepTable nodes={report.plan.nodes} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} />
+                <ExplainStepTable
+                  nodes={report.plan.nodes}
+                  selectedNodeId={selectedNodeId}
+                  onSelectNode={onSelectNode}
+                  analyzed={report.plan.analyzed}
+                />
               )}
             </div>
             <div className="gn-explain-plan-sidebar">
@@ -115,6 +152,7 @@ export default function ExplainReportBody({
                 suggestions={report.suggestions ?? []}
                 selectedNode={selectedNode}
                 onSelectSuggestion={onSelectSuggestion}
+                analyzed={report.plan.analyzed}
               />
             </div>
           </div>

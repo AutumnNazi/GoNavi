@@ -2,7 +2,15 @@ import { memo } from 'react'
 import { Handle, Position } from 'reactflow'
 import { formatNumber, type ExplainNode } from '../../utils/explainTypes'
 import { useI18n } from '../../i18n/provider'
-import { explainHeatLevel, explainOperationKindKey, formatShare, type ExplainLayoutDirection } from './explainPlanInsights'
+import {
+  describeExplainEstimate,
+  explainActualRows,
+  explainNeverExecuted,
+  explainNodeTotalMs,
+  formatStepMs,
+  isExplainMisestimated,
+} from './explainActuals'
+import { explainHeatLevel, explainOperationKindKey, formatCompactRows, formatShare, type ExplainLayoutDirection } from './explainPlanInsights'
 import './ExplainPlanInsights.css'
 
 export interface ExplainGraphNodeData {
@@ -12,6 +20,8 @@ export interface ExplainGraphNodeData {
   direction?: ExplainLayoutDirection
   /** On the chain from the costliest step up to the result. */
   onHotPath?: boolean
+  /** The plan was measured. */
+  analyzed?: boolean
 }
 
 function FlagBadge({ tone, text }: { tone: 'danger' | 'warning' | 'info'; text: string }) {
@@ -51,8 +61,12 @@ export function resolveOperationColor(operation: string): string {
   }
 }
 
-function NodeMetrics({ node }: { node: ExplainNode }) {
+function NodeMetrics({ node, analyzed }: { node: ExplainNode; analyzed?: boolean }) {
   const { language, t } = useI18n()
+  const never = analyzed && explainNeverExecuted(node)
+  const actualRows = never ? undefined : explainActualRows(node, analyzed)
+  const totalMs = explainNodeTotalMs(node)
+  const loops = node.loops ?? 0
   return (
     <span className="gn-explain-node__metrics">
       {isFiniteMetric(node.estRows) && (
@@ -61,13 +75,21 @@ function NodeMetrics({ node }: { node: ExplainNode }) {
           <strong>{formatNumber(node.estRows, language)}</strong>
         </span>
       )}
-      {isFiniteMetric(node.actualRows) && (
-        <span>
+      {never && <span className="gn-explain-node__never">{t('sql_analysis.explain_graph.metric.never_executed')}</span>}
+      {isFiniteMetric(actualRows) && (
+        <span className={isExplainMisestimated(node) ? 'gn-explain-node__actual is-misestimated' : 'gn-explain-node__actual'}>
           {t('sql_analysis.explain_graph.metric.actual_rows')}{' '}
-          <strong>{formatNumber(node.actualRows, language)}</strong>
+          <strong>{formatNumber(actualRows, language)}</strong>
+          {loops > 1 ? ` ${t('sql_analysis.explain_graph.metric.loops', { count: formatCompactRows(loops, language) })}` : null}
         </span>
       )}
-      {isFiniteMetric(node.cost) && (
+      {analyzed && totalMs !== undefined && (
+        <span>
+          {t('sql_analysis.explain_graph.metric.time')}{' '}
+          <strong>{formatStepMs(totalMs, language)}</strong>
+        </span>
+      )}
+      {!analyzed && isFiniteMetric(node.cost) && (
         <span>
           {t('sql_analysis.explain_graph.metric.cost')}{' '}
           <strong>{node.cost?.toFixed(1)}</strong>
@@ -83,7 +105,8 @@ export const ExplainGraphNodeRenderer = memo(function ExplainGraphNodeRenderer({
   data: ExplainGraphNodeData
 }) {
   const { t } = useI18n()
-  const { node, isSelected, onSelect, direction = 'TB', onHotPath } = data
+  const { node, isSelected, onSelect, direction = 'TB', onHotPath, analyzed } = data
+  const misestimate = isExplainMisestimated(node) ? describeExplainEstimate(node, t) : null
   const operationColor = resolveOperationColor(node.opType)
   const flags = new Set<string>(node.flags ?? [])
   const operationLabel = node.opDetail || formatOperationLabel(node.opType)
@@ -130,10 +153,11 @@ export const ExplainGraphNodeRenderer = memo(function ExplainGraphNodeRenderer({
           <code>{node.index}</code>
         </span>
       )}
-      <NodeMetrics node={node} />
-      {(flags.has('HIGH_COST') || flags.has('FULL_SCAN') || flags.has('FILESORT') || flags.has('TEMP_TABLE')) && (
+      <NodeMetrics node={node} analyzed={analyzed} />
+      {(misestimate || flags.has('HIGH_COST') || flags.has('FULL_SCAN') || flags.has('FILESORT') || flags.has('TEMP_TABLE')) && (
         <span className="gn-explain-node__flags">
-          {flags.has('HIGH_COST') && <FlagBadge tone="danger" text={t('sql_analysis.explain_graph.flag.high_cost')} />}
+          {misestimate && <FlagBadge tone="warning" text={misestimate} />}
+          {flags.has('HIGH_COST') && <FlagBadge tone="danger" text={t(analyzed ? 'sql_analysis.explain_graph.flag.time_hotspot' : 'sql_analysis.explain_graph.flag.high_cost')} />}
           {flags.has('FULL_SCAN') && <FlagBadge tone="danger" text={t('sql_analysis.explain_graph.flag.full_scan')} />}
           {flags.has('FILESORT') && <FlagBadge tone="warning" text={t('sql_analysis.explain_graph.flag.filesort')} />}
           {flags.has('TEMP_TABLE') && <FlagBadge tone="info" text={t('sql_analysis.explain_graph.flag.temp_table')} />}

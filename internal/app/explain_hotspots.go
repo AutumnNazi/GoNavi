@@ -10,6 +10,8 @@ import (
 const (
 	explainHotspotBasisCost = "cost"
 	explainHotspotBasisRows = "rows"
+	// explainHotspotBasisTime: measured self time of an analyzed plan.
+	explainHotspotBasisTime = "time"
 )
 
 const (
@@ -78,12 +80,21 @@ func annotateExplainHotspots(result *connection.ExplainResult, cumulative bool) 
 			}
 		}
 	}
+	applyExplainHotspotShares(result, self, total, basis)
+}
+
+// applyExplainHotspotShares writes each step's share of the plan's work and
+// flags the steps that dominate it. Earlier shares and flags are replaced, so a
+// measured basis can supersede the estimated one.
+func applyExplainHotspotShares(result *connection.ExplainResult, self []float64, total float64, basis string) {
 	if total <= 0 {
 		return
 	}
 	result.HotspotBasis = basis
 	top := -1
 	for index := range result.Nodes {
+		result.Nodes[index].CostShare = 0
+		result.Nodes[index].Flags = removeExplainFlags(result.Nodes[index].Flags, connection.ExplainFlagHighCost)
 		share := self[index] / total
 		if share <= 0 {
 			continue
