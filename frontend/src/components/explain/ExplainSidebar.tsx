@@ -11,6 +11,7 @@ import {
   formatMs,
 } from '../../utils/explainTypes'
 import { useI18n } from '../../i18n/provider'
+import { explainOperationInsightKey, formatShare } from './explainPlanInsights'
 import './ExplainAnalysis.css'
 
 interface ExplainSidebarProps {
@@ -151,6 +152,9 @@ function ExplainNodeDetail({ node }: { node: ExplainNode }) {
   if (hasMetricValue(node.bufferHit)) {
     rows.push([t('sql_analysis.sidebar.node.buffer_hit'), formatPercent(node.bufferHit, language)])
   }
+  if (hasMetricValue(node.costShare) && node.costShare > 0) {
+    rows.push([t('sql_analysis.sidebar.node.share'), t('sql_analysis.explain_hotspot.share', { share: formatShare(node.costShare) })])
+  }
   if (node.flags && node.flags.length > 0) {
     rows.push([
       t('sql_analysis.sidebar.node.flags'),
@@ -163,6 +167,10 @@ function ExplainNodeDetail({ node }: { node: ExplainNode }) {
       <h3 id={titleId} className="gn-explain-card__title">
         {t('sql_analysis.sidebar.node.title')}
       </h3>
+      <p className="gn-explain-insight">
+        <strong>{t('sql_analysis.explain_insight.title')}</strong>
+        {t(explainOperationInsightKey(String(node.opType)))}
+      </p>
       <dl className="gn-explain-details">
         {rows.map(([label, value]) => (
           <div key={label} className="gn-explain-details__row">
@@ -320,6 +328,14 @@ export function localizeExplainFlag(flag: string, t: Translate): string {
       return t('sql_analysis.explain_graph.flag.filesort')
     case 'TEMP_TABLE':
       return t('sql_analysis.explain_graph.flag.temp_table')
+    case 'HIGH_COST':
+      return t('sql_analysis.explain_graph.flag.high_cost')
+    case 'NO_INDEX':
+      return t('sql_analysis.explain_graph.flag.no_index')
+    case 'LOW_BUFFER_HIT':
+      return t('sql_analysis.explain_graph.flag.low_buffer_hit')
+    case 'UNCERTAIN_ROWS':
+      return t('sql_analysis.explain_graph.flag.uncertain_rows')
     default:
       return formatExplainEnumLabel(flag)
   }
