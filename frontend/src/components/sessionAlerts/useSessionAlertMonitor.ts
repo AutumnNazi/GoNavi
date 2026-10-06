@@ -9,6 +9,7 @@ import {
   lockWaitAlerts,
   longTransactionAlerts,
   type SessionAlert,
+  type SessionAlertCheck,
 } from './sessionAlertEvaluation';
 import type { SessionAlertRule, SessionAlertRules } from './sessionAlertRules';
 
@@ -20,18 +21,23 @@ const record = (value: unknown): Record<string, unknown> => (
   value && typeof value === 'object' ? value as Record<string, unknown> : {}
 );
 
-/** Run the enabled checks for one connection; a failed check reports nothing. */
+/**
+ * Run the enabled checks for one connection. A check that fails reports
+ * nothing and is left out of `checked`, so its earlier findings stand.
+ */
 export const checkSessionAlerts = async (
   connection: SavedConnection,
   rule: SessionAlertRule,
-): Promise<SessionAlert[]> => {
+): Promise<SessionAlertCheck> => {
   const alerts: SessionAlert[] = [];
+  const checked: SessionAlertCheck['checked'] = [];
   if (rule.lockWaitEnabled) {
     try {
       const result = await listDatabaseLockWaits(connection.config, '');
       const payload = normalizeLockWaitPayload(result?.data);
       if (result?.success === true && payload.capability.supported) {
         alerts.push(...lockWaitAlerts(connection.id, payload.waits, rule.lockWaitSeconds));
+        checked.push('lockWait');
       }
     } catch {
       // A connection that cannot be reached right now is retried next round.
@@ -49,18 +55,21 @@ export const checkSessionAlerts = async (
           rows.map(normalizeDatabaseSession),
           rule.longTransactionMinutes,
         ));
+        checked.push('longTransaction');
       }
     } catch {
       // Same as above.
     }
   }
-  return alerts;
+  return { alerts, checked };
 };
 
 export interface UseSessionAlertMonitorOptions {
   connections: SavedConnection[];
   rules: SessionAlertRules;
   onAlerts: (alerts: SessionAlert[], connection: SavedConnection) => void;
+  /** Every completed round, so the alert history can follow problems until they end. */
+  onCheck?: (check: SessionAlertCheck, connection: SavedConnection) => void;
   check?: typeof checkSessionAlerts;
 }
 
@@ -72,10 +81,11 @@ export const useSessionAlertMonitor = ({
   connections,
   rules,
   onAlerts,
+  onCheck,
   check = checkSessionAlerts,
 }: UseSessionAlertMonitorOptions): void => {
-  const latest = useRef({ connections, rules, onAlerts, check });
-  latest.current = { connections, rules, onAlerts, check };
+  const latest = useRef({ connections, rules, onAlerts, onCheck, check });
+  latest.current = { connections, rules, onAlerts, onCheck, check };
   const reportedKeys = useRef(new Map<string, Set<string>>());
   const watchedSignature = connections
     .filter((connection) => isSessionAlertRuleActive(rules[connection.id]))
@@ -105,10 +115,15 @@ export const useSessionAlertMonitor = ({
           if (cancelled) return;
           const rule = latest.current.rules[connection.id];
           if (!isSessionAlertRuleActive(rule)) continue;
-          const alerts = await latest.current.check(connection, rule);
+          const result = await latest.current.check(connection, rule);
           if (cancelled) return;
-          const { fresh, keys } = freshSessionAlerts(reportedKeys.current.get(connection.id) ?? new Set(), alerts);
+          const { fresh, keys } = freshSessionAlerts(
+            reportedKeys.current.get(connection.id) ?? new Set(),
+            result.alerts,
+            result.checked,
+          );
           reportedKeys.current.set(connection.id, keys);
+          latest.current.onCheck?.(result, connection);
           if (fresh.length > 0) latest.current.onAlerts(fresh, connection);
         }
       } finally {

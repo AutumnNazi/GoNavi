@@ -72,17 +72,34 @@ export const longTransactionAlerts = (
     durationMs: transaction.durationMs ?? 0,
   }));
 
+/** One round of checks on a connection. */
+export interface SessionAlertCheck {
+  alerts: SessionAlert[];
+  /** Kinds whose check ran; a failed check says nothing about its problems. */
+  checked: SessionAlertKind[];
+}
+
+export const ALL_SESSION_ALERT_KINDS: readonly SessionAlertKind[] = ['lockWait', 'longTransaction'];
+
+export const sessionAlertKindOfKey = (key: string): SessionAlertKind => (key.startsWith('lock:') ? 'lockWait' : 'longTransaction');
+
 /**
  * Alerts not raised before. A problem that clears and comes back is new again,
- * because the keys of the current check replace the previous ones.
+ * because the keys of the current check replace the previous ones. Keys of a
+ * kind whose check failed are kept: an unreachable server has not solved them,
+ * and they must not be raised again once it answers.
  */
 export const freshSessionAlerts = (
   previousKeys: ReadonlySet<string>,
   alerts: SessionAlert[],
-): { fresh: SessionAlert[]; keys: Set<string> } => ({
-  fresh: alerts.filter((alert) => !previousKeys.has(alert.key)),
-  keys: new Set(alerts.map((alert) => alert.key)),
-});
+  checked: readonly SessionAlertKind[] = ALL_SESSION_ALERT_KINDS,
+): { fresh: SessionAlert[]; keys: Set<string> } => {
+  const keys = new Set(alerts.map((alert) => alert.key));
+  previousKeys.forEach((key) => {
+    if (!checked.includes(sessionAlertKindOfKey(key))) keys.add(key);
+  });
+  return { fresh: alerts.filter((alert) => !previousKeys.has(alert.key)), keys };
+};
 
 export const isSessionAlertRuleActive = (rule: SessionAlertRule | undefined): rule is SessionAlertRule => Boolean(
   rule?.enabled && (rule.lockWaitEnabled || rule.longTransactionEnabled),

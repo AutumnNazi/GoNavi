@@ -5,7 +5,8 @@ import { useStore } from '../../store';
 import type { SavedConnection } from '../../types';
 import { buildSessionWorkbenchTab } from '../../utils/sessionWorkbenchTab';
 import { formatSessionDuration, truncateSessionStatement } from '../sessionWorkbench/sessionWorkbenchModel';
-import type { SessionAlert } from './sessionAlertEvaluation';
+import type { SessionAlert, SessionAlertCheck } from './sessionAlertEvaluation';
+import { recordSessionAlertCheck } from './sessionAlertHistory';
 import { useSessionAlertRules } from './sessionAlertRules';
 import { useSessionAlertMonitor } from './useSessionAlertMonitor';
 import './SessionAlert.css';
@@ -77,6 +78,10 @@ export default function SessionAlertHost() {
     });
   }, [api, t]);
 
-  useSessionAlertMonitor({ connections, rules, onAlerts });
+  const onCheck = useCallback((check: SessionAlertCheck, connection: SavedConnection) => {
+    recordSessionAlertCheck({ id: connection.id, name: connection.name }, check);
+  }, []);
+
+  useSessionAlertMonitor({ connections, rules, onAlerts, onCheck });
   return <>{contextHolder}</>;
 }
