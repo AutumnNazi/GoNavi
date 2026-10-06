@@ -65,9 +65,9 @@ export type SessionAssetsApi = {
   refreshSources(kind: string): Promise<boolean>;
   continueSession(assetId: string): Promise<{ stage: string } | null>;
   launchInteractive(workDir: string): Promise<{ stage: string } | null>;
-  prepareHandoff(assetId: string, workDir: string, mode: string, from: number, to: number): Promise<{ stage: string; noteFile?: string; materialsDir?: string } | null>;
+  prepareHandoff(assetId: string, workDir: string, mode: string, from: number, to: number, currentRequest: string): Promise<{ stage: string; noteFile?: string; materialsDir?: string } | null>;
+  getCapability(assetId: string): Promise<{ nativeResume: boolean; newSession: boolean; manualMaterial: boolean; historyProvider?: string; currentProvider?: string } | null>;
   previewHandoff(assetId: string, mode: string, from: number, to: number): Promise<Record<string, unknown> | null>;
-  getCapability(assetId: string): Promise<{ nativeResume: boolean; newSession: boolean; manualMaterial: boolean } | null>;
 };
 
 const unwrap = <T,>(result: { success?: boolean; data?: unknown } | null | undefined): T | null =>
@@ -121,13 +121,13 @@ export const wailsSessionAssetsApi: SessionAssetsApi = {
   async previewHandoff(assetId, mode, from, to) {
     return unwrap<Record<string, unknown>>(await SessionAssetsPreviewHandoff(assetId, mode, from, to));
   },
-  async prepareHandoff(assetId, workDir, mode, from, to) {
+  async prepareHandoff(assetId, workDir, mode, from, to, currentRequest) {
     return unwrap<{ stage: string; noteFile?: string; materialsDir?: string }>(
-      await SessionAssetsPrepareHandoff(assetId, workDir, mode, from, to),
+      await SessionAssetsPrepareHandoff(assetId, workDir, mode, from, to, currentRequest),
     );
   },
   async getCapability(assetId) {
-    return unwrap<{ nativeResume: boolean; newSession: boolean; manualMaterial: boolean }>(
+    return unwrap<{ nativeResume: boolean; newSession: boolean; manualMaterial: boolean; historyProvider?: string; currentProvider?: string }>(
       await SessionAssetsHandoffCapability(assetId),
     );
   },

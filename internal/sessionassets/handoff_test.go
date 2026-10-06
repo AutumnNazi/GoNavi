@@ -21,7 +21,7 @@ func TestPrepareHandoffMaterialsWritesNoteAndRecord(t *testing.T) {
 	if err != nil {
 		t.Fatalf("detail: %v", err)
 	}
-	plan, err := service.PrepareHandoffMaterials(ctx, detail, `C:\work\demo`, HandoffScope{Mode: HandoffScopeRecent}, nil, nil)
+	plan, err := service.PrepareHandoffMaterials(ctx, detail, `C:\work\demo`, HandoffScope{Mode: HandoffScopeRecent}, "", nil, nil)
 	if err != nil {
 		t.Fatalf("prepare handoff: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestPrepareHandoffFailsWithoutMaterial(t *testing.T) {
 	if err != nil {
 		t.Fatalf("detail: %v", err)
 	}
-	plan, err := service.PrepareHandoffMaterials(ctx, detail, "", HandoffScope{Mode: HandoffScopeRecent}, nil, nil)
+	plan, err := service.PrepareHandoffMaterials(ctx, detail, "", HandoffScope{Mode: HandoffScopeRecent}, "", nil, nil)
 	if err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
@@ -77,8 +77,11 @@ func TestCanResumeNativelyRequiresReadableSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("detail: %v", err)
 	}
-	if !CanResumeNatively(detail) {
-		t.Fatalf("native resume should be available while source exists")
+	if !CanResumeNatively(detail, detail.Provider) {
+		t.Fatalf("native resume should be available while source exists and provider matches")
+	}
+	if CanResumeNatively(detail, "different-provider") {
+		t.Fatalf("cross-provider native resume must be rejected")
 	}
 	if err := os.Remove(session.NativePath); err != nil {
 		t.Fatalf("remove source file: %v", err)
@@ -87,14 +90,14 @@ func TestCanResumeNativelyRequiresReadableSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("detail after removal: %v", err)
 	}
-	if CanResumeNatively(detail) {
+	if CanResumeNatively(detail, detail.Provider) {
 		t.Fatalf("native resume must be unavailable when the source file is gone")
 	}
 }
 
 func TestHandoffDirEscapesAssetScope(t *testing.T) {
 	service := newTestService(t)
-	if _, err := service.PrepareHandoffMaterials(context.Background(), AssetDetail{AssetView: AssetView{ID: "..\\evil"}}, "", HandoffScope{}, nil, nil); err == nil {
+	if _, err := service.PrepareHandoffMaterials(context.Background(), AssetDetail{AssetView: AssetView{ID: "..\\evil"}}, "", HandoffScope{}, "", nil, nil); err == nil {
 		t.Fatalf("asset id with separators must be rejected")
 	}
 }

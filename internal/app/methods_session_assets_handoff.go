@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"GoNavi-Wails/internal/connection"
@@ -26,7 +28,7 @@ func (a *App) SessionAssetsContinueSession(assetID string) (result connection.Qu
 	if err != nil {
 		return sessionAssetsError(a, "session_assets.error.list_failed", err)
 	}
-	if !sessionassets.CanResumeNatively(detail) {
+	if !sessionassets.CanResumeNatively(detail, codex.CurrentProvider(sourceDataDirForProviderProbe(detail))) {
 		return connection.QueryResult{
 			Success: false,
 			Message: a.appText("session_assets.error.resume_unavailable", nil),
@@ -41,6 +43,24 @@ func (a *App) SessionAssetsContinueSession(assetID string) (result connection.Qu
 				"status": a.agentDetectionStatusText(detection.Status),
 			}),
 			Data: map[string]any{"stage": sessionassets.HandoffStageFailed},
+		}
+	}
+	// provider guard（S-15/AC-12）：历史 provider 与当前运行 provider 不一致
+	// 时拒绝原生续聊，改走携带历史新建，避免改写或误路由。
+	currentProvider := codex.CurrentProvider(detection.DataDir)
+	if strings.TrimSpace(detail.Provider) != "" && strings.TrimSpace(currentProvider) != "" &&
+		!strings.EqualFold(detail.Provider, currentProvider) {
+		return connection.QueryResult{
+			Success: false,
+			Message: a.appText("session_assets.error.provider_mismatch", map[string]any{
+				"history": detail.Provider,
+				"current": currentProvider,
+			}),
+			Data: map[string]any{
+				"stage":           sessionassets.HandoffStageFailed,
+				"historyProvider": detail.Provider,
+				"currentProvider": currentProvider,
+			},
 		}
 	}
 	command := fmt.Sprintf("%s resume %s", quoteCommand(detection.CommandPath), detail.NativeThreadID)
@@ -81,7 +101,7 @@ func (a *App) SessionAssetsLaunchInteractive(workDir string) (result connection.
 
 // SessionAssetsPrepareHandoff 生成手动交接材料包与核验过的操作说明
 // （手动兜底必需可用，FR-22）。
-func (a *App) SessionAssetsPrepareHandoff(assetID, workDir, scopeMode string, from, to int) (result connection.QueryResult) {
+func (a *App) SessionAssetsPrepareHandoff(assetID, workDir, scopeMode string, from, to int, currentRequest string) (result connection.QueryResult) {
 	_, service, err := a.sessionAssetsCatalog()
 	if err != nil {
 		return sessionAssetsServiceError(a, err)
@@ -91,7 +111,7 @@ func (a *App) SessionAssetsPrepareHandoff(assetID, workDir, scopeMode string, fr
 		return sessionAssetsError(a, "session_assets.error.list_failed", err)
 	}
 	scope := sessionassets.NormalizeHandoffScope(scopeMode, from, to)
-	plan, err := service.PrepareHandoffMaterials(context.Background(), detail, workDir, scope, codex.ReadableHistoryAdapter{}, codex.ReadableHistoryAdapter{})
+	plan, err := service.PrepareHandoffMaterials(context.Background(), detail, workDir, scope, currentRequest, codex.ReadableHistoryAdapter{}, codex.ReadableHistoryAdapter{})
 	if err != nil {
 		return sessionAssetsError(a, "session_assets.error.handoff_failed", err)
 	}
@@ -118,10 +138,12 @@ func (a *App) SessionAssetsHandoffCapability(assetID string) (result connection.
 	}
 	detection := codex.Detect(context.Background(), "", "")
 	capability := map[string]any{
-		"nativeResume":   sessionassets.CanResumeNatively(detail) && detection.CommandPath != "",
-		"newSession":     detection.CommandPath != "",
-		"manualMaterial": detail.LatestGenerationID != "",
-		"cliVersion":     detection.Version,
+		"nativeResume":    sessionassets.CanResumeNatively(detail, codex.CurrentProvider(detection.DataDir)) && detection.CommandPath != "",
+		"historyProvider": detail.Provider,
+		"currentProvider": codex.CurrentProvider(detection.DataDir),
+		"newSession":      detection.CommandPath != "",
+		"manualMaterial":  detail.LatestGenerationID != "",
+		"cliVersion":      detection.Version,
 	}
 	return connection.QueryResult{Success: true, Data: capability}
 }
@@ -155,4 +177,28 @@ func (a *App) SessionAssetsPreviewHandoff(assetID, scopeMode string, from, to in
 		}
 	}
 	return connection.QueryResult{Success: true, Data: preview}
+}
+
+// sourceDataDirForProviderProbe 从来源引用推断探测用数据目录：取第一
+// 个可读来源路径所在的数据目录（向上查找 .codex 目录）；找不到回退
+// ~/.codex（CurrentProvider 自行处理空值）。
+func sourceDataDirForProviderProbe(detail sessionassets.AssetDetail) string {
+	for _, ref := range detail.SourceRefs {
+		dir := filepath.Dir(ref.NativePath)
+		for i := 0; i < 6 && strings.TrimSpace(dir) != ""; i++ {
+			if strings.HasSuffix(strings.ToLower(filepath.Base(dir)), ".codex") {
+				return dir
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".codex")
 }

@@ -3,6 +3,7 @@
 package codex
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -171,4 +172,29 @@ func probeDataDir(dataDir string) (bool, error) {
 		break
 	}
 	return true, nil
+}
+
+// CurrentProvider 探测目标数据目录当前运行的 model provider：读取
+// config.toml 中 model_provider 行（保守行级解析，不做完整 TOML 解析；
+// 读不到时返回空串，由调用方按未知处理）。只读该文件，不读取会话。
+func CurrentProvider(dataDir string) string {
+	if strings.TrimSpace(dataDir) == "" {
+		return ""
+	}
+	file, err := os.Open(filepath.Join(dataDir, "config.toml"))
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "model_provider") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				return strings.Trim(strings.TrimSpace(parts[1]), `"'`)
+			}
+		}
+	}
+	return ""
 }

@@ -42,7 +42,7 @@ export const SessionAssetsNewSessionPanel: React.FC<{
   const handlePrepare = React.useCallback(async () => {
     setBusy(true);
     try {
-      const plan = await api.prepareHandoff(detail.id, workDir, mode, from, to);
+      const plan = await api.prepareHandoff(detail.id, workDir, mode, from, to, currentRequest);
       if (plan?.stage === 'materials_ready') {
         setResultNote(t('session_assets.handoff.materials_ready', { file: plan.noteFile || plan.materialsDir || '' }));
         if (workDir) {

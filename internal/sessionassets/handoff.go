@@ -18,9 +18,22 @@ const (
 	HandoffStageFailed         = "failed"
 )
 
-// 原生继续的能力前提（交互设计 §7）：来源仍可读、资产有原生 ID。
-// provider 兼容性由原工具自行判定，GoNavi 不改写或伪造。
-func CanResumeNatively(detail AssetDetail) bool {
+// 原生继续的能力前提（交互设计 §7）：来源仍可读、资产有原生 ID，
+// 且历史 provider 与当前运行 provider 一致（S-15：同 provider 尽力；
+// 跨 provider 默认新建，不改写原记录）。currentProvider 为空视为未知，
+// 保守拒绝。
+func CanResumeNatively(detail AssetDetail, currentProvider string) bool {
+	if strings.TrimSpace(currentProvider) == "" {
+		return false
+	}
+	if strings.TrimSpace(detail.Provider) != "" && detail.Provider != currentProvider {
+		return false
+	}
+	return canResumeNativelySource(detail)
+}
+
+// canResumeNativelySource 检查来源仍可读、资产有原生 ID。
+func canResumeNativelySource(detail AssetDetail) bool {
 	if detail.NativeThreadID == "" {
 		return false
 	}
@@ -49,7 +62,7 @@ type HandoffPlanView struct {
 // PrepareHandoffMaterials 生成手动交接材料包：范围化可读历史、一份核验
 // 过的操作说明（S-16：手动材料与说明是必需兜底）。reader 为空时跳过
 // 可读导出，仅写说明。
-func (s *Service) PrepareHandoffMaterials(ctx context.Context, detail AssetDetail, workDir string, scope HandoffScope, scanner HistoryStatsScanner, reader ReadableHistoryReader) (HandoffPlanView, error) {
+func (s *Service) PrepareHandoffMaterials(ctx context.Context, detail AssetDetail, workDir string, scope HandoffScope, currentRequest string, scanner HistoryStatsScanner, reader ReadableHistoryReader) (HandoffPlanView, error) {
 	if err := sanitizeID(detail.ID); err != nil {
 		return HandoffPlanView{}, err
 	}
@@ -62,7 +75,7 @@ func (s *Service) PrepareHandoffMaterials(ctx context.Context, detail AssetDetai
 		return HandoffPlanView{}, err
 	}
 	noteFile := filepath.Join(materialsDir, "handoff-notes.md")
-	note := buildHandoffNotes(detail, workDir, scope)
+	note := buildHandoffNotes(detail, workDir, scope, currentRequest)
 	if err := writeFileSync(noteFile, []byte(note)); err != nil {
 		return HandoffPlanView{}, err
 	}
@@ -97,13 +110,16 @@ func (s *Service) PrepareHandoffMaterials(ctx context.Context, detail AssetDetai
 
 // buildHandoffNotes 生成操作说明：核验过的官方 CLI 步骤，明确“尚未创建
 // 新会话”。不含凭据、不要求改全局配置。
-func buildHandoffNotes(detail AssetDetail, workDir string, scope HandoffScope) string {
+func buildHandoffNotes(detail AssetDetail, workDir string, scope HandoffScope, currentRequest string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# 会话交接材料：%s\n\n", detailTitleOrID(detail))
 	fmt.Fprintf(&b, "- 原生会话 ID：%s\n", detail.NativeThreadID)
 	fmt.Fprintf(&b, "- 历史 provider/模型：%s / %s\n", emptyDash(detail.Provider), emptyDash(detail.Model))
 	fmt.Fprintf(&b, "- 项目目录：%s\n", emptyDash(detail.ProjectDir))
 	fmt.Fprintf(&b, "- 历史范围：%s（行 %d..%d）\n", emptyDash(scope.Mode), scope.From, scope.To)
+	if strings.TrimSpace(currentRequest) != "" {
+		fmt.Fprintf(&b, "- 当前请求（与历史分开传递）：%s\n", currentRequest)
+	}
 	if detail.CoverageAt > 0 {
 		fmt.Fprintf(&b, "- 备份覆盖时间：%s\n", time.Unix(detail.CoverageAt, 0).Format("2006-01-02 15:04:05"))
 	}

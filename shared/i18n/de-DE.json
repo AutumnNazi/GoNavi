@@ -12147,5 +12147,6 @@
   "session_assets.new_session.preview_budget": "Ziel-Kontextbudget unbekannt; keine Token-Sch\u00e4tzung. Bei Unsicherheit den Bereich verkleinern.",
   "session_assets.new_session.preview_request": "Aktuelle Anfrage (getrennt vom Verlauf): {{request}}",
   "session_assets.new_session.launch_notice": "Material vorbereiten erzeugt keine Sitzung. Die neue Sitzung beginnt, wenn Sie im ge\u00f6ffneten Codex-Terminal arbeiten.",
-  "session_assets.new_session.prepare_action": "Material vorbereiten und Codex \u00f6ffnen"
+  "session_assets.new_session.prepare_action": "Material vorbereiten und Codex \u00f6ffnen",
+  "session_assets.error.provider_mismatch": "Native Fortsetzung ben\u00f6tigt denselben Provider: Verlauf {{history}}, aktuell {{current}}. Bitte \u201eMit Verlauf neu starten\u201c verwenden."
 }

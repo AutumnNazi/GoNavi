@@ -1570,8 +1570,8 @@ export function SessionAssetsListIntegrations() {
   return window['go']['app']['App']['SessionAssetsListIntegrations']();
 }
 
-export function SessionAssetsPrepareHandoff(arg1, arg2, arg3, arg4, arg5) {
-  return window['go']['app']['App']['SessionAssetsPrepareHandoff'](arg1, arg2, arg3, arg4, arg5);
+export function SessionAssetsPrepareHandoff(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['app']['App']['SessionAssetsPrepareHandoff'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
 export function SessionAssetsPreviewHandoff(arg1, arg2, arg3, arg4) {
@@ -1584,6 +1584,10 @@ export function SessionAssetsReadHistory(arg1, arg2, arg3) {
 
 export function SessionAssetsRefreshSources(arg1) {
   return window['go']['app']['App']['SessionAssetsRefreshSources'](arg1);
+}
+
+export function SessionAssetsRelocateSource(arg1, arg2) {
+  return window['go']['app']['App']['SessionAssetsRelocateSource'](arg1, arg2);
 }
 
 export function SessionAssetsSelectExportDirectory() {
