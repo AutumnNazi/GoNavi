@@ -436,3 +436,72 @@ func TestSyncSourcePartialDoesNotInferDeletion(t *testing.T) {
 		t.Fatalf("partial scan must not mark deleted")
 	}
 }
+
+func TestRetryCaptureRequeuesFailedJob(t *testing.T) {
+	service := newTestService(t)
+	ctx := context.Background()
+	_, sourceID := enableCodex(t, service)
+	source, err := service.catalog.GetSource(ctx, sourceID)
+	if err != nil {
+		t.Fatalf("load source: %v", err)
+	}
+	session := seedRealSession(t, filepath.Join(source.RootPath, "archived_sessions"), "thread-retry", true)
+	discoverer := &fakeDiscoverer{sessions: []DiscoveredSession{session}}
+	if _, err := service.SyncSource(ctx, source, discoverer.scanResult()); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	// 制造失败：删除源文件后 runQueue。
+	if err := os.Remove(session.NativePath); err != nil {
+		t.Fatalf("remove source: %v", err)
+	}
+	runQueue(t, service)
+	assets, _ := service.catalog.ListAssets(ctx, source.IntegrationID)
+	var asset Asset
+	for _, item := range assets {
+		if item.NativeThreadID == "thread-retry" {
+			asset = item
+		}
+	}
+	jobs, _ := service.catalog.ListCaptureJobs(ctx, asset.ID)
+	if jobs[0].Status != string(CaptureStatusFailed) {
+		t.Fatalf("expected failed job, got %s", jobs[0].Status)
+	}
+
+	// 恢复源文件并重试：新任务成功提交。
+	rewritten := seedRealSession(t, filepath.Join(source.RootPath, "archived_sessions"), "thread-retry", true)
+	if err := service.RetryCapture(ctx, SourceScanResult{Quality: ScanQualityComplete}, asset.ID); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	_ = rewritten
+	runQueue(t, service)
+	updated, err := service.catalog.GetAsset(ctx, asset.ID)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if updated.LatestGenerationID == "" || updated.BackupStatus != string(BackupStatusVerified) {
+		t.Fatalf("retry did not commit: %+v", updated)
+	}
+}
+
+func TestRetryCaptureRejectsDisabledAndSuppressed(t *testing.T) {
+	service := newTestService(t)
+	ctx := context.Background()
+	integrationID, sourceID := enableCodex(t, service)
+	asset := seedAsset(t, service, integrationID, sourceID, "thread-retry-guard")
+
+	if err := service.catalog.SetIntegrationEnabled(ctx, integrationID, false); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	if err := service.RetryCapture(ctx, SourceScanResult{}, asset.ID); !errors.Is(err, ErrIntegrationDisabled) {
+		t.Fatalf("disabled retry = %v, want ErrIntegrationDisabled", err)
+	}
+	if err := service.catalog.SetIntegrationEnabled(ctx, integrationID, true); err != nil {
+		t.Fatalf("re-enable: %v", err)
+	}
+	if err := service.DeleteAsset(ctx, asset.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if err := service.RetryCapture(ctx, SourceScanResult{}, asset.ID); !errors.Is(err, ErrSuppressed) {
+		t.Fatalf("suppressed retry = %v, want ErrSuppressed", err)
+	}
+}

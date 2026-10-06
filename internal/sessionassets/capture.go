@@ -162,6 +162,8 @@ func (s *Service) commitCandidate(ctx context.Context, job CaptureJob, request C
 	if err := s.checkIntegrationStillEnabled(ctx, request.AssetID); err != nil {
 		_ = os.RemoveAll(stagingDir)
 		_ = s.catalog.FinishCaptureJob(ctx, job.ID, CaptureStatusCancelled, "", "integration disabled before commit")
+		// 恢复投影：MarkAssetSaving 可能在认领时改写为 saving（FR-28）。
+		s.restoreProjectionFromPointer(ctx, request.AssetID)
 		return nil
 	}
 	generationID, err := newGenerationID()
@@ -321,4 +323,24 @@ func (s *Service) checkIntegrationStillEnabled(ctx context.Context, assetID stri
 		return errCaptureDisabled
 	}
 	return nil
+}
+
+// restoreProjectionFromPointer 在任务取消（禁用）后按 current 指针恢复
+// 投影，清除认领时写入的 saving 状态（FR-28/AC-14）。
+func (s *Service) restoreProjectionFromPointer(ctx context.Context, assetID string) {
+	pointer, ok, err := readCurrentPointer(s.paths.AssetDir(assetID))
+	if err != nil || !ok {
+		return
+	}
+	manifest, err := readManifestJSON(s.paths.GenerationDir(assetID, pointer.GenerationID))
+	if err != nil {
+		return
+	}
+	backup := BackupStatusVerified
+	material := MaterialStatusReadable
+	if !manifest.Complete {
+		backup = BackupStatusIncomplete
+		material = missingMaterialStatus(manifest.Missing)
+	}
+	_ = s.catalog.UpdateAssetProjection(ctx, assetID, backup, material, pointer.GenerationID, manifest.Complete, pointer.CommittedAt)
 }

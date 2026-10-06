@@ -1590,6 +1590,10 @@ export function SessionAssetsRelocateSource(arg1, arg2) {
   return window['go']['app']['App']['SessionAssetsRelocateSource'](arg1, arg2);
 }
 
+export function SessionAssetsRetryCapture(arg1) {
+  return window['go']['app']['App']['SessionAssetsRetryCapture'](arg1);
+}
+
 export function SessionAssetsSelectExportDirectory() {
   return window['go']['app']['App']['SessionAssetsSelectExportDirectory']();
 }

@@ -253,3 +253,39 @@ func BuildSessionCaptureRequest(assetID, sourceID string, session DiscoveredSess
 		Missing:        missing,
 	}
 }
+
+// RetryCapture 对资产最后一次失败的保全任务重新入队（manual_retry）。
+// 仅保留一个活跃任务（V-08）；被抑制或已删除的身份拒绝（FR-20）。
+func (s *Service) RetryCapture(ctx context.Context, result SourceScanResult, assetID string) error {
+	// 抑制检查在前：已删除/抑制的资产即便集成恢复启用也不可重试（FR-20）。
+	suppressed, err := s.catalog.IsSuppressedByAsset(ctx, assetID)
+	if err != nil {
+		return err
+	}
+	if suppressed {
+		return ErrSuppressed
+	}
+	asset, err := s.catalog.GetAsset(ctx, assetID)
+	if err != nil {
+		return err
+	}
+	enabled, err := s.catalog.IntegrationEnabledByID(ctx, asset.IntegrationID)
+	if err != nil {
+		return err
+	}
+	if !enabled {
+		return ErrIntegrationDisabled
+	}
+	// 找最近一次失败任务的请求，按 manual_retry 重新入队。
+	job, err := s.catalog.LatestFailedCaptureJob(ctx, assetID)
+	if err != nil {
+		return err
+	}
+	request, err := s.catalog.LoadCaptureRequest(ctx, job.ID)
+	if err != nil {
+		return err
+	}
+	request.Trigger = string(CaptureTriggerManualRetry)
+	_, err = s.EnqueueCapture(ctx, request)
+	return err
+}

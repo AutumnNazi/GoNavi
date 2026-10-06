@@ -191,6 +191,9 @@ func (s *Service) runWorkerOnce(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	// 让用户看到进行中的保全；失败时 finishJobFailed/markUpdateFailed 会
+	// 覆盖为失败或旧副本状态（FR-12/AC-05）。
+	_ = s.catalog.MarkAssetSaving(ctx, job.AssetID)
 	s.processCaptureJob(ctx, job)
 	return true, nil
 }

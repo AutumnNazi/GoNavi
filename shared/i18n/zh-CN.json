@@ -12148,5 +12148,11 @@
   "session_assets.new_session.preview_request": "\u5f53\u524d\u8bf7\u6c42\uff08\u4e0e\u5386\u53f2\u5206\u5f00\u4f20\u9012\uff09\uff1a{{request}}",
   "session_assets.new_session.launch_notice": "\u51c6\u5907\u6750\u6599\u4e0d\u4f1a\u521b\u5efa\u4f1a\u8bdd\uff1b\u65b0\u4f1a\u8bdd\u5728\u6253\u5f00\u7684 Codex \u7ec8\u7aef\u91cc\u5f00\u59cb\u5de5\u4f5c\u65f6\u624d\u521b\u5efa\u3002",
   "session_assets.new_session.prepare_action": "\u51c6\u5907\u6750\u6599\u5e76\u6253\u5f00 Codex",
-  "session_assets.error.provider_mismatch": "\u539f\u751f\u7eed\u804a\u9700\u8981\u76f8\u540c provider\uff1a\u5386\u53f2\u4e3a {{history}}\uff0c\u5f53\u524d\u4e3a {{current}}\u3002\u8bf7\u6539\u7528\u643a\u5e26\u5386\u53f2\u65b0\u5efa\u3002"
+  "session_assets.error.provider_mismatch": "\u539f\u751f\u7eed\u804a\u9700\u8981\u76f8\u540c provider\uff1a\u5386\u53f2\u4e3a {{history}}\uff0c\u5f53\u524d\u4e3a {{current}}\u3002\u8bf7\u6539\u7528\u643a\u5e26\u5386\u53f2\u65b0\u5efa\u3002",
+  "session_assets.action.retry_capture": "\u91cd\u8bd5\u4fdd\u5168",
+  "session_assets.action.retry_hint": "\u5c06\u6700\u8fd1\u4e00\u6b21\u5931\u8d25\u7684\u4fdd\u5168\u91cd\u65b0\u5165\u961f",
+  "session_assets.action.retry_enqueued": "\u4fdd\u5168\u5df2\u91cd\u65b0\u5165\u961f",
+  "session_assets.action.retry_failed": "\u91cd\u8bd5\u5931\u8d25",
+  "session_assets.history.failed_title": "\u6700\u8fd1\u4fdd\u5168\u5931\u8d25",
+  "session_assets.error.retry_failed": "\u91cd\u8bd5\u5931\u8d25\uff1a{{detail}}"
 }

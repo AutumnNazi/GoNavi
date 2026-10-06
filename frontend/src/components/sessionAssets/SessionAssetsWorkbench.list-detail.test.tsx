@@ -56,6 +56,7 @@ const buildDetail = (overrides: Record<string, unknown> = {}) => ({
   ancestors: [],
   attachments: [],
   missing: [],
+  recentJobs: [],
   ...overrides,
 });
 
@@ -80,6 +81,7 @@ const buildApi = (overrides: Partial<SessionAssetsApi> = {}): SessionAssetsApi =
   prepareHandoff: vi.fn(async () => ({ stage: 'materials_ready', noteFile: 'X:/handoff/notes.md' })),
   previewHandoff: vi.fn(async () => ({ mode: 'recent', resolvedFrom: 0, resolvedTo: 2 })),
   getCapability: vi.fn(async () => ({ nativeResume: true, newSession: true, manualMaterial: true })),
+  retryCapture: vi.fn(async () => true),
   ...overrides,
 });
 

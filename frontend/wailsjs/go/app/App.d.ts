@@ -808,6 +808,8 @@ export function SessionAssetsRefreshSources(arg1:string):Promise<connection.Quer
 
 export function SessionAssetsRelocateSource(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
+export function SessionAssetsRetryCapture(arg1:string):Promise<connection.QueryResult>;
+
 export function SessionAssetsSelectExportDirectory():Promise<connection.QueryResult>;
 
 export function SetApplicationBrandIcon(arg1:string):Promise<connection.QueryResult>;

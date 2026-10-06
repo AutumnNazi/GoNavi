@@ -1,4 +1,4 @@
-import { SessionAssetsContinueSession, SessionAssetsPreviewHandoff, SessionAssetsDeleteAsset, SessionAssetsExportAsset, SessionAssetsGetAssetDetail, SessionAssetsHandoffCapability, SessionAssetsLaunchInteractive, SessionAssetsListAssets, SessionAssetsPrepareHandoff, SessionAssetsReadHistory, SessionAssetsRefreshSources } from '../../../wailsjs/go/app/App';
+import { SessionAssetsContinueSession, SessionAssetsPreviewHandoff, SessionAssetsDeleteAsset, SessionAssetsExportAsset, SessionAssetsGetAssetDetail, SessionAssetsHandoffCapability, SessionAssetsLaunchInteractive, SessionAssetsListAssets, SessionAssetsPrepareHandoff, SessionAssetsReadHistory, SessionAssetsRefreshSources, SessionAssetsRetryCapture } from '../../../wailsjs/go/app/App';
 
 /**
  * 会话资产前端 API seam：组件依赖本接口而非直接绑定，便于测试注入
@@ -36,6 +36,7 @@ export interface SessionAssetDetail extends SessionAssetView {
   ancestors: Array<{ nativeThreadId: string; boundaryAt: number }>;
   attachments: Array<{ name: string; disposition: string; relPath?: string }>;
   missing: Array<{ reason: string; detail: string }>;
+  recentJobs: Array<{ id: string; status: string; trigger: string; error: string; updatedAt: number }>;
 }
 
 export interface SessionHistoryEntry {
@@ -67,6 +68,7 @@ export type SessionAssetsApi = {
   launchInteractive(workDir: string): Promise<{ stage: string } | null>;
   prepareHandoff(assetId: string, workDir: string, mode: string, from: number, to: number, currentRequest: string): Promise<{ stage: string; noteFile?: string; materialsDir?: string } | null>;
   getCapability(assetId: string): Promise<{ nativeResume: boolean; newSession: boolean; manualMaterial: boolean; historyProvider?: string; currentProvider?: string } | null>;
+  retryCapture(assetId: string): Promise<boolean>;
   previewHandoff(assetId: string, mode: string, from: number, to: number): Promise<Record<string, unknown> | null>;
 };
 
@@ -125,6 +127,10 @@ export const wailsSessionAssetsApi: SessionAssetsApi = {
     return unwrap<{ stage: string; noteFile?: string; materialsDir?: string }>(
       await SessionAssetsPrepareHandoff(assetId, workDir, mode, from, to, currentRequest),
     );
+  },
+  async retryCapture(assetId) {
+    const result = await SessionAssetsRetryCapture(assetId);
+    return Boolean(result?.success);
   },
   async getCapability(assetId) {
     return unwrap<{ nativeResume: boolean; newSession: boolean; manualMaterial: boolean; historyProvider?: string; currentProvider?: string }>(

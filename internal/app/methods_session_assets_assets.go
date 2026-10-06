@@ -404,3 +404,27 @@ func openSessionAssetsDirectoryDialog(a *App, title string) (selection string, e
 		CanCreateDirectories: true,
 	})
 }
+
+// SessionAssetsRetryCapture 对最近一次失败的保全重新入队（manual_retry
+// 触发）。安全检查与普通入队一致：禁用、抑制、已删除均拒绝（V-14）。
+func (a *App) SessionAssetsRetryCapture(assetID string) (result connection.QueryResult) {
+	if strings.TrimSpace(assetID) == "" {
+		return connection.QueryResult{Success: false, Message: a.appText("session_assets.error.integration_not_found", nil)}
+	}
+	_, service, err := a.sessionAssetsCatalog()
+	if err != nil {
+		return sessionAssetsServiceError(a, err)
+	}
+	detail, err := service.AssetDetail(context.Background(), assetID)
+	if err != nil {
+		return sessionAssetsError(a, "session_assets.error.list_failed", err)
+	}
+	if err := service.RetryCapture(context.Background(), sessionassets.SourceScanResult{Quality: sessionassets.ScanQualityComplete}, detail.ID); err != nil {
+		if errors.Is(err, sessionassets.ErrNotFound) {
+			return connection.QueryResult{Success: false, Message: a.appText("session_assets.error.no_readable_history", nil)}
+		}
+		return sessionAssetsError(a, "session_assets.error.retry_failed", err)
+	}
+	logger.Infof("会话资产：手动重试已入队 asset=%s", assetID)
+	return connection.QueryResult{Success: true}
+}

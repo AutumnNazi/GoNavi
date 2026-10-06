@@ -12148,5 +12148,11 @@
   "session_assets.new_session.preview_request": "Current request (kept separate from history): {{request}}",
   "session_assets.new_session.launch_notice": "Preparing material does not create a session. The new session starts when you begin working in the opened Codex terminal.",
   "session_assets.new_session.prepare_action": "Prepare material and open Codex",
-  "session_assets.error.provider_mismatch": "Native continue needs the same provider: history provider is {{history}}, current is {{current}}. Use carry-history-new-session instead."
+  "session_assets.error.provider_mismatch": "Native continue needs the same provider: history provider is {{history}}, current is {{current}}. Use carry-history-new-session instead.",
+  "session_assets.action.retry_capture": "Retry capture",
+  "session_assets.action.retry_hint": "Re-enqueue the last failed capture",
+  "session_assets.action.retry_enqueued": "Capture re-enqueued",
+  "session_assets.action.retry_failed": "Retry failed",
+  "session_assets.history.failed_title": "Recent capture failures",
+  "session_assets.error.retry_failed": "Retry failed: {{detail}}"
 }

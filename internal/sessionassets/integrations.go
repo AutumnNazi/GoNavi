@@ -127,3 +127,19 @@ func (c *Catalog) IntegrationEnabledByID(ctx context.Context, id string) (bool, 
 	}
 	return enabled != 0, nil
 }
+
+// IntegrationEnabledByIDForAsset 通过资产 ID 查其所属集成的启用状态；
+// 资产不存在时返回 false（不可重试）。
+func (c *Catalog) IntegrationEnabledByIDForAsset(ctx context.Context, assetID string) (bool, error) {
+	var enabled int
+	err := c.db.QueryRowContext(ctx,
+		`SELECT i.enabled FROM integrations i JOIN assets a ON a.integration_id = i.id WHERE a.id = ? AND a.deleted = 0`,
+		assetID).Scan(&enabled)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("query integration enabled for asset: %w", err)
+	}
+	return enabled != 0, nil
+}

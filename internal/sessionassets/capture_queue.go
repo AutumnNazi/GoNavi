@@ -221,3 +221,32 @@ func (c *Catalog) CancelQueuedJobsForIntegration(ctx context.Context, integratio
 	rows, _ := result.RowsAffected()
 	return rows, nil
 }
+
+// MarkAssetSaving 把资产投影置为保存中（worker 认领任务时调用，让用户
+// 看到进行中的保全；无 latest 的资产同样可见，不再是静止的 none）。
+func (c *Catalog) MarkAssetSaving(ctx context.Context, assetID string) error {
+	_, err := c.db.ExecContext(ctx,
+		`UPDATE assets SET backup_status = ? WHERE id = ? AND deleted = 0`,
+		string(BackupStatusSaving), assetID)
+	if err != nil {
+		return fmt.Errorf("mark asset saving: %w", err)
+	}
+	return nil
+}
+
+// LatestFailedCaptureJob 返回资产最近一次失败的保全任务。
+func (c *Catalog) LatestFailedCaptureJob(ctx context.Context, assetID string) (CaptureJob, error) {
+	row := c.db.QueryRowContext(ctx,
+		`SELECT id, asset_id, source_id, trigger_kind, status, base_generation_id, generation_id, attempt, error, created_at, updated_at
+		 FROM capture_jobs WHERE asset_id = ? AND status = ? ORDER BY created_at DESC, updated_at DESC LIMIT 1`,
+		assetID, string(CaptureStatusFailed))
+	var job CaptureJob
+	err := row.Scan(&job.ID, &job.AssetID, &job.SourceID, &job.Trigger, &job.Status, &job.BaseGenerationID, &job.GenerationID, &job.Attempt, &job.Error, &job.CreatedAt, &job.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return CaptureJob{}, ErrNotFound
+	}
+	if err != nil {
+		return CaptureJob{}, fmt.Errorf("scan failed capture job: %w", err)
+	}
+	return job, nil
+}

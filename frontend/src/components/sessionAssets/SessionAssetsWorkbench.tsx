@@ -98,6 +98,17 @@ export const SessionAssetsWorkbench: React.FC<{
     });
   }, [reload, refreshAgentIntegrations, selected]);
 
+  const handleRetry = React.useCallback(async () => {
+    if (!selected) return;
+    const ok = await api.retryCapture(selected.id);
+    if (ok) {
+      message.success(t('session_assets.action.retry_enqueued'));
+      await openAsset(selected.id);
+    } else {
+      message.error(t('session_assets.action.retry_failed'));
+    }
+  }, [api, openAsset, selected]);
+
   const handleReread = React.useCallback(async () => {
     await api.refreshSources(kind);
     reload();
@@ -165,6 +176,7 @@ export const SessionAssetsWorkbench: React.FC<{
           onExport={(mode) => void handleExport(mode)}
           onDelete={handleDelete}
           onReread={() => void handleReread()}
+          onRetry={() => void handleRetry()}
           onContinue={() => void handleContinue()}
           onNewSession={() => void handleNewSession()}
         />

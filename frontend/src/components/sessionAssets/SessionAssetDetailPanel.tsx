@@ -21,9 +21,10 @@ export const SessionAssetDetailPanel: React.FC<{
   onExport: (mode: 'raw' | 'readable') => void;
   onDelete: () => void;
   onReread: () => void;
+  onRetry: () => void;
   onContinue: () => void;
   onNewSession: () => void;
-}> = ({ detail, loading, historyPage, historyLoading, capability, onLoadMore, onExport, onDelete, onReread, onContinue, onNewSession }) => {
+}> = ({ detail, loading, historyPage, historyLoading, capability, onLoadMore, onExport, onDelete, onReread, onContinue, onNewSession, onRetry }) => {
   if (loading || !detail) {
     return <div className="session-assets-detail-loading"><Spin /></div>;
   }
@@ -74,6 +75,13 @@ export const SessionAssetDetailPanel: React.FC<{
           <Button size="small" icon={<ExportOutlined />} disabled={!detail.hasBackup} onClick={() => onExport('readable')}>
             {t('session_assets.action.export_readable')}
           </Button>
+          {detail.recentJobs?.some((job) => job.status === 'failed') ? (
+            <Tooltip title={t('session_assets.action.retry_hint')}>
+              <Button size="small" icon={<ReloadOutlined />} onClick={onRetry}>
+                {t('session_assets.action.retry_capture')}
+              </Button>
+            </Tooltip>
+          ) : null}
           <Button size="small" danger icon={<DeleteOutlined />} onClick={onDelete}>
             {t('session_assets.action.delete')}
           </Button>
@@ -101,6 +109,19 @@ export const SessionAssetDetailPanel: React.FC<{
                 : undefined
         }
       />
+
+      {detail.recentJobs?.some((job) => job.status === 'failed') ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={t('session_assets.history.failed_title')}
+          description={detail.recentJobs
+            .filter((job) => job.status === 'failed')
+            .map((job) => (
+              <div key={job.id}>{job.error || t('session_assets.history.unknown')}</div>
+            ))}
+        />
+      ) : null}
 
       <Tabs
         size="small"
