@@ -103,12 +103,12 @@ func resolveScopeRange(scope HandoffScope, stats HistoryStatsView) (int, int) {
 func (s *Service) WriteScopedReadableExport(ctx context.Context, detail AssetDetail, materialsDir string, from, to int, reader ReadableHistoryReader) (string, error) {
 	target := filepath.Join(materialsDir, "readable-history.md")
 	header := map[string]string{
-		"title":     detailTitleOrID(detail),
-		"thread":    detail.NativeThreadID,
-		"provider":  emptyDash(detail.Provider),
-		"project":   emptyDash(detail.ProjectDir),
+		"title":      detailTitleOrID(detail),
+		"thread":     detail.NativeThreadID,
+		"provider":   emptyDash(detail.Provider),
+		"project":    emptyDash(detail.ProjectDir),
 		"readSource": detail.ReadSource,
-		"scope":     fmt.Sprintf("lines %d..%d", from, to),
+		"scope":      fmt.Sprintf("lines %d..%d", from, to),
 	}
 	if detail.CoverageAt > 0 {
 		header["coverage"] = FormatCoverageTime(detail.CoverageAt)
