@@ -52,6 +52,8 @@ export interface ExplainNode {
   cost?: number
   durationMs?: number
   bufferHit?: number
+  // 这一步自身（不含子步骤）承担的估算工作量占整份计划的比例 0-1，口径见 ExplainResult.hotspotBasis。
+  costShare?: number
   flags?: ExplainNodeFlag[] | string[]
   extra?: Record<string, unknown>
 }
@@ -82,6 +84,8 @@ export interface ExplainResult {
   warnings?: string[]
   rawFormat: ExplainFormat | string
   rawPayload?: string
+  // costShare 的口径：'cost' 估算成本；'rows' 方言无成本时按访问步骤的估算读取行数。
+  hotspotBasis?: 'cost' | 'rows' | string
 }
 
 export interface IndexSuggestion {

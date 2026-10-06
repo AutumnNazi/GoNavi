@@ -609,6 +609,14 @@ func parseExplainRaw(dbType, sourceSQL, raw string, format connection.ExplainFor
 }
 
 func parseExplainRawWithText(dbType, sourceSQL, raw string, format connection.ExplainFormat, text func(string, map[string]any) string) (connection.ExplainResult, error) {
+	result, err := parseExplainRawByDialect(dbType, sourceSQL, raw, format, text)
+	if err == nil {
+		annotateExplainHotspots(&result, explainCostIsCumulative(dbType))
+	}
+	return result, err
+}
+
+func parseExplainRawByDialect(dbType, sourceSQL, raw string, format connection.ExplainFormat, text func(string, map[string]any) string) (connection.ExplainResult, error) {
 	if text == nil {
 		text = defaultExplainBackendText
 	}
