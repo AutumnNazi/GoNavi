@@ -51,11 +51,19 @@ func (a *App) runDiagnoseQuery(
 			Message: a.appText("sql_analysis.backend.error.unsupported_db_type", map[string]any{"dbType": dbType}),
 		}
 	}
-	analyzeSupported := explainAnalyzeSupported(dbType)
+	analyzeSupported := explainAnalyzeSupportedFor(runConfig, dbType)
 	if options.Analyze && !analyzeSupported {
 		return connection.QueryResult{
 			Success: false,
 			Message: a.appText("sql_analysis.backend.error.analyze_unsupported", map[string]any{"dbType": dbType}),
+		}
+	}
+	if options.Analyze {
+		if construct := explainAnalyzeIrreversible(dbType, query); construct != "" {
+			return connection.QueryResult{
+				Success: false,
+				Message: a.appText("sql_analysis.backend.error.analyze_irreversible", map[string]any{"construct": construct}),
+			}
 		}
 	}
 

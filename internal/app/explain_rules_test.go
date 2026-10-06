@@ -169,6 +169,28 @@ func TestRunExplainRules_HighEstimationSkewFollowsMeasuredVerdict(t *testing.T) 
 	}
 }
 
+func TestRunExplainRules_HighEstimationSkewAdvisesWhereTheMissStarts(t *testing.T) {
+	result := connection.ExplainResult{
+		DBType: "oracle",
+		Nodes: []connection.ExplainNode{
+			{ID: "n1", OpType: connection.ExplainOpJoin, EstRows: 1, ActualRows: 20000, Loops: 1},
+			{ID: "n2", ParentID: "n1", OpType: connection.ExplainOpIndexScan, EstRows: 1, ActualRows: 20000, Loops: 1},
+			{ID: "n3", ParentID: "n1", OpType: connection.ExplainOpScan, EstRows: 1, ActualRows: 2000, Loops: 1},
+		},
+	}
+	annotateExplainActuals(&result)
+	var nodes []string
+	for _, s := range runExplainRules(result) {
+		if s.Rule == "high_estimation_skew" {
+			nodes = append(nodes, s.AffectedNodeID)
+		}
+	}
+	// The join only inherits the scan's miss; both scans are where misses start.
+	if strings.Join(nodes, ",") != "n2,n3" && strings.Join(nodes, ",") != "n3,n2" {
+		t.Fatalf("skew advice on %v", nodes)
+	}
+}
+
 func TestRunExplainRules_LowBufferHitRateGlobalRule(t *testing.T) {
 	result := connection.ExplainResult{
 		DBType:    "postgres",
