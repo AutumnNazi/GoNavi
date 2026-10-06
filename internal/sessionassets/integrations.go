@@ -113,3 +113,17 @@ func (c *Catalog) SetIntegrationEnabled(ctx context.Context, id string, enabled 
 func normalizeKind(kind AgentKind) AgentKind {
 	return AgentKind(strings.TrimSpace(string(kind)))
 }
+
+// IntegrationEnabledByID 按集成 ID 查询启用状态；记录不存在时返回 false。
+func (c *Catalog) IntegrationEnabledByID(ctx context.Context, id string) (bool, error) {
+	var enabled int
+	err := c.db.QueryRowContext(ctx,
+		`SELECT enabled FROM integrations WHERE id = ?`, id).Scan(&enabled)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("query integration enabled: %w", err)
+	}
+	return enabled != 0, nil
+}

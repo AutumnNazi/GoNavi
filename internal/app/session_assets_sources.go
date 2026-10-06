@@ -39,8 +39,22 @@ func (a *App) resumeSessionAssetSources(service *sessionassets.Service) {
 }
 
 // syncAndObserveSource 对单个来源补核对（发现+归档补保存）并启动观察。
+// 所属集成或来源被禁用时不做任何事（FR-28：禁用即停止采集）。
 func (a *App) syncAndObserveSource(service *sessionassets.Service, source sessionassets.Source) {
 	ctx := context.Background()
+	catalog := service.Catalog()
+	integration, err := catalog.GetIntegration(ctx, source.IntegrationID)
+	if err != nil {
+		logger.Error(err, "会话资产：读取集成失败")
+		return
+	}
+	if !integration.Enabled {
+		logger.Infof("会话资产：集成已禁用，跳过来源核对 source=%s", source.ID)
+		return
+	}
+	if !source.Enabled {
+		return
+	}
 	sessions, broken, err := (codex.Discoverer{}).DiscoverSourceSessions(ctx, source.RootPath)
 	scanOK := err == nil
 	if err != nil {
@@ -58,4 +72,16 @@ func (a *App) syncAndObserveSource(service *sessionassets.Service, source sessio
 		// 观察启动失败必须可见，不得显示为正在保护（V-05）。
 		logger.Errorf("会话资产：来源观察启动失败 source=%s err=%v", source.ID, err)
 	}
+}
+
+// disableIntegrationRuntime 停止集成下全部来源的观察并取消排队任务
+// （FR-28：禁用即停止采集，但保留配置、节点与资产）。
+func disableIntegrationRuntime(service *sessionassets.Service, integrationID string) {
+	stopped := service.StopIntegrationObservation(integrationID)
+	cancelled, err := service.Catalog().CancelQueuedJobsForIntegration(context.Background(), integrationID)
+	if err != nil {
+		logger.Error(err, "会话资产：取消排队任务失败")
+	}
+	logger.Infof("会话资产：集成已禁用 integration=%s stoppedObservers=%d cancelledJobs=%d",
+		integrationID, len(stopped), cancelled)
 }

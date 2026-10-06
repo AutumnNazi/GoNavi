@@ -159,6 +159,11 @@ func (s *Service) commitCandidate(ctx context.Context, job CaptureJob, request C
 		_ = s.catalog.FinishCaptureJob(ctx, job.ID, CaptureStatusCancelled, "", err.Error())
 		return nil
 	}
+	if err := s.checkIntegrationStillEnabled(ctx, request.AssetID); err != nil {
+		_ = os.RemoveAll(stagingDir)
+		_ = s.catalog.FinishCaptureJob(ctx, job.ID, CaptureStatusCancelled, "", "integration disabled before commit")
+		return nil
+	}
 	generationID, err := newGenerationID()
 	if err != nil {
 		return err
@@ -296,4 +301,24 @@ func missingMaterialStatus(missing []MissingRecord) MaterialStatus {
 		}
 	}
 	return MaterialStatusPartial
+}
+
+// errCaptureDisabled 是提交落点前的禁用拦截信号：任务置为取消。
+var errCaptureDisabled = errors.New("capture target integration is disabled")
+
+// checkIntegrationStillEnabled 在提交落点前确认所属集成仍启用；禁用后
+// 不写入新结果（FR-28）。
+func (s *Service) checkIntegrationStillEnabled(ctx context.Context, assetID string) error {
+	asset, err := s.catalog.GetAsset(ctx, assetID)
+	if err != nil {
+		return err
+	}
+	enabled, err := s.catalog.IntegrationEnabledByID(ctx, asset.IntegrationID)
+	if err != nil {
+		return err
+	}
+	if !enabled {
+		return errCaptureDisabled
+	}
+	return nil
 }

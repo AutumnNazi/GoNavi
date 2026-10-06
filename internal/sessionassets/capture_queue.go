@@ -11,13 +11,25 @@ import (
 
 // EnqueueCapture 持久化一个保全意图并排入队列。请求先于复制落库，进程
 // 中途退出后启动核对能识别未完成任务（FR-13）。base_generation_id 记录
-// 入队时的 latest，提交时重新校验以拒绝旧任务覆盖新结果。
+// 入队时的 latest，提交时重新校验以拒绝旧任务覆盖新结果。所属集成被
+// 禁用时拒绝入队（FR-28）。
 func (s *Service) EnqueueCapture(ctx context.Context, request CaptureRequest) (CaptureJob, error) {
 	if s == nil || s.catalog == nil {
 		return CaptureJob{}, ErrClosed
 	}
 	if err := sanitizeID(request.AssetID); err != nil {
 		return CaptureJob{}, err
+	}
+	asset, err := s.catalog.GetAsset(ctx, request.AssetID)
+	if err != nil {
+		return CaptureJob{}, fmt.Errorf("resolve capture asset: %w", err)
+	}
+	enabled, err := s.catalog.IntegrationEnabledByID(ctx, asset.IntegrationID)
+	if err != nil {
+		return CaptureJob{}, err
+	}
+	if !enabled {
+		return CaptureJob{}, ErrIntegrationDisabled
 	}
 	if request.Trigger == "" {
 		request.Trigger = string(CaptureTriggerManualRetry)
@@ -192,4 +204,20 @@ func (c *Catalog) HasActiveCaptureJob(ctx context.Context, assetID string) (bool
 	default:
 		return false, fmt.Errorf("check active capture job: %w", err)
 	}
+}
+
+// CancelQueuedJobsForIntegration 把集成下全部来源的排队任务置为取消
+// （禁用集成，FR-28）。正在运行的任务由 worker 在提交前检查启用状态。
+func (c *Catalog) CancelQueuedJobsForIntegration(ctx context.Context, integrationID string) (int64, error) {
+	result, err := c.db.ExecContext(ctx,
+		`UPDATE capture_jobs SET status = ?, error = ?, updated_at = ?
+		 WHERE asset_id IN (SELECT id FROM assets WHERE integration_id = ?)
+		   AND status = ?`,
+		string(CaptureStatusCancelled), "integration disabled", time.Now().Unix(),
+		integrationID, string(CaptureStatusQueued))
+	if err != nil {
+		return 0, fmt.Errorf("cancel queued jobs for integration: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	return rows, nil
 }

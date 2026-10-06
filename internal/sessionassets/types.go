@@ -295,3 +295,6 @@ type CurrentPointer struct {
 
 // ErrSourceConflict 表示重定位的目标身份已被同工具的其他来源占用。
 var ErrSourceConflict = errors.New("source identity conflict")
+
+// ErrIntegrationDisabled 表示所属集成已被禁用，拒绝新的采集。
+var ErrIntegrationDisabled = errors.New("agent integration is disabled")

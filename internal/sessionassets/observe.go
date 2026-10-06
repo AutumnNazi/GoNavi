@@ -30,15 +30,16 @@ var (
 // SourceObserver 以文件观察覆盖一个来源的归档与会话目录。观察只在
 // GoNavi 运行期间存在（S-13）；停机期间的归档由启动核对补保存。
 type SourceObserver struct {
-	sourceID   string
-	dataDir    string
-	watcher    *fsnotify.Watcher
-	events     chan fsnotify.Event
-	ctx        context.Context
-	cancel     context.CancelFunc
-	wg         sync.WaitGroup
-	onArchive  func(sourceID, path string)
-	onSessions func(sourceID, path string)
+	sourceID      string
+	integrationID string
+	dataDir       string
+	watcher       *fsnotify.Watcher
+	events        chan fsnotify.Event
+	ctx           context.Context
+	cancel        context.CancelFunc
+	wg            sync.WaitGroup
+	onArchive     func(sourceID, path string)
+	onSessions    func(sourceID, path string)
 }
 
 // StartSourceObservation 启动一个来源的目录观察。onArchive 在归档目录
@@ -56,14 +57,15 @@ func (s *Service) StartSourceObservation(source Source, discoverer SourceDiscove
 	}
 	ctx, cancel := context.WithCancel(s.lifecycleContext())
 	observer := &SourceObserver{
-		sourceID:   source.ID,
-		dataDir:    source.RootPath,
-		watcher:    watcher,
-		events:     make(chan fsnotify.Event, observerEventBuffer),
-		ctx:        ctx,
-		cancel:     cancel,
-		onArchive:  s.archiveEventhandler(source, discoverer),
-		onSessions: s.sessionEventHandler(source, discoverer),
+		sourceID:      source.ID,
+		integrationID: source.IntegrationID,
+		dataDir:       source.RootPath,
+		watcher:       watcher,
+		events:        make(chan fsnotify.Event, observerEventBuffer),
+		ctx:           ctx,
+		cancel:        cancel,
+		onArchive:     s.archiveEventhandler(source, discoverer),
+		onSessions:    s.sessionEventHandler(source, discoverer),
 	}
 	if err := observer.watchTree(observer.activeSessionsDir(), 4); err != nil {
 		_ = watcher.Close()
@@ -84,11 +86,65 @@ func (s *Service) StartSourceObservation(source Source, discoverer SourceDiscove
 	return nil
 }
 
+// StopSourceObservation 停止一个来源的观察；禁用与重定位来源时调用。
+func (s *Service) StopSourceObservation(sourceID string) {
+	s.observerMu.Lock()
+	observer := s.observers[sourceID]
+	delete(s.observers, sourceID)
+	s.observerMu.Unlock()
+	if observer != nil {
+		observer.Close()
+	}
+}
+
+// StopIntegrationObservation 停止一个集成下全部来源的观察（禁用集成，
+// FR-28）。返回被停止的来源 ID 列表。
+func (s *Service) StopIntegrationObservation(integrationID string) []string {
+	s.observerMu.Lock()
+	stopped := make([]string, 0)
+	observers := make([]*SourceObserver, 0)
+	for id, observer := range s.observers {
+		if observer.integrationID == integrationID {
+			observers = append(observers, observer)
+			stopped = append(stopped, id)
+			delete(s.observers, id)
+		}
+	}
+	s.observerMu.Unlock()
+	for _, observer := range observers {
+		observer.Close()
+	}
+	return stopped
+}
+
+// ObserversRunning 返回当前仍在观察的来源 ID 集合（状态展示用）。
+func (s *Service) ObserversRunning() []string {
+	s.observerMu.Lock()
+	defer s.observerMu.Unlock()
+	ids := make([]string, 0, len(s.observers))
+	for id := range s.observers {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// integrationEnabled 检查集成当前是否启用。禁用后丢弃观察事件（FR-28）。
+func (s *Service) integrationEnabled(ctx context.Context, integrationID string) bool {
+	enabled, err := s.catalog.IntegrationEnabledByID(ctx, integrationID)
+	if err != nil {
+		return false
+	}
+	return enabled
+}
+
 // archiveEventhandler 归档事件处理：识别会话、纳入索引并立即安排
-// 保全（意图持久化，任务去重防重复）。
+// 保全（意图持久化，任务去重防重复）。集成被禁用后丢弃事件（FR-28）。
 func (s *Service) archiveEventhandler(source Source, discoverer SourceDiscoverer) func(string, string) {
 	return func(sourceID, path string) {
 		ctx := s.lifecycleContext()
+		if !s.integrationEnabled(ctx, source.IntegrationID) {
+			return
+		}
 		session, err := discoverer.DiscoverSession(ctx, path, true)
 		if err != nil {
 			return
@@ -112,10 +168,13 @@ func (s *Service) archiveEventhandler(source Source, discoverer SourceDiscoverer
 }
 
 // sessionEventHandler 活跃会话事件处理：只维护基础元数据，不复制正文
-// （FR-05）。
+// （FR-05）。集成被禁用后丢弃事件。
 func (s *Service) sessionEventHandler(source Source, discoverer SourceDiscoverer) func(string, string) {
 	return func(sourceID, path string) {
 		ctx := s.lifecycleContext()
+		if !s.integrationEnabled(ctx, source.IntegrationID) {
+			return
+		}
 		session, err := discoverer.DiscoverSession(ctx, path, false)
 		if err != nil {
 			return
@@ -132,28 +191,6 @@ func (s *Service) sessionEventHandler(source Source, discoverer SourceDiscoverer
 			UpdatedAt:      session.ModifiedAt,
 		})
 	}
-}
-
-// StopSourceObservation 停止一个来源的观察；禁用来源时调用。
-func (s *Service) StopSourceObservation(sourceID string) {
-	s.observerMu.Lock()
-	observer := s.observers[sourceID]
-	delete(s.observers, sourceID)
-	s.observerMu.Unlock()
-	if observer != nil {
-		observer.Close()
-	}
-}
-
-// ObserversRunning 返回当前仍在观察的来源 ID 集合（状态展示用）。
-func (s *Service) ObserversRunning() []string {
-	s.observerMu.Lock()
-	defer s.observerMu.Unlock()
-	ids := make([]string, 0, len(s.observers))
-	for id := range s.observers {
-		ids = append(ids, id)
-	}
-	return ids
 }
 
 func (o *SourceObserver) activeSessionsDir() string {

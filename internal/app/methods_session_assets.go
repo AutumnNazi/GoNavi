@@ -99,13 +99,15 @@ func (a *App) SessionAssetsEnable(input sessionassets.EnableInput) (result conne
 	return connection.QueryResult{Success: true, Data: view}
 }
 
-// SessionAssetsDisable 禁用集成：停止后续采集，保留配置、节点与资产。
+// SessionAssetsDisable 禁用集成：停止全部来源观察、取消排队任务，保留
+// 配置、节点与资产（FR-28/AC-14）。运行中的任务在提交前再次检查启用
+// 状态，不会写入新结果。
 func (a *App) SessionAssetsDisable(kind string) (result connection.QueryResult) {
 	normalized, supported := sessionassets.NormalizeAgentKind(kind)
 	if !supported {
 		return sessionAssetsUnsupportedResult(a, kind)
 	}
-	catalog, _, err := a.sessionAssetsCatalog()
+	catalog, service, err := a.sessionAssetsCatalog()
 	if err != nil {
 		return sessionAssetsServiceError(a, err)
 	}
@@ -116,6 +118,7 @@ func (a *App) SessionAssetsDisable(kind string) (result connection.QueryResult) 
 	if err := catalog.SetIntegrationEnabled(context.Background(), integration.ID, false); err != nil {
 		return sessionAssetsError(a, "session_assets.error.disable_failed", err)
 	}
+	disableIntegrationRuntime(service, integration.ID)
 	return connection.QueryResult{Success: true}
 }
 

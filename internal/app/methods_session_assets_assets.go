@@ -347,6 +347,12 @@ func (a *App) SessionAssetsRefreshSources(kind string) (result connection.QueryR
 	if err != nil {
 		return sessionAssetsError(a, "session_assets.error.integration_not_found", err)
 	}
+	if !integration.Enabled {
+		return connection.QueryResult{
+			Success: false,
+			Message: a.appText("session_assets.error.integration_disabled", nil),
+		}
+	}
 	sources, err := catalog.ListSources(context.Background(), integration.ID)
 	if err != nil {
 		return sessionAssetsError(a, "session_assets.error.list_failed", err)
