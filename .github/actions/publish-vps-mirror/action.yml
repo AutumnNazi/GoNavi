@@ -25,7 +25,7 @@ inputs:
   throughput-warning-mbps: { required: false, default: '20', description: Observability-only public eight-Range warning threshold }
   cst-max-bytes: { required: false, default: '16000000000', description: Maximum Cst mirror bytes }
   cst-reserve-free-bytes: { required: false, default: '2000000000', description: Minimum free bytes preserved on Cst }
-  bero-max-bytes: { required: false, default: '9000000000', description: Maximum Bero origin bytes }
+  bero-max-bytes: { required: false, default: '13000000000', description: Maximum Bero origin bytes }
   bero-reserve-free-bytes: { required: false, default: '2000000000', description: Minimum free bytes preserved on Bero }
 
 runs:
