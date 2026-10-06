@@ -251,6 +251,8 @@ export const getConnectionTypeHint = (
   switch (String(type || '').trim().toLowerCase()) {
     case 'jvm':
       return translateCatalogCopy(translate, 'connection_modal.step1.hint.jvm', 'JMX / Endpoint / Agent');
+    case 'codex':
+      return translateCatalogCopy(translate, 'connection_modal.step1.hint.codex', 'Local session assets for Codex');
     case 'custom':
       return translateCatalogCopy(translate, 'connection_modal.step1.hint.custom', 'Custom driver and DSN');
     case 'redis':
