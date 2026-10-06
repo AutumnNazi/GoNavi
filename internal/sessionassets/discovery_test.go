@@ -436,5 +436,3 @@ func TestSyncSourcePartialDoesNotInferDeletion(t *testing.T) {
 		t.Fatalf("partial scan must not mark deleted")
 	}
 }
-
-
