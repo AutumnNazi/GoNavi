@@ -20,9 +20,9 @@ const (
 )
 
 type sessionSpec struct {
-	engine       string
-	capability   connection.SessionCapability
-	listQuery    string
+	engine     string
+	capability connection.SessionCapability
+	listQuery  string
 	// fallbackListQueries run in order when listQuery fails, for engines whose
 	// session views changed between server versions. The first success wins.
 	fallbackListQueries []string
