@@ -557,7 +557,7 @@ class PrepareVPSReleasePayloadTest(unittest.TestCase):
             source,
         )
 
-    def test_publication_requires_bero_but_allows_cst_failure(self) -> None:
+    def test_publication_requires_bero_and_fails_after_a_cst_failure(self) -> None:
         source = PUBLISH_SCRIPT.read_text(encoding="utf-8")
         start = source.index("publish_prepared_edges() {")
         end = source.index("\npublish_prepared_edges\n", start)
@@ -569,11 +569,13 @@ class PrepareVPSReleasePayloadTest(unittest.TestCase):
         if not bash:
             self.skipTest("Bash is required for edge publication")
 
+        # A Cst failure leaves the verified Bero release in place and is reported, but the run
+        # fails: clients try Cst first, so a stale Cst keeps them on the previous release.
         cases = [
             ("all-ready", "true", True, "cst=true bero=true", ["stage:bero", "activate:bero", "stage:cst", "activate:cst"]),
-            ("cst-stage-fails", "true", True, "cst=false bero=true", ["stage:bero", "activate:bero", "stage:cst"]),
-            ("cst-activation-fails", "true", True, "cst=false bero=true", ["stage:bero", "activate:bero", "stage:cst", "activate:cst"]),
-            ("cst-driver-mismatch", "true", True, "cst=false bero=true", ["stage:bero", "activate:bero", "stage:cst", "activate:cst"]),
+            ("cst-stage-fails", "true", False, "cst=false bero=true", ["stage:bero", "activate:bero", "stage:cst"]),
+            ("cst-activation-fails", "true", False, "cst=false bero=true", ["stage:bero", "activate:bero", "stage:cst", "activate:cst"]),
+            ("cst-driver-mismatch", "true", False, "cst=false bero=true", ["stage:bero", "activate:bero", "stage:cst", "activate:cst"]),
             ("cst-driver-mismatch", "false", True, "cst=true bero=true", ["stage:bero", "activate:bero", "stage:cst", "activate:cst"]),
             ("bero-stage-fails", "true", False, "", ["stage:bero"]),
             ("bero-activation-fails", "true", False, "", ["stage:bero", "activate:bero"]),
@@ -624,14 +626,15 @@ publish_prepared_edges
                 self.assertEqual(result.returncode == 0, success, result.stderr)
                 self.assertEqual(events, expected_events)
                 self.assertNotIn("continued-after-error", events)
-                if success:
+                if summary:
                     self.assertIn(summary, result.stdout)
                 else:
                     self.assertNotIn("Published generation", result.stdout)
-                if scenario.startswith("cst-") and "cst=false" in summary:
-                    self.assertIn("::warning::Cst publication", result.stderr)
+                if "cst=false" in summary:
+                    self.assertIn("::error::Cst publication", result.stderr)
+                    self.assertIn("Bero release dev-test is ready", result.stderr)
                 if "cst=true" in summary:
-                    self.assertNotIn("::warning::Cst publication", result.stderr)
+                    self.assertNotIn("Cst publication", result.stderr)
 
     def test_workflows_pass_explicit_driver_mode(self) -> None:
         dev_source = DEV_WORKFLOW.read_text(encoding="utf-8")
