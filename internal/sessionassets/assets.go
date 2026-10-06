@@ -12,11 +12,14 @@ import (
 // AssetInput 是发现流程上报的资产元数据。除 ID 类字段外都允许未知
 // （空值），不从文件名猜测缺失字段（需求 §4.2）。
 type AssetInput struct {
-	IntegrationID      string
-	NativeThreadID     string
-	SourceID           string
-	NativePath         string
-	SourceStatus       SourceStatus
+	IntegrationID  string
+	NativeThreadID string
+	SourceID       string
+	NativePath     string
+	SourceStatus   SourceStatus
+	// 上次观测的源文件版本，写入 source_refs 供重归档比较（P0-03）。
+	SourceSize         int64
+	SourceModTime      int64
 	Title              string
 	ProjectDir         string
 	Provider           string
@@ -152,13 +155,16 @@ func updateAssetMetadataTx(ctx context.Context, tx *sql.Tx, asset *Asset, input 
 
 func upsertSourceRefTx(ctx context.Context, tx *sql.Tx, assetID string, input AssetInput, now int64) error {
 	_, err := tx.ExecContext(ctx,
-		`INSERT INTO source_refs (asset_id, source_id, native_path, source_status, last_seen_at)
-		 VALUES (?, ?, ?, ?, ?)
+		`INSERT INTO source_refs (asset_id, source_id, native_path, source_status, last_seen_at, source_size, source_mtime)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(asset_id, source_id) DO UPDATE SET
 		   native_path = CASE WHEN ? <> '' THEN ? ELSE native_path END,
 		   source_status = excluded.source_status,
-		   last_seen_at = excluded.last_seen_at`,
+		   last_seen_at = excluded.last_seen_at,
+		   source_size = excluded.source_size,
+		   source_mtime = excluded.source_mtime`,
 		assetID, input.SourceID, input.NativePath, string(input.SourceStatus), now,
+		input.SourceSize, input.SourceModTime,
 		input.NativePath, input.NativePath,
 	)
 	if err != nil {
@@ -205,7 +211,7 @@ func (c *Catalog) ListAssets(ctx context.Context, integrationID string) ([]Asset
 // ListSourceRefs 返回资产的全部来源引用。
 func (c *Catalog) ListSourceRefs(ctx context.Context, assetID string) ([]SourceRef, error) {
 	rows, err := c.db.QueryContext(ctx,
-		`SELECT asset_id, source_id, native_path, source_status, last_seen_at
+		`SELECT asset_id, source_id, native_path, source_status, last_seen_at, source_size, source_mtime
 		 FROM source_refs WHERE asset_id = ? ORDER BY last_seen_at DESC`, assetID)
 	if err != nil {
 		return nil, fmt.Errorf("list source refs: %w", err)
@@ -214,7 +220,7 @@ func (c *Catalog) ListSourceRefs(ctx context.Context, assetID string) ([]SourceR
 	refs := make([]SourceRef, 0)
 	for rows.Next() {
 		var ref SourceRef
-		if err := rows.Scan(&ref.AssetID, &ref.SourceID, &ref.NativePath, &ref.SourceStatus, &ref.LastSeenAt); err != nil {
+		if err := rows.Scan(&ref.AssetID, &ref.SourceID, &ref.NativePath, &ref.SourceStatus, &ref.LastSeenAt, &ref.SourceSize, &ref.SourceMtime); err != nil {
 			return nil, fmt.Errorf("scan source ref: %w", err)
 		}
 		refs = append(refs, ref)
@@ -283,10 +289,10 @@ func (c *Catalog) UpdateSourceRefStatus(ctx context.Context, assetID, sourceID s
 // FindSourceRef 读取资产在某来源下的当前引用（不存在时返回 ErrNotFound）。
 func (c *Catalog) FindSourceRef(ctx context.Context, assetID, sourceID string) (SourceRef, error) {
 	row := c.db.QueryRowContext(ctx,
-		`SELECT asset_id, source_id, native_path, source_status, last_seen_at
+		`SELECT asset_id, source_id, native_path, source_status, last_seen_at, source_size, source_mtime
 		 FROM source_refs WHERE asset_id = ? AND source_id = ?`, assetID, sourceID)
 	var ref SourceRef
-	err := row.Scan(&ref.AssetID, &ref.SourceID, &ref.NativePath, &ref.SourceStatus, &ref.LastSeenAt)
+	err := row.Scan(&ref.AssetID, &ref.SourceID, &ref.NativePath, &ref.SourceStatus, &ref.LastSeenAt, &ref.SourceSize, &ref.SourceMtime)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SourceRef{}, ErrNotFound
 	}
@@ -300,12 +306,12 @@ func (c *Catalog) FindSourceRef(ctx context.Context, assetID, sourceID string) (
 // 读取旧状态使用）。
 func (c *Catalog) FindSourceRefByThread(ctx context.Context, sourceID, nativeThreadID string) (SourceRef, error) {
 	row := c.db.QueryRowContext(ctx,
-		`SELECT r.asset_id, r.source_id, r.native_path, r.source_status, r.last_seen_at
+		`SELECT r.asset_id, r.source_id, r.native_path, r.source_status, r.last_seen_at, r.source_size, r.source_mtime
 		 FROM source_refs r JOIN assets a ON a.id = r.asset_id
 		 WHERE r.source_id = ? AND a.native_thread_id = ? AND a.deleted = 0`,
 		sourceID, nativeThreadID)
 	var ref SourceRef
-	err := row.Scan(&ref.AssetID, &ref.SourceID, &ref.NativePath, &ref.SourceStatus, &ref.LastSeenAt)
+	err := row.Scan(&ref.AssetID, &ref.SourceID, &ref.NativePath, &ref.SourceStatus, &ref.LastSeenAt, &ref.SourceSize, &ref.SourceMtime)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SourceRef{}, ErrNotFound
 	}

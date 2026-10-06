@@ -95,4 +95,10 @@ var catalogMigrations = map[int][]string{
 			PRIMARY KEY (integration_id, native_thread_id)
 		)`,
 	},
+	// 版本 2：source_refs 记录上次观测的源文件版本（大小/修改时间），
+	// 重归档判断比较源版本而不是扫描时间（P0-03/FR-07/V-09）。
+	2: {
+		`ALTER TABLE source_refs ADD COLUMN source_size INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE source_refs ADD COLUMN source_mtime INTEGER NOT NULL DEFAULT 0`,
+	},
 }

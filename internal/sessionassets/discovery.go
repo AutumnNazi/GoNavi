@@ -88,6 +88,8 @@ func (s *Service) SyncSource(ctx context.Context, source Source, result SourceSc
 			SourceID:       source.ID,
 			NativePath:     session.NativePath,
 			SourceStatus:   status,
+			SourceSize:     session.Size,
+			SourceModTime:  session.ModifiedAt,
 			ProjectDir:     session.ProjectDir,
 			Provider:       session.Provider,
 			Model:          session.Model,
@@ -133,7 +135,8 @@ func (s *Service) SyncSource(ctx context.Context, source Source, result SourceSc
 
 // shouldCaptureArchive 判断一次全量扫描中的归档会话是否需要保全。
 // 无既有引用（首次发现）或由其他状态转为归档都视为归档事件；
-// 已归档的会话仅当材料版本（路径、修改时间）变化时重新保全。
+// 已归档的会话比较**源文件版本**（路径、大小、修改时间，P0-03）——
+// 任一变化即重新保全；版本完全一致才跳过。
 func shouldCaptureArchive(previous SourceRef, session DiscoveredSession) bool {
 	if previous.SourceID == "" {
 		return true
@@ -144,8 +147,17 @@ func shouldCaptureArchive(previous SourceRef, session DiscoveredSession) bool {
 	if previous.NativePath != session.NativePath {
 		return true
 	}
-	return session.ModifiedAt != 0 && previous.LastSeenAt != 0 &&
-		session.ModifiedAt > previous.LastSeenAt
+	// 无版本信息的旧引用按“未知”处理，宁可重新保全也不留旧副本。
+	if previous.SourceSize == 0 && previous.SourceMtime == 0 {
+		return true
+	}
+	if session.Size != 0 && previous.SourceSize != 0 && session.Size != previous.SourceSize {
+		return true
+	}
+	if session.ModifiedAt != 0 && previous.SourceMtime != 0 && session.ModifiedAt != previous.SourceMtime {
+		return true
+	}
+	return false
 }
 
 // captureArchivedAsset 为归档会话安排保全：进行中的任务不重复排队

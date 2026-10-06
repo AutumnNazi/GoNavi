@@ -184,6 +184,9 @@ type SourceRef struct {
 	NativePath   string `json:"nativePath"`
 	SourceStatus string `json:"sourceStatus"`
 	LastSeenAt   int64  `json:"lastSeenAt"`
+	// 上次观测到的源文件版本：重归档判断比较源版本而非扫描时间（P0-03）。
+	SourceSize  int64 `json:"sourceSize"`
+	SourceMtime int64 `json:"sourceMtime"`
 }
 
 // CaptureJob 是持久化的保全任务。base_generation_id 记录入队时的 current
