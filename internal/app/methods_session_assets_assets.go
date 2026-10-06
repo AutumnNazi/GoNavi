@@ -124,6 +124,9 @@ func (a *App) SessionAssetsExportAsset(assetID, mode, destDir string) (result co
 	if err != nil {
 		return sessionAssetsError(a, "session_assets.error.list_failed", err)
 	}
+	if err := os.MkdirAll(trimmedDest, 0o700); err != nil {
+		return sessionAssetsError(a, "session_assets.error.export_failed", fmt.Errorf("prepare export destination: %w", err))
+	}
 	switch strings.TrimSpace(mode) {
 	case "raw":
 		return a.exportRawAsset(service, detail, trimmedDest)

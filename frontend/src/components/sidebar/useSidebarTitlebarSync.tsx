@@ -69,6 +69,11 @@ export const useSidebarTitlebarSync = ({
   selectedNodesRef, connectionStates,
 }: UseSidebarTitlebarSyncInput) => {
   const agentIntegrations = useStore((state) => state.agentIntegrations);
+  const refreshAgentIntegrations = useStore((state) => state.refreshAgentIntegrations);
+  // 侧栏挂载时拉取一次智能体集成，保证重启后固定分组恢复显示。
+  useEffect(() => {
+    void refreshAgentIntegrations();
+  }, [refreshAgentIntegrations]);
   useEffect(() => {
     const previousSignatures = connectionReloadSignaturesRef.current;
     const nextSignatures: Record<string, string> = {};

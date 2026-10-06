@@ -67,9 +67,15 @@ func (s *Service) ListAssetsView(ctx context.Context, integrationID string, filt
 	if err != nil {
 		return nil, 0, err
 	}
+	statusByAsset, err := s.catalog.SourceStatusByAsset(ctx, integrationID)
+	if err != nil {
+		return nil, 0, err
+	}
 	views := make([]AssetView, 0, len(assets))
 	for _, asset := range assets {
-		views = append(views, assetToView(asset))
+		view := assetToView(asset)
+		view.SourceStatus = statusByAsset[asset.ID]
+		views = append(views, view)
 	}
 	return views, total, nil
 }

@@ -371,3 +371,32 @@ func normalizePage(page, size int) (int, int) {
 	}
 	return page, size
 }
+
+// SourceStatusByAsset 聚合集成内每个资产的原记录状态展示值：
+// active > archived > deleted > unknown（需求 §4.3 分维表达）。
+func (c *Catalog) SourceStatusByAsset(ctx context.Context, integrationID string) (map[string]string, error) {
+	rows, err := c.db.QueryContext(ctx,
+		`SELECT r.asset_id,
+		   CASE
+		     WHEN SUM(CASE WHEN r.source_status = 'active' THEN 1 ELSE 0 END) > 0 THEN 'active'
+		     WHEN SUM(CASE WHEN r.source_status = 'archived' THEN 1 ELSE 0 END) > 0 THEN 'archived'
+		     WHEN SUM(CASE WHEN r.source_status = 'deleted' THEN 1 ELSE 0 END) > 0 THEN 'deleted'
+		     ELSE 'unknown'
+		   END AS aggregated
+		 FROM source_refs r JOIN assets a ON a.id = r.asset_id
+		 WHERE a.integration_id = ? AND a.deleted = 0
+		 GROUP BY r.asset_id`, integrationID)
+	if err != nil {
+		return nil, fmt.Errorf("aggregate source status: %w", err)
+	}
+	defer rows.Close()
+	result := make(map[string]string)
+	for rows.Next() {
+		var assetID, status string
+		if err := rows.Scan(&assetID, &status); err != nil {
+			return nil, fmt.Errorf("scan source status: %w", err)
+		}
+		result[assetID] = status
+	}
+	return result, rows.Err()
+}
