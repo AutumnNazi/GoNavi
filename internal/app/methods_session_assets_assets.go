@@ -14,6 +14,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"GoNavi-Wails/internal/appdata"
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/logger"
 	"GoNavi-Wails/internal/sessionassets"
@@ -170,7 +171,9 @@ func zipGenerationDir(generationDir, target string) error {
 	if err != nil {
 		return err
 	}
-	out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	tempTarget := target + ".partial"
+	_ = os.Remove(tempTarget)
+	out, err := os.OpenFile(tempTarget, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return fmt.Errorf("create export archive: %w", err)
 	}
@@ -217,13 +220,24 @@ func zipGenerationDir(generationDir, target string) error {
 	}
 	if err := writer.Close(); err != nil {
 		_ = out.Close()
+		_ = os.Remove(tempTarget)
 		return fmt.Errorf("finalize export archive: %w", err)
 	}
 	if err := out.Sync(); err != nil {
 		_ = out.Close()
+		_ = os.Remove(tempTarget)
 		return fmt.Errorf("sync export archive: %w", err)
 	}
-	return out.Close()
+	if err := out.Close(); err != nil {
+		_ = os.Remove(tempTarget)
+		return fmt.Errorf("close export archive: %w", err)
+	}
+	// 原子落位：失败清理半成品，重试不被 O_EXCL 阻塞。
+	if err := appdata.AtomicReplaceFile(tempTarget, target); err != nil {
+		_ = os.Remove(tempTarget)
+		return fmt.Errorf("publish export archive: %w", err)
+	}
+	return nil
 }
 
 // writeReadableMarkdown 流式写出可读历史；密文与未知条目按不透明呈现，

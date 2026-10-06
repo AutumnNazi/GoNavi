@@ -23,6 +23,8 @@ func (a *App) SessionAssetsRelocateSource(sourceID, newRootPath string) (result 
 		return sessionAssetsError(a, "session_assets.error.integration_not_found", err)
 	}
 	identity := "dir:" + strings.ToLower(strings.ReplaceAll(strings.TrimRight(newRoot, "\\/"), "\\", "/"))
+	// 重定位前先停旧观察器，避免旧路径观察器占用、新观察器启动失败。
+	service.StopSourceObservation(sourceID)
 	if err := catalog.RelocateSource(context.Background(), sourceID, newRoot, identity); err != nil {
 		return sessionAssetsError(a, "session_assets.error.relocate_failed", err)
 	}

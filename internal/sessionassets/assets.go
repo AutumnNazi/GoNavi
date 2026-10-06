@@ -347,6 +347,18 @@ func (c *Catalog) QueryAssets(ctx context.Context, integrationID string, filter 
 		where = append(where, "backup_status = ?")
 		args = append(args, trimmed)
 	}
+	if trimmed := strings.TrimSpace(filter.SourceID); trimmed != "" {
+		where = append(where, "EXISTS (SELECT 1 FROM source_refs sr WHERE sr.asset_id = assets.id AND sr.source_id = ?)")
+		args = append(args, trimmed)
+	}
+	if trimmed := strings.TrimSpace(filter.SourceStatus); trimmed != "" {
+		if trimmed == "unknown" {
+			where = append(where, "NOT EXISTS (SELECT 1 FROM source_refs sr2 WHERE sr2.asset_id = assets.id AND sr2.source_status IN ('active','archived','deleted'))")
+		} else {
+			where = append(where, "EXISTS (SELECT 1 FROM source_refs sr3 WHERE sr3.asset_id = assets.id AND sr3.source_status = ?)")
+			args = append(args, trimmed)
+		}
+	}
 	whereClause := strings.Join(where, " AND ")
 
 	var total int

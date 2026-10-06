@@ -20,9 +20,28 @@ export const SessionAssetHistoryView: React.FC<{
   }
   return (
     <div className="session-assets-history" data-session-assets-history="true">
-      {page.entries.map((entry) => (
-        <HistoryEntryRow key={entry.index} entry={entry} />
-      ))}
+      {groupToolPairs(page.entries).map((group) =>
+        group.output ? (
+          <details
+            key={group.call.index}
+            className="session-assets-entry tool-group"
+            data-history-kind="tool-group"
+          >
+            <summary>
+              <span className="session-assets-entry-label">
+                {entryLabel(group.call)} + {entryLabel(group.output)}
+              </span>
+            </summary>
+            <pre className="session-assets-entry-text">
+              {group.call.opaque ? t('session_assets.history.opaque') : group.call.text || '(empty)'}
+              {'\n'}
+              {group.output.opaque ? t('session_assets.history.opaque') : group.output.text || '(empty)'}
+            </pre>
+          </details>
+        ) : (
+          <HistoryEntryRow key={group.call.index} entry={group.call} />
+        ),
+      )}
       {page.hasMore ? (
         <Button size="small" block loading={loading} onClick={onLoadMore} data-history-load-more="true">
           {t('session_assets.history.load_more')}
@@ -81,3 +100,40 @@ const entryLabel = (entry: SessionHistoryPage['entries'][number]): string => {
       return t('session_assets.history.unknown');
   }
 };
+
+// groupToolPairs 把成对的工具调用与输出按 callId 关联为一组（交互设计
+// §5.2）：output 紧随其 call 时合并渲染；未配对的条目单独渲染。
+function groupToolPairs(entries: SessionHistoryPage['entries']): Array<{
+  call: SessionHistoryPage['entries'][number];
+  output?: SessionHistoryPage['entries'][number];
+}> {
+  const groups: Array<{
+    call: SessionHistoryPage['entries'][number];
+    output?: SessionHistoryPage['entries'][number];
+  }> = [];
+  let pending: SessionHistoryPage['entries'][number] | null = null;
+  for (const entry of entries) {
+    if (entry.kind === 'tool_call') {
+      if (pending) groups.push({ call: pending });
+      pending = entry;
+      continue;
+    }
+    if (entry.kind === 'tool_output') {
+      if (pending && (!entry.callId || !pending.callId || entry.callId === pending.callId)) {
+        groups.push({ call: pending, output: entry });
+      } else {
+        if (pending) groups.push({ call: pending });
+        groups.push({ call: entry });
+      }
+      pending = null;
+      continue;
+    }
+    if (pending) {
+      groups.push({ call: pending });
+      pending = null;
+    }
+    groups.push({ call: entry });
+  }
+  if (pending) groups.push({ call: pending });
+  return groups;
+}

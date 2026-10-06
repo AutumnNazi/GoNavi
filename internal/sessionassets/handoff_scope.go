@@ -24,12 +24,13 @@ const (
 // HistoryStatsView 是范围预览统计（adapter 扫描后转换；不估算 token，
 // FR-18：预算未知时不造精确数字）。
 type HistoryStatsView struct {
-	TotalLines   int `json:"totalLines"`
-	Messages     int `json:"messages"`
-	ToolCalls    int `json:"toolCalls"`
-	ToolOutputs  int `json:"toolOutputs"`
-	Opaque       int `json:"opaque"`
-	LastUserLine int `json:"lastUserLine"`
+	TotalLines   int  `json:"totalLines"`
+	Messages     int  `json:"messages"`
+	ToolCalls    int  `json:"toolCalls"`
+	ToolOutputs  int  `json:"toolOutputs"`
+	Opaque       int  `json:"opaque"`
+	LastUserLine int  `json:"lastUserLine"`
+	Truncated    bool `json:"truncated"`
 }
 
 // HistoryStatsScanner 是统计能力接口（adapter 实现）。

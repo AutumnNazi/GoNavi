@@ -88,6 +88,9 @@ func ReadHistoryPage(ctx context.Context, path string, offset, limit int) (Histo
 	page := HistoryPage{Entries: make([]HistoryEntry, 0, limit)}
 	index := 0
 	for index < offset {
+		if err := ctx.Err(); err != nil {
+			return page, err
+		}
 		if err := skipLine(reader); err != nil {
 			if errors.Is(err, io.EOF) {
 				return page, nil
@@ -266,17 +269,18 @@ func skipLine(reader *bufio.Reader) error {
 // HistoryStats 是一次范围预览的统计：条目数、可读消息数、成对工具
 // 记录数与不透明条目数。用于两阶段交接的预览（不估算 token）。
 type HistoryStats struct {
-	TotalLines   int `json:"totalLines"`
-	Messages     int `json:"messages"`
-	ToolCalls    int `json:"toolCalls"`
-	ToolOutputs  int `json:"toolOutputs"`
-	Opaque       int `json:"opaque"`
-	LastUserLine int `json:"lastUserLine"`
+	TotalLines   int  `json:"totalLines"`
+	Messages     int  `json:"messages"`
+	ToolCalls    int  `json:"toolCalls"`
+	ToolOutputs  int  `json:"toolOutputs"`
+	Opaque       int  `json:"opaque"`
+	LastUserLine int  `json:"lastUserLine"`
+	Truncated    bool `json:"truncated"`
 }
 
 // ScanHistoryStats 完整流过文件统计各类型条目；LastUserLine 是最后一条
 // user 消息所在行（“最近可读轮次”的起点，-1 表示没有）。
-func ScanHistoryStats(_ context.Context, path string) (HistoryStats, error) {
+func ScanHistoryStats(ctx context.Context, path string) (HistoryStats, error) {
 	stats := HistoryStats{LastUserLine: -1}
 	file, err := os.Open(path)
 	if err != nil {
@@ -286,6 +290,9 @@ func ScanHistoryStats(_ context.Context, path string) (HistoryStats, error) {
 	reader := bufio.NewReader(file)
 	index := 0
 	for {
+		if err := ctx.Err(); err != nil {
+			return stats, err
+		}
 		line, readErr := readLineLimited(reader)
 		if len(line) > 0 {
 			entry, parseErr := parseHistoryLine(index, line)
@@ -314,7 +321,8 @@ func ScanHistoryStats(_ context.Context, path string) (HistoryStats, error) {
 			return stats, readErr
 		}
 		if index > 4_000_000 {
-			// 防御异常膨胀的文件；真实历史远小于此。
+			// 防御异常膨胀的文件：标记截断而非静默成功（V-23）。
+			stats.Truncated = true
 			return stats, nil
 		}
 	}
@@ -356,5 +364,6 @@ func (ReadableHistoryAdapter) ScanReadableStats(ctx context.Context, path string
 		ToolOutputs:  stats.ToolOutputs,
 		Opaque:       stats.Opaque,
 		LastUserLine: stats.LastUserLine,
+		Truncated:    stats.Truncated,
 	}, nil
 }
