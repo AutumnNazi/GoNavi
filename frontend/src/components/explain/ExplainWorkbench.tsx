@@ -6,6 +6,7 @@ import { useI18n } from '../../i18n/provider'
 import type { ConnectionConfig } from '../../types'
 import type { DiagnoseReport, ExplainNode, IndexSuggestion } from '../../utils/explainTypes'
 import ExplainReportBody from './ExplainReportBody'
+import type { ExplainBaseline } from './ExplainCompareView'
 import './ExplainReport.css'
 
 // SQL 诊断报告：左侧 react-flow 执行计划图（点击节点联动），右侧统计 / 节点详情 / 索引建议；
@@ -22,9 +23,23 @@ interface ExplainReportViewProps {
   analyze?: boolean
   /** Ask to measure the current SQL; the caller confirms and bumps runKey with analyze set. */
   onAnalyze?: () => void
+  /** Before/after comparison, kept by the caller so it outlives this view. */
+  baseline?: ExplainBaseline | null
+  onPinBaseline?: (report: DiagnoseReport) => void
+  onClearBaseline?: () => void
 }
 
-export function ExplainReportView({ config, dbName, sql, runKey, analyze = false, onAnalyze }: ExplainReportViewProps) {
+export function ExplainReportView({
+  config,
+  dbName,
+  sql,
+  runKey,
+  analyze = false,
+  onAnalyze,
+  baseline,
+  onPinBaseline,
+  onClearBaseline,
+}: ExplainReportViewProps) {
   const { t } = useI18n()
   const [loading, setLoading] = useState(false)
   const [report, setReport] = useState<DiagnoseReport | null>(null)
@@ -116,6 +131,9 @@ export function ExplainReportView({ config, dbName, sql, runKey, analyze = false
             onSelectSuggestion={handleSelectSuggestion}
             onAnalyze={onAnalyze}
             analyzing={loading && analyze}
+            baseline={baseline}
+            onPinBaseline={onPinBaseline}
+            onClearBaseline={onClearBaseline}
           />
         </Spin>
       ) : null}

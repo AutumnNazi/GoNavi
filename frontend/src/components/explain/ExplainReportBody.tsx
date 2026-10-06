@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { ApartmentOutlined, CodeOutlined, ExperimentOutlined, UnorderedListOutlined } from '@ant-design/icons'
+import { ApartmentOutlined, CodeOutlined, DiffOutlined, ExperimentOutlined, UnorderedListOutlined } from '@ant-design/icons'
 import { Button, Segmented, Tooltip, Typography } from 'antd'
 import { useI18n } from '../../i18n/provider'
 import { formatMs, type DiagnoseReport, type ExplainNode, type IndexSuggestion } from '../../utils/explainTypes'
+import ExplainCompareView, { ExplainBaselineControl, type ExplainBaseline } from './ExplainCompareView'
 import ExplainGraph from './ExplainGraph'
 import ExplainHotspotStrip from './ExplainHotspotStrip'
 import ExplainSidebar from './ExplainSidebar'
@@ -11,7 +12,7 @@ import type { ExplainLayoutDirection } from './explainPlanInsights'
 
 const { Text } = Typography
 
-type ExplainReportViewMode = 'plan' | 'steps' | 'raw'
+type ExplainReportViewMode = 'plan' | 'steps' | 'raw' | 'compare'
 
 interface ExplainReportBodyProps {
   report: DiagnoseReport
@@ -23,6 +24,10 @@ interface ExplainReportBodyProps {
   /** Run the query for real to compare the plan with what happens; offered when the data source supports it. */
   onAnalyze?: () => void
   analyzing?: boolean
+  /** The plan pinned for before/after comparison, and how to pin or drop it. */
+  baseline?: ExplainBaseline | null
+  onPinBaseline?: (report: DiagnoseReport) => void
+  onClearBaseline?: () => void
 }
 
 /** "Measured, ran in 12.3ms" for a measured plan, and the button that measures (again). */
@@ -69,15 +74,24 @@ export default function ExplainReportBody({
   onSelectSuggestion,
   onAnalyze,
   analyzing,
+  baseline,
+  onPinBaseline,
+  onClearBaseline,
 }: ExplainReportBodyProps) {
   const { t } = useI18n()
   const [activeView, setActiveView] = useState<ExplainReportViewMode>('plan')
   // The layout is a reading preference, so it survives re-running the diagnosis.
   const [direction, setDirection] = useState<ExplainLayoutDirection>('TB')
 
+  const comparable = Boolean(baseline && baseline.report !== report)
+  // A new report after pinning a baseline is what the comparison is for.
   useEffect(() => {
-    setActiveView('plan')
+    setActiveView(comparable ? 'compare' : 'plan')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [report])
+  useEffect(() => {
+    if (!comparable && activeView === 'compare') setActiveView('plan')
+  }, [activeView, comparable])
 
   return (
     <div className="gn-explain-report-shell">
@@ -90,6 +104,7 @@ export default function ExplainReportBody({
             { value: 'plan', label: <ViewLabel icon={<ApartmentOutlined />} text={t('sql_analysis.explain.view.plan')} /> },
             { value: 'steps', label: <ViewLabel icon={<UnorderedListOutlined />} text={t('sql_analysis.explain.view.steps')} /> },
             { value: 'raw', label: <ViewLabel icon={<CodeOutlined />} text={t('sql_analysis.explain.view.raw')} /> },
+            ...(comparable ? [{ value: 'compare', label: <ViewLabel icon={<DiffOutlined />} text={t('sql_analysis.compare.view')} /> }] : []),
           ]}
         />
         {activeView === 'plan' ? (
@@ -105,6 +120,7 @@ export default function ExplainReportBody({
           />
         ) : null}
         <AnalyzeControls report={report} onAnalyze={onAnalyze} analyzing={analyzing} />
+        <ExplainBaselineControl report={report} baseline={baseline} onPin={onPinBaseline} />
         <Text type="secondary" className="gn-explain-report-switcher-meta">
           {t('sql_analysis.explain.meta.node_count', { count: report.plan.nodes.length })}
           <span className="gn-explain-report-switcher-meta-separator">/</span>
@@ -112,7 +128,7 @@ export default function ExplainReportBody({
         </Text>
       </div>
 
-      {activeView !== 'raw' ? (
+      {activeView !== 'raw' && activeView !== 'compare' ? (
         <ExplainHotspotStrip
           nodes={report.plan.nodes}
           basis={report.plan.hotspotBasis}
@@ -121,7 +137,14 @@ export default function ExplainReportBody({
         />
       ) : null}
       <div className="gn-explain-report-content">
-        {activeView === 'raw' ? (
+        {activeView === 'compare' && baseline ? (
+          <ExplainCompareView
+            baseline={baseline}
+            report={report}
+            onRepin={() => onPinBaseline?.(report)}
+            onClear={() => onClearBaseline?.()}
+          />
+        ) : activeView === 'raw' ? (
           <pre className="gn-explain-raw">{report.plan.rawPayload || t('sql_analysis.explain.raw.empty')}</pre>
         ) : (
           <div className="gn-explain-plan-view">
