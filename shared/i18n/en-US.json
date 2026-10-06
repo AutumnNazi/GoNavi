@@ -12154,5 +12154,6 @@
   "session_assets.action.retry_enqueued": "Capture re-enqueued",
   "session_assets.action.retry_failed": "Retry failed",
   "session_assets.history.failed_title": "Recent capture failures",
-  "session_assets.error.retry_failed": "Retry failed: {{detail}}"
+  "session_assets.error.retry_failed": "Retry failed: {{detail}}",
+  "session_assets.action.disable": "Disable capture"
 }

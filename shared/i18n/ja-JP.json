@@ -12154,5 +12154,6 @@
   "session_assets.action.retry_enqueued": "\u30ad\u30e3\u30d7\u30c1\u30e3\u3092\u518d\u30ad\u30e5\u30fc\u6295\u5165\u3057\u307e\u3057\u305f",
   "session_assets.action.retry_failed": "\u518d\u8a66\u884c\u306b\u5931\u6557\u3057\u307e\u3057\u305f",
   "session_assets.history.failed_title": "\u6700\u8fd1\u306e\u30ad\u30e3\u30d7\u30c1\u30e3\u5931\u6557",
-  "session_assets.error.retry_failed": "\u518d\u8a66\u884c\u306b\u5931\u6557\uff1a{{detail}}"
+  "session_assets.error.retry_failed": "\u518d\u8a66\u884c\u306b\u5931\u6557\uff1a{{detail}}",
+  "session_assets.action.disable": "\u53d6\u5f97\u3092\u505c\u6b62"
 }

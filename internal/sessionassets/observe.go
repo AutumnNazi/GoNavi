@@ -150,15 +150,18 @@ func (s *Service) archiveEventhandler(source Source, discoverer SourceDiscoverer
 			return
 		}
 		asset, err := s.catalog.UpsertAsset(ctx, AssetInput{
-			IntegrationID:  source.IntegrationID,
-			NativeThreadID: session.NativeThreadID,
-			SourceID:       source.ID,
-			NativePath:     session.NativePath,
-			SourceStatus:   SourceStatusArchived,
-			ProjectDir:     session.ProjectDir,
-			Provider:       session.Provider,
-			Model:          session.Model,
-			UpdatedAt:      session.ModifiedAt,
+			IntegrationID:     source.IntegrationID,
+			OriginIdentityKey: source.IdentityKey,
+			NativeThreadID:    session.NativeThreadID,
+			SourceID:          source.ID,
+			NativePath:        session.NativePath,
+			SourceStatus:      SourceStatusArchived,
+			SourceSize:        session.Size,
+			SourceModTime:     session.ModifiedAt,
+			ProjectDir:        session.ProjectDir,
+			Provider:          session.Provider,
+			Model:             session.Model,
+			UpdatedAt:         session.ModifiedAt,
 		})
 		if err != nil {
 			return
@@ -180,15 +183,18 @@ func (s *Service) sessionEventHandler(source Source, discoverer SourceDiscoverer
 			return
 		}
 		_, _ = s.catalog.UpsertAsset(ctx, AssetInput{
-			IntegrationID:  source.IntegrationID,
-			NativeThreadID: session.NativeThreadID,
-			SourceID:       source.ID,
-			NativePath:     session.NativePath,
-			SourceStatus:   SourceStatusActive,
-			ProjectDir:     session.ProjectDir,
-			Provider:       session.Provider,
-			Model:          session.Model,
-			UpdatedAt:      session.ModifiedAt,
+			IntegrationID:     source.IntegrationID,
+			OriginIdentityKey: source.IdentityKey,
+			NativeThreadID:    session.NativeThreadID,
+			SourceID:          source.ID,
+			NativePath:        session.NativePath,
+			SourceStatus:      SourceStatusActive,
+			SourceSize:        session.Size,
+			SourceModTime:     session.ModifiedAt,
+			ProjectDir:        session.ProjectDir,
+			Provider:          session.Provider,
+			Model:             session.Model,
+			UpdatedAt:         session.ModifiedAt,
 		})
 	}
 }

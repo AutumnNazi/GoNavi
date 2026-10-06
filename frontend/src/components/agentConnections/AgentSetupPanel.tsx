@@ -7,7 +7,7 @@ import {
   ExclamationCircleFilled,
   ReloadOutlined,
 } from "@ant-design/icons";
-import { SessionAssetsDetect, SessionAssetsEnable } from "../../../wailsjs/go/app/App";
+import { SessionAssetsDetect, SessionAssetsDisable, SessionAssetsEnable } from "../../../wailsjs/go/app/App";
 import { t } from "../../i18n";
 import { useStore } from "../../store";
 import { buildAgentAssetsWorkbenchTab } from "../../utils/agentAssetsTab";
@@ -48,6 +48,7 @@ const AgentSetupPanel: React.FC<AgentSetupPanelProps> = ({ kind, onClose }) => {
   const [view, setView] = React.useState<DetectionView | null>(null);
   const [detecting, setDetecting] = React.useState(false);
   const [enabling, setEnabling] = React.useState(false);
+  const [disabling, setDisabling] = React.useState(false);
   const [manualDataDir, setManualDataDir] = React.useState("");
   const [errorText, setErrorText] = React.useState("");
   const refreshAgentIntegrations = useStore((state) => state.refreshAgentIntegrations);
@@ -89,6 +90,25 @@ const AgentSetupPanel: React.FC<AgentSetupPanelProps> = ({ kind, onClose }) => {
     },
     [addTab, onClose, refreshAgentIntegrations],
   );
+
+  const handleDisable = React.useCallback(async () => {
+    setDisabling(true);
+    setErrorText("");
+    try {
+      const result = await SessionAssetsDisable(kind);
+      if (result?.success) {
+        const refreshed = await SessionAssetsDetect({ kind, commandPath: "", dataDir: view?.dataDir || "" });
+        if (refreshed?.success) setView(refreshed.data as DetectionView);
+        void refreshAgentIntegrations();
+      } else {
+        setErrorText(toErrorMessage(result));
+      }
+    } catch (err) {
+      setErrorText(String(err));
+    } finally {
+      setDisabling(false);
+    }
+  }, [kind, view]);
 
   const handleEnable = React.useCallback(async () => {
     setEnabling(true);
@@ -201,6 +221,13 @@ const AgentSetupPanel: React.FC<AgentSetupPanelProps> = ({ kind, onClose }) => {
               <>
                 <Button type="primary" onClick={() => openManagement(view)}>
                   {t("session_assets.action.open_management")}
+                </Button>
+                <Button
+                  danger
+                  loading={disabling}
+                  onClick={() => void handleDisable()}
+                >
+                  {t("session_assets.action.disable")}
                 </Button>
                 <Button onClick={onClose}>{t("common.action.close")}</Button>
               </>

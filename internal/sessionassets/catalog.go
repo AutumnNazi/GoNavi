@@ -76,8 +76,10 @@ func (c *Catalog) Close() error {
 	return errors.Join(checkpointErr, closeErr)
 }
 
-// initialize 执行 schema 迁移。user_version 高于已知版本时拒绝打开，
-// 避免旧代码写入不认识的新 schema。
+// initialize 执行 schema 迁移。迁移在**单条连接**上进行，并在迁移期间
+// 关闭外键：v3 的表重建含 DROP TABLE assets，外键开启会让引用它的
+// source_refs/capture_jobs 被 ON DELETE CASCADE 清空（N3）。迁移只向前，
+// 版本高于本代码的库不得覆盖（V-13）。
 func (c *Catalog) initialize(ctx context.Context) error {
 	var version int
 	if err := c.db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
@@ -86,34 +88,54 @@ func (c *Catalog) initialize(ctx context.Context) error {
 	if version > catalogSchemaVersion {
 		return fmt.Errorf("session assets catalog version %d is newer than supported %d", version, catalogSchemaVersion)
 	}
+	if version >= catalogSchemaVersion {
+		return nil
+	}
+	// 单连接独占迁移：PRAGMA foreign_keys 是连接级设置，事务内是空操作，
+	// 必须在同一物理连接上以事务外方式切换。
+	conn, err := c.db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire session assets migration connection: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := conn.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+		return fmt.Errorf("disable foreign keys for session assets migration: %w", err)
+	}
 	for v := version; v < catalogSchemaVersion; v++ {
-		if err := c.applyMigration(ctx, v+1); err != nil {
+		if err := applyMigrationOnConn(ctx, conn, v+1); err != nil {
 			return err
 		}
+	}
+	if _, err := conn.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {
+		return fmt.Errorf("restore foreign keys after session assets migration: %w", err)
 	}
 	return nil
 }
 
-// applyMigration 在单个事务内应用一个版本并推进 user_version。
-func (c *Catalog) applyMigration(ctx context.Context, target int) error {
-	tx, err := c.db.BeginTx(ctx, nil)
-	if err != nil {
+// applyMigrationOnConn 在单连接手动事务内应用一个版本并推进 user_version。
+func applyMigrationOnConn(ctx context.Context, conn *sql.Conn, target int) error {
+	if _, err := conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
 		return fmt.Errorf("begin session assets migration %d: %w", target, err)
 	}
-	defer func() { _ = tx.Rollback() }()
 	statements, ok := catalogMigrations[target]
 	if !ok {
+		_, _ = conn.ExecContext(ctx, `ROLLBACK`)
 		return fmt.Errorf("missing session assets migration for version %d", target)
 	}
 	for _, statement := range statements {
-		if _, err := tx.ExecContext(ctx, statement); err != nil {
+		if _, err := conn.ExecContext(ctx, statement); err != nil {
+			_, _ = conn.ExecContext(ctx, `ROLLBACK`)
 			return fmt.Errorf("apply session assets migration %d: %w", target, err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, target)); err != nil {
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, target)); err != nil {
+		_, _ = conn.ExecContext(ctx, `ROLLBACK`)
 		return fmt.Errorf("record session assets migration %d: %w", target, err)
 	}
-	return tx.Commit()
+	if _, err := conn.ExecContext(ctx, `COMMIT`); err != nil {
+		return fmt.Errorf("commit session assets migration %d: %w", target, err)
+	}
+	return nil
 }
 
 // catalogDSN 构造带 PRAGMA 的 SQLite DSN，模式与 syncjob 保持一致；

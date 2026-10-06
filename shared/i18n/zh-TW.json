@@ -12154,5 +12154,6 @@
   "session_assets.action.retry_enqueued": "\u4fdd\u5168\u5df2\u91cd\u65b0\u5165\u968a",
   "session_assets.action.retry_failed": "\u91cd\u8a66\u5931\u6557",
   "session_assets.history.failed_title": "\u6700\u8fd1\u4fdd\u5168\u5931\u6557",
-  "session_assets.error.retry_failed": "\u91cd\u8a66\u5931\u6557\uff1a{{detail}}"
+  "session_assets.error.retry_failed": "\u91cd\u8a66\u5931\u6557\uff1a{{detail}}",
+  "session_assets.action.disable": "\u505c\u6b62\u8490\u96c6"
 }

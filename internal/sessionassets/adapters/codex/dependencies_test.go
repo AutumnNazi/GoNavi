@@ -91,3 +91,56 @@ func TestResolveDependenciesSelfContained(t *testing.T) {
 		t.Fatalf("self-contained rollout must resolve empty: %+v", resolution)
 	}
 }
+
+// N1 回归：引用存在的祖先经完整捕获链路进入 generation，不因双写失败。
+func TestDependencyResolutionEndToEndCapture(t *testing.T) {
+	dir := t.TempDir()
+	archive := filepath.Join(dir, "archived_sessions")
+	if err := os.MkdirAll(archive, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	ancestorName := "rollout-2026-01-01T00-00-00-00000000-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl"
+	if err := os.WriteFile(filepath.Join(archive, ancestorName), []byte(`{"ancestor":true}`+"\n"), 0o600); err != nil {
+		t.Fatalf("write ancestor: %v", err)
+	}
+	main := filepath.Join(archive, "rollout-main.jsonl")
+	base := `{"timestamp":"t","type":"session_meta","payload":{"session_id":"th-main"}}` + "\n"
+	withRef := base + `{"timestamp":"t","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"fork from ` + ancestorName + `"}]}}` + "\n"
+	if err := os.WriteFile(main, []byte(withRef), 0o600); err != nil {
+		t.Fatalf("write main: %v", err)
+	}
+	info, _ := os.Stat(main)
+	session := sessionassets.DiscoveredSession{
+		NativeThreadID: "th-main",
+		NativePath:     main,
+		Archived:       true,
+		ModifiedAt:     info.ModTime().Unix(),
+		Size:           info.Size(),
+	}
+	resolution, err := (Discoverer{}).ResolveDependencies(context.Background(), dir, main)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	request := sessionassets.BuildSessionCaptureRequest("asset-x", "source-x", session, resolution)
+	seen := map[string]int{}
+	for _, file := range request.Files {
+		seen[file.RelPath]++
+		if count := seen[file.RelPath]; count > 1 {
+			t.Logf("RelPath %s duplicated %d times", file.RelPath, count)
+			t.Fatalf("duplicate RelPath in capture request")
+		}
+	}
+	if len(request.Ancestors) != 1 {
+		t.Fatalf("expected 1 ancestor, got %d", len(request.Ancestors))
+	}
+}
+
+func relPathCount(relPath string, files []sessionassets.MaterialFile) int {
+	count := 0
+	for _, file := range files {
+		if file.RelPath == relPath {
+			count++
+		}
+	}
+	return count
+}

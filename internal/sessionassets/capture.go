@@ -125,11 +125,39 @@ func (s *Service) buildCandidate(ctx context.Context, stagingDir string, job Cap
 // commitCandidate 提交候选：完整候选或无完整 latest 时的部分候选替换
 // current；已有完整 latest 时部分候选被放弃。提交前在最终化锁内重新校验
 // 抑制、删除与代次冲突，旧任务不得覆盖较新结果（V-14）。
+// current 指针读取在 finalizeMu 锁内进行，消除 TOCTOU（N6）。
 func (s *Service) commitCandidate(ctx context.Context, job CaptureJob, request CaptureRequest, stagingDir string, manifest MaterialManifest) error {
 	assetDir := s.paths.AssetDir(request.AssetID)
+	s.finalizeMu.Lock()
+	defer s.finalizeMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		// 完整候选保留在 staging，重启后接续提交（V-11/V-12）。
+		_ = s.catalog.FinishCaptureJob(ctx, job.ID, CaptureStatusCancelled, "", "cancelled with complete staged candidate")
+		return errCaptureCancelled
+	}
 	current, hasCurrent, err := readCurrentPointer(assetDir)
 	if err != nil {
 		return err
+	}
+	if err := s.checkNotSuppressedOrDeleted(ctx, request.AssetID); err != nil {
+		_ = os.RemoveAll(stagingDir)
+		_ = s.catalog.FinishCaptureJob(ctx, job.ID, CaptureStatusCancelled, "", err.Error())
+		s.restoreProjectionFromPointer(ctx, request.AssetID)
+		return nil
+	}
+	disabled, disableErr := s.checkIntegrationStillEnabled(ctx, request.AssetID)
+	if disableErr != nil {
+		// 查询失败 ≠ 禁用：保留完整候选待重启接续，任务记失败（N5）。
+		_ = s.catalog.FinishCaptureJob(ctx, job.ID, CaptureStatusFailed, "", disableErr.Error())
+		s.markUpdateFailed(ctx, request.AssetID)
+		return disableErr
+	}
+	if disabled {
+		_ = os.RemoveAll(stagingDir)
+		_ = s.catalog.FinishCaptureJob(ctx, job.ID, CaptureStatusCancelled, "", "integration disabled before commit")
+		// 恢复投影：MarkAssetSaving 可能在认领时改写为 saving（FR-28/N4）。
+		s.restoreProjectionFromPointer(ctx, request.AssetID)
+		return nil
 	}
 	if !manifest.Complete && hasCurrent && current.Complete {
 		if err := os.RemoveAll(stagingDir); err != nil {
@@ -139,32 +167,16 @@ func (s *Service) commitCandidate(ctx context.Context, job CaptureJob, request C
 		if err := s.catalog.FinishCaptureJob(ctx, job.ID, CaptureStatusPartialDiscarded, "", missing); err != nil {
 			return err
 		}
+		// 丢弃路径不改写 latest，但需清除认领时的 saving 残留（N4）。
+		s.restoreProjectionFromPointer(ctx, request.AssetID)
 		return nil
-	}
-
-	s.finalizeMu.Lock()
-	defer s.finalizeMu.Unlock()
-	if err := ctx.Err(); err != nil {
-		// 完整候选保留在 staging，重启后接续提交（V-11/V-12）。
-		_ = s.catalog.FinishCaptureJob(ctx, job.ID, CaptureStatusCancelled, "", "cancelled with complete staged candidate")
-		return errCaptureCancelled
 	}
 	if hasCurrent && current.GenerationID != job.BaseGenerationID {
 		_ = os.RemoveAll(stagingDir)
+		// 过时任务不污染新状态：按现行指针恢复投影（N4）。
+		s.restoreProjectionFromPointer(ctx, request.AssetID)
 		return fmt.Errorf("asset %s advanced from base %q to %q: %w",
 			request.AssetID, job.BaseGenerationID, current.GenerationID, ErrGenerationConflict)
-	}
-	if err := s.checkNotSuppressedOrDeleted(ctx, request.AssetID); err != nil {
-		_ = os.RemoveAll(stagingDir)
-		_ = s.catalog.FinishCaptureJob(ctx, job.ID, CaptureStatusCancelled, "", err.Error())
-		return nil
-	}
-	if err := s.checkIntegrationStillEnabled(ctx, request.AssetID); err != nil {
-		_ = os.RemoveAll(stagingDir)
-		_ = s.catalog.FinishCaptureJob(ctx, job.ID, CaptureStatusCancelled, "", "integration disabled before commit")
-		// 恢复投影：MarkAssetSaving 可能在认领时改写为 saving（FR-28）。
-		s.restoreProjectionFromPointer(ctx, request.AssetID)
-		return nil
 	}
 	generationID, err := newGenerationID()
 	if err != nil {
@@ -308,21 +320,22 @@ func missingMaterialStatus(missing []MissingRecord) MaterialStatus {
 // errCaptureDisabled 是提交落点前的禁用拦截信号：任务置为取消。
 var errCaptureDisabled = errors.New("capture target integration is disabled")
 
-// checkIntegrationStillEnabled 在提交落点前确认所属集成仍启用；禁用后
-// 不写入新结果（FR-28）。
-func (s *Service) checkIntegrationStillEnabled(ctx context.Context, assetID string) error {
+// checkIntegrationStillEnabled 在提交落点前确认所属集成仍启用。
+// 返回 disabled=true 表示确认禁用（可安全放弃候选）；err 非 nil 表示
+// 查询本身失败（候选保留待重启，不误删，N5）。
+func (s *Service) checkIntegrationStillEnabled(ctx context.Context, assetID string) (disabled bool, err error) {
 	asset, err := s.catalog.GetAsset(ctx, assetID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	enabled, err := s.catalog.IntegrationEnabledByID(ctx, asset.IntegrationID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if !enabled {
-		return errCaptureDisabled
+		return true, nil
 	}
-	return nil
+	return false, nil
 }
 
 // restoreProjectionFromPointer 在任务取消（禁用）后按 current 指针恢复

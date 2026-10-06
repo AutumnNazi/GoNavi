@@ -12154,5 +12154,6 @@
   "session_assets.action.retry_enqueued": "Erfassung erneut einge reiht",
   "session_assets.action.retry_failed": "Wiederholung fehlgeschlagen",
   "session_assets.history.failed_title": "Aktuelle Erfassungsfehler",
-  "session_assets.error.retry_failed": "Wiederholung fehlgeschlagen: {{detail}}"
+  "session_assets.error.retry_failed": "Wiederholung fehlgeschlagen: {{detail}}",
+  "session_assets.action.disable": "Erfassung stoppen"
 }

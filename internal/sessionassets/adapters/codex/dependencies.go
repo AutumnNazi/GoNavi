@@ -80,8 +80,7 @@ func ResolveSessionDependencies(ctx context.Context, dataDir, sessionPath string
 			})
 			continue
 		}
-		info, err := os.Stat(ancestorPath)
-		if err != nil {
+		if _, err := os.Stat(ancestorPath); err != nil {
 			resolution.Missing = append(resolution.Missing, sessionassets.MissingRecord{
 				Reason: string(sessionassets.MissingAncestor),
 				Detail: "rollout 引用 " + name + " 无法读取: " + err.Error(),
@@ -97,12 +96,6 @@ func ResolveSessionDependencies(ctx context.Context, dataDir, sessionPath string
 				Role:       string(sessionassets.MaterialRoleAncestor),
 			}},
 		})
-		resolution.ExtraFiles = append(resolution.ExtraFiles, sessionassets.MaterialFile{
-			RelPath:    "ancestors/" + name,
-			SourcePath: ancestorPath,
-			Role:       string(sessionassets.MaterialRoleAncestor),
-		})
-		_ = info
 	}
 	_ = dataDir
 	return resolution, nil
