@@ -911,6 +911,7 @@ export namespace app {
 	    connections: connection.SavedConnectionView[];
 	    redisDbAliases?: Record<string, any>;
 	    excelGroups?: ConnectionExcelGroupAssignment[];
+	    skippedCount?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new ConnectionPackageImportResult(source);
@@ -921,6 +922,7 @@ export namespace app {
 	        this.connections = this.convertValues(source["connections"], connection.SavedConnectionView);
 	        this.redisDbAliases = source["redisDbAliases"];
 	        this.excelGroups = this.convertValues(source["excelGroups"], ConnectionExcelGroupAssignment);
+	        this.skippedCount = source["skippedCount"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

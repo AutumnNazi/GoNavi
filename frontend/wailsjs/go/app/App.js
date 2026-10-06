@@ -266,6 +266,10 @@ export function DBGetViewsContext(arg1, arg2, arg3) {
   return window['go']['app']['App']['DBGetViewsContext'](arg1, arg2, arg3);
 }
 
+export function DBListLockWaits(arg1, arg2) {
+  return window['go']['app']['App']['DBListLockWaits'](arg1, arg2);
+}
+
 export function DBListSessionDatabases(arg1, arg2) {
   return window['go']['app']['App']['DBListSessionDatabases'](arg1, arg2);
 }

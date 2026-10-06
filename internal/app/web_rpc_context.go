@@ -15,7 +15,7 @@ var requiredIssue1098WebRPCContextMethods = []string{
 	"DBQuery", "DBQueryApplicationWithCancel", "DBQueryWithCancel", "DBQueryMulti", "DBQueryMultiWithOptions", "DBQueryMultiCompact", "DBQueryAudited", "DBQueryAI", "DBQueryIsolated", "MySQLQuery",
 	"DBGetDatabases", "DBGetTables", "DBGetViews", "DBGetObjects", "DBGetAllColumns", "DBGetColumns", "DBGetIndexes",
 	"DBGetForeignKeys", "DBGetDatabaseForeignKeys", "DBGetTriggers", "DBShowCreateTable", "DBTableExists",
-	"DBListSessions", "DBExecuteSessionAction",
+	"DBListSessions", "DBListLockWaits", "DBExecuteSessionAction",
 	"MySQLGetDatabases", "MySQLGetTables", "MySQLShowCreateTable", "MongoDiscoverMembers", "DBRefreshTableStats", "DiagnoseQuery",
 	"DataSyncDatabaseList", "DataSyncObjectList", "DataSyncFieldList", "DataSyncCapabilityResolve", "DataSyncCDCProbe", "DataSyncJobPreflight",
 	"DataSyncJobList", "DataSyncJobGet", "DataSyncRunGet", "DataSyncRunList", "DataSyncRunPage", "DataSyncRunEventList",
@@ -69,6 +69,9 @@ func WebRPCContextHandlers(a *App) map[string]any {
 		},
 		"DBListSessions": func(ctx context.Context, config connection.ConnectionConfig, dbName string) connection.QueryResult {
 			return a.dbListSessionsContext(ctx, config, dbName)
+		},
+		"DBListLockWaits": func(ctx context.Context, config connection.ConnectionConfig, dbName string) connection.QueryResult {
+			return a.dbListLockWaitsContext(ctx, config, dbName)
 		},
 		"DBExecuteSessionAction": func(ctx context.Context, config connection.ConnectionConfig, dbName string, request connection.SessionActionRequest) connection.QueryResult {
 			return a.dbExecuteSessionActionWithAuditContext(ctx, config, dbName, request)
