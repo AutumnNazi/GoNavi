@@ -13,6 +13,7 @@ interface SessionWailsApp {
     config: unknown,
     dbName: string,
   ) => Promise<SessionQueryResult>;
+  DBListLockWaits?: (config: unknown, dbName: string) => Promise<SessionQueryResult>;
   DBExecuteSessionAction: (
     config: unknown,
     dbName: string,
@@ -85,5 +86,22 @@ export const executeDatabaseSessionAction = async (
     'DBExecuteSessionAction',
     [rpcConfig, dbName, request],
     (app) => app.DBExecuteSessionAction(rpcConfig, dbName, request),
+  );
+};
+
+export const listDatabaseLockWaits = async (
+  config: ConnectionConfig,
+  dbName: string,
+): Promise<SessionQueryResult> => {
+  const rpcConfig = buildRpcConnectionConfig(config);
+  return invokeSessionMethod(
+    'DBListLockWaits',
+    [rpcConfig, dbName],
+    (app) => {
+      // An older backend without the binding reports the RPC as unavailable
+      // instead of throwing a TypeError from inside the panel.
+      if (!app.DBListLockWaits) throw new Error(SESSION_WORKBENCH_RPC_UNAVAILABLE);
+      return app.DBListLockWaits(rpcConfig, dbName);
+    },
   );
 };
