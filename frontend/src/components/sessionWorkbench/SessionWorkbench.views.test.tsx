@@ -78,6 +78,7 @@ vi.mock('./LockWaitPanel', () => ({
 }));
 
 vi.mock('./SessionHeader', () => ({ default: (props: any) => <div>{props.extra}</div> }));
+vi.mock('../sessionAlerts/SessionAlertSettingsButton', () => ({ default: () => null }));
 vi.mock('./SessionSummary', () => ({ default: () => null }));
 vi.mock('./SessionActionChooser', () => ({ default: () => null }));
 vi.mock('./SessionConfirmModal', () => ({ default: () => null }));

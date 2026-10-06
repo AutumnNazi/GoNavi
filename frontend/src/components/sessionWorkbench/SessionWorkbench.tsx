@@ -3,6 +3,7 @@ import { useMemo, useRef, useState } from 'react';
 import type { TabData } from '../../types';
 import { useI18n } from '../../i18n/provider';
 import { resolveConnectionEnvironmentType } from '../../utils/connectionEnvironment';
+import SessionAlertSettingsButton from '../sessionAlerts/SessionAlertSettingsButton';
 import LockWaitPanel from './LockWaitPanel';
 import SessionActionChooser from './SessionActionChooser';
 import SessionConfirmModal from './SessionConfirmModal';
@@ -18,16 +19,15 @@ import {
   type SessionQueryResult,
 } from './sessionWorkbenchModel';
 import { useLockWaits } from './useLockWaits';
+import { useSessionWorkbenchDeepLink, type SessionWorkbenchView } from './useSessionWorkbenchDeepLink';
 import { useSessionWorkbench } from './useSessionWorkbench';
 import { useSessionWorkbenchDialogs } from './useSessionWorkbenchDialogs';
 import './SessionWorkbench.css';
 
 export interface SessionWorkbenchProps {
-  tab: Pick<TabData, 'connectionId' | 'dbName'>;
+  tab: Pick<TabData, 'connectionId' | 'dbName' | 'sessionWorkbenchView' | 'sessionWorkbenchFilter' | 'sessionWorkbenchRequestKey'>;
   isActive?: boolean;
 }
-
-type SessionWorkbenchView = 'sessions' | 'lockWaits';
 
 export default function SessionWorkbench({ tab, isActive }: SessionWorkbenchProps) {
   const { t } = useI18n();
@@ -37,6 +37,7 @@ export default function SessionWorkbench({ tab, isActive }: SessionWorkbenchProp
     initialConnectionId: tab.connectionId,
     initialDbName: tab.dbName,
   });
+  useSessionWorkbenchDeepLink({ tab, workbench, setView });
   const lockWaits = useLockWaits({
     connection: workbench.selectedConnection,
     databaseName: workbench.databaseName,
@@ -104,20 +105,23 @@ export default function SessionWorkbench({ tab, isActive }: SessionWorkbenchProp
       <SessionHeader
         engine={(showingLockWaits ? lockWaits.payload?.engine : undefined) || workbench.payload?.engine}
         extra={(
-          <Segmented<SessionWorkbenchView>
-            className="gn-session-workbench-view-switch"
-            value={view}
-            onChange={setView}
-            options={[
-              { value: 'sessions', label: t('session_workbench.view.sessions') },
-              {
-                value: 'lockWaits',
-                label: waitingCount > 0
-                  ? `${t('session_workbench.view.lock_waits')} · ${waitingCount}`
-                  : t('session_workbench.view.lock_waits'),
-              },
-            ]}
-          />
+          <>
+            <SessionAlertSettingsButton connection={workbench.selectedConnection} />
+            <Segmented<SessionWorkbenchView>
+              className="gn-session-workbench-view-switch"
+              value={view}
+              onChange={setView}
+              options={[
+                { value: 'sessions', label: t('session_workbench.view.sessions') },
+                {
+                  value: 'lockWaits',
+                  label: waitingCount > 0
+                    ? `${t('session_workbench.view.lock_waits')} · ${waitingCount}`
+                    : t('session_workbench.view.lock_waits'),
+                },
+              ]}
+            />
+          </>
         )}
       />
       <SessionToolbar

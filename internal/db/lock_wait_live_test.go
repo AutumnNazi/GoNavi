@@ -101,6 +101,25 @@ func logLockWaits(t *testing.T, waits []connection.DatabaseLockWait) {
 	}
 }
 
+// assertLongTransactionLive checks that the staged idle holder is listed as an
+// open transaction with its age and the statement that took the lock.
+func assertLongTransactionLive(t *testing.T, client Database, config connection.ConnectionConfig, heldMarker string) {
+	t.Helper()
+	payload, err := NewLongTransactionInspector(client, config).ListLongTransactions(context.Background())
+	if err != nil {
+		t.Fatalf("ListLongTransactions: %v", err)
+	}
+	for _, trx := range payload.Transactions {
+		t.Logf("open transaction: session %s %s/%s age=%dms %q", trx.SessionID, trx.User, trx.State, trx.DurationMs, trx.Statement)
+	}
+	for _, trx := range payload.Transactions {
+		if strings.Contains(trx.Statement, heldMarker) && trx.DurationMs >= 500 {
+			return
+		}
+	}
+	t.Fatalf("the idle holder is missing from the open transactions: %+v", payload.Transactions)
+}
+
 func findLockWait(waits []connection.DatabaseLockWait, match func(connection.DatabaseLockWait) bool) bool {
 	for _, wait := range waits {
 		if match(wait) {
@@ -173,6 +192,12 @@ func runMySQLFamilyLockWaitsLive(t *testing.T, env string, spec lockWaitSpec, pe
 			}) {
 				t.Fatal("missing the metadata-lock edge from ALTER TABLE to the holder")
 			}
+			if performanceSchema {
+				assertLongTransactionLive(t, client, config, "'held'")
+			} else {
+				// Without performance_schema an idle holder has no statement to show.
+				assertLongTransactionLive(t, client, config, "")
+			}
 		})
 	}
 }
@@ -239,6 +264,7 @@ func TestLockWaitsLivePostgres(t *testing.T) {
 					}
 				})
 			}
+			assertLongTransactionLive(t, client, config, "'held'")
 		})
 	}
 }
@@ -296,6 +322,7 @@ func TestLockWaitsLiveSQLServer(t *testing.T) {
 			}) {
 				t.Fatal("missing the object-lock edge from ALTER TABLE")
 			}
+			assertLongTransactionLive(t, client, config, "'held'")
 		})
 	}
 }
