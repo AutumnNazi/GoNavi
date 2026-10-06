@@ -25,7 +25,7 @@ func TestDBListLockWaitsUnsupportedDoesNotOpenConnection(t *testing.T) {
 		databaseType string
 		reason       string
 	}{
-		{databaseType: "dameng", reason: "unsupported"},
+		{databaseType: "clickhouse", reason: "unsupported"},
 		{databaseType: "sqlite", reason: "not_applicable"},
 	} {
 		result := app.DBListLockWaits(sessionWorkbenchConfig(test.databaseType), "")

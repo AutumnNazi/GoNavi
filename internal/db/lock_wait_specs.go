@@ -14,8 +14,16 @@ func lockWaitSpecFor(config connection.ConnectionConfig) lockWaitSpec {
 		return mariaDBLockWaitSpec()
 	case "postgres", "kingbase", "highgo":
 		return postgresLockWaitSpec(engine)
-	case "vastbase", "opengauss", "gaussdb":
+	case "vastbase", "opengauss", "gaussdb", "gbase8c":
 		return openGaussLockWaitSpec(engine)
+	case "oceanbase-mysql":
+		return oceanBaseMySQLLockWaitSpec()
+	case "oceanbase-oracle":
+		return oceanBaseOracleLockWaitSpec()
+	case "dameng":
+		return damengLockWaitSpec()
+	case "yashandb":
+		return yashanDBLockWaitSpec()
 	case "oracle":
 		return oracleLockWaitSpec()
 	case "sqlserver":

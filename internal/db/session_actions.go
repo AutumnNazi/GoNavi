@@ -45,8 +45,10 @@ func buildSessionActionStatement(
 		return buildDorisSessionAction(request)
 	case "starrocks":
 		return buildStarRocksSessionAction(request)
-	case "postgres", "kingbase", "highgo", "vastbase", "opengauss", "gaussdb":
+	case "postgres", "kingbase", "highgo", "vastbase", "opengauss", "gaussdb", "gbase8c":
 		return buildPostgresSessionAction(request)
+	case "yashandb":
+		return buildYashanDBSessionAction(request)
 	case "oracle":
 		return buildOracleSessionAction(request)
 	case "sqlserver":

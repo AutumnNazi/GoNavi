@@ -50,8 +50,10 @@ func sessionSpecFor(config connection.ConnectionConfig) sessionSpec {
 		return oceanBaseMySQLSessionSpec()
 	case "doris", "starrocks":
 		return mysqlCompatibleAnalyticsSessionSpec(engine)
-	case "postgres", "kingbase", "highgo", "vastbase", "opengauss", "gaussdb":
+	case "postgres", "kingbase", "highgo", "vastbase", "opengauss", "gaussdb", "gbase8c":
 		return postgresSessionSpec(engine)
+	case "yashandb":
+		return yashanDBSessionSpec()
 	case "oracle":
 		return oracleSessionSpec()
 	case "oceanbase-oracle":
