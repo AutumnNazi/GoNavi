@@ -29,11 +29,14 @@ func TestLockWaitCapabilityFor(t *testing.T) {
 		{name: "oracle", config: connection.ConnectionConfig{Type: "oracle"}, engine: "oracle", supported: true},
 		{name: "sqlserver", config: connection.ConnectionConfig{Type: "sqlserver"}, engine: "sqlserver", supported: true},
 		{name: "custom mysql driver", config: connection.ConnectionConfig{Type: "custom", Driver: "mysql"}, engine: "mysql", supported: true},
-		// Sessions are listed, but there is no reliable waiter→holder view yet.
-		{name: "oceanbase mysql", config: connection.ConnectionConfig{Type: "oceanbase"}, engine: "oceanbase-mysql", reason: sessionReasonUnsupported},
-		{name: "oceanbase oracle", config: connection.ConnectionConfig{Type: "oceanbase", OceanBaseProtocol: "oracle"}, engine: "oceanbase-oracle", reason: sessionReasonUnsupported},
-		{name: "dameng", config: connection.ConnectionConfig{Type: "dameng"}, engine: "dameng", reason: sessionReasonUnsupported},
+		{name: "oceanbase mysql", config: connection.ConnectionConfig{Type: "oceanbase"}, engine: "oceanbase-mysql", supported: true},
+		{name: "oceanbase oracle", config: connection.ConnectionConfig{Type: "oceanbase", OceanBaseProtocol: "oracle"}, engine: "oceanbase-oracle", supported: true},
+		{name: "dameng", config: connection.ConnectionConfig{Type: "dameng"}, engine: "dameng", supported: true},
+		{name: "yashandb", config: connection.ConnectionConfig{Type: "yashandb"}, engine: "yashandb", supported: true},
+		{name: "gbase8c", config: connection.ConnectionConfig{Type: "gbase8c"}, engine: "gbase8c", supported: true},
+		// Sessions are listed, but there is no waiter→holder view.
 		{name: "clickhouse", config: connection.ConnectionConfig{Type: "clickhouse"}, engine: "clickhouse", reason: sessionReasonUnsupported},
+		{name: "trino", config: connection.ConnectionConfig{Type: "trino"}, engine: "trino", reason: sessionReasonUnsupported},
 		{name: "mongodb", config: connection.ConnectionConfig{Type: "mongodb"}, engine: "mongodb", reason: sessionReasonUnsupported},
 		{name: "sqlite", config: connection.ConnectionConfig{Type: "sqlite"}, engine: "sqlite", reason: sessionReasonNotApplicable},
 		{name: "redis", config: connection.ConnectionConfig{Type: "redis"}, engine: "redis", reason: sessionReasonNotApplicable},
@@ -56,8 +59,14 @@ func TestLockWaitCapabilityFor(t *testing.T) {
 func TestLockWaitSpecsCoverEverySupportedEngine(t *testing.T) {
 	t.Parallel()
 
-	for _, engine := range []string{"mysql", "mariadb", "postgres", "kingbase", "highgo", "opengauss", "vastbase", "gaussdb", "oracle", "sqlserver"} {
-		spec := lockWaitSpecFor(connection.ConnectionConfig{Type: engine})
+	for _, config := range []connection.ConnectionConfig{
+		{Type: "mysql"}, {Type: "mariadb"}, {Type: "postgres"}, {Type: "kingbase"}, {Type: "highgo"},
+		{Type: "opengauss"}, {Type: "vastbase"}, {Type: "gaussdb"}, {Type: "gbase8c"}, {Type: "oracle"},
+		{Type: "sqlserver"}, {Type: "dameng"}, {Type: "yashandb"}, {Type: "oceanbase"},
+		{Type: "oceanbase", OceanBaseProtocol: "oracle"},
+	} {
+		engine := config.Type
+		spec := lockWaitSpecFor(config)
 		if !spec.capability.Supported || len(spec.sources) == 0 {
 			t.Fatalf("%s: spec = %+v", engine, spec)
 		}
@@ -163,7 +172,7 @@ func TestUnsupportedLockWaitsDoNotQuery(t *testing.T) {
 			return nil, nil, nil
 		},
 	}
-	payload, err := NewLockWaitInspector(database, connection.ConnectionConfig{Type: "dameng"}).ListLockWaits(context.Background())
+	payload, err := NewLockWaitInspector(database, connection.ConnectionConfig{Type: "clickhouse"}).ListLockWaits(context.Background())
 	if err != nil || payload.Capability.Supported || payload.Waits == nil {
 		t.Fatalf("payload = %+v, err = %v", payload, err)
 	}
