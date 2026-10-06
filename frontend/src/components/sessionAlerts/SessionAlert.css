@@ -1,0 +1,46 @@
+.gn-session-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gn-session-alert .gn-session-alert-statement.ant-typography {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 12px;
+  word-break: break-all;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.gn-session-alert-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 300px;
+}
+
+.gn-session-alert-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.gn-session-alert-settings .ant-input-number-group-wrapper {
+  flex: none;
+  width: 132px;
+}
+
+.gn-session-alert-settings .ant-input-number-group-addon {
+  width: 48px;
+}
+
+.gn-session-alert-settings .ant-input-number {
+  width: 100%;
+}
+
+.gn-session-alert-settings .gn-session-alert-settings-hint.ant-typography {
+  font-size: 12px;
+  line-height: 1.5;
+}

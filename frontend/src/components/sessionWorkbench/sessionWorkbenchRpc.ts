@@ -14,6 +14,8 @@ interface SessionWailsApp {
     dbName: string,
   ) => Promise<SessionQueryResult>;
   DBListLockWaits?: (config: unknown, dbName: string) => Promise<SessionQueryResult>;
+  DBListLongTransactions?: (config: unknown, dbName: string) => Promise<SessionQueryResult>;
+  DBGetSessionMonitorCapabilities?: (config: unknown) => Promise<SessionQueryResult>;
   DBExecuteSessionAction: (
     config: unknown,
     dbName: string,
@@ -102,6 +104,36 @@ export const listDatabaseLockWaits = async (
       // instead of throwing a TypeError from inside the panel.
       if (!app.DBListLockWaits) throw new Error(SESSION_WORKBENCH_RPC_UNAVAILABLE);
       return app.DBListLockWaits(rpcConfig, dbName);
+    },
+  );
+};
+
+export const listDatabaseLongTransactions = async (
+  config: ConnectionConfig,
+  dbName: string,
+): Promise<SessionQueryResult> => {
+  const rpcConfig = buildRpcConnectionConfig(config);
+  return invokeSessionMethod(
+    'DBListLongTransactions',
+    [rpcConfig, dbName],
+    (app) => {
+      if (!app.DBListLongTransactions) throw new Error(SESSION_WORKBENCH_RPC_UNAVAILABLE);
+      return app.DBListLongTransactions(rpcConfig, dbName);
+    },
+  );
+};
+
+/** Which alert checks a data source supports; never opens a connection. */
+export const getSessionMonitorCapabilities = async (
+  config: ConnectionConfig,
+): Promise<SessionQueryResult> => {
+  const rpcConfig = buildRpcConnectionConfig(config);
+  return invokeSessionMethod(
+    'DBGetSessionMonitorCapabilities',
+    [rpcConfig],
+    (app) => {
+      if (!app.DBGetSessionMonitorCapabilities) throw new Error(SESSION_WORKBENCH_RPC_UNAVAILABLE);
+      return app.DBGetSessionMonitorCapabilities(rpcConfig);
     },
   );
 };
