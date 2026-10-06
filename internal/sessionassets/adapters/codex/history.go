@@ -75,7 +75,7 @@ type historyPayload struct {
 
 // ReadHistoryPage 按条目分页读取 rollout 的可读历史。offset/limit 以
 // 文件行（含首行元数据）为单位；读取是流式的，不整份载入文件。
-func ReadHistoryPage(_ context.Context, path string, offset, limit int) (HistoryPage, error) {
+func ReadHistoryPage(ctx context.Context, path string, offset, limit int) (HistoryPage, error) {
 	if offset < 0 || limit <= 0 {
 		return HistoryPage{}, errors.New("invalid history page range")
 	}
@@ -97,6 +97,9 @@ func ReadHistoryPage(_ context.Context, path string, offset, limit int) (History
 		index++
 	}
 	for len(page.Entries) < limit {
+		if err := ctx.Err(); err != nil {
+			return page, err
+		}
 		line, readErr := readLineLimited(reader)
 		if len(line) == 0 && readErr != nil {
 			if errors.Is(readErr, io.EOF) {
