@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { TabData } from '../../types';
 import type { SessionWorkbenchState } from './useSessionWorkbench';
 
-export type SessionWorkbenchView = 'sessions' | 'lockWaits';
+export type SessionWorkbenchView = 'sessions' | 'lockWaits' | 'alertHistory';
 
 type DeepLinkTab = Pick<TabData, 'connectionId' | 'sessionWorkbenchView' | 'sessionWorkbenchFilter' | 'sessionWorkbenchRequestKey'>;
 

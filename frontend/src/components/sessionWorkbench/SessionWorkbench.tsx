@@ -3,6 +3,7 @@ import { useMemo, useRef, useState } from 'react';
 import type { TabData } from '../../types';
 import { useI18n } from '../../i18n/provider';
 import { resolveConnectionEnvironmentType } from '../../utils/connectionEnvironment';
+import SessionAlertHistoryPanel from '../sessionAlerts/SessionAlertHistoryPanel';
 import SessionAlertSettingsButton from '../sessionAlerts/SessionAlertSettingsButton';
 import LockWaitPanel from './LockWaitPanel';
 import SessionActionChooser from './SessionActionChooser';
@@ -95,6 +96,7 @@ export default function SessionWorkbench({ tab, isActive }: SessionWorkbenchProp
   });
 
   const showingLockWaits = view === 'lockWaits';
+  const showingAlertHistory = view === 'alertHistory';
   const waitingCount = lockWaits.payload?.waits.length
     ? new Set(lockWaits.payload.waits.map((wait) => `${wait.waitingInstanceId ?? ''}:${wait.waitingSessionId}`)).size
     : 0;
@@ -119,6 +121,7 @@ export default function SessionWorkbench({ tab, isActive }: SessionWorkbenchProp
                     ? `${t('session_workbench.view.lock_waits')} · ${waitingCount}`
                     : t('session_workbench.view.lock_waits'),
                 },
+                { value: 'alertHistory', label: t('session_alerts.history.view') },
               ]}
             />
           </>
@@ -131,7 +134,7 @@ export default function SessionWorkbench({ tab, isActive }: SessionWorkbenchProp
         databaseName={workbench.databaseName}
         filter={workbench.filter}
         runningOnly={workbench.runningOnly}
-        showSessionFilters={!showingLockWaits}
+        showSessionFilters={!showingLockWaits && !showingAlertHistory}
         loading={showingLockWaits ? lockWaits.loading : workbench.loading}
         databaseLoading={workbench.databasesLoading}
         onConnectionChange={workbench.setSelectedConnectionId}
@@ -141,7 +144,9 @@ export default function SessionWorkbench({ tab, isActive }: SessionWorkbenchProp
         onRefresh={() => { void (showingLockWaits ? lockWaits.refresh() : workbench.refresh()); }}
       />
       <div className="gn-session-workbench-body">
-        {showingLockWaits ? (
+        {showingAlertHistory ? (
+          <SessionAlertHistoryPanel connection={workbench.selectedConnection} />
+        ) : showingLockWaits ? (
           <LockWaitPanel
             hasConnection={Boolean(workbench.selectedConnection)}
             payload={lockWaits.payload}
