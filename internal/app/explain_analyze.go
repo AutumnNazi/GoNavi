@@ -65,9 +65,22 @@ func explainAnalyzeSpecFor(dbType string) (explainAnalyzeSpec, bool) {
 }
 
 // explainAnalyzeSupported reports whether the measured mode can run on dbType.
+// SQL Server and Oracle measure the query itself rather than wrapping it in an
+// EXPLAIN statement, see explain_analyze_sqlserver.go / explain_analyze_oracle.go.
 func explainAnalyzeSupported(dbType string) bool {
-	_, ok := explainAnalyzeSpecFor(dbType)
-	return ok
+	if _, ok := explainAnalyzeSpecFor(dbType); ok {
+		return true
+	}
+	return dbType == "sqlserver" || dbType == "oracle"
+}
+
+// explainAnalyzeSupportedFor also rules out OceanBase's Oracle mode, which the
+// plan dialects treat as Oracle but which has no Oracle cursor statistics.
+func explainAnalyzeSupportedFor(config connection.ConnectionConfig, dbType string) bool {
+	if dbType == "oracle" && !strings.EqualFold(strings.TrimSpace(config.Type), "oracle") {
+		return false
+	}
+	return explainAnalyzeSupported(dbType)
 }
 
 // executeExplainAnalyzeContext returns the measured plan and the statement it
@@ -80,33 +93,26 @@ func (a *App) executeExplainAnalyzeContext(
 	query string,
 ) (connection.ExplainResult, string, error) {
 	text := a.appText
+	sql := strings.TrimRight(strings.TrimSpace(query), ";")
+	timeout := getDiagnoseTimeout(config)
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+	switch dbType {
+	case "sqlserver":
+		return a.executeSQLServerExplainAnalyze(ctx, dbInst, query, sql, timeout)
+	case "oracle":
+		return a.executeOracleExplainAnalyze(ctx, dbInst, query, sql, timeout)
+	}
 	spec, ok := explainAnalyzeSpecFor(dbType)
 	if !ok {
 		return connection.ExplainResult{}, "", fmt.Errorf("%s", text("sql_analysis.backend.error.analyze_unsupported", map[string]any{"dbType": dbType}))
 	}
-	sql := strings.TrimRight(strings.TrimSpace(query), ";")
 	statement := fmt.Sprintf(spec.explain, sql)
-	timeout := getDiagnoseTimeout(config)
-	ctx, cancel := context.WithTimeout(parent, timeout)
-	defer cancel()
-
-	provider, ok := dbInst.(db.SessionExecerProvider)
-	if !ok || !runtimeSupportsSessionExecer(dbInst) {
-		return connection.ExplainResult{}, statement, fmt.Errorf("%s", text("sql_analysis.backend.error.analyze_unsupported", map[string]any{"dbType": dbType}))
-	}
-	session, err := provider.OpenSessionExecer(ctx)
+	session, querySession, closeSession, err := openExplainAnalyzeSession(ctx, dbInst, dbType, text)
 	if err != nil {
 		return connection.ExplainResult{}, statement, err
 	}
-	defer func() {
-		if closeErr := session.Close(); closeErr != nil {
-			logger.Warnf("实测会话关闭失败：type=%s err=%v", dbType, closeErr)
-		}
-	}()
-	querySession, ok := session.(db.StatementQueryExecer)
-	if !ok {
-		return connection.ExplainResult{}, statement, fmt.Errorf("%s", text("sql_analysis.backend.error.analyze_unsupported", map[string]any{"dbType": dbType}))
-	}
+	defer closeSession()
 
 	parseType := dbType
 	stopKill := func() bool { return true }
@@ -142,6 +148,36 @@ func (a *App) executeExplainAnalyzeContext(
 	}
 	annotateExplainActuals(&result)
 	return result, statement, nil
+}
+
+// openExplainAnalyzeSession pins one physical connection: the measured run, its
+// transaction and the statements that read the plan back must share it.
+func openExplainAnalyzeSession(
+	ctx context.Context,
+	dbInst db.Database,
+	dbType string,
+	text explainText,
+) (db.StatementExecer, db.StatementQueryExecer, func(), error) {
+	unsupported := fmt.Errorf("%s", text("sql_analysis.backend.error.analyze_unsupported", map[string]any{"dbType": dbType}))
+	provider, ok := dbInst.(db.SessionExecerProvider)
+	if !ok || !runtimeSupportsSessionExecer(dbInst) {
+		return nil, nil, nil, unsupported
+	}
+	session, err := provider.OpenSessionExecer(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	closeSession := func() {
+		if closeErr := session.Close(); closeErr != nil {
+			logger.Warnf("实测会话关闭失败：type=%s err=%v", dbType, closeErr)
+		}
+	}
+	querySession, ok := session.(db.StatementQueryExecer)
+	if !ok {
+		closeSession()
+		return nil, nil, nil, unsupported
+	}
+	return session, querySession, closeSession, nil
 }
 
 // mysqlSessionIdentity reads the pinned connection's id (for KILL QUERY) and

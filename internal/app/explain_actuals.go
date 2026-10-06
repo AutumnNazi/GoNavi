@@ -31,7 +31,7 @@ func annotateExplainActuals(result *connection.ExplainResult) {
 // whose outer side produced nothing) from a grouping line that has no numbers
 // of its own: only a real step carries an estimate.
 func markExplainNeverExecuted(node *connection.ExplainNode) {
-	if node.Loops > 0 || node.DurationMs > 0 {
+	if node.Loops > 0 || node.DurationMs > 0 || node.Extra[sqlServerNoRuntimeKey] == true {
 		return
 	}
 	_, treeCost := node.Extra["estimatedTotalCost"]
@@ -122,4 +122,15 @@ func annotateExplainTimeHotspots(result *connection.ExplainResult) {
 		total += self[index]
 	}
 	applyExplainHotspotShares(result, self, total, explainHotspotBasisTime)
+}
+
+// explainMeasuredWallMs is the statement's time when a dialect reports no total
+// of its own: step times include the steps below them, so the largest one is
+// the outermost measured step. Summing the steps would count children twice.
+func explainMeasuredWallMs(nodes []connection.ExplainNode) float64 {
+	wall := 0.0
+	for _, node := range nodes {
+		wall = math.Max(wall, explainNodeTotalMs(node))
+	}
+	return roundExplain(wall, 3)
 }

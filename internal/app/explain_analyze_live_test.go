@@ -25,15 +25,16 @@ import (
 const explainLiveRows = 20000
 
 type explainLiveTarget struct {
-	name      string
-	config    connection.ConnectionConfig
-	dbName    string
-	setup     []string
-	query     string // join + group: every step is measured
-	skewed    string // a filter whose estimate is far off
-	sideEffct string // writes from inside a SELECT; must be refused
-	sleep     string // runs past the timeout
-	running   string // counts statements still running the sleep
+	name       string
+	config     connection.ConnectionConfig
+	dbName     string
+	setup      []string
+	query      string // join + group: every step is measured
+	skewed     string // a filter whose estimate is far off
+	sideEffct  string // writes from inside a SELECT; must be refused
+	writeCount string // reads what sideEffct would have changed
+	sleep      string // runs past the timeout
+	running    string // counts statements still running the sleep
 }
 
 func explainLiveTargets(t *testing.T, envName, dbType string) []explainLiveTarget {
@@ -54,8 +55,12 @@ func explainLiveTargets(t *testing.T, envName, dbType string) []explainLiveTarge
 			ID: "explain-live-" + dbType + "-" + portText, Type: dbType,
 			Host: host, Port: port, Password: password, Timeout: 30,
 		}
-		target := explainLiveTarget{name: dbType + "@" + addr}
-		if dbType == "postgres" {
+		target := explainLiveTarget{name: dbType + "@" + addr, config: config}
+		switch dbType {
+		case "sqlserver", "oracle":
+			target = explainLiveTargetFor(dbType, target)
+			config = target.config
+		case "postgres":
 			config.User, config.Database = "postgres", "postgres"
 			target.dbName = "postgres"
 			target.setup = postgresExplainLiveSetup()
@@ -66,7 +71,8 @@ func explainLiveTargets(t *testing.T, envName, dbType string) []explainLiveTarge
 			target.sideEffct = "SELECT nextval('explain_seq')"
 			target.sleep = "SELECT pg_sleep(20)"
 			target.running = "SELECT COUNT(*) AS n FROM pg_stat_activity WHERE query LIKE '%pg_sleep(20)%' AND state = 'active' AND pid <> pg_backend_pid()"
-		} else {
+			target.writeCount = "SELECT last_value AS n FROM explain_seq"
+		default:
 			config.User, config.Database = "root", ""
 			target.dbName = "gonavi_explain_live"
 			target.setup = mysqlExplainLiveSetup()
@@ -75,6 +81,7 @@ func explainLiveTargets(t *testing.T, envName, dbType string) []explainLiveTarge
 			target.sideEffct = "SELECT gonavi_explain_live.add_item()"
 			target.sleep = "SELECT SLEEP(20)"
 			target.running = "SELECT COUNT(*) AS n FROM information_schema.PROCESSLIST WHERE INFO LIKE '%SLEEP(20)%' AND INFO NOT LIKE '%PROCESSLIST%'"
+			target.writeCount = "SELECT COUNT(*) AS n FROM gonavi_explain_live.items"
 		}
 		target.config = config.WithResolvedSavedSnapshot()
 		targets = append(targets, target)
@@ -162,10 +169,15 @@ func assertMeasuredPlan(t *testing.T, app *App, target explainLiveTarget) {
 		t.Fatalf("%s analyze: %s", target.name, result.Message)
 	}
 	plan := report.Plan
-	if !plan.Analyzed || !report.AnalyzeSupported || plan.HotspotBasis != explainHotspotBasisTime {
+	timed := false
+	for _, node := range plan.Nodes {
+		timed = timed || node.DurationMs > 0
+	}
+	// SQL Server reports whole milliseconds: a fast plan may carry no times.
+	if !plan.Analyzed || !report.AnalyzeSupported || (timed && plan.HotspotBasis != explainHotspotBasisTime) {
 		t.Fatalf("%s: analyzed=%t supported=%t basis=%q", target.name, plan.Analyzed, report.AnalyzeSupported, plan.HotspotBasis)
 	}
-	if plan.Stats.TotalDurationMs <= 0 {
+	if timed && plan.Stats.TotalDurationMs <= 0 {
 		t.Fatalf("%s: total duration %v", target.name, plan.Stats.TotalDurationMs)
 	}
 	measured, shares := 0, 0.0
@@ -237,14 +249,14 @@ func assertAnalyzeAudited(t *testing.T, app *App, target explainLiveTarget) {
 	t.Helper()
 	events := loadSQLAuditEvents(t, app, sqlaudit.Filter{})
 	for _, event := range events {
-		if event.Source == explainAnalyzeAuditSource && strings.Contains(strings.ToUpper(event.SQLText), "ANALYZE") {
+		if event.Source == explainAnalyzeAuditSource && event.Status == "success" {
 			return
 		}
 	}
 	t.Fatalf("%s: no sql_analysis audit event among %d events", target.name, len(events))
 }
 
-func runExplainAnalyzeLive(t *testing.T, envName, dbType, writeCount string) {
+func runExplainAnalyzeLive(t *testing.T, envName, dbType string) {
 	for _, target := range explainLiveTargets(t, envName, dbType) {
 		t.Run(target.name, func(t *testing.T) {
 			app := newSQLAuditTestApp(t)
@@ -252,7 +264,7 @@ func runExplainAnalyzeLive(t *testing.T, envName, dbType, writeCount string) {
 			runExplainLiveSetup(t, app, target)
 			assertMeasuredPlan(t, app, target)
 			assertSkewFlagged(t, app, target)
-			assertSideEffectRefused(t, app, target, func() int64 { return explainLiveCount(t, app, target, writeCount) })
+			assertSideEffectRefused(t, app, target, func() int64 { return explainLiveCount(t, app, target, target.writeCount) })
 			assertTimeoutStopsServer(t, app, target)
 			assertAnalyzeAudited(t, app, target)
 		})
@@ -260,13 +272,21 @@ func runExplainAnalyzeLive(t *testing.T, envName, dbType, writeCount string) {
 }
 
 func TestExplainAnalyzeLiveMySQL(t *testing.T) {
-	runExplainAnalyzeLive(t, "GONAVI_EXPLAIN_MYSQL_ADDRS", "mysql", "SELECT COUNT(*) AS n FROM gonavi_explain_live.items")
+	runExplainAnalyzeLive(t, "GONAVI_EXPLAIN_MYSQL_ADDRS", "mysql")
 }
 
 func TestExplainAnalyzeLiveMariaDB(t *testing.T) {
-	runExplainAnalyzeLive(t, "GONAVI_EXPLAIN_MARIADB_ADDRS", "mariadb", "SELECT COUNT(*) AS n FROM gonavi_explain_live.items")
+	runExplainAnalyzeLive(t, "GONAVI_EXPLAIN_MARIADB_ADDRS", "mariadb")
 }
 
 func TestExplainAnalyzeLivePostgres(t *testing.T) {
-	runExplainAnalyzeLive(t, "GONAVI_EXPLAIN_POSTGRES_ADDRS", "postgres", "SELECT last_value AS n FROM explain_seq")
+	runExplainAnalyzeLive(t, "GONAVI_EXPLAIN_POSTGRES_ADDRS", "postgres")
+}
+
+func TestExplainAnalyzeLiveSQLServer(t *testing.T) {
+	runExplainAnalyzeLive(t, "GONAVI_EXPLAIN_SQLSERVER_ADDRS", "sqlserver")
+}
+
+func TestExplainAnalyzeLiveOracle(t *testing.T) {
+	runExplainAnalyzeLive(t, "GONAVI_EXPLAIN_ORACLE_ADDRS", "oracle")
 }

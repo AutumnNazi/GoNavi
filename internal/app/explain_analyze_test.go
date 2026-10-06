@@ -15,11 +15,16 @@ import (
 type fakeAnalyzeDatabase struct {
 	fakePinnedExplainDatabase
 	session *fakeAnalyzeSession
-	mu      sync.Mutex
-	execs   []string
+	// analyzeSession replaces session for dialects needing other session calls.
+	analyzeSession db.StatementExecer
+	mu             sync.Mutex
+	execs          []string
 }
 
 func (database *fakeAnalyzeDatabase) OpenSessionExecer(context.Context) (db.StatementExecer, error) {
+	if database.analyzeSession != nil {
+		return database.analyzeSession, nil
+	}
 	return database.session, nil
 }
 
@@ -136,7 +141,7 @@ func TestExecuteExplainAnalyzePostgresUsesReadOnlyTransaction(t *testing.T) {
 
 func TestDiagnoseQueryWithOptionsRefusesAnalyzeWhereUnsupported(t *testing.T) {
 	app := NewApp()
-	for _, dbType := range []string{"oracle", "sqlserver", "clickhouse", "oceanbase"} {
+	for _, dbType := range []string{"clickhouse", "oceanbase", "sqlite"} {
 		if explainAnalyzeSupported(dbType) {
 			t.Fatalf("%s must not offer a measured run yet", dbType)
 		}
@@ -145,10 +150,18 @@ func TestDiagnoseQueryWithOptionsRefusesAnalyzeWhereUnsupported(t *testing.T) {
 			t.Fatalf("%s: %+v", dbType, result)
 		}
 	}
-	for _, dbType := range []string{"mysql", "mariadb", "postgres", "kingbase", "highgo", "vastbase"} {
+	for _, dbType := range []string{"mysql", "mariadb", "postgres", "kingbase", "highgo", "vastbase", "sqlserver", "oracle"} {
 		if !explainAnalyzeSupported(dbType) {
 			t.Fatalf("%s should offer a measured run", dbType)
 		}
+	}
+	// OceanBase's Oracle mode reads plans like Oracle but has no cursor statistics.
+	oceanBaseOracle := connection.ConnectionConfig{Type: "oceanbase", OceanBaseProtocol: "oracle"}
+	if dbType := resolveExplainDBType(oceanBaseOracle); dbType != "oracle" || explainAnalyzeSupportedFor(oceanBaseOracle, dbType) {
+		t.Fatalf("OceanBase Oracle mode resolved to %q and must not offer a measured run", dbType)
+	}
+	if !explainAnalyzeSupportedFor(connection.ConnectionConfig{Type: "oracle"}, "oracle") {
+		t.Fatalf("Oracle itself should offer a measured run")
 	}
 }
 
