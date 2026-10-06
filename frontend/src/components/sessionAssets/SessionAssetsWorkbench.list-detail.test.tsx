@@ -78,6 +78,7 @@ const buildApi = (overrides: Partial<SessionAssetsApi> = {}): SessionAssetsApi =
   continueSession: vi.fn(async () => ({ stage: 'entry_launched' })),
   launchInteractive: vi.fn(async () => ({ stage: 'entry_launched' })),
   prepareHandoff: vi.fn(async () => ({ stage: 'materials_ready', noteFile: 'X:/handoff/notes.md' })),
+  previewHandoff: vi.fn(async () => ({ mode: 'recent', resolvedFrom: 0, resolvedTo: 2 })),
   getCapability: vi.fn(async () => ({ nativeResume: true, newSession: true, manualMaterial: true })),
   ...overrides,
 });

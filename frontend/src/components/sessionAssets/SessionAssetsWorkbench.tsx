@@ -9,6 +9,7 @@ import {
 } from './SessionAssetDetailPanel';
 import { SessionAssetsListPanel } from './SessionAssetsListPanel';
 import { wailsSessionAssetsApi, type SessionAssetDetail, type SessionHistoryPage, type SessionAssetsApi } from './sessionAssetsApi';
+import { SessionAssetsNewSessionPanel } from './SessionAssetsNewSessionPanel';
 import { useSessionAssetsList } from './useSessionAssetsList';
 import './SessionAssetsWorkbench.css';
 
@@ -129,20 +130,10 @@ export const SessionAssetsWorkbench: React.FC<{
     }
   }, [selected]);
 
-  const handleNewSession = React.useCallback(async () => {
+  const [newSessionOpen, setNewSessionOpen] = React.useState(false);
+  const handleNewSession = React.useCallback(() => {
     if (!selected) return;
-    // 手动兜底必先就绪：生成材料与操作说明，再启动目标工作目录的交互
-    // 入口（入口启动 ≠ 新会话已创建，V-29）。
-    const plan = await api.prepareHandoff(selected.id, selected.projectDir);
-    if (!plan || plan.stage !== 'materials_ready') {
-      message.warning(t('session_assets.handoff.materials_failed'));
-      return;
-    }
-    message.success(t('session_assets.handoff.materials_ready', { file: plan.noteFile || plan.materialsDir || '' }));
-    const launch = await api.launchInteractive(selected.projectDir);
-    if (launch?.stage === 'entry_launched') {
-      message.info(t('session_assets.handoff.entry_launched'));
-    }
+    setNewSessionOpen(true);
   }, [selected]);
 
   const handleSelect = React.useCallback((view: { id: string }) => {
@@ -178,6 +169,9 @@ export const SessionAssetsWorkbench: React.FC<{
           onNewSession={() => void handleNewSession()}
         />
       </div>
+      {newSessionOpen && selected ? (
+        <SessionAssetsNewSessionPanel detail={selected} api={api} onClose={() => setNewSessionOpen(false)} />
+      ) : null}
       <footer className="session-assets-workbench-footer">
         {t('session_assets.workbench.protection_hint')}
       </footer>

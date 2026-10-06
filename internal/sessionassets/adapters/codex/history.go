@@ -1,6 +1,8 @@
 package codex
 
 import (
+	"GoNavi-Wails/internal/sessionassets"
+
 	"bufio"
 	"context"
 	"encoding/json"
@@ -313,4 +315,43 @@ func ScanHistoryStats(_ context.Context, path string) (HistoryStats, error) {
 			return stats, nil
 		}
 	}
+}
+
+// ReadableHistoryAdapter 把 rollout 历史转换为领域层可读条目接口实现。
+type ReadableHistoryAdapter struct{}
+
+// ReadReadablePage 实现 sessionassets.ReadableHistoryReader。
+func (ReadableHistoryAdapter) ReadReadablePage(ctx context.Context, path string, offset, limit int) ([]sessionassets.ReadableEntry, int, bool, error) {
+	page, err := ReadHistoryPage(ctx, path, offset, limit)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	entries := make([]sessionassets.ReadableEntry, 0, len(page.Entries))
+	for _, entry := range page.Entries {
+		entries = append(entries, sessionassets.ReadableEntry{
+			Index:  entry.Index,
+			Kind:   entry.Kind,
+			Role:   entry.Role,
+			Name:   entry.Name,
+			Text:   entry.Text,
+			Opaque: entry.Opaque,
+		})
+	}
+	return entries, page.NextOffset, page.HasMore, nil
+}
+
+// ScanReadableStats 实现 sessionassets.HistoryStatsScanner。
+func (ReadableHistoryAdapter) ScanReadableStats(ctx context.Context, path string) (sessionassets.HistoryStatsView, error) {
+	stats, err := ScanHistoryStats(ctx, path)
+	if err != nil {
+		return sessionassets.HistoryStatsView{}, err
+	}
+	return sessionassets.HistoryStatsView{
+		TotalLines:   stats.TotalLines,
+		Messages:     stats.Messages,
+		ToolCalls:    stats.ToolCalls,
+		ToolOutputs:  stats.ToolOutputs,
+		Opaque:       stats.Opaque,
+		LastUserLine: stats.LastUserLine,
+	}, nil
 }

@@ -798,7 +798,9 @@ export function SessionAssetsListAssets(arg1:string,arg2:sessionassets.AssetFilt
 
 export function SessionAssetsListIntegrations():Promise<connection.QueryResult>;
 
-export function SessionAssetsPrepareHandoff(arg1:string,arg2:string):Promise<connection.QueryResult>;
+export function SessionAssetsPrepareHandoff(arg1:string,arg2:string,arg3:string,arg4:number,arg5:number):Promise<connection.QueryResult>;
+
+export function SessionAssetsPreviewHandoff(arg1:string,arg2:string,arg3:number,arg4:number):Promise<connection.QueryResult>;
 
 export function SessionAssetsReadHistory(arg1:string,arg2:number,arg3:number):Promise<connection.QueryResult>;
 

@@ -1,4 +1,4 @@
-import { SessionAssetsContinueSession, SessionAssetsDeleteAsset, SessionAssetsExportAsset, SessionAssetsGetAssetDetail, SessionAssetsHandoffCapability, SessionAssetsLaunchInteractive, SessionAssetsListAssets, SessionAssetsPrepareHandoff, SessionAssetsReadHistory, SessionAssetsRefreshSources } from '../../../wailsjs/go/app/App';
+import { SessionAssetsContinueSession, SessionAssetsPreviewHandoff, SessionAssetsDeleteAsset, SessionAssetsExportAsset, SessionAssetsGetAssetDetail, SessionAssetsHandoffCapability, SessionAssetsLaunchInteractive, SessionAssetsListAssets, SessionAssetsPrepareHandoff, SessionAssetsReadHistory, SessionAssetsRefreshSources } from '../../../wailsjs/go/app/App';
 
 /**
  * 会话资产前端 API seam：组件依赖本接口而非直接绑定，便于测试注入
@@ -65,7 +65,8 @@ export type SessionAssetsApi = {
   refreshSources(kind: string): Promise<boolean>;
   continueSession(assetId: string): Promise<{ stage: string } | null>;
   launchInteractive(workDir: string): Promise<{ stage: string } | null>;
-  prepareHandoff(assetId: string, workDir: string): Promise<{ stage: string; noteFile?: string; materialsDir?: string } | null>;
+  prepareHandoff(assetId: string, workDir: string, mode: string, from: number, to: number): Promise<{ stage: string; noteFile?: string; materialsDir?: string } | null>;
+  previewHandoff(assetId: string, mode: string, from: number, to: number): Promise<Record<string, unknown> | null>;
   getCapability(assetId: string): Promise<{ nativeResume: boolean; newSession: boolean; manualMaterial: boolean } | null>;
 };
 
@@ -117,9 +118,12 @@ export const wailsSessionAssetsApi: SessionAssetsApi = {
   async launchInteractive(workDir) {
     return unwrap<{ stage: string }>(await SessionAssetsLaunchInteractive(workDir));
   },
-  async prepareHandoff(assetId, workDir) {
+  async previewHandoff(assetId, mode, from, to) {
+    return unwrap<Record<string, unknown>>(await SessionAssetsPreviewHandoff(assetId, mode, from, to));
+  },
+  async prepareHandoff(assetId, workDir, mode, from, to) {
     return unwrap<{ stage: string; noteFile?: string; materialsDir?: string }>(
-      await SessionAssetsPrepareHandoff(assetId, workDir),
+      await SessionAssetsPrepareHandoff(assetId, workDir, mode, from, to),
     );
   },
   async getCapability(assetId) {

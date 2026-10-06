@@ -21,7 +21,7 @@ func TestPrepareHandoffMaterialsWritesNoteAndRecord(t *testing.T) {
 	if err != nil {
 		t.Fatalf("detail: %v", err)
 	}
-	plan, err := service.PrepareHandoffMaterials(ctx, detail, `C:\work\demo`)
+	plan, err := service.PrepareHandoffMaterials(ctx, detail, `C:\work\demo`, HandoffScope{Mode: HandoffScopeRecent}, nil, nil)
 	if err != nil {
 		t.Fatalf("prepare handoff: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestPrepareHandoffFailsWithoutMaterial(t *testing.T) {
 	if err != nil {
 		t.Fatalf("detail: %v", err)
 	}
-	plan, err := service.PrepareHandoffMaterials(ctx, detail, "")
+	plan, err := service.PrepareHandoffMaterials(ctx, detail, "", HandoffScope{Mode: HandoffScopeRecent}, nil, nil)
 	if err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestCanResumeNativelyRequiresReadableSource(t *testing.T) {
 
 func TestHandoffDirEscapesAssetScope(t *testing.T) {
 	service := newTestService(t)
-	if _, err := service.PrepareHandoffMaterials(context.Background(), AssetDetail{AssetView: AssetView{ID: "..\\evil"}}, ""); err == nil {
+	if _, err := service.PrepareHandoffMaterials(context.Background(), AssetDetail{AssetView: AssetView{ID: "..\\evil"}}, "", HandoffScope{}, nil, nil); err == nil {
 		t.Fatalf("asset id with separators must be rejected")
 	}
 }

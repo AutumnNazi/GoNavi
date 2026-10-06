@@ -81,7 +81,7 @@ func (a *App) SessionAssetsLaunchInteractive(workDir string) (result connection.
 
 // SessionAssetsPrepareHandoff 生成手动交接材料包与核验过的操作说明
 // （手动兜底必需可用，FR-22）。
-func (a *App) SessionAssetsPrepareHandoff(assetID, workDir string) (result connection.QueryResult) {
+func (a *App) SessionAssetsPrepareHandoff(assetID, workDir, scopeMode string, from, to int) (result connection.QueryResult) {
 	_, service, err := a.sessionAssetsCatalog()
 	if err != nil {
 		return sessionAssetsServiceError(a, err)
@@ -90,7 +90,8 @@ func (a *App) SessionAssetsPrepareHandoff(assetID, workDir string) (result conne
 	if err != nil {
 		return sessionAssetsError(a, "session_assets.error.list_failed", err)
 	}
-	plan, err := service.PrepareHandoffMaterials(context.Background(), detail, workDir)
+	scope := sessionassets.NormalizeHandoffScope(scopeMode, from, to)
+	plan, err := service.PrepareHandoffMaterials(context.Background(), detail, workDir, scope, codex.ReadableHistoryAdapter{}, codex.ReadableHistoryAdapter{})
 	if err != nil {
 		return sessionAssetsError(a, "session_assets.error.handoff_failed", err)
 	}
@@ -132,4 +133,26 @@ func quoteCommand(commandPath string) string {
 		return "\"" + trimmed + "\""
 	}
 	return trimmed
+}
+
+// SessionAssetsPreviewHandoff 返回两阶段新建第二阶段的预览数据：解析后
+// 的行区间、条目统计与省略说明（不估算 token，FR-18）。
+func (a *App) SessionAssetsPreviewHandoff(assetID, scopeMode string, from, to int) (result connection.QueryResult) {
+	_, service, err := a.sessionAssetsCatalog()
+	if err != nil {
+		return sessionAssetsServiceError(a, err)
+	}
+	detail, err := service.AssetDetail(context.Background(), assetID)
+	if err != nil {
+		return sessionAssetsError(a, "session_assets.error.list_failed", err)
+	}
+	scope := sessionassets.NormalizeHandoffScope(scopeMode, from, to)
+	preview, err := service.PreviewHandoff(context.Background(), detail, scope, codex.ReadableHistoryAdapter{})
+	if err != nil {
+		return connection.QueryResult{
+			Success: false,
+			Message: a.appText("session_assets.error.no_readable_history", nil),
+		}
+	}
+	return connection.QueryResult{Success: true, Data: preview}
 }

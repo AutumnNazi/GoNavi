@@ -1570,8 +1570,12 @@ export function SessionAssetsListIntegrations() {
   return window['go']['app']['App']['SessionAssetsListIntegrations']();
 }
 
-export function SessionAssetsPrepareHandoff(arg1, arg2) {
-  return window['go']['app']['App']['SessionAssetsPrepareHandoff'](arg1, arg2);
+export function SessionAssetsPrepareHandoff(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['App']['SessionAssetsPrepareHandoff'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function SessionAssetsPreviewHandoff(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['SessionAssetsPreviewHandoff'](arg1, arg2, arg3, arg4);
 }
 
 export function SessionAssetsReadHistory(arg1, arg2, arg3) {
