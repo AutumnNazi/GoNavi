@@ -107,7 +107,7 @@ func (a *App) SessionAssetsExportAsset(assetID, mode, destDir string) (result co
 		return connection.QueryResult{Success: false, Message: a.appText("session_assets.error.export_failed", map[string]any{"detail": "missing asset"})}
 	}
 	if trimmedDest == "" {
-		selection, err := openSessionAssetsDirectoryDialog(a.ctx, a.appText("session_assets.export.dialog_title", nil))
+		selection, err := openSessionAssetsDirectoryDialog(a, a.appText("session_assets.export.dialog_title", nil))
 		if err != nil {
 			return connection.QueryResult{Success: false, Message: err.Error()}
 		}
@@ -373,7 +373,7 @@ func nonEmptyText(value, fallback string) string {
 // SessionAssetsSelectExportDirectory 弹出导出目标目录选择框；取消返回
 // Success=false 且不计为错误。
 func (a *App) SessionAssetsSelectExportDirectory() (result connection.QueryResult) {
-	selection, err := openSessionAssetsDirectoryDialog(a.ctx, a.appText("session_assets.export.dialog_title", nil))
+	selection, err := openSessionAssetsDirectoryDialog(a, a.appText("session_assets.export.dialog_title", nil))
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
@@ -384,8 +384,13 @@ func (a *App) SessionAssetsSelectExportDirectory() (result connection.QueryResul
 }
 
 // openSessionAssetsDirectoryDialog 打开目录选择对话框（导出目标）。
-func openSessionAssetsDirectoryDialog(ctx context.Context, title string) (string, error) {
-	return runtime.OpenDirectoryDialog(ctx, runtime.OpenDialogOptions{
+// headless/web 运行时与生命周期启动前的调用没有桌面对话框能力；Wails
+// 对无效上下文直接 log.Fatal（无法 recover），必须在此之前拦截。
+func openSessionAssetsDirectoryDialog(a *App, title string) (selection string, err error) {
+	if a == nil || a.headlessRuntime || a.webRuntime || a.ctx == nil || a.ctx == context.Background() {
+		return "", errors.New("directory dialog requires the desktop runtime")
+	}
+	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
 		Title:                title,
 		CanCreateDirectories: true,
 	})

@@ -292,3 +292,6 @@ type CurrentPointer struct {
 	CommittedAt   int64  `json:"committedAt"`
 	Complete      bool   `json:"complete"`
 }
+
+// ErrSourceConflict 表示重定位的目标身份已被同工具的其他来源占用。
+var ErrSourceConflict = errors.New("source identity conflict")

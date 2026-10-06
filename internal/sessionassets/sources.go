@@ -153,3 +153,48 @@ func boolToInt(value bool) int {
 	}
 	return 0
 }
+
+// RelocateSource 重定位一个来源的历史目录：更新 root_path 与身份键。
+// 新身份与其他来源冲突时拒绝，不覆盖冲突身份（V-22）。
+func (c *Catalog) RelocateSource(ctx context.Context, id, newRootPath, newIdentityKey string) error {
+	newRootPath = strings.TrimSpace(newRootPath)
+	newIdentityKey = strings.TrimSpace(newIdentityKey)
+	if newRootPath == "" || newIdentityKey == "" {
+		return fmt.Errorf("relocation requires a root path and identity key")
+	}
+	now := time.Now().Unix()
+	tx, err := c.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin relocate source: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var currentID string
+	err = tx.QueryRowContext(ctx, `SELECT id FROM sources WHERE id = ?`, id).Scan(&currentID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("scan relocating source: %w", err)
+	}
+	var integrationID string
+	err = tx.QueryRowContext(ctx, `SELECT integration_id FROM sources WHERE id = ?`, id).Scan(&integrationID)
+	if err != nil {
+		return fmt.Errorf("scan source integration: %w", err)
+	}
+	var conflicting string
+	err = tx.QueryRowContext(ctx,
+		`SELECT id FROM sources WHERE integration_id = ? AND identity_key = ? AND id <> ?`,
+		integrationID, newIdentityKey, id).Scan(&conflicting)
+	if err == nil {
+		return fmt.Errorf("another source already occupies identity %s: %w", newIdentityKey, ErrSourceConflict)
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("check relocation conflict: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE sources SET root_path = ?, identity_key = ?, updated_at = ? WHERE id = ?`,
+		newRootPath, newIdentityKey, now, id); err != nil {
+		return fmt.Errorf("update relocated source: %w", err)
+	}
+	return tx.Commit()
+}
