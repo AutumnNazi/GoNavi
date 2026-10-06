@@ -131,6 +131,8 @@ export function DBGetServerVersion(arg1:connection.ConnectionConfig):Promise<con
 
 export function DBGetServerVersionContext(arg1:context.Context,arg2:connection.ConnectionConfig):Promise<connection.QueryResult>;
 
+export function DBGetSessionMonitorCapabilities(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
+
 export function DBGetTables(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
 export function DBGetTablesContext(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:string):Promise<connection.QueryResult>;
@@ -146,6 +148,8 @@ export function DBGetViews(arg1:connection.ConnectionConfig,arg2:string):Promise
 export function DBGetViewsContext(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:string):Promise<connection.QueryResult>;
 
 export function DBListLockWaits(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
+
+export function DBListLongTransactions(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
 export function DBListSessionDatabases(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
