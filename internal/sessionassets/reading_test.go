@@ -50,7 +50,7 @@ func syncArchivedAsset(t *testing.T, service *Service, source Source, threadID s
 	t.Helper()
 	session := seedRealSession(t, filepath.Join(source.RootPath, "archived_sessions"), threadID, true)
 	discoverer := &fakeDiscoverer{sessions: []DiscoveredSession{session}}
-	if _, err := service.SyncSource(context.Background(), source, discoverer.sessions, true); err != nil {
+	if _, err := service.SyncSource(context.Background(), source, discoverer.scanResult()); err != nil {
 		t.Fatalf("sync: %v", err)
 	}
 	runQueue(t, service)
@@ -86,7 +86,7 @@ func TestAssetDetailReadSourceTransitions(t *testing.T) {
 	if err := os.RemoveAll(source.RootPath); err != nil {
 		t.Fatalf("remove source: %v", err)
 	}
-	if _, err := service.SyncSource(ctx, source, nil, true); err != nil {
+	if _, err := service.SyncSource(ctx, source, SourceScanResult{Quality: ScanQualityComplete, Complete: true}); err != nil {
 		t.Fatalf("sync after removal: %v", err)
 	}
 	detail, err = service.AssetDetail(ctx, asset.ID)

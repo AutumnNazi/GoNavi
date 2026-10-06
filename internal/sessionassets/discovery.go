@@ -7,11 +7,28 @@ import (
 	"strings"
 )
 
+// 扫描质量常量（由 adapter 把工具私有错误转换为统一语义）。
+const (
+	ScanQualityComplete    = "complete"    // 关键目录全部可读
+	ScanQualityPartial     = "partial"     // 部分目录不可读，发现结果不完整
+	ScanQualityUnreachable = "unreachable" // 来源根或归档目录整体不可达
+)
+
+// SourceScanResult 是一次来源扫描的完整结果：发现项、损坏清单与扫描
+// 质量。Complete 为 false 时不得把消失的引用推断为明确删除（V-22）。
+type SourceScanResult struct {
+	Sessions    []DiscoveredSession
+	Broken      []string
+	Quality     string
+	Complete    bool
+	Unreachable bool
+}
+
 // SourceDiscoverer 是来源发现能力接口（消费方定义，适配器实现）。
 // 返回通用发现结果，实现层负责把工具私有格式转换过来；broken 单列，
 // 不与“来源不可达”混同。
 type SourceDiscoverer interface {
-	DiscoverSourceSessions(ctx context.Context, dataDir string) (sessions []DiscoveredSession, broken []string, err error)
+	DiscoverSourceSessions(ctx context.Context, dataDir string) (SourceScanResult, error)
 	// DiscoverSession 解析单个 rollout 文件的元数据；观察事件使用。
 	DiscoverSession(ctx context.Context, path string, archived bool) (DiscoveredSession, error)
 }
@@ -30,18 +47,25 @@ type DiscoveredSession struct {
 
 // SourceSyncReport 汇总一次来源核对的结果，保证可解释。
 type SourceSyncReport struct {
-	Discovered  int      `json:"discovered"`
-	BrokenFiles int      `json:"brokenFiles"`
-	UpdatedRefs int      `json:"updatedRefs"`
-	Backfilled  int      `json:"backfilled"`
-	MarkedGone  []string `json:"markedGone"`
+	Discovered        int      `json:"discovered"`
+	BrokenFiles       int      `json:"brokenFiles"`
+	UpdatedRefs       int      `json:"updatedRefs"`
+	Backfilled        int      `json:"backfilled"`
+	MarkedGone        []string `json:"markedGone"`
+	Quality           string   `json:"quality"`
+	MarkedUnreachable bool     `json:"markedUnreachable"`
 }
 
 // SyncSource 把一次发现结果并入索引：幂等纳入资产、维护来源引用状态、
-// 对仍存在的归档补保存（FR-06）。scanOK 表示目录扫描完整成功——只有
-// 此时才允许把消失的引用标记为明确删除（V-22：不把不可达误报为删除）。
-func (s *Service) SyncSource(ctx context.Context, source Source, sessions []DiscoveredSession, scanOK bool) (SourceSyncReport, error) {
-	report := SourceSyncReport{Discovered: len(sessions)}
+// 对仍存在的归档补保存（FR-06）。
+//
+// 扫描质量决定状态推断（V-22）：
+//   - Complete：消失的引用推断为明确删除；
+//   - Partial：正常处理发现项，但不做删除推断；
+//   - Unreachable：全部引用改标“来源不可达”，保留最后观测与副本。
+func (s *Service) SyncSource(ctx context.Context, source Source, result SourceScanResult) (SourceSyncReport, error) {
+	sessions := result.Sessions
+	report := SourceSyncReport{Discovered: len(sessions), Quality: result.Quality}
 	seenThreadIDs := make(map[string]bool, len(sessions))
 	for _, session := range sessions {
 		threadID := strings.TrimSpace(session.NativeThreadID)
@@ -88,7 +112,13 @@ func (s *Service) SyncSource(ctx context.Context, source Source, sessions []Disc
 		}
 	}
 
-	if scanOK {
+	switch {
+	case result.Unreachable || result.Quality == ScanQualityUnreachable:
+		if err := s.catalog.MarkSourceRefsStatusForSource(ctx, source.ID, SourceStatusUnreachable); err != nil {
+			return report, err
+		}
+		report.MarkedUnreachable = true
+	case result.Complete:
 		gone, err := s.markMissingRefsGone(ctx, source, seenThreadIDs)
 		if err != nil {
 			return report, err

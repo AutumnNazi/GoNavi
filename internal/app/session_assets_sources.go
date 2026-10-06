@@ -55,18 +55,20 @@ func (a *App) syncAndObserveSource(service *sessionassets.Service, source sessio
 	if !source.Enabled {
 		return
 	}
-	sessions, broken, err := (codex.Discoverer{}).DiscoverSourceSessions(ctx, source.RootPath)
-	scanOK := err == nil
+	scan, err := (codex.Discoverer{}).DiscoverSourceSessions(ctx, source.RootPath)
 	if err != nil {
-		// 目录不可达：保留最后观测与副本，状态由引用维度呈现（AC-11）。
-		logger.Errorf("会话资产：来源扫描不可达 source=%s err=%v", source.ID, err)
+		// 扫描被取消或致命错误：按不可达处理，保留最后观测与副本（AC-11）。
+		logger.Errorf("会话资产：来源扫描失败 source=%s err=%v", source.ID, err)
 	}
-	report, syncErr := service.SyncSource(ctx, source, sessions, scanOK)
+	if scan.Quality == sessionassets.ScanQualityUnreachable {
+		logger.Infof("会话资产：来源不可达，引用改标不可达 source=%s", source.ID)
+	}
+	report, syncErr := service.SyncSource(ctx, source, scan)
 	if syncErr != nil {
 		logger.Error(syncErr, "会话资产：来源核对失败")
-	} else if report.Discovered > 0 || report.Backfilled > 0 || len(report.MarkedGone) > 0 || len(broken) > 0 {
-		logger.Infof("会话资产：来源核对完成 source=%s discovered=%d backfilled=%d gone=%d broken=%d",
-			source.ID, report.Discovered, report.Backfilled, len(report.MarkedGone), len(broken))
+	} else if report.Discovered > 0 || report.Backfilled > 0 || len(report.MarkedGone) > 0 || len(scan.Broken) > 0 {
+		logger.Infof("会话资产：来源核对完成 source=%s discovered=%d backfilled=%d gone=%d broken=%d quality=%s",
+			source.ID, report.Discovered, report.Backfilled, len(report.MarkedGone), len(scan.Broken), scan.Quality)
 	}
 	if err := service.StartSourceObservation(source, codex.Discoverer{}, nil); err != nil {
 		// 观察启动失败必须可见，不得显示为正在保护（V-05）。

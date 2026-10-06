@@ -400,3 +400,15 @@ func (c *Catalog) SourceStatusByAsset(ctx context.Context, integrationID string)
 	}
 	return result, rows.Err()
 }
+
+// MarkSourceRefsStatusForSource 把来源下全部引用置为同一状态（来源整体
+// 不可达时使用；不触碰副本与资产本体）。
+func (c *Catalog) MarkSourceRefsStatusForSource(ctx context.Context, sourceID string, status SourceStatus) error {
+	_, err := c.db.ExecContext(ctx,
+		`UPDATE source_refs SET source_status = ?, last_seen_at = ? WHERE source_id = ?`,
+		string(status), time.Now().Unix(), sourceID)
+	if err != nil {
+		return fmt.Errorf("mark source refs: %w", err)
+	}
+	return nil
+}

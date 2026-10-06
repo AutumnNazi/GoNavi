@@ -71,7 +71,7 @@ func TestDisableBeforeCommitKeepsOldLatest(t *testing.T) {
 	}
 	session := seedRealSession(t, filepath.Join(source.RootPath, "archived_sessions"), "thread-disable-commit", true)
 	discoverer := &fakeDiscoverer{sessions: []DiscoveredSession{session}}
-	if _, err := service.SyncSource(ctx, source, discoverer.sessions, true); err != nil {
+	if _, err := service.SyncSource(ctx, source, discoverer.scanResult()); err != nil {
 		t.Fatalf("initial sync: %v", err)
 	}
 	runQueue(t, service)
@@ -80,13 +80,13 @@ func TestDisableBeforeCommitKeepsOldLatest(t *testing.T) {
 	baseline := mustReadPointer(t, service, asset.ID)
 
 	// 重归档事件已入队，但提交落点前集成被禁用：不得写入新结果。
-	if _, err := service.SyncSource(ctx, source, nil, true); err != nil {
+	if _, err := service.SyncSource(ctx, source, SourceScanResult{Quality: ScanQualityComplete, Complete: true}); err != nil {
 		t.Fatalf("resync: %v", err)
 	}
 	reArchived := seedRealSession(t, filepath.Join(source.RootPath, "archived_sessions"), "thread-disable-commit", true)
 	reArchived.ModifiedAt++ // 模拟源变化触发重新保全
 	discoverer.sessions = []DiscoveredSession{reArchived}
-	if _, err := service.SyncSource(ctx, source, discoverer.sessions, true); err != nil {
+	if _, err := service.SyncSource(ctx, source, discoverer.scanResult()); err != nil {
 		t.Fatalf("re-archive sync: %v", err)
 	}
 	if err := service.catalog.SetIntegrationEnabled(ctx, integrationID, false); err != nil {

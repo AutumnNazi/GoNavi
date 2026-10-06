@@ -20,7 +20,7 @@ func TestUnarchiveKeepsBackupAndReArchiveReplaces(t *testing.T) {
 	sessionDir := filepath.Join(source.RootPath, "archived_sessions")
 	first := seedRealSession(t, sessionDir, "thread-v09", true)
 	discoverer := &fakeDiscoverer{sessions: []DiscoveredSession{first}}
-	if _, err := service.SyncSource(ctx, source, discoverer.sessions, true); err != nil {
+	if _, err := service.SyncSource(ctx, source, discoverer.scanResult()); err != nil {
 		t.Fatalf("archive sync: %v", err)
 	}
 	runQueue(t, service)
@@ -40,7 +40,7 @@ func TestUnarchiveKeepsBackupAndReArchiveReplaces(t *testing.T) {
 	}
 	reactivated := seedRealSession(t, activeDir, "thread-v09", false)
 	discoverer.sessions = []DiscoveredSession{reactivated}
-	if _, err := service.SyncSource(ctx, source, discoverer.sessions, true); err != nil {
+	if _, err := service.SyncSource(ctx, source, discoverer.scanResult()); err != nil {
 		t.Fatalf("unarchive sync: %v", err)
 	}
 	assets, _ := service.catalog.ListAssets(ctx, integrationID)
@@ -59,7 +59,7 @@ func TestUnarchiveKeepsBackupAndReArchiveReplaces(t *testing.T) {
 	}
 	reArchived := seedRealSession(t, sessionDir, "thread-v09", true)
 	discoverer.sessions = []DiscoveredSession{reArchived}
-	if _, err := service.SyncSource(ctx, source, discoverer.sessions, true); err != nil {
+	if _, err := service.SyncSource(ctx, source, discoverer.scanResult()); err != nil {
 		t.Fatalf("re-archive sync: %v", err)
 	}
 	runQueue(t, service)

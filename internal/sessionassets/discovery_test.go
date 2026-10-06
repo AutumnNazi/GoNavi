@@ -14,14 +14,30 @@ type fakeDiscoverer struct {
 	sessions []DiscoveredSession
 	single   map[string]DiscoveredSession
 	failScan bool
+	quality  string // 缺省 complete
 }
 
-func (f *fakeDiscoverer) DiscoverSourceSessions(_ context.Context, _ string) ([]DiscoveredSession, []string, error) {
-	if f.failScan {
-		return nil, nil, errors.New("scan failed")
+func (f *fakeDiscoverer) scanResult() SourceScanResult {
+	quality := f.quality
+	if quality == "" {
+		quality = ScanQualityComplete
 	}
-	broken := make([]string, 0)
-	return f.sessions, broken, nil
+	if f.failScan {
+		return SourceScanResult{Quality: ScanQualityUnreachable, Unreachable: true}
+	}
+	return SourceScanResult{
+		Sessions: f.sessions,
+		Broken:   make([]string, 0),
+		Quality:  quality,
+		Complete: quality == ScanQualityComplete,
+	}
+}
+
+func (f *fakeDiscoverer) DiscoverSourceSessions(_ context.Context, _ string) (SourceScanResult, error) {
+	if f.failScan {
+		return SourceScanResult{Quality: ScanQualityUnreachable, Unreachable: true}, errors.New("scan failed")
+	}
+	return f.scanResult(), nil
 }
 
 func (f *fakeDiscoverer) DiscoverSession(_ context.Context, path string, archived bool) (DiscoveredSession, error) {
@@ -84,7 +100,7 @@ func TestSyncSourceBackfillsArchivedSessions(t *testing.T) {
 		seedRealSession(t, filepath.Join(root, "archived_sessions"), "thread-archived", true),
 		seedRealSession(t, filepath.Join(root, "sessions"), "thread-active", false),
 	}}
-	report, err := service.SyncSource(ctx, source, discoverer.sessions, true)
+	report, err := service.SyncSource(ctx, source, discoverer.scanResult())
 	if err != nil {
 		t.Fatalf("sync source: %v", err)
 	}
@@ -128,10 +144,10 @@ func TestSyncSourceDoesNotDuplicateJobs(t *testing.T) {
 	}
 	session := seedDiscovered("thread-dup", `X:\archived\rollout-dup.jsonl`, true)
 	discoverer := &fakeDiscoverer{sessions: []DiscoveredSession{session}}
-	if _, err := service.SyncSource(ctx, source, discoverer.sessions, true); err != nil {
+	if _, err := service.SyncSource(ctx, source, discoverer.scanResult()); err != nil {
 		t.Fatalf("first sync: %v", err)
 	}
-	if _, err := service.SyncSource(ctx, source, discoverer.sessions, true); err != nil {
+	if _, err := service.SyncSource(ctx, source, discoverer.scanResult()); err != nil {
 		t.Fatalf("second sync: %v", err)
 	}
 	assets, err := service.catalog.ListAssets(ctx, source.IntegrationID)
@@ -163,7 +179,7 @@ func TestSyncSourceMarksGoneOnlyAfterFullScan(t *testing.T) {
 	}
 	first := seedDiscovered("thread-gone", `X:\archived\rollout-gone.jsonl`, true)
 	discoverer := &fakeDiscoverer{sessions: []DiscoveredSession{first}}
-	if _, err := service.SyncSource(ctx, source, discoverer.sessions, true); err != nil {
+	if _, err := service.SyncSource(ctx, source, discoverer.scanResult()); err != nil {
 		t.Fatalf("seed sync: %v", err)
 	}
 	assetID := ""
@@ -176,7 +192,7 @@ func TestSyncSourceMarksGoneOnlyAfterFullScan(t *testing.T) {
 
 	// 扫描失败：不得把消失的引用标为删除（V-22）。
 	discoverer.failScan = true
-	if _, err := service.SyncSource(ctx, source, nil, false); err != nil {
+	if _, err := service.SyncSource(ctx, source, SourceScanResult{Quality: ScanQualityPartial}); err != nil {
 		t.Fatalf("failed scan should not error at sync level: %v", err)
 	}
 	refs, _ := service.catalog.ListSourceRefs(ctx, assetID)
@@ -187,7 +203,7 @@ func TestSyncSourceMarksGoneOnlyAfterFullScan(t *testing.T) {
 	// 扫描完整成功但会话不再出现：标记明确删除（元数据维度）。
 	discoverer.failScan = false
 	discoverer.sessions = nil
-	report, err := service.SyncSource(ctx, source, nil, true)
+	report, err := service.SyncSource(ctx, source, SourceScanResult{Quality: ScanQualityComplete, Complete: true})
 	if err != nil {
 		t.Fatalf("clean sync: %v", err)
 	}
@@ -214,7 +230,7 @@ func TestSyncSourceSkipsSuppressed(t *testing.T) {
 	}
 	session := seedDiscovered("thread-killed", `X:\archived\rollout-killed.jsonl`, true)
 	discoverer := &fakeDiscoverer{sessions: []DiscoveredSession{session}}
-	if _, err := service.SyncSource(ctx, source, discoverer.sessions, true); err != nil {
+	if _, err := service.SyncSource(ctx, source, discoverer.scanResult()); err != nil {
 		t.Fatalf("first sync: %v", err)
 	}
 	assets, _ := service.catalog.ListAssets(ctx, integrationID)
@@ -226,7 +242,7 @@ func TestSyncSourceSkipsSuppressed(t *testing.T) {
 		}
 	}
 	// 重新扫描：被抑制的身份不重新纳入、不报错。
-	if _, err := service.SyncSource(ctx, source, discoverer.sessions, true); err != nil {
+	if _, err := service.SyncSource(ctx, source, discoverer.scanResult()); err != nil {
 		t.Fatalf("rescan after delete: %v", err)
 	}
 	list, _ := service.catalog.ListAssets(ctx, integrationID)
@@ -294,7 +310,7 @@ func TestM3CheckpointArchivePreserveThenSourceRemoved(t *testing.T) {
 	discoverer := &fakeDiscoverer{sessions: []DiscoveredSession{session}}
 
 	// 1) 发现并补保存。
-	if _, err := service.SyncSource(ctx, source, discoverer.sessions, true); err != nil {
+	if _, err := service.SyncSource(ctx, source, discoverer.scanResult()); err != nil {
 		t.Fatalf("sync: %v", err)
 	}
 	runQueue(t, service)
@@ -329,7 +345,7 @@ func TestM3CheckpointArchivePreserveThenSourceRemoved(t *testing.T) {
 	if err := os.RemoveAll(source.RootPath); err != nil {
 		t.Fatalf("remove source root: %v", err)
 	}
-	if _, err := service.SyncSource(ctx, source, nil, true); err != nil {
+	if _, err := service.SyncSource(ctx, source, SourceScanResult{Quality: ScanQualityComplete, Complete: true}); err != nil {
 		t.Fatalf("sync after removal: %v", err)
 	}
 	if refs, _ := service.catalog.ListSourceRefs(ctx, asset.ID); refs[0].SourceStatus != string(SourceStatusDeleted) {
@@ -350,5 +366,73 @@ func TestM3CheckpointArchivePreserveThenSourceRemoved(t *testing.T) {
 	updated, _ := service.catalog.GetAsset(ctx, asset.ID)
 	if updated.BackupStatus != string(BackupStatusVerified) || !updated.LatestComplete {
 		t.Fatalf("asset projection must stay verified after source removal: %+v", updated)
+	}
+}
+
+func TestSyncSourceUnreachableMarksRefsNotDeleted(t *testing.T) {
+	service := newTestService(t)
+	ctx := context.Background()
+	integrationID, sourceID := enableCodex(t, service)
+	source, err := service.catalog.GetSource(ctx, sourceID)
+	if err != nil {
+		t.Fatalf("load source: %v", err)
+	}
+	session := seedRealSession(t, filepath.Join(source.RootPath, "archived_sessions"), "thread-unreachable", true)
+	discoverer := &fakeDiscoverer{sessions: []DiscoveredSession{session}}
+	if _, err := service.SyncSource(ctx, source, discoverer.scanResult()); err != nil {
+		t.Fatalf("initial sync: %v", err)
+	}
+	var assetID string
+	assets, _ := service.catalog.ListAssets(ctx, integrationID)
+	for _, item := range assets {
+		if item.NativeThreadID == "thread-unreachable" {
+			assetID = item.ID
+		}
+	}
+
+	// 来源整体不可达（挂载丢失/权限变化）：引用改标不可达，不做删除推断。
+	unreachable := SourceScanResult{Quality: ScanQualityUnreachable, Unreachable: true}
+	if _, err := service.SyncSource(ctx, source, unreachable); err != nil {
+		t.Fatalf("unreachable sync: %v", err)
+	}
+	refs, _ := service.catalog.ListSourceRefs(ctx, assetID)
+	if refs[0].SourceStatus != string(SourceStatusUnreachable) {
+		t.Fatalf("ref status = %s, want unreachable", refs[0].SourceStatus)
+	}
+	// 资产与副本不受影响。
+	if _, err := service.catalog.GetAsset(ctx, assetID); err != nil {
+		t.Fatalf("asset must survive unreachable: %v", err)
+	}
+}
+
+func TestSyncSourcePartialDoesNotInferDeletion(t *testing.T) {
+	service := newTestService(t)
+	ctx := context.Background()
+	integrationID, sourceID := enableCodex(t, service)
+	source, err := service.catalog.GetSource(ctx, sourceID)
+	if err != nil {
+		t.Fatalf("load source: %v", err)
+	}
+	session := seedRealSession(t, filepath.Join(source.RootPath, "archived_sessions"), "thread-partial-scan", true)
+	discoverer := &fakeDiscoverer{sessions: []DiscoveredSession{session}}
+	if _, err := service.SyncSource(ctx, source, discoverer.scanResult()); err != nil {
+		t.Fatalf("initial sync: %v", err)
+	}
+	var assetID string
+	assets, _ := service.catalog.ListAssets(ctx, integrationID)
+	for _, item := range assets {
+		if item.NativeThreadID == "thread-partial-scan" {
+			assetID = item.ID
+		}
+	}
+
+	// 部分扫描（如活跃目录权限错误）：不推断删除。
+	partial := SourceScanResult{Quality: ScanQualityPartial}
+	if _, err := service.SyncSource(ctx, source, partial); err != nil {
+		t.Fatalf("partial sync: %v", err)
+	}
+	refs, _ := service.catalog.ListSourceRefs(ctx, assetID)
+	if refs[0].SourceStatus == string(SourceStatusDeleted) {
+		t.Fatalf("partial scan must not mark deleted")
 	}
 }

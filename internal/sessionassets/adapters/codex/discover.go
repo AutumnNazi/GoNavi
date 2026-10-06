@@ -55,41 +55,83 @@ type SessionMeta struct {
 	Size         int64  `json:"size"`
 }
 
-// DiscoverSessions 扫描数据目录下的活跃与归档会话。单个文件解析失败
-// 不中断整体发现；损坏文件由调用方按来源状态呈现。
-func DiscoverSessions(_ context.Context, dataDir string) ([]SessionMeta, []string, error) {
+// ScanQuality 区分扫描完整性：错误必须显式返回，调用方据此决定能否
+// 把消失的引用推断为明确删除（V-22：不可达不误报删除）。
+const (
+	ScanComplete    = "complete"    // 关键目录全部可读
+	ScanPartial     = "partial"     // 部分目录/文件不可读，发现结果不完整
+	ScanUnreachable = "unreachable" // 来源根或归档目录整体不可达
+)
+
+// DiscoverSessions 扫描数据目录下的活跃与归档会话。返回扫描质量：
+// complete=关键目录全部可读；partial=个别目录不可读但来源根可达；
+// unreachable=来源根或归档目录整体不可达（权限、挂载、移动）。
+// 单个文件解析失败只计入 broken，不影响扫描质量。
+func DiscoverSessions(ctx context.Context, dataDir string) ([]SessionMeta, []string, string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, ScanUnreachable, err
+	}
+	if info, err := os.Stat(dataDir); err != nil || !info.IsDir() {
+		// 来源根整体不可达：不产生任何删除推断。
+		return nil, nil, ScanUnreachable, nil
+	}
 	metas := make([]SessionMeta, 0, 16)
 	broken := make([]string, 0)
+	quality := ScanComplete
 	archivedDir := filepath.Join(dataDir, archivedSessionsDirName)
-	metasFromFile, brokenFromFile := discoverRolloutDir(archivedDir, true)
-	metas = append(metas, metasFromFile...)
-	broken = append(broken, brokenFromFile...)
-	activeRoot := filepath.Join(dataDir, activeSessionsDirName)
-	activeFiles, walkErr := collectRolloutFiles(activeRoot, 4)
-	if walkErr != nil {
-		return metas, broken, nil // 活跃目录缺失只影响活跃发现，不视为来源错误
-	}
-	for _, path := range activeFiles {
-		meta, err := readSessionHeader(path, false)
-		if err != nil {
-			broken = append(broken, path)
-			continue
+	archivedMeta, archivedBroken, archivedErr := discoverRolloutDir(ctx, archivedDir, true)
+	if archivedErr != nil {
+		if !errors.Is(archivedErr, os.ErrNotExist) {
+			// 权限或 IO 错误：归档目录整体不可读。
+			return metas, broken, ScanUnreachable, nil
 		}
-		metas = append(metas, meta)
+		// 归档目录不存在属合法布局（无归档）；活跃目录也缺失则视为不可达。
+		if _, activeStatErr := os.Stat(filepath.Join(dataDir, activeSessionsDirName)); activeStatErr != nil {
+			return nil, archivedBroken, ScanUnreachable, nil
+		}
+		quality = ScanPartial
+	}
+	metas = append(metas, archivedMeta...)
+	broken = append(broken, archivedBroken...)
+	activeRoot := filepath.Join(dataDir, activeSessionsDirName)
+	activeFiles, walkErr := collectRolloutFiles(ctx, activeRoot, 4)
+	if walkErr != nil {
+		if errors.Is(walkErr, os.ErrNotExist) {
+			// 活跃目录缺失：无活跃发现，不降低扫描质量。
+			sort.Slice(metas, func(i, j int) bool { return metas[i].ModifiedAt > metas[j].ModifiedAt })
+			return metas, broken, quality, nil
+		}
+		quality = ScanPartial
+	} else {
+		for _, path := range activeFiles {
+			if err := ctx.Err(); err != nil {
+				return metas, broken, quality, err
+			}
+			meta, err := readSessionHeader(path, false)
+			if err != nil {
+				broken = append(broken, path)
+				continue
+			}
+			metas = append(metas, meta)
+		}
 	}
 	sort.Slice(metas, func(i, j int) bool { return metas[i].ModifiedAt > metas[j].ModifiedAt })
-	return metas, broken, nil
+	return metas, broken, quality, nil
 }
 
-// discoverRolloutDir 读取扁平的归档目录。
-func discoverRolloutDir(dir string, archived bool) ([]SessionMeta, []string) {
-	files, err := collectRolloutFiles(dir, 1)
+// discoverRolloutDir 读取扁平的归档目录。目录不存在返回 os.ErrNotExist，
+// 其它错误（权限、IO）原样返回，调用方区分扫描质量。
+func discoverRolloutDir(ctx context.Context, dir string, archived bool) ([]SessionMeta, []string, error) {
+	files, err := collectRolloutFiles(ctx, dir, 1)
 	if err != nil {
-		return nil, nil
+		return nil, nil, err
 	}
 	metas := make([]SessionMeta, 0, len(files))
 	broken := make([]string, 0)
 	for _, path := range files {
+		if err := ctx.Err(); err != nil {
+			return metas, broken, err
+		}
 		meta, err := readSessionHeader(path, archived)
 		if err != nil {
 			broken = append(broken, path)
@@ -97,16 +139,20 @@ func discoverRolloutDir(dir string, archived bool) ([]SessionMeta, []string) {
 		}
 		metas = append(metas, meta)
 	}
-	return metas, broken
+	return metas, broken, nil
 }
 
 // collectRolloutFiles 收集目录（至多 depth 层）内的 rollout 文件。
-func collectRolloutFiles(root string, maxDepth int) ([]string, error) {
+// 目录不存在返回包装的 os.ErrNotExist；权限/IO 错误原样返回。
+func collectRolloutFiles(ctx context.Context, root string, maxDepth int) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	files := make([]string, 0, 16)
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, err
+			return nil, fmt.Errorf("read codex sessions directory %s: %w", filepath.Base(root), os.ErrNotExist)
 		}
 		return nil, fmt.Errorf("read codex sessions directory: %w", err)
 	}
@@ -116,7 +162,7 @@ func collectRolloutFiles(root string, maxDepth int) ([]string, error) {
 			if maxDepth <= 1 {
 				continue
 			}
-			nested, err := collectRolloutFiles(path, maxDepth-1)
+			nested, err := collectRolloutFiles(ctx, path, maxDepth-1)
 			if err != nil {
 				continue
 			}
@@ -200,16 +246,22 @@ func firstNonEmpty(values ...string) string {
 type Discoverer struct{}
 
 // DiscoverSourceSessions 扫描数据目录的全部活跃与归档会话。
-func (Discoverer) DiscoverSourceSessions(ctx context.Context, dataDir string) ([]sessionassets.DiscoveredSession, []string, error) {
-	metas, broken, err := DiscoverSessions(ctx, dataDir)
+// err 非 nil 表示扫描被取消或发生致命错误；扫描质量通过 Quality 表达。
+func (Discoverer) DiscoverSourceSessions(ctx context.Context, dataDir string) (sessionassets.SourceScanResult, error) {
+	metas, broken, quality, err := DiscoverSessions(ctx, dataDir)
 	if err != nil {
-		return nil, broken, err
+		return sessionassets.SourceScanResult{Quality: sessionassets.ScanQualityUnreachable}, err
 	}
 	sessions := make([]sessionassets.DiscoveredSession, 0, len(metas))
 	for _, meta := range metas {
 		sessions = append(sessions, toDiscovered(meta))
 	}
-	return sessions, broken, nil
+	return sessionassets.SourceScanResult{
+		Sessions: sessions,
+		Broken:   broken,
+		Quality:  quality,
+		Complete: quality == ScanComplete,
+	}, nil
 }
 
 // DiscoverSession 解析单个 rollout 文件。

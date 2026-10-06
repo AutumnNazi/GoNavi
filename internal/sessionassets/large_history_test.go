@@ -87,7 +87,7 @@ func TestLargeHistoryCaptureBenchmark(t *testing.T) {
 		ModifiedAt:     info.ModTime().Unix(),
 		Size:           info.Size(),
 	}
-	if _, err := service.SyncSource(ctx, source, []DiscoveredSession{session}, true); err != nil {
+	if _, err := service.SyncSource(ctx, source, SourceScanResult{Sessions: []DiscoveredSession{session}, Quality: ScanQualityComplete, Complete: true}); err != nil {
 		t.Fatalf("sync: %v", err)
 	}
 	runQueue(t, service)
