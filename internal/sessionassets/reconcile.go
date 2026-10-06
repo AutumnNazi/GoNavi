@@ -111,8 +111,9 @@ func (s *Service) reconcileAssetDirs(ctx context.Context, report *ReconcileRepor
 	return nil
 }
 
-// reconcileOneAsset 处理单个资产目录：指针存在则修复投影并清理未引用
-// 代次；指针缺失时从完整候选恢复或清理；被抑制的身份整体移除。
+// reconcileOneAsset 处理单个资产目录：指针存在且代次通过全文件校验则
+// 修复投影并清理未引用代次；指针缺失或指向损坏代次时，先扫描全部代次
+// 找完整可验证者恢复，确认后才清理其余；被抑制的身份整体移除。
 func (s *Service) reconcileOneAsset(ctx context.Context, assetID string, report *ReconcileReport) error {
 	assetDir := s.paths.AssetDir(assetID)
 	pointer, hasPointer, err := readCurrentPointer(assetDir)
@@ -127,19 +128,22 @@ func (s *Service) reconcileOneAsset(ctx context.Context, assetID string, report 
 			return nil
 		}
 		manifest, genErr := readManifestJSON(s.paths.GenerationDir(assetID, pointer.GenerationID))
+		verified := genErr == nil && verifyGenerationFiles(s.paths.GenerationDir(assetID, pointer.GenerationID), manifest) == nil
 		switch {
-		case genErr == nil:
+		case verified:
 			if err := s.repairProjectionFromManifest(ctx, assetID, pointer, manifest, report); err != nil {
 				return err
 			}
+			return s.removeUnreferencedGenerations(assetID, pointer.GenerationID)
 		default:
-			// 指针指向的代次缺失：latest 不可用，投影回退为无副本。
+			// current 指向的代次缺失或损坏：latest 不可信。先扫描全部
+			// 代次找完整可验证者恢复（P0-04），全部无效才回退为无副本。
 			_ = os.Remove(filepath.Join(assetDir, currentFileName))
-			if err := s.resetProjection(ctx, assetID, report); err != nil {
+			if err := s.recoverUnpointedAsset(ctx, assetID, report); err != nil {
 				return err
 			}
+			return nil
 		}
-		return s.removeUnreferencedGenerations(assetID, pointer.GenerationID)
 	}
 	return s.recoverUnpointedAsset(ctx, assetID, report)
 }
@@ -244,11 +248,17 @@ func (s *Service) recoverUnpointedAsset(ctx context.Context, assetID string, rep
 	if err := s.repairProjectionFromManifest(ctx, assetID, pointer, manifest, report); err != nil {
 		return err
 	}
+	// 提升完成后清理其余（损坏）代次；完好代次不受影响。
+	if err := s.removeUnreferencedGenerations(assetID, generationID); err != nil {
+		return err
+	}
 	report.PromotedGenerations = append(report.PromotedGenerations, assetID+"/"+generationID)
 	return nil
 }
 
-// newestVerifiableGeneration 返回清单可读的最新代次（目录名时间序）。
+// newestVerifiableGeneration 返回清单可读且**全部文件校验通过**的最新
+// 代次（目录名时间序）。只解析清单不足以认定有效：损坏文件不得被提升
+// 为 latest（P0-04/V-11）。
 func newestVerifiableGeneration(generationsDir string) (string, bool, error) {
 	entries, err := os.ReadDir(generationsDir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -265,9 +275,15 @@ func newestVerifiableGeneration(generationsDir string) (string, bool, error) {
 	}
 	sort.Sort(sort.Reverse(sort.StringSlice(names)))
 	for _, name := range names {
-		if _, err := readManifestJSON(filepath.Join(generationsDir, name)); err == nil {
-			return name, true, nil
+		dir := filepath.Join(generationsDir, name)
+		manifest, err := readManifestJSON(dir)
+		if err != nil {
+			continue
 		}
+		if verifyGenerationFiles(dir, manifest) != nil {
+			continue
+		}
+		return name, true, nil
 	}
 	return "", false, nil
 }
