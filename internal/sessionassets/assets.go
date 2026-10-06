@@ -14,9 +14,11 @@ import (
 type AssetInput struct {
 	IntegrationID  string
 	NativeThreadID string
-	SourceID       string
-	NativePath     string
-	SourceStatus   SourceStatus
+	// 首次纳入来源的身份键：跨来源同 ID 保留独立资产，不无条件合并（P0-06）。
+	OriginIdentityKey string
+	SourceID          string
+	NativePath        string
+	SourceStatus      SourceStatus
 	// 上次观测的源文件版本，写入 source_refs 供重归档比较（P0-03）。
 	SourceSize         int64
 	SourceModTime      int64
@@ -29,12 +31,14 @@ type AssetInput struct {
 	ForkParentThreadID string
 }
 
-// UpsertAsset 幂等纳入一个会话资产：同集成内相同 native_thread_id 合并为
-// 同一资产并补充来源引用；用户删除过的身份返回 ErrSuppressed，禁止扫描
-// 自动重新纳入（FR-20）。元数据只被更新的观测覆盖，不被空值抹掉。
+// UpsertAsset 幂等纳入一个会话资产：同一来源身份内相同 native_thread_id
+// 合并为同一资产并补充来源引用；跨来源相同 ID 保留独立资产，不无条件
+// 合并（P0-06/V-01）。用户删除过的身份返回 ErrSuppressed，禁止扫描自动
+// 重新纳入（FR-20）。元数据只被更新的观测覆盖，不被空值抹掉。
 func (c *Catalog) UpsertAsset(ctx context.Context, input AssetInput) (Asset, error) {
 	input.NativeThreadID = strings.TrimSpace(input.NativeThreadID)
 	input.IntegrationID = strings.TrimSpace(input.IntegrationID)
+	input.OriginIdentityKey = strings.TrimSpace(input.OriginIdentityKey)
 	if input.IntegrationID == "" || input.NativeThreadID == "" {
 		return Asset{}, fmt.Errorf("asset integration and native thread id are required")
 	}
@@ -47,7 +51,7 @@ func (c *Catalog) UpsertAsset(ctx context.Context, input AssetInput) (Asset, err
 		return Asset{}, fmt.Errorf("begin upsert asset: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	suppressed, err := checkSuppressedTx(ctx, tx, input.IntegrationID, input.NativeThreadID)
+	suppressed, err := checkSuppressedTx(ctx, tx, input.IntegrationID, input.OriginIdentityKey, input.NativeThreadID)
 	if err != nil {
 		return Asset{}, err
 	}
@@ -55,8 +59,8 @@ func (c *Catalog) UpsertAsset(ctx context.Context, input AssetInput) (Asset, err
 		return Asset{}, ErrSuppressed
 	}
 	var asset Asset
-	err = tx.QueryRowContext(ctx, assetSelect+` WHERE integration_id = ? AND native_thread_id = ? AND deleted = 0`,
-		input.IntegrationID, input.NativeThreadID).Scan(asset.scanDest()...)
+	err = tx.QueryRowContext(ctx, assetSelect+` WHERE integration_id = ? AND origin_identity_key = ? AND native_thread_id = ? AND deleted = 0`,
+		input.IntegrationID, input.OriginIdentityKey, input.NativeThreadID).Scan(asset.scanDest()...)
 	switch {
 	case err == nil:
 		if err := updateAssetMetadataTx(ctx, tx, &asset, input, now); err != nil {
@@ -95,17 +99,17 @@ func insertAssetTx(ctx context.Context, tx *sql.Tx, input AssetInput, now int64)
 		sessionUpdated = sessionCreated
 	}
 	asset := Asset{
-		ID: id, IntegrationID: input.IntegrationID, NativeThreadID: input.NativeThreadID,
+		ID: id, IntegrationID: input.IntegrationID, OriginIdentityKey: input.OriginIdentityKey, NativeThreadID: input.NativeThreadID,
 		Title: input.Title, ProjectDir: input.ProjectDir, Provider: input.Provider, Model: input.Model,
 		CreatedAt: sessionCreated, UpdatedAt: sessionUpdated,
 		FirstSeenAt: now, LastSeenAt: now, ForkParentThreadID: input.ForkParentThreadID,
 		BackupStatus: string(BackupStatusNone), MaterialStatus: string(MaterialStatusNotPrepared),
 	}
 	_, err = tx.ExecContext(ctx,
-		`INSERT INTO assets (id, integration_id, native_thread_id, title, project_dir, provider, model,
+		`INSERT INTO assets (id, integration_id, origin_identity_key, native_thread_id, title, project_dir, provider, model,
 		   created_at, updated_at, first_seen_at, last_seen_at, fork_parent_thread_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		asset.ID, asset.IntegrationID, asset.NativeThreadID, asset.Title, asset.ProjectDir, asset.Provider, asset.Model,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		asset.ID, asset.IntegrationID, asset.OriginIdentityKey, asset.NativeThreadID, asset.Title, asset.ProjectDir, asset.Provider, asset.Model,
 		asset.CreatedAt, asset.UpdatedAt, asset.FirstSeenAt, asset.LastSeenAt, asset.ForkParentThreadID,
 	)
 	if err != nil {
@@ -247,14 +251,14 @@ func (c *Catalog) UpdateAssetProjection(ctx context.Context, assetID string, bac
 	return nil
 }
 
-const assetSelect = `SELECT id, integration_id, native_thread_id, title, project_dir, provider, model,
+const assetSelect = `SELECT id, integration_id, origin_identity_key, native_thread_id, title, project_dir, provider, model,
 	created_at, updated_at, first_seen_at, last_seen_at, fork_parent_thread_id,
 	backup_status, material_status, latest_generation_id, latest_complete, last_backup_at
 	FROM assets`
 
 func (a *Asset) scanDest() []any {
 	return []any{
-		&a.ID, &a.IntegrationID, &a.NativeThreadID, &a.Title, &a.ProjectDir, &a.Provider, &a.Model,
+		&a.ID, &a.IntegrationID, &a.OriginIdentityKey, &a.NativeThreadID, &a.Title, &a.ProjectDir, &a.Provider, &a.Model,
 		&a.CreatedAt, &a.UpdatedAt, &a.FirstSeenAt, &a.LastSeenAt, &a.ForkParentThreadID,
 		&a.BackupStatus, &a.MaterialStatus, &a.LatestGenerationID, &a.LatestComplete, &a.LastBackupAt,
 	}

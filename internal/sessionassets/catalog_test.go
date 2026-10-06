@@ -179,3 +179,56 @@ func TestUpsertAssetRefAndSuppression(t *testing.T) {
 		t.Fatalf("deleted asset should be gone, got %v", err)
 	}
 }
+
+// P0-06：跨来源相同 native_thread_id 保留独立资产，不无条件合并；
+// 同来源身份仍幂等合并（V-01/V-06）。
+func TestCrossSourceSameThreadStaysIndependent(t *testing.T) {
+	service := newTestService(t)
+	ctx := context.Background()
+	integrationID, sourceAID := enableCodex(t, service)
+	sourceA, err := service.catalog.GetSource(ctx, sourceAID)
+	if err != nil {
+		t.Fatalf("load source A: %v", err)
+	}
+	sourceB, err := service.catalog.UpsertSource(ctx, SourceInput{
+		IntegrationID: integrationID,
+		Kind:          "cli",
+		DisplayName:   "second location",
+		RootPath:      `D:\second`,
+		IdentityKey:   "identity-second",
+	})
+	if err != nil {
+		t.Fatalf("seed source B: %v", err)
+	}
+	inA := AssetInput{
+		IntegrationID:     integrationID,
+		NativeThreadID:    "thread-shared",
+		SourceID:          sourceA.ID,
+		OriginIdentityKey: sourceA.IdentityKey,
+		SourceStatus:      SourceStatusArchived,
+		Provider:          "openai",
+	}
+	inB := inA
+	inB.SourceID = sourceB.ID
+	inB.OriginIdentityKey = sourceB.IdentityKey
+	inB.Provider = "relay"
+
+	first, err := service.catalog.UpsertAsset(ctx, inA)
+	if err != nil {
+		t.Fatalf("upsert A: %v", err)
+	}
+	second, err := service.catalog.UpsertAsset(ctx, inB)
+	if err != nil {
+		t.Fatalf("upsert B: %v", err)
+	}
+	if first.ID == second.ID {
+		t.Fatalf("different sources must keep independent assets")
+	}
+	if first.Provider != "openai" || second.Provider != "relay" {
+		t.Fatalf("providers must not overwrite across sources: %q vs %q", first.Provider, second.Provider)
+	}
+	assets, _ := service.catalog.ListAssets(ctx, integrationID)
+	if len(assets) != 2 {
+		t.Fatalf("expected 2 assets, got %d", len(assets))
+	}
+}

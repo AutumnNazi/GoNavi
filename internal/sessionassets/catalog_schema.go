@@ -101,4 +101,59 @@ var catalogMigrations = map[int][]string{
 		`ALTER TABLE source_refs ADD COLUMN source_size INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE source_refs ADD COLUMN source_mtime INTEGER NOT NULL DEFAULT 0`,
 	},
+	// 版本 3：资产身份组合首次纳入来源的身份键（P0-06/V-01/FR-27）——
+	// 跨来源相同 native_thread_id 保留独立资产，不无条件合并；抑制标记
+	// 同步按来源身份区分。旧数据 origin_identity_key 迁移为空串，行为
+	// 与旧约束一致。
+	3: {
+		`CREATE TABLE assets_v3 (
+			id                    TEXT PRIMARY KEY,
+			integration_id        TEXT NOT NULL REFERENCES integrations(id) ON DELETE CASCADE,
+			origin_identity_key   TEXT NOT NULL DEFAULT '',
+			native_thread_id      TEXT NOT NULL DEFAULT '',
+			title                 TEXT NOT NULL DEFAULT '',
+			project_dir           TEXT NOT NULL DEFAULT '',
+			provider              TEXT NOT NULL DEFAULT '',
+			model                 TEXT NOT NULL DEFAULT '',
+			created_at            INTEGER NOT NULL DEFAULT 0,
+			updated_at            INTEGER NOT NULL DEFAULT 0,
+			first_seen_at         INTEGER NOT NULL DEFAULT 0,
+			last_seen_at          INTEGER NOT NULL DEFAULT 0,
+			fork_parent_thread_id TEXT NOT NULL DEFAULT '',
+			backup_status         TEXT NOT NULL DEFAULT 'none',
+			material_status       TEXT NOT NULL DEFAULT 'not_prepared',
+			latest_generation_id  TEXT NOT NULL DEFAULT '',
+			latest_complete       INTEGER NOT NULL DEFAULT 0,
+			last_backup_at        INTEGER NOT NULL DEFAULT 0,
+			deleted               INTEGER NOT NULL DEFAULT 0,
+			cleanup_error         TEXT NOT NULL DEFAULT '',
+			UNIQUE(integration_id, origin_identity_key, native_thread_id)
+		)`,
+		`INSERT INTO assets_v3
+			(id, integration_id, origin_identity_key, native_thread_id, title, project_dir, provider, model,
+			 created_at, updated_at, first_seen_at, last_seen_at, fork_parent_thread_id,
+			 backup_status, material_status, latest_generation_id, latest_complete, last_backup_at,
+			 deleted, cleanup_error)
+		 SELECT id, integration_id, '', native_thread_id, title, project_dir, provider, model,
+			 created_at, updated_at, first_seen_at, last_seen_at, fork_parent_thread_id,
+			 backup_status, material_status, latest_generation_id, latest_complete, last_backup_at,
+			 deleted, cleanup_error
+		 FROM assets`,
+		`DROP TABLE assets`,
+		`ALTER TABLE assets_v3 RENAME TO assets`,
+		`CREATE INDEX IF NOT EXISTS idx_session_assets_integration_updated
+			ON assets(integration_id, updated_at)`,
+		`CREATE TABLE suppressed_v3 (
+			integration_id      TEXT NOT NULL,
+			origin_identity_key TEXT NOT NULL DEFAULT '',
+			native_thread_id    TEXT NOT NULL,
+			reason              TEXT NOT NULL DEFAULT 'user_delete',
+			created_at          INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (integration_id, origin_identity_key, native_thread_id)
+		)`,
+		`INSERT INTO suppressed_v3 (integration_id, origin_identity_key, native_thread_id, reason, created_at)
+		 SELECT integration_id, '', native_thread_id, reason, created_at FROM suppressed_sources`,
+		`DROP TABLE suppressed_sources`,
+		`ALTER TABLE suppressed_v3 RENAME TO suppressed_sources`,
+	},
 }

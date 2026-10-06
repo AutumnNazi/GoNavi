@@ -83,17 +83,18 @@ func (s *Service) SyncSource(ctx context.Context, source Source, result SourceSc
 			status = SourceStatusArchived
 		}
 		asset, err := s.catalog.UpsertAsset(ctx, AssetInput{
-			IntegrationID:  source.IntegrationID,
-			NativeThreadID: threadID,
-			SourceID:       source.ID,
-			NativePath:     session.NativePath,
-			SourceStatus:   status,
-			SourceSize:     session.Size,
-			SourceModTime:  session.ModifiedAt,
-			ProjectDir:     session.ProjectDir,
-			Provider:       session.Provider,
-			Model:          session.Model,
-			UpdatedAt:      session.ModifiedAt,
+			IntegrationID:     source.IntegrationID,
+			NativeThreadID:    threadID,
+			SourceID:          source.ID,
+			OriginIdentityKey: source.IdentityKey,
+			NativePath:        session.NativePath,
+			SourceStatus:      status,
+			SourceSize:        session.Size,
+			SourceModTime:     session.ModifiedAt,
+			ProjectDir:        session.ProjectDir,
+			Provider:          session.Provider,
+			Model:             session.Model,
+			UpdatedAt:         session.ModifiedAt,
 		})
 		if err != nil {
 			// 被用户删除抑制的身份安静跳过，不报错、不重新纳入。

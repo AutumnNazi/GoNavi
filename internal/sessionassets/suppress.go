@@ -11,11 +11,11 @@ import (
 )
 
 // checkSuppressedTx 在事务内检查资产身份是否被用户删除抑制。
-func checkSuppressedTx(ctx context.Context, tx *sql.Tx, integrationID, nativeThreadID string) (bool, error) {
+func checkSuppressedTx(ctx context.Context, tx *sql.Tx, integrationID, originIdentityKey, nativeThreadID string) (bool, error) {
 	var one int
 	err := tx.QueryRowContext(ctx,
-		`SELECT 1 FROM suppressed_sources WHERE integration_id = ? AND native_thread_id = ?`,
-		integrationID, nativeThreadID).Scan(&one)
+		`SELECT 1 FROM suppressed_sources WHERE integration_id = ? AND origin_identity_key = ? AND native_thread_id = ?`,
+		integrationID, originIdentityKey, nativeThreadID).Scan(&one)
 	switch {
 	case err == nil:
 		return true, nil
@@ -28,11 +28,11 @@ func checkSuppressedTx(ctx context.Context, tx *sql.Tx, integrationID, nativeThr
 
 // IsSuppressed 按身份检查抑制标记。被抑制的身份在显式“重新纳入”前，
 // 扫描不得自动重新纳入（FR-20）。
-func (c *Catalog) IsSuppressed(ctx context.Context, integrationID, nativeThreadID string) (bool, error) {
+func (c *Catalog) IsSuppressed(ctx context.Context, integrationID, originIdentityKey, nativeThreadID string) (bool, error) {
 	var one int
 	err := c.db.QueryRowContext(ctx,
-		`SELECT 1 FROM suppressed_sources WHERE integration_id = ? AND native_thread_id = ?`,
-		integrationID, nativeThreadID).Scan(&one)
+		`SELECT 1 FROM suppressed_sources WHERE integration_id = ? AND origin_identity_key = ? AND native_thread_id = ?`,
+		integrationID, originIdentityKey, nativeThreadID).Scan(&one)
 	switch {
 	case err == nil:
 		return true, nil
@@ -53,7 +53,7 @@ func (c *Catalog) IsSuppressedByAsset(ctx context.Context, assetID string) (bool
 	if err != nil {
 		return false, err
 	}
-	return c.IsSuppressed(ctx, asset.IntegrationID, asset.NativeThreadID)
+	return c.IsSuppressed(ctx, asset.IntegrationID, asset.OriginIdentityKey, asset.NativeThreadID)
 }
 
 // AssetDeleted 返回资产是否处于已删除待清理状态。
@@ -105,9 +105,9 @@ func (c *Catalog) deleteAssetTx(ctx context.Context, asset Asset, now int64) err
 		return fmt.Errorf("mark asset deleted: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx,
-		`INSERT OR IGNORE INTO suppressed_sources (integration_id, native_thread_id, reason, created_at)
-		 VALUES (?, ?, 'user_delete', ?)`,
-		asset.IntegrationID, asset.NativeThreadID, now); err != nil {
+		`INSERT OR IGNORE INTO suppressed_sources (integration_id, origin_identity_key, native_thread_id, reason, created_at)
+		 VALUES (?, ?, ?, ?, ?)`,
+		asset.IntegrationID, asset.OriginIdentityKey, asset.NativeThreadID, "user_delete", now); err != nil {
 		return fmt.Errorf("record suppression: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx,
@@ -164,9 +164,9 @@ func (c *Catalog) purgeDeletedAsset(ctx context.Context, assetID string) error {
 // loadAssetIncludingDeleted 读取含已删除状态的资产行。
 func (c *Catalog) loadAssetIncludingDeleted(ctx context.Context, assetID string) (deletedAsset, error) {
 	row := c.db.QueryRowContext(ctx,
-		`SELECT id, integration_id, native_thread_id, deleted, cleanup_error FROM assets WHERE id = ?`, assetID)
+		`SELECT id, integration_id, origin_identity_key, native_thread_id, deleted, cleanup_error FROM assets WHERE id = ?`, assetID)
 	var asset deletedAsset
-	err := row.Scan(&asset.ID, &asset.IntegrationID, &asset.NativeThreadID, &asset.Deleted, &asset.CleanupError)
+	err := row.Scan(&asset.ID, &asset.IntegrationID, &asset.OriginIdentityKey, &asset.NativeThreadID, &asset.Deleted, &asset.CleanupError)
 	if errors.Is(err, sql.ErrNoRows) {
 		return deletedAsset{}, ErrNotFound
 	}
@@ -178,9 +178,10 @@ func (c *Catalog) loadAssetIncludingDeleted(ctx context.Context, assetID string)
 
 // deletedAsset 是删除与抑制检查所需的资产行投影。
 type deletedAsset struct {
-	ID             string
-	IntegrationID  string
-	NativeThreadID string
-	Deleted        bool
-	CleanupError   string
+	ID                string
+	IntegrationID     string
+	OriginIdentityKey string
+	NativeThreadID    string
+	Deleted           bool
+	CleanupError      string
 }

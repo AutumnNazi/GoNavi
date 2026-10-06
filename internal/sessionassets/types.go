@@ -159,6 +159,7 @@ type Source struct {
 type Asset struct {
 	ID                 string `json:"id"`
 	IntegrationID      string `json:"integrationId"`
+	OriginIdentityKey  string `json:"originIdentityKey"`
 	NativeThreadID     string `json:"nativeThreadId"`
 	Title              string `json:"title"`
 	ProjectDir         string `json:"projectDir"`
