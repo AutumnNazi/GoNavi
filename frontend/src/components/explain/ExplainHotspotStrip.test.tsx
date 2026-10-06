@@ -49,6 +49,12 @@ describe('ExplainHotspotStrip', () => {
       .toEqual(['sql_analysis.explain_hotspot.title.rows'])
   })
 
+  it('titles a measured plan by time', () => {
+    const renderer = render({ basis: 'time' })
+    expect(renderer.root.findByProps({ className: 'gn-explain-hotspots__title' }).children)
+      .toEqual(['sql_analysis.explain_hotspot.title.time'])
+  })
+
   it('renders nothing without a basis', () => {
     expect(render({ basis: undefined }).toJSON()).toBeNull()
   })

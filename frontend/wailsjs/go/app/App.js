@@ -562,6 +562,10 @@ export function DiagnoseQuery(arg1, arg2, arg3) {
   return window['go']['app']['App']['DiagnoseQuery'](arg1, arg2, arg3);
 }
 
+export function DiagnoseQueryWithOptions(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['DiagnoseQueryWithOptions'](arg1, arg2, arg3, arg4);
+}
+
 export function DismissSecurityUpdateReminder() {
   return window['go']['app']['App']['DismissSecurityUpdateReminder']();
 }

@@ -11,6 +11,7 @@ import {
   formatMs,
 } from '../../utils/explainTypes'
 import { useI18n } from '../../i18n/provider'
+import { describeExplainEstimate, explainActualRows, explainNeverExecuted, explainNodeTotalMs, formatStepMs } from './explainActuals'
 import { explainOperationInsightKey, formatShare } from './explainPlanInsights'
 import './ExplainAnalysis.css'
 
@@ -20,12 +21,14 @@ interface ExplainSidebarProps {
   suggestions: IndexSuggestion[]
   selectedNode?: ExplainNode
   onSelectSuggestion?: (suggestion: IndexSuggestion) => void
+  /** The plan was measured. */
+  analyzed?: boolean
 }
 
 type Translate = (key: string) => string
 
 export default function ExplainSidebar(props: ExplainSidebarProps) {
-  const { stats, warnings, suggestions, selectedNode, onSelectSuggestion } = props
+  const { stats, warnings, suggestions, selectedNode, onSelectSuggestion, analyzed } = props
   const sortedSuggestions = useMemo(
     () =>
       [...suggestions].sort((left, right) => {
@@ -40,7 +43,7 @@ export default function ExplainSidebar(props: ExplainSidebarProps) {
   return (
     <aside className="gn-explain-sidebar">
       <ExplainStatsBar stats={stats} warnings={warnings} />
-      {selectedNode && <ExplainNodeDetail node={selectedNode} />}
+      {selectedNode && <ExplainNodeDetail node={selectedNode} analyzed={analyzed} />}
       <IndexSuggestionList suggestions={sortedSuggestions} onSelect={onSelectSuggestion} />
     </aside>
   )
@@ -126,7 +129,7 @@ function WarningRow({
   )
 }
 
-function ExplainNodeDetail({ node }: { node: ExplainNode }) {
+function ExplainNodeDetail({ node, analyzed }: { node: ExplainNode; analyzed?: boolean }) {
   const { language, t } = useI18n()
   const titleId = useId()
   const rows: Array<[string, string]> = []
@@ -137,9 +140,14 @@ function ExplainNodeDetail({ node }: { node: ExplainNode }) {
   if (hasMetricValue(node.estRows)) {
     rows.push([t('sql_analysis.sidebar.node.est_rows'), formatNumber(node.estRows, language)])
   }
-  if (hasMetricValue(node.actualRows)) {
-    rows.push([t('sql_analysis.sidebar.node.actual_rows'), formatNumber(node.actualRows, language)])
+  const actualRows = explainActualRows(node, analyzed)
+  if (analyzed && explainNeverExecuted(node)) {
+    rows.push([t('sql_analysis.sidebar.node.actual_rows'), t('sql_analysis.explain_graph.metric.never_executed')])
+  } else if (hasMetricValue(actualRows)) {
+    rows.push([t('sql_analysis.sidebar.node.actual_rows'), formatNumber(actualRows, language)])
   }
+  const estimate = describeExplainEstimate(node, t)
+  if (estimate) rows.push([t('sql_analysis.sidebar.node.estimate'), estimate])
   if (hasMetricValue(node.loops)) {
     rows.push([t('sql_analysis.sidebar.node.loops'), formatNumber(node.loops, language)])
   }
@@ -147,7 +155,11 @@ function ExplainNodeDetail({ node }: { node: ExplainNode }) {
     rows.push([t('sql_analysis.sidebar.node.cost'), node.cost.toFixed(2)])
   }
   if (hasMetricValue(node.durationMs)) {
-    rows.push([t('sql_analysis.sidebar.node.duration'), formatMs(node.durationMs, language)])
+    rows.push([t('sql_analysis.sidebar.node.duration'), formatStepMs(node.durationMs, language)])
+  }
+  const totalMs = explainNodeTotalMs(node)
+  if (totalMs !== undefined && (node.loops ?? 0) > 1) {
+    rows.push([t('sql_analysis.sidebar.node.total_time'), formatStepMs(totalMs, language)])
   }
   if (hasMetricValue(node.bufferHit)) {
     rows.push([t('sql_analysis.sidebar.node.buffer_hit'), formatPercent(node.bufferHit, language)])

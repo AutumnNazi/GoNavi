@@ -2785,6 +2785,18 @@ export namespace connection {
 	        this.expectedRevision = source["expectedRevision"];
 	    }
 	}
+	export class DiagnoseOptions {
+	    analyze?: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new DiagnoseOptions(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.analyze = source["analyze"];
+	    }
+	}
 	export class GlobalProxyView {
 	    enabled: boolean;
 	    type: string;

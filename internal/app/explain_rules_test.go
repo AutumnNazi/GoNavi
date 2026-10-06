@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 
 	"GoNavi-Wails/internal/connection"
@@ -143,6 +144,28 @@ func TestRunExplainRules_HighEstimationSkewRequiresAnalyze(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("估算/实际偏差 > 10x 应触发建议")
+	}
+}
+
+func TestRunExplainRules_HighEstimationSkewFollowsMeasuredVerdict(t *testing.T) {
+	result := connection.ExplainResult{
+		DBType: "mysql",
+		Nodes: []connection.ExplainNode{
+			// 2300 rows expected 49478: a measured, flagged miss.
+			{ID: "n1", OpType: connection.ExplainOpJoin, EstRows: 49478, ActualRows: 2300, Loops: 1},
+			// 1 row expected per loop, 25 found: judged too small to matter.
+			{ID: "n2", OpType: connection.ExplainOpIndexScan, EstRows: 1, ActualRows: 25, Loops: 1},
+		},
+	}
+	annotateExplainActuals(&result)
+	var reasons []string
+	for _, s := range runExplainRules(result) {
+		if s.Rule == "high_estimation_skew" {
+			reasons = append(reasons, s.AffectedNodeID+": "+s.Reason)
+		}
+	}
+	if len(reasons) != 1 || !strings.HasPrefix(reasons[0], "n1: ") || !strings.Contains(reasons[0], "相差约 22 倍") {
+		t.Fatalf("skew advice = %q", reasons)
 	}
 }
 

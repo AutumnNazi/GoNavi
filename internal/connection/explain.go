@@ -74,9 +74,12 @@ type ExplainNode struct {
 	BufferHit  float64 `json:"bufferHit,omitempty"`  // 缓冲命中率 0-1
 	// CostShare 是这一步自身（不含子节点）承担的估算工作量占整份计划的比例 0-1，
 	// 口径见 ExplainResult.HotspotBasis。
-	CostShare float64        `json:"costShare,omitempty"`
-	Flags     []string       `json:"flags,omitempty"` // 警告标志
-	Extra     map[string]any `json:"extra,omitempty"` // 方言特定字段，前端按需展示
+	CostShare float64 `json:"costShare,omitempty"`
+	// EstimateFactor 是实测时实际行数与估算行数之比（各自按每次循环计、小于 1 行按 1 行算）：
+	// 大于 1 表示少估，小于 1 表示多估；仅实测计划中执行过的步骤填写。
+	EstimateFactor float64        `json:"estimateFactor,omitempty"`
+	Flags          []string       `json:"flags,omitempty"` // 警告标志
+	Extra          map[string]any `json:"extra,omitempty"` // 方言特定字段，前端按需展示
 }
 
 // ExplainEdge 表示执行计划节点间的父子关系，前端 react-flow 用于绘制连线。
@@ -110,7 +113,9 @@ type ExplainResult struct {
 	// HotspotBasis 说明 ExplainNode.CostShare 的口径："cost"（估算成本）或
 	// "rows"（方言没有成本时按访问步骤的估算读取行数）；为空表示无法估算。
 	HotspotBasis string `json:"hotspotBasis,omitempty"`
-	RawPayload   string `json:"rawPayload,omitempty"` // 原始 EXPLAIN 输出，前端调试用
+	// Analyzed 表示计划来自实测（真实执行后的耗时与行数），而不只是估算。
+	Analyzed   bool   `json:"analyzed,omitempty"`
+	RawPayload string `json:"rawPayload,omitempty"` // 原始 EXPLAIN 输出，前端调试用
 }
 
 // IndexSuggestion 是规则引擎针对某个节点产生的索引建议。
@@ -128,6 +133,14 @@ type IndexSuggestion struct {
 type DiagnoseReport struct {
 	Plan        ExplainResult     `json:"plan"`
 	Suggestions []IndexSuggestion `json:"suggestions"`
+	// AnalyzeSupported 表示该数据源可以用实测模式再跑一次（真实执行并对照估算）。
+	AnalyzeSupported bool `json:"analyzeSupported,omitempty"`
+}
+
+// DiagnoseOptions 是 DiagnoseQueryWithOptions 的可选项。
+type DiagnoseOptions struct {
+	// Analyze 真实执行查询（只读事务内执行后回滚），返回每一步的实际耗时与行数。
+	Analyze bool `json:"analyze,omitempty"`
 }
 
 // QueryExecutionRecord 是慢 SQL 历史的一条记录（PR5 慢 SQL 摘要用，提前定义便于 PR1 数据流贯通）。

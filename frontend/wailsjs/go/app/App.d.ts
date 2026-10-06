@@ -293,6 +293,8 @@ export function DeleteSavedQueryGroup(arg1:string):Promise<void>;
 
 export function DiagnoseQuery(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
+export function DiagnoseQueryWithOptions(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:connection.DiagnoseOptions):Promise<connection.QueryResult>;
+
 export function DismissSecurityUpdateReminder():Promise<app.SecurityUpdateStatus>;
 
 export function DownloadDriverPackage(arg1:string,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;

@@ -16,7 +16,7 @@ var requiredIssue1098WebRPCContextMethods = []string{
 	"DBGetDatabases", "DBGetTables", "DBGetViews", "DBGetObjects", "DBGetAllColumns", "DBGetColumns", "DBGetIndexes",
 	"DBGetForeignKeys", "DBGetDatabaseForeignKeys", "DBGetTriggers", "DBShowCreateTable", "DBTableExists",
 	"DBListSessions", "DBListLockWaits", "DBListLongTransactions", "DBExecuteSessionAction",
-	"MySQLGetDatabases", "MySQLGetTables", "MySQLShowCreateTable", "MongoDiscoverMembers", "DBRefreshTableStats", "DiagnoseQuery",
+	"MySQLGetDatabases", "MySQLGetTables", "MySQLShowCreateTable", "MongoDiscoverMembers", "DBRefreshTableStats", "DiagnoseQuery", "DiagnoseQueryWithOptions",
 	"DataSyncDatabaseList", "DataSyncObjectList", "DataSyncFieldList", "DataSyncCapabilityResolve", "DataSyncCDCProbe", "DataSyncJobPreflight",
 	"DataSyncJobList", "DataSyncJobGet", "DataSyncRunGet", "DataSyncRunList", "DataSyncRunPage", "DataSyncRunEventList",
 	"DataSyncErrorRowList", "DataSyncErrorRowGet", "DataSyncCheckpointGet", "DataSync", "DataSyncAnalyze", "DataSyncPreview",
@@ -138,6 +138,9 @@ func WebRPCContextHandlers(a *App) map[string]any {
 		},
 		"DiagnoseQuery": func(ctx context.Context, config connection.ConnectionConfig, dbName, query string) connection.QueryResult {
 			return a.diagnoseQueryContext(ctx, config, dbName, query)
+		},
+		"DiagnoseQueryWithOptions": func(ctx context.Context, config connection.ConnectionConfig, dbName, query string, options connection.DiagnoseOptions) connection.QueryResult {
+			return a.runDiagnoseQuery(ctx, config, dbName, query, options)
 		},
 
 		"DataSyncDatabaseList": func(ctx context.Context, connectionID string) connection.QueryResult {

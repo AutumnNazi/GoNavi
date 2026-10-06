@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Empty, Spin } from 'antd'
-import { DiagnoseQuery } from '../../../wailsjs/go/app/App'
+import { DiagnoseQuery, DiagnoseQueryWithOptions } from '../../../wailsjs/go/app/App'
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig'
 import { useI18n } from '../../i18n/provider'
 import type { ConnectionConfig } from '../../types'
@@ -18,9 +18,13 @@ interface ExplainReportViewProps {
   dbName: string
   sql: string
   runKey?: string | number | null
+  /** The run requested by runKey measures the query for real (EXPLAIN ANALYZE). */
+  analyze?: boolean
+  /** Ask to measure the current SQL; the caller confirms and bumps runKey with analyze set. */
+  onAnalyze?: () => void
 }
 
-export function ExplainReportView({ config, dbName, sql, runKey }: ExplainReportViewProps) {
+export function ExplainReportView({ config, dbName, sql, runKey, analyze = false, onAnalyze }: ExplainReportViewProps) {
   const { t } = useI18n()
   const [loading, setLoading] = useState(false)
   const [report, setReport] = useState<DiagnoseReport | null>(null)
@@ -29,8 +33,8 @@ export function ExplainReportView({ config, dbName, sql, runKey }: ExplainReport
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const hasRequestedRun = runKey !== null && runKey !== undefined && runKey !== ''
   const requestSequenceRef = useRef(0)
-  const requestInputRef = useRef({ config, dbName, sql, t })
-  requestInputRef.current = { config, dbName, sql, t }
+  const requestInputRef = useRef({ config, dbName, sql, t, analyze })
+  requestInputRef.current = { config, dbName, sql, t, analyze }
 
   const runDiagnose = useCallback(async () => {
     const currentInput = requestInputRef.current
@@ -43,11 +47,10 @@ export function ExplainReportView({ config, dbName, sql, runKey }: ExplainReport
     setError(null)
     setSelectedNodeId(null)
     try {
-      const result = await DiagnoseQuery(
-        buildRpcConnectionConfig(currentInput.config),
-        currentInput.dbName,
-        currentInput.sql,
-      )
+      const rpcConfig = buildRpcConnectionConfig(currentInput.config)
+      const result = currentInput.analyze
+        ? await DiagnoseQueryWithOptions(rpcConfig, currentInput.dbName, currentInput.sql, { analyze: true })
+        : await DiagnoseQuery(rpcConfig, currentInput.dbName, currentInput.sql)
       if (requestSequence !== requestSequenceRef.current) return
       if (!result.success) {
         setError(result.message || currentInput.t('sql_analysis.explain.error.run_failed'))
@@ -86,7 +89,7 @@ export function ExplainReportView({ config, dbName, sql, runKey }: ExplainReport
     <div className="gn-explain-report-view">
       {loading && !report ? (
         <div className="gn-explain-report-loading">
-          <Spin tip={t('sql_analysis.explain.loading')} />
+          <Spin tip={t(analyze ? 'sql_analysis.analyze.loading' : 'sql_analysis.explain.loading')} />
         </div>
       ) : null}
       {/* 失败后的重试入口是上方 SQL 栏的「重新诊断」，这里不再放第二个同义按钮。 */}
@@ -103,7 +106,7 @@ export function ExplainReportView({ config, dbName, sql, runKey }: ExplainReport
         <Empty className="gn-explain-report-empty" image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('sql_analysis.explain.empty')} />
       ) : null}
       {!error && report ? (
-        <Spin spinning={loading} tip={t('sql_analysis.explain.loading')} wrapperClassName="gn-explain-report-spinner">
+        <Spin spinning={loading} tip={t(analyze ? 'sql_analysis.analyze.loading' : 'sql_analysis.explain.loading')} wrapperClassName="gn-explain-report-spinner">
           <ExplainReportBody
             report={report}
             reportRevision={reportRevision}
@@ -111,6 +114,8 @@ export function ExplainReportView({ config, dbName, sql, runKey }: ExplainReport
             selectedNode={selectedNode}
             onSelectNode={setSelectedNodeId}
             onSelectSuggestion={handleSelectSuggestion}
+            onAnalyze={onAnalyze}
+            analyzing={loading && analyze}
           />
         </Spin>
       ) : null}
