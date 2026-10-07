@@ -16,8 +16,10 @@ type ReadableEntry struct {
 	Kind   string `json:"kind"`
 	Role   string `json:"role,omitempty"`
 	Name   string `json:"name,omitempty"`
+	CallID string `json:"callId,omitempty"`
 	Text   string `json:"text,omitempty"`
 	Opaque bool   `json:"opaque"`
+	Wrapper bool  `json:"wrapper,omitempty"`
 }
 
 // ReadableHistoryReader 按行分页读取可读历史（消费方定义的接口，

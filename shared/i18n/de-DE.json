@@ -12155,5 +12155,6 @@
   "session_assets.action.retry_failed": "Wiederholung fehlgeschlagen",
   "session_assets.history.failed_title": "Aktuelle Erfassungsfehler",
   "session_assets.error.retry_failed": "Wiederholung fehlgeschlagen: {{detail}}",
-  "session_assets.action.disable": "Erfassung stoppen"
+  "session_assets.action.disable": "Erfassung stoppen",
+  "session_assets.history.noise_toggle": "{{count}} Kontext-/Systemeintr\u00e4ge anzeigen"
 }

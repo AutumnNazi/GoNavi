@@ -319,8 +319,8 @@ func extractSessionTitle(path string) string {
 			if text == "" {
 				continue
 			}
-			// 跳过注入的指令包装（AGENTS.md 等），取用户真实输入的首条消息。
-			if strings.HasPrefix(text, "# ") || strings.Contains(text, "<INSTRUCTIONS>") {
+			// 跳过注入的包装：AGENTS.md 指令与环境上下文，取用户真实输入。
+			if strings.HasPrefix(text, "# ") || strings.Contains(text, "<INSTRUCTIONS>") || strings.HasPrefix(text, "<environment_context>") {
 				continue
 			}
 			text = strings.ReplaceAll(text, "\n", " ")

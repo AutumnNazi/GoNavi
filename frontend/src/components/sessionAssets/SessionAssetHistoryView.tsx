@@ -1,26 +1,33 @@
 import React from 'react';
 import { Button, Empty, Spin } from 'antd';
 import { t } from '../../i18n';
-import type { SessionHistoryPage } from './sessionAssetsApi';
+import type { SessionHistoryEntry, SessionHistoryPage } from './sessionAssetsApi';
 
 /**
- * 历史视图：以消息与轮次阅读，历史工具调用默认折叠可展开（交互设计
- * §5.2）；长历史按需分页加载，不整文件渲染（V-23）。
+ * 历史视图：对话优先（交互设计 §5.2）。用户真实输入与助手回复为
+ * 主线；工具调用按 callId 成对折叠；注入包装（环境上下文/指令）折叠
+ * 为上下文块；事件默认隐藏可展开；长历史按需分页，不整文件渲染
+ * （V-23）。
  */
 export const SessionAssetHistoryView: React.FC<{
   page: SessionHistoryPage | null;
   loading: boolean;
   onLoadMore: () => void;
 }> = ({ page, loading, onLoadMore }) => {
+  const [showNoise, setShowNoise] = React.useState(false);
   if (!page && loading) {
     return <div className="session-assets-history-loading"><Spin /></div>;
   }
   if (!page || page.entries.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('session_assets.history.empty')} />;
   }
+  // 对话优先：主线只留用户/助手消息与成对工具调用；包装与事件进折叠块。
+  const primary = page.entries.filter(isPrimaryEntry);
+  const noise = page.entries.filter((entry) => !isPrimaryEntry(entry));
+  const groups = groupToolPairs(primary);
   return (
     <div className="session-assets-history" data-session-assets-history="true">
-      {groupToolPairs(page.entries).map((group) =>
+      {groups.map((group) =>
         group.output ? (
           <details
             key={group.call.index}
@@ -29,13 +36,14 @@ export const SessionAssetHistoryView: React.FC<{
           >
             <summary>
               <span className="session-assets-entry-label">
-                {entryLabel(group.call)} + {entryLabel(group.output)}
+                {entryLabel(group.call)}
+                {group.output ? ` + ${entryLabel(group.output)}` : ''}
               </span>
             </summary>
             <pre className="session-assets-entry-text">
               {group.call.opaque ? t('session_assets.history.opaque') : group.call.text || '(empty)'}
               {'\n'}
-              {group.output.opaque ? t('session_assets.history.opaque') : group.output.text || '(empty)'}
+              {group.output.opaque ? t('session_assets.history.opaque') : group.output.text || ''}
             </pre>
           </details>
         ) : (
@@ -47,8 +55,27 @@ export const SessionAssetHistoryView: React.FC<{
           {t('session_assets.history.load_more')}
         </Button>
       ) : null}
+      {noise.length > 0 ? (
+        <details className="session-assets-entry noise-block" data-history-kind="noise-block">
+          <summary>
+            <span className="session-assets-entry-label">
+              {t('session_assets.history.noise_toggle', { count: noise.length })}
+            </span>
+          </summary>
+          {noise.map((entry) => (
+            <HistoryEntryRow key={entry.index} entry={entry} />
+          ))}
+        </details>
+      ) : null}
     </div>
   );
+};
+
+/** 主线条目：真实用户输入、助手回复、成对工具调用。 */
+const isPrimaryEntry = (entry: SessionHistoryPage['entries'][number]): boolean => {
+  if (entry.wrapper) return false;
+  if (entry.kind === 'message') return entry.role === 'user' || entry.role === 'assistant';
+  return entry.kind === 'tool_call' || entry.kind === 'tool_output';
 };
 
 const HistoryEntryRow: React.FC<{ entry: SessionHistoryPage['entries'][number] }> = ({ entry }) => {

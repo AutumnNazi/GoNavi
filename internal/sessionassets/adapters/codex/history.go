@@ -43,6 +43,8 @@ type HistoryEntry struct {
 	Text      string `json:"text,omitempty"`
 	Timestamp string `json:"timestamp,omitempty"`
 	Opaque    bool   `json:"opaque"`
+	// Wrapper 标记用户消息实为注入的上下文/指令包装，非用户真实输入。
+	Wrapper bool `json:"wrapper,omitempty"`
 }
 
 // HistoryPage 是一页历史与游标：hasMore 为假表示已到文件尾。
@@ -157,6 +159,12 @@ func parseHistoryLine(index int, line []byte) (HistoryEntry, error) {
 		entry.Kind = HistoryKindMessage
 		entry.Role = payload.Role
 		entry.Text = extractContentText(payload.Content)
+		// 用户消息里的注入包装（环境上下文/指令）打标，前端按上下文
+		// 条目折叠而非对话气泡显示。
+		if strings.TrimSpace(entry.Role) == "user" &&
+			(strings.Contains(entry.Text, "<environment_context>") || strings.Contains(entry.Text, "<INSTRUCTIONS>") || strings.Contains(entry.Text, "<user_instructions>")) {
+			entry.Wrapper = true
+		}
 		if strings.TrimSpace(entry.Role) == "developer" {
 			entry.Kind = HistoryKindSystem
 		}
@@ -344,8 +352,10 @@ func (ReadableHistoryAdapter) ReadReadablePage(ctx context.Context, path string,
 			Kind:   entry.Kind,
 			Role:   entry.Role,
 			Name:   entry.Name,
+			CallID: entry.CallID,
 			Text:   entry.Text,
 			Opaque: entry.Opaque,
+			Wrapper: entry.Wrapper,
 		})
 	}
 	return entries, page.NextOffset, page.HasMore, nil

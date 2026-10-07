@@ -48,6 +48,7 @@ export interface SessionHistoryEntry {
   text?: string;
   timestamp?: string;
   opaque?: boolean;
+  wrapper?: boolean;
 }
 
 export interface SessionHistoryPage {
