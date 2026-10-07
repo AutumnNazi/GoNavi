@@ -12156,5 +12156,7 @@
   "session_assets.history.failed_title": "Aktuelle Erfassungsfehler",
   "session_assets.error.retry_failed": "Wiederholung fehlgeschlagen: {{detail}}",
   "session_assets.action.disable": "Erfassung stoppen",
-  "session_assets.history.noise_toggle": "{{count}} Kontext-/Systemeintr\u00e4ge anzeigen"
+  "session_assets.history.noise_toggle": "{{count}} Kontext-/Systemeintr\u00e4ge anzeigen",
+  "session_assets.action.back_to_list": "Zur Liste zur\u00fcck",
+  "session_assets.error.integration_disabled": "Die Sitzungserfassung ist deaktiviert. Codex bitte erneut aktivieren."
 }

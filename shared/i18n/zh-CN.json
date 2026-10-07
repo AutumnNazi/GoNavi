@@ -12156,5 +12156,7 @@
   "session_assets.history.failed_title": "\u6700\u8fd1\u4fdd\u5168\u5931\u8d25",
   "session_assets.error.retry_failed": "\u91cd\u8bd5\u5931\u8d25\uff1a{{detail}}",
   "session_assets.action.disable": "\u505c\u6b62\u91c7\u96c6",
-  "session_assets.history.noise_toggle": "\u5c55\u5f00 {{count}} \u6761\u4e0a\u4e0b\u6587\u4e0e\u7cfb\u7edf\u6761\u76ee"
+  "session_assets.history.noise_toggle": "\u5c55\u5f00 {{count}} \u6761\u4e0a\u4e0b\u6587\u4e0e\u7cfb\u7edf\u6761\u76ee",
+  "session_assets.action.back_to_list": "\u8fd4\u56de\u5217\u8868",
+  "session_assets.error.integration_disabled": "\u4f1a\u8bdd\u91c7\u96c6\u5df2\u505c\u7528\uff0c\u8bf7\u91cd\u65b0\u542f\u7528 Codex \u540e\u7ee7\u7eed\u3002"
 }

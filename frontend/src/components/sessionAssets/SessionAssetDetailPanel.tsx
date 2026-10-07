@@ -1,6 +1,6 @@
 import React from 'react';
 import { Alert, Button, Modal, Spin, Tabs, Tooltip } from 'antd';
-import { DeleteOutlined, ExportOutlined, PlayCircleOutlined, ReloadOutlined, SendOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, DeleteOutlined, ExportOutlined, PlayCircleOutlined, ReloadOutlined, SendOutlined } from '@ant-design/icons';
 import { t } from '../../i18n';
 import type { SessionAssetDetail, SessionHistoryEntry, SessionHistoryPage } from './sessionAssetsApi';
 import { SessionAssetHistoryView } from './SessionAssetHistoryView';
@@ -22,9 +22,10 @@ export const SessionAssetDetailPanel: React.FC<{
   onDelete: () => void;
   onReread: () => void;
   onRetry: () => void;
+  onBackToList: () => void;
   onContinue: () => void;
   onNewSession: () => void;
-}> = ({ detail, loading, historyPage, historyLoading, capability, onLoadMore, onExport, onDelete, onReread, onContinue, onNewSession, onRetry }) => {
+}> = ({ detail, loading, historyPage, historyLoading, capability, onLoadMore, onExport, onDelete, onReread, onContinue, onNewSession, onRetry, onBackToList }) => {
   if (loading || !detail) {
     return <div className="session-assets-detail-loading"><Spin /></div>;
   }
@@ -45,6 +46,14 @@ export const SessionAssetDetailPanel: React.FC<{
           </span>
         </div>
         <div className="session-assets-detail-actions">
+          <Button
+            className="session-assets-back-btn"
+            size="small"
+            icon={<ArrowLeftOutlined />}
+            onClick={onBackToList}
+          >
+            {t('session_assets.action.back_to_list')}
+          </Button>
           <Tooltip title={t('session_assets.action.reload_sources')}>
             <Button size="small" icon={<ReloadOutlined />} onClick={onReread} aria-label={t('session_assets.action.reload_sources')} />
           </Tooltip>

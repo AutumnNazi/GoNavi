@@ -12156,5 +12156,7 @@
   "session_assets.history.failed_title": "Recent capture failures",
   "session_assets.error.retry_failed": "Retry failed: {{detail}}",
   "session_assets.action.disable": "Disable capture",
-  "session_assets.history.noise_toggle": "Show {{count}} context/system entries"
+  "session_assets.history.noise_toggle": "Show {{count}} context/system entries",
+  "session_assets.action.back_to_list": "Back to list",
+  "session_assets.error.integration_disabled": "Capture is disabled. Re-enable Codex to continue."
 }

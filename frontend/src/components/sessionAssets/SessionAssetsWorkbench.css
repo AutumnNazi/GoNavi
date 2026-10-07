@@ -357,3 +357,17 @@
 .session-assets-new-session-notice {
   margin-top: 8px;
 }
+
+/* 窄屏：点行进入详情全屏视图（列表隐藏），宽屏返回按钮隐藏 */
+.session-assets-back-btn {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .session-assets-back-btn {
+    display: inline-flex;
+  }
+  .session-assets-workbench-columns.detail-open .session-assets-list {
+    display: none;
+  }
+}

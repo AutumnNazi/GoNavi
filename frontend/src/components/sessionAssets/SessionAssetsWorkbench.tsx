@@ -34,6 +34,8 @@ export const SessionAssetsWorkbench: React.FC<{
   const [historyPage, setHistoryPage] = React.useState<SessionHistoryPage | null>(null);
   const [historyLoading, setHistoryLoading] = React.useState(false);
   const selectedIdRef = React.useRef('');
+  // 窄屏（≤900px）下列表与详情切换：点行进入详情全屏视图，返回按钮回列表
+  const [mobileDetailOpen, setMobileDetailOpen] = React.useState(false);
 
   const openAsset = React.useCallback(async (assetId: string) => {
     selectedIdRef.current = assetId;
@@ -147,13 +149,25 @@ export const SessionAssetsWorkbench: React.FC<{
     setNewSessionOpen(true);
   }, [selected]);
 
-  const handleSelect = React.useCallback((view: { id: string }) => {
-    void openAsset(view.id);
-  }, [openAsset]);
+  const handleSelect = React.useCallback(
+    (view: { id: string }) => {
+      setMobileDetailOpen(true);
+      void openAsset(view.id);
+    },
+    [openAsset],
+  );
+
+  const closeMobileDetail = React.useCallback(() => setMobileDetailOpen(false), []);
 
   return (
     <div className="session-assets-workbench" data-session-assets-workbench="true">
-      <div className="session-assets-workbench-columns">
+      <div
+        className={
+          mobileDetailOpen
+            ? 'session-assets-workbench-columns detail-open'
+            : 'session-assets-workbench-columns'
+        }
+      >
         <SessionAssetsListPanel
           items={items}
           total={total}
@@ -177,6 +191,7 @@ export const SessionAssetsWorkbench: React.FC<{
           onDelete={handleDelete}
           onReread={() => void handleReread()}
           onRetry={() => void handleRetry()}
+          onBackToList={closeMobileDetail}
           onContinue={() => void handleContinue()}
           onNewSession={() => void handleNewSession()}
         />
