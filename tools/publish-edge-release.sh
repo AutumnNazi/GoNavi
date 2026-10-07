@@ -18,14 +18,12 @@ done
 [[ "${PUB_GENERATION}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || { echo "Invalid publication generation" >&2; exit 1; }
 PUB_THROUGHPUT_WARN_MBPS="${PUB_THROUGHPUT_WARN_MBPS:-20}"
 [[ "${PUB_THROUGHPUT_WARN_MBPS}" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "Invalid throughput warning threshold" >&2; exit 1; }
-# Retention keeps, per channel, the current release and the previous driver release: about
-# 10.5 GB with both channels, growing with the driver set. Cst has the disk for 16 GB. Bero
-# shares its disk with other services (about 18 GB free with 3 GB of mirror in October 2026):
-# 13 GB leaves room for one more step of driver growth and still keeps a staged payload plus
-# the reserve free.
+# Retention keeps, per channel, the current release and the previous driver release: 11.2 GB
+# with both channels (measured October 2026), growing with the driver set. Both edges have the
+# disk for 16 GB plus a staged payload and the reserve (Bero's disk was enlarged to 200 GB).
 EDGE_CST_MAX_BYTES="${EDGE_CST_MAX_BYTES:-16000000000}"
 EDGE_CST_RESERVE_FREE_BYTES="${EDGE_CST_RESERVE_FREE_BYTES:-2000000000}"
-EDGE_BERO_MAX_BYTES="${EDGE_BERO_MAX_BYTES:-13000000000}"
+EDGE_BERO_MAX_BYTES="${EDGE_BERO_MAX_BYTES:-16000000000}"
 EDGE_BERO_RESERVE_FREE_BYTES="${EDGE_BERO_RESERVE_FREE_BYTES:-2000000000}"
 [[ "${EDGE_BERO_HOST:-}" == "94.103.173.47" ]] || {
   echo "Bero origin SSH host must be 94.103.173.47" >&2
