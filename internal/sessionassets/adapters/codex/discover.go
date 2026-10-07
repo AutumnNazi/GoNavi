@@ -260,7 +260,7 @@ func readSessionHeader(path string, archived bool) (SessionMeta, error) {
 	}
 	meta.ThreadID = firstNonEmpty(rawString(payload.SessionID), rawString(payload.ID))
 	meta.ProjectDir = rawString(payload.Cwd)
-	meta.Provider = rawString(payload.Source)
+	meta.Provider = rawString(payload.ModelProvider)
 	meta.Model = rawString(payload.Model)
 	meta.CLIVersion = rawString(payload.CLIVersion)
 	meta.Originator = rawString(payload.Originator)
