@@ -12,14 +12,14 @@ import (
 // ReadableEntry 是跨适配器的可读历史条目视图；adapter 把工具私有格式
 // 转换为该结构，无法解释的内容以 Opaque 标记，不伪造文本。
 type ReadableEntry struct {
-	Index  int    `json:"index"`
-	Kind   string `json:"kind"`
-	Role   string `json:"role,omitempty"`
-	Name   string `json:"name,omitempty"`
-	CallID string `json:"callId,omitempty"`
-	Text   string `json:"text,omitempty"`
-	Opaque bool   `json:"opaque"`
-	Wrapper bool  `json:"wrapper,omitempty"`
+	Index   int    `json:"index"`
+	Kind    string `json:"kind"`
+	Role    string `json:"role,omitempty"`
+	Name    string `json:"name,omitempty"`
+	CallID  string `json:"callId,omitempty"`
+	Text    string `json:"text,omitempty"`
+	Opaque  bool   `json:"opaque"`
+	Wrapper bool   `json:"wrapper,omitempty"`
 }
 
 // ReadableHistoryReader 按行分页读取可读历史（消费方定义的接口，

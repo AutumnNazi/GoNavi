@@ -348,13 +348,13 @@ func (ReadableHistoryAdapter) ReadReadablePage(ctx context.Context, path string,
 	entries := make([]sessionassets.ReadableEntry, 0, len(page.Entries))
 	for _, entry := range page.Entries {
 		entries = append(entries, sessionassets.ReadableEntry{
-			Index:  entry.Index,
-			Kind:   entry.Kind,
-			Role:   entry.Role,
-			Name:   entry.Name,
-			CallID: entry.CallID,
-			Text:   entry.Text,
-			Opaque: entry.Opaque,
+			Index:   entry.Index,
+			Kind:    entry.Kind,
+			Role:    entry.Role,
+			Name:    entry.Name,
+			CallID:  entry.CallID,
+			Text:    entry.Text,
+			Opaque:  entry.Opaque,
 			Wrapper: entry.Wrapper,
 		})
 	}
