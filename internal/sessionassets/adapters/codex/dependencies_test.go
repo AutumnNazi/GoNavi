@@ -22,7 +22,7 @@ func TestResolveDependenciesMarksMissingAncestor(t *testing.T) {
 	if err := os.WriteFile(main, []byte(withRef), 0o600); err != nil {
 		t.Fatalf("write main: %v", err)
 	}
-	resolution, err := (Discoverer{}).ResolveDependencies(context.Background(), dir, main)
+	resolution, err := (Discoverer{}).ResolveDependencies(context.Background(), dir, sessionassets.DiscoveredSession{NativePath: main})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestResolveDependenciesCopiesPresentAncestor(t *testing.T) {
 	if err := os.WriteFile(main, []byte(withRef), 0o600); err != nil {
 		t.Fatalf("write main: %v", err)
 	}
-	resolution, err := (Discoverer{}).ResolveDependencies(context.Background(), dir, main)
+	resolution, err := (Discoverer{}).ResolveDependencies(context.Background(), dir, sessionassets.DiscoveredSession{NativePath: main})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestResolveDependenciesSelfContained(t *testing.T) {
 	if err := os.WriteFile(main, []byte(`{"timestamp":"t","type":"session_meta","payload":{"session_id":"th-solo"}}`+"\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	resolution, err := (Discoverer{}).ResolveDependencies(context.Background(), dir, main)
+	resolution, err := (Discoverer{}).ResolveDependencies(context.Background(), dir, sessionassets.DiscoveredSession{NativePath: main})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestDependencyResolutionEndToEndCapture(t *testing.T) {
 		ModifiedAt:     info.ModTime().Unix(),
 		Size:           info.Size(),
 	}
-	resolution, err := (Discoverer{}).ResolveDependencies(context.Background(), dir, main)
+	resolution, err := (Discoverer{}).ResolveDependencies(context.Background(), dir, sessionassets.DiscoveredSession{NativePath: main})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"GoNavi-Wails/internal/appdata"
 	"GoNavi-Wails/internal/connection"
@@ -36,7 +38,7 @@ func (a *App) SessionAssetsDetect(input sessionassets.DetectInput) (result conne
 	if !supported {
 		return sessionAssetsUnsupportedResult(a, input.Kind)
 	}
-	detection := a.detectAgentKind(context.Background(), kind, input.CommandPath, input.DataDir)
+	detection := a.cachedCodexDetection(context.Background(), kind, input.CommandPath, input.DataDir)
 	view := a.buildDetectionView(kind, detection)
 	return connection.QueryResult{Success: true, Data: view}
 }
@@ -257,4 +259,52 @@ func (a *App) agentDetectionStatusText(status string) string {
 	default:
 		return fmt.Sprintf("unknown(%s)", status)
 	}
+}
+
+// codexProbeCacheEntry 缓存一次探测结果，避免每次选择资产都重新执行
+// codex --version（Windows 上会反复创建进程）。显式重新检测绕过缓存。
+type codexProbeCacheEntry struct {
+	dataDir       string
+	commandPath   string
+	version       string
+	currentProber string
+	probedAt      time.Time
+}
+
+var (
+	codexProbeCacheMu  sync.Mutex
+	codexProbeCache    *codexProbeCacheEntry
+	codexProbeCacheTTL = 5 * time.Minute
+)
+
+// cachedCodexDetection 带缓存的探测：dataDir/commandPath 与缓存一致且
+// 未过期时直接返回缓存结果。
+func (a *App) cachedCodexDetection(ctx context.Context, kind, commandPath, dataDir string) codex.Detection {
+	codexProbeCacheMu.Lock()
+	cached := codexProbeCache
+	codexProbeCacheMu.Unlock()
+	if cached != nil && commandPath == "" && dataDir == "" &&
+		time.Since(cached.probedAt) < codexProbeCacheTTL {
+		return codex.Detection{
+			Kind:         kind,
+			Status:       codex.StatusReady,
+			CommandPath:  cached.commandPath,
+			Version:      cached.version,
+			DataDir:      cached.dataDir,
+			DataReadable: true,
+			Details:      []string{codex.DetailOK},
+		}
+	}
+	detection := a.detectAgentKind(ctx, kind, commandPath, dataDir)
+	if detection.Status == codex.StatusReady {
+		codexProbeCacheMu.Lock()
+		codexProbeCache = &codexProbeCacheEntry{
+			dataDir:     detection.DataDir,
+			commandPath: detection.CommandPath,
+			version:     detection.Version,
+			probedAt:    time.Now(),
+		}
+		codexProbeCacheMu.Unlock()
+	}
+	return detection
 }

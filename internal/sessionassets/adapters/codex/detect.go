@@ -117,7 +117,9 @@ func resolveCommand(ctx context.Context, explicitPath string) (string, string, e
 func probeVersion(ctx context.Context, commandPath string) (string, error) {
 	probeCtx, cancel := context.WithTimeout(ctx, versionProbeTimeout)
 	defer cancel()
-	output, err := exec.CommandContext(probeCtx, commandPath, "--version").Output()
+	cmd := exec.CommandContext(probeCtx, commandPath, "--version")
+	applyProbeSysAttr(cmd)
+	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("probe codex version: %w", err)
 	}

@@ -127,4 +127,3 @@ func (c *Catalog) IntegrationEnabledByID(ctx context.Context, id string) (bool, 
 	}
 	return enabled != 0, nil
 }
-

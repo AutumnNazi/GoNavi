@@ -1,6 +1,7 @@
 package codex
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -44,6 +45,7 @@ type SessionMeta struct {
 	ThreadID     string `json:"threadId"`
 	NativePath   string `json:"nativePath"`
 	Archived     bool   `json:"archived"`
+	Title        string `json:"title"`
 	ProjectDir   string `json:"projectDir"`
 	Provider     string `json:"provider"`
 	Model        string `json:"model"`
@@ -51,6 +53,8 @@ type SessionMeta struct {
 	Originator   string `json:"originator"`
 	EntrySource  string `json:"entrySource"`
 	ThreadSource string `json:"threadSource"`
+	ForkedFromID string `json:"forkedFromId"`
+	ParentThread string `json:"parentThreadId"`
 	ModifiedAt   int64  `json:"modifiedAt"`
 	Size         int64  `json:"size"`
 }
@@ -137,6 +141,7 @@ func discoverRolloutDir(ctx context.Context, dir string, archived bool) ([]Sessi
 			broken = append(broken, path)
 			continue
 		}
+		meta.Title = extractSessionTitle(path)
 		metas = append(metas, meta)
 	}
 	return metas, broken, nil
@@ -176,23 +181,52 @@ func collectRolloutFiles(ctx context.Context, root string, maxDepth int) ([]stri
 	return files, nil
 }
 
-// rolloutHeader 对应首行已知字段；未知字段由 encoding/json 忽略并原样
-// 保留在原始材料中。
+// rolloutHeader 对应首行已知字段。逐字段容错提取：单字段类型变化
+// （如 source 从字符串变为对象，0.16x 新格式实测）不再导致整个头部
+// 解析失败——那会让大量合法会话被误判为损坏（V-17 未知格式降级）。
 type rolloutHeader struct {
-	Type      string `json:"type"`
-	Timestamp string `json:"timestamp"`
-	Payload   struct {
-		SessionID     string `json:"session_id"`
-		ID            string `json:"id"`
-		Timestamp     string `json:"timestamp"`
-		Cwd           string `json:"cwd"`
-		Originator    string `json:"originator"`
-		CLIVersion    string `json:"cli_version"`
-		Source        string `json:"source"`
-		ThreadSource  string `json:"thread_source"`
-		ModelProvider string `json:"model_provider"`
-		Model         string `json:"model"`
-	} `json:"payload"`
+	Type      string          `json:"type"`
+	Timestamp string          `json:"timestamp"`
+	Payload   json.RawMessage `json:"payload"`
+}
+
+// headerPayload 只声明需要的字段；类型用 RawMessage 以便逐字段容错。
+type headerPayload struct {
+	SessionID     json.RawMessage `json:"session_id"`
+	ID            json.RawMessage `json:"id"`
+	Cwd           json.RawMessage `json:"cwd"`
+	Originator    json.RawMessage `json:"originator"`
+	CLIVersion    json.RawMessage `json:"cli_version"`
+	Source        json.RawMessage `json:"source"`
+	ThreadSource  json.RawMessage `json:"thread_source"`
+	ForkedFromID  json.RawMessage `json:"forked_from_id"`
+	ParentThread  json.RawMessage `json:"parent_thread_id"`
+	ModelProvider json.RawMessage `json:"model_provider"`
+	Model         json.RawMessage `json:"model"`
+}
+
+// rawString 提取标量字符串；字段变为对象/数组时回退到其中可读的
+// name/id/text 标量，再不行返回空串（绝不因字段形态失败）。
+func rawString(raw json.RawMessage) string {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err == nil {
+		for _, key := range []string{"name", "id", "label", "text"} {
+			if inner, ok := obj[key]; ok {
+				if extracted := rawString(inner); extracted != "" {
+					return extracted
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // readSessionHeader 只读取文件头部第一段有效 JSON 行。
@@ -218,18 +252,82 @@ func readSessionHeader(path string, archived bool) (SessionMeta, error) {
 	if header.Type != sessionMetaLineType {
 		return SessionMeta{}, ErrSessionHeaderMissing
 	}
-	meta.ThreadID = firstNonEmpty(header.Payload.SessionID, header.Payload.ID)
-	meta.ProjectDir = header.Payload.Cwd
-	meta.Provider = header.Payload.ModelProvider
-	meta.Model = header.Payload.Model
-	meta.CLIVersion = header.Payload.CLIVersion
-	meta.Originator = header.Payload.Originator
-	meta.EntrySource = header.Payload.Source
-	meta.ThreadSource = header.Payload.ThreadSource
+	var payload headerPayload
+	if len(header.Payload) > 0 {
+		if err := json.Unmarshal(header.Payload, &payload); err != nil {
+			return SessionMeta{}, fmt.Errorf("decode rollout header payload: %w", err)
+		}
+	}
+	meta.ThreadID = firstNonEmpty(rawString(payload.SessionID), rawString(payload.ID))
+	meta.ProjectDir = rawString(payload.Cwd)
+	meta.Provider = rawString(payload.Source)
+	meta.Model = rawString(payload.Model)
+	meta.CLIVersion = rawString(payload.CLIVersion)
+	meta.Originator = rawString(payload.Originator)
+	meta.EntrySource = rawString(payload.Source)
+	meta.ThreadSource = rawString(payload.ThreadSource)
+	meta.ForkedFromID = rawString(payload.ForkedFromID)
+	meta.ParentThread = rawString(payload.ParentThread)
 	if meta.ThreadID == "" {
 		return SessionMeta{}, ErrSessionHeaderMissing
 	}
+	meta.Title = extractSessionTitle(path)
 	return meta, nil
+}
+
+// titleScanLimit 限制标题扫描的读取量：只看文件开头少量行。
+const titleScanLimit = 256 << 10
+
+// extractSessionTitle 从 rollout 开头提取第一条用户消息作为标题
+// （只读前 256KB，找不到留空，不猜测）。这是元数据增强，解析失败
+// 不影响发现。
+func extractSessionTitle(path string) string {
+	file, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(io.LimitReader(file, titleScanLimit))
+	scanner.Buffer(make([]byte, 0, maxHistoryLineBytes), maxHistoryLineBytes)
+	for scanner.Scan() {
+		var lineObj rolloutHeader
+		if err := json.Unmarshal(scanner.Bytes(), &lineObj); err != nil {
+			continue
+		}
+		if lineObj.Type != "response_item" {
+			continue
+		}
+		var payload struct {
+			Type    string          `json:"type"`
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		}
+		if err := json.Unmarshal(lineObj.Payload, &payload); err != nil {
+			continue
+		}
+		if payload.Type != "message" || payload.Role != "user" {
+			continue
+		}
+		var items []struct {
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal(payload.Content, &items); err != nil {
+			continue
+		}
+		for _, item := range items {
+			text := strings.TrimSpace(item.Text)
+			if text == "" {
+				continue
+			}
+			text = strings.ReplaceAll(text, "\n", " ")
+			runes := []rune(text)
+			if len(runes) > 80 {
+				text = string(runes[:80]) + "…"
+			}
+			return text
+		}
+	}
+	return ""
 }
 
 func firstNonEmpty(values ...string) string {
@@ -275,13 +373,15 @@ func (Discoverer) DiscoverSession(_ context.Context, path string, archived bool)
 
 func toDiscovered(meta SessionMeta) sessionassets.DiscoveredSession {
 	return sessionassets.DiscoveredSession{
-		NativeThreadID: meta.ThreadID,
-		NativePath:     meta.NativePath,
-		Archived:       meta.Archived,
-		ProjectDir:     meta.ProjectDir,
-		Provider:       meta.Provider,
-		Model:          meta.Model,
-		ModifiedAt:     meta.ModifiedAt,
-		Size:           meta.Size,
+		NativeThreadID:     meta.ThreadID,
+		NativePath:         meta.NativePath,
+		Archived:           meta.Archived,
+		Title:              meta.Title,
+		ForkParentThreadID: meta.ParentThread,
+		ProjectDir:         meta.ProjectDir,
+		Provider:           meta.Provider,
+		Model:              meta.Model,
+		ModifiedAt:         meta.ModifiedAt,
+		Size:               meta.Size,
 	}
 }

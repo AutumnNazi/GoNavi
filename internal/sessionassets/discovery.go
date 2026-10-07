@@ -35,14 +35,16 @@ type SourceDiscoverer interface {
 
 // DiscoveredSession 是一次来源扫描得到的会话元数据。取不到的字段留空。
 type DiscoveredSession struct {
-	NativeThreadID string
-	NativePath     string
-	Archived       bool
-	ProjectDir     string
-	Provider       string
-	Model          string
-	ModifiedAt     int64
-	Size           int64
+	NativeThreadID     string
+	NativePath         string
+	Archived           bool
+	Title              string
+	ForkParentThreadID string
+	ProjectDir         string
+	Provider           string
+	Model              string
+	ModifiedAt         int64
+	Size               int64
 }
 
 // SourceSyncReport 汇总一次来源核对的结果，保证可解释。
@@ -83,18 +85,20 @@ func (s *Service) SyncSource(ctx context.Context, source Source, result SourceSc
 			status = SourceStatusArchived
 		}
 		asset, err := s.catalog.UpsertAsset(ctx, AssetInput{
-			IntegrationID:     source.IntegrationID,
-			NativeThreadID:    threadID,
-			SourceID:          source.ID,
-			OriginIdentityKey: source.IdentityKey,
-			NativePath:        session.NativePath,
-			SourceStatus:      status,
-			SourceSize:        session.Size,
-			SourceModTime:     session.ModifiedAt,
-			ProjectDir:        session.ProjectDir,
-			Provider:          session.Provider,
-			Model:             session.Model,
-			UpdatedAt:         session.ModifiedAt,
+			IntegrationID:      source.IntegrationID,
+			NativeThreadID:     threadID,
+			Title:              session.Title,
+			ForkParentThreadID: session.ForkParentThreadID,
+			SourceID:           source.ID,
+			OriginIdentityKey:  source.IdentityKey,
+			NativePath:         session.NativePath,
+			SourceStatus:       status,
+			SourceSize:         session.Size,
+			SourceModTime:      session.ModifiedAt,
+			ProjectDir:         session.ProjectDir,
+			Provider:           session.Provider,
+			Model:              session.Model,
+			UpdatedAt:          session.ModifiedAt,
 		})
 		if err != nil {
 			// 被用户删除抑制的身份安静跳过，不报错、不重新纳入。

@@ -120,5 +120,5 @@ type DependencyResolution struct {
 // 识别不到依赖时返回空结果（保持自包含判定）；识别到但缺失时必须
 // 写入 Missing（候选不得标完整，FR-09）。
 type DependencyResolver interface {
-	ResolveDependencies(ctx context.Context, dataDir, sessionPath string) (DependencyResolution, error)
+	ResolveDependencies(ctx context.Context, dataDir string, session DiscoveredSession) (DependencyResolution, error)
 }

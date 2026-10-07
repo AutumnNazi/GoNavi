@@ -225,7 +225,7 @@ func (s *Service) resolveDependencies(ctx context.Context, source Source, sessio
 	if resolver == nil {
 		return DependencyResolution{}
 	}
-	resolution, err := resolver.ResolveDependencies(ctx, source.RootPath, session.NativePath)
+	resolution, err := resolver.ResolveDependencies(ctx, source.RootPath, session)
 	if err != nil {
 		return DependencyResolution{
 			Missing: []MissingRecord{{Reason: string(MissingUnknownEntry), Detail: "dependency resolution failed"}},

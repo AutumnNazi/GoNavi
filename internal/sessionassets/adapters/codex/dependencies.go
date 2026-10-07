@@ -33,8 +33,10 @@ type Resolution struct {
 }
 
 // ResolveSessionDependencies 解析一个 rollout 的 fork 祖先与外部附件线索。
+// 首选 session_meta 头部的 forked_from_id/parent_thread_id（0.16x 实测
+// 存在于 fork 会话首行）；正文中的 rollout 文件名引用作为补充线索。
 // dataDir 用于在同来源内定位被引用的 rollout 文件。
-func ResolveSessionDependencies(ctx context.Context, dataDir, sessionPath string) (Resolution, error) {
+func ResolveSessionDependencies(ctx context.Context, dataDir, sessionPath string, forkParentID string) (Resolution, error) {
 	resolution := Resolution{}
 	file, err := os.Open(sessionPath)
 	if err != nil {
@@ -42,6 +44,26 @@ func ResolveSessionDependencies(ctx context.Context, dataDir, sessionPath string
 	}
 	defer file.Close()
 
+	// 头部 fork 字段是权威依据：parent 文件在同一来源内定位到即作为
+	// 祖先前缀副本；定位不到记入 Missing（FR-09，AC-06）。
+	if strings.TrimSpace(forkParentID) != "" {
+		ancestorPath := findRolloutFileByThreadID(ctx, dataDir, forkParentID, 5)
+		if ancestorPath == "" {
+			resolution.Missing = append(resolution.Missing, sessionassets.MissingRecord{
+				Reason: string(sessionassets.MissingAncestor),
+				Detail: "fork parent " + forkParentID + " not found in this source",
+			})
+		} else {
+			resolution.Ancestors = append(resolution.Ancestors, sessionassets.AncestorDependency{
+				NativeThreadID: forkParentID,
+				Files: []sessionassets.MaterialFile{{
+					RelPath:    "ancestors/" + forkParentID + ".jsonl",
+					SourcePath: ancestorPath,
+					Role:       string(sessionassets.MaterialRoleAncestor),
+				}},
+			})
+		}
+	}
 	referenced := map[string]bool{}
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 0, maxHistoryLineBytes), maxHistoryLineBytes)
@@ -102,8 +124,9 @@ func ResolveSessionDependencies(ctx context.Context, dataDir, sessionPath string
 }
 
 // ResolveDependencies 实现 sessionassets.DependencyResolver。
-func (Discoverer) ResolveDependencies(ctx context.Context, dataDir, sessionPath string) (sessionassets.DependencyResolution, error) {
-	resolution, err := ResolveSessionDependencies(ctx, dataDir, sessionPath)
+func (Discoverer) ResolveDependencies(ctx context.Context, dataDir string, session sessionassets.DiscoveredSession) (sessionassets.DependencyResolution, error) {
+	forkParentID := session.ForkParentThreadID
+	resolution, err := ResolveSessionDependencies(ctx, dataDir, session.NativePath, forkParentID)
 	if err != nil {
 		return sessionassets.DependencyResolution{}, err
 	}
@@ -152,6 +175,45 @@ func findRolloutInTree(ctx context.Context, root, name string, depth int) string
 			continue
 		}
 		if entry.Name() == name {
+			return path
+		}
+	}
+	return ""
+}
+
+// findRolloutFileByThreadID 在数据目录内扫描各 rollout 头部，按原生
+// 会话 ID 定位文件（只读首行元数据）。找到返回路径，否则空串。
+func findRolloutFileByThreadID(ctx context.Context, dataDir, threadID string, maxDepth int) string {
+	if strings.TrimSpace(threadID) == "" {
+		return ""
+	}
+	return findRolloutByThreadInTree(ctx, dataDir, threadID, maxDepth)
+}
+
+func findRolloutByThreadInTree(ctx context.Context, root, threadID string, depth int) string {
+	if depth < 0 {
+		return ""
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return ""
+	}
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return ""
+		}
+		path := filepath.Join(root, entry.Name())
+		if entry.IsDir() {
+			if found := findRolloutByThreadInTree(ctx, path, threadID, depth-1); found != "" {
+				return found
+			}
+			continue
+		}
+		if !strings.HasPrefix(entry.Name(), rolloutFilePrefix) || !strings.HasSuffix(entry.Name(), rolloutFileSuffix) {
+			continue
+		}
+		meta, err := readSessionHeader(path, strings.Contains(root, archivedSessionsDirName))
+		if err == nil && meta.ThreadID == threadID {
 			return path
 		}
 	}
