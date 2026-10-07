@@ -319,6 +319,10 @@ func extractSessionTitle(path string) string {
 			if text == "" {
 				continue
 			}
+			// 跳过注入的指令包装（AGENTS.md 等），取用户真实输入的首条消息。
+			if strings.HasPrefix(text, "# ") || strings.Contains(text, "<INSTRUCTIONS>") {
+				continue
+			}
 			text = strings.ReplaceAll(text, "\n", " ")
 			runes := []rune(text)
 			if len(runes) > 80 {
