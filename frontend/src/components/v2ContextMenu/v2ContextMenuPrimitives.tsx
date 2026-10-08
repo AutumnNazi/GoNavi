@@ -1,4 +1,13 @@
 import React from 'react';
+import { getPrimaryShortcutDisplayLabel, type ShortcutPlatform } from '../../utils/shortcuts';
+
+export const DEFAULT_V2_CONTEXT_MENU_SHORTCUT_PLATFORM: ShortcutPlatform = 'windows';
+
+/** 菜单里显示的主修饰键快捷键文案，如 Windows 的 Ctrl+D、macOS 的 ⌘D。 */
+export const primaryShortcut = (
+  key: string,
+  shortcutPlatform: ShortcutPlatform = DEFAULT_V2_CONTEXT_MENU_SHORTCUT_PLATFORM,
+): string => getPrimaryShortcutDisplayLabel(key, shortcutPlatform);
 
 /** 右键菜单条目配置：连接、表等 V2 菜单共用。 */
 export type V2TableContextMenuItemConfig = {
