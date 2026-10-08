@@ -119,6 +119,12 @@ func (m *Message) GetStatus() uint16 {
 	return m.header.GetStatus()
 }
 
+// exhausted 报告消息是否已读到末尾。旧版服务端会省略若干尾部字段，
+// 调用方据此判断还有没有字段可读。
+func (m *Message) exhausted() bool {
+	return int(m.offset) >= len(m.data)
+}
+
 func (m *Message) Get(value interface{}) error {
 	listItem := list.GetListItem(m.data, &m.offset)
 	listItem.Get(value)

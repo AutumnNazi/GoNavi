@@ -85,6 +85,9 @@ type ResultSet struct {
 	data    []byte
 	offset  uint
 	sqlCode int16
+	// stmtId 是该结果集对应的 statement，FETCH_DATA 必须带上它，
+	// 否则服务端会取错游标，多语句连接上会丢行。
+	stmtId uint32
 }
 
 type SQLError struct {
@@ -128,6 +131,7 @@ type Value interface{}
 
 func (rs *ResultSet) fetchMoreData() bool {
 	msg := NewMessage(FETCH_DATA)
+	msg.header.SetStatementId(rs.stmtId)
 	_, err := rs.c.conn.Write(msg.Dump(rs.c.count()))
 	if err != nil {
 		panic(err)
@@ -303,10 +307,19 @@ func getColumns(msg *Message, statementFeature StatementFeature) []Column {
 		} else {
 			column.slot_position = i
 		}
-		column.is_auto_increment = additional[0] == 0x01
-		column.is_case_sensitive = additional[1] == 0x01
-		column.is_currency = additional[2] == 0x01
-		column.is_read_only = additional[3] == 0x01
+		// 旧协议服务端返回的 additional 可能短于 IRIS，逐位取用前先判长度。
+		if len(additional) > 0 {
+			column.is_auto_increment = additional[0] == 0x01
+		}
+		if len(additional) > 1 {
+			column.is_case_sensitive = additional[1] == 0x01
+		}
+		if len(additional) > 2 {
+			column.is_currency = additional[2] == 0x01
+		}
+		if len(additional) > 3 {
+			column.is_read_only = additional[3] == 0x01
+		}
 		if len(additional) >= 12 {
 			column.is_row_id = additional[11] == 0x01
 		}
@@ -412,14 +425,19 @@ func (c *Connection) DirectQuery(sqlText string, args ...interface{}) (*ResultSe
 	if sqlCode != 0 && sqlCode != 100 {
 		return nil, &SQLError{SQLCode: sqlCode, Message: c.getErrorInfo(sqlCode)}
 	}
-	statementFeature := statementFeature(&msg)
-	columns := getColumns(&msg, statementFeature)
+	// 旧协议（Caché）的查询响应不带 statement feature 前缀，直接进入列定义。
+	var sf StatementFeature
+	if c.featureOptionSupported {
+		sf = statementFeature(&msg)
+	}
+	columns := getColumns(&msg, sf)
 	parameterInfo((&msg))
 	rs := &ResultSet{
 		c:       c,
-		sf:      statementFeature,
+		sf:      sf,
 		columns: columns,
 		count:   len(columns),
+		stmtId:  statementId,
 	}
 
 	msg, err = ReadMessage(c.conn)

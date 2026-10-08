@@ -9,3 +9,28 @@ Local patch against github.com/caretdev/go-irisnative v0.2.1:
   leak sockets.
 - Made `Connection.BeginTx` return the `START TRANSACTION` error instead of
   marking the connection as in-transaction when the server rejected the begin.
+- Sent the statement id on `FETCH_DATA`. `ResultSet` kept no statement id, so
+  every fetch was issued for statement 0. On a connection that had run more
+  than one statement the server fetched the wrong cursor, and roughly half of
+  all multi-row queries silently returned only their first row.
+- Tolerated the older InterSystems wire protocol, which Caché speaks. IRIS
+  negotiates protocol version 69 and Caché 2018.1 negotiates 53; the two
+  differ in layout, and the driver assumed the IRIS one throughout:
+  - The CONNECT response of a legacy server omits the trailing
+    `serverFeatureOptions` field. Reading it unconditionally ran past the end
+    of the buffer and panicked with `index out of range [75] with length 75`,
+    surfacing as `driver panic during connect`. Each trailing field is now
+    read only while the buffer still holds data, and the presence of
+    `serverFeatureOptions` is recorded as a server capability.
+  - A legacy query response omits the leading statement-feature item that IRIS
+    sends. Parsing it unconditionally shifted every later field by one, which
+    read the column count, `featureOption` and `slot_position` from the wrong
+    bytes and ended in `vals[-1]`. The prefix is now parsed only for servers
+    that reported the capability above.
+  - `getColumns` indexed `additional[0..3]` without a length check, though the
+    blob is shorter on a legacy server. Each byte is now read only when
+    present.
+  - `list.GetListItem` indexed `buffer[offset]` and sliced
+    `buffer[offset:offset+size]` without bounds checks, so any truncated or
+    unfamiliar response panicked the driver agent process. It now reports an
+    empty item at end of buffer and clamps a declared size to what remains.

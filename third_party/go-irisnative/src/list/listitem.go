@@ -99,6 +99,11 @@ func GetListItem(buffer []byte, ooffset *uint) ListItem {
 	var itemType byte = 0
 	offset := *ooffset
 
+	// 旧协议响应会提前把缓冲区读尽。此时返回空项，而不是越界访问。
+	if int(offset) >= len(buffer) {
+		return ListItem{isNull: true}
+	}
+
 	switch buffer[offset] {
 	case 0:
 		size = uint16((buffer[offset+1] & 0xff))
@@ -122,6 +127,10 @@ func GetListItem(buffer []byte, ooffset *uint) ListItem {
 	}
 	var data = []byte{}
 	if size > 0 {
+		// 声明长度可能超出剩余缓冲区，收窄到实际可用长度。
+		if int(offset)+int(size) > len(buffer) {
+			size = uint16(len(buffer) - int(offset))
+		}
 		data = buffer[offset : offset+uint(size)]
 	}
 	offset += uint(size)
