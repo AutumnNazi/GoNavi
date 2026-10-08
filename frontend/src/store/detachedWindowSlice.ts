@@ -1,4 +1,5 @@
 import { nextDetachedZIndex, createDefaultDetachedBounds } from "../utils/detachedWindow";
+import { pinSettingsCenterTabFirst } from "../utils/settingsCenterTab";
 import {
   resolveActiveContextForTabId,
   resolveActiveContextFromTab,
@@ -90,7 +91,9 @@ export const createDetachedWindowSlice = (set: StoreSet, get: StoreGet): Detache
           ),
         };
       }
+      // 独立窗口取消关闭时 tab 会被追加回末尾，收回主窗口时把设置中心放回首位。
       return {
+        tabs: pinSettingsCenterTabFirst(state.tabs),
         detachedWorkbenchWindows: state.detachedWorkbenchWindows.filter(
           (windowState) => windowState.tabId !== id,
         ),
