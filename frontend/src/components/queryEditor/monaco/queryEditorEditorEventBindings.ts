@@ -45,7 +45,7 @@ export interface BindQueryEditorEditorEventsInput {
     objectDecorationsDirtyRef: React.MutableRefObject<boolean>;
     cancelPendingObjectDecorationRefresh: () => void;
     cancelPendingSqlReferencedMetadataRefresh: () => void;
-    imeCompositionFallbackTimerRef: React.MutableRefObject<number | null>;
+    imeCompositionFallbackTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
     clearImeCompositionFallbackTimer: ReturnType<typeof createQueryEditorImeAndDropHandlers>['clearImeCompositionFallbackTimer'];
     refreshObjectDecorations: (maxTextLength?: number) => void;
     sqlReferencedMetadataTimerRef: React.MutableRefObject<number | null>;

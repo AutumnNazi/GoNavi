@@ -28,7 +28,7 @@ export interface CreateQueryEditorAiInlineGhostActionsInput {
     aiInlineGhostAcceptingRef: React.MutableRefObject<boolean>;
     syncQueryDraft: (nextQuery: string) => void;
     editorRef: React.MutableRefObject<any>;
-    aiInlineGhostTimerRef: React.MutableRefObject<number | null>;
+    aiInlineGhostTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
     buildInlineGhostEditorSnapshot: ReturnType<typeof createQueryEditorAiInlineGhostState>['buildInlineGhostEditorSnapshot'];
     recoverStrayManualSqlCompletionMarker: ReturnType<typeof createQueryEditorAiInlineGhostState>['recoverStrayManualSqlCompletionMarker'];
     connectionsRef: React.MutableRefObject<SavedConnection[]>;
