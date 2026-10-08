@@ -294,58 +294,61 @@ func (d *DamengDB) GetTables(dbName string) ([]string, error) {
 
 	var tables []string
 	for _, row := range data {
-		owner, okOwner := row["OWNER"]
-		name, okName := row["TABLE_NAME"]
-		if okOwner && okName && name != nil {
+		owner := getDamengRowString(row, "OWNER")
+		name := getDamengRowString(row, "TABLE_NAME")
+		if owner != "" && name != "" {
 			tables = append(tables, fmt.Sprintf("%v.%v", owner, name))
 			continue
 		}
-		if okName && name != nil {
-			tables = append(tables, fmt.Sprintf("%v", name))
+		if name != "" {
+			tables = append(tables, name)
 		}
 	}
 	return tables, nil
 }
 
 func (d *DamengDB) GetCreateStatement(dbName, tableName string) (string, error) {
-	// DM: SP_TABLEDEF usually returns definition
-	// Or standard Oracle way if supported.
-	// We'll try a common DM approach.
-	// SELECT DBMS_METADATA.GET_DDL('TABLE', 'TABLE_NAME', 'OWNER') FROM DUAL;
-
-	escapedDBName := escapeDamengMetadataLiteral(dbName)
-	escapedTableName := escapeDamengMetadataLiteral(tableName)
-	query := fmt.Sprintf("SELECT DBMS_METADATA.GET_DDL('TABLE', '%s', '%s') as ddl FROM DUAL",
-		escapedTableName, escapedDBName)
-
-	if escapedDBName == "" {
-		query = fmt.Sprintf("SELECT DBMS_METADATA.GET_DDL('TABLE', '%s') as ddl FROM DUAL", escapedTableName)
-	}
-
-	data, _, err := d.Query(query)
+	schema, table, err := resolveDamengMetadataTable(d.Query, dbName, tableName)
 	if err != nil {
 		return "", err
 	}
-
-	if len(data) > 0 {
-		if ddl := getDamengRowString(data[0], "DDL"); ddl != "" {
-			commentData, _, commentErr := d.Query(buildDamengTableCommentQuery(dbName, tableName))
-			if commentErr != nil {
-				logger.Warnf("达梦 GetCreateStatement 表注释元数据查询失败，已返回基础 DDL：%v", commentErr)
-				return ddl, nil
-			}
-			if len(commentData) == 0 {
-				return ddl, nil
-			}
-			comment := getDamengRowString(commentData[0], "TABLE_COMMENT", "COMMENT", "COMMENTS")
-			return appendDamengTableCommentDDL(ddl, dbName, tableName, comment), nil
+	data, _, err := d.Query(buildDamengGetDDLQuery(schema, table))
+	if err != nil {
+		return "", err
+	}
+	for _, row := range data {
+		ddl := getDamengRowString(row, "DDL")
+		if ddl == "" {
+			continue
 		}
+		commentData, _, commentErr := d.Query(buildDamengTableCommentQuery(schema, table))
+		if commentErr != nil {
+			logger.Warnf("达梦 GetCreateStatement 表注释元数据查询失败，已返回基础 DDL：%v", commentErr)
+			return ddl, nil
+		}
+		if len(commentData) == 0 {
+			return ddl, nil
+		}
+		comment := getDamengRowString(commentData[0], "TABLE_COMMENT", "COMMENT", "COMMENTS")
+		return appendDamengTableCommentDDL(ddl, schema, table, comment), nil
 	}
 	return "", localizedDatabaseRuntimeError("db.backend.error.create_table_statement_not_found", nil)
 }
 
+func buildDamengGetDDLQuery(dbName, tableName string) string {
+	if strings.TrimSpace(dbName) == "" {
+		return fmt.Sprintf("SELECT DBMS_METADATA.GET_DDL('TABLE', '%s') as ddl FROM DUAL", escapeDamengMetadataLiteralExact(tableName))
+	}
+	return fmt.Sprintf("SELECT DBMS_METADATA.GET_DDL('TABLE', '%s', '%s') as ddl FROM DUAL",
+		escapeDamengMetadataLiteralExact(tableName), escapeDamengMetadataLiteralExact(dbName))
+}
+
 func (d *DamengDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefinition, error) {
-	data, _, err := d.Query(buildDamengColumnsQuery(dbName, tableName))
+	resolvedSchemaName, resolvedTableName, err := resolveDamengMetadataTable(d.Query, dbName, tableName)
+	if err != nil {
+		return nil, err
+	}
+	data, _, err := d.Query(buildDamengColumnsQuery(resolvedSchemaName, resolvedTableName))
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +358,7 @@ func (d *DamengDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefi
 		return columns, nil
 	}
 	if !hasDamengColumnComments(columns) {
-		commentData, _, commentErr := d.Query(buildDamengColumnCommentsQuery(dbName, tableName))
+		commentData, _, commentErr := d.Query(buildDamengColumnCommentsQuery(resolvedSchemaName, resolvedTableName))
 		if commentErr != nil {
 			logger.Warnf("达梦 GetColumns 原生字段注释查询失败，已返回基础字段定义：%v", commentErr)
 		} else {
@@ -363,7 +366,7 @@ func (d *DamengDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefi
 		}
 	}
 
-	autoIncrementData, _, autoIncrementErr := d.Query(buildDamengAutoIncrementColumnsQuery(dbName, tableName))
+	autoIncrementData, _, autoIncrementErr := d.Query(buildDamengAutoIncrementColumnsQuery(resolvedSchemaName, resolvedTableName))
 	if autoIncrementErr != nil {
 		logger.Warnf("达梦 GetColumns 自增字段元数据查询失败，已返回基础字段定义：%v", autoIncrementErr)
 		return columns, nil
@@ -373,7 +376,11 @@ func (d *DamengDB) GetColumns(dbName, tableName string) ([]connection.ColumnDefi
 }
 
 func (d *DamengDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefinition, error) {
-	data, _, err := d.Query(buildDamengIndexesQuery(dbName, tableName))
+	schema, table, err := resolveDamengMetadataTable(d.Query, dbName, tableName)
+	if err != nil {
+		return nil, err
+	}
+	data, _, err := d.Query(buildDamengIndexesQuery(schema, table))
 	if err != nil {
 		return nil, err
 	}
@@ -382,7 +389,11 @@ func (d *DamengDB) GetIndexes(dbName, tableName string) ([]connection.IndexDefin
 
 func (d *DamengDB) GetForeignKeys(dbName, tableName string) ([]connection.ForeignKeyDefinition, error) {
 	// Reusing Oracle style query as DM is highly compatible
-	data, _, err := d.Query(buildDamengForeignKeysQuery(dbName, tableName))
+	schema, table, err := resolveDamengMetadataTable(d.Query, dbName, tableName)
+	if err != nil {
+		return nil, err
+	}
+	data, _, err := d.Query(buildDamengForeignKeysQuery(schema, table))
 	if err != nil {
 		return nil, err
 	}
@@ -390,11 +401,11 @@ func (d *DamengDB) GetForeignKeys(dbName, tableName string) ([]connection.Foreig
 	var fks []connection.ForeignKeyDefinition
 	for _, row := range data {
 		fk := connection.ForeignKeyDefinition{
-			Name:           fmt.Sprintf("%v", row["CONSTRAINT_NAME"]),
-			ColumnName:     fmt.Sprintf("%v", row["COLUMN_NAME"]),
-			RefTableName:   fmt.Sprintf("%v", row["R_TABLE_NAME"]),
-			RefColumnName:  fmt.Sprintf("%v", row["R_COLUMN_NAME"]),
-			ConstraintName: fmt.Sprintf("%v", row["CONSTRAINT_NAME"]),
+			Name:           getDamengRowString(row, "CONSTRAINT_NAME"),
+			ColumnName:     getDamengRowString(row, "COLUMN_NAME"),
+			RefTableName:   getDamengRowString(row, "R_TABLE_NAME"),
+			RefColumnName:  getDamengRowString(row, "R_COLUMN_NAME"),
+			ConstraintName: getDamengRowString(row, "CONSTRAINT_NAME"),
 		}
 		fks = append(fks, fk)
 	}
@@ -402,10 +413,14 @@ func (d *DamengDB) GetForeignKeys(dbName, tableName string) ([]connection.Foreig
 }
 
 func (d *DamengDB) GetTriggers(dbName, tableName string) ([]connection.TriggerDefinition, error) {
+	schema, table, err := resolveDamengMetadataTable(d.Query, dbName, tableName)
+	if err != nil {
+		return nil, err
+	}
 	query := fmt.Sprintf(`SELECT trigger_name, trigger_type, triggering_event 
 		FROM all_triggers 
 		WHERE table_owner = '%s' AND table_name = '%s'`,
-		escapeDamengMetadataLiteral(dbName), escapeDamengMetadataLiteral(tableName))
+		escapeDamengMetadataLiteralExact(schema), escapeDamengMetadataLiteralExact(table))
 
 	data, _, err := d.Query(query)
 	if err != nil {
@@ -415,9 +430,9 @@ func (d *DamengDB) GetTriggers(dbName, tableName string) ([]connection.TriggerDe
 	var triggers []connection.TriggerDefinition
 	for _, row := range data {
 		trig := connection.TriggerDefinition{
-			Name:      fmt.Sprintf("%v", row["TRIGGER_NAME"]),
-			Timing:    fmt.Sprintf("%v", row["TRIGGER_TYPE"]),
-			Event:     fmt.Sprintf("%v", row["TRIGGERING_EVENT"]),
+			Name:      getDamengRowString(row, "TRIGGER_NAME"),
+			Timing:    getDamengRowString(row, "TRIGGER_TYPE"),
+			Event:     getDamengRowString(row, "TRIGGERING_EVENT"),
 			Statement: "SOURCE HIDDEN",
 		}
 		triggers = append(triggers, trig)
@@ -673,9 +688,9 @@ func (d *DamengDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWi
 	var cols []connection.ColumnDefinitionWithTable
 	for _, row := range data {
 		col := connection.ColumnDefinitionWithTable{
-			TableName: fmt.Sprintf("%v", row["TABLE_NAME"]),
-			Name:      fmt.Sprintf("%v", row["COLUMN_NAME"]),
-			Type:      fmt.Sprintf("%v", row["DATA_TYPE"]),
+			TableName: getDamengRowString(row, "TABLE_NAME"),
+			Name:      getDamengRowString(row, "COLUMN_NAME"),
+			Type:      getDamengRowString(row, "DATA_TYPE"),
 			Comment:   getDamengRowString(row, "COL_COMMENT", "COMMENT", "COMMENTS"),
 		}
 		cols = append(cols, col)
