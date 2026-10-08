@@ -15,7 +15,7 @@ import { QUERY_EDITOR_PARAMS_PANEL_KEY, type QueryParamBindingInput } from './qu
 import { useOptionalI18n } from '../i18n/provider';
 import {
   resolveNativeDetachPreferredBounds,
-  shouldDetachAtScreenPoint,
+  isReleasedOutsideViewport,
   shouldDetachTabByDrag,
   type DetachedWindowBounds,
 } from '../utils/detachedWindow';
@@ -379,12 +379,7 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
             const releaseScreenY = Number.isFinite(upEvent.screenY)
                 ? upEvent.screenY
                 : drag.startScreenY + (upEvent.clientY - drag.startY);
-            const releasedOutsideHost = shouldDetachAtScreenPoint(releaseScreenX, releaseScreenY, {
-                x: window.screenX,
-                y: window.screenY,
-                width: window.outerWidth || window.innerWidth,
-                height: window.outerHeight || window.innerHeight,
-            });
+            const releasedOutsideHost = isReleasedOutsideViewport(upEvent.clientX, upEvent.clientY);
             const shouldDetach = drag.active && (shouldDetachTabByDrag(dy) || releasedOutsideHost);
             if (drag.active) {
                 upEvent.preventDefault();

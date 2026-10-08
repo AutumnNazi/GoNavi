@@ -10,7 +10,7 @@ import {
   resolveResultDetachPreferredBounds,
   shouldDetachAfterNativePointerCancel,
   shouldDetachTabByDrag,
-  shouldDetachAtScreenPoint,
+  isReleasedOutsideViewport,
   toAIChatDetachedBoundsMemory,
 } from './detachedWindow';
 import {
@@ -98,35 +98,50 @@ describe('detachedWindow helpers', () => {
     })).toEqual({
       deltaX: -920,
       deltaY: 120,
+      clientX: -120,
+      clientY: 160,
       screenX: -1480,
       screenY: 220,
       terminalType: 'pointercancel',
     });
   });
 
-  it('detaches when the pointer leaves the host window in any screen direction', () => {
-    const host = { x: 100, y: 80, width: 1200, height: 800 };
-    expect(shouldDetachAtScreenPoint(80, 300, host)).toBe(true);
-    expect(shouldDetachAtScreenPoint(1500, 300, host)).toBe(true);
-    expect(shouldDetachAtScreenPoint(500, 40, host)).toBe(true);
-    expect(shouldDetachAtScreenPoint(500, 1000, host)).toBe(true);
-    expect(shouldDetachAtScreenPoint(600, 300, host)).toBe(false);
+  it('detaches when the pointer leaves the host viewport in any direction', () => {
+    const viewport = { width: 1200, height: 800 };
+    expect(isReleasedOutsideViewport(-20, 300, viewport)).toBe(true);
+    expect(isReleasedOutsideViewport(1260, 300, viewport)).toBe(true);
+    expect(isReleasedOutsideViewport(500, -10, viewport)).toBe(true);
+    expect(isReleasedOutsideViewport(500, 860, viewport)).toBe(true);
+    expect(isReleasedOutsideViewport(600, 300, viewport)).toBe(false);
+  });
+
+  it('keeps a sideways reorder near the right edge of the tab strip inside the host', () => {
+    // macOS WKWebView 报告 window.screenX=0 / outerWidth=0；按 client 坐标判断不受影响。
+    expect(isReleasedOutsideViewport(1150, 40, { width: 1200, height: 800 })).toBe(false);
+    expect(isReleasedOutsideViewport(Number.NaN, 40, { width: 1200, height: 800 })).toBe(false);
+    expect(isReleasedOutsideViewport(1500, 40, { width: 0, height: 0 })).toBe(false);
   });
 
   it('treats a native pointercancel outside the host as a completed detach drag', () => {
-    const host = { x: 100, y: 80, width: 1200, height: 800 };
+    const viewport = { width: 1200, height: 800 };
     expect(shouldDetachAfterNativePointerCancel({
       terminalType: 'pointercancel',
       deltaY: 12,
-      screenX: -1480,
-      screenY: 220,
-    }, host)).toBe(true);
+      clientX: -120,
+      clientY: 160,
+    }, viewport)).toBe(true);
+    expect(shouldDetachAfterNativePointerCancel({
+      terminalType: 'pointercancel',
+      deltaY: 12,
+      clientX: 900,
+      clientY: 40,
+    }, viewport)).toBe(false);
     expect(shouldDetachAfterNativePointerCancel({
       terminalType: 'pointerup',
       deltaY: 120,
-      screenX: -1480,
-      screenY: 220,
-    }, host)).toBe(false);
+      clientX: -120,
+      clientY: 160,
+    }, viewport)).toBe(false);
   });
 
   it('snapshots AI chat detached bounds for size memory', () => {

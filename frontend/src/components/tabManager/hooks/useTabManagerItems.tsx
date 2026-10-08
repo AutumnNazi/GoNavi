@@ -19,7 +19,7 @@ import { t } from '../../../i18n';
 import {
   type NativeDetachTerminalPointer,
   resolveNativeDetachDragRelease,
-  shouldDetachAtScreenPoint,
+  isReleasedOutsideViewport,
   shouldDetachTabByDrag,
   resolveNativeDetachPreferredBounds,
   shouldDetachAfterNativePointerCancel,
@@ -210,12 +210,7 @@ export const useTabManagerItems = ({
     if (!sourceId) {
       return;
     }
-    const releasedOutsideHost = shouldDetachAtScreenPoint(release.screenX, release.screenY, {
-      x: window.screenX,
-      y: window.screenY,
-      width: window.outerWidth || window.innerWidth,
-      height: window.outerHeight || window.innerHeight,
-    });
+    const releasedOutsideHost = isReleasedOutsideViewport(release.clientX, release.clientY);
     if (shouldDetachTabByDrag(release.deltaY, targetId || null) || releasedOutsideHost) {
       suppressClickUntilRef.current = Date.now() + 120;
       const preferred = resolveNativeDetachPreferredBounds(release.screenX, release.screenY);
@@ -240,12 +235,7 @@ export const useTabManagerItems = ({
       fallbackDeltaY: 0,
       terminalPointer: session?.terminalPointer,
     });
-    const shouldDetach = Boolean(session) && shouldDetachAfterNativePointerCancel(release, {
-      x: window.screenX,
-      y: window.screenY,
-      width: window.outerWidth || window.innerWidth,
-      height: window.outerHeight || window.innerHeight,
-    });
+    const shouldDetach = Boolean(session) && shouldDetachAfterNativePointerCancel(release);
     setDraggingTabId(null);
     clearDetachDragSession();
     if (shouldDetach && session) {

@@ -211,6 +211,8 @@ export const resolveNativeDetachDragRelease = (input: {
 }): {
   deltaX: number;
   deltaY: number;
+  clientX: number;
+  clientY: number;
   screenX: number;
   screenY: number;
   terminalType?: NativeDetachTerminalPointer['type'];
@@ -237,6 +239,8 @@ export const resolveNativeDetachDragRelease = (input: {
   return {
     deltaX,
     deltaY,
+    clientX: Number(input.startClientX) + deltaX,
+    clientY: Number(input.startClientY) + deltaY,
     screenX: hasTerminalScreenPoint ? Math.round(Number(terminal?.screenX)) : fallbackRelease.screenX,
     screenY: hasTerminalScreenPoint ? Math.round(Number(terminal?.screenY)) : fallbackRelease.screenY,
     ...(terminal ? { terminalType: terminal.type } : {}),
@@ -252,35 +256,46 @@ export const resolveNativeDetachPreferredBounds = (
   y: Math.round(Number(screenY) - 24),
 });
 
-export const shouldDetachAtScreenPoint = (
-  screenX: number,
-  screenY: number,
-  hostBounds: { x: number; y: number; width: number; height: number },
+type DetachViewport = { width: number; height: number };
+
+const currentViewport = (): DetachViewport => ({
+  width: typeof window === 'undefined' ? 0 : window.innerWidth,
+  height: typeof window === 'undefined' ? 0 : window.innerHeight,
+});
+
+/**
+ * 松手点是否已离开宿主窗口，按视口内的 client 坐标判断。
+ * 不能拿指针的 screenX/screenY 去比 window.screenX/outerWidth：macOS WKWebView 不报告真实窗口位置
+ * （实测窗口在 (400, 300) 时 screenX=0、screenY=1152、outerWidth=outerHeight=0），
+ * 会把窗口里正常的左右拖动排序误判成拖出窗口。
+ */
+export const isReleasedOutsideViewport = (
+  clientX: number,
+  clientY: number,
+  viewport: DetachViewport = currentViewport(),
 ): boolean => {
-  const x = Number(screenX);
-  const y = Number(screenY);
-  const left = Number(hostBounds.x);
-  const top = Number(hostBounds.y);
-  const width = Number(hostBounds.width);
-  const height = Number(hostBounds.height);
-  if (![x, y, left, top, width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
+  const x = Number(clientX);
+  const y = Number(clientY);
+  const width = Number(viewport.width);
+  const height = Number(viewport.height);
+  if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
     return false;
   }
-  return x < left || x > left + width || y < top || y > top + height;
+  return x < 0 || x > width || y < 0 || y > height;
 };
 
 export const shouldDetachAfterNativePointerCancel = (
   release: {
     terminalType?: NativeDetachTerminalPointer['type'];
     deltaY: number;
-    screenX: number;
-    screenY: number;
+    clientX: number;
+    clientY: number;
   },
-  hostBounds: { x: number; y: number; width: number; height: number },
+  viewport: DetachViewport = currentViewport(),
 ): boolean => release.terminalType === 'pointercancel'
   && (
     shouldDetachTabByDrag(release.deltaY)
-    || shouldDetachAtScreenPoint(release.screenX, release.screenY, hostBounds)
+    || isReleasedOutsideViewport(release.clientX, release.clientY, viewport)
   );
 
 export const resolveDetachedWindowTitle = (params: {
