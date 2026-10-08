@@ -1,0 +1,83 @@
+/*
+ * 启动公告弹窗的入场 / 退场动画。
+ *
+ * antd 默认给 .ant-modal 挂 antZoomIn：scale(0.2) → scale(1)，时长 motionDurationSlow(0.3s)。
+ * 对本弹窗观感很差，原因是两处叠加：
+ *   1. antd 在 -prepare 阶段先把 transform 置为 none（满尺寸渲染一帧），动画才从 scale(0.2)
+ *      起步，肉眼就是"满尺寸 → 跳小 → 放大"的一次闪烁；
+ *   2. .ant-modal-content 带 backdrop-filter: blur(18px)，缩放期间每帧都要重新采样背景，
+ *      模糊区域尺寸剧变，进一步放大撕裂感。
+ *
+ * 因此本弹窗改用「淡入 + 轻微上浮」：位移只有 10px，背景模糊的重采样几乎无差别，
+ * 也不再有尺寸跳变。选择器带 .gonavi-announcement-modal（rootClassName 落在
+ * .ant-modal-root），只作用于本弹窗，其余模态框保持 antd 默认动画。
+ */
+
+@keyframes gonavi-announcement-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes gonavi-announcement-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* 起始帧：给出与首帧一致的位移，避免"满尺寸一帧"的闪烁。 */
+.gonavi-announcement-modal .ant-modal.ant-zoom-enter,
+.gonavi-announcement-modal .ant-modal.ant-zoom-appear {
+  transform: translateY(10px);
+  opacity: 0;
+  animation-duration: 0.16s;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: both;
+  animation-play-state: paused;
+}
+
+.gonavi-announcement-modal .ant-modal.ant-zoom-enter.ant-zoom-enter-active,
+.gonavi-announcement-modal .ant-modal.ant-zoom-appear.ant-zoom-appear-active {
+  animation-name: gonavi-announcement-in;
+  animation-play-state: running;
+}
+
+.gonavi-announcement-modal .ant-modal.ant-zoom-leave {
+  animation-duration: 0.12s;
+  animation-timing-function: cubic-bezier(0.4, 0, 1, 1);
+  animation-fill-mode: both;
+  animation-play-state: paused;
+}
+
+.gonavi-announcement-modal .ant-modal.ant-zoom-leave.ant-zoom-leave-active {
+  animation-name: gonavi-announcement-out;
+  animation-play-state: running;
+}
+
+/* 尊重系统「减少动态效果」：直接落到终态，只保留不可感知的过渡。 */
+@media (prefers-reduced-motion: reduce) {
+  .gonavi-announcement-modal .ant-modal.ant-zoom-enter,
+  .gonavi-announcement-modal .ant-modal.ant-zoom-appear,
+  .gonavi-announcement-modal .ant-modal.ant-zoom-leave {
+    transform: none;
+    opacity: 1;
+    animation-duration: 0.01s;
+    animation-timing-function: linear;
+  }
+
+  .gonavi-announcement-modal .ant-modal.ant-zoom-leave.ant-zoom-leave-active {
+    opacity: 0;
+  }
+}

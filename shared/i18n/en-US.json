@@ -12373,5 +12373,20 @@
   "mock_data.column.null_ratio_hint": "Share of generated rows where this column is NULL. For example, 20% leaves about one row in five empty. Not available for NOT NULL or unique columns.",
   "mock_data.column.null_not_allowed": "NOT NULL",
   "mock_data.column.null_unique": "Unique, no NULL",
-  "mock_data.workbench.loading": "Reading columns, constraints and foreign key values..."
+  "mock_data.workbench.loading": "Reading columns, constraints and foreign key values...",
+  "announcement.builtin_ai.title": "Free built-in AI is here",
+  "announcement.builtin_ai.subtitle": "GoNavi 1.1.0 ships GoNavi AI — sign in and use it free",
+  "announcement.builtin_ai.description": "Nothing to configure — no API key or endpoint to fill in. Signing in gives you the free quota GoNavi provides.",
+  "announcement.builtin_ai.highlight.free": "Free of charge: GoNavi serves the model, no key of your own needed",
+  "announcement.builtin_ai.highlight.no_api_key": "No setup: no API key, model name or endpoint to enter",
+  "announcement.builtin_ai.highlight.shortcut": "Press {{shortcut}} to open the AI panel and start asking",
+  "announcement.builtin_ai.login.title": "How to sign in",
+  "announcement.builtin_ai.login.step1": "Open the AI panel and click “Sign in”",
+  "announcement.builtin_ai.login.step2": "Your browser opens the authorization page — check that the code on it matches the one in the panel",
+  "announcement.builtin_ai.login.step3": "Approve it in the browser; GoNavi signs in automatically and you can start chatting",
+  "announcement.builtin_ai.signed_in_hint": "You are already signed in to GoNavi AI — start chatting whenever you like",
+  "announcement.builtin_ai.quota": "The free quota is counted per day and over a rolling 5-hour window; live usage is shown in the AI panel and settings.",
+  "announcement.builtin_ai.action.acknowledge": "Got it",
+  "announcement.builtin_ai.action.use_now": "Use it now",
+  "announcement.builtin_ai.action.open_panel": "Open AI panel"
 }

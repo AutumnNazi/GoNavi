@@ -33,6 +33,8 @@ import { useAppSettingsPanesRender } from './appShell/hooks/useAppSettingsPanesR
 import { useAppAboutSettingsRender } from './appShell/hooks/useAppAboutSettingsRender';
 import { useAppThemeSettingsRender } from './appShell/hooks/useAppThemeSettingsRender';
 import { useAppSettingsCenterRender } from './appShell/hooks/useAppSettingsCenterRender';
+import { useBuiltinAIAnnouncement } from './appShell/hooks/useBuiltinAIAnnouncement';
+import { resolveShortcutDisplay } from './utils/shortcutOptions';
 import { useLateBoundCallback } from './hooks/useLateBoundCallback';
 import { renderAppSettingsCenterModal } from './appShell/settings/renderAppSettingsCenterModal';
 import { AppTitleBar } from './appShell/layout/AppTitleBar';
@@ -394,6 +396,11 @@ function App() {
     handleBrandIconChange,
   });
 
+  const builtinAIAnnouncement = useBuiltinAIAnnouncement({
+    isStoreHydrated, hasLoadedSecureConfig, isSecurityUpdateIntroOpen,
+    isSecurityUpdateProgressOpen, aiPanelVisible, onOpenPanel: handleToggleOrFocusAIPanel,
+  });
+
   return (
     <ConfigProvider
         locale={getAntdLocale(language)}
@@ -598,6 +605,10 @@ function App() {
             isProxyModalOpen={isProxyModalOpen}
             handleCloseGlobalProxySettings={handleCloseGlobalProxySettings}
             renderProxySettingsContent={renderProxySettingsContent}
+            builtinAIAnnouncement={builtinAIAnnouncement}
+            builtinAIAnnouncementShortcutLabel={
+              resolveShortcutDisplay(shortcutOptions, 'toggleAIPanel', activeShortcutPlatform)
+            }
           />
 
           {showLinuxResizeHandles && (

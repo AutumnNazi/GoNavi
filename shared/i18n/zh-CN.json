@@ -12373,5 +12373,20 @@
   "mock_data.column.null_ratio_hint": "生成的行里，这一列有多大比例写成 NULL（留空）。例如 20% 表示大约五分之一的行该列为空。不允许为空的列和唯一列不能设置。",
   "mock_data.column.null_not_allowed": "不可为空",
   "mock_data.column.null_unique": "唯一列不留空",
-  "mock_data.workbench.loading": "正在读取表结构、约束和外键取值…"
+  "mock_data.workbench.loading": "正在读取表结构、约束和外键取值…",
+  "announcement.builtin_ai.title": "内置免费 AI 已上线",
+  "announcement.builtin_ai.subtitle": "GoNavi 1.1.0 起内置 GoNavi AI，登录后即可免费使用",
+  "announcement.builtin_ai.description": "不需要填写 API 密钥或接口地址，开箱即用；登录后即可使用 GoNavi 提供的免费额度。",
+  "announcement.builtin_ai.highlight.free": "完全免费：由 GoNavi 提供模型服务，无需自备密钥",
+  "announcement.builtin_ai.highlight.no_api_key": "无需配置：不用填 API Key、模型名称或接口地址",
+  "announcement.builtin_ai.highlight.shortcut": "按 {{shortcut}} 打开 AI 面板，就可以直接提问",
+  "announcement.builtin_ai.login.title": "如何登录",
+  "announcement.builtin_ai.login.step1": "打开 AI 面板后，点击面板中的「登录」",
+  "announcement.builtin_ai.login.step2": "浏览器会自动打开授权页面，请核对页面上的设备码与面板中显示的一致",
+  "announcement.builtin_ai.login.step3": "在浏览器完成授权后，GoNavi 会自动登录，即可开始对话",
+  "announcement.builtin_ai.signed_in_hint": "你已经登录 GoNavi AI，可以直接开始对话",
+  "announcement.builtin_ai.quota": "免费额度按每日与 5 小时滚动窗口计算，实时用量可在 AI 面板与设置中查看。",
+  "announcement.builtin_ai.action.acknowledge": "我已知晓",
+  "announcement.builtin_ai.action.use_now": "立即使用",
+  "announcement.builtin_ai.action.open_panel": "打开 AI 面板"
 }

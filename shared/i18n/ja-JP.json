@@ -12373,5 +12373,20 @@
   "mock_data.column.null_ratio_hint": "生成する行のうち、この列を NULL（空）にする割合です。例：20% なら約 5 行に 1 行が空になります。NOT NULL 列と一意列では設定できません。",
   "mock_data.column.null_not_allowed": "NULL 不可",
   "mock_data.column.null_unique": "一意列は空にしない",
-  "mock_data.workbench.loading": "列・制約・外部キーの値を読み込んでいます…"
+  "mock_data.workbench.loading": "列・制約・外部キーの値を読み込んでいます…",
+  "announcement.builtin_ai.title": "無料の内蔵 AI が使えるようになりました",
+  "announcement.builtin_ai.subtitle": "GoNavi 1.1.0 から GoNavi AI を内蔵。ログインすれば無料で使えます",
+  "announcement.builtin_ai.description": "API キーやエンドポイントの入力は不要で、すぐに使えます。ログインすると GoNavi が提供する無料枠を利用できます。",
+  "announcement.builtin_ai.highlight.free": "完全無料：モデルは GoNavi が提供するため、自分のキーは不要",
+  "announcement.builtin_ai.highlight.no_api_key": "設定不要：API キー・モデル名・エンドポイントの入力は不要",
+  "announcement.builtin_ai.highlight.shortcut": "{{shortcut}} で AI パネルを開けば、すぐに質問できます",
+  "announcement.builtin_ai.login.title": "ログイン方法",
+  "announcement.builtin_ai.login.step1": "AI パネルを開き、「ログイン」をクリックします",
+  "announcement.builtin_ai.login.step2": "ブラウザで認証ページが開きます。ページのデバイスコードがパネルの表示と一致するか確認してください",
+  "announcement.builtin_ai.login.step3": "ブラウザで承認すると GoNavi が自動でログインし、そのまま会話を始められます",
+  "announcement.builtin_ai.signed_in_hint": "すでに GoNavi AI にログイン済みです。いつでも会話を始められます",
+  "announcement.builtin_ai.quota": "無料枠は 1 日ごとと 5 時間のローリング枠で計算されます。使用量は AI パネルと設定で確認できます。",
+  "announcement.builtin_ai.action.acknowledge": "了解しました",
+  "announcement.builtin_ai.action.use_now": "今すぐ使う",
+  "announcement.builtin_ai.action.open_panel": "AI パネルを開く"
 }

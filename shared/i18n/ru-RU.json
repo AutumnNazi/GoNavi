@@ -12373,5 +12373,20 @@
   "mock_data.column.null_ratio_hint": "Доля строк, где столбец будет NULL. Например, 20% — примерно каждая пятая строка пустая. Недоступно для NOT NULL и уникальных столбцов.",
   "mock_data.column.null_not_allowed": "NOT NULL",
   "mock_data.column.null_unique": "Уникальный, без NULL",
-  "mock_data.workbench.loading": "Чтение столбцов, ограничений и значений внешних ключей..."
+  "mock_data.workbench.loading": "Чтение столбцов, ограничений и значений внешних ключей...",
+  "announcement.builtin_ai.title": "Встроенный бесплатный ИИ уже здесь",
+  "announcement.builtin_ai.subtitle": "Начиная с GoNavi 1.1.0 встроен GoNavi AI — войдите и пользуйтесь бесплатно",
+  "announcement.builtin_ai.description": "Настраивать ничего не нужно — ни API-ключ, ни адрес. После входа доступна бесплатная квота, которую предоставляет GoNavi.",
+  "announcement.builtin_ai.highlight.free": "Бесплатно: модель предоставляет GoNavi, свой ключ не нужен",
+  "announcement.builtin_ai.highlight.no_api_key": "Без настройки: не нужно указывать API-ключ, модель или адрес",
+  "announcement.builtin_ai.highlight.shortcut": "Нажмите {{shortcut}}, чтобы открыть панель ИИ и сразу задать вопрос",
+  "announcement.builtin_ai.login.title": "Как войти",
+  "announcement.builtin_ai.login.step1": "Откройте панель ИИ и нажмите «Войти»",
+  "announcement.builtin_ai.login.step2": "Браузер откроет страницу авторизации — сверьте код на странице с кодом в панели",
+  "announcement.builtin_ai.login.step3": "Подтвердите вход в браузере; GoNavi войдёт автоматически, и можно сразу начать диалог",
+  "announcement.builtin_ai.signed_in_hint": "Вы уже вошли в GoNavi AI — можно сразу начать диалог",
+  "announcement.builtin_ai.quota": "Бесплатная квота считается за сутки и за скользящие 5 часов; расход виден в панели ИИ и в настройках.",
+  "announcement.builtin_ai.action.acknowledge": "Понятно",
+  "announcement.builtin_ai.action.use_now": "Начать сейчас",
+  "announcement.builtin_ai.action.open_panel": "Открыть панель ИИ"
 }

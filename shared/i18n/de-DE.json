@@ -12373,5 +12373,20 @@
   "mock_data.column.null_ratio_hint": "Anteil der erzeugten Zeilen, in denen diese Spalte NULL ist. 20 % lässt etwa jede fünfte Zeile leer. Nicht für NOT-NULL- oder eindeutige Spalten.",
   "mock_data.column.null_not_allowed": "NOT NULL",
   "mock_data.column.null_unique": "Eindeutig, kein NULL",
-  "mock_data.workbench.loading": "Spalten, Constraints und Fremdschlüsselwerte werden gelesen..."
+  "mock_data.workbench.loading": "Spalten, Constraints und Fremdschlüsselwerte werden gelesen...",
+  "announcement.builtin_ai.title": "Die kostenlose integrierte KI ist da",
+  "announcement.builtin_ai.subtitle": "GoNavi 1.1.0 enthält GoNavi AI — anmelden und kostenlos nutzen",
+  "announcement.builtin_ai.description": "Nichts einzurichten — weder API-Schlüssel noch Endpunkt. Nach der Anmeldung steht Ihnen das von GoNavi bereitgestellte kostenlose Kontingent zur Verfügung.",
+  "announcement.builtin_ai.highlight.free": "Kostenlos: Das Modell stellt GoNavi bereit, ein eigener Schlüssel ist nicht nötig",
+  "announcement.builtin_ai.highlight.no_api_key": "Keine Einrichtung: kein API-Schlüssel, Modellname oder Endpunkt",
+  "announcement.builtin_ai.highlight.shortcut": "Mit {{shortcut}} öffnen Sie das KI-Panel und können sofort fragen",
+  "announcement.builtin_ai.login.title": "So melden Sie sich an",
+  "announcement.builtin_ai.login.step1": "Öffnen Sie das KI-Panel und klicken Sie auf „Anmelden“",
+  "announcement.builtin_ai.login.step2": "Der Browser öffnet die Autorisierungsseite — prüfen Sie, ob der Code dort mit dem im Panel übereinstimmt",
+  "announcement.builtin_ai.login.step3": "Bestätigen Sie im Browser; GoNavi meldet sich automatisch an und Sie können sofort chatten",
+  "announcement.builtin_ai.signed_in_hint": "Sie sind bereits bei GoNavi AI angemeldet — Sie können sofort chatten",
+  "announcement.builtin_ai.quota": "Das kostenlose Kontingent gilt pro Tag und über ein rollierendes 5-Stunden-Fenster; die Nutzung sehen Sie im KI-Panel und in den Einstellungen.",
+  "announcement.builtin_ai.action.acknowledge": "Verstanden",
+  "announcement.builtin_ai.action.use_now": "Jetzt nutzen",
+  "announcement.builtin_ai.action.open_panel": "KI-Panel öffnen"
 }
