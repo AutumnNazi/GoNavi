@@ -11,6 +11,7 @@ import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
 import { isConnectionDataEditRestricted } from '../../utils/connectionReadOnly';
 import { buildElasticsearchConsoleTemplates } from '../../utils/elasticsearchConsole';
 import { buildUserManagementWorkbenchTab } from '../../utils/userManagementTab';
+import { buildMockDataWorkbenchTab } from '../../utils/mockDataTab';
 import {
   buildTableSelectQuery,
   isElasticsearchDbType,
@@ -266,6 +267,14 @@ export const useSidebarV2ActionHandlers = ({
         return;
       case 'batch-tables':
         openBatchTableWorkbench(node);
+        return;
+      case 'mock-data':
+        addTab(buildMockDataWorkbenchTab({
+          connectionId: String(node?.dataRef?.id || ''),
+          dbName: node?.dataRef?.dbName,
+          tableName: String(node?.dataRef?.tableName || node?.title || ''),
+          schemaName: node?.dataRef?.schemaName,
+        }));
         return;
       case 'ai-explain':
         void injectTablePromptToAI(node, 'explain');

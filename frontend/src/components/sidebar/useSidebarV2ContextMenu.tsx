@@ -381,6 +381,7 @@ export const useSidebarV2ContextMenu = ({
               supportsMessagePublish={supportsMessagePublish}
               supportsBatchTables={dataSourceCapabilities.supportsSqlQueryExport}
               supportsSqlExport={dataSourceCapabilities.supportsSqlQueryExport}
+              supportsMockData={dataSourceCapabilities.supportsMockData}
               onAction={(action) => {
                   setContextMenu(null);
                   handleV2TableContextMenuAction(node, action);

@@ -24,6 +24,7 @@ import {
 import { noAutoCapInputProps } from '../../../utils/inputAutoCap';
 import { useStore } from '../../../store';
 import { type V2TableContextMenuActionKey, V2TableContextMenuView } from '../../V2TableContextMenu';
+import { buildMockDataWorkbenchTab, canGenerateMockData } from '../../../utils/mockDataTab';
 import type { TableOverviewStateApi } from './useTableOverviewState';
 import type { TableOverviewProps } from '../../TableOverview';
 
@@ -413,6 +414,9 @@ export const useTableOverviewTableActions = ({
           case 'export-data':
               void openExportDialog(tableName, tables.find((item) => item.name === tableName)?.rows);
               return;
+          case 'mock-data':
+              addTab(buildMockDataWorkbenchTab({ connectionId: tab.connectionId, dbName: tab.dbName, tableName, schemaName }));
+              return;
           case 'ai-explain':
               void injectTablePromptToAI(tableName, 'explain');
               return;
@@ -432,6 +436,7 @@ export const useTableOverviewTableActions = ({
               return;
       }
   }, [
+      addTab,
       handleCopyStructure,
       handleCopyTable,
       handleCopyTableAsInsert,
@@ -449,6 +454,9 @@ export const useTableOverviewTableActions = ({
       openTable,
       openTableDdl,
       openTableInER,
+      schemaName,
+      tab.connectionId,
+      tab.dbName,
       tables,
       toggleOverviewTablePinned,
   ]);
@@ -468,12 +476,13 @@ export const useTableOverviewTableActions = ({
           supportsClear={allowClear}
           supportsCopyTable={supportsCopyTable}
           supportsStarRocksRollup={metadataDialect === 'starrocks'}
+          supportsMockData={canGenerateMockData(connection)}
           onAction={(action) => {
               setV2ContextMenu(null);
               handleV2TableContextMenuAction(table, action);
           }}
       />
-  ), [activeShortcutPlatform, allowClear, allowTruncate, connection?.id, handleV2TableContextMenuAction, metadataDialect, pinnedSidebarTables, schemaName, supportsCopyTable, tab.dbName]);
+  ), [activeShortcutPlatform, allowClear, allowTruncate, connection, handleV2TableContextMenuAction, metadataDialect, pinnedSidebarTables, schemaName, supportsCopyTable, tab.dbName]);
   return {
     textPrimary, textSecondary, textMuted, accentColor, containerBg, toggleSort, sortMenuItems,
     hasKnownTableSize, getCombinedTableSize, maxCombinedSize, renderToolbarSummary,

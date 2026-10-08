@@ -1,12 +1,14 @@
 import { t } from '../../i18n';
 import React, { useCallback } from 'react';
 import { useSidebarWorkbenchLaunchers } from './useSidebarWorkbenchLaunchers';
+import { useSidebarMockDataLauncher } from './useSidebarMockDataLauncher';
 import type { TitleBarQuickAction } from '../TitleBarQuickActions';
 import { TitlebarGraphIcon, TitlebarSqlToolIcon } from '../titlebar/gonaviTitlebarIcons';
 import {
   CloudOutlined,
   TableOutlined,
   DatabaseOutlined,
+  ExperimentOutlined,
   ImportOutlined,
   UploadOutlined,
   SwitcherOutlined,
@@ -176,6 +178,7 @@ export const useSidebarToolbarModel = ({
 
     openDataImportWorkbench({ connectionId, dbName, tableName, mode });
   }, [activeContext?.connectionId, activeContext?.dbName, activeTabId, openDataImportWorkbench, tabs]);
+  const handleOpenMockDataWorkbench = useSidebarMockDataLauncher({ selectedNodesRef, tabs, activeTabId, connections, addTab });
 
   const {
     openSlowQueryWorkbench,
@@ -216,6 +219,12 @@ export const useSidebarToolbarModel = ({
           label: v2DataImportLabel,
           icon: <ImportOutlined aria-hidden="true" />,
           onClick: handleOpenDataImportWorkbench,
+        },
+        {
+          key: 'mock-data',
+          label: t('mock_data.entry.title'),
+          icon: <ExperimentOutlined aria-hidden="true" />,
+          onClick: handleOpenMockDataWorkbench,
         },
         {
           key: 'sync',

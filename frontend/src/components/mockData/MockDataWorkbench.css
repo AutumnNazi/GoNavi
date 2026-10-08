@@ -1,0 +1,178 @@
+.gn-mock-data-workbench {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--gn-bg-panel-2, #f5f7fb);
+}
+
+.gn-mock-data-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px 16px;
+  background: var(--gn-bg-panel-2, #fafaf8);
+  border-bottom: 1px solid var(--gn-br-1, rgba(5, 5, 5, 0.06));
+}
+
+.gn-mock-data-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.gn-mock-data-toolbar {
+  padding: 12px 24px;
+  background: var(--gn-bg-panel-2, #fafaf8);
+  border-bottom: 1px solid var(--gn-br-1, rgba(5, 5, 5, 0.06));
+}
+
+.gn-mock-data-run-panel {
+  padding: 12px 24px 0;
+}
+
+.gn-mock-data-run-meta {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.gn-mock-data-error-logs {
+  max-height: 180px;
+  margin: 8px 0 0;
+  overflow: auto;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.gn-mock-data-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  padding: 16px 24px 24px;
+  overflow: auto;
+}
+
+.gn-mock-data-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  /* 与表概览一致：内容区用主题的 panel-2，卡片只叠一点前景色区分层次，不出现白底块。 */
+  background: color-mix(in srgb, var(--gn-fg-1, #1f2328) 2.5%, var(--gn-bg-panel-2, #fafaf8));
+  border: 1px solid var(--gn-br-1, rgba(5, 5, 5, 0.06));
+  border-radius: 8px;
+}
+
+/* v2 主题把所有 antd 表格铺成 --gn-bg-panel（浅色主题里接近白），这里改成透出卡片底色；
+   选择器带上 body[data-ui-version] 才能盖过全局规则的 !important。 */
+body[data-ui-version] .gn-mock-data-workbench .ant-table,
+body[data-ui-version] .gn-mock-data-workbench .ant-table-container,
+body[data-ui-version] .gn-mock-data-workbench .ant-table-tbody > tr > td,
+body[data-ui-version] .gn-mock-data-workbench .ant-table-placeholder,
+body[data-ui-version] .gn-mock-data-workbench .ant-table-placeholder:hover > td {
+  background: transparent !important;
+}
+
+body[data-ui-version] .gn-mock-data-workbench .ant-table-thead > tr > th {
+  background: color-mix(in srgb, var(--gn-fg-1, #1f2328) 5%, var(--gn-bg-panel-2, #fafaf8)) !important;
+}
+
+body[data-ui-version] .gn-mock-data-workbench .ant-table-tbody > tr:hover > td {
+  background: var(--gn-bg-hover, rgba(0, 0, 0, 0.04)) !important;
+}
+
+.gn-mock-data-workbench .ant-empty-description {
+  color: var(--gn-fg-4, rgba(0, 0, 0, 0.45));
+}
+
+.gn-mock-data-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 48px 0;
+}
+
+.gn-mock-data-column-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.gn-mock-data-column-type {
+  font-size: 12px;
+}
+
+.gn-mock-data-column-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.gn-mock-data-column-badges .ant-tag {
+  margin-inline-end: 0;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.gn-mock-data-params {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.gn-mock-data-params {
+  column-gap: 16px;
+  row-gap: 6px;
+}
+
+.gn-mock-data-param-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.gn-mock-data-param-label {
+  color: var(--gn-fg-2, rgba(0, 0, 0, 0.65));
+  font-size: 12px;
+}
+
+.gn-mock-data-param-separator {
+  color: var(--gn-fg-3, rgba(0, 0, 0, 0.45));
+}
+
+.gn-mock-data-header-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: help;
+}
+
+.gn-mock-data-param-hint {
+  color: var(--gn-fg-3, rgba(0, 0, 0, 0.45));
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .gn-mock-data-header,
+  .gn-mock-data-toolbar,
+  .gn-mock-data-body {
+    padding-inline: 16px;
+  }
+}

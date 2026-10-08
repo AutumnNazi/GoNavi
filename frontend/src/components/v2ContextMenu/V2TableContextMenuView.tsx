@@ -7,6 +7,7 @@ import {
   CopyOutlined,
   DeleteOutlined,
   EditOutlined,
+  ExperimentOutlined,
   ExportOutlined,
   FileAddOutlined,
   LinkOutlined,
@@ -48,6 +49,7 @@ export type V2TableContextMenuActionKey =
   | 'refresh-stats'
   | 'export-data'
   | 'batch-tables'
+  | 'mock-data'
   | 'ai-explain'
   | 'ai-generate-query'
   | 'truncate-table'
@@ -67,6 +69,8 @@ export const V2TableContextMenuView: React.FC<{
   supportsBatchTables?: boolean;
   // SQL 形式的导出（复制全表为 INSERT、SQL Dump 备份）：非 SQL 数据源生成的语句无法回灌，不提供。
   supportsSqlExport?: boolean;
+  // 生成模拟数据：关系型数据源且连接没有禁止编辑/导入数据。
+  supportsMockData?: boolean;
   onAction?: (action: V2TableContextMenuActionKey) => void;
 }> = ({
   tableName,
@@ -80,6 +84,7 @@ export const V2TableContextMenuView: React.FC<{
   supportsMessagePublish = false,
   supportsBatchTables = true,
   supportsSqlExport = true,
+  supportsMockData = false,
   onAction,
 }) => {
   const renderItems = (items: V2TableContextMenuItemConfig[]) => renderV2ContextMenuItems(
@@ -160,6 +165,7 @@ export const V2TableContextMenuView: React.FC<{
             icon: <AppstoreOutlined />,
             title: t('sidebar.action.batch_tables'),
           }] : []),
+          ...(supportsMockData ? [{ action: 'mock-data' as const, icon: <ExperimentOutlined />, title: t('sidebar.v2_table_menu.generate_mock_data') }] : []),
         ])}
 
         <div className="gn-v2-context-menu-divider" />

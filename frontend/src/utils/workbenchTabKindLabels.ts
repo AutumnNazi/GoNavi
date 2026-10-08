@@ -9,6 +9,7 @@ export const getWorkbenchTabKindLabel = (tab: TabData): string => {
   if (tab.type === 'table-overview') return t('tab_manager.kind_badge.table_overview');
   if (tab.type === 'table-export') return t('tab_manager.kind_badge.table_export');
   if (tab.type === 'data-import') return t('tab_manager.kind_badge.data_import');
+  if (tab.type === 'mock-data') return t('tab_manager.kind_badge.mock_data');
   if (tab.type === 'data-sync') {
     return t(
       tab.dataSyncEntryMode === 'compare' ||
@@ -50,6 +51,7 @@ export const getWorkbenchTabKindTooltipLabel = (tab: TabData): string => {
   if (tab.type === 'table-overview') return t('tab_manager.hover.kind.table_overview');
   if (tab.type === 'table-export') return t('tab_manager.hover.kind.table_export');
   if (tab.type === 'data-import') return t('tab_manager.hover.kind.data_import');
+  if (tab.type === 'mock-data') return t('tab_manager.hover.kind.mock_data');
   if (tab.type === 'data-sync') {
     return t(
       tab.dataSyncEntryMode === 'compare' ||

@@ -61,6 +61,7 @@ const COMES_BACK_AFTER_RESTART: Record<WorkbenchTabType, boolean> = {
   'sql-analysis': false,
   'table-export': false,
   'data-import': false,
+  'mock-data': false,
 };
 
 const TEXT_FIELDS = [

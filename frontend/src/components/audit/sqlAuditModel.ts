@@ -130,6 +130,7 @@ export const SQL_AUDIT_SOURCES = [
   'app_shutdown',
   'data_editor',
   'data_import',
+  'mock_data',
   'table_designer',
   'object_editor',
   'message_publish',

@@ -19,7 +19,7 @@ import {
 import { dispatchSidebarLocateConnection } from '../../utils/sidebarLocate';
 
 export const isBackgroundTaskWorkbenchTab = (tab: Pick<TabData, 'type'>): boolean => (
-  tab.type === 'table-export' || tab.type === 'data-import' || tab.type === 'data-sync'
+  tab.type === 'table-export' || tab.type === 'data-import' || tab.type === 'data-sync' || tab.type === 'mock-data'
 );
 
 /** Settings center keeps its UI/state in the main App bridge; do not detach it. */

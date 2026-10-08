@@ -4,6 +4,7 @@ import DataGrid from './DataGrid';
 import { useDataViewerState } from './dataViewer/hooks/useDataViewerState';
 import { useDataViewerFetchData } from './dataViewer/hooks/useDataViewerFetchData';
 import { useDataViewerActions } from './dataViewer/hooks/useDataViewerActions';
+import { useDataViewerMockDataAction } from './dataViewer/useDataViewerMockDataAction';
 
 export interface DataViewerProps { tab: TabData; isActive?: boolean }
 
@@ -45,6 +46,7 @@ const DataViewer: React.FC<DataViewerProps> = React.memo(({ tab, isActive = true
     setQuickWhereCondition, tab, currentConnConfig, filterConditions, quickWhereCondition, sortInfo,
     editLocator, pkColumns,
   }); // Initial load and re-load on sort/filter
+  const mockDataAction = useDataViewerMockDataAction(tab);
 
   return (
     <div className="gn-v2-data-viewer" style={{ flex: '1 1 auto', minHeight: 0, minWidth: 0, height: '100%', width: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -91,6 +93,7 @@ const DataViewer: React.FC<DataViewerProps> = React.memo(({ tab, isActive = true
           initialViewModeRequestId={tab.initialViewModeRequestId}
           onDataViewActivate={handleDataViewActivate}
           workbenchTabId={tab.id}
+          toolbarExtraActions={mockDataAction}
       />
     </div>
   );
