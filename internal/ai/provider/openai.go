@@ -39,6 +39,33 @@ var openAIHTTPTransport = func() http.RoundTripper {
 	return transport
 }()
 
+// openAIHeaderTimeout 返回该 provider 等待响应头的上限。托管的内置模型走网关，
+// 网关在模型槽位排队和节点冷启动时可能长时间没有字节返回；沿用通用的 120s 会让
+// 客户端先于网关放弃，请求被记成"客户端离开"，而模型其实还在生成。配置里显式给出
+// 覆盖值时用它，否则用默认值。
+func openAIHeaderTimeout(config ai.ProviderConfig) time.Duration {
+	if config.HeaderTimeoutSeconds > 0 {
+		return time.Duration(config.HeaderTimeoutSeconds) * time.Second
+	}
+	return openAIHTTPTimeout
+}
+
+// openAIHTTPTransportFor 对需要更长等待的 provider 复制一份 transport。
+// 包级 openAIHTTPTransport 是所有实例共享的，改它会影响用户自建的 provider，
+// 因此覆盖值只能落在实例自己的副本上。
+func openAIHTTPTransportFor(timeout time.Duration) http.RoundTripper {
+	if timeout == openAIHTTPTimeout {
+		return openAIHTTPTransport
+	}
+	transport, ok := openAIHTTPTransport.(*http.Transport)
+	if !ok {
+		return openAIHTTPTransport
+	}
+	clone := transport.Clone()
+	clone.ResponseHeaderTimeout = timeout
+	return clone
+}
+
 // NewOpenAIProvider 创建 OpenAI Provider 实例
 func NewOpenAIProvider(config ai.ProviderConfig) (Provider, error) {
 	baseURL := NormalizeOpenAICompatibleBaseURL(config.BaseURL)
@@ -61,14 +88,14 @@ func NewOpenAIProvider(config ai.ProviderConfig) (Provider, error) {
 	return &OpenAIProvider{
 		config:  normalized,
 		baseURL: baseURL,
-		client:  newOpenAIHTTPClient(),
+		client:  newOpenAIHTTPClient(openAIHeaderTimeout(normalized)),
 	}, nil
 }
 
-func newOpenAIHTTPClient() *http.Client {
+func newOpenAIHTTPClient(timeout time.Duration) *http.Client {
 	return &http.Client{
-		Timeout:   openAIHTTPTimeout,
-		Transport: openAIHTTPTransport,
+		Timeout:   timeout,
+		Transport: openAIHTTPTransportFor(timeout),
 	}
 }
 

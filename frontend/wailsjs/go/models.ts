@@ -355,6 +355,7 @@ export namespace ai {
 	    temperature: number;
 	    thinkingIntensity?: string;
 	    effort?: string;
+	    headerTimeoutSeconds?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new ProviderConfig(source);
@@ -386,6 +387,7 @@ export namespace ai {
 	        this.temperature = source["temperature"];
 	        this.thinkingIntensity = source["thinkingIntensity"];
 	        this.effort = source["effort"];
+	        this.headerTimeoutSeconds = source["headerTimeoutSeconds"];
 	    }
 	}
 	export class ResultMaskingSettings {
