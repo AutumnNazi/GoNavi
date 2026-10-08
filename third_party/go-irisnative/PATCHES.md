@@ -34,3 +34,13 @@ Local patch against github.com/caretdev/go-irisnative v0.2.1:
     `buffer[offset:offset+size]` without bounds checks, so any truncated or
     unfamiliar response panicked the driver agent process. It now reports an
     empty item at end of buffer and clamps a declared size to what remains.
+- Stopped requesting a 200-row limit on every direct query. Older servers treat
+  that field as a hard ceiling rather than a fetch batch: Caché 2018.1 returned
+  only the first 200 of 603 `INFORMATION_SCHEMA.TABLES` rows and 200 of 6710
+  `INFORMATION_SCHEMA.COLUMNS` rows, and IRIS 2023.1.x is expected to behave the
+  same. Because system schemas sort first, the metadata tree came back empty
+  even though `GetDatabases` and the connection itself succeeded, which is the
+  reported «未返回可见数据库或结构». IRIS 2026.1 ignores the field entirely.
+  It now sends 0 (unlimited) and leaves bounding to GoNavi's own row budget,
+  which truncates by row count and byte size and reports the truncation instead
+  of dropping rows silently.

@@ -410,8 +410,13 @@ func (c *Connection) DirectQuery(sqlText string, args ...interface{}) (*ResultSe
 	msg.header.SetStatementId(statementId)
 	msg.SetSQLText(sqlText)
 	writeParameters(&msg, args...)
-	msg.Set(10)  // Query timeout
-	msg.Set(200) // Max rows
+	msg.Set(10) // Query timeout
+	// Max rows 传 0 表示不限制。旧代次服务端（Caché 2018.1、IRIS 2023.1.x）把这个
+	// 字段当硬上限：传 200 时 INFORMATION_SCHEMA.TABLES 只会回前 200 行，而系统表
+	// 按字母序排在最前，用户表全被挡在窗口外，元数据树因此为空。新代次服务端（IRIS
+	// 2026.1）本来就不遵守它。限量交给 GoNavi 自己的行预算，它按行数与字节数截断
+	// 并如实上报 truncated，不会静默丢数据。
+	msg.Set(0) // Max rows
 
 	_, err := c.conn.Write(msg.Dump(c.count()))
 	if err != nil {
