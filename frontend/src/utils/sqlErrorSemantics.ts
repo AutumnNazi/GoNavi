@@ -98,6 +98,15 @@ const SQL_ERROR_RULES: SqlErrorSemanticRule[] = [
     ],
   },
   {
+    key: 'database_access_denied',
+    fallbackLabel: 'Cannot access the selected database',
+    fallbackExplanation: 'The connection was rejected while selecting the target database, so the SQL statement has not run. The query tab may be using a database the account cannot access.',
+    fallbackSuggestion: 'Check the database selected in this query tab and compare it with the database used by the table designer. Confirm that the account is granted access to that database.',
+    patterns: [
+      /(?:connection|连接).*?(?:(?:validation|verification)\s+failed|验证失败).*?error\s+1044\b/i,
+    ],
+  },
+  {
     key: 'permission_denied',
     fallbackLabel: 'Insufficient permissions',
     fallbackExplanation: 'The current database account does not have permission to execute this SQL or access the related objects.',

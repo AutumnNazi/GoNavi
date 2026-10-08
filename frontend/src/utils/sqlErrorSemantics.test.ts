@@ -25,6 +25,25 @@ describe('formatSqlExecutionError', () => {
     expect(formatted).toContain('Raw error: Error 1046 (3D000): No database selected');
   });
 
+  it('distinguishes MySQL database selection denial from SQL object permissions', () => {
+    const raw = "连接建立后验证失败：Error 1044 (42000): Access denied for user 'canmou_live'@'%' to database 'canmou_chrome'";
+    const formatted = formatSqlExecutionError(raw);
+
+    expect(formatted).toContain('Semantic meaning: Cannot access the selected database');
+    expect(formatted).toContain('the SQL statement has not run');
+    expect(formatted).not.toContain('Semantic meaning: Insufficient permissions');
+    expect(formatted).toContain(`Raw error: ${raw}`);
+  });
+
+  it('keeps an executed MySQL 1044 statement as a permission error', () => {
+    const raw = "第 1 条语句执行失败: Error 1044 (42000): Access denied for user 'canmou_live'@'%' to database 'canmou_chrome' SQL: CREATE DATABASE IF NOT EXISTS `canmou_chrome`";
+    const formatted = formatSqlExecutionError(raw);
+
+    expect(formatted).toContain('Semantic meaning: Insufficient permissions');
+    expect(formatted).not.toContain('the SQL statement has not run');
+    expect(formatted).toContain(`Raw error: ${raw}`);
+  });
+
   it('recognizes postgres no-schema-selected errors as no-database-selected semantics', () => {
     const formatted = formatSqlExecutionError('ERROR: no schema has been selected to search in');
 
