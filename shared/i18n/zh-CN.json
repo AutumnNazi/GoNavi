@@ -3741,6 +3741,8 @@
   "app.theme.data_table.query_ctrl_click_action.locate": "定位到左侧库表",
   "app.theme.data_table.query_ctrl_click_action_hint": "控制 SQL 查询中按住 Ctrl/Cmd 点击表名时的动作。默认打开表对象设计，也可切换为在左侧库表树中定位。",
   "app.theme.data_table.title": "编辑器与数据表显示",
+  "app.theme.data_table.auto_show_sql_execution_log": "执行后自动展开日志面板",
+  "app.theme.data_table.auto_show_sql_execution_log_hint": "关闭后，无结果的 SQL 执行不会自动展开日志面板；查询结果和执行错误仍会显示，日志仍会记录。",
   "app.theme.data_table.vertical_borders": "显示数据表竖向分隔线",
   "app.theme.data_table.vertical_borders_hint": "仅作用于数据表页面 DataGrid，不影响其他表格组件。",
   "app.theme.data_table.row_number": "显示数据表行号",

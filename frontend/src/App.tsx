@@ -52,7 +52,7 @@ function App() {
     setFontSize, startupMaximised, setStartupMaximised, autoCheckForUpdates, setAutoCheckForUpdates,
     autoCheckForUpdatesIntervalMinutes, setAutoCheckForUpdatesIntervalMinutes, globalProxy,
     replaceConnections, replaceConnectionSidebarLayout, replaceGlobalProxy, replaceSavedQueries,
-    reloadSavedQueryGroups, setQueryOptions, shortcutOptions, updateShortcut, resetShortcutOptions,
+    reloadSavedQueryGroups, queryOptions, setQueryOptions, shortcutOptions, updateShortcut, resetShortcutOptions,
     runtimePlatform, setRuntimePlatform, runtimeBuildType, setRuntimeBuildType, isLinuxRuntime,
     setIsLinuxRuntime, effectiveThemePreference, darkMode, setComputedCustomThemeAntTokens,
     customThemeStyleContextKey, customThemeAntTokens, effectiveUiScale, effectiveFontSize,
@@ -355,6 +355,7 @@ function App() {
   const { renderThemeSettingsContent } = useAppThemeSettingsRender({
     t, themeSettingsSections, themeModalSection, setThemeModalSection, renderThemeSettingsSection,
     effectiveThemePreference, selectPresetTheme, renderThemeModePreview, renderThemeSettingsRow,
+    queryOptions, setQueryOptions,
     effectiveUiScale, setUiScale, effectiveFontSize, setFontSize, effectiveSidebarRailScale,
     setAppearance, appearance, isFontFamiliesLoading, uiFontOptions, filterFontOption,
     renderFontOptionLabel, fontFamiliesLoadError, installedFontFamilies, linuxCJKFontInstallHint,

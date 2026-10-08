@@ -559,7 +559,7 @@ export const runQueryEditorSqlStatements = async ({
     }
     const visibleResultSets = finalizeQueryEditorSqlServerResultSets(normalizedDbType, nextResultSets);
 
-    if (visibleResultSets.length > 0) {
+    if (visibleResultSets.length > 0 || queryOptions.autoShowSqlExecutionLog !== false) {
         updateResultPanelVisibility(true);
     }
     const shouldReplaceAllResults = didExecuteWholeEditor;

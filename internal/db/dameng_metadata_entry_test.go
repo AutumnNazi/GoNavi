@@ -13,7 +13,8 @@ import (
 )
 
 type damengMetadataCapture struct {
-	queries []string
+	queries             []string
+	lowercaseColumnCase bool
 }
 
 type damengMetadataConnector struct {
@@ -49,7 +50,12 @@ func (damengMetadataConn) Begin() (driver.Tx, error) {
 func (c damengMetadataConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
 	c.capture.queries = append(c.capture.queries, query)
 	switch {
+	case strings.HasPrefix(query, "SELECT DISTINCT c."):
+		return &damengMetadataRows{columns: []string{"OWNER", "TABLE_NAME"}, values: [][]driver.Value{{"SALES'OPS", "ORDER'ITEMS"}}}, nil
 	case strings.Contains(query, "all_tables"):
+		if c.capture.lowercaseColumnCase {
+			return &damengMetadataRows{columns: []string{"owner", "table_name"}, values: [][]driver.Value{{"SLGZT", "ab_cd"}}}, nil
+		}
 		return &damengMetadataRows{columns: []string{"OWNER", "TABLE_NAME"}, values: [][]driver.Value{{"SALES'OPS", "ORDER'ITEMS"}}}, nil
 	case strings.Contains(query, "DBMS_METADATA.GET_DDL"):
 		return &damengMetadataRows{columns: []string{"DDL"}, values: [][]driver.Value{{"CREATE TABLE TEST"}}}, nil
@@ -59,6 +65,19 @@ func (c damengMetadataConn) QueryContext(_ context.Context, query string, _ []dr
 		return &damengMetadataRows{columns: []string{"TABLE_COMMENT"}}, nil
 	default:
 		return &damengMetadataRows{columns: []string{"TABLE_NAME", "COLUMN_NAME", "DATA_TYPE", "COL_COMMENT"}}, nil
+	}
+}
+
+func TestDamengGetTablesAcceptsLowercaseColumnLabels(t *testing.T) {
+	capture := &damengMetadataCapture{lowercaseColumnCase: true}
+	db := &DamengDB{conn: openDamengMetadataCaptureDB(t, capture)}
+
+	tables, err := db.GetTables("SLGZT")
+	if err != nil {
+		t.Fatalf("GetTables returned error: %v", err)
+	}
+	if len(tables) != 1 || tables[0] != "SLGZT.ab_cd" {
+		t.Fatalf("expected the original lowercase table name, got: %v", tables)
 	}
 }
 
@@ -157,7 +176,7 @@ func TestDamengMetadataEntrypointsTreatWhitespaceSchemaAsEmpty(t *testing.T) {
 	if _, err := db.GetCreateStatement("  ", "orders"); err != nil {
 		t.Fatalf("GetCreateStatement returned error: %v", err)
 	}
-	if len(capture.queries) < 1 || strings.Contains(capture.queries[0], ", ''") || !strings.Contains(capture.queries[0], "GET_DDL('TABLE', 'ORDERS')") {
+	if len(capture.queries) < 2 || strings.Contains(capture.queries[1], ", ''") || !strings.Contains(capture.queries[1], "GET_DDL('TABLE', 'orders')") {
 		t.Fatalf("whitespace schema should use current-schema DDL query, got: %v", capture.queries)
 	}
 }

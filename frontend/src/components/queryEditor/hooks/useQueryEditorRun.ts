@@ -207,7 +207,6 @@ export const useQueryEditorRun = ({
       setLoading(true);
       setExecutionError('');
       recordExecutionOrigin(currentQuery, executableSQL);
-      updateResultPanelVisibility(true);
       rpcLostWithoutResultRef.current = false;
       const runStartTime = Date.now();
 

@@ -3748,6 +3748,8 @@
   "app.theme.data_table.query_ctrl_click_action.locate": "定位到左側庫表",
   "app.theme.data_table.query_ctrl_click_action_hint": "控制在 SQL 查詢中按住 Ctrl/Cmd 點擊表名時的動作。預設開啟表物件設計，也可切換為在左側庫表樹中定位。",
   "app.theme.data_table.title": "編輯器與資料表顯示",
+  "app.theme.data_table.auto_show_sql_execution_log": "執行後自動展開日誌面板",
+  "app.theme.data_table.auto_show_sql_execution_log_hint": "關閉後，沒有結果的 SQL 執行不會自動展開日誌面板；查詢結果與執行錯誤仍會顯示，日誌仍會記錄。",
   "app.theme.data_table.vertical_borders": "显示資料表竖向分隔线",
   "app.theme.data_table.vertical_borders_hint": "仅作用于資料表页面 DataGrid，不影响其他表格组件。",
   "app.theme.data_table.row_number": "顯示資料表行號",

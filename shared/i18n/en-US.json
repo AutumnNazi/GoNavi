@@ -3748,6 +3748,8 @@
   "app.theme.data_table.query_ctrl_click_action.locate": "Locate in sidebar",
   "app.theme.data_table.query_ctrl_click_action_hint": "Controls the action when holding Ctrl/Cmd and clicking a table name in a SQL query. The default opens the table object design; switch it to locate the table in the left schema tree.",
   "app.theme.data_table.title": "Editor and Data Table Display",
+  "app.theme.data_table.auto_show_sql_execution_log": "Automatically open the log panel after execution",
+  "app.theme.data_table.auto_show_sql_execution_log_hint": "When off, SQL executions without results do not open the log panel automatically. Query results and errors remain visible, and logs are still recorded.",
   "app.theme.data_table.vertical_borders": "Show Data Table Vertical Separators",
   "app.theme.data_table.vertical_borders_hint": "Only affects DataGrid on data table pages, not other table components.",
   "app.theme.data_table.row_number": "Show Data Table Row Numbers",

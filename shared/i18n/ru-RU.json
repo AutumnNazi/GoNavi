@@ -3748,6 +3748,8 @@
   "app.theme.data_table.query_ctrl_click_action.locate": "Найти в боковой панели",
   "app.theme.data_table.query_ctrl_click_action_hint": "Управляет действием при нажатии Ctrl/Cmd и клике по имени таблицы в SQL-запросе. По умолчанию открывается дизайн объекта таблицы; можно переключиться на поиск таблицы в левом дереве схем.",
   "app.theme.data_table.title": "Отображение редактора и таблиц данных",
+  "app.theme.data_table.auto_show_sql_execution_log": "Автоматически открывать панель журнала после выполнения",
+  "app.theme.data_table.auto_show_sql_execution_log_hint": "Если выключено, выполнение SQL без результата не открывает панель автоматически. Результаты запросов и ошибки остаются видимыми, журнал продолжает записываться.",
   "app.theme.data_table.vertical_borders": "Показывать вертикальные разделители таблицы данных",
   "app.theme.data_table.vertical_borders_hint": "Влияет только на DataGrid на страницах таблиц данных и не затрагивает другие табличные компоненты.",
   "app.theme.data_table.row_number": "Показывать номера строк таблицы данных",
