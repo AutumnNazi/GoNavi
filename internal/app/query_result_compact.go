@@ -105,6 +105,22 @@ func (a *App) DBQueryMultiCompact(
 	return encodeCompactQueryResult(a.DBQueryMulti(config, dbName, query, queryID))
 }
 
+// DBQueryMultiWithOptionsCompact 是 DBQueryMultiWithOptions 的压缩传输变体。
+//
+// 「不限」放开行数预算后，结果集可以远超未压缩通道能承受的规模：未压缩路径会把
+// 整份 JSON 内联成一条 JS 字面量交给前端一次性 JSON.parse。这里复用
+// DBQueryMultiCompact 的编码（列名只传一次 + gzip + base64），并原样保留行预算
+// 语义——预算仍由 normalizeQueryResultBudgetOptions 决定，压缩只改变传输形态。
+func (a *App) DBQueryMultiWithOptionsCompact(
+	config connection.ConnectionConfig,
+	dbName string,
+	query string,
+	queryID string,
+	options QueryResultBudgetOptions,
+) CompactQueryResult {
+	return encodeCompactQueryResult(a.DBQueryMultiWithOptions(config, dbName, query, queryID, options))
+}
+
 // QueryResultQueryID exposes the embedded query ID to transports that only see
 // the compact wrapper, such as the web request-trace correlation.
 func (c CompactQueryResult) QueryResultQueryID() string {

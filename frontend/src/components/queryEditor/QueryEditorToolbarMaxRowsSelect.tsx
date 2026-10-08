@@ -4,11 +4,7 @@ import { CheckOutlined } from '@ant-design/icons';
 
 import { t as defaultTranslate, type I18nParams } from '../../i18n';
 import { useOptionalI18n } from '../../i18n/provider';
-import {
-  QUERY_EDITOR_SAFE_MAX_FIELD_BYTES,
-  QUERY_EDITOR_SAFE_MAX_RESULT_BYTES,
-  QUERY_EDITOR_UNLIMITED_SAFE_MAX_ROWS,
-} from './queryEditorResultBudget';
+import { QUERY_EDITOR_SAFE_MAX_FIELD_BYTES } from './queryEditorResultBudget';
 
 /**
  * 工具栏「最大返回行数」上限，与 store 的 sanitizeQueryOptions 保持一致
@@ -65,9 +61,8 @@ const QueryEditorToolbarMaxRowsSelect: React.FC<QueryEditorToolbarMaxRowsSelectP
   const [customInput, setCustomInput] = React.useState('');
   const customInputRef = React.useRef('');
   const [customError, setCustomError] = React.useState(false);
+  // 「不限」不再限制行数与总大小，文案里只剩单字段预览上限这一个参数。
   const safetyParams = {
-    rows: QUERY_EDITOR_UNLIMITED_SAFE_MAX_ROWS,
-    size: Math.round(QUERY_EDITOR_SAFE_MAX_RESULT_BYTES / 1024 / 1024),
     fieldSize: Math.round(QUERY_EDITOR_SAFE_MAX_FIELD_BYTES / 1024 / 1024),
   };
 
@@ -78,9 +73,7 @@ const QueryEditorToolbarMaxRowsSelect: React.FC<QueryEditorToolbarMaxRowsSelectP
     { label: t('query_editor.max_rows.option_5000'), value: 5000 },
     { label: t('query_editor.max_rows.option_20000'), value: 20000 },
     {
-      label: t('query_editor.max_rows.option_unlimited_safe', {
-        rows: QUERY_EDITOR_UNLIMITED_SAFE_MAX_ROWS,
-      }),
+      label: t('query_editor.max_rows.option_unlimited_safe'),
       value: 0,
     },
   ], [t]);

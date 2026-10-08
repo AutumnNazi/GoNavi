@@ -338,6 +338,10 @@ export function DBQueryMultiWithOptions(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['app']['App']['DBQueryMultiWithOptions'](arg1, arg2, arg3, arg4, arg5);
 }
 
+export function DBQueryMultiWithOptionsCompact(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['App']['DBQueryMultiWithOptionsCompact'](arg1, arg2, arg3, arg4, arg5);
+}
+
 export function DBQueryMultiWithParams(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['app']['App']['DBQueryMultiWithParams'](arg1, arg2, arg3, arg4, arg5);
 }

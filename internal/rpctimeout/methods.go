@@ -14,6 +14,7 @@ func IsLongRunningAppMethod(method string) bool {
 		"DBQueryMulti",
 		"DBQueryMultiCompact",
 		"DBQueryMultiWithOptions",
+		"DBQueryMultiWithOptionsCompact",
 		"DBQueryMultiWithParams",
 		"DBQueryMultiWithParamsInTransaction",
 		"DBQueryMultiTransactional",
