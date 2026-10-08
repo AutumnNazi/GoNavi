@@ -34,6 +34,7 @@ import {
   buildV2SidebarDatabaseSectionedChildren,
   isSidebarDatabasePinned,
   isSidebarTablePinned,
+  resolveSidebarNodeConnectionId,
   type SidebarConnectionState,
   type SidebarTreeNode as TreeNode,
   type V2RailConnectionGroup,
@@ -416,14 +417,23 @@ export const useSidebarV2ActionHandlers = ({
   };
 
   const openDatabaseQuery = (node: any) => {
+    const nodeConnectionId = resolveSidebarNodeConnectionId(
+      node,
+      connections.map((candidate) => candidate.id),
+    );
+    const connection = connections.find((candidate) => candidate.id === nodeConnectionId);
+    if (!connection) {
+      message.error(t('query_editor.message.connection_not_found'));
+      return;
+    }
     const dbName = String(node.dataRef?.dbName || node.title || '').trim();
     const schemaName = String(node.dataRef?.schemaName || '').trim();
-    const dbType = getMetadataDialect(node.dataRef as SavedConnection);
+    const dbType = getMetadataDialect(connection);
     addTab({
       id: `query-${Date.now()}`,
       title: t('sidebar.tab.new_query_database', { database: dbName }),
       type: 'query',
-      connectionId: node.dataRef.id,
+      connectionId: connection.id,
       dbName,
       schemaName: schemaName || undefined,
       query: isElasticsearchDbType(dbType)

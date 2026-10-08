@@ -3,13 +3,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildElasticsearchConsoleTemplates } from '../../utils/elasticsearchConsole';
 import { useSidebarV2ActionHandlers } from './useSidebarV2ActionHandlers';
 
-const buildHandlers = () => {
+const buildHandlers = (connections: unknown[] = []) => {
   const addTab = vi.fn();
   const setTargetConnection = vi.fn();
   const setIsCreateDbModalOpen = vi.fn();
   const noop = vi.fn();
   const handlers = useSidebarV2ActionHandlers({
-    connections: [],
+    connections,
     connectionTags: [],
     pinnedSidebarTables: [],
     pinnedSidebarDatabases: [],
@@ -94,7 +94,13 @@ describe('useSidebarV2ActionHandlers Elasticsearch create action', () => {
   });
 
   it('opens a schema-scoped query with both database and schema context', () => {
-    const { handlers, addTab } = buildHandlers();
+    const { handlers, addTab } = buildHandlers([
+      {
+        id: 'conn-1',
+        name: 'Kingbase dev',
+        config: { type: 'kingbase', host: '127.0.0.1', port: 54321 },
+      },
+    ]);
     handlers.handleV2DatabaseContextMenuAction({
       key: 'conn-1-app-schema-sales',
       title: 'sales',
@@ -112,6 +118,32 @@ describe('useSidebarV2ActionHandlers Elasticsearch create action', () => {
       dbName: 'app',
       schemaName: 'sales',
       query: '',
+    }));
+  });
+
+  it('resolves the database query connection from the current connection store', () => {
+    const { handlers, addTab } = buildHandlers([
+      {
+        id: 'conn-1',
+        name: 'Current connection',
+        config: { type: 'mysql', host: 'current.example', port: 3306 },
+      },
+    ]);
+
+    handlers.handleV2DatabaseContextMenuAction({
+      key: 'conn-1-canmo_extra_live',
+      title: 'canmou_extra_live',
+      dataRef: {
+        id: 'stale-conn-1',
+        dbName: 'canmou_extra_live',
+        config: { type: 'mysql', host: 'stale.example', port: 3306 },
+      },
+    }, 'new-query');
+
+    expect(addTab).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'query',
+      connectionId: 'conn-1',
+      dbName: 'canmou_extra_live',
     }));
   });
 });
