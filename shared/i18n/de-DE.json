@@ -3748,6 +3748,8 @@
   "app.theme.data_table.query_ctrl_click_action.locate": "In der Seitenleiste suchen",
   "app.theme.data_table.query_ctrl_click_action_hint": "Steuert die Aktion beim Klicken auf einen Tabellennamen in einer SQL-Abfrage mit gedrückter Ctrl-/Cmd-Taste. Standardmäßig wird das Tabellen-Objektdesign geöffnet; alternativ kann die Tabelle im linken Schemasbaum gesucht werden.",
   "app.theme.data_table.title": "Editor- und Datentabellenanzeige",
+  "app.theme.data_table.auto_show_sql_execution_log": "Protokollbereich nach Ausführung automatisch öffnen",
+  "app.theme.data_table.auto_show_sql_execution_log_hint": "Ist die Option deaktiviert, öffnet eine SQL-Ausführung ohne Ergebnis den Protokollbereich nicht automatisch. Abfrageergebnisse und Fehler bleiben sichtbar, und Protokolle werden weiterhin erfasst.",
   "app.theme.data_table.vertical_borders": "Vertikale Trennlinien der Datentabelle anzeigen",
   "app.theme.data_table.vertical_borders_hint": "Wirkt nur auf DataGrid auf Datentabellenseiten und nicht auf andere Tabellenkomponenten.",
   "app.theme.data_table.row_number": "Zeilennummern der Datentabelle anzeigen",

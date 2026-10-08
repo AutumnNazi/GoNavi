@@ -216,7 +216,7 @@ export const runQueryEditorMongoStatements = async ({
             finishQueryEditorSqlClock({ durationMs: mongoTotalDuration }, 0);
         }
     }
-    if (nextResultSets.length > 0) {
+    if (nextResultSets.length > 0 || queryOptions?.autoShowSqlExecutionLog !== false) {
         updateResultPanelVisibility(true);
     }
     const shouldReplaceAllResults = didExecuteWholeEditor;

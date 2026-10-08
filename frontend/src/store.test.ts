@@ -453,6 +453,21 @@ describe('store appearance persistence', () => {
     expect(reloaded.useStore.getState().queryOptions.wordWrap).toBe(true);
   });
 
+  it('persists the SQL execution log auto-show preference with an enabled default', async () => {
+    const { useStore } = await importStore();
+    expect(useStore.getState().queryOptions.autoShowSqlExecutionLog).toBe(true);
+
+    useStore.getState().setQueryOptions({ autoShowSqlExecutionLog: false });
+    expect(useStore.getState().queryOptions.autoShowSqlExecutionLog).toBe(false);
+
+    const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
+    expect(persisted.state.queryOptions.autoShowSqlExecutionLog).toBe(false);
+
+    vi.resetModules();
+    const reloaded = await importStore();
+    expect(reloaded.useStore.getState().queryOptions.autoShowSqlExecutionLog).toBe(false);
+  });
+
   it('persists zero as the unlimited SQL query row limit', async () => {
     const { useStore } = await importStore();
 

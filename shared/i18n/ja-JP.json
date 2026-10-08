@@ -3748,6 +3748,8 @@
   "app.theme.data_table.query_ctrl_click_action.locate": "左側のツリーで定位",
   "app.theme.data_table.query_ctrl_click_action_hint": "SQL クエリ内のテーブル名を Ctrl/Cmd キーを押しながらクリックしたときの動作を制御します。既定ではテーブルのオブジェクト設計を開き、左側スキーマツリーでの定位に切り替えられます。",
   "app.theme.data_table.title": "エディターとデータテーブル表示",
+  "app.theme.data_table.auto_show_sql_execution_log": "実行後にログパネルを自動で開く",
+  "app.theme.data_table.auto_show_sql_execution_log_hint": "オフにすると、結果のない SQL 実行後にログパネルを自動で開きません。クエリ結果とエラーは表示され、ログも記録されます。",
   "app.theme.data_table.vertical_borders": "データテーブルの縦区切り線を表示",
   "app.theme.data_table.vertical_borders_hint": "データテーブルページの DataGrid のみに作用し、他のテーブルコンポーネントには影響しません。",
   "app.theme.data_table.row_number": "データテーブルの行番号を表示",

@@ -303,6 +303,8 @@ export const sanitizeQueryOptions = (value: unknown): QueryOptions => {
       : false;
   const showQueryResultsPanel =
     typeof raw.showQueryResultsPanel === "boolean" ? raw.showQueryResultsPanel : false;
+  const autoShowSqlExecutionLog =
+    typeof raw.autoShowSqlExecutionLog === "boolean" ? raw.autoShowSqlExecutionLog : true;
   const queryEditorEditorHeightRatio = sanitizeQueryEditorEditorHeightRatio(
     raw.queryEditorEditorHeightRatio,
   );
@@ -318,6 +320,7 @@ export const sanitizeQueryOptions = (value: unknown): QueryOptions => {
       showColumnType,
       alignNumericTemporalCellsRight,
       showQueryResultsPanel,
+      autoShowSqlExecutionLog,
       queryEditorEditorHeightRatio,
     };
   }
@@ -332,6 +335,7 @@ export const sanitizeQueryOptions = (value: unknown): QueryOptions => {
     showColumnType,
     alignNumericTemporalCellsRight,
     showQueryResultsPanel,
+    autoShowSqlExecutionLog,
     queryEditorEditorHeightRatio,
   };
 };
