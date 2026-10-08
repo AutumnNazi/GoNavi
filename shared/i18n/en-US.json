@@ -9635,6 +9635,8 @@
   "tab_manager.detached.close": "Close window",
   "tab_manager.detached.restore": "Restore as tab",
   "tab_manager.detached.title_fallback": "Floating window",
+  "detach_preview.keep_dragging": "Keep dragging away from the tab bar, then release to open in a floating window",
+  "detach_preview.release_to_open": "Release to open in a floating window",
   "tab_manager.empty.action.open_ai": "Open AI",
   "tab_manager.empty.aria.start_workbench": "GoNavi start workbench",
   "tab_manager.empty.eyebrow.connections": "{{count}} connections",

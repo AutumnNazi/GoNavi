@@ -9635,6 +9635,8 @@
   "tab_manager.detached.close": "關閉視窗",
   "tab_manager.detached.restore": "還原為標籤頁",
   "tab_manager.detached.title_fallback": "獨立視窗",
+  "detach_preview.keep_dragging": "繼續拖離標籤列，放開即在獨立視窗開啟",
+  "detach_preview.release_to_open": "放開即在獨立視窗開啟",
   "tab_manager.empty.action.open_ai": "開啟 AI",
   "tab_manager.empty.aria.start_workbench": "GoNavi 起始工作台",
   "tab_manager.empty.eyebrow.connections": "{{count}} 個連線",

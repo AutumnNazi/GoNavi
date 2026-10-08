@@ -9635,6 +9635,8 @@
   "tab_manager.detached.close": "Fenster schließen",
   "tab_manager.detached.restore": "Als Tab wiederherstellen",
   "tab_manager.detached.title_fallback": "Schwebendes Fenster",
+  "detach_preview.keep_dragging": "Weiter von der Tableiste wegziehen und loslassen, um in einem schwebenden Fenster zu öffnen",
+  "detach_preview.release_to_open": "Loslassen, um in einem schwebenden Fenster zu öffnen",
   "tab_manager.empty.action.open_ai": "AI öffnen",
   "tab_manager.empty.aria.start_workbench": "GoNavi-Startarbeitsbereich",
   "tab_manager.empty.eyebrow.connections": "{{count}} Verbindungen",

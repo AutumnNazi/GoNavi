@@ -9635,6 +9635,8 @@
   "tab_manager.detached.close": "ウィンドウを閉じる",
   "tab_manager.detached.restore": "タブに戻す",
   "tab_manager.detached.title_fallback": "フローティングウィンドウ",
+  "detach_preview.keep_dragging": "タブバーから離れるまでドラッグし、離すとフローティングウィンドウで開きます",
+  "detach_preview.release_to_open": "離すとフローティングウィンドウで開きます",
   "tab_manager.empty.action.open_ai": "AI を開く",
   "tab_manager.empty.aria.start_workbench": "GoNavi 開始ワークベンチ",
   "tab_manager.empty.eyebrow.connections": "{{count}} 件の接続",

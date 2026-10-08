@@ -825,7 +825,6 @@ const QueryEditorResultsPanel: React.FC<QueryEditorResultsPanelProps> = ({
             <DetachDragPreview
                 preview={detachDragPreview}
                 darkMode={darkMode}
-                readyHint={t('query_editor.results_panel.menu.open_in_window')}
             />
         </>
     );

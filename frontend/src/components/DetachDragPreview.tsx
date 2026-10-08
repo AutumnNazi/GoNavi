@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { ExpandOutlined } from '@ant-design/icons';
+import { t } from '../i18n';
 import { DETACH_TAB_DRAG_Y_THRESHOLD } from '../utils/detachedWindow';
 
 export type DetachDragPreviewState = {
@@ -11,13 +12,17 @@ export type DetachDragPreviewState = {
   progress: number;
 };
 
+/** 离开标签栏这么远才显示预览：左右拖动排序时的手抖不算拖出意图。 */
+export const DETACH_PREVIEW_REVEAL_DISTANCE = 16;
+
 export const buildDetachDragPreviewState = (params: {
   title: string;
   clientX: number;
   clientY: number;
   deltaY: number;
-}): DetachDragPreviewState => {
+}): DetachDragPreviewState | null => {
   const distance = Math.abs(params.deltaY);
+  if (!Number.isFinite(distance) || distance < DETACH_PREVIEW_REVEAL_DISTANCE) return null;
   const progress = Math.max(0, Math.min(1, distance / DETACH_TAB_DRAG_Y_THRESHOLD));
   return {
     title: params.title,
@@ -31,7 +36,6 @@ export const buildDetachDragPreviewState = (params: {
 type DetachDragPreviewProps = {
   preview: DetachDragPreviewState | null;
   darkMode?: boolean;
-  readyHint: string;
 };
 
 /**
@@ -40,7 +44,6 @@ type DetachDragPreviewProps = {
 export const DetachDragPreview: React.FC<DetachDragPreviewProps> = ({
   preview,
   darkMode = false,
-  readyHint,
 }) => {
   const portal = useMemo(() => {
     if (!preview || typeof document === 'undefined') {
@@ -50,7 +53,7 @@ export const DetachDragPreview: React.FC<DetachDragPreviewProps> = ({
     const previewHeight = 52 + preview.progress * 200;
     const left = Math.max(12, preview.clientX - previewWidth * 0.28);
     const top = Math.max(12, preview.clientY - 22);
-    const hint = preview.willDetach ? readyHint : preview.title;
+    const hint = preview.willDetach ? t('detach_preview.release_to_open') : t('detach_preview.keep_dragging');
     return createPortal(
       <>
         <style>{`
@@ -104,16 +107,6 @@ export const DetachDragPreview: React.FC<DetachDragPreviewProps> = ({
             white-space: nowrap;
             font-weight: 700;
           }
-          .gn-detach-preview-chrome em {
-            flex: 0 0 auto;
-            font-style: normal;
-            font-weight: 700;
-            font-variant-numeric: tabular-nums;
-            color: rgba(22, 119, 255, 0.9);
-          }
-          .gn-detach-preview.is-dark .gn-detach-preview-chrome em {
-            color: rgba(255, 214, 102, 0.95);
-          }
           .gn-detach-preview-body {
             flex: 1 1 auto;
             min-height: 0;
@@ -130,6 +123,12 @@ export const DetachDragPreview: React.FC<DetachDragPreviewProps> = ({
           }
           .gn-detach-preview.is-dark .gn-detach-preview-body > span {
             color: rgba(255, 255, 255, 0.55);
+          }
+          .gn-detach-preview.is-ready .gn-detach-preview-body > span {
+            color: rgba(22, 119, 255, 0.9);
+          }
+          .gn-detach-preview.is-dark.is-ready .gn-detach-preview-body > span {
+            color: rgba(255, 214, 102, 0.95);
           }
           .gn-detach-preview-progress {
             height: 4px;
@@ -181,7 +180,6 @@ export const DetachDragPreview: React.FC<DetachDragPreviewProps> = ({
           <div className="gn-detach-preview-chrome">
             <ExpandOutlined />
             <strong>{preview.title}</strong>
-            <em>{Math.round(preview.progress * 100)}%</em>
           </div>
           <div className="gn-detach-preview-body">
             <span>{hint}</span>
@@ -194,7 +192,7 @@ export const DetachDragPreview: React.FC<DetachDragPreviewProps> = ({
       </>,
       document.body,
     );
-  }, [darkMode, preview, readyHint]);
+  }, [darkMode, preview]);
 
   return portal;
 };

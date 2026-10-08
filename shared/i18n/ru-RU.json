@@ -9635,6 +9635,8 @@
   "tab_manager.detached.close": "Закрыть окно",
   "tab_manager.detached.restore": "Вернуть во вкладку",
   "tab_manager.detached.title_fallback": "Плавающее окно",
+  "detach_preview.keep_dragging": "Продолжайте тянуть от панели вкладок и отпустите, чтобы открыть в плавающем окне",
+  "detach_preview.release_to_open": "Отпустите, чтобы открыть в плавающем окне",
   "tab_manager.empty.action.open_ai": "Открыть AI",
   "tab_manager.empty.aria.start_workbench": "Стартовая рабочая область GoNavi",
   "tab_manager.empty.eyebrow.connections": "{{count}} подключений",
