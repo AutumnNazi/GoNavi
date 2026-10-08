@@ -1,11 +1,60 @@
 package db
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestResolveDamengMetadataTable(t *testing.T) {
+	cases := []struct {
+		name, schema, table, wantSchema, wantTable string
+		rows                                       []map[string]interface{}
+		queryErr                                   error
+		queryRequired                              bool
+	}{
+		{name: "exact name wins over folded name", schema: "SLGZT", table: "ab_cd", wantSchema: "SLGZT", wantTable: "ab_cd", queryRequired: true,
+			rows: []map[string]interface{}{{"OWNER": "SLGZT", "TABLE_NAME": "AB_CD"}, {"OWNER": "SLGZT", "TABLE_NAME": "ab_cd"}}},
+		{name: "unquoted lowercase name falls back to uppercase", schema: "slgzt", table: "ab_cd", wantSchema: "SLGZT", wantTable: "AB_CD", queryRequired: true,
+			rows: []map[string]interface{}{{"owner": "SLGZT", "table_name": "AB_CD"}}},
+		{name: "mixed case and dotted catalog values stay exact", schema: "Sales", table: "Order.Items", wantSchema: "Sales", wantTable: "Order.Items", queryRequired: true,
+			rows: []map[string]interface{}{{"OWNER": "SALES", "TABLE_NAME": "ORDER.ITEMS"}, {"OWNER": "Sales", "TABLE_NAME": "Order.Items"}}},
+		{name: "current user without owner", table: "ab_cd", wantTable: "ab_cd", queryRequired: true,
+			rows: []map[string]interface{}{{"TABLE_NAME": "AB_CD"}, {"TABLE_NAME": "ab_cd"}}},
+		{name: "uppercase avoids redundant lookup", schema: "SLGZT", table: "AB_CD", wantSchema: "SLGZT", wantTable: "AB_CD"},
+		{name: "missing object retains requested identity", schema: "SLGZT", table: "missing", wantSchema: "SLGZT", wantTable: "missing", queryRequired: true},
+		{name: "catalog error propagates", schema: "SLGZT", table: "ab_cd", queryRequired: true, queryErr: errors.New("catalog denied")},
+		{name: "cancellation propagates", schema: "SLGZT", table: "ab_cd", queryRequired: true, queryErr: context.Canceled},
+		{name: "apostrophes are escaped once", schema: "Sales'Ops", table: "Order'Items", wantSchema: "Sales'Ops", wantTable: "Order'Items", queryRequired: true,
+			rows: []map[string]interface{}{{"OWNER": "Sales'Ops", "TABLE_NAME": "Order'Items"}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			schema, table, err := resolveDamengMetadataTable(func(query string) ([]map[string]interface{}, []string, error) {
+				calls++
+				if !strings.Contains(query, "'"+escapeDamengMetadataLiteralExact(tc.table)+"'") {
+					t.Fatalf("query lost the exact escaped table name: %s", query)
+				}
+				if tc.schema != "" && !strings.Contains(query, "'"+escapeDamengMetadataLiteralExact(tc.schema)+"'") {
+					t.Fatalf("query lost the exact escaped schema name: %s", query)
+				}
+				return tc.rows, nil, tc.queryErr
+			}, tc.schema, tc.table)
+			if !errors.Is(err, tc.queryErr) {
+				t.Fatalf("error = %v, want %v", err, tc.queryErr)
+			}
+			if schema != tc.wantSchema || table != tc.wantTable {
+				t.Fatalf("resolved target = %q.%q, want %q.%q", schema, table, tc.wantSchema, tc.wantTable)
+			}
+			if (calls == 1) != tc.queryRequired || calls > 1 {
+				t.Fatalf("unexpected number of catalog queries: %d", calls)
+			}
+		})
+	}
+}
 
 func TestEscapeDamengMetadataLiteral_NormalizesAndEscapes(t *testing.T) {
 	t.Parallel()
@@ -166,8 +215,8 @@ func TestDamengMetadataQueriesEscapeSchemaAndTableLiterals(t *testing.T) {
 
 	const schema = "Sales'Ops"
 	const table = "Order'Items"
-	wantSchema := "SALES''OPS"
-	wantTable := "ORDER''ITEMS"
+	wantSchema := "Sales''Ops"
+	wantTable := "Order''Items"
 
 	queries := []string{
 		buildDamengColumnsQuery(schema, table),
@@ -181,7 +230,7 @@ func TestDamengMetadataQueriesEscapeSchemaAndTableLiterals(t *testing.T) {
 		if !strings.Contains(query, wantSchema) || !strings.Contains(query, wantTable) {
 			t.Fatalf("metadata query %d should escape normalized schema/table literals, got: %s", i, query)
 		}
-		if strings.Contains(query, "'SALES'OPS'") || strings.Contains(query, "'ORDER'ITEMS'") {
+		if strings.Contains(query, "'Sales'Ops'") || strings.Contains(query, "'Order'Items'") {
 			t.Fatalf("metadata query %d contains an unescaped apostrophe, got: %s", i, query)
 		}
 	}
@@ -190,7 +239,7 @@ func TestDamengMetadataQueriesEscapeSchemaAndTableLiterals(t *testing.T) {
 func TestBuildDamengColumnCommentsQueryUsesNativeDictionary(t *testing.T) {
 	t.Parallel()
 
-	userQuery := buildDamengColumnCommentsQuery("", "orders")
+	userQuery := buildDamengColumnCommentsQuery("", "ORDERS")
 	for _, want := range []string{
 		"FROM SYS.SYSCOLUMNCOMMENTS",
 		"SCHNAME = USER",
@@ -203,7 +252,7 @@ func TestBuildDamengColumnCommentsQueryUsesNativeDictionary(t *testing.T) {
 		}
 	}
 
-	ownerQuery := buildDamengColumnCommentsQuery("biz", "orders")
+	ownerQuery := buildDamengColumnCommentsQuery("BIZ", "ORDERS")
 	if !strings.Contains(ownerQuery, "SCHNAME = 'BIZ'") || !strings.Contains(ownerQuery, "TVNAME = 'ORDERS'") {
 		t.Fatalf("schema native comment query should target the selected table, got: %s", ownerQuery)
 	}
@@ -212,12 +261,12 @@ func TestBuildDamengColumnCommentsQueryUsesNativeDictionary(t *testing.T) {
 func TestBuildDamengTableCommentQueryUsesSchemaAppropriateDictionaryView(t *testing.T) {
 	t.Parallel()
 
-	userQuery := buildDamengTableCommentQuery("", "orders")
+	userQuery := buildDamengTableCommentQuery("", "ORDERS")
 	if !strings.Contains(userQuery, "FROM user_tab_comments") || !strings.Contains(userQuery, "table_name = 'ORDERS'") {
 		t.Fatalf("expected current-schema table comment query, got: %s", userQuery)
 	}
 
-	allQuery := buildDamengTableCommentQuery("biz", "orders")
+	allQuery := buildDamengTableCommentQuery("BIZ", "ORDERS")
 	if !strings.Contains(allQuery, "FROM all_tab_comments") || !strings.Contains(allQuery, "owner = 'BIZ'") || !strings.Contains(allQuery, "table_name = 'ORDERS'") {
 		t.Fatalf("expected schema table comment query, got: %s", allQuery)
 	}
@@ -226,7 +275,7 @@ func TestBuildDamengTableCommentQueryUsesSchemaAppropriateDictionaryView(t *test
 func TestAppendDamengTableCommentDDLAvoidsDuplicateAndEscapesLiteral(t *testing.T) {
 	t.Parallel()
 
-	ddl := appendDamengTableCommentDDL(`CREATE TABLE "BIZ"."ORDERS" ("ID" NUMBER)`, "biz", "orders", "订单'归档")
+	ddl := appendDamengTableCommentDDL(`CREATE TABLE "BIZ"."ORDERS" ("ID" NUMBER)`, "BIZ", "ORDERS", "订单'归档")
 	if !strings.Contains(ddl, `COMMENT ON TABLE "BIZ"."ORDERS" IS '订单''归档';`) {
 		t.Fatalf("expected escaped table comment DDL, got: %s", ddl)
 	}
@@ -234,7 +283,7 @@ func TestAppendDamengTableCommentDDLAvoidsDuplicateAndEscapesLiteral(t *testing.
 		t.Fatalf("expected create statement terminator before table comment, got: %s", ddl)
 	}
 
-	duplicated := appendDamengTableCommentDDL(ddl, "biz", "orders", "新备注")
+	duplicated := appendDamengTableCommentDDL(ddl, "BIZ", "ORDERS", "新备注")
 	if duplicated != ddl {
 		t.Fatalf("expected existing table comment DDL to remain unchanged, got: %s", duplicated)
 	}
@@ -264,7 +313,7 @@ func TestBuildDamengColumnDefinitions_MapsComment(t *testing.T) {
 func TestBuildDamengIndexesQuery_JoinsAllViewsByIndexOwner(t *testing.T) {
 	t.Parallel()
 
-	query := buildDamengIndexesQuery("app", "orders")
+	query := buildDamengIndexesQuery("APP", "ORDERS")
 
 	if !strings.Contains(query, "JOIN all_indexes i ON i.owner = c.index_owner AND i.index_name = c.index_name") {
 		t.Fatalf("expected schema query to join ALL_INDEXES through INDEX_OWNER, got: %s", query)
