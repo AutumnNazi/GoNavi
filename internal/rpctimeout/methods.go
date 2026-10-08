@@ -33,6 +33,7 @@ func IsLongRunningAppMethod(method string) bool {
 		"ImportDataWithProgressOptions",
 		"ResumeImportJob",
 		"RetryImportJobFailedRows",
+		"MockDataGenerate",
 		"DataSync":
 		return true
 	default:

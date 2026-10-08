@@ -15,6 +15,8 @@ func TestIsLongRunningAppMethod(t *testing.T) {
 		{method: "DBQueryMultiWithOptions", want: true},
 		{method: "DBQueryMultiTransactionalWithOptions", want: true},
 		{method: "ExecuteSQLFile", want: true},
+		{method: "MockDataGenerate", want: true},
+		{method: "MockDataPreview", want: false},
 		{method: "Health", want: false},
 		{method: "CancelQuery", want: false},
 		{method: "GenerateQueryID", want: false},

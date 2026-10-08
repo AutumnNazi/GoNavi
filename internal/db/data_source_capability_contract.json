@@ -1,13 +1,13 @@
 {
     "version":  2,
     "profiles":  {
-                     "sql-gbase8s":  {"query": {"supported": true}, "metadata": {"supported": true}, "transaction": {"supported": true}, "pagination": {"supported": true}, "cancel": {"supported": true, "runtimeProbe": true}, "schema": {"supported": true}, "sampling": {"supported": true}, "streaming": {"supported": false, "reason": "not_streaming_data_source", "alternative": "use-paginated-query", "messageKey": "query_editor.message.unsupported_source"}, "dangerousOperations": {"supported": true}, "ui": {"userManagement": false, "parameterBinding": false, "explainDiagnosis": false, "sqlQueryExport": true, "copyInsert": true, "copyTable": false, "createDatabase": false, "createDatabaseCharset": false, "dropDatabase": false}, "navigation": {"primaryVisibilitySupported": true, "primaryKind": "database", "secondarySchemaVisibilitySupported": false, "schemaIdentifierCaseSensitive": false}},
-                     "sql-gbase8a":  {"query": {"supported": true}, "metadata": {"supported": true}, "transaction": {"supported": true}, "pagination": {"supported": true}, "cancel": {"supported": true, "runtimeProbe": true}, "schema": {"supported": true}, "sampling": {"supported": true}, "streaming": {"supported": false, "reason": "not_streaming_data_source", "alternative": "use-paginated-query", "messageKey": "query_editor.message.unsupported_source"}, "dangerousOperations": {"supported": true}, "ui": {"userManagement": false, "parameterBinding": true, "explainDiagnosis": true, "sqlQueryExport": true, "copyInsert": true, "copyTable": true, "createDatabase": true, "createDatabaseCharset": true, "dropDatabase": true}, "navigation": {"primaryVisibilitySupported": true, "primaryKind": "database", "secondarySchemaVisibilitySupported": false, "schemaIdentifierCaseSensitive": false}},
-                     "sql-yashandb":  {"query": {"supported": true}, "metadata": {"supported": true}, "transaction": {"supported": true}, "pagination": {"supported": true}, "cancel": {"supported": true, "runtimeProbe": true}, "schema": {"supported": true}, "sampling": {"supported": true}, "streaming": {"supported": false, "reason": "not_streaming_data_source", "alternative": "use-paginated-query", "messageKey": "query_editor.message.unsupported_source"}, "dangerousOperations": {"supported": true}, "ui": {"userManagement": false, "parameterBinding": true, "explainDiagnosis": true, "sqlQueryExport": true, "copyInsert": true, "preferManualTotalCount": true, "supportsApproximateTableCount": true}, "navigation": {"primaryVisibilitySupported": true, "primaryKind": "owner", "secondarySchemaVisibilitySupported": false, "schemaIdentifierCaseSensitive": false}},
-                     "sql-firebird":  {"query": {"supported": true}, "metadata": {"supported": true}, "transaction": {"supported": true}, "pagination": {"supported": true}, "cancel": {"supported": true, "runtimeProbe": true}, "schema": {"supported": true}, "sampling": {"supported": true}, "streaming": {"supported": false, "reason": "not_streaming_data_source", "alternative": "use-paginated-query", "messageKey": "query_editor.message.unsupported_source"}, "dangerousOperations": {"supported": true}, "ui": {"userManagement": false, "parameterBinding": true, "explainDiagnosis": false, "sqlQueryExport": true, "copyInsert": true, "copyTable": false, "createDatabase": false, "createDatabaseCharset": false, "dropDatabase": false}, "navigation": {"primaryVisibilitySupported": false, "primaryKind": "database", "secondarySchemaVisibilitySupported": false, "schemaIdentifierCaseSensitive": true}},
-                     "sql-greptimedb":  {"query": {"supported": true}, "metadata": {"supported": true}, "transaction": {"supported": false, "reason": "transaction_not_supported", "alternative": "execute-statement-directly", "messageKey": "query_editor.message.unsupported_source"}, "pagination": {"supported": true}, "cancel": {"supported": true, "runtimeProbe": true}, "schema": {"supported": false, "reason": "schema_designer_not_supported", "alternative": "use-database-metadata", "messageKey": "query_editor.message.unsupported_source"}, "sampling": {"supported": true}, "streaming": {"supported": false, "reason": "not_streaming_data_source", "alternative": "use-paginated-query", "messageKey": "query_editor.message.unsupported_source"}, "dangerousOperations": {"supported": true}, "ui": {"forceReadOnlyQueryResult": true, "forceReadOnlyStructureDesigner": true, "explainDiagnosis": true, "sqlQueryExport": true, "copyInsert": true, "createDatabase": true, "dropDatabase": true}, "navigation": {"primaryVisibilitySupported": true, "primaryKind": "database", "secondarySchemaVisibilitySupported": false, "schemaIdentifierCaseSensitive": false}},
-                     "sql-questdb":  {"query": {"supported": true}, "metadata": {"supported": true}, "transaction": {"supported": false, "reason": "transaction_not_supported", "alternative": "execute-statement-directly", "messageKey": "query_editor.message.unsupported_source"}, "pagination": {"supported": true}, "cancel": {"supported": true, "runtimeProbe": true}, "schema": {"supported": false, "reason": "schema_designer_not_supported", "alternative": "use-database-metadata", "messageKey": "query_editor.message.unsupported_source"}, "sampling": {"supported": true}, "streaming": {"supported": false, "reason": "not_streaming_data_source", "alternative": "use-paginated-query", "messageKey": "query_editor.message.unsupported_source"}, "dangerousOperations": {"supported": true}, "ui": {"forceReadOnlyQueryResult": true, "forceReadOnlyStructureDesigner": true, "explainDiagnosis": true, "sqlQueryExport": true, "copyInsert": true}, "navigation": {"primaryVisibilitySupported": true, "primaryKind": "database", "secondarySchemaVisibilitySupported": false, "schemaIdentifierCaseSensitive": false}},
-                     "sql-postgres-wire":  {"query": {"supported": true}, "metadata": {"supported": true}, "transaction": {"supported": true}, "pagination": {"supported": true}, "cancel": {"supported": true, "runtimeProbe": true}, "schema": {"supported": true}, "sampling": {"supported": true}, "streaming": {"supported": false, "reason": "not_streaming_data_source", "alternative": "use-paginated-query", "messageKey": "query_editor.message.unsupported_source"}, "dangerousOperations": {"supported": true}, "ui": {"userManagement": false, "parameterBinding": true, "explainDiagnosis": true, "sqlQueryExport": true, "copyInsert": true, "createDatabase": true, "renameDatabase": true, "dropDatabase": true}, "navigation": {"primaryVisibilitySupported": true, "primaryKind": "database", "secondarySchemaVisibilitySupported": true, "schemaIdentifierCaseSensitive": true}},
+                     "sql-gbase8s":  {"query": {"supported": true}, "metadata": {"supported": true}, "transaction": {"supported": true}, "pagination": {"supported": true}, "cancel": {"supported": true, "runtimeProbe": true}, "schema": {"supported": true}, "sampling": {"supported": true}, "streaming": {"supported": false, "reason": "not_streaming_data_source", "alternative": "use-paginated-query", "messageKey": "query_editor.message.unsupported_source"}, "dangerousOperations": {"supported": true}, "ui": {"userManagement": false, "parameterBinding": false, "explainDiagnosis": false, "sqlQueryExport": true, "copyInsert": true, "mockData": true, "copyTable": false, "createDatabase": false, "createDatabaseCharset": false, "dropDatabase": false}, "navigation": {"primaryVisibilitySupported": true, "primaryKind": "database", "secondarySchemaVisibilitySupported": false, "schemaIdentifierCaseSensitive": false}},
+                     "sql-gbase8a":  {"query": {"supported": true}, "metadata": {"supported": true}, "transaction": {"supported": true}, "pagination": {"supported": true}, "cancel": {"supported": true, "runtimeProbe": true}, "schema": {"supported": true}, "sampling": {"supported": true}, "streaming": {"supported": false, "reason": "not_streaming_data_source", "alternative": "use-paginated-query", "messageKey": "query_editor.message.unsupported_source"}, "dangerousOperations": {"supported": true}, "ui": {"userManagement": false, "parameterBinding": true, "explainDiagnosis": true, "sqlQueryExport": true, "copyInsert": true, "mockData": true, "copyTable": true, "createDatabase": true, "createDatabaseCharset": true, "dropDatabase": true}, "navigation": {"primaryVisibilitySupported": true, "primaryKind": "database", "secondarySchemaVisibilitySupported": false, "schemaIdentifierCaseSensitive": false}},
+                     "sql-yashandb":  {"query": {"supported": true}, "metadata": {"supported": true}, "transaction": {"supported": true}, "pagination": {"supported": true}, "cancel": {"supported": true, "runtimeProbe": true}, "schema": {"supported": true}, "sampling": {"supported": true}, "streaming": {"supported": false, "reason": "not_streaming_data_source", "alternative": "use-paginated-query", "messageKey": "query_editor.message.unsupported_source"}, "dangerousOperations": {"supported": true}, "ui": {"userManagement": false, "parameterBinding": true, "explainDiagnosis": true, "sqlQueryExport": true, "copyInsert": true, "mockData": true, "preferManualTotalCount": true, "supportsApproximateTableCount": true}, "navigation": {"primaryVisibilitySupported": true, "primaryKind": "owner", "secondarySchemaVisibilitySupported": false, "schemaIdentifierCaseSensitive": false}},
+                     "sql-firebird":  {"query": {"supported": true}, "metadata": {"supported": true}, "transaction": {"supported": true}, "pagination": {"supported": true}, "cancel": {"supported": true, "runtimeProbe": true}, "schema": {"supported": true}, "sampling": {"supported": true}, "streaming": {"supported": false, "reason": "not_streaming_data_source", "alternative": "use-paginated-query", "messageKey": "query_editor.message.unsupported_source"}, "dangerousOperations": {"supported": true}, "ui": {"userManagement": false, "parameterBinding": true, "explainDiagnosis": false, "sqlQueryExport": true, "copyInsert": true, "mockData": true, "copyTable": false, "createDatabase": false, "createDatabaseCharset": false, "dropDatabase": false}, "navigation": {"primaryVisibilitySupported": false, "primaryKind": "database", "secondarySchemaVisibilitySupported": false, "schemaIdentifierCaseSensitive": true}},
+                     "sql-greptimedb":  {"query": {"supported": true}, "metadata": {"supported": true}, "transaction": {"supported": false, "reason": "transaction_not_supported", "alternative": "execute-statement-directly", "messageKey": "query_editor.message.unsupported_source"}, "pagination": {"supported": true}, "cancel": {"supported": true, "runtimeProbe": true}, "schema": {"supported": false, "reason": "schema_designer_not_supported", "alternative": "use-database-metadata", "messageKey": "query_editor.message.unsupported_source"}, "sampling": {"supported": true}, "streaming": {"supported": false, "reason": "not_streaming_data_source", "alternative": "use-paginated-query", "messageKey": "query_editor.message.unsupported_source"}, "dangerousOperations": {"supported": true}, "ui": {"forceReadOnlyQueryResult": true, "forceReadOnlyStructureDesigner": true, "explainDiagnosis": true, "sqlQueryExport": true, "copyInsert": true, "mockData": true, "createDatabase": true, "dropDatabase": true}, "navigation": {"primaryVisibilitySupported": true, "primaryKind": "database", "secondarySchemaVisibilitySupported": false, "schemaIdentifierCaseSensitive": false}},
+                     "sql-questdb":  {"query": {"supported": true}, "metadata": {"supported": true}, "transaction": {"supported": false, "reason": "transaction_not_supported", "alternative": "execute-statement-directly", "messageKey": "query_editor.message.unsupported_source"}, "pagination": {"supported": true}, "cancel": {"supported": true, "runtimeProbe": true}, "schema": {"supported": false, "reason": "schema_designer_not_supported", "alternative": "use-database-metadata", "messageKey": "query_editor.message.unsupported_source"}, "sampling": {"supported": true}, "streaming": {"supported": false, "reason": "not_streaming_data_source", "alternative": "use-paginated-query", "messageKey": "query_editor.message.unsupported_source"}, "dangerousOperations": {"supported": true}, "ui": {"forceReadOnlyQueryResult": true, "forceReadOnlyStructureDesigner": true, "explainDiagnosis": true, "sqlQueryExport": true, "copyInsert": true, "mockData": true}, "navigation": {"primaryVisibilitySupported": true, "primaryKind": "database", "secondarySchemaVisibilitySupported": false, "schemaIdentifierCaseSensitive": false}},
+                     "sql-postgres-wire":  {"query": {"supported": true}, "metadata": {"supported": true}, "transaction": {"supported": true}, "pagination": {"supported": true}, "cancel": {"supported": true, "runtimeProbe": true}, "schema": {"supported": true}, "sampling": {"supported": true}, "streaming": {"supported": false, "reason": "not_streaming_data_source", "alternative": "use-paginated-query", "messageKey": "query_editor.message.unsupported_source"}, "dangerousOperations": {"supported": true}, "ui": {"userManagement": false, "parameterBinding": true, "explainDiagnosis": true, "sqlQueryExport": true, "copyInsert": true, "mockData": true, "createDatabase": true, "renameDatabase": true, "dropDatabase": true}, "navigation": {"primaryVisibilitySupported": true, "primaryKind": "database", "secondarySchemaVisibilitySupported": true, "schemaIdentifierCaseSensitive": true}},
                      "sql-mysql":  {
                                        "query":  {
                                                      "supported":  true
@@ -46,6 +46,7 @@
                                                   "explainDiagnosis":  true,
                                                   "sqlQueryExport":  true,
                                                   "copyInsert":  true,
+                                                  "mockData":  true,
                                                   "copyTable":  true,
                                                   "createDatabase":  true,
                                                   "createDatabaseCharset":  true,
@@ -95,6 +96,7 @@
                                                   "explainDiagnosis":  true,
                                                   "sqlQueryExport":  true,
                                                   "copyInsert":  true,
+                                                  "mockData":  true,
                                                   "createDatabase":  true,
                                                   "createDatabaseCharset":  true,
                                                   "dropDatabase":  true
@@ -143,6 +145,7 @@
                                                       "explainDiagnosis":  true,
                                                       "sqlQueryExport":  true,
                                                       "copyInsert":  true,
+                                                      "mockData":  true,
                                                       "createDatabase":  true,
                                                       "dropDatabase":  true
                                                   },
@@ -188,7 +191,8 @@
                                         "ui":  {
                                                                 "parameterBinding":  true,
                                                    "sqlQueryExport":  true,
-                                                   "copyInsert":  true
+                                                   "copyInsert":  true,
+                                                   "mockData":  true
                                                },
                                         "navigation":  {
                                                            "primaryVisibilitySupported":  false,
@@ -235,6 +239,7 @@
                                                      "explainDiagnosis":  true,
                                                      "sqlQueryExport":  true,
                                                      "copyInsert":  true,
+                                                     "mockData":  true,
                                                      "copyTable":  true,
                                                      "createDatabase":  true,
                                                      "renameDatabase":  true,
@@ -285,6 +290,7 @@
                                                                 "explainDiagnosis":  true,
                                                                 "sqlQueryExport":  true,
                                                                 "copyInsert":  true,
+                                                                "mockData":  true,
                                                                 "createDatabase":  true,
                                                                 "renameDatabase":  true,
                                                                 "dropDatabase":  true
@@ -334,6 +340,7 @@
                                                       "explainDiagnosis":  true,
                                                       "sqlQueryExport":  true,
                                                       "copyInsert":  true,
+                                                      "mockData":  true,
                                                       "createDatabase":  true
                                                   },
                                            "navigation":  {
@@ -378,7 +385,8 @@
                                       "ui":  {
                                                               "parameterBinding":  true,
                                                  "sqlQueryExport":  true,
-                                                 "copyInsert":  true
+                                                 "copyInsert":  true,
+                                                 "mockData":  true
                                              },
                                       "navigation":  {
                                                          "primaryVisibilitySupported":  true,
@@ -423,7 +431,8 @@
                                                                   "parameterBinding":  true,
                                                      "explainDiagnosis":  true,
                                                      "sqlQueryExport":  true,
-                                                     "copyInsert":  true
+                                                     "copyInsert":  true,
+                                                     "mockData":  true
                                                  },
                                           "navigation":  {
                                                              "primaryVisibilitySupported":  false,
@@ -468,6 +477,7 @@
                                                                 "parameterBinding":  true,
                                                    "sqlQueryExport":  true,
                                                    "copyInsert":  true,
+                                                   "mockData":  true,
                                                    "preferManualTotalCount":  true,
                                                    "supportsApproximateTableCount":  true,
                                                    "supportsApproximateTotalPages":  true
@@ -517,6 +527,7 @@
                                                    "explainDiagnosis":  true,
                                                    "sqlQueryExport":  true,
                                                    "copyInsert":  true,
+                                                   "mockData":  true,
                                                    "preferManualTotalCount":  true,
                                                    "supportsApproximateTableCount":  true
                                                },
@@ -563,7 +574,8 @@
                                                                 "userManagement":  true,
                                                                 "parameterBinding":  true,
                                                    "sqlQueryExport":  true,
-                                                   "copyInsert":  true
+                                                   "copyInsert":  true,
+                                                   "mockData":  true
                                                },
                                         "navigation":  {
                                                            "primaryVisibilitySupported":  true,
@@ -612,6 +624,7 @@
                                                                   "parameterBinding":  true,
                                                      "sqlQueryExport":  true,
                                                      "copyInsert":  true,
+                                                     "mockData":  true,
                                                      "createDatabase":  true,
                                                      "dropDatabase":  true,
                                                      "forceReadOnlyQueryResult":  true
@@ -664,6 +677,7 @@
                                                        "explainDiagnosis":  true,
                                                        "sqlQueryExport":  true,
                                                        "copyInsert":  true,
+                                                       "mockData":  true,
                                                        "createDatabase":  true,
                                                        "dropDatabase":  true,
                                                        "forceReadOnlyQueryResult":  true
@@ -713,7 +727,8 @@
                                        "ui":  {
                                                                "parameterBinding":  true,
                                                   "sqlQueryExport":  true,
-                                                  "copyInsert":  true
+                                                  "copyInsert":  true,
+                                                  "mockData":  true
                                               },
                                        "navigation":  {
                                                           "primaryVisibilitySupported":  true,

@@ -139,6 +139,7 @@ type App struct {
 	importTaskMu                  sync.Mutex
 	importTasks                   map[string]importTaskRegistration
 	importTasksWG                 sync.WaitGroup
+	mockDataTables                mockDataTableCache
 	importTasksClosing            bool
 	driverDownloadTaskMu          sync.RWMutex
 	driverDownloadTasks           map[string]DriverDownloadTaskStatus

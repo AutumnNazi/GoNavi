@@ -994,6 +994,18 @@ export function LogWindowDiagnostic(arg1, arg2) {
   return window['go']['app']['App']['LogWindowDiagnostic'](arg1, arg2);
 }
 
+export function MockDataGenerate(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['App']['MockDataGenerate'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function MockDataInspect(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['MockDataInspect'](arg1, arg2, arg3, arg4);
+}
+
+export function MockDataPreview(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['MockDataPreview'](arg1, arg2, arg3, arg4);
+}
+
 export function MongoDiscoverMembers(arg1) {
   return window['go']['app']['App']['MongoDiscoverMembers'](arg1);
 }

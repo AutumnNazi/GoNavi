@@ -34,9 +34,11 @@ type DataSourceNavigationCapabilities struct {
 // as the backend operation boundaries. All fields are intentionally false by
 // default so a newly declared profile must opt into an entry point explicitly.
 type DataSourceUICapabilities struct {
-	ExplainDiagnosis               bool `json:"explainDiagnosis"`
-	SQLQueryExport                 bool `json:"sqlQueryExport"`
-	CopyInsert                     bool `json:"copyInsert"`
+	ExplainDiagnosis bool `json:"explainDiagnosis"`
+	SQLQueryExport   bool `json:"sqlQueryExport"`
+	CopyInsert       bool `json:"copyInsert"`
+	// MockData 开启"生成模拟数据"入口：关系型数据源按列类型批量造数写入。
+	MockData                       bool `json:"mockData"`
 	CopyTable                      bool `json:"copyTable"`
 	CreateDatabase                 bool `json:"createDatabase"`
 	CreateDatabaseCharset          bool `json:"createDatabaseCharset"`

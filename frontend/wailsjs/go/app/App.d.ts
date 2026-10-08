@@ -9,6 +9,7 @@ import {syncjob} from '../models';
 import {requesttrace} from '../models';
 import {jvm} from '../models';
 import {db} from '../models';
+import {mockdata} from '../models';
 import {redis} from '../models';
 import {resultdiff} from '../models';
 import {dbuser} from '../models';
@@ -508,6 +509,12 @@ export function ListSQLDirectory(arg1:string):Promise<connection.QueryResult>;
 export function LoadConnectionSidebarLayout():Promise<connection.ConnectionSidebarLayout>;
 
 export function LogWindowDiagnostic(arg1:string,arg2:string):Promise<void>;
+
+export function MockDataGenerate(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:mockdata.Plan,arg5:app.MockDataRunOptions):Promise<connection.QueryResult>;
+
+export function MockDataInspect(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function MockDataPreview(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:mockdata.Plan):Promise<connection.QueryResult>;
 
 export function MongoDiscoverMembers(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
 

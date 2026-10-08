@@ -7,6 +7,7 @@ import (
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/db"
 	"GoNavi-Wails/internal/logger"
+	"GoNavi-Wails/internal/mockdata"
 	syncengine "GoNavi-Wails/internal/sync"
 	"GoNavi-Wails/internal/syncjob"
 )
@@ -22,6 +23,7 @@ var requiredIssue1098WebRPCContextMethods = []string{
 	"DataSyncErrorRowList", "DataSyncErrorRowGet", "DataSyncCheckpointGet", "DataSync", "DataSyncAnalyze", "DataSyncPreview",
 	"PreviewImportFile", "PreviewImportFileWithOptions", "ImportDataWithProgress", "ImportDataWithProgressOptions",
 	"ImportDatabaseSQL", "ImportDatabaseSQLWithOptions", "ExecuteSQLFile", "ResumeImportJob", "RetryImportJobFailedRows", "VerifySQLAuditIntegrity",
+	"MockDataInspect", "MockDataPreview", "MockDataGenerate",
 }
 
 // RequiredIssue1098WebRPCContextMethods returns the exact App method set whose
@@ -225,6 +227,15 @@ func WebRPCContextHandlers(a *App) map[string]any {
 		},
 		"VerifySQLAuditIntegrity": func(ctx context.Context) connection.QueryResult {
 			return a.verifySQLAuditIntegrity(ctx)
+		},
+		"MockDataInspect": func(ctx context.Context, config connection.ConnectionConfig, dbName, tableName, locale string) connection.QueryResult {
+			return a.mockDataInspectContext(ctx, config, dbName, tableName, locale)
+		},
+		"MockDataPreview": func(ctx context.Context, config connection.ConnectionConfig, dbName, tableName string, plan mockdata.Plan) connection.QueryResult {
+			return a.mockDataPreviewContext(ctx, config, dbName, tableName, plan)
+		},
+		"MockDataGenerate": func(ctx context.Context, config connection.ConnectionConfig, dbName, tableName string, plan mockdata.Plan, options MockDataRunOptions) connection.QueryResult {
+			return a.mockDataGenerateContext(ctx, config, dbName, tableName, plan, options)
 		},
 	}
 }
