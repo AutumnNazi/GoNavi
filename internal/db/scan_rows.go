@@ -22,6 +22,10 @@ import (
 // 同时保证单次 GC 之间累积的临时对象不超过几百 MB，避免 GC 间隙堆膨胀。
 const streamRowsPeriodicGCInterval = 50000
 
+// initialResultRowCapacity 是结果切片的初始容量预分配，避免逐行 append 时反复扩容拷贝。
+// 取 256：覆盖绝大多数交互式预览结果集，一次分配到位；超大结果集仍按 2 倍自动增长。
+const initialResultRowCapacity = 256
+
 // interactiveOracleLargeObjectPreviewBytes bounds Oracle large objects before
 // they cross the Wails bridge. The streaming export path stays unbounded.
 const interactiveOracleLargeObjectPreviewBytes = 4 * 1024
@@ -100,7 +104,7 @@ func scanRowsForDialectWithPreview(rows *sql.Rows, dialect string, boundOracleLa
 }
 
 func scanRowsWithScanner(rows *sql.Rows, columns []string, scanner queryRowsScanner, boundOracleLargeObjects bool, budget *RowBudget) ([]map[string]interface{}, []string, bool, error) {
-	resultData := make([]map[string]interface{}, 0)
+	resultData := make([]map[string]interface{}, 0, initialResultRowCapacity)
 
 	var rowNumber int64
 	truncated := false
