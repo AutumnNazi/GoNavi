@@ -7,6 +7,7 @@ import {
   matchesDatabasePattern,
   moveExactDatabaseVisibilityEntry,
   removeExactDatabaseVisibilityEntry,
+  resolveIncludeDatabasesAfterRemoval,
 } from './databaseVisibility';
 
 describe('database visibility patterns', () => {
@@ -139,5 +140,25 @@ describe('database visibility rules', () => {
     expect(removeExactDatabaseVisibilityEntry(source, 'audit')).toEqual(['app', 'archive']);
     expect(removeExactDatabaseVisibilityEntry({ includeDatabases: ['app'] }, 'app')).toEqual([]);
     expect(source.includeDatabases).toEqual(['app', 'audit', 'archive']);
+  });
+
+  it('drops the whitelist instead of locking it onto the deleted database', () => {
+    // 白名单被删空时必须落回空数组（= 不过滤、全部可见）。回填被删库名会把连接锁死，
+    // 用户此后在该连接上只能看到一个已不存在的库，侧边栏报 no_visible_databases。
+    expect(resolveIncludeDatabasesAfterRemoval({ includeDatabases: ['audit'] }, [], 'audit')).toEqual([]);
+
+    // 还有别的库加载着时保留它们，维持用户此前的收窄视图。
+    expect(resolveIncludeDatabasesAfterRemoval({ includeDatabases: ['audit'] }, ['app'], 'audit')).toEqual(['app']);
+
+    // 白名单未删空：只移除目标项，其余原样保留。
+    expect(resolveIncludeDatabasesAfterRemoval({ includeDatabases: ['app', 'audit'] }, ['app'], 'audit')).toEqual(['app']);
+
+    // 本来就没有白名单：不引入过滤规则。
+    expect(resolveIncludeDatabasesAfterRemoval({}, ['app'], 'audit')).toBeUndefined();
+
+    // 入参不被就地修改。
+    const source = { includeDatabases: ['audit'] };
+    resolveIncludeDatabasesAfterRemoval(source, [], 'audit');
+    expect(source.includeDatabases).toEqual(['audit']);
   });
 });

@@ -167,3 +167,22 @@ export const removeExactDatabaseVisibilityEntry = (
   }
   return source.includeDatabases.filter((name) => name !== target);
 };
+
+// 删除数据库后重算 includeDatabases 白名单。
+//
+// includeDatabases 为空表示"不过滤、全部可见"，所以白名单被删空时必须落回空数组。
+// 曾经这里回填的是 removedDatabase 本身：白名单于是锁在一个刚被删掉的库上，过滤后
+// 一个库都不剩，侧边栏随即报 sidebar.message.no_visible_databases —— 用户删库后
+// 整个连接就废了。仍加载着的库名优先保留，以维持用户此前的收窄视图。
+export const resolveIncludeDatabasesAfterRemoval = (
+  source: DatabaseVisibilitySource,
+  remainingLoadedDatabases: readonly string[],
+  removedDatabase: unknown,
+): string[] | undefined => {
+  const exactIncludes = removeExactDatabaseVisibilityEntry(source, removedDatabase);
+  const hadIncludes = Array.isArray(source.includeDatabases) && source.includeDatabases.length > 0;
+  if (!hadIncludes || exactIncludes?.length !== 0) {
+    return exactIncludes;
+  }
+  return remainingLoadedDatabases.length > 0 ? [...remainingLoadedDatabases] : [];
+};
