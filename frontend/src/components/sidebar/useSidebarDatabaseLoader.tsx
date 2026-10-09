@@ -491,6 +491,16 @@ export const useSidebarDatabaseLoader = ({
                           content: t('sidebar.message.elasticsearch_no_indices'),
                           key: `conn-${currentConnection.id}-dbs`,
                       });
+                  } else if (returnedDatabaseNames.length > 0) {
+                      // 后端返回了库/命名空间，却被该连接的「数据库显示范围」全部滤掉。
+                      // 这两种空的处置完全不同：前者要查权限或服务端，后者只需调整显示范围，
+                      // 所以不能共用一条「请检查账号权限」的提示把人引错方向。
+                      message.warning({
+                          content: t('sidebar.message.databases_filtered_by_scope', {
+                              count: returnedDatabaseNames.length,
+                          }),
+                          key: `conn-${currentConnection.id}-dbs`,
+                      });
                   } else {
                       message.warning({
                           content: t('sidebar.message.no_visible_databases'),

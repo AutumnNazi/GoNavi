@@ -12390,5 +12390,12 @@
   "announcement.builtin_ai.quota": "免费额度按每日与 5 小时滚动窗口计算，实时用量可在 AI 面板与设置中查看。",
   "announcement.builtin_ai.action.acknowledge": "我已知晓",
   "announcement.builtin_ai.action.use_now": "立即使用",
-  "announcement.builtin_ai.action.open_panel": "打开 AI 面板"
+  "announcement.builtin_ai.action.open_panel": "打开 AI 面板",
+  "app.theme.appearance.low_spec_mode": "低配适配模式",
+  "app.theme.appearance.low_spec_mode_hint": "低配或无显卡的机器自动关闭动画与重特效；未手动设置时跟随自动检测结果，手动切换后固定在所选状态。",
+  "app.theme.appearance.reduce_motion": "减少动效",
+  "app.theme.appearance.reduce_motion_hint": "关闭界面动画与弹窗、下拉过渡，提升低配与无显卡（虚拟机）环境的渲染速度。",
+  "data_grid.message.truncated_cell_readonly": "该单元格内容超长，当前仅显示截断预览，已禁止编辑，以免把截断片段写回数据库覆盖原值",
+  "data_grid.message.truncated_cells_skipped": "已跳过 {{count}} 个仅显示截断预览的单元格，未写入修改，以免覆盖数据库中的原始值",
+  "sidebar.message.databases_filtered_by_scope": "后端返回了 {{count}} 个数据库或命名空间，但都被该连接的「数据库显示范围」过滤掉了。请从右键菜单打开「数据库显示范围」调整或清空。"
 }

@@ -12390,5 +12390,12 @@
   "announcement.builtin_ai.quota": "The free quota is counted per day and over a rolling 5-hour window; live usage is shown in the AI panel and settings.",
   "announcement.builtin_ai.action.acknowledge": "Got it",
   "announcement.builtin_ai.action.use_now": "Use it now",
-  "announcement.builtin_ai.action.open_panel": "Open AI panel"
+  "announcement.builtin_ai.action.open_panel": "Open AI panel",
+  "app.theme.appearance.low_spec_mode": "Low-Spec Mode",
+  "app.theme.appearance.low_spec_mode_hint": "Automatically disables animations and heavy effects on low-spec or GPU-less machines. When unset it follows automatic detection; switching it pins the state you choose.",
+  "app.theme.appearance.reduce_motion": "Reduce Motion",
+  "app.theme.appearance.reduce_motion_hint": "Turns off interface animations and popup/dropdown transitions for faster rendering on low-spec and GPU-less (virtual machine) environments.",
+  "data_grid.message.truncated_cell_readonly": "This cell's content is too long and only a truncated preview is shown. Editing is disabled so the truncated fragment cannot be written back over the original value",
+  "data_grid.message.truncated_cells_skipped": "Skipped {{count}} cells that only show a truncated preview; no changes were written, so the original values stay intact",
+  "sidebar.message.databases_filtered_by_scope": "The backend returned {{count}} database(s) or namespace(s), but this connection's database display scope filtered them all out. Open \"Database display scope\" from the right-click menu to adjust or clear it."
 }

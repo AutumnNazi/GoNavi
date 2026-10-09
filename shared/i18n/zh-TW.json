@@ -12390,5 +12390,12 @@
   "announcement.builtin_ai.quota": "免費額度按每日與 5 小時滾動視窗計算，即時用量可在 AI 面板與設定中查看。",
   "announcement.builtin_ai.action.acknowledge": "我已知曉",
   "announcement.builtin_ai.action.use_now": "立即使用",
-  "announcement.builtin_ai.action.open_panel": "開啟 AI 面板"
+  "announcement.builtin_ai.action.open_panel": "開啟 AI 面板",
+  "app.theme.appearance.low_spec_mode": "低配適配模式",
+  "app.theme.appearance.low_spec_mode_hint": "低配或無顯卡的機器自動關閉動畫與重特效；未手動設定時跟隨自動偵測結果，手動切換後固定在所選狀態。",
+  "app.theme.appearance.reduce_motion": "減少動效",
+  "app.theme.appearance.reduce_motion_hint": "關閉介面動畫與彈窗、下拉過渡，提升低配與無顯卡（虛擬機）環境的渲染速度。",
+  "data_grid.message.truncated_cell_readonly": "該儲存格內容過長，目前僅顯示截斷預覽，已禁止編輯，以免將截斷片段寫回資料庫覆蓋原值",
+  "data_grid.message.truncated_cells_skipped": "已跳過 {{count}} 個僅顯示截斷預覽的儲存格，未寫入修改，以免覆蓋資料庫中的原始值",
+  "sidebar.message.databases_filtered_by_scope": "後端回傳了 {{count}} 個資料庫或命名空間，但都被該連線的「資料庫顯示範圍」過濾掉了。請從右鍵選單開啟「資料庫顯示範圍」調整或清空。"
 }

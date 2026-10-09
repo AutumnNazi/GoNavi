@@ -12390,5 +12390,12 @@
   "announcement.builtin_ai.quota": "無料枠は 1 日ごとと 5 時間のローリング枠で計算されます。使用量は AI パネルと設定で確認できます。",
   "announcement.builtin_ai.action.acknowledge": "了解しました",
   "announcement.builtin_ai.action.use_now": "今すぐ使う",
-  "announcement.builtin_ai.action.open_panel": "AI パネルを開く"
+  "announcement.builtin_ai.action.open_panel": "AI パネルを開く",
+  "app.theme.appearance.low_spec_mode": "低スペック向けモード",
+  "app.theme.appearance.low_spec_mode_hint": "低スペックまたは GPU 非搭載の環境ではアニメーションと重いエフェクトを自動的に無効にします。未設定のときは自動検出の結果に従い、切り替えるとその状態に固定されます。",
+  "app.theme.appearance.reduce_motion": "アニメーションを減らす",
+  "app.theme.appearance.reduce_motion_hint": "画面のアニメーションとポップアップ・ドロップダウンの遷移を無効にし、低スペックや GPU 非搭載（仮想マシン）環境での描画を高速化します。",
+  "data_grid.message.truncated_cell_readonly": "このセルの内容は長すぎるため、切り詰めたプレビューのみ表示しています。切り詰めた断片で元の値を上書きしないよう、編集は無効です",
+  "data_grid.message.truncated_cells_skipped": "切り詰めたプレビューのみのセル {{count}} 個をスキップしました。元の値を保護するため、変更は書き込んでいません",
+  "sidebar.message.databases_filtered_by_scope": "バックエンドは {{count}} 件のデータベース／名前空間を返しましたが、この接続の「データベース表示範囲」ですべて除外されました。右クリックメニューの「データベース表示範囲」で調整またはクリアしてください。"
 }

@@ -9,13 +9,19 @@ import (
 	"strings"
 
 	"GoNavi-Wails/internal/connection"
+	"GoNavi-Wails/internal/logger"
 )
 
 func (i *IrisDB) GetDatabases() ([]string, error) {
 	namespace := strings.TrimSpace(i.namespace)
+	// 侧边栏「未返回可见数据库或结构」可能源于本层返回 0 项，也可能源于前端显示范围
+	// 过滤。把本层实际解析到的命名空间与结果数写进日志（agent 的 stderr 会汇入
+	// gonavi.log），用户回传日志即可区分两者。
 	if namespace != "" {
+		logger.Infof("%s 库列表：命名空间=%q，返回 1 项", i.productName(), namespace)
 		return []string{namespace}, nil
 	}
+	logger.Warnf("%s 库列表：命名空间为空，回退到 INFORMATION_SCHEMA.TABLE_CATALOG 查询", i.productName())
 	data, _, err := i.Query(`SELECT DISTINCT TABLE_CATALOG FROM INFORMATION_SCHEMA.TABLES`)
 	if err != nil {
 		return nil, err
