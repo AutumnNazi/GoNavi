@@ -522,3 +522,101 @@ func TestIrisApplyChangesContextCancelsInFlightStatement(t *testing.T) {
 
 var _ BatchApplierContext = (*IrisDB)(nil)
 var _ BatchApplierContext = (*CacheDB)(nil)
+
+// 连接配置留空时驱动的 namespace 只是本地兜底的 USER，服务端从未确认过。此前
+// GetDatabases 直接把它当唯一结果返回，侧栏会显示一个并不存在的库，展开才发第一个
+// 真实查询，失败即红点。改为向服务端枚举真实命名空间。
+func TestIrisGetDatabasesEnumeratesNamespacesWhenConfiguredBlank(t *testing.T) {
+	t.Parallel()
+
+	dbConn, state := openOracleRecordingDB(t)
+	state.mu.Lock()
+	state.queryResults[`SELECT * FROM %SYS.Namespace_List()`] = oracleRecordingQueryResult{
+		columns: []string{"Nsp", "Status", "Remote"},
+		rows: [][]driver.Value{
+			{"%SYS", "1", ""},
+			{"GONAVIIRIS", "1", ""},
+			{"USER", "1", ""},
+		},
+	}
+	state.mu.Unlock()
+
+	iris := &IrisDB{conn: dbConn, namespace: "USER", namespaceExplicit: false}
+	databases, err := iris.GetDatabases()
+	if err != nil {
+		t.Fatalf("GetDatabases 返回错误: %v", err)
+	}
+
+	// % 开头的系统命名空间要滤掉：用户点不开，与 schema 层的过滤语义保持一致。
+	want := []string{"GONAVIIRIS", "USER"}
+	if !reflect.DeepEqual(databases, want) {
+		t.Fatalf("期望枚举出真实命名空间，want=%v got=%v", want, databases)
+	}
+}
+
+func TestIrisGetDatabasesKeepsExplicitNamespaceWithoutQuerying(t *testing.T) {
+	t.Parallel()
+
+	dbConn, state := openOracleRecordingDB(t)
+	iris := &IrisDB{conn: dbConn, namespace: "GONAVIIRIS", namespaceExplicit: true}
+
+	databases, err := iris.GetDatabases()
+	if err != nil {
+		t.Fatalf("GetDatabases 返回错误: %v", err)
+	}
+	if want := []string{"GONAVIIRIS"}; !reflect.DeepEqual(databases, want) {
+		t.Fatalf("显式配置时应原样返回，want=%v got=%v", want, databases)
+	}
+	// 显式指定不需要枚举，不应多发一条查询。
+	if queries := state.snapshotQueries(); len(queries) != 0 {
+		t.Fatalf("显式命名空间不应产生查询，got=%v", queries)
+	}
+}
+
+// 枚举命名空间需要 %SYS 读权限，普通账号会拿到 SQLCODE -99；此时不能把连接弄成
+// 「一个库都没有」，要退回连接自身的命名空间，连接至少可用。
+func TestIrisGetDatabasesFallsBackWhenNamespaceListUnavailable(t *testing.T) {
+	t.Parallel()
+
+	dbConn, state := openOracleRecordingDB(t)
+	state.mu.Lock()
+	state.queryError = errors.New("Error Code: 99, Message: [SQLCODE: <-99>:<Privilege violation>]")
+	state.mu.Unlock()
+
+	iris := &IrisDB{conn: dbConn, namespace: "USER", namespaceExplicit: false}
+	databases, err := iris.GetDatabases()
+	if err != nil {
+		t.Fatalf("枚举失败不应向上报错，应回退: %v", err)
+	}
+	if want := []string{"USER"}; !reflect.DeepEqual(databases, want) {
+		t.Fatalf("权限不足时应回退到连接命名空间，want=%v got=%v", want, databases)
+	}
+}
+
+func TestCacheGetDatabasesEnumeratesNamespaces(t *testing.T) {
+	t.Parallel()
+
+	dbConn, state := openOracleRecordingDB(t)
+	state.mu.Lock()
+	state.queryResults[`SELECT * FROM %SYS.Namespace_List()`] = oracleRecordingQueryResult{
+		columns: []string{"Nsp", "Status", "Remote"},
+		rows: [][]driver.Value{
+			{"%SYS", "1", ""},
+			{"DOCBOOK", "1", ""},
+			{"SAMPLES", "1", ""},
+			{"USER", "1", ""},
+		},
+	}
+	state.mu.Unlock()
+
+	// Caché 复用同一套实现，这里确认包装类型也走到枚举分支。
+	cache := &CacheDB{IrisDB: IrisDB{conn: dbConn, namespace: "USER", namespaceExplicit: false}}
+	databases, err := cache.GetDatabases()
+	if err != nil {
+		t.Fatalf("GetDatabases 返回错误: %v", err)
+	}
+	want := []string{"DOCBOOK", "SAMPLES", "USER"}
+	if !reflect.DeepEqual(databases, want) {
+		t.Fatalf("Caché 应枚举真实命名空间，want=%v got=%v", want, databases)
+	}
+}

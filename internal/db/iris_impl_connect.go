@@ -92,6 +92,7 @@ func (i *IrisDB) Connect(config connection.ConnectionConfig) (err error) {
 		runConfig.Port = defaultIRISPort
 	}
 	i.namespace = normalizeIRISNamespace(runConfig.Database)
+	i.namespaceExplicit = strings.Trim(strings.TrimSpace(runConfig.Database), "/") != ""
 
 	if runConfig.UseSSH {
 		logger.Infof("%s 使用 SSH 连接：地址=%s:%d 用户=%s", i.productName(), runConfig.Host, runConfig.Port, runConfig.User)

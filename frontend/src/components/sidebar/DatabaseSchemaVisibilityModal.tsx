@@ -97,7 +97,14 @@ export const DatabaseSchemaVisibilityModal: React.FC<DatabaseSchemaVisibilityMod
   onSave,
 }) => {
   const requestGenerationRef = useRef(0);
+  // schema 加载用独立代际：刷新库列表只应作废库列表请求，不该把在途的 schema 加载一起
+  // 作废。此前两者共用 requestGenerationRef，点一次「刷新」就会丢弃在途 schema 结果，
+  // 而丢弃路径直接 return 不落终态，快照永久停在 loading —— 界面表现为该库一直转圈，
+  // 且 `!force && status === 'loading'` 守卫挡住后续重试，转圈永不结束。
+  const schemaEpochRef = useRef(0);
   const schemaRequestIdsRef = useRef<Record<string, number>>({});
+  // 真正记录「该库是否有在途请求」，不再拿 status === 'loading' 当去重标记。
+  const schemaInflightRef = useRef<Record<string, boolean>>({});
   const [candidates, setCandidates] = useState<DatabaseVisibilityCandidate[]>([]);
   const [selectedDatabases, setSelectedDatabases] = useState<string[]>([]);
   const [schemaSnapshots, setSchemaSnapshots] = useState<SchemaSnapshots>({});
@@ -145,7 +152,9 @@ export const DatabaseSchemaVisibilityModal: React.FC<DatabaseSchemaVisibilityMod
 
   useEffect(() => {
     requestGenerationRef.current += 1;
+    schemaEpochRef.current += 1;
     schemaRequestIdsRef.current = {};
+    schemaInflightRef.current = {};
     if (!open) return;
     setCandidates([]);
     setSelectedDatabases([]);
@@ -165,12 +174,15 @@ export const DatabaseSchemaVisibilityModal: React.FC<DatabaseSchemaVisibilityMod
   const loadDatabaseSchemas = useCallback(async (database: string, force = false, selectAll = false) => {
     if (!supportsSchemas) return;
     const current = schemaSnapshots[database];
-    if (!force && (current?.status === 'loading' || current?.status === 'loaded')) return;
-    const generation = requestGenerationRef.current;
+    // 去重看「有没有在途请求」而不是「status 是不是 loading」：后者在请求被作废而没落
+    // 终态时会永久为真，把重试一并挡死。
+    if (!force && (schemaInflightRef.current[database] || current?.status === 'loaded')) return;
+    const generation = schemaEpochRef.current;
     const requestId = (schemaRequestIdsRef.current[database] || 0) + 1;
     schemaRequestIdsRef.current[database] = requestId;
+    schemaInflightRef.current[database] = true;
     const isCurrentRequest = () => (
-      requestGenerationRef.current === generation
+      schemaEpochRef.current === generation
       && schemaRequestIdsRef.current[database] === requestId
     );
     setSchemaSnapshots((previous) => ({
@@ -228,6 +240,11 @@ export const DatabaseSchemaVisibilityModal: React.FC<DatabaseSchemaVisibilityMod
         database,
         error: error?.message || String(error),
       }));
+    } finally {
+      // 只有仍是最新请求时才清标记：更新的请求会自己接管，不能被旧的清掉。
+      if (schemaRequestIdsRef.current[database] === requestId) {
+        delete schemaInflightRef.current[database];
+      }
     }
   }, [
     databaseCaseSensitive,

@@ -17,26 +17,53 @@ func (i *IrisDB) GetDatabases() ([]string, error) {
 	// 侧边栏「未返回可见数据库或结构」可能源于本层返回 0 项，也可能源于前端显示范围
 	// 过滤。把本层实际解析到的命名空间与结果数写进日志（agent 的 stderr 会汇入
 	// gonavi.log），用户回传日志即可区分两者。
-	if namespace != "" {
-		logger.Infof("%s 库列表：命名空间=%q，返回 1 项", i.productName(), namespace)
+	if i.namespaceExplicit && namespace != "" {
+		logger.Infof("%s 库列表：命名空间=%q（连接配置显式指定），返回 1 项", i.productName(), namespace)
 		return []string{namespace}, nil
 	}
-	logger.Warnf("%s 库列表：命名空间为空，回退到 INFORMATION_SCHEMA.TABLE_CATALOG 查询", i.productName())
-	data, _, err := i.Query(`SELECT DISTINCT TABLE_CATALOG FROM INFORMATION_SCHEMA.TABLES`)
+	// 连接配置留空：此时的 namespace 只是本地兜底的 defaultIRISNamespace（USER），
+	// 服务端从未确认过它。直接回它会显示一个可能并不存在的库，展开才发第一个真实查询，
+	// 失败即红点。改为向服务端枚举真实命名空间。
+	//
+	// 旧实现在这里查 INFORMATION_SCHEMA.TABLES 的 TABLE_CATALOG，实测 IRIS 2026.1 与
+	// Caché 2018.1 都只回一行 NULL，永远列不出命名空间，属于走不到的空路径。
+	namespaces, err := i.listNamespaces()
+	if err != nil {
+		logger.Warnf("%s 库列表：枚举命名空间失败（多为权限不足），回退到连接命名空间 %q：%v",
+			i.productName(), namespace, err)
+	} else if len(namespaces) > 0 {
+		logger.Infof("%s 库列表：枚举到 %d 个命名空间 %v", i.productName(), len(namespaces), namespaces)
+		return namespaces, nil
+	} else {
+		logger.Warnf("%s 库列表：枚举结果为空，回退到连接命名空间 %q", i.productName(), namespace)
+	}
+	if namespace == "" {
+		return nil, nil
+	}
+	return []string{namespace}, nil
+}
+
+// listNamespaces 用 %SYS.Namespace_List() 枚举服务端真实存在的命名空间。该视图需要
+// %SYS 命名空间的读权限，普通账号会收到权限错误（SQLCODE -99），由调用方兜底。
+// 注意列名是 Nsp/Status/Remote 而不是 Name，按 Name 查会报 SQLCODE -29。
+// 与 schema 层一致，滤掉 % 开头的系统命名空间（%SYS），避免显示用户点不开的项。
+func (i *IrisDB) listNamespaces() ([]string, error) {
+	data, _, err := i.Query(`SELECT * FROM %SYS.Namespace_List()`)
 	if err != nil {
 		return nil, err
 	}
-	var namespaces []string
 	seen := map[string]struct{}{}
+	namespaces := make([]string, 0, len(data))
 	for _, row := range data {
-		name := strings.TrimSpace(rowString(row, "TABLE_CATALOG", "table_catalog", "TABLECATALOG", "tablecatalog"))
-		if name == "" {
+		name := strings.TrimSpace(rowString(row, "Nsp", "nsp", "Name", "name"))
+		if name == "" || strings.HasPrefix(name, "%") {
 			continue
 		}
-		if _, ok := seen[name]; ok {
+		key := strings.ToUpper(name)
+		if _, ok := seen[key]; ok {
 			continue
 		}
-		seen[name] = struct{}{}
+		seen[key] = struct{}{}
 		namespaces = append(namespaces, name)
 	}
 	sort.Strings(namespaces)
