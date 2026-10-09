@@ -50,6 +50,7 @@ import {
 } from '../tabManagerCloseHelpers';
 import { SortableTabLabel } from '../SortableTabLabel';
 import WorkbenchTabContent from '../../WorkbenchTabContent';
+import { TabSwitchPhaseProfiler } from '../../../utils/tabSwitchProbe';
 import { getDataSourceCapabilities } from '../../../utils/dataSourceCapabilities';
 import { buildWorkbenchQueryTabId } from '../tabManagerIds';
 import type { TabManagerStateApi } from './useTabManagerState';
@@ -310,9 +311,12 @@ export const useTabManagerItems = ({
   ), [appearance.tabDisplay, connections, connectionGroupNameById, dockedTabs]);
 
   const renderTabBar: TabsProps['renderTabBar'] = (tabBarProps, DefaultTabBar) => (
-    <DefaultTabBar {...tabBarProps} extra={<QueryEditorRunningTabsDock />}>
-      {(node) => <DraggableTabNode key={node.key} node={node} />}
-    </DefaultTabBar>
+    // 探针子树计时（默认关闭时空操作）：标签条自身的渲染成本独立成一段归因。
+    <TabSwitchPhaseProfiler phase="tab-bar">
+      <DefaultTabBar {...tabBarProps} extra={<QueryEditorRunningTabsDock />}>
+        {(node) => <DraggableTabNode key={node.key} node={node} />}
+      </DefaultTabBar>
+    </TabSwitchPhaseProfiler>
   );
 
   const items = useMemo(() => dockedTabs.map((tab, index) => {
@@ -414,7 +418,13 @@ export const useTabManagerItems = ({
       key: tab.id,
       closable: false,
       destroyOnHidden: shouldDestroyHiddenTab(tab),
-      children: <WorkbenchTabContent tab={tab} />,
+      // 探针子树计时：按 tab 类型分段，拆出「切换时哪个 pane 类型渲染最贵」。
+      // 该包装不产生 DOM 节点，故 .ant-tabs-tabpane > div 结构不变。
+      children: (
+        <TabSwitchPhaseProfiler phase={`pane:${tab.type}`}>
+          <WorkbenchTabContent tab={tab} />
+        </TabSwitchPhaseProfiler>
+      ),
     };
   }), [dockedTabs, tabs, connections, connectionGroupNameById, appearance.tabDisplay, closeTab, closeTabsWithSQLFilePrompt, detachTabToWindow, true, languagePreference, shouldDestroyHiddenTab]);
 
