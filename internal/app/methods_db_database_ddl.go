@@ -49,6 +49,8 @@ func (a *App) CreateDatabase(config connection.ConnectionConfig, dbName string, 
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
+	// 新建库后该库的元数据缓存条目（若存在同名的旧条目）必须失效。
+	a.invalidateMetadata(config, dbName)
 	return connection.QueryResult{Success: true, Message: a.appText("db.backend.message.database_created", nil)}
 }
 
@@ -236,6 +238,9 @@ func (a *App) RenameDatabase(config connection.ConnectionConfig, oldName string,
 		if _, err := dbInst.Exec(sql); err != nil {
 			return connection.QueryResult{Success: false, Message: err.Error()}
 		}
+		// 新旧库名都要清：旧名下的缓存属于已经不存在的库，新名下的属于刚改名的库。
+		a.invalidateMetadata(config, oldName)
+		a.invalidateMetadata(config, newName)
 		return connection.QueryResult{Success: true, Message: a.appText("db.backend.message.database_renamed", nil)}
 	case "mysql", "mariadb", "oceanbase", "starrocks", "sphinx":
 		return connection.QueryResult{Success: false, Message: a.appText("db.backend.error.database_rename_direct_unsupported", nil)}
@@ -249,6 +254,9 @@ func (a *App) RenameDatabase(config connection.ConnectionConfig, oldName string,
 		if _, err := dbInst.Exec(sql); err != nil {
 			return connection.QueryResult{Success: false, Message: err.Error()}
 		}
+		// 新旧库名都要清：旧名下的缓存属于已经不存在的库，新名下的属于刚改名的库。
+		a.invalidateMetadata(config, oldName)
+		a.invalidateMetadata(config, newName)
 		return connection.QueryResult{Success: true, Message: a.appText("db.backend.message.database_renamed", nil)}
 	default:
 		return connection.QueryResult{Success: false, Message: a.appText("db.backend.error.database_rename_unsupported", map[string]any{"dbType": dbType})}
@@ -293,5 +301,6 @@ func (a *App) DropDatabase(config connection.ConnectionConfig, dbName string) (r
 	if _, err := dbInst.Exec(sql); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
+	a.invalidateMetadata(config, dbName)
 	return connection.QueryResult{Success: true, Message: a.appText("db.backend.message.database_dropped", nil)}
 }

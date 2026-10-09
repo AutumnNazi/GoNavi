@@ -82,9 +82,9 @@ func (a *App) dbQueryMulti(
 	// 用 named return + defer 覆盖所有 return path，避免遗漏。
 	var queryExecutionDuration time.Duration
 	queryExecuted := false
-	defer func() {
-		result.DurationMs = durationMilliseconds(queryExecutionDuration)
-	}()
+	// 取连接的等待耗时（毫秒）：冷建连与重建连接都累加进来，供前端从主查询耗时里分离。
+	var connWaitMs int64
+	defer func() { attachQueryTimings(&result, queryExecutionDuration, connWaitMs) }()
 	defer func() {
 		if !result.Success {
 			return
@@ -147,13 +147,11 @@ func (a *App) dbQueryMulti(
 		cleanupRunningQuery()
 	}()
 
-	var dbInst db.Database
-	var err error
-	if auditOptions.synchronousConnectionWait {
-		dbInst, err = a.getDatabaseSynchronouslyWithContext(ctx, runConfig, false)
-	} else {
-		dbInst, err = a.getDatabaseWithContext(ctx, runConfig, false)
-	}
+	dbInst, waitMs, err := a.acquireQueryConnection(ctx, queryConnectionRequest{
+		config:      runConfig,
+		synchronous: auditOptions.synchronousConnectionWait,
+	})
+	connWaitMs += waitMs
 	if err != nil {
 		logger.Error(err, "DBQueryMulti 获取连接失败：%s", formatConnSummary(runConfig))
 		return buildQueryConnectionFailure(err, queryID, auditOptions.classifyConnectionErrors)
@@ -194,6 +192,15 @@ func (a *App) dbQueryMulti(
 		if strings.TrimSpace(statement) != "" {
 			statementCount++
 		}
+	}
+	// SQL 编辑器实际提交的是多语句批次（DBQueryMulti），单语句路径上的 DDL 钩子覆盖不到
+	// 这里。不补这一段的话，「一次执行多条建表/删表」仍要等元数据 TTL（45s）才反映到侧栏。
+	// 逐条判定语句首关键词，命中 DDL 才注册；普通 SELECT/INSERT 批次不清缓存。
+	// defer 读的是命名返回值 result，因此只在 result.Success 时才真正失效。
+	if statementsAffectMetadata(statements) {
+		defer func() {
+			a.invalidateMetadataAfterDDL(result, config, dbName)
+		}()
 	}
 	auditSequentialStatements := trackSQLAudit && statementCount > 1
 	appendStatementAudit := func(
@@ -313,13 +320,13 @@ func (a *App) dbQueryMulti(
 		if a.invalidateCachedDatabase(runConfig, err) {
 			requestTrace.MarkRetry("cached connection refresh")
 			setRunningQueryCancellable(true)
-			var retryInst db.Database
-			var retryErr error
-			if auditOptions.synchronousConnectionWait {
-				retryInst, retryErr = a.getDatabaseSynchronouslyWithContext(ctx, runConfig, true)
-			} else {
-				retryInst, retryErr = a.getDatabaseWithContext(ctx, runConfig, true)
-			}
+			// 重建连接的开销同样计入取连接等待，否则会漏进「其余」一段。
+			retryInst, retryWaitMs, retryErr := a.acquireQueryConnection(ctx, queryConnectionRequest{
+				config:      runConfig,
+				synchronous: auditOptions.synchronousConnectionWait,
+				forcePing:   true,
+			})
+			connWaitMs += retryWaitMs
 			if retryErr != nil {
 				logger.Error(retryErr, "DBQueryMulti 重建连接失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
 				return buildQueryConnectionFailure(retryErr, queryID, auditOptions.classifyConnectionErrors)

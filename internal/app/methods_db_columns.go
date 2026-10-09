@@ -39,17 +39,33 @@ func (a *App) DBGetColumns(config connection.ConnectionConfig, dbName string, ta
 	runConfig := normalizeMetadataRunConfig(config, dbName)
 	text := a.appText
 
-	dbInst, err := a.getDatabase(runConfig)
+	// 元数据通道：列定义是逐表补全里最重的一类查询，必须与用户查询分开连接池。
+	dbInst, err := a.getMetadataDatabase(runConfig)
 	if err != nil {
 		logger.Error(err, "DBGetColumns 获取连接失败：%s 表=%s.%s", formatConnSummary(runConfig), dbName, tableName)
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
 	schemaName, pureTableName := normalizeMetadataSchemaAndTable(config, dbName, tableName)
-	columns, err := getColumnsWithMetadataFallback(dbInst, config, schemaName, pureTableName, text)
+	// 列定义缓存：key 里必须显式带上 schema/表名——Oracle 与 OceanBase Oracle 模式下
+	// normalizeMetadataRunConfig 刻意让同 owner 的元数据请求共用一个连接池，runConfig
+	// 本身不含 owner，只按表名缓存会让 S1.T 与 S2.T 互相串味。
+	columnsMetaKey := a.buildMetadataCacheKey(runConfig, dbName, metadataColumnCacheKind(schemaName, pureTableName))
+	rawColumns, err := a.metadataCacheFetch(columnsMetaKey, func() (interface{}, error) {
+		fetched, fetchErr := getColumnsWithMetadataFallback(dbInst, config, schemaName, pureTableName, text)
+		if fetchErr != nil {
+			return nil, fetchErr
+		}
+		return append([]connection.ColumnDefinition(nil), fetched...), nil
+	})
+	var columns []connection.ColumnDefinition
+	if rawColumns != nil {
+		columns, _ = rawColumns.([]connection.ColumnDefinition)
+	}
 	if err != nil && shouldRefreshCachedConnection(err) {
-		if a.invalidateCachedDatabase(runConfig, err) {
-			retryInst, retryErr := a.getDatabaseForcePing(runConfig)
+		if a.invalidateMetadataDatabase(runConfig, err) {
+			a.metadataCacheDelete(columnsMetaKey)
+			retryInst, retryErr := a.getMetadataDatabaseForcePing(runConfig)
 			if retryErr != nil {
 				logger.Error(retryErr, "DBGetColumns 重建连接失败：%s 表=%s.%s", formatConnSummary(runConfig), dbName, tableName)
 				return connection.QueryResult{Success: false, Message: retryErr.Error()}
@@ -375,12 +391,27 @@ func quoteOracleMetadataTableRef(schemaName string, tableName string) string {
 func (a *App) DBGetAllColumns(config connection.ConnectionConfig, dbName string) connection.QueryResult {
 	runConfig := normalizeMetadataRunConfig(config, dbName)
 
-	dbInst, err := a.getDatabase(runConfig)
+	// 全库列查询一次扫全部表，是元数据里最重的单次查询，走元数据通道。
+	dbInst, err := a.getMetadataDatabase(runConfig)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
-	cols, err := dbInst.GetAllColumns(dbName)
+	// 全库列缓存。PartialMetadataError（部分表读失败但其余表可用）必须把已取到的列
+	// 与错误一起透传：调用方要用它渲染降级结果。fetch 返回 error 时 metadataCacheFetch
+	// 只透传值、不写缓存，所以不完整结果不会被固定 45s，下次请求还有机会补齐。
+	allColumnsMetaKey := a.buildMetadataCacheKey(runConfig, dbName, metadataCacheKindAllColumns)
+	rawCols, err := a.metadataCacheFetch(allColumnsMetaKey, func() (interface{}, error) {
+		fetched, fetchErr := dbInst.GetAllColumns(dbName)
+		if fetchErr != nil {
+			return append([]connection.ColumnDefinitionWithTable(nil), fetched...), fetchErr
+		}
+		return append([]connection.ColumnDefinitionWithTable(nil), fetched...), nil
+	})
+	var cols []connection.ColumnDefinitionWithTable
+	if rawCols != nil {
+		cols, _ = rawCols.([]connection.ColumnDefinitionWithTable)
+	}
 	if err != nil {
 		var partialErr *db.PartialMetadataError
 		if errors.As(err, &partialErr) {

@@ -839,6 +839,9 @@ export namespace app {
 	    truncated?: boolean;
 	    scannedCount?: number;
 	    durationMs?: number;
+	    mainQueryMs?: number;
+	    connWaitMs?: number;
+	    encodeMs?: number;
 	    queryId?: string;
 	    cancellationState?: string;
 	    transactionId?: string;
@@ -869,6 +872,9 @@ export namespace app {
 	        this.truncated = source["truncated"];
 	        this.scannedCount = source["scannedCount"];
 	        this.durationMs = source["durationMs"];
+	        this.mainQueryMs = source["mainQueryMs"];
+	        this.connWaitMs = source["connWaitMs"];
+	        this.encodeMs = source["encodeMs"];
 	        this.queryId = source["queryId"];
 	        this.cancellationState = source["cancellationState"];
 	        this.transactionId = source["transactionId"];
@@ -2885,6 +2891,9 @@ export namespace connection {
 	    truncated?: boolean;
 	    scannedCount?: number;
 	    durationMs?: number;
+	    mainQueryMs?: number;
+	    connWaitMs?: number;
+	    encodeMs?: number;
 	    queryId?: string;
 	    cancellationState?: string;
 	    transactionId?: string;
@@ -2913,6 +2922,9 @@ export namespace connection {
 	        this.truncated = source["truncated"];
 	        this.scannedCount = source["scannedCount"];
 	        this.durationMs = source["durationMs"];
+	        this.mainQueryMs = source["mainQueryMs"];
+	        this.connWaitMs = source["connWaitMs"];
+	        this.encodeMs = source["encodeMs"];
 	        this.queryId = source["queryId"];
 	        this.cancellationState = source["cancellationState"];
 	        this.transactionId = source["transactionId"];

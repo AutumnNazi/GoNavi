@@ -118,6 +118,7 @@ type App struct {
 	connectFailures               map[string]cachedConnectFailure
 	dbConnectGroup                singleflight.Group
 	dbConnectFlights              map[uint64]*databaseConnectFlight
+	metadataCache                 *metadataCacheStore // 结构元数据缓存（锁+表+合并组），会话 App 继承同一实例，详见 metadata_cache.go
 	metadataSession               *metadataSession
 	nextDBConnectFlightID         uint64
 	dbShuttingDown                bool

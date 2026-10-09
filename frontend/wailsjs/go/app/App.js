@@ -1254,6 +1254,10 @@ export function RebindSavedQuery(arg1, arg2) {
   return window['go']['app']['App']['RebindSavedQuery'](arg1, arg2);
 }
 
+export function ReclaimMemory() {
+  return window['go']['app']['App']['ReclaimMemory']();
+}
+
 export function RedisConnect(arg1) {
   return window['go']['app']['App']['RedisConnect'](arg1);
 }

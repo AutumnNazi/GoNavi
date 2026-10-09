@@ -345,6 +345,10 @@ func (a *App) releaseCachedDatabaseConnectionsByMatchKeyExcludingFlight(targetKe
 		targets = append(targets, cachedDatabaseCloseTarget{key: key, inst: entry.inst})
 		groupKeys = append(groupKeys, key)
 		delete(a.dbCache, key)
+		// 连接被释放后同一 config 会重新建连，但元数据缓存 key 只由 config 派生，
+		// 不清就会让重连后的前 45s 继续读到上一个连接的元数据。与 dbCache 的清理
+		// 处在同一临界区，避免出现「连接已关但元数据缓存仍在」的窗口。
+		a.dropMetadataCacheForConfigLocked(getCacheKey(entryConfig))
 	}
 	a.forgetDatabaseConnectGroupsLocked(groupKeys)
 	a.mu.Unlock()

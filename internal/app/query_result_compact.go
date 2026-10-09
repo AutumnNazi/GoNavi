@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"time"
 
 	"GoNavi-Wails/internal/connection"
 )
@@ -68,6 +69,13 @@ func encodeCompactQueryResult(result connection.QueryResult) CompactQueryResult 
 		return CompactQueryResult{QueryResult: result}
 	}
 
+	// 链路分解（E）：压缩通道下真正过桥的载荷与 profileQueryResultEncode 量到的
+	// 「未压缩结构」不是一回事 —— 后者是行键展开后的全量 JSON，前者是大致 1/3 体积的
+	// gzip 字节加 base64。差一个数量级，前端拿未压缩值去减总耗时会让「其余」一段变成负数。
+	// 所以在成功压缩的返回点用真实成本覆盖一次；走下面几个兜底分支时数据未压缩，
+	// 保留 profileQueryResultEncode 的测量值即可。
+	compactionStartedAt := time.Now()
+
 	encoded, err := json.Marshal(resultSets)
 	if err != nil || len(encoded) < compactQueryResultCompressionThreshold {
 		return CompactQueryResult{QueryResult: result}
@@ -87,6 +95,7 @@ func encodeCompactQueryResult(result connection.QueryResult) CompactQueryResult 
 	}
 
 	result.Data = nil
+	result.EncodeMs = time.Since(compactionStartedAt).Microseconds()
 	return CompactQueryResult{
 		QueryResult:  result,
 		DataEncoding: compactQueryResultEncoding,

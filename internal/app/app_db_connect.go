@@ -25,7 +25,7 @@ func (a *App) applyCachedDatabaseKeepAlivePolicy(key string, expectedInst db.Dat
 	return entry, true
 }
 
-func (a *App) connectAndCacheDatabase(effectiveConfig connection.ConnectionConfig, initialKey string, isFileDB bool, flight *databaseConnectFlight) (databaseConnectResult, error) {
+func (a *App) connectAndCacheDatabase(effectiveConfig connection.ConnectionConfig, initialKey string, cacheKeySuffix string, isFileDB bool, flight *databaseConnectFlight) (databaseConnectResult, error) {
 	key := initialKey
 	shortKey := shortenCacheKey(key)
 
@@ -60,7 +60,10 @@ func (a *App) connectAndCacheDatabase(effectiveConfig connection.ConnectionConfi
 	if err != nil {
 		retryInst, retryConfig, retryErr := a.retryConnectAfterMySQLMaxUserConnections(effectiveConfig, connectedConfig, err, flight)
 		if retryErr != nil {
-			failedKey := getCacheKey(retryConfig)
+			// 失败冷却 key 必须与落库 key 用同一套后缀：重连后 effectiveConfig 会重算，
+			// 少加后缀就会把「元数据通道建连失败」记到查询通道的 key 上，两条通道互相
+			// 触发对方的冷却，表现为另一条通道莫名报连接失败。
+			failedKey := getCacheKey(retryConfig) + cacheKeySuffix
 			if flightErr := a.recordConnectFailureForFlight(flight, failedKey, retryErr); flightErr != nil {
 				return databaseConnectResult{}, flightErr
 			}
@@ -70,7 +73,11 @@ func (a *App) connectAndCacheDatabase(effectiveConfig connection.ConnectionConfi
 		connectedConfig = retryConfig
 	}
 	effectiveConfig = connectedConfig
-	key = getCacheKey(effectiveConfig)
+	// 关键点：这里必须重新带上调用方传入的通道后缀。驱动可能改写 effectiveConfig
+	// （代理、SSH 隧道），key 需要按新的 effectiveConfig 重算；但只写 getCacheKey() 会
+	// 把后缀丢掉，于是落库的是无后缀 key，元数据通道每次调用都会真做一次物理建连
+	// 再立刻丢弃 —— 比不加通道更差。
+	key = getCacheKey(effectiveConfig) + cacheKeySuffix
 	shortKey = shortenCacheKey(key)
 
 	now := time.Now()

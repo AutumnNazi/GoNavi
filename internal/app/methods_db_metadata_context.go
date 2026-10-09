@@ -16,6 +16,8 @@ type metadataSession struct {
 	app         *App
 	ctx         context.Context
 	synchronous bool
+	// flightScope 是本会话在元数据缓存合并组里的作用域标识，见 metadata_cache.go。
+	flightScope string
 
 	closeOnce sync.Once
 	mu        sync.Mutex
@@ -42,6 +44,12 @@ func newMetadataSessionWithMode(owner *App, ctx context.Context, synchronous boo
 	}
 
 	sessionApp := NewAppWithSecretStore(owner.secretStore)
+	// 继承根 App 的元数据缓存存储体：会话 App 每次都是新建的，不继承就永远命中不了
+	// 跨请求缓存（MCP/Web 就是「冷启动逐表补全 IPC 惊群」的来源）。共享的是整个
+	// store（锁+表+合并组），锁与 table 同生共死，不构成双锁竞态。
+	// 用 metadataStore() 而不是直接读字段：owner 若未走构造函数（测试字面量）则先补建，
+	// 否则这里拿到 nil，会话后续惰性初始化出的是自己的一份，共享会静默失效。
+	sessionApp.metadataCache = owner.metadataStore()
 	sessionApp.ctx = owner.ctx
 	sessionApp.webRuntime = owner.webRuntime
 	sessionApp.headlessRuntime = owner.headlessRuntime
@@ -51,7 +59,7 @@ func newMetadataSessionWithMode(owner *App, ctx context.Context, synchronous boo
 	sessionApp.localizer = owner.localizer
 	owner.i18nMu.RUnlock()
 
-	session := &metadataSession{app: sessionApp, ctx: ctx, synchronous: synchronous}
+	session := &metadataSession{app: sessionApp, ctx: ctx, synchronous: synchronous, flightScope: nextMetadataSessionFlightScope()}
 	sessionApp.metadataSession = session
 	return session
 }

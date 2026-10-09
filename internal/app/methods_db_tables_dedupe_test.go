@@ -20,7 +20,9 @@ func TestDBGetTablesDeduplicatesOnlyExactMetadataNamesAtAppBoundary(t *testing.T
 		"LDF_SERVER.LDF_APPLICATION_TYPE",
 	}}
 	application := NewApp()
-	application.dbCache[getCacheKey(config)] = cachedDatabase{
+	// DBGetTables 走元数据通道，缓存 key 带通道后缀。仍按查询通道的裸 key 预热会让
+	// 这次调用未命中缓存，转而去真连 localhost:3306（用例本意只想验证去重，不建连）。
+	application.dbCache[getCacheKey(config)+metadataLaneSuffixForConfig(config)] = cachedDatabase{
 		inst:     database,
 		lastPing: time.Now(),
 		config:   config,

@@ -83,7 +83,6 @@ func (a *App) DBGetDatabases(config connection.ConnectionConfig) connection.Quer
 	for _, name := range dbs {
 		resData = append(resData, map[string]string{"Database": name})
 	}
-
 	return connection.QueryResult{Success: true, Data: resData}
 }
 
@@ -138,16 +137,34 @@ func (a *App) DBGetTables(config connection.ConnectionConfig, dbName string) con
 		return connection.QueryResult{Success: true, Data: resData, ScannedCount: len(tables)}
 	}
 
-	dbInst, err := a.getDatabase(runConfig)
+	// 元数据通道：与用户查询分属两条物理连接，避免逐表补全占满查询连接池。
+	dbInst, err := a.getMetadataDatabase(runConfig)
 	if err != nil {
 		logger.Error(err, "DBGetTables 获取连接失败：%s", formatConnSummary(runConfig))
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
-	tables, err := dbInst.GetTables(dbName)
+	// 表清单缓存：只缓存 GetTables 本身，行数与存储大小仍在下面实时查（它们随写入
+	// 变化，缓存会让侧栏数字长期不更新）。fetch 闭包返回副本，避免驱动复用切片时
+	// 改写到缓存里的同一块内存。
+	tablesMetaKey := a.buildMetadataCacheKey(runConfig, dbName, metadataCacheKindTables)
+	rawTables, err := a.metadataCacheFetch(tablesMetaKey, func() (interface{}, error) {
+		fetched, fetchErr := dbInst.GetTables(dbName)
+		if fetchErr != nil {
+			// 错误与表列表可能同时返回（Pulsar 主题发现不完整）：原样透传，
+			// tableMetadataErrorResult 需要用它渲染降级提示。
+			return fetched, fetchErr
+		}
+		return append([]string(nil), fetched...), nil
+	})
+	var tables []string
+	if rawTables != nil {
+		tables, _ = rawTables.([]string)
+	}
 	if err != nil && shouldRefreshCachedConnection(err) {
-		if a.invalidateCachedDatabase(runConfig, err) {
-			retryInst, retryErr := a.getDatabaseForcePing(runConfig)
+		if a.invalidateMetadataDatabase(runConfig, err) {
+			a.metadataCacheDelete(tablesMetaKey)
+			retryInst, retryErr := a.getMetadataDatabaseForcePing(runConfig)
 			if retryErr != nil {
 				logger.Error(retryErr, "DBGetTables 重建连接失败：%s", formatConnSummary(runConfig))
 				return connection.QueryResult{Success: false, Message: retryErr.Error()}
@@ -518,7 +535,8 @@ func (a *App) DBGetViews(config connection.ConnectionConfig, dbName string) conn
 func (a *App) DBGetIndexes(config connection.ConnectionConfig, dbName string, tableName string) connection.QueryResult {
 	runConfig := normalizeMetadataRunConfig(config, dbName)
 
-	dbInst, err := a.getDatabase(runConfig)
+	// 索引查询走元数据通道：它和列查询一样属于逐表补全，量级与表数成正比。
+	dbInst, err := a.getMetadataDatabase(runConfig)
 	if err != nil {
 		logger.Error(err, "DBGetIndexes 获取连接失败：%s 表=%s.%s", formatConnSummary(runConfig), dbName, tableName)
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -527,8 +545,8 @@ func (a *App) DBGetIndexes(config connection.ConnectionConfig, dbName string, ta
 	schemaName, pureTableName := normalizeMetadataSchemaAndTable(config, dbName, tableName)
 	indexes, err := dbInst.GetIndexes(schemaName, pureTableName)
 	if err != nil && shouldRefreshCachedConnection(err) {
-		if a.invalidateCachedDatabase(runConfig, err) {
-			retryInst, retryErr := a.getDatabaseForcePing(runConfig)
+		if a.invalidateMetadataDatabase(runConfig, err) {
+			retryInst, retryErr := a.getMetadataDatabaseForcePing(runConfig)
 			if retryErr != nil {
 				logger.Error(retryErr, "DBGetIndexes 重建连接失败：%s 表=%s.%s", formatConnSummary(runConfig), dbName, tableName)
 				return connection.QueryResult{Success: false, Message: retryErr.Error()}

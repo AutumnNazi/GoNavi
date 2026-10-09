@@ -640,6 +640,8 @@ export function ReadSQLFile(arg1:string):Promise<connection.QueryResult>;
 
 export function RebindSavedQuery(arg1:string,arg2:string):Promise<connection.SavedQuery>;
 
+export function ReclaimMemory():Promise<connection.QueryResult>;
+
 export function RedisConnect(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
 
 export function RedisDeleteHashField(arg1:connection.ConnectionConfig,arg2:string,arg3:any):Promise<connection.QueryResult>;

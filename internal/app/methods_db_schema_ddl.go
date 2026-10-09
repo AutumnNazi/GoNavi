@@ -164,6 +164,9 @@ func (a *App) CreateSchema(config connection.ConnectionConfig, dbName string, sc
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
+	// 库名要用解析后的 targetDbName：dbName 为空时它是 config.Database，
+	// 与元数据缓存键所用的库名一致。
+	a.invalidateMetadata(config, targetDbName)
 	return connection.QueryResult{Success: true, Message: a.appText("db.backend.message.schema_created", nil)}
 }
 
@@ -192,6 +195,7 @@ func (a *App) RenameSchema(config connection.ConnectionConfig, dbName string, ol
 	if _, err := dbInst.Exec(query); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
+	a.invalidateMetadata(config, targetDbName)
 	return connection.QueryResult{Success: true, Message: a.appText("db.backend.message.schema_renamed", nil)}
 }
 
@@ -220,5 +224,6 @@ func (a *App) DropSchema(config connection.ConnectionConfig, dbName string, sche
 	if _, err := dbInst.Exec(query); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
+	a.invalidateMetadata(config, targetDbName)
 	return connection.QueryResult{Success: true, Message: a.appText("db.backend.message.schema_dropped", nil)}
 }
