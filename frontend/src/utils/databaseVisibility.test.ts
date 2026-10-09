@@ -161,4 +161,56 @@ describe('database visibility rules', () => {
     resolveIncludeDatabasesAfterRemoval(source, [], 'audit');
     expect(source.includeDatabases).toEqual(['audit']);
   });
+
+  it('matches database names case-insensitively when the data source says so', () => {
+    // IRIS/Caché 的契约声明 schemaIdentifierCaseSensitive=false：服务端把命名空间
+    // 规范化成大写（USER），而用户在「数据库显示范围」里手输的往往是小写。精确匹配
+    // 若仍区分大小写，唯一返回的库会被整体滤掉，侧栏只剩「未返回可见数据库或结构」。
+    const iris = { includeDatabases: ['user'], config: { type: 'iris' } };
+    const cache = { includeDatabases: ['user'], config: { type: 'cache' } };
+
+    expect(isDatabaseVisible(iris, 'USER')).toBe(true);
+    expect(filterVisibleDatabaseNames(iris, ['USER'])).toEqual(['USER']);
+    expect(isDatabaseVisible(cache, 'USER')).toBe(true);
+    expect(filterVisibleDatabaseNames(cache, ['USER'])).toEqual(['USER']);
+
+    // 反向也成立：白名单存大写、服务端返回小写。
+    expect(isDatabaseVisible({ includeDatabases: ['USER'], config: { type: 'iris' } }, 'user')).toBe(true);
+
+    // 过滤只判断可见性，返回的仍是服务端原始名字，不改成白名单的大小写。
+    expect(filterVisibleDatabaseNames({ includeDatabases: ['gonaviiris'], config: { type: 'iris' } }, ['GONAVIIRIS']))
+      .toEqual(['GONAVIIRIS']);
+
+    // exclude 通配符同样跟随该语义。
+    expect(isDatabaseVisible({ excludeDatabasePatterns: ['sys*'], config: { type: 'iris' } }, 'SYSLOG')).toBe(false);
+  });
+
+  it('keeps exact matching case-sensitive for case-sensitive data sources', () => {
+    // PostgreSQL 声明 schemaIdentifierCaseSensitive=true，必须保持原样：库名大小写不同
+    // 就是不同的库，放宽会让用户看到本不该出现的库。
+    const postgres = { includeDatabases: ['user'], config: { type: 'postgres' } };
+    expect(isDatabaseVisible(postgres, 'USER')).toBe(false);
+    expect(isDatabaseVisible(postgres, 'user')).toBe(true);
+    expect(filterVisibleDatabaseNames(postgres, ['USER', 'user'])).toEqual(['user']);
+  });
+
+  it('defaults to case-sensitive matching when no connection config is given', () => {
+    // 缺省必须保持历史行为，避免影响没带 config 的调用方（例如 redis 合成的可见性对象）。
+    expect(isDatabaseVisible({ includeDatabases: ['user'] }, 'USER')).toBe(false);
+    expect(isDatabaseVisible({ includeDatabases: ['user'] }, 'user')).toBe(true);
+    expect(matchesDatabasePattern('USER', 'user')).toBe(false);
+  });
+
+  it('applies the same case semantics to rename and removal bookkeeping', () => {
+    const iris = { includeDatabases: ['user'], config: { type: 'iris' } };
+
+    // 重命名按不区分大小写命中，并保留用户输入的写法。
+    expect(moveExactDatabaseVisibilityEntry(iris, 'USER', 'USER2')).toEqual(['USER2']);
+    // 删除最后一项时返回空数组（而非 undefined），删除路径据此落回「不过滤」。
+    expect(removeExactDatabaseVisibilityEntry(iris, 'USER')).toEqual([]);
+
+    // 区分大小写的数据源不受影响。
+    const postgres = { includeDatabases: ['user'], config: { type: 'postgres' } };
+    expect(removeExactDatabaseVisibilityEntry(postgres, 'USER')).toEqual(['user']);
+  });
 });
