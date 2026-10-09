@@ -6,7 +6,18 @@ import { message } from 'antd';
 import type { SavedConnection } from '../../types';
 import { buildSidebarDatabasePinKey } from '../../store';
 import { t } from '../../i18n';
-import { useSidebarTreeLoaders } from './useSidebarTreeLoaders';
+import { useSidebarTreeLoaders as useCurrentSidebarTreeLoaders, type UseSidebarTreeLoadersOptions } from './useSidebarTreeLoaders';
+import { useSidebarTableLoader } from './useSidebarTableLoader';
+import { useSidebarTreeLoadState } from './useSidebarTreeLoadState';
+
+// These complete-catalog fixtures retain coverage of the shared builder and legacy sources.
+// The schema entry point and its progressive refills are exercised in useSidebarSchemaLoader.test.tsx.
+const useSidebarTreeLoaders = (options: UseSidebarTreeLoadersOptions) => {
+  const loaders = useCurrentSidebarTreeLoaders(options);
+  const loadState = useSidebarTreeLoadState({ loadingNodesRef: options.loadingNodesRef });
+  const { loadTables } = useSidebarTableLoader({ ...options, ...loadState, onDatabaseTreeLoaded: options.onDatabaseTreeLoaded });
+  return { ...loaders, loadTables };
+};
 
 const mocks = vi.hoisted(() => ({
   dbGetDatabases: vi.fn(),
