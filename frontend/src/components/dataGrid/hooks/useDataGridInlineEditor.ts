@@ -11,6 +11,7 @@ import {
     looksLikeJsonText,
 } from '../../DataGridCore';
 import { isWritableResultColumn } from '../../../utils/rowLocator';
+import { isTruncatedPreviewValue } from '../../../utils/dataGridTruncatedValue';
 import {
     formatJsonCellText,
     compactJsonCellText,
@@ -21,6 +22,7 @@ import { getTemporalPickerType, parseToDayjs } from '../../dataGridTemporal';
 import { useDataGridPreviewPanel } from '../../useDataGridPreviewPanel';
 import { useReportDataGridPendingChanges } from '../../useControllableDataGridSelection';
 import { pickDataGridOutputRows } from '../../dataGridOutput';
+import { buildDataGridIncrementalFingerprint } from '../dataGridChangeFingerprint';
 import type { DataGridCellEditorStateApi } from './useDataGridCellEditorState';
 import type { DataGridCellEditingApi } from './useDataGridCellEditing';
 import type { DataGridTableMetricsApi } from './useDataGridTableMetrics';
@@ -170,6 +172,14 @@ export const useDataGridInlineEditor = ({
             closeCellEditor();
             return;
         }
+        // 截断预览值禁写回：当前格的值是后端截断预览时，前端从未持有完整值，
+        // 任何写入都会把「预览标记 + 截断片段」当成新值覆盖数据库原始 LOB，
+        // 因此直接拦在提交前（后端提交路径不做校验）。
+        if (isTruncatedPreviewValue(cellEditorMeta.record?.[cellEditorMeta.dataIndex])) {
+            void message.warning(translateDataGrid('data_grid.message.truncated_cell_readonly'));
+            closeCellEditor();
+            return;
+        }
         const apply = cellEditorApplyRef.current;
         if (apply) {
             apply(cellEditorValue);
@@ -291,6 +301,10 @@ export const useDataGridInlineEditor = ({
     // 'displayData' already merges addedRows.
     // We need to merge modifiedRows into it for rendering.
     const mergedDisplayData = useMemo(() => {
+        // 无修改且无删除时直接复用 displayData 引用：10W+ 行下每次全量 map 会产生
+        // 同等数量的临时对象，既放大 GC 压力，又会击穿下游依赖行引用的 memo。
+        const hasModifications = Object.keys(modifiedRows).length > 0 || deletedRowKeys.size > 0;
+        if (!hasModifications) return displayData;
         return displayData.map(row => {
             const k = row?.[GONAVI_ROW_KEY];
             const keyStr = k !== undefined ? rowKeyStr(k) : undefined;
@@ -337,6 +351,11 @@ export const useDataGridInlineEditor = ({
             void message.info(translateDataGrid('data_grid.message.current_field_not_editable'));
             return false;
         }
+        // 截断预览值禁写回：面板里显示的同样是后端截断预览，写回会覆盖数据库原始 LOB。
+        if (isTruncatedPreviewValue(focusedCellInfo.record?.[focusedCellInfo.dataIndex])) {
+            void message.warning(translateDataGrid('data_grid.message.truncated_cell_readonly'));
+            return false;
+        }
         // 与 updateFocusedCell 设置的原始值比较，避免幽灵变更
         if (dataPanelValue === dataPanelOriginalRef.current) {
             dataPanelDirtyRef.current = false;
@@ -351,6 +370,9 @@ export const useDataGridInlineEditor = ({
         return true;
     }, [focusedCellInfo, focusedCellWritable, dataPanelValue, handleCellSave, translateDataGrid]);
     const lastReportedDataFingerprintRef = useRef('');
+    // 记录上次上报时的 displayData 引用：引用变化必然是新查询/翻页，直接上报，
+    // 无需再走指纹计算（省掉大结果集上的一次全量/抽样序列化）。
+    const lastReportedDisplayDataRef = useRef(displayData);
     useEffect(() => {
         if (!onDataChange) return;
         const currentRows = mergedDisplayData.filter((row) => {
@@ -360,11 +382,24 @@ export const useDataGridInlineEditor = ({
         // A hidden column is still part of the result snapshot. Only presentation
         // uses displayOutputColumnNames; detach/attach state must keep full rows.
         const outputRows = pickDataGridOutputRows(currentRows, dataChangeOutputColumnNames);
-        const fingerprint = JSON.stringify(outputRows);
-        if (fingerprint === lastReportedDataFingerprintRef.current) return;
-        lastReportedDataFingerprintRef.current = fingerprint;
+        const displayDataChanged = !Object.is(lastReportedDisplayDataRef.current, displayData);
+        lastReportedDisplayDataRef.current = displayData;
+        if (displayDataChanged) {
+            // 新查询/翻页：必然是新数据，跳过指纹计算直接上报。
+            lastReportedDataFingerprintRef.current = '';
+        } else {
+            // 行内编辑/删除行：用增量指纹判重，避免大结果集全量 JSON.stringify。
+            const fingerprint = buildDataGridIncrementalFingerprint(
+                outputRows,
+                modifiedRows,
+                deletedRowKeys,
+                dataChangeOutputColumnNames,
+            );
+            if (fingerprint === lastReportedDataFingerprintRef.current) return;
+            lastReportedDataFingerprintRef.current = fingerprint;
+        }
         onDataChange(outputRows);
-    }, [dataChangeOutputColumnNames, deletedRowKeys, mergedDisplayData, onDataChange, rowKeyStr]);
+    }, [dataChangeOutputColumnNames, deletedRowKeys, displayData, mergedDisplayData, modifiedRows, onDataChange, rowKeyStr]);
 
     const dataSourceContextKey = useMemo(
         () => `${connectionId || ''}\u0001${dbName || ''}\u0001${tableName || ''}\u0001${resolvedDdlDbName || ''}\u0001${resolvedDdlTableName || ''}\u0001${connectionParamsOverride || ''}`,

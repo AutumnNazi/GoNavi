@@ -29,6 +29,7 @@ import {
 } from '../../../../wailsjs/go/app/App';
 import { buildRpcConnectionConfig } from '../../../utils/connectionRpcConfig';
 import { invokeBudgetedDBQueryMulti, expandCompactQueryResult } from '../queryResultTransport';
+import { capResultSets } from '../../../utils/boundedResultSets';
 import type { QueryEditorCoreStateApi } from './useQueryEditorCoreState';
 import type { QueryEditorDraftSyncApi } from './useQueryEditorDraftSync';
 import type { QueryEditorConnectionContextApi } from './useQueryEditorConnectionContext';
@@ -102,18 +103,29 @@ export const useQueryEditorResultSetModel = ({
 
     const mergeResultSets = (previous: QueryEditorResultSet[], next: QueryEditorResultSet[], replaceAll: boolean): QueryEditorResultSet[] => {
         const merged = replaceAll ? previous.filter((result) => result.pinned) : [...previous];
+        // 本次执行产出/复用的 key：作为裁剪豁免，保证 activateExecutedResult 仍能在结果里
+        // 找到刚跑完的那条（否则刚执行完的结果会被当最旧项裁掉，激活 key 悬空）。
+        const touchedKeys: string[] = [];
         next.forEach((result) => {
             const incomingKey = buildResultSetMergeKey(result);
             const existingIndex = merged.findIndex(
                 (item) => !item.pinned && buildResultSetMergeKey(item) === incomingKey,
             );
             if (existingIndex >= 0) {
-                merged[existingIndex] = { ...result, key: merged[existingIndex].key, pinned: false };
+                const reusedKey = merged[existingIndex].key;
+                merged[existingIndex] = { ...result, key: reusedKey, pinned: false };
+                touchedKeys.push(reusedKey);
                 return;
             }
-            merged.push({ ...result, key: `result-${resolveNextResultSetIndex(merged)}`, pinned: false });
+            const nextKey = `result-${resolveNextResultSetIndex(merged)}`;
+            merged.push({ ...result, key: nextKey, pinned: false });
+            touchedKeys.push(nextKey);
         });
-        return merged;
+        // 同步裁剪：useQueryEditorResultHistoryBudget 是 effect 阶段的三维预算裁剪，这里是
+        // 同一语义的合并期守卫，两者共用 pinned/hasPendingChanges/保护 key 的豁免规则，
+        // 因此不会互相拉扯；上界不再依赖 effect 是否被触发。
+        const protectedKeys: string[] = [activeResultKeyRef.current, ...touchedKeys].filter(Boolean);
+        return capResultSets(merged, { protectedKeys }).items;
     };
 
     const clearUnpinnedResultSets = (fallbackActiveKey = ''): QueryEditorResultSet[] => {

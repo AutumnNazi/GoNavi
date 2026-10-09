@@ -159,7 +159,12 @@ export const useDataGridColumnTitles = ({
             ? data.map((row) => normalizeMongoDocumentForEditing(row))
             : data
     ), [data, isMongoDBConnection]);
-    const rowsBeforeClientFilter = useMemo(() => [...baseData, ...addedRows], [addedRows, baseData]);
+    // 无新增行时直接复用 baseData 引用：省一次全量数组浅拷贝，并保持引用稳定，
+    // 避免下游依赖 rowsBeforeClientFilter 的 memo 在无关重渲染时全部重算。
+    const rowsBeforeClientFilter = useMemo(
+        () => (addedRows.length > 0 ? [...baseData, ...addedRows] : baseData),
+        [addedRows, baseData],
+    );
     const getCurrentColumnValueCounts = useMemo(() => {
         const cache = new Map<string, ReturnType<typeof countGridColumnValues>>();
         return (columnName: string) => {
