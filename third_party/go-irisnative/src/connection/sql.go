@@ -15,6 +15,15 @@ import (
 const timeLaylout = "2006-01-02 15:04:05.000000000"
 const timeLayloutShort = "2006-01-02 15:04:05"
 
+// maxResultRows 是每条直接查询向服务端声明的行数上限。
+//
+// 不用 0（不限）：0 的语义随服务端版本而异，依赖它会让取数循环的行为不可预期。
+// 也不用 200：旧代次服务端把它当硬上限，而 INFORMATION_SCHEMA 的系统表按字母序排在
+// 最前，元数据查询会在拿到用户表之前就被截断（issue #1430）。取一个远高于 GoNavi
+// 自身 50000 行预算的值，让预算先触发并如实上报截断，既不静默丢数据，也不依赖
+// 服务端对 0 的解释。
+const maxResultRows = 100000
+
 type StatementFeature struct {
 	featureOption   int
 	msgCount        int
@@ -411,12 +420,12 @@ func (c *Connection) DirectQuery(sqlText string, args ...interface{}) (*ResultSe
 	msg.SetSQLText(sqlText)
 	writeParameters(&msg, args...)
 	msg.Set(10) // Query timeout
-	// Max rows 传 0 表示不限制。旧代次服务端（Caché 2018.1、IRIS 2023.1.x）把这个
-	// 字段当硬上限：传 200 时 INFORMATION_SCHEMA.TABLES 只会回前 200 行，而系统表
-	// 按字母序排在最前，用户表全被挡在窗口外，元数据树因此为空。新代次服务端（IRIS
-	// 2026.1）本来就不遵守它。限量交给 GoNavi 自己的行预算，它按行数与字节数截断
-	// 并如实上报 truncated，不会静默丢数据。
-	msg.Set(0) // Max rows
+	// Max rows 用一个有限大值，而不是 0。旧代次服务端把这个字段当硬上限：传 200 时
+	// INFORMATION_SCHEMA.TABLES 只回前 200 行，而系统表按字母序排在最前，用户表全被
+	// 挡在窗口外，元数据树因此为空（issue #1430）。但也不能传 0：0 的语义随服务端版本
+	// 而异，依赖它会让取数循环的行为不可预期。100000 远高于 GoNavi 自己的 50000 行预算，
+	// 预算会先触发并如实上报截断，不会静默丢数据。
+	msg.Set(maxResultRows) // Max rows
 
 	_, err := c.conn.Write(msg.Dump(c.count()))
 	if err != nil {

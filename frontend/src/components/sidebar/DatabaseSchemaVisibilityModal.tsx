@@ -162,7 +162,7 @@ export const DatabaseSchemaVisibilityModal: React.FC<DatabaseSchemaVisibilityMod
     void refreshDatabases(false);
   }, [initialDatabase, open]);
 
-  const loadDatabaseSchemas = useCallback(async (database: string, force = false) => {
+  const loadDatabaseSchemas = useCallback(async (database: string, force = false, selectAll = false) => {
     if (!supportsSchemas) return;
     const current = schemaSnapshots[database];
     if (!force && (current?.status === 'loading' || current?.status === 'loaded')) return;
@@ -189,9 +189,8 @@ export const DatabaseSchemaVisibilityModal: React.FC<DatabaseSchemaVisibilityMod
         database,
         databaseCaseSensitive,
       )?.[1];
-      setSchemaSnapshots((previous) => ({
-        ...previous,
-        [database]: result.supported
+      setSchemaSnapshots((previous) => {
+        const nextSnapshot = result.supported
           ? mergeSchemaSelectionAfterRefresh(
             previous[database],
             rule,
@@ -199,11 +198,19 @@ export const DatabaseSchemaVisibilityModal: React.FC<DatabaseSchemaVisibilityMod
             schemaCaseSensitive,
           )
           : {
-            status: result.failureMessage ? 'error' : 'unsupported',
+            status: result.failureMessage ? 'error' as const : 'unsupported' as const,
             availableSchemas: previous[database]?.availableSchemas || [],
             selectedSchemas: previous[database]?.selectedSchemas || [],
-          },
-      }));
+          };
+        return {
+          ...previous,
+          // 点父节点时要求「该库下全部 schema 一起选中」：加载完成后直接全选，
+          // 否则父节点会停在 indeterminate，看起来点不动。
+          [database]: selectAll && nextSnapshot.status === 'loaded'
+            ? { ...nextSnapshot, selectedSchemas: [...nextSnapshot.availableSchemas] }
+            : nextSnapshot,
+        };
+      });
       if (result.failureMessage) {
         message.warning(result.failureMessage);
       }
@@ -244,8 +251,24 @@ export const DatabaseSchemaVisibilityModal: React.FC<DatabaseSchemaVisibilityMod
       else next.delete(database);
       return candidates.map((candidate) => candidate.name).filter((name) => next.has(name));
     });
-    if (checked && supportsSchemas) void loadDatabaseSchemas(database);
-  }, [candidates, loadDatabaseSchemas, supportsSchemas]);
+    if (!checked || !supportsSchemas) return;
+    // 勾父节点 = 该库下全部 schema 一起选中。
+    //
+    // 只把库名加进选中集是不够的：只要用户此前勾过部分 schema，父节点就会停在
+    // indeterminate；再次点击时选中集毫无变化，复选框外观也不变，用户看到的是
+    // 「父节点点不动」。所以已加载的快照直接全选，未加载的交给加载流程带上全选意图。
+    const snapshot = schemaSnapshots[database];
+    if (snapshot?.status === 'loaded') {
+      setSchemaSnapshots((previous) => ({
+        ...previous,
+        [database]: snapshot.availableSchemas.length === 0
+          ? { ...snapshot, selectedSchemas: [] }
+          : { ...snapshot, selectedSchemas: [...snapshot.availableSchemas] },
+      }));
+      return;
+    }
+    void loadDatabaseSchemas(database, true, true);
+  }, [candidates, loadDatabaseSchemas, schemaSnapshots, supportsSchemas]);
 
   const toggleSchema = useCallback((
     database: string,

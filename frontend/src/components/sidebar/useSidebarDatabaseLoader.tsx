@@ -425,13 +425,23 @@ export const useSidebarDatabaseLoader = ({
                   const dbRows: any[] = Array.isArray(res.data) ? res.data : [];
                   const returnedDatabaseNames = dbRows
                       .map((row: any) => row.Database || row.database)
-                      .filter((name: unknown): name is string => typeof name === 'string' && name.length > 0);
+                      .filter((name: unknown): name is string => typeof name === 'string' && name.trim().length > 0);
                   const visibleDatabaseNames = filterVisibleDatabaseNames(
                       currentConnection,
                       returnedDatabaseNames,
                   );
-  
-                  const databaseNames = dedupeTrimmedDatabaseNames(visibleDatabaseNames);
+
+                  // 显示范围把后端返回的库一个不剩地滤掉时，不可能是用户的意图：那只会
+                  // 让这个连接永久打不开。历史遗留的白名单指向已不存在或改了大小写的库名
+                  // 时就会这样（服务端返回 USER、白名单里却是别的库），此时放行后端返回的
+                  // 全部库，并提示范围需要调整，而不是留一个点不开的连接。
+                  const scopeHidEveryDatabase = returnedDatabaseNames.length > 0
+                      && visibleDatabaseNames.length === 0;
+                  const effectiveDatabaseNames = scopeHidEveryDatabase
+                      ? returnedDatabaseNames
+                      : visibleDatabaseNames;
+
+                  const databaseNames = dedupeTrimmedDatabaseNames(effectiveDatabaseNames);
                   const messageQueueProfile = resolveSidebarMessageQueueProfile(
                       currentConnection.config,
                   );
@@ -477,6 +487,16 @@ export const useSidebarDatabaseLoader = ({
   
               if (dbs.length > 0) {
                   replaceTreeNodeChildren(node.key, dbs, currentConnection);
+                  if (scopeHidEveryDatabase) {
+                      // 库渲染出来了，但这是兜底放行的结果：显示范围仍然配错着，用户下次
+                      // 保存范围时会再次踩到。提示他去掉那条对不上的白名单。
+                      message.warning({
+                          content: t('sidebar.message.databases_filtered_by_scope', {
+                              count: returnedDatabaseNames.length,
+                          }),
+                          key: `conn-${currentConnection.id}-dbs`,
+                      });
+                  }
               } else {
                   // 空列表：清理 loadedKeys 以允许重新加载，不设置 children = []
                   setLoadedKeys(prev => prev.filter(k => k !== node.key));
@@ -491,17 +511,8 @@ export const useSidebarDatabaseLoader = ({
                           content: t('sidebar.message.elasticsearch_no_indices'),
                           key: `conn-${currentConnection.id}-dbs`,
                       });
-                  } else if (returnedDatabaseNames.length > 0) {
-                      // 后端返回了库/命名空间，却被该连接的「数据库显示范围」全部滤掉。
-                      // 这两种空的处置完全不同：前者要查权限或服务端，后者只需调整显示范围，
-                      // 所以不能共用一条「请检查账号权限」的提示把人引错方向。
-                      message.warning({
-                          content: t('sidebar.message.databases_filtered_by_scope', {
-                              count: returnedDatabaseNames.length,
-                          }),
-                          key: `conn-${currentConnection.id}-dbs`,
-                      });
                   } else {
+                      // 走到这里说明后端确实一个库都没返回，才该提示查账号权限或服务端。
                       message.warning({
                           content: t('sidebar.message.no_visible_databases'),
                           key: `conn-${currentConnection.id}-dbs`,
