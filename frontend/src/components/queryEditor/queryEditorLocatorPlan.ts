@@ -17,6 +17,11 @@ import { getColumnDefinitionName, getColumnDefinitionKey } from '../../utils/col
 import { buildIndexedColumnMetadata } from '../dataGridColumnTypeMarker';
 import { t as translate } from '../../i18n';
 import {
+    getLocatorMetaCacheKey,
+    getLocatorMetaCached,
+    setLocatorMetaCached,
+} from '../../utils/queryLocatorMetaCache';
+import {
     type QueryStatementPlan,
     isSystemMetadataQueryResult,
     buildQueryReadOnlyLocator,
@@ -101,17 +106,52 @@ export const resolveQueryLocatorPlan = async ({
             plan.tableRef = tableRef;
         }
 
-        const [resCols, resIndexes] = await Promise.all([
-            withSoftTimeout(
-                DBGetColumns(buildRpcConnectionConfig(config) as any, tableRef.metadataDbName, tableRef.metadataTableName),
-                () => ({ success: false, message: 'Timed out while loading columns', data: [] }),
-            ),
-            withSoftTimeout(
-                DBGetIndexes(buildRpcConnectionConfig(config) as any, tableRef.metadataDbName, tableRef.metadataTableName)
-                    .catch((error: any) => ({ success: false, message: String(error?.message || error || 'Failed to load indexes'), data: [] })),
-                () => ({ success: false, message: 'Timed out while loading indexes', data: [] }),
-            ),
-        ]);
+        // 元数据 TTL 缓存叠加：
+        // 命中 → 直接用快照，省掉 DBGetColumns + DBGetIndexes 两次 IPC；
+        // 未命中 → 仍走下面的两次调用，且**保留** withSoftTimeout 软超时兜底
+        //（缓存不是替换它：超时语义与「执行不被元数据拖死」的保证完全不变）。
+        const locatorMetaKey = getLocatorMetaCacheKey(
+            config,
+            tableRef.metadataDbName,
+            tableRef.metadataTableName,
+        );
+        const cachedMeta = getLocatorMetaCached(locatorMetaKey);
+        let resCols: any;
+        let resIndexes: any;
+        if (cachedMeta) {
+            resCols = cachedMeta.columns
+                ? { success: true, data: cachedMeta.columns }
+                : { success: false, message: 'columns not cached', data: [] };
+            resIndexes = cachedMeta.indexes
+                ? { success: true, data: cachedMeta.indexes }
+                : { success: false, message: 'indexes not cached', data: [] };
+        } else {
+            const [freshCols, freshIndexes] = await Promise.all([
+                withSoftTimeout(
+                    DBGetColumns(buildRpcConnectionConfig(config) as any, tableRef.metadataDbName, tableRef.metadataTableName),
+                    () => ({ success: false, message: 'Timed out while loading columns', data: [] }),
+                ),
+                withSoftTimeout(
+                    DBGetIndexes(buildRpcConnectionConfig(config) as any, tableRef.metadataDbName, tableRef.metadataTableName)
+                        .catch((error: any) => ({ success: false, message: String(error?.message || error || 'Failed to load indexes'), data: [] })),
+                    () => ({ success: false, message: 'Timed out while loading indexes', data: [] }),
+                ),
+            ]);
+            resCols = freshCols;
+            resIndexes = freshIndexes;
+            // 只在列元数据确实成功时写缓存：软超时/失败返回 success:false，
+            // 写进去会把一次失败固化成 120s 内的持续失败。
+            // 索引失败时照写（indexes 置空），宁可退化到「全列定位」也不要丢掉列缓存；
+            // 该退化窗口由 120s TTL + DDL 失效钩子收敛。
+            if (freshCols?.success && Array.isArray(freshCols.data)) {
+                setLocatorMetaCached(locatorMetaKey, {
+                    columns: freshCols.data as ColumnDefinition[],
+                    indexes: freshIndexes?.success && Array.isArray(freshIndexes.data)
+                        ? freshIndexes.data as IndexDefinition[]
+                        : undefined,
+                });
+            }
+        }
         if (!resCols?.success || !Array.isArray(resCols.data)) {
             plan.editLocator = buildAllColumnsLocator([], { translate });
             return plan;

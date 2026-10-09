@@ -10,6 +10,7 @@ import { clearQueryTabDraft, clearSQLFileTabDraft } from '../utils/sqlFileTabDra
 import { clearQueryEditorInlineRuntimeReadinessCache } from './queryEditor/QueryEditorAiAssist';
 import { resetDatabaseServerVersionCache } from './queryEditor/queryEditorServerVersion';
 import { clearQueryEditorSessionMetadata } from './queryEditor/metadata/queryEditorSessionMetadataStore';
+import { clearLocatorMetaCache } from '../utils/queryLocatorMetaCache';
 import { resetTableMetadataRequestCacheForTests } from '../utils/tableMetadataRequestCache';
 import {
     mountedRenderers,
@@ -35,6 +36,11 @@ export const setUpQueryEditorExternalSqlSaveTest = () => {
     resetDatabaseServerVersionCache();
     clearQueryEditorSessionMetadata();
     resetTableMetadataRequestCacheForTests();
+    // 行定位元数据缓存是模块级、跨用例存活的：同文件里的用例经常共用同一张表却 mock 不同的
+    // DBGetColumns/DBGetIndexes 结果（用例 fixture 的 config 里没有 id，连接段退化成
+    // type/host/port/user，所有用例塌成同一个 key）。不在每个用例前清空，先跑的用例的
+    // 快照会串给后跑者，断言随之错位。
+    clearLocatorMetaCache();
     clearQueryEditorInlineRuntimeReadinessCache();
     const completionState = (globalThis as any).__gonaviSqlCompletionState;
     if (completionState) {

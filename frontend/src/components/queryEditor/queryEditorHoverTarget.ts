@@ -40,6 +40,23 @@ import { getNormalizedPositionAtOffset } from './queryEditorEditorState';
 import { splitCompletionSchemaAndTable } from './queryEditorCompletionMetadata';
 import { resolveQueryEditorNavigationTarget } from './queryEditorNavigationTarget';
 import { collectQueryEditorTableReferences } from './queryEditorTableReferences';
+import { resolveBoundedSqlStatementContext } from './queryEditorBoundedStatementContext';
+
+/**
+ * 统计 offset 之前的 `\r\n` 对数。
+ *
+ * resolveBoundedSqlStatementContext 内部会把 `\r\n` 归一化成 `\n`，但不调整传入的 offset；
+ * CRLF 文档上直接传原始 offset 会按行数累积漂移（每行多算 1 个字符），窗口起点会切错位置。
+ * 这里只数 `\r\n`（不数单独的 `\r`），与归一化实际剔除的字符严格对应。
+ */
+const countCrlfPairsBeforeOffset = (text: string, offset: number): number => {
+    const limit = Math.max(0, Math.min(text.length, offset));
+    let pairs = 0;
+    for (let index = text.indexOf('\r\n'); index >= 0 && index < limit; index = text.indexOf('\r\n', index + 2)) {
+        pairs += 1;
+    }
+    return pairs;
+};
 
 export const resolveQueryEditorHoverTarget = (
     fullText: string,
@@ -446,9 +463,37 @@ export const resolveQueryEditorHoverTarget = (
         }
     }
 
+    // 别名表与表引用扫描只在「光标所在语句」范围内进行（有界扫描）。
+    //
+    // 旧实现拿调用方给的 fullText 直接扫：大文档下每次 hover 都要对整篇做一遍别名正则 +
+    // 表引用收集（此时文档早已超过 getQueryEditorObjectResolveText 的 200_000 字符上限，
+    // 上限只是兜底，成本仍随体积线性增长）。这里复用补全半边已建的 resolveBoundedSqlStatementContext：
+    // 只取「向上 200 行 / 向下 100 行、遇空行或分号截断」的当前语句文本，扫描量不再随文档增长。
+    //
+    // 延迟到首次使用时才算：上文多数分支（三段式限定列、表匹配等）会在用到之前就 return，
+    // 提前算等于给每次 hover 白送一次窗口扫描。
+    let boundedScanText: string | null = null;
+    const resolveHoverScanText = (): string => {
+        if (boundedScanText !== null) return boundedScanText;
+        boundedScanText = fullText;
+        // documentContext 是唯一能把「行列 + offset」映射到 fullText 的坐标系来源；
+        // 缺失时（例如直接按单行调用）不猜 offset，保持原全文行为，避免切错语句。
+        if (documentText && Number.isFinite(documentOffset)) {
+            // 归一化会剔除 \r\n 里的 \r 但不改 offset，先按同样的口径把 offset 折到归一化坐标系。
+            const normalizedOffset = documentOffset - countCrlfPairsBeforeOffset(documentText, documentOffset);
+            const bounded = resolveBoundedSqlStatementContext(documentText, normalizedOffset, dialect);
+            // 窗口内定位不到语句（例如光标停在注释/空白区）时退回原文，
+            // 否则别名解析会因为拿到空文本而整体失效——那比多扫一点更糟。
+            if (bounded.referenceText) {
+                boundedScanText = bounded.referenceText;
+            }
+        }
+        return boundedScanText;
+    };
+
     if (parts.length === 2) {
         const [firstPart, secondPart] = parts;
-        const resolvedAliasMap = aliasMap || buildQueryEditorAliasMap(fullText, currentDb, dialect);
+        const resolvedAliasMap = aliasMap || buildQueryEditorAliasMap(resolveHoverScanText(), currentDb, dialect);
         const aliasKey = buildQueryEditorIdentifierIdentityKey(
             [rawIdentifierSegments[0] || { raw: firstPart, value: firstPart, quoted: false }],
             dialect,
@@ -464,7 +509,7 @@ export const resolveQueryEditorHoverTarget = (
             // the current database/schema interpretation when that catalog is
             // unavailable.
             const explicitOwner = String(aliasInfo.explicitOwnerName || '').trim();
-            const aliasReference = collectQueryEditorTableReferences(fullText, dialect).find((reference) => {
+            const aliasReference = collectQueryEditorTableReferences(resolveHoverScanText(), dialect).find((reference) => {
                 const referenceAlias = reference.aliasSegment
                     || (reference.alias
                         ? splitQueryIdentifierPathSegments(reference.alias, dialect)[0]
