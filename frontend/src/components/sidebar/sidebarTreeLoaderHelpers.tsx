@@ -85,6 +85,7 @@ export const applyRefreshedSQLiteStatsToTree = (
 
 export type SidebarTreeLoadOptions = {
   ensureFresh?: boolean;
+  savedQueriesOnly?: boolean;
 };
 
 export type TrackedSidebarLoad = {
