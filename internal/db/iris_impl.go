@@ -28,8 +28,12 @@ type IrisDB struct {
 	conn        *sql.DB
 	pingTimeout time.Duration
 	namespace   string
-	forwarder   *ssh.LocalForwarder
-	product     interSystemsProduct
+	// namespaceExplicit 记录命名空间是否为连接配置里显式给定。配置留空时驱动会兜底成
+	// defaultIRISNamespace（USER）以保证会话可用，但那个名字是本地推断的、服务端从未
+	// 确认过，不能当作库列表的唯一来源，否则侧栏会显示一个并不存在的库，展开即失败。
+	namespaceExplicit bool
+	forwarder         *ssh.LocalForwarder
+	product           interSystemsProduct
 }
 
 // CacheDB exposes InterSystems Caché as an independent data-source type while
