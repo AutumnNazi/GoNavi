@@ -4,6 +4,12 @@ import type { DragEndEvent } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import { APP_OVERLAY_Z_INDEX_BASE } from '../../utils/overlayZIndex';
 import { matchFontFamilyOption, type FontFamilyOption } from '../../utils/fontFamilies';
+import { useStore } from '../../store';
+import {
+  detectRuntimeCapabilityCached,
+  resolveLowSpecModeActive,
+  shouldReduceMotion,
+} from '../../utils/runtimeCapability';
 import {
   type SidebarTableMetadataField,
   setSidebarTableMetadataFieldSelected,
@@ -74,6 +80,14 @@ export const useAppAntdTheme = ({
   const v2AntBorder = customThemeAntTokens.border;
   const v2AntRowHoverBg = customThemeAntTokens.rowHoverBg;
   const v2AntInfoColor = customThemeAntTokens.info ?? v2AntPrimaryColor;
+  // 低配档位 / 减少动画：antd 组件动画（Modal / Drawer / Dropdown / Select 等）的总开关。
+  // 与 useAppLayoutEffects 的 body 类同源同判定，避免 antd 动与自定义 CSS 动画出现两套口径。
+  const lowSpecModePreference = useStore((state) => state.appearance.lowSpecMode);
+  const reduceMotionPreference = useStore((state) => state.appearance.reduceMotion);
+  const antdMotionEnabled = !shouldReduceMotion(
+      reduceMotionPreference,
+      resolveLowSpecModeActive(lowSpecModePreference, detectRuntimeCapabilityCached().lowSpec),
+  );
   const antdTheme = useMemo(() => ({
       algorithm: darkMode ? theme.darkAlgorithm : theme.defaultAlgorithm,
       token: {
@@ -110,6 +124,9 @@ export const useAppAntdTheme = ({
           colorLink: v2AntPrimaryColor,
           colorLinkHover: v2AntPrimaryHoverColor,
           colorLinkActive: v2AntPrimaryActiveColor,
+          // antd v5 SeedToken：motion=false 关闭全部过渡/动画。低配档位与减少动画都置 false，
+          // 与 CSS 的 0.001ms 中和互补（antd 内部依赖 motionDeadline 兜底，不会卡在中间态）。
+          motion: antdMotionEnabled,
           colorPrimaryBg: v2AntPrimaryBgColor,
           colorPrimaryBgHover: v2AntPrimaryBgHoverColor,
           colorPrimaryBorder: v2AntPrimaryBorderColor,
@@ -141,6 +158,7 @@ export const useAppAntdTheme = ({
   }), [
       darkMode,
       effectiveOpacity,
+      antdMotionEnabled,
       v2AntBgContainer,
       v2AntBgElevated,
       v2AntBorder,

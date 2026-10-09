@@ -23,10 +23,26 @@ export const DEFAULT_TAB_ENVIRONMENT_ACCENT_THICKNESS = 2;
 export const MIN_TAB_ENVIRONMENT_ACCENT_THICKNESS = 1;
 export const MAX_TAB_ENVIRONMENT_ACCENT_THICKNESS = 6;
 
+/**
+ * 低配适配模式默认值：null = 跟随运行时能力自动检测。
+ * 不能给 false —— 声明成纯 boolean 再默认 false，会让「自动检测」分支永远不可达，
+ * 低配机器只能等用户手动打开开关，档位形同虚设。
+ */
+export const DEFAULT_LOW_SPEC_MODE: boolean | null = null;
+
+/**
+ * 减少动画默认关闭（选择加入）。
+ * 若默认开启，等于对所有既有用户无条件中和全局动画，属于超出「低配降级」范围的观感变更；
+ * 低配机器不依赖此开关 —— gn-low-spec 档位自身已包含动画中和，故默认关闭不影响降级收益。
+ */
+export const DEFAULT_REDUCE_MOTION = false;
+
 export const DEFAULT_APPEARANCE: AppearanceSettings = {
   enabled: true,
   opacity: 1.0,
   blur: 0,
+  lowSpecMode: DEFAULT_LOW_SPEC_MODE,
+  reduceMotion: DEFAULT_REDUCE_MOTION,
   tableDoubleClickAction: "open-data",
   queryTableCtrlClickAction: "open-design",
   v2SidebarSearchMode: "command",
@@ -123,6 +139,18 @@ export const sanitizeTabEnvironmentAccentThickness = (value: unknown): number =>
     MIN_TAB_ENVIRONMENT_ACCENT_THICKNESS,
     MAX_TAB_ENVIRONMENT_ACCENT_THICKNESS,
   );
+};
+
+/**
+ * 低配适配模式：只有显式布尔值才算用户固定，其余（含旧数据缺失、null、脏值）一律回落
+ * 到「跟随自动检测」，避免旧 localStorage 把自动档位锁死。
+ */
+export const sanitizeLowSpecMode = (value: unknown): boolean | null => {
+  return typeof value === "boolean" ? value : DEFAULT_LOW_SPEC_MODE;
+};
+
+export const sanitizeReduceMotion = (value: unknown): boolean => {
+  return typeof value === "boolean" ? value : DEFAULT_REDUCE_MOTION;
 };
 
 export const MAX_URI_LENGTH = 4096;

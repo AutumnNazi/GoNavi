@@ -75,6 +75,13 @@ export interface AppearanceSettings
   enabled: boolean;
   opacity: number;
   blur: number;
+  /**
+   * 低配适配模式三态：null = 跟随运行时能力自动检测，true / false = 用户显式固定。
+   * 保留 null 才能让「自动」与「用户关掉」区分开，否则自动检测永远失效。
+   */
+  lowSpecMode: boolean | null;
+  /** 减少动画与过渡：关闭界面动画、弹窗/下拉过渡，提升低配/无显卡（虚拟机）环境的渲染速度 */
+  reduceMotion: boolean;
   tableDoubleClickAction: TableDoubleClickAction;
   queryTableCtrlClickAction: QueryTableCtrlClickAction;
   v2SidebarSearchMode: "command" | "filter";

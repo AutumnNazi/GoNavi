@@ -21,6 +21,10 @@ import {
   sanitizeFontFamilyInput,
   DEFAULT_MONO_FONT_FAMILY,
 } from '../../utils/fontFamilies';
+import {
+  detectRuntimeCapabilityCached,
+  resolveLowSpecModeActive,
+} from '../../utils/runtimeCapability';
 import { isWindowsPlatform } from '../../utils/appearance';
 import type { UseAppThemeSettingsRenderInput } from '../hooks/useAppThemeSettingsRender';
 
@@ -106,6 +110,30 @@ export const ThemeAppearanceSettingsSection = ({
                           onChange={(value) => setAppearance({
                               v2SidebarRailScale: sanitizeV2SidebarRailScale(value),
                           })}
+                      />
+                  ),
+              })}
+              {renderThemeSettingsRow({
+                  label: t('app.theme.appearance.reduce_motion'),
+                  hint: t('app.theme.appearance.reduce_motion_hint'),
+                  control: (
+                      <Switch
+                          checked={appearance.reduceMotion === true}
+                          onChange={(checked) => setAppearance({ reduceMotion: checked })}
+                      />
+                  ),
+              })}
+              {renderThemeSettingsRow({
+                  label: t('app.theme.appearance.low_spec_mode'),
+                  hint: t('app.theme.appearance.low_spec_mode_hint'),
+                  // 三态回显：未显式设置（null）时显示自动检测结果，用户点击后才落库为布尔值。
+                  control: (
+                      <Switch
+                          checked={resolveLowSpecModeActive(
+                              appearance.lowSpecMode,
+                              detectRuntimeCapabilityCached().lowSpec,
+                          )}
+                          onChange={(checked) => setAppearance({ lowSpecMode: checked })}
                       />
                   ),
               })}
