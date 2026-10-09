@@ -1,4 +1,5 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
+import { useActivationGatedEffect } from './useActivationGatedEffect';
 import { message } from 'antd';
 import {
     QUERY_EDITOR_OBJECT_DECORATION_MAX_TEXT_LENGTH,
@@ -92,7 +93,17 @@ export const useQueryEditorObjectDecorations = ({
     tableNavigationContextRef, metadataGenerationRef, missingTableMetadataKeysRef, columnsCacheRef,
     aiContextCacheRef, objectHoverActionRef, lastHoverTargetPositionRef, currentDb, currentSchema,
 }: UseQueryEditorObjectDecorationsInput) => {
+    // 非激活 tab 副作用瘦身：失活期间被跳过的装饰刷新，在切回时补一次。
+    // 只用「真的跳过了」才记脏（而非每次失活都记）：没变更的 tab 切回来不该白算一遍全文装饰。
+    const decorationsActivationStaleRef = useRef(false);
     const refreshObjectDecorations = useCallback((maxTextLength = QUERY_EDITOR_OBJECT_DECORATION_MAX_TEXT_LENGTH) => {
+        // 失活早退 + 记脏：装饰的消费方（元数据落库、格式化、快捷键、拖放、AI 采纳…）都会直接调这里，
+        // 逐个调用点加门控既易漏又不集中；在此单点拦截，失活期间不做全文候选扫描，
+        // 由激活补刷分支兜底，语义等价（装饰最终仍反映最新文本）。
+        if (!queryEditorActiveRef.current) {
+            decorationsActivationStaleRef.current = true;
+            return;
+        }
         const editor = editorRef.current;
         const monaco = monacoRef.current;
         const model = editor?.getModel?.();
@@ -514,6 +525,18 @@ export const useQueryEditorObjectDecorations = ({
     useEffect(() => {
         refreshObjectDecorations(QUERY_EDITOR_LIVE_DECORATION_MAX_TEXT_LENGTH);
     }, [currentDb, currentSchema, refreshObjectDecorations]);
+
+    // 激活补刷：失活期间被 refreshObjectDecorations 单点拦截的刷新，在这里补一次。
+    // 之所以单独成 effect 而不给上面的 [currentDb, currentSchema] effect 加 isActive：
+    // 那样会让「切回 tab」（currentDb/currentSchema 均未变）也重跑一遍，等于每次切回都算两次全文装饰。
+    useActivationGatedEffect(isActive, () => {
+        if (!decorationsActivationStaleRef.current) {
+            return undefined;
+        }
+        decorationsActivationStaleRef.current = false;
+        refreshObjectDecorations(QUERY_EDITOR_LIVE_DECORATION_MAX_TEXT_LENGTH);
+        return undefined;
+    }, [refreshObjectDecorations]);
     return {
         refreshObjectDecorations, cancelPendingObjectDecorationRefresh,
         cancelPendingSqlReferencedMetadataRefresh, scheduleObjectDecorationRefresh,

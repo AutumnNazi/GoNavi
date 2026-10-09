@@ -1,4 +1,9 @@
-import { useMemo, useCallback, useEffect } from 'react';
+import { useMemo, useCallback } from 'react';
+import {
+    useActivationGatedEffect,
+    useQueryEditorActivationRef,
+    useQueryEditorTabActivationPublisher,
+} from './useActivationGatedEffect';
 import { message } from 'antd';
 import { useStore } from '../../../store';
 import {
@@ -58,6 +63,11 @@ export const useQueryEditorShortcutsAndSnippets = ({
     isActive, executionErrorRef, acceptSqlAiCompletionBindingRef, queryEditorActiveRef, editorRef,
     queryEditorRootRef, editorHeight, isResultPanelVisible,
 }: UseQueryEditorShortcutsAndSnippetsInput) => {
+    // 非激活 tab 副作用瘦身：本 hook 同时持有 isActive 与 tab.id，是激活态的两个对外出口——
+    // 1) isActiveRef 供本文件其它 effect 做二次门控；
+    // 2) 发布到按 tab 维度的激活通道，供拿不到 isActive 的 bindQueryEditorEditorEvents 使用。
+    const isActiveRef = useQueryEditorActivationRef(isActive);
+    useQueryEditorTabActivationPublisher(tab.id, isActive);
     const shortcutOptions = useStore(state => state.shortcutOptions);
     const activeShortcutPlatform = getShortcutPlatform(isMacLikePlatform());
     const runQueryShortcutBinding = useMemo(
@@ -262,9 +272,10 @@ export const useQueryEditorShortcutsAndSnippets = ({
         ) || ''),
     });
 
-    useEffect(() => {
-      if (!isActive) return;
+    useActivationGatedEffect(isActive, () => {
       const handler = (e: KeyboardEvent) => {
+        // 二次门控：deps 变化之外的失活翻转下，闭包里的 isActive 会陈旧，ref 始终是最新值。
+        if (!isActiveRef.current) return;
         if (diagnoseQueryShortcutBinding?.enabled && isShortcutMatch(e, diagnoseQueryShortcutBinding.combo)) {
           e.preventDefault();
           openSqlAnalysisWorkbench('diagnose', getCurrentQuery());
@@ -287,7 +298,7 @@ export const useQueryEditorShortcutsAndSnippets = ({
       return () => window.removeEventListener('keydown', handler);
       // handleDiagnoseExecutionErrorWithAI 有意不进 deps：getter 惰性求值使其陈旧闭包安全，
       // 与原实现对 getCurrentQuery 的处理一致
-    }, [diagnoseExecutionErrorShortcutBinding, diagnoseQueryShortcutBinding, isActive, openSqlAnalysisWorkbench, showSlowQueriesShortcutBinding]);
+    }, [diagnoseExecutionErrorShortcutBinding, diagnoseQueryShortcutBinding, openSqlAnalysisWorkbench, showSlowQueriesShortcutBinding]);
     const selectCurrentStatementShortcutBinding = useMemo(
         () => resolveShortcutBinding(shortcutOptions, 'selectCurrentStatement', activeShortcutPlatform),
         [activeShortcutPlatform, shortcutOptions],

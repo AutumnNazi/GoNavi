@@ -11,6 +11,10 @@ import {
 } from '../QueryEditorAiAssist';
 import { buildQueryEditorMetadataIdentityKey } from '../queryEditorCompletionTables';
 import { setQueryEditorMouseCursor } from './queryEditorMouseCursor';
+import {
+    isQueryEditorTabActive,
+    subscribeQueryEditorTabActivation,
+} from '../hooks/useActivationGatedEffect';
 import type { OnMount } from '../../MonacoEditor';
 import type { TabData } from '../../../types';
 import type { createQueryEditorAiInlineGhostState } from './queryEditorAiInlineGhostState';
@@ -354,11 +358,51 @@ export const bindQueryEditorEditorEvents = ({
         setQueryEditorMouseCursor(editor, '');
     });
 
-    window.addEventListener('keydown', syncModifierState);
-    window.addEventListener('keyup', syncModifierState);
-    window.addEventListener('blur', handleWindowBlur);
-    window.addEventListener('dragend', handleSqlFieldDragEnd);
-    window.addEventListener('drop', handleSqlFieldDragEnd);
+    // 非激活 tab 副作用瘦身：window 级监听随激活挂/拆。
+    // 为什么走模块级激活通道而不是新增入参：本文件是纯函数、拿不到 isActive，而调用方
+    // useQueryEditorMonacoMount 不在本次改动白名单内，无法为它接线。发布方见
+    // useQueryEditorShortcutsAndSnippets（同时持有 isActive 与 tab.id）。
+    // 只门控 window 级监听：编辑器 DOM 上的 IME/拖放监听仅在编辑器自身交互时触发，
+    // 且反复拆装会打断输入法组合状态，保持常驻。
+    let windowListenersAttached = false;
+    const attachWindowListeners = () => {
+        if (windowListenersAttached) return;
+        windowListenersAttached = true;
+        window.addEventListener('keydown', syncModifierState);
+        window.addEventListener('keyup', syncModifierState);
+        window.addEventListener('blur', handleWindowBlur);
+        window.addEventListener('dragend', handleSqlFieldDragEnd);
+        window.addEventListener('drop', handleSqlFieldDragEnd);
+    };
+    const detachWindowListeners = (resetModifierState: boolean) => {
+        if (!windowListenersAttached) return;
+        windowListenersAttached = false;
+        window.removeEventListener('keydown', syncModifierState);
+        window.removeEventListener('keyup', syncModifierState);
+        window.removeEventListener('blur', handleWindowBlur);
+        window.removeEventListener('dragend', handleSqlFieldDragEnd);
+        window.removeEventListener('drop', handleSqlFieldDragEnd);
+        if (!resetModifierState) return;
+        // 失活期间按下 Ctrl/Meta 不会再有 keyup 触达，必须主动复位修饰键状态与悬停装饰，
+        // 否则切回后会以「修饰键仍按下」的陈旧状态渲染。
+        // 销毁路径不调它：那时编辑器/装饰已被别的 dispose 回调清空，重复清理只会碰到已释放的对象。
+        handleWindowBlur();
+    };
+    const syncWindowListenerActivation = () => {
+        if (isQueryEditorTabActive(tab.id)) {
+            attachWindowListeners();
+            return;
+        }
+        detachWindowListeners(true);
+    };
+    const unsubscribeActivation = subscribeQueryEditorTabActivation(tab.id, syncWindowListenerActivation);
+    // 订阅后立刻对齐一次：bind 发生在挂载时，此前的激活翻转不会再回调到订阅方。
+    syncWindowListenerActivation();
+    editor.onDidDispose?.(() => {
+        unsubscribeActivation();
+        detachWindowListeners(false);
+    });
+
     editorDomNode?.addEventListener('beforeinput', handleImeBeforeInput, true);
     editorDomNode?.addEventListener('compositionstart', handleImeCompositionStart, true);
     editorDomNode?.addEventListener('compositionend', handleImeCompositionEnd, true);
