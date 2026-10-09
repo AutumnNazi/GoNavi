@@ -8,6 +8,7 @@ import {
   countDataGridPasteOverflow, resolveDataGridPasteGateReason, resolveDataGridPasteMatrixReason,
   traceDataGridPaste, type DataGridPasteSkipReason,
 } from '../../dataGridClipboardPasteFeedback';
+import { stripTruncatedPasteValues } from '../../../utils/dataGridTruncatedValue';
 import type {
   CellSelectionAutoScrollViewport, CellSelectionAutoScrollController, DataGridBatchActionsContext,
 } from '../../useDataGridBatchActions';
@@ -319,13 +320,37 @@ export const createCellSelectionHandlers = ({
       isValueEqual: isCellValueEqualForDiff,
     });
 
+    // 截断预览值禁写回：目标格当前值是后端截断预览时跳过该格（粘贴值会覆盖数据库原始 LOB）。
+    // 取值优先级与 buildDataGridClipboardPasteRows 内部一致（已新增行 → 已修改值 → 基准行），
+    // 因为截断信息只存在于基准行上，已修改值优先能避免把用户此前的编辑误判为截断。
+    const rowsByKey = new Map<string, Record<string, any>>();
+    currentRows.forEach((row) => {
+      const key = row?.[GONAVI_ROW_KEY];
+      if (key === undefined || key === null) return;
+      rowsByKey.set(rowKeyStr(key), row);
+    });
+    const stripped = stripTruncatedPasteValues(
+      result,
+      (rowKey, column) => {
+        if (addedRowKeys.has(rowKey)) return rowsByKey.get(rowKey)?.[column];
+        const existing = modifiedRows[rowKey];
+        if (existing && Object.prototype.hasOwnProperty.call(existing, column)) return existing[column];
+        return rowsByKey.get(rowKey)?.[column];
+      },
+    );
+    if (stripped.skippedCellCount > 0) {
+      void message.warning(translateDataGrid('data_grid.message.truncated_cells_skipped', {
+        count: stripped.skippedCellCount,
+      }));
+    }
+
     e.preventDefault();
-    if (result.updatedCellCount === 0) {
+    if (stripped.updatedCellCount === 0) {
       void message.info(translateDataGrid('data_grid.message.selected_cells_no_update'));
       return;
     }
 
-    const pasteRowsByKey = new Map(result.rows.map((row) => [row.rowKey, row]));
+    const pasteRowsByKey = new Map(stripped.rows.map((row) => [row.rowKey, row]));
     setAddedRows((prev) => prev.map((row) => {
       const key = row?.[GONAVI_ROW_KEY];
       if (key === undefined || key === null) return row;
@@ -334,7 +359,7 @@ export const createCellSelectionHandlers = ({
     }));
     setModifiedRows((prev) => {
       const next = { ...prev };
-      result.rows.forEach((row) => {
+      stripped.rows.forEach((row) => {
         if (row.isAdded) return;
         if (Object.keys(row.modifiedValues).length === 0) delete next[row.rowKey];
         else next[row.rowKey] = row.modifiedValues;
@@ -343,7 +368,7 @@ export const createCellSelectionHandlers = ({
     });
     setModifiedColumns((prev) => {
       const next = { ...prev };
-      result.rows.forEach((row) => {
+      stripped.rows.forEach((row) => {
         if (row.isAdded) return;
         if (row.modifiedColumnNames.length === 0) delete next[row.rowKey];
         else next[row.rowKey] = new Set(row.modifiedColumnNames);
@@ -352,8 +377,8 @@ export const createCellSelectionHandlers = ({
     });
 
     void message.success(translateDataGrid('data_grid.message.pasted_columns_to_rows', {
-      rows: result.rows.length,
-      cells: result.updatedCellCount,
+      rows: stripped.rows.length,
+      cells: stripped.updatedCellCount,
     }));
 
     // 单值填充选区不受边界约束；矩阵粘贴超出表格范围的行列没有落点，需要明确告知。

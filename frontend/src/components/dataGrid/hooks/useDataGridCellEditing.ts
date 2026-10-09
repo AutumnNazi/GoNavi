@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { message } from 'antd';
 import { DragEndEvent } from '@dnd-kit/core';
 import { useDataGridReloadReset } from '../../useDataGridReloadReset';
 import { useDataGridBatchActions } from '../../useDataGridBatchActions';
@@ -16,6 +17,7 @@ import {
     type Item,
 } from '../../DataGridCore';
 import { isWritableResultColumn } from '../../../utils/rowLocator';
+import { isTruncatedPreviewValue } from '../../../utils/dataGridTruncatedValue';
 import { filterRowsByGridConditions } from '../../../utils/dataGridClientFilter';
 import { resolveGridSortInfoFromTableSorter } from '../../../utils/dataGridSort';
 import { useDataGridColumnResize } from '../../useDataGridColumnResize';
@@ -466,12 +468,24 @@ export const useDataGridCellEditing = ({
             const currentRow = modifiedRows[keyStr] ? { ...originalRow, ...modifiedRows[keyStr] } : originalRow;
             const normalizedRow = normalizeMongoEditedRow(row, currentRow);
             const changedFields: Record<string, any> = {};
+            let skippedTruncatedCount = 0;
             for (const col of Object.keys(normalizedRow)) {
                 if (col === GONAVI_ROW_KEY) continue;
                 if (!isWritableResultColumn(col, effectiveEditLocator)) continue;
+                // 截断预览值禁写回：基准值为后端截断预览时该列永远拿不到完整值，
+                // 写回会把「预览标记 + 截断片段」当成新值覆盖数据库原始 LOB（后端提交路径不校验），
+                // 因此在此拦住。本函数覆盖内联编辑器/数据面板/撤销三条走 handleCellSave 的路径；
+                // 行编辑器直填走 applyRowEditor，不经过这里，它自己带同源守卫。
+                if (isTruncatedPreviewValue(originalRow[col])) {
+                    if (!isCellValueEqualForDiff(originalRow[col], normalizedRow[col])) skippedTruncatedCount += 1;
+                    continue;
+                }
                 if (!isCellValueEqualForDiff(originalRow[col], normalizedRow[col])) {
                     changedFields[col] = normalizedRow[col];
                 }
+            }
+            if (skippedTruncatedCount > 0) {
+                void message.warning(translateDataGrid('data_grid.message.truncated_cells_skipped', { count: skippedTruncatedCount }));
             }
             if (Object.keys(changedFields).length === 0) {
                 // 没有实际变更，从 modifiedRows 中移除该行
@@ -502,7 +516,7 @@ export const useDataGridCellEditing = ({
             });
             setModifiedRows(prev => ({ ...prev, [keyStr]: normalizedRow }));
         }
-    }, [addedRows, baseData, rowKeyStr, deletedRowKeys, effectiveEditLocator, modifiedRows, normalizeMongoEditedRow]);
+    }, [addedRows, baseData, rowKeyStr, deletedRowKeys, effectiveEditLocator, modifiedRows, normalizeMongoEditedRow, translateDataGrid]);
     const handleCellSaveRef = useRef(handleCellSave);
     handleCellSaveRef.current = handleCellSave;
 

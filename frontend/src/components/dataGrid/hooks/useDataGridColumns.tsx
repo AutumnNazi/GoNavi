@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import dayjs from 'dayjs';
 import type { ColumnType, SortOrder } from 'antd/es/table/interface';
-import { Form, TimePicker, DatePicker, Input } from 'antd';
+import { Form, TimePicker, DatePicker, Input, message } from 'antd';
 import {
     GONAVI_ROW_KEY,
     isCellValueEqualForDiff,
@@ -18,6 +18,7 @@ import {
     ROW_NUMBER_COLUMN_WIDTH,
 } from '../../DataGridCore';
 import { isWritableResultColumn } from '../../../utils/rowLocator';
+import { omitTruncatedPatchEntries } from '../../../utils/dataGridTruncatedValue';
 import {
     getTemporalPickerType,
     resolveTemporalEditorSaveValue,
@@ -156,7 +157,7 @@ export const useDataGridColumns = ({
             return;
         }
 
-        const patch: Record<string, any> = {};
+        const builtPatch: Record<string, any> = {};
         visibleColumnNames.forEach((col) => {
             if (!isWritableResultColumn(col, effectiveEditLocator)) return;
             let nextVal = values[col];
@@ -174,8 +175,13 @@ export const useDataGridColumns = ({
                 nextVal = normalizeMongoEditedCellValue(col, nextVal, baseRawMap[col]);
             }
             const baseVal = baseRawMap[col];
-            if (!isCellValueEqualForDiff(baseVal, nextVal)) patch[col] = nextVal;
+            if (!isCellValueEqualForDiff(baseVal, nextVal)) builtPatch[col] = nextVal;
         });
+
+        // 截断预览值禁写回：行编辑器直填不经过 handleCellSave，是唯一绕开其守卫的写回路径。
+        // 基准值为后端截断预览时该列没有完整值，patch 里的「预览标记 + 截断片段」会覆盖
+        // 数据库原始 LOB（后端提交路径不校验），因此在提交前剔除该列并提示。
+        const { patch, skippedColumns } = omitTruncatedPatchEntries(builtPatch, baseRawMap);
 
         setModifiedRows(prev => {
             const next = { ...prev };
@@ -184,8 +190,11 @@ export const useDataGridColumns = ({
             return next;
         });
 
+        if (skippedColumns.length > 0) {
+            void message.warning(translateDataGrid('data_grid.message.truncated_cells_skipped', { count: skippedColumns.length }));
+        }
         closeRowEditor();
-    }, [addedRows, closeRowEditor, columnMetaMap, columnMetaMapByLowerName, currentConnConfig, dbType, effectiveEditLocator, normalizeMongoEditedCellValue, rowEditorForm, rowEditorRowKey, rowKeyStr, visibleColumnNames]);
+    }, [addedRows, closeRowEditor, columnMetaMap, columnMetaMapByLowerName, currentConnConfig, dbType, effectiveEditLocator, normalizeMongoEditedCellValue, rowEditorForm, rowEditorRowKey, rowKeyStr, translateDataGrid, visibleColumnNames]);
 
     const enableVirtual = isTableSurfaceActive;
     const enableInlineEditableCell = canModifyData;

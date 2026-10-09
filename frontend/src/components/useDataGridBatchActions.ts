@@ -6,6 +6,7 @@ import {
   filterDataGridCellSelectionToVisibleRows,
 } from './DataGridCore';
 import type { Item } from './DataGridCore';
+import { isTruncatedPreviewValue } from '../utils/dataGridTruncatedValue';
 import { createCellSelectionHandlers } from './dataGrid/batchActions/cellSelectionHandlers';
 import { createCellSelectionInteraction } from './dataGrid/batchActions/cellSelectionInteraction';
 
@@ -166,6 +167,7 @@ const handleBatchFillCells = useCallback(() => {
 
     const patchesByRow = new Map<string, Record<string, any>>();
     let updatedCount = 0;
+    let skippedTruncatedCount = 0;
 
     cellsToFill.forEach((cellKey) => {
       const parts = splitCellKey(cellKey);
@@ -188,6 +190,13 @@ const handleBatchFillCells = useCallback(() => {
         currentVal = baseRow?.[colName];
       }
 
+      // 截断预览值禁写回：当前值是后端截断预览时前端没有完整值，
+      // 填充会把它当成新值覆盖数据库原始 LOB（后端提交路径不校验）。
+      if (isTruncatedPreviewValue(currentVal)) {
+        skippedTruncatedCount += 1;
+        return;
+      }
+
       const isSame = isCellValueEqualForDiff(currentVal, fillValue);
       if (isSame) return;
 
@@ -196,6 +205,10 @@ const handleBatchFillCells = useCallback(() => {
       patchesByRow.set(rowKey, patch);
       updatedCount++;
     });
+
+    if (skippedTruncatedCount > 0) {
+      void message.warning(translateDataGrid('data_grid.message.truncated_cells_skipped', { count: skippedTruncatedCount }));
+    }
 
     if (updatedCount === 0) {
       void message.info(translateDataGrid('data_grid.message.selected_cells_no_update'));
@@ -305,6 +318,7 @@ const handleBatchFillCells = useCallback(() => {
 
     const patchesByRow = new Map<string, Record<string, any>>();
     let updatedCount = 0;
+    let skippedTruncatedCount = 0;
     Array.from(targetCells).forEach((cellKey) => {
       const parts = splitCellKey(cellKey);
       if (!parts || !isWritableResultColumn(parts.colName, effectiveEditLocator)) return;
@@ -326,12 +340,23 @@ const handleBatchFillCells = useCallback(() => {
         currentValue = baseRow?.[colName];
       }
 
+      // 截断预览值禁写回：当前值是后端截断预览时置 NULL 同样会覆盖掉数据库原始 LOB 的完整内容，
+      // 与填充/粘贴同源问题，故一并拦截。
+      if (isTruncatedPreviewValue(currentValue)) {
+        skippedTruncatedCount += 1;
+        return;
+      }
+
       if (isCellValueEqualForDiff(currentValue, null)) return;
       const patch = patchesByRow.get(rowKey) || {};
       patch[colName] = null;
       patchesByRow.set(rowKey, patch);
       updatedCount += 1;
     });
+
+    if (skippedTruncatedCount > 0) {
+      void message.warning(translateDataGrid('data_grid.message.truncated_cells_skipped', { count: skippedTruncatedCount }));
+    }
 
     if (updatedCount === 0) {
       void message.info(translateDataGrid('data_grid.message.selected_cells_no_update'));
@@ -557,6 +582,7 @@ const handleBatchFillCells = useCallback(() => {
 
     const patchesByRow = new Map<string, Record<string, any>>();
     let updatedCellCount = 0;
+    let skippedTruncatedCount = 0;
 
     targetKeySet.forEach((targetRowKey) => {
       const patch: Record<string, any> = {};
@@ -577,6 +603,12 @@ const handleBatchFillCells = useCallback(() => {
           currentValue = baseRow?.[colName];
         }
 
+        // 截断预览值禁写回：目标格当前值是后端截断预览时跳过该格，
+        // 模板值会覆盖掉数据库原始 LOB 的完整内容。
+        if (isTruncatedPreviewValue(currentValue)) {
+          skippedTruncatedCount += 1;
+          return;
+        }
         if (isCellValueEqualForDiff(currentValue, nextValue)) return;
         patch[colName] = nextValue;
         updatedCellCount++;
@@ -586,6 +618,10 @@ const handleBatchFillCells = useCallback(() => {
         patchesByRow.set(targetRowKey, patch);
       }
     });
+
+    if (skippedTruncatedCount > 0) {
+      void message.warning(translateDataGrid('data_grid.message.truncated_cells_skipped', { count: skippedTruncatedCount }));
+    }
 
     if (patchesByRow.size === 0 || updatedCellCount === 0) {
       void message.info(translateDataGrid('data_grid.message.target_rows_no_update'));
@@ -663,6 +699,13 @@ const handleBatchFillCells = useCallback(() => {
       return;
     }
     const sourceValue = sourceRecord[dataIndex];
+    // 源单元格本身是截断预览时没有任何可填充的完整值：填充只会把「预览标记 + 截断片段」
+    // 复制到其他行覆盖原始 LOB，故直接按「当前字段不可编辑」拒绝（语义与只读列一致）。
+    if (isTruncatedPreviewValue(sourceValue)) {
+      void message.info(translateDataGrid('data_grid.message.current_field_not_editable'));
+      setCellContextMenu((prev: any) => ({ ...prev, visible: false }));
+      return;
+    }
     const selKeys = selectedRowKeysRef.current;
 
     if (selKeys.length === 0) {
@@ -689,6 +732,50 @@ const handleBatchFillCells = useCallback(() => {
 
     const targetKeyStrList = targetKeys.map(rowKeyStr);
     const targetKeyStrSet = new Set(targetKeyStrList);
+
+    // 截断预览值禁写回：目标行该列当前值若是后端截断预览，写入会覆盖数据库原始 LOB。
+    // 取值优先级与填充/粘贴路径一致（已新增行 → 已修改值 → 基准行），
+    // 因为截断信息只存在于基准行，已修改值优先可避免把用户此前的编辑误判为截断。
+    const addedRowMap = new Map<string, any>();
+    addedRows.forEach((r) => {
+      const k = r?.[GONAVI_ROW_KEY];
+      if (k === undefined) return;
+      addedRowMap.set(rowKeyStr(k), r);
+    });
+    const baseRowMap = new Map<string, any>();
+    displayDataRef.current.forEach((r) => {
+      const k = r?.[GONAVI_ROW_KEY];
+      if (k === undefined) return;
+      baseRowMap.set(rowKeyStr(k), r);
+    });
+
+    let skippedTruncatedCount = 0;
+    targetKeyStrSet.forEach((keyStr) => {
+      const addedRow = addedRowMap.get(keyStr);
+      const existing = modifiedRows[keyStr];
+      let currentValue: any;
+      if (addedRow) {
+        currentValue = addedRow[dataIndex];
+      } else if (existing && Object.prototype.hasOwnProperty.call(existing as any, dataIndex)) {
+        currentValue = (existing as any)[dataIndex];
+      } else {
+        currentValue = baseRowMap.get(keyStr)?.[dataIndex];
+      }
+      if (isTruncatedPreviewValue(currentValue)) {
+        skippedTruncatedCount += 1;
+        targetKeyStrSet.delete(keyStr);
+      }
+    });
+
+    if (skippedTruncatedCount > 0) {
+      void message.warning(translateDataGrid('data_grid.message.truncated_cells_skipped', { count: skippedTruncatedCount }));
+    }
+    if (targetKeyStrSet.size === 0) {
+      void message.info(translateDataGrid('data_grid.message.target_rows_no_update'));
+      setCellContextMenu((prev: any) => ({ ...prev, visible: false }));
+      return;
+    }
+
     const updatedCount = targetKeyStrSet.size;
 
     setAddedRows(prev => prev.map(r => {
@@ -716,7 +803,7 @@ const handleBatchFillCells = useCallback(() => {
 
     void message.success(translateDataGrid('data_grid.message.filled_rows', { count: updatedCount }));
     setCellContextMenu((prev: any) => ({ ...prev, visible: false }));
-  }, [addedRows, rowKeyStr, effectiveEditLocator, translateDataGrid]);
+  }, [addedRows, modifiedRows, displayDataRef, rowKeyStr, effectiveEditLocator, translateDataGrid]);
 
   return {
     handleBatchFillCells,
