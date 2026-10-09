@@ -5156,6 +5156,7 @@
   "data_grid.message.locate_record_to_edit": "请先定位要编辑的记录",
   "data_grid.message.locator_column_value_empty": "定位列 {{column}} 的值为空，无法安全提交修改。",
   "data_grid.message.no_changes_to_commit": "没有需要提交的修改",
+  "data_grid.message.query_change_with_pending_edits": "存在未提交修改，请先提交或回滚后再筛选、排序、翻页或刷新。",
   "data_grid.message.no_copyable_cells": "未识别到可复制的单元格",
   "data_grid.message.no_copyable_columns": "未识别到可复制的列",
   "data_grid.message.no_copyable_rows": "未识别到可复制的行",

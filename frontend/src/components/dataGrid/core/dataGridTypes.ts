@@ -34,7 +34,7 @@ export interface DataGridProps {
     readOnly?: boolean;
     showRowNumberColumn?: boolean;
     onReload?: () => void | Promise<void>;
-    onSort?: (field: string, order: string) => void;
+    onSort?: (field: string, order: string) => void | boolean;
     onPageChange?: (page: number, size: number) => void;
     onLastPage?: (pageSize: number) => void;
     /** SQL query max rows used only as a result-grid page-size suggestion. */

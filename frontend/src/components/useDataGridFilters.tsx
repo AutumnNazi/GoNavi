@@ -41,6 +41,7 @@ interface UseDataGridFiltersParams {
   onApplyFilter?: (conditions: GridFilterConditionState[]) => void;
   onApplyQuickWhereCondition?: (condition: string) => void;
   onSort?: (field: string, order: string) => void;
+  beforeQueryChange?: () => boolean;
   messageApi?: {
     warning?: (content: string) => void;
   };
@@ -98,6 +99,7 @@ export const useDataGridFilters = ({
   onApplyFilter,
   onApplyQuickWhereCondition,
   onSort,
+  beforeQueryChange,
   messageApi,
   translate = fallbackTranslate,
   getColumnFilterType,
@@ -341,22 +343,25 @@ export const useDataGridFilters = ({
       messageApi?.warning?.(validation.message);
       return false;
     }
+    if (beforeQueryChange?.() === false) return false;
     setQuickWhereDraft(normalized);
     if (onApplyQuickWhereCondition) onApplyQuickWhereCondition(normalized);
     return true;
-  }, [messageApi, onApplyQuickWhereCondition, quickWhereDraft]);
+  }, [beforeQueryChange, messageApi, onApplyQuickWhereCondition, quickWhereDraft]);
 
   const clearQuickWhereCondition = React.useCallback(() => {
+    if (beforeQueryChange?.() === false) return;
     setQuickWhereDraft('');
     if (onApplyQuickWhereCondition) onApplyQuickWhereCondition('');
-  }, [onApplyQuickWhereCondition]);
+  }, [beforeQueryChange, onApplyQuickWhereCondition]);
 
   const clearAllFiltersAndSorts = React.useCallback(() => {
+    if (beforeQueryChange?.() === false) return;
     setFilterConditions([]);
     clearQuickWhereCondition();
     if (onApplyFilter) onApplyFilter([]);
     if (onSort) onSort('', '');
-  }, [clearQuickWhereCondition, onApplyFilter, onSort]);
+  }, [beforeQueryChange, clearQuickWhereCondition, onApplyFilter, onSort]);
 
   const applyFilters = React.useCallback(() => {
     if (!applyQuickWhereCondition()) return;
@@ -439,10 +444,11 @@ export const useDataGridFilters = ({
   const commitFilterConditionFlag = React.useCallback((enabled: boolean) => {
     if (filterConditions.length === 0) return;
     if (filterConditions.every((cond) => (cond.enabled !== false) === enabled)) return;
+    if (beforeQueryChange?.() === false) return;
     const nextConditions = filterConditions.map((cond) => ({ ...cond, enabled }));
     setFilterConditions(nextConditions);
     if (onApplyFilter) onApplyFilter(nextConditions);
-  }, [filterConditions, onApplyFilter]);
+  }, [beforeQueryChange, filterConditions, onApplyFilter]);
 
   const applyAllFiltersEnabled = React.useCallback(() => {
     commitFilterConditionFlag(true);

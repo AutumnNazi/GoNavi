@@ -235,7 +235,7 @@ const DataGrid: React.FC<DataGridProps> = ({
       closeDdlView, handleClosePageFind, handleDataGridRootPointerDownCapture, columnIndexMap,
       updateCellSelection, markCellSelectionDeleteEligible, markCellSelectionUserSelection,
   } = useDataGridColumnTitles({
-      appliedFilterConditions, quickWhereCondition, showFilter, onApplyFilter,
+      appliedFilterConditions, quickWhereCondition, showFilter, onApplyFilter, workbenchTabId,
       onApplyQuickWhereCondition, onSort, displayColumnNames, allTableColumnNames, columnMetaMap,
       getColumnFilterType, dbType, darkMode, dataGridFilterMessageApi, translateDataGrid, data,
       isMongoDBConnection, addedRows, exportScope, columnMetaMapByLowerName, foreignKeyMap,

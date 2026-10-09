@@ -183,6 +183,8 @@ export const useDataGridCommit = ({
     sortInfo, supportsCopyInsert, supportsSqlQueryExport, pinnedLeftColumnScope,
     toggleColumnVisibility, pinnedLeftColumnNames, setTablePinnedLeftColumns,
 }: UseDataGridCommitInput) => {
+    const pendingChangesRef = useRef(hasChanges);
+    pendingChangesRef.current = hasChanges;
     const handleCommit = useCallback(async (source: 'manual' | 'auto' = 'manual'): Promise<boolean> => {
         clearAutoCommitTimer();
         if (!connectionId || !tableName) return false;
@@ -256,6 +258,7 @@ export const useDataGridCommit = ({
         });
 
         if (res.success) {
+            pendingChangesRef.current = false;
             autoCommitFailedTokenRef.current = -1;
             addSqlLog({
                 id: Date.now().toString(),
@@ -289,6 +292,7 @@ export const useDataGridCommit = ({
                 autoCommitFailedTokenRef.current = autoCommitChangeTokenRef.current;
             }
             if (outcomeUnknown) {
+                pendingChangesRef.current = false;
                 autoCommitFailedTokenRef.current = autoCommitChangeTokenRef.current;
                 setAddedRows([]);
                 setModifiedRows({});
@@ -378,7 +382,7 @@ export const useDataGridCommit = ({
     useEffect(() => {
         if (!workbenchTabId) return undefined;
         return registerWorkbenchTabCloseGuard(workbenchTabId, {
-            isDirty: () => hasChanges || dataPanelDirtyRef.current,
+            isDirty: () => pendingChangesRef.current || dataPanelDirtyRef.current,
             save: async () => {
                 if (dataPanelDirtyRef.current) {
                     const applied = flushSync(() => handleDataPanelSave());
@@ -387,6 +391,7 @@ export const useDataGridCommit = ({
                 return handleCommitRef.current('manual');
             },
             discard: () => {
+                pendingChangesRef.current = false;
                 clearAutoCommitTimer();
                 setAddedRows([]);
                 setModifiedRows({});

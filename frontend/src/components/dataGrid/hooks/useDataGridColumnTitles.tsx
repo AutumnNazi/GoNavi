@@ -20,8 +20,10 @@ import type { DataGridCoreStateApi } from './useDataGridCoreState';
 import type { DataGridTableMetricsApi } from './useDataGridTableMetrics';
 import type { DataGridCellEditorStateApi } from './useDataGridCellEditorState';
 import type { DataGridProps } from '../../DataGridCore';
+import { allowDataGridQueryChange } from '../../../utils/dataGridQueryGuard';
 
 export interface UseDataGridColumnTitlesInput {
+    workbenchTabId: DataGridProps['workbenchTabId'];
     appliedFilterConditions: DataGridProps['appliedFilterConditions'];
     quickWhereCondition: DataGridProps['quickWhereCondition'];
     showFilter: DataGridProps['showFilter'];
@@ -91,7 +93,7 @@ export interface UseDataGridColumnTitlesInput {
 }
 
 export const useDataGridColumnTitles = ({
-    appliedFilterConditions, quickWhereCondition, showFilter, onApplyFilter,
+    appliedFilterConditions, quickWhereCondition, showFilter, onApplyFilter, workbenchTabId,
     onApplyQuickWhereCondition, onSort, displayColumnNames, allTableColumnNames, columnMetaMap,
     getColumnFilterType, dbType, darkMode, dataGridFilterMessageApi, translateDataGrid, data,
     isMongoDBConnection, addedRows, exportScope, columnMetaMapByLowerName, foreignKeyMap,
@@ -107,6 +109,10 @@ export const useDataGridColumnTitles = ({
     containerRef, selectionStartRef, cellSelectionSourceDataRef, setCellSelectionDeleteEligible,
     cellSelectionUserSourceDataRef,
 }: UseDataGridColumnTitlesInput) => {
+    const beforeQueryChange = useCallback(
+        () => allowDataGridQueryChange(workbenchTabId, translateDataGrid),
+        [workbenchTabId, translateDataGrid],
+    );
     const {
         filterConditions,
         setFilterConditions,
@@ -146,6 +152,7 @@ export const useDataGridColumnTitles = ({
         onApplyFilter,
         onApplyQuickWhereCondition,
         onSort,
+        beforeQueryChange: exportScope === 'table' ? beforeQueryChange : undefined,
         messageApi: dataGridFilterMessageApi,
         translate: translateDataGrid,
         getColumnFilterType,

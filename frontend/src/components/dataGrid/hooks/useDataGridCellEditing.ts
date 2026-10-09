@@ -402,13 +402,13 @@ export const useDataGridCellEditing = ({
     const handleTableChange = useCallback((_pag: any, _filtersArg: any, sorter: any) => {
         if (isResizingRef.current) return; // Block sort if resizing
         const next = resolveGridSortInfoFromTableSorter({ sorter });
+        if (onSort?.(JSON.stringify(next), '') === false) return;
         setSortInfo(next);
-        if (onSort) onSort(JSON.stringify(next), '');
     }, [onSort]);
 
     const applySortInfo = useCallback((next: Array<{ columnKey: string, order: string, enabled?: boolean }>) => {
+        if (onSort?.(JSON.stringify(next), '') === false) return;
         setSortInfo(next);
-        if (onSort) onSort(JSON.stringify(next), '');
     }, [onSort]);
 
     const applyColumnSort = useCallback((columnName: string, order: 'ascend' | 'descend' | null) => {

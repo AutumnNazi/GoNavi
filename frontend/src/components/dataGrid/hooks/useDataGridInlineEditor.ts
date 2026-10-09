@@ -332,9 +332,11 @@ export const useDataGridInlineEditor = ({
         dataPanelOriginalRef,
         toggleDataPanel,
         updateFocusedCell,
+        isFocusedCellSourceCurrent,
         handleDataPanelFormatJson,
     } = useDataGridPreviewPanel({
         previewAvailable: mergedDisplayData.length > 0,
+        sourceData: data,
         toEditableText: mongoAwareEditableText,
         looksLikeJsonText,
         normalizeDateTimeString,
@@ -346,7 +348,7 @@ export const useDataGridInlineEditor = ({
         isWritableResultColumn(focusedCellInfo.dataIndex, effectiveEditLocator)
     ), [canModifyData, focusedCellInfo, effectiveEditLocator]);
     const handleDataPanelSave = useCallback((): boolean => {
-        if (!focusedCellInfo) return false;
+        if (!focusedCellInfo || !isFocusedCellSourceCurrent()) return false;
         if (!focusedCellWritable) {
             void message.info(translateDataGrid('data_grid.message.current_field_not_editable'));
             return false;
@@ -368,7 +370,7 @@ export const useDataGridInlineEditor = ({
         dataPanelDirtyRef.current = false;
         void message.success(translateDataGrid('data_grid.message.saved'));
         return true;
-    }, [focusedCellInfo, focusedCellWritable, dataPanelValue, handleCellSave, translateDataGrid]);
+    }, [focusedCellInfo, focusedCellWritable, dataPanelValue, handleCellSave, isFocusedCellSourceCurrent, translateDataGrid]);
     const lastReportedDataFingerprintRef = useRef('');
     // 记录上次上报时的 displayData 引用：引用变化必然是新查询/翻页，直接上报，
     // 无需再走指纹计算（省掉大结果集上的一次全量/抽样序列化）。

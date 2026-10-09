@@ -5156,6 +5156,7 @@
   "data_grid.message.locate_record_to_edit": "先に編集するレコードを特定してください",
   "data_grid.message.locator_column_value_empty": "ロケーター列 {{column}} の値が空のため、変更を安全に送信できません。",
   "data_grid.message.no_changes_to_commit": "コミットする変更はありません",
+  "data_grid.message.query_change_with_pending_edits": "未コミットの変更があります。フィルター、並べ替え、ページ切り替え、更新の前に、変更をコミットするかロールバックしてください。",
   "data_grid.message.no_copyable_cells": "コピー可能なセルを認識できませんでした",
   "data_grid.message.no_copyable_columns": "コピー可能な列を認識できませんでした",
   "data_grid.message.no_copyable_rows": "コピー可能な行を認識できませんでした",

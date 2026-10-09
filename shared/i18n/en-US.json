@@ -5156,6 +5156,7 @@
   "data_grid.message.locate_record_to_edit": "Locate the record to edit first",
   "data_grid.message.locator_column_value_empty": "Locator column {{column}} is empty, so changes cannot be submitted safely.",
   "data_grid.message.no_changes_to_commit": "No changes to commit",
+  "data_grid.message.query_change_with_pending_edits": "There are uncommitted changes. Commit or roll them back before filtering, sorting, changing pages, or refreshing.",
   "data_grid.message.no_copyable_cells": "No copyable cells were recognized",
   "data_grid.message.no_copyable_columns": "No copyable columns were recognized",
   "data_grid.message.no_copyable_rows": "No copyable rows were recognized",

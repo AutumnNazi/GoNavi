@@ -5156,6 +5156,7 @@
   "data_grid.message.locate_record_to_edit": "Сначала найдите запись для редактирования",
   "data_grid.message.locator_column_value_empty": "Значение столбца локатора {{column}} пустое, поэтому изменения нельзя безопасно отправить.",
   "data_grid.message.no_changes_to_commit": "Нет изменений для фиксации",
+  "data_grid.message.query_change_with_pending_edits": "Есть незафиксированные изменения. Зафиксируйте или откатите их перед фильтрацией, сортировкой, переходом на другую страницу или обновлением.",
   "data_grid.message.no_copyable_cells": "Копируемые ячейки не распознаны",
   "data_grid.message.no_copyable_columns": "Копируемые столбцы не распознаны",
   "data_grid.message.no_copyable_rows": "Копируемые строки не распознаны",
