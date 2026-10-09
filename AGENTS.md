@@ -161,3 +161,66 @@ export function QueryEditor() {
 4. 提交信息遵循 `CONTRIBUTING.md`：`emoji type(scope): 中文描述`。未要求时不要 commit、不要 push。
 
 **【推荐】** PR 保持单一主题；UI 变更附截图或录屏说明。
+
+---
+
+## 7. 本机工具链（macOS 开发机）
+
+> 本节记录**开发机环境**，不是代码规约。只在 macOS 构建失败时查阅。
+
+### 7.1 当前配置：`xcode-select` 指向 CommandLineTools
+
+```
+xcode-select -p   →  /Library/Developer/CommandLineTools
+clang / ld        →  CLT 自带的 clang 与 ld
+默认 sysroot      →  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk
+                     （即 MacOSX27.0.sdk 的别名，版本 27.0）
+```
+
+**为什么这么配**：宿主是 macOS 27，clang 据此选择 **27.0 版本的 SDK**；而该 SDK 的 `.tbd`
+声明了 `arm64e.x1-macos` 架构标记，**Xcode 的 `ld` 不认识它**，导致链接失败：
+
+```
+ld: tapi error: malformed file
+.../MacOSX27.0.sdk/usr/lib/libSystem.B.tbd:4:20: error: unknown architecture
+```
+
+即「新 SDK + 旧 linker」错配。CLT 是 27.0 全套（clang + ld + SDK 同源同版本），与宿主匹配。
+
+**触发条件**：`xcode-select` 指回 Xcode，且该 Xcode 的 `ld` 版本早于 macOS 27 时复现。
+纯编译（`go build ./internal/...`）不受影响，**只有需要链接的目标会失败**
+（`go build ./...` 含 main 的包、`go test` 的 cgo 路径、`wails build/dev`、直接 `cc`）。
+
+### 7.2 禁止再加 `SDKROOT` workaround
+
+历史上曾用 `export SDKROOT=<Xcode 的 26.5 SDK>` 绕过该问题，**现已移除，不要再加回来**：
+
+- 放在 `~/.zshrc` 只在**交互式** shell 生效，脚本 / CI / 编辑器 task / agent 工具走的
+  非交互式 shell 读不到，那些场景照旧失败（这正是它先前"看起来没用"的原因）；
+- 它会把 SDK 钉在比宿主更旧的 26.5 上，掩盖真实的版本配对问题。
+
+若确实需要临时指定，用 `SDKROOT=... <命令>` 前缀，不要写进任何 rc 文件。
+
+### 7.3 需要 `xcodebuild` 时
+
+切回 Xcode（会让上述链接问题复现，除非 Xcode 已升到与 CLT 匹配的版本）：
+
+```bash
+sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+```
+
+`codesign` 不受影响：它是系统自带的 `/usr/bin/codesign`（三种架构齐全），
+不随 `xcode-select` 变化，`build-release.sh` / `scripts/codesign-dev-app.sh` 正常可用。
+
+### 7.4 排查顺序
+
+1. `xcode-select -p` → 确认指向 CLT
+2. `xcrun --show-sdk-path` 与 `xcrun --show-sdk-version` → 确认 SDK 版本与宿主一致
+3. `env -i PATH=/usr/bin:/bin xcrun --show-sdk-path` → **排除 rc 文件干扰**，看真实默认值
+4. 对照实验：同一份 C 代码分别用 CLT 与 Xcode 的工具链编译，定位是「工具链旧」还是「SDK 坏」
+
+> 注：`SDKs/MacOSX.sdk` 这个**别名会参与解析**，但它是"默认名候选人"，不是版本来源。
+> clang 的 SDK 版本取自**宿主系统版本**（macOS 27 → 找 27.0 的 SDK）；
+> 当别名的目标版本与宿主不符时（例如被手动指向 `MacOSX26.5.sdk`），
+> 解析会**回落到带版本号的目录**（`MacOSX27.0.sdk`），所以改别名**改变不了实际使用的 SDK**
+> —— 这才是"改链接没用"的原因，不是"不读链接"。别再在这上面浪费时间。
