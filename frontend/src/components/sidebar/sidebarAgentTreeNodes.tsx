@@ -1,9 +1,24 @@
 import React from 'react';
 import { t } from '../../i18n';
-import { GnFolderIcon } from '../icons/gnIcons';
+import { GnFolderIcon, GnOpenAIAgentIcon } from '../icons/gnIcons';
 import { agentTreeNodeKey } from '../../utils/agentConnectionTypes';
 import type { AgentIntegrationSummaryView } from '../../utils/agentConnectionTypes';
 import type { SidebarTreeNode as TreeNode } from './sidebarV2TreeNodes';
+
+/**
+ * 智能体工具节点的品牌图标：复用文件夹图标的树图标槽位钩子类，
+ * v2 主题的 20px 槽位规则自动生效。
+ */
+const agentKindIcon = (kind: string): React.ReactNode => {
+  if (kind === 'codex') {
+    return (
+      <span className="gn-v2-tree-folder-icon" data-sidebar-tree-folder-icon="true">
+        <GnOpenAIAgentIcon />
+      </span>
+    );
+  }
+  return null;
+};
 
 /**
  * 主页固定"智能体"系统分组：不可改名、删除或混入数据库分组（S-03）。
@@ -33,6 +48,7 @@ export const buildAgentRootTreeNode = (
       type: 'agent-integration',
       isLeaf: true,
       selectable: true,
+      icon: agentKindIcon(integration.kind),
       dataRef: integration,
     })),
   } as TreeNode;

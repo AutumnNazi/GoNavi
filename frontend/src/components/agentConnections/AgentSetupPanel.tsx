@@ -83,7 +83,7 @@ const AgentSetupPanel: React.FC<AgentSetupPanelProps> = ({ kind, onClose }) => {
     (integration: DetectionView) => {
       addTab(buildAgentAssetsWorkbenchTab({
         integrationId: integration.integrationId,
-        displayName: "Codex",
+        displayName: "ChatGPT",
       }));
       void refreshAgentIntegrations();
       onClose();
@@ -151,7 +151,7 @@ const AgentSetupPanel: React.FC<AgentSetupPanelProps> = ({ kind, onClose }) => {
           <ApiOutlined />
         </span>
         <div>
-          <div className="gn-agent-setup-title">Codex</div>
+          <div className="gn-agent-setup-title">ChatGPT</div>
           <div className="gn-agent-setup-subtitle">{t("session_assets.detect.subtitle")}</div>
         </div>
       </div>
@@ -241,7 +241,7 @@ const AgentSetupPanel: React.FC<AgentSetupPanelProps> = ({ kind, onClose }) => {
                 >
                   {integrationStatus === "disabled"
                     ? t("session_assets.action.re_enable")
-                    : t("session_assets.action.enable", { name: "Codex" })}
+                    : t("session_assets.action.enable", { name: "ChatGPT" })}
                 </Button>
                 <Button onClick={onClose}>{t("common.action.cancel")}</Button>
               </>

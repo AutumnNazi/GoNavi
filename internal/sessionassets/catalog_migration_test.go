@@ -120,3 +120,42 @@ func TestV4MigrationAddsLastUserPreviewColumn(t *testing.T) {
 		t.Fatalf("migrated row = (%q, %q), want (old title, empty)", title, preview)
 	}
 }
+
+// v5 迁移：存量 codex 集成的显示名统一改为 ChatGPT（产品更名，
+// 工具类型键不变）。
+func TestV5MigrationRenamesCodexDisplayName(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "catalog.sqlite")
+	db, err := sql.Open("sqlite", "file:"+dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	for version := 1; version <= 4; version++ {
+		for _, statement := range catalogMigrations[version] {
+			if _, err := db.Exec(statement); err != nil {
+				t.Fatalf("v%d statement: %v", version, err)
+			}
+		}
+	}
+	if _, err := db.Exec(`PRAGMA user_version = 4`); err != nil {
+		t.Fatalf("set version: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO integrations (id, kind, display_name, enabled, created_at, updated_at)
+		 VALUES ('int-1', 'codex', 'Codex', 1, 1, 1)`); err != nil {
+		t.Fatalf("seed integration: %v", err)
+	}
+	_ = db.Close()
+
+	catalog, err := OpenCatalog(dbPath)
+	if err != nil {
+		t.Fatalf("open migrated catalog: %v", err)
+	}
+	defer catalog.Close()
+
+	var displayName string
+	if err := catalog.db.QueryRow(`SELECT display_name FROM integrations WHERE kind = 'codex'`).Scan(&displayName); err != nil {
+		t.Fatalf("query integration: %v", err)
+	}
+	if displayName != "ChatGPT" {
+		t.Fatalf("display_name = %q, want ChatGPT", displayName)
+	}
+}

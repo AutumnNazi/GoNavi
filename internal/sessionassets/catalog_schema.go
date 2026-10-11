@@ -161,4 +161,9 @@ var catalogMigrations = map[int][]string{
 	4: {
 		`ALTER TABLE assets ADD COLUMN last_user_preview TEXT NOT NULL DEFAULT ''`,
 	},
+	// 版本 5：智能体产品显示名 Codex 更名 ChatGPT（工具类型键仍为
+	// codex，指向同一 CLI 与数据目录）。
+	5: {
+		`UPDATE integrations SET display_name = 'ChatGPT' WHERE kind = 'codex'`,
+	},
 }

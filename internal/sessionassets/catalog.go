@@ -16,7 +16,7 @@ import (
 
 // catalogSchemaVersion 是 catalog.sqlite 的当前 schema 版本。迁移只向前，
 // 版本高于本代码的库不得覆盖（V-13）。
-const catalogSchemaVersion = 4
+const catalogSchemaVersion = 5
 
 // Catalog 是材料库的 SQLite 索引：配置、来源、资产、任务与抑制标记。
 // 表内容是可以由提交清单重建的投影加上不可重建的用户决定（启用、抑制）。

@@ -14,7 +14,7 @@ export const buildAgentAssetsWorkbenchTab = (integration: {
 }): TabData => ({
   id: agentAssetsTabId(integration.integrationId),
   title: t('session_assets.workbench.tab_title', {
-    name: integration.displayName || 'Codex',
+    name: integration.displayName || 'ChatGPT',
   }),
   type: 'agent-assets',
   connectionId: '',

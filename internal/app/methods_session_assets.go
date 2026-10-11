@@ -76,7 +76,7 @@ func (a *App) SessionAssetsEnable(input sessionassets.EnableInput) (result conne
 		return sessionAssetsServiceError(a, err)
 	}
 	catalog := service.Catalog()
-	integration, err := catalog.EnableIntegration(context.Background(), sessionassets.AgentKind(kind), "Codex")
+	integration, err := catalog.EnableIntegration(context.Background(), sessionassets.AgentKind(kind), "ChatGPT")
 	if err != nil {
 		return sessionAssetsError(a, "session_assets.error.enable_failed", err)
 	}
@@ -84,7 +84,7 @@ func (a *App) SessionAssetsEnable(input sessionassets.EnableInput) (result conne
 		if _, err := catalog.UpsertSource(context.Background(), sessionassets.SourceInput{
 			IntegrationID: integration.ID,
 			Kind:          "cli",
-			DisplayName:   "Codex",
+			DisplayName:   "ChatGPT",
 			RootPath:      detection.DataDir,
 			IdentityKey:   identity,
 		}); err != nil {
