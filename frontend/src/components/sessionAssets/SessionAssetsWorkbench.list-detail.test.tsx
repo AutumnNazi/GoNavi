@@ -110,6 +110,20 @@ describe('SessionAssetsWorkbench', () => {
     expect(root.findByProps({ 'data-backup-state': 'verified' })).toBeTruthy();
   });
 
+  it('shows the empty state before a selection and the detail after clicking a row', async () => {
+    const api = buildApi();
+    const tree = await renderWorkbench(api);
+    expect(tree.root.findByProps({ 'data-session-assets-empty': 'true' })).toBeTruthy();
+    expect(tree.root.findByProps({ role: 'separator' })).toBeTruthy();
+    const row = tree.root.find((node) => node.props.className?.includes?.('session-assets-row'));
+    await act(async () => {
+      row.props.onClick();
+    });
+    await act(async () => {});
+    expect(() => tree.root.findByProps({ 'data-session-assets-empty': 'true' })).toThrow();
+    expect(tree.root.findByProps({ 'data-session-assets-detail': 'true' })).toBeTruthy();
+  });
+
   it('selects an asset and shows the backup read-source band with coverage', async () => {
     const api = buildApi();
     const tree = await renderWorkbench(api);

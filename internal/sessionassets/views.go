@@ -31,6 +31,9 @@ type AgentIntegrationSummary struct {
 	DisplayName   string `json:"displayName"`
 	Enabled       bool   `json:"enabled"`
 	AssetCount    int    `json:"assetCount"`
+	// LibraryLocked 标记材料库被其他实例占用：列表来自只读连接，
+	// 保全与详情暂不可用；正常路径省略该字段（false）。
+	LibraryLocked bool `json:"libraryLocked,omitempty"`
 }
 
 // DetectInput 是检测请求参数；两个定位字段为空时使用默认探测。

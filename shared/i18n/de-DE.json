@@ -12158,5 +12158,10 @@
   "session_assets.action.disable": "Erfassung stoppen",
   "session_assets.history.noise_toggle": "{{count}} Kontext-/Systemeintr\u00e4ge anzeigen",
   "session_assets.action.back_to_list": "Zur Liste zur\u00fcck",
-  "session_assets.error.integration_disabled": "Die Sitzungserfassung ist deaktiviert. Codex bitte erneut aktivieren."
+  "session_assets.error.integration_disabled": "Die Sitzungserfassung ist deaktiviert. Codex bitte erneut aktivieren.",
+  "session_assets.workbench.empty_title": "W\u00e4hlen Sie links eine Sitzung aus, um Details zu sehen",
+  "session_assets.workbench.empty_hint": "Nach dem Archivieren der Sitzung im Originaltool bewahrt GoNavi die Materialien automatisch auf",
+  "session_assets.workbench.library_locked_title": "Die Bibliothek wird von einer anderen GoNavi-Instanz belegt",
+  "session_assets.workbench.library_locked_description": "Integrationsinformationen werden schreibgesch\u00fctzt angezeigt; Browsen, Sicherung und Export sind pausiert. Schlie\u00dfen Sie die andere GoNavi-Instanz und klicken Sie auf \u201eAktualisieren\u201c, um fortzufahren.",
+  "session_assets.workbench.resize_list": "Ziehen, um die Listenbreite anzupassen"
 }

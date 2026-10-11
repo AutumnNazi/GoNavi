@@ -12158,5 +12158,10 @@
   "session_assets.action.disable": "Disable capture",
   "session_assets.history.noise_toggle": "Show {{count}} context/system entries",
   "session_assets.action.back_to_list": "Back to list",
-  "session_assets.error.integration_disabled": "Capture is disabled. Re-enable Codex to continue."
+  "session_assets.error.integration_disabled": "Capture is disabled. Re-enable Codex to continue.",
+  "session_assets.workbench.empty_title": "Select a session on the left to view details",
+  "session_assets.workbench.empty_hint": "Once you archive the session in the original tool, GoNavi preserves its materials automatically",
+  "session_assets.workbench.library_locked_title": "Library is held by another GoNavi instance",
+  "session_assets.workbench.library_locked_description": "Integration info is shown read-only; browsing, preservation and export are paused. Close the other GoNavi instance and click Refresh to restore.",
+  "session_assets.workbench.resize_list": "Drag to resize the list"
 }

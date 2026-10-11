@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -125,24 +126,36 @@ func (a *App) SessionAssetsDisable(kind string) (result connection.QueryResult) 
 }
 
 // SessionAssetsListIntegrations 返回主页智能体分组的数据源。材料库尚不存在
-// 时返回空列表而不报错。
+// 时返回空列表而不报错；库被其他实例占用时降级为只读列表并标记
+// libraryLocked，分组照常显示（不静默消失）。
 func (a *App) SessionAssetsListIntegrations() (result connection.QueryResult) {
 	a.sessionAssetsMu.Lock()
 	service := a.sessionAssets
 	a.sessionAssetsMu.Unlock()
 	if service == nil {
+		if result, ok := a.listIntegrationsReadOnly(); ok {
+			return result
+		}
 		return connection.QueryResult{Success: true, Data: []sessionassets.AgentIntegrationSummary{}}
 	}
-	catalog := service.Catalog()
-	integrations, err := catalog.ListIntegrations(context.Background())
+	integrations, err := service.Catalog().ListIntegrations(context.Background())
 	if err != nil {
 		return sessionAssetsError(a, "session_assets.error.list_failed", err)
 	}
+	summaries, err := summarizeIntegrations(service.Catalog(), integrations, false)
+	if err != nil {
+		return sessionAssetsError(a, "session_assets.error.list_failed", err)
+	}
+	return connection.QueryResult{Success: true, Data: summaries}
+}
+
+// summarizeIntegrations 为集成记录聚合资产数并收拢为分组视图。
+func summarizeIntegrations(catalog *sessionassets.Catalog, integrations []sessionassets.Integration, locked bool) ([]sessionassets.AgentIntegrationSummary, error) {
 	summaries := make([]sessionassets.AgentIntegrationSummary, 0, len(integrations))
 	for _, integration := range integrations {
 		count, err := catalog.CountAssets(context.Background(), integration.ID)
 		if err != nil {
-			return sessionAssetsError(a, "session_assets.error.list_failed", err)
+			return nil, err
 		}
 		summaries = append(summaries, sessionassets.AgentIntegrationSummary{
 			IntegrationID: integration.ID,
@@ -150,9 +163,40 @@ func (a *App) SessionAssetsListIntegrations() (result connection.QueryResult) {
 			DisplayName:   integration.DisplayName,
 			Enabled:       integration.Enabled,
 			AssetCount:    count,
+			LibraryLocked: locked,
 		})
 	}
-	return connection.QueryResult{Success: true, Data: summaries}
+	return summaries, nil
+}
+
+// listIntegrationsReadOnly 在写服务不可用时以只读连接列出集成：
+// 目录文件存在且可读时返回降级摘要。失败返回 false，由调用方回退空列表。
+func (a *App) listIntegrationsReadOnly() (connection.QueryResult, bool) {
+	materialsRoot, err := appdata.ResolveSessionAssetsDirectory(appdata.MustResolveActiveRoot())
+	if err != nil {
+		return connection.QueryResult{}, false
+	}
+	catalogPath := filepath.Join(materialsRoot, "catalog.sqlite")
+	if _, err := os.Stat(catalogPath); err != nil {
+		return connection.QueryResult{}, false
+	}
+	catalog, err := sessionassets.OpenCatalogReadOnly(catalogPath)
+	if err != nil {
+		logger.Warnf("会话资产目录只读打开失败：%v", err)
+		return connection.QueryResult{}, false
+	}
+	defer catalog.Close()
+	integrations, err := catalog.ListIntegrations(context.Background())
+	if err != nil {
+		logger.Warnf("只读列出会话资产集成失败：%v", err)
+		return connection.QueryResult{}, false
+	}
+	summaries, err := summarizeIntegrations(catalog, integrations, true)
+	if err != nil {
+		logger.Warnf("只读聚合会话资产集成摘要失败：%v", err)
+		return connection.QueryResult{}, false
+	}
+	return connection.QueryResult{Success: true, Data: summaries}, true
 }
 
 // detectAgentKind 按工具类型分派探测；首版仅 Codex。

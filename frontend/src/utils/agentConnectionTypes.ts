@@ -20,6 +20,8 @@ export interface AgentIntegrationSummaryView {
   displayName: string;
   enabled: boolean;
   assetCount: number;
+  /** 材料库被其他 GoNavi 实例占用：列表来自只读连接，保全与详情暂不可用。 */
+  libraryLocked?: boolean;
 }
 
 /** 智能体检测/启用页的组合视图（对应后端 sessionassets.DetectionView）。 */

@@ -21,8 +21,9 @@ const catalogSchemaVersion = 3
 // Catalog 是材料库的 SQLite 索引：配置、来源、资产、任务与抑制标记。
 // 表内容是可以由提交清单重建的投影加上不可重建的用户决定（启用、抑制）。
 type Catalog struct {
-	db   *sql.DB
-	path string
+	db       *sql.DB
+	path     string
+	readOnly bool
 }
 
 // OpenCatalog 打开（必要时创建）材料库索引并执行向前迁移。
@@ -57,6 +58,30 @@ func OpenCatalog(path string) (*Catalog, error) {
 	return catalog, nil
 }
 
+// OpenCatalogReadOnly 以只读连接打开已存在的目录索引：材料库被其他
+// GoNavi 实例占用时，绑定层借此维持集成列表可见（libraryLocked 降级），
+// 不与写者竞争写锁。不执行迁移、不创建文件。
+func OpenCatalogReadOnly(path string) (*Catalog, error) {
+	trimmed := path
+	if trimmed == "" {
+		return nil, errors.New("session assets catalog path is empty")
+	}
+	absolute, err := filepath.Abs(trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("resolve session assets catalog path: %w", err)
+	}
+	if _, err := os.Stat(absolute); err != nil {
+		return nil, fmt.Errorf("stat session assets catalog: %w", err)
+	}
+	database, err := sql.Open("sqlite", catalogReadOnlyDSN(absolute))
+	if err != nil {
+		return nil, fmt.Errorf("open session assets catalog read-only: %w", err)
+	}
+	database.SetMaxOpenConns(2)
+	database.SetMaxIdleConns(2)
+	return &Catalog{db: database, path: absolute, readOnly: true}, nil
+}
+
 // Path 返回数据库文件路径。
 func (c *Catalog) Path() string {
 	if c == nil {
@@ -65,12 +90,16 @@ func (c *Catalog) Path() string {
 	return c.path
 }
 
-// Close 收尾 WAL 并关闭连接。调用方负责已持有材料库锁的释放。
+// Close 收尾 WAL 并关闭连接。调用方负责已持有材料库锁的释放；
+// 只读连接没有写权限，跳过 checkpoint。
 func (c *Catalog) Close() error {
 	if c == nil || c.db == nil {
 		return nil
 	}
-	_, checkpointErr := c.db.ExecContext(context.Background(), `PRAGMA wal_checkpoint(TRUNCATE)`)
+	var checkpointErr error
+	if !c.readOnly {
+		_, checkpointErr = c.db.ExecContext(context.Background(), `PRAGMA wal_checkpoint(TRUNCATE)`)
+	}
 	closeErr := c.db.Close()
 	c.db = nil
 	return errors.Join(checkpointErr, closeErr)
@@ -138,9 +167,9 @@ func applyMigrationOnConn(ctx context.Context, conn *sql.Conn, target int) error
 	return nil
 }
 
-// catalogDSN 构造带 PRAGMA 的 SQLite DSN，模式与 syncjob 保持一致；
-// Windows 路径需要转斜杠并补全 file URI 的盘符前导斜杠。
-func catalogDSN(path string) string {
+// catalogFileURI 把数据库路径转成 file URI 的 URL 形式；Windows 路径
+// 需要转斜杠并补全盘符前导斜杠（模式与 syncjob 保持一致）。
+func catalogFileURI(path string) *url.URL {
 	uriPath := filepath.ToSlash(path)
 	dsn := &url.URL{Scheme: "file", Path: uriPath}
 	if runtime.GOOS == "windows" {
@@ -154,11 +183,30 @@ func catalogDSN(path string) string {
 			dsn.Path = "/" + uriPath
 		}
 	}
+	return dsn
+}
+
+func catalogDSN(path string) string {
+	dsn := catalogFileURI(path)
 	query := url.Values{}
 	for _, pragma := range []string{"busy_timeout(5000)", "foreign_keys(ON)", "synchronous(FULL)", "journal_mode(WAL)"} {
 		query.Add("_pragma", pragma)
 	}
 	query.Set("_txlock", "immediate")
+	dsn.RawQuery = query.Encode()
+	return dsn.String()
+}
+
+// catalogReadOnlyDSN 与写路径的差异：mode=ro + query_only，不设
+// journal_mode/synchronous（只读连接改写日志设置会报错），事务用默认
+// deferred（immediate 会申请写锁）。
+func catalogReadOnlyDSN(path string) string {
+	dsn := catalogFileURI(path)
+	query := url.Values{}
+	for _, pragma := range []string{"busy_timeout(5000)", "foreign_keys(ON)", "query_only(ON)"} {
+		query.Add("_pragma", pragma)
+	}
+	query.Set("mode", "ro")
 	dsn.RawQuery = query.Encode()
 	return dsn.String()
 }

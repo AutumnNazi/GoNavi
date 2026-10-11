@@ -1,5 +1,5 @@
 import React from 'react';
-import { message } from 'antd';
+import { Alert, message } from 'antd';
 import { useStore } from '../../store';
 import { t } from '../../i18n';
 import type { TabData } from '../../types';
@@ -8,6 +8,11 @@ import {
   confirmSessionAssetDelete,
 } from './SessionAssetDetailPanel';
 import { SessionAssetsListPanel } from './SessionAssetsListPanel';
+import {
+  SessionAssetsListResizeDivider,
+  loadSessionAssetsListWidth,
+  saveSessionAssetsListWidth,
+} from './SessionAssetsListResize';
 import { wailsSessionAssetsApi, type SessionAssetDetail, type SessionHistoryPage, type SessionAssetsApi } from './sessionAssetsApi';
 import { SessionAssetsNewSessionPanel } from './SessionAssetsNewSessionPanel';
 import { useSessionAssetsList } from './useSessionAssetsList';
@@ -15,7 +20,8 @@ import './SessionAssetsWorkbench.css';
 
 /**
  * 智能体会话资产工作台：一种工具一个唯一页签（固定 ID 激活已有页签）。
- * 左列表右详情；读取、导出与删除全部走后端真实状态，不显示伪造数据。
+ * 左列表右详情（宽度可拖拽调整并记忆）；读取、导出与删除全部走后端
+ * 真实状态，不显示伪造数据。材料库被占用时顶部展示降级提示。
  */
 export const SessionAssetsWorkbench: React.FC<{
   tab: TabData;
@@ -26,7 +32,9 @@ export const SessionAssetsWorkbench: React.FC<{
   const agentIntegrations = useStore((state) => state.agentIntegrations);
   const refreshAgentIntegrations = useStore((state) => state.refreshAgentIntegrations);
   const integrationId = tab.agentIntegrationId || '';
-  const kind = agentIntegrations.find((item) => item.integrationId === integrationId)?.kind || 'codex';
+  const integration = agentIntegrations.find((item) => item.integrationId === integrationId);
+  const kind = integration?.kind || 'codex';
+  const libraryLocked = integration?.libraryLocked === true;
 
   const { items, total, loading, filter, updateFilter, reload } = useSessionAssetsList(api, kind);
   const [selected, setSelected] = React.useState<SessionAssetDetail | null>(null);
@@ -36,6 +44,12 @@ export const SessionAssetsWorkbench: React.FC<{
   const selectedIdRef = React.useRef('');
   // 窄屏（≤900px）下列表与详情切换：点行进入详情全屏视图，返回按钮回列表
   const [mobileDetailOpen, setMobileDetailOpen] = React.useState(false);
+  // 宽屏列表宽度：分割条拖拽后记忆，重开页签保持。
+  const [listWidth, setListWidth] = React.useState<number | undefined>(() => loadSessionAssetsListWidth());
+  const handleListResize = React.useCallback((width: number) => {
+    setListWidth(width);
+    saveSessionAssetsListWidth(width);
+  }, []);
 
   const openAsset = React.useCallback(async (assetId: string) => {
     selectedIdRef.current = assetId;
@@ -161,6 +175,14 @@ export const SessionAssetsWorkbench: React.FC<{
 
   return (
     <div className="session-assets-workbench" data-session-assets-workbench="true">
+      {libraryLocked ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={t('session_assets.workbench.library_locked_title')}
+          description={t('session_assets.workbench.library_locked_description')}
+        />
+      ) : null}
       <div
         className={
           mobileDetailOpen
@@ -175,26 +197,41 @@ export const SessionAssetsWorkbench: React.FC<{
           query={filter.query}
           backupFilter={filter.backupStatus}
           selectedId={selected?.id || ''}
+          style={listWidth ? { flexBasis: listWidth, width: listWidth } : undefined}
           onQueryChange={(value) => updateFilter({ query: value })}
           onBackupFilterChange={(value) => updateFilter({ backupStatus: value })}
           onSelect={handleSelect}
           onReload={reload}
         />
-        <SessionAssetDetailPanel
-          detail={selected}
-          loading={detailLoading}
-          capability={capability}
-          historyPage={historyPage}
-          historyLoading={historyLoading}
-          onLoadMore={() => void loadMoreHistory()}
-          onExport={(mode) => void handleExport(mode)}
-          onDelete={handleDelete}
-          onReread={() => void handleReread()}
-          onRetry={() => void handleRetry()}
-          onBackToList={closeMobileDetail}
-          onContinue={() => void handleContinue()}
-          onNewSession={() => void handleNewSession()}
-        />
+        <SessionAssetsListResizeDivider onCommit={handleListResize} />
+        {selected || detailLoading ? (
+          <SessionAssetDetailPanel
+            detail={selected}
+            loading={detailLoading}
+            capability={capability}
+            historyPage={historyPage}
+            historyLoading={historyLoading}
+            onLoadMore={() => void loadMoreHistory()}
+            onExport={(mode) => void handleExport(mode)}
+            onDelete={handleDelete}
+            onReread={() => void handleReread()}
+            onRetry={() => void handleRetry()}
+            onBackToList={closeMobileDetail}
+            onContinue={() => void handleContinue()}
+            onNewSession={() => void handleNewSession()}
+          />
+        ) : (
+          <div className="session-assets-detail-empty" data-session-assets-empty="true">
+            <div className="session-assets-detail-empty-body">
+              <p className="session-assets-detail-empty-title">
+                {t('session_assets.workbench.empty_title')}
+              </p>
+              <p className="session-assets-detail-empty-hint">
+                {t('session_assets.workbench.empty_hint')}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
       {newSessionOpen && selected ? (
         <SessionAssetsNewSessionPanel detail={selected} api={api} onClose={() => setNewSessionOpen(false)} />

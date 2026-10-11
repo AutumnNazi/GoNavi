@@ -15,12 +15,14 @@ export const SessionAssetsListPanel: React.FC<{
   query: string;
   backupFilter: string;
   selectedId: string;
+  /** 拖拽分割条提交后的列表宽度；未拖拽时用 CSS 默认值。 */
+  style?: React.CSSProperties;
   onQueryChange: (value: string) => void;
   onBackupFilterChange: (value: string) => void;
   onSelect: (asset: SessionAssetView) => void;
   onReload: () => void;
-}> = ({ items, total, loading, query, backupFilter, selectedId, onQueryChange, onBackupFilterChange, onSelect, onReload }) => (
-  <aside className="session-assets-list" data-session-assets-list="true">
+}> = ({ items, total, loading, query, backupFilter, selectedId, style, onQueryChange, onBackupFilterChange, onSelect, onReload }) => (
+  <aside className="session-assets-list" style={style} data-session-assets-list="true">
     <div className="session-assets-list-toolbar">
       <Input
         allowClear
