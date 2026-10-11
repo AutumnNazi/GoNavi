@@ -5,7 +5,9 @@ import { t } from '../../i18n';
 export const SESSION_ASSETS_LIST_WIDTH_KEY = 'gonavi.sessionAssets.listWidth';
 export const SESSION_ASSETS_LIST_MIN_WIDTH = 240;
 export const SESSION_ASSETS_LIST_RESERVE = 420;
-const SESSION_ASSETS_LIST_MAX_STORED_WIDTH = 1600;
+// 拖拽可以临时拉宽，但持久化上限跟随新的默认占比：更宽的历史值在下次
+// 启动时按超限丢弃，回落默认宽度。
+const SESSION_ASSETS_LIST_MAX_STORED_WIDTH = 520;
 
 export const loadSessionAssetsListWidth = (): number | undefined => {
   try {
@@ -46,9 +48,12 @@ export const SessionAssetsListResizeDivider: React.FC<{
       if (!target) return;
       const container = target.parentElement;
       const containerWidth = container?.offsetWidth || window.innerWidth;
-      const maxWidth = Math.max(
-        SESSION_ASSETS_LIST_MIN_WIDTH + 80,
-        containerWidth - SESSION_ASSETS_LIST_RESERVE,
+      const maxWidth = Math.min(
+        SESSION_ASSETS_LIST_MAX_STORED_WIDTH,
+        Math.max(
+          SESSION_ASSETS_LIST_MIN_WIDTH + 80,
+          containerWidth - SESSION_ASSETS_LIST_RESERVE,
+        ),
       );
       const startX = event.clientX;
       const startWidth = target.offsetWidth;

@@ -17,24 +17,42 @@
 
 .session-assets-list {
   /* 默认窄占比：小窗口下列表不再挤掉详情；拖拽后由内联宽度覆盖。 */
-  flex: 0 0 clamp(240px, 24vw, 380px);
+  flex: 0 0 clamp(240px, 18vw, 300px);
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-height: 0;
-  border-right: 1px solid rgba(128, 128, 128, 0.18);
-  padding-right: 10px;
+  min-width: 0;
 }
 
+/* 分割条：视觉分隔线由热区自己的 ::before 绘制，线与可拖拽区域天然
+   重叠（用户反馈：分割线与可拖动处错位、看不出可操作）。 */
 .session-assets-list-resize {
-  flex: 0 0 6px;
+  position: relative;
+  flex: 0 0 8px;
   cursor: col-resize;
   border-radius: 3px;
   background: transparent;
 }
 
+.session-assets-list-resize::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: rgba(128, 128, 128, 0.18);
+}
+
 .session-assets-list-resize:hover {
-  background: rgba(22, 119, 255, 0.35);
+  background: rgba(22, 119, 255, 0.08);
+}
+
+.session-assets-list-resize:hover::before {
+  width: 2px;
+  background: rgba(22, 119, 255, 0.5);
 }
 
 .session-assets-list-toolbar {
@@ -78,6 +96,13 @@
   cursor: pointer;
   font: inherit;
   color: inherit;
+  /* 行内任何子项都不得把行撑出可视宽度，否则省略号失效、文本盖到
+     日期上（用户反馈：窄列表时预览浮到日期上）。 */
+  overflow: hidden;
+  max-width: 100%;
+  /* 列表主体是可滚动 flex 列容器：overflow:hidden 会把 flex 最小尺寸
+     变成 0，行数一多所有行被压缩成细条，必须禁止收缩。 */
+  flex: 0 0 auto;
 }
 
 .session-assets-row:hover {
@@ -88,23 +113,34 @@
   background: rgba(22, 119, 255, 0.14);
 }
 
+.session-assets-row-top {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .session-assets-row-title {
+  flex: 1 1 auto;
+  min-width: 0;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.session-assets-row-meta {
-  display: flex;
-  gap: 8px;
-  font-size: 12px;
-  opacity: 0.7;
-  min-width: 0;
+.session-assets-row-time {
+  flex: 0 0 auto;
+  font-size: 11px;
+  opacity: 0.6;
 }
 
-.session-assets-row-project,
-.session-assets-row-provider {
+.session-assets-row-preview {
+  min-width: 0;
+  max-width: 100%;
+  font-size: 12px;
+  opacity: 0.72;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -115,11 +151,14 @@
   gap: 6px;
   align-items: center;
   font-size: 11px;
+  min-width: 0;
 }
 
-.session-assets-row-time {
-  margin-left: auto;
-  opacity: 0.6;
+.session-assets-row-project,
+.session-assets-row-provider {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .session-assets-tag {
@@ -222,34 +261,78 @@
   flex-direction: column;
 }
 
-/* 紧凑页签：默认样式在本面板里过大（用户反馈）。 */
-/* 页签视觉复用项目现成的 gn-user-mgmt-editor-tabs（文字页签+主题色下划线），
-   但该套样式面向有外层留白的页面（tab 纵向 padding 12px、nav 白底），在
-   本面板里会形成大白卡且文字贴边；v2 全局还给所有 nav 铺 panel-2 白底。
-   以下用高于两者特异性的选择器收紧为紧凑透明页签。 */
-body[data-ui-version=v2] .session-assets-detail-tabs.gn-user-mgmt-editor-tabs > .ant-tabs-nav {
+/* 自包含紧凑文字页签（对齐项目文字页签视觉：透明底 + 主题色底部下划线）。
+   v2 主题会向嵌套 Tabs 泄漏三层样式，这里逐项夺回，缺一项就会出现
+   「两个字占一条、页签下一片空白、高亮线压在字头上」：
+   1) v2-theme-09 .gn-v2-main-tabs .ant-tabs-tab：260px 定宽、36px 高、
+      nav-wrap/nav-list min-height 36px、tab-btn 拉满 100%、active 顶部
+      inset 高亮（后代选择器，本面板处于主工作台页签内容内，必中）；
+   2) v2-theme-01 全局 .ant-tabs-tab：8px 12px padding、右边框 0.5px、
+      active ::after 顶栏、nav 白底；
+   3) v2-theme-09 对 active ::after 的 display:none。 */
+body[data-ui-version=v2] .session-assets-detail-tabs > .ant-tabs-nav {
   background: transparent !important;
   margin-bottom: 0 !important;
   padding: 0 2px;
 }
 
-body[data-ui-version=v2] .session-assets-detail-tabs.gn-user-mgmt-editor-tabs > .ant-tabs-nav::before {
+body[data-ui-version=v2] .session-assets-detail-tabs > .ant-tabs-nav::before {
   border-bottom: none !important;
 }
 
-body[data-ui-version=v2] .session-assets-detail-tabs.gn-user-mgmt-editor-tabs > .ant-tabs-nav .ant-tabs-tab {
+body[data-ui-version=v2] .session-assets-detail-tabs > .ant-tabs-nav .ant-tabs-nav-wrap,
+body[data-ui-version=v2] .session-assets-detail-tabs > .ant-tabs-nav .ant-tabs-nav-list {
+  min-height: 0 !important;
+}
+
+body[data-ui-version=v2] .session-assets-detail-tabs > .ant-tabs-nav .ant-tabs-tab {
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
   height: auto !important;
   min-height: 0 !important;
-  margin: 0 18px 0 0 !important;
-  padding: 5px 2px !important;
+  margin: 0 24px 0 0 !important;
+  padding: 10px 0 !important;
   background: transparent !important;
   border: none !important;
   border-radius: 0 !important;
+  box-shadow: none !important;
 }
 
-body[data-ui-version=v2] .session-assets-detail-tabs.gn-user-mgmt-editor-tabs > .ant-tabs-nav .ant-tabs-tab .ant-tabs-tab-btn {
+body[data-ui-version=v2] .session-assets-detail-tabs > .ant-tabs-nav .ant-tabs-tab:hover {
+  background: transparent !important;
+}
+
+body[data-ui-version=v2] .session-assets-detail-tabs > .ant-tabs-nav .ant-tabs-tab .ant-tabs-tab-btn {
+  width: auto !important;
+  height: auto !important;
   font-size: 13px !important;
-  line-height: 18px !important;
+  line-height: 20px !important;
+  font-weight: 500 !important;
+  color: var(--gn-fg-3) !important;
+}
+
+body[data-ui-version=v2] .session-assets-detail-tabs > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body[data-ui-version=v2] .session-assets-detail-tabs > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--gn-accent) !important;
+  font-weight: 600 !important;
+}
+
+/* 激活下划线：v2-01 把 ::after 画在 tab 顶部，v2-09 直接 display:none；
+   这里重新声明并移到文字底部，与项目文字页签一致。 */
+body[data-ui-version=v2] .session-assets-detail-tabs > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active::after {
+  display: block !important;
+  top: auto !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  height: 2px !important;
+  border-radius: 2px 2px 0 0 !important;
+  background: var(--gn-accent) !important;
 }
 
 /* 滚动链关键：主工作台页签的 .main-tabs .ant-tabs-content-holder（后代
