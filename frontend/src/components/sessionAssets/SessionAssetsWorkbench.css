@@ -207,11 +207,12 @@
   flex: 0 0 auto;
 }
 
-.session-assets-readband .ant-alert-description {
+.session-assets-readband.ant-alert {
+  padding: 5px 12px;
+}
+
+.session-assets-readband .ant-alert-message {
   font-size: 12px;
-  word-break: break-all;
-  max-height: 64px;
-  overflow: auto;
 }
 
 .session-assets-detail-tabs {
@@ -221,7 +222,20 @@
   flex-direction: column;
 }
 
+/* 紧凑页签：默认样式在本面板里过大（用户反馈）。 */
+.session-assets-detail-tabs .ant-tabs-nav {
+  margin: 0 0 8px;
+}
+
+.session-assets-detail-tabs .ant-tabs-tab {
+  padding: 4px 2px;
+  font-size: 13px;
+}
+
+/* 滚动链关键：content-holder 必须可收缩，否则历史把面板撑爆且无滚动条。 */
 .session-assets-detail-tabs .ant-tabs-content-holder {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
 }
 

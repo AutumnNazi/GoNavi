@@ -6,6 +6,13 @@ import type { SessionAssetDetail, SessionHistoryEntry, SessionHistoryPage } from
 import { SessionAssetHistoryView } from './SessionAssetHistoryView';
 import { SessionAssetMaterialsView } from './SessionAssetMaterialsView';
 
+/** 读源带里只展示文件名，完整路径放在 Tooltip。 */
+export const readBandFileName = (path: string): string => {
+  const normalized = String(path || '').replace(/\\/g, '/');
+  const base = normalized.slice(normalized.lastIndexOf('/') + 1);
+  return base || String(path || '');
+};
+
 /**
  * 会话详情面板：顶部读源带指明正在读取原工具还是哪次备份（交互设计
  * §5.1），历史与材料分页呈现；动作区按能力判定提供继续原会话、携带
@@ -97,27 +104,29 @@ export const SessionAssetDetailPanel: React.FC<{
         </div>
       </header>
 
-      <Alert
-        className="session-assets-readband"
-        type={
-          detail.readSource === 'live' ? 'success'
-            : detail.readSource === 'backup' ? 'info'
-              : 'warning'
-        }
-        showIcon
-        message={t(readSourceKey)}
-        description={
-          detail.readSource === 'backup' && detail.coverageAt > 0
-            ? t('session_assets.detail.read_source.coverage', {
-                time: new Date(detail.coverageAt * 1000).toLocaleString(),
-              })
-            : detail.readSource === 'backup'
-              ? detail.readPath
-              : detail.readSource === 'live'
-                ? detail.readPath
-                : undefined
-        }
-      />
+      {/* 读源带：单行紧凑展示；完整路径悬停可见，不再占整块面板。 */}
+      <Tooltip title={detail.readPath} placement="bottomLeft">
+        <Alert
+          className="session-assets-readband"
+          type={
+            detail.readSource === 'live' ? 'success'
+              : detail.readSource === 'backup' ? 'info'
+                : 'warning'
+          }
+          showIcon
+          message={
+            detail.readSource === 'backup' && detail.coverageAt > 0
+              ? t('session_assets.detail.read_source.coverage', {
+                  time: new Date(detail.coverageAt * 1000).toLocaleString(),
+                })
+              : detail.readSource === 'backup'
+                ? t(readSourceKey)
+                : detail.readSource === 'live'
+                  ? `${t(readSourceKey)} · ${readBandFileName(detail.readPath)}`
+                  : t(readSourceKey)
+          }
+        />
+      </Tooltip>
 
       {detail.recentJobs?.some((job) => job.status === 'failed') ? (
         <Alert
