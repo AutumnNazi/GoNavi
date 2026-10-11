@@ -1,8 +1,10 @@
 import React from 'react';
-import { Spin } from 'antd';
+import { Alert, Spin } from 'antd';
 import type { TabData } from '../types';
 import { useStore } from '../store';
 import { useWorkbenchTabActivation } from './useWorkbenchTabActivation';
+import AIPanelErrorBoundary from './ai/AIPanelErrorBoundary';
+import { t } from '../i18n';
 import '../styles/v2-theme-workbench.css';
 
 const DataViewer = React.lazy(() => import('./DataViewer'));
@@ -206,6 +208,24 @@ export const WorkbenchTabContent: React.FC<WorkbenchTabContentProps> = React.mem
     return exhaustiveType;
   }
 
+  // 页签内容崩溃只圈在本页签内：页签栏与其他页签继续可用，用户可以
+  // 直接关闭出错的页签，而不是整窗白屏无路可走（用户实测反馈）。
+  const renderTabErrorFallback = (error: Error | null) => (
+    <div
+      role="alert"
+      data-testid="workbench-tab-error"
+      style={{ flex: '1 1 auto', minWidth: 0, minHeight: 0, display: 'grid', placeItems: 'center', padding: 24 }}
+    >
+      <Alert
+        type="error"
+        showIcon
+        message={t('workbench.tab_error.title')}
+        description={error?.message || t('workbench.tab_error.unknown')}
+        style={{ maxWidth: 560 }}
+      />
+    </div>
+  );
+
   return (
     <React.Suspense
       fallback={(
@@ -217,12 +237,14 @@ export const WorkbenchTabContent: React.FC<WorkbenchTabContentProps> = React.mem
         </div>
       )}
     >
-      {content}
-      <WorkbenchContentReady
-        key={`${tab.id}:${tab.type}`}
-        marker={`${tab.id}:${tab.type}`}
-        onReady={onContentReady}
-      />
+      <AIPanelErrorBoundary fallback={renderTabErrorFallback}>
+        {content}
+        <WorkbenchContentReady
+          key={`${tab.id}:${tab.type}`}
+          marker={`${tab.id}:${tab.type}`}
+          onReady={onContentReady}
+        />
+      </AIPanelErrorBoundary>
     </React.Suspense>
   );
 });
