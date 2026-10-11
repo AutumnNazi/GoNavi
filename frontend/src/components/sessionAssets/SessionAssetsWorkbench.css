@@ -223,13 +223,36 @@
 }
 
 /* 紧凑页签：默认样式在本面板里过大（用户反馈）。 */
-.session-assets-detail-tabs .ant-tabs-nav {
-  margin: 0 0 8px;
+/* 紧凑页签：v2 全局主题（body[data-ui-version=v2] .ant-tabs-tab，带
+   !important）给所有页签强制面板底色与卡片边框，会把本面板页签渲染成
+   大白条；按主题同款作用域与优先级覆盖为紧凑行内页签。 */
+body[data-ui-version=v2] .session-assets-detail-tabs > .ant-tabs-nav {
+  background: transparent !important;
+  margin: 0 0 8px !important;
+  padding: 0 !important;
 }
 
-.session-assets-detail-tabs .ant-tabs-tab {
-  padding: 4px 2px;
-  font-size: 13px;
+body[data-ui-version=v2] .session-assets-detail-tabs > .ant-tabs-nav .ant-tabs-tab {
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 0 16px 0 0 !important;
+  padding: 4px 2px !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+body[data-ui-version=v2] .session-assets-detail-tabs > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active {
+  background: transparent !important;
+}
+
+body[data-ui-version=v2] .session-assets-detail-tabs > .ant-tabs-nav .ant-tabs-tab .ant-tabs-tab-btn {
+  font-size: 13px !important;
+  line-height: 20px !important;
+}
+
+body[data-ui-version=v2] .session-assets-detail-tabs .ant-tabs-content-holder {
+  padding: 0 !important;
 }
 
 /* 滚动链关键：content-holder 必须可收缩，否则历史把面板撑爆且无滚动条。 */
