@@ -96,11 +96,11 @@ func windowsEnsureShortcutsDisabledEnv(executablePath string) string {
 }
 
 // migrateWindowsMachineShortcutsToUserLayer runs the shortcut repair script in
-// migrate-only mode: machine-layer GoNavi shortcuts move to the user layer
-// byte-for-byte (installer appearance and AppUserModel property bag intact),
-// and Ensure-GoNaviAumidShortcut still backs a missing user-layer Start Menu
-// entry with the executable's own icon. The icon argument is validated by the
-// script but never written into shortcuts by the migration loop.
+// migrate-only mode for the machine Start Menu entry. The public Desktop entry
+// remains owned by the MSI; moving it to the user Desktop creates a duplicate
+// after reinstall and makes that default-icon entry disappear on the next
+// launch. The icon argument is validated by the script but never written into
+// shortcuts by the migration loop.
 func migrateWindowsMachineShortcutsToUserLayer(executablePath string) error {
 	iconDir := filepath.Join(resolveAppConfigDir(), windowsApplicationIconDirectoryName)
 	if err := os.MkdirAll(iconDir, 0o755); err != nil {
@@ -116,7 +116,8 @@ func migrateWindowsMachineShortcutsToUserLayer(executablePath string) error {
 // Start menu host restarts so the all-apps list rebuilds its icon snapshot —
 // that list ignores every shell notification (item, directory and the global
 // association flush; observed on Windows 11 26200) and only rereads shortcuts
-// when its host process starts.
+// when its host process starts. The restart is limited to runs that changed a
+// Start Menu shortcut; desktop/taskbar-only switches do not need it.
 const windowsShortcutUpdateEpilogue = `
 
 $ErrorActionPreference = 'Stop'
@@ -124,7 +125,7 @@ $updated = Set-GoNaviShortcutBrandIcon -TargetPath $env:GONAVI_BRAND_TARGET -Ico
 $failed = 0
 if ($null -ne $script:GoNaviBrandFailureCount) { $failed = [int]$script:GoNaviBrandFailureCount }
 Write-Output ("UPDATED=" + $updated + " FAILED=" + $failed)
-if ($updated -gt 0 -and $env:GONAVI_BRAND_RESTART_STARTMENU -ne '0') {
+if ($updated -gt 0 -and $env:GONAVI_BRAND_MIGRATE_ONLY -ne '1' -and $script:GoNaviStartMenuChanged -and $env:GONAVI_BRAND_RESTART_STARTMENU -ne '0') {
     Restart-GoNaviStartMenuHost
 }
 `
@@ -198,7 +199,7 @@ func runWindowsShortcutUpdateScript(executablePath, iconPath, scriptDir, logDir 
 	// 单项失败（标准用户写机器级快捷方式被拒等）不中止，但必须可见：
 	// 明细已写入 shortcut-repair.log，这里记一条汇总便于事后诊断。
 	if m := windowsShortcutUpdateFailedCount(string(output)); m > 0 {
-		logger.Warnf("Windows 快捷方式图标更新有 %d 项失败（详见 shortcut-repair.log）", m)
+		return fmt.Errorf("update Windows application shortcuts: %d shortcut updates failed (see shortcut-repair.log)", m)
 	}
 	return nil
 }

@@ -1,6 +1,8 @@
 import { ColumnDefinition } from '../../types';
 import { buildMetadataIdentityKey } from '../../utils/metadataIdentity';
 import { resolveSqlDialect } from '../../utils/sqlDialect';
+import { buildMetadataDiscoveryScope } from '../../utils/metadataDiscoveryScope';
+import { fingerprintQueryEditorMetadataConfig } from './queryEditorMetadataRequests';
 import {
     buildQueryEditorMetadataCacheScope,
     queryEditorColumnsCache as boundedColumnsCache,
@@ -52,9 +54,11 @@ export const buildSharedLazyTablesCacheKey = (
     connectionId: string,
     dbName: string,
     metadataDialect = '',
-): string => (
-    `${String(connectionId || '').trim()}|${buildMetadataIdentityKey(metadataDialect, dbName)}`
-);
+): string => {
+    const conn = sharedConnections.find((connection) => connection.id === connectionId);
+    const scope = conn ? buildMetadataDiscoveryScope(conn, dbName) : undefined;
+    return `${String(connectionId || '').trim()}|${buildMetadataIdentityKey(metadataDialect, dbName)}${scope ? `|${fingerprintQueryEditorMetadataConfig(scope)}` : ''}`;
+};
 
 const isSharedLazyTablesCacheKeyForRequest = (
     key: string,
@@ -120,6 +124,10 @@ export const invalidateSharedLazyTablesCache = (connectionId: string, dbName?: s
 };
 export const QUERY_EDITOR_SQL_SNIPPET_SUGGEST_DETAIL_MIN_HEIGHT = 260;
 export const QUERY_EDITOR_TABLE_NAVIGATION_VALIDATION_TIMEOUT_MS = 5_000;
+// 判定「表已不存在」前的列证据复核窗口：点击竞速可能先于列预取定型，而缺失判定
+// 会清超链接并删除本地元数据。破坏性降级前等列预取落定（有界），避免冷元数据
+// 通道下的误报（refs #1441）。
+export const QUERY_EDITOR_TABLE_NAVIGATION_MISSING_RECHECK_TIMEOUT_MS = 5_000;
 
 export const isConnectionScopedQueryEditorMetadata = (connection: any): boolean => (
     resolveSqlDialect(

@@ -33,6 +33,8 @@ import { useAppSettingsPanesRender } from './appShell/hooks/useAppSettingsPanesR
 import { useAppAboutSettingsRender } from './appShell/hooks/useAppAboutSettingsRender';
 import { useAppThemeSettingsRender } from './appShell/hooks/useAppThemeSettingsRender';
 import { useAppSettingsCenterRender } from './appShell/hooks/useAppSettingsCenterRender';
+import { useBuiltinAIAnnouncement } from './appShell/hooks/useBuiltinAIAnnouncement';
+import { resolveShortcutDisplay } from './utils/shortcutOptions';
 import { useLateBoundCallback } from './hooks/useLateBoundCallback';
 import { renderAppSettingsCenterModal } from './appShell/settings/renderAppSettingsCenterModal';
 import { AppTitleBar } from './appShell/layout/AppTitleBar';
@@ -50,7 +52,7 @@ function App() {
     setFontSize, startupMaximised, setStartupMaximised, autoCheckForUpdates, setAutoCheckForUpdates,
     autoCheckForUpdatesIntervalMinutes, setAutoCheckForUpdatesIntervalMinutes, globalProxy,
     replaceConnections, replaceConnectionSidebarLayout, replaceGlobalProxy, replaceSavedQueries,
-    reloadSavedQueryGroups, setQueryOptions, shortcutOptions, updateShortcut, resetShortcutOptions,
+    reloadSavedQueryGroups, queryOptions, setQueryOptions, shortcutOptions, updateShortcut, resetShortcutOptions,
     runtimePlatform, setRuntimePlatform, runtimeBuildType, setRuntimeBuildType, isLinuxRuntime,
     setIsLinuxRuntime, effectiveThemePreference, darkMode, setComputedCustomThemeAntTokens,
     customThemeStyleContextKey, customThemeAntTokens, effectiveUiScale, effectiveFontSize,
@@ -353,6 +355,7 @@ function App() {
   const { renderThemeSettingsContent } = useAppThemeSettingsRender({
     t, themeSettingsSections, themeModalSection, setThemeModalSection, renderThemeSettingsSection,
     effectiveThemePreference, selectPresetTheme, renderThemeModePreview, renderThemeSettingsRow,
+    queryOptions, setQueryOptions,
     effectiveUiScale, setUiScale, effectiveFontSize, setFontSize, effectiveSidebarRailScale,
     setAppearance, appearance, isFontFamiliesLoading, uiFontOptions, filterFontOption,
     renderFontOptionLabel, fontFamiliesLoadError, installedFontFamilies, linuxCJKFontInstallHint,
@@ -392,6 +395,11 @@ function App() {
     shouldDockCollapsedSidebarActionsInTitlebar, setCollapsedSidebarActionsTarget,
     handleExpandSidebarPanel, handleCollapseSidebarPanel, sidebarCollapsedToggleRef, brandIconId,
     handleBrandIconChange,
+  });
+
+  const builtinAIAnnouncement = useBuiltinAIAnnouncement({
+    isStoreHydrated, hasLoadedSecureConfig, isSecurityUpdateIntroOpen,
+    isSecurityUpdateProgressOpen, aiPanelVisible, onOpenPanel: handleToggleOrFocusAIPanel,
   });
 
   return (
@@ -598,6 +606,10 @@ function App() {
             isProxyModalOpen={isProxyModalOpen}
             handleCloseGlobalProxySettings={handleCloseGlobalProxySettings}
             renderProxySettingsContent={renderProxySettingsContent}
+            builtinAIAnnouncement={builtinAIAnnouncement}
+            builtinAIAnnouncementShortcutLabel={
+              resolveShortcutDisplay(shortcutOptions, 'toggleAIPanel', activeShortcutPlatform)
+            }
           />
 
           {showLinuxResizeHandles && (

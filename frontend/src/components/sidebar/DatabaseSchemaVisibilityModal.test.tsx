@@ -202,4 +202,58 @@ describe('DatabaseSchemaVisibilityModal', () => {
       },
     });
   });
+  it('keeps an in-flight schema load alive when the database list is refreshed', async () => {
+    // 刷新库列表只应作废库列表请求。此前它与 schema 加载共用同一个代际计数器，
+    // 点一次「刷新」就会丢弃在途 schema 结果，而丢弃分支不落终态，快照永久停在
+    // loading：该库一直转圈，且 `!force && status === 'loading'` 守卫挡住后续重试。
+    let resolveSchemas!: (value: { supported: boolean; schemas: string[] }) => void;
+    const loadSchemas = vi.fn(() => new Promise<{ supported: boolean; schemas: string[] }>((resolve) => {
+      resolveSchemas = resolve;
+    }));
+    let renderer!: ReactTestRenderer;
+
+    await act(async () => {
+      renderer = create(
+        <DatabaseSchemaVisibilityModal
+          open
+          connectionName="IRIS"
+          source={{}}
+          initialDatabase="app"
+          primaryLabel="namespace"
+          supportsSchemas
+          databaseCaseSensitive={false}
+          schemaCaseSensitive={false}
+          loadDatabases={async () => ['app', 'audit']}
+          loadSchemas={loadSchemas}
+          onCancel={vi.fn()}
+          onSave={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(loadSchemas).toHaveBeenCalledWith('app');
+
+    const refreshButton = renderer.root.findAllByType('button').find(
+      (button) => textContent(button) === 'common.refresh',
+    );
+    expect(refreshButton).toBeDefined();
+
+    await act(async () => {
+      refreshButton!.props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      resolveSchemas({ supported: true, schemas: ['dbo', 'reporting'] });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // 在途结果不能被刷新作废：schema 必须渲染出来，不能永远停在转圈。
+    expect(findCheckbox(renderer, 'dbo')).toBeDefined();
+    expect(findCheckbox(renderer, 'reporting')).toBeDefined();
+  });
 });

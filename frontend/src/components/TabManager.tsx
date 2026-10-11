@@ -324,7 +324,6 @@ body[data-theme='dark'] .main-tabs .ant-tabs-tab.ant-tabs-tab-active {
         <DetachDragPreview
           preview={detachDragPreview}
           darkMode={theme === 'dark'}
-          readyHint={t('tab_manager.menu.open_in_window')}
         />
     </div>
   );

@@ -26,6 +26,17 @@ func (o *OracleDB) TableExists(dbName, tableName string) (bool, error) {
 	if target == "" {
 		return false, nil
 	}
+	// GetTables 返回 OWNER.TABLE 全名（refs #445），SQL 导航等调用方也以该形态传表名；
+	// 而字典列是裸 TABLE_NAME。点查前先拆分限定名：拆得出 owner 就以它为准（跨 schema
+	// 引用比调用方给定的 dbName 更可信），拆不出 schema 时沿用 dbName。引号内的点号
+	// （如 "ORDER.ITEMS"）不是限定符，splitter 会保持整名。
+	lookupSchema, lookupTable := SplitSQLQualifiedNameForDialect(target, "oracle")
+	if strings.TrimSpace(lookupTable) != "" {
+		target = lookupTable
+		if strings.TrimSpace(lookupSchema) != "" {
+			dbName = lookupSchema
+		}
+	}
 	var firstErr error
 	// 复用「已命中的大小写变体」：首次与改动前一致，后续调用不再重复试错。
 	for _, candidate := range o.oracleMetadataNameCandidates(dbName, target) {

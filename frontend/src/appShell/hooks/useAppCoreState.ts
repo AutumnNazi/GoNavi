@@ -330,7 +330,7 @@ export const useAppCoreState = ({ setFocusedTabDisplayElementKey }: UseAppCoreSt
     setFontSize, startupMaximised, setStartupMaximised, autoCheckForUpdates, setAutoCheckForUpdates,
     autoCheckForUpdatesIntervalMinutes, setAutoCheckForUpdatesIntervalMinutes, globalProxy,
     replaceConnections, replaceConnectionSidebarLayout, replaceGlobalProxy, replaceSavedQueries,
-    reloadSavedQueryGroups, setQueryOptions, shortcutOptions, updateShortcut, resetShortcutOptions,
+    reloadSavedQueryGroups, queryOptions, setQueryOptions, shortcutOptions, updateShortcut, resetShortcutOptions,
     runtimePlatform, setRuntimePlatform, runtimeBuildType, setRuntimeBuildType, isLinuxRuntime,
     setIsLinuxRuntime, effectiveThemePreference, darkMode, setComputedCustomThemeAntTokens,
     customThemeStyleContextKey, customThemeAntTokens, effectiveUiScale, effectiveFontSize,

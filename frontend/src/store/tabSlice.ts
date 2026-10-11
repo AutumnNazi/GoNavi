@@ -12,6 +12,10 @@ import { MAX_PERSISTED_QUERY_LENGTH } from "./storeConstants";
 import { clearQueryTabDraft } from "../utils/sqlFileTabDrafts";
 import { clearQueryEditorResultSession } from "../utils/queryEditorResultSessionCache";
 import { nextDetachedZIndex } from "../utils/detachedWindow";
+import {
+  pinSettingsCenterTabFirst,
+  SETTINGS_CENTER_WORKBENCH_TAB_ID,
+} from "../utils/settingsCenterTab";
 import type { AppState } from "./storeStateTypes";
 import type { StoreGet, StoreSet } from "./storeSliceTypes";
 
@@ -126,7 +130,7 @@ export const createTabSlice = (set: StoreSet, _get: StoreGet): TabSliceState => 
           };
         }
       }
-      const nextTabs = [...state.tabs, incomingTab];
+      const nextTabs = pinSettingsCenterTabFirst([...state.tabs, incomingTab]);
       return {
         tabs: nextTabs,
         ...recentWorkbenchEntries,
@@ -495,7 +499,7 @@ export const createTabSlice = (set: StoreSet, _get: StoreGet): TabSliceState => 
     set((state) => {
       const fromId = String(sourceId || "").trim();
       const toId = String(targetId || "").trim();
-      if (!fromId || !toId || fromId === toId) {
+      if (!fromId || !toId || fromId === toId || fromId === SETTINGS_CENTER_WORKBENCH_TAB_ID) {
         return state;
       }
       const fromIndex = state.tabs.findIndex((tab) => tab.id === fromId);
@@ -506,7 +510,7 @@ export const createTabSlice = (set: StoreSet, _get: StoreGet): TabSliceState => 
       const nextTabs = [...state.tabs];
       const [movingTab] = nextTabs.splice(fromIndex, 1);
       nextTabs.splice(toIndex, 0, movingTab);
-      return { tabs: nextTabs };
+      return { tabs: pinSettingsCenterTabFirst(nextTabs) };
     }),
 
   closeAllTabs: () =>

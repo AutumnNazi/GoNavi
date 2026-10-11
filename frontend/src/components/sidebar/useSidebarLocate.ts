@@ -15,6 +15,7 @@ import { shouldHideSchemaPrefix } from './sidebarMetadataLoaders';
 import { resolveSidebarTitlebarObjectName } from './sidebarHelpers';
 import { buildOptionalSchemaContext } from './sidebarRootHelpers';
 import { useSidebarTreeLoaders } from './useSidebarTreeLoaders';
+import { sidebarSchemaNodeKey } from './sidebarSchemaLoading';
 import {
   describeSidebarLocateFailure,
   dispatchSidebarActiveQueryTableLocate,
@@ -242,23 +243,6 @@ export const useSidebarLocate = ({
   }, []);
 
   useEffect(() => {
-      const handleSidebarTablePinChanged = (event: Event) => {
-          const detail = (event as CustomEvent).detail || {};
-          const connectionId = String(detail.connectionId || '').trim();
-          const dbName = String(detail.dbName || '').trim();
-          if (!connectionId || !dbName) return;
-          const dbNode = findTreeNodeByKeyRef.current(treeDataRef.current, `${connectionId}-${dbName}`);
-          if (dbNode) {
-              void loadTables(dbNode, { ensureFresh: true });
-          }
-      };
-      window.addEventListener('gonavi:sidebar-table-pin-changed', handleSidebarTablePinChanged as EventListener);
-      return () => {
-          window.removeEventListener('gonavi:sidebar-table-pin-changed', handleSidebarTablePinChanged as EventListener);
-      };
-  }, []);
-
-  useEffect(() => {
       const handleSidebarTableCreated = (event: Event) => {
           const detail = (event as CustomEvent).detail || {};
           const connectionId = String(detail.connectionId || '').trim();
@@ -266,7 +250,8 @@ export const useSidebarLocate = ({
           if (!connectionId || !dbName) return;
           const dbNode = findTreeNodeByKeyRef.current(treeDataRef.current, `${connectionId}-${dbName}`);
           if (dbNode) {
-              void loadTables(dbNode, { ensureFresh: true });
+              const schemaNode = detail.schemaName ? findTreeNodeByKeyRef.current(treeDataRef.current, sidebarSchemaNodeKey(String(dbNode.key), String(detail.schemaName))) : null;
+              void loadTables(schemaNode?.dataRef?.schemaLazy ? schemaNode : dbNode, { ensureFresh: true });
           }
       };
       window.addEventListener('gonavi:sidebar-table-created', handleSidebarTableCreated as EventListener);
@@ -294,7 +279,11 @@ export const useSidebarLocate = ({
               `${request.connectionId}-${request.dbName}`,
           );
           if (dbNode) {
-              void loadTables(dbNode, { ensureFresh: true });
+              const schemaNode = request.schemaName ? findTreeNodeByKeyRef.current(treeDataRef.current, sidebarSchemaNodeKey(String(dbNode.key), request.schemaName)) : null;
+              void loadTables(
+                  schemaNode?.dataRef?.schemaLazy ? schemaNode : dbNode,
+                  { ensureFresh: true, rowCountTables: request.rowCountTables, schemaName: request.schemaName },
+              );
           }
       };
       window.addEventListener(SIDEBAR_DATABASE_REFRESH_EVENT, handleSidebarDatabaseRefresh as EventListener);

@@ -15,6 +15,7 @@ import SecurityUpdateProgressModal from '../../components/SecurityUpdateProgress
 import ConnectionPackagePasswordModal from '../../components/ConnectionPackagePasswordModal';
 import { isConnectionPackageSettingsPaneKey } from '../settingsCenterPanes';
 import UpdateReleaseNotesModal from '../../components/UpdateReleaseNotesModal';
+import BuiltinAIAnnouncementModal from '../../components/BuiltinAIAnnouncementModal';
 import { BrowserOpenURL } from '../../../wailsjs/runtime';
 import type { AppProxySettingsApi } from '../hooks/useAppProxySettings';
 import type { AppSecurityUpdateApi } from '../hooks/useAppSecurityUpdate';
@@ -28,6 +29,7 @@ import type { AppUpdateAndDiagnosticsApi } from '../hooks/useAppUpdateAndDiagnos
 import type { AppSettingsPanesRenderApi } from '../hooks/useAppSettingsPanesRender';
 import type { AppThemeSettingsRenderApi } from '../hooks/useAppThemeSettingsRender';
 import type { AppWorkbenchActionsApi } from '../hooks/useAppWorkbenchActions';
+import type { BuiltinAIAnnouncementApi } from '../hooks/useBuiltinAIAnnouncement';
 
 export interface AppGlobalDialogsProps {
   isDataRootModalOpen: AppProxySettingsApi['isDataRootModalOpen'];
@@ -78,6 +80,8 @@ export interface AppGlobalDialogsProps {
   isProxyModalOpen: AppProxySettingsApi['isProxyModalOpen'];
   handleCloseGlobalProxySettings: AppWorkbenchActionsApi['handleCloseGlobalProxySettings'];
   renderProxySettingsContent: AppSettingsPanesRenderApi['renderProxySettingsContent'];
+  builtinAIAnnouncement: BuiltinAIAnnouncementApi;
+  builtinAIAnnouncementShortcutLabel: string;
 }
 
 export const AppGlobalDialogs = ({
@@ -94,7 +98,7 @@ export const AppGlobalDialogs = ({
   handleDownloadUpdateWithNotes, updateDownloadActionLabel, openDownloadedUpdateDirectory,
   handleInstallUpdateRequest, updateInstallActionLabel, isThemeModalOpen, themeModalSection,
   setIsThemeModalOpen, renderThemeSettingsContent, isProxyModalOpen, handleCloseGlobalProxySettings,
-  renderProxySettingsContent,
+  renderProxySettingsContent, builtinAIAnnouncement, builtinAIAnnouncementShortcutLabel,
 }: AppGlobalDialogsProps) => (
   <>
     {isDataRootModalOpen && (
@@ -150,6 +154,17 @@ export const AppGlobalDialogs = ({
       stageText={securityUpdateProgressStage}
       overlayTheme={overlayTheme}
       surfaceOpacity={effectiveOpacity}
+    />
+    <BuiltinAIAnnouncementModal
+      open={builtinAIAnnouncement.open}
+      darkMode={darkMode}
+      overlayTheme={overlayTheme}
+      surfaceOpacity={effectiveOpacity}
+      signedIn={builtinAIAnnouncement.signedIn}
+      shortcutLabel={builtinAIAnnouncementShortcutLabel}
+      onAcknowledge={builtinAIAnnouncement.acknowledge}
+      onDismiss={builtinAIAnnouncement.dismiss}
+      onOpenPanel={builtinAIAnnouncement.openPanel}
     />
     <ConnectionPackagePasswordModal
       open={connectionPackageDialog.open && !(isSettingsModalOpen && isConnectionPackageSettingsPaneKey(activeSettingsCenterPane?.key))}

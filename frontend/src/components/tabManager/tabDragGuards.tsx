@@ -2,6 +2,7 @@ import React from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { NativeDetachTerminalPointer } from '../../utils/detachedWindow';
+import { SETTINGS_CENTER_WORKBENCH_TAB_ID } from '../../utils/settingsCenterTab';
 
 type DraggableTabNodeProps = {
   node: React.ReactElement;
@@ -135,7 +136,12 @@ export const installTabDetachDragGuards = ({
 
 export const DraggableTabNode: React.FC<DraggableTabNodeProps> = ({ node }) => {
   const tabId = String(node.key || '').trim();
-  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tabId });
+  // 设置中心固定在首位：既不能被拖走（含拖出独立窗口），也不接受别的 tab 放到它的位置。
+  const pinned = tabId === SETTINGS_CENTER_WORKBENCH_TAB_ID;
+  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tabId, disabled: pinned });
+  if (pinned) {
+    return React.cloneElement(node, { ref: setNodeRef });
+  }
   const style: React.CSSProperties = {
     ...(node.props.style || {}),
     transform: CSS.Transform.toString(transform),

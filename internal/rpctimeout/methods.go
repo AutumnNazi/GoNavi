@@ -14,6 +14,7 @@ func IsLongRunningAppMethod(method string) bool {
 		"DBQueryMulti",
 		"DBQueryMultiCompact",
 		"DBQueryMultiWithOptions",
+		"DBQueryMultiWithOptionsCompact",
 		"DBQueryMultiWithParams",
 		"DBQueryMultiWithParamsInTransaction",
 		"DBQueryMultiTransactional",
@@ -33,6 +34,7 @@ func IsLongRunningAppMethod(method string) bool {
 		"ImportDataWithProgressOptions",
 		"ResumeImportJob",
 		"RetryImportJobFailedRows",
+		"MockDataGenerate",
 		"DataSync":
 		return true
 	default:

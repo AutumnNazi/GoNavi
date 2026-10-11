@@ -20,8 +20,10 @@ import type { DataGridCoreStateApi } from './useDataGridCoreState';
 import type { DataGridTableMetricsApi } from './useDataGridTableMetrics';
 import type { DataGridCellEditorStateApi } from './useDataGridCellEditorState';
 import type { DataGridProps } from '../../DataGridCore';
+import { allowDataGridQueryChange } from '../../../utils/dataGridQueryGuard';
 
 export interface UseDataGridColumnTitlesInput {
+    workbenchTabId: DataGridProps['workbenchTabId'];
     appliedFilterConditions: DataGridProps['appliedFilterConditions'];
     quickWhereCondition: DataGridProps['quickWhereCondition'];
     showFilter: DataGridProps['showFilter'];
@@ -91,7 +93,7 @@ export interface UseDataGridColumnTitlesInput {
 }
 
 export const useDataGridColumnTitles = ({
-    appliedFilterConditions, quickWhereCondition, showFilter, onApplyFilter,
+    appliedFilterConditions, quickWhereCondition, showFilter, onApplyFilter, workbenchTabId,
     onApplyQuickWhereCondition, onSort, displayColumnNames, allTableColumnNames, columnMetaMap,
     getColumnFilterType, dbType, darkMode, dataGridFilterMessageApi, translateDataGrid, data,
     isMongoDBConnection, addedRows, exportScope, columnMetaMapByLowerName, foreignKeyMap,
@@ -107,6 +109,10 @@ export const useDataGridColumnTitles = ({
     containerRef, selectionStartRef, cellSelectionSourceDataRef, setCellSelectionDeleteEligible,
     cellSelectionUserSourceDataRef,
 }: UseDataGridColumnTitlesInput) => {
+    const beforeQueryChange = useCallback(
+        () => allowDataGridQueryChange(workbenchTabId, translateDataGrid),
+        [workbenchTabId, translateDataGrid],
+    );
     const {
         filterConditions,
         setFilterConditions,
@@ -146,6 +152,7 @@ export const useDataGridColumnTitles = ({
         onApplyFilter,
         onApplyQuickWhereCondition,
         onSort,
+        beforeQueryChange: exportScope === 'table' ? beforeQueryChange : undefined,
         messageApi: dataGridFilterMessageApi,
         translate: translateDataGrid,
         getColumnFilterType,
@@ -159,7 +166,12 @@ export const useDataGridColumnTitles = ({
             ? data.map((row) => normalizeMongoDocumentForEditing(row))
             : data
     ), [data, isMongoDBConnection]);
-    const rowsBeforeClientFilter = useMemo(() => [...baseData, ...addedRows], [addedRows, baseData]);
+    // 无新增行时直接复用 baseData 引用：省一次全量数组浅拷贝，并保持引用稳定，
+    // 避免下游依赖 rowsBeforeClientFilter 的 memo 在无关重渲染时全部重算。
+    const rowsBeforeClientFilter = useMemo(
+        () => (addedRows.length > 0 ? [...baseData, ...addedRows] : baseData),
+        [addedRows, baseData],
+    );
     const getCurrentColumnValueCounts = useMemo(() => {
         const cache = new Map<string, ReturnType<typeof countGridColumnValues>>();
         return (columnName: string) => {
@@ -435,7 +447,7 @@ export const useDataGridColumnTitles = ({
             if (String(detail.tableName || '') !== String(tableName || '')) return;
             const nextMode = String(detail.viewMode || '').trim();
             if (!nextMode) return;
-            if (!['table', 'json', 'text', 'fields', 'ddl', 'er', 'sqlLog'].includes(nextMode)) return;
+            if (!['table', 'json', 'text', 'chart', 'fields', 'ddl', 'er', 'sqlLog'].includes(nextMode)) return;
             handleViewModeChange(nextMode as GridViewMode);
         };
 
@@ -459,6 +471,7 @@ export const useDataGridColumnTitles = ({
             viewMode === 'table'
             || viewMode === 'json'
             || viewMode === 'text'
+            || viewMode === 'chart'
             || (viewMode === 'ddl' && isTableSurfaceActive)
         );
         if (!requiresTableData) {

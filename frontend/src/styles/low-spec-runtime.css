@@ -1,0 +1,52 @@
+/*
+ * 低配档位 / 减少动画的运行时降级样式（性能专项 C）。
+ *
+ * 为什么单开一个文件而不写进 App.css：GoNavi 规约禁止把大块布局样式塞回 App.css，
+ * 且这两组规则由运行时能力探测决定启用，与主题无关，独立成文件便于随时审视与移除。
+ *
+ * 两档语义：
+ *   body.gn-reduce-motion —— 用户显式开启「减少动画与过渡」；
+ *   body.gn-low-spec      —— 低配/无显卡机器（自动检测或用户固定），是 gn-reduce-motion 的超集。
+ * 两者都由 appShell/hooks/useAppLayoutEffects.ts 在 layout effect 里挂到 body 上。
+ *
+ * ⚠️ 关键细节：时长一律用 0.001ms 而不是 none / 0s。
+ * rc-motion（antd 动画底座）依赖 transitionend / animationend 事件推进内部状态机，
+ * 把过渡设成 none 会让事件不再触发，组件可能卡在「进入中/离开中」的状态不卸载。
+ * 0.001ms 既能视觉上等同瞬时完成，又保留事件语义。
+ */
+
+body.gn-reduce-motion *,
+body.gn-reduce-motion *::before,
+body.gn-reduce-motion *::after,
+body.gn-low-spec *,
+body.gn-low-spec *::before,
+body.gn-low-spec *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+}
+
+/*
+ * 低配档位在减少动画之外，进一步降低合成与绘制负担：
+ * backdrop-filter 在无 GPU / 软件合成路径上代价极高（每次滚动都要重新模糊整块背景），
+ * 这正是 4 核核显机掉帧的主因之一，故低配档位强制关闭。
+ */
+body.gn-low-spec *,
+body.gn-low-spec *::before,
+body.gn-low-spec *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+/*
+ * antd 浮层（下拉/气泡/提示）自带的过渡同样在软件合成下昂贵。
+ * 这里沿用 0.001ms 而非 transition: none，理由同上：保住 transitionend。
+ */
+body.gn-low-spec .ant-dropdown:not(.ant-dropdown-hidden),
+body.gn-low-spec .ant-popover:not(.ant-popover-hidden),
+body.gn-low-spec .ant-tooltip:not(.ant-tooltip-hidden) {
+    transition-duration: 0.001ms !important;
+    transition-delay: 0ms !important;
+}

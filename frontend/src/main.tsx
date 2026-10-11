@@ -16,6 +16,8 @@ import {
 import { configureAntdStaticOverlayLayer } from './utils/overlayZIndex'
 import { devHarnessMode } from './dev/devHarnessMode';
 import { installBrowserMockRuntime } from './dev/browserMock/installBrowserMockRuntime';
+import { installIpcMeter } from './utils/ipcMeter';
+import { installTabSwitchProbe } from './utils/tabSwitchProbe';
 
 configureAntdStaticOverlayLayer();
 
@@ -28,6 +30,9 @@ if (
 ) {
     installBrowserMockRuntime();
 }
+// 诊断设施安装点（各一行，默认关闭、只读计量）。放在 mock 之后：dev/Web 模式下绑定由 mock 提供。
+installIpcMeter();
+installTabSwitchProbe(useStore);
 const rootNode = document.getElementById('root')!;
 
 const readBrowserLanguages = (): string[] => {

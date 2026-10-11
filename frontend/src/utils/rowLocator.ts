@@ -1,6 +1,7 @@
 import type { IndexDefinition } from '../types';
 import { resolveUniqueKeyGroupsFromIndexes } from '../components/dataGridCopyInsert';
 import { isOracleLikeDialect } from './sqlDialect';
+import { isTruncatedPreviewValue } from './dataGridTruncatedValue';
 import { t as translateCatalog, type I18nParams } from '../i18n';
 
 export const ORACLE_ROWID_LOCATOR_COLUMN = '__gonavi_oracle_rowid__';
@@ -250,4 +251,23 @@ export const resolveWritableColumnName = (column: string, locator?: EditRowLocat
 
 export const isWritableResultColumn = (column: string, locator?: EditRowLocator): boolean => (
   resolveWritableColumnName(column, locator) !== undefined
+);
+
+/**
+ * 可写判定 + 截断预览值守卫的合体版本（写回路径专用）。
+ *
+ * 后端会把超大字段替换成前缀式预览标记（见 utils/dataGridTruncatedValue.ts），此时单元格
+ * 里的值不是完整值。这类格子一旦编辑提交，patch 会把「预览标记 + 截断片段」写回数据库，
+ * 覆盖原始 LOB，而后端提交路径不做校验——所以必须在这里就判定为不可写。
+ *
+ * 单独开函数而不是给 isWritableResultColumn 加可选参数：后者有 20+ 个只做渲染/选择判定的
+ * 调用点，它们手上没有该行原始值；把「值」变成可选参数会诱导后续调用方漏传值而悄悄绕过守卫。
+ * 误判方向取「阻止编辑」的安全侧。
+ */
+export const isWritableResultCellValue = (
+  column: string,
+  value: unknown,
+  locator?: EditRowLocator,
+): boolean => (
+  isWritableResultColumn(column, locator) && !isTruncatedPreviewValue(value)
 );

@@ -130,11 +130,13 @@ export const SQL_AUDIT_SOURCES = [
   'app_shutdown',
   'data_editor',
   'data_import',
+  'mock_data',
   'table_designer',
   'object_editor',
   'message_publish',
   'user_management',
   'ai_action',
+  'sql_analysis',
   'application_api',
   'audit_control',
 ] as const;

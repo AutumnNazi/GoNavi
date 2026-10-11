@@ -124,6 +124,7 @@ export const createInitialStateSlice = (_set: StoreSet, _get: StoreGet): Initial
     showColumnType: true,
     alignNumericTemporalCellsRight: false,
     showQueryResultsPanel: false,
+    autoShowSqlExecutionLog: true,
     queryEditorEditorHeightRatio: DEFAULT_QUERY_EDITOR_EDITOR_HEIGHT_RATIO,
   },
   dataEditTransactionOptions: {

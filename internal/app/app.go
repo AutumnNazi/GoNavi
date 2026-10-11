@@ -62,51 +62,6 @@ type cachedDatabase struct {
 	keepAliveInFlightRevision uint64
 }
 
-type connectionKeepAlivePolicy struct {
-	enabled  bool
-	interval time.Duration
-	sql      string
-	dbType   string
-}
-
-func resolveConnectionKeepAlivePolicy(config connection.ConnectionConfig) connectionKeepAlivePolicy {
-	enabled, interval := resolveConnectionKeepAliveSettings(config)
-	sql, dbType := resolveConnectionKeepAliveSQL(config)
-	return connectionKeepAlivePolicy{
-		enabled:  enabled,
-		interval: interval,
-		sql:      sql,
-		dbType:   dbType,
-	}
-}
-
-func (policy connectionKeepAlivePolicy) matches(entry cachedDatabase) bool {
-	return entry.keepAliveEnabled == policy.enabled &&
-		entry.keepAliveInterval == policy.interval &&
-		entry.keepAliveSQL == policy.sql &&
-		entry.keepAliveDBType == policy.dbType
-}
-
-func (policy connectionKeepAlivePolicy) apply(entry cachedDatabase, now time.Time) cachedDatabase {
-	if policy.matches(entry) {
-		return entry
-	}
-	wasKeepAliveEnabled := entry.keepAliveEnabled
-	entry.keepAliveRevision = nextConnectionKeepAliveRevision(entry.keepAliveRevision)
-	entry.keepAliveEnabled = policy.enabled
-	entry.keepAliveInterval = policy.interval
-	entry.keepAliveSQL = policy.sql
-	entry.keepAliveDBType = policy.dbType
-	if !policy.enabled {
-		entry.keepAliveInFlight = false
-		entry.keepAliveInFlightRevision = 0
-		entry.lastKeepAliveAt = time.Time{}
-	} else if !wasKeepAliveEnabled || entry.lastKeepAliveAt.IsZero() {
-		entry.lastKeepAliveAt = now
-	}
-	return entry
-}
-
 type cachedConnectFailure struct {
 	occurredAt time.Time
 	err        error
@@ -162,6 +117,7 @@ type App struct {
 	connectFailures               map[string]cachedConnectFailure
 	dbConnectGroup                singleflight.Group
 	dbConnectFlights              map[uint64]*databaseConnectFlight
+	metadataCache                 *metadataCacheStore // 结构元数据缓存（锁+表+合并组），会话 App 继承同一实例，详见 metadata_cache.go
 	metadataSession               *metadataSession
 	nextDBConnectFlightID         uint64
 	dbShuttingDown                bool
@@ -183,6 +139,7 @@ type App struct {
 	importTaskMu                  sync.Mutex
 	importTasks                   map[string]importTaskRegistration
 	importTasksWG                 sync.WaitGroup
+	mockDataTables                mockDataTableCache
 	importTasksClosing            bool
 	driverDownloadTaskMu          sync.RWMutex
 	driverDownloadTasks           map[string]DriverDownloadTaskStatus

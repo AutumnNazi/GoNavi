@@ -364,8 +364,8 @@ func TestInitializePersistedNativeBrandIconAppliesActiveIcon(t *testing.T) {
 	if shortcutIconPath != iconPath {
 		t.Fatalf("shortcut icon path = %q, want %q", shortcutIconPath, iconPath)
 	}
-	if got := strings.Join(identityEvents, ","); got != "shortcut,window,refresh" {
-		t.Fatalf("startup identity order = %q, want shortcut,window,refresh", got)
+	if got := strings.Join(identityEvents, ","); got != "shortcut,window" {
+		t.Fatalf("startup identity order = %q, want shortcut,window", got)
 	}
 	if err := InitializePersistedNativeBrandIcon(application, ctx); err != nil {
 		t.Fatalf("initialize persisted native brand icon again: %v", err)
@@ -440,7 +440,6 @@ func TestRepairPersistedWindowsApplicationShortcutsRetriesAfterFailure(t *testin
 		t.Fatalf("shortcut repair calls = %d, want retry after failure", updateCalls)
 	}
 }
-
 
 func TestSetApplicationIconPNGDoesNotActivateAfterShortcutFailure(t *testing.T) {
 	source := image.NewNRGBA(image.Rect(0, 0, 2, 2))
@@ -570,37 +569,17 @@ func TestWindowsPinsChangeAffectsGoNavi(t *testing.T) {
 
 func TestWindowsSendShortcutRefreshNotificationsUsesKnownFolders(t *testing.T) {
 	var items, directories []string
-	var associations int
 	previousItem := windowsApplicationIconNotifyItemChanged
 	previousDirectory := windowsApplicationIconNotifyDirectoryChanged
-	previousAssociation := windowsApplicationIconNotifyShellChange
 	defer func() {
 		windowsApplicationIconNotifyItemChanged = previousItem
 		windowsApplicationIconNotifyDirectoryChanged = previousDirectory
-		windowsApplicationIconNotifyShellChange = previousAssociation
 	}()
 	windowsApplicationIconNotifyItemChanged = func(path string) { items = append(items, path) }
 	windowsApplicationIconNotifyDirectoryChanged = func(path string) { directories = append(directories, path) }
-	windowsApplicationIconNotifyShellChange = func() { associations++ }
 
 	windowsSendShortcutRefreshNotifications()
 
-	// The global association flush redraws the whole desktop (visible flash),
-	// so the refresh pass sends it only when a GoNavi taskbar pin exists (the
-	// pinned button re-reads its icon exclusively on that flush). The test
-	// machine may or may not have the pin, so derive the expectation from the
-	// same directories the pass walks.
-	wantAssociations := 0
-	for _, dir := range directories {
-		if strings.EqualFold(dir, windowsTaskbarPinsDirectory()) {
-			if len(windowsGoNaviShortcutNamesIn(dir)) > 0 {
-				wantAssociations = 1
-			}
-		}
-	}
-	if associations != wantAssociations {
-		t.Fatalf("association change notification sent %d times, want %d", associations, wantAssociations)
-	}
 	if len(directories) == 0 {
 		t.Fatal("no folder notifications were sent")
 	}
@@ -644,32 +623,27 @@ func TestWindowsGoNaviShortcutNamesInClaimsVariantNames(t *testing.T) {
 	}
 }
 
-func TestWindowsSendShortcutRefreshNotificationsSendsAssociationForVariantPin(t *testing.T) {
+func TestWindowsSendShortcutRefreshNotificationsTargetsVariantPin(t *testing.T) {
 	var items, directories []string
-	var associations int
 	previousItem := windowsApplicationIconNotifyItemChanged
 	previousDirectory := windowsApplicationIconNotifyDirectoryChanged
-	previousAssociation := windowsApplicationIconNotifyShellChange
 	previousDirectories := windowsKnownGoNaviShortcutDirectories
 	previousPins := windowsTaskbarPinsDirectory
 	defer func() {
 		windowsApplicationIconNotifyItemChanged = previousItem
 		windowsApplicationIconNotifyDirectoryChanged = previousDirectory
-		windowsApplicationIconNotifyShellChange = previousAssociation
 		windowsKnownGoNaviShortcutDirectories = previousDirectories
 		windowsTaskbarPinsDirectory = previousPins
 	}()
 	windowsApplicationIconNotifyItemChanged = func(path string) { items = append(items, path) }
 	windowsApplicationIconNotifyDirectoryChanged = func(path string) { directories = append(directories, path) }
-	windowsApplicationIconNotifyShellChange = func() { associations++ }
 
 	pinsDir := t.TempDir()
 	windowsTaskbarPinsDirectory = func() string { return pinsDir }
 	windowsKnownGoNaviShortcutDirectories = func() []string { return []string{pinsDir} }
 
-	// 复现审查发现的场景：固定项不叫 GoNavi.lnk（如副本 GoNavi (2).lnk）。
-	// 固定按钮的图标重读只认全局关联广播，字面名单一判定会让这类 pin
-	// 停留在旧图标。
+	// 固定项不叫 GoNavi.lnk（如副本 GoNavi (2).lnk）时也必须按实际
+	// 文件路径发出单项通知。
 	variantPin := filepath.Join(pinsDir, "GoNavi (2).lnk")
 	if err := os.WriteFile(variantPin, nil, 0o644); err != nil {
 		t.Fatal(err)
@@ -677,34 +651,27 @@ func TestWindowsSendShortcutRefreshNotificationsSendsAssociationForVariantPin(t 
 
 	windowsSendShortcutRefreshNotifications()
 
-	if associations != 1 {
-		t.Fatalf("association change notification sent %d times, want 1 for variant-named pin", associations)
-	}
 	if len(items) != 1 || items[0] != variantPin {
 		t.Fatalf("item notifications = %v, want [%s]", items, variantPin)
 	}
-	if len(directories) != 1 || directories[0] != pinsDir {
-		t.Fatalf("directory notifications = %v, want [%s]", directories, pinsDir)
+	if len(directories) != 0 {
+		t.Fatalf("taskbar directory must not receive broad refresh notifications: %v", directories)
 	}
 }
 
-func TestWindowsSendShortcutRefreshNotificationsSkipsAssociationForForeignPin(t *testing.T) {
-	var associations int
+func TestWindowsSendShortcutRefreshNotificationsSkipsForeignPin(t *testing.T) {
 	previousItem := windowsApplicationIconNotifyItemChanged
 	previousDirectory := windowsApplicationIconNotifyDirectoryChanged
-	previousAssociation := windowsApplicationIconNotifyShellChange
 	previousDirectories := windowsKnownGoNaviShortcutDirectories
 	previousPins := windowsTaskbarPinsDirectory
 	defer func() {
 		windowsApplicationIconNotifyItemChanged = previousItem
 		windowsApplicationIconNotifyDirectoryChanged = previousDirectory
-		windowsApplicationIconNotifyShellChange = previousAssociation
 		windowsKnownGoNaviShortcutDirectories = previousDirectories
 		windowsTaskbarPinsDirectory = previousPins
 	}()
 	windowsApplicationIconNotifyItemChanged = func(path string) {}
 	windowsApplicationIconNotifyDirectoryChanged = func(path string) {}
-	windowsApplicationIconNotifyShellChange = func() { associations++ }
 
 	pinsDir := t.TempDir()
 	windowsTaskbarPinsDirectory = func() string { return pinsDir }
@@ -715,9 +682,6 @@ func TestWindowsSendShortcutRefreshNotificationsSkipsAssociationForForeignPin(t 
 
 	windowsSendShortcutRefreshNotifications()
 
-	if associations != 0 {
-		t.Fatalf("association change notification sent %d times, want 0 for foreign pin", associations)
-	}
 }
 
 // 45s 超时硬杀会绕过脚本自身的清理路径，桌面/开始菜单目录里会留下
@@ -771,5 +735,308 @@ func TestWindowsShortcutUpdateFailedCount(t *testing.T) {
 				t.Fatalf("windowsShortcutUpdateFailedCount(%q) = %d, want %d", tc.output, got, tc.want)
 			}
 		})
+	}
+}
+
+// 每次实时切换都必须恰好补发一次全局关联刷新：固定按钮（含刚取消固定的）
+// 图标快照对其他一切刷新手段（UPDATEITEM/窗口属性/DeleteTab+AddTab/
+// WM_SETICON）都不重采样，且无法区分「从未固定」与「刚取消固定」。刷新位
+// 置必须在快捷方式与窗口身份都提交之后，否则 Explorer 采样到中间态。
+func TestSetApplicationIconPNGFlushesAssociationOnEveryLiveSwitch(t *testing.T) {
+	source := image.NewNRGBA(image.Rect(0, 0, 2, 2))
+	source.SetNRGBA(0, 0, color.NRGBA{R: 0x10, G: 0x42, B: 0x88, A: 0xff})
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, source); err != nil {
+		t.Fatal(err)
+	}
+	configDir := t.TempDir()
+	pinsDir := t.TempDir()
+	pinPath := filepath.Join(pinsDir, "GoNavi.lnk")
+	if err := os.WriteFile(pinPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	const (
+		hwnd  = uintptr(0x1234)
+		small = uintptr(0x2001)
+		large = uintptr(0x2002)
+	)
+	ctx := context.WithValue(context.Background(), stringContextKey("frontend"), &fakeBrandIconFrontend{
+		chromium:   &fakeChromium{},
+		mainWindow: &fakeBrandIconWindow{hwnd: hwnd},
+	})
+
+	originalPinsDirectory := windowsTaskbarPinsDirectory
+	originalUpdateShortcuts := windowsUpdateCurrentApplicationShortcuts
+	originalDPI := windowsApplicationIconSystemDPI
+	originalLoad := windowsApplicationIconLoad
+	originalDestroy := windowsApplicationIconDestroyCall
+	originalSend := windowsApplicationIconSendMessageCall
+	originalSetClass := windowsApplicationIconSetClassIcon
+	originalSetTaskbarProperties := windowsApplicationIconSetTaskbarProperties
+	originalRefreshTaskbar := windowsRefreshTaskbarButton
+	originalAssociationChanged := windowsApplicationIconNotifyAssociationChanged
+	originalRecreateForPin := windowsRecreateTaskbarButtonForPinRefresh
+	windowsApplicationIconHandleMu.Lock()
+	originalSmallHandle := windowsApplicationIconSmallHandle
+	originalLargeHandle := windowsApplicationIconLargeHandle
+	windowsApplicationIconSmallHandle = 0
+	windowsApplicationIconLargeHandle = 0
+	windowsApplicationIconHandleMu.Unlock()
+	t.Cleanup(func() {
+		windowsTaskbarPinsDirectory = originalPinsDirectory
+		windowsUpdateCurrentApplicationShortcuts = originalUpdateShortcuts
+		windowsApplicationIconSystemDPI = originalDPI
+		windowsApplicationIconLoad = originalLoad
+		windowsApplicationIconDestroyCall = originalDestroy
+		windowsApplicationIconSendMessageCall = originalSend
+		windowsApplicationIconSetClassIcon = originalSetClass
+		windowsApplicationIconSetTaskbarProperties = originalSetTaskbarProperties
+		windowsRefreshTaskbarButton = originalRefreshTaskbar
+		windowsApplicationIconNotifyAssociationChanged = originalAssociationChanged
+		windowsRecreateTaskbarButtonForPinRefresh = originalRecreateForPin
+		windowsApplicationIconHandleMu.Lock()
+		windowsApplicationIconSmallHandle = originalSmallHandle
+		windowsApplicationIconLargeHandle = originalLargeHandle
+		windowsApplicationIconHandleMu.Unlock()
+	})
+
+	windowsTaskbarPinsDirectory = func() string { return pinsDir }
+	windowsUpdateCurrentApplicationShortcuts = func(string) error { return nil }
+	windowsApplicationIconSystemDPI = func() int { return 96 }
+	windowsApplicationIconLoad = func(string, int) (uintptr, error) { return small, nil }
+	windowsApplicationIconDestroyCall = func(uintptr) {}
+	current := map[uintptr]uintptr{}
+	windowsApplicationIconSendMessageCall = func(_, message, iconType, icon uintptr) uintptr {
+		switch message {
+		case windowsSetIconMessage:
+			current[iconType] = icon
+		case windowsGetIconMessage:
+			return current[iconType]
+		}
+		return 0
+	}
+	windowsApplicationIconSetClassIcon = func(uintptr, int32, uintptr) {}
+	windowsApplicationIconSetTaskbarProperties = func(uintptr, string) error { return nil }
+	windowsRefreshTaskbarButton = func(uintptr) error { return nil }
+	associationFlushes := 0
+	windowsApplicationIconNotifyAssociationChanged = func() { associationFlushes++ }
+	recreatesForPin := 0
+	windowsRecreateTaskbarButtonForPinRefresh = func(uintptr) bool { recreatesForPin++; return true }
+
+	if err := setApplicationIconPNG(encoded.Bytes(), configDir, ctx); err != nil {
+		t.Fatalf("set application icon with GoNavi pin: %v", err)
+	}
+	if associationFlushes != 1 {
+		t.Fatalf("association flush count with GoNavi pin = %d, want 1", associationFlushes)
+	}
+	// 一次切换只允许一次按钮重建：历史上曾因重复调用块导致固定窗口隐藏/
+	// 恢复两次（窗口闪两下），且第二次失败会跳过持久化激活造成状态分裂。
+	if recreatesForPin != 1 {
+		t.Fatalf("taskbar recreate count with GoNavi pin = %d, want 1", recreatesForPin)
+	}
+
+	if err := os.Remove(pinPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := setApplicationIconPNG(encoded.Bytes(), configDir, ctx); err != nil {
+		t.Fatalf("set application icon without GoNavi pin: %v", err)
+	}
+	if associationFlushes != 2 {
+		t.Fatalf("association flush count after pin removal = %d, want 2 (unpinned buttons keep a stale snapshot too)", associationFlushes)
+	}
+	if recreatesForPin != 1 {
+		t.Fatalf("taskbar recreate count after pin removal = %d, want 1 (no pin, no recreate)", recreatesForPin)
+	}
+}
+
+// 启动期恢复不得发送全局关联刷新：启动时任务栏按钮本就按已改写的固定项
+// 重建，此时刷新只会带来一次无意义的全桌面重绘。
+func TestInitializePersistedNativeBrandIconDoesNotFlushAssociation(t *testing.T) {
+	source := image.NewNRGBA(image.Rect(0, 0, 4, 4))
+	source.SetNRGBA(0, 0, color.NRGBA{R: 0x22, G: 0x66, B: 0xaa, A: 0xff})
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, source); err != nil {
+		t.Fatal(err)
+	}
+	configDir := t.TempDir()
+	iconPath, err := persistWindowsApplicationIcon(encoded.Bytes(), configDir)
+	if err != nil {
+		t.Fatalf("persist active icon: %v", err)
+	}
+	if err := activatePersistedWindowsApplicationIcon(iconPath, configDir); err != nil {
+		t.Fatalf("activate active icon: %v", err)
+	}
+
+	const hwnd = uintptr(0x1234)
+	ctx := context.WithValue(context.Background(), stringContextKey("frontend"), &fakeBrandIconFrontend{
+		chromium:   &fakeChromium{},
+		mainWindow: &fakeBrandIconWindow{hwnd: hwnd},
+	})
+	application := NewAppWithSecretStore(nil)
+	application.configDir = configDir
+
+	pinsDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(pinsDir, "GoNavi.lnk"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	originalPinsDirectory := windowsTaskbarPinsDirectory
+	originalUpdateShortcuts := windowsUpdateCurrentApplicationShortcuts
+	originalDPI := windowsApplicationIconSystemDPI
+	originalLoad := windowsApplicationIconLoad
+	originalDestroy := windowsApplicationIconDestroyCall
+	originalSend := windowsApplicationIconSendMessageCall
+	originalSetClass := windowsApplicationIconSetClassIcon
+	originalSetTaskbarProperties := windowsApplicationIconSetTaskbarProperties
+	originalRefreshTaskbar := windowsRefreshTaskbarButton
+	originalAssociationChanged := windowsApplicationIconNotifyAssociationChanged
+	originalResolveInstallTarget := updateResolveInstallTarget
+	originalVersion := AppVersion
+	windowsApplicationIconHandleMu.Lock()
+	originalSmallHandle := windowsApplicationIconSmallHandle
+	originalLargeHandle := windowsApplicationIconLargeHandle
+	windowsApplicationIconSmallHandle = 0
+	windowsApplicationIconLargeHandle = 0
+	windowsApplicationIconHandleMu.Unlock()
+	t.Cleanup(func() {
+		windowsTaskbarPinsDirectory = originalPinsDirectory
+		windowsUpdateCurrentApplicationShortcuts = originalUpdateShortcuts
+		windowsApplicationIconSystemDPI = originalDPI
+		windowsApplicationIconLoad = originalLoad
+		windowsApplicationIconDestroyCall = originalDestroy
+		windowsApplicationIconSendMessageCall = originalSend
+		windowsApplicationIconSetClassIcon = originalSetClass
+		windowsApplicationIconSetTaskbarProperties = originalSetTaskbarProperties
+		windowsRefreshTaskbarButton = originalRefreshTaskbar
+		windowsApplicationIconNotifyAssociationChanged = originalAssociationChanged
+		updateResolveInstallTarget = originalResolveInstallTarget
+		AppVersion = originalVersion
+		windowsApplicationIconHandleMu.Lock()
+		windowsApplicationIconSmallHandle = originalSmallHandle
+		windowsApplicationIconLargeHandle = originalLargeHandle
+		windowsApplicationIconHandleMu.Unlock()
+	})
+
+	windowsTaskbarPinsDirectory = func() string { return pinsDir }
+	windowsUpdateCurrentApplicationShortcuts = func(string) error { return nil }
+	windowsApplicationIconSystemDPI = func() int { return 96 }
+	windowsApplicationIconLoad = func(string, int) (uintptr, error) { return 0x2001, nil }
+	windowsApplicationIconDestroyCall = func(uintptr) {}
+	current := map[uintptr]uintptr{}
+	windowsApplicationIconSendMessageCall = func(_, message, iconType, icon uintptr) uintptr {
+		switch message {
+		case windowsSetIconMessage:
+			current[iconType] = icon
+		case windowsGetIconMessage:
+			return current[iconType]
+		}
+		return 0
+	}
+	windowsApplicationIconSetClassIcon = func(uintptr, int32, uintptr) {}
+	windowsApplicationIconSetTaskbarProperties = func(uintptr, string) error { return nil }
+	windowsRefreshTaskbarButton = func(uintptr) error { return nil }
+	associationFlushes := 0
+	windowsApplicationIconNotifyAssociationChanged = func() { associationFlushes++ }
+	installDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(installDir, windowsMSIInstallMarker), []byte("MSI"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	updateResolveInstallTarget = func() string {
+		return filepath.Join(installDir, "GoNavi.exe")
+	}
+	AppVersion = "1.0.0"
+
+	if err := InitializePersistedNativeBrandIcon(application, ctx); err != nil {
+		t.Fatalf("initialize persisted native brand icon: %v", err)
+	}
+	if associationFlushes != 0 {
+		t.Fatalf("association flush count on startup restore = %d, want 0", associationFlushes)
+	}
+}
+
+// 实时切换时只有存在本应用固定项才强制重建任务栏按钮（隐藏/恢复窗口）：
+// 固定按钮的图标快照对其他一切手段都不重采样；启动路径（refreshTaskbar=
+// false）与无固定项时不得触发，避免无意义的窗口闪烁。
+func TestApplyWindowsApplicationIconModeRecreatesButtonOnlyForPins(t *testing.T) {
+	pinsDir := t.TempDir()
+	pinPath := filepath.Join(pinsDir, "GoNavi.lnk")
+	if err := os.WriteFile(pinPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	const (
+		hwnd  = uintptr(0x1234)
+		small = uintptr(0x2001)
+		large = uintptr(0x2002)
+	)
+	originalPinsDirectory := windowsTaskbarPinsDirectory
+	originalSend := windowsApplicationIconSendMessageCall
+	originalSetClass := windowsApplicationIconSetClassIcon
+	originalSetTaskbarProperties := windowsApplicationIconSetTaskbarProperties
+	originalRefreshTaskbar := windowsRefreshTaskbarButton
+	originalRecreate := windowsRecreateTaskbarButtonForPinRefresh
+	t.Cleanup(func() {
+		windowsTaskbarPinsDirectory = originalPinsDirectory
+		windowsApplicationIconSendMessageCall = originalSend
+		windowsApplicationIconSetClassIcon = originalSetClass
+		windowsApplicationIconSetTaskbarProperties = originalSetTaskbarProperties
+		windowsRefreshTaskbarButton = originalRefreshTaskbar
+		windowsRecreateTaskbarButtonForPinRefresh = originalRecreate
+	})
+	windowsTaskbarPinsDirectory = func() string { return pinsDir }
+	current := map[uintptr]uintptr{}
+	windowsApplicationIconSendMessageCall = func(_, message, iconType, icon uintptr) uintptr {
+		switch message {
+		case windowsSetIconMessage:
+			current[iconType] = icon
+		case windowsGetIconMessage:
+			return current[iconType]
+		}
+		return 0
+	}
+	windowsApplicationIconSetClassIcon = func(uintptr, int32, uintptr) {}
+	windowsApplicationIconSetTaskbarProperties = func(uintptr, string) error { return nil }
+	windowsRefreshTaskbarButton = func(uintptr) error { return nil }
+	recreated := 0
+	windowsRecreateTaskbarButtonForPinRefresh = func(uintptr) bool { recreated++; return true }
+
+	if err := applyWindowsApplicationIconMode(hwnd, `C:\brand.ico`, small, large, true); err != nil {
+		t.Fatalf("apply icon with pin: %v", err)
+	}
+	if recreated != 1 {
+		t.Fatalf("recreation count with pin = %d, want 1", recreated)
+	}
+
+	if err := os.Remove(pinPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyWindowsApplicationIconMode(hwnd, `C:\brand.ico`, small, large, true); err != nil {
+		t.Fatalf("apply icon without pin: %v", err)
+	}
+	if recreated != 1 {
+		t.Fatalf("recreation count without pin = %d, want still 1", recreated)
+	}
+
+	if err := os.WriteFile(pinPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyWindowsApplicationIconMode(hwnd, `C:\brand.ico`, small, large, false); err != nil {
+		t.Fatalf("apply icon on startup path: %v", err)
+	}
+	if recreated != 1 {
+		t.Fatalf("recreation count on startup path = %d, want still 1", recreated)
+	}
+}
+
+// 无法读取窗口状态（假句柄、句柄为 0）时必须整体放弃：盲目隐藏会破坏窗口
+// 状态，宁可让固定按钮等待下次机会。
+func TestRecreateWindowsTaskbarButtonForPinRefreshSkipsUnknownState(t *testing.T) {
+	if recreateWindowsTaskbarButtonForPinRefresh(0) {
+		t.Fatal("zero hwnd must skip recreation")
+	}
+	// 假句柄：GetWindowPlacement 失败 → 返回 false 且不产生副作用。
+	if recreateWindowsTaskbarButtonForPinRefresh(0xdeadbeef) {
+		t.Fatal("unknown hwnd must skip recreation")
 	}
 }

@@ -5,10 +5,24 @@ import { createRoot, type Root } from 'react-dom/client';
 import VirtualList from 'rc-virtual-list';
 import VirtualTable from 'rc-table/lib/VirtualTable';
 import VirtualTableESM from 'rc-table/es/VirtualTable';
+import { Table } from 'antd';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DATA_GRID_FILL_BODY_CSS } from './dataGridLayout';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: vi.fn().mockImplementation((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })),
+});
 
 type Row = {
   id: string;
@@ -413,7 +427,7 @@ describe('resolver-based native virtual scrolling', () => {
     expect(compositedInner?.style.width).toBe('600px');
   });
 
-  it('lets a single-row body stretch and hides horizontal scrolling for empty results', () => {
+  it('keeps horizontal scrolling available for empty results with wide columns', () => {
     container = document.createElement('div');
     container.className = 'data-grid-root';
     document.body.append(container);
@@ -425,17 +439,29 @@ describe('resolver-based native virtual scrolling', () => {
           prefixCls="ant-table-tbody-virtual" itemHeight={28} itemKey="id">
           {(row) => <div>{row.id}</div>}
         </VirtualList>
-        <div className="ant-table ant-table-empty"><div className="ant-table-body" style={{ overflow: 'auto' }} /></div>
+        <Table dataSource={[]} columns={Array.from({ length: 20 }, (_, index) => ({
+          key: `column-${index}`, title: `column-${index}`, width: 180,
+        }))} virtual scroll={{ x: 3600, y: 500 }} pagination={false} />
       </div>
     </>));
     const holder = container.querySelector('.ant-table-tbody-virtual-holder')!;
     expect(getComputedStyle(holder).flexGrow).toBe('1');
-    expect(getComputedStyle(container.querySelector('.ant-table-body')!).overflowX).toBe('hidden');
+    const emptyBody = container.querySelector('.ant-table-body')!;
+    expect(getComputedStyle(emptyBody).flexGrow).toBe('1');
+    expect(getComputedStyle(emptyBody).overflowX).not.toBe('hidden');
+    expect(getComputedStyle(container.querySelector('.ant-table-body > table')!).height).toBe('100%');
+    expect(getComputedStyle(container.querySelector('.ant-table-placeholder')!).height).toBe('100%');
+    // jsdom does not apply stylesheet !important over inline styles. Check the
+    // override priority here; the real browser probe verifies its final height.
+    const bodyRule = Array.from(container.querySelector('style')!.sheet!.cssRules)
+      .find((rule) => rule instanceof CSSStyleRule && emptyBody.matches(rule.selectorText)
+        && rule.style.getPropertyValue('max-height') === 'none') as CSSStyleRule;
+    expect(bodyRule.style.getPropertyPriority('max-height')).toBe('important');
     container.classList.add('data-grid-empty');
     const external = document.createElement('div');
     external.className = 'data-grid-external-horizontal-scroll';
     container.append(external);
-    expect(getComputedStyle(external).display).toBe('none');
+    expect(getComputedStyle(external).display).not.toBe('none');
     container.classList.remove('data-grid-empty');
     expect(getComputedStyle(external).display).not.toBe('none');
   });

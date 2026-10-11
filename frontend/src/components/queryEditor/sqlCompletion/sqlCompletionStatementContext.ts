@@ -3,7 +3,7 @@ import {
     getNormalizedOffsetAtPosition, isQueryEditorTableSourceCompletionContext,
     isQueryEditorTableAliasCompletionContext, buildQueryEditorTableSourceAlias,
 } from '../QueryEditorHelpers';
-import { resolveCurrentSqlStatementRange } from '../../../utils/sqlStatementSelection';
+import { resolveBoundedSqlStatementContext } from '../queryEditorBoundedStatementContext';
 import { useStore } from '../../../store';
 import { appendTableAlias } from '../../../utils/sqlDialect';
 import type { createSqlCompletionDialectContext } from './sqlCompletionDialectContext';
@@ -20,15 +20,18 @@ export const resolveSqlCompletionStatementContext = ({ model, position, activeDi
         lineNumber: Number(position?.lineNumber || 1),
         column: Number(position?.column || 1),
     });
-    const currentStatementRange = resolveCurrentSqlStatementRange(fullText, cursorOffset, activeDialect);
+    // 有界语句上下文：只在光标附近「向上 200 行 / 向下 100 行、遇空行截断」的窗口内定位语句
+    // 边界，避免每次触发补全都对整篇文档做词法扫描（大 SQL 下补全耗时随体积增长）。
+    // 窗口仍覆盖同一语句的 FROM 部分，别名解析结果与全文扫描一致。
+    const boundedContext = resolveBoundedSqlStatementContext(fullText, cursorOffset, activeDialect);
 
     const lineStartOffset = fullText.lastIndexOf('\n', Math.max(0, cursorOffset - 1)) + 1;
     const linePrefix = fullText.slice(lineStartOffset, cursorOffset);
-    const currentStatementPrefix = currentStatementRange
-        ? fullText.slice(currentStatementRange.start, cursorOffset)
-        : fullText.slice(0, cursorOffset);
+    // 窗口内没定位到语句（例如光标停在空白/注释区）时退回当前行前缀，
+    // 不能再取全文前缀——那正是本次要消除的「随文档增长」成本来源。
+    const currentStatementPrefix = boundedContext.prefixText || linePrefix;
     const completionScopeText = currentStatementPrefix || linePrefix;
-    const currentStatementText = currentStatementRange?.text || '';
+    const currentStatementText = boundedContext.statementText;
     const completionReferenceText = currentStatementText || completionScopeText;
     const isTableSourceCompletion = isQueryEditorTableSourceCompletionContext(completionScopeText, activeDialect);
     const isTableAliasCompletion = isQueryEditorTableAliasCompletionContext(completionScopeText, activeDialect);

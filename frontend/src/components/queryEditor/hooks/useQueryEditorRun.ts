@@ -207,7 +207,6 @@ export const useQueryEditorRun = ({
       setLoading(true);
       setExecutionError('');
       recordExecutionOrigin(currentQuery, executableSQL);
-      updateResultPanelVisibility(true);
       rpcLostWithoutResultRef.current = false;
       const runStartTime = Date.now();
 
@@ -310,7 +309,7 @@ export const useQueryEditorRun = ({
                   recordExecutionOrigin, executableSQL, runOptions, paramsDialogState, paramsState,
                   setLoading, lastParamsRunScopeRef, runScope, setParamsDialogState, runState,
                   setQueryId, setExecutionTimingActive, executeSqlEditorMultiQuery,
-                  executionConnectionParams, finishQueryEditorSqlClock, queryEditorUnmountedRef,
+                  executionConnectionParams, executionSchemaName, finishQueryEditorSqlClock, queryEditorUnmountedRef,
                   addSqlLog, currentQueryIdRef, clearQueryId, updateResultPanelVisibility,
                   setExecutionError, mutatingStatements, activatePendingSqlTransaction,
                   sqlEditorCommitMode, sqlEditorAutoCommitDelayMs,

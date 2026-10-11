@@ -7,7 +7,7 @@ import type { SavedConnection } from '../../../typeDefs/connectionTypes';
 
 export interface CreateQueryEditorAiInlineGhostStateInput {
     editor: Parameters<OnMount>[0];
-    aiInlineGhostTimerRef: React.MutableRefObject<number | null>;
+    aiInlineGhostTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
     aiInlineGhostDecorationIdsRef: React.MutableRefObject<string[]>;
     aiInlineGhostRequestSeqRef: React.MutableRefObject<number>;
     aiInlineGhostRef: React.MutableRefObject<{ insertText: string; editText: string; replacePrefixLength: number; modelUri: string; position: { lineNumber: number; column: number; }; snapshot: QueryEditorAiEditorSnapshot; } | null>;

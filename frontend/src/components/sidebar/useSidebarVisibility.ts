@@ -13,7 +13,7 @@ import {
 } from '../../utils/schemaVisibility';
 import {
   moveExactDatabaseVisibilityEntry,
-  removeExactDatabaseVisibilityEntry,
+  resolveIncludeDatabasesAfterRemoval,
 } from '../../utils/databaseVisibility';
 import { isSidebarDatabasePinned } from '../sidebarV2Utils';
 import type { SidebarStoreStateApi } from './useSidebarStoreState';
@@ -203,7 +203,6 @@ export const useSidebarVisibility = ({
               .map((child) => String(child.dataRef?.dbName || child.title || '').trim())
               .filter((name) => name && name !== dbName),
       ));
-      const exactIncludes = removeExactDatabaseVisibilityEntry(currentConnection, dbName);
       const nextConnection = {
           ...updateSchemaVisibilityRule(
               currentConnection,
@@ -211,11 +210,11 @@ export const useSidebarVisibility = ({
               undefined,
               { caseSensitive: capabilities.schemaIdentifierCaseSensitive },
           ),
-          includeDatabases: Array.isArray(currentConnection.includeDatabases)
-              && currentConnection.includeDatabases.length > 0
-              && exactIncludes?.length === 0
-              ? (remainingLoadedDatabases.length > 0 ? remainingLoadedDatabases : [dbName])
-              : exactIncludes,
+          includeDatabases: resolveIncludeDatabasesAfterRemoval(
+              currentConnection,
+              remainingLoadedDatabases,
+              dbName,
+          ),
       };
       return persistConnectionVisibilityMetadata(currentConnection, nextConnection);
   }, [connections, persistConnectionVisibilityMetadata]);

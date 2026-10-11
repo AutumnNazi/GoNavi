@@ -699,9 +699,10 @@ New-TestShortcut $foreignNamedShortcut $env:GONAVI_TEST_FOREIGN_TARGET ''
 $shadowedShortcut = Join-Path $env:GONAVI_TEST_COMMON_DESKTOP 'GoNavi.lnk'
 New-TestShortcut $shadowedShortcut $env:GONAVI_TEST_TARGET ''
 New-TestShortcut (Join-Path $env:GONAVI_TEST_USER_DESKTOP 'GoNavi.lnk') $env:GONAVI_TEST_TARGET ''
+New-TestShortcut (Join-Path $env:GONAVI_TEST_USER_DESKTOP 'GoNavi (2).lnk') $env:GONAVI_TEST_TARGET ''
 
 $migrated = Set-GoNaviMachineShortcutMigration -TargetPath $env:GONAVI_TEST_TARGET -CommonDesktopDirectory $env:GONAVI_TEST_COMMON_DESKTOP -CommonProgramsDirectory $env:GONAVI_TEST_COMMON_PROGRAMS -UserDesktopDirectory $env:GONAVI_TEST_USER_DESKTOP -UserProgramsDirectory $env:GONAVI_TEST_USER_PROGRAMS
-if ($migrated -ne 3) { throw ('unexpected migration count: ' + $migrated) }
+if ($migrated -ne 2) { throw ('unexpected migration count: ' + $migrated) }
 
 if (Test-Path -LiteralPath $machineShortcut -PathType Leaf) { throw 'machine start menu shortcut was not moved' }
 $movedPath = Join-Path $env:GONAVI_TEST_USER_PROGRAMS 'GoNavi.lnk'
@@ -721,9 +722,17 @@ if (-not (Test-Path -LiteralPath (Join-Path $env:GONAVI_TEST_USER_PROGRAMS 'GoNa
 
 if (-not (Test-Path -LiteralPath $foreignNamedShortcut -PathType Leaf)) { throw 'foreign-targeted GoNavi-named shortcut must stay untouched' }
 
-if (Test-Path -LiteralPath $shadowedShortcut -PathType Leaf) { throw 'shadowed machine shortcut was not removed' }
-$keptUserDesktop = $shell.CreateShortcut((Join-Path $env:GONAVI_TEST_USER_DESKTOP 'GoNavi.lnk'))
-if (-not (Test-SameFilePath $keptUserDesktop.TargetPath $env:GONAVI_TEST_TARGET)) { throw 'existing user desktop shortcut was modified' }
+if (-not (Test-Path -LiteralPath $shadowedShortcut -PathType Leaf)) { throw 'public desktop shortcut must remain machine-owned' }
+if (Test-Path -LiteralPath (Join-Path $env:GONAVI_TEST_USER_DESKTOP 'GoNavi.lnk') -PathType Leaf) { throw 'duplicate user desktop shortcut was not removed' }
+if (Test-Path -LiteralPath (Join-Path $env:GONAVI_TEST_USER_DESKTOP 'GoNavi (2).lnk') -PathType Leaf) { throw 'variant duplicate user desktop shortcut was not removed' }
+
+# Without an MSI-owned public Desktop target, a same-target user shortcut is
+# legitimate and must not be removed by the duplicate cleanup guard.
+Remove-Item -LiteralPath $shadowedShortcut -Force
+$standaloneUserShortcut = Join-Path $env:GONAVI_TEST_USER_DESKTOP 'GoNavi-standalone.lnk'
+New-TestShortcut $standaloneUserShortcut $env:GONAVI_TEST_TARGET ''
+[void](Remove-GoNaviDuplicateUserDesktopShortcuts -TargetPath $env:GONAVI_TEST_TARGET -CommonDesktopDirectory $env:GONAVI_TEST_COMMON_DESKTOP -UserDesktopDirectory $env:GONAVI_TEST_USER_DESKTOP -Shell $shell)
+if (-not (Test-Path -LiteralPath $standaloneUserShortcut -PathType Leaf)) { throw 'user desktop shortcut was removed without a machine duplicate' }
 
 # SFX 死链防护：Go 侧检测到 exe 位于临时目录时会设置禁用标记，Ensure
 # 必须拒绝创建开始菜单快捷方式（SFX 退出即清理临时目录，创建即死链且
@@ -779,5 +788,34 @@ func TestWindowsShortcutScriptRestartsStartMenuHostForAllAppsList(t *testing.T) 
 	// 函数定义 + 迁移分发调用：嵌入脚本中至少出现两次。
 	if got := strings.Count(windowsShortcutRepairPowerShellScript, "Restart-GoNaviStartMenuHost"); got < 2 {
 		t.Fatalf("Restart-GoNaviStartMenuHost references = %d, want >= 2 (definition + migration dispatch)", got)
+	}
+}
+
+func TestWindowsShortcutScriptBatchesFolderRefreshNotifications(t *testing.T) {
+	for _, marker := range []string{
+		"$changedShortcutPathSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)",
+		"$changedShortcutDirectorySet = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)",
+		"$flushShortcutNotifications = {",
+		"Send-ShellDirectoryUpdatedNotification $shortcutDirectory",
+	} {
+		if !strings.Contains(windowsShortcutRepairPowerShellScript, marker) {
+			t.Fatalf("repair script must batch shortcut refresh notifications (missing %q)", marker)
+		}
+	}
+	if got := strings.Count(windowsShortcutRepairPowerShellScript, "& $flushShortcutNotifications"); got != 2 {
+		t.Fatalf("shortcut notification flush call count = %d, want 2 (success and failure paths)", got)
+	}
+	if !strings.Contains(windowsShortcutRepairPowerShellScript, "SHCNF_PATHW | SHCNF_FLUSH") {
+		t.Fatal("batched shortcut refresh must retain synchronous shell notification semantics")
+	}
+	if !strings.Contains(windowsShortcutUpdateEpilogue, "$script:GoNaviStartMenuChanged") {
+		t.Fatal("brand update epilogue must restart StartMenuExperienceHost only when Start menu shortcuts changed")
+	}
+	if !strings.Contains(windowsShortcutUpdateEpilogue, "$env:GONAVI_BRAND_MIGRATE_ONLY -ne '1'") {
+		t.Fatal("migration mode must not restart StartMenuExperienceHost twice")
+	}
+	if !strings.Contains(windowsShortcutRepairPowerShellScript, "Explorer also treats UPDATEDIR on") ||
+		!strings.Contains(windowsShortcutRepairPowerShellScript, "foreach ($desktopDirectory in (Get-GoNaviDesktopDirectories))") {
+		t.Fatal("desktop shortcut refresh must avoid a directory-wide shell redraw")
 	}
 }

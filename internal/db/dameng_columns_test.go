@@ -10,7 +10,7 @@ import (
 func TestBuildDamengColumnsQuery_IncludesPrimaryKeyMetadata(t *testing.T) {
 	t.Parallel()
 
-	ownerQuery := buildDamengColumnsQuery("biz", "orders")
+	ownerQuery := buildDamengColumnsQuery("BIZ", "ORDERS")
 	if !strings.Contains(ownerQuery, "constraint_type = 'P'") {
 		t.Fatalf("owner query 应包含主键约束过滤, got=%s", ownerQuery)
 	}
@@ -36,7 +36,7 @@ func TestBuildDamengColumnsQuery_IncludesPrimaryKeyMetadata(t *testing.T) {
 		}
 	}
 
-	userQuery := buildDamengColumnsQuery("", "orders")
+	userQuery := buildDamengColumnsQuery("", "ORDERS")
 	if !strings.Contains(userQuery, "FROM user_tab_columns c") {
 		t.Fatalf("user query 应使用 user_tab_columns, got=%s", userQuery)
 	}
@@ -56,7 +56,7 @@ func TestBuildDamengColumnsQuery_IncludesPrimaryKeyMetadata(t *testing.T) {
 func TestBuildDamengForeignKeysQuery_PreFiltersLocalColumnsByTargetTable(t *testing.T) {
 	t.Parallel()
 
-	ownerQuery := buildDamengForeignKeysQuery("biz", "orders")
+	ownerQuery := buildDamengForeignKeysQuery("BIZ", "ORDERS")
 	for _, want := range []string{
 		"FROM (",
 		"FROM all_cons_columns",
@@ -68,7 +68,7 @@ func TestBuildDamengForeignKeysQuery_PreFiltersLocalColumnsByTargetTable(t *test
 		}
 	}
 
-	userQuery := buildDamengForeignKeysQuery("", "orders")
+	userQuery := buildDamengForeignKeysQuery("", "ORDERS")
 	for _, want := range []string{
 		"FROM user_cons_columns",
 		"WHERE table_name = 'ORDERS'",
@@ -131,7 +131,7 @@ func TestBuildDamengColumnDefinitions_MarksPrimaryKeyColumns(t *testing.T) {
 func TestBuildDamengAutoIncrementColumnsQuery_UsesSystemColumnMetadata(t *testing.T) {
 	t.Parallel()
 
-	ownerQuery := buildDamengAutoIncrementColumnsQuery("biz", "orders")
+	ownerQuery := buildDamengAutoIncrementColumnsQuery("BIZ", "ORDERS")
 	for _, want := range []string{
 		"FROM SYS.SYSCOLUMNS sc",
 		"JOIN SYS.SYSOBJECTS t ON sc.ID = t.ID",
@@ -145,7 +145,7 @@ func TestBuildDamengAutoIncrementColumnsQuery_UsesSystemColumnMetadata(t *testin
 		}
 	}
 
-	userQuery := buildDamengAutoIncrementColumnsQuery("", "orders")
+	userQuery := buildDamengAutoIncrementColumnsQuery("", "ORDERS")
 	if !strings.Contains(userQuery, "s.NAME = USER") {
 		t.Fatalf("user query 应按当前登录 schema 过滤, got=%s", userQuery)
 	}

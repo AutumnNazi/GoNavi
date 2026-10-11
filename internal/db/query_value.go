@@ -421,6 +421,16 @@ func normalizeCompositeQueryValue(v interface{}) interface{} {
 		return nil
 	}
 
+	// 常见标量类型无需反射深拷贝，直接透传：与下方 reflect 分支的 default
+	// （normalizeUnsafeIntegerForJS 对未匹配 Kind 返回 original）语义完全等价，
+	// 但省去每单元格一次 reflect.ValueOf，对以 string/float 为主的大结果集
+	// 可显著降低归一化 CPU。
+	// 注：int/uint 系列必须走下方 reflect 分支，以处理超出 JS 安全整数范围的值（转为字符串）。
+	switch v.(type) {
+	case string, bool, float32, float64:
+		return v
+	}
+
 	switch typed := v.(type) {
 	case []interface{}:
 		items := make([]interface{}, len(typed))

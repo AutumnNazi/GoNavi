@@ -295,50 +295,22 @@ function Send-ShellDirectoryUpdatedNotification {
     # UPDATEITEM for a single .lnk (observed on Windows 11 26200: the all-apps
     # entry kept the previous brand icon after in-place IconLocation rewrites).
     # UPDATEDIR on the containing folder is the documented folder-level refresh
-    # that StartMenuExperienceHost honours.
+    # that StartMenuExperienceHost honours. Explorer also treats UPDATEDIR on
+    # Desktop as a request to redraw every item in the desktop view, so never
+    # send that broad notification: the preceding UPDATEITEM is sufficient for
+    # the one GoNavi desktop shortcut.
     param([string]$Path)
 
     try {
+        foreach ($desktopDirectory in (Get-GoNaviDesktopDirectories)) {
+            if (Test-SameFilePath $Path $desktopDirectory) {
+                return
+            }
+        }
         Ensure-GoNaviShortcutShellNotificationType
         [GoNaviShortcutShellNotification]::NotifyDirectoryUpdated($Path)
     } catch {
         Write-ShortcutRepairLog ("shell directory refresh failed for " + $Path + ": " + $_.Exception.Message)
-    }
-}
-
-function Send-ShellAssociationChangedNotification {
-    # RETIRED: with whole-file shortcut replacement the per-item/per-folder
-    # notifications cover every observed surface, and the global flush this
-    # performs redraws the entire desktop (visible flash on each switch).
-    # Kept for a surface that provably needs the global flush; not called.
-    # Windows 11 keeps drawing a pinned taskbar button from its in-memory
-    # copy. UPDATEITEM refreshes a desktop .lnk; the taskbar needs the
-    # association flush before it shows the new IconLocation.
-    try {
-        if (-not ('GoNaviShortcutShellAssociation' -as [type])) {
-            Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-
-public static class GoNaviShortcutShellAssociation
-{
-    private const uint SHCNE_ASSOCCHANGED = 0x08000000;
-    private const uint SHCNF_IDLIST = 0x0000;
-    private const uint SHCNF_FLUSH = 0x1000;
-
-    [DllImport("shell32.dll")]
-    private static extern void SHChangeNotify(uint eventId, uint flags, System.IntPtr item1, System.IntPtr item2);
-
-    public static void NotifyAssociationChanged()
-    {
-        SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST | SHCNF_FLUSH, System.IntPtr.Zero, System.IntPtr.Zero);
-    }
-}
-'@
-        }
-        [GoNaviShortcutShellAssociation]::NotifyAssociationChanged()
-    } catch {
-        Write-ShortcutRepairLog ("shell association refresh failed: " + $_.Exception.Message)
     }
 }
 
@@ -693,9 +665,67 @@ function Ensure-GoNaviAumidShortcut {
         Write-ShortcutRepairLog ("AUMID shortcut relaunch properties failed: " + $shortcutPath)
     }
     Write-ShortcutRepairLog ("created AUMID shortcut: " + $shortcutPath)
+    $script:GoNaviStartMenuChanged = $true
     Send-ShellItemUpdatedNotification $shortcutPath
     Send-ShellDirectoryUpdatedNotification ([IO.Path]::GetDirectoryName($ShortcutPath))
     return $true
+}
+
+function Remove-GoNaviDuplicateUserDesktopShortcuts {
+    param(
+        [string]$TargetPath,
+        [string]$CommonDesktopDirectory,
+        [string]$UserDesktopDirectory,
+        [object]$Shell
+    )
+
+    $failureMessages = [Collections.Generic.List[string]]::new()
+    $machineDesktop = Get-NormalizedFilePath $CommonDesktopDirectory
+    $userDesktop = Get-NormalizedFilePath $UserDesktopDirectory
+    if ([string]::IsNullOrWhiteSpace($machineDesktop) -or
+        [string]::IsNullOrWhiteSpace($userDesktop) -or
+        [string]::Equals($machineDesktop, $userDesktop, [StringComparison]::OrdinalIgnoreCase) -or
+        -not (Test-Path -LiteralPath $machineDesktop -PathType Container) -or
+        -not (Test-Path -LiteralPath $userDesktop -PathType Container)) {
+        return $failureMessages
+    }
+        $hasMachineMatch = $false
+        try {
+            $machineEntries = @(Get-ChildItem -LiteralPath $machineDesktop -Filter 'GoNavi*.lnk' -File -ErrorAction Stop)
+        } catch {
+            $failureMessages.Add("desktop duplicate cleanup enumeration failed for " + $machineDesktop + ": " + $_.Exception.Message)
+            return $failureMessages
+        }
+        foreach ($machineEntry in $machineEntries) {
+        try {
+            $machineLink = $Shell.CreateShortcut($machineEntry.FullName)
+            if (-not (Test-SameFilePath $machineLink.TargetPath $TargetPath)) { continue }
+                $hasMachineMatch = $true
+        } catch {
+            $failureMessages.Add("desktop duplicate cleanup failed for " + $machineEntry.FullName + ": " + $_.Exception.Message)
+        }
+    }
+        if ($hasMachineMatch) {
+            try {
+                $userEntries = @(Get-ChildItem -LiteralPath $userDesktop -Filter 'GoNavi*.lnk' -File -ErrorAction Stop)
+            } catch {
+                $failureMessages.Add("desktop duplicate cleanup enumeration failed for " + $userDesktop + ": " + $_.Exception.Message)
+                return $failureMessages
+            }
+            foreach ($userEntry in $userEntries) {
+            try {
+                $userLink = $Shell.CreateShortcut($userEntry.FullName)
+                if (-not (Test-SameFilePath $userLink.TargetPath $TargetPath)) { continue }
+                Remove-Item -LiteralPath $userEntry.FullName -Force
+                Send-ShellItemUpdatedNotification $userEntry.FullName
+                Send-ShellDirectoryUpdatedNotification $userDesktop
+                Write-ShortcutRepairLog ("removed duplicate user desktop shortcut: " + $userEntry.FullName)
+            } catch {
+                $failureMessages.Add("desktop duplicate cleanup failed for " + $userEntry.FullName + ": " + $_.Exception.Message)
+            }
+            }
+        }
+    return $failureMessages
 }
 
 function Set-GoNaviMachineShortcutMigration {
@@ -716,9 +746,12 @@ function Set-GoNaviMachineShortcutMigration {
     # every other profile's Start Menu entry after an MSI repair/upgrade
     # recreated the machine shortcuts. Top-level only: the installer creates
     # flat entries, and a nested move would need subdirectory mirroring.
+    # Keep the MSI-owned public Desktop shortcut in place. Moving it to the
+    # user Desktop creates a duplicate after reinstall and makes the default
+    # installer shortcut disappear on the next launch. Only the shared Start
+    # Menu shortcut needs migration for writable per-user replacement.
     $pairs = @(
-        @{ Machine = $CommonProgramsDirectory; User = $UserProgramsDirectory },
-        @{ Machine = $CommonDesktopDirectory; User = $UserDesktopDirectory }
+        @{ Machine = $CommonProgramsDirectory; User = $UserProgramsDirectory }
     )
     $migratedCount = 0
     $failureMessages = [Collections.Generic.List[string]]::new()
@@ -755,11 +788,17 @@ function Set-GoNaviMachineShortcutMigration {
                 }
                 Send-ShellDirectoryUpdatedNotification $userDirectory
                 Send-ShellDirectoryUpdatedNotification $machineDirectory
+                if (Test-SameFilePath $machineDirectory $CommonProgramsDirectory) {
+                    $script:GoNaviStartMenuChanged = $true
+                }
                 $migratedCount++
             } catch {
                 $failureMessages.Add("machine shortcut migration failed for " + $shortcutFile.FullName + ": " + $_.Exception.Message)
             }
         }
+    }
+    foreach ($failure in @(Remove-GoNaviDuplicateUserDesktopShortcuts -TargetPath $TargetPath -CommonDesktopDirectory $CommonDesktopDirectory -UserDesktopDirectory $UserDesktopDirectory -Shell $shell)) {
+        [void]$failureMessages.Add($failure)
     }
     $script:GoNaviBrandFailureCount = $failureMessages.Count
     if ($failureMessages.Count -gt 0) {
@@ -785,6 +824,25 @@ function Set-GoNaviShortcutBrandIcon {
     $onlyMatchingTarget = $env:GONAVI_BRAND_MATCH_TARGET_ONLY -eq '1'
     $updatedCount = 0
     $failureMessages = [Collections.Generic.List[string]]::new()
+    $changedShortcutPaths = [Collections.Generic.List[string]]::new()
+    $changedShortcutPathSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $changedShortcutDirectories = [Collections.Generic.List[string]]::new()
+    $changedShortcutDirectorySet = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $flushShortcutNotifications = {
+        foreach ($shortcutPath in $changedShortcutPaths) {
+            Send-ShellItemUpdatedNotification $shortcutPath
+        }
+        foreach ($shortcutDirectory in $changedShortcutDirectories) {
+            # The taskbar pin folder is already covered by item notifications.
+            # A directory refresh there can make Explorer rebuild more shell
+            # surfaces than the one pinned button being changed.
+            if (Test-SameFilePath $shortcutDirectory $taskbarDirectory) {
+                continue
+            }
+            Send-ShellDirectoryUpdatedNotification $shortcutDirectory
+        }
+    }
+    $script:GoNaviStartMenuChanged = $false
     try {
         $normalizedTargetPath = Get-NormalizedFilePath $TargetPath
         $normalizedIconPath = Get-NormalizedFilePath $IconPath
@@ -820,11 +878,9 @@ function Set-GoNaviShortcutBrandIcon {
 
         $shell = New-Object -ComObject WScript.Shell
         $visitedDirectories = @{}
-        # Set when a machine-level common-desktop shortcut had to be migrated
-        # (deleted because its directory denies file creation to standard
-        # users); the user-level desktop shortcut is created after the loop.
-        $script:GoNaviMigratedCommonDesktop = $false
         $commonDesktopDirectory = Get-NormalizedFilePath ([Environment]::GetFolderPath([Environment+SpecialFolder]::CommonDesktopDirectory))
+        $userProgramsDirectory = Get-NormalizedFilePath ([Environment]::GetFolderPath([Environment+SpecialFolder]::Programs))
+        $commonProgramsDirectory = Get-NormalizedFilePath ([Environment]::GetFolderPath([Environment+SpecialFolder]::CommonPrograms))
 
         # Startup migration mode: converge machine-layer shortcuts to the
         # user layer even when no brand icon was ever selected (closes the
@@ -852,6 +908,10 @@ function Set-GoNaviShortcutBrandIcon {
                 Restart-GoNaviStartMenuHost
             }
             return $migrated
+        }
+
+        foreach ($failure in @(Remove-GoNaviDuplicateUserDesktopShortcuts -TargetPath $normalizedTargetPath -CommonDesktopDirectory $commonDesktopDirectory -UserDesktopDirectory ([Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)) -Shell $shell)) {
+            [void]$failureMessages.Add($failure)
         }
 
         foreach ($directory in $ShortcutDirectories) {
@@ -948,19 +1008,50 @@ function Set-GoNaviShortcutBrandIcon {
                         # executable's implicit identity and creates a second
                         # taskbar button after the current process exits.
                         $shouldWriteIdentity = $isMSITarget -or $matchesTarget -or $hasGoNaviIdentity -or $isGoNaviTaskbarShortcut
-                        if ($pinLaunchBroken -or ($isMSITarget -and -not $matchesTarget)) {
+                        $identityNeedsRepair = $shouldWriteIdentity -and
+                            -not [string]::Equals($existingAumid, 'Syngnat.GoNavi', [StringComparison]::OrdinalIgnoreCase)
+                        $wantedIconLocation = $normalizedIconPath + ',0'
+                        $iconNeedsSave = -not [string]::Equals([string]$shortcut.IconLocation, $wantedIconLocation, [StringComparison]::OrdinalIgnoreCase)
+                        $targetNeedsSave = $pinLaunchBroken -or ($isMSITarget -and -not $matchesTarget)
+                        if (-not $iconNeedsSave -and -not $targetNeedsSave -and -not $identityNeedsRepair) {
+                            continue
+                        }
+                        if ($targetNeedsSave) {
                             $shortcut.TargetPath = $normalizedTargetPath
                             $shortcut.WorkingDirectory = [IO.Path]::GetDirectoryName($normalizedTargetPath)
                         }
                         if ($pinLaunchBroken) {
                             $shortcut.Arguments = ''
                         }
-                        # Always save. WScript.Shell.Save rewrites the .lnk
-                        # without the AppUserModel property bag, which drops a
-                        # relaunch command that points at a missing file.
-                        $shortcut.IconLocation = $normalizedIconPath + ',0'
+                        $shortcut.IconLocation = $wantedIconLocation
                         if (Test-GoNaviShortcutWritable $shortcutFile.FullName) {
-                            $shortcut.Save()
+                            # Explorer keeps a separate snapshot for pinned
+                            # shortcuts. Replacing the .lnk at the same path
+                            # makes it reopen that item without a global shell
+                            # association broadcast (which redraws the whole
+                            # desktop). Fall back to in-place save when the
+                            # pin directory rejects sibling creation.
+                            $replaced = $false
+                            $replacementPath = ''
+                            try {
+                                $replacementPath = Join-Path $taskbarDirectory ($shortcutFile.BaseName + '-gonavi-update-' + [Guid]::NewGuid().ToString('N').Substring(0, 8) + '.lnk')
+                                $replacement = $shell.CreateShortcut($replacementPath)
+                                $replacement.TargetPath = $shortcut.TargetPath
+                                $replacement.Arguments = $shortcut.Arguments
+                                $replacement.WorkingDirectory = $shortcut.WorkingDirectory
+                                $replacement.WindowStyle = $shortcut.WindowStyle
+                                $replacement.Description = $shortcut.Description
+                                $replacement.IconLocation = $wantedIconLocation
+                                $replacement.Save()
+                                Move-Item -LiteralPath $replacementPath -Destination $shortcutFile.FullName -Force
+                                $replaced = $true
+                            } catch {
+                                if ($replacementPath -and (Test-Path -LiteralPath $replacementPath -PathType Leaf)) {
+                                    [void](Remove-Item -LiteralPath $replacementPath -Force -ErrorAction SilentlyContinue)
+                                }
+                                Write-ShortcutRepairLog ("taskbar shortcut replacement failed, falling back to in-place save: " + $shortcutFile.FullName + ": " + $_.Exception.Message)
+                            }
+                            if (-not $replaced) { $shortcut.Save() }
                             if ($shouldWriteIdentity -and -not (Set-GoNaviShortcutRelaunchProperties -ShortcutPath $shortcutFile.FullName -TargetPath $shortcut.TargetPath -IconPath $normalizedIconPath -ApplicationUserModelID $ApplicationUserModelID)) {
                                 throw ('failed to update taskbar identity: ' + $shortcutFile.FullName)
                             }
@@ -969,8 +1060,13 @@ function Set-GoNaviShortcutBrandIcon {
                             Write-ShortcutRepairLog ("failed to save read-only shortcut: " + $shortcutFile.FullName)
                             throw ('shortcut is not writable: ' + $shortcutFile.FullName)
                         }
-                        Send-ShellItemUpdatedNotification $shortcutFile.FullName
-                        Send-ShellDirectoryUpdatedNotification ([IO.Path]::GetDirectoryName($shortcutFile.FullName))
+                        if ($changedShortcutPathSet.Add($shortcutFile.FullName)) {
+                            [void]$changedShortcutPaths.Add($shortcutFile.FullName)
+                        }
+                        $shortcutDirectory = [IO.Path]::GetDirectoryName($shortcutFile.FullName)
+                        if ($changedShortcutDirectorySet.Add($shortcutDirectory)) {
+                            [void]$changedShortcutDirectories.Add($shortcutDirectory)
+                        }
                         continue
                     }
                     $wantedIconLocation = $normalizedIconPath + ',0'
@@ -1017,33 +1113,13 @@ function Set-GoNaviShortcutBrandIcon {
                                 Write-ShortcutRepairLog ("shortcut replacement failed, falling back to in-place save: " + $shortcutFile.FullName + ": " + $_.Exception.Message)
                             }
                             if (-not $replaced) {
-                                # Standard users cannot create files in the common
-                                # shortcuts' directories (the installer's per-file
-                                # grant allows modifying the existing .lnk but the
-                                # directories deny CreateFiles by design), so file
-                                # replacement is impossible there and an in-place
-                                # save can never refresh the Start menu snapshot.
-                                # Migrate instead: delete the machine shortcut
-                                # (Delete is part of the per-file Modify grant) and
-                                # recreate the entry as a user-level shortcut,
-                                # which is replaceable. The MSI recreates its
-                                # machine shortcuts on the next repair or upgrade,
-                                # and the migration repeats on the first switch
-                                # after that.
-                                $migrated = $false
-                                try {
-                                    Remove-Item -LiteralPath $shortcutFile.FullName -Force
-                                    $migrated = $true
-                                    Write-ShortcutRepairLog ("migrated machine shortcut to user scope: " + $shortcutFile.FullName)
-                                    if (Test-SameFilePath $normalizedDirectory $commonDesktopDirectory) {
-                                        $script:GoNaviMigratedCommonDesktop = $true
-                                    }
-                                } catch {
-                                    Write-ShortcutRepairLog ("machine shortcut migration delete failed: " + $shortcutFile.FullName + ": " + $_.Exception.Message)
-                                }
-                                if (-not $migrated) {
-                                    $shortcut.Save()
-                                }
+                                # The MSI grants Users modify access to the
+                                # existing public Desktop/Start Menu shortcut,
+                                # but its directory may deny creating a sibling.
+                                # Preserve that single shortcut and fall back to
+                                # an in-place save; never delete it and create a
+                                # second user-level Desktop entry.
+                                $shortcut.Save()
                             }
                             $updatedCount++
                         } else {
@@ -1051,21 +1127,35 @@ function Set-GoNaviShortcutBrandIcon {
                             throw ('shortcut is not writable: ' + $shortcutFile.FullName)
                         }
                     }
-                    # WScript.Shell.Save drops the AppUserModel property bag on every
-                    # rewrite, and a replaced file starts without one. The installer
-                    # declared System.AppUserModel.ID on these shortcuts, so restore
-                    # the identity after the write; matching the target means the
-                    # identity belongs to this application. A failure is logged and
-                    # never fatal: the icon itself is already updated. A migrated
-                    # (deleted) machine shortcut no longer exists, so the bag write
-                    # and the per-item notification are skipped for it.
+                    # WScript.Shell.Save drops the AppUserModel property bag on a
+                    # rewrite, and a replaced file starts without one. Restore the
+                    # identity only when the shortcut changed or lacks the stable
+                    # GoNavi identity; unchanged shortcuts stay completely quiet.
+                    $identityNeedsRepair = $false
                     if (Test-Path -LiteralPath $shortcutFile.FullName -PathType Leaf) {
-                        if (-not (Set-GoNaviShortcutRelaunchProperties -ShortcutPath $shortcutFile.FullName -TargetPath $shortcut.TargetPath -IconPath $normalizedIconPath -ApplicationUserModelID $ApplicationUserModelID)) {
-                            Write-ShortcutRepairLog ("shortcut identity restore failed: " + $shortcutFile.FullName)
+                        $existingAumid = [string](Get-GoNaviShortcutAppUserModelID $shortcutFile.FullName)
+                        $identityNeedsRepair = -not [string]::Equals($existingAumid, 'Syngnat.GoNavi', [StringComparison]::OrdinalIgnoreCase)
+                        if ($needsSave -or $identityNeedsRepair) {
+                            if (-not (Set-GoNaviShortcutRelaunchProperties -ShortcutPath $shortcutFile.FullName -TargetPath $shortcut.TargetPath -IconPath $normalizedIconPath -ApplicationUserModelID $ApplicationUserModelID)) {
+                                Write-ShortcutRepairLog ("shortcut identity restore failed: " + $shortcutFile.FullName)
+                            }
+                            if ($changedShortcutPathSet.Add($shortcutFile.FullName)) {
+                                [void]$changedShortcutPaths.Add($shortcutFile.FullName)
+                            }
                         }
-                        Send-ShellItemUpdatedNotification $shortcutFile.FullName
                     }
-                    Send-ShellDirectoryUpdatedNotification ([IO.Path]::GetDirectoryName($shortcutFile.FullName))
+                    $shortcutDirectory = [IO.Path]::GetDirectoryName($shortcutFile.FullName)
+                    if ($needsSave -or $identityNeedsRepair) {
+                        if ($changedShortcutDirectorySet.Add($shortcutDirectory)) {
+                            [void]$changedShortcutDirectories.Add($shortcutDirectory)
+                        }
+                    }
+                    if (($needsSave -or $identityNeedsRepair) -and ((Test-SameFilePath $shortcutDirectory $userProgramsDirectory) -or
+                        (Test-SameFilePath $shortcutDirectory $commonProgramsDirectory) -or
+                        $shortcutDirectory.StartsWith($userProgramsDirectory + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
+                        $shortcutDirectory.StartsWith($commonProgramsDirectory + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase))) {
+                        $script:GoNaviStartMenuChanged = $true
+                    }
                 } catch {
                     # A single failure is logged, never fatal: one read-only system
                     # shortcut must not sink the writable ones with it.
@@ -1075,33 +1165,8 @@ function Set-GoNaviShortcutBrandIcon {
                 }
             }
         }
+        & $flushShortcutNotifications
         Send-ShellItemUpdatedNotification $normalizedIconPath
-        if ($script:GoNaviMigratedCommonDesktop) {
-            # The installer's public-desktop shortcut was migrated (deleted);
-            # keep the desktop entry alive as a user-level shortcut, which is
-            # replaceable on every future brand switch. Skipped when the user
-            # never had one (INSTALLDESKTOPSHORTCUT=0 leaves no machine
-            # shortcut to migrate) or already created it.
-            $userDesktopDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
-            $userDesktopPath = Join-Path $userDesktopDirectory 'GoNavi.lnk'
-            if (-not (Test-Path -LiteralPath $userDesktopPath -PathType Leaf)) {
-                try {
-                    $desktopShortcut = $shell.CreateShortcut($userDesktopPath)
-                    $desktopShortcut.TargetPath = $normalizedTargetPath
-                    $desktopShortcut.WorkingDirectory = [IO.Path]::GetDirectoryName($normalizedTargetPath)
-                    $desktopShortcut.IconLocation = $normalizedIconPath + ',0'
-                    $desktopShortcut.Save()
-                    if (-not (Set-GoNaviShortcutRelaunchProperties -ShortcutPath $userDesktopPath -TargetPath $normalizedTargetPath -IconPath $normalizedIconPath -ApplicationUserModelID $ApplicationUserModelID)) {
-                        Write-ShortcutRepairLog ("user desktop shortcut identity failed: " + $userDesktopPath)
-                    }
-                    Send-ShellItemUpdatedNotification $userDesktopPath
-                    Send-ShellDirectoryUpdatedNotification $userDesktopDirectory
-                    Write-ShortcutRepairLog ("created user desktop shortcut after machine shortcut migration: " + $userDesktopPath)
-                } catch {
-                    Write-ShortcutRepairLog ("user desktop shortcut creation failed: " + $_.Exception.Message)
-                }
-            }
-        }
         # SHCNE_ASSOCCHANGED is intentionally NOT sent: the global icon cache
         # flush makes Explorer redraw every icon on the desktop (a visible
         # flash on each brand switch), and since every shortcut is replaced as
@@ -1110,6 +1175,7 @@ function Set-GoNaviShortcutBrandIcon {
         # Send-ShellAssociationChangedNotification stays available for a
         # surface that provably needs the global flush.
     } catch {
+        & $flushShortcutNotifications
         Write-ShortcutRepairLog ("brand icon shortcut update failed: " + $_.Exception.Message)
         throw
     }

@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import dayjs from 'dayjs';
 import type { ColumnType, SortOrder } from 'antd/es/table/interface';
-import { Form, TimePicker, DatePicker, Input } from 'antd';
+import { Form, TimePicker, DatePicker, Input, message } from 'antd';
 import {
     GONAVI_ROW_KEY,
-    isCellValueEqualForDiff,
     renderCellDisplayValue,
     CELL_ELLIPSIS_STYLE,
     type Item,
@@ -18,9 +17,9 @@ import {
     ROW_NUMBER_COLUMN_WIDTH,
 } from '../../DataGridCore';
 import { isWritableResultColumn } from '../../../utils/rowLocator';
+import { useDataGridRowEditorApply } from './useDataGridRowEditorApply';
 import {
     getTemporalPickerType,
-    resolveTemporalEditorSaveValue,
     TEMPORAL_FORMATS,
     getTemporalPickerFormat,
 } from '../../dataGridTemporal';
@@ -125,67 +124,12 @@ export const useDataGridColumns = ({
     form, translateDataGrid, commitVirtualInlinePickerValue, saveVirtualInlineEditor,
     closeVirtualInlineEditor, handleVirtualCellActivate, setSelectedRowKeys, handleViewModeChange,
 }: UseDataGridColumnsInput) => {
-    const applyRowEditor = useCallback(() => {
-        const keyStr = rowEditorRowKey;
-        if (!keyStr) return;
-        const values = rowEditorForm.getFieldsValue(true) || {};
-        const baseRawMap = rowEditorBaseRawRef.current || {};
-
-        const isAdded = addedRows.some(r => rowKeyStr(r?.[GONAVI_ROW_KEY]) === keyStr);
-        if (isAdded) {
-            // 日期时间类型: 将 dayjs 对象转回格式化字符串
-            const convertedValues: Record<string, any> = {};
-            Object.entries(values).forEach(([col, val]) => {
-                if (!isWritableResultColumn(col, effectiveEditLocator)) return;
-                const baseVal = baseRawMap[col];
-                if (val && dayjs.isDayjs(val)) {
-                    const colMeta = columnMetaMap[col] || columnMetaMapByLowerName[col.toLowerCase()];
-                    const rowPickerType = getTemporalPickerType(colMeta?.type, dbType, currentConnConfig);
-                    convertedValues[col] = resolveTemporalEditorSaveValue(
-                        undefined,
-                        val as dayjs.Dayjs,
-                        rowPickerType,
-                        baseVal,
-                    );
-                } else {
-                    convertedValues[col] = normalizeMongoEditedCellValue(col, val, baseVal);
-                }
-            });
-            setAddedRows(prev => prev.map(r => rowKeyStr(r?.[GONAVI_ROW_KEY]) === keyStr ? { ...r, ...convertedValues } : r));
-            closeRowEditor();
-            return;
-        }
-
-        const patch: Record<string, any> = {};
-        visibleColumnNames.forEach((col) => {
-            if (!isWritableResultColumn(col, effectiveEditLocator)) return;
-            let nextVal = values[col];
-            // 日期时间类型: 将 dayjs 对象转回格式化字符串
-            if (nextVal && dayjs.isDayjs(nextVal)) {
-                const colMeta = columnMetaMap[col] || columnMetaMapByLowerName[col.toLowerCase()];
-                const rowPickerType = getTemporalPickerType(colMeta?.type, dbType, currentConnConfig);
-                nextVal = resolveTemporalEditorSaveValue(
-                    undefined,
-                    nextVal as dayjs.Dayjs,
-                    rowPickerType,
-                    baseRawMap[col],
-                );
-            } else {
-                nextVal = normalizeMongoEditedCellValue(col, nextVal, baseRawMap[col]);
-            }
-            const baseVal = baseRawMap[col];
-            if (!isCellValueEqualForDiff(baseVal, nextVal)) patch[col] = nextVal;
-        });
-
-        setModifiedRows(prev => {
-            const next = { ...prev };
-            if (Object.keys(patch).length === 0) delete next[keyStr];
-            else next[keyStr] = patch;
-            return next;
-        });
-
-        closeRowEditor();
-    }, [addedRows, closeRowEditor, columnMetaMap, columnMetaMapByLowerName, currentConnConfig, dbType, effectiveEditLocator, normalizeMongoEditedCellValue, rowEditorForm, rowEditorRowKey, rowKeyStr, visibleColumnNames]);
+    const applyRowEditor = useDataGridRowEditorApply({
+        rowEditorRowKey, rowEditorForm, rowEditorBaseRawRef, closeRowEditor, addedRows, setAddedRows,
+        rowKeyStr, effectiveEditLocator, columnMetaMap, columnMetaMapByLowerName, dbType,
+        currentConnConfig, normalizeMongoEditedCellValue, visibleColumnNames, setModifiedRows,
+        translateDataGrid, canModifyData,
+    });
 
     const enableVirtual = isTableSurfaceActive;
     const enableInlineEditableCell = canModifyData;

@@ -3,7 +3,9 @@ package connection
 import (
 	"database/sql/driver"
 	"errors"
+	"fmt"
 	"net"
+	"time"
 )
 
 const VERSION_PROTOCOL uint16 = 69
@@ -17,7 +19,16 @@ type Connection struct {
 	version        uint16
 	info           string
 	featureOptions uint
-	tx             bool
+	// featureOptionSupported 记录服务端 CONNECT 响应是否携带 serverFeatureOptions
+	// 尾字段。IRIS 携带；旧协议 Caché（2018.1 握手版本 53）不携带。查询响应的
+	// statement feature 前缀与它同属一个协议代次，解析时一并跳过。
+	featureOptionSupported bool
+	tx                     bool
+	// queryTimeout 是单次「等待服务端响应」的读超时。0 表示不限制。
+	// 该超时用来给 DirectQuery/fetchMoreData 的 ReadMessage 兜底，避免服务端
+	// 对受限账号/慢视图不回包时上层永久转圈（GoNavi issue #1430/#1427）。
+	// 只控制单次 Read，不是整条 SQL 的端到端超时；端到端由调用方 ctx 负责。
+	queryTimeout time.Duration
 }
 
 var (
@@ -66,6 +77,17 @@ func (c *Connection) Disconnect() {
 	c.conn = nil
 }
 
+// SetQueryTimeout 设置单次网络读的超时。<=0 表示不限制（保留旧行为）。
+// 该函数不是并发安全的：只在连接建立后、发起任何查询前调用。
+func (c *Connection) SetQueryTimeout(timeout time.Duration) {
+	c.queryTimeout = timeout
+}
+
+// QueryTimeout 返回当前生效的查询超时（0 = 不限制）。
+func (c *Connection) QueryTimeout() time.Duration {
+	return c.queryTimeout
+}
+
 func (c *Connection) count() uint32 {
 	count := c.messageCount
 	c.messageCount += 1
@@ -90,6 +112,9 @@ func (c *Connection) handshake() (err error) {
 	msg, err := ReadMessage(c.conn)
 	if err != nil {
 		return
+	}
+	if len(msg.data) < 4 {
+		return fmt.Errorf("intersystems: 握手响应过短（%d 字节）", len(msg.data))
 	}
 
 	var version uint16
@@ -190,13 +215,30 @@ func (c *Connection) connect(namespace, login, password string) (err error) {
 		sqlEmptyString       int
 		serverFeatureOptions uint
 	)
-	msg.Get(&delimited_ids)
-	msg.Get(&ignored)
-	msg.Get(&isolationLevel)
-	msg.Get(&serverJobNumber)
-	msg.Get(&sqlEmptyString)
-	msg.Get(&serverFeatureOptions)
-	c.featureOptions = serverFeatureOptions
+	// CONNECT 响应的尾字段数量随服务端协议代次变化：IRIS 返回 6 项
+	// （delimited_ids、ignored、isolationLevel、serverJobNumber、sqlEmptyString、
+	// serverFeatureOptions），旧协议 Caché 只返回前 5 项。每读一项前先确认缓冲
+	// 未读尽，既避免越界，也把"是否携带 serverFeatureOptions"记为服务端能力。
+	if !msg.exhausted() {
+		msg.Get(&delimited_ids)
+	}
+	if !msg.exhausted() {
+		msg.Get(&ignored)
+	}
+	if !msg.exhausted() {
+		msg.Get(&isolationLevel)
+	}
+	if !msg.exhausted() {
+		msg.Get(&serverJobNumber)
+	}
+	if !msg.exhausted() {
+		msg.Get(&sqlEmptyString)
+	}
+	if !msg.exhausted() {
+		msg.Get(&serverFeatureOptions)
+		c.featureOptions = serverFeatureOptions
+		c.featureOptionSupported = true
+	}
 	return
 }
 

@@ -1,4 +1,8 @@
 import { useEffect } from 'react';
+import {
+    useActivationGatedEffect,
+    useQueryEditorActivationRef,
+} from './useActivationGatedEffect';
 import { message } from 'antd';
 import { registerQueryEditorShortcutAction } from '../queryEditorShortcutRegistration';
 import {
@@ -104,6 +108,9 @@ export const useQueryEditorActiveTabShortcuts = ({
     handleSelectCurrentStatement, duplicateCurrentLineShortcutBinding, handleDuplicateCurrentLine,
     switchQueryContext, applyQueryState, getCurrentQuery, runAfterQueryContextReady,
 }: UseQueryEditorActiveTabShortcutsInput) => {
+    // 非激活 tab 副作用瘦身：下方 window 级监听（含组件分发事件）随激活挂/拆，
+    // 改造前它们常驻并在回调内早退，多 tab 常开时按键/事件捕获链按 tab 数线性放大。
+    const isActiveRef = useQueryEditorActivationRef(isActive);
     // 「取消/添加注释」右键菜单 + 可配置快捷键：委托 Monaco 内置
     // editor.action.commentLine（当前行/选区生效、一步撤销），语言或改键变化时重注册。
     // 平台默认 Ctrl（Cmd）+/ 恒被吞键命令占用：enabled 时菜单键位委托切换
@@ -293,9 +300,9 @@ export const useQueryEditorActiveTabShortcuts = ({
         };
     }, [activeShortcutPlatform, languagePreference, toggleQueryResultsPanelShortcutBinding, toggleResultPanelVisibility]);
 
-    useEffect(() => {
+    useActivationGatedEffect(isActive, () => {
         const handleLocateActiveQueryTable = (event: Event) => {
-            if (!isActive) return;
+            if (!isActiveRef.current) return;
             const fallbackRequest = (event as CustomEvent<Record<string, unknown> | undefined>).detail;
             const editor = editorRef.current;
             const model = editor?.getModel?.();
@@ -350,10 +357,10 @@ export const useQueryEditorActiveTabShortcuts = ({
         };
         window.addEventListener('gonavi:locate-active-query-table', handleLocateActiveQueryTable);
         return () => window.removeEventListener('gonavi:locate-active-query-table', handleLocateActiveQueryTable);
-    }, [currentConnectionConfig, isActive]);
-    useEffect(() => {
+    }, [currentConnectionConfig]);
+    useActivationGatedEffect(isActive, () => {
         const handleRunActiveQuery = (event: Event) => {
-            if (!isActive) {
+            if (!isActiveRef.current) {
                 return;
             }
             const detail = (event as CustomEvent<{
@@ -375,11 +382,11 @@ export const useQueryEditorActiveTabShortcuts = ({
         return () => {
             window.removeEventListener('gonavi:run-active-query', handleRunActiveQuery as EventListener);
         };
-    }, [isActive, handleRun, handleRunSelectedShortcut]);
+    }, [handleRun, handleRunSelectedShortcut]);
 
-    useEffect(() => {
+    useActivationGatedEffect(isActive, () => {
         const handleFindActiveQuery = () => {
-            if (!isActive) {
+            if (!isActiveRef.current) {
                 return;
             }
             handleOpenEditorFind();
@@ -389,16 +396,16 @@ export const useQueryEditorActiveTabShortcuts = ({
         return () => {
             window.removeEventListener('gonavi:find-active-query', handleFindActiveQuery as EventListener);
         };
-    }, [handleOpenEditorFind, isActive]);
+    }, [handleOpenEditorFind]);
 
-    useEffect(() => {
+    useActivationGatedEffect(isActive, () => {
         const binding = selectCurrentStatementShortcutBinding;
         if (!binding?.enabled || !binding.combo) {
             return;
         }
 
         const handleSelectCurrentStatementShortcut = (event: KeyboardEvent) => {
-            if (!isActive) {
+            if (!isActiveRef.current) {
                 return;
             }
             if (!isShortcutMatch(event, binding.combo)) {
@@ -422,9 +429,9 @@ export const useQueryEditorActiveTabShortcuts = ({
         return () => {
             window.removeEventListener('keydown', handleSelectCurrentStatementShortcut, true);
         };
-    }, [handleSelectCurrentStatement, isActive, selectCurrentStatementShortcutBinding]);
+    }, [handleSelectCurrentStatement, selectCurrentStatementShortcutBinding]);
 
-    useEffect(() => {
+    useActivationGatedEffect(isActive, () => {
         const binding = selectCurrentStatementShortcutBinding;
         if (
             activeShortcutPlatform !== 'mac'
@@ -436,7 +443,7 @@ export const useQueryEditorActiveTabShortcuts = ({
 
         try {
             return EventsOn(QUERY_EDITOR_NATIVE_SELECT_CURRENT_LINE_EVENT, () => {
-                if (!isActive) {
+                if (!isActiveRef.current) {
                     return;
                 }
                 void handleSelectCurrentStatement();
@@ -444,16 +451,16 @@ export const useQueryEditorActiveTabShortcuts = ({
         } catch {
             return;
         }
-    }, [activeShortcutPlatform, handleSelectCurrentStatement, isActive, selectCurrentStatementShortcutBinding]);
+    }, [activeShortcutPlatform, handleSelectCurrentStatement, selectCurrentStatementShortcutBinding]);
 
-    useEffect(() => {
+    useActivationGatedEffect(isActive, () => {
         const binding = duplicateCurrentLineShortcutBinding;
         if (!binding?.enabled || !binding.combo) {
             return;
         }
 
         const handleDuplicateCurrentLineShortcut = (event: KeyboardEvent) => {
-            if (!isActive) {
+            if (!isActiveRef.current) {
                 return;
             }
             if (!isShortcutMatch(event, binding.combo)) {
@@ -477,7 +484,7 @@ export const useQueryEditorActiveTabShortcuts = ({
         return () => {
             window.removeEventListener('keydown', handleDuplicateCurrentLineShortcut, true);
         };
-    }, [duplicateCurrentLineShortcutBinding, handleDuplicateCurrentLine, isActive]);
+    }, [duplicateCurrentLineShortcutBinding, handleDuplicateCurrentLine]);
 
     // 监听由 TabManager 分发的专用注入事件（含 AI“替换原 SQL”，见 queryEditorAiSqlInsert.ts）
     useAiSqlInsertToTabListener({

@@ -29,6 +29,8 @@ var damengColumnsMetadataQueryState struct {
 	sync.Mutex
 	failAutoIncrementQuery bool
 	failColumnCommentQuery bool
+	lowercaseTableName     bool
+	ambiguousTableName     bool
 	queries                []string
 }
 
@@ -51,14 +53,80 @@ func (damengColumnsMetadataConn) QueryContext(_ context.Context, query string, _
 	damengColumnsMetadataQueryState.queries = append(damengColumnsMetadataQueryState.queries, query)
 	failAutoIncrementQuery := damengColumnsMetadataQueryState.failAutoIncrementQuery
 	failColumnCommentQuery := damengColumnsMetadataQueryState.failColumnCommentQuery
+	lowercaseTableName := damengColumnsMetadataQueryState.lowercaseTableName
+	ambiguousTableName := damengColumnsMetadataQueryState.ambiguousTableName
 	damengColumnsMetadataQueryState.Unlock()
 
+	if strings.HasPrefix(query, "SELECT DISTINCT c.") {
+		rows := [][]driver.Value{{"BIZ", "ORDERS"}}
+		if lowercaseTableName || ambiguousTableName {
+			rows = [][]driver.Value{{"SLGZT", "ab_cd"}}
+			if ambiguousTableName {
+				rows = append(rows, []driver.Value{"SLGZT", "AB_CD"})
+			}
+		}
+		return &damengColumnsMetadataRows{columns: []string{"OWNER", "TABLE_NAME"}, values: rows}, nil
+	}
+	if (lowercaseTableName || ambiguousTableName) && !strings.Contains(query, "FROM all_tab_columns c") && (strings.Contains(query, "all_ind_columns") || strings.Contains(query, "all_cons_columns") || strings.Contains(query, "all_triggers")) {
+		if strings.Contains(query, "table_name = 'ab_cd'") {
+			return &damengColumnsMetadataRows{columns: []string{"INDEX_NAME", "CONSTRAINT_NAME", "TRIGGER_NAME"}}, nil
+		}
+		return &damengColumnsMetadataRows{
+			columns: []string{"INDEX_NAME", "COLUMN_NAME", "CONSTRAINT_NAME", "TRIGGER_NAME"},
+			values:  [][]driver.Value{{"WRONG_INDEX", "wrong", "WRONG_FK", "WRONG_TRIGGER"}},
+		}, nil
+	}
+
 	if strings.Contains(query, "DBMS_METADATA.GET_DDL") {
+		if ambiguousTableName {
+			if strings.Contains(query, "'ab_cd'") {
+				return &damengColumnsMetadataRows{
+					columns: []string{"DDL"},
+					values:  [][]driver.Value{{`CREATE TABLE "SLGZT"."ab_cd" ("id" VARCHAR(20))`}},
+				}, nil
+			}
+			return &damengColumnsMetadataRows{
+				columns: []string{"DDL"},
+				values:  [][]driver.Value{{`CREATE TABLE "SLGZT"."AB_CD" ("wrong" INTEGER)`}},
+			}, nil
+		}
+		if lowercaseTableName {
+			if strings.Contains(query, "'AB_CD'") {
+				return nil, errors.New("object AB_CD not found")
+			}
+			if strings.Contains(query, "'ab_cd'") {
+				return &damengColumnsMetadataRows{
+					columns: []string{"DDL"},
+					values:  [][]driver.Value{{`CREATE TABLE "SLGZT"."ab_cd" ("id" VARCHAR(20))`}},
+				}, nil
+			}
+		}
 		return &damengColumnsMetadataRows{
 			columns: []string{"DDL"},
 			values: [][]driver.Value{{`CREATE TABLE "BIZ"."ORDERS" (
   "ID" NUMBER NOT NULL
 )`}},
+		}, nil
+	}
+	if ambiguousTableName && strings.Contains(query, "FROM all_tab_columns c") {
+		if strings.Contains(query, "c.table_name = 'ab_cd'") {
+			return &damengColumnsMetadataRows{
+				columns: []string{"COLUMN_NAME", "DATA_TYPE", "NULLABLE"},
+				values:  [][]driver.Value{{"id", "VARCHAR2", "N"}},
+			}, nil
+		}
+		return &damengColumnsMetadataRows{
+			columns: []string{"COLUMN_NAME", "DATA_TYPE", "NULLABLE"},
+			values:  [][]driver.Value{{"wrong", "INTEGER", "Y"}},
+		}, nil
+	}
+	if lowercaseTableName && strings.Contains(query, "FROM all_tab_columns c") {
+		if !strings.Contains(query, "c.table_name = 'ab_cd'") {
+			return &damengColumnsMetadataRows{columns: []string{"COLUMN_NAME", "DATA_TYPE"}}, nil
+		}
+		return &damengColumnsMetadataRows{
+			columns: []string{"COLUMN_NAME", "DATA_TYPE", "NULLABLE"},
+			values:  [][]driver.Value{{"id", "VARCHAR2", "N"}},
 		}, nil
 	}
 
@@ -153,15 +221,33 @@ func resetDamengColumnsMetadataQueryState(t *testing.T, failAutoIncrementQuery, 
 	damengColumnsMetadataQueryState.Lock()
 	damengColumnsMetadataQueryState.failAutoIncrementQuery = failAutoIncrementQuery
 	damengColumnsMetadataQueryState.failColumnCommentQuery = failColumnCommentQuery
+	damengColumnsMetadataQueryState.lowercaseTableName = false
+	damengColumnsMetadataQueryState.ambiguousTableName = false
 	damengColumnsMetadataQueryState.queries = nil
 	damengColumnsMetadataQueryState.Unlock()
 	t.Cleanup(func() {
 		damengColumnsMetadataQueryState.Lock()
 		damengColumnsMetadataQueryState.failAutoIncrementQuery = false
 		damengColumnsMetadataQueryState.failColumnCommentQuery = false
+		damengColumnsMetadataQueryState.lowercaseTableName = false
+		damengColumnsMetadataQueryState.ambiguousTableName = false
 		damengColumnsMetadataQueryState.queries = nil
 		damengColumnsMetadataQueryState.Unlock()
 	})
+}
+
+func setDamengAmbiguousTableMetadata(t *testing.T) {
+	t.Helper()
+	damengColumnsMetadataQueryState.Lock()
+	damengColumnsMetadataQueryState.ambiguousTableName = true
+	damengColumnsMetadataQueryState.Unlock()
+}
+
+func setDamengLowercaseTableMetadata(t *testing.T) {
+	t.Helper()
+	damengColumnsMetadataQueryState.Lock()
+	damengColumnsMetadataQueryState.lowercaseTableName = true
+	damengColumnsMetadataQueryState.Unlock()
 }
 
 func damengColumnsMetadataQueries() []string {
@@ -192,8 +278,8 @@ func TestDamengGetColumnsMarksAutoIncrementColumns(t *testing.T) {
 	}
 
 	queries := damengColumnsMetadataQueries()
-	if len(queries) != 3 || !strings.Contains(queries[1], "SYS.SYSCOLUMNCOMMENTS") || !strings.Contains(queries[2], "SYS.SYSCOLUMNS") {
-		t.Fatalf("expected base, native comment, and system column metadata queries, got=%v", queries)
+	if len(queries) != 4 || !strings.Contains(queries[2], "SYS.SYSCOLUMNCOMMENTS") || !strings.Contains(queries[3], "SYS.SYSCOLUMNS") {
+		t.Fatalf("expected catalog, base, native comment, and system column metadata queries, got=%v", queries)
 	}
 }
 
@@ -223,6 +309,102 @@ func TestDamengGetColumnsKeepsBaseMetadataWhenNativeCommentQueryFails(t *testing
 	}
 }
 
+func TestDamengGetColumnsLooksUpLowercaseQuotedTableBeforeFoldedName(t *testing.T) {
+	resetDamengColumnsMetadataQueryState(t, false, false)
+	setDamengLowercaseTableMetadata(t)
+
+	damengDB := &DamengDB{conn: openDamengColumnsMetadataDB(t)}
+	columns, err := damengDB.GetColumns("SLGZT", "ab_cd")
+	if err != nil {
+		t.Fatalf("GetColumns returned error: %v", err)
+	}
+	if len(columns) != 1 || columns[0].Name != "id" {
+		t.Fatalf("expected the quoted lowercase table columns, got: %+v queries=%v", columns, damengColumnsMetadataQueries())
+	}
+
+	queries := damengColumnsMetadataQueries()
+	if len(queries) != 4 || !strings.Contains(queries[1], "c.table_name = 'ab_cd'") {
+		t.Fatalf("expected exact-case metadata lookup, got: %v", queries)
+	}
+}
+
+func TestDamengGetCreateStatementLooksUpLowercaseQuotedTableBeforeFoldedName(t *testing.T) {
+	resetDamengColumnsMetadataQueryState(t, false, false)
+	setDamengLowercaseTableMetadata(t)
+
+	damengDB := &DamengDB{conn: openDamengColumnsMetadataDB(t)}
+	ddl, err := damengDB.GetCreateStatement("SLGZT", "ab_cd")
+	if err != nil {
+		t.Fatalf("GetCreateStatement returned error: %v", err)
+	}
+	if !strings.Contains(ddl, `"SLGZT"."ab_cd"`) {
+		t.Fatalf("expected DDL for the lowercase quoted table, got: %s", ddl)
+	}
+	if !strings.Contains(ddl, `COMMENT ON TABLE "SLGZT"."ab_cd"`) {
+		t.Fatalf("expected the table comment to preserve the lowercase identifier, got: %s", ddl)
+	}
+
+	queries := damengColumnsMetadataQueries()
+	if len(queries) != 3 || !strings.Contains(queries[1], "GET_DDL('TABLE', 'ab_cd'") || !strings.Contains(queries[2], "table_name = 'ab_cd'") {
+		t.Fatalf("expected exact-case DDL and table-comment lookups, got: %v", queries)
+	}
+}
+
+func TestDamengMetadataPrefersExactCaseWhenFoldedNameAlsoExists(t *testing.T) {
+	resetDamengColumnsMetadataQueryState(t, false, false)
+	setDamengAmbiguousTableMetadata(t)
+
+	damengDB := &DamengDB{conn: openDamengColumnsMetadataDB(t)}
+	columns, err := damengDB.GetColumns("SLGZT", "ab_cd")
+	if err != nil {
+		t.Fatalf("GetColumns returned error: %v", err)
+	}
+	if len(columns) != 1 || columns[0].Name != "id" {
+		t.Fatalf("expected exact-case table columns, got: %+v queries=%v", columns, damengColumnsMetadataQueries())
+	}
+
+	ddl, err := damengDB.GetCreateStatement("SLGZT", "ab_cd")
+	if err != nil {
+		t.Fatalf("GetCreateStatement returned error: %v", err)
+	}
+	if !strings.Contains(ddl, `"SLGZT"."ab_cd"`) || strings.Contains(ddl, `"wrong"`) {
+		t.Fatalf("expected exact-case table DDL, got: %s", ddl)
+	}
+}
+
+func TestDamengOptionalMetadataDoesNotBorrowFromFoldedTable(t *testing.T) {
+	for _, kind := range []string{"indexes", "foreign keys", "triggers"} {
+		t.Run(kind, func(t *testing.T) {
+			resetDamengColumnsMetadataQueryState(t, false, false)
+			setDamengAmbiguousTableMetadata(t)
+			database := &DamengDB{conn: openDamengColumnsMetadataDB(t)}
+			var count int
+			var err error
+			switch kind {
+			case "indexes":
+				rows, queryErr := database.GetIndexes("SLGZT", "ab_cd")
+				count, err = len(rows), queryErr
+			case "foreign keys":
+				rows, queryErr := database.GetForeignKeys("SLGZT", "ab_cd")
+				count, err = len(rows), queryErr
+			case "triggers":
+				rows, queryErr := database.GetTriggers("SLGZT", "ab_cd")
+				count, err = len(rows), queryErr
+			}
+			if err != nil {
+				t.Fatalf("metadata query returned error: %v", err)
+			}
+			if count != 0 {
+				t.Fatalf("empty lowercase table metadata must not use the uppercase table: got %d rows", count)
+			}
+			queries := damengColumnsMetadataQueries()
+			if len(queries) != 2 || !strings.Contains(queries[1], "table_name = 'ab_cd'") {
+				t.Fatalf("expected one query against the resolved lowercase table, got: %v", queries)
+			}
+		})
+	}
+}
+
 func TestDamengGetCreateStatementAppendsTableComment(t *testing.T) {
 	resetDamengColumnsMetadataQueryState(t, false, false)
 
@@ -242,11 +424,11 @@ func TestDamengGetCreateStatementAppendsTableComment(t *testing.T) {
 	}
 
 	queries := damengColumnsMetadataQueries()
-	if len(queries) != 2 || !strings.Contains(queries[1], "all_tab_comments") {
-		t.Fatalf("expected DDL and table comment metadata queries, got=%v", queries)
+	if len(queries) != 3 || !strings.Contains(queries[2], "all_tab_comments") {
+		t.Fatalf("expected catalog, DDL and table comment metadata queries, got=%v", queries)
 	}
-	if !strings.Contains(queries[1], "owner = 'BIZ'") || !strings.Contains(queries[1], "table_name = 'ORDERS'") {
-		t.Fatalf("expected normalized schema and table comment predicates, got=%s", queries[1])
+	if !strings.Contains(queries[2], "owner = 'BIZ'") || !strings.Contains(queries[2], "table_name = 'ORDERS'") {
+		t.Fatalf("expected resolved schema and table comment predicates, got=%s", queries[2])
 	}
 }
 
@@ -269,7 +451,7 @@ func TestDamengGetIndexesUsesIndexOwnerJoinAndMapsColumnOrder(t *testing.T) {
 	}
 
 	queries := damengColumnsMetadataQueries()
-	if len(queries) != 1 || !strings.Contains(queries[0], "c.table_owner = 'BIZ'") || !strings.Contains(queries[0], "c.table_name = 'ORDERS'") {
-		t.Fatalf("expected one normalized schema index query, got=%v", queries)
+	if len(queries) != 2 || !strings.Contains(queries[1], "c.table_owner = 'BIZ'") || !strings.Contains(queries[1], "c.table_name = 'ORDERS'") {
+		t.Fatalf("expected catalog lookup followed by the resolved schema index query, got=%v", queries)
 	}
 }

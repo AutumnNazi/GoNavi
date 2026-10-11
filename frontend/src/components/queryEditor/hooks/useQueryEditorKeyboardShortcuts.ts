@@ -1,4 +1,7 @@
-import { useEffect } from 'react';
+import {
+    useActivationGatedEffect,
+    useQueryEditorActivationRef,
+} from './useActivationGatedEffect';
 import { isShortcutMatch, isEditableElement } from '../../../utils/shortcuts';
 import { resolveEventTargetNode, isDocumentLevelShortcutTarget } from '../QueryEditorHelpers';
 import { useQueryEditorSqlLogBridge } from '../useQueryEditorSqlLogBridge';
@@ -52,9 +55,12 @@ export const useQueryEditorKeyboardShortcuts = ({
     triggerAiInlineCompletionRef, toggleQueryResultsPanelShortcutBinding,
     toggleResultPanelVisibility, isResultPanelVisible, activeResultKey, handleShowSqlExecutionLog,
 }: UseQueryEditorKeyboardShortcutsInput) => {
-    useEffect(() => {
+    // 非激活 tab 副作用瘦身：keydown 监听随激活挂/拆（改造前是常驻 + 回调内早退，
+    // 多 tab 常开时按键捕获链会按 tab 数线性放大）。
+    const isActiveRef = useQueryEditorActivationRef(isActive);
+    useActivationGatedEffect(isActive, () => {
         const handleFindShortcut = (event: KeyboardEvent) => {
-            if (!isActive) {
+            if (!isActiveRef.current) {
                 return;
             }
             if (!isShortcutMatch(event, findInEditorShortcutCombo)) {
@@ -95,16 +101,16 @@ export const useQueryEditorKeyboardShortcuts = ({
         return () => {
             window.removeEventListener('keydown', handleFindShortcut, true);
         };
-    }, [findInEditorShortcutCombo, handleOpenEditorFind, isActive]);
+    }, [findInEditorShortcutCombo, handleOpenEditorFind]);
 
-    useEffect(() => {
+    useActivationGatedEffect(isActive, () => {
         const binding = saveQueryShortcutBinding;
         if (!binding?.enabled || !binding.combo) {
             return;
         }
 
         const handleSaveShortcut = (event: KeyboardEvent) => {
-            if (!isActive) {
+            if (!isActiveRef.current) {
                 return;
             }
             if (!isShortcutMatch(event, binding.combo)) {
@@ -128,16 +134,16 @@ export const useQueryEditorKeyboardShortcuts = ({
         return () => {
             window.removeEventListener('keydown', handleSaveShortcut, true);
         };
-    }, [isActive, saveQueryShortcutBinding, handleQuickSave]);
+    }, [saveQueryShortcutBinding, handleQuickSave]);
 
-    useEffect(() => {
+    useActivationGatedEffect(isActive, () => {
         const binding = saveQueryAsShortcutBinding;
         if (!binding?.enabled || !binding.combo) {
             return;
         }
 
         const handleSaveAsShortcut = (event: KeyboardEvent) => {
-            if (!isActive || !currentSavedQuery || tab.filePath) {
+            if (!isActiveRef.current || !currentSavedQuery || tab.filePath) {
                 return;
             }
             if (!isShortcutMatch(event, binding.combo)) {
@@ -161,16 +167,16 @@ export const useQueryEditorKeyboardShortcuts = ({
         return () => {
             window.removeEventListener('keydown', handleSaveAsShortcut, true);
         };
-    }, [currentSavedQuery, handleSaveQueryAs, isActive, saveQueryAsShortcutBinding, tab.filePath]);
+    }, [currentSavedQuery, handleSaveQueryAs, saveQueryAsShortcutBinding, tab.filePath]);
 
-    useEffect(() => {
+    useActivationGatedEffect(isActive, () => {
         const binding = formatSqlShortcutBinding;
         if (!binding?.enabled || !binding.combo) {
             return;
         }
 
         const handleFormatShortcut = (event: KeyboardEvent) => {
-            if (!isActive) {
+            if (!isActiveRef.current) {
                 return;
             }
             if (!isShortcutMatch(event, binding.combo)) {
@@ -194,9 +200,11 @@ export const useQueryEditorKeyboardShortcuts = ({
         return () => {
             window.removeEventListener('keydown', handleFormatShortcut, true);
         };
-    }, [isActive, formatSqlShortcutBinding]);
+    }, [formatSqlShortcutBinding]);
 
-    useEffect(() => {
+    // Alt 手势状态是「失活即无意义」的暂存态：随激活挂/拆，并在拆掉时清一次，
+    // 避免失活期间窗口 blur 收不到导致 alt 按压态残留到下次激活。
+    useActivationGatedEffect(isActive, () => {
         const updateAltState = (event: KeyboardEvent) => {
             const key = String(event.key || '').trim().toLowerCase();
             const code = String(event.code || '').trim().toLowerCase();
@@ -225,17 +233,18 @@ export const useQueryEditorKeyboardShortcuts = ({
             window.removeEventListener('keydown', updateAltState, true);
             window.removeEventListener('keyup', updateAltState, true);
             window.removeEventListener('blur', clearAltState);
+            clearAltState();
         };
-    }, []);
+    }, [triggerSqlAiCompletionAltGestureAtRef, triggerSqlAiCompletionAltPressedRef, triggerSqlAiCompletionFallbackRef]);
 
-    useEffect(() => {
+    useActivationGatedEffect(isActive, () => {
         const binding = triggerSqlAiCompletionShortcutBinding;
         if (!binding?.enabled || !binding.combo) {
             return;
         }
 
         const handleTriggerSqlAiCompletionShortcut = (event: KeyboardEvent) => {
-            if (!isActive) {
+            if (!isActiveRef.current) {
                 return;
             }
             const editor = editorRef.current;
@@ -262,16 +271,16 @@ export const useQueryEditorKeyboardShortcuts = ({
         return () => {
             window.removeEventListener('keydown', handleTriggerSqlAiCompletionShortcut, true);
         };
-    }, [isActive, isPossibleTriggerSqlAiCompletionFallbackEvent, isTriggerSqlAiCompletionShortcutEvent, triggerSqlAiCompletionShortcutBinding]);
+    }, [isPossibleTriggerSqlAiCompletionFallbackEvent, isTriggerSqlAiCompletionShortcutEvent, triggerSqlAiCompletionShortcutBinding]);
 
-    useEffect(() => {
+    useActivationGatedEffect(isActive, () => {
         const binding = toggleQueryResultsPanelShortcutBinding;
         if (!binding?.enabled || !binding.combo) {
             return;
         }
 
         const handleToggleResultsShortcut = (event: KeyboardEvent) => {
-            if (!isActive) {
+            if (!isActiveRef.current) {
                 return;
             }
             if (!isShortcutMatch(event, binding.combo)) {
@@ -295,11 +304,11 @@ export const useQueryEditorKeyboardShortcuts = ({
         return () => {
             window.removeEventListener('keydown', handleToggleResultsShortcut, true);
         };
-    }, [isActive, toggleQueryResultsPanelShortcutBinding, toggleResultPanelVisibility]);
+    }, [toggleQueryResultsPanelShortcutBinding, toggleResultPanelVisibility]);
 
-    useEffect(() => {
+    useActivationGatedEffect(isActive, () => {
         const handleSaveActiveQuery = () => {
-            if (!isActive) {
+            if (!isActiveRef.current) {
                 return;
             }
             void handleQuickSave();
@@ -309,11 +318,11 @@ export const useQueryEditorKeyboardShortcuts = ({
         return () => {
             window.removeEventListener('gonavi:save-active-query', handleSaveActiveQuery as EventListener);
         };
-    }, [isActive, handleQuickSave]);
+    }, [handleQuickSave]);
 
-    useEffect(() => {
+    useActivationGatedEffect(isActive, () => {
         const handleSaveActiveQueryAs = () => {
-            if (!isActive || !currentSavedQuery || tab.filePath) {
+            if (!isActiveRef.current || !currentSavedQuery || tab.filePath) {
                 return;
             }
             handleSaveQueryAs();
@@ -323,7 +332,7 @@ export const useQueryEditorKeyboardShortcuts = ({
         return () => {
             window.removeEventListener('gonavi:save-active-query-as', handleSaveActiveQueryAs as EventListener);
         };
-    }, [currentSavedQuery, handleSaveQueryAs, isActive, tab.filePath]);
+    }, [currentSavedQuery, handleSaveQueryAs, tab.filePath]);
 
     useQueryEditorSqlLogBridge({
         isActive,

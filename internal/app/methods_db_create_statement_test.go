@@ -624,7 +624,7 @@ func TestTryGetViewCreateStatement_OracleUsesUnboundedStreamForCLOB(t *testing.T
 	}
 
 	ddl, ok := tryGetViewCreateStatement(
-			context.Background(),
+		context.Background(),
 		dbInst,
 		connection.ConnectionConfig{Type: "oracle"},
 		"H2",
@@ -872,5 +872,26 @@ func TestBuildFallbackCreateStatement_DamengDoesNotAddIdentityToNumber(t *testin
 	}
 	if strings.Contains(ddl, "IDENTITY") {
 		t.Fatalf("Dameng NUMBER columns must not receive an illegal IDENTITY clause: %s", ddl)
+	}
+}
+
+func TestResolveCreateStatementWithFallbackDamengPreservesLowercaseQualifiedTable(t *testing.T) {
+	for _, name := range []string{"SLGZT.ab_cd", `"SLGZT"."ab_cd"`} {
+		t.Run(name, func(t *testing.T) {
+			database := &fakeCreateStatementDB{
+				createErr: errors.New("Error -20008: DBMS_METADATA.GET_DDL unavailable"),
+				columns:   []connection.ColumnDefinition{{Name: "id", Type: "VARCHAR(20)", Nullable: "YES", Comment: "小写表字段"}},
+			}
+			ddl, err := resolveCreateStatementWithFallback(database, connection.ConnectionConfig{Type: "dameng"}, "SLGZT", name)
+			if err != nil {
+				t.Fatalf("DDL fallback failed: %v", err)
+			}
+			if !strings.Contains(ddl, `CREATE TABLE "SLGZT"."ab_cd"`) || !strings.Contains(ddl, `COMMENT ON COLUMN "SLGZT"."ab_cd"."id"`) {
+				t.Fatalf("fallback DDL lost the lowercase identity: %s", ddl)
+			}
+			if database.createSchema != "SLGZT" || database.createTable != "ab_cd" || database.colsSchema != "SLGZT" || database.colsTable != "ab_cd" || database.indexSchema != "SLGZT" || database.indexTable != "ab_cd" {
+				t.Fatalf("DDL, column and index lookups must use the same exact identity: %+v", database)
+			}
+		})
 	}
 }

@@ -15,6 +15,15 @@ import (
 const timeLaylout = "2006-01-02 15:04:05.000000000"
 const timeLayloutShort = "2006-01-02 15:04:05"
 
+// maxResultRows 是每条直接查询向服务端声明的行数上限。
+//
+// 不用 0（不限）：0 的语义随服务端版本而异，依赖它会让取数循环的行为不可预期。
+// 也不用 200：旧代次服务端把它当硬上限，而 INFORMATION_SCHEMA 的系统表按字母序排在
+// 最前，元数据查询会在拿到用户表之前就被截断（issue #1430）。取一个远高于 GoNavi
+// 自身 50000 行预算的值，让预算先触发并如实上报截断，既不静默丢数据，也不依赖
+// 服务端对 0 的解释。
+const maxResultRows = 100000
+
 type StatementFeature struct {
 	featureOption   int
 	msgCount        int
@@ -85,6 +94,9 @@ type ResultSet struct {
 	data    []byte
 	offset  uint
 	sqlCode int16
+	// stmtId 是该结果集对应的 statement，FETCH_DATA 必须带上它，
+	// 否则服务端会取错游标，多语句连接上会丢行。
+	stmtId uint32
 }
 
 type SQLError struct {
@@ -126,20 +138,36 @@ type Value interface{}
 
 // type ResultSetRow struct{}
 
-func (rs *ResultSet) fetchMoreData() bool {
+// fetchMoreData 失败时不再 panic：把错误透传给 Next，让上层（database/sql 的
+// rows.Next → scanRows）能把"读超时/网络错"作为正常 error 返回，而不是整个
+// 进程崩溃。原实现 panic(err) 会让 GoNavi 在 IRIS 慢视图/受限账号上直接闪退
+// （issue #1430/#1427 修复中暴露）。
+func (rs *ResultSet) fetchMoreData() (bool, error) {
 	msg := NewMessage(FETCH_DATA)
+	msg.header.SetStatementId(rs.stmtId)
 	_, err := rs.c.conn.Write(msg.Dump(rs.c.count()))
 	if err != nil {
-		panic(err)
+		return false, err
 	}
-	msg, err = ReadMessage(rs.c.conn)
+	// 用带超时的读取兜底：服务端不再回包（受限账号查 %SYS 视图、流式结果集
+	// 提前结束但服务端不发完成标志）时，让上层能在有限时间内拿到错误而不是
+	// 永久转圈。
+	msg, err = ReadMessageWithTimeout(rs.c.conn, rs.c.queryTimeout)
 	if err != nil {
-		panic(err)
+		return false, err
 	}
+
+	// 关键：每一帧 FETCH_DATA 的响应头里都带着「这条 statement 是否还有更多数据」
+	// 的 status。原实现从不更新 rs.sqlCode，导致首帧 sqlCode=0（继续）时永远走
+	// fetchMoreData，即使中间某一帧服务端已经标了 100（完成），客户端还会再发
+	// 一次 FETCH_DATA，服务端对此不再响应——这就是大结果集在最后一帧之后挂死
+	// 的根因（issue #1430/#1427 的 SAMPLES 206 张表实测：第二帧 status=100，
+	// 但 sqlCode 没更新，第三次 fetch 永久阻塞）。
+	rs.sqlCode = int16(msg.GetStatus())
 
 	rs.data = msg.data
 	rs.offset = 0
-	return len(msg.data) > 0
+	return len(msg.data) > 0, nil
 }
 
 func fromODBC(coltype SQLTYPE, li list.ListItem) (result interface{}, err error) {
@@ -222,8 +250,21 @@ func (rs *ResultSet) Next() ([]Value, error) {
 	if rs == nil || (rs.sqlCode != 0 && rs.sqlCode != 100) {
 		return nil, io.EOF
 	}
-	if rs.offset >= uint(len(rs.data)) && (rs.sqlCode == 100 || !rs.fetchMoreData()) {
-		return nil, io.EOF
+	if rs.offset >= uint(len(rs.data)) {
+		// sqlCode=100 在这套协议里既出现在「短结果集一帧发完」的尾部，也被
+		// 服务端用来标记「这条 statement 不再产生更多数据」。原始实现把
+		// sqlCode==100 直接当作 EOF，我们保持这个语义——否则 IRIS 2026.1 上
+		// 的多帧响应会卡进 fetchMoreData 永不返回（issue #1430/#1427）。
+		if rs.sqlCode == 100 {
+			return nil, io.EOF
+		}
+		more, err := rs.fetchMoreData()
+		if err != nil {
+			return nil, err
+		}
+		if !more {
+			return nil, io.EOF
+		}
 	}
 	row := make([]Value, rs.count)
 	data := rs.data
@@ -303,10 +344,19 @@ func getColumns(msg *Message, statementFeature StatementFeature) []Column {
 		} else {
 			column.slot_position = i
 		}
-		column.is_auto_increment = additional[0] == 0x01
-		column.is_case_sensitive = additional[1] == 0x01
-		column.is_currency = additional[2] == 0x01
-		column.is_read_only = additional[3] == 0x01
+		// 旧协议服务端返回的 additional 可能短于 IRIS，逐位取用前先判长度。
+		if len(additional) > 0 {
+			column.is_auto_increment = additional[0] == 0x01
+		}
+		if len(additional) > 1 {
+			column.is_case_sensitive = additional[1] == 0x01
+		}
+		if len(additional) > 2 {
+			column.is_currency = additional[2] == 0x01
+		}
+		if len(additional) > 3 {
+			column.is_read_only = additional[3] == 0x01
+		}
 		if len(additional) >= 12 {
 			column.is_row_id = additional[11] == 0x01
 		}
@@ -397,14 +447,19 @@ func (c *Connection) DirectQuery(sqlText string, args ...interface{}) (*ResultSe
 	msg.header.SetStatementId(statementId)
 	msg.SetSQLText(sqlText)
 	writeParameters(&msg, args...)
-	msg.Set(10)  // Query timeout
-	msg.Set(200) // Max rows
+	msg.Set(10) // Query timeout
+	// Max rows 用一个有限大值，而不是 0。旧代次服务端把这个字段当硬上限：传 200 时
+	// INFORMATION_SCHEMA.TABLES 只回前 200 行，而系统表按字母序排在最前，用户表全被
+	// 挡在窗口外，元数据树因此为空（issue #1430）。但也不能传 0：0 的语义随服务端版本
+	// 而异，依赖它会让取数循环的行为不可预期。100000 远高于 GoNavi 自己的 50000 行预算，
+	// 预算会先触发并如实上报截断，不会静默丢数据。
+	msg.Set(maxResultRows) // Max rows
 
 	_, err := c.conn.Write(msg.Dump(c.count()))
 	if err != nil {
 		return nil, err
 	}
-	msg, err = ReadMessage(c.conn)
+	msg, err = ReadMessageWithTimeout(c.conn, c.queryTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -412,17 +467,22 @@ func (c *Connection) DirectQuery(sqlText string, args ...interface{}) (*ResultSe
 	if sqlCode != 0 && sqlCode != 100 {
 		return nil, &SQLError{SQLCode: sqlCode, Message: c.getErrorInfo(sqlCode)}
 	}
-	statementFeature := statementFeature(&msg)
-	columns := getColumns(&msg, statementFeature)
+	// 旧协议（Caché）的查询响应不带 statement feature 前缀，直接进入列定义。
+	var sf StatementFeature
+	if c.featureOptionSupported {
+		sf = statementFeature(&msg)
+	}
+	columns := getColumns(&msg, sf)
 	parameterInfo((&msg))
 	rs := &ResultSet{
 		c:       c,
-		sf:      statementFeature,
+		sf:      sf,
 		columns: columns,
 		count:   len(columns),
+		stmtId:  statementId,
 	}
 
-	msg, err = ReadMessage(c.conn)
+	msg, err = ReadMessageWithTimeout(c.conn, c.queryTimeout)
 	rs.sqlCode = int16(msg.GetStatus())
 	if err != nil {
 		return nil, err

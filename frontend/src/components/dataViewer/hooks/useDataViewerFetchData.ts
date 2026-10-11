@@ -67,6 +67,7 @@ import {
   buildOracleApproximateTotalSql,
 } from '../../../utils/approximateTableCount';
 import { formatDataViewerQueryError } from '../../../utils/dataViewerQueryError';
+import { allowDataGridQueryChange } from '../../../utils/dataGridQueryGuard';
 import type { DataViewerStateApi } from './useDataViewerState';
 import type { DataViewerProps } from '../../DataViewer';
 
@@ -126,6 +127,7 @@ export const useDataViewerFetchData = ({
   setColumnNames, setData, preferManualTotalCount, supportsApproximateTableCount,
 }: UseDataViewerFetchDataInput) => {
   const fetchData = useCallback(async (page = pagination.current, size = pagination.pageSize, options?: DataViewerFetchOptions) => {
+    if (!allowDataGridQueryChange(tab.id, tr)) return;
     const navigateToLastPage = options?.navigateToLastPage === true;
     const refreshTotal = options?.refreshTotal === true || navigateToLastPage;
     const seq = ++fetchSeqRef.current;
@@ -528,6 +530,11 @@ export const useDataViewerFetchData = ({
                 fieldNames = Object.keys(resultData[0]);
             }
             if (fetchSeqRef.current !== seq) return;
+            // Preserve the edit baseline when a user changes a row during this request.
+            if (!allowDataGridQueryChange(tab.id, tr)) {
+                setLoading(false);
+                return;
+            }
             if (isMongoDB && !forceReadOnly && tableName) {
                 const nextLocator = buildMongoDataViewerEditLocator(fieldNames, tr);
                 pkColumnsForQuery = nextLocator.readOnly ? [] : [MONGODB_ID_COLUMN];

@@ -11,6 +11,7 @@ import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
 import { isConnectionDataEditRestricted } from '../../utils/connectionReadOnly';
 import { buildElasticsearchConsoleTemplates } from '../../utils/elasticsearchConsole';
 import { buildUserManagementWorkbenchTab } from '../../utils/userManagementTab';
+import { buildMockDataWorkbenchTab } from '../../utils/mockDataTab';
 import {
   buildTableSelectQuery,
   isElasticsearchDbType,
@@ -18,6 +19,7 @@ import {
 } from '../../utils/objectQueryTemplates';
 import { DBReleaseConnection } from '../../../wailsjs/go/app/App';
 import { updateSidebarDatabasePinKeys } from '../../store';
+import { syncLoadedSidebarTablePins } from './sidebarTablePinRefresh';
 import type { SidebarTableSortPreference } from '../../utils/sidebarTreeOrder';
 import { getDbIcon } from '../DatabaseIcons';
 import { getMetadataDialect } from './sidebarMetadataLoaders';
@@ -33,6 +35,7 @@ import {
   buildV2SidebarDatabaseSectionedChildren,
   isSidebarDatabasePinned,
   isSidebarTablePinned,
+  resolveSidebarNodeConnectionId,
   type SidebarConnectionState,
   type SidebarTreeNode as TreeNode,
   type V2RailConnectionGroup,
@@ -153,7 +156,6 @@ export const useSidebarV2ActionHandlers = ({
   replaceTreeNodeChildren,
   loadDatabases,
   loadTables,
-  getDatabaseNodeRef,
   extractObjectName,
   openDesign,
   openNewTableDesign,
@@ -267,6 +269,14 @@ export const useSidebarV2ActionHandlers = ({
       case 'batch-tables':
         openBatchTableWorkbench(node);
         return;
+      case 'mock-data':
+        addTab(buildMockDataWorkbenchTab({
+          connectionId: String(node?.dataRef?.id || ''),
+          dbName: node?.dataRef?.dbName,
+          tableName: String(node?.dataRef?.tableName || node?.title || ''),
+          schemaName: node?.dataRef?.schemaName,
+        }));
+        return;
       case 'ai-explain':
         void injectTablePromptToAI(node, 'explain');
         return;
@@ -305,7 +315,12 @@ export const useSidebarV2ActionHandlers = ({
     );
     const shouldPin = pinned ?? !currentlyPinned;
     setSidebarTablePinned(conn.id, dbName, tableName, conn.schemaName || '', shouldPin);
-    void loadTables(getDatabaseNodeRef(conn, dbName), { ensureFresh: true });
+    // Schema-lazy engines drop expanded schema keys when the whole database reloads.
+    syncLoadedSidebarTablePins(
+      treeDataRef.current,
+      { connectionId: String(conn.id), dbName },
+      replaceTreeNodeChildren,
+    );
     message.success(shouldPin ? t('sidebar.message.table_pinned') : t('sidebar.message.table_unpinned'));
   };
 
@@ -407,14 +422,23 @@ export const useSidebarV2ActionHandlers = ({
   };
 
   const openDatabaseQuery = (node: any) => {
+    const nodeConnectionId = resolveSidebarNodeConnectionId(
+      node,
+      connections.map((candidate) => candidate.id),
+    );
+    const connection = connections.find((candidate) => candidate.id === nodeConnectionId);
+    if (!connection) {
+      message.error(t('query_editor.message.connection_not_found'));
+      return;
+    }
     const dbName = String(node.dataRef?.dbName || node.title || '').trim();
     const schemaName = String(node.dataRef?.schemaName || '').trim();
-    const dbType = getMetadataDialect(node.dataRef as SavedConnection);
+    const dbType = getMetadataDialect(connection);
     addTab({
       id: `query-${Date.now()}`,
       title: t('sidebar.tab.new_query_database', { database: dbName }),
       type: 'query',
-      connectionId: node.dataRef.id,
+      connectionId: connection.id,
       dbName,
       schemaName: schemaName || undefined,
       query: isElasticsearchDbType(dbType)

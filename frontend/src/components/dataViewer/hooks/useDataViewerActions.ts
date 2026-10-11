@@ -17,6 +17,7 @@ import {
 import { resolveDataSourceType } from '../../../utils/dataSourceCapabilities';
 import { resolveDataViewerOrderFallbackColumns } from '../dataViewerQuerySql';
 import { resolveDataViewerAutoFetchAction } from '../../../utils/dataViewerAutoFetch';
+import { allowDataGridQueryChange } from '../../../utils/dataGridQueryGuard';
 import type { DataViewerStateApi } from './useDataViewerState';
 import type { DataViewerFetchDataApi } from './useDataViewerFetchData';
 import type { DataViewerProps } from '../../DataViewer';
@@ -71,6 +72,7 @@ export const useDataViewerActions = ({
     void fetchData(pagination.current, pagination.pageSize);
   }, [fetchData, pagination.current, pagination.pageSize]);
   const handleReload = useCallback(() => {
+    if (!allowDataGridQueryChange(tab.id, tr)) return;
     countSeqRef.current++;
     manualCountSeqRef.current++;
     duckdbApproxSeqRef.current++;
@@ -89,8 +91,9 @@ export const useDataViewerActions = ({
       totalCountCancelled: false,
     }));
     return fetchData(pagination.current, pagination.pageSize, { refreshTotal: true });
-  }, [fetchData, pagination.current, pagination.pageSize]);
+  }, [fetchData, pagination.current, pagination.pageSize, tab.id, tr]);
   const handleSort = useCallback((field: string, order: string) => {
+    if (!allowDataGridQueryChange(tab.id, tr)) return false;
     // 支持多字段排序：field 为 JSON 数组字符串时解析为多字段
     try {
       const parsed = JSON.parse(field);
@@ -106,17 +109,22 @@ export const useDataViewerActions = ({
       return;
     }
     setSortInfo([{ columnKey: normalizedField, order: normalizedOrder, enabled: true }]);
-  }, []);
-  const handlePageChange = useCallback((page: number, size: number) => fetchData(page, size), [fetchData]);
+  }, [tab.id, tr]);
+  const handlePageChange = useCallback((page: number, size: number) => {
+    if (!allowDataGridQueryChange(tab.id, tr)) return;
+    return fetchData(page, size);
+  }, [fetchData, tab.id, tr]);
   const handleLastPage = useCallback((pageSize: number) => {
+    if (!allowDataGridQueryChange(tab.id, tr)) return;
     if (rocketMQTagTotalCountUnavailable) {
       message.warning(tr('data_grid.toolbar.tag_total_unavailable_tooltip'));
       return;
     }
     fetchData(1, pageSize, { navigateToLastPage: true });
-  }, [fetchData, rocketMQTagTotalCountUnavailable, tr]);
+  }, [fetchData, rocketMQTagTotalCountUnavailable, tab.id, tr]);
   const handleToggleFilter = useCallback(() => setShowFilter(prev => !prev), []);
   const handleApplyFilter = useCallback((conditions: FilterCondition[]) => {
+    if (!allowDataGridQueryChange(tab.id, tr)) return;
     skipNextAutoFetchRef.current = false;
     initialLoadRef.current = true;
     setPagination(prev => ({
@@ -126,7 +134,7 @@ export const useDataViewerActions = ({
       totalCountCancelled: false,
     }));
     setFilterConditions(normalizeViewerFilterConditions(conditions));
-  }, []);
+  }, [tab.id, tr]);
   const handleApplyQuickWhereCondition = useCallback((condition: string) => {
     const normalized = normalizeQuickWhereCondition(condition);
     const validation = validateQuickWhereCondition(normalized);
@@ -134,6 +142,7 @@ export const useDataViewerActions = ({
       message.error(validation.message);
       return;
     }
+    if (!allowDataGridQueryChange(tab.id, tr)) return;
     skipNextAutoFetchRef.current = false;
     initialLoadRef.current = true;
     setPagination(prev => ({
@@ -143,7 +152,7 @@ export const useDataViewerActions = ({
       totalCountCancelled: false,
     }));
     setQuickWhereCondition(normalized);
-  }, []);
+  }, [tab.id, tr]);
 
   const exportSqlWithFilter = useMemo(() => {
     const tableName = String(tab.tableName || '').trim();

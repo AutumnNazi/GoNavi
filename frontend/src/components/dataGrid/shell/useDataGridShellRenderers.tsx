@@ -1,6 +1,7 @@
 import { message } from 'antd';
 import { DataGridTableSurface } from './DataGridTableSurface';
 import type { DataGridShellProps } from '../../DataGridShell';
+import { isWritableResultCellValue } from '../../../utils/rowLocator';
 
 export interface UseDataGridShellRenderersInput {
   tableContainerRef: DataGridShellProps['tableContainerRef'];
@@ -151,7 +152,7 @@ export const useDataGridShellRenderers = ({
   allowCustomPageSize, paginationHasKnownTotalPages, prefersManualTotalCount, onPageChange,
   onLastPage, handlePageSizeChange, handleV2PageStep, useMemo, rowEditorDisplayRef,
   rowEditorNullColsRef, looksLikeJsonText, columnMetaMap, columnMetaMapByLowerName,
-  getTemporalPickerType, dbType, currentConnConfig, isWritableResultColumn, effectiveEditLocator,
+  getTemporalPickerType, dbType, currentConnConfig, effectiveEditLocator,
   rowEditorOpen, rowEditorRowKey, setSelectedRowKeys, resetCellSelection, tableName, connectionId,
   columnMetaCacheRef, metadataCacheKey, foreignKeyCacheRef, uniqueKeyGroupsCacheRef,
   setMetadataReloadVersion, onReload, clearAutoCommitTimer, autoCommitFailedTokenRef, setAddedRows,
@@ -303,7 +304,10 @@ export const useDataGridShellRenderers = ({
             const colMeta = columnMetaMap[col] || columnMetaMapByLowerName[col.toLowerCase()];
             const pickerType = getTemporalPickerType(colMeta?.type, dbType, currentConnConfig);
             const isTemporalValue = !!pickerType && !(/^0{4}-0{2}-0{2}/.test(String(sample || '')));
-            const isWritable = isWritableResultColumn(col, effectiveEditLocator);
+            // 用带值判定的重载：截断预览格显示的是「预览标记 + 截断片段」，若只判列可写
+            // 仍会开放编辑，提交即覆盖数据库原始 LOB。sample 取自 rowEditorDisplayRef（与基准行同源），
+            // 因而能如实反映该格是否为截断预览。
+            const isWritable = isWritableResultCellValue(col, sample, effectiveEditLocator);
             return {
                 columnName: col,
                 sample,

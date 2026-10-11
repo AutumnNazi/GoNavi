@@ -1,0 +1,83 @@
+# 在 pull request 上回复评审。
+#
+# 工作流文件和评审程序都来自 PR 的基线提交，只通过 GitHub API 读取 diff，
+# 不检出、不执行 PR 分支里的代码。
+#
+# 规约检查和 CI 门禁不需要模型。语义评审走 OpenAI 兼容接口，和
+# coco-framework-agent 一样只配置地址、模型和密钥。免费额度任选其一：
+# - GROQ_API_KEY：https://console.groq.com/keys ，模型 openai/gpt-oss-120b
+# - GEMINI_API_KEY：https://aistudio.google.com/apikey ，模型 gemini-2.5-flash
+# - OPENROUTER_API_KEY：https://openrouter.ai/settings/keys ，模型 meta-llama/llama-3.3-70b-instruct:free
+# 填了多个时按 Groq、Gemini、OpenRouter 的顺序，前一个失败再试下一个。
+# 免费档模型会下线（返回 HTTP 404），失效时以各 provider 模型列表为准换模型。
+# 若要指定别的接口，改用 PR_REVIEW_API_KEY，以及可选的
+# PR_REVIEW_API_BASE、PR_REVIEW_MODEL。
+name: PR Review
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_run:
+    # Backend Tests 结束后只刷新同一条评论里的 CI 门禁状态（-gate-only）。
+    # 不要用 event 里的 pull_requests 数组：push 触发时它会填陈旧或错误的
+    # PR 关联，PR 一律由程序按 head SHA 匹配开放 PR 列表。
+    workflows: ["Backend Tests"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "要评审的 pull request 编号"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: read
+
+concurrency:
+  # 统一按 PR head SHA 分组：同一提交的完整评审与门禁刷新互相取消，
+  # 避免两个事件并发 upsert 同一条评论。
+  group: pr-review-${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha || github.event.inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Review and reply
+    # 草稿先不评审，转 ready_for_review 时会再触发。只回复，不作为第四个门禁，
+    # 合并是否放行看 CI Gate。
+    if: ${{ github.event_name != 'pull_request_target' || !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout trusted revision
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Review pull request
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          PR_REVIEW_API_KEY: ${{ secrets.PR_REVIEW_API_KEY }}
+          PR_REVIEW_API_BASE: ${{ vars.PR_REVIEW_API_BASE }}
+          PR_REVIEW_MODEL: ${{ vars.PR_REVIEW_MODEL }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha }}
+        run: |
+          args=(-repo "${{ github.repository }}" -sha "${HEAD_SHA}")
+          if [[ -n "${PR_NUMBER}" ]]; then
+            args+=(-pr "${PR_NUMBER}")
+          fi
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            args+=(-gate-only)
+          fi
+          go run ./tools/pr-review "${args[@]}"

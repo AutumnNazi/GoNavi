@@ -130,6 +130,7 @@ export const storeState = (() => ({
     showColumnComment: true,
     showColumnType: true,
     showQueryResultsPanel: false,
+    autoShowSqlExecutionLog: true,
     queryEditorEditorHeightRatio: 0.5,
   },
   setQueryOptions: vi.fn(),

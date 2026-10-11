@@ -121,10 +121,9 @@ func TestWindowsShortcutBrandIconDoesNotWriteUnsupportedWScriptAUMID(t *testing.
 	// legacy pin repair pass, the AUMID shortcut creation, the guarded taskbar
 	// branch of the single-pass loop, the non-taskbar identity restore after a
 	// shortcut write (WScript.Shell.Save drops the AppUserModel property bag),
-	// and the user desktop shortcut created when a machine desktop shortcut is
-	// migrated. Any new call site must be reviewed for ownership gates before
-	// this count is raised.
-	if got := strings.Count(script, `Set-GoNaviShortcutRelaunchProperties -ShortcutPath`); got != 5 {
+	// Any new call site must be reviewed for ownership gates before this count
+	// is raised.
+	if got := strings.Count(script, `Set-GoNaviShortcutRelaunchProperties -ShortcutPath`); got != 4 {
 		t.Fatalf("unexpected relaunch property call site count %d:\n%s", got, script)
 	}
 	// The Start menu never re-reads an in-place IconLocation rewrite (observed
@@ -134,14 +133,14 @@ func TestWindowsShortcutBrandIconDoesNotWriteUnsupportedWScriptAUMID(t *testing.
 	// deny CreateFiles to standard users), so they are migrated: deleted, and
 	// the desktop entry is recreated at user level.
 	for _, token := range []string{
+		`function Remove-GoNaviDuplicateUserDesktopShortcuts`,
+		`Remove-GoNaviDuplicateUserDesktopShortcuts -TargetPath $normalizedTargetPath`,
 		`$replacement.Save()`,
 		`Move-Item -LiteralPath $replacementPath -Destination $shortcutFile.FullName -Force`,
 		`shortcut replacement failed, falling back to in-place save`,
 		`shortcut identity restore failed`,
-		`migrated machine shortcut to user scope`,
-		`machine shortcut migration delete failed`,
-		`$script:GoNaviMigratedCommonDesktop`,
-		`created user desktop shortcut after machine shortcut migration`,
+		`machine shortcut migration failed`,
+		`Keep the MSI-owned public Desktop shortcut in place`,
 	} {
 		if !strings.Contains(script, token) {
 			t.Fatalf("start menu shortcut replacement missing %q:\n%s", token, script)
@@ -153,7 +152,7 @@ func TestWindowsShortcutBrandIconDoesNotWriteUnsupportedWScriptAUMID(t *testing.
 	for _, token := range []string{
 		`function Send-ShellDirectoryUpdatedNotification`,
 		`NotifyDirectoryUpdated`,
-		`Send-ShellDirectoryUpdatedNotification ([IO.Path]::GetDirectoryName($shortcutFile.FullName))`,
+		`Send-ShellDirectoryUpdatedNotification $shortcutDirectory`,
 		`Send-ShellDirectoryUpdatedNotification ([IO.Path]::GetDirectoryName($ShortcutPath))`,
 	} {
 		if !strings.Contains(script, token) {

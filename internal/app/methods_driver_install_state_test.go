@@ -1,9 +1,12 @@
 package app
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"GoNavi-Wails/internal/db"
 )
 
 // 用户可能绕过应用直接从文件夹删驱动文件。此时 installed.json 仍在，
@@ -16,11 +19,25 @@ func installDriverWithMetaOnly(t *testing.T, root string, driverType string) (st
 	if err := os.MkdirAll(driverDir, 0o755); err != nil {
 		t.Fatalf("创建驱动目录失败: %v", err)
 	}
-	executablePath := filepath.Join(driverDir, driverType+"-driver-agent")
+	// 二进制路径必须与实现同源解析：Windows 代理名带 .exe，手拼裸名会在
+	// 夹具与状态探测之间产生路径分歧，探测永远判定二进制缺失。
+	executablePath, err := db.ResolveOptionalDriverAgentExecutablePathForVersion(root, driverType, "1.8.22")
+	if err != nil {
+		t.Fatalf("解析驱动二进制路径失败: %v", err)
+	}
 	metaPath := installedDriverMetaPath(root, driverType)
-	payload := `{"driverType":"` + driverType + `","version":"1.8.22","agentRevision":"src-test",` +
-		`"executablePath":"` + executablePath + `"}`
-	if err := os.WriteFile(metaPath, []byte(payload), 0o644); err != nil {
+	// 路径必须经 json.Marshal 转义：Windows 分隔符 `\` 直拼进 JSON 字符串会
+	// 构成 \U、\k 等非法转义，元数据在 Windows 上永远解析失败。
+	payload, err := json.Marshal(map[string]string{
+		"driverType":     driverType,
+		"version":        "1.8.22",
+		"agentRevision":  "src-test",
+		"executablePath": executablePath,
+	})
+	if err != nil {
+		t.Fatalf("编码元数据失败: %v", err)
+	}
+	if err := os.WriteFile(metaPath, payload, 0o644); err != nil {
 		t.Fatalf("写入元数据失败: %v", err)
 	}
 	return metaPath, executablePath

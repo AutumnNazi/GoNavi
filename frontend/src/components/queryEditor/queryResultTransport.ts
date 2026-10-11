@@ -78,13 +78,20 @@ export const invokeCompactDBQueryMulti = <T>(
     : invokeWails();
 };
 
+/** 带预算查询的压缩变体：列名只传一次 + gzip，用于「不限」可能返回的超大结果集。 */
+export const QUERY_EDITOR_BUDGETED_QUERY_COMPACT_METHOD = 'DBQueryMultiWithOptionsCompact';
+/** 未压缩变体，作为压缩变体不可用时的兜底。 */
+export const QUERY_EDITOR_BUDGETED_QUERY_METHOD = 'DBQueryMultiWithOptions';
+
 /**
  * Runs a desktop query that must carry a server-side result budget.
  *
- * The compact transport cannot forward it: `DBQueryMultiCompact` only accepts
- * the four base arguments, and the budget is bound by the WithOptions method.
- * This therefore routes to WithOptions over both transports instead of the
- * compact fast path, so the scan-layer budget is actually enforced.
+ * 预算只能由 WithOptions 系列承载（`DBQueryMultiCompact` 只接受四个基础参数）。
+ * 这里优先选**带预算的压缩变体**：放开「不限」后结果集可达百万行量级，未压缩通道
+ * 会把整份 JSON 内联成一条 JS 字面量交给前端一次性解析，正是压缩变体要避免的。
+ *
+ * 三级回退保证跨版本可用：压缩变体 → 未压缩变体 → 调用方传入的静态绑定。
+ * 返回值统一交给 `expandCompactQueryResult`，它对未压缩结果幂等。
  */
 export const invokeBudgetedDBQueryMulti = <T>(
   args: [unknown, string, string, string, unknown],
@@ -95,17 +102,22 @@ export const invokeBudgetedDBQueryMulti = <T>(
     wailsFallback: () => Promise<T>,
   ) => Promise<T>,
 ): Promise<T> => {
-  const methodName = 'DBQueryMultiWithOptions';
-  const invokeWails = () => {
-    if (typeof window === 'undefined') return fallback();
+  const resolveWindowMethod = (name: string) => {
+    if (typeof window === 'undefined') return undefined;
     const method = (window as Window & {
       go?: { app?: { App?: Record<string, unknown> } };
-    }).go?.app?.App?.[methodName];
+    }).go?.app?.App?.[name];
     return typeof method === 'function'
-      ? (method as (...values: unknown[]) => Promise<T>)(...args)
-      : fallback();
+      ? (method as (...values: unknown[]) => Promise<T>)
+      : undefined;
+  };
+  const invokeWails = () => {
+    const compact = resolveWindowMethod(QUERY_EDITOR_BUDGETED_QUERY_COMPACT_METHOD);
+    if (compact) return compact(...args);
+    const plain = resolveWindowMethod(QUERY_EDITOR_BUDGETED_QUERY_METHOD);
+    return plain ? plain(...args) : fallback();
   };
   return invokeRequestScopedApp
-    ? invokeRequestScopedApp(methodName, args, invokeWails)
+    ? invokeRequestScopedApp(QUERY_EDITOR_BUDGETED_QUERY_COMPACT_METHOD, args, invokeWails)
     : invokeWails();
 };

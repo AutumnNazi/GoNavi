@@ -36,12 +36,14 @@
             Source="$(var.SourceExe)"
             Name="GoNavi.exe"
             KeyPath="yes">
-        <!-- Keep shortcut icons bound to the stable executable path. Referencing the MSI Icon table
-             can leave Windows shell caches pointing at the removed product cache after a major upgrade. -->
+        <!-- Give a fresh install a real icon before GoNavi has launched and rewritten the
+             shortcut to the user's content-addressed ICO. Runtime brand switches replace
+             IconLocation with that stable per-user path. -->
         <Shortcut Id="StartMenuShortcut"
                   Directory="ProgramMenuFolder"
                   Name="$(var.ProductName)"
                   WorkingDirectory="INSTALLFOLDER"
+                  Icon="GoNaviIcon"
                   Advertise="no">
           <ShortcutProperty Key="System.AppUserModel.ID" Value="Syngnat.GoNavi" />
         </Shortcut>
@@ -49,6 +51,9 @@
       <File Id="GoNaviMsiInstallMarker"
             Source="$(var.InstallMarker)"
             Name=".gonavi-msi-install" />
+      <File Id="GoNaviApplyBrandIconScript"
+            Source="$(var.ApplyBrandIconScript)"
+            Name="apply-brand-icon.ps1" />
       <File Id="GoNaviLicense"
             Source="$(var.LicenseFile)"
             Name="LICENSE.txt" />
@@ -81,6 +86,7 @@
                 Name="$(var.ProductName)"
                 Target="[#GoNaviExe]"
                 WorkingDirectory="INSTALLFOLDER"
+                Icon="GoNaviIcon"
                 Advertise="no">
         <ShortcutProperty Key="System.AppUserModel.ID" Value="Syngnat.GoNavi" />
       </Shortcut>
@@ -129,11 +135,52 @@
                   Impersonate="no"
                   Return="ignore"
                   ExeCommand="[GrantUsersModifyDesktopShortcut]" />
+    <!-- Restore the previously selected brand icon at install time. The
+         selection survives uninstall inside the user's data root, but the
+         in-app restore only runs once GoNavi launches - without this action a
+         reinstall shows the default icon until the first start. The immediate
+         action formats the command line (user profile paths resolve at script
+         generation); the deferred SYSTEM action runs the installed script
+         against the freshly created shortcuts. Failures are ignored: a fresh
+         machine without persisted state keeps the default icon. The "."
+         appended to [AppDataFolder] is load-bearing: the property ends with a
+         backslash, and a raw "...\Roaming\" inside quotes makes the closing
+         quote an escaped one that swallows every remaining argument. -->
+    <CustomAction Id="SetApplyPersistedBrandIconCmd"
+                  Property="ApplyPersistedBrandIcon"
+                  Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]apply-brand-icon.ps1&quot; -ApplicationDataFolder &quot;[AppDataFolder].&quot; -StartMenuShortcut &quot;[ProgramMenuFolder]$(var.ProductName).lnk&quot; -DesktopShortcut &quot;[DesktopFolder]$(var.ProductName).lnk&quot;" />
+    <CustomAction Id="ApplyPersistedBrandIcon"
+                  Directory="SystemFolder"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"
+                  ExeCommand="[ApplyPersistedBrandIcon]" />
+    <!-- Remove the app's user-layer leftovers on a genuine uninstall: the
+         startup migration moves the machine Start Menu shortcut into the user
+         profile, so MSI RemoveFiles never sees it, and the taskbar pin keeps
+         launching the uninstalled executable. UPGRADINGPRODUCTCODE keeps this
+         off the major-upgrade teardown so an update never unpins the user or
+         deletes their migrated shortcuts. The action runs before file removal
+         so the installed script and the executable it matches against still
+         exist. -->
+    <CustomAction Id="SetUninstallBrandCleanupCmd"
+                  Property="UninstallBrandCleanup"
+                  Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]apply-brand-icon.ps1&quot; -UninstallCleanup -ApplicationDataFolder &quot;[AppDataFolder].&quot; -ExpectedTarget &quot;[INSTALLFOLDER]GoNavi.exe&quot;" />
+    <CustomAction Id="UninstallBrandCleanup"
+                  Directory="SystemFolder"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore"
+                  ExeCommand="[UninstallBrandCleanup]" />
     <InstallExecuteSequence>
       <Custom Action="SetGrantUsersModifyStartMenuShortcutCmd" After="InstallFiles" Condition="NOT REMOVE" />
       <Custom Action="GrantUsersModifyStartMenuShortcut" Before="InstallFinalize" Condition="NOT REMOVE" />
       <Custom Action="SetGrantUsersModifyDesktopShortcutCmd" After="InstallFiles" Condition="NOT REMOVE" />
       <Custom Action="GrantUsersModifyDesktopShortcut" Before="InstallFinalize" Condition="NOT REMOVE" />
+      <Custom Action="SetApplyPersistedBrandIconCmd" After="InstallFiles" Condition="NOT REMOVE" />
+      <Custom Action="ApplyPersistedBrandIcon" Before="InstallFinalize" Condition="NOT REMOVE" />
+      <Custom Action="SetUninstallBrandCleanupCmd" After="InstallValidate" Condition="REMOVE AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="UninstallBrandCleanup" After="InstallInitialize" Condition="REMOVE AND NOT UPGRADINGPRODUCTCODE" />
     </InstallExecuteSequence>
   </Package>
 

@@ -26,6 +26,8 @@ export interface UseAppThemeSettingsRenderInput {
   selectPresetTheme: AppCoreStateApi['selectPresetTheme'];
   renderThemeModePreview: AppAboutSettingsRenderApi['renderThemeModePreview'];
   renderThemeSettingsRow: AppAboutSettingsRenderApi['renderThemeSettingsRow'];
+  queryOptions: AppCoreStateApi['queryOptions'];
+  setQueryOptions: AppCoreStateApi['setQueryOptions'];
   effectiveUiScale: AppCoreStateApi['effectiveUiScale'];
   setUiScale: AppCoreStateApi['setUiScale'];
   effectiveFontSize: AppCoreStateApi['effectiveFontSize'];
@@ -77,6 +79,7 @@ export interface UseAppThemeSettingsRenderInput {
 export const useAppThemeSettingsRender = ({
   t, themeSettingsSections, themeModalSection, setThemeModalSection, renderThemeSettingsSection,
   effectiveThemePreference, selectPresetTheme, renderThemeModePreview, renderThemeSettingsRow,
+  queryOptions, setQueryOptions,
   effectiveUiScale, setUiScale, effectiveFontSize, setFontSize, effectiveSidebarRailScale,
   setAppearance, appearance, isFontFamiliesLoading, uiFontOptions, filterFontOption,
   renderFontOptionLabel, fontFamiliesLoadError, installedFontFamilies, linuxCJKFontInstallHint,
@@ -275,6 +278,8 @@ export const useAppThemeSettingsRender = ({
                                   t('app.theme.data_table.title'),
                                   <DataTableSettingsFields
                                     renderThemeSettingsRow={renderThemeSettingsRow} t={t}
+                                    autoShowSqlExecutionLog={queryOptions.autoShowSqlExecutionLog}
+                                    setAutoShowSqlExecutionLog={(enabled) => setQueryOptions({ autoShowSqlExecutionLog: enabled })}
                                     appearance={appearance} setAppearance={setAppearance}
                                     tableDoubleClickAction={tableDoubleClickAction}
                                     queryTableCtrlClickAction={queryTableCtrlClickAction}

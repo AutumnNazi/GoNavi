@@ -100,7 +100,7 @@ describe('workbench session across a restart', () => {
     second.useStore.getState().addTab({ id: 'settings-center', title: 'Settings', type: 'settings-center', connectionId: '' });
     expect(second.useStore.getState().activeTabId).toBe('settings-center');
     await second.restoreWorkbenchSession();
-    expect(second.useStore.getState().tabs.map((tab) => tab.id)).toEqual(['users', 'query-1', 'settings-center']);
+    expect(second.useStore.getState().tabs.map((tab) => tab.id)).toEqual(['settings-center', 'users', 'query-1']);
     expect(second.useStore.getState().activeTabId).toBe('users');
   });
 

@@ -10,7 +10,10 @@ import {
 import {
     buildQueryEditorTableSourceProbeContext, buildQueryEditorTableTargetKey,
 } from '../queryEditorHoverDdl';
-import { isConnectionScopedQueryEditorMetadata } from '../queryEditorLazyTablesCache';
+import {
+    isConnectionScopedQueryEditorMetadata,
+    QUERY_EDITOR_TABLE_NAVIGATION_MISSING_RECHECK_TIMEOUT_MS,
+} from '../queryEditorLazyTablesCache';
 import { useStore } from '../../../store';
 import { setQueryEditorMouseCursor } from './queryEditorMouseCursor';
 import { t as translate } from '../../../i18n';
@@ -239,6 +242,24 @@ export const bindQueryEditorMouseAndDispose = ({
                     return false;
                 }
             };
+            const isNavigationContextStale = () => (
+                !queryEditorMountedRef.current
+                || !queryEditorActiveRef.current
+                || String(currentConnectionIdRef.current || '').trim() !== connectionId
+                || tableNavigationContextRef.current.version !== navigationContextVersion
+                || !isCurrentNavigationEditor()
+            );
+            const markTargetPresentAndOpenTableTab = () => {
+                missingTableMetadataKeysRef.current.delete(
+                    buildQueryEditorTableTargetKey(
+                        connectionId,
+                        targetDbName,
+                        targetTableName,
+                        targetMetadataDialect,
+                    ),
+                );
+                openTableTab();
+            };
             const navigationAction = (async () => {
                 // 点击的同时就取字段：页签打开后直接复用这次请求；取到字段也说明表存在，不用再等存在性校验。
                 const columnsPrefetch = prefetchQueryEditorNavigationTableColumns(
@@ -254,13 +275,7 @@ export const bindQueryEditorMouseAndDispose = ({
                     columnsPrefetch.then((hasColumns) => (hasColumns ? true : validation)),
                     validation,
                 ]);
-                if (
-                    !queryEditorMountedRef.current
-                    || !queryEditorActiveRef.current
-                    || String(currentConnectionIdRef.current || '').trim() !== connectionId
-                    || tableNavigationContextRef.current.version !== navigationContextVersion
-                    || !isCurrentNavigationEditor()
-                ) {
+                if (isNavigationContextStale()) {
                     return;
                 }
                 if (targetExists === null) {
@@ -268,15 +283,30 @@ export const bindQueryEditorMouseAndDispose = ({
                     return;
                 }
                 if (targetExists) {
-                    missingTableMetadataKeysRef.current.delete(
-                        buildQueryEditorTableTargetKey(
-                            connectionId,
-                            targetDbName,
-                            targetTableName,
-                            targetMetadataDialect,
-                        ),
-                    );
-                    openTableTab();
+                    markTargetPresentAndOpenTableTab();
+                    return;
+                }
+
+                // 判定缺失会清超链接并删除本地元数据，是破坏性动作；竞速先到先得可能
+                // 丢弃迟到的列证据。降级前等列预取（有界）复核一次，取到列就按存在处理。
+                let missingRecheckTimerId: ReturnType<typeof setTimeout> | undefined;
+                const hasColumns = await Promise.race([
+                    columnsPrefetch.catch(() => false),
+                    new Promise<boolean>((resolve) => {
+                        missingRecheckTimerId = globalThis.setTimeout(
+                            () => resolve(false),
+                            QUERY_EDITOR_TABLE_NAVIGATION_MISSING_RECHECK_TIMEOUT_MS,
+                        );
+                    }),
+                ]);
+                if (missingRecheckTimerId !== undefined) {
+                    globalThis.clearTimeout(missingRecheckTimerId);
+                }
+                if (isNavigationContextStale()) {
+                    return;
+                }
+                if (hasColumns) {
+                    markTargetPresentAndOpenTableTab();
                     return;
                 }
 

@@ -31,6 +31,7 @@ export type WorkbenchTabType =
   | "table-overview"
   | "table-export"
   | "data-import"
+  | "mock-data"
   | "jvm-overview"
   | "jvm-resource"
   | "jvm-audit"

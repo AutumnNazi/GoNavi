@@ -1,4 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { useActivationGatedEffect } from './useActivationGatedEffect';
+import { useStore } from '../../../store';
 import {
     getTabQueryValue,
     normalizeMetadataDialect,
@@ -133,6 +135,12 @@ export const useQueryEditorMetadataLoading = ({
     scheduleObjectDecorationRefresh, metadataRetryPendingRef, refreshObjectDecorations,
     lastSqlReferencedMetadataKeyRef, queryEditorMetadataReloadTick, sqlReferencedMetadataKey,
 }: UseQueryEditorMetadataLoadingInput) => {
+    // 非激活 tab 副作用瘦身：隐藏 tab 不再走元数据拉取（不再对每个可见面板发 IPC 争主线程）。
+    // 本 hook 没有 isActive 入参，但 queryEditorActiveRef 由 useQueryEditorShortcutsAndSnippets
+    // 在渲染期同步（其调用位置先于本 hook），同一帧内读到的是本帧最新值，可安全作为 effect 依赖。
+    const isEditorActive = queryEditorActiveRef.current;
+    // 失活期间被跳过的元数据刷新，在切回时补跑一次的脏标记。
+    const metadataActivationStaleRef = useRef(false);
     // If opening a saved query, load its SQL
     useEffect(() => {
         const incoming = getTabQueryValue(tab);
@@ -262,7 +270,7 @@ export const useQueryEditorMetadataLoading = ({
 
         // 同一连接、同一库的 schema 列表在各查询页之间复用：有缓存时直接生效、不转圈，
         // 过期的缓存先用着并在后台刷新。
-        const schemaSessionKey = buildQueryEditorSessionMetadataKey(currentConnectionId, conn.config, dbName);
+        const schemaSessionKey = buildQueryEditorSessionMetadataKey(currentConnectionId, { ...conn.config, schemaVisibilityByDatabase: conn.schemaVisibilityByDatabase }, dbName);
         const cachedSchemaContext = queryEditorSchemaContextSession.read(schemaSessionKey);
         if (cachedSchemaContext) {
             applySchemaContext(cachedSchemaContext.value);
@@ -293,6 +301,7 @@ export const useQueryEditorMetadataLoading = ({
                 // 后台刷新不跟某一次 effect 绑定：只要本页还停在同一个连接和库上就应用新列表。
                 if (
                     schemaContextKeyRef.current === contextKey
+                    && JSON.stringify(useStore.getState().connections.find((item) => item.id === currentConnectionId)?.schemaVisibilityByDatabase || {}) === JSON.stringify(conn.schemaVisibilityByDatabase || {})
                     && isQueryEditorMetadataRequestCurrent({
                         generation: metadataGenerationRef.current,
                         connectionId: currentConnectionId,
@@ -387,6 +396,15 @@ export const useQueryEditorMetadataLoading = ({
         if (!hasBeenActive || !autoFetchVisible || isObjectEditQueryTab) {
             return;
         }
+        // 非激活 tab 副作用瘦身：隐藏 tab 不发元数据 IPC（多 tab 常开时这是「用一会变慢」的主要来源之一）。
+        // 早退点放在消费 queryEditorMetadataForceReloadRef 之前，事件驱动的强制重载因此得以保留，
+        // 切回时由补跑分支消费，不会被静默丢弃。
+        // 注意：失活不写 metadataFetchKeyRef、不 cancel 在途请求——已用过的编辑器切走后保留在途
+        // 请求、切回不整库重拉是既有语义（见 useQueryEditorEverActive 注释），此处只跳过多余的新拉取。
+        if (!queryEditorActiveRef.current) {
+            metadataActivationStaleRef.current = true;
+            return;
+        }
 
         let cancelled = false;
         // 事件驱动的重载只生效一次；普通依赖变化不绕过去重
@@ -452,6 +470,7 @@ export const useQueryEditorMetadataLoading = ({
             }
             const metadataFetchKey = [
                 currentConnectionId,
+                JSON.stringify(conn.schemaVisibilityByDatabase || {}),
                 ...metadataDbNames.map((dbName) => (
                     buildQueryEditorMetadataIdentityKey(metadataDialect, dbName)
                 )).sort(),
@@ -474,10 +493,10 @@ export const useQueryEditorMetadataLoading = ({
             // key 相同但表为空（中途 cancel / 异常）：允许重拉
             activeFetchKey = metadataFetchKey;
 
-            const fetchContext: QueryEditorMetadataFetchContext = { config, metadataDialect, oracleMetadataOwner };
+            const fetchContext: QueryEditorMetadataFetchContext = { config, metadataDialect, oracleMetadataOwner, connection: conn };
             const buildSessionKey = (dbName: string) => buildQueryEditorSessionMetadataKey(
                 currentConnectionId,
-                conn.config,
+                { ...conn.config, schemaVisibilityByDatabase: conn.schemaVisibilityByDatabase },
                 buildQueryEditorMetadataIdentityKey(metadataDialect, dbName),
                 oracleMetadataOwner,
             );
@@ -632,6 +651,18 @@ export const useQueryEditorMetadataLoading = ({
         scheduleObjectDecorationRefresh,
         sqlReferencedMetadataKey,
     ]);
+
+    // 非激活 tab 副作用瘦身之补跑：失活期间被跳过的元数据刷新，在切回本 tab 时补一次。
+    // 只丢一个 tick 就是完整补跑——主 effect 的 fetchKey 去重会吃掉「其实已是最新」的空跑，
+    // 因此这里不需要额外判重。首次激活（hasBeenActive 由 false 翻转）不需要补跑。
+    useActivationGatedEffect(isEditorActive, () => {
+        if (!metadataActivationStaleRef.current) {
+            return undefined;
+        }
+        metadataActivationStaleRef.current = false;
+        setQueryEditorMetadataReloadTick((tick) => tick + 1);
+        return undefined;
+    }, [setQueryEditorMetadataReloadTick]);
 };
 
 export type QueryEditorMetadataLoadingApi = ReturnType<typeof useQueryEditorMetadataLoading>;

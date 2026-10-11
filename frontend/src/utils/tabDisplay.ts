@@ -509,7 +509,7 @@ const buildCompactObjectTabTitle = (tab: TabData, translate: TabDisplayTranslate
   if (tab.type === 'table-export') {
     return replaceTitleObjectLabel(tab.title, tab.tableName);
   }
-  if (tab.type === 'data-import') {
+  if (tab.type === 'data-import' || tab.type === 'mock-data') {
     return replaceTitleObjectLabel(tab.title, tab.tableName);
   }
   if (tab.type === 'view-def') {
@@ -543,6 +543,7 @@ export const getTabDisplayKindLabel = (tab: TabData): string => {
   if (tab.type === 'table-overview') return 'DB';
   if (tab.type === 'table-export') return 'EXPORT';
   if (tab.type === 'data-import') return 'IMPORT';
+  if (tab.type === 'mock-data') return 'MOCK';
   if (tab.type === 'data-sync') {
     return tab.dataSyncEntryMode === 'compare' ||
       tab.dataSyncEntryMode === 'schemaCompare' ||
@@ -719,6 +720,7 @@ export const buildTabDisplayTitle = (
     tab.type !== 'table-overview' &&
     tab.type !== 'table-export' &&
     tab.type !== 'data-import' &&
+    tab.type !== 'mock-data' &&
     tab.type !== 'sql-analysis'
   ) {
     return baseTitle;

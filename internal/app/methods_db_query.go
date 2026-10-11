@@ -71,10 +71,22 @@ func (a *App) dbQueryWithCancel(
 	trackQueryHistory := auditOptions.trackHistory
 	auditStartedAt := time.Now()
 	var queryExecutionDuration time.Duration
-	defer func() {
-		result.DurationMs = durationMilliseconds(queryExecutionDuration)
-	}()
+	// 取连接的等待耗时（毫秒）：缓存命中接近 0，冷建连与重建连接都累加进来，
+	// 供前端把它从「主查询耗时」里分离出去（链路分解 Q/E/其余 三段中的其余）。
+	var connWaitMs int64
+	defer func() { attachQueryTimings(&result, queryExecutionDuration, connWaitMs) }()
 	query = sanitizeSQLForPgLike(resolveDDLDBType(config), query)
+	// 走 SQL 编辑器的 DDL（CREATE/DROP/ALTER/RENAME）成功后立即失效元数据缓存，
+	// 否则建表/删表/改名后侧栏树要等 TTL（45s）才反映真实结构。
+	//
+	// 判定用首关键词而不是"看起来像写操作"：SELECT/INSERT/UPDATE/DELETE 一律不动缓存，
+	// 避免把普通查询也变成缓存抖动源。只有 result.Success 时才清——失败的 DDL 没有改变
+	// 真实结构，清了只会让侧栏白刷一次。
+	if isMetadataAffectingDDL(query) {
+		defer func() {
+			a.invalidateMetadataAfterDDL(result, config, dbName)
+		}()
+	}
 	trackSQLAudit := auditOptions.auditAll || (auditOptions.auditWrites && containsSQLAuditWrite(resolveDDLDBType(runConfig), query))
 	if trackSQLAudit {
 		defer func() {
@@ -126,13 +138,11 @@ func (a *App) dbQueryWithCancel(
 		cleanupRunningQuery()
 	}()
 
-	var dbInst db.Database
-	var err error
-	if auditOptions.synchronousConnectionWait {
-		dbInst, err = a.getDatabaseSynchronouslyWithContext(ctx, runConfig, false)
-	} else {
-		dbInst, err = a.getDatabaseWithContext(ctx, runConfig, false)
-	}
+	dbInst, waitMs, err := a.acquireQueryConnection(ctx, queryConnectionRequest{
+		config:      runConfig,
+		synchronous: auditOptions.synchronousConnectionWait,
+	})
+	connWaitMs += waitMs
 	if err != nil {
 		logger.Error(err, "DBQuery 获取连接失败：%s", formatConnSummary(runConfig))
 		return buildQueryConnectionFailure(err, queryID, auditOptions.classifyConnectionErrors)
@@ -206,13 +216,14 @@ func (a *App) dbQueryWithCancel(
 			if a.invalidateCachedDatabase(runConfig, err) {
 				requestTrace.MarkRetry("cached connection refresh")
 				setRunningQueryCancellable(true)
-				var retryInst db.Database
-				var retryErr error
-				if auditOptions.synchronousConnectionWait {
-					retryInst, retryErr = a.getDatabaseSynchronouslyWithContext(ctx, runConfig, true)
-				} else {
-					retryInst, retryErr = a.getDatabaseWithContext(ctx, runConfig, true)
-				}
+				// 重建连接的开销同样归入取连接等待：它是这次查询真实付出的链路成本，
+				// 漏掉就会让「其余」一段凭空变大。
+				retryInst, retryWaitMs, retryErr := a.acquireQueryConnection(ctx, queryConnectionRequest{
+					config:      runConfig,
+					synchronous: auditOptions.synchronousConnectionWait,
+					forcePing:   true,
+				})
+				connWaitMs += retryWaitMs
 				if retryErr != nil {
 					logger.Error(retryErr, "DBQuery 重建连接失败：%s SQL片段=%q", formatConnSummary(runConfig), sqlSnippet(query))
 					return buildQueryConnectionFailure(retryErr, queryID, auditOptions.classifyConnectionErrors)

@@ -1,5 +1,6 @@
 import type { WorkbenchTabType } from '../tabTypes';
 import type { TabData } from '../types';
+import { pinSettingsCenterTabFirst } from './settingsCenterTab';
 
 /**
  * What GoNavi remembers of the workbench between runs, beyond what the store keeps for
@@ -61,6 +62,7 @@ const COMES_BACK_AFTER_RESTART: Record<WorkbenchTabType, boolean> = {
   'sql-analysis': false,
   'table-export': false,
   'data-import': false,
+  'mock-data': false,
 };
 
 const TEXT_FIELDS = [
@@ -237,7 +239,8 @@ export interface WorkbenchRestorePlan {
  * Lays the remembered tab strip over the tabs the store already holds (the SQL editors, which
  * come back with their text on their own). A tab whose connection no longer exists is dropped,
  * and so is one for a type that came back from an older snapshot but must not. Tabs open now
- * and not in the snapshot stay, after the remembered ones.
+ * and not in the snapshot stay, after the remembered ones. The settings center, whenever it
+ * is open, goes first.
  */
 export const planWorkbenchSessionRestore = (
   snapshot: WorkbenchSessionSnapshot,
@@ -266,7 +269,7 @@ export const planWorkbenchSessionRestore = (
   current.tabs.forEach((tab) => place(tab));
 
   return {
-    tabs,
+    tabs: pinSettingsCenterTabFirst(tabs),
     activeTabId: snapshot.activeTabId && placed.has(snapshot.activeTabId) ? snapshot.activeTabId : null,
     openAIPanel: snapshot.aiPanelDocked && !current.aiPanelVisible,
   };

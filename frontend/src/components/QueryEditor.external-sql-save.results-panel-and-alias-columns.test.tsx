@@ -222,6 +222,7 @@ describe('QueryEditor external SQL save', () => {
 
   it('shows execution failures inside the embedded sql log tab in v2', async () => {
 
+    storeState.queryOptions.autoShowSqlExecutionLog = false;
     backendApp.DBQueryMulti.mockResolvedValueOnce({
       success: false,
       message: 'driver exploded',
@@ -250,10 +251,53 @@ describe('QueryEditor external SQL save', () => {
     renderer.unmount();
   });
 
+  it('keeps empty successful executions collapsed when automatic log display is disabled', async () => {
+    storeState.queryOptions.autoShowSqlExecutionLog = false;
+    const windowListeners: Record<string, ((event?: Event) => void)[]> = {};
+    vi.stubGlobal('window', {
+      addEventListener: vi.fn((type: string, listener: (event?: Event) => void) => {
+        windowListeners[type] ||= [];
+        windowListeners[type].push(listener);
+      }),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+      setTimeout,
+      clearTimeout,
+      requestAnimationFrame: vi.fn((callback: FrameRequestCallback) => {
+        callback(0);
+        return 1;
+      }),
+      cancelAnimationFrame: vi.fn(),
+      innerHeight: 900,
+    });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<QueryEditor tab={createTab({ query: 'SELECT 1;' })} />);
+    });
+    await act(async () => {
+      await findButton(renderer, '运行').props.onClick();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(storeState.addSqlLog).toHaveBeenCalled();
+    expect(textContent(renderer.toJSON())).not.toContain('SQL 执行日志');
+
+    const openEvent = new CustomEvent('gonavi:show-sql-execution-log', { detail: { mode: 'open' } });
+    await act(async () => {
+      windowListeners['gonavi:show-sql-execution-log']?.forEach((listener) => listener(openEvent));
+    });
+    expect(textContent(renderer.toJSON())).toContain('SQL 执行日志');
+
+    renderer.unmount();
+  });
+
   it.each(['sqlite', 'clickhouse', 'mongodb'])(
     'activates the data result tab and requests data preview for %s after the sql log tab was open',
     async (dbType) => {
 
+      storeState.queryOptions.autoShowSqlExecutionLog = false;
       storeState.connections[0].config.type = dbType;
       storeState.sqlLogs = [{
         id: 'log-1',

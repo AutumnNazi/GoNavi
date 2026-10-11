@@ -17,6 +17,11 @@ const (
 	builtinAIContextWindow    = ai.DefaultHostedContextWindow
 	builtinAIMaxOutputTokens  = ai.DefaultHostedMaxOutputTokens
 	builtinAIDefaultTemperate = 0.1
+	// builtinAIHeaderTimeoutSeconds 是内置 AI 等待网关响应头的上限。网关侧一次
+	// 请求的预算是「排队超时 60s + 生成超时 240s」，通用的 120s 会让桌面端先于
+	// 网关放弃，请求在控制台被记成「客户端离开」，而模型其实还在生成。取 320s
+	// 留出余量，让网关自己的超时先于客户端发生并返回可读的错误。
+	builtinAIHeaderTimeoutSeconds = 320
 )
 
 // isBuiltinAIProviderConfig recognizes the built-in provider by its fixed id or,
@@ -79,6 +84,9 @@ func completeBuiltinAIProvider(cfg ai.ProviderConfig) ai.ProviderConfig {
 	cfg.APIKey, cfg.SecretRef, cfg.HasSecret = "", "", false
 	// The hosted model has no reasoning mode: never send a thinking level.
 	cfg.ThinkingIntensity, cfg.Effort = "", ""
+	// The Gateway may queue and cold-start a node, so this provider alone waits
+	// longer for response headers than the shared 120s default.
+	cfg.HeaderTimeoutSeconds = builtinAIHeaderTimeoutSeconds
 	cfg.SupportsImages = builtinAISupportsImages()
 	// Stored headers are discarded; only the product token below is sent.
 	cfg.Headers, cfg.CLIEnv = map[string]string{"User-Agent": builtinAIUserAgent()}, nil

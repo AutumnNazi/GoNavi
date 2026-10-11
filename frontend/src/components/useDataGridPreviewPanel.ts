@@ -10,6 +10,7 @@ export interface DataGridFocusedCellInfo {
 
 interface UseDataGridPreviewPanelParams {
   previewAvailable: boolean;
+  sourceData?: readonly unknown[];
   toEditableText: (value: any, columnName?: string) => string;
   looksLikeJsonText: (text: string) => boolean;
   normalizeDateTimeString: (value: string) => string;
@@ -26,11 +27,13 @@ export interface UseDataGridPreviewPanelResult {
   dataPanelOriginalRef: React.MutableRefObject<string>;
   toggleDataPanel: () => void;
   updateFocusedCell: (record: GridRecord, dataIndex: string) => void;
+  isFocusedCellSourceCurrent: () => boolean;
   handleDataPanelFormatJson: (onError: (message: string) => void) => void;
 }
 
 export const useDataGridPreviewPanel = ({
   previewAvailable,
+  sourceData,
   toEditableText,
   looksLikeJsonText,
   normalizeDateTimeString,
@@ -42,11 +45,16 @@ export const useDataGridPreviewPanel = ({
   const [dataPanelIsJson, setDataPanelIsJson] = React.useState(false);
   const dataPanelDirtyRef = React.useRef(false);
   const dataPanelOriginalRef = React.useRef('');
+  const sourceDataRef = React.useRef(sourceData);
+  sourceDataRef.current = sourceData;
+  const previousSourceDataRef = React.useRef(sourceData);
+  const focusedCellSourceDataRef = React.useRef<readonly unknown[] | undefined | null>(null);
 
   const closeDataPanel = React.useCallback(() => {
     dataPanelOpenRef.current = false;
     setDataPanelOpen(false);
     setFocusedCellInfo(null);
+    focusedCellSourceDataRef.current = null;
     setDataPanelValue('');
     setDataPanelIsJson(false);
     dataPanelDirtyRef.current = false;
@@ -55,6 +63,7 @@ export const useDataGridPreviewPanel = ({
 
   const updateFocusedCell = React.useCallback((record: GridRecord, dataIndex: string) => {
     if (!record || !dataIndex) return;
+    if (sourceDataRef.current !== sourceData) return;
     const raw = record?.[dataIndex];
     let text = toEditableText(raw, dataIndex);
     if (typeof raw === 'string' && text === raw) {
@@ -62,11 +71,18 @@ export const useDataGridPreviewPanel = ({
     }
     const isJson = looksLikeJsonText(text);
     setFocusedCellInfo({ record, dataIndex, title: dataIndex });
+    focusedCellSourceDataRef.current = sourceData;
     dataPanelOriginalRef.current = text;
     setDataPanelValue(text);
     setDataPanelIsJson(isJson);
     dataPanelDirtyRef.current = false;
-  }, [looksLikeJsonText, normalizeDateTimeString, toEditableText]);
+  }, [looksLikeJsonText, normalizeDateTimeString, sourceData, toEditableText]);
+
+  const isFocusedCellSourceCurrent = React.useCallback(() => (
+    focusedCellInfo !== null
+    && sourceDataRef.current === sourceData
+    && focusedCellSourceDataRef.current === sourceData
+  ), [focusedCellInfo, sourceData]);
 
   const handleDataPanelFormatJson = React.useCallback((onError: (message: string) => void) => {
     if (!dataPanelIsJson) return;
@@ -99,6 +115,12 @@ export const useDataGridPreviewPanel = ({
   }, [closeDataPanel, previewAvailable]);
 
   React.useEffect(() => {
+    if (previousSourceDataRef.current === sourceData) return;
+    previousSourceDataRef.current = sourceData;
+    closeDataPanel();
+  }, [closeDataPanel, sourceData]);
+
+  React.useEffect(() => {
     dataPanelOpenRef.current = dataPanelOpen;
   }, [dataPanelOpen]);
 
@@ -113,6 +135,7 @@ export const useDataGridPreviewPanel = ({
     dataPanelOriginalRef,
     toggleDataPanel,
     updateFocusedCell,
+    isFocusedCellSourceCurrent,
     handleDataPanelFormatJson,
   };
 };

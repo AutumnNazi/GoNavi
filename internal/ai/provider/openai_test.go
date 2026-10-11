@@ -22,7 +22,7 @@ func (fn openAIRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, erro
 }
 
 func TestOpenAIHTTPClientSeparatesStreamBodyAndResponseHeaderTimeouts(t *testing.T) {
-	client := newOpenAIHTTPClient()
+	client := newOpenAIHTTPClient(openAIHTTPTimeout)
 	if client.Timeout != openAIHTTPTimeout {
 		t.Fatalf("non-stream client timeout = %s, want %s", client.Timeout, openAIHTTPTimeout)
 	}

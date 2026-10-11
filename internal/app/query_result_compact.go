@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"time"
 
 	"GoNavi-Wails/internal/connection"
 )
@@ -68,6 +69,13 @@ func encodeCompactQueryResult(result connection.QueryResult) CompactQueryResult 
 		return CompactQueryResult{QueryResult: result}
 	}
 
+	// 链路分解（E）：压缩通道下真正过桥的载荷与 profileQueryResultEncode 量到的
+	// 「未压缩结构」不是一回事 —— 后者是行键展开后的全量 JSON，前者是大致 1/3 体积的
+	// gzip 字节加 base64。差一个数量级，前端拿未压缩值去减总耗时会让「其余」一段变成负数。
+	// 所以在成功压缩的返回点用真实成本覆盖一次；走下面几个兜底分支时数据未压缩，
+	// 保留 profileQueryResultEncode 的测量值即可。
+	compactionStartedAt := time.Now()
+
 	encoded, err := json.Marshal(resultSets)
 	if err != nil || len(encoded) < compactQueryResultCompressionThreshold {
 		return CompactQueryResult{QueryResult: result}
@@ -87,6 +95,7 @@ func encodeCompactQueryResult(result connection.QueryResult) CompactQueryResult 
 	}
 
 	result.Data = nil
+	result.EncodeMs = time.Since(compactionStartedAt).Microseconds()
 	return CompactQueryResult{
 		QueryResult:  result,
 		DataEncoding: compactQueryResultEncoding,
@@ -103,6 +112,22 @@ func (a *App) DBQueryMultiCompact(
 	queryID string,
 ) CompactQueryResult {
 	return encodeCompactQueryResult(a.DBQueryMulti(config, dbName, query, queryID))
+}
+
+// DBQueryMultiWithOptionsCompact 是 DBQueryMultiWithOptions 的压缩传输变体。
+//
+// 「不限」放开行数预算后，结果集可以远超未压缩通道能承受的规模：未压缩路径会把
+// 整份 JSON 内联成一条 JS 字面量交给前端一次性 JSON.parse。这里复用
+// DBQueryMultiCompact 的编码（列名只传一次 + gzip + base64），并原样保留行预算
+// 语义——预算仍由 normalizeQueryResultBudgetOptions 决定，压缩只改变传输形态。
+func (a *App) DBQueryMultiWithOptionsCompact(
+	config connection.ConnectionConfig,
+	dbName string,
+	query string,
+	queryID string,
+	options QueryResultBudgetOptions,
+) CompactQueryResult {
+	return encodeCompactQueryResult(a.DBQueryMultiWithOptions(config, dbName, query, queryID, options))
 }
 
 // QueryResultQueryID exposes the embedded query ID to transports that only see

@@ -16,11 +16,16 @@ export const DATA_GRID_FILL_BODY_CSS = `
   .data-grid-root .data-grid-table-wrap .ant-table-tbody-virtual-holder {
     flex: 1; max-height: none !important;
   }
+  /* antd uses a regular table body for empty virtual tables. Fill both the
+     scroll viewport and its placeholder row so the empty state stays centered. */
   .data-grid-root .data-grid-table-wrap .ant-table-empty .ant-table-body {
-    overflow-x: hidden !important;
+    flex: 1; min-height: 0; max-height: none !important;
   }
-  .data-grid-root.data-grid-empty .data-grid-external-horizontal-scroll {
-    display: none !important;
+  .data-grid-root .data-grid-table-wrap .ant-table-empty .ant-table-body > table {
+    height: 100%;
+  }
+  .data-grid-root .data-grid-table-wrap .ant-table-empty .ant-table-placeholder {
+    height: 100%;
   }
 `;
 

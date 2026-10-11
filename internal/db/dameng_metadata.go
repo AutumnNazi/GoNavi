@@ -9,10 +9,26 @@ import (
 	"GoNavi-Wails/internal/logger"
 )
 
-// escapeDamengMetadataLiteral normalizes a schema/table value and escapes it
-// for use as a SQL string literal in Dameng metadata queries.
+// escapeDamengMetadataLiteral keeps the historical uppercase lookup used by
+// unquoted Dameng metadata identifiers.
 func escapeDamengMetadataLiteral(value string) string {
 	return strings.ReplaceAll(strings.ToUpper(strings.TrimSpace(value)), "'", "''")
+}
+
+func escapeDamengMetadataLiteralExact(value string) string {
+	return strings.ReplaceAll(strings.TrimSpace(value), "'", "''")
+}
+
+func damengMetadataNameCandidates(value string) []string {
+	exact := strings.TrimSpace(value)
+	if exact == "" {
+		return []string{""}
+	}
+	upper := strings.ToUpper(exact)
+	if exact == upper {
+		return []string{exact}
+	}
+	return []string{exact, upper}
 }
 
 var damengDatabaseQueries = []string{
@@ -33,6 +49,45 @@ var damengDatabaseQueries = []string{
 }
 
 type damengQueryFunc func(query string) ([]map[string]interface{}, []string, error)
+
+// Resolve catalog identity before optional metadata queries: an empty index or
+// comment result does not mean that the table is missing. Exact names win when
+// quoted lowercase objects coexist with unquoted uppercase objects.
+func resolveDamengMetadataTable(query damengQueryFunc, schema, table string) (string, string, error) {
+	schema, table = strings.TrimSpace(schema), strings.TrimSpace(table)
+	if schema == strings.ToUpper(schema) && table == strings.ToUpper(table) {
+		return schema, table, nil
+	}
+	schemas := damengMetadataNameCandidates(schema)
+	tables := damengMetadataNameCandidates(table)
+	literals := func(names []string) string {
+		quoted := make([]string, len(names))
+		for i, name := range names {
+			quoted[i] = "'" + escapeDamengMetadataLiteralExact(name) + "'"
+		}
+		return strings.Join(quoted, ", ")
+	}
+	sql := `SELECT DISTINCT c.owner AS "OWNER", c.table_name AS "TABLE_NAME" FROM all_tab_columns c WHERE c.owner IN (` + literals(schemas) + `) AND c.table_name IN (` + literals(tables) + `)`
+	if schema == "" {
+		sql = `SELECT DISTINCT c.table_name AS "TABLE_NAME" FROM user_tab_columns c WHERE c.table_name IN (` + literals(tables) + `)`
+	}
+	rows, _, err := query(sql)
+	if err != nil {
+		return "", "", err
+	}
+	for _, candidateSchema := range schemas {
+		for _, candidateTable := range tables {
+			for _, row := range rows {
+				owner := getDamengRowString(row, "OWNER")
+				name := getDamengRowString(row, "TABLE_NAME")
+				if (schema == "" || owner == candidateSchema) && name == candidateTable {
+					return candidateSchema, candidateTable, nil
+				}
+			}
+		}
+	}
+	return schema, table, nil
+}
 
 func collectDamengDatabaseNames(query damengQueryFunc) ([]string, error) {
 	seen := make(map[string]struct{})
@@ -112,11 +167,11 @@ func getDamengRowString(row map[string]interface{}, keys ...string) string {
 }
 
 func buildDamengColumnsQuery(dbName, tableName string) string {
-	upperTableName := escapeDamengMetadataLiteral(tableName)
-	upperDBName := escapeDamengMetadataLiteral(dbName)
+	escapedTableName := escapeDamengMetadataLiteralExact(tableName)
+	escapedDBName := escapeDamengMetadataLiteralExact(dbName)
 
 	// 注意：达梦中 COMMENT 为保留字，不能使用 AS comment 作为列别名（Error -2007 语法分析出错）。
-	if upperDBName == "" {
+	if escapedDBName == "" {
 		return fmt.Sprintf(`SELECT c.column_name, c.data_type, c.data_length, c.char_length, c.data_precision, c.data_scale, c.nullable, c.data_default, cc.comments AS col_comment,
 		CASE WHEN pk.column_name IS NOT NULL THEN 'PRI' ELSE '' END AS column_key
 		FROM user_tab_columns c
@@ -131,7 +186,7 @@ func buildDamengColumnsQuery(dbName, tableName string) string {
 			  AND cols.table_name = '%s'
 		) pk ON c.table_name = pk.table_name AND c.column_name = pk.column_name
 		WHERE c.table_name = '%s'
-		ORDER BY c.column_id`, upperTableName, upperTableName, upperTableName)
+		ORDER BY c.column_id`, escapedTableName, escapedTableName, escapedTableName)
 	}
 
 	return fmt.Sprintf(`SELECT c.column_name, c.data_type, c.data_length, c.char_length, c.data_precision, c.data_scale, c.nullable, c.data_default, cc.comments AS col_comment,
@@ -151,7 +206,7 @@ func buildDamengColumnsQuery(dbName, tableName string) string {
 			  AND cols.table_name = '%s'
 		) pk ON c.owner = pk.owner AND c.table_name = pk.table_name AND c.column_name = pk.column_name
 		WHERE c.owner = '%s' AND c.table_name = '%s'
-		ORDER BY c.column_id`, upperDBName, upperTableName, upperDBName, upperTableName, upperDBName, upperTableName)
+		ORDER BY c.column_id`, escapedDBName, escapedTableName, escapedDBName, escapedTableName, escapedDBName, escapedTableName)
 }
 
 // buildDamengColumnCommentsQuery uses Dameng's native comment dictionary as a
@@ -159,31 +214,31 @@ func buildDamengColumnsQuery(dbName, tableName string) string {
 // compatible ALL_COL_COMMENTS/USER_COL_COMMENTS views but return empty comment
 // values when those views are joined with the column dictionary.
 func buildDamengColumnCommentsQuery(dbName, tableName string) string {
-	upperTableName := escapeDamengMetadataLiteral(tableName)
-	upperDBName := escapeDamengMetadataLiteral(dbName)
+	escapedTableName := escapeDamengMetadataLiteralExact(tableName)
+	escapedDBName := escapeDamengMetadataLiteralExact(dbName)
 
 	schemaPredicate := "SCHNAME = USER"
-	if upperDBName != "" {
-		schemaPredicate = fmt.Sprintf("SCHNAME = '%s'", upperDBName)
+	if escapedDBName != "" {
+		schemaPredicate = fmt.Sprintf("SCHNAME = '%s'", escapedDBName)
 	}
 
 	return fmt.Sprintf(`SELECT COLNAME AS column_name, COMMENT$ AS col_comment
 		FROM SYS.SYSCOLUMNCOMMENTS
 		WHERE %s AND TVNAME = '%s' AND COMMENT$ IS NOT NULL
-		ORDER BY COLNAME`, schemaPredicate, upperTableName)
+		ORDER BY COLNAME`, schemaPredicate, escapedTableName)
 }
 
 func buildDamengTableCommentQuery(dbName, tableName string) string {
-	upperTableName := escapeDamengMetadataLiteral(tableName)
-	upperDBName := escapeDamengMetadataLiteral(dbName)
-	if upperDBName == "" {
+	escapedTableName := escapeDamengMetadataLiteralExact(tableName)
+	escapedDBName := escapeDamengMetadataLiteralExact(dbName)
+	if escapedDBName == "" {
 		return fmt.Sprintf(`SELECT comments AS "TABLE_COMMENT"
 			FROM user_tab_comments
-			WHERE table_name = '%s' AND comments IS NOT NULL`, upperTableName)
+			WHERE table_name = '%s' AND comments IS NOT NULL`, escapedTableName)
 	}
 	return fmt.Sprintf(`SELECT comments AS "TABLE_COMMENT"
 		FROM all_tab_comments
-		WHERE owner = '%s' AND table_name = '%s' AND comments IS NOT NULL`, upperDBName, upperTableName)
+		WHERE owner = '%s' AND table_name = '%s' AND comments IS NOT NULL`, escapedDBName, escapedTableName)
 }
 
 func appendDamengTableCommentDDL(ddl, dbName, tableName, comment string) string {
@@ -194,7 +249,7 @@ func appendDamengTableCommentDDL(ddl, dbName, tableName, comment string) string 
 	}
 
 	quoteIdentifier := func(value string) string {
-		value = strings.ToUpper(strings.TrimSpace(value))
+		value = strings.TrimSpace(value)
 		return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
 	}
 	tableRef := quoteIdentifier(tableName)
@@ -214,12 +269,12 @@ func appendDamengTableCommentDDL(ddl, dbName, tableName, comment string) string 
 // records both IDENTITY and AUTO_INCREMENT columns. It intentionally remains a
 // separate query so restricted accounts can still load base column metadata.
 func buildDamengAutoIncrementColumnsQuery(dbName, tableName string) string {
-	upperDBName := escapeDamengMetadataLiteral(dbName)
-	upperTableName := escapeDamengMetadataLiteral(tableName)
+	escapedDBName := escapeDamengMetadataLiteralExact(dbName)
+	escapedTableName := escapeDamengMetadataLiteralExact(tableName)
 
 	schemaPredicate := "s.NAME = USER"
-	if upperDBName != "" {
-		schemaPredicate = fmt.Sprintf("s.NAME = '%s'", upperDBName)
+	if escapedDBName != "" {
+		schemaPredicate = fmt.Sprintf("s.NAME = '%s'", escapedDBName)
 	}
 
 	return fmt.Sprintf(`SELECT sc.NAME AS column_name
@@ -229,7 +284,7 @@ func buildDamengAutoIncrementColumnsQuery(dbName, tableName string) string {
 		WHERE %s
 		  AND t.NAME = '%s'
 		  AND (sc.INFO2 & 0x01) = 0x01
-		ORDER BY sc.COLID`, schemaPredicate, upperTableName)
+		ORDER BY sc.COLID`, schemaPredicate, escapedTableName)
 }
 
 func applyDamengAutoIncrementColumns(columns []connection.ColumnDefinition, data []map[string]interface{}) []connection.ColumnDefinition {
@@ -251,10 +306,10 @@ func applyDamengAutoIncrementColumns(columns []connection.ColumnDefinition, data
 }
 
 func buildDamengIndexesQuery(dbName, tableName string) string {
-	upperDBName := escapeDamengMetadataLiteral(dbName)
-	upperTableName := escapeDamengMetadataLiteral(tableName)
+	escapedDBName := escapeDamengMetadataLiteralExact(dbName)
+	escapedTableName := escapeDamengMetadataLiteralExact(tableName)
 
-	if upperDBName == "" {
+	if escapedDBName == "" {
 		return fmt.Sprintf(`SELECT c.index_name, c.column_name, i.uniqueness, c.column_position, i.index_type
 			FROM user_ind_columns c
 			JOIN user_indexes i ON i.index_name = c.index_name
@@ -262,7 +317,7 @@ func buildDamengIndexesQuery(dbName, tableName string) string {
 			  AND c.column_name IS NOT NULL
 			  AND c.column_name NOT LIKE 'SYS_NC%%$'
 			  AND i.index_type NOT LIKE 'FUNCTION-BASED%%'
-			ORDER BY c.index_name, c.column_position`, upperTableName)
+			ORDER BY c.index_name, c.column_position`, escapedTableName)
 	}
 
 	return fmt.Sprintf(`SELECT c.index_name, c.column_name, i.uniqueness, c.column_position, i.index_type
@@ -273,7 +328,7 @@ func buildDamengIndexesQuery(dbName, tableName string) string {
 		  AND c.column_name IS NOT NULL
 		  AND c.column_name NOT LIKE 'SYS_NC%%$'
 		  AND i.index_type NOT LIKE 'FUNCTION-BASED%%'
-		ORDER BY c.index_name, c.column_position`, upperDBName, upperTableName)
+		ORDER BY c.index_name, c.column_position`, escapedDBName, escapedTableName)
 }
 
 func buildDamengIndexDefinitions(data []map[string]interface{}) []connection.IndexDefinition {
@@ -308,9 +363,9 @@ func buildDamengIndexDefinitions(data []map[string]interface{}) []connection.Ind
 }
 
 func buildDamengForeignKeysQuery(dbName, tableName string) string {
-	upperDBName := escapeDamengMetadataLiteral(dbName)
-	upperTableName := escapeDamengMetadataLiteral(tableName)
-	if upperDBName == "" {
+	escapedDBName := escapeDamengMetadataLiteralExact(dbName)
+	escapedTableName := escapeDamengMetadataLiteralExact(tableName)
+	if escapedDBName == "" {
 		return fmt.Sprintf(`SELECT a.constraint_name, a.column_name, c_pk.table_name r_table_name, b.column_name r_column_name
 		FROM (
 			SELECT constraint_name, table_name, column_name, position
@@ -320,7 +375,7 @@ func buildDamengForeignKeysQuery(dbName, tableName string) string {
 		JOIN user_constraints c ON a.constraint_name = c.constraint_name
 		JOIN user_constraints c_pk ON c.r_constraint_name = c_pk.constraint_name
 		JOIN user_cons_columns b ON c_pk.constraint_name = b.constraint_name AND a.position = b.position
-		WHERE c.constraint_type = 'R' AND c.table_name = '%s'`, upperTableName, upperTableName)
+		WHERE c.constraint_type = 'R' AND c.table_name = '%s'`, escapedTableName, escapedTableName)
 	}
 	return fmt.Sprintf(`SELECT a.constraint_name, a.column_name, c_pk.table_name r_table_name, b.column_name r_column_name
 		FROM (
@@ -332,7 +387,7 @@ func buildDamengForeignKeysQuery(dbName, tableName string) string {
 		JOIN all_constraints c_pk ON c.r_owner = c_pk.owner AND c.r_constraint_name = c_pk.constraint_name
 		JOIN all_cons_columns b ON c_pk.owner = b.owner AND c_pk.constraint_name = b.constraint_name AND a.position = b.position
 		WHERE c.constraint_type = 'R' AND c.owner = '%s' AND c.table_name = '%s'`,
-		upperDBName, upperTableName, upperDBName, upperTableName)
+		escapedDBName, escapedTableName, escapedDBName, escapedTableName)
 }
 
 func getDamengRowInt(row map[string]interface{}, keys ...string) (int, bool) {

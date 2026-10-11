@@ -79,6 +79,17 @@ func readDriverPackageZipEntries(t *testing.T, path string) map[string]uint64 {
 	return entries
 }
 
+// driverPackageAgentAssetName 按发布资产契约拼平台条目名：Windows 资产带
+// .exe（与 tools/complete-driver-release-assets、prepare-vps-release-payload
+// 的发布命名同源），导入解析器对带与不带 .exe 的形态都兼容。
+func driverPackageAgentAssetName(stem string) string {
+	name := stem + "-" + stdRuntime.GOOS + "-" + stdRuntime.GOARCH
+	if strings.EqualFold(stdRuntime.GOOS, "windows") {
+		return name + ".exe"
+	}
+	return name
+}
+
 func TestExportDriverPackageWritesPlatformEntries(t *testing.T) {
 	root := t.TempDir()
 	installFakeDriverPackage(t, root, "mariadb", "1.9.3", "src-0a451007282c8777")
@@ -92,7 +103,7 @@ func TestExportDriverPackageWritesPlatformEntries(t *testing.T) {
 
 	entries := readDriverPackageZipEntries(t, target)
 	platformDir := optionalDriverBundlePlatformDir(stdRuntime.GOOS)
-	wantEntry := platformDir + "/mariadb-driver-agent-" + stdRuntime.GOOS + "-" + stdRuntime.GOARCH
+	wantEntry := platformDir + "/" + driverPackageAgentAssetName("mariadb-driver-agent")
 	if _, ok := entries[wantEntry]; !ok {
 		t.Fatalf("导出包缺少平台条目 %s，实际条目: %v", wantEntry, entries)
 	}
@@ -113,7 +124,7 @@ func TestExportDriverPackageUsesPublicTypeNameForDiros(t *testing.T) {
 
 	entries := readDriverPackageZipEntries(t, target)
 	// diros 对外必须落成 doris：导出包要能直接被发布总包同源的导入路径识别。
-	wantEntry := optionalDriverBundlePlatformDir(stdRuntime.GOOS) + "/doris-driver-agent-" + stdRuntime.GOOS + "-" + stdRuntime.GOARCH
+	wantEntry := optionalDriverBundlePlatformDir(stdRuntime.GOOS) + "/" + driverPackageAgentAssetName("doris-driver-agent")
 	if _, ok := entries[wantEntry]; !ok {
 		t.Fatalf("diros 应导出为 %s，实际条目: %v", wantEntry, entries)
 	}
@@ -136,7 +147,7 @@ func TestExportDriverPackageKeepsMongoV1Suffix(t *testing.T) {
 
 	entries := readDriverPackageZipEntries(t, target)
 	// mongodb v1 必须带 -v1 后缀：漏掉后缀会让导入侧按 v2 的 entry 名查找而报"条目缺失"。
-	wantEntry := optionalDriverBundlePlatformDir(stdRuntime.GOOS) + "/mongodb-driver-agent-v1-" + stdRuntime.GOOS + "-" + stdRuntime.GOARCH
+	wantEntry := optionalDriverBundlePlatformDir(stdRuntime.GOOS) + "/" + driverPackageAgentAssetName("mongodb-driver-agent-v1")
 	if _, ok := entries[wantEntry]; !ok {
 		t.Fatalf("mongodb v1 应导出为 %s，实际条目: %v", wantEntry, entries)
 	}
@@ -606,8 +617,8 @@ func TestExportDriverPackageSelectionKeepsOnlyRequestedDrivers(t *testing.T) {
 
 	entries := readDriverPackageZipEntries(t, target)
 	platformDir := optionalDriverBundlePlatformDir(stdRuntime.GOOS)
-	mariadbEntry := platformDir + "/mariadb-driver-agent-" + stdRuntime.GOOS + "-" + stdRuntime.GOARCH
-	dorisEntry := platformDir + "/doris-driver-agent-" + stdRuntime.GOOS + "-" + stdRuntime.GOARCH
+	mariadbEntry := platformDir + "/" + driverPackageAgentAssetName("mariadb-driver-agent")
+	dorisEntry := platformDir + "/" + driverPackageAgentAssetName("doris-driver-agent")
 	if _, ok := entries[mariadbEntry]; !ok {
 		t.Fatalf("导出包缺少 %s，实际条目: %v", mariadbEntry, entries)
 	}

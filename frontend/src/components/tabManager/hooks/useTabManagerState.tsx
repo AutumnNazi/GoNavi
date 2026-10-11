@@ -49,8 +49,11 @@ import {
   REQUEST_CLOSE_WORKBENCH_TABS_EVENT,
 } from '../../../utils/workbenchTabCloseProtection';
 import { closeConfirmedWorkbenchTabs } from '../tabManagerCloseHelpers';
+import { noteTabSwitchRender } from '../../../utils/tabSwitchProbe';
 
 export const useTabManagerState = () => {
+  // 标签切换探针的渲染计数（默认关闭时为空操作）：统计一次切换内本 hook 的渲染遍数。
+  noteTabSwitchRender('useTabManagerState');
   const tabs = useWorkbenchTabs();
   const detachedWorkbenchWindows = useStore(state => state.detachedWorkbenchWindows);
   const connections = useStore(state => state.connections);

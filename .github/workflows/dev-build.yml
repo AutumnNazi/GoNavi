@@ -1210,6 +1210,7 @@ jobs:
           $sourceExe = (Resolve-Path -LiteralPath $finalExe).Path
           $wxsPath = (Resolve-Path -LiteralPath "..\\windows\\installer.wxs").Path
           $iconPath = (Resolve-Path -LiteralPath "..\\windows\\icon.ico").Path
+          $applyBrandIconScript = (Resolve-Path -LiteralPath "..\\windows\\apply-brand-icon.ps1").Path
           $installMarkerPath = Join-Path $env:RUNNER_TEMP ".gonavi-msi-install"
           Set-Content -LiteralPath $installMarkerPath -Value "MSI" -Encoding ascii -NoNewline
           $installMarkerPath = (Resolve-Path -LiteralPath $installMarkerPath).Path
@@ -1228,6 +1229,7 @@ jobs:
               -d "SourceExe=$sourceExe" `
               -d "InstallMarker=$installMarkerPath" `
               -d "IconPath=$iconPath" `
+              -d "ApplyBrandIconScript=$applyBrandIconScript" `
               -d "LicenseRtf=$licenseRtf" `
               -d "LicenseFile=$licenseFile" `
               -d "NoticeFile=$noticeFile" `

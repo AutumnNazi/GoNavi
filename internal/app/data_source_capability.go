@@ -25,6 +25,7 @@ type DataSourceUICapabilities struct {
 	ExplainDiagnosis               bool `json:"explainDiagnosis"`
 	SQLQueryExport                 bool `json:"sqlQueryExport"`
 	CopyInsert                     bool `json:"copyInsert"`
+	MockData                       bool `json:"mockData"`
 	CopyTable                      bool `json:"copyTable"`
 	CreateDatabase                 bool `json:"createDatabase"`
 	CreateDatabaseCharset          bool `json:"createDatabaseCharset"`
@@ -106,6 +107,7 @@ func dataSourceCapabilityFromDB(capability db.DataSourceCapability) DataSourceCa
 			ExplainDiagnosis:               capability.UI.ExplainDiagnosis,
 			SQLQueryExport:                 capability.UI.SQLQueryExport,
 			CopyInsert:                     capability.UI.CopyInsert,
+			MockData:                       capability.UI.MockData,
 			CopyTable:                      capability.UI.CopyTable,
 			CreateDatabase:                 capability.UI.CreateDatabase,
 			CreateDatabaseCharset:          capability.UI.CreateDatabaseCharset,

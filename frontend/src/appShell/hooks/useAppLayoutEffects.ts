@@ -3,6 +3,13 @@ import { message } from 'antd';
 import { withAISettingsLeaveGuard } from '../../utils/aiSettingsLeaveGuard';
 import { shouldSuppressMacNativeEscapeExit } from '../../utils/macWindow';
 import { useStore } from '../../store';
+// 低配/减少动画的降级样式；由本 hook 负责挂 body 类，故样式随本 hook 一起引入。
+import '../../styles/low-spec-runtime.css';
+import {
+  detectRuntimeCapabilityCached,
+  resolveLowSpecModeActive,
+  shouldReduceMotion,
+} from '../../utils/runtimeCapability';
 import {
   isEditableElement,
   isImeComposingKeyEvent,
@@ -127,6 +134,25 @@ export const useAppLayoutEffects = ({
     tokenControlHeight,
     tokenControlHeightSM,
   ]);
+
+  // 低配档位 / 减少动画：单字段 selector 订阅，避免外观对象其它字段变化时连带重渲染整个根组件。
+  const lowSpecModePreference = useStore((state) => state.appearance.lowSpecMode);
+  const reduceMotionPreference = useStore((state) => state.appearance.reduceMotion);
+
+  // 低配/减少动画的 body 类切换放在这里（App.tsx 有未提交 WIP，不在此包白名单内）。
+  // 用 layout effect 而非 effect：首帧就要带上 gn-low-spec，否则低配机会先画一帧带动画/模糊的界面。
+  useLayoutEffect(() => {
+    const lowSpecActive = resolveLowSpecModeActive(
+      lowSpecModePreference,
+      detectRuntimeCapabilityCached().lowSpec,
+    );
+    document.body.classList.toggle('gn-low-spec', lowSpecActive);
+    // 低配档位本身就包含中和动画，故两个类都挂上也无需担心语义冲突。
+    document.body.classList.toggle(
+      'gn-reduce-motion',
+      shouldReduceMotion(reduceMotionPreference, lowSpecActive),
+    );
+  }, [lowSpecModePreference, reduceMotionPreference]);
 
   useEffect(() => {
       const handleOpenShortcutSettingsEvent = () => {

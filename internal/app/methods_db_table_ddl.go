@@ -26,7 +26,10 @@ func (a *App) RenameTable(config connection.ConnectionConfig, dbName string, old
 	}
 	if sql, ok := registryObjectStatement(config.Type, "renameTable", map[string]string{"old": oldTableName, "new": newTableName}); ok {
 		auditSQL = sql
-		return a.execRegistryObjectStatement(config, dbName, sql, "db.backend.message.table_renamed")
+		// 必须赋值给具名返回值再返回：审计的 defer 读的是 result，不是这里的新变量。
+		result = a.execRegistryObjectStatement(config, dbName, sql, "db.backend.message.table_renamed")
+		a.invalidateMetadataAfterDDL(result, config, dbName)
+		return result
 	}
 
 	dbType := resolveDDLDBType(config)
@@ -66,6 +69,8 @@ func (a *App) RenameTable(config connection.ConnectionConfig, dbName string, old
 	if _, err := dbInst.Exec(sql); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
+	// 改名后旧表名不应再出现在树里：立即清空该库元数据，而不是等 45s TTL。
+	a.invalidateMetadata(config, dbName)
 	return connection.QueryResult{Success: true, Message: a.appText("db.backend.message.table_renamed", nil)}
 }
 
@@ -81,7 +86,10 @@ func (a *App) DropTable(config connection.ConnectionConfig, dbName string, table
 	}
 	if sql, ok := registryObjectStatement(config.Type, "dropTable", map[string]string{"table": tableName}); ok {
 		auditSQL = sql
-		return a.execRegistryObjectStatement(config, dbName, sql, "db.backend.message.table_dropped")
+		// 必须赋值给具名返回值再返回：审计的 defer 读的是 result，不是这里的新变量。
+		result = a.execRegistryObjectStatement(config, dbName, sql, "db.backend.message.table_dropped")
+		a.invalidateMetadataAfterDDL(result, config, dbName)
+		return result
 	}
 
 	dbType := resolveDDLDBType(config)
@@ -106,6 +114,7 @@ func (a *App) DropTable(config connection.ConnectionConfig, dbName string, table
 	if _, err := dbInst.Exec(sql); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
+	a.invalidateMetadata(config, dbName)
 	return connection.QueryResult{Success: true, Message: a.appText("db.backend.message.table_dropped", nil)}
 }
 
@@ -121,7 +130,9 @@ func (a *App) DropView(config connection.ConnectionConfig, dbName string, viewNa
 	}
 	if sql, ok := registryObjectStatement(config.Type, "dropView", map[string]string{"view": viewName}); ok {
 		auditSQL = sql
-		return a.execRegistryObjectStatement(config, dbName, sql, "db.backend.message.view_dropped")
+		result = a.execRegistryObjectStatement(config, dbName, sql, "db.backend.message.view_dropped")
+		a.invalidateMetadataAfterDDL(result, config, dbName)
+		return result
 	}
 
 	dbType := resolveDDLDBType(config)
@@ -146,6 +157,7 @@ func (a *App) DropView(config connection.ConnectionConfig, dbName string, viewNa
 	if _, err := dbInst.Exec(sql); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
+	a.invalidateMetadata(config, dbName)
 	return connection.QueryResult{Success: true, Message: a.appText("db.backend.message.view_dropped", nil)}
 }
 
@@ -169,7 +181,9 @@ func (a *App) DropFunction(config connection.ConnectionConfig, dbName string, ro
 		if routineType == "PROCEDURE" {
 			successKey = "db.backend.message.procedure_dropped"
 		}
-		return a.execRegistryObjectStatement(config, dbName, sql, successKey)
+		result = a.execRegistryObjectStatement(config, dbName, sql, successKey)
+		a.invalidateMetadataAfterDDL(result, config, dbName)
+		return result
 	}
 
 	dbType := resolveDDLDBType(config)
@@ -198,6 +212,7 @@ func (a *App) DropFunction(config connection.ConnectionConfig, dbName string, ro
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 
+	a.invalidateMetadata(config, dbName)
 	if routineType == "PROCEDURE" {
 		return connection.QueryResult{Success: true, Message: a.appText("db.backend.message.procedure_dropped", nil)}
 	}
@@ -257,5 +272,6 @@ func (a *App) RenameView(config connection.ConnectionConfig, dbName string, oldN
 	if _, err := dbInst.Exec(sql); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
+	a.invalidateMetadata(config, dbName)
 	return connection.QueryResult{Success: true, Message: a.appText("db.backend.message.view_renamed", nil)}
 }

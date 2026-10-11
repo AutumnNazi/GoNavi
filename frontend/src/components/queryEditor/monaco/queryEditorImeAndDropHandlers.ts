@@ -7,7 +7,7 @@ import type { createQueryEditorAiInlineGhostState } from './queryEditorAiInlineG
 
 export interface CreateQueryEditorImeAndDropHandlersInput {
     editor: Parameters<OnMount>[0];
-    imeCompositionFallbackTimerRef: React.MutableRefObject<number | null>;
+    imeCompositionFallbackTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
     imeCompositionFallbackRef: React.MutableRefObject<{ editor: any; valueBefore: string; selectionBefore: any; positionBefore: { lineNumber: number; column: number; } | null; committedText: string; } | null>;
     lastEditorCursorPositionRef: React.MutableRefObject<any>;
     monaco: Parameters<OnMount>[1];

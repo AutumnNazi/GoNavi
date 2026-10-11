@@ -59,6 +59,12 @@ export function useBrandIconSync(runtimePlatform: string) {
     if (runtimePlatform === 'windows' && windowsBrandIconApplyingRef.current === brandIconId) {
       return;
     }
+    // Windows restores the persisted native icon before the Wails window is
+    // shown. A second bridge call here can race an explicit picker selection
+    // and apply the old icon after the new selection succeeds.
+    if (runtimePlatform === 'windows') {
+      return;
+    }
     // 同一品牌已经成功应用过（选择流程或上一轮同步），brandAssetRevision
     // 的自增不需要再对同一图标重复应用。
     if (runtimePlatform === 'windows' && lastNativeAppliedBrandIdRef.current === brandIconId) {

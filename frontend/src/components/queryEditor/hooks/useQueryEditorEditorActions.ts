@@ -1,5 +1,9 @@
 import { useEffect } from 'react';
 import {
+    useActivationGatedEffect,
+    useQueryEditorActivationRef,
+} from './useActivationGatedEffect';
+import {
     resolveEventTargetNode,
     shouldHandleQueryEditorRunShortcutFallback,
 } from '../QueryEditorHelpers';
@@ -77,9 +81,11 @@ export const useQueryEditorEditorActions = ({
     selectCurrentStatementShortcutBinding, handleSelectCurrentStatement,
     duplicateCurrentLineActionRef, duplicateCurrentLineShortcutBinding, handleDuplicateCurrentLine,
 }: UseQueryEditorEditorActionsInput) => {
-    useEffect(() => {
+    // 非激活 tab 副作用瘦身：window 级 keydown 监听随激活挂/拆，改造前常驻 + 回调内早退。
+    const isActiveRef = useQueryEditorActivationRef(isActive);
+    useActivationGatedEffect(isActive, () => {
         const handleSelectAllInEditor = (event: KeyboardEvent) => {
-            if (!isActive) {
+            if (!isActiveRef.current) {
                 return;
             }
             if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'a') {
@@ -115,16 +121,16 @@ export const useQueryEditorEditorActions = ({
         return () => {
             window.removeEventListener('keydown', handleSelectAllInEditor, true);
         };
-    }, [isActive]);
+    }, []);
 
-    useEffect(() => {
+    useActivationGatedEffect(isActive, () => {
         const binding = runQueryShortcutBinding;
         if (!binding?.enabled || !binding.combo) {
             return;
         }
 
         const handleRunShortcut = (event: KeyboardEvent) => {
-            if (!isActive) {
+            if (!isActiveRef.current) {
                 return;
             }
             if (!isShortcutMatch(event, binding.combo)) {
@@ -149,7 +155,7 @@ export const useQueryEditorEditorActions = ({
         return () => {
             window.removeEventListener('keydown', handleRunShortcut, true);
         };
-    }, [isActive, runQueryShortcutBinding, handleRun]);
+    }, [runQueryShortcutBinding, handleRun]);
 
     // Re-register Monaco internal keybinding when runQuery shortcut changes
     useEffect(() => {
@@ -221,7 +227,9 @@ export const useQueryEditorEditorActions = ({
         };
     }, [languagePreference, registerTriggerSqlAiCompletionAction]);
 
-    useEffect(() => {
+    // Monaco 内部的 onKeyDown 也随激活挂/拆：失活期间连 Monaco 的按键分发都不参与，
+    // 改造前是常驻 disposable + 回调内早退。
+    useActivationGatedEffect(isActive, () => {
         triggerSqlAiCompletionKeydownDisposableRef.current?.dispose?.();
         triggerSqlAiCompletionKeydownDisposableRef.current = null;
 
@@ -232,7 +240,7 @@ export const useQueryEditorEditorActions = ({
         }
 
         triggerSqlAiCompletionKeydownDisposableRef.current = editor.onKeyDown((event: any) => {
-            if (!isActive) {
+            if (!isActiveRef.current) {
                 return;
             }
 
@@ -259,7 +267,7 @@ export const useQueryEditorEditorActions = ({
             triggerSqlAiCompletionKeydownDisposableRef.current?.dispose?.();
             triggerSqlAiCompletionKeydownDisposableRef.current = null;
         };
-    }, [isActive, isElasticsearchMode, isPossibleTriggerSqlAiCompletionFallbackEvent, isTriggerSqlAiCompletionShortcutEvent, triggerSqlAiCompletionShortcutBinding]);
+    }, [isElasticsearchMode, isPossibleTriggerSqlAiCompletionFallbackEvent, isTriggerSqlAiCompletionShortcutEvent, triggerSqlAiCompletionShortcutBinding]);
 
     useEffect(() => {
         if (runQueryActionRef.current) {

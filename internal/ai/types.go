@@ -157,6 +157,10 @@ type ProviderConfig struct {
 	// 三个 CLI 两两不同，Codex 还会按模型变化，因此不共用同一个枚举。
 	// 空值表示沿用该 CLI 自身的默认档位，不下发任何档位参数。
 	Effort string `json:"effort,omitempty"`
+	// HeaderTimeoutSeconds 覆盖等待上游响应头的时间，0 表示用 provider 默认值。
+	// 托管的内置模型走网关，网关排队 + 冷启动可能明显久于常见上游，需要单独放宽；
+	// 它只影响"等到响应头"这一段，不影响流式正文的读取（正文由请求上下文接管）。
+	HeaderTimeoutSeconds int `json:"headerTimeoutSeconds,omitempty"`
 }
 
 // CLICapabilityView 是按 CLI 的模型/档位能力在前端的只读投影。

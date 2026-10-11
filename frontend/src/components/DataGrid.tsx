@@ -235,7 +235,7 @@ const DataGrid: React.FC<DataGridProps> = ({
       closeDdlView, handleClosePageFind, handleDataGridRootPointerDownCapture, columnIndexMap,
       updateCellSelection, markCellSelectionDeleteEligible, markCellSelectionUserSelection,
   } = useDataGridColumnTitles({
-      appliedFilterConditions, quickWhereCondition, showFilter, onApplyFilter,
+      appliedFilterConditions, quickWhereCondition, showFilter, onApplyFilter, workbenchTabId,
       onApplyQuickWhereCondition, onSort, displayColumnNames, allTableColumnNames, columnMetaMap,
       getColumnFilterType, dbType, darkMode, dataGridFilterMessageApi, translateDataGrid, data,
       isMongoDBConnection, addedRows, exportScope, columnMetaMapByLowerName, foreignKeyMap,
@@ -360,7 +360,7 @@ const DataGrid: React.FC<DataGridProps> = ({
       tableColumns, handleAddRow, copyRowsForPaste, handlePasteCopiedRowsAsNew,
       handleDeleteSelected, handleUndoDeleteSelected, handlePreviewChanges,
   } = useDataGridRowActions({
-      pagination, translateDataGrid, rowNumberColumnWidth, handleResizeStart, handleResizeAutoFit,
+      pagination, canModifyData, translateDataGrid, rowNumberColumnWidth, handleResizeStart, handleResizeAutoFit,
       handleRowNumberClick, handleRowNumberDoubleClick, resolvedShowRowNumberColumn, mergedColumns,
       pinnedLeftColumnNames, selectionColumnWidth, tableViewportWidth, densityParams,
       visibleColumnNames, pendingScrollToBottomRef, setAddedRows, mergedDisplayData,
@@ -380,7 +380,7 @@ const DataGrid: React.FC<DataGridProps> = ({
       handleCopySelectedCellsToClipboard, handleCopyUpdate, handleExportSelected,
       handleV2CellContextMenuAction, handleOpenExportDialog,
   } = useDataGridCommit({
-      connectionId, tableName, dbName, onReload, clearAutoCommitTimer, connections, addedRows,
+      connectionId, tableName, dbName, schemaName, onReload, clearAutoCommitTimer, connections, addedRows,
       setAddedRows, modifiedRows, setModifiedRows, deletedRowKeys, setDeletedRowKeys, baseData,
       effectiveEditLocator, visibleColumnNames, rowKeyStr, normalizeCommitCellValue,
       shouldCommitColumn, rowLocatorMessages, translateDataGrid, dbType, autoCommitFailedTokenRef,
@@ -460,6 +460,7 @@ const DataGrid: React.FC<DataGridProps> = ({
       updateFocusedCell, containerRef, updateCellSelection, activePageFindMatchIndex,
       setActivePageFindMatchIndex, pageFindMatches, normalizedColumnQuickFindText,
       displayColumnNames, setHighlightedColumnName, columnQuickFindHighlightTimerRef,
+      columnMetaMap, columnMetaMapByLowerName,
       externalScrollbarDraggingRef, horizontalScrollVisible, tableScrollTargetsRef,
       pendingTableTargetSyncSourceRef, tableTargetSyncRafRef,
   });
