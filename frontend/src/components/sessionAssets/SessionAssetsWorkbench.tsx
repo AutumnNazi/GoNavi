@@ -201,7 +201,11 @@ export const SessionAssetsWorkbench: React.FC<{
           onQueryChange={(value) => updateFilter({ query: value })}
           onBackupFilterChange={(value) => updateFilter({ backupStatus: value })}
           onSelect={handleSelect}
-          onReload={reload}
+          onReload={() => {
+            reload();
+            // 集成摘要一并刷新：材料库锁释放后黄条随本次点击消除。
+            void refreshAgentIntegrations();
+          }}
         />
         <SessionAssetsListResizeDivider onCommit={handleListResize} />
         {selected || detailLoading ? (

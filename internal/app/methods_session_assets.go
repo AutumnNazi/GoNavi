@@ -126,12 +126,19 @@ func (a *App) SessionAssetsDisable(kind string) (result connection.QueryResult) 
 }
 
 // SessionAssetsListIntegrations 返回主页智能体分组的数据源。材料库尚不存在
-// 时返回空列表而不报错；库被其他实例占用时降级为只读列表并标记
-// libraryLocked，分组照常显示（不静默消失）。
+// 时返回空列表而不报错；服务未打开时先尝试补打开（启动时被其他实例占用、
+// 之后锁已释放的自愈），仍失败才降级为只读列表并标记 libraryLocked，
+// 分组照常显示（不静默消失）。
 func (a *App) SessionAssetsListIntegrations() (result connection.QueryResult) {
 	a.sessionAssetsMu.Lock()
 	service := a.sessionAssets
 	a.sessionAssetsMu.Unlock()
+	if service == nil && sessionAssetsCatalogExists() {
+		// 只对已存在的库补打开：从未启用过不得顺手创建材料库。
+		if reopened, err := a.ensureSessionAssetsService(); err == nil {
+			service = reopened
+		}
+	}
 	if service == nil {
 		if result, ok := a.listIntegrationsReadOnly(); ok {
 			return result
@@ -167,6 +174,18 @@ func summarizeIntegrations(catalog *sessionassets.Catalog, integrations []sessio
 		})
 	}
 	return summaries, nil
+}
+
+// sessionAssetsCatalogExists 报告材料库目录文件是否已存在；从未启用过的
+// 安装没有该文件，任何路径都不得顺手创建（与 initializeSessionAssets 同一
+// 判定基准）。
+func sessionAssetsCatalogExists() bool {
+	materialsRoot, err := appdata.ResolveSessionAssetsDirectory(appdata.MustResolveActiveRoot())
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(filepath.Join(materialsRoot, "catalog.sqlite"))
+	return err == nil
 }
 
 // listIntegrationsReadOnly 在写服务不可用时以只读连接列出集成：
