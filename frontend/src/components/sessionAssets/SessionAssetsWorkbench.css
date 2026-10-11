@@ -223,18 +223,33 @@
 }
 
 /* 紧凑页签：默认样式在本面板里过大（用户反馈）。 */
-/* 页签视觉复用项目现成的 gn-user-mgmt-editor-tabs（用户管理编辑器同款
-   文字页签：透明底、主题色下划线），此处只保留本面板的布局与滚动约束。 */
-.session-assets-detail-tabs {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
+/* 页签视觉复用项目现成的 gn-user-mgmt-editor-tabs（文字页签+主题色下划线），
+   但该套样式面向有外层留白的页面（tab 纵向 padding 12px、nav 白底），在
+   本面板里会形成大白卡且文字贴边；v2 全局还给所有 nav 铺 panel-2 白底。
+   以下用高于两者特异性的选择器收紧为紧凑透明页签。 */
+body[data-ui-version=v2] .session-assets-detail-tabs.gn-user-mgmt-editor-tabs > .ant-tabs-nav {
+  background: transparent !important;
+  margin-bottom: 0 !important;
+  padding: 0 2px;
 }
 
-.session-assets-detail-tabs > .ant-tabs-nav {
-  flex: 0 0 auto;
-  margin-bottom: 0;
+body[data-ui-version=v2] .session-assets-detail-tabs.gn-user-mgmt-editor-tabs > .ant-tabs-nav::before {
+  border-bottom: none !important;
+}
+
+body[data-ui-version=v2] .session-assets-detail-tabs.gn-user-mgmt-editor-tabs > .ant-tabs-nav .ant-tabs-tab {
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 0 18px 0 0 !important;
+  padding: 5px 2px !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+body[data-ui-version=v2] .session-assets-detail-tabs.gn-user-mgmt-editor-tabs > .ant-tabs-nav .ant-tabs-tab .ant-tabs-tab-btn {
+  font-size: 13px !important;
+  line-height: 18px !important;
 }
 
 /* 滚动链关键：主工作台页签的 .main-tabs .ant-tabs-content-holder（后代
@@ -446,4 +461,15 @@ body[data-ui-version=v2] .session-assets-detail-tabs .ant-tabs-tabpane {
   .session-assets-workbench-columns.detail-open .session-assets-list {
     display: none;
   }
+}
+
+.session-assets-detail-tabs {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.session-assets-detail-tabs > .ant-tabs-nav {
+  flex: 0 0 auto;
 }
