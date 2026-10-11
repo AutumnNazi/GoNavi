@@ -143,7 +143,7 @@ export const SessionAssetDetailPanel: React.FC<{
 
       <Tabs
         size="small"
-        className="session-assets-detail-tabs"
+        className="session-assets-detail-tabs gn-user-mgmt-editor-tabs"
         items={[
           {
             key: 'history',
