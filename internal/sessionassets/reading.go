@@ -124,6 +124,23 @@ func (s *Service) AssetDetail(ctx context.Context, assetID string) (AssetDetail,
 			detail.Missing = manifest.Missing
 		}
 	}
+	// Go nil slice 序列化为 JSON null，前端按数组消费会把 null.length
+	// 读炸（用户实测：材料页签整页崩溃）。这里统一归一为空数组。
+	if detail.MaterialFiles == nil {
+		detail.MaterialFiles = []MaterialFileRecord{}
+	}
+	if detail.Ancestors == nil {
+		detail.Ancestors = []AncestorDependency{}
+	}
+	if detail.Attachments == nil {
+		detail.Attachments = []AttachmentRecord{}
+	}
+	if detail.Missing == nil {
+		detail.Missing = []MissingRecord{}
+	}
+	if detail.SourceRefs == nil {
+		detail.SourceRefs = []SourceRef{}
+	}
 	jobs, err := s.catalog.ListCaptureJobs(ctx, assetID)
 	if err == nil && len(jobs) > 5 {
 		jobs = jobs[:5]

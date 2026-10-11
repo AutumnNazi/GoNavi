@@ -117,3 +117,33 @@ func TestAssetDetailMissingShowsNothingReadable(t *testing.T) {
 		t.Fatalf("bare asset must not offer readable history: %+v", detail)
 	}
 }
+
+// 旧构建写出的清单可能缺 files/ancestors 等键：解码后是 nil slice，
+// 序列化为 JSON null 会把前端材料页签读炸（用户实测整页崩溃）。
+// AssetDetail 必须把它们归一为空数组。
+func TestAssetDetailNormalizesNullCollections(t *testing.T) {
+	service := newTestService(t)
+	ctx := context.Background()
+	_, sourceID := enableCodex(t, service)
+	source, err := service.catalog.GetSource(ctx, sourceID)
+	if err != nil {
+		t.Fatalf("load source: %v", err)
+	}
+	asset, _ := syncArchivedAsset(t, service, source, "thread-null-collections")
+
+	manifestPath := filepath.Join(service.paths.GenerationDir(asset.ID, asset.LatestGenerationID), manifestFileName)
+	if err := os.WriteFile(manifestPath, []byte(`{"formatVersion":1,"generationId":"`+asset.LatestGenerationID+`","assetId":"`+asset.ID+`"}`), 0o600); err != nil {
+		t.Fatalf("rewrite manifest: %v", err)
+	}
+
+	detail, err := service.AssetDetail(ctx, asset.ID)
+	if err != nil {
+		t.Fatalf("detail: %v", err)
+	}
+	if detail.MaterialFiles == nil || detail.Ancestors == nil || detail.Attachments == nil || detail.Missing == nil || detail.SourceRefs == nil || detail.Jobs == nil {
+		t.Fatalf("detail collections must be non-nil after normalization: %+v", detail)
+	}
+	if len(detail.MaterialFiles) != 0 || len(detail.Ancestors) != 0 || len(detail.Attachments) != 0 || len(detail.Missing) != 0 {
+		t.Fatalf("normalized collections must be empty: %+v", detail)
+	}
+}

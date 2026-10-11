@@ -154,6 +154,27 @@ describe('SessionAssetsWorkbench', () => {
     expect(() => tree.root.find((node) => node.props.className === 'session-assets-row-preview')).toThrow();
   });
 
+  it('renders the materials view without crashing when collections arrive as null', async () => {
+    const api = buildApi({
+      getAssetDetail: vi.fn(async () => buildDetail({
+        hasBackup: true,
+        materialFiles: null,
+        ancestors: null,
+        attachments: null,
+        missing: null,
+      })),
+    });
+    const tree = await renderWorkbench(api);
+    const row = tree.root.find((node) => node.props.className?.includes?.('session-assets-row'));
+    await act(async () => {
+      row.props.onClick();
+    });
+    await act(async () => {});
+    // antd mock 把两个页签的内容都渲染出来：材料视图必须正常出现而不是
+    // 抛 null.length（用户实测：材料页签整窗崩溃且无法关闭）。
+    expect(tree.root.findByProps({ 'data-session-assets-materials': 'true' })).toBeTruthy();
+  });
+
   it('shows the empty state before a selection and the detail after clicking a row', async () => {
     const api = buildApi();
     const tree = await renderWorkbench(api);
