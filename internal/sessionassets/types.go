@@ -157,14 +157,16 @@ type Source struct {
 // Asset 是 GoNavi 管理的会话资产逻辑记录。native_thread_id 只在来源内
 // 唯一，不是跨主机全局身份；备份相关字段是可重建投影，以提交清单为准。
 type Asset struct {
-	ID                 string `json:"id"`
-	IntegrationID      string `json:"integrationId"`
-	OriginIdentityKey  string `json:"originIdentityKey"`
-	NativeThreadID     string `json:"nativeThreadId"`
-	Title              string `json:"title"`
-	ProjectDir         string `json:"projectDir"`
-	Provider           string `json:"provider"`
-	Model              string `json:"model"`
+	ID                string `json:"id"`
+	IntegrationID     string `json:"integrationId"`
+	OriginIdentityKey string `json:"originIdentityKey"`
+	NativeThreadID    string `json:"nativeThreadId"`
+	Title             string `json:"title"`
+	ProjectDir        string `json:"projectDir"`
+	Provider          string `json:"provider"`
+	Model             string `json:"model"`
+	// 最后一次用户输入预览：来源扫描时从原记录尾部提取，列表副标题用。
+	LastUserPreview    string `json:"lastUserPreview"`
 	CreatedAt          int64  `json:"createdAt"`
 	UpdatedAt          int64  `json:"updatedAt"`
 	FirstSeenAt        int64  `json:"firstSeenAt"`

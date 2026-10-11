@@ -134,6 +134,37 @@ func TestSyncSourceBackfillsArchivedSessions(t *testing.T) {
 	}
 }
 
+// 同步链路把最后一条用户输入预览写入资产投影，并出现在列表视图。
+func TestSyncSourceStoresLastUserPreview(t *testing.T) {
+	service := newTestService(t)
+	ctx := context.Background()
+	integrationID, sourceID := enableCodex(t, service)
+	source, err := service.catalog.GetSource(ctx, sourceID)
+	if err != nil {
+		t.Fatalf("load source: %v", err)
+	}
+	session := seedDiscovered("thread-preview", `X:\sessions\rollout-preview.jsonl`, false)
+	session.LastUserPreview = "latest question"
+	discoverer := &fakeDiscoverer{sessions: []DiscoveredSession{session}}
+	if _, err := service.SyncSource(ctx, source, discoverer.scanResult()); err != nil {
+		t.Fatalf("sync source: %v", err)
+	}
+	assets, err := service.catalog.ListAssets(ctx, integrationID)
+	if err != nil || len(assets) != 1 {
+		t.Fatalf("expected single asset, got %d (%v)", len(assets), err)
+	}
+	if assets[0].LastUserPreview != "latest question" {
+		t.Fatalf("asset preview = %q, want %q", assets[0].LastUserPreview, "latest question")
+	}
+	views, _, err := service.ListAssetsView(ctx, integrationID, AssetFilter{})
+	if err != nil || len(views) != 1 {
+		t.Fatalf("expected single view, got %d (%v)", len(views), err)
+	}
+	if views[0].LastUserPreview != "latest question" {
+		t.Fatalf("view preview = %q, want %q", views[0].LastUserPreview, "latest question")
+	}
+}
+
 func TestSyncSourceDoesNotDuplicateJobs(t *testing.T) {
 	service := newTestService(t)
 	ctx := context.Background()

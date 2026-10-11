@@ -26,6 +26,7 @@ type AssetInput struct {
 	ProjectDir         string
 	Provider           string
 	Model              string
+	LastUserPreview    string
 	CreatedAt          int64
 	UpdatedAt          int64
 	ForkParentThreadID string
@@ -101,15 +102,17 @@ func insertAssetTx(ctx context.Context, tx *sql.Tx, input AssetInput, now int64)
 	asset := Asset{
 		ID: id, IntegrationID: input.IntegrationID, OriginIdentityKey: input.OriginIdentityKey, NativeThreadID: input.NativeThreadID,
 		Title: input.Title, ProjectDir: input.ProjectDir, Provider: input.Provider, Model: input.Model,
-		CreatedAt: sessionCreated, UpdatedAt: sessionUpdated,
+		LastUserPreview: input.LastUserPreview,
+		CreatedAt:       sessionCreated, UpdatedAt: sessionUpdated,
 		FirstSeenAt: now, LastSeenAt: now, ForkParentThreadID: input.ForkParentThreadID,
 		BackupStatus: string(BackupStatusNone), MaterialStatus: string(MaterialStatusNotPrepared),
 	}
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO assets (id, integration_id, origin_identity_key, native_thread_id, title, project_dir, provider, model,
-		   created_at, updated_at, first_seen_at, last_seen_at, fork_parent_thread_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		   last_user_preview, created_at, updated_at, first_seen_at, last_seen_at, fork_parent_thread_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		asset.ID, asset.IntegrationID, asset.OriginIdentityKey, asset.NativeThreadID, asset.Title, asset.ProjectDir, asset.Provider, asset.Model,
+		asset.LastUserPreview,
 		asset.CreatedAt, asset.UpdatedAt, asset.FirstSeenAt, asset.LastSeenAt, asset.ForkParentThreadID,
 	)
 	if err != nil {
@@ -132,6 +135,9 @@ func updateAssetMetadataTx(ctx context.Context, tx *sql.Tx, asset *Asset, input 
 	if input.Model != "" {
 		asset.Model = input.Model
 	}
+	if input.LastUserPreview != "" {
+		asset.LastUserPreview = input.LastUserPreview
+	}
 	if input.ForkParentThreadID != "" {
 		asset.ForkParentThreadID = input.ForkParentThreadID
 	}
@@ -145,10 +151,10 @@ func updateAssetMetadataTx(ctx context.Context, tx *sql.Tx, asset *Asset, input 
 		asset.LastSeenAt = now
 	}
 	_, err := tx.ExecContext(ctx,
-		`UPDATE assets SET title = ?, project_dir = ?, provider = ?, model = ?,
+		`UPDATE assets SET title = ?, project_dir = ?, provider = ?, model = ?, last_user_preview = ?,
 		   created_at = ?, updated_at = ?, last_seen_at = ?, fork_parent_thread_id = ?
 		 WHERE id = ?`,
-		asset.Title, asset.ProjectDir, asset.Provider, asset.Model,
+		asset.Title, asset.ProjectDir, asset.Provider, asset.Model, asset.LastUserPreview,
 		asset.CreatedAt, asset.UpdatedAt, asset.LastSeenAt, asset.ForkParentThreadID, asset.ID,
 	)
 	if err != nil {
@@ -252,6 +258,7 @@ func (c *Catalog) UpdateAssetProjection(ctx context.Context, assetID string, bac
 }
 
 const assetSelect = `SELECT id, integration_id, origin_identity_key, native_thread_id, title, project_dir, provider, model,
+	last_user_preview,
 	created_at, updated_at, first_seen_at, last_seen_at, fork_parent_thread_id,
 	backup_status, material_status, latest_generation_id, latest_complete, last_backup_at
 	FROM assets`
@@ -259,6 +266,7 @@ const assetSelect = `SELECT id, integration_id, origin_identity_key, native_thre
 func (a *Asset) scanDest() []any {
 	return []any{
 		&a.ID, &a.IntegrationID, &a.OriginIdentityKey, &a.NativeThreadID, &a.Title, &a.ProjectDir, &a.Provider, &a.Model,
+		&a.LastUserPreview,
 		&a.CreatedAt, &a.UpdatedAt, &a.FirstSeenAt, &a.LastSeenAt, &a.ForkParentThreadID,
 		&a.BackupStatus, &a.MaterialStatus, &a.LatestGenerationID, &a.LatestComplete, &a.LastBackupAt,
 	}

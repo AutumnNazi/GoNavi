@@ -42,21 +42,22 @@ var (
 // SessionMeta 是一次只读发现得到的会话元信息。取不到的字段留空，
 // 不从文件名猜测（需求 §4.2）。
 type SessionMeta struct {
-	ThreadID     string `json:"threadId"`
-	NativePath   string `json:"nativePath"`
-	Archived     bool   `json:"archived"`
-	Title        string `json:"title"`
-	ProjectDir   string `json:"projectDir"`
-	Provider     string `json:"provider"`
-	Model        string `json:"model"`
-	CLIVersion   string `json:"cliVersion"`
-	Originator   string `json:"originator"`
-	EntrySource  string `json:"entrySource"`
-	ThreadSource string `json:"threadSource"`
-	ForkedFromID string `json:"forkedFromId"`
-	ParentThread string `json:"parentThreadId"`
-	ModifiedAt   int64  `json:"modifiedAt"`
-	Size         int64  `json:"size"`
+	ThreadID        string `json:"threadId"`
+	NativePath      string `json:"nativePath"`
+	Archived        bool   `json:"archived"`
+	Title           string `json:"title"`
+	ProjectDir      string `json:"projectDir"`
+	Provider        string `json:"provider"`
+	Model           string `json:"model"`
+	LastUserPreview string `json:"lastUserPreview"`
+	CLIVersion      string `json:"cliVersion"`
+	Originator      string `json:"originator"`
+	EntrySource     string `json:"entrySource"`
+	ThreadSource    string `json:"threadSource"`
+	ForkedFromID    string `json:"forkedFromId"`
+	ParentThread    string `json:"parentThreadId"`
+	ModifiedAt      int64  `json:"modifiedAt"`
+	Size            int64  `json:"size"`
 }
 
 // ScanQuality 区分扫描完整性：错误必须显式返回，调用方据此决定能否
@@ -272,11 +273,34 @@ func readSessionHeader(path string, archived bool) (SessionMeta, error) {
 		return SessionMeta{}, ErrSessionHeaderMissing
 	}
 	meta.Title = extractSessionTitle(path)
+	meta.LastUserPreview = extractLastUserPreview(path)
 	return meta, nil
 }
 
 // titleScanLimit 限制标题扫描的读取量：只看文件开头少量行。
 const titleScanLimit = 256 << 10
+
+// 预览尾部扫描参数：从文件尾向前找最后一条用户输入，窗口从 256KB 起
+// 成倍扩大，最多回看 2MB——末尾若堆着大段助手输出，单窗口会漏。
+const (
+	lastUserPreviewMinSpan = 256 << 10
+	lastUserPreviewMaxSpan = 2 << 20
+)
+
+// previewRuneLimit 是标题与预览统一的最大长度（含省略号）。
+const previewRuneLimit = 80
+
+// isInjectedWrapper 判断一条用户消息是否为工具注入的包装（环境上下文、
+// 指令、推荐插件、浏览器上下文等），并非用户真实输入。标题与预览提取
+// 跳过这些内容；历史阅读按同一清单打 Wrapper 标。
+func isInjectedWrapper(text string) bool {
+	return strings.HasPrefix(text, "# ") ||
+		strings.Contains(text, "<INSTRUCTIONS>") ||
+		strings.Contains(text, "<user_instructions>") ||
+		strings.Contains(text, "<environment_context>") ||
+		strings.HasPrefix(text, "<recommended_plugins>") ||
+		strings.HasPrefix(text, "<in-app-browser-context")
+}
 
 // extractSessionTitle 从 rollout 开头提取第一条用户消息作为标题
 // （只读前 256KB，找不到留空，不猜测）。这是元数据增强，解析失败
@@ -290,48 +314,111 @@ func extractSessionTitle(path string) string {
 	scanner := bufio.NewScanner(io.LimitReader(file, titleScanLimit))
 	scanner.Buffer(make([]byte, 0, maxHistoryLineBytes), maxHistoryLineBytes)
 	for scanner.Scan() {
-		var lineObj rolloutHeader
-		if err := json.Unmarshal(scanner.Bytes(), &lineObj); err != nil {
-			continue
-		}
-		if lineObj.Type != "response_item" {
-			continue
-		}
-		var payload struct {
-			Type    string          `json:"type"`
-			Role    string          `json:"role"`
-			Content json.RawMessage `json:"content"`
-		}
-		if err := json.Unmarshal(lineObj.Payload, &payload); err != nil {
-			continue
-		}
-		if payload.Type != "message" || payload.Role != "user" {
-			continue
-		}
-		var items []struct {
-			Text string `json:"text"`
-		}
-		if err := json.Unmarshal(payload.Content, &items); err != nil {
-			continue
-		}
-		for _, item := range items {
-			text := strings.TrimSpace(item.Text)
-			if text == "" {
-				continue
-			}
-			// 跳过注入的包装：AGENTS.md 指令与环境上下文，取用户真实输入。
-			if strings.HasPrefix(text, "# ") || strings.Contains(text, "<INSTRUCTIONS>") || strings.HasPrefix(text, "<environment_context>") {
-				continue
-			}
-			text = strings.ReplaceAll(text, "\n", " ")
-			runes := []rune(text)
-			if len(runes) > 80 {
-				text = string(runes[:80]) + "…"
-			}
-			return text
+		if text := rolloutUserMessageText(scanner.Bytes()); text != "" {
+			return truncateRunes(text, previewRuneLimit)
 		}
 	}
 	return ""
+}
+
+// extractLastUserPreview 从 rollout 尾部提取最后一条用户真实输入作为
+// 列表预览（找不到留空，不猜测）。与标题一样是元数据增强，解析失败
+// 不影响发现。
+func extractLastUserPreview(path string) string {
+	info, err := os.Stat(path)
+	if err != nil || info.Size() <= 0 {
+		return ""
+	}
+	size := info.Size()
+	for span := int64(lastUserPreviewMinSpan); ; span *= 2 {
+		if span > lastUserPreviewMaxSpan {
+			span = lastUserPreviewMaxSpan
+		}
+		windowStart := size - span
+		if windowStart < 0 {
+			windowStart = 0
+		}
+		if preview := scanUserPreviewWindow(path, windowStart); preview != "" {
+			return truncateRunes(preview, previewRuneLimit)
+		}
+		if windowStart == 0 || span == lastUserPreviewMaxSpan {
+			return ""
+		}
+	}
+}
+
+// scanUserPreviewWindow 扫描 [windowStart, EOF) 区间，返回其中最后一条
+// 用户输入。窗口起点可能落在某一行中间：跳过首个残行，避免解析半行
+// JSON 造成漏判或误判。
+func scanUserPreviewWindow(path string, windowStart int64) string {
+	info, err := os.Stat(path)
+	if err != nil {
+		return ""
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(io.NewSectionReader(file, windowStart, info.Size()-windowStart))
+	scanner.Buffer(make([]byte, 0, maxHistoryLineBytes), maxHistoryLineBytes)
+	preview := ""
+	skipPartial := windowStart > 0
+	for scanner.Scan() {
+		if skipPartial {
+			skipPartial = false
+			continue
+		}
+		if text := rolloutUserMessageText(scanner.Bytes()); text != "" {
+			preview = text
+		}
+	}
+	return preview
+}
+
+// rolloutUserMessageText 从一行 rollout JSON 提取用户真实输入文本；
+// 非消息行、注入的包装返回空串。
+func rolloutUserMessageText(line []byte) string {
+	var lineObj rolloutHeader
+	if err := json.Unmarshal(line, &lineObj); err != nil {
+		return ""
+	}
+	if lineObj.Type != "response_item" {
+		return ""
+	}
+	var payload struct {
+		Type    string          `json:"type"`
+		Role    string          `json:"role"`
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(lineObj.Payload, &payload); err != nil {
+		return ""
+	}
+	if payload.Type != "message" || payload.Role != "user" {
+		return ""
+	}
+	var items []struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(payload.Content, &items); err != nil {
+		return ""
+	}
+	for _, item := range items {
+		text := strings.TrimSpace(item.Text)
+		if text == "" || isInjectedWrapper(text) {
+			continue
+		}
+		return strings.ReplaceAll(text, "\n", " ")
+	}
+	return ""
+}
+
+func truncateRunes(text string, limit int) string {
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return string(runes[:limit]) + "…"
 }
 
 func firstNonEmpty(values ...string) string {
@@ -385,6 +472,7 @@ func toDiscovered(meta SessionMeta) sessionassets.DiscoveredSession {
 		ProjectDir:         meta.ProjectDir,
 		Provider:           meta.Provider,
 		Model:              meta.Model,
+		LastUserPreview:    meta.LastUserPreview,
 		ModifiedAt:         meta.ModifiedAt,
 		Size:               meta.Size,
 	}

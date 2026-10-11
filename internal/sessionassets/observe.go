@@ -161,6 +161,7 @@ func (s *Service) archiveEventhandler(source Source, discoverer SourceDiscoverer
 			ProjectDir:        session.ProjectDir,
 			Provider:          session.Provider,
 			Model:             session.Model,
+			LastUserPreview:   session.LastUserPreview,
 			UpdatedAt:         session.ModifiedAt,
 		})
 		if err != nil {
@@ -194,6 +195,7 @@ func (s *Service) sessionEventHandler(source Source, discoverer SourceDiscoverer
 			ProjectDir:        session.ProjectDir,
 			Provider:          session.Provider,
 			Model:             session.Model,
+			LastUserPreview:   session.LastUserPreview,
 			UpdatedAt:         session.ModifiedAt,
 		})
 	}

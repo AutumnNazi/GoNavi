@@ -35,6 +35,7 @@ const buildAsset = (overrides: Record<string, unknown> = {}) => ({
   projectDir: 'C:/work/demo',
   provider: 'openai',
   model: 'gpt-5',
+  lastUserPreview: 'latest question',
   updatedAt: 1760000000,
   sourceStatus: 'deleted',
   backupStatus: 'verified',
@@ -108,6 +109,49 @@ describe('SessionAssetsWorkbench', () => {
     expect(root.findByProps({ 'data-session-assets-list': 'true' })).toBeTruthy();
     expect(root.findByProps({ 'data-source-state': 'deleted' })).toBeTruthy();
     expect(root.findByProps({ 'data-backup-state': 'verified' })).toBeTruthy();
+  });
+
+  it('renders rows with shortened title, last input preview and project name', async () => {
+    const api = buildApi({
+      listAssets: vi.fn(async () => ({
+        items: [buildAsset({
+          title: '我有一台肖尔的服务器，我想作为我的VPN服务器。你有什么想法吗？这台服务器好像一个月会限制流量',
+          lastUserPreview: '统计一下这台VPN的用量',
+          projectDir: 'E:/Project/CodeUp/kunghim-ops',
+        })],
+        total: 1,
+      })),
+    });
+    const tree = await renderWorkbench(api);
+    const titleNode = tree.root.find((node) => node.props.className === 'session-assets-row-title');
+    expect(titleNode.props.children).toBe('我有一台肖尔的服务器，我想作为我的VPN服务器。');
+    expect(titleNode.props.title).toBe('我有一台肖尔的服务器，我想作为我的VPN服务器。你有什么想法吗？这台服务器好像一个月会限制流量');
+    const previewNode = tree.root.find((node) => node.props.className === 'session-assets-row-preview');
+    expect(previewNode.props.children).toBe('统计一下这台VPN的用量');
+    const projectNode = tree.root.find((node) => node.props.className === 'session-assets-row-project');
+    expect(projectNode.props.children).toBe('kunghim-ops');
+  });
+
+  it('truncates long last-input previews at a fixed length', async () => {
+    const preview = '所以你对这个项目的判断和评价是什么呢，汇总总结一下，生成一份md文档给我，我发给我们的朋友去看。';
+    const api = buildApi({
+      listAssets: vi.fn(async () => ({ items: [buildAsset({ lastUserPreview: preview })], total: 1 })),
+    });
+    const tree = await renderWorkbench(api);
+    const previewNode = tree.root.find((node) => node.props.className === 'session-assets-row-preview');
+    const rendered = String(previewNode.props.children);
+    expect(rendered.endsWith('…')).toBe(true);
+    expect(Array.from(rendered).length).toBeLessThanOrEqual(41);
+    // 完整文本保留在悬停提示里。
+    expect(previewNode.props.title).toBe(preview);
+  });
+
+  it('omits the preview line when the asset has no last user input', async () => {
+    const api = buildApi({
+      listAssets: vi.fn(async () => ({ items: [buildAsset({ lastUserPreview: '' })], total: 1 })),
+    });
+    const tree = await renderWorkbench(api);
+    expect(() => tree.root.find((node) => node.props.className === 'session-assets-row-preview')).toThrow();
   });
 
   it('shows the empty state before a selection and the detail after clicking a row', async () => {

@@ -66,3 +66,57 @@ func TestV3MigrationPreservesRefsAndJobs(t *testing.T) {
 		t.Fatalf("v3 migration lost rows: refs=%d jobs=%d", refCount, jobCount)
 	}
 }
+
+// v4 迁移：存量 v3 库升级后 assets 带 last_user_preview 列，旧行留空，
+// 已有数据不受影响。
+func TestV4MigrationAddsLastUserPreviewColumn(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "catalog.sqlite")
+	db, err := sql.Open("sqlite", "file:"+dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	for _, statement := range catalogMigrations[1] {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatalf("v1 statement: %v", err)
+		}
+	}
+	for _, statement := range catalogMigrations[2] {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatalf("v2 statement: %v", err)
+		}
+	}
+	for _, statement := range catalogMigrations[3] {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatalf("v3 statement: %v", err)
+		}
+	}
+	if _, err := db.Exec(`PRAGMA user_version = 3`); err != nil {
+		t.Fatalf("set version: %v", err)
+	}
+	seed := []string{
+		`INSERT INTO integrations (id, kind, display_name, enabled, created_at, updated_at)
+		 VALUES ('int-1', 'codex', 'Codex', 1, 1, 1)`,
+		`INSERT INTO assets (id, integration_id, origin_identity_key, native_thread_id, title, created_at, updated_at, first_seen_at, last_seen_at)
+		 VALUES ('asset-1', 'int-1', 'dir:c-/x', 'th-1', 'old title', 1, 1, 1, 1)`,
+	}
+	for _, statement := range seed {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+	_ = db.Close()
+
+	catalog, err := OpenCatalog(dbPath)
+	if err != nil {
+		t.Fatalf("open migrated catalog: %v", err)
+	}
+	defer catalog.Close()
+
+	var title, preview string
+	if err := catalog.db.QueryRow(`SELECT title, last_user_preview FROM assets WHERE id = 'asset-1'`).Scan(&title, &preview); err != nil {
+		t.Fatalf("query migrated asset: %v", err)
+	}
+	if title != "old title" || preview != "" {
+		t.Fatalf("migrated row = (%q, %q), want (old title, empty)", title, preview)
+	}
+}

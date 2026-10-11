@@ -18,6 +18,8 @@ export interface SessionAssetView {
   projectDir: string;
   provider: string;
   model: string;
+  /** 最后一次用户输入预览（后端扫描提取；取不到为空串）。 */
+  lastUserPreview: string;
   updatedAt: number;
   sourceStatus: string;
   backupStatus: string;

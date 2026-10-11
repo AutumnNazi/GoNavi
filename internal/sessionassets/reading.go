@@ -27,8 +27,8 @@ type AssetFilter struct {
 	PageSize     int    `json:"pageSize"`
 }
 
-// AssetView 是会话列表条目：主信息为标题，辅助显示项目、provider 与
-// 原记录/备份两个状态维度（交互设计 §4.1）。
+// AssetView 是会话列表条目：主信息为标题，副标题为最后一次用户输入
+// 预览，辅助显示项目、provider 与原记录/备份两个状态维度。
 type AssetView struct {
 	ID                 string `json:"id"`
 	NativeThreadID     string `json:"nativeThreadId"`
@@ -36,6 +36,7 @@ type AssetView struct {
 	ProjectDir         string `json:"projectDir"`
 	Provider           string `json:"provider"`
 	Model              string `json:"model"`
+	LastUserPreview    string `json:"lastUserPreview"`
 	UpdatedAt          int64  `json:"updatedAt"`
 	SourceStatus       string `json:"sourceStatus"`
 	BackupStatus       string `json:"backupStatus"`
@@ -127,6 +128,9 @@ func (s *Service) AssetDetail(ctx context.Context, assetID string) (AssetDetail,
 	if err == nil && len(jobs) > 5 {
 		jobs = jobs[:5]
 	}
+	if jobs == nil {
+		jobs = []CaptureJob{}
+	}
 	detail.Jobs = jobs
 	return detail, nil
 }
@@ -169,6 +173,7 @@ func assetToView(asset Asset) AssetView {
 		ProjectDir:         asset.ProjectDir,
 		Provider:           asset.Provider,
 		Model:              asset.Model,
+		LastUserPreview:    asset.LastUserPreview,
 		UpdatedAt:          asset.UpdatedAt,
 		BackupStatus:       asset.BackupStatus,
 		MaterialStatus:     asset.MaterialStatus,

@@ -159,10 +159,9 @@ func parseHistoryLine(index int, line []byte) (HistoryEntry, error) {
 		entry.Kind = HistoryKindMessage
 		entry.Role = payload.Role
 		entry.Text = extractContentText(payload.Content)
-		// 用户消息里的注入包装（环境上下文/指令）打标，前端按上下文
-		// 条目折叠而非对话气泡显示。
-		if strings.TrimSpace(entry.Role) == "user" &&
-			(strings.Contains(entry.Text, "<environment_context>") || strings.Contains(entry.Text, "<INSTRUCTIONS>") || strings.Contains(entry.Text, "<user_instructions>")) {
+		// 用户消息里的注入包装（环境上下文/指令等）打标，前端按上下文
+		// 条目折叠而非对话气泡显示；清单与标题/预览提取共享。
+		if strings.TrimSpace(entry.Role) == "user" && isInjectedWrapper(entry.Text) {
 			entry.Wrapper = true
 		}
 		if strings.TrimSpace(entry.Role) == "developer" {

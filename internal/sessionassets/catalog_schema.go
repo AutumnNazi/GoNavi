@@ -156,4 +156,9 @@ var catalogMigrations = map[int][]string{
 		`DROP TABLE suppressed_sources`,
 		`ALTER TABLE suppressed_v3 RENAME TO suppressed_sources`,
 	},
+	// 版本 4：资产记录最后一次用户输入预览，列表条目用副标题展示，
+	// 帮助用户按内容识别会话。存量资产留空，下次来源扫描成功后补齐。
+	4: {
+		`ALTER TABLE assets ADD COLUMN last_user_preview TEXT NOT NULL DEFAULT ''`,
+	},
 }

@@ -43,8 +43,10 @@ type DiscoveredSession struct {
 	ProjectDir         string
 	Provider           string
 	Model              string
-	ModifiedAt         int64
-	Size               int64
+	// 最后一次用户输入预览（适配器从原记录尾部提取；取不到留空）。
+	LastUserPreview string
+	ModifiedAt      int64
+	Size            int64
 }
 
 // SourceSyncReport 汇总一次来源核对的结果，保证可解释。
@@ -98,6 +100,7 @@ func (s *Service) SyncSource(ctx context.Context, source Source, result SourceSc
 			ProjectDir:         session.ProjectDir,
 			Provider:           session.Provider,
 			Model:              session.Model,
+			LastUserPreview:    session.LastUserPreview,
 			UpdatedAt:          session.ModifiedAt,
 		})
 		if err != nil {

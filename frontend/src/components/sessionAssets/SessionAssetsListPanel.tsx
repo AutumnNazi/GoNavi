@@ -3,10 +3,11 @@ import { Empty, Input, Select, Spin, Tooltip } from 'antd';
 import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { t } from '../../i18n';
 import type { SessionAssetView } from './sessionAssetsApi';
+import { projectDisplayName, shortenSessionPreview, shortenSessionTitle } from './sessionAssetRow';
 
 /**
- * 会话列表面板：主信息为标题，辅助显示项目、provider 与原记录/备份
- * 两个状态维度（交互设计 §4.1）。不默认展开内部 ID。
+ * 会话列表面板：主信息为截断后的标题，副标题为最后一次用户输入预览，
+ * 辅助显示项目名与原记录/备份两个状态维度。不默认展开内部 ID。
  */
 export const SessionAssetsListPanel: React.FC<{
   items: SessionAssetView[];
@@ -71,19 +72,26 @@ export const SessionAssetsListPanel: React.FC<{
             }
             onClick={() => onSelect(asset)}
           >
-            <span className="session-assets-row-title" title={asset.title || asset.nativeThreadId}>
-              {asset.title || asset.nativeThreadId}
-            </span>
-            <span className="session-assets-row-meta">
-              <span className="session-assets-row-project">{asset.projectDir || '—'}</span>
-              <span className="session-assets-row-provider">{asset.provider || '—'}</span>
-            </span>
-            <span className="session-assets-row-states">
-              <SourceStateTag asset={asset} />
-              <BackupStateTag asset={asset} />
+            <span className="session-assets-row-top">
+              <span className="session-assets-row-title" title={asset.title || asset.nativeThreadId}>
+                {shortenSessionTitle(asset.title || asset.nativeThreadId)}
+              </span>
               <span className="session-assets-row-time">
                 {asset.updatedAt > 0 ? new Date(asset.updatedAt * 1000).toLocaleDateString() : ''}
               </span>
+            </span>
+            {asset.lastUserPreview ? (
+              <span className="session-assets-row-preview" title={asset.lastUserPreview}>
+                {shortenSessionPreview(asset.lastUserPreview)}
+              </span>
+            ) : null}
+            <span className="session-assets-row-states">
+              <span className="session-assets-row-project" title={asset.projectDir || ''}>
+                {projectDisplayName(asset.projectDir) || '—'}
+              </span>
+              <span className="session-assets-row-provider">{asset.provider || '—'}</span>
+              <SourceStateTag asset={asset} />
+              <BackupStateTag asset={asset} />
             </span>
           </button>
         ))
