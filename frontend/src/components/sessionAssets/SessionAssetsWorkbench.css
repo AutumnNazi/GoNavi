@@ -237,12 +237,29 @@
   margin-bottom: 0;
 }
 
-/* 滚动链关键：content-holder 必须可收缩，否则历史把面板撑爆且无滚动条。 */
-.session-assets-detail-tabs .ant-tabs-content-holder {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
+/* 滚动链关键：主工作台页签的 .main-tabs .ant-tabs-content-holder（后代
+   选择器，overflow:hidden，加载顺序更晚）会命中本面板内层的同名结构，
+   把历史区裁剪成不可滚动。这里以更高优先级逐项夺回：holder 恢复滚动，
+   content/tabpane 恢复自然高度，让 holder 的 scrollHeight 真实增长。 */
+body[data-ui-version=v2] .session-assets-detail-tabs .ant-tabs-content-holder {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto !important;
+  overflow-x: hidden;
   padding: 0 2px;
+}
+
+body[data-ui-version=v2] .session-assets-detail-tabs .ant-tabs-content {
+  flex: 0 0 auto !important;
+  min-height: 0;
+}
+
+body[data-ui-version=v2] .session-assets-detail-tabs .ant-tabs-tabpane {
+  flex: 0 0 auto !important;
+  min-height: 0;
+  overflow: visible !important;
 }
 
 .session-assets-history {
