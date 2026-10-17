@@ -25,7 +25,8 @@ const specsByDialect = new Map<string, DataSourceSpec>();
 
 for (const spec of registrySpecs) {
   specsByCanonicalType.set(spec.type, spec);
-  specsByDialect.set(spec.dialect, spec);
+  // 无驱动类型（XXL-JOB 等专用工作台）的 dialect 为空，不能占用方言索引。
+  if (spec.dialect) specsByDialect.set(spec.dialect, spec);
   for (const name of [spec.type, ...(spec.aliases ?? [])]) {
     canonicalByName.set(normalizeName(name), spec.type);
   }

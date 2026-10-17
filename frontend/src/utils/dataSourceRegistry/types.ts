@@ -8,7 +8,8 @@ export type DataSourceCatalogGroup =
   | 'vector'
   | 'timeseries'
   | 'bigdata'
-  | 'config_center';
+  | 'config_center'
+  | 'task_scheduler';
 
 export type DataSourceAgentBuild = {
   // 代理驱动键：默认代理留空（等同类型名），独立构建档位必填（如 cassandra_legacy）。
