@@ -272,3 +272,11 @@ func (c *Client) stackSnapshot() Stack {
 	defer c.mu.Unlock()
 	return c.stack
 }
+
+// ProtocolFamily reports the detected stack, e.g. "2.x" or "3.3+".
+func (c *Client) ProtocolFamily() string {
+	return c.stackSnapshot().FamilyLabel()
+}
+
+// Connected reports whether the client currently holds a usable session.
+func (c *Client) Connected() bool { return c.isLoggedIn() }

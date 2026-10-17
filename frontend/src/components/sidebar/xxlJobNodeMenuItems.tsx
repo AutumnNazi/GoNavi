@@ -43,7 +43,7 @@ export const buildXxlJobConnectionMenuItems = (
     { type: 'divider' as const },
     {
       key: 'edit',
-      label: t('connection.sidebar.menu.edit_connection'),
+      label: t('sidebar.menu.edit_connection'),
       onClick: () => context.onEditConnection?.(conn),
     },
     {

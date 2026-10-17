@@ -32,6 +32,11 @@ describe('data source registry', () => {
 
   it('declares at most three driver variants with a valid default', () => {
     for (const spec of listDataSourceSpecs()) {
+      // 无驱动类型（XXL-JOB 等专用工作台）没有驱动档位，也不该声明 variants。
+      if (!spec.wire || !spec.dialect) {
+        expect(spec.variants?.items ?? []).toHaveLength(0);
+        continue;
+      }
       const variants = getDataSourceVariants(spec.type);
       expect(variants.length).toBeGreaterThan(0);
       expect(variants.length).toBeLessThanOrEqual(3);

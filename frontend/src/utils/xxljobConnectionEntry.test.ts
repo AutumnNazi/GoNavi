@@ -42,6 +42,6 @@ describe('XXL-JOB 连接入口', () => {
 
   it('提供带 context-path 的示例', () => {
     expect(getUriPlaceholder('xxljob')).toContain('8080');
-    expect(getConnectionParamsPlaceholder('xxljob')).toContain('contextPath=');
+    expect(getConnectionParamsPlaceholder('xxljob', 'mysql')).toContain('contextPath=');
   });
 });
