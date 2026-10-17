@@ -38,6 +38,12 @@ func (t *FlexTime) UnmarshalJSON(data []byte) error {
 			*t = FlexTime(raw)
 			return nil
 		}
+		// "Never triggered" arrives as epoch 0; showing 1970 would read like a
+		// real schedule that happened.
+		if millis <= 0 {
+			*t = ""
+			return nil
+		}
 		*t = FlexTime(time.UnixMilli(millis).Format(TimeFormat))
 		return nil
 	}
@@ -55,14 +61,46 @@ type PageResult[T any] struct {
 
 // JobGroup is one registered (or manually entered) executor.
 type JobGroup struct {
-	ID           int            `json:"id"`
-	AppName      string         `json:"appName"`
-	Title        string         `json:"title"`
-	AddressType  int            `json:"addressType"`
-	AddressList  string         `json:"addressList"`
-	AccessToken  string         `json:"accessToken,omitempty"`
-	UpdateTime   FlexTime       `json:"updateTime,omitempty"`
-	RegistryList []RegistryNode `json:"registryList,omitempty"`
+	ID           int          `json:"id"`
+	AppName      string       `json:"appName"`
+	Title        string       `json:"title"`
+	AddressType  int          `json:"addressType"`
+	AddressList  string       `json:"addressList"`
+	AccessToken  string       `json:"accessToken,omitempty"`
+	UpdateTime   FlexTime     `json:"updateTime,omitempty"`
+	RegistryList RegistryList `json:"registryList,omitempty"`
+}
+
+// RegistryList tolerates both shapes the admin uses for the same field: the
+// executor listing answers with plain executor addresses on every version we
+// support, while the registry bookkeeping carries objects. Decoding strictly to
+// one shape fails the whole row and takes the page down with it.
+type RegistryList []RegistryNode
+
+func (l *RegistryList) UnmarshalJSON(data []byte) error {
+	if trimmed := strings.TrimSpace(string(data)); trimmed == "" || trimmed == "null" {
+		*l = nil
+		return nil
+	}
+	var items []json.RawMessage
+	if err := json.Unmarshal(data, &items); err != nil {
+		return err
+	}
+	nodes := make(RegistryList, 0, len(items))
+	for _, item := range items {
+		var address string
+		if err := json.Unmarshal(item, &address); err == nil {
+			nodes = append(nodes, RegistryNode{RegistryKey: address})
+			continue
+		}
+		var node RegistryNode
+		if err := json.Unmarshal(item, &node); err != nil {
+			return err
+		}
+		nodes = append(nodes, node)
+	}
+	*l = nodes
+	return nil
 }
 
 // DisplayName prefers the 3.5.0 `name` field and falls back to `title`.

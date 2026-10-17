@@ -72,8 +72,8 @@ func (c *Client) DetectPagingAndFields(ctx context.Context) (PaginationFamily, F
 	if decodeErr != nil {
 		return "", "", localizedXxlJobErrorWithCause("xxljob.backend.error.invalid_response", nil, decodeErr)
 	}
-	if envelope.Code != http.StatusOK {
-		return "", "", remoteError(envelope.Code, envelope.text())
+	if !envelope.succeeded() {
+		return "", "", remoteError(envelope.code(), envelope.text())
 	}
 
 	pagination, fields := classifyPagePayload(envelope.payload())

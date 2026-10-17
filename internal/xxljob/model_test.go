@@ -2,6 +2,7 @@ package xxljob
 
 import (
 	"encoding/json"
+	"net/http"
 	"testing"
 )
 
@@ -15,7 +16,10 @@ func TestFlexTimeNormalizesEveryShape(t *testing.T) {
 		{"formatted string", `"2026-10-17 10:00:00"`, "2026-10-17 10:00:00"},
 		{"null", `null`, ""},
 		{"empty string", `""`, ""},
-		{"zero", `0`, "1970-01-01 08:00:00"},
+		// 2.x sends epoch 0 for "never triggered"; rendering it as a real
+		// 1970 date would read like a schedule that actually happened.
+		{"zero", `0`, ""},
+		{"negative", `-1`, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -223,5 +227,71 @@ func TestClassifyPagePayload(t *testing.T) {
 				t.Errorf("fields = %q, want %q", fields, tc.wantFields)
 			}
 		})
+	}
+}
+
+func TestJobGroupAcceptsBothRegistryListShapes(t *testing.T) {
+	// 2.5.0 and 3.5.0 alike answer the executor listing with plain addresses,
+	// while registry bookkeeping carries objects. A strict decode of one shape
+	// fails the whole row and takes the executor page down with it.
+	cases := []struct {
+		name string
+		raw  string
+		want RegistryList
+	}{
+		{
+			name: "address strings",
+			raw:  `{"id":1,"registryList":["http://10.0.0.1:9999/","http://10.0.0.2:9999/"]}`,
+			want: RegistryList{{RegistryKey: "http://10.0.0.1:9999/"}, {RegistryKey: "http://10.0.0.2:9999/"}},
+		},
+		{
+			name: "registry objects",
+			raw:  `{"id":1,"registryList":[{"registryGroup":"g","registryKey":"http://10.0.0.1:9999/"}]}`,
+			want: RegistryList{{RegistryGroup: "g", RegistryKey: "http://10.0.0.1:9999/"}},
+		},
+		{name: "null", raw: `{"id":1,"registryList":null}`, want: nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var group JobGroup
+			if err := json.Unmarshal([]byte(tc.raw), &group); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if len(group.RegistryList) != len(tc.want) {
+				t.Fatalf("registry length = %d, want %d", len(group.RegistryList), len(tc.want))
+			}
+			for i := range tc.want {
+				if group.RegistryList[i] != tc.want[i] {
+					t.Errorf("registry[%d] = %+v, want %+v", i, group.RegistryList[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestAdminEnvelopeTreatsABarePayloadAsSuccess(t *testing.T) {
+	// The 2.x paging routes answer with the DataTables object at the top level
+	// and no envelope at all; reading that as code 0 reported a healthy
+	// connection as an admin error.
+	var bare adminEnvelope
+	if err := json.Unmarshal([]byte(`{"recordsTotal":2,"data":[]}`), &bare); err != nil {
+		t.Fatalf("unmarshal bare payload: %v", err)
+	}
+	if !bare.succeeded() {
+		t.Error("a payload without an envelope should count as success")
+	}
+	if bare.code() != http.StatusOK {
+		t.Errorf("code() = %d, want %d", bare.code(), http.StatusOK)
+	}
+
+	var failed adminEnvelope
+	if err := json.Unmarshal([]byte(`{"code":500,"msg":"boom"}`), &failed); err != nil {
+		t.Fatalf("unmarshal failure envelope: %v", err)
+	}
+	if failed.succeeded() {
+		t.Error("code 500 should not count as success")
+	}
+	if failed.code() != 500 {
+		t.Errorf("code() = %d, want 500", failed.code())
 	}
 }

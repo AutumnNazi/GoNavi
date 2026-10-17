@@ -133,17 +133,17 @@ func (c *Client) tryLogin(ctx context.Context, family LoginFamily) error {
 	if decodeErr != nil {
 		return localizedXxlJobErrorWithCause("xxljob.backend.error.invalid_response", nil, decodeErr)
 	}
-	if envelope.Code == http.StatusOK {
+	if envelope.succeeded() {
 		return nil
 	}
 	message := envelope.text()
 	if isCredentialRejection(message) {
 		return &SessionExpiredError{Cause: errors.New(redactDiagnosticText(message))}
 	}
-	if sessionExpiredFromEnvelope(envelope.Code, message) {
+	if sessionExpiredFromEnvelope(envelope.code(), message) {
 		return &SessionExpiredError{}
 	}
-	return remoteError(envelope.Code, message)
+	return remoteError(envelope.code(), message)
 }
 
 func isCredentialRejection(message string) bool {

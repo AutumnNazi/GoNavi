@@ -74,11 +74,29 @@ func (s Stack) usesBatchIDs() bool { return s.Pagination == PageOffsetPageSize }
 // adminEnvelope decodes both response shells: ReturnT{code,msg,content} up to
 // 3.2.x and Response{code,msg,data,success} from 3.3.0.
 type adminEnvelope struct {
-	Code    int             `json:"code"`
+	// Code is a pointer because not every route answers with an envelope: the
+	// 2.x paging endpoints return the DataTables object at the top level and
+	// carry no code at all. A plain int would read that as code 0 and report a
+	// healthy connection as an admin error.
+	Code    *int            `json:"code"`
 	Msg     string          `json:"msg"`
 	Message string          `json:"message"`
 	Content json.RawMessage `json:"content"`
 	Data    json.RawMessage `json:"data"`
+}
+
+// succeeded reports whether the response is a success. An absent code means the
+// route answered with a bare payload rather than an envelope, which is a
+// success as far as every version we support is concerned.
+func (e adminEnvelope) succeeded() bool { return e.Code == nil || *e.Code == http.StatusOK }
+
+// code returns the envelope code, treating a payload without an envelope as
+// the success it is.
+func (e adminEnvelope) code() int {
+	if e.Code == nil {
+		return http.StatusOK
+	}
+	return *e.Code
 }
 
 func (e adminEnvelope) text() string {
@@ -319,17 +337,17 @@ func (c *Client) callAPI(
 			return adminEnvelope{}, localizedXxlJobErrorWithCause(
 				"xxljob.backend.error.invalid_response", nil, decodeErr)
 		}
-		if envelope.Code == http.StatusOK {
+		if envelope.succeeded() {
 			return envelope, nil
 		}
-		if sessionExpiredFromEnvelope(envelope.Code, envelope.text()) {
+		if sessionExpiredFromEnvelope(envelope.code(), envelope.text()) {
 			if attempt == 0 {
 				c.invalidateSession()
 				continue
 			}
 			return adminEnvelope{}, &SessionExpiredError{}
 		}
-		return adminEnvelope{}, remoteError(envelope.Code, envelope.text())
+		return adminEnvelope{}, remoteError(envelope.code(), envelope.text())
 	}
 	return adminEnvelope{}, &SessionExpiredError{}
 }
