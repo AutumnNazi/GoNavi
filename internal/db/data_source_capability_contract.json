@@ -1552,6 +1552,7 @@
                     "presto":  "sql-trino",
                     "tidb":  "sql-mysql",
                     "nacos":  "dedicated-workbench",
-                    "jvm":  "dedicated-workbench"
+                    "jvm":  "dedicated-workbench",
+                    "xxljob":  "dedicated-workbench"
                 }
 }

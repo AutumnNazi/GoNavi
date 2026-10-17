@@ -1741,3 +1741,55 @@ export function VerifySQLAuditIntegrity() {
 export function WriteSQLFile(arg1, arg2) {
   return window['go']['app']['App']['WriteSQLFile'](arg1, arg2);
 }
+
+export function XxlJobConnect(arg1) {
+  return window['go']['app']['App']['XxlJobConnect'](arg1);
+}
+
+export function XxlJobDisconnect(arg1) {
+  return window['go']['app']['App']['XxlJobDisconnect'](arg1);
+}
+
+export function XxlJobListJobGroups(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobListJobGroups'](arg1, arg2);
+}
+
+export function XxlJobListJobs(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobListJobs'](arg1, arg2);
+}
+
+export function XxlJobListLogs(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobListLogs'](arg1, arg2);
+}
+
+export function XxlJobLoadJobGroup(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobLoadJobGroup'](arg1, arg2);
+}
+
+export function XxlJobLogDetail(arg1, arg2, arg3) {
+  return window['go']['app']['App']['XxlJobLogDetail'](arg1, arg2, arg3);
+}
+
+export function XxlJobLogKill(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobLogKill'](arg1, arg2);
+}
+
+export function XxlJobNextTriggerTimes(arg1, arg2, arg3) {
+  return window['go']['app']['App']['XxlJobNextTriggerTimes'](arg1, arg2, arg3);
+}
+
+export function XxlJobStartJobs(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobStartJobs'](arg1, arg2);
+}
+
+export function XxlJobStopJobs(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobStopJobs'](arg1, arg2);
+}
+
+export function XxlJobTestConnection(arg1) {
+  return window['go']['app']['App']['XxlJobTestConnection'](arg1);
+}
+
+export function XxlJobTriggerJob(arg1, arg2, arg3) {
+  return window['go']['app']['App']['XxlJobTriggerJob'](arg1, arg2, arg3);
+}

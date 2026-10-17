@@ -4172,7 +4172,7 @@
   "connection.sidebar.menu.current": "Aktuell",
   "connection.sidebar.menu.delete": "Verbindung löschen",
   "connection.sidebar.menu.disconnect": "Verbindung trennen",
-	"connection.sidebar.menu.groupSection": "In Verbindungsgruppe verschieben",
+  "connection.sidebar.menu.groupSection": "In Verbindungsgruppe verschieben",
   "connection.sidebar.menu.hostBadge": "HOST",
   "connection.sidebar.menu.hostFallback": "Adresse nicht konfiguriert",
   "connection.sidebar.menu.moveOutTag": "Aus Tag entfernen",
@@ -12827,5 +12827,13 @@
   "xxljob.backend.error.ssh_tunnel_failed": "XXL-JOB-SSH-Tunnel konnte nicht erstellt werden: {{detail}}",
   "xxljob.backend.error.tls_setup_failed": "TLS-Einrichtung fehlgeschlagen: {{detail}}",
   "xxljob.backend.error.validation": "Ungültiger Parameter: {{field}}{{detail}}",
-  "xxljob.backend.error.version_probe_failed": "Version der Verwaltung konnte nicht erkannt werden{{location}}: {{detail}}"
+  "xxljob.backend.error.version_probe_failed": "Version der Verwaltung konnte nicht erkannt werden{{location}}: {{detail}}",
+  "xxljob.backend.message.connect_success": "Verbindung erfolgreich",
+  "xxljob.backend.message.trigger_success": "Einmaliger Lauf ausgelöst",
+  "xxljob.backend.message.start_success": "Gestartet",
+  "xxljob.backend.message.stop_success": "Gestoppt",
+  "xxljob.backend.message.kill_success": "Laufenden Auftrag beendet",
+  "xxljob.backend.error.read_only": "Diese Verbindung ist schreibgeschützt; Start, Stop, Auslösen und Beenden sind gesperrt",
+  "connection_modal.step1.group.task_scheduler": "Aufgabenplanung",
+  "connection_modal.step1.hint.xxljob": "XXL-JOB-Verwaltung: Executoren, Aufgaben und Zeitpläne"
 }

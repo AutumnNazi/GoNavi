@@ -4172,7 +4172,7 @@
   "connection.sidebar.menu.current": "目前",
   "connection.sidebar.menu.delete": "刪除連線",
   "connection.sidebar.menu.disconnect": "中斷連線",
-	"connection.sidebar.menu.groupSection": "移動到連線分組",
+  "connection.sidebar.menu.groupSection": "移動到連線分組",
   "connection.sidebar.menu.hostBadge": "HOST",
   "connection.sidebar.menu.hostFallback": "位址未設定",
   "connection.sidebar.menu.moveOutTag": "移出標籤",
@@ -12827,5 +12827,13 @@
   "xxljob.backend.error.ssh_tunnel_failed": "建立 XXL-JOB SSH 通道失敗：{{detail}}",
   "xxljob.backend.error.tls_setup_failed": "TLS 設定失敗：{{detail}}",
   "xxljob.backend.error.validation": "參數無效：{{field}}{{detail}}",
-  "xxljob.backend.error.version_probe_failed": "無法辨識調度中心版本{{location}}：{{detail}}"
+  "xxljob.backend.error.version_probe_failed": "無法辨識調度中心版本{{location}}：{{detail}}",
+  "xxljob.backend.message.connect_success": "連線成功",
+  "xxljob.backend.message.trigger_success": "已觸發一次執行",
+  "xxljob.backend.message.start_success": "已啟動",
+  "xxljob.backend.message.stop_success": "已停止",
+  "xxljob.backend.message.kill_success": "已終止執行中的任務",
+  "xxljob.backend.error.read_only": "目前連線為唯讀，禁止啟停、執行一次或終止任務",
+  "connection_modal.step1.group.task_scheduler": "任務排程",
+  "connection_modal.step1.hint.xxljob": "XXL-JOB 調度中心：執行器、工作與排程日誌"
 }

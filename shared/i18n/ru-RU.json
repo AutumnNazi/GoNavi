@@ -4172,7 +4172,7 @@
   "connection.sidebar.menu.current": "Текущий",
   "connection.sidebar.menu.delete": "Удалить подключение",
   "connection.sidebar.menu.disconnect": "Отключить",
-	"connection.sidebar.menu.groupSection": "Переместить в группу подключений",
+  "connection.sidebar.menu.groupSection": "Переместить в группу подключений",
   "connection.sidebar.menu.hostBadge": "HOST",
   "connection.sidebar.menu.hostFallback": "Адрес не указан",
   "connection.sidebar.menu.moveOutTag": "Убрать из тега",
@@ -12827,5 +12827,13 @@
   "xxljob.backend.error.ssh_tunnel_failed": "Не удалось создать SSH-туннель XXL-JOB: {{detail}}",
   "xxljob.backend.error.tls_setup_failed": "Ошибка настройки TLS: {{detail}}",
   "xxljob.backend.error.validation": "Недопустимый параметр: {{field}}{{detail}}",
-  "xxljob.backend.error.version_probe_failed": "Не удалось определить версию панели управления{{location}}: {{detail}}"
+  "xxljob.backend.error.version_probe_failed": "Не удалось определить версию панели управления{{location}}: {{detail}}",
+  "xxljob.backend.message.connect_success": "Подключение выполнено",
+  "xxljob.backend.message.trigger_success": "Один запуск инициирован",
+  "xxljob.backend.message.start_success": "Запущено",
+  "xxljob.backend.message.stop_success": "Остановлено",
+  "xxljob.backend.message.kill_success": "Выполняющаяся задача остановлена",
+  "xxljob.backend.error.read_only": "Соединение доступно только для чтения; запуск, остановка, выполнение и прерывание запрещены",
+  "connection_modal.step1.group.task_scheduler": "Планировщики задач",
+  "connection_modal.step1.hint.xxljob": "Панель XXL-JOB: исполнители, задачи и журнал запусков"
 }

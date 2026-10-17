@@ -4165,7 +4165,7 @@
   "connection.sidebar.menu.current": "当前",
   "connection.sidebar.menu.delete": "删除连接",
   "connection.sidebar.menu.disconnect": "断开连接",
-	"connection.sidebar.menu.groupSection": "移动到连接分组",
+  "connection.sidebar.menu.groupSection": "移动到连接分组",
   "connection.sidebar.menu.hostBadge": "HOST",
   "connection.sidebar.menu.hostFallback": "未配置地址",
   "connection.sidebar.menu.moveOutTag": "移出标签",
@@ -12827,5 +12827,13 @@
   "xxljob.backend.error.ssh_tunnel_failed": "创建 XXL-JOB SSH 隧道失败：{{detail}}",
   "xxljob.backend.error.tls_setup_failed": "TLS 配置失败：{{detail}}",
   "xxljob.backend.error.validation": "参数无效：{{field}}{{detail}}",
-  "xxljob.backend.error.version_probe_failed": "无法识别调度中心版本{{location}}：{{detail}}"
+  "xxljob.backend.error.version_probe_failed": "无法识别调度中心版本{{location}}：{{detail}}",
+  "xxljob.backend.message.connect_success": "连接成功",
+  "xxljob.backend.message.trigger_success": "已触发一次执行",
+  "xxljob.backend.message.start_success": "已启动",
+  "xxljob.backend.message.stop_success": "已停止",
+  "xxljob.backend.message.kill_success": "已终止运行中的任务",
+  "xxljob.backend.error.read_only": "当前连接为只读，禁止启停、执行一次或终止任务",
+  "connection_modal.step1.group.task_scheduler": "任务调度",
+  "connection_modal.step1.hint.xxljob": "XXL-JOB 调度中心：执行器、任务与调度日志"
 }

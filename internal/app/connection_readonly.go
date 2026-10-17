@@ -36,6 +36,7 @@ var connectionReadOnlySupportedTypes = map[string]struct{}{
 	"mongodb":       {},
 	"mysql":         {},
 	"nacos":         {},
+	"xxljob":        {},
 	"oceanbase":     {},
 	"opengauss":     {},
 	"oracle":        {},

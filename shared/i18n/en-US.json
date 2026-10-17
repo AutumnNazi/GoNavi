@@ -4172,7 +4172,7 @@
   "connection.sidebar.menu.current": "Current",
   "connection.sidebar.menu.delete": "Delete connection",
   "connection.sidebar.menu.disconnect": "Disconnect",
-	"connection.sidebar.menu.groupSection": "Move to connection group",
+  "connection.sidebar.menu.groupSection": "Move to connection group",
   "connection.sidebar.menu.hostBadge": "HOST",
   "connection.sidebar.menu.hostFallback": "Address not configured",
   "connection.sidebar.menu.moveOutTag": "Remove from tag",
@@ -12827,5 +12827,13 @@
   "xxljob.backend.error.ssh_tunnel_failed": "Failed to create the XXL-JOB SSH tunnel: {{detail}}",
   "xxljob.backend.error.tls_setup_failed": "TLS setup failed: {{detail}}",
   "xxljob.backend.error.validation": "Invalid parameter: {{field}}{{detail}}",
-  "xxljob.backend.error.version_probe_failed": "Could not identify the admin version{{location}}: {{detail}}"
+  "xxljob.backend.error.version_probe_failed": "Could not identify the admin version{{location}}: {{detail}}",
+  "xxljob.backend.message.connect_success": "Connection succeeded",
+  "xxljob.backend.message.trigger_success": "Triggered one run",
+  "xxljob.backend.message.start_success": "Started",
+  "xxljob.backend.message.stop_success": "Stopped",
+  "xxljob.backend.message.kill_success": "Terminated the running task",
+  "xxljob.backend.error.read_only": "This connection is read-only; start, stop, trigger and kill are blocked",
+  "connection_modal.step1.group.task_scheduler": "Task schedulers",
+  "connection_modal.step1.hint.xxljob": "XXL-JOB admin: executors, tasks and schedule logs"
 }

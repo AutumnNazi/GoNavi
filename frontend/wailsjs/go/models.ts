@@ -2146,6 +2146,40 @@ export namespace app {
 		    return a;
 		}
 	}
+	export class XxlJobListQuery {
+	    page: number;
+	    size: number;
+	    jobGroup: number;
+	    triggerStatus: number;
+	    logStatus: number;
+	    jobId: number;
+	    appName: string;
+	    title: string;
+	    name: string;
+	    executorHandler: string;
+	    author: string;
+	    filterTime: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new XxlJobListQuery(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.page = source["page"];
+	        this.size = source["size"];
+	        this.jobGroup = source["jobGroup"];
+	        this.triggerStatus = source["triggerStatus"];
+	        this.logStatus = source["logStatus"];
+	        this.jobId = source["jobId"];
+	        this.appName = source["appName"];
+	        this.title = source["title"];
+	        this.name = source["name"];
+	        this.executorHandler = source["executorHandler"];
+	        this.author = source["author"];
+	        this.filterTime = source["filterTime"];
+	    }
+	}
 
 }
 
@@ -5038,6 +5072,8 @@ export namespace sqlaudit {
 	    source: string;
 	    fromTimestamp: number;
 	    toTimestamp: number;
+	    mcpRequestId: string;
+	    includeMcp: boolean;
 	    executionHistory: boolean;
 	    page: number;
 	    pageSize: number;
@@ -5058,6 +5094,8 @@ export namespace sqlaudit {
 	        this.source = source["source"];
 	        this.fromTimestamp = source["fromTimestamp"];
 	        this.toTimestamp = source["toTimestamp"];
+	        this.mcpRequestId = source["mcpRequestId"];
+	        this.includeMcp = source["includeMcp"];
 	        this.executionHistory = source["executionHistory"];
 	        this.page = source["page"];
 	        this.pageSize = source["pageSize"];
@@ -5285,6 +5323,7 @@ export namespace sync {
 	    mappings?: SyncObjectMapping[];
 	    batchSize?: number;
 	    rowErrorPolicy?: string;
+	    existingTargetInsertWithoutKey?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new SyncConfig(source);
@@ -5310,6 +5349,7 @@ export namespace sync {
 	        this.mappings = this.convertValues(source["mappings"], SyncObjectMapping);
 	        this.batchSize = source["batchSize"];
 	        this.rowErrorPolicy = source["rowErrorPolicy"];
+	        this.existingTargetInsertWithoutKey = source["existingTargetInsertWithoutKey"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

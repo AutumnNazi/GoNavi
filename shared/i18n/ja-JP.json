@@ -4172,7 +4172,7 @@
   "connection.sidebar.menu.current": "現在",
   "connection.sidebar.menu.delete": "接続を削除",
   "connection.sidebar.menu.disconnect": "接続を切断",
-	"connection.sidebar.menu.groupSection": "接続グループへ移動",
+  "connection.sidebar.menu.groupSection": "接続グループへ移動",
   "connection.sidebar.menu.hostBadge": "HOST",
   "connection.sidebar.menu.hostFallback": "アドレス未設定",
   "connection.sidebar.menu.moveOutTag": "タグから外す",
@@ -12827,5 +12827,13 @@
   "xxljob.backend.error.ssh_tunnel_failed": "XXL-JOB SSH トンネルの作成に失敗しました: {{detail}}",
   "xxljob.backend.error.tls_setup_failed": "TLS 設定に失敗しました: {{detail}}",
   "xxljob.backend.error.validation": "パラメータが無効です: {{field}}{{detail}}",
-  "xxljob.backend.error.version_probe_failed": "管理コンソールのバージョンを判別できません{{location}}: {{detail}}"
+  "xxljob.backend.error.version_probe_failed": "管理コンソールのバージョンを判別できません{{location}}: {{detail}}",
+  "xxljob.backend.message.connect_success": "接続に成功しました",
+  "xxljob.backend.message.trigger_success": "1 回実行をトリガーしました",
+  "xxljob.backend.message.start_success": "開始しました",
+  "xxljob.backend.message.stop_success": "停止しました",
+  "xxljob.backend.message.kill_success": "実行中のタスクを終了しました",
+  "xxljob.backend.error.read_only": "この接続は読み取り専用です。開始・停止・実行・終了は使用できません",
+  "connection_modal.step1.group.task_scheduler": "ジョブスケジューラ",
+  "connection_modal.step1.hint.xxljob": "XXL-JOB 管理コンソール：実行エージェント・タスク・実行ログ"
 }
