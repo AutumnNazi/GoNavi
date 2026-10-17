@@ -308,13 +308,39 @@ func (a *App) XxlJobConnect(config connection.ConnectionConfig) connection.Query
 // XxlJobDisconnect drops the cached session for one connection.
 func (a *App) XxlJobDisconnect(config connection.ConnectionConfig) connection.QueryResult {
 	config.Type = "xxljob"
-	key := getXxlJobClientCacheKey(config)
-	xxlJobCacheMu.Lock()
-	client := xxlJobCache[key]
-	delete(xxlJobCache, key)
-	xxlJobCacheMu.Unlock()
-	if client != nil {
-		_ = client.Close()
+	closed := a.releaseXxlJobClientsForConfig(config)
+	return connection.QueryResult{Success: true, Data: map[string]int{"closed": closed}}
+}
+
+// releaseXxlJobClientsForConfig closes every cached client whose identity matches
+// the connection. Secrets are resolved first so a saved connection released from
+// the sidebar (whose config carries secret references, not plaintext) matches the
+// key the client was cached under.
+func (a *App) releaseXxlJobClientsForConfig(config connection.ConnectionConfig) int {
+	resolved, err := a.resolveConnectionSecrets(config)
+	if err != nil {
+		// 密文解析失败的连接不可能有已缓存的会话（缓存 key 由解析后的密文参与计算）。
+		return 0
 	}
-	return connection.QueryResult{Success: true}
+	effective := a.withManagedSSHHostKeyTrustStore(resolved)
+	effective.Type = "xxljob"
+	targetKey := getXxlJobClientCacheKey(effective)
+
+	xxlJobCacheMu.Lock()
+	var victims []*xxljob.Client
+	if client := xxlJobCache[targetKey]; client != nil {
+		delete(xxlJobCache, targetKey)
+		victims = append(victims, client)
+	}
+	xxlJobCacheMu.Unlock()
+
+	closed := 0
+	for _, client := range victims {
+		_ = client.Close()
+		closed++
+	}
+	if closed > 0 {
+		logger.Infof("XxlJobDisconnect 已释放 XXL-JOB 会话：%s 数量=%d", formatXxlJobConnSummary(effective), closed)
+	}
+	return closed
 }

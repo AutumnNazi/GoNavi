@@ -272,6 +272,7 @@ export const useSidebarDatabaseLoader = ({
                     replaceTreeNodeChildren(node.key, buildXxlJobTreeNodes(currentConnection));
                     setLoadedKeys(prev => (prev.includes(loadKey) ? prev : [...prev, loadKey]));
                 }
+                loadingNodesRef.current.delete(loadKey);
                 return;
             }
 

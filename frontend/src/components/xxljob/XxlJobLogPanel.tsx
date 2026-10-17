@@ -13,15 +13,19 @@ import {
 } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { t } from '../../i18n';
+import { useXxlJobLogs } from './hooks/useXxlJobLogs';
+import { toGroupOptions, useXxlJobGroups, type XxlJobGroupOption } from './hooks/useXxlJobGroups';
+import { xxlJobRpc } from './xxljobRpc';
 import {
   LOG_STATUS_ALL,
+  XXL_JOB_MAX_PAGE_SIZE,
   formatXxlJobTime,
   isXxlJobLogRunning,
+  type XxlJobInfo,
   type XxlJobLog,
   type XxlJobLogDetail,
+  type XxlJobPage,
 } from './xxljobModel';
-import { useXxlJobLogs } from './hooks/useXxlJobLogs';
-import { toGroupOptions, useXxlJobGroups } from './hooks/useXxlJobGroups';
 
 const TIME_FORMAT = 'YYYY-MM-DD HH:mm:ss';
 
@@ -45,12 +49,16 @@ const XxlJobLogDetailDrawer: React.FC<{
   const [ended, setEnded] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // 续读请求序号：慢响应返回时可能已经切换到另一条日志，旧响应不得覆盖新内容。
+  const readSeq = React.useRef(0);
 
   const readFrom = useCallback(async (fromLineNum: number, append: boolean) => {
     if (logId == null) return;
+    const seq = ++readSeq.current;
     setLoading(true);
     setError('');
     const result = await fetchDetail(logId, fromLineNum);
+    if (seq !== readSeq.current) return;
     if (!result?.success) {
       setError(String(result?.message ?? t('xxljob.message.detail_failed')));
       setLoading(false);
@@ -68,6 +76,7 @@ const XxlJobLogDetailDrawer: React.FC<{
 
   useEffect(() => {
     if (!open) {
+      readSeq.current += 1;
       setContent('');
       setNextLine(1);
       setEnded(false);
@@ -135,24 +144,49 @@ export const XxlJobLogPanel: React.FC<Props> = ({ connectionId, isActive }) => {
     rows, total, loading, error, page, size, reload, setPage, setSize,
     readOnly, busy, jobGroup, jobId, logStatus, range, changeFilter, logKill, fetchLogDetail,
   } = useXxlJobLogs(connectionId, isActive);
-  const { allGroups, loadAllGroups } = useXxlJobGroups(connectionId, false);
+  const { allGroups, loadAllGroups, rpcConfig } = useXxlJobGroups(connectionId, false);
   const [detailLogId, setDetailLogId] = useState<number | null>(null);
-  const [rowsByJob, setRowsByJob] = useState<Record<number, string[]>>({});
+  const [jobOptions, setJobOptions] = useState<XxlJobGroupOption[]>([]);
 
   React.useEffect(() => {
     if (isActive) void loadAllGroups();
   }, [isActive, loadAllGroups]);
 
+  // 任务下拉跟随执行器：选中后拉该执行器下的任务（单页上限 200，覆盖绝大多数部署）。
+  React.useEffect(() => {
+    if (!isActive) return;
+    let cancelled = false;
+    if (jobGroup == null) {
+      setJobOptions([]);
+      return;
+    }
+    xxlJobRpc.listJobs(rpcConfig as never, {
+      page: 1,
+      size: XXL_JOB_MAX_PAGE_SIZE,
+      jobGroup,
+      triggerStatus: -1,
+      name: '',
+      executorHandler: '',
+      author: '',
+    } as never)
+      .then((result) => {
+        if (cancelled) return;
+        const data = result?.data as XxlJobPage<XxlJobInfo> | undefined;
+        const rows = result?.success && Array.isArray(data?.rows) ? data.rows : [];
+        setJobOptions(rows.map((job) => ({ label: job.name || String(job.id), value: job.id })));
+      })
+      .catch(() => {
+        if (!cancelled) setJobOptions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isActive, jobGroup, rpcConfig]);
+
   const changeGroup = (value?: number) => {
     // 换执行器后原来的任务筛选不再适用，一并清掉，避免出现空结果的错觉。
     changeFilter({ jobGroup: value, jobId: undefined });
   };
-
-  const jobsOfGroup = Object.values(rowsByJob).flat();
-  const jobOptions = jobsOfGroup.map((label, index) => ({
-    label,
-    value: index + 1,
-  }));
 
   return (
     <div className="xxljob-panel">

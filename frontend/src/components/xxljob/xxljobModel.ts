@@ -75,6 +75,9 @@ export const LOG_STATUS_RUNNING = 3;
 
 export const DEFAULT_PAGE_SIZE = 20;
 
+/** 调度中心 pageList 单页条数上限（maxPageSize）。 */
+export const XXL_JOB_MAX_PAGE_SIZE = 200;
+
 /** 调度中心对执行状态码的固定取值。 */
 export const XXL_JOB_CODE_OK = 200;
 

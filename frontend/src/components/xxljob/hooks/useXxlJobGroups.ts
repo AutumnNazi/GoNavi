@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { xxlJobRpc, type XxlJobRpcResult } from '../xxljobRpc';
 import {
   DEFAULT_PAGE_SIZE,
+  XXL_JOB_MAX_PAGE_SIZE,
   type XxlJobGroup,
   type XxlJobInfo,
   type XxlJobPage,
@@ -51,13 +52,23 @@ export const useXxlJobGroups = (connectionId: string, isActive: boolean) => {
   const [allGroups, setAllGroups] = useState<XxlJobGroup[]>([]);
   const loadAllGroups = useCallback(async () => {
     if (!rpcConfig) return;
-    const result = (await xxlJobRpc.listJobGroups(rpcConfig as never, {
-      page: 1,
-      size: DEFAULT_PAGE_SIZE,
-      appName: '',
-      title: '',
-    } as never)) as QueryResult<XxlJobPage<XxlJobGroup>>;
-    setAllGroups(result?.success && Array.isArray(result.data?.rows) ? result.data.rows : []);
+    const groups: XxlJobGroup[] = [];
+    // 调度中心单页上限 200；超过一页时翻页拉全，避免下拉静默缺项。
+    for (let page = 1; ; page += 1) {
+      const result = (await xxlJobRpc.listJobGroups(rpcConfig as never, {
+        page,
+        size: MAX_GROUP_PAGE_SIZE,
+        appName: '',
+        title: '',
+      } as never)) as QueryResult<XxlJobPage<XxlJobGroup>>;
+      const rows = result?.success && Array.isArray(result.data?.rows) ? result.data.rows : [];
+      groups.push(...rows);
+      const total = Number(result?.data?.total ?? 0);
+      if (rows.length < MAX_GROUP_PAGE_SIZE || groups.length >= total || page >= MAX_GROUP_PAGES) {
+        break;
+      }
+    }
+    setAllGroups(groups);
   }, [rpcConfig]);
 
   return {
@@ -78,6 +89,10 @@ export const useXxlJobGroups = (connectionId: string, isActive: boolean) => {
 
 // 任务面板依赖执行器列表做下拉联动，单独导出以便复用。
 export type XxlJobGroupOption = { label: string; value: number };
+
+// 拉全执行器的翻页上限：防御调度中心 total 异常导致的死循环。
+const MAX_GROUP_PAGE_SIZE = XXL_JOB_MAX_PAGE_SIZE;
+const MAX_GROUP_PAGES = 50;
 
 export const toGroupOptions = (groups: Array<XxlJobGroup | XxlJobInfo>): XxlJobGroupOption[] =>
   groups.map((group) => ({
