@@ -24,6 +24,7 @@ import { useStore } from '../../store';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import { getRedisDbAlias, buildRedisDbNodeLabel } from '../../utils/redisDbAlias';
 import { buildNacosNamespaceTreeNode as buildNamespaceNode } from './nacosNamespaceTreeNode';
+import { buildXxlJobTreeNodes, isXxlJobConnection } from './xxlJobSidebarNodes';
 import { resolveNacosConnectionScope } from '../../utils/nacosConnectionScope';
 import { filterVisibleDatabaseNames } from '../../utils/databaseVisibility';
 import { resolveSidebarMessageQueueProfile } from './sidebarMessageProfiles';
@@ -261,6 +262,19 @@ export const useSidebarDatabaseLoader = ({
                 return;
             }
   
+            // XXL-JOB 调度中心：三个入口是静态的，展开即完成，不需要任何请求。
+            if (isXxlJobConnection(conn)) {
+                const currentConnection = useStore
+                    .getState()
+                    .connections.find((candidate) => candidate.id === conn.id);
+                if (currentConnection) {
+                    setConnectionStates(prev => ({ ...prev, [conn.id]: 'success' }));
+                    replaceTreeNodeChildren(node.key, buildXxlJobTreeNodes(currentConnection));
+                    setLoadedKeys(prev => (prev.includes(loadKey) ? prev : [...prev, loadKey]));
+                }
+                return;
+            }
+
             // Handle Nacos connections: expand namespaces
             if (conn.config.type === 'nacos') {
                 const { requestId, signature: requestSignature } =

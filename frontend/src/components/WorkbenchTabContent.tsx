@@ -13,6 +13,7 @@ const RedisCommandEditor = React.lazy(() => import('./RedisCommandEditor'));
 const RedisMonitor = React.lazy(() => import('./RedisMonitor'));
 const NacosViewer = React.lazy(() => import('./NacosViewer'));
 const NacosServiceViewer = React.lazy(() => import('./NacosServiceViewer'));
+const XxlJobWorkbench = React.lazy(() => import('./xxljob/XxlJobWorkbench'));
 const TriggerViewer = React.lazy(() => import('./TriggerViewer'));
 const DefinitionViewer = React.lazy(() => import('./DefinitionViewer'));
 const TableOverview = React.lazy(() => import('./TableOverview'));
@@ -194,6 +195,8 @@ export const WorkbenchTabContent: React.FC<WorkbenchTabContentProps> = React.mem
     content = <MessageQueueWorkbench tab={tab} isActive={isActive} />;
   } else if (tab.type === 'session-workbench') {
     content = <SessionWorkbench tab={tab} isActive={isActive} />;
+  } else if (tab.type === 'xxljob-groups' || tab.type === 'xxljob-jobs' || tab.type === 'xxljob-logs') {
+    content = <XxlJobWorkbench tab={tab} isActive={isActive} />;
   } else if (tab.type === 'jvm-overview') {
     content = <JVMOverview tab={tab} />;
   } else if (tab.type === 'jvm-resource') {

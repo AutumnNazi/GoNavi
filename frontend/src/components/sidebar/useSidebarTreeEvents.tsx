@@ -1,3 +1,5 @@
+import type { WorkbenchTabType } from '../../tabTypes';
+import { xxlJobPanelOfNode } from './xxlJobSidebarNodes';
 import {
   hasSidebarLazyChildren,
   clearSidebarHostConnectionState,
@@ -528,6 +530,20 @@ export const useSidebarTreeEvents = ({
               return;
           }
           // Service explorer entry is a folder: fall through to expand/collapse + lazy load groups.
+      } else if (xxlJobPanelOfNode(node)) {
+          // XXL-JOB 面板节点是叶子：双击直接打开对应工作台标签页。
+          const panel = xxlJobPanelOfNode(node);
+          const conn = (connections.find((item) => item.id === node.dataRef?.id) || node.dataRef) as SavedConnection;
+          if (panel && conn) {
+              addTab({
+                  id: `xxljob-${panel}-${conn.id}`,
+                  title: t(`xxljob.tab.${panel}`),
+                  type: `xxljob-${panel}` as WorkbenchTabType,
+                  connectionId: conn.id,
+                  xxlJobPanel: panel,
+              });
+              return;
+          }
       } else if (node.type === 'jvm-mode') {
           const { providerMode, id } = node.dataRef;
           const conn = (connections.find((item) => item.id === id) || node.dataRef) as SavedConnection;
