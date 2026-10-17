@@ -3,6 +3,7 @@ import {
   type DataSourceCatalogGroup,
   type DataSourceSpec,
   type DataSourceVariant,
+  type DataSourceVariantSet,
 } from './types';
 
 export * from './types';
@@ -44,6 +45,14 @@ export const getDataSourceSpec = (value: unknown): DataSourceSpec | undefined =>
   const canonical = resolveDataSourceType(value);
   return canonical ? specsByCanonicalType.get(canonical) : undefined;
 };
+
+// 无驱动类型（XXL-JOB 等专用工作台）不声明 variants，统一按空集回落。
+// 可选链只挡到 variants 为止，直接展开 spec.variants.items 仍会抛错，所以所有档位读取都走这里。
+const EMPTY_VARIANT_SET: DataSourceVariantSet = { auto: false, default: '', items: [] };
+
+/** 类型声明的驱动档位集；无驱动类型与非描述表类型返回空集。 */
+export const getDataSourceVariantSet = (value: unknown): DataSourceVariantSet =>
+  getDataSourceSpec(value)?.variants ?? EMPTY_VARIANT_SET;
 
 /** 描述表类型归一；不是描述表类型时原样返回小写值，便于接在历史归一函数的 default 分支。 */
 export const canonicalizeDataSourceType = (value: unknown): string =>
@@ -96,20 +105,23 @@ export const listDataSourceTypesWhere = (predicate: (spec: DataSourceSpec) => bo
 
 /** 连接表单可选的驱动版本档位（不含自动识别）。 */
 export const getDataSourceVariants = (value: unknown): DataSourceVariant[] =>
-  getDataSourceSpec(value)?.variants.items ?? [];
+  getDataSourceVariantSet(value).items;
 
 /** 用户未显式选择时连接实际采用的档位值（可能是 auto）。 */
 export const getDefaultDataSourceVariant = (value: unknown): string | undefined =>
-  getDataSourceSpec(value)?.variants.default;
+  getDataSourceVariantSet(value).default;
+
+/** 类型是否有可选驱动档位；无驱动类型与非描述表类型都没有档位。 */
+export const hasDataSourceVariants = (value: unknown): boolean =>
+  getDataSourceVariantSet(value).items.length > 0;
 
 export const supportsAutoDataSourceVariant = (value: unknown): boolean =>
-  Boolean(getDataSourceSpec(value)?.variants.auto);
+  Boolean(getDataSourceVariantSet(value).auto);
 
 /** 档位是否需要独立的驱动代理构建（需要在驱动管理里单独安装）。 */
 export const dataSourceVariantNeedsSeparateAgent = (value: unknown, variantId: string): boolean => {
-  const spec = getDataSourceSpec(value);
-  if (!spec) return false;
-  const selected = normalizeName(variantId) || spec.variants.default;
+  const variants = getDataSourceVariantSet(value);
+  const selected = normalizeName(variantId) || variants.default;
   if (selected === DATA_SOURCE_VARIANT_AUTO) return false;
-  return Boolean(spec.variants.items.find((item) => item.id === selected)?.build);
+  return Boolean(variants.items.find((item) => item.id === selected)?.build);
 };

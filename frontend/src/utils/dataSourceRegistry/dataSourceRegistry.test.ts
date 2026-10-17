@@ -6,10 +6,16 @@ import {
   getDataSourceSpec,
   getDataSourceVariants,
   getDefaultDataSourceVariant,
+  hasDataSourceVariants,
   isDataSourceFamily,
   listDataSourceSpecs,
   supportsAutoDataSourceVariant,
 } from '.';
+import {
+  buildDriverVariantOptions,
+  normalizeDriverVariantValue,
+  resolveRuntimeDriverKey,
+} from './driverVariant';
 import { CONNECTION_TYPE_GROUPS, getConnectionTypeDefaultPort } from '../connectionTypeCatalog';
 import {
   isMySQLCompatibleType,
@@ -47,6 +53,19 @@ describe('data source registry', () => {
         expect(variants.map((item) => item.id)).toContain(fallback);
       }
     }
+  });
+
+  it('treats a no-driver type as having no variants without throwing', () => {
+    // 无驱动类型（XXL-JOB 等专用工作台）的描述表不声明 variants，所有档位读取都要能安全回落。
+    expect(getDataSourceSpec('xxljob')?.variants).toBeUndefined();
+    expect(getDataSourceVariants('xxljob')).toEqual([]);
+    expect(hasDataSourceVariants('xxljob')).toBe(false);
+    expect(getDefaultDataSourceVariant('xxljob')).toBe('');
+    expect(supportsAutoDataSourceVariant('xxljob')).toBe(false);
+    expect(dataSourceVariantNeedsSeparateAgent('xxljob', 'auto')).toBe(false);
+    expect(buildDriverVariantOptions('xxljob')).toEqual([]);
+    expect(normalizeDriverVariantValue('xxljob', undefined)).toBeUndefined();
+    expect(resolveRuntimeDriverKey('xxljob', undefined)).toBe('xxljob');
   });
 
   it('wires TiDB into the catalog and MySQL-family capabilities', () => {

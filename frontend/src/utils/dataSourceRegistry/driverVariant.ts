@@ -1,4 +1,4 @@
-import { getDataSourceSpec } from './index';
+import { getDataSourceSpec, getDataSourceVariantSet, hasDataSourceVariants } from './index';
 import { DATA_SOURCE_VARIANT_AUTO } from './types';
 
 export type DriverVariantOption = {
@@ -16,8 +16,9 @@ const normalize = (value: unknown): string => String(value ?? '').trim().toLower
 export const buildDriverVariantOptions = (type: unknown): DriverVariantOption[] => {
   const spec = getDataSourceSpec(type);
   if (!spec) return [];
+  const variants = getDataSourceVariantSet(type);
   const options: DriverVariantOption[] = [];
-  if (spec.variants.auto) {
+  if (variants.auto) {
     options.push({
       value: DATA_SOURCE_VARIANT_AUTO,
       label: '',
@@ -26,7 +27,7 @@ export const buildDriverVariantOptions = (type: unknown): DriverVariantOption[] 
       separateAgent: false,
     });
   }
-  for (const item of spec.variants.items) {
+  for (const item of variants.items) {
     options.push({
       value: item.id,
       label: item.label,
@@ -43,12 +44,13 @@ export const buildDriverVariantOptions = (type: unknown): DriverVariantOption[] 
  * 其他类型返回 undefined，避免把档位字段带进历史类型的连接配置。
  */
 export const normalizeDriverVariantValue = (type: unknown, value: unknown): string | undefined => {
-  const spec = getDataSourceSpec(type);
-  if (!spec) return undefined;
+  // 无档位可选的类型（无驱动专用工作台、非描述表类型）不写 driverVariant 字段。
+  if (!hasDataSourceVariants(type)) return undefined;
+  const variants = getDataSourceVariantSet(type);
   const requested = normalize(value);
-  if (requested === DATA_SOURCE_VARIANT_AUTO && spec.variants.auto) return requested;
-  if (requested && spec.variants.items.some((item) => item.id === requested)) return requested;
-  return spec.variants.default;
+  if (requested === DATA_SOURCE_VARIANT_AUTO && variants.auto) return requested;
+  if (requested && variants.items.some((item) => item.id === requested)) return requested;
+  return variants.default;
 };
 
 /** 连接要启动的驱动代理键，用于驱动状态查询与安装引导；非描述表类型返回原类型。 */
@@ -56,5 +58,5 @@ export const resolveRuntimeDriverKey = (type: unknown, variant: unknown): string
   const spec = getDataSourceSpec(type);
   if (!spec) return normalize(type);
   const selected = normalizeDriverVariantValue(type, variant);
-  return spec.variants.items.find((item) => item.id === selected)?.build?.key || spec.type;
+  return getDataSourceVariantSet(type).items.find((item) => item.id === selected)?.build?.key || spec.type;
 };
