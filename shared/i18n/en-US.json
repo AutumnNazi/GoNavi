@@ -12812,5 +12812,20 @@
   "app.theme.tab_appearance.close_position.label": "Close button position",
   "app.theme.tab_appearance.close_position.hint": "Place the close button on the left or right of the tab label.",
   "app.theme.tab_appearance.close_position.left": "Left",
-  "app.theme.tab_appearance.close_position.right": "Right"
+  "app.theme.tab_appearance.close_position.right": "Right",
+  "xxljob.backend.error.cookie_jar_failed": "Failed to initialize the cookie session",
+  "xxljob.backend.error.executor_forward_failed": "The admin failed to reach the executor: {{detail}}",
+  "xxljob.backend.error.http_status": "The admin returned an unexpected status ({{status}}): {{body}}",
+  "xxljob.backend.error.invalid_address": "Invalid XXL-JOB address: {{detail}}",
+  "xxljob.backend.error.invalid_response": "Could not parse the admin response: {{detail}}",
+  "xxljob.backend.error.network": "Could not reach the XXL-JOB admin; check the address, network, and proxy settings",
+  "xxljob.backend.error.not_connected": "XXL-JOB is not connected",
+  "xxljob.backend.error.read_body_failed": "Failed to read the admin response: {{detail}}",
+  "xxljob.backend.error.remote_code": "The admin returned an error (code {{code}}): {{msg}}",
+  "xxljob.backend.error.request_build_failed": "Failed to build the admin request: {{detail}}",
+  "xxljob.backend.error.session_expired": "Your login has expired; please reconnect",
+  "xxljob.backend.error.ssh_tunnel_failed": "Failed to create the XXL-JOB SSH tunnel: {{detail}}",
+  "xxljob.backend.error.tls_setup_failed": "TLS setup failed: {{detail}}",
+  "xxljob.backend.error.validation": "Invalid parameter: {{field}}{{detail}}",
+  "xxljob.backend.error.version_probe_failed": "Could not identify the admin version{{location}}: {{detail}}"
 }

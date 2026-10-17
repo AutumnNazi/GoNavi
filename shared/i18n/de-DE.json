@@ -12812,5 +12812,20 @@
   "app.theme.tab_appearance.close_position.label": "Position der Schließen-Schaltfläche",
   "app.theme.tab_appearance.close_position.hint": "Die Schließen-Schaltfläche links oder rechts neben dem Tab-Text platzieren.",
   "app.theme.tab_appearance.close_position.left": "Links",
-  "app.theme.tab_appearance.close_position.right": "Rechts"
+  "app.theme.tab_appearance.close_position.right": "Rechts",
+  "xxljob.backend.error.cookie_jar_failed": "Cookie-Sitzung konnte nicht initialisiert werden",
+  "xxljob.backend.error.executor_forward_failed": "Die Verwaltung konnte den Executor nicht erreichen: {{detail}}",
+  "xxljob.backend.error.http_status": "Die Verwaltung lieferte einen unerwarteten Status ({{status}}): {{body}}",
+  "xxljob.backend.error.invalid_address": "Ungültige XXL-JOB-Adresse: {{detail}}",
+  "xxljob.backend.error.invalid_response": "Antwort der Verwaltung konnte nicht gelesen werden: {{detail}}",
+  "xxljob.backend.error.network": "Die XXL-JOB-Verwaltung ist nicht erreichbar; Adresse, Netzwerk und Proxy-Einstellungen prüfen",
+  "xxljob.backend.error.not_connected": "XXL-JOB ist nicht verbunden",
+  "xxljob.backend.error.read_body_failed": "Antwort der Verwaltung konnte nicht gelesen werden: {{detail}}",
+  "xxljob.backend.error.remote_code": "Die Verwaltung meldete einen Fehler (Code {{code}}): {{msg}}",
+  "xxljob.backend.error.request_build_failed": "Anfrage an die Verwaltung konnte nicht erstellt werden: {{detail}}",
+  "xxljob.backend.error.session_expired": "Die Anmeldung ist abgelaufen; bitte erneut verbinden",
+  "xxljob.backend.error.ssh_tunnel_failed": "XXL-JOB-SSH-Tunnel konnte nicht erstellt werden: {{detail}}",
+  "xxljob.backend.error.tls_setup_failed": "TLS-Einrichtung fehlgeschlagen: {{detail}}",
+  "xxljob.backend.error.validation": "Ungültiger Parameter: {{field}}{{detail}}",
+  "xxljob.backend.error.version_probe_failed": "Version der Verwaltung konnte nicht erkannt werden{{location}}: {{detail}}"
 }

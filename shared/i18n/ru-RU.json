@@ -12812,5 +12812,20 @@
   "app.theme.tab_appearance.close_position.label": "Положение кнопки закрытия",
   "app.theme.tab_appearance.close_position.hint": "Разместите кнопку закрытия слева или справа от текста вкладки.",
   "app.theme.tab_appearance.close_position.left": "Слева",
-  "app.theme.tab_appearance.close_position.right": "Справа"
+  "app.theme.tab_appearance.close_position.right": "Справа",
+  "xxljob.backend.error.cookie_jar_failed": "Не удалось инициализировать сеанс cookie",
+  "xxljob.backend.error.executor_forward_failed": "Панели управления не удалось связаться с исполнителем: {{detail}}",
+  "xxljob.backend.error.http_status": "Панель управления вернула неожиданный статус ({{status}}): {{body}}",
+  "xxljob.backend.error.invalid_address": "Недопустимый адрес XXL-JOB: {{detail}}",
+  "xxljob.backend.error.invalid_response": "Не удалось разобрать ответ панели управления: {{detail}}",
+  "xxljob.backend.error.network": "Не удалось связаться с панелью управления XXL-JOB; проверьте адрес, сеть и параметры прокси",
+  "xxljob.backend.error.not_connected": "XXL-JOB не подключён",
+  "xxljob.backend.error.read_body_failed": "Не удалось прочитать ответ панели управления: {{detail}}",
+  "xxljob.backend.error.remote_code": "Панель управления вернула ошибку (code {{code}}): {{msg}}",
+  "xxljob.backend.error.request_build_failed": "Не удалось сформировать запрос к панели управления: {{detail}}",
+  "xxljob.backend.error.session_expired": "Срок входа истёк; выполните подключение заново",
+  "xxljob.backend.error.ssh_tunnel_failed": "Не удалось создать SSH-туннель XXL-JOB: {{detail}}",
+  "xxljob.backend.error.tls_setup_failed": "Ошибка настройки TLS: {{detail}}",
+  "xxljob.backend.error.validation": "Недопустимый параметр: {{field}}{{detail}}",
+  "xxljob.backend.error.version_probe_failed": "Не удалось определить версию панели управления{{location}}: {{detail}}"
 }

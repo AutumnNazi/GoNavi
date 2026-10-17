@@ -12812,5 +12812,20 @@
   "app.theme.tab_appearance.close_position.label": "閉じるボタンの位置",
   "app.theme.tab_appearance.close_position.hint": "閉じるボタンをタブ文字の左側または右側に配置します。",
   "app.theme.tab_appearance.close_position.left": "左",
-  "app.theme.tab_appearance.close_position.right": "右"
+  "app.theme.tab_appearance.close_position.right": "右",
+  "xxljob.backend.error.cookie_jar_failed": "Cookie セッションの初期化に失敗しました",
+  "xxljob.backend.error.executor_forward_failed": "管理コンソールから実行エージェントへ転送できませんでした: {{detail}}",
+  "xxljob.backend.error.http_status": "管理コンソールが予期しないステータスを返しました（{{status}}）: {{body}}",
+  "xxljob.backend.error.invalid_address": "無効な XXL-JOB アドレスです: {{detail}}",
+  "xxljob.backend.error.invalid_response": "管理コンソールの応答を解析できませんでした: {{detail}}",
+  "xxljob.backend.error.network": "XXL-JOB 管理コンソールに接続できません。アドレス、ネットワーク、プロキシ設定を確認してください",
+  "xxljob.backend.error.not_connected": "XXL-JOB に接続されていません",
+  "xxljob.backend.error.read_body_failed": "管理コンソールの応答の読み取りに失敗しました: {{detail}}",
+  "xxljob.backend.error.remote_code": "管理コンソールがエラーを返しました（code {{code}}）: {{msg}}",
+  "xxljob.backend.error.request_build_failed": "管理コンソールへのリクエスト作成に失敗しました: {{detail}}",
+  "xxljob.backend.error.session_expired": "ログインの有効期限が切れました。再接続してください",
+  "xxljob.backend.error.ssh_tunnel_failed": "XXL-JOB SSH トンネルの作成に失敗しました: {{detail}}",
+  "xxljob.backend.error.tls_setup_failed": "TLS 設定に失敗しました: {{detail}}",
+  "xxljob.backend.error.validation": "パラメータが無効です: {{field}}{{detail}}",
+  "xxljob.backend.error.version_probe_failed": "管理コンソールのバージョンを判別できません{{location}}: {{detail}}"
 }

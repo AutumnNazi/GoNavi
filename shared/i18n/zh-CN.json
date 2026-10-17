@@ -12812,5 +12812,20 @@
   "app.theme.tab_appearance.close_position.label": "关闭按钮位置",
   "app.theme.tab_appearance.close_position.hint": "把关闭按钮放到标签文字的左侧或右侧。",
   "app.theme.tab_appearance.close_position.left": "左侧",
-  "app.theme.tab_appearance.close_position.right": "右侧"
+  "app.theme.tab_appearance.close_position.right": "右侧",
+  "xxljob.backend.error.cookie_jar_failed": "初始化 Cookie 会话失败",
+  "xxljob.backend.error.executor_forward_failed": "调度中心转发执行器失败：{{detail}}",
+  "xxljob.backend.error.http_status": "调度中心返回异常状态（{{status}}）：{{body}}",
+  "xxljob.backend.error.invalid_address": "XXL-JOB 地址无效：{{detail}}",
+  "xxljob.backend.error.invalid_response": "调度中心响应格式无法解析：{{detail}}",
+  "xxljob.backend.error.network": "无法连接 XXL-JOB 调度中心，请检查地址、网络或代理设置",
+  "xxljob.backend.error.not_connected": "XXL-JOB 尚未连接",
+  "xxljob.backend.error.read_body_failed": "读取调度中心响应失败：{{detail}}",
+  "xxljob.backend.error.remote_code": "调度中心返回错误（code {{code}}）：{{msg}}",
+  "xxljob.backend.error.request_build_failed": "构造调度中心请求失败：{{detail}}",
+  "xxljob.backend.error.session_expired": "登录已失效，请重新连接",
+  "xxljob.backend.error.ssh_tunnel_failed": "创建 XXL-JOB SSH 隧道失败：{{detail}}",
+  "xxljob.backend.error.tls_setup_failed": "TLS 配置失败：{{detail}}",
+  "xxljob.backend.error.validation": "参数无效：{{field}}{{detail}}",
+  "xxljob.backend.error.version_probe_failed": "无法识别调度中心版本{{location}}：{{detail}}"
 }
