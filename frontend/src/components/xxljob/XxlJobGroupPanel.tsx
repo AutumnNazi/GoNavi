@@ -2,7 +2,7 @@ import React from 'react';
 import { Alert, Button, Card, Input, Space, Table } from 'antd';
 import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { t } from '../../i18n';
-import { formatXxlJobTime, type XxlJobGroup } from './xxljobModel';
+import { formatXxlJobEmptyText, formatXxlJobTime, type XxlJobGroup } from './xxljobModel';
 import { useXxlJobGroups } from './hooks/useXxlJobGroups';
 
 type Props = {
@@ -92,7 +92,7 @@ export const XxlJobGroupPanel: React.FC<Props> = ({ connectionId, isActive }) =>
                 .map((node) => node?.registryKey)
                 .filter((key): key is string => Boolean(key));
               if (nodes.length > 0) return nodes.join(', ');
-              return formatXxlJobTime(record.addressList || '');
+              return formatXxlJobEmptyText(record.addressList);
             },
           },
           {

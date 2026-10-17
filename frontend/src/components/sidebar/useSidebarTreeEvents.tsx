@@ -307,6 +307,8 @@ export const useSidebarTreeEvents = ({
               connectionId: dataRef.id,
               dbName: dataRef.nacosNamespaceName || dataRef.nacosNamespaceId || 'public',
           });
+      } else if (type === 'xxljob-groups' || type === 'xxljob-jobs' || type === 'xxljob-logs') {
+          setActiveContext({ connectionId: dataRef.id, dbName: '' });
       }
 
       if (type === 'folder-columns') openDesign(info.node, 'columns', false);

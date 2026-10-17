@@ -17,12 +17,6 @@ const (
 	route3JobGroupDelete = "/jobgroup/delete"
 )
 
-// Task field names after the 3.5.0 rename.
-const (
-	field3GroupName = "name"
-	field3JobName   = "name"
-)
-
 // loginRoute returns the login endpoint for the detected authentication family.
 func (s Stack) loginRoute() string {
 	if s.Login == LoginSSO {
@@ -36,13 +30,4 @@ func (s Stack) logoutRoute() string {
 		return route3Logout
 	}
 	return route2Logout
-}
-
-// loginPageSuffix is what the unauthenticated redirect points at, which is how
-// the first detection step tells the two authentication families apart.
-func (s Stack) loginPageSuffix() string {
-	if s.Login == LoginSSO {
-		return route3LoginPage
-	}
-	return route2LoginPage
 }

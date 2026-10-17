@@ -25,19 +25,6 @@ const (
 	routeJobLogKill         = "/joblog/logKill"
 )
 
-// buildIDList renders the batch parameter for start/stop. Stacks below 3.3.0
-// only accept a single id, so a multi-id request is split into single calls by
-// the caller rather than silently truncated here.
-func buildIDList(ids []int) []string {
-	out := make([]string, 0, len(ids))
-	for _, id := range ids {
-		if id > 0 {
-			out = append(out, itoa(id))
-		}
-	}
-	return out
-}
-
 // ListJobGroups returns one page of executors.
 func (p *stackProtocol) ListJobGroups(ctx context.Context, req GroupListRequest) (PageResult[JobGroup], error) {
 	values := url.Values{}
@@ -119,12 +106,23 @@ func (p *stackProtocol) changeTriggerStatus(ctx context.Context, jobIDs []int, a
 	if len(jobIDs) == 0 {
 		return newValidationError("jobIDs", "at least one task id is required")
 	}
-	values := url.Values{}
-	for _, id := range jobIDs {
-		p.applyID(values, id)
+	// 3.3+ 用 ids[] 一次带全；2.x 的 id 参数互相覆盖，逐个发送才不会静默丢 id。
+	if p.stack.usesBatchIDs() {
+		values := url.Values{}
+		for _, id := range jobIDs {
+			values.Add("ids[]", strconv.Itoa(id))
+		}
+		_, err := p.client.callAPI(ctx, http.MethodPost, action, values, nil)
+		return err
 	}
-	_, err := p.client.callAPI(ctx, http.MethodPost, action, values, nil)
-	return err
+	for _, id := range jobIDs {
+		values := url.Values{}
+		values.Set("id", strconv.Itoa(id))
+		if _, err := p.client.callAPI(ctx, http.MethodPost, action, values, nil); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // StartJobs resumes scheduling for the given tasks.

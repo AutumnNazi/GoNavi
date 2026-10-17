@@ -94,6 +94,12 @@ export const formatXxlJobTime = (value?: string): string => {
   return text || '—';
 };
 
+/** 任意文本的空值兜底（地址等非时间字段与时间共用破折号语义）。 */
+export const formatXxlJobEmptyText = (value?: string): string => {
+  const text = String(value ?? '').trim();
+  return text || '—';
+};
+
 /**
  * 组装调度中心要求的 filterTime：两侧空格的 ` - ` 分隔。
  * 只做格式组装，不校验日期语义；日期选择器已经保证输入形状。

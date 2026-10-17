@@ -54,13 +54,17 @@ export const XxlJobJobPanel: React.FC<Props> = ({ connectionId, isActive }) => {
 
   const submitTrigger = async () => {
     if (!triggerTarget) return;
-    const values = await form.validateFields();
-    const result = await triggerJob(triggerTarget.id, values.executorParam ?? '');
-    if (result?.success) {
-      message.success(result.message || t('xxljob.message.trigger_success'));
-      setTriggerOpen(false);
-    } else {
-      message.error(result?.message || t('xxljob.message.action_failed'));
+    try {
+      const values = await form.validateFields();
+      const result = await triggerJob(triggerTarget.id, values.executorParam ?? '');
+      if (result?.success) {
+        message.success(result.message || t('xxljob.message.trigger_success'));
+        setTriggerOpen(false);
+      } else {
+        message.error(result?.message || t('xxljob.message.action_failed'));
+      }
+    } catch {
+      // validateFields 拒绝时 antd 已在字段下方展示错误；这里只需吞掉 rejection。
     }
   };
 
@@ -83,6 +87,11 @@ export const XxlJobJobPanel: React.FC<Props> = ({ connectionId, isActive }) => {
     setNextTimes((prev) => ({ ...prev, [record.id]: times }));
     if (times.length === 0) message.info(t('xxljob.message.no_next_time'));
   };
+
+  // 列表刷新后旧的“下次触发时间”计算值会压过 triggerNextTime，随刷新一并清掉。
+  React.useEffect(() => {
+    setNextTimes({});
+  }, [rows]);
 
   const mutationDisabled = readOnly || busy;
   const readonlyHint = readOnly ? t('xxljob.hint.readonly') : undefined;
@@ -183,6 +192,7 @@ export const XxlJobJobPanel: React.FC<Props> = ({ connectionId, isActive }) => {
                   <Button
                     size="small"
                     icon={<PlayCircleOutlined />}
+                    aria-label={t('xxljob.action.trigger')}
                     disabled={mutationDisabled}
                     onClick={() => openTrigger(record)}
                   />
@@ -214,7 +224,7 @@ export const XxlJobJobPanel: React.FC<Props> = ({ connectionId, isActive }) => {
         open={triggerOpen}
         title={t('xxljob.modal.trigger_title')}
         onCancel={() => setTriggerOpen(false)}
-        onOk={() => void submitTrigger()}
+        onOk={() => { void submitTrigger(); }}
         okText={t('xxljob.action.confirm')}
         cancelText={t('xxljob.action.cancel')}
         destroyOnHidden

@@ -18,9 +18,3 @@ const (
 	route2JobGroupSave  = "/jobgroup/save"
 	route2JobLogClear   = "/joblog/clearLog"
 )
-
-// Task field names before the 3.5.0 rename.
-const (
-	field2GroupTitle = "title"
-	field2JobDesc    = "jobDesc"
-)

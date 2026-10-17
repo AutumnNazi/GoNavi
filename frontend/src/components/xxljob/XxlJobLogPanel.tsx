@@ -18,6 +18,7 @@ import { toGroupOptions, useXxlJobGroups, type XxlJobGroupOption } from './hooks
 import { xxlJobRpc } from './xxljobRpc';
 import {
   LOG_STATUS_ALL,
+  XXL_JOB_CODE_OK,
   XXL_JOB_MAX_PAGE_SIZE,
   formatXxlJobTime,
   isXxlJobLogRunning,
@@ -276,7 +277,7 @@ export const XxlJobLogPanel: React.FC<Props> = ({ connectionId, isActive }) => {
             title: t('xxljob.column.trigger_result'),
             width: 110,
             render: (_value: unknown, record: XxlJobLog) => (
-              <Tag color={record.triggerCode === 200 ? 'green' : 'red'}>{record.triggerCode}</Tag>
+              <Tag color={record.triggerCode === XXL_JOB_CODE_OK ? 'green' : 'red'}>{record.triggerCode}</Tag>
             ),
           },
           { title: t('xxljob.column.handle_time'), width: 180, render: (_v: unknown, r: XxlJobLog) => formatXxlJobTime(r.handleTime) },

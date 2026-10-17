@@ -270,10 +270,3 @@ func wrapNetworkError(cause error) error {
 	}
 	return &NetworkError{Cause: cause}
 }
-
-func describeError(err error) string {
-	if err == nil {
-		return ""
-	}
-	return redactDiagnosticText(err.Error())
-}

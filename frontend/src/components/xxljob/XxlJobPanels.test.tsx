@@ -169,6 +169,9 @@ describe('XXL-JOB 任务面板', () => {
     expect(container.textContent).toContain('xxljob.hint.readonly');
     expect(buttonFor('xxljob.action.start')?.disabled).toBe(true);
     expect(buttonFor('xxljob.action.stop')?.disabled).toBe(true);
+    // 执行一次是图标按钮，aria-label 承载动作名；只读下必须同样禁用。
+    const triggerButton = buttonFor('xxljob.action.trigger');
+    expect(triggerButton?.disabled).toBe(true);
   });
 
   it('运行中的任务只能停止，已停止的任务只能启动', async () => {

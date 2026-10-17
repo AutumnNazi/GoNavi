@@ -143,12 +143,6 @@ func (a *App) xxlJobOperationContext(config connection.ConnectionConfig) (contex
 	)
 }
 
-func (a *App) getXxlJobClient(config connection.ConnectionConfig) (*xxljob.Client, error) {
-	ctx, cancel := a.xxlJobOperationContext(config)
-	defer cancel()
-	return a.getXxlJobClientWithContext(ctx, config)
-}
-
 // getXxlJobClientWithContext returns a cached client for the connection, opening
 // one through the shared singleflight so concurrent panel loads open a single
 // session rather than one per table.

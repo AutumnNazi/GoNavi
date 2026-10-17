@@ -206,6 +206,8 @@ func (a *App) Shutdown() {
 	CloseAllRedisClients()
 	// Close Nacos listeners and connections
 	CloseAllNacosClients()
+	// Close XXL-JOB sessions (cookies and SSH forwarders)
+	CloseAllXxlJobClients()
 	logger.Infof("资源释放完成，应用已关闭")
 	logger.Close()
 }
