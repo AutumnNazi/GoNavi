@@ -23,6 +23,7 @@ import {
   NacosTestConnectionWithProgress,
   TestConnectionWithProgress,
   TestConnection,
+  XxlJobConnect,
   RedisGetDatabases,
   DBGetDatabases,
 } from "../../../wailsjs/go/app/App";
@@ -342,18 +343,21 @@ export const useConnectionModalSaveAndTest = ({
           : 30;
       const rpcTimeoutMs = (timeoutSeconds + 5) * 1000;
 
-      // Use different API for Redis / JVM / Nacos
+      // Use different API for Redis / JVM / Nacos / XXL-JOB
       const isRedisType = values.type === "redis";
       const isJVMType = values.type === "jvm";
       const isNacosType = values.type === "nacos";
+      const isXxlJobType = values.type === "xxljob";
       const dbTestConfig =
         !isRedisType && !isJVMType && !isNacosType
           ? buildRpcConnectionConfig(config as any)
           : config;
+      // XXL-JOB 没有带进度的连接接口，报了进度只会开一个永远不动的面板。
       const shouldReportSSHProgress =
         Boolean((config as any).useSSH) &&
         !isRedisType &&
-        !isJVMType;
+        !isJVMType &&
+        !isXxlJobType;
       if (shouldReportSSHProgress) {
         const sshConfig = (dbTestConfig as any)?.ssh || (config as any)?.ssh || {};
         sshProgressRunId = `ssh-test-${testRunId}-${Date.now()}`;
@@ -377,9 +381,11 @@ export const useConnectionModalSaveAndTest = ({
           ? RedisConnect(config as any)
           : isNacosType
             ? NacosTestConnectionWithProgress(config as any, nacosTestRunId)
-            : shouldReportSSHProgress
-              ? TestConnectionWithProgress(dbTestConfig as any, sshProgressRunId)
-              : TestConnection(dbTestConfig as any);
+            : isXxlJobType
+              ? XxlJobConnect(dbTestConfig as any)
+              : shouldReportSSHProgress
+                ? TestConnectionWithProgress(dbTestConfig as any, sshProgressRunId)
+                : TestConnection(dbTestConfig as any);
       cancellableRequest = makeCancellableConnectionTestRequest(rpcPromise);
       const res = await withClientTimeout(
         cancellableRequest.promise,
@@ -459,7 +465,7 @@ export const useConnectionModalSaveAndTest = ({
                   }),
                 );
               }
-            } else if (!isJVMType && !isNacosType) {
+            } else if (!isJVMType && !isNacosType && !isXxlJobType) {
               const dbRes = await withClientTimeout(
                 DBGetDatabases(dbTestConfig as any),
                 rpcTimeoutMs,
