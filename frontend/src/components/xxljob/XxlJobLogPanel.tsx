@@ -5,6 +5,7 @@ import {
   Card,
   DatePicker,
   Drawer,
+  Modal,
   Select,
   Space,
   Table,
@@ -19,6 +20,7 @@ import { xxlJobRpc } from './xxljobRpc';
 import {
   LOG_STATUS_ALL,
   XXL_JOB_CODE_OK,
+  XXL_JOB_CODE_TIMEOUT,
   XXL_JOB_MAX_PAGE_SIZE,
   formatXxlJobTime,
   isXxlJobLogRunning,
@@ -29,6 +31,30 @@ import {
 } from './xxljobModel';
 
 const TIME_FORMAT = 'YYYY-MM-DD HH:mm:ss';
+
+// 触发/处理消息列：有内容时点击弹窗查看（对齐官方 logTips），无内容显示破折号。
+const LogMsgLink: React.FC<{ text?: string }> = ({ text }) => {
+  const [open, setOpen] = useState(false);
+  if (!text) return <span>—</span>;
+  return (
+    <>
+      <Button type="link" size="small" style={{ padding: 0 }} onClick={() => setOpen(true)}>
+        {t('xxljob.action.show')}
+      </Button>
+      <Modal
+        open={open}
+        footer={null}
+        title={t('xxljob.message.msg_detail')}
+        onCancel={() => setOpen(false)}
+        width={640}
+      >
+        <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: '50vh', overflow: 'auto' }}>
+          {text}
+        </pre>
+      </Modal>
+    </>
+  );
+};
 
 type Props = {
   connectionId: string;
@@ -283,6 +309,13 @@ export const XxlJobLogPanel: React.FC<Props> = ({ connectionId, isActive }) => {
               <Tag color={record.triggerCode === XXL_JOB_CODE_OK ? 'green' : 'red'}>{record.triggerCode}</Tag>
             ),
           },
+          {
+            title: t('xxljob.column.trigger_msg'),
+            width: 90,
+            render: (_value: unknown, record: XxlJobLog) => (
+              <LogMsgLink text={record.triggerMsg} />
+            ),
+          },
           { title: t('xxljob.column.handle_time'), width: 180, render: (_v: unknown, r: XxlJobLog) => formatXxlJobTime(r.handleTime) },
           {
             title: t('xxljob.column.handle_result'),
@@ -291,12 +324,19 @@ export const XxlJobLogPanel: React.FC<Props> = ({ connectionId, isActive }) => {
               if (isXxlJobLogRunning(record)) {
                 return <Tag color="processing">{t('xxljob.value.log_running')}</Tag>;
               }
-              return (
-                <Tag color={record.handleCode === 200 ? 'green' : 'red'}>
-                  {record.handleCode || '—'}
-                </Tag>
-              );
+              // 官方语义：200 成功、502 超时、其他非零失败。
+              const color = record.handleCode === XXL_JOB_CODE_OK
+                ? 'green'
+                : (record.handleCode === XXL_JOB_CODE_TIMEOUT ? 'orange' : 'red');
+              return <Tag color={color}>{record.handleCode || '—'}</Tag>;
             },
+          },
+          {
+            title: t('xxljob.column.handle_msg'),
+            width: 90,
+            render: (_value: unknown, record: XxlJobLog) => (
+              <LogMsgLink text={record.handleMsg} />
+            ),
           },
           {
             title: t('xxljob.column.actions'),
