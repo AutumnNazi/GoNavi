@@ -1,0 +1,480 @@
+/* 智能体会话管理工作台：主从布局，沿用 v2 工作台紧凑风格。
+   行布局、分割条、页签约束与 sessionAssets 已验收实现一致。 */
+.session-agent-workbench {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  padding: 12px 14px 8px;
+  gap: 10px;
+}
+
+.session-agent-workbench-columns {
+  flex: 1 1 auto;
+  display: flex;
+  gap: 12px;
+  min-height: 0;
+}
+
+.session-agent-list {
+  flex: 0 0 clamp(240px, 18vw, 300px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* 分割条：视觉分隔线由热区自己的 ::before 绘制，线与可拖拽区域天然
+   重叠（同 sessionAssets 已验收实现）。 */
+.session-agent-list-resize {
+  position: relative;
+  flex: 0 0 8px;
+  cursor: col-resize;
+  border-radius: 3px;
+  background: transparent;
+}
+
+.session-agent-list-resize::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: rgba(128, 128, 128, 0.18);
+}
+
+.session-agent-list-resize:hover {
+  background: rgba(22, 119, 255, 0.08);
+}
+
+.session-agent-list-resize:hover::before {
+  width: 2px;
+  background: rgba(22, 119, 255, 0.5);
+}
+
+.session-agent-list-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.session-agent-list-filter {
+  min-width: 110px;
+}
+
+.session-agent-list-reload {
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.session-agent-list-body {
+  flex: 1 1 auto;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.session-agent-list-loading {
+  display: grid;
+  place-items: center;
+  padding: 24px 0;
+}
+
+.session-agent-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.session-agent-group-title {
+  margin: 0;
+  padding: 2px 2px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.65;
+  position: sticky;
+  top: 0;
+  background: var(--gn-bg-app, transparent);
+  z-index: 1;
+}
+
+.session-agent-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 7px 9px;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  /* 行内任何子项都不得把行撑出可视宽度，否则省略号失效、文本盖到
+     日期上（同 sessionAssets 已验收约束）。 */
+  overflow: hidden;
+  max-width: 100%;
+  /* 列表主体是可滚动 flex 列容器：overflow:hidden 会把 flex 最小尺寸
+     变成 0，行数一多所有行被压缩成细条，必须禁止收缩。 */
+  flex: 0 0 auto;
+}
+
+.session-agent-row:hover {
+  background: rgba(128, 128, 128, 0.12);
+}
+
+.session-agent-row.selected {
+  background: rgba(22, 119, 255, 0.14);
+}
+
+.session-agent-row-top {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.session-agent-row-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-agent-row-time {
+  flex: 0 0 auto;
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.session-agent-row-preview {
+  min-width: 0;
+  max-width: 100%;
+  font-size: 12px;
+  opacity: 0.72;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-agent-row-states {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 11px;
+  min-width: 0;
+}
+
+.session-agent-row-project,
+.session-agent-row-provider {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-agent-list-footer {
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.session-agent-detail {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.session-agent-detail-empty {
+  flex: 1 1 auto;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+}
+
+.session-agent-detail-empty-body {
+  text-align: center;
+  opacity: 0.62;
+}
+
+.session-agent-detail-empty-title {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.session-agent-detail-empty-hint {
+  margin: 0;
+  font-size: 12px;
+}
+
+.session-agent-detail-loading {
+  flex: 1 1 auto;
+  display: grid;
+  place-items: center;
+}
+
+.session-agent-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.session-agent-detail-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-agent-detail-meta {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.session-agent-detail-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.session-agent-detail-toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.session-agent-detail-views {
+  display: flex;
+  gap: 6px;
+}
+
+.session-agent-timeline {
+  flex: 1 1 auto;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 2px;
+}
+
+.session-agent-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.session-agent-turn-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.session-agent-turn-title {
+  font-weight: 600;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-agent-turn-stats {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  opacity: 0.65;
+  flex: 0 0 auto;
+}
+
+.session-agent-turn-error {
+  color: rgba(255, 77, 79, 0.85);
+}
+
+.session-agent-entry {
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(128, 128, 128, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.session-agent-entry.user {
+  background: rgba(22, 119, 255, 0.1);
+}
+
+.session-agent-entry.assistant {
+  background: rgba(82, 196, 26, 0.1);
+}
+
+.session-agent-entry.injected {
+  opacity: 0.6;
+}
+
+.session-agent-entry-label {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.65;
+}
+
+.session-agent-entry-text {
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.session-agent-thinking {
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: rgba(128, 128, 128, 0.06);
+  font-size: 12px;
+}
+
+.session-agent-thinking summary {
+  cursor: pointer;
+  opacity: 0.75;
+  font-weight: 600;
+}
+
+.session-agent-tool {
+  border-radius: 6px;
+  border: 1px solid rgba(128, 128, 128, 0.18);
+  overflow: hidden;
+}
+
+.session-agent-tool-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  min-width: 0;
+}
+
+.session-agent-tool-kind {
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: rgba(128, 128, 128, 0.18);
+  flex: 0 0 auto;
+}
+
+.session-agent-tool-title {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.session-agent-tool-diff {
+  font-size: 11px;
+  color: rgba(82, 196, 26, 0.9);
+  flex: 0 0 auto;
+}
+
+.session-agent-tool-toggle {
+  flex: 0 0 auto;
+  opacity: 0.6;
+}
+
+.session-agent-tool-input,
+.session-agent-tool-output {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow: auto;
+  background: rgba(128, 128, 128, 0.06);
+}
+
+.session-agent-tool-files {
+  margin: 0;
+  padding: 6px 10px 6px 24px;
+  font-size: 12px;
+}
+
+.session-agent-tool-result {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(128, 128, 128, 0.05);
+}
+
+.session-agent-tool-status {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.session-agent-tool-status.error {
+  color: rgba(255, 77, 79, 0.85);
+}
+
+.session-agent-event {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.session-agent-event-kind {
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.session-agent-workbench-notice {
+  flex: 0 0 auto;
+}
+
+/* 窄屏：点行进入详情全屏视图 */
+.session-agent-back-btn {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .session-agent-back-btn {
+    display: inline-flex;
+  }
+  .session-agent-workbench-columns {
+    flex-direction: column;
+  }
+  .session-agent-list {
+    flex: 0 0 220px;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.18);
+    padding-bottom: 8px;
+  }
+  .session-agent-workbench-columns .session-agent-list-resize {
+    display: none;
+  }
+}

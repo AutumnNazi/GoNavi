@@ -378,6 +378,14 @@ export const GnOpenAIAgentIcon = createGnIcon('openai-agent', (
   />
 ));
 
+/** Claude Code（智能体）：Anthropic 星芒标志的线性版（随文字颜色着色）。 */
+export const GnClaudeIcon = createGnIcon('claude-agent', (
+  <>
+    <path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4" />
+    <path d="M12 7.2l1.6 3.2 3.2 1.6-3.2 1.6L12 16.8l-1.6-3.2-3.2-1.6 3.2-1.6z" fill="currentColor" stroke="none" />
+  </>
+));
+
 /** 文件夹：合上的。 */
 export const GnFolderIcon = createGnIcon('folder', (
   <path d="M3.5 7.4A2.4 2.4 0 0 1 5.9 5h3.5a2 2 0 0 1 1.5.7l1 1.2a2 2 0 0 0 1.5.7h4.7a2.4 2.4 0 0 1 2.4 2.4v7.6a2.4 2.4 0 0 1-2.4 2.4H5.9a2.4 2.4 0 0 1-2.4-2.4z" />

@@ -1,6 +1,6 @@
 import React from 'react';
 import { t } from '../../i18n';
-import { GnFolderIcon, GnOpenAIAgentIcon } from '../icons/gnIcons';
+import { GnClaudeIcon, GnFolderIcon, GnOpenAIAgentIcon } from '../icons/gnIcons';
 import { agentTreeNodeKey } from '../../utils/agentConnectionTypes';
 import type { AgentIntegrationSummaryView } from '../../utils/agentConnectionTypes';
 import type { SidebarTreeNode as TreeNode } from './sidebarV2TreeNodes';
@@ -10,14 +10,13 @@ import type { SidebarTreeNode as TreeNode } from './sidebarV2TreeNodes';
  * v2 主题的 20px 槽位规则自动生效。
  */
 const agentKindIcon = (kind: string): React.ReactNode => {
-  if (kind === 'codex') {
-    return (
-      <span className="gn-v2-tree-folder-icon" data-sidebar-tree-folder-icon="true">
-        <GnOpenAIAgentIcon />
-      </span>
-    );
-  }
-  return null;
+  const Icon = kind === 'codex' ? GnOpenAIAgentIcon : kind === 'claude' ? GnClaudeIcon : null;
+  if (!Icon) return null;
+  return (
+    <span className="gn-v2-tree-folder-icon" data-sidebar-tree-folder-icon="true">
+      <Icon />
+    </span>
+  );
 };
 
 /**
