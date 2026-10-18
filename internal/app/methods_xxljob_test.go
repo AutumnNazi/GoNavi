@@ -211,6 +211,15 @@ func TestXxlJobMutationBindingsBlockedByReadOnly(t *testing.T) {
 		"start":   func() connection.QueryResult { return app.XxlJobStartJobs(config, []int{3}) },
 		"stop":    func() connection.QueryResult { return app.XxlJobStopJobs(config, []int{3}) },
 		"kill":    func() connection.QueryResult { return app.XxlJobLogKill(config, 10) },
+		"job_save": func() connection.QueryResult {
+			return app.XxlJobSaveJob(config, XxlJobJobMutation{JobGroup: 1, Name: "demo", ScheduleType: "CRON", ScheduleConf: "0/30 * * * * ?", ExecutorHandler: "demoJobHandler"})
+		},
+		"job_delete": func() connection.QueryResult { return app.XxlJobDeleteJobs(config, []int{3}) },
+		"group_save": func() connection.QueryResult {
+			return app.XxlJobSaveJobGroup(config, XxlJobGroupMutation{AppName: "xxl-job-demo-group", Title: "Demo"})
+		},
+		"group_delete": func() connection.QueryResult { return app.XxlJobDeleteJobGroups(config, []int{1}) },
+		"glue_save":    func() connection.QueryResult { return app.XxlJobSaveGlueSource(config, 3, "print('x')", "demo") },
 	}
 	for name, call := range cases {
 		t.Run(name, func(t *testing.T) {

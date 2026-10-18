@@ -1746,6 +1746,14 @@ export function XxlJobConnect(arg1) {
   return window['go']['app']['App']['XxlJobConnect'](arg1);
 }
 
+export function XxlJobDeleteJobGroups(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobDeleteJobGroups'](arg1, arg2);
+}
+
+export function XxlJobDeleteJobs(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobDeleteJobs'](arg1, arg2);
+}
+
 export function XxlJobDisconnect(arg1) {
   return window['go']['app']['App']['XxlJobDisconnect'](arg1);
 }
@@ -1776,6 +1784,18 @@ export function XxlJobLogKill(arg1, arg2) {
 
 export function XxlJobNextTriggerTimes(arg1, arg2, arg3) {
   return window['go']['app']['App']['XxlJobNextTriggerTimes'](arg1, arg2, arg3);
+}
+
+export function XxlJobSaveGlueSource(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['XxlJobSaveGlueSource'](arg1, arg2, arg3, arg4);
+}
+
+export function XxlJobSaveJob(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobSaveJob'](arg1, arg2);
+}
+
+export function XxlJobSaveJobGroup(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobSaveJobGroup'](arg1, arg2);
 }
 
 export function XxlJobStartJobs(arg1, arg2) {

@@ -886,6 +886,10 @@ export function WriteSQLFile(arg1:string,arg2:string):Promise<connection.QueryRe
 
 export function XxlJobConnect(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
 
+export function XxlJobDeleteJobGroups(arg1:connection.ConnectionConfig,arg2:Array<number>):Promise<connection.QueryResult>;
+
+export function XxlJobDeleteJobs(arg1:connection.ConnectionConfig,arg2:Array<number>):Promise<connection.QueryResult>;
+
 export function XxlJobDisconnect(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
 
 export function XxlJobListJobGroups(arg1:connection.ConnectionConfig,arg2:app.XxlJobListQuery):Promise<connection.QueryResult>;
@@ -901,6 +905,12 @@ export function XxlJobLogDetail(arg1:connection.ConnectionConfig,arg2:number,arg
 export function XxlJobLogKill(arg1:connection.ConnectionConfig,arg2:number):Promise<connection.QueryResult>;
 
 export function XxlJobNextTriggerTimes(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
+
+export function XxlJobSaveGlueSource(arg1:connection.ConnectionConfig,arg2:number,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function XxlJobSaveJob(arg1:connection.ConnectionConfig,arg2:app.XxlJobJobMutation):Promise<connection.QueryResult>;
+
+export function XxlJobSaveJobGroup(arg1:connection.ConnectionConfig,arg2:app.XxlJobGroupMutation):Promise<connection.QueryResult>;
 
 export function XxlJobStartJobs(arg1:connection.ConnectionConfig,arg2:Array<number>):Promise<connection.QueryResult>;
 
