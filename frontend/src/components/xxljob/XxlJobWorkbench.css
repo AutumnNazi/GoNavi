@@ -1,0 +1,24 @@
+/* XXL-JOB 工作台面板样式。
+   固定列（操作列 fixed: right）必须有完全不透明的背景：antd 默认给固定列
+   单元格的白色背景会被 v2 主题的透明行背景与半透明 hover 色穿透，横向滚动时
+   底下的列内容会从固定列里透出来。解法与 SqlAuditWorkbench 相同——固定列
+   用面板底色，hover/选中行用 color-mix 混出对应的不透明色。 */
+
+.xxljob-panel .ant-table-cell-fix-left,
+.xxljob-panel .ant-table-cell-fix-right {
+  background: var(--gn-bg-panel-2, #fafaf8);
+}
+
+/* hover 行：antd 的行 hover 是半透明色（colorFillQuaternary 系），
+   在固定列上会穿透；用面板底色混合同样的比例得到不透明等价色。 */
+.xxljob-panel .ant-table-tbody > tr.ant-table-cell-row-hover > td.ant-table-cell-fix-left,
+.xxljob-panel .ant-table-tbody > tr.ant-table-cell-row-hover > td.ant-table-cell-fix-right {
+  background: color-mix(in srgb, rgba(15, 23, 42, 4.5%) var(--gn-bg-panel-2, #fafaf8));
+}
+
+/* 固定列与滚动区的分界阴影保持 antd 默认（ping 类控制），无需覆盖；
+   表头固定列底色与表头一致，避免与滚动区表头出现色差。 */
+.xxljob-panel .ant-table-thead > tr > th.ant-table-cell-fix-left,
+.xxljob-panel .ant-table-thead > tr > th.ant-table-cell-fix-right {
+  background: var(--gn-bg-panel-2, #fafaf8);
+}

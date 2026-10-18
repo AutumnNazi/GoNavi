@@ -1,6 +1,7 @@
 import React from 'react';
 import { Alert, Empty } from 'antd';
 import type { TabData } from '../../types';
+import './XxlJobWorkbench.css';
 import { XxlJobGroupPanel } from './XxlJobGroupPanel';
 import { XxlJobJobPanel } from './XxlJobJobPanel';
 import { XxlJobLogPanel } from './XxlJobLogPanel';
