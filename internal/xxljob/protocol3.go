@@ -9,12 +9,21 @@ const (
 )
 
 // Task mutation routes for the 3.3.0+ line. These replace the 2.x /add /remove
-// pair with /insert /delete, and the single-id parameter with ids[].
+// pair with /insert /delete, and the single-id parameter with ids[]. The admin
+// restricts delete to exactly one id, so the app sends single-id batches.
 const (
 	route3JobInfoInsert  = "/jobinfo/insert"
+	route3JobInfoUpdate  = "/jobinfo/update"
 	route3JobInfoDelete  = "/jobinfo/delete"
 	route3JobGroupInsert = "/jobgroup/insert"
+	route3JobGroupUpdate = "/jobgroup/update"
 	route3JobGroupDelete = "/jobgroup/delete"
+)
+
+// GLUE source routes. 3.x moved the source editor behind /jobcode; the source
+// itself still travels inside the jobinfo POJO on insert/update.
+const (
+	route3JobCodeSave = "/jobcode/save"
 )
 
 // loginRoute returns the login endpoint for the detected authentication family.

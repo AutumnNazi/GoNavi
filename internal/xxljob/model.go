@@ -135,6 +135,9 @@ type JobInfo struct {
 	ExecutorTimeout        int      `json:"executorTimeout"`
 	ExecutorFailRetryCount int      `json:"executorFailRetryCount"`
 	GlueType               string   `json:"glueType,omitempty"`
+	GlueSource             string   `json:"glueSource,omitempty"`
+	GlueRemark             string   `json:"glueRemark,omitempty"`
+	GlueUpdatetime         FlexTime `json:"glueUpdatetime,omitempty"`
 	ChildJobID             string   `json:"childJobId,omitempty"`
 	TriggerStatus          int      `json:"triggerStatus"`
 	TriggerLastTime        FlexTime `json:"triggerLastTime,omitempty"`

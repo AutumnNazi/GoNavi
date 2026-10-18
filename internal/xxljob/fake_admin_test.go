@@ -36,6 +36,43 @@ var (
 // expiryShape selects how an expired session is reported.
 type expiryShape string
 
+// Route expectations per flavor: the stack decides which mutation route the
+// protocol must hit.
+func (f adminFlavor) jobCreateRoute() string {
+	if f.login == LoginSSO {
+		return route3JobInfoInsert
+	}
+	return route2JobInfoAdd
+}
+
+func (f adminFlavor) jobUpdateRoute() string {
+	if f.login == LoginSSO {
+		return route3JobInfoUpdate
+	}
+	return route2JobInfoSave
+}
+
+func (f adminFlavor) jobDeleteRoute() string {
+	if f.login == LoginSSO {
+		return route3JobInfoDelete
+	}
+	return route2JobInfoRemove
+}
+
+func (f adminFlavor) groupCreateRoute() string {
+	if f.login == LoginSSO {
+		return route3JobGroupInsert
+	}
+	return route2JobGroupSave
+}
+
+func (f adminFlavor) groupUpdateRoute() string {
+	if f.login == LoginSSO {
+		return route3JobGroupUpdate
+	}
+	return route2JobGroupUpdate
+}
+
 const (
 	expiryRedirect302 expiryShape = "redirect302"
 	expiryCode500     expiryShape = "code500"
@@ -238,6 +275,20 @@ func (a *fakeAdmin) serve(w http.ResponseWriter, r *http.Request) {
 		a.serveTrigger(w, form)
 	case routeJobInfoStart, routeJobInfoStop:
 		a.writeEnvelope(w, http.StatusOK, http.StatusOK, "ok", nil)
+	case route2JobInfoAdd, route3JobInfoInsert:
+		a.writeEnvelope(w, http.StatusOK, http.StatusOK, "Success", "3")
+	case route2JobInfoSave, route3JobInfoUpdate:
+		a.writeEnvelope(w, http.StatusOK, http.StatusOK, "Success", nil)
+	case route2JobInfoRemove, route3JobInfoDelete:
+		a.writeEnvelope(w, http.StatusOK, http.StatusOK, "Success", nil)
+	case route2JobGroupSave, route3JobGroupInsert:
+		a.writeEnvelope(w, http.StatusOK, http.StatusOK, "Success", "7")
+	case route2JobGroupUpdate: // 与 route3JobGroupUpdate 同路径，合并 case
+		a.writeEnvelope(w, http.StatusOK, http.StatusOK, "Success", nil)
+	case route2JobGroupRemove, route3JobGroupDelete:
+		a.writeEnvelope(w, http.StatusOK, http.StatusOK, "Success", nil)
+	case route3JobCodeSave:
+		a.writeEnvelope(w, http.StatusOK, http.StatusOK, "Success", nil)
 	case routeJobInfoNextTrigger:
 		a.writeArray(w, []string{"2026-10-17 10:00:00", "2026-10-17 10:00:30"})
 	case routeJobLogPageList:

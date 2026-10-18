@@ -8,13 +8,19 @@ const (
 	route2LoginPage = "/toLogin"
 )
 
-// Task mutation routes for the 2.x line. The first version ships no task
-// editor, so these are declared here to keep the version difference isolated
-// and to leave the second-phase editor a single place to wire up.
+// Task mutation routes for the 2.x line. The admin binds full POJOs here, so a
+// save carries every field of XxlJobInfo including the GLUE source.
 const (
 	route2JobInfoAdd    = "/jobinfo/add"
 	route2JobInfoRemove = "/jobinfo/remove"
 	route2JobInfoSave   = "/jobinfo/save"
 	route2JobGroupSave  = "/jobgroup/save"
 	route2JobLogClear   = "/joblog/clearLog"
+)
+
+// Executor mutation routes for the 2.x line. save/update/remove mirror the
+// group page's own buttons.
+const (
+	route2JobGroupUpdate = "/jobgroup/update"
+	route2JobGroupRemove = "/jobgroup/remove"
 )

@@ -207,7 +207,9 @@ type LogListRequest struct {
 }
 
 // Protocol is the version-neutral admin surface. Implementations differ only in
-// parameter names and response shells.
+// parameter names and response shells. The mutation half (declared on
+// jobMutator) is part of the same surface: every stack routes add/update/delete
+// to its own route family.
 type Protocol interface {
 	ListJobGroups(ctx context.Context, req GroupListRequest) (PageResult[JobGroup], error)
 	LoadJobGroup(ctx context.Context, id int) (JobGroup, error)
@@ -219,6 +221,14 @@ type Protocol interface {
 	ListLogs(ctx context.Context, req LogListRequest) (PageResult[JobLog], error)
 	LogDetail(ctx context.Context, logID, fromLineNum int) (LogDetail, error)
 	LogKill(ctx context.Context, logID int) error
+
+	CreateJob(ctx context.Context, job JobMutation) (int, error)
+	UpdateJob(ctx context.Context, job JobMutation) error
+	DeleteJobs(ctx context.Context, ids []int) error
+	CreateJobGroup(ctx context.Context, group GroupMutation) (int, error)
+	UpdateJobGroup(ctx context.Context, group GroupMutation) error
+	DeleteJobGroups(ctx context.Context, ids []int) error
+	SaveGlueSource(ctx context.Context, jobID int, glueSource, glueRemark string) error
 }
 
 // stackProtocol routes each call to the matching stack behaviour. Everything
