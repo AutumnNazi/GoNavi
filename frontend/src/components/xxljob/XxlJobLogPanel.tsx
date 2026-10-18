@@ -36,15 +36,16 @@ type Props = {
 };
 
 // 详情抽屉：按 fromLineNum 续读调度中心转发的执行器滚动日志。
+// killable：该次执行仍在运行且连接非只读，只有此时才展示终止按钮。
 const XxlJobLogDetailDrawer: React.FC<{
   open: boolean;
   logId: number | null;
-  readOnly: boolean;
+  killable: boolean;
   busy: boolean;
   fetchDetail: (logId: number, fromLineNum: number) => Promise<{ success: boolean; message?: string; data?: XxlJobLogDetail } | null>;
   kill: (logId: number) => Promise<{ success: boolean; message?: string } | null>;
   onClose: () => void;
-}> = ({ open, logId, readOnly, busy, fetchDetail, kill, onClose }) => {
+}> = ({ open, logId, killable, busy, fetchDetail, kill, onClose }) => {
   const [content, setContent] = useState('');
   const [nextLine, setNextLine] = useState(1);
   const [ended, setEnded] = useState(false);
@@ -109,9 +110,11 @@ const XxlJobLogDetailDrawer: React.FC<{
           >
             {t('xxljob.action.load_more')}
           </Button>
-          <Button danger disabled={readOnly || busy} onClick={() => void runKill()}>
-            {t('xxljob.action.kill')}
-          </Button>
+          {killable ? (
+            <Button danger disabled={busy} onClick={() => void runKill()}>
+              {t('xxljob.action.kill')}
+            </Button>
+          ) : null}
         </Space>
       )}
     >
@@ -304,19 +307,22 @@ export const XxlJobLogPanel: React.FC<Props> = ({ connectionId, isActive }) => {
                 <Button size="small" onClick={() => setDetailLogId(record.id)}>
                   {t('xxljob.action.detail')}
                 </Button>
-                <Button
-                  size="small"
-                  danger
-                  disabled={readOnly || busy || !isXxlJobLogRunning(record)}
-                  onClick={() => {
-                    void logKill(record.id).then((result) => {
-                      if (result?.success) message.success(result.message || t('xxljob.message.kill_success'));
-                      else message.error(result?.message || t('xxljob.message.action_failed'));
-                    });
-                  }}
-                >
-                  {t('xxljob.action.kill')}
-                </Button>
+                {/* 终止只对运行中的执行有意义；不可操作时不渲染而不是置灰。 */}
+                {isXxlJobLogRunning(record) && !readOnly ? (
+                  <Button
+                    size="small"
+                    danger
+                    disabled={busy}
+                    onClick={() => {
+                      void logKill(record.id).then((result) => {
+                        if (result?.success) message.success(result.message || t('xxljob.message.kill_success'));
+                        else message.error(result?.message || t('xxljob.message.action_failed'));
+                      });
+                    }}
+                  >
+                    {t('xxljob.action.kill')}
+                  </Button>
+                ) : null}
               </Space>
             ),
           },
@@ -326,7 +332,7 @@ export const XxlJobLogPanel: React.FC<Props> = ({ connectionId, isActive }) => {
       <XxlJobLogDetailDrawer
         open={detailLogId != null}
         logId={detailLogId}
-        readOnly={readOnly}
+        killable={!readOnly && rows.some((r) => r.id === detailLogId && isXxlJobLogRunning(r))}
         busy={busy}
         fetchDetail={fetchLogDetail}
         kill={logKill}

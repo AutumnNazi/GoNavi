@@ -108,6 +108,11 @@ const buttonIn = (row: HTMLElement, label: string): HTMLButtonElement => {
   return hit;
 };
 
+// 终止按钮按需渲染：不可操作的行里不应存在该按钮。
+const hasButtonIn = (row: HTMLElement, label: string): boolean =>
+  Array.from(row.querySelectorAll('button'))
+    .some((button) => (button.textContent || '').includes(label));
+
 const textOf = (label: string): HTMLElement | null => {
   const node = Array.from(container.querySelectorAll('*'))
     .find((el) => el.textContent?.trim() === label);
@@ -230,7 +235,7 @@ describe('XXL-JOB 任务面板', () => {
 });
 
 describe('XXL-JOB 调度日志面板', () => {
-  it('非运行中的记录禁用终止，运行中的启用', async () => {
+  it('非运行中的记录不渲染终止按钮，运行中的渲染且可用', async () => {
     rpcMock.listLogs.mockResolvedValue(page([
       { id: 10, jobId: 1, triggerCode: 200, handleCode: 200 },
       { id: 11, jobId: 1, triggerCode: 200, handleCode: 0 },
@@ -239,11 +244,11 @@ describe('XXL-JOB 调度日志面板', () => {
     await flush();
     const finished = rowWithId('10');
     const running = rowWithId('11');
-    expect(buttonIn(finished, 'xxljob.action.kill').disabled).toBe(true);
+    expect(hasButtonIn(finished, 'xxljob.action.kill')).toBe(false);
     expect(buttonIn(running, 'xxljob.action.kill').disabled).toBe(false);
   });
 
-  it('只读连接下即使运行中也禁用终止', async () => {
+  it('只读连接下即使运行中也不渲染终止按钮', async () => {
     storeState = {
       connections: [{
         ...baseConnection,
@@ -253,7 +258,7 @@ describe('XXL-JOB 调度日志面板', () => {
     rpcMock.listLogs.mockResolvedValue(page([{ id: 11, jobId: 1, triggerCode: 200, handleCode: 0 }]));
     renderPanel(<XxlJobLogPanel connectionId="c1" isActive />);
     await flush();
-    expect(buttonIn(rowWithId('11'), 'xxljob.action.kill').disabled).toBe(true);
+    expect(hasButtonIn(rowWithId('11'), 'xxljob.action.kill')).toBe(false);
   });
 
   it('空列表渲染空态', async () => {
