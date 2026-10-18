@@ -1562,76 +1562,44 @@ export function SelectSavedQueryDirectory(arg1) {
   return window['go']['app']['App']['SelectSavedQueryDirectory'](arg1);
 }
 
-export function SessionAssetsContinueSession(arg1) {
-  return window['go']['app']['App']['SessionAssetsContinueSession'](arg1);
+export function SessionAgentBlockContent(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['App']['SessionAgentBlockContent'](arg1, arg2, arg3, arg4, arg5);
 }
 
-export function SessionAssetsDeleteAsset(arg1) {
-  return window['go']['app']['App']['SessionAssetsDeleteAsset'](arg1);
+export function SessionAgentCopyResume(arg1, arg2) {
+  return window['go']['app']['App']['SessionAgentCopyResume'](arg1, arg2);
 }
 
-export function SessionAssetsDetect(arg1) {
-  return window['go']['app']['App']['SessionAssetsDetect'](arg1);
+export function SessionAgentDelete(arg1, arg2, arg3) {
+  return window['go']['app']['App']['SessionAgentDelete'](arg1, arg2, arg3);
 }
 
-export function SessionAssetsDisable(arg1) {
-  return window['go']['app']['App']['SessionAssetsDisable'](arg1);
+export function SessionAgentDetail(arg1, arg2) {
+  return window['go']['app']['App']['SessionAgentDetail'](arg1, arg2);
 }
 
-export function SessionAssetsEnable(arg1) {
-  return window['go']['app']['App']['SessionAssetsEnable'](arg1);
+export function SessionAgentExportMarkdown(arg1, arg2) {
+  return window['go']['app']['App']['SessionAgentExportMarkdown'](arg1, arg2);
 }
 
-export function SessionAssetsExportAsset(arg1, arg2, arg3) {
-  return window['go']['app']['App']['SessionAssetsExportAsset'](arg1, arg2, arg3);
+export function SessionAgentList(arg1, arg2) {
+  return window['go']['app']['App']['SessionAgentList'](arg1, arg2);
 }
 
-export function SessionAssetsGetAssetDetail(arg1) {
-  return window['go']['app']['App']['SessionAssetsGetAssetDetail'](arg1);
+export function SessionAgentProviders() {
+  return window['go']['app']['App']['SessionAgentProviders']();
 }
 
-export function SessionAssetsHandoffCapability(arg1) {
-  return window['go']['app']['App']['SessionAssetsHandoffCapability'](arg1);
+export function SessionAgentReadPage(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['SessionAgentReadPage'](arg1, arg2, arg3, arg4);
 }
 
-export function SessionAssetsLaunchInteractive(arg1) {
-  return window['go']['app']['App']['SessionAssetsLaunchInteractive'](arg1);
+export function SessionAgentRevealPath(arg1) {
+  return window['go']['app']['App']['SessionAgentRevealPath'](arg1);
 }
 
-export function SessionAssetsListAssets(arg1, arg2) {
-  return window['go']['app']['App']['SessionAssetsListAssets'](arg1, arg2);
-}
-
-export function SessionAssetsListIntegrations() {
-  return window['go']['app']['App']['SessionAssetsListIntegrations']();
-}
-
-export function SessionAssetsPrepareHandoff(arg1, arg2, arg3, arg4, arg5, arg6) {
-  return window['go']['app']['App']['SessionAssetsPrepareHandoff'](arg1, arg2, arg3, arg4, arg5, arg6);
-}
-
-export function SessionAssetsPreviewHandoff(arg1, arg2, arg3, arg4) {
-  return window['go']['app']['App']['SessionAssetsPreviewHandoff'](arg1, arg2, arg3, arg4);
-}
-
-export function SessionAssetsReadHistory(arg1, arg2, arg3) {
-  return window['go']['app']['App']['SessionAssetsReadHistory'](arg1, arg2, arg3);
-}
-
-export function SessionAssetsRefreshSources(arg1) {
-  return window['go']['app']['App']['SessionAssetsRefreshSources'](arg1);
-}
-
-export function SessionAssetsRelocateSource(arg1, arg2) {
-  return window['go']['app']['App']['SessionAssetsRelocateSource'](arg1, arg2);
-}
-
-export function SessionAssetsRetryCapture(arg1) {
-  return window['go']['app']['App']['SessionAssetsRetryCapture'](arg1);
-}
-
-export function SessionAssetsSelectExportDirectory() {
-  return window['go']['app']['App']['SessionAssetsSelectExportDirectory']();
+export function SessionAgentTimeGroups(arg1, arg2) {
+  return window['go']['app']['App']['SessionAgentTimeGroups'](arg1, arg2);
 }
 
 export function SetApplicationBrandIcon(arg1) {

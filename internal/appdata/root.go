@@ -18,7 +18,6 @@ const (
 	savedQueryDirectoryProbePrefix    = ".gonavi-saved-query-"
 	agentDataDirectoryProbePrefix     = ".gonavi-agent-data-"
 	sessionAssetsDirectoryName        = "session-assets"
-	sessionAssetsDirectoryProbePrefix = ".gonavi-session-assets-"
 )
 const dataRootEnvName = "GONAVI_DATA_ROOT"
 
@@ -117,7 +116,6 @@ type bootstrapConfig struct {
 	LogDirectory           string `json:"logDirectory,omitempty"`
 	SavedQueryDirectory    string `json:"savedQueryDirectory,omitempty"`
 	AgentDataDirectory     string `json:"agentDataDirectory,omitempty"`
-	SessionAssetsDirectory string `json:"sessionAssetsDirectory,omitempty"`
 }
 
 func readBootstrapConfig() (bootstrapConfig, error) {
@@ -140,9 +138,8 @@ func writeBootstrapConfig(cfg bootstrapConfig) error {
 	cfg.LogDirectory = strings.TrimSpace(cfg.LogDirectory)
 	cfg.SavedQueryDirectory = strings.TrimSpace(cfg.SavedQueryDirectory)
 	cfg.AgentDataDirectory = strings.TrimSpace(cfg.AgentDataDirectory)
-	cfg.SessionAssetsDirectory = strings.TrimSpace(cfg.SessionAssetsDirectory)
 	if cfg.DataRoot == "" && cfg.LogDirectory == "" && cfg.SavedQueryDirectory == "" &&
-		cfg.AgentDataDirectory == "" && cfg.SessionAssetsDirectory == "" {
+		cfg.AgentDataDirectory == "" {
 		if err := os.Remove(BootstrapPath()); err != nil && !os.IsNotExist(err) {
 			return err
 		}

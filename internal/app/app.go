@@ -17,7 +17,6 @@ import (
 	"GoNavi-Wails/internal/requesttrace"
 	"GoNavi-Wails/internal/resultdiff"
 	"GoNavi-Wails/internal/secretstore"
-	"GoNavi-Wails/internal/sessionassets"
 	"GoNavi-Wails/internal/sqlaudit"
 	syncbackend "GoNavi-Wails/internal/sync"
 	"GoNavi-Wails/internal/synccdc"
@@ -111,8 +110,6 @@ type App struct {
 	webRuntime                    bool
 	headlessRuntime               bool
 	startedAt                     time.Time
-	sessionAssetsMu               sync.Mutex
-	sessionAssets                 *sessionassets.Service
 	dbCache                       map[string]cachedDatabase // Cache for DB connections
 	connectFailures               map[string]cachedConnectFailure
 	dbConnectGroup                singleflight.Group

@@ -5003,66 +5003,26 @@ export namespace runharness {
 
 }
 
-export namespace sessionassets {
+export namespace sessionagent {
 	
-	export class AssetFilter {
-	    query: string;
-	    sourceId: string;
-	    projectDir: string;
-	    provider: string;
-	    sourceStatus: string;
-	    backupStatus: string;
-	    page: number;
-	    pageSize: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new AssetFilter(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.query = source["query"];
-	        this.sourceId = source["sourceId"];
-	        this.projectDir = source["projectDir"];
-	        this.provider = source["provider"];
-	        this.sourceStatus = source["sourceStatus"];
-	        this.backupStatus = source["backupStatus"];
-	        this.page = source["page"];
-	        this.pageSize = source["pageSize"];
-	    }
-	}
-	export class DetectInput {
+	export class ContentRef {
 	    kind: string;
-	    commandPath: string;
-	    dataDir: string;
+	    offset?: number;
+	    len?: number;
+	    relPath?: string;
+	    pointer?: string;
 	
 	    static createFrom(source: any = {}) {
-	        return new DetectInput(source);
+	        return new ContentRef(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.kind = source["kind"];
-	        this.commandPath = source["commandPath"];
-	        this.dataDir = source["dataDir"];
-	    }
-	}
-	export class EnableInput {
-	    kind: string;
-	    commandPath: string;
-	    dataDir: string;
-	    materialsRoot: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new EnableInput(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.kind = source["kind"];
-	        this.commandPath = source["commandPath"];
-	        this.dataDir = source["dataDir"];
-	        this.materialsRoot = source["materialsRoot"];
+	        this.offset = source["offset"];
+	        this.len = source["len"];
+	        this.relPath = source["relPath"];
+	        this.pointer = source["pointer"];
 	    }
 	}
 

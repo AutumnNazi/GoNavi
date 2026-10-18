@@ -12,7 +12,7 @@ import {db} from '../models';
 import {mockdata} from '../models';
 import {redis} from '../models';
 import {resultdiff} from '../models';
-import {sessionassets} from '../models';
+import {sessionagent} from '../models';
 import {dbuser} from '../models';
 
 export function AnalyzeQueryParameters(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<app.QueryParameterAnalysis>;
@@ -795,41 +795,25 @@ export function SelectSSHKnownHostsFile(arg1:string):Promise<connection.QueryRes
 
 export function SelectSavedQueryDirectory(arg1:string):Promise<connection.QueryResult>;
 
-export function SessionAssetsContinueSession(arg1:string):Promise<connection.QueryResult>;
+export function SessionAgentBlockContent(arg1:string,arg2:string,arg3:sessionagent.ContentRef,arg4:number,arg5:number):Promise<connection.QueryResult>;
 
-export function SessionAssetsDeleteAsset(arg1:string):Promise<connection.QueryResult>;
+export function SessionAgentCopyResume(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
-export function SessionAssetsDetect(arg1:sessionassets.DetectInput):Promise<connection.QueryResult>;
+export function SessionAgentDelete(arg1:string,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
-export function SessionAssetsDisable(arg1:string):Promise<connection.QueryResult>;
+export function SessionAgentDetail(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
-export function SessionAssetsEnable(arg1:sessionassets.EnableInput):Promise<connection.QueryResult>;
+export function SessionAgentExportMarkdown(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
-export function SessionAssetsExportAsset(arg1:string,arg2:string,arg3:string):Promise<connection.QueryResult>;
+export function SessionAgentList(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
-export function SessionAssetsGetAssetDetail(arg1:string):Promise<connection.QueryResult>;
+export function SessionAgentProviders():Promise<connection.QueryResult>;
 
-export function SessionAssetsHandoffCapability(arg1:string):Promise<connection.QueryResult>;
+export function SessionAgentReadPage(arg1:string,arg2:string,arg3:number,arg4:number):Promise<connection.QueryResult>;
 
-export function SessionAssetsLaunchInteractive(arg1:string):Promise<connection.QueryResult>;
+export function SessionAgentRevealPath(arg1:string):Promise<connection.QueryResult>;
 
-export function SessionAssetsListAssets(arg1:string,arg2:sessionassets.AssetFilter):Promise<connection.QueryResult>;
-
-export function SessionAssetsListIntegrations():Promise<connection.QueryResult>;
-
-export function SessionAssetsPrepareHandoff(arg1:string,arg2:string,arg3:string,arg4:number,arg5:number,arg6:string):Promise<connection.QueryResult>;
-
-export function SessionAssetsPreviewHandoff(arg1:string,arg2:string,arg3:number,arg4:number):Promise<connection.QueryResult>;
-
-export function SessionAssetsReadHistory(arg1:string,arg2:number,arg3:number):Promise<connection.QueryResult>;
-
-export function SessionAssetsRefreshSources(arg1:string):Promise<connection.QueryResult>;
-
-export function SessionAssetsRelocateSource(arg1:string,arg2:string):Promise<connection.QueryResult>;
-
-export function SessionAssetsRetryCapture(arg1:string):Promise<connection.QueryResult>;
-
-export function SessionAssetsSelectExportDirectory():Promise<connection.QueryResult>;
+export function SessionAgentTimeGroups(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
 export function SetApplicationBrandIcon(arg1:string):Promise<connection.QueryResult>;
 

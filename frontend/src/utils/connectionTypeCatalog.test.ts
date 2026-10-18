@@ -19,7 +19,6 @@ const translatedCopy: Record<string, string> = {
   'connection_modal.step1.group.bigdata': 'T:bigdata',
   'connection_modal.step1.group.message_queue': 'T:message-queue',
   'connection_modal.step1.group.config_center': 'T:config-center',
-  'connection_modal.step1.group.agent': 'T:agent',
   'connection_modal.step1.group.other': 'T:other',
   'connection_modal.step1.hint.redis': 'T:redis',
   'connection_modal.step1.hint.mongodb': 'T:mongodb',
@@ -50,7 +49,6 @@ describe('connectionTypeCatalog', () => {
       'connection_modal.step1.group.bigdata',
       'connection_modal.step1.group.message_queue',
       'connection_modal.step1.group.config_center',
-      'connection_modal.step1.group.agent',
       'connection_modal.step1.group.other',
     ]);
     expect(buildConnectionTypeGroups(translate).map((group) => group.label)).toEqual([
@@ -63,7 +61,6 @@ describe('connectionTypeCatalog', () => {
       'T:bigdata',
       'T:message-queue',
       'T:config-center',
-      'T:agent',
       'T:other',
     ]);
     expect(

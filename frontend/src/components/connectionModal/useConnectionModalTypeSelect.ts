@@ -1,5 +1,4 @@
 import { normalizeDriverType } from "../../utils/connectionDriverType";
-import { isAgentConnectionType } from "../../utils/agentConnectionTypes";
 import { t } from "../../i18n";
 import { getConnectionTypeDefaultPort as getDefaultPortByType } from "../../utils/connectionTypeCatalog";
 import { buildDefaultJVMConnectionValues } from "../../utils/jvmConnectionConfig";
@@ -45,13 +44,6 @@ export const useConnectionModalTypeSelect = ({
   refreshDriverStatus,
 }: UseConnectionModalTypeSelectInput) => {
   const handleTypeSelect = (type: string) => {
-    // 智能体类型不进入数据库表单：直接进入检测/启用步骤（S-02）。
-    if (isAgentConnectionType(type)) {
-      setTypeSelectWarning(null);
-      setDbType(type);
-      setStep(2);
-      return;
-    }
     const normalized = normalizeDriverType(type);
     const snapshot = driverStatusMap[normalized];
     if (snapshot && !snapshot.connectable) {
