@@ -71,11 +71,33 @@ export const useXxlJobGroups = (connectionId: string, isActive: boolean) => {
     setAllGroups(groups);
   }, [rpcConfig]);
 
+  const [busy, setBusy] = useState(false);
+  const withBusy = useCallback(async (run: () => Promise<QueryResult<unknown>>) => {
+    setBusy(true);
+    try {
+      return await run();
+    } finally {
+      setBusy(false);
+      page.reload();
+    }
+  }, [page]);
+
+  const saveJobGroup = useCallback(async (payload: unknown) => {
+    if (!rpcConfig) return null;
+    return withBusy(() => xxlJobRpc.saveJobGroup(rpcConfig as never, payload as never));
+  }, [rpcConfig, withBusy]);
+
+  const deleteJobGroups = useCallback(async (groupIds: number[]) => {
+    if (!rpcConfig || groupIds.length === 0) return null;
+    return withBusy(() => xxlJobRpc.deleteJobGroups(rpcConfig as never, groupIds));
+  }, [rpcConfig, withBusy]);
+
   return {
     ...page,
     connection,
     rpcConfig,
     readOnly,
+    busy,
     appName,
     title,
     setAppName,
@@ -84,6 +106,8 @@ export const useXxlJobGroups = (connectionId: string, isActive: boolean) => {
     resetFilters,
     allGroups,
     loadAllGroups,
+    saveJobGroup,
+    deleteJobGroups,
   };
 };
 
