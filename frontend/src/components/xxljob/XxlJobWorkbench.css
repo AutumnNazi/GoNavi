@@ -1,24 +1,56 @@
 /* XXL-JOB 工作台面板样式。
-   固定列（操作列 fixed: right）必须有完全不透明的背景：antd 默认给固定列
-   单元格的白色背景会被 v2 主题的透明行背景与半透明 hover 色穿透，横向滚动时
-   底下的列内容会从固定列里透出来。解法与 SqlAuditWorkbench 相同——固定列
-   用面板底色，hover/选中行用 color-mix 混出对应的不透明色。 */
+   固定列（操作列 fixed: right）必须有完全不透明的背景：横向滚动时固定列下方
+   会透出滚动区的内容。v2 主题对行的 hover / 选中态用带 !important 的半透明色
+   （--gn-bg-hover / --gn-bg-selected，均为 rgba/color-mix transparent 底）覆盖
+   所有单元格，组件级的不透明底色若无 !important 会被压过而重新变透明。
+   解法与 dataGridStylesTable.ts 相同——固定列在不透明面板底色上叠一层半透明
+   高亮（linear-gradient 铺满），并用 !important 确保覆盖主题规则。 */
+
+/* 高亮叠层颜色：默认态透明；hover / 选中沿用主题同款半透明色。 */
+.xxljob-panel {
+  --xxljob-fixed-hover: var(--gn-bg-hover, rgba(15, 23, 42, 4.5%));
+  --xxljob-fixed-selected: var(--gn-bg-selected, color-mix(in srgb, var(--gn-accent, #16a34a) 16%, transparent));
+  /* 固定列实心底：窗口透明度场景下 --gn-bg-panel-2 自带 / var(--gn-window-opacity)
+     的 alpha，这里强制回不透明（rgb(from … r g b / 1)），否则透明窗口下仍会透底。 */
+  --xxljob-fixed-fill: rgb(from var(--gn-bg-panel-2, #fafaf8) r g b / 1);
+}
 
 .xxljob-panel .ant-table-cell-fix-left,
 .xxljob-panel .ant-table-cell-fix-right {
-  background: var(--gn-bg-panel-2, #fafaf8);
+  background: var(--xxljob-fixed-fill) !important;
+  background-image: none !important;
 }
 
-/* hover 行：antd 的行 hover 是半透明色（colorFillQuaternary 系），
-   在固定列上会穿透；用面板底色混合同样的比例得到不透明等价色。 */
-.xxljob-panel .ant-table-tbody > tr.ant-table-cell-row-hover > td.ant-table-cell-fix-left,
-.xxljob-panel .ant-table-tbody > tr.ant-table-cell-row-hover > td.ant-table-cell-fix-right {
-  background: color-mix(in srgb, rgba(15, 23, 42, 4.5%) var(--gn-bg-panel-2, #fafaf8));
+/* hover 行：主题的行 hover 背景是半透明 !important，固定列上会穿透；
+   用实心底 + 同色叠层得到视觉一致且不透明的等价色。
+   antd v5 把 ant-table-cell-row-hover 加在 td 上（非 tr），直接选单元格。 */
+.xxljob-panel .ant-table-tbody > td.ant-table-cell-row-hover.ant-table-cell-fix-left,
+.xxljob-panel .ant-table-tbody > td.ant-table-cell-row-hover.ant-table-cell-fix-right,
+.xxljob-panel .ant-table-tbody > tr:hover > td.ant-table-cell-fix-left,
+.xxljob-panel .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right {
+  background: linear-gradient(var(--xxljob-fixed-hover), var(--xxljob-fixed-hover)), var(--xxljob-fixed-fill) !important;
 }
 
-/* 固定列与滚动区的分界阴影保持 antd 默认（ping 类控制），无需覆盖；
-   表头固定列底色与表头一致，避免与滚动区表头出现色差。 */
+/* 选中行：主题的 ant-table-row-selected 规则带 !important 且颜色透明，
+   必须同样以 !important 的叠层实底压过，固定列才不透出下层滚动内容。 */
+.xxljob-panel .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-left,
+.xxljob-panel .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right,
+.xxljob-panel .ant-table-tbody .ant-table-row.ant-table-row-selected > .ant-table-cell.ant-table-cell-fix-left,
+.xxljob-panel .ant-table-tbody .ant-table-row.ant-table-row-selected > .ant-table-cell.ant-table-cell-fix-right {
+  background: linear-gradient(var(--xxljob-fixed-selected), var(--xxljob-fixed-selected)), var(--xxljob-fixed-fill) !important;
+}
+
+/* 选中 + hover 叠加：hover 层在上，仍保持实底。 */
+.xxljob-panel .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-row-hover.ant-table-cell-fix-left,
+.xxljob-panel .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-row-hover.ant-table-cell-fix-right,
+.xxljob-panel .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-left,
+.xxljob-panel .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-right {
+  background: linear-gradient(var(--xxljob-fixed-hover), var(--xxljob-fixed-hover)), var(--xxljob-fixed-fill) !important;
+}
+
+/* 表头固定列底色与表头一致，避免与滚动区表头出现色差。 */
 .xxljob-panel .ant-table-thead > tr > th.ant-table-cell-fix-left,
 .xxljob-panel .ant-table-thead > tr > th.ant-table-cell-fix-right {
-  background: var(--gn-bg-panel-2, #fafaf8);
+  background: var(--xxljob-fixed-fill) !important;
+  background-image: none !important;
 }
