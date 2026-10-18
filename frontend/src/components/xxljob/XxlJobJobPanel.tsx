@@ -6,21 +6,29 @@ import {
   Form,
   Input,
   Modal,
+  Popconfirm,
   Select,
   Space,
   Table,
   Tooltip,
   message,
 } from 'antd';
-import { PlayCircleOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  DeleteOutlined,
+  EditOutlined,
+  PlayCircleOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons';
 import { t } from '../../i18n';
 import {
   TRIGGER_STATUS_RUNNING,
-  formatXxlJobTime,
   type XxlJobInfo,
 } from './xxljobModel';
 import { useXxlJobJobs } from './hooks/useXxlJobJobs';
 import { toGroupOptions, useXxlJobGroups } from './hooks/useXxlJobGroups';
+import { buildJobColumns } from './xxljobJobColumns';
+import { XxlJobJobEditorModal } from './XxlJobJobEditorModal';
 
 type Props = {
   connectionId: string;
@@ -29,18 +37,21 @@ type Props = {
 
 type TriggerForm = { executorParam?: string };
 
-// 任务面板：执行器联动下拉、状态筛选、启停 / 执行一次 / 下次触发时间。
+// 任务面板：执行器联动下拉、状态/描述筛选、启停 / 执行一次 / 下次触发时间 /
+// 新增 / 编辑 / 删除。变更操作全部受只读保护约束。
 export const XxlJobJobPanel: React.FC<Props> = ({ connectionId, isActive }) => {
   const {
     rows, total, loading, error, page, size, reload, setPage, setSize,
-    readOnly, busy, jobGroup, triggerStatus, changeJobGroup, changeTriggerStatus,
-    triggerJob, startJobs, stopJobs, nextTriggerTimes,
+    readOnly, busy, rpcConfig, jobGroup, triggerStatus, changeJobGroup, changeTriggerStatus,
+    changeName, triggerJob, startJobs, stopJobs, nextTriggerTimes, deleteJobs,
   } = useXxlJobJobs(connectionId, isActive);
   const { allGroups, loadAllGroups } = useXxlJobGroups(connectionId, false);
   const [triggerTarget, setTriggerTarget] = useState<XxlJobInfo | null>(null);
   const [triggerOpen, setTriggerOpen] = useState(false);
   const [form] = Form.useForm<TriggerForm>();
   const [nextTimes, setNextTimes] = useState<Record<number, string[]>>({});
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingJob, setEditingJob] = useState<XxlJobInfo | null>(null);
 
   React.useEffect(() => {
     if (isActive) void loadAllGroups();
@@ -88,6 +99,25 @@ export const XxlJobJobPanel: React.FC<Props> = ({ connectionId, isActive }) => {
     if (times.length === 0) message.info(t('xxljob.message.no_next_time'));
   };
 
+  const openCreate = () => {
+    setEditingJob(null);
+    setEditorOpen(true);
+  };
+
+  const openEdit = (record: XxlJobInfo) => {
+    setEditingJob(record);
+    setEditorOpen(true);
+  };
+
+  const runDelete = async (record: XxlJobInfo) => {
+    const result = await deleteJobs([record.id]);
+    if (result?.success) {
+      message.success(result.message || t('xxljob.message.delete_success'));
+    } else {
+      message.error(result?.message || t('xxljob.message.action_failed'));
+    }
+  };
+
   // 列表刷新后旧的“下次触发时间”计算值会压过 triggerNextTime，随刷新一并清掉。
   React.useEffect(() => {
     setNextTimes({});
@@ -95,6 +125,61 @@ export const XxlJobJobPanel: React.FC<Props> = ({ connectionId, isActive }) => {
 
   const mutationDisabled = readOnly || busy;
   const readonlyHint = readOnly ? t('xxljob.hint.readonly') : undefined;
+
+  const renderActions = (record: XxlJobInfo) => (
+    <Space size={4}>
+      <Tooltip title={t('xxljob.action.trigger')}>
+        <Button
+          size="small"
+          icon={<PlayCircleOutlined />}
+          aria-label={t('xxljob.action.trigger')}
+          disabled={mutationDisabled}
+          onClick={() => openTrigger(record)}
+        />
+      </Tooltip>
+      <Button
+        size="small"
+        disabled={mutationDisabled || record.triggerStatus === TRIGGER_STATUS_RUNNING}
+        onClick={() => void runStart(record.id)}
+      >
+        {t('xxljob.action.start')}
+      </Button>
+      <Button
+        size="small"
+        disabled={mutationDisabled || record.triggerStatus !== TRIGGER_STATUS_RUNNING}
+        onClick={() => void runStop(record.id)}
+      >
+        {t('xxljob.action.stop')}
+      </Button>
+      <Button size="small" onClick={() => void showNextTimes(record)}>
+        {t('xxljob.action.next_times')}
+      </Button>
+      <Tooltip title={t('xxljob.action.edit')}>
+        <Button
+          size="small"
+          icon={<EditOutlined />}
+          aria-label={t('xxljob.action.edit')}
+          disabled={mutationDisabled}
+          onClick={() => openEdit(record)}
+        />
+      </Tooltip>
+      <Popconfirm
+        title={t('xxljob.confirm.delete_job')}
+        okText={t('xxljob.action.confirm')}
+        cancelText={t('xxljob.action.cancel')}
+        disabled={mutationDisabled}
+        onConfirm={() => { void runDelete(record); }}
+      >
+        <Button
+          size="small"
+          danger
+          icon={<DeleteOutlined />}
+          aria-label={t('xxljob.action.delete')}
+          disabled={mutationDisabled}
+        />
+      </Popconfirm>
+    </Space>
+  );
 
   return (
     <div className="xxljob-panel">
@@ -119,6 +204,20 @@ export const XxlJobJobPanel: React.FC<Props> = ({ connectionId, isActive }) => {
               { label: t('xxljob.value.trigger_running'), value: 1 },
             ]}
           />
+          <Input.Search
+            allowClear
+            style={{ minWidth: 200 }}
+            placeholder={t('xxljob.filter.job_desc')}
+            onSearch={changeName}
+          />
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            disabled={readOnly}
+            onClick={openCreate}
+          >
+            {t('xxljob.action.add')}
+          </Button>
           <Button icon={<ReloadOutlined />} onClick={reload} loading={loading}>
             {t('xxljob.action.refresh')}
           </Button>
@@ -135,7 +234,7 @@ export const XxlJobJobPanel: React.FC<Props> = ({ connectionId, isActive }) => {
         size="small"
         loading={loading}
         dataSource={rows}
-        scroll={{ y: 'calc(100vh - 260px)' }}
+        scroll={{ x: 1900, y: 'calc(100vh - 260px)' }}
         pagination={{
           current: page,
           pageSize: size,
@@ -147,77 +246,7 @@ export const XxlJobJobPanel: React.FC<Props> = ({ connectionId, isActive }) => {
           },
         }}
         locale={{ emptyText: t('xxljob.empty.jobs') }}
-        columns={[
-          { title: t('xxljob.column.id'), dataIndex: 'id', width: 80 },
-          { title: t('xxljob.column.job_name'), dataIndex: 'name', width: 200 },
-          { title: t('xxljob.column.executor_handler'), dataIndex: 'executorHandler', width: 200 },
-          {
-            title: t('xxljob.column.schedule'),
-            width: 220,
-            render: (_value: unknown, record: XxlJobInfo) => (
-              <span>{record.scheduleType || '—'} {record.scheduleConf || ''}</span>
-            ),
-          },
-          {
-            title: t('xxljob.column.route_strategy'),
-            width: 140,
-            render: (_value: unknown, record: XxlJobInfo) => record.executorRouteStrategy || '—',
-          },
-          {
-            title: t('xxljob.column.trigger_status'),
-            width: 110,
-            render: (_value: unknown, record: XxlJobInfo) => (
-              record.triggerStatus === TRIGGER_STATUS_RUNNING
-                ? t('xxljob.value.trigger_running')
-                : t('xxljob.value.trigger_stopped')
-            ),
-          },
-          { title: t('xxljob.column.last_time'), width: 180, render: (_v: unknown, r: XxlJobInfo) => formatXxlJobTime(r.triggerLastTime) },
-          {
-            title: t('xxljob.column.next_time'),
-            width: 320,
-            render: (_value: unknown, record: XxlJobInfo) => {
-              const times = nextTimes[record.id];
-              if (!times) return formatXxlJobTime(record.triggerNextTime);
-              return times.length > 0 ? times.join(' / ') : '—';
-            },
-          },
-          {
-            title: t('xxljob.column.actions'),
-            width: 260,
-            fixed: 'right',
-            render: (_value: unknown, record: XxlJobInfo) => (
-              <Space size={4}>
-                <Tooltip title={t('xxljob.action.trigger')}>
-                  <Button
-                    size="small"
-                    icon={<PlayCircleOutlined />}
-                    aria-label={t('xxljob.action.trigger')}
-                    disabled={mutationDisabled}
-                    onClick={() => openTrigger(record)}
-                  />
-                </Tooltip>
-                <Button
-                  size="small"
-                  disabled={mutationDisabled || record.triggerStatus === TRIGGER_STATUS_RUNNING}
-                  onClick={() => void runStart(record.id)}
-                >
-                  {t('xxljob.action.start')}
-                </Button>
-                <Button
-                  size="small"
-                  disabled={mutationDisabled || record.triggerStatus !== TRIGGER_STATUS_RUNNING}
-                  onClick={() => void runStop(record.id)}
-                >
-                  {t('xxljob.action.stop')}
-                </Button>
-                <Button size="small" onClick={() => void showNextTimes(record)}>
-                  {t('xxljob.action.next_times')}
-                </Button>
-              </Space>
-            ),
-          },
-        ]}
+        columns={buildJobColumns({ nextTimes, actions: renderActions })}
       />
 
       <Modal
@@ -239,6 +268,15 @@ export const XxlJobJobPanel: React.FC<Props> = ({ connectionId, isActive }) => {
           </Form.Item>
         </Form>
       </Modal>
+
+      <XxlJobJobEditorModal
+        open={editorOpen}
+        editing={editingJob}
+        groups={toGroupOptions(allGroups)}
+        rpcConfig={rpcConfig}
+        onSaved={reload}
+        onClose={() => setEditorOpen(false)}
+      />
     </div>
   );
 };

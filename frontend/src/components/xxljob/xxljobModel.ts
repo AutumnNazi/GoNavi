@@ -17,8 +17,10 @@ export type XxlJobInfo = {
   jobGroup: number;
   name: string;
   author?: string;
+  alarmEmail?: string;
   scheduleType?: string;
   scheduleConf?: string;
+  misfireStrategy?: string;
   executorRouteStrategy?: string;
   executorHandler?: string;
   executorParam?: string;
@@ -26,6 +28,9 @@ export type XxlJobInfo = {
   executorTimeout?: number;
   executorFailRetryCount?: number;
   glueType?: string;
+  glueSource?: string;
+  glueRemark?: string;
+  childJobId?: string;
   triggerStatus: number;
   triggerLastTime?: string;
   triggerNextTime?: string;
@@ -80,6 +85,9 @@ export const XXL_JOB_MAX_PAGE_SIZE = 200;
 
 /** 调度中心对执行状态码的固定取值。 */
 export const XXL_JOB_CODE_OK = 200;
+
+/** 执行超时的固定状态码（官方 joblog_handleCode_502）。 */
+export const XXL_JOB_CODE_TIMEOUT = 502;
 
 /**
  * 判断一条执行记录是否仍在运行。调度中心在执行器回报前把 handleCode 留为 0，
