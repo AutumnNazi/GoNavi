@@ -21,6 +21,19 @@ import {
 import { xxlJobRpc, type XxlJobJobMutationPayload } from './xxljobRpc';
 import { XxlJobGlueEditor } from './XxlJobGlueEditor';
 
+// Form.Item 受控的 GLUE 源码输入：从 form context 取值，交给 Monaco。
+const GlueSourceInput: React.FC<{ language: string }> = ({ language }) => {
+  const form = Form.useFormInstance<JobFormValues>();
+  const value = Form.useWatch('glueSource', form) ?? '';
+  return (
+    <XxlJobGlueEditor
+      language={language}
+      value={value}
+      onChange={(next) => form.setFieldValue('glueSource', next)}
+    />
+  );
+};
+
 type Props = {
   open: boolean;
   editing: XxlJobInfo | null;
@@ -191,7 +204,10 @@ export const XxlJobJobEditorModal: React.FC<Props> = ({
             extra={t('xxljob.hint.glue_source')}
             rules={[{ required: true, message: t('xxljob.validation.glue_source_required') }]}
           >
-            <XxlJobGlueEditor language={glueLanguage} value={form.getFieldValue('glueSource') ?? ''} onChange={(next) => form.setFieldValue('glueSource', next)} />
+            {/* Monaco 在 Form.Item 内需要显式高度容器，否则塌陷成几像素。 */}
+            <div style={{ height: 320 }}>
+              <GlueSourceInput language={glueLanguage} />
+            </div>
           </Form.Item>
         ) : null}
 

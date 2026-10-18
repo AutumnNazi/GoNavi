@@ -1,6 +1,7 @@
 // 任务编辑器的纯函数层：枚举字典、表单值 ↔ RPC 载荷映射、调度配置校验。
 // 枚举值与官方 xxl-job 对齐（ExecutorRouteStrategyEnum / ExecutorBlockStrategyEnum
 // / MisfireStrategyEnum / ScheduleTypeEnum / GlueTypeEnum）。
+import { t } from '../../i18n';
 import type { XxlJobGroupOption } from './hooks/useXxlJobGroups';
 import type { XxlJobInfo } from './xxljobModel';
 import type { XxlJobJobMutationPayload } from './xxljobRpc';
@@ -156,9 +157,10 @@ export const validateScheduleConf = (scheduleType: string, conf?: string): strin
   return null;
 };
 
-// 枚举选项生成：label 走 i18n（xxljob.enum.*），value 是官方枚举字符串。
+// 枚举选项生成：label 经 t() 翻译（xxljob.enum.*），value 是官方枚举字符串。
+// 注意 label 必须在这里翻译——antd Select 不会处理 i18n key。
 export const enumOptions = (values: readonly string[], prefix: string) =>
-  values.map((value) => ({ label: `xxljob.enum.${prefix}.${value}`, value }));
+  values.map((value) => ({ label: t(`xxljob.enum.${prefix}.${value}`), value }));
 
 // 执行器下拉选项（表单内复用侧边栏的分组选项）。
 export const jobGroupOptions = (groups: XxlJobGroupOption[]) =>

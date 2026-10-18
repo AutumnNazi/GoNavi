@@ -69,13 +69,17 @@ func (m JobMutation) validate() error {
 	if strings.TrimSpace(m.ScheduleConf) == "" && m.ScheduleType != ScheduleTypeNone {
 		return newValidationError("scheduleConf", "scheduleConf is required")
 	}
-	if strings.TrimSpace(m.ExecutorHandler) == "" {
-		return newValidationError("executorHandler", "executorHandler is required")
+	// GLUE 任务没有 JobHandler（源码即任务体），仅 BEAN 模式必填。
+	if m.GlueType == "" || m.GlueType == "BEAN" {
+		if strings.TrimSpace(m.ExecutorHandler) == "" {
+			return newValidationError("executorHandler", "executorHandler is required")
+		}
 	}
-	if m.ExecutorTimeout < 0 {
+	// 官方语义：-1 表示沿用调度中心默认（超时 0 秒、不重试），合法值。
+	if m.ExecutorTimeout < -1 {
 		return newValidationError("executorTimeout", "executorTimeout must not be negative")
 	}
-	if m.ExecutorFailRetryCount < 0 {
+	if m.ExecutorFailRetryCount < -1 {
 		return newValidationError("executorFailRetryCount", "executorFailRetryCount must not be negative")
 	}
 	return nil

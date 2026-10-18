@@ -256,8 +256,8 @@ func TestJobMutationValidation(t *testing.T) {
 		{"missing scheduleType", func(m *JobMutation) { m.ScheduleType = "" }, "scheduleType"},
 		{"missing scheduleConf", func(m *JobMutation) { m.ScheduleConf = "" }, "scheduleConf"},
 		{"missing handler", func(m *JobMutation) { m.ExecutorHandler = "" }, "executorHandler"},
-		{"negative timeout", func(m *JobMutation) { m.ExecutorTimeout = -1 }, "executorTimeout"},
-		{"negative retry", func(m *JobMutation) { m.ExecutorFailRetryCount = -1 }, "executorFailRetryCount"},
+		{"timeout below -1", func(m *JobMutation) { m.ExecutorTimeout = -2 }, "executorTimeout"},
+		{"retry below -1", func(m *JobMutation) { m.ExecutorFailRetryCount = -2 }, "executorFailRetryCount"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -273,8 +273,11 @@ func TestJobMutationValidation(t *testing.T) {
 	job := sampleJobMutation()
 	job.ScheduleType = ScheduleTypeNone
 	job.ScheduleConf = ""
+	// -1 是官方「沿用默认」语义，必须放行。
+	job.ExecutorTimeout = -1
+	job.ExecutorFailRetryCount = -1
 	if err := job.validate(); err != nil {
-		t.Errorf("NONE schedule without conf must pass, got %v", err)
+		t.Errorf("NONE schedule and -1 defaults must pass, got %v", err)
 	}
 }
 
