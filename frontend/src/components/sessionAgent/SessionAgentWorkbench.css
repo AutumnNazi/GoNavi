@@ -55,6 +55,15 @@
   flex-direction: column;
   gap: 12px;
   padding: 2px;
+  /* 卡片行省略号依赖整条宽度链的 min-width:0；缺这层时卡片会被
+     内容撑出可视区，消息行右侧被截断（用户反馈缺陷 1）。 */
+  min-width: 0;
+  max-width: 100%;
+}
+
+.session-agent-listpage-body > .session-agent-group {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .session-agent-list-loading {
@@ -67,6 +76,8 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .session-agent-group-head {
@@ -116,10 +127,15 @@
   border-radius: 10px;
   padding: 10px 12px;
   margin-left: 20px;
+  margin-right: 4px;
   cursor: pointer;
   transition: border-color 0.12s, background 0.12s;
   flex: 0 0 auto;
   min-width: 0;
+  max-width: 100%;
+  /* 卡片自身也是 flex 列容器：禁收缩防被压扁，overflow 防内容撑出。 */
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .session-agent-card:hover {
@@ -389,6 +405,72 @@
   white-space: pre-wrap;
   word-break: break-word;
   font-size: 13px;
+}
+
+/* Markdown 正文：段距紧凑，代码块/表格跟随 v2 灰阶。 */
+.session-agent-markdown p {
+  margin: 0 0 6px;
+}
+
+.session-agent-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.session-agent-markdown pre {
+  background: rgba(128, 128, 128, 0.08);
+  border-radius: 6px;
+  padding: 8px 10px;
+  overflow: auto;
+  font-size: 12px;
+  margin: 4px 0;
+}
+
+.session-agent-markdown code {
+  background: rgba(128, 128, 128, 0.12);
+  border-radius: 4px;
+  padding: 0 5px;
+  font-size: 12px;
+}
+
+.session-agent-markdown pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.session-agent-markdown ul,
+.session-agent-markdown ol {
+  margin: 4px 0;
+  padding-left: 22px;
+}
+
+.session-agent-markdown table {
+  border-collapse: collapse;
+  margin: 6px 0;
+  font-size: 12px;
+}
+
+.session-agent-markdown th,
+.session-agent-markdown td {
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  padding: 4px 8px;
+}
+
+.session-agent-markdown blockquote {
+  margin: 4px 0;
+  padding: 2px 10px;
+  border-left: 3px solid rgba(128, 128, 128, 0.3);
+  color: var(--gn-fg-2, #6b7280);
+}
+
+.session-agent-markdown h1,
+.session-agent-markdown h2,
+.session-agent-markdown h3 {
+  font-size: 13.5px;
+  margin: 8px 0 4px;
+}
+
+.session-agent-markdown a {
+  color: var(--gn-accent, #16a34a);
 }
 
 .session-agent-atext code,

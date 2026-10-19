@@ -10,6 +10,7 @@ import {
 import { t } from '../../i18n';
 import type { SessionAgentItem, SessionBlockContent, SessionContentRef, SessionMessageView, SessionTurnView } from './sessionAgentApi';
 import { ProviderAvatar } from './SessionAgentListPage';
+import { SessionAgentMarkdown } from './SessionAgentMarkdown';
 
 /**
  * 会话详情页（挤压式）：列表收成左侧窄条，右侧聊天风格时间线。
@@ -37,18 +38,20 @@ export const SessionAgentDetailPanel: React.FC<{
   }
 
   const needle = search.trim().toLowerCase();
-  const highlight = (text: string) => {
-    if (!needle) return text;
-    const idx = text.toLowerCase().indexOf(needle);
-    if (idx < 0) return text;
-    return (
-      <>
-        {text.slice(0, idx)}
-        <mark>{text.slice(idx, idx + needle.length)}</mark>
-        {text.slice(idx + needle.length)}
-      </>
-    );
-  };
+  // 无搜索词时为 null：正文走 Markdown 渲染；有搜索词时降级纯文本高亮。
+  const highlight = needle
+    ? (text: string) => {
+        const idx = text.toLowerCase().indexOf(needle);
+        if (idx < 0) return text;
+        return (
+          <>
+            {text.slice(0, idx)}
+            <mark>{text.slice(idx, idx + needle.length)}</mark>
+            {text.slice(idx + needle.length)}
+          </>
+        );
+      }
+    : null;
 
   return (
     <section className="session-agent-detail" data-session-agent-detail="true">
@@ -126,7 +129,7 @@ const Timeline: React.FC<{
   turns: SessionTurnView[];
   viewMode: 'all' | 'chat' | 'changes';
   needle: string;
-  highlight: (text: string) => React.ReactNode;
+  highlight: ((text: string) => React.ReactNode) | null;
   onOpenFull: (ref: SessionContentRef) => Promise<SessionBlockContent | null>;
   onStats: (stats: { questions: number; calls: number } | null) => void;
 }> = ({ item, messages, turns, viewMode, needle, highlight, onOpenFull, onStats }) => {
@@ -199,7 +202,7 @@ const TurnSection: React.FC<{
   viewMode: 'all' | 'chat' | 'changes';
   needle: string;
   providerId: string;
-  highlight: (text: string) => React.ReactNode;
+  highlight: ((text: string) => React.ReactNode) | null;
   onOpenFull: (ref: SessionContentRef) => Promise<SessionBlockContent | null>;
 }> = ({ turn, messages, viewMode, needle, providerId, highlight, onOpenFull }) => {
   const slice = messages.slice(turn.firstMessageIndex, turn.lastMessageIndex + 1);
@@ -225,7 +228,7 @@ const MessageRow: React.FC<{
   viewMode: 'all' | 'chat' | 'changes';
   needle: string;
   providerId: string;
-  highlight: (text: string) => React.ReactNode;
+  highlight: ((text: string) => React.ReactNode) | null;
   onOpenFull: (ref: SessionContentRef) => Promise<SessionBlockContent | null>;
 }> = ({ msg, viewMode, needle, providerId, highlight, onOpenFull }) => {
   if (msg.injected) return null;
@@ -234,7 +237,7 @@ const MessageRow: React.FC<{
     return (
       <div className="session-agent-msg-user">
         <span className="session-agent-msg-ts">{formatTs(msg.ts)}</span>
-        <div className="session-agent-bubble-user">{highlight(msg.content)}</div>
+        <div className="session-agent-bubble-user">{highlightMarkdownSafe(msg.content, highlight)}</div>
       </div>
     );
   }
@@ -255,9 +258,9 @@ const MessageRow: React.FC<{
           {toolBlocks.length > 0 && (
             <ExecSection blocks={toolBlocks} onOpenFull={onOpenFull} />
           )}
-          {msg.content ? <div className="session-agent-atext">{highlight(msg.content)}</div> : null}
+          {msg.content ? <MarkdownText content={msg.content} highlight={highlight} /> : null}
           {textBlocks.map((block, i) => (
-            block.text ? <div key={i} className="session-agent-atext">{highlight(block.text.text)}</div> : null
+            block.text ? <MarkdownText key={i} content={block.text.text} highlight={highlight} /> : null
           ))}
         </div>
       </div>
@@ -274,15 +277,28 @@ const MessageRow: React.FC<{
 };
 
 const ThinkingRow: React.FC<{ block: NonNullable<SessionMessageView['blocks']>[number] }> = ({ block }) => {
-  if (!block.thinking) return null;
+  const thinking = block.thinking;
+  // 加密思考（redacted）没有可读内容：整个块不显示（用户反馈缺陷 4）。
+  if (!thinking || thinking.redacted || !thinking.text.trim()) return null;
   return (
     <details className="session-agent-thinking">
       <summary>{t('session_agent.detail.thinking')}</summary>
-      {block.thinking.redacted
-        ? <span className="session-agent-thinking-redacted">{t('session_agent.detail.thinking_redacted')}</span>
-        : <div className="session-agent-thinking-text">{block.thinking.text}</div>}
+      <div className="session-agent-thinking-text">{thinking.text}</div>
     </details>
   );
+};
+
+// 带高亮的 Markdown 正文：无搜索词时直接渲染 Markdown；有搜索词时
+// 降级为纯文本高亮（mark 不能嵌进 Markdown 流）。highlight 为 null
+// 表示无搜索词。
+const MarkdownText: React.FC<{
+  content: string;
+  highlight: ((text: string) => React.ReactNode) | null;
+}> = ({ content, highlight }) => {
+  if (highlight) {
+    return <div className="session-agent-atext">{highlight(content)}</div>;
+  }
+  return <div className="session-agent-atext"><SessionAgentMarkdown content={content} /></div>;
 };
 
 // 执行过程折叠条：默认收起显示步数，展开看工具序列。
@@ -362,6 +378,18 @@ const ExpandFull: React.FC<{
       {content && <pre className="session-agent-tooldetail expanded">{content.text}</pre>}
     </>
   );
+};
+
+// 用户气泡：无搜索词时渲染 Markdown（气泡内代码块等），有搜索词时
+// 纯文本高亮。highlight 为 null 表示无搜索词。
+const highlightMarkdownSafe = (
+  content: string,
+  highlight: ((text: string) => React.ReactNode) | null,
+): React.ReactNode => {
+  if (highlight) {
+    return highlight(content);
+  }
+  return <SessionAgentMarkdown content={content} />;
 };
 
 const formatTs = (ts: number): string => {

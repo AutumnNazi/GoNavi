@@ -17,12 +17,14 @@ export const SessionAgentListPage: React.FC<{
   providerFilter: string;
   groupMode: string;
   selectedPath: string;
+  /** 拖拽分割条提交后的列表宽度；未拖拽时用 CSS 默认值。 */
+  style?: React.CSSProperties;
   onQueryChange: (value: string) => void;
   onProviderFilterChange: (value: string) => void;
   onGroupModeChange: (value: string) => void;
   onSelect: (item: SessionAgentItem) => void;
   onReload: () => void;
-}> = ({ items, total, loading, query, providerFilter, groupMode, selectedPath, onQueryChange, onProviderFilterChange, onGroupModeChange, onSelect, onReload }) => {
+}> = ({ items, total, loading, query, providerFilter, groupMode, selectedPath, style, onQueryChange, onProviderFilterChange, onGroupModeChange, onSelect, onReload }) => {
   // 分组展开/收起状态记忆（按组键存 localStorage）。
   const [collapsed, setCollapsed] = React.useState<Record<string, boolean>>(() => {
     try {
@@ -46,7 +48,7 @@ export const SessionAgentListPage: React.FC<{
   const groups = React.useMemo(() => buildGroups(items, groupMode), [items, groupMode]);
 
   return (
-    <div className="session-agent-listpage" data-session-agent-list="true">
+    <div className="session-agent-listpage" style={style} data-session-agent-list="true">
       <div className="session-agent-list-toolbar">
         <Input
           allowClear

@@ -5,6 +5,7 @@ import type { TabData } from '../../types';
 import { wailsSessionAgentApi, type SessionAgentApi, type SessionAgentItem, type SessionBlockContent, type SessionContentRef, type SessionMessageView, type SessionTurnView } from './sessionAgentApi';
 import { SessionAgentListPage } from './SessionAgentListPage';
 import { SessionAgentDetailPanel, confirmSessionAgentDelete } from './SessionAgentDetailPanel';
+import { loadSessionAgentListWidth, saveSessionAgentListWidth, SessionAgentListResizeDivider } from './SessionAgentListResize';
 import './SessionAgentWorkbench.css';
 
 /**
@@ -35,6 +36,12 @@ export const SessionAgentWorkbench: React.FC<{
     }
   });
   const [selected, setSelected] = React.useState<SessionAgentItem | null>(null);
+  // 拖拽提交后的列表宽度（详情态）；未拖拽时用 CSS 默认值。
+  const [listWidth, setListWidth] = React.useState<number | undefined>(() => loadSessionAgentListWidth());
+  const listStyle = React.useMemo<React.CSSProperties>(
+    () => (listWidth ? { flexBasis: listWidth, width: listWidth, flexGrow: 0, flexShrink: 0 } : {}),
+    [listWidth],
+  );
   const [messages, setMessages] = React.useState<SessionMessageView[]>([]);
   const [turns, setTurns] = React.useState<SessionTurnView[]>([]);
   const [detailLoading, setDetailLoading] = React.useState(false);
@@ -134,6 +141,7 @@ export const SessionAgentWorkbench: React.FC<{
           providerFilter={providerFilter}
           groupMode={groupMode}
           selectedPath={selected?.sourcePath ?? ''}
+          style={listStyle}
           onQueryChange={setQuery}
           onProviderFilterChange={setProviderFilter}
           onGroupModeChange={setGroupMode}
@@ -141,18 +149,21 @@ export const SessionAgentWorkbench: React.FC<{
           onReload={reload}
         />
         {selected ? (
-          <SessionAgentDetailPanel
-            item={selected}
-            messages={messages}
-            turns={turns}
-            loading={detailLoading}
-            onBack={() => setSelected(null)}
-            onReload={() => handleSelect(selected)}
-            onExport={handleExport}
-            onCopyResume={handleCopyResume}
-            onDelete={handleDelete}
-            onOpenFull={handleOpenFull}
-          />
+          <>
+            <SessionAgentListResizeDivider onCommit={(width) => { setListWidth(width); saveSessionAgentListWidth(width); }} />
+            <SessionAgentDetailPanel
+              item={selected}
+              messages={messages}
+              turns={turns}
+              loading={detailLoading}
+              onBack={() => setSelected(null)}
+              onReload={() => handleSelect(selected)}
+              onExport={handleExport}
+              onCopyResume={handleCopyResume}
+              onDelete={handleDelete}
+              onOpenFull={handleOpenFull}
+            />
+          </>
         ) : null}
       </div>
     </div>
