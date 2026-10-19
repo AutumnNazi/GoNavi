@@ -46,10 +46,14 @@ const CronConfInput: React.FC = () => {
       open={builderOpen}
       onOpenChange={setBuilderOpen}
       trigger="click"
-      placement="rightTop"
+      placement="bottom"
+      // 禁用自动翻转：构建器固定在输入框正下方弹出（内容限高内部滚动）。
+      autoAdjustOverflow={{ adjustX: 0, adjustY: 0 }}
+      // 挂到触发元素所在层，避免挂 body 后被 ant-modal 的层叠上下文翻转/遮挡。
+      getPopupContainer={(triggerNode) => triggerNode.closest('.ant-modal') ?? document.body}
       overlayStyle={{ maxWidth: 460 }}
       content={
-        <div style={{ width: 400 }}>
+        <div style={{ width: 400, maxHeight: 320, overflow: 'auto' }}>
           <XxlJobCronBuilder
             value={value}
             onChange={(next) => form.setFieldValue('scheduleConf', next)}
