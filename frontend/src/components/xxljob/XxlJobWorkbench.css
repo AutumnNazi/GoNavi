@@ -84,3 +84,79 @@
   display: block;
   content: "";
 }
+
+/* ─── Cron 构建器（悬浮弹层内） ─────────────────────────────
+   模式行紧凑单列、参数输入行内；指定模式的多选框网格铺满。
+   antd Popover 在受控 open + 无 trigger 的组合下会给弹层容器
+   pointer-events:none（rc-trigger Popup 的 !open 分支），内容
+   点击全部穿透导致弹层被外层判定关闭。构建器弹层挂在 modal 上
+   （不在 .xxljob-panel 内），用内容类锚定强制恢复交互。 */
+.ant-popover:has(.xxljob-cron-modes),
+.ant-popover:has(.xxljob-cron-modes) .ant-popover-inner,
+.ant-popover:has(.xxljob-cron-modes) .ant-popover-inner-content {
+  pointer-events: auto !important;
+}
+
+.xxljob-cron-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.xxljob-cron-modes .ant-radio-wrapper {
+  display: flex;
+  align-items: center;
+  margin-inline-end: 0;
+  padding-block: 2px;
+  white-space: nowrap;
+}
+
+.xxljob-cron-mode-inline .ant-input[type='number'] {
+  width: 64px !important;
+  padding: 2px 6px;
+  text-align: center;
+}
+
+.xxljob-cron-sep {
+  margin: 0 4px;
+  color: var(--gn-fg-3, #999);
+}
+
+.xxljob-cron-mode-assign {
+  display: flex;
+  white-space: normal;
+  width: 100%;
+}
+
+/* assign 的多选框网格需要整行宽度：grid 在 .ant-radio-label 内（label 是
+   flex 子项且宽度受限），必须让 label 占满 wrapper 再放开 grid 宽度。 */
+.xxljob-cron-mode-assign .ant-radio-label {
+  display: block;
+  width: 100%;
+  white-space: normal;
+}
+
+.xxljob-cron-mode-assign > span.ant-checkbox-group.xxljob-cron-assign-grid {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  width: 100%;
+}
+
+.xxljob-cron-assign-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  gap: 2px 8px;
+  margin-top: 6px;
+}
+
+.xxljob-cron-assign-grid .ant-checkbox-wrapper {
+  margin-inline-start: 0;
+  font-size: 12px;
+}
+
+/* antd 5 的 Checkbox.Group 渲染为 flex row（.ant-checkbox-group），
+   内层 grid 需要作用到真正的容器上。 */
+span.ant-checkbox-group.xxljob-cron-assign-grid {
+  display: grid;
+}

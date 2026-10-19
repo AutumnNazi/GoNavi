@@ -45,12 +45,14 @@ const CronConfInput: React.FC = () => {
     <Popover
       open={builderOpen}
       onOpenChange={setBuilderOpen}
-      trigger="click"
+      // 触发完全由内嵌按钮控制（受控 open）；不用 trigger=click，避免按钮点击
+      // 冒泡到 Input 触发 click-to-hide 的 toggle，把刚打开的弹层又关掉。
+      trigger={[]}
       placement="bottom"
       // 禁用自动翻转：构建器固定在输入框正下方弹出（内容限高内部滚动）。
-      autoAdjustOverflow={{ adjustX: 0, adjustY: 0 }}
-      // 挂到触发元素所在层，避免挂 body 后被 ant-modal 的层叠上下文翻转/遮挡。
-      getPopupContainer={(triggerNode) => triggerNode.closest('.ant-modal') ?? document.body}
+      // 注意 antd 的 {adjustY: 0} 在 rc-trigger 里语义是"允许调整"（0>=0），
+      // 必须用 false 才真正禁用。
+      autoAdjustOverflow={false}
       overlayStyle={{ maxWidth: 460 }}
       content={
         <div style={{ width: 400, maxHeight: 320, overflow: 'auto' }}>
@@ -70,7 +72,11 @@ const CronConfInput: React.FC = () => {
             type="link"
             size="small"
             style={{ padding: '0 4px' }}
-            onClick={() => setBuilderOpen(true)}
+            onClick={(event) => {
+              // 阻止冒泡，避免外层 Input 的 click 处理把弹层关掉。
+              event.stopPropagation();
+              setBuilderOpen((open) => !open);
+            }}
           >
             {t('xxljob.action.cron_builder')}
           </Button>

@@ -235,7 +235,7 @@ const FieldEditor: React.FC<{
       value={state.mode}
       onChange={(event) => onChange({ ...state, mode: event.target.value as FieldMode })}
     >
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 16, rowGap: 10 }}>
+      <div className="xxljob-cron-modes">
         {MODES_BY_FIELD[field].includes('every') ? (
           <Radio value="every">{label('every')}</Radio>
         ) : null}
@@ -243,18 +243,18 @@ const FieldEditor: React.FC<{
           <Radio value="unassign">{label('unassign')}</Radio>
         ) : null}
         {MODES_BY_FIELD[field].includes('range') ? (
-          <Radio value="range">
+          <Radio value="range" className="xxljob-cron-mode-inline">
             {label('range')}
             {numberInput('rangeStart', state.rangeStart)}
-            <span>-</span>
+            <span className="xxljob-cron-sep">-</span>
             {numberInput('rangeEnd', state.rangeEnd)}
           </Radio>
         ) : null}
         {MODES_BY_FIELD[field].includes('step') ? (
-          <Radio value="step">
+          <Radio value="step" className="xxljob-cron-mode-inline">
             {label('step')}
             {numberInput('stepStart', state.stepStart)}
-            <span>/</span>
+            <span className="xxljob-cron-sep">/</span>
             {numberInput('stepEvery', state.stepEvery, { min: 1, max: max })}
           </Radio>
         ) : null}
@@ -262,24 +262,24 @@ const FieldEditor: React.FC<{
           <Radio value="last">{label('last')}</Radio>
         ) : null}
         {MODES_BY_FIELD[field].includes('lastOffset') ? (
-          <Radio value="lastOffset">
+          <Radio value="lastOffset" className="xxljob-cron-mode-inline">
             {label('lastOffset')}
             {numberInput('lastOffset', state.lastOffset, { min: 1, max: 31 })}
           </Radio>
         ) : null}
         {MODES_BY_FIELD[field].includes('workDay') ? (
-          <Radio value="workDay">
+          <Radio value="workDay" className="xxljob-cron-mode-inline">
             {label('workDay')}
             {numberInput('workDay', state.workDay)}
-            <span>W</span>
+            <span className="xxljob-cron-sep">W</span>
           </Radio>
         ) : null}
         {MODES_BY_FIELD[field].includes('nthWeek') ? (
-          <Radio value="nthWeek">
+          <Radio value="nthWeek" className="xxljob-cron-mode-inline">
             {label('nthWeek')}
             <Select
               size="small"
-              style={{ width: 90, margin: '0 6px' }}
+              style={{ width: 84, margin: '0 4px' }}
               value={state.nthWeekDay ?? 1}
               onChange={(next) => onChange({ ...state, nthWeekDay: Number(next) })}
               options={WEEK_NAMES.slice(1).map((name, index) => ({ label: name, value: index + 1 }))}
@@ -289,11 +289,11 @@ const FieldEditor: React.FC<{
           </Radio>
         ) : null}
         {MODES_BY_FIELD[field].includes('lastWeek') ? (
-          <Radio value="lastWeek">
+          <Radio value="lastWeek" className="xxljob-cron-mode-inline">
             {label('lastWeek')}
             <Select
               size="small"
-              style={{ width: 90, margin: '0 6px' }}
+              style={{ width: 84, margin: '0 4px' }}
               value={state.nthWeekDay ?? 1}
               onChange={(next) => onChange({ ...state, nthWeekDay: Number(next) })}
               options={WEEK_NAMES.slice(1).map((name, index) => ({ label: name, value: index + 1 }))}
@@ -301,10 +301,10 @@ const FieldEditor: React.FC<{
           </Radio>
         ) : null}
         {MODES_BY_FIELD[field].includes('assign') ? (
-          <Radio value="assign" style={{ gridColumn: '1 / -1' }}>
+          <Radio value="assign" className="xxljob-cron-mode-assign">
             {label('assign')}
             <Checkbox.Group
-              style={{ marginTop: 8 }}
+              className="xxljob-cron-assign-grid"
               value={options}
               onChange={(next) => onChange({ ...state, assign: (next as string[]).map(Number).sort((a, b) => a - b) })}
               options={Array.from({ length: max - min + 1 }, (_, index) => {
