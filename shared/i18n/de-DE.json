@@ -13021,5 +13021,6 @@
   "xxljob.cron.mode.workDay": "Nächster Werktag",
   "xxljob.cron.mode.nthWeek": "N-ter Wochentag",
   "xxljob.cron.mode.lastWeek": "Letzter Wochentag",
-  "xxljob.cron.mode.nthWeekIndex": "N-te"
+  "xxljob.cron.mode.nthWeekIndex": "N-te",
+  "xxljob.action.cron_builder": "Generator"
 }

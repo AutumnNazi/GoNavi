@@ -13021,5 +13021,6 @@
   "xxljob.cron.mode.workDay": "最近工作日",
   "xxljob.cron.mode.nthWeek": "第几周的星期",
   "xxljob.cron.mode.lastWeek": "最后一个星期",
-  "xxljob.cron.mode.nthWeekIndex": "第"
+  "xxljob.cron.mode.nthWeekIndex": "第",
+  "xxljob.action.cron_builder": "构建器"
 }

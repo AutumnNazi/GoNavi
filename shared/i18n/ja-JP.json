@@ -13021,5 +13021,6 @@
   "xxljob.cron.mode.workDay": "直近の平日",
   "xxljob.cron.mode.nthWeek": "第 N 週の曜日",
   "xxljob.cron.mode.lastWeek": "最後の曜日",
-  "xxljob.cron.mode.nthWeekIndex": "第"
+  "xxljob.cron.mode.nthWeekIndex": "第",
+  "xxljob.action.cron_builder": "ビルダー"
 }

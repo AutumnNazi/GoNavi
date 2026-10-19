@@ -13021,5 +13021,6 @@
   "xxljob.cron.mode.workDay": "Nearest weekday",
   "xxljob.cron.mode.nthWeek": "Nth weekday",
   "xxljob.cron.mode.lastWeek": "Last weekday",
-  "xxljob.cron.mode.nthWeekIndex": "Nth"
+  "xxljob.cron.mode.nthWeekIndex": "Nth",
+  "xxljob.action.cron_builder": "Builder"
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Divider, Form, Input, InputNumber, Modal, Select, Switch, message } from 'antd';
+import { Alert, Button, Divider, Form, Input, InputNumber, Modal, Popover, Select, Switch, message } from 'antd';
 import { t } from '../../i18n';
 import type { XxlJobGroupOption } from './hooks/useXxlJobGroups';
 import type { XxlJobInfo } from './xxljobModel';
@@ -35,24 +35,44 @@ const GlueSourceInput: React.FC<{ language: string }> = ({ language }) => {
   );
 };
 
-// CRON 配置输入：表达式框 + 可视化构建器（对齐官方 cronGen）。构建器改动
-// 直接写回表单值；手改表达式也会即时反映到构建器。
+// CRON 配置输入：表达式框 + 内嵌「构建器」按钮，构建器在 Popover 里悬浮展开，
+// 不占表单版面。构建器改动直接写回表单值；手改表达式即时反映到构建器。
 const CronConfInput: React.FC = () => {
   const form = Form.useFormInstance<JobFormValues>();
   const value = Form.useWatch('scheduleConf', form) ?? '';
+  const [builderOpen, setBuilderOpen] = useState(false);
   return (
-    <div>
+    <Popover
+      open={builderOpen}
+      onOpenChange={setBuilderOpen}
+      trigger="click"
+      placement="rightTop"
+      overlayStyle={{ maxWidth: 460 }}
+      content={
+        <div style={{ width: 400 }}>
+          <XxlJobCronBuilder
+            value={value}
+            onChange={(next) => form.setFieldValue('scheduleConf', next)}
+          />
+        </div>
+      }
+    >
       <Input
         value={value}
         maxLength={128}
         onChange={(event) => form.setFieldValue('scheduleConf', event.target.value)}
-        style={{ marginBottom: 8 }}
+        suffix={
+          <Button
+            type="link"
+            size="small"
+            style={{ padding: '0 4px' }}
+            onClick={() => setBuilderOpen(true)}
+          >
+            {t('xxljob.action.cron_builder')}
+          </Button>
+        }
       />
-      <XxlJobCronBuilder
-        value={value}
-        onChange={(next) => form.setFieldValue('scheduleConf', next)}
-      />
-    </div>
+    </Popover>
   );
 };
 
