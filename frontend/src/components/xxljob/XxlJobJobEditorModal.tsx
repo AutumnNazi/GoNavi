@@ -20,6 +20,7 @@ import {
 } from './xxljobJobEditor';
 import { xxlJobRpc, type XxlJobJobMutationPayload } from './xxljobRpc';
 import { XxlJobGlueEditor } from './XxlJobGlueEditor';
+import { XxlJobCronBuilder } from './XxlJobCronBuilder';
 
 // Form.Item 受控的 GLUE 源码输入：从 form context 取值，交给 Monaco。
 const GlueSourceInput: React.FC<{ language: string }> = ({ language }) => {
@@ -31,6 +32,27 @@ const GlueSourceInput: React.FC<{ language: string }> = ({ language }) => {
       value={value}
       onChange={(next) => form.setFieldValue('glueSource', next)}
     />
+  );
+};
+
+// CRON 配置输入：表达式框 + 可视化构建器（对齐官方 cronGen）。构建器改动
+// 直接写回表单值；手改表达式也会即时反映到构建器。
+const CronConfInput: React.FC = () => {
+  const form = Form.useFormInstance<JobFormValues>();
+  const value = Form.useWatch('scheduleConf', form) ?? '';
+  return (
+    <div>
+      <Input
+        value={value}
+        maxLength={128}
+        onChange={(event) => form.setFieldValue('scheduleConf', event.target.value)}
+        style={{ marginBottom: 8 }}
+      />
+      <XxlJobCronBuilder
+        value={value}
+        onChange={(next) => form.setFieldValue('scheduleConf', next)}
+      />
+    </div>
   );
 };
 
@@ -162,7 +184,11 @@ export const XxlJobJobEditorModal: React.FC<Props> = ({
               extra={t(SCHEDULE_CONF_HINT_KEY[scheduleType] ?? 'xxljob.hint.schedule_conf_cron')}
               rules={[{ validator: validateCron }]}
             >
-              <Input maxLength={scheduleType === 'CRON' ? 128 : 10} />
+              {scheduleType === 'CRON' ? (
+                <CronConfInput />
+              ) : (
+                <Input maxLength={10} />
+              )}
             </Form.Item>
           ) : null}
           <Form.Item name="misfireStrategy" label={t('xxljob.field.misfire_strategy')}>
