@@ -54,3 +54,33 @@
   background: var(--xxljob-fixed-fill) !important;
   background-image: none !important;
 }
+
+/* 编辑表单两列排布（对齐官方 add/update 表单的分组双列布局）；
+   窄弹窗回退单列。 */
+.xxljob-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 16px;
+}
+
+@media (max-width: 720px) {
+  .xxljob-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 日志消息详情：官方返回富文本（<br>、彩色 span），消毒后按 HTML 渲染。 */
+.xxljob-log-msg {
+  max-height: 50vh;
+  overflow: auto;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.xxljob-log-msg br {
+  display: block;
+  content: "";
+}

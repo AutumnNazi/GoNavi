@@ -13,6 +13,7 @@ import {
   message,
 } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
+import DOMPurify from 'dompurify';
 import { t } from '../../i18n';
 import { useXxlJobLogs } from './hooks/useXxlJobLogs';
 import { toGroupOptions, useXxlJobGroups, type XxlJobGroupOption } from './hooks/useXxlJobGroups';
@@ -33,9 +34,11 @@ import {
 const TIME_FORMAT = 'YYYY-MM-DD HH:mm:ss';
 
 // 触发/处理消息列：有内容时点击弹窗查看（对齐官方 logTips），无内容显示破折号。
+// 官方消息是富文本（<br> 换行、彩色 span 标注触发调度段），DOMPurify 消毒后按 HTML 渲染。
 const LogMsgLink: React.FC<{ text?: string }> = ({ text }) => {
   const [open, setOpen] = useState(false);
   if (!text) return <span>—</span>;
+  const clean = DOMPurify.sanitize(text, { ALLOWED_TAGS: ['br', 'span', 'b', 'i', 'a'], ALLOWED_ATTR: ['style', 'href'] });
   return (
     <>
       <Button type="link" size="small" style={{ padding: 0 }} onClick={() => setOpen(true)}>
@@ -48,9 +51,10 @@ const LogMsgLink: React.FC<{ text?: string }> = ({ text }) => {
         onCancel={() => setOpen(false)}
         width={640}
       >
-        <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: '50vh', overflow: 'auto' }}>
-          {text}
-        </pre>
+        <div
+          className="xxljob-log-msg"
+          dangerouslySetInnerHTML={{ __html: clean }}
+        />
       </Modal>
     </>
   );
