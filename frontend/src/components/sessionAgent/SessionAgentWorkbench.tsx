@@ -22,6 +22,11 @@ export const SessionAgentWorkbench: React.FC<{
   const [loading, setLoading] = React.useState(false);
   const [query, setQuery] = React.useState('');
   const [providerFilter, setProviderFilter] = React.useState(() => {
+    // 点侧边栏智能体节点打开时，按该工具过滤（tab.agentIntegrationId
+    // 即 kind）；没有指定则用记忆值或全部。
+    if (tab.agentIntegrationId) {
+      return tab.agentIntegrationId;
+    }
     try {
       return localStorage.getItem('gonavi.sessionAgent.provider') ?? '';
     } catch {

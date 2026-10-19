@@ -12,6 +12,8 @@ import {
 } from "../DatabaseIcons";
 import { supportsSSLForType } from "../../utils/connectionTypeCapabilities";
 import { getConnectionTypeHint } from "../../utils/connectionTypeCatalog";
+import { isAgentConnectionType } from "../../utils/agentConnectionTypes";
+import AgentSetupPanel from "../agentConnections/AgentSetupPanel";
 import ConnectionModalStep2 from "./ConnectionModalStep2";
 import { buildRedisDatabaseList, normalizeRedisDatabaseSelection } from "./connectionModalHelpers";
 import type { ConnectionModalStateApi } from "./useConnectionModalState";
@@ -485,6 +487,10 @@ export const useConnectionModalSteps = ({
   );
 
   const renderStep2 = () => {
+    // 智能体类型：检测/添加面板替代数据库表单。
+    if (isAgentConnectionType(dbType)) {
+      return <AgentSetupPanel kind={dbType} onClose={onClose} />;
+    }
     return (
     <ConnectionModalStep2
       {...{

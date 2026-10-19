@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"GoNavi-Wails/internal/appdata"
+	"GoNavi-Wails/internal/logger"
 )
 
 // agentIntegrationsMu 串行化单进程内 agents.json 的读改写序列。
@@ -55,11 +56,15 @@ func (a *App) AddAgentIntegration(kind, dataDir, displayName string) (AgentInteg
 	agentIntegrationsMu.Lock()
 	defer agentIntegrationsMu.Unlock()
 
-	normalized := strings.TrimSpace(kind)
+	normalized := strings.ToLower(strings.TrimSpace(kind))
 	if normalized == "" {
 		return AgentIntegration{}, errors.New("agent kind is required")
 	}
-	absolute, err := filepath.Abs(strings.TrimSpace(dataDir))
+	dataDirTrimmed := strings.TrimSpace(dataDir)
+	if dataDirTrimmed == "" {
+		return AgentIntegration{}, errors.New("agent data dir is required")
+	}
+	absolute, err := filepath.Abs(dataDirTrimmed)
 	if err != nil {
 		return AgentIntegration{}, fmt.Errorf("resolve data dir: %w", err)
 	}
@@ -94,7 +99,7 @@ func (a *App) RemoveAgentIntegration(kind string) error {
 	agentIntegrationsMu.Lock()
 	defer agentIntegrationsMu.Unlock()
 
-	normalized := strings.TrimSpace(kind)
+	normalized := strings.ToLower(strings.TrimSpace(kind))
 	existing, err := loadAgentIntegrations()
 	if err != nil {
 		return err
@@ -102,7 +107,7 @@ func (a *App) RemoveAgentIntegration(kind string) error {
 	kept := existing[:0]
 	found := false
 	for _, item := range existing {
-		if item.Kind == normalized {
+		if strings.ToLower(strings.TrimSpace(item.Kind)) == normalized {
 			found = true
 			continue
 		}
@@ -132,7 +137,7 @@ func loadAgentIntegrations() ([]AgentIntegration, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return []AgentIntegration{}, nil
 		}
 		return nil, fmt.Errorf("read agent integrations: %w", err)
 	}
@@ -140,6 +145,10 @@ func loadAgentIntegrations() ([]AgentIntegration, error) {
 	if err := json.Unmarshal(data, &file); err != nil {
 		// 配置损坏不静默丢弃：返回错误让绑定层给用户可见信息。
 		return nil, fmt.Errorf("parse agent integrations: %w", err)
+	}
+	if file.Integrations == nil {
+		// Go nil slice 序列化为 JSON null；前端按数组消费，这里归一。
+		return []AgentIntegration{}, nil
 	}
 	return file.Integrations, nil
 }
@@ -210,5 +219,9 @@ func removeLegacySessionAssetsData() {
 	if err != nil || !info.IsDir() {
 		return
 	}
-	_ = os.RemoveAll(legacy)
+	if err := os.RemoveAll(legacy); err != nil {
+		logger.Warnf("清理旧会话保全数据失败（可手动删除 %s）：%v", legacy, err)
+		return
+	}
+	logger.Infof("已清理旧会话保全数据目录：%s", legacy)
 }
