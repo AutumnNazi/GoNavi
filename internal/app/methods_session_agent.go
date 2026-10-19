@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -15,9 +16,24 @@ import (
 //
 // 方案参考 cc-switch 会话管理器（MIT）：纯只读浏览本地 CLI 会话。
 
-// sessionAgentService 返回会话浏览服务（轻量无状态，随用随建）。
+// sessionAgentService 返回会话浏览服务：按已添加的智能体实例注入
+// 各工具数据目录，未添加的工具不参与扫描。
 func (a *App) sessionAgentService() *sessionagent.Service {
-	return sessionagent.New()
+	service := sessionagent.New()
+	integrations, err := a.ListAgentIntegrations()
+	if err != nil {
+		// 配置不可读时退化为「无已添加」，不崩不扫默认目录。
+		return service
+	}
+	for _, item := range integrations {
+		switch item.Kind {
+		case sessionagent.ProviderCodex:
+			service.CodexDir = item.DataDir
+		case sessionagent.ProviderClaude:
+			service.ClaudeDir = item.DataDir
+		}
+	}
+	return service
 }
 
 // SessionAgentList 返回会话列表（按最后活跃时间倒序）。provider 为空
@@ -36,9 +52,45 @@ func (a *App) SessionAgentList(provider, search string) (result connection.Query
 	}}
 }
 
-// SessionAgentProviders 返回支持的工具列表（Codex + Claude Code）。
-func (a *App) SessionAgentProviders() (result connection.QueryResult) {
-	return connection.QueryResult{Success: true, Data: a.sessionAgentService().ListProviders()}
+// SessionAgentListIntegrations 返回已添加的智能体（读 agents.json）。
+// 空列表表示尚未添加任何智能体：侧边栏分组隐藏，入口在新建连接弹窗。
+func (a *App) SessionAgentListIntegrations() (result connection.QueryResult) {
+	integrations, err := a.ListAgentIntegrations()
+	if err != nil {
+		logger.Error(err, "SessionAgentListIntegrations failed")
+		return connection.QueryResult{Success: false, Message: a.appText("session_agent.error.list_integrations_failed", map[string]any{"detail": err.Error()})}
+	}
+	if integrations == nil {
+		integrations = []AgentIntegration{}
+	}
+	return connection.QueryResult{Success: true, Data: integrations}
+}
+
+// SessionAgentDetect 探测本机安装（添加前的扫描）：命令路径、版本与
+// 数据目录可读性。
+func (a *App) SessionAgentDetect(kind, dataDir string) (result connection.QueryResult) {
+	detection := sessionagent.Detect(context.Background(), strings.TrimSpace(kind), strings.TrimSpace(dataDir))
+	return connection.QueryResult{Success: true, Data: detection}
+}
+
+// SessionAgentAdd 二次确认后添加智能体实例（写 agents.json）。同 kind
+// 已存在时报错。
+func (a *App) SessionAgentAdd(kind, dataDir string) (result connection.QueryResult) {
+	added, err := a.AddAgentIntegration(strings.TrimSpace(kind), strings.TrimSpace(dataDir), "")
+	if err != nil {
+		logger.Error(err, "SessionAgentAdd failed")
+		return connection.QueryResult{Success: false, Message: a.appText("session_agent.error.add_failed", map[string]any{"detail": err.Error()})}
+	}
+	return connection.QueryResult{Success: true, Data: added}
+}
+
+// SessionAgentRemove 移除已添加的智能体（只删配置）。
+func (a *App) SessionAgentRemove(kind string) (result connection.QueryResult) {
+	if err := a.RemoveAgentIntegration(strings.TrimSpace(kind)); err != nil {
+		logger.Error(err, "SessionAgentRemove failed")
+		return connection.QueryResult{Success: false, Message: a.appText("session_agent.error.remove_failed", map[string]any{"detail": err.Error()})}
+	}
+	return connection.QueryResult{Success: true}
 }
 
 // SessionAgentDetail 返回会话详情：消息流、轮次索引与缓存命中标记。

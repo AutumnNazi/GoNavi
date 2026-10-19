@@ -20,14 +20,36 @@ const (
 	ProviderClaude ProviderID = "claude"
 )
 
-// Service 是会话浏览服务。dataDirs 为空时使用各工具默认目录。
+// Service 是会话浏览服务。CodexDir/ClaudeDir 为各工具数据目录；绑定层
+// 按已添加实例注入（未添加的工具不设目录），enabled 集标记哪些工具
+// 已被用户添加——扫描与详情只对已添加工具生效。
 type Service struct {
-	// CodexDir / ClaudeDir 为工具数据目录（测试注入用；空取默认）。
 	CodexDir  string
 	ClaudeDir string
+	// Enabled 标记已添加的工具；nil 视为「全部启用」（测试直接构造
+	// Service 时的宽松行为，绑定层必须显式设置）。
+	Enabled map[ProviderID]bool
 }
 
-// New 构造服务（使用各工具默认目录）。
+// SetEnabled 按已添加实例标记启用工具。
+func (s *Service) SetEnabled(kinds ...ProviderID) {
+	s.Enabled = make(map[ProviderID]bool, len(kinds))
+	for _, kind := range kinds {
+		s.Enabled[kind] = true
+	}
+}
+
+// isEnabled 工具是否已添加（Enabled 为 nil 视为全部启用，兼容测试）。
+func (s *Service) isEnabled(kind ProviderID) bool {
+	if s.Enabled == nil {
+		return true
+	}
+	return s.Enabled[kind]
+}
+
+// New 构造服务。调用方（绑定层）按已添加实例注入 CodexDir/ClaudeDir；
+// 未注入的字段保持空串，Scan 会按各工具默认目录解析——绑定层保证
+// 只有已添加的工具才有非空目录，从而只扫已添加工具。
 func New() *Service {
 	return &Service{}
 }
@@ -36,10 +58,10 @@ func New() *Service {
 // 全部；search 对标题/摘要/项目目录/提问做大小写不敏感子串匹配。
 func (s *Service) List(provider, search string) []SessionMeta {
 	var result []SessionMeta
-	if provider == "" || provider == ProviderCodex {
+	if (provider == "" || provider == ProviderCodex) && s.isEnabled(ProviderCodex) {
 		result = append(result, ScanCodexSessions(s.CodexDir)...)
 	}
-	if provider == "" || provider == ProviderClaude {
+	if (provider == "" || provider == ProviderClaude) && s.isEnabled(ProviderClaude) {
 		result = append(result, ScanClaudeSessions(s.ClaudeDir)...)
 	}
 	if needle := strings.ToLower(strings.TrimSpace(search)); needle != "" {
@@ -64,6 +86,9 @@ func (s *Service) List(provider, search string) []SessionMeta {
 // LoadTranscript 加载会话详情（带 LRU 缓存）。返回消息、轮次索引与
 // 是否缓存命中。
 func (s *Service) LoadTranscript(provider ProviderID, sourcePath string) (*Transcript, bool, error) {
+	if !s.isEnabled(ProviderID(provider)) {
+		return nil, false, fmt.Errorf("agent %s is not added", provider)
+	}
 	roots := s.rootsFor(provider)
 	ok, err := UnderRoots(sourcePath, roots)
 	if err != nil {
@@ -147,6 +172,9 @@ func (s *Service) ReadPage(provider ProviderID, sourcePath string, offset, limit
 
 // BlockContent 按需取大内容（分页）。
 func (s *Service) BlockContent(provider ProviderID, sourcePath string, ref ContentRef, offset, limit int) (BlockContent, error) {
+	if !s.isEnabled(provider) {
+		return BlockContent{}, fmt.Errorf("agent %s is not added", provider)
+	}
 	roots := s.rootsFor(provider)
 	ok, err := UnderRoots(sourcePath, roots)
 	if err != nil || !ok {
@@ -198,6 +226,9 @@ func (s *Service) ExportMarkdown(provider ProviderID, sourcePath string) (string
 // Delete 删除会话源文件（校验归属 + 身份）。只读浏览语义：删除是唯
 // 一的写操作，仅删用户指定的记录文件（含 sibling 双形态）。
 func (s *Service) Delete(provider ProviderID, sourcePath, sessionID string) error {
+	if !s.isEnabled(provider) {
+		return fmt.Errorf("agent %s is not added", provider)
+	}
 	roots := s.rootsFor(provider)
 	ok, err := UnderRoots(sourcePath, roots)
 	if err != nil || !ok {
@@ -229,6 +260,9 @@ func (s *Service) Delete(provider ProviderID, sourcePath, sessionID string) erro
 
 // ResumeCommand 返回恢复命令（前端复制到剪贴板 / 终端启动）。
 func (s *Service) ResumeCommand(provider ProviderID, sessionID string) string {
+	if !s.isEnabled(provider) {
+		return ""
+	}
 	switch provider {
 	case ProviderCodex:
 		return "codex resume " + sessionID
