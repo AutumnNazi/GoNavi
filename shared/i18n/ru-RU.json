@@ -12458,5 +12458,12 @@
   "session_agent.error.resume_unavailable": "Команда возобновления недоступна для этого инструмента",
   "session_agent.error.reveal_failed": "Не удалось открыть содержащую папку",
   "session_agent.list.resize": "Перетащите для изменения ширины списка",
-  "session_agent.workbench.tab_title": "{{name}} · Сессии"
+  "session_agent.workbench.tab_title": "{{name}} · Сессии",
+  "session_agent.card.first": "Первое",
+  "session_agent.card.last": "Последнее",
+  "session_agent.time.yesterday": "Вчера",
+  "session_agent.time.days_ago": "{{count}} дн. назад",
+  "session_agent.detail.stats": "{{questions}} вопросов · {{calls}} вызовов инструмента",
+  "session_agent.detail.latest": "Последнее",
+  "session_agent.detail.collapse_full": "Свернуть"
 }

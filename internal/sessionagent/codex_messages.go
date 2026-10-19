@@ -24,6 +24,8 @@ type codexParser struct {
 	lastModel     string
 	turnModels    map[string]string
 	lastWebSearch string
+	// lineSpan 是当前处理行的字节区间，构造 ContentRef 时写入。
+	lineSpan LineSpan
 }
 
 type callSite struct {
@@ -48,23 +50,37 @@ func ParseCodexMessages(path string) ([]SessionMessage, []TurnIndex, error) {
 		finishedCalls: map[string]callSite{},
 		turnModels:    map[string]string{},
 	}
-	scanner := readScanner(reader)
-	for scanner.Scan() {
-		p.processLine(scanner.Text())
+	// LineSpans 记录每行的字节区间：解析时即写入 ContentRef 的
+	// Offset/Length，前端按需取全文时 O(1) seek（cc-switch 方案核心）。
+	spans := NewLineSpans(reader)
+	for {
+		line, span, ok := spans.Next()
+		if !ok {
+			break
+		}
+		p.processLine(line, span)
 	}
-	if err := scanner.Err(); err != nil {
+	if err := spans.Err(); err != nil {
 		return p.messages, BuildTurns(p.messages), err
 	}
 	p.flushPending("finished")
 	return p.messages, BuildTurns(p.messages), nil
 }
 
-// processLine 处理单行 rollout 记录。
-func (p *codexParser) processLine(line string) {
+// lineRef 构造指向当前行内 pointer 的内容引用（携带字节区间）。
+func (p *codexParser) lineRef(pointer string) *ContentRef {
+	ref := p.lineSpan.ContentRef(pointer)
+	return &ref
+}
+
+// processLine 处理单行 rollout 记录；span 是该行的字节区间，供
+// ContentRef 精确定位。
+func (p *codexParser) processLine(line string, span LineSpan) {
 	trimmed := strings.TrimSpace(line)
 	if trimmed == "" {
 		return
 	}
+	p.lineSpan = span
 	var item rolloutLine
 	if err := json.Unmarshal([]byte(trimmed), &item); err != nil {
 		return // 坏行静默跳过
@@ -207,7 +223,7 @@ func (p *codexParser) pushMessage(role MessageRole, text string, injected bool) 
 			Type: BlockText,
 			Text: &TextBlock{
 				Text: preview.Text,
-				Full: &ContentRef{Kind: ContentJSONL, Pointer: "/payload/content"},
+				Full: p.lineRef("/payload/content"),
 			},
 		}}
 		msg.Content = preview.Text
@@ -256,7 +272,7 @@ func (p *codexParser) onReasoning(raw json.RawMessage) {
 	if body != "" {
 		block.Text = TruncateRunes(body, ThinkingPreviewChars)
 		if len([]rune(body)) > ThinkingPreviewChars {
-			block.Full = &ContentRef{Kind: ContentJSONL, Pointer: "/payload/content"}
+			block.Full = p.lineRef("/payload/content")
 		}
 	}
 	// 连续 redacted 思考去重。
@@ -296,7 +312,7 @@ func (p *codexParser) onFunctionCall(raw json.RawMessage) {
 		InputTotalLen: uint32(len([]rune(string(payload.Arguments)))),
 	}
 	if block.InputTotalLen > uint32(len([]rune(block.InputPreview))) {
-		block.InputFull = &ContentRef{Kind: ContentJSONL, Pointer: "/payload/arguments"}
+		block.InputFull = p.lineRef("/payload/arguments")
 	}
 	idx := p.pushBlock(SessionBlock{Type: BlockToolCall, ToolCall: &block})
 	p.pendingCalls[block.ID] = callSite{
@@ -332,7 +348,7 @@ func (p *codexParser) onCustomToolCall(raw json.RawMessage) {
 		InputTotalLen: uint32(len([]rune(string(payload.Input)))),
 	}
 	if block.InputTotalLen > uint32(len([]rune(block.InputPreview))) {
-		block.InputFull = &ContentRef{Kind: ContentJSONL, Pointer: "/payload/input"}
+		block.InputFull = p.lineRef("/payload/input")
 	}
 	idx := p.pushBlock(SessionBlock{Type: BlockToolCall, ToolCall: &block})
 	p.pendingCalls[block.ID] = callSite{
@@ -349,7 +365,7 @@ func (p *codexParser) onApplyPatch(callID, input string) {
 		Files:   files,
 		Added:   added,
 		Removed: removed,
-		Full:    &ContentRef{Kind: ContentJSONL, Pointer: "/payload/input"},
+		Full:    p.lineRef("/payload/input"),
 	}
 	block := ToolCallBlock{
 		ID:      firstNonEmpty(callID, "apply_patch"),
@@ -416,7 +432,7 @@ func (p *codexParser) onOutput(raw json.RawMessage) {
 		Truncated: preview.Truncated,
 	}
 	if preview.Truncated {
-		result.Full = &ContentRef{Kind: ContentJSONL, Pointer: "/payload/output"}
+		result.Full = p.lineRef("/payload/output")
 	}
 	if code, ok := extractExitCode(payload.Output); ok {
 		result.ExitCode = &code

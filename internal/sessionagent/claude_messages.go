@@ -20,11 +20,16 @@ func ParseClaudeMessages(path string) ([]SessionMessage, []TurnIndex, error) {
 	p := &claudeParser{
 		callIndex: map[string]callSite{},
 	}
-	scanner := readScanner(reader)
-	for scanner.Scan() {
-		p.processLine(scanner.Text())
+	// LineSpans 记录每行字节区间，供 ContentRef 按需定位（同 codex）。
+	spans := NewLineSpans(reader)
+	for {
+		line, span, ok := spans.Next()
+		if !ok {
+			break
+		}
+		p.processLine(line, span)
 	}
-	if err := scanner.Err(); err != nil {
+	if err := spans.Err(); err != nil {
 		return p.messages, BuildTurns(p.messages), err
 	}
 	return p.messages, BuildTurns(p.messages), nil
@@ -33,13 +38,22 @@ func ParseClaudeMessages(path string) ([]SessionMessage, []TurnIndex, error) {
 type claudeParser struct {
 	messages  []SessionMessage
 	callIndex map[string]callSite
+	// lineSpan 是当前处理行的字节区间，构造 ContentRef 时写入。
+	lineSpan LineSpan
 }
 
-func (p *claudeParser) processLine(line string) {
+// lineRef 构造指向当前行内 pointer 的内容引用（携带字节区间）。
+func (p *claudeParser) lineRef(pointer string) *ContentRef {
+	ref := p.lineSpan.ContentRef(pointer)
+	return &ref
+}
+
+func (p *claudeParser) processLine(line string, span LineSpan) {
 	trimmed := strings.TrimSpace(line)
 	if trimmed == "" {
 		return
 	}
+	p.lineSpan = span
 	var item claudeLine
 	if err := json.Unmarshal([]byte(trimmed), &item); err != nil {
 		return
@@ -68,7 +82,7 @@ func (p *claudeParser) onMessage(item claudeLine) {
 		role = RoleSystem
 	}
 
-	for _, c := range msg.Content {
+	for _, c := range claudeMessageContentItems(msg.Content) {
 		switch c.Type {
 		case "text":
 			text := strings.TrimSpace(c.Text)
@@ -103,7 +117,7 @@ func (p *claudeParser) onMessage(item claudeLine) {
 				InputTotalLen: uint32(len([]rune(string(c.Input)))),
 			}
 			if block.InputTotalLen > uint32(len([]rune(block.InputPreview))) {
-				block.InputFull = &ContentRef{Kind: ContentJSONL, Pointer: "/message/content"}
+				block.InputFull = p.lineRef("/message/content")
 			}
 			idx := p.pushBlock(SessionBlock{Type: BlockToolCall, ToolCall: &block})
 			p.callIndex[block.ID] = callSite{
@@ -123,7 +137,7 @@ func (p *claudeParser) onMessage(item claudeLine) {
 			result.LineCount = preview.LineCount
 			result.Truncated = preview.Truncated
 			if preview.Truncated {
-				result.Full = &ContentRef{Kind: ContentJSONL, Pointer: "/message/content"}
+				result.Full = p.lineRef("/message/content")
 			}
 			site, ok := p.callIndex[callID]
 			if ok {

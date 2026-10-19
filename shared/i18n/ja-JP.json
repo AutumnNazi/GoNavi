@@ -12458,5 +12458,12 @@
   "session_agent.error.resume_unavailable": "このツールでは再開コマンドに対応していません",
   "session_agent.error.reveal_failed": "フォルダを開けませんでした",
   "session_agent.list.resize": "ドラッグしてリスト幅を調整",
-  "session_agent.workbench.tab_title": "{{name}} · セッション管理"
+  "session_agent.workbench.tab_title": "{{name}} · セッション管理",
+  "session_agent.card.first": "最初",
+  "session_agent.card.last": "最後",
+  "session_agent.time.yesterday": "昨日",
+  "session_agent.time.days_ago": "{{count}} 日前",
+  "session_agent.detail.stats": "{{questions}} 回の質問 · {{calls}} 回のツール呼び出し",
+  "session_agent.detail.latest": "最新",
+  "session_agent.detail.collapse_full": "折りたたむ"
 }

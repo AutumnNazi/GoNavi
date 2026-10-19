@@ -47,6 +47,7 @@ func (s *Service) List(provider, search string) []SessionMeta {
 		for _, meta := range result {
 			if strings.Contains(strings.ToLower(meta.Title), needle) ||
 				strings.Contains(strings.ToLower(meta.Summary), needle) ||
+				strings.Contains(strings.ToLower(meta.FirstMessage), needle) ||
 				strings.Contains(strings.ToLower(meta.ProjectDir), needle) ||
 				strings.Contains(strings.ToLower(meta.SessionID), needle) {
 				filtered = append(filtered, meta)

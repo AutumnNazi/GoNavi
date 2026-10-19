@@ -12458,5 +12458,12 @@
   "session_agent.error.resume_unavailable": "Fortsetzungsbefehl für dieses Tool nicht verfügbar",
   "session_agent.error.reveal_failed": "Enthaltenden Ordner konnte nicht geöffnet werden",
   "session_agent.list.resize": "Ziehen zum Ändern der Listenbreite",
-  "session_agent.workbench.tab_title": "{{name}} · Sitzungen"
+  "session_agent.workbench.tab_title": "{{name}} · Sitzungen",
+  "session_agent.card.first": "Erste",
+  "session_agent.card.last": "Letzte",
+  "session_agent.time.yesterday": "Gestern",
+  "session_agent.time.days_ago": "vor {{count}} Tagen",
+  "session_agent.detail.stats": "{{questions}} Fragen · {{calls}} Tool-Aufrufe",
+  "session_agent.detail.latest": "Neueste",
+  "session_agent.detail.collapse_full": "Einklappen"
 }

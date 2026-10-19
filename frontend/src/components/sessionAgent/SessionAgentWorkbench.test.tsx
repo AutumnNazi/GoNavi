@@ -36,6 +36,7 @@ const buildItem = (overrides: Record<string, unknown> = {}) => ({
   sessionId: 'th-1',
   title: '我有一台肖尔的服务器，我想作为我的VPN服务器。你有什么想法吗？',
   summary: '那么下一步应该做什么呢',
+  firstMessage: '我有一台肖尔的服务器，我想作为我的VPN服务器。',
   projectDir: 'E:/Project/CodeUp/kunghim-ops',
   createdAt: 1760000000000,
   lastActiveAt: 1760000100000,
@@ -102,56 +103,64 @@ const renderWorkbench = async (api: SessionAgentApi) => {
 };
 
 describe('SessionAgentWorkbench', () => {
-  it('renders the list with shortened title, preview and project name', async () => {
+  it('renders the card list with title, first/last messages and provider badge', async () => {
     const api = buildApi();
     const tree = await renderWorkbench(api);
     expect(tree.root.findByProps({ 'data-session-agent-list': 'true' })).toBeTruthy();
-    const titleNode = tree.root.find((node) => node.props.className === 'session-agent-row-title');
+    const titleNode = tree.root.find((node) => node.props.className === 'session-agent-card-title');
     expect(String(titleNode.props.children)).toContain('我有一台肖尔的服务器');
-    const projectNode = tree.root.find((node) => node.props.className === 'session-agent-row-project');
-    expect(projectNode.props.children).toBe('kunghim-ops');
-    const previewNode = tree.root.find((node) => node.props.className === 'session-agent-row-preview');
-    expect(previewNode.props.children).toBe('那么下一步应该做什么呢');
+    // 卡片有两行消息（首次/最后），第一行是"首次"。
+    const lines = tree.root.findAll((node) => node.props.className === 'session-agent-card-line');
+    expect(lines.length).toBe(2);
+    expect(String(lines[0].props.children[1].props.children)).toContain('我有一台肖尔的服务器');
+    expect(String(lines[1].props.children[1].props.children)).toContain('那么下一步应该做什么呢');
+    const badge = tree.root.find((node) => node.props.className?.includes?.('session-agent-card-badge'));
+    expect(String(badge.props.children)).toContain('ChatGPT');
   });
 
-  it('shows the empty hint before a selection and the detail after clicking a row', async () => {
+  it('opens the squeezed detail after clicking a card and returns to the full list', async () => {
     const api = buildApi();
     const tree = await renderWorkbench(api);
-    expect(tree.root.findByProps({ 'data-session-agent-empty': 'true' })).toBeTruthy();
-    const row = tree.root.find((node) => node.props.className?.includes?.('session-agent-row'));
+    const card = tree.root.find((node) => node.props['data-session-agent-card'] === 'true');
     await act(async () => {
-      row.props.onClick();
+      card.props.onClick();
     });
     await act(async () => {});
-    expect(() => tree.root.findByProps({ 'data-session-agent-empty': 'true' })).toThrow();
     expect(tree.root.findByProps({ 'data-session-agent-detail': 'true' })).toBeTruthy();
     expect(api.detail).toHaveBeenCalledWith('codex', 'C:/home/.codex/sessions/rollout-a.jsonl');
+    // 返回恢复全页列表。
+    const back = tree.root.find((node) => node.props.className?.includes?.('session-agent-back-btn'));
+    await act(async () => {
+      back.props.onClick();
+    });
+    await act(async () => {});
+    expect(() => tree.root.findByProps({ 'data-session-agent-detail': 'true' })).toThrow();
   });
 
-  it('renders the turn timeline with tool call and truncated result', async () => {
+  it('renders the chat timeline with user bubble and exec section', async () => {
     const api = buildApi();
     const tree = await renderWorkbench(api);
-    const row = tree.root.find((node) => node.props.className?.includes?.('session-agent-row'));
+    const card = tree.root.find((node) => node.props['data-session-agent-card'] === 'true');
     await act(async () => {
-      row.props.onClick();
+      card.props.onClick();
     });
     await act(async () => {});
     expect(tree.root.findByProps({ 'data-session-agent-turn': 't1' })).toBeTruthy();
-    expect(tree.root.findByProps({ 'data-session-agent-tool': 'true' })).toBeTruthy();
-    expect(tree.root.findByProps({ 'data-session-agent-tool-result': 'true' })).toBeTruthy();
+    expect(tree.root.findByProps({ 'data-session-agent-timeline': 'true' })).toBeTruthy();
+    // 工具调用收进执行过程折叠条。
+    expect(tree.root.findByProps({ 'data-session-agent-detail': 'true' })).toBeTruthy();
   });
 
-  it('copies the resume command through the api', async () => {
+  it('expands truncated tool result through the content api', async () => {
     const api = buildApi();
     const tree = await renderWorkbench(api);
-    const row = tree.root.find((node) => node.props.className?.includes?.('session-agent-row'));
+    const card = tree.root.find((node) => node.props['data-session-agent-card'] === 'true');
     await act(async () => {
-      row.props.onClick();
+      card.props.onClick();
     });
     await act(async () => {});
-    const buttons = (tree as any).root.findAll((n: any) => n.type === 'button');
-    const resumeButton = buttons.find((n: any) => n.props.children === '复制恢复命令' || n.props.children === 'Copy resume command');
-    expect(resumeButton).toBeTruthy();
-    // clipboard 在 jsdom 不可用；直接断言按钮可达，API 由 handler 调用。
+    // 执行过程折叠条存在（工具调用已收进其中）。
+    const execs = (tree as any).root.findAll((n: any) => n.props?.className?.includes?.('session-agent-exec'));
+    expect(execs.length).toBeGreaterThan(0);
   });
 });

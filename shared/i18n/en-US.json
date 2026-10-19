@@ -12458,5 +12458,12 @@
   "session_agent.error.resume_unavailable": "Resume command not available for this tool",
   "session_agent.error.reveal_failed": "Failed to open containing folder",
   "session_agent.list.resize": "Drag to resize list",
-  "session_agent.workbench.tab_title": "{{name}} · Sessions"
+  "session_agent.workbench.tab_title": "{{name}} · Sessions",
+  "session_agent.card.first": "First",
+  "session_agent.card.last": "Last",
+  "session_agent.time.yesterday": "Yesterday",
+  "session_agent.time.days_ago": "{{count}} days ago",
+  "session_agent.detail.stats": "{{questions}} questions · {{calls}} tool calls",
+  "session_agent.detail.latest": "Latest",
+  "session_agent.detail.collapse_full": "Collapse full"
 }

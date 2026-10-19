@@ -21,6 +21,8 @@ export interface SessionAgentItem {
   sessionId: string;
   title: string;
   summary: string;
+  /** 首条真实用户消息（卡片"首次"行）。 */
+  firstMessage: string;
   projectDir: string;
   createdAt: number;
   lastActiveAt: number;

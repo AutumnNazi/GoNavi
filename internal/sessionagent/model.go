@@ -36,10 +36,12 @@ const (
 // SessionMeta 是会话列表条目。时间戳为 Unix 毫秒；取不到的字段留空，
 // 不从文件名猜测（缺失即空，前端按未知显示）。
 type SessionMeta struct {
-	ProviderID    string `json:"providerId"`
-	SessionID     string `json:"sessionId"`
-	Title         string `json:"title"`
-	Summary       string `json:"summary"`
+	ProviderID string `json:"providerId"`
+	SessionID  string `json:"sessionId"`
+	Title      string `json:"title"`
+	Summary    string `json:"summary"`
+	// FirstMessage 是首条真实用户消息（列表卡片"首次"行与搜索索引用）。
+	FirstMessage  string `json:"firstMessage"`
 	ProjectDir    string `json:"projectDir"`
 	CreatedAt     int64  `json:"createdAt"`
 	LastActiveAt  int64  `json:"lastActiveAt"`

@@ -1,45 +1,45 @@
 import React from 'react';
-import { Alert, Button, Input, Modal, Spin, Tooltip, message } from 'antd';
+import { Button, Input, Modal, Spin, Tooltip, message } from 'antd';
 import {
   ArrowLeftOutlined,
   CopyOutlined,
   DeleteOutlined,
   ExportOutlined,
-  FileTextOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
 import { t } from '../../i18n';
 import type { SessionAgentItem, SessionBlockContent, SessionContentRef, SessionMessageView, SessionTurnView } from './sessionAgentApi';
+import { ProviderAvatar } from './SessionAgentListPage';
 
 /**
- * 会话详情面板：按轮次分组渲染时间线（提问-回复），工具调用/结果折叠
- * 展示，大内容按需展开（ContentRef 分页）。信息架构照抄 cc-switch 会话
- * 阅读页，视觉走 GoNavi v2 主题。
+ * 会话详情页（挤压式）：列表收成左侧窄条，右侧聊天风格时间线。
+ * 用户消息右侧气泡、助手消息左侧头像；工具调用收进「执行过程」
+ * 折叠条；顶部统计条 + 全部/对话/改动视图切换；「最新」悬浮按钮。
  */
 export const SessionAgentDetailPanel: React.FC<{
-  item: SessionAgentItem | null;
+  item: SessionAgentItem;
   messages: SessionMessageView[];
   turns: SessionTurnView[];
   loading: boolean;
-  onBackToList: () => void;
+  onBack: () => void;
   onReload: () => void;
-  onExportMarkdown: () => void;
+  onExport: () => void;
   onCopyResume: () => void;
   onDelete: () => void;
   onOpenFull: (ref: SessionContentRef) => Promise<SessionBlockContent | null>;
-}> = ({ item, messages, turns, loading, onBackToList, onReload, onExportMarkdown, onCopyResume, onDelete, onOpenFull }) => {
+}> = ({ item, messages, turns, loading, onBack, onReload, onExport, onCopyResume, onDelete, onOpenFull }) => {
   const [search, setSearch] = React.useState('');
   const [viewMode, setViewMode] = React.useState<'all' | 'chat' | 'changes'>('all');
-  const [openTools, setOpenTools] = React.useState<Record<string, boolean>>({});
+  const [stats, setStats] = React.useState<{ questions: number; calls: number } | null>(null);
 
-  if (loading || !item) {
+  if (loading) {
     return <div className="session-agent-detail-loading"><Spin /></div>;
   }
+
   const needle = search.trim().toLowerCase();
   const highlight = (text: string) => {
     if (!needle) return text;
-    const lower = text.toLowerCase();
-    const idx = lower.indexOf(needle);
+    const idx = text.toLowerCase().indexOf(needle);
     if (idx < 0) return text;
     return (
       <>
@@ -53,24 +53,21 @@ export const SessionAgentDetailPanel: React.FC<{
   return (
     <section className="session-agent-detail" data-session-agent-detail="true">
       <header className="session-agent-detail-head">
+        <Button className="session-agent-back-btn" size="small" icon={<ArrowLeftOutlined />} onClick={onBack}>
+          {t('session_agent.action.back_to_list')}
+        </Button>
         <div className="session-agent-detail-titleline">
           <h3 className="session-agent-detail-title">{item.title || item.sessionId}</h3>
-          <span className="session-agent-detail-meta">
-            {(item.projectDir || '—') + ' · ' + (item.providerId === 'claude' ? 'Claude' : 'ChatGPT')}
-          </span>
         </div>
         <div className="session-agent-detail-actions">
-          <Button className="session-agent-back-btn" size="small" icon={<ArrowLeftOutlined />} onClick={onBackToList}>
-            {t('session_agent.action.back_to_list')}
-          </Button>
           <Tooltip title={t('session_agent.action.reload')}>
             <Button size="small" icon={<ReloadOutlined />} onClick={onReload} aria-label={t('session_agent.action.reload')} />
           </Tooltip>
-          <Button size="small" icon={<ExportOutlined />} onClick={onExportMarkdown}>
-            {t('session_agent.action.export')}
-          </Button>
           <Button size="small" icon={<CopyOutlined />} onClick={onCopyResume}>
             {t('session_agent.action.copy_resume')}
+          </Button>
+          <Button size="small" icon={<ExportOutlined />} onClick={onExport}>
+            {t('session_agent.action.export')}
           </Button>
           <Button size="small" danger icon={<DeleteOutlined />} onClick={onDelete}>
             {t('session_agent.action.delete')}
@@ -78,7 +75,11 @@ export const SessionAgentDetailPanel: React.FC<{
         </div>
       </header>
 
-      <div className="session-agent-detail-toolbar">
+      <div className="session-agent-detail-sub">
+        <span className="session-agent-detail-meta">
+          {item.projectDir || '—'} · {item.providerId === 'claude' ? 'Claude Code' : 'ChatGPT'}
+          {stats ? ` · ${t('session_agent.detail.stats', { questions: stats.questions, calls: stats.calls })}` : ''}
+        </span>
         <Input.Search
           allowClear
           size="small"
@@ -86,7 +87,7 @@ export const SessionAgentDetailPanel: React.FC<{
           onChange={(event) => setSearch(event.target.value)}
           placeholder={t('session_agent.detail.search_placeholder')}
           aria-label={t('session_agent.detail.search_placeholder')}
-          style={{ maxWidth: 280 }}
+          style={{ maxWidth: 240 }}
         />
         <div className="session-agent-detail-views">
           {(['all', 'chat', 'changes'] as const).map((mode) => (
@@ -104,109 +105,114 @@ export const SessionAgentDetailPanel: React.FC<{
         </div>
       </div>
 
-      <div className="session-agent-timeline" data-session-agent-timeline="true">
-        {turns.length === 0 ? (
-          <EmptyState />
-        ) : (
-          turns.map((turn) => (
-            <TurnSection
-              key={turn.turnId + turn.firstMessageIndex}
-              turn={turn}
-              messages={messages}
-              viewMode={viewMode}
-              needle={needle}
-              openTools={openTools}
-              onToggleTool={(id) => setOpenTools((prev) => ({ ...prev, [id]: !prev[id] }))}
-              highlight={highlight}
-              onOpenFull={onOpenFull}
-            />
-          ))
-        )}
-      </div>
+      <Timeline
+        item={item}
+        messages={messages}
+        turns={turns}
+        viewMode={viewMode}
+        needle={needle}
+        highlight={highlight}
+        onOpenFull={onOpenFull}
+        onStats={setStats}
+      />
     </section>
   );
 };
 
-const EmptyState: React.FC = () => (
-  <div className="session-agent-detail-empty-body">
-    <Alert type="info" showIcon message={t('session_agent.detail.empty')} />
-  </div>
-);
+// 时间线：按轮次渲染聊天流；滚动到底部跟随，离开底部出现「最新」按钮。
+const Timeline: React.FC<{
+  item: SessionAgentItem;
+  messages: SessionMessageView[];
+  turns: SessionTurnView[];
+  viewMode: 'all' | 'chat' | 'changes';
+  needle: string;
+  highlight: (text: string) => React.ReactNode;
+  onOpenFull: (ref: SessionContentRef) => Promise<SessionBlockContent | null>;
+  onStats: (stats: { questions: number; calls: number } | null) => void;
+}> = ({ item, messages, turns, viewMode, needle, highlight, onOpenFull, onStats }) => {
+  const bodyRef = React.useRef<HTMLDivElement>(null);
+  const [atBottom, setAtBottom] = React.useState(true);
+
+  // 统计条数据：提问数与工具调用数。
+  React.useEffect(() => {
+    let questions = 0;
+    let calls = 0;
+    for (const msg of messages) {
+      if (msg.role === 'user' && !msg.injected && msg.content.trim()) questions++;
+      for (const block of msg.blocks ?? []) {
+        if (block.type === 'tool_call') calls++;
+      }
+    }
+    onStats({ questions, calls });
+    return () => onStats(null);
+  }, [messages, onStats]);
+
+  // 切会话时回底部。
+  React.useEffect(() => {
+    const body = bodyRef.current;
+    if (body) body.scrollTop = body.scrollHeight;
+  }, [item.sourcePath]);
+
+  const handleScroll = () => {
+    const body = bodyRef.current;
+    if (!body) return;
+    setAtBottom(body.scrollHeight - body.scrollTop - body.clientHeight < 60);
+  };
+
+  const scrollToBottom = () => {
+    const body = bodyRef.current;
+    if (body) body.scrollTo({ top: body.scrollHeight, behavior: 'smooth' });
+  };
+
+  return (
+    <div className="session-agent-timeline" data-session-agent-timeline="true" ref={bodyRef} onScroll={handleScroll}>
+      {turns.length === 0 ? (
+        <div className="session-agent-detail-empty-body">
+          <p>{t('session_agent.detail.empty')}</p>
+        </div>
+      ) : (
+        turns.map((turn) => (
+          <TurnSection
+            key={turn.turnId + turn.firstMessageIndex}
+            turn={turn}
+            messages={messages}
+            viewMode={viewMode}
+            needle={needle}
+            providerId={item.providerId}
+            highlight={highlight}
+            onOpenFull={onOpenFull}
+          />
+        ))
+      )}
+      {!atBottom && (
+        <button type="button" className="session-agent-latest-btn" onClick={scrollToBottom}>
+          ↓ {t('session_agent.detail.latest')}
+        </button>
+      )}
+    </div>
+  );
+};
 
 const TurnSection: React.FC<{
   turn: SessionTurnView;
   messages: SessionMessageView[];
   viewMode: 'all' | 'chat' | 'changes';
   needle: string;
-  openTools: Record<string, boolean>;
-  onToggleTool: (id: string) => void;
+  providerId: string;
   highlight: (text: string) => React.ReactNode;
   onOpenFull: (ref: SessionContentRef) => Promise<SessionBlockContent | null>;
-}> = ({ turn, messages, viewMode, needle, openTools, onToggleTool, highlight, onOpenFull }) => {
+}> = ({ turn, messages, viewMode, needle, providerId, highlight, onOpenFull }) => {
   const slice = messages.slice(turn.firstMessageIndex, turn.lastMessageIndex + 1);
   return (
-    <section className="session-agent-turn" data-session-agent-turn={turn.turnId}>
-      <header className="session-agent-turn-head">
-        <span className="session-agent-turn-title">{turn.questionPreview || t('session_agent.detail.turn')}</span>
-        <span className="session-agent-turn-stats">
-          {turn.stepCount > 0 && <span>{t('session_agent.detail.steps', { count: turn.stepCount })}</span>}
-          {turn.errorCount > 0 && <span className="session-agent-turn-error">{t('session_agent.detail.errors', { count: turn.errorCount })}</span>}
-          {turn.aborted && <span>{t('session_agent.detail.aborted')}</span>}
-        </span>
-      </header>
+    <div className="session-agent-turn" data-session-agent-turn={turn.turnId}>
       {slice.map((msg, i) => (
         <MessageRow
           key={`${turn.turnId}-${i}`}
           msg={msg}
           viewMode={viewMode}
           needle={needle}
-          openTools={openTools}
-          onToggleTool={onToggleTool}
+          providerId={providerId}
           highlight={highlight}
-          onOpenFull={onOpenFull}
-        />
-      ))}
-    </section>
-  );
-};
-
-const MessageRow: React.FC<{
-  msg: SessionMessageView;
-  viewMode: 'all' | 'chat' | 'changes';
-  needle: string;
-  openTools: Record<string, boolean>;
-  onToggleTool: (id: string) => void;
-  highlight: (text: string) => React.ReactNode;
-  onOpenFull: (ref: SessionContentRef) => Promise<SessionBlockContent | null>;
-}> = ({ msg, viewMode, openTools, onToggleTool, highlight, onOpenFull }) => {
-  if (msg.injected) {
-    return (
-      <div className="session-agent-entry injected" data-session-agent-injected="true">
-        <span className="session-agent-entry-label">{t('session_agent.detail.injected')}</span>
-      </div>
-    );
-  }
-  const isChat = msg.role === 'user' || msg.role === 'assistant';
-  if (viewMode === 'chat' && !isChat) return null;
-
-  return (
-    <div className={`session-agent-entry ${msg.role}`}>
-      <span className="session-agent-entry-label">
-        {msg.role === 'user' ? t('session_agent.detail.user')
-          : msg.role === 'assistant' ? t('session_agent.detail.assistant')
-            : msg.role === 'tool' ? t('session_agent.detail.tool')
-              : t('session_agent.detail.system')}
-      </span>
-      {msg.content ? (
-        <p className="session-agent-entry-text">{highlight(msg.content)}</p>
-      ) : null}
-      {(msg.blocks ?? []).map((block, idx) => (
-        <BlockRow
-          key={idx}
-          block={block}
-          viewMode={viewMode}
-          openTools={openTools}
-          onToggleTool={onToggleTool}
           onOpenFull={onOpenFull}
         />
       ))}
@@ -214,75 +220,125 @@ const MessageRow: React.FC<{
   );
 };
 
-const BlockRow: React.FC<{
-  block: NonNullable<SessionMessageView['blocks']>[number];
+const MessageRow: React.FC<{
+  msg: SessionMessageView;
   viewMode: 'all' | 'chat' | 'changes';
-  openTools: Record<string, boolean>;
-  onToggleTool: (id: string) => void;
+  needle: string;
+  providerId: string;
+  highlight: (text: string) => React.ReactNode;
   onOpenFull: (ref: SessionContentRef) => Promise<SessionBlockContent | null>;
-}> = ({ block, viewMode, openTools, onToggleTool, onOpenFull }) => {
-  if (block.type === 'thinking' && block.thinking) {
+}> = ({ msg, viewMode, needle, providerId, highlight, onOpenFull }) => {
+  if (msg.injected) return null;
+
+  if (msg.role === 'user') {
     return (
-      <details className="session-agent-thinking" data-session-agent-thinking="true">
-        <summary>{t('session_agent.detail.thinking')}</summary>
-        {block.thinking.redacted
-          ? <span className="session-agent-entry-label">{t('session_agent.detail.thinking_redacted')}</span>
-          : <p className="session-agent-entry-text">{block.thinking.text}</p>}
-      </details>
+      <div className="session-agent-msg-user">
+        <span className="session-agent-msg-ts">{formatTs(msg.ts)}</span>
+        <div className="session-agent-bubble-user">{highlight(msg.content)}</div>
+      </div>
     );
   }
-  if (block.type === 'tool_call' && block.toolCall) {
-    const call = block.toolCall;
-    const open = openTools[call.id] ?? false;
+  if (msg.role === 'assistant') {
+    const toolBlocks = (msg.blocks ?? []).filter((b) => b.type === 'tool_call' || b.type === 'tool_result');
+    const textBlocks = (msg.blocks ?? []).filter((b) => b.type === 'text');
+    const thinkingBlocks = (msg.blocks ?? []).filter((b) => b.type === 'thinking');
+    const providerName = providerId === 'claude' ? 'Claude Code' : 'ChatGPT';
     return (
-      <div className="session-agent-tool" data-session-agent-tool="true">
-        <button type="button" className="session-agent-tool-head" onClick={() => onToggleTool(call.id)}>
-          <span className="session-agent-tool-kind">{call.kind}</span>
-          <span className="session-agent-tool-title">{call.title}</span>
-          {call.diff && (
-            <span className="session-agent-tool-diff">
-              {`+${call.diff.added} -${call.diff.removed}`}
-            </span>
+      <div className="session-agent-msg-assistant">
+        <ProviderAvatar providerId={providerId} />
+        <div className="session-agent-abody">
+          <div className="session-agent-ahead">
+            <span className="session-agent-aname">{providerName}</span>
+            <span className="session-agent-ats">{formatTs(msg.ts)}</span>
+          </div>
+          {thinkingBlocks.map((block, i) => <ThinkingRow key={i} block={block} />)}
+          {toolBlocks.length > 0 && (
+            <ExecSection blocks={toolBlocks} onOpenFull={onOpenFull} />
           )}
-          <span className="session-agent-tool-toggle">{open ? '▾' : '▸'}</span>
-        </button>
-        {open && call.inputPreview && (
-          <pre className="session-agent-tool-input">{call.inputPreview}</pre>
-        )}
-        {open && call.diff && call.diff.files.length > 0 && (
-          <ul className="session-agent-tool-files">
-            {call.diff.files.map((file) => (
-              <li key={file.path}>{file.op} · {file.path} (+{file.added} -{file.removed})</li>
-            ))}
-          </ul>
-        )}
+          {msg.content ? <div className="session-agent-atext">{highlight(msg.content)}</div> : null}
+          {textBlocks.map((block, i) => (
+            block.text ? <div key={i} className="session-agent-atext">{highlight(block.text.text)}</div> : null
+          ))}
+        </div>
       </div>
     );
   }
-  if (block.type === 'tool_result' && block.toolResult) {
-    const result = block.toolResult;
-    return (
-      <div className="session-agent-tool-result" data-session-agent-tool-result="true">
-        <span className={`session-agent-tool-status ${result.status}`}>{result.status}</span>
-        {result.preview && <pre className="session-agent-tool-output">{result.preview}</pre>}
-        {result.truncated && result.full && (
-          <ExpandFull blockRef={result.full} onOpenFull={onOpenFull} />
-        )}
+  // tool / system：全部视图下以弱化行展示。
+  if (viewMode === 'chat') return null;
+  return (
+    <div className="session-agent-msg-system">
+      <span className="session-agent-msg-ts">{formatTs(msg.ts)}</span>
+      <span className="session-agent-system-text">{msg.content}</span>
+    </div>
+  );
+};
+
+const ThinkingRow: React.FC<{ block: NonNullable<SessionMessageView['blocks']>[number] }> = ({ block }) => {
+  if (!block.thinking) return null;
+  return (
+    <details className="session-agent-thinking">
+      <summary>{t('session_agent.detail.thinking')}</summary>
+      {block.thinking.redacted
+        ? <span className="session-agent-thinking-redacted">{t('session_agent.detail.thinking_redacted')}</span>
+        : <div className="session-agent-thinking-text">{block.thinking.text}</div>}
+    </details>
+  );
+};
+
+// 执行过程折叠条：默认收起显示步数，展开看工具序列。
+const ExecSection: React.FC<{
+  blocks: NonNullable<SessionMessageView['blocks']>;
+  onOpenFull: (ref: SessionContentRef) => Promise<SessionBlockContent | null>;
+}> = ({ blocks, onOpenFull }) => {
+  const [open, setOpen] = React.useState(false);
+  const calls = blocks.filter((b) => b.type === 'tool_call' && b.toolCall);
+  const results = new Map<string, NonNullable<SessionMessageView['blocks']>[number]>();
+  for (const b of blocks) {
+    if (b.type === 'tool_result' && b.toolResult) results.set(b.toolResult.callId, b);
+  }
+  return (
+    <div className={`session-agent-exec${open ? ' open' : ''}`}>
+      <div className="session-agent-exec-head" onClick={() => setOpen(!open)} role="button" aria-expanded={open}>
+        <span className={`session-agent-exec-caret${open ? ' open' : ''}`}>▶</span>
+        <span className="session-agent-exec-title">
+          {t('session_agent.detail.steps', { count: calls.length })}
+        </span>
       </div>
-    );
-  }
-  if (block.type === 'text' && block.text) {
-    return <p className="session-agent-entry-text">{block.text.text}</p>;
-  }
-  if (block.type === 'event' && block.event) {
-    return (
-      <div className="session-agent-event">
-        <span className="session-agent-event-kind">{block.event.kind}</span>
-        {block.event.text && <span>{block.event.text}</span>}
+      {open && (
+        <div className="session-agent-exec-body">
+          {calls.map((block, i) => (
+            <ToolRow key={block.toolCall?.id ?? i} call={block.toolCall!} result={results.get(block.toolCall?.id ?? '')?.toolResult} onOpenFull={onOpenFull} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ToolRow: React.FC<{
+  call: NonNullable<SessionMessageView['blocks']>[number]['toolCall'] & object;
+  result?: NonNullable<SessionMessageView['blocks']>[number]['toolResult'];
+  onOpenFull: (ref: SessionContentRef) => Promise<SessionBlockContent | null>;
+}> = ({ call, result, onOpenFull }) => {
+  const [open, setOpen] = React.useState(false);
+  const status = result?.status ?? 'pending';
+  return (
+    <div className="session-agent-toolrow">
+      <div className="session-agent-toolline" onClick={() => setOpen(!open)} role="button">
+        <span className="session-agent-toolkind">{call.kind}</span>
+        <span className="session-agent-tooltitle">{call.title}</span>
+        {call.diff && <span className="session-agent-tooldiff">+{call.diff.added} -{call.diff.removed}</span>}
+        <span className={`session-agent-toolstatus ${status}`}>{status === 'success' ? '✓' : status === 'error' ? '✗' : '…'}</span>
       </div>
-    );
-  }
-  return null;
+      {open && call.inputPreview && (
+        <pre className="session-agent-tooldetail">{call.inputPreview}</pre>
+      )}
+      {open && result?.preview && (
+        <pre className="session-agent-tooldetail">{result.preview}</pre>
+      )}
+      {open && result?.truncated && result.full && <ExpandFull blockRef={result.full} onOpenFull={onOpenFull} />}
+    </div>
+  );
 };
 
 const ExpandFull: React.FC<{
@@ -295,21 +351,27 @@ const ExpandFull: React.FC<{
       <Button
         size="small"
         type="link"
-        icon={<FileTextOutlined />}
         onClick={async () => {
           const full = await onOpenFull(blockRef);
-          setContent(full);
-          if (!full) message.warning(t('session_agent.error.content_failed'));
+          if (full) setContent(full);
+          else message.warning(t('session_agent.error.content_failed'));
         }}
       >
-        {t('session_agent.detail.expand_full')}
+        {content ? t('session_agent.detail.collapse_full') : t('session_agent.detail.expand_full')}
       </Button>
-      {content && <pre className="session-agent-tool-output expanded">{content.text}</pre>}
+      {content && <pre className="session-agent-tooldetail expanded">{content.text}</pre>}
     </>
   );
 };
 
-// ─── 删除确认（复用 Modal.confirm 模式） ───
+const formatTs = (ts: number): string => {
+  if (!ts) return '';
+  return new Date(ts).toLocaleString([], {
+    month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+};
+
+// ─── 删除确认 ───
 export const confirmSessionAgentDelete = (item: SessionAgentItem, onConfirm: () => void) => {
   Modal.confirm({
     title: t('session_agent.delete.title'),

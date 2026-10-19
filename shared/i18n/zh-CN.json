@@ -12458,5 +12458,12 @@
   "session_agent.error.resume_unavailable": "该工具暂不支持恢复命令",
   "session_agent.error.reveal_failed": "打开所在目录失败",
   "session_agent.list.resize": "拖动调整列表宽度",
-  "session_agent.workbench.tab_title": "{{name}} · 会话管理"
+  "session_agent.workbench.tab_title": "{{name}} · 会话管理",
+  "session_agent.card.first": "首次",
+  "session_agent.card.last": "最后",
+  "session_agent.time.yesterday": "昨天",
+  "session_agent.time.days_ago": "{{count}} 天前",
+  "session_agent.detail.stats": "{{questions}} 次提问 · {{calls}} 次工具调用",
+  "session_agent.detail.latest": "最新",
+  "session_agent.detail.collapse_full": "收起全文"
 }

@@ -86,17 +86,38 @@ type claudeLine struct {
 	Message     json.RawMessage `json:"message"`
 }
 
+// claudeMessageContent 兼容两种形态：真实数据里 user 消息的 content
+// 常是纯字符串，assistant/tool 结果多为内容项数组。
+type claudeMessageContent struct {
+	Type      string          `json:"type"`
+	Text      string          `json:"text"`
+	ID        string          `json:"id"`
+	ToolUseID string          `json:"tool_use_id"`
+	Name      string          `json:"name"`
+	Input     json.RawMessage `json:"input"`
+	Content   json.RawMessage `json:"content"`
+}
+
+// claudeMessageContentItems 把 message.content（字符串或数组）归一为
+// 内容项列表：字符串形态转为单个 text 项。
+func claudeMessageContentItems(raw json.RawMessage) []claudeMessageContent {
+	if len(raw) == 0 {
+		return nil
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return []claudeMessageContent{{Type: "text", Text: text}}
+	}
+	var items []claudeMessageContent
+	if err := json.Unmarshal(raw, &items); err == nil {
+		return items
+	}
+	return nil
+}
+
 type claudeMessage struct {
-	Role    string `json:"role"`
-	Content []struct {
-		Type      string          `json:"type"`
-		Text      string          `json:"text"`
-		ID        string          `json:"id"`
-		ToolUseID string          `json:"tool_use_id"`
-		Name      string          `json:"name"`
-		Input     json.RawMessage `json:"input"`
-		Content   json.RawMessage `json:"content"`
-	} `json:"content"`
+	Role    string          `json:"role"`
+	Content json.RawMessage `json:"content"`
 }
 
 // parseClaudeSessionMeta 提取列表元数据（只读头尾少量行）。
@@ -134,17 +155,20 @@ func parseClaudeSessionMeta(path string) (*SessionMeta, error) {
 	}
 	meta.ResumeCommand = "claude --resume " + meta.SessionID
 
-	// 首条真实用户消息（跳过包装）→ 标题候选。
-	if meta.Title == "" {
-		for _, line := range lines.Head {
-			var item claudeLine
-			if err := json.Unmarshal([]byte(line), &item); err != nil {
-				continue
+	// 首条真实用户消息（跳过包装）→ FirstMessage 与标题候选。
+	for _, line := range lines.Head {
+		var item claudeLine
+		if err := json.Unmarshal([]byte(line), &item); err != nil {
+			continue
+		}
+		if item.IsMeta || item.IsSidechain {
+			continue
+		}
+		if text := claudeUserMessageText(item); text != "" {
+			if meta.FirstMessage == "" {
+				meta.FirstMessage = TruncateRunes(FoldWhitespace(text), SummaryChars)
 			}
-			if item.IsMeta || item.IsSidechain {
-				continue
-			}
-			if text := claudeUserMessageText(item); text != "" {
+			if meta.Title == "" {
 				meta.Title = TruncateRunes(text, TitleChars)
 				break
 			}
@@ -166,7 +190,7 @@ func parseClaudeSessionMeta(path string) (*SessionMeta, error) {
 		if meta.Summary == "" && item.Message != nil && !item.IsMeta {
 			var msg claudeMessage
 			if err := json.Unmarshal(item.Message, &msg); err == nil {
-				for _, c := range msg.Content {
+				for _, c := range claudeMessageContentItems(msg.Content) {
 					text := strings.TrimSpace(c.Text)
 					if text == "" || claudeIsInjectedText(text) {
 						continue
@@ -198,7 +222,7 @@ func claudeUserMessageText(item claudeLine) string {
 	if msg.Role != "user" {
 		return ""
 	}
-	for _, c := range msg.Content {
+	for _, c := range claudeMessageContentItems(msg.Content) {
 		text := strings.TrimSpace(c.Text)
 		if text == "" || claudeIsInjectedText(text) {
 			continue

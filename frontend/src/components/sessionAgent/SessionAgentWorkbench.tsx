@@ -1,17 +1,16 @@
 import React from 'react';
-import { Alert, message } from 'antd';
+import { message } from 'antd';
 import { t } from '../../i18n';
 import type { TabData } from '../../types';
 import { wailsSessionAgentApi, type SessionAgentApi, type SessionAgentItem, type SessionBlockContent, type SessionContentRef, type SessionMessageView, type SessionTurnView } from './sessionAgentApi';
-import { SessionAgentListPanel } from './SessionAgentListPanel';
+import { SessionAgentListPage } from './SessionAgentListPage';
 import { SessionAgentDetailPanel, confirmSessionAgentDelete } from './SessionAgentDetailPanel';
-import { SessionAgentListResizeDivider } from './SessionAgentListResize';
 import './SessionAgentWorkbench.css';
 
 /**
- * 会话管理工作台：主从布局（列表 + 详情），纯只读浏览本机智能体会话。
- * 方案参考 cc-switch 会话管理器；视觉沿用 GoNavi v2 主题（行布局、
- * 分割线、页签约束保持与 sessionAssets 已验收实现一致）。
+ * 会话管理工作台：两态布局——进入即全页列表；点会话后列表挤压到左侧
+ * 窄条、右侧展开聊天风格详情；「返回」恢复全页。纯只读浏览本机智能体
+ * 会话（方案参考 cc-switch 会话管理器）。
  */
 export const SessionAgentWorkbench: React.FC<{
   tab: TabData;
@@ -21,13 +20,34 @@ export const SessionAgentWorkbench: React.FC<{
   const [total, setTotal] = React.useState(0);
   const [loading, setLoading] = React.useState(false);
   const [query, setQuery] = React.useState('');
-  const [providerFilter, setProviderFilter] = React.useState('');
-  const [groupMode, setGroupMode] = React.useState('time');
+  const [providerFilter, setProviderFilter] = React.useState(() => {
+    try {
+      return localStorage.getItem('gonavi.sessionAgent.provider') ?? '';
+    } catch {
+      return '';
+    }
+  });
+  const [groupMode, setGroupMode] = React.useState(() => {
+    try {
+      return localStorage.getItem('gonavi.sessionAgent.groupMode') ?? 'project';
+    } catch {
+      return 'project';
+    }
+  });
   const [selected, setSelected] = React.useState<SessionAgentItem | null>(null);
   const [messages, setMessages] = React.useState<SessionMessageView[]>([]);
   const [turns, setTurns] = React.useState<SessionTurnView[]>([]);
   const [detailLoading, setDetailLoading] = React.useState(false);
-  const [detailOpen, setDetailOpen] = React.useState(false);
+
+  // 筛选/分组状态记忆。
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('gonavi.sessionAgent.provider', providerFilter);
+      localStorage.setItem('gonavi.sessionAgent.groupMode', groupMode);
+    } catch {
+      // 存储不可用时跳过。
+    }
+  }, [providerFilter, groupMode]);
 
   const reload = React.useCallback(async () => {
     setLoading(true);
@@ -35,6 +55,8 @@ export const SessionAgentWorkbench: React.FC<{
       const list = await api.list(providerFilter, query);
       setItems(list);
       setTotal(list.length);
+    } catch {
+      message.error(t('session_agent.error.list_failed'));
     } finally {
       setLoading(false);
     }
@@ -46,12 +68,15 @@ export const SessionAgentWorkbench: React.FC<{
 
   const handleSelect = React.useCallback(async (item: SessionAgentItem) => {
     setSelected(item);
-    setDetailOpen(true);
     setDetailLoading(true);
     try {
       const detail = await api.detail(item.providerId, item.sourcePath);
       setMessages(detail?.messages ?? []);
       setTurns(detail?.turns ?? []);
+    } catch {
+      message.error(t('session_agent.error.detail_failed', { detail: '' }));
+      setMessages([]);
+      setTurns([]);
     } finally {
       setDetailLoading(false);
     }
@@ -86,7 +111,6 @@ export const SessionAgentWorkbench: React.FC<{
       if (ok) {
         message.success(t('session_agent.delete.done'));
         setSelected(null);
-        setDetailOpen(false);
         await reload();
       } else {
         message.error(t('session_agent.error.delete_failed'));
@@ -101,8 +125,8 @@ export const SessionAgentWorkbench: React.FC<{
 
   return (
     <div className="session-agent-workbench" data-session-agent-workbench="true">
-      <div className="session-agent-workbench-columns">
-        <SessionAgentListPanel
+      <div className={`session-agent-workbench-columns${selected ? ' detail-open' : ''}`}>
+        <SessionAgentListPage
           items={items}
           total={total}
           loading={loading}
@@ -116,35 +140,21 @@ export const SessionAgentWorkbench: React.FC<{
           onSelect={handleSelect}
           onReload={reload}
         />
-        <SessionAgentListResizeDivider onCommit={() => undefined} />
         {selected ? (
           <SessionAgentDetailPanel
             item={selected}
             messages={messages}
             turns={turns}
             loading={detailLoading}
-            onBackToList={() => { setSelected(null); setDetailOpen(false); }}
+            onBack={() => setSelected(null)}
             onReload={() => handleSelect(selected)}
-            onExportMarkdown={handleExport}
+            onExport={handleExport}
             onCopyResume={handleCopyResume}
             onDelete={handleDelete}
             onOpenFull={handleOpenFull}
           />
-        ) : (
-          <div className="session-agent-detail-empty" data-session-agent-empty="true">
-            <div className="session-agent-detail-empty-body">
-              <h3 className="session-agent-detail-empty-title">{t('session_agent.workbench.pick_hint')}</h3>
-              <p className="session-agent-detail-empty-hint">{t('session_agent.workbench.pick_hint_detail')}</p>
-            </div>
-          </div>
-        )}
+        ) : null}
       </div>
-      <Alert
-        className="session-agent-workbench-notice"
-        type="info"
-        showIcon
-        message={t('session_agent.workbench.readonly_notice')}
-      />
     </div>
   );
 };

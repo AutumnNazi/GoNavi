@@ -1,12 +1,11 @@
-/* 智能体会话管理工作台：主从布局，沿用 v2 工作台紧凑风格。
-   行布局、分割条、页签约束与 sessionAssets 已验收实现一致。 */
+/* 智能体会话管理工作台：两态布局（全页列表 ⇄ 挤压详情）。
+   视觉走 GoNavi v2 主题：绿主色、灰阶边框、紧凑行高。 */
 .session-agent-workbench {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-width: 0;
   padding: 12px 14px 8px;
-  gap: 10px;
 }
 
 .session-agent-workbench-columns {
@@ -16,8 +15,10 @@
   min-height: 0;
 }
 
-.session-agent-list {
-  flex: 0 0 clamp(240px, 18vw, 300px);
+/* ─── 页面 A：全页列表 ─── */
+
+.session-agent-listpage {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -25,57 +26,35 @@
   min-width: 0;
 }
 
-/* 分割条：视觉分隔线由热区自己的 ::before 绘制，线与可拖拽区域天然
-   重叠（同 sessionAssets 已验收实现）。 */
-.session-agent-list-resize {
-  position: relative;
-  flex: 0 0 8px;
-  cursor: col-resize;
-  border-radius: 3px;
-  background: transparent;
-}
-
-.session-agent-list-resize::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  width: 1px;
-  transform: translateX(-50%);
-  background: rgba(128, 128, 128, 0.18);
-}
-
-.session-agent-list-resize:hover {
-  background: rgba(22, 119, 255, 0.08);
-}
-
-.session-agent-list-resize:hover::before {
-  width: 2px;
-  background: rgba(22, 119, 255, 0.5);
+/* 挤压态：列表收成左侧窄条，保持可切会话。 */
+.session-agent-workbench-columns.detail-open .session-agent-listpage {
+  flex: 0 0 280px;
 }
 
 .session-agent-list-toolbar {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex: 0 0 auto;
 }
 
 .session-agent-list-filter {
-  min-width: 110px;
+  min-width: 108px;
 }
 
 .session-agent-list-reload {
   cursor: pointer;
   padding: 2px 4px;
+  flex: 0 0 auto;
 }
 
-.session-agent-list-body {
+.session-agent-listpage-body {
   flex: 1 1 auto;
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  padding: 2px;
 }
 
 .session-agent-list-loading {
@@ -87,133 +66,189 @@
 .session-agent-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
-.session-agent-group-title {
-  margin: 0;
-  padding: 2px 2px 4px;
-  font-size: 12px;
-  font-weight: 600;
-  opacity: 0.65;
+.session-agent-group-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 2px;
+  cursor: pointer;
+  user-select: none;
   position: sticky;
-  top: 0;
+  top: -2px;
   background: var(--gn-bg-app, transparent);
   z-index: 1;
 }
 
-.session-agent-row {
+.session-agent-group-caret {
+  color: var(--gn-fg-3, #9ca3af);
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+
+.session-agent-group-caret.open {
+  transform: rotate(90deg);
+}
+
+.session-agent-group-title {
+  font-weight: 600;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-agent-group-count {
+  color: var(--gn-fg-3, #9ca3af);
+  font-size: 12px;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+/* 会话卡片：头像+标题+时间 / 首次 / 最后 / 脚标。 */
+.session-agent-card {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  text-align: left;
-  border: none;
-  background: transparent;
-  padding: 7px 9px;
-  border-radius: 8px;
+  gap: 4px;
+  border: 1px solid rgba(128, 128, 128, 0.18);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-left: 20px;
   cursor: pointer;
-  font: inherit;
-  color: inherit;
-  /* 行内任何子项都不得把行撑出可视宽度，否则省略号失效、文本盖到
-     日期上（同 sessionAssets 已验收约束）。 */
-  overflow: hidden;
-  max-width: 100%;
-  /* 列表主体是可滚动 flex 列容器：overflow:hidden 会把 flex 最小尺寸
-     变成 0，行数一多所有行被压缩成细条，必须禁止收缩。 */
+  transition: border-color 0.12s, background 0.12s;
   flex: 0 0 auto;
+  min-width: 0;
 }
 
-.session-agent-row:hover {
-  background: rgba(128, 128, 128, 0.12);
+.session-agent-card:hover {
+  border-color: var(--gn-accent, #16a34a);
+  background: rgba(22, 163, 74, 0.06);
 }
 
-.session-agent-row.selected {
-  background: rgba(22, 119, 255, 0.14);
+.session-agent-card.selected {
+  border-color: var(--gn-accent, #16a34a);
+  background: rgba(22, 163, 74, 0.1);
 }
 
-.session-agent-row-top {
+.session-agent-card-top {
   display: flex;
   gap: 8px;
-  align-items: baseline;
+  align-items: center;
   min-width: 0;
-  max-width: 100%;
 }
 
-.session-agent-row-title {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.session-agent-row-time {
+.session-agent-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
   flex: 0 0 auto;
-  font-size: 11px;
-  opacity: 0.6;
+  display: grid;
+  place-items: center;
+  background: rgba(128, 128, 128, 0.1);
+  font-size: 13px;
 }
 
-.session-agent-row-preview {
-  min-width: 0;
-  max-width: 100%;
-  font-size: 12px;
-  opacity: 0.72;
+.session-agent-avatar.is-claude {
+  color: #d97757;
+}
+
+.session-agent-avatar.is-codex {
+  color: var(--gn-fg-1, #1f2937);
+}
+
+.session-agent-card-title {
+  font-weight: 600;
+  font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
-.session-agent-row-states {
+.session-agent-card-time {
+  margin-left: auto;
+  color: var(--gn-fg-3, #9ca3af);
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+
+.session-agent-card-line {
+  display: flex;
+  gap: 8px;
+  margin-left: 30px;
+  color: var(--gn-fg-2, #6b7280);
+  font-size: 12px;
+  min-width: 0;
+}
+
+.session-agent-card-line .k {
+  flex: 0 0 auto;
+  color: var(--gn-fg-3, #9ca3af);
+  font-size: 11px;
+  padding-top: 1px;
+}
+
+.session-agent-card-line .v {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.session-agent-card-foot {
   display: flex;
   gap: 6px;
   align-items: center;
-  font-size: 11px;
-  min-width: 0;
+  margin-left: 30px;
+  margin-top: 2px;
 }
 
-.session-agent-row-project,
-.session-agent-row-provider {
+.session-agent-card-badge {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--gn-fg-2, #6b7280);
+  background: rgba(128, 128, 128, 0.1);
+  border-radius: 5px;
+  padding: 1px 7px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.session-agent-card-badge .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.dot-codex {
+  background: #1f2937;
+}
+
+.dot-claude {
+  background: #d97757;
 }
 
 .session-agent-list-footer {
   font-size: 12px;
   opacity: 0.6;
+  flex: 0 0 auto;
 }
+
+/* ─── 页面 B：挤压式详情 ─── */
 
 .session-agent-detail {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
   min-height: 0;
-}
-
-.session-agent-detail-empty {
-  flex: 1 1 auto;
-  display: grid;
-  place-items: center;
-  min-width: 0;
-}
-
-.session-agent-detail-empty-body {
-  text-align: center;
-  opacity: 0.62;
-}
-
-.session-agent-detail-empty-title {
-  margin: 0 0 6px;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.session-agent-detail-empty-hint {
-  margin: 0;
-  font-size: 12px;
 }
 
 .session-agent-detail-loading {
@@ -224,124 +259,150 @@
 
 .session-agent-detail-head {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
 }
 
 .session-agent-detail-title {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.session-agent-detail-meta {
-  font-size: 12px;
-  opacity: 0.7;
+  min-width: 0;
 }
 
 .session-agent-detail-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.session-agent-detail-sub {
+  display: flex;
+  gap: 10px;
+  align-items: center;
   flex: 0 0 auto;
 }
 
-.session-agent-detail-toolbar {
-  display: flex;
-  gap: 12px;
-  align-items: center;
+.session-agent-detail-meta {
+  font-size: 12px;
+  color: var(--gn-fg-2, #6b7280);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .session-agent-detail-views {
   display: flex;
-  gap: 6px;
+  gap: 4px;
+  margin-left: auto;
+  flex: 0 0 auto;
 }
 
+/* 时间线：聊天流。 */
 .session-agent-timeline {
   flex: 1 1 auto;
   overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 4px 2px;
+  padding: 8px 4px;
+  position: relative;
 }
 
 .session-agent-turn {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
-.session-agent-turn-head {
+.session-agent-turn + .session-agent-turn {
+  border-top: 1px dashed rgba(128, 128, 128, 0.25);
+  padding-top: 14px;
+}
+
+/* 用户消息：右侧气泡。 */
+.session-agent-msg-user {
   display: flex;
-  gap: 8px;
-  align-items: baseline;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
 }
 
-.session-agent-turn-title {
-  font-weight: 600;
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.session-agent-turn-stats {
-  display: flex;
-  gap: 8px;
+.session-agent-msg-ts {
+  color: var(--gn-fg-3, #9ca3af);
   font-size: 11px;
-  opacity: 0.65;
-  flex: 0 0 auto;
 }
 
-.session-agent-turn-error {
-  color: rgba(255, 77, 79, 0.85);
+.session-agent-bubble-user {
+  background: rgba(22, 163, 74, 0.12);
+  border: 1px solid rgba(22, 163, 74, 0.3);
+  border-radius: 14px 14px 4px 14px;
+  padding: 8px 12px;
+  max-width: 72%;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
 }
 
-.session-agent-entry {
-  border-radius: 8px;
-  padding: 8px 10px;
-  background: rgba(128, 128, 128, 0.08);
+/* 助手消息：左侧头像。 */
+.session-agent-msg-assistant {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.session-agent-msg-assistant .session-agent-avatar {
+  margin-top: 2px;
+}
+
+.session-agent-abody {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
+  flex: 1;
 }
 
-.session-agent-entry.user {
-  background: rgba(22, 119, 255, 0.1);
+.session-agent-ahead {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
 }
 
-.session-agent-entry.assistant {
-  background: rgba(82, 196, 26, 0.1);
-}
-
-.session-agent-entry.injected {
-  opacity: 0.6;
-}
-
-.session-agent-entry-label {
-  display: inline-block;
-  font-size: 11px;
+.session-agent-aname {
   font-weight: 600;
-  opacity: 0.65;
+  font-size: 12.5px;
 }
 
-.session-agent-entry-text {
-  font-size: 13px;
+.session-agent-ats {
+  color: var(--gn-fg-3, #9ca3af);
+  font-size: 11px;
+}
+
+.session-agent-atext {
   white-space: pre-wrap;
   word-break: break-word;
-  margin: 0;
-  max-height: 320px;
-  overflow: auto;
+  font-size: 13px;
 }
 
+.session-agent-atext code,
+.session-agent-bubble-user code {
+  background: rgba(128, 128, 128, 0.12);
+  border-radius: 4px;
+  padding: 0 5px;
+  font-size: 12px;
+}
+
+/* 思考折叠。 */
 .session-agent-thinking {
   border-radius: 6px;
-  padding: 6px 10px;
+  padding: 5px 10px;
   background: rgba(128, 128, 128, 0.06);
   font-size: 12px;
 }
@@ -352,36 +413,85 @@
   font-weight: 600;
 }
 
-.session-agent-tool {
-  border-radius: 6px;
-  border: 1px solid rgba(128, 128, 128, 0.18);
-  overflow: hidden;
+.session-agent-thinking-redacted {
+  opacity: 0.6;
+  font-size: 11px;
 }
 
-.session-agent-tool-head {
+.session-agent-thinking-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  opacity: 0.85;
+  max-height: 240px;
+  overflow: auto;
+}
+
+/* 执行过程折叠条。 */
+.session-agent-exec {
+  border: 1px solid rgba(128, 128, 128, 0.18);
+  border-radius: 8px;
+  overflow: hidden;
+  max-width: 680px;
+}
+
+.session-agent-exec-head {
   display: flex;
   gap: 8px;
   align-items: center;
-  width: 100%;
-  padding: 6px 10px;
-  border: none;
-  background: transparent;
+  padding: 6px 12px;
   cursor: pointer;
-  font: inherit;
-  color: inherit;
-  text-align: left;
+  background: rgba(128, 128, 128, 0.07);
+  user-select: none;
+}
+
+.session-agent-exec-caret {
+  color: var(--gn-fg-3, #9ca3af);
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+
+.session-agent-exec-caret.open {
+  transform: rotate(90deg);
+}
+
+.session-agent-exec-title {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.session-agent-exec-body {
+  border-top: 1px solid rgba(128, 128, 128, 0.15);
+  display: flex;
+  flex-direction: column;
+}
+
+.session-agent-toolrow {
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.12);
+}
+
+.session-agent-toolrow:last-child {
+  border-bottom: none;
+}
+
+.session-agent-toolline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
   min-width: 0;
 }
 
-.session-agent-tool-kind {
-  font-size: 11px;
+.session-agent-toolkind {
+  font-size: 10.5px;
   padding: 0 6px;
   border-radius: 4px;
-  background: rgba(128, 128, 128, 0.18);
+  background: rgba(128, 128, 128, 0.14);
+  color: var(--gn-fg-2, #6b7280);
   flex: 0 0 auto;
 }
 
-.session-agent-tool-title {
+.session-agent-tooltitle {
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -390,74 +500,92 @@
   flex: 1 1 auto;
 }
 
-.session-agent-tool-diff {
+.session-agent-tooldiff {
   font-size: 11px;
-  color: rgba(82, 196, 26, 0.9);
+  color: var(--gn-accent, #16a34a);
   flex: 0 0 auto;
 }
 
-.session-agent-tool-toggle {
+.session-agent-toolstatus {
+  margin-left: auto;
+  font-size: 11px;
   flex: 0 0 auto;
-  opacity: 0.6;
 }
 
-.session-agent-tool-input,
-.session-agent-tool-output {
-  margin: 0;
-  padding: 6px 10px;
-  font-size: 12px;
+.session-agent-toolstatus.ok {
+  color: var(--gn-accent, #16a34a);
+}
+
+.session-agent-toolstatus.error {
+  color: #dc2626;
+}
+
+.session-agent-toolstatus.pending {
+  color: var(--gn-fg-3, #9ca3af);
+}
+
+.session-agent-tooldetail {
+  margin: 6px 0 0 40px;
+  background: rgba(128, 128, 128, 0.07);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: Consolas, monospace;
+  font-size: 11.5px;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 280px;
+  max-height: 220px;
   overflow: auto;
-  background: rgba(128, 128, 128, 0.06);
+  color: var(--gn-fg-2, #6b7280);
 }
 
-.session-agent-tool-files {
-  margin: 0;
-  padding: 6px 10px 6px 24px;
-  font-size: 12px;
+.session-agent-tooldetail.expanded {
+  max-height: 480px;
 }
 
-.session-agent-tool-result {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  background: rgba(128, 128, 128, 0.05);
-}
-
-.session-agent-tool-status {
-  font-size: 11px;
-  font-weight: 600;
-  opacity: 0.75;
-}
-
-.session-agent-tool-status.error {
-  color: rgba(255, 77, 79, 0.85);
-}
-
-.session-agent-event {
+/* 系统消息弱化行。 */
+.session-agent-msg-system {
   display: flex;
   gap: 8px;
   align-items: baseline;
+  opacity: 0.6;
   font-size: 12px;
-  opacity: 0.75;
 }
 
-.session-agent-event-kind {
-  font-size: 11px;
-  padding: 0 6px;
-  border-radius: 4px;
-  background: rgba(128, 128, 128, 0.15);
+.session-agent-system-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
-.session-agent-workbench-notice {
-  flex: 0 0 auto;
+/* 「最新」悬浮按钮。 */
+.session-agent-latest-btn {
+  position: sticky;
+  bottom: 8px;
+  margin-left: auto;
+  margin-right: 8px;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  background: var(--gn-bg-panel, #fff);
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  z-index: 2;
 }
 
-/* 窄屏：点行进入详情全屏视图 */
+.session-agent-latest-btn:hover {
+  border-color: var(--gn-accent, #16a34a);
+  color: var(--gn-accent, #16a34a);
+}
+
+.session-agent-detail-empty-body {
+  text-align: center;
+  opacity: 0.62;
+  padding: 40px 0;
+}
+
+/* 窄屏：列表全宽，详情覆盖。 */
 .session-agent-back-btn {
   display: none;
 }
@@ -466,15 +594,7 @@
   .session-agent-back-btn {
     display: inline-flex;
   }
-  .session-agent-workbench-columns {
-    flex-direction: column;
-  }
-  .session-agent-list {
-    flex: 0 0 220px;
-    border-bottom: 1px solid rgba(128, 128, 128, 0.18);
-    padding-bottom: 8px;
-  }
-  .session-agent-workbench-columns .session-agent-list-resize {
+  .session-agent-workbench-columns.detail-open .session-agent-listpage {
     display: none;
   }
 }

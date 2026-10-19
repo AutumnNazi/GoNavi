@@ -12458,5 +12458,12 @@
   "session_agent.error.resume_unavailable": "該工具暫不支援還原命令",
   "session_agent.error.reveal_failed": "開啟所在目錄失敗",
   "session_agent.list.resize": "拖動調整列表寬度",
-  "session_agent.workbench.tab_title": "{{name}} · 會話管理"
+  "session_agent.workbench.tab_title": "{{name}} · 會話管理",
+  "session_agent.card.first": "首次",
+  "session_agent.card.last": "最後",
+  "session_agent.time.yesterday": "昨天",
+  "session_agent.time.days_ago": "{{count}} 天前",
+  "session_agent.detail.stats": "{{questions}} 次提問 · {{calls}} 次工具呼叫",
+  "session_agent.detail.latest": "最新",
+  "session_agent.detail.collapse_full": "收起全文"
 }

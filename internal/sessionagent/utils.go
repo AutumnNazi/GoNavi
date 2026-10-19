@@ -267,8 +267,10 @@ func NewFileParseCache() *FileParseCache {
 	return &FileParseCache{entries: map[string]cachedParse{}}
 }
 
-// Scan 清空并重建缓存：解析 fn 返回非 nil 会话、nil 无会话（都缓存），
-// 返回错误不缓存（防永久负缓存）。已删除的文件自动淘汰。
+// Scan 增量刷新缓存：指纹未变的文件直接复用上次解析结果（读旧表），
+// 变化/新增的文件重新解析；解析错误不缓存（防永久负缓存）。已删除的
+// 文件自动淘汰（本轮未命中的旧条目不再写回）。并发安全：旧表快照在
+// 锁内取出后只读，新表写入在锁内完成，两个并发 Scan 互不干扰。
 func (c *FileParseCache) Scan(paths []string, fn func(string) (*SessionMeta, error)) []*SessionMeta {
 	c.mu.Lock()
 	old := c.entries
@@ -282,8 +284,9 @@ func (c *FileParseCache) Scan(paths []string, fn func(string) (*SessionMeta, err
 			continue
 		}
 		fingerprint := fileFingerprint{Modified: info.ModTime(), Size: info.Size()}
-		if hit, ok := old[path]; ok && hit.fingerprint == fingerprint {
-			c.mu.Lock()
+		c.mu.Lock()
+		hit, hitOk := old[path]
+		if hitOk && hit.fingerprint == fingerprint {
 			c.entries[path] = hit
 			c.mu.Unlock()
 			if hit.meta != nil {
@@ -291,6 +294,7 @@ func (c *FileParseCache) Scan(paths []string, fn func(string) (*SessionMeta, err
 			}
 			continue
 		}
+		c.mu.Unlock()
 		meta, err := fn(path)
 		if err != nil {
 			continue

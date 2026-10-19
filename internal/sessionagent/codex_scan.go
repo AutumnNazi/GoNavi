@@ -144,9 +144,10 @@ func parseCodexSessionMeta(path string, titles map[string]string) (*SessionMeta,
 	}
 	meta.ResumeCommand = "codex resume " + meta.SessionID
 
-	// 首条真实用户消息 → 标题候选。
+	// 首条真实用户消息 → FirstMessage 与标题候选。
 	for _, line := range lines.Head {
 		if text := codexUserMessageText(line); text != "" {
+			meta.FirstMessage = TruncateRunes(FoldWhitespace(text), SummaryChars)
 			meta.Title = TruncateRunes(text, codexTitleMaxChars)
 			break
 		}
