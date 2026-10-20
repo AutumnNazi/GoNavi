@@ -22,7 +22,9 @@ func (a *App) sessionAgentService() *sessionagent.Service {
 	service := sessionagent.New()
 	integrations, err := a.ListAgentIntegrations()
 	if err != nil {
-		// 配置不可读时退化为「无已添加」，不崩不扫默认目录。
+		// 配置不可读时退化为「无已添加」：显式置空启用集，
+		// 避免 isEnabled 的 nil 宽松语义放行默认目录扫描。
+		service.SetEnabled()
 		return service
 	}
 	for _, item := range integrations {
@@ -46,6 +48,10 @@ func (a *App) SessionAgentList(provider, search string) (result connection.Query
 		}
 	}()
 	items := a.sessionAgentService().List(provider, search)
+	if items == nil {
+		// Go nil slice 序列化为 JSON null；前端按数组消费，这里归一。
+		items = []sessionagent.SessionMeta{}
+	}
 	return connection.QueryResult{Success: true, Data: map[string]any{
 		"items": items,
 		"total": len(items),
@@ -67,9 +73,10 @@ func (a *App) SessionAgentListIntegrations() (result connection.QueryResult) {
 }
 
 // SessionAgentDetect 探测本机安装（添加前的扫描）：命令路径、版本与
-// 数据目录可读性。
-func (a *App) SessionAgentDetect(kind, dataDir string) (result connection.QueryResult) {
-	detection := sessionagent.Detect(context.Background(), strings.TrimSpace(kind), strings.TrimSpace(dataDir))
+// 数据目录可读性。ctx 由 Wails 注入用户请求上下文（GO_STYLE §4），
+// 窗口关闭/请求取消可中断 --version 探测。
+func (a *App) SessionAgentDetect(ctx context.Context, kind, dataDir string) (result connection.QueryResult) {
+	detection := sessionagent.Detect(ctx, strings.TrimSpace(kind), strings.TrimSpace(dataDir))
 	return connection.QueryResult{Success: true, Data: detection}
 }
 

@@ -130,34 +130,47 @@ func (s LineSpan) ContentRef(pointer string) ContentRef {
 }
 
 // LineSpans 逐行读取并记录每行的字节区间，供 ContentRef 精确定位。
+// 用 bufio.Reader 读原始行尾字节，Length 含真实行尾（LF 或 CRLF），
+// CRLF 文件的区间不会漂移（P2-3）。
 type LineSpans struct {
-	scanner *bufio.Scanner
+	reader  *bufio.Reader
 	offset  int64
+	lastErr error
 }
 
 // NewLineSpans 从 r 构造逐行扫描器。
 func NewLineSpans(r io.Reader) *LineSpans {
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	return &LineSpans{scanner: scanner}
+	return &LineSpans{reader: bufio.NewReaderSize(r, 64*1024)}
 }
 
-// Next 读下一行，返回行文本与字节区间；到文件尾返回 ok=false。
+// Next 读下一行，返回行文本（已剥行尾）与原始字节区间；到文件尾返回 ok=false。
 func (l *LineSpans) Next() (string, LineSpan, bool) {
-	if !l.scanner.Scan() {
+	raw, err := l.reader.ReadBytes('\n')
+	if err != nil && !errors.Is(err, io.EOF) && len(raw) == 0 {
+		// 真实读错误：保留错误供 Err() 上报。
+		l.lastErr = err
 		return "", LineSpan{}, false
 	}
-	text := l.scanner.Text()
-	// bufio.Scanner 已剥掉行尾；长度按 text + "\n" 估计（CRLF 文件
-	// 多计 1 字节会落进下一行首字节，读取端再做行界校验纠正）。
-	length := int64(len(text)) + 1
-	span := LineSpan{Offset: l.offset, Length: uint32(length)}
-	l.offset += length
-	return text, span, true
+	if len(raw) == 0 {
+		return "", LineSpan{}, false
+	}
+	total := len(raw)
+	// 剥行尾：LF 或 CRLF。
+	text := raw
+	if n := len(text); n > 0 && text[n-1] == '\n' {
+		text = text[:n-1]
+		if n > 1 && text[n-2] == '\r' {
+			text = text[:n-2]
+		}
+	}
+	span := LineSpan{Offset: l.offset, Length: uint32(total)}
+	l.offset += int64(total)
+	_ = err // EOF 时 raw 为最后一行，仍正常返回
+	return string(text), span, true
 }
 
 // Err 返回扫描错误。
-func (l *LineSpans) Err() error { return l.scanner.Err() }
+func (l *LineSpans) Err() error { return l.lastErr }
 
 // ─── 时间戳解析 ───
 

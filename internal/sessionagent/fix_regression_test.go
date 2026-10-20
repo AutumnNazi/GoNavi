@@ -124,3 +124,38 @@ func TestFileParseCacheConcurrentScan(t *testing.T) {
 		<-done
 	}
 }
+
+// 绑定层防御回归：配置不可读时绑定层调用 SetEnabled() 显式置空启用集，
+// List 不得放行默认目录扫描（Enabled=nil 的宽松语义只允许测试构造使用）。
+func TestSetEnabledEmptyBlocksDefaultScan(t *testing.T) {
+	codexDir := t.TempDir()
+	sessionsDir := filepath.Join(codexDir, "sessions")
+	if err := os.MkdirAll(sessionsDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeRollout(t, sessionsDir, "rollout-e.jsonl", metaLine)
+	svc := &Service{CodexDir: codexDir, ClaudeDir: filepath.Join(t.TempDir(), "absent")}
+	if len(svc.List("", "")) != 1 {
+		t.Fatal("precondition: nil Enabled scans by default")
+	}
+	svc.SetEnabled()
+	if items := svc.List("", ""); len(items) != 0 {
+		t.Fatalf("SetEnabled() must block scan, got %d items", len(items))
+	}
+	if svc.isEnabled(ProviderCodex) || svc.isEnabled(ProviderClaude) {
+		t.Fatal("no provider may stay enabled after SetEnabled()")
+	}
+}
+
+// 绑定层防御回归的领域侧约定：List 允许返回 nil slice（零结果），由
+// 绑定层 SessionAgentList 归一为 [] 再下发（Go nil 序列化为 JSON null，
+// 前端按数组消费会崩）。这里锁定「nil 或空均可、len 必为 0」的契约，
+// 防止未来有人把哨兵值混进空结果。
+func TestListEmptyResultContract(t *testing.T) {
+	svc := &Service{}
+	svc.SetEnabled()
+	items := svc.List("", "")
+	if len(items) != 0 {
+		t.Fatalf("empty service must list 0 items, got %d", len(items))
+	}
+}

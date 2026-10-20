@@ -234,13 +234,23 @@ func (s *Service) Delete(provider ProviderID, sourcePath, sessionID string) erro
 	if err != nil || !ok {
 		return fmt.Errorf("引用的路径不在会话目录内")
 	}
-	if provider == ProviderCodex {
+	switch provider {
+	case ProviderCodex:
 		// 身份校验：重新解析确认 session_id 匹配。
 		meta, err := parseCodexSessionMeta(sourcePath, nil)
 		if err != nil {
 			return fmt.Errorf("读取会话文件失败: %w", err)
 		}
 		if meta == nil || meta.SessionID != sessionID {
+			return fmt.Errorf("会话标识不匹配，已取消删除")
+		}
+	case ProviderClaude:
+		// Claude 删除同样做身份校验（复用元数据解析）。
+		meta, err := parseClaudeSessionMeta(sourcePath)
+		if err != nil {
+			return fmt.Errorf("读取会话文件失败: %w", err)
+		}
+		if meta.SessionID != sessionID {
 			return fmt.Errorf("会话标识不匹配，已取消删除")
 		}
 	}
