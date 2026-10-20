@@ -5081,6 +5081,8 @@ export namespace sqlaudit {
 	    source: string;
 	    fromTimestamp: number;
 	    toTimestamp: number;
+	    mcpRequestId: string;
+	    includeMcp: boolean;
 	    executionHistory: boolean;
 	    page: number;
 	    pageSize: number;
@@ -5101,6 +5103,8 @@ export namespace sqlaudit {
 	        this.source = source["source"];
 	        this.fromTimestamp = source["fromTimestamp"];
 	        this.toTimestamp = source["toTimestamp"];
+	        this.mcpRequestId = source["mcpRequestId"];
+	        this.includeMcp = source["includeMcp"];
 	        this.executionHistory = source["executionHistory"];
 	        this.page = source["page"];
 	        this.pageSize = source["pageSize"];
@@ -5328,6 +5332,7 @@ export namespace sync {
 	    mappings?: SyncObjectMapping[];
 	    batchSize?: number;
 	    rowErrorPolicy?: string;
+	    existingTargetInsertWithoutKey?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new SyncConfig(source);
@@ -5353,6 +5358,7 @@ export namespace sync {
 	        this.mappings = this.convertValues(source["mappings"], SyncObjectMapping);
 	        this.batchSize = source["batchSize"];
 	        this.rowErrorPolicy = source["rowErrorPolicy"];
+	        this.existingTargetInsertWithoutKey = source["existingTargetInsertWithoutKey"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

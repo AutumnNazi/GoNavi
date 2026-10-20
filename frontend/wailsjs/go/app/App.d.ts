@@ -17,7 +17,7 @@ import {dbuser} from '../models';
 
 export function AddAgentIntegration(arg1:string,arg2:string,arg3:string):Promise<app.AgentIntegration>;
 
-export function AnalyzeQueryParameters(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<app.QueryParameterAnalysis>;
+export function AnalyzeQueryParameters(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:boolean):Promise<app.QueryParameterAnalysis>;
 
 export function ApplyChanges(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:connection.ChangeSet):Promise<connection.QueryResult>;
 
@@ -28,6 +28,18 @@ export function ApplyLogDirectory(arg1:string):Promise<connection.QueryResult>;
 export function ApplySavedQueryDirectory(arg1:string):Promise<connection.QueryResult>;
 
 export function AuthorizeMCPConnectionSQL(arg1:connection.ConnectionConfig,arg2:string):Promise<void>;
+
+export function BackgroundGalleryCancel(arg1:string):Promise<connection.QueryResult>;
+
+export function BackgroundGalleryDownload(arg1:string,arg2:string,arg3:string):Promise<connection.QueryResult>;
+
+export function BackgroundGalleryRefresh():Promise<connection.QueryResult>;
+
+export function BackgroundGalleryRemove(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
+export function BackgroundGalleryResolve(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
+export function BackgroundGalleryStatus():Promise<connection.QueryResult>;
 
 export function BootstrapConnectionSidebarLayout(arg1:connection.ConnectionSidebarLayoutInput):Promise<connection.ConnectionSidebarLayout>;
 
@@ -137,6 +149,8 @@ export function DBGetServerVersionContext(arg1:context.Context,arg2:connection.C
 
 export function DBGetSessionMonitorCapabilities(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
 
+export function DBGetTableInfo(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
 export function DBGetTables(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
 
 export function DBGetTablesContext(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:string):Promise<connection.QueryResult>;
@@ -181,15 +195,15 @@ export function DBQueryMultiTransactional(arg1:connection.ConnectionConfig,arg2:
 
 export function DBQueryMultiTransactionalWithOptions(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:app.QueryResultBudgetOptions):Promise<connection.QueryResult>;
 
-export function DBQueryMultiTransactionalWithParams(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:Array<connection.QueryParamBinding>):Promise<connection.QueryResult>;
+export function DBQueryMultiTransactionalWithParams(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:Array<connection.QueryParamBinding>,arg6:boolean):Promise<connection.QueryResult>;
 
 export function DBQueryMultiWithOptions(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:app.QueryResultBudgetOptions):Promise<connection.QueryResult>;
 
 export function DBQueryMultiWithOptionsCompact(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:app.QueryResultBudgetOptions):Promise<app.CompactQueryResult>;
 
-export function DBQueryMultiWithParams(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:Array<connection.QueryParamBinding>):Promise<connection.QueryResult>;
+export function DBQueryMultiWithParams(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string,arg5:Array<connection.QueryParamBinding>,arg6:boolean):Promise<connection.QueryResult>;
 
-export function DBQueryMultiWithParamsInTransaction(arg1:string,arg2:string,arg3:string,arg4:Array<connection.QueryParamBinding>):Promise<connection.QueryResult>;
+export function DBQueryMultiWithParamsInTransaction(arg1:string,arg2:string,arg3:string,arg4:Array<connection.QueryParamBinding>,arg5:boolean):Promise<connection.QueryResult>;
 
 export function DBQueryWithCancel(arg1:connection.ConnectionConfig,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
 
@@ -373,6 +387,20 @@ export function ExportTablesSQL(arg1:connection.ConnectionConfig,arg2:string,arg
 
 export function ExportTablesSQLWithOptions(arg1:connection.ConnectionConfig,arg2:string,arg3:Array<string>,arg4:boolean,arg5:boolean,arg6:app.ExportFileOptions):Promise<connection.QueryResult>;
 
+export function FontGalleryCancel(arg1:string):Promise<connection.QueryResult>;
+
+export function FontGalleryDownload(arg1:string,arg2:string,arg3:string):Promise<connection.QueryResult>;
+
+export function FontGalleryPreview(arg1:string,arg2:string,arg3:string):Promise<connection.QueryResult>;
+
+export function FontGalleryRefresh():Promise<connection.QueryResult>;
+
+export function FontGalleryRemove(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
+export function FontGalleryResolve(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
+export function FontGalleryStatus():Promise<connection.QueryResult>;
+
 export function ForceQuitApplication():Promise<connection.QueryResult>;
 
 export function GenerateQueryID():Promise<string>;
@@ -460,6 +488,8 @@ export function InspectElasticsearchConsole(arg1:connection.ConnectionConfig,arg
 export function InspectSavedConnectionHealth(arg1:string):Promise<connection.ConnectionHealthReport>;
 
 export function InspectSavedConnectionsHealth(arg1:Array<string>):Promise<Array<connection.ConnectionHealthReport>>;
+
+export function InspectSource(arg1:context.Context,arg2:connection.ConnectionConfig,arg3:app.SourceInspectQuery):Promise<connection.QueryResult>;
 
 export function InstallLocalDriverPackage(arg1:string,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
 
@@ -759,6 +789,10 @@ export function RevealSavedConnectionPrimaryPassword(arg1:string):Promise<string
 
 export function RevealSavedQueryInFolder(arg1:string):Promise<connection.QueryResult>;
 
+export function RollbackDataSyncRun(arg1:string):Promise<connection.QueryResult>;
+
+export function RollbackImportJob(arg1:string):Promise<connection.QueryResult>;
+
 export function SaveCloudBackupConfig(arg1:app.CloudBackupConfigInput):Promise<app.CloudBackupConfig>;
 
 export function SaveConnection(arg1:connection.SavedConnectionInput):Promise<connection.SavedConnectionView>;
@@ -811,7 +845,7 @@ export function SessionAgentDelete(arg1:string,arg2:string,arg3:string):Promise<
 
 export function SessionAgentDetail(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
-export function SessionAgentDetect(arg1:string,arg2:string):Promise<connection.QueryResult>;
+export function SessionAgentDetect(arg1:context.Context,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
 export function SessionAgentExportMarkdown(arg1:string,arg2:string):Promise<connection.QueryResult>;
 

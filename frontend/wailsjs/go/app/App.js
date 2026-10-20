@@ -6,8 +6,8 @@ export function AddAgentIntegration(arg1, arg2, arg3) {
   return window['go']['app']['App']['AddAgentIntegration'](arg1, arg2, arg3);
 }
 
-export function AnalyzeQueryParameters(arg1, arg2, arg3) {
-  return window['go']['app']['App']['AnalyzeQueryParameters'](arg1, arg2, arg3);
+export function AnalyzeQueryParameters(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['AnalyzeQueryParameters'](arg1, arg2, arg3, arg4);
 }
 
 export function ApplyChanges(arg1, arg2, arg3, arg4) {
@@ -28,6 +28,30 @@ export function ApplySavedQueryDirectory(arg1) {
 
 export function AuthorizeMCPConnectionSQL(arg1, arg2) {
   return window['go']['app']['App']['AuthorizeMCPConnectionSQL'](arg1, arg2);
+}
+
+export function BackgroundGalleryCancel(arg1) {
+  return window['go']['app']['App']['BackgroundGalleryCancel'](arg1);
+}
+
+export function BackgroundGalleryDownload(arg1, arg2, arg3) {
+  return window['go']['app']['App']['BackgroundGalleryDownload'](arg1, arg2, arg3);
+}
+
+export function BackgroundGalleryRefresh() {
+  return window['go']['app']['App']['BackgroundGalleryRefresh']();
+}
+
+export function BackgroundGalleryRemove(arg1, arg2) {
+  return window['go']['app']['App']['BackgroundGalleryRemove'](arg1, arg2);
+}
+
+export function BackgroundGalleryResolve(arg1, arg2) {
+  return window['go']['app']['App']['BackgroundGalleryResolve'](arg1, arg2);
+}
+
+export function BackgroundGalleryStatus() {
+  return window['go']['app']['App']['BackgroundGalleryStatus']();
 }
 
 export function BootstrapConnectionSidebarLayout(arg1) {
@@ -246,6 +270,10 @@ export function DBGetSessionMonitorCapabilities(arg1) {
   return window['go']['app']['App']['DBGetSessionMonitorCapabilities'](arg1);
 }
 
+export function DBGetTableInfo(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['DBGetTableInfo'](arg1, arg2, arg3, arg4);
+}
+
 export function DBGetTables(arg1, arg2) {
   return window['go']['app']['App']['DBGetTables'](arg1, arg2);
 }
@@ -334,8 +362,8 @@ export function DBQueryMultiTransactionalWithOptions(arg1, arg2, arg3, arg4, arg
   return window['go']['app']['App']['DBQueryMultiTransactionalWithOptions'](arg1, arg2, arg3, arg4, arg5);
 }
 
-export function DBQueryMultiTransactionalWithParams(arg1, arg2, arg3, arg4, arg5) {
-  return window['go']['app']['App']['DBQueryMultiTransactionalWithParams'](arg1, arg2, arg3, arg4, arg5);
+export function DBQueryMultiTransactionalWithParams(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['app']['App']['DBQueryMultiTransactionalWithParams'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
 export function DBQueryMultiWithOptions(arg1, arg2, arg3, arg4, arg5) {
@@ -346,12 +374,12 @@ export function DBQueryMultiWithOptionsCompact(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['app']['App']['DBQueryMultiWithOptionsCompact'](arg1, arg2, arg3, arg4, arg5);
 }
 
-export function DBQueryMultiWithParams(arg1, arg2, arg3, arg4, arg5) {
-  return window['go']['app']['App']['DBQueryMultiWithParams'](arg1, arg2, arg3, arg4, arg5);
+export function DBQueryMultiWithParams(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['app']['App']['DBQueryMultiWithParams'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
-export function DBQueryMultiWithParamsInTransaction(arg1, arg2, arg3, arg4) {
-  return window['go']['app']['App']['DBQueryMultiWithParamsInTransaction'](arg1, arg2, arg3, arg4);
+export function DBQueryMultiWithParamsInTransaction(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['App']['DBQueryMultiWithParamsInTransaction'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function DBQueryWithCancel(arg1, arg2, arg3, arg4) {
@@ -718,6 +746,34 @@ export function ExportTablesSQLWithOptions(arg1, arg2, arg3, arg4, arg5, arg6) {
   return window['go']['app']['App']['ExportTablesSQLWithOptions'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
+export function FontGalleryCancel(arg1) {
+  return window['go']['app']['App']['FontGalleryCancel'](arg1);
+}
+
+export function FontGalleryDownload(arg1, arg2, arg3) {
+  return window['go']['app']['App']['FontGalleryDownload'](arg1, arg2, arg3);
+}
+
+export function FontGalleryPreview(arg1, arg2, arg3) {
+  return window['go']['app']['App']['FontGalleryPreview'](arg1, arg2, arg3);
+}
+
+export function FontGalleryRefresh() {
+  return window['go']['app']['App']['FontGalleryRefresh']();
+}
+
+export function FontGalleryRemove(arg1, arg2) {
+  return window['go']['app']['App']['FontGalleryRemove'](arg1, arg2);
+}
+
+export function FontGalleryResolve(arg1, arg2) {
+  return window['go']['app']['App']['FontGalleryResolve'](arg1, arg2);
+}
+
+export function FontGalleryStatus() {
+  return window['go']['app']['App']['FontGalleryStatus']();
+}
+
 export function ForceQuitApplication() {
   return window['go']['app']['App']['ForceQuitApplication']();
 }
@@ -892,6 +948,10 @@ export function InspectSavedConnectionHealth(arg1) {
 
 export function InspectSavedConnectionsHealth(arg1) {
   return window['go']['app']['App']['InspectSavedConnectionsHealth'](arg1);
+}
+
+export function InspectSource(arg1, arg2, arg3) {
+  return window['go']['app']['App']['InspectSource'](arg1, arg2, arg3);
 }
 
 export function InstallLocalDriverPackage(arg1, arg2, arg3, arg4) {
@@ -1490,6 +1550,14 @@ export function RevealSavedQueryInFolder(arg1) {
   return window['go']['app']['App']['RevealSavedQueryInFolder'](arg1);
 }
 
+export function RollbackDataSyncRun(arg1) {
+  return window['go']['app']['App']['RollbackDataSyncRun'](arg1);
+}
+
+export function RollbackImportJob(arg1) {
+  return window['go']['app']['App']['RollbackImportJob'](arg1);
+}
+
 export function SaveCloudBackupConfig(arg1) {
   return window['go']['app']['App']['SaveCloudBackupConfig'](arg1);
 }
@@ -1594,8 +1662,8 @@ export function SessionAgentDetail(arg1, arg2) {
   return window['go']['app']['App']['SessionAgentDetail'](arg1, arg2);
 }
 
-export function SessionAgentDetect(arg1, arg2) {
-  return window['go']['app']['App']['SessionAgentDetect'](arg1, arg2);
+export function SessionAgentDetect(arg1, arg2, arg3) {
+  return window['go']['app']['App']['SessionAgentDetect'](arg1, arg2, arg3);
 }
 
 export function SessionAgentExportMarkdown(arg1, arg2) {
