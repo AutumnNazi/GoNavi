@@ -100,6 +100,7 @@ type fakeAdmin struct {
 	expireAfter     int
 	forwardFail     bool
 	rejectLogin     bool
+	loginFailureMsg string
 	businessError   string
 	customLoginPage bool
 	forwardDetail   string
@@ -191,6 +192,17 @@ func (a *fakeAdmin) rejectLogins(reject bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.rejectLogin = reject
+}
+
+// rejectLoginsWith makes every login attempt fail with a specific admin
+// message. The default rejection is a credential error; an admin that reports
+// an expired session instead answers with a different text, and the two must
+// not reach the user as the same problem.
+func (a *fakeAdmin) rejectLoginsWith(message string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.rejectLogin = true
+	a.loginFailureMsg = message
 }
 
 // nextBusinessError makes the next ordinary endpoint answer with a non-auth
@@ -337,13 +349,17 @@ func (a *fakeAdmin) serveLoginRedirect(w http.ResponseWriter, _ *http.Request) {
 func (a *fakeAdmin) serveLogin(w http.ResponseWriter, form url.Values) {
 	a.mu.Lock()
 	rejectLogin := a.rejectLogin
+	failureMessage := a.loginFailureMsg
 	a.mu.Unlock()
+	if failureMessage == "" {
+		failureMessage = "user/password error"
+	}
 	if rejectLogin {
-		a.writeEnvelope(w, http.StatusOK, http.StatusInternalServerError, "user/password error", nil)
+		a.writeEnvelope(w, http.StatusOK, http.StatusInternalServerError, failureMessage, nil)
 		return
 	}
 	if form.Get("userName") != "admin" || form.Get("password") != "123456" {
-		a.writeEnvelope(w, http.StatusOK, http.StatusInternalServerError, "user/password error", nil)
+		a.writeEnvelope(w, http.StatusOK, http.StatusInternalServerError, failureMessage, nil)
 		return
 	}
 	a.mu.Lock()
@@ -394,11 +410,17 @@ func (a *fakeAdmin) groupRow() json.RawMessage {
 }
 
 func (a *fakeAdmin) serveGroupByID(w http.ResponseWriter, form url.Values) {
+	// loadById binds a single "id" on every version. The real 3.3+ admin
+	// answers with a 400 error page when the parameter is missing, so the fake
+	// must not accept ids[] as a stand-in: doing so would hide a client that
+	// sends the batch parameter to a single-record route.
 	id := form.Get("id")
 	if id == "" {
-		id = form.Get("ids[]")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("<!DOCTYPE html><title>Error</title>missing request parameter 'id'"))
+		return
 	}
-	if id == "" || id == "0" {
+	if id == "0" {
 		a.writeEnvelope(w, http.StatusOK, http.StatusInternalServerError, "executor not found", nil)
 		return
 	}

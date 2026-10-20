@@ -355,3 +355,31 @@ func TestLoadJobGroupReadsSingleRow(t *testing.T) {
 		t.Error("expected the registered node address")
 	}
 }
+
+func TestLoadJobGroupAlwaysSendsSingleID(t *testing.T) {
+	// loadById binds a single "id" on every version. Only the jobinfo batch
+	// routes take ids[] on 3.3+, so sending the batch form here makes the
+	// admin answer with a 400 error page instead of the executor.
+	for _, flavor := range allFlavors {
+		t.Run(flavor.name, func(t *testing.T) {
+			admin := newFakeAdmin(t, flavor, "")
+			client, _ := mustConnectFake(t, admin)
+			ctx, cancel := testContext(t)
+			defer cancel()
+
+			if _, err := client.NewProtocol().LoadJobGroup(ctx, 1); err != nil {
+				t.Fatalf("LoadJobGroup: %v", err)
+			}
+			call, ok := admin.lastCallTo(routeJobGroupLoadByID)
+			if !ok {
+				t.Fatalf("no call to %s", routeJobGroupLoadByID)
+			}
+			if got := call.Form.Get("id"); got != "1" {
+				t.Errorf("id = %q, want 1", got)
+			}
+			if _, ok := call.Form["ids[]"]; ok {
+				t.Errorf("ids[] must not reach a single-record route: %v", call.Form)
+			}
+		})
+	}
+}

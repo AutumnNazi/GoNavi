@@ -49,7 +49,11 @@ func (p *stackProtocol) LoadJobGroup(ctx context.Context, id int) (JobGroup, err
 		return JobGroup{}, newValidationError("id", "id must be positive")
 	}
 	values := url.Values{}
-	p.applyID(values, id)
+	// loadById binds a single "id" on every version. Only the jobinfo batch
+	// routes (start/stop) take ids[] on 3.3+, so the stack-aware helper must
+	// not be used here: sending ids[] makes the admin answer with a 400 error
+	// page instead of the executor.
+	values.Set("id", itoa(id))
 
 	envelope, err := p.client.callAPI(ctx, http.MethodPost, routeJobGroupLoadByID, values, nil)
 	if err != nil {
