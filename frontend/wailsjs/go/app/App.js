@@ -1662,8 +1662,8 @@ export function SessionAgentDetail(arg1, arg2) {
   return window['go']['app']['App']['SessionAgentDetail'](arg1, arg2);
 }
 
-export function SessionAgentDetect(arg1, arg2, arg3) {
-  return window['go']['app']['App']['SessionAgentDetect'](arg1, arg2, arg3);
+export function SessionAgentDetect(arg1, arg2) {
+  return window['go']['app']['App']['SessionAgentDetect'](arg1, arg2);
 }
 
 export function SessionAgentExportMarkdown(arg1, arg2) {

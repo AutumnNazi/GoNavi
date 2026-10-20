@@ -73,10 +73,11 @@ func (a *App) SessionAgentListIntegrations() (result connection.QueryResult) {
 }
 
 // SessionAgentDetect 探测本机安装（添加前的扫描）：命令路径、版本与
-// 数据目录可读性。ctx 由 Wails 注入用户请求上下文（GO_STYLE §4），
-// 窗口关闭/请求取消可中断 --version 探测。
-func (a *App) SessionAgentDetect(ctx context.Context, kind, dataDir string) (result connection.QueryResult) {
-	detection := sessionagent.Detect(ctx, strings.TrimSpace(kind), strings.TrimSpace(dataDir))
+// 数据目录可读性。桌面 Wails 绑定不注入 ctx（前端直调，与
+// AnalyzeQueryParameters 等同层方法一致）；探测超时由
+// probeAgentVersion 内部的 WithTimeout 兜底。
+func (a *App) SessionAgentDetect(kind, dataDir string) (result connection.QueryResult) {
+	detection := sessionagent.Detect(context.Background(), strings.TrimSpace(kind), strings.TrimSpace(dataDir))
 	return connection.QueryResult{Success: true, Data: detection}
 }
 

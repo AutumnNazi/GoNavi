@@ -845,7 +845,7 @@ export function SessionAgentDelete(arg1:string,arg2:string,arg3:string):Promise<
 
 export function SessionAgentDetail(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
-export function SessionAgentDetect(arg1:context.Context,arg2:string,arg3:string):Promise<connection.QueryResult>;
+export function SessionAgentDetect(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
 export function SessionAgentExportMarkdown(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
