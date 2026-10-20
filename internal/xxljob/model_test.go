@@ -3,7 +3,9 @@ package xxljob
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestFlexTimeNormalizesEveryShape(t *testing.T) {
@@ -20,6 +22,9 @@ func TestFlexTimeNormalizesEveryShape(t *testing.T) {
 		// 1970 date would read like a schedule that actually happened.
 		{"zero", `0`, ""},
 		{"negative", `-1`, ""},
+		// A string without an offset carries no zone information, so it stays
+		// in the admin's own zone instead of being shifted.
+		{"iso without offset", `"2026-10-20T16:05:00"`, "2026-10-20T16:05:00"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -31,6 +36,28 @@ func TestFlexTimeNormalizesEveryShape(t *testing.T) {
 				t.Errorf("FlexTime(%s) = %q, want %q", tc.raw, value.String(), tc.want)
 			}
 		})
+	}
+}
+
+func TestFlexTimeConvertsISO8601WithOffset(t *testing.T) {
+	// Some 2.x deployments serialize java.util.Date as an ISO-8601 string with
+	// an explicit offset. Showing that raw puts a UTC timestamp into a
+	// local-time column, next to the plain strings 3.3+ sends.
+	const text = "2026-10-20T16:05:00.000+00:00"
+	var value FlexTime
+	if err := json.Unmarshal([]byte(`"`+text+`"`), &value); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	parsed, err := time.Parse(time.RFC3339, text)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	want := parsed.Local().Format(TimeFormat)
+	if value.String() != want {
+		t.Errorf("FlexTime = %q, want %q", value.String(), want)
+	}
+	if strings.Contains(value.String(), "T") || strings.Contains(value.String(), "+") {
+		t.Errorf("the ISO separator or offset leaked into the display value: %q", value.String())
 	}
 }
 

@@ -17,6 +17,28 @@ const TimeFormat = "2006-01-02 15:04:05"
 // an empty schedule yields null.
 type FlexTime string
 
+// normalizeFlexTime renders one admin timestamp in the display format.
+//
+// The admin emits timestamps in three shapes, and they do not carry the same
+// amount of information:
+//
+//   - epoch milliseconds, which are an absolute instant;
+//   - "yyyy-MM-dd HH:mm:ss" in the admin's own zone, which has no offset;
+//   - ISO-8601 with an explicit offset, which some 2.x deployments emit.
+//
+// Only the last shape states its own zone, so it is converted to the local
+// zone instead of being shown as a raw UTC string. The plain string shape has
+// no offset to convert, so it is kept verbatim and stays in the admin's zone.
+func normalizeFlexTime(text string) FlexTime {
+	if text == "" {
+		return ""
+	}
+	if parsed, err := time.Parse(time.RFC3339, text); err == nil {
+		return FlexTime(parsed.Local().Format(TimeFormat))
+	}
+	return FlexTime(text)
+}
+
 func (t *FlexTime) UnmarshalJSON(data []byte) error {
 	raw := strings.TrimSpace(string(data))
 	switch {
@@ -28,7 +50,7 @@ func (t *FlexTime) UnmarshalJSON(data []byte) error {
 		if err := json.Unmarshal(data, &text); err != nil {
 			return err
 		}
-		*t = FlexTime(strings.TrimSpace(text))
+		*t = normalizeFlexTime(strings.TrimSpace(text))
 		return nil
 	default:
 		millis, err := strconv.ParseInt(raw, 10, 64)
