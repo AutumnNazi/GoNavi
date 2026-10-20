@@ -116,7 +116,7 @@ func (a *App) dbQueryWithCancel(
 	if err := a.ensureDataSourceQueryCapability(config); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
 	}
-	if err := ensureConnectionAllowsQuery(config, query); err != nil {
+	if err := ensureConnectionAllowsJobQuery(config, query, auditOptions.source); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
 	}
 
@@ -149,7 +149,7 @@ func (a *App) dbQueryWithCancel(
 	}
 	lifecycle.markExecuting()
 
-	isReadQuery := isReadOnlySQLQuery(runConfig.Type, query)
+	isReadQuery := auditOptions.source != "database_jobs" && isReadOnlySQLQuery(runConfig.Type, query)
 	tryQueryFirst := shouldTryQueryResultFirst(runConfig.Type, query)
 	legacyCancellationUnsupported := false
 

@@ -34,7 +34,7 @@ func collectRequiredColumns(inserts []map[string]interface{}, updates []connecti
 }
 
 func filterInsertRows(inserts []map[string]interface{}, allowedLower map[string]struct{}) []map[string]interface{} {
-	if len(inserts) == 0 || len(allowedLower) == 0 {
+	if len(inserts) == 0 || allowedLower == nil {
 		return inserts
 	}
 
@@ -56,7 +56,7 @@ func filterInsertRows(inserts []map[string]interface{}, allowedLower map[string]
 }
 
 func filterUpdateRows(updates []connection.UpdateRow, allowedLower map[string]struct{}) []connection.UpdateRow {
-	if len(updates) == 0 || len(allowedLower) == 0 {
+	if len(updates) == 0 || allowedLower == nil {
 		return updates
 	}
 

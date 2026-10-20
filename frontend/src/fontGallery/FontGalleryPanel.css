@@ -1,0 +1,10 @@
+.gonavi-font-gallery { margin-top: 12px; max-width: 640px; }
+.gonavi-font-gallery-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 12px; }
+.gonavi-font-gallery-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--gn-settings-line, #e2e8f0); border-radius: 8px; max-height: 280px; overflow: auto; }
+.gonavi-font-gallery-list button { display: flex; justify-content: space-between; gap: 8px; width: 100%; padding: 8px 12px; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.gonavi-font-gallery-list button.is-active { background: var(--gn-settings-chip-bg, #f8fafc); }
+.gonavi-font-gallery-list span { color: var(--gn-settings-muted, #64748b); font-size: 12px; }
+.gonavi-font-gallery-detail { border: 1px solid var(--gn-settings-line, #e2e8f0); border-radius: 8px; padding: 12px; min-width: 0; }
+.gonavi-font-gallery-preview { min-height: 64px; margin: 8px 0; padding: 8px; background: var(--gn-settings-chip-bg, #f8fafc); border-radius: 6px; }
+.gonavi-font-gallery-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 720px) { .gonavi-font-gallery-layout { grid-template-columns: 1fr; } }

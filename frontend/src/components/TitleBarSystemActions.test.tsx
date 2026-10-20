@@ -37,6 +37,7 @@ describe('TitleBarSystemActions', () => {
 
     buttons[0].props.onClick();
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
+    expect(onOpenSettings).toHaveBeenCalledWith();
   });
 
   it('places the trailing slot between settings and theme inside the preferences pill', () => {

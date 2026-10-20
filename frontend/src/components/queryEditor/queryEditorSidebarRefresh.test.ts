@@ -18,7 +18,8 @@ describe('SQL write sidebar refresh targets', () => {
     ])('carries the table reference for %s', (sql, table) => {
         dispatchSidebarSqlDataRefresh({ connectionId: 'conn-1', dbName: 'main' }, [sql], 'mysql');
         expect(dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({
-            detail: { connectionId: 'conn-1', dbName: 'main', rowCountTables: [table] },
+            detail: { connectionId: 'conn-1', dbName: 'main', rowCountTables: [table],
+                ...(/TRUNCATE/i.test(sql) ? { clearedTables: [table] } : {}), },
         }));
     });
 
@@ -50,4 +51,17 @@ describe('SQL write sidebar refresh targets', () => {
             connectionId: 'conn-1', dbName, rowCountTables: [table],
         });
     });
+    it('uses only the final write outcome for truncate followed by insert', () => {
+        dispatchSidebarSqlDataRefresh({ connectionId: 'conn-1', dbName: 'main' },
+            ['TRUNCATE TABLE users', 'INSERT INTO users(id) VALUES(1)'], 'mysql');
+        expect(dispatchEvent.mock.calls[0][0].detail).toEqual({ connectionId: 'conn-1', dbName: 'main', rowCountTables: ['`users`'] });
+    });
+    it('removes committed DROP targets but never assumes an unknown execution cleared or dropped a table', () => {
+        dispatchSidebarSqlDataRefresh({ connectionId: 'conn-1', dbName: 'main' }, ['DROP TABLE IF EXISTS users'], 'mysql');
+        expect(dispatchEvent.mock.calls[0][0].detail.droppedTables).toEqual(['`users`']);
+        dispatchEvent.mockClear();
+        dispatchSidebarSqlDataRefresh({ connectionId: 'conn-1', dbName: 'main' }, ['TRUNCATE TABLE users'], 'mysql', false);
+        expect(dispatchEvent.mock.calls[0][0].detail.clearedTables).toBeUndefined();
+    });
+
 });

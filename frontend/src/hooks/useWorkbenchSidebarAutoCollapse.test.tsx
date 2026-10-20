@@ -9,14 +9,15 @@ import { isSidebarAutoCollapseTabType, useWorkbenchSidebarAutoCollapse } from '.
 
 let setCollapsedFromOutside: (collapsed: boolean) => void = () => undefined;
 
-/** 模拟 App：左侧树折叠状态由 useState 持有，当前激活的标签页类型由外部控制。 */
-const Harness: React.FC<{ tabType?: WorkbenchTabType; initialCollapsed?: boolean }> = ({
+// 模拟 App：左侧树折叠状态由 useState 持有，当前激活的标签页类型由外部控制。
+const Harness: React.FC<{ tabType?: WorkbenchTabType; initialCollapsed?: boolean; enabled?: boolean }> = ({
   tabType,
   initialCollapsed = false,
+  enabled = true,
 }) => {
   const [collapsed, setCollapsed] = useState(initialCollapsed);
   setCollapsedFromOutside = setCollapsed;
-  useWorkbenchSidebarAutoCollapse(tabType, collapsed, setCollapsed);
+  useWorkbenchSidebarAutoCollapse(tabType, collapsed, setCollapsed, enabled);
   return (
     <div data-collapsed={String(collapsed)}>
       <div data-sidebar-content="true"><button type="button" data-testid="tree-node">orders</button></div>
@@ -132,4 +133,40 @@ describe('useWorkbenchSidebarAutoCollapse', () => {
     await render(<Harness tabType="data-sync" />);
     expect(document.activeElement).not.toBe(node);
   });
+  it.each([false, true])('preserves the manually chosen state when disabled (collapsed=%s)', async initialCollapsed => {
+    await render(<Harness tabType="query" initialCollapsed={initialCollapsed} enabled={false} />);
+    await render(<Harness tabType="settings-center" enabled={false} />);
+    expect(collapsed()).toBe(String(initialCollapsed));
+    await render(<Harness tabType="table" enabled={false} />);
+    expect(collapsed()).toBe(String(initialCollapsed));
+    await render(<Harness tabType={undefined} enabled={false} />);
+    expect(collapsed()).toBe(String(initialCollapsed));
+  });
+
+  it('enables the behavior immediately and stops changing the sidebar after disabling it', async () => {
+    await render(<Harness tabType="settings-center" enabled={false} />);
+    await render(<Harness tabType="settings-center" enabled />);
+    expect(collapsed()).toBe('true');
+    await render(<Harness tabType="settings-center" enabled={false} />);
+    expect(collapsed()).toBe('true');
+    await render(<Harness tabType="query" enabled={false} />);
+    expect(collapsed()).toBe('true');
+    await act(async () => setCollapsedFromOutside(false));
+    await render(<Harness tabType="settings-center" enabled={false} />);
+    expect(collapsed()).toBe('false');
+  });
+
+  it('defaults to no automatic transitions when the preference is omitted', async () => {
+    const DefaultHarness = ({ tabType }: { tabType: WorkbenchTabType }) => {
+      const [value, setValue] = useState(false);
+      useWorkbenchSidebarAutoCollapse(tabType, value, setValue);
+      return <div data-collapsed={String(value)} />;
+    };
+    await render(<DefaultHarness tabType="query" />);
+    await render(<DefaultHarness tabType="settings-center" />);
+    expect(collapsed()).toBe('false');
+    await render(<DefaultHarness tabType="query" />);
+    expect(collapsed()).toBe('false');
+  });
+
 });

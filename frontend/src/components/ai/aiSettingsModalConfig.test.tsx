@@ -5,6 +5,8 @@ import {
   ATLAS_CLOUD_DEFAULT_MODEL,
   ORCAROUTER_BASE_URL,
   ORCAROUTER_DEFAULT_MODEL,
+  CHEAPER_INFERENCE_BASE_URL,
+  CHEAPER_INFERENCE_DEFAULT_MODEL,
   QWEN_CODING_PLAN_ANTHROPIC_BASE_URL,
   XIAOMI_MIMO_DEFAULT_MODEL,
   XIAOMI_MIMO_OPENAI_BASE_URL,
@@ -145,6 +147,21 @@ describe('aiSettingsModalConfig', () => {
     }).key).toBe('orcarouter');
   });
 
+  it('exposes and recognizes the Cheaper Inference preset', () => {
+    const preset = findPreset('cheaperinference');
+
+    expect(preset).toMatchObject({
+      label: 'Cheaper Inference',
+      backendType: 'openai',
+      defaultBaseUrl: CHEAPER_INFERENCE_BASE_URL,
+      defaultModel: CHEAPER_INFERENCE_DEFAULT_MODEL,
+    });
+    expect(matchProviderPreset({
+      type: 'openai',
+      baseUrl: CHEAPER_INFERENCE_BASE_URL,
+    }).key).toBe('cheaperinference');
+  });
+
   it('exposes Xiaomi MiMo with current official endpoints and model', () => {
     const preset = findPreset('xiaomi-mimo');
 
@@ -249,6 +266,7 @@ describe('aiSettingsModalConfig', () => {
     });
     expect(PROVIDER_PRESETS.some((item) => item.key === 'atlascloud')).toBe(true);
     expect(PROVIDER_PRESETS.some((item) => item.key === 'orcarouter')).toBe(true);
+    expect(PROVIDER_PRESETS.some((item) => item.key === 'cheaperinference')).toBe(true);
     expect(PROVIDER_PRESETS.some((item) => item.key === 'xiaomi-mimo')).toBe(true);
     expect(PROVIDER_PRESETS.some((item) => item.key === 'codex')).toBe(false);
     expect(PROVIDER_PRESETS.some((item) => item.key === 'claude-subscription')).toBe(false);

@@ -479,6 +479,8 @@ func (e *agentToolExecutor) Execute(ctx context.Context, request runharness.Tool
 	}
 
 	switch name {
+	case inspectSourceToolName:
+		return e.executeInspectSource(ctx, request)
 	case "get_connections":
 		var args emptyArgs
 		return e.call(ctx, func() (*mcp.CallToolResult, any, error) {
@@ -757,6 +759,7 @@ func agentToolDescriptors() []runharness.ToolDescriptor {
 			Capabilities:   []string{"database", "sql", "side_effect_dynamic"},
 			MaxResultBytes: 1 << 20,
 		},
+		inspectSourceDescriptor(),
 	}
 }
 

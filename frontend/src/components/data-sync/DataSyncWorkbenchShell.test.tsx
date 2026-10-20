@@ -15,7 +15,7 @@ import { readCssWithImports } from '../../test/readCssWithImports';
 const modalConfirm = vi.hoisted(() => vi.fn());
 
 vi.mock('../common/ResizableDraggableModal', () => ({
-  default: { confirm: modalConfirm },
+  default: Object.assign(({ children }: { children?: React.ReactNode }) => children, { confirm: modalConfirm }),
 }));
 
 const dataSyncWorkbenchCss = readCssWithImports(new URL('./DataSyncWorkbench.css', import.meta.url));

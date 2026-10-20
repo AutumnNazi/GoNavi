@@ -50,6 +50,9 @@ describe('AI settings request events section', () => {
     expect(timeColumn.defaultSortOrder).toBe('descend');
     expect(timeColumn.sorter({ createdAt: 1_000 }, { createdAt: 2_000 })).toBeLessThan(0);
     expect(table.props.scroll).toEqual({ x: 1260, y: '100%' });
-    expect(root.findAllByProps({ 'data-alert': true })).toHaveLength(0);
+    const notice = root.findByProps({ 'data-alert': true });
+    expect(notice.props.type).toBe('info');
+    expect(notice.props.message).toBe('MCP SQL executions');
+    expect(notice.props.description).toContain('SQL Audit in the sidebar');
   });
 });

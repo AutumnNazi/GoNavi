@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"sort"
 	"strings"
 	"time"
 )
@@ -31,33 +30,6 @@ func (counts appliedChangeCounts) addToResult(result *SyncResult) {
 	result.RowsInserted += counts.Inserts
 	result.RowsUpdated += counts.Updates
 	result.RowsDeleted += counts.Deletes
-}
-
-// SyncConfig defines the parameters for a synchronization task
-type SyncConfig struct {
-	SourceConfig        connection.ConnectionConfig `json:"sourceConfig"`
-	TargetConfig        connection.ConnectionConfig `json:"targetConfig"`
-	SourceDatabase      string                      `json:"sourceDatabase,omitempty"`
-	TargetDatabase      string                      `json:"targetDatabase,omitempty"`
-	TargetSchema        string                      `json:"targetSchema,omitempty"`
-	Tables              []string                    `json:"tables"`
-	SourceQuery         string                      `json:"sourceQuery,omitempty"`
-	Content             string                      `json:"content,omitempty"` // "data", "schema", "both"
-	Mode                string                      `json:"mode"`              // "insert_update", "insert_only", "full_overwrite"
-	JobID               string                      `json:"jobId,omitempty"`
-	AutoAddColumns      bool                        `json:"autoAddColumns,omitempty"` // 自动补齐缺失字段
-	TargetTableStrategy string                      `json:"targetTableStrategy,omitempty"`
-	CreateIndexes       bool                        `json:"createIndexes,omitempty"`
-	MongoCollectionName string                      `json:"mongoCollectionName,omitempty"`
-	TableOptions        map[string]TableOptions     `json:"tableOptions,omitempty"`
-	Mappings            []SyncObjectMapping         `json:"mappings,omitempty"`
-	// identityMappingTarget is populated only while a schema planner handles a
-	// column-identity object rename. It is intentionally not part of the public
-	// config payload: callers express it through Mappings.
-	identityMappingTarget SyncObjectRef
-	BatchSize             int                     `json:"batchSize,omitempty"`
-	RowErrorPolicy        string                  `json:"rowErrorPolicy,omitempty"`
-	OnRowError            ChangeEventRowErrorFunc `json:"-"`
 }
 
 // SyncResult holds the result of the sync operation
@@ -299,7 +271,7 @@ func (s *SyncEngine) runSync(config SyncConfig) SyncResult {
 						markTableFailure(message)
 						return
 					}
-					if len(keyColumns) == 0 {
+					if len(keyColumns) == 0 && !config.ExistingTargetInsertWithoutKey {
 						message := fmt.Sprintf("表 %s 未找到主键或映射稳定 key，无法执行差异同步", tableName)
 						s.appendLog(config.JobID, &result, "warn", message)
 						markTableFailure(message)
@@ -460,7 +432,9 @@ func (s *SyncEngine) runSync(config SyncConfig) SyncResult {
 				markTableFailure(message)
 				return
 			}
-			requirePK := tableMode == "insert_update" && plan.TargetTableExists && hasEffectiveSyncDataOperation(tableMode, opts)
+			// 无物理主键时差异比对无从谈起：requirePK 只在真的拿到 key 时成立。
+			// 此时若任务允许（ExistingTargetInsertWithoutKey），会走下面的追加分支。
+			requirePK := tableMode == "insert_update" && plan.TargetTableExists && hasEffectiveSyncDataOperation(tableMode, opts) && len(pkCols) > 0
 			hasRowSelection := len(opts.SelectedInsertPKs) > 0 || len(opts.SelectedUpdatePKs) > 0 || len(opts.SelectedDeletePKs) > 0
 			selectionKeyCols := append([]string(nil), pkCols...)
 			if len(selectionKeyCols) > 0 && hasExplicitSyncMappings(config) && (requirePK || hasRowSelection) {
@@ -509,7 +483,7 @@ func (s *SyncEngine) runSync(config SyncConfig) SyncResult {
 				return
 			}
 
-			if len(targetPKCols) <= 1 {
+			if len(targetPKCols) == 1 {
 				if handled, counts, err := s.tryApplyDiffInPages(config, &result, i, totalTables, tableName, sourceDB, targetDB, plan, cols, targetCols, opts, sourceType, targetType, applyTableName, pkCol); handled {
 					result.RowsInserted += counts.Inserts
 					result.RowsUpdated += counts.Updates
@@ -565,7 +539,7 @@ func (s *SyncEngine) runSync(config SyncConfig) SyncResult {
 			var updates []connection.UpdateRow
 			var deletes []map[string]interface{}
 
-			if tableMode == "insert_update" && plan.TargetTableExists {
+			if requirePK {
 				s.progress(config.JobID, i, totalTables, tableName, "读取目标表数据")
 				targetRows, _, err := querySyncDatabaseContext(s.context(), targetDB, fmt.Sprintf("SELECT * FROM %s", quoteQualifiedIdentByType(targetType, targetQueryTable)))
 				if err != nil {
@@ -582,6 +556,9 @@ func (s *SyncEngine) runSync(config SyncConfig) SyncResult {
 				updates = filterUpdatesByKeySelection(targetPKCols, updates, opts.Update, opts.SelectedUpdatePKs)
 				deletes = filterRowsByKeySelection(targetPKCols, deletes, opts.Delete, opts.SelectedDeletePKs)
 			} else {
+				if config.ExistingTargetInsertWithoutKey && tableMode == "insert_update" && plan.TargetTableExists && len(pkCols) == 0 {
+					s.appendLog(config.JobID, &result, "warn", fmt.Sprintf("  -> 表 %s 源表无物理主键，无法差异比对，已按任务策略降级为追加写入（仅插入）", tableName))
+				}
 				inserts = filterRowsByKeySelection(selectionKeyCols, sourceRows, opts.Insert, opts.SelectedInsertPKs)
 			}
 
@@ -598,22 +575,8 @@ func (s *SyncEngine) runSync(config SyncConfig) SyncResult {
 				}
 			}
 			if len(targetColsResolved) > 0 {
-				targetColSet := make(map[string]struct{}, len(targetColsResolved))
-				for _, c := range targetColsResolved {
-					name := strings.ToLower(strings.TrimSpace(c.Name))
-					if name == "" {
-						continue
-					}
-					targetColSet[name] = struct{}{}
-				}
-				requiredCols := collectRequiredColumns(changeSet.Inserts, changeSet.Updates)
-				missing := make([]string, 0)
-				for lower, original := range requiredCols {
-					if _, ok := targetColSet[lower]; !ok {
-						missing = append(missing, original)
-					}
-				}
-				sort.Strings(missing)
+				writableColSet := buildWritableTargetColumnSet(targetColsResolved)
+				missing := missingChangeSetColumns(changeSet, targetColsResolved)
 				if len(missing) > 0 {
 					if hasExplicitSyncMappings(config) {
 						message := fmt.Sprintf("映射目标表缺少字段：%s", strings.Join(missing, ", "))
@@ -639,7 +602,7 @@ func (s *SyncEngine) runSync(config SyncConfig) SyncResult {
 								markTableFailure(message)
 								continue
 							}
-							alterSQL, alterWarnings, err := buildAddColumnSQLForPair(sourceType, targetType, targetQueryTable, srcCol)
+							alterSQL, alterWarnings, err := buildAddColumnSQLForPair(sourceType, targetType, targetQueryTable, srcCol, plan.characterLengthTarget)
 							if err != nil {
 								message := fmt.Sprintf("自动补字段失败：字段=%s 错误=%v", colName, err)
 								s.appendLog(config.JobID, &result, "error", "  -> "+message)
@@ -659,15 +622,16 @@ func (s *SyncEngine) runSync(config SyncConfig) SyncResult {
 								continue
 							}
 							added++
-							targetColSet[colLower] = struct{}{}
+							writableColSet[colLower] = struct{}{}
 						}
 						s.appendLog(config.JobID, &result, "info", fmt.Sprintf("  -> 自动补字段完成：成功=%d 失败=%d", added, len(missing)-added))
 					} else {
 						s.appendLog(config.JobID, &result, "warn", fmt.Sprintf("  -> 目标表缺少字段 %d 个（未开启自动补齐），将自动忽略：%s", len(missing), strings.Join(missing, ", ")))
 					}
-					changeSet.Inserts = filterInsertRows(changeSet.Inserts, targetColSet)
-					changeSet.Updates = filterUpdateRows(changeSet.Updates, targetColSet)
 				}
+				// 补列完成后只过滤一次，保留成功新增普通列的源值。
+				changeSet.Inserts = filterInsertRows(changeSet.Inserts, writableColSet)
+				changeSet.Updates = filterUpdateRows(changeSet.Updates, writableColSet)
 			}
 			if tableFailure != "" {
 				return

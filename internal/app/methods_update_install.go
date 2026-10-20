@@ -41,6 +41,19 @@ func (a *App) InstallUpdateAndRestart(closeAllWindowsInstancesConfirmed bool) co
 			}),
 		}
 	}
+	// macOS 同样要在退出前探测目标可写：更新脚本是脱离主进程静默执行的，
+	// 等到安装阶段才发现写不动时窗口早已关闭，用户只会看到「点了没反应」。
+	// 这里提前拦住并回一条带原因的失败，前端才有机会把问题显示出来。
+	if stdRuntime.GOOS == "darwin" {
+		if err := ensureMacUpdateTargetWritable(strings.TrimSpace(updateResolveInstallTarget())); err != nil {
+			return connection.QueryResult{
+				Success: false,
+				Message: a.appText("app.update.backend.message.install_launch_failed", map[string]any{
+					"detail": a.localizedUpdateError(err),
+				}),
+			}
+		}
+	}
 	resumeSyncJobs, err := a.suspendDataSyncJobs()
 	installStarted := false
 	defer func() {

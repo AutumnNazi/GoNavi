@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"strings"
 	"sync"
 	"time"
 
@@ -216,6 +215,7 @@ type App struct {
 	dataSyncFingerprintMu         sync.Mutex
 	dataSyncFingerprintKey        []byte
 	dataSyncJobsState
+	appearanceGalleryState
 	dataSyncJobLeaseOwner     string
 	dataSyncCDCRegistry       *synccdc.Registry
 	dataSyncChangeEventRunner func(context.Context, syncbackend.ChangeEventRequest) syncbackend.ChangeEventResult
@@ -224,16 +224,6 @@ type App struct {
 // NewApp creates a new App application struct
 func NewApp() *App {
 	return NewAppWithSecretStore(secretstore.NewKeyringStore())
-}
-
-// ConfigDirForIntegration returns the directory used for persisted application
-// settings. It is a package function rather than an App method so Wails does
-// not expose the local filesystem path through its reflective RPC bridge.
-func ConfigDirForIntegration(a *App) string {
-	if a == nil {
-		return ""
-	}
-	return strings.TrimSpace(a.configDir)
 }
 
 // NewWebApp creates the backend used by the authenticated browser server.

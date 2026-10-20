@@ -9,6 +9,8 @@ export const ATLAS_CLOUD_BASE_URL = 'https://api.atlascloud.ai/v1';
 export const ATLAS_CLOUD_DEFAULT_MODEL = 'qwen/qwen3.8-max';
 export const ORCAROUTER_BASE_URL = 'https://api.orcarouter.ai/v1';
 export const ORCAROUTER_DEFAULT_MODEL = 'orcarouter/auto';
+export const CHEAPER_INFERENCE_BASE_URL = 'https://api.cheaperinference.com/v1';
+export const CHEAPER_INFERENCE_DEFAULT_MODEL = 'gpt-5.4-mini';
 export const DEEPSEEK_RESPONSES_BASE_URL = 'https://api.deepseek.com';
 export const DEEPSEEK_DEFAULT_MODEL = 'deepseek-flash';
 // deepseek-v4-pro 仍在服务，但 V4.1 Pro 尚未发布；旧 ID deepseek-v4-flash 已下线并转发到 V4.1-Flash。

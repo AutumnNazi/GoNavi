@@ -95,7 +95,10 @@ describe('data grid saving through Navicat HTTP script tunnels', () => {
 
   it('explains the restriction and refuses new row, cell and paste edits while keeping browsing available', async () => {
     setConnection(scriptTunnel);
-    const grid = await renderGrid();
+    const grid = await renderGrid({
+      ...baseProps,
+      data: [{ [GONAVI_ROW_KEY]: 'row-1', id: 1, name: 'Ada\nLovelace' }],
+    });
     const toolbar = grid.root.findByType(DataGridToolbarFrame);
     expect(toolbar.props.canModifyData).toBe(false);
     const disabledCommit = grid.root.findByProps({ 'data-grid-disabled-action': 'commit' });

@@ -196,6 +196,9 @@ func (executor *MCPQueryExecutor) dbQueryMultiAuthorizedContext(
 			Data:    map[string]any{"errorKind": headlessResultErrorKindPolicy},
 		}, effectiveDialect
 	}
+	if strings.EqualFold(strings.TrimSpace(resolvedConfig.Type), "redis") {
+		return executor.app.executeRedisCommandFromMCP(ctx, resolvedConfig, dbName, query), effectiveDialect
+	}
 	return executor.app.dbQueryMulti(resolvedConfig, dbName, query, "", dbQueryMultiAuditOptions{
 		auditAll:         true,
 		auditWrites:      true,
@@ -207,7 +210,7 @@ func (executor *MCPQueryExecutor) dbQueryMultiAuthorizedContext(
 
 func normalizeSQLAuditUserActionSource(source string) string {
 	switch normalized := strings.ToLower(strings.TrimSpace(source)); normalized {
-	case "data_editor", "table_designer", "object_editor", "message_publish":
+	case "data_editor", "table_designer", "object_editor", "message_publish", "database_jobs":
 		return normalized
 	default:
 		return "application_api"

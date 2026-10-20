@@ -185,12 +185,12 @@ import (
 	"unsafe"
 )
 
-func setApplicationIconPNG(png []byte, _ string, _ context.Context) error {
+func setApplicationIconPNG(png []byte, _ string, _ context.Context) (bool, error) {
 	if len(png) == 0 {
-		return errors.New("application icon PNG is empty")
+		return false, errors.New("application icon PNG is empty")
 	}
 	if C.gonaviSetApplicationIconFromPNG(unsafe.Pointer(&png[0]), C.int(len(png))) == 0 {
-		return errors.New("failed to create macOS application icon image")
+		return false, errors.New("failed to create macOS application icon image")
 	}
-	return nil
+	return false, nil
 }

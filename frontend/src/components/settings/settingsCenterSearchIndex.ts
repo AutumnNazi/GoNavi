@@ -1,3 +1,4 @@
+import { routePreferenceSearchEntry } from './preferences/preferenceSearchRouting';
 import type { SettingsCenterSearchEntrySource } from './settingsCenterSearchEntries';
 import { AI_SEARCH_ENTRIES } from './settingsSearchEntries/ai';
 import { CONTENT_SEARCH_ENTRIES } from './settingsSearchEntries/content';
@@ -18,4 +19,4 @@ export const SETTINGS_CENTER_SEARCH_ENTRIES: ReadonlyArray<SettingsCenterSearchE
   ...AI_SEARCH_ENTRIES,
   ...TOOLS_SEARCH_ENTRIES,
   ...CONTENT_SEARCH_ENTRIES,
-];
+].map(routePreferenceSearchEntry);

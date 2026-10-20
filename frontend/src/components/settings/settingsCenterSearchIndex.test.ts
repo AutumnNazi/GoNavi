@@ -61,13 +61,13 @@ describe('settings center search index', () => {
     expect(duplicates).toEqual([]);
   });
 
-  it('resolves dynamic entries, such as one row per shortcut', () => {
+  it('resolves dynamic entries, such as one row per built-in AI tool', () => {
     const resolved = resolveSettingsCenterSearchEntries(SETTINGS_CENTER_SEARCH_ENTRIES, t);
-    const shortcuts = resolved.filter((entry) => entry.item === 'shortcut-settings');
+    const builtinTools = resolved.filter((entry) => entry.item === 'ai-tools');
 
-    expect(shortcuts.length).toBeGreaterThan(10);
-    expect(shortcuts.every((entry) => entry.label.trim().length > 0)).toBe(true);
-    expect(resolved.some((entry) => entry.item === 'ai-tools' && entry.label === 'execute_sql')).toBe(true);
+    expect(builtinTools.length).toBeGreaterThan(10);
+    expect(builtinTools.every((entry) => entry.label.trim().length > 0)).toBe(true);
+    expect(builtinTools.some((entry) => entry.label === 'execute_sql')).toBe(true);
   });
 });
 

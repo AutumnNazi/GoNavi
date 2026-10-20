@@ -31,6 +31,9 @@ type resolvedDataSyncJobEndpoint struct {
 	Database    string
 	Schema      string
 	Fingerprint string
+	// DatabasePending 表示预检确认目标库尚不存在、将由迁移在运行前创建。
+	// 只在预检内有效，不参与指纹，也不持久化。
+	DatabasePending bool
 }
 
 func (a *App) resolveDataSyncJobEndpoint(connectionID, database, schema string) (resolvedDataSyncJobEndpoint, error) {

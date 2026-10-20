@@ -53,6 +53,7 @@ import WorkbenchTabContent from '../../WorkbenchTabContent';
 import { TabSwitchPhaseProfiler } from '../../../utils/tabSwitchProbe';
 import { getDataSourceCapabilities } from '../../../utils/dataSourceCapabilities';
 import { buildWorkbenchQueryTabId } from '../tabManagerIds';
+import { sanitizeTabCloseButtonPosition } from '../../../utils/tabAppearance';
 import type { TabManagerStateApi } from './useTabManagerState';
 import type { TabManagerProps } from '../../TabManager';
 
@@ -310,6 +311,8 @@ export const useTabManagerItems = ({
     })
   ), [appearance.tabDisplay, connections, connectionGroupNameById, dockedTabs]);
 
+  const tabCloseButtonPosition = sanitizeTabCloseButtonPosition(appearance.tabCloseButtonPosition);
+
   const renderTabBar: TabsProps['renderTabBar'] = (tabBarProps, DefaultTabBar) => (
     // 探针子树计时（默认关闭时空操作）：标签条自身的渲染成本独立成一段归因。
     <TabSwitchPhaseProfiler phase="tab-bar">
@@ -412,6 +415,7 @@ export const useTabManagerItems = ({
           environmentColor={environment?.color}
           environmentLabel={environment?.label}
           environmentType={environment?.type}
+          closeButtonPosition={tabCloseButtonPosition}
           onClose={() => closeTabsWithSQLFilePrompt([tab.id], () => closeTab(tab.id))}
         />
       ),
@@ -426,7 +430,7 @@ export const useTabManagerItems = ({
         </TabSwitchPhaseProfiler>
       ),
     };
-  }), [dockedTabs, tabs, connections, connectionGroupNameById, appearance.tabDisplay, closeTab, closeTabsWithSQLFilePrompt, detachTabToWindow, true, languagePreference, shouldDestroyHiddenTab]);
+  }), [dockedTabs, tabs, connections, connectionGroupNameById, appearance.tabDisplay, appearance.tabCloseButtonPosition, closeTab, closeTabsWithSQLFilePrompt, detachTabToWindow, true, languagePreference, shouldDestroyHiddenTab]);
 
   const queryCapableConnections = useMemo(
     () => connections.filter((connection) => getDataSourceCapabilities(connection.config).supportsQueryEditor),

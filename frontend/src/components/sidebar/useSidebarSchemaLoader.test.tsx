@@ -9,10 +9,11 @@ import { shouldLoadSidebarNodeOnExpand as shouldLoadV2Node } from './sidebarV2Tr
 import { resolveSidebarSwitcherLoadKey } from './sidebarSwitcherState';
 
 const mocks = vi.hoisted(() => ({
-  query: vi.fn(), tables: vi.fn(), databases: vi.fn(),
+  count: vi.fn(), query: vi.fn(), tables: vi.fn(), databases: vi.fn(),
   state: { connections: [] as SavedConnection[], tableSortPreference: {}, tableAccessCount: {}, pinnedSidebarTables: [], pinnedSidebarDatabases: [] },
 }));
 vi.mock('../../../wailsjs/go/app/App', () => ({
+  DBQueryApplicationWithCancel: mocks.count, CancelQuery: vi.fn().mockResolvedValue({ success: true }),
   DBQuery: mocks.query, DBGetTables: mocks.tables, DBGetDatabases: mocks.databases,
   DBRefreshTableStats: vi.fn(), GetDriverStatusList: vi.fn(), JVMProbeCapabilities: vi.fn(),
 }));
@@ -54,16 +55,17 @@ describe('sidebar schema lazy loading', () => {
     vi.clearAllMocks(); loading = new Set(); expanded = []; loadedKeys = []; savedQueries = [];
     mocks.state.connections = [connection];
     tree = [{ key: 'pg-app', type: 'database', dataRef: { ...connection, dbName: 'app' } }];
-    mocks.query.mockImplementation(async (_config, _database, sql: string) => ({ success: true, data: sql.includes('FROM pg_namespace WHERE') ? [{ schema_name: 'public' }, { schema_name: 'sales' }] : [] }));
+    mocks.query.mockImplementation(async (_config, _database, sql: string) => ({ success: true, data: sql.includes('AS available') ? [{ available: false }] : sql.includes('FROM pg_namespace WHERE') ? [{ schema_name: 'public' }, { schema_name: 'sales' }] : [] }));
     mocks.tables.mockImplementation(async (config) => ({ success: true, data: [{ Table: `${config.metadataScope?.schemas.names[0] || 'public'}.users` }] }));
   });
   afterEach(() => { act(() => renderer?.unmount()); });
 
-  it('shows schema nodes without requesting tables, objects or relation sizes', async () => {
+  it('shows schema nodes with only lightweight scheduler probes, not tables or relation sizes', async () => {
     mount();
     await act(async () => { await loaders.loadTables(tree[0]); });
     expect(mocks.tables).not.toHaveBeenCalled();
-    expect(mocks.query).toHaveBeenCalledTimes(1);
+    expect(mocks.query).toHaveBeenCalledTimes(3);
+    expect(mocks.query.mock.calls.filter((call) => String(call[2]).includes('AS available'))).toHaveLength(2);
     const schemas = tree[0].children.filter((node: any) => node.dataRef?.groupKey === 'schema');
     expect(schemas.map((node: any) => node.title)).toEqual(['public', 'sales']);
     for (const node of schemas) {
@@ -77,6 +79,7 @@ describe('sidebar schema lazy loading', () => {
   it('requests only the expanded schema and does not wait for relation statistics to display tables', async () => {
     mount(); await act(async () => { await loaders.loadTables(tree[0]); });
     const schema = tree[0].children.find((node: any) => node.title === 'sales');
+    mocks.query.mockClear();
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     mocks.query.mockImplementation(async (_config, _database, sql: string) => {
@@ -90,11 +93,31 @@ describe('sidebar schema lazy loading', () => {
       expect(schema.children.some((node: any) => node.dataRef.groupKey === 'tables')).toBe(true);
       const group = schema.children.find((node: any) => node.dataRef.groupKey === 'tables');
       expect(group.dataRef.schemaLazy).toBe(true);
-      for (const [, , sql] of mocks.query.mock.calls.slice(1)) expect(sql).toContain("IN ('sales')");
+      for (const [, , sql] of mocks.query.mock.calls) expect(sql).toContain("IN ('sales')");
     } finally { await act(async () => { release(); await task; }); }
     const table = schema.children.find((node: any) => node.dataRef.groupKey === 'tables').children[0];
     expect(table.dataRef.tableSize).toBe(8192);
     expect(loading.size).toBe(0);
+  });
+
+  it('loads database-wide schedulers alongside lazy schemas and preserves jobs during schema expansion', async () => {
+    mocks.query.mockImplementation(async (_config, _database, sql: string) => ({ success: true, data:
+      sql.includes('AS available') ? [{ available: sql.includes("'cron'") }]
+        : sql.includes('FROM cron.job') ? [{ job_name: '10', job_label: 'daily' }]
+          : sql.includes('FROM pg_namespace WHERE') ? [{ schema_name: 'public' }] : [] }));
+    mount(); await act(async () => { await loaders.loadTables(tree[0]); });
+    const jobs = find('pg-app-jobs');
+    expect(jobs.children[0].dataRef.jobKind).toBe('pg-cron');
+    expect(jobs.children[0].title).toBe('daily · 10 · pg_cron');
+    const schema = tree[0].children.find((node: { title?: unknown }) => node.title === 'public');
+    await act(async () => { await loaders.loadTables(schema); });
+    expect(find('pg-app-jobs')).toBe(jobs);
+    expect(schema.children.some((node: { dataRef?: { groupKey?: string } }) => node.dataRef?.groupKey === 'jobs')).toBe(false);
+    mocks.query.mockImplementation(async (_config, _database, sql: string) => ({ success: true, data:
+      sql.includes('AS available') ? [{ available: false }]
+        : sql.includes('FROM pg_namespace WHERE') ? [{ schema_name: 'public' }] : [] }));
+    await act(async () => { await loaders.loadTables(tree[0], { ensureFresh: true }); });
+    expect(find('pg-app-jobs')).toBeUndefined();
   });
 
   it('refreshes a single schema without reloading its sibling', async () => {
@@ -125,13 +148,13 @@ describe('sidebar schema lazy loading', () => {
     expect(mocks.tables.mock.calls[0][0].metadataScope.schemas.names).toEqual(['sales']);
   });
 
-  it('initial database expansion loads only schema names even with persisted schema keys', async () => {
+  it('initial database expansion only loads schemas and scheduler probes even with persisted schema keys', async () => {
     const otherDatabase = 'pg-app-schema-backup';
     const otherSchema = sidebarSchemaNodeKey(otherDatabase, 'public');
     expanded = ['pg-app', sidebarSchemaNodeKey('pg-app', 'sales'), otherDatabase, otherSchema];
     mount(); await act(async () => { await loaders.loadTables(tree[0]); });
     expect(mocks.tables).not.toHaveBeenCalled();
-    expect(mocks.query).toHaveBeenCalledTimes(1);
+    expect(mocks.query).toHaveBeenCalledTimes(3);
     expect(expanded).toEqual(['pg-app', otherDatabase, otherSchema]);
   });
 
@@ -258,4 +281,18 @@ describe('sidebar schema lazy loading', () => {
     expect(find(schema.key).dataRef.schemaLoaded).toBe(false);
     expect(loading.size).toBe(0);
   });
+  it('finishes object loading while an unlimited post-write count remains pending', async () => {
+    mount(); await act(async () => { await loaders.loadTables(tree[0]); });
+    const schema = tree[0].children.find((node: any) => node.title === 'sales');
+    let finishCount!: (value: unknown) => void;
+    mocks.count.mockImplementationOnce(() => new Promise(resolve => { finishCount = resolve; }));
+    await act(async () => { await loaders.loadTables(schema, { ensureFresh: true, schemaName: 'sales', rowCountTables: ['sales.users'] }); });
+    expect(loading.size).toBe(0);
+    expect(mocks.count).toHaveBeenCalledOnce();
+    expect(mocks.count.mock.calls[0][2]).toBe('SELECT COUNT(*) AS table_rows FROM sales.users');
+    await act(async () => { finishCount({ success: true, data: [{ table_rows: 42 }] }); });
+    const group = find(schema.key).children.find((node: any) => node.dataRef.groupKey === 'tables');
+    expect(group.children[0].dataRef.rowCount).toBe(42);
+  });
+
 });

@@ -4,14 +4,14 @@ import { Layout, ConfigProvider } from 'antd';
 import ConnectionGroupManagementModal from './components/sidebar/ConnectionGroupManagementModal';
 import ConnectionModal from './components/ConnectionModal';
 import LinuxCJKFontBanner from './components/LinuxCJKFontBanner';
-import CustomThemeStyleHost from './components/theme/CustomThemeStyleHost';
-import ToolbarAppearanceStyleHost from './components/theme/ToolbarAppearanceStyleHost';
+import AppAppearanceStyleHosts from './components/theme/AppAppearanceStyleHosts';
 import { type TabDisplayElementKey } from './utils/tabDisplay';
 import { APP_NESTED_MODAL_Z_INDEX } from './utils/overlayZIndex';
 import { getAntdLocale } from './i18n/frameworkLocale';
 import './App.css';
 import './v2-theme.css';
 import './styles/v2-theme-workbench.css';
+import './styles/navicatTheme.css';
 import './styles/v2-theme-ai.css';
 import { type ToolCenterGroupKey } from './appShell/settingsCenterPanes';
 import { useAppCoreState } from './appShell/hooks/useAppCoreState';
@@ -40,6 +40,9 @@ import { renderAppSettingsCenterModal } from './appShell/settings/renderAppSetti
 import { AppTitleBar } from './appShell/layout/AppTitleBar';
 import { AppSider } from './appShell/layout/AppSider';
 import { AppContent } from './appShell/layout/AppContent';
+import { AppStatusBar } from './appShell/layout/AppStatusBar';
+import LinuxResizeHandles from './appShell/layout/LinuxResizeHandles';
+import AppLogPanelResizeGhost from './appShell/layout/AppLogPanelResizeGhost';
 import { AppGlobalDialogs } from './appShell/layout/AppGlobalDialogs';
 
 function App() {
@@ -47,7 +50,8 @@ function App() {
   const {
     language, t, notificationApi, notificationContextHolder, isModalOpen, setIsModalOpen,
     isConnectionModalMounted, setIsConnectionModalMounted, editingConnection, setEditingConnection,
-    connectionHealthTargetIds, setConnectionHealthTargetIds, pendingConnectionTagIdRef,
+    connectionHealthTargetIds, setConnectionHealthTargetIds, connectionHealthDialogOpen,
+    setConnectionHealthDialogOpen, pendingConnectionTagIdRef,
     connectionModalWarmupDoneRef, windowState, themeMode, appearance, setAppearance, setUiScale,
     setFontSize, startupMaximised, setStartupMaximised, autoCheckForUpdates, setAutoCheckForUpdates,
     autoCheckForUpdatesIntervalMinutes, setAutoCheckForUpdatesIntervalMinutes, globalProxy,
@@ -96,9 +100,9 @@ function App() {
     setConnectionPackageDialog, pendingConnectionImportPayload, setPendingConnectionImportPayload,
     connectionImportTargetTagId, setConnectionImportTargetTagId, connectionImportNotice,
     setConnectionImportNotice, browserConnectionImportInputRef,
-    browserConnectionImportSourceGroupRef, aiPanelRenderNonce, setAiPanelRenderNonce,
+    aiPanelRenderNonce, setAiPanelRenderNonce,
     aiSettingsRenderNonce, setAiSettingsRenderNonce, LazyAIChatPanel, LazyAISettingsContent,
-    sidebarWidth, setSidebarWidth, documentPlatform, isMacRuntime,
+    sidebarWidth, setSidebarWidth, documentPlatform, isMacRuntime, isBrowserServedApp,
     shouldDockCollapsedSidebarActionsInTitlebar, collapsedSidebarActionsTarget,
     handleCollapseSidebarPanel, handleEnsureSidebarExpanded, handleExpandSidebarPanel,
     isCollapsedSidebarActionsDocked, isSidebarCollapsed, setCollapsedSidebarActionsTarget,
@@ -186,7 +190,7 @@ function App() {
     releaseNotesModalVisible, emitWindowDiagnostic, handleNewQuery, switchActiveTabByOffset,
     resetApplicationQuitRequest, forceQuitApplication,
   } = useAppUpdateAndDiagnostics({
-    isMacRuntime, shortcutOptions, runtimeBuildType, t, windowDiagSequenceRef,
+    isMacRuntime, isBrowserServedApp, shortcutOptions, runtimeBuildType, t, windowDiagSequenceRef,
     windowDiagLastSignatureRef, windowDiagLastAtRef, activeTabId, tabs, connections, activeContext,
     addTab, appearance, setActiveTab, applicationQuitHandlingRef, applicationQuitConfirmRef,
   });
@@ -205,15 +209,13 @@ function App() {
   });
 
   const {
-    handleBrowserConnectionImportFileChange, handleImportConnections, handleExportConnections,
-    handleExportConnectionsRef, handleConfirmConnectionPackageDialog,
+    handleBrowserConnectionImportFileChange, handleImportConnections,
+    handleExportConnectionsRef, handleImportConnectionsRef, handleConfirmConnectionPackageDialog,
   } = useAppConnectionImportExport({
     t, connectionSidebarLayoutCoordinatorRef, connectionImportTargetTagId,
     setConnectionDisplaySortMode, refreshConnectionsAfterImport, moveConnectionsToTag,
     setConnectionImportNotice, setConnectionPackageDialog, setPendingConnectionImportPayload,
-    setToolCenterBackGroupKey: setToolCenterBackGroupKeyLate.call, setActiveSettingsCenterGroupKey,
-    setActiveSettingsCenterPane, browserConnectionImportSourceGroupRef,
-    openSettingsCenterWorkbenchTab, isWebRuntime, browserConnectionImportInputRef, connections,
+    isWebRuntime, browserConnectionImportInputRef, connections,
     connectionPackageDialog, pendingConnectionImportPayload,
   });
 
@@ -243,20 +245,22 @@ function App() {
   setToolCenterBackGroupKeyLate.bind(setToolCenterBackGroupKey);
   setIsProxyModalOpenLate.bind(setIsProxyModalOpen);
   const {
-    closeConnectionHealthSettingsPane, handleOpenToolsModal, handleOpenSettingsModal,
+    handleOpenToolsModal, handleOpenSettingsModal,
     handleOpenSettingsCenterPane, handleCancelSettingsCenterPane, handleOpenDataSyncWorkbench,
     handleOpenToolCenterPane, handleTitleBarSettingsNavigation, handleReturnToToolCenter,
     handleFocusSidebarSearch, handleSelectDataRoot, handleApplyDataRoot, handleOpenDataRoot,
     handleSelectLogDirectory, handleApplyLogDirectory, handleOpenLogDirectory,
     handleSelectSavedQueryDirectory, handleApplySavedQueryDirectory, handleOpenSavedQueryDirectory,
   } = useAppSettingsNavigation({
-    setConnectionHealthTargetIds, setActiveSettingsCenterPane, setCapturingShortcutAction,
-    activeSettingsCenterPaneRef, closeConnectionPackageDialog, setFocusedAIProviderId,
+    setConnectionHealthTargetIds, setConnectionHealthDialogOpen, setActiveSettingsCenterPane,
+    setCapturingShortcutAction,
+    activeSettingsCenterPaneRef, setFocusedAIProviderId,
     setSecurityUpdateRepairSource, aiSettingsLeaveGuardRef, setToolCenterBackGroupKey,
     setActiveSettingsCenterGroupKey, openSettingsCenterWorkbenchTab, securityUpdateRepairSource,
     openSecurityUpdateSettings, activeSettingsCenterPane, closeSettingsCenterWorkbenchTab, addTab,
     isSettingsModalOpen, updateCenterBridgeRef, openReleaseNotesOnManualCheckRef,
-    setReleaseNotesModalOpen, prepareAboutSurface, handleExportConnectionsRef, setThemeModalSection,
+    setReleaseNotesModalOpen, prepareAboutSurface, handleExportConnectionsRef,
+    handleImportConnectionsRef, setThemeModalSection,
     setAiSettingsSection, setAiSettingsProviderView, toolCenterBackGroupKey, setIsSidebarCollapsed,
     setDataRootLoading, t, setDataRootInfo, setSelectedDataRootPath, setSelectedLogDirectoryPath,
     setSelectedSavedQueryDirectoryPath, isDataRootModalOpen, selectedDataRootPath, dataRootInfo,
@@ -288,7 +292,8 @@ function App() {
     moveConnectionToTag, securityUpdateRepairSource, securityUpdateStatus, replaceConnections,
     replaceGlobalProxy, normalizeSecurityUpdateStatus, applySecurityUpdateStatus,
     setSecurityUpdateHasLegacySensitiveItems, setSecurityUpdateRawPayload, securityUpdateRawPayload,
-    openSecurityUpdateSettings, setConnectionHealthTargetIds, setToolCenterBackGroupKey,
+    openSecurityUpdateSettings, setConnectionHealthTargetIds, setConnectionHealthDialogOpen,
+    setToolCenterBackGroupKey,
     setActiveSettingsCenterGroupKey, setActiveSettingsCenterPane, openSettingsCenterWorkbenchTab,
     handleOpenDriverManagerWorkbench, setIsProxyModalOpen, aiSettingsLeaveGuardRef,
     setFocusedAIProviderId, setAiSettingsSection, setAiSettingsProviderView, setAiPanelRenderNonce,
@@ -300,6 +305,7 @@ function App() {
     darkMode, documentPlatform, effectiveFontSize, resolvedUiFontFamily, resolvedMonoFontFamily,
     effectiveUiScale, effectiveOpacity, effectiveDataTableFontSize, effectiveSidebarTreeFontSize,
     effectiveSidebarRailScale, tokenControlHeight, tokenControlHeightSM, handleOpenToolCenterPane,
+    handleOpenSettingsCenterPane,
     aiSettingsLeaveGuardRef, closeSettingsCenterWorkbenchTab, setThemeModalSection,
     setIsThemeModalOpen, setTabDisplaySettingsFocusRequest, handleNewQuery, isMacRuntime,
     useNativeMacWindowControls, closeShortcutScopeRef, capturingShortcutAction, shortcutOptions,
@@ -311,7 +317,7 @@ function App() {
 
   const {
     linuxResizeHandleStyleBase, showLinuxResizeHandles, resizeGuideColor, v2AntPrimaryColor,
-    v2AntPrimaryBgColor, antdTheme, filterFontOption, renderFontOptionLabel, showLinuxCJKFontBanner,
+    v2AntPrimaryBgColor, antdTheme, showLinuxCJKFontBanner,
     sidebarMetadataFieldItems, toggleSidebarMetadataFieldFromSettings, handleSidebarMetadataDragEnd,
   } = useAppAntdTheme({
     isLinuxRuntime, customThemeAntTokens, darkMode, tokenFontSize, tokenFontSizeSM, tokenFontSizeLG,
@@ -321,7 +327,7 @@ function App() {
     sidebarTableMetadataFieldOrder, setQueryOptions, sidebarTableMetadataFields,
   });
   const {
-    renderProxySettingsContent, renderDownloadSourceSettingsContent,
+    renderProxySettingsContent,
     renderSidebarMetadataSettingsPane, renderSidebarObjectVisibilitySettingsPane,
     updateInstallActionLabel, updateDownloadActionLabel,
   } = useAppSettingsPanesRender({
@@ -331,7 +337,7 @@ function App() {
     proxyDraftHost, proxyDraftPortValid, setProxyDraftClearPassword, proxyDraftClearPassword,
     proxyTestPresetItems, proxyTestUrlTrimmed, setProxyTestUrl, proxyTestUrl, proxyCanTest,
     handleTestGlobalProxyDraft, proxyTesting, resetProxyDraftToCurrent, proxyApplying,
-    handleApplyGlobalProxyDraft, downloadSource, downloadSourceSaving, handleDownloadSourceChange,
+    handleApplyGlobalProxyDraft,
     sidebarMetadataDragSensors, handleSidebarMetadataDragEnd, sidebarMetadataFieldItems,
     sidebarTableMetadataFields, toggleSidebarMetadataFieldFromSettings, setQueryOptions, appearance,
     setAppearance, updateInstallAction, lastUpdateInfo,
@@ -357,8 +363,8 @@ function App() {
     effectiveThemePreference, selectPresetTheme, renderThemeModePreview, renderThemeSettingsRow,
     queryOptions, setQueryOptions,
     effectiveUiScale, setUiScale, effectiveFontSize, setFontSize, effectiveSidebarRailScale,
-    setAppearance, appearance, isFontFamiliesLoading, uiFontOptions, filterFontOption,
-    renderFontOptionLabel, fontFamiliesLoadError, installedFontFamilies, linuxCJKFontInstallHint,
+    setAppearance, appearance, isFontFamiliesLoading, uiFontOptions,
+    fontFamiliesLoadError, installedFontFamilies, linuxCJKFontInstallHint,
     hasLoadedInstalledFontsRef, darkMode, monoFontOptions, newQuerySqlTemplate,
     tabDisplaySettingsPanelRef, tabDisplaySettings, setTabDisplayLayout,
     effectiveTabEnvironmentAccentThickness, tabDisplayElementOrder, visibleTabDisplayElementKeys,
@@ -374,7 +380,7 @@ function App() {
   const {
     settingsCenterGroups, activeSettingsCenterDetailPanelStyle, settingsCenterDetailBodyStyle,
     renderSettingsCenterPane, sidebarPanelCollapseLabel, sidebarPanelExpandLabel,
-    handleAppContextMenu, handleNativeMenuCheckUpdate, titleBarSystemActionsNode, titleBarActionRow,
+    handleAppContextMenu, handleNativeMenuCheckUpdate, titleBarSystemActionsNode, titleBarActionRow, titleBarObjectActionsRow,
     dockedSidebarActionsHost,
   } = useAppSettingsCenterRender({
     t, handleOpenSettingsCenterPane, setThemeModalSection, themeSettingsSections, isWebRuntime,
@@ -383,7 +389,9 @@ function App() {
     toolCenterDetailPanelStyle, toolCenterDetailBodyStyle, utilityPanelStyle, overlayTheme,
     utilityMutedTextStyle, renderThemeSettingsContent, renderSidebarMetadataSettingsPane,
     renderSidebarObjectVisibilitySettingsPane, renderProxySettingsContent,
-    renderDownloadSourceSettingsContent, darkMode, aiSettingsRenderNonce, handleAIPanelRenderError,
+    setCapturingShortcutAction, resetShortcutOptions, isMacRuntime, shortcutOptions,
+    activeShortcutPlatform, capturingShortcutAction, shortcutConflictMap, resolvedMonoFontFamily,
+    updateShortcut, darkMode, aiSettingsRenderNonce, handleAIPanelRenderError,
     handleRetryAISettingsRender, LazyAISettingsContent, isSettingsModalOpen, aiSettingsSection,
     aiSettingsProviderView, handleCancelSettingsCenterPane, handlePrepareExternalMCPUse,
     registerAISettingsLeaveGuard, applicationQuitModalZIndex, renderSettingsCenterAboutPane,
@@ -409,11 +417,10 @@ function App() {
         theme={antdTheme}
     >
         {notificationContextHolder}
-        <CustomThemeStyleHost
+        <AppAppearanceStyleHosts
             contextKey={customThemeStyleContextKey}
             onAntTokensChange={setComputedCustomThemeAntTokens}
         />
-        <ToolbarAppearanceStyleHost />
         <Layout
           className="gn-v2-app-root"
           onContextMenu={handleAppContextMenu}
@@ -455,7 +462,7 @@ function App() {
             handleApplicationQuitRequest={handleApplicationQuitRequest}
           />
 
-          {!titleBarActionsInline && titleBarActionRow}{/* 工具条不套 mac 红绿灯留白 */}
+          {!titleBarActionsInline && titleBarActionRow}{titleBarObjectActionsRow}
           {!titleBarActionsInline && dockedSidebarActionsHost}
 
           {showLinuxCJKFontBanner && (
@@ -524,6 +531,7 @@ function App() {
              registerAIPanelTerminalGuard={registerAIPanelTerminalGuard}
            />
           </Layout>
+          <AppStatusBar isLogPanelOpen={isLogPanelOpen} onToggleLogPanel={handleToggleLogPanel} />
           {isConnectionModalMounted && (
           <ConnectionModal
             open={isModalOpen}
@@ -539,26 +547,19 @@ function App() {
           />
           )}
           {isSettingsModalOpen && renderAppSettingsCenterModal({
-            t, handleOpenToolCenterPane, handleExportConnections, handleOpenConnectionHealth,
+            t, handleOpenToolCenterPane,
             securityUpdateEntryVisibility, securityUpdateHasLegacySensitiveItems,
-            securityUpdateStatusMeta, handleOpenDataSyncWorkbench, handleCancelSettingsCenterPane,
-            addTab, settingsCenterGroups, activeSettingsCenterGroupKey, activeSettingsCenterPane,
+            securityUpdateStatusMeta, handleCancelSettingsCenterPane,
+            settingsCenterGroups, activeSettingsCenterGroupKey, activeSettingsCenterPane,
             themeModalSection, aiSettingsSection, aiSettingsProviderView, handleOpenToolsModal,
-            handleOpenSettingsModal, connectionImportGroupOptions, connectionImportTargetTagId,
-            connectionPackageDialog, pendingConnectionImportPayload, connectionImportNotice,
-            setConnectionImportTargetTagId, setConnectionImportNotice, setConnectionPackageDialog,
-            handleImportConnections, handleConfirmConnectionPackageDialog,
-            setPendingConnectionImportPayload, utilityPanelStyle, utilityMutedTextStyle,
-            connections, closeConnectionPackageDialog, connectionHealthTargetIds,
-            closeConnectionHealthSettingsPane, isWebRuntime, renderDataDirectorySettings,
+            handleOpenSettingsModal, utilityPanelStyle, utilityMutedTextStyle,
+            isWebRuntime, renderDataDirectorySettings,
             darkMode, overlayTheme, effectiveOpacity, securityUpdateStatus,
             securityUpdateSettingsFocusTarget, securityUpdateSettingsFocusRequest,
             handleStartSecurityUpdate, handleRetrySecurityUpdate, handleRestartSecurityUpdate,
             handleSecurityUpdateIssueAction, handleOpenSettingsCenterPane,
             handleDownloadSourceChange, downloadSourceSaving, downloadSource,
-            setCapturingShortcutAction, resetShortcutOptions, isMacRuntime, shortcutOptions,
-            activeShortcutPlatform, capturingShortcutAction, shortcutConflictMap,
-            resolvedMonoFontFamily, updateShortcut, toolCenterModalWorkspaceStyle,
+            toolCenterModalWorkspaceStyle,
             toolCenterModalSplitStyle, toolCenterNavPanelStyle, toolCenterContentPanelStyle,
             activeSettingsCenterDetailPanelStyle, toolCenterDetailBodyStyle,
             settingsCenterDetailBodyStyle, renderSettingsCenterPane,
@@ -582,11 +583,14 @@ function App() {
             settingsChildModalZIndex={settingsChildModalZIndex}
             securityUpdateProgressStage={securityUpdateProgressStage}
             connectionPackageDialog={connectionPackageDialog}
-            isSettingsModalOpen={isSettingsModalOpen}
-            activeSettingsCenterPane={activeSettingsCenterPane} connections={connections}
+            connections={connections}
             setConnectionPackageDialog={setConnectionPackageDialog}
             closeConnectionPackageDialog={closeConnectionPackageDialog}
             handleConfirmConnectionPackageDialog={handleConfirmConnectionPackageDialog}
+            connectionHealthDialogOpen={connectionHealthDialogOpen}
+            connectionHealthTargetIds={connectionHealthTargetIds}
+            setConnectionHealthDialogOpen={setConnectionHealthDialogOpen}
+            setConnectionHealthTargetIds={setConnectionHealthTargetIds}
             releaseNotesModalVisible={releaseNotesModalVisible}
             closeReleaseNotesModal={closeReleaseNotesModal}
             handleReleaseNotesModalOpen={handleReleaseNotesModalOpen}
@@ -613,18 +617,7 @@ function App() {
           />
 
           {showLinuxResizeHandles && (
-              <>
-                  {/* Linux Mint 下 frameless 仅局部可缩放：补四边四角命中层 */}
-                  <div style={{ ...linuxResizeHandleStyleBase, top: 0, left: 14, right: 14, height: 6, cursor: 'ns-resize' }} />
-                  <div style={{ ...linuxResizeHandleStyleBase, bottom: 0, left: 14, right: 14, height: 6, cursor: 'ns-resize' }} />
-                  <div style={{ ...linuxResizeHandleStyleBase, top: 14, bottom: 14, left: 0, width: 6, cursor: 'ew-resize' }} />
-                  <div style={{ ...linuxResizeHandleStyleBase, top: 14, bottom: 14, right: 0, width: 6, cursor: 'ew-resize' }} />
-
-                  <div style={{ ...linuxResizeHandleStyleBase, top: 0, left: 0, width: 14, height: 14, cursor: 'nwse-resize' }} />
-                  <div style={{ ...linuxResizeHandleStyleBase, top: 0, right: 0, width: 14, height: 14, cursor: 'nesw-resize' }} />
-                  <div style={{ ...linuxResizeHandleStyleBase, bottom: 0, left: 0, width: 14, height: 14, cursor: 'nesw-resize' }} />
-                  <div style={{ ...linuxResizeHandleStyleBase, bottom: 0, right: 0, width: 14, height: 14, cursor: 'nwse-resize' }} />
-              </>
+              <LinuxResizeHandles visible={showLinuxResizeHandles} styleBase={linuxResizeHandleStyleBase} />
           )}
 
           <ConnectionGroupManagementModal
@@ -640,20 +633,7 @@ function App() {
           />
 
           {/* Ghost Resize Line for Log Panel */}
-          <div
-              ref={logGhostRef}
-              style={{
-                  position: 'fixed',
-                  left: renderedSidebarWidth, // Start from the rendered sidebar edge
-                  right: 0,
-                  height: '4px',
-                  background: resizeGuideColor,
-                  zIndex: 9999,
-                  pointerEvents: 'none',
-                  display: 'none',
-                  cursor: 'row-resize'
-              }}
-          />
+          <AppLogPanelResizeGhost ghostRef={logGhostRef} left={renderedSidebarWidth} guideColor={resizeGuideColor} />
         </Layout>
     </ConfigProvider>
   );

@@ -1,4 +1,5 @@
 import { type MenuProps } from 'antd';
+import { buildDatabaseJobMenuItems } from './sidebarJobObjects';
 import type { SavedConnection } from '../../types';
 import { type SidebarNodeMenuContext } from './sidebarNodeMenuHelpers';
 import { buildExternalSqlFileMenuItems } from './sidebarNodeMenuExternalSql';
@@ -40,6 +41,9 @@ export const buildSidebarNodeMenuItems = (
   context: SidebarNodeMenuContext,
 ): MenuProps['items'] => {
   const { loadDatabases, refreshConnectionResources: refreshConnectionResourcesFromContext } = context;
+  if (node.type === 'db-job' || (node.type === 'object-group' && node.dataRef?.groupKey === 'jobs')) {
+    return buildDatabaseJobMenuItems(node, context);
+  }
     const refreshConnectionResources = refreshConnectionResourcesFromContext || ((targetNode: any) => {
       loadDatabases(targetNode);
       return Promise.resolve();

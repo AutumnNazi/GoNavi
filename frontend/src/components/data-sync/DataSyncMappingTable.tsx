@@ -11,6 +11,8 @@ import {
   normalizeName,
   ObjectMetadataStatus,
   targetStatus,
+  targetHintKey,
+  taskKindCanCreateTarget,
   mappingReady,
 } from './mappingTable/dataSyncMappingStatus';
 import { DataSyncObjectCombobox } from './mappingTable/DataSyncObjectCombobox';
@@ -579,7 +581,7 @@ export const DataSyncMappingTable: React.FC<{
                       data-mapping-hint="target"
                       data-state={targetState}
                     >
-                      {t(`mapping.target_hint.${targetState}`)}
+                      {t(targetHintKey(targetState, taskKind))}
                     </small>
                     )}
                   </div>
@@ -612,7 +614,7 @@ export const DataSyncMappingTable: React.FC<{
                         })
                       }
                     >
-                      <option value="create_or_reuse">{t('mapping.create_or_reuse')}</option>
+                      <option value="create_or_reuse" disabled={!taskKindCanCreateTarget(taskKind)}>{t('mapping.create_or_reuse')}</option>
                       <option value="existing_only">{t('mapping.existing_only')}</option>
                     </select>
                   </label>

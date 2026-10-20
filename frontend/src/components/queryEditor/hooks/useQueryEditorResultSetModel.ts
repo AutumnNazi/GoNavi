@@ -334,6 +334,7 @@ export const useQueryEditorResultSetModel = ({
         connectionParamsOverride?: string,
         executionConnectionId = currentConnectionIdRef.current,
         paramBindings?: QueryParamBindingInput[],
+        quotedPlaceholders = true,
     ) => {
         const executionConfig = connectionParamsOverride === undefined
             ? buildSqlExecutionConnectionConfig(config)
@@ -355,7 +356,7 @@ export const useQueryEditorResultSetModel = ({
             && canReusePendingSqlEditorTransactionForType(dbType, sourceStatements, config as ConnectionConfig)
         ) {
             if (paramBindings && paramBindings.length > 0) {
-                return DBQueryMultiWithParamsInTransaction(pendingTransaction.id, sql, queryId, paramBindings);
+                return DBQueryMultiWithParamsInTransaction(pendingTransaction.id, sql, queryId, paramBindings, quotedPlaceholders);
             }
             return DBQueryMultiInTransactionWithOptions(pendingTransaction.id, sql, queryId, resultBudget);
         }
@@ -363,8 +364,8 @@ export const useQueryEditorResultSetModel = ({
         if (paramBindings && paramBindings.length > 0) {
             return invokeRequestScopedApp(
                 'DBQueryMultiWithParams',
-                [rpcConfig, dbName, sql, queryId, paramBindings],
-                () => DBQueryMultiWithParams(rpcConfig, dbName, sql, queryId, paramBindings),
+                [rpcConfig, dbName, sql, queryId, paramBindings, quotedPlaceholders],
+                () => DBQueryMultiWithParams(rpcConfig, dbName, sql, queryId, paramBindings, quotedPlaceholders),
             );
         }
         return invokeBudgetedDBQueryMulti(

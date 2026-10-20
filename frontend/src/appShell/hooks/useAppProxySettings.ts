@@ -11,9 +11,7 @@ import {
   normalizeShortcutCombo,
 } from '../../utils/shortcuts';
 import type { CloseShortcutScope } from '../../utils/closeTabShortcut';
-import { ListInstalledFontFamilies } from '../../../wailsjs/go/app/App';
-import { sanitizeFontFamilyInput, type InstalledFontFamily } from '../../utils/fontFamilies';
-import { EMPTY_INSTALLED_FONT_FAMILIES } from '../appSettingsConstants';
+import { useInstalledFontFamilies } from './useInstalledFontFamilies';
 import { GlobalProxyConfig } from '../../types';
 import {
   createGlobalProxyComparableDraft,
@@ -96,58 +94,10 @@ export const useAppProxySettings = ({
       setGlobalShortcutCaptureActive(Boolean(capturingShortcutAction));
       return () => setGlobalShortcutCaptureActive(false);
   }, [capturingShortcutAction]);
-  useEffect(() => {
-      const shouldLoadInstalledFonts =
-          runtimePlatform === 'linux' || ((isThemeModalOpen || isThemeSettingsPaneOpen) && themeModalSection === 'appearance');
-      if (!shouldLoadInstalledFonts) {
-          return;
-      }
-      if (hasLoadedInstalledFontsRef.current || isFontFamiliesLoading) {
-          return;
-      }
-
-      let cancelled = false;
-      hasLoadedInstalledFontsRef.current = true;
-      setIsFontFamiliesLoading(true);
-      setFontFamiliesLoadError(null);
-
-      ListInstalledFontFamilies()
-          .then((result) => {
-              if (cancelled) {
-                  return;
-              }
-              if (!result?.success) {
-                  throw new Error(String(result?.message || t('app.theme.font_family.load_failed')));
-              }
-              const nextFonts = Array.isArray(result?.data)
-                  ? result.data
-                      .map((item) => ({
-                          family: sanitizeFontFamilyInput((item as InstalledFontFamily | Record<string, unknown>)?.family) || '',
-                          path: typeof (item as InstalledFontFamily | Record<string, unknown>)?.path === 'string'
-                              ? String((item as InstalledFontFamily | Record<string, unknown>).path)
-                              : undefined,
-                      }))
-                      .filter((item) => item.family)
-                  : EMPTY_INSTALLED_FONT_FAMILIES;
-              setInstalledFontFamilies(nextFonts);
-          })
-          .catch((error) => {
-              if (cancelled) {
-                  return;
-              }
-              hasLoadedInstalledFontsRef.current = false;
-              setFontFamiliesLoadError(String(error instanceof Error ? error.message : error || t('app.theme.font_family.load_failed')));
-          })
-          .finally(() => {
-              if (!cancelled) {
-                  setIsFontFamiliesLoading(false);
-              }
-          });
-
-      return () => {
-          cancelled = true;
-      };
-  }, [isThemeModalOpen, isThemeSettingsPaneOpen, runtimePlatform, t, themeModalSection]);
+  useInstalledFontFamilies({
+    activePane: activeSettingsCenterPane?.key, runtimePlatform, isThemeModalOpen, themeModalSection,
+    hasLoadedInstalledFontsRef, setIsFontFamiliesLoading, setFontFamiliesLoadError, setInstalledFontFamilies, t,
+  });
 
   useEffect(() => {
       if ((!isThemeModalOpen && !isThemeSettingsPaneOpen) || themeModalSection !== 'workspace' || tabDisplaySettingsFocusRequest === 0) {

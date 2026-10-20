@@ -12,7 +12,7 @@ import (
 )
 
 func (s *Service) ExecuteSQL(ctx context.Context, req *mcp.CallToolRequest, args executeSQLArgs) (*mcp.CallToolResult, executeSQLResult, error) {
-	_ = req
+	ctx, requestID := withSQLAuditContext(ctx, req)
 
 	view, errResult := s.resolveConnection(args.ConnectionID)
 	if errResult != nil {
@@ -52,7 +52,7 @@ func (s *Service) ExecuteSQL(ctx context.Context, req *mcp.CallToolRequest, args
 	queryResult, effectiveDialect := s.executeAuthorizedSQL(ctx, view, dbName, sqlText, mutatingAck || args.AllowMutating, maxRowsPerResult)
 	if !queryResult.Success {
 		failure := executeSQLResult{
-			RequestID:         mcpRequestID(ctx),
+			RequestID:         requestID,
 			ConnectionID:      view.ID,
 			DBName:            dbName,
 			StatementCount:    inspection.StatementCount,
@@ -104,7 +104,7 @@ func (s *Service) ExecuteSQL(ctx context.Context, req *mcp.CallToolRequest, args
 		}
 	}
 	output := executeSQLResult{
-		RequestID:         mcpRequestID(ctx),
+		RequestID:         requestID,
 		ConnectionID:      view.ID,
 		DBName:            dbName,
 		StatementCount:    inspection.StatementCount,

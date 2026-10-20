@@ -128,6 +128,31 @@ describe('buildAIChatReadinessSnapshot', () => {
     expect(snapshot.title).toContain('Auto-selected');
   });
 
+  // 留空密钥 = 使用 CodeBuddy CLI 本机登录态（key/url/模型均可为空），
+  // 不应再提示「还缺少 密钥」。
+  it('treats custom codebuddy-cli providers as ready with local CLI login and no secret', () => {
+    const snapshot = buildAIChatReadinessSnapshot({
+      providers: [{
+        id: 'provider-1',
+        type: 'custom',
+        name: 'CodeBuddy',
+        apiKey: '',
+        hasSecret: false,
+        baseUrl: '',
+        model: '',
+        apiFormat: 'codebuddy-cli',
+        models: [],
+        maxTokens: 4096,
+        temperature: 0.2,
+      }],
+      activeProviderId: 'provider-1',
+    });
+
+    expect(snapshot.status).toBe('ready');
+    expect(snapshot.ready).toBe(true);
+    expect(snapshot.issues).toEqual([]);
+  });
+
   it('treats Cursor Agent as ready without an explicit model', () => {
     const snapshot = buildAIChatReadinessSnapshot({
       providers: [{

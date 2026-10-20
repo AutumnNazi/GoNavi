@@ -306,4 +306,18 @@ describe('AIChatInput notice layout', () => {
     expect(markup).toContain('aria-label="关闭 AI 状态提示"');
     expect(markup).toContain('title="关闭"');
   });
+
+  it('does not claim nothing is configured while the active provider is unresolved', () => {
+    // The provider list can arrive before the active id resolves, and the panel is
+    // restored on launch, so this window is visible on every start-up. With the
+    // providers known, the copy must point at selecting one — not at adding one.
+    const markup = renderAIChatInput({
+      activeProvider: null,
+      providers: [baseProvider],
+    });
+
+    expect(markup).toContain('data-ai-chat-composer-status="true"');
+    expect(markup).toContain('已配置供应商，但当前没有选中生效项');
+    expect(markup).not.toContain('还没有配置 AI 供应商');
+  });
 });

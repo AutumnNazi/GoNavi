@@ -9,16 +9,20 @@ export const dispatchSidebarSqlDataRefresh = (
     request: SidebarDatabaseRefreshRequest,
     statements: string[],
     dbType: string,
+    committed = true,
 ): void => {
     const dialect = resolveSqlDialect(dbType);
     const targets = new Map<string, Set<string>>();
+    const outcomes = new Map<string, Map<string, 'count' | 'clear' | 'drop'>>();
     targets.set(request.dbName || '', new Set());
     for (const statement of statements) {
         if (!findPotentiallyMutatingConnectionStatements({ type: dbType }, statement).length) continue;
         const masked = maskQueryEditorSqlLiteralsAndComments(statement, dialect);
         // 表引用扫描器已支持 DML；TRUNCATE 的目标使用同一识别路径。
         const truncate = /^\s*TRUNCATE\s+(?:TABLE\s+)?/i.exec(masked);
-        const source = truncate ? `DELETE FROM ${statement.slice(truncate[0].length)}` : statement;
+        const drop = /^\s*DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?/i.exec(masked);
+        const prefix = truncate || drop;
+        const source = prefix ? `DELETE FROM ${statement.slice(prefix[0].length)}` : statement;
         for (const reference of collectQueryEditorTableReferences(source, dialect)) {
             const segments = reference.segments || [];
             if (!segments.length) continue;
@@ -41,9 +45,17 @@ export const dispatchSidebarSqlDataRefresh = (
             const tables = targets.get(dbName) || new Set<string>();
             tables.add(tableName);
             targets.set(dbName, tables);
+            const changes = outcomes.get(dbName) || new Map<string, 'count' | 'clear' | 'drop'>();
+            changes.set(tableName, truncate ? 'clear' : drop ? 'drop' : 'count');
+            outcomes.set(dbName, changes);
         }
     }
     for (const [dbName, tables] of targets) {
-        dispatchSidebarDatabaseRefresh({ ...request, dbName, rowCountTables: [...tables] });
+        const changes = outcomes.get(dbName);
+        const clearedTables = [...tables].filter(table => committed && changes?.get(table) === 'clear');
+        const droppedTables = [...tables].filter(table => committed && changes?.get(table) === 'drop');
+        dispatchSidebarDatabaseRefresh({ ...request, dbName, rowCountTables: [...tables],
+            ...(clearedTables.length ? { clearedTables } : {}), ...(droppedTables.length ? { droppedTables } : {}),
+        });
     }
 };

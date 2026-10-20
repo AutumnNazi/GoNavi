@@ -192,24 +192,70 @@ func (s *Service) getActiveProvider() (provider.Provider, error) {
 	return p, err
 }
 
-func (s *Service) loadConfig() {
+// PreloadConfig loads the persisted AI configuration before a host starts
+// serving bindings. Wails runs OnStartup in its own goroutine, so the WebView can
+// call these bindings before InitializeLifecycle has run; without this the
+// provider list reads back empty and the AI panel reports that no provider is
+// configured. It is safe to call at any time, repeatedly, and before the
+// lifecycle context exists.
+func PreloadConfig(s *Service) {
+	if s == nil {
+		return
+	}
+	s.ensureConfigLoaded()
+}
+
+// ensureConfigLoaded reads the persisted configuration once per directory.
+// startup() calls it, and a host may call it earlier through PreloadConfig; a
+// service whose configDir changed between the two reads the new one instead of
+// keeping the earlier snapshot.
+func (s *Service) ensureConfigLoaded() {
+	s.configLoadMu.Lock()
+	defer s.configLoadMu.Unlock()
+
+	directory := strings.TrimSpace(s.configDir)
+	if directory == "" {
+		// Resolved once, then owned by the service: a later startup must not
+		// overwrite a directory the caller already pinned.
+		if directory = strings.TrimSpace(resolveConfigDir()); directory == "" {
+			return
+		}
+		s.configDir = directory
+	}
+	if directory == s.configLoadedDir {
+		return
+	}
+	if err := s.loadConfig(); err != nil {
+		return
+	}
+	s.configLoadedDir = directory
+}
+
+// loadConfig reads the persisted configuration into memory. A failed read leaves
+// the in-memory state untouched and reports the error, so the caller may retry.
+func (s *Service) loadConfig() error {
 	snapshot, err := NewProviderConfigStoreWithLanguage(s.configDir, s.secretStore, s.serviceLanguage()).Load()
 	if err != nil {
 		logger.Error(err, "加载 AI 配置失败")
-		return
+		return err
 	}
 
+	// The fields go in under one lock: a host may preload while bindings are
+	// already being served, so a reader must never see a half-applied snapshot.
+	s.mu.Lock()
 	s.providers = snapshot.Providers
 	s.activeProvider = snapshot.ActiveProvider
-	s.migrateBuiltinAIProviders()
 	s.safetyLevel = snapshot.SafetyLevel
 	s.guard.SetPermissionLevel(s.safetyLevel)
 	s.contextLevel = snapshot.ContextLevel
 	s.userPromptSettings = snapshot.UserPromptSettings
 	s.mcpServers = normalizeMCPServerConfigs(snapshot.MCPServers)
 	s.mcpHTTPConfig = normalizeMCPHTTPServerConfig(snapshot.MCPHTTPServer)
-	s.skills = normalizeSkillConfigs(snapshot.Skills, s.serviceLocalizerForLanguage())
+	s.skills = normalizeSkillConfigs(snapshot.Skills, s.serviceLocalizerForLanguageLocked())
 	s.resultMasking = ai.NormalizeResultMaskingSettings(snapshot.ResultMasking)
+	s.mu.Unlock()
+
+	s.migrateBuiltinAIProviders()
 
 	status := mcpHTTPStatusFromConfig(s.mcpHTTPConfig, s.serviceText("ai_settings.mcp_http.status.not_running", nil))
 	s.mcpHTTPMu.Lock()
@@ -217,6 +263,7 @@ func (s *Service) loadConfig() {
 		s.mcpHTTPLast = status
 	}
 	s.mcpHTTPMu.Unlock()
+	return nil
 }
 
 func (s *Service) saveConfig() error {

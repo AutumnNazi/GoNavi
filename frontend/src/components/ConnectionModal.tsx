@@ -9,6 +9,7 @@ import {
 } from '../utils/overlayZIndex';
 import { SavedConnection } from "../types";
 import SSHConnectionProgressPanel from "./connectionModal/SSHConnectionProgressPanel";
+import { ConnectionModalContent } from "./connectionModal/ConnectionModalContent";
 import {
   CONNECTION_MODAL_BODY_HEIGHT,
   CONNECTION_MODAL_WIDTH_STEP2,
@@ -608,7 +609,8 @@ const ConnectionModal: React.FC<ConnectionModalProps> = ({ open, onClose, initia
         }
         width={isFormStep ? CONNECTION_MODAL_WIDTH_STEP2 : CONNECTION_MODAL_WIDTH_STEP1}
         zIndex={modalZIndex}
-        destroyOnHidden
+        destroyOnHidden={false}
+        forceRender
         maskClosable={false}
         styles={{
           content: modalShellStyle,
@@ -617,7 +619,8 @@ const ConnectionModal: React.FC<ConnectionModalProps> = ({ open, onClose, initia
           footer: { background: "transparent" },
         }}
       >
-        {step === 1 ? renderStep1() : renderStep2()}
+        <ConnectionModalContent open={open} step={step} formKey={(initialValues?.id || "new") + ":" + dbType}
+          renderPicker={renderStep1} renderForm={renderStep2} />
       </Modal>
       <Modal
         title={

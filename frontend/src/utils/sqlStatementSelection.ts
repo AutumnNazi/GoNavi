@@ -1,3 +1,5 @@
+import { findMysqlDelimiterStatementRanges, isSqlControlEndKeyword, textHasMysqlDelimiterDirective } from './sqlMysqlDelimiter';
+
 export interface SqlStatementRange {
   start: number;
   end: number;
@@ -196,6 +198,51 @@ const nextSqlSignificantChar = (text: string, position: number): string => {
   return index >= text.length ? '' : text[index];
 };
 
+// SQL Server 的 GO 是 SSMS/sqlcmd 的客户端批处理分隔符：必须独占一行
+// （行内其前只有水平空白），行尾允许可选注释与可选重复次数。
+// 与后端 scanSQLServerGoDirective 保持一致，见 internal/app/sql_split_sqlserver.go。
+const isSqlLineStartOnlyWhitespaceBefore = (text: string, index: number): boolean => {
+  for (let pos = index - 1; pos >= 0; pos--) {
+    if (!isHorizontalWhitespace(text[pos])) {
+      return text[pos] === '\n';
+    }
+  }
+  return true;
+};
+
+const resolveSqlServerGoLineEnd = (text: string, index: number): { lineEnd: number; repeat: number } | null => {
+  const remaining = text.slice(index);
+  const keyword = 'go';
+  if (remaining.length < keyword.length || remaining.slice(0, keyword.length).toLowerCase() !== keyword) {
+    return null;
+  }
+  const boundary = remaining[keyword.length];
+  if (boundary !== undefined && boundary !== '\n' && !isHorizontalWhitespace(boundary)) {
+    return null;
+  }
+
+  const newline = remaining.indexOf('\n');
+  const lineEnd = newline < 0 ? text.length : index + newline + 1;
+  const line = newline < 0 ? remaining : remaining.slice(0, newline);
+  let remainder = line.slice(keyword.length).trim();
+  const comment = remainder.indexOf('--');
+  if (comment >= 0) {
+    remainder = remainder.slice(0, comment).trim();
+  }
+  if (remainder === '') {
+    return { lineEnd, repeat: 1 };
+  }
+  // 只接受十进制整数，与后端 strconv.Atoi 一致（'1e2' 这类写法不算 GO n）。
+  if (!/^\d+$/.test(remainder)) {
+    return null;
+  }
+  const repeat = Number(remainder);
+  if (!Number.isInteger(repeat) || repeat <= 0) {
+    return null;
+  }
+  return { lineEnd, repeat };
+};
+
 const resolveStandaloneSqlSlashLineEnd = (text: string, index: number): number | null => {
   if (text[index] !== '/') return null;
 
@@ -335,10 +382,6 @@ const shouldEnterPlsqlCreateRoutineBlock = (
   return isCreateRoutineHeaderPrefix(text.slice(statementStart, tokenEnd - token.length));
 };
 
-const isPlsqlControlEnd = (text: string, tokenEnd: number): boolean => (
-  ['if', 'loop', 'case'].includes(nextSqlSignificantToken(text, tokenEnd))
-);
-
 const trimStatementRange = (sql: string, start: number, end: number, dbType = ''): SqlStatementRange | null => {
   let nextStart = Math.max(0, start);
   let nextEnd = Math.min(sql.length, Math.max(start, end));
@@ -367,11 +410,21 @@ const trimStatementRange = (sql: string, start: number, end: number, dbType = ''
 
 export const findSqlStatementRanges = (sql: string, dbType = ''): SqlStatementRange[] => {
   const text = String(sql || '').replace(/\r\n/g, '\n');
+  if (textHasMysqlDelimiterDirective(dbType, text)) {
+    const delimiterRanges = findMysqlDelimiterStatementRanges(text, (start, end) => trimStatementRange(text, start, end, dbType));
+    if (delimiterRanges !== null) return delimiterRanges;
+  }
+  return findRegularSqlStatementRanges(text, dbType);
+};
+
+const findRegularSqlStatementRanges = (text: string, dbType: string): SqlStatementRange[] => {
   const ranges: SqlStatementRange[] = [];
   const bracketIdentifiers = supportsSqlBracketIdentifier(dbType);
   const escapedBracketIdentifiers = supportsSqlEscapedBracketIdentifier(dbType);
+  const sqlServerBatchSeparator = normalizeSqlLexicalDbType(dbType) === 'sqlserver';
 
   let statementStart = 0;
+  let sqlServerBatchStart = 0;
   let inSingle = false;
   let inDouble = false;
   let inBacktick = false;
@@ -523,6 +576,38 @@ export const findSqlStatementRanges = (sql: string, dbType = ''): SqlStatementRa
       continue;
     }
 
+    // SQL Server 的 GO 是客户端批处理分隔符，不是语句内容：独占一行时作为语句边界，
+    // 且不进入任何语句文本，否则发给服务端会报「"GO" 附近有语法错误」。
+    // GO n 按 SSMS 语义把当前批次重复 n 次，与后端 splitSQLStatementsForDialect 保持一致，
+    // 语句索引才能在前后端对齐。
+    if (
+      sqlServerBatchSeparator
+      && (ch === 'g' || ch === 'G')
+      && !inSingle && !inDouble && !inBacktick && !inBracket
+      && isSqlLineStartOnlyWhitespaceBefore(text, index)
+    ) {
+      const goDirective = resolveSqlServerGoLineEnd(text, index);
+      if (goDirective) {
+        push(index);
+        // GO n：把当前批次（上一个 GO 之后完成的语句）整体再重复 n-1 次。
+        if (goDirective.repeat > 1 && sqlServerBatchStart < ranges.length) {
+          const batch = ranges.slice(sqlServerBatchStart);
+          for (let iteration = 1; iteration < goDirective.repeat; iteration++) {
+            for (const batchRange of batch) {
+              ranges.push({ ...batchRange });
+            }
+          }
+        }
+        sqlServerBatchStart = ranges.length;
+        // lineEnd 指向换行之后（下一批次的首字符）。循环每轮还会自增 index，
+        // 因此这里回退一格，保证下一批次的首字符不会被跳过。
+        statementStart = goDirective.lineEnd;
+        index = goDirective.lineEnd - 1;
+        justClosedPLSQLBlock = false;
+        continue;
+      }
+    }
+
     if (!inSingle && !inDouble && !inBacktick && !dollarTag && isSqlIdentifierStart(ch)) {
       let tokenEnd = index + 1;
       while (tokenEnd < text.length && isSqlIdentifierPart(text[tokenEnd])) {
@@ -561,7 +646,7 @@ export const findSqlStatementRanges = (sql: string, dbType = ''): SqlStatementRa
           skipNextPlsqlCaseEndToken = true;
         }
         justClosedPLSQLBlock = false;
-      } else if (token === 'end' && plsqlDepth > 0 && !isPlsqlControlEnd(text, tokenEnd)) {
+      } else if (token === 'end' && plsqlDepth > 0 && !isSqlControlEndKeyword(nextSqlSignificantToken(text, tokenEnd), dbType)) {
         plsqlDepth--;
         if (plsqlDeclareBeginSkips > plsqlDepth) {
           plsqlDeclareBeginSkips = plsqlDepth;

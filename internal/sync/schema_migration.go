@@ -9,23 +9,24 @@ import (
 )
 
 type SchemaMigrationPlan struct {
-	SourceSchema       string
-	SourceTable        string
-	SourceQueryTable   string
-	TargetSchema       string
-	TargetTable        string
-	TargetQueryTable   string
-	TargetTableExists  bool
-	AutoCreate         bool
-	PlannedAction      string
-	Warnings           []string
-	UnsupportedObjects []string
-	UnmigratedIndexes  []UnmigratedIndex
-	IndexesToCreate    int
-	IndexesSkipped     int
-	CreateTableSQL     string
-	PreDataSQL         []string
-	PostDataSQL        []string
+	characterLengthTarget *characterLengthTarget
+	SourceSchema          string
+	SourceTable           string
+	SourceQueryTable      string
+	TargetSchema          string
+	TargetTable           string
+	TargetQueryTable      string
+	TargetTableExists     bool
+	AutoCreate            bool
+	PlannedAction         string
+	Warnings              []string
+	UnsupportedObjects    []string
+	UnmigratedIndexes     []UnmigratedIndex
+	IndexesToCreate       int
+	IndexesSkipped        int
+	CreateTableSQL        string
+	PreDataSQL            []string
+	PostDataSQL           []string
 }
 
 type IndexMigrationColumn struct {
@@ -173,7 +174,7 @@ func buildSchemaMigrationPlanLegacy(config SyncConfig, tableName string, sourceD
 				if _, ok := targetSet[key]; ok {
 					continue
 				}
-				addSQL, addWarnings, err := buildAddColumnSQLForPair(sourceType, targetType, plan.TargetQueryTable, col)
+				addSQL, addWarnings, err := buildAddColumnSQLForPair(sourceType, targetType, plan.TargetQueryTable, col, config.characterLengthTarget)
 				if err != nil {
 					plan.Warnings = append(plan.Warnings, fmt.Sprintf("字段 %s 自动补齐 SQL 生成失败：%v", col.Name, err))
 					continue

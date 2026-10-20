@@ -19,13 +19,14 @@ export interface CollectQueryEditorRunResultSetsInput {
     executionDbName: string;
     executionConnectionParams: string | undefined;
     paramBindings: QueryParamBindingInput[] | undefined;
+    quotedPlaceholders: boolean;
     forceReadOnlyResult: boolean;
 }
 
 export const collectQueryEditorRunResultSets = ({
     res, queryOptions, normalizedDbType, sourceStatements, hasConcreteQueryResultSetData,
     executablePlans, isAffectedRowsResultSetData, anyLimitApplied, driver, currentConnectionId,
-    executionDbName, executionConnectionParams, paramBindings, forceReadOnlyResult,
+    executionDbName, executionConnectionParams, paramBindings, quotedPlaceholders, forceReadOnlyResult,
 }: CollectQueryEditorRunResultSetsInput) => {
     // res.data 是 ResultSetData[] 数组
     const resultSetDataArray = Array.isArray(res.data) ? (res.data as any[]) : [];
@@ -159,6 +160,7 @@ export const collectQueryEditorRunResultSets = ({
                 executionDbName: executionDbName,
                 executionConnectionParams,
                 executionBindings: paramBindings,
+                executionQuotedPlaceholders: quotedPlaceholders,
                 pkColumns: plan?.pkColumns || [],
                 columnMetaMap: plan?.columnMetaMap,
                 uniqueKeyGroups: plan?.uniqueKeyGroups,

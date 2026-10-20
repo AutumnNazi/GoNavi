@@ -117,6 +117,8 @@ export const QueryEditorResultsArea = ({
               analysis={paramsState.analysis}
               analyzing={paramsState.analyzing}
               values={paramsState.values}
+              quotedPlaceholders={paramsState.quotedPlaceholders}
+              onQuotedPlaceholdersChange={paramsState.setQuotedPlaceholders}
               onChange={paramsState.setValue}
             />
           ) : undefined
@@ -134,6 +136,14 @@ export const QueryEditorResultsArea = ({
           ? collectMissingParamNames(paramsDialogState.analysis.parameterNames, paramsState.values)
           : []
       }
+      quotedPlaceholders={paramsState.quotedPlaceholders}
+      onQuotedPlaceholdersChange={(enabled) => {
+        void paramsState.reanalyze(enabled).then((analysis) => {
+          setParamsDialogState((current) => (
+            current.open ? { ...current, analysis } : current
+          ));
+        });
+      }}
       onChange={paramsState.setValue}
       onConfirm={() => {
         setParamsDialogState((current) => ({ ...current, open: false }));

@@ -4,13 +4,10 @@ import { isToolCenterGroupKey } from '../settingsCenterPanes';
 import { SettingsCenterWorkbenchRegistrar } from '../../components/settings/SettingsCenterWorkbenchBridge';
 import type { useAppCoreState } from '../hooks/useAppCoreState';
 import type { useAppSettingsNavigation } from '../hooks/useAppSettingsNavigation';
-import type { useAppConnectionImportExport } from '../hooks/useAppConnectionImportExport';
-import type { useAppWorkbenchActions } from '../hooks/useAppWorkbenchActions';
 import type { useAppShellState } from '../hooks/useAppShellState';
 import type { useAppSecurityUpdate } from '../hooks/useAppSecurityUpdate';
 import type { useAppSettingsCenterRender } from '../hooks/useAppSettingsCenterRender';
 import type { useAppProxySettings } from '../hooks/useAppProxySettings';
-import type { useAppQuitAndUpdate } from '../hooks/useAppQuitAndUpdate';
 import type { useAppDirectorySettingsRender } from '../hooks/useAppDirectorySettingsRender';
 import type { useAppBootstrapEffects } from '../hooks/useAppBootstrapEffects';
 import type { useAppUpdateAndDiagnostics } from '../hooks/useAppUpdateAndDiagnostics';
@@ -21,14 +18,10 @@ import { buildToolCenterGroups } from './toolCenterGroups';
 export interface RenderAppSettingsCenterModalInput {
   t: ReturnType<typeof useAppCoreState>['t'];
   handleOpenToolCenterPane: ReturnType<typeof useAppSettingsNavigation>['handleOpenToolCenterPane'];
-  handleExportConnections: ReturnType<typeof useAppConnectionImportExport>['handleExportConnections'];
-  handleOpenConnectionHealth: ReturnType<typeof useAppWorkbenchActions>['handleOpenConnectionHealth'];
   securityUpdateEntryVisibility: ReturnType<typeof useAppShellState>['securityUpdateEntryVisibility'];
   securityUpdateHasLegacySensitiveItems: ReturnType<typeof useAppShellState>['securityUpdateHasLegacySensitiveItems'];
   securityUpdateStatusMeta: ReturnType<typeof useAppShellState>['securityUpdateStatusMeta'];
-  handleOpenDataSyncWorkbench: ReturnType<typeof useAppSettingsNavigation>['handleOpenDataSyncWorkbench'];
   handleCancelSettingsCenterPane: ReturnType<typeof useAppSettingsNavigation>['handleCancelSettingsCenterPane'];
-  addTab: ReturnType<typeof useAppSecurityUpdate>['addTab'];
   settingsCenterGroups: ReturnType<typeof useAppSettingsCenterRender>['settingsCenterGroups'];
   activeSettingsCenterGroupKey: ReturnType<typeof useAppShellState>['activeSettingsCenterGroupKey'];
   activeSettingsCenterPane: ReturnType<typeof useAppShellState>['activeSettingsCenterPane'];
@@ -37,23 +30,8 @@ export interface RenderAppSettingsCenterModalInput {
   aiSettingsProviderView: ReturnType<typeof useAppShellState>['aiSettingsProviderView'];
   handleOpenToolsModal: ReturnType<typeof useAppSettingsNavigation>['handleOpenToolsModal'];
   handleOpenSettingsModal: ReturnType<typeof useAppSettingsNavigation>['handleOpenSettingsModal'];
-  connectionImportGroupOptions: ReturnType<typeof useAppSecurityUpdate>['connectionImportGroupOptions'];
-  connectionImportTargetTagId: ReturnType<typeof useAppShellState>['connectionImportTargetTagId'];
-  connectionPackageDialog: ReturnType<typeof useAppShellState>['connectionPackageDialog'];
-  pendingConnectionImportPayload: ReturnType<typeof useAppShellState>['pendingConnectionImportPayload'];
-  connectionImportNotice: ReturnType<typeof useAppShellState>['connectionImportNotice'];
-  setConnectionImportTargetTagId: ReturnType<typeof useAppShellState>['setConnectionImportTargetTagId'];
-  setConnectionImportNotice: ReturnType<typeof useAppShellState>['setConnectionImportNotice'];
-  setConnectionPackageDialog: ReturnType<typeof useAppShellState>['setConnectionPackageDialog'];
-  handleImportConnections: ReturnType<typeof useAppConnectionImportExport>['handleImportConnections'];
-  handleConfirmConnectionPackageDialog: ReturnType<typeof useAppConnectionImportExport>['handleConfirmConnectionPackageDialog'];
-  setPendingConnectionImportPayload: ReturnType<typeof useAppShellState>['setPendingConnectionImportPayload'];
   utilityPanelStyle: ReturnType<typeof useAppSecurityUpdate>['utilityPanelStyle'];
   utilityMutedTextStyle: ReturnType<typeof useAppSecurityUpdate>['utilityMutedTextStyle'];
-  connections: ReturnType<typeof useAppSecurityUpdate>['connections'];
-  closeConnectionPackageDialog: ReturnType<typeof useAppQuitAndUpdate>['closeConnectionPackageDialog'];
-  connectionHealthTargetIds: ReturnType<typeof useAppCoreState>['connectionHealthTargetIds'];
-  closeConnectionHealthSettingsPane: ReturnType<typeof useAppSettingsNavigation>['closeConnectionHealthSettingsPane'];
   isWebRuntime: ReturnType<typeof useAppShellState>['isWebRuntime'];
   renderDataDirectorySettings: ReturnType<typeof useAppDirectorySettingsRender>['renderDataDirectorySettings'];
   darkMode: ReturnType<typeof useAppCoreState>['darkMode'];
@@ -70,15 +48,6 @@ export interface RenderAppSettingsCenterModalInput {
   handleDownloadSourceChange: ReturnType<typeof useAppBootstrapEffects>['handleDownloadSourceChange'];
   downloadSourceSaving: ReturnType<typeof useAppShellState>['downloadSourceSaving'];
   downloadSource: ReturnType<typeof useAppShellState>['downloadSource'];
-  setCapturingShortcutAction: ReturnType<typeof useAppProxySettings>['setCapturingShortcutAction'];
-  resetShortcutOptions: ReturnType<typeof useAppCoreState>['resetShortcutOptions'];
-  isMacRuntime: ReturnType<typeof useAppShellState>['isMacRuntime'];
-  shortcutOptions: ReturnType<typeof useAppCoreState>['shortcutOptions'];
-  activeShortcutPlatform: ReturnType<typeof useAppUpdateAndDiagnostics>['activeShortcutPlatform'];
-  capturingShortcutAction: ReturnType<typeof useAppProxySettings>['capturingShortcutAction'];
-  shortcutConflictMap: ReturnType<typeof useAppProxySettings>['shortcutConflictMap'];
-  resolvedMonoFontFamily: ReturnType<typeof useAppShellState>['resolvedMonoFontFamily'];
-  updateShortcut: ReturnType<typeof useAppCoreState>['updateShortcut'];
   toolCenterModalWorkspaceStyle: ReturnType<typeof useAppSecurityUpdate>['toolCenterModalWorkspaceStyle'];
   toolCenterModalSplitStyle: ReturnType<typeof useAppSecurityUpdate>['toolCenterModalSplitStyle'];
   toolCenterNavPanelStyle: ReturnType<typeof useAppSecurityUpdate>['toolCenterNavPanelStyle'];
@@ -91,31 +60,23 @@ export interface RenderAppSettingsCenterModalInput {
 }
 
 export const renderAppSettingsCenterModal = ({
-  t, handleOpenToolCenterPane, handleExportConnections, handleOpenConnectionHealth,
+  t, handleOpenToolCenterPane,
   securityUpdateEntryVisibility, securityUpdateHasLegacySensitiveItems, securityUpdateStatusMeta,
-  handleOpenDataSyncWorkbench, handleCancelSettingsCenterPane, addTab, settingsCenterGroups,
+  handleCancelSettingsCenterPane, settingsCenterGroups,
   activeSettingsCenterGroupKey, activeSettingsCenterPane, themeModalSection, aiSettingsSection,
   aiSettingsProviderView, handleOpenToolsModal, handleOpenSettingsModal,
-  connectionImportGroupOptions, connectionImportTargetTagId, connectionPackageDialog,
-  pendingConnectionImportPayload, connectionImportNotice, setConnectionImportTargetTagId,
-  setConnectionImportNotice, setConnectionPackageDialog, handleImportConnections,
-  handleConfirmConnectionPackageDialog, setPendingConnectionImportPayload, utilityPanelStyle,
-  utilityMutedTextStyle, connections, closeConnectionPackageDialog, connectionHealthTargetIds,
-  closeConnectionHealthSettingsPane, isWebRuntime, renderDataDirectorySettings, darkMode,
+  utilityPanelStyle, utilityMutedTextStyle, isWebRuntime, renderDataDirectorySettings, darkMode,
   overlayTheme, effectiveOpacity, securityUpdateStatus, securityUpdateSettingsFocusTarget,
   securityUpdateSettingsFocusRequest, handleStartSecurityUpdate, handleRetrySecurityUpdate,
   handleRestartSecurityUpdate, handleSecurityUpdateIssueAction, handleOpenSettingsCenterPane,
-  handleDownloadSourceChange, downloadSourceSaving, downloadSource, setCapturingShortcutAction,
-  resetShortcutOptions, isMacRuntime, shortcutOptions, activeShortcutPlatform,
-  capturingShortcutAction, shortcutConflictMap, resolvedMonoFontFamily, updateShortcut,
+  handleDownloadSourceChange, downloadSourceSaving, downloadSource,
   toolCenterModalWorkspaceStyle, toolCenterModalSplitStyle, toolCenterNavPanelStyle,
   toolCenterContentPanelStyle, activeSettingsCenterDetailPanelStyle, toolCenterDetailBodyStyle,
   settingsCenterDetailBodyStyle, renderSettingsCenterPane, renderSettingsCenterAboutFooter,
 }: RenderAppSettingsCenterModalInput) => {
   const { toolCenterGroups } = buildToolCenterGroups({
-    t, handleOpenToolCenterPane, handleExportConnections, handleOpenConnectionHealth,
+    t, handleOpenToolCenterPane,
     securityUpdateEntryVisibility, securityUpdateHasLegacySensitiveItems, securityUpdateStatusMeta,
-    handleOpenDataSyncWorkbench, handleCancelSettingsCenterPane, addTab,
   });
   const combinedSettingsCenterGroups = [
     ...settingsCenterGroups.filter((group) => group.key !== 'about'),
@@ -160,19 +121,13 @@ export const renderAppSettingsCenterModal = ({
     handleOpenSettingsModal(group.key);
   };
   const { renderToolCenterPane } = createToolCenterPaneRenderer({
-    activeSettingsCenterPane, connectionImportGroupOptions, connectionImportTargetTagId,
-    connectionPackageDialog, pendingConnectionImportPayload, connectionImportNotice,
-    setConnectionImportTargetTagId, setConnectionImportNotice, setConnectionPackageDialog,
-    handleImportConnections, handleConfirmConnectionPackageDialog,
-    setPendingConnectionImportPayload, utilityPanelStyle, utilityMutedTextStyle, t, connections,
-    closeConnectionPackageDialog, connectionHealthTargetIds, closeConnectionHealthSettingsPane,
-    isWebRuntime, renderDataDirectorySettings, handleCancelSettingsCenterPane, darkMode,
+    activeSettingsCenterPane,
+    utilityPanelStyle, utilityMutedTextStyle, t, isWebRuntime,
+    renderDataDirectorySettings, handleCancelSettingsCenterPane, darkMode,
     overlayTheme, effectiveOpacity, securityUpdateStatus, securityUpdateSettingsFocusTarget,
     securityUpdateSettingsFocusRequest, handleStartSecurityUpdate, handleRetrySecurityUpdate,
     handleRestartSecurityUpdate, handleSecurityUpdateIssueAction, handleOpenSettingsCenterPane,
-    handleDownloadSourceChange, downloadSourceSaving, downloadSource, setCapturingShortcutAction,
-    resetShortcutOptions, isMacRuntime, shortcutOptions, activeShortcutPlatform,
-    capturingShortcutAction, shortcutConflictMap, resolvedMonoFontFamily, updateShortcut,
+    handleDownloadSourceChange, downloadSourceSaving, downloadSource,
   });
 
   return (

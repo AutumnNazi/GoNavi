@@ -57,7 +57,7 @@ func (p builtinAIPromptProvider) present(ctx context.Context, req ai.ChatRequest
 	}
 	known := builtinAIKnown{version: question.version != "", tables: len(columns) > 0}
 	req.Messages = presentBuiltinAIContextWithLines(req.Messages, append(lines, columns...))
-	req.Tools = builtinAITurnTools(builtinAITools(req.Tools), known)
+	req.Tools = builtinAITurnTools(builtinAIToolsFor(req.Tools, turn.target.family), known)
 	return req, turn
 }
 
@@ -74,7 +74,7 @@ func (p builtinAIPromptProvider) Chat(ctx context.Context, req ai.ChatRequest) (
 	req, turn := p.present(ctx, req)
 	response, err := p.Provider.Chat(ctx, req)
 	if response != nil {
-		response.ToolCalls, response.Content = guardBuiltinAIToolCalls(turn.target.complete(response.ToolCalls), response.Content, p.readOnlyNotice)
+		response.ToolCalls, response.Content = guardBuiltinAIToolCalls(response.ToolCalls, response.Content, p.readOnlyNotice, turn.target)
 		if err == nil && len(response.ToolCalls) == 0 && turn.preview != "" && !showsTable(response.Content) {
 			response.Content = strings.TrimRight(response.Content, "\n") + "\n\n" + turn.preview
 		}

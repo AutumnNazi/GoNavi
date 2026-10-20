@@ -15,6 +15,7 @@ export const buildSidebarObjectVisibilitySettings = (
   { key: 'routines', label: translate('sidebar.object_group.routines') },
   { key: 'triggers', label: translate('sidebar.object_group.triggers') },
   { key: 'events', label: translate('sidebar.object_group.events') },
+  { key: 'jobs', label: translate('sidebar.object_group.jobs') },
   { key: 'sequences', label: translate('sidebar.object_group.sequences') },
   { key: 'packages', label: translate('sidebar.object_group.packages') },
   { key: 'databaseLinks', label: translate('sidebar.object_group.database_links') },

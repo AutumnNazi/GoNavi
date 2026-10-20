@@ -3,6 +3,7 @@ import { Button, Spin, Alert } from 'antd';
 import { EditOutlined } from '@ant-design/icons';
 import Editor from './MonacoEditor';
 import { TabData } from '../types';
+import { JobManagementButton } from './databaseJobs/JobManagementButton';
 import { useDefinitionViewerState } from './definitionViewer/hooks/useDefinitionViewerState';
 import { useDefinitionViewerLoader } from './definitionViewer/hooks/useDefinitionViewerLoader';
 import {
@@ -67,7 +68,8 @@ const DefinitionViewer: React.FC<DefinitionViewerProps> = ({ tab }) => {
                     {tab.dbName && <span style={{ marginLeft: 16, color: '#888' }}>{t('definition_viewer.field.database')}: {tab.dbName}</span>}
                     {tab.routineType && <span style={{ marginLeft: 16, color: '#888' }}>{t('definition_viewer.field.type')}: {tab.routineType}</span>}
                 </div>
-                {tab.type !== 'database-link-def' ? (
+                {tab.type === 'event-def' && <JobManagementButton tab={tab} onChanged={loadDefinition} />}
+                {tab.type === 'job-def' ? <JobManagementButton tab={tab} onChanged={loadDefinition} /> : tab.type !== 'database-link-def' ? (
                 <Button size="small" icon={<EditOutlined />} onClick={openObjectEditQuery} disabled={!normalizedObjectName} loading={openingObjectEdit}>
                     {t('definition_viewer.action.edit_object')}
                 </Button>
@@ -75,7 +77,7 @@ const DefinitionViewer: React.FC<DefinitionViewerProps> = ({ tab }) => {
             </div>
             {error && hasDefinition && (
                 <div style={{ padding: '8px 16px 0' }}>
-                    <Alert type="warning" message={t('definition_viewer.warning.refresh_latest_failed')} description={error} showIcon />
+                    <Alert type="warning" message={t(tab.type === 'job-def' ? 'database_jobs.warning.partial_definition' : 'definition_viewer.warning.refresh_latest_failed')} description={error} showIcon />
                 </div>
             )}
             <div style={{ flex: 1, minHeight: 0 }}>

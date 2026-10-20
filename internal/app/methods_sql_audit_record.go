@@ -41,7 +41,7 @@ func (a *App) recordSQLAuditQuery(input sqlAuditQueryInput) {
 	if status != "success" {
 		event.Error = strings.TrimSpace(input.Result.Message)
 	}
-	a.appendSQLAuditEvent(event)
+	a.appendSQLAuditEvent(sqlaudit.ApplyMCPContext(event, input.MCPContext))
 }
 
 func (a *App) sqlAuditTransactionStatementObserver(

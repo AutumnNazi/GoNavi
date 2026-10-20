@@ -1,3 +1,5 @@
+import { dispatchSidebarTableDataRefresh } from '../../../utils/sidebarDatabaseRefresh';
+import { resolveSqlDialect } from '../../../utils/sqlDialect';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal } from 'antd';
 import { EventsOn } from '../../../../wailsjs/runtime/runtime';
@@ -98,6 +100,10 @@ export const useMockDataRun = (setup: MockDataSetup) => {
     });
     try {
       const result = await generateMockData(target, plan, { jobId, continueOnError });
+      if (connection && (result.success || Number(result.data?.success) > 0)) {
+        dispatchSidebarTableDataRefresh({ connectionId: connection.id, dbName: target.dbName },
+          target.tableName, resolveSqlDialect(connection.config.type, connection.config.driver, connection.config));
+      }
       setOutcome({ success: result.success, message: result.message, data: result.data });
     } catch (error) {
       setOutcome({ success: false, message: errorText(error) });
@@ -106,7 +112,7 @@ export const useMockDataRun = (setup: MockDataSetup) => {
       jobIdRef.current = null;
       setRunning(false);
     }
-  }, [confirmWrite, continueOnError, plan, running, target]);
+  }, [confirmWrite, connection, continueOnError, plan, running, target]);
 
   const cancel = useCallback(() => {
     if (jobIdRef.current) cancelMockDataJob(jobIdRef.current);

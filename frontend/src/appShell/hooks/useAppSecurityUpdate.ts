@@ -4,7 +4,7 @@ import { useAppUtilityStyles } from '../../hooks/useAppUtilityStyles';
 import { useStore } from '../../store';
 import { useOpenDriverManagerWorkbench } from '../../hooks/useDriverManagerWorkbench';
 import { type TitlebarSidebarSnapshot, resolveTitlebarContext } from '../../utils/titlebarContext';
-import { buildConnectionImportGroupOptions } from '../../components/settings/ConnectionImportSettingsPanel';
+import { buildConnectionImportGroupOptions } from '../../components/settings/connectionImportPlacement';
 import { useWorkbenchTabs } from '../../hooks/useWorkbenchTabs';
 import { useWorkbenchSidebarAutoCollapse } from '../../hooks/useAppSidebarCollapse';
 import { useWorkbenchSessionRestore } from '../../hooks/useWorkbenchSessionRestore';
@@ -137,7 +137,8 @@ export const useAppSecurityUpdate = ({
       () => activeTabId ? tabs.find(tab => tab.id === activeTabId) : undefined,
       [activeTabId, tabs],
   );
-  useWorkbenchSidebarAutoCollapse(activeWorkbenchTab?.type, isSidebarCollapsed, setIsSidebarCollapsed);
+  const autoCollapseSidebar = useStore(state => state.appearance.workbenchSidebarAutoCollapse);
+  useWorkbenchSidebarAutoCollapse(activeWorkbenchTab?.type, isSidebarCollapsed, setIsSidebarCollapsed, autoCollapseSidebar);
   useWorkbenchSessionRestore(isStoreHydrated && hasLoadedSecureConfig);
   const titlebarContext = useMemo(
       () => resolveTitlebarContext({

@@ -167,7 +167,7 @@ func executeSQLFileSingleTransactionStream(ctx context.Context, dbInst db.Databa
 		if err := ctx.Err(); err != nil {
 			return errSQLFileCancelled
 		}
-		stmt = strings.TrimSpace(stmt)
+		stmt = pinSQLFileImportDatabase(options.DBType, strings.TrimSpace(stmt), options.PinDatabase)
 		if stmt == "" {
 			return nil
 		}
@@ -533,7 +533,7 @@ func executeSQLFileStream(ctx context.Context, dbInst db.Database, reader io.Rea
 		default:
 		}
 
-		stmt = strings.TrimSpace(stmt)
+		stmt = pinSQLFileImportDatabase(options.DBType, strings.TrimSpace(stmt), options.PinDatabase)
 		if stmt == "" {
 			return nil
 		}

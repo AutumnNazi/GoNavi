@@ -101,19 +101,20 @@ body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-thead > tr > th.is-single
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-thead > tr > th.is-single-line-title .ant-table-column-sorters {
-  min-height: 48px !important;
+  min-height: var(--gn-data-table-header-inner-height, 48px) !important;
   align-items: center !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .sortable-header-cell-drag-handle {
   box-sizing: border-box;
-  min-height: 48px !important;
+  min-height: var(--gn-data-table-header-inner-height, 48px) !important;
   align-items: flex-start !important;
   padding: 3px 0 3px 2px !important;
   overflow: visible;
 }
 
-body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-thead > tr > th:not(.is-single-line-title).gonavi-sortable-header-cell {
+body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-thead > tr > th.gonavi-sortable-header-cell {
+  padding: 0 !important;
   overflow: visible !important;
 }
 
@@ -160,7 +161,7 @@ body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-thead > tr > th.ant-table
 
 body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-thead > tr > th:first-child .ant-table-selection,
 body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-thead > tr > th.ant-table-selection-column .ant-table-selection {
-  min-height: 48px;
+  min-height: var(--gn-data-table-header-inner-height, 48px);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -319,18 +320,19 @@ body[data-ui-version="v2"] .gn-v2-data-grid .react-resizable-handle {
 
 body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-tbody > tr > td,
 body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-tbody .ant-table-row > .ant-table-cell {
-  height: calc(28px * var(--gn-ui-scale, 1));
-  padding: 0 calc(8px * var(--gn-ui-scale, 1)) 0 calc(2px * var(--gn-ui-scale, 1)) !important;
+  height: var(--gn-data-table-row-height, calc(28px * var(--gn-ui-scale, 1)));
+  padding: 0 var(--gn-data-table-cell-inline-padding, calc(8px * var(--gn-ui-scale, 1))) 0 calc(2px * var(--gn-ui-scale, 1)) !important;
   font-family: var(--gn-font-mono) !important;
   font-size: var(--gn-data-table-font-size, var(--gn-font-size-mono, 12px)) !important;
-  line-height: calc(28px * var(--gn-ui-scale, 1)) !important;
+  line-height: calc(var(--gn-data-table-row-height, calc(28px * var(--gn-ui-scale, 1))) - 1px) !important;
+  box-sizing: border-box;
   vertical-align: middle !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-tbody > tr > td .editable-cell-value-wrap,
 body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-tbody .ant-table-row > .ant-table-cell .editable-cell-value-wrap {
-  min-height: calc(28px * var(--gn-ui-scale, 1));
-  line-height: calc(28px * var(--gn-ui-scale, 1));
+  min-height: calc(var(--gn-data-table-row-height, calc(28px * var(--gn-ui-scale, 1))) - 1px);
+  line-height: calc(var(--gn-data-table-row-height, calc(28px * var(--gn-ui-scale, 1))) - 1px);
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .data-grid-virtual-inline-editing .ant-form-item,

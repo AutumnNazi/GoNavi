@@ -118,6 +118,9 @@ func (a *App) prefetchDataSyncPreflightColumns(ctx context.Context, definition s
 			{"source", source, mapping.SourceSchema, mapping.SourceTable},
 			{"target", target, mapping.TargetSchema, mapping.TargetTable},
 		} {
+			if side.endpoint.DatabasePending {
+				continue
+			}
 			key, ok := dataSyncPreflightColumnKeyFor(side.name, side.endpoint, side.schema, side.table)
 			if !ok {
 				continue

@@ -5,8 +5,9 @@
 # The data-root resolution mirrors internal/appdata/root.go: the root defaults
 # to <USERPROFILE>\.gonavi and can be redirected by the dataRoot field of
 # <USERPROFILE>\.gonavi\storage_root.json. The brand state lives in
-# <dataRoot>\application-icons\active-icon.txt (empty content = cleared) next
-# to the content-addressed gonavi-brand-*.ico files. The installing user's
+# <dataRoot>\application-icons\active-icon.txt (empty content = cleared; absent
+# = no brand icon was ever selected) next to the content-addressed
+# gonavi-brand-*.ico files. The installing user's
 # profile is derived from the MSI AppDataFolder property because the deferred
 # action runs as SYSTEM. Every failure is logged and ignored: the install must
 # never fail for a cosmetic restore, and a machine without persisted state
@@ -406,16 +407,14 @@ try {
             exit 0
         }
         $iconName = $candidate
-    } elseif ([IO.Directory]::Exists($iconDir)) {
-        # Versions before the startup pointer already left content-addressed
-        # ICO files behind; pick the newest one so an existing user's selected
-        # icon is restored without a manual re-selection.
-        $newest = Get-ChildItem -LiteralPath $iconDir -Filter 'gonavi-brand-*.ico' -File -ErrorAction SilentlyContinue |
-            Sort-Object -Property LastWriteTime, Name | Select-Object -Last 1
-        if ($null -ne $newest) {
-            $iconName = $newest.Name
-        }
     }
+    # The pointer file is the only authority: when it is absent the installing
+    # user never selected a brand icon, so the machine keeps the default icon.
+    # Do not reintroduce a "newest gonavi-brand-*.ico" fallback here: those
+    # content-addressed ICO files are never pruned and survive uninstall, so
+    # guessing resurrects an icon the user never chose (an older release's
+    # default mascot, for example) and applies it to the fresh shortcuts before
+    # GoNavi ever starts. Mirrors the Go loader in application_icon_windows_ico.go.
     if ([string]::IsNullOrWhiteSpace($iconName)) {
         exit 0
     }

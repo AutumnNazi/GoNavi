@@ -158,7 +158,7 @@ describe('AIChatInput i18n source guards', () => {
       activeContext: { connectionId: 'conn-1', dbName: 'analytics' },
     });
 
-    expect(markup).toContain('data-tooltip-title="Current data query context"');
+    expect(markup).toContain('data-tooltip-title="Current data query context: orders-db / analytics"');
     expect(markup).toContain('orders-db / analytics');
   });
 
@@ -190,7 +190,7 @@ describe('AIChatInput i18n source guards', () => {
     });
 
     expect(markup).toContain('placeholder="Type a message... ⌘↵ to send · / commands"');
-    expect(markup).toContain('data-tooltip-title="Current data query context"');
+    expect(markup).toContain('data-tooltip-title="Current data query context: orders-db / analytics"');
     expect(markup).toContain('aria-label="Context usage 31%"');
     expect(markup).toContain('orders-db / analytics');
     expect(markup).not.toContain('ai_chat.input.context.connection_tooltip');

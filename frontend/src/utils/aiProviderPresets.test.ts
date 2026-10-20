@@ -7,6 +7,7 @@ import {
   MOONSHOT_ANTHROPIC_BASE_URL,
   MOONSHOT_OPENAI_BASE_URL,
   ORCAROUTER_BASE_URL,
+  CHEAPER_INFERENCE_BASE_URL,
   LEGACY_QWEN_CODING_PLAN_OPENAI_BASE_URL,
   QWEN_BAILIAN_ANTHROPIC_BASE_URL,
   QWEN_BAILIAN_MODELS_BASE_URL,
@@ -49,6 +50,7 @@ const PRESETS: ProviderPresetMatcher[] = [
   { key: 'openai', backendType: 'openai', defaultBaseUrl: 'https://api.openai.com/v1' },
   { key: 'atlascloud', backendType: 'openai', defaultBaseUrl: ATLAS_CLOUD_BASE_URL },
   { key: 'orcarouter', backendType: 'openai', defaultBaseUrl: ORCAROUTER_BASE_URL },
+  { key: 'cheaperinference', backendType: 'openai', defaultBaseUrl: CHEAPER_INFERENCE_BASE_URL },
   { key: 'moonshot', backendType: 'openai', defaultBaseUrl: MOONSHOT_OPENAI_BASE_URL },
   {
     key: 'xiaomi-mimo', backendType: 'openai', defaultBaseUrl: XIAOMI_MIMO_OPENAI_BASE_URL,
@@ -384,6 +386,13 @@ describe('resolveProviderPresetKey', () => {
       type: 'openai',
       baseUrl: `${ORCAROUTER_BASE_URL}/`,
     }, PRESETS, 'custom')).toBe('orcarouter');
+  });
+
+  it('recognizes Cheaper Inference by its OpenAI-compatible endpoint', () => {
+    expect(resolveProviderPresetKey({
+      type: 'openai',
+      baseUrl: `${CHEAPER_INFERENCE_BASE_URL}/`,
+    }, PRESETS, 'custom')).toBe('cheaperinference');
   });
 
   it('不会把自定义 OpenAI 端点误识别成千问 Coding Plan', () => {

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const modalConfirm = vi.hoisted(() => vi.fn());
 
 vi.mock('../common/ResizableDraggableModal', () => ({
-  default: { confirm: modalConfirm },
+  default: Object.assign(({ children }: { children?: React.ReactNode }) => children, { confirm: modalConfirm }),
 }));
 
 import { createStaticDataSyncWorkbenchGateway } from './gateway';
@@ -604,9 +604,8 @@ describe('DataSyncWorkbenchShell schedule control', () => {
     );
     expect(textOf(selectedRow)).toContain('run-a-failed');
     expect(
-      renderer.root.findByProps({ 'data-data-sync-task-failure': 'true' })
-        .props.children,
-    ).toBeTruthy();
+      renderer.root.findAllByProps({ 'data-data-sync-task-failure': 'true' }),
+    ).toHaveLength(0);
   });
 
   it('refreshes the schedule rows after saving a scheduled task in the editor', async () => {

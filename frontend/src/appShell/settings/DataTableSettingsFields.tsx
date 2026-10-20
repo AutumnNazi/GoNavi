@@ -1,3 +1,4 @@
+import { TablePreferencePreview } from '../../components/settings/preferences/TablePreferencePreview';
 import { Switch, Segmented, Button } from 'antd';
 import type { QueryTableCtrlClickAction } from '../../store';
 import {
@@ -74,6 +75,18 @@ export const DataTableSettingsFields = ({
           ),
       })}
       {renderThemeSettingsRow({
+          label: t('app.theme.data_table.checkbox_column'),
+          hint: t('app.theme.data_table.checkbox_column_hint'),
+          control: (
+              <Switch
+                  checked={appearance.showDataTableCheckboxColumn === null
+                      ? appearance.uiLayoutMode !== 'navicat'
+                      : appearance.showDataTableCheckboxColumn === true}
+                  onChange={(checked) => setAppearance({ showDataTableCheckboxColumn: checked })}
+              />
+          ),
+      })}
+      {renderThemeSettingsRow({
           label: t('app.theme.data_table.table_double_click_action'),
           hint: t('app.theme.data_table.table_double_click_action_hint'),
           stacked: true,
@@ -124,6 +137,7 @@ export const DataTableSettingsFields = ({
               />
           ),
       })}
+      <TablePreferencePreview />
       {renderThemeSettingsRow({
           label: (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>

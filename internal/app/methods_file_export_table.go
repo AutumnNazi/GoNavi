@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -38,6 +37,9 @@ func closeExportFile(f io.Closer) error {
 
 func (a *App) ExportTableWithOptions(config connection.ConnectionConfig, dbName string, tableName string, options ExportFileOptions) (result connection.QueryResult) {
 	options = normalizeExportFileOptions("", options)
+	if err := a.validateExportEncoding(options); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
 	if err := validateExportColumnsSelection(options); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
@@ -100,54 +102,7 @@ func (a *App) ExportTableWithOptions(config connection.ConnectionConfig, dbName 
 	}
 
 	if format == "sql" {
-		reporter.Start(a.appText("data_export.progress.stage.exporting_sql_file", nil))
-		target, err := createAtomicExportTarget(filename, webDownloadBudgetForTarget(webTarget))
-		if err != nil {
-			reporter.Error(0, err.Error())
-			return connection.QueryResult{Success: false, Message: err.Error()}
-		}
-		defer target.abort()
-
-		w := bufio.NewWriterSize(target.file, 1024*1024)
-
-		if err := writeSQLHeader(w, runConfig, dbName); err != nil {
-			reporter.Error(0, err.Error())
-			return connection.QueryResult{Success: false, Message: err.Error()}
-		}
-		viewLookup := listViewNameLookup(dbInst, runConfig, dbName)
-		if err := writeSQLDropIfExistsPreamble(
-			w,
-			runConfig,
-			dbName,
-			[]string{tableName},
-			viewLookup,
-			true,
-			options,
-		); err != nil {
-			reporter.Error(0, err.Error())
-			return connection.QueryResult{Success: false, Message: err.Error()}
-		}
-		if err := dumpTableSQL(exportCtx, w, dbInst, runConfig, dbName, tableName, true, true, viewLookup); err != nil {
-			reporter.Error(0, err.Error())
-			return connection.QueryResult{Success: false, Message: err.Error()}
-		}
-		if err := writeSQLFooter(w, runConfig); err != nil {
-			reporter.Error(0, err.Error())
-			return connection.QueryResult{Success: false, Message: err.Error()}
-		}
-
-		reporter.Finalizing(0)
-		if err := w.Flush(); err != nil {
-			reporter.Error(0, err.Error())
-			return connection.QueryResult{Success: false, Message: err.Error()}
-		}
-		if err := commitCancelableExportTarget(exportCtx, target); err != nil {
-			reporter.Error(0, err.Error())
-			return connection.QueryResult{Success: false, Message: err.Error()}
-		}
-		reporter.Done(0)
-		maybeReleaseFileTransferMemory("export-table-sql-finished", 0, filename)
-		return connection.QueryResult{Success: true, Message: a.appText("file.backend.message.export_completed", nil)}
+		return a.exportSingleTableSQL(exportCtx, dbInst, runConfig, dbName, tableName, filename, options, webTarget, reporter)
 	}
 
 	dbType := resolveDDLDBType(config)
@@ -161,13 +116,13 @@ func (a *App) ExportTableWithOptions(config connection.ConnectionConfig, dbName 
 	defer cleanupExportFileTarget(f, atomicTarget)
 	rowCount, _, err := exportQueryResultToFileWithContext(exportCtx, f, dbInst, runConfig, query, options, reporter)
 	if err != nil {
-		errMsg := a.appText("file.backend.error.write_failed", map[string]any{"detail": err.Error()})
+		errMsg := a.exportFormatErrorMessage(err, options)
 		reporter.Error(rowCount, errMsg)
 		maybeReleaseFileTransferMemory("export-table-error", rowCount, filename)
 		return connection.QueryResult{Success: false, Message: errMsg}
 	}
 	if err := finishCancelableExportTarget(exportCtx, atomicTarget, f); err != nil {
-		errMsg := a.appText("file.backend.error.write_failed", map[string]any{"detail": err.Error()})
+		errMsg := a.exportFormatErrorMessage(err, options)
 		reporter.Error(rowCount, errMsg)
 		maybeReleaseFileTransferMemory("export-table-error", rowCount, filename)
 		return connection.QueryResult{Success: false, Message: errMsg}

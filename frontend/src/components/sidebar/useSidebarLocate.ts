@@ -282,7 +282,7 @@ export const useSidebarLocate = ({
               const schemaNode = request.schemaName ? findTreeNodeByKeyRef.current(treeDataRef.current, sidebarSchemaNodeKey(String(dbNode.key), request.schemaName)) : null;
               void loadTables(
                   schemaNode?.dataRef?.schemaLazy ? schemaNode : dbNode,
-                  { ensureFresh: true, rowCountTables: request.rowCountTables, schemaName: request.schemaName },
+                  { ...request, ensureFresh: true },
               );
           }
       };

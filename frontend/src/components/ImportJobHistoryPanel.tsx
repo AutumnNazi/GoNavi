@@ -7,6 +7,7 @@ import {
   PlayCircleOutlined,
   RedoOutlined,
   ReloadOutlined,
+  RollbackOutlined,
   StopOutlined,
 } from '@ant-design/icons';
 
@@ -18,6 +19,7 @@ import {
   ListImportJobs,
   ResumeImportJob,
   RetryImportJobFailedRows,
+  RollbackImportJob,
 } from '../../wailsjs/go/app/App';
 import { t as defaultTranslate } from '../i18n';
 import { useOptionalI18n } from '../i18n/provider';
@@ -64,6 +66,7 @@ type ImportJobRecord = {
   errorArtifactScopeKnown?: boolean;
   parentJobId?: string;
   recoveryAction?: string;
+  rollbackReady?: boolean;
   message?: string;
   createdAt?: number;
   updatedAt?: number;
@@ -128,6 +131,7 @@ const normalizeJobs = (value: unknown): ImportJobRecord[] => {
       errorArtifactScopeKnown: candidate.errorArtifactScopeKnown === true,
       parentJobId: String(candidate.parentJobId || ''),
       recoveryAction: String(candidate.recoveryAction || ''),
+      rollbackReady: candidate.rollbackReady === true,
       message: String(candidate.message || ''),
       createdAt: Number(candidate.createdAt) || 0,
       updatedAt: Number(candidate.updatedAt) || 0,
@@ -337,6 +341,35 @@ const ImportJobHistoryPanel: React.FC<ImportJobHistoryPanelProps> = ({ refreshTo
     });
   };
 
+  const confirmRollback = (job: ImportJobRecord) => {
+    if (!job.rollbackReady || !terminalStatuses.has(job.status as ImportJobStatus)) return;
+    Modal.confirm({
+      title: t('data_import.history.confirm.rollback_title'),
+      content: t('data_import.history.confirm.rollback_content'),
+      okText: t('data_import.history.action.rollback'),
+      cancelText: t('common.cancel'),
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setPendingAction(`rollback:${job.id}`);
+        try {
+          const result = await RollbackImportJob(job.id);
+          if (!result?.success) {
+            throw new Error(result?.message || t('data_import.history.error.rollback_failed'));
+          }
+          await loadJobs();
+          void message.success(t('data_import.history.message.rollback_done'));
+        } catch (rollbackError: any) {
+          void message.error(t('data_import.history.error.rollback_failed_detail', {
+            detail: rollbackError?.message || String(rollbackError),
+          }));
+          throw rollbackError;
+        } finally {
+          setPendingAction('');
+        }
+      },
+    });
+  };
+
   const confirmRetryFailedRows = (job: ImportJobRecord) => {
     Modal.confirm({
       title: t('data_import.history.confirm.retry_failed_rows_title'),
@@ -412,6 +445,7 @@ const ImportJobHistoryPanel: React.FC<ImportJobHistoryPanelProps> = ({ refreshTo
       <div style={{ display: 'grid', gap: 8 }}>
         {jobs.map((job) => {
           const canDelete = terminalStatuses.has(job.status as ImportJobStatus);
+          const canRollback = canDelete && job.rollbackReady === true;
           const canCancel = job.status === 'preparing' || job.status === 'running';
           const hasArtifact = Boolean(String(job.errorArtifactId || '').trim());
           const errorArtifactCount = Number(job.errorArtifactCount) || 0;
@@ -583,6 +617,18 @@ const ImportJobHistoryPanel: React.FC<ImportJobHistoryPanelProps> = ({ refreshTo
                     onClick={() => confirmRetryFailedRows(job)}
                   >
                     {t('data_import.history.action.retry_failed_rows')}
+                  </Button>
+                ) : null}
+                {canRollback ? (
+                  <Button
+                    data-import-history-rollback-action={job.id}
+                    size="small"
+                    danger
+                    icon={<RollbackOutlined />}
+                    loading={pendingAction === `rollback:${job.id}`}
+                    onClick={() => confirmRollback(job)}
+                  >
+                    {t('data_import.history.action.rollback')}
                   </Button>
                 ) : null}
                 {canDelete ? (

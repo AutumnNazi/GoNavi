@@ -412,28 +412,6 @@ func (k *KingbaseDB) QueryWithMessages(query string) ([]map[string]interface{}, 
 	return k.QueryContextWithMessages(context.Background(), query)
 }
 
-func (k *KingbaseDB) ExecContext(ctx context.Context, query string) (int64, error) {
-	if k.conn == nil {
-		return 0, fmt.Errorf("连接未打开")
-	}
-	res, err := k.conn.ExecContext(ctx, query)
-	if err != nil {
-		return 0, err
-	}
-	return res.RowsAffected()
-}
-
-func (k *KingbaseDB) ExecBatchContext(ctx context.Context, query string) (int64, error) {
-	if k.conn == nil {
-		return 0, fmt.Errorf("连接未打开")
-	}
-	res, err := k.conn.ExecContext(ctx, query)
-	if err != nil {
-		return 0, err
-	}
-	return res.RowsAffected()
-}
-
 func (k *KingbaseDB) OpenSessionExecer(ctx context.Context) (StatementExecer, error) {
 	if k.conn == nil {
 		return nil, fmt.Errorf("连接未打开")
@@ -443,17 +421,6 @@ func (k *KingbaseDB) OpenSessionExecer(ctx context.Context) (StatementExecer, er
 		return nil, err
 	}
 	return &kingbaseSessionExecer{sqlConnStatementExecer: &sqlConnStatementExecer{conn: conn}}, nil
-}
-
-func (k *KingbaseDB) Exec(query string) (int64, error) {
-	if k.conn == nil {
-		return 0, fmt.Errorf("连接未打开")
-	}
-	res, err := k.conn.Exec(query)
-	if err != nil {
-		return 0, err
-	}
-	return res.RowsAffected()
 }
 
 func (e *kingbaseSessionExecer) QueryWithMessages(query string) ([]map[string]interface{}, []string, []string, error) {

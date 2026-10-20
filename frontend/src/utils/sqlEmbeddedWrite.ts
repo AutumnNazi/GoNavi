@@ -59,7 +59,7 @@ const isSqlKeywordChar = (char: string | undefined): boolean => !!char && /[A-Za
  * 必须跳过这些区域，否则 `SELECT 'DELETE'`、`SELECT 1 -- DELETE` 这类
  * 只读语句会被误判为写。dollar-quoting 与方括号标识符按方言处理。
  */
-const skipQuotedOrComment = (text: string, start: number, dbType: string): number => {
+export const skipQuotedOrComment = (text: string, start: number, dbType: string): number => {
   if (text.startsWith('--', start) && isSqlDashLineCommentStart(dbType, text.slice(start + 2, start + 3))) {
     const nextLine = text.indexOf('\n', start);
     return nextLine < 0 ? text.length : nextLine + 1;

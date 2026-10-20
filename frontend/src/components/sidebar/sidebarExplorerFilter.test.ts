@@ -105,7 +105,7 @@ describe('sidebarExplorerFilter / 过滤维度表', () => {
       expect(order[0]).toBe('all');
     }
     expect(V2_EXPLORER_FILTER_ORDER.nacos).toEqual(['all', 'nacos-services', 'nacos-configs']);
-    expect(V2_EXPLORER_FILTER_ORDER.relational).toHaveLength(7);
+    expect(V2_EXPLORER_FILTER_ORDER.relational).toHaveLength(8);
   });
 
   it('按族生成按钮列表，文案走传入的翻译器', () => {
@@ -117,7 +117,7 @@ describe('sidebarExplorerFilter / 过滤维度表', () => {
       { key: 'nacos-configs', label: 'T:sidebar.command_search.object_kind.nacos_configs' },
     ]);
 
-    // 默认仍是关系型的 7 个，既有调用方行为不变。
+    // 默认包含关系型的所有过滤维度。
     expect(buildV2ExplorerFilterOptions(translate).map((o) => o.key)).toEqual(
       V2_EXPLORER_FILTER_ORDER.relational,
     );
@@ -128,8 +128,8 @@ describe('sidebarExplorerFilter / 过滤维度表', () => {
       ...V2_EXPLORER_FILTER_ORDER.relational,
       ...V2_EXPLORER_FILTER_ORDER.nacos,
     ];
-    // `all` 是两个族共有的，所以出现 12 次但只有 9 个不同取值。
-    expect(new Set(everyFilter).size).toBe(9);
+    // `all` 是两个族共有的过滤维度。
+    expect(new Set(everyFilter).size).toBe(10);
     for (const filter of everyFilter) {
       expect(() => filterV2ExplorerTreeByKind([], filter)).not.toThrow();
     }
@@ -144,7 +144,7 @@ describe('sidebarExplorerFilter / 过滤维度表', () => {
     const tree = [{
       key: 'conn-main',
       type: 'database',
-      children: ['tables', 'views', 'materializedViews', 'sequences', 'routines', 'packages', 'events']
+      children: ['tables', 'views', 'materializedViews', 'sequences', 'routines', 'packages', 'events', 'jobs']
         .map((groupKey) => ({
           key: `conn-main-${groupKey}`,
           type: 'object-group',

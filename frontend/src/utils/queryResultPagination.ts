@@ -1,6 +1,7 @@
 import { buildOrderBySQL, buildPaginatedSelectSQL, splitTrailingIsolationClause } from './sql';
 import { findTopLevelKeyword, isSelectStatement, splitSqlTail } from './queryAutoLimit';
 import { resolveSqlDialect } from './sqlDialect';
+import { buildInterSystemsQueryResultCountSql, buildInterSystemsQueryResultPageSql } from './intersystemsSql';
 
 export type QueryResultPaginationState = {
   current: number;
@@ -120,7 +121,8 @@ const wasLimitAppliedByQueryEditorCap = (
   if (pageSize <= 0 || !isSelectStatement(exportBaseSql, dialect)) return false;
 
   const queryEditorCappedSql = buildPaginatedSelectSQL(dialect, exportBaseSql, '', pageSize, 0);
-  return normalizeSqlForComparison(executed) === normalizeSqlForComparison(queryEditorCappedSql);
+  return normalizeSqlForComparison(normalizePaginationStatement(executed, dialect))
+    === normalizeSqlForComparison(normalizePaginationStatement(queryEditorCappedSql, dialect));
 };
 
 // Presto / Trino 会丢弃子查询里的 ORDER BY：包一层再分页会打乱顺序。语句自带顶层 ORDER BY、且没有自己的
@@ -143,6 +145,7 @@ export const buildQueryResultCountSql = (baseSql: string, dbType = ''): string =
   const dialect = resolveSqlDialect(dbType || '');
   const mainSql = splitSqlTail(String(baseSql || ''), dialect).main.trim();
   if (!mainSql) return '';
+  if (dialect === 'iris') return buildInterSystemsQueryResultCountSql(mainSql);
   const statement = splitTrailingIsolationClause(mainSql);
   const orderByPos = findTopLevelKeyword(statement.main, 'order by', dialect);
   const countBaseSql = (orderByPos >= 0 ? statement.main.slice(0, orderByPos) : statement.main).trim();
@@ -188,12 +191,16 @@ export const buildQueryResultPageSql = (params: {
     ? splitTrailingIsolationClause(params.baseSql)
     : { main: params.baseSql, tail: '' };
   if (pageSize <= 0) {
+    if (dialect === 'iris') return buildInterSystemsQueryResultPageSql(statement.main, orderBySql, 0, 0);
     if (!orderBySql) return String(params.baseSql || '').trim();
     return `${resolveWrappedBaseSql(dialect, statement.main)}${orderBySql}${statement.tail}`;
   }
   const page = Math.max(1, Math.floor(Number(params.page) || 1));
   const limit = params.lookahead ? pageSize + 1 : pageSize;
   const offset = (page - 1) * pageSize;
+  if (dialect === 'iris') {
+    return buildInterSystemsQueryResultPageSql(statement.main, orderBySql, limit, offset);
+  }
   const pageBaseSql = appendsPageToStatement(dialect, statement.main, orderBySql)
     ? statement.main.trim()
     : resolveWrappedBaseSql(dialect, statement.main);

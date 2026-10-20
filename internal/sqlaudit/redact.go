@@ -558,6 +558,8 @@ func sanitizeEvent(event Event, settings Settings) Event {
 	event.QueryID = sanitizeLabel(event.QueryID, 256)
 	event.TransactionID = sanitizeLabel(event.TransactionID, 256)
 	event.Source = strings.ToLower(sanitizeLabel(event.Source, 64))
+	event.MCPRequestID = sanitizeLabel(RedactError(event.MCPRequestID), 256)
+	event.MCPClient = sanitizeLabel(RedactError(event.MCPClient), 256)
 	event.BoundaryMode = normalizeBoundaryMode(event.BoundaryMode)
 	event.CommitMode = normalizeCommitMode(event.CommitMode)
 

@@ -3,7 +3,6 @@ package app
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"GoNavi-Wails/internal/connection"
@@ -138,7 +137,7 @@ func buildAppOracleColumnsQuery(schema string, table string) string {
 	metadataTableName := escapeAppOracleMetadataLiteral(table)
 	metadataSchemaName := escapeAppOracleMetadataLiteral(schema)
 	if strings.TrimSpace(schema) == "" {
-		return fmt.Sprintf(`SELECT c.column_name AS "COLUMN_NAME", c.data_type AS "DATA_TYPE", c.data_length AS "DATA_LENGTH", c.char_length AS "CHAR_LENGTH", c.data_precision AS "DATA_PRECISION", c.data_scale AS "DATA_SCALE", c.nullable AS "NULLABLE", c.data_default AS "DATA_DEFAULT",
+		return fmt.Sprintf(`SELECT c.column_name AS "COLUMN_NAME", c.data_type AS "DATA_TYPE", c.data_length AS "DATA_LENGTH", c.char_length AS "CHAR_LENGTH", c.char_used AS "CHAR_USED", c.data_precision AS "DATA_PRECISION", c.data_scale AS "DATA_SCALE", c.nullable AS "NULLABLE", c.data_default AS "DATA_DEFAULT",
 		CASE WHEN pk.column_name IS NOT NULL THEN 'PRI' ELSE '' END AS "COLUMN_KEY",
 		cc.comments AS "COMMENT"
 	FROM user_tab_columns c
@@ -155,7 +154,7 @@ func buildAppOracleColumnsQuery(schema string, table string) string {
 	ORDER BY c.column_id`, metadataTableName)
 	}
 
-	return fmt.Sprintf(`SELECT c.column_name AS "COLUMN_NAME", c.data_type AS "DATA_TYPE", c.data_length AS "DATA_LENGTH", c.char_length AS "CHAR_LENGTH", c.data_precision AS "DATA_PRECISION", c.data_scale AS "DATA_SCALE", c.nullable AS "NULLABLE", c.data_default AS "DATA_DEFAULT",
+	return fmt.Sprintf(`SELECT c.column_name AS "COLUMN_NAME", c.data_type AS "DATA_TYPE", c.data_length AS "DATA_LENGTH", c.char_length AS "CHAR_LENGTH", c.char_used AS "CHAR_USED", c.data_precision AS "DATA_PRECISION", c.data_scale AS "DATA_SCALE", c.nullable AS "NULLABLE", c.data_default AS "DATA_DEFAULT",
 		CASE WHEN pk.column_name IS NOT NULL THEN 'PRI' ELSE '' END AS "COLUMN_KEY",
 		cc.comments AS "COMMENT"
 	FROM all_tab_columns c
@@ -198,46 +197,7 @@ func parseAppOracleColumns(data []map[string]interface{}) []connection.ColumnDef
 }
 
 func formatAppOracleColumnType(row map[string]interface{}) string {
-	dataType := appOracleRowString(row, "DATA_TYPE", "TYPE_NAME", "data_type", "type_name")
-	if dataType == "" || strings.Contains(dataType, "(") {
-		return dataType
-	}
-
-	upperType := strings.ToUpper(dataType)
-	if isAppOracleLengthQualifiedType(upperType) {
-		if charLength, ok := appOracleRowInt(row, "CHAR_LENGTH", "CHAR_COL_DECL_LENGTH", "char_length", "char_col_decl_length"); ok && charLength > 0 {
-			return fmt.Sprintf("%s(%d)", dataType, charLength)
-		}
-		if dataLength, ok := appOracleRowInt(row, "DATA_LENGTH", "data_length"); ok && dataLength > 0 {
-			return fmt.Sprintf("%s(%d)", dataType, dataLength)
-		}
-	}
-
-	if strings.Contains(upperType, "NUMBER") || strings.Contains(upperType, "DECIMAL") || strings.Contains(upperType, "NUMERIC") {
-		precision, hasPrecision := appOracleRowInt(row, "DATA_PRECISION", "NUMERIC_PRECISION", "data_precision", "numeric_precision")
-		if hasPrecision && precision > 0 {
-			scale, hasScale := appOracleRowInt(row, "DATA_SCALE", "NUMERIC_SCALE", "data_scale", "numeric_scale")
-			// 负 scale 必须保留，理由与 internal/db 的 formatOracleColumnType 相同：
-			// Oracle 的 NUMBER(10,-2) 表示向左舍入到百位，丢掉负号会显示成
-			// NUMBER(10) 而改变精度语义。这两条路径都可能被 DBGetColumns 走到
-			// （db 层返回空列表时才走本兜底），保持一致才不会让同一列显示出两种类型。
-			if hasScale && scale != 0 {
-				return fmt.Sprintf("%s(%d,%d)", dataType, precision, scale)
-			}
-			return fmt.Sprintf("%s(%d)", dataType, precision)
-		}
-	}
-
-	return dataType
-}
-
-func isAppOracleLengthQualifiedType(upperType string) bool {
-	switch strings.TrimSpace(upperType) {
-	case "CHAR", "NCHAR", "VARCHAR", "VARCHAR2", "NVARCHAR", "NVARCHAR2", "RAW", "BINARY", "VARBINARY":
-		return true
-	default:
-		return strings.Contains(upperType, "CHARACTER")
-	}
+	return db.FormatOracleColumnType(row)
 }
 
 func normalizeAppOracleNullable(nullable string) string {
@@ -293,44 +253,6 @@ func appOracleValueString(value interface{}) string {
 			return ""
 		}
 		return text
-	}
-}
-
-func appOracleRowInt(row map[string]interface{}, names ...string) (int, bool) {
-	value := appOracleRowValue(row, names...)
-	switch typed := value.(type) {
-	case int:
-		return typed, true
-	case int8:
-		return int(typed), true
-	case int16:
-		return int(typed), true
-	case int32:
-		return int(typed), true
-	case int64:
-		return int(typed), true
-	case uint:
-		return int(typed), true
-	case uint8:
-		return int(typed), true
-	case uint16:
-		return int(typed), true
-	case uint32:
-		return int(typed), true
-	case uint64:
-		return int(typed), true
-	case float32:
-		return int(typed), true
-	case float64:
-		return int(typed), true
-	case []byte:
-		parsed, err := strconv.Atoi(strings.TrimSpace(string(typed)))
-		return parsed, err == nil
-	case string:
-		parsed, err := strconv.Atoi(strings.TrimSpace(typed))
-		return parsed, err == nil
-	default:
-		return 0, false
 	}
 }
 

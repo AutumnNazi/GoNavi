@@ -135,7 +135,7 @@ func normalizeSQLExportDefaultFilename(rawName string) string {
 
 func exportFormatExtension(format string) string {
 	switch normalized := strings.ToLower(strings.TrimSpace(format)); normalized {
-	case "csv", "xlsx", "json", "md", "html", "sql":
+	case "csv", "xlsx", "json", "md", "html", "sql", "parquet":
 		return "." + normalized
 	default:
 		return ""

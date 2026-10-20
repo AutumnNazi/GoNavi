@@ -1,3 +1,4 @@
+import { sidebarMutationTableTarget } from './sidebarMutationTableTarget';
 import {
   type TableDataDangerActionKind,
   getTableDataDangerActionMeta,
@@ -88,7 +89,7 @@ export const useSidebarTableAndViewActions = ({
           dbName: conn.dbName,
           affectedRows: res.data?.count || 0,
         });
-        await loadTables(getDatabaseNodeRef(conn, conn.dbName), { ensureFresh: true });
+        void loadTables(getDatabaseNodeRef(conn, conn.dbName), { ensureFresh: true, clearedTables: [sidebarMutationTableTarget(conn, tableName)], schemaName: resolveNodeSchemaName(node) });
         message.success(t('sidebar.message.table_data_action_success', { action: progressLabel }));
         return;
       }

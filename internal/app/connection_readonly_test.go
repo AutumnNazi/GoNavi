@@ -32,7 +32,7 @@ func TestSupportsConnectionReadOnlyMode(t *testing.T) {
 		{name: "custom driver substring alias", config: connection.ConnectionConfig{Type: "custom", Driver: "postgres-driver"}, want: true},
 		{name: "OceanBase Oracle tenant", config: connection.ConnectionConfig{Type: "oceanbase", OceanBaseProtocol: "oracle"}, want: true},
 		{name: "custom OceanBase Oracle tenant", config: connection.ConnectionConfig{Type: "custom", Driver: "oceanbase", OceanBaseProtocol: "oracle"}, want: true},
-		{name: "redis", config: connection.ConnectionConfig{Type: "redis"}, want: false},
+		{name: "redis", config: connection.ConnectionConfig{Type: "redis"}, want: true},
 	}
 	for _, test := range tests {
 		test := test

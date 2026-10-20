@@ -53,11 +53,11 @@ func (a *App) ListImportJobs() connection.QueryResult {
 		var warning *importjob.CorruptJobFilesWarning
 		if errors.As(err, &warning) {
 			logger.Warnf("已跳过损坏的导入任务元数据文件：数量=%d", warning.Count)
-			return connection.QueryResult{Success: true, Message: warning.Error(), Data: a.webImportJobViews(jobs)}
+			return connection.QueryResult{Success: true, Message: warning.Error(), Data: a.markImportJobsRollbackReady(a.webImportJobViews(jobs))}
 		}
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	return connection.QueryResult{Success: true, Data: a.webImportJobViews(jobs)}
+	return connection.QueryResult{Success: true, Data: a.markImportJobsRollbackReady(a.webImportJobViews(jobs))}
 }
 
 func (a *App) GetImportJob(jobID string) connection.QueryResult {
@@ -69,7 +69,8 @@ func (a *App) GetImportJob(jobID string) connection.QueryResult {
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	return connection.QueryResult{Success: true, Data: a.webImportJobView(job)}
+	views := a.markImportJobsRollbackReady([]importjob.Job{a.webImportJobView(job)})
+	return connection.QueryResult{Success: true, Data: views[0]}
 }
 
 func (a *App) webImportJobViews(jobs []importjob.Job) []importjob.Job {

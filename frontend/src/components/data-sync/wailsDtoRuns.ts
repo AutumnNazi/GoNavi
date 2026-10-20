@@ -79,6 +79,7 @@ export const decodeRunRecord = (
     ),
     attempt: optionalNumber(run.attempt, 'run.attempt'),
     resumable: optionalBoolean(run.resumable, 'run.resumable'),
+    rollbackReady: optionalBoolean(run.rollbackReady, 'run.rollbackReady'),
     message: optionalString(run.message, 'run.message'),
     startedAt:
       fromMillis(run.startedAt, 'run.startedAt') || fromMillis(run.queuedAt, 'run.queuedAt'),

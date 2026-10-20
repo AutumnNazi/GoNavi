@@ -37,7 +37,7 @@ class RootErrorBoundary extends React.Component<RootErrorBoundaryProps, RootErro
           boxSizing: 'border-box',
           color: '#111827',
           display: 'flex',
-          fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif',
+          fontFamily: 'var(--gn-font-sans, Segoe UI, Microsoft YaHei, sans-serif)',
           height: '100%',
           justifyContent: 'center',
           padding: 24,

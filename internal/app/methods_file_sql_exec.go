@@ -76,6 +76,8 @@ func (a *App) importDatabaseSQLWithGTIDModeContext(ctx context.Context, config c
 		sqlFileExecutionPolicy{
 			TransactionMode: sqlFileTransactionModeOff,
 			MySQLGTIDMode:   mode,
+			// 导入已经指定目标库时，文件里的 USE 不能把数据写进另一个库。
+			PinDatabase: strings.TrimSpace(dbName),
 		},
 	)
 }
@@ -367,6 +369,9 @@ func (a *App) executeSQLFileWithStatementLimitPolicyContextWithPolicy(parent con
 			}
 		}
 	}
+	if err := a.captureSQLFileRollbackPoint(ctx, managedJob, config, jobID, policy); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
 	if containsMySQLGTIDPurged {
 		switch policy.MySQLGTIDMode {
 		case mysqlGTIDImportModeReject:
@@ -476,6 +481,7 @@ func (a *App) executeSQLFileWithStatementLimitPolicyContextWithPolicy(parent con
 		TransactionMode:   policy.TransactionMode,
 		StatementGuard:    policy.StatementGuard,
 		SkipStatement:     policy.SkipStatement,
+		PinDatabase:       policy.PinDatabase,
 		// Keep the callback guard even after a full small-file preflight so a
 		// source replacement between the two opens cannot send client commands
 		// to the database.

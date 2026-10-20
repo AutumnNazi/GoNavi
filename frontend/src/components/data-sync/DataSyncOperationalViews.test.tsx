@@ -1,11 +1,15 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { DataSyncRunHistory } from './DataSyncOperationalViews';
 import type { DataSyncCompareResult, DataSyncRunRecord } from './model';
 import { createDataSyncWorkbenchTranslate } from './text';
 import { formatDataSyncRunEvent } from './textSchedules';
+
+vi.mock('../common/ResizableDraggableModal', () => ({
+  default: ({ children }: { children?: React.ReactNode }) => <div role="dialog">{children}</div>,
+}));
 
 describe('DataSyncRunHistory compare output', () => {
   it('localizes persisted event types, stages and known messages in either locale', () => {
@@ -207,7 +211,7 @@ describe('DataSyncRunHistory compare output', () => {
     expect(markup).not.toContain('gn-data-sync-compare-row__endpoints');
   });
 
-  it('explains task-level failures when a run has no isolated error rows', () => {
+  it('does not invent an event error panel from a run message alone', () => {
     const run: DataSyncRunRecord = {
       id: 'failed-run',
       taskId: 'task-1',
@@ -259,7 +263,7 @@ describe('DataSyncRunHistory compare output', () => {
       />,
     );
 
-    expect(markup).toContain('映射目标表缺少字段：new_column');
-    expect(markup).toContain('data-data-sync-task-failure');
+    expect(markup).not.toContain('映射目标表缺少字段：new_column');
+    expect(markup).not.toContain('data-data-sync-task-failure');
   });
 });

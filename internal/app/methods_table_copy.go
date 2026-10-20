@@ -435,12 +435,7 @@ WHERE s.seqrelid = pg_catalog.pg_get_serial_sequence(%s, %s)::regclass`,
 }
 
 func isGeneratedCopyTableColumn(extra string) bool {
-	normalized := strings.ToLower(strings.Join(strings.Fields(extra), " "))
-	return strings.Contains(normalized, "virtual generated") ||
-		strings.Contains(normalized, "stored generated") ||
-		normalized == "generated" ||
-		normalized == "materialized" ||
-		normalized == "alias"
+	return connection.IsGeneratedColumnExtra(extra)
 }
 
 func ensureCopyTableSourceIsIndependent(dbInst db.Database, dbType string, schemaName string, sourceName string) error {

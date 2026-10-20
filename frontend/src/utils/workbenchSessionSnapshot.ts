@@ -1,5 +1,6 @@
 import type { WorkbenchTabType } from '../tabTypes';
 import type { TabData } from '../types';
+import { DATABASE_JOB_KINDS } from '../typeDefs/databaseJobTypes';
 import { pinSettingsCenterTabFirst } from './settingsCenterTab';
 
 /**
@@ -31,11 +32,13 @@ const COMES_BACK_AFTER_RESTART: Record<WorkbenchTabType, boolean> = {
   table: true,
   design: true,
   'table-overview': true,
+  'object-overview': true,
   'user-management': true,
   'data-sync': true,
   'sql-audit': true,
   'dml-snapshot': true,
   'driver-manager': true,
+  'cloud-backup': true,
   'settings-center': true,
   'request-diagnostics': true,
   'message-queue': true,
@@ -47,6 +50,7 @@ const COMES_BACK_AFTER_RESTART: Record<WorkbenchTabType, boolean> = {
   trigger: true,
   'view-def': true,
   'event-def': true,
+  'job-def': true,
   'routine-def': true,
   'sequence-def': true,
   'package-def': true,
@@ -79,6 +83,8 @@ const TEXT_FIELDS = [
   'triggerTableName',
   'viewName',
   'eventName',
+  'jobName',
+  'jobLabel',
   'routineName',
   'routineType',
   'sequenceName',
@@ -90,8 +96,10 @@ const TEXT_FIELDS = [
 
 const CHOICE_FIELDS = {
   providerMode: ['jmx', 'endpoint', 'agent'],
+  jobKind: DATABASE_JOB_KINDS,
   objectType: ['table', 'view', 'materialized-view'],
   viewKind: ['view', 'materialized'],
+  overviewKind: ['views', 'routines', 'events'],
   dataSyncEntryMode: ['sync', 'compare', 'schemaCompare', 'dataCompare'],
   sqlAuditView: ['audit', 'query-history'],
   messageQueueObjectKind: ['topic-filter', 'topic', 'queue', 'exchange'],

@@ -23,6 +23,8 @@ import type { SidebarTreeNode } from '../sidebarV2Utils';
 import { t } from '../../i18n';
 import { t as catalogTranslate } from '../../i18n/catalog';
 import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
+import { resolveDatabaseJobDialect } from '../../utils/databaseJobs/jobCapabilities';
+import type { SavedConnection } from '../../types';
 
 export type SidebarExplorerFilterTranslate = (key: string) => string;
 
@@ -35,6 +37,7 @@ export type V2ExplorerFilter =
   | 'routines'
   | 'packages'
   | 'events'
+  | 'jobs'
   | 'nacos-services'
   | 'nacos-configs';
 
@@ -49,6 +52,7 @@ export const V2_EXPLORER_FILTER_LABEL_KEYS: Record<V2ExplorerFilter, string> = {
   routines: 'sidebar.command_search.object_kind.routines',
   packages: 'sidebar.command_search.object_kind.packages',
   events: 'sidebar.command_search.object_kind.events',
+  jobs: 'sidebar.command_search.object_kind.jobs',
   'nacos-services': 'sidebar.command_search.object_kind.nacos_services',
   'nacos-configs': 'sidebar.command_search.object_kind.nacos_configs',
 };
@@ -59,11 +63,21 @@ export const V2_EXPLORER_FILTER_LABEL_KEYS: Record<V2ExplorerFilter, string> = {
  * enforces.
  */
 export const V2_EXPLORER_FILTER_ORDER: Record<ExplorerFilterFamily, V2ExplorerFilter[]> = {
-  relational: ['all', 'tables', 'views', 'sequences', 'routines', 'packages', 'events'],
+  relational: ['all', 'tables', 'views', 'sequences', 'routines', 'packages', 'events', 'jobs'],
   nacos: ['all', 'nacos-services', 'nacos-configs'],
 };
 
 export type ExplorerFilterFamily = 'relational' | 'nacos';
+
+export const resolveExplorerFilterOrder = (
+  family: ExplorerFilterFamily | null,
+  connection?: { config?: SavedConnection['config'] } | null,
+): V2ExplorerFilter[] => {
+  if (!family) return [];
+  return V2_EXPLORER_FILTER_ORDER[family].filter((key) => (
+    key !== 'jobs' || !connection || resolveDatabaseJobDialect(connection.config) !== null
+  ));
+};
 
 /**
  * Which family's filters the active connection can honour.
@@ -98,6 +112,7 @@ const V2_EXPLORER_FILTER_GROUP_KEYS: Record<string, string[]> = {
   routines: ['routines'],
   packages: ['packages'],
   events: ['events'],
+  jobs: ['jobs'],
 };
 
 /**
@@ -155,6 +170,7 @@ export const filterV2ExplorerTreeByKind = (
     if (filter === 'routines') return node.type === 'routine';
     if (filter === 'packages') return node.type === 'package';
     if (filter === 'events') return node.type === 'db-event';
+    if (filter === 'jobs') return node.type === 'db-job';
     return false;
   };
 
@@ -226,10 +242,11 @@ export const filterV2ExplorerTreeByKind = (
 export const resolveExplorerFilterReset = (
   family: ExplorerFilterFamily | null,
   activeFilter: V2ExplorerFilter,
+  connection?: { config?: SavedConnection['config'] } | null,
 ): V2ExplorerFilter | null => {
   // No family at all (Redis, MQ, or no active host): nothing survives.
   if (!family) return activeFilter === 'all' ? null : 'all';
-  return V2_EXPLORER_FILTER_ORDER[family].includes(activeFilter) ? null : 'all';
+  return resolveExplorerFilterOrder(family, connection).includes(activeFilter) ? null : 'all';
 };
 
 export const buildV2ExplorerFilterOptions = (

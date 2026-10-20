@@ -140,6 +140,7 @@ export const useQueryEditorResultReload = ({
                     executionContext?.executionConnectionParams ?? currentResult?.executionConnectionParams,
                     executionConnectionId,
                     currentResult?.executionBindings,
+                    currentResult?.executionQuotedPlaceholders,
                 );
             } finally {
                 if (isCurrentRun()) {
@@ -275,6 +276,7 @@ export const useQueryEditorResultReload = ({
                 target.executionConnectionParams,
                 executionConnectionId,
                 target.executionBindings,
+                target.executionQuotedPlaceholders,
             );
             const duration = Date.now() - countStartedAt;
             addSqlLog({

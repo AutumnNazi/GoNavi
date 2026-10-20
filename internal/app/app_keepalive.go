@@ -44,7 +44,7 @@ func nextConnectionKeepAliveRevision(current uint64) uint64 {
 
 func supportsConnectionKeepAliveSQL(config connection.ConnectionConfig) bool {
 	dbType := resolveDDLDBType(config)
-	if dbType == "mongodb" || isFileDatabaseType(dbType) {
+	if dbType == "mongodb" || dbType == "redis" || isFileDatabaseType(dbType) {
 		return false
 	}
 	_, supported := connectionReadOnlySupportedTypes[dbType]

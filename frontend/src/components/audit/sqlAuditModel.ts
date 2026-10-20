@@ -13,6 +13,8 @@ export interface SQLAuditEvent {
   queryId: string;
   transactionId: string;
   source: string;
+  mcpRequestId?: string;
+  mcpClient?: string;
   commitMode: string;
   boundaryMode: string;
   sqlText: string;
@@ -48,6 +50,8 @@ export interface SQLAuditFilter {
   status: string;
   transactionId: string;
   source: string;
+  mcpRequestId?: string;
+  includeMcp?: boolean;
   fromTimestamp?: number;
   toTimestamp?: number;
   page: number;
@@ -188,6 +192,8 @@ export const normalizeSQLAuditEvent = (value: unknown, index = 0): SQLAuditEvent
     queryId: toStringValue(raw.queryId),
     transactionId: toStringValue(raw.transactionId),
     source: toStringValue(raw.source),
+    mcpRequestId: toStringValue(raw.mcpRequestId),
+    mcpClient: toStringValue(raw.mcpClient),
     commitMode: toStringValue(raw.commitMode),
     boundaryMode,
     sqlText: typeof raw.sqlText === 'string' ? raw.sqlText : '',
@@ -291,6 +297,7 @@ export const buildSQLAuditFilterPayload = (
     'status',
     'transactionId',
     'source',
+    'mcpRequestId',
   ] as const;
   stringFields.forEach((field) => {
     const value = String(filter[field] || '').trim();
@@ -299,6 +306,7 @@ export const buildSQLAuditFilterPayload = (
   if (Number.isFinite(filter.fromTimestamp)) payload.fromTimestamp = Number(filter.fromTimestamp);
   if (Number.isFinite(filter.toTimestamp)) payload.toTimestamp = Number(filter.toTimestamp);
   if (options.executionHistory === true) payload.executionHistory = true;
+  if (filter.includeMcp === true) payload.includeMcp = true;
   return payload;
 };
 

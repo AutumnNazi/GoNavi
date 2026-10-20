@@ -11,9 +11,12 @@ import {
   resolveBrandIcon,
   resolveBrandIconSrc,
   resolveBrandIconRemoteSrc,
+  resolveBrandNativeIconZoom,
+  resolveBrandNativeSrc,
   resolveBrandTitlebarSrc,
   BRAND_ICON_FALLBACK_SRC,
   DEFAULT_BRAND_ICON_ID,
+  RIBBON_TILE_ART_FRACTION,
   sanitizeBrandIconId,
   setLoadedBrandIconSources,
 } from './brandIcons';
@@ -98,10 +101,38 @@ describe('brand icon asset resolution', () => {
   });
 
   it('keeps the bundled default dark-tile icon out of the white-tile mascot family', () => {
-    // #01 composes full-bleed on macOS; the mascot flag would apply the
-    // white-tile Dock safe-area inset and shrink the running default icon.
+    // #01 shares the ribbon family framing (the baked icns measures 820/1024
+    // with the same unified breathing margin), so native composition crops it
+    // like the remote ribbons; the mascot flag would only drive the white-tile
+    // base behind the Apple grid, which a dark tile must not get.
     expect(resolveBrandIcon('01').mascot).toBeFalsy();
     expect(resolveBrandIcon('01').bundled).toBe(true);
+  });
+
+  it('scales the native tile per asset family framing', () => {
+    // Ribbon SVGs — bundled graphite air included — frame their tile at ~80%
+    // of the canvas; cropping exactly that breathing margin makes the visible
+    // tile read full-bleed like neighbouring apps (the user-reported
+    // "icon is ~20% too small", refs the macOS default-icon regression).
+    expect(resolveBrandNativeIconZoom('02')).toBeCloseTo(1 / RIBBON_TILE_ART_FRACTION);
+    expect(resolveBrandNativeIconZoom('06')).toBeCloseTo(1 / RIBBON_TILE_ART_FRACTION);
+    expect(resolveBrandNativeIconZoom('01')).toBeCloseTo(1 / RIBBON_TILE_ART_FRACTION);
+    // Mascots compose from the rounded white-tile webp: the tile fills the
+    // canvas with its own designed margins and transparent rounded corners,
+    // so any crop would square the corners off.
+    expect(resolveBrandNativeIconZoom('09')).toBe(1);
+    // Unknown ids resolve to the default definition (a ribbon) → family crop.
+    expect(resolveBrandNativeIconZoom('nope')).toBeCloseTo(1 / RIBBON_TILE_ART_FRACTION);
+  });
+
+  it('composes remote mascots from the rounded white-tile webp, not the trimmed about png', () => {
+    // f9eaab56 routed mascots to the about-v2 transparent artwork while the
+    // webp still shipped a square white plate; the v2 webp now carries
+    // transparent rounded corners, so the tile artwork is the better native
+    // source (the trimmed dog spanned ~61% of the square canvas). Uses #12:
+    // the loaded-source map is module state and #09 is asserted elsewhere.
+    setLoadedBrandIconSources({ '12': 'asset:12-icon', '12-about': 'asset:12-about' });
+    expect(resolveBrandNativeSrc('12')).toBe('asset:12-icon');
   });
 
   it('fetches only ribbons and the selected icon at startup, mascot previews on demand', () => {

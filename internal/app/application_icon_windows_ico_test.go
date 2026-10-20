@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"golang.org/x/image/draw"
 )
@@ -254,7 +253,10 @@ func TestPersistWindowsApplicationIconRecordsActiveIcon(t *testing.T) {
 	}
 }
 
-func TestLoadPersistedWindowsApplicationIconFallsBackToNewestLegacyIcon(t *testing.T) {
+// 指针缺失即「从未选择过」。内容寻址 ICO 残留（指针引入前的版本写入、卸载刻意
+// 保留）绝不能拿来猜测当前选择：那会把用户从没选过的图标（旧版默认吉祥物）恢复
+// 成生效图标，并立刻固化成指针，应用内选择器却仍显示默认值。
+func TestLoadPersistedWindowsApplicationIconIgnoresResidualIconsWithoutPointer(t *testing.T) {
 	makePNG := func(value uint8) []byte {
 		source := image.NewNRGBA(image.Rect(0, 0, 2, 2))
 		source.SetNRGBA(0, 0, color.NRGBA{R: value, G: 0x22, B: 0x77, A: 0xff})
@@ -265,29 +267,19 @@ func TestLoadPersistedWindowsApplicationIconFallsBackToNewestLegacyIcon(t *testi
 		return encoded.Bytes()
 	}
 	root := t.TempDir()
-	older, err := persistWindowsApplicationIcon(makePNG(0x11), root)
-	if err != nil {
-		t.Fatalf("persist older icon: %v", err)
+	if _, err := persistWindowsApplicationIcon(makePNG(0x11), root); err != nil {
+		t.Fatalf("persist residual icon: %v", err)
 	}
-	newer, err := persistWindowsApplicationIcon(makePNG(0xee), root)
-	if err != nil {
-		t.Fatalf("persist newer icon: %v", err)
-	}
-	olderTime := time.Now().Add(-2 * time.Minute)
-	newerTime := time.Now().Add(-time.Minute)
-	if err := os.Chtimes(older, olderTime, olderTime); err != nil {
-		t.Fatalf("touch older icon: %v", err)
-	}
-	if err := os.Chtimes(newer, newerTime, newerTime); err != nil {
-		t.Fatalf("touch newer icon: %v", err)
+	if _, err := persistWindowsApplicationIcon(makePNG(0xee), root); err != nil {
+		t.Fatalf("persist residual icon: %v", err)
 	}
 
 	got, err := loadPersistedWindowsApplicationIcon(root)
 	if err != nil {
-		t.Fatalf("load legacy icon: %v", err)
+		t.Fatalf("load without pointer: %v", err)
 	}
-	if got != newer {
-		t.Fatalf("legacy icon = %q, want newest %q", got, newer)
+	if got != "" {
+		t.Fatalf("residual ICOs without a pointer resolved to %q, want empty (default icon)", got)
 	}
 }
 

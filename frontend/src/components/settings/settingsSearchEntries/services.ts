@@ -19,12 +19,6 @@ export const SERVICES_SEARCH_ENTRIES: ReadonlyArray<SettingsCenterSearchEntry> =
       : entry
   )),
 
-  ...page('services', 'download-source', [
-    'app.download_source.option.cst',
-    'app.download_source.option.bero',
-    'app.download_source.option.github',
-  ]),
-
   ...page('services', 'web-auth', [
     'app.settings.web_auth.password.title',
     'app.settings.web_auth.password.current_label',
@@ -38,26 +32,5 @@ export const SERVICES_SEARCH_ENTRIES: ReadonlyArray<SettingsCenterSearchEntry> =
     'app.settings.web_auth.status.idle_timeout',
     'app.settings.web_auth.status.absolute_timeout',
     'app.settings.web_auth.status.remember_days',
-  ]),
-
-  ...page('services', 'cloud-backup', [
-    'app.cloud_backup.enabled',
-    'app.cloud_backup.provider',
-    'app.cloud_backup.webdav.endpoint',
-    'app.cloud_backup.webdav.file_path',
-    'app.cloud_backup.webdav.username',
-    'app.cloud_backup.webdav.password',
-    'app.cloud_backup.s3.endpoint',
-    'app.cloud_backup.s3.object_key',
-    'app.cloud_backup.s3.bucket',
-    'app.cloud_backup.s3.region',
-    'app.cloud_backup.s3.access_key',
-    'app.cloud_backup.s3.secret_key',
-    'app.cloud_backup.encryption_password',
-    'app.cloud_backup.schedule',
-    'app.cloud_backup.backup_scope',
-    'app.cloud_backup.action.sync',
-    'app.cloud_backup.action.check',
-    'app.cloud_backup.action.restore',
   ]),
 ];

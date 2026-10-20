@@ -86,8 +86,11 @@ func (r *RedisClientImpl) ExecuteCommand(args []string) (interface{}, error) {
 		return nil, fmt.Errorf("命令不能为空")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(metadataContextFor(r), 30*time.Second)
 	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	if r.isCluster {
 		command := strings.ToUpper(strings.TrimSpace(args[0]))

@@ -11,6 +11,8 @@ export type SidebarDatabaseRefreshRequest = {
   dbName?: string;
   schemaName?: string;
   rowCountTables?: string[];
+  clearedTables?: string[];
+  droppedTables?: string[];
   reason?: 'data-sync' | 'external';
 };
 
@@ -33,6 +35,8 @@ export const normalizeSidebarDatabaseRefreshRequest = (
     ...(dbName ? { dbName } : {}),
     ...(schemaName ? { schemaName } : {}),
     ...(rowCountTables.length ? { rowCountTables } : {}),
+    ...(Array.isArray(value?.clearedTables) ? { clearedTables: value.clearedTables.map(table => String(table).trim()).filter(Boolean) } : {}),
+    ...(Array.isArray(value?.droppedTables) ? { droppedTables: value.droppedTables.map(table => String(table).trim()).filter(Boolean) } : {}),
     ...(value?.reason ? { reason: value.reason } : {}),
   };
 };
@@ -49,26 +53,51 @@ export const dispatchSidebarDatabaseRefresh = (
   return true;
 };
 
-export const dispatchSidebarTableDataRefresh = (
+const buildSidebarTableDataRefreshRequest = (
   request: SidebarDatabaseRefreshRequest,
   tableName: string,
   dbType: string,
-): boolean => {
+): SidebarDatabaseRefreshRequest | null => {
   const dialect = resolveSqlDialect(dbType);
   const parts = isMysqlFamilyDialect(dialect)
     ? [tableName]
     : splitQualifiedNameSegmentsDetailed(tableName, dialect).map((part) => part.raw);
-  if (!parts.length || !tableName.trim()) return false;
+  if (!parts.length || !tableName.trim()) return null;
   if (parts.length === 1 && request.schemaName && !isMysqlFamilyDialect(dialect)) {
     parts.unshift(request.schemaName);
   }
   const owner = isOracleLikeDialect(dialect) && parts.length > 1
     ? stripIdentifierQuotes(parts[0], dialect) : '';
-  return dispatchSidebarDatabaseRefresh({
+  return {
     ...request,
     ...(owner ? { dbName: owner } : {}),
     rowCountTables: [parts.map((part) => quoteSqlIdentifierPart(dialect, part)).join('.')],
-  });
+  };
+};
+
+export const dispatchSidebarTableDataRefresh = (
+  request: SidebarDatabaseRefreshRequest, tableName: string, dbType: string,
+): boolean => {
+  const target = buildSidebarTableDataRefreshRequest(request, tableName, dbType);
+  return target ? dispatchSidebarDatabaseRefresh(target) : false;
+};
+
+export const dispatchSidebarTableMutationRefresh = (
+  request: SidebarDatabaseRefreshRequest, tableNames: string[], dbType: string, action: 'clear' | 'drop',
+): void => {
+  const targets = new Map<string, SidebarDatabaseRefreshRequest>();
+  for (const table of tableNames) {
+    const target = buildSidebarTableDataRefreshRequest(request, table, dbType);
+    if (!target) continue;
+    const key = target.dbName || '';
+    const previous = targets.get(key);
+    targets.set(key, { ...target, rowCountTables: [...(previous?.rowCountTables || []), ...(target.rowCountTables || [])] });
+  }
+  for (const target of targets.values()) {
+    dispatchSidebarDatabaseRefresh({ ...target,
+      ...(action === 'clear' ? { clearedTables: target.rowCountTables } : { droppedTables: target.rowCountTables }),
+    });
+  }
 };
 
 export const normalizeSidebarDatabaseListRefreshRequest = (

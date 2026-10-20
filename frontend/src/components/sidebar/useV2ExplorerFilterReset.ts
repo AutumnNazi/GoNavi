@@ -26,7 +26,7 @@ export const useV2ExplorerFilterReset = (
 ): void => {
   const family = resolveExplorerFilterFamily(activeConnection);
   useEffect(() => {
-    const next = resolveExplorerFilterReset(family, activeFilter);
+    const next = resolveExplorerFilterReset(family, activeFilter, activeConnection);
     if (next) resetFilter(next);
-  }, [family, activeFilter, resetFilter]);
+  }, [family, activeConnection, activeFilter, resetFilter]);
 };

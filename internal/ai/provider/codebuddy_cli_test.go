@@ -368,6 +368,161 @@ func TestCodeBuddyCLIProviderChatStreamWithState_ResumesExistingSessionWithoutDr
 	}
 }
 
+func TestBuildCodeBuddyCLIArgs_ShortPromptStaysInArgv(t *testing.T) {
+	args := buildCodeBuddyCLIArgs(false, "ping", "deepseek-v3", "")
+	want := []string{"-p", "ping", "--output-format", "json", "--model", "deepseek-v3"}
+	if len(args) != len(want) {
+		t.Fatalf("expected argv %#v, got %#v", want, args)
+	}
+	for index := range want {
+		if args[index] != want[index] {
+			t.Fatalf("expected argv %#v, got %#v", want, args)
+		}
+	}
+	if codebuddyCLIStdinPrompt("ping") != nil {
+		t.Fatal("short prompt must not be routed to stdin")
+	}
+}
+
+func TestBuildCodeBuddyCLIArgs_LongPromptMovesToStdin(t *testing.T) {
+	longPrompt := strings.Repeat("a", codebuddyCLIStdinPromptThreshold+1)
+	args := buildCodeBuddyCLIArgs(true, longPrompt, "", "")
+	if hasArg(args, longPrompt) {
+		t.Fatal("long prompt must not appear in argv")
+	}
+	if !hasArgSequence(args, "-p", "--output-format") {
+		t.Fatalf("expected -p flag without prompt value, got %#v", args)
+	}
+	for _, want := range []string{"--output-format", "stream-json", "--verbose", "--include-partial-messages"} {
+		if !hasArg(args, want) {
+			t.Fatalf("expected %s flag to be preserved, got %#v", want, args)
+		}
+	}
+	if codebuddyCLIStdinPrompt(longPrompt) == nil {
+		t.Fatal("long prompt must be routed to stdin")
+	}
+}
+
+func TestBuildCodeBuddyCLIArgs_ThresholdBoundary(t *testing.T) {
+	below := strings.Repeat("a", codebuddyCLIStdinPromptThreshold-1)
+	exact := strings.Repeat("a", codebuddyCLIStdinPromptThreshold)
+	if !hasArg(buildCodeBuddyCLIArgs(false, below, "", ""), below) {
+		t.Fatal("prompt below threshold must stay in argv")
+	}
+	if hasArg(buildCodeBuddyCLIArgs(false, exact, "", ""), exact) {
+		t.Fatal("prompt at or above threshold must move to stdin")
+	}
+	if codebuddyCLIStdinPrompt(below) != nil {
+		t.Fatal("prompt below threshold must not be routed to stdin")
+	}
+	if codebuddyCLIStdinPrompt(exact) == nil {
+		t.Fatal("prompt at threshold must be routed to stdin")
+	}
+}
+
+func TestCodeBuddyCLIProvider_ChatKeepsShortPromptInArgv(t *testing.T) {
+	fakeCodeBuddy := writeFakeCodeBuddyScript(t, "#!/bin/sh\necho '[{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"ok\"}]'\n")
+	var capturedArgs []string
+	restore := overrideCodeBuddyCLIForTestWithCapture(t, fakeCodeBuddy, func(args []string) {
+		capturedArgs = append([]string(nil), args...)
+	})
+	defer restore()
+
+	provider, err := NewCodeBuddyCLIProvider(ai.ProviderConfig{APIKey: "cb-test"})
+	if err != nil {
+		t.Fatalf("unexpected provider error: %v", err)
+	}
+
+	resp, err := provider.Chat(context.Background(), ai.ChatRequest{
+		Messages: []ai.Message{{Role: "user", Content: "ping"}},
+	})
+	if err != nil {
+		t.Fatalf("expected chat to succeed, got %v", err)
+	}
+	if resp == nil || resp.Content != "ok" {
+		t.Fatalf("unexpected response: %#v", resp)
+	}
+	if !hasArgSequence(capturedArgs, "-p", "ping") {
+		t.Fatalf("expected short prompt in argv, got %#v", capturedArgs)
+	}
+}
+
+func TestCodeBuddyCLIProvider_ChatUsesStdinForLongPrompt(t *testing.T) {
+	longPrompt := strings.Repeat("a", codebuddyCLIStdinPromptThreshold+2048)
+	fakeCodeBuddy := writeFakeCodeBuddyScript(t, `#!/bin/sh
+input=$(cat)
+printf '{"type":"result","subtype":"success","is_error":false,"result":"%s"}\n' "$input"
+`)
+	var capturedArgs []string
+	restore := overrideCodeBuddyCLIForTestWithCapture(t, fakeCodeBuddy, func(args []string) {
+		capturedArgs = append([]string(nil), args...)
+	})
+	defer restore()
+
+	provider, err := NewCodeBuddyCLIProvider(ai.ProviderConfig{APIKey: "cb-test"})
+	if err != nil {
+		t.Fatalf("unexpected provider error: %v", err)
+	}
+
+	resp, err := provider.Chat(context.Background(), ai.ChatRequest{
+		Messages: []ai.Message{{Role: "user", Content: longPrompt}},
+	})
+	if err != nil {
+		t.Fatalf("expected chat to succeed, got %v", err)
+	}
+	if resp == nil || resp.Content != longPrompt {
+		t.Fatalf("expected CLI to read the full prompt from stdin, got %d bytes back", len(resp.Content))
+	}
+	if hasArg(capturedArgs, longPrompt) {
+		t.Fatal("long prompt must not appear in argv")
+	}
+	if !hasArgSequence(capturedArgs, "-p", "--output-format") {
+		t.Fatalf("expected -p flag without prompt value, got %#v", capturedArgs)
+	}
+}
+
+func TestCodeBuddyCLIProviderChatStream_UsesStdinForLongPrompt(t *testing.T) {
+	longPrompt := strings.Repeat("b", codebuddyCLIStdinPromptThreshold+4096)
+	fakeCodeBuddy := writeFakeCodeBuddyScript(t, `#!/bin/sh
+input=$(cat)
+printf '%s\n' "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"$input\"}]}}" '{"type":"result","subtype":"success","is_error":false,"result":"done"}'
+`)
+	var capturedArgs []string
+	restore := overrideCodeBuddyCLIForTestWithCapture(t, fakeCodeBuddy, func(args []string) {
+		capturedArgs = append([]string(nil), args...)
+	})
+	defer restore()
+
+	providerInstance, err := NewCodeBuddyCLIProvider(ai.ProviderConfig{APIKey: "cb-test"})
+	if err != nil {
+		t.Fatalf("unexpected provider error: %v", err)
+	}
+
+	var chunks []ai.StreamChunk
+	_, err = providerInstance.(SessionStreamProvider).ChatStreamWithState(
+		context.Background(),
+		nil,
+		ai.ChatRequest{
+			Messages: []ai.Message{{Role: "user", Content: longPrompt}},
+		},
+		func(chunk ai.StreamChunk) {
+			chunks = append(chunks, chunk)
+		},
+	)
+	if err != nil {
+		t.Fatalf("expected chat stream to succeed, got %v", err)
+	}
+	if len(chunks) < 2 || chunks[0].Content != longPrompt || !chunks[len(chunks)-1].Done {
+		t.Fatalf("expected stdin prompt echoed as first chunk, got %d chunks", len(chunks))
+	}
+	if hasArg(capturedArgs, longPrompt) {
+		t.Fatal("long prompt must not appear in argv")
+	}
+	if !hasArgSequence(capturedArgs, "-p", "--output-format") {
+		t.Fatalf("expected -p flag without prompt value, got %#v", capturedArgs)
+	}
+}
+
 func writeFakeCodeBuddyScript(t *testing.T, content string) string {
 	t.Helper()
 	tempRoot := t.TempDir()

@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { message } from 'antd';
+import { copyDataGridClipboard } from '../copy/copyDataGridClipboard';
 import {
     buildDataGridCommitChangeSet,
     resolveContextMenuFieldName,
@@ -15,7 +16,6 @@ import { buildRpcConnectionConfig } from '../../../utils/connectionRpcConfig';
 import { buildDataGridTransactionLog } from '../../dataGridTransactionLog';
 import {
     type DataGridClipboardPayload,
-    writeClipboardPayload,
     buildTabularClipboardPayloadFromTsv,
 } from '../../dataGridClipboardPayload';
 import { useDataGridV2Actions } from '../../useDataGridV2Actions';
@@ -358,9 +358,7 @@ export const useDataGridCommit = ({
     });
 
     const copyToClipboard = useCallback((value: string | DataGridClipboardPayload) => {
-        const payload = typeof value === 'string' ? { plainText: value } : value;
-        writeClipboardPayload(payload).catch(console.error);
-        void message.success(translateDataGrid('data_grid.message.copied_to_clipboard'));
+        void copyDataGridClipboard(value, translateDataGrid);
     }, [translateDataGrid]);
 
     const handleCopyContextMenuFieldName = useCallback(() => {

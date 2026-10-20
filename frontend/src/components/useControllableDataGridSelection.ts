@@ -23,8 +23,19 @@ export const useControllableDataGridSelection = ({
   selectedRowKeysRef.current = selectedRowKeys;
   selectedCellsRef.current = selectedCells;
 
+  const prevControlledRowKeysRef = React.useRef<typeof controlledRowKeys>(undefined);
   React.useEffect(() => {
     if (controlledRowKeys === undefined) return;
+    // 受控值「引用变化但内容未变」时跳过回写：查询结果等宿主把 selectedRowKeys
+    // 存在结果集视图状态里且可能不消化回调（onResultViewStateChange 可选未接），
+    // 父级浅拷贝重建的等值数组会把本地刚选中的行（空白选择列点击/拖选）立刻清掉。
+    const previous = prevControlledRowKeysRef.current;
+    prevControlledRowKeysRef.current = controlledRowKeys;
+    if (
+      previous !== undefined
+      && previous.length === controlledRowKeys.length
+      && previous.every((key, index) => Object.is(key, controlledRowKeys[index]))
+    ) return;
     if (
       controlledRowKeys.length === selectedRowKeysRef.current.length
       && controlledRowKeys.every((key, index) => Object.is(key, selectedRowKeysRef.current[index]))
@@ -50,6 +61,7 @@ export const useControllableDataGridSelection = ({
     setLocalRowKeys(resolved);
     onSelectedRowKeysChange?.(resolved);
   }, [onSelectedRowKeysChange]);
+
 
   const setSelectedCells = React.useCallback<React.Dispatch<React.SetStateAction<Set<string>>>>((next) => {
     const resolved = typeof next === 'function' ? next(selectedCellsRef.current) : next;

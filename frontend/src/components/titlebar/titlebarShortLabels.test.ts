@@ -9,7 +9,7 @@ import zhTW from '../../../../shared/i18n/zh-TW.json';
 import { resolveTitlebarQuickActionShortLabel } from './titlebarShortLabels';
 
 const catalogs: Record<string, Record<string, string>> = { deDE, enUS, jaJP, ruRU, zhCN, zhTW };
-const INJECTED_KEYS = ['data-workflow', 'sql-tools', 'user-management', 'session-workbench', 'drivers'];
+const INJECTED_KEYS = ['connection-tools', 'data-workflow', 'sql-tools', 'user-management', 'session-workbench', 'drivers'];
 
 describe('resolveTitlebarQuickActionShortLabel', () => {
   it('maps every sidebar-injected entry to a short label key present in all catalogs', () => {
@@ -30,6 +30,6 @@ describe('resolveTitlebarQuickActionShortLabel', () => {
   it('shortens the Chinese labels', () => {
     const zh = (value: string) => (zhCN as Record<string, string>)[value];
     expect(INJECTED_KEYS.map((key) => resolveTitlebarQuickActionShortLabel(key, zh)))
-      .toEqual(['工作流', 'SQL', '用户', '会话', '驱动']);
+      .toEqual(['维护', '工作流', 'SQL', '用户', '会话', '驱动']);
   });
 });

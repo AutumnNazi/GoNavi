@@ -61,22 +61,11 @@ func (a *App) dbQueryMulti(
 	auditStartedAt := time.Now()
 	var statementAuditEvents []sqlaudit.Event
 	if trackSQLAudit {
-		defer func() {
-			a.recordSQLAuditQuery(sqlAuditQueryInput{
-				Config:     runConfig,
-				Database:   dbName,
-				DBType:     resolvedDBType,
-				QueryID:    queryID,
-				SQL:        originalQuery,
-				Source:     auditSource,
-				CommitMode: result.CommitMode,
-				Duration:   time.Since(auditStartedAt),
-				Result:     result,
-			})
-		}()
-		defer func() {
-			a.appendSQLAuditEvents(statementAuditEvents)
-		}()
+		defer a.beginSQLAuditMulti(sqlAuditQueryInput{
+			Config: runConfig, Database: dbName, DBType: resolvedDBType,
+			QueryID: queryID, SQL: originalQuery, Source: auditSource,
+			MCPContext: sqlaudit.MCPContextFrom(traceContext),
+		}, auditStartedAt, &result, &statementAuditEvents)()
 	}
 	// 慢 SQL 埋点：成功执行后记录（低于阈值 500ms 自动跳过）。
 	// 用 named return + defer 覆盖所有 return path，避免遗漏。
@@ -239,7 +228,7 @@ func (a *App) dbQueryMulti(
 			Err:            statementErr,
 		})
 		event.Timestamp = completedAt.UnixMilli()
-		statementAuditEvents = append(statementAuditEvents, event)
+		statementAuditEvents = append(statementAuditEvents, sqlaudit.ApplyMCPContext(event, sqlaudit.MCPContextFrom(traceContext)))
 	}
 	allReadOnly := true
 	for _, stmt := range statements {
@@ -252,10 +241,13 @@ func (a *App) dbQueryMulti(
 		querier, ok := inst.(db.StatementBatchMultiResultQuerierContext)
 		return ok && querier.SupportsStatementBatchMultiResult()
 	}
-	useNativeMultiResult := shouldUseNativeMultiResultBatch(resolvedDBType, statements, allReadOnly) || supportsStatementBatch(dbInst)
+	useNativeMultiResult := (shouldUseNativeMultiResultBatch(resolvedDBType, statements, allReadOnly) || supportsStatementBatch(dbInst)) &&
+		// 含 GO 的 SQL Server 批次不能下发原文（服务端不认 GO），退回逐条执行。
+		!sqlServerBatchTextNeedsPerStatement(resolvedDBType, query)
 
 	runMultiQuery := func(inst db.Database) ([]connection.ResultSetData, []string, error) {
-		if q, ok := inst.(db.StatementBatchMultiResultQuerierContext); ok && q.SupportsStatementBatchMultiResult() {
+		if q, ok := inst.(db.StatementBatchMultiResultQuerierContext); ok && q.SupportsStatementBatchMultiResult() &&
+			!sqlServerBatchTextNeedsPerStatement(resolvedDBType, query) {
 			setRunningQueryCancellable(true)
 			var (
 				results []connection.ResultSetData
@@ -469,7 +461,9 @@ func (a *App) dbQueryMulti(
 				containsPLSQLBlock = true
 			}
 		}
-		if allWrite && !containsPLSQLBlock && !containsQueryFirstWrite && len(statements) == 1 {
+		if allWrite && !containsPLSQLBlock && !containsQueryFirstWrite && len(statements) == 1 &&
+			// 批量写下发的是原文；含 GO 时必须退回逐条执行，否则 GO 会发给服务端。
+			!sqlServerBatchTextNeedsPerStatement(resolvedDBType, query) {
 			batcher := sessionBatchTarget
 			if batcher == nil {
 				if fallbackBatcher, ok := dbInst.(db.BatchWriteExecer); ok {

@@ -8,6 +8,7 @@ export const SIDEBAR_OBJECT_GROUP_KEYS = [
   'packages',
   'triggers',
   'events',
+  'jobs',
   'databaseLinks',
 ] as const;
 

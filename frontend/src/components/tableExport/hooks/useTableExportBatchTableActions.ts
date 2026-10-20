@@ -1,3 +1,5 @@
+import { dispatchSidebarTableMutationRefresh } from '../../../utils/sidebarDatabaseRefresh';
+import { resolveSqlDialect } from '../../../utils/sqlDialect';
 import { useMemo, useEffect } from 'react';
 import { message } from 'antd';
 import { t } from '../../../i18n';
@@ -322,6 +324,8 @@ export const useTableExportBatchTableActions = ({
       );
       const duration = Date.now() - startTime;
       if (res.success) {
+        dispatchSidebarTableMutationRefresh({ connectionId: effectiveConnectionId, dbName: selectedDbName, schemaName: tab.schemaName },
+          selectedTableNames, resolveSqlDialect(connectionConfig.type, connectionConfig.driver, connectionConfig), 'clear');
         message.success(
           isTruncate
             ? t('sidebar.message.truncate_selected_tables_success', { count: selectedTableNames.length })
@@ -445,6 +449,8 @@ export const useTableExportBatchTableActions = ({
     }
 
     if (succeededNames.length > 0) {
+      dispatchSidebarTableMutationRefresh({ connectionId: effectiveConnectionId, dbName: selectedDbName, schemaName: tab.schemaName },
+        succeededNames, resolveSqlDialect(connectionConfig.type, connectionConfig.driver, connectionConfig), 'drop');
       const succeededNameSet = new Set(succeededNames);
       setAvailableObjects((prev) => prev.filter((item) => !succeededNameSet.has(item.value)));
       setSelectedObjectNames((prev) => prev.filter((name) => !succeededNameSet.has(name)));

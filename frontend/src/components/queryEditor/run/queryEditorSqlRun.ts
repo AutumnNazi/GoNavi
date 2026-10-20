@@ -92,7 +92,7 @@ export interface RunQueryEditorSqlStatementsInput {
     runState: { queryId: string; sqlDurationMs?: number; };
     setQueryId: (id: string) => void;
     setExecutionTimingActive: React.Dispatch<React.SetStateAction<boolean>>;
-    executeSqlEditorMultiQuery: (config: Record<string, any>, dbName: string, sql: string, queryId: string, sourceStatements: string[], dbType?: string, connectionParamsOverride?: string, executionConnectionId?: string, paramBindings?: QueryParamBindingInput[]) => Promise<connection.QueryResult>;
+    executeSqlEditorMultiQuery: (config: Record<string, any>, dbName: string, sql: string, queryId: string, sourceStatements: string[], dbType?: string, connectionParamsOverride?: string, executionConnectionId?: string, paramBindings?: QueryParamBindingInput[], quotedPlaceholders?: boolean) => Promise<connection.QueryResult>;
     executionConnectionParams: string | undefined;
     executionSchemaName?: string;
     finishQueryEditorSqlClock: (result: { durationMs?: unknown; } | null | undefined, startedAt: number) => number;
@@ -369,6 +369,7 @@ export const runQueryEditorSqlStatements = async ({
                     fullSQL,
                     queryId,
                     paramBindings,
+                    paramsState.quotedPlaceholders,
                 )
                 : await DBQueryMultiTransactionalWithOptions(
                     buildRpcConnectionConfig(executionConfig) as any,
@@ -387,6 +388,7 @@ export const runQueryEditorSqlStatements = async ({
                 executionConnectionParams,
                 currentConnectionId,
                 paramBindings,
+                paramsState.quotedPlaceholders,
             );
     } catch (error: any) {
         // A rejected Wails call has the same ambiguity as a returned
@@ -500,7 +502,7 @@ export const runQueryEditorSqlStatements = async ({
             connectionId: conn.id,
             dbName: executionDbName,
             schemaName: executionSchemaName,
-        }, committedStatements, normalizedDbType);
+        }, committedStatements, normalizedDbType, !res.transactionPending && !hasSqlExecutionOutcomeUnknown(res));
     }
 
     if (!res.success) {
@@ -552,7 +554,7 @@ export const runQueryEditorSqlStatements = async ({
         res, queryOptions, normalizedDbType, sourceStatements,
         hasConcreteQueryResultSetData, executablePlans, isAffectedRowsResultSetData,
         anyLimitApplied, driver, currentConnectionId, executionDbName,
-        executionConnectionParams, paramBindings, forceReadOnlyResult,
+        executionConnectionParams, paramBindings, quotedPlaceholders: paramsState.quotedPlaceholders, forceReadOnlyResult,
     });
 
     if (topLevelMessages.length > 0 && !nextResultSets.some((result) => Array.isArray(result.messages) && result.messages.length > 0)) {

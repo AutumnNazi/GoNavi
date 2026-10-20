@@ -1,0 +1,222 @@
+/*
+ * Navicat 布局主题（appearance.uiLayoutMode = 'navicat'）的全局样式层。
+ *
+ * 作用域：body[data-ui-layout='navicat'] —— classic 模式完全不受影响。
+ *
+ * 配色策略（重要）：本层只承载「布局语义」——不透明表面、页签形状、
+ * 密度、页签降噪——所有颜色一律引用主题 token（--gn-bg-* / --gn-fg-* /
+ * --gn-accent 等）。亮色 / 暗色基础主题、GoNavi 内置主题、用户自定义
+ * CSS 主题因此都能在 navicat 布局下正常生效；本层不再写死任何
+ * Navicat 原型调色板。侧栏、内容区、标题栏、数据网格表头等表面
+ * 完全沿用基础层 / 主题层的 token 规则。
+ */
+
+body[data-ui-layout='navicat'][data-ui-version='v2'] {
+  /* 不透明窗口：压掉毛玻璃。基础主题用 --gn-window-opacity 调表面 alpha，
+     自定义主题用 --gn-window-opacity-percent，两套都要在 body 上钉住。 */
+  --gn-window-opacity: 1;
+  --gn-window-opacity-percent: 100%;
+}
+
+/* 窗口骨架：不透明表面（去掉毛玻璃），更接近 Navicat 桌面质感。 */
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-app-root {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  --gonavi-window-opacity: 1;
+}
+
+/* 侧栏 + 主页签条：与主体内容区完全同色（直接引用 panel-2 token），
+   亮/暗基础主题与 GoNavi 内置/自定义主题自动跟随。 */
+body[data-ui-layout='navicat'][data-ui-version='v2'] {
+  --gn-navicat-side-surface: var(--gn-bg-panel-2, #f6f6f8);
+}
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-app-sider,
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-sidebar-redesign,
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-app-sider .gn-side-info-tabs {
+  background: var(--gn-navicat-side-surface) !important;
+}
+
+/* 侧栏资源管理器底部工具条（上下文摘要 + 搜索/定位/折叠按钮）：
+   Navicat 模式整条不展示——顶部已有搜索输入框，上下文信息由底部
+   状态栏与「信息」页签承载，原型侧栏也没有这条横带。 */
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-explorer-actions {
+  display: none;
+}
+
+/* 空工作区：Navicat 无标签时就是一块安静的主题画布，不展示首页引导。 */
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-navicat-empty-workspace {
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--gn-bg-app, #f0f0f3);
+}
+
+/* ============================================================
+ * 主标签条：参考 antd Tabs 默认「线式页签」的布局与样式。
+ * 页签条背景与左侧栏同色（chrome，比内容面深一档，对齐 Navicat
+ * 「左树 + 页签行一灰、内容区更亮」的骨架），页签平铺无盒子，
+ * 整条底部一条发丝线（基础层 ::before），激活页签仅加粗文字 +
+ * 2px 主题强调色顶部标记。
+ * 布局上带高随页签自适应：基础层把带高钉死（单行 36 / 双行 46px），
+ * 而双行页签 46px + 内边距会超出固定带高，页签底部溢出压到内容
+ * 上（「背景图层 + 悬浮页签」的错位观感）；自适应后
+ * 带底 = 页签底 = 内容顶，天然一个整体。
+ * ============================================================ */
+
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs > .ant-tabs-nav,
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs-double > .ant-tabs-nav {
+  background: var(--gn-navicat-side-surface);
+  height: auto;
+  flex: 0 0 auto;
+  min-height: 0;
+  /* 左侧顶格：首签与侧栏分割线对齐（Navicat 式），右侧留滚动溢出空间。 */
+  padding: 0 8px 0 0;
+  margin: 0;
+}
+
+/* antd 对非首签有兄弟 margin（与本层同权重、被运行时注入的 antd 样式压过），
+   这里提权清零，页签保持紧排。 */
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-tab + .ant-tabs-tab {
+  margin: 0 !important;
+}
+
+/* 页签：平铺文本页签（antd 线式）——无底色、无圆角、无竖向分割线。 */
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-tab {
+  border-radius: 0 !important;
+  background: transparent !important;
+  border-right: none !important;
+  margin: 0 !important;
+  transition: background-color 0.12s ease;
+}
+
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-tab:hover:not(.ant-tabs-tab-active) {
+  background: var(--gn-bg-hover, rgba(38, 38, 43, 0.05)) !important;
+}
+
+/* 激活页签高亮：与 classic 模式同色（--gn-bg-panel 面板白）+ 加粗文字 +
+   基础层的 2px 主题强调色顶部标记。页签带与内容区同色（panel-2）后
+   仅靠顶标难以区分当前页签，用面板色高亮明确标识，两种布局观感一致。 */
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-tab.ant-tabs-tab-active {
+  background: var(--gn-bg-panel, #ffffff) !important;
+}
+
+/* 激活页签悬浮不加深：保持高亮底稳定，避免闪烁。 */
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-tab.ant-tabs-tab-active:hover {
+  background: var(--gn-bg-panel, #ffffff) !important;
+}
+
+/* 页签文字：非激活 fg-3 / 激活 fg-1。btn 上必须显式声明——antd 自身对
+   .ant-tabs-tab-btn 有直接命中的颜色规则，基础层写在 .ant-tabs-tab 上的
+   颜色继承不进去。 */
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-tab .ant-tabs-tab-btn {
+  color: var(--gn-fg-3, #5f5f68);
+  font-size: var(--gn-font-size-sm, 12px);
+}
+
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--gn-fg-1, #26262b);
+  font-weight: 600;
+}
+
+/* 页签内部部件降噪：主机/库/分隔符统一主题灰阶，避免彩色碎片感。
+   !important 用于压过内置主题给这两类部件的彩色规则
+   （customThemePresets 以 !important 输出），降噪是 navicat 布局
+   自己的视觉语言，优先于主题配色。 */
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .gn-v2-tab-label-part-host,
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .gn-v2-tab-label-part-schema,
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .gn-v2-tab-label-part-group,
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .gn-v2-tab-label-part-database,
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .gn-v2-tab-kind-icon {
+  color: var(--gn-fg-4, #8b8b94) !important;
+}
+
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .gn-v2-tab-label-separator {
+  color: var(--gn-fg-5, #a9a9b3);
+}
+
+/* 类型图标：非激活灰、激活主题强调色 */
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-tab.ant-tabs-tab-active .gn-v2-tab-kind-icon {
+  color: var(--gn-accent, #16a34a) !important;
+}
+
+/* 关闭按钮：悬浮才显形，圆形热区；margin-left:auto 钉在页签右缘——
+   页签宽度随内容自适应时，关闭按钮距外层右边的距离保持一致。 */
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .gn-v2-tab-close {
+  color: var(--gn-fg-4, #8b8b94);
+  border-radius: 5px;
+  margin-left: auto;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .gn-v2-tab-close:hover {
+  background: var(--gn-bg-active, #d8d8de);
+  color: var(--gn-fg-1, #33333a);
+}
+
+/* 新页签“+”：主题灰阶（替代亮绿） */
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-nav-add {
+  background: transparent !important;
+  color: var(--gn-fg-4, #66666e) !important;
+  margin-left: 6px;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-nav-add:hover {
+  background: var(--gn-bg-active, #d2d2d9) !important;
+  color: var(--gn-fg-1, #33333a) !important;
+}
+
+/* —— 页签宽度自适应（覆盖 JS 注入的固定 --gn-v2-tab-width）——
+   短标题不再撑满 260px 空宽；长标题 240px 封顶截断。 */
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-tab {
+  width: auto !important;
+  min-width: 132px !important;
+  max-width: 240px !important;
+}
+
+/* —— 标签排版：内容左对齐 + 所有页签统一的左右内边距 ——
+   不能居中：页签宽度是内容自适应的，居中会让文字左缘随内容宽度漂移
+   （新页签副标题异步补全、标题更新时都会跳变），不同页签左缘也不一致。 */
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .gn-v2-tab-label {
+  padding: 0 10px;
+  gap: 7px;
+  justify-content: flex-start;
+}
+
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .gn-v2-tab-label-content {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* 主标题：略大更清晰，非激活 500 / 激活 600（颜色沿用基础层 fg-3 / fg-1）。 */
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .gn-v2-tab-label-main.tab-title-text {
+  font-size: calc(var(--gn-font-size-sm, 12px) + 0.5px);
+  font-weight: 500;
+  letter-spacing: 0.1px;
+}
+
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-tab.ant-tabs-tab-active .gn-v2-tab-label-main.tab-title-text {
+  font-weight: 600;
+}
+
+/* 双行模式第二行：更小更淡 */
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .gn-v2-tab-label-secondary {
+  font-size: var(--gn-font-size-xs, 11px);
+  color: var(--gn-fg-4, #8b8b94);
+}
+
+/* 关闭按钮：悬浮页签才显形（占位不变，避免布局抖动） */
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .gn-v2-tab-close {
+  opacity: 0;
+}
+
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-tab:hover .gn-v2-tab-close,
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-tab.ant-tabs-tab-active .gn-v2-tab-close {
+  opacity: 1;
+}
+
+/* antd 控件基础观感：1px 实线边框、5px 圆角（原型 sel-lite / mini-btn 口径）。 */
+body[data-ui-layout='navicat'][data-ui-version='v2'] .ant-input,
+body[data-ui-layout='navicat'][data-ui-version='v2'] .ant-select-selector,
+body[data-ui-layout='navicat'][data-ui-version='v2'] .ant-input-affix-wrapper {
+  border-radius: 5px;
+}

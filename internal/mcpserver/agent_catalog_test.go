@@ -33,7 +33,7 @@ func TestAgentToolCatalogListIsBuiltInAndSchemaComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List returned error: %v", err)
 	}
-	wantNames := []string{"get_connections", "get_server_version", "get_databases", "get_tables", "get_views", "get_objects", "get_all_columns", "get_columns", "get_indexes", "get_foreign_keys", "get_triggers", "get_table_ddl", "execute_sql"}
+	wantNames := []string{"get_connections", "get_server_version", "get_databases", "get_tables", "get_views", "get_objects", "get_all_columns", "get_columns", "get_indexes", "get_foreign_keys", "get_triggers", "get_table_ddl", "execute_sql", "inspect_source"}
 	if len(items) != len(wantNames) {
 		t.Fatalf("catalog length = %d, want %d", len(items), len(wantNames))
 	}
@@ -45,8 +45,12 @@ func TestAgentToolCatalogListIsBuiltInAndSchemaComplete(t *testing.T) {
 			t.Fatalf("catalog[%q] has invalid input schema: %s", want, items[index].InputSchema)
 		}
 	}
-	if items[len(items)-1].Effect != runharness.ToolEffectSideEffectUnknown {
-		t.Fatalf("execute_sql fallback effect = %q, want conservative unknown", items[len(items)-1].Effect)
+	executeSQL := items[len(items)-2]
+	if executeSQL.Name != "execute_sql" || executeSQL.Effect != runharness.ToolEffectSideEffectUnknown {
+		t.Fatalf("execute_sql fallback effect = %q (%s), want conservative unknown", executeSQL.Effect, executeSQL.Name)
+	}
+	if items[len(items)-1].Name != "inspect_source" || items[len(items)-1].Effect != runharness.ToolEffectReadOnly {
+		t.Fatalf("inspect_source = %s effect %q", items[len(items)-1].Name, items[len(items)-1].Effect)
 	}
 	for _, item := range items {
 		if strings.Contains(item.Name, "mcp") {

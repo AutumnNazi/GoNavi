@@ -5,6 +5,7 @@ import { getAntdLocale } from '../i18n/frameworkLocale';
 import { APP_OVERLAY_Z_INDEX_BASE } from '../utils/overlayZIndex';
 import CustomThemeStyleHost from './theme/CustomThemeStyleHost';
 import ToolbarAppearanceStyleHost from './theme/ToolbarAppearanceStyleHost';
+import { useDocumentFontFamilies } from './common/useDocumentFontFamilies';
 import {
   type NativeDetachedWindowClient,
   defaultClient,
@@ -34,6 +35,7 @@ export interface NativeDetachedWindowAppProps {
 const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
   client = defaultClient,
 }) => {
+  const fontFamilyTokens = useDocumentFontFamilies();
   const {
     i18n, translate, bootstrap, loadError, contentMounted, setContentMounted, controllerEnabled,
     customThemeOverride, markContentReady, terminalAction, setTerminalAction,
@@ -93,6 +95,7 @@ const NativeDetachedWindowApp: React.FC<NativeDetachedWindowAppProps> = ({
         theme={{
           algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
           token: {
+            ...fontFamilyTokens,
             fontSize: Math.max(10, Number(fontSize) || 14),
             zIndexPopupBase: APP_OVERLAY_Z_INDEX_BASE,
             ...(customThemeAntTokens.bgContainer ? {

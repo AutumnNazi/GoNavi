@@ -456,6 +456,7 @@ export const mockModule6 = () => {
     Radio,
     Alert,
     Card,
+    Collapse: ({ items }: { items: { key: string; children: React.ReactNode }[] }) => <>{items.map((item) => <div key={item.key}>{item.children}</div>)}</>,
     Row,
     Col,
     Typography,

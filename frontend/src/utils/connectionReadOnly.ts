@@ -2,6 +2,7 @@ import type { ConnectionConfig } from "../types";
 import { convertMongoShellToJsonCommand } from "./mongodb";
 import { resolveSqlDialect } from "./sqlDialect";
 import { hasEmbeddedWriteStatement } from "./sqlEmbeddedWrite";
+import { hasJobMutationSQL } from "./databaseJobs/jobMutationClassifier";
 import { findSqlStatementRanges } from "./sqlStatementSelection";
 import { listDataSourceSpecs } from "./dataSourceRegistry";
 import { resolveRegistryReadOnlyClassifier } from "./dataSourceRegistry/commandReadOnly";
@@ -276,6 +277,7 @@ const resolveConnectionReadOnlyType = (
 const isReadOnlySqlStatement = (statement: string, dbType: string): boolean => {
   const text = stripLeadingSqlComments(statement, dbType);
   if (!text) return true;
+  if (hasJobMutationSQL(text, dbType)) return false;
   const keyword = extractLeadingSqlKeyword(text, dbType);
   if (!keyword || !SQL_READ_ONLY_KEYWORDS.has(keyword)) {
     return false;

@@ -74,17 +74,19 @@ func (r *RedisClientImpl) Connect(config connection.ConnectionConfig) (err error
 				tlsConfig = cfg
 			}
 			opts := &redis.FailoverOptions{
-				MasterName:       masterName,
-				SentinelAddrs:    seedAddrs,
-				Username:         strings.TrimSpace(attempt.User),
-				Password:         attempt.Password,
-				SentinelUsername: strings.TrimSpace(attempt.RedisSentinelUser),
-				SentinelPassword: attempt.RedisSentinelPassword,
-				DB:               r.currentDB,
-				DialTimeout:      timeout,
-				ReadTimeout:      timeout,
-				WriteTimeout:     timeout,
-				TLSConfig:        tlsConfig,
+				MaxRetries:            -1,
+				ContextTimeoutEnabled: true,
+				MasterName:            masterName,
+				SentinelAddrs:         seedAddrs,
+				Username:              strings.TrimSpace(attempt.User),
+				Password:              attempt.Password,
+				SentinelUsername:      strings.TrimSpace(attempt.RedisSentinelUser),
+				SentinelPassword:      attempt.RedisSentinelPassword,
+				DB:                    r.currentDB,
+				DialTimeout:           timeout,
+				ReadTimeout:           timeout,
+				WriteTimeout:          timeout,
+				TLSConfig:             tlsConfig,
 			}
 			sentinelClient := redis.NewFailoverClient(opts)
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -128,6 +130,7 @@ func (r *RedisClientImpl) Connect(config connection.ConnectionConfig) (err error
 				tlsConfig = cfg
 			}
 			opts := &redis.ClusterOptions{
+				MaxRetries:            -1,
 				Addrs:                 seedAddrs,
 				Username:              strings.TrimSpace(attempt.User),
 				Password:              attempt.Password,
@@ -192,14 +195,17 @@ func (r *RedisClientImpl) Connect(config connection.ConnectionConfig) (err error
 		}
 
 		opts := &redis.Options{
-			Addr:         addr,
-			Username:     strings.TrimSpace(attempt.User),
-			Password:     attempt.Password,
-			DB:           r.currentDB,
-			DialTimeout:  timeout,
-			ReadTimeout:  timeout,
-			WriteTimeout: timeout,
-			TLSConfig:    tlsConfig,
+			// Raw commands can be non-idempotent; a lost reply must not replay them.
+			MaxRetries:            -1,
+			ContextTimeoutEnabled: true,
+			Addr:                  addr,
+			Username:              strings.TrimSpace(attempt.User),
+			Password:              attempt.Password,
+			DB:                    r.currentDB,
+			DialTimeout:           timeout,
+			ReadTimeout:           timeout,
+			WriteTimeout:          timeout,
+			TLSConfig:             tlsConfig,
 		}
 
 		singleClient := redis.NewClient(opts)

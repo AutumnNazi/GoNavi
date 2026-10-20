@@ -28,9 +28,12 @@ func TestWindowsInstallerBrandIconScriptMirrorsDataRootResolution(t *testing.T) 
 		`'.gonavi'`,
 		`storage_root.json`,
 		`dataRoot`,
-		// Brand state pointer and legacy content-addressed fallback.
+		// Brand state pointer. The pointer is the only authority: legacy
+		// content-addressed ICO files must never be guessed from (they are
+		// never pruned and survive uninstall, so guessing resurrects an icon
+		// the user never selected). Mirrors the Go loader.
 		`active-icon.txt`,
-		`gonavi-brand-*.ico`,
+		`$iconName = $candidate`,
 		// The profile is derived from the AppDataFolder property because the
 		// deferred action runs as SYSTEM.
 		`$ApplicationDataFolder`,
@@ -39,6 +42,40 @@ func TestWindowsInstallerBrandIconScriptMirrorsDataRootResolution(t *testing.T) 
 		if !strings.Contains(script, token) {
 			t.Fatalf("installer brand icon script missing %q:\n%s", token, script)
 		}
+	}
+}
+
+// 回归防线：安装期不得再按修改时间挑最新的 gonavi-brand-*.ico。内容寻址 ICO
+// 从不清理、卸载也刻意保留，猜测会把用户从未选择过的图标（旧版默认吉祥物）
+// 恢复到新建快捷方式上，而应用内选择器仍显示默认值——这正是用户报告的现象，
+// 且因为安装器早于首次启动运行而更难诊断。只检查可执行代码行，注释（含本
+// 契约的说明文字）不参与判定。
+func TestWindowsInstallerBrandIconScriptNeverGuessesFromResidualIcons(t *testing.T) {
+	script := readWindowsInstallerBrandIconScript(t)
+	var code strings.Builder
+	for _, line := range strings.Split(script, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		code.WriteString(line)
+		code.WriteString("\n")
+	}
+	executable := code.String()
+	for _, forbidden := range []string{
+		// The residual ICO glob and the mtime ordering that turned it into a
+		// "current selection" guess.
+		`gonavi-brand-*.ico`,
+		`LastWriteTime`,
+		`Sort-Object`,
+	} {
+		if strings.Contains(executable, forbidden) {
+			t.Fatalf("installer brand icon script must not guess an icon from residual ICO files, found %q in executable code:\n%s", forbidden, executable)
+		}
+	}
+	// The icon name may only ever come from active-icon.txt, never from a
+	// directory scan.
+	if strings.Contains(executable, `-Filter 'gonavi-brand`) {
+		t.Fatalf("installer brand icon script must resolve the icon from active-icon.txt only:\n%s", executable)
 	}
 }
 

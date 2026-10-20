@@ -462,3 +462,38 @@ func ensureWindowsUpdateTargetWritable(targetExe string) error {
 	}
 	return nil
 }
+
+// ensureMacUpdateTargetWritable 在退出前确认目标目录可写。
+//
+// 更新脚本是脱离主进程静默执行的，等到安装阶段才发现写不动时窗口早已关闭。
+// 这里只做无副作用的目录写入探测，不碰用户的 .app 本身：
+// 换包失败（含 App Management 拦截改名）由脚本侧的通知兜底，会弹窗告诉用户原因。
+func ensureMacUpdateTargetWritable(targetApp string) error {
+	targetApp = strings.TrimSpace(targetApp)
+	if targetApp == "" {
+		return localizedUpdateError{key: "app.update.backend.error.install_target_unresolved"}
+	}
+	targetDir := strings.TrimSpace(filepath.Dir(targetApp))
+	if targetDir == "" || targetDir == "." {
+		return localizedUpdateError{key: "app.update.backend.error.install_target_unresolved"}
+	}
+
+	probePath := filepath.Join(targetDir, fmt.Sprintf(".gonavi-update-write-probe-%d.tmp", time.Now().UnixNano()))
+	file, err := os.OpenFile(probePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return localizedUpdateError{
+			key: "app.update.backend.error.install_target_not_writable",
+			params: map[string]any{
+				"path":   targetDir,
+				"detail": err.Error(),
+			},
+		}
+	}
+	if closeErr := file.Close(); closeErr != nil {
+		logger.Warnf("关闭 macOS 更新写入探针失败：%v", closeErr)
+	}
+	if removeErr := os.Remove(probePath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+		logger.Warnf("清理 macOS 更新写入探针失败：%v", removeErr)
+	}
+	return nil
+}

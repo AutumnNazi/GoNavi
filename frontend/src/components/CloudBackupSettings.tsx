@@ -10,6 +10,7 @@ import CloudBackupCategorySelector, {
   CLOUD_BACKUP_CATEGORY_IDS,
 } from './CloudBackupCategorySelector';
 import CloudBackupRemotePreview from './CloudBackupRemotePreview';
+import { useI18n } from '../i18n/provider';
 
 type CloudBackupConfig = {
   enabled: boolean;
@@ -46,7 +47,7 @@ type CloudBackupBindings = {
 };
 
 type Props = {
-  t: (key: string, params?: any) => string;
+  t?: (key: string, params?: any) => string;
 };
 
 const getBindings = (): CloudBackupBindings | null => {
@@ -54,7 +55,7 @@ const getBindings = (): CloudBackupBindings | null => {
   return ((window as any).go?.app?.App || null) as CloudBackupBindings | null;
 };
 
-const fallback = (t: Props['t'], key: string, value: string, params?: any): string => {
+const fallback = (t: NonNullable<Props['t']>, key: string, value: string, params?: any): string => {
   const translated = t(key, params);
   return translated === key ? value : translated;
 };
@@ -100,7 +101,9 @@ const DEFAULT_CONFIG: CloudBackupConfig = {
   s3RemoteAvailable: false,
 };
 
-export default function CloudBackupSettings({ t }: Props) {
+export default function CloudBackupSettings({ t: tProp }: Props = {}) {
+  const { t: tFromI18n } = useI18n();
+  const t = tProp ?? ((key: string, params?: any) => tFromI18n(key, params));
   const [config, setConfig] = useState<CloudBackupConfig>(DEFAULT_CONFIG);
   const [savedConfig, setSavedConfig] = useState<CloudBackupConfig>(DEFAULT_CONFIG);
   const [webdavUsername, setWebdavUsername] = useState('');

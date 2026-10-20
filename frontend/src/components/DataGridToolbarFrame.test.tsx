@@ -4,6 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { setCurrentLanguage, t } from '../i18n';
 import DataGridToolbarFrame, { type DataGridToolbarFrameProps } from './DataGridToolbarFrame';
+import { Dropdown } from 'antd';
+import { useDataGridCopyContent } from './dataGrid/copy/useDataGridCopyContent';
+import { GONAVI_ROW_KEY } from './dataGrid/core/dataGridCellKeys';
 
 vi.mock('@ant-design/icons', () => {
   const icon = (name: string) => () => <span data-icon={name} />;
@@ -441,4 +444,59 @@ describe('DataGridToolbarFrame filter entry highlight (issue #1302)', () => {
     expect(labels).toContain('清空');
     expect(labels).toContain('清空全部');
   });
+});
+
+
+describe('refresh cancellation button', () => {
+  it('switches the existing refresh button to an enabled stop action while loading', () => {
+    const onRefresh = vi.fn();
+    const onCancelReload = vi.fn();
+    const props = makeProps({ onReload: vi.fn(), onRefresh, onCancelReload, loading: true });
+    let renderer!: ReactTestRenderer;
+    act(() => { renderer = create(<DataGridToolbarFrame {...props} />); });
+    const stop = renderer.root.findAllByType('button').find(button =>
+      button.props['aria-label'] === t('data_grid.toolbar.stop_refresh'))!;
+    expect(stop.props.disabled).toBe(false);
+    act(() => stop.props.onClick());
+    expect(onCancelReload).toHaveBeenCalledOnce();
+    expect(onRefresh).not.toHaveBeenCalled();
+    act(() => renderer.update(<DataGridToolbarFrame {...props} loading={false} />));
+    const refresh = renderer.root.findAllByType('button').find(button =>
+      button.props['aria-label'] === t('data_grid.toolbar.refresh'))!;
+    act(() => refresh.props.onClick());
+    expect(onRefresh).toHaveBeenCalledOnce();
+    act(() => renderer.unmount());
+  });
+});
+
+
+describe('DataGridToolbarFrame regular copy content integration', () => {
+  for (const isQueryResultExport of [false, true]) {
+    it(`exposes six copy actions for ${isQueryResultExport ? 'query results' : 'table data'}`, () => {
+      const clipboard = vi.fn();
+      function Harness() {
+        const copy = useDataGridCopyContent({
+          rows: [{ [GONAVI_ROW_KEY]: 'a', name: 'Alice' }, { [GONAVI_ROW_KEY]: 'b', name: 'Bob' }],
+          columnNames: ['name'], selectedRowKeys: ['b'], selectedCells: new Set(),
+          copyToClipboard: clipboard, translate: (key) => t(key),
+        });
+        return <DataGridToolbarFrame {...makeProps({
+          isQueryResultExport, canCopyQueryResult: copy.canCopy, queryResultCopyMenu: copy.menuItems,
+        })} />;
+      }
+      const renderer = create(<Harness />);
+      const trigger = renderer.root.findByProps({ 'data-grid-query-copy-action': 'true' });
+      expect(trigger.props.disabled).toBe(false);
+      const dropdown = renderer.root.findAllByType(Dropdown).find((node) => node.props.menu?.items?.[0]?.key === 'copy-selected');
+      expect(dropdown).toBeDefined();
+      const expected = ['name', 'Bob', 'name\nBob', 'name', 'Alice\nBob', 'name\nAlice\nBob'];
+      const items = dropdown?.props.menu.items.flatMap((group: { children: Array<{ onClick: () => void }> }) => group.children);
+      expect(items).toHaveLength(6);
+      items.forEach((item: { onClick: () => void }, index: number) => {
+        act(() => item.onClick());
+        expect(clipboard.mock.lastCall?.[0].plainText).toBe(expected[index]);
+      });
+      renderer.unmount();
+    });
+  }
 });

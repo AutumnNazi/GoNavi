@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"bufio"
 	"compress/flate"
-	"encoding/xml"
 	"fmt"
 	"io"
 	"os"
@@ -166,7 +165,7 @@ func (w *xlsxExportFileWriter) ConsumeRow(row map[string]interface{}) error {
 		}
 		values[i] = formatExportCellText(val)
 	}
-	if err := w.writeStringRow(w.nextRow, values); err != nil {
+	if err := w.writeDataRow(w.nextRow, values); err != nil {
 		return err
 	}
 	w.nextRow++
@@ -193,7 +192,7 @@ func (w *xlsxExportFileWriter) ConsumeRowValues(values []interface{}) error {
 		}
 		record[i] = formatExportCellText(value)
 	}
-	if err := w.writeStringRow(w.nextRow, record); err != nil {
+	if err := w.writeDataRow(w.nextRow, record); err != nil {
 		return err
 	}
 	w.nextRow++
@@ -280,6 +279,14 @@ func (w *xlsxExportFileWriter) cleanupTempSheets() error {
 }
 
 func (w *xlsxExportFileWriter) writeStringRow(rowNumber int, values []string) error {
+	return w.writeRow(rowNumber, values, false)
+}
+
+func (w *xlsxExportFileWriter) writeDataRow(rowNumber int, values []string) error {
+	return w.writeRow(rowNumber, values, true)
+}
+
+func (w *xlsxExportFileWriter) writeRow(rowNumber int, values []string, numericCells bool) error {
 	if w.current == nil {
 		return fmt.Errorf("xlsx sheet not initialized")
 	}
@@ -295,7 +302,7 @@ func (w *xlsxExportFileWriter) writeStringRow(rowNumber int, values []string) er
 	}
 	rowRef := strconv.Itoa(rowNumber)
 	for i, value := range values {
-		if err := writeXLSXInlineStringCell(w.current.writer, w.columnRefs[i], rowRef, value); err != nil {
+		if err := writeXLSXCell(w.current.writer, w.columnRefs[i], rowRef, value, numericCells); err != nil {
 			return err
 		}
 	}
@@ -400,34 +407,6 @@ func writeXLSXSheetHeader(writer *bufio.Writer) error {
 	return err
 }
 
-func writeXLSXInlineStringCell(writer *bufio.Writer, columnRef string, rowRef string, value string) error {
-	if _, err := writer.WriteString(`<c r="`); err != nil {
-		return err
-	}
-	if _, err := writer.WriteString(columnRef); err != nil {
-		return err
-	}
-	if _, err := writer.WriteString(rowRef); err != nil {
-		return err
-	}
-	if _, err := writer.WriteString(`" t="inlineStr"><is><t`); err != nil {
-		return err
-	}
-	if value != strings.TrimSpace(value) {
-		if _, err := writer.WriteString(` xml:space="preserve"`); err != nil {
-			return err
-		}
-	}
-	if _, err := writer.WriteString(`>`); err != nil {
-		return err
-	}
-	if err := xml.EscapeText(writer, []byte(value)); err != nil {
-		return err
-	}
-	_, err := writer.WriteString(`</t></is></c>`)
-	return err
-}
-
 func buildXLSXContentTypes(sheetCount int) []byte {
 	var builder strings.Builder
 	builder.Grow(1024 + sheetCount*128)
@@ -456,7 +435,8 @@ func buildXLSXWorkbookXML(sheets []*xlsxExportTempSheet) []byte {
 	builder.Grow(512 + len(sheets)*96)
 	builder.WriteString(`<?xml version="1.0" encoding="UTF-8"?>`)
 	builder.WriteString(`<workbook xmlns="` + xlsxMainNamespace + `" xmlns:r="` + xlsxRelationshipsNamespace + `">`)
-	builder.WriteString(`<bookViews><workbookView workbookViewId="0"/></bookViews>`)
+	// sheetView refers to this view by index; workbookView has no workbookViewId attribute.
+	builder.WriteString(`<bookViews><workbookView/></bookViews>`)
 	builder.WriteString(`<sheets>`)
 	for i, sheet := range sheets {
 		builder.WriteString(`<sheet name="`)

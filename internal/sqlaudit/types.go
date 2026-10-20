@@ -36,6 +36,8 @@ type Event struct {
 	QueryID               string `json:"queryId"`
 	TransactionID         string `json:"transactionId"`
 	Source                string `json:"source"`
+	MCPRequestID          string `json:"mcpRequestId,omitempty"`
+	MCPClient             string `json:"mcpClient,omitempty"`
 	BoundaryMode          string `json:"boundaryMode"`
 	CommitMode            string `json:"commitMode"`
 	SQLText               string `json:"sqlText"`
@@ -65,9 +67,10 @@ type Filter struct {
 	Source        string `json:"source"`
 	FromTimestamp int64  `json:"fromTimestamp"`
 	ToTimestamp   int64  `json:"toTimestamp"`
-	// ExecutionHistory limits results to user-triggered SQL editor executions.
-	// It deliberately excludes transaction lifecycle/control events while still
-	// including per-statement managed-transaction executions and failed opens.
+	MCPRequestID  string `json:"mcpRequestId"`
+	// IncludeMCP 在执行历史中额外包含 MCP 来源；默认保持仅查询编辑器。
+	IncludeMCP bool `json:"includeMcp"`
+	// ExecutionHistory 排除事务控制事件，保留查询、托管事务语句和失败的事务打开。
 	ExecutionHistory bool `json:"executionHistory"`
 	Page             int  `json:"page"`
 	PageSize         int  `json:"pageSize"`

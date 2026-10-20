@@ -1,3 +1,5 @@
+import { dispatchSidebarTableMutationRefresh } from '../../../utils/sidebarDatabaseRefresh';
+import { resolveSqlDialect } from '../../../utils/sqlDialect';
 import React, { useCallback, useMemo } from 'react';
 import { message, Input } from 'antd';
 import {
@@ -115,6 +117,8 @@ export const useTableOverviewTableActions = ({
               )) return;
               const res = await DropTable(buildRpcConnectionConfig(config) as any, tab.dbName || '', tableName);
               if (res.success) {
+                  dispatchSidebarTableMutationRefresh({ connectionId: connection!.id, dbName: tab.dbName, schemaName },
+                    [tableName], resolveSqlDialect(config.type, config.driver, config), 'drop');
                   await loadData();
                   message.success(t('table_overview.message.delete_table_success'));
               } else {
@@ -122,7 +126,7 @@ export const useTableOverviewTableActions = ({
               }
           },
       });
-  }, [buildConfig, connection, loadData, t, tab.dbName]);
+  }, [buildConfig, connection, loadData, schemaName, t, tab.dbName]);
 
   const handleTableDataDangerAction = useCallback((tableName: string, action: TableDataDangerActionKind) => {
       if (action === 'clear' && !allowClear) return;
@@ -156,6 +160,8 @@ export const useTableOverviewTableActions = ({
                   const res = await app[methodName](buildRpcConnectionConfig(config) as any, tab.dbName || '', [tableName]);
                   hide();
                   if (res.success) {
+                      dispatchSidebarTableMutationRefresh({ connectionId: connection!.id, dbName: tab.dbName, schemaName },
+                        [tableName], resolveSqlDialect(config.type, config.driver, config), 'clear');
                       await loadData();
                       message.success(t('table_overview.message.table_data_action_success', { action: actionLabel }));
                   } else {
@@ -172,7 +178,7 @@ export const useTableOverviewTableActions = ({
               }
           },
       });
-  }, [allowClear, buildConfig, connection, loadData, t, tab.dbName]);
+  }, [allowClear, buildConfig, connection, loadData, schemaName, t, tab.dbName]);
 
   const toggleOverviewTablePinned = useCallback((tableName: string, pinned?: boolean) => {
       if (!connection?.id || !tab.dbName || !tableName) return;
@@ -229,7 +235,7 @@ export const useTableOverviewTableActions = ({
               }
           },
       });
-  }, [buildConfig, connection, loadData, t, tab.dbName]);
+  }, [buildConfig, connection, loadData, schemaName, t, tab.dbName]);
 
   const openCreateStarRocksRollup = useCallback((tableName: string) => {
       if (!connection) return;

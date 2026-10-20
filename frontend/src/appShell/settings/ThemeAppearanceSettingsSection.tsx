@@ -1,4 +1,6 @@
-import { Switch, Select } from 'antd';
+import { WorkbenchSidebarAutoCollapseSetting } from './WorkbenchSidebarAutoCollapseSetting';
+import { Switch } from 'antd';
+import { FontFamilySettingsBlock } from './FontFamilySettingsBlock';
 import { ThemeSettingsSlider } from '../ThemeSettingsSlider';
 import {
   MIN_UI_SCALE,
@@ -17,11 +19,6 @@ import {
   sanitizeV2SidebarRailScale,
 } from '../../store';
 import {
-  DEFAULT_UI_FONT_FAMILY,
-  sanitizeFontFamilyInput,
-  DEFAULT_MONO_FONT_FAMILY,
-} from '../../utils/fontFamilies';
-import {
   detectRuntimeCapabilityCached,
   resolveLowSpecModeActive,
 } from '../../utils/runtimeCapability';
@@ -30,7 +27,7 @@ import type { UseAppThemeSettingsRenderInput } from '../hooks/useAppThemeSetting
 
 export interface ThemeAppearanceSettingsSectionProps {
   renderThemeSettingsSection: UseAppThemeSettingsRenderInput['renderThemeSettingsSection'];
-  options: { hideSectionTabs?: boolean } | undefined;
+  options: { hideSectionTabs?: boolean; page?: string } | undefined;
   t: UseAppThemeSettingsRenderInput['t'];
   renderThemeSettingsRow: UseAppThemeSettingsRenderInput['renderThemeSettingsRow'];
   effectiveUiScale: UseAppThemeSettingsRenderInput['effectiveUiScale'];
@@ -42,8 +39,6 @@ export interface ThemeAppearanceSettingsSectionProps {
   appearance: UseAppThemeSettingsRenderInput['appearance'];
   isFontFamiliesLoading: UseAppThemeSettingsRenderInput['isFontFamiliesLoading'];
   uiFontOptions: UseAppThemeSettingsRenderInput['uiFontOptions'];
-  filterFontOption: UseAppThemeSettingsRenderInput['filterFontOption'];
-  renderFontOptionLabel: UseAppThemeSettingsRenderInput['renderFontOptionLabel'];
   fontFamiliesLoadError: UseAppThemeSettingsRenderInput['fontFamiliesLoadError'];
   installedFontFamilies: UseAppThemeSettingsRenderInput['installedFontFamilies'];
   linuxCJKFontInstallHint: UseAppThemeSettingsRenderInput['linuxCJKFontInstallHint'];
@@ -55,7 +50,7 @@ export interface ThemeAppearanceSettingsSectionProps {
 export const ThemeAppearanceSettingsSection = ({
   renderThemeSettingsSection, options, t, renderThemeSettingsRow, effectiveUiScale, setUiScale,
   effectiveFontSize, setFontSize, effectiveSidebarRailScale, setAppearance, appearance,
-  isFontFamiliesLoading, uiFontOptions, filterFontOption, renderFontOptionLabel,
+  isFontFamiliesLoading, uiFontOptions,
   fontFamiliesLoadError, installedFontFamilies, linuxCJKFontInstallHint, hasLoadedInstalledFontsRef,
   darkMode, monoFontOptions,
 }: ThemeAppearanceSettingsSectionProps) => (
@@ -64,6 +59,17 @@ export const ThemeAppearanceSettingsSection = ({
           // 设置中心侧栏已显示「显示与字体」，内容区不再重复分区标题
           options?.hideSectionTabs ? null : t('app.theme.nav.appearance.title'),
           <>
+              {options?.page !== 'fonts-settings' && renderThemeSettingsRow({
+                  label: t('app.theme.appearance.navicat_layout_title'),
+                  hint: t('app.theme.appearance.navicat_layout_hint'),
+                  stacked: true,
+                  control: (
+                      <Switch
+                          checked={appearance.uiLayoutMode === 'navicat'}
+                          onChange={(checked) => setAppearance({ uiLayoutMode: checked ? 'navicat' : 'classic' })}
+                      />
+                  ),
+              })}
               {renderThemeSettingsRow({
                   label: t('app.theme.appearance.ui_scale_title'),
                   hint: t('app.theme.appearance.ui_scale_hint'),
@@ -137,6 +143,8 @@ export const ThemeAppearanceSettingsSection = ({
                       />
                   ),
               })}
+              {options?.page !== 'fonts-settings' && <>
+              <WorkbenchSidebarAutoCollapseSetting appearance={appearance} setAppearance={setAppearance} t={t} renderThemeSettingsRow={renderThemeSettingsRow} />
               {renderThemeSettingsRow({
                   label: t('app.theme.appearance.single_database_expansion_title'),
                   hint: t('app.theme.appearance.single_database_expansion_hint'),
@@ -147,83 +155,24 @@ export const ThemeAppearanceSettingsSection = ({
                       />
                   ),
               })}
+              </>}
           </>,
       )}
       {renderThemeSettingsSection(
           t('app.theme.font_family.title'),
-          <>
-              <div style={{ padding: '8px 0' }}>
-                  <div className="gonavi-settings-label" style={{ marginBottom: 8 }}>{t('app.theme.font_family.ui_title')}</div>
-                  <Select
-                      allowClear
-                      showSearch
-                      optionFilterProp="label"
-                      loading={isFontFamiliesLoading}
-                      placeholder={DEFAULT_UI_FONT_FAMILY}
-                      value={appearance.customUIFontFamily ?? undefined}
-                      onChange={(value) => setAppearance({
-                          customUIFontFamily: sanitizeFontFamilyInput(value),
-                      })}
-                      onClear={() => setAppearance({ customUIFontFamily: null })}
-                      options={uiFontOptions.map((option) => ({
-                          value: option.value,
-                          label: option.label,
-                      }))}
-                      filterOption={filterFontOption}
-                      popupMatchSelectWidth
-                      style={{ width: '100%' }}
-                      optionRender={(option) => renderFontOptionLabel({
-                          value: String(option.data.value),
-                          label: String(option.data.label),
-                      })}
-                  />
-                  <div className="gonavi-settings-inline-meta">
-                      {fontFamiliesLoadError
-                          ? t('app.theme.font_family.load_failed_fallback', { error: fontFamiliesLoadError })
-                          : (installedFontFamilies.length > 0
-                              ? t('app.theme.font_family.loaded_ui_hint', { count: installedFontFamilies.length })
-                              : t('app.theme.font_family.loading_ui_hint'))}
-                  </div>
-                  {linuxCJKFontInstallHint && hasLoadedInstalledFontsRef.current && !isFontFamiliesLoading && !fontFamiliesLoadError ? (
-                      <div className="gonavi-settings-alert" style={{ borderColor: darkMode ? 'rgba(250,204,21,0.28)' : 'rgba(217,119,6,0.22)', background: darkMode ? 'rgba(250,204,21,0.08)' : 'rgba(251,191,36,0.12)', color: darkMode ? 'rgba(254,249,195,0.92)' : '#92400e' }}>
-                          {t('app.theme.font_family.linux_cjk_install_prefix')}
-                          <span style={{ fontFamily: 'var(--gn-font-mono)', marginLeft: 6 }}>{linuxCJKFontInstallHint}</span>
-                          {t('app.theme.font_family.linux_cjk_install_suffix')}
-                      </div>
-                  ) : null}
-              </div>
-              <div style={{ padding: '8px 0', borderTop: '1px solid var(--gn-settings-line)' }}>
-                  <div className="gonavi-settings-label" style={{ marginBottom: 8 }}>{t('app.theme.font_family.mono_title')}</div>
-                  <Select
-                      allowClear
-                      showSearch
-                      optionFilterProp="label"
-                      loading={isFontFamiliesLoading}
-                      placeholder={DEFAULT_MONO_FONT_FAMILY}
-                      value={appearance.customMonoFontFamily ?? undefined}
-                      onChange={(value) => setAppearance({
-                          customMonoFontFamily: sanitizeFontFamilyInput(value),
-                      })}
-                      onClear={() => setAppearance({ customMonoFontFamily: null })}
-                      options={monoFontOptions.map((option) => ({
-                          value: option.value,
-                          label: option.label,
-                      }))}
-                      filterOption={filterFontOption}
-                      popupMatchSelectWidth
-                      style={{ width: '100%' }}
-                      optionRender={(option) => renderFontOptionLabel({
-                          value: String(option.data.value),
-                          label: String(option.data.label),
-                      })}
-                  />
-                  <div className="gonavi-settings-inline-meta">
-                      {fontFamiliesLoadError
-                          ? t('app.theme.font_family.mono_fallback_hint')
-                          : t('app.theme.font_family.mono_hint')}
-                  </div>
-              </div>
-          </>,
+          <FontFamilySettingsBlock
+              t={t}
+              appearance={appearance}
+              setAppearance={setAppearance}
+              isFontFamiliesLoading={isFontFamiliesLoading}
+              uiFontOptions={uiFontOptions}
+              monoFontOptions={monoFontOptions}
+              fontFamiliesLoadError={fontFamiliesLoadError}
+              installedFontFamilies={installedFontFamilies}
+              linuxCJKFontInstallHint={linuxCJKFontInstallHint}
+              hasLoadedInstalledFontsRef={hasLoadedInstalledFontsRef}
+              darkMode={darkMode}
+          />,
       )}
       {renderThemeSettingsSection(
           t('app.theme.appearance.transparency_blur_title'),

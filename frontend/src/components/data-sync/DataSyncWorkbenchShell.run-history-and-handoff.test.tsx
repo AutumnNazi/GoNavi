@@ -14,7 +14,7 @@ import { setDataSyncHandoff } from '../../utils/dataSyncHandoff';
 const modalConfirm = vi.hoisted(() => vi.fn());
 
 vi.mock('../common/ResizableDraggableModal', () => ({
-  default: { confirm: modalConfirm },
+  default: Object.assign(({ children }: { children?: React.ReactNode }) => children, { confirm: modalConfirm }),
 }));
 
 const buildTask = () => {
@@ -164,6 +164,7 @@ describe('DataSyncWorkbenchShell', () => {
       tasks: [task],
       runs: [run],
       errorRowsByRun: { [run.id]: [errorRow] },
+      runEventsByRun: { [run.id]: [{ runId: run.id, sequence: 1, type: 'error_row', message: '', payload: { id: errorRow.id }, createdAt: '' }] },
     });
     const renderer = TestRenderer.create(
       <DataSyncWorkbenchShell initialTasks={[task]} gateway={gateway} locale="en-US" />,
@@ -185,6 +186,8 @@ describe('DataSyncWorkbenchShell', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
+    expect(renderer.root.findAllByProps({ children: '{"id":8}' })).toHaveLength(0);
+    act(() => renderer.root.findByProps({ 'data-view-event-error': 1 }).props.onClick());
     expect(renderer.root.findAllByProps({ children: '{"id":8}' })).toHaveLength(1);
 
     await act(async () => {
@@ -350,6 +353,7 @@ describe('DataSyncWorkbenchShell', () => {
     const baseGateway = createStaticDataSyncWorkbenchGateway({
       tasks: [task],
       runs: [runA, runB],
+      runEventsByRun: { [runB.id]: [{ runId: runB.id, sequence: 1, type: 'failed', message: '', createdAt: '' }] },
     });
     const gateway = {
       ...baseGateway,
@@ -380,6 +384,7 @@ describe('DataSyncWorkbenchShell', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
+    act(() => renderer.root.findByProps({ 'data-view-event-error': 1 }).props.onClick());
     expect(renderer.root.findAllByProps({ children: '{"run":"run-b"}' })).toHaveLength(1);
 
     await act(async () => {

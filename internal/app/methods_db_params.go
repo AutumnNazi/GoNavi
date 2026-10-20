@@ -38,7 +38,7 @@ type QueryParameterAnalysis struct {
 // AnalyzeQueryParameters 解析 SQL 的语句拆分与命名参数清单。该接口不建立
 // 连接，可在输入过程中防抖调用；能力判定来自静态能力注册表，运行时
 // （agent 协议版本、驱动参数化契约）在执行入口再做兜底校验。
-func (a *App) AnalyzeQueryParameters(config connection.ConnectionConfig, dbName string, sql string) QueryParameterAnalysis {
+func (a *App) AnalyzeQueryParameters(config connection.ConnectionConfig, dbName string, sql string, quotedPlaceholders bool) QueryParameterAnalysis {
 	runConfig := normalizeRunConfig(config, dbName)
 	resolvedDBType := resolveDDLDBType(runConfig)
 	analysis := QueryParameterAnalysis{Statements: []QueryParameterStatement{}}
@@ -56,13 +56,19 @@ func (a *App) AnalyzeQueryParameters(config connection.ConnectionConfig, dbName 
 		if trimmed == "" {
 			continue
 		}
-		names := sqlparam.Names(trimmed, sqlparam.OptionsForDBType(resolvedDBType))
 		entry := QueryParameterStatement{Index: idx, Text: trimmed, Parameters: []string{}}
-		for _, name := range names {
-			entry.Parameters = append(entry.Parameters, name)
-			if _, dup := seen[name]; !dup {
-				seen[name] = struct{}{}
-				analysis.ParameterNames = append(analysis.ParameterNames, name)
+		// Oracle 家族存储程序定义（触发器等）不进入参数扫描：体内的 :NEW/:OLD
+		// 不是绑定参数，绑定语义在 DDL 上不成立。
+		if statementQualifiesForParameterBinding(resolvedDBType, trimmed) {
+			opts := sqlparam.OptionsForDBType(resolvedDBType)
+			opts.QuotedPlaceholders = quotedPlaceholders
+			names := sqlparam.Names(trimmed, opts)
+			for _, name := range names {
+				entry.Parameters = append(entry.Parameters, name)
+				if _, dup := seen[name]; !dup {
+					seen[name] = struct{}{}
+					analysis.ParameterNames = append(analysis.ParameterNames, name)
+				}
 			}
 		}
 		analysis.Statements = append(analysis.Statements, entry)
@@ -97,13 +103,13 @@ func resolveParameterBindingCapability(runConfig connection.ConnectionConfig) (b
 // DBQueryMultiWithParams 是查询编辑器带参执行入口：SQL 先按方言拆分语句，
 // 逐语句用 sqlparam 重写占位符并按名绑定值（同名参数填一次处处生效），
 // 再逐语句绑定执行。审计与历史只接收 SQL 原文。
-func (a *App) DBQueryMultiWithParams(config connection.ConnectionConfig, dbName string, sql string, queryID string, bindings []connection.QueryParamBinding) connection.QueryResult {
+func (a *App) DBQueryMultiWithParams(config connection.ConnectionConfig, dbName string, sql string, queryID string, bindings []connection.QueryParamBinding, quotedPlaceholders bool) connection.QueryResult {
 	explicitQuery := strings.TrimSpace(queryID) != ""
 	auditSource := "query_editor"
 	if !explicitQuery {
 		auditSource = "application_api"
 	}
-	return a.dbQueryMultiWithParams(config, dbName, sql, queryID, bindings, dbQueryMultiAuditOptions{
+	return a.dbQueryMultiWithParams(config, dbName, sql, queryID, bindings, quotedPlaceholders, dbQueryMultiAuditOptions{
 		auditAll:    explicitQuery || a.webRuntime,
 		auditWrites: true,
 		source:      auditSource,
@@ -116,6 +122,7 @@ func (a *App) dbQueryMultiWithParams(
 	query string,
 	queryID string,
 	bindings []connection.QueryParamBinding,
+	quotedPlaceholders bool,
 	auditOptions dbQueryMultiAuditOptions,
 ) (result connection.QueryResult) {
 	runConfig := normalizeRunConfig(config, dbName)
@@ -143,7 +150,7 @@ func (a *App) dbQueryMultiWithParams(
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error(), QueryID: queryID}
 	}
-	stmts, err := bindParameterizedStatements(splitSQLStatementsForDialect(resolvedDBType, query), resolvedDBType, values)
+	stmts, err := bindParameterizedStatements(splitSQLStatementsForDialect(resolvedDBType, query), resolvedDBType, values, quotedPlaceholders)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: a.translateParameterBindingError(err), QueryID: queryID}
 	}
@@ -289,7 +296,7 @@ func (a *App) recordParameterizedQueryAudit(
 }
 
 // DBQueryMultiWithParamsInTransaction 在编辑器托管事务内执行参数化 SQL。
-func (a *App) DBQueryMultiWithParamsInTransaction(transactionID string, sql string, queryID string, bindings []connection.QueryParamBinding) (result connection.QueryResult) {
+func (a *App) DBQueryMultiWithParamsInTransaction(transactionID string, sql string, queryID string, bindings []connection.QueryParamBinding, quotedPlaceholders bool) (result connection.QueryResult) {
 	transactionID = strings.TrimSpace(transactionID)
 	if transactionID == "" {
 		return connection.QueryResult{Success: false, Message: a.appText("db.backend.error.transaction_id_required", nil), QueryID: queryID}
@@ -347,7 +354,7 @@ func (a *App) DBQueryMultiWithParamsInTransaction(transactionID string, sql stri
 	resolvedDBType := resolveDDLDBType(runConfig)
 	query := sanitizeSQLForPgLike(tx.dbType, sql)
 	statementTexts := splitSQLStatementsForDialect(tx.dbType, query)
-	stmts, err := bindParameterizedStatements(statementTexts, tx.dbType, values)
+	stmts, err := bindParameterizedStatements(statementTexts, tx.dbType, values, quotedPlaceholders)
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: a.translateParameterBindingError(err), QueryID: queryID, TransactionID: transactionID, TransactionPending: true}
 	}
@@ -404,15 +411,22 @@ type parameterizedStatement struct {
 }
 
 // bindParameterizedStatements 对每条语句做占位符重写与值绑定；缺值立即返回
-// 可操作错误（包含缺失参数名），不执行任何语句。
-func bindParameterizedStatements(statementTexts []string, dbType string, values map[string]sqlparam.TypedValue) ([]parameterizedStatement, error) {
+// 可操作错误（包含缺失参数名），不执行任何语句。Oracle 家族存储程序定义
+// 不重写，按原文执行（:NEW/:OLD 等不是绑定参数）。
+func bindParameterizedStatements(statementTexts []string, dbType string, values map[string]sqlparam.TypedValue, quotedPlaceholders bool) ([]parameterizedStatement, error) {
 	stmts := make([]parameterizedStatement, 0, len(statementTexts))
 	for _, statement := range statementTexts {
 		trimmed := strings.TrimSpace(statement)
 		if trimmed == "" {
 			continue
 		}
-		bound, err := sqlparam.Bind(trimmed, dbType, values)
+		if !statementQualifiesForParameterBinding(dbType, trimmed) {
+			stmts = append(stmts, parameterizedStatement{text: trimmed, sql: trimmed})
+			continue
+		}
+		opts := sqlparam.OptionsForDBType(dbType)
+		opts.QuotedPlaceholders = quotedPlaceholders
+		bound, err := sqlparam.BindWithOptions(trimmed, dbType, values, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -435,7 +449,7 @@ type managedTransactionStatementOptions struct {
 // prepareManagedTransactionStatements 拆分并绑定托管事务待执行语句：
 // 返回的 statements 是含 :name 的原文（审计/观察者使用），options 携带
 // 重写后的可执行文本与逐语句绑定值；未提供绑定时走纯拆分的 legacy 形态。
-func prepareManagedTransactionStatements(dbType string, query string, session db.StatementExecer, bindings []connection.QueryParamBinding) ([]string, managedTransactionStatementOptions, error) {
+func prepareManagedTransactionStatements(dbType string, query string, session db.StatementExecer, bindings []connection.QueryParamBinding, quotedPlaceholders bool) ([]string, managedTransactionStatementOptions, error) {
 	statementTexts := splitSQLStatementsForDialect(dbType, query)
 	if len(bindings) == 0 {
 		return statementTexts, managedTransactionStatementOptions{}, nil
@@ -447,7 +461,7 @@ func prepareManagedTransactionStatements(dbType string, query string, session db
 	if err != nil {
 		return nil, managedTransactionStatementOptions{}, err
 	}
-	bound, err := bindParameterizedStatements(statementTexts, dbType, values)
+	bound, err := bindParameterizedStatements(statementTexts, dbType, values, quotedPlaceholders)
 	if err != nil {
 		return nil, managedTransactionStatementOptions{}, err
 	}

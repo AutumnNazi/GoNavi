@@ -49,4 +49,5 @@ export const TOOL_ACTION_LABEL_KEYS: Record<string, string> = {
   inspect_shortcuts: 'ai_chat.message.tool_call.inspect_shortcuts',
   preview_table_rows: 'ai_chat.message.tool_call.preview_table_rows',
   execute_sql: 'ai_chat.message.tool_call.execute_sql',
+  inspect_source: 'ai_chat.message.tool_call.inspect_source',
 };

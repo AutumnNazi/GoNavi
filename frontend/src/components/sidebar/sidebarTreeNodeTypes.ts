@@ -9,6 +9,7 @@ export type SidebarTreeNodeType =
   | 'materialized-view'
   | 'db-trigger'
   | 'db-event'
+  | 'db-job'
   | 'routine'
   | 'sequence'
   | 'package'

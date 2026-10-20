@@ -1,3 +1,4 @@
+import { SettingOutlined } from '@ant-design/icons';
 import React from 'react';
 import { GnNewConnectionIcon, GnNewQueryIcon } from './icons/gnIcons';
 import type { SidebarTableSortPreference } from '../utils/sidebarTreeOrder';
@@ -295,6 +296,7 @@ export const V2SchemaContextMenuView: React.FC<{
 };
 
 export type V2ConnectionContextMenuActionKey =
+  | 'sidebar-settings'
   | 'new-db'
   | 'visibility'
   | 'refresh'
@@ -447,6 +449,7 @@ export const V2ConnectionContextMenuView: React.FC<{
           { action: 'copy-connection', icon: <CopyOutlined />, title: t('connection.sidebar.menu.copy') },
           { action: 'batch-connections', icon: <AppstoreOutlined />, title: t('sidebar.action.batch_connections') },
           { action: 'disconnect', icon: <DisconnectOutlined />, title: t('connection.sidebar.menu.disconnect') },
+          { action: 'sidebar-settings', icon: <SettingOutlined />, title: t('settings.page.sidebar-settings.title') },
         ])}
 
         {tags.length > 0 && (
@@ -620,6 +623,7 @@ export const V2CellContextMenuView: React.FC<{
   copiedRowCount?: number;
   canPasteCopiedColumns?: boolean;
   supportsCopyInsert?: boolean;
+  regularCopyMenu?: React.ReactNode;
   onAction?: (action: V2CellContextMenuActionKey) => void;
 }> = ({
   fieldName,
@@ -634,6 +638,7 @@ export const V2CellContextMenuView: React.FC<{
   copiedRowCount = 0,
   canPasteCopiedColumns = false,
   supportsCopyInsert = true,
+  regularCopyMenu,
   onAction,
 }) => {
   const renderItems = (items: V2TableContextMenuItemConfig[]) => renderV2ContextMenuItems(
@@ -711,7 +716,7 @@ export const V2CellContextMenuView: React.FC<{
 
         <div className="gn-v2-context-menu-section-title">{t('sidebar.v2_table_menu.copy_section')}</div>
         {renderItems([
-          { action: 'copy-row-data', icon: <CopyOutlined />, title: t('data_grid.context_menu.copy_row_data') },
+          ...(!regularCopyMenu ? [{ action: 'copy-row-data', icon: <CopyOutlined />, title: t('data_grid.context_menu.copy_row_data') }] : []),
           { action: 'copy-column-data', icon: <CopyOutlined />, title: t('data_grid.context_menu.copy_column_data') },
           ...(supportsCopyInsert ? [
             { action: 'copy-insert' as const, icon: <ConsoleSqlOutlined />, title: t('data_grid.context_menu.copy_as_insert'), kbd: 'SQL' },
@@ -722,6 +727,7 @@ export const V2CellContextMenuView: React.FC<{
           { action: 'copy-csv', icon: <FileTextOutlined />, title: t('data_grid.context_menu.copy_as_csv') },
           { action: 'copy-markdown', icon: <CopyOutlined />, title: t('data_grid.context_menu.copy_as_markdown') },
         ])}
+        {regularCopyMenu}
 
         <div className="gn-v2-context-menu-section-title">{t('data_grid.toolbar.export')}</div>
         {renderItems([

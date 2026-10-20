@@ -547,8 +547,8 @@ func TestIrisGetDatabasesEnumeratesNamespacesWhenConfiguredBlank(t *testing.T) {
 		t.Fatalf("GetDatabases 返回错误: %v", err)
 	}
 
-	// % 开头的系统命名空间要滤掉：用户点不开，与 schema 层的过滤语义保持一致。
-	want := []string{"GONAVIIRIS", "USER"}
+	// 空配置应保留服务端枚举的全部命名空间，包括 %SYS。
+	want := []string{"%SYS", "GONAVIIRIS", "USER"}
 	if !reflect.DeepEqual(databases, want) {
 		t.Fatalf("期望枚举出真实命名空间，want=%v got=%v", want, databases)
 	}
@@ -615,7 +615,7 @@ func TestCacheGetDatabasesEnumeratesNamespaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetDatabases 返回错误: %v", err)
 	}
-	want := []string{"DOCBOOK", "SAMPLES", "USER"}
+	want := []string{"%SYS", "DOCBOOK", "SAMPLES", "USER"}
 	if !reflect.DeepEqual(databases, want) {
 		t.Fatalf("Caché 应枚举真实命名空间，want=%v got=%v", want, databases)
 	}

@@ -70,6 +70,116 @@ describe('sqlStatementSelection', () => {
     ]);
   });
 
+  it('treats a standalone GO line as a SQL Server batch boundary', () => {
+    const sql = [
+      "IF OBJECT_ID(N'dbo.t', N'U') IS NULL",
+      'BEGIN',
+      '  CREATE TABLE dbo.t (id int);',
+      '  CREATE UNIQUE INDEX UX_t ON dbo.t(id);',
+      'END',
+      'GO',
+    ].join('\n');
+
+    expect(findSqlStatementRanges(sql, 'sqlserver').map((range) => range.text)).toEqual([
+      [
+        "IF OBJECT_ID(N'dbo.t', N'U') IS NULL",
+        'BEGIN',
+        '  CREATE TABLE dbo.t (id int);',
+        '  CREATE UNIQUE INDEX UX_t ON dbo.t(id);',
+        'END',
+      ].join('\n'),
+    ]);
+  });
+
+  it('drops GO lines and expands GO n like SSMS does', () => {
+    const sql = [
+      'CREATE TABLE demo(id int)',
+      'GO',
+      'INSERT INTO demo(id) VALUES (1);',
+      'GO 2',
+    ].join('\n');
+
+    expect(findSqlStatementRanges(sql, 'sqlserver').map((range) => range.text)).toEqual([
+      'CREATE TABLE demo(id int)',
+      'INSERT INTO demo(id) VALUES (1)',
+      'INSERT INTO demo(id) VALUES (1)',
+    ]);
+  });
+
+  it('only treats GO as a batch separator at the start of a line', () => {
+    const inlineGo = 'SELECT 1 GO SELECT 2;';
+    expect(findSqlStatementRanges(inlineGo, 'sqlserver').map((range) => range.text)).toEqual([
+      'SELECT 1 GO SELECT 2',
+    ]);
+
+    const identifierGo = 'SELECT go FROM t; SELECT 2;';
+    expect(findSqlStatementRanges(identifierGo, 'sqlserver').map((range) => range.text)).toEqual([
+      'SELECT go FROM t',
+      'SELECT 2',
+    ]);
+
+    const otherDialect = 'SELECT 1\nGO\nSELECT 2';
+    expect(findSqlStatementRanges(otherDialect, 'postgres').map((range) => range.text)).toEqual([
+      'SELECT 1\nGO\nSELECT 2',
+    ]);
+  });
+
+  it('keeps GO inside strings and comments as content', () => {
+    const sql = [
+      "SELECT 'GO' AS marker;",
+      'SELECT 2 /* GO */;',
+    ].join('\n');
+
+    expect(findSqlStatementRanges(sql, 'sqlserver').map((range) => range.text)).toEqual([
+      "SELECT 'GO' AS marker",
+      'SELECT 2 /* GO */',
+    ]);
+
+    // A comment line that starts with GO must not split the batch either: the
+    // leading comment stays attached to the statement that follows it.
+    const commentedGo = ['-- GO', 'SELECT 2;'].join('\n');
+    expect(findSqlStatementRanges(commentedGo, 'sqlserver').map((range) => range.text)).toEqual([
+      '-- GO\nSELECT 2',
+    ]);
+  });
+
+  it('accepts GO with a trailing comment', () => {
+    const sql = 'SELECT 1\nGO -- run the batch\nSELECT 2';
+    expect(findSqlStatementRanges(sql, 'sqlserver').map((range) => range.text)).toEqual([
+      'SELECT 1',
+      'SELECT 2',
+    ]);
+  });
+
+  it('does not skip the first character of the batch after GO', () => {
+    const sql = [
+      'SELECT 1',
+      'GO',
+      "SELECT 'a;b' AS quoted, [x;y] AS bracketed",
+    ].join('\n');
+
+    expect(findSqlStatementRanges(sql, 'sqlserver').map((range) => range.text)).toEqual([
+      'SELECT 1',
+      "SELECT 'a;b' AS quoted, [x;y] AS bracketed",
+    ]);
+  });
+
+  it('keeps a BEGIN block directly after GO as one statement', () => {
+    const sql = [
+      'SELECT 1',
+      'GO',
+      'BEGIN',
+      '  INSERT INTO t(id) VALUES (1);',
+      'END',
+      'GO',
+    ].join('\n');
+
+    expect(findSqlStatementRanges(sql, 'sqlserver').map((range) => range.text)).toEqual([
+      'SELECT 1',
+      'BEGIN\n  INSERT INTO t(id) VALUES (1);\nEND',
+    ]);
+  });
+
   it.each([
     ['postgres', 'SELECT ARRAY[[1,2],[3,4]]; DROP TABLE users;'],
     ['clickhouse', 'SELECT [[1],[2]]; DROP TABLE users;'],

@@ -1100,7 +1100,7 @@ describe('DataGrid DDL interactions', () => {
 
     expect(renderer!.root.findByProps({ 'data-v2-cell-context-menu': 'true' })).toBeTruthy();
     expect(textContent(renderer!.root)).toContain(t('data_grid.context_menu.copy_field_name'));
-    expect(textContent(renderer!.root)).toContain(t('data_grid.context_menu.copy_row_data'));
+    expect(textContent(renderer!.root.findByProps({ 'data-grid-copy-scope': 'selected' }))).toContain(t('data_grid.copy_content.headers_and_data'));
     expect(textContent(renderer!.root)).toContain(t('data_grid.context_menu.copy_column_data'));
     expect(textContent(renderer!.root)).toContain(t('data_grid.context_menu.copy_as_insert'));
     expect(textContent(renderer!.root)).toContain(t('data_grid.toolbar.export'));

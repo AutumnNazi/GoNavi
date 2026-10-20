@@ -1,6 +1,7 @@
 import { buildOffsetLimitSelectSQL, buildRegistryPaginatedSelectSQL, resolveRegistryQuoting, usesRegistryFlatObjectNames } from './dataSourceRegistry/sqlBehavior';
 import { splitQualifiedNameSegments, stripIdentifierQuotes } from './qualifiedName';
 import { isElasticsearchFamilyType } from './elasticsearchFamily';
+import { buildInterSystemsPaginatedSelectSQL, isInterSystemsDialect } from './intersystemsSql';
 
 export type FilterValueSelection = {
   values: string[];
@@ -343,6 +344,9 @@ export const buildPaginatedSelectSQL = (
 
   if (!base || safeLimit <= 0) {
     return `${base}${orderBy}`;
+  }
+  if (isInterSystemsDialect(normalizedType)) {
+    return buildInterSystemsPaginatedSelectSQL(base, orderBy, safeLimit, safeOffset);
   }
   const registrySql = buildRegistryPaginatedSelectSQL(normalizedType, base, orderBy, safeLimit, safeOffset);
   if (registrySql !== undefined) return registrySql;

@@ -77,19 +77,11 @@ func launchMacUpdate(staged *stagedUpdate, targetExe string, pid int) error {
 		return err
 	}
 
-	// 用 bash 执行脚本；Setsid 脱离主进程会话，避免 Quit 后脚本被 SIGHUP
-	cmd := exec.Command("/bin/bash", scriptPath)
-	configureDetachedUpdateCommand(cmd)
+	// Setsid 只脱离会话，改不了 macOS 的 responsible process。
+	// App 退出后系统仍会杀掉这个子进程：日志停在 “host process exited”，
+	// 既不会挂载 dmg，也不会走到 notify_failure，看起来就是点了没反应。
 	logger.Infof("启动 macOS 更新脚本：target=%s script=%s log=%s package=%s", targetApp, scriptPath, logPath, staged.FilePath)
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	if cmd.Process != nil {
-		if err := cmd.Process.Release(); err != nil {
-			logger.Warnf("释放 macOS 更新脚本进程句柄失败：%v", err)
-		}
-	}
-	return nil
+	return startMacUpdateViaLaunchd(scriptPath)
 }
 
 func launchLinuxUpdate(staged *stagedUpdate, targetExe string, pid int) error {
@@ -157,6 +149,63 @@ DETACH_NEEDED=0
 
 log() {
   echo "[$(date '+%%Y-%%m-%%d %%H:%%M:%%S')] $*" >> "$LOG_FILE" 2>/dev/null || true
+}
+
+# 会话结束时的 SIGHUP 不能打断安装。SIGKILL（responsible process 回收）
+# 无法捕获，所以启动侧必须把脚本交给 launchd，而不是当作 App 的子进程。
+trap '' HUP
+
+# 更新是脱离主进程静默执行的：失败时必须主动告知用户，
+# 否则表现就是「点了重启更新没任何反应」，用户拿不到日志路径也无法自助排查。
+# 用中英双语文案：脚本脱离主进程跑，调不到 i18n，双语让用户至少能看懂关键词。
+notify_failure() {
+  reason="$1"
+  log "update failed: $reason"
+  # osascript 弹窗可能一直挂着（等用户点按钮），所以后台跑并给 10s 超时；
+  # 不用 GNU timeout，macOS 上没有。
+  _notify_applescript | /usr/bin/osascript - "$reason" "$LOG_FILE" "$PACKAGE" "$TARGET_APP" >/dev/null 2>&1 &
+  _notify_pid=$!
+  ( sleep 10; /bin/kill -9 "$_notify_pid" 2>/dev/null ) &
+  _watchdog_pid=$!
+  wait "$_notify_pid" 2>/dev/null || true
+  /bin/kill -0 "$_watchdog_pid" 2>/dev/null && /bin/kill "$_watchdog_pid" 2>/dev/null
+  wait "$_watchdog_pid" 2>/dev/null || true
+  return 0
+}
+
+_notify_applescript() {
+  cat <<'NOTIFY'
+on run argv
+  set reasonText to item 1 of argv
+  set logPath to item 2 of argv
+  set pkgPath to item 3 of argv
+  set appPath to item 4 of argv
+  set isZh to ((system attribute "APPLE_LANGUAGE") starts with "zh")
+  if isZh then
+    set titleText to "GoNavi 更新失败"
+    set reasonLabel to "更新未完成"
+    set pkgLabel to "安装包已保留"
+    set logLabel to "更新日志"
+    set appLabel to "目标应用"
+    set okLabel to "好"
+    set introText to "GoNavi 自动更新未完成。"
+  else
+    set titleText to "GoNavi Update Failed"
+    set reasonLabel to "Update incomplete"
+    set pkgLabel to "Package kept at"
+    set logLabel to "Update log"
+    set appLabel to "Target app"
+    set okLabel to "OK"
+    set introText to "GoNavi update did not finish."
+  end if
+  display notification (reasonLabel & ": " & reasonText) with title titleText subtitle (logLabel & ": " & logPath) sound name "Basso"
+  display dialog (introText & return & return & ¬
+    reasonLabel & ": " & reasonText & return & return & ¬
+    pkgLabel & ": " & pkgPath & return & ¬
+    logLabel & ": " & logPath & return & ¬
+    appLabel & ": " & appPath) buttons {okLabel} default button okLabel with title titleText giving up after 120
+end run
+NOTIFY
 }
 
 cleanup_mount() {
@@ -235,7 +284,10 @@ prepare_app_source_from_package() {
 }
 
 run_admin_replace() {
-  /usr/bin/osascript <<'APPLESCRIPT' "$APP_SRC" "$TARGET_APP" "$TMP_APP" "$BACKUP_APP" "$APP_BIN_REL" "$LOG_FILE"
+  # 必须写成 osascript - args <<EOF：没有 - 时 osascript 会把第一个参数
+  # 当成脚本文件名（这里就是 .app 路径），转而报 -2740 语法错误并退出 1，
+  # 内置脚本从不执行，管理员替换必然失败。
+  /usr/bin/osascript - "$APP_SRC" "$TARGET_APP" "$TMP_APP" "$BACKUP_APP" "$APP_BIN_REL" "$LOG_FILE" <<'APPLESCRIPT'
 on run argv
   set srcPath to item 1 of argv
   set dstPath to item 2 of argv
@@ -262,8 +314,14 @@ replace_app_direct() {
     log "tmp app binary missing: $TMP_APP/$APP_BIN_REL"
     return 1
   fi
+  # 把旧包挪走这一步必须判失败：挪不动时（App Management / uchg / 权限）若继续往下走，
+  # 下面的 mv 会把新包塞进旧包内部，而旧包的可执行文件仍在原位，
+  # 后面的存在性校验照样通过 —— 结果就是「更新成功但版本没变」。
   if [ -d "$TARGET_APP" ]; then
-    /bin/mv "$TARGET_APP" "$BACKUP_APP" >>"$LOG_FILE" 2>&1
+    if ! /bin/mv "$TARGET_APP" "$BACKUP_APP" >>"$LOG_FILE" 2>&1; then
+      log "move existing app aside failed: $TARGET_APP -> $BACKUP_APP"
+      return 1
+    fi
   fi
   if ! /bin/mv "$TMP_APP" "$TARGET_APP" >>"$LOG_FILE" 2>&1; then
     log "move new app failed, trying rollback"
@@ -302,7 +360,7 @@ relaunch_app() {
 log "updater started package=$PACKAGE target=$TARGET_APP pid=$PID"
 while /bin/kill -0 "$PID" 2>/dev/null; do
   if [ "$WAIT_PID_SECONDS" -ge "$MAX_WAIT_PID_SECONDS" ]; then
-    log "host process still running after ${WAIT_PID_SECONDS}s, aborting update"
+    notify_failure "主程序在 ${MAX_WAIT_PID_SECONDS} 秒内仍未退出"
     exit 1
   fi
   /bin/sleep 1
@@ -310,14 +368,16 @@ while /bin/kill -0 "$PID" 2>/dev/null; do
 done
 log "host process exited after ${WAIT_PID_SECONDS}s"
 /bin/sleep 1
+log "continuing install after host exit"
 
 if [ ! -f "$PACKAGE" ]; then
-  log "package file missing: $PACKAGE"
+  notify_failure "安装包已丢失：$PACKAGE"
   exit 1
 fi
 
 if ! prepare_app_source_from_package; then
   cleanup_mount
+  notify_failure "无法从安装包中解出应用（dmg/zip 挂载或解压失败）"
   exit 1
 fi
 
@@ -325,20 +385,20 @@ log "install target: $TARGET_APP"
 if ! replace_app_direct; then
   log "direct replace failed, trying admin replace"
   if ! run_admin_replace >>"$LOG_FILE" 2>&1; then
-    log "admin replace failed — package kept at: $PACKAGE"
     cleanup_mount
+    notify_failure "无权限替换应用，且管理员授权替换失败"
     exit 1
   fi
 fi
 
 if ! resolve_app_binary_rel "$TARGET_APP"; then
-  log "target app binary missing after replace: $TARGET_APP — package kept at: $PACKAGE"
   cleanup_mount
+  notify_failure "替换后目标应用缺少可执行文件"
   exit 1
 fi
 if [ ! -x "$TARGET_APP/$APP_BIN_REL" ]; then
-  log "target app binary not executable: $TARGET_APP/$APP_BIN_REL — package kept at: $PACKAGE"
   cleanup_mount
+  notify_failure "替换后目标应用可执行文件不可运行：$APP_BIN_REL"
   exit 1
 fi
 
@@ -347,8 +407,8 @@ cleanup_mount
 /bin/rm -rf "$EXTRACT_DIR" >>"$LOG_FILE" 2>&1 || true
 
 if ! relaunch_app; then
-  log "update files replaced but relaunch failed — package kept for manual install: $PACKAGE"
   log "please open: $TARGET_APP"
+  notify_failure "应用已替换但自动重启失败，请手动打开 $TARGET_APP"
   exit 1
 fi
 

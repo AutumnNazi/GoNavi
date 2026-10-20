@@ -192,7 +192,7 @@ export const useSidebarCommandSearchRunner = ({
       onDoubleClick(null, node);
       return;
     }
-    if (node.type === 'db-trigger' || node.type === 'db-event' || node.type === 'routine' || node.type === 'sequence' || node.type === 'package') {
+    if (node.type === 'db-trigger' || node.type === 'db-event' || node.type === 'db-job' || node.type === 'routine' || node.type === 'sequence' || node.type === 'package') {
       publishTitlebarSelectionForNode?.(node);
       setActiveContext({
         connectionId: resolveSidebarNodeConnectionId(node, connectionIds) || dataRef.id,

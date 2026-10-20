@@ -1,6 +1,6 @@
 export const DATA_SYNC_TASK_SCHEMA_VERSION = 1 as const;
 
-import type { DataSyncTaskKind, DataSyncTaskLifecycle, DataSyncTaskStage, DataSyncCompareMode, DataSyncContent } from './modelTaskKinds';
+import { taskKindCanCreateTarget, type DataSyncTaskKind, type DataSyncTaskLifecycle, type DataSyncTaskStage, type DataSyncCompareMode, type DataSyncContent } from './modelTaskKinds';
 export * from './modelTaskKinds';
 export type DataSyncEndpointRef = {
   connectionId: string;
@@ -194,6 +194,7 @@ export type DataSyncValidationCode =
   | 'target_columns_will_be_added'
   | 'key_columns_required'
   | 'source_primary_key_required'
+  | 'existing_target_no_key_append'
   | 'structure_migration_primary_key_required'
   | 'mapping_key_unmapped'
   | 'mapping_key_target_missing'
@@ -370,6 +371,7 @@ export type DataSyncRunRecord = {
   rowsFailed: number;
   throughput: number;
   checkpoint: string;
+  rollbackReady?: boolean;
 };
 
 export type DataSyncRunCursor = {
@@ -531,16 +533,14 @@ export const createDataSyncTableMapping = (
 });
 
 /**
- * 一次性迁移选表时的建表许可。能力快照未就绪（level=unknown，包括加载中
- * 与解析失败）时必须返回 undefined，让 buildDataSyncMappingsFromSelection
- * 回落到 kind=migration 的默认许可——后端预检会用真实连接重新判定
- * SupportsAutoCreate，不会放走真正不支持的组合。
+ * 选表时的建表许可。能力快照未就绪（加载中或解析失败）时必须返回 undefined，
+ * 回落到任务类型的默认许可；后端预检会用真实连接重新判定，不会放走不支持的组合。
  */
 export const migrationAllowTargetCreate = (
   taskKind: DataSyncTaskKind,
   capability: DataSyncRouteCapability,
 ): boolean | undefined => {
-  if (taskKind !== 'migration') return false;
+  if (!taskKindCanCreateTarget(taskKind)) return false;
   if (capability.level === 'unknown') return undefined;
   return (
     capability.canExecute &&
@@ -561,6 +561,7 @@ export const repairMigrationTargetModes = (
   targetObjectsReady: boolean,
   userSelectedTargetModeIds: ReadonlySet<string> = new Set(),
 ): DataSyncTableMapping[] => {
+  // 数据同步的建表模式由用户决定，只修复旧版迁移任务。
   if (taskKind !== 'migration' || capability.level === 'unknown') {
     return mappings;
   }
@@ -712,7 +713,7 @@ export const buildDataSyncMappingsFromSelection = ({
 
     const matchedTarget = matchTarget(sourceObject);
     const canCreateTarget =
-      (allowTargetCreate ?? taskKind === 'migration') && !matchedTarget;
+      (allowTargetCreate ?? taskKindCanCreateTarget(taskKind)) && !matchedTarget;
     const idStem = sourceKey.replace(/[^a-z0-9_-]+/g, '-').replace(/^-|-$/g, '');
     let mappingId = `${taskId}:mapping:${idStem || selectionIndex + 1}`;
     let suffix = 2;

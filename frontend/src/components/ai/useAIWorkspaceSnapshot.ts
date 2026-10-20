@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { shallow } from 'zustand/shallow';
 
-import { useStore, type SqlLog } from '../../store';
+import { useStore } from '../../store';
+import { createWorkspaceSnapshotProjection, workspaceText as text, truncateWorkspaceText as truncate } from './aiWorkspaceSnapshotProjection';
 import type { TabData } from '../../types';
 import { resolveLiveQueryTabs } from '../../utils/liveQueryTabs';
 import {
   getAIRunHarnessService,
-  serializeShortcutOptionsForWorkspace,
   updateWorkspaceSnapshot,
   type WorkspaceSnapshotRequest,
 } from './aiRunHarnessClient';
@@ -22,8 +22,6 @@ import {
 import { recordPublishedWorkspaceSnapshot } from './aiWorkspaceSnapshotMeasure';
 
 const SNAPSHOT_SCHEMA_VERSION = 1;
-const MAX_DRAFT_CHARS = 20_000;
-const MAX_SQL_ACTIVITY = 50;
 
 const newInstanceID = (): string => {
   const cryptoObject = globalThis.crypto as Crypto | undefined;
@@ -69,14 +67,6 @@ export const prepareAIWorkspaceSnapshotForChat = async (): Promise<void> => {
   await publishAIWorkspaceSnapshotNow();
 };
 
-const text = (value: unknown): string => String(value || '').trim();
-
-const truncate = (value: unknown, limit = MAX_DRAFT_CHARS): string => {
-  const result = String(value || '');
-  if (result.length <= limit) return result;
-  return `${result.slice(0, Math.floor(limit / 2))}\n/* ... snapshot truncated ... */\n${result.slice(-Math.floor(limit / 2))}`;
-};
-
 const tabSnapshot = (tab: TabData) => ({
   id: text(tab.id),
   title: text(tab.title),
@@ -87,22 +77,13 @@ const tabSnapshot = (tab: TabData) => ({
   draft: truncate(tab.query),
 });
 
-const sqlActivitySnapshot = (logs: SqlLog[] | undefined) => (Array.isArray(logs) ? logs : [])
-  .filter((log) => log && !log.hiddenFromRecent)
-  .slice(-MAX_SQL_ACTIVITY)
-  .map((log) => ({
-    id: text(log.id),
-    statement: truncate(log.sql, 8_000),
-    status: text(log.status),
-    createdAt: new Date(Number(log.timestamp) || Date.now()).toISOString(),
-  }));
-
 /** Build the complete desktop-owned context sent to the Go Harness. */
 export const buildDesktopWorkspaceSnapshot = (
   state: Record<string, any>,
   revision: number,
   sourceID = 'desktop',
   instanceID = sourceInstanceID,
+  projectCollections = createWorkspaceSnapshotProjection(),
 ): WorkspaceSnapshotRequest => {
   const tabs = resolveLiveQueryTabs(Array.isArray(state.tabs) ? state.tabs : []);
   const activeTabID = text(state.activeTabId);
@@ -133,21 +114,7 @@ export const buildDesktopWorkspaceSnapshot = (
       : { attachedItems: attachedContext },
     tabs: tabs.map(tabSnapshot),
     activeTabId: activeTabID || undefined,
-    sqlActivity: sqlActivitySnapshot(state.sqlLogs),
-    savedQueries: (Array.isArray(state.savedQueries) ? state.savedQueries : []).map((query: any) => ({
-      id: text(query.id),
-      name: text(query.name),
-      content: truncate(query.sql || query.content),
-    })),
-    snippets: (Array.isArray(state.sqlSnippets) ? state.sqlSnippets : []).map((snippet: any) => ({
-      id: text(snippet.id),
-      name: text(snippet.name),
-      content: truncate(snippet.body || snippet.content),
-    })),
-    externalSqlDirectories: (Array.isArray(state.externalSQLDirectories)
-      ? state.externalSQLDirectories
-      : []).map((directory: any) => text(directory.path || directory.name)).filter(Boolean),
-    shortcuts: serializeShortcutOptionsForWorkspace(state.shortcutOptions),
+    ...projectCollections(state),
     transactionState: {
       pending: state.sqlEditorPendingTransactions && typeof state.sqlEditorPendingTransactions === 'object'
         ? { ...state.sqlEditorPendingTransactions }
@@ -201,13 +168,7 @@ export const useAIWorkspaceSnapshot = ({
     dataEditTransactionOptions: state.dataEditTransactionOptions,
     sqlLogs: state.sqlLogs,
   }), shallow);
-  const dependencyKey = useMemo(() => {
-    try {
-      return JSON.stringify(snapshotInputs);
-    } catch {
-      return '';
-    }
-  }, [snapshotInputs]);
+  const projectCollections = useMemo(createWorkspaceSnapshotProjection, []);
 
   // Keep the latest complete state available to the lease-renewal timer
   // without recreating the timer for every React render.
@@ -248,6 +209,7 @@ export const useAIWorkspaceSnapshot = ({
         nextRevision,
         sourceIDRef.current,
         sourceInstanceID,
+        projectCollections,
       );
       recordPublishedWorkspaceSnapshot(latestSnapshotRef.current);
     }
@@ -288,9 +250,9 @@ export const useAIWorkspaceSnapshot = ({
   // deliberately owns no timer: the lease cadence below remains stable while
   // the editor, tabs, or SQL log change.
   useEffect(() => {
-    if (!enabled || !dependencyKey) return;
+    if (!enabled) return;
     void publish(true);
-  }, [dependencyKey, enabled, sourceId]);
+  }, [snapshotInputs, enabled, sourceId]);
 
   useEffect(() => {
     if (!enabled) return;

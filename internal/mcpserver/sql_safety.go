@@ -73,6 +73,9 @@ func applyExecuteSQLSafety(level ai.SQLPermissionLevel, inspection appcore.SQLIn
 }
 
 func classifyStatementOperation(stmt appcore.SQLStatementInspection) ai.SQLOperationType {
+	if stmt.OperationType != "" {
+		return stmt.OperationType
+	}
 	if stmt.ReadOnly {
 		return ai.SQLOpQuery
 	}

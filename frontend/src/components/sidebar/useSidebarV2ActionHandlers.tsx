@@ -1,3 +1,4 @@
+import { openPreferencePage } from '../settings/preferences/preferencePages';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { message } from 'antd';
 import type { FormInstance } from 'antd/es/form';
@@ -586,6 +587,9 @@ export const useSidebarV2ActionHandlers = ({
     const connId = String(node?.key || node?.dataRef?.id || '');
     if (!connId) return;
     switch (action) {
+      case 'sidebar-settings':
+        openPreferencePage('sidebar-settings');
+        return;
       case 'new-db': {
         const capabilities = getDataSourceCapabilities(node?.dataRef?.config);
         if (isElasticsearchFamilyType(capabilities.type)) {

@@ -350,12 +350,14 @@ func inspectClosedAgentLedger(path string) (runharness.LedgerStorageStats, error
 	if stats.FileBytes == 0 {
 		return stats, nil
 	}
-	uri := &url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
-	query := uri.Query()
+	query := url.Values{}
 	query.Set("mode", "ro")
 	query.Add("_pragma", "busy_timeout(1000)")
-	uri.RawQuery = query.Encode()
-	database, err := sql.Open("sqlite", uri.String())
+	dsn, err := runharness.SQLiteFileURI(path, query)
+	if err != nil {
+		return stats, err
+	}
+	database, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return stats, err
 	}

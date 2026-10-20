@@ -406,7 +406,7 @@ body[data-ui-version="v2"] .gn-v2-data-grid .rc-virtual-list-holder {
 }
 
 body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-thead > tr > th {
-  height: 48px !important;
+  height: var(--gn-data-table-header-height, 48px) !important;
   padding: 3px 8px 3px 2px !important;
   background: var(--gn-bg-panel-2) !important;
   color: var(--gn-fg-2) !important;
@@ -459,3 +459,8 @@ body[data-ui-version="v2"] .gn-v2-data-grid .ant-table-thead .ant-table-column-s
   flex: 0 0 auto;
 }
 
+/* 行首选择列拖选中（Navicat 式）：拖动进行中抑制原生文本选择。 */
+body.gn-datagrid-row-select-dragging {
+  user-select: none;
+  -webkit-user-select: none;
+}

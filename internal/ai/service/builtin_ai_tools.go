@@ -22,15 +22,31 @@ var builtinAIToolNames = map[string]bool{
 	"execute_sql":        true,
 }
 
+func builtinAICompletesConnection(name string) bool {
+	return builtinAIToolNames[name] || name == inspectSourceToolName
+}
+
 const builtinAIExecuteSQLDescription = "Run one read-only query (SELECT, SHOW, DESCRIBE or EXPLAIN) on a saved connection and return the rows. Add LIMIT to queries that may return many rows. Statements that change data or schema are refused."
 
 // builtinAITools keeps the curated tools, in the catalog's order, and offers execute_sql as the
 // read-only query it is for this model.
 func builtinAITools(tools []ai.Tool) []ai.Tool {
+	return builtinAIToolsFor(tools, "")
+}
+
+// builtinAIToolsFor keeps the SQL tools, or only inspect_source when the turn is on a
+// Nacos, Redis, vector, or message connection.
+func builtinAIToolsFor(tools []ai.Tool, family string) []ai.Tool {
+	if isNonSQLFamily(family) {
+		return keepInspectSource(tools)
+	}
 	var kept []ai.Tool
 	for _, tool := range tools {
 		name := strings.TrimSpace(tool.Function.Name)
 		if !builtinAIToolNames[name] {
+			if family == "" && name == inspectSourceToolName {
+				kept = append(kept, tool)
+			}
 			continue
 		}
 		if name == "execute_sql" {
@@ -66,6 +82,9 @@ type builtinAIKnown struct {
 // 2026-10-06). With the tables of the person's SQL in the context only execute_sql stays (an
 // EXPLAIN or SHOW INDEX still runs); with the version in it, get_server_version goes.
 func builtinAITurnTools(tools []ai.Tool, known builtinAIKnown) []ai.Tool {
+	if builtinAIInspectOnly(tools) {
+		return tools
+	}
 	var kept []ai.Tool
 	for _, tool := range tools {
 		name := strings.TrimSpace(tool.Function.Name)
@@ -80,7 +99,19 @@ func builtinAITurnTools(tools []ai.Tool, known builtinAIKnown) []ai.Tool {
 // guardBuiltinAIToolCalls lets through the calls the built-in AI may make. A query that is not
 // read-only is not run: the person gets the SQL to look at instead, with a note that says why.
 // (The tool's own checks and the approval step stay in place for everything that passes.)
-func guardBuiltinAIToolCalls(calls []ai.ToolCall, content string, notice string) ([]ai.ToolCall, string) {
+func guardBuiltinAIToolCalls(calls []ai.ToolCall, content string, notice string, target builtinAITarget) ([]ai.ToolCall, string) {
+	calls, rejected := target.keepAllowedConnections(calls)
+	if rejected != "" {
+		if strings.TrimSpace(content) != "" {
+			content = strings.TrimRight(content, "\n") + "\n\n" + rejected
+		} else {
+			content = rejected
+		}
+	}
+	if isNonSQLFamily(target.family) {
+		return rewriteNonSQLToolCalls(target.complete(calls)), content
+	}
+	calls = target.complete(calls)
 	var allowed []ai.ToolCall
 	var blocked []string
 	for _, call := range calls {
@@ -123,6 +154,12 @@ type builtinAITarget struct {
 	connectionID string
 	dbName       string
 	schemaName   string
+	// family is nacos, redis, vector, or message when this turn is not SQL.
+	family string
+	// allowedIDs, when set, are the only connections this turn may call.
+	allowedIDs map[string]bool
+	// allowedNote explains a rejected call that named some other connection.
+	allowedNote string
 	// known are the saved connections' ids, when they could be read: a call naming any other
 	// connection (the small model writes "your_connection_id") is put on the target instead.
 	known map[string]bool
@@ -179,7 +216,7 @@ func (t builtinAITarget) complete(calls []ai.ToolCall) []ai.ToolCall {
 	for i, call := range calls {
 		completed[i] = call
 		name := strings.TrimSpace(call.Function.Name)
-		if !builtinAIToolNames[name] {
+		if !builtinAICompletesConnection(name) {
 			continue
 		}
 		args := map[string]any{}
@@ -270,7 +307,7 @@ func (g *builtinAIStreamGuard) release() {
 		return
 	}
 	g.released = true
-	allowed, text := guardBuiltinAIToolCalls(g.target.complete(g.calls), "", g.notice)
+	allowed, text := guardBuiltinAIToolCalls(g.calls, "", g.notice, g.target)
 	if text != "" {
 		g.callback(ai.StreamChunk{Content: text})
 	}

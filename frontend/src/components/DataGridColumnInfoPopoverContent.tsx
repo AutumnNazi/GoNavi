@@ -93,6 +93,13 @@ const DataGridColumnInfoPopoverContent: React.FC<DataGridColumnInfoPopoverConten
       <div style={{ fontWeight: 600, fontSize: 13, color: darkMode ? '#ddd' : '#666' }}>
         {translate('data_grid.column_settings.display_settings')}
       </div>
+        <Checkbox
+          checked={showRowNumberColumn}
+          onChange={(e) => onShowRowNumberColumnChange(e.target.checked)}
+          style={{ marginLeft: 0 }}
+        >
+          {translate('app.theme.data_table.row_number')}
+        </Checkbox>
       <Checkbox checked={showColumnComment} onChange={(e) => onShowColumnCommentChange(e.target.checked)}>
         {translate('data_grid.column_settings.show_comments')}
       </Checkbox>
@@ -123,13 +130,6 @@ const DataGridColumnInfoPopoverContent: React.FC<DataGridColumnInfoPopoverConten
         allowClear
       />
       <div className="custom-scrollbar" style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <Checkbox
-          checked={showRowNumberColumn}
-          onChange={(e) => onShowRowNumberColumnChange(e.target.checked)}
-          style={{ marginLeft: 0 }}
-        >
-          {translate('app.theme.data_table.row_number')}
-        </Checkbox>
         {allOrderedColumnNames
           .filter((col) => !columnSearchText || col.toLowerCase().includes(columnSearchText.toLowerCase()))
           .map((col) => (

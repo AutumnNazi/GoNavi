@@ -347,6 +347,11 @@ func (a *App) importDataWithProgressOptionsContext(
 			Message: a.appText("data_import.capability.reason."+reason, nil),
 		}
 	}
+	if recovery == nil {
+		if err := a.captureTableImportRollbackPoint(importCtx, managedJob, config, dbName, tableName, jobID); err != nil {
+			return connection.QueryResult{Success: false, Message: err.Error()}
+		}
+	}
 
 	targetColumns, colErr := a.importTargetColumnsContext(importCtx, dbInst, config, dbName, tableName)
 	if errors.Is(importCtx.Err(), context.Canceled) {

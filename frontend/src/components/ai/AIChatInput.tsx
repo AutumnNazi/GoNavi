@@ -115,12 +115,16 @@ export const AIChatInput: React.FC<AIChatInputProps> = ({
     });
     const composerReadiness = React.useMemo(() => buildAIChatReadinessSnapshot({
         activeProvider,
+        // The provider list decides which wording is true while the active one is
+        // still unresolved: without it, a configured setup is reported as "no
+        // provider configured" instead of "none selected yet".
+        providers,
         dynamicModels,
         loadingModels,
         activeContext,
         activeContextItems,
         translate: t,
-    }), [activeProvider, dynamicModels, loadingModels, activeContext, activeContextItems, t]);
+    }), [activeProvider, providers, dynamicModels, loadingModels, activeContext, activeContextItems, t]);
     const {
         appendingContext,
         contextExpanded,
@@ -198,7 +202,8 @@ export const AIChatInput: React.FC<AIChatInputProps> = ({
             shortcut: getShortcutDisplayLabel(combo, shortcutPlatform),
         });
     }, [sendShortcutBinding?.combo, sendShortcutBinding?.enabled, shortcutPlatform, t]);
-    const connectionTooltipLabel = t('ai_chat.input.context.connection_tooltip');
+    const connectionContextLabel = activeContext?.dbName ? `${activeConnName} / ${activeContext.dbName}` : activeConnName;
+    const connectionTooltipLabel = t('ai_chat.input.context.connection_tooltip', { name: connectionContextLabel });
     const composerActionHandler = typeof onComposerAction === 'function' ? onComposerAction : undefined;
     const composerNoticeActionHandler = composerNotice?.action?.key && composerActionHandler
         ? handleComposerNoticeAction
@@ -306,7 +311,7 @@ export const AIChatInput: React.FC<AIChatInputProps> = ({
                                 <span className="gn-v2-ai-context-live-dot" />
                                 <GnDatabaseIcon />
                                 <span className="gn-v2-ai-context-chip-text">
-                                    {activeConnName}{activeContext?.dbName ? ` / ${activeContext.dbName}` : ''}
+                                    {connectionContextLabel}
                                 </span>
                             </div>
                         </Tooltip>

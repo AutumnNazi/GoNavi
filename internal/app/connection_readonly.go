@@ -18,6 +18,7 @@ const (
 )
 
 var connectionReadOnlySupportedTypes = map[string]struct{}{
+	"redis":         {},
 	"clickhouse":    {},
 	"dameng":        {},
 	"diros":         {},
@@ -276,6 +277,9 @@ func readOnlyConnectionActionBlockedMessage(action string) string {
 
 func ensureConnectionAllowsQueryWithText(config connection.ConnectionConfig, query string, text func(string, map[string]any) string) error {
 	text = normalizeReadOnlyConnectionText(text)
+	if isDatabaseJobMutationProtected(config) && hasDatabaseJobMutationSQL(resolveDDLDBType(config), query) {
+		return errors.New(readOnlyConnectionQueryBlockedMessageWithText(text))
+	}
 	if !isConnectionScriptExecutionRestricted(config) {
 		return nil
 	}

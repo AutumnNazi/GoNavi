@@ -41,7 +41,7 @@ func (s *SyncEngine) tryApplySourceQueryInPages(config SyncConfig, res *SyncResu
 	if !ok {
 		return true, pagedDiffCounts{}, fmt.Errorf("目标驱动不支持应用数据变更 (ApplyChanges)")
 	}
-	targetColSet := buildTargetColumnSet(ctx.TargetCols)
+	writableColSet := buildWritableTargetColumnSet(ctx.TargetCols)
 	counts := pagedDiffCounts{}
 	rowIndexBase := 0
 
@@ -53,8 +53,8 @@ func (s *SyncEngine) tryApplySourceQueryInPages(config SyncConfig, res *SyncResu
 				Updates: filterPagedUpdatesByPKSelection(ctx.PKColumn, page.Updates, opts.Update, opts.SelectedUpdatePKs),
 				Deletes: filterRowsByPKSelection(ctx.PKColumn, page.Deletes, opts.Delete, opts.SelectedDeletePKs),
 			}
-			changeSet.Inserts = filterInsertRows(changeSet.Inserts, targetColSet)
-			changeSet.Updates = filterUpdateRows(changeSet.Updates, targetColSet)
+			changeSet.Inserts = filterInsertRows(changeSet.Inserts, writableColSet)
+			changeSet.Updates = filterUpdateRows(changeSet.Updates, writableColSet)
 			if len(changeSet.Inserts) == 0 && len(changeSet.Updates) == 0 && len(changeSet.Deletes) == 0 {
 				return nil
 			}
@@ -106,7 +106,7 @@ func (s *SyncEngine) tryApplySourceQueryInPages(config SyncConfig, res *SyncResu
 
 	applyPage := func(rows []map[string]interface{}) error {
 		insertRows := filterRowsByPKSelection(ctx.PKColumn, rows, opts.Insert, opts.SelectedInsertPKs)
-		insertRows = filterInsertRows(insertRows, targetColSet)
+		insertRows = filterInsertRows(insertRows, writableColSet)
 		if len(insertRows) == 0 {
 			return nil
 		}

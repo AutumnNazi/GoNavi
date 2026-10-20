@@ -349,6 +349,7 @@ export const useDataSyncWorkbenchRunActions = ({
     setErrorRows([]);
     setCheckpoint(null);
     setCompareResult(null);
+    if (!runId) return;
     const run = runs.find((item) => item.id === runId) || runHint;
     setOperationError('');
     try {

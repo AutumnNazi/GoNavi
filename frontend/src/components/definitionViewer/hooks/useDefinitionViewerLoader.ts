@@ -1,4 +1,5 @@
 import { useEffect, useCallback } from 'react';
+import { loadDatabaseJobDefinition } from '../../databaseJobs/loadJobDefinition';
 import {
   buildOracleDatabaseLinkDefinitionQueries,
   extractOracleDatabaseLinkDefinition,
@@ -201,6 +202,7 @@ export const useDefinitionViewerLoader = ({
       if (!conn) {
           return { success: false, error: t('definition_viewer.error.connection_not_found') };
       }
+      if (tab.type === 'job-def') return loadDatabaseJobDefinition(conn, tab, t);
 
       const dbName = tab.dbName || '';
       const dialect = getMetadataDialect(conn);
@@ -410,6 +412,7 @@ export const useDefinitionViewerLoader = ({
           if (result.success) {
               loadedDefinitionKeyRef.current = objectIdentityKey;
               setDefinition(String(result.definition || ''));
+              setError(result.error || null);
           } else {
               setError(result.error || t('definition_viewer.error.query_failed'));
           }
@@ -421,7 +424,7 @@ export const useDefinitionViewerLoader = ({
       return () => {
           cancelled = true;
       };
-  }, [tab.connectionId, tab.dbName, tab.viewName, tab.viewKind, tab.eventName, tab.routineName, tab.routineType, tab.sequenceName, tab.packageName, tab.databaseLinkName, tab.schemaName, tab.type, connections, objectIdentityKey, t]);
+  }, [tab.connectionId, tab.dbName, tab.viewName, tab.viewKind, tab.eventName, tab.jobName, tab.jobKind, tab.routineName, tab.routineType, tab.sequenceName, tab.packageName, tab.databaseLinkName, tab.schemaName, tab.type, connections, objectIdentityKey, t]);
 
   useEffect(() => () => {
       isMountedRef.current = false;

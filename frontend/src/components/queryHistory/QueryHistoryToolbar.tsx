@@ -6,6 +6,7 @@ import { SearchOutlined } from '@ant-design/icons';
 import { useI18n } from '../../i18n/provider';
 import type { SavedConnection } from '../../types';
 import type { SQLAuditFilter } from '../audit/sqlAuditModel';
+import QueryHistorySourceFilter from './QueryHistorySourceFilter';
 import {
   isQueryHistoryStatus,
   QUERY_HISTORY_STATUS_FILTERS,
@@ -121,6 +122,7 @@ export default function QueryHistoryToolbar({
         autoComplete="off"
         allowClear
       />
+      <QueryHistorySourceFilter filter={filter} onFieldChange={onFieldChange} />
       <RangePicker
         className="gn-qh-filter-time"
         showTime={{ format: 'HH:mm' }}

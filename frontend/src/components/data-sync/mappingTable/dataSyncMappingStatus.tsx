@@ -1,6 +1,7 @@
 import React from 'react';
+import { taskKindCanCreateTarget } from '../modelTaskKinds';
 import type { DataSyncTableMapping, DataSyncTaskKind, DataSyncObjectMetadata } from '../model';
-import type { DataSyncWorkbenchTranslate } from '../text';
+import type { DataSyncWorkbenchTextKey, DataSyncWorkbenchTranslate } from '../text';
 import type { DataSyncMetadataResult } from '../useDataSyncMetadata';
 
 export const normalizeName = (value: string): string => value.trim().toLowerCase();
@@ -53,6 +54,17 @@ export const ObjectMetadataStatus: React.FC<{
     ) : null}
   </div>
 );
+
+export { taskKindCanCreateTarget };
+
+/** 目标缺失且任务类型不能建表时，改用说明原因的提示。 */
+export const targetHintKey = (
+  targetState: MappingTargetStatus,
+  taskKind: DataSyncTaskKind,
+): DataSyncWorkbenchTextKey =>
+  targetState === 'missing' && !taskKindCanCreateTarget(taskKind)
+    ? 'mapping.target_hint.missing_requires_existing'
+    : `mapping.target_hint.${targetState}`;
 
 export const targetStatus = (
   mapping: DataSyncTableMapping,

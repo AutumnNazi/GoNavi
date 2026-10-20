@@ -817,7 +817,7 @@ body[data-ui-version] .gonavi-ai-provider-form-popup .ant-select-item-option-sel
 }
 .gonavi-ai-provider-partner-code:hover,
 .gonavi-ai-provider-partner-code:focus-visible { border-color: var(--gn-primary, var(--provider-active, #00984a)); outline: none; }
-.gonavi-ai-provider-partner-code code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; }
+.gonavi-ai-provider-partner-code code { font-family: var(--gn-font-mono); font-size: 11px; font-weight: 700; }
 .gonavi-ai-provider-partner-code > span { flex: 0 0 auto; color: var(--gn-primary, var(--provider-active, #007f3d)); font-size: 9px; }
 .gonavi-ai-provider-partner-copy-state { min-height: 15px; color: var(--gn-fg-4, var(--provider-muted, #6b7280)); font-size: 10px; line-height: 15px; }
 .gonavi-ai-provider-partner-copy-state.is-error { color: var(--gn-danger, #cf4343); }

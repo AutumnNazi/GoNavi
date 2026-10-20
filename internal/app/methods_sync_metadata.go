@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"strings"
 
 	"GoNavi-Wails/internal/connection"
@@ -25,7 +26,13 @@ func (a *App) DataSyncObjectList(connectionID, database, schema string) connecti
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	return a.DBGetTables(endpoint.Config, endpoint.Database)
+	result := a.DBGetTables(endpoint.Config, endpoint.Database)
+	// 迁移目标可以填一个尚不存在的库（运行前自动创建）。确认库不存在时它就是空库，
+	// 返回空清单让映射照常进入「将自动建表」，而不是整页卡在加载失败。
+	if !result.Success && a.dataSyncTargetDatabaseMissing(context.Background(), endpoint.Config, endpoint.Database) {
+		return connection.QueryResult{Success: true, Data: []map[string]string{}}
+	}
+	return result
 }
 
 // DataSyncFieldList resolves metadata without exposing the editable saved

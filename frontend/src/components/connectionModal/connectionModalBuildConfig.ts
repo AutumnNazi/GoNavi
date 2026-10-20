@@ -1,4 +1,5 @@
 import type { ConnectionConfig } from "../../types";
+import { resolveConnectionDatabaseValue } from "./connectionModalNamespace";
 import {
   supportsConnectionKeepAliveSQL,
   MAX_CONNECTION_KEEPALIVE_SQL_LENGTH,
@@ -689,7 +690,7 @@ export const buildConnectionConfig = async ({
     user: mergedValues.user || "",
     password: keepPassword ? mergedValues.password || "" : "",
     savePassword: savePassword,
-    database: mergedValues.database || "",
+    database: resolveConnectionDatabaseValue(type, mergedValues.database, mergedValues.uri) || "",
     readOnly: protection
       ? deriveLegacyConnectionReadOnlyFlag(protection)
       : false,

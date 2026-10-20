@@ -185,6 +185,12 @@ func (a *App) Shutdown() {
 	if !a.cancelAndWaitConnectionHealthRuns(5 * time.Second) {
 		logger.Warnf("连接健康检查任务未能在关闭超时内全部退出；将继续释放数据库资源")
 	}
+	if !a.shutdownBackgroundGallery() {
+		logger.Warnf("Background gallery downloads did not stop before shutdown timeout")
+	}
+	if !a.shutdownFontGallery() {
+		logger.Warnf("Font gallery downloads did not stop before shutdown timeout")
+	}
 	a.shutdownCloudBackup()
 	a.shutdownDataSyncJobs()
 	if !a.cancelAndWaitImportTasks(5 * time.Second) {

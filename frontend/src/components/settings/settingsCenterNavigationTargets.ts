@@ -1,6 +1,7 @@
 import type { AISettingsSectionKey } from '../ai/AISettingsSidebar';
 import { AI_SETTINGS_NAV_ITEMS } from '../ai/AISettingsSidebar';
 import type { TabData } from '../../types';
+import { buildCloudBackupWorkbenchTab } from '../../utils/cloudBackupTab';
 import { buildDMLSnapshotWorkbenchTab } from '../../utils/dmlSnapshotTab';
 import { buildRequestDiagnosticsWorkbenchTab } from '../../utils/requestDiagnosticsTab';
 import { buildSqlAuditWorkbenchTab } from '../../utils/sqlAuditTab';
@@ -28,6 +29,7 @@ export const SETTINGS_WORKBENCH_TAB_BUILDERS: Partial<
   Record<NonNullable<SettingsCenterNavigationTarget['action']>, () => TabData>
 > = {
   'sql-audit': buildSqlAuditWorkbenchTab,
+  'cloud-backup': buildCloudBackupWorkbenchTab,
   'request-diagnostics': buildRequestDiagnosticsWorkbenchTab,
   'dml-snapshot': buildDMLSnapshotWorkbenchTab,
 };

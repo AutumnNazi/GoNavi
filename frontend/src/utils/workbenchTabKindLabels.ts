@@ -36,6 +36,7 @@ export const getWorkbenchTabKindLabel = (tab: TabData): string => {
       : t('tab_manager.kind_badge.view');
   }
   if (tab.type === 'event-def') return t('tab_manager.kind_badge.event');
+  if (tab.type === 'job-def') return t('tab_manager.kind_badge.job');
   if (tab.type === 'routine-def') return t('tab_manager.kind_badge.routine');
   if (tab.type === 'sequence-def') return t('tab_manager.kind_badge.sequence');
   if (tab.type === 'package-def') return t('tab_manager.kind_badge.package');
@@ -86,6 +87,7 @@ export const getWorkbenchTabKindTooltipLabel = (tab: TabData): string => {
       : t('tab_manager.hover.kind.view');
   }
   if (tab.type === 'event-def') return t('tab_manager.hover.kind.event');
+  if (tab.type === 'job-def') return t('tab_manager.hover.kind.job');
   if (tab.type === 'routine-def') return t('tab_manager.hover.kind.routine');
   if (tab.type === 'sequence-def') return t('tab_manager.hover.kind.sequence');
   if (tab.type === 'package-def') return t('tab_manager.hover.kind.package');

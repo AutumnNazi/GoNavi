@@ -1,3 +1,4 @@
+import { eventErrorTexts } from './textEventErrors';
 import { backupTexts } from './textBackup';
 import { dataSyncScheduleTextsEnUS, dataSyncRunEventTextsEnUS } from './textSchedules';
 import { dataSyncValidationTextsEnUS } from './textValidation';
@@ -5,6 +6,7 @@ import type { DataSyncWorkbenchTextKey } from './textZhCN';
 
 export const enUS: Record<DataSyncWorkbenchTextKey, string> = {
   ...backupTexts('en-US'),
+  ...eventErrorTexts('en-US'),
   'workbench.title': 'Data migration and sync',
   'workbench.title_short': 'Data sync',
   'workbench.title_compare': 'Data compare',
@@ -72,11 +74,11 @@ export const enUS: Record<DataSyncWorkbenchTextKey, string> = {
   'task_kind.title': 'Choose a task type',
   'task_kind.subtitle': 'The type determines incremental and trigger options. You can copy it into another task later.',
   'task_kind.subtitle_compare': 'Choose schema or data comparison. Compare tasks never write to the target.',
-  'task_kind.migration': 'One-time migration',
-  'task_kind.migration_desc': 'Move schema and data, with target object creation.',
+  'task_kind.migration': 'One-time migration (legacy)',
+  'task_kind.migration_desc': 'Legacy task type. Create a Data sync task instead; it also creates databases and tables automatically.',
   'task_kind.schema_sync': 'Schema sync',
-  'task_kind.reconcile': 'Batch / difference sync',
-  'task_kind.reconcile_desc': 'Compare snapshots or use a watermark by key.',
+  'task_kind.reconcile': 'Data sync',
+  'task_kind.reconcile_desc': 'Sync schema and data to the target. Missing databases and tables are created automatically, then rows sync by key comparison or watermark.',
   'task_kind.querySink': 'SQL result sink',
   'task_kind.querySink_desc': 'Run a query and write its stable result to a target table.',
   'task_kind.compare': 'Read-only compare',
@@ -149,6 +151,9 @@ export const enUS: Record<DataSyncWorkbenchTextKey, string> = {
   'metadata.retry': 'Retry',
   'metadata.no_eligible_connections': 'No connection supports this read/write direction.',
   'metadata.no_databases': 'This connection returned no databases. The draft can still be saved.',
+  'metadata.new_database_option': '+ Enter a new database name (created before running)',
+  'metadata.new_database_placeholder': 'Type a new database name and press Enter',
+  'metadata.database_will_be_created': 'Database {database} does not exist on the target yet; it will be created before the task runs.',
   'metadata.endpoint_required': 'Choose an endpoint first',
   'metadata.object_required': 'Choose an object first',
   'metadata.objects_count': '{count} objects',
@@ -216,8 +221,9 @@ export const enUS: Record<DataSyncWorkbenchTextKey, string> = {
   'mapping.needs_attention': 'Needs attention',
   'mapping.target_hint.exists': 'This table already exists on the target',
   'mapping.target_hint.create': 'This table is not on the target yet; it will be created during sync',
-  'mapping.target_hint.missing': 'This table is not on the target, and this task is not allowed to create it',
+  'mapping.target_hint.missing': 'This table is not on the target; switch it to auto-create under Edit exceptions to create it during sync',
   'mapping.target_hint.pending': 'Checking whether this table already exists on the target',
+  'mapping.target_hint.missing_requires_existing': 'This table is not on the target, and this task only writes to existing tables; create it on the target first',
   'mapping.key_placeholder': 'Leave empty to auto-match by source primary key',
   'mapping.key_detected': 'Detected from source metadata; edit if needed',
   'mapping.key_when_needed': 'Upsert into an existing target needs a source physical primary key; initial auto-create does not. CDC still needs a stable key.',
@@ -308,7 +314,7 @@ export const enUS: Record<DataSyncWorkbenchTextKey, string> = {
   'delivery.performance_title': 'Performance and retries',
   'delivery.performance_help': 'The defaults fit most tasks. Adjust only when you understand target load and retry idempotency.',
   'delivery.structure_title': 'Target schema',
-  'delivery.structure_help': 'One-time migrations, schema-sync tasks and reconcile (diff sync) tasks can add missing target columns; existing columns are never modified or deleted, and no tables are created automatically.',
+  'delivery.structure_help': 'Data sync can add columns missing from existing target tables; existing columns are never modified or deleted. Missing tables follow each mapping\'s auto-create setting.',
   'delivery.auto_add_columns': 'Add missing target columns',
   'delivery.auto_add_columns_desc': 'Only adds columns missing from the target; existing columns are not changed or removed. DDL may briefly lock the target table.',
   'delivery.create_indexes': 'Copy table dependents',
@@ -400,6 +406,9 @@ export const enUS: Record<DataSyncWorkbenchTextKey, string> = {
   'runs.resume': 'Resume',
   'runs.retry': 'Retry run',
   'runs.delete': 'Delete record',
+  'runs.rollback': 'Roll back',
+  'runs.rollback_confirm_title': 'Roll back this run',
+  'runs.rollback_confirm': 'The target returns to the snapshot taken before this run. Tables created after the run started are dropped, and snapshotted tables return to their earlier data. This cannot be undone.',
   'runs.clear_terminal': 'Clear completed records',
   'runs.pagination': 'Run history pagination',
   'runs.page': 'Page {page}',

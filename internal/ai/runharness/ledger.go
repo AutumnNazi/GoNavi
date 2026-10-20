@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -370,19 +369,16 @@ func ledgerDSN(path string) (dsn, absPath string, err error) {
 	if err := os.MkdirAll(filepath.Dir(absPath), 0o700); err != nil {
 		return "", "", fmt.Errorf("create agent ledger directory: %w", err)
 	}
-	// Use the same file URI form as the rest of the repository. PathEscape is
-	// unsuitable here because it escapes the path's '/' separators.
-	uri := &url.URL{Scheme: "file", Path: filepath.ToSlash(absPath)}
-	if runtime.GOOS == "windows" && !strings.HasPrefix(uri.Path, "/") {
-		uri.Path = "/" + uri.Path
-	}
 	query := url.Values{}
 	for _, pragma := range []string{"busy_timeout(5000)", "foreign_keys(ON)", "synchronous(FULL)", "journal_mode(WAL)"} {
 		query.Add("_pragma", pragma)
 	}
 	query.Set("_txlock", "immediate")
-	uri.RawQuery = query.Encode()
-	return uri.String(), absPath, nil
+	dsn, err = SQLiteFileURI(absPath, query)
+	if err != nil {
+		return "", "", err
+	}
+	return dsn, absPath, nil
 }
 
 func (l *Ledger) Path() string {

@@ -4,7 +4,7 @@ import type { WorkbenchTabType } from '../tabTypes';
 
 type PendingSidebarToggleFocus = 'collapsed' | 'explorer' | null;
 
-/** 折叠前让出侧栏内的焦点，避免焦点留在被隐藏 / inert 的树里。 */
+// 折叠前让出侧栏内的焦点，避免焦点留在被隐藏 / inert 的树里。
 export const blurFocusInsideSidebarContent = () => {
   if (typeof document === 'undefined') return;
   const activeElement = document.activeElement as HTMLElement | null;
@@ -13,7 +13,7 @@ export const blurFocusInsideSidebarContent = () => {
   }
 };
 
-/** 自成一体、不依赖左侧树选中上下文的工作台标签页：显示时自动折叠左侧树。 */
+// 自成一体、不依赖左侧树选中上下文的工作台标签页：显示时自动折叠左侧树。
 const SIDEBAR_AUTO_COLLAPSE_TAB_TYPES: ReadonlySet<WorkbenchTabType> = new Set<WorkbenchTabType>([
   'settings-center',
   'driver-manager',
@@ -26,25 +26,30 @@ export const isSidebarAutoCollapseTabType = (tabType: WorkbenchTabType | undefin
   tabType !== undefined && SIDEBAR_AUTO_COLLAPSE_TAB_TYPES.has(tabType)
 );
 
-/**
- * 设置中心、驱动管理、同步 / 导入 / 导出工作台显示时自动折叠左侧树，离开时恢复。
- *
- * - 只恢复自己折叠的：进入前左侧树本来就折叠着，离开时保持折叠。
- * - 显示期间用户手动展开过左侧树，视为用户接管，离开时不再干预。
- * - 在这类标签页之间切换（显示状态不变）不触发展开 / 折叠，保持折叠不闪烁。
- * - 自动折叠不转移焦点（手动折叠会把焦点交给折叠按钮），只让出树内焦点。
- * - 用布局副作用在绘制前完成切换，避免左侧树闪现一帧。
- */
+// 用户开启后，设置中心、驱动管理、同步 / 导入 / 导出工作台显示时折叠左侧树，离开时恢复。
+// 默认关闭；关闭时保留当前状态并释放自动恢复标记，后续切换不再干预。
+//
+// - 只恢复自己折叠的：进入前左侧树本来就折叠着，离开时保持折叠。
+// - 显示期间用户手动展开过左侧树，视为用户接管，离开时不再干预。
+// - 在这类标签页之间切换（显示状态不变）不触发展开 / 折叠，保持折叠不闪烁。
+// - 自动折叠不转移焦点（手动折叠会把焦点交给折叠按钮），只让出树内焦点。
+// - 用布局副作用在绘制前完成切换，避免左侧树闪现一帧。
 export const useWorkbenchSidebarAutoCollapse = (
   activeTabType: WorkbenchTabType | undefined,
   isSidebarCollapsed: boolean,
   setIsSidebarCollapsed: (collapsed: boolean) => void,
+  enabled = false,
 ) => {
-  const autoCollapseTabActive = isSidebarAutoCollapseTabType(activeTabType);
+  const autoCollapseTabActive = enabled && isSidebarAutoCollapseTabType(activeTabType);
   const previousActiveRef = useRef(autoCollapseTabActive);
   const autoCollapsedRef = useRef(false);
 
   useLayoutEffect(() => {
+    if (!enabled) {
+      previousActiveRef.current = false;
+      autoCollapsedRef.current = false;
+      return;
+    }
     const wasActive = previousActiveRef.current;
     previousActiveRef.current = autoCollapseTabActive;
     if (autoCollapseTabActive && !wasActive) {
@@ -65,7 +70,7 @@ export const useWorkbenchSidebarAutoCollapse = (
     if (autoCollapseTabActive && !isSidebarCollapsed) {
       autoCollapsedRef.current = false;
     }
-  }, [autoCollapseTabActive, isSidebarCollapsed, setIsSidebarCollapsed]);
+  }, [enabled, autoCollapseTabActive, isSidebarCollapsed, setIsSidebarCollapsed]);
 };
 
 /**

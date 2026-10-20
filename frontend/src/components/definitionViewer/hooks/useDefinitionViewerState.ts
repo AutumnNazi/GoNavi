@@ -36,6 +36,8 @@ export const useDefinitionViewerState = ({ tab }: UseDefinitionViewerStateInput)
       tab.viewName,
       tab.viewKind,
       tab.eventName,
+      tab.jobName,
+      tab.jobKind,
       tab.routineName,
       tab.routineType,
       tab.sequenceName,

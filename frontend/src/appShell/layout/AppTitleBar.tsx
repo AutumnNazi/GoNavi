@@ -1,5 +1,6 @@
 import { Tooltip, Button } from 'antd';
 import { PoweroffOutlined } from '@ant-design/icons';
+import { useI18n } from '../../i18n/provider';
 import {
   getMacNativeTitlebarContentOffset,
   getMacNativeTitlebarPaddingLeft,
@@ -44,7 +45,9 @@ export const AppTitleBar = ({
   isWebRuntime, titleBarLayout, titleBarButtonWidth, effectiveUiScale, tokenFontSize,
   titleBarActionsInline, titleBarActionRow, dockedSidebarActionsHost, titleBarSystemActionsNode,
   handleWebLogout, titleBarToggleIconKey, handleTitleBarWindowToggle, handleApplicationQuitRequest,
-}: AppTitleBarProps) => (
+}: AppTitleBarProps) => {
+  const { t } = useI18n();
+  return (
   <div
     className={[
       'gn-v2-titlebar',
@@ -92,7 +95,7 @@ export const AppTitleBar = ({
                 onDoubleClick={(e) => e.stopPropagation()}
                 style={{ display: 'flex', alignItems: 'center', gap: 8, WebkitAppRegion: 'no-drag', '--wails-draggable': 'no-drag' } as any}
               >
-                  <Tooltip title="退出当前 Web 会话">
+                  <Tooltip title={t('app.titlebar.web_logout')}>
                       <Button
                         type="text"
                         icon={<PoweroffOutlined />}
@@ -135,4 +138,5 @@ export const AppTitleBar = ({
           )}
       </div>
   </div>
-);
+  );
+};

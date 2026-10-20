@@ -26,6 +26,7 @@ import type { AgentIntegrationSummaryView } from "../utils/agentConnectionTypes"
 import type { DataGridDisplaySettings } from "../utils/dataGridDisplay";
 import type { SqlEditorTypographySettings } from "../utils/sqlEditorTypography";
 import type { TitlebarActionsPlacementSettings } from "../utils/titlebarActionsPlacement";
+import type { TabAppearanceStyle, TabCloseButtonPosition } from "../utils/tabAppearance";
 import type {
   DetachedWorkbenchWindow,
   DetachedQueryResultWindow,
@@ -64,11 +65,13 @@ export type ActiveContext = {
 };
 
 export type TableDoubleClickAction = "open-data" | "open-design";
-/** SQL 编辑器中按住 Ctrl/Cmd 点击表名时执行的动作。 */
+// SQL 编辑器中按住 Ctrl/Cmd 点击表名时执行的动作。
 export type QueryTableCtrlClickAction = "open-design" | "locate";
 export type ThemeMode = "light" | "dark";
 export type ThemePreference = ThemeMode | "system";
-/** AI 聊天默认打开形态：侧栏 / 独立浮动窗 */
+// 界面布局主题：classic = 现有样式；navicat = Navicat 风格布局与配色（独立开关，不影响 classic）。
+export type UiLayoutMode = "classic" | "navicat";
+// AI 聊天默认打开形态：侧栏 / 独立浮动窗
 export type AIChatOpenMode = "dock" | "detached";
 
 export interface AppearanceSettings
@@ -76,12 +79,12 @@ export interface AppearanceSettings
   enabled: boolean;
   opacity: number;
   blur: number;
-  /**
-   * 低配适配模式三态：null = 跟随运行时能力自动检测，true / false = 用户显式固定。
-   * 保留 null 才能让「自动」与「用户关掉」区分开，否则自动检测永远失效。
-   */
+  // 界面布局主题：Navicat 风格只在 navicat 下生效，classic 保持既有样式。
+  uiLayoutMode: UiLayoutMode;
+  // 低配适配模式三态：null = 跟随运行时能力自动检测，true / false = 用户显式固定。
+  // 保留 null 才能让「自动」与「用户关掉」区分开，否则自动检测永远失效。
   lowSpecMode: boolean | null;
-  /** 减少动画与过渡：关闭界面动画、弹窗/下拉过渡，提升低配/无显卡（虚拟机）环境的渲染速度 */
+  // 减少动画与过渡：关闭界面动画、弹窗/下拉过渡，提升低配/无显卡（虚拟机）环境的渲染速度
   reduceMotion: boolean;
   tableDoubleClickAction: TableDoubleClickAction;
   queryTableCtrlClickAction: QueryTableCtrlClickAction;
@@ -89,8 +92,12 @@ export interface AppearanceSettings
   v2SidebarPersistedFilter: string;
   v2SidebarRailScale: number;
   tabEnvironmentAccentThickness: number;
+  tabAppearanceStyle: TabAppearanceStyle;
+  tabCloseButtonPosition: TabCloseButtonPosition;
   toolbarButtonColorOverrides: ToolbarButtonColorOverrides;
   sidebarSingleDatabaseExpansion: boolean;
+  workbenchSidebarAutoCollapse: boolean;
+  favoriteSettings: string[];
   sidebarHiddenObjectGroups: SidebarObjectGroupKey[];
   customUIFontFamily: string | null;
   customMonoFontFamily: string | null;
@@ -117,14 +124,14 @@ export interface SqlLog {
   transactionAction?: "commit" | "rollback";
 }
 
-/** 首页一键重新打开的最近连接 / 数据库目标。 */
+// 首页一键重新打开的最近连接 / 数据库目标。
 export interface RecentConnectionTarget {
   connectionId: string;
   dbName?: string;
   openedAt: number;
 }
 
-/** 首页一键重新打开的 SQL 文件，始终保留其运行时连接上下文。 */
+// 首页一键重新打开的 SQL 文件，始终保留其运行时连接上下文。
 export interface RecentSQLFile {
   filePath: string;
   fileName: string;
@@ -172,7 +179,7 @@ export interface SqlEditorPendingTransactionState {
   dbName?: string;
   statements?: string[];
   executionDurationMs?: number;
-  /** 事务所属连接；提交前按它做生产环境确认，见 PendingSqlEditorTransaction。 */
+  // 事务所属连接；提交前按它做生产环境确认，见 PendingSqlEditorTransaction。
   connectionId?: string;
 }
 
@@ -183,13 +190,13 @@ export interface AppState {
   rootSortMode: ConnectionSortMode;
   rootConnectionSortMode: ConnectionDisplaySortMode;
   tabs: TabData[];
-  /** 主工作区已拆出的浮动窗口（会话态，不持久化） */
+  // 主工作区已拆出的浮动窗口（会话态，不持久化）
   detachedWorkbenchWindows: DetachedWorkbenchWindow[];
-  /** SQL 结果区已拆出的浮动窗口（会话态，不持久化） */
+  // SQL 结果区已拆出的浮动窗口（会话态，不持久化）
   detachedQueryResultWindows: DetachedQueryResultWindow[];
-  /** AI 聊天独立浮动窗口（单例，会话态不持久化） */
+  // AI 聊天独立浮动窗口（单例，会话态不持久化）
   detachedAIChatWindow: DetachedAIChatWindow | null;
-  /** AI 独立窗上次尺寸/位置（持久化，再次打开时复用） */
+  // AI 独立窗上次尺寸/位置（持久化，再次打开时复用）
   aiChatDetachedBoundsMemory: AIChatDetachedBoundsMemory | null;
   activeTabId: string | null;
   activeContext: ActiveContext | null;
@@ -210,9 +217,9 @@ export interface AppState {
   fontSize: number;
   /** Legacy persisted name; true means maximise the startup window on every desktop platform. */
   startupFullscreen: boolean;
-  /** 启动后与定时静默检查更新；默认开启 */
+  // 启动后与定时静默检查更新；默认开启
   autoCheckForUpdates: boolean;
-  /** 自动检查更新间隔（分钟），默认 30 */
+  // 自动检查更新间隔（分钟），默认 30
   autoCheckForUpdatesIntervalMinutes: number;
   globalProxy: GlobalProxyConfig;
   sqlFormatOptions: { keywordCase: "upper" | "lower" };
@@ -230,7 +237,7 @@ export interface AppState {
   tableDesignerSchemaByConnection: Record<string, string>;
   tableColumnOrders: Record<string, string[]>;
   enableColumnOrderMemory: boolean;
-  /** 数据表横向滚动时左侧固定的数据列（按表维度记忆；勾选列/行号列始终固定） */
+  // 数据表横向滚动时左侧固定的数据列（按表维度记忆；勾选列/行号列始终固定）
   tablePinnedLeftColumns: Record<string, string[]>;
   tableHiddenColumns: Record<string, string[]>;
   enableHiddenColumnMemory: boolean;
@@ -242,9 +249,20 @@ export interface AppState {
 
   // AI 运行时投影。会话和消息的持久化由 Agent Run Harness Ledger 管理。
   aiPanelVisible: boolean;
-  /** AI 面板停靠宽度：拖拽后记住，重启保持。 */
+  // AI 面板停靠宽度：拖拽后记住，重启保持。
   aiPanelWidth: number;
-  /** 打开 AI 时的默认形态：侧栏 dock 或独立窗口 detached（持久化） */
+  // 侧栏底部「对象 / 信息」面板（Navicat 格局）：显隐、高度与活动页签，均持久化。
+  infoPanelVisible: boolean;
+  sideInfoPanelHeight: number;
+  sideInfoPanelActiveTab: 'objects' | 'info';
+  setInfoPanelVisible: (visible: boolean) => void;
+  // Navicat 布局：侧栏「外部 SQL 文件」根节点按需显示（会话级，不持久化）。
+  sidebarExternalSqlVisible: boolean;
+  toggleSidebarExternalSqlVisible: () => void;
+  toggleInfoPanel: () => void;
+  setSideInfoPanelHeight: (height: number) => void;
+  setSideInfoPanelActiveTab: (tab: 'objects' | 'info') => void;
+  // 打开 AI 时的默认形态：侧栏 dock 或独立窗口 detached（持久化）
   aiChatOpenMode: AIChatOpenMode;
   aiChatHistory: Record<string, AIChatMessage[]>; // sessionId -> messages
   replaceAIChatHistory: (sessionId: string, messages: AIChatMessage[]) => void;

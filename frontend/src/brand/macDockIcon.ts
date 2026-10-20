@@ -1,13 +1,16 @@
 const DOCK_ICON_SIZE = 1024;
-// The PNG handed to NSApp is already a complete Dock tile.  Leaving a
-// 100px transparent border here makes GoNavi render visibly smaller than
-// neighbouring macOS apps, so use the full 1024px canvas.
-const DOCK_ICON_INSET = 0;
-// The 0.9.7 mascot artwork is a full rounded white tile. Keep its original
-// safe area so it does not appear larger than neighbouring Dock icons.
-export const LEGACY_MASCOT_DOCK_ICON_INSET = 100;
-// Keep the same rounded-tile proportion used by the source artwork.
+// Apple icon grid (Human Interface Guidelines): a Dock icon composes on a
+// 1024px canvas whose visible tile sits inside the centred 824px content area.
+// Every brand family shares this grid so the runtime icon matches the bundled
+// icns and neighbouring apps.
+export const APPLE_DOCK_ICON_GRID_INSET = 100;
+// Apple icon grid corner radius: 184px on the 824px content area. The
+// Windows full-bleed composition reuses the same ratio at canvas scale.
 const DOCK_ICON_CORNER_RADIUS_RATIO = 184 / 824;
+// White tile base behind mascot artwork: the v2 webps are full-bleed rounded
+// white tiles whose own corner radius is smaller than the Apple arc, so the
+// corner notches must be filled for the silhouette to read as one Apple tile.
+const MACOS_DOCK_TILE_BACKGROUND_COLOUR = '#ffffff';
 
 export type DockIconRuntimeEnvironment = {
   platform?: unknown;
@@ -50,7 +53,7 @@ function canvasToBase64Png(canvas: HTMLCanvasElement): string {
 export function calculateMacOSDockImageRect(
   imageWidth: number,
   imageHeight: number,
-  inset = DOCK_ICON_INSET,
+  inset = 0,
 ): MacOSDockImageRect {
   const safeInset = Math.max(0, Math.min((DOCK_ICON_SIZE / 2) - 1, Number(inset) || 0));
   const tileSize = DOCK_ICON_SIZE - (safeInset * 2);
@@ -72,7 +75,7 @@ export function calculateMacOSDockCornerRadius(rect: MacOSDockImageRect): number
   return Math.round(Math.min(rect.width, rect.height) * DOCK_ICON_CORNER_RADIUS_RATIO);
 }
 
-function clipMacOSDockImage(ctx: CanvasRenderingContext2D, rect: MacOSDockImageRect): void {
+function traceMacOSDockTilePath(ctx: CanvasRenderingContext2D, rect: MacOSDockImageRect): void {
   const radius = calculateMacOSDockCornerRadius(rect);
   const right = rect.x + rect.width;
   const bottom = rect.y + rect.height;
@@ -88,17 +91,34 @@ function clipMacOSDockImage(ctx: CanvasRenderingContext2D, rect: MacOSDockImageR
   ctx.lineTo(rect.x, rect.y + radius);
   ctx.arcTo(rect.x, rect.y, rect.x + radius, rect.y, radius);
   ctx.closePath();
+}
+
+function clipMacOSDockImage(ctx: CanvasRenderingContext2D, rect: MacOSDockImageRect): void {
+  traceMacOSDockTilePath(ctx, rect);
   ctx.clip();
 }
 
+function fillMacOSDockTileBackground(ctx: CanvasRenderingContext2D, rect: MacOSDockImageRect): void {
+  ctx.save();
+  traceMacOSDockTilePath(ctx, rect);
+  ctx.fillStyle = MACOS_DOCK_TILE_BACKGROUND_COLOUR;
+  ctx.fill();
+  ctx.restore();
+}
+
 /**
- * Place the selected complete brand icon on a transparent macOS canvas.
- * Keep the source artwork intact while normalising its outer tile to the
- * standard macOS corner geometry.
+ * Compose the selected brand artwork onto the strict Apple icon grid: the
+ * visible tile fills the centred 824px content area and is clipped to the
+ * standard macOS corner radius. `zoom` centre-crops the source before the fit
+ * so families with designed breathing margins (ribbon SVGs frame their tile at
+ * RIBBON_TILE_ART_FRACTION) fill the grid exactly. `fillTileBackground` paints
+ * the white tile first so sources with a smaller corner radius of their own
+ * (mascot webps) read as one full Apple tile instead of showing wallpaper
+ * notches in the corners.
  */
 export async function composeMacOSDockIconBase64(
   src: string,
-  options: { inset?: number } = {},
+  options: { inset?: number; zoom?: number; fillTileBackground?: boolean } = {},
 ): Promise<string> {
   const img = await loadImage(src);
   const size = DOCK_ICON_SIZE;
@@ -116,8 +136,30 @@ export async function composeMacOSDockIconBase64(
     img.naturalHeight || img.height,
     options.inset,
   );
+  if (options.fillTileBackground) {
+    fillMacOSDockTileBackground(ctx, rect);
+  }
   clipMacOSDockImage(ctx, rect);
-  ctx.drawImage(img, rect.x, rect.y, rect.width, rect.height);
+  const zoom = Math.max(1, Number(options.zoom) || 1);
+  if (zoom <= 1) {
+    ctx.drawImage(img, rect.x, rect.y, rect.width, rect.height);
+    return canvasToBase64Png(canvas);
+  }
+  const sourceWidth = img.naturalWidth || img.width;
+  const sourceHeight = img.naturalHeight || img.height;
+  const widthCrop = calculateWindowsNativeIconSourceCrop(sourceWidth, zoom);
+  const heightCrop = calculateWindowsNativeIconSourceCrop(sourceHeight, zoom);
+  ctx.drawImage(
+    img,
+    widthCrop.offset,
+    heightCrop.offset,
+    widthCrop.size,
+    heightCrop.size,
+    rect.x,
+    rect.y,
+    rect.width,
+    rect.height,
+  );
   return canvasToBase64Png(canvas);
 }
 

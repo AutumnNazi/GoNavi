@@ -17,6 +17,29 @@ permissions:
   contents: read
 
 jobs:
+  frontend:
+    name: Frontend clean build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+      - name: Test gallery browser adapters
+        working-directory: frontend
+        run: npm test -- src/backgroundGallery
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
   full:
     name: Full backend suite
     runs-on: ubuntu-latest
@@ -53,6 +76,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev
 
+      - name: Check Linux Wails build tags
+        run: python3 tools/backend-workflow.test.py
+
       - name: Run backend tests
         run: go test -tags webkit2_41 ./... -count=1 -timeout=30m
 
@@ -61,7 +87,8 @@ jobs:
       - name: Run DuckDB driver tests
         env:
           CGO_ENABLED: 1
-        run: go test -tags gonavi_duckdb_driver ./internal/db/ ./internal/app/ -run 'DuckDB|Attach|Slugify|SavedConnection|ConnectionSecret|BuildDuckDB|SameExternal|ParseDuckDB|SecretCleanup' -count=1 -timeout=30m
+        # App tests include Wails assetserver CGO even when -run selects only DuckDB.
+        run: go test -tags webkit2_41,gonavi_duckdb_driver ./internal/db/ ./internal/app/ -run 'DuckDB|Attach|Slugify|SavedConnection|ConnectionSecret|BuildDuckDB|SameExternal|ParseDuckDB|SecretCleanup' -count=1 -timeout=30m
 
       # Kafka、RocketMQ、Pulsar 改为驱动代理后带各自的构建标签，主套件不再编译这批
       # 文件；单独跑一遍保留原有覆盖。
@@ -108,25 +135,27 @@ jobs:
       - name: Test optional driver-agent cleanup
         run: go test ./internal/db -run '^TestOptionalDriverAgentUnresponsiveProcessIsReapedAfterTimeout$' -count=1
 
-  # 门禁：上面 3 个检查（完整后端、macOS、Windows）全部成功才通过。
+  # 门禁：前端干净构建、完整后端、macOS、Windows 全部成功才通过。
   # 矩阵任一失败时 platform-sensitive 的 result 为 failure。
   gate:
     name: CI Gate
-    needs: [full, platform-sensitive]
+    needs: [frontend, full, platform-sensitive]
     if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-latest
     steps:
-      - name: Require all three CI jobs
+      - name: Require all CI jobs
         env:
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
           FULL_RESULT: ${{ needs.full.result }}
           PLATFORM_RESULT: ${{ needs.platform-sensitive.result }}
         shell: bash
         run: |
           set -euo pipefail
+          echo "Frontend clean build: ${FRONTEND_RESULT}"
           echo "Full backend suite: ${FULL_RESULT}"
           echo "Platform-sensitive tests (macos-latest, windows-latest): ${PLATFORM_RESULT}"
-          if [[ "${FULL_RESULT}" != "success" || "${PLATFORM_RESULT}" != "success" ]]; then
-            echo "CI 门禁未通过：Full backend suite、Platform-sensitive tests (macos-latest)、Platform-sensitive tests (windows-latest) 必须全部成功。"
+          if [[ "${FRONTEND_RESULT}" != "success" || "${FULL_RESULT}" != "success" || "${PLATFORM_RESULT}" != "success" ]]; then
+            echo "CI 门禁未通过：Frontend clean build、Full backend suite、Platform-sensitive tests (macos-latest)、Platform-sensitive tests (windows-latest) 必须全部成功。"
             exit 1
           fi
           echo "CI 门禁通过。"

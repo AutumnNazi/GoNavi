@@ -1,3 +1,4 @@
+import type { PreferencePage } from '../../components/settings/preferences/preferencePages';
 
 import { Switch, Input, Button } from 'antd';
 import {
@@ -13,6 +14,7 @@ import type { AppAntdThemeApi } from './useAppAntdTheme';
 import type { AppSecurityUpdateApi } from './useAppSecurityUpdate';
 import { ThemeModeSettingsSection } from '../settings/ThemeModeSettingsSection';
 import { ThemeAppearanceSettingsSection } from '../settings/ThemeAppearanceSettingsSection';
+import { TabAppearanceSettingsSection } from '../settings/TabAppearanceSettingsSection';
 import { TabDisplaySettingsSection } from '../settings/TabDisplaySettingsSection';
 import { DataTableSettingsFields } from '../settings/DataTableSettingsFields';
 
@@ -37,8 +39,6 @@ export interface UseAppThemeSettingsRenderInput {
   appearance: AppCoreStateApi['appearance'];
   isFontFamiliesLoading: AppShellStateApi['isFontFamiliesLoading'];
   uiFontOptions: AppShellStateApi['uiFontOptions'];
-  filterFontOption: AppAntdThemeApi['filterFontOption'];
-  renderFontOptionLabel: AppAntdThemeApi['renderFontOptionLabel'];
   fontFamiliesLoadError: AppShellStateApi['fontFamiliesLoadError'];
   installedFontFamilies: AppShellStateApi['installedFontFamilies'];
   linuxCJKFontInstallHint: AppShellStateApi['linuxCJKFontInstallHint'];
@@ -81,8 +81,8 @@ export const useAppThemeSettingsRender = ({
   effectiveThemePreference, selectPresetTheme, renderThemeModePreview, renderThemeSettingsRow,
   queryOptions, setQueryOptions,
   effectiveUiScale, setUiScale, effectiveFontSize, setFontSize, effectiveSidebarRailScale,
-  setAppearance, appearance, isFontFamiliesLoading, uiFontOptions, filterFontOption,
-  renderFontOptionLabel, fontFamiliesLoadError, installedFontFamilies, linuxCJKFontInstallHint,
+  setAppearance, appearance, isFontFamiliesLoading, uiFontOptions,
+  fontFamiliesLoadError, installedFontFamilies, linuxCJKFontInstallHint,
   hasLoadedInstalledFontsRef, darkMode, monoFontOptions, newQuerySqlTemplate,
   tabDisplaySettingsPanelRef, tabDisplaySettings, setTabDisplayLayout,
   effectiveTabEnvironmentAccentThickness, tabDisplayElementOrder, visibleTabDisplayElementKeys,
@@ -94,7 +94,9 @@ export const useAppThemeSettingsRender = ({
   effectiveDataTableFontSize, sidebarTreeFontSizeFollowsGlobal, effectiveSidebarTreeFontSize,
   startupMaximised, setStartupMaximised,
 }: UseAppThemeSettingsRenderInput) => {
-  const renderThemeSettingsContentV2 = (options?: { hideSectionTabs?: boolean }) => (
+  const renderThemeSettingsContentV2 = (options?: { hideSectionTabs?: boolean; section?: 'theme' | 'appearance' | 'workspace'; page?: PreferencePage }) => {
+    const section = options?.section ?? themeModalSection;
+    return (
               <div className="gonavi-theme-settings" style={{
                   display: 'flex',
                   flexDirection: 'column',
@@ -109,7 +111,7 @@ export const useAppThemeSettingsRender = ({
                   <div style={{ flexShrink: 0, display: 'grid', gap: 4 }}>
                       <div className="gonavi-settings-tabs" role="tablist" aria-label={t('app.settings.entry.theme.title')}>
                           {themeSettingsSections.map((item, itemIndex) => {
-                              const active = themeModalSection === item.value;
+                              const active = section === item.value;
                               return (
                                   <button
                                       key={item.value}
@@ -147,17 +149,17 @@ export const useAppThemeSettingsRender = ({
                   </div>
                   )}
                   <div
-                    key={themeModalSection}
-                    id={`gonavi-theme-settings-panel-${themeModalSection}`}
+                    key={section}
+                    id={`gonavi-theme-settings-panel-${section}`}
                     role={options?.hideSectionTabs ? undefined : 'tabpanel'}
-                    aria-labelledby={options?.hideSectionTabs ? undefined : `gonavi-theme-settings-tab-${themeModalSection}`}
+                    aria-labelledby={options?.hideSectionTabs ? undefined : `gonavi-theme-settings-tab-${section}`}
                     className="gonavi-settings-center-pane-scroll"
                     style={{
                         minWidth: 0,
                         minHeight: 0,
                         flex: 1,
                         overflowY: 'auto',
-                        /* visible：避免 Slider 两端手柄被横向裁切 */
+                        // visible：避免 Slider 两端手柄被横向裁切
                         overflowX: 'visible',
                         overscrollBehavior: 'contain',
                         paddingRight: 4,
@@ -166,14 +168,14 @@ export const useAppThemeSettingsRender = ({
                         scrollbarGutter: 'auto',
                     }}
                   >
-                      {themeModalSection === 'theme' ? (
+                      {section === 'theme' ? (
                           <ThemeModeSettingsSection
                             renderThemeSettingsSection={renderThemeSettingsSection} t={t}
                             effectiveThemePreference={effectiveThemePreference}
                             selectPresetTheme={selectPresetTheme}
-                            renderThemeModePreview={renderThemeModePreview}
+                            renderThemeModePreview={renderThemeModePreview} colorsOnly={options?.page === 'colors-settings'}
                           />
-                      ) : themeModalSection === 'appearance' ? (
+                      ) : section === 'appearance' ? (
                           <ThemeAppearanceSettingsSection
                             renderThemeSettingsSection={renderThemeSettingsSection}
                             options={options} t={t}
@@ -183,8 +185,7 @@ export const useAppThemeSettingsRender = ({
                             effectiveSidebarRailScale={effectiveSidebarRailScale}
                             setAppearance={setAppearance} appearance={appearance}
                             isFontFamiliesLoading={isFontFamiliesLoading}
-                            uiFontOptions={uiFontOptions} filterFontOption={filterFontOption}
-                            renderFontOptionLabel={renderFontOptionLabel}
+                            uiFontOptions={uiFontOptions}
                             fontFamiliesLoadError={fontFamiliesLoadError}
                             installedFontFamilies={installedFontFamilies}
                             linuxCJKFontInstallHint={linuxCJKFontInstallHint}
@@ -193,6 +194,7 @@ export const useAppThemeSettingsRender = ({
                           />
                       ) : (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              {options?.page !== 'tabs-settings' && <>
                               {renderThemeSettingsSection(
                                   t('app.theme.query_template.title'),
                                   <>
@@ -252,7 +254,9 @@ export const useAppThemeSettingsRender = ({
                                       </div>
                                   </div>,
                               )}
-                              <TabDisplaySettingsSection
+                              </>}
+                              {options?.page === 'tabs-settings' && <TabAppearanceSettingsSection />}
+                              {options?.page !== 'editor-settings' && <TabDisplaySettingsSection
                                 tabDisplaySettingsPanelRef={tabDisplaySettingsPanelRef} t={t}
                                 renderThemeSettingsRow={renderThemeSettingsRow}
                                 tabDisplaySettings={tabDisplaySettings}
@@ -273,7 +277,8 @@ export const useAppThemeSettingsRender = ({
                                 getTabDisplayElementDescription={getTabDisplayElementDescription}
                                 setTabDisplayElementRow={setTabDisplayElementRow}
                                 moveTabDisplayElement={moveTabDisplayElement}
-                              />
+                              />}
+                              {options?.page !== 'tabs-settings' && <>
                               {renderThemeSettingsSection(
                                   t('app.theme.data_table.title'),
                                   <DataTableSettingsFields
@@ -312,13 +317,15 @@ export const useAppThemeSettingsRender = ({
                                       {t('app.theme.action.restore_defaults')}
                                   </Button>
                               </div>
+                              </>}
                           </div>
                       )}
                   </div>
               </div>
   );
+  };
 
-  const renderThemeSettingsContent = (options?: { hideSectionTabs?: boolean }) => (
+  const renderThemeSettingsContent = (options?: { hideSectionTabs?: boolean; section?: 'theme' | 'appearance' | 'workspace'; page?: PreferencePage }) => (
     renderThemeSettingsContentV2(options)
   );
   return { renderThemeSettingsContent };

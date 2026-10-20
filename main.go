@@ -29,7 +29,6 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/menu"
 	"github.com/wailsapp/wails/v2/pkg/menu/keys"
 	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -165,6 +164,10 @@ func main() {
 	application := app.NewApp()
 	aiService := aiservice.NewServiceWithConfigChangeHandler(app.NewCloudBackupChangeHandler(application))
 	aiservice.SetBuiltinAIClientVersion(app.CurrentVersion())
+	// Load the persisted AI configuration before any binding is served: Wails runs
+	// OnStartup in a goroutine, so the AI panel can read the provider list before
+	// InitializeLifecycle has run and would otherwise be told nothing is configured.
+	aiservice.PreloadConfig(aiService)
 	agentTools, agentToolsErr := newDesktopAgentToolCatalog(application, aiService)
 	if agentToolsErr != nil {
 		logger.Warnf("初始化 AI Agent 工具目录失败：%v", agentToolsErr)
@@ -229,9 +232,7 @@ func main() {
 		DragAndDrop: &options.DragAndDrop{
 			EnableFileDrop: true,
 		},
-		AssetServer: &assetserver.Options{
-			Assets: assets,
-		},
+		AssetServer:      app.BackgroundGalleryAssetOptions(application, assets),
 		BackgroundColour: backgroundColour,
 		Menu:             appMenu,
 		OnStartup: func(ctx context.Context) {

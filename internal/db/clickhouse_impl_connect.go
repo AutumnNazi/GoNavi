@@ -263,6 +263,15 @@ func (c *ClickHouseDB) validateQueryPath() error {
 }
 
 func (c *ClickHouseDB) QueryContext(ctx context.Context, query string) ([]map[string]interface{}, []string, error) {
+	data, columns, err := c.queryClickHouse(ctx, query)
+	if err != nil || len(data) > 0 || len(columns) > 0 || c.conn == nil {
+		return data, columns, err
+	}
+	columns, err = c.clickHouseEmptyResultColumns(ctx, query)
+	return data, columns, err
+}
+
+func (c *ClickHouseDB) queryClickHouse(ctx context.Context, query string) ([]map[string]interface{}, []string, error) {
 	if c.legacyHTTP != nil {
 		return c.legacyHTTP.Query(ctx, query)
 	}
@@ -275,6 +284,14 @@ func (c *ClickHouseDB) QueryContext(ctx context.Context, query string) ([]map[st
 	}
 	defer rows.Close()
 	return scanRowsContext(ctx, rows)
+}
+
+// clickHouseEmptyResultColumns 补回 HTTP Native 空结果丢掉的字段名。
+// clickhouse-go 在 ContentLength 为 0 时造空 block，Columns() 没有列。
+func (c *ClickHouseDB) clickHouseEmptyResultColumns(ctx context.Context, query string) ([]string, error) {
+	schemaQuery := "SELECT * FROM (" + strings.TrimRight(strings.TrimSpace(query), ";") + ") AS gonavi_empty_result LIMIT 0"
+	_, columns, err := c.queryClickHouse(ctx, schemaQuery)
+	return columns, err
 }
 
 func (c *ClickHouseDB) Query(query string) ([]map[string]interface{}, []string, error) {

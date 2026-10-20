@@ -14,6 +14,7 @@ export const getTabObjectLabel = (tab: TabData): string => {
   if (tab.resourcePath) return tab.resourcePath;
   if (tab.filePath) return tab.filePath;
   if (tab.type === 'driver-manager') return t('app.tools.entry.drivers.title');
+  if (tab.type === 'cloud-backup') return t('app.settings.entry.cloud_backup.title');
   if (tab.type === 'settings-center') return t('app.settings.title');
   if (tab.type === 'sql-analysis' || tab.type === 'sql-audit' || tab.type === 'dml-snapshot' || tab.type === 'user-management') return tab.title;
   if (tab.type === 'message-queue') return tab.messageQueueTarget || tab.dbName || '';

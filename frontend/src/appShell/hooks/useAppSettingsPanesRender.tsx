@@ -1,11 +1,9 @@
 import React, { useCallback } from 'react';
 import { Switch, Button, Segmented, Input, InputNumber, Alert, Select } from 'antd';
-import { InfoCircleOutlined } from '@ant-design/icons';
 import { DndContext, closestCenter } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { GlobalProxyConfig } from '../../types';
 import { getGlobalProxyDefaultPort } from '../globalProxySettings';
-import DownloadSourceSelect from '../../components/DownloadSourceSelect';
 import { SidebarMetadataSortableRow } from '../SidebarMetadataSortableRow';
 import {
   DEFAULT_SIDEBAR_TABLE_METADATA_FIELDS,
@@ -55,9 +53,6 @@ export interface UseAppSettingsPanesRenderInput {
   resetProxyDraftToCurrent: AppProxySettingsApi['resetProxyDraftToCurrent'];
   proxyApplying: AppProxySettingsApi['proxyApplying'];
   handleApplyGlobalProxyDraft: AppProxySettingsApi['handleApplyGlobalProxyDraft'];
-  downloadSource: AppShellStateApi['downloadSource'];
-  downloadSourceSaving: AppShellStateApi['downloadSourceSaving'];
-  handleDownloadSourceChange: AppBootstrapEffectsApi['handleDownloadSourceChange'];
   sidebarMetadataDragSensors: AppCoreStateApi['sidebarMetadataDragSensors'];
   handleSidebarMetadataDragEnd: AppAntdThemeApi['handleSidebarMetadataDragEnd'];
   sidebarMetadataFieldItems: AppAntdThemeApi['sidebarMetadataFieldItems'];
@@ -77,7 +72,7 @@ export const useAppSettingsPanesRender = ({
   proxyDraftPortValid, setProxyDraftClearPassword, proxyDraftClearPassword, proxyTestPresetItems,
   proxyTestUrlTrimmed, setProxyTestUrl, proxyTestUrl, proxyCanTest, handleTestGlobalProxyDraft,
   proxyTesting, resetProxyDraftToCurrent, proxyApplying, handleApplyGlobalProxyDraft,
-  downloadSource, downloadSourceSaving, handleDownloadSourceChange, sidebarMetadataDragSensors,
+  sidebarMetadataDragSensors,
   handleSidebarMetadataDragEnd, sidebarMetadataFieldItems, sidebarTableMetadataFields,
   toggleSidebarMetadataFieldFromSettings, setQueryOptions, appearance, setAppearance,
   updateInstallAction, lastUpdateInfo,
@@ -367,51 +362,6 @@ export const useAppSettingsPanesRender = ({
       utilityPanelStyle,
       viewportWidth,
   ]);
-  const renderDownloadSourceSettingsContent = useCallback(() => {
-      return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '12px 0' }}>
-              <div style={utilityPanelStyle}>
-                  <div style={{ ...utilityMutedTextStyle, marginBottom: 14, lineHeight: 1.7 }}>
-                      {t('app.download_source.description')}
-                  </div>
-                  <DownloadSourceSelect
-                      value={downloadSource}
-                      darkMode={darkMode}
-                      saving={downloadSourceSaving}
-                      onChange={(source) => void handleDownloadSourceChange(source)}
-                      style={{ width: '100%', maxWidth: 360 }}
-                  />
-                  <div
-                      style={{
-                          marginTop: 14,
-                          display: 'flex',
-                          alignItems: 'flex-start',
-                          gap: 8,
-                          padding: '10px 12px',
-                          borderRadius: 10,
-                          background: darkMode ? 'rgba(255,255,255,0.04)' : 'rgba(22,119,255,0.06)',
-                          color: overlayTheme.mutedText,
-                          fontSize: 12,
-                          lineHeight: 1.7,
-                      }}
-                  >
-                      <InfoCircleOutlined style={{ color: overlayTheme.selectedText, marginTop: 2, flexShrink: 0 }} />
-                      <span>{t('app.download_source.fallback_hint')}</span>
-                  </div>
-              </div>
-          </div>
-      );
-  }, [
-      darkMode,
-      downloadSource,
-      downloadSourceSaving,
-      handleDownloadSourceChange,
-      overlayTheme.mutedText,
-      overlayTheme.selectedText,
-      t,
-      utilityMutedTextStyle,
-      utilityPanelStyle,
-  ]);
   const renderSidebarMetadataSettingsPane = useCallback(() => (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '12px 0' }}>
           <div style={utilityPanelStyle}>
@@ -542,7 +492,7 @@ export const useAppSettingsPanesRender = ({
           ? t('app.about.action.download_portable_update')
           : t('app.about.action.download_update'));
   return {
-    renderProxySettingsContent, renderDownloadSourceSettingsContent,
+    renderProxySettingsContent,
     renderSidebarMetadataSettingsPane, renderSidebarObjectVisibilitySettingsPane,
     updateInstallActionLabel, updateDownloadActionLabel,
   };

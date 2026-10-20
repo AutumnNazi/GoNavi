@@ -13,7 +13,7 @@ import Modal from '../../components/common/ResizableDraggableModal';
 import SecurityUpdateIntroModal from '../../components/SecurityUpdateIntroModal';
 import SecurityUpdateProgressModal from '../../components/SecurityUpdateProgressModal';
 import ConnectionPackagePasswordModal from '../../components/ConnectionPackagePasswordModal';
-import { isConnectionPackageSettingsPaneKey } from '../settingsCenterPanes';
+import ConnectionHealthModal from '../../components/ConnectionHealthModal';
 import UpdateReleaseNotesModal from '../../components/UpdateReleaseNotesModal';
 import BuiltinAIAnnouncementModal from '../../components/BuiltinAIAnnouncementModal';
 import { BrowserOpenURL } from '../../../wailsjs/runtime';
@@ -52,12 +52,14 @@ export interface AppGlobalDialogsProps {
   settingsChildModalZIndex: AppShellStateApi['settingsChildModalZIndex'];
   securityUpdateProgressStage: AppShellStateApi['securityUpdateProgressStage'];
   connectionPackageDialog: AppShellStateApi['connectionPackageDialog'];
-  isSettingsModalOpen: AppShellStateApi['isSettingsModalOpen'];
-  activeSettingsCenterPane: AppShellStateApi['activeSettingsCenterPane'];
   connections: AppSecurityUpdateApi['connections'];
   setConnectionPackageDialog: AppShellStateApi['setConnectionPackageDialog'];
   closeConnectionPackageDialog: AppQuitAndUpdateApi['closeConnectionPackageDialog'];
   handleConfirmConnectionPackageDialog: AppConnectionImportExportApi['handleConfirmConnectionPackageDialog'];
+  connectionHealthDialogOpen: AppCoreStateApi['connectionHealthDialogOpen'];
+  connectionHealthTargetIds: AppCoreStateApi['connectionHealthTargetIds'];
+  setConnectionHealthDialogOpen: AppCoreStateApi['setConnectionHealthDialogOpen'];
+  setConnectionHealthTargetIds: AppCoreStateApi['setConnectionHealthTargetIds'];
   releaseNotesModalVisible: AppUpdateAndDiagnosticsApi['releaseNotesModalVisible'];
   closeReleaseNotesModal: AppUpdateAndDiagnosticsApi['closeReleaseNotesModal'];
   handleReleaseNotesModalOpen: AppUpdateAndDiagnosticsApi['handleReleaseNotesModalOpen'];
@@ -90,9 +92,11 @@ export const AppGlobalDialogs = ({
   utilityModalShellStyle, renderDataDirectorySettings, isSecurityUpdateIntroOpen,
   isSecurityUpdateProgressOpen, darkMode, overlayTheme, effectiveOpacity, handleStartSecurityUpdate,
   handlePostponeSecurityUpdate, handleOpenSecurityUpdateSettings, settingsChildModalZIndex,
-  securityUpdateProgressStage, connectionPackageDialog, isSettingsModalOpen,
-  activeSettingsCenterPane, connections, setConnectionPackageDialog, closeConnectionPackageDialog,
-  handleConfirmConnectionPackageDialog, releaseNotesModalVisible, closeReleaseNotesModal,
+  securityUpdateProgressStage, connectionPackageDialog, connections,
+  setConnectionPackageDialog, closeConnectionPackageDialog,
+  handleConfirmConnectionPackageDialog, connectionHealthDialogOpen, connectionHealthTargetIds,
+  setConnectionHealthDialogOpen, setConnectionHealthTargetIds,
+  releaseNotesModalVisible, closeReleaseNotesModal,
   handleReleaseNotesModalOpen, lastUpdateInfo, updateDownloadProgress, aboutInfo, formatBytes,
   updateInstallAction, markUpdateProgressDismissed, isLatestUpdateDownloaded,
   handleDownloadUpdateWithNotes, updateDownloadActionLabel, openDownloadedUpdateDirectory,
@@ -167,7 +171,7 @@ export const AppGlobalDialogs = ({
       onOpenPanel={builtinAIAnnouncement.openPanel}
     />
     <ConnectionPackagePasswordModal
-      open={connectionPackageDialog.open && !(isSettingsModalOpen && isConnectionPackageSettingsPaneKey(activeSettingsCenterPane?.key))}
+      open={connectionPackageDialog.open}
       title={connectionPackageDialog.mode === 'export'
           ? t('app.connection_package.dialog.export_title')
           : t('app.connection_package.dialog.import_password_title')}
@@ -189,7 +193,6 @@ export const AppGlobalDialogs = ({
       confirmText={connectionPackageDialog.mode === 'export'
           ? t('app.connection_package.action.start_export')
           : t('app.connection_package.action.start_import')}
-      onBack={toolCenterBackGroupKey === 'config' ? () => handleReturnToToolCenter(closeConnectionPackageDialog) : undefined}
       onIncludeSecretsChange={(value) => {
           setConnectionPackageDialog((current) => ({
               ...current,
@@ -218,6 +221,14 @@ export const AppGlobalDialogs = ({
           void handleConfirmConnectionPackageDialog();
       }}
       onCancel={closeConnectionPackageDialog}
+    />
+    <ConnectionHealthModal
+      open={connectionHealthDialogOpen}
+      targetConnectionIds={connectionHealthTargetIds}
+      onClose={() => {
+          setConnectionHealthDialogOpen(false);
+          setConnectionHealthTargetIds([]);
+      }}
     />
     <UpdateReleaseNotesModal
         open={releaseNotesModalVisible}

@@ -3,6 +3,7 @@ import { message } from 'antd';
 import { useDataGridMetadata } from '../../useDataGridMetadata';
 import { type GridColumnAlign, resolveGridColumnAlign } from '../../dataGridColumnAlign';
 import { type DataExportFileOptions, resolveDataExportColumns } from '../../DataExportDialog';
+import { buildDataGridBackendExportOptions } from '../../dataGridExportOptions';
 import { pickDataGridOutputRows } from '../../dataGridOutput';
 import { ExportDataWithOptions } from '../../../../wailsjs/go/app/App';
 import { parseMongoEditedValue } from '../../../utils/mongodb';
@@ -216,26 +217,12 @@ export const useDataGridTableMetrics = ({
         && supportsCopyInsert
         && displayOutputColumnNames.length > 0;
 
-    const buildBackendExportOptions = useCallback((options: DataExportFileOptions): DataExportFileOptions => {
-        if (options.format !== 'sql') {
-            if (!options.useColumnComments || !['xlsx', 'csv', 'md', 'html'].includes(options.format)) return options;
-            const columnComments: Record<string, string> = {};
-            (resolveDataExportColumns(options.columns, displayOutputColumnNames) || []).forEach((column) => {
-                const meta = columnMetaMap[column] || columnMetaMapByLowerName[column.toLowerCase()];
-                const comment = String(meta?.comment || '').trim();
-                if (comment) columnComments[column] = comment;
-            });
-            return { ...options, columnComments };
-        }
-        return {
-            ...options,
-            insertSQLDialect: dbType,
-            insertSQLTargetTable: hasResolvedInsertSQLTarget ? String(tableName || '').trim() : '',
-            insertSQLColumnTypes,
-            insertSQLTargetColumns: hasResolvedInsertSQLTarget ? insertSQLTargetColumns : {},
-            insertSQLAllowEmptyTargetTable: !hasResolvedInsertSQLTarget,
-        };
-    }, [columnMetaMap, columnMetaMapByLowerName, displayOutputColumnNames, dbType, hasResolvedInsertSQLTarget, insertSQLColumnTypes, insertSQLTargetColumns, tableName]);
+    const buildBackendExportOptions = useCallback((options: DataExportFileOptions): DataExportFileOptions => (
+        buildDataGridBackendExportOptions(options, {
+            columnMetaMap, columnMetaMapByLowerName, displayOutputColumnNames, dbType,
+            hasResolvedInsertSQLTarget, tableName, insertSQLColumnTypes, insertSQLTargetColumns,
+        })
+    ), [columnMetaMap, columnMetaMapByLowerName, displayOutputColumnNames, dbType, hasResolvedInsertSQLTarget, insertSQLColumnTypes, insertSQLTargetColumns, tableName]);
 
     // Helper to export specific data
     const exportData = async (rows: any[], options: DataExportFileOptions) => {

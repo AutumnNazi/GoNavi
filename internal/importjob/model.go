@@ -83,6 +83,7 @@ type Job struct {
 	ErrorArtifactMaxRows          int64               `json:"errorArtifactMaxRows,omitempty"`
 	ErrorArtifactMaxBytes         int64               `json:"errorArtifactMaxBytes,omitempty"`
 	Message                       string              `json:"message,omitempty"`
+	RollbackReady                 bool                `json:"rollbackReady,omitempty"` // 仅响应副本，不写回任务存储。
 	Revision                      int64               `json:"revision"`
 	CreatedAt                     int64               `json:"createdAt"`
 	UpdatedAt                     int64               `json:"updatedAt"`

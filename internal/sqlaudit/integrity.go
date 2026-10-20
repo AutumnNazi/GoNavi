@@ -104,6 +104,7 @@ func newIntegrityReport() IntegrityReport {
 	}
 }
 
+// 新增上下文字段省略空值，保证升级前记录的规范 JSON 和哈希不变。
 type canonicalEvent struct {
 	Version               string `json:"version"`
 	ID                    string `json:"id"`
@@ -118,6 +119,8 @@ type canonicalEvent struct {
 	QueryID               string `json:"queryId"`
 	TransactionID         string `json:"transactionId"`
 	Source                string `json:"source"`
+	MCPRequestID          string `json:"mcpRequestId,omitempty"`
+	MCPClient             string `json:"mcpClient,omitempty"`
 	BoundaryMode          string `json:"boundaryMode"`
 	CommitMode            string `json:"commitMode"`
 	SQLText               string `json:"sqlText"`
@@ -150,6 +153,8 @@ func calculateEventHash(event Event) (string, error) {
 		QueryID:               event.QueryID,
 		TransactionID:         event.TransactionID,
 		Source:                event.Source,
+		MCPRequestID:          event.MCPRequestID,
+		MCPClient:             event.MCPClient,
 		BoundaryMode:          event.BoundaryMode,
 		CommitMode:            event.CommitMode,
 		SQLText:               event.SQLText,
@@ -184,7 +189,7 @@ const selectEventColumns = `SELECT sequence, id, timestamp, event_type, status,
 	connection_id, connection_fingerprint, db_type, database_name, query_id,
 	transaction_id, source, boundary_mode, commit_mode, sql_text, sql_redacted,
 	sql_fingerprint, statement_index, statement_count, executed_count, failed_index,
-	outcome_unknown, duration_ms, rows_affected, rows_returned, error_text, prev_hash, record_hash FROM sql_audit_events`
+	outcome_unknown, duration_ms, rows_affected, rows_returned, error_text, prev_hash, record_hash, mcp_request_id, mcp_client FROM sql_audit_events`
 
 type rowScanner interface {
 	Scan(...any) error
@@ -199,7 +204,7 @@ func scanEvent(scanner rowScanner) (Event, error) {
 		&event.QueryID, &event.TransactionID, &event.Source, &event.BoundaryMode,
 		&event.CommitMode, &event.SQLText, &sqlRedacted, &event.SQLFingerprint,
 		&event.StatementIndex, &event.StatementCount, &event.ExecutedCount, &event.FailedIndex, &outcomeUnknown, &event.DurationMs,
-		&event.RowsAffected, &event.RowsReturned, &event.Error, &event.PrevHash, &event.Hash,
+		&event.RowsAffected, &event.RowsReturned, &event.Error, &event.PrevHash, &event.Hash, &event.MCPRequestID, &event.MCPClient,
 	); err != nil {
 		return Event{}, fmt.Errorf("scan SQL audit event: %w", err)
 	}

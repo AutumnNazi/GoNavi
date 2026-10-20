@@ -268,6 +268,9 @@ func oracleRowString(row map[string]interface{}, names ...string) string {
 	if value == nil {
 		return ""
 	}
+	if bytes, ok := value.([]byte); ok {
+		return strings.TrimSpace(string(bytes))
+	}
 	return strings.TrimSpace(fmt.Sprintf("%v", value))
 }
 
@@ -293,40 +296,11 @@ func isOracleLengthQualifiedType(upperType string) bool {
 }
 
 func formatOracleColumnType(row map[string]interface{}) string {
-	dataType := oracleRowString(row, "DATA_TYPE")
-	if dataType == "" || strings.Contains(dataType, "(") {
-		return dataType
-	}
-
-	upperType := strings.ToUpper(dataType)
-	if isOracleLengthQualifiedType(upperType) {
-		if charLength, ok := oracleRowInt(row, "CHAR_LENGTH", "CHAR_COL_DECL_LENGTH"); ok && charLength > 0 {
-			return fmt.Sprintf("%s(%d)", dataType, charLength)
-		}
-		if dataLength, ok := oracleRowInt(row, "DATA_LENGTH"); ok && dataLength > 0 {
-			return fmt.Sprintf("%s(%d)", dataType, dataLength)
-		}
-	}
-
-	if strings.Contains(upperType, "NUMBER") || strings.Contains(upperType, "DECIMAL") || strings.Contains(upperType, "NUMERIC") {
-		precision, hasPrecision := oracleRowInt(row, "DATA_PRECISION", "NUMERIC_PRECISION")
-		if hasPrecision && precision > 0 {
-			scale, hasScale := oracleRowInt(row, "DATA_SCALE", "NUMERIC_SCALE")
-			// 负 scale 必须保留：Oracle 的 NUMBER(10,-2) 表示向左舍入到百位，
-			// 丢掉负号会当成 NUMBER(10) 从而改变精度语义。跨方言迁移时由
-			// 归一层把负 scale 折算成目标库合法的写法。
-			if hasScale && scale != 0 {
-				return fmt.Sprintf("%s(%d,%d)", dataType, precision, scale)
-			}
-			return fmt.Sprintf("%s(%d)", dataType, precision)
-		}
-	}
-
-	return dataType
+	return FormatOracleColumnType(row)
 }
 
 func (o *OracleDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWithTable, error) {
-	query := fmt.Sprintf(`SELECT c.table_name, c.column_name, c.data_type, cc.comments AS comment
+	query := fmt.Sprintf(`SELECT c.table_name, c.column_name, c.data_type, c.data_length, c.char_length, c.char_used, c.data_precision, c.data_scale, cc.comments AS comment
 		FROM all_tab_columns c
 		LEFT JOIN all_col_comments cc
 		  ON cc.owner = c.owner AND cc.table_name = c.table_name AND cc.column_name = c.column_name
@@ -342,7 +316,7 @@ func (o *OracleDB) GetAllColumns(dbName string) ([]connection.ColumnDefinitionWi
 		col := connection.ColumnDefinitionWithTable{
 			TableName: fmt.Sprintf("%v", row["TABLE_NAME"]),
 			Name:      fmt.Sprintf("%v", row["COLUMN_NAME"]),
-			Type:      fmt.Sprintf("%v", row["DATA_TYPE"]),
+			Type:      FormatOracleColumnType(row),
 			Comment:   normalizeOracleMetadataComment(fmt.Sprintf("%v", row["COMMENT"])),
 		}
 		cols = append(cols, col)

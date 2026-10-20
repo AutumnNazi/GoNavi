@@ -1,4 +1,5 @@
 import { t } from "../../i18n";
+import { ConnectionStep2NamespaceField } from "./ConnectionStep2NamespaceField";
 import { Form, Input, Button, InputNumber, Select, Radio } from "antd";
 import { noAutoCapInputProps } from "../../utils/inputAutoCap";
 import { usesTrinoStyleConnection } from "../../utils/dataSourceRegistry/uriScheme";
@@ -131,6 +132,8 @@ export const ConnectionStep2HostFields = ({
           )}
       </div>
     </div>
+
+    <ConnectionStep2NamespaceField dbType={dbType} denseLabel={denseLabel} />
 
     {dbType === "nacos" && (
       <div className="gn-conn-f-row" data-align="start">

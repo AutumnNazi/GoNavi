@@ -3,6 +3,8 @@ import { message } from 'antd';
 import { withAISettingsLeaveGuard } from '../../utils/aiSettingsLeaveGuard';
 import { shouldSuppressMacNativeEscapeExit } from '../../utils/macWindow';
 import { useStore } from '../../store';
+import { applyDocumentFontFamilies } from '../../utils/documentTypography';
+import { useFontGalleryFaces } from '../../fontGallery/useFontGalleryFaces';
 // 低配/减少动画的降级样式；由本 hook 负责挂 body 类，故样式随本 hook 一起引入。
 import '../../styles/low-spec-runtime.css';
 import {
@@ -53,6 +55,7 @@ export interface UseAppLayoutEffectsInput {
   tokenControlHeight: AppCoreStateApi['tokenControlHeight'];
   tokenControlHeightSM: AppCoreStateApi['tokenControlHeightSM'];
   handleOpenToolCenterPane: AppSettingsNavigationApi['handleOpenToolCenterPane'];
+  handleOpenSettingsCenterPane: AppSettingsNavigationApi['handleOpenSettingsCenterPane'];
   aiSettingsLeaveGuardRef: AppShellStateApi['aiSettingsLeaveGuardRef'];
   closeSettingsCenterWorkbenchTab: AppShellStateApi['closeSettingsCenterWorkbenchTab'];
   setThemeModalSection: AppProxySettingsApi['setThemeModalSection'];
@@ -83,6 +86,7 @@ export const useAppLayoutEffects = ({
   darkMode, documentPlatform, effectiveFontSize, resolvedUiFontFamily, resolvedMonoFontFamily,
   effectiveUiScale, effectiveOpacity, effectiveDataTableFontSize, effectiveSidebarTreeFontSize,
   effectiveSidebarRailScale, tokenControlHeight, tokenControlHeightSM, handleOpenToolCenterPane,
+  handleOpenSettingsCenterPane,
   aiSettingsLeaveGuardRef, closeSettingsCenterWorkbenchTab, setThemeModalSection,
   setIsThemeModalOpen, setTabDisplaySettingsFocusRequest, handleNewQuery, isMacRuntime,
   useNativeMacWindowControls, closeShortcutScopeRef, capturingShortcutAction, shortcutOptions,
@@ -91,6 +95,11 @@ export const useAppLayoutEffects = ({
   handleTitleBarWindowToggle, handleManualResetWindowZoom, setCapturingShortcutAction, t,
   updateShortcut,
 }: UseAppLayoutEffectsInput) => {
+  useFontGalleryFaces();
+  // 界面布局主题（classic / navicat）：单字段订阅，供首帧 body 属性使用。
+  const uiLayoutMode = useStore((state) => state.appearance.uiLayoutMode);
+  // 行首选择列形态（true=复选框 / false=隐藏 / null=跟布局）：供 CSS 区分选中样式。
+  const showDataTableCheckboxColumn = useStore((state) => state.appearance.showDataTableCheckboxColumn);
   // Apply the document theme before the first paint. V2 structural styles are
   // scoped by data-ui-version; a passive effect leaves one unstyled titlebar
   // frame where the centered context and its marker collapse into the legacy
@@ -101,13 +110,14 @@ export const useAppLayoutEffects = ({
     document.documentElement.style.colorScheme = darkMode ? 'dark' : 'light';
     document.body.setAttribute('data-theme', darkMode ? 'dark' : 'light');
     document.body.setAttribute('data-ui-version', 'v2');
+    document.body.setAttribute('data-ui-layout', uiLayoutMode === 'navicat' ? 'navicat' : 'classic');
+    document.body.setAttribute('data-grid-selection-checkbox',
+      showDataTableCheckboxColumn === true ? 'true'
+        : showDataTableCheckboxColumn === false ? 'false' : 'layout');
     document.body.setAttribute('data-platform', documentPlatform);
     document.body.style.fontSize = `${effectiveFontSize}px`;
-    document.body.style.setProperty('--gn-font-sans', resolvedUiFontFamily);
-    document.body.style.setProperty('--gn-font-mono', resolvedMonoFontFamily);
+    applyDocumentFontFamilies(resolvedUiFontFamily, resolvedMonoFontFamily);
     document.documentElement.style.setProperty('--gonavi-font-size', `${effectiveFontSize}px`);
-    document.documentElement.style.setProperty('--gn-font-sans', resolvedUiFontFamily);
-    document.documentElement.style.setProperty('--gn-font-mono', resolvedMonoFontFamily);
     document.documentElement.style.setProperty('--gn-ui-scale', `${effectiveUiScale}`);
     document.documentElement.style.setProperty('--gn-window-opacity', `${effectiveOpacity}`);
     document.documentElement.style.setProperty('--gn-window-opacity-percent', `${effectiveOpacity * 100}%`);
@@ -122,6 +132,7 @@ export const useAppLayoutEffects = ({
     document.documentElement.style.setProperty('--gn-control-height-sm', `${tokenControlHeightSM}px`);
   }, [
     darkMode,
+    showDataTableCheckboxColumn,
     effectiveDataTableFontSize,
     effectiveFontSize,
     effectiveOpacity,
@@ -133,6 +144,7 @@ export const useAppLayoutEffects = ({
     effectiveUiScale,
     tokenControlHeight,
     tokenControlHeightSM,
+    uiLayoutMode,
   ]);
 
   // 低配档位 / 减少动画：单字段 selector 订阅，避免外观对象其它字段变化时连带重渲染整个根组件。
@@ -156,13 +168,13 @@ export const useAppLayoutEffects = ({
 
   useEffect(() => {
       const handleOpenShortcutSettingsEvent = () => {
-          handleOpenToolCenterPane('workspace', 'shortcut-settings');
+          handleOpenSettingsCenterPane('preferences', 'shortcut-settings');
       };
       window.addEventListener('gonavi:open-shortcut-settings', handleOpenShortcutSettingsEvent as EventListener);
       return () => {
           window.removeEventListener('gonavi:open-shortcut-settings', handleOpenShortcutSettingsEvent as EventListener);
       };
-  }, [handleOpenToolCenterPane]);
+  }, [handleOpenSettingsCenterPane]);
 
   useEffect(() => {
       const handleOpenSnippetSettingsEvent = () => {
@@ -175,12 +187,7 @@ export const useAppLayoutEffects = ({
   }, [handleOpenToolCenterPane]);
 
   useEffect(() => {
-      const handleOpenTabDisplaySettingsEvent = () => withAISettingsLeaveGuard(aiSettingsLeaveGuardRef.current, () => {
-          closeSettingsCenterWorkbenchTab();
-          setThemeModalSection('workspace');
-          setIsThemeModalOpen(true);
-          setTabDisplaySettingsFocusRequest((current) => current + 1);
-      });
+      const handleOpenTabDisplaySettingsEvent = () => handleOpenSettingsCenterPane('tabs-settings', 'tabs-settings');
       window.addEventListener('gonavi:open-tab-display-settings', handleOpenTabDisplaySettingsEvent as EventListener);
       return () => {
           window.removeEventListener('gonavi:open-tab-display-settings', handleOpenTabDisplaySettingsEvent as EventListener);
@@ -345,7 +352,7 @@ export const useAppLayoutEffects = ({
                   selectPresetTheme(themeMode === 'dark' ? 'light' : 'dark');
                   break;
               case 'openShortcutManager':
-                  handleOpenToolCenterPane('workspace', 'shortcut-settings');
+                  handleOpenSettingsCenterPane('preferences', 'shortcut-settings');
                   break;
               case 'toggleMacFullscreen':
                   if (isMacRuntime && useNativeMacWindowControls) {
@@ -362,7 +369,7 @@ export const useAppLayoutEffects = ({
       return () => {
           window.removeEventListener('keydown', handleGlobalShortcut, true);
       };
-  }, [activeShortcutPlatform, capturingShortcutAction, handleCreateConnection, handleFocusSidebarSearch, handleManualResetWindowZoom, handleNewQuery, handleOpenToolCenterPane, handleTitleBarWindowToggle, handleToggleLogPanel, handleToggleOrFocusAIPanel, isMacRuntime, selectPresetTheme, shortcutOptions, switchActiveTabByOffset, themeMode, useNativeMacWindowControls]);
+  }, [activeShortcutPlatform, capturingShortcutAction, handleCreateConnection, handleFocusSidebarSearch, handleManualResetWindowZoom, handleNewQuery, handleOpenSettingsCenterPane, handleTitleBarWindowToggle, handleToggleLogPanel, handleToggleOrFocusAIPanel, isMacRuntime, selectPresetTheme, shortcutOptions, switchActiveTabByOffset, themeMode, useNativeMacWindowControls]);
 
   useEffect(() => {
       if (!capturingShortcutAction) {

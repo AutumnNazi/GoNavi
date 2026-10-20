@@ -10,6 +10,7 @@ import type { TabData } from '../../types';
 import type { MockDataInspection } from './mockDataModel';
 
 const api = vi.hoisted(() => ({
+  notify: vi.fn(),
   inspectMockDataTable: vi.fn(),
   previewMockData: vi.fn(),
   generateMockData: vi.fn(),
@@ -17,6 +18,7 @@ const api = vi.hoisted(() => ({
 }));
 
 vi.mock('./mockDataApi', () => api);
+vi.mock('../../utils/sidebarDatabaseRefresh', () => ({ dispatchSidebarTableDataRefresh: api.notify }));
 vi.mock('../../../wailsjs/runtime/runtime', () => ({ EventsOn: vi.fn(() => () => undefined) }));
 vi.mock('../../utils/productionRiskConfirm', () => ({ confirmProductionRisk: vi.fn(async () => true) }));
 vi.mock('../../store', () => {
@@ -120,6 +122,7 @@ describe('MockDataWorkbench flow', () => {
       expect.objectContaining({ continueOnError: false, jobId: expect.stringMatching(/^mockdata-/) }),
     );
     expect(document.body.textContent).toContain('done-message');
+    expect(api.notify).toHaveBeenCalledWith({ connectionId: 'conn-1', dbName: 'app' }, 'users', 'mysql');
   });
 
   it('does not write when the confirmation is dismissed', async () => {

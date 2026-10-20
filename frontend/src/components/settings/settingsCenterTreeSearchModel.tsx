@@ -1,3 +1,4 @@
+import { isPreferencePage, openPreferencePage } from './preferences/preferencePages';
 import React from 'react';
 
 import { t as translateCurrentLanguage } from '../../i18n';
@@ -119,6 +120,12 @@ export const filterSettingsCenterTreeGroups = (
     options.translate ?? ((key) => translateCurrentLanguage(key)),
   );
   return groups.flatMap((group) => {
+    if (isPreferencePage(group.key)) {
+      const page = group.key;
+      const entries = buildEntryNodes(page, { key: page, title: group.title, description: group.description,
+        onClick: () => openPreferencePage(page) }, matchedByItem);
+      return nodeMatches(group, normalizedQuery) || entries.length ? [{ ...group, items: entries }] : [];
+    }
     if (nodeMatches(group, normalizedQuery)) {
       return [{
         ...group,

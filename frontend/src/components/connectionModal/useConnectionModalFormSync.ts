@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { INTERSYSTEMS_STORED_URI_FIELD, resolveConnectionDatabaseValue } from "./connectionModalNamespace";
 import { createEmptyConnectionSecretClearState } from "./connectionModalConfig";
 import { getConnectionTypeDefaultPort as getDefaultPortByType } from "../../utils/connectionTypeCatalog";
 import { isFileDatabaseType, supportsSSLForType } from "../../utils/connectionTypeCapabilities";
@@ -280,7 +281,7 @@ export const useConnectionModalFormSync = ({
           database:
             oracleTarget?.mode === "sid"
               ? oracleTarget.sid
-              : config.database,
+              : resolveConnectionDatabaseValue(configType, config.database, config.uri),
           oracleMode: oracleTarget?.mode || "service",
           restrictDataEdit: protection.restrictDataEdit === true,
           restrictStructureEdit: protection.restrictStructureEdit === true,
@@ -288,6 +289,7 @@ export const useConnectionModalFormSync = ({
             protection.restrictScriptExecution === true,
           restrictDataImport: protection.restrictDataImport === true,
           uri: config.uri || "",
+          [INTERSYSTEMS_STORED_URI_FIELD]: initialValues.hasOpaqueURI === true,
           connectionParams:
             nacosConnectionScope?.connectionParams ?? initialConnectionParams,
           nacosNamespaceId: initialNacosNamespaceId,

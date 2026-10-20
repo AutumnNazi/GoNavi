@@ -219,20 +219,8 @@ func projectionForSourceQuery(config SyncConfig) (*CompiledProjection, error) {
 	return CompileProjection(mapping)
 }
 
-func buildTargetColumnSet(cols []connection.ColumnDefinition) map[string]struct{} {
-	targetColSet := make(map[string]struct{}, len(cols))
-	for _, col := range cols {
-		lowerName := strings.ToLower(strings.TrimSpace(col.Name))
-		if lowerName == "" {
-			continue
-		}
-		targetColSet[lowerName] = struct{}{}
-	}
-	return targetColSet
-}
-
 func applyQuerySourceColumnFilter(changeSet connection.ChangeSet, targetCols []connection.ColumnDefinition) connection.ChangeSet {
-	targetColSet := buildTargetColumnSet(targetCols)
+	targetColSet := buildWritableTargetColumnSet(targetCols)
 	changeSet.Inserts = filterInsertRows(changeSet.Inserts, targetColSet)
 	changeSet.Updates = filterUpdateRows(changeSet.Updates, targetColSet)
 	return changeSet

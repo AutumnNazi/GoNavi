@@ -24,3 +24,43 @@ body[data-ui-version='v2'] {
   --gn-titlebar-icon-primary-soft: color-mix(in srgb, var(--gn-titlebar-icon-primary) 60%, transparent);
   --gn-titlebar-icon-highlight: color-mix(in srgb, var(--gn-titlebar-icon-primary) 78%, #ffffff);
 }
+
+/*
+ * 工具条「对象类」图标（gonaviTitlebarObjectIcons.tsx）的每按钮一色 token。
+ *
+ * 色相锚定上面的核心 token（primary / accent / warm / highlight）与主题
+ * 强调色（--gn-accent）：内置 GoNavi 主题覆盖核心色 / 强调色时这些图标
+ * 自动跟随换色。没有核心色对应的色相（danger / muted / teal / magenta）
+ * 在下方给出亮暗两套默认值，用户自定义 CSS 主题同样可以逐个覆盖。
+ */
+
+body[data-ui-version='v2'] {
+  --gn-titlebar-icon-table: var(--gn-titlebar-icon-primary, #3b82f6);
+  --gn-titlebar-icon-view: var(--gn-titlebar-icon-warm, #f59e0b);
+  --gn-titlebar-icon-function: var(--gn-titlebar-icon-accent, #4c3fd6);
+  --gn-titlebar-icon-event: var(--gn-titlebar-icon-highlight, #4b9bff);
+  --gn-titlebar-icon-saved-query: var(--gn-titlebar-icon-danger, #e05a5a);
+  --gn-titlebar-icon-backup: var(--gn-titlebar-icon-muted, #7a86a3);
+  /* 打开表 / 设计表是「动作」语义，直接取主题强调色。 */
+  --gn-titlebar-icon-open-table: var(--gn-accent, #15803d);
+  --gn-titlebar-icon-design-table: var(--gn-accent, #15803d);
+  --gn-titlebar-icon-import: var(--gn-titlebar-icon-teal, #2fa7a0);
+  --gn-titlebar-icon-export: var(--gn-titlebar-icon-teal, #2fa7a0);
+  --gn-titlebar-icon-er-model: var(--gn-titlebar-icon-magenta, #c05bd8);
+  --gn-titlebar-icon-external-sql: var(--gn-titlebar-icon-warm, #f59e0b);
+}
+
+/* 无核心 token 对应的色相：亮 / 暗各一套默认值，暗色整体提亮保证描边可读。 */
+body[data-ui-version='v2'][data-theme='light'] {
+  --gn-titlebar-icon-danger: #e05a5a;
+  --gn-titlebar-icon-muted: #7a86a3;
+  --gn-titlebar-icon-teal: #2fa7a0;
+  --gn-titlebar-icon-magenta: #c05bd8;
+}
+
+body[data-ui-version='v2'][data-theme='dark'] {
+  --gn-titlebar-icon-danger: #ef8f88;
+  --gn-titlebar-icon-muted: #9aa6c2;
+  --gn-titlebar-icon-teal: #56c9c0;
+  --gn-titlebar-icon-magenta: #d78ae6;
+}

@@ -25,6 +25,7 @@ import { dataSyncTaskKindTextKey } from '../../text';
 import { registerWorkbenchTabCloseGuard } from '../../../../utils/workbenchTabCloseProtection';
 import type { DataSyncWorkbenchStateApi } from './useDataSyncWorkbenchState';
 import type { DataSyncWorkbenchShellProps } from '../../DataSyncWorkbenchShell';
+import { formatSavedTaskPreflightFailure } from '../../../../utils/dataSyncWorkbenchPersistenceText';
 
 export interface UseDataSyncWorkbenchTaskPersistenceInput {
   workbenchFamily: DataSyncWorkbenchShellProps['workbenchFamily'];
@@ -441,11 +442,7 @@ export const useDataSyncWorkbenchTaskPersistence = ({
         return next;
       });
       if (refreshError && !editedDuringSave) {
-        setOperationError(
-          `任务已保存，但保存后的预检失败：${
-            refreshError instanceof Error ? refreshError.message : String(refreshError)
-          }`,
-        );
+        setOperationError(formatSavedTaskPreflightFailure(refreshError));
       }
       if (saved.trigger.mode !== 'manual') {
         // Persisted schedule rows derive from the saved task; re-aggregate so

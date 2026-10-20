@@ -1,0 +1,68 @@
+.gonavi-font-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 640px;
+  min-width: 0;
+}
+
+.gonavi-font-picker-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.gonavi-font-picker-select {
+  flex: 1 1 280px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.gonavi-font-details {
+  color: var(--gn-settings-muted, var(--gn-fg-3));
+  font-size: var(--gn-settings-font-secondary, var(--gn-font-size-sm, 12px));
+}
+
+.gonavi-font-details summary {
+  cursor: pointer;
+  width: fit-content;
+}
+
+.gonavi-font-details summary:focus-visible {
+  outline: 2px solid var(--gn-settings-accent, var(--gn-accent));
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+.gonavi-font-details code {
+  display: block;
+  margin-top: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.gonavi-font-option {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  min-width: 0;
+  line-height: 1.5;
+}
+
+.gonavi-font-option-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gonavi-font-option-source {
+  flex-shrink: 0;
+  font-size: 0.85em;
+  opacity: 0.75;
+}

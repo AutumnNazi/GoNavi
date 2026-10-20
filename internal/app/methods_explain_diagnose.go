@@ -42,10 +42,11 @@ func (a *App) runDiagnoseQuery(
 
 	runConfig := normalizeRunConfig(config, dbName)
 	dbType := resolveExplainDBType(runConfig)
-	if !isSafeExplainQuery(dbType, query) {
+	supportsExplain := explainSupportedDBTypes[dbType] || isRegistryExplainDialect(dbType)
+	if (supportsExplain || dbType == "") && !isSafeExplainQuery(dbType, query) {
 		return connection.QueryResult{Success: false, Message: a.appText("sql_analysis.backend.error.select_only", nil)}
 	}
-	if !explainSupportedDBTypes[dbType] && !isRegistryExplainDialect(dbType) {
+	if !supportsExplain {
 		return connection.QueryResult{
 			Success: false,
 			Message: a.appText("sql_analysis.backend.error.unsupported_db_type", map[string]any{"dbType": dbType}),

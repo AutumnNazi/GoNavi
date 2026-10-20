@@ -5,6 +5,7 @@ import {
   GnAllObjectsIcon,
   GnBoltIcon,
   GnCloudIcon,
+  GnClockIcon,
   GnConfigFileIcon,
   GnEventIcon,
   GnFunctionIcon,
@@ -29,6 +30,7 @@ export type SidebarObjectIconKind =
   | 'package'
   | 'trigger'
   | 'event'
+  | 'job'
   | 'nacosService'
   | 'nacosConfig';
 
@@ -42,6 +44,7 @@ const SIDEBAR_OBJECT_ICONS: Record<SidebarObjectIconKind, React.ComponentType<Gn
   package: GnPackageIcon,
   trigger: GnBoltIcon,
   event: GnEventIcon,
+  job: GnClockIcon,
   nacosService: GnCloudIcon,
   nacosConfig: GnConfigFileIcon,
 };

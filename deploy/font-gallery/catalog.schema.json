@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GoNavi font gallery v1",
+  "description": "Published font metadata only; never bundle font files. Consumers additionally verify size/hash/path/MIME correspondence, unique IDs, HTTPS references and source permission. Preview may reference the same unmodified file when at most 512 KiB.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "version",
+    "entries"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "version": {
+      "$ref": "#/$defs/version"
+    },
+    "entries": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    }
+  },
+  "$defs": {
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "url": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "format": "uri",
+      "pattern": "^https://"
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "sizeBytes",
+        "mimeType"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^assets/[0-9a-f]{64}\\.(ttf|otf|ttc|woff2)$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        },
+        "mimeType": {
+          "enum": [
+            "font/ttf",
+            "application/font-sfnt",
+            "font/otf",
+            "font/collection",
+            "font/woff2"
+          ]
+        }
+      }
+    },
+    "license": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "url",
+        "notice",
+        "text",
+        "nonCommercial"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "url": {
+          "$ref": "#/$defs/url"
+        },
+        "notice": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        },
+        "nonCommercial": {
+          "type": "boolean"
+        }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "kind",
+        "family",
+        "names",
+        "description",
+        "useCase",
+        "font",
+        "preview",
+        "attribution",
+        "sourceUrl",
+        "rightsStatus",
+        "license"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "version": {
+          "$ref": "#/$defs/version"
+        },
+        "kind": {
+          "enum": [
+            "ui",
+            "mono"
+          ]
+        },
+        "family": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9 _-]{0,127}$"
+        },
+        "names": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 16,
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "useCase": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "font": {
+          "$ref": "#/$defs/asset"
+        },
+        "preview": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/asset"
+            },
+            {
+              "properties": {
+                "sizeBytes": {
+                  "maximum": 524288
+                }
+              }
+            }
+          ]
+        },
+        "attribution": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "sourceUrl": {
+          "$ref": "#/$defs/url"
+        },
+        "rightsStatus": {
+          "const": "approved"
+        },
+        "license": {
+          "$ref": "#/$defs/license"
+        }
+      }
+    }
+  }
+}

@@ -164,7 +164,19 @@ body[data-ui-version="v2"] .gn-v2-query-transaction-toolbar {
 }
 
 body[data-ui-version="v2"] .gn-v2-query-toolbar .ant-select {
+  height: 32px !important;
   min-width: 0;
+}
+
+body[data-ui-version="v2"] .gn-v2-query-toolbar .ant-select-arrow {
+  top: 50%;
+  margin-top: 0;
+  transform: translateY(-50%);
+  font-size: 12px;
+}
+
+body[data-ui-version="v2"] .gn-v2-query-toolbar .ant-select:not(.ant-select-disabled) .ant-select-arrow {
+  color: var(--gn-fg-3);
 }
 
 body[data-ui-version="v2"] .gn-v2-query-toolbar-connection-select {

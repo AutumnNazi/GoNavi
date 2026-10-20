@@ -234,13 +234,27 @@ func fromODBC(coltype SQLTYPE, li list.ListItem) (result interface{}, err error)
 		var value string
 		li.Get(&value)
 	case TYPE_TIMESTAMP:
+		// 注意：Caché/IRIS 的日期时间列在 DIRECT_QUERY 下常以 91/92/93
+		// （DATE/TIME/TIMESTAMP 的 ODBC 码）返回，且值本身就是可读字符串。
+		// 解析失败时退回原始字符串，不要丢掉值。
 		var strval string
 		li.Get(&strval)
-		result, err = time.Parse(timeLayloutShort, strval)
+		parsed, perr := time.Parse(timeLayloutShort, strval)
+		if perr != nil {
+			result = strval
+			break
+		}
+		result = parsed
+	case TYPE_DATE, TYPE_TIME:
+		// 日期与时间列直接透传字符串：早先落入 default 分支，每行都会往 stderr
+		// 打一行 fmt.Printf，既污染日志又显著拖慢大结果集（实测 100 行会刷
+		// 满终端），把 TIMESTAMP 的分支补全后这里不再需要噪音输出。
+		var value string
+		li.Get(&value)
+		result = value
 	default:
 		var value string
 		li.Get(&value)
-		fmt.Printf("fromODBC: invalid type: %v - %#v - %#v", coltype, li, value)
 		result = value
 	}
 	return
@@ -482,12 +496,15 @@ func (c *Connection) DirectQuery(sqlText string, args ...interface{}) (*ResultSe
 		stmtId:  statementId,
 	}
 
+	// 实测 Caché 2018.1.5 与 IRIS 2026.1 的空结果都有 status=100 终止帧。
+	// 不能以短窗口内未收到字节判空：两种协议的数据帧延迟 3s 都会静默丢行。
+	// 按查询超时完整等待；缺失帧或半帧必须报错，并关闭连接避免迟到帧污染下次查询。
 	msg, err = ReadMessageWithTimeout(c.conn, c.queryTimeout)
-	rs.sqlCode = int16(msg.GetStatus())
 	if err != nil {
+		_ = c.conn.Close()
 		return nil, err
 	}
-
+	rs.sqlCode = int16(msg.GetStatus())
 	msg.GetRaw(&rs.data)
 
 	return rs, nil

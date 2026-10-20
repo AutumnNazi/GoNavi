@@ -103,6 +103,21 @@ class WindowsReleaseArtifactsTest(unittest.TestCase):
             self.assertIn(f"GoNavi-${{version}}-Windows-{arch}-Portable.exe", publish_source)
             self.assertIn(f"GoNavi-${{version}}-Windows-{arch}-Portable.zip", publish_source)
 
+    def test_portable_sfx_runs_root_gonavi_exe(self) -> None:
+        source = (ROOT / "tools" / "make-portable-sfx.ps1").read_text(encoding="utf-8")
+        self.assertIn('RunProgram="GoNavi.exe"', source)
+        self.assertIn('Copy-Item -LiteralPath $SourceExe -Destination (Join-Path $stageDir "GoNavi.exe") -Force', source)
+        self.assertIn("$archivePath = New-PortableArchive -SevenZip $sevenZip -WorkDir $WorkDir -SourceExe $SourceExe -LicenseFile $LicenseFile -NoticeFile $NoticeFile", source)
+        self.assertIn("Assert-PortableArchiveLayout -SevenZip $SevenZip -WorkDir $WorkDir -ArchivePath $archivePath -ExpectedNames $stagedNames", source)
+        self.assertIn("SFX 归档根目录缺少", source)
+        self.assertIn("SFX 归档里的可执行文件必须是根目录 GoNavi.exe", source)
+        # CI 产物名是 gonavi-build-windows-*.exe。直接把这个绝对路径交给 7z 时，
+        # 归档叶子名不是 GoNavi.exe，SFX 会报「系统找不到指定的文件」。
+        self.assertNotIn("$archivePath, $SourceExe", source)
+        archive_args = source.split("$archiveArgs = ", 1)[1].split("\n", 1)[0]
+        self.assertNotIn("$SourceExe", archive_args)
+        self.assertIn("$stagedNames", archive_args)
+
     def test_local_windows_release_keeps_unpacked_trimmed_executables(self) -> None:
         source = LOCAL_RELEASE_SCRIPT.read_text(encoding="utf-8")
         windows_builds = source.split("# --- Windows AMD64", 1)[1].split("# --- Linux AMD64", 1)[0]

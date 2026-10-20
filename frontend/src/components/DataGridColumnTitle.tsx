@@ -64,7 +64,7 @@ export interface DataGridColumnTitleProps {
   columnMetaTooltipColor: string;
   darkMode: boolean;
   highlighted?: boolean;
-  /** 左侧钉住列：表头显示固定图标 */
+  // 左侧钉住列：表头显示固定图标。
   pinnedLeft?: boolean;
   translate?: DataGridColumnTitleTranslate;
   onOpenForeignKey?: () => void;

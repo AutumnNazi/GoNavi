@@ -13,6 +13,7 @@ import { supportsTableTruncateAction } from '../tableDataDangerActions';
 import type { MenuProps } from 'antd';
 import { buildSidebarCopyObjectNameMenuItem } from './sidebarCopyObjectNameMenu';
 import { supportsOracleObjectCompilation } from './oracleObjectCompilation';
+import { openEventManagement, supportsEventManagement } from './sidebarEventManagement';
 
 export interface BuildTableNodeMenuItemsInput {
   node: any;
@@ -253,6 +254,7 @@ export interface BuildDbEventMenuItemsInput {
 export const buildDbEventMenuItems = ({ node, context }: BuildDbEventMenuItemsInput): MenuProps['items'] => {
   const { openEventDefinition, openEditEvent } = context;
   return [
+      ...(supportsEventManagement(node) ? [{ key: 'manage-event', label: t('database_jobs.manage.title'), onClick: () => openEventManagement(node) }] : []),
       {
           key: 'view-event-def',
           label: t('sidebar.menu.view_object_definition'),

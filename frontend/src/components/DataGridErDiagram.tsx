@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Spin, Tooltip } from 'antd';
 import {
   ApartmentOutlined,
@@ -238,7 +238,7 @@ const ErTableNode = memo(function ErTableNode({ data }: { data: ErDiagramNodeDat
       </div>
 
       <div
-        className={`gn-er-node-columns nodrag nopan${columnsScrollable ? ' is-scrollable' : ''}`}
+        className={`gn-er-node-columns nodrag nopan${columnsScrollable ? ' is-scrollable nowheel' : ''}`}
         style={{ '--er-node-columns-max-height': `${getNodeColumnViewportHeight(node, expanded)}px` } as React.CSSProperties}
       >
         {visibleColumns.map((column) => (
@@ -278,6 +278,10 @@ const ErTableNode = memo(function ErTableNode({ data }: { data: ErDiagramNodeDat
   );
 });
 
+// reactflow 要求 nodeTypes 引用稳定：内联字面量每次渲染都是新对象，会触发
+// error #002 并全量重挂载节点 DOM（滚动位置丢失、点击被吞）。
+const erNodeTypes = { erTable: ErTableNode };
+
 const DataGridErDiagramCanvasInner: React.FC<{
   graph: BuildErDiagramGraphResult;
   translate: DataGridMetadataTranslate;
@@ -306,32 +310,80 @@ const DataGridErDiagramCanvasInner: React.FC<{
   const [nodes, setNodes, onNodesChange] = useNodesState(layout.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(layout.edges);
 
+  // 节点 data 按 id 缓存：只有业务字段真变化的节点才换 data 引用，
+  // 其余节点靠 ErTableNode 的 memo 跳过重渲染（大图展开时的卡顿主因）。
+  const nodeDataCacheRef = useRef(new Map<string, ErDiagramNodeData>());
+  const buildNodeData = useCallback((node: ErDiagramNode, expanded: boolean, selected: boolean): ErDiagramNodeData => {
+    const next: ErDiagramNodeData = {
+      node,
+      selected,
+      expanded,
+      translate,
+      onToggleExpanded: onToggleNodeExpanded,
+      onOpenTable,
+    };
+    const cached = nodeDataCacheRef.current.get(node.id);
+    if (
+      cached
+      && cached.node === next.node
+      && cached.selected === next.selected
+      && cached.expanded === next.expanded
+      && cached.translate === next.translate
+      && cached.onToggleExpanded === next.onToggleExpanded
+      && cached.onOpenTable === next.onOpenTable
+    ) {
+      return cached;
+    }
+    nodeDataCacheRef.current.set(node.id, next);
+    return next;
+  }, [onOpenTable, onToggleNodeExpanded, translate]);
+
+  // 清理已不存在的节点缓存，避免长会话中切表累积。
   useEffect(() => {
-    setNodes(
-      layout.nodes.map((node) => ({
-        ...node,
-        data: {
-          ...node.data,
-          selected: node.id === selectedNodeId,
-        },
-      })),
+    nodeDataCacheRef.current = new Map(
+      Array.from(nodeDataCacheRef.current.entries()).filter(([nodeId]) => graph.nodes.some((node) => node.id === nodeId)),
     );
-  }, [layout.nodes, setNodes]);
+  }, [graph]);
+
+  const selectedNodeIdRef = useRef(selectedNodeId);
+  selectedNodeIdRef.current = selectedNodeId;
+  const prevLayoutNodesRef = useRef(layout.nodes);
+
+  // 布局变化（dagre 重排）与选中/展开变化走不同路径：
+  // 前者灌入 dagre 新位置并按 layout 重建；后者基于现有节点只改 data 与
+  // selected——保留用户拖动过的位置，不把节点拉回布局坐标。
+  // 两条路径都经 buildNodeData 复用 data 引用，未变化的节点不触发重渲染。
+  useEffect(() => {
+    const layoutChanged = prevLayoutNodesRef.current !== layout.nodes;
+    prevLayoutNodesRef.current = layout.nodes;
+    setNodes((currentNodes) => {
+      if (layoutChanged) {
+        return layout.nodes.map((layoutNode) => {
+          const selected = layoutNode.id === selectedNodeIdRef.current;
+          return {
+            ...layoutNode,
+            selected,
+            data: buildNodeData(layoutNode.data.node, expandedNodeIds.has(layoutNode.id), selected),
+          };
+        });
+      }
+      return currentNodes.map((node) => {
+        const selected = node.id === selectedNodeId;
+        const nextData = buildNodeData(node.data.node, expandedNodeIds.has(node.id), selected);
+        if (node.data === nextData && node.selected === selected) {
+          return node;
+        }
+        return { ...node, selected, data: nextData };
+      });
+    });
+  }, [buildNodeData, expandedNodeIds, layout.nodes, selectedNodeId, setNodes]);
 
   useEffect(() => {
     setEdges(layout.edges);
   }, [layout.edges, setEdges]);
 
-  useEffect(() => {
-    setNodes((currentNodes) => currentNodes.map((node) => ({
-      ...node,
-      data: {
-        ...node.data,
-        selected: node.id === selectedNodeId,
-      },
-    })));
-  }, [selectedNodeId, setNodes]);
-
+  // 仅在图数据变化（切表/刷新/加深关系）时重取全景；展开/收起只改变节点
+  // 内部高度，此时全图 fitView 会把视野拉远并让点击目标漂移。
   useEffect(() => {
     const timer = globalThis.setTimeout(() => {
       void fitView({ padding: 0.18, duration: 220 });
@@ -339,7 +391,7 @@ const DataGridErDiagramCanvasInner: React.FC<{
     return () => {
       globalThis.clearTimeout(timer);
     };
-  }, [fitView, layout.edges, layout.nodes]);
+  }, [fitView, graph]);
 
   const handleNodeClick: NodeMouseHandler = useCallback((_event, node) => {
     setSelectedNodeId(node.id);
@@ -357,7 +409,7 @@ const DataGridErDiagramCanvasInner: React.FC<{
     <ReactFlow
       nodes={nodes}
       edges={edges}
-      nodeTypes={{ erTable: ErTableNode }}
+      nodeTypes={erNodeTypes}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       onNodeClick={handleNodeClick}

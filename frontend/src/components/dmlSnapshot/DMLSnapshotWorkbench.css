@@ -55,7 +55,7 @@
   border: 1px solid var(--gn-border, rgba(5, 5, 5, 0.1));
   border-radius: 8px;
   background: var(--gn-code-bg, rgba(0, 0, 0, 0.03));
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--gn-font-mono);
   font-size: 12px;
   line-height: 1.6;
   white-space: pre;

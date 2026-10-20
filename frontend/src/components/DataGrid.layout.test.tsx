@@ -273,7 +273,7 @@ describe('DataGrid layout', () => {
     expect(markup).toContain('data-grid-view-switcher="true"');
     expect(markup).toContain('data-grid-column-display-action="true"');
     expect(markup).toContain('data-grid-column-quick-find-action="true"');
-    expect(markup).toContain('显示/隐藏字段列');
+    expect(markup).toContain('表格显示设置');
     expect(markup).toContain('跳列');
     expect(markup).toContain('日志');
     expect(markup).toContain(zhObjectDesignLabel);
@@ -820,7 +820,7 @@ describe('DataGrid layout', () => {
       '文本',
       '数据预览',
       '字段信息',
-      '显示/隐藏字段列',
+      '表格显示设置',
       '跳列',
       '未提交',
       '跳页',
@@ -999,7 +999,7 @@ describe('DataGrid layout', () => {
       '查看 DDL',
       'ER 图',
       '日志',
-      '显示/隐藏字段列',
+      '表格显示设置',
     ].forEach((label) => {
       expect(getButtonBody(label)).not.toContain(label);
     });
@@ -1087,8 +1087,8 @@ describe('DataGrid layout', () => {
     const source = readDataGridSource();
     const css = readV2ThemeCss();
 
-    expect(css).toContain('height: calc(28px * var(--gn-ui-scale, 1));');
-    expect(source).toContain('const virtualListItemHeight = Math.max(1, 28 * effectiveUiScale);');
+    expect(css).toContain('height: var(--gn-data-table-row-height, calc(28px * var(--gn-ui-scale, 1)));');
+    expect(source).toContain('const virtualListItemHeight = resolveDataGridRowHeight(densityParams, effectiveUiScale);');
     expect(source).toContain('const virtualListItemHeightFixed = !virtualEditingCellForRender;');
     expect(source).not.toContain('virtualRowHeightMeasurement');
   });

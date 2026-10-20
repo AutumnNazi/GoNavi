@@ -1,5 +1,6 @@
 import type { TabData } from '../../types';
 import { openDatabaseLinkDefinition } from './sidebarOpenDatabaseLinkDefinition';
+import { openDatabaseJobDefinition } from './sidebarJobObjects';
 
 type SidebarObjectNode = {
   key?: unknown;
@@ -21,6 +22,10 @@ export const tryOpenSidebarObjectNode = (
   deps: OpenSidebarObjectNodeDeps,
 ): boolean => {
   const { addTab, openEventDefinition, openSequenceDefinition, openPackageDefinition, t, buildOptionalSchemaContext } = deps;
+  if (node.type === 'db-job') {
+    openDatabaseJobDefinition(node, addTab);
+    return true;
+  }
   if (node.type === 'view' || node.type === 'materialized-view') {
     const { viewName, dbName, id, schemaName } = node.dataRef || {};
     addTab({

@@ -41,6 +41,8 @@
                                                                    "supported":  true
                                                                },
                                        "ui":  {
+                                                  "preferManualTotalCount": true,
+                                                  "supportsApproximateTableCount": true,
                                                                "userManagement":  true,
                                                                "parameterBinding":  true,
                                                   "explainDiagnosis":  true,

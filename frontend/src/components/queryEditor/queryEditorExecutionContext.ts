@@ -5,6 +5,7 @@ import {
     isOracleLikeDialect,
 } from '../../utils/sqlDialect';
 import { normalizeTableAliasPrefix } from '../../utils/tableAliasPrefix';
+import { findSqlStatementRanges, stripLeadingSqlTrivia } from '../../utils/sqlStatementSelection';
 import {
     type QueryEditorExecutionContext,
     collectQueryEditorTableReferences,
@@ -20,7 +21,19 @@ import {
 import { buildQueryEditorIdentifierIdentityKey } from './queryEditorReferenceIdentity';
 import { getCompletionQualifiedNameLastPart } from './queryEditorCompletionMetadata';
 
-/** Resolve the database/schema explicitly named by the SQL, without changing SQL text. */
+const stripExecutionContextTrivia = (source: string, dialect: string): string => {
+    let statement = stripLeadingSqlTrivia(source, dialect);
+    // Leading optimizer hints carry no statement keyword, but executable
+    // version comments after them must remain visible to the safety check.
+    while (statement.startsWith('/*+')) {
+        const end = statement.indexOf('*/', 3);
+        if (end < 0) return '';
+        statement = stripLeadingSqlTrivia(statement.slice(end + 2), dialect);
+    }
+    return statement;
+};
+
+/** Infer a single query's context, without retargeting definitions or batches. */
 export const resolveQueryEditorExecutionContext = (
     source: string,
     dialect: string,
@@ -31,12 +44,26 @@ export const resolveQueryEditorExecutionContext = (
     const normalized = String(resolveSqlDialect(dialect) || dialect || '').toLowerCase();
     const visible = new Map(visibleDbs.map((name) => [String(name).trim().toLowerCase(), String(name).trim()] as const));
     const canonical = (name: string) => visible.get(name.toLowerCase()) || name;
-    const result: QueryEditorExecutionContext = {};
-    const masked = maskQueryEditorSqlLiteralsAndComments(String(source || ''), normalized);
+    const statements = findSqlStatementRanges(String(source || ''), normalized);
+    const statement = stripExecutionContextTrivia(statements[0]?.text || '', normalized);
+    // Executable version comments can contain CREATE/DEFINER headers. Do not
+    // erase those headers and mistake the following body for a standalone query.
+    if (/^\/\*(?:!|m!)/i.test(statement)) return {};
+    const masked = maskQueryEditorSqlLiteralsAndComments(statement, normalized);
     const useMatch = (isMysqlFamilyDialect(normalized) || ['sqlserver', 'clickhouse', 'tdengine'].includes(normalized))
-        && masked.match(/^\s*use\s+(`[^`]+`|"[^"]+"|\[[^\]]+\]|[A-Za-z0-9_$-]+)/i);
-    if (useMatch) result.dbName = canonical(stripQueryIdentifierQuotesForDialect(useMatch[1], normalized));
-    for (const reference of collectQueryEditorTableReferences(source, normalized)) {
+        && masked.match(/^\s*use\s+(`(?:``|[^`])+`|"(?:""|[^"])+"|\[(?:\]\]|[^\]])+\]|[A-Za-z0-9_$-]+)\s*$/i);
+    if (useMatch) {
+        const dbName = canonical(stripQueryIdentifierQuotesForDialect(useMatch[1], normalized));
+        return dbName.toLowerCase() === String(currentDb).trim().toLowerCase() ? {} : { dbName };
+    }
+    // A definition's body references are not its creation target. Qualified
+    // targets already resolve in SQL; unqualified targets need the selected
+    // context. Likewise, no one table reference can set a whole batch's initial
+    // context: later USE statements must execute in their original order.
+    if (statements.length !== 1 || !/^\s*(?:select|with|insert|update|delete|replace|merge)\b/i.test(masked)) return {};
+
+    const result: QueryEditorExecutionContext = {};
+    for (const reference of collectQueryEditorTableReferences(statement, normalized)) {
         const parts = reference.parts.map((part) => String(part || '').trim()).filter(Boolean);
         if (parts.length < 2) continue;
         if (normalized === 'iotdb') {

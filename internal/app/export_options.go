@@ -12,6 +12,7 @@ const (
 
 type ExportFileOptions struct {
 	Format                         string            `json:"format"`
+	CSVEncoding                    string            `json:"csvEncoding,omitempty"`
 	Columns                        []string          `json:"columns,omitempty"`
 	ColumnComments                 map[string]string `json:"columnComments,omitempty"`
 	XLSXMaxRowsPerSheet            int               `json:"xlsxMaxRowsPerSheet,omitempty"`
@@ -34,6 +35,7 @@ func normalizeExportFileOptions(format string, options ExportFileOptions) Export
 	}
 	return ExportFileOptions{
 		Format:                         resolvedFormat,
+		CSVEncoding:                    options.CSVEncoding,
 		Columns:                        normalizeExportColumns(options.Columns),
 		ColumnComments:                 options.ColumnComments,
 		XLSXMaxRowsPerSheet:            normalizeXLSXRowsPerSheet(options.XLSXMaxRowsPerSheet),

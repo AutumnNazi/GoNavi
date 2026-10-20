@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"golang.org/x/image/draw"
 )
@@ -48,11 +47,17 @@ func encodeWindowsApplicationIconICO(source image.Image) ([]byte, error) {
 	if source == nil {
 		return nil, errors.New("application icon source is nil")
 	}
+	source, _ = normalizeWindowsApplicationIconArtwork(source)
+	taskbarSource, _ := composeWindowsTaskbarArtwork(source)
 
 	frames := make([][]byte, 0, len(windowsApplicationIconSizes))
 	for _, size := range windowsApplicationIconSizes {
+		frameSource := source
+		if size <= windowsTaskbarArtworkMaxPixels {
+			frameSource = taskbarSource
+		}
 		target := image.NewNRGBA(image.Rect(0, 0, size, size))
-		draw.CatmullRom.Scale(target, target.Bounds(), source, source.Bounds(), draw.Over, nil)
+		draw.CatmullRom.Scale(target, target.Bounds(), frameSource, frameSource.Bounds(), draw.Over, nil)
 		frame, err := encodeWindowsApplicationIconFrame(target, size)
 		if err != nil {
 			return nil, err
@@ -292,7 +297,7 @@ func migrateWindowsApplicationIconFile(iconPath string) error {
 
 func windowsApplicationIconCandidatePath(pngBytes []byte, configDir string) string {
 	hash := sha256.Sum256(pngBytes)
-	return filepath.Join(strings.TrimSpace(configDir), windowsApplicationIconDirectoryName, fmt.Sprintf("gonavi-brand-%x.ico", hash[:12]))
+	return filepath.Join(strings.TrimSpace(configDir), windowsApplicationIconDirectoryName, fmt.Sprintf(windowsApplicationIconRenderPrefix+"%x.ico", hash[:12]))
 }
 
 func persistWindowsApplicationIcon(pngBytes []byte, configDir string) (string, error) {
@@ -417,40 +422,20 @@ func loadPersistedWindowsApplicationIcon(configDir string) (string, error) {
 		if filepath.Base(iconName) == iconName && filepath.Ext(iconName) == ".ico" {
 			iconPath := filepath.Join(iconDir, iconName)
 			if info, statErr := os.Stat(iconPath); statErr == nil && info.Mode().IsRegular() {
-				return iconPath, nil
+				return preparePersistedWindowsApplicationIconArtwork(iconPath, configDir)
 			}
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("read Windows application icon state: %w", err)
 	}
 
-	// Versions before the startup pointer was introduced already left
-	// content-addressed ICO files behind. Pick the newest valid file once so
-	// an existing user's selected icon is migrated without requiring a second
-	// manual selection. New writes always create active-icon.txt and take
-	// precedence above this compatibility fallback.
-	entries, err := os.ReadDir(iconDir)
-	if errors.Is(err, os.ErrNotExist) {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("read Windows application icon directory: %w", err)
-	}
-	var newestPath string
-	var newestModTime time.Time
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "gonavi-brand-") || filepath.Ext(entry.Name()) != ".ico" {
-			continue
-		}
-		info, statErr := entry.Info()
-		if statErr != nil || !info.Mode().IsRegular() {
-			continue
-		}
-		if newestPath == "" || info.ModTime().After(newestModTime) ||
-			(info.ModTime().Equal(newestModTime) && entry.Name() > filepath.Base(newestPath)) {
-			newestPath = filepath.Join(iconDir, entry.Name())
-			newestModTime = info.ModTime()
-		}
-	}
-	return newestPath, nil
+	// 指针文件是唯一依据：缺失即「从未选择过」，必须保持默认图标。
+	// 这里曾有一条「挑最新的 gonavi-brand-*.ico」兼容回退，用来迁移指针引入前
+	// 写入的 ICO；但内容寻址 ICO 从不清理（且卸载刻意保留），v0.9.8 又在没有
+	// 指针的年代落过盘，于是那条猜测会把用户从未选择过的陈旧图标（例如旧版
+	// 默认的吉祥物）当成当前选择恢复出来，并立刻写成指针使其永久化——用户看
+	// 到图标被自动改动，而应用内选择器读的是前端 store，仍是默认值，两者从此
+	// 再无对齐机会。没有任何证据能证明残留 ICO 代表用户意图，因此不再猜测：
+	// 只有 active-icon.txt 指向的文件才算生效选择。
+	return "", nil
 }

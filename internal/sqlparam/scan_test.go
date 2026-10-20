@@ -129,7 +129,7 @@ func TestScanRecognizesQuotedCurlyParameters(t *testing.T) {
 		{name: "Navicat 风格引号包裹", sql: "WHERE f_date >= '{startDate}'", opts: OptionsForDBType("mysql"), want: []string{"startDate"}},
 		{name: "含下划线数字", sql: "WHERE d <= '{u_end_2}', x = '{a1}'", opts: OptionsForDBType("mysql"), want: []string{"u_end_2", "a1"}},
 		{name: "带前后缀文本为模板参数", sql: "WHERE note = 'abc{name}def'", opts: OptionsForDBType("mysql"), want: []string{"name"}},
-		{name: "多段花括号归为模板", sql: "WHERE x = '{a}{b}'", opts: OptionsForDBType("mysql"), want: []string{"a"}},
+		{name: "同一字面量多个占位符记在同一个跨度", sql: "WHERE x = '{a}{b}'", opts: OptionsForDBType("mysql"), want: []string{"a"}},
 		{name: "JSON 字面量不误伤", sql: "WHERE payload = '{\"a\":1}'", opts: OptionsForDBType("postgres"), want: nil},
 		{name: "数字开头不识别", sql: "WHERE x = '{123}'", opts: OptionsForDBType("mysql"), want: nil},
 		{name: "空白名不识别", sql: "WHERE x = '{ }'", opts: OptionsForDBType("mysql"), want: nil},
@@ -146,6 +146,36 @@ func TestScanRecognizesQuotedCurlyParameters(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("Scan(%q) = %v, want %v", tc.sql, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestQuotedPlaceholderSwitch(t *testing.T) {
+	on := OptionsForDBType("oracle")
+	off := on
+	off.QuotedPlaceholders = false
+	cases := []struct {
+		name string
+		sql  string
+		opts ScanOptions
+		want []string
+	}{
+		{name: "打开时两个占位符都登记", sql: "SELECT '{code1}-{code2}' FROM dual", opts: on, want: []string{"code1", "code2"}},
+		{name: "关闭时格式串保持原文", sql: "SELECT '{code1}-{code2}' FROM dual", opts: off, want: nil},
+		{name: "关闭不影响引号外参数", sql: "SELECT '{code1}-{code2}', :code2", opts: off, want: []string{"code2"}},
+		{name: "打开时整段占位符仍是参数", sql: "WHERE d >= '{startDate}'", opts: on, want: []string{"startDate"}},
+		{name: "关闭时整段占位符也是原文", sql: "WHERE d >= '{startDate}'", opts: off, want: nil},
+		{name: "打开时带后缀仍是模板", sql: "WHERE d >= '{startDate} 00:00:00'", opts: on, want: []string{"startDate"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Names(tc.sql, tc.opts)
+			if len(got) == 0 && len(tc.want) == 0 {
+				return
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("Names(%q) = %v, want %v", tc.sql, got, tc.want)
 			}
 		})
 	}

@@ -54,7 +54,6 @@ export const DATA_SYNC_FAMILY_KIND_CHOICES: Record<
 > = {
   sync: [
     { kind: 'backup' },
-    { kind: 'migration' },
     { kind: 'reconcile' },
     { kind: 'querySink' },
     { kind: 'cdc' },
@@ -64,6 +63,13 @@ export const DATA_SYNC_FAMILY_KIND_CHOICES: Record<
     { kind: 'compare', compareMode: 'data' },
   ],
 };
+
+/**
+ * 运行时能否补建缺失的目标库和目标表。数据同步与旧的一次性迁移任务都可以；
+ * CDC 依赖已存在的目标表记检查点，查询写入与对比只碰已有对象。
+ */
+export const taskKindCanCreateTarget = (taskKind: DataSyncTaskKind): boolean =>
+  taskKind === 'migration' || taskKind === 'reconcile';
 
 export const dataSyncTaskBelongsToFamily = (
   task: { kind: DataSyncTaskKind },

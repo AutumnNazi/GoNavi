@@ -139,6 +139,7 @@ export const decodeFieldMetadata = (value: unknown): DataSyncFieldMetadata[] =>
       type: string(field.type, `DataSyncFieldList.data[${index}].type`, false),
       nullable: nullable === 'yes' || nullable === 'true',
       ordinal: index + 1,
-      key: key === 'PRI' || key === 'UNI' || key === 'PRIMARY' || key === 'UNIQUE',
+      // 只认物理主键：后端写已有目标表时要求匹配列等于源表主键，唯一索引列混进来会被预检拒绝。
+      key: key === 'PRI' || key === 'PK' || key === 'PRIMARY',
     };
   });

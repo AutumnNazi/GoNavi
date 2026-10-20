@@ -230,6 +230,7 @@ type RunRecord struct {
 	RowsFailed         int64           `json:"rowsFailed"`
 	Message            string          `json:"message,omitempty"`
 	Resumable          bool            `json:"resumable"`
+	RollbackReady      bool            `json:"rollbackReady,omitempty"` // 仅响应副本，不写回运行记录。
 	DefinitionSnapshot json.RawMessage `json:"definitionSnapshot,omitempty"`
 	SourceFingerprint  string          `json:"sourceFingerprint,omitempty"`
 	TargetFingerprint  string          `json:"targetFingerprint,omitempty"`

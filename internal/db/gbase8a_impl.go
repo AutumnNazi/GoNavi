@@ -13,6 +13,8 @@ import (
 	"GoNavi-Wails/internal/logger"
 	"GoNavi-Wails/internal/ssh"
 	"GoNavi-Wails/internal/utils"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 const defaultGBase8aPort = 5258
@@ -87,7 +89,12 @@ func (g *GBase8aDB) openPool(config connection.ConnectionConfig) error {
 			continue
 		}
 		for _, plan := range plans {
-			pool, err := sql.Open(gbase8aSQLDriverName, plan.dsn)
+			dsn, err := gbase8aForceInterpolateParams(plan.dsn)
+			if err != nil {
+				details = append(details, fmt.Sprintf("%s [%s]: %v", address, plan.label, err))
+				continue
+			}
+			pool, err := sql.Open(gbase8aSQLDriverName, dsn)
 			if err != nil {
 				details = append(details, fmt.Sprintf("%s: %v", address, err))
 				continue
@@ -103,7 +110,7 @@ func (g *GBase8aDB) openPool(config connection.ConnectionConfig) error {
 				continue
 			}
 			m.conn, m.pingTimeout = pool, timeout
-			m.batchWritesEnabled = mysqlDSNSupportsBatchWrites(plan.dsn)
+			m.batchWritesEnabled = mysqlDSNSupportsBatchWrites(dsn)
 			return nil
 		}
 	}
@@ -111,6 +118,25 @@ func (g *GBase8aDB) openPool(config connection.ConnectionConfig) error {
 		details = append(details, "no address")
 	}
 	return localizedDatabaseRuntimeError("db.backend.error.gbase8a_connect_failed", map[string]any{"detail": strings.Join(details, "; ")})
+}
+
+// gbase8aForceInterpolateParams 让驱动在客户端把 ? 内联成字面量、改以文本协议发出。
+// GBase 8a 集群（gcluster 加 gnode 两层）把带占位符的预处理语句下推 gnode 时不会一并绑定参数，
+// gnode 收到的是带裸 ? 的语句，于是报 SQL 语法错误（Error 1709 / GBA-02AD-0005），界面表现为
+// 结果集网格提交事务失败。查询编辑器执行的是纯文本语句、单机版 GBase 也不经 gnode 下推，
+// 所以这个故障只在集群的网格提交里出现。参数绑定是这里的正确性前提，因此覆盖用户显式设置的
+// interpolateParams=false。
+func gbase8aForceInterpolateParams(dsn string) (string, error) {
+	parsed, err := mysql.ParseDSN(dsn)
+	if err != nil {
+		// 连接串由本包拼装，解析失败意味着内部构造有误；文案仍走 i18n 目录，底层原因作为 detail 渲染。
+		return "", localizedDatabaseRuntimeError("db.backend.error.gbase8a_dsn_parse_failed", map[string]any{"detail": err.Error()})
+	}
+	if parsed.InterpolateParams {
+		return dsn, nil
+	}
+	parsed.InterpolateParams = true
+	return parsed.FormatDSN(), nil
 }
 
 var gbase8aVersionPattern = regexp.MustCompile(`^\s*(\d+(?:\.\d+)*)`)

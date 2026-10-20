@@ -13,6 +13,8 @@ import { getSchemaVisibilityRule, isSchemaVisible } from '../../utils/schemaVisi
 import { isRegistryHiddenSchema } from './sidebarRegistryObjectGroups';
 import { loadSchemas, loadViews, loadFunctions, loadSequences, loadDatabaseTriggers, buildSidebarTableStatusSQL } from './sidebarMetadataLoaders';
 import { createSidebarDatabaseChildrenBuilder } from './sidebarDatabaseChildren';
+import { loadDatabaseJobs } from './sidebarDatabaseJobs';
+import { buildRootDatabaseJobGroups } from './sidebarRootJobGroups';
 import { ensureTableStatsServerVersion } from './sidebarTableStatsVersion';
 import { needsServerVersionForTableStats } from '../../utils/dataSourceRegistry/tableStats';
 import { invalidateQueryEditorSessionMetadata } from '../queryEditor/metadata/queryEditorSessionMetadataStore';
@@ -34,6 +36,7 @@ const emptyObjects = (): SidebarDatabaseObjectLoadResults => ({
   triggersResult: { triggers: [], supported: true }, routinesResult: { routines: [], supported: true },
   sequencesResult: { sequences: [], supported: true }, packagesResult: { packages: [], supported: true },
   eventsResult: { events: [], supported: true }, databaseLinksResult: { databaseLinks: [], supported: true },
+  jobsResult: { jobs: [], supported: true },
 });
 
 type SchemaLoadTask = {
@@ -169,7 +172,7 @@ export const useSidebarSchemaLoader = (input: Input) => {
       replaceTreeNodeChildren(node.key, [queriesNode(connection)], connection);
     }
     try {
-      const schemas = await loadSchemas(connection, connection.dbName, DBQuery, true);
+      const [schemas, jobs] = await Promise.all([loadSchemas(connection, connection.dbName, DBQuery, true), loadDatabaseJobs(connection, connection.dbName)]);
       if (!lifecycle.current()) return;
       if (!schemas.supported) throw new Error(schemas.failureMessage || t('sidebar.message.load_table_list_failed', { error: '' }));
       const nodes: SidebarTreeNode[] = schemas.schemas.filter((schema) => visible(connection, schema)).map((schema) => ({
@@ -179,7 +182,8 @@ export const useSidebarSchemaLoader = (input: Input) => {
       // Even persisted expansion keys wait for an explicit schema expansion after this database load.
       nodes.forEach((schema) => schemaKeys.add(String(schema.key)));
       input.setExpandedKeys?.((keys) => keys.filter((key) => !schemaKeys.has(String(key))));
-      replaceTreeNodeChildren(node.key, [queriesNode(connection), ...nodes], connection);
+      if (jobs.failureMessage) message.warning({ key: `jobs-${databaseKey}`, content: jobs.failureMessage });
+      replaceTreeNodeChildren(node.key, [queriesNode(connection), ...buildRootDatabaseJobGroups(connection, databaseKey, jobs), ...nodes], connection);
       setConnectionStates((states) => ({ ...states, [String(node.key)]: 'success' }));
       input.onDatabaseTreeLoaded?.(databaseKey);
     } catch (error) { if (lifecycle.current()) fail(node, error); }

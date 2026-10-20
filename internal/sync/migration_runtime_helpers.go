@@ -55,7 +55,7 @@ func hasNativeAddColumnPath(source, target string) bool {
 	return source == "clickhouse" && target == "clickhouse"
 }
 
-func buildAddColumnSQLForPair(sourceType string, targetType string, targetQueryTable string, sourceCol connection.ColumnDefinition) (string, []string, error) {
+func buildAddColumnSQLForPair(sourceType string, targetType string, targetQueryTable string, sourceCol connection.ColumnDefinition, lengthTarget ...*characterLengthTarget) (string, []string, error) {
 	source := normalizeMigrationDBType(sourceType)
 	target := normalizeMigrationDBType(targetType)
 	// 原生路径直接用源方言类型；其余组合先把列归一为 MySQL 中间表示，并把
@@ -63,14 +63,15 @@ func buildAddColumnSQLForPair(sourceType string, targetType string, targetQueryT
 	// postgres->kingbase 会把归一后的 tinyint(1) 直接用于 PG 类 DDL。
 	// 归一与目标映射产生的告警必须回传：类型降级、精度假设、自增语义丢弃
 	// 都是调用方要展示的取舍，静默发生会让补列结果无从排查。
+	originalCol := sourceCol
 	var warnings []string
 	if !hasNativeAddColumnPath(source, target) && supportsAutoAddColumnsForPair(sourceType, targetType) {
 		sourceCol, warnings = buildCrossDialectIntermediateColumn(source, targetType, sourceCol)
 		source = "mysql"
 	}
 	// 目标按字节计字符列长度（openGauss 系）时放宽 varchar/char，与建表路径保持一致。
-	byteLengthWidener := newByteLengthWidener(sourceType, targetType)
-	sourceCol = byteLengthWidener.Adapt(sourceCol)
+	byteLengthWidener := newByteLengthWidener(sourceType, targetType, lengthTarget...)
+	sourceCol = byteLengthWidener.AdaptSource(originalCol, sourceCol)
 	warnings = append(warnings, byteLengthWidener.Warnings()...)
 	// 所有目标分支的 ADD COLUMN 都不携带自增子句（要么各方言语法不允许，
 	// 要么需要键约束前置），自增语义统一在此丢弃并告警，避免逐分支判定遗漏。

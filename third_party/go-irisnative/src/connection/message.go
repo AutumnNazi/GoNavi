@@ -1,6 +1,7 @@
 package connection
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -8,6 +9,9 @@ import (
 
 	"github.com/caretdev/go-irisnative/src/list"
 )
+
+// errIncompleteMessage marks a response whose frame boundary was lost.
+var errIncompleteMessage = errors.New("incomplete response frame")
 
 type Message struct {
 	header MessageHeader
@@ -29,38 +33,26 @@ func NewMessage(messageType MessageType) Message {
 // 表现为上层「转圈」（GoNavi issue #1430/#1427）。
 // 保留它给握手等必须阻塞的场景；查询路径请改用 ReadMessageWithTimeout。
 func ReadMessage(conn *net.TCPConn) (msg Message, err error) {
-	buffer := make([]byte, 14)
-
-	_, err = conn.Read(buffer)
-	if err != nil {
-		return
-	}
-
+	// TCP preserves bytes, not frame boundaries. A short header read must not
+	// turn the remaining header bytes into payload (or the next response).
 	var header [14]byte
-	copy(header[:], buffer[:14])
-	var msgHeader = MessageHeader{header}
-
-	length := msgHeader.GetLength()
-	data := make([]byte, length)
-	var offset int = 0
-	var size int
-	for {
-		size, err = conn.Read(data[offset:])
-		if err != nil {
-			if err != io.EOF {
-				return
-			}
-			break
+	n, err := io.ReadFull(conn, header[:])
+	if err != nil {
+		if n > 0 {
+			// A partial frame cannot be retried or interpreted as an empty result.
+			// Close it so late bytes cannot become the next query's header.
+			_ = conn.Close()
+			return Message{}, fmt.Errorf("%w: read header: %w", errIncompleteMessage, err)
 		}
-		offset += size
-		if offset >= int(length) {
-			break
-		}
+		return Message{}, err
 	}
-
-	msg = Message{msgHeader, data, 0}
-
-	return
+	msgHeader := MessageHeader{header}
+	data := make([]byte, msgHeader.GetLength())
+	if _, err = io.ReadFull(conn, data); err != nil {
+		_ = conn.Close()
+		return Message{}, fmt.Errorf("%w: read payload: %w", errIncompleteMessage, err)
+	}
+	return Message{msgHeader, data, 0}, nil
 }
 
 // ReadMessageWithTimeout 在每次 Read 之前设置 ReadDeadline，

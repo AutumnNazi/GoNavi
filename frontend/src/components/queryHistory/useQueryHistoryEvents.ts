@@ -130,7 +130,8 @@ export function useQueryHistoryEvents(tab: TabData, backend: SQLAuditBackend): Q
   const reload = useCallback(() => setReloadKey((current) => current + 1), []);
 
   const hasActiveFilters = Boolean(
-    filter.search
+    filter.includeMcp
+    || filter.search
     || filter.connectionId
     || filter.database
     || filter.status

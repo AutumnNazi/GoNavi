@@ -33,6 +33,7 @@ export interface DataGridProps {
     editLocator?: EditRowLocator;
     readOnly?: boolean;
     showRowNumberColumn?: boolean;
+    onCancelReload?: () => void;
     onReload?: () => void | Promise<void>;
     onSort?: (field: string, order: string) => void | boolean;
     onPageChange?: (page: number, size: number) => void;

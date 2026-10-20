@@ -56,6 +56,7 @@ vi.mock('@ant-design/icons', () => ({
   PlayCircleOutlined: () => React.createElement('mock-icon', { name: 'play-circle' }),
   RedoOutlined: () => React.createElement('mock-icon', { name: 'redo' }),
   ReloadOutlined: () => React.createElement('mock-icon', { name: 'reload' }),
+  RollbackOutlined: () => React.createElement('mock-icon', { name: 'rollback' }),
   StopOutlined: () => React.createElement('mock-icon', { name: 'stop' }),
 }));
 

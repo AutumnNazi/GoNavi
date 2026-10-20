@@ -133,7 +133,6 @@ export const DataSyncTaskList: React.FC<{
 
 const FALLBACK_KIND_CHOICES: readonly DataSyncTaskKindChoice[] = [
   { kind: 'backup' },
-  { kind: 'migration' },
   { kind: 'reconcile' },
   { kind: 'querySink' },
   { kind: 'compare' },

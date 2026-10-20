@@ -8,7 +8,11 @@
 // 一致，确保「按语句分组」与「参数扫描」对同一份 SQL 得到互相吻合的边界。
 package sqlparam
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+	"unicode/utf8"
+)
 
 // ScanOptions 控制方言相关的词法规则，字段语义与 sql_split.go 的方言判定对齐。
 type ScanOptions struct {
@@ -26,6 +30,14 @@ type ScanOptions struct {
 	EscapedBracketIdentifiers bool
 	// DollarQuotes 表示支持 $$...$$ 与 $tag$...$tag$ 块（PostgreSQL 系）。
 	DollarQuotes bool
+	// QuotedPlaceholders 为 true 时，引号里的 {name}、'{name} 后缀'、'${name}'
+	// 是绑定参数。为 false 时这些文本保持字面量，只认引号外的 :name 和 ${name}。
+	QuotedPlaceholders bool
+	// OracleAlternativeQuotes 表示 q'...' / Q'...' / nq'...' 是 Oracle 替代
+	// 引号：首个字符是定界符（括号对取匹配闭括号），到「定界符 + '」结束，
+	// 内容整体是字面量。Oracle 家族启用，避免 q'{abc}' 的内容被误认成
+	// 引号参数、以及 q'[it's]' 里的撇号吞掉后续真实参数。
+	OracleAlternativeQuotes bool
 }
 
 // OptionsForDBType 按数据源类型返回与语句拆分器一致的词法选项。
@@ -36,10 +48,17 @@ func OptionsForDBType(dbType string) ScanOptions {
 	// BackslashEscapes 仅 MySQL 系启用（issue #1326 用户反馈）：Oracle/达梦等
 	// 方言里 `'\'` 是内容为反斜杠的完整字符串，若按转义处理会让扫描器认为
 	// 字符串未闭合，后续所有 ${param} 全部丢失。
-	opts := ScanOptions{BackslashEscapes: normalized == "mysql" ||
-		normalized == "mariadb" || normalized == "oceanbase" ||
-		normalized == "diros" || normalized == "starrocks" ||
-		normalized == "goldendb" || normalized == "sphinx" || normalized == "tidb"}
+	opts := ScanOptions{
+		BackslashEscapes: normalized == "mysql" ||
+			normalized == "mariadb" || normalized == "oceanbase" ||
+			normalized == "diros" || normalized == "starrocks" ||
+			normalized == "goldendb" || normalized == "sphinx" || normalized == "tidb",
+		// 历史默认开启。查询编辑器按用户开关关掉后，'{code1}-{code2}' 按原文执行。
+		QuotedPlaceholders: true,
+		// Oracle 家族（oracle / dameng，yashandb、OceanBase Oracle 协议等在
+		// app 层已归一为 oracle）支持 q'...' 替代引号。
+		OracleAlternativeQuotes: IsOracleFamilyDBType(normalized),
+	}
 	if normalized == "" {
 		opts.HashComments = true
 		opts.DollarQuotes = true
@@ -77,19 +96,50 @@ func normalizeDBType(dbType string) string {
 		return "kingbase"
 	case "greatdb", "gdb":
 		return "goldendb"
+	case "dm", "dm8":
+		// 达梦别名归一，与 internal/db/driver_support.go 的口径一致。
+		return "dameng"
 	default:
 		return normalized
+	}
+}
+
+// IsOracleFamilyDBType 报告 dbType 是否为 Oracle 兼容方言（替代引号、
+// :NEW/:OLD 伪记录等词法共享）。dameng 是达梦的归一名；yashandb、
+// OceanBase Oracle 协议在 app 层 resolveDDLDBType 已归一为 oracle。
+// 前端 isOracleLikeDialect 的 oracle 家族口径与这里保持一致。
+func IsOracleFamilyDBType(dbType string) bool {
+	switch normalizeDBType(dbType) {
+	case "oracle", "dameng", "dm":
+		return true
+	default:
+		return false
 	}
 }
 
 // Span 描述一个命名参数在原文中的字节跨度（含起始冒号，不含结束）。
 // Template 非空时表示引号包裹的字符串模板参数：'前缀{name}后缀' 整体
 // 是一个参数跨度，Template 保存字符串字面量原文（含 {name} 占位）。
+// templateNames 保存该模板里的全部参数名；Name 仍是其中第一个，按出现
+// 位置遍历时用来标识这段跨度。名单与缺值检查必须走 parameterNames。
 type Span struct {
-	Name     string
-	Start    int
-	End      int
-	Template string
+	Name          string
+	Start         int
+	End           int
+	Template      string
+	templateNames []string
+}
+
+// parameterNames 返回这段跨度贡献的参数名。普通 :name、${name}、'{name}'
+// 只有 Name。同一字面量里的多个 {name} 不会生成跨度。
+func (s Span) parameterNames() []string {
+	if len(s.templateNames) > 0 {
+		return s.templateNames
+	}
+	if s.Name == "" {
+		return nil
+	}
+	return []string{s.Name}
 }
 
 // Scan 返回 sql 中所有命名参数 :name 的出现位置，按出现顺序排列，不去重。
@@ -99,6 +149,7 @@ func Scan(sql string, opts ScanOptions) []Span {
 	singleStart := -1
 	inLineComment, inBlockComment, escaped := false, false, false
 	dollarTag := ""
+	var altQuoteFailFrom map[rune]int
 
 	for i := 0; i < len(sql); i++ {
 		ch := sql[i]
@@ -146,17 +197,45 @@ func Scan(sql string, opts ScanOptions) []Span {
 			continue
 		}
 
+		// Oracle 替代引号 q'X...X'：内容整体是字面量，不参与引号参数识别。
+		// 找不到合法闭合时回退为普通引号处理，避免吞掉后续真实参数。
+		// altQuoteFailFrom 按 opener 定界符记录「该定界符在此位置起找不到
+		// 闭合」的最早位置：同一定界符的后续 q-quote 搜索范围是失败扫描
+		// 范围的子集，必然同样失败，直接跳过探测，保证大量未闭合 q' 的
+		// 最坏情况仍是线性。前缀不匹配（普通文本里的 n/q 字母）、标识符
+		// 守卫失败、定界符非法都与具体位置相关，不代表同定界符的后续
+		// q-quote 会失败，不得记入水位线。
+		if opts.OracleAlternativeQuotes && !inSingle && !inDouble && !inBacktick &&
+			(ch == 'q' || ch == 'Q' || ch == 'n' || ch == 'N') {
+			opener, openerIndex, ok := oracleAlternativeQuoteOpener(sql, i)
+			if ok {
+				// 同定界符此前已确认从更晚位置起找不到闭合：本次搜索范围是
+				// 失败扫描范围的子集，必然同样失败，跳过探测并回退普通引号。
+				// openerIndex 更早时搜索范围覆盖了失败范围之外的前段，仍需探测。
+				failFrom, failed := altQuoteFailFrom[opener]
+				if !failed || openerIndex < failFrom {
+					if end, ok := oracleAlternativeQuoteEnd(sql, i, opener, openerIndex); ok {
+						i = end - 1
+						continue
+					}
+					if altQuoteFailFrom == nil {
+						altQuoteFailFrom = make(map[rune]int)
+					}
+					altQuoteFailFrom[opener] = openerIndex
+				}
+			}
+		}
+
 		if !inDouble && !inBacktick && ch == '\'' {
 			if inSingle && next == '\'' {
 				i++
 				continue
 			}
-			if inSingle {
-				// 引号包裹参数两种形态：
-				// 1. 整个字符串恰为一个 {标识符} → 纯参数（连同引号替换为占位符）
-				// 2. 内容含 {标识符} 且混有其他文本 → 字符串模板（Template 保存
-				//    原文，渲染时把 {name} 替换为参数值字符串形式后整体绑定）
-				// 名字均为标识符规则，排除 '{"a":1}' 之类 JSON 数据字面量误伤。
+			if inSingle && opts.QuotedPlaceholders {
+				// 开关打开时才认引号里的占位符：
+				// 1. 整个字符串恰为一个 {标识符} → 纯参数
+				// 2. 含一个或多个 {标识符} → 字符串模板，每个名字都要登记
+				// 开关关闭时整段保持字面量。名字用标识符规则，排除 JSON。
 				content := sql[singleStart+1 : i]
 				if len(content) > 1 && content[0] == '{' && content[len(content)-1] == '}' {
 					if name := content[1 : len(content)-1]; isQuotedParamName(name) {
@@ -166,9 +245,15 @@ func Scan(sql string, opts ScanOptions) []Span {
 					}
 				}
 				if names := extractTemplateNames(content); len(names) > 0 {
-					spans = append(spans, Span{Name: names[0], Start: singleStart, End: i + 1, Template: content})
+					spans = append(spans, Span{
+						Name:          names[0],
+						Start:         singleStart,
+						End:           i + 1,
+						Template:      content,
+						templateNames: names,
+					})
 				}
-			} else {
+			} else if !inSingle {
 				singleStart = i
 			}
 			inSingle = !inSingle
@@ -249,11 +334,13 @@ func Names(sql string, opts ScanOptions) []string {
 	seen := make(map[string]struct{})
 	var names []string
 	for _, span := range Scan(sql, opts) {
-		if _, ok := seen[span.Name]; ok {
-			continue
+		for _, name := range span.parameterNames() {
+			if _, ok := seen[name]; ok {
+				continue
+			}
+			seen[name] = struct{}{}
+			names = append(names, name)
 		}
-		seen[span.Name] = struct{}{}
-		names = append(names, span.Name)
 	}
 	return names
 }
@@ -291,6 +378,77 @@ func parseDollarTagAt(text string, start int) string {
 		}
 	}
 	return ""
+}
+
+// oracleAlternativeQuoteOpener 判定 text[start:] 是否以 Oracle 替代引号的
+// 合法开头起跑（q'X、Q'X、nq'X、NQ'X，X 非空白且非引号），是则返回 opener
+// 定界符与其字节下标。前一个字符是标识符成分（如 abcq'、中q'）时不认，
+// 按 rune 解码判定，与 result_masking.go 的 isSQLIdentifierRune 一致。
+// 只做 O(1) 校验，不扫描内容；调用方据此决定是否探测闭合与记失败水位。
+func oracleAlternativeQuoteOpener(text string, start int) (rune, int, bool) {
+	prefixLen := 0
+	switch {
+	case start+1 < len(text) && (text[start] == 'q' || text[start] == 'Q') && text[start+1] == '\'':
+		prefixLen = 1
+	case start+2 < len(text) && (text[start] == 'n' || text[start] == 'N') &&
+		(text[start+1] == 'q' || text[start+1] == 'Q') && text[start+2] == '\'':
+		prefixLen = 2
+	default:
+		return 0, 0, false
+	}
+	if start > 0 && isSQLIdentifierRuneAt(text, start-1) {
+		return 0, 0, false
+	}
+	openerIndex := start + prefixLen + 1
+	opener, openerSize := utf8.DecodeRuneInString(text[openerIndex:])
+	if opener == utf8.RuneError && openerSize == 0 {
+		return 0, 0, false
+	}
+	switch opener {
+	case '\'', ' ', '\t', '\r', '\n':
+		return 0, 0, false
+	}
+	return opener, openerIndex, true
+}
+
+// oracleAlternativeQuoteEnd 从 oracleAlternativeQuoteOpener 已确认的 opener
+// 处扫描闭合序列「定界符 + '」，括号类定界符取匹配闭括号，返回闭合引号
+// 之后的下标；找不到闭合返回 false，由调用方回退为普通引号词法。
+// 语义对齐 internal/mcpserver/result_masking.go 的 sqlOracleAlternativeQuoteEnd。
+func oracleAlternativeQuoteEnd(text string, start int, opener rune, openerIndex int) (int, bool) {
+	_, openerSize := utf8.DecodeRuneInString(text[openerIndex:])
+	closer := opener
+	switch opener {
+	case '[':
+		closer = ']'
+	case '{':
+		closer = '}'
+	case '(':
+		closer = ')'
+	case '<':
+		closer = '>'
+	}
+	for index := openerIndex + openerSize; index < len(text); {
+		candidate, size := utf8.DecodeRuneInString(text[index:])
+		if candidate == closer && index+size < len(text) && text[index+size] == '\'' {
+			return index + size + 1, true
+		}
+		index += size
+	}
+	return start, false
+}
+
+// isSQLIdentifierRuneAt 判定 text 中 index 处开始的字符是否为标识符成分
+// （字母/数字/下划线/$/#/@，rune 级），与 result_masking.go 的
+// isSQLIdentifierRune 语义一致：多字节字母（如中文）也计为标识符成分。
+// index 可能落在多字节字符中间（start-1 是字节下标），先向前找 rune 起点。
+func isSQLIdentifierRuneAt(text string, index int) bool {
+	for index > 0 && !utf8.RuneStart(text[index]) {
+		index--
+	}
+	r, _ := utf8.DecodeRuneInString(text[index:])
+	return r == '_' || r == '$' || r == '#' || r == '@' ||
+		unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
 // isQuotedParamName 校验引号包裹参数的名字：标识符规则（字母/下划线开头，

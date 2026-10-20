@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -58,10 +59,16 @@ func resolveRequestedExportColumns(columns []string, requested []string) ([]stri
 }
 
 func newExportFileWriter(f io.Writer, options ExportFileOptions) (exportFileWriter, error) {
+	return newExportFileWriterWithContext(context.Background(), f, options)
+}
+
+func newExportFileWriterWithContext(ctx context.Context, f io.Writer, options ExportFileOptions) (exportFileWriter, error) {
 	options = normalizeExportFileOptions("", options)
 	switch options.Format {
 	case "csv":
-		return newCSVExportFileWriter(f, options.ColumnComments)
+		return newCSVExportFileWriter(f, options.ColumnComments, options.CSVEncoding)
+	case "parquet":
+		return newParquetExportFileWriter(ctx, f), nil
 	case "json":
 		return newJSONExportFileWriter(f)
 	case "md":
@@ -152,7 +159,7 @@ func exportQueryResultToFileWithContext(ctx context.Context, f io.Writer, dbInst
 	if err := validateExportColumnsSelection(options); err != nil {
 		return 0, nil, err
 	}
-	writer, err := newExportFileWriter(f, options)
+	writer, err := newExportFileWriterWithContext(ctx, f, options)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -174,13 +181,18 @@ func exportQueryResultToFileWithContext(ctx context.Context, f io.Writer, dbInst
 	if reporter != nil && streamErr == nil {
 		reporter.Finalizing(consumer.rowCount)
 	}
-	closeErr := writer.Close()
+	var closeErr error
+	if streamErr != nil {
+		closeErr = abortExportFileWriter(writer)
+	} else {
+		closeErr = writer.Close()
+	}
 	exportedColumns := consumer.columns
 	if projection != nil {
 		exportedColumns = projection.columns
 	}
 	if streamErr != nil {
-		return consumer.rowCount, exportedColumns, streamErr
+		return consumer.rowCount, exportedColumns, errors.Join(streamErr, closeErr)
 	}
 	if closeErr != nil {
 		return consumer.rowCount, exportedColumns, closeErr
@@ -241,25 +253,22 @@ func writeRowsToFileWithReporter(exportCtx context.Context, f io.Writer, data []
 	if err != nil {
 		return 0, err
 	}
-	writer, err := newExportFileWriter(f, options)
+	writer, err := newExportFileWriterWithContext(exportCtx, f, options)
 	if err != nil {
 		return 0, err
 	}
 	if err := writer.SetColumns(columns); err != nil {
-		_ = writer.Close()
-		return 0, err
+		return 0, errors.Join(err, abortExportFileWriter(writer))
 	}
 	if reporter != nil {
 		reporter.ForceRunning(0, reporter.text("data_export.progress.stage.writing_file", nil))
 	}
 	for index, row := range data {
 		if err := exportCtx.Err(); err != nil {
-			_ = writer.Close()
-			return int64(index), err
+			return int64(index), errors.Join(err, abortExportFileWriter(writer))
 		}
 		if err := writer.ConsumeRow(row); err != nil {
-			_ = writer.Close()
-			return int64(index), err
+			return int64(index), errors.Join(err, abortExportFileWriter(writer))
 		}
 		if reporter != nil {
 			reporter.Rows(int64(index+1), reporter.text("data_export.progress.stage.writing_file", nil))

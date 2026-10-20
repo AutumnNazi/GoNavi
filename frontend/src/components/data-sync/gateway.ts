@@ -98,6 +98,7 @@ export interface DataSyncWorkbenchGateway {
   resumeRun(runId: string): Promise<DataSyncRunRecord>;
   retryRun(runId: string): Promise<DataSyncRunRecord>;
   deleteRun(runId: string): Promise<void>;
+  rollbackRun(runId: string): Promise<void>;
   clearTerminalRuns(): Promise<number>;
   discardErrorRow(errorRowId: string): Promise<void>;
   retryErrorRow(errorRowId: string): Promise<DataSyncErrorRow>;
@@ -519,6 +520,14 @@ export const createStaticDataSyncWorkbenchGateway = (
       runs.splice(index, 1);
       delete runEvents[runId];
       delete errors[runId];
+    },
+    async rollbackRun(runId) {
+      const run = runs.find((item) => item.id === runId);
+      if (!run) throw new Error('data sync run not found');
+      if (!isTerminalRun(run.status) || !run.rollbackReady) {
+        throw new Error('data sync run cannot be rolled back');
+      }
+      run.rollbackReady = false;
     },
     async clearTerminalRuns() {
       let deleted = 0;

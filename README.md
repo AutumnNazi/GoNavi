@@ -236,6 +236,8 @@ Special thanks to **[APISmart](https://www.apismart.ai/)** and **[HuaLongAI](htt
 </tr>
 </table>
 
+To connect a custom OpenAI-compatible model service, add a provider in GoNavi's AI settings with its documented base URL (for example, `https://api.example.com/v1`), API key, and an available model ID. Match the selected model and API format to the GoNavi feature you intend to use.
+
 ### 🧩 Stack
 
 `Go 1.24` · `Wails v2` · `React 18` · `TypeScript` · `Vite` · `Ant Design 5` · `Zustand` · `Monaco`

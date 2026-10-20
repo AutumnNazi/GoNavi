@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -18,6 +19,45 @@ import (
 var codebuddyLookPath = lookupLocalCLICommand
 var codebuddyCommandContext = exec.CommandContext
 var codebuddyCLIRequestTimeout = 90 * time.Second
+
+// codebuddyCLIStdinPromptThreshold 决定 prompt 走 argv 还是 stdin。
+// Windows 上 npm/pnpm 安装的 codebuddy.cmd 包装器会经 cmd.exe 转发参数，
+// 单条命令行上限约 8191 字符，超长会被以「命令行太长」拒绝（issue #1469）。
+// 超过阈值时 argv 只保留 -p 开关，prompt 改写入 stdin：CodeBuddy CLI 的
+// -p 模式本身不带 prompt 值，支持从 stdin 读取输入（官方 CLI 文档的
+// cat file | codebuddy -p 管道示例）。阈值取 6000，为 cmd.exe 前缀、
+// 其余 flag 与参数转义留足余量。
+const codebuddyCLIStdinPromptThreshold = 6000
+
+// buildCodeBuddyCLIArgs 组装 CodeBuddy CLI 参数；streamOutput 为 true 时
+// 使用 stream-json 输出格式，否则使用单次 json 输出。
+func buildCodeBuddyCLIArgs(streamOutput bool, prompt string, model string, resumeSessionID string) []string {
+	args := []string{"-p"}
+	if len(prompt) < codebuddyCLIStdinPromptThreshold {
+		args = append(args, prompt)
+	}
+	if streamOutput {
+		args = append(args, "--output-format", "stream-json", "--verbose", "--include-partial-messages")
+	} else {
+		args = append(args, "--output-format", "json")
+	}
+	if strings.TrimSpace(model) != "" {
+		args = append(args, "--model", strings.TrimSpace(model))
+	}
+	if strings.TrimSpace(resumeSessionID) != "" {
+		args = append(args, "--resume", strings.TrimSpace(resumeSessionID))
+	}
+	return args
+}
+
+// codebuddyCLIStdinPrompt 在 prompt 超过 argv 阈值时返回 stdin 内容，
+// 否则返回 nil：短 prompt 走 argv，且不继承父进程 stdin，避免 CLI 挂起等待输入。
+func codebuddyCLIStdinPrompt(prompt string) io.Reader {
+	if len(prompt) < codebuddyCLIStdinPromptThreshold {
+		return nil
+	}
+	return strings.NewReader(prompt)
+}
 
 // CodeBuddyCLIProvider 通过 CodeBuddy CLI 发送聊天请求。
 type CodeBuddyCLIProvider struct {
@@ -68,24 +108,22 @@ func (p *CodeBuddyCLIProvider) ChatWithState(ctx context.Context, state json.Raw
 		return nil, nil, err
 	}
 	prompt := buildPrompt(req.Messages)
-	args := []string{"-p", prompt, "--output-format", "json"}
-	if strings.TrimSpace(p.config.Model) != "" {
-		args = append(args, "--model", strings.TrimSpace(p.config.Model))
-	}
-	if strings.TrimSpace(sessionState.SessionID) != "" {
-		args = append(args, "--resume", strings.TrimSpace(sessionState.SessionID))
-	}
+	args := buildCodeBuddyCLIArgs(false, prompt, p.config.Model, sessionState.SessionID)
+	stdinPrompt := codebuddyCLIStdinPrompt(prompt)
 
 	cmd := newLocalCLICommand(codebuddyCommandContext, ctx, commandName, args...)
 	if err := p.setEnv(cmd); err != nil {
 		return nil, nil, err
+	}
+	if stdinPrompt != nil {
+		cmd.Stdin = stdinPrompt
 	}
 
 	requestLog := logAIUpstreamRequestStart(
 		p.Name(),
 		"CLI",
 		codebuddyCLIEndpointForLog(p.config),
-		buildCodeBuddyCLIRequestLogBody("json", commandName, args, prompt, p.config, req),
+		buildCodeBuddyCLIRequestLogBody("json", commandName, args, prompt, p.config, req, stdinPrompt != nil),
 	)
 	var requestErr error
 	defer func() {
@@ -167,13 +205,7 @@ func (p *CodeBuddyCLIProvider) chatStreamWithSession(ctx context.Context, resume
 	}
 
 	prompt := buildPrompt(req.Messages)
-	args := []string{"-p", prompt, "--output-format", "stream-json", "--verbose", "--include-partial-messages"}
-	if strings.TrimSpace(p.config.Model) != "" {
-		args = append(args, "--model", strings.TrimSpace(p.config.Model))
-	}
-	if strings.TrimSpace(resumeSessionID) != "" {
-		args = append(args, "--resume", strings.TrimSpace(resumeSessionID))
-	}
+	args := buildCodeBuddyCLIArgs(true, prompt, p.config.Model, resumeSessionID)
 
 	cmd := newLocalCLICommand(codebuddyCommandContext, ctx, commandName, args...)
 	if err := p.setEnv(cmd); err != nil {
@@ -184,14 +216,14 @@ func (p *CodeBuddyCLIProvider) chatStreamWithSession(ctx context.Context, resume
 		p.Name(),
 		"CLI",
 		codebuddyCLIEndpointForLog(p.config),
-		buildCodeBuddyCLIRequestLogBody("stream-json", commandName, args, prompt, p.config, req),
+		buildCodeBuddyCLIRequestLogBody("stream-json", commandName, args, prompt, p.config, req, len(prompt) >= codebuddyCLIStdinPromptThreshold),
 	)
 	var requestErr error
 	defer func() {
 		logAIUpstreamRequestFinish(requestLog, 0, requestErr)
 	}()
 
-	cmd.Stdin = nil
+	cmd.Stdin = codebuddyCLIStdinPrompt(prompt)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -359,11 +391,22 @@ func codebuddyCLIEndpointForLog(config ai.ProviderConfig) string {
 	return "codebuddy://cli"
 }
 
-func buildCodeBuddyCLIRequestLogBody(outputFormat string, commandName string, args []string, prompt string, config ai.ProviderConfig, req ai.ChatRequest) map[string]any {
+func buildCodeBuddyCLIRequestLogBody(outputFormat string, commandName string, args []string, prompt string, config ai.ProviderConfig, req ai.ChatRequest, promptViaStdin bool) map[string]any {
+	// stdin 模式下 -p 后面紧跟 --output-format，claudeCLIArgsForLog 的
+	// 「-p 下一参数即 prompt」假设会误伤后续 flag，此时按原样记录 args。
+	loggedArgs := claudeCLIArgsForLog(args)
+	if promptViaStdin {
+		loggedArgs = append([]string(nil), args...)
+	}
+	promptVia := "argv"
+	if promptViaStdin {
+		promptVia = "stdin"
+	}
 	return map[string]any{
 		"command":       commandName,
-		"args":          claudeCLIArgsForLog(args),
+		"args":          loggedArgs,
 		"prompt":        prompt,
+		"prompt_via":    promptVia,
 		"output_format": outputFormat,
 		"model":         strings.TrimSpace(config.Model),
 		"base_url":      codebuddyCLIEndpointForLog(config),

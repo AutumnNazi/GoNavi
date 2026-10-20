@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 )
 
@@ -386,7 +385,7 @@ func (s *sqlStreamSplitter) Feed(chunk []byte) []string {
 					s.skipCaseEnd = true
 				}
 				s.closedPLSQL = false
-			} else if token == "end" && s.plsqlDepth > 0 && !isPLSQLControlEnd(text, tokenEnd) {
+			} else if token == "end" && s.plsqlDepth > 0 && !isPLSQLControlEnd(text, tokenEnd, s.dbType) {
 				s.plsqlDepth--
 				if s.declareSkips > s.plsqlDepth {
 					s.declareSkips = s.plsqlDepth
@@ -605,7 +604,7 @@ func isSQLStreamMySQLClientDialect(dbType string) bool {
 }
 
 func (s *sqlStreamSplitter) canConsumeClientDirective() bool {
-	return sqlStreamCurrentLineWhitespaceOnly(&s.cur) && !hasExecutableSQLStatementContent(s.dbType, s.cur.String())
+	return sqlCurrentLineWhitespaceOnly(&s.cur) && !hasExecutableSQLStatementContent(s.dbType, s.cur.String())
 }
 
 func scanSQLStreamDelimiterDirective(text string, start int, eof bool) (delimiter string, lineEnd int, matched bool, incomplete bool) {
@@ -649,60 +648,11 @@ func scanSQLStreamDelimiterDirective(text string, start int, eof bool) (delimite
 }
 
 func scanSQLStreamGoDirective(text string, start int, eof bool) (repeat int, lineEnd int, matched bool, incomplete bool) {
-	const keyword = "go"
-	if start < 0 || start >= len(text) {
-		return 0, start, false, false
-	}
-	remaining := text[start:]
-	prefixLength := len(remaining)
-	if prefixLength > len(keyword) {
-		prefixLength = len(keyword)
-	}
-	if !strings.EqualFold(remaining[:prefixLength], keyword[:prefixLength]) {
-		return 0, start, false, false
-	}
-	if len(remaining) < len(keyword) {
-		return 0, start, false, !eof
-	}
-	if len(remaining) > len(keyword) && !isSQLHorizontalWhitespace(remaining[len(keyword)]) && remaining[len(keyword)] != '\n' {
-		return 0, start, false, false
-	}
-
-	newline := strings.IndexByte(remaining, '\n')
-	if newline < 0 && !eof {
-		return 0, start, false, true
-	}
-	line := remaining
-	lineEnd = len(text)
-	if newline >= 0 {
-		line = remaining[:newline]
-		lineEnd = start + newline + 1
-	}
-	remainder := strings.TrimSpace(line[len(keyword):])
-	if comment := strings.Index(remainder, "--"); comment >= 0 {
-		remainder = strings.TrimSpace(remainder[:comment])
-	}
-	if remainder == "" {
-		return 1, lineEnd, true, false
-	}
-	parsed, err := strconv.Atoi(remainder)
-	if err != nil || parsed <= 0 {
-		return 0, start, false, false
-	}
-	return parsed, lineEnd, true, false
+	return scanSQLServerGoDirective(text, start, eof)
 }
 
 func sqlStreamCurrentLineWhitespaceOnly(builder interface{ String() string }) bool {
-	text := builder.String()
-	for i := len(text) - 1; i >= 0; i-- {
-		if text[i] == '\n' {
-			return true
-		}
-		if !isSQLHorizontalWhitespace(text[i]) {
-			return false
-		}
-	}
-	return true
+	return sqlCurrentLineWhitespaceOnly(builder)
 }
 
 func isIncompleteSQLDollarTag(s string) bool {
@@ -729,62 +679,6 @@ func isIncompleteSQLDollarTagAt(text string, start int) bool {
 		return false
 	}
 	return isIncompleteSQLDollarTag(text[start:])
-}
-
-func shouldDeferPLSQLKeywordInStream(text string, tokenStart int, tokenEnd int, token string) bool {
-	switch token {
-	case "begin", "declare", "end", "create", "or", "replace", "editionable", "noneditionable", "procedure", "function", "package", "body", "is", "as":
-	default:
-		return false
-	}
-	if tokenEnd >= len(text) {
-		return true
-	}
-	next := skipSQLTrivia(text, tokenEnd)
-	if next >= len(text) {
-		return true
-	}
-	if isSQLIdentifierStart(text[next]) {
-		nextEnd := next + 1
-		for nextEnd < len(text) && isSQLIdentifierPart(text[nextEnd]) {
-			nextEnd++
-		}
-		if nextEnd >= len(text) {
-			return true
-		}
-		if token == "begin" {
-			nextToken := strings.ToLower(text[next:nextEnd])
-			if nextToken == "not" || nextToken == "distributed" {
-				following := skipSQLTrivia(text, nextEnd)
-				if following >= len(text) {
-					return true
-				}
-				if isSQLIdentifierStart(text[following]) {
-					followingEnd := following + 1
-					for followingEnd < len(text) && isSQLIdentifierPart(text[followingEnd]) {
-						followingEnd++
-					}
-					return followingEnd >= len(text)
-				}
-			}
-		}
-	}
-	return false
-}
-
-func shouldDeferPLSQLKeywordPrefixInStream(text string, tokenStart int, tokenEnd int, token string) bool {
-	if tokenEnd < len(text) {
-		return false
-	}
-	for _, keyword := range []string{"begin", "declare", "end", "create", "or", "replace", "editionable", "noneditionable", "procedure", "function", "package", "body", "is", "as"} {
-		if strings.HasPrefix(keyword, token) && token != keyword {
-			if tokenStart > 0 && isSQLIdentifierPart(text[tokenStart-1]) {
-				return false
-			}
-			return true
-		}
-	}
-	return false
 }
 
 // streamSQLFile 从 reader 中流式读取 SQL 并逐条回调。

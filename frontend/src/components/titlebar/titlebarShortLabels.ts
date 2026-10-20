@@ -6,6 +6,8 @@ type Translate = (key: string) => string;
  */
 export const resolveTitlebarQuickActionShortLabel = (key: string, t: Translate): string | undefined => {
   switch (key) {
+    case 'connection-tools':
+      return t('app.titlebar.short_label.connection_tools');
     case 'data-workflow':
       return t('app.titlebar.short_label.data_workflow');
     case 'sql-tools':

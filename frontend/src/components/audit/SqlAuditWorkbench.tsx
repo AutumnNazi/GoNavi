@@ -58,6 +58,7 @@ import {
   type SQLAuditBackend,
 } from './sqlAuditRpc';
 import { useSQLAuditRestore } from './useSQLAuditRestore';
+import MCPAuditFilters from './MCPAuditFilters';
 import './SqlAuditWorkbench.css';
 
 const { Text, Title } = Typography;
@@ -176,6 +177,7 @@ export default function SqlAuditWorkbench({ tab, backend: backendOverride, isAct
     status: filter.status,
     transactionId: filter.transactionId,
     source: filter.source,
+    mcpRequestId: filter.mcpRequestId,
     fromTimestamp: filter.fromTimestamp,
     toTimestamp: filter.toTimestamp,
     page: filter.page,
@@ -190,6 +192,7 @@ export default function SqlAuditWorkbench({ tab, backend: backendOverride, isAct
     filter.page,
     filter.pageSize,
     filter.source,
+    filter.mcpRequestId,
     filter.status,
     filter.toTimestamp,
     filter.transactionId,
@@ -246,6 +249,7 @@ export default function SqlAuditWorkbench({ tab, backend: backendOverride, isAct
     || filter.eventType
     || filter.status
     || filter.transactionId
+    || filter.mcpRequestId
     || filter.source
     || filter.fromTimestamp
     || filter.toTimestamp,
@@ -568,6 +572,7 @@ export default function SqlAuditWorkbench({ tab, backend: backendOverride, isAct
       />
       <SqlAuditHealthAlert backend={backend} refreshKey={reloadKey} isActive={isActive} />
 
+      <MCPAuditFilters filter={filter} onChange={updateFilter} />
       <section className="gn-sql-audit-toolbar" aria-label={t('sql_audit.filter.aria_label')}>
         <Input
           value={filter.search}

@@ -1,0 +1,99 @@
+.gonavi-font-preview {
+  border: 1px solid var(--font-preview-border);
+  border-radius: 10px;
+  background: var(--font-preview-bg);
+  color: var(--font-preview-text);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.gonavi-font-specimen-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--font-preview-border);
+  background: var(--font-preview-subtle);
+  font-size: var(--gn-settings-font-secondary, 12px);
+  line-height: 1.5;
+}
+
+.gonavi-font-specimen-caption {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  color: var(--font-preview-muted);
+}
+
+.gonavi-font-specimen-family {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--font-preview-muted);
+}
+
+.gonavi-font-preview-sample {
+  font-size: var(--gn-settings-font-body, var(--gn-font-size, 14px));
+  line-height: 1.65;
+}
+
+.gonavi-font-specimen-ui {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+}
+
+.gonavi-font-specimen-copy { min-width: 0; overflow-wrap: anywhere; }
+.gonavi-font-specimen-title { font-size: 1.4em; font-weight: 600; line-height: 1.45; }
+.gonavi-font-specimen-description { margin-top: 5px; font-size: 0.93em; color: var(--font-preview-muted); }
+.gonavi-font-specimen-glyph { flex-shrink: 0; font-size: 3em; line-height: 1; color: var(--font-preview-accent); }
+
+.gonavi-font-specimen-sql {
+  padding: 13px 0;
+  overflow-x: auto;
+}
+
+.gonavi-font-specimen-line {
+  display: flex;
+  align-items: baseline;
+  min-width: max-content;
+  padding-right: 20px;
+}
+
+.gonavi-font-specimen-line-number {
+  flex: 0 0 42px;
+  box-sizing: border-box;
+  padding-right: 12px;
+  text-align: right;
+  font-size: 0.8em;
+  font-variant-numeric: tabular-nums;
+  color: var(--font-preview-muted);
+  user-select: none;
+}
+
+.gonavi-font-specimen-line code {
+  font-family: inherit;
+  font-size: inherit;
+  white-space: pre;
+}
+
+.gonavi-font-specimen-line .is-keyword { color: var(--font-preview-accent); }
+.gonavi-font-specimen-line .is-string { color: var(--font-preview-string); }
+
+.gonavi-font-specimen-footer {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding: 9px 20px;
+  border-top: 1px solid var(--font-preview-border);
+  line-height: 1.6;
+}
+
+.gonavi-font-specimen-footer-label { color: var(--font-preview-muted); font-size: 0.8em; }
+.gonavi-font-specimen-character-sample { font-size: 0.93em; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }

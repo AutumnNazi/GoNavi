@@ -72,10 +72,8 @@ func (s *SyncEngine) tryApplyDiffInPages(config SyncConfig, res *SyncResult, tab
 			Updates: filterPagedUpdatesByPKSelection(pkCol, page.Updates, opts.Update, opts.SelectedUpdatePKs),
 			Deletes: filterRowsByPKSelection(pkCol, page.Deletes, opts.Delete, opts.SelectedDeletePKs),
 		}
-		if len(targetColSet) > 0 {
-			changeSet.Inserts = filterInsertRows(changeSet.Inserts, targetColSet)
-			changeSet.Updates = filterUpdateRows(changeSet.Updates, targetColSet)
-		}
+		changeSet.Inserts = filterInsertRows(changeSet.Inserts, targetColSet)
+		changeSet.Updates = filterUpdateRows(changeSet.Updates, targetColSet)
 		if len(changeSet.Inserts) == 0 && len(changeSet.Updates) == 0 && len(changeSet.Deletes) == 0 {
 			return nil
 		}
@@ -324,7 +322,7 @@ func diffReadableColumns(sourceCols []connection.ColumnDefinition, allowedLower 
 			add(col)
 			continue
 		}
-		if len(allowedLower) > 0 {
+		if allowedLower != nil {
 			if _, ok := allowedLower[lower]; !ok {
 				continue
 			}
@@ -357,7 +355,7 @@ func diffLookupColumns(sourceReadCols, targetCols []connection.ColumnDefinition,
 		if _, ok := seen[lower]; ok {
 			continue
 		}
-		if !strings.EqualFold(name, pkCol) && len(allowedLower) > 0 {
+		if !strings.EqualFold(name, pkCol) && allowedLower != nil {
 			if _, ok := allowedLower[lower]; !ok {
 				continue
 			}

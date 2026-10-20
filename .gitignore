@@ -30,6 +30,8 @@ GoNavi-Wails.exe
 .claude/
 .gemini/
 .playwright-mcp/
+.playwright-cli/
+/output/playwright/
 .zcode/
 **/tmpclaude-*
 docs/superpowers/
@@ -40,6 +42,14 @@ docs
 !docs/
 docs/*
 !docs/download-cdn-operations.md
+!docs/background-gallery-operations.md
+!docs/font-gallery-operations.md
+!docs/superpowers/
+docs/superpowers/*
+!docs/superpowers/specs/
+docs/superpowers/specs/*
+!docs/superpowers/specs/2026-10-16-remote-background-gallery-design.md
+!docs/superpowers/specs/2026-10-16-remote-background-gallery-tasks.md
 !docs/blog/
 !docs/blog/**
 .tmp_superpowers_edit

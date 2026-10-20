@@ -176,7 +176,7 @@ func describeColumnStructure(col connection.ColumnDefinition) string {
 
 var (
 	columnTypeWhitespacePattern     = regexp.MustCompile(`\s*([(),])\s*`)
-	mysqlIntegerDisplayWidthPattern = regexp.MustCompile(`\b(tinyint|smallint|mediumint|int|integer|bigint)\s*\(\s*\d+\s*\)`)
+	mysqlIntegerDisplayWidthPattern = regexp.MustCompile(`\b(tinyint|smallint|mediumint|int|integer|bigint|year)\s*\(\s*\d+\s*\)`)
 	pgLikeNextvalPattern            = regexp.MustCompile(`(?i)^nextval\s*\(\s*'((?:[^']|'')+)'`)
 )
 
@@ -184,14 +184,17 @@ var (
 // before a same-engine schema comparison. MySQL 8 no longer reports integer
 // display widths that MySQL 5.7 returned, and drivers vary around spaces in
 // precision/scale clauses; neither changes the value domain.
+//
+// The display width must be stripped before the whitespace collapse: collapsing
+// first turns "int(11) unsigned" into "int(11)unsigned", so removing the width
+// then yields "intunsigned" while MySQL 8 reports "int unsigned".
 func normalizeComparableColumnType(dbType, raw string) string {
 	value := strings.ToLower(strings.TrimSpace(raw))
 	value = strings.Join(strings.Fields(value), " ")
-	value = columnTypeWhitespacePattern.ReplaceAllString(value, "$1")
 	if normalizeMigrationDBType(dbType) == "mysql" {
 		value = mysqlIntegerDisplayWidthPattern.ReplaceAllString(value, "$1")
 	}
-	return value
+	return columnTypeWhitespacePattern.ReplaceAllString(value, "$1")
 }
 
 // normalizeColumnNullable unifies the metadata spellings emitted by the

@@ -1,0 +1,50 @@
+GoNavi gallery — ZipZipPipe original JPEG provenance
+===================================================
+Author: ZipZipPipe (https://www.pixiv.net/users/18604994)
+Source album: https://www.pixiv.net/artworks/148186519
+License record: LicenseRef-ZipZipPipe-Attribution-NonCommercial
+Name: ZipZipPipe 署名－非商业使用 / Attribution–NonCommercial
+Full author quote: 作为保存用，方便所有人取用，需要标注作者，不可商用。
+Full author-statement record: LICENSE-ZIPZIPPIPE
+
+glm-maid-portrait
+  Author: ZipZipPipe
+  Album: https://www.pixiv.net/artworks/148186519
+  Album page: 7 (one-based); original index: p6 (zero-based)
+  Original URL: https://i.pximg.net/img-original/img/2026/08/09/01/18/27/148186519_p6.jpg
+  Original file: glm-maid-portrait.jpg
+  SHA-256: b15ddcb0cc9308087182da75e65e77b3ed14b8d20278b36f76e4712d2df965b8
+  Bytes: 1317520; raw dimensions: 1152 x 2048
+
+wenxin-wheelchair
+  Author: ZipZipPipe
+  Album: https://www.pixiv.net/artworks/148186519
+  Album page: 12 (one-based); original index: p11 (zero-based)
+  Original URL: https://i.pximg.net/img-original/img/2026/08/09/01/18/27/148186519_p11.jpg
+  Original file: wenxin-wheelchair.jpg
+  SHA-256: 637a8bdad07ed5a730a1bffa7d8863417ae6193c1774d2387e0a9328d77cdd6e
+  Bytes: 11254649; raw dimensions: 3072 x 5504
+
+minimax-maid
+  Author: ZipZipPipe
+  Album: https://www.pixiv.net/artworks/148186519
+  Album page: 16 (one-based); original index: p15 (zero-based)
+  Original URL: https://i.pximg.net/img-original/img/2026/08/09/01/18/27/148186519_p15.jpg
+  Original file: minimax-maid.jpg
+  SHA-256: 04febfc86453a5668d20cf2f2bc8ec5e80c5baeb4260df52f705a7926f9001a5
+  Bytes: 8499425; raw dimensions: 3072 x 5504
+
+Acquisition provenance is the externally retained originals-record.json.
+The original images are not stored in this repository. The source manifest
+pins these exact JPEG bytes; the GLM mirror WebP is not an approved substitute.
+JEV, Hunyuan, and GLM wallpaper are not approved by this manifest.
+
+GoNavi implementation boundaries, separate from the author's quoted terms:
+User-approved current non-commercial Bero hosting, app preview, download/cache,
+and proportional thumbnails only. Raw JPEG files are unchanged; thumbnails
+are proportionally downsized (no upscaling; at most 512 pixels per side with
+integer-pixel rounding) and losslessly WebP-encoded. No crop, redraw, or
+watermark removal. No endorsement is implied. No paid benefits, ads, or
+commercial promotion. No Creative Commons or ShareAlike license is assigned
+to these images; the separate DeepSeek-only CC sentence does not apply to
+this three-image grant. These boundaries do not add legal license conditions.

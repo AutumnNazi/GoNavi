@@ -78,10 +78,11 @@ describe('store appearance persistence', () => {
     expect(appearance.tabEnvironmentAccentThickness).toBe(2);
     expect(appearance.toolbarButtonColorOverrides).toEqual({});
     expect(appearance.sidebarSingleDatabaseExpansion).toBe(false);
+    expect(appearance.workbenchSidebarAutoCollapse).toBe(false);
     expect(appearance.sidebarHiddenObjectGroups).toEqual([]);
     expect(appearance.showDataTableVerticalBorders).toBe(false);
     expect(appearance.showDataTableRowNumber).toBe(true);
-    expect(appearance.dataTableDensity).toBe('comfortable');
+    expect(appearance.dataTableDensity).toBe('compact');
     expect(appearance.dataTableFontSize).toBeNull();
     expect(appearance.dataTableFontSizeFollowGlobal).toBe(true);
     expect(appearance.sqlEditorFontSize).toBeNull();
@@ -95,9 +96,9 @@ describe('store appearance persistence', () => {
     expect(appearance.customTableAliasPrefixEnabled).toBe(false);
     expect(appearance.customTableAliasPrefix).toBe('');
     expect(appearance.tabDisplay).toEqual({
-      layout: 'double',
-      primaryElements: ['object'],
-      secondaryElements: ['kind', 'connection', 'database'],
+      layout: 'single',
+      primaryElements: ['connection', 'kind', 'object'],
+      secondaryElements: [],
     });
   }, 30000);
 
@@ -157,12 +158,14 @@ describe('store appearance persistence', () => {
     }));
 
     const migrated = await importStore();
+    // 默认布局已翻转为单行：旧默认（单行 [connection,kind,object]）迁移后保持等值，
+    // 仅版本号升级；自定义 double 快照原样保留（不被默认迁移覆盖）。
     expect(migrated.useStore.getState().appearance.tabDisplay).toEqual({
-      layout: 'double',
-      primaryElements: ['object'],
-      secondaryElements: ['kind', 'connection', 'database'],
+      layout: 'single',
+      primaryElements: ['connection', 'kind', 'object'],
+      secondaryElements: [],
     });
-    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(21);
+    expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').version).toBe(22);
 
     storage.setItem('lite-db-storage', JSON.stringify({
       state: {
@@ -214,7 +217,7 @@ describe('store appearance persistence', () => {
     expect(appearance.sqlEditorFontSizeFollowGlobal).toBe(false);
 
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}');
-    expect(persisted.version).toBe(21);
+    expect(persisted.version).toBe(22);
     expect(persisted.state.appearance.sqlEditorFontSize).toBe(17);
     expect(persisted.state.appearance.sqlEditorFontSizeFollowGlobal).toBe(false);
   });
@@ -255,6 +258,30 @@ describe('store appearance persistence', () => {
     expect(appearance.v2SidebarRailScale).toBe(1.55);
     expect(appearance.tabEnvironmentAccentThickness).toBe(5);
     expect(appearance.sidebarSingleDatabaseExpansion).toBe(true);
+  });
+
+  it('persists the optional workbench sidebar behavior in both directions', async () => {
+    let store = (await importStore()).useStore;
+    expect(store.getState().appearance.workbenchSidebarAutoCollapse).toBe(false);
+    for (const enabled of [true, false]) {
+      store.getState().setAppearance({ workbenchSidebarAutoCollapse: enabled });
+      expect(JSON.parse(storage.getItem('lite-db-storage') || '{}').state.appearance.workbenchSidebarAutoCollapse).toBe(enabled);
+      vi.resetModules();
+      store = (await importStore()).useStore;
+      expect(store.getState().appearance.workbenchSidebarAutoCollapse).toBe(enabled);
+    }
+  });
+
+  it('persists custom favorite settings, their order and an intentionally empty selection', async () => {
+    let store = (await importStore()).useStore;
+    expect(store.getState().appearance.favoriteSettings).toContain('layout');
+    const target = 'entry:fonts-settings/fonts-settings/app.theme.font_family.ui_title';
+    for (const favoriteSettings of [[target, 'rows', 'density'], []]) {
+      store.getState().setAppearance({ favoriteSettings });
+      vi.resetModules();
+      store = (await importStore()).useStore;
+      expect(store.getState().appearance.favoriteSettings).toEqual(favoriteSettings);
+    }
   });
 
   it('sanitizes invalid tab environment accent thickness values', async () => {
@@ -718,31 +745,40 @@ describe('store appearance persistence', () => {
     expect(reloaded.useStore.getState().appearance.autoAddTableAlias).toBe(true);
   });
 
-  it('defaults new installs to the title bar and keeps upgraded users on the toolbar', async () => {
-    // 新用户：本地没有任何配置，使用标题栏 + 图标 + 精简名称。
+  it('defaults new installs to the title bar and falls back missing fields to the same default', async () => {
+    // 新用户：本地没有任何配置，使用标题栏 + 图标 + 精简名称（classic 默认）。
     const { useStore } = await importStore();
 
-    expect(useStore.getState().appearance.titlebarActionsPlacement).toBe('titlebar');
-    expect(useStore.getState().appearance.titlebarActionsDisplay).toBe('icon-text');
+    expect(useStore.getState().appearance.titlebarActionsPlacement).toBe('toolbar');
+    expect(useStore.getState().appearance.sidebarActionsPlacement).toBe('rail');
+    expect(useStore.getState().appearance.uiLayoutMode).toBe('classic');
 
     useStore.getState().setAppearance({ titlebarActionsPlacement: 'toolbar', titlebarActionsDisplay: 'icon' });
     const persisted = JSON.parse(storage.getItem('lite-db-storage') || '{}').state.appearance;
     expect(persisted.titlebarActionsPlacement).toBe('toolbar');
-    expect(persisted.titlebarActionsDisplay).toBe('icon');
 
     vi.resetModules();
-    let reloaded = await importStore();
+    const reloaded = await importStore();
     expect(reloaded.useStore.getState().appearance.titlebarActionsPlacement).toBe('toolbar');
     expect(reloaded.useStore.getState().appearance.titlebarActionsDisplay).toBe('icon');
 
-    // 老用户：已有配置但没有这些字段（或写入了未知值），保持升级前的工具条，切到标题栏时默认纯文字。
+    // 老用户：已有配置但没有这些字段（或写入了未知值），回退到与新用户一致的标题栏默认。
     for (const appearance of [{ titlebarActionsPlacement: 'menu', titlebarActionsDisplay: 'emoji' }, {}]) {
       storage.setItem('lite-db-storage', JSON.stringify({ state: { appearance }, version: 21 }));
       vi.resetModules();
-      reloaded = await importStore();
-      expect(reloaded.useStore.getState().appearance.titlebarActionsPlacement).toBe('toolbar');
-      expect(reloaded.useStore.getState().appearance.titlebarActionsDisplay).toBe('text');
+      const legacy = await importStore();
+      expect(legacy.useStore.getState().appearance.titlebarActionsPlacement).toBe('toolbar');
+      expect(legacy.useStore.getState().appearance.titlebarActionsDisplay).toBe('icon-text');
     }
+
+    // Navicat 布局开关：持久化并在重启后保持。
+    storage.setItem('lite-db-storage', JSON.stringify({
+      state: { appearance: { uiLayoutMode: 'navicat' } },
+      version: 22,
+    }));
+    vi.resetModules();
+    const navicat = await importStore();
+    expect(navicat.useStore.getState().appearance.uiLayoutMode).toBe('navicat');
   });
 
   it('keeps data grid and SQL editor typography slices when sanitizing appearance', async () => {
@@ -775,7 +811,7 @@ describe('store appearance persistence', () => {
       sqlEditorFontSize: 16,
       sqlEditorFontSizeFollowGlobal: false,
       titlebarActionsPlacement: 'toolbar',
-      titlebarActionsDisplay: 'text',
+      titlebarActionsDisplay: 'icon-text',
     });
   });
 

@@ -4,6 +4,10 @@ import { CloseOutlined } from '@ant-design/icons';
 import type { TabData } from '../../types';
 import { t } from '../../i18n';
 import type { TabDisplayModel, TabDisplayPart } from '../../utils/tabDisplay';
+import {
+  DEFAULT_TAB_CLOSE_BUTTON_POSITION,
+  type TabCloseButtonPosition,
+} from '../../utils/tabAppearance';
 import { renderV2ActionMenuPopup } from '../common/V2ActionMenuPopup';
 import { QueryEditorTabRunningIndicator } from '../queryEditor/QueryEditorTabRunningIndicator';
 import { TabHoverInfo } from './TabHoverInfo';
@@ -21,6 +25,7 @@ type SortableTabLabelProps = {
   environmentColor?: string;
   environmentLabel?: string;
   environmentType?: string;
+  closeButtonPosition?: TabCloseButtonPosition;
   onClose?: () => void;
 };
 
@@ -58,6 +63,7 @@ export const SortableTabLabel: React.FC<SortableTabLabelProps> = ({
   environmentColor,
   environmentLabel,
   environmentType,
+  closeButtonPosition = DEFAULT_TAB_CLOSE_BUTTON_POSITION,
   onClose,
 }) => {
   const [isHoverInfoOpen, setIsHoverInfoOpen] = useState(false);
@@ -93,15 +99,32 @@ export const SortableTabLabel: React.FC<SortableTabLabelProps> = ({
 
   const tabDisplayPartCount = displayModel.primaryParts.length + displayModel.secondaryParts.length;
   const showSecondaryLine = displayModel.layout === 'double' && Boolean(displayModel.secondaryText);
+  // 关闭按钮在左置设置下渲染为 label 的第一个子节点，右置（默认）保持现状的最后一位。
+  const closeButtonNode = onClose ? (
+    <button
+      type="button"
+      className="gn-v2-tab-close"
+      aria-label={t('tab_manager.close_aria', { title: displayTitle })}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onClose();
+      }}
+    >
+      <CloseOutlined />
+    </button>
+  ) : null;
   const labelNode = (
     <span
       className={`tab-dnd-label gn-v2-tab-label${showSecondaryLine ? ' gn-v2-tab-label-double' : ''}${tabDisplayPartCount >= 4 ? ' gn-v2-tab-label-rich' : ''}${environmentColor ? ' gn-tab-label-has-environment' : ''}`}
       data-connection-environment={environmentType}
+      data-tab-close-position={closeButtonPosition}
       onContextMenu={handleTabLabelContextMenu}
       onMouseDown={handleTabLabelMouseDown}
       onAuxClick={handleTabLabelAuxClick}
       title={undefined}
     >
+      {closeButtonPosition === 'left' ? closeButtonNode : null}
       {environmentColor ? (
         <span
           className="gn-tab-environment-accent"
@@ -129,20 +152,7 @@ export const SortableTabLabel: React.FC<SortableTabLabelProps> = ({
             </span>
           ) : null}
       </span>
-      {onClose ? (
-        <button
-          type="button"
-          className="gn-v2-tab-close"
-          aria-label={t('tab_manager.close_aria', { title: displayTitle })}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            onClose();
-          }}
-        >
-          <CloseOutlined />
-        </button>
-      ) : null}
+      {closeButtonPosition === 'right' ? closeButtonNode : null}
     </span>
   );
 

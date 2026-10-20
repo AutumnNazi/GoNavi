@@ -15,6 +15,7 @@ import {
 } from './aiObservability';
 import { formatTokenCount } from './aiObservabilityFormatting';
 import { useAIObservabilityRuns } from './useAIObservabilityRuns';
+import MCPAuditNotice from './MCPAuditNotice';
 import './AIObservability.css';
 
 interface AISettingsRequestEventsSectionProps {
@@ -194,6 +195,7 @@ const AISettingsRequestEventsSection: React.FC<AISettingsRequestEventsSectionPro
 
   return (
     <div className="gonavi-ai-observability gonavi-ai-observability-request-events" style={cssVariables}>
+      <MCPAuditNotice translate={copy} />
       <div className="gonavi-ai-observability-toolbar">
         <Select aria-label={copy('ai_settings.observability.filter.range')} value={range} options={(['today', '7d', '30d', 'all'] as AIObservabilityRange[]).map((value) => option(value, copy(`ai_settings.observability.range.${value}`)))} onChange={setRange} />
         <Select aria-label={copy('ai_settings.observability.filter.provider')} value={providerId || undefined} allowClear placeholder={copy('ai_settings.observability.filter.all_providers')} options={uniqueAIObservabilityValues(observability.records, 'providerId').map((value) => option(value, providerName.get(value) || value))} onChange={(value) => setProviderId(String(value || ''))} />

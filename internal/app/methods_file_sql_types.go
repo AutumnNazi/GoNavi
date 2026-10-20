@@ -26,8 +26,10 @@ type sqlFileExecutionOptions struct {
 	TransactionMode        sqlFileTransactionMode
 	StatementGuard         func(index int, stmt string) error
 	SkipStatement          func(index int, stmt string) bool
-	Text                   fileBackendTextFunc
-	OnProgress             func(sqlFileExecutionProgress)
+	// PinDatabase 非空时，把 SQL 文件里的 USE 改写到这个库。导入工作台指定的目标库优先于文件内的 USE。
+	PinDatabase string
+	Text        fileBackendTextFunc
+	OnProgress  func(sqlFileExecutionProgress)
 }
 
 type sqlFileTransactionMode string
@@ -43,6 +45,10 @@ type sqlFileExecutionPolicy struct {
 	StatementGuard     func(index int, stmt string) error
 	SkipStatement      func(index int, stmt string) bool
 	MySQLGTIDMode      mysqlGTIDImportMode
+	// PinDatabase 非空时，导入执行忽略 SQL 文件里的 USE，会话保持在这个库。
+	PinDatabase string
+	// SkipRollbackSnapshot 为真时，这次执行本身就是回滚，不能把当前库再拍成新的回滚点。
+	SkipRollbackSnapshot bool
 }
 
 type sqlFileExecutionResult struct {

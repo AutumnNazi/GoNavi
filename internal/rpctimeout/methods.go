@@ -35,6 +35,11 @@ func IsLongRunningAppMethod(method string) bool {
 		"ResumeImportJob",
 		"RetryImportJobFailedRows",
 		"MockDataGenerate",
+		"BackgroundGalleryRefresh",
+		"BackgroundGalleryDownload",
+		"FontGalleryRefresh",
+		"FontGalleryDownload",
+		"FontGalleryPreview",
 		"DataSync":
 		return true
 	default:

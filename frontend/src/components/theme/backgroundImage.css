@@ -1,0 +1,42 @@
+/* Paint the same viewport-aligned image beneath each workspace surface, never
+   over text. Theme-colored tint keeps both light and dark themes readable.
+   Portaled dialogs and menus retain their original opaque backgrounds. */
+body[data-ui-version='v2'] .gn-v2-app-root[data-background-image='true'],
+body[data-ui-version='v2'] .gn-v2-app-root[data-background-image='true'] :is(
+  .ant-layout-content,
+  .gn-v2-titlebar,
+  .gn-titlebar-toolbar,
+  .gn-v2-collapsed-sidebar-actions.is-below-toolbar,
+  .gn-v2-app-sider,
+  .gn-v2-sidebar-redesign,
+  .gn-v2-empty-workbench,
+  .gn-navicat-empty-workspace,
+  .gn-monaco-surface,
+  .gn-v2-query-results
+) {
+  background-image:
+    linear-gradient(
+      color-mix(in srgb, var(--gn-bg-panel-2) var(--gn-background-tint), transparent),
+      color-mix(in srgb, var(--gn-bg-panel-2) var(--gn-background-tint), transparent)
+    ),
+    var(--gn-background-image) !important;
+  background-color: var(--gn-bg-panel-2) !important;
+  background-position: center, calc(50% + var(--gn-background-offset-x, 0vw)) calc(50% + var(--gn-background-offset-y, 0vh)) !important;
+  background-size: cover, var(--gn-background-size, cover) !important;
+  background-repeat: no-repeat, no-repeat !important;
+  background-attachment: fixed, fixed !important;
+}
+
+body[data-ui-version='v2'] .gn-v2-app-root[data-background-image='true'] .gn-monaco-surface :is(
+  .monaco-editor,
+  .monaco-editor-background,
+  .margin,
+  .overflow-guard,
+  .monaco-scrollable-element,
+  .lines-content,
+  .inputarea,
+  .view-overlays,
+  .margin-view-overlays
+) {
+  background-color: transparent !important;
+}

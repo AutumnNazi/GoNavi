@@ -61,6 +61,7 @@ export interface UseAppWorkbenchActionsInput {
   securityUpdateRawPayload: AppShellStateApi['securityUpdateRawPayload'];
   openSecurityUpdateSettings: AppSecurityUpdateApi['openSecurityUpdateSettings'];
   setConnectionHealthTargetIds: AppCoreStateApi['setConnectionHealthTargetIds'];
+  setConnectionHealthDialogOpen: AppCoreStateApi['setConnectionHealthDialogOpen'];
   setToolCenterBackGroupKey: AppProxySettingsApi['setToolCenterBackGroupKey'];
   setActiveSettingsCenterGroupKey: AppShellStateApi['setActiveSettingsCenterGroupKey'];
   setActiveSettingsCenterPane: AppShellStateApi['setActiveSettingsCenterPane'];
@@ -89,7 +90,8 @@ export const useAppWorkbenchActions = ({
   securityUpdateRepairSource, securityUpdateStatus, replaceConnections, replaceGlobalProxy,
   normalizeSecurityUpdateStatus, applySecurityUpdateStatus,
   setSecurityUpdateHasLegacySensitiveItems, setSecurityUpdateRawPayload, securityUpdateRawPayload,
-  openSecurityUpdateSettings, setConnectionHealthTargetIds, setToolCenterBackGroupKey,
+  openSecurityUpdateSettings, setConnectionHealthTargetIds, setConnectionHealthDialogOpen,
+  setToolCenterBackGroupKey,
   setActiveSettingsCenterGroupKey, setActiveSettingsCenterPane, openSettingsCenterWorkbenchTab,
   handleOpenDriverManagerWorkbench, setIsProxyModalOpen, aiSettingsLeaveGuardRef,
   setFocusedAIProviderId, setAiSettingsSection, setAiSettingsProviderView, setAiPanelRenderNonce,
@@ -267,11 +269,8 @@ export const useAppWorkbenchActions = ({
   };
   const handleOpenConnectionHealth = useCallback((connectionIds: string[] = []) => {
       setConnectionHealthTargetIds(Array.from(new Set(connectionIds.filter((id) => String(id || '').trim() !== ''))));
-      setToolCenterBackGroupKey('config');
-      setActiveSettingsCenterGroupKey('config');
-      setActiveSettingsCenterPane({ key: 'connection-health', group: 'config' });
-      openSettingsCenterWorkbenchTab();
-  }, [openSettingsCenterWorkbenchTab]);
+      setConnectionHealthDialogOpen(true);
+  }, []);
 
   const handleOpenDriverManagerFromConnection = useCallback(() => {
       pendingConnectionTagIdRef.current = null;

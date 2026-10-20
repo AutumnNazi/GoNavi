@@ -1,12 +1,18 @@
-/** How to open a settings-center destination through `onOpenSettingsNavigation`. */
+import { PREFERENCE_PAGES, preferenceTitleKey, preferenceDescriptionKey, type PreferencePage } from './preferences/preferencePages';
+// How to open a settings-center destination through `onOpenSettingsNavigation`.
+// `'workflow'` is not a settings-center group any more, but stays a valid target
+// because title-bar 数据同步/数据对比 entries navigate with it and the handler
+// dispatches on `action` alone.
 export type SettingsCenterNavigationTarget = {
-  group: 'preferences' | 'services' | 'config' | 'workflow' | 'workspace' | 'about';
+  group: PreferencePage | 'preferences' | 'services' | 'config' | 'workflow' | 'workspace' | 'about';
   pane?: string;
   /** Child page inside a pane: a theme section or an AI settings section. */
   section?: string;
   action?:
     | 'import-connections'
     | 'export-connections'
+    | 'connection-health'
+    | 'cloud-backup'
     | 'schema-compare'
     | 'data-compare'
     | 'compare'
@@ -54,30 +60,21 @@ const pane = (
   target: { group: groupKey, ...target },
 });
 
-const THEME_SECTIONS = ['theme', 'appearance', 'workspace'] as const;
 const AI_SECTIONS = [
   'providers', 'analysis', 'request_events', 'safety', 'context',
   'run_policy', 'mcp', 'skills', 'tools', 'prompts',
 ] as const;
 
 export const SETTINGS_CENTER_MENU_CATALOG: ReadonlyArray<SettingsCenterMenuNode> = [
-  group('preferences', 'app.settings.group.preferences.title', 'app.settings.group.preferences.description'),
+  ...PREFERENCE_PAGES.map(key => ({ group: key, item: key, titleKey: preferenceTitleKey(key), descriptionKey: preferenceDescriptionKey(key), target: { group: key, pane: key } })),
+  group('preferences', 'settings.group.more_preferences.title', 'settings.group.more_preferences.description'),
   pane('preferences', 'language', 'settings.language'),
-  pane('preferences', 'theme', 'app.settings.entry.theme'),
-  ...THEME_SECTIONS.map((section) => pane(
-    'preferences',
-    `theme-${section}`,
-    `app.theme.nav.${section}`,
-    { pane: 'theme', section },
-  )),
-  pane('preferences', 'sidebar-metadata', 'app.settings.sidebar_metadata'),
-  pane('preferences', 'sidebar-objects', 'app.settings.sidebar_objects'),
+  pane('preferences', 'brand-icon', 'app.settings.entry.brand_icon'),
+  pane('preferences', 'shortcut-settings', 'app.tools.entry.shortcuts'),
 
   group('services', 'app.settings.group.services.title', 'app.settings.group.services.description'),
   pane('services', 'proxy', 'app.settings.entry.proxy'),
-  pane('services', 'download-source', 'app.settings.entry.download_source'),
   { ...pane('services', 'web-auth', 'app.settings.entry.web_auth'), webOnly: true },
-  pane('services', 'cloud-backup', 'app.settings.entry.cloud_backup'),
   pane('services', 'ai', 'app.settings.entry.ai'),
   ...AI_SECTIONS.map((section) => pane(
     'services',
@@ -94,9 +91,6 @@ export const SETTINGS_CENTER_MENU_CATALOG: ReadonlyArray<SettingsCenterMenuNode>
   },
 
   group('config', 'app.tools.group.config.title', 'app.tools.group.config.description'),
-  pane('config', 'import', 'app.tools.entry.import'),
-  pane('config', 'export', 'app.tools.entry.export', { action: 'export-connections' }),
-  pane('config', 'connection-health', 'app.tools.entry.connection_health'),
   pane('config', 'data-root', 'app.tools.entry.data_root'),
   {
     group: 'config',
@@ -108,18 +102,6 @@ export const SETTINGS_CENTER_MENU_CATALOG: ReadonlyArray<SettingsCenterMenuNode>
   pane('config', 'data-root-agent', 'app.data_root.agent_data'),
   pane('config', 'data-root-saved-queries', 'app.data_root.saved_query_directory'),
   pane('config', 'security-update', 'app.tools.entry.security_update'),
-
-  group('workflow', 'app.tools.group.workflow.title', 'app.tools.group.workflow.description'),
-  pane('workflow', 'sync', 'app.tools.entry.sync', { action: 'sync' }),
-  pane('workflow', 'compare', 'app.tools.entry.compare', { action: 'compare' }),
-
-  group('workspace', 'app.tools.group.workspace.title', 'app.tools.group.workspace.description'),
-  pane('workspace', 'drivers', 'app.tools.entry.drivers', { action: 'drivers' }),
-  pane('workspace', 'snippet-settings', 'app.tools.entry.snippets'),
-  pane('workspace', 'shortcut-settings', 'app.tools.entry.shortcuts'),
-  pane('workspace', 'sql-audit', 'app.tools.entry.sql_audit', { action: 'sql-audit' }),
-  pane('workspace', 'request-diagnostics', 'app.tools.entry.request_diagnostics', { action: 'request-diagnostics' }),
-  pane('workspace', 'dml-snapshot', 'dml_snapshot.workbench', { action: 'dml-snapshot' }),
 
   {
     group: 'about',

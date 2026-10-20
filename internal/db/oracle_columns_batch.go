@@ -110,7 +110,7 @@ func buildOracleColumnsBatchQuery(schema string, tableNames []string, withIdenti
 		LEFT JOIN user_tab_identity_cols ic
 		  ON ic.table_name = c.table_name AND ic.column_name = c.column_name`
 		}
-		return fmt.Sprintf(`SELECT c.table_name AS "TABLE_NAME", c.column_name AS "COLUMN_NAME", c.data_type AS "DATA_TYPE", c.data_length AS "DATA_LENGTH", c.char_length AS "CHAR_LENGTH", c.data_precision AS "DATA_PRECISION", c.data_scale AS "DATA_SCALE", c.nullable AS "NULLABLE", c.data_default AS "DATA_DEFAULT",
+		return fmt.Sprintf(`SELECT c.table_name AS "TABLE_NAME", c.column_name AS "COLUMN_NAME", c.data_type AS "DATA_TYPE", c.data_length AS "DATA_LENGTH", c.char_length AS "CHAR_LENGTH", c.char_used AS "CHAR_USED", c.data_precision AS "DATA_PRECISION", c.data_scale AS "DATA_SCALE", c.nullable AS "NULLABLE", c.data_default AS "DATA_DEFAULT",
 		CASE WHEN pk.column_name IS NOT NULL THEN 'PRI' ELSE '' END AS "COLUMN_KEY",%s
 		cc.comments AS "COMMENT"
 		FROM user_tab_columns c
@@ -131,7 +131,7 @@ func buildOracleColumnsBatchQuery(schema string, tableNames []string, withIdenti
 		LEFT JOIN all_tab_identity_cols ic
 		  ON ic.owner = c.owner AND ic.table_name = c.table_name AND ic.column_name = c.column_name`
 	}
-	return fmt.Sprintf(`SELECT c.table_name AS "TABLE_NAME", c.column_name AS "COLUMN_NAME", c.data_type AS "DATA_TYPE", c.data_length AS "DATA_LENGTH", c.char_length AS "CHAR_LENGTH", c.data_precision AS "DATA_PRECISION", c.data_scale AS "DATA_SCALE", c.nullable AS "NULLABLE", c.data_default AS "DATA_DEFAULT",
+	return fmt.Sprintf(`SELECT c.table_name AS "TABLE_NAME", c.column_name AS "COLUMN_NAME", c.data_type AS "DATA_TYPE", c.data_length AS "DATA_LENGTH", c.char_length AS "CHAR_LENGTH", c.char_used AS "CHAR_USED", c.data_precision AS "DATA_PRECISION", c.data_scale AS "DATA_SCALE", c.nullable AS "NULLABLE", c.data_default AS "DATA_DEFAULT",
 		CASE WHEN pk.column_name IS NOT NULL THEN 'PRI' ELSE '' END AS "COLUMN_KEY",%s
 		cc.comments AS "COMMENT"
 		FROM all_tab_columns c

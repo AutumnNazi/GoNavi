@@ -48,7 +48,7 @@ import {
   type WailsDataSyncJobDefinition,
   type WailsQueryResultLike,
 } from './wailsDto';
-
+import { rollbackDataSyncRun } from './wailsGatewayRollback';
 import type { WailsDataSyncApi } from './wailsGatewayApi';
 export type { WailsDataSyncApi } from './wailsGatewayApi';
 
@@ -847,7 +847,7 @@ export const createWailsDataSyncWorkbenchGateway = (
       approvalChallenges.delete(taskId);
       return saved;
     },
-
+    rollbackRun: (runId) => rollbackDataSyncRun(api, runId),
     async cancelRun(runId) {
       requireWailsCommandSuccess(
         await api.DataSyncRunCancel(runId),

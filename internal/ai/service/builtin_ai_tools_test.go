@@ -53,7 +53,7 @@ func TestOnlyReadOnlyQueriesReachTheTool(t *testing.T) {
 		sqlCall("c", "DELETE FROM orders"),
 		{ID: "d", Type: "function", Function: ai.ToolCallFunction{Name: "jvm_probe", Arguments: `{}`}},
 	}
-	allowed, content := guardBuiltinAIToolCalls(calls, "Let me look.", "NOT RUN:")
+	allowed, content := guardBuiltinAIToolCalls(calls, "Let me look.", "NOT RUN:", builtinAITarget{})
 	if len(allowed) != 2 || allowed[0].ID != "a" || allowed[1].ID != "b" {
 		t.Fatalf("allowed: %+v", allowed)
 	}
@@ -64,7 +64,7 @@ func TestOnlyReadOnlyQueriesReachTheTool(t *testing.T) {
 
 func TestAnAnswerWithOnlyQueriesIsUntouched(t *testing.T) {
 	calls := []ai.ToolCall{sqlCall("b", "SHOW TABLES")}
-	allowed, content := guardBuiltinAIToolCalls(calls, "", "NOT RUN:")
+	allowed, content := guardBuiltinAIToolCalls(calls, "", "NOT RUN:", builtinAITarget{})
 	if len(allowed) != 1 || content != "" {
 		t.Fatalf("allowed=%+v content=%q", allowed, content)
 	}

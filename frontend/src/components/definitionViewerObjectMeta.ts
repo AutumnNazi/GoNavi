@@ -3,6 +3,13 @@ import type { TabData } from '../types';
 type Translate = (key: string) => string;
 
 export const resolveDefinitionViewerObjectMeta = (tab: TabData, translate: Translate) => {
+  if (tab.type === 'job-def') {
+    return {
+      label: translate('definition_viewer.object.job'),
+      name: tab.jobLabel || tab.jobName,
+      loadingTip: translate('definition_viewer.loading.job_definition'),
+    };
+  }
   if (tab.type === 'view-def') {
     const materialized = tab.viewKind === 'materialized';
     return {

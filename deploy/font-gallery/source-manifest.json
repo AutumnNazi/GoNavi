@@ -1,0 +1,186 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/google/fonts",
+  "revision": "1d0e46c7933245c8180fe83e47917961c913bbdb",
+  "reviewedAt": "2026-10-16",
+  "publication": "original-unmodified-files",
+  "previewPolicy": "Reuse original font bytes below 512 KiB; no subsetting, no renamed or altered binaries.",
+  "entries": [
+    {
+      "id": "jetbrains-mono",
+      "family": "JetBrains Mono",
+      "kind": "mono",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/jetbrainsmono/JetBrainsMono%5Bwght%5D.ttf",
+      "sha256": "48715a42ec242c21e9f02692891e147d022299a52e48d5e413e1a942193ffeda",
+      "sizeBytes": 187208,
+      "licenseUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/jetbrainsmono/OFL.txt",
+      "licenseSha256": "b2fe5e8987594e9ffd1d2ca52a2f5d73eb8335243893c5d6254b5ad69269591d",
+      "fontCopyright": [
+        "Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)"
+      ],
+      "fontVersion": [
+        "Version 2.211"
+      ]
+    },
+    {
+      "id": "fira-code",
+      "family": "Fira Code",
+      "kind": "mono",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/firacode/FiraCode%5Bwght%5D.ttf",
+      "sha256": "9335b082b3c7850d98a64b584f3417f65355f3471278bb5eeb8c6c0e8657aeeb",
+      "sizeBytes": 260364,
+      "licenseUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/firacode/OFL.txt",
+      "licenseSha256": "926041dac670e6922505e35ac1661a4e8d20f1ffeabbbcb5edb5544370702369",
+      "fontCopyright": [
+        "Copyright 2014-2020 The Fira Code Project Authors (https://github.com/tonsky/FiraCode)"
+      ],
+      "fontVersion": [
+        "Version 5.002"
+      ]
+    },
+    {
+      "id": "fira-mono",
+      "family": "Fira Mono",
+      "kind": "mono",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/firamono/FiraMono-Regular.ttf",
+      "sha256": "2e00b0cf3106a3d792f35711b7722740b76c02ee7300ea8c60f940584b7a8ac9",
+      "sizeBytes": 174596,
+      "licenseUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/firamono/OFL.txt",
+      "licenseSha256": "d1829ff3455bbf3b9d13dfb0a57758a863107c9108aab48558f26f37f1094180",
+      "fontCopyright": [
+        "Digitized data copyright © 2012-2015, The Mozilla Foundation and Telefonica S.A."
+      ],
+      "fontVersion": [
+        "Version 3.206"
+      ]
+    },
+    {
+      "id": "ibm-plex-mono",
+      "family": "IBM Plex Mono",
+      "kind": "mono",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/ibmplexmono/IBMPlexMono-Regular.ttf",
+      "sha256": "6a3412f058c7d8dfd9170c41e85ade48e5156ecb89356110ca57a0a27734af46",
+      "sizeBytes": 135580,
+      "licenseUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/ibmplexmono/OFL.txt",
+      "licenseSha256": "7e6b2818edbd8f6a01ae80641cc8f16a51080d08fb4e532be3a0b6f74adb07da",
+      "fontCopyright": [
+        "Copyright 2017 IBM Corp. All rights reserved."
+      ],
+      "fontVersion": [
+        "Version 2.3"
+      ]
+    },
+    {
+      "id": "roboto-mono",
+      "family": "Roboto Mono",
+      "kind": "mono",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/robotomono/RobotoMono%5Bwght%5D.ttf",
+      "sha256": "66a80e79d17e4c7cabd162e2916578a4cc08fd19eef6e2a643305eae9c567b2b",
+      "sizeBytes": 183700,
+      "licenseUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/robotomono/OFL.txt",
+      "licenseSha256": "50ab8dd54680d3473f649c9db86fece88434d097c7834475c1c72d2f8c429215",
+      "fontCopyright": [
+        "Copyright 2015 The Roboto Mono Project Authors (https://github.com/googlefonts/robotomono)"
+      ],
+      "fontVersion": [
+        "Version 3.001"
+      ]
+    },
+    {
+      "id": "inconsolata",
+      "family": "Inconsolata",
+      "kind": "mono",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/inconsolata/Inconsolata%5Bwdth%2Cwght%5D.ttf",
+      "sha256": "23ded25b447074d00659392bf9b1123d89df55cb07b0ad9bfef3366d199b5fcb",
+      "sizeBytes": 347180,
+      "licenseUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/inconsolata/OFL.txt",
+      "licenseSha256": "29bd0cfd0fb2a45f9b057c834a057724bae1f63b525a8ac83d3e7525706d9f80",
+      "fontCopyright": [
+        "Copyright 2006 The Inconsolata Project Authors (https://github.com/cyrealtype/Inconsolata)"
+      ],
+      "fontVersion": [
+        "Version 3.001"
+      ]
+    },
+    {
+      "id": "source-code-pro",
+      "family": "Source Code Pro",
+      "kind": "mono",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/sourcecodepro/SourceCodePro%5Bwght%5D.ttf",
+      "sha256": "b400fc584e10aff25d0e775ce181b4fc1c5ea1b5dc37b81aeb2084375b945790",
+      "sizeBytes": 212340,
+      "licenseUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/sourcecodepro/OFL.txt",
+      "licenseSha256": "cb30d3086a8b3ce0b9e3690bf48d6620402b61160bc658076f95180ccd9e9dae",
+      "fontCopyright": [
+        "© 2023 Adobe (http://www.adobe.com/), with Reserved Font Name ‘Source’"
+      ],
+      "fontVersion": [
+        "Version 1.026;hotconv 1.1.0;makeotfexe 2.6.0"
+      ]
+    },
+    {
+      "id": "ubuntu-mono",
+      "family": "Ubuntu Mono",
+      "kind": "mono",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ufl/ubuntumono/UbuntuMono-Regular.ttf",
+      "sha256": "b35dd9d2131d5d83a9b87fe9ad22c6288fa3d17688d43302c14da29812417d63",
+      "sizeBytes": 205748,
+      "licenseUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ufl/ubuntumono/LICENCE.txt",
+      "licenseSha256": "2f0015108d68627bd788d313f529c21ff4da2c2c42a5e1f3883acc83480f9002",
+      "fontCopyright": [
+        "Copyright 2011 Canonical Ltd.  Licensed under the Ubuntu Font Licence 1.0"
+      ],
+      "fontVersion": [
+        "Version 0.80"
+      ]
+    },
+    {
+      "id": "cousine",
+      "family": "Cousine",
+      "kind": "mono",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/cousine/Cousine-Regular.ttf",
+      "sha256": "1da22250675fc4c42fcf3a9736c44bc0570516105331443b663fd5cfbd1412fe",
+      "sizeBytes": 296856,
+      "licenseUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/cousine/OFL.txt",
+      "licenseSha256": "b81c4d4dc0a9f72c9155e78187316e016e2012a8102468804173dc61468b906d",
+      "fontCopyright": [
+        "Copyright 2026 The Cousine Project Authors (https://github.com/googlefonts/cousine)"
+      ],
+      "fontVersion": [
+        "Version 1.241; ttfautohint (v1.8.4.16-eb64)"
+      ]
+    },
+    {
+      "id": "space-mono",
+      "family": "Space Mono",
+      "kind": "mono",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/spacemono/SpaceMono-Regular.ttf",
+      "sha256": "95837e182baeeada83368f7748db28357f0a1b75c6b84ff7065b5edf933c8e18",
+      "sizeBytes": 99356,
+      "licenseUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/spacemono/OFL.txt",
+      "licenseSha256": "8e4ee42b2553e1e01504e61cb0d46d148cd8c9e5eacaa3622a7df2d4f2955b9f",
+      "fontCopyright": [
+        "Copyright 2016 The Space Mono Project Authors (https://github.com/googlefonts/spacemono)"
+      ],
+      "fontVersion": [
+        "Version 1.003; ttfautohint (v1.8.4.7-5d5b)"
+      ]
+    },
+    {
+      "id": "atkinson-hyperlegible",
+      "family": "Atkinson Hyperlegible",
+      "kind": "ui",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/atkinsonhyperlegible/AtkinsonHyperlegible-Regular.ttf",
+      "sha256": "7fb917c89019896d0b52ee84b7cbb3304c18cb90b19a62f5e32712bd23e97669",
+      "sizeBytes": 54348,
+      "licenseUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/atkinsonhyperlegible/OFL.txt",
+      "licenseSha256": "f32d22b3908fcad2c86a74000614ec22e6a7f66ea7e867e616026a27aebdc143",
+      "fontCopyright": [
+        "Copyright 2020 Braille Institute of America, Inc."
+      ],
+      "fontVersion": [
+        "Version 1.006; ttfautohint (v1.8.3)"
+      ]
+    }
+  ]
+}

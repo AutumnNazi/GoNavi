@@ -5,7 +5,7 @@ import {
 } from '../settingsCenterSearchEntries';
 
 const PROVIDER_PRESETS = [
-  'anthropic', 'atlascloud', 'claude_subscription', 'cursor_cli', 'custom', 'deepseek', 'gemini', 'grok',
+  'anthropic', 'atlascloud', 'cheaperinference', 'claude_subscription', 'cursor_cli', 'custom', 'deepseek', 'gemini', 'grok',
   'minimax', 'moonshot', 'ollama', 'openai', 'orcarouter', 'qwen_bailian', 'qwen_coding_plan',
   'volcengine_ark', 'volcengine_coding', 'xiaomi_mimo', 'zhipu',
 ] as const;

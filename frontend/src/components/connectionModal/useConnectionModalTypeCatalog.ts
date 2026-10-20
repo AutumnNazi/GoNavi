@@ -1,13 +1,14 @@
 import { isFileDatabaseType } from "../../utils/connectionTypeCapabilities";
 import { resolveConnectionConfigLayout } from "../../utils/connectionModalPresentation";
-import { t } from "../../i18n";
+import { getCurrentLanguage, t } from "../../i18n";
+import { useOptionalI18n } from "../../i18n/provider";
+import { buildPickerTypeGroups } from "./connectionTypePickerCatalog";
 import { resolveConnectionDriverType } from "../../utils/connectionDriverType";
 import {
-  buildConnectionTypeGroups,
   orderConnectionTypeCatalogItems,
   getAllConnectionTypeCatalogItems,
 } from "../../utils/connectionTypeCatalog";
-import { getDbIcon, getDbDefaultColor } from "../DatabaseIcons";
+import { getDbDefaultColor } from "../DatabaseIcons";
 import { useEffect, useMemo } from "react";
 import type { ConnectionModalStateApi } from "./useConnectionModalState";
 import type { ConnectionModalProps } from "../ConnectionModal";
@@ -80,33 +81,13 @@ export const useConnectionModalTypeCatalog = ({
   const driverStatusChecking =
     hasCurrentDriverType && !driverStatusLoaded && step === 2;
 
-  // 翻译函数读取运行时语言；系统语言变化时 preference 仍可能保持 "system"，
-  // 因此这组少量目录项必须随组件重渲染重新派生，不能只按 preference 做 memo。
-  const localizedDbTypeGroups = buildConnectionTypeGroups(t).map((group) => ({
-    ...group,
-    items: group.items.map((item) => ({
-      ...item,
-      icon: getDbIcon(item.key, undefined, 32),
-    })),
-  }));
-  const seenDbTypeKeys = new Set<string>();
-  const allDbTypeItems = localizedDbTypeGroups
-    .flatMap((group) => group.items)
-    .filter((item) => {
-      if (seenDbTypeKeys.has(item.key)) {
-        return false;
-      }
-      seenDbTypeKeys.add(item.key);
-      return true;
-    });
-  const dbTypeGroups = [
-    {
-      labelKey: "connection_modal.step1.group.all",
-      label: t("connection.modal.step1.group.all"),
-      items: allDbTypeItems,
-    },
-    ...localizedDbTypeGroups,
-  ];
+  const i18n = useOptionalI18n();
+  const language = i18n?.language ?? getCurrentLanguage();
+  const translate = i18n?.t ?? t;
+  // Track resolved language, not preference: system language may change independently.
+  const dbTypeGroups = useMemo(() => buildPickerTypeGroups(translate), [translate, language]);
+  const localizedDbTypeGroups = useMemo(() => dbTypeGroups.slice(1), [dbTypeGroups]);
+  const allDbTypeItems = dbTypeGroups[0].items;
 
   const normalizedDbTypeQuery = dbTypeQuery.trim().toLowerCase();
   const filteredDbTypeItems = normalizedDbTypeQuery

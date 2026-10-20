@@ -76,16 +76,12 @@ func evaluateHeadlessSQLSafety(level ai.SQLPermissionLevel, dbType string, sql s
 		ConfirmRequired: []HeadlessSQLSafetyStatement{},
 	}
 
-	for _, statement := range splitSQLStatementsForDialect(dbType, sql) {
+	for _, statement := range inspectionStatements(dbType, sql) {
 		statement = strings.TrimSpace(statement)
 		if statement == "" {
 			continue
 		}
-		inspection := SQLStatementInspection{
-			Index:    len(decision.Inspection.Statements) + 1,
-			Keyword:  leadingSQLKeyword(statement),
-			ReadOnly: isReadOnlySQLQuery(dbType, statement),
-		}
+		inspection := inspectStatement(dbType, statement, len(decision.Inspection.Statements)+1)
 		decision.Inspection.Statements = append(decision.Inspection.Statements, inspection)
 		if !inspection.ReadOnly {
 			decision.Inspection.ReadOnly = false
@@ -110,6 +106,9 @@ func evaluateHeadlessSQLSafety(level ai.SQLPermissionLevel, dbType string, sql s
 }
 
 func classifyHeadlessSQLOperation(dbType, statement string, inspection SQLStatementInspection) ai.SQLOperationType {
+	if inspection.OperationType != "" {
+		return inspection.OperationType
+	}
 	if inspection.ReadOnly {
 		return ai.SQLOpQuery
 	}

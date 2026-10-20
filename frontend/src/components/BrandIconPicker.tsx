@@ -45,8 +45,8 @@ export default function BrandIconPicker({ value, onChange, darkMode = false, acc
         const active = value === item.id;
         // The bundled dark-tile icon shares the mascot-style preview (white
         // backing sized to the ribbon tile fraction) even though it must not
-        // carry the mascot flag: that flag drives the macOS Dock safe-area
-        // inset and would shrink the running default icon.
+        // carry the mascot flag: on macOS that flag drives the white tile
+        // base behind the Apple grid, which a dark tile must not get.
         const usesBundledPreview = item.mascot === true || item.bundled === true;
         // 吉祥物资源未就绪时渲染中性骨架，而不是 GN 深色兜底 SVG——
         // 深色剪影会在资源到达后突变为白底真图，观感像图标坏掉了。

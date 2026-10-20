@@ -18,6 +18,7 @@ const NacosServiceViewer = React.lazy(() => import('./NacosServiceViewer'));
 const TriggerViewer = React.lazy(() => import('./TriggerViewer'));
 const DefinitionViewer = React.lazy(() => import('./DefinitionViewer'));
 const TableOverview = React.lazy(() => import('./TableOverview'));
+const ObjectOverview = React.lazy(() => import('./objectOverview/ObjectOverview'));
 const TableExportWorkbench = React.lazy(() => import('./TableExportWorkbench'));
 const DataImportWorkbench = React.lazy(() => import('./DataImportWorkbench'));
 const MockDataWorkbench = React.lazy(() => import('./mockData/MockDataWorkbench'));
@@ -32,6 +33,7 @@ const SqlAnalysisWorkbench = React.lazy(() => import('./explain/SqlAnalysisWorkb
 const SqlAuditWorkbench = React.lazy(() => import('./audit/SqlAuditWorkbench'));
 const QueryHistoryWorkbench = React.lazy(() => import('./queryHistory/QueryHistoryWorkbench'));
 const DriverManagerWorkbench = React.lazy(() => import('./DriverManagerWorkbench'));
+const CloudBackupSettings = React.lazy(() => import('./CloudBackupSettings'));
 const SettingsCenterWorkbench = React.lazy(() => import('./settings/SettingsCenterWorkbench'));
 const RequestDiagnosticsWorkbench = React.lazy(() => import('./requestDiagnostics/RequestDiagnosticsWorkbench'));
 const DMLSnapshotWorkbench = React.lazy(() => import('./dmlSnapshot/DMLSnapshotWorkbench'));
@@ -151,10 +153,12 @@ export const WorkbenchTabContent: React.FC<WorkbenchTabContentProps> = React.mem
     );
   } else if (tab.type === 'trigger') {
     content = <TriggerViewer tab={tab} />;
-  } else if (tab.type === 'view-def' || tab.type === 'event-def' || tab.type === 'routine-def' || tab.type === 'sequence-def' || tab.type === 'package-def' || tab.type === 'database-link-def') {
+  } else if (tab.type === 'view-def' || tab.type === 'event-def' || tab.type === 'job-def' || tab.type === 'routine-def' || tab.type === 'sequence-def' || tab.type === 'package-def' || tab.type === 'database-link-def') {
     content = <DefinitionViewer tab={tab} />;
   } else if (tab.type === 'table-overview') {
     content = <TableOverview tab={tab} />;
+  } else if (tab.type === 'object-overview') {
+    content = <ObjectOverview tab={tab} />;
   } else if (tab.type === 'table-export') {
     content = <TableExportWorkbench tab={tab} />;
   } else if (tab.type === 'data-import') {
@@ -183,6 +187,8 @@ export const WorkbenchTabContent: React.FC<WorkbenchTabContentProps> = React.mem
         onRequestClose={onRequestClose}
       />
     );
+  } else if (tab.type === 'cloud-backup') {
+    content = <CloudBackupSettings />;
   } else if (tab.type === 'settings-center') {
     content = <SettingsCenterWorkbench tab={tab} isActive={isActive} />;
   } else if (tab.type === 'request-diagnostics') {

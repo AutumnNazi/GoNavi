@@ -1,3 +1,4 @@
+import { findSidebarSchemaTreeNode } from './sidebarSchemaLoading';
 import { t } from '../../i18n';
 import { message, Button } from 'antd';
 import { resolveSidebarMessageQueueProfile } from './sidebarMessageProfiles';
@@ -51,13 +52,14 @@ import {
   getSidebarTableObjectIdentity,
 } from './sidebarPartitions';
 import { loadOracleDatabaseLinks } from './sidebarOracleDatabaseLinks';
+import { loadDatabaseJobs } from './sidebarDatabaseJobs';
 import type { SidebarTreeLoadStateApi } from './useSidebarTreeLoadState';
 import type { UseSidebarTreeLoadersOptions } from './useSidebarTreeLoaders';
 import { createSidebarDatabaseChildrenBuilder } from './sidebarDatabaseChildren';
 import { invalidateQueryEditorSessionMetadata } from '../queryEditor/metadata/queryEditorSessionMetadataStore';
-import { applySidebarTableRowCounts, refreshSidebarTableRowCounts } from './sidebarTableRowCounts';
 
 export interface UseSidebarTableLoaderInput {
+  getTree?: UseSidebarTreeLoadersOptions['getTree'];
   loadingNodesRef: UseSidebarTreeLoadersOptions['loadingNodesRef'];
   setConnectionStates: UseSidebarTreeLoadersOptions['setConnectionStates'];
   setLoadedKeys: UseSidebarTreeLoadersOptions['setLoadedKeys'];
@@ -84,13 +86,14 @@ export type SidebarDatabaseObjectLoadResults = {
     packagesResult: Awaited<ReturnType<typeof loadPackages>>;
     eventsResult: Awaited<ReturnType<typeof loadDatabaseEvents>>;
     databaseLinksResult: Awaited<ReturnType<typeof loadOracleDatabaseLinks>>;
+    jobsResult: Awaited<ReturnType<typeof loadDatabaseJobs>>;
 };
 
 export const useSidebarTableLoader = ({
   loadingNodesRef, setConnectionStates, setLoadedKeys, savedQueries, resolveSavedQueryDisplayName,
   replaceTreeNodeChildren, onDatabaseTreeLoaded, tableSortPreference, tableAccessCount,
   pinnedSidebarTables, getConnectionLoadEpoch, isCurrentConnectionLoadEpoch, beginLoadGeneration,
-  isCurrentLoadGeneration, tableLoadsRef,
+  isCurrentLoadGeneration, tableLoadsRef, getTree,
 }: UseSidebarTableLoaderInput) => {
   	  const runLoadTables = async (
         node: any,
@@ -361,6 +364,7 @@ export const useSidebarTableLoader = ({
   	                loadPackages(conn, conn.dbName),
   	                loadDatabaseEvents(conn, conn.dbName),
   	                loadOracleDatabaseLinks(conn as SavedConnection, conn.dbName),
+                  loadDatabaseJobs(conn as SavedConnection, conn.dbName),
   	            ]).then(
   	                (results) => {
   	                    objectLoadsSettled = true;
@@ -482,6 +486,7 @@ export const useSidebarTableLoader = ({
   	                packagesResult: { packages: [], supported: true },
   	                eventsResult: { events: [], supported: true },
   	                databaseLinksResult: { databaseLinks: [], supported: true },
+                  jobsResult: { jobs: [], supported: true },
   	            };
   	            let renderedDatabaseChildren: TreeNode[] = [];
   	            let latestDatabaseConnection: SavedConnection = conn as SavedConnection;
@@ -510,7 +515,7 @@ export const useSidebarTableLoader = ({
   	            const objectLoads = await objectLoadsPromise;
               if (!isCurrentLoad()) return;
   	            if (!objectLoads.ok) throw objectLoads.error;
-  	            const [viewsResult, materializedViewsResult, triggersResult, routinesResult, sequencesResult, packagesResult, eventsResult, databaseLinksResult] = objectLoads.results;
+              const [viewsResult, materializedViewsResult, triggersResult, routinesResult, sequencesResult, packagesResult, eventsResult, databaseLinksResult, jobsResult] = objectLoads.results;
   	            const secondPass = buildRenderedDatabaseChildren({
   	                viewsResult,
   	                materializedViewsResult,
@@ -520,6 +525,7 @@ export const useSidebarTableLoader = ({
   	                packagesResult,
   	                eventsResult,
   	                databaseLinksResult,
+                  jobsResult,
   	            }, true);
   	            renderedDatabaseChildren = secondPass.renderedDatabaseChildren;
   	            latestDatabaseConnection = secondPass.latestDatabaseConnection;
@@ -527,32 +533,26 @@ export const useSidebarTableLoader = ({
                   onDatabaseTreeLoaded?.(String(key));
                   shouldMarkDatabaseSuccess = true;
   
-                if (options.rowCountTables?.length && getMetadataDialect(conn as SavedConnection) !== 'sqlite') {
-                    const counts = await refreshSidebarTableRowCounts(conn, tableEntries, options.rowCountTables, options.schemaName);
-                    if (!isCurrentLoad()) return;
-                    if (counts.size) {
-                        renderedDatabaseChildren = applySidebarTableRowCounts(renderedDatabaseChildren, counts);
-                        replaceTreeNodeChildren(key, renderedDatabaseChildren, latestDatabaseConnection);
-                    }
-                }
-
   	            if (getMetadataDialect(conn as SavedConnection) === 'sqlite') {
   	                const tableNames = tableRows
   	                    .map((row) => getSidebarTableName(row as Record<string, any>))
   	                    .filter((tableName) => String(tableName || '').trim() !== '');
-                  const refreshed = await DBRefreshTableStats(
+                  void DBRefreshTableStats(
                       buildRpcConnectionConfig(config) as any,
                       conn.dbName,
                       tableNames,
-                  ).catch(() => null);
+                  ).then((refreshed) => {
                   if (!isCurrentLoad()) return;
+                  const currentNode = getTree ? findSidebarSchemaTreeNode(getTree(), String(key)) : undefined;
+                  if (getTree && !currentNode) return;
                   if (refreshed?.success && Array.isArray(refreshed.data)) {
   	                    renderedDatabaseChildren = applyRefreshedSQLiteStatsToTree(
-  	                        renderedDatabaseChildren,
+                            currentNode?.children || renderedDatabaseChildren,
   	                        refreshed.data as Record<string, any>[],
   	                    );
   	                    replaceTreeNodeChildren(key, renderedDatabaseChildren, latestDatabaseConnection);
   	                }
+                  }).catch(() => undefined);
   	            }
   	          } else {
   	            showTableLoadFailure(res.message);

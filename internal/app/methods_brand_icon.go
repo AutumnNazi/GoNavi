@@ -20,6 +20,10 @@ const applicationBrandIconMaxPNGBytes = 4 * 1024 * 1024
 var applicationBrandIconMu sync.Mutex
 var prepareWindowsBrandIconRestartPlatform = prepareWindowsBrandIconRestartPNG
 
+// setApplicationIconPNGPlatform 与 prepareWindowsBrandIconRestartPlatform 同款
+// 可桩化间接层：App 绑定层测试据此锁定 Data 契约而不触碰真实任务栏。
+var setApplicationIconPNGPlatform = setApplicationIconPNG
+
 var (
 	errApplicationBrandIconPayloadEmpty   = errors.New("empty icon payload")
 	errApplicationBrandIconPayloadInvalid = errors.New("invalid PNG icon payload")
@@ -58,10 +62,22 @@ func (a *App) SetApplicationBrandIcon(imageBase64 string) (result connection.Que
 		configDir = a.configDir
 		runtimeContext = a.ctx
 	}
-	if err := setApplicationIconPNG(png, configDir, runtimeContext); err != nil {
+	restartRecommended, err := setApplicationIconPNGPlatform(png, configDir, runtimeContext)
+	if err != nil {
+		// 失败路径刻意丢弃 restartRecommended：activate 失败时持久化状态还
+		// 指向旧图标，重启只会回到旧图，引导重启反而误导用户。错误提示兜底。
 		return connection.QueryResult{Success: false, Message: a.appText("app.backend.error.set_brand_icon_failed", map[string]any{
 			"detail": err.Error(),
 		})}
+	}
+	// 固定项按钮重建失败时热应用无法覆盖固定按钮（Explorer 快照不重采样），
+	// 前端据此引导用户重启应用，让按钮按新快捷方式重建。
+	if restartRecommended {
+		return connection.QueryResult{
+			Success: true,
+			Message: a.appText("app.backend.message.brand_icon_updated", nil),
+			Data:    map[string]any{"restartRecommended": true},
+		}
 	}
 	return connection.QueryResult{Success: true, Message: a.appText("app.backend.message.brand_icon_updated", nil)}
 }

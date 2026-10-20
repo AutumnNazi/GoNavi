@@ -219,12 +219,7 @@ func isAutoIncrement(extra, defaultText, base string) bool {
 
 // isComputed 识别不能写入的计算列。注意 MySQL 的 DEFAULT_GENERATED 只是默认值表达式，不算。
 func isComputed(extra string) bool {
-	for _, marker := range []string{"virtual generated", "stored generated", "generated always", "materialized", "alias", "computed"} {
-		if strings.Contains(extra, marker) {
-			return true
-		}
-	}
-	return false
+	return connection.IsGeneratedColumnExtra(extra)
 }
 
 // SetNextValue 填入整数主键/唯一列的下一个可用值。

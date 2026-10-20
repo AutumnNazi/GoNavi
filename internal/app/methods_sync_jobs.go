@@ -352,7 +352,7 @@ func (a *App) DataSyncRunList(jobID string, limit int) connection.QueryResult {
 	for index := range runs {
 		runs[index] = publicDataSyncRun(runs[index])
 	}
-	return connection.QueryResult{Success: true, Data: runs}
+	return connection.QueryResult{Success: true, Data: a.markDataSyncRunsRollbackReady(context.Background(), runs)}
 }
 
 // DataSyncRunPage returns terminal and active run history through a stable
@@ -377,7 +377,9 @@ func (a *App) DataSyncRunPage(jobID string, beforeCreatedAt int64, beforeID stri
 	if err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
-	return connection.QueryResult{Success: true, Data: publicDataSyncRunPage(page)}
+	page = publicDataSyncRunPage(page)
+	page.Runs = a.markDataSyncRunsRollbackReady(context.Background(), page.Runs)
+	return connection.QueryResult{Success: true, Data: page}
 }
 
 func (a *App) DataSyncRunDelete(runID string) connection.QueryResult {

@@ -119,6 +119,8 @@ describe('application overlay z-index policy', () => {
       theme: {
         token: {
           zIndexPopupBase: APP_STATIC_FEEDBACK_Z_INDEX_BASE,
+          fontFamily: 'var(--gn-font-sans)',
+          fontFamilyCode: 'var(--gn-font-mono)',
         },
       },
     });

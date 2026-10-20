@@ -35,7 +35,7 @@ func (s *Service) startup(ctx context.Context) {
 		s.agentMu.Unlock()
 	}
 	s.configDir = resolveConfigDir()
-	s.loadConfig()
+	s.ensureConfigLoaded()
 	if lifecycleCtx == nil {
 		logger.Warnf("未提供应用生命周期上下文，AI Agent Run Harness 未启动")
 	}

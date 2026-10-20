@@ -1,3 +1,4 @@
+import { useSidebarMutationRefresh } from './useSidebarMutationRefresh';
 import React from 'react';
 import type { SavedConnection, SavedQuery } from '../../types';
 import {
@@ -52,13 +53,15 @@ export const useSidebarTreeLoaders = ({
   loadingNodesRef,
   setConnectionStates,
   setLoadedKeys,
-  replaceTreeNodeChildren,
+  replaceTreeNodeChildren: replaceChildren,
   buildRuntimeConfig,
   buildJVMRuntimeConfig,
   buildJVMDiagnosticTreeNodes,
   resolveSavedQueryDisplayName,
   onDatabaseTreeLoaded,
 }: UseSidebarTreeLoadersOptions) => {
+  const mutations = useSidebarMutationRefresh({ getTree, replaceTreeNodeChildren: replaceChildren });
+  const { replaceTreeNodeChildren } = mutations;
   const {
     databaseRequestIdsRef, nacosServiceGroupRequestIdsRef, nacosNamespaceRequestIdsRef,
     nacosNamespaceActiveRequestsRef, databaseLoadsRef, tableLoadsRef, beginLoadGeneration,
@@ -82,10 +85,10 @@ export const useSidebarTreeLoaders = ({
 	    loadingNodesRef, setConnectionStates, setLoadedKeys, savedQueries,
 	    resolveSavedQueryDisplayName, replaceTreeNodeChildren, onDatabaseTreeLoaded,
 	    tableSortPreference, tableAccessCount, pinnedSidebarTables, getConnectionLoadEpoch,
-	    isCurrentConnectionLoadEpoch, beginLoadGeneration, isCurrentLoadGeneration, tableLoadsRef,
+	    isCurrentConnectionLoadEpoch, beginLoadGeneration, isCurrentLoadGeneration, tableLoadsRef, getTree,
 	  });
 
-  const { loadTables } = useSidebarSchemaLoader({
+  const { loadTables: loadTableObjects } = useSidebarSchemaLoader({
     loadingNodesRef, setConnectionStates, setLoadedKeys, savedQueries, resolveSavedQueryDisplayName,
     replaceTreeNodeChildren, onDatabaseTreeLoaded, tableSortPreference, tableAccessCount, pinnedSidebarTables,
     getConnectionLoadEpoch, isCurrentConnectionLoadEpoch, beginLoadGeneration, isCurrentLoadGeneration,
@@ -101,9 +104,9 @@ export const useSidebarTreeLoaders = ({
   return {
       loadDatabases,
       loadJVMResources,
-      loadTables,
+      loadTables: (node: Parameters<typeof loadTableObjects>[0], options: SidebarTreeLoadOptions = {}) => mutations.refresh(node, options, loadTableObjects),
       loadNacosConfigGroups,
       loadNacosServiceGroups,
-      invalidateConnectionLoads,
+      invalidateConnectionLoads: (id: string) => { mutations.invalidate(id); invalidateConnectionLoads(id); },
   };
 };

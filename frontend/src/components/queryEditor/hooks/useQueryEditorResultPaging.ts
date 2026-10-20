@@ -129,6 +129,7 @@ export const useQueryEditorResultPaging = ({
                     target.executionConnectionParams,
                     executionConnectionId,
                     target.executionBindings,
+                    target.executionQuotedPlaceholders,
                 );
             } finally {
                 if (isCurrentRun()) {

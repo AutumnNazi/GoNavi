@@ -47,9 +47,9 @@ export type InstalledFontFamily = {
   path?: string;
 };
 
-const UI_FONT_FALLBACK_STACK =
+export const UI_FONT_FALLBACK_STACK =
   '-apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", "WenQuanYi Micro Hei", "Microsoft YaHei", "Ubuntu", sans-serif';
-const MONO_FONT_FALLBACK_STACK =
+export const MONO_FONT_FALLBACK_STACK =
   'ui-monospace, "SF Mono", Menlo, Consolas, "Noto Sans Mono CJK SC", "Noto Sans Mono", "DejaVu Sans Mono", monospace';
 
 const MONO_FONT_PRIORITY_HINTS = [
@@ -159,9 +159,19 @@ const SHARED_MONO_FONTS: FontFamilyOption[] = [
     keywords: ['default', 'system', 'mono'],
   },
   { value: '"JetBrains Mono", monospace', label: 'JetBrains Mono', keywords: ['shared'] },
+  { value: '"JetBrainsMono Nerd Font Mono", monospace', label: 'JetBrainsMono Nerd Font Mono', keywords: ['shared', 'nerd'] },
   { value: '"Cascadia Code", monospace', label: 'Cascadia Code', keywords: ['shared'] },
+  { value: '"Cascadia Mono", monospace', label: 'Cascadia Mono', keywords: ['shared'] },
   { value: '"Fira Code", monospace', label: 'Fira Code', keywords: ['shared'] },
+  { value: '"Fira Mono", monospace', label: 'Fira Mono', keywords: ['shared'] },
   { value: '"Source Code Pro", monospace', label: 'Source Code Pro', keywords: ['shared'] },
+  { value: '"IBM Plex Mono", monospace', label: 'IBM Plex Mono', keywords: ['shared'] },
+  { value: '"Iosevka", monospace', label: 'Iosevka', keywords: ['shared'] },
+  { value: '"Hack", monospace', label: 'Hack', keywords: ['shared'] },
+  { value: '"Ubuntu Mono", monospace', label: 'Ubuntu Mono', keywords: ['shared'] },
+  { value: '"Roboto Mono", monospace', label: 'Roboto Mono', keywords: ['shared'] },
+  { value: '"Inconsolata", monospace', label: 'Inconsolata', keywords: ['shared'] },
+  { value: '"Sarasa Gothic SC", "Sarasa Mono SC", monospace', label: 'Sarasa Gothic SC', keywords: ['shared', '更纱'] },
 ];
 
 const normalizeFontOptionLabel = (label: string): string => sanitizeFontFamilyInput(label)?.toLowerCase() || '';
@@ -232,8 +242,6 @@ const formatInstalledFontLabel = (family: string): string => sanitizeFontFamilyI
   insertFontNameWordBreaks(family),
 ) || family;
 
-const isInstalledMonoCandidate = (family: string): boolean => scoreInstalledMonoFamily(family) > 0;
-
 const normalizeInstalledFontFamilyName = (entry: string | InstalledFontFamily): string | null => {
   const family = typeof entry === 'string' ? entry : entry.family;
   return sanitizeFontFamilyInput(family);
@@ -281,9 +289,6 @@ const buildInstalledFontOptions = (
   installedFamilies.forEach((entry) => {
     const family = normalizeInstalledFontFamilyName(entry);
     if (!family) {
-      return;
-    }
-    if (kind === 'mono' && !isInstalledMonoCandidate(family)) {
       return;
     }
     const dedupeKey = family.toLowerCase();
@@ -382,10 +387,12 @@ export const buildFontFamilyOptions = (
   installedFamilies: Array<string | InstalledFontFamily>,
   translate?: FontFamilyLabelTranslator,
 ): FontFamilyOption[] => {
-  return localizeFontOptions(sortFontOptions(dedupeFontOptions([
+  const presets = getPlatformFontFamilyOptions(platform, kind);
+  // 未安装预设仅在字体库展示；选择器不把名称预设当成可用字体。
+  return localizeFontOptions(dedupeFontOptions([
+    ...presets.filter(option => option.isDefault),
     ...buildInstalledFontOptions(installedFamilies, kind),
-    ...getPlatformFontFamilyOptions(platform, kind),
-  ])), translate);
+  ]), translate);
 };
 
 export const matchFontFamilyOption = (

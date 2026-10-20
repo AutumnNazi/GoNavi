@@ -82,3 +82,17 @@ func dataSyncJobContextIssueCode(err error) string {
 	}
 	return "request_cancelled"
 }
+
+func pingDatabaseWithContext(ctx context.Context, database interface{ Ping() error }) error {
+	if pinger, ok := database.(interface{ PingContext(context.Context) error }); ok {
+		return pinger.PingContext(ctx)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	err := database.Ping()
+	if err == nil {
+		return ctx.Err()
+	}
+	return err
+}

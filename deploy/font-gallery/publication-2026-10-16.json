@@ -1,0 +1,284 @@
+{
+  "catalogVersion": "2026-10-16.1",
+  "publishedAt": "2026-10-16T10:06:04Z",
+  "publicBaseURL": "https://origin-download.syngnat.top:8443/gonavi/fonts/v1/",
+  "catalogSha256": "4ccf7f6f8871ebcb90898c0043586d6359ae832dacc8d33a982110c178013dad",
+  "catalogSizeBytes": 72385,
+  "fontCount": 11,
+  "upstreamRevision": "1d0e46c7933245c8180fe83e47917961c913bbdb",
+  "fontFamilies": [
+    "JetBrains Mono",
+    "Fira Code",
+    "Fira Mono",
+    "IBM Plex Mono",
+    "Roboto Mono",
+    "Inconsolata",
+    "Source Code Pro",
+    "Ubuntu Mono",
+    "Cousine",
+    "Space Mono",
+    "Atkinson Hyperlegible"
+  ],
+  "previewMode": "same original font file; no modification; explicit opt-in; 512 KiB limit",
+  "totalFontBytes": 2157276,
+  "verification": {
+    "publicCatalogHTTP": 200,
+    "catalogHEAD": 200,
+    "immutableFiles": [
+      {
+        "path": "gonavi/fonts/v1/assets/48715a42ec242c21e9f02692891e147d022299a52e48d5e413e1a942193ffeda.ttf",
+        "sha256": "48715a42ec242c21e9f02692891e147d022299a52e48d5e413e1a942193ffeda",
+        "sizeBytes": 187208,
+        "status": 200,
+        "contentType": "font/ttf",
+        "nosniff": "nosniff",
+        "cors": "*"
+      },
+      {
+        "path": "gonavi/fonts/v1/licenses/b9d02699d55c6db537f7e787a6e13dd1f4ab67f142251d45e874633b95b9c937.txt",
+        "sha256": "b9d02699d55c6db537f7e787a6e13dd1f4ab67f142251d45e874633b95b9c937",
+        "sizeBytes": 4733,
+        "status": 200,
+        "contentType": "text/plain; charset=utf-8",
+        "nosniff": "nosniff",
+        "cors": "*"
+      },
+      {
+        "path": "gonavi/fonts/v1/assets/9335b082b3c7850d98a64b584f3417f65355f3471278bb5eeb8c6c0e8657aeeb.ttf",
+        "sha256": "9335b082b3c7850d98a64b584f3417f65355f3471278bb5eeb8c6c0e8657aeeb",
+        "sizeBytes": 260364,
+        "status": 200,
+        "contentType": "font/ttf",
+        "nosniff": "nosniff",
+        "cors": "*"
+      },
+      {
+        "path": "gonavi/fonts/v1/licenses/dd9f442e09e0a6169a5e93fad5776636e913c512caa4ef4f3cd436383d7b6e3c.txt",
+        "sha256": "dd9f442e09e0a6169a5e93fad5776636e913c512caa4ef4f3cd436383d7b6e3c",
+        "sizeBytes": 4707,
+        "status": 200,
+        "contentType": "text/plain; charset=utf-8",
+        "nosniff": "nosniff",
+        "cors": "*"
+      },
+      {
+        "path": "gonavi/fonts/v1/assets/2e00b0cf3106a3d792f35711b7722740b76c02ee7300ea8c60f940584b7a8ac9.ttf",
+        "sha256": "2e00b0cf3106a3d792f35711b7722740b76c02ee7300ea8c60f940584b7a8ac9",
+        "sizeBytes": 174596,
+        "status": 200,
+        "contentType": "font/ttf",
+        "nosniff": "nosniff",
+        "cors": "*"
+      },
+      {
+        "path": "gonavi/fonts/v1/licenses/431fd9a573ac2979e220afb36d9b481f5464869fd53969e6843a89698744b17c.txt",
+        "sha256": "431fd9a573ac2979e220afb36d9b481f5464869fd53969e6843a89698744b17c",
+        "sizeBytes": 4680,
+        "status": 200,
+        "contentType": "text/plain; charset=utf-8",
+        "nosniff": "nosniff",
+        "cors": "*"
+      },
+      {
+        "path": "gonavi/fonts/v1/assets/6a3412f058c7d8dfd9170c41e85ade48e5156ecb89356110ca57a0a27734af46.ttf",
+        "sha256": "6a3412f058c7d8dfd9170c41e85ade48e5156ecb89356110ca57a0a27734af46",
+        "sizeBytes": 135580,
+        "status": 200,
+        "contentType": "font/ttf",
+        "nosniff": "nosniff",
+        "cors": "*"
+      },
+      {
+        "path": "gonavi/fonts/v1/licenses/8588d70b9cd18562042442ed8c536f2cf962229574b4612b78d97a0859afa8f7.txt",
+        "sha256": "8588d70b9cd18562042442ed8c536f2cf962229574b4612b78d97a0859afa8f7",
+        "sizeBytes": 4735,
+        "status": 200,
+        "contentType": "text/plain; charset=utf-8",
+        "nosniff": "nosniff",
+        "cors": "*"
+      },
+      {
+        "path": "gonavi/fonts/v1/assets/66a80e79d17e4c7cabd162e2916578a4cc08fd19eef6e2a643305eae9c567b2b.ttf",
+        "sha256": "66a80e79d17e4c7cabd162e2916578a4cc08fd19eef6e2a643305eae9c567b2b",
+        "sizeBytes": 183700,
+        "status": 200,
+        "contentType": "font/ttf",
+        "nosniff": "nosniff",
+        "cors": "*"
+      },
+      {
+        "path": "gonavi/fonts/v1/licenses/c33b41dc7b00bd0e1c7c49c7c4f0b7717df78f1366f3de2d866cedadc20143c6.txt",
+        "sha256": "c33b41dc7b00bd0e1c7c49c7c4f0b7717df78f1366f3de2d866cedadc20143c6",
+        "sizeBytes": 4719,
+        "status": 200,
+        "contentType": "text/plain; charset=utf-8",
+        "nosniff": "nosniff",
+        "cors": "*"
+      },
+      {
+        "path": "gonavi/fonts/v1/assets/23ded25b447074d00659392bf9b1123d89df55cb07b0ad9bfef3366d199b5fcb.ttf",
+        "sha256": "23ded25b447074d00659392bf9b1123d89df55cb07b0ad9bfef3366d199b5fcb",
+        "sizeBytes": 347180,
+        "status": 200,
+        "contentType": "font/ttf",
+        "nosniff": "nosniff",
+        "cors": "*"
+      },
+      {
+        "path": "gonavi/fonts/v1/licenses/0e65f3affea0256f62b34e0e73499e182a4afd4bb44221fef25fd4f28c38afba.txt",
+        "sha256": "0e65f3affea0256f62b34e0e73499e182a4afd4bb44221fef25fd4f28c38afba",
+        "sizeBytes": 4683,
+        "status": 200,
+        "contentType": "text/plain; charset=utf-8",
+        "nosniff": "nosniff",
+        "cors": "*"
+      },
+      {
+        "path": "gonavi/fonts/v1/assets/b400fc584e10aff25d0e775ce181b4fc1c5ea1b5dc37b81aeb2084375b945790.ttf",
+        "sha256": "b400fc584e10aff25d0e775ce181b4fc1c5ea1b5dc37b81aeb2084375b945790",
+        "sizeBytes": 212340,
+        "status": 200,
+        "contentType": "font/ttf",
+        "nosniff": "nosniff",
+        "cors": "*"
+      },
+      {
+        "path": "gonavi/fonts/v1/licenses/dabdcd8dbeb9c5f9a08f97d8191435015e8a12b15a54be3561bccaa572db0703.txt",
+        "sha256": "dabdcd8dbeb9c5f9a08f97d8191435015e8a12b15a54be3561bccaa572db0703",
+        "sizeBytes": 4937,
+        "status": 200,
+        "contentType": "text/plain; charset=utf-8",
+        "nosniff": "nosniff",
+        "cors": "*"
+      },
+      {
+        "path": "gonavi/fonts/v1/assets/b35dd9d2131d5d83a9b87fe9ad22c6288fa3d17688d43302c14da29812417d63.ttf",
+        "sha256": "b35dd9d2131d5d83a9b87fe9ad22c6288fa3d17688d43302c14da29812417d63",
+        "sizeBytes": 205748,
+        "status": 200,
+        "contentType": "font/ttf",
+        "nosniff": "nosniff",
+        "cors": "*"
+      },
+      {
+        "path": "gonavi/fonts/v1/licenses/8cb150ce689253c21729a313ed658e34b0c4c006552ca8a09b1f7eea81900174.txt",
+        "sha256": "8cb150ce689253c21729a313ed658e34b0c4c006552ca8a09b1f7eea81900174",
+        "sizeBytes": 4978,
+        "status": 200,
+        "contentType": "text/plain; charset=utf-8",
+        "nosniff": "nosniff",
+        "cors": "*"
+      },
+      {
+        "path": "gonavi/fonts/v1/assets/1da22250675fc4c42fcf3a9736c44bc0570516105331443b663fd5cfbd1412fe.ttf",
+        "sha256": "1da22250675fc4c42fcf3a9736c44bc0570516105331443b663fd5cfbd1412fe",
+        "sizeBytes": 296856,
+        "status": 200,
+        "contentType": "font/ttf",
+        "nosniff": "nosniff",
+        "cors": "*"
+      },
+      {
+        "path": "gonavi/fonts/v1/licenses/590fbcf530f47d99398eb22c876d83191292444caa88388d19ccb3d6d8c9e596.txt",
+        "sha256": "590fbcf530f47d99398eb22c876d83191292444caa88388d19ccb3d6d8c9e596",
+        "sizeBytes": 4696,
+        "status": 200,
+        "contentType": "text/plain; charset=utf-8",
+        "nosniff": "nosniff",
+        "cors": "*"
+      },
+      {
+        "path": "gonavi/fonts/v1/assets/95837e182baeeada83368f7748db28357f0a1b75c6b84ff7065b5edf933c8e18.ttf",
+        "sha256": "95837e182baeeada83368f7748db28357f0a1b75c6b84ff7065b5edf933c8e18",
+        "sizeBytes": 99356,
+        "status": 200,
+        "contentType": "font/ttf",
+        "nosniff": "nosniff",
+        "cors": "*"
+      },
+      {
+        "path": "gonavi/fonts/v1/licenses/f1bdc6ba148fe452605c158daabb685a8ec2520cce5c426de94d086ee3228b2d.txt",
+        "sha256": "f1bdc6ba148fe452605c158daabb685a8ec2520cce5c426de94d086ee3228b2d",
+        "sizeBytes": 4710,
+        "status": 200,
+        "contentType": "text/plain; charset=utf-8",
+        "nosniff": "nosniff",
+        "cors": "*"
+      },
+      {
+        "path": "gonavi/fonts/v1/assets/7fb917c89019896d0b52ee84b7cbb3304c18cb90b19a62f5e32712bd23e97669.ttf",
+        "sha256": "7fb917c89019896d0b52ee84b7cbb3304c18cb90b19a62f5e32712bd23e97669",
+        "sizeBytes": 54348,
+        "status": 200,
+        "contentType": "font/ttf",
+        "nosniff": "nosniff",
+        "cors": "*"
+      },
+      {
+        "path": "gonavi/fonts/v1/licenses/1207d9b5ff97865406a8762eba95799c5df8f702bb9676a9733e47dab04fe8e9.txt",
+        "sha256": "1207d9b5ff97865406a8762eba95799c5df8f702bb9676a9733e47dab04fe8e9",
+        "sizeBytes": 4653,
+        "status": 200,
+        "contentType": "text/plain; charset=utf-8",
+        "nosniff": "nosniff",
+        "cors": "*"
+      }
+    ],
+    "postStatus": 403,
+    "deniedPaths": [
+      {
+        "path": "gonavi/fonts/v1/",
+        "status": 404
+      },
+      {
+        "path": "gonavi/fonts/v1/assets/",
+        "status": 404
+      },
+      {
+        "path": "gonavi/fonts/v1/unknown.ttf",
+        "status": 404
+      },
+      {
+        "path": "gonavi/fonts/v1/assets/0000000000000000000000000000000000000000000000000000000000000000.ttf",
+        "status": 404
+      }
+    ],
+    "browserFontFaceLoaded": 11,
+    "domainLifecycleTestsPassed": 11,
+    "existingServices": [
+      {
+        "path": "healthz",
+        "beforeStatus": 200,
+        "afterStatus": 200
+      },
+      {
+        "path": "health.txt",
+        "beforeStatus": 404,
+        "afterStatus": 404
+      },
+      {
+        "path": "gonavi/backgrounds/v1/catalog.json",
+        "beforeStatus": 200,
+        "afterStatus": 200,
+        "beforeSha256": "9722bd0928e3b128afe2aa28e89d3f93b60110c4eabc39bd72f1fbfd4a86be88",
+        "afterSha256": "9722bd0928e3b128afe2aa28e89d3f93b60110c4eabc39bd72f1fbfd4a86be88"
+      },
+      {
+        "path": "gonavi/dev/releases/download/dev-dd32293/GoNavi-dev-dd32293-Windows-Amd64-Portable.zip",
+        "beforeStatus": 200,
+        "afterStatus": 200
+      }
+    ]
+  },
+  "nginx": {
+    "beforeSha256": "eb4e15578bfdd1ea09ea1e4db47e7ca1ee71aec39573b5ed56d9fa7c90b10d8e",
+    "afterSha256": "b1112ae50525b6cd3357d1d704a54eea9383859d33e55e66c2145d6329d501f5",
+    "backupDirectory": "/root/gonavi-font-backups/20261016-v1"
+  },
+  "scopeLimitations": [
+    "No font bytes are added to the repository or installer.",
+    "Cascadia Code, Iosevka, Hack and Sarasa Gothic are not part of this publication.",
+    "This verifies public resources and the fontgallery service, not a running native desktop instance.",
+    "Fonts in this batch do not provide full CJK coverage; Chinese glyph fallback remains separate."
+  ]
+}

@@ -3,7 +3,7 @@ import { useStore } from '../../store';
 import type { SidebarActionsPlacement } from '../../utils/titlebarActionsPlacement';
 import SettingsPills from './SettingsPills';
 
-/** 新版左侧搜索模式：命令面板 / 常驻过滤框。 */
+// 新版左侧搜索模式：命令面板 / 常驻过滤框。
 export function SidebarSearchModeSettings() {
   const { t } = useI18n();
   const mode = useStore((state) => state.appearance.v2SidebarSearchMode ?? 'command');
@@ -21,11 +21,10 @@ export function SidebarSearchModeSettings() {
   );
 }
 
-/**
- * 侧栏工具按钮（搜索 / 定位 / 回顶 / 连接操作 / 折叠）位置：
- * 默认放在顶部工具条，也可固定在连接树左侧的侧边栏里竖排。
- */
-export function SidebarActionsPlacementSettings() {
+// 侧栏工具按钮位置；受控模式用于预览，默认直接更新设置。
+export function SidebarActionsPlacementSettings({ value, onChange }: {
+  value?: SidebarActionsPlacement; onChange?: (value: SidebarActionsPlacement) => void;
+} = {}) {
   const { t } = useI18n();
   const placement = useStore((state) => state.appearance.sidebarActionsPlacement);
   const setAppearance = useStore((state) => state.setAppearance);
@@ -37,8 +36,8 @@ export function SidebarActionsPlacementSettings() {
         { value: 'toolbar', label: t('app.theme.sidebar_actions_placement.toolbar') },
         { value: 'rail', label: t('app.theme.sidebar_actions_placement.rail') },
       ]}
-      value={placement}
-      onChange={(value) => setAppearance({ sidebarActionsPlacement: value })}
+      value={value ?? placement}
+      onChange={onChange ?? ((value) => setAppearance({ sidebarActionsPlacement: value }))}
     />
   );
 }

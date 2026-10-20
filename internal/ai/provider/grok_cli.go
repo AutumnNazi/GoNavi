@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -204,7 +203,7 @@ func (p *GrokCLIProvider) streamAttempt(ctx context.Context, req ai.ChatRequest,
 		return false, err
 	}
 	prompt := buildPrompt(req.Messages)
-	promptFile, cleanupPromptFile, err := createGrokCLIPromptFile(prompt)
+	promptFile, cleanupPromptFile, err := createGrokCLIRequestPromptFile(req.Messages, prompt)
 	if err != nil {
 		return false, err
 	}
@@ -415,7 +414,7 @@ func (p *GrokCLIProvider) runAttempt(ctx context.Context, req ai.ChatRequest) (g
 	}
 
 	prompt := buildPrompt(req.Messages)
-	promptFile, cleanupPromptFile, err := createGrokCLIPromptFile(prompt)
+	promptFile, cleanupPromptFile, err := createGrokCLIRequestPromptFile(req.Messages, prompt)
 	if err != nil {
 		return grokCLIResult{}, err
 	}
@@ -525,25 +524,6 @@ func parseGrokCLIResponse(raw []byte) (grokCLIParsed, error) {
 		},
 		stopReason: payload.StopReason,
 	}, nil
-}
-
-func createGrokCLIPromptFile(prompt string) (string, func(), error) {
-	file, err := os.CreateTemp("", "gonavi-grok-prompt-*.txt")
-	if err != nil {
-		return "", func() {}, fmt.Errorf("create Grok CLI prompt file failed: %w", err)
-	}
-	path := file.Name()
-	cleanup := func() { _ = os.Remove(path) }
-	if _, err := file.WriteString(prompt); err != nil {
-		_ = file.Close()
-		cleanup()
-		return "", func() {}, fmt.Errorf("write Grok CLI prompt file failed: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		cleanup()
-		return "", func() {}, fmt.Errorf("close Grok CLI prompt file failed: %w", err)
-	}
-	return path, cleanup, nil
 }
 
 func newGrokCLICommand(ctx context.Context, name string, args ...string) *exec.Cmd {

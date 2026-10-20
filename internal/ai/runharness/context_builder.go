@@ -79,6 +79,10 @@ type ContextCompressionMetadata struct {
 	WorkspaceTrimmed string                      `json:"workspaceTrimmed,omitempty"`
 	Workspace        *WorkspaceSnapshotReference `json:"workspace,omitempty"`
 
+	// ContentCompacted is set when older messages were shortened so the projection
+	// stays under 90% of the prompt budget. The ledger transcript is unchanged.
+	ContentCompacted bool `json:"contentCompacted,omitempty"`
+
 	// Omitted bounds describe durable transcript entries that were omitted from
 	// the provider request. Retained bounds cover the durable part of the
 	// request and do not include the synthetic workspace message.
@@ -170,6 +174,8 @@ func (b *DeterministicContextBuilder) Build(ctx context.Context, input ContextBu
 	if estimate == nil {
 		estimate = defaultContextTokenEstimate
 	}
+	var contentCompacted bool
+	providerTranscript, contentCompacted = compactContextTranscript(providerTranscript, estimate, maxTokens)
 	var newestMessage *Message
 	if len(providerTranscript) > 0 {
 		newestMessage = &providerTranscript[len(providerTranscript)-1]
@@ -242,6 +248,7 @@ func (b *DeterministicContextBuilder) Build(ctx context.Context, input ContextBu
 		InstructionsIncluded: hasInstructions,
 		WorkspaceTrimmed:     workspace.trimmed,
 		Workspace:            cloneWorkspaceSnapshotReference(workspaceReference),
+		ContentCompacted:     contentCompacted,
 	}
 	populateContextCursor(&metadata, transcript, selectedStart)
 

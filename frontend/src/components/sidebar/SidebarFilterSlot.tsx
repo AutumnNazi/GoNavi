@@ -5,6 +5,7 @@ import { t } from '../../i18n';
 import { isRedisConnection } from './redisSidebarOverview';
 import {
   resolveExplorerFilterFamily,
+  resolveExplorerFilterOrder,
   V2_EXPLORER_FILTER_LABEL_KEYS,
   V2_EXPLORER_FILTER_ORDER,
   type V2ExplorerFilter,
@@ -31,6 +32,7 @@ const V2_EXPLORER_FILTER_ICONS: Record<V2ExplorerFilter, React.ReactNode> = {
   routines: renderSidebarObjectIcon('routine'),
   packages: renderSidebarObjectIcon('package'),
   events: renderSidebarObjectIcon('event'),
+  jobs: renderSidebarObjectIcon('job'),
   // A Nacos workbench filters between its two explorer branches, so the icons echo
   // those rather than reusing the relational ones.
   'nacos-services': renderSidebarObjectIcon('nacosService'),
@@ -59,7 +61,7 @@ const SidebarFilterSlot = React.memo(({
   // disagree about which family is active — a disagreement is what lets a stale
   // filter empty the tree.
   const family = resolveExplorerFilterFamily(activeConnection);
-  const options = family ? V2_EXPLORER_FILTER_ORDER[family] : [];
+  const options = resolveExplorerFilterOrder(family, activeConnection);
   // With no host selected the slot still previews the relational tabs, matching
   // the behaviour it had before dedicated workbenches existed.
   const showTabs = options.length > 0 || (!activeConnection && hasRelationalFilterConnection);

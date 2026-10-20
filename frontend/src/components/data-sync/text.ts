@@ -1,3 +1,4 @@
+import { eventErrorTexts } from './textEventErrors';
 import { resolveDataSyncWorkbenchLocale } from './textLocale';
 export { resolveDataSyncWorkbenchLocale } from './textLocale';
 export type { DataSyncWorkbenchLocale } from './textLocale';
@@ -24,7 +25,7 @@ export { dataSyncTaskKindTextKey, dataSyncTaskKindChoiceTextKey, dataSyncStageTe
 export const createDataSyncWorkbenchTranslate = (
   language?: string,
 ): DataSyncWorkbenchTranslate => {
-  const catalog = { ...(resolveDataSyncWorkbenchLocale(language) === 'zh-CN' ? zhCN : enUS), ...backupTexts(language || 'en-US') };
+  const catalog = { ...(resolveDataSyncWorkbenchLocale(language) === 'zh-CN' ? zhCN : enUS), ...backupTexts(language || 'en-US'), ...eventErrorTexts(language || 'en-US') };
   return (key, params) => {
     let value = catalog[key] || key;
     Object.entries(params || {}).forEach(([name, replacement]) => {

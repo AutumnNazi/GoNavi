@@ -65,13 +65,13 @@ body[data-ui-version="v2"] .gn-v2-ai-input-actions .ant-btn:hover {
 
 /*
  * 单行紧凑工具条：
- *  [连接] [模型] [思考] ········· [token]
- * 全部固定/内容宽度，模型下拉绝不拉满整行。
+ *  [连接 40%] [模型 35%] [思考 25%] [token 环]
+ * 三个控件按权重分割行宽，窄窗口只收缩不折行。
  */
 body[data-ui-version="v2"] .gn-v2-ai-model-bar {
   display: flex;
   flex-direction: row;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: calc(6 * var(--gn-ai-unit, 1px));
   width: 100%;
@@ -95,26 +95,13 @@ body[data-ui-version="v2"] .gn-v2-ai-context-chip {
   box-sizing: border-box;
 }
 
-/* 连接芯片：内容宽度 + 上限 */
+/* 连接芯片：占行宽 40%，长连接名超出部分走省略号 */
 body[data-ui-version="v2"] .gn-v2-ai-context-chip {
-  flex: 0 1 auto;
+  flex: 40 1 0;
   width: auto;
-  max-width: 112px;
+  max-width: none;
   min-width: 0;
   overflow: hidden;
-}
-
-/* Tooltip 外包层：不破坏 flex 子项收缩 */
-body[data-ui-version="v2"] .gn-v2-ai-model-bar > span {
-  display: inline-flex !important;
-  min-width: 0;
-  max-width: 100%;
-  vertical-align: middle;
-}
-
-body[data-ui-version="v2"] .gn-v2-ai-model-bar > span:has(.gn-v2-ai-context-chip) {
-  max-width: 112px;
-  flex: 0 1 auto;
 }
 
 body[data-ui-version="v2"] .gn-v2-ai-context-chip > .anticon {
@@ -137,13 +124,13 @@ body[data-ui-version="v2"] .gn-v2-ai-context-live-dot {
   background: var(--gn-accent);
 }
 
-/* 模型 / 思考：固定宽度，禁止被 flex 拉长 */
+/* 模型：占行宽 35% */
 body[data-ui-version="v2"] .gn-v2-ai-model-select {
-  width: calc(190 * var(--gn-ai-unit, 1px)) !important;
-  min-width: calc(128 * var(--gn-ai-unit, 1px)) !important;
-  max-width: 190px !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
   height: calc(28 * var(--gn-ai-unit, 1px)) !important;
-  flex: 0 1 calc(190 * var(--gn-ai-unit, 1px)) !important;
+  flex: 35 1 0 !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-ai-provider-model-trigger {
@@ -200,13 +187,13 @@ body[data-ui-version="v2"] .gn-v2-ai-provider-model-label {
   color: var(--gn-accent);
 }
 
+/* 思考等级：占行宽 25% */
 body[data-ui-version="v2"] .gn-v2-ai-thinking-select {
-  /* 宽度由组件按最长档位名称写入 --gn-ai-thinking-width */
-  width: var(--gn-ai-thinking-width, calc(64 * var(--gn-ai-unit, 1px))) !important;
-  min-width: var(--gn-ai-thinking-width, calc(64 * var(--gn-ai-unit, 1px))) !important;
+  width: auto !important;
+  min-width: 0 !important;
   max-width: none !important;
   height: calc(28 * var(--gn-ai-unit, 1px)) !important;
-  flex: 0 0 var(--gn-ai-thinking-width, calc(64 * var(--gn-ai-unit, 1px))) !important;
+  flex: 25 1 0 !important;
 }
 
 /* 输入区允许 IME 候选层正常定位，避免被裁切/残留 */

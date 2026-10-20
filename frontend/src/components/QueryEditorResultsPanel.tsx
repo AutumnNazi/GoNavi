@@ -72,6 +72,8 @@ export type QueryEditorResultSet = {
     executionDbName?: string;
     /** 参数化执行时的绑定值快照：分页/总计数/刷新等远端重跑路径必须原样携带 */
     executionBindings?: QueryParamBindingInput[];
+    // 与 executionBindings 同时拍下：引号中的 {name} 当时是否当作参数。
+    executionQuotedPlaceholders?: boolean;
     pkColumns: string[];
     columnMetaMap?: Record<string, ColumnMeta>;
     uniqueKeyGroups?: string[][];

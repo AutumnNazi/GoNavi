@@ -105,25 +105,12 @@ describe('command search destinations', () => {
       expect(openSettingsNavigation).toHaveBeenNthCalledWith(2, { group: 'services', pane: 'ai', section: 'mcp' });
     });
 
-    it('opens workbench-style pages through their action', () => {
-      const openSettingsNavigation = vi.fn();
+    it('finds AI tool rows generated from the built-in tool catalog', () => {
       const { settings } = buildCommandSearchDestinationSections(makeArgs({
-        normalizedKeyword: t('app.tools.entry.request_diagnostics.title').toLowerCase(),
-        openSettingsNavigation,
+        normalizedKeyword: 'execute_sql',
       }));
 
-      const item = settings.find((candidate) => candidate.key === 'settings-menu:workspace/request-diagnostics');
-      if (item?.kind === 'action') item.onRun();
-
-      expect(openSettingsNavigation).toHaveBeenCalledWith({ group: 'workspace', action: 'request-diagnostics' });
-    });
-
-    it('finds shortcut rows generated from the shortcut definitions', () => {
-      const { settings } = buildCommandSearchDestinationSections(makeArgs({
-        normalizedKeyword: t('app.shortcuts.action.runQuery.label').toLowerCase(),
-      }));
-
-      expect(settings.some((item) => item.key === 'settings-entry:shortcut-settings:runQuery')).toBe(true);
+      expect(settings.some((item) => item.key === 'settings-entry:ai-tools:execute_sql')).toBe(true);
     });
 
     it('hides web-only pages outside the browser build', () => {

@@ -77,7 +77,7 @@ export default function SqlAuditDetailDrawer({
       setLoading(false);
       return;
     }
-    if (!event.transactionId) {
+    if (!event.transactionId && !event.mcpRequestId) {
       setTimeline([event]);
       setTimelineTotal(1);
       setError('');
@@ -89,7 +89,8 @@ export default function SqlAuditDetailDrawer({
     setError('');
     const filter = {
       ...DEFAULT_SQL_AUDIT_FILTER,
-      transactionId: event.transactionId,
+      transactionId: event.mcpRequestId ? '' : event.transactionId,
+      mcpRequestId: event.mcpRequestId,
       page: timelinePage,
       pageSize: SQL_AUDIT_TIMELINE_PAGE_SIZE,
     };
@@ -203,6 +204,8 @@ export default function SqlAuditDetailDrawer({
             <Descriptions.Item label={t('sql_audit.column.source')}>{sourceLabel}</Descriptions.Item>
             <Descriptions.Item label={t('sql_audit.detail.commit_mode')}>{event.commitMode || '-'}</Descriptions.Item>
             <Descriptions.Item label={t('sql_audit.detail.boundary_mode')}>{boundaryModeLabel}</Descriptions.Item>
+            <Descriptions.Item label={t('sql_audit.mcp.request_id')} span={2}>{event.mcpRequestId || '-'}</Descriptions.Item>
+            <Descriptions.Item label={t('sql_audit.mcp.client')} span={2}>{event.mcpClient || '-'}</Descriptions.Item>
             <Descriptions.Item label={t('sql_audit.detail.query_id')} span={2}>{event.queryId || '-'}</Descriptions.Item>
             <Descriptions.Item label={t('sql_audit.detail.transaction_id')} span={2}>{event.transactionId || '-'}</Descriptions.Item>
             <Descriptions.Item label={t('sql_audit.detail.connection_fingerprint')} span={2}>{event.connectionFingerprint || '-'}</Descriptions.Item>
@@ -252,7 +255,7 @@ export default function SqlAuditDetailDrawer({
 
         <section aria-labelledby="sql-audit-detail-timeline">
           <div className="gn-sql-audit-detail-heading-row">
-            <Title level={5} id="sql-audit-detail-timeline">{t('sql_audit.detail.timeline')}</Title>
+            <Title level={5} id="sql-audit-detail-timeline">{t(event.mcpRequestId ? 'sql_audit.mcp.timeline' : 'sql_audit.detail.timeline')}</Title>
             <Text type="secondary" aria-live="polite">
               {t('sql_audit.detail.timeline_page_status', { loaded: timeline.length, total: timelineTotal })}
             </Text>
@@ -278,7 +281,7 @@ export default function SqlAuditDetailDrawer({
               ))}
             </ol>
           </Spin>
-          {event.transactionId && timelineTotal > SQL_AUDIT_TIMELINE_PAGE_SIZE ? (
+          {(event.transactionId || event.mcpRequestId) && timelineTotal > SQL_AUDIT_TIMELINE_PAGE_SIZE ? (
             <div className="gn-sql-audit-timeline-pagination">
               <Pagination
                 size="small"

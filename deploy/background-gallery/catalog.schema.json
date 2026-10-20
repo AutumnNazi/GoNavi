@@ -1,0 +1,206 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GoNavi background gallery v1 (shared task contract)",
+  "description": "Transport limits: 2 MiB UTF-8 JSON, 24,000,000 pixels per image, thumbnail 256 KiB. Consumers must also check path/hash equality, MIME/extension agreement, unique entry IDs and HTTPS source/license URLs without credentials.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "version",
+    "entries"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "version": {
+      "$ref": "#/$defs/version"
+    },
+    "entries": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    }
+  },
+  "$defs": {
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "sizeBytes",
+        "width",
+        "height",
+        "mimeType"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^assets/[0-9a-f]{64}\\.(webp|png|jpg)$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 24000000
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 24000000
+        },
+        "mimeType": {
+          "enum": [
+            "image/webp",
+            "image/png",
+            "image/jpeg"
+          ]
+        }
+      }
+    },
+    "license": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "url",
+        "notice",
+        "text",
+        "nonCommercial"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^https://",
+          "format": "uri"
+        },
+        "notice": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        },
+        "nonCommercial": {
+          "type": "boolean"
+        }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "names",
+        "fit",
+        "image",
+        "thumbnail",
+        "attribution",
+        "sourceUrl",
+        "rightsStatus",
+        "license"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+        },
+        "version": {
+          "$ref": "#/$defs/version"
+        },
+        "names": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 16,
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "fit": {
+          "enum": [
+            "contain",
+            "cover"
+          ]
+        },
+        "image": {
+          "$ref": "#/$defs/asset"
+        },
+        "thumbnail": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/asset"
+            },
+            {
+              "properties": {
+                "sizeBytes": {
+                  "maximum": 262144
+                }
+              }
+            }
+          ]
+        },
+        "attribution": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "sourceUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^https://",
+          "format": "uri"
+        },
+        "rightsStatus": {
+          "const": "approved"
+        },
+        "license": {
+          "$ref": "#/$defs/license"
+        }
+      }
+    }
+  }
+}

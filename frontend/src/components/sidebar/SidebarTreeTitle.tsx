@@ -241,6 +241,7 @@ export const renderSidebarV2TreeTitle = ({
     || node.type === 'sequence'
     || node.type === 'db-trigger'
     || node.type === 'db-event'
+    || node.type === 'db-job'
     || node.type === 'routine'
     || node.type === 'package'
     || node.type === 'database-link'

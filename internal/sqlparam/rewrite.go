@@ -50,7 +50,12 @@ type BindResult struct {
 //   - 未提供值的参数返回 ErrMissingParameter（包装具体参数名）；
 //   - 不修改任何合法字符串字面量或注释；值永远通过 Args 绑定，绝不拼进 SQL。
 func Bind(sql string, dbType string, values map[string]TypedValue) (BindResult, error) {
-	opts := OptionsForDBType(dbType)
+	return BindWithOptions(sql, dbType, values, OptionsForDBType(dbType))
+}
+
+// BindWithOptions 与 Bind 相同，但使用调用方给的扫描选项。查询编辑器用它
+// 贯彻「引号中的 {name} 是否当作参数」开关。
+func BindWithOptions(sql string, dbType string, values map[string]TypedValue, opts ScanOptions) (BindResult, error) {
 	spans := Scan(sql, opts)
 	if len(spans) == 0 {
 		return BindResult{SQL: sql}, nil
@@ -269,18 +274,24 @@ func convertOnce(name string, values map[string]TypedValue, cache map[string]any
 // MissingParameterNames 返回扫描到但未提供值的参数名（排序去重），供上层生成
 // 可操作的错误提示。
 func MissingParameterNames(sql string, dbType string, values map[string]TypedValue) []string {
-	opts := OptionsForDBType(dbType)
+	return MissingParameterNamesWithOptions(sql, OptionsForDBType(dbType), values)
+}
+
+// MissingParameterNamesWithOptions 用调用方的扫描选项列出缺值参数。
+func MissingParameterNamesWithOptions(sql string, opts ScanOptions, values map[string]TypedValue) []string {
 	var missing []string
 	seen := make(map[string]struct{})
 	for _, span := range Scan(sql, opts) {
-		if _, ok := values[span.Name]; ok {
-			continue
+		for _, name := range span.parameterNames() {
+			if _, ok := values[name]; ok {
+				continue
+			}
+			if _, ok := seen[name]; ok {
+				continue
+			}
+			seen[name] = struct{}{}
+			missing = append(missing, name)
 		}
-		if _, ok := seen[span.Name]; ok {
-			continue
-		}
-		seen[span.Name] = struct{}{}
-		missing = append(missing, span.Name)
 	}
 	sort.Strings(missing)
 	return missing

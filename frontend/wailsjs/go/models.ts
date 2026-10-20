@@ -1365,6 +1365,7 @@ export namespace app {
 	
 	export class ExportFileOptions {
 	    format: string;
+	    csvEncoding?: string;
 	    columns?: string[];
 	    columnComments?: Record<string, string>;
 	    xlsxMaxRowsPerSheet?: number;
@@ -1386,6 +1387,7 @@ export namespace app {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.format = source["format"];
+	        this.csvEncoding = source["csvEncoding"];
 	        this.columns = source["columns"];
 	        this.columnComments = source["columnComments"];
 	        this.xlsxMaxRowsPerSheet = source["xlsxMaxRowsPerSheet"];
@@ -2108,6 +2110,26 @@ export namespace app {
 		}
 	}
 	
+	export class SourceInspectQuery {
+	    kind: string;
+	    namespace?: string;
+	    group?: string;
+	    name?: string;
+	    pattern?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SourceInspectQuery(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.namespace = source["namespace"];
+	        this.group = source["group"];
+	        this.name = source["name"];
+	        this.pattern = source["pattern"];
+	    }
+	}
 	export class StartSecurityUpdateRequest {
 	    sourceType: string;
 	    rawPayload?: string;

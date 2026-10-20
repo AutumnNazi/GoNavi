@@ -192,6 +192,19 @@ describe('data sync task model', () => {
     });
     expect(reconcile[0]).toMatchObject({
       sourceObject: 'missing_target',
+      targetObject: 'missing_target',
+      targetMode: 'create_or_reuse',
+    });
+
+    const cdc = buildDataSyncMappingsFromSelection({
+      taskId: 'cdc-1',
+      taskKind: 'cdc',
+      sourceNames: ['missing_target'],
+      targetObjects: [],
+      existingMappings: [],
+    });
+    expect(cdc[0]).toMatchObject({
+      sourceObject: 'missing_target',
       targetObject: '',
       targetMode: 'existing_only',
     });

@@ -4,7 +4,7 @@ import type { SidebarTreeNode } from '../sidebarV2Utils';
 import { applySidebarTableRowCounts, refreshSidebarTableRowCounts } from './sidebarTableRowCounts';
 
 const query = vi.hoisted(() => vi.fn());
-vi.mock('../../../wailsjs/go/app/App', () => ({ DBQuery: query }));
+vi.mock('../../../wailsjs/go/app/App', () => ({ DBQueryApplicationWithCancel: query, CancelQuery: vi.fn().mockResolvedValue({ success: true }) }));
 
 describe('sidebar row counts after SQL writes', () => {
     beforeEach(() => {
@@ -28,7 +28,7 @@ describe('sidebar row counts after SQL writes', () => {
         const nodes: SidebarTreeNode[] = [{ title: 'Tables', type: 'object-group', key: 'tables', children: [{
             title: tableName, type: 'table', key: 'orders', dataRef: { tableName, schemaName, rowCount: 100 },
         }] }];
-        expect(query).toHaveBeenCalledWith(expect.anything(), dbName, sql);
+        expect(query).toHaveBeenCalledWith(expect.anything(), dbName, sql, expect.any(String));
         expect(applySidebarTableRowCounts(nodes, counts)[0].children?.[0].dataRef.rowCount).toBe(0);
         expect(nodes[0].children?.[0].dataRef.rowCount).toBe(100);
     });
@@ -67,4 +67,10 @@ describe('sidebar row counts after SQL writes', () => {
             'SELECT COUNT(*) AS table_rows FROM `audit.log`',
         ]);
     });
+    it('does not impose a five-second deadline on large tables', async () => {
+        const conn = { id: 'conn-1', name: 'MySQL', dbName: 'main', config: { type: 'mysql', queryTimeout: 0 } } as SavedConnection & { dbName: string };
+        await refreshSidebarTableRowCounts(conn, [{ tableName: 'orders', schemaName: '', displayName: 'orders' }], ['orders']);
+        expect(query.mock.calls[0][0].queryTimeout).toBe(0);
+    });
+
 });

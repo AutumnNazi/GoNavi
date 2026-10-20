@@ -440,7 +440,7 @@ export const useDataSyncWorkbenchState = ({
     const targetKind =
       handed?.kind ||
       tasksRef.current.find((task) => task.id === targetId)?.kind ||
-      'migration';
+      'reconcile';
     const stages = dataSyncTaskStages(targetKind);
     const requestedStage = focusStage || handoff?.stage || 'mappings';
     setSelectedTaskId(targetId);

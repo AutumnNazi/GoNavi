@@ -141,6 +141,7 @@ const apiFixture = (
   DataSyncRunResume: vi.fn(async () => success(runFixture('resume-run', 'resume'))),
   DataSyncRunRetry: vi.fn(async () => success(runFixture('retry-run', 'retry'))),
   DataSyncRunStart: vi.fn(async () => success(runFixture('run-1', 'manual'))),
+  RollbackDataSyncRun: vi.fn(async () => success()),
   ...overrides,
 });
 

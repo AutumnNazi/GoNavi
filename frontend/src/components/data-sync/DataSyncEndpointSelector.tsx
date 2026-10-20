@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 
 import { DataSyncConnectionTreeSelect } from './DataSyncConnectionTreeSelect';
+import { DataSyncDatabaseField } from './DataSyncDatabaseField';
 import type {
   DataSyncConnectionTreeItem,
   DataSyncDatabaseMetadata,
@@ -53,10 +54,12 @@ export const DataSyncEndpointSelector: React.FC<{
   onConnectionChange: (connection: DataSyncSavedConnectionView | null) => void;
   onDatabaseChange: (database: string) => void;
   onSchemaChange: (schema: string) => void;
+  allowCreateDatabase?: boolean;
 }> = ({
   role,
   title,
   hideLegend = false,
+  allowCreateDatabase = false,
   endpoint,
   connections,
   connectionTree,
@@ -71,9 +74,6 @@ export const DataSyncEndpointSelector: React.FC<{
   );
   const missingConnection = connections.status === 'ready' && Boolean(endpoint.connectionId)
     && !connections.items.some((connection) => connection.id === endpoint.connectionId);
-  const currentDatabaseKnown = databases.items.some(
-    (database) => database.name === endpoint.database,
-  );
   const [schemaDraft, setSchemaDraft] = useState(endpoint.schema);
 
   useEffect(() => {
@@ -119,27 +119,13 @@ export const DataSyncEndpointSelector: React.FC<{
           <>
             <label className="gn-data-sync-field" data-wide="true">
               <span>{t('editor.database')}</span>
-              <select
-                className="gn-data-sync-control gn-data-sync-mono"
-                data-endpoint-control="database"
+              <DataSyncDatabaseField
                 value={endpoint.database}
-                disabled={databases.status === 'loading'}
-                onChange={(event) => onDatabaseChange(event.target.value)}
-              >
-                {!endpoint.database ? (
-                  <option value="" disabled hidden>
-                    {t('metadata.select_database')}
-                  </option>
-                ) : null}
-                {endpoint.database && !currentDatabaseKnown ? (
-                  <option value={endpoint.database}>{endpoint.database}</option>
-                ) : null}
-                {databases.items.map((database) => (
-                  <option key={database.name} value={database.name}>
-                    {database.name}
-                  </option>
-                ))}
-              </select>
+                databases={databases}
+                allowCreate={allowCreateDatabase}
+                t={t}
+                onChange={onDatabaseChange}
+              />
             </label>
             <label className="gn-data-sync-field" data-wide="true">
               <span>{t('editor.schema')}</span>

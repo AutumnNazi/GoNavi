@@ -157,14 +157,12 @@ export const V2ExplorerToolbarActions: React.FC<{
   </>
 );
 
-/**
- * 标题栏第二行的常驻工具条宿主。Sidebar 把搜索/定位/回顶/更多 portal 到 slot；
- * 折叠按钮由 App 持有并直接渲染在这里，切换折叠时不会重渲染 explorer。
- */
+// 标题栏第二行的常驻工具条宿主。Sidebar 把搜索/定位/回顶/更多 portal 到 slot；
+// 折叠按钮由 App 持有并直接渲染在这里，切换折叠时不会重渲染 explorer。
 export const DockedSidebarActionsHost: React.FC<{
   label: string;
   slotRef: React.Ref<HTMLDivElement>;
-  /** titlebar：标题栏第二行（内联功能入口）；below-toolbar：独立工具条下方的一行。 */
+  // titlebar：标题栏第二行（内联功能入口）；below-toolbar：独立工具条下方的一行。
   placement: 'titlebar' | 'below-toolbar';
   collapsed: boolean;
   toggleLabel: string;
@@ -194,11 +192,9 @@ export const DockedSidebarActionsHost: React.FC<{
   </div>
 );
 
-/**
- * 侧边栏（固定 rail）里竖排的同一组按钮，折叠 / 展开按钮排在第一位。
- * 折叠 / 展开各有一个按钮占同一位置，由 Sider 的 data-sidebar-collapsed 决定显示哪一个，
- * 各自持有焦点交接用的 ref。
- */
+// 侧边栏（固定 rail）里竖排的同一组按钮，折叠 / 展开按钮排在第一位。
+// 折叠 / 展开各有一个按钮占同一位置，由 Sider 的 data-sidebar-collapsed 决定显示哪一个，
+// 各自持有焦点交接用的 ref。
 export const V2RailExplorerActions: React.FC<{
   label: string;
   searchAction?: { label: string; onClick: () => void };

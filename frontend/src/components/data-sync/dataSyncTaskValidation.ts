@@ -57,6 +57,9 @@ export const canUseDataSyncRowErrorIsolation = (
   task: DataSyncTaskDefinition,
 ): boolean => {
   if (task.kind === 'cdc') return true;
+  // 数据同步缺失的目标表在写数据前单独建好，数据阶段只写已有表，
+  // 所以自动建表不影响行级隔离；查询写入仍要求目标事先存在。
+  const createsTargetsUpfront = task.kind === 'reconcile';
   if (
     (task.kind !== 'reconcile' && task.kind !== 'querySink') ||
     task.incremental.mode !== 'snapshot' ||
@@ -71,7 +74,8 @@ export const canUseDataSyncRowErrorIsolation = (
   const enabledMappings = task.mappings.filter((mapping) => mapping.enabled);
   return (
     enabledMappings.length > 0 &&
-    enabledMappings.every((mapping) => mapping.targetMode === 'existing_only')
+    (createsTargetsUpfront ||
+      enabledMappings.every((mapping) => mapping.targetMode === 'existing_only'))
   );
 };
 

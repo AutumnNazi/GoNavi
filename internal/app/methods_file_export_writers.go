@@ -2,7 +2,6 @@ package app
 
 import (
 	"bufio"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -10,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"GoNavi-Wails/internal/dataexport"
 	"GoNavi-Wails/internal/db"
 )
 
@@ -143,17 +143,22 @@ func (c *countingExportConsumer) ConsumeRowValues(values []interface{}) error {
 }
 
 type csvExportFileWriter struct {
-	writer         *csv.Writer
+	writer         *dataexport.CSV
 	columns        []string
 	record         []string
 	columnComments map[string]string
 }
 
-func newCSVExportFileWriter(f io.Writer, columnComments map[string]string) (*csvExportFileWriter, error) {
-	if _, err := f.Write([]byte{0xEF, 0xBB, 0xBF}); err != nil {
+func newCSVExportFileWriter(f io.Writer, columnComments map[string]string, encodings ...string) (*csvExportFileWriter, error) {
+	encoding := ""
+	if len(encodings) > 0 {
+		encoding = encodings[0]
+	}
+	writer, err := dataexport.NewCSV(f, encoding)
+	if err != nil {
 		return nil, err
 	}
-	return &csvExportFileWriter{writer: csv.NewWriter(f), columnComments: columnComments}, nil
+	return &csvExportFileWriter{writer: writer, columnComments: columnComments}, nil
 }
 
 func (w *csvExportFileWriter) SetColumns(columns []string) error {
@@ -171,8 +176,7 @@ func (w *csvExportFileWriter) ConsumeRowValues(values []interface{}) error {
 }
 
 func (w *csvExportFileWriter) Close() error {
-	w.writer.Flush()
-	return w.writer.Error()
+	return w.writer.Close()
 }
 
 type jsonExportFileWriter struct {

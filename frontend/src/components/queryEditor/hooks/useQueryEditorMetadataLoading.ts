@@ -64,7 +64,9 @@ import type { QueryEditorExecutionStatusApi } from './useQueryEditorExecutionSta
 import type { QueryEditorConnectionContextApi } from './useQueryEditorConnectionContext';
 import type { QueryEditorDraftSyncApi } from './useQueryEditorDraftSync';
 import type { QueryEditorObjectDecorationsApi } from './useQueryEditorObjectDecorations';
+import type { QueryEditorQueryContextApi } from './useQueryEditorQueryContext';
 import type { QueryEditorProps } from '../../QueryEditor';
+import { resolveDefaultQueryEditorDatabase } from '../queryEditorDefaultDatabase';
 
 export interface UseQueryEditorMetadataLoadingInput {
     tab: QueryEditorProps['tab'];
@@ -119,6 +121,7 @@ export interface UseQueryEditorMetadataLoadingInput {
     lastSqlReferencedMetadataKeyRef: QueryEditorCoreStateApi['lastSqlReferencedMetadataKeyRef'];
     queryEditorMetadataReloadTick: QueryEditorCoreStateApi['queryEditorMetadataReloadTick'];
     sqlReferencedMetadataKey: QueryEditorCoreStateApi['sqlReferencedMetadataKey'];
+    switchQueryContext: QueryEditorQueryContextApi['switchQueryContext'];
 }
 
 export const useQueryEditorMetadataLoading = ({
@@ -134,6 +137,7 @@ export const useQueryEditorMetadataLoading = ({
     isQueryEditorMetadataRequestCurrent, currentDbRef, getCurrentQuery, objectDecorationsDirtyRef,
     scheduleObjectDecorationRefresh, metadataRetryPendingRef, refreshObjectDecorations,
     lastSqlReferencedMetadataKeyRef, queryEditorMetadataReloadTick, sqlReferencedMetadataKey,
+    switchQueryContext,
 }: UseQueryEditorMetadataLoadingInput) => {
     // 非激活 tab 副作用瘦身：隐藏 tab 不再走元数据拉取（不再对每个可见面板发 IPC 争主线程）。
     // 本 hook 没有 isActive 入参，但 queryEditorActiveRef 由 useQueryEditorShortcutsAndSnippets
@@ -141,6 +145,10 @@ export const useQueryEditorMetadataLoading = ({
     const isEditorActive = queryEditorActiveRef.current;
     // 失活期间被跳过的元数据刷新，在切回时补跑一次的脏标记。
     const metadataActivationStaleRef = useRef(false);
+    // switchQueryContext 的身份会随 tab 激活态翻转而变；库列表 effect 不该因它重跑，
+    // 因此经 ref 读取最新实现。默认选库只发生一次，晚一帧拿到新实现不影响结果。
+    const switchQueryContextRef = useRef(switchQueryContext);
+    switchQueryContextRef.current = switchQueryContext;
     // If opening a saved query, load its SQL
     useEffect(() => {
         const incoming = getTabQueryValue(tab);
@@ -190,6 +198,15 @@ export const useQueryEditorMetadataLoading = ({
                 }
 
                 setDbList(dbs);
+                // 新建查询落在连接上时 dbName 会是空的，这里按列表首个库补上默认选中。
+                const defaultDb = resolveDefaultQueryEditorDatabase({
+                    config: conn.config,
+                    currentDb: currentDbRef.current,
+                    databaseNames: dbs,
+                });
+                if (defaultDb) {
+                    switchQueryContextRef.current(currentConnectionId, defaultDb, { silentPending: true });
+                }
             } else {
                 visibleDbsRef.current = [];
                 if (queryEditorActiveRef.current) {

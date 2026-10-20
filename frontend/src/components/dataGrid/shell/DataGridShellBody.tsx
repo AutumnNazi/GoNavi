@@ -18,6 +18,7 @@ import type { DataGridShellProps } from '../../DataGridShell';
 const ResultChartView = lazy(() => import('../chart/ResultChartView'));
 
 export interface DataGridShellBodyProps {
+  regularCopyMenu?: React.ReactNode;
   containerRef: DataGridShellProps['containerRef'];
   bgContent: DataGridShellProps['bgContent'];
   panelRadius: DataGridShellProps['panelRadius'];
@@ -156,7 +157,7 @@ export const DataGridShellBody = ({
   cellContextMenuPortalRef, resolveContextMenuFieldName, sortInfo, activeShortcutPlatform,
   pinnedLeftColumnSet, pinnedLeftColumnScope, handleV2ColumnHeaderContextMenuAction,
   selectedRowKeys, selectedCellCount, canEditContextMenuCell, canUndoContextMenuCellChange,
-  copiedRowsForPaste, copiedCellPatch, supportsCopyInsert, handleV2CellContextMenuAction,
+  copiedRowsForPaste, copiedCellPatch, supportsCopyInsert, handleV2CellContextMenuAction, regularCopyMenu,
 }: DataGridShellBodyProps) => (
   <div ref={containerRef} style={{ flex: 1, overflow: 'hidden', position: 'relative', minHeight: 0, display: 'flex', flexDirection: 'column', background: `var(--gn-bg-panel, ${bgContent})`, borderRadius: panelRadius, border: `1px solid ${panelFrameColor}`, boxSizing: 'border-box' }}>
    {contextHolder}
@@ -399,6 +400,7 @@ export const DataGridShellBody = ({
   );
   })() : (
   <V2CellContextMenuView
+  regularCopyMenu={regularCopyMenu}
   fieldName={resolveContextMenuFieldName(cellContextMenu.dataIndex, cellContextMenu.title)}
   shortcutPlatform={activeShortcutPlatform}
   tableName={tableName}

@@ -9,9 +9,10 @@ import {
   resolveConnectionPackageExportResult,
 } from '../../utils/connectionExport';
 import { normalizeConnectionPackageImportPayload, summarizeConnectionImport } from '../connectionPackageImport';
-import { resolveConnectionImportPlacement } from '../../components/settings/ConnectionImportSettingsPanel';
+import {
+  resolveConnectionImportPlacement,
+} from '../../components/settings/connectionImportPlacement';
 import { mergeRedisDbAliases } from '../../utils/redisDbAlias';
-import type { ToolCenterGroupKey } from '../settingsCenterPanes';
 import {
   type ExcelGroupAssignment,
   type ExcelGroupPlanContext,
@@ -34,11 +35,6 @@ export interface UseAppConnectionImportExportInput {
   setConnectionImportNotice: AppShellStateApi['setConnectionImportNotice'];
   setConnectionPackageDialog: AppShellStateApi['setConnectionPackageDialog'];
   setPendingConnectionImportPayload: AppShellStateApi['setPendingConnectionImportPayload'];
-  setToolCenterBackGroupKey: React.Dispatch<React.SetStateAction<ToolCenterGroupKey | null>>;
-  setActiveSettingsCenterGroupKey: AppShellStateApi['setActiveSettingsCenterGroupKey'];
-  setActiveSettingsCenterPane: AppShellStateApi['setActiveSettingsCenterPane'];
-  browserConnectionImportSourceGroupRef: AppShellStateApi['browserConnectionImportSourceGroupRef'];
-  openSettingsCenterWorkbenchTab: AppShellStateApi['openSettingsCenterWorkbenchTab'];
   isWebRuntime: AppShellStateApi['isWebRuntime'];
   browserConnectionImportInputRef: AppShellStateApi['browserConnectionImportInputRef'];
   connections: AppSecurityUpdateApi['connections'];
@@ -50,8 +46,7 @@ export const useAppConnectionImportExport = ({
   t, connectionSidebarLayoutCoordinatorRef, connectionImportTargetTagId,
   setConnectionDisplaySortMode, refreshConnectionsAfterImport, moveConnectionsToTag,
   setConnectionImportNotice, setConnectionPackageDialog, setPendingConnectionImportPayload,
-  setToolCenterBackGroupKey, setActiveSettingsCenterGroupKey, setActiveSettingsCenterPane,
-  browserConnectionImportSourceGroupRef, openSettingsCenterWorkbenchTab, isWebRuntime,
+  isWebRuntime,
   browserConnectionImportInputRef, connections, connectionPackageDialog,
   pendingConnectionImportPayload,
 }: UseAppConnectionImportExportInput) => {
@@ -125,11 +120,11 @@ export const useAppConnectionImportExport = ({
       return imported;
   }, [connectionImportTargetTagId, moveConnectionsToTag, refreshConnectionsAfterImport, setConnectionDisplaySortMode, t]);
 
-  const importConnectionPayloadFromFile = async (raw: string, sourceGroup?: ToolCenterGroupKey) => {
+  const importConnectionPayloadFromFile = async (raw: string) => {
       // Excel 由后端在统一入口直接完成导入，返回信封结果而非文本载荷。
       const excelResult = parseConnectionsExcelImportEnvelope(raw);
       if (excelResult) {
-          await finishExcelImport({ data: excelResult }, sourceGroup);
+          await finishExcelImport({ data: excelResult });
           return;
       }
 
@@ -171,11 +166,6 @@ export const useAppConnectionImportExport = ({
           }));
       } catch (e: any) {
           if (isConnectionPackagePasswordRequiredError(e)) {
-              if (sourceGroup) {
-                  setToolCenterBackGroupKey(sourceGroup);
-                  setActiveSettingsCenterGroupKey(sourceGroup);
-                  setActiveSettingsCenterPane({ key: 'import', group: sourceGroup });
-              }
               setPendingConnectionImportPayload(raw);
               setConnectionPackageDialog({
                   open: true,
@@ -202,8 +192,6 @@ export const useAppConnectionImportExport = ({
 
   const handleBrowserConnectionImportFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
-      const sourceGroup = browserConnectionImportSourceGroupRef.current;
-      browserConnectionImportSourceGroupRef.current = undefined;
       event.target.value = '';
       if (!file) {
           return;
@@ -227,10 +215,10 @@ export const useAppConnectionImportExport = ({
               if (!res?.success) {
                   throw new Error(String(res?.message || ''));
               }
-              await finishExcelImport(res, sourceGroup);
+              await finishExcelImport(res);
               return;
           }
-          await importConnectionPayloadFromFile(await file.text(), sourceGroup);
+          await importConnectionPayloadFromFile(await file.text());
       } catch (error) {
           const detail = error instanceof Error ? error.message : String(error ?? '').trim();
           const resolvedDetail = detail || t('app.connection_package.message.import_failed');
@@ -244,8 +232,7 @@ export const useAppConnectionImportExport = ({
       }
   };
 
-  const handleImportConnections = async (sourceGroup?: ToolCenterGroupKey) => {
-      setToolCenterBackGroupKey(sourceGroup ?? null);
+  const handleImportConnections = async () => {
       setConnectionImportNotice(null);
       setConnectionPackageDialog((current) => ({
           ...current,
@@ -254,18 +241,12 @@ export const useAppConnectionImportExport = ({
           error: '',
           confirmLoading: false,
       }));
-      if (sourceGroup) {
-          setActiveSettingsCenterGroupKey(sourceGroup);
-          setActiveSettingsCenterPane({ key: 'import', group: sourceGroup });
-          openSettingsCenterWorkbenchTab();
-      }
       if (isWebRuntime) {
           const input = browserConnectionImportInputRef.current;
           if (!input) {
               void message.error(t('app.connection_package.error.import_capability_unavailable'));
               return;
           }
-          browserConnectionImportSourceGroupRef.current = sourceGroup;
           input.value = '';
           input.click();
           return;
@@ -282,16 +263,12 @@ export const useAppConnectionImportExport = ({
       }
 
       const raw = typeof res.data === 'string' ? res.data : String(res.data ?? '');
-      await importConnectionPayloadFromFile(raw, sourceGroup);
+      await importConnectionPayloadFromFile(raw);
   };
+  const handleImportConnectionsRef = useRef(handleImportConnections);
+  handleImportConnectionsRef.current = handleImportConnections;
 
-  const handleExportConnections = async (sourceGroup?: ToolCenterGroupKey) => {
-      setToolCenterBackGroupKey(sourceGroup ?? null);
-      if (sourceGroup) {
-          setActiveSettingsCenterGroupKey(sourceGroup);
-          setActiveSettingsCenterPane({ key: 'export', group: sourceGroup });
-          openSettingsCenterWorkbenchTab();
-      }
+  const handleExportConnections = async () => {
       setConnectionPackageDialog({
           open: true,
           mode: 'export',
@@ -357,7 +334,7 @@ export const useAppConnectionImportExport = ({
       return movedCount;
   };
 
-  const finishExcelImport = async (result: any, sourceGroup?: ToolCenterGroupKey) => {
+  const finishExcelImport = async (result: any) => {
       const imported = normalizeConnectionPackageImportPayload(result?.data);
       // 全部条目都已存在时后端返回空连接列表 + 跳过数，这不是失败。
       if (!imported || (imported.connections.length === 0 && imported.skippedCount === 0)) {
@@ -380,11 +357,6 @@ export const useAppConnectionImportExport = ({
           );
       }
       const movedByExcel = await applyExcelGroupAssignments(imported.excelGroups || [], imported.connections);
-      if (sourceGroup) {
-          setToolCenterBackGroupKey(sourceGroup);
-          setActiveSettingsCenterGroupKey(sourceGroup);
-          setActiveSettingsCenterPane({ key: 'import', group: sourceGroup });
-      }
       const summary = summarizeConnectionImport(t, imported, { groupedCount: movedByExcel });
       setConnectionImportNotice(summary);
       void message[summary.type](summary.message);
@@ -520,7 +492,7 @@ export const useAppConnectionImportExport = ({
   };
   return {
     handleBrowserConnectionImportFileChange, handleImportConnections, handleExportConnections,
-    handleExportConnectionsRef, handleConfirmConnectionPackageDialog,
+    handleExportConnectionsRef, handleImportConnectionsRef, handleConfirmConnectionPackageDialog,
   };
 };
 

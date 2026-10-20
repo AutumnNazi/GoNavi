@@ -762,6 +762,7 @@ describe('Sidebar locate toolbar', () => {
       'sidebar.command_search.object_kind.routines': 'Routines',
       'sidebar.command_search.object_kind.packages': 'Packages',
       'sidebar.command_search.object_kind.events': 'Events',
+      'sidebar.command_search.object_kind.jobs': 'Jobs',
       'table_overview.section.pinned': 'Pinned',
       'table_overview.section.all': 'All',
     } as Record<string, string>)[key] || key;
@@ -774,8 +775,8 @@ describe('Sidebar locate toolbar', () => {
       t('sidebar.search.scope.host', undefined, 'zh-CN'),
       t('sidebar.search.scope.tag', undefined, 'zh-CN'),
     ]);
-    expect(buildV2ExplorerFilterOptions(translate).map((option) => option.label)).toEqual(['All', 'Tables', 'Views', 'Sequences', 'Routines', 'Packages', 'Events']);
-    expect(V2_UTILS_EXPLORER_FILTER_OPTIONS.map((option) => option.label)).toEqual(['全部', '表', '视图', '序列', '函数', '存储包', '事件']);
+    expect(buildV2ExplorerFilterOptions(translate).map((option) => option.label)).toEqual(['All', 'Tables', 'Views', 'Sequences', 'Routines', 'Packages', 'Events', 'Jobs']);
+    expect(V2_UTILS_EXPLORER_FILTER_OPTIONS.map((option) => option.label)).toEqual(['全部', '表', '视图', '序列', '函数', '存储包', '事件', '作业']);
 
     const tableNodes = [
       { title: 'orders', key: 'orders', type: 'table' as const, dataRef: { pinnedSidebarTable: true } },

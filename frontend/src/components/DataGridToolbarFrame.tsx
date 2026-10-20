@@ -13,6 +13,7 @@ import {
   GnImportIcon,
   GnPencilIcon,
   GnRefreshIcon,
+  GnStopIcon,
   GnRollbackIcon,
   GnSaveIcon,
   GnSigmaIcon,
@@ -110,6 +111,7 @@ export interface DataGridToolbarFrameProps {
   onResetPendingChanges: () => void;
   onDataEditCommitModeChange: (mode: 'manual' | 'auto') => void;
   onDataEditAutoCommitDelayChange: (delayMs: number) => void;
+  onCancelReload?: () => void;
   onRefresh: () => void;
   onToggleFilterClick: () => void;
   onAddRow: () => void;
@@ -212,6 +214,7 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
   onDataEditCommitModeChange,
   onDataEditAutoCommitDelayChange,
   onRefresh,
+  onCancelReload,
   onToggleFilterClick,
   onAddRow,
   onUndoDeleteSelected,
@@ -372,10 +375,10 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
         </>
         {onReload && (
           renderToolbarAction({
-            label: translate('data_grid.toolbar.refresh'),
-            icon: <GnRefreshIcon />,
-            disabled: loading,
-            onClick: onRefresh,
+            label: translate(loading && onCancelReload ? 'data_grid.toolbar.stop_refresh' : 'data_grid.toolbar.refresh'),
+            icon: loading && onCancelReload ? <GnStopIcon /> : <GnRefreshIcon />,
+            disabled: loading && !onCancelReload,
+            onClick: loading && onCancelReload ? onCancelReload : onRefresh,
           })
         )}
 
@@ -563,7 +566,7 @@ const DataGridToolbarFrame: React.FC<DataGridToolbarFrameProps> = ({
           </>
         )}
 
-        {isQueryResultExport && (
+        {(isQueryResultExport || canCopyQueryResult) && (
           <>
             {renderToolbarDivider()}
             <Tooltip

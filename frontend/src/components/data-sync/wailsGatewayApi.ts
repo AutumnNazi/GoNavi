@@ -79,6 +79,7 @@ export interface WailsDataSyncApi {
   DataSyncRunClearTerminal(taskId: string): QueryResultPromise;
   DataSyncRunResume(runId: string): QueryResultPromise;
   DataSyncRunRetry(runId: string): QueryResultPromise;
+  RollbackDataSyncRun(runId: string): QueryResultPromise;
   DataSyncRunStart(
     taskId: string,
     expectedRevision: number,

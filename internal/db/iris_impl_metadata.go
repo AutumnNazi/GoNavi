@@ -51,7 +51,7 @@ func (i *IrisDB) GetDatabases() ([]string, error) {
 // 调用方据此回退到连接命名空间而不是无限等待。
 //
 // 注意列名是 Nsp/Status/Remote 而不是 Name，按 Name 查会报 SQLCODE -29。
-// 与 schema 层一致，滤掉 % 开头的系统命名空间（%SYS），避免显示用户点不开的项。
+// 保留服务端返回的系统命名空间，访问权限由服务端校验，不按名称前缀隐藏。
 func (i *IrisDB) listNamespaces() ([]string, error) {
 	data, _, err := i.Query(`SELECT Nsp FROM %SYS.Namespace_List()`)
 	if err != nil {
@@ -61,7 +61,7 @@ func (i *IrisDB) listNamespaces() ([]string, error) {
 	namespaces := make([]string, 0, len(data))
 	for _, row := range data {
 		name := strings.TrimSpace(rowString(row, "Nsp", "nsp", "Name", "name"))
-		if name == "" || strings.HasPrefix(name, "%") {
+		if name == "" {
 			continue
 		}
 		key := strings.ToUpper(name)

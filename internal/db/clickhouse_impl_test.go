@@ -68,9 +68,10 @@ var (
 )
 
 type fakeClickHouseQueryResult struct {
-	columns []string
-	rows    [][]driver.Value
-	err     error
+	columns     []string
+	rows        [][]driver.Value
+	err         error
+	emptySchema bool
 }
 
 func TestClickHousePingValidatesQueryPath(t *testing.T) {
@@ -161,6 +162,43 @@ func TestClickHouseGetDatabasesFallsBackToCurrentDatabase(t *testing.T) {
 	}
 	if queries[0] != listSQL || queries[1] != fallbackSQL {
 		t.Fatalf("unexpected query order: %v", queries)
+	}
+}
+
+func TestClickHouseEmptyResultKeepsColumns(t *testing.T) {
+	registerFakeClickHouseDriverOnce.Do(func() {
+		sql.Register(fakeClickHouseDriverName, fakeClickHouseDriver{})
+	})
+
+	conn, err := sql.Open(fakeClickHouseDriverName, "")
+	if err != nil {
+		t.Fatalf("open fake clickhouse db failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = conn.Close()
+	})
+
+	const query = "SELECT id, name FROM events WHERE 1 = 0"
+	schemaQuery := "SELECT * FROM (" + query + ") AS gonavi_empty_result LIMIT 0"
+	fakeClickHouseStateMu.Lock()
+	fakeClickHouseState.pingErr = nil
+	fakeClickHouseState.queryErr = nil
+	fakeClickHouseState.queryResults = map[string]fakeClickHouseQueryResult{
+		query:       {emptySchema: true},
+		schemaQuery: {columns: []string{"id", "name"}},
+	}
+	fakeClickHouseState.queries = nil
+	fakeClickHouseStateMu.Unlock()
+
+	rows, columns, err := (&ClickHouseDB{conn: conn}).QueryContext(context.Background(), query)
+	if err != nil {
+		t.Fatalf("empty query failed: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("rows = %#v", rows)
+	}
+	if strings.Join(columns, ",") != "id,name" {
+		t.Fatalf("columns = %#v", columns)
 	}
 }
 
@@ -1289,7 +1327,7 @@ func (fakeClickHouseConn) QueryContext(ctx context.Context, query string, args [
 		if result.err != nil {
 			return nil, result.err
 		}
-		return &fakeClickHouseRows{columns: result.columns, rows: result.rows}, nil
+		return &fakeClickHouseRows{columns: result.columns, rows: result.rows, emptySchema: result.emptySchema}, nil
 	}
 	if fakeClickHouseState.queryErr != nil {
 		return nil, fakeClickHouseState.queryErr
@@ -1309,12 +1347,16 @@ func (fakeClickHouseConn) ExecContext(ctx context.Context, query string, args []
 }
 
 type fakeClickHouseRows struct {
-	columns []string
-	rows    [][]driver.Value
-	index   int
+	columns     []string
+	rows        [][]driver.Value
+	index       int
+	emptySchema bool
 }
 
 func (r *fakeClickHouseRows) Columns() []string {
+	if r.emptySchema {
+		return nil
+	}
 	if len(r.columns) > 0 {
 		return r.columns
 	}

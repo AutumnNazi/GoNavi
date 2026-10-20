@@ -239,7 +239,9 @@ func webTransferDirContainsReferencedPath(dir string, referenced map[string]stru
 func webDownloadMIMEForFormat(format string) string {
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "csv":
-		return "text/csv; charset=utf-8"
+		return "text/csv"
+	case "parquet":
+		return "application/vnd.apache.parquet"
 	case "json":
 		return "application/json"
 	case "md":

@@ -2,10 +2,18 @@ import { t as translateCatalog } from '../i18n/catalog';
 
 export type DataTableDensity = 'comfortable' | 'standard' | 'compact';
 
+/** 行首选择列形态：hidden=整列隐藏；checkbox=复选框列；blank=空白选择列（点击/拖选行）。 */
+export type DataGridSelectionColumnMode = 'hidden' | 'checkbox' | 'blank';
+
 export interface DataGridDisplaySettings {
   showDataTableVerticalBorders: boolean;
   /** 数据预览 / SQL 结果表是否显示行号列；默认开启 */
   showDataTableRowNumber: boolean;
+  /**
+   * 行首勾选列三态：null = 跟随界面布局（classic 显示、Navicat 风格隐藏，
+   * 对齐 Navicat 浏览数据的行选中习惯），true / false = 用户显式固定。
+   */
+  showDataTableCheckboxColumn: boolean | null;
   dataTableDensity: DataTableDensity;
   dataTableFontSize: number | null;
   dataTableFontSizeFollowGlobal: boolean;
@@ -16,7 +24,9 @@ export interface DataGridDisplaySettings {
 export const DEFAULT_DATA_GRID_DISPLAY_SETTINGS: DataGridDisplaySettings = {
   showDataTableVerticalBorders: false,
   showDataTableRowNumber: true,
-  dataTableDensity: 'comfortable',
+  showDataTableCheckboxColumn: null,
+  // 默认紧凑：Navicat 式数据表阅读密度（表头 28px、行内边距 2px 6px）。
+  dataTableDensity: 'compact',
   dataTableFontSize: null,
   dataTableFontSizeFollowGlobal: true,
   sidebarTreeFontSize: null,
@@ -33,6 +43,7 @@ export const MIN_DATA_TABLE_COLUMN_WIDTH = 120;
 type DensityOptionTranslator = (key: string) => string;
 
 interface DensityParams {
+  rowHeight: number;
   defaultColumnWidth: number;
   cellPadding: string;
   inputCellPadding: string;
@@ -43,6 +54,7 @@ interface DensityParams {
 
 const DENSITY_PARAMS: Record<DataTableDensity, DensityParams> = {
   comfortable: {
+    rowHeight: 36,
     defaultColumnWidth: 180,
     cellPadding: '8px',
     inputCellPadding: '0px 4px',
@@ -51,6 +63,7 @@ const DENSITY_PARAMS: Record<DataTableDensity, DensityParams> = {
     metaFontSize: 11,
   },
   standard: {
+    rowHeight: 30,
     defaultColumnWidth: 140,
     cellPadding: '5px 8px',
     inputCellPadding: '0px 3px',
@@ -59,6 +72,7 @@ const DENSITY_PARAMS: Record<DataTableDensity, DensityParams> = {
     metaFontSize: 10,
   },
   compact: {
+    rowHeight: 24,
     defaultColumnWidth: 100,
     cellPadding: '2px 6px',
     inputCellPadding: '0px 2px',
@@ -84,8 +98,8 @@ export const createDensityOptions = (
 export const DENSITY_OPTIONS = createDensityOptions();
 
 export const sanitizeDataTableDensity = (value: unknown): DataTableDensity => {
-  if (value === 'standard' || value === 'compact') return value;
-  return 'comfortable';
+  if (value === 'standard' || value === 'compact' || value === 'comfortable') return value;
+  return DEFAULT_DATA_GRID_DISPLAY_SETTINGS.dataTableDensity;
 };
 
 const sanitizeOptionalIntegerInRange = (
@@ -125,6 +139,10 @@ export const sanitizeDataGridDisplaySettings = (
     showDataTableVerticalBorders: value.showDataTableVerticalBorders === true,
     // 缺省/历史数据：默认显示行号（仅显式 false 才关闭）
     showDataTableRowNumber: value.showDataTableRowNumber !== false,
+    // 缺省/历史数据：null = 跟随界面布局（classic 显示、Navicat 风格隐藏）
+    showDataTableCheckboxColumn: typeof value.showDataTableCheckboxColumn === 'boolean'
+      ? value.showDataTableCheckboxColumn
+      : null,
     dataTableDensity: sanitizeDataTableDensity(value.dataTableDensity),
     dataTableFontSize,
     dataTableFontSizeFollowGlobal: typeof value.dataTableFontSizeFollowGlobal === 'boolean'

@@ -370,3 +370,32 @@ func TestBindQuotedTemplateMultipleNames(t *testing.T) {
 		t.Fatalf("绑定值异常: %#v", result.Args)
 	}
 }
+
+func TestBindQuotedPlaceholderSwitch(t *testing.T) {
+	values := map[string]TypedValue{
+		"code1": {Type: TypeString, Value: "A"},
+		"code2": {Type: TypeString, Value: "B"},
+	}
+	on, err := Bind("SELECT '{code1}-{code2}' FROM dual", "oracle", values)
+	if err != nil {
+		t.Fatalf("开关打开时应能绑定: %v", err)
+	}
+	if on.SQL != "SELECT :1 FROM dual" || !reflect.DeepEqual(on.Args, []any{"A-B"}) {
+		t.Fatalf("打开时应渲染成一个绑定值: sql=%q args=%#v", on.SQL, on.Args)
+	}
+
+	offOpts := OptionsForDBType("oracle")
+	offOpts.QuotedPlaceholders = false
+	off, err := BindWithOptions("SELECT '{code1}-{code2}' FROM dual", "oracle", values, offOpts)
+	if err != nil {
+		t.Fatalf("开关关闭不应失败: %v", err)
+	}
+	if off.SQL != "SELECT '{code1}-{code2}' FROM dual" || len(off.Args) != 0 {
+		t.Fatalf("关闭时应原样保留: sql=%q args=%#v", off.SQL, off.Args)
+	}
+
+	missing := MissingParameterNamesWithOptions("SELECT '{code1}-{code2}' FROM dual", offOpts, nil)
+	if len(missing) != 0 {
+		t.Fatalf("关闭时不应报缺参: %v", missing)
+	}
+}

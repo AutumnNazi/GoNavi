@@ -19,10 +19,6 @@ const THEME_PRESETS = [
 
 const TAB_DISPLAY_ELEMENTS = ['connection', 'database', 'schema', 'host', 'group'] as const;
 
-const SNIPPET_IDS = [
-  'alt', 'ct', 'ctt', 'del', 'dro', 'grp', 'ins', 'inst', 'lim', 'ljo', 'ord', 'sel', 'seld', 'selj', 'selw', 'sub', 'upd',
-] as const;
-
 const BUILTIN_TOOL_FLOWS = [
   'locate_table_fields', 'field_lookup_table', 'deep_structure', 'table_snapshot', 'database_overview',
   'app_health_overview', 'support_bundle', 'choose_tool_route', 'ai_setup_health', 'ai_runtime',
@@ -84,6 +80,17 @@ export const CONTENT_SEARCH_ENTRIES: ReadonlyArray<SettingsCenterSearchEntry> = 
     'app.theme.tab_display.element.schema.label',
     'app.theme.tab_display.element.host.label',
     'app.theme.tab_display.preview.prefix',
+    'app.theme.tab_appearance.title',
+    'app.theme.tab_appearance.description',
+    'app.theme.tab_appearance.style.label',
+    'app.theme.tab_appearance.style.hint',
+    'app.theme.tab_appearance.style.card',
+    'app.theme.tab_appearance.style.underline',
+    'app.theme.tab_appearance.style.pill',
+    'app.theme.tab_appearance.close_position.label',
+    'app.theme.tab_appearance.close_position.hint',
+    'app.theme.tab_appearance.close_position.left',
+    'app.theme.tab_appearance.close_position.right',
     'app.theme.data_table.table_double_click_action.open_data',
     'app.theme.data_table.table_double_click_action.open_design',
     'app.theme.data_table.query_ctrl_click_action.locate',
@@ -99,25 +106,8 @@ export const CONTENT_SEARCH_ENTRIES: ReadonlyArray<SettingsCenterSearchEntry> = 
     'app.proxy.test.preset.github_api',
     'app.proxy.scope_hint',
   ]),
-  ...page('services', 'download-source', [
-    'app.download_source.description',
-    'app.download_source.fallback_hint',
-  ]),
   ...page('services', 'web-auth', [
     'app.settings.web_auth.password.description',
-  ]),
-  ...page('services', 'cloud-backup', [
-    'app.cloud_backup.description',
-    'app.cloud_backup.category.connections',
-    'app.cloud_backup.category.saved_queries',
-    'app.cloud_backup.category.ai_settings',
-    'app.cloud_backup.category.daily_secrets',
-    'app.cloud_backup.category.update_settings',
-    'app.cloud_backup.provider.webdav',
-    'app.cloud_backup.provider.s3',
-    'app.cloud_backup.provider.webdav_hint',
-    'app.cloud_backup.secret_hint',
-    'app.cloud_backup.schedule.manual',
   ]),
 
   // AI 设置
@@ -192,14 +182,7 @@ export const CONTENT_SEARCH_ENTRIES: ReadonlyArray<SettingsCenterSearchEntry> = 
     'ai_settings.prompts.builtin.description',
   ]),
 
-  // 连接与配置
-  ...page('config', 'import', [
-    'app.connection_package.import.description',
-    'app.connection_package.import.root_level',
-  ]),
-  ...page('config', 'connection-health', [
-    'connection_health.description',
-  ]),
+  // 数据与安全（连接导入/导出/健康检查已上移标题栏「连接工具」，页面不再是菜单节点）
   ...page('config', 'data-root-application', [
     'app.data_root.current_location',
     'app.data_root.application.current_description',
@@ -238,7 +221,4 @@ export const CONTENT_SEARCH_ENTRIES: ReadonlyArray<SettingsCenterSearchEntry> = 
     'security_update.settings.summary.total',
     'security_update.settings.pending_list',
   ]),
-
-  // 编辑器与驱动
-  ...page('workspace', 'snippet-settings', SNIPPET_IDS.map((id) => `sql_snippets.builtin.${id}.name`)),
 ];

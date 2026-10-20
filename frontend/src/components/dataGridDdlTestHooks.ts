@@ -12,6 +12,8 @@ export const setUpDataGridDdlTest = () => {
     backendApp.DBGetForeignKeys.mockResolvedValue({ success: true, data: [] });
     backendApp.DBGetTriggers.mockResolvedValue({ success: true, data: [] });
     backendApp.DBQuery.mockResolvedValue({ success: true, data: [] });
+    backendApp.DBQueryApplicationWithCancel.mockImplementation((config, dbName, sql) => backendApp.DBQuery(config, dbName, sql));
+    backendApp.CancelQuery.mockResolvedValue({ success: true });
     backendApp.DBShowCreateTable.mockResolvedValue({ success: true, data: 'CREATE TABLE users' });
     setCurrentLanguage('zh-CN');
     storeState.queryOptions.showColumnComment = false;
@@ -108,6 +110,8 @@ export const tearDownDataGridDdlTest = () => {
     backendApp.DBGetForeignKeys.mockReset();
     backendApp.DBGetTriggers.mockReset();
     backendApp.DBQuery.mockReset();
+    backendApp.DBQueryApplicationWithCancel.mockReset();
+    backendApp.CancelQuery.mockReset();
     backendApp.DBShowCreateTable.mockReset();
     resetDataGridDdlViewSharedStateForTests();
     vi.unstubAllGlobals();

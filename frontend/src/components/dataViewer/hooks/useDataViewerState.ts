@@ -1,5 +1,4 @@
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
-import { message } from 'antd';
 import {
   getViewerFilterSnapshot,
   shouldDeferInitialDataViewerFetch,
@@ -13,13 +12,12 @@ import type { EditRowLocator } from '../../../utils/rowLocator';
 import { useStore } from '../../../store';
 import { useOptionalI18n } from '../../../i18n/provider';
 import { type I18nParams, t as translate, resolveLanguage } from '../../../i18n';
-import { type ViewerPaginationState, parseTotalFromCountRow } from '../dataViewerTotals';
+import { type ViewerPaginationState } from '../dataViewerTotals';
 import type { FilterCondition } from '../../../utils/sql';
 import { getDataSourceCapabilities } from '../../../utils/dataSourceCapabilities';
 import { isRocketMQTagFilteredConnection } from '../../../utils/rocketmqTagFilter';
 import { normalizeQuickWhereCondition } from '../../../utils/dataGridWhereFilter';
-import { buildRpcConnectionConfig } from '../../../utils/connectionRpcConfig';
-import { DBQuery } from '../../../../wailsjs/go/app/App';
+import { useDataViewerManualCount } from './useDataViewerManualCount';
 import { confirmRabbitMQPreview } from '../../../utils/rabbitmqPreview';
 import type { DataViewerProps } from '../../DataViewer';
 
@@ -210,82 +208,12 @@ export const useDataViewerState = ({ tab }: UseDataViewerStateInput) => {
     }, VIEWER_SCROLL_SNAPSHOT_PERSIST_DELAY_MS);
   }, [tab.id, persistViewerSnapshot]);
 
-  const handleManualTotalCount = useCallback(async () => {
-    if (rocketMQTagTotalCountUnavailable) {
-      message.warning(tr('data_grid.toolbar.tag_total_unavailable_tooltip'));
-      return;
-    }
-
-    const config = latestConfigRef.current;
-    const dbName = latestDbNameRef.current;
-    const countSql = latestCountSqlRef.current;
-    const countKey = latestCountKeyRef.current;
-
-    if (!config || !countSql || !countKey) {
-      message.warning(tr('data_viewer.message.result_not_ready'));
-      return;
-    }
-
-    manualCountKeyRef.current = countKey;
-    const countSeq = ++manualCountSeqRef.current;
-    const countStart = Date.now();
-    setPagination(prev => ({ ...prev, totalCountLoading: true, totalCountCancelled: false }));
-    const countConfig = buildRpcConnectionConfig(config, { timeout: 120, queryTimeout: 120 });
-
-    try {
-      const resCount = await DBQuery(countConfig as any, dbName, countSql);
-      const countDuration = Date.now() - countStart;
-      addSqlLog({
-        id: `log-${Date.now()}-manual-count`,
-        timestamp: Date.now(),
-        sql: countSql,
-        status: resCount?.success ? 'success' : 'error',
-        duration: countDuration,
-        message: resCount?.success ? '' : String(resCount?.message || tr('data_viewer.message.total_count_failed')),
-        dbName
-      });
-
-      if (manualCountSeqRef.current !== countSeq) return;
-      if (manualCountKeyRef.current !== countKey) return;
-
-      if (!resCount?.success) {
-        setPagination(prev => ({ ...prev, totalCountLoading: false }));
-        message.error(String(resCount?.message || tr('data_viewer.message.total_count_failed')));
-        return;
-      }
-      if (!Array.isArray(resCount.data) || resCount.data.length === 0) {
-        setPagination(prev => ({ ...prev, totalCountLoading: false }));
-        return;
-      }
-
-      const total = parseTotalFromCountRow(resCount.data[0]);
-      if (total === null) {
-        setPagination(prev => ({ ...prev, totalCountLoading: false }));
-        message.error(tr('data_viewer.message.total_count_parse_failed'));
-        return;
-      }
-
-      setPagination(prev => ({
-        ...prev,
-        total,
-        totalKnown: true,
-        totalApprox: false,
-        approximateTotal: undefined,
-        totalCountLoading: false,
-        totalCountCancelled: false,
-      }));
-    } catch (e: any) {
-      if (manualCountSeqRef.current !== countSeq) return;
-      if (manualCountKeyRef.current !== countKey) return;
-      setPagination(prev => ({ ...prev, totalCountLoading: false }));
-      message.error(tr('data_viewer.message.total_count_failed_detail', { detail: String(e?.message || e) }));
-    }
-  }, [addSqlLog, rocketMQTagTotalCountUnavailable, tr]);
-
-  const handleCancelManualTotalCount = useCallback(() => {
-    manualCountSeqRef.current++;
-    setPagination(prev => ({ ...prev, totalCountLoading: false, totalCountCancelled: true }));
-  }, []);
+  const { handleManualTotalCount, handleCancelManualTotalCount, invalidateManualCount } = useDataViewerManualCount({
+    latestConfigRef, latestDbNameRef, latestCountSqlRef, latestCountKeyRef,
+    manualCountSeqRef, manualCountKeyRef, countKeyRef, setPagination, addSqlLog, tr,
+    rocketMQTagTotalCountUnavailable,
+    contextKey: `${viewerLoadContextKey}|${JSON.stringify(filterConditions)}|${quickWhereCondition}`,
+  });
 
   const ensureRabbitMQPreviewConfirmed = useCallback(async (queue: string): Promise<boolean> => {
     if (rabbitMQPreviewConfirmedRef.current) return true;
@@ -315,7 +243,7 @@ export const useDataViewerState = ({ tab }: UseDataViewerStateInput) => {
     forceReadOnly, preferManualTotalCount, supportsApproximateTableCount,
     supportsApproximateTotalPages, rocketMQTagTotalCountUnavailable, totalCountUnavailableLabel,
     totalCountUnavailableReason, handleTableScrollSnapshotChange, handleManualTotalCount,
-    handleCancelManualTotalCount, ensureRabbitMQPreviewConfirmed,
+    handleCancelManualTotalCount, invalidateManualCount, ensureRabbitMQPreviewConfirmed,
   };
 };
 

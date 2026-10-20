@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { t } from '../../i18n';
 import {
   buildDiffExportContent,
   collectExportColumns,
@@ -99,7 +100,7 @@ describe('exportDiff', () => {
     expect(out.content).toContain('cell-changed');
     expect(out.content).toContain('cell-added');
     expect(out.content).toContain('cell-removed');
-    expect(out.content).toContain('并排对比');
+    expect(out.content).toContain(t('result_diff.export.side_by_side_title'));
   });
 
   it('collectExportColumns prefers key columns', () => {

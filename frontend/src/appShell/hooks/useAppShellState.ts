@@ -39,7 +39,7 @@ import {
   type ConnectionPackageDialogState,
   createClosedConnectionPackageDialogState,
 } from '../connectionPackageImport';
-import type { ConnectionImportNotice } from '../../components/settings/ConnectionImportSettingsPanel';
+import type { ConnectionImportNotice } from '../../components/settings/connectionImportPlacement';
 import { createLazyAIChatPanel, createLazyAISettingsContent } from '../appLayoutParts';
 import {
   resolveDocumentPlatform,
@@ -88,6 +88,15 @@ export const useAppShellState = ({
   const blurFilter = blurToFilter(effectiveBlur);
   const isWebRuntime = runtimeBuildType === 'web'
     || (typeof window !== 'undefined' && (window as any).__GONAVI_WEB_RUNTIME__?.buildType === 'web');
+  // 浏览器里承载的前端（部署 web 版、wails dev 调试页）没有原生菜单栏，
+  // 不能按「macOS 桌面」语义隐藏标题栏的「设置│主题」胶囊与自绘窗口控制。
+  // wails 桌面生产窗口走专属通道（macOS 为 wails: 协议，Windows/Linux 为
+  // wails.localhost 主机），据此与普通 http(s) 页面区分；wails dev 的桌面
+  // 窗口与调试页共用 localhost:34115，无法区分，dev 桌面按浏览器形态渲染。
+  const isBrowserServedApp = isWebRuntime
+    || (typeof window !== 'undefined'
+      && window.location.protocol === 'http:'
+      && !window.location.hostname.endsWith('wails.localhost'));
   const [installedFontFamilies, setInstalledFontFamilies] = useState<InstalledFontFamily[]>(EMPTY_INSTALLED_FONT_FAMILIES);
   const [isFontFamiliesLoading, setIsFontFamiliesLoading] = useState(false);
   const [fontFamiliesLoadError, setFontFamiliesLoadError] = useState<string | null>(null);
@@ -132,8 +141,8 @@ export const useAppShellState = ({
       }
   }, []);
   const [isConnectionGroupManagementOpen, setIsConnectionGroupManagementOpen] = useState(false);
-  const [activeSettingsCenterGroupKey, setActiveSettingsCenterGroupKey] = useState<SettingsCenterGroupKey>('preferences');
-  const [activeSettingsCenterPane, setActiveSettingsCenterPane] = useState<SettingsCenterPaneState | null>(null);
+  const [activeSettingsCenterGroupKey, setActiveSettingsCenterGroupKey] = useState<SettingsCenterGroupKey>('common-settings');
+  const [activeSettingsCenterPane, setActiveSettingsCenterPane] = useState<SettingsCenterPaneState | null>({ key: 'common-settings', group: 'common-settings' });
   const activeSettingsCenterPaneRef = useRef<SettingsCenterPaneState | null>(null);
   const aiSettingsLeaveGuardRef = useRef<AISettingsLeaveGuard | null>(null);
   const registerAISettingsLeaveGuard = useCallback((guard: AISettingsLeaveGuard | null) => {
@@ -149,7 +158,6 @@ export const useAppShellState = ({
   const [connectionImportTargetTagId, setConnectionImportTargetTagId] = useState('');
   const [connectionImportNotice, setConnectionImportNotice] = useState<ConnectionImportNotice | null>(null);
   const browserConnectionImportInputRef = useRef<HTMLInputElement>(null);
-  const browserConnectionImportSourceGroupRef = useRef<ToolCenterGroupKey | undefined>(undefined);
   const [aiPanelRenderNonce, setAiPanelRenderNonce] = useState(0);
   const [aiSettingsRenderNonce, setAiSettingsRenderNonce] = useState(0);
   const LazyAIChatPanel = useMemo(createLazyAIChatPanel, [aiPanelRenderNonce]);
@@ -179,7 +187,10 @@ export const useAppShellState = ({
       sidebarContentRef,
       sidebarExplorerToggleRef,
   } = useAppSidebarCollapse(shouldDockCollapsedSidebarActionsInTitlebar);
-  const titleBarActionsInline = appearance.titlebarActionsPlacement === 'titlebar'; // 功能入口行：默认工具条，可切到 GoNavi 右侧
+  // 功能入口行位置完全跟随用户设置（默认标题栏内联）；Navicat 风格下
+  // 选「独立工具条」时功能入口与对象按钮同一行（各端一致的完整工具条），
+  // 选「标题栏」时功能入口内联、对象工具条独立成行（见 titleBarObjectActionsRow）。
+  const titleBarActionsInline = appearance.titlebarActionsPlacement === 'titlebar';
   // 内联形态下工具条常驻标题栏第二行；独立工具条形态下改放在工具条下方，标题栏不再预留第二行。
   const dockActionsInTitlebarBand = shouldDockCollapsedSidebarActionsInTitlebar && titleBarActionsInline;
   const titleBarLayout = resolveTitleBarLayout(
@@ -284,7 +295,7 @@ export const useAppShellState = ({
   const windowCornerRadius = 14;
   return {
     resolvedUiFontFamily, resolvedMonoFontFamily, appComponentSize, titleBarButtonWidth,
-    resolvedAppearance, effectiveOpacity, blurFilter, isWebRuntime, installedFontFamilies,
+    resolvedAppearance, effectiveOpacity, blurFilter, isWebRuntime, isBrowserServedApp, installedFontFamilies,
     setInstalledFontFamilies, isFontFamiliesLoading, setIsFontFamiliesLoading,
     fontFamiliesLoadError, setFontFamiliesLoadError, hasLoadedInstalledFontsRef, uiFontOptions,
     monoFontOptions, linuxCJKFontInstallHint, isStoreHydrated, setIsStoreHydrated,
@@ -309,7 +320,7 @@ export const useAppShellState = ({
     setConnectionPackageDialog, pendingConnectionImportPayload, setPendingConnectionImportPayload,
     connectionImportTargetTagId, setConnectionImportTargetTagId, connectionImportNotice,
     setConnectionImportNotice, browserConnectionImportInputRef,
-    browserConnectionImportSourceGroupRef, aiPanelRenderNonce, setAiPanelRenderNonce,
+    aiPanelRenderNonce, setAiPanelRenderNonce,
     aiSettingsRenderNonce, setAiSettingsRenderNonce, LazyAIChatPanel, LazyAISettingsContent,
     sidebarWidth, setSidebarWidth, documentPlatform, isMacRuntime,
     shouldDockCollapsedSidebarActionsInTitlebar, collapsedSidebarActionsTarget,

@@ -6,6 +6,38 @@
     max-height: 100%;
 }
 
+/* 结构与设置中心 gonavi-settings-row 一致：文字一列、开关一列，整行居中 */
+.gn-query-params-quoted {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 12px;
+    align-items: center;
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--gn-border-color, rgba(128, 128, 128, 0.35));
+    border-radius: 6px;
+    background: rgba(127, 127, 127, 0.06);
+}
+
+.gn-query-params-quoted-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.gn-query-params-quoted-title {
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.gn-query-params-quoted-hint {
+    font-size: 12px;
+    line-height: 1.4;
+    opacity: 0.75;
+}
+
 .gn-query-params-groups {
     display: flex;
     flex-direction: column;

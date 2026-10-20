@@ -31,7 +31,7 @@ describe('shouldSyncApplicationBrandIcon', () => {
     expect(shouldSyncApplicationBrandIcon()).toBe(false);
   });
 
-  it('fills the Dock canvas so GoNavi matches neighboring macOS app icons', () => {
+  it('fills the whole canvas when no grid inset is requested (Windows full-bleed tile)', () => {
     const rect = calculateMacOSDockImageRect(512, 512);
 
     expect(rect).toEqual({
@@ -43,7 +43,7 @@ describe('shouldSyncApplicationBrandIcon', () => {
     expect(calculateMacOSDockCornerRadius(rect)).toBe(229);
   });
 
-  it('keeps the restored 0.9.7 mascot inside the Dock safe area', () => {
+  it('keeps the mascot inside the Apple 824px grid content area', () => {
     expect(calculateMacOSDockImageRect(512, 512, 100)).toEqual({
       x: 100,
       y: 100,
@@ -102,6 +102,114 @@ describe('shouldSyncApplicationBrandIcon', () => {
     expect(arcTo.mock.calls.map((args) => args[4])).toEqual([229, 229, 229, 229]);
     expect(calls.indexOf('clip')).toBeGreaterThan(calls.indexOf('beginPath'));
     expect(calls.indexOf('drawImage')).toBeGreaterThan(calls.indexOf('clip'));
+  });
+
+  it('composes ribbon artwork onto the strict Apple grid with the zoom crop', async () => {
+    const drawImage = vi.fn();
+    const arcTo = vi.fn();
+    const context = {
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      arcTo,
+      closePath: vi.fn(),
+      clip: vi.fn(),
+      drawImage,
+      imageSmoothingEnabled: false,
+      imageSmoothingQuality: 'low',
+    } as unknown as CanvasRenderingContext2D;
+    const canvas = {
+      width: 0,
+      height: 0,
+      getContext: vi.fn(() => context),
+      toDataURL: vi.fn(() => 'data:image/png;base64,encoded'),
+    } as unknown as HTMLCanvasElement;
+
+    class FakeImage {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      naturalWidth = 512;
+      naturalHeight = 512;
+      width = 512;
+      height = 512;
+
+      set src(_value: string) {
+        queueMicrotask(() => this.onload?.());
+      }
+    }
+
+    vi.stubGlobal('Image', FakeImage);
+    vi.stubGlobal('document', { createElement: vi.fn(() => canvas) });
+
+    await expect(composeMacOSDockIconBase64('/brand-icons/02-ribbon-graphite.svg', {
+      inset: 100,
+      zoom: 1.25,
+    })).resolves.toBe('encoded');
+    // Apple grid: 824px content area with the standard 184px corner radius.
+    expect(arcTo.mock.calls.map((args) => args[4])).toEqual([184, 184, 184, 184]);
+    // Ribbon zoom centre-crops the 20% breathing margin before the grid fit.
+    expect(drawImage.mock.calls[0]).toEqual([
+      expect.anything(),
+      51,
+      51,
+      410,
+      410,
+      100,
+      100,
+      824,
+      824,
+    ]);
+  });
+
+  it('paints the white tile base before clipping when fillTileBackground is set', async () => {
+    const drawCalls: string[] = [];
+    const fill = vi.fn(() => drawCalls.push('fill'));
+    const clip = vi.fn(() => drawCalls.push('clip'));
+    const context = {
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      arcTo: vi.fn(),
+      closePath: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      fill,
+      fillStyle: '',
+      clip,
+      drawImage: vi.fn(() => drawCalls.push('drawImage')),
+      imageSmoothingEnabled: false,
+      imageSmoothingQuality: 'low',
+    } as unknown as CanvasRenderingContext2D;
+    const canvas = {
+      width: 0,
+      height: 0,
+      getContext: vi.fn(() => context),
+      toDataURL: vi.fn(() => 'data:image/png;base64,encoded'),
+    } as unknown as HTMLCanvasElement;
+
+    class FakeImage {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      naturalWidth = 512;
+      naturalHeight = 512;
+      width = 512;
+      height = 512;
+
+      set src(_value: string) {
+        queueMicrotask(() => this.onload?.());
+      }
+    }
+
+    vi.stubGlobal('Image', FakeImage);
+    vi.stubGlobal('document', { createElement: vi.fn(() => canvas) });
+
+    await expect(composeMacOSDockIconBase64('/brand-icons/07-database-hug.webp', {
+      inset: 100,
+      fillTileBackground: true,
+    })).resolves.toBe('encoded');
+    expect(context.fillStyle).toBe('#ffffff');
+    // The white Apple silhouette must land before the clipped artwork.
+    expect(drawCalls).toEqual(['fill', 'clip', 'drawImage']);
   });
 });
 

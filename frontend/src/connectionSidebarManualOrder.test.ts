@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 class MemoryStorage implements Storage {
   private data = new Map<string, string>();
@@ -189,7 +189,7 @@ describe('connection sidebar manual order', () => {
   it('keeps an existing grouped connection in place when import updates sortable fields', async () => {
     const { useStore } = await importStore();
     const { buildSidebarConnectionTagTree } = await import('./components/sidebarV2Utils');
-    const { resolveConnectionImportPlacement } = await import('./components/settings/ConnectionImportSettingsPanel');
+    const { resolveConnectionImportPlacement } = await import('./components/settings/connectionImportPlacement');
     useStore.getState().replaceConnections([
       { id: 'z', name: 'Zulu', createdAt: 1, config: { id: 'z', type: 'mysql', host: 'z', port: 3306, user: 'root' } },
       { id: 'a', name: 'Alpha', createdAt: 2, config: { id: 'a', type: 'mysql', host: 'a', port: 3306, user: 'root' } },

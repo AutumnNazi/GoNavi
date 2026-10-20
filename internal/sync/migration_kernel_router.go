@@ -47,7 +47,7 @@ type tdengineToPGLikePlanner struct{}
 
 type mongoToRelationalPlanner struct{}
 
-func buildSchemaMigrationPlan(config SyncConfig, tableName string, sourceDB db.Database, targetDB db.Database) (SchemaMigrationPlan, []connection.ColumnDefinition, []connection.ColumnDefinition, error) {
+func buildSchemaMigrationPlanBase(config SyncConfig, tableName string, sourceDB db.Database, targetDB db.Database) (SchemaMigrationPlan, []connection.ColumnDefinition, []connection.ColumnDefinition, error) {
 	if hasExplicitSyncMappings(config) {
 		mapping, err := explicitSyncMappingForTable(config, tableName)
 		if err != nil {

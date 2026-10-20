@@ -28,6 +28,13 @@ export type DataSyncConfirmation =
       confirmText: string;
     }
   | {
+      kind: 'rollback-run';
+      runId: string;
+      title: string;
+      description: string;
+      confirmText: string;
+    }
+  | {
       kind: 'clear-terminal-runs';
       title: string;
       description: string;

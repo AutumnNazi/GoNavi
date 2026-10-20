@@ -45,7 +45,7 @@ type tableArgs struct {
 type executeSQLArgs struct {
 	ConnectionID     string `json:"connectionId" jsonschema:"get_connections 返回的连接 ID"`
 	DBName           string `json:"dbName,omitempty" jsonschema:"可选数据库/Schema 名称。为空时优先使用保存连接里的默认数据库"`
-	SQL              string `json:"sql" jsonschema:"待执行的 SQL 文本，可以包含多条语句"`
+	SQL              string `json:"sql" jsonschema:"待执行的 SQL 文本，可以包含多条语句；Redis 连接填写单条 Redis 命令"`
 	AllowMutating    bool   `json:"allowMutating,omitempty" jsonschema:"兼容旧客户端的可选字段。安全控制已允许的写语句不再要求传 true；调用 execute_sql 即视为确认"`
 	MaxRowsPerResult int    `json:"maxRowsPerResult,omitempty" jsonschema:"每个结果集最多返回多少行。默认 50，最大 200，只限制返回给 Agent 的行数，不限制可执行的 SQL 类型。达到上限后立即停止读取，剩余行不返回；多语句查询中某条语句达到上限时，后续语句不再返回结果（逐条执行路径中后续语句将不执行；原生多语句批次中的语句仍会在服务端全部执行）"`
 }

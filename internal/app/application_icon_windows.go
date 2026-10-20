@@ -201,50 +201,6 @@ func mainWindowDisplayAreas(ctx context.Context) []mainWindowDisplayArea {
 	return state.areas
 }
 
-// applyPersistedWindowsApplicationIcon binds the last selected ICO before
-// Wails shows the first window. The frontend state is hydrated too late to be
-// the first source of truth for the Windows taskbar button.
-func applyPersistedWindowsApplicationIcon(runtimeContext context.Context, configDir string) error {
-	removeStaleWindowsShortcutUpdateScripts(configDir)
-	removeStaleWindowsShortcutReplacementFiles()
-	iconPath, err := loadPersistedWindowsApplicationIcon(configDir)
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(iconPath) == "" {
-		// 从未切换过品牌图标也要在启动时把机器层快捷方式收敛到用户层：
-		// 安装器授予的单文件 Users-Modify 修改权是跨用户篡改面，迁移完成
-		// 即关闭；MSI 修复/升级重建机器层条目后，下次启动再次迁移，其他
-		// 用户的开始菜单入口也借此自愈。后台执行，失败不阻塞启动。
-		go repairDefaultWindowsApplicationShortcuts()
-		return clearPersistedWindowsApplicationIcon(configDir)
-	}
-	// 每次启动都幂等执行固定项修复：没有一次性标记，失败（文件被占用、
-	// Explorer 重启等）总会在下次启动重试。
-	repairPersistedWindowsApplicationShortcuts(iconPath)
-	// On startup the taskbar button is created after Wails shows the window.
-	// Re-registering it here only creates a visible delete/add cycle; the
-	// shortcut and WM_SETICON sources are already updated before first show.
-	// The shortcut already carries the persisted icon. Explorer resolves it
-	// while creating the taskbar button, so startup does not need the global
-	// association broadcast used by a live brand switch.
-	_, err = setCurrentWindowsApplicationIconMode(runtimeContext, iconPath, false)
-	if err != nil {
-		return err
-	}
-	// 监视任务栏固定项变化（用户固定/取消固定），变化后重应用当前品牌
-	// 图标：取消固定会让按钮失去图标来源（Explorer 不重采样窗口图标），
-	// 需要一次完整的重应用链路才能恢复显示。
-	startWindowsPinsWatcher(runtimeContext, configDir)
-	// Persist the compatibility fallback too. This makes later failed
-	// selections transactional: the active pointer remains authoritative and
-	// an unactivated candidate cannot win the next startup scan.
-	if err := activatePersistedWindowsApplicationIcon(iconPath, configDir); err != nil {
-		return fmt.Errorf("persist active Windows application icon: %w", err)
-	}
-	return nil
-}
-
 // repairPersistedWindowsApplicationShortcuts rewrites existing GoNavi
 // shortcuts and taskbar pins to the selected icon. Ownership rules inside the
 // repair script confine a portable/development build to its own shortcuts, so
@@ -450,7 +406,7 @@ func windowsHandlePinsChange(runtimeContext context.Context, configDir string, a
 		}
 		windowsRefreshPinnedTaskbarIcon()
 	} else {
-		if _, err := setCurrentWindowsApplicationIcon(runtimeContext, iconPath); err != nil {
+		if _, _, err := setCurrentWindowsApplicationIcon(runtimeContext, iconPath); err != nil {
 			logger.Warnf("固定项移除后重应用 Windows 品牌图标失败：%v", err)
 			return false
 		}
@@ -531,29 +487,32 @@ func windowsReadPinsNameSet(pinsDir string) (string, error) {
 	return strings.Join(names, "\n"), nil
 }
 
-func setApplicationIconPNG(pngBytes []byte, configDir string, runtimeContext context.Context) error {
+// setApplicationIconPNG 应用品牌图标到全部 Windows 表面。第二个返回值
+// restartRecommended 表示固定项按钮重建失败、重启应用后按钮才会跟随新图标。
+func setApplicationIconPNG(pngBytes []byte, configDir string, runtimeContext context.Context) (bool, error) {
 	if len(pngBytes) == 0 {
-		return errors.New("application icon PNG is empty")
+		return false, errors.New("application icon PNG is empty")
 	}
 	if strings.TrimSpace(configDir) == "" {
 		configDir = resolveAppConfigDir()
 	}
 	iconPath, err := persistWindowsApplicationIcon(pngBytes, configDir)
 	if err != nil {
-		return err
+		return false, err
 	}
 	// Update shortcuts before refreshing the live window icon. Both the shortcut
 	// and live window use the stable GoNavi identity.
 	if err := windowsUpdateCurrentApplicationShortcuts(iconPath); err != nil {
-		return err
+		return false, err
 	}
 	// The shortcut script flushes item and directory notifications only after
 	// every write completes. Re-register the live taskbar button once after the
 	// shortcut transaction. A targeted shell notification alone does not make
 	// Explorer discard the existing pinned button's icon snapshot; DeleteTab /
 	// AddTab is scoped to this HWND and does not invalidate desktop icons.
-	if _, err := setCurrentWindowsApplicationIconMode(runtimeContext, iconPath, true); err != nil {
-		return err
+	_, restartRecommended, err := setCurrentWindowsApplicationIconMode(runtimeContext, iconPath, true)
+	if err != nil {
+		return restartRecommended, err
 	}
 	// 任务栏按钮（无论是否固定、是否刚取消固定）在 Explorer 里持有的图标快
 	// 照对单项通知、窗口属性提交、DeleteTab/AddTab、WM_SETICON 都不重采样，
@@ -564,10 +523,14 @@ func setApplicationIconPNG(pngBytes []byte, configDir string, runtimeContext con
 	// 和「刚取消固定」，而后者的按钮同样带着过期快照；代价是 Explorer 重绘
 	// 一次桌面图标（切换本身已会让开始菜单列表闪烁）。
 	windowsApplicationIconNotifyAssociationChanged()
+	// 曾在此处恢复 1.5s 延迟安全网（定向通知+重注册）以修「固定后首切失效」，
+	// 实测回归：与重建按钮路径互相干扰——重注册让按钮多刷一遍（换两遍），
+	// 且打断紧随的第二次切换的按钮重建（第二次无效）。Explorer 对固定按钮
+	// 的刷新路径以 a43e0e11 的重建按钮为准，不再叠加延迟补偿。
 	if err := activatePersistedWindowsApplicationIcon(iconPath, configDir); err != nil {
-		return err
+		return restartRecommended, err
 	}
-	return nil
+	return restartRecommended, nil
 }
 
 func prepareWindowsBrandIconRestartPNG(pngBytes []byte, configDir string) error {
@@ -596,32 +559,32 @@ func prepareWindowsBrandIconRestartPNG(pngBytes []byte, configDir string) error 
 	return nil
 }
 
-func setCurrentWindowsApplicationIcon(runtimeContext context.Context, iconPath string) (uintptr, error) {
+func setCurrentWindowsApplicationIcon(runtimeContext context.Context, iconPath string) (uintptr, bool, error) {
 	return setCurrentWindowsApplicationIconMode(runtimeContext, iconPath, true)
 }
 
-func setCurrentWindowsApplicationIconMode(runtimeContext context.Context, iconPath string, refreshTaskbar bool) (uintptr, error) {
+func setCurrentWindowsApplicationIconMode(runtimeContext context.Context, iconPath string, refreshTaskbar bool) (uintptr, bool, error) {
 	if err := migrateWindowsApplicationIconFile(iconPath); err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	dpi := windowsApplicationIconSystemDPI()
 	small, err := windowsApplicationIconLoad(iconPath, windowsTaskbarIconPixels(dpi))
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	large, err := windowsApplicationIconLoad(iconPath, windowsAltTabIconPixels(dpi))
 	if err != nil {
 		windowsApplicationIconDestroyCall(small)
-		return 0, err
+		return 0, false, err
 	}
 
 	mainWindow, err := resolveWailsMainWindowHandle(runtimeContext)
 	if err != nil {
 		windowsApplicationIconDestroyCall(small)
 		windowsApplicationIconDestroyCall(large)
-		return 0, fmt.Errorf("resolve Windows application window: %w", err)
+		return 0, false, fmt.Errorf("resolve Windows application window: %w", err)
 	}
-	applyErr := applyWindowsApplicationIconMode(mainWindow, iconPath, small, large, refreshTaskbar)
+	restartRecommended, applyErr := applyWindowsApplicationIconMode(mainWindow, iconPath, small, large, refreshTaskbar)
 
 	// WM_SETICON / class icon calls transfer live references to these handles.
 	// Keep them alive even when Explorer's taskbar refresh reports an error.
@@ -634,9 +597,9 @@ func setCurrentWindowsApplicationIconMode(runtimeContext context.Context, iconPa
 	windowsApplicationIconDestroyCall(previousSmall)
 	windowsApplicationIconDestroyCall(previousLarge)
 	if applyErr != nil {
-		return mainWindow, applyErr
+		return mainWindow, restartRecommended, applyErr
 	}
-	return mainWindow, nil
+	return mainWindow, restartRecommended, nil
 }
 
 func resolveWailsMainWindowHandle(runtimeContext context.Context) (handle uintptr, err error) {
@@ -675,13 +638,16 @@ func resolveWailsMainWindowHandle(runtimeContext context.Context) (handle uintpt
 	return handle, nil
 }
 
-func applyWindowsApplicationIcon(hwnd uintptr, iconPath string, small, large uintptr) error {
+func applyWindowsApplicationIcon(hwnd uintptr, iconPath string, small, large uintptr) (bool, error) {
 	return applyWindowsApplicationIconMode(hwnd, iconPath, small, large, true)
 }
 
-func applyWindowsApplicationIconMode(hwnd uintptr, iconPath string, small, large uintptr, refreshTaskbar bool) error {
+// applyWindowsApplicationIconMode 应用窗口/类图标并在 refreshTaskbar 时刷新
+// 任务栏。第二个返回值 restartRecommended 表示固定项按钮重建失败、需要重启
+// 应用才能让固定按钮跟随新图标（仅实时切换路径可能为 true）。
+func applyWindowsApplicationIconMode(hwnd uintptr, iconPath string, small, large uintptr, refreshTaskbar bool) (bool, error) {
 	if hwnd == 0 {
-		return errors.New("Windows application window handle is zero")
+		return false, errors.New("Windows application window handle is zero")
 	}
 	windowsApplicationIconSendMessageCall(hwnd, windowsSetIconMessage, windowsIconSmall, small)
 	windowsApplicationIconSendMessageCall(hwnd, windowsSetIconMessage, windowsIconBig, large)
@@ -695,7 +661,7 @@ func applyWindowsApplicationIconMode(hwnd uintptr, iconPath string, small, large
 	actualSmall := windowsApplicationIconSendMessageCall(hwnd, windowsGetIconMessage, windowsIconSmall, 0)
 	actualLarge := windowsApplicationIconSendMessageCall(hwnd, windowsGetIconMessage, windowsIconBig, 0)
 	if actualSmall != small || actualLarge != large {
-		return fmt.Errorf(
+		return false, fmt.Errorf(
 			"Windows icon readback mismatch: small=%#x want=%#x, large=%#x want=%#x",
 			actualSmall,
 			small,
@@ -705,10 +671,10 @@ func applyWindowsApplicationIconMode(hwnd uintptr, iconPath string, small, large
 	}
 	if err := windowsApplicationIconSetTaskbarProperties(hwnd, iconPath); err != nil {
 		logger.Warnf("应用 Windows 任务栏图标属性失败：%v", err)
-		return fmt.Errorf("set Windows taskbar icon properties: %w", err)
+		return false, fmt.Errorf("set Windows taskbar icon properties: %w", err)
 	}
 	if !refreshTaskbar {
-		return nil
+		return false, nil
 	}
 	// Explorer caches the icon on the existing taskbar button and does NOT
 	// re-read a later WM_SETICON for a button it already created（Win11 26200
@@ -716,7 +682,7 @@ func applyWindowsApplicationIconMode(hwnd uintptr, iconPath string, small, large
 	// 与每次切换都必须重注册，Windows 10/11 才会显示新图标。
 	if err := windowsRefreshTaskbarButton(hwnd); err != nil {
 		logger.Warnf("重注册 Windows 任务栏按钮失败：%v", err)
-		return fmt.Errorf("refresh Windows taskbar icon: %w", err)
+		return false, fmt.Errorf("refresh Windows taskbar icon: %w", err)
 	}
 	// 已固定且运行中的任务栏按钮图标是 Explorer 的快照，对单项通知、窗口
 	// 属性提交、DeleteTab/AddTab、WM_SETICON 乃至全局关联刷新都不重采样
@@ -724,11 +690,17 @@ func applyWindowsApplicationIconMode(hwnd uintptr, iconPath string, small, large
 	// 的路径是按钮创建——与启动期依赖的机制相同。存在本应用固定项时把主
 	// 窗口按原状态短暂隐藏再恢复，强制按钮销毁重建。窗口与按钮会闪烁一
 	// 次，仅实时切换路径执行；最小化/最大化状态经 WINDOWPLACEMENT 保留。
+	// 重建失败（窗口状态读取失败等）时固定按钮本次不会跟随新图标——向调用
+	// 方透传 restartRecommended，前端引导用户重启应用让按钮按新快捷方式重建。
+	restartRecommended := false
 	if len(windowsGoNaviTaskbarPinPaths()) > 0 {
-		windowsRecreateTaskbarButtonForPinRefresh(hwnd)
+		if !windowsRecreateTaskbarButtonForPinRefresh(hwnd) {
+			restartRecommended = true
+			logger.Warnf("固定项按钮重建失败，本次切换的固定按钮图标保持旧图；已向前端建议重启")
+		}
 	}
 	logger.Infof("Windows 图标应用完成：WM_SETICON/类图标/任务栏属性/按钮重注册均成功，ico=%s", iconPath)
-	return nil
+	return restartRecommended, nil
 }
 
 func currentWindowsSystemDPI() int {

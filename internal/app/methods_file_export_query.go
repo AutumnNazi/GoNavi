@@ -23,6 +23,9 @@ func (a *App) ExportDataWithOptions(data []map[string]interface{}, columns []str
 		defaultName = "export"
 	}
 	options = normalizeExportFileOptions("", options)
+	if err := a.validateExportEncoding(options); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
 	if err := validateExportColumnsSelection(options); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
@@ -84,14 +87,14 @@ func (a *App) ExportDataWithOptions(data []map[string]interface{}, columns []str
 	writtenRows, err := writeRowsToFileWithReporter(exportCtx, f, data, columns, options, reporter)
 	if err != nil {
 		logger.Warnf("ExportData 写入失败：file=%s err=%v", filename, err)
-		errMsg := a.appText("file.backend.error.write_failed", map[string]any{"detail": err.Error()})
+		errMsg := a.exportFormatErrorMessage(err, options)
 		reporter.Error(writtenRows, errMsg)
 		maybeReleaseFileTransferMemory("export-data-error", writtenRows, filename)
 		return connection.QueryResult{Success: false, Message: errMsg}
 	}
 	if err := finishCancelableExportTarget(exportCtx, atomicTarget, f); err != nil {
 		logger.Warnf("ExportData 落盘失败：file=%s err=%v", filename, err)
-		errMsg := a.appText("file.backend.error.write_failed", map[string]any{"detail": err.Error()})
+		errMsg := a.exportFormatErrorMessage(err, options)
 		reporter.Error(writtenRows, errMsg)
 		maybeReleaseFileTransferMemory("export-data-error", writtenRows, filename)
 		return connection.QueryResult{Success: false, Message: errMsg}
@@ -119,6 +122,9 @@ func (a *App) ExportQueryWithOptions(config connection.ConnectionConfig, dbName 
 		defaultName = "export"
 	}
 	options = normalizeExportFileOptions("", options)
+	if err := a.validateExportEncoding(options); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
 	if err := validateExportColumnsSelection(options); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
@@ -208,13 +214,13 @@ func (a *App) ExportQueryWithOptions(config connection.ConnectionConfig, dbName 
 	rowCount, columns, err := exportQueryResultToFileWithContext(exportCtx, f, dbInst, runConfig, query, options, reporter)
 	if err != nil {
 		logger.Warnf("ExportQuery 查询失败：type=%s db=%s err=%v sql=%q", strings.TrimSpace(config.Type), strings.TrimSpace(dbName), err, sqlSnippet(query))
-		reporter.Error(rowCount, err.Error())
+		reporter.Error(rowCount, a.exportFormatErrorMessage(err, options))
 		maybeReleaseFileTransferMemory("export-query-error", rowCount, filename)
-		return connection.QueryResult{Success: false, Message: err.Error()}
+		return connection.QueryResult{Success: false, Message: a.exportFormatErrorMessage(err, options)}
 	}
 	if err := finishCancelableExportTarget(exportCtx, atomicTarget, f); err != nil {
 		logger.Warnf("ExportQuery 落盘失败：file=%s err=%v", filename, err)
-		errMsg := a.appText("file.backend.error.write_failed", map[string]any{"detail": err.Error()})
+		errMsg := a.exportFormatErrorMessage(err, options)
 		reporter.Error(rowCount, errMsg)
 		maybeReleaseFileTransferMemory("export-query-error", rowCount, filename)
 		return connection.QueryResult{Success: false, Message: errMsg}

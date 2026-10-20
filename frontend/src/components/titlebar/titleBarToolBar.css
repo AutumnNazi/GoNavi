@@ -14,20 +14,29 @@ body[data-ui-version='v2'] .gn-titlebar-toolbar {
   --gn-titlebar-toolbar-item-width: calc(48px * var(--gn-ui-scale, 1));
   --gn-titlebar-toolbar-item-height: calc(46px * var(--gn-ui-scale, 1));
   --gn-titlebar-toolbar-icon-size: calc(22px * var(--gn-ui-scale, 1));
-  --gn-titlebar-toolbar-label-size: calc(13px * var(--gn-ui-scale, 1));
+  /* 字号跟随全局字体设置（--gn-font-size-sm），控件几何仍随 UI 缩放。 */
+  --gn-titlebar-toolbar-label-size: calc(var(--gn-font-size-sm, 12px) + 1px);
   --gn-titlebar-toolbar-gap: calc(4px * var(--gn-ui-scale, 1));
   --gn-titlebar-toolbar-inline-padding: calc(14px * var(--gn-ui-scale, 1));
   --gn-titlebar-toolbar-vertical-padding: calc(4px * var(--gn-ui-scale, 1));
-  --gn-titlebar-toolbar-active-surface: #eeebff;
-  --gn-titlebar-toolbar-active-label: #4c3fd6;
+  /* 激活态取主题语义色：底 = 主题选中面（强调色淡化），文字 = 主题强调色。
+     不写死色值，亮暗基础主题 / GoNavi 内置主题 / 自定义 CSS 主题都自动跟随。 */
+  --gn-titlebar-toolbar-active-surface: var(--gn-bg-selected, color-mix(in srgb, var(--gn-accent, #7c6cff) 16%, transparent));
+  --gn-titlebar-toolbar-active-label: var(--gn-accent-text, var(--gn-accent, #4c3fd6));
 
   display: flex;
   flex: 0 0 auto;
   align-items: center;
   gap: var(--gn-titlebar-toolbar-gap);
   box-sizing: border-box;
-  /* 上下各留一个内边距，条带总高 = 按钮高 + 2 * padding，随缩放一起变。 */
-  height: calc(
+  /* 窄窗口下工具条整体可横向滚动，按钮不再被裁掉。 */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  /* 上下各留一个内边距，条带总高随按钮内容自适应（min-height 保底，
+     大字号设置下不裁切）。 */
+  height: auto;
+  min-height: calc(
     var(--gn-titlebar-toolbar-item-height) + 2 * var(--gn-titlebar-toolbar-vertical-padding)
   );
   padding: var(--gn-titlebar-toolbar-vertical-padding) var(--gn-titlebar-toolbar-inline-padding);
@@ -39,15 +48,20 @@ body[data-ui-version='v2'] .gn-titlebar-toolbar {
   --wails-draggable: no-drag;
 }
 
-body[data-theme='dark'][data-ui-version='v2'] .gn-titlebar-toolbar {
-  --gn-titlebar-toolbar-active-surface: color-mix(in srgb, var(--gn-accent, #7c6cff) 26%, transparent);
-  --gn-titlebar-toolbar-active-label: #c7bfff;
-}
-
 /* portal 插槽只是定位锚点，自身不参与布局，让按钮与兄弟节点同一层排布。 */
 body[data-ui-version='v2'] .gn-titlebar-toolbar > .gn-titlebar-toolbar-slot,
 body[data-ui-version='v2'] .gn-titlebar-toolbar > .gonavi-titlebar-quick-actions-slot {
   display: contents;
+}
+
+/* 细滚动条样式（WebKit 内核）：高度跟随 UI 缩放。 */
+body[data-ui-version='v2'] .gn-titlebar-toolbar::-webkit-scrollbar {
+  height: calc(4px * var(--gn-ui-scale, 1));
+}
+
+body[data-ui-version='v2'] .gn-titlebar-toolbar::-webkit-scrollbar-thumb {
+  background: var(--gn-br-3, rgba(15, 23, 42, 0.18));
+  border-radius: 999px;
 }
 
 /* 动作组容器：内部按钮按 row 排列，与工具条同向。 */
@@ -78,7 +92,8 @@ body[data-ui-version='v2'] .gn-titlebar-toolbar .gn-v2-titlebar-quick-more {
    */
   width: auto;
   min-width: var(--gn-titlebar-toolbar-item-width);
-  height: var(--gn-titlebar-toolbar-item-height);
+  height: auto;
+  min-height: var(--gn-titlebar-toolbar-item-height);
   padding: 0 calc(8px * var(--gn-ui-scale, 1));
   border: none;
   border-radius: calc(12px * var(--gn-ui-scale, 1));
@@ -111,7 +126,7 @@ body[data-ui-version='v2'] .gn-titlebar-toolbar [data-titlebar-toolbar-item-acti
   background: var(--gn-titlebar-toolbar-active-surface);
 }
 
-/* 激活态换的是淡紫底，文字要跟着变紫才读得出选中。 */
+/* 激活态换的是主题强调色淡化底，文字要跟着变强调色才读得出选中。 */
 body[data-ui-version='v2'] .gn-titlebar-toolbar [data-titlebar-toolbar-item-active='true'] .gn-titlebar-toolbar-item-label {
   color: var(--gn-titlebar-toolbar-active-label);
   font-weight: 600;
@@ -172,7 +187,7 @@ body[data-ui-version='v2'] .gn-v2-titlebar .gn-v2-titlebar-about-slot .gn-v2-tit
   background: transparent;
   color: var(--gn-fg-1, inherit);
   font: inherit;
-  font-size: calc(13px * var(--gn-ui-scale, 1));
+  font-size: calc(var(--gn-font-size-sm, 12px) + 1px);
   font-weight: 500;
   cursor: pointer;
   -webkit-app-region: no-drag;
@@ -204,4 +219,23 @@ body[data-ui-version='v2'] .gn-v2-titlebar .gn-v2-titlebar-about-slot .gn-titleb
 
 body[data-ui-version='v2'] .gn-v2-titlebar .gn-v2-titlebar-about-slot .gn-titlebar-toolbar-item-label {
   white-space: nowrap;
+}
+
+/*
+ * Navicat 布局主题的工具条密度（原型 navicat-prototype.html）：
+ * 56px 宽按钮 / 19px 图标 / 11px 文字。仅 data-ui-layout='navicat' 生效。
+ * 表面与悬停色不在此覆盖：基础规则已引用 --gn-bg-titlebar / --gn-bg-panel-2
+ * 等 token，随主题自动适配。
+ */
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-titlebar-toolbar {
+  --gn-titlebar-toolbar-item-width: calc(56px * var(--gn-ui-scale, 1));
+  --gn-titlebar-toolbar-item-height: calc(44px * var(--gn-ui-scale, 1));
+  --gn-titlebar-toolbar-icon-size: calc(19px * var(--gn-ui-scale, 1));
+  --gn-titlebar-toolbar-label-size: calc(11px * var(--gn-ui-scale, 1));
+  --gn-titlebar-toolbar-gap: calc(2px * var(--gn-ui-scale, 1));
+  --gn-titlebar-toolbar-inline-padding: calc(10px * var(--gn-ui-scale, 1));
+}
+
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-titlebar-toolbar .gonavi-titlebar-primary-action {
+  gap: calc(2px * var(--gn-ui-scale, 1));
 }

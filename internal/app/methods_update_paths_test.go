@@ -182,6 +182,69 @@ func TestEnsureWindowsUpdateTargetWritableAcceptsWritableDirectory(t *testing.T)
 	}
 }
 
+// macOS 缺少 Windows 那样的退出前写入探测时，写不动的目标要等窗口关闭后才在
+// 静默脚本里失败，用户看到的就是「点了重启更新没反应」。这里确保 macOS 也有探测。
+func TestEnsureMacUpdateTargetWritableAcceptsWritableDirectory(t *testing.T) {
+	if stdRuntime.GOOS != "darwin" {
+		t.Skip("macos-only update target validation")
+	}
+
+	dir := t.TempDir()
+	target := filepath.Join(dir, "GoNavi.app")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := ensureMacUpdateTargetWritable(target); err != nil {
+		t.Fatalf("ensureMacUpdateTargetWritable returned error: %v", err)
+	}
+	// 探测不得改动目标本身，也不得留下探针文件。
+	if _, err := os.Stat(target); err != nil {
+		t.Fatalf("target app must survive the writability probe: %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir returned error: %v", err)
+	}
+	for _, entry := range entries {
+		if entry.Name() != "GoNavi.app" {
+			t.Fatalf("probe left an artifact behind: %s", entry.Name())
+		}
+	}
+}
+
+func TestEnsureMacUpdateTargetWritableRejectsUnresolvedTarget(t *testing.T) {
+	if stdRuntime.GOOS != "darwin" {
+		t.Skip("macos-only update target validation")
+	}
+
+	if err := ensureMacUpdateTargetWritable(""); err == nil {
+		t.Fatal("expected an error for an empty install target")
+	}
+}
+
+func TestEnsureMacUpdateTargetWritableRejectsReadOnlyDirectory(t *testing.T) {
+	if stdRuntime.GOOS != "darwin" {
+		t.Skip("macos-only update target validation")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory permissions")
+	}
+
+	dir := t.TempDir()
+	target := filepath.Join(dir, "GoNavi.app")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatalf("Chmod returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	if err := ensureMacUpdateTargetWritable(target); err == nil {
+		t.Fatal("expected a not-writable error for a read-only install directory")
+	}
+}
+
 func TestInstallUpdateAndRestartFailsBeforeLaunchWhenWindowsTargetDirIsNotWritable(t *testing.T) {
 	if stdRuntime.GOOS != "windows" {
 		t.Skip("windows-only update target validation")

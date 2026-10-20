@@ -55,6 +55,78 @@ function Verify-FileHash {
     }
 }
 
+function New-PortableArchive {
+    param(
+        [string]$SevenZip,
+        [string]$WorkDir,
+        [string]$SourceExe,
+        [string]$LicenseFile,
+        [string]$NoticeFile
+    )
+
+    $stageDir = Join-Path $WorkDir "stage"
+    if (Test-Path -LiteralPath $stageDir) { Remove-Item -LiteralPath $stageDir -Recurse -Force }
+    New-Item -ItemType Directory -Path $stageDir | Out-Null
+
+    $stagedNames = @('GoNavi.exe')
+    Copy-Item -LiteralPath $SourceExe -Destination (Join-Path $stageDir "GoNavi.exe") -Force
+    foreach ($entry in @(
+            @{ Source = $LicenseFile; Name = 'LICENSE' },
+            @{ Source = $NoticeFile; Name = 'NOTICE' }
+        )) {
+        if ($entry.Source -and (Test-Path -LiteralPath $entry.Source)) {
+            Copy-Item -LiteralPath $entry.Source -Destination (Join-Path $stageDir $entry.Name) -Force
+            $stagedNames += $entry.Name
+        }
+    }
+
+    $archivePath = Join-Path $WorkDir "gonavi-portable.7z"
+    Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
+    # 只用叶子名，且在 stage 目录里调用。把绝对路径交给旧版 7-Zip 时，
+    # 归档会带上盘符之后的目录，RunProgram 同样找不到 GoNavi.exe。
+    $archiveArgs = @('a', '-t7z', '-mx=9', '-y', '--', $archivePath) + $stagedNames
+    Push-Location -LiteralPath $stageDir
+    try {
+        & $SevenZip @archiveArgs | Out-Null
+    }
+    finally { Pop-Location }
+    if ($LASTEXITCODE -ne 0) { throw "创建 7z 归档失败(退出码 $LASTEXITCODE)" }
+
+    Assert-PortableArchiveLayout -SevenZip $SevenZip -WorkDir $WorkDir -ArchivePath $archivePath -ExpectedNames $stagedNames
+    Write-Host "   归档根目录: $($stagedNames -join ', ')"
+    return $archivePath
+}
+
+function Assert-PortableArchiveLayout {
+    param(
+        [string]$SevenZip,
+        [string]$WorkDir,
+        [string]$ArchivePath,
+        [string[]]$ExpectedNames
+    )
+
+    $verifyDir = Join-Path $WorkDir "verify"
+    if (Test-Path -LiteralPath $verifyDir) { Remove-Item -LiteralPath $verifyDir -Recurse -Force }
+    New-Item -ItemType Directory -Path $verifyDir | Out-Null
+    & $SevenZip x -y -o"$verifyDir" -- $ArchivePath | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "解压校验 7z 归档失败(退出码 $LASTEXITCODE)" }
+
+    $verifyRoot = [IO.Path]::GetFullPath($verifyDir)
+    $found = @(Get-ChildItem -LiteralPath $verifyRoot -Recurse -File | ForEach-Object {
+            $_.FullName.Substring($verifyRoot.Length).TrimStart('\', '/')
+        })
+    foreach ($name in $ExpectedNames) {
+        $extracted = Join-Path $verifyRoot $name
+        if (-not (Test-Path -LiteralPath $extracted -PathType Leaf)) {
+            throw "SFX 归档根目录缺少 ${name}。实际文件: $($found -join ', ')"
+        }
+    }
+    $exes = @($found | Where-Object { $_.EndsWith('.exe') })
+    if ($exes.Count -ne 1 -or $exes[0] -ne 'GoNavi.exe') {
+        throw "SFX 归档里的可执行文件必须是根目录 GoNavi.exe。实际: $($exes -join ', ')"
+    }
+}
+
 function Add-SfxManifest {
     param([string]$TargetExe)
     $manifest = @'
@@ -156,15 +228,11 @@ Copy-Item $sfxModule $sfxModulePrepared -Force
 Add-SfxManifest -TargetExe $sfxModulePrepared
 $sfxModule = $sfxModulePrepared
 
-# --- 3. 压缩 7z 包(GoNavi.exe + LICENSE + NOTICE,与 Portable.zip 内容一致) ---
-$archivePath = Join-Path $WorkDir "gonavi-portable.7z"
-Remove-Item $archivePath -Force -ErrorAction SilentlyContinue
-$archiveArgs = @('a', '-t7z', '-mx=9', '-y', '--', $archivePath, $SourceExe)
-foreach ($extra in @($LicenseFile, $NoticeFile)) {
-    if ($extra -and (Test-Path $extra)) { $archiveArgs += (Resolve-Path $extra).Path }
-}
-& $sevenZip @archiveArgs | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "创建 7z 归档失败(退出码 $LASTEXITCODE)" }
+# --- 3. 压缩 7z 包(根目录必须是 GoNavi.exe + LICENSE + NOTICE) ---
+# CI 产物文件名是 gonavi-build-windows-*.exe。7-Zip 会把这个叶子名写进归档。
+# SFX 配置 RunProgram="GoNavi.exe" 只在解压根目录找这个名字，对不上就弹出
+# 「系统找不到指定的文件」，程序还没启动。先铺成和 Portable.zip 一样的根目录。
+$archivePath = New-PortableArchive -SevenZip $sevenZip -WorkDir $WorkDir -SourceExe $SourceExe -LicenseFile $LicenseFile -NoticeFile $NoticeFile
 
 # --- 4. 写安装器配置(UTF-8 无 BOM;文档:LZMA SDK DOC/installer.txt) ---
 # 静默无感:不配 BeginPrompt(不弹确认框),Progress="no"(不弹解压进度窗)。

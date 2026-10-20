@@ -1,3 +1,5 @@
+import { dispatchSidebarTableDataRefresh } from '../../../utils/sidebarDatabaseRefresh';
+import { resolveSqlDialect } from '../../../utils/sqlDialect';
 import { Space, Button } from 'antd';
 import { StopOutlined } from '@ant-design/icons';
 import { confirmProductionRisk } from '../../../utils/productionRiskConfirm';
@@ -127,6 +129,10 @@ export const useImportPreviewActions = ({
       );
       if (importRequestRef.current !== importRequestId) return;
 
+      if (connection && (res.success || Number(res.data?.success) > 0)) {
+        dispatchSidebarTableDataRefresh({ connectionId: connection.id, dbName }, tableName,
+          resolveSqlDialect(connection.config.type, connection.config.driver, connection.config));
+      }
       setError(null);
       if (res.data?.cancelled) {
         setImportResult(res.data);

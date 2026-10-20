@@ -767,25 +767,40 @@ func windowsGitBashCandidates(env []string) []string {
 	return candidates
 }
 
+// envKeyEqual 报告环境条目的键是否等于 key。Windows 环境变量不区分大小写，
+// 桌面进程的环境块里 PATH 的键是 `Path=`；按字面匹配会读不到原值，导致 PATH
+// 增强后只剩 prepend 目录（chcp/reg/wmic 找不到）。POSIX 保持大小写敏感。
+func envKeyEqual(entry, key string) bool {
+	separator := strings.IndexByte(entry, '=')
+	if separator < 0 {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(entry[:separator], key)
+	}
+	return entry[:separator] == key
+}
+
 func envValue(env []string, key string) string {
-	prefix := key + "="
 	for _, entry := range env {
-		if strings.HasPrefix(entry, prefix) {
-			return strings.TrimPrefix(entry, prefix)
+		if envKeyEqual(entry, key) {
+			return entry[strings.IndexByte(entry, '=')+1:]
 		}
 	}
 	return ""
 }
 
 func upsertEnv(env []string, key, value string) []string {
-	prefix := key + "="
 	for i, entry := range env {
-		if strings.HasPrefix(entry, prefix) {
-			env[i] = prefix + value
+		if envKeyEqual(entry, key) {
+			// 保留原键名：Windows 上 Path= 与 PATH= 等价，就地规范化键名
+			// 对同块内按字面匹配键的消费者是多余的变量。
+			separator := strings.IndexByte(entry, '=')
+			env[i] = entry[:separator+1] + value
 			return env
 		}
 	}
-	return append(env, prefix+value)
+	return append(env, key+"="+value)
 }
 
 func removeEnvKeys(env []string, keys ...string) []string {

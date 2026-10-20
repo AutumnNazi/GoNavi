@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
-import { message } from 'antd';
-import { SetApplicationBrandIcon } from '../../wailsjs/go/app/App';
+import { message, Modal } from 'antd';
+import { RestartApplication, SetApplicationBrandIcon } from '../../wailsjs/go/app/App';
 import { Environment } from '../../wailsjs/runtime';
 import { useI18n } from '../i18n/provider';
 import { useStore } from '../store';
@@ -8,6 +8,7 @@ import {
   brandAssetKeysFor,
   previewBrandAssetKeys,
   resolveBrandNativeSrc,
+  resolveBrandNativeIconZoom,
   resolveBrandIconSrc,
   resolveBrandIcon,
   startupBrandAssetKeys,
@@ -17,7 +18,7 @@ import { ensureBrandAssets, getBrandAssetsRevision, subscribeBrandAssets } from 
 import {
   composeMacOSDockIconBase64,
   composeWindowsNativeIconBase64,
-  LEGACY_MASCOT_DOCK_ICON_INSET,
+  APPLE_DOCK_ICON_GRID_INSET,
   shouldSyncApplicationBrandIcon,
 } from './macDockIcon';
 
@@ -32,9 +33,8 @@ export function useBrandIconSync(runtimePlatform: string) {
   // applying the same icon through the native bridge, so the shortcut update
   // and window identity rotation run exactly once.
   const windowsBrandIconApplyingRef = useRef<BrandIconId | null>(null);
-  // 最近一次成功应用到原生表面的品牌 ID：选择流程完成后 brandAssetRevision
-  // 的自增会重跑同步 effect，没有这个记录就会对同一图标再应用一次。
-  const lastNativeAppliedBrandIdRef = useRef<BrandIconId | null>(null);
+  // 重启确认框去重：连续切换连续失败时 antd 静态 confirm 会叠加多个弹窗。
+  const restartConfirmActiveRef = useRef(false);
 
   // Apply the selected brand mascot to the favicon and supported native OS surfaces.
   useEffect(() => {
@@ -53,21 +53,10 @@ export function useBrandIconSync(runtimePlatform: string) {
     link.type = /\.webp(?:[?#]|$)/i.test(href) ? 'image/webp' : 'image/svg+xml';
     link.href = href;
 
-    // The selection flow below updates the live window icon itself;
-    // skip this sync while that apply is in flight so the shortcut update
-    // and window icon refresh run exactly once.
-    if (runtimePlatform === 'windows' && windowsBrandIconApplyingRef.current === brandIconId) {
-      return;
-    }
     // Windows restores the persisted native icon before the Wails window is
     // shown. A second bridge call here can race an explicit picker selection
     // and apply the old icon after the new selection succeeds.
     if (runtimePlatform === 'windows') {
-      return;
-    }
-    // 同一品牌已经成功应用过（选择流程或上一轮同步），brandAssetRevision
-    // 的自增不需要再对同一图标重复应用。
-    if (runtimePlatform === 'windows' && lastNativeAppliedBrandIdRef.current === brandIconId) {
       return;
     }
 
@@ -85,16 +74,19 @@ export function useBrandIconSync(runtimePlatform: string) {
         const b64 = runtimePlatform === 'windows'
           ? await composeWindowsNativeIconBase64(dockHref)
           : await composeMacOSDockIconBase64(dockHref, {
-            inset: resolveBrandIcon(brandIconId).mascot ? LEGACY_MASCOT_DOCK_ICON_INSET : undefined,
+            // 严格 Apple 网格：全家族统一 1024 画布 / 824 内容区 / Apple 圆角，
+            // 与烘焙进 icns 的图标和相邻应用对齐。缎带 SVG 的 20% 呼吸边距按
+            // zoom 裁掉填满网格；吉祥物 webp 先铺白色圆角底再叠图，自身圆角
+            // 小于 Apple 弧线的角缺口不会透出壁纸。
+            inset: APPLE_DOCK_ICON_GRID_INSET,
+            zoom: resolveBrandNativeIconZoom(brandIconId),
+            fillTileBackground: resolveBrandIcon(brandIconId).mascot === true,
           });
         if (cancelled) return;
         const result = await SetApplicationBrandIcon(b64);
         if (!result.success && !cancelled) {
           console.warn('Failed to update the native application icon:', result.message);
           message.warning(t('app.settings.entry.brand_icon.native_sync_failed'));
-        }
-        if (result.success) {
-          lastNativeAppliedBrandIdRef.current = brandIconId as BrandIconId;
         }
       } catch (error) {
         if (!cancelled) {
@@ -150,13 +142,42 @@ export function useBrandIconSync(runtimePlatform: string) {
       // shortcut, so bundled mascots keep their full artwork (tile and
       // word mark) exactly as shown in the picker - cutting the tile away
       // made the desktop and Start Menu shortcuts look unfinished.
-      const b64 = await composeWindowsNativeIconBase64(source);
+      // The zoom normalizes each asset family's designed framing (ribbon
+      // breathing margin, mascot white margins) so the visible artwork
+      // reads at the same size as the picker preview; without it the
+      // ribbon tile lands at ~80% of the tile and users read the icon as
+      // a size smaller than neighbouring apps.
+      const b64 = await composeWindowsNativeIconBase64(source, {
+        zoom: resolveBrandNativeIconZoom(id),
+      });
       const result = await SetApplicationBrandIcon(b64);
       if (!result || result.success === false) {
         throw new Error(result?.message || 'Windows brand icon update failed');
       }
-      lastNativeAppliedBrandIdRef.current = id;
       message.success(t('app.settings.entry.brand_icon.applied'));
+      // 固定项按钮重建失败时，热应用覆盖不了已固定的任务栏按钮（Explorer
+      // 快照不重采样）；引导用户重启应用，让按钮按新快捷方式重建。复用
+      // f71b318b 时代的重启文案与 RestartApplication 绑定。
+      const restartRecommended = (result?.data as { restartRecommended?: boolean } | undefined)?.restartRecommended === true;
+      if (restartRecommended && !restartConfirmActiveRef.current) {
+        restartConfirmActiveRef.current = true;
+        Modal.confirm({
+          title: t('app.settings.entry.brand_icon.windows_restart.title'),
+          content: t('app.settings.entry.brand_icon.windows_restart.description'),
+          okText: t('app.settings.entry.brand_icon.windows_restart.now'),
+          cancelText: t('app.settings.entry.brand_icon.windows_restart.later'),
+          // 无论确定/取消/ESC 关闭后才允许再弹，避免连续失败时弹窗堆叠。
+          afterClose: () => { restartConfirmActiveRef.current = false; },
+          onOk: async () => {
+            // RestartApplication 返回 QueryResult 不抛异常：子进程拉起失败
+            // 时必须显式报错，否则用户以为在重启、实际毫无动静。
+            const res = await RestartApplication();
+            if (res && res.success === false) {
+              message.error(res.message || t('common.unknown'));
+            }
+          },
+        });
+      }
     } catch (error) {
       // 只有当没有更新的选择接管时才回退：A 失败时用户可能已经改选 B，
       // 无条件回退会把过期的 previousId 写回 store——随后 B 成功时选择器

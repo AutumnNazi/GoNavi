@@ -7,6 +7,7 @@ import ImportPreviewModal from "./ImportPreviewModal";
 import type { DataImportPreferences } from "./dataImportPreferences";
 
 const mocks = vi.hoisted(() => ({
+  notify: vi.fn(),
   previewImportFile: vi.fn(),
   dbGetColumns: vi.fn(),
   importDataWithProgressOptions: vi.fn(),
@@ -34,6 +35,8 @@ const mocks = vi.hoisted(() => ({
     ],
   },
 }));
+
+vi.mock("../utils/sidebarDatabaseRefresh", () => ({ dispatchSidebarTableDataRefresh: mocks.notify }));
 
 vi.mock("../store", () => ({
   useStore: (selector: (state: typeof mocks.storeState) => unknown) =>
@@ -238,6 +241,7 @@ describe("ImportPreviewModal i18n", () => {
     mocks.progressHandler = null;
     mocks.eventsOn.mockClear();
     mocks.eventsOff.mockClear();
+    mocks.notify.mockClear();
   });
 
   it("renders preview chrome in the active language while preserving raw column names", async () => {
@@ -1102,4 +1106,13 @@ describe("ImportPreviewModal i18n", () => {
     expect(mocks.previewImportFile).toHaveBeenCalledTimes(1);
     expect(textContent(renderer.toJSON())).toContain("database rejected import");
   });
+  it("refreshes sidebar rows after a partially successful import", async () => {
+    mocks.importDataWithProgressOptions.mockResolvedValueOnce({ success: false, data: { success: 3, failed: 1, stoppedOnError: true } });
+    const renderer = await renderImportPreview();
+    const button = renderer.root.findAllByType("button").find(node => textContent(node.props.children) === "Start import");
+    await act(async () => { await button?.props.onClick(); });
+    expect(mocks.notify).toHaveBeenCalledWith({ connectionId: 'conn-1', dbName: 'app' }, 'users', 'mysql');
+    act(() => renderer.unmount());
+  });
+
 });

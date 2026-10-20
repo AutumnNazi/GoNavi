@@ -203,10 +203,23 @@ export const writeClipboardPayload = async (
     }
   }
 
+  let writeError: unknown = new Error('Clipboard write is not supported');
   if (clipboard?.writeText) {
-    await clipboard.writeText(payload.plainText);
-    return;
+    try {
+      await clipboard.writeText(payload.plainText);
+      return;
+    } catch (error) {
+      writeError = error;
+    }
   }
 
-  throw new Error('Clipboard write is not supported');
+  const runtime = (globalThis as typeof globalThis & {
+    window?: { runtime?: { ClipboardSetText?: (text: string) => Promise<boolean> } };
+  }).window?.runtime;
+  if (typeof runtime?.ClipboardSetText === 'function') {
+    if (await runtime.ClipboardSetText(payload.plainText) === true) return;
+    throw new Error('Native clipboard write failed');
+  }
+
+  throw writeError;
 };

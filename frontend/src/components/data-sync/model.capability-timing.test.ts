@@ -94,7 +94,9 @@ describe("migrationAllowTargetCreate", () => {
         requiresExistingTarget: true,
       }),
     ).toBe(false);
-    expect(migrationAllowTargetCreate("reconcile", base)).toBe(false);
+    expect(migrationAllowTargetCreate("reconcile", base)).toBe(true);
+    expect(migrationAllowTargetCreate("cdc", base)).toBe(false);
+    expect(migrationAllowTargetCreate("querySink", base)).toBe(false);
   });
 });
 

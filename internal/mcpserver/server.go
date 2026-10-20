@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"GoNavi-Wails/internal/requesttrace"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -94,7 +95,7 @@ func NewServerWithOptions(backend Backend, options ServerOptions) *mcp.Server {
 	if !options.SchemaOnly {
 		mcp.AddTool(server, &mcp.Tool{
 			Name:        "execute_sql",
-			Description: "执行 SQL，范围与内置 AI 助手相同，受 GoNavi「安全控制」约束：只读仅查询，读写可 DML，完全可 DDL。调用本工具即视为确认，不必再传 allowMutating。查询结果默认每结果集最多 50 行、上限 200，只为避免撑爆 Agent 上下文。",
+			Description: "执行 SQL；Redis 连接执行单条 Redis 命令，dbName 为 DB 编号。受 GoNavi「安全控制」约束：只读允许查询，读写允许普通数据写入，完全允许管理及未知命令。调用本工具即视为确认，不必再传 allowMutating。查询结果默认每结果集最多 50 行、上限 200。",
 		}, service.ExecuteSQL)
 	}
 

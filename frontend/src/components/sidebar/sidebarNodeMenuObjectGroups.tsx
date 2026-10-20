@@ -8,6 +8,7 @@ import {
 import Modal from '../common/ResizableDraggableModal';
 import type { SidebarNodeMenuContext } from './sidebarNodeMenuHelpers';
 import type { SavedConnection } from '../../types';
+import { openEventManagement, supportsEventManagement } from './sidebarEventManagement';
 
 export interface BuildTagNodeMenuItemsInput {
   node: any;
@@ -93,6 +94,7 @@ export const buildEventsGroupMenuItems = ({ node, context }: BuildEventsGroupMen
           label: t('sidebar.menu.create_event'),
           icon: <PlusOutlined />,
           onClick: () => {
+              if (supportsEventManagement(node)) { openEventManagement(node, true); return; }
               addTab({
                   id: `query-create-event-${Date.now()}`,
                   title: t('sidebar.tab.new_event'),

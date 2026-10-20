@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	schemaVersion       = 2
+	schemaVersion       = 3
 	maxRetentionDays    = 3650
 	maxConfiguredEvents = 10_000_000
 )
@@ -113,125 +113,6 @@ func sqliteAuditDSN(path string) string {
 	return dsn.String()
 }
 
-func (s *Store) initialize() error {
-	if err := s.ensureOpen(); err != nil {
-		return err
-	}
-	ctx := context.Background()
-	for _, pragma := range []string{
-		"PRAGMA busy_timeout=5000",
-		"PRAGMA journal_mode=WAL",
-		"PRAGMA synchronous=FULL",
-		"PRAGMA foreign_keys=ON",
-	} {
-		if _, err := s.db.ExecContext(ctx, pragma); err != nil {
-			return fmt.Errorf("configure sql audit database (%s): %w", pragma, err)
-		}
-	}
-	var existingSchemaVersion int
-	if err := s.db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&existingSchemaVersion); err != nil {
-		return fmt.Errorf("read SQL audit schema version: %w", err)
-	}
-	if existingSchemaVersion > schemaVersion {
-		return fmt.Errorf("SQL audit schema version %d is newer than supported version %d", existingSchemaVersion, schemaVersion)
-	}
-
-	statements := []string{
-		`CREATE TABLE IF NOT EXISTS sql_audit_events (
-			sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-			id TEXT NOT NULL UNIQUE,
-			timestamp INTEGER NOT NULL,
-			event_type TEXT NOT NULL,
-			status TEXT NOT NULL,
-			connection_id TEXT NOT NULL DEFAULT '',
-			connection_fingerprint TEXT NOT NULL,
-			db_type TEXT NOT NULL DEFAULT '',
-			database_name TEXT NOT NULL DEFAULT '',
-			query_id TEXT NOT NULL DEFAULT '',
-			transaction_id TEXT NOT NULL DEFAULT '',
-			source TEXT NOT NULL DEFAULT '',
-			boundary_mode TEXT NOT NULL DEFAULT 'unknown',
-			commit_mode TEXT NOT NULL DEFAULT '',
-			sql_text TEXT NOT NULL DEFAULT '',
-			sql_redacted INTEGER NOT NULL DEFAULT 1,
-			sql_fingerprint TEXT NOT NULL,
-			statement_index INTEGER NOT NULL DEFAULT 0,
-			statement_count INTEGER NOT NULL DEFAULT 0,
-			executed_count INTEGER NOT NULL DEFAULT 0,
-			failed_index INTEGER NOT NULL DEFAULT 0,
-			outcome_unknown INTEGER NOT NULL DEFAULT 0,
-			duration_ms INTEGER NOT NULL DEFAULT 0,
-			rows_affected INTEGER NOT NULL DEFAULT 0,
-			rows_returned INTEGER NOT NULL DEFAULT 0,
-			error_text TEXT NOT NULL DEFAULT '',
-			prev_hash TEXT NOT NULL DEFAULT '',
-			record_hash TEXT NOT NULL
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_sql_audit_events_timestamp ON sql_audit_events(timestamp DESC, sequence DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_sql_audit_events_connection ON sql_audit_events(connection_id, timestamp DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_sql_audit_events_transaction ON sql_audit_events(transaction_id, sequence)`,
-		`CREATE INDEX IF NOT EXISTS idx_sql_audit_events_type_status ON sql_audit_events(event_type, status, timestamp DESC)`,
-		`CREATE TABLE IF NOT EXISTS sql_audit_settings (
-			singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-			enabled INTEGER NOT NULL,
-			capture_mode TEXT NOT NULL,
-			retention_days INTEGER NOT NULL,
-			max_records INTEGER NOT NULL
-		)`,
-		`INSERT OR IGNORE INTO sql_audit_settings(singleton, enabled, capture_mode, retention_days, max_records)
-		 VALUES(1, 1, 'redacted', 30, 100000)`,
-	}
-	for _, statement := range statements {
-		if _, err := s.db.ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf("initialize sql audit database: %w", err)
-		}
-	}
-	for _, column := range []struct {
-		name       string
-		definition string
-	}{
-		{name: "executed_count", definition: "INTEGER NOT NULL DEFAULT 0"},
-		{name: "failed_index", definition: "INTEGER NOT NULL DEFAULT 0"},
-		{name: "outcome_unknown", definition: "INTEGER NOT NULL DEFAULT 0"},
-	} {
-		if err := s.ensureEventColumn(ctx, column.name, column.definition); err != nil {
-			return err
-		}
-	}
-	if _, err := s.db.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version=%d", schemaVersion)); err != nil {
-		return fmt.Errorf("set SQL audit schema version: %w", err)
-	}
-	return nil
-}
-
-func (s *Store) ensureEventColumn(ctx context.Context, name, definition string) error {
-	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(sql_audit_events)`)
-	if err != nil {
-		return fmt.Errorf("inspect SQL audit event columns: %w", err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var cid int
-		var columnName, columnType string
-		var notNull int
-		var defaultValue any
-		var primaryKey int
-		if err := rows.Scan(&cid, &columnName, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
-			return fmt.Errorf("scan SQL audit event column: %w", err)
-		}
-		if strings.EqualFold(columnName, name) {
-			return nil
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterate SQL audit event columns: %w", err)
-	}
-	if _, err := s.db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE sql_audit_events ADD COLUMN %s %s", name, definition)); err != nil {
-		return fmt.Errorf("migrate SQL audit event column %s: %w", name, err)
-	}
-	return nil
-}
-
 // Append adds one terminal audit fact. When auditing is disabled this method is
 // a successful no-op. SQL and error text are sanitized before the transaction.
 func (s *Store) Append(event Event) error {
@@ -322,14 +203,14 @@ func appendEventsLocked(conn *sql.Conn, settings Settings, inputEvents []Event) 
 			db_type, database_name, query_id, transaction_id, source, boundary_mode,
 			commit_mode, sql_text, sql_redacted, sql_fingerprint, statement_index,
 			statement_count, executed_count, failed_index, outcome_unknown, duration_ms, rows_affected, rows_returned, error_text,
-			prev_hash, record_hash
-		) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			prev_hash, record_hash, mcp_request_id, mcp_client
+		) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			event.ID, event.Timestamp, event.EventType, event.Status, event.ConnectionID,
 			event.ConnectionFingerprint, event.DBType, event.Database, event.QueryID,
 			event.TransactionID, event.Source, event.BoundaryMode, event.CommitMode,
 			event.SQLText, boolToInt(event.SQLRedacted), event.SQLFingerprint,
 			event.StatementIndex, event.StatementCount, event.ExecutedCount, event.FailedIndex, boolToInt(event.OutcomeUnknown), event.DurationMs,
-			event.RowsAffected, event.RowsReturned, event.Error, event.PrevHash, "",
+			event.RowsAffected, event.RowsReturned, event.Error, event.PrevHash, "", event.MCPRequestID, event.MCPClient,
 		)
 		if err != nil {
 			return fmt.Errorf("append sql audit event %d: %w", index+1, err)
@@ -625,6 +506,7 @@ func normalizeFilter(filter Filter) Filter {
 	filter.Status = strings.ToLower(strings.TrimSpace(filter.Status))
 	filter.TransactionID = strings.TrimSpace(filter.TransactionID)
 	filter.Source = strings.ToLower(strings.TrimSpace(filter.Source))
+	filter.MCPRequestID = strings.TrimSpace(filter.MCPRequestID)
 	if filter.Page <= 0 {
 		filter.Page = 1
 	}
@@ -641,7 +523,11 @@ func buildFilterWhere(filter Filter) (string, []any) {
 	conditions := make([]string, 0, 11)
 	args := make([]any, 0, 12)
 	if filter.ExecutionHistory {
-		conditions = append(conditions, `(source = 'query_editor' AND (
+		sources := `source = 'query_editor'`
+		if filter.IncludeMCP {
+			sources = `source IN ('query_editor', 'mcp')`
+		}
+		conditions = append(conditions, `(`+sources+` AND (
 			event_type = 'query'
 			OR event_type = 'transaction_statement'
 			OR (event_type = 'transaction_begin' AND status <> 'success')
@@ -672,6 +558,7 @@ func buildFilterWhere(filter Filter) (string, []any) {
 	appendExact("status", filter.Status)
 	appendExact("transaction_id", filter.TransactionID)
 	appendExact("source", filter.Source)
+	appendExact("mcp_request_id", filter.MCPRequestID)
 	if filter.FromTimestamp > 0 {
 		conditions = append(conditions, "timestamp >= ?")
 		args = append(args, filter.FromTimestamp)

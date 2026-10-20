@@ -396,6 +396,21 @@ export const useDataSyncWorkbenchTaskLifecycle = ({
     }
   };
 
+  const rollbackRunHistory = async (runId: string) => {
+    if (operationBusy === `rollback-run:${runId}`) return;
+    setOperationBusy(`rollback-run:${runId}`);
+    setOperationError('');
+    try {
+      await gatewayRef.current!.rollbackRun(runId);
+      const page = await requestRunPage(runPageCursors[runPageIndex], runPageSize);
+      if (page) applyRunPage(page, runPageIndex, runPageCursors);
+    } catch (error) {
+      setOperationError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setOperationBusy('');
+    }
+  };
+
   const executeConfirmation = async (confirmation: DataSyncConfirmation) => {
     switch (confirmation.kind) {
       case 'delete-task':
@@ -403,6 +418,9 @@ export const useDataSyncWorkbenchTaskLifecycle = ({
         break;
       case 'delete-run':
         await deleteRunHistory(confirmation.runId);
+        break;
+      case 'rollback-run':
+        await rollbackRunHistory(confirmation.runId);
         break;
       case 'clear-terminal-runs':
         await clearTerminalRunHistory();
@@ -438,6 +456,17 @@ export const useDataSyncWorkbenchTaskLifecycle = ({
       title: t('workbench.delete_confirm_title'),
       description: t('workbench.delete_confirm'),
       confirmText: t('workbench.delete'),
+    });
+  };
+
+  const requestRollbackRunHistory = (runId: string) => {
+    if (operationBusy === `rollback-run:${runId}`) return;
+    openConfirmation({
+      kind: 'rollback-run',
+      runId,
+      title: t('runs.rollback_confirm_title'),
+      description: t('runs.rollback_confirm'),
+      confirmText: t('runs.rollback'),
     });
   };
 
@@ -499,7 +528,7 @@ export const useDataSyncWorkbenchTaskLifecycle = ({
   return {
     refreshRuns, updateRun, discardErrorRow, retryErrorRow, refreshCdc, locateIssue,
     transitionLifecycle, publishTask, changeRunPage, changeRunPageSize, requestDeleteSelectedTask,
-    requestDeleteRunHistory, requestClearTerminalRunHistory, requestResetCheckpoint, actionEnabled,
+    requestDeleteRunHistory, requestRollbackRunHistory, requestClearTerminalRunHistory, requestResetCheckpoint, actionEnabled,
     currentPreflightRequiresApproval,
   };
 };

@@ -343,7 +343,7 @@ func TestPreflightSourceComparisonKeysRequireAnExecutableKeyOnlyForExistingTarge
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			issues := preflightSourceComparisonKeyIssues(test.definition, test.mapping, test.sourceColumns, test.targetColumns, test.targetExists, "orders")
+			issues := preflightSourceComparisonKeyIssues(test.definition, test.mapping, test.sourceColumns, test.targetColumns, test.targetExists, false, "orders")
 			if len(issues) != len(test.wantCodes) {
 				t.Fatalf("issues = %#v, want codes %#v", issues, test.wantCodes)
 			}
@@ -353,6 +353,26 @@ func TestPreflightSourceComparisonKeysRequireAnExecutableKeyOnlyForExistingTarge
 				}
 			}
 		})
+	}
+}
+
+// 目标表已存在、但映射仍满足自动建表条件时，无源物理主键不再阻断：
+// 预检提示追加写入告警，运行时按仅插入追加执行。
+func TestPreflightSourceComparisonKeysExistingTargetCanCreateDegradesToWarning(t *testing.T) {
+	definition := approvalTestDefinition()
+	definition.Options.SyncMode = "insert_update"
+	mapping := syncjob.TableMapping{SourceTable: "orders", TargetTable: "orders_archive"}
+	sourceColumns := []connection.ColumnDefinition{
+		{Name: "id", Type: "bigint"},
+		{Name: "external_id", Type: "varchar(64)"},
+	}
+
+	issues := preflightSourceComparisonKeyIssues(definition, mapping, sourceColumns, nil, true, true, "orders")
+	if len(issues) != 1 {
+		t.Fatalf("issues = %#v, want one warning", issues)
+	}
+	if issues[0].Code != "existing_target_no_key_append" || issues[0].Severity != DataSyncJobPreflightWarning {
+		t.Fatalf("issues = %#v, want existing_target_no_key_append warning", issues)
 	}
 }
 

@@ -156,26 +156,32 @@ func (a *App) preflightDataSyncMappingContext(ctx context.Context, session *meta
 			issues = append(issues, preflightIssue("watermark_column_missing", DataSyncJobPreflightBlocker, "trigger", fmt.Sprintf("watermark column %s does not exist", mapping.Watermark.Column), mappingID))
 		}
 	}
-	targetTable := qualifyDataSyncJobObject(mapping.TargetSchema, mapping.TargetTable)
-	existsResult := session.app.DBTableExists(target.Config, target.Database, targetTable)
-	if !existsResult.Success {
-		if ctx.Err() != nil {
+	targetExists := false
+	// 目标库待创建时库里必然没有表，也连不上库，直接按「不存在」处理。
+	if !target.DatabasePending {
+		targetTable := qualifyDataSyncJobObject(mapping.TargetSchema, mapping.TargetTable)
+		existsResult := session.app.DBTableExists(target.Config, target.Database, targetTable)
+		if !existsResult.Success {
+			if ctx.Err() != nil {
+				return issues
+			}
+			issues = append(issues, preflightIssue("target_table_check_failed", DataSyncJobPreflightBlocker, "mappings", existsResult.Message, mappingID))
 			return issues
 		}
-		issues = append(issues, preflightIssue("target_table_check_failed", DataSyncJobPreflightBlocker, "mappings", existsResult.Message, mappingID))
-		return issues
-	}
-	targetExists := false
-	if payload, ok := existsResult.Data.(map[string]bool); ok {
-		targetExists = payload["exists"]
+		if payload, ok := existsResult.Data.(map[string]bool); ok {
+			targetExists = payload["exists"]
+		}
 	}
 	if !targetExists {
-		targetStrategy := dataSyncJobEffectiveTargetTableStrategy(definition, mapping)
-		if dataSyncJobMappingNeedsExplicitProjection(definition, mapping) || targetStrategy == "existing_only" || !resultSupportsAutoCreate(syncengine.ResolveMigrationCapability(source.Config, target.Config)) {
+		if !dataSyncJobMappingCanCreateTarget(definition, mapping, syncengine.ResolveMigrationCapability(source.Config, target.Config)) {
 			issues = append(issues, preflightIssue("target_table_missing", DataSyncJobPreflightBlocker, "mappings", "target table does not exist and this mapping cannot auto-create it", mappingID))
+		} else if err := ensureConnectionAllowsStructureEdit(target.Config, "connection.backend.action.data_sync_structure"); err != nil {
+			issues = append(issues, preflightIssue("target_protection_blocked", DataSyncJobPreflightBlocker, "mappings", err.Error(), mappingID))
 		} else {
 			issues = append(issues, preflightIssue("target_table_will_be_created", DataSyncJobPreflightInfo, "mappings", "target table will be created by the migration planner", mappingID))
-			issues = append(issues, a.preflightUnmigratedIndexesContext(ctx, session, definition, source, target, mapping)...)
+			if !target.DatabasePending {
+				issues = append(issues, a.preflightUnmigratedIndexesContext(ctx, session, definition, source, target, mapping)...)
+			}
 		}
 		return issues
 	}
@@ -187,7 +193,8 @@ func (a *App) preflightDataSyncMappingContext(ctx context.Context, session *meta
 		issues = append(issues, preflightIssue("target_columns_failed", DataSyncJobPreflightBlocker, "mappings", targetMessage, mappingID))
 		return issues
 	}
-	issues = append(issues, preflightSourceComparisonKeyIssues(definition, mapping, sourceColumns, targetColumns, targetExists, mappingID)...)
+	capability := syncengine.ResolveMigrationCapability(source.Config, target.Config)
+	issues = append(issues, preflightSourceComparisonKeyIssues(definition, mapping, sourceColumns, targetColumns, targetExists, dataSyncJobMappingCanCreateTarget(definition, mapping, capability), mappingID)...)
 	issues = append(issues, preflightUnsupportedTargetSchemaIssues(
 		definition,
 		mapping,

@@ -38,8 +38,10 @@ CONTRIBUTED_BY_RE = re.compile(
 HUALONG_SPONSOR_URL = "https://gonavi.hualong.online/"
 HUALONG_SPONSOR_NOTICE = (
     f"> 💖 **赞助商 · [華龍算力]({HUALONG_SPONSOR_URL})**："
-    "deepseek,glm,kimi降至**3.8折**，DeepSeek谷价仅**1.9折**！\n"
-    "> 華龍算力AI中转站活动加码：充88得100，每人限1单哦"
+    "感恩回馈老用户，福利活动再次开启！\n"
+    "> **10 月 19 日上午 10:00**，在企业微信群内抽取 "
+    "**1 台 vmiss CN.HK.BGP.Basic**，到期时间 **2027-05-16**。\n"
+    f"> 🎁 [活动入口]({HUALONG_SPONSOR_URL})"
 )
 
 

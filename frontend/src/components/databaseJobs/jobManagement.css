@@ -1,0 +1,11 @@
+.gn-job-manager { display: flex; flex-direction: column; gap: 12px; min-width: 0; max-height: calc(100dvh - 180px); overflow: auto; }
+.gn-job-manager > * { flex-shrink: 0; }
+.gn-job-manager .gn-job-sql { height: clamp(200px, 32vh, 330px); min-height: 200px; border: 1px solid var(--gn-border-color, #8884); }
+.gn-job-manager .ant-btn:disabled { opacity: 0.45; }
+.gn-job-manager .gn-job-create-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.gn-job-manager .gn-job-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.gn-job-manager .gn-job-field:has(textarea) { grid-column: 1 / -1; }
+.gn-job-manager .gn-job-snippets { min-width: 190px; }
+@media (max-width: 700px) {
+  .gn-job-manager .gn-job-create-fields { grid-template-columns: 1fr; }
+}

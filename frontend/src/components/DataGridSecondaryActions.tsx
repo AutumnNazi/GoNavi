@@ -1,3 +1,4 @@
+import { QuickPreferencePanel } from './settings/preferences/QuickPreferences';
 import React from 'react';
 import { Button, Popover, Tooltip } from 'antd';
 import {
@@ -92,7 +93,7 @@ const DataGridSecondaryActions: React.FC<DataGridSecondaryActionsProps> = ({
           <Popover
             trigger="click"
             placement="topRight"
-            content={columnInfoSettingContent}
+            content={<><QuickPreferencePanel area="table" onNavigate={() => setColumnDisplayOpen(false)} />{columnInfoSettingContent}</>}
             open={columnDisplayOpen}
             onOpenChange={setColumnDisplayOpen}
           >

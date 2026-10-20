@@ -9,6 +9,7 @@ import type {
 } from '../model';
 import { type DataSyncWorkbenchTranslate, dataSyncStageTextKey } from '../text';
 import { useDataSyncSavedConnections, useDataSyncDatabases } from '../useDataSyncMetadata';
+import { taskKindCanCreateTarget } from '../modelTaskKinds';
 import { type TaskPatch, clearEndpointMappings } from './taskEditorModel';
 
 export const EndpointStage: React.FC<{
@@ -134,6 +135,7 @@ export const EndpointStage: React.FC<{
             connections={connections}
             connectionTree={connectionTree}
             databases={targetDatabases}
+            allowCreateDatabase={taskKindCanCreateTarget(task.kind)}
             t={t}
             onConnectionChange={(connection) => selectConnection('target', connection)}
             onDatabaseChange={(database) => selectDatabase('target', database)}

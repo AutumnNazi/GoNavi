@@ -581,14 +581,14 @@ describe('QueryEditor external SQL save', () => {
     let renderer!: ReactTestRenderer;
     autoFetchState.visible = true;
     storeState.connections[0].config.database = '';
-    backendApp.DBGetDatabases.mockResolvedValueOnce({ success: true, data: [{ Database: 'information_schema' }, { Database: 'main' }] });
+    backendApp.DBGetDatabases.mockResolvedValue({ success: true, data: [{ Database: 'information_schema' }, { Database: 'main' }] });
     backendApp.DBGetTables.mockImplementation(async (_config: unknown, dbName: string) => ({
       success: true,
       data: dbName === 'main'
         ? [{ Tables_in_main: 'organization' }]
         : [{ Tables_in_database_a: 'legacy_table' }],
     }));
-    backendApp.DBGetAllColumns.mockResolvedValueOnce({ success: true, data: [] });
+    backendApp.DBGetAllColumns.mockResolvedValue({ success: true, data: [] });
 
     await act(async () => {
       renderer = create(
@@ -606,11 +606,11 @@ describe('QueryEditor external SQL save', () => {
 
     const sqlProvider = editorState.providers.find((provider) => Array.isArray(provider.triggerCharacters) && provider.triggerCharacters.includes('.'));
     expect(sqlProvider).toBeTruthy();
-    expect(backendApp.DBGetTables).not.toHaveBeenCalled();
 
     let immediateCompletion!: Promise<any>;
     await act(async () => {
-      const activeToolbar = renderer.root.findAllByType(QueryEditorToolbar).find((toolbar) => toolbar.props.currentDb === '');
+      // 新建 tab 已按列表首个库补上默认选中，这里再手工切到 main 验证切换链路。
+      const activeToolbar = renderer.root.findAllByType(QueryEditorToolbar).find((toolbar) => toolbar.props.currentDb === 'information_schema');
       expect(activeToolbar).toBeTruthy();
       activeToolbar!.props.onDatabaseChange('main');
 
@@ -638,7 +638,7 @@ describe('QueryEditor external SQL save', () => {
     });
   });
 
-  it('keeps the database empty after loading options for a connection-scoped query tab', async () => {
+  it('selects the first database after loading options for a new query tab', async () => {
     let renderer!: ReactTestRenderer;
     autoFetchState.visible = true;
     backendApp.DBGetDatabases.mockResolvedValueOnce({
@@ -657,9 +657,11 @@ describe('QueryEditor external SQL save', () => {
 
     expect(backendApp.DBGetDatabases).toHaveBeenCalledTimes(1);
     expect(storeState.updateQueryTabDraft).toHaveBeenCalledWith('tab-1', expect.objectContaining({
-      dbName: '',
+      dbName: 'information_schema',
     }));
-    expect(backendApp.DBGetTables).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(backendApp.DBGetTables).toHaveBeenCalledWith(expect.any(Object), 'information_schema');
+    });
 
     await act(async () => {
       renderer.unmount();

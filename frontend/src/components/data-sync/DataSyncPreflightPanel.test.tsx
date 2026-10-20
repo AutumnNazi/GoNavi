@@ -97,7 +97,7 @@ describe('DataSyncPreflightPanel production approval', () => {
         { code: 'structure_migration_primary_key_required', message: 'source physical primary key required' },
         t,
       ),
-    ).toBe('当前结构迁移路径只能使用源端物理主键；配置的业务稳定键不会参与更新。');
+    ).toBe('同步表结构时只能按源表主键识别同一行。点「定位」后在「编辑例外」里把「用于识别同一行」改成只保留主键列（去掉唯一索引列或业务字段）。');
     expect(
       dataSyncValidationIssueText(
         {

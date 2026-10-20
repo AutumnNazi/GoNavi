@@ -1,7 +1,7 @@
 import { t as catalogTranslate } from '../../i18n/catalog';
 import type { I18nParams } from '../../i18n/types';
 import type { AIContextItem, AIProviderConfig } from '../../types';
-import { isLocalCLISubscriptionProvider } from '../../utils/aiProviderPresets';
+import { getSingletonCLIIdentity, isLocalCLISubscriptionProvider } from '../../utils/aiProviderPresets';
 import { isBuiltinAIProvider } from './builtinAILogin';
 
 export type AIChatReadinessActionKey = 'open-settings' | 'reload-models' | 'builtin-login';
@@ -77,16 +77,21 @@ const getProviderHost = (baseUrl: string): string => {
 const hasProviderSecret = (provider: AIProviderConfig): boolean =>
   provider.hasSecret ?? Boolean(provider.secretRef || provider.apiKey);
 
+// CodeBuddy CLI 用本机登录态，密钥/地址/模型全部可留空（后端 Validate 只检查
+// CLI 命令存在）。它有两种配置形态：独立类型 codebuddy-cli 与
+// custom + apiFormat=codebuddy-cli，getSingletonCLIIdentity 统一识别。
 const isLocalCLIProvider = (provider: AIProviderConfig): boolean =>
-  isLocalCLISubscriptionProvider(provider);
+  isLocalCLISubscriptionProvider(provider)
+  || getSingletonCLIIdentity(provider) === 'codebuddy-cli';
 
+// base url 与 model 的可选范围与密钥豁免完全一致：本地 CLI（含 CodeBuddy）
+// 三项都可留空。历史代码在两处重复手写 codebuddy-cli 判定，统一收敛到这里。
 const isBaseURLOptionalProvider = (provider: AIProviderConfig): boolean =>
-  isLocalCLIProvider(provider)
-  || (provider.type === 'custom' && trimText(provider.apiFormat) === 'codebuddy-cli');
+  isLocalCLIProvider(provider);
 
 const isModelOptionalProvider = (provider: AIProviderConfig): boolean =>
   isLocalCLIProvider(provider)
-  || (provider.type === 'custom' && ['codebuddy-cli', 'cursor-agent'].includes(trimText(provider.apiFormat)));
+  || (provider.type === 'custom' && trimText(provider.apiFormat) === 'cursor-agent');
 
 const getSelectedProvider = (params: {
   providers?: AIProviderConfig[];

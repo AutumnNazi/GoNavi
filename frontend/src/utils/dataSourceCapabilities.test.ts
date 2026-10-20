@@ -54,12 +54,12 @@ describe('dataSourceCapabilities', () => {
     expect(getDataSourceCapabilities(null).supportsRelationalObjectKindFilter).toBe(false);
   });
 
-  it('keeps MySQL on automatic total count mode', () => {
+  it('uses MySQL manual exact count and metadata estimates', () => {
     expect(getDataSourceCapabilities({ type: 'mysql' })).toMatchObject({
       type: 'mysql',
       supportsExplainDiagnosis: true,
-      preferManualTotalCount: false,
-      supportsApproximateTableCount: false,
+      preferManualTotalCount: true,
+      supportsApproximateTableCount: true,
       supportsApproximateTotalPages: false,
     });
   });

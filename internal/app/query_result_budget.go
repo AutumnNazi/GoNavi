@@ -93,7 +93,7 @@ func (a *App) DBQueryMultiTransactionalWithOptions(
 	options QueryResultBudgetOptions,
 ) connection.QueryResult {
 	budget := normalizeQueryResultBudgetOptions(options)
-	return a.dbQueryMultiTransactionalWithBindings(config, dbName, query, queryID, nil, &budget)
+	return a.dbQueryMultiTransactionalWithBindings(config, dbName, query, queryID, nil, true, &budget)
 }
 
 // DBQueryMultiInTransactionWithOptions runs a follow-up managed-transaction query with a result budget.

@@ -154,8 +154,23 @@ func TestEarlierMessagesThatNoLongerFitAreCountedAsLeftOut(t *testing.T) {
 		t.Fatalf("with room everything is sent: %+v", whole)
 	}
 	tight := f.preview(t, ContextPreviewRequest{Content: "next", ContextWindowTokens: 4_000, ReservedOutputTokens: 500})
-	if tight.OmittedMessages == 0 || tight.RetainedMessages+tight.OmittedMessages != 9 || total(tight) > 3_500 {
-		t.Fatalf("with little room the oldest are left out: %+v", tight)
+	if tight.RetainedMessages+tight.OmittedMessages != 9 || total(tight) > 3_500 {
+		t.Fatalf("with little room the projection stays inside the window: %+v", tight)
+	}
+	// Messages already shorter than the compaction floor cannot be shortened,
+	// so the oldest ones are still left out.
+	var short []Message
+	for i := 0; i < 40; i++ {
+		role := "user"
+		if i%2 == 1 {
+			role = "assistant"
+		}
+		short = append(short, Message{Role: role, Content: fmt.Sprintf("note %d", i)})
+	}
+	shortFit := newPreviewFixture(t, short, nil)
+	leftOut := shortFit.preview(t, ContextPreviewRequest{Content: "next", ContextWindowTokens: 4_000, ReservedOutputTokens: 500})
+	if leftOut.OmittedMessages == 0 || leftOut.RetainedMessages+leftOut.OmittedMessages != 41 || total(leftOut) > 3_500 {
+		t.Fatalf("short messages that still do not fit are left out: %+v", leftOut)
 	}
 }
 

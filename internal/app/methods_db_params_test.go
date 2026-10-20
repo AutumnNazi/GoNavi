@@ -46,7 +46,7 @@ var paramsTestConfig = connection.ConnectionConfig{Type: "mysql", Host: "127.0.0
 func TestAnalyzeQueryParametersSplitsStatementsAndParams(t *testing.T) {
 	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
 	config := paramsTestConfig
-	analysis := app.AnalyzeQueryParameters(config, "main", "SELECT :a; SELECT :b, :a")
+	analysis := app.AnalyzeQueryParameters(config, "main", "SELECT :a; SELECT :b, :a", true)
 	if !analysis.Supported {
 		t.Fatalf("mysql 应支持参数绑定: %#v", analysis)
 	}
@@ -64,7 +64,7 @@ func TestAnalyzeQueryParametersSplitsStatementsAndParams(t *testing.T) {
 func TestAnalyzeQueryParametersUnsupportedDriver(t *testing.T) {
 	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
 	config := connection.ConnectionConfig{Type: "mongodb"}
-	analysis := app.AnalyzeQueryParameters(config, "", "SELECT :a")
+	analysis := app.AnalyzeQueryParameters(config, "", "SELECT :a", true)
 	if analysis.Supported {
 		t.Fatal("mongodb 不应声明参数绑定能力")
 	}
@@ -82,7 +82,7 @@ func TestDBQueryMultiWithParamsBindsPerStatement(t *testing.T) {
 		[]connection.QueryParamBinding{
 			{Name: "x", Type: "string", Value: "hello"},
 			{Name: "y", Type: "number", Value: float64(7)},
-		})
+		}, true)
 	if !result.Success {
 		t.Fatalf("带参执行失败: %s", result.Message)
 	}
@@ -106,7 +106,7 @@ func TestDBQueryMultiWithParamsReusesSameNameAcrossStatements(t *testing.T) {
 
 	result := app.DBQueryMultiWithParams(paramsTestConfig, "main",
 		"SELECT :day AS a; SELECT :day AS b", "q-2",
-		[]connection.QueryParamBinding{{Name: "day", Type: "string", Value: "2026-09-20"}})
+		[]connection.QueryParamBinding{{Name: "day", Type: "string", Value: "2026-09-20"}}, true)
 	if !result.Success {
 		t.Fatalf("带参执行失败: %s", result.Message)
 	}
@@ -129,7 +129,7 @@ func TestDBQueryMultiWithParamsReportsMissingBinding(t *testing.T) {
 
 	result := app.DBQueryMultiWithParams(paramsTestConfig, "main",
 		"SELECT id FROM t WHERE a = :alpha AND b = :beta", "q-3",
-		[]connection.QueryParamBinding{{Name: "alpha", Type: "string", Value: "v"}})
+		[]connection.QueryParamBinding{{Name: "alpha", Type: "string", Value: "v"}}, true)
 	if result.Success {
 		t.Fatal("缺值应失败")
 	}
@@ -152,7 +152,7 @@ func TestDBQueryMultiWithParamsRejectsUnsupportedDriver(t *testing.T) {
 	newDatabaseFunc = func(string) (db.Database, error) { return &fakeBatchWriteDB{}, nil }
 
 	result := app.DBQueryMultiWithParams(paramsTestConfig, "main", "SELECT :a", "q-4",
-		[]connection.QueryParamBinding{{Name: "a", Type: "string", Value: "v"}})
+		[]connection.QueryParamBinding{{Name: "a", Type: "string", Value: "v"}}, true)
 	if result.Success {
 		t.Fatal("无参数化契约的驱动应失败")
 	}
@@ -207,6 +207,7 @@ func TestDBQueryMultiTransactionalWithParamsBindsInsideTransaction(t *testing.T)
 	started := app.DBQueryMultiTransactionalWithParams(config, "main",
 		"UPDATE t SET b = :v WHERE id = 1", "tx-params-1",
 		[]connection.QueryParamBinding{{Name: "v", Type: "string", Value: "x"}},
+		true,
 	)
 	if !started.Success || started.TransactionID == "" {
 		t.Fatalf("托管事务带参启动失败: %#v", started)
@@ -219,5 +220,18 @@ func TestDBQueryMultiTransactionalWithParamsBindsInsideTransaction(t *testing.T)
 	}
 	if len(fake.txSession.argsExecValue[0]) != 1 || fake.txSession.argsExecValue[0][0] != "x" {
 		t.Fatalf("事务内绑定值异常: %#v", fake.txSession.argsExecValue[0])
+	}
+}
+
+func TestAnalyzeQueryParametersHonorsQuotedPlaceholderSwitch(t *testing.T) {
+	app := NewAppWithSecretStore(secretstore.NewUnavailableStore("test"))
+	sql := "SELECT '{code1}-{code2}', :real FROM dual"
+	on := app.AnalyzeQueryParameters(paramsTestConfig, "main", sql, true)
+	if strings.Join(on.ParameterNames, ",") != "code1,code2,real" {
+		t.Fatalf("打开开关时应登记引号内全部占位符: %#v", on.ParameterNames)
+	}
+	off := app.AnalyzeQueryParameters(paramsTestConfig, "main", sql, false)
+	if strings.Join(off.ParameterNames, ",") != "real" {
+		t.Fatalf("关闭开关时引号内文本应保持原文: %#v", off.ParameterNames)
 	}
 }

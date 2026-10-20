@@ -158,6 +158,65 @@ func TestExistingTargetInsertUpdateWithoutKeyIsRejected(t *testing.T) {
 	}
 }
 
+// 已有目标表 + 源表无物理主键时，设置了 ExistingTargetInsertWithoutKey
+// 的任务应按追加写入执行：不做行级差异比对、直接插入源行。
+func TestExistingTargetNoKeyAppendWhenOptedIn(t *testing.T) {
+	sourceDB := newNoPKAutoCreateSource()
+	targetDB := &fakeQuerySyncTargetDB{fakeMigrationDB: fakeMigrationDB{
+		columns: map[string][]connection.ColumnDefinition{
+			"target_db.logs": {
+				{Name: "event_name", Type: "varchar(128)", Nullable: "NO"},
+				{Name: "created_at", Type: "datetime", Nullable: "NO"},
+			},
+		},
+	}}
+	config := noPKAutoCreateConfig()
+	config.TargetTableStrategy = "existing_only"
+	config.ExistingTargetInsertWithoutKey = true
+	useSyncDatabaseFactorySequence(t,
+		syncDatabaseFactoryStep{db: sourceDB},
+		syncDatabaseFactoryStep{db: targetDB},
+	)
+
+	result := NewSyncEngine(Reporter{}).RunSync(config)
+	if !result.Success || result.RowsInserted != 1 || len(targetDB.appliedChanges.Inserts) != 1 {
+		t.Fatalf("RunSync() = %+v, want one appended row", result)
+	}
+	if len(targetDB.appliedChanges.Updates) != 0 || len(targetDB.appliedChanges.Deletes) != 0 {
+		t.Fatalf("append-only sync must not update/delete: %+v", targetDB.appliedChanges)
+	}
+	if targetDB.appliedChanges.Inserts[0]["event_name"] != "started" {
+		t.Fatalf("appended row = %#v, want event_name=started", targetDB.appliedChanges.Inserts[0])
+	}
+}
+
+// 未显式开启降级时，同样的无 key 已有目标表仍然拒绝（保护真实对账任务）。
+func TestExistingTargetNoKeyStillRejectedWithoutOptIn(t *testing.T) {
+	sourceDB := newNoPKAutoCreateSource()
+	targetDB := &fakeQuerySyncTargetDB{fakeMigrationDB: fakeMigrationDB{
+		columns: map[string][]connection.ColumnDefinition{
+			"target_db.logs": {
+				{Name: "event_name", Type: "varchar(128)", Nullable: "NO"},
+				{Name: "created_at", Type: "datetime", Nullable: "NO"},
+			},
+		},
+	}}
+	config := noPKAutoCreateConfig()
+	config.TargetTableStrategy = "existing_only"
+	useSyncDatabaseFactorySequence(t,
+		syncDatabaseFactoryStep{db: sourceDB},
+		syncDatabaseFactoryStep{db: targetDB},
+	)
+
+	result := NewSyncEngine(Reporter{}).RunSync(config)
+	if result.Success || result.RowsInserted != 0 {
+		t.Fatalf("RunSync() = %+v, want existing-target no-key rejection", result)
+	}
+	if len(targetDB.appliedChanges.Inserts) != 0 {
+		t.Fatalf("rejected sync must not write: %+v", targetDB.appliedChanges)
+	}
+}
+
 func TestAutoCreateWithoutKeyRejectsRequestedRowSelection(t *testing.T) {
 	sourceDB := newNoPKAutoCreateSource()
 	targetDB := &noPKAutoCreateTargetDB{}

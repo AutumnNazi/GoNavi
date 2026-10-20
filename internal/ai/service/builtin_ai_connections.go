@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"GoNavi-Wails/internal/connection"
 )
 
 // builtinAIConnection is a saved connection as get_connections describes it (never with secrets).
@@ -99,6 +101,27 @@ func (s *Service) builtinAIContextFor(ctx context.Context, target builtinAITarge
 			target.known[connection.ID] = true
 		}
 	}
+	if replacementID, allowed, note, switched := builtinAITypeSwitch(connections, target.connectionID, question); switched {
+		if replacementID == "" {
+			target.connectionID = ""
+			target.dbName = ""
+			target.schemaName = ""
+			target.family = "sql"
+			target.allowedIDs = allowed
+			target.allowedNote = note
+			return target, []string{note}
+		}
+		target.connectionID = replacementID
+		target.dbName = ""
+		target.schemaName = ""
+	}
+	if item, ok := builtinAIConnectionByID(connections, target.connectionID); ok {
+		if family := connection.NonSQLSourceFamily(item.Type); family != "" {
+			target.family = family
+			return target, []string{builtinAINonSQLHint(item, family)}
+		}
+		target.family = "sql"
+	}
 	if target.connectionID != "" {
 		tables := builtinAIUserTables(s.builtinAITables(ctx, target))
 		return target, nonEmpty(builtinAITablesLine("Tables in this database", tables, target.schemaName))
@@ -116,13 +139,20 @@ func (s *Service) builtinAIContextFor(ctx context.Context, target builtinAITarge
 		}
 		lines = append(lines, line)
 	}
-	connection, ok := mentionedBuiltinAIConnection(connections, question)
+	chosen, ok := mentionedBuiltinAIConnection(connections, question)
 	if !ok {
 		return target, lines
 	}
-	target.connectionID = connection.ID
-	about := fmt.Sprintf("The user means the connection %s (%s). Connection id (for tools): %s", connection.Name, connection.Type, connection.ID)
-	databases := s.builtinAIDatabases(ctx, connection.ID)
+	if family := connection.NonSQLSourceFamily(chosen.Type); family != "" {
+		target.connectionID = chosen.ID
+		target.family = family
+		lines = append(lines, builtinAINonSQLHint(chosen, family))
+		return target, lines
+	}
+	target.connectionID = chosen.ID
+	target.family = "sql"
+	about := fmt.Sprintf("The user means the connection %s (%s). Connection id (for tools): %s", chosen.Name, chosen.Type, chosen.ID)
+	databases := s.builtinAIDatabases(ctx, chosen.ID)
 	if len(databases) > 0 {
 		listed, shown := builtinAIListLine(". Databases: ", databases)
 		about += listed
@@ -134,11 +164,11 @@ func (s *Service) builtinAIContextFor(ctx context.Context, target builtinAITarge
 
 	scan, cancel := context.WithTimeout(ctx, builtinAIScanTimeout)
 	defer cancel()
-	for _, database := range builtinAIScanOrder(databases, target.opened[connection.ID]) {
+	for _, database := range builtinAIScanOrder(databases, target.opened[chosen.ID]) {
 		if scan.Err() != nil {
 			break
 		}
-		if own := builtinAIOwnTables(s.builtinAITables(scan, builtinAITarget{connectionID: connection.ID, dbName: database})); len(own) > 0 {
+		if own := builtinAIOwnTables(s.builtinAITables(scan, builtinAITarget{connectionID: chosen.ID, dbName: database})); len(own) > 0 {
 			target.dbName = database
 			return target, append(lines, fmt.Sprintf("Database %s holds tables of its own; use it (dbName %s).", database, database),
 				builtinAITablesLine("Tables in "+database, own, ""))

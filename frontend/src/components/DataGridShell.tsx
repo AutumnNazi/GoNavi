@@ -5,6 +5,8 @@ import { useDataGridShellRenderers } from './dataGrid/shell/useDataGridShellRend
 import { DataGridShellToolbar } from './dataGrid/shell/DataGridShellToolbar';
 import { DataGridShellBody } from './dataGrid/shell/DataGridShellBody';
 import { DataGridShellRowEditorModal } from './dataGrid/shell/DataGridShellRowEditorModal';
+import { useDataGridCopyContent } from './dataGrid/copy/useDataGridCopyContent';
+import { DataGridCopyContentMenu } from './dataGrid/copy/DataGridCopyContentMenu';
 export { DataGridTableSurface } from './dataGrid/shell/DataGridTableSurface';
 
 export type DataGridShellProps = Record<string, any>;
@@ -217,7 +219,7 @@ const DataGridShell: React.FC<DataGridShellProps> = (props) => {
     onOpenErTable,
     onPageChange,
     onLastPage,
-    onReload,
+    onReload, onCancelReload,
     onRequestTotalCount,
     onSort,
     onToggleFilter,
@@ -334,6 +336,12 @@ const DataGridShell: React.FC<DataGridShellProps> = (props) => {
     virtualListItemColumnVirtual,
     window,
   } = props;
+  const regularCopy = useDataGridCopyContent({
+    rows: mergedDisplayData, columnNames: displayOutputColumnNames, selectedRowKeys, selectedCells,
+    currentSelectionRef: props.currentSelectionRef, copyToClipboard, translate: translateDataGrid,
+    columnMetaMap, columnMetaMapByLowerName, connectionConfig: currentConnConfig,
+  });
+  const combinedCopyMenu = [...regularCopy.menuItems, ...(isQueryResultExport ? queryResultCopyMenu : [])];
 
 const {
   renderDataTableView, floatingPageFindContent, columnQuickFindContent, resultViewSwitcher,
@@ -387,7 +395,7 @@ const {
           panelPaddingX={panelPaddingX} toolbarBottomPadding={toolbarBottomPadding}
           filterTopPadding={filterTopPadding} showFilter={showFilter}
           appliedFilterConditions={appliedFilterConditions} filterPanelRef={filterPanelRef}
-          onReload={onReload} onToggleFilter={onToggleFilter} canModifyData={canModifyData} currentConnConfig={currentConnConfig}
+          onReload={onReload} onCancelReload={onCancelReload} onToggleFilter={onToggleFilter} canModifyData={canModifyData} currentConnConfig={currentConnConfig}
           selectedRowKeys={selectedRowKeys} deleteTargetRowCount={deleteTargetRowCount}
           allSelectedAreDeleted={allSelectedAreDeleted} cellEditMode={cellEditMode}
           selectedCells={selectedCells} selectedCellRowCount={selectedCellRowCount}
@@ -398,7 +406,7 @@ const {
           localizedDataEditAutoCommitDelayOptions={localizedDataEditAutoCommitDelayOptions}
           autoCommitRemainingSeconds={autoCommitRemainingSeconds} canImport={canImport}
           canExport={canExport} isQueryResultExport={isQueryResultExport}
-          canCopyQueryResult={canCopyQueryResult}
+          canCopyQueryResult={regularCopy.canCopy || canCopyQueryResult}
           prefersManualTotalCount={prefersManualTotalCount}
           onRequestTotalCount={onRequestTotalCount} aiShortcutLabel={aiShortcutLabel}
           pagination={pagination} toolbarExtraActions={toolbarExtraActions}
@@ -410,7 +418,7 @@ const {
           gridFieldSelectOptions={gridFieldSelectOptions} filterLogicOptions={filterLogicOptions}
           filterOpOptions={filterOpOptions}
           renderGridFieldSelectOption={renderGridFieldSelectOption}
-          noAutoCapInputProps={noAutoCapInputProps} queryResultCopyMenu={queryResultCopyMenu}
+          noAutoCapInputProps={noAutoCapInputProps} queryResultCopyMenu={combinedCopyMenu}
           dbType={dbType} handleResetPendingChanges={handleResetPendingChanges}
           setDataEditTransactionOptions={setDataEditTransactionOptions}
           handleRefreshGrid={handleRefreshGrid}
@@ -501,6 +509,8 @@ const {
 	         canUndoContextMenuCellChange={canUndoContextMenuCellChange}
 	         copiedRowsForPaste={copiedRowsForPaste} copiedCellPatch={copiedCellPatch}
 	         supportsCopyInsert={supportsCopyInsert}
+	         regularCopyMenu={<DataGridCopyContentMenu groups={regularCopy.groups}
+                   onCopied={() => setCellContextMenu({ ...cellContextMenu, visible: false })} />}
 	         handleV2CellContextMenuAction={handleV2CellContextMenuAction}
 	       />
 

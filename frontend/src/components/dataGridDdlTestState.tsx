@@ -68,6 +68,8 @@ export const backendApp = (() => ({
   DBGetForeignKeys: vi.fn(),
   DBGetTriggers: vi.fn(),
   DBQuery: vi.fn(),
+  DBQueryApplicationWithCancel: vi.fn(),
+  CancelQuery: vi.fn(),
   DBShowCreateTable: vi.fn(),
 }))();
 

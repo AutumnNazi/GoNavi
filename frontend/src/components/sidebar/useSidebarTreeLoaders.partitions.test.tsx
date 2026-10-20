@@ -83,6 +83,7 @@ vi.mock('../../../wailsjs/go/app/App', () => ({
   DBGetTables: mocks.dbGetTables,
   DBRefreshTableStats: mocks.dbRefreshTableStats,
   DBQuery: mocks.dbQuery,
+  DBQueryApplicationWithCancel: mocks.dbQuery, CancelQuery: vi.fn().mockResolvedValue({ success: true }),
   GetDriverStatusList: mocks.getDriverStatusList,
   JVMProbeCapabilities: mocks.jvmProbeCapabilities,
 }));
@@ -1132,11 +1133,16 @@ describe('useSidebarTreeLoaders PostgreSQL partitions', () => {
       return { success: true, data: [] };
     });
     let loaders: ReturnType<typeof useSidebarTreeLoaders> | undefined;
+    let tree: any[] = [{ key: 'conn-mysql-app', type: 'database', dataRef: connection }];
     const Harness = () => {
-      loaders = useSidebarTreeLoaders({
+      loaders = useCurrentSidebarTreeLoaders({
         savedQueries: [], tableSortPreference: {}, tableAccessCount: {}, pinnedSidebarTables: [], pinnedSidebarDatabases: [],
         loadingNodesRef: { current: new Set<string>() }, setConnectionStates: vi.fn(), setLoadedKeys: vi.fn(),
-        replaceTreeNodeChildren: mocks.replaceTreeNodeChildren,
+        getTree: () => tree,
+        replaceTreeNodeChildren: (key, children, dataRef) => {
+          mocks.replaceTreeNodeChildren(key, children, dataRef);
+          tree = [{ ...tree[0], children }]; return tree;
+        },
         buildRuntimeConfig: (conn) => conn.config, buildJVMRuntimeConfig: (conn) => conn.config,
         buildJVMDiagnosticTreeNodes: () => [], resolveSavedQueryDisplayName: (name) => String(name || ''),
       });

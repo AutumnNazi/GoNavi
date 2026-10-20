@@ -263,6 +263,7 @@ export const isV2SidebarObjectNode = (
       || node?.type === 'sequence'
       || node?.type === 'db-trigger'
       || node?.type === 'db-event'
+      || node?.type === 'db-job'
       || node?.type === 'routine'
       || node?.type === 'package'
       || node?.type === 'database-link';
@@ -280,6 +281,7 @@ export const isSidebarCommandSearchObjectNode = (
   || node?.type === 'sequence'
   || node?.type === 'package'
   || node?.type === 'database-link'
+  || node?.type === 'db-job'
   || node?.type === 'message-object'
   || isSidebarSearchableNacosGroupNode(node);
 
@@ -314,6 +316,7 @@ export const resolveV2ObjectGroupTitle = (
   if (groupKey === 'packages') return t('sidebar.object_group.packages');
   if (groupKey === 'triggers') return t('sidebar.object_group.triggers');
   if (groupKey === 'events') return t('sidebar.object_group.events');
+  if (groupKey === 'jobs') return t('sidebar.object_group.jobs');
   if (groupKey === 'materializedViews') return t('sidebar.object_group.materialized_views');
   if (groupKey === 'databaseLinks') return t('sidebar.object_group.database_links');
   return null;
@@ -337,6 +340,7 @@ export const resolveSidebarTableNameForCopy = (
     || node?.dataRef?.packageName
     || node?.dataRef?.databaseLinkName
     || node?.dataRef?.eventName
+    || node?.dataRef?.jobLabel || node?.dataRef?.jobName
     || node?.title
     || '',
   ).trim();
@@ -352,6 +356,7 @@ const SIDEBAR_TITLEBAR_OBJECT_TYPES = new Set([
   'database-link',
   'db-trigger',
   'db-event',
+  'db-job',
   'routine',
 ]);
 

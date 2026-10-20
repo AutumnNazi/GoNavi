@@ -107,7 +107,8 @@ Java 跟《阿里巴巴 Java 开发手册》。**Go 不套那本手册**，专�
 4. 不要把新的全局状态塞进已经过大的 `store.ts`。新增 slice / 模块文件，根 store 只组合。
 5. 禁止 `any` 作为新代码的默认类型。Wails 返回值先收敛到 `types.ts` 或局部类型。
 6. 样式：工作台走 `v2-theme-*.css` 与组件旁 CSS。不要把大块布局写进 `App.css` 或组件内超长 `style={{}}`。
-7. 单测用 Vitest，文件名 `*.test.ts` / `*.test.tsx`，与实现同目录。按场景拆文件（`QueryEditor.external-sql-save.test.tsx` 这种已经过大，**新用例不要往里堆**）。
+7. 中文注释一律用 `//` 单行注释。**禁止在 `/* */` 块注释或 JSX `{/* */}` 注释里写中文**——i18n 规约扫描会把块注释中的中文判为「组件里写死的界面文案」导致 CI 门禁报违规。JSX 内确需说明时，把注释移到最近的 JS 语句位置用 `//`，或改用英文。
+8. 单测用 Vitest，文件名 `*.test.ts` / `*.test.tsx`，与实现同目录。按场景拆文件（`QueryEditor.external-sql-save.test.tsx` 这种已经过大，**新用例不要往里堆**）。
 
 **【推荐】**
 
@@ -161,6 +162,12 @@ export function QueryEditor() {
 4. 提交信息遵循 `CONTRIBUTING.md`：`emoji type(scope): 中文描述`。未要求时不要 commit、不要 push。
 
 **【推荐】** PR 保持单一主题；UI 变更附截图或录屏说明。
+
+**【推荐】同步代码工作流**：用户要求「更新/拉取最新代码」而未指定分支时，默认流程为——
+1. `git fetch origin dev` 拉取 **origin 的 dev 分支**最新；
+2. 基于最新 `origin/dev` **新建工作分支**（命名延续现有 `dev-<主题>` 系列）；
+3. 把本地改动合到新分支：未提交的修改随工作区带过去；已提交的用 cherry-pick。
+不主动 push；推送目标为用户的 fork 远端，由用户自行执行或明确要求时再操作。
 
 ---
 

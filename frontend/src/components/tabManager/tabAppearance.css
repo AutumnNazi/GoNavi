@@ -1,0 +1,55 @@
+/* Main workbench tab bar appearance.
+   Only the underline and pill styles live here: the card style is the existing
+   look, so it must not receive a single rule.
+   Every selector is scoped to the main workbench tab bar and every color comes
+   from a --gn-* theme variable, so dark/light and custom themes both follow.
+   The selectors carry .ant-tabs-nav-list (present in the shipped tab bar DOM,
+   see v2-theme-09-full-v2-workbench.css) so they stay above the navicat active
+   tab rules, which reach (0,6,1) with their :hover variant. */
+
+/* --- underline: drop the card surface, keep the nav bottom border, move the
+   active marker from the tab top edge to a line under the label. --- */
+body[data-ui-version='v2'] .gn-v2-tab-workbench[data-tab-appearance='underline'] .gn-v2-main-tabs .ant-tabs-nav-list .ant-tabs-tab {
+  background: transparent !important;
+  border-right: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+body[data-ui-version='v2'] .gn-v2-tab-workbench[data-tab-appearance='underline'] .gn-v2-main-tabs .ant-tabs-nav-list .ant-tabs-tab:hover:not(.ant-tabs-tab-active) {
+  background: var(--gn-bg-hover) !important;
+}
+
+body[data-ui-version='v2'] .gn-v2-tab-workbench[data-tab-appearance='underline'] .gn-v2-main-tabs .ant-tabs-nav-list .ant-tabs-tab.ant-tabs-tab-active {
+  background: transparent !important;
+  box-shadow: inset 0 -2px 0 var(--gn-accent) !important;
+}
+
+/* --- pill: stadium tabs separated by a small gap. --- */
+body[data-ui-version='v2'] .gn-v2-tab-workbench[data-tab-appearance='pill'] .gn-v2-main-tabs .ant-tabs-nav-list .ant-tabs-tab {
+  background: transparent !important;
+  border-right: 0 !important;
+  border-radius: 999px !important;
+  box-shadow: none !important;
+}
+
+body[data-ui-version='v2'] .gn-v2-tab-workbench[data-tab-appearance='pill'] .gn-v2-main-tabs .ant-tabs-nav-list .ant-tabs-tab + .ant-tabs-tab {
+  margin-left: 6px !important;
+}
+
+body[data-ui-version='v2'] .gn-v2-tab-workbench[data-tab-appearance='pill'] .gn-v2-main-tabs .ant-tabs-nav-list .ant-tabs-tab:hover:not(.ant-tabs-tab-active) {
+  background: var(--gn-bg-hover) !important;
+}
+
+body[data-ui-version='v2'] .gn-v2-tab-workbench[data-tab-appearance='pill'] .gn-v2-main-tabs .ant-tabs-nav-list .ant-tabs-tab.ant-tabs-tab-active {
+  background: var(--gn-bg-active) !important;
+  box-shadow: inset 0 0 0 1px var(--gn-br-2) !important;
+}
+
+/* --- left close button: the navicat layout pins the button to the tab right
+   edge with margin-left:auto (0,4,1), so !important is required to release it
+   and let the flex order put it before the label text. --- */
+body[data-ui-version='v2'] .gn-v2-tab-workbench[data-tab-close-position='left'] .gn-v2-main-tabs .ant-tabs-nav-list .gn-v2-tab-close {
+  margin-left: 0 !important;
+  margin-right: 0;
+}

@@ -23,6 +23,7 @@ export interface DataGridShellToolbarProps {
   showFilter: DataGridShellProps['showFilter'];
   appliedFilterConditions: DataGridShellProps['appliedFilterConditions'];
   filterPanelRef: DataGridShellProps['filterPanelRef'];
+  onCancelReload?: () => void;
   onReload: DataGridShellProps['onReload'];
   onToggleFilter: DataGridShellProps['onToggleFilter'];
   canModifyData: DataGridShellProps['canModifyData'];
@@ -107,7 +108,7 @@ export interface DataGridShellToolbarProps {
 export const DataGridShellToolbar = ({
   tableName, dbName, translateDataGrid, loading, darkMode, bgFilter, panelFrameColor, panelRadius,
   panelOuterGap, panelPaddingY, panelPaddingX, toolbarBottomPadding, filterTopPadding, showFilter,
-  appliedFilterConditions, filterPanelRef, onReload, onToggleFilter, canModifyData, currentConnConfig, selectedRowKeys,
+  appliedFilterConditions, filterPanelRef, onReload, onCancelReload, onToggleFilter, canModifyData, currentConnConfig, selectedRowKeys,
   deleteTargetRowCount, allSelectedAreDeleted, cellEditMode, selectedCells, selectedCellRowCount,
   fillTemplateTargetRowCount, copiedCellPatch, hasChanges, pendingChangeCount, dataEditCommitMode,
   dataEditAutoCommitDelayMs, localizedDataEditAutoCommitDelayOptions, autoCommitRemainingSeconds,
@@ -145,6 +146,7 @@ export const DataGridShellToolbar = ({
       appliedFilterConditions={appliedFilterConditions}
       filterPanelRef={filterPanelRef}
       onReload={onReload}
+      onCancelReload={onCancelReload}
       onToggleFilter={onToggleFilter}
       canModifyData={canModifyData}
       selectedRowKeysLength={selectedRowKeys.length}

@@ -143,7 +143,7 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
   const {
     refreshRuns, updateRun, discardErrorRow, retryErrorRow, refreshCdc, locateIssue,
     transitionLifecycle, publishTask, changeRunPage, changeRunPageSize, requestDeleteSelectedTask,
-    requestDeleteRunHistory, requestClearTerminalRunHistory, requestResetCheckpoint, actionEnabled,
+    requestDeleteRunHistory, requestRollbackRunHistory, requestClearTerminalRunHistory, requestResetCheckpoint, actionEnabled,
     currentPreflightRequiresApproval,
   } = useDataSyncWorkbenchTaskLifecycle({
     setOperationBusy, setOperationError, requestRunPage, runPageCursors, runPageIndex, runPageSize,
@@ -354,6 +354,7 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
           onNextRunPage={() => void changeRunPage('next')}
           onRunPageSizeChange={(pageSize) => void changeRunPageSize(pageSize)}
           onDeleteRun={requestDeleteRunHistory}
+          onRollback={requestRollbackRunHistory}
           onClearTerminalRuns={requestClearTerminalRunHistory}
           onCancel={(runId) => void updateRun('cancel', runId)}
           onResume={(runId) => void updateRun('resume', runId)}

@@ -87,6 +87,8 @@ export type SidebarTreeLoadOptions = {
   ensureFresh?: boolean;
   savedQueriesOnly?: boolean;
   rowCountTables?: string[];
+  clearedTables?: string[];
+  droppedTables?: string[];
   schemaName?: string;
 };
 

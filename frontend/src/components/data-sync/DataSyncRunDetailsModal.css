@@ -1,0 +1,12 @@
+.gn-data-sync-run-details-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: 70vh;
+  overflow: auto;
+  padding: 4px;
+}
+
+.gn-data-sync-run-details-body > button { align-self: flex-start; }
+.gn-data-sync-run-details-body .gn-data-sync-run-pagination { flex-wrap: wrap; }
+.gn-data-sync-run-details-body .gn-data-sync-run-events__content { min-width: 0; overflow-wrap: anywhere; }

@@ -34,6 +34,12 @@ type Service struct {
 	secretStore        secretstore.SecretStore
 	configChanged      func()
 	localizer          *i18n.Localizer
+	// configLoadMu serializes the persisted-config read and guards configLoadedDir,
+	// so a binding call that arrives while startup is still loading never reads a
+	// half-applied snapshot and never loads the file twice.
+	configLoadMu sync.Mutex
+	// configLoadedDir is the directory whose configuration is already in memory.
+	configLoadedDir string
 	// agentMu protects the lifecycle-owned Harness and Ledger.  The existing
 	// mu guards persisted AI configuration; keeping these locks separate means
 	// a provider resolver can read configuration while a run is being closed.

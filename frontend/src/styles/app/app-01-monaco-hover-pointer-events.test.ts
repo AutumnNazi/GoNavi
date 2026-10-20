@@ -19,6 +19,12 @@ describe('monaco workbench hover pointer events', () => {
     );
   });
 
+  it('passes pointer events through unlocked pointer tooltips, including descendants and the context view', () => {
+    expect(appCss).toMatch(
+      /\.context-view:has\(> \.workbench-hover-container:not\(\.locked\) > \.workbench-hover-pointer\),\s*\.workbench-hover-container:not\(\.locked\):has\(> \.workbench-hover-pointer\),\s*\.workbench-hover-container:not\(\.locked\):has\(> \.workbench-hover-pointer\) \*\s*\{[^}]*pointer-events:\s*none;/,
+    );
+  });
+
   it('keeps editor content hovers (scrollable/copyable) interactive', () => {
     expect(appCss).not.toMatch(
       /\.monaco-hover\s*\{[^}]*pointer-events:\s*none/,

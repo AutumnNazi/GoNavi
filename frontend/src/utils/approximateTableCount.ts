@@ -1,4 +1,12 @@
-export type ApproximateTableCountStrategy = 'none' | 'duckdb-estimated-size' | 'oracle-num-rows';
+import capabilityRegistry from '../../../internal/db/data_source_capability_contract.json';
+
+export type ApproximateTableCountStrategy = 'none' | 'duckdb-estimated-size' | 'oracle-num-rows' | 'mysql-table-rows';
+
+export const buildMySQLApproximateTotalSql = ({ dbName, tableName }: { dbName: string; tableName: string }): string => {
+  // Hex literals avoid both quote and backslash SQL-mode differences; table names may contain dots.
+  const literal = (value: string) => `CONVERT(0x${Array.from(new TextEncoder().encode(value), byte => byte.toString(16).padStart(2, '0')).join('')} USING utf8mb4)`;
+  return `SELECT TABLE_ROWS AS approx_total FROM information_schema.tables WHERE TABLE_SCHEMA = ${literal(dbName)} AND TABLE_NAME = ${literal(tableName)} AND TABLE_TYPE = 'BASE TABLE' LIMIT 1`;
+};
 
 const MAX_SAFE_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
 
@@ -57,6 +65,7 @@ export const resolveApproximateTableCountStrategy = (params: {
   const dbType = String(params.dbType || '').trim().toLowerCase();
   const whereSQL = String(params.whereSQL || '').trim();
   if (whereSQL) return 'none';
+  if ((capabilityRegistry.drivers as Record<string, string>)[dbType] === 'sql-mysql') return 'mysql-table-rows';
   if (dbType === 'duckdb') return 'duckdb-estimated-size';
   if (dbType === 'oracle') return 'oracle-num-rows';
   return 'none';

@@ -112,7 +112,7 @@ describe('DataGrid DDL interactions', () => {
 
   it('hides the cell viewer immediately when the data-source context changes', async () => {
 
-    const rows = [{ __gonavi_row_key__: 'row-1', payload: 'value from the previous table' }];
+    const rows = [{ __gonavi_row_key__: 'row-1', payload: 'value from the previous table\nline two' }];
     const props = {
       data: rows,
       columnNames: ['payload'],
@@ -664,8 +664,8 @@ describe('DataGrid DDL interactions', () => {
 
   it('opens a refreshed row value without waiting for passive effects', async () => {
 
-    const initialData = [{ __gonavi_row_key__: 'row-1', payload: 'old result value' }];
-    const refreshedData = [{ __gonavi_row_key__: 'row-1', payload: 'fresh result value' }];
+    const initialData = [{ __gonavi_row_key__: 'row-1', payload: 'old result value\nline two' }];
+    const refreshedData = [{ __gonavi_row_key__: 'row-1', payload: 'fresh result value\nline two' }];
     const props = {
       columnNames: ['payload'],
       loading: false,
@@ -972,7 +972,7 @@ describe('DataGrid DDL interactions', () => {
     renderer!.unmount();
   });
 
-  it('copies row and column data from the v2 cell context menu', async () => {
+  it('copies all loaded rows and dedicated column data from the v2 cell context menu', async () => {
 
 
     let renderer: ReactTestRenderer;
@@ -1018,13 +1018,13 @@ describe('DataGrid DDL interactions', () => {
     });
 
     await act(async () => {
-      findButton(renderer!, t('data_grid.context_menu.copy_row_data')).props.onClick({
+      renderer!.root.findByProps({ 'data-grid-copy-scope': 'allLoaded' }).findAllByType('button')[2].props.onClick({
         preventDefault: vi.fn(),
         stopPropagation: vi.fn(),
       });
     });
 
-    expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith('id\tname\n1\talpha');
+    expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith('id\tname\n1\talpha\n2\tbeta');
 
     await act(async () => {
       cellProps.onContextMenu({

@@ -1,12 +1,17 @@
 package app
 
-import "strings"
+import (
+	"strings"
+
+	"GoNavi-Wails/internal/sqlparam"
+)
 
 // splitSQLStatements 按分号拆分 SQL 文本为独立语句。
 // 正确处理单引号/双引号/反引号字符串、行注释（-- / #）、块注释（/* */）、
 // PostgreSQL/Kingbase 的 $$...$$ dollar-quoting，以及 Oracle PL/SQL 匿名块，
 // 避免在这些上下文中错误拆分。
 // 同时支持 SQL 标准的转义单引号（两个连续单引号 ” 表示字面量引号）。
+// SQL Server 的 GO 是客户端批处理分隔符，识别后会作为语句边界并丢弃。
 func splitSQLStatements(sql string) []string {
 	return splitSQLStatementsForDialect("", sql)
 }
@@ -35,6 +40,7 @@ func splitSQLStatementsForDialectMode(dbType, sql string, backslashEscapes bool)
 	text := strings.ReplaceAll(sql, "\r\n", "\n")
 	bracketIdentifiers := supportsSQLBracketIdentifier(dbType)
 	escapedBracketIdentifiers := supportsSQLEscapedBracketIdentifier(dbType)
+	sqlServerBatchSeparator := isSQLServerBatchSeparatorDialect(dbType)
 	if normalizeSQLClassifierDBType(dbType) == "elasticsearch" {
 		if source := strings.TrimSpace(text); source != "" {
 			return []string{source}
@@ -57,6 +63,7 @@ func splitSQLStatementsForDialectMode(dbType, sql string, backslashEscapes bool)
 	plsqlCaseDepth := 0
 	skipNextPLSQLCaseEndToken := false
 	justClosedPLSQLBlock := false
+	sqlServerBatchStart := 0
 
 	push := func() {
 		s := strings.TrimSpace(cur.String())
@@ -133,6 +140,19 @@ func splitSQLStatementsForDialectMode(dbType, sql string, backslashEscapes bool)
 			continue
 		}
 
+		// Oracle 替代引号 q'X...X' / nq'X...X'：内容整体是字面量，其中的
+		// 撇号不是字符串边界（q'[it's]' 若按普通引号词法会进入幻影字符串，
+		// 后续分号不再切分）。与 sqlparam.Scan 的判定口径一致，保证「按
+		// 语句分组」与「参数扫描」边界吻合。找不到闭合时回退普通引号词法。
+		if isOracleLikeDBType(dbType) && !inSingle && !inDouble && !inBacktick &&
+			(ch == 'q' || ch == 'Q' || ch == 'n' || ch == 'N') {
+			if end, ok := sqlparam.OracleAlternativeQuoteEnd(text, i); ok {
+				cur.WriteString(text[i:end])
+				i = end - 1
+				continue
+			}
+		}
+
 		// 字符串开闭
 		if !inDouble && !inBacktick && ch == '\'' {
 			if inSingle && next == '\'' {
@@ -166,6 +186,19 @@ func splitSQLStatementsForDialectMode(dbType, sql string, backslashEscapes bool)
 		if inSingle || inDouble || inBacktick {
 			cur.WriteByte(ch)
 			continue
+		}
+
+		// SQL Server 批处理分隔符：GO 独占一行时结束当前批次并丢弃该行，
+		// 绝不能把它当作语句文本下发（服务端不认识 GO）。
+		if sqlServerBatchSeparator {
+			if repeat, lineEnd, matched := matchSQLServerGoLine(text, i); matched {
+				push()
+				repeatSQLServerBatchStatements(&statements, sqlServerBatchStart, repeat)
+				sqlServerBatchStart = len(statements)
+				justClosedPLSQLBlock = false
+				i = lineEnd - 1
+				continue
+			}
 		}
 
 		if isSQLIdentifierStart(ch) {
@@ -207,7 +240,7 @@ func splitSQLStatementsForDialectMode(dbType, sql string, backslashEscapes bool)
 					skipNextPLSQLCaseEndToken = true
 				}
 				justClosedPLSQLBlock = false
-			} else if token == "end" && plsqlDepth > 0 && !isPLSQLControlEnd(text, tokenEnd) {
+			} else if token == "end" && plsqlDepth > 0 && !isPLSQLControlEnd(text, tokenEnd, dbType) {
 				plsqlDepth--
 				if plsqlDeclareBeginSkips > plsqlDepth {
 					plsqlDeclareBeginSkips = plsqlDepth
@@ -641,15 +674,6 @@ func isPLSQLBlockStatementForDialect(dbType string, stmt string) bool {
 
 func shouldEnterPLSQLDeclareBlock(text string, tokenEnd int) bool {
 	return nextSQLSignificantToken(text, tokenEnd) != ""
-}
-
-func isPLSQLControlEnd(text string, tokenEnd int) bool {
-	switch nextSQLSignificantToken(text, tokenEnd) {
-	case "if", "loop", "case":
-		return true
-	default:
-		return false
-	}
 }
 
 func isCreateRoutineHeaderPrefix(text string) bool {

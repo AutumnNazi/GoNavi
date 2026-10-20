@@ -30,116 +30,6 @@ type dataSyncWatermarkState struct {
 	Mappings map[string]syncbackend.WatermarkCursor `json:"mappings"`
 }
 
-func (executor appDataSyncJobExecutor) Execute(ctx context.Context, request syncjob.ExecutionRequest, reporter syncjob.RunReporter) (syncjob.ExecutionOutcome, error) {
-	if executor.app == nil {
-		return syncjob.ExecutionOutcome{}, errors.New("application is unavailable")
-	}
-	definition := request.Definition
-	if definition.Kind == syncjob.JobKindBackup {
-		return executor.app.executeBackupJob(ctx, request, reporter)
-	}
-	source, err := executor.app.resolveDataSyncJobEndpoint(definition.Source.ConnectionID, definition.Source.Database, definition.Source.Schema)
-	if err != nil {
-		return syncjob.ExecutionOutcome{}, fmt.Errorf("resolve source connection: %w", err)
-	}
-	target, err := executor.app.resolveDataSyncJobEndpoint(definition.Target.ConnectionID, definition.Target.Database, definition.Target.Schema)
-	if err != nil {
-		return syncjob.ExecutionOutcome{}, fmt.Errorf("resolve target connection: %w", err)
-	}
-	if err := validateDataSyncJobEndpointDrift(definition, source, target); err != nil {
-		return syncjob.ExecutionOutcome{}, err
-	}
-	if dataSyncJobRequiresExecutionApproval(definition, target) {
-		if err := executor.app.validateStoredDataSyncJobApproval(definition, target.Fingerprint); err != nil {
-			return syncjob.ExecutionOutcome{}, err
-		}
-	}
-	enabledMappings := make([]syncjob.TableMapping, 0, len(definition.Mappings))
-	for _, mapping := range definition.Mappings {
-		if mapping.Enabled {
-			enabledMappings = append(enabledMappings, mapping)
-		}
-	}
-	if definition.IncrementalMode == syncjob.IncrementalCDC {
-		return executor.executeCDCJob(ctx, request, definition, enabledMappings, source, target, reporter)
-	}
-	if definition.IncrementalMode == syncjob.IncrementalWatermark {
-		return executor.executeWatermarkJob(ctx, request, definition, enabledMappings, source, target, reporter)
-	}
-	startIndex, err := dataSyncJobResumeIndex(request, enabledMappings)
-	if err != nil {
-		return syncjob.ExecutionOutcome{}, err
-	}
-	definitionHash, err := dataSyncJobDefinitionHash(definition)
-	if err != nil {
-		return syncjob.ExecutionOutcome{}, err
-	}
-	outcome := syncjob.ExecutionOutcome{}
-	for index := startIndex; index < len(enabledMappings); index++ {
-		if err := ctx.Err(); err != nil {
-			outcome.Resumable = true
-			return outcome, err
-		}
-		mapping := enabledMappings[index]
-		tableLabel := dataSyncJobMappingLabel(mapping)
-		if err := reporter.ReportProgress(syncjob.RunProgress{
-			Current: index,
-			Total:   len(enabledMappings),
-			Table:   tableLabel,
-			Stage:   "running",
-			Message: fmt.Sprintf("running mapping %d/%d", index+1, len(enabledMappings)),
-		}); err != nil {
-			return outcome, err
-		}
-
-		config, err := buildDataSyncJobEngineConfig(definition, request.Run.ID, source, target, mapping)
-		if err != nil {
-			outcome.Resumable = true
-			return outcome, err
-		}
-		if definition.Kind != syncjob.JobKindCompare {
-			if err := ensureDataSyncTargetProtection(config); err != nil {
-				return outcome, err
-			}
-		}
-		configureDataSyncSnapshotErrorHandling(&config, definition, mapping, reporter)
-		mappingOutcome, runErr := executor.executeMappingWithRetry(ctx, request.Run.ID, definition, config, reporter)
-		outcome.RowsInserted += mappingOutcome.RowsInserted
-		outcome.RowsUpdated += mappingOutcome.RowsUpdated
-		outcome.RowsDeleted += mappingOutcome.RowsDeleted
-		outcome.RowsFailed += mappingOutcome.RowsFailed
-		if runErr != nil {
-			outcome.Resumable = dataSyncJobMappingRetrySafe(definition) && !db.IsWriteOutcomeUnknown(runErr)
-			return outcome, runErr
-		}
-
-		cursor, _ := json.Marshal(dataSyncMappingCursor{NextMapping: index + 1})
-		if err := reporter.SaveCheckpoint(syncjob.Checkpoint{
-			Version:       1,
-			Kind:          "resume",
-			Table:         tableLabel,
-			Phase:         "mapping_completed",
-			CursorType:    "mapping_index",
-			Cursor:        cursor,
-			BatchSequence: int64(index + 1),
-			SchemaHash:    definitionHash,
-		}); err != nil {
-			outcome.Resumable = true
-			return outcome, fmt.Errorf("persist mapping checkpoint: %w", err)
-		}
-		if err := reporter.ReportProgress(syncjob.RunProgress{
-			Current: index + 1,
-			Total:   len(enabledMappings),
-			Table:   tableLabel,
-			Stage:   "completed",
-		}); err != nil {
-			return outcome, err
-		}
-	}
-	outcome.Message = "data sync job completed"
-	return outcome, nil
-}
-
 func (executor appDataSyncJobExecutor) executeWatermarkJob(
 	ctx context.Context,
 	request syncjob.ExecutionRequest,
@@ -589,7 +479,19 @@ func buildDataSyncJobEngineConfig(definition syncjob.JobDefinition, runID string
 		}
 		return config, nil
 	}
+	if definition.Kind == syncjob.JobKindReconcile {
+		// 缺失的目标表由运行前的补建步骤建好（prepareDataSyncTargetTables），数据阶段只写已有表。
+		config.TargetTableStrategy = "existing_only"
+		config.CreateIndexes = false
+		}
 	needsExplicitProjection := dataSyncJobMappingNeedsExplicitProjection(definition, mapping)
+	if definition.Kind == syncjob.JobKindReconcile && !needsExplicitProjection {
+		// 本可自动建表的映射遇到已存在的目标表时，用户预期仍是「把源数据灌进去」，
+		// 而不是行级差异同步；无物理主键时差异无从谈起，允许引擎降级为追加写入。
+		// 显式字段映射走自己的投影路径，不在此处处理。
+		capability := syncbackend.ResolveMigrationCapability(source.Config, target.Config)
+		config.ExistingTargetInsertWithoutKey = dataSyncJobMappingCanCreateTarget(definition, mapping, capability)
+	}
 	if definition.Kind == syncjob.JobKindReconcile && definition.AutoAddColumnsEnabled() && !needsExplicitProjection {
 		// 对账（差异同步）任务开启了「自动补字段」：引擎只有按结构同步内容运行才允许补齐目标缺失字段。
 		// 目标表策略仍由任务/映射决定（默认 existing_only，不会建表）；显式字段映射仍保持仅数据，

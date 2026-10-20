@@ -33,6 +33,19 @@ var (
 var errorType = reflect.TypeOf((*error)(nil)).Elem()
 
 var desktopOnlyAppMethods = map[string]struct{}{
+	"FontGalleryStatus":              {},
+	"FontGalleryRefresh":             {},
+	"FontGalleryDownload":            {},
+	"FontGalleryPreview":             {},
+	"FontGalleryCancel":              {},
+	"FontGalleryResolve":             {},
+	"FontGalleryRemove":              {},
+	"BackgroundGalleryStatus":        {},
+	"BackgroundGalleryRefresh":       {},
+	"BackgroundGalleryDownload":      {},
+	"BackgroundGalleryCancel":        {},
+	"BackgroundGalleryResolve":       {},
+	"BackgroundGalleryRemove":        {},
 	"Shutdown":                       {},
 	"SetWindowTranslucency":          {},
 	"SetMacNativeWindowControls":     {},

@@ -18,15 +18,15 @@ import (
 // The transaction stays open until DBCommitTransaction or DBRollbackTransaction
 // is called by the SQL editor UI.
 func (a *App) DBQueryMultiTransactional(config connection.ConnectionConfig, dbName string, query string, queryID string) connection.QueryResult {
-	return a.dbQueryMultiTransactionalWithBindings(config, dbName, query, queryID, nil, nil)
+	return a.dbQueryMultiTransactionalWithBindings(config, dbName, query, queryID, nil, true, nil)
 }
 
 // DBQueryMultiTransactionalWithParams 在托管事务启动时按名绑定参数执行首条 SQL。
-func (a *App) DBQueryMultiTransactionalWithParams(config connection.ConnectionConfig, dbName string, query string, queryID string, bindings []connection.QueryParamBinding) connection.QueryResult {
-	return a.dbQueryMultiTransactionalWithBindings(config, dbName, query, queryID, bindings, nil)
+func (a *App) DBQueryMultiTransactionalWithParams(config connection.ConnectionConfig, dbName string, query string, queryID string, bindings []connection.QueryParamBinding, quotedPlaceholders bool) connection.QueryResult {
+	return a.dbQueryMultiTransactionalWithBindings(config, dbName, query, queryID, bindings, quotedPlaceholders, nil)
 }
 
-func (a *App) dbQueryMultiTransactionalWithBindings(config connection.ConnectionConfig, dbName string, query string, queryID string, bindings []connection.QueryParamBinding, budgetOptions *db.RowBudgetOptions) (result connection.QueryResult) {
+func (a *App) dbQueryMultiTransactionalWithBindings(config connection.ConnectionConfig, dbName string, query string, queryID string, bindings []connection.QueryParamBinding, quotedPlaceholders bool, budgetOptions *db.RowBudgetOptions) (result connection.QueryResult) {
 	runConfig := normalizeRunConfig(config, dbName)
 	transactionDBType := resolveDDLDBType(runConfig)
 	transactionConfig := runConfig
@@ -63,12 +63,12 @@ func (a *App) dbQueryMultiTransactionalWithBindings(config connection.Connection
 				ResultBudget: budgetOptions,
 			}
 			if len(bindings) > 0 {
-				return a.dbQueryMultiWithParams(config, dbName, query, queryID, bindings, options)
+				return a.dbQueryMultiWithParams(config, dbName, query, queryID, bindings, quotedPlaceholders, options)
 			}
 			return a.dbQueryMulti(config, dbName, query, queryID, options)
 		}
 		if len(bindings) > 0 {
-			return a.dbQueryMultiWithParams(config, dbName, query, queryID, bindings, dbQueryMultiAuditOptions{
+			return a.dbQueryMultiWithParams(config, dbName, query, queryID, bindings, quotedPlaceholders, dbQueryMultiAuditOptions{
 				auditAll:    true,
 				auditWrites: true,
 				source:      "query_editor",
@@ -238,7 +238,7 @@ func (a *App) dbQueryMultiTransactionalWithBindings(config connection.Connection
 		BoundaryMode:  transactionBoundaryMode,
 	})
 
-	statements, executionOptions, bindErr := prepareManagedTransactionStatements(transactionDBType, query, sessionExecer, bindings)
+	statements, executionOptions, bindErr := prepareManagedTransactionStatements(transactionDBType, query, sessionExecer, bindings, quotedPlaceholders)
 	if bindErr != nil {
 		return connection.QueryResult{Success: false, Message: a.translateParameterBindingError(bindErr), QueryID: queryID}
 	}

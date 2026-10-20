@@ -8,6 +8,10 @@ import type {
   SavedQueryParamInfo,
 } from './queryEditorParamsModel';
 import { collectMissingParamNames, initialValuesFromSavedParams } from './queryEditorParamsModel';
+import {
+  readQuotedPlaceholdersEnabled,
+  writeQuotedPlaceholdersEnabled,
+} from './queryEditorQuotedPlaceholders';
 
 const ANALYSIS_DEBOUNCE_MS = 400;
 
@@ -40,6 +44,10 @@ export interface QueryEditorParamsState {
   applyAnalysis: (analysis: QueryParameterAnalysisInfo | null) => void;
   // 编辑器键入时触发防抖重分析（面板与高亮随最新内容刷新）。
   requestAnalysis: () => void;
+  quotedPlaceholders: boolean;
+  setQuotedPlaceholders: (enabled: boolean) => void;
+  // 切换开关后立刻按新规则重分析当前 SQL，供绑定对话框刷新字段。
+  reanalyze: (quotedPlaceholders: boolean) => Promise<QueryParameterAnalysisInfo | null>;
 }
 
 // 会话级参数输入状态 + 防抖参数分析。解析权威在后端；同一编辑器标签页内
@@ -49,6 +57,8 @@ export function useQueryEditorParams(options: UseQueryEditorParamsOptions): Quer
   const [analysis, setAnalysis] = useState<QueryParameterAnalysisInfo | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [values, setValues] = useState<QueryParamValueMap>({});
+  const [quotedPlaceholders, setQuotedPlaceholdersState] = useState(readQuotedPlaceholdersEnabled);
+  const quotedPlaceholdersRef = useRef(quotedPlaceholders);
   // 分析输入与 query state 解耦：query 只在保存/切换时更新，键入通过
   // requestAnalysis 把编辑器实时内容送进防抖分析。
   const [analysisSql, setAnalysisSql] = useState(sql);
@@ -94,7 +104,7 @@ export function useQueryEditorParams(options: UseQueryEditorParamsOptions): Quer
       setAnalyzing(true);
       try {
         const rawConfig = (config || {}) as unknown as connection.ConnectionConfig;
-        const result = await AnalyzeQueryParameters(rawConfig, dbName || '', analysisSql || '');
+        const result = await AnalyzeQueryParameters(rawConfig, dbName || '', analysisSql || '', quotedPlaceholders);
         if (sequenceRef.current !== sequence) {
           return;
         }
@@ -122,7 +132,7 @@ export function useQueryEditorParams(options: UseQueryEditorParamsOptions): Quer
     return () => {
       clearTimeout(timer);
     };
-  }, [config, dbName, analysisSql, enabled]);
+  }, [config, dbName, analysisSql, enabled, quotedPlaceholders]);
 
   const setValue = useCallback((name: string, input: QueryParamInput | null) => {
     setValues((current) => {
@@ -151,12 +161,13 @@ export function useQueryEditorParams(options: UseQueryEditorParamsOptions): Quer
     setAnalysisSql((current) => (current === latest ? current : latest));
   }, [getSqlRef, sql]);
 
-  const analyzeNow = useCallback(async (sqlText: string, analysisDbName?: string) => {
+  const analyzeNow = useCallback(async (sqlText: string, analysisDbName?: string, quotedOverride?: boolean) => {
     const sequence = ++sequenceRef.current;
     setAnalyzing(true);
     try {
       const rawConfig = (configRef.current || {}) as unknown as connection.ConnectionConfig;
-      const result = await AnalyzeQueryParameters(rawConfig, analysisDbName || dbName || '', sqlText || '');
+      const quoted = quotedOverride ?? quotedPlaceholdersRef.current;
+      const result = await AnalyzeQueryParameters(rawConfig, analysisDbName || dbName || '', sqlText || '', quoted);
       const normalized: QueryParameterAnalysisInfo = {
         supported: Boolean(result?.supported),
         statements: (result?.statements || []).map((item) => ({
@@ -182,6 +193,18 @@ export function useQueryEditorParams(options: UseQueryEditorParamsOptions): Quer
     }
   }, [dbName]);
 
+  const setQuotedPlaceholders = useCallback((enabled: boolean) => {
+    writeQuotedPlaceholdersEnabled(enabled);
+    quotedPlaceholdersRef.current = enabled;
+    setQuotedPlaceholdersState(enabled);
+  }, []);
+
+  const reanalyze = useCallback(async (enabled: boolean) => {
+    setQuotedPlaceholders(enabled);
+    const latest = getSqlRef.current?.() ?? analysisSql;
+    return analyzeNow(latest, undefined, enabled);
+  }, [analysisSql, analyzeNow, setQuotedPlaceholders]);
+
   const parameterNames = analysis?.parameterNames || [];
   const missingNames = collectMissingParamNames(parameterNames, values);
 
@@ -197,5 +220,8 @@ export function useQueryEditorParams(options: UseQueryEditorParamsOptions): Quer
     analyzeNow,
     applyAnalysis,
     requestAnalysis,
+    quotedPlaceholders,
+    setQuotedPlaceholders,
+    reanalyze,
   };
 }

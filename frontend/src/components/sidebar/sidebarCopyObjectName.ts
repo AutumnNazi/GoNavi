@@ -6,6 +6,7 @@ export const resolveCopyObjectNameLabel = (node: { type?: string } | null | unde
   if (node?.type === 'sequence') return t('sidebar.copy_object_name.label.sequence');
   if (node?.type === 'package') return t('sidebar.copy_object_name.label.package');
   if (node?.type === 'db-event') return t('sidebar.copy_object_name.label.event');
+  if (node?.type === 'db-job') return t('sidebar.copy_object_name.label.job');
   if (node?.type === 'database-link') return t('sidebar.copy_object_name.label.database_link');
   return t('sidebar.copy_object_name.label.table');
 };

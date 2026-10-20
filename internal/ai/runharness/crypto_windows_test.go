@@ -49,6 +49,41 @@ func TestKeyFileProviderAcceptsExistingWindowsKeyFile(t *testing.T) {
 		t.Fatalf("read key DACL: %v", err)
 	}
 	if dacl.AceCount != 3 {
-		t.Fatalf("key DACL ACE count = %d, want owner/SYSTEM/Administrators", dacl.AceCount)
+		t.Fatalf("key DACL ACE count = %d, want user/SYSTEM/Administrators", dacl.AceCount)
+	}
+}
+
+func TestKeyFileProviderAcceptsAdministratorsOwnedKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ledger.key")
+	want := testKey(t, 44)
+	if err := os.WriteFile(path, want, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	admins, err := windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.SetNamedSecurityInfo(
+		path,
+		windows.SE_FILE_OBJECT,
+		windows.OWNER_SECURITY_INFORMATION,
+		admins,
+		nil,
+		nil,
+		nil,
+	); err != nil {
+		t.Skipf("cannot assign Administrators as owner: %v", err)
+	}
+
+	provider, err := NewKeyFileProvider(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := provider.LoadOrCreate()
+	if err != nil {
+		t.Fatalf("Administrators-owned key must open for an administrator: %v", err)
+	}
+	if !ConstantTimeEqual(got, want) {
+		t.Fatal("key file contents changed")
 	}
 }

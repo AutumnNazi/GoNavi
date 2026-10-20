@@ -4,6 +4,7 @@ import {
   normalizeSidebarDatabaseListRefreshRequest,
   normalizeSidebarDatabaseRefreshRequest,
   dispatchSidebarTableDataRefresh,
+  dispatchSidebarTableMutationRefresh,
 } from './sidebarDatabaseRefresh';
 
 describe('sidebar database refresh requests', () => {
@@ -69,4 +70,13 @@ describe('sidebar database refresh requests', () => {
       },
     }));
   });
+  it('batches clear and drop outcomes into one refresh while preserving quoted table names', () => {
+    const dispatchEvent = vi.fn(); vi.stubGlobal('window', { dispatchEvent });
+    dispatchSidebarTableMutationRefresh({ connectionId: 'mysql', dbName: 'db' }, ['orders', 'audit.log'], 'mysql', 'clear');
+    expect(dispatchEvent).toHaveBeenCalledOnce();
+    expect(dispatchEvent.mock.calls[0][0].detail.clearedTables).toEqual(['`orders`', '`audit.log`']);
+    dispatchSidebarTableMutationRefresh({ connectionId: 'mysql', dbName: 'db' }, ['orders'], 'mysql', 'drop');
+    expect(dispatchEvent.mock.calls[1][0].detail.droppedTables).toEqual(['`orders`']);
+  });
+
 });

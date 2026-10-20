@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+
 	"GoNavi-Wails/internal/connection"
 	"GoNavi-Wails/internal/db"
 	"GoNavi-Wails/shared/i18n"
@@ -61,7 +62,6 @@ func (db *fakeExplainDatabase) Explain(ctx context.Context, query string) (strin
 	return db.explainRaw, db.explainFormat, nil
 }
 
-
 func TestMethodsExplainAndQueryHistoryCatalogKeysExist(t *testing.T) {
 	catalogs, err := i18n.LoadCatalogs()
 	if err != nil {
@@ -102,7 +102,7 @@ func TestDiagnoseQueryUsesCurrentLanguageForValidationAndSuccessMessages(t *test
 
 	newDatabaseFunc = func(dbType string) (db.Database, error) {
 		return &fakeExplainDatabase{
-			explainRaw: "id\tparent\tnotused\tdetail\n2\t0\t0\tSCAN TABLE users\n",
+			explainRaw:    "id\tparent\tnotused\tdetail\n2\t0\t0\tSCAN TABLE users\n",
 			explainFormat: connection.ExplainFormatTable,
 		}, nil
 	}
@@ -146,9 +146,11 @@ func TestDiagnoseQueryUsesCurrentLanguageForValidationAndSuccessMessages(t *test
 		}
 	}
 
-	unsupported := app.DiagnoseQuery(connection.ConnectionConfig{Type: "redis", Host: "127.0.0.1"}, "", "select 1")
-	if expected := app.appText("sql_analysis.backend.error.unsupported_db_type", map[string]any{"dbType": "redis"}); unsupported.Message != expected {
-		t.Fatalf("expected localized unsupported-db message %q, got %q", expected, unsupported.Message)
+	for _, query := range []string{"select 1", "GET test:key"} {
+		unsupported := app.DiagnoseQuery(connection.ConnectionConfig{Type: "redis", Host: "127.0.0.1"}, "", query)
+		if expected := app.appText("sql_analysis.backend.error.unsupported_db_type", map[string]any{"dbType": "redis"}); unsupported.Message != expected {
+			t.Fatalf("expected localized unsupported-db message %q for %q, got %q", expected, query, unsupported.Message)
+		}
 	}
 
 	success := app.DiagnoseQuery(connection.ConnectionConfig{Type: "sqlite", Database: ":memory:"}, "", "select 1")

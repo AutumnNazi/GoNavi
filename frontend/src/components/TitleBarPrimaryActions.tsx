@@ -5,7 +5,15 @@ import {
   type ShortcutOptions,
   type ShortcutPlatform,
 } from '../utils/shortcuts';
-import { TitlebarDatabaseIcon, TitlebarGridIcon, TitlebarPlugIcon } from './titlebar/gonaviTitlebarIcons';
+import { useStore } from '../store';
+import {
+  TitlebarDatabaseIcon,
+  TitlebarDatabaseLineIcon,
+  TitlebarGridIcon,
+  TitlebarGridLineIcon,
+  TitlebarPlugIcon,
+  TitlebarPlugLineIcon,
+} from './titlebar/gonaviTitlebarIcons';
 
 type TitleBarPrimaryShortcutAction = 'newQueryTab' | 'newConnection';
 
@@ -21,6 +29,7 @@ export const resolveTitleBarPrimaryActionShortcut = (
 };
 
 interface TitleBarPrimaryActionsProps {
+  layoutMode?: 'classic' | 'navicat';
   newQueryLabel: string;
   newConnectionLabel: string;
   newQueryShortcut?: string;
@@ -29,7 +38,7 @@ interface TitleBarPrimaryActionsProps {
   onNewConnection: () => void;
   connectionGroupLabel?: string;
   onConnectionGroupManagement?: () => void;
-  /** 标题栏「图标 + 文字」模式的精简名称；显示与否由样式按模式决定。 */
+  // 标题栏「图标 + 文字」模式的精简名称；显示与否由样式按模式决定。
   shortLabels?: TitleBarPrimaryShortLabels;
 }
 
@@ -43,13 +52,11 @@ const getActionTitle = (label: string, shortcut?: string): string => (
   shortcut ? `${label} · ${shortcut}` : label
 );
 
-/**
- * 工具条按钮的图标+文字内容。
- *
- * 图标挂在 `data-titlebar-toolbar-icon` 而不是通用的 `data-titlebar-icon`
- * 上：后者是「快捷入口图标」的既有标记，语义不同，混用会让两侧的断言
- * 互相干扰。
- */
+// 工具条按钮的图标+文字内容。
+//
+// 图标挂在 `data-titlebar-toolbar-icon` 而不是通用的 `data-titlebar-icon`
+// 上：后者是「快捷入口图标」的既有标记，语义不同，混用会让两侧的断言
+// 互相干扰。
 const renderToolbarActionContent = (
   label: string,
   icon: React.ReactNode,
@@ -65,7 +72,7 @@ const renderToolbarActionContent = (
 );
 
 const TitleBarPrimaryActions: React.FC<TitleBarPrimaryActionsProps> = ({
-  newQueryLabel,
+  layoutMode, newQueryLabel,
   newConnectionLabel,
   newQueryShortcut,
   newConnectionShortcut,
@@ -74,14 +81,21 @@ const TitleBarPrimaryActions: React.FC<TitleBarPrimaryActionsProps> = ({
   connectionGroupLabel,
   onConnectionGroupManagement,
   shortLabels,
-}) => (
+}) => {
+  // Navicat 布局用线稿图标；classic 保持原实心图标。
+  const configuredLayout = useStore(state => state.appearance.uiLayoutMode);
+  const navicatLayout = (layoutMode ?? configuredLayout) === 'navicat';
+  const PlugIcon = navicatLayout ? TitlebarPlugLineIcon : TitlebarPlugIcon;
+  const QueryIcon = navicatLayout ? TitlebarGridLineIcon : TitlebarGridIcon;
+  const GroupIcon = navicatLayout ? TitlebarDatabaseLineIcon : TitlebarDatabaseIcon;
+  return (
   <div
     className="gonavi-titlebar-primary-actions"
     data-titlebar-primary-actions="true"
     data-no-titlebar-toggle="true"
     onDoubleClick={(event) => event.stopPropagation()}
   >
-    {/* 顺序对齐参考稿：新建连接在前，新建查询在后。 */}
+    {/* Connection precedes query, matching the application toolbar. */}
     <button
       type="button"
       className="gonavi-titlebar-primary-action"
@@ -90,8 +104,11 @@ const TitleBarPrimaryActions: React.FC<TitleBarPrimaryActionsProps> = ({
       data-gonavi-create-connection-action="true"
       onClick={onNewConnection}
     >
-      {renderToolbarActionContent(newConnectionLabel, <TitlebarPlugIcon size="100%" />, shortLabels?.newConnection)}
+      {renderToolbarActionContent(newConnectionLabel, <PlugIcon size="100%" />, shortLabels?.newConnection)}
     </button>
+    {connectionGroupLabel && onConnectionGroupManagement && <button type="button" className="gonavi-titlebar-primary-action" aria-label={connectionGroupLabel} title={connectionGroupLabel} data-gonavi-connection-group-management-action="true" onClick={onConnectionGroupManagement}>
+      {renderToolbarActionContent(connectionGroupLabel, <GroupIcon size="100%" />, shortLabels?.connectionGroup)}
+    </button>}
     <button
       type="button"
       className="gonavi-titlebar-primary-action"
@@ -100,12 +117,10 @@ const TitleBarPrimaryActions: React.FC<TitleBarPrimaryActionsProps> = ({
       data-gonavi-new-query-action="true"
       onClick={onNewQuery}
     >
-      {renderToolbarActionContent(newQueryLabel, <TitlebarGridIcon size="100%" />, shortLabels?.newQuery)}
+      {renderToolbarActionContent(newQueryLabel, <QueryIcon size="100%" />, shortLabels?.newQuery)}
     </button>
-    {connectionGroupLabel && onConnectionGroupManagement && <button type="button" className="gonavi-titlebar-primary-action" aria-label={connectionGroupLabel} title={connectionGroupLabel} data-gonavi-connection-group-management-action="true" onClick={onConnectionGroupManagement}>
-      {renderToolbarActionContent(connectionGroupLabel, <TitlebarDatabaseIcon size="100%" />, shortLabels?.connectionGroup)}
-    </button>}
   </div>
-);
+  );
+};
 
 export default TitleBarPrimaryActions;
