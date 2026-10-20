@@ -17,8 +17,14 @@ func (a *App) DBGetServerVersion(config connection.ConnectionConfig) connection.
 
 func (a *App) dbGetServerVersion(config connection.ConnectionConfig) connection.QueryResult {
 	query, ok := db.ServerVersionQuery(config)
-	_, registryType := db.DataSourceSpec(config.Type)
+	spec, registryType := db.DataSourceSpec(config.Type)
 	if !ok && !registryType {
+		return emptyServerVersionResult()
+	}
+	// 无驱动类型（XXL-JOB 等专用工作台）没有数据库代理，永远连不上，
+	// 按「不支持的数据源返回空版本」的约定直接返回。否则每次版本探测都会
+	// 失败，而失败不入前端缓存，界面会反复重试并刷错误日志。
+	if registryType && !spec.HasDriver() {
 		return emptyServerVersionResult()
 	}
 
