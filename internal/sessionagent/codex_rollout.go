@@ -100,6 +100,54 @@ func logicalName(path string) string {
 	return strings.TrimSuffix(path, plainSuffix)
 }
 
+// rolloutLogicalKey 返回跨根可比的逻辑键：去掉目录与形态后缀的文件名。
+// 同一会话在 sessions 与 archived_sessions 下的路径不同但文件名相同，
+// 只有按文件名比对才能跨根识别为同一会话。
+func rolloutLogicalKey(path string) string {
+	base := filepath.Base(path)
+	if IsCompressedRollout(base) {
+		return strings.TrimSuffix(base, compressedSuffix)
+	}
+	return strings.TrimSuffix(base, plainSuffix)
+}
+
+// RolloutCopies 返回同一逻辑会话在各处的全部副本路径：同目录的压缩/
+// 未压缩双形态，以及各归档根目录下的同逻辑副本。Codex 归档是复制而
+// 非移动，只删一份的话另一份会重新出现在列表里。
+func RolloutCopies(path string, roots []string) []string {
+	candidates := []string{path, RolloutSibling(path)}
+	base := rolloutLogicalKey(path)
+	for _, root := range roots {
+		_ = filepath.WalkDir(root, func(current string, entry os.DirEntry, err error) error {
+			if err != nil || entry.IsDir() {
+				return nil
+			}
+			if rolloutLogicalKey(current) == base {
+				candidates = append(candidates, current)
+			}
+			return nil
+		})
+	}
+	return candidates
+}
+
+// DedupeRolloutCopies 跨根去重：Codex 归档是复制而非移动，同一会话会
+// 同时存在于 sessions 与 archived_sessions（文件名相同）。保留先出现
+// 的那个——根目录顺序即优先级（sessions 在前，archived_sessions 在后）。
+func DedupeRolloutCopies(paths []string) []string {
+	seen := map[string]bool{}
+	result := make([]string, 0, len(paths))
+	for _, path := range paths {
+		name := rolloutLogicalKey(path)
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		result = append(result, path)
+	}
+	return result
+}
+
 // CollectRolloutFiles 递归收集目录下全部 rollout 文件并去重双形态。
 func CollectRolloutFiles(root string) []string {
 	var files []string

@@ -123,7 +123,10 @@ func resolveAgentCommand(ctx context.Context, commandName string) (string, strin
 func probeAgentVersion(ctx context.Context, commandPath string) string {
 	probeCtx, cancel := context.WithTimeout(ctx, versionProbeTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(probeCtx, commandPath, "--version").Output()
+	cmd := exec.CommandContext(probeCtx, commandPath, "--version")
+	// 探测只是读个版本号，不该在桌面上闪一个控制台窗口。
+	configureProbeProcess(cmd)
+	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}

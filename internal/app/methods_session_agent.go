@@ -101,6 +101,21 @@ func (a *App) SessionAgentRemove(kind string) (result connection.QueryResult) {
 	return connection.QueryResult{Success: true}
 }
 
+// SessionAgentUpdate 更新已添加的智能体（数据目录 / 展示名）。只改
+// 配置，不触碰工具自身的会话数据。
+func (a *App) SessionAgentUpdate(kind, dataDir, displayName string) (result connection.QueryResult) {
+	updated, err := a.UpdateAgentIntegration(
+		strings.TrimSpace(kind),
+		strings.TrimSpace(dataDir),
+		strings.TrimSpace(displayName),
+	)
+	if err != nil {
+		logger.Error(err, "SessionAgentUpdate failed")
+		return connection.QueryResult{Success: false, Message: a.appText("session_agent.error.update_failed", map[string]any{"detail": err.Error()})}
+	}
+	return connection.QueryResult{Success: true, Data: updated}
+}
+
 // SessionAgentDetail 返回会话详情：消息流、轮次索引与缓存命中标记。
 func (a *App) SessionAgentDetail(provider, sourcePath string) (result connection.QueryResult) {
 	defer func() {
@@ -196,6 +211,22 @@ func (a *App) SessionAgentRevealPath(sourcePath string) (result connection.Query
 		return connection.QueryResult{Success: false, Message: a.appText("session_agent.error.reveal_failed", nil)}
 	}
 	return connection.QueryResult{Success: true, Data: map[string]any{"path": path}}
+}
+
+// SessionAgentImageDataURL 读取本机图片并返回 data URL。webview 不能直接
+// 加载本机路径的图片（站点相对路径与 file:// 都会被拦掉），正文里的图片
+// 与 Claude 会话的 image 块都要靠这个接口才能显示。
+func (a *App) SessionAgentImageDataURL(path string) (result connection.QueryResult) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return connection.QueryResult{Success: false, Message: a.appText("session_agent.error.image_failed", map[string]any{"detail": ""})}
+	}
+	dataURL, err := sessionagent.ReadLocalImageDataURL(path)
+	if err != nil {
+		logger.Error(err, "SessionAgentImageDataURL failed")
+		return connection.QueryResult{Success: false, Message: a.appText("session_agent.error.image_failed", map[string]any{"detail": err.Error()})}
+	}
+	return connection.QueryResult{Success: true, Data: map[string]any{"dataUrl": dataURL, "path": path}}
 }
 
 // SessionAgentTimeGroups 返回按时间分组的会话列表（今天/昨天/本周/

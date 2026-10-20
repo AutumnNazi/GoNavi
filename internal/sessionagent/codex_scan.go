@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -21,6 +22,10 @@ const (
 	codexProviderID = "codex"
 	// codexTitleMaxChars 线程标题的截断长度。
 	codexTitleMaxChars = 200
+	// codexHeadLines 列表元数据扫描读取的头部行数。Codex 会话头部
+	// 集中放置 AGENTS.md、environment_context、apps 上下文等注入块，
+	// 真实首条用户消息实测落在第 9~19 行，行数不足会取不到。
+	codexHeadLines = 32
 )
 
 // uuidRe 从文件名兜底提取会话 ID。
@@ -55,6 +60,8 @@ func ScanCodexSessions(dataDir string) []SessionMeta {
 	if len(files) == 0 {
 		return nil
 	}
+	// 归档根目录是副本，跨根去重避免同一会话出现两行。
+	files = DedupeRolloutCopies(files)
 	titles := loadCodexThreadTitles(dataDir)
 	metas := codexParseCache.Scan(files, func(path string) (*SessionMeta, error) {
 		return parseCodexSessionMeta(path, titles)
@@ -89,20 +96,93 @@ type rolloutLine struct {
 	Payload json.RawMessage `json:"payload"`
 }
 
+// rolloutSessionMeta 是 session_meta 的最小结构。Source 用 RawMessage
+// 承接：Codex 的 source 字段有三种形态（字符串 "vscode"、对象
+// {"subagent":{...}}、旧版 {"subagent":true}），用固定类型反序列化会
+// 直接报错，连带丢掉 cwd 与 timestamp。
 type rolloutSessionMeta struct {
-	ID        string `json:"id"`
-	SessionID string `json:"session_id"`
-	Cwd       string `json:"cwd"`
-	Timestamp any    `json:"timestamp"`
-	Source    *struct {
-		Subagent *bool `json:"subagent"`
-	} `json:"source"`
+	ID           string          `json:"id"`
+	SessionID    string          `json:"session_id"`
+	Cwd          string          `json:"cwd"`
+	Timestamp    any             `json:"timestamp"`
+	Source       json.RawMessage `json:"source"`
+	ThreadSource string          `json:"thread_source"`
+	// ForkedFromID 标记该会话是另一个会话的 fork 分支。
+	ForkedFromID string `json:"forked_from_id"`
+}
+
+// codexSubagentMarker 是 session_meta 里的子代理标记。
+type codexSubagentMarker struct {
+	Subagent bool
+	// ParentThreadID 子代理的父线程 ID（仅 thread_spawn 形态有）。
+	ParentThreadID string
+}
+
+// parseCodexSubagentMarker 解析子代理标记。判定信号有三：source 内含
+// subagent 对象（旧版为 true 布尔）、thread_source="subagent"。
+func parseCodexSubagentMarker(source json.RawMessage, threadSource string) codexSubagentMarker {
+	marker := codexSubagentMarker{}
+	if strings.EqualFold(strings.TrimSpace(threadSource), "subagent") {
+		marker.Subagent = true
+	}
+	trimmed := strings.TrimSpace(string(source))
+	if trimmed == "" || trimmed == "null" || !strings.HasPrefix(trimmed, "{") {
+		return marker
+	}
+	var payload struct {
+		Subagent json.RawMessage `json:"subagent"`
+	}
+	if err := json.Unmarshal(source, &payload); err != nil {
+		return marker
+	}
+	inner := strings.TrimSpace(string(payload.Subagent))
+	if inner == "" || inner == "null" {
+		return marker
+	}
+	marker.Subagent = true
+	if !strings.HasPrefix(inner, "{") {
+		return marker
+	}
+	var spawn struct {
+		ThreadSpawn *struct {
+			ParentThreadID string `json:"parent_thread_id"`
+		} `json:"thread_spawn"`
+	}
+	if err := json.Unmarshal(payload.Subagent, &spawn); err == nil && spawn.ThreadSpawn != nil {
+		marker.ParentThreadID = strings.TrimSpace(spawn.ThreadSpawn.ParentThreadID)
+	}
+	return marker
+}
+
+// codexFilenameIsSubagent 判断文件名是否为子代理 rollout：Codex 把子
+// 代理会话写成 rollout-<时间>-<父ID>_<子ID>.jsonl。旧版本没有
+// session_meta 标记，只能靠文件名识别。
+func codexFilenameIsSubagent(path string) bool {
+	base := filepath.Base(path)
+	trimmed := strings.TrimSuffix(strings.TrimSuffix(base, plainSuffix), compressedSuffix)
+	index := strings.LastIndex(trimmed, "_")
+	if index < 0 {
+		return false
+	}
+	return uuidRe.MatchString(trimmed[index+1:])
+}
+
+// lastUUIDFromName 从文件名取最后一个 UUID。子代理文件名带父 ID 前缀，
+// 取最后一个才是子会话自身。
+func lastUUIDFromName(path string) string {
+	base := filepath.Base(path)
+	trimmed := strings.TrimSuffix(strings.TrimSuffix(base, plainSuffix), compressedSuffix)
+	matches := uuidRe.FindAllString(trimmed, -1)
+	if len(matches) == 0 {
+		return ""
+	}
+	return matches[len(matches)-1]
 }
 
 // parseCodexSessionMeta 从 rollout 文件提取列表元数据：只读 head/tail
 // 少量行。取不到的字段留空，不从文件名猜测（ID 例外：UUID 兜底）。
 func parseCodexSessionMeta(path string, titles map[string]string) (*SessionMeta, error) {
-	lines, err := ReadHeadTailLines(path)
+	lines, err := ReadSessionLines(path, codexHeadLines, TailLines)
 	if err != nil {
 		return nil, err
 	}
@@ -111,6 +191,11 @@ func parseCodexSessionMeta(path string, titles map[string]string) (*SessionMeta,
 		ProviderID:    codexProviderID,
 		SourcePath:    path,
 		ResumeCommand: "",
+	}
+
+	// 旧版本子代理会话没有 session_meta 标记，只能靠文件名识别。
+	if codexFilenameIsSubagent(path) {
+		return nil, nil
 	}
 
 	// head 解析：session_meta + 首条真实用户消息。
@@ -126,18 +211,19 @@ func parseCodexSessionMeta(path string, titles map[string]string) (*SessionMeta,
 		if err := json.Unmarshal(item.Payload, &payload); err != nil {
 			continue
 		}
-		if payload.Source != nil && payload.Source.Subagent != nil && *payload.Source.Subagent {
+		if parseCodexSubagentMarker(payload.Source, payload.ThreadSource).Subagent {
 			// 子代理线程不进列表。
 			return nil, nil
 		}
 		meta.SessionID = firstNonEmpty(payload.ID, payload.SessionID)
 		meta.ProjectDir = strings.TrimSpace(payload.Cwd)
 		meta.CreatedAt = ParseTimestampMs(payload.Timestamp)
+		meta.ForkedFrom = strings.TrimSpace(payload.ForkedFromID)
 		break
 	}
 	if meta.SessionID == "" {
 		// 文件名 UUID 兜底。
-		meta.SessionID = uuidRe.FindString(filepath.Base(path))
+		meta.SessionID = lastUUIDFromName(path)
 	}
 	if meta.SessionID == "" {
 		return nil, nil
@@ -172,6 +258,16 @@ func parseCodexSessionMeta(path string, titles map[string]string) (*SessionMeta,
 				for _, c := range payload.Content {
 					text := strings.TrimSpace(c.Text)
 					if text == "" {
+						continue
+					}
+					if payload.Role == "developer" {
+						// harness 注入的上下文（app-context、
+						// turn_aborted、recommended_plugins 等）不进摘要。
+						continue
+					}
+					if payload.Role == "user" && isInjectedUserText(text) {
+						// 用户位上的注入块不进摘要；助手消息不做注入
+						// 判定，正文里的 HTML 不是注入包装。
 						continue
 					}
 					meta.Summary = TruncateRunes(FoldWhitespace(text), SummaryChars)
@@ -235,8 +331,8 @@ func codexUserMessageText(line string) string {
 	return ""
 }
 
-// isInjectedUserText 判断用户消息是否为工具注入的包装（与 rollout
-// 解析共享同一清单）。
+// isInjectedUserText 判断文本是否为工具注入的包装（与 rollout 解析共
+// 享同一清单）。首条用户消息与尾部摘要都用它过滤注入块。
 func isInjectedUserText(text string) bool {
 	trimmed := strings.TrimSpace(text)
 	if strings.HasPrefix(trimmed, "# AGENTS.md instructions") ||
@@ -263,8 +359,12 @@ func isInjectedUserText(text string) bool {
 			}
 		}
 		name := rest[:nameEnd]
-		if name != "" && strings.Contains(trimmed, "</"+name+">") {
-			return true
+		if name != "" {
+			// 闭合标签可能带属性（如 <permissions instructions> 的
+			// </permissions instructions>），只比前缀即可。
+			if strings.Contains(trimmed, "</"+name) {
+				return true
+			}
 		}
 	}
 	return false
@@ -272,8 +372,21 @@ func isInjectedUserText(text string) bool {
 
 // ─── 标题双来源 ───
 
-// codexTitlesMu 保护标题缓存（每次扫描重读，按需加锁）。
+// codexTitlesMu 保护标题缓存（按需加锁）。
 var codexTitlesMu sync.Mutex
+
+// codexTitlesCacheTTL 是标题来源的缓存时长。state_5.sqlite 在 Codex
+// 运行时可能被锁（busy_timeout 会等 2 秒），而列表搜索每敲一个键就要
+// 重扫一次，不缓存的话搜索会明显卡住。
+const codexTitlesCacheTTL = 10 * time.Second
+
+// codexTitlesCache 缓存最近一次读到的线程标题。
+var codexTitlesCache = struct {
+	mu        sync.Mutex
+	dataDir   string
+	titles    map[string]string
+	fetchedAt time.Time
+}{}
 
 // loadCodexThreadTitles 合并两个标题来源（DB 覆盖 index）：
 // session_index.jsonl（每 id 末条胜）+ state_5.sqlite threads 表
@@ -290,6 +403,16 @@ func loadCodexThreadTitles(dataDir string) map[string]string {
 		}
 		dataDir = filepath.Join(home, ".codex")
 	}
+
+	codexTitlesCache.mu.Lock()
+	if codexTitlesCache.dataDir == dataDir &&
+		codexTitlesCache.titles != nil &&
+		time.Since(codexTitlesCache.fetchedAt) < codexTitlesCacheTTL {
+		cached := codexTitlesCache.titles
+		codexTitlesCache.mu.Unlock()
+		return cached
+	}
+	codexTitlesCache.mu.Unlock()
 
 	// 来源一：session_index.jsonl。
 	if file, err := os.Open(filepath.Join(dataDir, "session_index.jsonl")); err == nil {
@@ -332,6 +455,12 @@ func loadCodexThreadTitles(dataDir string) map[string]string {
 			db.Close()
 		}
 	}
+	// 写回缓存：短时间内重复扫描（搜索输入）不再重读 sqlite。
+	codexTitlesCache.mu.Lock()
+	codexTitlesCache.dataDir = dataDir
+	codexTitlesCache.titles = titles
+	codexTitlesCache.fetchedAt = time.Now()
+	codexTitlesCache.mu.Unlock()
 	return titles
 }
 

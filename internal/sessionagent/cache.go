@@ -8,6 +8,7 @@ import (
 	"container/list"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -289,6 +290,9 @@ func readJSONLLine(path string, offset, length int64) (string, error) {
 	if length <= 0 {
 		return "", fmt.Errorf("会话已更新，请重新读取")
 	}
+	if IsCompressedRollout(path) {
+		return readJSONLLineCompressed(path, offset, length)
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return "", err
@@ -311,6 +315,41 @@ func readJSONLLine(path string, offset, length int64) (string, error) {
 	buf := make([]byte, length)
 	if _, err := file.ReadAt(buf, offset); err != nil {
 		return "", err
+	}
+	text := strings.TrimRight(string(buf), "\r\n")
+	if strings.ContainsAny(text, "\n\r") {
+		// 行内出现换行说明区间错位。
+		return "", fmt.Errorf("会话已更新，请重新读取")
+	}
+	return text, nil
+}
+
+// readJSONLLineCompressed 从压缩形态会话里按字节区间取单行。ContentRef
+// 的偏移是在**解压后**的字节流上算出来的（解析时经 OpenRollout 解压），
+// 这里必须同样走解压流——zstd 流不可 seek，且压缩文件的字节偏移与解压
+// 后的偏移不是一回事，直接在压缩文件上 seek 会取到错位的字节。
+func readJSONLLineCompressed(path string, offset, length int64) (string, error) {
+	reader, err := OpenRollout(path)
+	if err != nil {
+		return "", err
+	}
+	defer reader.Close()
+	if offset > 0 {
+		// 跳过前一字节，单独读它做行界校验。
+		if _, err := io.CopyN(io.Discard, reader, offset-1); err != nil {
+			return "", fmt.Errorf("会话已更新，请重新读取")
+		}
+		var prev [1]byte
+		if _, err := io.ReadFull(reader, prev[:]); err != nil {
+			return "", fmt.Errorf("会话已更新，请重新读取")
+		}
+		if prev[0] != '\n' && prev[0] != '\r' {
+			return "", fmt.Errorf("会话已更新，请重新读取")
+		}
+	}
+	buf := make([]byte, length)
+	if _, err := io.ReadFull(reader, buf); err != nil {
+		return "", fmt.Errorf("会话已更新，请重新读取")
 	}
 	text := strings.TrimRight(string(buf), "\r\n")
 	if strings.ContainsAny(text, "\n\r") {

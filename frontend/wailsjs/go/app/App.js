@@ -1670,6 +1670,10 @@ export function SessionAgentExportMarkdown(arg1, arg2) {
   return window['go']['app']['App']['SessionAgentExportMarkdown'](arg1, arg2);
 }
 
+export function SessionAgentImageDataURL(arg1) {
+  return window['go']['app']['App']['SessionAgentImageDataURL'](arg1);
+}
+
 export function SessionAgentList(arg1, arg2) {
   return window['go']['app']['App']['SessionAgentList'](arg1, arg2);
 }
@@ -1692,6 +1696,10 @@ export function SessionAgentRevealPath(arg1) {
 
 export function SessionAgentTimeGroups(arg1, arg2) {
   return window['go']['app']['App']['SessionAgentTimeGroups'](arg1, arg2);
+}
+
+export function SessionAgentUpdate(arg1, arg2, arg3) {
+  return window['go']['app']['App']['SessionAgentUpdate'](arg1, arg2, arg3);
 }
 
 export function SetApplicationBrandIcon(arg1) {
@@ -1760,6 +1768,10 @@ export function TrustSSHHostKey(arg1, arg2, arg3) {
 
 export function TrustSSHHostKeyForConnection(arg1, arg2) {
   return window['go']['app']['App']['TrustSSHHostKeyForConnection'](arg1, arg2);
+}
+
+export function UpdateAgentIntegration(arg1, arg2, arg3) {
+  return window['go']['app']['App']['UpdateAgentIntegration'](arg1, arg2, arg3);
 }
 
 export function UpdateConnectionVisibility(arg1) {

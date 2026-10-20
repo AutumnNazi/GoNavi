@@ -119,6 +119,55 @@ func (a *App) RemoveAgentIntegration(kind string) error {
 	return saveAgentIntegrations(kept)
 }
 
+// UpdateAgentIntegration 更新已添加智能体的数据目录与展示名。未知 kind
+// 报错；空参数表示保留原值。只改配置，不触碰工具自身的会话数据。
+func (a *App) UpdateAgentIntegration(kind, dataDir, displayName string) (AgentIntegration, error) {
+	agentIntegrationsMu.Lock()
+	defer agentIntegrationsMu.Unlock()
+
+	normalized := strings.ToLower(strings.TrimSpace(kind))
+	if normalized == "" {
+		return AgentIntegration{}, errors.New("agent kind is required")
+	}
+	absolute := ""
+	if trimmed := strings.TrimSpace(dataDir); trimmed != "" {
+		resolved, err := filepath.Abs(trimmed)
+		if err != nil {
+			return AgentIntegration{}, fmt.Errorf("resolve data dir: %w", err)
+		}
+		absolute = resolved
+	}
+	existing, err := loadAgentIntegrations()
+	if err != nil {
+		return AgentIntegration{}, err
+	}
+	updated := make([]AgentIntegration, 0, len(existing))
+	var target AgentIntegration
+	found := false
+	for _, item := range existing {
+		if strings.ToLower(strings.TrimSpace(item.Kind)) != normalized {
+			updated = append(updated, item)
+			continue
+		}
+		found = true
+		if absolute != "" {
+			item.DataDir = absolute
+		}
+		if name := strings.TrimSpace(displayName); name != "" {
+			item.DisplayName = name
+		}
+		target = item
+		updated = append(updated, item)
+	}
+	if !found {
+		return AgentIntegration{}, fmt.Errorf("agent %s is not added", normalized)
+	}
+	if err := saveAgentIntegrations(updated); err != nil {
+		return AgentIntegration{}, err
+	}
+	return target, nil
+}
+
 // defaultAgentDisplayName 工具展示名兜底。
 func defaultAgentDisplayName(kind string) string {
 	switch kind {

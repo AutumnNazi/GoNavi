@@ -849,6 +849,8 @@ export function SessionAgentDetect(arg1:string,arg2:string):Promise<connection.Q
 
 export function SessionAgentExportMarkdown(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
+export function SessionAgentImageDataURL(arg1:string):Promise<connection.QueryResult>;
+
 export function SessionAgentList(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
 export function SessionAgentListIntegrations():Promise<connection.QueryResult>;
@@ -860,6 +862,8 @@ export function SessionAgentRemove(arg1:string):Promise<connection.QueryResult>;
 export function SessionAgentRevealPath(arg1:string):Promise<connection.QueryResult>;
 
 export function SessionAgentTimeGroups(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
+export function SessionAgentUpdate(arg1:string,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
 export function SetApplicationBrandIcon(arg1:string):Promise<connection.QueryResult>;
 
@@ -894,6 +898,8 @@ export function TruncateTables(arg1:connection.ConnectionConfig,arg2:string,arg3
 export function TrustSSHHostKey(arg1:string,arg2:number,arg3:string):Promise<connection.QueryResult>;
 
 export function TrustSSHHostKeyForConnection(arg1:connection.ConnectionConfig,arg2:string):Promise<connection.QueryResult>;
+
+export function UpdateAgentIntegration(arg1:string,arg2:string,arg3:string):Promise<app.AgentIntegration>;
 
 export function UpdateConnectionVisibility(arg1:connection.ConnectionVisibilityInput):Promise<connection.SavedConnectionView>;
 

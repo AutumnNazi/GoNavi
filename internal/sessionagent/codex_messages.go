@@ -190,18 +190,32 @@ func (p *codexParser) onMessage(raw json.RawMessage) {
 	}
 
 	role := RoleUser
+	// Codex 的 developer/system 消息装的是工具链自己的上下文（skills 指令、
+	// 权限说明、审批记录「Approved command prefix saved」、hook 事件、工具
+	// 目录更新等），不是对话内容。一律按注入隐藏，否则会话详情会被这些
+	// harness 噪音淹没。
+	alwaysInjected := false
 	switch payload.Role {
 	case "assistant":
 		role = RoleAssistant
 	case "developer", "system":
 		role = RoleSystem
+		alwaysInjected = true
 	case "tool":
 		role = RoleTool
 	}
 
 	// 真实内容与注入内容分成两条消息。
-	if realText.Len() > 0 {
+	if realText.Len() > 0 && !alwaysInjected {
 		p.pushMessage(role, realText.String(), false)
+	}
+	if alwaysInjected {
+		if realText.Len() > 0 {
+			if injectedText.Len() > 0 {
+				injectedText.WriteString("\n\n")
+			}
+			injectedText.WriteString(realText.String())
+		}
 	}
 	if injectedText.Len() > 0 {
 		p.pushMessage(role, injectedText.String(), true)

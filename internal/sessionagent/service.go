@@ -254,15 +254,17 @@ func (s *Service) Delete(provider ProviderID, sourcePath, sessionID string) erro
 			return fmt.Errorf("会话标识不匹配，已取消删除")
 		}
 	}
-	if err := os.Remove(sourcePath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("删除会话文件失败: %w", err)
-	}
-	// sibling 双形态联动删除（压缩/未压缩是同一逻辑会话）。
 	if provider == ProviderCodex {
-		sibling := RolloutSibling(sourcePath)
-		if _, err := os.Stat(sibling); err == nil {
-			_ = os.Remove(sibling)
+		// 压缩/未压缩双形态 + 归档副本联动删除：Codex 归档是复制，
+		// 只删一份的话另一份会重新出现在列表里。
+		for _, candidate := range RolloutCopies(sourcePath, roots) {
+			if err := os.Remove(candidate); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("删除会话文件失败: %w", err)
+			}
+			globalTranscript.Remove(provider + "|" + candidate)
 		}
+	} else if err := os.Remove(sourcePath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("删除会话文件失败: %w", err)
 	}
 	globalTranscript.Remove(provider + "|" + sourcePath)
 	return nil

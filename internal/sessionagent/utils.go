@@ -27,6 +27,9 @@ const (
 	smallFileBytes = 16 * 1024
 	// SniffBytes 行类型嗅探的字节数上限。
 	SniffBytes = 512
+	// headReadLimitBytes 头部扫描的字节上限。Codex 头部含大段注入块
+	//（单条 developer 消息可达 20KB+），上限过小会把行截断在半路。
+	headReadLimitBytes = 1024 * 1024
 )
 
 // SessionLines 是一次头尾扫描的结果。
@@ -37,11 +40,19 @@ type SessionLines struct {
 	FallbackLastActive int64
 }
 
-// ReadHeadTailLines 读取文件头 HeadLines 行与尾 TailLines 行：
-// 小文件整读；大文件读头部，再取尾部 tailWindowBytes 窗口并跳过
-// 可能的半行。尾窗首行跳过后按 TailLines 取行。
+// ReadHeadTailLines 读取文件头 HeadLines 行与尾 TailLines 行。
 func ReadHeadTailLines(path string) (SessionLines, error) {
+	return ReadSessionLines(path, HeadLines, TailLines)
+}
+
+// ReadSessionLines 读取文件头 headLines 行与尾 tailLines 行：小文件
+// 整读；大文件读头部，再取尾部 tailWindowBytes 窗口并跳过可能的半行。
+// 压缩形态（.jsonl.zst）不可 seek，改走流式顺序扫描。
+func ReadSessionLines(path string, headLines, tailLines int) (SessionLines, error) {
 	result := SessionLines{}
+	if IsCompressedRollout(path) {
+		return readHeadTailLinesStream(path, headLines, tailLines)
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return result, err
@@ -63,15 +74,15 @@ func ReadHeadTailLines(path string) (SessionLines, error) {
 		if err := scanner.Err(); err != nil && !errors.Is(err, io.EOF) {
 			return result, err
 		}
-		result.Head = firstN(lines, HeadLines)
-		result.Tail = lastN(lines, TailLines)
+		result.Head = firstN(lines, headLines)
+		result.Tail = lastN(lines, tailLines)
 		return result, nil
 	}
 
 	// 头部：直接扫前若干行。
-	headScanner := bufio.NewScanner(io.LimitReader(file, 256*1024))
+	headScanner := bufio.NewScanner(io.LimitReader(file, headReadLimitBytes))
 	headScanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	for headScanner.Scan() && len(result.Head) < HeadLines {
+	for headScanner.Scan() && len(result.Head) < headLines {
 		result.Head = append(result.Head, headScanner.Text())
 	}
 
@@ -93,7 +104,41 @@ func ReadHeadTailLines(path string) (SessionLines, error) {
 		}
 		result.Tail = append(result.Tail, tailScanner.Text())
 	}
-	result.Tail = lastN(result.Tail, TailLines)
+	result.Tail = lastN(result.Tail, tailLines)
+	return result, nil
+}
+
+// readHeadTailLinesStream 流式读取压缩形态：zstd 流不可 seek，一次顺序
+// 扫描同时保留头部前 headLines 行与尾部 tailLines 行。
+func readHeadTailLinesStream(path string, headLines, tailLines int) (SessionLines, error) {
+	result := SessionLines{}
+	if info, err := os.Stat(path); err == nil {
+		result.FallbackLastActive = info.ModTime().UnixMilli()
+	}
+	reader, err := OpenRollout(path)
+	if err != nil {
+		return result, err
+	}
+	defer reader.Close()
+	scanner := readScanner(reader)
+	tail := make([]string, 0, tailLines)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if len(result.Head) < headLines {
+			result.Head = append(result.Head, line)
+		}
+		if tailLines <= 0 {
+			continue
+		}
+		if len(tail) == tailLines {
+			tail = tail[1:]
+		}
+		tail = append(tail, line)
+	}
+	if err := scanner.Err(); err != nil {
+		return result, err
+	}
+	result.Tail = tail
 	return result, nil
 }
 

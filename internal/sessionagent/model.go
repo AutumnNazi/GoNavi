@@ -47,6 +47,9 @@ type SessionMeta struct {
 	LastActiveAt  int64  `json:"lastActiveAt"`
 	SourcePath    string `json:"sourcePath"`
 	ResumeCommand string `json:"resumeCommand"`
+	// ForkedFrom 是派生自哪个会话（Codex 的 forked_from_id）。非空即
+	// fork 会话，列表需要区分标记。
+	ForkedFrom string `json:"forkedFrom,omitempty"`
 }
 
 // ─── 详情消息 ───
