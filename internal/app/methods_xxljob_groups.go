@@ -11,6 +11,11 @@ import (
 // XxlJobListQuery carries the paging and filter arguments shared by the three
 // panels. Every field is optional so the frontend can pass through only the
 // filters a given panel actually exposes.
+//
+// TriggerStatus and LogStatus carry the admin's own codes: -1 means "no
+// filter", 0 means stopped and 1 means running. The panels send -1 when the
+// corresponding filter is not set, because the admin filters by these values
+// and a zero would silently narrow the list to stopped tasks.
 type XxlJobListQuery struct {
 	Page            int    `json:"page"`
 	Size            int    `json:"size"`

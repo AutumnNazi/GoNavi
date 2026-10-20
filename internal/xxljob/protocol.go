@@ -186,6 +186,11 @@ type GroupListRequest struct {
 
 // JobListRequest filters the task list. Every filter must be sent even when
 // blank; the admin rejects the call otherwise.
+//
+// TriggerStatus carries the admin's own codes: -1 means "no filter", 0 means
+// stopped and 1 means running. The zero value is therefore a real filter
+// (stopped only) and not "unset", so a caller that wants the whole list must
+// pass -1 explicitly. The UI does that already.
 type JobListRequest struct {
 	Page            int
 	Size            int
