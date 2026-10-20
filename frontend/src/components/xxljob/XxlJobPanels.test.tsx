@@ -162,7 +162,7 @@ describe('XXL-JOB 执行器面板', () => {
 });
 
 describe('XXL-JOB 任务面板', () => {
-  it('只读连接禁用启停与执行一次，并给出提示', async () => {
+  it('只读连接禁用启停，更多菜单里的执行一次同样禁用', async () => {
     storeState = {
       connections: [{ ...baseConnection, config: { ...baseConnection.config, readOnly: true } }],
     };
@@ -174,9 +174,12 @@ describe('XXL-JOB 任务面板', () => {
     expect(container.textContent).toContain('xxljob.hint.readonly');
     expect(buttonFor('xxljob.action.start')?.disabled).toBe(true);
     expect(buttonFor('xxljob.action.stop')?.disabled).toBe(true);
-    // 执行一次是图标按钮，aria-label 承载动作名；只读下必须同样禁用。
-    const triggerButton = buttonFor('xxljob.action.trigger');
-    expect(triggerButton?.disabled).toBe(true);
+    // 执行一次收进更多菜单：打开菜单后断言菜单项禁用。
+    await act(async () => { buttonFor('xxljob.action.more')?.click(); });
+    await flush();
+    const menuItem = Array.from(document.body.querySelectorAll('li[role="menuitem"]'))
+      .find((item) => (item.textContent || '').includes('xxljob.action.trigger'));
+    expect(menuItem?.getAttribute('aria-disabled')).toBe('true');
   });
 
   it('运行中的任务只能停止，已停止的任务只能启动', async () => {
@@ -196,7 +199,7 @@ describe('XXL-JOB 任务面板', () => {
     expect(buttonIn(stoppedRow, 'xxljob.action.stop').disabled).toBe(true);
   });
 
-  it('执行一次把可选参数传给后端', async () => {
+  it('更多菜单里执行一次把可选参数传给后端', async () => {
     rpcMock.listJobs.mockResolvedValue(page([{
       id: 3, jobGroup: 1, name: 'sleepJob', triggerStatus: 0, executorHandler: 'commandJobHandler',
     }]));
@@ -204,9 +207,14 @@ describe('XXL-JOB 任务面板', () => {
     renderPanel(<XxlJobJobPanel connectionId="c1" isActive />);
     await flush();
 
-    const triggerButton = rowContaining('sleepJob').querySelector('button');
-    await act(async () => { triggerButton?.click(); });
-    await act(async () => { await Promise.resolve(); });
+    // 打开更多菜单并点执行一次
+    await act(async () => { buttonFor('xxljob.action.more')?.click(); });
+    await flush();
+    const menuItem = Array.from(document.body.querySelectorAll('li[role="menuitem"]'))
+      .find((item) => (item.textContent || '').includes('xxljob.action.trigger'));
+    expect(menuItem).toBeTruthy();
+    await act(async () => { (menuItem as HTMLElement | null)?.click(); });
+    await flush();
 
     // Modal 渲染在 portal 里，必须到 document.body 上找确定按钮。
     const okButton = Array.from(document.body.querySelectorAll('button'))
@@ -221,14 +229,17 @@ describe('XXL-JOB 任务面板', () => {
     expect(typeof param).toBe('string');
   });
 
-  it('无调度规则的任务不请求下次触发时间', async () => {
+  it('无调度规则的任务从更多菜单触发时不请求下次触发时间', async () => {
     rpcMock.listJobs.mockResolvedValue(page([{
       id: 5, jobGroup: 1, name: 'manualJob', triggerStatus: 0, executorHandler: 'commandJobHandler',
     }]));
     renderPanel(<XxlJobJobPanel connectionId="c1" isActive />);
     await flush();
-    const nextButton = buttonIn(rowContaining('manualJob'), 'xxljob.action.next_times');
-    await act(async () => { nextButton.click(); });
+    await act(async () => { buttonFor('xxljob.action.more')?.click(); });
+    await flush();
+    const menuItem = Array.from(document.body.querySelectorAll('li[role="menuitem"]'))
+      .find((item) => (item.textContent || '').includes('xxljob.action.next_times'));
+    await act(async () => { (menuItem as HTMLElement | null)?.click(); });
     await flush();
     expect(rpcMock.nextTriggerTimes).not.toHaveBeenCalled();
   });

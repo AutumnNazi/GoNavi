@@ -97,7 +97,9 @@ export const XxlJobGroupPanel: React.FC<Props> = ({ connectionId, isActive }) =>
         size="small"
         loading={loading}
         dataSource={rows}
-        scroll={{ y: 'calc(100vh - 260px)' }}
+        // scroll.x 必须与 scroll.y 同用：antd FixedHolder 在纯 scroll.y 时会把
+        // 表头 table 拉伸填满剩余高度（ant-design#54894），表头高 288px。
+        scroll={{ x: 1100, y: 'calc(100vh - 260px)' }}
         pagination={{
           current: page,
           pageSize: size,
@@ -128,6 +130,8 @@ export const XxlJobGroupPanel: React.FC<Props> = ({ connectionId, isActive }) =>
           },
           {
             title: t('xxljob.column.address'),
+            width: 280,
+            ellipsis: true,
             render: (_value: unknown, record: XxlJobGroup) => {
               const nodes = (record.registryList ?? [])
                 .map((node) => node?.registryKey)

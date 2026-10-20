@@ -3,19 +3,20 @@ import {
   Alert,
   Button,
   Card,
+  Dropdown,
   Form,
   Input,
   Modal,
-  Popconfirm,
   Select,
   Space,
   Table,
-  Tooltip,
   message,
 } from 'antd';
+import type { MenuProps } from 'antd';
 import {
   DeleteOutlined,
   EditOutlined,
+  MoreOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -126,60 +127,65 @@ export const XxlJobJobPanel: React.FC<Props> = ({ connectionId, isActive }) => {
   const mutationDisabled = readOnly || busy;
   const readonlyHint = readOnly ? t('xxljob.hint.readonly') : undefined;
 
-  const renderActions = (record: XxlJobInfo) => (
-    <Space size={4}>
-      <Tooltip title={t('xxljob.action.trigger')}>
+  // 行操作：只保留 Start/Stop 常驻，触发/下次触发时间/编辑/删除收进 More 菜单，
+  // 降低操作列宽度与视觉噪音。
+  const renderActions = (record: XxlJobInfo) => {
+    const moreItems: MenuProps['items'] = [
+      {
+        key: 'trigger',
+        icon: <PlayCircleOutlined />,
+        label: t('xxljob.action.trigger'),
+        disabled: mutationDisabled,
+        onClick: () => openTrigger(record),
+      },
+      {
+        key: 'next_times',
+        label: t('xxljob.action.next_times'),
+        onClick: () => { void showNextTimes(record); },
+      },
+      {
+        key: 'edit',
+        icon: <EditOutlined />,
+        label: t('xxljob.action.edit'),
+        disabled: mutationDisabled,
+        onClick: () => openEdit(record),
+      },
+      { type: 'divider' },
+      {
+        key: 'delete',
+        icon: <DeleteOutlined />,
+        label: t('xxljob.action.delete'),
+        danger: true,
+        disabled: mutationDisabled,
+        onClick: () => { void runDelete(record); },
+      },
+    ];
+    return (
+      <Space size={4}>
         <Button
           size="small"
-          icon={<PlayCircleOutlined />}
-          aria-label={t('xxljob.action.trigger')}
-          disabled={mutationDisabled}
-          onClick={() => openTrigger(record)}
-        />
-      </Tooltip>
-      <Button
-        size="small"
-        disabled={mutationDisabled || record.triggerStatus === TRIGGER_STATUS_RUNNING}
-        onClick={() => void runStart(record.id)}
-      >
-        {t('xxljob.action.start')}
-      </Button>
-      <Button
-        size="small"
-        disabled={mutationDisabled || record.triggerStatus !== TRIGGER_STATUS_RUNNING}
-        onClick={() => void runStop(record.id)}
-      >
-        {t('xxljob.action.stop')}
-      </Button>
-      <Button size="small" onClick={() => void showNextTimes(record)}>
-        {t('xxljob.action.next_times')}
-      </Button>
-      <Tooltip title={t('xxljob.action.edit')}>
+          disabled={mutationDisabled || record.triggerStatus === TRIGGER_STATUS_RUNNING}
+          onClick={() => void runStart(record.id)}
+        >
+          {t('xxljob.action.start')}
+        </Button>
         <Button
           size="small"
-          icon={<EditOutlined />}
-          aria-label={t('xxljob.action.edit')}
-          disabled={mutationDisabled}
-          onClick={() => openEdit(record)}
-        />
-      </Tooltip>
-      <Popconfirm
-        title={t('xxljob.confirm.delete_job')}
-        okText={t('xxljob.action.confirm')}
-        cancelText={t('xxljob.action.cancel')}
-        disabled={mutationDisabled}
-        onConfirm={() => { void runDelete(record); }}
-      >
-        <Button
-          size="small"
-          danger
-          icon={<DeleteOutlined />}
-          aria-label={t('xxljob.action.delete')}
-          disabled={mutationDisabled}
-        />
-      </Popconfirm>
-    </Space>
-  );
+          disabled={mutationDisabled || record.triggerStatus !== TRIGGER_STATUS_RUNNING}
+          onClick={() => void runStop(record.id)}
+        >
+          {t('xxljob.action.stop')}
+        </Button>
+        <Dropdown menu={{ items: moreItems }} trigger={['click']} placement="bottomRight">
+          <Button
+            size="small"
+            icon={<MoreOutlined />}
+            aria-label={t('xxljob.action.more')}
+          />
+        </Dropdown>
+      </Space>
+    );
+  };
 
   return (
     <div className="xxljob-panel">

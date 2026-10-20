@@ -13022,5 +13022,6 @@
   "xxljob.cron.mode.nthWeek": "N-й день недели",
   "xxljob.cron.mode.lastWeek": "Последний день недели",
   "xxljob.cron.mode.nthWeekIndex": "№",
-  "xxljob.action.cron_builder": "Конструктор"
+  "xxljob.action.cron_builder": "Конструктор",
+  "xxljob.action.more": "Ещё"
 }

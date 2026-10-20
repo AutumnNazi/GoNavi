@@ -98,12 +98,14 @@ const buttonByLabel = (label: string): HTMLButtonElement | null =>
       || (button.textContent || '').includes(label)) ?? null;
 
 describe('任务面板：编辑 / 删除 / 新增', () => {
-  it('可写连接下渲染新增、编辑与删除按钮', async () => {
+  it('可写连接下渲染新增按钮与更多菜单入口', async () => {
     renderPanel(<XxlJobJobPanel connectionId="c1" isActive />);
     await flush();
     expect(buttonByLabel('xxljob.action.add')).toBeTruthy();
-    expect(buttonByLabel('xxljob.action.edit')).toBeTruthy();
-    expect(buttonByLabel('xxljob.action.delete')).toBeTruthy();
+    // 编辑/删除收进 More 菜单，行内只保留 Start/Stop 与菜单入口。
+    expect(buttonByLabel('xxljob.action.more')).toBeTruthy();
+    expect(buttonByLabel('xxljob.action.edit')).toBeNull();
+    expect(buttonByLabel('xxljob.action.delete')).toBeNull();
   });
 
   it('只读连接下新增按钮禁用', async () => {
