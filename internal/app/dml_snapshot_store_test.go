@@ -37,7 +37,10 @@ func TestDMLSnapshotStoreAppendAndListNewestFirst(t *testing.T) {
 	dir := t.TempDir()
 	store := newDMLSnapshotStore(dir)
 
-	base := time.Date(2026, 9, 20, 10, 0, 0, 0, time.UTC)
+	// 基准时间必须相对当前时间：写死的日期一旦超出保留天数，快照会被
+	// 天数裁剪直接丢掉，测试就会与被测行为无关地失败。按秒截断是为了与
+	// RFC3339 序列化的精度一致。
+	base := time.Now().Truncate(time.Second).Add(-time.Hour)
 	for index := 0; index < 3; index++ {
 		if err := store.Append(testDMLSnapshotEntry(
 			"snap-"+string(rune('a'+index)), base.Add(time.Duration(index)*time.Minute), true)); err != nil {
@@ -92,7 +95,9 @@ func TestDMLSnapshotStorePrunesOldestBeyondLimit(t *testing.T) {
 	dir := t.TempDir()
 	store := newDMLSnapshotStore(dir)
 
-	base := time.Date(2026, 9, 20, 10, 0, 0, 0, time.UTC)
+	// 同上：基准时间必须相对当前时间，否则超过保留天数后全部条目会被
+	// 天数裁剪丢掉，条数裁剪就无从验证。
+	base := time.Now().Truncate(time.Second).Add(-time.Hour)
 	total := dmlSnapshotMaxEntries + 5
 	for index := 0; index < total; index++ {
 		entry := testDMLSnapshotEntry("snap", base.Add(time.Duration(index)*time.Second), true)
