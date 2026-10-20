@@ -16,6 +16,7 @@ import { t } from "../../i18n";
 import { useStore } from "../../store";
 import { buildAgentAssetsWorkbenchTab } from "../../utils/agentAssetsTab";
 import type { AgentDetectionView } from "../../utils/agentConnectionTypes";
+import { ProviderIcon } from "../sessionAgent/SessionAgentListPage";
 import "./AgentSetupPanel.css";
 
 interface AgentSetupPanelProps {
@@ -151,12 +152,14 @@ const AgentSetupPanel: React.FC<AgentSetupPanelProps> = ({ kind, onClose }) => {
   return (
     <div className="gn-agent-setup" data-agent-setup-panel="true">
       <div className="gn-agent-setup-head">
-        <span className="gn-agent-setup-ico" aria-hidden="true">
-          {kind === "claude" ? "✳" : "✳"}
+        <span className={`gn-agent-setup-ico ${kind === "claude" ? "is-claude" : "is-codex"}`} aria-hidden="true">
+          <ProviderIcon providerId={kind} />
         </span>
-        <div className="gn-agent-setup-title">{displayName}</div>
-        <div className="gn-agent-setup-subtitle">
-          {t("session_agent.setup.subtitle")}
+        <div className="gn-agent-setup-head-text">
+          <div className="gn-agent-setup-title">{displayName}</div>
+          <div className="gn-agent-setup-subtitle">
+            {t("session_agent.setup.subtitle")}
+          </div>
         </div>
       </div>
 
@@ -178,10 +181,10 @@ const AgentSetupPanel: React.FC<AgentSetupPanelProps> = ({ kind, onClose }) => {
           {detectionRows.length > 0 && (
             <dl className="gn-agent-setup-facts">
               {detectionRows.map(({ label, value }) => (
-                <React.Fragment key={label}>
-                  <dt>{label}</dt>
-                  <dd>{value}</dd>
-                </React.Fragment>
+                <div className="gn-agent-setup-fact" key={label}>
+                  <dt className="gn-agent-setup-fact-label">{label}</dt>
+                  <dd className="gn-agent-setup-fact-value" title={value}>{value}</dd>
+                </div>
               ))}
             </dl>
           )}

@@ -24,6 +24,11 @@ import {
 import { useSidebarCommandSearchRunner } from './useSidebarCommandSearchRunner';
 import { MenuProps } from 'antd';
 import { buildSidebarNodeMenuItems } from './sidebarNodeMenu';
+import { buildAgentAssetsWorkbenchTab } from '../../utils/agentAssetsTab';
+import {
+  confirmRemoveAgentIntegration,
+  openAgentIntegrationEditor,
+} from './sidebarAgentIntegrationActions';
 import { getMetadataDialect, shouldHideSchemaPrefix } from './sidebarMetadataLoaders';
 import { useSidebarTitleRender } from './useSidebarTitleRender';
 import type { SidebarObjectMenuActionsApi } from './useSidebarObjectMenuActions';
@@ -525,6 +530,13 @@ export const useSidebarContextMenus = ({
     openExternalSQLBindingModal,
     openRenameExternalSQLFileModal,
     handleDeleteExternalSQLFile,
+    openAgentWorkbench: (node: any) => {
+      const integration = node?.dataRef;
+      if (!integration) return;
+      addTab(buildAgentAssetsWorkbenchTab(integration));
+    },
+    openAgentIntegrationEditor,
+    removeAgentIntegration: confirmRemoveAgentIntegration,
     extractObjectName,
   });
 

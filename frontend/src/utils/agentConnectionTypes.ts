@@ -21,6 +21,8 @@ export interface AgentIntegrationSummaryView {
   displayName: string;
   enabled: boolean;
   assetCount: number;
+  /** 扫描数据目录（编辑智能体时回填）。 */
+  dataDir: string;
 }
 
 /** 检测结果（对应后端 sessionagent.Detection）。 */

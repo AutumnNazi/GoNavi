@@ -42,5 +42,4 @@ export type SidebarTreeNodeType =
   | 'jvm-resource'
   | 'jvm-diagnostic'
   | 'jvm-monitoring'
-  | 'agent-root'
   | 'agent-integration';

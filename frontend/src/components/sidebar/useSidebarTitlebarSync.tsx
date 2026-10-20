@@ -33,7 +33,7 @@ import type { SidebarSearchStateApi } from './useSidebarSearchState';
 import type { SidebarStoreStateApi } from './useSidebarStoreState';
 import type { SidebarTreeViewStateApi } from './useSidebarTreeViewState';
 import type { SidebarProps } from '../Sidebar';
-import { buildAgentRootTreeNode } from './sidebarAgentTreeNodes';
+import { buildAgentTreeNodes } from './sidebarAgentTreeNodes';
 import { useStore } from '../../store';
 
 export interface UseSidebarTitlebarSyncInput {
@@ -192,9 +192,9 @@ export const useSidebarTitlebarSync = ({
         orderedNodes.push(allSavedQueriesNode);
       }
       const externalSQLRootNode = prev.find((node) => node.type === 'external-sql-root');
-      const agentRootNode = buildAgentRootTreeNode(agentIntegrations);
-      const nodesWithAgentRoot = agentRootNode ? [...orderedNodes, agentRootNode] : orderedNodes;
-      return externalSQLRootNode ? [...nodesWithAgentRoot, externalSQLRootNode] : nodesWithAgentRoot;
+      // 智能体与数据连接同级：直接作为顶层节点插入，不套分组。
+      const nodesWithAgents = [...orderedNodes, ...buildAgentTreeNodes(agentIntegrations)];
+      return externalSQLRootNode ? [...nodesWithAgents, externalSQLRootNode] : nodesWithAgents;
     });
   }, [connections, connectionTags, sidebarRootOrder, rootSortMode, rootConnectionSortMode, allSavedQueriesNode, agentIntegrations]);
 

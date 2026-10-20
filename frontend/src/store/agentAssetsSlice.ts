@@ -25,6 +25,7 @@ const toSummaries = (payload: unknown): AgentIntegrationSummaryView[] => {
       displayName: item.displayName || item.kind,
       enabled: true,
       assetCount: 0,
+      dataDir: item.dataDir || '',
     }));
 };
 
