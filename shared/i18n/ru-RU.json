@@ -13023,5 +13023,6 @@
   "xxljob.cron.mode.lastWeek": "Последний день недели",
   "xxljob.cron.mode.nthWeekIndex": "№",
   "xxljob.action.cron_builder": "Конструктор",
-  "xxljob.action.more": "Ещё"
+  "xxljob.action.more": "Ещё",
+  "xxljob.backend.error.invalid_credentials": "Неверное имя пользователя или пароль; проверьте учётные данные подключения"
 }

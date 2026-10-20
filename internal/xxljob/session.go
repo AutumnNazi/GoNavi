@@ -83,8 +83,8 @@ func (c *Client) performLogin(ctx context.Context) error {
 			return nil
 		}
 		lastErr = err
-		if errors.Is(err, ErrSessionExpired) {
-			// The route exists and rejected the credentials; trying the other
+		if errors.Is(err, ErrSessionExpired) || errors.Is(err, ErrCredentialRejected) {
+			// The route exists and refused the request; trying the other
 			// family would only resend the password to a missing endpoint.
 			return err
 		}
@@ -138,7 +138,7 @@ func (c *Client) tryLogin(ctx context.Context, family LoginFamily) error {
 	}
 	message := envelope.text()
 	if isCredentialRejection(message) {
-		return &SessionExpiredError{Cause: errors.New(redactDiagnosticText(message))}
+		return &CredentialRejectedError{Detail: message}
 	}
 	if sessionExpiredFromEnvelope(envelope.code(), message) {
 		return &SessionExpiredError{}

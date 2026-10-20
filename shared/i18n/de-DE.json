@@ -13023,5 +13023,6 @@
   "xxljob.cron.mode.lastWeek": "Letzter Wochentag",
   "xxljob.cron.mode.nthWeekIndex": "N-te",
   "xxljob.action.cron_builder": "Generator",
-  "xxljob.action.more": "Mehr"
+  "xxljob.action.more": "Mehr",
+  "xxljob.backend.error.invalid_credentials": "Benutzername oder Passwort ist falsch; bitte die Verbindungsdaten prüfen"
 }

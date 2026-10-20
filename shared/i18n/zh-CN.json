@@ -13023,5 +13023,6 @@
   "xxljob.cron.mode.lastWeek": "最后一个星期",
   "xxljob.cron.mode.nthWeekIndex": "第",
   "xxljob.action.cron_builder": "构建器",
-  "xxljob.action.more": "更多"
+  "xxljob.action.more": "更多",
+  "xxljob.backend.error.invalid_credentials": "账号或密码错误，请检查连接凭据"
 }

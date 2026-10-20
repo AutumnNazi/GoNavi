@@ -13023,5 +13023,6 @@
   "xxljob.cron.mode.lastWeek": "最後一個星期",
   "xxljob.cron.mode.nthWeekIndex": "第",
   "xxljob.action.cron_builder": "建構器",
-  "xxljob.action.more": "更多"
+  "xxljob.action.more": "更多",
+  "xxljob.backend.error.invalid_credentials": "帳號或密碼錯誤，請檢查連線憑據"
 }

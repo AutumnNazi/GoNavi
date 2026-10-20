@@ -12,6 +12,9 @@ var (
 	// ErrSessionExpired means the admin no longer accepts the current session
 	// and a fresh login did not restore it.
 	ErrSessionExpired = errors.New("xxljob session expired")
+	// ErrCredentialRejected means the admin understood the login request and
+	// refused the username or password.
+	ErrCredentialRejected = errors.New("xxljob credential rejected")
 	// ErrVersionProbe means neither the redirect target nor the page shape
 	// identified a known protocol stack.
 	ErrVersionProbe = errors.New("xxljob version probe failed")
@@ -45,6 +48,27 @@ func (e *SessionExpiredError) Unwrap() error {
 }
 
 func (e *SessionExpiredError) Is(target error) bool { return target == ErrSessionExpired }
+
+// CredentialRejectedError means the admin answered the login request and
+// refused the credentials. It is deliberately not an expired session: telling
+// the operator that the session expired hides the fact that the username or
+// password is wrong, which is the only thing they can actually fix.
+type CredentialRejectedError struct {
+	Detail string
+}
+
+func (e *CredentialRejectedError) Error() string {
+	return localizedXxlJobText("xxljob.backend.error.invalid_credentials", nil)
+}
+
+func (e *CredentialRejectedError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return ErrCredentialRejected
+}
+
+func (e *CredentialRejectedError) Is(target error) bool { return target == ErrCredentialRejected }
 
 // VersionProbeError carries the observations that failed to identify a stack so
 // the app layer can show a diagnosable message instead of "unknown".

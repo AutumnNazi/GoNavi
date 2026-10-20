@@ -13023,5 +13023,6 @@
   "xxljob.cron.mode.lastWeek": "最後の曜日",
   "xxljob.cron.mode.nthWeekIndex": "第",
   "xxljob.action.cron_builder": "ビルダー",
-  "xxljob.action.more": "その他"
+  "xxljob.action.more": "その他",
+  "xxljob.backend.error.invalid_credentials": "ユーザー名またはパスワードが正しくありません。接続の認証情報を確認してください"
 }

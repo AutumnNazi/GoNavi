@@ -107,8 +107,13 @@ func TestConnectRejectsBadCredentials(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a login failure")
 	}
-	if !errors.Is(err, ErrSessionExpired) {
-		t.Fatalf("error = %v, want ErrSessionExpired", err)
+	// A refused password is not an expired session: telling the operator to
+	// "reconnect" hides the only thing they can fix.
+	if !errors.Is(err, ErrCredentialRejected) {
+		t.Fatalf("error = %v, want ErrCredentialRejected", err)
+	}
+	if errors.Is(err, ErrSessionExpired) {
+		t.Fatal("a refused password must not be reported as an expired session")
 	}
 	if message := err.Error(); containsSecret(message) {
 		t.Fatalf("error text leaked a secret: %q", message)
@@ -181,9 +186,31 @@ func TestSessionExpirySurfacesAfterFailedRelogin(t *testing.T) {
 	defer cancel()
 
 	admin.expireSessions(expiryCode500, 1)
-	admin.rejectLogins(true)
+	// The re-login fails with an expiry-shaped answer rather than a refused
+	// password, so the caller is told the session is gone.
+	admin.rejectLoginsWith("xxl-job login expired, please login again")
 	if _, err := protocol.ListJobGroups(ctx, GroupListRequest{Page: 1, Size: 10}); !errors.Is(err, ErrSessionExpired) {
 		t.Fatalf("error = %v, want ErrSessionExpired", err)
+	}
+}
+
+func TestCredentialRejectionDoesNotRetryTheOtherLoginRoute(t *testing.T) {
+	// The admin answered the login route and refused the credentials, so the
+	// password must not be sent a second time to the other family's endpoint.
+	admin := newFakeAdmin(t, flavor35, "")
+	admin.rejectLogins(true)
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	client := NewClient()
+	defer client.Close()
+	if _, err := client.Connect(ctx, admin.testConfig(t)); !errors.Is(err, ErrCredentialRejected) {
+		t.Fatalf("error = %v, want ErrCredentialRejected", err)
+	}
+	for _, call := range admin.recorded() {
+		if call.Path == "/login" {
+			t.Fatalf("the legacy login route must not be tried after a refused credential: %v", admin.recorded())
+		}
 	}
 }
 
