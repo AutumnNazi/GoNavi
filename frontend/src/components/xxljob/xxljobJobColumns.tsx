@@ -93,7 +93,7 @@ export const buildJobColumns = (options: {
   },
   {
     title: t('xxljob.column.actions'),
-    width: 170,
+    width: 130,
     fixed: 'right' as const,
     render: (_value: unknown, record: XxlJobInfo) => options.actions(record),
   },

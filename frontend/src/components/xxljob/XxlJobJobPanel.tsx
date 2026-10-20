@@ -10,13 +10,17 @@ import {
   Select,
   Space,
   Table,
+  Tooltip,
   message,
 } from 'antd';
 import type { MenuProps } from 'antd';
 import {
+  CaretRightOutlined,
+  ClockCircleOutlined,
   DeleteOutlined,
   EditOutlined,
   MoreOutlined,
+  PauseOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -127,8 +131,8 @@ export const XxlJobJobPanel: React.FC<Props> = ({ connectionId, isActive }) => {
   const mutationDisabled = readOnly || busy;
   const readonlyHint = readOnly ? t('xxljob.hint.readonly') : undefined;
 
-  // 行操作：只保留 Start/Stop 常驻，触发/下次触发时间/编辑/删除收进 More 菜单，
-  // 降低操作列宽度与视觉噪音。
+  // 行操作：全部图标按钮（Tooltip 承载语义），只保留 Start/Stop 常驻，
+  // 触发/下次触发时间/编辑/删除收进 More 菜单；菜单项图标与按钮同源。
   const renderActions = (record: XxlJobInfo) => {
     const moreItems: MenuProps['items'] = [
       {
@@ -140,6 +144,7 @@ export const XxlJobJobPanel: React.FC<Props> = ({ connectionId, isActive }) => {
       },
       {
         key: 'next_times',
+        icon: <ClockCircleOutlined />,
         label: t('xxljob.action.next_times'),
         onClick: () => { void showNextTimes(record); },
       },
@@ -162,20 +167,24 @@ export const XxlJobJobPanel: React.FC<Props> = ({ connectionId, isActive }) => {
     ];
     return (
       <Space size={4}>
-        <Button
-          size="small"
-          disabled={mutationDisabled || record.triggerStatus === TRIGGER_STATUS_RUNNING}
-          onClick={() => void runStart(record.id)}
-        >
-          {t('xxljob.action.start')}
-        </Button>
-        <Button
-          size="small"
-          disabled={mutationDisabled || record.triggerStatus !== TRIGGER_STATUS_RUNNING}
-          onClick={() => void runStop(record.id)}
-        >
-          {t('xxljob.action.stop')}
-        </Button>
+        <Tooltip title={t('xxljob.action.start')}>
+          <Button
+            size="small"
+            icon={<CaretRightOutlined />}
+            aria-label={t('xxljob.action.start')}
+            disabled={mutationDisabled || record.triggerStatus === TRIGGER_STATUS_RUNNING}
+            onClick={() => void runStart(record.id)}
+          />
+        </Tooltip>
+        <Tooltip title={t('xxljob.action.stop')}>
+          <Button
+            size="small"
+            icon={<PauseOutlined />}
+            aria-label={t('xxljob.action.stop')}
+            disabled={mutationDisabled || record.triggerStatus !== TRIGGER_STATUS_RUNNING}
+            onClick={() => void runStop(record.id)}
+          />
+        </Tooltip>
         <Dropdown menu={{ items: moreItems }} trigger={['click']} placement="bottomRight">
           <Button
             size="small"

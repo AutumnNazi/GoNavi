@@ -102,8 +102,10 @@ const rowWithId = (id: string): HTMLElement => {
 };
 
 const buttonIn = (row: HTMLElement, label: string): HTMLButtonElement => {
+  // 图标按钮的语义在 aria-label 上，文本按钮在 textContent 里，两者都查。
   const hit = Array.from(row.querySelectorAll('button'))
-    .find((button) => (button.textContent || '').includes(label));
+    .find((button) => button.getAttribute('aria-label') === label
+      || (button.textContent || '').includes(label));
   if (!hit) throw new Error(`button ${label} not found in row`);
   return hit;
 };
