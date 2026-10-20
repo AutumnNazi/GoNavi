@@ -5,6 +5,10 @@ import { t } from '../../i18n';
 export const SESSION_AGENT_LIST_WIDTH_KEY = 'gonavi.sessionAgent.listWidth';
 export const SESSION_AGENT_LIST_MIN_WIDTH = 240;
 export const SESSION_AGENT_LIST_RESERVE = 420;
+// 详情展开时的默认窄栏宽度。必须给「确定宽度」：组头是整行 flex 容器，
+// 只写 flex-basis:auto 会按内容宽度撑开（实测能到 880px），把详情挤出
+// 视口。
+export const SESSION_AGENT_LIST_DEFAULT_WIDTH = 340;
 // 拖拽可以临时拉宽，但持久化上限跟随新的默认占比：更宽的历史值在下次
 // 启动时按超限丢弃，回落默认宽度。
 const SESSION_AGENT_LIST_MAX_STORED_WIDTH = 520;
@@ -96,7 +100,7 @@ export const SessionAgentListResizeDivider: React.FC<{
 
   return (
     <div
-      className="session-agent-list-resize"
+      className="gn-session-agent-list-resize"
       onMouseDown={handleMouseDown}
       role="separator"
       aria-orientation="vertical"

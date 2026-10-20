@@ -1,11 +1,12 @@
 import React from 'react';
-import { message } from 'antd';
+import { Button, Input, Select, Tooltip, message } from 'antd';
+import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { t } from '../../i18n';
 import type { TabData } from '../../types';
 import { wailsSessionAgentApi, type SessionAgentApi, type SessionAgentItem, type SessionBlockContent, type SessionContentRef, type SessionMessageView, type SessionTurnView } from './sessionAgentApi';
 import { SessionAgentListPage } from './SessionAgentListPage';
 import { SessionAgentDetailPanel, confirmSessionAgentDelete } from './SessionAgentDetailPanel';
-import { loadSessionAgentListWidth, saveSessionAgentListWidth, SessionAgentListResizeDivider } from './SessionAgentListResize';
+import { loadSessionAgentListWidth, saveSessionAgentListWidth, SESSION_AGENT_LIST_DEFAULT_WIDTH, SessionAgentListResizeDivider } from './SessionAgentListResize';
 import './SessionAgentWorkbench.css';
 
 /**
@@ -19,8 +20,17 @@ export const SessionAgentWorkbench: React.FC<{
 }> = ({ tab, api = wailsSessionAgentApi }) => {
   const [items, setItems] = React.useState<SessionAgentItem[]>([]);
   const [total, setTotal] = React.useState(0);
+  /** 该工具的会话总数（未筛选），用于展示筛选命中情况。 */
+  const [scopeTotal, setScopeTotal] = React.useState(0);
   const [loading, setLoading] = React.useState(false);
   const [query, setQuery] = React.useState('');
+  /** 实际生效的搜索词（防抖后）。每敲一个键就重扫几百个会话文件，
+   *  不防抖会把界面卡住好几秒。 */
+  const [appliedQuery, setAppliedQuery] = React.useState('');
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => setAppliedQuery(query), 350);
+    return () => window.clearTimeout(timer);
+  }, [query]);
   const [providerFilter, setProviderFilter] = React.useState(() => {
     // 点侧边栏智能体节点打开时，按该工具过滤（tab.agentIntegrationId
     // 即 kind）；没有指定则用记忆值或全部。
@@ -41,12 +51,17 @@ export const SessionAgentWorkbench: React.FC<{
     }
   });
   const [selected, setSelected] = React.useState<SessionAgentItem | null>(null);
-  // 拖拽提交后的列表宽度（详情态）；未拖拽时用 CSS 默认值。
+  /** 是否有生效中的搜索（用于把筛选结果显式讲出来）。 */
+  const filtering = appliedQuery.trim().length > 0;
+  // 拖拽提交后的列表宽度（详情态）；未拖拽时用默认窄栏宽度。
   const [listWidth, setListWidth] = React.useState<number | undefined>(() => loadSessionAgentListWidth());
-  const listStyle = React.useMemo<React.CSSProperties>(
-    () => (listWidth ? { flexBasis: listWidth, width: listWidth, flexGrow: 0, flexShrink: 0 } : {}),
-    [listWidth],
-  );
+  // 列表宽度只在「详情展开」时有意义（那时列表是左侧窄条）；全页列表
+  // 始终铺满工作区，不能被记住的窄栏宽度卡住。
+  const listStyle = React.useMemo<React.CSSProperties>(() => {
+    if (!selected) return {};
+    const width = listWidth ?? SESSION_AGENT_LIST_DEFAULT_WIDTH;
+    return { flexBasis: width, width, flexGrow: 0, flexShrink: 0 };
+  }, [listWidth, selected]);
   const [messages, setMessages] = React.useState<SessionMessageView[]>([]);
   const [turns, setTurns] = React.useState<SessionTurnView[]>([]);
   const [detailLoading, setDetailLoading] = React.useState(false);
@@ -64,15 +79,20 @@ export const SessionAgentWorkbench: React.FC<{
   const reload = React.useCallback(async () => {
     setLoading(true);
     try {
-      const list = await api.list(providerFilter, query);
+      const list = await api.list(providerFilter, appliedQuery);
       setItems(list);
       setTotal(list.length);
+      // 搜索命中数之外，还要记住该工具的会话总数——否则筛完看不出
+      // 「少了多少」，也不知道筛选到底生效没有。
+      if (!appliedQuery.trim()) {
+        setScopeTotal(list.length);
+      }
     } catch {
       message.error(t('session_agent.error.list_failed'));
     } finally {
       setLoading(false);
     }
-  }, [api, providerFilter, query]);
+  }, [api, providerFilter, appliedQuery]);
 
   React.useEffect(() => {
     void reload();
@@ -93,6 +113,22 @@ export const SessionAgentWorkbench: React.FC<{
       setDetailLoading(false);
     }
   }, [api]);
+
+  // Esc 直接回到列表：详情里的「返回列表」按钮很小，且会话解析要十几秒，
+  // 光靠找按钮不够好按。
+  React.useEffect(() => {
+    if (!selected) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      // 有「可见」弹窗（删除确认等）打开时让弹窗自己处理 Esc。必须判可见：
+      // 页面里常驻着隐藏的 .ant-modal-wrap 容器，按存在性判断会把 Esc 吞掉。
+      const wrap = document.querySelector('.ant-modal-wrap');
+      if (wrap && wrap.getBoundingClientRect().height > 0) return;
+      setSelected(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selected]);
 
   const handleExport = React.useCallback(async () => {
     if (!selected) return;
@@ -136,22 +172,78 @@ export const SessionAgentWorkbench: React.FC<{
   }, [api, selected]);
 
   return (
-    <div className="session-agent-workbench" data-session-agent-workbench="true">
-      <div className={`session-agent-workbench-columns${selected ? ' detail-open' : ''}`}>
+    <div className="gn-session-agent-workbench" data-session-agent-workbench="true">
+      <header className="gn-session-agent-header">
+        <h2 className="gn-session-agent-heading">{t('session_agent.workbench.heading')}</h2>
+        <p className="gn-session-agent-description">{t('session_agent.workbench.description')}</p>
+      </header>
+      <div className="gn-session-agent-toolbar">
+        <div className="gn-session-agent-toolbar-row">
+          <Input
+            allowClear
+            size="small"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            prefix={<SearchOutlined />}
+            placeholder={t('session_agent.list.search_placeholder')}
+            aria-label={t('session_agent.list.search_placeholder')}
+            className="gn-session-agent-search"
+          />
+          <Select
+            size="small"
+            value={providerFilter}
+            onChange={setProviderFilter}
+            className="gn-session-agent-filter"
+            aria-label={t('session_agent.list.filter_label')}
+            options={[
+              { value: '', label: t('session_agent.list.filter_all') },
+              { value: 'codex', label: 'ChatGPT' },
+              { value: 'claude', label: 'Claude Code' },
+            ]}
+          />
+          <Select
+            size="small"
+            value={groupMode}
+            onChange={setGroupMode}
+            className="gn-session-agent-filter"
+            aria-label={t('session_agent.list.group_label')}
+            options={[
+              { value: 'project', label: t('session_agent.list.group_project') },
+              { value: 'time', label: t('session_agent.list.group_time') },
+            ]}
+          />
+          <Tooltip title={t('session_agent.list.refresh')}>
+            <ReloadOutlined
+              className="gn-session-agent-reload"
+              onClick={() => { void reload(); }}
+              aria-label={t('session_agent.list.refresh')}
+            />
+          </Tooltip>
+          <span className="gn-session-agent-toolbar-summary">
+            {filtering
+              ? t('session_agent.list.matched', { matched: total, total: scopeTotal })
+              : t('session_agent.list.total', { count: total })}
+          </span>
+          {filtering ? (
+            <Button
+              size="small"
+              className="gn-session-agent-clear-filter"
+              onClick={() => setQuery('')}
+            >
+              {t('session_agent.list.clear_filter')}
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      <div className={`gn-session-agent-workbench-columns${selected ? ' detail-open' : ''}`}>
         <SessionAgentListPage
           items={items}
-          total={total}
           loading={loading}
-          query={query}
-          providerFilter={providerFilter}
           groupMode={groupMode}
           selectedPath={selected?.sourcePath ?? ''}
+          compact={Boolean(selected)}
           style={listStyle}
-          onQueryChange={setQuery}
-          onProviderFilterChange={setProviderFilter}
-          onGroupModeChange={setGroupMode}
           onSelect={handleSelect}
-          onReload={reload}
         />
         {selected ? (
           <>

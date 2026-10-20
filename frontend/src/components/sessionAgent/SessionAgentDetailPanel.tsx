@@ -11,6 +11,7 @@ import { t } from '../../i18n';
 import type { SessionAgentItem, SessionBlockContent, SessionContentRef, SessionMessageView, SessionTurnView } from './sessionAgentApi';
 import { ProviderAvatar } from './SessionAgentListPage';
 import { SessionAgentMarkdown } from './SessionAgentMarkdown';
+import { SessionAgentImage } from './SessionAgentImage';
 
 /**
  * 会话详情页（挤压式）：列表收成左侧窄条，右侧聊天风格时间线。
@@ -33,10 +34,6 @@ export const SessionAgentDetailPanel: React.FC<{
   const [viewMode, setViewMode] = React.useState<'all' | 'chat' | 'changes'>('all');
   const [stats, setStats] = React.useState<{ questions: number; calls: number } | null>(null);
 
-  if (loading) {
-    return <div className="session-agent-detail-loading"><Spin /></div>;
-  }
-
   const needle = search.trim().toLowerCase();
   // 无搜索词时为 null：正文走 Markdown 渲染；有搜索词时降级纯文本高亮。
   const highlight = needle
@@ -54,15 +51,15 @@ export const SessionAgentDetailPanel: React.FC<{
     : null;
 
   return (
-    <section className="session-agent-detail" data-session-agent-detail="true">
-      <header className="session-agent-detail-head">
-        <Button className="session-agent-back-btn" size="small" icon={<ArrowLeftOutlined />} onClick={onBack}>
+    <section className="gn-session-agent-detail" data-session-agent-detail="true">
+      <header className="gn-session-agent-detail-head">
+        <Button className="gn-session-agent-back-btn" size="small" icon={<ArrowLeftOutlined />} onClick={onBack}>
           {t('session_agent.action.back_to_list')}
         </Button>
-        <div className="session-agent-detail-titleline">
-          <h3 className="session-agent-detail-title">{item.title || item.sessionId}</h3>
+        <div className="gn-session-agent-detail-titleline">
+          <h3 className="gn-session-agent-detail-title">{item.title || item.sessionId}</h3>
         </div>
-        <div className="session-agent-detail-actions">
+        <div className="gn-session-agent-detail-actions">
           <Tooltip title={t('session_agent.action.reload')}>
             <Button size="small" icon={<ReloadOutlined />} onClick={onReload} aria-label={t('session_agent.action.reload')} />
           </Tooltip>
@@ -78,8 +75,8 @@ export const SessionAgentDetailPanel: React.FC<{
         </div>
       </header>
 
-      <div className="session-agent-detail-sub">
-        <span className="session-agent-detail-meta">
+      <div className="gn-session-agent-detail-sub">
+        <span className="gn-session-agent-detail-meta">
           {item.projectDir || '—'} · {item.providerId === 'claude' ? 'Claude Code' : 'ChatGPT'}
           {stats ? ` · ${t('session_agent.detail.stats', { questions: stats.questions, calls: stats.calls })}` : ''}
         </span>
@@ -92,7 +89,7 @@ export const SessionAgentDetailPanel: React.FC<{
           aria-label={t('session_agent.detail.search_placeholder')}
           style={{ maxWidth: 240 }}
         />
-        <div className="session-agent-detail-views">
+        <div className="gn-session-agent-detail-views">
           {(['all', 'chat', 'changes'] as const).map((mode) => (
             <Button
               key={mode}
@@ -108,16 +105,22 @@ export const SessionAgentDetailPanel: React.FC<{
         </div>
       </div>
 
-      <Timeline
-        item={item}
-        messages={messages}
-        turns={turns}
-        viewMode={viewMode}
-        needle={needle}
-        highlight={highlight}
-        onOpenFull={onOpenFull}
-        onStats={setStats}
-      />
+      {loading ? (
+        // 加载中也保留页头（含「返回列表」）：真实会话是压缩文件，解析要
+        // 十几秒，此前整块面板被转圈替换，这段时间里用户没有返回入口。
+        <div className="gn-session-agent-detail-loading"><Spin /></div>
+      ) : (
+        <Timeline
+          item={item}
+          messages={messages}
+          turns={turns}
+          viewMode={viewMode}
+          needle={needle}
+          highlight={highlight}
+          onOpenFull={onOpenFull}
+          onStats={setStats}
+        />
+      )}
     </section>
   );
 };
@@ -168,9 +171,9 @@ const Timeline: React.FC<{
   };
 
   return (
-    <div className="session-agent-timeline" data-session-agent-timeline="true" ref={bodyRef} onScroll={handleScroll}>
+    <div className="gn-session-agent-timeline" data-session-agent-timeline="true" ref={bodyRef} onScroll={handleScroll}>
       {turns.length === 0 ? (
-        <div className="session-agent-detail-empty-body">
+        <div className="gn-session-agent-detail-empty-body">
           <p>{t('session_agent.detail.empty')}</p>
         </div>
       ) : (
@@ -188,7 +191,7 @@ const Timeline: React.FC<{
         ))
       )}
       {!atBottom && (
-        <button type="button" className="session-agent-latest-btn" onClick={scrollToBottom}>
+        <button type="button" className="gn-session-agent-latest-btn" onClick={scrollToBottom}>
           ↓ {t('session_agent.detail.latest')}
         </button>
       )}
@@ -207,11 +210,14 @@ const TurnSection: React.FC<{
 }> = ({ turn, messages, viewMode, needle, providerId, highlight, onOpenFull }) => {
   const slice = messages.slice(turn.firstMessageIndex, turn.lastMessageIndex + 1);
   return (
-    <div className="session-agent-turn" data-session-agent-turn={turn.turnId}>
+    <div className="gn-session-agent-turn" data-session-agent-turn={turn.turnId}>
       {slice.map((msg, i) => (
         <MessageRow
           key={`${turn.turnId}-${i}`}
           msg={msg}
+          // 同一轮里连续的助手消息不重复头像与名字（否则每条都顶一次
+          // 「ChatGPT」，整屏都是同一个头）。
+          showProviderHeader={i === 0 || slice[i - 1]?.role !== 'assistant'}
           viewMode={viewMode}
           needle={needle}
           providerId={providerId}
@@ -225,19 +231,21 @@ const TurnSection: React.FC<{
 
 const MessageRow: React.FC<{
   msg: SessionMessageView;
+  /** 是否显示厂商头像与名字（同一轮内只显示一次）。 */
+  showProviderHeader: boolean;
   viewMode: 'all' | 'chat' | 'changes';
   needle: string;
   providerId: string;
   highlight: ((text: string) => React.ReactNode) | null;
   onOpenFull: (ref: SessionContentRef) => Promise<SessionBlockContent | null>;
-}> = ({ msg, viewMode, needle, providerId, highlight, onOpenFull }) => {
+}> = ({ msg, showProviderHeader, viewMode, needle, providerId, highlight, onOpenFull }) => {
   if (msg.injected) return null;
 
   if (msg.role === 'user') {
     return (
-      <div className="session-agent-msg-user">
-        <span className="session-agent-msg-ts">{formatTs(msg.ts)}</span>
-        <div className="session-agent-bubble-user">{highlightMarkdownSafe(msg.content, highlight)}</div>
+      <div className="gn-session-agent-msg-user">
+        <span className="gn-session-agent-msg-ts">{formatTs(msg.ts)}</span>
+        <div className="gn-session-agent-bubble-user">{highlightMarkdownSafe(msg.content, highlight)}</div>
       </div>
     );
   }
@@ -245,19 +253,31 @@ const MessageRow: React.FC<{
     const toolBlocks = (msg.blocks ?? []).filter((b) => b.type === 'tool_call' || b.type === 'tool_result');
     const textBlocks = (msg.blocks ?? []).filter((b) => b.type === 'text');
     const thinkingBlocks = (msg.blocks ?? []).filter((b) => b.type === 'thinking');
+    const imageBlocks = (msg.blocks ?? []).filter((b) => b.type === 'image' && b.image);
     const providerName = providerId === 'claude' ? 'Claude Code' : 'ChatGPT';
     return (
-      <div className="session-agent-msg-assistant">
-        <ProviderAvatar providerId={providerId} />
-        <div className="session-agent-abody">
-          <div className="session-agent-ahead">
-            <span className="session-agent-aname">{providerName}</span>
-            <span className="session-agent-ats">{formatTs(msg.ts)}</span>
-          </div>
+      <div className="gn-session-agent-msg-assistant">
+        {showProviderHeader ? <ProviderAvatar providerId={providerId} /> : <span className="gn-session-agent-avatar-space" />}
+        <div className="gn-session-agent-abody">
+          {showProviderHeader ? (
+            <div className="gn-session-agent-ahead">
+              <span className="gn-session-agent-aname">{providerName}</span>
+              <span className="gn-session-agent-ats">{formatTs(msg.ts)}</span>
+            </div>
+          ) : null}
           {thinkingBlocks.map((block, i) => <ThinkingRow key={i} block={block} />)}
           {toolBlocks.length > 0 && (
             <ExecSection blocks={toolBlocks} onOpenFull={onOpenFull} />
           )}
+          {imageBlocks.map((block, i) => (
+            block.image?.path ? (
+              <SessionAgentImage
+                key={`img-${i}`}
+                path={block.image.path}
+                alt={block.image.alt}
+              />
+            ) : null
+          ))}
           {msg.content ? <MarkdownText content={msg.content} highlight={highlight} /> : null}
           {textBlocks.map((block, i) => (
             block.text ? <MarkdownText key={i} content={block.text.text} highlight={highlight} /> : null
@@ -269,9 +289,9 @@ const MessageRow: React.FC<{
   // tool / system：全部视图下以弱化行展示。
   if (viewMode === 'chat') return null;
   return (
-    <div className="session-agent-msg-system">
-      <span className="session-agent-msg-ts">{formatTs(msg.ts)}</span>
-      <span className="session-agent-system-text">{msg.content}</span>
+    <div className="gn-session-agent-msg-system">
+      <span className="gn-session-agent-msg-ts">{formatTs(msg.ts)}</span>
+      <span className="gn-session-agent-system-text">{msg.content}</span>
     </div>
   );
 };
@@ -281,9 +301,9 @@ const ThinkingRow: React.FC<{ block: NonNullable<SessionMessageView['blocks']>[n
   // 加密思考（redacted）没有可读内容：整个块不显示（用户反馈缺陷 4）。
   if (!thinking || thinking.redacted || !thinking.text.trim()) return null;
   return (
-    <details className="session-agent-thinking">
+    <details className="gn-session-agent-thinking">
       <summary>{t('session_agent.detail.thinking')}</summary>
-      <div className="session-agent-thinking-text">{thinking.text}</div>
+      <div className="gn-session-agent-thinking-text">{thinking.text}</div>
     </details>
   );
 };
@@ -296,9 +316,12 @@ const MarkdownText: React.FC<{
   highlight: ((text: string) => React.ReactNode) | null;
 }> = ({ content, highlight }) => {
   if (highlight) {
-    return <div className="session-agent-atext">{highlight(content)}</div>;
+    // 纯文本高亮：按原文换行显示，所以要保留 pre-wrap。
+    return <div className="gn-session-agent-atext is-plain">{highlight(content)}</div>;
   }
-  return <div className="session-agent-atext"><SessionAgentMarkdown content={content} /></div>;
+  // Markdown 路径不能继承 pre-wrap：react-markdown 会在块级元素之间插入
+  // "\n" 文本节点，pre-wrap 会把这些分隔符渲染成真实空行，段距翻倍。
+  return <div className="gn-session-agent-atext"><SessionAgentMarkdown content={content} /></div>;
 };
 
 // 执行过程折叠条：默认收起显示步数，展开看工具序列。
@@ -313,15 +336,15 @@ const ExecSection: React.FC<{
     if (b.type === 'tool_result' && b.toolResult) results.set(b.toolResult.callId, b);
   }
   return (
-    <div className={`session-agent-exec${open ? ' open' : ''}`}>
-      <div className="session-agent-exec-head" onClick={() => setOpen(!open)} role="button" aria-expanded={open}>
-        <span className={`session-agent-exec-caret${open ? ' open' : ''}`}>▶</span>
-        <span className="session-agent-exec-title">
+    <div className={`gn-session-agent-exec${open ? ' open' : ''}`}>
+      <div className="gn-session-agent-exec-head" onClick={() => setOpen(!open)} role="button" aria-expanded={open}>
+        <span className={`gn-session-agent-exec-caret${open ? ' open' : ''}`}>▶</span>
+        <span className="gn-session-agent-exec-title">
           {t('session_agent.detail.steps', { count: calls.length })}
         </span>
       </div>
       {open && (
-        <div className="session-agent-exec-body">
+        <div className="gn-session-agent-exec-body">
           {calls.map((block, i) => (
             <ToolRow key={block.toolCall?.id ?? i} call={block.toolCall!} result={results.get(block.toolCall?.id ?? '')?.toolResult} onOpenFull={onOpenFull} />
           ))}
@@ -331,6 +354,14 @@ const ExecSection: React.FC<{
   );
 };
 
+// 工具输出里常见字面量转义（\r\n、\t）。原样显示会像一坨乱码，这里
+// 还原成真实换行再展示。
+const unescapeToolText = (text: string): string =>
+  (text || '')
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t');
+
 const ToolRow: React.FC<{
   call: NonNullable<SessionMessageView['blocks']>[number]['toolCall'] & object;
   result?: NonNullable<SessionMessageView['blocks']>[number]['toolResult'];
@@ -339,18 +370,18 @@ const ToolRow: React.FC<{
   const [open, setOpen] = React.useState(false);
   const status = result?.status ?? 'pending';
   return (
-    <div className="session-agent-toolrow">
-      <div className="session-agent-toolline" onClick={() => setOpen(!open)} role="button">
-        <span className="session-agent-toolkind">{call.kind}</span>
-        <span className="session-agent-tooltitle">{call.title}</span>
-        {call.diff && <span className="session-agent-tooldiff">+{call.diff.added} -{call.diff.removed}</span>}
-        <span className={`session-agent-toolstatus ${status}`}>{status === 'success' ? '✓' : status === 'error' ? '✗' : '…'}</span>
+    <div className="gn-session-agent-toolrow">
+      <div className="gn-session-agent-toolline" onClick={() => setOpen(!open)} role="button">
+        <span className="gn-session-agent-toolkind">{call.kind}</span>
+        <span className="gn-session-agent-tooltitle">{call.title}</span>
+        {call.diff && <span className="gn-session-agent-tooldiff">+{call.diff.added} -{call.diff.removed}</span>}
+        <span className={`gn-session-agent-toolstatus ${status}`}>{status === 'success' ? '✓' : status === 'error' ? '✗' : '…'}</span>
       </div>
       {open && call.inputPreview && (
-        <pre className="session-agent-tooldetail">{call.inputPreview}</pre>
+        <pre className="gn-session-agent-tooldetail">{unescapeToolText(call.inputPreview)}</pre>
       )}
       {open && result?.preview && (
-        <pre className="session-agent-tooldetail">{result.preview}</pre>
+        <pre className="gn-session-agent-tooldetail">{unescapeToolText(result.preview)}</pre>
       )}
       {open && result?.truncated && result.full && <ExpandFull blockRef={result.full} onOpenFull={onOpenFull} />}
     </div>
@@ -375,7 +406,7 @@ const ExpandFull: React.FC<{
       >
         {content ? t('session_agent.detail.collapse_full') : t('session_agent.detail.expand_full')}
       </Button>
-      {content && <pre className="session-agent-tooldetail expanded">{content.text}</pre>}
+      {content && <pre className="gn-session-agent-tooldetail expanded">{unescapeToolText(content.text)}</pre>}
     </>
   );
 };

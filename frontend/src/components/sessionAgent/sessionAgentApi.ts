@@ -13,6 +13,7 @@ import {
   SessionAgentDelete,
   SessionAgentRevealPath,
   SessionAgentTimeGroups,
+  SessionAgentImageDataURL,
 } from '../../../wailsjs/go/app/App';
 
 /** 列表条目（对应后端 SessionMeta）。 */
@@ -28,6 +29,8 @@ export interface SessionAgentItem {
   lastActiveAt: number;
   sourcePath: string;
   resumeCommand: string;
+  /** 派生来源会话 ID：非空即 fork 分支，列表需要区分标记。 */
+  forkedFrom?: string;
 }
 
 /** 大内容引用（对应后端 ContentRef）。 */
@@ -66,6 +69,14 @@ export interface SessionBlockView {
     exitCode?: number;
   };
   event?: { kind: string; text?: string; url?: string };
+  image?: {
+    source: 'inline' | 'local_file';
+    content?: SessionContentRef;
+    path?: string;
+    mediaType?: string;
+    size?: number;
+    alt?: string;
+  };
 }
 
 /** 消息（对应后端 SessionMessage）。 */
@@ -109,6 +120,8 @@ export type SessionAgentApi = {
   copyResume(provider: string, sessionId: string): Promise<string>;
   delete(provider: string, sourcePath: string, sessionId: string): Promise<boolean>;
   revealPath(sourcePath: string): Promise<string>;
+  /** 读取本机图片并返回 data URL（webview 不能直接加载本机路径图片）。 */
+  imageDataUrl(path: string): Promise<string>;
   timeGroups(provider: string, search: string): Promise<{ groups: Record<string, SessionAgentItem[]>; total: number }>;
 };
 
@@ -149,6 +162,10 @@ export const wailsSessionAgentApi: SessionAgentApi = {
   async revealPath(sourcePath) {
     const result = await SessionAgentRevealPath(sourcePath);
     return unwrap<{ path: string }>(result)?.path ?? '';
+  },
+  async imageDataUrl(path) {
+    const result = await SessionAgentImageDataURL(path);
+    return unwrap<{ dataUrl: string }>(result)?.dataUrl ?? '';
   },
   async timeGroups(provider, search) {
     return (

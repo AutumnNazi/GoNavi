@@ -13,12 +13,14 @@ vi.mock('antd', () => {
       { Search: (props: any) => React.createElement('input', { value: props.value, onChange: props.onChange, placeholder: props.placeholder }) },
     ),
     Select: (props: any) => React.createElement('select', { value: props.value, onChange: props.onChange }),
+    Pagination: (props: any) => React.createElement('div', { 'data-testid': 'pagination' }, String(props.total ?? '')),
     Tooltip: (props: any) => React.createElement('span', null, props.children),
     Spin: Light('span'),
     Empty: Object.assign(Light('span'), { PRESENTED_IMAGE_SIMPLE: null }),
     Alert: (props: any) => React.createElement('div', { 'data-testid': 'alert' }, props.message, props.description),
     Tabs: (props: any) => React.createElement('div', null, (props.items || []).map((item: any) => React.createElement('div', { key: item.key }, item.children))),
     Tag: Light('span'),
+    Typography: { Text: (props: any) => React.createElement('span', null, props.children) },
     Modal: Object.assign(Light('span'), { confirm: vi.fn() }),
     message: { success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn() },
   };
@@ -28,7 +30,7 @@ import { act, create } from 'react-test-renderer';
 import { SessionAgentWorkbench } from './SessionAgentWorkbench';
 import type { SessionAgentApi } from './sessionAgentApi';
 
-// 会话管理工作台的虚构数据路径：列表渲染、轮次时间线、导出/恢复
+// 会话管理工作台的虚构数据路径：表格列表渲染、轮次时间线、导出/恢复
 // 命令、删除确认（cc-switch 方案替换后的 UI 面）。不连真实 Wails 绑定。
 
 const buildItem = (overrides: Record<string, unknown> = {}) => ({
@@ -84,6 +86,7 @@ const buildApi = (overrides: Partial<SessionAgentApi> = {}): SessionAgentApi => 
   copyResume: vi.fn(async () => 'codex resume th-1'),
   delete: vi.fn(async () => true),
   revealPath: vi.fn(async () => 'C:/home/.codex/sessions'),
+  imageDataUrl: vi.fn(async () => 'data:image/png;base64,AAAA'),
   timeGroups: vi.fn(async () => ({ groups: { today: [buildItem()] }, total: 1 })),
   ...overrides,
 });
@@ -102,34 +105,52 @@ const renderWorkbench = async (api: SessionAgentApi) => {
   return tree!;
 };
 
+const findRow = (tree: ReturnType<typeof create>) =>
+  tree.root.find((node) => node.props['data-session-agent-row'] === 'true');
+
 describe('SessionAgentWorkbench', () => {
-  it('renders the card list with title, first/last messages and provider badge', async () => {
+  it('renders the session table with title, preview and provider tag', async () => {
     const api = buildApi();
     const tree = await renderWorkbench(api);
     expect(tree.root.findByProps({ 'data-session-agent-list': 'true' })).toBeTruthy();
-    const titleNode = tree.root.find((node) => node.props.className === 'session-agent-card-title');
+    const titleNode = tree.root.find((node) => node.props.className === 'gn-session-agent-session-title');
     expect(String(titleNode.props.children)).toContain('我有一台肖尔的服务器');
-    // 卡片有两行消息（首次/最后），第一行是"首次"。
-    const lines = tree.root.findAll((node) => node.props.className === 'session-agent-card-line');
-    expect(lines.length).toBe(2);
-    expect(String(lines[0].props.children[1].props.children)).toContain('我有一台肖尔的服务器');
-    expect(String(lines[1].props.children[1].props.children)).toContain('那么下一步应该做什么呢');
-    const badge = tree.root.find((node) => node.props.className?.includes?.('session-agent-card-badge'));
-    expect(String(badge.props.children)).toContain('ChatGPT');
+    // 首问预览与厂商标签都来自真实条目，不再是卡片的两行「首次/最后」。
+    const preview = tree.root.find((node) => node.props.className === 'gn-session-agent-session-preview');
+    expect(String(preview.props.children)).toContain('我有一台肖尔的服务器');
+    const tag = tree.root.find((node) => node.props.className?.includes?.('gn-session-agent-provider-tag'));
+    expect(String(tag.props.children)).toContain('ChatGPT');
   });
 
-  it('opens the squeezed detail after clicking a card and returns to the full list', async () => {
+  it('puts the project name on its own line above the session cards', async () => {
     const api = buildApi();
     const tree = await renderWorkbench(api);
-    const card = tree.root.find((node) => node.props['data-session-agent-card'] === 'true');
+    const groups = tree.root.findAll((node) => node.props['data-session-agent-group'] !== undefined);
+    expect(groups.length).toBe(1);
+    const group = groups[0];
+    expect(group.props['data-session-agent-group']).toBe('kunghim-ops');
+    // 组头只有项目名（与会话标题无关），项目名独占一行。
+    const head = group.find((node) => node.props.className === 'gn-session-agent-group-head');
+    const name = head.find((node) => node.props.className === 'gn-session-agent-group-name');
+    expect(String(name.props.children)).toBe('kunghim-ops');
+    // 卡片排在组头下方的分组体里。
+    const body = group.find((node) => node.props.className === 'gn-session-agent-group-body');
+    const rows = body.findAll((node) => node.props['data-session-agent-row'] === 'true');
+    expect(rows.length).toBe(1);
+  });
+
+  it('opens the squeezed detail after clicking a row and returns to the full list', async () => {
+    const api = buildApi();
+    const tree = await renderWorkbench(api);
+    const row = findRow(tree);
     await act(async () => {
-      card.props.onClick();
+      row.props.onClick();
     });
     await act(async () => {});
     expect(tree.root.findByProps({ 'data-session-agent-detail': 'true' })).toBeTruthy();
     expect(api.detail).toHaveBeenCalledWith('codex', 'C:/home/.codex/sessions/rollout-a.jsonl');
     // 返回恢复全页列表。
-    const back = tree.root.find((node) => node.props.className?.includes?.('session-agent-back-btn'));
+    const back = tree.root.find((node) => node.props.className?.includes?.('gn-session-agent-back-btn'));
     await act(async () => {
       back.props.onClick();
     });
@@ -137,30 +158,93 @@ describe('SessionAgentWorkbench', () => {
     expect(() => tree.root.findByProps({ 'data-session-agent-detail': 'true' })).toThrow();
   });
 
+  it('keeps the back button available while the session detail is still loading', async () => {
+    // 真实会话是 .zst 压缩文件，解析要十几秒。这段时间里必须还能返回
+    // 列表——此前整块详情被转圈替换，「返回列表」按钮一起消失。
+    const api = buildApi({ detail: vi.fn(() => new Promise<never>(() => {})) });
+    const tree = await renderWorkbench(api);
+    const row = findRow(tree);
+    await act(async () => {
+      row.props.onClick();
+    });
+    await act(async () => {});
+    expect(tree.root.findByProps({ 'data-session-agent-detail': 'true' })).toBeTruthy();
+    expect(tree.root.find((node) => node.props.className?.includes?.('gn-session-agent-detail-loading'))).toBeTruthy();
+    const back = tree.root.find((node) => node.props.className?.includes?.('gn-session-agent-back-btn'));
+    expect(back).toBeTruthy();
+    // 点返回后详情卸载，列表回到全宽。
+    await act(async () => {
+      back.props.onClick();
+    });
+    await act(async () => {});
+    expect(() => tree.root.findByProps({ 'data-session-agent-detail': 'true' })).toThrow();
+  });
+
+  it('returns to the list when Escape is pressed in the detail', async () => {
+    const api = buildApi();
+    const tree = await renderWorkbench(api);
+    const row = findRow(tree);
+    await act(async () => {
+      row.props.onClick();
+    });
+    await act(async () => {});
+    expect(tree.root.findByProps({ 'data-session-agent-detail': 'true' })).toBeTruthy();
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    });
+    await act(async () => {});
+    expect(() => tree.root.findByProps({ 'data-session-agent-detail': 'true' })).toThrow();
+  });
+
+  it('still returns to the list on Escape when a hidden modal wrapper exists', async () => {
+    // antd 渲染过的弹窗会把 .ant-modal-wrap 留在 DOM 里（隐藏状态）。
+    // 不能因为它「存在」就把 Esc 吞掉——必须只看可见弹窗。
+    const hidden = document.createElement('div');
+    hidden.className = 'ant-modal-wrap';
+    hidden.style.display = 'none';
+    document.body.appendChild(hidden);
+    try {
+      const api = buildApi();
+      const tree = await renderWorkbench(api);
+      const row = findRow(tree);
+      await act(async () => {
+        row.props.onClick();
+      });
+      await act(async () => {});
+      expect(tree.root.findByProps({ 'data-session-agent-detail': 'true' })).toBeTruthy();
+      await act(async () => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      });
+      await act(async () => {});
+      expect(() => tree.root.findByProps({ 'data-session-agent-detail': 'true' })).toThrow();
+    } finally {
+      document.body.removeChild(hidden);
+    }
+  });
+
   it('renders the chat timeline with user bubble and exec section', async () => {
     const api = buildApi();
     const tree = await renderWorkbench(api);
-    const card = tree.root.find((node) => node.props['data-session-agent-card'] === 'true');
+    const row = findRow(tree);
     await act(async () => {
-      card.props.onClick();
+      row.props.onClick();
     });
     await act(async () => {});
     expect(tree.root.findByProps({ 'data-session-agent-turn': 't1' })).toBeTruthy();
     expect(tree.root.findByProps({ 'data-session-agent-timeline': 'true' })).toBeTruthy();
-    // 工具调用收进执行过程折叠条。
     expect(tree.root.findByProps({ 'data-session-agent-detail': 'true' })).toBeTruthy();
   });
 
   it('expands truncated tool result through the content api', async () => {
     const api = buildApi();
     const tree = await renderWorkbench(api);
-    const card = tree.root.find((node) => node.props['data-session-agent-card'] === 'true');
+    const row = findRow(tree);
     await act(async () => {
-      card.props.onClick();
+      row.props.onClick();
     });
     await act(async () => {});
     // 执行过程折叠条存在（工具调用已收进其中）。
-    const execs = (tree as any).root.findAll((n: any) => n.props?.className?.includes?.('session-agent-exec'));
+    const execs = (tree as any).root.findAll((n: any) => n.props?.className?.includes?.('gn-session-agent-exec'));
     expect(execs.length).toBeGreaterThan(0);
   });
 });
