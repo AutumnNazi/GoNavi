@@ -10,6 +10,8 @@ export interface RecommendedFont {
 }
 
 export const RECOMMENDED_FONTS: RecommendedFont[] = [
+  { id: 'lxgw-wenkai', kind: 'ui', family: 'LXGW WenKai', names: { 'en-US': 'LXGW WenKai', 'zh-CN': '霞鹜文楷' }, description: 'Klee One based open-source Chinese font with a graceful kai style.', useCase: 'Interface text, notes and documents with full Simplified Chinese coverage', sourceUrl: 'https://github.com/lxgw/LxgwWenKai', licenseName: 'OFL-1.1' },
+  { id: 'lxgw-wenkai-mono', kind: 'mono', family: 'LXGW WenKai Mono', names: { 'en-US': 'LXGW WenKai Mono', 'zh-CN': '霞鹜文楷等宽' }, description: 'Monospaced variant of LXGW WenKai for mixed CJK and Latin text.', useCase: 'SQL editor and logs with Chinese comments', sourceUrl: 'https://github.com/lxgw/LxgwWenKai', licenseName: 'OFL-1.1' },
   { id: 'inter', kind: 'ui', family: 'Inter', names: { 'en-US': 'Inter', 'zh-CN': 'Inter' }, description: 'A modern interface typeface with open forms.', useCase: 'Interface text, sidebar and data grids', sourceUrl: 'https://github.com/rsms/inter', licenseName: 'OFL-1.1' },
   { id: 'noto-sans-sc', kind: 'ui', family: 'Noto Sans SC', names: { 'en-US': 'Noto Sans SC', 'zh-CN': '思源黑体 Noto Sans SC' }, description: 'Simplified Chinese interface font co-developed by Adobe and Google.', useCase: 'Interface text with full Simplified Chinese coverage', sourceUrl: 'https://github.com/notofonts/noto-cjk', licenseName: 'OFL-1.1' },
   { id: 'open-sans', kind: 'ui', family: 'Open Sans', names: { 'en-US': 'Open Sans', 'zh-CN': 'Open Sans' }, description: 'A classic humanist interface typeface.', useCase: 'Interface text and body copy', sourceUrl: 'https://github.com/googlefonts/opensans', licenseName: 'OFL-1.1' },
