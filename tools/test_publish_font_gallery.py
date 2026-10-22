@@ -131,8 +131,8 @@ class PublisherTest(unittest.TestCase):
         self.assertNotEqual(entry["preview"]["sha256"], entry["font"]["sha256"])
         self.assertLessEqual(entry["preview"]["sizeBytes"], len(font) // 2)
         self.assertEqual(record["previewPolicies"], {"test-sans": "subset-preview"})
-        self.assertEqual(publisher.font_family_name(
-            (self.out / "assets" / f"{entry['preview']['sha256']}.ttf").read_bytes()), "Test Sans")
+        self.assertTrue(publisher.family_matches("Test Sans", publisher.font_family_names(
+            (self.out / "assets" / f"{entry['preview']['sha256']}.ttf").read_bytes())))
 
     def test_merges_with_previous_catalog_replacing_by_id(self):
         previous = {"schemaVersion": 1, "version": "2026-10-16.1", "entries": [

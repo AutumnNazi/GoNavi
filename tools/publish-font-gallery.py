@@ -53,23 +53,38 @@ def read_bytes(path: Path, limit: int, code: str) -> bytes:
     return data
 
 
-def font_family_name(data: bytes) -> str:
-    """Return the font's family (typographic family preferred), mirroring the Go reader."""
+def font_family_names(data: bytes) -> list[str]:
+    """Return decoded family-name candidates (typographic family preferred, Windows platform first).
+
+    Mac-platform CJK records decode to garbage via latin-1, so Windows (platform 3)
+    records sort first and the caller matches the declared family against any candidate.
+    """
     try:
         font = TTFont(io.BytesIO(data), fontNumber=0, lazy=True)
         name_table = font["name"]
+        candidates: list[tuple[bool, str]] = []
         for name_id in (16, 1):
             for record in name_table.names:
-                if record.nameID == name_id and (record.toUnicode() or "").strip():
-                    return record.toUnicode().strip()
+                if record.nameID != name_id:
+                    continue
+                try:
+                    value = (record.toUnicode() or "").strip()
+                except Exception:  # noqa: BLE001 - undecodable legacy records are skipped
+                    continue
+                if value:
+                    candidates.append((record.platformID == 3, value))
+            if candidates:
+                candidates.sort(key=lambda item: item[0], reverse=True)
+                return [value for _, value in candidates]
     except Exception as error:  # noqa: BLE001 - any parse failure is an integrity error
         raise PublishError(f"integrity: unreadable font: {error}") from error
     raise PublishError("integrity: font family name is missing")
 
 
-def same_family(declared: str, actual: str) -> bool:
+def family_matches(declared: str, candidates: list[str]) -> bool:
     normalize = lambda value: re.sub(r"\s+", " ", value).strip().casefold()
-    return normalize(declared) == normalize(actual)
+    target = normalize(declared)
+    return any(normalize(value) == target for value in candidates)
 
 
 def build_subset(data: bytes, destination: Path, preview_text: str) -> None:
@@ -148,10 +163,11 @@ def prepare(orig_dir: Path, batch: dict, out_dir: Path, previous_catalog: dict |
         font_data = read_bytes(font_path, MAX_FONT_BYTES, "download_failed")
         if not font_path.name.lower().endswith(".ttf"):
             raise PublishError(f"invalid_catalog: {entry['id']} must ship a .ttf (nginx serves ttf only)")
-        actual_family = font_family_name(font_data)
-        if not same_family(entry["family"], actual_family):
+        family_candidates = font_family_names(font_data)
+        if not family_matches(entry["family"], family_candidates):
             raise PublishError(
-                f"integrity: {entry['id']} family mismatch: declared {entry['family']!r}, font says {actual_family!r}")
+                f"integrity: {entry['id']} family mismatch: declared {entry['family']!r}, font offers "
+                f"{family_candidates[:3]!r}")
         font_asset = asset_record(font_data)
 
         preview_bytes = font_data
@@ -166,7 +182,7 @@ def prepare(orig_dir: Path, batch: dict, out_dir: Path, previous_catalog: dict |
             if len(preview_bytes) > MAX_PREVIEW_BYTES:
                 raise PublishError(
                     f"invalid_catalog: {entry['id']} preview subset is {len(preview_bytes)} bytes, over 512 KiB")
-            if not same_family(entry["family"], font_family_name(preview_bytes)):
+            if not family_matches(entry["family"], font_family_names(preview_bytes)):
                 raise PublishError(f"integrity: {entry['id']} preview subset lost the family name")
             preview_policy = "subset-preview"
 
