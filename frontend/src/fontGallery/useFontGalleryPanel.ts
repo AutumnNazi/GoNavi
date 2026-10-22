@@ -21,6 +21,18 @@ export function useFontGalleryPanel(open: boolean) {
   const request = useRef<string | null>(null);
   const preview = useFontGalleryPreview(open);
   const setSelectedId = (id: string) => { preview.clear(); select(id); };
+  const loadLocal = useCallback(async () => {
+    const current = ++refreshRevision.current;
+    setLoading(true); setError(null);
+    try {
+      const local = await getFontGalleryAdapter().status();
+      if (active.current && current === refreshRevision.current) setState(local);
+    } catch (failure) {
+      if (active.current && current === refreshRevision.current) setError(fontGalleryErrorKey(failure));
+    } finally {
+      if (active.current && current === refreshRevision.current) setLoading(false);
+    }
+  }, []);
   const refresh = useCallback(async () => {
     const current = ++refreshRevision.current;
     setLoading(true); setError(null);
@@ -39,7 +51,8 @@ export function useFontGalleryPanel(open: boolean) {
   useEffect(() => {
     active.current = open;
     setPending(null); setProgress(null); setLoading(false);
-    if (open) void refresh();
+    // 面板默认展开即本地加载；远程目录刷新仍由刷新按钮显式触发，不让设置页每次挂载都发网络请求。
+    if (open) void loadLocal();
     return () => {
       active.current = false;
       revision.current += 1;
@@ -47,7 +60,7 @@ export function useFontGalleryPanel(open: boolean) {
       if (request.current) void getFontGalleryAdapter().cancel(request.current).catch(() => undefined);
       request.current = null;
     };
-  }, [open, refresh]);
+  }, [open, loadLocal]);
   const download = async (entry: FontEntry): Promise<FontInstalled | null> => {
     const current = ++revision.current;
     refreshRevision.current += 1; setLoading(false);

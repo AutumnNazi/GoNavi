@@ -26,7 +26,8 @@ export function FontFamilySettingsBlock({
   t, appearance, setAppearance, isFontFamiliesLoading, uiFontOptions, monoFontOptions,
   fontFamiliesLoadError, installedFontFamilies, linuxCJKFontInstallHint, hasLoadedInstalledFontsRef, darkMode,
 }: Props) {
-  const [browseOpen, setBrowseOpen] = useState(false);
+  // 画廊默认展开：入口不再折叠在按钮后面，用户可随时收起。
+  const [browseOpen, setBrowseOpen] = useState(true);
   const [downloaded, setDownloaded] = useState<FontInstalled[]>([]);
   const galleryRef = useRef<HTMLDivElement | null>(null);
   // 入口跟随两个字体下拉：从下拉底部打开时滚动到画廊，避免打开后仍然看不见。
