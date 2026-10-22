@@ -72,11 +72,19 @@ describe('font library activation and preview lifecycle', () => {
     let resolve!: () => void;
     vi.mocked(loadDownloadedFont).mockImplementation(item => item.entry.id === alpha.id
       ? new Promise<void>(done => { resolve = done; }) : Promise.resolve());
-    await render(); await select(alpha.id); await click('app.theme.font_family.gallery.use');
-    await select(beta.id); await click('app.theme.font_family.gallery.use');
+    await render(); await select(alpha.id); await click('app.theme.font_family.gallery.use_mono');
+    await select(beta.id); await click('app.theme.font_family.gallery.use_mono');
     await act(async () => resolve());
     expect(onEnable).toHaveBeenCalledTimes(1);
     expect(onEnable).toHaveBeenCalledWith('mono', fontInstalled(beta).family);
+  });
+  it('enables an installed mono catalog family as the interface font as well', async () => {
+    state.installed = [fontInstalled(alpha)];
+    await render(); await select(alpha.id);
+    await click('app.theme.font_family.gallery.use_ui');
+    expect(onEnable).toHaveBeenCalledWith('ui', fontInstalled(alpha).family);
+    await click('app.theme.font_family.gallery.use_mono');
+    expect(onEnable).toHaveBeenCalledWith('mono', fontInstalled(alpha).family);
   });
 
   it('cancels and invalidates a download when the library closes', async () => {
