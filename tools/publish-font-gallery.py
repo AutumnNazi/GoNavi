@@ -87,16 +87,20 @@ def family_matches(declared: str, candidates: list[str]) -> bool:
     return any(normalize(value) == target for value in candidates)
 
 
-def build_subset(data: bytes, destination: Path, preview_text: str) -> None:
-    """Subset one font down to the preview text, keeping every name record."""
+def build_subset(data: bytes, destination: Path, preview_text: str, level: int) -> None:
+    """Subset one font down to the preview text, keeping every name record.
+
+    Level 0 keeps all layout features; level 1 drops GSUB/GPOS (ligatures and kerning,
+    which some fonts ship in bulk); level 2 also limits glyphs to the preview text itself.
+    """
     options = subset.Options()
     options.name_IDs = ["*"]
     options.name_languages = ["*"]
     options.name_legacy = True
     options.glyph_names = False
     options.notdef_outline = True
-    options.layout_features = ["*"]
-    unicodes = list(range(0x20, 0x7F)) + EXTRA_PREVIEW_UNICODES
+    options.layout_features = ["*"] if level == 0 else []
+    unicodes = list(range(0x20, 0x7F)) + (EXTRA_PREVIEW_UNICODES if level <= 1 else [])
     font = subset.load_font(io.BytesIO(data), options)
     subsetter = subset.Subsetter(options)
     subsetter.populate(unicodes=unicodes, text=preview_text)
@@ -176,7 +180,10 @@ def prepare(orig_dir: Path, batch: dict, out_dir: Path, previous_catalog: dict |
             if not preview_text:
                 raise PublishError(f"invalid_catalog: {entry['id']} needs a preview text file")
             temp_preview = out_dir / f".preview-{entry['id']}.ttf"
-            build_subset(font_data, temp_preview, preview_text)
+            for level in (0, 1, 2):
+                build_subset(font_data, temp_preview, preview_text, level)
+                if temp_preview.stat().st_size <= MAX_PREVIEW_BYTES:
+                    break
             preview_bytes = temp_preview.read_bytes()
             temp_preview.unlink()
             if len(preview_bytes) > MAX_PREVIEW_BYTES:
