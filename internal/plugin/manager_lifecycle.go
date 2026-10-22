@@ -260,11 +260,41 @@ func (m *Manager) quarantine(inst *instance, cause error) {
 	if len(message) > 1024 {
 		message = message[:1024]
 	}
-	// Persist before cleanup: a crash during shutdown must not produce a boot loop.
-	if err := m.updateRecord(ctx, inst.record.Manifest.ID, inst.record.Generation, func(r *record) { r.Quarantined = true; r.State = StateFaulted; r.LastError = message; r.Generation++ }); err != nil && !errors.Is(err, ErrDisabled) {
-		// Failure to record quarantine is fail-closed for this owner's remaining lifetime.
-		m.failClosed()
+	// Persist before cleanup: a crash during shutdown must not produce a boot loop. A dropped
+	// quarantine is worse: the next reconcile restarts the plugin, the fault repeats, and the
+	// unguarded stop path finally parks the record in a bogus disabled state. updateRecord
+	// guards on the start generation, so when a concurrent write moved it, re-read and retry
+	// with the fresh generation while the record still wants to run.
+	for attempt := 0; attempt < 5; attempt++ {
+		state, err := m.loadState()
+		if err != nil {
+			m.failClosed()
+			return
+		}
+		current, ok := state.Records[inst.record.Manifest.ID]
+		if !ok || current.Removing || !current.DesiredEnabled {
+			return
+		}
+		err = m.updateRecord(ctx, inst.record.Manifest.ID, current.Generation, func(r *record) {
+			r.Quarantined = true
+			r.State = StateFaulted
+			r.LastError = message
+			r.Generation++
+		})
+		if err == nil {
+			return
+		}
+		if !errors.Is(err, ErrDisabled) {
+			m.failClosed()
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(20 * time.Millisecond):
+		}
 	}
+	m.failClosed()
 }
 
 func (m *Manager) failClosed() {

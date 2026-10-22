@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -152,6 +153,48 @@ func TestRealProcessInvocationAndGeneration(t *testing.T) {
 	}
 	if _, err = m.Invoke(ctx, status.Manifest.ID, "missing", nil); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("undeclared command: %v", err)
+	}
+}
+func TestQuarantineRetriesAfterConcurrentGenerationBump(t *testing.T) {
+	m := testManager(t)
+	status := installFixture(t, m, "test.echo", "echo")
+	enableFixture(t, m, status.Manifest.ID)
+	if err := m.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitState(t, m, status.Manifest.ID, StateRunning)
+	m.mu.Lock()
+	inst := m.instances[status.Manifest.ID]
+	m.mu.Unlock()
+	if inst == nil {
+		t.Fatal("instance missing")
+	}
+	cause := errors.New("plugin process exited: exit status 23")
+	// A concurrent external write moves the record generation after start; the quarantine
+	// used to drop silently on the stale generation, and the next reconcile restart turned
+	// one fault into a restart loop that ended in a bogus disabled state.
+	if _, err := m.mutate(context.Background(), func(state *diskState) (bool, error) {
+		r, ok := state.Records[status.Manifest.ID]
+		if !ok {
+			return false, ErrNotFound
+		}
+		r.Generation = state.Generation
+		state.Records[status.Manifest.ID] = r
+		return true, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	m.quarantine(inst, cause)
+	state, err := m.loadState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := state.Records[status.Manifest.ID]
+	if !record.Quarantined || record.State != StateFaulted {
+		t.Fatalf("quarantine dropped after generation bump: quarantined=%v state=%s", record.Quarantined, record.State)
+	}
+	if !strings.Contains(record.LastError, "exit status 23") {
+		t.Fatalf("quarantine lost the cause: %q", record.LastError)
 	}
 }
 func TestRealProcessFaultsAreQuarantined(t *testing.T) {
