@@ -20,18 +20,21 @@ export const buildToolCenterGroups = ({
 }: BuildToolCenterGroupsInput) => {
   const toolCenterGroups: SettingsCenterNavigationGroup[] = [
     {
+      // 叶子分组：分组本身就是插件页入口（空 items → 树导航渲染为不可展开的叶子，
+      // 点击走 onSelectGroup → resolveSettingsCenterGroupInitialPane 直达插件页），
+      // 避免「插件」分组下再嵌一个同名「插件」子项。
+      key: 'plugins',
+      icon: <AppstoreAddOutlined />,
+      title: t('plugin.manager.title'),
+      description: t('plugin.manager.description'),
+      items: [],
+    },
+    {
       key: 'config',
       icon: <SettingOutlined />,
       title: t('app.tools.group.config.title'),
       description: t('app.tools.group.config.description'),
       items: [
-        {
-          key: 'plugins',
-          icon: <AppstoreAddOutlined />,
-          title: t('plugin.manager.title'),
-          description: t('plugin.manager.description'),
-          onClick: () => handleOpenToolCenterPane('config', 'plugins'),
-        },
         {
           key: 'data-root',
           icon: <HddOutlined />,
