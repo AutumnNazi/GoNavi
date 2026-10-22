@@ -14,7 +14,10 @@ func TestFlexTimeNormalizesEveryShape(t *testing.T) {
 		raw  string
 		want string
 	}{
-		{"epoch millis", `1758000000000`, "2025-09-16 13:20:00"},
+		// epoch millis 是绝对时刻，显示为本地时区。期望值必须按本地时区
+		// 算出：写死字面量等于把开发机的时区固化进测试，CI runner 的时区
+		// 不同就必红（写死的北京时间在 UTC-8 runner 上差 8 小时）。
+		{"epoch millis", `1758000000000`, time.UnixMilli(1758000000000).Format(TimeFormat)},
 		{"formatted string", `"2026-10-17 10:00:00"`, "2026-10-17 10:00:00"},
 		{"null", `null`, ""},
 		{"empty string", `""`, ""},
