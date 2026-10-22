@@ -21,15 +21,34 @@ type adminFlavor struct {
 	login      LoginFamily
 	pagination PaginationFamily
 	fields     FieldEra
+	// requiredGroupFilters lists the group paging parameters the upstream
+	// admin binds as required request parameters: a request without them is
+	// answered with HTTP 400. 3.0-3.2.x do, 2.4.1 and 3.3.0+ do not.
+	requiredGroupFilters []string
+	// requiredJobFilters lists the jobinfo paging parameters the upstream
+	// admin binds as required request parameters.
+	requiredJobFilters []string
 }
 
 // The three dialects the first version targets: the legacy line, the 3.2.x
 // transition (new login, old paging), and 3.5.0 (new login, new paging, renamed
 // fields).
 var (
-	flavor2x   = adminFlavor{name: "2.x", login: LoginLegacy, pagination: PageStartLength, fields: FieldLegacy}
-	flavor32x  = adminFlavor{name: "3.2.x", login: LoginSSO, pagination: PageStartLength, fields: FieldLegacy}
-	flavor35   = adminFlavor{name: "3.5.0", login: LoginSSO, pagination: PageOffsetPageSize, fields: FieldRenamed}
+	flavor2x = adminFlavor{
+		name: "2.x", login: LoginLegacy, pagination: PageStartLength, fields: FieldLegacy,
+		requiredGroupFilters: nil,
+		requiredJobFilters:   []string{"jobGroup", "triggerStatus"},
+	}
+	flavor32x = adminFlavor{
+		name: "3.2.x", login: LoginSSO, pagination: PageStartLength, fields: FieldLegacy,
+		requiredGroupFilters: []string{"appname", "title"},
+		requiredJobFilters:   []string{"jobGroup", "triggerStatus", "jobDesc", "executorHandler", "author"},
+	}
+	flavor35 = adminFlavor{
+		name: "3.5.0", login: LoginSSO, pagination: PageOffsetPageSize, fields: FieldRenamed,
+		requiredGroupFilters: nil,
+		requiredJobFilters:   []string{"jobGroup", "triggerStatus", "name", "executorHandler", "author"},
+	}
 	allFlavors = []adminFlavor{flavor2x, flavor32x, flavor35}
 )
 
@@ -37,9 +56,10 @@ var (
 type expiryShape string
 
 // Route expectations per flavor: the stack decides which mutation route the
-// protocol must hit.
+// protocol must hit. The add→insert and remove→delete renames landed with
+// 3.3.0, so a 3.2.x admin still answers the 2.x route names.
 func (f adminFlavor) jobCreateRoute() string {
-	if f.login == LoginSSO {
+	if f.pagination == PageOffsetPageSize {
 		return route3JobInfoInsert
 	}
 	return route2JobInfoAdd
@@ -53,14 +73,14 @@ func (f adminFlavor) jobUpdateRoute() string {
 }
 
 func (f adminFlavor) jobDeleteRoute() string {
-	if f.login == LoginSSO {
+	if f.pagination == PageOffsetPageSize {
 		return route3JobInfoDelete
 	}
 	return route2JobInfoRemove
 }
 
 func (f adminFlavor) groupCreateRoute() string {
-	if f.login == LoginSSO {
+	if f.pagination == PageOffsetPageSize {
 		return route3JobGroupInsert
 	}
 	return route2JobGroupSave
@@ -108,6 +128,23 @@ type fakeAdmin struct {
 	groupsTotal     int
 	jobsTotal       int
 	logsTotal       int
+	// jobIDs turns the task listing into a synthetic list of that many tasks
+	// so a test can place a task on a later page.
+	jobIDs []int
+}
+
+// setGroupsTotal sets the total the admin reports for the executor listing.
+func (a *fakeAdmin) setGroupsTotal(total int) {
+	a.mu.Lock()
+	a.groupsTotal = total
+	a.mu.Unlock()
+}
+
+// setJobIDs replaces the task listing with a synthetic list of those ids.
+func (a *fakeAdmin) setJobIDs(ids []int) {
+	a.mu.Lock()
+	a.jobIDs = append([]int(nil), ids...)
+	a.mu.Unlock()
 }
 
 func newFakeAdmin(t *testing.T, flavor adminFlavor, contextPath string) *fakeAdmin {
@@ -300,6 +337,14 @@ func (a *fakeAdmin) serve(w http.ResponseWriter, r *http.Request) {
 	case route2JobGroupRemove, route3JobGroupDelete:
 		a.writeEnvelope(w, http.StatusOK, http.StatusOK, "Success", nil)
 	case route3JobCodeSave:
+		// The upstream route refuses a blank remark and one outside 4-100
+		// characters, and it exists on every supported version (2.3.1 already
+		// ships it), so the fake must not accept what the admin rejects.
+		remark := form.Get("glueRemark")
+		if len([]rune(remark)) < 4 || len([]rune(remark)) > 100 {
+			a.writeEnvelope(w, http.StatusOK, http.StatusInternalServerError, "glueRemark limit", nil)
+			return
+		}
 		a.writeEnvelope(w, http.StatusOK, http.StatusOK, "Success", nil)
 	case routeJobInfoNextTrigger:
 		a.writeArray(w, []string{"2026-10-17 10:00:00", "2026-10-17 10:00:30"})
@@ -395,11 +440,27 @@ func (a *fakeAdmin) writeUnauthenticated(w http.ResponseWriter, shape expiryShap
 }
 
 func (a *fakeAdmin) serveGroups(w http.ResponseWriter, form url.Values) {
+	if !writeMissingFilter(w, form, a.flavor.requiredGroupFilters) {
+		return
+	}
 	a.mu.Lock()
 	total := a.groupsTotal
 	a.mu.Unlock()
 	row := a.groupRow()
 	a.writePage(w, a.pagingParams(form), []json.RawMessage{row}, total)
+}
+
+// writeMissingFilter answers HTTP 400 when a required request parameter is
+// missing, which is how the upstream admins reject an incomplete paging call.
+func writeMissingFilter(w http.ResponseWriter, form url.Values, required []string) bool {
+	for _, key := range required {
+		if _, ok := form[key]; !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte("<!DOCTYPE html><title>Error</title>Missing request parameter '" + key + "'"))
+			return false
+		}
+	}
+	return true
 }
 
 func (a *fakeAdmin) groupRow() json.RawMessage {
@@ -428,16 +489,64 @@ func (a *fakeAdmin) serveGroupByID(w http.ResponseWriter, form url.Values) {
 }
 
 func (a *fakeAdmin) serveJobs(w http.ResponseWriter, form url.Values) {
+	if !writeMissingFilter(w, form, a.flavor.requiredJobFilters) {
+		return
+	}
 	a.mu.Lock()
 	total := a.jobsTotal
+	ids := append([]int(nil), a.jobIDs...)
 	a.mu.Unlock()
+
 	var rows []json.RawMessage
-	if a.flavor.fields == FieldRenamed {
-		rows = append(rows, json.RawMessage(`{"id":1,"jobGroup":1,"name":"demoJobHandler","author":"admin","scheduleType":"CRON","scheduleConf":"0/30 * * * * ?","executorHandler":"demoJobHandler","executorParam":"","executorRouteStrategy":"FIRST","executorBlockStrategy":"SERIAL_EXECUTION","executorTimeout":0,"executorFailRetryCount":0,"glueType":"BEAN","triggerStatus":1,"triggerLastTime":1758000000000,"triggerNextTime":1758000030000}`))
+	if len(ids) > 0 {
+		rows = a.jobRowsForPage(form, ids)
+		total = len(ids)
 	} else {
-		rows = append(rows, json.RawMessage(`{"id":1,"jobGroup":1,"jobDesc":"demoJobHandler","author":"admin","scheduleType":"CRON","scheduleConf":"0/30 * * * * ?","executorHandler":"demoJobHandler","executorParam":"","executorRouteStrategy":"FIRST","executorBlockStrategy":"SERIAL_EXECUTION","executorTimeout":0,"executorFailRetryCount":0,"glueType":"BEAN","triggerStatus":1,"triggerLastTime":"2026-10-17 10:00:00","triggerNextTime":"2026-10-17 10:00:30"}`))
+		rows = append(rows, a.jobRowWithID(1))
 	}
 	a.writePage(w, a.pagingParams(form), rows, total)
+}
+
+// jobRowsForPage renders the slice of the synthetic task list the request
+// asked for, so a test can put a task on a later page.
+func (a *fakeAdmin) jobRowsForPage(form url.Values, ids []int) []json.RawMessage {
+	start, size := a.pageWindow(form)
+	end := start + size
+	if end > len(ids) {
+		end = len(ids)
+	}
+	if start > len(ids) {
+		start = len(ids)
+	}
+	rows := make([]json.RawMessage, 0, end-start)
+	for _, id := range ids[start:end] {
+		rows = append(rows, a.jobRowWithID(id))
+	}
+	return rows
+}
+
+// pageWindow resolves the requested page window in the flavor's paging shape.
+func (a *fakeAdmin) pageWindow(form url.Values) (int, int) {
+	if a.flavor.pagination == PageOffsetPageSize {
+		size := atoiDefault(form.Get("pagesize"))
+		if size <= 0 {
+			size = 10
+		}
+		return atoiDefault(form.Get("offset")), size
+	}
+	size := atoiDefault(form.Get("length"))
+	if size <= 0 {
+		size = 10
+	}
+	return atoiDefault(form.Get("start")), size
+}
+
+// jobRowWithID renders one task row carrying the given id.
+func (a *fakeAdmin) jobRowWithID(id int) json.RawMessage {
+	if a.flavor.fields == FieldRenamed {
+		return json.RawMessage(fmt.Sprintf(`{"id":%d,"jobGroup":1,"name":"demoJobHandler","author":"admin","scheduleType":"CRON","scheduleConf":"0/30 * * * * ?","executorHandler":"demoJobHandler","executorParam":"","executorRouteStrategy":"FIRST","executorBlockStrategy":"SERIAL_EXECUTION","executorTimeout":0,"executorFailRetryCount":0,"glueType":"BEAN","triggerStatus":1,"triggerLastTime":1758000000000,"triggerNextTime":1758000030000}`, id))
+	}
+	return json.RawMessage(fmt.Sprintf(`{"id":%d,"jobGroup":1,"jobDesc":"demoJobHandler","author":"admin","scheduleType":"CRON","scheduleConf":"0/30 * * * * ?","executorHandler":"demoJobHandler","executorParam":"","executorRouteStrategy":"FIRST","executorBlockStrategy":"SERIAL_EXECUTION","executorTimeout":0,"executorFailRetryCount":0,"glueType":"BEAN","triggerStatus":1,"triggerLastTime":"2026-10-17 10:00:00","triggerNextTime":"2026-10-17 10:00:30"}`, id))
 }
 
 func (a *fakeAdmin) serveLogs(w http.ResponseWriter, form url.Values) {
@@ -501,12 +610,15 @@ func (a *fakeAdmin) writePage(w http.ResponseWriter, params url.Values, rows []j
 		a.writeEnvelope(w, http.StatusOK, http.StatusOK, "Success", page)
 		return
 	}
+	// The 2.x line and 3.0-3.2.x answer the paging routes with a bare
+	// DataTables object and no envelope at all: the top-level "data" key is
+	// the row array and recordsTotal sits next to it.
 	page := map[string]any{
 		"recordsTotal":    total,
 		"recordsFiltered": total,
 		"data":            items,
 	}
-	a.writeEnvelope(w, http.StatusOK, http.StatusOK, "Success", page)
+	a.writeJSON(w, http.StatusOK, page)
 }
 
 func (a *fakeAdmin) writeArray(w http.ResponseWriter, values []string) {

@@ -83,6 +83,29 @@ type adminEnvelope struct {
 	Message string          `json:"message"`
 	Content json.RawMessage `json:"content"`
 	Data    json.RawMessage `json:"data"`
+
+	// raw keeps the body exactly as it arrived. The paging routes of the 2.x
+	// line and of 3.0-3.2.x answer with a bare DataTables object, so their
+	// top-level "data" key holds the row array rather than the page object:
+	// the page object is the whole body, and only raw still holds it.
+	raw json.RawMessage
+}
+
+// UnmarshalJSON decodes the envelope while keeping the raw body, so a
+// response that carries no envelope at all can still be read as a page.
+func (e *adminEnvelope) UnmarshalJSON(data []byte) error {
+	type plain adminEnvelope
+	var base plain
+	if err := json.Unmarshal(data, &base); err != nil {
+		return err
+	}
+	*e = adminEnvelope(base)
+	// Only a response without an envelope needs its body kept: that body is
+	// the page object itself. Enveloped answers already carry their payload.
+	if e.Code == nil {
+		e.raw = append(json.RawMessage(nil), data...)
+	}
+	return nil
 }
 
 // succeeded reports whether the response is a success. An absent code means the
@@ -113,6 +136,20 @@ func (e adminEnvelope) payload() json.RawMessage {
 		return e.Content
 	}
 	return e.Data
+}
+
+// pagePayload returns the payload of a paging response.
+//
+// 3.3+ nests the page object under the envelope's data/content. The 2.x line
+// and 3.0-3.2.x answer with a bare DataTables object instead, where the
+// top-level "data" key is the row array and the page object is the body
+// itself; decoding the body is what keeps recordsTotal readable, so the
+// reported total is the admin's real count instead of the page length.
+func (e adminEnvelope) pagePayload() json.RawMessage {
+	if e.Code == nil && len(e.raw) > 0 {
+		return e.raw
+	}
+	return e.payload()
 }
 
 func isPresentPayload(raw json.RawMessage) bool {

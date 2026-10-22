@@ -147,11 +147,14 @@ func (p *stackProtocol) applyGroupMutation(values url.Values, group GroupMutatio
 	values.Set("addressList", group.AddressList)
 }
 
-// jobMutateRoute picks add vs update vs save for the stack. 3.3+ renamed add to
-// insert but kept update; 2.x uses add/save.
+// jobMutateRoute picks add vs update vs save for the stack. The 3.3.0 line
+// renamed add to insert and remove to delete; 3.2.x still answers the 2.x
+// route names even though it already uses the SSO login. The rename boundary
+// is therefore the paging axis (3.3+), not the login family: keying it on
+// the login sends every write of a 3.2.x admin to a route it does not bind.
 func (p *stackProtocol) jobMutateRoute(create bool) string {
 	if create {
-		if p.stack.Login == LoginSSO {
+		if p.stack.usesBatchIDs() {
 			return route3JobInfoInsert
 		}
 		return route2JobInfoAdd
@@ -162,29 +165,29 @@ func (p *stackProtocol) jobMutateRoute(create bool) string {
 	return route2JobInfoSave
 }
 
-// groupMutateRoute mirrors the task naming: 3.3+ insert/update, 2.x save/update.
+// groupMutateRoute mirrors the task naming: 3.3+ insert, earlier lines save.
+// The update route is called /jobgroup/update on every supported version.
 func (p *stackProtocol) groupMutateRoute(create bool) string {
 	if create {
-		if p.stack.Login == LoginSSO {
+		if p.stack.usesBatchIDs() {
 			return route3JobGroupInsert
 		}
 		return route2JobGroupSave
 	}
-	if p.stack.Login == LoginSSO {
-		return route3JobGroupUpdate
-	}
-	return route2JobGroupUpdate
+	return route3JobGroupUpdate
 }
 
-// deleteRoute picks the task or executor delete path for the stack.
+// deleteRoute picks the task or executor delete path for the stack. 3.3+
+// names it delete and takes ids[], the earlier lines name it remove and take
+// a single id.
 func (p *stackProtocol) deleteRoute(job bool) string {
 	if job {
-		if p.stack.Login == LoginSSO {
+		if p.stack.usesBatchIDs() {
 			return route3JobInfoDelete
 		}
 		return route2JobInfoRemove
 	}
-	if p.stack.Login == LoginSSO {
+	if p.stack.usesBatchIDs() {
 		return route3JobGroupDelete
 	}
 	return route2JobGroupRemove
@@ -293,8 +296,10 @@ func (p *stackProtocol) DeleteJobGroups(ctx context.Context, ids []int) error {
 }
 
 // SaveGlueSource writes a GLUE job's source through the admin's dedicated code
-// editor route (3.x /jobcode/save). 2.x has no separate route; the source rides
-// on the jobinfo update POJO, so we fall back to loading the job and updating it.
+// editor route (/jobcode/save). Every supported version binds that route with
+// the same id/glueSource/glueRemark parameters — 2.3.1 already ships it — so
+// the older "read the task, then update it" detour is not needed: it had to
+// page through the whole task list just to find one row.
 func (p *stackProtocol) SaveGlueSource(ctx context.Context, jobID int, glueSource, glueRemark string) error {
 	if jobID <= 0 {
 		return newValidationError("jobID", "jobID must be positive")
@@ -302,81 +307,18 @@ func (p *stackProtocol) SaveGlueSource(ctx context.Context, jobID int, glueSourc
 	if strings.TrimSpace(glueSource) == "" {
 		return newValidationError("glueSource", "glueSource is required")
 	}
-	if p.stack.Login != LoginSSO {
-		job, err := p.loadJobByID(ctx, jobID)
-		if err != nil {
-			return err
-		}
-		job.GlueSource = glueSource
-		if strings.TrimSpace(glueRemark) != "" {
-			job.GlueRemark = glueRemark
-		}
-		return p.UpdateJob(ctx, jobMutationFromJobInfo(job))
+	// The admin refuses a blank remark and one outside 4-100 characters.
+	remark := strings.TrimSpace(glueRemark)
+	remarkLen := len([]rune(remark))
+	if remarkLen < 4 || remarkLen > 100 {
+		return newValidationError("glueRemark", "glueRemark must be 4-100 characters")
 	}
 	values := url.Values{}
 	values.Set("id", itoa(jobID))
 	values.Set("glueSource", glueSource)
-	values.Set("glueRemark", glueRemark)
+	values.Set("glueRemark", remark)
 	_, err := p.client.callAPI(ctx, http.MethodPost, route3JobCodeSave, values, nil)
 	return err
-}
-
-// loadJobByID reads one task definition through the paging endpoint filtered by
-// nothing — the admin has no single-task GET for 2.x, so we page for it.
-func (p *stackProtocol) loadJobByID(ctx context.Context, jobID int) (JobInfo, error) {
-	values := url.Values{}
-	page, size := normalizePage(1), normalizePageSize(maxPageSize)
-	p.applyPaging(values, page, size)
-	values.Set("jobGroup", "0")
-	values.Set("triggerStatus", "-1")
-	values.Set("executorHandler", "")
-	values.Set("author", "")
-	if p.stack.Fields == FieldRenamed {
-		values.Set("name", "")
-	} else {
-		values.Set("jobDesc", "")
-	}
-
-	envelope, err := p.client.callAPI(ctx, http.MethodPost, routeJobInfoPageList, values, nil)
-	if err != nil {
-		return JobInfo{}, err
-	}
-	result, err := decodePage[JobInfo](envelope.payload())
-	if err != nil {
-		return JobInfo{}, err
-	}
-	for _, job := range result.Rows {
-		if job.ID == jobID {
-			return job, nil
-		}
-	}
-	return JobInfo{}, remoteError(http.StatusNotFound, "task not found")
-}
-
-// jobMutationFromJobInfo converts a loaded task back into a mutation payload so
-// a GLUE save can reuse the update path on 2.x.
-func jobMutationFromJobInfo(job JobInfo) JobMutation {
-	return JobMutation{
-		ID:                     job.ID,
-		JobGroup:               job.JobGroup,
-		Name:                   job.Name,
-		Author:                 job.Author,
-		AlarmEmail:             job.AlarmEmail,
-		ScheduleType:           job.ScheduleType,
-		ScheduleConf:           job.ScheduleConf,
-		MisfireStrategy:        job.MisfireStrategy,
-		ExecutorRouteStrategy:  job.ExecutorRouteStrategy,
-		ExecutorHandler:        job.ExecutorHandler,
-		ExecutorParam:          job.ExecutorParam,
-		ExecutorBlockStrategy:  job.ExecutorBlockStrategy,
-		ExecutorTimeout:        job.ExecutorTimeout,
-		ExecutorFailRetryCount: job.ExecutorFailRetryCount,
-		GlueType:               job.GlueType,
-		GlueSource:             job.GlueSource,
-		GlueRemark:             job.GlueRemark,
-		ChildJobID:             job.ChildJobID,
-		TriggerStatus:          job.TriggerStatus,
-	}
 }
 
 // createdID pulls the numeric id out of a create response when the admin

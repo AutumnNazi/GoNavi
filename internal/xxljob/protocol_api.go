@@ -36,7 +36,7 @@ func (p *stackProtocol) ListJobGroups(ctx context.Context, req GroupListRequest)
 	if err != nil {
 		return PageResult[JobGroup]{}, err
 	}
-	result, err := decodePage[JobGroup](envelope.payload())
+	result, err := decodePage[JobGroup](envelope.pagePayload())
 	if err != nil {
 		return PageResult[JobGroup]{}, err
 	}
@@ -80,7 +80,7 @@ func (p *stackProtocol) ListJobs(ctx context.Context, req JobListRequest) (PageR
 	if err != nil {
 		return PageResult[JobInfo]{}, err
 	}
-	result, err := decodePage[JobInfo](envelope.payload())
+	result, err := decodePage[JobInfo](envelope.pagePayload())
 	if err != nil {
 		return PageResult[JobInfo]{}, err
 	}
@@ -180,7 +180,7 @@ func (p *stackProtocol) ListLogs(ctx context.Context, req LogListRequest) (PageR
 	if err != nil {
 		return PageResult[JobLog]{}, err
 	}
-	result, err := decodePage[JobLog](envelope.payload())
+	result, err := decodePage[JobLog](envelope.pagePayload())
 	if err != nil {
 		return PageResult[JobLog]{}, err
 	}

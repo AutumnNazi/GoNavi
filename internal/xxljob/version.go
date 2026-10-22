@@ -42,9 +42,9 @@ func (c *Client) DetectLoginFamily(ctx context.Context) (LoginFamily, string, er
 	}
 	location := strings.ToLower(strings.TrimSpace(raw.location))
 	switch {
-	case strings.HasSuffix(location, route3LoginPage):
+	case strings.HasSuffix(location, strings.ToLower(route3LoginPage)):
 		return LoginSSO, raw.location, nil
-	case strings.HasSuffix(location, route2LoginPage):
+	case strings.HasSuffix(location, strings.ToLower(route2LoginPage)):
 		return LoginLegacy, raw.location, nil
 	default:
 		return "", raw.location, nil
@@ -58,6 +58,12 @@ func (c *Client) DetectPagingAndFields(ctx context.Context) (PaginationFamily, F
 	values := url.Values{}
 	values.Set("start", "0")
 	values.Set("length", "1")
+	// 3.0-3.2.x bind appname and title as required request parameters on the
+	// group paging route and answer a request without them with HTTP 400.
+	// Sending the empty filters keeps the probe valid on every version:
+	// the admins that treat them as optional ignore the empty values.
+	values.Set("appname", "")
+	values.Set("title", "")
 
 	requestCtx, cancel := c.requestTimeout(ctx)
 	defer cancel()
@@ -76,7 +82,7 @@ func (c *Client) DetectPagingAndFields(ctx context.Context) (PaginationFamily, F
 		return "", "", remoteError(envelope.code(), envelope.text())
 	}
 
-	pagination, fields := classifyPagePayload(envelope.payload())
+	pagination, fields := classifyPagePayload(envelope.pagePayload())
 	return pagination, fields, nil
 }
 

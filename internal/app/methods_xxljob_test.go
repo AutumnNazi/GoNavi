@@ -32,10 +32,12 @@ func newXxlJobStubAdmin(t *testing.T) *httptest.Server {
 			w.WriteHeader(http.StatusFound)
 			return
 		}
-		w.Write([]byte(`{"code":200,"content":{"recordsTotal":1,"data":[{"id":1,"appname":"sample","title":"Sample"}]}}`))
+		// The 2.x paging routes answer with a bare DataTables object and no
+		// envelope at all.
+		w.Write([]byte(`{"recordsTotal":1,"recordsFiltered":1,"data":[{"id":1,"appname":"sample","title":"Sample"}]}`))
 	})
 	mux.HandleFunc("/jobinfo/pageList", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte(`{"code":200,"content":{"recordsTotal":1,"data":[{"id":3,"jobGroup":1,"jobDesc":"sleepJob","triggerStatus":1}]}}`))
+		w.Write([]byte(`{"recordsTotal":1,"recordsFiltered":1,"data":[{"id":3,"jobGroup":1,"jobDesc":"sleepJob","triggerStatus":1}]}`))
 	})
 	mux.HandleFunc("/jobinfo/trigger", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(`{"code":200,"content":"trigger success"}`))
@@ -47,7 +49,7 @@ func newXxlJobStubAdmin(t *testing.T) *httptest.Server {
 		w.Write([]byte(`{"code":200,"msg":"ok"}`))
 	})
 	mux.HandleFunc("/joblog/pageList", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte(`{"code":200,"content":{"recordsTotal":1,"data":[{"id":10,"triggerCode":200,"handleCode":0}]}}`))
+		w.Write([]byte(`{"recordsTotal":1,"recordsFiltered":1,"data":[{"id":10,"triggerCode":200,"handleCode":0}]}`))
 	})
 	mux.HandleFunc("/joblog/logKill", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(`{"code":200,"msg":"ok"}`))

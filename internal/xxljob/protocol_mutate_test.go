@@ -1,6 +1,8 @@
 package xxljob
 
 import (
+	"errors"
+	"strings"
 	"testing"
 )
 
@@ -213,33 +215,50 @@ func TestUpdateJobGroupCarriesID(t *testing.T) {
 }
 
 func TestSaveGlueSourcePerStack(t *testing.T) {
+	// /jobcode/save exists on every supported version (2.3.1 already ships
+	// it) with the same id/glueSource/glueRemark parameters, so every stack
+	// must use it instead of detouring through a full task listing.
 	for _, flavor := range allFlavors {
 		t.Run(flavor.name, func(t *testing.T) {
 			protocol, admin := mutateProtocolForFlavor(t, flavor)
-			if err := protocol.SaveGlueSource(t.Context(), 1, "print('hi')", "demo"); err != nil {
+			if err := protocol.SaveGlueSource(t.Context(), 1, "print('hi')", "demo remark"); err != nil {
 				t.Fatalf("SaveGlueSource: %v", err)
 			}
-			if flavor.login == LoginSSO {
-				call, ok := admin.lastCallTo(route3JobCodeSave)
-				if !ok {
-					t.Fatalf("no %s call recorded", route3JobCodeSave)
-				}
-				if got := call.Form.Get("glueSource"); got != "print('hi')" {
-					t.Errorf("glueSource = %q", got)
-				}
-				if got := call.Form.Get("glueRemark"); got != "demo" {
-					t.Errorf("glueRemark = %q", got)
-				}
-				return
-			}
-			// 2.x has no dedicated route: the save must ride the update POJO.
-			route := flavor.jobUpdateRoute()
-			call, ok := admin.lastCallTo(route)
+			call, ok := admin.lastCallTo(route3JobCodeSave)
 			if !ok {
-				t.Fatalf("no %s call recorded", route)
+				t.Fatalf("no %s call recorded", route3JobCodeSave)
+			}
+			if got := call.Form.Get("id"); got != "1" {
+				t.Errorf("id = %q, want 1", got)
 			}
 			if got := call.Form.Get("glueSource"); got != "print('hi')" {
 				t.Errorf("glueSource = %q", got)
+			}
+			if got := call.Form.Get("glueRemark"); got != "demo remark" {
+				t.Errorf("glueRemark = %q", got)
+			}
+		})
+	}
+}
+
+func TestSaveGlueSourceRejectsWhatTheAdminRefuses(t *testing.T) {
+	// The admin refuses a blank remark and one outside 4-100 characters, so
+	// the client rejects them locally instead of waiting for a remote error.
+	cases := []struct {
+		name   string
+		source string
+		remark string
+	}{
+		{"blank source", "", "demo remark"},
+		{"blank remark", "print('hi')", ""},
+		{"short remark", "print('hi')", "abc"},
+		{"long remark", "print('hi')", strings.Repeat("x", 101)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			protocol, _ := mutateProtocolForFlavor(t, flavor32x)
+			if err := protocol.SaveGlueSource(t.Context(), 1, tc.source, tc.remark); !errors.Is(err, ErrValidation) {
+				t.Fatalf("error = %v, want ErrValidation", err)
 			}
 		})
 	}
