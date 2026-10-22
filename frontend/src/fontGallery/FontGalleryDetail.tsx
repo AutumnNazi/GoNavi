@@ -29,11 +29,11 @@ export function FontGalleryDetail({ row, local, installed, name, gallery, active
   const preview = entry && gallery.previewState?.key === fontEntryKey(entry) ? gallery.previewState : null;
   const busy = Boolean(gallery.pending || gallery.previewState?.loading || gallery.loading || activating);
   const inUse = installed && [activeUi, activeMono].some(value => value && getPrimaryFontFamily(value) === installed.family);
-  const useFont = async () => {
+  const useFont = async (kind: 'ui' | 'mono') => {
     setActivationError(null); setActivating(true);
     try {
       if (installed) await loadDownloadedFont(installed);
-      if (mounted.current && (installed || local)) onEnable(row.kind, installed?.family ?? row.family);
+      if (mounted.current && (installed || local)) onEnable(kind, installed?.family ?? row.family);
     } catch (error) { if (mounted.current) setActivationError(fontGalleryErrorKey(error)); }
     finally { if (mounted.current) setActivating(false); }
   };
@@ -61,9 +61,14 @@ export function FontGalleryDetail({ row, local, installed, name, gallery, active
       {!local && !installed && row.remote && <Button size="small" type="primary" disabled={busy} onClick={() => { void download(); }}>
         {t('app.theme.font_family.gallery.download')}
       </Button>}
-      {(installed || local) && <Button size="small" disabled={busy} onClick={() => { void useFont(); }}>
-        {t('app.theme.font_family.gallery.use')}
-      </Button>}
+      {(installed || local) && <>
+        <Button size="small" disabled={busy} onClick={() => { void useFont('ui'); }}>
+          {t('app.theme.font_family.gallery.use_ui')}
+        </Button>
+        <Button size="small" disabled={busy} onClick={() => { void useFont('mono'); }}>
+          {t('app.theme.font_family.gallery.use_mono')}
+        </Button>
+      </>}
       {installed && !inUse && <Button size="small" danger disabled={busy} onClick={() => { void gallery.remove(installed.entry); }}>
         {t('app.theme.font_family.gallery.remove')}
       </Button>}

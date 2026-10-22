@@ -24,8 +24,13 @@ export function mergeDownloadedFontOptions(
     result.push(option);
   }
   const activeFamily = activeValue ? fontFamilyKey(getPrimaryFontFamily(activeValue)) : '';
-  for (const item of installed) {
-    if (item.entry.kind !== kind) continue;
+  // 已下载字体同时进入两个槽位：kind 匹配的排在前，其余排后。目录里的 kind 只是建议用途，
+  // 用户明确要求下载的代码字体也能设为界面字体，跨槽位启用后必须在对应下拉中保持可见。
+  const ordered = [
+    ...installed.filter(item => item.entry.kind === kind),
+    ...installed.filter(item => item.entry.kind !== kind),
+  ];
+  for (const item of ordered) {
     const key = fontFamilyKey(item.entry.family);
     const position = positions.get(key);
     const active = activeFamily === fontFamilyKey(item.family);
