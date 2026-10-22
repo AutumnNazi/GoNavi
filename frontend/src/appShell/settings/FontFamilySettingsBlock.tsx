@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { FontFamilySelect } from './FontFamilySelect';
 import { FontGalleryPanel } from '../../fontGallery/FontGalleryPanel';
 import { cssStack, mergeDownloadedFontOptions } from '../../fontGallery/options';
@@ -28,6 +28,13 @@ export function FontFamilySettingsBlock({
 }: Props) {
   const [browseOpen, setBrowseOpen] = useState(false);
   const [downloaded, setDownloaded] = useState<FontInstalled[]>([]);
+  const galleryRef = useRef<HTMLDivElement | null>(null);
+  // 入口跟随两个字体下拉：从下拉底部打开时滚动到画廊，避免打开后仍然看不见。
+  const browseGallery = () => {
+    setBrowseOpen(true);
+    requestAnimationFrame(() => galleryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
+  };
+  const browseProps = { browseLabel: t('app.theme.font_family.gallery.browse'), onBrowse: browseGallery };
   const selection = useDownloadedFontSelection(downloaded, (kind, value) => setAppearance(kind === 'ui'
     ? { customUIFontFamily: value } : { customMonoFontFamily: value }));
   useEffect(() => {
@@ -55,6 +62,7 @@ export function FontFamilySettingsBlock({
           loading={isFontFamiliesLoading || selection.loading}
           onChange={(value) => { void selection.selectFont('ui', value); }}
           t={t}
+          {...browseProps}
         />
         <div className="gonavi-settings-inline-meta">
           {fontFamiliesLoadError
@@ -79,6 +87,7 @@ export function FontFamilySettingsBlock({
           loading={isFontFamiliesLoading || selection.loading}
           onChange={(value) => { void selection.selectFont('mono', value); }}
           t={t}
+          {...browseProps}
         />
         <div className="gonavi-settings-inline-meta">
           {fontFamiliesLoadError
@@ -87,16 +96,18 @@ export function FontFamilySettingsBlock({
         </div>
       </div>
       {selection.error && <Alert type="error" showIcon message={t(selection.error)} />}
-      <FontGalleryPanel
-        open={browseOpen}
-        onToggle={() => setBrowseOpen(value => !value)}
-        installedFontFamilies={installedFontFamilies}
-        activeUi={appearance.customUIFontFamily}
-        activeMono={appearance.customMonoFontFamily}
-        onEnable={(kind, family) => setAppearance(kind === 'ui'
-          ? { customUIFontFamily: cssStack(family, 'ui') }
-          : { customMonoFontFamily: cssStack(family, 'mono') })}
-      />
+      <div ref={galleryRef}>
+        <FontGalleryPanel
+          open={browseOpen}
+          onToggle={() => setBrowseOpen(value => !value)}
+          installedFontFamilies={installedFontFamilies}
+          activeUi={appearance.customUIFontFamily}
+          activeMono={appearance.customMonoFontFamily}
+          onEnable={(kind, family) => setAppearance(kind === 'ui'
+            ? { customUIFontFamily: cssStack(family, 'ui') }
+            : { customMonoFontFamily: cssStack(family, 'mono') })}
+        />
+      </div>
     </>
   );
 }
