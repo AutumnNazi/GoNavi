@@ -2,10 +2,10 @@
 
 ## 当前发布
 
-- 目录版本：2026-10-22.1；发布时间：2026-10-23 00:16 前后（Asia/Shanghai）。
+- 目录版本：2026-10-23.1；发布时间：2026-10-23 00:55 前后（Asia/Shanghai）。
 - 公网目录：[catalog.json](https://origin-download.syngnat.top:8443/gonavi/fonts/v1/catalog.json)。
-- 目录 SHA-256：`0e9ef8983e840f5d317cb422c15f7feab4ba281a53a5d96ba068fc828217707e`。
-- 16 款字体；上一版目录（2026-10-16.1，SHA `4ccf7f6f8871ebcb90898c0043586d6359ae832dacc8d33a982110c178013dad`）已备份到 `/root/gonavi-font-backups/20261022-v1/`。
+- 目录 SHA-256：`4d39219434ce14a50d8575e4567d7ee8c3cc96b1ee60704558af4db74bc57eaf`。
+- 18 款字体；上一版目录（2026-10-22.1，SHA `0e9ef8983e840f5d317cb422c15f7feab4ba281a53a5d96ba068fc828217707e`）已备份到 `/root/gonavi-font-backups/20261023-v1/`。
 - 固定远端目录：`/srv/gonavi-downloads/gonavi/fonts/v1/`；只添加字体命名空间，不触碰背景图库、更新发布和其他端口。
 - 安装包和源码仓库不包含字体文件。浏览目录不会下载字体；预览和安装由用户主动触发。
 - 客户端字体资产上限由 16MiB 提升到 32MiB（CJK 可变字体普遍超出 16MiB：Noto Sans SC 17,772,300 字节、霞鹜文楷 24.7MB）；预览仍为 512KiB 上限。
@@ -14,8 +14,8 @@
 元数据与配置：
 
 - [上游固定版本与资源哈希](../deploy/font-gallery/source-manifest.json)
-- [本次发布验证结果](../deploy/font-gallery/publication-2026-10-22.json)
-- [历史发布验证结果](../deploy/font-gallery/publication-2026-10-16.json)
+- [本次发布验证结果](../deploy/font-gallery/publication-2026-10-23.json)
+- [历史发布验证结果](../deploy/font-gallery/publication-2026-10-22.json)、[首批发布验证结果](../deploy/font-gallery/publication-2026-10-16.json)
 - [字体目录契约](../deploy/font-gallery/catalog.schema.json)
 - [字体 Nginx 路由片段](../deploy/font-gallery/bero-locations.conf)
 - [完整 Bero 下载源配置](../deploy/download-mirror/bero-origin-download.conf)
@@ -51,7 +51,16 @@ Inter、Noto Sans SC、Open Sans、Manrope 固定于 [google/fonts revision 45e3
 
 预览字段对 ≤512KiB 的字体引用与正式下载相同的原始小文件；更大的字体引用仅覆盖应用预览文案的子集（保留 family 名称），不声称它是完整字体。预览请求不写安装记录。所有拉丁字体主要面向拉丁文字；Noto Sans SC 提供简体中文完整覆盖，中文预览不再依赖系统回退。
 
-Cascadia Code、Iosevka、更纱黑体仍包含在客户端的本地推荐名单中并继续显示待上架：Cascadia/Iosevka 的上游 release 包为 130–150MB 的整包压缩档，更纱黑体发布为 7z 分卷，均不适合为单个 TTF 下载整包；霞鹜文楷 Regular 为 24.7MB，超出 32MiB 前已超限，且上游无更小的官方 TTF。不伪造下载地址、授权或资源哈希。
+Cascadia Code、Iosevka、更纱黑体仍包含在客户端的本地推荐名单中并继续显示待上架：Cascadia/Iosevka 的上游 release 包为 130–150MB 的整包压缩档，更纱黑体发布为 7z 分卷，均不适合为单个 TTF 下载整包。不伪造下载地址、授权或资源哈希。
+
+## 批次三（2026-10-23.1 新增）
+
+| 字体 | 用途 | 提供版本 | 许可 | 预览 |
+|---|---|---|---|---|
+| 霞鹜文楷 LXGW WenKai | 界面 | Regular 原版 | OFL-1.1 | 子集 |
+| 霞鹜文楷等宽 LXGW WenKai Mono | 代码 | Regular 原版 | OFL-1.1 | 子集 |
+
+两款固定于 [lxgw/LxgwWenKai v1.530](https://github.com/lxgw/LxgwWenKai/releases/tag/v1.530)，各 25.9MB，在 32MiB 资产上限内直接发布；字体本体不做修改，预览为保留 name 表的子集。该字体的 OFL 附加许可允许为网页交付做子集与格式转换，子集预览仅通过应用内资源路由提供，不作为可安装桌面字体分发。
 
 ## 发布和验证
 

@@ -1,0 +1,45 @@
+{
+  "catalogVersion": "2026-10-23.1",
+  "publishedAt": "2026-10-22T16:45:00Z",
+  "publicBaseURL": "https://origin-download.syngnat.top:8443/gonavi/fonts/v1/",
+  "catalogSha256": "4d39219434ce14a50d8575e4567d7ee8c3cc96b1ee60704558af4db74bc57eaf",
+  "catalogSizeBytes": 118803,
+  "fontCount": 18,
+  "previousCatalogSha256": "0e9ef8983e840f5d317cb422c15f7feab4ba281a53a5d96ba068fc828217707e",
+  "upstreamRevision": "lxgw-v1.530",
+  "fontFamilies": [
+    "JetBrains Mono",
+    "Fira Code",
+    "Fira Mono",
+    "IBM Plex Mono",
+    "Roboto Mono",
+    "Inconsolata",
+    "Source Code Pro",
+    "Ubuntu Mono",
+    "Cousine",
+    "Space Mono",
+    "Atkinson Hyperlegible",
+    "Hack",
+    "Inter",
+    "Manrope",
+    "Noto Sans SC",
+    "Open Sans",
+    "LXGW WenKai",
+    "LXGW WenKai Mono"
+  ],
+  "previewMode": "font bytes unmodified; previews reuse the original file under 512 KiB, otherwise a name-preserving subset limited to the application's preview text",
+  "previewPolicies": {
+    "lxgw-wenkai": "subset-preview",
+    "lxgw-wenkai-mono": "subset-preview"
+  },
+  "verification": {
+    "publicCatalogHTTP": 200,
+    "catalogSha256Match": true,
+    "assetChecks": 23,
+    "licenseChecks": 17,
+    "headers": "assets/licenses: 200 + immutable cache + nosniff + CORS *; catalog: no-cache revalidation",
+    "verifiedFrom": "Bero origin over the public HTTPS URL",
+    "newAssets": 4,
+    "newLicenses": 1
+  }
+}

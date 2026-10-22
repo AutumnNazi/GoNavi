@@ -261,10 +261,43 @@
       "fontVersion": [
         "Version 3.003"
       ]
+    },
+    {
+      "id": "lxgw-wenkai",
+      "family": "LXGW WenKai",
+      "kind": "ui",
+      "sourceUrl": "https://github.com/lxgw/LxgwWenKai/releases/download/v1.530/LXGWWenKai-Regular.ttf",
+      "sha256": "2d73eea94ad808999d90c0000c239a84a33b09d4bc6ab6c5b8bbf1eda8a7fc8b",
+      "sizeBytes": 25928940,
+      "licenseUrl": "https://raw.githubusercontent.com/lxgw/LxgwWenKai/v1.530/OFL.txt",
+      "licenseSha256": "1a25e35da1031c6c3436fde545bb9cb5aca954e9873afe510c834b8b79bd21a0",
+      "fontCopyright": [
+        "Copyright 2021-2026 LXGW (https://github.com/lxgw/LxgwWenKai), with Reserved Font Name '霞鹜', '霞鶩', '落霞孤鹜', '落霞孤鶩' and 'LXGW'."
+      ],
+      "fontVersion": [
+        "Version 1.530; October 18, 2026"
+      ]
+    },
+    {
+      "id": "lxgw-wenkai-mono",
+      "family": "LXGW WenKai Mono",
+      "kind": "mono",
+      "sourceUrl": "https://github.com/lxgw/LxgwWenKai/releases/download/v1.530/LXGWWenKaiMono-Regular.ttf",
+      "sha256": "895ce1d2fa00d5ca3bec0329d38e3190454f4b5fa7b4733f491c419faf9753a1",
+      "sizeBytes": 25957300,
+      "licenseUrl": "https://raw.githubusercontent.com/lxgw/LxgwWenKai/v1.530/OFL.txt",
+      "licenseSha256": "1a25e35da1031c6c3436fde545bb9cb5aca954e9873afe510c834b8b79bd21a0",
+      "fontCopyright": [
+        "Copyright 2021-2026 LXGW (https://github.com/lxgw/LxgwWenKai), with Reserved Font Name '霞鹜', '霞鶩', '落霞孤鹜', '落霞孤鶩' and 'LXGW'."
+      ],
+      "fontVersion": [
+        "Version 1.530; October 18, 2026"
+      ]
     }
   ],
   "revisions": {
     "2026-10-16.1": "1d0e46c7933245c8180fe83e47917961c913bbdb",
-    "2026-10-22.1": "45e3d5269e4a17d823f6d84470bc084dc5ae46f6"
+    "2026-10-22.1": "45e3d5269e4a17d823f6d84470bc084dc5ae46f6",
+    "2026-10-23.1": "lxgw-v1.530"
   }
 }
