@@ -91,7 +91,7 @@ interface MatchedProviderPreset {
   icon: React.ReactNode;
 }
 
-interface AISettingsProvidersSectionProps {
+export interface AISettingsProvidersSectionProps {
   providers: AIProviderConfig[];
   activeProviderId: string;
   pendingProviderId?: string;

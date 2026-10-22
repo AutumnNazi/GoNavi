@@ -3,6 +3,7 @@ import { message } from 'antd';
 import { withAISettingsLeaveGuard } from '../../utils/aiSettingsLeaveGuard';
 import { shouldSuppressMacNativeEscapeExit } from '../../utils/macWindow';
 import { useStore } from '../../store';
+import { applyDocumentFontFamilies } from '../../utils/documentTypography';
 import { useFontGalleryFaces } from '../../fontGallery/useFontGalleryFaces';
 // 低配/减少动画的降级样式；由本 hook 负责挂 body 类，故样式随本 hook 一起引入。
 import '../../styles/low-spec-runtime.css';
@@ -115,11 +116,8 @@ export const useAppLayoutEffects = ({
         : showDataTableCheckboxColumn === false ? 'false' : 'layout');
     document.body.setAttribute('data-platform', documentPlatform);
     document.body.style.fontSize = `${effectiveFontSize}px`;
-    document.body.style.setProperty('--gn-font-sans', resolvedUiFontFamily);
-    document.body.style.setProperty('--gn-font-mono', resolvedMonoFontFamily);
+    applyDocumentFontFamilies(resolvedUiFontFamily, resolvedMonoFontFamily);
     document.documentElement.style.setProperty('--gonavi-font-size', `${effectiveFontSize}px`);
-    document.documentElement.style.setProperty('--gn-font-sans', resolvedUiFontFamily);
-    document.documentElement.style.setProperty('--gn-font-mono', resolvedMonoFontFamily);
     document.documentElement.style.setProperty('--gn-ui-scale', `${effectiveUiScale}`);
     document.documentElement.style.setProperty('--gn-window-opacity', `${effectiveOpacity}`);
     document.documentElement.style.setProperty('--gn-window-opacity-percent', `${effectiveOpacity * 100}%`);

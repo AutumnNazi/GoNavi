@@ -12,7 +12,8 @@ export const TOPIC_COLORS = ['#34c388', '#4f8cff', '#f59e0b', '#a78bfa', '#ef6b7
 export const MAX_VISIBLE_MESSAGES = 1000;
 export const MAX_SEEN_MESSAGE_IDENTITIES = MAX_VISIBLE_MESSAGES;
 const STREAM_LOOP_GAP_MS = 180;
-export const MESSAGE_ROW_HEIGHT = 58;
+// 单行卡片高度 36 + 列表 gap 6；虚拟滚动按固定行高计算，改卡片布局必须同步改这里。
+export const MESSAGE_ROW_HEIGHT = 42;
 export const MESSAGE_ROW_OVERSCAN = 12;
 
 export type MessageDirection = 'received' | 'published';
@@ -45,8 +46,19 @@ export const toWorkbenchMessage = (
   partial: Omit<WorkbenchMessage, 'preview'>,
 ): WorkbenchMessage => ({
   ...partial,
-  preview: previewPayload(rowPayload(partial.row)),
+  // 元数据行没有 payload 键，对整行做 JSON 摘要只会得到「{」这种噪声，直接留空。
+  preview: hasMessagePayload(partial.row) ? previewPayload(rowPayload(partial.row)) : '',
 });
+
+// 列表卡片右侧的摘要位：有 payload 摘要就显示摘要，否则退回到消息 key（Kafka 常见），
+// 两者都没有时留空，避免出现孤立的「{」。
+export const messageCardSummary = (message: { preview: string; row: Record<string, any> }): string => {
+  if (message.preview) return message.preview;
+  const key = message.row?.key;
+  if (key === undefined || key === null || key === '') return '';
+  const text = typeof key === 'string' ? key : JSON.stringify(key);
+  return text ? `key: ${text.length > 120 ? `${text.slice(0, 120)}…` : text}` : '';
+};
 
 export type MessageQueueRuntimeContext = {
   connection: SavedConnection | null;
@@ -125,6 +137,15 @@ export const rowDestination = (row: Record<string, any>, fallback: string): stri
   row.topic || row.queue || row.routing_key || fallback || '',
 ).trim();
 
+const padTimestampPart = (value: number): string => String(value).padStart(2, '0');
+
+// 消息时间统一展示为 YYYY-MM-DD HH:mm:ss（本地时区），与表概览、侧栏的时间列一致；
+// 只给时分秒会让跨天、跨批次的消息无法区分先后。
+export const formatMessageTimestamp = (date: Date): string => (
+  `${date.getFullYear()}-${padTimestampPart(date.getMonth() + 1)}-${padTimestampPart(date.getDate())}`
+  + ` ${padTimestampPart(date.getHours())}:${padTimestampPart(date.getMinutes())}:${padTimestampPart(date.getSeconds())}`
+);
+
 export const rowTimestamp = (row: Record<string, any>): string => {
   const raw = row.received_at || row.timestamp || row.store_timestamp || row.born_timestamp;
   if (raw === undefined || raw === null || raw === '') return '';
@@ -132,8 +153,22 @@ export const rowTimestamp = (row: Record<string, any>): string => {
   const date = Number.isFinite(numeric)
     ? new Date(numeric > 10_000_000_000 ? numeric : numeric * 1000)
     : new Date(String(raw));
-  return Number.isNaN(date.getTime()) ? String(raw) : date.toLocaleTimeString();
+  return Number.isNaN(date.getTime()) ? String(raw) : formatMessageTimestamp(date);
 };
+
+// 消息大小展示：元数据列表只带 value_size，按 B/KB/MB 折算便于快速判断消息体量。
+export const formatByteSize = (value: unknown): string => {
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes) || bytes < 0) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+// 列表预览只带元数据列，没有 payload 键；详情查询回来后才会有。
+export const hasMessagePayload = (row: Record<string, any>): boolean => (
+  ['payload', 'value', 'body', 'message'].some((key) => Object.prototype.hasOwnProperty.call(row, key))
+);
 
 export const rowPayload = (row: Record<string, any>): unknown => {
   for (const key of ['payload', 'value', 'body', 'message']) {
@@ -142,20 +177,46 @@ export const rowPayload = (row: Record<string, any>): unknown => {
   return row;
 };
 
-export const prettyPayload = (value: unknown): string => {
-  if (typeof value === 'string') {
-    try {
-      return JSON.stringify(JSON.parse(value), null, 2);
-    } catch {
-      return value;
-    }
-  }
+// 大内容跳过 JSON 美化：十几 MB 的消息做 parse + indent 会把界面卡死。
+const PRETTY_PAYLOAD_MAX_CHARS = 512 << 10;
+
+const stringifyPayload = (value: unknown): string => {
+  if (typeof value === 'string') return value;
   try {
-    return JSON.stringify(value, null, 2);
+    return JSON.stringify(value) ?? '';
   } catch {
     return String(value ?? '');
   }
 };
+
+export const prettyPayload = (value: unknown): string => {
+  const raw = stringifyPayload(value);
+  if (!raw) return '';
+  if (raw.length > PRETTY_PAYLOAD_MAX_CHARS) return raw;
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+};
+
+// 列表只取元数据后，详情按 partition + offset 精确定位再拉 payload；
+// 目前只有 Kafka 支持这种定位查询。
+export const buildMessageDetailCommand = (
+  sourceType: string | undefined,
+  destination: string,
+  row: Record<string, any>,
+): string => {
+  if (sourceType !== 'kafka') return '';
+  const partition = Number(row.partition);
+  const offset = Number(row.offset);
+  if (!Number.isSafeInteger(partition) || partition < 0) return '';
+  if (!Number.isSafeInteger(offset) || offset < 0) return '';
+  const topic = String(destination || row.topic || '').trim();
+  if (!topic) return '';
+  return `SELECT * FROM "${topic}" WHERE partition = ${partition} AND offset = ${offset} LIMIT 1;`;
+};
+
 
 const previewPayload = (value: unknown): string => {
   const text = prettyPayload(value).trim();

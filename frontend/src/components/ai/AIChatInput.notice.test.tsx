@@ -203,7 +203,7 @@ describe('AIChatInput notice layout', () => {
     );
 
     expect(markup).toContain('gn-v2-ai-model-select');
-    expect(markup).toContain('gn-v2-ai-thinking-select');
+    expect(markup).toContain('gn-zcode-thought-meter');
     expect(markup).toContain('gn-v2-ai-model-bar');
     expect(markup).not.toContain('ant-select-filled');
     expect(markup).not.toContain('ant-select-show-search');

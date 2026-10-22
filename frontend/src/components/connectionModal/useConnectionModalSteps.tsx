@@ -1,5 +1,9 @@
 import { Alert, Space, Button, Input } from "antd";
 import { t } from "../../i18n";
+import { isPluginDataSourceNamespace } from "../../plugins/dataSource/identity";
+import { findPluginDataSource } from "../../plugins/dataSource/snapshot";
+import { pluginDataSourcePickerHint, PluginDataSourcePickerStatus } from "./pluginDataSourcePicker";
+import { PluginDataSourceDiscoveryStatus } from "./PluginDataSourceDiscoveryStatus";
 import { SearchOutlined, PushpinOutlined } from "@ant-design/icons";
 import { noAutoCapInputProps } from "../../utils/inputAutoCap";
 import { isMacLikePlatform } from "../../utils/appearance";
@@ -263,6 +267,7 @@ export const useConnectionModalSteps = ({
 }: UseConnectionModalStepsInput) => {
   const renderStep1 = () => (
     <div className="gn-conn-picker" data-connection-step="1">
+      <PluginDataSourceDiscoveryStatus />
       {typeSelectWarning && (
         <Alert
           type="warning"
@@ -378,7 +383,7 @@ export const useConnectionModalSteps = ({
             <span>{t("connection.modal.step1.clickToConfigure")}</span>
           </div>
           <div className="gn-conn-picker-grid">
-            {visibleDbTypeItems.map((item) => {
+            {visibleDbTypeItems.slice(0, 120).map((item) => {
               const pinned = pinnedConnectionTypeSet.has(item.key);
               // 卡片所属的数据源分类展示标签。
               const categoryLabel = localizedDbTypeGroups.find((group) =>
@@ -400,6 +405,8 @@ export const useConnectionModalSteps = ({
                     type="button"
                     data-connection-type-key={item.key}
                     aria-label={item.name}
+                    disabled={isPluginDataSourceNamespace(item.key) && !findPluginDataSource(item.key)?.connectable}
+                    title={isPluginDataSourceNamespace(item.key) ? pluginDataSourcePickerHint(item.key, t) : undefined}
                     onClick={() => {
                       void handleTypeSelect(item.key);
                     }}
@@ -431,10 +438,11 @@ export const useConnectionModalSteps = ({
                       <div className="gn-conn-type-card-meta">
                         <div className="gn-conn-type-card-name">{item.name}</div>
                         <div className="gn-conn-type-card-hint">
-                          {getConnectionTypeHint(item.key, t)}
+                          {isPluginDataSourceNamespace(item.key) ? pluginDataSourcePickerHint(item.key, t) : getConnectionTypeHint(item.key, t)}
                         </div>
                       </div>
                     </div>
+                    {isPluginDataSourceNamespace(item.key) && <PluginDataSourcePickerStatus type={item.key} />}
                     {studioTags.length > 0 ? (
                       <div className="gn-conn-type-card-tags" aria-hidden="true">
                         {studioTags.map((tag) => (
@@ -472,6 +480,7 @@ export const useConnectionModalSteps = ({
               );
             })}
           </div>
+          {visibleDbTypeItems.length > 120 && <Alert type="info" showIcon message={t("plugin.datasource.results_limited", { count: 120 })} />}
           {normalizedDbTypeQuery && visibleDbTypeItems.length === 0 ? (
             <div role="status" className="gn-conn-picker-empty">
               {t("connection.modal.step1.search.empty")}

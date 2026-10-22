@@ -1,11 +1,13 @@
 package app
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestMacUpdateLaunchdPlistEscapesScriptPath(t *testing.T) {
@@ -88,6 +90,11 @@ func TestBuildMacScriptSurvivesHangupAfterHostExit(t *testing.T) {
 	bash, err := exec.LookPath("bash")
 	if err != nil {
 		t.Skip("bash not available")
+	}
+	probeContext, cancelProbe := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelProbe()
+	if err := exec.CommandContext(probeContext, bash, "-c", ":").Run(); err != nil {
+		t.Skipf("usable bash runtime unavailable (a Windows WSL launcher alone is insufficient): %v", err)
 	}
 	cmd := exec.Command(bash, "-n")
 	cmd.Stdin = strings.NewReader(script)

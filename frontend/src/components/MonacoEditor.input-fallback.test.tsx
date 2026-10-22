@@ -537,4 +537,51 @@ describe('MonacoEditor printable input fallback', () => {
     expect(value).toBe('axdy');
     expect(position).toEqual({ lineNumber: 1, column: 5 });
   });
+
+  it('does not replay a closing bracket that Monaco already skipped', () => {
+    installFallback();
+
+    // 自动补全括号后再次输入右括号：Monaco 直接跳过已补出的右括号，文本不变、光标右移一格。
+    value = '()';
+    position = { lineNumber: 1, column: 2 };
+    input.dispatchPrintableBeforeInput(')');
+    position = { lineNumber: 1, column: 3 };
+    vi.advanceTimersByTime(200);
+
+    expect(value).toBe('()');
+    expect(position).toEqual({ lineNumber: 1, column: 3 });
+    expect(editor.executeEdits).not.toHaveBeenCalled();
+    expect(editor.trigger).not.toHaveBeenCalled();
+  });
+
+  it('does not replay a skipped closing bracket when the next keystroke arrives first', () => {
+    installFallback();
+
+    value = '()';
+    position = { lineNumber: 1, column: 2 };
+    input.dispatchPrintableBeforeInput(')');
+    position = { lineNumber: 1, column: 3 };
+    input.dispatchPrintableBeforeInput('x');
+    vi.advanceTimersByTime(200);
+
+    expect(value).toBe('()x');
+    expect(editor.executeEdits).not.toHaveBeenCalled();
+  });
+
+  it('still recovers printable text that was dropped before the caret moved', () => {
+    installFallback();
+
+    // 原生输入确实丢失（文本与光标都没变）时，兜底逻辑仍然要补写字符。
+    value = 'ab';
+    position = { lineNumber: 1, column: 3 };
+    input.dispatchPrintableBeforeInput('c');
+    vi.advanceTimersByTime(200);
+
+    expect(value).toBe('abc');
+    expect(editor.trigger).toHaveBeenCalledWith(
+      'gonavi-printable-input-fallback',
+      'type',
+      { text: 'c' },
+    );
+  });
 });

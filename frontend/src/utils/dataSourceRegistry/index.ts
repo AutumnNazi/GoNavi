@@ -7,6 +7,8 @@ import {
 } from './types';
 
 export * from './types';
+import { getPluginDataSourceSpec } from './pluginOverlay';
+import { isPluginDataSourceNamespace, parsePluginDataSourceType } from '../../plugins/dataSource/identity';
 
 // 每个数据源一个描述文件，与 Go 侧 internal/datasource 读取的是同一批文件。
 const specModules = import.meta.glob<DataSourceSpec>('../../../../internal/datasource/specs/*.json', {
@@ -38,10 +40,11 @@ export const listDataSourceSpecs = (): readonly DataSourceSpec[] => registrySpec
 
 /** 把类型名或别名归一为描述表规范类型；不是描述表类型时返回 undefined。 */
 export const resolveDataSourceType = (value: unknown): string | undefined =>
-  canonicalByName.get(normalizeName(value));
+  isPluginDataSourceNamespace(value) ? parsePluginDataSourceType(value)?.type : canonicalByName.get(normalizeName(value));
 
 /** 按类型名或别名查找描述表条目。 */
 export const getDataSourceSpec = (value: unknown): DataSourceSpec | undefined => {
+  if (isPluginDataSourceNamespace(value)) return getPluginDataSourceSpec(value);
   const canonical = resolveDataSourceType(value);
   return canonical ? specsByCanonicalType.get(canonical) : undefined;
 };
@@ -56,7 +59,7 @@ export const getDataSourceVariantSet = (value: unknown): DataSourceVariantSet =>
 
 /** 描述表类型归一；不是描述表类型时原样返回小写值，便于接在历史归一函数的 default 分支。 */
 export const canonicalizeDataSourceType = (value: unknown): string =>
-  resolveDataSourceType(value) ?? normalizeName(value);
+  isPluginDataSourceNamespace(value) ? value : resolveDataSourceType(value) ?? normalizeName(value);
 
 export const isRegistryDataSource = (value: unknown): boolean => resolveDataSourceType(value) !== undefined;
 
@@ -65,6 +68,7 @@ export const isRegistryDataSource = (value: unknown): boolean => resolveDataSour
  * 历史类型不受影响（返回 true，由后端导入能力决定）。
  */
 export const registryAllowsImport = (value: unknown, mode: 'table' | 'sqlFile'): boolean => {
+  if (isPluginDataSourceNamespace(value)) return false;
   const spec = getDataSourceSpec(value);
   if (!spec) {
     return true;

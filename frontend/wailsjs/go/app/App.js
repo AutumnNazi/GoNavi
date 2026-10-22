@@ -1278,6 +1278,118 @@ export function OpenSavedQueryDirectory() {
   return window['go']['app']['App']['OpenSavedQueryDirectory']();
 }
 
+export function PluginAIProviders() {
+  return window['go']['app']['App']['PluginAIProviders']();
+}
+
+export function PluginDataSources() {
+  return window['go']['app']['App']['PluginDataSources']();
+}
+
+export function PluginExporters() {
+  return window['go']['app']['App']['PluginExporters']();
+}
+
+export function PluginInspect(arg1) {
+  return window['go']['app']['App']['PluginInspect'](arg1);
+}
+
+export function PluginInstall(arg1, arg2, arg3) {
+  return window['go']['app']['App']['PluginInstall'](arg1, arg2, arg3);
+}
+
+export function PluginInvoke(arg1, arg2, arg3) {
+  return window['go']['app']['App']['PluginInvoke'](arg1, arg2, arg3);
+}
+
+export function PluginList() {
+  return window['go']['app']['App']['PluginList']();
+}
+
+export function PluginMarketCancelInspection(arg1) {
+  return window['go']['app']['App']['PluginMarketCancelInspection'](arg1);
+}
+
+export function PluginMarketCatalog(arg1, arg2, arg3) {
+  return window['go']['app']['App']['PluginMarketCatalog'](arg1, arg2, arg3);
+}
+
+export function PluginMarketConfigure(arg1) {
+  return window['go']['app']['App']['PluginMarketConfigure'](arg1);
+}
+
+export function PluginMarketDeleteRating(arg1) {
+  return window['go']['app']['App']['PluginMarketDeleteRating'](arg1);
+}
+
+export function PluginMarketDetail(arg1) {
+  return window['go']['app']['App']['PluginMarketDetail'](arg1);
+}
+
+export function PluginMarketInspect(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['PluginMarketInspect'](arg1, arg2, arg3, arg4);
+}
+
+export function PluginMarketInstall(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['App']['PluginMarketInstall'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function PluginMarketLogin() {
+  return window['go']['app']['App']['PluginMarketLogin']();
+}
+
+export function PluginMarketLogout() {
+  return window['go']['app']['App']['PluginMarketLogout']();
+}
+
+export function PluginMarketPollLogin(arg1) {
+  return window['go']['app']['App']['PluginMarketPollLogin'](arg1);
+}
+
+export function PluginMarketRate(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['PluginMarketRate'](arg1, arg2, arg3, arg4);
+}
+
+export function PluginMarketRatings(arg1) {
+  return window['go']['app']['App']['PluginMarketRatings'](arg1);
+}
+
+export function PluginMarketSettings() {
+  return window['go']['app']['App']['PluginMarketSettings']();
+}
+
+export function PluginOpenWindow(arg1) {
+  return window['go']['app']['App']['PluginOpenWindow'](arg1);
+}
+
+export function PluginRemove(arg1, arg2) {
+  return window['go']['app']['App']['PluginRemove'](arg1, arg2);
+}
+
+export function PluginReplace(arg1, arg2, arg3) {
+  return window['go']['app']['App']['PluginReplace'](arg1, arg2, arg3);
+}
+
+export function PluginRuntimeInfo() {
+  return window['go']['app']['App']['PluginRuntimeInfo']();
+}
+
+export function PluginSetEnabled(arg1, arg2) {
+  return window['go']['app']['App']['PluginSetEnabled'](arg1, arg2);
+}
+
+export function PluginSkillRead(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['PluginSkillRead'](arg1, arg2, arg3, arg4);
+}
+
+export function PluginSkillResourceRead(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['App']['PluginSkillResourceRead'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function PluginSkills() {
+  return window['go']['app']['App']['PluginSkills']();
+}
+
 export function PreflightDatabaseSQLImport(arg1, arg2, arg3) {
   return window['go']['app']['App']['PreflightDatabaseSQLImport'](arg1, arg2, arg3);
 }
@@ -1608,6 +1720,14 @@ export function SelectDriverPackageZipFile(arg1) {
 
 export function SelectLogDirectory(arg1) {
   return window['go']['app']['App']['SelectLogDirectory'](arg1);
+}
+
+export function SelectPluginPackageDirectory(arg1) {
+  return window['go']['app']['App']['SelectPluginPackageDirectory'](arg1);
+}
+
+export function SelectPluginPackageFile(arg1) {
+  return window['go']['app']['App']['SelectPluginPackageFile'](arg1);
 }
 
 export function SelectSQLDirectory(arg1) {

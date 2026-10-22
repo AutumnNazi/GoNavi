@@ -14,6 +14,9 @@ export const configureAntdStaticOverlayLayer = (): void => {
     theme: {
       token: {
         zIndexPopupBase: APP_STATIC_FEEDBACK_Z_INDEX_BASE,
+        // Static feedback renders outside the app provider; variables stay live on font changes.
+        fontFamily: 'var(--gn-font-sans)',
+        fontFamilyCode: 'var(--gn-font-mono)',
       },
     },
   });

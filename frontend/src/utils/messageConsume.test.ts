@@ -252,13 +252,15 @@ describe('buildMessageConsumeCommand', () => {
     });
   });
 
-  it('builds a Kafka consume query with an optional per-query group', () => {
+  it('builds a Kafka metadata preview query so payload loads on demand', () => {
+    // 列表只取元数据列：payload 可能有十几 MB，塞进列表帧会让驱动代理单帧超限、
+    // 整条预览流中断；完整内容在点击消息时按 partition+offset 单独拉取。
     expect(buildMessageConsumeCommand(
       { type: 'kafka' },
       { destination: 'orders.events', consumerGroup: 'analytics', limit: 50 },
       t,
     )).toEqual({
-      commandText: 'CONSUME GROUP "analytics" FROM "orders.events" LIMIT 50;',
+      commandText: 'SELECT timestamp, partition, offset, key, value_size FROM "orders.events" LIMIT 50;',
       destinationLabel: 'orders.events',
       mode: 'pull-preview',
     });

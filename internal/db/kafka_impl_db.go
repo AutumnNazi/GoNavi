@@ -158,6 +158,18 @@ func (k *KafkaDB) QueryContext(ctx context.Context, query string) ([]map[string]
 				"total": kafkaTopicMessageCount(description),
 			}}, []string{"topic", "total"}, nil
 		}
+		// WHERE partition = ? AND offset = ? 表示按定位取单条（详情按需加载 payload）。
+		if parsed.Partition != nil && parsed.MsgOffset != nil {
+			record, err := k.runtime.FetchMessageAt(ctx, topic, *parsed.Partition, *parsed.MsgOffset)
+			if err != nil {
+				return nil, nil, err
+			}
+			if record == nil {
+				return []map[string]interface{}{}, []string{}, nil
+			}
+			rows := kafkaMessageRowsProjected([]kafkaMessageRecord{*record}, parsed.Columns)
+			return rows, collectColumns(rows), nil
+		}
 		records, err := k.runtime.FetchMessages(ctx, kafkaFetchRequest{
 			Topic:   topic,
 			Limit:   parsed.Limit,
@@ -168,7 +180,7 @@ func (k *KafkaDB) QueryContext(ctx context.Context, query string) ([]map[string]
 		if err != nil {
 			return nil, nil, err
 		}
-		rows := kafkaMessageRows(records)
+		rows := kafkaMessageRowsProjected(records, parsed.Columns)
 		return rows, collectColumns(rows), nil
 	default:
 		return nil, nil, fmt.Errorf("未实现的 Kafka 查询类型：%s", parsed.Action)

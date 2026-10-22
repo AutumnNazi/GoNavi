@@ -124,20 +124,20 @@ body[data-ui-version="v2"] .gn-v2-ai-context-live-dot {
   background: var(--gn-accent);
 }
 
-/* 模型：占行宽 35% */
-body[data-ui-version="v2"] .gn-v2-ai-model-select {
-  width: auto !important;
+/* 模型按钮按文字收紧。推理计量贴在名称和箭头之间，不再被拉到整行中间。 */
+body[data-ui-version="v2"] .gn-v2-ai-model-bar .gn-v2-ai-model-select {
+  width: max-content !important;
   min-width: 0 !important;
-  max-width: none !important;
+  max-width: min(280px, 100%) !important;
   height: calc(28 * var(--gn-ai-unit, 1px)) !important;
-  flex: 35 1 0 !important;
+  flex: 0 1 auto !important;
 }
 
 body[data-ui-version="v2"] .gn-v2-ai-provider-model-trigger {
   display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: calc(8 * var(--gn-ai-unit, 1px));
+  justify-content: flex-start;
+  gap: calc(6 * var(--gn-ai-unit, 1px));
   padding: 0 calc(8 * var(--gn-ai-unit, 1px));
   border: 0.5px solid var(--gn-br-2);
   border-radius: calc(8 * var(--gn-ai-unit, 1px));
@@ -163,6 +163,12 @@ body[data-ui-version="v2"] .gn-v2-ai-provider-model-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+body[data-ui-version="v2"] .gn-v2-ai-provider-model-trigger .gn-zcode-thought-meter,
+body[data-ui-version="v2"] .gn-v2-ai-provider-model-trigger .gn-zcode-chevron,
+body[data-ui-version="v2"] .gn-v2-ai-provider-model-trigger .gn-zcode-spinner {
+  flex: 0 0 auto;
 }
 
 .gn-v2-ai-provider-model-popup .ant-dropdown-menu {

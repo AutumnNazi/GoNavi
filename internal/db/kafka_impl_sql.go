@@ -25,17 +25,27 @@ type kafkaParsedSQL struct {
 	GroupID string
 	Count   bool
 	Latest  bool
+	// Columns 是 SELECT 的列投影；为空表示全列。列表预览只取元数据列，
+	// payload 由详情查询按 partition+offset 单独拉取。
+	Columns []string
+	// Partition/MsgOffset 来自 WHERE partition = ? AND offset = ?，用于精确定位单条消息。
+	Partition *int
+	MsgOffset *int64
 }
 
 var (
-	kafkaSQLFromRE       = regexp.MustCompile(`(?i)\bFROM\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+))`)
-	kafkaSQLLimitRE      = regexp.MustCompile(`(?i)\bLIMIT\s+(\d+)`)
-	kafkaSQLOffsetRE     = regexp.MustCompile(`(?i)\bOFFSET\s+(\d+)`)
-	kafkaShowTopicsRE    = regexp.MustCompile(`(?i)^\s*SHOW\s+TOPICS(?:\s+LIMIT\s+(\d+))?\s*$`)
-	kafkaShowGroupsRE    = regexp.MustCompile(`(?i)^\s*SHOW\s+CONSUMER\s+GROUPS\s*;?\s*$`)
-	kafkaDescribeGroupRE = regexp.MustCompile(`(?i)^\s*(?:DESCRIBE|SHOW)\s+CONSUMER\s+GROUP\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+))\s*$`)
-	kafkaDescribeTopicRE = regexp.MustCompile(`(?i)^\s*(?:SHOW|DESCRIBE)\s+TOPIC\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+))\s*$`)
-	kafkaConsumeTopicRE  = regexp.MustCompile(`(?i)^\s*CONSUME(?:\s+GROUP\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+)))?\s+FROM\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+))`)
+	kafkaSQLFromRE   = regexp.MustCompile(`(?i)\bFROM\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+))`)
+	kafkaSQLLimitRE  = regexp.MustCompile(`(?i)\bLIMIT\s+(\d+)`)
+	kafkaSQLOffsetRE = regexp.MustCompile(`(?i)\bOFFSET\s+(\d+)`)
+	// 列投影与按 partition/offset 精确定位：列表只取元数据列，详情再按定位拉 payload。
+	kafkaSQLSelectColumnsRE  = regexp.MustCompile(`(?is)^\s*SELECT\s+(.+?)\s+FROM\s+`)
+	kafkaSQLWherePartitionRE = regexp.MustCompile(`(?i)\bWHERE\b[^;]*?\bpartition\s*=\s*(\d+)`)
+	kafkaSQLWhereOffsetRE    = regexp.MustCompile(`(?i)\bWHERE\b[^;]*?\boffset\s*=\s*(\d+)`)
+	kafkaShowTopicsRE        = regexp.MustCompile(`(?i)^\s*SHOW\s+TOPICS(?:\s+LIMIT\s+(\d+))?\s*$`)
+	kafkaShowGroupsRE        = regexp.MustCompile(`(?i)^\s*SHOW\s+CONSUMER\s+GROUPS\s*;?\s*$`)
+	kafkaDescribeGroupRE     = regexp.MustCompile(`(?i)^\s*(?:DESCRIBE|SHOW)\s+CONSUMER\s+GROUP\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+))\s*$`)
+	kafkaDescribeTopicRE     = regexp.MustCompile(`(?i)^\s*(?:SHOW|DESCRIBE)\s+TOPIC\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+))\s*$`)
+	kafkaConsumeTopicRE      = regexp.MustCompile(`(?i)^\s*CONSUME(?:\s+GROUP\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+)))?\s+FROM\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+))`)
 )
 
 func parseKafkaSQL(sqlText string, defaultLatest bool) (kafkaParsedSQL, bool) {
@@ -98,7 +108,41 @@ func parseKafkaSQL(sqlText string, defaultLatest bool) (kafkaParsedSQL, bool) {
 	if offsetMatch := kafkaSQLOffsetRE.FindStringSubmatch(text); len(offsetMatch) > 1 {
 		parsed.Offset, _ = strconv.Atoi(offsetMatch[1])
 	}
+	if columnMatch := kafkaSQLSelectColumnsRE.FindStringSubmatch(text); len(columnMatch) > 1 {
+		parsed.Columns = parseKafkaColumnList(columnMatch[1])
+	}
+	if partitionMatch := kafkaSQLWherePartitionRE.FindStringSubmatch(text); len(partitionMatch) > 1 {
+		if partition, err := strconv.Atoi(partitionMatch[1]); err == nil {
+			parsed.Partition = &partition
+		}
+	}
+	if whereOffsetMatch := kafkaSQLWhereOffsetRE.FindStringSubmatch(text); len(whereOffsetMatch) > 1 {
+		if messageOffset, err := strconv.ParseInt(whereOffsetMatch[1], 10, 64); err == nil {
+			parsed.MsgOffset = &messageOffset
+		}
+	}
 	return parsed, true
+}
+
+// parseKafkaColumnList 解析 SELECT 的列投影；`*` 与空值表示全列（返回 nil）。
+func parseKafkaColumnList(raw string) []string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || trimmed == "*" {
+		return nil
+	}
+	parts := strings.Split(trimmed, ",")
+	columns := make([]string, 0, len(parts))
+	for _, part := range parts {
+		name := strings.ToLower(strings.TrimSpace(strings.Trim(strings.TrimSpace(part), "\"`")))
+		if name == "" {
+			continue
+		}
+		columns = append(columns, name)
+	}
+	if len(columns) == 0 {
+		return nil
+	}
+	return columns
 }
 
 func kafkaConsumerGroupRows(groups []kafkaConsumerGroupInfo) []map[string]interface{} {
@@ -157,7 +201,21 @@ func kafkaDescribeRows(description kafkaTopicDescription) []map[string]interface
 	return rows
 }
 
+// kafkaFlattenMaxPayloadBytes 限制「把 JSON payload 展开成 value.xxx 列」的消息体积。
+// 展开会让同一份内容在行里出现两次（value 与 value.data），十几 MB 的消息会顶满
+// 驱动代理的单帧上限，让整个预览流中断。
+const kafkaFlattenMaxPayloadBytes = 64 << 10
+
 func kafkaMessageRows(records []kafkaMessageRecord) []map[string]interface{} {
+	return kafkaMessageRowsProjected(records, nil)
+}
+
+// kafkaMessageRowsProjected 按列投影构造消息行；columns 为空表示全列。
+//
+// 列表预览只请求元数据列（timestamp/partition/offset/key/value_size），payload 由详情
+// 查询按 partition+offset 单独拉取，避免把十几 MB 的消息塞进列表帧。
+func kafkaMessageRowsProjected(records []kafkaMessageRecord, columns []string) []map[string]interface{} {
+	includeValue := len(columns) == 0 || kafkaColumnSelected(columns, "value")
 	rows := make([]map[string]interface{}, 0, len(records))
 	for _, record := range records {
 		row := map[string]interface{}{
@@ -167,13 +225,21 @@ func kafkaMessageRows(records []kafkaMessageRecord) []map[string]interface{} {
 			"timestamp":       record.Message.Time.Format(time.RFC3339Nano),
 			"high_water_mark": record.Message.HighWaterMark,
 			"key":             record.Key,
-			"value":           record.Value,
 			"headers":         record.Headers,
 			"key_size":        len(record.Message.Key),
 			"value_size":      len(record.Message.Value),
 		}
-		if valueMap, ok := record.Value.(map[string]interface{}); ok {
-			flattenKafkaMap("value", valueMap, row)
+		if includeValue {
+			row["value"] = record.Value
+		}
+		if len(columns) > 0 {
+			rows = append(rows, projectKafkaRow(row, columns))
+			continue
+		}
+		if includeValue {
+			if valueMap, ok := record.Value.(map[string]interface{}); ok && len(record.Message.Value) <= kafkaFlattenMaxPayloadBytes {
+				flattenKafkaMap("value", valueMap, row)
+			}
 		}
 		if keyMap, ok := record.Key.(map[string]interface{}); ok {
 			flattenKafkaMap("key", keyMap, row)
@@ -184,6 +250,26 @@ func kafkaMessageRows(records []kafkaMessageRecord) []map[string]interface{} {
 		rows = append(rows, row)
 	}
 	return rows
+}
+
+func kafkaColumnSelected(columns []string, name string) bool {
+	for _, column := range columns {
+		if column == name {
+			return true
+		}
+	}
+	return false
+}
+
+// projectKafkaRow 只保留请求的列，避免元数据查询把 payload 一并带回。
+func projectKafkaRow(row map[string]interface{}, columns []string) map[string]interface{} {
+	projected := make(map[string]interface{}, len(columns))
+	for _, column := range columns {
+		if value, ok := row[column]; ok {
+			projected[column] = value
+		}
+	}
+	return projected
 }
 
 func flattenKafkaMap(prefix string, values map[string]interface{}, row map[string]interface{}) {

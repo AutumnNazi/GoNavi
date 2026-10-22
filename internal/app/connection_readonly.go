@@ -177,6 +177,9 @@ var readOnlyConnectionActionTextKeys = map[string]string{
 }
 
 func supportsConnectionReadOnlyMode(config connection.ConnectionConfig) bool {
+	if isPluginDataSourceType(config.Type) {
+		return true
+	}
 	_, ok := connectionReadOnlySupportedTypes[resolveConnectionProtectionDBType(config)]
 	ok = ok || registryProtectionSupported(config.Type)
 	return ok
@@ -190,6 +193,17 @@ func hasAnyConnectionProtection(config connection.ConnectionProtectionConfig) bo
 }
 
 func resolveConnectionProtectionConfig(config connection.ConnectionConfig) connection.ConnectionProtectionConfig {
+	if isPluginDataSourceType(config.Type) {
+		if config.PluginWritable && !config.ReadOnly {
+			return config.Protection
+		}
+		return connection.ConnectionProtectionConfig{
+			RestrictDataEdit:        true,
+			RestrictStructureEdit:   true,
+			RestrictScriptExecution: true,
+			RestrictDataImport:      true,
+		}
+	}
 	if !supportsConnectionReadOnlyMode(config) {
 		return connection.ConnectionProtectionConfig{}
 	}
@@ -277,6 +291,12 @@ func readOnlyConnectionActionBlockedMessage(action string) string {
 }
 
 func ensureConnectionAllowsQueryWithText(config connection.ConnectionConfig, query string, text func(string, map[string]any) string) error {
+	if isPluginDataSourceType(config.Type) {
+		if isConnectionScriptExecutionRestricted(config) {
+			return validatePluginReadOnlyQuery(config.Type, query, text)
+		}
+		return nil
+	}
 	text = normalizeReadOnlyConnectionText(text)
 	if isDatabaseJobMutationProtected(config) && hasDatabaseJobMutationSQL(resolveDDLDBType(config), query) {
 		return errors.New(readOnlyConnectionQueryBlockedMessageWithText(text))

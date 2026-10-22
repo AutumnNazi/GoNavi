@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": 1,
+  "id": "fixture.flood",
+  "name": "Failure fixture: flood",
+  "version": "1.0.0",
+  "description": "Adversarial test fixture; use a disposable profile only",
+  "permissions": [],
+  "backend": {
+    "default": {
+      "executable": "bin/plugin",
+      "args": [
+        "--mode",
+        "flood"
+      ],
+      "runtime": "native"
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "run",
+        "title": "Trigger test failure",
+        "effect": "unknown"
+      }
+    ],
+    "panels": []
+  }
+}

@@ -652,6 +652,62 @@ export function OpenSQLFile():Promise<connection.QueryResult>;
 
 export function OpenSavedQueryDirectory():Promise<connection.QueryResult>;
 
+export function PluginAIProviders():Promise<connection.QueryResult>;
+
+export function PluginDataSources():Promise<connection.QueryResult>;
+
+export function PluginExporters():Promise<connection.QueryResult>;
+
+export function PluginInspect(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginInstall(arg1:string,arg2:string,arg3:boolean):Promise<connection.QueryResult>;
+
+export function PluginInvoke(arg1:string,arg2:string,arg3:string):Promise<connection.QueryResult>;
+
+export function PluginList():Promise<connection.QueryResult>;
+
+export function PluginMarketCancelInspection(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginMarketCatalog(arg1:string,arg2:string,arg3:string):Promise<connection.QueryResult>;
+
+export function PluginMarketConfigure(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginMarketDeleteRating(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginMarketDetail(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginMarketInspect(arg1:string,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function PluginMarketInstall(arg1:string,arg2:string,arg3:string,arg4:boolean,arg5:string):Promise<connection.QueryResult>;
+
+export function PluginMarketLogin():Promise<connection.QueryResult>;
+
+export function PluginMarketLogout():Promise<connection.QueryResult>;
+
+export function PluginMarketPollLogin(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginMarketRate(arg1:string,arg2:number,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function PluginMarketRatings(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginMarketSettings():Promise<connection.QueryResult>;
+
+export function PluginOpenWindow(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginRemove(arg1:string,arg2:boolean):Promise<connection.QueryResult>;
+
+export function PluginReplace(arg1:string,arg2:string,arg3:boolean):Promise<connection.QueryResult>;
+
+export function PluginRuntimeInfo():Promise<connection.QueryResult>;
+
+export function PluginSetEnabled(arg1:string,arg2:boolean):Promise<connection.QueryResult>;
+
+export function PluginSkillRead(arg1:string,arg2:string,arg3:string,arg4:number):Promise<connection.QueryResult>;
+
+export function PluginSkillResourceRead(arg1:string,arg2:string,arg3:string,arg4:string,arg5:number):Promise<connection.QueryResult>;
+
+export function PluginSkills():Promise<connection.QueryResult>;
+
 export function PreflightDatabaseSQLImport(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
 export function PrepareWindowsBrandIconRestart(arg1:string):Promise<connection.QueryResult>;
@@ -817,6 +873,10 @@ export function SelectDriverPackageFile(arg1:string):Promise<connection.QueryRes
 export function SelectDriverPackageZipFile(arg1:string):Promise<connection.QueryResult>;
 
 export function SelectLogDirectory(arg1:string):Promise<connection.QueryResult>;
+
+export function SelectPluginPackageDirectory(arg1:string):Promise<connection.QueryResult>;
+
+export function SelectPluginPackageFile(arg1:string):Promise<connection.QueryResult>;
 
 export function SelectSQLDirectory(arg1:string):Promise<connection.QueryResult>;
 

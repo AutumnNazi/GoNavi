@@ -32,14 +32,14 @@ var requiredIssue1098WebRPCContextMethods = []string{
 // Web RPC lifetime is request-scoped. Callers receive a copy so the contract
 // cannot be mutated after server construction.
 func RequiredIssue1098WebRPCContextMethods() []string {
-	return append([]string(nil), requiredIssue1098WebRPCContextMethods...)
+	return append(append([]string(nil), requiredIssue1098WebRPCContextMethods...), pluginContextMethodNames...)
 }
 
 // WebRPCContextHandlers keeps context injection outside App's exported Wails
 // method set. Every handler has the original public signature prefixed by a
 // context.Context; the Web server validates the complete map at construction.
 func WebRPCContextHandlers(a *App) map[string]any {
-	return withFontGalleryContextHandlers(a, withBackgroundGalleryContextHandlers(a, map[string]any{
+	return withPluginContextHandlers(a, withFontGalleryContextHandlers(a, withBackgroundGalleryContextHandlers(a, map[string]any{
 		"DBQuery": func(ctx context.Context, config connection.ConnectionConfig, dbName, query string) connection.QueryResult {
 			return a.dbQueryContext(ctx, config, dbName, query)
 		},
@@ -242,7 +242,7 @@ func WebRPCContextHandlers(a *App) map[string]any {
 		"MockDataGenerate": func(ctx context.Context, config connection.ConnectionConfig, dbName, tableName string, plan mockdata.Plan, options MockDataRunOptions) connection.QueryResult {
 			return a.mockDataGenerateContext(ctx, config, dbName, tableName, plan, options)
 		},
-	}))
+	})))
 }
 
 func (a *App) dbQueryContext(ctx context.Context, config connection.ConnectionConfig, dbName, query string) connection.QueryResult {

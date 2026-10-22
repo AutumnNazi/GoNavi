@@ -1,18 +1,17 @@
 import React from 'react';
-import { Dropdown } from 'antd';
-import type { MenuProps } from 'antd';
-import {
-  CheckOutlined,
-  DownOutlined,
-  LoadingOutlined,
-  SettingOutlined,
-} from '@ant-design/icons';
+import { createPortal } from 'react-dom';
 
 import { t as catalogTranslate } from '../../i18n/catalog';
 import { useOptionalI18n } from '../../i18n/provider';
 import type { AIProviderConfig } from '../../types';
+import type { CLIModelCatalog } from '../../utils/aiProviderManagement';
 import { isLocalCLISubscriptionProvider } from '../../utils/aiProviderPresets';
-import { enabledProviderModels } from '../../utils/aiProviderManagement';
+import ComposerModelMenu from './composerMenu/ComposerModelMenu';
+import { thoughtMeterProgress } from './composerMenu/composerMenuModel';
+import RollingLabel from './composerMenu/RollingLabel';
+import { useComposerModelMenuState } from './composerMenu/useComposerModelMenuState';
+import type { CLIThinkingCapability } from './useAIChatRuntimeResources';
+import './composerMenu/composer-model-menu.css';
 
 interface AIChatProviderModelSelectProps {
   activeProvider?: AIProviderConfig | null;
@@ -25,165 +24,103 @@ interface AIChatProviderModelSelectProps {
   onManageProvider?: (providerId: string) => void;
   onFetchModels: () => void;
   onFetchProviderModels?: (providerId: string) => void;
+  thinkingIntensity?: string;
+  onThinkingIntensityChange?: (value: string) => void;
+  cliCapability?: CLIThinkingCapability;
+  cliCatalog?: CLIModelCatalog;
 }
 
-interface ProviderModelChoice {
-  providerId: string;
-  model: string;
-}
+type Translate = (key: string, params?: Record<string, string | number | boolean | null | undefined>) => string;
 
-const connectedProviders = (
-  providers: AIProviderConfig[] | undefined,
-  activeProvider: AIProviderConfig,
-): AIProviderConfig[] => {
-  const available = Array.isArray(providers) ? providers.filter((provider) => Boolean(provider?.id)) : [];
-  if (available.some((provider) => provider.id === activeProvider.id)) return available;
-  return [activeProvider, ...available];
-};
-
-const selectableModels = (
-  provider: AIProviderConfig,
-  activeProviderId: string,
-  dynamicModels: string[],
-  discoveredModels: string[] = [],
-): string[] => enabledProviderModels(
-  [
-    ...(provider.id === activeProviderId && dynamicModels.length > 0
-      ? dynamicModels
-      : discoveredModels.length > 0 ? discoveredModels : (provider.models || [])),
-    ...(provider.customModels || []),
-    ...(String(provider.model || '').trim() ? [String(provider.model).trim()] : []),
-  ],
-  provider.disabledModels,
+const ChevronDown: React.FC = () => (
+  <svg className="gn-zcode-chevron" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" style={{ transform: 'rotate(90deg)' }}>
+    <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
 );
 
-const AIChatProviderModelSelect: React.FC<AIChatProviderModelSelectProps> = ({
-  activeProvider,
-  providers,
-  providerModels,
-  dynamicModels,
-  loadingModels,
-  onModelChange,
-  onProviderModelChange,
-  onManageProvider,
-  onFetchModels,
-  onFetchProviderModels,
+const AIChatProviderModelMenu: React.FC<AIChatProviderModelSelectProps & { activeProvider: AIProviderConfig; t: Translate }> = ({
+  activeProvider, providers, providerModels, dynamicModels, loadingModels, onModelChange, onProviderModelChange,
+  onManageProvider, onFetchModels, onFetchProviderModels, thinkingIntensity, onThinkingIntensityChange,
+  cliCapability, cliCatalog, t,
 }) => {
+  const state = useComposerModelMenuState({
+    activeProvider, providers, providerModels, dynamicModels, thinkingIntensity, cliCapability, cliCatalog,
+    onModelChange, onProviderModelChange, onManageProvider, onFetchModels, onFetchProviderModels, onThinkingIntensityChange,
+    labelForLevel: (labelKey) => t(labelKey),
+  }, loadingModels);
+  const usesLocalCLI = isLocalCLISubscriptionProvider(activeProvider);
+  const modelLabel = state.currentModel
+    || (usesLocalCLI ? t('ai_settings.provider.auto_model') : t('ai_chat.input.model.placeholder'));
+  const meter = thoughtMeterProgress(state.levels, state.effortValue);
+  const providerName = activeProvider.name || activeProvider.id;
+  return (
+    <>
+      <button
+        ref={state.triggerRef}
+        type="button"
+        className="gn-v2-ai-model-select gn-v2-ai-provider-model-trigger"
+        aria-label={`${providerName}: ${modelLabel}`}
+        aria-haspopup="menu"
+        aria-expanded={state.open}
+        onClick={state.toggle}
+      >
+        <span className="gn-v2-ai-provider-model-label"><RollingLabel label={modelLabel} /></span>
+        {state.levels.length > 0 ? (
+          <span className="gn-zcode-thought-meter" data-testid="composer-thought-meter" data-progress={meter} aria-hidden="true">
+            <span className="gn-zcode-thought-meter-fill" data-highspeed={state.highspeed || undefined} style={{ height: `${meter}%` }} />
+          </span>
+        ) : null}
+        {loadingModels ? <span className="gn-zcode-spinner" role="status" aria-label={t('common.loading')} /> : <ChevronDown />}
+      </button>
+      {state.open && typeof document !== 'undefined' ? createPortal(
+        <ComposerModelMenu
+          groups={state.groups}
+          activeProviderId={activeProvider.id}
+          shownProviderId={state.shownId}
+          currentModel={state.currentModel}
+          narrow={state.narrow}
+          providerOpen={state.providerOpen}
+          loading={loadingModels}
+          levels={state.levels}
+          effortValue={state.effortValue}
+          highspeed={state.highspeed}
+          labels={{
+            provider: t('ai_chat.input.model.provider'),
+            models: t('ai_chat.input.model.models'),
+            effort: t('ai_chat.input.thinking_intensity.label'),
+            back: t('ai_chat.input.model.back'),
+            manage: t('ai_settings.models.manage'),
+            empty: t('ai_settings.models.sync_empty'),
+            auto: t('ai_settings.provider.auto_model'),
+            loading: t('common.loading'),
+          }}
+          menuStyle={state.menuStyle}
+          submenuStyle={state.submenuStyle}
+          menuRef={state.menuRef}
+          submenuRef={state.submenuRef}
+          onProviderOpenChange={state.setProviderOpen}
+          onProviderHoverStart={state.hoverProviderStart}
+          onProviderHoverEnd={state.hoverProviderEnd}
+          onProviderPointerEnter={state.fetchProvider}
+          onSelectProvider={state.selectProvider}
+          onSelectModel={state.selectModel}
+          onEffortChange={state.changeEffort}
+          onManage={state.manage}
+          onCloseProviders={state.closeProviders}
+          onCloseMenu={state.closeMenu}
+        />,
+        document.body,
+      ) : null}
+    </>
+  );
+};
+
+const AIChatProviderModelSelect: React.FC<AIChatProviderModelSelectProps> = (props) => {
   const i18n = useOptionalI18n();
   const t = i18n?.t ?? ((key: string, params?: Record<string, string | number | boolean | null | undefined>) =>
     catalogTranslate('en-US', key, params));
-  const [open, setOpen] = React.useState(false);
-
-  if (!activeProvider) return null;
-
-  const choicesByKey = new Map<string, ProviderModelChoice>();
-  const providerIdByMenuKey = new Map<string, string>();
-  let selectedKey = '';
-  const autoModelLabel = t('ai_settings.provider.auto_model');
-  const providerItems: MenuProps['items'] = connectedProviders(providers, activeProvider).map((provider, providerIndex) => {
-    const usesLocalCLI = isLocalCLISubscriptionProvider(provider);
-    const models = selectableModels(provider, activeProvider.id, dynamicModels, providerModels?.[provider.id]);
-    const modelChoices = usesLocalCLI ? ['', ...models] : models;
-    const children: NonNullable<MenuProps['items']> = modelChoices.map((model, modelIndex) => {
-      const key = `provider-model-${providerIndex}-${modelIndex}`;
-      choicesByKey.set(key, { providerId: provider.id, model });
-      if (provider.id === activeProvider.id && model === String(activeProvider.model || '').trim()) {
-        selectedKey = key;
-      }
-      return {
-        key,
-        label: model || autoModelLabel,
-        icon: provider.id === activeProvider.id && model === String(activeProvider.model || '').trim()
-          ? <CheckOutlined />
-          : undefined,
-      };
-    });
-    if (children.length === 0) {
-      children.push({
-        key: `provider-empty-${providerIndex}`,
-        label: t('ai_settings.models.sync_empty'),
-        disabled: true,
-      });
-    }
-    const providerKey = `provider-${providerIndex}`;
-    providerIdByMenuKey.set(providerKey, provider.id);
-    return {
-      key: providerKey,
-      label: provider.name || provider.id,
-      children,
-    };
-  });
-
-  const menuItems: MenuProps['items'] = [
-    ...providerItems,
-    { type: 'divider' },
-    {
-      key: 'manage-models',
-      icon: <SettingOutlined />,
-      label: t('ai_settings.models.manage'),
-    },
-  ];
-  const usesLocalCLI = isLocalCLISubscriptionProvider(activeProvider);
-  const currentModelLabel = String(activeProvider.model || '').trim()
-    || (usesLocalCLI ? autoModelLabel : t('ai_chat.input.model.placeholder'));
-  const triggerLabel = `${activeProvider.name || activeProvider.id} / ${currentModelLabel}`;
-
-  const handleMenuClick: NonNullable<MenuProps['onClick']> = ({ key }) => {
-    if (key === 'manage-models') {
-      onManageProvider?.(activeProvider.id);
-      setOpen(false);
-      return;
-    }
-    const choice = choicesByKey.get(key);
-    if (!choice) return;
-    if (onProviderModelChange) {
-      void onProviderModelChange(choice.providerId, choice.model);
-    } else if (choice.providerId === activeProvider.id) {
-      void onModelChange(choice.model);
-    }
-    setOpen(false);
-  };
-
-  const handleOpenChange = (nextOpen: boolean) => {
-    setOpen(nextOpen);
-    if (
-      nextOpen
-      && selectableModels(activeProvider, activeProvider.id, dynamicModels, providerModels?.[activeProvider.id]).length === 0
-      && !usesLocalCLI
-    ) {
-      onFetchModels();
-    }
-  };
-
-  return (
-    <Dropdown
-      open={open}
-      trigger={['click']}
-      placement="topLeft"
-      overlayClassName="gn-v2-ai-provider-model-popup"
-      onOpenChange={handleOpenChange}
-      menu={{
-        items: menuItems,
-        selectedKeys: selectedKey ? [selectedKey] : [],
-        onClick: handleMenuClick,
-        onOpenChange: (openKeys) => {
-          const providerId = providerIdByMenuKey.get(String(openKeys[openKeys.length - 1] || ''));
-          if (providerId) onFetchProviderModels?.(providerId);
-        },
-      }}
-    >
-      <button
-        type="button"
-        className="gn-v2-ai-model-select gn-v2-ai-provider-model-trigger"
-        aria-label={triggerLabel}
-        aria-haspopup="menu"
-        aria-expanded={open}
-      >
-        <span className="gn-v2-ai-provider-model-label">{triggerLabel}</span>
-        {loadingModels ? <LoadingOutlined spin /> : <DownOutlined />}
-      </button>
-    </Dropdown>
-  );
+  if (!props.activeProvider) return null;
+  return <AIChatProviderModelMenu {...props} activeProvider={props.activeProvider} t={t} />;
 };
 
 export default AIChatProviderModelSelect;

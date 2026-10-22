@@ -1,4 +1,6 @@
 import { message } from "antd";
+import { isPluginDataSourceNamespace } from "../../plugins/dataSource/identity";
+import { refreshPluginDataSources } from "../../plugins/dataSource/discovery";
 import { resolveConnectionDriverType } from "../../utils/connectionDriverType";
 import {
   buildConnectionConfig,
@@ -125,7 +127,7 @@ export const useConnectionModalSaveAndTest = ({
             ? ""
             : formValues.password,
       };
-      const unavailableReason = await resolveDriverUnavailableReason(
+      const unavailableReason = isPluginDataSourceNamespace(values.type) ? "" : await resolveDriverUnavailableReason(
         values.type,
         values.driver,
       );
@@ -583,6 +585,7 @@ export const useConnectionModalSaveAndTest = ({
       ) {
         activeNacosTestRunIdRef.current = "";
       }
+      if (isPluginDataSourceNamespace(dbType)) void refreshPluginDataSources();
       if (isCurrentTestRun()) {
         testInFlightRef.current = false;
         setTestingConnection(false);

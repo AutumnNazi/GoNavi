@@ -109,9 +109,25 @@ export const isSchemaScopedTableOverviewDialect = (dialect: string): boolean => 
     'gaussdb',
 ].includes(dialect);
 
-const TABLE_LIST_OVERVIEW_DIALECTS = new Set(['tdengine', 'sqlite', 'sqlite3', 'milvus', 'milvusdb', 'milvus-db']);
+const TABLE_LIST_OVERVIEW_DIALECTS = new Set([
+    'tdengine', 'sqlite', 'sqlite3', 'milvus', 'milvusdb', 'milvus-db',
+    // 以下方言既没有 information_schema，也没有 internal/datasource/specs 描述文件可以覆盖表状态
+    // 查询，只能在这里显式列出；否则表概览会回落到信息模式 SQL：轻则报「获取表信息失败」，
+    // 重则被驱动当成元数据查询直接返回空结果，界面静默显示空列表。
+    'mongodb',
+    // 向量库与时序库：只有各自的集合 / 设备列表接口，没有关系型元数据。
+    'chroma', 'qdrant', 'iotdb',
+    // Elasticsearch 与 OpenSearch 的元数据方言都归一为 elasticsearch（见 opensearch 描述文件的
+    // ddlDialect / family），两者共用同一个驱动的索引枚举接口。
+    'elasticsearch',
+    // 消息队列与 Redis：各自的 topic / queue / key 枚举接口就是表概览的数据来源，驱动不接受
+    // SQL 元数据查询（Redis 的表清单走后端 DBGetTables 的 ScanKeys 分支）。
+    'kafka', 'pulsar', 'rocketmq', 'mqtt', 'rabbitmq', 'redis',
+]);
 
-/** 表概览改用 DBGetTables 表名列表的方言：没有 information_schema 的 TDengine / SQLite / Milvus，
+/** 表概览改用 DBGetTables 表名列表的方言：没有 information_schema 的 TDengine / SQLite / Milvus /
+ * MongoDB / Chroma / Qdrant / IoTDB / Elasticsearch（含 OpenSearch），消息队列（Kafka、Pulsar、
+ * RocketMQ、MQTT、RabbitMQ）与 Redis，
  * 以及非 SQL 查询语言、也没有声明表状态查询的描述表数据源（etcd、ZooKeeper、Weaviate、InfluxDB 等）。 */
 export const usesTableListOverview = (dialect: string, connType?: string): boolean => {
     if (TABLE_LIST_OVERVIEW_DIALECTS.has(dialect)) return true;

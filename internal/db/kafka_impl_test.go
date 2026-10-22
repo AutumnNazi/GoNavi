@@ -25,6 +25,10 @@ type fakeKafkaRuntime struct {
 	lastFetchRequest     kafkaFetchRequest
 	lastPublishCommand   kafkaPublishCommand
 	fetchCount           int
+	fetchAtCount         int
+	lastFetchAtTopic     string
+	lastFetchAtPartition int
+	lastFetchAtOffset    int64
 	consumerGroupsResult []kafkaConsumerGroupInfo
 	consumerGroupsErr    error
 	lastConsumerGroupID  string
@@ -230,6 +234,18 @@ func (f *fakeKafkaRuntime) FetchMessages(ctx context.Context, request kafkaFetch
 	f.fetchCount++
 	f.lastFetchRequest = request
 	return append([]kafkaMessageRecord(nil), f.fetchResult...), nil
+}
+
+func (f *fakeKafkaRuntime) FetchMessageAt(ctx context.Context, topic string, partition int, offset int64) (*kafkaMessageRecord, error) {
+	f.fetchAtCount++
+	f.lastFetchAtTopic = topic
+	f.lastFetchAtPartition = partition
+	f.lastFetchAtOffset = offset
+	if len(f.fetchResult) == 0 {
+		return nil, nil
+	}
+	record := f.fetchResult[0]
+	return &record, nil
 }
 
 func (f *fakeKafkaRuntime) Publish(ctx context.Context, command kafkaPublishCommand) (int64, error) {

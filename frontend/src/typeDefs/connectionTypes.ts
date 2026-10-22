@@ -43,6 +43,7 @@ export interface ConnectionConfig {
   savePassword?: boolean;
   database?: string;
   readOnly?: boolean;
+  pluginWritable?: boolean;
   protection?: ConnectionProtectionConfig;
   useSSL?: boolean;
   sslMode?: "preferred" | "required" | "skip-verify" | "disable";

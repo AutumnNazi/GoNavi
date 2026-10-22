@@ -21,6 +21,7 @@ import (
 	"GoNavi-Wails/internal/logger"
 	"GoNavi-Wails/internal/mcpserver"
 	"GoNavi-Wails/internal/nativewindow"
+	"GoNavi-Wails/internal/plugin"
 	"GoNavi-Wails/internal/webserver"
 	"GoNavi-Wails/shared/i18n"
 
@@ -87,6 +88,9 @@ func shouldEnableWindowsMSISingleInstance(goos string, executablePath string) bo
 }
 
 func main() {
+	if !configurePluginProcessArgs() {
+		return
+	}
 	if app.HandleWindowsRuntimeReaperArgs(os.Args[1:]) {
 		return
 	}
@@ -116,12 +120,7 @@ func main() {
 	if handOffDeepLink(os.Args[1:], executablePath) {
 		return
 	}
-	handled, err := runSpecialMode(os.Args[1:])
-	if handled {
-		if err != nil && !isNormalSpecialModeExit(err) {
-			reportFatalError(err, "GoNavi 特殊模式退出")
-			os.Exit(1)
-		}
+	if finishSpecialMode(os.Args[1:]) {
 		return
 	}
 	isWindowsDesktop := strings.EqualFold(strings.TrimSpace(runtime.GOOS), "windows")
@@ -162,7 +161,12 @@ func main() {
 	app.StartWindowsRuntimeProcessReaper()
 	// Create an instance of the app structure
 	application := app.NewApp()
+	configureDesktopPlugins(application)
 	aiService := aiservice.NewServiceWithConfigChangeHandler(app.NewCloudBackupChangeHandler(application))
+	if err := configureDesktopPluginAIProvider(application, aiService); err != nil {
+		reportFatalError(err, "初始化插件 AI 供应商失败")
+		return
+	}
 	aiservice.SetBuiltinAIClientVersion(app.CurrentVersion())
 	// Load the persisted AI configuration before any binding is served: Wails runs
 	// OnStartup in a goroutine, so the AI panel can read the provider list before
@@ -214,7 +218,7 @@ func main() {
 	startupGate := newStartupWindowGate()
 
 	// Create application with options
-	err = wails.Run(&options.App{
+	err := wails.Run(&options.App{
 		Title:              "GoNavi",
 		Logger:             logger.NewWailsAdapter(),
 		LogLevel:           wailslogger.INFO,
@@ -366,10 +370,17 @@ func newDesktopAgentToolCatalog(application *app.App, aiService *aiservice.Servi
 	if err != nil {
 		return nil, err
 	}
-	return mcpserver.NewCompositeToolCatalog(
+	ordinary := mcpserver.NewCompositeToolCatalog(
 		mcpserver.NewAgentToolCatalogWithDynamicSource(backend, mcpserver.NewServiceMCPSource(aiService)),
 		mcpserver.NewWorkspaceSnapshotToolCatalog(),
-	), nil
+		mcpserver.NewAppPluginToolCatalog(func(ctx context.Context) (*plugin.Manager, error) {
+			return app.PluginManagerForIntegration(ctx, application)
+		}),
+	)
+	skills := mcpserver.NewAppPluginSkillCatalog(func(ctx context.Context) (*plugin.Manager, error) {
+		return app.PluginSkillManagerForIntegration(ctx, application)
+	})
+	return mcpserver.NewCompositeToolCatalog(mcpserver.NewPluginSkillAugmentedCatalog(ordinary, skills)), nil
 }
 
 // buildMacApplicationMenu 组装 macOS 菜单栏；extraMenus 按顺序追加在 SQL 之后。
@@ -396,12 +407,19 @@ func buildMacApplicationMenu(onNativeSelectCurrentLine func(), frameless bool, e
 }
 
 func runSpecialMode(args []string) (bool, error) {
+	if hasDesktopCLIPrefix(args) {
+		return true, runDesktopPluginCLI(args)
+	}
 	if len(args) == 0 {
 		return false, nil
 	}
 
 	mode := strings.ToLower(strings.TrimSpace(args[0]))
 	switch mode {
+	case "plugin-window", "--plugin-window":
+		return true, runPluginWindowMode(args[1:])
+	case "plugin":
+		return true, runDesktopPluginCLI(args)
 	case "sync-worker":
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()

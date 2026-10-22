@@ -9,9 +9,8 @@ import (
 	"GoNavi-Wails/internal/ai/runharness"
 	aiservice "GoNavi-Wails/internal/ai/service"
 	"GoNavi-Wails/internal/appdata"
+	"GoNavi-Wails/internal/logger"
 	"GoNavi-Wails/internal/mcpserver"
-
-	"github.com/google/uuid"
 )
 
 func defaultAgentHarnessFactory(ctx context.Context, options AgentHarnessOptions) (AgentHarnessRuntime, error) {
@@ -67,23 +66,7 @@ func defaultAgentHarnessFactory(ctx context.Context, options AgentHarnessOptions
 		})
 		return nil, fmt.Errorf("initialize agent MCP tools: %w", err)
 	}
-	providerResolver := newCLIProviderResolverState(root)
-	model := runharness.NewProviderModelTurnAdapter(providerResolver.resolve)
-	config := runharness.HarnessConfig{
-		Ledger: ledger,
-		Model:  model,
-		InputBinder: func(_ context.Context, request *runharness.AgentInputRequest) error {
-			return providerResolver.bindInput(request)
-		},
-		Tools:                          newCLIAgentToolCatalog(backend, mcpService),
-		Approvals:                      newCLIAgentApprovalHandler(),
-		RootContext:                    ctx,
-		OwnerID:                        "gonavi-cli-" + uuid.NewString(),
-		PollInterval:                   runtimeConfig.ControlPollInterval,
-		WorkspaceSnapshotLeaseDuration: runtimeConfig.WorkspaceSnapshotLeaseDuration,
-		WorkspaceSnapshotRenewInterval: runtimeConfig.WorkspaceSnapshotRenewInterval,
-	}
-	harness, err := runharness.NewAgentRunHarness(config)
+	providerResolver, harness, err := newCLIPluginProviderHarness(ctx, root, ledger, backend, mcpService, runtimeConfig)
 	if err != nil {
 		_ = closeAgentRuntimeResources(ctx, agentRuntimeResources{
 			shutdownMCP:  func(ctx context.Context) { aiservice.ShutdownWithContext(mcpService, ctx) },
@@ -104,6 +87,9 @@ func defaultAgentHarnessFactory(ctx context.Context, options AgentHarnessOptions
 		}
 	}
 	if options.StartWorkers {
+		if err := mcpserver.ActivatePluginToolsForBackend(ctx, backend); err != nil {
+			logger.Warnf("Plugin tool runtime unavailable; Agent built-ins remain enabled")
+		}
 		if err := harness.Start(ctx); err != nil {
 			_ = closeAgentRuntimeResources(ctx, agentRuntimeResources{
 				closeHarness: harness.Close,

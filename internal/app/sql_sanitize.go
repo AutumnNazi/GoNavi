@@ -3,6 +3,8 @@ package app
 import (
 	"strings"
 	"unicode"
+
+	"GoNavi-Wails/internal/sqlparam"
 )
 
 func leadingSQLKeyword(query string) string {
@@ -299,6 +301,15 @@ func skipSQLQuotedOrComment(text string, start int, dbTypes ...string) (int, boo
 		return skipSQLDelimited(text, start, text[start]), true
 	case text[start] == '[' && supportsSQLBracketIdentifier(dbType):
 		return skipSQLBracketIdentifier(text, start), true
+	case isOracleLikeDBType(dbType) &&
+		(text[start] == 'q' || text[start] == 'Q' || text[start] == 'n' || text[start] == 'N'):
+		// Oracle 替代引号 q'X...X'：内容整体是字面量，其中的撇号不是字符串
+		// 边界。不认它会让 q'[it's]' 之后的 DELETE 进入幻影字符串被漏判
+		// （只读守卫放行）。找不到闭合时按普通词法继续，不吞后续文本。
+		if end, ok := sqlparam.OracleAlternativeQuoteEnd(text, start); ok {
+			return end, true
+		}
+		return start, false
 	default:
 		if tag, ok := sqlDollarQuoteTag(text, start); ok {
 			end := strings.Index(text[start+len(tag):], tag)
@@ -342,34 +353,6 @@ func sqlDollarQuoteTag(text string, start int) (string, bool) {
 
 func isSQLKeywordByte(ch byte) bool {
 	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_'
-}
-
-func normalizeSQLClassifierDBType(dbType string) string {
-	normalized := strings.ToLower(strings.TrimSpace(dbType))
-	switch normalized {
-	case "postgresql":
-		return "postgres"
-	case "mssql", "sql_server", "sql-server":
-		return "sqlserver"
-	case "open_gauss", "open-gauss":
-		return "opengauss"
-	case "gauss_db", "gauss-db":
-		return "gaussdb"
-	case "kingbase8", "kingbasees", "kingbasev8":
-		return "kingbase"
-	case "milvusdb", "milvus-db":
-		return "milvus"
-	case "intersystems", "intersystemsiris", "inter-systems", "inter-systems-iris":
-		return "iris"
-	case "cache", "caché", "intersystems cache", "intersystems caché", "intersystems-cache", "intersystems-caché", "intersystemscache", "intersystemscaché", "inter-systems-cache", "inter-systems-caché", "intersystems-cache-database", "cache-db", "cachedb":
-		return "iris"
-	default:
-		// 描述表类型按借用方言分类（TiDB → mysql、OpenSearch → elasticsearch），与 resolveDDLDBType 一致。
-		if dialect, ok := registryDDLDialect(normalized); ok {
-			return dialect
-		}
-		return normalized
-	}
 }
 
 func isSQLServerDBType(dbType string) bool {

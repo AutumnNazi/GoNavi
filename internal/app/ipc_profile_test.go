@@ -37,8 +37,10 @@ func TestIpcProfileWritesQueryTimings(t *testing.T) {
 	if result.ConnWaitMs != 42 {
 		t.Fatalf("ConnWaitMs = %d, want 42", result.ConnWaitMs)
 	}
-	if result.EncodeMs <= 0 {
-		t.Fatalf("EncodeMs = %d, want > 0（500 行结果的 JSON 编码不可能真的 0 微秒）", result.EncodeMs)
+	// A fast encoding may fit within one clock tick. Exact elapsed recording
+	// is covered independently with an injected clock, not a minimum duration.
+	if result.EncodeMs < 0 {
+		t.Fatalf("EncodeMs = %d, want a nonnegative measurement", result.EncodeMs)
 	}
 }
 
@@ -155,8 +157,10 @@ func TestIpcProfileCompactTransportOverwritesEncodeCost(t *testing.T) {
 	if compact.EncodeMs == staleEncodeMs {
 		t.Fatalf("EncodeMs 仍是压缩前的值(%d)，覆盖没生效", staleEncodeMs)
 	}
-	if compact.EncodeMs <= 0 {
-		t.Fatalf("EncodeMs = %d, want > 0", compact.EncodeMs)
+	// The sentinel above proves replacement. A real clock may legitimately
+	// quantize a fast compact encoding to zero; never manufacture a duration.
+	if compact.EncodeMs < 0 {
+		t.Fatalf("EncodeMs = %d, want a nonnegative measurement", compact.EncodeMs)
 	}
 	// 三段里的另两段必须原样带过压缩边界。
 	if compact.DurationMs != 100 || compact.MainQueryMs != 100 || compact.ConnWaitMs != 4 {

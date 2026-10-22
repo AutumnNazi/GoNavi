@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, Button, Empty, Modal, Space, Tooltip, message } from 'antd';
 import {
   ClearOutlined,
@@ -20,6 +20,8 @@ import {
   MAX_VISIBLE_MESSAGES,
   normalizeRows,
   buildAdvancedMessageQuery,
+  buildMessageDetailCommand,
+  hasMessagePayload,
 } from './messageQueue/messageQueueWorkbenchModel';
 import { useMessageQueueWorkbenchState } from './messageQueue/hooks/useMessageQueueWorkbenchState';
 import { useMessageQueueWorkbenchView } from './messageQueue/hooks/useMessageQueueWorkbenchView';
@@ -51,6 +53,52 @@ const MessageQueueWorkbench: React.FC<MessageQueueWorkbenchProps> = ({ tab }) =>
     setPublishDefaults, setPublishModalOpen, t, setConsumeModalOpen, subscriptions,
     selectedSubscriptionId, publishDefaults, profile, searchText, messages, directionFilter,
   });
+
+  // 列表只取元数据（时间 / partition / offset / key / 大小），payload 在用户选中消息时
+  // 按 partition+offset 单独拉取，避免十几 MB 的消息塞满列表帧。
+  const [messageDetails, setMessageDetails] = useState<Record<string, Record<string, any>>>({});
+  const [loadingDetailId, setLoadingDetailId] = useState('');
+  const loadMessageDetail = useCallback(async (item: { id: string; destination: string; row: Record<string, any> }) => {
+    if (!connection || hasMessagePayload(item.row) || messageDetails[item.id]) return;
+    const command = buildMessageDetailCommand(profile?.type, item.destination, item.row);
+    if (!command) return;
+    setLoadingDetailId(item.id);
+    try {
+      const result = await DBQuery(
+        buildRpcConnectionConfig(connection.config) as any,
+        executionDbName,
+        command,
+      );
+      if (result?.success) {
+        const rows = normalizeRows(result.data);
+        if (rows[0]) {
+          setMessageDetails((current) => ({ ...current, [item.id]: rows[0] }));
+          return;
+        }
+      }
+      // 失败或取到空结果都要给反馈：否则加载态消失、正文空白，用户不知道发生了什么。
+      void message.error(result?.message || t('message_queue_workbench.message.load_failed'));
+    } catch (error) {
+      void message.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLoadingDetailId('');
+    }
+  }, [connection, executionDbName, messageDetails, profile?.type]);
+  // 「跟随最新消息」会自动选中最新一条（走 setSelectedMessageId，不经过卡片点击），
+  // 这里补上同一条路径：选中即加载，避免右侧停在「点按钮加载」的状态。
+  // 流式消费（CONSUME）返回的行自带 payload，不会命中这个分支。
+  const requestedDetailIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!selectedMessage) return;
+    if (hasMessagePayload(selectedMessage.row)) return;
+    if (requestedDetailIdsRef.current.has(selectedMessage.id)) return;
+    requestedDetailIdsRef.current.add(selectedMessage.id);
+    void loadMessageDetail(selectedMessage);
+  }, [selectedMessage, loadMessageDetail]);
+
+  const selectedMessageWithDetail = selectedMessage
+    ? { ...selectedMessage, row: { ...selectedMessage.row, ...(messageDetails[selectedMessage.id] || {}) } }
+    : null;
 
   if (!connection || !profile) {
     return (
@@ -160,7 +208,8 @@ const MessageQueueWorkbench: React.FC<MessageQueueWorkbenchProps> = ({ tab }) =>
           searchText={searchText} setSearchText={setSearchText} listRef={listRef}
           setListViewport={setListViewport} filteredMessages={filteredMessages}
           messages={messages} windowedMessages={windowedMessages} subscriptions={subscriptions}
-          selectedMessage={selectedMessage} selectMessage={selectMessage}
+          selectedMessage={selectedMessageWithDetail} selectMessage={selectMessage}
+          onLoadDetail={loadMessageDetail} loadingDetailId={loadingDetailId}
         />
       </div>
 

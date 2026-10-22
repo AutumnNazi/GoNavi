@@ -4,6 +4,7 @@ import {
   PRINTABLE_INPUT_FALLBACK_DELAY_MS,
 } from './monacoEditorConstants';
 import { sameEditorPosition, isSelectionEmpty, sameEditorRange } from './monacoEditorPositions';
+import { isPrintableInputConsumedWithoutTextChange } from './printableInputConsumption';
 
 export const installPrintableInputFallback = (editor: any, monaco: any) => {
   const editorDomNode = editor?.getDomNode?.();
@@ -196,6 +197,22 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
   const hasNativeInputApplied = (pending: NonNullable<typeof pendingInput>): boolean => (
     getPendingNativeInputDelta(pending)?.insertedText === pending.text
   );
+
+  // Monaco 会「吃掉」某些按键而不改动文本（例如自动补全括号后再次输入右括号时直接跳过右括号），
+  // 这类输入必须视为已生效，一旦回放就会多出一个右括号。
+  const isConsumedWithoutTextChange = (
+    pending: { valueBefore: string; offsetBefore: number; text: string },
+    currentValue: string,
+    currentPosition: any,
+  ): boolean => {
+    const model = editor.getModel?.();
+    const currentOffset = Number(model?.getOffsetAt?.(currentPosition));
+    return isPrintableInputConsumedWithoutTextChange(
+      pending,
+      currentValue,
+      Number.isFinite(currentOffset) ? currentOffset : undefined,
+    );
+  };
 
   const isPendingInputContextCurrent = (
     pending: NonNullable<typeof pendingInput>,
@@ -477,7 +494,9 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
       clearPendingInput();
     }
     if (pendingInput && !isPendingInputContextCurrent(pendingInput, beforeValue, beforePosition)) {
-      recoverPendingInputAtOriginalPosition(pendingInput, beforePosition);
+      if (!isConsumedWithoutTextChange(pendingInput, beforeValue, beforePosition)) {
+        recoverPendingInputAtOriginalPosition(pendingInput, beforePosition);
+      }
       clearPendingInput();
       beforeValue = String(editor.getValue?.() ?? '');
       beforePosition = editor.getPosition?.();
@@ -529,7 +548,9 @@ export const installPrintableInputFallback = (editor: any, monaco: any) => {
         return;
       }
       if (afterValue !== pending.valueBefore || !sameEditorPosition(pending.positionBefore, afterPosition)) {
-        recoverPendingInputAtOriginalPosition(pending, afterPosition);
+        if (!isConsumedWithoutTextChange(pending, afterValue, afterPosition)) {
+          recoverPendingInputAtOriginalPosition(pending, afterPosition);
+        }
         return;
       }
       editor.trigger?.('gonavi-printable-input-fallback', 'type', { text: pending.text });

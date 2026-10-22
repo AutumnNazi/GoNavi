@@ -1,0 +1,31 @@
+.plugin-manager { color: var(--gn-fg-1); font-family: var(--gn-font-sans); padding: 4px 0 20px; min-width: 0; }
+.plugin-manager-heading .ant-typography { margin-top: 0; }
+.plugin-stack, .plugin-ui-column { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.plugin-toolbar, .plugin-card-header, .plugin-ui-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.plugin-ui-row { justify-content: flex-start; flex-wrap: wrap; }
+.plugin-toolbar > .ant-input, .plugin-toolbar > .ant-input-affix-wrapper { flex: 1; min-width: 100px; }
+.plugin-card { border: 1px solid var(--gn-br-2); border-radius: 8px; background: var(--gn-bg-panel); padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.plugin-card .ant-typography { margin: 0; }
+.plugin-identity, .plugin-break, .plugin-result { font-family: var(--gn-font-mono); overflow-wrap: anywhere; }
+.plugin-identity { color: var(--gn-fg-3); font-size: 12px; }
+.plugin-lifecycle { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; align-items: center; padding-block: 10px; border-block: 1px solid var(--gn-br-1); }
+.plugin-state-rail { display: flex; gap: 16px; align-items: center; }
+.plugin-state-rail > div { display: grid; gap: 4px; }
+.plugin-state-rail > div > span:first-child { color: var(--gn-fg-3); font-size: 12px; }
+.plugin-state-rail .ant-tag { margin: 0; }
+.plugin-state-arrow { color: var(--gn-fg-4); }
+.plugin-local-install { padding: 16px; background: var(--gn-bg-panel-2); border: 1px dashed var(--gn-br-3); border-radius: 8px; }
+.plugin-permissions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.plugin-embedded-panel { padding-top: 8px; }
+.plugin-html-frame { display: block; width: 100%; min-height: 480px; border: 1px solid var(--gn-br-2); border-radius: 8px; background: var(--gn-bg-panel-2); }
+.plugin-result { max-height: 280px; overflow: auto; white-space: pre-wrap; margin: 0; padding: 12px; background: var(--gn-bg-panel-2); border-radius: 6px; }
+.plugin-market-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 12px; }
+.plugin-market-card { border-inline-start: 3px solid var(--gn-br-2); }
+.plugin-market-card[data-official="true"] { border-inline-start-color: var(--gn-accent); }
+.plugin-market-metrics { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; color: var(--gn-fg-3); font-size: 12px; }
+.plugin-account-code { font-family: var(--gn-font-mono); letter-spacing: 0.14em; font-size: 22px; }
+.plugin-rating { border-top: 1px solid var(--gn-br-1); padding-top: 12px; }
+.plugin-rating-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.plugin-manager button:focus-visible, .plugin-manager a:focus-visible { outline: 2px solid var(--gn-accent); outline-offset: 3px; }
+@media (max-width: 600px) { .plugin-toolbar { flex-wrap: wrap; } .plugin-state-rail { gap: 10px; } .plugin-card { padding: 12px; } }
+@media (prefers-reduced-motion: reduce) { .plugin-manager *, .plugin-manager *::before, .plugin-manager *::after { transition-duration: 0s !important; animation-duration: 0s !important; } }

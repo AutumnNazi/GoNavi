@@ -349,7 +349,7 @@ func TestCLIProviderResolverUsesBoundConfigAfterSettingsChange(t *testing.T) {
 		RequestID: "run-freeze-1", Content: "hello", Model: "turn-model", Thinking: "high",
 		Temperature: &temperature, MaxTokens: &maxTokens,
 	}
-	if err := resolver.bindInput(&input); err != nil {
+	if err := resolver.bindInput(context.Background(), &input); err != nil {
 		t.Fatalf("bind input: %v", err)
 	}
 	if input.Provider != base.ID || !input.HasProviderBinding() {
@@ -402,7 +402,7 @@ func TestCLIProviderResolverBindsCurrentActiveProviderID(t *testing.T) {
 	}
 	resolver := newCLIProviderResolverState(root)
 	first := runharness.AgentInputRequest{RequestID: "provider-a", Content: "hello"}
-	if err := resolver.bindInput(&first); err != nil {
+	if err := resolver.bindInput(context.Background(), &first); err != nil {
 		t.Fatalf("bind input with first active provider: %v", err)
 	}
 	if first.Provider != providerA.ID || !first.HasProviderBinding() {
@@ -412,7 +412,7 @@ func TestCLIProviderResolverBindsCurrentActiveProviderID(t *testing.T) {
 		t.Fatalf("save updated provider config: %v", err)
 	}
 	second := runharness.AgentInputRequest{RequestID: "provider-b", Content: "hello"}
-	if err := resolver.bindInput(&second); err != nil {
+	if err := resolver.bindInput(context.Background(), &second); err != nil {
 		t.Fatalf("bind input with updated active provider: %v", err)
 	}
 	if second.Provider != providerB.ID || !second.HasProviderBinding() {

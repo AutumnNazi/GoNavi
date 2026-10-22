@@ -1,9 +1,13 @@
-import { Segmented, Input, Tooltip, Button, message, Tag } from 'antd';
+import { Segmented, Input, Tooltip, Button, Skeleton, message, Tag } from 'antd';
 import React from 'react';
 import { CopyOutlined } from '@ant-design/icons';
 import {
   type MessageDirection,
   Text,
+  formatByteSize,
+  formatMessageTimestamp,
+  hasMessagePayload,
+  messageCardSummary,
   rowTimestamp,
   rowMetadata,
   prettyPayload,
@@ -26,11 +30,14 @@ export interface MessageQueueStreamPaneProps {
   subscriptions: MessageQueueWorkbenchStateApi['subscriptions'];
   selectedMessage: MessageQueueWorkbenchViewApi['selectedMessage'];
   selectMessage: MessageQueueWorkbenchViewApi['selectMessage'];
+  onLoadDetail: (item: { id: string; destination: string; row: Record<string, any> }) => void;
+  loadingDetailId: string;
 }
 
 export const MessageQueueStreamPane = ({
   directionFilter, setDirectionFilter, t, searchText, setSearchText, listRef, setListViewport,
   filteredMessages, messages, windowedMessages, subscriptions, selectedMessage, selectMessage,
+  onLoadDetail, loadingDetailId,
 }: MessageQueueStreamPaneProps) => (
   <main className="gn-message-stream">
     <div className="gn-message-stream-toolbar">
@@ -87,24 +94,31 @@ export const MessageQueueStreamPane = ({
             key={item.id}
             className={`gn-message-card ${item.direction}${selected ? ' is-selected' : ''}`}
             style={{ '--gn-message-topic-color': subscription?.color || 'var(--gn-accent)' } as React.CSSProperties}
-            onClick={() => selectMessage(item)}
+            onClick={() => {
+              selectMessage(item);
+              // 点开即加载：元数据列表没有 payload，选中时直接按 partition+offset 拉取；
+              // 已缓存或已带 payload 的消息在 loadMessageDetail 内部会被跳过。
+              onLoadDetail(item);
+            }}
             data-message-id={item.id}
           >
             <div className="gn-message-card-head">
-              <div>
+              <div className="gn-message-card-head-main">
                 <span className="gn-message-direction">
                   {t(item.direction === 'received'
                     ? 'message_queue_workbench.message.received'
                     : 'message_queue_workbench.message.published')}
                 </span>
-                <strong className="gn-message-payload-preview">
-                  {item.preview || t('message_queue_workbench.message.empty_payload')}
-                </strong>
+                {messageCardSummary(item) ? (
+                  <strong className="gn-message-payload-preview">{messageCardSummary(item)}</strong>
+                ) : null}
+                <span className="gn-message-card-topic" title={item.destination}>
+                  {item.destination}
+                  {item.row.offset !== undefined ? ` · #${item.row.offset}` : ''}
+                  {item.row.value_size !== undefined ? ` · ${formatByteSize(item.row.value_size)}` : ''}
+                </span>
               </div>
-              <Text type="secondary">{rowTimestamp(item.row) || new Date(item.receivedAt).toLocaleTimeString()}</Text>
-            </div>
-            <div className="gn-message-card-topic" title={item.destination}>
-              {item.destination}
+              <Text type="secondary">{rowTimestamp(item.row) || formatMessageTimestamp(new Date(item.receivedAt))}</Text>
             </div>
           </article>
         );
@@ -117,7 +131,9 @@ export const MessageQueueStreamPane = ({
       <aside className="gn-message-detail" aria-label={t('message_queue_workbench.message.detail_title')}>
         {selectedMessage ? (() => {
           const metadata = rowMetadata(selectedMessage.row, t);
-          const payloadText = prettyPayload(rowPayload(selectedMessage.row));
+          // 列表只带元数据列时先不渲染 payload，等用户点击再按 partition+offset 拉取。
+          const hasPayload = hasMessagePayload(selectedMessage.row);
+          const payloadText = hasPayload ? prettyPayload(rowPayload(selectedMessage.row)) : '';
           return (
             <>
               <div className="gn-message-detail-head">
@@ -129,22 +145,24 @@ export const MessageQueueStreamPane = ({
                   </span>
                   <strong title={selectedMessage.destination}>{selectedMessage.destination}</strong>
                 </div>
-                <Tooltip title={t('message_queue_workbench.message.copy_payload')}>
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<CopyOutlined />}
-                    aria-label={t('message_queue_workbench.message.copy_payload')}
-                    onClick={() => {
-                      void navigator.clipboard.writeText(payloadText || '').then(() => {
-                        void message.success(t('message_queue_workbench.message.copied'));
-                      });
-                    }}
-                  />
-                </Tooltip>
-              </div>
-              <div className="gn-message-detail-time">
-                {rowTimestamp(selectedMessage.row) || new Date(selectedMessage.receivedAt).toLocaleTimeString()}
+                <div className="gn-message-detail-actions">
+                  <Text type="secondary">
+                    {rowTimestamp(selectedMessage.row) || formatMessageTimestamp(new Date(selectedMessage.receivedAt))}
+                  </Text>
+                  <Tooltip title={t('message_queue_workbench.message.copy_payload')}>
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<CopyOutlined />}
+                      aria-label={t('message_queue_workbench.message.copy_payload')}
+                      onClick={() => {
+                        void navigator.clipboard.writeText(payloadText || '').then(() => {
+                          void message.success(t('message_queue_workbench.message.copied'));
+                        });
+                      }}
+                    />
+                  </Tooltip>
+                </div>
               </div>
               {metadata.length > 0 && (
                 <div className="gn-message-card-meta">
@@ -159,7 +177,26 @@ export const MessageQueueStreamPane = ({
                   ))}
                 </div>
               )}
-              <pre>{payloadText || t('message_queue_workbench.message.empty_payload')}</pre>
+              {hasPayload ? (
+                <pre>{payloadText || t('message_queue_workbench.message.empty_payload')}</pre>
+              ) : loadingDetailId === selectedMessage.id ? (
+                <div className="gn-message-detail-load">
+                  {/* 大消息要传几秒到几十秒，用骨架屏占住正文区域，避免布局跳动；
+                      同时把消息大小带上，让人知道在等什么。 */}
+                  <Skeleton active title={false} paragraph={{ rows: 8 }} />
+                  <p>
+                    {t('message_queue_workbench.message.loading_payload')}
+                    {selectedMessage.row.value_size !== undefined ? ` ${formatByteSize(selectedMessage.row.value_size)}` : ''}
+                  </p>
+                </div>
+              ) : (
+                <div className="gn-message-detail-load">
+                  <p>{t('message_queue_workbench.message.payload_hint')}</p>
+                  <Button size="small" onClick={() => onLoadDetail(selectedMessage)}>
+                    {t('message_queue_workbench.message.load_payload')}
+                  </Button>
+                </div>
+              )}
             </>
           );
         })() : (

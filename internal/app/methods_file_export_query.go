@@ -19,6 +19,9 @@ func (a *App) ExportData(data []map[string]interface{}, columns []string, defaul
 }
 
 func (a *App) ExportDataWithOptions(data []map[string]interface{}, columns []string, defaultName string, options ExportFileOptions) (result connection.QueryResult) {
+	if isPluginExportRequest(options) {
+		return a.exportPluginSnapshot(a.pluginRuntimeContext(), data, columns, defaultName, options)
+	}
 	if defaultName == "" {
 		defaultName = "export"
 	}
@@ -113,6 +116,9 @@ func (a *App) ExportQuery(config connection.ConnectionConfig, dbName string, que
 }
 
 func (a *App) ExportQueryWithOptions(config connection.ConnectionConfig, dbName string, query string, defaultName string, options ExportFileOptions) (result connection.QueryResult) {
+	if isPluginExportRequest(options) {
+		return a.pluginExportFailure("unsupported_scope")
+	}
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.query_required", nil)}
@@ -173,30 +179,10 @@ func (a *App) ExportQueryWithOptions(config connection.ConnectionConfig, dbName 
 		result = a.classifyExportTaskResult(exportCtx, result)
 	}()
 
-	runConfig := normalizeRunConfig(config, dbName)
-	dbInst, err := a.getDatabase(runConfig)
+	dbInst, runConfig, options, err := a.prepareQueryExportDatabase(config, dbName, options)
 	if err != nil {
 		reporter.Error(0, err.Error())
 		return connection.QueryResult{Success: false, Message: err.Error()}
-	}
-	if format == "sql" {
-		options.InsertSQLDialect = resolveDDLDBType(runConfig)
-		options.InsertSQLTargetTable = resolveChangeTargetTableName(runConfig, dbName, options.InsertSQLTargetTable)
-		if options.InsertSQLTargetTable != "" {
-			schemaName, pureTableName := normalizeSchemaAndTable(runConfig, dbName, options.InsertSQLTargetTable)
-			if options.InsertSQLDialect == "dameng" {
-				schemaName, pureTableName = splitDamengChangeTarget(dbName, options.InsertSQLTargetTable)
-			}
-			if defs, colErr := dbInst.GetColumns(schemaName, pureTableName); colErr == nil {
-				options.InsertSQLColumnTypes = buildImportColumnTypeMap(defs)
-				options.InsertSQLTargetColumns = make(map[string]string, len(defs))
-				for _, def := range defs {
-					if key := normalizeColumnName(def.Name); key != "" {
-						options.InsertSQLTargetColumns[key] = strings.TrimSpace(def.Name)
-					}
-				}
-			}
-		}
 	}
 
 	query = sanitizeSQLForPgLike(resolveDDLDBType(config), query)
@@ -230,6 +216,35 @@ func (a *App) ExportQueryWithOptions(config connection.ConnectionConfig, dbName 
 	reporter.Done(rowCount)
 	maybeReleaseFileTransferMemory("export-query-finished", rowCount, filename)
 	return connection.QueryResult{Success: true, Message: a.appText("file.backend.message.export_completed", nil)}
+}
+
+func (a *App) prepareQueryExportDatabase(config connection.ConnectionConfig, dbName string, options ExportFileOptions) (db.Database, connection.ConnectionConfig, ExportFileOptions, error) {
+	runConfig := normalizeRunConfig(config, dbName)
+	dbInst, err := a.getDatabase(runConfig)
+	if err != nil {
+		return nil, runConfig, options, err
+	}
+	if options.Format == "sql" {
+		options.InsertSQLDialect = resolveDDLDBType(runConfig)
+		options.InsertSQLTargetTable = resolveChangeTargetTableName(runConfig, dbName, options.InsertSQLTargetTable)
+		if options.InsertSQLTargetTable != "" {
+			schemaName, pureTableName := normalizeSchemaAndTable(runConfig, dbName, options.InsertSQLTargetTable)
+			if options.InsertSQLDialect == "dameng" {
+				schemaName, pureTableName = splitDamengChangeTarget(dbName, options.InsertSQLTargetTable)
+			}
+			if defs, colErr := dbInst.GetColumns(schemaName, pureTableName); colErr == nil {
+				options.InsertSQLColumnTypes = buildImportColumnTypeMap(defs)
+				options.InsertSQLTargetColumns = make(map[string]string, len(defs))
+				for _, def := range defs {
+					if key := normalizeColumnName(def.Name); key != "" {
+						options.InsertSQLTargetColumns[key] = strings.TrimSpace(def.Name)
+					}
+				}
+			}
+		}
+	}
+
+	return dbInst, runConfig, options, nil
 }
 
 func queryDataForExport(dbInst db.Database, config connection.ConnectionConfig, query string) ([]map[string]interface{}, []string, error) {

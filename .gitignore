@@ -44,6 +44,8 @@ docs/*
 !docs/download-cdn-operations.md
 !docs/background-gallery-operations.md
 !docs/font-gallery-operations.md
+!docs/plugins/
+!docs/plugins/**
 !docs/superpowers/
 docs/superpowers/*
 !docs/superpowers/specs/

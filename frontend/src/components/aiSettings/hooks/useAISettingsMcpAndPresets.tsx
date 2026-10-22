@@ -1,4 +1,5 @@
 import React from 'react';
+import { useAISettingsProviderChecks } from './useAISettingsProviderChecks';
 import { isValidAIRunRuntimeConfig, normalizeAIRunPolicySnapshot } from '../../ai/aiRunPolicy';
 import type { AIMCPServerConfig, AISkillConfig, AIProviderConfig } from '../../../types';
 import {
@@ -82,7 +83,8 @@ export interface UseAISettingsMcpAndPresetsInput {
   activeSection: AISettingsStateApi['activeSection'];
 }
 
-export const useAISettingsMcpAndPresets = ({
+export const useAISettingsMcpAndPresets = (checkInput: UseAISettingsMcpAndPresetsInput) => {
+  const {
   runPolicySaving, setRunPolicySaving, setRunPolicyError, resolveAIService, t, runPolicyRevision,
   setRunPolicyRevision, runRuntime, setRunRuntime, runPolicy, setRunPolicy, mountedRef, activeRef,
   messageApi, setLoading, userPromptSettings, setUserPromptSettings, setMCPServers, loadConfig,
@@ -92,7 +94,7 @@ export const useAISettingsMcpAndPresets = ({
   setProviderTesting, setTestStatus, setTestResult, form, buildProviderPayload, editingProvider,
   providers, invalidateProviderTest, refreshProviderDirty, editedFieldsRef, hideSidebar,
   overlayTheme, activeSection,
-}: UseAISettingsMcpAndPresetsInput) => {
+  } = checkInput;
   const handleSaveRunPolicy = async () => {
       if (runPolicySaving) return;
       setRunPolicySaving(true);
@@ -341,66 +343,7 @@ export const useAISettingsMcpAndPresets = ({
       }
   };
 
-  const handleTestProvider = async () => {
-      const session = editorSessionRef.current;
-      const revision = configRevisionRef.current;
-      const request = ++testRequestRef.current;
-      const isCurrent = () => mountedRef.current && activeRef.current
-          && session === editorSessionRef.current && revision === configRevisionRef.current && request === testRequestRef.current;
-      setProviderTesting(true);
-      setTestStatus('idle');
-      setTestResult(null);
-      try {
-          const values = await form.validateFields();
-          if (!isCurrent()) return;
-          const payload = buildProviderPayload(values, 'test');
-          const Service = await resolveAIService();
-          if (!isCurrent()) return;
-          if (typeof Service?.AITestProvider !== 'function') throw new Error(t('ai_settings.message.bridge_unavailable'));
-          const response = await Service.AITestProvider(payload);
-          if (!isCurrent()) return;
-          const result = parseProviderCheckResult(response);
-          if (!result) throw new Error(t('ai_settings.message.test_scope_missing'));
-          setTestResult(result);
-          setTestStatus(result.success ? 'success' : 'error');
-      } catch (error: any) {
-          if (isCurrent() && !error?.errorFields) {
-              setTestStatus('error');
-              setTestResult({ success: false, checkKind: 'none', modelVerified: false, message: error?.message || String(error) || t('ai_settings.message.test_failed') });
-          }
-      } finally {
-          if (isCurrent()) setProviderTesting(false);
-      }
-  };
-
-  const handleSyncProviderModels = async (): Promise<string[]> => {
-      const session = editorSessionRef.current;
-      const revision = configRevisionRef.current;
-      const isCurrent = () => mountedRef.current && activeRef.current
-          && session === editorSessionRef.current && revision === configRevisionRef.current;
-      try {
-          await form.validateFields(['baseUrl', 'apiKey']);
-          if (!isCurrent()) return [];
-          const payload = buildProviderPayload({}, 'test');
-          const Service = await resolveAIService();
-          if (!isCurrent()) return [];
-          if (typeof Service?.AIListProviderModels !== 'function') throw new Error(t('ai_settings.message.bridge_unavailable'));
-          const response = await Service.AIListProviderModels(payload);
-          if (!isCurrent()) return [];
-          if (!response || response.success !== true) {
-              throw new Error(response?.error || t('ai_settings.models.sync_failed'));
-          }
-          const models = normalizeProviderModels(response.models);
-          if (!models.length) throw new Error(t('ai_settings.models.sync_empty'));
-          void messageApi.success(t('ai_settings.models.sync_success', { count: models.length }));
-          return models;
-      } catch (error: any) {
-          if (isCurrent() && !error?.errorFields) {
-              void messageApi.error(error?.message || t('ai_settings.models.sync_failed'));
-          }
-          throw error;
-      }
-  };
+  const { handleTestProvider, handleSyncProviderModels } = useAISettingsProviderChecks(checkInput);
 
   const handlePresetChange = (presetKey: string, endpointType?: ProviderEndpointType) => {
       const normalizedPresetKey = normalizeProviderPresetKey(presetKey);

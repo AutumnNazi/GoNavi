@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { usePluginProviderModelCatalog } from './usePluginProviderModelCatalog';
+import { usePluginProviderContextProfile } from './usePluginProviderContextProfile';
+import { isPluginAIProviderNamespace } from '../../plugins/aiProvider/identity';
 
 import type {
   AIMCPToolDescriptor,
@@ -71,6 +74,7 @@ export const useAIChatRuntimeResources = ({
   const [loadingModels, setLoadingModels] = useState(false);
   const [composerNotice, setComposerNotice] = useState<AIComposerNotice | null>(null);
 
+  const pluginCatalog = usePluginProviderModelCatalog({ providers, activeProvider, setProviderModels, setProviderCatalogs, setDynamicModels, setModelContextProfile });
   const activeProviderIdRef = useRef<string | null>(null);
   const providerModelRequestsRef = useRef(new Set<string>());
 
@@ -214,7 +218,7 @@ export const useAIChatRuntimeResources = ({
     if (!targetProvider) return;
     try {
       const service = getAIService();
-      const modelChanged = String(targetProvider.model || '').trim() !== model;
+      const modelChanged = (isPluginAIProviderNamespace(targetProvider.type) ? targetProvider.model : String(targetProvider.model || '').trim()) !== model;
       const payload = {
         ...targetProvider,
         model,
@@ -275,30 +279,10 @@ export const useAIChatRuntimeResources = ({
     }
   }, [activeProvider?.model]);
 
-  // 模型的默认上下文与可选档位由后端给出；模型变化后重新取。
-  useEffect(() => {
-    const load = getAIService()?.AIGetModelContextProfile;
-    if (!activeProvider || typeof load !== 'function') {
-      setModelContextProfile(null);
-      return undefined;
-    }
-    let cancelled = false;
-    void load(activeProvider)
-      .then((result) => {
-        if (!cancelled) setModelContextProfile(parseModelContextProfile(result));
-      })
-      .catch((error) => {
-        console.warn('Failed to load model context profile', error);
-        if (!cancelled) setModelContextProfile(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-    // 只关心模型身份；其余字段变化（如 contextWindow）不影响模型的档位表。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProvider?.id, activeProvider?.model, getAIService]);
+  usePluginProviderContextProfile(activeProvider, getAIService, setModelContextProfile);
 
   const fetchDynamicModels = useCallback(async () => {
+    if (isPluginAIProviderNamespace(activeProvider?.type)) { await pluginCatalog.refresh(); return; }
     try {
       setLoadingModels(true);
       setComposerNotice(null);
@@ -324,10 +308,11 @@ export const useAIChatRuntimeResources = ({
     } finally {
       setLoadingModels(false);
     }
-  }, [getAIService]);
+  }, [getAIService, activeProvider?.type, pluginCatalog.refresh]);
 
   const fetchProviderModels = useCallback(async (providerId: string) => {
     const targetProvider = providers.find((provider) => provider.id === providerId);
+    if (targetProvider && isPluginAIProviderNamespace(targetProvider.type)) { await pluginCatalog.refresh(); return; }
     if (!targetProvider || Object.prototype.hasOwnProperty.call(providerModels, providerId)
       || providerModelRequestsRef.current.has(providerId)) return;
 
@@ -367,7 +352,7 @@ export const useAIChatRuntimeResources = ({
     } finally {
       providerModelRequestsRef.current.delete(providerId);
     }
-  }, [getAIService, providerModels, providers]);
+  }, [getAIService, providerModels, providers, pluginCatalog.refresh]);
 
   useEffect(() => {
     if (activeProvider && isLocalCLISubscriptionProvider(activeProvider)) {

@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": 1,
+  "id": "example.hello",
+  "name": "Hello SDK",
+  "version": "1.0.0",
+  "description": "A standalone cancellable Go plugin example",
+  "author": "GoNavi examples",
+  "license": "Apache-2.0",
+  "permissions": ["ai.tools", "host.log"],
+  "permissionNotes": {
+    "ai.tools": "Runs the hello command from the host or an agent.",
+    "host.log": "Writes one diagnostic when the plugin starts running."
+  },
+  "backend": {
+    "default": {
+      "executable": "bin/plugin",
+      "runtime": "native"
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "hello",
+        "title": "Say hello",
+        "effect": "read",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "delayMillis": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 60000
+            }
+          }
+        }
+      }
+    ],
+    "panels": [
+      {
+        "id": "welcome",
+        "title": "Hello plugin",
+        "body": {
+          "type": "column",
+          "children": [
+            {
+              "type": "text",
+              "text": "This panel contains declarative data, not plugin JavaScript."
+            },
+            {
+              "type": "button",
+              "title": "Say hello",
+              "command": "hello",
+              "arguments": {
+                "name": "GoNavi"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

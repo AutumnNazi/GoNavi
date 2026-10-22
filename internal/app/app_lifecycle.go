@@ -111,6 +111,7 @@ func (a *App) startup(ctx context.Context) {
 	a.startConnectionKeepAliveLoop()
 	a.initializeDataSyncJobs(ctx)
 	a.initializeCloudBackup(ctx)
+	a.initializePlugins(ctx)
 	logger.Infof("应用启动完成（首次连接保护窗口=%s，最多重试=%d 次）", startupConnectRetryWindow, startupConnectRetryAttempts)
 }
 
@@ -180,6 +181,10 @@ func (a *App) LogWindowDiagnostic(stage string, payload string) {
 // Shutdown is called when the app terminates.
 func (a *App) Shutdown() {
 	logger.Infof("应用开始关闭，准备释放资源")
+	a.shutdownPlugins()
+	// This first datasource slice is read-only: revoke before evicting sessions.
+	// A future write/transaction adapter must redesign this order for rollback.
+	a.evictPluginDataSourceCache("", 0)
 	if !a.cancelAndWaitConnectionHealthRuns(5 * time.Second) {
 		logger.Warnf("连接健康检查任务未能在关闭超时内全部退出；将继续释放数据库资源")
 	}

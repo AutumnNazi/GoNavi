@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": 1,
+  "id": "sdk.examples.aiprovider",
+  "name": "HTTP/SSE AI provider example",
+  "version": "1.0.0",
+  "description": "Native transport to an explicitly configured upstream; compatibility verified with local HTTP/SSE fixtures only",
+  "author": "GoNavi examples",
+  "license": "Apache-2.0",
+  "permissions": ["ai.providers"],
+  "backend": {
+    "default": {"executable": "bin/plugin", "runtime": "native"}
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "provider",
+        "title": "HTTP AI provider transport",
+        "effect": "read",
+        "inputSchema": {
+          "type": "object",
+          "required": ["protocolVersion", "operation", "providerId", "requestId"],
+          "properties": {
+            "protocolVersion": {"type": "integer", "const": 1},
+            "operation": {"type": "string", "enum": ["start", "pull", "cancel"]},
+            "providerId": {"type": "string", "const": "http"},
+            "requestId": {"type": "string", "minLength": 43, "maxLength": 43},
+            "config": {"type": "object"},
+            "request": {"type": "object"}
+          },
+          "additionalProperties": false
+        }
+      }
+    ],
+    "aiProviders": [
+      {
+        "id": "http",
+        "name": "HTTP/SSE (configured upstream)",
+        "command": "provider",
+        "models": [
+          {
+            "id": "gpt-4o-mini",
+            "name": "GPT-4o mini (configured upstream)",
+            "contextWindow": 128000,
+            "maxOutputTokens": 16384
+          }
+        ],
+        "supportsTools": true,
+        "supportsImages": false
+      }
+    ]
+  }
+}

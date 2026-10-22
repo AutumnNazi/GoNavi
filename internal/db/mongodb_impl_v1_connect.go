@@ -247,6 +247,7 @@ func (m *MongoDBV1) Connect(config connection.ConnectionConfig) (err error) {
 	runConfig := applyMongoURI(config)
 	connectConfig := runConfig
 	sshRouteHint := ""
+	var sshDialer *mongoSSHDialer
 	if runConfig.UseSSH {
 		sshRouteHint = fmt.Sprintf("SSH隧道 %s:%d", runConfig.SSH.Host, runConfig.SSH.Port)
 		logger.Infof("MongoDB(v1) 使用 SSH 隧道连接：跳板=%s:%d", runConfig.SSH.Host, runConfig.SSH.Port)
@@ -256,6 +257,40 @@ func (m *MongoDBV1) Connect(config connection.ConnectionConfig) (err error) {
 		// trust error remains unwrapable by the application layer.
 		if _, sshErr := mongoGetOrCreateSSHClient(runConfig.SSH); sshErr != nil {
 			return fmt.Errorf("创建 MongoDB SSH 隧道失败：%w", sshErr)
+		}
+		// mongo-driver 在握手时会给 socket 设置读写 deadline，而 x/crypto/ssh
+		// 的 channel 不支持 deadline，直接拨号必然失败；因此改走本机转发监听器，
+		// 让驱动拿到真实的本机 TCP socket。
+		sshDialer = newMongoSSHDialer(runConfig.SSH)
+		m.sshDialer = sshDialer
+
+		// 预检跳板机到每个种子地址的拨号：sshd 的 PermitOpen 拒绝或远端端口
+		// 未监听在这里立即报错。驱动自身对拨号失败会持续重试到
+		// serverSelectionTimeout，不预检就会白等一整个超时周期。
+		if !runConfig.MongoSRV {
+			preflightCtx, cancelPreflight := context.WithTimeout(context.Background(), getConnectTimeout(runConfig))
+			preflightTargets := collectMongoSeeds(runConfig)
+			if len(preflightTargets) == 0 {
+				preflightTargets = append(preflightTargets, normalizeMongoAddress(runConfig.Host, runConfig.Port))
+			}
+			reachableTargets := 0
+			var preflightErr error
+			for _, target := range preflightTargets {
+				localAddr, tunnelErr := sshDialer.ensureTunnel(preflightCtx, target)
+				if tunnelErr != nil {
+					logger.Warnf("MongoDB SSH 隧道预检失败：目标=%s 错误=%v", target, tunnelErr)
+					if preflightErr == nil {
+						preflightErr = tunnelErr
+					}
+					continue
+				}
+				logger.Infof("MongoDB SSH 隧道预检通过：本地 %s -> 远程 %s", localAddr, target)
+				reachableTargets++
+			}
+			cancelPreflight()
+			if reachableTargets == 0 && preflightErr != nil {
+				return fmt.Errorf("创建 MongoDB SSH 隧道失败：%w", preflightErr)
+			}
 		}
 	}
 
@@ -311,16 +346,22 @@ func (m *MongoDBV1) Connect(config connection.ConnectionConfig) (err error) {
 			if tlsConfig != nil {
 				clientOpts.SetTLSConfig(tlsConfig)
 			}
-			if dialer := mongoConnectionDialer(attemptConfig); dialer != nil {
+			if sshDialer != nil {
+				clientOpts.SetDialer(sshDialer)
+			} else if dialer := mongoConnectionDialer(attemptConfig); dialer != nil {
 				clientOpts.SetDialer(dialer)
 			}
 			connectCtx, connectCancel := context.WithTimeout(context.Background(), m.pingTimeout)
 			client, err := mongo.Connect(connectCtx, clientOpts)
 			connectCancel()
 			if err != nil {
+				attemptErr := err
+				if sshDialer != nil {
+					attemptErr = sshDialer.wrapConnectError(attemptErr, attemptStarted)
+				}
 				logger.Warnf("MongoDB(v1) 连接尝试失败：%d/%d 模式=%s 凭据=%s 耗时=%s 错误=%v",
-					attemptNo, totalAttempts, sslLabel, authLabel, time.Since(attemptStarted).Round(time.Millisecond), err)
-				detail := fmt.Sprintf("%s %s连接失败: %v", sslLabel, authLabel, err)
+					attemptNo, totalAttempts, sslLabel, authLabel, time.Since(attemptStarted).Round(time.Millisecond), attemptErr)
+				detail := fmt.Sprintf("%s %s连接失败: %v", sslLabel, authLabel, attemptErr)
 				if sshRouteHint != "" {
 					detail = fmt.Sprintf("%s（%s）", detail, sshRouteHint)
 				}
@@ -329,14 +370,18 @@ func (m *MongoDBV1) Connect(config connection.ConnectionConfig) (err error) {
 			}
 
 			m.client = client
-			if err := m.Ping(); err != nil {
+			if pingErr := m.Ping(); pingErr != nil {
 				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 				_ = client.Disconnect(ctx)
 				cancel()
 				m.client = nil
+				attemptErr := pingErr
+				if sshDialer != nil {
+					attemptErr = sshDialer.wrapConnectError(attemptErr, attemptStarted)
+				}
 				logger.Warnf("MongoDB(v1) 连接尝试验证失败：%d/%d 模式=%s 凭据=%s 耗时=%s 错误=%v",
-					attemptNo, totalAttempts, sslLabel, authLabel, time.Since(attemptStarted).Round(time.Millisecond), err)
-				detail := fmt.Sprintf("%s %s验证失败: %v", sslLabel, authLabel, err)
+					attemptNo, totalAttempts, sslLabel, authLabel, time.Since(attemptStarted).Round(time.Millisecond), attemptErr)
+				detail := fmt.Sprintf("%s %s验证失败: %v", sslLabel, authLabel, attemptErr)
 				if sshRouteHint != "" {
 					detail = fmt.Sprintf("%s（%s）", detail, sshRouteHint)
 				}
@@ -360,12 +405,21 @@ func (m *MongoDBV1) Connect(config connection.ConnectionConfig) (err error) {
 }
 
 func (m *MongoDBV1) Close() error {
+	var firstErr error
 	if m.client != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		return m.client.Disconnect(ctx)
+		firstErr = m.client.Disconnect(ctx)
+		cancel()
+		m.client = nil
 	}
-	return nil
+	// 释放本机转发监听器，避免连接关闭后端口转发残留。
+	if m.sshDialer != nil {
+		if err := m.sshDialer.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		m.sshDialer = nil
+	}
+	return firstErr
 }
 
 func (m *MongoDBV1) Ping() error {

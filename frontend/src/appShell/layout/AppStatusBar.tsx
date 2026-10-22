@@ -11,8 +11,8 @@ export interface AppStatusBarProps {
   onToggleLogPanel: () => void;
 }
 
-// 底部全局状态栏（Navicat 格局）：左=活动上下文（连接 / 库 / Schema / 标签页），
-// 右=对象信息面板开关、日志开关与应用版本。高度与配色沿用 DataGrid 状态栏的 26px 契约。
+// 底部全局状态栏（Navicat 格局）：左=信息面板开关 + 活动上下文（连接 / 库 /
+// Schema / 标签页），右=日志开关与应用版本。高度与配色沿用 DataGrid 状态栏的 26px 契约。
 export const AppStatusBar = ({ isLogPanelOpen, onToggleLogPanel }: AppStatusBarProps) => {
   const { connectionName, dbName, schemaName, activeTabTitle, version } = useAppStatusBar();
   const infoPanelVisible = useStore(state => state.infoPanelVisible);
@@ -31,6 +31,16 @@ export const AppStatusBar = ({ isLogPanelOpen, onToggleLogPanel }: AppStatusBarP
       aria-label={t('status_bar.aria')}
     >
       <div className="gn-app-statusbar-context">
+        <button
+          type="button"
+          className={`gn-app-statusbar-action${infoPanelVisible ? ' is-active' : ''}`}
+          aria-pressed={infoPanelVisible}
+          title={t('status_bar.action.object_info')}
+          onClick={toggleInfoPanel}
+        >
+          <InfoCircleOutlined />
+          <span>{t('status_bar.action.object_info')}</span>
+        </button>
         <span className={`gn-app-statusbar-dot${contextParts.length > 0 ? ' is-on' : ''}`} aria-hidden="true" />
         {contextParts.length > 0 ? (
           <span className="gn-app-statusbar-context-text" title={contextParts.join(' / ')}>
@@ -49,16 +59,6 @@ export const AppStatusBar = ({ isLogPanelOpen, onToggleLogPanel }: AppStatusBarP
         )}
       </div>
       <div className="gn-app-statusbar-actions">
-        <button
-          type="button"
-          className={`gn-app-statusbar-action${infoPanelVisible ? ' is-active' : ''}`}
-          aria-pressed={infoPanelVisible}
-          title={t('status_bar.action.object_info')}
-          onClick={toggleInfoPanel}
-        >
-          <InfoCircleOutlined />
-          <span>{t('status_bar.action.object_info')}</span>
-        </button>
         <button
           type="button"
           className={`gn-app-statusbar-action${isLogPanelOpen ? ' is-active' : ''}`}

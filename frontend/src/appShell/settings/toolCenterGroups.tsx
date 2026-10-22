@@ -1,6 +1,6 @@
 import {
   SettingOutlined, SafetyCertificateOutlined, HddOutlined,
-  FileTextOutlined,
+  FileTextOutlined, AppstoreAddOutlined,
 } from '@ant-design/icons';
 import type { SettingsCenterNavigationGroup } from '../settingsCenterNavigation';
 import AiSparkOutlined from '../../components/icons/AiSparkOutlined';
@@ -25,6 +25,13 @@ export const buildToolCenterGroups = ({
       title: t('app.tools.group.config.title'),
       description: t('app.tools.group.config.description'),
       items: [
+        {
+          key: 'plugins',
+          icon: <AppstoreAddOutlined />,
+          title: t('plugin.manager.title'),
+          description: t('plugin.manager.description'),
+          onClick: () => handleOpenToolCenterPane('config', 'plugins'),
+        },
         {
           key: 'data-root',
           icon: <HddOutlined />,

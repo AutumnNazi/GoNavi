@@ -10,6 +10,11 @@ import (
 	"GoNavi-Wails/internal/db"
 )
 
+// 固定日历日会在 30 天保留期之后被裁掉，条数和顺序用例必须落在保留期内。
+func recentSnapshotBase() time.Time {
+	return time.Now().UTC().Truncate(time.Second).Add(-2 * time.Hour)
+}
+
 func testDMLSnapshotEntry(id string, createdAt time.Time, complete bool) dmlSnapshotEntry {
 	skipped := []db.SkippedReverseRow(nil)
 	if !complete {
@@ -37,10 +42,7 @@ func TestDMLSnapshotStoreAppendAndListNewestFirst(t *testing.T) {
 	dir := t.TempDir()
 	store := newDMLSnapshotStore(dir)
 
-	// 基准时间必须相对当前时间：写死的日期一旦超出保留天数，快照会被
-	// 天数裁剪直接丢掉，测试就会与被测行为无关地失败。按秒截断是为了与
-	// RFC3339 序列化的精度一致。
-	base := time.Now().Truncate(time.Second).Add(-time.Hour)
+	base := recentSnapshotBase()
 	for index := 0; index < 3; index++ {
 		if err := store.Append(testDMLSnapshotEntry(
 			"snap-"+string(rune('a'+index)), base.Add(time.Duration(index)*time.Minute), true)); err != nil {
@@ -95,9 +97,7 @@ func TestDMLSnapshotStorePrunesOldestBeyondLimit(t *testing.T) {
 	dir := t.TempDir()
 	store := newDMLSnapshotStore(dir)
 
-	// 同上：基准时间必须相对当前时间，否则超过保留天数后全部条目会被
-	// 天数裁剪丢掉，条数裁剪就无从验证。
-	base := time.Now().Truncate(time.Second).Add(-time.Hour)
+	base := recentSnapshotBase()
 	total := dmlSnapshotMaxEntries + 5
 	for index := 0; index < total; index++ {
 		entry := testDMLSnapshotEntry("snap", base.Add(time.Duration(index)*time.Second), true)

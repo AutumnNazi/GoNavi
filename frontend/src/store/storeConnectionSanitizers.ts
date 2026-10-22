@@ -1,4 +1,5 @@
 import { SchemaVisibilityRule } from "../types";
+import { isPluginDataSourceNamespace } from "../plugins/dataSource/identity";
 import {
   resolveOceanBaseProtocolFromConfig,
   normalizeOceanBaseProtocol,
@@ -248,6 +249,7 @@ export const sanitizeConnectionIconColor = (value: unknown): string | undefined 
 };
 
 export const normalizeConnectionType = (value: unknown): string => {
+  if (isPluginDataSourceNamespace(value)) return value;
   const type = normalizeDriverType(toTrimmedString(value));
   if (type === "doris") {
     return "diros";

@@ -13,6 +13,8 @@ import (
 // metadataSession 仅持有一个 MCP 元数据请求的资源。
 // Close 只会在执行请求的协程、元数据方法返回后调用，避免与运行中的查询并发关闭驱动。
 type metadataSession struct {
+	// owner shares only the root resolver; the temporary App keeps its own locks/cache.
+	owner       *App
 	app         *App
 	ctx         context.Context
 	synchronous bool
@@ -59,7 +61,7 @@ func newMetadataSessionWithMode(owner *App, ctx context.Context, synchronous boo
 	sessionApp.localizer = owner.localizer
 	owner.i18nMu.RUnlock()
 
-	session := &metadataSession{app: sessionApp, ctx: ctx, synchronous: synchronous, flightScope: nextMetadataSessionFlightScope()}
+	session := &metadataSession{owner: owner.pluginDataSourceOwner(), app: sessionApp, ctx: ctx, synchronous: synchronous, flightScope: nextMetadataSessionFlightScope()}
 	sessionApp.metadataSession = session
 	return session
 }

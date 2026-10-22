@@ -5,7 +5,7 @@ import {
   type SidebarTreeLoadOptions,
   scheduleSidebarLoad,
 } from './sidebarTreeLoaderHelpers';
-import { JVMProbeCapabilities, DBGetDatabases } from '../../../wailsjs/go/app/App';
+import { JVMProbeCapabilities, DBGetDatabases, DBReleaseConnection } from '../../../wailsjs/go/app/App';
 import {
   type SidebarTreeNode as TreeNode,
   buildV2SidebarDatabaseSectionedChildren,
@@ -18,7 +18,7 @@ import {
   UnorderedListOutlined,
 } from '@ant-design/icons';
 import { buildJVMMonitoringActionDescriptors } from '../../utils/jvmSidebarActions';
-import { message } from 'antd';
+import { Button, message } from 'antd';
 import { t } from '../../i18n';
 import { useStore } from '../../store';
 import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
@@ -538,7 +538,17 @@ export const useSidebarDatabaseLoader = ({
   	          } else {
   	            setConnectionStates(prev => ({ ...prev, [currentConnection.id]: 'error' }));
   	            setLoadedKeys(prev => prev.filter(k => k !== node.key));
-  	            message.error({ content: res.message, key: `conn-${currentConnection.id}-dbs` });
+              message.error({
+                content: (
+                  <span>
+                    {res.message}
+                    <Button type="link" size="small" onClick={() => void retryLoadDatabases(node)}>
+                      {t('common.retry')}
+                    </Button>
+                  </span>
+                ),
+                key: `conn-${currentConnection.id}-dbs`,
+              });
   	          }
   	      } catch (e: any) {
   	          const currentConnection = resolveCurrentDatabaseRequestConnection();
@@ -548,7 +558,7 @@ export const useSidebarDatabaseLoader = ({
   	          setConnectionStates(prev => ({ ...prev, [currentConnection.id]: 'error' }));
   	          setLoadedKeys(prev => prev.filter(k => k !== node.key));
   	          message.error({
-                  content: t('sidebar.message.connection_failed', { error: e?.message || String(e) }),
+                  content: <span>{t('sidebar.message.connection_failed', { error: e?.message || String(e) })}<Button type="link" size="small" onClick={() => void retryLoadDatabases(node)}>{t('common.retry')}</Button></span>,
                   key: `conn-${currentConnection.id}-dbs`,
               });
   	      } finally {
@@ -584,7 +594,21 @@ export const useSidebarDatabaseLoader = ({
             signature,
         );
     };
-  return { loadDatabases };
+
+    const retryLoadDatabases = async (node: any) => {
+        const conn = node?.dataRef as SavedConnection | undefined;
+        if (!conn?.config) return;
+        try {
+            const result = await DBReleaseConnection(buildRpcConnectionConfig(buildRuntimeConfig(conn) as any, { id: conn.id }) as any);
+            if (result?.success === false) throw new Error(String(result.message || ''));
+        } catch (error: any) {
+            message.error(error?.message || String(error));
+            return;
+        }
+        await loadDatabases(node, { ensureFresh: true });
+    };
+
+  return { loadDatabases, retryLoadDatabases };
 };
 
 export type SidebarDatabaseLoaderApi = ReturnType<typeof useSidebarDatabaseLoader>;

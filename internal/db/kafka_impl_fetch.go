@@ -5,8 +5,10 @@ package db
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"time"
 
 	kafka "github.com/segmentio/kafka-go"
@@ -122,6 +124,30 @@ func seekKafkaAbsoluteOffset(conn kafkaOffsetSeeker, offset int64) error {
 	return err
 }
 
+// FetchMessageAt 按 partition + offset 精确定位一条消息，供详情按需加载使用。
+// 列表预览只取元数据列，payload 在这里单独读取，避免列表帧被大消息撑爆。
+func (r *kafkaGoRuntime) FetchMessageAt(ctx context.Context, topic string, partition int, offset int64) (*kafkaMessageRecord, error) {
+	trimmedTopic := strings.TrimSpace(topic)
+	if trimmedTopic == "" {
+		return nil, fmt.Errorf("Kafka topic 不能为空")
+	}
+	if partition < 0 {
+		return nil, fmt.Errorf("Kafka partition 不能为负数：%d", partition)
+	}
+	if offset < 0 {
+		return nil, fmt.Errorf("Kafka offset 不能为负数：%d", offset)
+	}
+	records, err := r.fetchPartitionMessages(ctx, trimmedTopic, partition, offset, 1)
+	if err != nil {
+		return nil, err
+	}
+	if len(records) == 0 {
+		return nil, nil
+	}
+	record := records[0]
+	return &record, nil
+}
+
 func (r *kafkaGoRuntime) fetchPartitionMessages(ctx context.Context, topic string, partitionID int, startOffset int64, limit int) ([]kafkaMessageRecord, error) {
 	conn, err := r.dialer.DialLeader(ctx, "tcp", r.bootstrap, topic, partitionID)
 	if err != nil {
@@ -132,27 +158,45 @@ func (r *kafkaGoRuntime) fetchPartitionMessages(ctx context.Context, topic strin
 	if err := seekKafkaAbsoluteOffset(conn, startOffset); err != nil {
 		return nil, err
 	}
-	deadline := time.Now().Add(r.readWait)
-	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
-		deadline = ctxDeadline
+	// readWait 衡量的是「空闲多久算没有更多消息」，而不是整个拉取的硬超时：
+	// 之前只在循环外设一次 deadline，十几 MB 的消息读两三条就会撞上 1.5 秒上限，
+	// 表现为「topic 明明有很多消息却只列出几条」。ctx 的截止时间仍作为硬上限。
+	nextReadDeadline := func() time.Time {
+		deadline := time.Now().Add(r.readWait)
+		if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+			return ctxDeadline
+		}
+		return deadline
 	}
-	_ = conn.SetReadDeadline(deadline)
 
 	records := make([]kafkaMessageRecord, 0, limit)
 	for len(records) < limit {
-		msg, err := conn.ReadMessage(kafkaFetchMaxBytes)
-		if err != nil {
-			if isKafkaReadTimeout(err) || errorsIsContextTimeout(err) || errors.Is(err, io.EOF) {
+		_ = conn.SetReadDeadline(nextReadDeadline())
+		// 必须按批读取：conn.ReadMessage 内部是「ReadBatch(1, maxBytes) → 只取第一条 →
+		// Close 丢弃批内其余消息」，等于一条一个网络来回，还把同批消息白白扔掉。
+		// 这里一次 fetch 拿一批，把批内消息全部消费掉，只受单次 fetch 字节上限约束。
+		batch := conn.ReadBatch(1, kafkaFetchMaxBytes)
+		for len(records) < limit {
+			msg, err := batch.ReadMessage()
+			if err != nil {
+				// 批内读完（io.EOF）或读超时：交给 Close 判定是否整体结束。
 				break
 			}
-			return nil, err
+			records = append(records, kafkaMessageRecord{
+				Message: msg,
+				Key:     kafkaDecodePayload(msg.Key),
+				Value:   kafkaDecodePayload(msg.Value),
+				Headers: kafkaHeadersToMap(msg.Headers),
+			})
 		}
-		records = append(records, kafkaMessageRecord{
-			Message: msg,
-			Key:     kafkaDecodePayload(msg.Key),
-			Value:   kafkaDecodePayload(msg.Value),
-			Headers: kafkaHeadersToMap(msg.Headers),
-		})
+		closeErr := batch.Close()
+		if closeErr == nil {
+			continue
+		}
+		if isKafkaReadTimeout(closeErr) || errorsIsContextTimeout(closeErr) || errors.Is(closeErr, io.EOF) {
+			break
+		}
+		return nil, closeErr
 	}
 	return records, nil
 }

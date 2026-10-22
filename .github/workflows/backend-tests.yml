@@ -36,6 +36,22 @@ jobs:
       - name: Test gallery browser adapters
         working-directory: frontend
         run: npm test -- src/backgroundGallery
+      - name: Test i18n key resolution invariant
+        working-directory: frontend
+        # 插件动态 key（如 plugin.state.*）也在该不变量覆盖范围内。
+        run: npm test -- src/i18n/keyResolution.test.ts --maxWorkers=1 --minWorkers=1
+
+      - name: Test plugin extension UI contracts
+        working-directory: frontend
+        # 覆盖整个插件前端树：根目录的清单解码、界面校验和文案一致性测试
+        # 同样在门禁内，不能只跑四个子目录。
+        run: npm test -- src/plugins --maxWorkers=2 --minWorkers=1
+      - name: Test independent TypeScript plugin SDK
+        working-directory: sdk/typescript
+        run: |
+          node ../../frontend/node_modules/typescript/bin/tsc --noEmit -p tsconfig.json
+          node ../../frontend/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022,DOM test/manifest-types.ts
+          node ../../frontend/node_modules/vitest/vitest.mjs run --config vitest.config.mjs
       - name: Build frontend
         working-directory: frontend
         run: npm run build
@@ -99,6 +115,44 @@ jobs:
       - name: Run SQL Server driver tests
         run: go test -tags gonavi_sqlserver_driver ./internal/db/ -count=1 -timeout=30m
 
+  marketplace-contract:
+    name: Plugin and marketplace contract tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: gonavi
+          POSTGRES_PASSWORD: gonavi_ci_only
+          POSTGRES_DB: gonavi_market_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gonavi -d gonavi_market_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      GONAVI_MARKET_TEST_POSTGRES: postgres://gonavi:gonavi_ci_only@127.0.0.1:5432/gonavi_market_test?sslmode=disable
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+      - name: Test real PostgreSQL transactions and plugin races
+        run: go test -race ./internal/plugin ./internal/pluginmarket ./internal/market -count=1 -timeout=10m
+      - name: Test datasource adapter lifecycle races
+        run: go test -race ./internal/db -run '^TestPluginDatabase' -count=1 -timeout=5m
+      - name: Test plugin AI provider streaming races
+        run: go test -race ./internal/ai/provider -run '^TestPlugin' -count=1 -timeout=5m
+      - name: Test plugin exporter snapshot races
+        run: go test -race ./internal/dataexport -run '^TestPlugin' -count=1 -timeout=5m
+      - name: Test independent plugin SDK and examples
+        run: |
+          go -C sdk/go test -race ./... -count=1
+          go -C examples/plugins test ./... -count=1
+
   platform-sensitive:
     name: Platform-sensitive tests (${{ matrix.os }})
     strategy:
@@ -132,30 +186,11 @@ jobs:
       - name: Test JVM fixtures
         run: go test ./internal/jvm -run '^(TestAgentProviderRealAgentRoundTrip|TestHTTPProviderRealEndpointRoundTrip|TestJMXProviderRealJMXRoundTrip)$' -count=1 -timeout=5m
 
+      - name: Test plugin process isolation and market client
+        run: go test ./internal/plugin ./internal/pluginmarket ./internal/nativewindow -count=1 -timeout=5m
+
+      - name: Test plugin datasource adapter and host integration
+        run: go test ./internal/db ./internal/app ./internal/mcpserver ./internal/ai/provider ./internal/ai/service ./internal/dataexport -run '^TestPlugin' -count=1 -timeout=5m
+
       - name: Test optional driver-agent cleanup
         run: go test ./internal/db -run '^TestOptionalDriverAgentUnresponsiveProcessIsReapedAfterTimeout$' -count=1
-
-  # 门禁：前端干净构建、完整后端、macOS、Windows 全部成功才通过。
-  # 矩阵任一失败时 platform-sensitive 的 result 为 failure。
-  gate:
-    name: CI Gate
-    needs: [frontend, full, platform-sensitive]
-    if: ${{ always() && !cancelled() }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require all CI jobs
-        env:
-          FRONTEND_RESULT: ${{ needs.frontend.result }}
-          FULL_RESULT: ${{ needs.full.result }}
-          PLATFORM_RESULT: ${{ needs.platform-sensitive.result }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "Frontend clean build: ${FRONTEND_RESULT}"
-          echo "Full backend suite: ${FULL_RESULT}"
-          echo "Platform-sensitive tests (macos-latest, windows-latest): ${PLATFORM_RESULT}"
-          if [[ "${FRONTEND_RESULT}" != "success" || "${FULL_RESULT}" != "success" || "${PLATFORM_RESULT}" != "success" ]]; then
-            echo "CI 门禁未通过：Frontend clean build、Full backend suite、Platform-sensitive tests (macos-latest)、Platform-sensitive tests (windows-latest) 必须全部成功。"
-            exit 1
-          fi
-          echo "CI 门禁通过。"

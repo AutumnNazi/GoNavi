@@ -1,6 +1,7 @@
 package aiservice
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -46,7 +47,7 @@ func TestBuiltinLegacyProviderUsesAccountTokenForTestAndAgentBinding(t *testing.
 		t.Fatalf("legacy connection test failed: %v", result["message"])
 	}
 	input := runharness.AgentInputRequest{Provider: "provider-legacy", SessionID: "session-legacy"}
-	if err := s.bindAgentProviderInput(&input); err != nil {
+	if err := s.bindAgentProviderInput(context.Background(), &input); err != nil {
 		t.Fatalf("bind desktop agent: %v", err)
 	}
 	// This is the binding used by the real desktop send path, not the legacy chat path.

@@ -18,6 +18,7 @@ var errExportTaskNotFound = errors.New("export task not found")
 type exportTaskRegistration struct {
 	cancel           context.CancelFunc
 	cancelDispatched bool
+	strict           bool // Plugin tasks retain their slot until the operation exits.
 }
 
 // beginCancelableExportTask 为一次桌面导出登记可取消任务，返回任务 ctx 与
@@ -32,7 +33,7 @@ func (a *App) beginCancelableExportTask(jobID string) (context.Context, func()) 
 	registration := &exportTaskRegistration{cancel: cancel}
 	if !a.registerExportTask(jobID, registration) {
 		cancel()
-		return context.Background(), func() {}
+		return ctx, func() {}
 	}
 	return ctx, func() { a.finishExportTask(jobID, registration) }
 }
@@ -49,6 +50,9 @@ func (a *App) registerExportTask(jobID string, registration *exportTaskRegistrat
 	defer a.exportTaskMu.Unlock()
 	if a.exportTasks == nil {
 		a.exportTasks = make(map[string]*exportTaskRegistration)
+	}
+	if current := a.exportTasks[jobID]; current != nil && current.strict {
+		return false
 	}
 	a.exportTasks[jobID] = registration
 	return true

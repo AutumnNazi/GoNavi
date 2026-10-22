@@ -1,4 +1,6 @@
 import type { ConnectionConfig } from "../../types";
+import { isPluginDataSourceNamespace } from "../../plugins/dataSource/identity";
+import { buildPluginDataSourceConfig } from "./pluginDataSourceForm";
 import { resolveConnectionDatabaseValue } from "./connectionModalNamespace";
 import {
   supportsConnectionKeepAliveSQL,
@@ -59,6 +61,7 @@ export const buildConnectionConfig = async ({
   oracleModeTouched = false,
   translate: t,
 }: BuildConnectionConfigParams): Promise<ConnectionConfig> => {
+  if (isPluginDataSourceNamespace(values.type)) return buildPluginDataSourceConfig(values, forPersist, initialValues);
   const mergedValues = { ...values };
   if (
     String(mergedValues.type || "")

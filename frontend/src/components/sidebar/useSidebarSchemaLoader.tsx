@@ -18,7 +18,7 @@ import { buildRootDatabaseJobGroups } from './sidebarRootJobGroups';
 import { ensureTableStatsServerVersion } from './sidebarTableStatsVersion';
 import { needsServerVersionForTableStats } from '../../utils/dataSourceRegistry/tableStats';
 import { invalidateQueryEditorSessionMetadata } from '../queryEditor/metadata/queryEditorSessionMetadataStore';
-import { buildConnectionReloadSignature, scheduleSidebarLoad, type SidebarTreeLoadOptions } from './sidebarTreeLoaderHelpers';
+import { buildConnectionReloadSignature, scheduleSidebarLoad, SIDEBAR_DATABASE_TREE_FIRST_COMMIT_GRACE_MS, type SidebarTreeLoadOptions } from './sidebarTreeLoaderHelpers';
 import type { UseSidebarTableLoaderInput, SidebarDatabaseObjectLoadResults } from './useSidebarTableLoader';
 import { collectSidebarSubtreeKeys } from './sidebarV2TreeExpansion';
 import { supportsSidebarSchemaLazyLoading, sidebarSchemaNodeKey, sidebarSchemaLoadKey, findSidebarSchemaTreeNode, buildSidebarSchemaTableEntries, preserveSidebarSchemaObjectChildren } from './sidebarSchemaLoading';
@@ -95,7 +95,12 @@ const loadSidebarSchemaContents = async (task: SchemaLoadTask) => {
       if (!current()) return;
       if (stats.success && Array.isArray(stats.data) && stats.data.length) { statusRows = stats.data as Record<string, unknown>[]; publish(); }
     })().catch((error) => { if (current()) console.warn('GoNavi schema statistics failed', error); });
-    await Promise.all([objectTask, statisticsTask]);
+    const allOptionalMetadata = Promise.all([objectTask, statisticsTask]);
+    const optionalMetadataSettled = await Promise.race([
+      allOptionalMetadata.then(() => true),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), SIDEBAR_DATABASE_TREE_FIRST_COMMIT_GRACE_MS)),
+    ]);
+    if (!optionalMetadataSettled) return;
   } catch (error) { if (current()) task.fail(error); failed = true; }
   finally { task.finish(); }
 };

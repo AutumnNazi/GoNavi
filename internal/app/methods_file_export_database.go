@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"GoNavi-Wails/internal/connection"
+	"GoNavi-Wails/internal/db"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -26,6 +27,9 @@ func (a *App) ExportDatabaseSQLWithOptions(
 	includeData bool,
 	options ExportFileOptions,
 ) (result connection.QueryResult) {
+	if isPluginExportRequest(options) {
+		return a.pluginExportFailure("unsupported_scope")
+	}
 	safeDbName := strings.TrimSpace(dbName)
 	if safeDbName == "" {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.database_name_required", nil)}
@@ -72,6 +76,9 @@ func (a *App) ExportDatabasesSQLWithOptions(
 	includeData bool,
 	options ExportFileOptions,
 ) (result connection.QueryResult) {
+	if isPluginExportRequest(options) {
+		return a.pluginExportFailure("unsupported_scope")
+	}
 	normalizedDbNames := normalizeExportNameList(dbNames)
 	if len(normalizedDbNames) == 0 {
 		return connection.QueryResult{Success: false, Message: a.appText("sidebar.message.select_database_required", nil)}
@@ -192,6 +199,9 @@ func (a *App) exportDatabaseSQLToFile(
 	options ExportFileOptions,
 	budgets ...*webTransferBudget,
 ) connection.QueryResult {
+	if isPluginExportRequest(options) {
+		return a.pluginExportFailure("unsupported_scope")
+	}
 	var budget *webTransferBudget
 	if len(budgets) > 0 {
 		budget = budgets[0]
@@ -229,6 +239,10 @@ func (a *App) exportDatabaseSQLToFile(
 		reporter.ForceRunning(0, a.appText("data_export.progress.stage.exporting_sql_file", nil))
 	}
 
+	return a.writeDatabaseExportObjects(exportCtx, dbInst, runConfig, dbName, filename, includeData, options, budget, reporter, objects, viewLookup)
+}
+
+func (a *App) writeDatabaseExportObjects(exportCtx context.Context, dbInst db.Database, runConfig connection.ConnectionConfig, dbName, filename string, includeData bool, options ExportFileOptions, budget *webTransferBudget, reporter *exportProgressReporter, objects []string, viewLookup map[string]string) connection.QueryResult {
 	target, err := createAtomicExportTarget(filename, budget)
 	if err != nil {
 		if reporter != nil {
@@ -319,4 +333,5 @@ func (a *App) exportDatabaseSQLToFile(
 			"filePath": filename,
 		},
 	}
+
 }

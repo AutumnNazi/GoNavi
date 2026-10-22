@@ -151,6 +151,28 @@ func TestChromaGetDatabasesV2PropagatesHTTPFailure(t *testing.T) {
 	}
 }
 
+func TestChromaGetDatabasesV2FallsBackWhenListEndpointUnsupported(t *testing.T) {
+	server := newMockChromaServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/heartbeat":
+			writeChromaJSON(w, map[string]interface{}{"ok": true})
+		case "/api/v2/tenants/default_tenant/databases":
+			// 部分 Chroma 版本的 v2 只提供 POST（创建数据库），对 GET 返回 405。
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	db := newTestChromaDB(t, server.URL)
+	dbs, err := db.GetDatabases()
+	if err != nil {
+		t.Fatalf("GetDatabases should fall back to the single database, got error: %v", err)
+	}
+	if strings.Join(dbs, ",") != "default_database" {
+		t.Fatalf("databases = %v, want [default_database]", dbs)
+	}
+}
 func TestChromaSelectConvertsToGetRows(t *testing.T) {
 	var capturedPath string
 	var capturedBody map[string]interface{}

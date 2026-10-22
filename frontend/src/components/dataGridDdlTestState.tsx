@@ -59,6 +59,7 @@ export const backendApp = (() => ({
   ExportTable: vi.fn(),
   ExportData: vi.fn(),
   ExportDataWithOptions: vi.fn(),
+  PluginExporters: vi.fn(),
   ExportQuery: vi.fn(),
   ExportQueryWithOptions: vi.fn(),
   ApplyChanges: vi.fn(),
@@ -455,7 +456,8 @@ export const mockModule12 = () => {
     Dropdown,
     Form,
     Pagination: () => null,
-    Select: ({ children, options, onChange, disabled, value }: any) => (
+    Alert: ({ message: content }: any) => <div role="alert">{content}</div>,
+    Select: ({ children, options, onChange, onSelect, disabled, value }: any) => (
       <div data-select-value={String(value ?? '')}>
         {children}
         {(options || []).map((option: any) => (
@@ -464,7 +466,7 @@ export const mockModule12 = () => {
             type="button"
             data-select-option={String(option.value)}
             disabled={disabled || option.disabled}
-            onClick={() => onChange?.(option.value)}
+            onClick={() => { onChange?.(option.value); onSelect?.(option.value); }}
           >
             {option.label}
           </button>

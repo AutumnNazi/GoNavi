@@ -451,7 +451,7 @@ func buildMappedExistingTargetPlan(config SyncConfig, tableName string, sourceDB
 			plan.Warnings = append(plan.Warnings, fmt.Sprintf("字段 %s 没有可推断的源列类型，未生成自动补齐 SQL", missingTarget))
 			continue
 		}
-		addSQL, addWarnings, addErr := buildAddColumnSQLForPair(sourceType, targetType, plan.TargetQueryTable, *sourceColumn)
+		addSQL, addWarnings, addErr := buildAddColumnSQLForPair(sourceType, targetType, plan.TargetQueryTable, *sourceColumn, config.characterLengthTarget)
 		if addErr != nil {
 			plan.Warnings = append(plan.Warnings, fmt.Sprintf("字段 %s 自动补齐 SQL 生成失败：%v", missingTarget, addErr))
 			continue

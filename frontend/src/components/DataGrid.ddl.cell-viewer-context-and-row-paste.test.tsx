@@ -112,7 +112,7 @@ describe('DataGrid DDL interactions', () => {
 
   it('hides the cell viewer immediately when the data-source context changes', async () => {
 
-    const rows = [{ __gonavi_row_key__: 'row-1', payload: 'value from the previous table' }];
+    const rows = [{ __gonavi_row_key__: 'row-1', payload: 'value from the previous table\nline two' }];
     const props = {
       data: rows,
       columnNames: ['payload'],
@@ -664,8 +664,8 @@ describe('DataGrid DDL interactions', () => {
 
   it('opens a refreshed row value without waiting for passive effects', async () => {
 
-    const initialData = [{ __gonavi_row_key__: 'row-1', payload: 'old result value' }];
-    const refreshedData = [{ __gonavi_row_key__: 'row-1', payload: 'fresh result value' }];
+    const initialData = [{ __gonavi_row_key__: 'row-1', payload: 'old result value\nline two' }];
+    const refreshedData = [{ __gonavi_row_key__: 'row-1', payload: 'fresh result value\nline two' }];
     const props = {
       columnNames: ['payload'],
       loading: false,

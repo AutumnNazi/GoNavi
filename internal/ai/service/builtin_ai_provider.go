@@ -29,6 +29,9 @@ const (
 // name/endpoint/model combination. It never infers from an alias alone, so an
 // unrelated custom provider is never redirected to the free service.
 func isBuiltinAIProviderConfig(cfg ai.ProviderConfig) bool {
+	if isPluginProviderConfig(cfg) {
+		return false
+	}
 	if cfg.ID == builtinAIProviderID {
 		return true
 	}

@@ -20,6 +20,7 @@ export const PRESET_ICON_SLUG: Record<string, string> = {
   ollama: 'ollama',
   atlascloud: 'atlascloud',
   orcarouter: 'orcarouter',
+  cheaperinference: 'cheaperinference',
   zhipu: 'zhipu',
   moonshot: 'moonshot',
   'xiaomi-mimo': 'xiaomimimo',
@@ -41,7 +42,7 @@ export const brandIconZoom = (brandIconId: unknown): number => (
   resolveBrandIcon(brandIconId).slug.startsWith('ribbon-') ? 1 / RIBBON_TILE_ART_FRACTION : BUNDLED_BRAND_ICON_ZOOM
 );
 
-const WHITE_DARK_SLUGS = new Set(['openai', 'anthropic', 'ollama', 'cursor', 'grok', 'claudecode', 'atlascloud']);
+const WHITE_DARK_SLUGS = new Set(['openai', 'anthropic', 'ollama', 'cursor', 'grok', 'claudecode', 'atlascloud', 'cheaperinference']);
 
 export interface AIProviderLogoProps {
   presetKey: string;

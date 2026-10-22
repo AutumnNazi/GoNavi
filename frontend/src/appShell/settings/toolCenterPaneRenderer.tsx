@@ -1,4 +1,5 @@
 import { Button } from 'antd';
+import { PluginManagerPanel } from '../../components/pluginManager/PluginManagerPanel';
 import { isToolCenterGroupKey } from '../settingsCenterPanes';
 import Modal from '../../components/common/ResizableDraggableModal';
 import SecurityUpdateSettingsModal from '../../components/SecurityUpdateSettingsModal';
@@ -43,6 +44,8 @@ export const createToolCenterPaneRenderer = ({
     if (!activeSettingsCenterPane || !isToolCenterGroupKey(activeSettingsCenterPane.group)) {
       return null;
     }
+
+    if (activeSettingsCenterPane.key === 'plugins') return <PluginManagerPanel />;
 
     if (activeSettingsCenterPane.key.startsWith('data-root')) {
       const dataDirectorySection = activeSettingsCenterPane.key === 'data-root-agent'

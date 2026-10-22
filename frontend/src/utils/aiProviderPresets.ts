@@ -1,4 +1,5 @@
 import type { AIProviderAuthMode, AIProviderConfig, AIProviderType } from '../types';
+import { isPluginAIProviderNamespace } from '../plugins/aiProvider/identity';
 
 export const LEGACY_QWEN_BAILIAN_OPENAI_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 export const LEGACY_QWEN_CODING_PLAN_OPENAI_BASE_URL = 'https://coding.dashscope.aliyuncs.com/v1';
@@ -9,6 +10,8 @@ export const ATLAS_CLOUD_BASE_URL = 'https://api.atlascloud.ai/v1';
 export const ATLAS_CLOUD_DEFAULT_MODEL = 'qwen/qwen3.8-max';
 export const ORCAROUTER_BASE_URL = 'https://api.orcarouter.ai/v1';
 export const ORCAROUTER_DEFAULT_MODEL = 'orcarouter/auto';
+export const CHEAPER_INFERENCE_BASE_URL = 'https://api.cheaperinference.com/v1';
+export const CHEAPER_INFERENCE_DEFAULT_MODEL = 'gpt-5.4-mini';
 export const DEEPSEEK_RESPONSES_BASE_URL = 'https://api.deepseek.com';
 export const DEEPSEEK_DEFAULT_MODEL = 'deepseek-flash';
 // deepseek-v4-pro 仍在服务，但 V4.1 Pro 尚未发布；旧 ID deepseek-v4-flash 已下线并转发到 V4.1-Flash。
@@ -260,6 +263,7 @@ export const resolveProviderPresetKey = (
   presets: ProviderPresetMatcher[],
   fallbackKey = 'custom',
 ): string => {
+  if (isPluginAIProviderNamespace(provider.type)) return provider.type;
   if (String(provider.id || '').trim() === 'gonavi-ai') return 'gonavi-ai';
   const inferredAuthMode = inferProviderAuthMode(provider);
   const mergedModePreset = presets.find((preset) =>

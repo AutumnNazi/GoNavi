@@ -19,6 +19,9 @@ func (a *App) exportTablesSQLToFile(
 	options ExportFileOptions,
 	budget *webTransferBudget,
 ) connection.QueryResult {
+	if isPluginExportRequest(options) {
+		return a.pluginExportFailure("unsupported_scope")
+	}
 	if !includeSchema && !includeData {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.invalid_export_mode", nil)}
 	}

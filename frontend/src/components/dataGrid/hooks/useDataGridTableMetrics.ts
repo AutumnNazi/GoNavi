@@ -1,4 +1,6 @@
 import { useMemo, useCallback, useEffect, useState } from 'react';
+import { isPluginExporterNamespace } from '../../../plugins/exporter/identity';
+import { runPluginSnapshotExport } from '../../../plugins/exporter/runSnapshot';
 import { message } from 'antd';
 import { useDataGridMetadata } from '../../useDataGridMetadata';
 import { type GridColumnAlign, resolveGridColumnAlign } from '../../dataGridColumnAlign';
@@ -226,6 +228,9 @@ export const useDataGridTableMetrics = ({
 
     // Helper to export specific data
     const exportData = async (rows: any[], options: DataExportFileOptions) => {
+        if (isPluginExporterNamespace(options.format) || options.pluginExporter !== undefined) {
+            await runPluginSnapshotExport(options, tableName || 'export', translateDataGrid('file.backend.dialog.export_data'), runExportWithProgress); return;
+        }
         const exportColumns = resolveDataExportColumns(options.columns, displayOutputColumnNames)
             || displayOutputColumnNames;
         const cleanRows = pickDataGridOutputRows(rows, exportColumns);

@@ -15,6 +15,7 @@ describe('AIProviderLogo', () => {
     expect(PRESET_ICON_SLUG['qwen-bailian']).toBe('alibabacloud');
     expect(PRESET_ICON_SLUG.atlascloud).toBe('atlascloud');
     expect(PRESET_ICON_SLUG.orcarouter).toBe('orcarouter');
+    expect(PRESET_ICON_SLUG.cheaperinference).toBe('cheaperinference');
     expect(PRESET_ICON_SLUG.zhipu).toBe('zhipu');
     expect(PRESET_ICON_SLUG.moonshot).toBe('moonshot');
     expect(PRESET_ICON_SLUG['xiaomi-mimo']).toBe('xiaomimimo');

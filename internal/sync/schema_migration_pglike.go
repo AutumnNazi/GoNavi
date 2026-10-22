@@ -59,7 +59,7 @@ func buildPGLikeToPGLikePlan(config SyncConfig, tableName string, sourceDB db.Da
 				if _, ok := targetSet[key]; ok {
 					continue
 				}
-				addSQL, addWarnings, err := buildAddColumnSQLForPair(sourceType, targetType, plan.TargetQueryTable, col)
+				addSQL, addWarnings, err := buildAddColumnSQLForPair(sourceType, targetType, plan.TargetQueryTable, col, config.characterLengthTarget)
 				if err != nil {
 					plan.Warnings = append(plan.Warnings, fmt.Sprintf("字段 %s 自动补齐 SQL 生成失败：%v", col.Name, err))
 					continue

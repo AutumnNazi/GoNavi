@@ -265,6 +265,7 @@ const QueryEditor: React.FC<QueryEditorProps> = ({ tab, isActive = true }) => {
       isQueryEditorMetadataRequestCurrent, currentDbRef, getCurrentQuery, objectDecorationsDirtyRef,
       scheduleObjectDecorationRefresh, metadataRetryPendingRef, refreshObjectDecorations,
       lastSqlReferencedMetadataKeyRef, queryEditorMetadataReloadTick, sqlReferencedMetadataKey,
+      switchQueryContext,
   });
 
   const { setQueryId, clearQueryId, handleMouseDown } = useQueryEditorEditorSplit({

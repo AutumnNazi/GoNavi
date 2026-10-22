@@ -466,6 +466,54 @@ func TestGetDatabaseWithPing_AllowsRetryAfterFailureCooldown(t *testing.T) {
 	}
 }
 
+func TestDBReleaseConnectionClearsFailedConnectCooldown(t *testing.T) {
+	originalNewDatabaseFunc := newDatabaseFunc
+	originalResolveDialConfigWithProxyFunc := resolveDialConfigWithProxyFunc
+	t.Cleanup(func() {
+		newDatabaseFunc = originalNewDatabaseFunc
+		resolveDialConfigWithProxyFunc = originalResolveDialConfigWithProxyFunc
+	})
+
+	connectCalls := 0
+	newDatabaseFunc = func(string) (db.Database, error) {
+		return &fakeStartupRetryDB{connect: func(connection.ConnectionConfig) error {
+			connectCalls++
+			if connectCalls == 1 {
+				return errors.New("dial tcp 10.1.131.86:5432: connect: connection refused")
+			}
+			return nil
+		}}, nil
+	}
+	resolveDialConfigWithProxyFunc = func(config connection.ConnectionConfig) (connection.ConnectionConfig, error) { return config, nil }
+
+	application := &App{
+		startedAt:       time.Now().Add(-startupConnectRetryWindow - time.Second),
+		dbCache:         make(map[string]cachedDatabase),
+		connectFailures: make(map[string]cachedConnectFailure),
+		runningQueries:  make(map[string]queryContext),
+	}
+	config := connection.ConnectionConfig{Type: "postgres", Host: "10.1.131.86", Port: 5432, User: "postgres"}
+	if result := application.DBConnect(config); result.Success {
+		t.Fatal("initial DBConnect should fail")
+	}
+	if result := application.DBGetDatabases(config); result.Success {
+		t.Fatal("DBGetDatabases should report the cached failed connection")
+	}
+	if connectCalls != 1 {
+		t.Fatalf("cooldown should avoid duplicate Connect before explicit retry, calls=%d", connectCalls)
+	}
+
+	if result := application.DBReleaseConnection(config); !result.Success {
+		t.Fatalf("DBReleaseConnection: %s", result.Message)
+	}
+	if result := application.DBGetDatabases(config); !result.Success {
+		t.Fatalf("DBGetDatabases after explicit release/retry: %s", result.Message)
+	}
+	if connectCalls != 2 {
+		t.Fatalf("explicit retry should start one fresh connection attempt, calls=%d", connectCalls)
+	}
+}
+
 func TestGetDatabaseWithPing_ClearsFailureCooldownAfterSuccess(t *testing.T) {
 	originalNewDatabaseFunc := newDatabaseFunc
 	originalResolveDialConfigWithProxyFunc := resolveDialConfigWithProxyFunc

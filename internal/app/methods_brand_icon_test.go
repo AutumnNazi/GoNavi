@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
@@ -191,6 +192,52 @@ func TestPrepareWindowsBrandIconRestartReturnsRestartRequiredAfterPersisting(t *
 	data, ok := result.Data.(map[string]any)
 	if !ok || data["restartRequired"] != true {
 		t.Fatalf("restart result data = %#v, want restartRequired=true", result.Data)
+	}
+}
+
+// 锁定前端契约：固定项按钮重建失败时 SetApplicationBrandIcon 必须在成功
+// 结果的 Data 里携带 restartRecommended（key 名与 useBrandIconSync.ts 两侧
+// 各有测试钉住，任一侧改名都会被发现）。
+func TestSetApplicationBrandIconReportsRestartRecommendedInData(t *testing.T) {
+	originalSet := setApplicationIconPNGPlatform
+	t.Cleanup(func() {
+		setApplicationIconPNGPlatform = originalSet
+	})
+	setApplicationIconPNGPlatform = func([]byte, string, context.Context) (bool, error) {
+		return true, nil
+	}
+
+	application := NewApp()
+	application.configDir = t.TempDir()
+	result := application.SetApplicationBrandIcon(validBrandIconPNGBase64)
+	if !result.Success {
+		t.Fatalf("SetApplicationBrandIcon failed: %#v", result)
+	}
+	data, ok := result.Data.(map[string]any)
+	if !ok || data["restartRecommended"] != true {
+		t.Fatalf("result data = %#v, want restartRecommended=true", result.Data)
+	}
+}
+
+// 错误路径刻意丢弃重启建议（activate 失败时持久化状态仍指旧图标，重启只会
+// 回到旧图）：Data 必须为 nil，避免前端在错误分支误弹重启引导。
+func TestSetApplicationBrandIconErrorPathOmitsRestartRecommendation(t *testing.T) {
+	originalSet := setApplicationIconPNGPlatform
+	t.Cleanup(func() {
+		setApplicationIconPNGPlatform = originalSet
+	})
+	setApplicationIconPNGPlatform = func([]byte, string, context.Context) (bool, error) {
+		return true, errors.New("activate persisted icon failed")
+	}
+
+	application := NewApp()
+	application.configDir = t.TempDir()
+	result := application.SetApplicationBrandIcon(validBrandIconPNGBase64)
+	if result.Success {
+		t.Fatalf("expected failure result, got %#v", result)
+	}
+	if result.Data != nil {
+		t.Fatalf("error result data = %#v, want nil", result.Data)
 	}
 }
 

@@ -16,8 +16,10 @@ const (
 	defaultKafkaQueryTimeout = 30 * time.Second
 	defaultKafkaPreviewLimit = 100
 	kafkaSyntheticDatabase   = "topics"
-	kafkaFetchMaxBytes       = 1 << 20
-	kafkaDefaultClientID     = "GoNavi"
+	// 单次 fetch 的字节上限：消息队列的 value 常有几 MB 到十几 MB，1 MiB 会让每次
+	// 只取到一条，拉满一屏要几十个来回。
+	kafkaFetchMaxBytes   = 16 << 20
+	kafkaDefaultClientID = "GoNavi"
 )
 
 type kafkaRuntime interface {
@@ -26,6 +28,7 @@ type kafkaRuntime interface {
 	ListTopics(ctx context.Context, includeInternal bool) ([]kafkaTopicInfo, error)
 	DescribeTopic(ctx context.Context, topic string) (kafkaTopicDescription, error)
 	FetchMessages(ctx context.Context, request kafkaFetchRequest) ([]kafkaMessageRecord, error)
+	FetchMessageAt(ctx context.Context, topic string, partition int, offset int64) (*kafkaMessageRecord, error)
 	Publish(ctx context.Context, command kafkaPublishCommand) (int64, error)
 	InspectConsumerGroups(ctx context.Context, groupID string) ([]kafkaConsumerGroupInfo, error)
 }

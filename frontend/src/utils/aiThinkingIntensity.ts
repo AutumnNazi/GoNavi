@@ -1,4 +1,5 @@
 import type { AIProviderType } from '../types';
+import { isPluginAIProviderNamespace } from '../plugins/aiProvider/identity';
 import type { AIProviderConfig } from '../types';
 import type { CLIModelCatalog } from './aiProviderManagement';
 
@@ -8,7 +9,7 @@ interface CLIThinkingCapability {
   defaultEffort?: string;
 }
 
-export type ThinkingIntensityProfile = 'openai' | 'anthropic' | 'deepseek' | 'gemini' | 'generic';
+export type ThinkingIntensityProfile = 'openai' | 'anthropic' | 'deepseek' | 'gemini' | 'generic' | 'unsupported';
 
 export type ThinkingIntensityOption = {
   value: string;
@@ -103,7 +104,7 @@ export const resolveProviderThinkingIntensityControl = (
   cliCapability?: CLIThinkingCapability,
   catalog?: CLIModelCatalog | null,
 ): ProviderThinkingIntensityControl => {
-  if (isHostedSQLModel(provider)) return { options: [], defaultValue: '' };
+  if (isPluginAIProviderNamespace(provider.type) || isHostedSQLModel(provider)) return { options: [], defaultValue: '' };
   const isLocalCLI = String(provider.authMode || '').toLowerCase() === 'local-cli'
     && String(provider.apiFormat || '').toLowerCase().endsWith('-cli');
   if (isLocalCLI) {
@@ -157,6 +158,7 @@ export const resolveThinkingIntensityProfile = (input: {
   baseUrl?: string;
   model?: string;
 }): ThinkingIntensityProfile => {
+  if (isPluginAIProviderNamespace(input.type)) return 'unsupported';
   const type = String(input.type || '').toLowerCase();
   const format = String(input.apiFormat || '').toLowerCase();
   const base = String(input.baseUrl || '').toLowerCase();
@@ -181,6 +183,7 @@ export const resolveThinkingIntensityProfile = (input: {
 export const resolveThinkingIntensityOptions = (
   profile: ThinkingIntensityProfile,
 ): ThinkingIntensityOption[] => {
+  if (profile === 'unsupported') return [];
   switch (profile) {
     case 'openai':
       return OPENAI_OPTIONS;
@@ -215,6 +218,7 @@ export const coerceThinkingIntensityForProfile = (
   value: string | undefined,
   profile: ThinkingIntensityProfile,
 ): string => {
+  if (profile === 'unsupported') return '';
   const options = resolveThinkingIntensityOptions(profile);
   const raw = String(value || '').trim().toLowerCase();
   if (options.some((item) => item.value === raw)) {
@@ -241,6 +245,7 @@ export const coerceThinkingIntensityForProfile = (
 };
 
 export const defaultThinkingIntensityForProfile = (profile: ThinkingIntensityProfile): string => {
+  if (profile === 'unsupported') return '';
   const options = resolveThinkingIntensityOptions(profile);
   if (options.some((item) => item.value === 'medium')) return 'medium';
   return options[0]?.value || 'medium';

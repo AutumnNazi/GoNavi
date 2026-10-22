@@ -92,7 +92,7 @@ export const AIContextChip: React.FC<{
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-word',
               fontSize: aiPx(12),
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+              fontFamily: 'var(--gn-font-mono)',
             }}
           >
             {chip.text || ''}

@@ -22,6 +22,8 @@ type MongoDB struct {
 	client      *mongo.Client
 	database    string
 	pingTimeout time.Duration
+	// sshDialer 持有本次连接建立的 SSH 本地转发租约，Close 时统一释放。
+	sshDialer *mongoSSHDialer
 }
 
 var _ BatchApplierContext = (*MongoDB)(nil)
@@ -52,18 +54,11 @@ func (d *mongoProxyDialer) DialContext(ctx context.Context, network, address str
 	return proxytunnel.DialContext(ctx, d.proxyConfig, network, address)
 }
 
-type mongoSSHDialer struct {
-	sshConfig   connection.SSHConfig
-	dialContext func(context.Context, connection.SSHConfig, string, string) (net.Conn, error)
-}
-
-func (d *mongoSSHDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
-	return d.dialContext(ctx, d.sshConfig, network, address)
-}
-
 func mongoConnectionDialer(config connection.ConnectionConfig) options.ContextDialer {
 	if config.UseSSH {
-		return &mongoSSHDialer{sshConfig: config.SSH, dialContext: ssh.DialContextThroughSSH}
+		// 走 ssh.AcquireLocalForwarder（见 mongodb_ssh_dialer.go）：驱动必须拿到
+		// 支持 deadline 的真实本机 socket，不能直接对 SSH channel 拨号。
+		return newMongoSSHDialer(config.SSH)
 	}
 	if config.UseProxy {
 		return &mongoProxyDialer{proxyConfig: config.Proxy}

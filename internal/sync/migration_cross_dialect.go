@@ -28,7 +28,7 @@ func toMySQLColumnType(sourceType string, targetType string, col connection.Colu
 	// 这一步不可省：中间类型要过 knownIntermediateMySQLTypeBases 白名单，
 	// 而 dec / bpchar / int1 这类别名在各方言里都是合法类型，不归一就会被
 	// 白名单当成"无映射类型"降级为 text，反而丢掉本来能精确迁移的精度与长度。
-	raw = canonicalizeSourceTypeAlias(raw)
+	raw = normalizeMigrationCharacterType(canonicalizeSourceTypeAlias(raw))
 	isAutoIncrement := strings.Contains(extra, "auto_increment") ||
 		strings.Contains(extra, "identity") ||
 		strings.HasPrefix(raw, "serial") // PG serial 类型自带自增
@@ -72,11 +72,9 @@ func toMySQLColumnType(sourceType string, targetType string, col connection.Colu
 	// varchar 为前缀，先匹配宽泛分支会把 varchar2(100) 原样留下，生成的 DDL
 	// 在 MySQL/PG 侧无效。
 	case strings.HasPrefix(raw, "nvarchar2"), strings.HasPrefix(raw, "varchar2"):
-		// Oracle varchar2(n char) 的 char/byte 长度语义忽略，只保留数字长度。
+		// 无长度类型仍走旧映射；有长度的语义由 AdaptSource 从原始列恢复。
 		base := strings.Replace(raw, "nvarchar2", "varchar", 1)
 		base = strings.Replace(base, "varchar2", "varchar", 1)
-		base = strings.ReplaceAll(base, " char)", ")")
-		base = strings.ReplaceAll(base, " byte)", ")")
 		return normalizeUnboundedCharacterType(base), false
 	case strings.HasPrefix(raw, "national character varying"):
 		return normalizeUnboundedCharacterType(strings.Replace(raw, "national character varying", "varchar", 1)), false
@@ -797,7 +795,7 @@ func buildCrossDialectAutoCreatePlan(sourceType, targetType string, config SyncC
 
 	plannedColumnTypes := make(map[string]string, len(sourceCols))
 	// 目标按字节计字符列长度（openGauss 系）时放宽 varchar/char 长度，见 migration_byte_length_target.go。
-	byteLengthWidener := newByteLengthWidener(sourceType, targetType)
+	byteLengthWidener := newByteLengthWidener(sourceType, targetType, config.characterLengthTarget)
 
 	// 先把所有列归一，再决定 SQLite 的内联自增 —— 顺序不能反。
 	// 各方言表达自增的方式不同（Oracle 的 Extra="IDENTITY"、PG 的类型 serial），
@@ -827,7 +825,7 @@ func buildCrossDialectAutoCreatePlan(sourceType, targetType string, config SyncC
 		}
 		intermediate, keyWarnings := applyKeyColumnTypeSafety(targetType, intermediate)
 		warnings = append(warnings, keyWarnings...)
-		intermediate = byteLengthWidener.Adapt(intermediate)
+		intermediate = byteLengthWidener.AdaptSource(col, intermediate)
 		def, colWarnings := buildColumnDefinitionForTargetType(targetType, intermediate)
 		warnings = append(warnings, colWarnings...)
 		plannedColumnTypes[strings.ToLower(strings.TrimSpace(col.Name))] = def

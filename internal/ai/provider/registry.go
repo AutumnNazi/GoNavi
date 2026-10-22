@@ -5,10 +5,14 @@ import (
 	"strings"
 
 	"GoNavi-Wails/internal/ai"
+	"GoNavi-Wails/internal/plugin"
 )
 
 // NewProvider 根据配置创建 Provider 实例
 func NewProvider(config ai.ProviderConfig) (Provider, error) {
+	if plugin.IsAIProviderNamespace(config.Type) {
+		return nil, ErrPluginProviderUnavailable
+	}
 	providerType := strings.ToLower(strings.TrimSpace(config.Type))
 	switch providerType {
 	case "openai":

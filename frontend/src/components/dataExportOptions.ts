@@ -1,14 +1,19 @@
 import { t } from '../i18n';
+import { isPluginExporterNamespace, parsePluginExporterFormat } from '../plugins/exporter/identity';
+import { validExporterPin } from '../plugins/exporter/validation';
+import type { ConfirmedPluginExport, FrozenExportSnapshot, PluginExporterPin } from '../plugins/exporter/types';
 
 export const DATA_EXPORT_CSV_ENCODINGS = ['utf-8', 'utf-8-bom', 'gbk', 'gb18030', 'utf-16le'] as const;
 export type DataExportCSVEncoding = typeof DATA_EXPORT_CSV_ENCODINGS[number];
 export const DEFAULT_DATA_EXPORT_CSV_ENCODING: DataExportCSVEncoding = 'utf-8-bom';
 
-export type DataExportFormat = 'csv' | 'xlsx' | 'json' | 'md' | 'html' | 'sql' | 'parquet';
+export type DataExportFormat = 'csv' | 'xlsx' | 'json' | 'md' | 'html' | 'sql' | 'parquet' | (string & {});
 export type DataExportScope = 'selected' | 'page' | 'all' | 'filteredAll';
 
 export type DataExportFileOptions = {
   format: DataExportFormat;
+  pluginExporter?: PluginExporterPin;
+  confirmedPluginExport?: ConfirmedPluginExport;
   csvEncoding?: DataExportCSVEncoding;
   columns?: string[];
   useColumnComments?: boolean;
@@ -40,6 +45,7 @@ export type ShowDataExportDialogOptions = {
   allowInsertSql?: boolean;
   allowColumnCommentHeaders?: boolean;
   okText?: string;
+  preparePluginSnapshot?: (values: DataExportDialogValues, streaming?: boolean) => FrozenExportSnapshot;
 };
 
 export const MAX_XLSX_ROWS_PER_SHEET = 1048575;
@@ -99,6 +105,10 @@ export const normalizeDataExportDialogValues = (
   availableColumns?: string[],
 ): DataExportDialogValues => {
   const requestedFormat = (initialValues?.format || DEFAULT_DATA_EXPORT_FORMAT) as DataExportFormat;
+  if (isPluginExporterNamespace(requestedFormat) || initialValues?.pluginExporter !== undefined) return {
+    format: requestedFormat, scope: initialValues?.scope ?? resolveDefaultScope(scopeOptions),
+    pluginExporter: initialValues?.pluginExporter, columns: initialValues?.columns === undefined ? availableColumns : [...initialValues.columns],
+  };
   const format = resolveDataExportFormatOptions(allowInsertSql).some((item) => item.value === requestedFormat)
     ? requestedFormat
     : DEFAULT_DATA_EXPORT_FORMAT;
@@ -122,7 +132,16 @@ export const validateDataExportDialogValues = (
   scopeOptions: DataExportScopeOption[],
   allowInsertSql = false,
   availableColumns?: string[],
+  allowPluginExporter = false,
 ): string | null => {
+  if (isPluginExporterNamespace(values.format) || values.pluginExporter !== undefined) {
+    if (!allowPluginExporter || !['selected', 'page'].includes(String(values.scope))) return t('plugin.exporter.error.scope');
+    if (!parsePluginExporterFormat(values.format) || !validExporterPin(values.pluginExporter)) return t('plugin.exporter.error.selection');
+    const scope = scopeOptions.find((item) => item.value === values.scope);
+    if (!scope || scope.disabled || !values.columns?.length || values.columns.length > 256 || new Set(values.columns).size !== values.columns.length
+      || values.columns.some((column) => !availableColumns?.includes(column))) return t('plugin.exporter.error.snapshot');
+    return null;
+  }
   if (!resolveDataExportFormatOptions(allowInsertSql).some((item) => item.value === values.format)) {
     return t('data_export.dialog.validation.format_required');
   }
@@ -153,6 +172,10 @@ export const validateDataExportDialogValues = (
 };
 
 export const resolveDataExportFileOptions = <T extends DataExportFileOptions>(values: T): T => {
+  if (isPluginExporterNamespace(values.format) || values.pluginExporter !== undefined) return {
+    format: values.format, columns: values.columns, pluginExporter: values.pluginExporter,
+    ...('scope' in values ? { scope: values.scope } : {}),
+  } as T;
   const { csvEncoding, ...options } = values;
   return {
     ...options,

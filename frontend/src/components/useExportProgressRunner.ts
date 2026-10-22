@@ -36,6 +36,7 @@ export type RunExportWithProgressOptions<T extends ExportRunResult> = {
   format: string;
   totalRows?: number;
   run: (jobId: string) => Promise<T>;
+  shouldPublishResult?: (result?: T) => boolean;
 };
 
 export type UseExportProgressRunnerOptions = {
@@ -68,8 +69,8 @@ const hasStructuredCancelMark = (result: ExportRunResult | null): boolean => {
   if (!result || result.success) {
     return false;
   }
-  const data = result.data as { canceled?: unknown } | undefined;
-  return data?.canceled === true;
+  const data = result.data as { canceled?: unknown; outcomeUnknown?: unknown } | undefined;
+  return data?.canceled === true && data.outcomeUnknown !== true;
 };
 
 export function useExportProgressRunner(options?: UseExportProgressRunnerOptions) {
@@ -180,8 +181,9 @@ export function useExportProgressRunner(options?: UseExportProgressRunnerOptions
 
     try {
       const result = await runOptions.run(jobId);
+      const publish = !runOptions.shouldPublishResult || (getExportProgressTaskSnapshot(taskKey).state.jobId === jobId && runOptions.shouldPublishResult(result));
       if (result.success) {
-        if (!downloadBrowserFileFromResult(result as any)) {
+        if (publish && !downloadBrowserFileFromResult(result as any)) {
           throw new Error(t('data_export.message.export_failed', { error: 'Browser download is unavailable' }));
         }
         finishExportProgressTask(taskKey, jobId, (prev): ExportProgressState => ({
@@ -193,7 +195,7 @@ export function useExportProgressRunner(options?: UseExportProgressRunnerOptions
           current: prev.totalRowsKnown ? Math.max(prev.current, prev.total) : prev.current,
           message: '',
         }));
-        if (showToast) {
+        if (showToast && publish) {
           void message.success(t('data_export.message.export_success'));
         }
       } else if (hasStructuredCancelMark(result)) {
@@ -205,7 +207,7 @@ export function useExportProgressRunner(options?: UseExportProgressRunnerOptions
           stage: prev.stage || t('data_export.progress.title.cancelled'),
           message: result.message || '',
         }));
-        if (showToast) {
+        if (showToast && publish) {
           void message.info(t('data_export.progress.title.cancelled'));
         }
       } else if (result.message !== EXPORT_CANCELED_MESSAGE) {
@@ -217,7 +219,7 @@ export function useExportProgressRunner(options?: UseExportProgressRunnerOptions
           stage: prev.stage || t('data_export.progress.title.error'),
           message: result.message,
         }));
-        if (showToast) {
+        if (showToast && publish) {
           void message.error(t('data_export.message.export_failed', { error: result.message }));
         }
       } else {
@@ -226,6 +228,7 @@ export function useExportProgressRunner(options?: UseExportProgressRunnerOptions
       return result;
     } catch (error: any) {
       const errorMessage = error?.message || String(error);
+      const publish = !runOptions.shouldPublishResult || (getExportProgressTaskSnapshot(taskKey).state.jobId === jobId && runOptions.shouldPublishResult());
       finishExportProgressTask(taskKey, jobId, (prev): ExportProgressState => ({
         ...prev,
         open: true,
@@ -234,7 +237,7 @@ export function useExportProgressRunner(options?: UseExportProgressRunnerOptions
         stage: prev.stage || t('data_export.progress.title.error'),
         message: errorMessage,
       }));
-      if (showToast) {
+      if (showToast && publish) {
         void message.error(t('data_export.message.export_failed', { error: errorMessage }));
       }
       throw error;

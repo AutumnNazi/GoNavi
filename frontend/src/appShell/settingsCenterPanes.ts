@@ -7,6 +7,7 @@ export type ToolCenterPaneKey =
   | 'data-root-saved-queries'
   | 'security-update'
   | 'drivers'
+  | 'plugins'
   | 'snippet-settings';
 
 export type SettingsCenterGroupKey = PreferencePage | 'preferences' | 'services' | ToolCenterGroupKey | 'about' | 'brand-icon';

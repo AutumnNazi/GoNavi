@@ -1,9 +1,7 @@
 package sync
 
 import (
-	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -31,6 +29,7 @@ type valueLengthFinding struct {
 	MaxBytes int
 	MaxChars int
 	Rows     int
+	Unit     string
 }
 
 // charsOverflow 表示连字符数都超过了声明长度：数据本身比列长，与字节/字符计长口径无关。
@@ -40,15 +39,8 @@ func (f valueLengthFinding) charsOverflow() bool {
 
 // charColumnLimit 解析目标列类型里的字符长度（varchar(n) / character varying(n) / char(n) 等）。
 func charColumnLimit(rawType string) (int, bool) {
-	match := charLengthTypePattern.FindStringSubmatch(rawType)
-	if match == nil {
-		return 0, false
-	}
-	limit, err := strconv.Atoi(match[2])
-	if err != nil || limit <= 0 {
-		return 0, false
-	}
-	return limit, true
+	parsed, ok := parseMigrationCharacterType(rawType)
+	return parsed.length, ok
 }
 
 // findValueLengthOverflows 扫描待写入的新增 / 更新行，返回按最长字节数降序的超长字段。
@@ -57,11 +49,12 @@ func findValueLengthOverflows(targetCols []connection.ColumnDefinition, changes 
 		name  string
 		typ   string
 		limit int
+		unit  string
 	}
 	limits := make(map[string]columnInfo, len(targetCols))
 	for _, col := range targetCols {
-		if limit, ok := charColumnLimit(col.Type); ok {
-			limits[strings.ToLower(strings.TrimSpace(col.Name))] = columnInfo{name: col.Name, typ: strings.TrimSpace(col.Type), limit: limit}
+		if parsed, ok := parseMigrationCharacterType(col.Type); ok {
+			limits[strings.ToLower(strings.TrimSpace(col.Name))] = columnInfo{name: col.Name, typ: strings.TrimSpace(col.Type), limit: parsed.length, unit: parsed.gaussLengthUnit()}
 		}
 	}
 	if len(limits) == 0 {
@@ -80,18 +73,22 @@ func findValueLengthOverflows(targetCols []connection.ColumnDefinition, changes 
 			if !tracked {
 				continue
 			}
-			byteLen := len(text)
-			if byteLen <= info.limit {
+			byteLen, charLen := len(text), utf8.RuneCountInString(text)
+			measured := byteLen
+			if info.unit == "CHAR" {
+				measured = charLen
+			}
+			if measured <= info.limit {
 				continue
 			}
 			finding := found[key]
 			if finding == nil {
-				finding = &valueLengthFinding{Column: info.name, Type: info.typ, Limit: info.limit}
+				finding = &valueLengthFinding{Column: info.name, Type: info.typ, Limit: info.limit, Unit: info.unit}
 				found[key] = finding
 			}
 			finding.Rows++
 			finding.MaxBytes = max(finding.MaxBytes, byteLen)
-			finding.MaxChars = max(finding.MaxChars, utf8.RuneCountInString(text))
+			finding.MaxChars = max(finding.MaxChars, charLen)
 		}
 	}
 	for _, row := range changes.Inserts {
@@ -116,6 +113,9 @@ func findValueLengthOverflows(targetCols []connection.ColumnDefinition, changes 
 
 // suggestedCharColumnLength 给出参考加宽后的长度：至少放得下本次最长的数据，并留出 4 倍字节余量。
 func suggestedCharColumnLength(f valueLengthFinding) int {
+	if f.Unit == "CHAR" {
+		return min(max(f.Limit, f.MaxChars), byteLengthTypeMaxLength)
+	}
 	return min(max(f.Limit*byteLengthWidenFactor, f.MaxBytes), byteLengthTypeMaxLength)
 }
 
@@ -135,10 +135,7 @@ func buildValueTooLongDetail(targetType, targetTable string, findings []valueLen
 			"chars":  finding.MaxChars,
 			"rows":   finding.Rows,
 		}))
-		alters = append(alters, fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s TYPE varchar(%d);",
-			quoteQualifiedIdentByType(targetType, targetTable),
-			quoteIdentByType(targetType, finding.Column),
-			suggestedCharColumnLength(finding)))
+		alters = append(alters, suggestedCharacterColumnAlter(targetType, targetTable, finding))
 	}
 	return localizedSyncBackendText("data_sync.backend.hint.value_too_long_columns", map[string]any{
 		"columns": strings.Join(items, "；"),

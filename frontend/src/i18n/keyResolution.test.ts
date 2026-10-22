@@ -2,6 +2,10 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { DATA_SYNC_WORKBENCH_TEXT_KEYS } from '../components/data-sync/text';
+import { PLUGIN_STATE_KEYS } from '../plugins/stateKeys';
+import { PLUGIN_MARKET_AUTH_KEYS } from '../pluginMarket/authKeys';
+import { PLUGIN_DATASOURCE_STATUS_KEYS } from '../plugins/dataSource/presentation';
+import { PLUGIN_EXPORT_ERROR_KEYS } from '../plugins/exporter/result';
 import { messages as legacyMessages } from '../../../shared/i18n/messages';
 
 /**
@@ -38,6 +42,17 @@ const LOCAL_CATALOGS: readonly LocalCatalog[] = [
 const GLOBAL_TRANSLATOR_FILES: ReadonlySet<string> = new Set([
   `${frontendSrc}/components/data-sync/DataSyncBackgroundNotice.tsx`,
 ]);
+
+/**
+ * 动态拼接的 key（形如 t('prefix.' + value)）无法被字面量扫描覆盖。
+ * 每个前缀必须在下面登记完整变体，逐个走同一条解析链；未登记的前缀仍按字面量报错。
+ */
+const DYNAMIC_KEY_SETS: readonly { prefix: string; keys: readonly string[] }[] = [
+  { prefix: 'plugin.state.', keys: PLUGIN_STATE_KEYS },
+  { prefix: 'plugin.market.auth_', keys: PLUGIN_MARKET_AUTH_KEYS },
+  { prefix: 'plugin.datasource.status.', keys: PLUGIN_DATASOURCE_STATUS_KEYS },
+  { prefix: 'plugin_export.error.', keys: PLUGIN_EXPORT_ERROR_KEYS },
+];
 
 const localCatalogFor = (file: string): LocalCatalog | undefined =>
   GLOBAL_TRANSLATOR_FILES.has(file)
@@ -92,6 +107,16 @@ describe('i18n key resolution', () => {
       for (const match of source.matchAll(/\bt\(\s*'([a-zA-Z0-9_.-]+)'/g)) {
         const key = match[1];
         scanned += 1;
+        const dynamic = DYNAMIC_KEY_SETS.find((entry) => entry.prefix === key);
+        if (dynamic) {
+          for (const variant of dynamic.keys) {
+            const mapped = toCatalogKey(variant);
+            if (!catalogKeys.has(mapped) && !legacyKeys.has(variant) && !legacyKeys.has(mapped)) {
+              unresolved.push(`${variant} (via ${dynamic.prefix})`);
+            }
+          }
+          continue;
+        }
         if (localCatalog) {
           if (!localCatalog.keys.has(key)) {
             unresolved.push(`${key} (${file.slice(repoRoot.length)})`);

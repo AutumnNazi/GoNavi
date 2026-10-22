@@ -64,6 +64,10 @@ export type MessageConsumeCommand = {
 
 export type MessageConsumeTranslate = (key: string, params?: I18nParams) => string;
 
+// 列表预览只请求元数据列：payload 可能有十几 MB，放进列表帧会让驱动代理的单帧超限，
+// 整条预览流会因此中断。完整内容由详情查询按 partition + offset 拉取。
+export const KAFKA_MESSAGE_METADATA_COLUMNS = 'timestamp, partition, offset, key, value_size';
+
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 1000;
 const DEFAULT_MQTT_FETCH_WAIT_MS = 4000;
@@ -523,8 +527,11 @@ export const buildMessageConsumeCommand = (
       break;
     }
     case 'kafka': {
-      const groupClause = resolveKafkaConsumerGroupClause(draft?.consumerGroup, translate);
-      commandText = `CONSUME${groupClause} FROM "${destination}" LIMIT ${limit};`;
+      // 列表只取元数据（时间 / partition / offset / key / 大小）：payload 可能有十几 MB，
+      // 放进列表帧会让驱动代理单帧超限、预览流中断；完整内容在点击消息时按需拉取。
+      // 预览不提交消费进度，所以不用 consumer group，但仍保留它的格式校验。
+      void resolveKafkaConsumerGroupClause(draft?.consumerGroup, translate);
+      commandText = `SELECT ${KAFKA_MESSAGE_METADATA_COLUMNS} FROM "${destination}" LIMIT ${limit};`;
       break;
     }
     case 'rocketmq':

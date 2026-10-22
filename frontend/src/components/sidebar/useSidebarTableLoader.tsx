@@ -502,36 +502,37 @@ export const useSidebarTableLoader = ({
   	                ]);
   	                if (!isCurrentLoad()) return;
   	            }
+              const publishObjectResults = (objectLoads: Awaited<typeof objectLoadsPromise>) => {
+                  if (!objectLoads.ok) return;
+                  const [viewsResult, materializedViewsResult, triggersResult, routinesResult, sequencesResult, packagesResult, eventsResult, databaseLinksResult, jobsResult] = objectLoads.results;
+                  const secondPass = buildRenderedDatabaseChildren({
+                      viewsResult, materializedViewsResult, triggersResult, routinesResult,
+                      sequencesResult, packagesResult, eventsResult, databaseLinksResult, jobsResult,
+                  }, true);
+                  renderedDatabaseChildren = secondPass.renderedDatabaseChildren;
+                  latestDatabaseConnection = secondPass.latestDatabaseConnection;
+                  replaceTreeNodeChildren(key, renderedDatabaseChildren, latestDatabaseConnection);
+                  onDatabaseTreeLoaded?.(String(key));
+              };
   	            if (!objectLoadsSettled) {
   	                const firstPass = buildRenderedDatabaseChildren(emptyObjectLoadResults, false);
   	                renderedDatabaseChildren = firstPass.renderedDatabaseChildren;
   	                latestDatabaseConnection = firstPass.latestDatabaseConnection;
-              if (!isCurrentLoad()) return;
-              replaceTreeNodeChildren(key, renderedDatabaseChildren, latestDatabaseConnection);
+                  if (!isCurrentLoad()) return;
+                  replaceTreeNodeChildren(key, renderedDatabaseChildren, latestDatabaseConnection);
                   onDatabaseTreeLoaded?.(String(key));
                   shouldMarkDatabaseSuccess = true;
-  	            }
-  
-  	            const objectLoads = await objectLoadsPromise;
-              if (!isCurrentLoad()) return;
-  	            if (!objectLoads.ok) throw objectLoads.error;
-              const [viewsResult, materializedViewsResult, triggersResult, routinesResult, sequencesResult, packagesResult, eventsResult, databaseLinksResult, jobsResult] = objectLoads.results;
-  	            const secondPass = buildRenderedDatabaseChildren({
-  	                viewsResult,
-  	                materializedViewsResult,
-  	                triggersResult,
-  	                routinesResult,
-  	                sequencesResult,
-  	                packagesResult,
-  	                eventsResult,
-  	                databaseLinksResult,
-                  jobsResult,
-  	            }, true);
-  	            renderedDatabaseChildren = secondPass.renderedDatabaseChildren;
-  	            latestDatabaseConnection = secondPass.latestDatabaseConnection;
-              replaceTreeNodeChildren(key, renderedDatabaseChildren, latestDatabaseConnection);
-                  onDatabaseTreeLoaded?.(String(key));
+                  // Optional object metadata fills in later and must not block database expansion.
+                  void objectLoadsPromise.then((objectLoads) => {
+                      if (isCurrentLoad()) publishObjectResults(objectLoads);
+                  });
+              } else {
+                const objectLoads = await objectLoadsPromise;
+                  if (!isCurrentLoad()) return;
+                if (!objectLoads.ok) throw objectLoads.error;
+                  publishObjectResults(objectLoads);
                   shouldMarkDatabaseSuccess = true;
+              }
   
   	            if (getMetadataDialect(conn as SavedConnection) === 'sqlite') {
   	                const tableNames = tableRows

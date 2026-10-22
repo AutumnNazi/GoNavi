@@ -38,7 +38,9 @@ describe('DataGrid DDL interactions', () => {
 
   it('opens the complete cell value in a read-only viewer on double-click', async () => {
 
-    const fullValue = `${'A long query-result segment. '.repeat(12)}END-OF-CELL-VALUE`;
+    // 多行长文本属于「值得完整查看」的单元格（与可编辑结果集的判定一致）；
+    // 普通单行文本双击不再打开查看器。
+    const fullValue = `${'A long query-result segment. '.repeat(12)}\nEND-OF-CELL-VALUE`;
     const rows = [{ __gonavi_row_key__: 'row-1', payload: fullValue }];
 
     let renderer: ReactTestRenderer;
@@ -99,6 +101,62 @@ describe('DataGrid DDL interactions', () => {
     expect(viewer.findAll((node) => node.type === 'button' && textContent(node).includes(t('common.save')))).toHaveLength(0);
     expect(viewer.findAll((node) => node.type === 'button' && textContent(node).includes(t('common.close')))).toHaveLength(1);
     expect(viewer.findAll((node) => node.type === 'button')).toHaveLength(1);
+    renderer!.unmount();
+  });
+
+  // 只读结果集双击普通单行文本应保持浏览器默认选中行为，
+  // 不能弹查看器（与可编辑结果集走同一 shouldOpenModalEditor 判定）。
+  it('leaves plain single-line text cells to the default double-click selection', async () => {
+    const rows = [{ __gonavi_row_key__: 'row-1', payload: 'Ada' }];
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <DataGrid
+          data={rows}
+          columnNames={['payload']}
+          loading={false}
+          tableName="query_result"
+          dbName="main"
+          connectionId="conn-1"
+          readOnly
+        />,
+      );
+    });
+    await waitForEffects();
+
+    const doubleClickSurface = renderer!.root.findAll(
+      (node) => typeof node.props.onDoubleClickCapture === 'function',
+    )[0];
+    expect(doubleClickSurface).toBeTruthy();
+
+    const cellTarget = {
+      closest: (selector: string) => selector === '[data-row-key][data-col-name]'
+        ? {
+            getAttribute: (name: string) => {
+              if (name === 'data-row-key') return 'row-1';
+              if (name === 'data-col-name') return 'payload';
+              return null;
+            },
+          }
+        : null,
+    } as unknown as HTMLElement;
+    const preventDefault = vi.fn();
+    const stopPropagation = vi.fn();
+
+    await act(async () => {
+      doubleClickSurface.props.onDoubleClickCapture({
+        target: cellTarget,
+        preventDefault,
+        stopPropagation,
+      });
+    });
+
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(stopPropagation).not.toHaveBeenCalled();
+    expect(renderer!.root.findAllByProps({
+      'data-modal-title': t('data_grid.cell_viewer.title_with_column', { column: 'payload' }),
+    })).toHaveLength(0);
     renderer!.unmount();
   });
 
@@ -370,8 +428,8 @@ describe('DataGrid DDL interactions', () => {
 
     const columnNames = [' payload ', ''];
     const expectedValues: Record<string, string> = {
-      ' payload ': 'value under a spaced alias',
-      '': 'value under an empty alias',
+      ' payload ': 'value under a spaced alias\nline two',
+      '': 'value under an empty alias\nline two',
     };
     const rows = [{ __gonavi_row_key__: 'row-1', ...expectedValues }];
 
@@ -473,7 +531,7 @@ describe('DataGrid DDL interactions', () => {
     const rows = [{
       __gonavi_row_key__: 'row-1',
       id: 1,
-      computed_label: 'computed value that cannot be written back',
+      computed_label: 'computed value that cannot be written back\nline two',
       notes: 'writable value',
     }];
 
@@ -565,7 +623,7 @@ describe('DataGrid DDL interactions', () => {
     const payloadColumn = testRenderState.latestColumns.find((item) => item.key === 'payload');
     const editingCell = create(<div>{payloadColumn.render(record.payload, record, 0)}</div>);
     const blur = editingCell.root.findByProps({ className: 'data-grid-inline-editor-input' }).props.onBlur;
-    testRenderState.formGetFieldValue.mockReturnValue('pending edited value');
+    testRenderState.formGetFieldValue.mockReturnValue('pending edited value\nline two');
     await act(async () => {
       blur();
       await Promise.resolve();
@@ -574,7 +632,7 @@ describe('DataGrid DDL interactions', () => {
     editingCell.unmount();
     await waitForEffects();
 
-    expect(testRenderState.latestTableProps.dataSource[0].payload).toBe('pending edited value');
+    expect(testRenderState.latestTableProps.dataSource[0].payload).toBe('pending edited value\nline two');
 
     await act(async () => {
       renderer!.update(
@@ -599,7 +657,7 @@ describe('DataGrid DDL interactions', () => {
 
     const viewerTitle = t('data_grid.cell_viewer.title_with_column', { column: 'payload' });
     const viewer = renderer!.root.findByProps({ 'data-modal-title': viewerTitle });
-    expect(textContent(viewer.findByProps({ 'data-monaco-editor': 'true' }))).toBe('pending edited value');
+    expect(textContent(viewer.findByProps({ 'data-monaco-editor': 'true' }))).toBe('pending edited value\nline two');
     renderer!.unmount();
   });
 
@@ -739,7 +797,7 @@ describe('DataGrid DDL interactions', () => {
     const payloadColumn = testRenderState.latestColumns.find((item) => item.key === 'payload');
     const editingCell = create(<div>{payloadColumn.render(record.payload, record, 0)}</div>);
     const blur = editingCell.root.findByProps({ className: 'data-grid-inline-editor-input' }).props.onBlur;
-    testRenderState.formGetFieldValue.mockReturnValue('pending MongoDB value');
+    testRenderState.formGetFieldValue.mockReturnValue('pending MongoDB value\nline two');
     await act(async () => {
       blur();
       await Promise.resolve();
@@ -772,7 +830,7 @@ describe('DataGrid DDL interactions', () => {
     const viewer = renderer!.root.findByProps({
       'data-modal-title': t('data_grid.cell_viewer.title_with_column', { column: 'payload' }),
     });
-    expect(textContent(viewer.findByProps({ 'data-monaco-editor': 'true' }))).toBe('pending MongoDB value');
+    expect(textContent(viewer.findByProps({ 'data-monaco-editor': 'true' }))).toBe('pending MongoDB value\nline two');
     renderer!.unmount();
   });
 
@@ -858,7 +916,7 @@ describe('DataGrid DDL interactions', () => {
       (node) => typeof node.props.onApplyBatchFill === 'function',
     )[0];
     await act(async () => {
-      batchEditor.props.onBatchEditValueChange('batch-filled draft');
+      batchEditor.props.onBatchEditValueChange('batch-filled draft\nline two');
     });
     batchEditor = renderer!.root.findAll(
       (node) => typeof node.props.onApplyBatchFill === 'function',
@@ -870,7 +928,7 @@ describe('DataGrid DDL interactions', () => {
 
     expect(testRenderState.latestTableProps.dataSource[0]).toMatchObject({
       notes: 'edited notes',
-      payload: 'batch-filled draft',
+      payload: 'batch-filled draft\nline two',
     });
 
     await act(async () => {
@@ -900,7 +958,7 @@ describe('DataGrid DDL interactions', () => {
     const viewer = renderer!.root.findByProps({
       'data-modal-title': t('data_grid.cell_viewer.title_with_column', { column: 'payload' }),
     });
-    expect(textContent(viewer.findByProps({ 'data-monaco-editor': 'true' }))).toBe('batch-filled draft');
+    expect(textContent(viewer.findByProps({ 'data-monaco-editor': 'true' }))).toBe('batch-filled draft\nline two');
     renderer!.unmount();
   });
 
@@ -1001,7 +1059,7 @@ describe('DataGrid DDL interactions', () => {
     renderer!.unmount();
   });
 
-  it('renders only null as SQL NULL in the read-only cell viewer', async () => {
+  it('keeps null and empty cells in the grid without opening the viewer on double-click', async () => {
 
     const rows = [
       { __gonavi_row_key__: 'row-null', payload: null },
@@ -1025,30 +1083,30 @@ describe('DataGrid DDL interactions', () => {
     });
     await waitForEffects();
 
+    // null / undefined / 空串都不属于「值得完整查看」的单元格：
+    // 双击保持默认选中行为，不打开查看器。
     const doubleClickSurface = renderer!.root.findAll(
       (node) => typeof node.props.onDoubleClickCapture === 'function',
     )[0];
-    const openViewerForRow = async (rowKey: string) => {
+    for (const rowKey of ['row-null', 'row-undefined', 'row-empty']) {
+      const preventDefault = vi.fn();
       await act(async () => {
         doubleClickSurface.props.onDoubleClickCapture({
           target: createRenderedCellTarget(rowKey, 'payload'),
-          preventDefault: vi.fn(),
+          preventDefault,
           stopPropagation: vi.fn(),
         });
       });
-      return renderer!.root.findByProps({ 'data-monaco-editor': 'true' });
-    };
-
-    expect(textContent(await openViewerForRow('row-null'))).toBe('NULL');
-    expect(textContent(await openViewerForRow('row-undefined'))).toBe('undefined');
-    expect(textContent(await openViewerForRow('row-empty'))).toBe('');
+      expect(preventDefault).not.toHaveBeenCalled();
+    }
+    expect(renderer!.root.findAll((node) => node.props['data-monaco-editor'] === 'true')).toHaveLength(0);
     renderer!.unmount();
   });
 
   it('closes the read-only cell viewer when the grid becomes inactive', async () => {
 
     const props = {
-      data: [{ __gonavi_row_key__: 'row-1', payload: 'old result value' }],
+      data: [{ __gonavi_row_key__: 'row-1', payload: 'old result value\nline two' }],
       columnNames: ['payload'],
       loading: false,
       tableName: 'query_result',
@@ -1090,7 +1148,7 @@ describe('DataGrid DDL interactions', () => {
 
   it('closes the read-only cell viewer when the data reference refreshes', async () => {
 
-    const initialData = [{ __gonavi_row_key__: 'row-1', payload: 'old result value' }];
+    const initialData = [{ __gonavi_row_key__: 'row-1', payload: 'old result value\nline two' }];
     const props = {
       columnNames: ['payload'],
       loading: false,

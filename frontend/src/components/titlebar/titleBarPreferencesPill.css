@@ -27,15 +27,20 @@ body[data-ui-version='v2'] .gn-preferences-pill .gn-preferences-pill-segment.ant
   align-items: center;
   justify-content: center;
   gap: calc(6px * var(--gn-ui-scale, 1));
-  height: calc(26px * var(--gn-ui-scale, 1));
+  height: calc(26px * var(--gn-ui-scale, 1)) !important;
   width: auto;
   min-width: 0;
-  padding: 0 calc(8px * var(--gn-ui-scale, 1));
+  padding: 0 calc(8px * var(--gn-ui-scale, 1)) !important;
   border: none;
   border-radius: calc(7px * var(--gn-ui-scale, 1));
   background: transparent;
-  color: var(--gn-fg-1, #0c1322);
-  font-size: calc(13px * var(--gn-ui-scale, 1));
+  /* !important 对抗 v2-theme-01 里 .ant-btn-text 的 color: fg-3 !important，
+     常态文字必须与「驱动管理」入口一样用最深的 fg-1，不能偏白。 */
+  color: var(--gn-fg-1, #0c1322) !important;
+  /* 与工具条按钮同一口径：基础字体大小 × 界面缩放，两个设置都跟随。
+     !important 对抗 v2-theme-01 里 body[data-ui-version="v2"] .ant-btn-sm
+     的全局 !important 钉死（12px / 24px），否则胶囊文字永远不跟随设置。 */
+  font-size: calc((var(--gn-font-size-sm, 12px) + 1px) * var(--gn-ui-scale, 1)) !important;
   font-weight: 500;
   box-shadow: none;
 }

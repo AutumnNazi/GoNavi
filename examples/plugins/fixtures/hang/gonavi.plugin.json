@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": 1,
+  "id": "fixture.hang",
+  "name": "Failure fixture: hang",
+  "version": "1.0.0",
+  "description": "Adversarial test fixture; use a disposable profile only",
+  "permissions": [],
+  "backend": {
+    "default": {
+      "executable": "bin/plugin",
+      "args": [
+        "--mode",
+        "hang"
+      ],
+      "runtime": "native"
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "run",
+        "title": "Trigger test failure",
+        "effect": "unknown"
+      }
+    ],
+    "panels": []
+  }
+}

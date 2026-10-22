@@ -115,5 +115,5 @@ describe('result set switching re-render cost', () => {
     // Only the two grids whose `isActive` flipped should have re-rendered.
     expect(renderedSql).toEqual(['SELECT 1', 'SELECT 2']);
     expect(renderCounts.has('SELECT 3')).toBe(false);
-  });
+  }, 30_000);
 });

@@ -4,6 +4,7 @@
  * Provider-facing context compression is owned by the Go Agent Harness.
  */
 export interface AIModelContextProfile {
+  unavailable?: boolean;
   defaultWindow: number;
   /** 升序、含默认档；长度大于 1 表示该模型支持调整上下文档位 */
   options: number[];
@@ -27,6 +28,7 @@ export const resolveEffectiveContextWindow = (
   profile: AIModelContextProfile | null | undefined,
   selectedWindow?: number,
 ): number => {
+  if (profile?.unavailable) return 0;
   if (selectedWindow && selectedWindow > 0) return selectedWindow;
   return profile?.defaultWindow ?? FALLBACK_CONTEXT_WINDOW;
 };
