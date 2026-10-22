@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "repository": "https://github.com/google/fonts",
-  "revision": "1d0e46c7933245c8180fe83e47917961c913bbdb",
-  "reviewedAt": "2026-10-16",
+  "revision": "45e3d5269e4a17d823f6d84470bc084dc5ae46f6",
+  "reviewedAt": "2026-10-22",
   "publication": "original-unmodified-files",
-  "previewPolicy": "Reuse original font bytes below 512 KiB; no subsetting, no renamed or altered binaries.",
+  "previewPolicy": "Reuse original font bytes below 512 KiB; above the bound the preview is a name-preserving fontTools subset covering the application preview text. Font binaries are never modified or renamed.",
   "entries": [
     {
       "id": "jetbrains-mono",
@@ -181,6 +181,90 @@
       "fontVersion": [
         "Version 1.006; ttfautohint (v1.8.3)"
       ]
+    },
+    {
+      "id": "hack",
+      "family": "Hack",
+      "kind": "mono",
+      "sourceUrl": "https://github.com/source-foundry/Hack/releases/download/v3.003/Hack-v3.003-ttf.zip",
+      "sha256": "15f55cc0c85a2988d2b4b3a8cdb5d77fdfbaf319e1bb5309d725db9818fb7125",
+      "sizeBytes": 309408,
+      "licenseUrl": "https://raw.githubusercontent.com/source-foundry/Hack/v3.003/LICENSE.md",
+      "licenseSha256": "1f61bb7c790c59b4b0ecdf304628b94e42ae4c8020094a8c3da73381ab212623",
+      "fontCopyright": [
+        "The work in the Hack project is Copyright 2018 Source Foundry Authors and licensed under the MIT License"
+      ],
+      "fontVersion": [
+        "Version 3.003;[3114f1256]-release"
+      ]
+    },
+    {
+      "id": "inter",
+      "family": "Inter",
+      "kind": "ui",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf",
+      "sha256": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031",
+      "sizeBytes": 876576,
+      "licenseUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/inter/OFL.txt",
+      "licenseSha256": "5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57",
+      "fontCopyright": [
+        "Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter)"
+      ],
+      "fontVersion": [
+        "Version 4.001;git-66647c0bb"
+      ]
+    },
+    {
+      "id": "manrope",
+      "family": "Manrope",
+      "kind": "ui",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/manrope/Manrope%5Bwght%5D.ttf",
+      "sha256": "3ae11c49db0455a3cc33e37d380f20fdb8c7f8b41dc07625c177e3d87a9d6ae6",
+      "sizeBytes": 164700,
+      "licenseUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/manrope/OFL.txt",
+      "licenseSha256": "58172e0c0fac2cda8a37b348164bb55e44b0e69051e557e92b1d3f6910141f7b",
+      "fontCopyright": [
+        "Copyright 2018 The Manrope Project Authors (https://github.com/googlefonts/manrope)"
+      ],
+      "fontVersion": [
+        "Version 4.505"
+      ]
+    },
+    {
+      "id": "noto-sans-sc",
+      "family": "Noto Sans SC",
+      "kind": "ui",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf",
+      "sha256": "a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da",
+      "sizeBytes": 17772300,
+      "licenseUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/notosanssc/OFL.txt",
+      "licenseSha256": "1c05c68c34f9708415aada51f17e1b0092d2cea709bf4a94cd38114f9e73d7d9",
+      "fontCopyright": [
+        "Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'"
+      ],
+      "fontVersion": [
+        "Version 2.004-H2;hotconv 1.0.118;makeotfexe 2.5.65603"
+      ]
+    },
+    {
+      "id": "open-sans",
+      "family": "Open Sans",
+      "kind": "ui",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/opensans/OpenSans%5Bwdth%2Cwght%5D.ttf",
+      "sha256": "36643644f318a812aab2d2ed3bb98f8cf0872527f835fe9398d95fe6b9adb878",
+      "sizeBytes": 532636,
+      "licenseUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/opensans/OFL.txt",
+      "licenseSha256": "fbbbcfef55318de350562559b671360de6d597112ecc5c73881b05092db89602",
+      "fontCopyright": [
+        "Copyright 2020 The Open Sans Project Authors (https://github.com/googlefonts/opensans)"
+      ],
+      "fontVersion": [
+        "Version 3.003"
+      ]
     }
-  ]
+  ],
+  "revisions": {
+    "2026-10-16.1": "1d0e46c7933245c8180fe83e47917961c913bbdb",
+    "2026-10-22.1": "45e3d5269e4a17d823f6d84470bc084dc5ae46f6"
+  }
 }
