@@ -11,9 +11,11 @@ import (
 
 const (
 	maxCatalogBytes     = 2 << 20
-	maxFontBytes        = 16 << 20
+	// CJK variable fonts exceed 16 MiB (Noto Sans SC 17.8 MB, LXGW WenKai 24.7 MB),
+	// so the font and installed-asset bounds leave room for them; previews stay small.
+	maxFontBytes        = 32 << 20
 	maxPreviewBytes     = 512 << 10
-	maxInstalledBytes   = 16 << 20
+	maxInstalledBytes   = 32 << 20
 	maxInstalledEntries = 256
 )
 

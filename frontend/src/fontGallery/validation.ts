@@ -57,7 +57,8 @@ export function validateEntry(value: unknown): FontEntry {
   for (const [locale, name] of names) { text(locale, 32); text(name, 256); }
   text(value.description, 2048);
   text(value.useCase, 1024);
-  validateAsset(value.font, 16 * 1024 * 1024);
+  // CJK variable fonts exceed 16 MiB, so the font bound allows up to 32 MiB; previews stay small.
+  validateAsset(value.font, 32 * 1024 * 1024);
   validateAsset(value.preview, 512 * 1024);
   text(value.attribution, 8192);
   webURL(value.sourceUrl);
