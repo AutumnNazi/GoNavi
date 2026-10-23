@@ -6309,6 +6309,7 @@
   "db.backend.error.connection_not_open": "接続が開かれていません",
   "db.backend.error.connection_open_failed_prefix": "データベース接続を開けませんでした: ",
   "db.backend.error.connection_verify_failed_prefix": "接続確立後の検証に失敗しました: ",
+  "db.backend.error.kingbase_maintenance_database_hint": "。ヒント：データベース未指定時はメンテナンスデータベース test と template1 を順に確認します。業務データベースが利用可能な場合は、接続設定に具体的なデータベース名を入力して再試行してください。",
   "db.backend.error.ssh_tunnel_remote_target_verify_failed": "SSH トンネルを確立しました（ローカル {{localAddr}} -> リモート {{remoteAddr}}）が、データベース検証に失敗しました。ローカル接続エラー: ",
   "db.backend.error.ssh_tunnel_remote_dial_failed": "SSH トンネルを確立しました（ローカル {{localAddr}} -> リモート {{remoteAddr}}）が、踏み台ホストからリモートエンドポイントに接続できませんでした: {{remoteError}}。ローカル接続の検証エラー: ",
   "db.backend.error.create_table_statement_not_found": "CREATE TABLE 文が見つかりませんでした",

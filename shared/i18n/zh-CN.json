@@ -6309,6 +6309,7 @@
   "db.backend.error.connection_not_open": "连接未打开",
   "db.backend.error.connection_open_failed_prefix": "打开数据库连接失败：",
   "db.backend.error.connection_verify_failed_prefix": "连接建立后验证失败：",
+  "db.backend.error.kingbase_maintenance_database_hint": "。提示：未指定数据库时会依次探测维护库 test 与 template1；若业务库正常，请在连接配置中填写具体数据库名后重试。",
   "db.backend.error.ssh_tunnel_remote_target_verify_failed": "SSH 隧道已建立（本地 {{localAddr}} -> 远程 {{remoteAddr}}），数据库验证失败；本地连接错误：",
   "db.backend.error.ssh_tunnel_remote_dial_failed": "SSH 隧道已建立（本地 {{localAddr}} -> 远程 {{remoteAddr}}），但跳板机无法连接远端：{{remoteError}}；本地连接验证错误：",
   "db.backend.error.create_table_statement_not_found": "未找到 CREATE TABLE 语句",
