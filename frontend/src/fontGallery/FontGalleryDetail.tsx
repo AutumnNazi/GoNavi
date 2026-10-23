@@ -4,6 +4,8 @@ import { useI18n } from '../i18n/provider';
 import { loadDownloadedFont } from './faces';
 import { fontGalleryErrorKey } from './errors';
 import { fontEntryKey, type useFontGalleryPanel } from './useFontGalleryPanel';
+import { cssStack } from './options';
+import { FontFamilyPreview } from '../appShell/settings/FontFamilyPreview';
 import { getPrimaryFontFamily } from '../utils/fontFamilyDisplay';
 import type { CatalogRow } from './catalogRows';
 import type { FontInstalled } from './types';
@@ -27,13 +29,21 @@ export function FontGalleryDetail({ row, local, installed, name, gallery, active
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const entry = installed?.entry ?? row.remote;
   const preview = entry && gallery.previewState?.key === fontEntryKey(entry) ? gallery.previewState : null;
+  // 已下载/系统字体必须走与应用后完全一致的 cssStack 解析链，库内预览才与实际生效效果一致；
+  // 仅未下载的远程字体用预览别名（GoNaviFontPreview-*）临时渲染。
+  const previewFamily = installed ? cssStack(installed.family, row.kind)
+    : local ? cssStack(row.family, row.kind)
+      : preview?.family ? '"' + preview.family + '"' : null;
   const busy = Boolean(gallery.pending || gallery.previewState?.loading || gallery.loading || activating);
   const inUse = installed && [activeUi, activeMono].some(value => value && getPrimaryFontFamily(value) === installed.family);
-  const useFont = async (kind: 'ui' | 'mono') => {
+  const applyFont = async () => {
     setActivationError(null); setActivating(true);
     try {
       if (installed) await loadDownloadedFont(installed);
-      if (mounted.current && (installed || local)) onEnable(kind, installed?.family ?? row.family);
+      if (mounted.current && (installed || local)) {
+        onEnable('ui', installed?.family ?? row.family);
+        onEnable('mono', installed?.family ?? row.family);
+      }
     } catch (error) { if (mounted.current) setActivationError(fontGalleryErrorKey(error)); }
     finally { if (mounted.current) setActivating(false); }
   };
@@ -42,36 +52,27 @@ export function FontGalleryDetail({ row, local, installed, name, gallery, active
     const result = await gallery.download(row.remote);
     if (result && mounted.current) onEnable(result.entry.kind, result.family);
   };
-  return <div className="gonavi-font-gallery-detail">
-    <h4>{name}</h4>
-    <p>{row.description}</p>
-    <p className="gonavi-settings-inline-meta">{row.useCase}</p>
-    <p className="gonavi-settings-inline-meta">{row.licenseName}</p>
+  return <>
     <div className="gonavi-font-gallery-preview">
-      {local || preview?.family ? (
-        <p style={{ fontFamily: '"' + (local ? row.family : preview?.family) + '"' }}>{t(row.kind === 'mono' ? 'app.theme.font_family.preview_mono' : 'app.theme.font_family.preview_ui')}</p>
+      {previewFamily ? (
+        <FontFamilyPreview kind={row.kind} family={previewFamily} name={name} t={t} />
       ) : <p className="gonavi-settings-inline-meta">{t(entry ? 'app.theme.font_family.gallery.preview_idle' : 'app.theme.font_family.gallery.pending_download')}</p>}
       {preview?.error && <Alert type="error" showIcon message={t(preview.error)} />}
       {activationError && <Alert type="error" showIcon message={t(activationError)} />}
     </div>
+    <p className="gonavi-settings-inline-meta">{row.description}</p>
+    <p className="gonavi-settings-inline-meta">{row.useCase}</p>
+    <p className="gonavi-settings-inline-meta">{row.licenseName}</p>
     <div className="gonavi-font-gallery-actions">
-      {entry && !local && <Button size="small" disabled={busy} onClick={() => { void gallery.preview(entry, installed); }}>
-        {t('app.theme.font_family.gallery.preview')}
-      </Button>}
-      {!local && !installed && row.remote && <Button size="small" type="primary" disabled={busy} onClick={() => { void download(); }}>
+      {!local && !installed && row.remote && <Button type="primary" disabled={busy} onClick={() => { void download(); }}>
         {t('app.theme.font_family.gallery.download')}
       </Button>}
-      {(installed || local) && <>
-        <Button size="small" disabled={busy} onClick={() => { void useFont('ui'); }}>
-          {t('app.theme.font_family.gallery.use_ui')}
-        </Button>
-        <Button size="small" disabled={busy} onClick={() => { void useFont('mono'); }}>
-          {t('app.theme.font_family.gallery.use_mono')}
-        </Button>
-      </>}
-      {installed && !inUse && <Button size="small" danger disabled={busy} onClick={() => { void gallery.remove(installed.entry); }}>
+      {(installed || local) && <Button disabled={busy} onClick={() => { void applyFont(); }}>
+        {t('app.theme.font_family.gallery.apply')}
+      </Button>}
+      {installed && !inUse && <Button danger disabled={busy} onClick={() => { void gallery.remove(installed.entry); }}>
         {t('app.theme.font_family.gallery.remove')}
       </Button>}
     </div>
-  </div>;
+  </>;
 }

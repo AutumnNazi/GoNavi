@@ -26,13 +26,11 @@ export function FontFamilySettingsBlock({
   t, appearance, setAppearance, isFontFamiliesLoading, uiFontOptions, monoFontOptions,
   fontFamiliesLoadError, installedFontFamilies, linuxCJKFontInstallHint, hasLoadedInstalledFontsRef, darkMode,
 }: Props) {
-  // 画廊默认展开：入口不再折叠在按钮后面，用户可随时收起。
-  const [browseOpen, setBrowseOpen] = useState(true);
+  // 字体库常驻展开，不提供折叠入口。
   const [downloaded, setDownloaded] = useState<FontInstalled[]>([]);
   const galleryRef = useRef<HTMLDivElement | null>(null);
   // 入口跟随两个字体下拉：从下拉底部打开时滚动到画廊，避免打开后仍然看不见。
   const browseGallery = () => {
-    setBrowseOpen(true);
     requestAnimationFrame(() => galleryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
   };
   const browseProps = { browseLabel: t('app.theme.font_family.gallery.browse'), onBrowse: browseGallery };
@@ -99,8 +97,6 @@ export function FontFamilySettingsBlock({
       {selection.error && <Alert type="error" showIcon message={t(selection.error)} />}
       <div ref={galleryRef}>
         <FontGalleryPanel
-          open={browseOpen}
-          onToggle={() => setBrowseOpen(value => !value)}
           installedFontFamilies={installedFontFamilies}
           activeUi={appearance.customUIFontFamily}
           activeMono={appearance.customMonoFontFamily}

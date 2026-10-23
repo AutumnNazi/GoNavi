@@ -8,7 +8,7 @@ import type { FontEntry, FontGalleryState, FontInstalled, FontProgress } from '.
 export const fontEntryKey = (entry: FontEntry): string => entry.id + ':' + entry.version;
 let requestSequence = 0;
 
-export function useFontGalleryPanel(open: boolean) {
+export function useFontGalleryPanel() {
   const [state, setState] = useState<FontGalleryState>({ catalog: null, installed: [], stale: false });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,8 +19,8 @@ export function useFontGalleryPanel(open: boolean) {
   const revision = useRef(0);
   const refreshRevision = useRef(0);
   const request = useRef<string | null>(null);
-  const preview = useFontGalleryPreview(open);
-  const setSelectedId = (id: string) => { preview.clear(); select(id); };
+  const preview = useFontGalleryPreview();
+  const setSelectedId = (id: string) => { select(id); };
   const refresh = useCallback(async () => {
     const current = ++refreshRevision.current;
     setLoading(true); setError(null);
@@ -37,11 +37,11 @@ export function useFontGalleryPanel(open: boolean) {
     }
   }, []);
   useEffect(() => {
-    active.current = open;
+    active.current = true;
     setPending(null); setProgress(null); setLoading(false);
     // 面板可见时必须拉取远程目录：字体上架与更新全靠这份清单，仅读本地缓存会让
     // 客户端在应用更新后一直显示旧的待上架状态。请求失败时回退展示本地缓存。
-    if (open) void refresh();
+    void refresh();
     return () => {
       active.current = false;
       revision.current += 1;
@@ -49,7 +49,7 @@ export function useFontGalleryPanel(open: boolean) {
       if (request.current) void getFontGalleryAdapter().cancel(request.current).catch(() => undefined);
       request.current = null;
     };
-  }, [open, refresh]);
+  }, [refresh]);
   const download = async (entry: FontEntry): Promise<FontInstalled | null> => {
     const current = ++revision.current;
     refreshRevision.current += 1; setLoading(false);

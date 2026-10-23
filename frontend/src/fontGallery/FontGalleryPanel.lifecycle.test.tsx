@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import React, { act } from 'react';
+import { Simulate } from 'react-dom/test-utils';
 import { createRoot, type Root } from 'react-dom/client';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { FontGalleryPanel } from './FontGalleryPanel';
@@ -18,16 +19,21 @@ const alpha = fontEntry('fixture-alpha');
 const beta = fontEntry('fixture-beta');
 const onEnable = vi.fn();
 const button = (text: string) => Array.from(node.querySelectorAll('button')).find(b => b.textContent === text)!;
-const render = async (open = true) => {
-  await act(async () => root.render(<FontGalleryPanel open={open} onToggle={() => {}} installedFontFamilies={[]} onEnable={onEnable} />));
+const render = async () => {
+  await act(async () => root.render(<FontGalleryPanel installedFontFamilies={[]} onEnable={onEnable} />));
 };
 const click = async (label: string) => { await act(async () => button(label).click()); };
 const select = async (id: string) => {
-  const row = Array.from(node.querySelectorAll<HTMLButtonElement>('.gonavi-font-gallery-list button')).find(b => b.querySelector('strong')?.textContent === id)!;
+  act(() => node.querySelector('.ant-select-selector')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
+  const input = node.querySelector('input')!;
+  act(() => { input.value = id; Simulate.change(input); });
+  const row = Array.from(document.querySelectorAll<HTMLElement>('.ant-select-item-option'))
+    .find(option => option.textContent?.includes(id))!;
   await act(async () => row.click());
 };
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   vi.stubGlobal('FontFace', class { status = 'loaded'; async load() { return this; } });
   Object.defineProperty(document, 'fonts', { configurable: true, value: { add: vi.fn(), delete: vi.fn() } });
   node = document.createElement('div'); document.body.appendChild(node); root = createRoot(node);
@@ -60,8 +66,9 @@ describe('font library activation and preview lifecycle', () => {
   });
   it('does not show a completed or late preview under another font entry', async () => {
     let resolve!: (value: FontPreviewed) => void;
-    api.preview.mockReturnValue(new Promise<FontPreviewed>(done => { resolve = done; }));
-    await render(); await select(alpha.id); await click('app.theme.font_family.gallery.preview');
+    api.preview.mockImplementationOnce(() => new Promise<FontPreviewed>(done => { resolve = done; }))
+      .mockImplementation(() => new Promise<FontPreviewed>(() => {}));
+    await render(); await select(alpha.id);
     await select(beta.id);
     await act(async () => resolve({ entry: alpha, family: 'GoNaviFontPreview-' + alpha.id, url: '/preview.ttf' }));
     expect(node.querySelector('.gonavi-font-gallery-preview p')?.getAttribute('style')).toBeNull();
@@ -72,26 +79,28 @@ describe('font library activation and preview lifecycle', () => {
     let resolve!: () => void;
     vi.mocked(loadDownloadedFont).mockImplementation(item => item.entry.id === alpha.id
       ? new Promise<void>(done => { resolve = done; }) : Promise.resolve());
-    await render(); await select(alpha.id); await click('app.theme.font_family.gallery.use_mono');
-    await select(beta.id); await click('app.theme.font_family.gallery.use_mono');
+    await render(); await select(alpha.id); await click('app.theme.font_family.gallery.apply');
+    await select(beta.id); await click('app.theme.font_family.gallery.apply');
     await act(async () => resolve());
-    expect(onEnable).toHaveBeenCalledTimes(1);
+    expect(onEnable).toHaveBeenCalledTimes(2);
+    expect(onEnable).toHaveBeenCalledWith('ui', fontInstalled(beta).family);
     expect(onEnable).toHaveBeenCalledWith('mono', fontInstalled(beta).family);
   });
-  it('enables an installed mono catalog family as the interface font as well', async () => {
+  it('applies an installed catalog family to both the interface and code fonts', async () => {
     state.installed = [fontInstalled(alpha)];
     await render(); await select(alpha.id);
-    await click('app.theme.font_family.gallery.use_ui');
+    await click('app.theme.font_family.gallery.apply');
     expect(onEnable).toHaveBeenCalledWith('ui', fontInstalled(alpha).family);
-    await click('app.theme.font_family.gallery.use_mono');
     expect(onEnable).toHaveBeenCalledWith('mono', fontInstalled(alpha).family);
   });
 
-  it('cancels and invalidates a download when the library closes', async () => {
+  it('cancels and invalidates a download when the library unmounts', async () => {
     let resolve!: (value: FontInstalled) => void;
     api.download.mockReturnValue(new Promise<FontInstalled>(done => { resolve = done; }));
     await render(); await select(alpha.id); await click('app.theme.font_family.gallery.download');
-    await render(false);
+    await act(async () => root.unmount());
+    node?.remove();
+    node = document.createElement('div'); document.body.appendChild(node); root = createRoot(node);
     await act(async () => resolve(fontInstalled(alpha)));
     expect(onEnable).not.toHaveBeenCalled();
     expect(api.cancel).toHaveBeenCalled();
