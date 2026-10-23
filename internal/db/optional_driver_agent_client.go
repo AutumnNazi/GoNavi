@@ -224,8 +224,10 @@ func (c *optionalDriverAgentClient) callLocked(requestID int64, req optionalAgen
 			if errText == "" {
 				errText = fmt.Sprintf("%s 驱动代理返回失败", driverDisplayName(c.driver))
 			}
-			if errText == ErrOptionalDriverAgentJSONLineTooLarge.Error() {
-				_ = c.forceTerminate(ErrOptionalDriverAgentJSONLineTooLarge)
+			// agent 已就该请求写出完整的失败帧，帧边界可信：只让这次请求失败，
+			// 不终止 transport，否则一条超大的结果行会让整个连接不可用。
+			// applyChanges 的写入可能已经生效，只是响应发不出来，结果标记为未知。
+			if isOptionalAgentOversizeFailure(errText) {
 				return markOptionalAgentApplyChangesTransportUnknown(req, ErrOptionalDriverAgentJSONLineTooLarge)
 			}
 			if resp.SSHHostKeyTrust != nil {
