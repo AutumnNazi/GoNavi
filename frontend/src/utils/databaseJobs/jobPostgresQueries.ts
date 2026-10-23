@@ -40,10 +40,12 @@ export const pgAgentChildQueries = (id: string): DatabaseJobChildQueries => !isJ
 });
 
 // KDB_SCHEDULE's owner column is documented as NULL. An Oracle OWNER predicate loses every job.
+// pg_extension registration is not sufficient: PG-compat databases register kdb_schedule without
+// its Oracle-style views, so probe the exact relation the list query resolves instead.
 export const kingbaseJobListQueries = (): DatabaseJobQueryGroup[] => [{
   kind: 'kingbase-scheduler',
   queries: ['SELECT job_name, enabled, state, next_run_date AS next_run_at FROM all_scheduler_jobs ORDER BY job_name'],
-  probeQueries: ["SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_extension WHERE extname = 'kdb_schedule') AS available"],
+  probeQueries: [`SELECT to_regclass(${jobLiteral('all_scheduler_jobs')}) IS NOT NULL AS available`],
 }];
 
 export const kingbaseJobDefinitionQueries = (name: string): string[] => [

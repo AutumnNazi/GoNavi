@@ -51,9 +51,11 @@ describe('documented scheduler catalog queries', () => {
     expect(buildDatabaseJobDefinitionQueries('postgres', 'pg-cron', '', '2', 'postgres')).toHaveLength(3);
   });
   it('does not filter Kingbase jobs using its always-null owner', () => {
-    const queries = buildDatabaseJobListQueries('kingbase', 'app')[0].queries;
-    expect(queries[0]).toContain('all_scheduler_jobs');
-    expect(queries[0]).not.toMatch(/WHERE|OWNER/);
+    const group = buildDatabaseJobListQueries('kingbase', 'app')[0];
+    expect(group.queries[0]).toContain('all_scheduler_jobs');
+    expect(group.queries[0]).not.toMatch(/WHERE|OWNER/);
+    expect(group.probeQueries?.[0]).toContain("to_regclass('all_scheduler_jobs')");
+    expect(group.probeQueries?.[0]).not.toContain('pg_extension');
     expect(buildDatabaseJobDefinitionQueries('kingbase', 'kingbase-scheduler', '', "O'Brien", 'app')[0]).toContain("job_name = 'O''Brien'");
   });
   it.each(['opengauss', 'gaussdb'])('scopes %s to current database and separates action metadata', (dialect) => {
