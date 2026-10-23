@@ -86,8 +86,7 @@ func (c *optionalDriverAgentClient) callStreamQueryLocked(requestID int64, req o
 			}
 			// 单帧超限只代表「这一批数据发不出去」，agent 已就此结束该请求。
 			// 若在这里终止 transport，一条超大消息会让整个连接永久不可用。
-			// 用文案前缀而不是整串相等：上限调整后 MiB 数字会变，前缀才能跨版本匹配。
-			if strings.HasPrefix(errText, "驱动代理 JSON Lines 单帧超过") {
+			if isOptionalAgentOversizeFailure(errText) {
 				return ErrOptionalDriverAgentJSONLineTooLarge
 			}
 			return errors.New(errText)
@@ -184,6 +183,15 @@ func (c *optionalDriverAgentClient) drainAbandonedStream(requestID int64, cause 
 		}
 		// columns / rows / 未知分片对放弃消费的请求已无意义，丢弃后继续等待终止帧。
 	}
+}
+
+// isOptionalAgentOversizeFailure 判断失败帧是否是 agent 主动报告的「单帧超限」。
+//
+// agent 在写出前检查帧大小，超限时不写任何半帧，而是另写一条小的失败帧：帧边界仍然可信，
+// 同一个 transport 可以继续使用。用文案前缀而不是整串相等：上限调整后 MiB 数字会变，
+// 前缀才能匹配新旧版本的 agent。
+func isOptionalAgentOversizeFailure(errText string) bool {
+	return strings.HasPrefix(strings.TrimSpace(errText), "驱动代理 JSON Lines 单帧超过")
 }
 
 func decodeOptionalAgentRowValueBatch(data []byte) ([][]interface{}, error) {
