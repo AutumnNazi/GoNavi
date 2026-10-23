@@ -31,13 +31,13 @@ export interface MessageQueueStreamPaneProps {
   selectedMessage: MessageQueueWorkbenchViewApi['selectedMessage'];
   selectMessage: MessageQueueWorkbenchViewApi['selectMessage'];
   onLoadDetail: (item: { id: string; destination: string; row: Record<string, any> }) => void;
-  loadingDetailId: string;
+  loadingDetailIds: ReadonlySet<string>;
 }
 
 export const MessageQueueStreamPane = ({
   directionFilter, setDirectionFilter, t, searchText, setSearchText, listRef, setListViewport,
   filteredMessages, messages, windowedMessages, subscriptions, selectedMessage, selectMessage,
-  onLoadDetail, loadingDetailId,
+  onLoadDetail, loadingDetailIds,
 }: MessageQueueStreamPaneProps) => (
   <main className="gn-message-stream">
     <div className="gn-message-stream-toolbar">
@@ -179,10 +179,9 @@ export const MessageQueueStreamPane = ({
               )}
               {hasPayload ? (
                 <pre>{payloadText || t('message_queue_workbench.message.empty_payload')}</pre>
-              ) : loadingDetailId === selectedMessage.id ? (
+              ) : loadingDetailIds.has(selectedMessage.id) ? (
                 <div className="gn-message-detail-load">
-                  {/* 大消息要传几秒到几十秒，用骨架屏占住正文区域，避免布局跳动；
-                      同时把消息大小带上，让人知道在等什么。 */}
+                  {/* Large payloads can take seconds: keep the layout stable and show the size being loaded. */}
                   <Skeleton active title={false} paragraph={{ rows: 8 }} />
                   <p>
                     {t('message_queue_workbench.message.loading_payload')}

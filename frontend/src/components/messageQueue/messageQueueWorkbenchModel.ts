@@ -259,5 +259,27 @@ export const buildAdvancedMessageQuery = (sourceType: string, destination: strin
         : 'your.topic';
   if (sourceType === 'mqtt') return `CONSUME FROM "${safeDestination}" QOS 0 LIMIT 100;`;
   if (sourceType === 'rabbitmq') return `SELECT * FROM "${safeDestination}" LIMIT 100;`;
+  // Kafka 的 CONSUME 会带上连接配置的 groupId 加入消费组（触发 rebalance）；
+  // 默认示例改为直读最新的少量完整消息。
+  if (sourceType === 'kafka') return `SELECT * FROM "${safeDestination}" LATEST LIMIT 20;`;
   return `CONSUME FROM "${safeDestination}" LIMIT 100;`;
+};
+
+const kafkaRowTime = (row: Record<string, any>): number => {
+  const parsed = Date.parse(String(row.timestamp ?? ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+// Kafka 预览带 LATEST 时后端按时间倒序返回；工作台从上往下追加、「跟随最新」选最后一条，
+// 所以先按时间（再按 partition、offset）升序排好，最新的消息落在最下面。
+export const sortPullPreviewRows = (
+  sourceType: string,
+  rows: Record<string, any>[],
+): Record<string, any>[] => {
+  if (sourceType !== 'kafka' || rows.length < 2) return rows;
+  return [...rows].sort((left, right) => (
+    kafkaRowTime(left) - kafkaRowTime(right)
+    || Number(left.partition ?? 0) - Number(right.partition ?? 0)
+    || Number(left.offset ?? 0) - Number(right.offset ?? 0)
+  ));
 };

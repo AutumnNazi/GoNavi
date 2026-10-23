@@ -13345,5 +13345,7 @@
   "xxljob.cron.mode.nthWeekIndex": "N-te",
   "xxljob.action.cron_builder": "Generator",
   "xxljob.action.more": "Mehr",
-  "xxljob.backend.error.invalid_credentials": "Benutzername oder Passwort ist falsch; bitte die Verbindungsdaten prüfen"
+  "xxljob.backend.error.invalid_credentials": "Benutzername oder Passwort ist falsch; bitte die Verbindungsdaten prüfen",
+  "db.backend.message.kafka_preview_truncated": "{{budget}} gelesen, bisher {{rows}} Nachrichten zurückgegeben: Kafka überträgt auch für eine Liste vollständige Nachrichteninhalte. Erhöhen Sie previewMaxMB in den Verbindungsparametern, um mehr zu lesen.",
+  "message_queue_workbench.message.not_found": "Diese Nachricht existiert nicht mehr. Sie wurde möglicherweise durch Aufbewahrung oder Kompaktierung entfernt."
 }
