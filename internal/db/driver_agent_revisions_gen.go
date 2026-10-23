@@ -46,7 +46,6 @@ func init() {
 		"timescaledb":   "src-e63a3e816b6fa038",
 		"typesense":     "src-3766928647fbf2e3",
 		"weaviate":      "src-802aa3f86493c80b",
-		"xxljob":        "src-b53922472cf85ea7",
 		"yashandb":      "src-52d286249eed49de",
 		"zookeeper":     "src-bd49910a4b234bf1",
 	}
