@@ -55,6 +55,13 @@ describe('AIProviderLogo', () => {
     expect(renderToStaticMarkup(<AIProviderLogo presetKey="custom" label="Custom" dark />)).not.toContain('invert');
   });
 
+  it('renders the API Route mark without inverting its colors', () => {
+    const markup = renderToStaticMarkup(<AIProviderLogo presetKey="api-route" label="API Route" dark />);
+    expect(markup).toContain('/icons/ai/api-route.png');
+    expect(markup).not.toContain('invert');
+    expect(readFileSync(new URL('../../../public/icons/ai/api-route.png', import.meta.url)).subarray(1, 4).toString()).toBe('PNG');
+  });
+
   it('falls back to the first letter when there is no asset', () => {
     const markup = renderToStaticMarkup(<AIProviderLogo presetKey="unknown-provider" label="Kimi" />);
     expect(markup).toContain('is-fallback');
