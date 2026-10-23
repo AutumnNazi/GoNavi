@@ -64,7 +64,7 @@ export const AIProviderLogo: React.FC<AIProviderLogoProps> = ({
   const brandIconId = useStore((state) => state.brandIconId);
   const slug = PRESET_ICON_SLUG[presetKey];
   const brandSrc = presetKey === GONAVI_AI_PRESET_KEY ? resolveBrandIconSrc(brandIconId) : '';
-  const src = iconPath || brandSrc || (slug ? `/icons/ai/${slug}.svg` : '');
+  const src = iconPath || brandSrc || (presetKey === 'api-route' ? '/icons/ai/api-route.png' : slug ? `/icons/ai/${slug}.svg` : '');
   const invert = Boolean(dark && !iconPath && slug && WHITE_DARK_SLUGS.has(slug));
   const classes = ['gonavi-ai-provider-logo', className].filter(Boolean).join(' ');
   if (src && !failed) {

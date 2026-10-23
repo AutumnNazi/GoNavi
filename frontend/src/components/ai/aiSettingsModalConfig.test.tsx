@@ -5,6 +5,8 @@ import {
   ATLAS_CLOUD_DEFAULT_MODEL,
   ORCAROUTER_BASE_URL,
   ORCAROUTER_DEFAULT_MODEL,
+  API_ROUTE_BASE_URL,
+  API_ROUTE_DEFAULT_MODEL,
   CHEAPER_INFERENCE_BASE_URL,
   CHEAPER_INFERENCE_DEFAULT_MODEL,
   QWEN_CODING_PLAN_ANTHROPIC_BASE_URL,
@@ -160,6 +162,21 @@ describe('aiSettingsModalConfig', () => {
       type: 'openai',
       baseUrl: CHEAPER_INFERENCE_BASE_URL,
     }).key).toBe('cheaperinference');
+  });
+
+  it('exposes and recognizes the API Route preset', () => {
+    const preset = findPreset('api-route');
+
+    expect(preset).toMatchObject({
+      label: 'API Route',
+      backendType: 'openai',
+      defaultBaseUrl: API_ROUTE_BASE_URL,
+      defaultModel: API_ROUTE_DEFAULT_MODEL,
+    });
+    expect(matchProviderPreset({
+      type: 'openai',
+      baseUrl: `  ${API_ROUTE_BASE_URL}/  `,
+    }).key).toBe('api-route');
   });
 
   it('exposes Xiaomi MiMo with current official endpoints and model', () => {

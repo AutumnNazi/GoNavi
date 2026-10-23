@@ -2865,6 +2865,8 @@
   "ai_settings.provider_preset.atlascloud.label": "Atlas Cloud",
   "ai_settings.provider_preset.cheaperinference.desc": "GPT-5.4 mini / OpenAI 相容",
   "ai_settings.provider_preset.cheaperinference.label": "Cheaper Inference",
+  "ai_settings.provider_preset.api_route.desc": "GPT-6.1 Sol / OpenAI 相容介面",
+  "ai_settings.provider_preset.api_route.label": "API Route",
   "ai_settings.provider_preset.claude_subscription.desc": "本機 Claude Code CLI / Claude 訂閱登入狀態",
   "ai_settings.provider_preset.claude_subscription.label": "Claude 訂閱",
   "ai_settings.provider_preset.custom.desc": "自訂 API 端點",
