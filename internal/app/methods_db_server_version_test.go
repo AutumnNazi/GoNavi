@@ -40,3 +40,18 @@ func TestDBGetServerVersionSkipsUnsupportedSourcesWithoutConnecting(t *testing.T
 		t.Fatalf("expected empty version, got %q", result.Message)
 	}
 }
+
+func TestDBGetServerVersionSkipsNoDriverRegistryTypes(t *testing.T) {
+	// XXL-JOB 这类专用工作台没有数据库代理，取版本必然失败。失败不入前端
+	// 缓存，界面会不停重试，所以这里必须直接返回空版本。
+	app := NewApp()
+	result := app.DBGetServerVersion(connection.ConnectionConfig{
+		Type: "xxljob", Host: "127.0.0.1", Port: 18082, User: "admin",
+	})
+	if !result.Success {
+		t.Fatalf("no-driver registry types should succeed empty, got %#v", result)
+	}
+	if strings.TrimSpace(result.Message) != "" {
+		t.Fatalf("expected empty version, got %q", result.Message)
+	}
+}

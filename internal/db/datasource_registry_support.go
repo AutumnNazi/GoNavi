@@ -18,6 +18,11 @@ func init() {
 		optionalGoDrivers[key] = struct{}{}
 	}
 	for _, spec := range datasource.All() {
+		// 无驱动类型（XXL-JOB 等专用工作台）没有代理构建，注册工厂只会让 NewDatabase
+		// 返回一个必然连不上的代理壳，错误延后到连接时才暴露。
+		if !spec.HasDriver() {
+			continue
+		}
 		names := make([]string, 0, len(spec.Aliases)+1)
 		names = append(names, spec.Type)
 		names = append(names, spec.Aliases...)

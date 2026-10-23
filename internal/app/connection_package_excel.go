@@ -71,7 +71,7 @@ var connectionExcelTypeValues = []string{
 	"chroma", "qdrant", "milvus",
 	"tdengine", "iotdb",
 	"rocketmq", "mqtt", "kafka", "rabbitmq", "pulsar",
-	"nacos", "jvm", "custom",
+	"nacos", "jvm", "custom", "xxljob",
 }
 
 var connectionExcelExportColumns []string

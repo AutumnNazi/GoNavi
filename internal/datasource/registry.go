@@ -40,7 +40,7 @@ var (
 	variantIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_]*$`)
 	allowedGroups    = map[CatalogGroup]struct{}{
 		GroupRelational: {}, GroupDomestic: {}, GroupNoSQL: {}, GroupSearch: {}, GroupVector: {},
-		GroupTimeSeries: {}, GroupBigData: {}, GroupConfigCenter: {},
+		GroupTimeSeries: {}, GroupBigData: {}, GroupConfigCenter: {}, GroupTaskScheduler: {},
 	}
 	allowedProxyModes = map[string]struct{}{"": {}, ProxyModeForward: {}, ProxyModeDriver: {}}
 	releasePlatforms  = map[string]struct{}{
@@ -109,8 +109,11 @@ func NewRegistry(specs []Spec) (*Registry, error) {
 		if err := registry.addNames(spec); err != nil {
 			return nil, err
 		}
-		if err := registry.addAgents(spec); err != nil {
-			return nil, err
+		// 无驱动类型（专用工作台）没有代理构建，也不需要 buildTag。
+		if spec.HasDriver() {
+			if err := registry.addAgents(spec); err != nil {
+				return nil, err
+			}
 		}
 		registry.byType[spec.Type] = len(registry.specs)
 		registry.specs = append(registry.specs, spec)
@@ -168,11 +171,20 @@ func validateSpec(spec Spec) error {
 	if spec.DefaultPort < 0 || spec.DefaultPort > 65535 {
 		return fmt.Errorf("defaultPort %d out of range", spec.DefaultPort)
 	}
-	if strings.TrimSpace(spec.Wire) == "" || strings.TrimSpace(spec.Dialect) == "" {
-		return fmt.Errorf("wire and dialect are required")
+	// wire 与 dialect 都为空表示「无驱动类型」：XXL-JOB 这类专用工作台没有 db.Database 实现，
+	// 只通过 App 绑定与调度中心通讯。只声明其一说明描述表写漏了，按无效处理。
+	if (strings.TrimSpace(spec.Wire) == "") != (strings.TrimSpace(spec.Dialect) == "") {
+		return fmt.Errorf("wire and dialect must both be set or both be empty")
 	}
 	if spec.Agent.Key != "" && spec.Agent.Key != spec.Type {
 		return fmt.Errorf("default agent key must equal the type")
+	}
+	if !spec.HasDriver() {
+		// 专用工作台类型不绑定驱动，也就没有档位可校验。
+		if len(spec.Variants.Items) > 0 {
+			return fmt.Errorf("driverless type %q must not declare variants", spec.Type)
+		}
+		return nil
 	}
 	if err := validateAgent(spec.AgentFor("")); err != nil {
 		return err

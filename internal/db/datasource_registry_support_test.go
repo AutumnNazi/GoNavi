@@ -30,6 +30,22 @@ func TestRegistryTypesDoNotShadowLegacyDrivers(t *testing.T) {
 func TestRegistryTypesAreOptionalAgentDrivers(t *testing.T) {
 	for _, spec := range datasource.All() {
 		names := append([]string{spec.Type}, spec.Aliases...)
+		if !spec.HasDriver() {
+			// 无驱动类型（XXL-JOB 等专用工作台）只经 App 绑定访问远端 HTTP 服务，
+			// 不得被当成 db.Database 驱动代理起来，否则会为它去找并不存在的代理构建。
+			for _, name := range names {
+				if IsOptionalGoDriver(name) {
+					t.Fatalf("driverless type %q must not be gated as an optional driver", name)
+				}
+				if _, err := NewDatabase(name); err == nil {
+					t.Fatalf("driverless type %q must not resolve to a database driver", name)
+				}
+			}
+			if !IsDataSourceCapabilityDeclared(spec.Type) {
+				t.Fatalf("driverless type %q has no capability profile in the contract", spec.Type)
+			}
+			continue
+		}
 		for _, name := range names {
 			if got := normalizeRuntimeDriverType(name); got != spec.Type {
 				t.Fatalf("normalizeRuntimeDriverType(%q) = %q, want %q", name, got, spec.Type)

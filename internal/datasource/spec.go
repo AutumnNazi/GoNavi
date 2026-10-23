@@ -12,15 +12,22 @@ type CatalogGroup string
 
 // 描述表允许使用的分组；新增分组必须同步前端分组与 i18n 文案。
 const (
-	GroupRelational   CatalogGroup = "relational"
-	GroupDomestic     CatalogGroup = "domestic"
-	GroupNoSQL        CatalogGroup = "nosql"
-	GroupSearch       CatalogGroup = "search"
-	GroupVector       CatalogGroup = "vector"
-	GroupTimeSeries   CatalogGroup = "timeseries"
-	GroupBigData      CatalogGroup = "bigdata"
-	GroupConfigCenter CatalogGroup = "config_center"
+	GroupRelational    CatalogGroup = "relational"
+	GroupDomestic      CatalogGroup = "domestic"
+	GroupNoSQL         CatalogGroup = "nosql"
+	GroupSearch        CatalogGroup = "search"
+	GroupVector        CatalogGroup = "vector"
+	GroupTimeSeries    CatalogGroup = "timeseries"
+	GroupBigData       CatalogGroup = "bigdata"
+	GroupConfigCenter  CatalogGroup = "config_center"
+	GroupTaskScheduler CatalogGroup = "task_scheduler"
 )
+
+// HasDriver 报告该类型是否有 db.Database 驱动。专用工作台（如 XXL-JOB 调度中心）没有驱动，
+// 只通过 App 绑定与远端 HTTP 服务通讯，描述表里 wire 与 dialect 同时留空。
+func (s Spec) HasDriver() bool {
+	return strings.TrimSpace(s.Wire) != "" && strings.TrimSpace(s.Dialect) != ""
+}
 
 // ProxyMode 决定连接代理由谁处理。
 const (

@@ -19,6 +19,7 @@ const translatedCopy: Record<string, string> = {
   'connection_modal.step1.group.bigdata': 'T:bigdata',
   'connection_modal.step1.group.message_queue': 'T:message-queue',
   'connection_modal.step1.group.config_center': 'T:config-center',
+  'connection_modal.step1.group.task_scheduler': 'T:task-scheduler',
   'connection_modal.step1.group.other': 'T:other',
   'connection_modal.step1.hint.redis': 'T:redis',
   'connection_modal.step1.hint.mongodb': 'T:mongodb',
@@ -27,6 +28,7 @@ const translatedCopy: Record<string, string> = {
   'connection_modal.step1.hint.qdrant': 'T:qdrant',
   'connection_modal.step1.hint.milvus': 'T:milvus',
   'connection_modal.step1.hint.nacos': 'T:nacos',
+  'connection_modal.step1.hint.xxljob': 'T:xxljob',
   'connection_modal.step1.hint.oceanBase': 'T:oceanbase',
   'connection_modal.step1.hint.goldendb': 'T:goldendb',
   'connection_modal.step1.hint.cache': 'T:cache',
@@ -49,6 +51,7 @@ describe('connectionTypeCatalog', () => {
       'connection_modal.step1.group.bigdata',
       'connection_modal.step1.group.message_queue',
       'connection_modal.step1.group.config_center',
+      'connection_modal.step1.group.task_scheduler',
       'connection_modal.step1.group.other',
     ]);
     expect(buildConnectionTypeGroups(translate).map((group) => group.label)).toEqual([
@@ -61,6 +64,7 @@ describe('connectionTypeCatalog', () => {
       'T:bigdata',
       'T:message-queue',
       'T:config-center',
+      'T:task-scheduler',
       'T:other',
     ]);
     expect(

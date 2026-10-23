@@ -8,7 +8,8 @@ export type DataSourceCatalogGroup =
   | 'vector'
   | 'timeseries'
   | 'bigdata'
-  | 'config_center';
+  | 'config_center'
+  | 'task_scheduler';
 
 export type DataSourceAgentBuild = {
   // 代理驱动键：默认代理留空（等同类型名），独立构建档位必填（如 cassandra_legacy）。
@@ -122,8 +123,10 @@ export type DataSourceSpec = {
   sqlFileImport?: boolean;
   // sync 声明能否作为数据同步 / 迁移的源与目标；未声明的类型不出现在同步的连接选择里。
   sync?: { source?: boolean; target?: boolean };
-  agent: DataSourceAgentBuild;
-  variants: DataSourceVariantSet;
+  // 无驱动类型（XXL-JOB 等专用工作台）既不构建代理也不选驱动档位，agent 与 variants 都留空，
+  // 读取一律走 getDataSourceVariantSet 的空集回落，不要在调用点直接展开这两项。
+  agent?: DataSourceAgentBuild;
+  variants?: DataSourceVariantSet;
   ui?: DataSourceUISpec;
 };
 

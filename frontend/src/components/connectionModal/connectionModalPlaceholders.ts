@@ -63,6 +63,9 @@ export const getUriPlaceholder = (dbType: string) => {
   if (dbType === "pulsar") {
     return "pulsar://127.0.0.1:6650/public/default/orders.events?token=TOKEN";
   }
+  if (dbType === "xxljob") {
+    return "http://admin:123456@127.0.0.1:8080/xxl-job-admin";
+  }
   if (dbType === "nacos") {
     return "http://nacos:nacos@127.0.0.1:8848/nacos?namespaceId=dev";
   }
@@ -152,6 +155,8 @@ export const getConnectionParamsPlaceholder = (
       return "token=TOKEN&startOffset=earliest";
     case "nacos":
       return "contextPath=/nacos";
+    case "xxljob":
+      return "contextPath=/xxl-job-admin";
     default:
       return "key=value&another=value";
   }

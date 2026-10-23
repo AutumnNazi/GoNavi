@@ -53,6 +53,7 @@ export const backendApp = {
   RedisConnect: vi.fn(),
   NacosTestConnection: vi.fn(),
   NacosTestConnectionWithProgress: vi.fn(),
+  XxlJobConnect: vi.fn(),
   CancelConnectionTest: vi.fn(),
   RevealSavedConnectionPrimaryPassword: vi.fn(),
   SelectDatabaseFile: vi.fn(),
