@@ -4,7 +4,7 @@ import { PREFERENCE_PAGES, preferenceTitleKey, preferenceDescriptionKey, type Pr
 // because title-bar 数据同步/数据对比 entries navigate with it and the handler
 // dispatches on `action` alone.
 export type SettingsCenterNavigationTarget = {
-  group: PreferencePage | 'preferences' | 'services' | 'config' | 'workflow' | 'workspace' | 'about';
+  group: PreferencePage | 'preferences' | 'services' | 'config' | 'workflow' | 'workspace' | 'plugins' | 'about';
   pane?: string;
   /** Child page inside a pane: a theme section or an AI settings section. */
   section?: string;
@@ -88,6 +88,14 @@ export const SETTINGS_CENTER_MENU_CATALOG: ReadonlyArray<SettingsCenterMenuNode>
     titleKey: 'ai_settings.provider.configured',
     descriptionKey: 'ai_settings.provider.configured_hint',
     target: { group: 'services', pane: 'ai', section: 'providers' },
+  },
+
+  // 插件是叶子分组（分组即入口），目录里只挂一个无 item 的节点，参照 about。
+  {
+    group: 'plugins',
+    titleKey: 'plugin.manager.title',
+    descriptionKey: 'plugin.manager.description',
+    target: { group: 'plugins', pane: 'plugins' },
   },
 
   group('config', 'app.tools.group.config.title', 'app.tools.group.config.description'),

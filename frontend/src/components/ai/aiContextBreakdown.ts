@@ -115,6 +115,7 @@ export interface AIContextSegment {
 }
 
 export interface AIContextBreakdown {
+  unavailable?: boolean;
   windowSize: number;
   reserved: number;
   /** Window minus the reserved reply: what the prompt may use before compression starts. */
@@ -161,6 +162,7 @@ export const buildAIContextBreakdown = (input: AIContextBreakdownInput): AIConte
     windowSize, reserved, budget, used,
     free: Math.max(0, windowSize - reserved - used),
     pressure, level, segments,
+    ...(input.windowSize === 0 ? { unavailable: true, windowSize: 0, reserved: 0, budget: 0, free: 0, pressure: 0, level: 'ok' as const, overflow: false } : {}),
   };
 };
 
@@ -196,5 +198,6 @@ export const buildAIContextBreakdownFromPreview = (
     omittedMessages: preview.omittedMessages,
     workspaceTrimmed: preview.workspaceTrimmed,
     overflow: preview.overflow,
+    ...(fallback.windowSize === 0 ? { unavailable: true, windowSize: 0, reserved: 0, budget: 0, free: 0, pressure: 0, level: 'ok' as const, overflow: false } : {}),
   };
 };

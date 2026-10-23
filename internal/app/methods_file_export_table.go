@@ -36,6 +36,9 @@ func closeExportFile(f io.Closer) error {
 }
 
 func (a *App) ExportTableWithOptions(config connection.ConnectionConfig, dbName string, tableName string, options ExportFileOptions) (result connection.QueryResult) {
+	if isPluginExportRequest(options) {
+		return a.pluginExportFailure("unsupported_scope")
+	}
 	options = normalizeExportFileOptions("", options)
 	if err := a.validateExportEncoding(options); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -149,6 +152,9 @@ func (a *App) ExportTablesSQLWithOptions(
 	includeData bool,
 	options ExportFileOptions,
 ) (result connection.QueryResult) {
+	if isPluginExportRequest(options) {
+		return a.pluginExportFailure("unsupported_scope")
+	}
 	if !includeSchema && !includeData {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.invalid_export_mode", nil)}
 	}

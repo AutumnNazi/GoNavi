@@ -1,3 +1,4 @@
+import { invalidatePluginAIProviders } from '../../plugins/aiProvider/invalidation';
 import { useFavoriteSettingsNavigation } from '../../components/settings/preferences/useFavoriteSettingsNavigation';
 import { OPEN_PREFERENCE_PAGE, isPreferencePage } from '../../components/settings/preferences/preferencePages';
 import { useCallback, useRef, useEffect } from 'react';
@@ -379,6 +380,7 @@ export const useAppSettingsNavigation = ({
           const data = (res?.data || {}) as any;
           setDataRootInfo(data);
           setSelectedDataRootPath(String(data.path || nextPath));
+          invalidatePluginAIProviders({ reason: 'root' });
           void message.success(res?.message || t('app.data_root.message.updated'));
       } catch (error) {
           const errMsg = error instanceof Error ? error.message : String(error || t('common.unknown'));

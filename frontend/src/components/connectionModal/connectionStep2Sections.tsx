@@ -1,4 +1,7 @@
 import { t } from "../../i18n";
+import { isPluginDataSourceNamespace } from "../../plugins/dataSource/identity";
+import { PluginDataSourceFields } from "./PluginDataSourceFields";
+import { PluginDataSourceNetworkNotice } from "./PluginDataSourceNetworkNotice";
 import { CodeOutlined, FileTextOutlined, ApiOutlined } from "@ant-design/icons";
 import { Collapse, Form, Input, Alert, Tag } from "antd";
 import { getCustomConnectionDriverHelp } from "../../utils/driverImportGuidance";
@@ -217,6 +220,13 @@ export const createConnectionStep2Sections = ({
   useProxy,
   useSSL,
 }: CreateConnectionStep2SectionsInput) => {
+  if (isPluginDataSourceNamespace(dbType)) return {
+    baseInfoSection: <PluginDataSourceFields type={dbType} form={form} identityRows={denseIdentityRows} hasStoredPassword={initialValues?.hasPrimaryPassword}
+      passwordVisibility={{ visible: primaryPasswordVisible, onVisibleChange: handlePrimaryPasswordVisibleChange }}
+      passwordControls={initialValues?.hasPrimaryPassword ? renderStoredSecretControls({ fieldName: "password", clearKey: "primaryPassword", hasStoredSecret: true, clearLabel: t("connection.modal.secret.clear_saved_password"), description: t("connection.modal.secret.saved_password") }) : null} />,
+    advancedSection: <ConnectionModalAdditionalParams placeholder="" />,
+    networkSecuritySection: <PluginDataSourceNetworkNotice form={form} />,
+  };
   const baseInfoSection = (
     <div className="gn-conn-dense" style={{ display: "grid", gap: 4 }}>
       {uriQuickBlock ? (

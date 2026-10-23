@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { useSnapshotSource } from '../../../plugins/exporter/useSnapshotSource';
 import { message } from 'antd';
 import type { V2CellContextMenuActionKey } from '../../V2TableContextMenu';
 import {
@@ -219,6 +220,7 @@ export const useDataGridV2CellActions = ({
       translateDataGrid,
   ]);
 
+  const capturePluginSnapshot = useSnapshotSource({ allowed: isQueryResultExport, rows: mergedDisplayData, pageRows: queryResultCurrentPageRows, columns: displayOutputColumnNames, selectedKeys: selectedRowKeys, rowKey: GONAVI_ROW_KEY, keyString: (key) => String(key ?? '') });
   // Export
   const handleOpenExportDialog = useCallback(async () => {
       const selectedCount = selectedRowKeys.length;
@@ -259,6 +261,7 @@ export const useDataGridV2CellActions = ({
               title: translateDataGrid('file.backend.dialog.export_query_result'),
               scopeOptions,
               availableColumns: displayOutputColumnNames,
+              preparePluginSnapshot: capturePluginSnapshot(),
               allowInsertSql: canExportInsertSQL,
               allowColumnCommentHeaders: true,
               initialValues: {

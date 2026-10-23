@@ -12,6 +12,12 @@ import (
 // builders, while protection must recognize every saved-connection alias
 // before deciding whether a guard is available.
 func resolveConnectionProtectionDBType(config connection.ConnectionConfig) string {
+	if isPluginDataSourceType(config.Type) {
+		if dialect, ok := pluginDataSourceDialect(config.Type); ok {
+			return dialect
+		}
+		return invalidPluginDataSourceDialect
+	}
 	dbType := strings.ToLower(strings.TrimSpace(config.Type))
 	isCustom := dbType == "custom"
 	if dbType == "custom" {

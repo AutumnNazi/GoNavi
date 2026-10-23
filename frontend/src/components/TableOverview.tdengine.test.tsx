@@ -1040,4 +1040,83 @@ describe('TableOverview metadata compatibility', () => {
     expect(renderedText).toContain('2026-06-02 10:30:00');
     expect(renderedText).toContain('2026-05-01 09:00:00');
   });
+
+  it('loads MongoDB collections through DBGetTables instead of information_schema SQL', async () => {
+    storeState.connections = [{
+      id: 'conn-1',
+      config: {
+        type: 'mongodb',
+        host: '127.0.0.1',
+        port: 27017,
+        user: '',
+        password: '',
+        database: 'app_db',
+        useSSH: false,
+        ssh: { host: '', port: 22, user: '', password: '', keyPath: '' },
+      },
+    }] as any;
+    backendApp.DBGetTables.mockResolvedValue({
+      success: true,
+      data: [{ Table: 'users' }, { Table: 'orders' }],
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<TableOverview tab={{
+        id: 'tab-1',
+        title: '表概览 - app_db',
+        type: 'table-overview',
+        connectionId: 'conn-1',
+        dbName: 'app_db',
+      } as any} />);
+    });
+    await flushPromises();
+
+    expect(backendApp.DBGetTables).toHaveBeenCalled();
+    expect(backendApp.DBQuery).not.toHaveBeenCalled();
+    expect(messageApi.error).not.toHaveBeenCalled();
+    const renderedText = collectText(renderer!.toJSON());
+    expect(renderedText).toContain('users');
+    expect(renderedText).toContain('orders');
+  });
+
+  it('loads Kafka topics through DBGetTables instead of information_schema SQL', async () => {
+    storeState.connections = [{
+      id: 'conn-1',
+      config: {
+        type: 'kafka',
+        host: '127.0.0.1',
+        port: 9092,
+        user: '',
+        password: '',
+        // Kafka 没有真实库名，后端用合成库名 topics 承载 topic 列表。
+        database: 'topics',
+        useSSH: false,
+        ssh: { host: '', port: 22, user: '', password: '', keyPath: '' },
+      },
+    }] as any;
+    backendApp.DBGetTables.mockResolvedValue({
+      success: true,
+      data: [{ Table: 'orders.created' }, { Table: 'users.updated' }],
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<TableOverview tab={{
+        id: 'tab-1',
+        title: '表概览 - topics',
+        type: 'table-overview',
+        connectionId: 'conn-1',
+        dbName: 'topics',
+      } as any} />);
+    });
+    await flushPromises();
+
+    expect(backendApp.DBGetTables).toHaveBeenCalled();
+    expect(backendApp.DBQuery).not.toHaveBeenCalled();
+    expect(messageApi.error).not.toHaveBeenCalled();
+    const renderedText = collectText(renderer!.toJSON());
+    expect(renderedText).toContain('orders.created');
+    expect(renderedText).toContain('users.updated');
+  });
 });

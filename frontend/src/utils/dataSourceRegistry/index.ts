@@ -3,9 +3,12 @@ import {
   type DataSourceCatalogGroup,
   type DataSourceSpec,
   type DataSourceVariant,
+  type DataSourceVariantSet,
 } from './types';
 
 export * from './types';
+import { getPluginDataSourceSpec } from './pluginOverlay';
+import { isPluginDataSourceNamespace, parsePluginDataSourceType } from '../../plugins/dataSource/identity';
 
 // 每个数据源一个描述文件，与 Go 侧 internal/datasource 读取的是同一批文件。
 const specModules = import.meta.glob<DataSourceSpec>('../../../../internal/datasource/specs/*.json', {
@@ -25,7 +28,8 @@ const specsByDialect = new Map<string, DataSourceSpec>();
 
 for (const spec of registrySpecs) {
   specsByCanonicalType.set(spec.type, spec);
-  specsByDialect.set(spec.dialect, spec);
+  // 无驱动类型（XXL-JOB 等专用工作台）的 dialect 为空，不能占用方言索引。
+  if (spec.dialect) specsByDialect.set(spec.dialect, spec);
   for (const name of [spec.type, ...(spec.aliases ?? [])]) {
     canonicalByName.set(normalizeName(name), spec.type);
   }
@@ -36,17 +40,26 @@ export const listDataSourceSpecs = (): readonly DataSourceSpec[] => registrySpec
 
 /** 把类型名或别名归一为描述表规范类型；不是描述表类型时返回 undefined。 */
 export const resolveDataSourceType = (value: unknown): string | undefined =>
-  canonicalByName.get(normalizeName(value));
+  isPluginDataSourceNamespace(value) ? parsePluginDataSourceType(value)?.type : canonicalByName.get(normalizeName(value));
 
 /** 按类型名或别名查找描述表条目。 */
 export const getDataSourceSpec = (value: unknown): DataSourceSpec | undefined => {
+  if (isPluginDataSourceNamespace(value)) return getPluginDataSourceSpec(value);
   const canonical = resolveDataSourceType(value);
   return canonical ? specsByCanonicalType.get(canonical) : undefined;
 };
 
+// 无驱动类型（XXL-JOB 等专用工作台）不声明 variants，统一按空集回落。
+// 可选链只挡到 variants 为止，直接展开 spec.variants.items 仍会抛错，所以所有档位读取都走这里。
+const EMPTY_VARIANT_SET: DataSourceVariantSet = { auto: false, default: '', items: [] };
+
+/** 类型声明的驱动档位集；无驱动类型与非描述表类型返回空集。 */
+export const getDataSourceVariantSet = (value: unknown): DataSourceVariantSet =>
+  getDataSourceSpec(value)?.variants ?? EMPTY_VARIANT_SET;
+
 /** 描述表类型归一；不是描述表类型时原样返回小写值，便于接在历史归一函数的 default 分支。 */
 export const canonicalizeDataSourceType = (value: unknown): string =>
-  resolveDataSourceType(value) ?? normalizeName(value);
+  isPluginDataSourceNamespace(value) ? value : resolveDataSourceType(value) ?? normalizeName(value);
 
 export const isRegistryDataSource = (value: unknown): boolean => resolveDataSourceType(value) !== undefined;
 
@@ -55,6 +68,7 @@ export const isRegistryDataSource = (value: unknown): boolean => resolveDataSour
  * 历史类型不受影响（返回 true，由后端导入能力决定）。
  */
 export const registryAllowsImport = (value: unknown, mode: 'table' | 'sqlFile'): boolean => {
+  if (isPluginDataSourceNamespace(value)) return false;
   const spec = getDataSourceSpec(value);
   if (!spec) {
     return true;
@@ -95,20 +109,23 @@ export const listDataSourceTypesWhere = (predicate: (spec: DataSourceSpec) => bo
 
 /** 连接表单可选的驱动版本档位（不含自动识别）。 */
 export const getDataSourceVariants = (value: unknown): DataSourceVariant[] =>
-  getDataSourceSpec(value)?.variants.items ?? [];
+  getDataSourceVariantSet(value).items;
 
 /** 用户未显式选择时连接实际采用的档位值（可能是 auto）。 */
 export const getDefaultDataSourceVariant = (value: unknown): string | undefined =>
-  getDataSourceSpec(value)?.variants.default;
+  getDataSourceVariantSet(value).default;
+
+/** 类型是否有可选驱动档位；无驱动类型与非描述表类型都没有档位。 */
+export const hasDataSourceVariants = (value: unknown): boolean =>
+  getDataSourceVariantSet(value).items.length > 0;
 
 export const supportsAutoDataSourceVariant = (value: unknown): boolean =>
-  Boolean(getDataSourceSpec(value)?.variants.auto);
+  Boolean(getDataSourceVariantSet(value).auto);
 
 /** 档位是否需要独立的驱动代理构建（需要在驱动管理里单独安装）。 */
 export const dataSourceVariantNeedsSeparateAgent = (value: unknown, variantId: string): boolean => {
-  const spec = getDataSourceSpec(value);
-  if (!spec) return false;
-  const selected = normalizeName(variantId) || spec.variants.default;
+  const variants = getDataSourceVariantSet(value);
+  const selected = normalizeName(variantId) || variants.default;
   if (selected === DATA_SOURCE_VARIANT_AUTO) return false;
-  return Boolean(spec.variants.items.find((item) => item.id === selected)?.build);
+  return Boolean(variants.items.find((item) => item.id === selected)?.build);
 };

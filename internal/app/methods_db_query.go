@@ -137,6 +137,7 @@ func (a *App) dbQueryWithCancel(
 		cancel()
 		cleanupRunningQuery()
 	}()
+	defer a.localizeQueryResultNotices(&result)
 
 	dbInst, waitMs, err := a.acquireQueryConnection(ctx, queryConnectionRequest{
 		config:      runConfig,

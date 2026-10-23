@@ -1346,6 +1346,7 @@ export namespace app {
 	
 	
 	export class ExportFileOptions {
+	    pluginExporter?: dataexport.PluginExportSelection;
 	    format: string;
 	    csvEncoding?: string;
 	    columns?: string[];
@@ -1368,6 +1369,7 @@ export namespace app {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.pluginExporter = this.convertValues(source["pluginExporter"], dataexport.PluginExportSelection);
 	        this.format = source["format"];
 	        this.csvEncoding = source["csvEncoding"];
 	        this.columns = source["columns"];
@@ -1384,6 +1386,24 @@ export namespace app {
 	        this.insertSQLTargetColumns = source["insertSQLTargetColumns"];
 	        this.insertSQLAllowEmptyTargetTable = source["insertSQLAllowEmptyTargetTable"];
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class ImportFileOptions {
 	    columnMappings?: Record<string, string>;
@@ -2146,6 +2166,108 @@ export namespace app {
 		    return a;
 		}
 	}
+	export class XxlJobGroupMutation {
+	    id: number;
+	    appName: string;
+	    title: string;
+	    addressType: number;
+	    addressList: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new XxlJobGroupMutation(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.appName = source["appName"];
+	        this.title = source["title"];
+	        this.addressType = source["addressType"];
+	        this.addressList = source["addressList"];
+	    }
+	}
+	export class XxlJobJobMutation {
+	    id: number;
+	    jobGroup: number;
+	    name: string;
+	    author: string;
+	    alarmEmail: string;
+	    scheduleType: string;
+	    scheduleConf: string;
+	    misfireStrategy: string;
+	    executorRouteStrategy: string;
+	    executorHandler: string;
+	    executorParam: string;
+	    executorBlockStrategy: string;
+	    executorTimeout: number;
+	    executorFailRetryCount: number;
+	    glueType: string;
+	    glueSource: string;
+	    glueRemark: string;
+	    childJobId: string;
+	    triggerStatus: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new XxlJobJobMutation(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.jobGroup = source["jobGroup"];
+	        this.name = source["name"];
+	        this.author = source["author"];
+	        this.alarmEmail = source["alarmEmail"];
+	        this.scheduleType = source["scheduleType"];
+	        this.scheduleConf = source["scheduleConf"];
+	        this.misfireStrategy = source["misfireStrategy"];
+	        this.executorRouteStrategy = source["executorRouteStrategy"];
+	        this.executorHandler = source["executorHandler"];
+	        this.executorParam = source["executorParam"];
+	        this.executorBlockStrategy = source["executorBlockStrategy"];
+	        this.executorTimeout = source["executorTimeout"];
+	        this.executorFailRetryCount = source["executorFailRetryCount"];
+	        this.glueType = source["glueType"];
+	        this.glueSource = source["glueSource"];
+	        this.glueRemark = source["glueRemark"];
+	        this.childJobId = source["childJobId"];
+	        this.triggerStatus = source["triggerStatus"];
+	    }
+	}
+	export class XxlJobListQuery {
+	    page: number;
+	    size: number;
+	    jobGroup: number;
+	    triggerStatus: number;
+	    logStatus: number;
+	    jobId: number;
+	    appName: string;
+	    title: string;
+	    name: string;
+	    executorHandler: string;
+	    author: string;
+	    filterTime: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new XxlJobListQuery(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.page = source["page"];
+	        this.size = source["size"];
+	        this.jobGroup = source["jobGroup"];
+	        this.triggerStatus = source["triggerStatus"];
+	        this.logStatus = source["logStatus"];
+	        this.jobId = source["jobId"];
+	        this.appName = source["appName"];
+	        this.title = source["title"];
+	        this.name = source["name"];
+	        this.executorHandler = source["executorHandler"];
+	        this.author = source["author"];
+	        this.filterTime = source["filterTime"];
+	    }
+	}
 
 }
 
@@ -2490,6 +2612,7 @@ export namespace connection {
 	    savePassword?: boolean;
 	    database: string;
 	    readOnly?: boolean;
+	    pluginWritable?: boolean;
 	    protection?: ConnectionProtectionConfig;
 	    useSSL?: boolean;
 	    sslMode?: string;
@@ -2547,6 +2670,7 @@ export namespace connection {
 	        this.savePassword = source["savePassword"];
 	        this.database = source["database"];
 	        this.readOnly = source["readOnly"];
+	        this.pluginWritable = source["pluginWritable"];
 	        this.protection = this.convertValues(source["protection"], ConnectionProtectionConfig);
 	        this.useSSL = source["useSSL"];
 	        this.sslMode = source["sslMode"];
@@ -3433,6 +3557,25 @@ export namespace connection {
 		    }
 		    return a;
 		}
+	}
+
+}
+
+export namespace dataexport {
+	
+	export class PluginExportSelection {
+	    digest: string;
+	    generation: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new PluginExportSelection(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.digest = source["digest"];
+	        this.generation = source["generation"];
+	    }
 	}
 
 }
@@ -5038,6 +5181,8 @@ export namespace sqlaudit {
 	    source: string;
 	    fromTimestamp: number;
 	    toTimestamp: number;
+	    mcpRequestId: string;
+	    includeMcp: boolean;
 	    executionHistory: boolean;
 	    page: number;
 	    pageSize: number;
@@ -5058,6 +5203,8 @@ export namespace sqlaudit {
 	        this.source = source["source"];
 	        this.fromTimestamp = source["fromTimestamp"];
 	        this.toTimestamp = source["toTimestamp"];
+	        this.mcpRequestId = source["mcpRequestId"];
+	        this.includeMcp = source["includeMcp"];
 	        this.executionHistory = source["executionHistory"];
 	        this.page = source["page"];
 	        this.pageSize = source["pageSize"];
@@ -5285,6 +5432,7 @@ export namespace sync {
 	    mappings?: SyncObjectMapping[];
 	    batchSize?: number;
 	    rowErrorPolicy?: string;
+	    existingTargetInsertWithoutKey?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new SyncConfig(source);
@@ -5310,6 +5458,7 @@ export namespace sync {
 	        this.mappings = this.convertValues(source["mappings"], SyncObjectMapping);
 	        this.batchSize = source["batchSize"];
 	        this.rowErrorPolicy = source["rowErrorPolicy"];
+	        this.existingTargetInsertWithoutKey = source["existingTargetInsertWithoutKey"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

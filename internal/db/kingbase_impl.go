@@ -38,29 +38,6 @@ var _ DatabaseForeignKeyProvider = (*KingbaseDB)(nil)
 
 var openKingbaseDB = sql.Open
 
-// resolveKingbaseConnectDatabases returns databases that can be used to establish
-// a connection. Kingbase follows PostgreSQL's default of using the login user as
-// the database when no database is supplied, which is surprising for the UI's
-// optional database field. Use known maintenance databases instead.
-func resolveKingbaseConnectDatabases(config connection.ConnectionConfig) []string {
-	params := url.Values{}
-	mergeConnectionParamValuesWithAllowlist(params, connectionParamsFromURI(config.URI, "kingbase", "postgres", "postgresql"), kingbaseConnectionParamNames)
-	mergeConnectionParamValuesWithAllowlist(params, connectionParamsFromText(config.ConnectionParams), kingbaseConnectionParamNames)
-
-	explicit := strings.TrimSpace(config.Database)
-	if explicit == "" {
-		explicit = kingbaseDatabaseFromURI(config.URI)
-	}
-	if paramDatabase := strings.TrimSpace(firstConnectionParamValue(params, "dbname", "database")); paramDatabase != "" {
-		explicit = paramDatabase
-	}
-	if explicit != "" {
-		return []string{explicit}
-	}
-
-	return []string{"test", "template1"}
-}
-
 // kingbaseDatabaseFromURI extracts the PostgreSQL-compatible database path
 // from a Kingbase URI. Explicit config.Database and query parameters have
 // higher priority and are applied by the caller.
@@ -214,6 +191,7 @@ func (k *KingbaseDB) Connect(config connection.ConnectionConfig) (err error) {
 		logger.Infof("人大金仓通过本地端口转发连接：%s -> %s:%d", forwarder.LocalAddr, config.Host, config.Port)
 	}
 
+	usingMaintenanceFallback := resolveKingbaseExplicitDatabase(runConfig) == ""
 	attempts := []connection.ConnectionConfig{runConfig}
 	if shouldTrySSLPreferredFallback(runConfig) {
 		attempts = append(attempts, withSSLDisabled(runConfig))
@@ -263,7 +241,7 @@ func (k *KingbaseDB) Connect(config connection.ConnectionConfig) (err error) {
 			return nil
 		}
 	}
-	return fmt.Errorf("连接建立后验证失败：%s", strings.Join(failures, "；"))
+	return kingbaseConnectFailureError(failures, usingMaintenanceFallback)
 }
 
 func (k *KingbaseDB) ensureSearchPath(config connection.ConnectionConfig, baseDSN string, hasExplicitSearchPath bool) error {

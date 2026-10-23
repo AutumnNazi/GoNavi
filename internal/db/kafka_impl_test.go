@@ -25,6 +25,11 @@ type fakeKafkaRuntime struct {
 	lastFetchRequest     kafkaFetchRequest
 	lastPublishCommand   kafkaPublishCommand
 	fetchCount           int
+	fetchAtCount         int
+	lastFetchAtTopic     string
+	lastFetchAtPartition int
+	lastFetchAtOffset    int64
+	fetchTruncated       bool
 	consumerGroupsResult []kafkaConsumerGroupInfo
 	consumerGroupsErr    error
 	lastConsumerGroupID  string
@@ -52,13 +57,6 @@ func TestKafkaRuntimeDoesNotDeriveRequestTimeoutFromConnectionTimeout(t *testing
 	if concrete.dialer.Timeout != time.Second {
 		t.Fatalf("Kafka dial timeout = %s, want 1s", concrete.dialer.Timeout)
 	}
-}
-
-type kafkaOffsetSeekerRecorder struct {
-	firstOffset int64
-	lastOffset  int64
-	seekOffset  int64
-	seekWhence  int
 }
 
 func TestKafkaRuntimeRecognizesSASLMechanismAliases(t *testing.T) {
@@ -196,23 +194,6 @@ func TestKafkaSecurityProtocols(t *testing.T) {
 	}
 }
 
-func (s *kafkaOffsetSeekerRecorder) Seek(offset int64, whence int) (int64, error) {
-	s.seekOffset = offset
-	s.seekWhence = whence
-	switch whence {
-	case kafka.SeekStart:
-		offset += s.firstOffset
-	case kafka.SeekAbsolute:
-		// offset is already absolute.
-	default:
-		return 0, kafka.OffsetOutOfRange
-	}
-	if offset < s.firstOffset || offset > s.lastOffset {
-		return 0, kafka.OffsetOutOfRange
-	}
-	return offset, nil
-}
-
 func (f *fakeKafkaRuntime) Close() error { return nil }
 
 func (f *fakeKafkaRuntime) Ping(ctx context.Context) error { return nil }
@@ -226,10 +207,25 @@ func (f *fakeKafkaRuntime) DescribeTopic(ctx context.Context, topic string) (kaf
 	return f.describeResult, nil
 }
 
-func (f *fakeKafkaRuntime) FetchMessages(ctx context.Context, request kafkaFetchRequest) ([]kafkaMessageRecord, error) {
+func (f *fakeKafkaRuntime) FetchMessages(ctx context.Context, request kafkaFetchRequest) (kafkaFetchResult, error) {
 	f.fetchCount++
 	f.lastFetchRequest = request
-	return append([]kafkaMessageRecord(nil), f.fetchResult...), nil
+	return kafkaFetchResult{
+		Records:   append([]kafkaMessageRecord(nil), f.fetchResult...),
+		Truncated: f.fetchTruncated,
+	}, nil
+}
+
+func (f *fakeKafkaRuntime) FetchMessageAt(ctx context.Context, locator kafkaMessageLocator) (*kafkaMessageRecord, error) {
+	f.fetchAtCount++
+	f.lastFetchAtTopic = locator.Topic
+	f.lastFetchAtPartition = locator.Partition
+	f.lastFetchAtOffset = locator.Offset
+	if len(f.fetchResult) == 0 {
+		return nil, nil
+	}
+	record := f.fetchResult[0]
+	return &record, nil
 }
 
 func (f *fakeKafkaRuntime) Publish(ctx context.Context, command kafkaPublishCommand) (int64, error) {
@@ -239,23 +235,6 @@ func (f *fakeKafkaRuntime) Publish(ctx context.Context, command kafkaPublishComm
 func (f *fakeKafkaRuntime) InspectConsumerGroups(ctx context.Context, groupID string) ([]kafkaConsumerGroupInfo, error) {
 	f.lastConsumerGroupID = groupID
 	return f.consumerGroupsResult, f.consumerGroupsErr
-}
-
-func TestSeekKafkaAbsoluteOffsetUsesAbsoluteKafkaOffset(t *testing.T) {
-	seeker := &kafkaOffsetSeekerRecorder{
-		firstOffset: 100,
-		lastOffset:  150,
-	}
-
-	if err := seekKafkaAbsoluteOffset(seeker, 100); err != nil {
-		t.Fatalf("seek at retained first offset failed: %v", err)
-	}
-	if seeker.seekOffset != 100 {
-		t.Fatalf("expected absolute offset 100, got %d", seeker.seekOffset)
-	}
-	if seeker.seekWhence != kafka.SeekAbsolute {
-		t.Fatalf("expected kafka.SeekAbsolute, got %d", seeker.seekWhence)
-	}
 }
 
 func TestNormalizeKafkaConfigParsesURIAndParams(t *testing.T) {

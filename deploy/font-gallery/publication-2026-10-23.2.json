@@ -1,0 +1,53 @@
+{
+  "catalogVersion": "2026-10-23.2",
+  "publishedAt": "2026-10-22T23:25:00Z",
+  "publicBaseURL": "https://origin-download.syngnat.top:8443/gonavi/fonts/v1/",
+  "catalogSha256": "bb94378f349161ea5cd6ea78179fa658e8efa15802779fe9740f2a3a3f0151ae",
+  "catalogSizeBytes": 151905,
+  "fontCount": 23,
+  "previousCatalogSha256": "4d39219434ce14a50d8575e4567d7ee8c3cc96b1ee60704558af4db74bc57eaf",
+  "upstreamRevision": "mixed-cascadia-v2407.24-iosevka-v34.9.0-sarasa-v1.0.42-gf-45e3d5269e4a-maple-v7.9-smiley-v2.0.1",
+  "fontFamilies": [
+    "JetBrains Mono",
+    "Fira Code",
+    "Fira Mono",
+    "IBM Plex Mono",
+    "Roboto Mono",
+    "Inconsolata",
+    "Source Code Pro",
+    "Ubuntu Mono",
+    "Cousine",
+    "Space Mono",
+    "Atkinson Hyperlegible",
+    "Hack",
+    "Inter",
+    "Manrope",
+    "Noto Sans SC",
+    "Open Sans",
+    "LXGW WenKai",
+    "LXGW WenKai Mono",
+    "Cascadia Code",
+    "Iosevka",
+    "Maple Mono CN",
+    "Noto Serif SC",
+    "Sarasa Gothic SC"
+  ],
+  "previewMode": "font bytes unmodified; previews reuse the original file under 512 KiB, otherwise a name-preserving subset limited to the application's preview text",
+  "previewPolicies": {
+    "cascadia-code": "subset-preview",
+    "iosevka": "subset-preview",
+    "maple-mono-cn": "subset-preview",
+    "noto-serif-sc": "subset-preview",
+    "sarasa-gothic-sc": "subset-preview"
+  },
+  "verification": {
+    "publicCatalogHTTP": 200,
+    "catalogSha256Match": true,
+    "assetChecks": 33,
+    "licenseChecks": 22,
+    "headers": "assets/licenses: 200 + immutable cache + nosniff + CORS *; catalog: no-cache revalidation",
+    "verifiedFrom": "Bero origin over the public HTTPS URL",
+    "newAssets": 10,
+    "newLicenses": 5
+  }
+}

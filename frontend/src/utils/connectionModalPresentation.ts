@@ -148,7 +148,9 @@ export const getConnectionConfigLayoutKindLabel = (
 
 // 描述表 ui.layout 借用的既有表单布局：search → Elasticsearch 的索引类表单，vector → 向量库表单，
 // trino → catalog.schema 命名空间的 Trino 表单（Presto）。
-const REGISTRY_LAYOUT_TYPES: Record<string, string> = { search: 'elasticsearch', vector: 'qdrant', trino: 'trino' };
+// XXL-JOB 调度中心同样是「主机/端口 + 账号/密码」的管理端表单，借用 Nacos 布局；
+// context-path 作为连接参数随附，不占用独立分区。
+const REGISTRY_LAYOUT_TYPES: Record<string, string> = { search: 'elasticsearch', vector: 'qdrant', trino: 'trino', task_scheduler: 'nacos' };
 
 export const resolveConnectionConfigLayout = (
   rawType: string,

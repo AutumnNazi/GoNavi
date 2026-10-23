@@ -75,12 +75,12 @@ body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs-double > .
 
 /* antd 对非首签有兄弟 margin（与本层同权重、被运行时注入的 antd 样式压过），
    这里提权清零，页签保持紧排。 */
-body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-tab + .ant-tabs-tab {
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs > .ant-tabs-nav .ant-tabs-tab + .ant-tabs-tab {
   margin: 0 !important;
 }
 
 /* 页签：平铺文本页签（antd 线式）——无底色、无圆角、无竖向分割线。 */
-body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-tab {
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs > .ant-tabs-nav .ant-tabs-tab {
   border-radius: 0 !important;
   background: transparent !important;
   border-right: none !important;
@@ -88,31 +88,31 @@ body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-
   transition: background-color 0.12s ease;
 }
 
-body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-tab:hover:not(.ant-tabs-tab-active) {
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs > .ant-tabs-nav .ant-tabs-tab:hover:not(.ant-tabs-tab-active) {
   background: var(--gn-bg-hover, rgba(38, 38, 43, 0.05)) !important;
 }
 
 /* 激活页签高亮：与 classic 模式同色（--gn-bg-panel 面板白）+ 加粗文字 +
    基础层的 2px 主题强调色顶部标记。页签带与内容区同色（panel-2）后
    仅靠顶标难以区分当前页签，用面板色高亮明确标识，两种布局观感一致。 */
-body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-tab.ant-tabs-tab-active {
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active {
   background: var(--gn-bg-panel, #ffffff) !important;
 }
 
 /* 激活页签悬浮不加深：保持高亮底稳定，避免闪烁。 */
-body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-tab.ant-tabs-tab-active:hover {
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active:hover {
   background: var(--gn-bg-panel, #ffffff) !important;
 }
 
 /* 页签文字：非激活 fg-3 / 激活 fg-1。btn 上必须显式声明——antd 自身对
    .ant-tabs-tab-btn 有直接命中的颜色规则，基础层写在 .ant-tabs-tab 上的
    颜色继承不进去。 */
-body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-tab .ant-tabs-tab-btn {
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs > .ant-tabs-nav .ant-tabs-tab .ant-tabs-tab-btn {
   color: var(--gn-fg-3, #5f5f68);
   font-size: var(--gn-font-size-sm, 12px);
 }
 
-body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
   color: var(--gn-fg-1, #26262b);
   font-weight: 600;
 }
@@ -167,7 +167,7 @@ body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-
 
 /* —— 页签宽度自适应（覆盖 JS 注入的固定 --gn-v2-tab-width）——
    短标题不再撑满 260px 空宽；长标题 240px 封顶截断。 */
-body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs .ant-tabs-tab {
+body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-v2-main-tabs > .ant-tabs-nav .ant-tabs-tab {
   width: auto !important;
   min-width: 132px !important;
   max-width: 240px !important;

@@ -21,6 +21,7 @@ import {
   normalizeRows,
   buildAdvancedMessageQuery,
 } from './messageQueue/messageQueueWorkbenchModel';
+import { useMessageDetailLoader } from './messageQueue/hooks/useMessageDetailLoader';
 import { useMessageQueueWorkbenchState } from './messageQueue/hooks/useMessageQueueWorkbenchState';
 import { useMessageQueueWorkbenchView } from './messageQueue/hooks/useMessageQueueWorkbenchView';
 import { MessageQueueSubscriptionList } from './messageQueue/MessageQueueSubscriptionList';
@@ -51,6 +52,16 @@ const MessageQueueWorkbench: React.FC<MessageQueueWorkbenchProps> = ({ tab }) =>
     setPublishDefaults, setPublishModalOpen, t, setConsumeModalOpen, subscriptions,
     selectedSubscriptionId, publishDefaults, profile, searchText, messages, directionFilter,
   });
+
+  // 列表只取元数据（时间 / partition / offset / key / 大小），payload 在选中消息时
+  // 按 partition+offset 单独拉取；去重、加载态与缓存都在 hook 里。
+  const { details: messageDetails, loadingIds: loadingDetailIds, loadDetail: loadMessageDetail } = useMessageDetailLoader({
+    connection, sourceType: profile?.type, executionDbName, messages, selectedMessage, t,
+  });
+
+  const selectedMessageWithDetail = selectedMessage
+    ? { ...selectedMessage, row: { ...selectedMessage.row, ...(messageDetails[selectedMessage.id] || {}) } }
+    : null;
 
   if (!connection || !profile) {
     return (
@@ -160,7 +171,8 @@ const MessageQueueWorkbench: React.FC<MessageQueueWorkbenchProps> = ({ tab }) =>
           searchText={searchText} setSearchText={setSearchText} listRef={listRef}
           setListViewport={setListViewport} filteredMessages={filteredMessages}
           messages={messages} windowedMessages={windowedMessages} subscriptions={subscriptions}
-          selectedMessage={selectedMessage} selectMessage={selectMessage}
+          selectedMessage={selectedMessageWithDetail} selectMessage={selectMessage}
+          onLoadDetail={loadMessageDetail} loadingDetailIds={loadingDetailIds}
         />
       </div>
 

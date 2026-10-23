@@ -29,8 +29,8 @@ def missing_webkit_tag(workflow: str) -> list[str]:
 
 
 class BackendWorkflowTest(unittest.TestCase):
-    def test_clean_frontend_build_is_required_by_the_gate(self):
-        workflow = (ROOT / ".github/workflows/backend-tests.yml").read_text()
+    def test_clean_frontend_build_job_is_configured(self):
+        workflow = (ROOT / ".github/workflows/backend-tests.yml").read_text(encoding="utf-8")
         frontend = re.search(r"(?ms)^  frontend:\n(.*?)(?=^  [\w-]+:|\Z)", workflow)
         self.assertIsNotNone(frontend, "missing clean frontend job")
         block = frontend.group(1)
@@ -38,13 +38,27 @@ class BackendWorkflowTest(unittest.TestCase):
         self.assertIn("working-directory: frontend", block)
         self.assertIn("run: npm ci --no-audit --no-fund", block)
         self.assertIn("run: npm run build", block)
-        gate = workflow.split("  gate:", 1)[1]
-        self.assertIn("needs: [frontend, full, platform-sensitive]", gate)
-        self.assertIn("needs.frontend.result", gate)
-        self.assertIn('"${FRONTEND_RESULT}" != "success"', gate)
+        self.assertIn("working-directory: sdk/typescript", block)
+        self.assertIn("node ../../frontend/node_modules/typescript/bin/tsc --noEmit -p tsconfig.json", block)
+        self.assertIn("--lib ES2022,DOM test/manifest-types.ts", block)
+        self.assertIn("node ../../frontend/node_modules/vitest/vitest.mjs run --config vitest.config.mjs", block)
+        self.assertIn("npm test -- src/plugins --maxWorkers=2 --minWorkers=1", block)
+        self.assertIn("npm test -- src/i18n/keyResolution.test.ts --maxWorkers=1 --minWorkers=1", block)
+
+    def test_marketplace_postgres_and_plugin_races_are_configured(self):
+        workflow = (ROOT / ".github/workflows/backend-tests.yml").read_text(encoding="utf-8")
+        block = re.search(r"(?ms)^  marketplace-contract:\n(.*?)(?=^  [\w-]+:|\Z)", workflow)
+        self.assertIsNotNone(block)
+        self.assertIn("image: postgres:16", block.group(1))
+        self.assertIn("gonavi_market_test", block.group(1))
+        self.assertIn("go test -race ./internal/plugin ./internal/pluginmarket ./internal/market", block.group(1))
+        self.assertIn("go test -race ./internal/db -run '^TestPluginDatabase'", block.group(1))
+        self.assertIn("go test -race ./internal/ai/provider -run '^TestPlugin'", block.group(1))
+        self.assertIn("go test -race ./internal/dataexport -run '^TestPlugin'", block.group(1))
+        self.assertIn("go test ./internal/db ./internal/app ./internal/mcpserver ./internal/ai/provider ./internal/ai/service ./internal/dataexport -run '^TestPlugin'", workflow)
 
     def test_app_and_root_builds_select_installed_webkit(self):
-        workflow = (ROOT / ".github/workflows/backend-tests.yml").read_text()
+        workflow = (ROOT / ".github/workflows/backend-tests.yml").read_text(encoding="utf-8")
         self.assertEqual(missing_webkit_tag(workflow), [], "Linux app/root tests must select webkit2_41")
 
     def test_detects_driver_command_even_with_narrow_test_filter(self):

@@ -136,6 +136,7 @@ export function buildRpcConnectionConfig(
     driver: rpcMerged.driver,
     oceanBaseProtocol: rpcMerged.oceanBaseProtocol,
     readOnly: rpcMerged.readOnly,
+    pluginWritable: rpcMerged.pluginWritable,
     protection: rpcMerged.protection,
   });
 
@@ -148,6 +149,7 @@ export function buildRpcConnectionConfig(
     password: toStringValue(rpcMerged.password),
     database: toStringValue(rpcMerged.database),
     readOnly: deriveLegacyConnectionReadOnlyFlag(protection),
+    pluginWritable: rpcMerged.pluginWritable === true,
     protection: new connection.ConnectionProtectionConfig(protection),
     useSSH: rpcMerged.useSSH === true,
     ssh: normalizeSSHConfig(rpcMerged.ssh),

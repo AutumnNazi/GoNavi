@@ -5,7 +5,10 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
+    "predev": "npm run build:plugin-window",
     "dev": "vite",
+    "build:plugin-window": "vite build --config vite.plugin-window.config.ts",
+    "dev:plugin-window": "vite build --watch --config vite.plugin-window.config.ts",
     "build": "node scripts/build-frontend.mjs",
     "preview": "vite preview",
     "test": "vitest run",

@@ -1,0 +1,139 @@
+{
+  "publicationVersion": "2026-10-22.1",
+  "publishedAt": "2026-10-22T16:10:00Z",
+  "publicBaseURL": "https://origin-download.syngnat.top:8443/gonavi/fonts/v1/",
+  "previousCatalogSha256": "4ccf7f6f8871ebcb90898c0043586d6359ae832dacc8d33a982110c178013dad",
+  "upstreamRevision": "gf-45e3d5269e4a17d823f6d84470bc084dc5ae46f6",
+  "entries": [
+    {
+      "id": "inter",
+      "kind": "ui",
+      "family": "Inter",
+      "version": "gf-45e3d5269e4a",
+      "names": {
+        "zh-CN": "Inter",
+        "zh-TW": "Inter",
+        "en-US": "Inter",
+        "ja-JP": "Inter",
+        "ru-RU": "Inter",
+        "de-DE": "Inter"
+      },
+      "description": "Rasmus Andersson 开发的现代界面字体，字面开阔、层次清晰；本次提供可变字重原版。",
+      "useCase": "界面文字、侧栏与数据表格。此字体不提供完整中文字形，中文会使用系统回退字体。",
+      "attribution": "Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter)",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf",
+      "fontFile": "Inter-VF.ttf",
+      "license": {
+        "id": "OFL-1.1",
+        "name": "SIL Open Font License 1.1",
+        "url": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/inter/OFL.txt",
+        "licenseFile": "inter-OFL.txt",
+        "nonCommercial": false
+      }
+    },
+    {
+      "id": "noto-sans-sc",
+      "kind": "ui",
+      "family": "Noto Sans SC",
+      "version": "gf-45e3d5269e4a",
+      "names": {
+        "zh-CN": "思源黑体 Noto Sans SC",
+        "zh-TW": "思源黑體 Noto Sans SC",
+        "en-US": "Noto Sans SC",
+        "ja-JP": "Noto Sans SC",
+        "ru-RU": "Noto Sans SC",
+        "de-DE": "Noto Sans SC"
+      },
+      "description": "Adobe 与 Google 联合开发的中文字体（思源黑体），提供简体中文完整覆盖；本次提供可变字重原版。",
+      "useCase": "界面文字、侧栏与数据表格的完整中文显示。",
+      "attribution": "Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf",
+      "fontFile": "NotoSansSC-VF.ttf",
+      "license": {
+        "id": "OFL-1.1",
+        "name": "SIL Open Font License 1.1",
+        "url": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/notosanssc/OFL.txt",
+        "licenseFile": "notosanssc-OFL.txt",
+        "nonCommercial": false
+      }
+    },
+    {
+      "id": "open-sans",
+      "kind": "ui",
+      "family": "Open Sans",
+      "version": "gf-45e3d5269e4a",
+      "names": {
+        "zh-CN": "Open Sans",
+        "zh-TW": "Open Sans",
+        "en-US": "Open Sans",
+        "ja-JP": "Open Sans",
+        "ru-RU": "Open Sans",
+        "de-DE": "Open Sans"
+      },
+      "description": "Steve Matteson 设计的经典人本主义界面字体；本次提供可变字重原版。",
+      "useCase": "界面文字与正文内容。此字体不提供完整中文字形，中文会使用系统回退字体。",
+      "attribution": "Copyright 2020 The Open Sans Project Authors (https://github.com/googlefonts/opensans)",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/opensans/OpenSans%5Bwdth%2Cwght%5D.ttf",
+      "fontFile": "OpenSans-VF.ttf",
+      "license": {
+        "id": "OFL-1.1",
+        "name": "SIL Open Font License 1.1",
+        "url": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/opensans/OFL.txt",
+        "licenseFile": "opensans-OFL.txt",
+        "nonCommercial": false
+      }
+    },
+    {
+      "id": "manrope",
+      "kind": "ui",
+      "family": "Manrope",
+      "version": "gf-45e3d5269e4a",
+      "names": {
+        "zh-CN": "Manrope",
+        "zh-TW": "Manrope",
+        "en-US": "Manrope",
+        "ja-JP": "Manrope",
+        "ru-RU": "Manrope",
+        "de-DE": "Manrope"
+      },
+      "description": "几何风格现代界面字体，半圆字形与开放字腔；本次提供可变字重原版。",
+      "useCase": "界面文字、标题与数字。此字体不提供完整中文字形，中文会使用系统回退字体。",
+      "attribution": "Copyright 2018 The Manrope Project Authors (https://github.com/googlefonts/manrope)",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/manrope/Manrope%5Bwght%5D.ttf",
+      "fontFile": "Manrope-VF.ttf",
+      "license": {
+        "id": "OFL-1.1",
+        "name": "SIL Open Font License 1.1",
+        "url": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/manrope/OFL.txt",
+        "licenseFile": "manrope-OFL.txt",
+        "nonCommercial": false
+      }
+    },
+    {
+      "id": "hack",
+      "kind": "mono",
+      "family": "Hack",
+      "version": "v3.003",
+      "names": {
+        "zh-CN": "Hack",
+        "zh-TW": "Hack",
+        "en-US": "Hack",
+        "ja-JP": "Hack",
+        "ru-RU": "Hack",
+        "de-DE": "Hack"
+      },
+      "description": "Source Foundry 维护的编程字体，字形区分度高；本次提供 Regular 原版。",
+      "useCase": "SQL 编辑器、日志与终端面板。此字体不提供完整中文字形，中文会使用系统回退字体。",
+      "attribution": "Copyright 2018 Source Foundry Authors (https://sourcefoundry.org/hack/)",
+      "sourceUrl": "https://github.com/source-foundry/Hack/releases/download/v3.003/Hack-v3.003-ttf.zip",
+      "fontFile": "Hack-Regular.ttf",
+      "license": {
+        "id": "MIT",
+        "name": "MIT License",
+        "url": "https://raw.githubusercontent.com/source-foundry/Hack/v3.003/LICENSE.md",
+        "licenseFile": "hack-LICENSE.txt",
+        "nonCommercial": false
+      }
+    }
+  ]
+}

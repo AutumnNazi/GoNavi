@@ -15,6 +15,7 @@ describe('AIProviderLogo', () => {
     expect(PRESET_ICON_SLUG['qwen-bailian']).toBe('alibabacloud');
     expect(PRESET_ICON_SLUG.atlascloud).toBe('atlascloud');
     expect(PRESET_ICON_SLUG.orcarouter).toBe('orcarouter');
+    expect(PRESET_ICON_SLUG.cheaperinference).toBe('cheaperinference');
     expect(PRESET_ICON_SLUG.zhipu).toBe('zhipu');
     expect(PRESET_ICON_SLUG.moonshot).toBe('moonshot');
     expect(PRESET_ICON_SLUG['xiaomi-mimo']).toBe('xiaomimimo');
@@ -52,6 +53,13 @@ describe('AIProviderLogo', () => {
     // A slate tile with white sliders: legible on light and dark panels without recoloring.
     expect(svg).toContain('fill="#6f7f9e"');
     expect(renderToStaticMarkup(<AIProviderLogo presetKey="custom" label="Custom" dark />)).not.toContain('invert');
+  });
+
+  it('renders the API Route mark without inverting its colors', () => {
+    const markup = renderToStaticMarkup(<AIProviderLogo presetKey="api-route" label="API Route" dark />);
+    expect(markup).toContain('/icons/ai/api-route.png');
+    expect(markup).not.toContain('invert');
+    expect(readFileSync(new URL('../../../public/icons/ai/api-route.png', import.meta.url)).subarray(1, 4).toString()).toBe('PNG');
   });
 
   it('falls back to the first letter when there is no asset', () => {

@@ -2,12 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { resolveDefaultQueryEditorDatabase } from './queryEditorDefaultDatabase';
 
 describe('resolveDefaultQueryEditorDatabase', () => {
-  it('selects the first database when the tab has none selected', () => {
+  it('prefers the configured connection database when the tab has none selected', () => {
+    expect(resolveDefaultQueryEditorDatabase({
+      config: { type: 'mysql', database: 'main' },
+      currentDb: '',
+      databaseNames: ['information_schema', 'main'],
+    })).toBe('main');
+  });
+
+  it('skips system databases when the connection has no configured database', () => {
     expect(resolveDefaultQueryEditorDatabase({
       config: { type: 'mysql' },
       currentDb: '',
-      databaseNames: ['information_schema', 'main'],
-    })).toBe('information_schema');
+      databaseNames: ['information_schema', 'mysql', 'performance_schema', 'app'],
+    })).toBe('app');
   });
 
   it('keeps an already selected database', () => {

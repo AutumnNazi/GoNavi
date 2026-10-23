@@ -7,19 +7,19 @@ import { t } from '../../i18n';
 import { useSidebarTreeLoaders } from './useSidebarTreeLoaders';
 
 const mocks = vi.hoisted(() => ({
-  dbGetDatabases: vi.fn(), warning: vi.fn(), replaceTreeNodeChildren: vi.fn(),
+  dbGetDatabases: vi.fn(), releaseConnection: vi.fn(), warning: vi.fn(), error: vi.fn(), replaceTreeNodeChildren: vi.fn(),
   storeState: { connections: [] as SavedConnection[], pinnedSidebarDatabases: [] as string[] },
 }));
 vi.mock('antd', () => ({
-  Button: ({ children }: { children: React.ReactNode }) => <button>{children}</button>,
-  message: { error: vi.fn(), info: vi.fn(), warning: mocks.warning },
+  Button: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => <button onClick={onClick}>{children}</button>,
+  message: { error: mocks.error, info: vi.fn(), warning: mocks.warning },
 }));
 vi.mock('../../store', async () => ({
   ...await vi.importActual<typeof import('../../store')>('../../store'),
   useStore: Object.assign(vi.fn(), { getState: () => mocks.storeState }),
 }));
 vi.mock('../../../wailsjs/go/app/App', () => ({
-  DBGetDatabases: mocks.dbGetDatabases, DBGetTables: vi.fn(), DBRefreshTableStats: vi.fn(),
+  DBGetDatabases: mocks.dbGetDatabases, DBReleaseConnection: mocks.releaseConnection, DBGetTables: vi.fn(), DBRefreshTableStats: vi.fn(),
   DBQuery: vi.fn(), GetDriverStatusList: vi.fn(), JVMProbeCapabilities: vi.fn(),
 }));
 
@@ -33,6 +33,42 @@ describe('namespace loading with an old database display scope', () => {
     mocks.replaceTreeNodeChildren.mockImplementation((_key, children) => children);
   });
   afterEach(() => { act(() => renderer?.unmount()); renderer = undefined; });
+
+  it('shows and invokes Retry after DBGetDatabases fails', async () => {
+    const connection: SavedConnection = {
+      id: 'conn-retry', name: 'Retry', config: { type: 'mysql', host: 'localhost', port: 3306, user: 'root' },
+    };
+    mocks.storeState.connections = [connection];
+    mocks.releaseConnection.mockResolvedValue({ success: true });
+    mocks.dbGetDatabases
+      .mockResolvedValueOnce({ success: false, message: 'connect failed' })
+      .mockResolvedValueOnce({ success: true, data: [{ Database: 'app' }] });
+    let loaders: ReturnType<typeof useSidebarTreeLoaders> | undefined;
+    const Harness = () => {
+      loaders = useSidebarTreeLoaders({
+        savedQueries: [], tableSortPreference: {}, tableAccessCount: {}, pinnedSidebarTables: [], pinnedSidebarDatabases: [],
+        loadingNodesRef: { current: new Set<string>() }, setConnectionStates: vi.fn(), setLoadedKeys: vi.fn(),
+        replaceTreeNodeChildren: mocks.replaceTreeNodeChildren,
+        buildRuntimeConfig: (conn) => conn.config, buildJVMRuntimeConfig: (conn) => conn.config,
+        buildJVMDiagnosticTreeNodes: () => [], resolveSavedQueryDisplayName: (name) => String(name || ''),
+      });
+      return null;
+    };
+    act(() => { renderer = create(<Harness />); });
+    const node = { key: connection.id, dataRef: connection, type: 'connection' };
+    await act(async () => { await loaders!.loadDatabases(node); });
+    expect(mocks.error).toHaveBeenCalled();
+    const errorCalls = mocks.error.mock.calls;
+    const errorCall = errorCalls[errorCalls.length - 1]?.[0] as { content?: React.ReactNode };
+    expect(React.isValidElement(errorCall.content)).toBe(true);
+    const errorElement = errorCall.content as React.ReactElement<{ children: React.ReactNode }>;
+    const retryElement = React.Children.toArray(errorElement.props.children)
+      .find((child) => React.isValidElement(child) && typeof child.props.onClick === 'function') as React.ReactElement<{ onClick?: () => void }> | undefined;
+    expect(retryElement).toBeTruthy();
+    await act(async () => { retryElement!.props.onClick?.(); await Promise.resolve(); await Promise.resolve(); });
+    expect(mocks.releaseConnection).toHaveBeenCalledTimes(1);
+    expect(mocks.dbGetDatabases).toHaveBeenCalledTimes(2);
+  });
 
   it.each(['iris', 'cache'])('loads the explicit %s target and warns without rewriting the scope', async (type) => {
     const connection: SavedConnection = {

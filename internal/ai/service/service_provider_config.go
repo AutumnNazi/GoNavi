@@ -19,6 +19,9 @@ func formatProviderHTTPBody(body []byte) string {
 }
 
 func normalizedProviderType(config ai.ProviderConfig) string {
+	if isPluginProviderConfig(config) {
+		return config.Type
+	}
 	providerType := strings.ToLower(strings.TrimSpace(config.Type))
 	// Older custom API configurations omit apiFormat. The request provider
 	// already treats that as OpenAI; checks and catalogs must use the same default.
@@ -203,6 +206,9 @@ func defaultStaticModelsForProvider(config ai.ProviderConfig) []string {
 }
 
 func normalizeProviderConfig(config ai.ProviderConfig) ai.ProviderConfig {
+	if isPluginProviderConfig(config) {
+		return config
+	}
 	config.AuthMode = strings.ToLower(strings.TrimSpace(config.AuthMode))
 	switch {
 	case isDeepSeekResponsesProvider(config):

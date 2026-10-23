@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_MONO_FONT_FAMILY, buildFontFamilyOptions } from '../utils/fontFamilies';
+import { DEFAULT_MONO_FONT_FAMILY, UI_FONT_FALLBACK_STACK, buildFontFamilyOptions } from '../utils/fontFamilies';
 import { mergeDownloadedFontOptions, systemHasFamily } from './options';
 import type { FontInstalled } from './types';
 
@@ -56,5 +56,22 @@ describe('on-demand font library options', () => {
   it('does not treat a system-installed family as a remote download', () => {
     expect(systemHasFamily([{ family: 'Go Mono' }], 'Go Mono')).toBe(true);
     expect(systemHasFamily([{ family: 'Menlo' }], 'Go Mono')).toBe(false);
+  });
+
+  it('offers a downloaded mono family inside the UI selector as well', () => {
+    const options = mergeDownloadedFontOptions(buildFontFamilyOptions('linux', 'ui', []), [downloaded], 'ui');
+    const added = options.find(option => option.keywords?.includes('downloaded'));
+    expect(added?.label).toBe('Go Mono');
+    expect(added?.value).toBe('"GoNaviFont-go-mono", ' + UI_FONT_FALLBACK_STACK);
+  });
+
+  it('orders downloaded fonts by matching kind inside a slot', () => {
+    const uiDownloaded: FontInstalled = {
+      ...downloaded,
+      entry: { ...downloaded.entry, id: 'ui-sans', kind: 'ui', family: 'UI Sans', names: { 'en-US': 'UI Sans' } },
+    };
+    const options = mergeDownloadedFontOptions([], [downloaded, uiDownloaded], 'ui');
+    const labels = options.filter(option => option.keywords?.includes('downloaded')).map(option => option.label);
+    expect(labels).toEqual(['UI Sans', 'Go Mono']);
   });
 });

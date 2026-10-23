@@ -4,7 +4,7 @@ import { fontGalleryErrorKey } from './errors';
 import { FontGalleryError, type FontEntry, type FontInstalled } from './types';
 
 let sequence = 0;
-export function useFontGalleryPreview(open: boolean) {
+export function useFontGalleryPreview() {
   const [state, setState] = useState<{ key: string; family?: string; error?: string; loading?: boolean } | null>(null);
   const revision = useRef(0);
   const request = useRef<string | null>(null);
@@ -17,7 +17,7 @@ export function useFontGalleryPreview(open: boolean) {
     face.current = null;
     setState(null);
   }, []);
-  useEffect(() => clear, [open, clear]);
+  useEffect(() => clear, [clear]);
   const preview = async (entry: FontEntry, installed?: FontInstalled) => {
     clear();
     const current = revision.current;

@@ -101,7 +101,7 @@ export const zhCNDriverMessages: Record<string, string> = {
   "driver.modal.card.status.needsUpdate":
     "驱动组件有更新，建议重装以获得最新修复与兼容性改进；当前版本仍可正常使用。",
   "driver.modal.card.status.optionalUpdate":
-    "驱动组件有更新（可选，不影响使用）。",
+    "驱动组件有更新（可选，建议重装）。",
   "driver.modal.card.status.installedRevision":
     "已安装 revision {revision}。",
   "driver.modal.card.status.expectedRevision":

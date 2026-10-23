@@ -221,9 +221,14 @@ func (a *App) recordConnectFailureForFlight(flight *databaseConnectFlight, key s
 	if a.connectFailures == nil {
 		a.connectFailures = make(map[string]cachedConnectFailure)
 	}
+	releaseMatchKey := ""
+	if flight != nil {
+		releaseMatchKey = flight.releaseMatchKey
+	}
 	a.connectFailures[key] = cachedConnectFailure{
-		occurredAt: time.Now(),
-		err:        err,
+		occurredAt:      time.Now(),
+		err:             err,
+		releaseMatchKey: releaseMatchKey,
 	}
 	return nil
 }
@@ -233,6 +238,23 @@ func (a *App) clearConnectFailureByKeyLocked(key string) {
 		return
 	}
 	delete(a.connectFailures, key)
+}
+
+func (a *App) clearConnectFailureCooldownsForConfig(config connection.ConnectionConfig) int {
+	if a == nil {
+		return 0
+	}
+	matchKey := getConnectionReleaseMatchKey(config)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cleared := 0
+	for key, failure := range a.connectFailures {
+		if failure.releaseMatchKey == matchKey {
+			delete(a.connectFailures, key)
+			cleared++
+		}
+	}
+	return cleared
 }
 
 func (a *App) clearConnectFailuresForFlightLocked(flight *databaseConnectFlight, keys ...string) error {
@@ -302,6 +324,10 @@ func (a *App) connectDatabaseWithStartupRetry(rawConfig connection.ConnectionCon
 }
 
 func (a *App) connectEffectiveDatabaseWithStartupRetry(rawConfig connection.ConnectionConfig) (db.Database, connection.ConnectionConfig, error) {
+	if isPluginDataSourceType(rawConfig.Type) {
+		instance, err := a.openPluginDataSource(a.pluginDataSourceContext(), rawConfig)
+		return instance, rawConfig, err
+	}
 	var lastErr error
 	var lastEffectiveConfig connection.ConnectionConfig
 

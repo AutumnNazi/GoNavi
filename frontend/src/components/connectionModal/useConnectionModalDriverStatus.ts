@@ -3,6 +3,10 @@ import {
   normalizeDriverType,
   resolveConnectionDriverType,
 } from "../../utils/connectionDriverType";
+import { message } from "antd";
+import { isPluginDataSourceNamespace } from "../../plugins/dataSource/identity";
+import { pluginDataSourceUnavailableReason } from "../../plugins/dataSource/presentation";
+import { refreshPluginDataSources } from "../../plugins/dataSource/discovery";
 import { GetDriverStatusList } from "../../../wailsjs/go/app/App";
 import { t } from "../../i18n";
 import Modal from "../common/ResizableDraggableModal";
@@ -66,6 +70,8 @@ export const useConnectionModalDriverStatus = ({
     type: string,
     driver?: string,
   ): Promise<string> => {
+    if (isPluginDataSourceNamespace(type)) { await refreshPluginDataSources(); return pluginDataSourceUnavailableReason(type); }
+    if (isPluginDataSourceNamespace(driver)) return t("plugin.datasource.status.invalid");
     const normalized = resolveConnectionDriverType(type, driver);
     if (!normalized || normalized === "custom") {
       return "";
@@ -88,6 +94,7 @@ export const useConnectionModalDriverStatus = ({
   };
 
   const promptInstallDriver = (driverType: string, reason: string) => {
+    if (isPluginDataSourceNamespace(driverType)) { void message.warning(reason); return; }
     const normalized = normalizeDriverType(driverType);
     const snapshot = driverStatusMap[normalized];
     const driverName =

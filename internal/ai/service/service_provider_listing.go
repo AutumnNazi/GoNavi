@@ -28,6 +28,9 @@ func (s *Service) AIListModels() map[string]interface{} {
 		}
 	}
 
+	if isPluginProviderConfig(config) {
+		return s.pluginProviderModels(config)
+	}
 	if isBuiltinAIProviderConfig(config) {
 		return builtinAIModelList()
 	}
@@ -38,6 +41,9 @@ func (s *Service) AIListModels() map[string]interface{} {
 // It never writes the draft or changes the active provider; saved credentials
 // are resolved by ID when the editor intentionally retains its existing secret.
 func (s *Service) AIListProviderModels(config ai.ProviderConfig) map[string]interface{} {
+	if isPluginProviderConfig(config) {
+		return s.pluginProviderModels(config)
+	}
 	if isBuiltinAIProviderConfig(config) {
 		return builtinAIModelList()
 	}
@@ -50,6 +56,9 @@ func (s *Service) AIListProviderModels(config ai.ProviderConfig) map[string]inte
 }
 
 func listProviderModels(config ai.ProviderConfig, localizer *i18n.Localizer, allowConfiguredFallback bool) map[string]interface{} {
+	if isPluginProviderConfig(config) {
+		return map[string]interface{}{"success": false, "models": []string{}, "error": serviceTextFromLocalizer(localizer, "ai_service.backend.error.provider_test_unsupported", map[string]any{"protocol": "plugin"})}
+	}
 	if isLocalCLIAuthProvider(config) || normalizedProviderType(config) == "codebuddy-cli" {
 		return map[string]interface{}{
 			"success": true,

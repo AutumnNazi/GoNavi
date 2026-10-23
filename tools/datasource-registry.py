@@ -76,7 +76,14 @@ def default_agent(spec: dict) -> dict:
 
 
 def agent_units(spec: dict) -> list[tuple[str, dict]]:
-    """返回 (代理键, 构建声明)：默认代理在前，独立构建档位随后。"""
+    """返回 (代理键, 构建声明)：默认代理在前，独立构建档位随后。
+
+    不提供可选驱动代理的数据源（如 xxljob 这类 HTTP 管理台，实现位于 internal/app 层）
+    合法地不写 agent 键，此时返回空单元，构建与发布映射完全跳过该数据源。
+    """
+    agent = spec.get("agent")
+    if not agent:
+        return []
     units = [(spec["type"], default_agent(spec))]
     for item in spec.get("variants", {}).get("items", []):
         build = item.get("build")
@@ -137,10 +144,11 @@ def render_function(name: str, arms: list[str], default: str) -> str:
 
 
 def render_shell(specs: list[dict]) -> str:
-    units = [(spec, unit, build) for spec in specs for unit, build in agent_units(spec)]
+    unit_specs = [spec for spec in specs if agent_units(spec)]
+    units = [(spec, unit, build) for spec in unit_specs for unit, build in agent_units(spec)]
 
     normalize_arms = []
-    for spec in specs:
+    for spec in unit_specs:
         names = [spec["type"], *spec.get("aliases", [])]
         normalize_arms.append(case_arm([name.lower() for name in names], f"echo {shlex.quote(spec['type'])}"))
     for spec, unit, _ in units:

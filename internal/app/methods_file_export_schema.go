@@ -2,10 +2,12 @@ package app
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"strings"
 
 	"GoNavi-Wails/internal/connection"
+	"GoNavi-Wails/internal/db"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -21,6 +23,9 @@ func (a *App) ExportSchemaSQLWithOptions(
 	includeData bool,
 	options ExportFileOptions,
 ) (result connection.QueryResult) {
+	if isPluginExportRequest(options) {
+		return a.pluginExportFailure("unsupported_scope")
+	}
 	safeDbName := strings.TrimSpace(dbName)
 	safeSchemaName := strings.TrimSpace(schemaName)
 	if safeDbName == "" {
@@ -111,6 +116,10 @@ func (a *App) ExportSchemaSQLWithOptions(
 		reporter.ForceRunning(0, a.appText("data_export.progress.stage.exporting_sql_file", nil))
 	}
 
+	return a.writeSchemaExportObjects(exportCtx, dbInst, runConfig, dbName, safeSchemaName, filename, includeData, options, webTarget, reporter, objects, filteredViews)
+}
+
+func (a *App) writeSchemaExportObjects(exportCtx context.Context, dbInst db.Database, runConfig connection.ConnectionConfig, dbName, safeSchemaName, filename string, includeData bool, options ExportFileOptions, webTarget *webDownloadTarget, reporter *exportProgressReporter, objects []string, filteredViews map[string]string) connection.QueryResult {
 	target, err := createAtomicExportTarget(filename, webDownloadBudgetForTarget(webTarget))
 	if err != nil {
 		if reporter != nil {
@@ -189,4 +198,5 @@ func (a *App) ExportSchemaSQLWithOptions(
 			"filePath": filename,
 		},
 	}
+
 }

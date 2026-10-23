@@ -134,7 +134,9 @@ describe('useSidebarTreeLoaders progressive schema commit', () => {
       await sleep(SIDEBAR_DATABASE_TREE_FIRST_COMMIT_GRACE_MS + 60);
     });
 
-    expect(loadDone).toBe(false);
+    // The database load resolves after the table groups are committed; optional
+    // object metadata must not keep the tree row blocked.
+    expect(loadDone).toBe(true);
     expect(mocks.replaceTreeNodeChildren).toHaveBeenCalledTimes(1);
     const provisional = flatten(mocks.replaceTreeNodeChildren.mock.calls[0][1]);
     expect(provisional.some((node) => node.type === 'table' && /lab_customers/.test(String(node.dataRef?.tableName)))).toBe(true);

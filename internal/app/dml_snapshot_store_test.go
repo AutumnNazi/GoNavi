@@ -10,6 +10,11 @@ import (
 	"GoNavi-Wails/internal/db"
 )
 
+// 固定日历日会在 30 天保留期之后被裁掉，条数和顺序用例必须落在保留期内。
+func recentSnapshotBase() time.Time {
+	return time.Now().UTC().Truncate(time.Second).Add(-2 * time.Hour)
+}
+
 func testDMLSnapshotEntry(id string, createdAt time.Time, complete bool) dmlSnapshotEntry {
 	skipped := []db.SkippedReverseRow(nil)
 	if !complete {
@@ -37,7 +42,7 @@ func TestDMLSnapshotStoreAppendAndListNewestFirst(t *testing.T) {
 	dir := t.TempDir()
 	store := newDMLSnapshotStore(dir)
 
-	base := time.Date(2026, 9, 20, 10, 0, 0, 0, time.UTC)
+	base := recentSnapshotBase()
 	for index := 0; index < 3; index++ {
 		if err := store.Append(testDMLSnapshotEntry(
 			"snap-"+string(rune('a'+index)), base.Add(time.Duration(index)*time.Minute), true)); err != nil {
@@ -92,7 +97,7 @@ func TestDMLSnapshotStorePrunesOldestBeyondLimit(t *testing.T) {
 	dir := t.TempDir()
 	store := newDMLSnapshotStore(dir)
 
-	base := time.Date(2026, 9, 20, 10, 0, 0, 0, time.UTC)
+	base := recentSnapshotBase()
 	total := dmlSnapshotMaxEntries + 5
 	for index := 0; index < total; index++ {
 		entry := testDMLSnapshotEntry("snap", base.Add(time.Duration(index)*time.Second), true)

@@ -60,6 +60,7 @@ describe('MonacoEditor typography', () => {
     );
 
     expect(markup).toContain('&quot;editContext&quot;:false');
+    expect(markup).toContain('&quot;disableMonospaceOptimizations&quot;:true');
     expect(markup).toContain('JetBrains Mono');
     expect(markup).toContain('ui-monospace');
     expect(markup).toContain('&quot;fontSize&quot;:13');

@@ -25,6 +25,12 @@ const (
 	builtinAIRefreshTokenKey = "refresh-token"
 	builtinAITokenTypeKey    = "token-type"
 	builtinAITokenExpiresKey = "expires-at"
+	// builtinAIRefreshPendingKey marks an access token whose last refresh ended
+	// without a usable answer. The token may still authenticate for a while, but
+	// the rotated refresh token was never received, so the next call must retry
+	// the refresh instead of waiting for the access token to expire (which could
+	// be hours, far past the Gateway's replay grace window).
+	builtinAIRefreshPendingKey = "refresh-pending"
 
 	// builtinAIRefreshSkew refreshes slightly early so a request never leaves
 	// the desktop with a token that expires in flight.
@@ -96,8 +102,25 @@ func (s *Service) builtinAIHasLocalToken() bool {
 }
 
 func builtinAITokenFresh(bundle dailysecret.ProviderBundle) bool {
+	if strings.EqualFold(strings.TrimSpace(bundle.SensitiveHeaders[builtinAIRefreshPendingKey]), "true") {
+		return false
+	}
 	expiresAt, err := time.Parse(time.RFC3339, strings.TrimSpace(bundle.SensitiveHeaders[builtinAITokenExpiresKey]))
 	return err == nil && time.Until(expiresAt) > builtinAIRefreshSkew
+}
+
+// holdStaleToken keeps using the access token that is still valid but records
+// that a refresh is owed. Without the mark the client would wait for expiry and
+// then present a refresh token the Gateway rotated long ago.
+func (s *Service) holdStaleToken(bundle dailysecret.ProviderBundle) dailysecret.ProviderBundle {
+	if bundle.SensitiveHeaders == nil {
+		bundle.SensitiveHeaders = map[string]string{}
+	}
+	bundle.SensitiveHeaders[builtinAIRefreshPendingKey] = "true"
+	// Best effort: if the store cannot be written the next call simply waits for
+	// expiry as before; the in-memory bundle still carries the flag for this run.
+	_ = s.saveBuiltinAIToken(bundle)
+	return bundle
 }
 
 func builtinAITokenStillValid(bundle dailysecret.ProviderBundle) bool {
@@ -159,10 +182,10 @@ func (s *Service) ensureBuiltinAIAccessToken(config builtinAIConfig, force bool)
 	if err != nil {
 		return dailysecret.ProviderBundle{}, err
 	}
-	response, err := doBuiltinAIJSONRequest(http.MethodPost, config.tokenURL, "", body)
+	response, err := doBuiltinAIRefreshRequest(config.tokenURL, body)
 	if err != nil {
 		if !force && builtinAITokenStillValid(bundle) {
-			return bundle, nil
+			return s.holdStaleToken(bundle), nil
 		}
 		return dailysecret.ProviderBundle{}, fmt.Errorf("%w: %v", errBuiltinAINetwork, err)
 	}
@@ -173,7 +196,7 @@ func (s *Service) ensureBuiltinAIAccessToken(config builtinAIConfig, force bool)
 		return dailysecret.ProviderBundle{}, errBuiltinAIUnauthorized
 	default:
 		if !force && builtinAITokenStillValid(bundle) {
-			return bundle, nil
+			return s.holdStaleToken(bundle), nil
 		}
 		return dailysecret.ProviderBundle{}, fmt.Errorf("GoNavi AI refresh endpoint returned HTTP %d", response.statusCode)
 	}

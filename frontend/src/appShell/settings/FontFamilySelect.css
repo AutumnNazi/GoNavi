@@ -66,3 +66,8 @@
   font-size: 0.85em;
   opacity: 0.75;
 }
+
+.gonavi-font-picker-browse {
+  border-top: 1px solid var(--gn-settings-line, var(--gn-border-color, rgba(128, 128, 128, 0.24)));
+  padding: 4px 12px;
+}

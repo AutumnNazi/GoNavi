@@ -152,7 +152,7 @@ func (s *SyncEngine) resolveDirectImportMissingColumns(config SyncConfig, res *S
 			if !ok {
 				return nil, fmt.Errorf("自动补字段失败：未找到源字段定义 %s", colName)
 			}
-			alterSQL, alterWarnings, err := buildAddColumnSQLForPair(sourceType, targetType, plan.TargetQueryTable, srcCol)
+			alterSQL, alterWarnings, err := buildAddColumnSQLForPair(sourceType, targetType, plan.TargetQueryTable, srcCol, plan.characterLengthTarget)
 			if err != nil {
 				s.appendLog(config.JobID, res, "error", fmt.Sprintf("  -> 自动补字段失败：字段=%s 错误=%v", colName, err))
 				return nil, fmt.Errorf("自动补字段失败：字段=%s: %w", colName, err)

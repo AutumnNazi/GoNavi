@@ -1,6 +1,6 @@
 import {
   SettingOutlined, SafetyCertificateOutlined, HddOutlined,
-  FileTextOutlined,
+  FileTextOutlined, AppstoreAddOutlined,
 } from '@ant-design/icons';
 import type { SettingsCenterNavigationGroup } from '../settingsCenterNavigation';
 import AiSparkOutlined from '../../components/icons/AiSparkOutlined';
@@ -19,6 +19,16 @@ export const buildToolCenterGroups = ({
   securityUpdateEntryVisibility, securityUpdateHasLegacySensitiveItems, securityUpdateStatusMeta,
 }: BuildToolCenterGroupsInput) => {
   const toolCenterGroups: SettingsCenterNavigationGroup[] = [
+    {
+      // 叶子分组：分组本身就是插件页入口（空 items → 树导航渲染为不可展开的叶子，
+      // 点击走 onSelectGroup → resolveSettingsCenterGroupInitialPane 直达插件页），
+      // 避免「插件」分组下再嵌一个同名「插件」子项。
+      key: 'plugins',
+      icon: <AppstoreAddOutlined />,
+      title: t('plugin.manager.title'),
+      description: t('plugin.manager.description'),
+      items: [],
+    },
     {
       key: 'config',
       icon: <SettingOutlined />,

@@ -280,17 +280,17 @@ body[data-ui-version="v2"] .gn-v2-main-tabs-double > .ant-tabs-nav {
   flex: 0 0 46px;
 }
 
-body[data-ui-version="v2"] .gn-v2-main-tabs .ant-tabs-nav-wrap,
-body[data-ui-version="v2"] .gn-v2-main-tabs .ant-tabs-nav-list {
+body[data-ui-version="v2"] .gn-v2-main-tabs > .ant-tabs-nav .ant-tabs-nav-wrap,
+body[data-ui-version="v2"] .gn-v2-main-tabs > .ant-tabs-nav .ant-tabs-nav-list {
   min-height: 36px;
 }
 
-body[data-ui-version="v2"] .gn-v2-main-tabs-double .ant-tabs-nav-wrap,
-body[data-ui-version="v2"] .gn-v2-main-tabs-double .ant-tabs-nav-list {
+body[data-ui-version="v2"] .gn-v2-main-tabs-double > .ant-tabs-nav .ant-tabs-nav-wrap,
+body[data-ui-version="v2"] .gn-v2-main-tabs-double > .ant-tabs-nav .ant-tabs-nav-list {
   min-height: 46px;
 }
 
-body[data-ui-version="v2"] .gn-v2-main-tabs .ant-tabs-tab {
+body[data-ui-version="v2"] .gn-v2-main-tabs > .ant-tabs-nav .ant-tabs-tab {
   width: var(--gn-v2-tab-width, 260px);
   min-width: var(--gn-v2-tab-width, 260px);
   max-width: var(--gn-v2-tab-width, 260px);
@@ -300,19 +300,19 @@ body[data-ui-version="v2"] .gn-v2-main-tabs .ant-tabs-tab {
   border-radius: 8px !important;
 }
 
-body[data-ui-version="v2"] .gn-v2-main-tabs .ant-tabs-tab.ant-tabs-tab-active {
+body[data-ui-version="v2"] .gn-v2-main-tabs > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active {
   box-shadow: inset 0 2px 0 var(--gn-accent) !important;
 }
 
-body[data-ui-version="v2"] .gn-v2-main-tabs .ant-tabs-tab.ant-tabs-tab-active::after {
+body[data-ui-version="v2"] .gn-v2-main-tabs > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active::after {
   display: none;
 }
 
-body[data-ui-version="v2"] .gn-v2-main-tabs-double .ant-tabs-tab {
+body[data-ui-version="v2"] .gn-v2-main-tabs-double > .ant-tabs-nav .ant-tabs-tab {
   height: 46px;
 }
 
-body[data-ui-version="v2"] .gn-v2-main-tabs .ant-tabs-tab-btn {
+body[data-ui-version="v2"] .gn-v2-main-tabs > .ant-tabs-nav .ant-tabs-tab-btn {
   width: 100%;
   height: 100%;
 }
@@ -485,7 +485,7 @@ body[data-ui-version="v2"] .gn-v2-tab-running-indicator[data-status="read"] .gn-
   animation: none;
 }
 
-body[data-ui-version="v2"] .gn-v2-main-tabs .ant-tabs-extra-content {
+body[data-ui-version="v2"] .gn-v2-main-tabs > .ant-tabs-nav .ant-tabs-extra-content {
   display: inline-flex;
   align-items: center;
   min-width: 0;

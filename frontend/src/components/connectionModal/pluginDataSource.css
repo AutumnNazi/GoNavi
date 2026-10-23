@@ -1,0 +1,2 @@
+.plugin-data-source-stack { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.plugin-data-source-identity { font-family: var(--gn-font-mono); overflow-wrap: anywhere; }

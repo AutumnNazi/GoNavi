@@ -37,11 +37,10 @@ CONTRIBUTED_BY_RE = re.compile(
 )
 HUALONG_SPONSOR_URL = "https://gonavi.hualong.online/"
 HUALONG_SPONSOR_NOTICE = (
-    f"> 💖 **赞助商 · [華龍算力]({HUALONG_SPONSOR_URL})**："
-    "感恩回馈老用户，福利活动再次开启！\n"
-    "> **10 月 19 日上午 10:00**，在企业微信群内抽取 "
-    "**1 台 vmiss CN.HK.BGP.Basic**，到期时间 **2027-05-16**。\n"
-    f"> 🎁 [活动入口]({HUALONG_SPONSOR_URL})"
+    f"> 💖 **赞助商 · [華龍AI算力]({HUALONG_SPONSOR_URL})**："
+    "最新活动 **国模百亿补贴**，DeepSeek、GLM 等模型只需 "
+    "**0.8 折**（不足一折）。\n"
+    f"> 🎁 [注册链接]({HUALONG_SPONSOR_URL})"
 )
 
 

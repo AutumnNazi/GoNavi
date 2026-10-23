@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "repository": "https://github.com/google/fonts",
-  "revision": "1d0e46c7933245c8180fe83e47917961c913bbdb",
-  "reviewedAt": "2026-10-16",
+  "revision": "45e3d5269e4a17d823f6d84470bc084dc5ae46f6",
+  "reviewedAt": "2026-10-22",
   "publication": "original-unmodified-files",
-  "previewPolicy": "Reuse original font bytes below 512 KiB; no subsetting, no renamed or altered binaries.",
+  "previewPolicy": "Reuse original font bytes below 512 KiB; above the bound the preview is a name-preserving fontTools subset covering the application preview text. Font binaries are never modified or renamed.",
   "entries": [
     {
       "id": "jetbrains-mono",
@@ -181,6 +181,204 @@
       "fontVersion": [
         "Version 1.006; ttfautohint (v1.8.3)"
       ]
+    },
+    {
+      "id": "hack",
+      "family": "Hack",
+      "kind": "mono",
+      "sourceUrl": "https://github.com/source-foundry/Hack/releases/download/v3.003/Hack-v3.003-ttf.zip",
+      "sha256": "15f55cc0c85a2988d2b4b3a8cdb5d77fdfbaf319e1bb5309d725db9818fb7125",
+      "sizeBytes": 309408,
+      "licenseUrl": "https://raw.githubusercontent.com/source-foundry/Hack/v3.003/LICENSE.md",
+      "licenseSha256": "1f61bb7c790c59b4b0ecdf304628b94e42ae4c8020094a8c3da73381ab212623",
+      "fontCopyright": [
+        "The work in the Hack project is Copyright 2018 Source Foundry Authors and licensed under the MIT License"
+      ],
+      "fontVersion": [
+        "Version 3.003;[3114f1256]-release"
+      ]
+    },
+    {
+      "id": "inter",
+      "family": "Inter",
+      "kind": "ui",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf",
+      "sha256": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031",
+      "sizeBytes": 876576,
+      "licenseUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/inter/OFL.txt",
+      "licenseSha256": "5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57",
+      "fontCopyright": [
+        "Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter)"
+      ],
+      "fontVersion": [
+        "Version 4.001;git-66647c0bb"
+      ]
+    },
+    {
+      "id": "manrope",
+      "family": "Manrope",
+      "kind": "ui",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/manrope/Manrope%5Bwght%5D.ttf",
+      "sha256": "3ae11c49db0455a3cc33e37d380f20fdb8c7f8b41dc07625c177e3d87a9d6ae6",
+      "sizeBytes": 164700,
+      "licenseUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/manrope/OFL.txt",
+      "licenseSha256": "58172e0c0fac2cda8a37b348164bb55e44b0e69051e557e92b1d3f6910141f7b",
+      "fontCopyright": [
+        "Copyright 2018 The Manrope Project Authors (https://github.com/googlefonts/manrope)"
+      ],
+      "fontVersion": [
+        "Version 4.505"
+      ]
+    },
+    {
+      "id": "noto-sans-sc",
+      "family": "Noto Sans SC",
+      "kind": "ui",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf",
+      "sha256": "a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da",
+      "sizeBytes": 17772300,
+      "licenseUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/notosanssc/OFL.txt",
+      "licenseSha256": "1c05c68c34f9708415aada51f17e1b0092d2cea709bf4a94cd38114f9e73d7d9",
+      "fontCopyright": [
+        "Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'"
+      ],
+      "fontVersion": [
+        "Version 2.004-H2;hotconv 1.0.118;makeotfexe 2.5.65603"
+      ]
+    },
+    {
+      "id": "open-sans",
+      "family": "Open Sans",
+      "kind": "ui",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/opensans/OpenSans%5Bwdth%2Cwght%5D.ttf",
+      "sha256": "36643644f318a812aab2d2ed3bb98f8cf0872527f835fe9398d95fe6b9adb878",
+      "sizeBytes": 532636,
+      "licenseUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/opensans/OFL.txt",
+      "licenseSha256": "fbbbcfef55318de350562559b671360de6d597112ecc5c73881b05092db89602",
+      "fontCopyright": [
+        "Copyright 2020 The Open Sans Project Authors (https://github.com/googlefonts/opensans)"
+      ],
+      "fontVersion": [
+        "Version 3.003"
+      ]
+    },
+    {
+      "id": "lxgw-wenkai",
+      "family": "LXGW WenKai",
+      "kind": "ui",
+      "sourceUrl": "https://github.com/lxgw/LxgwWenKai/releases/download/v1.530/LXGWWenKai-Regular.ttf",
+      "sha256": "2d73eea94ad808999d90c0000c239a84a33b09d4bc6ab6c5b8bbf1eda8a7fc8b",
+      "sizeBytes": 25928940,
+      "licenseUrl": "https://raw.githubusercontent.com/lxgw/LxgwWenKai/v1.530/OFL.txt",
+      "licenseSha256": "1a25e35da1031c6c3436fde545bb9cb5aca954e9873afe510c834b8b79bd21a0",
+      "fontCopyright": [
+        "Copyright 2021-2026 LXGW (https://github.com/lxgw/LxgwWenKai), with Reserved Font Name '霞鹜', '霞鶩', '落霞孤鹜', '落霞孤鶩' and 'LXGW'."
+      ],
+      "fontVersion": [
+        "Version 1.530; October 18, 2026"
+      ]
+    },
+    {
+      "id": "lxgw-wenkai-mono",
+      "family": "LXGW WenKai Mono",
+      "kind": "mono",
+      "sourceUrl": "https://github.com/lxgw/LxgwWenKai/releases/download/v1.530/LXGWWenKaiMono-Regular.ttf",
+      "sha256": "895ce1d2fa00d5ca3bec0329d38e3190454f4b5fa7b4733f491c419faf9753a1",
+      "sizeBytes": 25957300,
+      "licenseUrl": "https://raw.githubusercontent.com/lxgw/LxgwWenKai/v1.530/OFL.txt",
+      "licenseSha256": "1a25e35da1031c6c3436fde545bb9cb5aca954e9873afe510c834b8b79bd21a0",
+      "fontCopyright": [
+        "Copyright 2021-2026 LXGW (https://github.com/lxgw/LxgwWenKai), with Reserved Font Name '霞鹜', '霞鶩', '落霞孤鹜', '落霞孤鶩' and 'LXGW'."
+      ],
+      "fontVersion": [
+        "Version 1.530; October 18, 2026"
+      ]
+    },
+    {
+      "id": "cascadia-code",
+      "family": "Cascadia Code",
+      "kind": "mono",
+      "sourceUrl": "https://github.com/microsoft/cascadia-code/releases/download/v2407.24/CascadiaCode-2407.24.zip",
+      "sha256": "54eae6e26961e980eb3e1ec4ee30f6d3ba7a932a2028832baceb91cc65844a65",
+      "sizeBytes": 736136,
+      "licenseUrl": "https://raw.githubusercontent.com/microsoft/cascadia-code/v2407.24/LICENSE",
+      "licenseSha256": "51882cd3cdba4e16f220f44ddb08a635c38c44ea6e0975db2574f4be6f958238",
+      "fontCopyright": [
+        "Copyright (c) 2019 - Present, Microsoft Corporation, with Reserved Font Name Cascadia Code."
+      ],
+      "fontVersion": [
+        "Version 2407.024"
+      ]
+    },
+    {
+      "id": "iosevka",
+      "family": "Iosevka",
+      "kind": "mono",
+      "sourceUrl": "https://github.com/be5invis/Iosevka/releases/download/v34.9.0/PkgTTF-Iosevka-34.9.0.zip",
+      "sha256": "c7e1ddc73aa7efd9353f86be61df834784d1a9d17d6f8eeac5ad2bca9b3ef53a",
+      "sizeBytes": 11601540,
+      "licenseUrl": "https://raw.githubusercontent.com/be5invis/Iosevka/v34.9.0/LICENSE.md",
+      "licenseSha256": "4ba53c7c1cb39279aae5f8d7d22054c485c71169920e5a36ed098b115e2e3c5d",
+      "fontCopyright": [
+        "Copyright (c) 2015-2026, Renzhi Li (aka. Belleve Invis, belleve@typeof.net)."
+      ],
+      "fontVersion": [
+        "Version 34.9.0; ttfautohint (v1.8.4)"
+      ]
+    },
+    {
+      "id": "maple-mono-cn",
+      "family": "Maple Mono CN",
+      "kind": "mono",
+      "sourceUrl": "https://github.com/subframe7536/maple-font/releases/download/v7.9/MapleMono-CN.zip",
+      "sha256": "e6338c3dca9a3bed3fb81f43c8bb8feca3b6ad54829f5a3229527d030a321dbd",
+      "sizeBytes": 18594640,
+      "licenseUrl": "https://raw.githubusercontent.com/subframe7536/maple-font/v7.9/OFL.txt",
+      "licenseSha256": "eb2d28d2e565a0757e3d64e34ebb452e75a0cad87c0ab3faf4e08ba7596de902",
+      "fontCopyright": [
+        "Copyright 2022 The Maple Mono Project Authors (https://github.com/subframe7536/maple-font)"
+      ],
+      "fontVersion": [
+        "Version 7.900"
+      ]
+    },
+    {
+      "id": "noto-serif-sc",
+      "family": "Noto Serif SC",
+      "kind": "ui",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/notoserifsc/NotoSerifSC%5Bwght%5D.ttf",
+      "sha256": "050080d9255a86808f2945bffac582b31ef32bc36411ce29563b4961670c66f9",
+      "sizeBytes": 25125512,
+      "licenseUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/notoserifsc/OFL.txt",
+      "licenseSha256": "5e0da210fb04058a8c0087985d2d456b931c2579811a49655721d3cf0c36b6d6",
+      "fontCopyright": [
+        "Copyright 2012 Google Inc. All Rights Reserved."
+      ],
+      "fontVersion": [
+        "Version 2.003-H1;hotconv 1.1.1"
+      ]
+    },
+    {
+      "id": "sarasa-gothic-sc",
+      "family": "Sarasa Gothic SC",
+      "kind": "mono",
+      "sourceUrl": "https://github.com/be5invis/Sarasa-Gothic/releases/download/v1.0.42/SarasaGothicSC-TTF-1.0.42.7z",
+      "sha256": "1202162d0369c25f4dd571582ffc4c8a8c42bf18db469d4580da9b41b6cb64a1",
+      "sizeBytes": 24047784,
+      "licenseUrl": "https://raw.githubusercontent.com/be5invis/Sarasa-Gothic/v1.0.42/LICENSE",
+      "licenseSha256": "32c932e0dbae4f6e6386964bbc2d04178707665a05ca65cf636241af13d50a53",
+      "fontCopyright": [
+        "Copyright (c) 2015-2025, Renzhi Li (aka. Belleve Invis, belleve@typeof.net). Portions Copyright (c) 2016 The Inter Project Authors."
+      ],
+      "fontVersion": [
+        "Version 1.0.42; ttfautohint (v1.8.4)"
+      ]
     }
-  ]
+  ],
+  "revisions": {
+    "2026-10-16.1": "1d0e46c7933245c8180fe83e47917961c913bbdb",
+    "2026-10-22.1": "45e3d5269e4a17d823f6d84470bc084dc5ae46f6",
+    "2026-10-23.1": "lxgw-v1.530",
+    "2026-10-23.2": "microsoft/cascadia-code v2407.24; be5invis/Iosevka v34.9.0; be5invis/Sarasa-Gothic v1.0.42 (SC pack); google/fonts 45e3d5269e4a; maple-font v7.9"
+  }
 }

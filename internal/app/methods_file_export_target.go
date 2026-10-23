@@ -19,11 +19,12 @@ type atomicExportFile interface {
 }
 
 type atomicExportTarget struct {
-	file       atomicExportFile
-	tempPath   string
-	targetPath string
-	closed     bool
-	committed  bool
+	file             atomicExportFile
+	tempPath         string
+	targetPath       string
+	closed           bool
+	committed        bool
+	replaceAttempted bool
 }
 
 func createAtomicExportTarget(targetPath string, budgets ...*webTransferBudget) (*atomicExportTarget, error) {
@@ -64,6 +65,13 @@ func (target *atomicExportTarget) abort() {
 // 可达秒级，取消若发生在 Sync/Close 期间，第二次复核会阻止把完整文件改名
 // 发布到目标位置（调用方随后走 abort 清理临时文件）。
 func (target *atomicExportTarget) commit(ctx context.Context) error {
+	return target.commitWithCheck(ctx, nil)
+}
+
+// commitWithCheck fences publication after potentially blocking Sync and Close.
+// A replace-stage failure may follow a successful rename; callers must not retry
+// or remove the destination when replaceAttempted is true.
+func (target *atomicExportTarget) commitWithCheck(ctx context.Context, beforeReplace func() error) error {
 	if target == nil || target.file == nil {
 		return errors.New("invalid atomic export target")
 	}
@@ -78,6 +86,15 @@ func (target *atomicExportTarget) commit(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if beforeReplace != nil {
+		if err := beforeReplace(); err != nil {
+			return err
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	target.replaceAttempted = true
 	if err := atomicReplaceSQLAuditFile(target.tempPath, target.targetPath); err != nil {
 		return err
 	}

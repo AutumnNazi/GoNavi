@@ -67,9 +67,15 @@ func profileQueryResultEncode(result *connection.QueryResult) {
 		return
 	}
 
-	startedAt := time.Now()
+	measureQueryResultEncode(result, time.Now)
+}
+
+// measureQueryResultEncode keeps the real clock in production while allowing
+// deterministic tests of elapsed-time recording, including sub-microsecond zero.
+func measureQueryResultEncode(result *connection.QueryResult, now func() time.Time) {
+	startedAt := now()
 	_, err := json.Marshal(result)
-	result.EncodeMs = time.Since(startedAt).Microseconds()
+	result.EncodeMs = now().Sub(startedAt).Microseconds()
 	if err != nil {
 		// 无法编码的结构在 Wails 侧同样会失败；绑定层不重复报错，但也谈不上
 		// 「有载荷的编码耗时」，因此清 0 表示未采集，而不是报一个失败的耗时。

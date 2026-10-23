@@ -48,7 +48,17 @@ func (e builtinAIHTTPStatusError) Error() string {
 }
 
 func doBuiltinAIJSONRequest(method, endpoint, accessToken string, body []byte) (builtinAIHTTPResponse, error) {
-	request, err := http.NewRequestWithContext(context.Background(), method, endpoint, bytes.NewReader(body))
+	return doBuiltinAIJSONRequestWithTimeout(method, endpoint, accessToken, body, 0)
+}
+
+func doBuiltinAIJSONRequestWithTimeout(method, endpoint, accessToken string, body []byte, timeout time.Duration) (builtinAIHTTPResponse, error) {
+	ctx := context.Background()
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	request, err := http.NewRequestWithContext(ctx, method, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return builtinAIHTTPResponse{}, err
 	}
@@ -68,6 +78,42 @@ func doBuiltinAIJSONRequest(method, endpoint, accessToken string, body []byte) (
 		return builtinAIHTTPResponse{}, fmt.Errorf("read GoNavi AI Gateway response: %w", readErr)
 	}
 	return builtinAIHTTPResponse{statusCode: response.StatusCode, body: responseBody}, nil
+}
+
+const (
+	// builtinAIRefreshAttemptTimeout bounds one refresh attempt. A refresh is a
+	// single database round trip and normally answers in well under a second;
+	// 5 s keeps the whole retry loop close to the old single 20 s attempt.
+	builtinAIRefreshAttemptTimeout = 5 * time.Second
+	// builtinAIRefreshAttempts is how many times one logical refresh is sent.
+	// The Gateway rotates the token as soon as it receives the request, so a
+	// transport error does not prove the request failed: the answer may have
+	// been lost after a successful rotation. Retrying with the token we still
+	// hold is safe because the Gateway answers it from its grace window with a
+	// fresh pair instead of treating the replay as theft.
+	builtinAIRefreshAttempts = 3
+)
+
+// builtinAIRefreshBackoff is a variable so tests can make retries immediate.
+var builtinAIRefreshBackoff = func(attempt int) time.Duration {
+	return time.Duration(attempt) * 2 * time.Second
+}
+
+// doBuiltinAIRefreshRequest sends one refresh grant, retrying transport
+// failures. It never retries an HTTP answer: a 400/401 is final.
+func doBuiltinAIRefreshRequest(endpoint string, body []byte) (builtinAIHTTPResponse, error) {
+	var lastErr error
+	for attempt := 0; attempt < builtinAIRefreshAttempts; attempt++ {
+		if attempt > 0 {
+			time.Sleep(builtinAIRefreshBackoff(attempt))
+		}
+		response, err := doBuiltinAIJSONRequestWithTimeout(http.MethodPost, endpoint, "", body, builtinAIRefreshAttemptTimeout)
+		if err == nil {
+			return response, nil
+		}
+		lastErr = err
+	}
+	return builtinAIHTTPResponse{}, lastErr
 }
 
 func fetchBuiltinAIQuota(config builtinAIConfig, accessToken string) (ai.BuiltinAIQuota, error) {

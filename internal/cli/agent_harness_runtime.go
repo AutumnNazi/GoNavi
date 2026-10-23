@@ -17,16 +17,16 @@ import (
 	"GoNavi-Wails/internal/mcpserver"
 )
 
-// cliProviderResolver owns only the current configuration lookup used while an
-// input is accepted. The immutable, secret-bearing result is persisted in the
-// Ledger's provider binding; model attempts never reload this configuration.
+// cliProviderResolver owns configuration lookup and its host's plugin factory.
+// The immutable, secret-bearing result is persisted in the Ledger's provider
+// binding; model attempts never reload this configuration.
 type cliProviderResolver struct {
-	root string
+	root    string
+	plugins *provider.PluginFactory
 }
 
-// newCLIProviderInstance is a narrow test seam. Production code always uses
-// provider.NewProvider; tests can inspect the exact frozen config without
-// reaching into provider implementations' private fields.
+// newCLIProviderInstance keeps builtin construction on its existing test seam.
+// Plugin identities use the instance-owned factory instead of this constructor.
 var newCLIProviderInstance = provider.NewProvider
 
 func newCLIProviderResolver(root string) runharness.ProviderResolver {
@@ -40,38 +40,29 @@ func newCLIProviderResolverState(root string) *cliProviderResolver {
 // bindInput resolves and freezes the selected provider before the Ledger
 // accepts a run. LoadRuntime returns the provider's secret-bearing runtime
 // configuration, while the Ledger encrypts the resulting binding at rest.
-func (r *cliProviderResolver) bindInput(request *runharness.AgentInputRequest) error {
+func (r *cliProviderResolver) bindInput(ctx context.Context, request *runharness.AgentInputRequest) error {
 	if r == nil {
 		return errors.New("AI provider resolver is unavailable")
+	}
+	if ctx == nil {
+		return runharness.ErrRootContextRequired
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if request == nil {
 		return errors.New("agent input is required")
 	}
-	store := aiservice.NewProviderConfigStore(r.root, nil)
-	snapshot, err := store.LoadRuntime()
-	if err != nil {
-		return fmt.Errorf("load AI provider configuration: %w", err)
-	}
-	selected, err := selectCLIProvider(snapshot, request.Provider)
+	selected, err := r.providerForBinding(ctx, request)
 	if err != nil {
 		return err
 	}
-	if value := strings.TrimSpace(request.Model); value != "" {
-		selected.Model = value
-	}
-	if value := strings.TrimSpace(request.Thinking); value != "" {
-		selected.ThinkingIntensity = value
-	}
-	if request.Temperature != nil {
-		selected.Temperature = *request.Temperature
-	}
-	if request.MaxTokens != nil {
-		selected.MaxTokens = *request.MaxTokens
-	}
-	selected = cloneCLIProviderConfig(selected)
-	binding, err := runharness.NewProviderBinding(selected.ID, selected)
+	binding, err := r.bindProviderConfig(ctx, selected)
 	if err != nil {
 		return fmt.Errorf("bind agent provider: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if err := request.SetProviderBinding(binding); err != nil {
 		return fmt.Errorf("attach agent provider binding: %w", err)
@@ -103,6 +94,9 @@ func (r *cliProviderResolver) resolve(ctx context.Context, request runharness.Mo
 	var selected ai.ProviderConfig
 	if err := json.Unmarshal(binding.Config, &selected); err != nil {
 		return nil, fmt.Errorf("%w: decode provider config: %v", runharness.ErrProviderBindingCorrupt, err)
+	}
+	if cliPluginProviderBinding(selected, binding.Config) {
+		return r.resolvePluginProvider(ctx, selected, binding)
 	}
 	selected.ID = strings.TrimSpace(selected.ID)
 	if selected.ID == "" || selected.ID != binding.ProviderID {
@@ -164,13 +158,15 @@ func selectCLIProvider(snapshot aiservice.ProviderConfigStoreSnapshot, requested
 // resolves credentials inside the Go backend, while workspace inspection only
 // reads the snapshot bound to the current run.
 func newCLIAgentToolCatalog(backend mcpserver.Backend, mcpService *aiservice.Service) runharness.ToolCatalog {
-	return mcpserver.NewCompositeToolCatalog(
+	ordinary := mcpserver.NewCompositeToolCatalog(
 		mcpserver.NewAgentToolCatalogWithDynamicSource(
 			backend,
 			mcpserver.NewServiceMCPSource(mcpService),
 		),
 		mcpserver.NewWorkspaceSnapshotToolCatalog(),
+		mcpserver.NewPluginToolCatalogForBackend(backend),
 	)
+	return mcpserver.NewPluginSkillAugmentedCatalog(ordinary, mcpserver.NewPluginSkillCatalogForBackend(backend))
 }
 
 // cliAgentApprovalHandler is intentionally non-interactive when stdin is not

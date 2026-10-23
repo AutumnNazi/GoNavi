@@ -9,6 +9,12 @@ import (
 )
 
 func resolveDDLDBType(config connection.ConnectionConfig) string {
+	if isPluginDataSourceType(config.Type) {
+		if dialect, ok := pluginDataSourceDialect(config.Type); ok {
+			return dialect
+		}
+		return invalidPluginDataSourceDialect
+	}
 	dbType := strings.ToLower(strings.TrimSpace(config.Type))
 	if dbType == "doris" {
 		return "diros"
@@ -47,7 +53,11 @@ func resolveDDLDBType(config connection.ConnectionConfig) string {
 		return dbType
 	}
 
-	driver := strings.ToLower(strings.TrimSpace(config.Driver))
+	return resolveCustomDDLDBType(config.Driver)
+}
+
+func resolveCustomDDLDBType(value string) string {
+	driver := strings.ToLower(strings.TrimSpace(value))
 	switch driver {
 	case "postgresql", "postgres", "pg", "pq", "pgx":
 		return "postgres"

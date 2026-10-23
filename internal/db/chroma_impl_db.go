@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -176,6 +177,15 @@ func (c *ChromaDB) GetDatabases() ([]string, error) {
 	var raw []map[string]interface{}
 	err := c.doJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v2/tenants/%s/databases", url.PathEscape(c.tenant)), nil, &raw)
 	if err != nil {
+		// 部分 Chroma 版本提供了 v2 心跳与 collections 端点，却没有 databases 列表端点，
+		// 服务端对 GET 返回 405 Method Not Allowed。这种情况退回单库模式，与 v1 分支行为一致，
+		// 否则整个连接都展不开、表概览也无从进入；其余失败（503、网络中断等）仍按服务端故障
+		// 向上传播，避免把「服务不可用」伪装成「只有一个库」。
+		var httpErr *chromaHTTPError
+		if errors.As(err, &httpErr) && httpErr.statusCode == http.StatusMethodNotAllowed {
+			logger.Warnf("Chroma 未提供 databases 列表端点，退回单库模式（database=%s）：%v", c.database, err)
+			return []string{c.database}, nil
+		}
 		return nil, err
 	}
 	names := make([]string, 0, len(raw))

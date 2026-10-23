@@ -897,7 +897,7 @@ describe('Sidebar locate toolbar', () => {
     expect(markup).toContain('Copy connection');
     expect(markup).toContain('Batch connections');
     expect(markup).toContain('Disconnect');
-    expect(markup).toContain('Connection groups');
+    expect(markup).toContain('Move to connection group');
     expect(markup).toContain('Current');
     expect(markup).toContain('Remove from group');
     expect(markup).toContain('Delete connection');

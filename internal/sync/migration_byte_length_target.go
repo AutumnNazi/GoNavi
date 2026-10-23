@@ -9,17 +9,9 @@ import (
 	"GoNavi-Wails/internal/connection"
 )
 
-// 字符列长度按「字节」计的目标：openGauss 系（Vastbase 海量 / openGauss / GaussDB）。
-//
-// 这一族数据库在非 PG 兼容模式（默认的 A 兼容等）下，varchar(n) / char(n) 的 n 是
-// 字节数，而不是 PostgreSQL 那样的字符数。源库的长度声明大多按字符计（MySQL、
-// PostgreSQL 系、Oracle 的 VARCHAR2(n CHAR)），或者按源库自己的编码计字节
-// （Oracle 库是 GBK 时一个汉字 2 字节，到 UTF-8 的目标里变成 3 字节）。原样把
-// varchar(120) 建到目标里，含中文的数据就会以
-// "value too long for type character varying(120) (22001)" 写入失败。
-//
-// 处理方式：建表 / 补列时把字符列的长度放宽到 4 倍（UTF-8 单字符最多 4 字节），
-// 并用一条告警说明。放宽只会让约束变松，PG 兼容模式的库里同样能正常写入。
+// openGauss 系的字符长度单位取决于版本、兼容模式及列声明，不能仅凭品牌断言。
+// Oracle 字符语义在目标能力探测成功时显式保留；旧版或编码语义未知时继续
+// 使用至多四倍的 UTF-8 容量兜底，并告警说明约束、CHAR 补空格可能发生变化。
 
 const (
 	// byteLengthWidenFactor 为 UTF-8 单个字符的最大字节数。
@@ -33,7 +25,7 @@ const (
 // charLengthTypePattern 匹配带长度的定长/变长字符类型（中间表示与 PG 系写法都覆盖）。
 var charLengthTypePattern = regexp.MustCompile(`(?i)^(\s*(?:character\s+varying|varchar|character|char|bpchar)\s*\(\s*)(\d+)(\s*\)\s*)$`)
 
-// targetCountsCharLengthInBytes 判定目标方言的 varchar/char 长度是否按字节计。
+// targetCountsCharLengthInBytes 标记可能按字节计长的目标族，不代表已确认当前列语义。
 func targetCountsCharLengthInBytes(dbType string) bool {
 	switch normalizeMigrationDBType(dbType) {
 	case "vastbase", "opengauss", "gaussdb":
@@ -48,13 +40,15 @@ func targetCountsCharLengthInBytes(dbType string) bool {
 type byteLengthWidener struct {
 	targetType string
 	active     bool
+	qualified  bool
 	widened    []string
 }
 
-// newByteLengthWidener 只在「目标按字节计长、源不是同一族」时生效：
-// 同为 openGauss 系时两端语义一致，长度原样保留才是无损的。
-func newByteLengthWidener(sourceType, targetType string) *byteLengthWidener {
+// newByteLengthWidener 对跨族迁移使用保守预算，同族沿用原路径，不声称语义等价。
+func newByteLengthWidener(sourceType, targetType string, target ...*characterLengthTarget) *byteLengthWidener {
+	qualified := len(target) > 0 && target[0] != nil && target[0].qualified
 	return &byteLengthWidener{
+		qualified:  qualified,
 		targetType: strings.TrimSpace(targetType),
 		active:     targetCountsCharLengthInBytes(targetType) && !targetCountsCharLengthInBytes(sourceType),
 	}
@@ -93,16 +87,11 @@ func (w *byteLengthWidener) Warnings() []string {
 	if w == nil || len(w.widened) == 0 {
 		return nil
 	}
-	shown := w.widened
-	suffix := ""
-	if len(shown) > byteLengthWarningColumnLimit {
-		shown = shown[:byteLengthWarningColumnLimit]
-		suffix = fmt.Sprintf(" 等 %d 个字段", len(w.widened))
-	}
-	return []string{fmt.Sprintf(
-		"目标 %s 的 varchar/char 长度按字节计（PG 兼容模式除外），源端按字符计长，含中文等多字节字符的数据会超出原声明长度而写入失败；已将字符列长度放宽为 %d 倍：%s%s",
-		w.targetType, byteLengthWidenFactor, strings.Join(shown, "、"), suffix,
-	)}
+	shown := w.widened[:min(len(w.widened), byteLengthWarningColumnLimit)]
+	return []string{localizedSyncBackendText("data_sync.backend.hint.character_length_widened", map[string]any{
+		"target": w.targetType, "factor": byteLengthWidenFactor,
+		"columns": strings.Join(shown, "、"), "count": len(w.widened),
+	})}
 }
 
 // isValueTooLongError 判定写入错误是否为「值超出列长度」（SQLSTATE 22001）。

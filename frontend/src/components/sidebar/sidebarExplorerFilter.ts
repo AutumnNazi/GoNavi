@@ -239,11 +239,26 @@ export const filterV2ExplorerTreeByKind = (
  * latter, but they cannot tell `tables` from `nacos-services`, which is precisely
  * the distinction that decides whether the tree survives.
  */
+export type ExplorerFilterResetOptions = {
+  /**
+   * True when the layout hides the relational object-kind tabs (Navicat layout:
+   * the strip duplicates the workbench toolbar's object buttons). A relational
+   * filter left behind by a layout switch would narrow the tree with no button
+   * left to clear it, so it collapses back to `all`. Nacos keeps its tabs — the
+   * toolbar has no equivalent for the two explorer branches.
+   */
+  relationalTabsHidden?: boolean;
+};
+
 export const resolveExplorerFilterReset = (
   family: ExplorerFilterFamily | null,
   activeFilter: V2ExplorerFilter,
   connection?: { config?: SavedConnection['config'] } | null,
+  options?: ExplorerFilterResetOptions,
 ): V2ExplorerFilter | null => {
+  if (options?.relationalTabsHidden && family === 'relational' && activeFilter !== 'all') {
+    return 'all';
+  }
   // No family at all (Redis, MQ, or no active host): nothing survives.
   if (!family) return activeFilter === 'all' ? null : 'all';
   return resolveExplorerFilterOrder(family, connection).includes(activeFilter) ? null : 'all';

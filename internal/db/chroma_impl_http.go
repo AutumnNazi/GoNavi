@@ -162,6 +162,19 @@ func (c *ChromaDB) ensureVersion(ctx context.Context) error {
 	return c.detectVersion(ctx)
 }
 
+// chromaHTTPError 保留响应状态码，便于调用方区分「端点不支持」（405）与服务端故障（503 等）。
+// Error() 文案与原实现保持一致，避免改变既有错误信息的可读性。
+type chromaHTTPError struct {
+	method     string
+	path       string
+	statusCode int
+	message    string
+}
+
+func (e *chromaHTTPError) Error() string {
+	return fmt.Sprintf("Chroma API %s %s 失败：%s", e.method, e.path, e.message)
+}
+
 func (c *ChromaDB) doJSON(ctx context.Context, method, path string, body interface{}, out interface{}) error {
 	if c.client == nil {
 		return fmt.Errorf("连接未打开")
@@ -204,7 +217,7 @@ func (c *ChromaDB) doJSON(ctx context.Context, method, path string, body interfa
 		if message == "" {
 			message = res.Status
 		}
-		return fmt.Errorf("Chroma API %s %s 失败：%s", method, path, message)
+		return &chromaHTTPError{method: method, path: path, statusCode: res.StatusCode, message: message}
 	}
 	if out == nil || len(bytes.TrimSpace(resBody)) == 0 {
 		return nil

@@ -374,9 +374,7 @@ func TestRunQueryUsesTemporaryConnectionFileWithoutSavedConnectionLookup(t *test
 	if err := os.WriteFile(path, contents, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(path, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	protectCLIConnectionFixture(t, path)
 	fake := &fakeBackend{
 		queryResult: connection.QueryResult{Success: true, Data: []connection.ResultSetData{}},
 	}

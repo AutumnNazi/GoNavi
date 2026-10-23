@@ -5,7 +5,6 @@ package db
 import (
 	"context"
 	"errors"
-	"net"
 	"strings"
 	"testing"
 
@@ -42,28 +41,32 @@ func TestMongoSSHDialerRoutesAllMembersThroughSSH(t *testing.T) {
 			}
 
 			dialer := mongoConnectionDialer(config)
+			// MongoDB 必须通过本机转发监听器拨号，而不是直接对 SSH channel 拨号：
+			// mongo-driver 会给连接设置 socket deadline，而 ssh channel 不支持。
 			sshDialer, ok := dialer.(*mongoSSHDialer)
 			if !ok {
-				t.Fatalf("expected SSH dialer, got %T", dialer)
+				t.Fatalf("expected local-forwarder SSH dialer, got %T", dialer)
+			}
+			if sshDialer.sshConfig.Host != config.SSH.Host {
+				t.Fatalf("expected SSH host %q, got %q", config.SSH.Host, sshDialer.sshConfig.Host)
 			}
 
-			wantErr := errors.New("dial stopped")
-			var addresses []string
-			sshDialer.dialContext = func(_ context.Context, _ connection.SSHConfig, network, address string) (net.Conn, error) {
-				if network != "tcp" {
-					t.Fatalf("expected tcp network, got %q", network)
-				}
-				addresses = append(addresses, address)
+			wantErr := errors.New("tunnel stopped")
+			var targets []string
+			previousAcquire := mongoAcquireSSHTunnel
+			t.Cleanup(func() { mongoAcquireSSHTunnel = previousAcquire })
+			mongoAcquireSSHTunnel = func(_ connection.SSHConfig, remoteAddr string) (mongoTunnel, error) {
+				targets = append(targets, remoteAddr)
 				return nil, wantErr
 			}
 
 			for _, address := range []string{"mongo-1.internal:27017", "mongo-2.internal:27018"} {
 				if _, err := dialer.DialContext(context.Background(), "tcp", address); !errors.Is(err, wantErr) {
-					t.Fatalf("expected SSH dial error for %s, got %v", address, err)
+					t.Fatalf("expected SSH tunnel error for %s, got %v", address, err)
 				}
 			}
-			if strings.Join(addresses, ",") != "mongo-1.internal:27017,mongo-2.internal:27018" {
-				t.Fatalf("unexpected SSH targets: %v", addresses)
+			if strings.Join(targets, ",") != "mongo-1.internal:27017,mongo-2.internal:27018" {
+				t.Fatalf("unexpected SSH targets: %v", targets)
 			}
 		})
 	}

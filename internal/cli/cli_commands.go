@@ -11,6 +11,7 @@ import (
 
 	appcore "GoNavi-Wails/internal/app"
 	"GoNavi-Wails/internal/mcpserver"
+	"GoNavi-Wails/internal/plugin"
 	"GoNavi-Wails/internal/sqlaudit"
 )
 
@@ -94,6 +95,9 @@ func runExport(ctx context.Context, args []string, runtime backend, stdout io.Wr
 	sql, err := resolveSQLInput(*sqlText, *sqlFile, fs.Args())
 	if err != nil {
 		return fail(stderr, ExitUsage, "usage", err)
+	}
+	if plugin.IsExporterNamespace(*format) {
+		return fail(stderr, ExitUsage, "usage", errors.New("plugin formats require a materialized desktop snapshot"))
 	}
 	resolvedFormat := strings.ToLower(strings.TrimSpace(*format))
 	if resolvedFormat == "" {

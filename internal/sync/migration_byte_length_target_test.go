@@ -376,8 +376,8 @@ func TestApplySnapshotChangesNamesTheOffendingColumnForByteTargets(t *testing.T)
 	for _, fragment := range []string{
 		"REMARK", "character varying(120)", "150 字节", "50 字符", "1 行超出",
 		`ALTER TABLE "HRP_CLOUD_SHOW"."AES_AE_RECORD" ALTER COLUMN "REMARK" TYPE varchar(480);`,
-		// 字符数没超、字节数超：必须带上「目标按字节计长」的口径说明。
-		"按字节计",
+		// 字符数没超、字节数超：提示核对单位，但不把兼容模式推断当事实。
+		"CHAR/BYTE",
 	} {
 		if !strings.Contains(err.Error(), fragment) {
 			t.Errorf("error missing %q:\n%s", fragment, err.Error())
@@ -389,7 +389,7 @@ func TestApplySnapshotChangesNamesTheOffendingColumnForByteTargets(t *testing.T)
 		{"ID": int64(2), "REMARK": strings.Repeat("a", 130)},
 	}}
 	_, err = NewSyncEngine(Reporter{}).applySnapshotChanges(config, &SyncResult{}, "src", "HRP_CLOUD_SHOW.AES_AE_RECORD", target, overlong, 0)
-	if err == nil || !strings.Contains(err.Error(), "REMARK") || strings.Contains(err.Error(), "按字节计") {
+	if err == nil || !strings.Contains(err.Error(), "REMARK") || strings.Contains(err.Error(), "CHAR/BYTE") {
 		t.Errorf("real overflow must name the column without the byte-count explanation, got %v", err)
 	}
 }

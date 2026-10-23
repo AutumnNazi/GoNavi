@@ -21,7 +21,8 @@ type Service struct {
 	ctx                context.Context
 	mu                 sync.RWMutex
 	providers          []ai.ProviderConfig
-	activeProvider     string // active provider ID
+	pluginProviders    *provider.PluginFactory // private, instance-owned extension; guarded by mu
+	activeProvider     string                  // active provider ID
 	safetyLevel        ai.SQLPermissionLevel
 	contextLevel       ai.ContextLevel
 	userPromptSettings ai.UserPromptSettings

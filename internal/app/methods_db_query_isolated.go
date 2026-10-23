@@ -15,7 +15,8 @@ func (a *App) DBQueryIsolated(config connection.ConnectionConfig, dbName string,
 	return a.dbQueryIsolatedContext(context.Background(), config, dbName, query)
 }
 
-func (a *App) dbQueryIsolatedContext(parent context.Context, config connection.ConnectionConfig, dbName string, query string) connection.QueryResult {
+func (a *App) dbQueryIsolatedContext(parent context.Context, config connection.ConnectionConfig, dbName string, query string) (result connection.QueryResult) {
+	defer a.localizeQueryResultNotices(&result)
 	if parent == nil {
 		parent = context.Background()
 	}

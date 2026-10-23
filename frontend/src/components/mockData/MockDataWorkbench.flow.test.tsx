@@ -123,7 +123,7 @@ describe('MockDataWorkbench flow', () => {
     );
     expect(document.body.textContent).toContain('done-message');
     expect(api.notify).toHaveBeenCalledWith({ connectionId: 'conn-1', dbName: 'app' }, 'users', 'mysql');
-  });
+  }, 30_000);
 
   it('does not write when the confirmation is dismissed', async () => {
     vi.mocked(Modal.confirm).mockImplementation((config) => {

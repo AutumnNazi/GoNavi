@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"GoNavi-Wails/internal/appdata"
+	"GoNavi-Wails/internal/logger"
 	"GoNavi-Wails/shared/i18n"
 )
 
@@ -38,8 +39,6 @@ func methodsLogDirectoryFunctionSource(t *testing.T, source string, signature st
 	}
 	return source[start : start+len(signature)+end]
 }
-
-
 
 func TestMethodsDataRootCatalogKeysExist(t *testing.T) {
 	catalogs, err := i18n.LoadCatalogs()
@@ -125,6 +124,7 @@ func TestApplyDataRootDirectoryUsesEnglishLocalizedMessageWhenUnchanged(t *testi
 	app.SetLanguage(string(i18n.LanguageEnUS))
 	t.Cleanup(func() {
 		app.SetLanguage(string(i18n.LanguageEnUS))
+		logger.Close()
 	})
 
 	defaultRoot := filepath.Join(homeDir, ".gonavi")

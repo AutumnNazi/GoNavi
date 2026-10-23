@@ -41,4 +41,7 @@ export type SidebarTreeNodeType =
   | 'jvm-mode'
   | 'jvm-resource'
   | 'jvm-diagnostic'
-  | 'jvm-monitoring';
+  | 'jvm-monitoring'
+  | 'xxljob-groups'
+  | 'xxljob-jobs'
+  | 'xxljob-logs';

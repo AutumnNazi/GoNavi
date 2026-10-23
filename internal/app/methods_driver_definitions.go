@@ -35,6 +35,8 @@ func normalizeDriverType(driverType string) string {
 		return "goldendb"
 	case "rocketmq", "rocket-mq", "rocket_mq", "apache-rocketmq", "apache_rocketmq", "rmq":
 		return "rocketmq"
+	case "xxljob", "xxl-job", "xxl_job", "xxl-job-admin":
+		return "xxljob"
 	case "mqtt", "mqtts":
 		return "mqtt"
 	case "kafka", "apache-kafka", "apache_kafka":

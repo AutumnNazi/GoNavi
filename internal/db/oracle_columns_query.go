@@ -12,7 +12,7 @@ func buildOracleColumnsQuery(schema string, table string) string {
 	metadataTableName := escapeOracleMetadataLiteralExact(table)
 	metadataSchemaName := escapeOracleMetadataLiteralExact(schema)
 	if strings.TrimSpace(schema) == "" {
-		return fmt.Sprintf(`SELECT c.column_name AS "COLUMN_NAME", c.data_type AS "DATA_TYPE", c.data_length AS "DATA_LENGTH", c.char_length AS "CHAR_LENGTH", c.data_precision AS "DATA_PRECISION", c.data_scale AS "DATA_SCALE", c.nullable AS "NULLABLE", c.data_default AS "DATA_DEFAULT",
+		return fmt.Sprintf(`SELECT c.column_name AS "COLUMN_NAME", c.data_type AS "DATA_TYPE", c.data_length AS "DATA_LENGTH", c.char_length AS "CHAR_LENGTH", c.char_used AS "CHAR_USED", c.data_precision AS "DATA_PRECISION", c.data_scale AS "DATA_SCALE", c.nullable AS "NULLABLE", c.data_default AS "DATA_DEFAULT",
 			CASE WHEN pk.column_name IS NOT NULL THEN 'PRI' ELSE '' END AS "COLUMN_KEY",
 			cc.comments AS "COMMENT"
 			FROM user_tab_columns c
@@ -30,7 +30,7 @@ func buildOracleColumnsQuery(schema string, table string) string {
 			ORDER BY c.column_id`, metadataTableName, metadataTableName, metadataTableName)
 	}
 
-	return fmt.Sprintf(`SELECT c.column_name AS "COLUMN_NAME", c.data_type AS "DATA_TYPE", c.data_length AS "DATA_LENGTH", c.char_length AS "CHAR_LENGTH", c.data_precision AS "DATA_PRECISION", c.data_scale AS "DATA_SCALE", c.nullable AS "NULLABLE", c.data_default AS "DATA_DEFAULT",
+	return fmt.Sprintf(`SELECT c.column_name AS "COLUMN_NAME", c.data_type AS "DATA_TYPE", c.data_length AS "DATA_LENGTH", c.char_length AS "CHAR_LENGTH", c.char_used AS "CHAR_USED", c.data_precision AS "DATA_PRECISION", c.data_scale AS "DATA_SCALE", c.nullable AS "NULLABLE", c.data_default AS "DATA_DEFAULT",
 		CASE WHEN pk.column_name IS NOT NULL THEN 'PRI' ELSE '' END AS "COLUMN_KEY",
 		cc.comments AS "COMMENT"
 		FROM all_tab_columns c
@@ -64,7 +64,7 @@ func buildOracleColumnsQueryWithIdentity(schema string, table string) string {
 	metadataTableName := escapeOracleMetadataLiteralExact(table)
 	metadataSchemaName := escapeOracleMetadataLiteralExact(schema)
 	if strings.TrimSpace(schema) == "" {
-		return fmt.Sprintf(`SELECT c.column_name AS "COLUMN_NAME", c.data_type AS "DATA_TYPE", c.data_length AS "DATA_LENGTH", c.char_length AS "CHAR_LENGTH", c.data_precision AS "DATA_PRECISION", c.data_scale AS "DATA_SCALE", c.nullable AS "NULLABLE", c.data_default AS "DATA_DEFAULT",
+		return fmt.Sprintf(`SELECT c.column_name AS "COLUMN_NAME", c.data_type AS "DATA_TYPE", c.data_length AS "DATA_LENGTH", c.char_length AS "CHAR_LENGTH", c.char_used AS "CHAR_USED", c.data_precision AS "DATA_PRECISION", c.data_scale AS "DATA_SCALE", c.nullable AS "NULLABLE", c.data_default AS "DATA_DEFAULT",
 			CASE WHEN pk.column_name IS NOT NULL THEN 'PRI' ELSE '' END AS "COLUMN_KEY",
 			CASE WHEN ic.column_name IS NOT NULL THEN 'YES' ELSE '' END AS "IDENTITY_COLUMN",
 			cc.comments AS "COMMENT"
@@ -85,7 +85,7 @@ func buildOracleColumnsQueryWithIdentity(schema string, table string) string {
 			ORDER BY c.column_id`, metadataTableName, metadataTableName, metadataTableName)
 	}
 
-	return fmt.Sprintf(`SELECT c.column_name AS "COLUMN_NAME", c.data_type AS "DATA_TYPE", c.data_length AS "DATA_LENGTH", c.char_length AS "CHAR_LENGTH", c.data_precision AS "DATA_PRECISION", c.data_scale AS "DATA_SCALE", c.nullable AS "NULLABLE", c.data_default AS "DATA_DEFAULT",
+	return fmt.Sprintf(`SELECT c.column_name AS "COLUMN_NAME", c.data_type AS "DATA_TYPE", c.data_length AS "DATA_LENGTH", c.char_length AS "CHAR_LENGTH", c.char_used AS "CHAR_USED", c.data_precision AS "DATA_PRECISION", c.data_scale AS "DATA_SCALE", c.nullable AS "NULLABLE", c.data_default AS "DATA_DEFAULT",
 		CASE WHEN pk.column_name IS NOT NULL THEN 'PRI' ELSE '' END AS "COLUMN_KEY",
 		CASE WHEN ic.column_name IS NOT NULL THEN 'YES' ELSE '' END AS "IDENTITY_COLUMN",
 		cc.comments AS "COMMENT"

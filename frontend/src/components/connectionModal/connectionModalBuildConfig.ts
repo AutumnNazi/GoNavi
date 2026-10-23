@@ -1,4 +1,6 @@
 import type { ConnectionConfig } from "../../types";
+import { isPluginDataSourceNamespace } from "../../plugins/dataSource/identity";
+import { buildPluginDataSourceConfig } from "./pluginDataSourceForm";
 import { resolveConnectionDatabaseValue } from "./connectionModalNamespace";
 import {
   supportsConnectionKeepAliveSQL,
@@ -59,6 +61,7 @@ export const buildConnectionConfig = async ({
   oracleModeTouched = false,
   translate: t,
 }: BuildConnectionConfigParams): Promise<ConnectionConfig> => {
+  if (isPluginDataSourceNamespace(values.type)) return buildPluginDataSourceConfig(values, forPersist, initialValues);
   const mergedValues = { ...values };
   if (
     String(mergedValues.type || "")
@@ -567,10 +570,13 @@ export const buildConnectionConfig = async ({
   }
 
   const keepPassword = !forPersist || savePassword;
+  // keep-alive 只扫描 dbCache 的驱动连接；xxljob 会话在独立的 xxlJobCache 里，
+  // 勾了也不会被 ping，这里与 jvm/nacos 一致直接排除，避免静默空操作。
   const keepAliveEnabled =
     !isFileDatabaseType(type) &&
     type !== "jvm" &&
     type !== "nacos" &&
+    type !== "xxljob" &&
     !!mergedValues.keepAliveEnabled;
   const keepAliveIntervalMinutesRaw = Number(
     mergedValues.keepAliveIntervalMinutes,

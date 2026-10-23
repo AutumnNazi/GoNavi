@@ -1,0 +1,139 @@
+{
+  "publicationVersion": "2026-10-23.2",
+  "publishedAt": "2026-10-22T23:25:00Z",
+  "publicBaseURL": "https://origin-download.syngnat.top:8443/gonavi/fonts/v1/",
+  "previousCatalogSha256": "4d39219434ce14a50d8575e4567d7ee8c3cc96b1ee60704558af4db74bc57eaf",
+  "upstreamRevision": "mixed-cascadia-v2407.24-iosevka-v34.9.0-sarasa-v1.0.42-gf-45e3d5269e4a-maple-v7.9-smiley-v2.0.1",
+  "entries": [
+    {
+      "id": "cascadia-code",
+      "kind": "mono",
+      "family": "Cascadia Code",
+      "version": "v2407.24",
+      "names": {
+        "zh-CN": "Cascadia Code",
+        "zh-TW": "Cascadia Code",
+        "en-US": "Cascadia Code",
+        "ja-JP": "Cascadia Code",
+        "ru-RU": "Cascadia Code",
+        "de-DE": "Cascadia Code"
+      },
+      "description": "微软为 Windows Terminal 打造的编程字体，字形清晰并含可选连字；本次提供可变字重原版。",
+      "useCase": "SQL 编辑器与控制台输出。此字体不提供完整中文字形，中文会使用系统回退字体。",
+      "attribution": "Copyright (c) 2019 - Present, Microsoft Corporation, with Reserved Font Name Cascadia Code.",
+      "sourceUrl": "https://github.com/microsoft/cascadia-code/releases/download/v2407.24/CascadiaCode-2407.24.zip",
+      "fontFile": "CascadiaCode-VF.ttf",
+      "license": {
+        "id": "OFL-1.1",
+        "name": "SIL Open Font License 1.1",
+        "url": "https://raw.githubusercontent.com/microsoft/cascadia-code/v2407.24/LICENSE",
+        "licenseFile": "cascadia-LICENSE.txt",
+        "nonCommercial": false
+      }
+    },
+    {
+      "id": "iosevka",
+      "kind": "mono",
+      "family": "Iosevka",
+      "version": "v34.9.0",
+      "names": {
+        "zh-CN": "Iosevka",
+        "zh-TW": "Iosevka",
+        "en-US": "Iosevka",
+        "ja-JP": "Iosevka",
+        "ru-RU": "Iosevka",
+        "de-DE": "Iosevka"
+      },
+      "description": "狭长字形、高度可定制的编程字体，同屏可容纳更多内容；本次提供 Regular 原版。",
+      "useCase": "高密度 SQL 与日志查看。此字体不提供完整中文字形，中文会使用系统回退字体。",
+      "attribution": "Copyright (c) 2015-2026, Renzhi Li (aka. Belleve Invis, belleve@typeof.net).",
+      "sourceUrl": "https://github.com/be5invis/Iosevka/releases/download/v34.9.0/PkgTTF-Iosevka-34.9.0.zip",
+      "fontFile": "Iosevka-Regular.ttf",
+      "license": {
+        "id": "OFL-1.1",
+        "name": "SIL Open Font License 1.1",
+        "url": "https://raw.githubusercontent.com/be5invis/Iosevka/v34.9.0/LICENSE.md",
+        "licenseFile": "iosevka-LICENSE.txt",
+        "nonCommercial": false
+      }
+    },
+    {
+      "id": "sarasa-gothic-sc",
+      "kind": "mono",
+      "family": "Sarasa Gothic SC",
+      "version": "v1.0.42",
+      "names": {
+        "zh-CN": "更纱黑体 SC",
+        "zh-TW": "更紗黑體 SC",
+        "en-US": "Sarasa Gothic SC",
+        "ja-JP": "Sarasa Gothic SC",
+        "ru-RU": "Sarasa Gothic SC",
+        "de-DE": "Sarasa Gothic SC"
+      },
+      "description": "基于 Iosevka 与思源黑体的 CJK 编程字体，中西文混排严格对齐；本次提供 Regular 原版。",
+      "useCase": "SQL 编辑器与含中文注释的代码场景，提供完整简体中文覆盖。",
+      "attribution": "Copyright (c) 2015-2025, Renzhi Li (aka. Belleve Invis, belleve@typeof.net). Portions Copyright (c) 2016 The Inter Project Authors.",
+      "sourceUrl": "https://github.com/be5invis/Sarasa-Gothic/releases/download/v1.0.42/SarasaGothicSC-TTF-1.0.42.7z",
+      "fontFile": "SarasaGothicSC-Regular.ttf",
+      "license": {
+        "id": "OFL-1.1",
+        "name": "SIL Open Font License 1.1",
+        "url": "https://raw.githubusercontent.com/be5invis/Sarasa-Gothic/v1.0.42/LICENSE",
+        "licenseFile": "sarasa-LICENSE.txt",
+        "nonCommercial": false
+      }
+    },
+    {
+      "id": "noto-serif-sc",
+      "kind": "ui",
+      "family": "Noto Serif SC",
+      "version": "gf-45e3d5269e4a",
+      "names": {
+        "zh-CN": "思源宋体 Noto Serif SC",
+        "zh-TW": "思源宋體 Noto Serif SC",
+        "en-US": "Noto Serif SC",
+        "ja-JP": "Noto Serif SC",
+        "ru-RU": "Noto Serif SC",
+        "de-DE": "Noto Serif SC"
+      },
+      "description": "Adobe 与 Google 联合开发的中文明体字体（思源宋体），适合长文阅读；本次提供可变字重原版。",
+      "useCase": "长文本、文档与引文的中文显示。",
+      "attribution": "Copyright 2012 Google Inc. All Rights Reserved.",
+      "sourceUrl": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/notoserifsc/NotoSerifSC%5Bwght%5D.ttf",
+      "fontFile": "NotoSerifSC-VF.ttf",
+      "license": {
+        "id": "OFL-1.1",
+        "name": "SIL Open Font License 1.1",
+        "url": "https://raw.githubusercontent.com/google/fonts/45e3d5269e4a17d823f6d84470bc084dc5ae46f6/ofl/notoserifsc/OFL.txt",
+        "licenseFile": "notoserifsc-OFL.txt",
+        "nonCommercial": false
+      }
+    },
+    {
+      "id": "maple-mono-cn",
+      "kind": "mono",
+      "family": "Maple Mono CN",
+      "version": "v7.9",
+      "names": {
+        "zh-CN": "Maple Mono CN",
+        "zh-TW": "Maple Mono CN",
+        "en-US": "Maple Mono CN",
+        "ja-JP": "Maple Mono CN",
+        "ru-RU": "Maple Mono CN",
+        "de-DE": "Maple Mono CN"
+      },
+      "description": "圆角风格的编程字体，内置简体中文字形与编程连字；本次提供 Regular 原版。",
+      "useCase": "SQL 编辑器与含中文注释的代码场景，提供完整简体中文覆盖。",
+      "attribution": "Copyright 2022 The Maple Mono Project Authors (https://github.com/subframe7536/maple-font)",
+      "sourceUrl": "https://github.com/subframe7536/maple-font/releases/download/v7.9/MapleMono-CN.zip",
+      "fontFile": "MapleMonoCN-Regular.ttf",
+      "license": {
+        "id": "OFL-1.1",
+        "name": "SIL Open Font License 1.1",
+        "url": "https://raw.githubusercontent.com/subframe7536/maple-font/v7.9/OFL.txt",
+        "licenseFile": "maple-OFL.txt",
+        "nonCommercial": false
+      }
+    }
+  ]
+}

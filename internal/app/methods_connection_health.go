@@ -65,6 +65,8 @@ func (a *App) inspectSavedConnectionHealthWithContext(ctx context.Context, id st
 		checks = a.inspectRedisConnectionHealth(ctx, config)
 	case "nacos":
 		checks = a.inspectNacosConnectionHealth(ctx, config)
+	case "xxljob":
+		checks = a.inspectXxlJobConnectionHealth(ctx, config)
 	case "jvm":
 		checks = a.inspectJVMConnectionHealth(ctx, config)
 	default:

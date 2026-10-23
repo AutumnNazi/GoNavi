@@ -4,13 +4,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"html"
 	"io"
 	"math"
 	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
@@ -60,37 +58,6 @@ func resolveRequestedExportColumns(columns []string, requested []string) ([]stri
 
 func newExportFileWriter(f io.Writer, options ExportFileOptions) (exportFileWriter, error) {
 	return newExportFileWriterWithContext(context.Background(), f, options)
-}
-
-func newExportFileWriterWithContext(ctx context.Context, f io.Writer, options ExportFileOptions) (exportFileWriter, error) {
-	options = normalizeExportFileOptions("", options)
-	switch options.Format {
-	case "csv":
-		return newCSVExportFileWriter(f, options.ColumnComments, options.CSVEncoding)
-	case "parquet":
-		return newParquetExportFileWriter(ctx, f), nil
-	case "json":
-		return newJSONExportFileWriter(f)
-	case "md":
-		return &markdownExportFileWriter{file: f, columnComments: options.ColumnComments}, nil
-	case "html":
-		return newHTMLExportFileWriter(f, options.ColumnComments), nil
-	case "xlsx":
-		file, ok := f.(xlsxExportOutputFile)
-		if !ok {
-			return nil, fmt.Errorf("xlsx export requires a seekable file")
-		}
-		writeOptions := xlsxExportWriteOptions{columnComments: options.ColumnComments}
-		if managed, ok := f.(*webTransferFile); ok {
-			writeOptions.tempDir = filepath.Dir(managed.file.Name())
-			writeOptions.budget = managed.budget
-		}
-		return newXLSXExportFileWriter(file, options.XLSXMaxRowsPerSheet, writeOptions)
-	case "sql":
-		return newSQLInsertExportFileWriter(f, options)
-	default:
-		return nil, fmt.Errorf("unsupported format: %s", options.Format)
-	}
 }
 
 func streamQueryDataForExport(dbInst db.Database, config connection.ConnectionConfig, query string, consumer db.QueryStreamConsumer) error {
@@ -154,52 +121,6 @@ func exportQueryResultToFile(f io.Writer, dbInst db.Database, config connection.
 	return exportQueryResultToFileWithContext(context.Background(), f, dbInst, config, query, options, reporter)
 }
 
-func exportQueryResultToFileWithContext(ctx context.Context, f io.Writer, dbInst db.Database, config connection.ConnectionConfig, query string, options ExportFileOptions, reporter *exportProgressReporter) (int64, []string, error) {
-	options = normalizeExportFileOptions("", options)
-	if err := validateExportColumnsSelection(options); err != nil {
-		return 0, nil, err
-	}
-	writer, err := newExportFileWriterWithContext(ctx, f, options)
-	if err != nil {
-		return 0, nil, err
-	}
-
-	if reporter != nil {
-		reporter.Start(reporter.text("data_export.progress.stage.querying_data", nil))
-	}
-	var projection *exportColumnProjectionConsumer
-	delegate := db.QueryStreamConsumer(writer)
-	if len(options.Columns) > 0 {
-		projection = &exportColumnProjectionConsumer{
-			delegate:         writer,
-			requestedColumns: options.Columns,
-		}
-		delegate = projection
-	}
-	consumer := &countingExportConsumer{delegate: delegate, reporter: reporter}
-	streamErr := streamQueryDataForExportWithContext(ctx, dbInst, config, query, consumer)
-	if reporter != nil && streamErr == nil {
-		reporter.Finalizing(consumer.rowCount)
-	}
-	var closeErr error
-	if streamErr != nil {
-		closeErr = abortExportFileWriter(writer)
-	} else {
-		closeErr = writer.Close()
-	}
-	exportedColumns := consumer.columns
-	if projection != nil {
-		exportedColumns = projection.columns
-	}
-	if streamErr != nil {
-		return consumer.rowCount, exportedColumns, errors.Join(streamErr, closeErr)
-	}
-	if closeErr != nil {
-		return consumer.rowCount, exportedColumns, closeErr
-	}
-	return consumer.rowCount, exportedColumns, nil
-}
-
 func fillExportRecordFromValues(record []string, values []interface{}, markdown bool) []string {
 	if len(record) != len(values) {
 		record = make([]string, len(values))
@@ -235,52 +156,6 @@ func formatExportRecordValue(val interface{}, markdown bool) string {
 func writeRowsToFile(f io.Writer, data []map[string]interface{}, columns []string, options ExportFileOptions) error {
 	_, err := writeRowsToFileWithReporter(context.Background(), f, data, columns, options, nil)
 	return err
-}
-
-func writeRowsToFileWithReporter(exportCtx context.Context, f io.Writer, data []map[string]interface{}, columns []string, options ExportFileOptions, reporter *exportProgressReporter) (int64, error) {
-	if f == nil {
-		return 0, fmt.Errorf("file required")
-	}
-	if exportCtx == nil {
-		exportCtx = context.Background()
-	}
-	options = normalizeExportFileOptions("", options)
-	if err := validateExportColumnsSelection(options); err != nil {
-		return 0, err
-	}
-	columns = resolveExportColumns(columns, data)
-	columns, err := resolveRequestedExportColumns(columns, options.Columns)
-	if err != nil {
-		return 0, err
-	}
-	writer, err := newExportFileWriterWithContext(exportCtx, f, options)
-	if err != nil {
-		return 0, err
-	}
-	if err := writer.SetColumns(columns); err != nil {
-		return 0, errors.Join(err, abortExportFileWriter(writer))
-	}
-	if reporter != nil {
-		reporter.ForceRunning(0, reporter.text("data_export.progress.stage.writing_file", nil))
-	}
-	for index, row := range data {
-		if err := exportCtx.Err(); err != nil {
-			return int64(index), errors.Join(err, abortExportFileWriter(writer))
-		}
-		if err := writer.ConsumeRow(row); err != nil {
-			return int64(index), errors.Join(err, abortExportFileWriter(writer))
-		}
-		if reporter != nil {
-			reporter.Rows(int64(index+1), reporter.text("data_export.progress.stage.writing_file", nil))
-		}
-	}
-	if reporter != nil {
-		reporter.Finalizing(int64(len(data)))
-	}
-	if err := writer.Close(); err != nil {
-		return int64(len(data)), err
-	}
-	return int64(len(data)), nil
 }
 
 func formatExportHTMLCell(val interface{}) string {

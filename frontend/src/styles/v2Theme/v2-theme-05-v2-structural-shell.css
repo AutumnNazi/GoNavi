@@ -24,7 +24,7 @@ body[data-ui-version="v2"] .gn-v2-connection-rail {
   align-items: center;
   justify-content: flex-start;
   gap: 0;
-  padding: calc(6px * var(--gn-v2-rail-scale)) 0 0;
+  padding: 0;
   border-right: 0.5px solid var(--gn-br-1);
   /* Match explorer panel — no tint strip (tinted empty rail looked worse) */
   background: transparent;
@@ -60,6 +60,9 @@ body[data-ui-version="v2"] .gn-v2-rail-explorer-actions {
   flex-direction: column;
   align-items: center;
   gap: calc(4px * var(--gn-v2-rail-scale));
+  /* 8px matches the explorer filter-tab row's top padding; +1px centres the 26px
+     rail tool on the 28px filter tab so both rows share one horizontal axis. */
+  padding-top: calc(9px * var(--gn-v2-rail-scale));
 }
 
 body[data-ui-version="v2"] .gn-v2-rail-explorer-actions .gn-v2-explorer-action-group {
@@ -82,7 +85,7 @@ body[data-ui-version="v2"] .gn-v2-rail-items {
   gap: calc(4px * var(--gn-v2-rail-scale));
   width: 100%;
   box-sizing: border-box;
-  padding-top: calc(4px * var(--gn-v2-rail-scale));
+  padding-top: 0;
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: thin;
@@ -197,7 +200,7 @@ body[data-ui-version="v2"] .gn-v2-rail-secondary-actions {
 
 /* Top tool cluster — compact, not floating in empty space */
 body[data-ui-version="v2"] .gn-v2-rail-primary-actions {
-  padding: calc(2px * var(--gn-v2-rail-scale)) 0 calc(4px * var(--gn-v2-rail-scale));
+  padding: 0 0 calc(4px * var(--gn-v2-rail-scale));
 }
 
 /* Bottom system actions — pin to foot with a hairline only, no fill */

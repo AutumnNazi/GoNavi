@@ -14,8 +14,10 @@ body[data-ui-version='v2'] .gn-titlebar-toolbar {
   --gn-titlebar-toolbar-item-width: calc(48px * var(--gn-ui-scale, 1));
   --gn-titlebar-toolbar-item-height: calc(46px * var(--gn-ui-scale, 1));
   --gn-titlebar-toolbar-icon-size: calc(22px * var(--gn-ui-scale, 1));
-  /* 字号跟随全局字体设置（--gn-font-size-sm），控件几何仍随 UI 缩放。 */
-  --gn-titlebar-toolbar-label-size: calc(var(--gn-font-size-sm, 12px) + 1px);
+  /* 字号 = 基础字体设置（--gn-font-size-sm）× 界面缩放（--gn-ui-scale）：
+     两个设置任一变化，工具条所有「图标 + 文字」按钮都跟着变。
+     基准 14px 字体 / 100% 缩放时约 13px，与标题栏「驱动管理」入口一致。 */
+  --gn-titlebar-toolbar-label-size: calc((var(--gn-font-size-sm, 12px) + 1px) * var(--gn-ui-scale, 1));
   --gn-titlebar-toolbar-gap: calc(4px * var(--gn-ui-scale, 1));
   --gn-titlebar-toolbar-inline-padding: calc(14px * var(--gn-ui-scale, 1));
   --gn-titlebar-toolbar-vertical-padding: calc(4px * var(--gn-ui-scale, 1));
@@ -64,6 +66,23 @@ body[data-ui-version='v2'] .gn-titlebar-toolbar::-webkit-scrollbar-thumb {
   border-radius: 999px;
 }
 
+/* 滚动条自动隐藏（与资源树 v2-theme-14 同一模式）：指针不在工具栏上
+   （且无滚动/拖动交互）时滚动条整体透明；悬停工具栏、滚轮或拖动滑块
+   （:active）时恢复显示。滚动槽始终保留，按钮不因显隐跳动。 */
+body[data-ui-version='v2'] .gn-titlebar-toolbar:not(:hover):not(:active) {
+  scrollbar-color: transparent transparent;
+}
+
+body[data-ui-version='v2'] .gn-titlebar-toolbar:not(:hover):not(:active)::-webkit-scrollbar,
+body[data-ui-version='v2'] .gn-titlebar-toolbar:not(:hover):not(:active)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+body[data-ui-version='v2'] .gn-titlebar-toolbar:not(:hover):not(:active)::-webkit-scrollbar-thumb {
+  background: transparent;
+  background-color: transparent;
+}
+
 /* 动作组容器：内部按钮按 row 排列，与工具条同向。 */
 body[data-ui-version='v2'] .gn-titlebar-toolbar > .gonavi-titlebar-primary-actions,
 body[data-ui-version='v2'] .gn-titlebar-toolbar > .gn-v2-titlebar-quick-actions,
@@ -98,7 +117,7 @@ body[data-ui-version='v2'] .gn-titlebar-toolbar .gn-v2-titlebar-quick-more {
   border: none;
   border-radius: calc(12px * var(--gn-ui-scale, 1));
   background: transparent;
-  color: var(--gn-fg-2, inherit);
+  color: var(--gn-fg-1, inherit);
   font: inherit;
   font-size: var(--gn-titlebar-toolbar-label-size);
   font-weight: 500;
@@ -187,7 +206,8 @@ body[data-ui-version='v2'] .gn-v2-titlebar .gn-v2-titlebar-about-slot .gn-v2-tit
   background: transparent;
   color: var(--gn-fg-1, inherit);
   font: inherit;
-  font-size: calc(var(--gn-font-size-sm, 12px) + 1px);
+  /* 与工具条按钮同一口径：基础字体大小 × 界面缩放，两个设置都跟随。 */
+  font-size: calc((var(--gn-font-size-sm, 12px) + 1px) * var(--gn-ui-scale, 1));
   font-weight: 500;
   cursor: pointer;
   -webkit-app-region: no-drag;
@@ -196,8 +216,8 @@ body[data-ui-version='v2'] .gn-v2-titlebar .gn-v2-titlebar-about-slot .gn-v2-tit
 
 body[data-ui-version='v2'] .gn-v2-titlebar .gn-v2-titlebar-about-slot .gn-v2-titlebar-quick-action:hover,
 body[data-ui-version='v2'] .gn-v2-titlebar .gn-v2-titlebar-about-slot .gn-v2-titlebar-quick-action:focus-visible {
-  /* 与相邻的「设置 / 主题」一致：标题栏按钮不做悬停 / 选中底色。 */
-  background: transparent;
+  /* 与相邻的「设置 / 主题」胶囊一致：悬停给同样的浅底反馈。 */
+  background: var(--gn-bg-panel-2, rgba(15, 23, 42, 0.05));
   color: var(--gn-fg-1, inherit);
   outline: none;
 }
@@ -222,20 +242,8 @@ body[data-ui-version='v2'] .gn-v2-titlebar .gn-v2-titlebar-about-slot .gn-titleb
 }
 
 /*
- * Navicat 布局主题的工具条密度（原型 navicat-prototype.html）：
- * 56px 宽按钮 / 19px 图标 / 11px 文字。仅 data-ui-layout='navicat' 生效。
- * 表面与悬停色不在此覆盖：基础规则已引用 --gn-bg-titlebar / --gn-bg-panel-2
- * 等 token，随主题自动适配。
+ * 布局密度统一：classic 与 navicat 两种布局下，工具条每个按钮的
+ * 宽度 / 高度 / 图标 / 字号 / 间距完全一致（同一套基础变量），
+ * 切换布局主题不改变工具栏任何尺寸。此前 navicat 有 56px/19px/11px
+ * 的独立密度覆盖，已按需求删除；如需区分密度请改基础变量本身。
  */
-body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-titlebar-toolbar {
-  --gn-titlebar-toolbar-item-width: calc(56px * var(--gn-ui-scale, 1));
-  --gn-titlebar-toolbar-item-height: calc(44px * var(--gn-ui-scale, 1));
-  --gn-titlebar-toolbar-icon-size: calc(19px * var(--gn-ui-scale, 1));
-  --gn-titlebar-toolbar-label-size: calc(11px * var(--gn-ui-scale, 1));
-  --gn-titlebar-toolbar-gap: calc(2px * var(--gn-ui-scale, 1));
-  --gn-titlebar-toolbar-inline-padding: calc(10px * var(--gn-ui-scale, 1));
-}
-
-body[data-ui-layout='navicat'][data-ui-version='v2'] .gn-titlebar-toolbar .gonavi-titlebar-primary-action {
-  gap: calc(2px * var(--gn-ui-scale, 1));
-}

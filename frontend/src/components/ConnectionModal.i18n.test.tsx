@@ -215,6 +215,65 @@ describe("ConnectionModal i18n", () => {
     expect(textContent(renderer!.toJSON())).toContain("准备连接检查");
   });
 
+  it("routes XXL-JOB test connection to XxlJobConnect instead of the database tester", async () => {
+    // XXL-JOB is a no-driver type: the generic TestConnection answers
+    // "不支持的数据库类型：xxljob" and DBGetDatabases fails the same way.
+    setCurrentLanguage("zh-CN");
+    backendApp.XxlJobConnect.mockResolvedValue({
+      success: true,
+      message: "XXL-JOB 调度中心连接成功",
+      data: { protocolFamily: "2.x" },
+    });
+    backendApp.TestConnection.mockResolvedValue({
+      success: false,
+      message: "不支持的数据库类型：xxljob",
+    });
+    backendApp.TestConnectionWithProgress.mockResolvedValue({
+      success: false,
+      message: "不支持的数据库类型：xxljob",
+    });
+    Object.assign(window, {
+      go: { app: { App: backendApp } },
+    });
+    // 这几个桩在用例之间不重置，本用例要断言"没有被调用"必须自己清干净。
+    backendApp.XxlJobConnect.mockClear();
+    backendApp.TestConnection.mockClear();
+    backendApp.TestConnectionWithProgress.mockClear();
+    backendApp.DBGetDatabases.mockClear();
+    const { default: ConnectionModal } = await import("./ConnectionModal");
+    const connection = initialConnection("xxljob", {
+      host: "94.103.173.47",
+      port: 18081,
+      connectionParams: "contextPath=/xxl-job-admin",
+    });
+
+    let renderer: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        <ConnectionModal open onClose={vi.fn()} initialValues={connection} />,
+      );
+      await flushConnectionTestTick();
+    });
+    await act(async () => {
+      findButton(renderer!, "测试连接").props.onClick();
+      await flushConnectionTestTick();
+    });
+
+    expect(backendApp.XxlJobConnect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "xxljob",
+        host: "94.103.173.47",
+        port: 18081,
+        connectionParams: "contextPath=/xxl-job-admin",
+      }),
+    );
+    expect(backendApp.TestConnection).not.toHaveBeenCalled();
+    expect(backendApp.TestConnectionWithProgress).not.toHaveBeenCalled();
+    // 无驱动类型没有数据库列表，连接成功后不应再去问后端要。
+    expect(backendApp.DBGetDatabases).not.toHaveBeenCalled();
+    expect(textContent(renderer!.toJSON())).toContain("XXL-JOB 调度中心连接成功");
+  });
+
   it("shows a driver preflight failure in the SSH log without blaming the network", async () => {
     const revisionMismatch =
       "clickhouse 驱动代理 revision 不匹配（已安装：src-old，当前需要：src-new）";

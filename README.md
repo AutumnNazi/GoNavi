@@ -438,6 +438,7 @@ go build .
 - First visit → `/setup` (admin password; optional Google Authenticator)
 - Bridge: `window.go.*` / `window.runtime.*` → HTTP / SSE
 - Sessions, recovery codes, login rate limits
+- Plugins: read-only by default; set `GONAVI_WEB_PLUGIN_MANAGEMENT=1` on the server to let authenticated sessions install and enable plugins (this executes plugin code on the host)
 
 #### Docker / Podman
 
