@@ -11,6 +11,14 @@
   "defaultPort": 8080,
   "protection": true,
   "excelImport": false,
+  "agent": {
+    "buildTag": "gonavi_xxljob_driver",
+    "version": "1.0.0",
+    "sourcePrefixes": [
+      "xxljob",
+      "registry"
+    ]
+  },
   "ui": {
     "defaultUser": "admin",
     "uriSchemes": [
