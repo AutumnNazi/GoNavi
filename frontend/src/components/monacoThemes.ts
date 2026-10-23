@@ -13,11 +13,13 @@ export const registerGonaviMonacoThemes: BeforeMount = (monaco) => {
     inherit: true,
     rules: [
       ...yamlValueTokens.map((token) => ({ token: token + '.yaml', foreground: 'CE9178' })),
-      { token: 'keyword.sql', foreground: 'C792EA', fontStyle: 'bold' },
-      { token: 'keyword.try.sql', foreground: 'C792EA', fontStyle: 'bold' },
-      { token: 'keyword.catch.sql', foreground: 'C792EA', fontStyle: 'bold' },
-      { token: 'keyword.block.sql', foreground: 'C792EA', fontStyle: 'bold' },
-      { token: 'keyword.choice.sql', foreground: 'C792EA', fontStyle: 'bold' },
+      // Bold keywords are wider than the regular glyphs Monaco measures for the caret.
+      // On Windows that drift grows with every keyword (issue #1574).
+      { token: 'keyword.sql', foreground: 'C792EA' },
+      { token: 'keyword.try.sql', foreground: 'C792EA' },
+      { token: 'keyword.catch.sql', foreground: 'C792EA' },
+      { token: 'keyword.block.sql', foreground: 'C792EA' },
+      { token: 'keyword.choice.sql', foreground: 'C792EA' },
     ],
     colors: {
       'editor.background': '#00000000',
@@ -39,11 +41,11 @@ export const registerGonaviMonacoThemes: BeforeMount = (monaco) => {
     inherit: true,
     rules: [
       ...yamlValueTokens.map((token) => ({ token: token + '.yaml', foreground: '0451A5' })),
-      { token: 'keyword.sql', foreground: '6D28D9', fontStyle: 'bold' },
-      { token: 'keyword.try.sql', foreground: '6D28D9', fontStyle: 'bold' },
-      { token: 'keyword.catch.sql', foreground: '6D28D9', fontStyle: 'bold' },
-      { token: 'keyword.block.sql', foreground: '6D28D9', fontStyle: 'bold' },
-      { token: 'keyword.choice.sql', foreground: '6D28D9', fontStyle: 'bold' },
+      { token: 'keyword.sql', foreground: '6D28D9' },
+      { token: 'keyword.try.sql', foreground: '6D28D9' },
+      { token: 'keyword.catch.sql', foreground: '6D28D9' },
+      { token: 'keyword.block.sql', foreground: '6D28D9' },
+      { token: 'keyword.choice.sql', foreground: '6D28D9' },
     ],
     colors: {
       'editor.background': '#00000000',
