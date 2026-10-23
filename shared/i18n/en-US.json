@@ -13345,5 +13345,7 @@
   "xxljob.cron.mode.nthWeekIndex": "Nth",
   "xxljob.action.cron_builder": "Builder",
   "xxljob.action.more": "More",
-  "xxljob.backend.error.invalid_credentials": "Incorrect username or password; check the connection credentials"
+  "xxljob.backend.error.invalid_credentials": "Incorrect username or password; check the connection credentials",
+  "db.backend.message.kafka_preview_truncated": "Read {{budget}} and returned {{rows}} messages so far: Kafka transfers full message bodies even for a list. Increase previewMaxMB in the connection parameters to read more.",
+  "message_queue_workbench.message.not_found": "This message no longer exists. It may have been removed by retention or compaction."
 }

@@ -54,23 +54,23 @@ describe('messageConsume profiles', () => {
     });
   });
 
-  it('only exposes a per-query consumer group for Kafka', () => {
-    expect(resolveMessageConsumeProfile({
+  it('does not offer a Kafka consumer group because previews never join one', () => {
+    // 预览按分区直读、不提交进度；加入 group 会触发 rebalance，所以不展示无效的组输入。
+    const profile = resolveMessageConsumeProfile({
       type: 'custom',
       driver: 'kafka',
-      connectionParams: 'groupId=analytics&startOffset=latest',
-    }, t)).toMatchObject({
+      connectionParams: 'groupId=analytics&startOffset=earliest',
+    }, t);
+    expect(profile).toMatchObject({
       type: 'kafka',
       mode: 'pull-preview',
       destinationLabel: 'message_consume.field.destination.topic',
-      showConsumerGroup: true,
-      consumerGroupEditable: true,
+      showConsumerGroup: false,
+      consumerGroupEditable: false,
       showStartOffset: true,
-      effectiveSettings: {
-        consumerGroup: 'analytics',
-        startOffset: 'latest',
-      },
+      effectiveSettings: { startOffset: 'earliest' },
     });
+    expect(profile?.effectiveSettings.consumerGroup).toBeUndefined();
   });
 
   it('keeps RocketMQ group, tag and offset as connection-level settings', () => {
@@ -204,7 +204,7 @@ describe('createDefaultMessageConsumeDraft', () => {
     });
   });
 
-  it('seeds Kafka consumer group because its query grammar can override it', () => {
+  it('does not seed a Kafka consumer group into preview drafts', () => {
     expect(createDefaultMessageConsumeDraft({
       type: 'kafka',
       database: 'orders.events',
@@ -212,7 +212,6 @@ describe('createDefaultMessageConsumeDraft', () => {
     })).toEqual({
       destination: 'orders.events',
       limit: 100,
-      consumerGroup: 'analytics',
     });
   });
 
@@ -255,15 +254,21 @@ describe('buildMessageConsumeCommand', () => {
   it('builds a Kafka metadata preview query so payload loads on demand', () => {
     // 列表只取元数据列：payload 可能有十几 MB，塞进列表帧会让驱动代理单帧超限、
     // 整条预览流中断；完整内容在点击消息时按 partition+offset 单独拉取。
+    // 起始位置写进命令：界面默认展示「最新位置」，后端未配置时却从最早读。
     expect(buildMessageConsumeCommand(
       { type: 'kafka' },
       { destination: 'orders.events', consumerGroup: 'analytics', limit: 50 },
       t,
     )).toEqual({
-      commandText: 'SELECT timestamp, partition, offset, key, value_size FROM "orders.events" LIMIT 50;',
+      commandText: 'SELECT timestamp, partition, offset, key, value_size FROM "orders.events" LATEST LIMIT 50;',
       destinationLabel: 'orders.events',
       mode: 'pull-preview',
     });
+    expect(buildMessageConsumeCommand(
+      { type: 'kafka', connectionParams: 'startOffset=earliest' },
+      { destination: 'orders.events', limit: 50 },
+      t,
+    ).commandText).toBe('SELECT timestamp, partition, offset, key, value_size FROM "orders.events" EARLIEST LIMIT 50;');
   });
 
   it('builds RocketMQ as a bounded consume preview', () => {
@@ -324,12 +329,13 @@ describe('buildMessageConsumeCommand', () => {
     )).toThrow('message_consume.error.kafka_topic_invalid');
   });
 
-  it('rejects unsafe Kafka groups and out-of-range limits', () => {
-    expect(() => buildMessageConsumeCommand(
+  it('ignores legacy Kafka groups and rejects out-of-range limits', () => {
+    // 旧草稿里的 group 不再进入命令，也就不能因为它拒绝恢复订阅。
+    expect(buildMessageConsumeCommand(
       { type: 'kafka' },
       { destination: 'orders.events', consumerGroup: 'analytics"; DROP', limit: 10 },
       t,
-    )).toThrow('message_consume.error.consumer_group_unsupported_quote');
+    ).commandText).not.toContain('analytics');
 
     for (const limit of [0, 1001, 1.5, Number.NaN]) {
       expect(() => buildMessageConsumeCommand(

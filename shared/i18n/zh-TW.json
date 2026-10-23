@@ -13345,5 +13345,7 @@
   "xxljob.cron.mode.nthWeekIndex": "第",
   "xxljob.action.cron_builder": "建構器",
   "xxljob.action.more": "更多",
-  "xxljob.backend.error.invalid_credentials": "帳號或密碼錯誤，請檢查連線憑據"
+  "xxljob.backend.error.invalid_credentials": "帳號或密碼錯誤，請檢查連線憑據",
+  "db.backend.message.kafka_preview_truncated": "已讀取 {{budget}}，先回傳 {{rows}} 則訊息：Kafka 列表也要傳完整訊息本文。需要更多可在連線參數中調大 previewMaxMB。",
+  "message_queue_workbench.message.not_found": "這則訊息已不存在，可能已被保留策略清理或被壓實"
 }

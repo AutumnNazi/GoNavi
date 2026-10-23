@@ -13345,5 +13345,7 @@
   "xxljob.cron.mode.nthWeekIndex": "第",
   "xxljob.action.cron_builder": "ビルダー",
   "xxljob.action.more": "その他",
-  "xxljob.backend.error.invalid_credentials": "ユーザー名またはパスワードが正しくありません。接続の認証情報を確認してください"
+  "xxljob.backend.error.invalid_credentials": "ユーザー名またはパスワードが正しくありません。接続の認証情報を確認してください",
+  "db.backend.message.kafka_preview_truncated": "{{budget}} を読み込んだ時点で {{rows}} 件のメッセージを返しました。Kafka は一覧表示でもメッセージ本文全体を転送します。さらに読み込むには接続パラメータの previewMaxMB を大きくしてください。",
+  "message_queue_workbench.message.not_found": "このメッセージは存在しません。保持ポリシーまたはコンパクションで削除された可能性があります。"
 }

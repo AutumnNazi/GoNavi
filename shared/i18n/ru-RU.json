@@ -13345,5 +13345,7 @@
   "xxljob.cron.mode.nthWeekIndex": "№",
   "xxljob.action.cron_builder": "Конструктор",
   "xxljob.action.more": "Ещё",
-  "xxljob.backend.error.invalid_credentials": "Неверное имя пользователя или пароль; проверьте учётные данные подключения"
+  "xxljob.backend.error.invalid_credentials": "Неверное имя пользователя или пароль; проверьте учётные данные подключения",
+  "db.backend.message.kafka_preview_truncated": "Прочитано {{budget}}, возвращено {{rows}} сообщений: Kafka передаёт полные тела сообщений даже для списка. Чтобы прочитать больше, увеличьте previewMaxMB в параметрах подключения.",
+  "message_queue_workbench.message.not_found": "Это сообщение больше не существует. Возможно, оно удалено политикой хранения или уплотнением."
 }

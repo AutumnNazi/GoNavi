@@ -15,6 +15,7 @@ import {
   MAX_VISIBLE_MESSAGES,
   withMQTTStreamOffset,
   normalizeRows,
+  sortPullPreviewRows,
   waitForNextPull,
   TOPIC_COLORS,
 } from '../messageQueueWorkbenchModel';
@@ -211,7 +212,12 @@ export const useMessageQueueWorkbenchState = ({ tab }: UseMessageQueueWorkbenchS
         if (!res?.success) {
           throw new Error(res?.message || t('message_queue_workbench.error.consume_failed'));
         }
-        const rows = normalizeRows(res.data);
+        const rows = sortPullPreviewRows(profile?.type || '', normalizeRows(res.data));
+        // 单次拉取的提示（例如 Kafka 预览达到读取上限）直接告诉用户；持续订阅每轮都会
+        // 返回，避免反复弹出。
+        if (!continuous && Array.isArray(res.messages) && res.messages.length > 0) {
+          void message.warning(res.messages.join('\n'));
+        }
         if (continuous && profile?.type === 'mqtt' && rows.length > 0) {
           const receivedOffsets = rows
             .map((row) => Number(row.stream_offset))
