@@ -10,7 +10,7 @@ import type { StoreGet, StoreSet } from './storeSliceTypes';
  */
 export type AgentAssetsSliceState = Pick<
   AppState,
-  'agentIntegrations' | 'agentIntegrationsLoading' | 'refreshAgentIntegrations'
+  'agentIntegrations' | 'agentIntegrationsLoading' | 'agentIntegrationsLoaded' | 'refreshAgentIntegrations'
 >;
 
 const toSummaries = (payload: unknown): AgentIntegrationSummaryView[] => {
@@ -32,6 +32,7 @@ const toSummaries = (payload: unknown): AgentIntegrationSummaryView[] => {
 export const createAgentAssetsSlice = (set: StoreSet, _get: StoreGet): AgentAssetsSliceState => ({
   agentIntegrations: [],
   agentIntegrationsLoading: false,
+  agentIntegrationsLoaded: false,
   refreshAgentIntegrations: async () => {
     set((state) => ({ ...state, agentIntegrationsLoading: true }));
     try {
@@ -41,6 +42,7 @@ export const createAgentAssetsSlice = (set: StoreSet, _get: StoreGet): AgentAsse
           ...state,
           agentIntegrations: toSummaries(result.data),
           agentIntegrationsLoading: false,
+          agentIntegrationsLoaded: true,
         }));
         return;
       }

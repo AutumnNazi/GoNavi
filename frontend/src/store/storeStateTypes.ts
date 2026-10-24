@@ -293,6 +293,9 @@ export interface AppState {
 
   agentIntegrations: AgentIntegrationSummaryView[];
   agentIntegrationsLoading: boolean;
+  /** 已完成过至少一次加载。空列表既可能是「还没加载」也可能是「一个都没
+      添加」，调用方要区分这两种情况时用它。 */
+  agentIntegrationsLoaded: boolean;
   refreshAgentIntegrations: () => Promise<void>;
 
   addConnection: (conn: SavedConnection) => void;

@@ -2,6 +2,7 @@ import React from 'react';
 import { Button, Input, Select, Tooltip, message } from 'antd';
 import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { t } from '../../i18n';
+import { useStore } from '../../store';
 import type { TabData } from '../../types';
 import { wailsSessionAgentApi, sessionAgentErrorText, type SessionAgentApi, type SessionAgentItem, type SessionBlockContent, type SessionContentRef, type SessionMessageView, type SessionTurnView } from './sessionAgentApi';
 import { SessionAgentListPage } from './SessionAgentListPage';
@@ -43,6 +44,23 @@ export const SessionAgentWorkbench: React.FC<{
       return '';
     }
   });
+  // 已添加智能体：移除智能体后必须重新扫描，否则工作台仍显示着旧会话
+  // （后端此时已无该智能体可扫）。下拉选项也只列已添加的工具。
+  const agentIntegrations = useStore((state) => state.agentIntegrations);
+  const agentKinds = React.useMemo(
+    () => agentIntegrations.map((item) => item.integrationId).join(','),
+    [agentIntegrations],
+  );
+  const providerOptions = React.useMemo(
+    () => [
+      { value: '', label: t('session_agent.list.filter_all') },
+      ...agentIntegrations.map((item) => ({
+        value: item.integrationId,
+        label: item.displayName || item.integrationId,
+      })),
+    ],
+    [agentIntegrations],
+  );
   const [groupMode, setGroupMode] = React.useState(() => {
     try {
       return localStorage.getItem('gonavi.sessionAgent.groupMode') ?? 'project';
@@ -76,6 +94,17 @@ export const SessionAgentWorkbench: React.FC<{
     }
   }, [providerFilter, groupMode]);
 
+  // 选中的智能体被移除后，筛选值可能指向一个已不存在的工具：清掉它，
+  // 避免下拉框落在空选项上、列表空着却看不出原因。必须等集成列表真的
+  // 加载完再判断——「还没加载」和「一个都没添加」都是空列表。
+  const agentIntegrationsLoaded = useStore((state) => state.agentIntegrationsLoaded);
+  React.useEffect(() => {
+    if (!agentIntegrationsLoaded) return;
+    if (!providerFilter) return;
+    if (providerOptions.some((option) => option.value === providerFilter)) return;
+    setProviderFilter('');
+  }, [agentIntegrationsLoaded, providerOptions, providerFilter]);
+
   const reload = React.useCallback(async () => {
     setLoading(true);
     try {
@@ -87,12 +116,19 @@ export const SessionAgentWorkbench: React.FC<{
       if (!appliedQuery.trim()) {
         setScopeTotal(list.length);
       }
+      // 列表空了（例如智能体被移除）就把详情残留清掉，别让已经移除的
+      // 会话正文继续挂在右侧。
+      if (list.length === 0) {
+        setSelected(null);
+        setMessages([]);
+        setTurns([]);
+      }
     } catch (err) {
       message.error(sessionAgentErrorText(err, 'session_agent.error.list_failed'));
     } finally {
       setLoading(false);
     }
-  }, [api, providerFilter, appliedQuery]);
+  }, [api, providerFilter, appliedQuery, agentKinds]);
 
   React.useEffect(() => {
     void reload();
@@ -203,11 +239,7 @@ export const SessionAgentWorkbench: React.FC<{
             onChange={setProviderFilter}
             className="gn-session-agent-filter"
             aria-label={t('session_agent.list.filter_label')}
-            options={[
-              { value: '', label: t('session_agent.list.filter_all') },
-              { value: 'codex', label: 'ChatGPT' },
-              { value: 'claude', label: 'Claude Code' },
-            ]}
+            options={providerOptions}
           />
           <Select
             size="small"
