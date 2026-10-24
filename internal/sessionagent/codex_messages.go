@@ -10,6 +10,7 @@ package sessionagent
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 )
 
@@ -306,6 +307,7 @@ func (p *codexParser) onReasoning(raw json.RawMessage) {
 func (p *codexParser) onFunctionCall(raw json.RawMessage) {
 	var payload struct {
 		Name      string          `json:"name"`
+		Namespace string          `json:"namespace"`
 		CallID    string          `json:"call_id"`
 		Arguments json.RawMessage `json:"arguments"`
 	}
@@ -313,17 +315,20 @@ func (p *codexParser) onFunctionCall(raw json.RawMessage) {
 		return
 	}
 	name := strings.TrimSpace(payload.Name)
-	kind, title, detail := classifyCodexTool(name, payload.Arguments)
+	kind, title, detail := classifyCodexTool(name, payload.Namespace, payload.Arguments)
 	site := callSite{flavor: string(kind), command: detail}
 
+	// 预览用剥壳后的参数文本：原始 arguments 是「JSON 字符串里套 JSON」，
+	// 直接展示会是一整屏转义引号。
+	argsText := codexToolArgsText(payload.Arguments)
 	block := ToolCallBlock{
 		ID:            firstNonEmpty(payload.CallID, name),
 		RawName:       name,
 		Kind:          kind,
 		Title:         title,
 		Detail:        detail,
-		InputPreview:  TruncateRunes(string(payload.Arguments), InputPreviewChars),
-		InputTotalLen: uint32(len([]rune(string(payload.Arguments)))),
+		InputPreview:  TruncateRunes(argsText, InputPreviewChars),
+		InputTotalLen: uint32(len([]rune(argsText))),
 	}
 	if block.InputTotalLen > uint32(len([]rune(block.InputPreview))) {
 		block.InputFull = p.lineRef("/payload/arguments")
@@ -351,15 +356,16 @@ func (p *codexParser) onCustomToolCall(raw json.RawMessage) {
 		p.onApplyPatch(payload.CallID, string(payload.Input))
 		return
 	}
-	kind, title, detail := classifyCodexTool(name, payload.Input)
+	kind, title, detail := classifyCodexTool(name, "", payload.Input)
+	inputText := codexToolArgsText(payload.Input)
 	block := ToolCallBlock{
 		ID:            firstNonEmpty(payload.CallID, name),
 		RawName:       name,
 		Kind:          kind,
 		Title:         title,
 		Detail:        detail,
-		InputPreview:  TruncateRunes(string(payload.Input), InputPreviewChars),
-		InputTotalLen: uint32(len([]rune(string(payload.Input)))),
+		InputPreview:  TruncateRunes(inputText, InputPreviewChars),
+		InputTotalLen: uint32(len([]rune(inputText))),
 	}
 	if block.InputTotalLen > uint32(len([]rune(block.InputPreview))) {
 		block.InputFull = p.lineRef("/payload/input")
@@ -607,11 +613,14 @@ func (p *codexParser) flushPending(reason string) {
 
 // ─── 工具分类 ───
 
-// classifyCodexTool 按工具名与参数推断分类、标题与详情。
-func classifyCodexTool(name string, args json.RawMessage) (ToolKind, string, string) {
+// classifyCodexTool 按工具名、命名空间与参数推断分类、标题与详情。
+//
+// namespace 单独成字段（"namespace":"mcp__cua_repl"），只按 name 前缀
+// 判 MCP 会漏掉全部 MCP 工具——真实记录里 name 往往只是 "js" 这类短名。
+// 参数解码见 codex_tool_args.go。
+func classifyCodexTool(name, namespace string, args json.RawMessage) (ToolKind, string, string) {
 	lower := strings.ToLower(name)
-	var parsed map[string]json.RawMessage
-	_ = json.Unmarshal(args, &parsed)
+	parsed := codexToolArgsMap(args)
 
 	argString := func(key string) string {
 		if raw, ok := parsed[key]; ok {
@@ -623,10 +632,29 @@ func classifyCodexTool(name string, args json.RawMessage) (ToolKind, string, str
 		return ""
 	}
 
+	ns := strings.ToLower(strings.TrimSpace(namespace))
+	isMCP := strings.HasPrefix(ns, "mcp__") || strings.HasPrefix(lower, "mcp__") ||
+		strings.Contains(lower, ".")
+
 	switch {
 	case lower == "exec" || lower == "exec_command" || lower == "shell" || lower == "local_shell":
 		cmd := firstNonEmpty(argString("cmd"), argString("command"))
 		detail := argString("workdir")
+		if cmd == "" {
+			// custom_tool_call 的 input 是自由文本，不是 JSON：从脚本里抠命令。
+			cmds := codexCustomToolCmds(codexToolArgsText(args))
+			switch len(cmds) {
+			case 1:
+				cmd = cmds[0]
+			case 0:
+				// 没有 cmd 的调用（write_stdin 之类）：标题退回被调工具名。
+				if called := codexCustomToolName(codexToolArgsText(args)); called != "" {
+					return ToolShell, TruncateRunes(called, TitleChars), detail
+				}
+			default:
+				cmd = cmds[0] + " （+" + strconv.Itoa(len(cmds)-1) + " 条命令）"
+			}
+		}
 		title := OneLineTitle(cmd)
 		if title == "" {
 			title = name
@@ -640,11 +668,16 @@ func classifyCodexTool(name string, args json.RawMessage) (ToolKind, string, str
 			}
 		}
 		return ToolShell, title, detail
-	case strings.HasPrefix(lower, "mcp__") || strings.Contains(lower, "."):
-		if strings.Contains(name, ".") {
-			return ToolMcp, TruncateRunes(name, TitleChars), ""
+	case isMCP:
+		// MCP 工具的标题优先取参数里的 title（真实记录用它描述这次调用），
+		// 其次回落到「namespace.name」。
+		label := name
+		if ns != "" {
+			label = ns + "." + name
 		}
-		return ToolMcp, TruncateRunes(name, TitleChars), ""
+		title := firstNonEmpty(argString("title"), label)
+		detail := firstNonEmpty(argString("code"), argString("command"), argString("cmd"))
+		return ToolMcp, TruncateRunes(title, TitleChars), TruncateRunes(detail, TitleChars)
 	case lower == "apply_patch" || lower == "edit":
 		return ToolEdit, TruncateRunes(firstNonEmpty(argString("path"), argString("file_path"), name), TitleChars), ""
 	case lower == "read" || lower == "view":

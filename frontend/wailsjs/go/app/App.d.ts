@@ -851,6 +851,8 @@ export function SessionAgentExportMarkdown(arg1:string,arg2:string):Promise<conn
 
 export function SessionAgentImageDataURL(arg1:string):Promise<connection.QueryResult>;
 
+export function SessionAgentImageInlineDataURL(arg1:string,arg2:string,arg3:sessionagent.ContentRef,arg4:string):Promise<connection.QueryResult>;
+
 export function SessionAgentList(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
 export function SessionAgentListIntegrations():Promise<connection.QueryResult>;

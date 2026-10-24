@@ -231,7 +231,11 @@ func BuildTurns(messages []SessionMessage) []TurnIndex {
 				}
 			}
 		}
-		if msg.Role == RoleAssistant && strings.TrimSpace(msg.Content) != "" && len(msg.Blocks) == 0 {
+		// 助手正文无论以块还是以 Content 承载，都算「有最终回复」：
+		// 解析器会把助手正文并进已有 thinking/tool_call 块的那条消息，
+		// 这时块数不为 0，旧的 len(Blocks)==0 判断会漏判，轮次索引里
+		// hasFinalReply 几乎恒为 false。
+		if msg.Role == RoleAssistant && strings.TrimSpace(msg.Content) != "" {
 			acc.hasFinal = true
 		}
 	}

@@ -236,6 +236,21 @@ func (a *App) SessionAgentImageDataURL(path string) (result connection.QueryResu
 	return connection.QueryResult{Success: true, Data: map[string]any{"dataUrl": dataURL, "path": path}}
 }
 
+// SessionAgentImageInlineDataURL 读取会话内联图片（Claude 的 base64 图片块）
+// 的完整载荷并返回 data URL。内联图片没有本机路径，只能按 ContentRef 回源。
+func (a *App) SessionAgentImageInlineDataURL(provider, sourcePath string, ref sessionagent.ContentRef, mediaType string) (result connection.QueryResult) {
+	provider, sourcePath = strings.TrimSpace(provider), strings.TrimSpace(sourcePath)
+	if provider == "" || sourcePath == "" {
+		return connection.QueryResult{Success: false, Message: a.appText("session_agent.error.image_failed", map[string]any{"detail": ""})}
+	}
+	dataURL, err := a.sessionAgentService().InlineImageDataURL(provider, sourcePath, ref, strings.TrimSpace(mediaType))
+	if err != nil {
+		logger.Error(err, "SessionAgentImageInlineDataURL failed")
+		return connection.QueryResult{Success: false, Message: a.appText("session_agent.error.image_failed", map[string]any{"detail": err.Error()})}
+	}
+	return connection.QueryResult{Success: true, Data: map[string]any{"dataUrl": dataURL}}
+}
+
 // SessionAgentTimeGroups 返回按时间分组的会话列表（今天/昨天/本周/
 // 更早），供前端分组展示。
 func (a *App) SessionAgentTimeGroups(provider, search string) (result connection.QueryResult) {

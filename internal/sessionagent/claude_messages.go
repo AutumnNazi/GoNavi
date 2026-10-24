@@ -5,6 +5,7 @@ package sessionagent
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 )
 
@@ -82,7 +83,7 @@ func (p *claudeParser) onMessage(item claudeLine) {
 		role = RoleSystem
 	}
 
-	for _, c := range claudeMessageContentItems(msg.Content) {
+	for idx, c := range claudeMessageContentItems(msg.Content) {
 		switch c.Type {
 		case "text":
 			text := strings.TrimSpace(c.Text)
@@ -131,7 +132,10 @@ func (p *claudeParser) onMessage(item claudeLine) {
 				CallID: callID,
 				Status: ToolStatusSuccess,
 			}
-			preview := MakePreview(stripSystemReminders(strings.TrimSpace(c.Text)))
+			// 工具输出写在 content 字段（不是 text）：可能是字符串，也可能是
+			// [{type:text,text}]。旧实现读 c.Text，两种形态都取不到，工具
+			// 输出在界面上彻底不可达。
+			preview := MakePreview(stripSystemReminders(strings.TrimSpace(claudeToolResultText(c.Content))))
 			result.Preview = preview.Text
 			result.TotalLen = preview.TotalLen
 			result.LineCount = preview.LineCount
@@ -152,13 +156,55 @@ func (p *claudeParser) onMessage(item claudeLine) {
 				)
 			}
 		case "image":
-			p.pushBlock(SessionBlock{Type: BlockImage, Image: &ImageRef{
-				Source:    ImageLocalFile,
-				Path:      c.Text,
-				MediaType: "image/png",
-			}})
+			p.pushBlock(SessionBlock{Type: BlockImage, Image: claudeImageRef(c, p, idx)})
 		}
 	}
+}
+
+// claudeToolResultText 取 tool_result 的正文。Claude 把工具输出写在
+// content 字段：可能是字符串，也可能是 [{type:text,text}] 内容项数组。
+func claudeToolResultText(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var parts []string
+	for _, item := range claudeMessageContentItems(raw) {
+		if text := strings.TrimSpace(item.Text); text != "" {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+// claudeImageRef 解析 Claude 图片块。
+//
+// 真实形态是 {"type":"image","source":{"type":"base64","media_type":
+// "image/png","data":"..."}} 或 {"type":"file","path":"..."}。旧实现读
+// c.Text，图片正文与路径都取不到，粘贴的截图在界面上不显示。
+// base64 走内联引用（ContentRef 指向行内 /source/data），文件走本机路径。
+func claudeImageRef(c claudeMessageContent, p *claudeParser, index int) *ImageRef {
+	ref := &ImageRef{Source: ImageLocalFile}
+	if len(c.Source) == 0 {
+		return ref
+	}
+	var source claudeImageSource
+	if err := json.Unmarshal(c.Source, &source); err != nil {
+		return ref
+	}
+	ref.MediaType = source.MediaType
+	switch source.Type {
+	case "base64":
+		ref.Source = ImageInline
+		ref.Size = uint32(len(source.Data))
+		if source.Data != "" {
+			ref.Content = p.lineRef("/message/content/" + strconv.Itoa(index) + "/source/data")
+		}
+	case "file":
+		ref.Path = source.Path
+	case "url":
+		ref.Path = source.URL
+	}
+	return ref
 }
 
 // stripSystemReminders 剥离 <system-reminder>…</system-reminder> 壳。

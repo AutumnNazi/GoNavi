@@ -96,6 +96,18 @@ type claudeMessageContent struct {
 	Name      string          `json:"name"`
 	Input     json.RawMessage `json:"input"`
 	Content   json.RawMessage `json:"content"`
+	// Source 是图片块的载荷（base64 或文件路径）。旧实现只读 Text，
+	// 图片正文与路径都取不到。
+	Source json.RawMessage `json:"source"`
+}
+
+// claudeImageSource 是图片块的 source 载荷。
+type claudeImageSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
+	Path      string `json:"path"`
+	URL       string `json:"url"`
 }
 
 // claudeMessageContentItems 把 message.content（字符串或数组）归一为

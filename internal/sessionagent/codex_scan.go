@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -76,11 +77,9 @@ func ScanCodexSessions(dataDir string) []SessionMeta {
 
 // sortSessionsDesc 按最后活跃时间倒序（缺失按 0）。
 func sortSessionsDesc(sessions []SessionMeta) {
-	for i := 1; i < len(sessions); i++ {
-		for j := i; j > 0 && sessionTime(sessions[j]) > sessionTime(sessions[j-1]); j-- {
-			sessions[j], sessions[j-1] = sessions[j-1], sessions[j]
-		}
-	}
+	sort.SliceStable(sessions, func(i, j int) bool {
+		return sessionTime(sessions[i]) > sessionTime(sessions[j])
+	})
 }
 
 func sessionTime(meta SessionMeta) int64 {

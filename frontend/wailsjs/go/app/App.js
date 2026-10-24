@@ -1674,6 +1674,10 @@ export function SessionAgentImageDataURL(arg1) {
   return window['go']['app']['App']['SessionAgentImageDataURL'](arg1);
 }
 
+export function SessionAgentImageInlineDataURL(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['SessionAgentImageInlineDataURL'](arg1, arg2, arg3, arg4);
+}
+
 export function SessionAgentList(arg1, arg2) {
   return window['go']['app']['App']['SessionAgentList'](arg1, arg2);
 }

@@ -183,6 +183,34 @@ func (s *Service) BlockContent(provider ProviderID, sourcePath string, ref Conte
 	return ResolveContent(sourcePath, ref, offset, limit)
 }
 
+// InlineImageDataURL 读取内联图片（Claude 的 base64 图片块）的完整载荷并
+// 拼成 data URL。图片不走分页：base64 被截断就渲染不出来。
+func (s *Service) InlineImageDataURL(provider ProviderID, sourcePath string, ref ContentRef, mediaType string) (string, error) {
+	if !s.isEnabled(provider) {
+		return "", fmt.Errorf("agent %s is not added", provider)
+	}
+	roots := s.rootsFor(provider)
+	ok, err := UnderRoots(sourcePath, roots)
+	if err != nil || !ok {
+		return "", fmt.Errorf("引用的路径不在会话目录内")
+	}
+	if ref.Kind != ContentJSONL {
+		return "", fmt.Errorf("引用的内容不是内联图片")
+	}
+	full, err := resolveContentFull(sourcePath, ref)
+	if err != nil {
+		return "", err
+	}
+	if int64(len(full)) > MaxTextBytes {
+		return "", fmt.Errorf("图片超过大小上限 %d 字节", MaxTextBytes)
+	}
+	mime := strings.TrimSpace(mediaType)
+	if mime == "" {
+		mime = "image/png"
+	}
+	return "data:" + mime + ";base64," + full, nil
+}
+
 // ExportMarkdown 把会话导出为 Markdown 文本（时间线 + 轮次标题）。
 func (s *Service) ExportMarkdown(provider ProviderID, sourcePath string) (string, error) {
 	transcript, _, err := s.LoadTranscript(provider, sourcePath)

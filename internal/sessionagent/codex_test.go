@@ -142,7 +142,10 @@ func TestParseCodexMessagesMapsBlocks(t *testing.T) {
 		`{"type":"turn_context","payload":{"turn_id":"t1","model":"gpt-5"}}`,
 		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"列出文件"}]}}`,
 		`{"type":"response_item","payload":{"type":"reasoning","summary":[{"text":"想一想"}],"content":"内部推理"}}`,
-		`{"type":"response_item","payload":{"type":"function_call","name":"exec","call_id":"c1","arguments":"{\"cmd\":\"ls -la\"}"}}`,
+		// 命令用 cat 而非 ls：ls 命中 classifyCodexTool 的搜索分支
+		// （rg/grep/fd/find/ls → ToolSearch），这里要断言的是 exec→shell
+		// 的映射。参数能否被解析出来由下面的专项用例覆盖。
+		`{"type":"response_item","payload":{"type":"function_call","name":"exec","call_id":"c1","arguments":"{\"cmd\":\"cat README.md\"}"}}`,
 		`{"type":"response_item","payload":{"type":"function_call_output","call_id":"c1","output":"file1\nfile2"}}`,
 	)
 	messages, turns, err := ParseCodexMessages(path)
