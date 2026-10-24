@@ -38,12 +38,18 @@ export const createAgentAssetsSlice = (set: StoreSet, _get: StoreGet): AgentAsse
     try {
       const result = await SessionAgentListIntegrations();
       if (result?.success) {
+        const integrations = toSummaries(result.data);
         set((state) => ({
           ...state,
-          agentIntegrations: toSummaries(result.data),
+          agentIntegrations: integrations,
           agentIntegrationsLoading: false,
           agentIntegrationsLoaded: true,
         }));
+        // 智能体被移除后，它的工作台页签要跟着关掉——页签绑在智能体上，
+        // 留着只会是一个「暂无会话记录」的空页面。
+        _get().closeStaleAgentAssetsTabs(
+          integrations.map((item) => item.integrationId),
+        );
         return;
       }
     } catch {

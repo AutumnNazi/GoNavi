@@ -360,6 +360,8 @@ export interface AppState {
   closeTabsToRight: (id: string) => void;
   closeTabsByConnection: (connectionId: string) => void;
   closeTabsByDatabase: (connectionId: string, dbName: string) => void;
+  /** 关闭智能体已不存在的会话工作台页签（传入当前仍存在的智能体列表）。 */
+  closeStaleAgentAssetsTabs: (liveIntegrationIds: string[]) => void;
   moveTab: (sourceId: string, targetId: string) => void;
   closeAllTabs: () => void;
   setActiveTab: (id: string) => void;
