@@ -57,3 +57,11 @@ export interface PluginInspection {
   sizeBytes: number;
 }
 export interface PluginRuntimeInfo { safeMode: boolean; managementAllowed: boolean; webRuntime?: boolean }
+export interface PluginRemoteSource { kind: 'github' | 'npm'; spec: string; url: string; name: string; version: string }
+export interface PluginRemoteInspection {
+  inspection: PluginInspection;
+  source: PluginRemoteSource;
+  artifactDigest: string;
+  approvalToken: string;
+  expiresAt: string;
+}

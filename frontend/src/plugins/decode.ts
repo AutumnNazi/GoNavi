@@ -1,6 +1,6 @@
 import { PluginAPIError, requireRecord } from './apiResult';
 import { boundedJSON } from './jsonBoundary';
-import type { PluginInspection, PluginManifest, PluginRuntimeInfo, PluginStatus } from './types';
+import type { PluginInspection, PluginManifest, PluginRemoteInspection, PluginRemoteSource, PluginRuntimeInfo, PluginStatus } from './types';
 
 function invalid(): never {
   throw new PluginAPIError('plugin.error.invalid_response');
@@ -279,4 +279,21 @@ export function decodeRuntime(data: unknown): PluginRuntimeInfo {
   if (typeof r.safeMode !== 'boolean' || typeof r.managementAllowed !== 'boolean'
     || (r.webRuntime !== undefined && typeof r.webRuntime !== 'boolean')) invalid();
   return r as unknown as PluginRuntimeInfo;
+}
+export function decodeRemoteInspection(data: unknown): PluginRemoteInspection {
+  const r = requireRecord(data);
+  const source = requireRecord(r.source);
+  if ((source.kind !== 'github' && source.kind !== 'npm')
+    || typeof source.spec !== 'string' || typeof source.url !== 'string'
+    || typeof source.name !== 'string' || typeof source.version !== 'string'
+    || typeof r.artifactDigest !== 'string' || !/^[a-f0-9]{64}$/i.test(r.artifactDigest)
+    || typeof r.approvalToken !== 'string' || r.approvalToken === ''
+    || typeof r.expiresAt !== 'string' || r.expiresAt === '') invalid();
+  return {
+    inspection: decodeInspection(r.inspection),
+    source: source as unknown as PluginRemoteSource,
+    artifactDigest: r.artifactDigest,
+    approvalToken: r.approvalToken,
+    expiresAt: r.expiresAt,
+  };
 }

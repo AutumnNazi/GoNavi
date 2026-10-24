@@ -24,8 +24,10 @@ type PluginWindowHost interface {
 type PluginWindowFactory func(context.Context, *plugin.Manager) (PluginWindowHost, error)
 
 type pluginRuntimeState struct {
-	mutationMu   sync.Mutex
-	mu           sync.Mutex
+	mutationMu sync.Mutex
+	mu         sync.Mutex
+	// fetch 持有 github:/npm 远程安装的一次性审批令牌（plugin_fetch_approval.go）。
+	fetch        pluginFetchState
 	initializing chan struct{}
 	manager      *plugin.Manager
 	root         string
@@ -159,6 +161,7 @@ func (a *App) initializePlugins(ctx context.Context) {
 
 func (a *App) shutdownPlugins() {
 	a.shutdownPluginMarket()
+	a.plugins.fetch.close()
 	if a == nil {
 		return
 	}
