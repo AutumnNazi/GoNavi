@@ -14,6 +14,7 @@ export type WorkbenchTabType =
   | "dml-snapshot"
   | "cloud-backup"
   | "driver-manager"
+  | "plugin-manager"
   | "settings-center"
   | "request-diagnostics"
   | "message-queue"

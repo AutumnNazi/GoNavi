@@ -22,6 +22,7 @@ import {
   CloudUploadOutlined,
 } from '@ant-design/icons';
 import { buildTitlebarTrailingActions } from './titlebarTrailingActions';
+import { PLUGIN_MANAGER_WORKBENCH_TAB_ID } from '../../utils/pluginManagerTab';
 import { useSidebarCommandSearchCopy } from './useSidebarCommandSearchCopy';
 import type { SidebarSearchPanelProps } from './SidebarSearchPanel';
 import type { V2CommandSearchItem } from '../sidebarV2Utils';
@@ -333,6 +334,7 @@ export const useSidebarToolbarModel = ({
     onCheckUpdate,
     hideAbout: hideTitlebarAboutAction,
     hideDrivers: hideTitlebarDriverAction,
+    pluginManagerTabActive: activeTabId === PLUGIN_MANAGER_WORKBENCH_TAB_ID,
   });
 
   const { getCommandSearchCopyOptions, handleCopyCommandSearchItem } = useSidebarCommandSearchCopy({ connections, connectionIds });

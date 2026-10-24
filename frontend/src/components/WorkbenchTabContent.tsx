@@ -32,6 +32,7 @@ const SqlAnalysisWorkbench = React.lazy(() => import('./explain/SqlAnalysisWorkb
 const SqlAuditWorkbench = React.lazy(() => import('./audit/SqlAuditWorkbench'));
 const QueryHistoryWorkbench = React.lazy(() => import('./queryHistory/QueryHistoryWorkbench'));
 const DriverManagerWorkbench = React.lazy(() => import('./DriverManagerWorkbench'));
+const PluginManagerWorkbench = React.lazy(() => import('./pluginManager/PluginManagerWorkbench'));
 const CloudBackupSettings = React.lazy(() => import('./CloudBackupSettings'));
 const SettingsCenterWorkbench = React.lazy(() => import('./settings/SettingsCenterWorkbench'));
 const RequestDiagnosticsWorkbench = React.lazy(() => import('./requestDiagnostics/RequestDiagnosticsWorkbench'));
@@ -185,6 +186,8 @@ export const WorkbenchTabContent: React.FC<WorkbenchTabContentProps> = React.mem
         onRequestClose={onRequestClose}
       />
     );
+  } else if (tab.type === 'plugin-manager') {
+    content = <PluginManagerWorkbench />;
   } else if (tab.type === 'cloud-backup') {
     content = <CloudBackupSettings />;
   } else if (tab.type === 'settings-center') {

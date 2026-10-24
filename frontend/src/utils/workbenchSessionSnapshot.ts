@@ -38,6 +38,7 @@ const COMES_BACK_AFTER_RESTART: Record<WorkbenchTabType, boolean> = {
   'sql-audit': true,
   'dml-snapshot': true,
   'driver-manager': true,
+  'plugin-manager': true,
   'cloud-backup': true,
   'settings-center': true,
   'request-diagnostics': true,
