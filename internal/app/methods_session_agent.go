@@ -27,14 +27,21 @@ func (a *App) sessionAgentService() *sessionagent.Service {
 		service.SetEnabled()
 		return service
 	}
+	// 成功路径同样必须显式置启用集：Service.Enabled 为 nil 时 isEnabled
+	// 视为「全部启用」，而未添加的工具目录为空串会被解析成默认家目录
+	// （~/.codex、~/.claude），导致没添加的智能体照样被扫描与删除。
+	enabled := make([]sessionagent.ProviderID, 0, len(integrations))
 	for _, item := range integrations {
-		switch item.Kind {
+		switch strings.ToLower(strings.TrimSpace(item.Kind)) {
 		case sessionagent.ProviderCodex:
 			service.CodexDir = item.DataDir
+			enabled = append(enabled, sessionagent.ProviderCodex)
 		case sessionagent.ProviderClaude:
 			service.ClaudeDir = item.DataDir
+			enabled = append(enabled, sessionagent.ProviderClaude)
 		}
 	}
+	service.SetEnabled(enabled...)
 	return service
 }
 
