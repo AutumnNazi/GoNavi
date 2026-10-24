@@ -76,6 +76,9 @@ type SessionMessage struct {
 	Injected  bool           `json:"injected,omitempty"`
 	Blocks    []SessionBlock `json:"blocks,omitempty"`
 	Meta      *MessageMeta   `json:"meta,omitempty"`
+	// Structured 是「整条正文是一个 JSON 对象」时的结构化拆解（子 Agent
+	// 的结构化结论）。Content 仍保留原始正文，这里只是浏览端的展示提示。
+	Structured *StructuredBody `json:"structured,omitempty"`
 }
 
 // MessageMeta 是消息级元数据（模型、token、耗时等），全部可空。

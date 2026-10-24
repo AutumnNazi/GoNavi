@@ -13,6 +13,7 @@ import type { SessionAgentItem, SessionBlockContent, SessionContentRef, SessionM
 import { ProviderAvatar } from './SessionAgentListPage';
 import { SessionAgentMarkdown } from './SessionAgentMarkdown';
 import { SessionAgentImage, SessionAgentInlineImage } from './SessionAgentImage';
+import { SessionAgentStructuredBody } from './SessionAgentStructuredBody';
 import './SessionAgentDetailPanel.css';
 
 /**
@@ -295,7 +296,12 @@ const MessageRow: React.FC<{
               />
             ) : null
           ))}
-          {msg.content ? <MarkdownText content={msg.content} highlight={highlight} /> : null}
+          {msg.structured ? (
+            // 正文是子 Agent 的结构化结论：后端已拆好，这里按对话正文渲染。
+            <SessionAgentStructuredBody body={msg.structured} highlight={highlight} />
+          ) : msg.content ? (
+            <MarkdownText content={msg.content} highlight={highlight} />
+          ) : null}
           {textBlocks.map((block, i) => (
             block.text ? <MarkdownText key={i} content={block.text.text} highlight={highlight} /> : null
           ))}

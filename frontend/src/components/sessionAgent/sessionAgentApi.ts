@@ -90,6 +90,22 @@ export interface SessionBlockView {
   };
 }
 
+/** 结构化结论（后端解析阶段拆好，前端只负责渲染）。 */
+export interface SessionStructuredBodyView {
+  /** 承载自然语言的正文。 */
+  prose: string;
+  /** 正文来自哪个字段。 */
+  proseField?: string;
+  /** 其余字段的摘要。 */
+  fields?: Array<{
+    key: string;
+    kind: 'scalar' | 'array' | 'object';
+    value?: string;
+    count?: number;
+    detail?: string;
+  }>;
+}
+
 /** 消息（对应后端 SessionMessage）。 */
 export interface SessionMessageView {
   role: 'user' | 'assistant' | 'tool' | 'system';
@@ -99,6 +115,8 @@ export interface SessionMessageView {
   turnId?: string;
   injected?: boolean;
   blocks?: SessionBlockView[];
+  /** 正文是结构化 JSON 时的拆解结果（子 Agent 的结论）。 */
+  structured?: SessionStructuredBodyView;
 }
 
 /** 轮次索引（对应后端 TurnIndex）。 */

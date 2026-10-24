@@ -243,11 +243,16 @@ func (p *codexParser) pushMessage(role MessageRole, text string, injected bool) 
 		}}
 		msg.Content = preview.Text
 	}
+	// 整条正文是 JSON 对象时（子 Agent 的结构化结论）拆出正文与字段摘要。
+	if !injected {
+		msg.Structured = splitStructuredBody(text)
+	}
 	// assistant 纯思考消息合并进上一条。
 	if role == RoleAssistant && !injected && len(p.messages) > 0 {
 		last := &p.messages[len(p.messages)-1]
 		if last.Role == RoleAssistant && strings.TrimSpace(last.Content) == "" && len(last.Blocks) > 0 {
 			last.Content = text
+			last.Structured = splitStructuredBody(text)
 			return
 		}
 	}

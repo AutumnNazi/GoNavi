@@ -12943,5 +12943,7 @@
   "session_agent.error.image_failed": "Failed to read the local image",
   "connection_modal.step1.group.agent": "Agents",
   "connection_modal.step1.hint.codex": "Browse local ChatGPT (Codex) sessions",
-  "connection_modal.step1.hint.claude": "Browse local Claude Code sessions"
+  "connection_modal.step1.hint.claude": "Browse local Claude Code sessions",
+  "session_agent.json.items_count": "{{count}} items",
+  "session_agent.json.fields_count": "{{count}} fields"
 }

@@ -231,6 +231,7 @@ func (p *claudeParser) pushMessage(role MessageRole, text string, injected bool)
 		last := &p.messages[len(p.messages)-1]
 		if last.Role == role && strings.TrimSpace(last.Content) == "" && len(last.Blocks) > 0 {
 			last.Content = text
+			last.Structured = splitStructuredBody(text)
 			return
 		}
 	}
@@ -238,7 +239,18 @@ func (p *claudeParser) pushMessage(role MessageRole, text string, injected bool)
 		Role:     role,
 		Content:  text,
 		Injected: injected,
+		// 整条正文是 JSON 对象时（子 Agent 的结构化结论）拆出正文与字段摘要。
+		Structured: structuredBodyOf(text, injected),
 	})
+}
+
+// structuredBodyOf 是 splitStructuredBody 的注入内容版本：注入内容是工具
+// 塞给模型的上下文，不是给人看的结论，不做结构化拆解。
+func structuredBodyOf(text string, injected bool) *StructuredBody {
+	if injected {
+		return nil
+	}
+	return splitStructuredBody(text)
 }
 
 // pushBlock 把块追加到当前 assistant 消息。
