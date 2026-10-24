@@ -210,13 +210,17 @@ export const useConnectionModalChrome = ({
     return (
       <div className="gn-conn-studio-header" data-connection-step={step}>
         <div className="gn-conn-studio-header-left">
-          <div
-            className="gn-conn-studio-type-badge"
-            style={pickerStep ? undefined : { background: getDbDefaultColor(dbType) }}
-            aria-hidden="true"
-          >
-            {pickerStep ? <PlusOutlined /> : getDbIcon(dbType, "#ffffff", 28)}
-          </div>
+          {/* 智能体类型没有数据库品牌图标，徽标只会渲染成一个白底白图的
+              空方块；品牌图标在面板正文里已经有了，这里不重复展示。 */}
+          {isAgentConnectionType(dbType) ? null : (
+            <div
+              className="gn-conn-studio-type-badge"
+              style={pickerStep ? undefined : { background: getDbDefaultColor(dbType) }}
+              aria-hidden="true"
+            >
+              {pickerStep ? <PlusOutlined /> : getDbIcon(dbType, "#ffffff", 28)}
+            </div>
+          )}
           <div className="gn-conn-studio-heading">
             <div className="gn-conn-studio-title">{title}</div>
             {pickerStep ? (

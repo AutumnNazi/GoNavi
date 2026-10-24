@@ -61,6 +61,12 @@ export const backendApp = {
   SelectSSHKnownHostsFile: vi.fn(),
   TestJVMConnection: vi.fn(),
   TrustSSHHostKeyForConnection: vi.fn(),
+  // 智能体类型在弹窗里挂载 AgentSetupPanel，挂载即调这些绑定。
+  SessionAgentListIntegrations: vi.fn(async () => ({ success: true, data: [] })),
+  SessionAgentDetect: vi.fn(async () => ({ success: true, data: { kind: "", status: "not_installed", details: [] } })),
+  SessionAgentAdd: vi.fn(async () => ({ success: true })),
+  SessionAgentRemove: vi.fn(async () => ({ success: true })),
+  SessionAgentUpdate: vi.fn(async () => ({ success: true })),
 };
 
 export const setMockFormValues = (value: typeof mockFormValues) => {
@@ -455,6 +461,7 @@ export const mockModule6 = () => {
     Select,
     Radio,
     Alert,
+    Spin: ({ children }: any) => <div>{children}</div>,
     Card,
     Collapse: ({ items }: { items: { key: string; children: React.ReactNode }[] }) => <>{items.map((item) => <div key={item.key}>{item.children}</div>)}</>,
     Row,
