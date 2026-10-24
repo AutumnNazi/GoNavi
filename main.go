@@ -153,7 +153,7 @@ func main() {
 			defer releaseSingleInstance()
 		}
 	}
-	deepLinks := &deepLinkWaker{activator: primaryActivator}
+	deepLinks := &deepLinkWaker{activator: primaryActivator, exePath: executablePath}
 	defer startDeepLinks(executablePath, deepLinks)()
 	// Clear WebView2 processes left behind by an earlier exit before this
 	// process creates its own browser, then arm a reaper for the next exit.
@@ -265,6 +265,8 @@ func main() {
 				// emit gonavi:frontend-ready into an empty event bus.
 				wailsRuntime.EventsOn(ctx, startupFrontendReadyEvent, func(...interface{}) {
 					startupGate.markFrontendReady()
+					// 市场网站唤起的冷启动链接：前端就绪后补发给插件安装面板。
+					go deepLinks.dispatchPendingLink()
 				})
 				// 显示回调与兜底定时器都在 OnStartup 绑定：OnDomReady 依赖 WebView
 				// 成功导航，页面加载失败时不会触发，绑定放在那里会让窗口一直隐藏。
