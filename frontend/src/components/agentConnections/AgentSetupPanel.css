@@ -3,7 +3,10 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 4px 0 0;
+  /* 弹窗内容区（.ant-modal-body）本身没有内边距，普通数据库表单走
+     .gn-conn-form-main 的 padding。这里直接贴着弹窗边缘会很难看，
+     留出与表单一致的横向留白。 */
+  padding: 16px 20px 18px;
   color: var(--gn-fg-1);
   font-family: var(--gn-font-sans);
   font-size: 14px;
@@ -126,6 +129,10 @@
 }
 
 .gn-agent-setup-hint {
+  /* 说明文字排到左侧，按钮组靠右——用 order 而不是 margin，避免
+     margin-right:auto 落在最后一个子元素上把按钮组顶到左边。 */
+  order: -1;
+  margin-right: auto;
   color: var(--gn-fg-3);
   font-size: 12px;
   line-height: 1.5;
@@ -141,6 +148,5 @@
 }
 
 .gn-agent-setup-actions .gn-agent-setup-hint {
-  margin-right: auto;
   text-align: left;
 }
