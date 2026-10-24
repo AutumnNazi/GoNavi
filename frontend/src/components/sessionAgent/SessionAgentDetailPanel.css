@@ -1,0 +1,447 @@
+/* 智能体会话管理：详情面板（挤压式两栏、聊天时间线、执行过程折叠条）。 */
+
+/* ─── 详情：挤压式两栏 ─── */
+
+.gn-session-agent-detail {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.gn-session-agent-detail-loading {
+  display: grid;
+  flex: 1 1 auto;
+  place-items: center;
+}
+
+.gn-session-agent-detail-head {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 10px;
+}
+
+.gn-session-agent-detail-titleline {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.gn-session-agent-detail-title {
+  overflow: hidden;
+  margin: 0;
+  color: var(--gn-fg-1);
+  font-size: 15px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gn-session-agent-detail-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.gn-session-agent-detail-sub {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 10px;
+}
+
+.gn-session-agent-detail-meta {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--gn-fg-2);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gn-session-agent-detail-views {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.gn-session-agent-detail-empty-body {
+  display: grid;
+  flex: 1 1 auto;
+  place-items: center;
+  color: var(--gn-fg-3);
+  font-size: 13px;
+}
+
+/* 时间线：聊天流。 */
+.gn-session-agent-timeline {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 14px;
+  overflow: auto;
+  padding: 8px 4px;
+}
+
+.gn-session-agent-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gn-session-agent-turn + .gn-session-agent-turn {
+  padding-top: 14px;
+  border-top: 1px dashed var(--gn-br-2);
+}
+
+/* 用户消息：右侧气泡。 */
+.gn-session-agent-msg-user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.gn-session-agent-msg-ts {
+  color: var(--gn-fg-3);
+  font-size: 11px;
+}
+
+.gn-session-agent-bubble-user {
+  max-width: 72%;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--gn-accent) 32%, transparent);
+  border-radius: 14px 14px 4px 14px;
+  background: var(--gn-accent-soft);
+  color: var(--gn-fg-1);
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 助手消息：左侧头像。 */
+/* 助手消息：连续助手消息不重复头像，头部留同宽空位保持正文对齐。 */
+.gn-session-agent-avatar-space {
+  width: 22px;
+  flex: 0 0 22px;
+}
+
+.gn-session-agent-msg-assistant {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.gn-session-agent-msg-assistant .gn-session-agent-avatar {
+  margin-top: 2px;
+}
+
+.gn-session-agent-abody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.gn-session-agent-ahead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.gn-session-agent-aname {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.gn-session-agent-ats {
+  color: var(--gn-fg-3);
+  font-size: 11px;
+}
+
+.gn-session-agent-atext {
+  color: var(--gn-fg-1);
+  font-size: 13px;
+  word-break: break-word;
+}
+
+/* 只有纯文本（搜索高亮）路径保留原文换行。Markdown 路径必须避开
+   pre-wrap：react-markdown 会在块级元素之间插入 "\n" 文本节点，
+   pre-wrap 会把这些「分隔符」渲染成真实空行，段落间距被撑到两倍，
+   列表/引用块前后还各多一整行。 */
+.gn-session-agent-atext.is-plain {
+  white-space: pre-wrap;
+}
+
+.gn-session-agent-markdown {
+  white-space: normal;
+}
+
+/* 系统消息。 */
+.gn-session-agent-msg-system {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--gn-fg-3);
+  font-size: 12px;
+}
+
+.gn-session-agent-system-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 正文里的本机图片：后端读成 data URL 后直接显示。 */
+.gn-session-agent-image {
+  display: block;
+  max-width: 100%;
+  max-height: 420px;
+  margin: 6px 0;
+  border: 1px solid var(--gn-br-1);
+  border-radius: 6px;
+  background: var(--gn-bg-panel);
+}
+
+.gn-session-agent-image.is-loading {
+  display: inline-block;
+  padding: 4px 8px;
+  border: 1px dashed var(--gn-br-2);
+  border-radius: 6px;
+  color: var(--gn-fg-3);
+  font-size: 12px;
+}
+
+/* Markdown 正文：段距紧凑，代码块/表格跟随 v2 灰阶。 */
+.gn-session-agent-markdown p {
+  margin: 0 0 6px;
+}
+
+.gn-session-agent-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.gn-session-agent-markdown pre {
+  margin: 4px 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--gn-br-1);
+  border-radius: 6px;
+  background: var(--gn-bg-input);
+  font-size: 12px;
+}
+
+.gn-session-agent-markdown code {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--gn-bg-active);
+  font-size: 12px;
+}
+
+.gn-session-agent-markdown pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.gn-session-agent-markdown ul,
+.gn-session-agent-markdown ol {
+  margin: 4px 0;
+  padding-left: 22px;
+}
+
+.gn-session-agent-markdown table {
+  margin: 6px 0;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.gn-session-agent-markdown th,
+.gn-session-agent-markdown td {
+  padding: 5px 8px;
+  border: 1px solid var(--gn-br-1);
+  text-align: left;
+}
+
+.gn-session-agent-markdown th {
+  background: var(--gn-bg-active);
+  font-weight: 600;
+}
+
+/* 思考块。 */
+.gn-session-agent-thinking {
+  color: var(--gn-fg-3);
+  font-size: 12px;
+}
+
+.gn-session-agent-thinking summary {
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.gn-session-agent-thinking-text {
+  margin-top: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ─── 执行过程折叠条 ─── */
+
+.gn-session-agent-exec {
+  overflow: hidden;
+  border: 1px solid var(--gn-br-1);
+  border-radius: 8px;
+  background: var(--gn-bg-panel);
+}
+
+.gn-session-agent-exec-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  color: var(--gn-fg-2);
+  font-size: 12px;
+}
+
+.gn-session-agent-exec-head:hover {
+  background: var(--gn-bg-hover);
+}
+
+.gn-session-agent-exec-caret {
+  display: inline-block;
+  color: var(--gn-fg-3);
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+
+.gn-session-agent-exec-caret.open {
+  transform: rotate(90deg);
+}
+
+.gn-session-agent-exec-title {
+  font-weight: 600;
+}
+
+.gn-session-agent-exec-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--gn-br-1);
+}
+
+/* 工具调用行。 */
+.gn-session-agent-toolrow {
+  overflow: hidden;
+  border: 1px solid var(--gn-br-1);
+  border-radius: 6px;
+  background: var(--gn-bg-panel-2);
+}
+
+.gn-session-agent-toolline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 9px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.gn-session-agent-toolline:hover {
+  background: var(--gn-bg-hover);
+}
+
+.gn-session-agent-toolkind {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--gn-bg-active);
+  color: var(--gn-fg-2);
+  font-family: var(--gn-font-mono);
+  font-size: 11px;
+}
+
+.gn-session-agent-tooltitle {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--gn-fg-1);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gn-session-agent-tooldiff {
+  flex: 0 0 auto;
+  color: var(--gn-fg-3);
+  font-size: 11px;
+}
+
+.gn-session-agent-toolstatus {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: 12px;
+}
+
+.gn-session-agent-toolstatus.success {
+  color: var(--gn-accent);
+}
+
+.gn-session-agent-toolstatus.error {
+  color: var(--gn-danger);
+}
+
+.gn-session-agent-tooldetail {
+  max-height: 220px;
+  margin: 0;
+  padding: 7px 9px;
+  overflow: auto;
+  border-top: 1px solid var(--gn-br-1);
+  background: var(--gn-bg-input);
+  color: var(--gn-fg-2);
+  font-family: var(--gn-font-mono);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.gn-session-agent-tooldetail.expanded {
+  max-height: none;
+}
+
+/* 「最新」悬浮按钮。 */
+.gn-session-agent-latest-btn {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2;
+  padding: 4px 10px;
+  border: 1px solid var(--gn-br-2);
+  border-radius: 999px;
+  background: var(--gn-bg-panel);
+  color: var(--gn-fg-2);
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: var(--gn-shadow-md);
+}
+
+.gn-session-agent-latest-btn:hover {
+  color: var(--gn-accent);
+  border-color: var(--gn-accent);
+}
+
+@media (max-width: 840px) {
+  .gn-session-agent-workbench {
+    padding: 12px;
+  }
+
+  .gn-session-agent-search {
+    min-width: min(100%, 240px);
+  }
+}

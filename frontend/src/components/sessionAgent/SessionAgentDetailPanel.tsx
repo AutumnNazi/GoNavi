@@ -12,6 +12,7 @@ import type { SessionAgentItem, SessionBlockContent, SessionContentRef, SessionM
 import { ProviderAvatar } from './SessionAgentListPage';
 import { SessionAgentMarkdown } from './SessionAgentMarkdown';
 import { SessionAgentImage } from './SessionAgentImage';
+import './SessionAgentDetailPanel.css';
 
 /**
  * 会话详情页（挤压式）：列表收成左侧窄条，右侧聊天风格时间线。

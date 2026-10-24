@@ -5,6 +5,7 @@ import { t } from '../../i18n';
 import { GnClaudeIcon, GnOpenAIAgentIcon } from '../icons/gnIcons';
 import type { SessionAgentItem } from './sessionAgentApi';
 import { projectDisplayName, shortenSessionPreview, shortenSessionTitle } from './sessionAgentRow';
+import './SessionAgentListPage.css';
 
 /**
  * 会话列表页（进入即全页）：按分组分区渲染——项目名（时间段）独占一行，

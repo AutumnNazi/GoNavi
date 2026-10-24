@@ -1,0 +1,186 @@
+/* 智能体会话管理：会话分组列表与拖拽分割条。 */
+
+/* ─── 会话分组列表 ─── */
+
+/* 分组区：项目名（时间段）独占一行，下面才是该组的会话卡片。 */
+.gn-session-agent-group {
+  margin-bottom: 16px;
+}
+
+.gn-session-agent-group-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--gn-accent);
+  border-bottom: 1px solid var(--gn-br-1);
+  border-radius: 0 4px 4px 0;
+  background: var(--gn-accent-soft);
+  color: var(--gn-fg-1);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.gn-session-agent-group-icon {
+  flex: 0 0 auto;
+  color: var(--gn-accent);
+  font-size: 14px;
+}
+
+.gn-session-agent-group-name {
+  overflow: hidden;
+  color: var(--gn-fg-1);
+  font-size: 14px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gn-session-agent-group-count {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--gn-fg-3);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.gn-session-agent-group-body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 会话卡片。 */
+.gn-session-agent-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--gn-br-1);
+  cursor: pointer;
+}
+
+.gn-session-agent-row:hover {
+  background: var(--gn-bg-hover);
+}
+
+.gn-session-agent-row.is-selected {
+  background: var(--gn-bg-selected);
+}
+
+.gn-session-agent-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.gn-session-agent-listpage-pager {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 2px;
+}
+
+.gn-session-agent-fork-tag {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+  border-style: solid !important;
+  border-width: 1px !important;
+  color: var(--gn-info) !important;
+  background: var(--gn-info-soft) !important;
+  border-color: color-mix(in srgb, var(--gn-info) 42%, transparent) !important;
+  font-size: 11px !important;
+  line-height: 16px;
+}
+
+/* 必须是块级：行内 span 上 text-overflow 不生效，会被正文撑开。 */
+.gn-session-agent-session-title {
+  display: block;
+  overflow: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--gn-fg-1);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gn-session-agent-session-preview {
+  display: block;
+  overflow: hidden;
+  color: var(--gn-fg-3);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gn-session-agent-time-cell {
+  flex: 0 0 auto;
+  color: var(--gn-fg-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.gn-session-agent-provider-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-inline-end: 0;
+  border-style: solid !important;
+  border-width: 1px !important;
+  font-family: var(--gn-font-sans) !important;
+  font-size: 12px !important;
+}
+
+.gn-session-agent-provider-tag-icon {
+  font-size: 12px;
+}
+
+.gn-session-agent-provider-tag.is-codex.ant-tag {
+  color: var(--gn-fg-2) !important;
+  background: var(--gn-bg-active) !important;
+  border-color: var(--gn-br-2) !important;
+}
+
+.gn-session-agent-provider-tag.is-claude.ant-tag {
+  color: var(--gn-warn) !important;
+  background: var(--gn-warn-soft) !important;
+  border-color: color-mix(in srgb, var(--gn-warn) 42%, transparent) !important;
+}
+
+.gn-session-agent-avatar {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--gn-bg-active);
+  font-size: 13px;
+}
+
+.gn-session-agent-avatar.is-claude {
+  color: var(--gn-warn);
+}
+
+.gn-session-agent-avatar.is-codex {
+  color: var(--gn-fg-1);
+}
+
+/* ─── 拖拽分割条 ─── */
+
+.gn-session-agent-list-resize {
+  width: 6px;
+  flex: 0 0 6px;
+  cursor: col-resize;
+  border-radius: 3px;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.gn-session-agent-list-resize:hover {
+  background: var(--gn-accent-soft);
+}
+
