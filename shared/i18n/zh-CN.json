@@ -12943,7 +12943,5 @@
   "session_agent.error.image_failed": "\u8bfb\u53d6\u672c\u673a\u56fe\u7247\u5931\u8d25",
   "connection_modal.step1.group.agent": "\u667a\u80fd\u4f53",
   "connection_modal.step1.hint.codex": "\u6d4f\u89c8\u672c\u673a ChatGPT\uff08Codex\uff09\u4f1a\u8bdd",
-  "connection_modal.step1.hint.claude": "\u6d4f\u89c8\u672c\u673a Claude Code \u4f1a\u8bdd",
-  "session_agent.json.items_count": "{{count}} 项",
-  "session_agent.json.fields_count": "{{count}} 个字段"
+  "connection_modal.step1.hint.claude": "\u6d4f\u89c8\u672c\u673a Claude Code \u4f1a\u8bdd"
 }

@@ -515,6 +515,13 @@ export const createBrowserMockAppMethods = ({
 
         // ─── 会话管理（sessionagent）浏览器 mock ───
         // 虚构 Codex/Claude 会话数据，支撑 Web 模式下的 UI 交互测试。
+        SessionAgentListIntegrations: async () => ({
+            success: true,
+            data: [
+                { kind: 'codex', dataDir: 'C:/mock/.codex', displayName: 'ChatGPT', addedAt: 1730000000 },
+                { kind: 'claude', dataDir: 'C:/mock/.claude', displayName: 'Claude Code', addedAt: 1730000000 },
+            ],
+        }),
         SessionAgentProviders: async () => ({
             success: true,
             data: [
