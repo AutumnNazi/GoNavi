@@ -107,7 +107,7 @@
   border-radius: 6px;
   background: var(--gn-bg-panel);
   color: var(--gn-fg-1);
-  font-family: var(--gn-font-mono, var(--gn-font-sans);
+  font-family: var(--gn-font-mono, var(--gn-font-sans));
   font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;
