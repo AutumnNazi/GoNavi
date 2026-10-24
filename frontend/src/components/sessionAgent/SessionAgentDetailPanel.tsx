@@ -13,6 +13,8 @@ import type { SessionAgentItem, SessionBlockContent, SessionContentRef, SessionM
 import { ProviderAvatar } from './SessionAgentListPage';
 import { SessionAgentMarkdown } from './SessionAgentMarkdown';
 import { SessionAgentImage, SessionAgentInlineImage } from './SessionAgentImage';
+import { SessionAgentJsonMessage, SessionAgentJsonText } from './SessionAgentJsonMessage';
+import { parseJsonMessage } from './sessionAgentJsonContent';
 import './SessionAgentDetailPanel.css';
 
 /**
@@ -328,10 +330,17 @@ const ThinkingRow: React.FC<{ block: NonNullable<SessionMessageView['blocks']>[n
 // 带高亮的 Markdown 正文：无搜索词时直接渲染 Markdown；有搜索词时
 // 降级为纯文本高亮（mark 不能嵌进 Markdown 流）。highlight 为 null
 // 表示无搜索词。
+//
+// 整段是 JSON 对象的正文（子 Agent 的结构化结论）改走结构化展示：正文按
+// 对话渲染，其余字段收成一行可展开的摘要。
 const MarkdownText: React.FC<{
   content: string;
   highlight: ((text: string) => React.ReactNode) | null;
 }> = ({ content, highlight }) => {
+  const jsonView = React.useMemo(() => parseJsonMessage(content), [content]);
+  if (jsonView) {
+    return <SessionAgentJsonMessage view={jsonView} highlight={highlight} />;
+  }
   if (highlight) {
     // 纯文本高亮：按原文换行显示，所以要保留 pre-wrap。
     return <div className="gn-session-agent-atext is-plain">{highlight(content)}</div>;
@@ -398,7 +407,10 @@ const ToolRow: React.FC<{
         <pre className="gn-session-agent-tooldetail">{unescapeToolText(call.inputPreview)}</pre>
       )}
       {open && result?.preview && (
-        <pre className="gn-session-agent-tooldetail">{unescapeToolText(result.preview)}</pre>
+        <SessionAgentJsonText
+          text={unescapeToolText(result.preview)}
+          className="gn-session-agent-tooldetail"
+        />
       )}
       {open && result?.truncated && result.full && <ExpandFull blockRef={result.full} onOpenFull={onOpenFull} />}
     </div>

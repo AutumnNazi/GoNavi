@@ -12943,5 +12943,7 @@
   "session_agent.error.image_failed": "\u30ed\u30fc\u30ab\u30eb\u753b\u50cf\u306e\u8aad\u307f\u8fbc\u307f\u306b\u5931\u6557\u3057\u307e\u3057\u305f",
   "connection_modal.step1.group.agent": "\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8",
   "connection_modal.step1.hint.codex": "\u30ed\u30fc\u30ab\u30eb\u306e ChatGPT\uff08Codex\uff09\u30bb\u30c3\u30b7\u30e7\u30f3\u3092\u95b2\u89a7",
-  "connection_modal.step1.hint.claude": "\u30ed\u30fc\u30ab\u30eb\u306e Claude Code \u30bb\u30c3\u30b7\u30e7\u30f3\u3092\u95b2\u89a7"
+  "connection_modal.step1.hint.claude": "\u30ed\u30fc\u30ab\u30eb\u306e Claude Code \u30bb\u30c3\u30b7\u30e7\u30f3\u3092\u95b2\u89a7",
+  "session_agent.json.items_count": "{{count}} 件",
+  "session_agent.json.fields_count": "{{count}} フィールド"
 }

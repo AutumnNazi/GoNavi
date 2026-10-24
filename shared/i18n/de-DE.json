@@ -12943,5 +12943,7 @@
   "session_agent.error.image_failed": "Lokales Bild konnte nicht gelesen werden",
   "connection_modal.step1.group.agent": "Agenten",
   "connection_modal.step1.hint.codex": "Lokale ChatGPT-(Codex-)-Sitzungen durchsuchen",
-  "connection_modal.step1.hint.claude": "Lokale Claude-Code-Sitzungen durchsuchen"
+  "connection_modal.step1.hint.claude": "Lokale Claude-Code-Sitzungen durchsuchen",
+  "session_agent.json.items_count": "{{count}} Einträge",
+  "session_agent.json.fields_count": "{{count}} Felder"
 }
