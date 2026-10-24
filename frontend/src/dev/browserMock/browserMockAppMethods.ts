@@ -553,6 +553,8 @@ export const createBrowserMockAppMethods = ({
         }),
         SessionAgentDelete: async () => ({ success: true }),
         SessionAgentRevealPath: async () => ({ success: true, data: { path: 'C:/mock/.codex/sessions' } }),
+        SessionAgentImageDataURL: async () => ({ success: true, data: { dataUrl: 'data:image/png;base64,AAAA' } }),
+        SessionAgentImageInlineDataURL: async () => ({ success: true, data: { dataUrl: 'data:image/png;base64,BBBB' } }),
         SessionAgentTimeGroups: async () => ({ success: true, data: { groups: {}, total: 0 } }),
     };
     return { mockAppMethods };

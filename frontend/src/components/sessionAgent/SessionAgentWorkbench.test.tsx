@@ -27,6 +27,7 @@ vi.mock('antd', () => {
 });
 import { describe, expect, it, vi } from 'vitest';
 import { act, create } from 'react-test-renderer';
+import { message } from 'antd';
 import { SessionAgentWorkbench } from './SessionAgentWorkbench';
 import type { SessionAgentApi } from './sessionAgentApi';
 
@@ -87,6 +88,7 @@ const buildApi = (overrides: Partial<SessionAgentApi> = {}): SessionAgentApi => 
   delete: vi.fn(async () => true),
   revealPath: vi.fn(async () => 'C:/home/.codex/sessions'),
   imageDataUrl: vi.fn(async () => 'data:image/png;base64,AAAA'),
+  imageInlineDataUrl: vi.fn(async () => 'data:image/png;base64,BBBB'),
   timeGroups: vi.fn(async () => ({ groups: { today: [buildItem()] }, total: 1 })),
   ...overrides,
 });
@@ -246,5 +248,20 @@ describe('SessionAgentWorkbench', () => {
     // 执行过程折叠条存在（工具调用已收进其中）。
     const execs = (tree as any).root.findAll((n: any) => n.props?.className?.includes?.('gn-session-agent-exec'));
     expect(execs.length).toBeGreaterThan(0);
+  });
+
+  it('surfaces the backend error instead of showing an empty list', async () => {
+    // 后端失败时必须给出可见反馈：旧实现 seam 吞掉错误，用户只看到
+    // 「空列表」，分不清是没会话还是扫描失败。
+    const errorMock = message.error as unknown as ReturnType<typeof vi.fn>;
+    errorMock.mockClear();
+    const api = buildApi({
+      list: vi.fn(async () => {
+        throw new Error('加载会话列表失败：磁盘读取错误');
+      }),
+    });
+    await renderWorkbench(api);
+    expect(errorMock).toHaveBeenCalled();
+    expect(String(errorMock.mock.calls[0]?.[0] ?? '')).toContain('磁盘读取错误');
   });
 });

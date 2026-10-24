@@ -8,10 +8,11 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons';
 import { t } from '../../i18n';
+import { sessionAgentErrorText } from './sessionAgentApi';
 import type { SessionAgentItem, SessionBlockContent, SessionContentRef, SessionMessageView, SessionTurnView } from './sessionAgentApi';
 import { ProviderAvatar } from './SessionAgentListPage';
 import { SessionAgentMarkdown } from './SessionAgentMarkdown';
-import { SessionAgentImage } from './SessionAgentImage';
+import { SessionAgentImage, SessionAgentInlineImage } from './SessionAgentImage';
 import './SessionAgentDetailPanel.css';
 
 /**
@@ -186,6 +187,7 @@ const Timeline: React.FC<{
             viewMode={viewMode}
             needle={needle}
             providerId={item.providerId}
+            sourcePath={item.sourcePath}
             highlight={highlight}
             onOpenFull={onOpenFull}
           />
@@ -206,9 +208,10 @@ const TurnSection: React.FC<{
   viewMode: 'all' | 'chat' | 'changes';
   needle: string;
   providerId: string;
+  sourcePath: string;
   highlight: ((text: string) => React.ReactNode) | null;
   onOpenFull: (ref: SessionContentRef) => Promise<SessionBlockContent | null>;
-}> = ({ turn, messages, viewMode, needle, providerId, highlight, onOpenFull }) => {
+}> = ({ turn, messages, viewMode, needle, providerId, sourcePath, highlight, onOpenFull }) => {
   const slice = messages.slice(turn.firstMessageIndex, turn.lastMessageIndex + 1);
   return (
     <div className="gn-session-agent-turn" data-session-agent-turn={turn.turnId}>
@@ -222,6 +225,7 @@ const TurnSection: React.FC<{
           viewMode={viewMode}
           needle={needle}
           providerId={providerId}
+          sourcePath={sourcePath}
           highlight={highlight}
           onOpenFull={onOpenFull}
         />
@@ -237,9 +241,10 @@ const MessageRow: React.FC<{
   viewMode: 'all' | 'chat' | 'changes';
   needle: string;
   providerId: string;
+  sourcePath: string;
   highlight: ((text: string) => React.ReactNode) | null;
   onOpenFull: (ref: SessionContentRef) => Promise<SessionBlockContent | null>;
-}> = ({ msg, showProviderHeader, viewMode, needle, providerId, highlight, onOpenFull }) => {
+}> = ({ msg, showProviderHeader, viewMode, needle, providerId, sourcePath, highlight, onOpenFull }) => {
   if (msg.injected) return null;
 
   if (msg.role === 'user') {
@@ -275,6 +280,17 @@ const MessageRow: React.FC<{
               <SessionAgentImage
                 key={`img-${i}`}
                 path={block.image.path}
+                alt={block.image.alt}
+              />
+            ) : block.image?.content ? (
+              // 内联图片（Claude 的 base64 图片块）没有本机路径，按
+              // ContentRef 回源取完整载荷。
+              <SessionAgentInlineImage
+                key={`img-inline-${i}`}
+                provider={providerId}
+                sourcePath={sourcePath}
+                contentRef={block.image.content}
+                mediaType={block.image.mediaType || 'image/png'}
                 alt={block.image.alt}
               />
             ) : null
@@ -400,9 +416,13 @@ const ExpandFull: React.FC<{
         size="small"
         type="link"
         onClick={async () => {
-          const full = await onOpenFull(blockRef);
-          if (full) setContent(full);
-          else message.warning(t('session_agent.error.content_failed'));
+          try {
+            const full = await onOpenFull(blockRef);
+            if (full) setContent(full);
+            else message.warning(t('session_agent.error.content_failed'));
+          } catch (err) {
+            message.error(sessionAgentErrorText(err, 'session_agent.error.content_failed'));
+          }
         }}
       >
         {content ? t('session_agent.detail.collapse_full') : t('session_agent.detail.expand_full')}

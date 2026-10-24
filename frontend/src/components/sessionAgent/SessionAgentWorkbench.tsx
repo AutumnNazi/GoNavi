@@ -3,7 +3,7 @@ import { Button, Input, Select, Tooltip, message } from 'antd';
 import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { t } from '../../i18n';
 import type { TabData } from '../../types';
-import { wailsSessionAgentApi, type SessionAgentApi, type SessionAgentItem, type SessionBlockContent, type SessionContentRef, type SessionMessageView, type SessionTurnView } from './sessionAgentApi';
+import { wailsSessionAgentApi, sessionAgentErrorText, type SessionAgentApi, type SessionAgentItem, type SessionBlockContent, type SessionContentRef, type SessionMessageView, type SessionTurnView } from './sessionAgentApi';
 import { SessionAgentListPage } from './SessionAgentListPage';
 import { SessionAgentDetailPanel, confirmSessionAgentDelete } from './SessionAgentDetailPanel';
 import { loadSessionAgentListWidth, saveSessionAgentListWidth, SESSION_AGENT_LIST_DEFAULT_WIDTH, SessionAgentListResizeDivider } from './SessionAgentListResize';
@@ -87,8 +87,8 @@ export const SessionAgentWorkbench: React.FC<{
       if (!appliedQuery.trim()) {
         setScopeTotal(list.length);
       }
-    } catch {
-      message.error(t('session_agent.error.list_failed'));
+    } catch (err) {
+      message.error(sessionAgentErrorText(err, 'session_agent.error.list_failed'));
     } finally {
       setLoading(false);
     }
@@ -105,8 +105,8 @@ export const SessionAgentWorkbench: React.FC<{
       const detail = await api.detail(item.providerId, item.sourcePath);
       setMessages(detail?.messages ?? []);
       setTurns(detail?.turns ?? []);
-    } catch {
-      message.error(t('session_agent.error.detail_failed', { detail: '' }));
+    } catch (err) {
+      message.error(sessionAgentErrorText(err, 'session_agent.error.detail_failed'));
       setMessages([]);
       setTurns([]);
     } finally {
@@ -132,24 +132,32 @@ export const SessionAgentWorkbench: React.FC<{
 
   const handleExport = React.useCallback(async () => {
     if (!selected) return;
-    const markdown = await api.exportMarkdown(selected.providerId, selected.sourcePath);
-    if (!markdown) {
-      message.warning(t('session_agent.error.export_failed'));
-      return;
+    try {
+      const markdown = await api.exportMarkdown(selected.providerId, selected.sourcePath);
+      if (!markdown) {
+        message.warning(t('session_agent.error.export_failed'));
+        return;
+      }
+      await navigator.clipboard.writeText(markdown);
+      message.success(t('session_agent.action.export_done'));
+    } catch (err) {
+      message.error(sessionAgentErrorText(err, 'session_agent.error.export_failed'));
     }
-    await navigator.clipboard.writeText(markdown);
-    message.success(t('session_agent.action.export_done'));
   }, [api, selected]);
 
   const handleCopyResume = React.useCallback(async () => {
     if (!selected) return;
-    const command = await api.copyResume(selected.providerId, selected.sessionId);
-    if (!command) {
-      message.warning(t('session_agent.error.resume_unavailable'));
-      return;
+    try {
+      const command = await api.copyResume(selected.providerId, selected.sessionId);
+      if (!command) {
+        message.warning(t('session_agent.error.resume_unavailable'));
+        return;
+      }
+      await navigator.clipboard.writeText(command);
+      message.success(t('session_agent.action.copy_resume_done'));
+    } catch (err) {
+      message.error(sessionAgentErrorText(err, 'session_agent.error.resume_unavailable'));
     }
-    await navigator.clipboard.writeText(command);
-    message.success(t('session_agent.action.copy_resume_done'));
   }, [api, selected]);
 
   const handleDelete = React.useCallback(() => {

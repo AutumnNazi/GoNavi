@@ -14,7 +14,18 @@ import {
   SessionAgentRevealPath,
   SessionAgentTimeGroups,
   SessionAgentImageDataURL,
+  SessionAgentImageInlineDataURL,
 } from '../../../wailsjs/go/app/App';
+import { t } from '../../i18n';
+
+/**
+ * 后端失败时的展示文案：优先用后端已经 i18n 化并带 detail 的 message，
+ * 没有时退回通用文案键。
+ */
+export const sessionAgentErrorText = (err: unknown, fallbackKey: string): string => {
+  const detail = err instanceof Error ? err.message.trim() : '';
+  return detail || t(fallbackKey);
+};
 
 /** 列表条目（对应后端 SessionMeta）。 */
 export interface SessionAgentItem {
@@ -122,11 +133,28 @@ export type SessionAgentApi = {
   revealPath(sourcePath: string): Promise<string>;
   /** 读取本机图片并返回 data URL（webview 不能直接加载本机路径图片）。 */
   imageDataUrl(path: string): Promise<string>;
+  /** 读取会话内联图片（Claude 的 base64 图片块）并返回 data URL。 */
+  imageInlineDataUrl(provider: string, sourcePath: string, ref: SessionContentRef, mediaType: string): Promise<string>;
   timeGroups(provider: string, search: string): Promise<{ groups: Record<string, SessionAgentItem[]>; total: number }>;
 };
 
-const unwrap = <T,>(result: { success?: boolean; data?: unknown } | null | undefined): T | null =>
-  result?.success ? ((result.data ?? null) as T | null) : null;
+/**
+ * 拆后端 QueryResult。
+ *
+ * 后端失败时抛错：QueryResult.message 已经 i18n 化并带了 detail，原样
+ * 带出才能让调用方给出可见反馈。旧实现失败时返回 null/空数组，调用方的
+ * catch 永远不触发——用户只看到「空列表」，分不清是没有会话、智能体没
+ * 添加还是扫描失败。
+ */
+const unwrap = <T,>(result: { success?: boolean; data?: unknown; message?: string } | null | undefined): T | null => {
+  if (!result) {
+    throw new Error('');
+  }
+  if (!result.success) {
+    throw new Error(result.message ?? '');
+  }
+  return (result.data ?? null) as T | null;
+};
 
 export const wailsSessionAgentApi: SessionAgentApi = {
   async list(provider, search) {
@@ -165,6 +193,10 @@ export const wailsSessionAgentApi: SessionAgentApi = {
   },
   async imageDataUrl(path) {
     const result = await SessionAgentImageDataURL(path);
+    return unwrap<{ dataUrl: string }>(result)?.dataUrl ?? '';
+  },
+  async imageInlineDataUrl(provider, sourcePath, ref, mediaType) {
+    const result = await SessionAgentImageInlineDataURL(provider, sourcePath, ref, mediaType);
     return unwrap<{ dataUrl: string }>(result)?.dataUrl ?? '';
   },
   async timeGroups(provider, search) {
