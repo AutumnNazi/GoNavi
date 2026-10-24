@@ -437,7 +437,11 @@ func runSpecialMode(args []string) (bool, error) {
 	case "web-server", "--web-server":
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		return true, webserver.Run(ctx, assets, args[1:])
+		// 前端资产解到临时目录用 page cache 承载，省去约 27 MB 常驻堆；
+		// 失败时内部回退内存 FS，release 在服务退出后清理临时目录。
+		assetFS, releaseWebAssets := webServerAssets()
+		defer releaseWebAssets()
+		return true, webserver.Run(ctx, assetFS, args[1:])
 	case "detached-window", nativewindow.DetachedWindowArgument:
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
