@@ -694,6 +694,12 @@ export function PluginMarketSettings():Promise<connection.QueryResult>;
 
 export function PluginOpenWindow(arg1:string):Promise<connection.QueryResult>;
 
+export function PluginRemoteCancelInspection(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginRemoteInspect(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginRemoteInstall(arg1:string,arg2:boolean,arg3:string):Promise<connection.QueryResult>;
+
 export function PluginRemove(arg1:string,arg2:boolean):Promise<connection.QueryResult>;
 
 export function PluginReplace(arg1:string,arg2:string,arg3:boolean):Promise<connection.QueryResult>;

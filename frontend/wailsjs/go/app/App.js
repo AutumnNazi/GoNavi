@@ -1362,6 +1362,18 @@ export function PluginOpenWindow(arg1) {
   return window['go']['app']['App']['PluginOpenWindow'](arg1);
 }
 
+export function PluginRemoteCancelInspection(arg1) {
+  return window['go']['app']['App']['PluginRemoteCancelInspection'](arg1);
+}
+
+export function PluginRemoteInspect(arg1) {
+  return window['go']['app']['App']['PluginRemoteInspect'](arg1);
+}
+
+export function PluginRemoteInstall(arg1, arg2, arg3) {
+  return window['go']['app']['App']['PluginRemoteInstall'](arg1, arg2, arg3);
+}
+
 export function PluginRemove(arg1, arg2) {
   return window['go']['app']['App']['PluginRemove'](arg1, arg2);
 }
