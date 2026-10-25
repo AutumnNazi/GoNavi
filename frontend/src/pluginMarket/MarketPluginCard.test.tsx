@@ -36,4 +36,10 @@ describe('market plugin card update badges', () => {
     expect(upgrade).toBeTruthy();
     expect(upgrade!.props.color).toBe('processing');
   });
+  it('does not claim the installed ID came from the displayed source', async () => {
+    await act(async () => { renderer = create(<MarketPluginCard plugin={plugin} installedVersion="1.0.0" sourceScoped onSelect={vi.fn()} />); });
+    expect(tags().some((tag) => String(tag.children).includes('plugin.market.installed_identity'))).toBe(true);
+    expect(tags().some((tag) => tag.props.className === 'plugin-market-upgrade')).toBe(false);
+  });
+
 });

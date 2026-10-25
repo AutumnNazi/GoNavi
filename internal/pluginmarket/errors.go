@@ -12,6 +12,9 @@ var ErrNotConfigured = errors.New("marketplace is not configured")
 // ErrInvalidURL means an endpoint is not HTTPS or an explicit loopback development URL.
 var ErrInvalidURL = errors.New("invalid marketplace URL")
 
+// ErrFiltersUnsupported means a source did not acknowledge the requested filter semantics.
+var ErrFiltersUnsupported = errors.New("marketplace filters unsupported")
+
 // ErrInvalidRequest means a client argument exceeds the API contract.
 var ErrInvalidRequest = errors.New("invalid marketplace request")
 
@@ -67,6 +70,8 @@ func errorCode(err error) string {
 		return "canceled"
 	case errors.Is(err, context.DeadlineExceeded):
 		return "timeout"
+	case errors.Is(err, ErrFiltersUnsupported):
+		return "filters_unsupported"
 	case errors.Is(err, ErrInvalidResponse):
 		return "invalid_response"
 	case errors.Is(err, ErrResponseTooLarge):

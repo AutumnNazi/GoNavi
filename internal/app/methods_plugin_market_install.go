@@ -31,6 +31,13 @@ func (a *App) pluginMarketInstallContext(parent context.Context, id, version, di
 		return a.pluginFailure("runtime_unavailable")
 	}
 	return a.marketCall(parent, func(ctx context.Context, s *pluginmarket.Service) (any, error) {
+		if approval.service != s {
+			scoped, err := s.ForSource(approval.sourceID)
+			if err != nil {
+				return nil, err
+			}
+			s = scoped
+		}
 		a.plugins.mutationMu.Lock()
 		defer a.plugins.mutationMu.Unlock()
 		if err := marketApprovalSource(s, approval); err != nil {

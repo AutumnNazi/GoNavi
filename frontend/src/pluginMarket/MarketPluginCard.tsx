@@ -4,14 +4,16 @@ import { useI18n } from '../i18n/provider';
 import { compareMarketVersions } from './versionCompare';
 import type { MarketPlugin } from './types';
 
-export function MarketPluginCard({ plugin, installedVersion, onSelect }: { plugin: MarketPlugin; installedVersion?: string; onSelect: () => void }) {
+export function MarketPluginCard({ plugin, installedVersion, onSelect, sourceScoped = false }: { plugin: MarketPlugin; installedVersion?: string; onSelect: () => void; sourceScoped?: boolean }) {
   const { t } = useI18n();
   const upgradeAvailable = installedVersion !== undefined && compareMarketVersions(installedVersion, plugin.version) < 0;
   return <article className="plugin-card plugin-market-card" data-official={plugin.official}>
     <header className="plugin-card-header"><Typography.Title level={5}>{plugin.name}</Typography.Title>
       {plugin.official && <Tag color="success" icon={<SafetyCertificateOutlined />}>{t('plugin.market.official')}</Tag>}</header>
     <code className="plugin-identity">{plugin.id} · {plugin.version}</code>
-    {installedVersion !== undefined && (upgradeAvailable
+    {installedVersion !== undefined && (sourceScoped
+      ? <Tag>{t('plugin.market.installed_identity', { version: installedVersion })}</Tag>
+      : upgradeAvailable
       ? <Tag className="plugin-market-upgrade" color="processing" icon={<ArrowUpOutlined />}>{t('plugin.market.upgrade_available', { version: plugin.version })}</Tag>
       : <Tag>{t('plugin.market.installed_version', { version: installedVersion })}</Tag>)}
     <Typography.Paragraph className="plugin-market-description" ellipsis={{ rows: 3 }}>{plugin.description}</Typography.Paragraph>

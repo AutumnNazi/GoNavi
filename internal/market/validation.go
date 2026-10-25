@@ -32,6 +32,12 @@ func validateCatalogQuery(q CatalogQuery) error {
 	if q.Limit < 1 || q.Limit > 100 || q.Offset < 0 || q.Offset > 10000 || !boundedText(q.Query, 200, false) {
 		return ErrInvalid
 	}
+	if err := validateExtraCatalogFilters(q); err != nil {
+		return err
+	}
+	if !validCatalogCategory(q.Category) {
+		return ErrInvalid
+	}
 	if q.Sort != "" && q.Sort != "updated" && q.Sort != "rating" && q.Sort != "downloads" {
 		return ErrInvalid
 	}
@@ -47,6 +53,10 @@ func validateCatalogQuery(q CatalogQuery) error {
 func parseCatalogQuery(v url.Values) (CatalogQuery, error) {
 	q := CatalogQuery{Query: strings.TrimSpace(v.Get("q")), Sort: v.Get("sort"), HostVersion: strings.TrimPrefix(v.Get("hostVersion"), "v"), Platform: v.Get("platform"), Limit: 24}
 	var err error
+	q.Category, err = normalizeCatalogCategory(strings.TrimSpace(v.Get("category")))
+	if err != nil {
+		return q, err
+	}
 	if raw := v.Get("limit"); raw != "" {
 		q.Limit, err = strconv.Atoi(raw)
 		if err != nil {
@@ -62,6 +72,9 @@ func parseCatalogQuery(v url.Values) (CatalogQuery, error) {
 		if err != nil {
 			return q, ErrInvalid
 		}
+	}
+	if err = parseExtraCatalogFilters(v, &q); err != nil {
+		return q, err
 	}
 	return q, validateCatalogQuery(q)
 }

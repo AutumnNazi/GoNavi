@@ -59,12 +59,13 @@ type Artifact struct {
 
 // CatalogPage marks cached fallback explicitly and is returned alongside a nonnil error on fetch failure.
 type CatalogPage struct {
-	Items      []Item     `json:"items"`
-	NextCursor string     `json:"nextCursor,omitempty"`
-	Stale      bool       `json:"stale"`
-	Error      string     `json:"error,omitempty"`
-	CachedAt   *time.Time `json:"cachedAt,omitempty"`
-	SourceID   string     `json:"sourceId"`
+	FilterVersion int        `json:"filterVersion,omitempty"`
+	Items         []Item     `json:"items"`
+	NextCursor    string     `json:"nextCursor,omitempty"`
+	Stale         bool       `json:"stale"`
+	Error         string     `json:"error,omitempty"`
+	CachedAt      *time.Time `json:"cachedAt,omitempty"`
+	SourceID      string     `json:"sourceId"`
 }
 
 // Rating is the service-owned, mutable rating for one user and plugin.

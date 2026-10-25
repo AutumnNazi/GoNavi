@@ -15,12 +15,23 @@ func (s *Service) Catalog(ctx context.Context, query, order, cursor string) (Cat
 	if err != nil {
 		return CatalogPage{}, err
 	}
+	return s.fetchCatalogPage(ctx, values, false)
+}
+
+func (s *Service) fetchCatalogPage(ctx context.Context, values url.Values, filtered bool) (CatalogPage, error) {
 	source, err := s.snapshot()
 	if err != nil {
 		return CatalogPage{Items: []Item{}, Error: errorCode(err)}, err
 	}
+	return s.fetchCatalogPageFrom(ctx, source, values, filtered)
+}
+
+func (s *Service) fetchCatalogPageFrom(ctx context.Context, source sourceSnapshot, values url.Values, filtered bool) (CatalogPage, error) {
 	var page CatalogPage
-	err = s.requestJSON(ctx, source, http.MethodGet, "/plugins", values, nil, &page, "")
+	err := s.requestJSON(ctx, source, http.MethodGet, "/plugins", values, nil, &page, "")
+	if err == nil && filtered && page.FilterVersion != 1 {
+		err = ErrFiltersUnsupported
+	}
 	if err == nil {
 		err = validatePage(&page, source)
 	}

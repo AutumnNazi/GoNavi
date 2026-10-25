@@ -26,6 +26,9 @@ const (
 // Service owns source-scoped credentials, cached public data and install provenance.
 // Network calls never hold mu and are fenced against source changes and logout.
 type Service struct {
+	owner             *Service
+	lease             *atomic.Bool
+	scopes            map[string]*Service
 	mu                sync.Mutex
 	authMu            sync.Mutex
 	currentSource     atomic.Value
@@ -40,6 +43,7 @@ type Service struct {
 	authGeneration    uint64
 	pending           map[string]pendingLogin
 	receipts          map[string]downloadReceipt
+	totalReceipts     int
 	downloadsInFlight int
 	now               func() time.Time
 }
@@ -81,7 +85,10 @@ func NewService(o Options) (*Service, error) {
 		downloadClient: boundedClient(o.Client, downloadTimeout), hostVersion: o.HostVersion,
 		officialURL: official, state: *state, pending: make(map[string]pendingLogin),
 		receipts: make(map[string]downloadReceipt), now: time.Now}
-	service.currentSource.Store(sourceID(state.BaseURL))
+	if err := service.initializeSources(); err != nil {
+		return nil, fmt.Errorf("initialize marketplace sources: %w", err)
+	}
+	service.currentSource.Store(sourceID(service.state.BaseURL))
 	return service, nil
 }
 
@@ -109,6 +116,9 @@ func boundedClient(original *http.Client, timeout time.Duration) *http.Client {
 // This atomic snapshot never calls the keychain, HTTP or filesystem, nor waits on state persistence locks.
 // It is not download provenance; use DownloadSourceID to bind approval to prepared archive bytes.
 func (s *Service) CurrentSourceID() (string, error) {
+	if s.lease != nil && !s.lease.Load() {
+		return "", ErrSourceChanged
+	}
 	id, ok := s.currentSource.Load().(string)
 	if !ok || id == "" {
 		return "", ErrNotConfigured
@@ -154,6 +164,9 @@ func (s *Service) settingsLocked() Settings {
 // Configure atomically selects an endpoint without probing it or moving credentials between sources.
 // An empty URL explicitly disables marketplace access; cached pages and provenance remain local.
 func (s *Service) Configure(ctx context.Context, baseURL string) (Settings, error) {
+	if s.owner != nil {
+		return Settings{}, ErrInvalidRequest
+	}
 	base, err := normalizeBase(baseURL)
 	if err != nil {
 		return Settings{}, err
@@ -165,14 +178,13 @@ func (s *Service) Configure(ctx context.Context, baseURL string) (Settings, erro
 	if err = ctx.Err(); err == nil {
 		next := s.state
 		next.BaseURL = base
+		next.Sources, err = legacySourceSelection(s.state.Sources, base, s.officialURL)
+		if err != nil {
+			s.mu.Unlock()
+			return Settings{}, err
+		}
 		if err = atomicJSON(filepath.Join(s.root, "settings.json"), next, maxStateBytes); err == nil {
-			if base != s.state.BaseURL {
-				s.generation++
-				s.authGeneration++
-				clear(s.pending)
-			}
-			s.state = next
-			s.currentSource.Store(sourceID(next.BaseURL))
+			s.applySourceStateLocked(next)
 		}
 	}
 	result := s.settingsLocked()
@@ -187,6 +199,9 @@ func (s *Service) snapshot() (sourceSnapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	source := s.snapshotLocked()
+	if s.lease != nil && !s.lease.Load() {
+		return source, ErrSourceChanged
+	}
 	if source.base == "" {
 		return source, ErrNotConfigured
 	}
@@ -205,6 +220,9 @@ func (s *Service) checkSource(source sourceSnapshot) error {
 }
 
 func (s *Service) checkSourceLocked(source sourceSnapshot) error {
+	if s.lease != nil && !s.lease.Load() {
+		return ErrSourceChanged
+	}
 	if source.generation != s.generation || source.base != s.state.BaseURL {
 		return ErrSourceChanged
 	}

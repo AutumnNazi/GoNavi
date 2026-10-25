@@ -2,6 +2,7 @@
 package market
 
 import (
+	"GoNavi-Wails/internal/marketfilter"
 	"encoding/json"
 	"errors"
 	"time"
@@ -39,13 +40,16 @@ type MarketPlugin struct {
 
 // CatalogPage is a bounded page. Cursors are opaque to clients.
 type CatalogPage struct {
-	Items      []MarketPlugin `json:"items"`
-	NextCursor string         `json:"nextCursor,omitempty"`
+	FilterVersion int            `json:"filterVersion,omitempty"`
+	Items         []MarketPlugin `json:"items"`
+	NextCursor    string         `json:"nextCursor,omitempty"`
 }
 
 // CatalogQuery contains validated public filters and a bounded offset.
 type CatalogQuery struct {
+	Filters                            marketfilter.Filters
 	Query, Sort, HostVersion, Platform string
+	Category                           string
 	Limit, Offset                      int
 }
 

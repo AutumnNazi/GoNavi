@@ -19,7 +19,9 @@ export interface MarketPlugin {
   artifact?: MarketArtifact;
   sourceId?: string;
 }
-export interface CatalogPage { items: MarketPlugin[]; nextCursor?: string; stale?: boolean; error?: string; cachedAt?: string; sourceId?: string }
+export interface MarketSourceConfig { baseUrl: string; enabled: boolean }
+export interface MarketSource extends MarketSourceConfig { sourceId: string; trustedOfficial: boolean }
+export interface CatalogPage { filterVersion?: number; items: MarketPlugin[]; nextCursor?: string; stale?: boolean; error?: string; cachedAt?: string; sourceId?: string }
 export interface MarketRating { userId: string; pluginId: string; stars: number; body: string; version: string; updatedAt: string }
 export interface MarketSettings { baseUrl: string; authenticated: boolean; sourceId?: string; trustedOfficial?: boolean }
 export interface MarketSubmission { id: string; pluginId: string; version: string; state: string; publisherId: string; reason?: string; sha256?: string }

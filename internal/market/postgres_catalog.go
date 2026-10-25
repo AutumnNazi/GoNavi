@@ -6,14 +6,13 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/lib/pq"
 )
 
 const catalogColumns = `p.id,v.name,v.description,v.author,p.publisher_id,u.official,v.version,
  v.min_host_version,p.source_url,v.platforms,COALESCE(r.average,0),COALESCE(r.count,0),p.download_count,
- v.updated_at,v.manifest,v.sha256,v.size_bytes`
+ v.updated_at,v.manifest,v.sha256,v.size_bytes,market_plugin_category(v.manifest)`
 
 const ratingJoin = ` LEFT JOIN LATERAL (SELECT AVG(stars)::float8 AS average,COUNT(*) AS count
  FROM market_ratings WHERE plugin_id=p.id AND NOT hidden AND NOT deleted) r ON true `
@@ -24,7 +23,7 @@ func scanPlugin(row scanner) (MarketPlugin, error) {
 	var manifest []byte
 	err := row.Scan(&p.ID, &p.Name, &p.Description, &p.Author, &p.PublisherID, &p.Official, &p.Version,
 		&p.MinHostVersion, &p.SourceURL, pq.Array(&p.Platforms), &p.RatingAverage, &p.RatingCount, &p.DownloadCount,
-		&p.UpdatedAt, &manifest, &artifact.SHA256, &artifact.SizeBytes)
+		&p.UpdatedAt, &manifest, &artifact.SHA256, &artifact.SizeBytes, &p.Category)
 	if err != nil {
 		return p, repositoryError(err)
 	}
@@ -50,13 +49,8 @@ func (p *Postgres) Catalog(ctx context.Context, q CatalogQuery) (CatalogPage, er
 	case "downloads":
 		order = "p.download_count DESC"
 	}
-	query := `SELECT ` + strings.Replace(catalogColumns, "v.manifest", "NULL::jsonb", 1) + ` FROM market_plugins p JOIN market_users u ON u.id=p.owner_id
- JOIN LATERAL (SELECT * FROM market_versions WHERE plugin_id=p.id AND state='published'
- AND ($3='' OR min_host_version='' OR market_semver_le(min_host_version,$3))
- AND ($4='' OR 'any'=ANY(platforms) OR $4=ANY(platforms)) ORDER BY updated_at DESC,id LIMIT 1) v ON true` + ratingJoin + `
- WHERE ($1='' OR strpos(lower(p.id || ' ' || v.name || ' ' || v.description),lower($1))>0)
- ORDER BY u.official DESC,` + order + `,p.id LIMIT $2 OFFSET $5`
-	rows, err := p.db.QueryContext(ctx, query, q.Query, q.Limit+1, q.HostVersion, q.Platform, q.Offset)
+	query, arguments := catalogStatement(q, order)
+	rows, err := p.db.QueryContext(ctx, query, arguments...)
 	if err != nil {
 		return CatalogPage{}, repositoryError(err)
 	}

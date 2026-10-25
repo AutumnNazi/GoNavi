@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"GoNavi-Wails/internal/marketfilter"
 	"golang.org/x/mod/semver"
 )
 
@@ -56,7 +57,7 @@ func (m *memoryRepo) plugin(v testRelease) MarketPlugin {
 	pkg := v.packageData
 	p := MarketPlugin{ID: pkg.ID, Name: pkg.Name, Description: pkg.Description, Author: pkg.Author, Version: pkg.Version,
 		PublisherID: m.accounts[v.owner].PublisherID, Official: m.accounts[v.owner].Official, MinHostVersion: pkg.MinHostVersion, Platforms: pkg.Platforms,
-		SourceURL: v.sourceURL,
+		SourceURL: v.sourceURL, Category: categoryFromManifest(pkg.Manifest),
 		Manifest: append([]byte(nil), pkg.Manifest...), UpdatedAt: v.submission.UpdatedAt, DownloadCount: m.downloads[pkg.ID],
 		Artifact: &Artifact{SHA256: pkg.SHA256, SizeBytes: pkg.SizeBytes, Platform: "any", Version: pkg.Version}}
 	for key, r := range m.ratings {
@@ -83,9 +84,6 @@ func (m *memoryRepo) Catalog(ctx context.Context, q CatalogQuery) (CatalogPage, 
 			continue
 		}
 		p := m.plugin(v)
-		if q.Query != "" && !strings.Contains(strings.ToLower(p.ID+" "+p.Name+" "+p.Description), strings.ToLower(q.Query)) {
-			continue
-		}
 		if q.HostVersion != "" && p.MinHostVersion != "" && semver.Compare("v"+p.MinHostVersion, "v"+q.HostVersion) > 0 {
 			continue
 		}
@@ -95,7 +93,7 @@ func (m *memoryRepo) Catalog(ctx context.Context, q CatalogQuery) (CatalogPage, 
 				compatible = true
 			}
 		}
-		if !compatible {
+		if !compatible || !marketfilter.MatchesPlatforms(marketfilter.PlatformValues(q.Filters), p.Platforms) {
 			continue
 		}
 		if old, ok := latest[p.ID]; !ok || old.UpdatedAt.Before(p.UpdatedAt) {
@@ -104,6 +102,15 @@ func (m *memoryRepo) Catalog(ctx context.Context, q CatalogQuery) (CatalogPage, 
 	}
 	items := make([]MarketPlugin, 0, len(latest))
 	for _, p := range latest {
+		if q.Category != "" && p.Category != q.Category {
+			continue
+		}
+		if q.Query != "" && !strings.Contains(strings.ToLower(p.ID+" "+p.Name+" "+p.Description), strings.ToLower(q.Query)) {
+			continue
+		}
+		if !marketfilter.Matches(q.Filters, p.Category, p.Author, p.PublisherID, p.Official, p.Platforms) {
+			continue
+		}
 		items = append(items, p)
 	}
 	mean, total := 3.0, 0

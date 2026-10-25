@@ -91,21 +91,7 @@ func (a *App) marketCall(parent context.Context, call func(context.Context, *plu
 	if err == nil {
 		return connection.QueryResult{Success: true, Data: value}
 	}
-	code := "market_unavailable"
-	if errors.Is(err, pluginmarket.ErrUnauthenticated) {
-		code = "authentication_required"
-	}
-	if errors.Is(err, pluginmarket.ErrInvalidRequest) || errors.Is(err, pluginmarket.ErrInvalidURL) {
-		code = "invalid_request"
-	}
-	// Submission failures that the publisher can act on keep their service code.
-	var apiErr *pluginmarket.APIError
-	if errors.As(err, &apiErr) {
-		switch apiErr.Code {
-		case "artifact_invalid", "forbidden", "conflict":
-			code = apiErr.Code
-		}
-	}
+	code := marketFailureCode(err)
 	result := a.pluginFailure(code)
 	// A failed refresh may still carry explicitly stale, last-good catalog data.
 	if page, ok := value.(pluginmarket.CatalogPage); ok {

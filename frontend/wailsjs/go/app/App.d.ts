@@ -10,6 +10,8 @@ import {requesttrace} from '../models';
 import {jvm} from '../models';
 import {db} from '../models';
 import {mockdata} from '../models';
+import {pluginmarket} from '../models';
+import {marketfilter} from '../models';
 import {redis} from '../models';
 import {resultdiff} from '../models';
 import {dbuser} from '../models';
@@ -690,9 +692,39 @@ export function PluginMarketRate(arg1:string,arg2:number,arg3:string,arg4:string
 
 export function PluginMarketRatings(arg1:string):Promise<connection.QueryResult>;
 
+export function PluginMarketSaveSources(arg1:Array<pluginmarket.SourceConfig>):Promise<connection.QueryResult>;
+
 export function PluginMarketSettings():Promise<connection.QueryResult>;
 
+export function PluginMarketSourceCatalog(arg1:string,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function PluginMarketSourceDeleteRating(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
+export function PluginMarketSourceDetail(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
+export function PluginMarketSourceLogin(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginMarketSourceLogout(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginMarketSourcePollLogin(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
+export function PluginMarketSourceRate(arg1:string,arg2:string,arg3:number,arg4:string,arg5:string):Promise<connection.QueryResult>;
+
+export function PluginMarketSourceRatings(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
+export function PluginMarketSourceSearch(arg1:string,arg2:string,arg3:string,arg4:string,arg5:marketfilter.Filters):Promise<connection.QueryResult>;
+
+export function PluginMarketSourceSettings(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginMarketSourceSubmit(arg1:string,arg2:string,arg3:string):Promise<connection.QueryResult>;
+
+export function PluginMarketSourceVersions(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
+export function PluginMarketSources():Promise<connection.QueryResult>;
+
 export function PluginMarketSubmit(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
+export function PluginMarketVersions(arg1:string):Promise<connection.QueryResult>;
 
 export function PluginOpenWindow(arg1:string):Promise<connection.QueryResult>;
 

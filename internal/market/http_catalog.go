@@ -10,6 +10,9 @@ import (
 )
 
 func (s *Server) decorate(p *MarketPlugin) {
+	if p.Category == "" {
+		p.Category = categoryFromManifest(p.Manifest)
+	}
 	if p.Artifact != nil {
 		s.decorateArtifact(p.Artifact)
 	}
@@ -34,6 +37,7 @@ func (s *Server) catalog(w http.ResponseWriter, r *http.Request) {
 	if page.Items == nil {
 		page.Items = []MarketPlugin{}
 	}
+	page.FilterVersion = 1
 	writeJSON(w, 200, page)
 }
 

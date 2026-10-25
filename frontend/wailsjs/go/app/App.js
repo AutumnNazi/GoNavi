@@ -1354,12 +1354,72 @@ export function PluginMarketRatings(arg1) {
   return window['go']['app']['App']['PluginMarketRatings'](arg1);
 }
 
+export function PluginMarketSaveSources(arg1) {
+  return window['go']['app']['App']['PluginMarketSaveSources'](arg1);
+}
+
 export function PluginMarketSettings() {
   return window['go']['app']['App']['PluginMarketSettings']();
 }
 
+export function PluginMarketSourceCatalog(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['PluginMarketSourceCatalog'](arg1, arg2, arg3, arg4);
+}
+
+export function PluginMarketSourceDeleteRating(arg1, arg2) {
+  return window['go']['app']['App']['PluginMarketSourceDeleteRating'](arg1, arg2);
+}
+
+export function PluginMarketSourceDetail(arg1, arg2) {
+  return window['go']['app']['App']['PluginMarketSourceDetail'](arg1, arg2);
+}
+
+export function PluginMarketSourceLogin(arg1) {
+  return window['go']['app']['App']['PluginMarketSourceLogin'](arg1);
+}
+
+export function PluginMarketSourceLogout(arg1) {
+  return window['go']['app']['App']['PluginMarketSourceLogout'](arg1);
+}
+
+export function PluginMarketSourcePollLogin(arg1, arg2) {
+  return window['go']['app']['App']['PluginMarketSourcePollLogin'](arg1, arg2);
+}
+
+export function PluginMarketSourceRate(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['App']['PluginMarketSourceRate'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function PluginMarketSourceRatings(arg1, arg2) {
+  return window['go']['app']['App']['PluginMarketSourceRatings'](arg1, arg2);
+}
+
+export function PluginMarketSourceSearch(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['App']['PluginMarketSourceSearch'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function PluginMarketSourceSettings(arg1) {
+  return window['go']['app']['App']['PluginMarketSourceSettings'](arg1);
+}
+
+export function PluginMarketSourceSubmit(arg1, arg2, arg3) {
+  return window['go']['app']['App']['PluginMarketSourceSubmit'](arg1, arg2, arg3);
+}
+
+export function PluginMarketSourceVersions(arg1, arg2) {
+  return window['go']['app']['App']['PluginMarketSourceVersions'](arg1, arg2);
+}
+
+export function PluginMarketSources() {
+  return window['go']['app']['App']['PluginMarketSources']();
+}
+
 export function PluginMarketSubmit(arg1, arg2) {
   return window['go']['app']['App']['PluginMarketSubmit'](arg1, arg2);
+}
+
+export function PluginMarketVersions(arg1) {
+  return window['go']['app']['App']['PluginMarketVersions'](arg1);
 }
 
 export function PluginOpenWindow(arg1) {

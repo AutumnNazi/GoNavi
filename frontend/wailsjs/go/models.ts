@@ -3893,6 +3893,29 @@ export namespace jvm {
 
 }
 
+export namespace marketfilter {
+	
+	export class Filters {
+	    categories: string[];
+	    platforms: string[];
+	    official: string;
+	    author: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Filters(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.categories = source["categories"];
+	        this.platforms = source["platforms"];
+	        this.official = source["official"];
+	        this.author = source["author"];
+	    }
+	}
+
+}
+
 export namespace mockdata {
 	
 	export class Generator {
@@ -4148,6 +4171,25 @@ export namespace nativewindow {
 	        this.ready = source["ready"];
 	        this.closeSent = source["closeSent"];
 	        this.hidden = source["hidden"];
+	    }
+	}
+
+}
+
+export namespace pluginmarket {
+	
+	export class SourceConfig {
+	    baseUrl: string;
+	    enabled: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new SourceConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.baseUrl = source["baseUrl"];
+	        this.enabled = source["enabled"];
 	    }
 	}
 
