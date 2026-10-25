@@ -14,7 +14,6 @@ import {
 } from "../../../wailsjs/go/app/App";
 import { t } from "../../i18n";
 import { useStore } from "../../store";
-import { buildAgentAssetsWorkbenchTab } from "../../utils/agentAssetsTab";
 import type { AgentDetectionView } from "../../utils/agentConnectionTypes";
 import { ProviderIcon } from "../sessionAgent/SessionAgentListPage";
 import "./AgentSetupPanel.css";
@@ -46,7 +45,8 @@ const toErrorMessage = (result: { message?: string } | null | undefined): string
 /**
  * 智能体检测/添加页：替代数据库连接表单。挂载自动检测，未通过时支持
  * 手动定位数据目录重新检测；ready 后需二次确认才添加（同 kind 已添加
- * 时报错）。
+ * 时报错）。添加成功只关面板，不自动打开工作台——会话管理的唯一入口
+ * 是侧边栏的智能体节点。
  */
 const AgentSetupPanel: React.FC<AgentSetupPanelProps> = ({ kind, onClose }) => {
   const [view, setView] = React.useState<AgentDetectionView | null>(null);
@@ -57,7 +57,6 @@ const AgentSetupPanel: React.FC<AgentSetupPanelProps> = ({ kind, onClose }) => {
   const [manualDataDir, setManualDataDir] = React.useState("");
   const [errorText, setErrorText] = React.useState("");
   const refreshAgentIntegrations = useStore((state) => state.refreshAgentIntegrations);
-  const addTab = useStore((state) => state.addTab);
 
   const displayName = kind === "claude" ? "Claude Code" : "ChatGPT";
 
@@ -97,12 +96,6 @@ const AgentSetupPanel: React.FC<AgentSetupPanelProps> = ({ kind, onClose }) => {
     void runDetect();
   }, [runDetect]);
 
-  const openManagement = React.useCallback(() => {
-    addTab(buildAgentAssetsWorkbenchTab({ integrationId: kind, displayName }));
-    void refreshAgentIntegrations();
-    onClose();
-  }, [addTab, onClose, refreshAgentIntegrations, kind, displayName]);
-
   const handleAdd = React.useCallback(async () => {
     if (!view || view.status !== "ready") return;
     setAdding(true);
@@ -112,7 +105,10 @@ const AgentSetupPanel: React.FC<AgentSetupPanelProps> = ({ kind, onClose }) => {
       if (result?.success) {
         setAlreadyAdded(true);
         void refreshAgentIntegrations();
-        openManagement();
+        // 添加后不自动打开工作台：集成列表刷新完成前挂载页签，会被
+        // 「绑定不在已加载列表」的重置逻辑清成「全部」，页签从此混入
+        // 其他工具的会话。入口统一收敛到侧边栏。
+        onClose();
         return;
       }
       setErrorText(toErrorMessage(result));
@@ -121,7 +117,7 @@ const AgentSetupPanel: React.FC<AgentSetupPanelProps> = ({ kind, onClose }) => {
     } finally {
       setAdding(false);
     }
-  }, [kind, view, openManagement, refreshAgentIntegrations]);
+  }, [kind, view, onClose, refreshAgentIntegrations]);
 
   const handleRemove = React.useCallback(async () => {
     setRemoving(true);
@@ -210,14 +206,9 @@ const AgentSetupPanel: React.FC<AgentSetupPanelProps> = ({ kind, onClose }) => {
 
       <div className="gn-agent-setup-actions">
         {alreadyAdded ? (
-          <Space>
-            <Button type="primary" onClick={openManagement}>
-              {t("session_agent.setup.open_management")}
-            </Button>
-            <Button danger loading={removing} onClick={() => void handleRemove()}>
-              {t("session_agent.setup.remove")}
-            </Button>
-          </Space>
+          <Button danger loading={removing} onClick={() => void handleRemove()}>
+            {t("session_agent.setup.remove")}
+          </Button>
         ) : (
           <Button
             type="primary"
