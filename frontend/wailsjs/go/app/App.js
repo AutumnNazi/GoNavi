@@ -1358,6 +1358,10 @@ export function PluginMarketSettings() {
   return window['go']['app']['App']['PluginMarketSettings']();
 }
 
+export function PluginMarketSubmit(arg1, arg2) {
+  return window['go']['app']['App']['PluginMarketSubmit'](arg1, arg2);
+}
+
 export function PluginOpenWindow(arg1) {
   return window['go']['app']['App']['PluginOpenWindow'](arg1);
 }

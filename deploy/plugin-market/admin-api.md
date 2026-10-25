@@ -2,9 +2,9 @@
 
 All API paths below are relative to the configured service origin plus /api/v1. Successful responses are JSON except the browser consent pages and artifact bytes. Errors use {"code":"...","message":"..."}; message currently carries the stable machine code for client localization. No response contains database errors, OAuth secrets or connection strings.
 
-## Explicit account bootstrap
+## Account bootstrap
 
-Use an operator database credential. Resolve the intended account's immutable numeric GitHub ID independently; a rename must not change its privileges. Run one explicit grant for each publisher or administrator:
+A first login self-serves a publisher role and a `gh-<github-login>` namespace, so authors can publish immediately after signing in; GitHub logins are unique case-insensitively, so the derived namespace never collides. Operators still own privileged and verified grants with an operator database credential. Resolve the intended account's immutable numeric GitHub ID independently; a rename must not change its privileges:
 
 ```sh
 ./gonavi-market-server -grant-github-id GITHUB_NUMERIC_ID -grant-role admin
@@ -13,7 +13,7 @@ Use an operator database credential. Resolve the intended account's immutable nu
 ./gonavi-market-server -grant-github-id VERIFIED_NUMERIC_ID -grant-role publisher -publisher verified -official
 ```
 
-The command records an audit event and exits. It can reserve an identity before its first login. It does not create a bearer token. Publishers own one lowercase namespace and may submit only IDs under that namespace (for example example.viewer). Once a publisher owns a plugin, the namespace cannot be silently reassigned. To revoke publisher/admin privileges, explicitly grant role user while preserving any existing publisher namespace (and omit -official). Existing sessions reload current privileges on every request, so the account loses privileged actions immediately while ownership and the author self-rating guard remain intact.
+The command records an audit event and exits. It can reserve an identity before its first login. It does not create a bearer token. Publishers own one namespace and may submit only IDs under that namespace (for example example.viewer). Once a publisher owns a plugin, the namespace cannot be silently reassigned. To revoke publisher/admin privileges, explicitly grant role user while preserving any existing publisher namespace (and omit -official). Existing sessions reload current privileges on every request, so the account loses privileged actions immediately while ownership and the author self-rating guard remain intact.
 
 There is no first-user administrator rule, public role-grant endpoint or default administrator password.
 
@@ -28,20 +28,48 @@ Device grants expire after ten minutes; access tokens expire after 24 hours. Ear
 
 ## Submit a prebuilt package
 
-The multipart request contains exactly three parts: pluginId, version and package. The ZIP/TGZ root must contain gonavi.plugin.json. Form metadata must match the validated manifest. The manifest cannot assign service privileges or an official badge.
+The multipart request contains three required parts: pluginId, version and package. The optional source part registers a canonical public GitHub repository URL such as https://github.com/owner/repo for future Release updates. The ZIP/TGZ root must contain gonavi.plugin.json. Form metadata must match the validated manifest. The manifest cannot assign service privileges or an official badge.
 
 ```sh
 curl --fail-with-body -H "Authorization: Bearer $TOKEN"   -F 'pluginId=example.viewer' -F 'version=1.0.0' -F 'package=@viewer.zip'   "$BASE/api/v1/submissions"
 curl --fail-with-body -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/submissions"
 ```
 
-A valid upload returns HTTP 201 with state pending_review and the archive's SHA-256. Validation failure returns artifact_invalid and retains a rejected reservation/audit record. A transient store/database failure is not a successful submission. Reserved plugin/version identities cannot be overwritten, including rejected versions; bump the version for changes.
+A valid upload returns HTTP 201 with state published and the archive's SHA-256: publication is self-service once static validation passes, with the full audit trail retained. Validation failure returns artifact_invalid and retains a rejected reservation/audit record. A transient store/database failure is not a successful submission. Reserved plugin/version identities cannot be overwritten, including rejected and published versions; bump the version for changes.
 
-Uploads are never executed. Validation checks structure, resource bounds, manifest shape and entry references, not whether a binary is benign or correctly implements the runtime protocol.
+Uploads are never executed. Validation checks structure, resource bounds, manifest shape and entry references, not whether a binary is benign or correctly implements the runtime protocol. Oversight happens after publication: official badges are operator-granted only, and administrators can yank a published version at any time.
 
-## Review, reject and yank
+## Automatic GitHub Release updates
 
-Administrators list the review queue, then inspect GET /admin/submissions/{id}. That private response contains the exact validated manifest and an administrator-only artifact URL at /admin/submissions/{id}/artifact. Fetch that URL with an administrator bearer token; it remains unavailable through the public artifact route until approval. Private inspection does not increase download counts. A publisher token cannot review. An administrator cannot approve their own package.
+Register the repository once when publishing the first package, either in the client's optional source repository field or with multipart source:
+
+```sh
+curl --fail-with-body -H "Authorization: Bearer $TOKEN" \
+  -F 'pluginId=example.viewer' -F 'version=1.0.0' \
+  -F 'source=https://github.com/owner/repo' -F 'package=@viewer.zip' \
+  "$BASE/api/v1/submissions"
+```
+
+After registration, authors only need to publish a newer stable GitHub Release containing exactly one ZIP, TGZ or TAR.GZ plugin archive. Pushing code or a tag without publishing a Release asset is not enough. The archive manifest must retain the registered plugin ID and increase its semantic version; the manifest version, not the tag text, determines whether an update is newer. Drafts and prereleases are not selected. The fetcher currently follows the repository-wide latest Release, without tag-prefix filtering; shared official repositories retain their existing explicitly tagged installation channel.
+
+The server downloads the archive, runs the same static validation and ownership checks as an upload, and rehosts immutable bytes under its own artifact origin. Same or older versions and foreign plugin manifests never replace the published package. Failed lookups or validation leave the previous version available and are retried on the next pass; reserved versions remain immutable, so a rejected package must use a new version. Manual upload remains available. No plugin code is executed.
+
+The worker starts one minute after service startup and repeats six hours after each completed pass. Set GONAVI_MARKET_SYNC_INTERVAL to an integer number of seconds (minimum 60) to override the interval. Invalid values use the six-hour default. An optional GONAVI_MARKET_GITHUB_TOKEN raises the GitHub API quota; inject it through the service environment, never into source control or logs. Without it, the anonymous quota is shared across tracked repositories and API users of the server address. Each background pass is limited to ten minutes, inherits shutdown cancellation, and is joined before the service closes its database.
+
+Operators can run one pass immediately using the existing service environment and database credential:
+
+```sh
+./gonavi-market-server -sync-once
+# Or, with an administrator bearer token:
+curl --fail-with-body -X POST -H "Authorization: Bearer $TOKEN" \
+  "$BASE/api/v1/admin/sync"
+```
+
+Both return per-plugin outcomes (pluginId, version, skipped, published and reason). Inspect those outcomes even when the process exits successfully: one plugin's failure does not abort other plugins. Public catalog responses expose sourceUrl; the website and clients see a newly published version through the same live catalog, and installed clients compare it with their local version.
+
+## Supervision and yank
+
+Administrators list submissions, then inspect GET /admin/submissions/{id}. That private response contains the exact validated manifest and an administrator-only artifact URL at /admin/submissions/{id}/artifact. Fetch that URL with an administrator bearer token. Private inspection does not increase download counts. A publisher token cannot review. An administrator cannot approve their own package.
 
 ```sh
 curl --fail-with-body -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/admin/submissions"

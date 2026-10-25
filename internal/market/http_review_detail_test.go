@@ -23,7 +23,7 @@ func (m *memoryRepo) SubmissionDetail(ctx context.Context, a Account, id string)
 	return detail, nil
 }
 
-func TestAdminReviewPreviewNeverPublishesBytes(t *testing.T) {
+func TestAdminSupervisionDetailAndArtifact(t *testing.T) {
 	f := newHTTPFixture(t)
 	archive := archiveFixture(t, "acme.example", "1.0.0", "")
 	response := f.upload(t, "acme.example", "1.0.0", "publisher", archive, nil)
@@ -34,15 +34,19 @@ func TestAdminReviewPreviewNeverPublishesBytes(t *testing.T) {
 	assertStatus(t, f.request("GET", path+"/artifact", "", nil), 401)
 	preview := decodeResponse[ReviewDetail](t, f.request("GET", path, "admin", nil))
 	if len(preview.Manifest) == 0 || preview.Artifact == nil || preview.Artifact.SHA256 != submission.SHA256 {
-		t.Fatal("review preview is incomplete")
+		t.Fatal("supervision preview is incomplete")
 	}
 	download := f.request("GET", path+"/artifact", "admin", nil)
 	assertStatus(t, download, 200)
 	if !bytes.Equal(download.Body.Bytes(), archive) {
-		t.Fatal("review bytes differ from approved bytes")
+		t.Fatal("supervision bytes differ from published bytes")
 	}
-	assertStatus(t, f.request("GET", "/artifacts/"+submission.SHA256, "", nil), 404)
 	if f.repo.downloads["acme.example"] != 0 {
-		t.Fatal("private review counted as public download")
+		t.Fatal("private supervision counted as public download")
+	}
+	publicDownload := f.request("GET", "/artifacts/"+submission.SHA256, "", nil)
+	assertStatus(t, publicDownload, 200)
+	if !bytes.Equal(publicDownload.Body.Bytes(), archive) {
+		t.Fatal("published artifact differs from submitted archive")
 	}
 }

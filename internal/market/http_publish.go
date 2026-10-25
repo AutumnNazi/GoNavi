@@ -11,7 +11,7 @@ import (
 	"GoNavi-Wails/internal/logger"
 )
 
-type uploadedPackage struct{ Path, PluginID, Version string }
+type uploadedPackage struct{ Path, PluginID, Version, Source string }
 
 func removeUpload(path string) {
 	if path == "" {
@@ -41,7 +41,7 @@ func receiveUpload(w http.ResponseWriter, r *http.Request) (uploadedPackage, err
 		if errors.Is(partErr, io.EOF) {
 			break
 		}
-		if partErr != nil || count >= 3 {
+		if partErr != nil || count >= 4 {
 			return upload, ErrInvalid
 		}
 		name := part.FormName()
@@ -52,16 +52,19 @@ func receiveUpload(w http.ResponseWriter, r *http.Request) (uploadedPackage, err
 		seen[name] = true
 		if name == "package" {
 			upload.Path, err = saveUpload(part)
-		} else if name == "pluginId" || name == "version" {
+		} else if name == "pluginId" || name == "version" || name == "source" {
 			var value []byte
 			value, err = io.ReadAll(io.LimitReader(part, 1025))
 			if len(value) > 1024 {
 				err = ErrInvalid
 			}
-			if name == "pluginId" {
+			switch name {
+			case "pluginId":
 				upload.PluginID = string(value)
-			} else {
+			case "version":
 				upload.Version = string(value)
+			default:
+				upload.Source = string(value)
 			}
 		} else {
 			err = ErrInvalid
@@ -73,6 +76,11 @@ func receiveUpload(w http.ResponseWriter, r *http.Request) (uploadedPackage, err
 	}
 	if upload.Path == "" || !validPluginID(upload.PluginID) || !validVersion(upload.Version) {
 		return upload, ErrInvalid
+	}
+	if upload.Source != "" {
+		if _, _, err = parseRepositoryURL(upload.Source); err != nil {
+			return upload, err
+		}
 	}
 	success = true
 	return upload, nil
@@ -152,6 +160,19 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, err)
 		return
+	}
+	// Self-service publication: static validation is the gate. Official
+	// certification and takedowns remain operator-owned.
+	submission, err = s.repo.SelfPublish(r.Context(), a, submission.ID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if upload.Source != "" {
+		if err = s.repo.SetPluginSource(r.Context(), a, upload.PluginID, upload.Source); err != nil {
+			writeError(w, err)
+			return
+		}
 	}
 	writeJSON(w, 201, submission)
 }

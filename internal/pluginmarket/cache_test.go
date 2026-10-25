@@ -20,8 +20,8 @@ func TestCatalogOfflineCacheIsLastGoodAndSourceScoped(t *testing.T) {
 		if r.Header.Get("Authorization") != "" {
 			t.Error("public catalog sent bearer")
 		}
-		if r.URL.Query().Get("hostVersion") != "1.2.3" || r.URL.Query().Get("limit") != "24" || r.URL.Query().Get("platform") == "" {
-			t.Error("compatibility filters missing")
+		if r.URL.Query().Has("hostVersion") || r.URL.Query().Get("limit") != "24" || r.URL.Query().Get("platform") == "" {
+			t.Error("unexpected discovery filters")
 		}
 		switch mode.Load() {
 		case 1:

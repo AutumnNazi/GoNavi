@@ -24,6 +24,9 @@ type ReviewRepository interface {
 	BeginSubmission(context.Context, Account, string, string) (Submission, error)
 	AdvanceSubmission(context.Context, Account, string, string, string) (Submission, error)
 	ValidateSubmission(context.Context, Account, string, ValidatedPackage) (Submission, error)
+	SelfPublish(context.Context, Account, string) (Submission, error)
+	SourcePlugins(context.Context) ([]SourcePlugin, error)
+	SetPluginSource(context.Context, Account, string, string) error
 	Submissions(context.Context, Account) ([]Submission, error)
 	SubmissionDetail(context.Context, Account, string) (ReviewDetail, error)
 	Review(context.Context, Account, string, string, string) (Submission, error)

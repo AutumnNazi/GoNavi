@@ -19,8 +19,6 @@ func TestCatalogOfficialFirstAndCompatibleVersion(t *testing.T) {
 	f.repo.sessions[secretHash(f.tokens["community"])] = testSession{accountID: "4", expires: time.Now().Add(time.Hour)}
 	response := f.upload(t, "community.example", "1.0.0", "community", archiveFixture(t, "community.example", "1.0.0", ""), nil)
 	assertStatus(t, response, 201)
-	submission := decodeResponse[Submission](t, response)
-	assertStatus(t, f.request("POST", "/admin/submissions/"+submission.ID+"/approve", "admin", strings.NewReader("{}")), 200)
 	assertStatus(t, f.request("PUT", "/plugins/community.example/rating", "user", strings.NewReader(`{"stars":5}`)), 200)
 	for _, sort := range []string{"rating", "downloads", "updated"} {
 		page := decodeResponse[CatalogPage](t, f.request("GET", "/plugins?sort="+sort+"&hostVersion=1.0.0&limit=1", "", nil))
@@ -34,16 +32,14 @@ func TestCatalogOfficialFirstAndCompatibleVersion(t *testing.T) {
 	}
 }
 
-func TestHTTPRejectLeavesPriorReleasePublished(t *testing.T) {
+func TestHTTPYankRestoresPriorRelease(t *testing.T) {
 	f := newHTTPFixture(t)
 	f.publish(t, "acme.example", "1.0.0", "")
-	response := f.upload(t, "acme.example", "2.0.0", "publisher", archiveFixture(t, "acme.example", "2.0.0", ""), nil)
-	assertStatus(t, response, 201)
-	submission := decodeResponse[Submission](t, response)
-	assertStatus(t, f.request("POST", "/admin/submissions/"+submission.ID+"/reject", "admin", strings.NewReader(`{"reason":"needs review changes"}`)), 200)
+	submission := f.publish(t, "acme.example", "2.0.0", "")
+	assertStatus(t, f.request("POST", "/admin/submissions/"+submission.ID+"/yank", "admin", strings.NewReader(`{"reason":"regression report"}`)), 200)
 	detail := decodeResponse[MarketPlugin](t, f.request("GET", "/plugins/acme.example", "", nil))
 	if detail.Version != "1.0.0" {
-		t.Fatal("rejected version replaced published version")
+		t.Fatal("yanked version still shadows the prior release")
 	}
 	assertStatus(t, f.request("GET", "/plugins/acme.example/versions/2.0.0/artifact", "", nil), 404)
 	assertStatus(t, f.request("POST", "/admin/submissions/"+submission.ID+"/approve", "admin", strings.NewReader("{}")), 409)

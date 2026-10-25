@@ -21,6 +21,9 @@ type commandOptions struct {
 	migrate                       bool
 	grantID, grantRole, publisher string
 	official                      bool
+	publishArchive                string
+	namespace, reviewer           string
+	syncOnce                      bool
 }
 
 func main() {
@@ -30,6 +33,10 @@ func main() {
 	flag.StringVar(&options.grantRole, "grant-role", "user", "operator-assigned user, publisher or admin role")
 	flag.StringVar(&options.publisher, "publisher", "", "unique publisher namespace for an operator role grant")
 	flag.BoolVar(&options.official, "official", false, "mark the explicitly granted publisher official")
+	flag.StringVar(&options.publishArchive, "publish-official", "", "import one official plugin zip through the submission pipeline, then exit")
+	flag.StringVar(&options.namespace, "official-namespace", "com.gonavi", "publisher namespace for -publish-official")
+	flag.StringVar(&options.reviewer, "official-reviewer", "", "admin github id that approves a -publish-official import")
+	flag.BoolVar(&options.syncOnce, "sync-once", false, "run one GitHub release sync pass, print outcomes, then exit")
 	flag.Parse()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -68,6 +75,12 @@ func run(ctx context.Context, options commandOptions) error {
 	if options.grantID != "" {
 		return repository.GrantRole(ctx, options.grantID, options.publisher, options.grantRole, options.official)
 	}
+	if options.publishArchive != "" {
+		return publishOfficial(ctx, db, options)
+	}
+	if options.syncOnce {
+		return syncOnceFromCLI(ctx, db, options)
+	}
 	return serve(ctx, repository)
 }
 
@@ -84,10 +97,13 @@ func serve(ctx context.Context, repository *market.Postgres) error {
 	if err != nil {
 		return err
 	}
-	api, err := market.NewServer(market.ServerOptions{Repository: repository, Artifacts: store, Identity: provider, PublicURL: publicURL})
+	api, err := market.NewServer(market.ServerOptions{Repository: repository, Artifacts: store, Identity: provider,
+		Releases: market.NewGitHubReleaseFetcher(os.Getenv("GONAVI_MARKET_GITHUB_TOKEN")), PublicURL: publicURL})
 	if err != nil {
 		return err
 	}
+	stopReleaseSync := startReleaseSync(ctx, api)
+	defer stopReleaseSync()
 	address := os.Getenv("GONAVI_MARKET_LISTEN")
 	if address == "" {
 		address = "127.0.0.1:8090"

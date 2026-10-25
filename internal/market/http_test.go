@@ -43,6 +43,16 @@ func newHTTPFixture(t *testing.T) *httpFixture {
 	return &httpFixture{repo: repo, server: server, handler: server.Handler(), tokens: tokens}
 }
 
+// newSyncFixture wires a stub release fetcher into the fixture server.
+func newSyncFixture(t *testing.T, releases ReleaseFetcher) *httpFixture {
+	t.Helper()
+	f := newHTTPFixture(t)
+	if err := f.server.setReleaseFetcher(releases); err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
 func (f *httpFixture) request(method, path, role string, body io.Reader) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(method, "http://localhost:8090/api/v1"+path, body)
 	if role != "" {
@@ -137,27 +147,22 @@ func (f *httpFixture) publish(t *testing.T, id, version, minHost string) Submiss
 	response := f.upload(t, id, version, "publisher", archiveFixture(t, id, version, minHost), nil)
 	assertStatus(t, response, 201)
 	submission := decodeResponse[Submission](t, response)
-	if submission.State != "pending_review" {
+	if submission.State != "published" {
 		t.Fatalf("state=%s", submission.State)
 	}
-	response = f.request("POST", "/admin/submissions/"+submission.ID+"/approve", "admin", strings.NewReader("{}"))
-	assertStatus(t, response, 200)
-	return decodeResponse[Submission](t, response)
+	return submission
 }
 
-func TestHTTPReviewedPublicationAndImmutableDownload(t *testing.T) {
+func TestHTTPSelfPublicationAndImmutableDownload(t *testing.T) {
 	f := newHTTPFixture(t)
 	payload := archiveFixture(t, "acme.example", "1.0.0", "")
 	response := f.upload(t, "acme.example", "1.0.0", "publisher", payload, nil)
 	assertStatus(t, response, 201)
 	submission := decodeResponse[Submission](t, response)
 	page := decodeResponse[CatalogPage](t, f.request("GET", "/plugins", "", nil))
-	if len(page.Items) != 0 {
-		t.Fatal("pending version leaked")
+	if len(page.Items) != 1 || page.Items[0].Version != "1.0.0" {
+		t.Fatal("self-published version is not visible")
 	}
-	assertStatus(t, f.request("GET", "/artifacts/"+submission.SHA256, "", nil), 404)
-	assertStatus(t, f.request("POST", "/admin/submissions/"+submission.ID+"/approve", "publisher", strings.NewReader("{}")), 403)
-	assertStatus(t, f.request("POST", "/admin/submissions/"+submission.ID+"/approve", "admin", strings.NewReader("{}")), 200)
 	detail := decodeResponse[MarketPlugin](t, f.request("GET", "/plugins/acme.example", "", nil))
 	hash := sha256.Sum256(payload)
 	if detail.Official || detail.Artifact.SHA256 != hex.EncodeToString(hash[:]) || len(detail.Manifest) == 0 {
@@ -178,7 +183,7 @@ func TestHTTPReviewedPublicationAndImmutableDownload(t *testing.T) {
 	}
 	audit := decodeResponse[[]Audit](t, f.request("GET", "/admin/audit", "admin", nil))
 	if len(audit) < 6 {
-		t.Fatal("missing review history")
+		t.Fatal("missing publication history")
 	}
 }
 

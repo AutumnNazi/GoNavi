@@ -27,6 +27,7 @@ type MarketPlugin struct {
 	Version        string          `json:"version"`
 	Category       string          `json:"category,omitempty"`
 	MinHostVersion string          `json:"minHostVersion,omitempty"`
+	SourceURL      string          `json:"sourceUrl,omitempty"`
 	Platforms      []string        `json:"platforms"`
 	RatingAverage  float64         `json:"ratingAverage"`
 	RatingCount    int64           `json:"ratingCount"`

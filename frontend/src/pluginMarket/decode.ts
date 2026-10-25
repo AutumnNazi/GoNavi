@@ -1,7 +1,7 @@
 import { PluginAPIError, requireRecord } from '../plugins/apiResult';
 import { boundedJSON } from '../plugins/jsonBoundary';
 import { decodeManifest } from '../plugins/decode';
-import type { CatalogPage, DeviceLogin, LoginStatus, MarketPlugin, MarketRating, MarketSettings } from './types';
+import type { CatalogPage, DeviceLogin, LoginStatus, MarketPlugin, MarketRating, MarketSettings, MarketSubmission } from './types';
 
 const invalid = (): never => { throw new PluginAPIError('plugin.error.invalid_response'); };
 export function safeHTTPURL(value: string): boolean {
@@ -18,6 +18,7 @@ export function decodeMarketPlugin(data: unknown): MarketPlugin {
     || !Number.isSafeInteger(p.ratingCount) || Number(p.ratingCount) < 0
     || !Number.isSafeInteger(p.downloadCount) || Number(p.downloadCount) < 0) invalid();
   if (p.sourceId != null && typeof p.sourceId !== 'string') invalid();
+  if (p.minHostVersion != null && (typeof p.minHostVersion !== 'string' || p.minHostVersion.length > 128)) invalid();
   if (p.manifest != null) p.manifest = decodeManifest(p.manifest);
   if (p.artifact != null) {
     const a = requireRecord(p.artifact);
@@ -62,4 +63,11 @@ export function decodeLoginStatus(data: unknown): LoginStatus {
   const s = requireRecord(data);
   if (!['pending', 'authorized', 'denied', 'expired'].includes(String(s.status))) return invalid();
   return s.status as LoginStatus;
+}
+export function decodeSubmission(data: unknown): MarketSubmission {
+  const s = requireRecord(data);
+  if (['id', 'pluginId', 'version', 'state', 'publisherId'].some((key) => typeof s[key] !== 'string')) invalid();
+  if (s.reason != null && typeof s.reason !== 'string') invalid();
+  if (s.sha256 != null && !/^[a-f0-9]{64}$/i.test(String(s.sha256))) invalid();
+  return s as unknown as MarketSubmission;
 }

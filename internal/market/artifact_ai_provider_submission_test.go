@@ -39,11 +39,10 @@ func submitAIProviderArchive(t *testing.T, f *httpFixture, format, version strin
 	return response
 }
 
-func TestArtifactAIProvidersEveryVersionRequiresReviewAndPreservesBytes(t *testing.T) {
+func TestArtifactAIProvidersSelfPublishAndPreserveBytes(t *testing.T) {
 	for _, format := range []string{".zip", ".tgz"} {
 		t.Run(format, func(t *testing.T) {
 			f := newHTTPFixture(t)
-			previous := ""
 			for _, version := range []string{"1.2.3", "1.2.4"} {
 				manifest := artifactAIProviderManifest(t, func(fields, provider, model map[string]any) {
 					fields["version"] = version
@@ -54,27 +53,9 @@ func TestArtifactAIProvidersEveryVersionRequiresReviewAndPreservesBytes(t *testi
 				response := submitAIProviderArchive(t, f, format, version, payload)
 				assertStatus(t, response, 201)
 				submission := decodeResponse[Submission](t, response)
-				if submission.State != "pending_review" || submission.SHA256 != artifactTestDigest(payload) {
+				if submission.State != "published" || submission.SHA256 != artifactTestDigest(payload) {
 					t.Fatalf("submission=%+v", submission)
 				}
-				before := f.request("GET", "/plugins/acme.aiprovider", "", nil)
-				if previous == "" {
-					assertStatus(t, before, 404)
-				} else {
-					assertStatus(t, before, 200)
-					if visible := decodeResponse[MarketPlugin](t, before); visible.Version != previous {
-						t.Fatal("unreviewed provider version replaced the public version")
-					}
-				}
-				assertStatus(t, f.request("GET", "/artifacts/"+submission.SHA256, "", nil), 404)
-				previewResponse := f.request("GET", "/admin/submissions/"+submission.ID, "admin", nil)
-				assertStatus(t, previewResponse, 200)
-				preview := decodeResponse[ReviewDetail](t, previewResponse)
-				if !bytes.Equal(preview.Manifest, []byte(manifest)) {
-					t.Fatal("AI provider review manifest changed")
-				}
-				assertStatus(t, f.request("POST", "/admin/submissions/"+submission.ID+"/approve", "publisher", strings.NewReader("{}")), 403)
-				assertStatus(t, f.request("POST", "/admin/submissions/"+submission.ID+"/approve", "admin", strings.NewReader("{}")), 200)
 				publishedResponse := f.request("GET", "/plugins/acme.aiprovider", "", nil)
 				assertStatus(t, publishedResponse, 200)
 				published := decodeResponse[MarketPlugin](t, publishedResponse)
@@ -92,12 +73,17 @@ func TestArtifactAIProvidersEveryVersionRequiresReviewAndPreservesBytes(t *testi
 				if !bytes.Equal(published.Manifest, []byte(manifest)) {
 					t.Fatal("published provider manifest changed")
 				}
+				previewResponse := f.request("GET", "/admin/submissions/"+submission.ID, "admin", nil)
+				assertStatus(t, previewResponse, 200)
+				preview := decodeResponse[ReviewDetail](t, previewResponse)
+				if !bytes.Equal(preview.Manifest, []byte(manifest)) {
+					t.Fatal("AI provider supervision manifest changed")
+				}
 				download := f.request("GET", "/artifacts/"+submission.SHA256, "", nil)
 				assertStatus(t, download, 200)
 				if !bytes.Equal(download.Body.Bytes(), payload) {
 					t.Fatal("published provider artifact bytes changed")
 				}
-				previous = version
 			}
 		})
 	}

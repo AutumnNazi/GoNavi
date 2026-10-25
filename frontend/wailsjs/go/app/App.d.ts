@@ -692,6 +692,8 @@ export function PluginMarketRatings(arg1:string):Promise<connection.QueryResult>
 
 export function PluginMarketSettings():Promise<connection.QueryResult>;
 
+export function PluginMarketSubmit(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
 export function PluginOpenWindow(arg1:string):Promise<connection.QueryResult>;
 
 export function PluginRemoteCancelInspection(arg1:string):Promise<connection.QueryResult>;

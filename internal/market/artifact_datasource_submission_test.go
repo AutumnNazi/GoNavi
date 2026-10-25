@@ -8,7 +8,6 @@ import (
 	"mime/multipart"
 	"net/http/httptest"
 	"os"
-	"strings"
 	"testing"
 )
 
@@ -39,7 +38,7 @@ func submitDataSourceArchive(t *testing.T, f *httpFixture, format string, payloa
 	return response
 }
 
-func TestArtifactDataSourceSubmissionRequiresManualReview(t *testing.T) {
+func TestArtifactDataSourceSubmissionSelfPublishes(t *testing.T) {
 	for _, format := range []string{".zip", ".tgz"} {
 		t.Run(format, func(t *testing.T) {
 			f := newHTTPFixture(t)
@@ -48,16 +47,13 @@ func TestArtifactDataSourceSubmissionRequiresManualReview(t *testing.T) {
 			response := submitDataSourceArchive(t, f, format, payload)
 			assertStatus(t, response, 201)
 			submission := decodeResponse[Submission](t, response)
-			if submission.State != "pending_review" || submission.SHA256 != artifactTestDigest(payload) {
+			if submission.State != "published" || submission.SHA256 != artifactTestDigest(payload) {
 				t.Fatalf("submission=%+v", submission)
 			}
-			assertStatus(t, f.request("GET", "/plugins/acme.datasource", "", nil), 404)
-			assertStatus(t, f.request("GET", "/artifacts/"+submission.SHA256, "", nil), 404)
 			preview := decodeResponse[ReviewDetail](t, f.request("GET", "/admin/submissions/"+submission.ID, "admin", nil))
 			if !bytes.Equal(preview.Manifest, []byte(manifest)) {
 				t.Fatal("review manifest differs from inspected datasource manifest")
 			}
-			assertStatus(t, f.request("POST", "/admin/submissions/"+submission.ID+"/approve", "admin", strings.NewReader("{}")), 200)
 			published := decodeResponse[MarketPlugin](t, f.request("GET", "/plugins/acme.datasource", "", nil))
 			var saved artifactManifest
 			if err := json.Unmarshal(published.Manifest, &saved); err != nil {

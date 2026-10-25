@@ -88,14 +88,16 @@ export function LocalInstallPanel({ allowed, onInstalled, installedIds }: Props)
     } finally { setPicking(null); }
   };
   return <section className="plugin-local-install plugin-stack" aria-label={t('plugin.install.local')}>
-    <Typography.Text strong>{t('plugin.install.local')}</Typography.Text>
-    <Typography.Text type="secondary">{t('plugin.install.path_hint')}</Typography.Text>
-    <div className="plugin-toolbar">
+    <header className="plugin-local-install-heading">
+      <Typography.Text strong>{t('plugin.install.local')}</Typography.Text>
+      <Typography.Text type="secondary">{t('plugin.install.path_hint')}</Typography.Text>
+    </header>
+    <div className="plugin-toolbar plugin-install-controls">
       <Input aria-label={t('plugin.install.path')} placeholder={t('plugin.install.path')} value={path} disabled={!allowed || installing}
         onChange={(event) => { request.current++; setBusy(false); setPath(event.target.value); clearInspection(); }} onPressEnter={inspect} />
-      <Button onClick={inspect} loading={busy} disabled={!allowed || installing || !path.trim()}>{t('plugin.install.inspect')}</Button>
+      <Button type="primary" onClick={inspect} loading={busy} disabled={!allowed || installing || !path.trim()}>{t('plugin.install.inspect')}</Button>
     </div>
-    {!webRuntime && <div className="plugin-ui-row">
+    {!webRuntime && <div className="plugin-ui-row plugin-install-pickers">
       <Button onClick={() => void pickPackage(false)} loading={picking === 'file'} disabled={!allowed || installing}>{t('plugin.install.select_file')}</Button>
       <Button onClick={() => void pickPackage(true)} loading={picking === 'directory'} disabled={!allowed || installing}>{t('plugin.install.select_directory')}</Button>
     </div>}

@@ -6,26 +6,72 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 )
 
 const accountColumns = "id,login,role,publisher_id,official"
 
 var githubIDPattern = regexp.MustCompile(`^[1-9][0-9]{0,19}$`)
-var publisherPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 
-// UpsertIdentity never assigns privileges; only a deployment operator may grant them.
+// publisherPattern allows dot-separated segments so a namespace can match the
+// reverse-domain prefix a plugin id must extend (com.gonavi.example-plugin).
+var publisherPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}(?:[.][a-z][a-z0-9-]{0,62})*$`)
+
+const maxPublisherNamespaceBytes = 200
+
+// UpsertIdentity registers a GitHub identity. A first login self-serves a scoped
+// publisher namespace so authors can publish immediately; official certification
+// and privileged roles stay operator-owned.
 func (p *Postgres) UpsertIdentity(ctx context.Context, identity Identity) (Account, error) {
 	if identity.ID == "" || identity.Login == "" {
 		return Account{}, ErrInvalid
 	}
-	query := `INSERT INTO market_users(id,login) VALUES($1,$2) ON CONFLICT(id) DO UPDATE SET login=EXCLUDED.login RETURNING ` + accountColumns
-	return scanAccount(p.db.QueryRowContext(ctx, query, identity.ID, identity.Login))
+	namespace, ok := selfServiceNamespace(identity.Login)
+	if !ok {
+		return Account{}, ErrInvalid
+	}
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Account{}, repositoryError(err)
+	}
+	defer rollback(tx)
+	inserted, err := tx.ExecContext(ctx, `INSERT INTO market_users(id,login,role,publisher_id,official) VALUES($1,$2,'publisher',$3,false) ON CONFLICT(id) DO NOTHING`, identity.ID, identity.Login, namespace)
+	if err != nil {
+		return Account{}, repositoryError(err)
+	}
+	affected, err := inserted.RowsAffected()
+	if err != nil {
+		return Account{}, repositoryError(err)
+	}
+	if affected == 1 {
+		if err = writeAudit(ctx, tx, "bootstrap:self-service", "account.role", identity.ID, "role=publisher publisher="+namespace); err != nil {
+			return Account{}, err
+		}
+	} else if _, err = tx.ExecContext(ctx, "UPDATE market_users SET login=$2 WHERE id=$1", identity.ID, identity.Login); err != nil {
+		return Account{}, repositoryError(err)
+	}
+	account, err := scanAccount(tx.QueryRowContext(ctx, "SELECT "+accountColumns+" FROM market_users WHERE id=$1", identity.ID))
+	if err != nil {
+		return account, err
+	}
+	return account, repositoryError(tx.Commit())
+}
+
+// selfServiceNamespace derives a stable namespace from a GitHub login. GitHub
+// logins are unique case-insensitively and limited to letters, digits and
+// dashes, so the lowercase mapping never collides across accounts.
+func selfServiceNamespace(login string) (string, bool) {
+	namespace := "gh-" + strings.ToLower(login)
+	if len(namespace) > maxPublisherNamespaceBytes || !publisherPattern.MatchString(namespace) {
+		return "", false
+	}
+	return namespace, true
 }
 
 // GrantRole is an explicit operator bootstrap operation, not a public signup path.
 func (p *Postgres) GrantRole(ctx context.Context, githubID, publisher, role string, official bool) error {
-	if !githubIDPattern.MatchString(githubID) || (publisher != "" && !publisherPattern.MatchString(publisher)) {
+	if !githubIDPattern.MatchString(githubID) || (publisher != "" && (len(publisher) > maxPublisherNamespaceBytes || !publisherPattern.MatchString(publisher))) {
 		return ErrInvalid
 	}
 	if role != "user" && role != "publisher" && role != "admin" {
@@ -64,6 +110,14 @@ func (p *Postgres) GrantRole(ctx context.Context, githubID, publisher, role stri
 		return err
 	}
 	return repositoryError(tx.Commit())
+}
+
+// AccountByID returns the stored privileges of one account for operator checks.
+func (p *Postgres) AccountByID(ctx context.Context, id string) (Account, error) {
+	if !githubIDPattern.MatchString(id) {
+		return Account{}, ErrInvalid
+	}
+	return scanAccount(p.db.QueryRowContext(ctx, "SELECT "+accountColumns+" FROM market_users WHERE id=$1", id))
 }
 
 // Session resolves current privileges on every request, including role revocation.

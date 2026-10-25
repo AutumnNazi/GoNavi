@@ -39,11 +39,10 @@ func submitExporterArchive(t *testing.T, f *httpFixture, format, version string,
 	return response
 }
 
-func TestArtifactExportersEveryVersionRequiresReviewAndPreservesBytes(t *testing.T) {
+func TestArtifactExportersSelfPublishAndPreserveBytes(t *testing.T) {
 	for _, format := range []string{".zip", ".tgz"} {
 		t.Run(format, func(t *testing.T) {
 			f := newHTTPFixture(t)
-			previous := ""
 			for _, version := range []string{"1.2.3", "1.2.4"} {
 				manifest := artifactExporterManifest(t, func(fields, exporter map[string]any) {
 					fields["version"] = version
@@ -54,26 +53,9 @@ func TestArtifactExportersEveryVersionRequiresReviewAndPreservesBytes(t *testing
 				response := submitExporterArchive(t, f, format, version, payload)
 				assertStatus(t, response, 201)
 				submission := decodeResponse[Submission](t, response)
-				if submission.State != "pending_review" || submission.SHA256 != artifactTestDigest(payload) {
+				if submission.State != "published" || submission.SHA256 != artifactTestDigest(payload) {
 					t.Fatalf("submission=%+v", submission)
 				}
-				before := f.request("GET", "/plugins/acme.exporter", "", nil)
-				if previous == "" {
-					assertStatus(t, before, 404)
-				} else {
-					assertStatus(t, before, 200)
-					if visible := decodeResponse[MarketPlugin](t, before); visible.Version != previous {
-						t.Fatal("unreviewed exporter replaced the public version")
-					}
-				}
-				assertStatus(t, f.request("GET", "/artifacts/"+submission.SHA256, "", nil), 404)
-				previewResponse := f.request("GET", "/admin/submissions/"+submission.ID, "admin", nil)
-				assertStatus(t, previewResponse, 200)
-				if preview := decodeResponse[ReviewDetail](t, previewResponse); !bytes.Equal(preview.Manifest, []byte(manifest)) {
-					t.Fatal("review manifest changed")
-				}
-				assertStatus(t, f.request("POST", "/admin/submissions/"+submission.ID+"/approve", "publisher", strings.NewReader("{}")), 403)
-				assertStatus(t, f.request("POST", "/admin/submissions/"+submission.ID+"/approve", "admin", strings.NewReader("{}")), 200)
 				publishedResponse := f.request("GET", "/plugins/acme.exporter", "", nil)
 				assertStatus(t, publishedResponse, 200)
 				published := decodeResponse[MarketPlugin](t, publishedResponse)
@@ -90,12 +72,16 @@ func TestArtifactExportersEveryVersionRequiresReviewAndPreservesBytes(t *testing
 				if len(saved.Contributes.Exporters) != 1 || saved.Contributes.Exporters[0].Extension != "ndjson" || saved.Contributes.Exporters[0].ContentType != "application/x-ndjson" {
 					t.Fatal("published exporter metadata changed")
 				}
+				previewResponse := f.request("GET", "/admin/submissions/"+submission.ID, "admin", nil)
+				assertStatus(t, previewResponse, 200)
+				if preview := decodeResponse[ReviewDetail](t, previewResponse); !bytes.Equal(preview.Manifest, []byte(manifest)) {
+					t.Fatal("supervision manifest changed")
+				}
 				download := f.request("GET", "/artifacts/"+submission.SHA256, "", nil)
 				assertStatus(t, download, 200)
 				if !bytes.Equal(download.Body.Bytes(), payload) {
 					t.Fatal("published exporter archive bytes changed")
 				}
-				previous = version
 			}
 		})
 	}

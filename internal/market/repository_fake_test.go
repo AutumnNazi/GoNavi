@@ -16,6 +16,7 @@ type testRelease struct {
 	submission  Submission
 	packageData ValidatedPackage
 	owner       string
+	sourceURL   string
 }
 type testSession struct {
 	accountID string
@@ -55,6 +56,7 @@ func (m *memoryRepo) plugin(v testRelease) MarketPlugin {
 	pkg := v.packageData
 	p := MarketPlugin{ID: pkg.ID, Name: pkg.Name, Description: pkg.Description, Author: pkg.Author, Version: pkg.Version,
 		PublisherID: m.accounts[v.owner].PublisherID, Official: m.accounts[v.owner].Official, MinHostVersion: pkg.MinHostVersion, Platforms: pkg.Platforms,
+		SourceURL: v.sourceURL,
 		Manifest: append([]byte(nil), pkg.Manifest...), UpdatedAt: v.submission.UpdatedAt, DownloadCount: m.downloads[pkg.ID],
 		Artifact: &Artifact{SHA256: pkg.SHA256, SizeBytes: pkg.SizeBytes, Platform: "any", Version: pkg.Version}}
 	for key, r := range m.ratings {

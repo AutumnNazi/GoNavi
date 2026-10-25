@@ -17,6 +17,18 @@ func (a *App) PluginMarketConfigure(baseURL string) connection.QueryResult {
 	return a.pluginMarketConfigureContext(a.pluginContext(), baseURL)
 }
 
+// PluginMarketSubmit uploads one prebuilt plugin archive to the configured source.
+// The service validates the package and owns publishing; the host never runs it.
+// An optional GitHub repository URL registers automatic release tracking.
+func (a *App) PluginMarketSubmit(archivePath, sourceURL string) connection.QueryResult {
+	if !a.pluginManagementAllowed() {
+		return a.pluginFailure("management_denied")
+	}
+	return a.marketCall(a.pluginContext(), func(ctx context.Context, s *pluginmarket.Service) (any, error) {
+		return s.Submit(ctx, archivePath, sourceURL)
+	})
+}
+
 func (a *App) pluginMarketConfigureContext(ctx context.Context, baseURL string) connection.QueryResult {
 	if !a.pluginManagementAllowed() {
 		return a.pluginFailure("management_denied")

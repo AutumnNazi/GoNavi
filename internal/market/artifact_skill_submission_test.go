@@ -39,7 +39,7 @@ func submitSkillArchive(t *testing.T, f *httpFixture, format string, payload []b
 	return response
 }
 
-func TestArtifactSkillsSubmissionRequiresManualReview(t *testing.T) {
+func TestArtifactSkillsSubmissionSelfPublishes(t *testing.T) {
 	for _, format := range []string{".zip", ".tgz"} {
 		t.Run(format, func(t *testing.T) {
 			f := newHTTPFixture(t)
@@ -49,11 +49,9 @@ func TestArtifactSkillsSubmissionRequiresManualReview(t *testing.T) {
 			response := submitSkillArchive(t, f, format, payload)
 			assertStatus(t, response, 201)
 			submission := decodeResponse[Submission](t, response)
-			if submission.State != "pending_review" || submission.SHA256 != artifactTestDigest(payload) {
+			if submission.State != "published" || submission.SHA256 != artifactTestDigest(payload) {
 				t.Fatalf("submission=%+v", submission)
 			}
-			assertStatus(t, f.request("GET", "/plugins/acme.skills", "", nil), 404)
-			assertStatus(t, f.request("GET", "/artifacts/"+submission.SHA256, "", nil), 404)
 			previewResponse := f.request("GET", "/admin/submissions/"+submission.ID, "admin", nil)
 			assertStatus(t, previewResponse, 200)
 			preview := decodeResponse[ReviewDetail](t, previewResponse)
@@ -63,7 +61,6 @@ func TestArtifactSkillsSubmissionRequiresManualReview(t *testing.T) {
 			if strings.Contains(previewResponse.Body.String(), "UNTRUSTED_SKILL_BODY") {
 				t.Fatal("review discovery included the skill body")
 			}
-			assertStatus(t, f.request("POST", "/admin/submissions/"+submission.ID+"/approve", "admin", strings.NewReader("{}")), 200)
 			publishedResponse := f.request("GET", "/plugins/acme.skills", "", nil)
 			assertStatus(t, publishedResponse, 200)
 			published := decodeResponse[MarketPlugin](t, publishedResponse)

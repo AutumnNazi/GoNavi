@@ -54,8 +54,9 @@ func (s *Service) catalogQuery(query, order, cursor string) (url.Values, error) 
 	if order != "updated" && order != "rating" && order != "downloads" {
 		return nil, ErrInvalidRequest
 	}
+	// Discovery includes newer-host releases; the runtime still enforces manifest compatibility.
 	return url.Values{"q": {query}, "sort": {order}, "cursor": {cursor}, "limit": {"24"},
-		"hostVersion": {s.hostVersion}, "platform": {runtime.GOOS + "/" + runtime.GOARCH}}, nil
+		"platform": {runtime.GOOS + "/" + runtime.GOARCH}}, nil
 }
 
 // Detail fetches a published entry without pretending that unavailable details are a successful empty result.

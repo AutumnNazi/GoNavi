@@ -21,8 +21,10 @@ type ServerOptions struct {
 	Repository Repository
 	Artifacts  ArtifactStore
 	Identity   IdentityProvider
-	PublicURL  string
-	Clock      func() time.Time
+	// Releases reads GitHub releases for source auto-sync; nil disables the pass.
+	Releases  ReleaseFetcher
+	PublicURL string
+	Clock     func() time.Time
 }
 
 // Server owns HTTP policy; repository methods own atomic domain invariants.
@@ -30,6 +32,7 @@ type Server struct {
 	repo          Repository
 	artifacts     ArtifactStore
 	identity      IdentityProvider
+	releases      ReleaseFetcher
 	localizer     *i18n.Localizer
 	publicURL     string
 	secure        bool
@@ -68,7 +71,7 @@ func NewServer(o ServerOptions) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{repo: o.Repository, artifacts: o.Artifacts, identity: o.Identity, localizer: localizer, publicURL: base, secure: secure, now: o.Clock,
+	return &Server{repo: o.Repository, artifacts: o.Artifacts, identity: o.Identity, releases: o.Releases, localizer: localizer, publicURL: base, secure: secure, now: o.Clock,
 		limits: make(map[string]requestLimit), slots: make(chan struct{}, 64), uploadSlots: make(chan struct{}, 2), artifactSlots: make(chan struct{}, 2)}, nil // Two artifact operations bound archive and object-store snapshots.
 }
 
@@ -92,6 +95,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/admin/submissions/{id}/{action}", s.review)
 	mux.HandleFunc("GET /api/v1/admin/audit", s.audit)
 	mux.HandleFunc("POST /api/v1/admin/plugins/{id}/ratings/{user}/hide", s.hideRating)
+	mux.HandleFunc("POST /api/v1/admin/sync", s.syncReleases)
 	mux.HandleFunc("POST /api/v1/auth/device", s.startDevice)
 	mux.HandleFunc("POST /api/v1/auth/device/token", s.pollDevice)
 	mux.HandleFunc("GET /api/v1/auth/session", s.session)

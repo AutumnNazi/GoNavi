@@ -165,6 +165,38 @@ func (p *Postgres) ValidateSubmission(ctx context.Context, a Account, id string,
 	return s, nil
 }
 
+// SelfPublish atomically publishes one owned pending version after static
+// validation. Official certification stays operator-owned and takedowns still
+// go through Review, so this path only removes the queue wait, not oversight.
+func (p *Postgres) SelfPublish(ctx context.Context, a Account, id string) (Submission, error) {
+	if a.Role != "publisher" && a.Role != "admin" {
+		return Submission{}, ErrForbidden
+	}
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Submission{}, repositoryError(err)
+	}
+	defer rollback(tx)
+	s, owner, err := lockedSubmission(ctx, tx, id)
+	if err != nil {
+		return s, err
+	}
+	if owner != a.ID {
+		return s, ErrForbidden
+	}
+	if s.State != "pending_review" || s.SHA256 == "" {
+		return s, ErrConflict
+	}
+	s, err = transition(ctx, tx, a.ID, s, "published", "self-service publication")
+	if err != nil {
+		return s, err
+	}
+	if err = tx.Commit(); err != nil {
+		return s, repositoryError(err)
+	}
+	return s, nil
+}
+
 // Submissions lists the caller's versions, or the bounded admin review queue.
 func (p *Postgres) Submissions(ctx context.Context, a Account) ([]Submission, error) {
 	if a.Role != "admin" && a.Role != "publisher" {

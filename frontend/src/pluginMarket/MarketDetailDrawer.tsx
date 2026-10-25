@@ -29,6 +29,7 @@ export function MarketDetailDrawer({ id, source, allowed, authenticated, trusted
         <Typography.Paragraph>{plugin.description}</Typography.Paragraph>
         <Typography.Text type="secondary">{t('plugin.market.author', { name: plugin.author })}</Typography.Text>
         <Typography.Text type="secondary">{t('plugin.market.platforms', { platforms: plugin.platforms.join(', ') })}</Typography.Text>
+        {plugin.minHostVersion && <Typography.Text type="secondary">{t('plugin.market.requires_host', { version: plugin.minHostVersion })}</Typography.Text>}
         <Typography.Text>{plugin.ratingCount ? t('plugin.market.rating_summary', { average: plugin.ratingAverage.toFixed(2), count: plugin.ratingCount }) : t('plugin.market.no_ratings')}</Typography.Text>
         <Button type="primary" disabled={!allowed || !canPreview || detail.loading || Boolean(request)} onClick={() => {
           if (canPreview && artifact && sourceId) { setInstallError(''); setRequest({ id, version: plugin.version, artifactDigest: artifact.sha256, sourceId }); }

@@ -12,7 +12,7 @@ import (
 )
 
 const catalogColumns = `p.id,v.name,v.description,v.author,p.publisher_id,u.official,v.version,
- v.min_host_version,v.platforms,COALESCE(r.average,0),COALESCE(r.count,0),p.download_count,
+ v.min_host_version,p.source_url,v.platforms,COALESCE(r.average,0),COALESCE(r.count,0),p.download_count,
  v.updated_at,v.manifest,v.sha256,v.size_bytes`
 
 const ratingJoin = ` LEFT JOIN LATERAL (SELECT AVG(stars)::float8 AS average,COUNT(*) AS count
@@ -23,7 +23,7 @@ func scanPlugin(row scanner) (MarketPlugin, error) {
 	var artifact Artifact
 	var manifest []byte
 	err := row.Scan(&p.ID, &p.Name, &p.Description, &p.Author, &p.PublisherID, &p.Official, &p.Version,
-		&p.MinHostVersion, pq.Array(&p.Platforms), &p.RatingAverage, &p.RatingCount, &p.DownloadCount,
+		&p.MinHostVersion, &p.SourceURL, pq.Array(&p.Platforms), &p.RatingAverage, &p.RatingCount, &p.DownloadCount,
 		&p.UpdatedAt, &manifest, &artifact.SHA256, &artifact.SizeBytes)
 	if err != nil {
 		return p, repositoryError(err)
