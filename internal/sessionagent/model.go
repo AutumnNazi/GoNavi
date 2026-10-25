@@ -27,6 +27,9 @@ const (
 	InlineTextMaxChars = 8 * 1024
 	// MaxPageChars 按需取全文时单页最大字符数。
 	MaxPageChars = 512 * 1024
+	// MaxInlineTextChars 工具输入可直接内联的最大字符数；超过才走
+	// ContentRef 按需读取（patch 文本通常远小于该值，直接内联省一次往返）。
+	MaxInlineTextChars = 64 * 1024
 	// MaxTextBytes 单次全文读取的字节上限。
 	MaxTextBytes = 32 * 1024 * 1024
 )
@@ -190,6 +193,7 @@ type ToolCallBlock struct {
 	Detail        string       `json:"detail,omitempty"`
 	Server        string       `json:"server,omitempty"`
 	InputPreview  string       `json:"inputPreview,omitempty"`
+	InputText     string       `json:"inputText,omitempty"`
 	InputTotalLen uint32       `json:"inputTotalLen,omitempty"`
 	InputFull     *ContentRef  `json:"inputFull,omitempty"`
 	Diff          *DiffSummary `json:"diff,omitempty"`

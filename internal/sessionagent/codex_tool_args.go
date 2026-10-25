@@ -88,6 +88,63 @@ func codexCustomToolName(input string) string {
 	return rest[:end]
 }
 
+// codexExtractApplyPatch 从 custom_tool_call 的自由文本里提取 patch 块。
+//
+// 新版 Codex 常把 apply_patch 包在 exec 脚本的字符串字面量里：
+//
+//	text(await tools.apply_patch("*** Begin Patch\n...*** End Patch"))
+//
+// 外层 JSON 只解一层，内部的 \n 和 \" 仍是转义形态。这里必须按字符串
+// 字面量再解一层，才能看到真实的 patch 行。同一脚本可能有多段 patch；
+// 只有能解析出文件时才返回，否则继续按普通 exec 处理。
+func codexExtractApplyPatch(input string) string {
+	const marker = "tools.apply_patch("
+	var patches []string
+	rest := input
+	for {
+		idx := strings.Index(rest, marker)
+		if idx < 0 {
+			break
+		}
+		argument := strings.TrimLeft(rest[idx+len(marker):], " \t")
+		// 字面量从这里开始还带着开引号，scanQuotedJSONString 只读引号
+		// 之间的内容，先把开引号跳掉。
+		if !strings.HasPrefix(argument, `"`) {
+			rest = argument
+			continue
+		}
+		quoted, ok := scanQuotedJSONString(argument[len(`"`):])
+		if ok {
+			patch := extractSingleApplyPatch(quoted)
+			if patch != "" {
+				patches = append(patches, patch)
+			}
+		}
+		rest = argument[len(`"`):]
+	}
+	return strings.Join(patches, "\n\n")
+}
+
+// extractSingleApplyPatch 从已解码的脚本文本中取出一个完整 patch 块。
+func extractSingleApplyPatch(text string) string {
+	const begin = "*** Begin Patch"
+	const end = "*** End Patch"
+	start := strings.Index(text, begin)
+	if start < 0 {
+		return ""
+	}
+	tail := text[start+len(begin):]
+	stop := strings.Index(tail, end)
+	if stop < 0 {
+		return ""
+	}
+	patch := begin + tail[:stop+len(end)]
+	if len(ParseApplyPatchFiles(patch)) == 0 {
+		return ""
+	}
+	return patch
+}
+
 // scanQuotedJSONString 读取一个带转义的 JSON 字符串字面量内容。
 func scanQuotedJSONString(s string) (string, bool) {
 	var b strings.Builder

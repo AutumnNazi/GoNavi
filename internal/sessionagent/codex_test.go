@@ -206,15 +206,96 @@ func TestStripOutputHeader(t *testing.T) {
 }
 
 func TestParseApplyPatchFiles(t *testing.T) {
-	files := ParseApplyPatchFiles("*** Begin Patch\n*** Add File: a.go\n+x\n*** Update File: b.go\n-y\n*** End Patch")
-	if len(files) != 2 {
+	files := ParseApplyPatchFiles(
+		"*** Begin Patch\n" +
+			"*** Add File: a.go\n+x1\n+x2\n" +
+			"*** Update File: b.go\n ctx\n-old\n+new\n" +
+			"*** Delete File: c.go\n-del1\n-del2\n" +
+			"*** End Patch")
+	if len(files) != 3 {
 		t.Fatalf("files = %+v", files)
 	}
-	if files[0].Path != "a.go" || files[0].Op != DiffAdd {
+	if files[0].Path != "a.go" || files[0].Op != DiffAdd || files[0].Added != 2 || files[0].Removed != 0 {
 		t.Fatalf("file0 = %+v", files[0])
 	}
-	if files[1].Path != "b.go" || files[1].Op != DiffUpdate {
+	if files[1].Path != "b.go" || files[1].Op != DiffUpdate || files[1].Added != 1 || files[1].Removed != 1 {
 		t.Fatalf("file1 = %+v", files[1])
+	}
+	if files[2].Path != "c.go" || files[2].Op != DiffDelete || files[2].Added != 0 || files[2].Removed != 2 {
+		t.Fatalf("file2 = %+v", files[2])
+	}
+}
+
+func TestCodexExtractApplyPatch(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "extracts patch wrapped in exec script",
+			input: "text(await tools.apply_patch(\"*** Begin Patch\n*** Add File: a.go\n+x\n*** End Patch\"));\ntools.exec_command({cmd:\"ls\"})",
+			want:  "*** Begin Patch\n*** Add File: a.go\n+x\n*** End Patch",
+		},
+		{
+			name:  "decodes escaped exec string literal",
+			input: `text(await tools.apply_patch("*** Begin Patch\n*** Add File: a.go\n+x\n*** End Patch"));`,
+			want:  "*** Begin Patch\n*** Add File: a.go\n+x\n*** End Patch",
+		},
+		{
+			name:  "rejects script without parseable files",
+			input: `text(await tools.apply_patch("*** Begin Patch\n@@\n*** End Patch"))`,
+			want:  "",
+		},
+		{
+			name:  "ignores ordinary exec command",
+			input: `text(await tools.exec_command({cmd:"git apply patch"}))`,
+			want:  "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := codexExtractApplyPatch(tt.input); got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseCodexMessagesExtractsWrappedApplyPatch(t *testing.T) {
+	dir := t.TempDir()
+	path := writeRollout(t, dir, "rollout-patch.jsonl",
+		metaLine,
+		`{"type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"c1","input":"text(await tools.apply_patch(\"*** Begin Patch\n*** Update File: main.go\n-x\n+y\n*** End Patch\"));"}}`,
+		`{"type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"c1","output":"ok"}}`,
+	)
+	messages, _, err := ParseCodexMessages(path)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var call *ToolCallBlock
+	for _, msg := range messages {
+		for _, block := range msg.Blocks {
+			if block.Type == BlockToolCall && block.ToolCall != nil {
+				call = block.ToolCall
+			}
+		}
+	}
+	if call == nil {
+		t.Fatal("tool call missing")
+	}
+	if call.Kind != ToolDiff || call.Diff == nil {
+		t.Fatalf("call = %+v", call)
+	}
+	if len(call.Diff.Files) != 1 || call.Diff.Files[0].Path != "main.go" {
+		t.Fatalf("files = %+v", call.Diff.Files)
+	}
+	if call.Diff.Files[0].Added != 1 || call.Diff.Files[0].Removed != 1 {
+		t.Fatalf("file counts = %+v", call.Diff.Files[0])
+	}
+	// 改动页要能展示 patch 内容：预览必须带上，且包含 + 行。
+	if !strings.Contains(call.InputPreview, "+y") {
+		t.Fatalf("inputPreview = %q", call.InputPreview)
 	}
 }
 

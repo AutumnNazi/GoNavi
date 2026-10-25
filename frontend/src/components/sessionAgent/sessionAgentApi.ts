@@ -65,6 +65,7 @@ export interface SessionBlockView {
     title: string;
     detail?: string;
     inputPreview?: string;
+    inputText?: string;
     inputTotalLen?: number;
     inputFull?: SessionContentRef;
     diff?: { files: Array<{ path: string; op: string; added: number; removed: number }>; added: number; removed: number };

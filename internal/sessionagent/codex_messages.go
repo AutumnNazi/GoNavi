@@ -361,6 +361,12 @@ func (p *codexParser) onCustomToolCall(raw json.RawMessage) {
 		p.onApplyPatch(payload.CallID, string(payload.Input))
 		return
 	}
+	// 新版 Codex 常把 apply_patch 包在 exec 自由文本里。能抽出真实 patch
+	// 时按 diff 处理；抽不出时仍走普通 shell/exec 分类。
+	if patch := codexExtractApplyPatch(codexToolArgsText(payload.Input)); patch != "" {
+		p.onApplyPatch(payload.CallID, patch)
+		return
+	}
 	kind, title, detail := classifyCodexTool(name, "", payload.Input)
 	inputText := codexToolArgsText(payload.Input)
 	block := ToolCallBlock{
@@ -386,6 +392,9 @@ func (p *codexParser) onCustomToolCall(raw json.RawMessage) {
 func (p *codexParser) onApplyPatch(callID, input string) {
 	files := ParseApplyPatchFiles(input)
 	added, removed := CountDiffLines(input)
+	// patch 文本既是 diff 也是工具输入：给改动页一份预览，截断时挂
+	// 全文引用供展开加载。
+	preview := MakePreview(input)
 	diff := &DiffSummary{
 		Files:   files,
 		Added:   added,
@@ -393,11 +402,20 @@ func (p *codexParser) onApplyPatch(callID, input string) {
 		Full:    p.lineRef("/payload/input"),
 	}
 	block := ToolCallBlock{
-		ID:      firstNonEmpty(callID, "apply_patch"),
-		RawName: "apply_patch",
-		Kind:    ToolDiff,
-		Title:   DiffTitle(files),
-		Diff:    diff,
+		ID:            firstNonEmpty(callID, "apply_patch"),
+		RawName:       "apply_patch",
+		Kind:          ToolDiff,
+		Title:         DiffTitle(files),
+		InputPreview:  preview.Text,
+		InputTotalLen: preview.TotalLen,
+		Diff:          diff,
+	}
+	if len([]rune(input)) <= MaxInlineTextChars {
+		// patch 文本就是改动内容本身，直接内联给改动页完整渲染；
+		// 不内联会话源里的 exec 包装脚本，避免展示多余包装。
+		block.InputText = input
+	} else {
+		block.InputFull = p.lineRef("/payload/input")
 	}
 	if added > 0 && removed == 0 {
 		block.Kind = ToolWrite
@@ -410,26 +428,40 @@ func (p *codexParser) onApplyPatch(callID, input string) {
 	}
 }
 
-// ParseApplyPatchFiles 从 apply_patch 输入提取改动文件列表。
+// ParseApplyPatchFiles 从 apply_patch 输入提取改动文件列表，并按文件
+// 统计 +/- 行数（文件头之后、下一文件头之前，以 + / - 开头的行）。
 func ParseApplyPatchFiles(input string) []DiffFile {
 	var files []DiffFile
+	var current *DiffFile
+	addFile := func(path string, op DiffOp) {
+		if path == "" || path == "/dev/null" {
+			return
+		}
+		files = append(files, DiffFile{Path: path, Op: op})
+		current = &files[len(files)-1]
+	}
 	for _, line := range strings.Split(input, "\n") {
-		path := ""
-		op := DiffUpdate
 		switch {
 		case strings.HasPrefix(line, "+++ "):
-			path = strings.TrimSpace(strings.TrimPrefix(line, "+++ "))
+			addFile(strings.TrimSpace(strings.TrimPrefix(line, "+++ ")), DiffUpdate)
 		case strings.HasPrefix(line, "*** Add File: "):
-			path = strings.TrimSpace(strings.TrimPrefix(line, "*** Add File: "))
-			op = DiffAdd
+			addFile(strings.TrimSpace(strings.TrimPrefix(line, "*** Add File: ")), DiffAdd)
 		case strings.HasPrefix(line, "*** Update File: "):
-			path = strings.TrimSpace(strings.TrimPrefix(line, "*** Update File: "))
+			addFile(strings.TrimSpace(strings.TrimPrefix(line, "*** Update File: ")), DiffUpdate)
 		case strings.HasPrefix(line, "*** Delete File: "):
-			path = strings.TrimSpace(strings.TrimPrefix(line, "*** Delete File: "))
-			op = DiffDelete
-		}
-		if path != "" && path != "/dev/null" {
-			files = append(files, DiffFile{Path: path, Op: op})
+			addFile(strings.TrimSpace(strings.TrimPrefix(line, "*** Delete File: ")), DiffDelete)
+		case strings.HasPrefix(line, "*** Move to: "):
+			// rename 的目标路径，不新增条目。
+		default:
+			if current == nil {
+				continue
+			}
+			switch {
+			case strings.HasPrefix(line, "+"):
+				current.Added++
+			case strings.HasPrefix(line, "-"):
+				current.Removed++
+			}
 		}
 	}
 	return files

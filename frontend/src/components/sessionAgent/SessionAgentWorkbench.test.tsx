@@ -117,9 +117,9 @@ describe('SessionAgentWorkbench', () => {
     expect(tree.root.findByProps({ 'data-session-agent-list': 'true' })).toBeTruthy();
     const titleNode = tree.root.find((node) => node.props.className === 'gn-session-agent-session-title');
     expect(String(titleNode.props.children)).toContain('我有一台肖尔的服务器');
-    // 首问预览与厂商标签都来自真实条目，不再是卡片的两行「首次/最后」。
+    // 列表优先展示摘要，首问只在没有摘要时回退。
     const preview = tree.root.find((node) => node.props.className === 'gn-session-agent-session-preview');
-    expect(String(preview.props.children)).toContain('我有一台肖尔的服务器');
+    expect(String(preview.props.children)).toContain('那么下一步应该做什么呢');
     const tag = tree.root.find((node) => node.props.className?.includes?.('gn-session-agent-provider-tag'));
     expect(String(tag.props.children)).toContain('ChatGPT');
   });
@@ -141,7 +141,7 @@ describe('SessionAgentWorkbench', () => {
     expect(rows.length).toBe(1);
   });
 
-  it('opens the squeezed detail after clicking a row and returns to the full list', async () => {
+  it('opens the immersive detail after clicking a row and returns to the full list', async () => {
     const api = buildApi();
     const tree = await renderWorkbench(api);
     const row = findRow(tree);

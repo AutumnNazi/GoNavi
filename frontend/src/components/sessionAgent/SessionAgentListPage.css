@@ -1,40 +1,35 @@
-/* 智能体会话管理：会话分组列表与拖拽分割条。 */
-
-/* ─── 会话分组列表 ─── */
-
-/* 分组区：项目名（时间段）独占一行，下面才是该组的会话卡片。 */
+/* 会话索引：轻量分组头与可扫描的任务行。 */
 .gn-session-agent-group {
-  margin-bottom: 16px;
+  margin-bottom: 22px;
 }
 
 .gn-session-agent-group-head {
-  position: sticky;
-  top: 0;
-  z-index: 1;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  border-left: 3px solid var(--gn-accent);
-  border-bottom: 1px solid var(--gn-br-1);
-  border-radius: 0 4px 4px 0;
-  background: var(--gn-accent-soft);
-  color: var(--gn-fg-1);
-  font-size: 14px;
-  font-weight: 600;
+  min-height: 34px;
+  padding: 0 4px;
+  color: var(--gn-fg-2);
 }
 
 .gn-session-agent-group-icon {
   flex: 0 0 auto;
-  color: var(--gn-accent);
-  font-size: 14px;
+  color: var(--gn-fg-3);
+  font-size: 13px;
 }
 
 .gn-session-agent-group-name {
-  overflow: hidden;
+  flex: 0 0 auto;
   color: var(--gn-fg-1);
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.gn-session-agent-group-path {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--gn-fg-3);
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -43,23 +38,35 @@
   margin-left: auto;
   flex: 0 0 auto;
   color: var(--gn-fg-3);
-  font-size: 12px;
-  font-weight: 400;
+  font-size: 11px;
 }
 
 .gn-session-agent-group-body {
-  display: flex;
-  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--gn-br-1);
+  border-radius: 10px;
+  background: var(--gn-bg-panel);
 }
 
-/* 会话卡片。 */
 .gn-session-agent-row {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 12px;
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  padding: 17px 18px;
+  border: 0;
   border-bottom: 1px solid var(--gn-br-1);
+  border-radius: 0;
+  background: transparent;
+  color: var(--gn-fg-1);
+  font: inherit;
+  text-align: left;
   cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.gn-session-agent-row:last-child {
+  border-bottom: 0;
 }
 
 .gn-session-agent-row:hover {
@@ -70,6 +77,11 @@
   background: var(--gn-bg-selected);
 }
 
+.gn-session-agent-row-main {
+  display: block;
+  min-width: 0;
+}
+
 .gn-session-agent-row-top {
   display: flex;
   align-items: center;
@@ -77,110 +89,141 @@
   min-width: 0;
 }
 
-.gn-session-agent-listpage-pager {
-  display: flex;
-  justify-content: center;
-  padding: 8px 0 2px;
-}
-
-.gn-session-agent-fork-tag {
-  flex: 0 0 auto;
-  margin-inline-end: 0;
-  border-style: solid !important;
-  border-width: 1px !important;
-  color: var(--gn-info) !important;
-  background: var(--gn-info-soft) !important;
-  border-color: color-mix(in srgb, var(--gn-info) 42%, transparent) !important;
-  font-size: 11px !important;
-  line-height: 16px;
-}
-
-/* 必须是块级：行内 span 上 text-overflow 不生效，会被正文撑开。 */
 .gn-session-agent-session-title {
   display: block;
   overflow: hidden;
-  flex: 1 1 auto;
   min-width: 0;
   color: var(--gn-fg-1);
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.5;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.gn-session-agent-row:hover .gn-session-agent-session-title {
+  color: var(--gn-accent);
 }
 
 .gn-session-agent-session-preview {
   display: block;
   overflow: hidden;
+  margin-top: 5px;
   color: var(--gn-fg-3);
   font-size: 12px;
+  line-height: 1.55;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.gn-session-agent-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  color: var(--gn-fg-3);
+  font-size: 11px;
+}
+
+.gn-session-agent-row-side {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--gn-fg-3);
+}
+
+.gn-session-agent-row-arrow {
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+
+.gn-session-agent-row:hover .gn-session-agent-row-arrow {
+  color: var(--gn-accent);
+  transform: translateX(2px);
+}
+
 .gn-session-agent-time-cell {
   flex: 0 0 auto;
-  color: var(--gn-fg-2);
-  font-size: 12px;
+  font-size: 11px;
   white-space: nowrap;
+}
+
+.gn-session-agent-listpage-pager {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0;
+}
+
+.gn-session-agent-fork-tag {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+  border: 0 !important;
+  color: var(--gn-fg-3) !important;
+  background: var(--gn-bg-active) !important;
+  font-size: 10px !important;
+  line-height: 17px;
 }
 
 .gn-session-agent-provider-tag {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   margin-inline-end: 0;
-  border-style: solid !important;
-  border-width: 1px !important;
+  border: 0 !important;
   font-family: var(--gn-font-sans) !important;
-  font-size: 12px !important;
+  font-size: 10px !important;
+  line-height: 18px;
 }
 
 .gn-session-agent-provider-tag-icon {
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .gn-session-agent-provider-tag.is-codex.ant-tag {
-  color: var(--gn-fg-2) !important;
-  background: var(--gn-bg-active) !important;
-  border-color: var(--gn-br-2) !important;
+  color: var(--gn-accent) !important;
+  background: var(--gn-accent-soft) !important;
 }
 
 .gn-session-agent-provider-tag.is-claude.ant-tag {
   color: var(--gn-warn) !important;
   background: var(--gn-warn-soft) !important;
-  border-color: color-mix(in srgb, var(--gn-warn) 42%, transparent) !important;
 }
 
 .gn-session-agent-avatar {
   display: grid;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 6px;
-  background: var(--gn-bg-active);
+  border-radius: 7px;
+  background: var(--gn-accent-soft);
   font-size: 13px;
 }
 
 .gn-session-agent-avatar.is-claude {
   color: var(--gn-warn);
+  background: var(--gn-warn-soft);
 }
 
 .gn-session-agent-avatar.is-codex {
-  color: var(--gn-fg-1);
+  color: var(--gn-accent);
 }
 
-/* ─── 拖拽分割条 ─── */
-
+/* 旧双栏拖拽样式保留给可能存在的持久化布局，不在新版详情中渲染。 */
 .gn-session-agent-list-resize {
   width: 6px;
   flex: 0 0 6px;
   cursor: col-resize;
   border-radius: 3px;
-  background: transparent;
-  transition: background 0.15s ease;
 }
 
-.gn-session-agent-list-resize:hover {
-  background: var(--gn-accent-soft);
-}
+@media (max-width: 840px) {
+  .gn-session-agent-group-path {
+    display: none;
+  }
 
+  .gn-session-agent-row {
+    gap: 10px;
+    padding: 15px;
+  }
+}
