@@ -62,11 +62,13 @@ const SessionGroupSection: React.FC<{
   onSelect: (item: SessionAgentItem) => void;
 }> = ({ group, groupMode, selectedPath, onSelect }) => {
   const projectPath = groupMode === 'project' ? group.items[0]?.projectDir : '';
+  const groupStamp = groupMode === 'project' ? projectGroupStamp(group.items) : '';
   return (
     <section className="gn-session-agent-group" data-session-agent-group={group.key}>
       <header className="gn-session-agent-group-head">
         {groupMode === 'project' ? <FolderOutlined className="gn-session-agent-group-icon" /> : <ClockCircleOutlined className="gn-session-agent-group-icon" />}
         <span className="gn-session-agent-group-name">{group.label}</span>
+        {groupStamp ? <span className="gn-session-agent-group-date">{groupStamp}</span> : null}
         {projectPath ? <span className="gn-session-agent-group-path" title={projectPath}>{projectPath}</span> : null}
         <span className="gn-session-agent-group-count">{t('session_agent.list.total', { count: group.items.length })}</span>
       </header>
@@ -107,7 +109,6 @@ const SessionRow: React.FC<{
           <span className="gn-session-agent-session-preview" title={preview}>{shortenSessionPreview(preview, 120)}</span>
         ) : null}
         <span className="gn-session-agent-row-meta">
-          <ProviderBadge providerId={item.providerId} />
           <span>{projectDisplayName(item.projectDir) || '—'}</span>
         </span>
       </span>
@@ -128,22 +129,23 @@ export const ProviderAvatar: React.FC<{ providerId: string }> = ({ providerId })
   <span className={`gn-session-agent-avatar ${providerId === 'claude' ? 'is-claude' : 'is-codex'}`}><ProviderIcon providerId={providerId} /></span>
 );
 
-export const ProviderBadge: React.FC<{ providerId: string }> = ({ providerId }) => (
-  <Tag className={`gn-session-agent-provider-tag ${providerId === 'claude' ? 'is-claude' : 'is-codex'}`}>
-    <ProviderIcon providerId={providerId} className="gn-session-agent-provider-tag-icon" />
-    {providerId === 'claude' ? 'Claude Code' : 'ChatGPT'}
-  </Tag>
-);
-
 export const relativeTime = (ts: number): string => {
   if (!ts) return '';
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   if (ts >= todayStart) return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const days = Math.floor((todayStart - ts) / 86400000);
-  if (days === 1) return t('session_agent.time.yesterday');
-  if (days < 30) return t('session_agent.time.days_ago', { count: days });
-  return new Date(ts).toLocaleDateString();
+  if (ts >= todayStart - 86400000) return t('session_agent.time.yesterday');
+  return dayLabel(ts);
+};
+
+// 具体日期：当年只给月日，跨年补上年份——「N 天前」这种相对值对不上日历。
+export const dayLabel = (ts: number): string => {
+  const date = new Date(ts);
+  const now = new Date();
+  const options: Intl.DateTimeFormatOptions = date.getFullYear() === now.getFullYear()
+    ? { month: 'long', day: 'numeric' }
+    : { year: 'numeric', month: 'long', day: 'numeric' };
+  return date.toLocaleDateString([], options);
 };
 
 export const sortSessionItems = (items: SessionAgentItem[], groupMode: string): SessionAgentItem[] => {
@@ -162,23 +164,44 @@ export const sortSessionItems = (items: SessionAgentItem[], groupMode: string): 
 export const sessionGroupKey = (item: SessionAgentItem, groupMode: string): string => {
   if (groupMode === 'project') return projectDisplayName(item.projectDir) || '—';
   const ts = item.lastActiveAt || item.createdAt;
-  if (!ts) return 'older';
+  if (!ts) return 'unknown';
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   if (ts >= today) return 'today';
   if (ts >= today - 86400000) return 'yesterday';
-  if (ts >= today - 6 * 86400000) return 'week';
-  return 'older';
+  // 时间分组一天一组：本周/更早这类模糊桶让人对不上具体日期。
+  const day = new Date(ts);
+  return `day-${new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime()}`;
 };
 
 export const sessionGroupLabel = (item: SessionAgentItem, groupMode: string): string => {
   if (groupMode === 'project') return projectDisplayName(item.projectDir) || '—';
-  switch (sessionGroupKey(item, groupMode)) {
-    case 'today': return t('session_agent.group.today');
-    case 'yesterday': return t('session_agent.group.yesterday');
-    case 'week': return t('session_agent.group.week');
-    default: return t('session_agent.group.older');
+  const key = sessionGroupKey(item, groupMode);
+  if (key === 'today') return t('session_agent.group.today');
+  if (key === 'yesterday') return t('session_agent.group.yesterday');
+  const ts = item.lastActiveAt || item.createdAt;
+  return ts ? dayLabel(ts) : '—';
+};
+
+// 项目组头的时间标注：整组都在今天的给首次会话的具体时刻，否则给
+// 最近活跃的具体日期，让项目卡片能对上日历。
+export const projectGroupStamp = (items: SessionAgentItem[]): string => {
+  if (items.length === 0) return '';
+  const activeTs = (item: SessionAgentItem) => item.lastActiveAt || item.createdAt;
+  const latest = activeTs(items[0]);
+  if (!latest) return '';
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (latest < todayStart) return dayLabel(latest);
+  let first = items[0];
+  for (const item of items) {
+    const ts = item.createdAt || item.lastActiveAt;
+    if (ts && ts < (first.createdAt || first.lastActiveAt)) first = item;
   }
+  const firstTs = first.createdAt || first.lastActiveAt;
+  return firstTs >= todayStart
+    ? new Date(firstTs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : dayLabel(latest);
 };
 
 export const buildSessionGroups = (items: SessionAgentItem[], groupMode: string): SessionGroup[] => {

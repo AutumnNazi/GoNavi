@@ -164,29 +164,10 @@
   line-height: 17px;
 }
 
-.gn-session-agent-provider-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-inline-end: 0;
-  border: 0 !important;
-  font-family: var(--gn-font-sans) !important;
-  font-size: 10px !important;
-  line-height: 18px;
-}
-
-.gn-session-agent-provider-tag-icon {
+.gn-session-agent-group-date {
+  flex: 0 0 auto;
+  color: var(--gn-fg-3);
   font-size: 11px;
-}
-
-.gn-session-agent-provider-tag.is-codex.ant-tag {
-  color: var(--gn-accent) !important;
-  background: var(--gn-accent-soft) !important;
-}
-
-.gn-session-agent-provider-tag.is-claude.ant-tag {
-  color: var(--gn-warn) !important;
-  background: var(--gn-warn-soft) !important;
 }
 
 .gn-session-agent-avatar {

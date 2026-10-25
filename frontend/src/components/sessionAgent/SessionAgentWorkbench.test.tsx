@@ -111,7 +111,7 @@ const findRow = (tree: ReturnType<typeof create>) =>
   tree.root.find((node) => node.props['data-session-agent-row'] === 'true');
 
 describe('SessionAgentWorkbench', () => {
-  it('renders the session table with title, preview and provider tag', async () => {
+  it('renders the session table with title and preview', async () => {
     const api = buildApi();
     const tree = await renderWorkbench(api);
     expect(tree.root.findByProps({ 'data-session-agent-list': 'true' })).toBeTruthy();
@@ -120,8 +120,6 @@ describe('SessionAgentWorkbench', () => {
     // 列表优先展示摘要，首问只在没有摘要时回退。
     const preview = tree.root.find((node) => node.props.className === 'gn-session-agent-session-preview');
     expect(String(preview.props.children)).toContain('那么下一步应该做什么呢');
-    const tag = tree.root.find((node) => node.props.className?.includes?.('gn-session-agent-provider-tag'));
-    expect(String(tag.props.children)).toContain('ChatGPT');
   });
 
   it('puts the project name on its own line above the session cards', async () => {

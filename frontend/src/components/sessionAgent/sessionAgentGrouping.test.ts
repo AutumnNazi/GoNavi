@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSessionGroups, sessionGroupKey, sortSessionItems } from './SessionAgentListPage';
+import { buildSessionGroups, dayLabel, projectGroupStamp, sessionGroupKey, sortSessionItems } from './SessionAgentListPage';
 
 // 「按项目分组」必须真的看得出是分组：同一项目的会话相邻，且组内只有
 // 首行带项目名。
@@ -44,12 +44,15 @@ describe('sessionGroupKey', () => {
     expect(sessionGroupKey(item({ projectDir: 'E:/work/demo' }), 'project')).toBe('demo');
   });
 
-  it('buckets by day in time mode', () => {
+  it('buckets today and yesterday, then one key per concrete day', () => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     expect(sessionGroupKey(item({ lastActiveAt: today + 1000 }), 'time')).toBe('today');
     expect(sessionGroupKey(item({ lastActiveAt: today - 86400000 + 1000 }), 'time')).toBe('yesterday');
-    expect(sessionGroupKey(item({ lastActiveAt: today - 30 * 86400000 }), 'time')).toBe('older');
+    // 更早的不再塞进「本周/更早」这类模糊桶：一天一个键。
+    const monthAgo = sessionGroupKey(item({ lastActiveAt: today - 30 * 86400000 }), 'time');
+    expect(monthAgo).toMatch(/^day-\d+$/);
+    expect(monthAgo).not.toBe(sessionGroupKey(item({ lastActiveAt: today - 34 * 86400000 }), 'time'));
   });
 });
 
@@ -67,14 +70,41 @@ describe('buildSessionGroups', () => {
     expect(groups[1].items.map((i) => i.sessionId)).toEqual(['b1']);
   });
 
-  it('falls back to the time bucket labels when grouping by time', () => {
+  it('labels non-today time groups with the concrete date', () => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const monthAgo = today - 30 * 86400000;
     const groups = buildSessionGroups([
       item({ sessionId: 't1', lastActiveAt: today + 1000 }),
-      item({ sessionId: 'o1', lastActiveAt: today - 30 * 86400000 }),
+      item({ sessionId: 'o1', lastActiveAt: monthAgo }),
     ], 'time');
-    expect(groups.map((group) => group.key)).toEqual(['today', 'older']);
+    expect(groups.map((group) => group.key)).toEqual([
+      'today',
+      sessionGroupKey(item({ lastActiveAt: monthAgo }), 'time'),
+    ]);
     expect(groups.map((group) => group.items.length)).toEqual([1, 1]);
+    // 具体日期标签来自 dayLabel，用户能对上日历。
+    expect(groups[1].label).toBe(dayLabel(monthAgo));
+  });
+});
+
+describe('projectGroupStamp', () => {
+  it('shows the first session time when the whole project group is from today', () => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const items = [
+      item({ lastActiveAt: today + 10800000, createdAt: today + 5400000 }),
+      item({ lastActiveAt: today + 7200000, createdAt: today + 3600000 }),
+    ];
+    expect(projectGroupStamp(items)).toBe(
+      new Date(today + 3600000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    );
+  });
+
+  it('shows the concrete date when the project was last active before today', () => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const monthAgo = today - 30 * 86400000;
+    expect(projectGroupStamp([item({ lastActiveAt: monthAgo, createdAt: monthAgo })])).toBe(dayLabel(monthAgo));
   });
 });

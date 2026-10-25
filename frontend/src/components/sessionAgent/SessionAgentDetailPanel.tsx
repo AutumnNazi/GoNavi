@@ -3,7 +3,6 @@ import { Button, Input, Modal, Spin, Tooltip } from 'antd';
 import { ArrowLeftOutlined, CopyOutlined, DeleteOutlined, ExportOutlined, MoreOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { t } from '../../i18n';
 import type { SessionAgentItem, SessionBlockContent, SessionContentRef, SessionMessageView, SessionTurnView } from './sessionAgentApi';
-import { ProviderBadge } from './SessionAgentListPage';
 import { SessionAgentTurns } from './SessionAgentTurns';
 import { SessionAgentChanges } from './SessionAgentChanges';
 import { buildSessionChanges, formatSessionDateTime, sessionChangeMatches, sessionTurnMatches } from './sessionAgentView';
@@ -87,7 +86,6 @@ const DetailHeader: React.FC<DetailProps> = (props) => {
         <div className="gn-session-agent-detail-titleline">
           <div className="gn-session-agent-detail-title-row">
             <h3 className="gn-session-agent-detail-title" title={item.title || item.sessionId}>{item.title || item.sessionId}</h3>
-            <ProviderBadge providerId={item.providerId} />
             {item.forkedFrom ? <span className="gn-session-agent-detail-fork">{t('session_agent.list.fork')}</span> : null}
           </div>
           <div className="gn-session-agent-detail-meta">
