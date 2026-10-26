@@ -1,12 +1,13 @@
 import React from 'react';
 import { Button, Input, Modal, Spin, Tooltip } from 'antd';
-import { ArrowLeftOutlined, CopyOutlined, DeleteOutlined, ExportOutlined, MoreOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { ArrowDownOutlined, ArrowLeftOutlined, ArrowUpOutlined, CopyOutlined, DeleteOutlined, ExportOutlined, MoreOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { t } from '../../i18n';
 import type { SessionAgentItem, SessionBlockContent, SessionContentRef, SessionMessageView, SessionTurnView } from './sessionAgentApi';
 import { SessionAgentTurns } from './SessionAgentTurns';
 import { SessionAgentChanges } from './SessionAgentChanges';
-import { buildSessionChanges, formatSessionDateTime, sessionChangeMatches, sessionTurnMatches } from './sessionAgentView';
+import { buildSessionChanges, formatSessionDateTime } from './sessionAgentView';
 import { relativeTime } from './SessionAgentListPage';
+import { useSessionSearchHighlight } from './useSessionSearchHighlight';
 import './SessionAgentDetailPanel.css';
 
 interface DetailProps {
@@ -34,9 +35,10 @@ export const SessionAgentDetailPanel: React.FC<DetailProps> = (props) => {
   }, [item.sourcePath]);
   const needle = search.trim().toLowerCase();
   const changes = React.useMemo(() => buildSessionChanges(messages), [messages]);
-  const matchCount = viewMode === 'chat'
-    ? turns.filter((turn) => sessionTurnMatches(turn, messages, needle)).length
-    : changes.filter((file) => sessionChangeMatches(file, needle)).length;
+  const scrollRef = React.useRef<HTMLDivElement | null>(null);
+  // 命中高亮与跳转基于渲染后的 DOM：内容切换、懒加载由 hook 内部的
+  // MutationObserver 兜底重扫，这里只需给出内容代次。
+  const searchHits = useSessionSearchHighlight(scrollRef, needle, `${viewMode}:${item.sourcePath}`);
 
   return (
     <section className="gn-session-agent-detail" data-session-agent-detail="true">
@@ -50,7 +52,13 @@ export const SessionAgentDetailPanel: React.FC<DetailProps> = (props) => {
             </button>
           ))}
         </div>
-        {needle ? <span className="gn-session-agent-search-count">{t('session_agent.detail.search_matches', { count: matchCount })}</span> : null}
+        {needle ? (
+          <span className="gn-session-agent-search-nav">
+            <Button size="small" icon={<ArrowUpOutlined />} disabled={!searchHits.total} onClick={() => searchHits.step(-1)} aria-label={t('session_agent.detail.search_prev')} />
+            <span className="gn-session-agent-search-position">{searchHits.total ? searchHits.active + 1 : 0} / {searchHits.total}</span>
+            <Button size="small" icon={<ArrowDownOutlined />} disabled={!searchHits.total} onClick={() => searchHits.step(1)} aria-label={t('session_agent.detail.search_next')} />
+          </span>
+        ) : null}
         <Input
           allowClear
           size="small"
@@ -62,7 +70,7 @@ export const SessionAgentDetailPanel: React.FC<DetailProps> = (props) => {
           className="gn-session-agent-detail-search"
         />
       </div>
-      <div className="gn-session-agent-detail-scroll">
+      <div ref={scrollRef} className="gn-session-agent-detail-scroll">
         {loading ? <div className="gn-session-agent-detail-loading"><Spin /></div> : (
           <div className="gn-session-agent-detail-content">
             {viewMode === 'chat' ? (
