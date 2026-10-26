@@ -1,5 +1,7 @@
 # 插件生态：当前实现与验证状态
 
+- [第三方插件作者指南](<author-guide.md>)：从选择插件形态、实现、打包、本地检查到 GitHub Release 上架与更新的一站式流程。
+- [插件作者 FAQ](<faq.md>)：文档入口、清单、打包、发布、安装验收和常见错误。
 - [市场多来源与聚合浏览](./market-sources.md)：来源管理、独立分页、迁移与安全边界。
 
 > 当前默认官方来源为 `https://plugin.gonavi.org`。以下验收与部署叙述保留 2026-10-19 至 2026-10-21 的历史快照；当前多来源行为以新说明为准。
@@ -41,9 +43,9 @@ gonavi plugin --safe-mode disable publisher.name
 
 ## 官方源、信任与部署边界
 
-官方源由发布方控制的 `app.pluginOfficialMarketURL` 指定，**默认未配置**；配置位置见[官方源初始化](<../../internal/app/plugin_market_runtime.go#L15-L17>)。用户切换到自定义市场，不会让该市场自报的 `official:true` 获得官方身份。服务端的官方标记也来自受控发布者记录，不来自插件作者自行填写的清单。
+官方源为 `https://plugin.gonavi.org`，由发布方控制的 `app.pluginOfficialMarketURL` 指定；用户仍可在客户端切换或停用来源、添加自定义市场。自定义市场自报的 `official:true` 不会获得官方身份；服务端的官方标记也来自受控发布者记录，不来自插件作者自行填写的清单。
 
-本次没有部署生产服务，也没有创建或编造生产账号、目录与评分。市场服务独立于桌面进程部署；数据库、OAuth 应用、存储和管理员角色都需由运营方配置。操作步骤及权限要求见[市场部署说明](<../../deploy/plugin-market/README.md>)和[发布／审核 API](<../../deploy/plugin-market/admin-api.md>)。当前只有应用内市场、必要的登录／授权页和运营 API，**不是完整公共市场网站**。
+生产市场与网站已独立于桌面进程部署。数据库、OAuth 应用、存储和管理员角色由运营方配置；操作步骤及权限要求见[市场部署说明](<../../deploy/plugin-market/README.md>)和[发布／审核 API](<../../deploy/plugin-market/admin-api.md>)。本文下方更早的验收快照仍保留“未部署”“默认未配置”等当时状态，不代表当前生产状态；这些记录仅用于追溯历史验证范围，当前行为以本段和[作者指南](<author-guide.md>)为准。
 
 插件仍是受信任的第三方代码。进程隔离、受限桥接和数据限额用于可靠性控制，**不构成 OS 安全沙箱，也不保证 CPU／内存等 OS 级硬配额**。原生插件可能使用当前账号的文件与网络权限；审核、权限清单和摘要校验不能证明代码安全。
 
@@ -152,6 +154,8 @@ Provider 回归还修复了取消队列饱和、排队与真正执行超时混�
 
 ## 文档导航
 
+- [第三方插件作者指南（先看这篇）](<author-guide.md>)
+- [插件作者 FAQ](<faq.md>)
 - [开发、打包、CLI 与故障夹具](<development.md>)
 - [Go／TypeScript SDK 与 UI 桥接](<sdk.md>)
 - [插件页面、菜单与宿主能力（v1 契约）](<pages.md>)
