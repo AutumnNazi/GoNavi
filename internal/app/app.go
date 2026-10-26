@@ -10,6 +10,7 @@ import (
 	"GoNavi-Wails/internal/db"
 	"GoNavi-Wails/internal/importjob"
 	"GoNavi-Wails/internal/jvm"
+	"GoNavi-Wails/internal/logger"
 	nacosbackend "GoNavi-Wails/internal/nacos"
 	proxytunnel "GoNavi-Wails/internal/proxy"
 	redisbackend "GoNavi-Wails/internal/redis"
