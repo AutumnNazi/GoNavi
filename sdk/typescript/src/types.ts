@@ -33,6 +33,12 @@ export interface AIProvider {
 }
 /** Requires data.export and a backend command; metadata grants no filesystem access. */
 export interface Exporter { id: string; name: string; command: string; extension: string; contentType: string; streaming?: boolean }
+/** Bounded custom markup for a page; the host renders it only in an opaque-origin sandboxed frame. */
+export interface PageHTML { source: string }
+/** Requires ui.pages and exactly one of body or html; html also requires ui.html-panel. */
+export interface Page { id: string; title: string; body?: UINode; html?: PageHTML }
+/** Requires ui.pages; location is the tools menu and order only reorders entries of one plugin. */
+export interface Navigation { id: string; title: string; page: string; location: 'tools'; order?: number }
 export interface Manifest {
   schemaVersion: 1; apiVersion: 1; id: string; name: string; version: string;
   description?: string; author?: string; license?: string; minHostVersion?: string;
@@ -40,7 +46,7 @@ export interface Manifest {
   permissionNotes?: Record<string, string>;
   requires?: { id: string; minVersion?: string; optional?: boolean }[];
   backend?: { default?: Entry; platforms?: Record<string, Entry> };
-  contributes?: { commands?: Command[]; panels?: { id: string; title: string; body: UINode }[]; dataSources?: DataSource[]; skills?: Skill[]; aiProviders?: AIProvider[]; exporters?: Exporter[] };
+  contributes?: { commands?: Command[]; panels?: { id: string; title: string; body: UINode }[]; dataSources?: DataSource[]; skills?: Skill[]; aiProviders?: AIProvider[]; exporters?: Exporter[]; pages?: Page[]; navigation?: Navigation[] };
   window?: { entry: string; title?: string; width?: number; height?: number };
   configSchema?: JSONValue;
 }

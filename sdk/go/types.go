@@ -46,6 +46,7 @@ type Entry struct {
 }
 
 // Contributions contains only supported declarative extension points.
+// Pages and Navigation are host-rendered surfaces that require the ui.pages permission.
 type Contributions struct {
 	Commands    []Command    `json:"commands,omitempty"`
 	Panels      []Panel      `json:"panels,omitempty"`
@@ -53,6 +54,8 @@ type Contributions struct {
 	Skills      []Skill      `json:"skills,omitempty"`
 	AIProviders []AIProvider `json:"aiProviders,omitempty"`
 	Exporters   []Exporter   `json:"exporters,omitempty"`
+	Pages       []Page       `json:"pages,omitempty"`
+	Navigation  []Navigation `json:"navigation,omitempty"`
 }
 
 // Skill declares an immutable UTF-8 SKILL.md document loaded only on explicit use.

@@ -51,7 +51,7 @@ export function parseManifest(data: unknown): Manifest {
   }
   if (record(data.contributes)) {
     const contributes = data.contributes;
-    only(contributes, ['commands', 'panels', 'dataSources', 'skills', 'aiProviders', 'exporters']);
+    only(contributes, ['commands', 'panels', 'dataSources', 'skills', 'aiProviders', 'exporters', 'pages', 'navigation']);
     if (contributes.commands != null) list(contributes.commands, (item) => only(item, ['id', 'title', 'description', 'inputSchema', 'effect']));
     if (contributes.panels != null) list(contributes.panels, (item) => { only(item, ['id', 'title', 'body']); if (item.body != null) node(item.body); });
     if (contributes.dataSources != null) list(contributes.dataSources, (item) => only(item, ['id', 'name', 'dialect', 'command', 'defaultPort', 'readOnly']));
@@ -61,6 +61,15 @@ export function parseManifest(data: unknown): Manifest {
       only(item, ['id', 'name', 'command', 'models', 'supportsTools', 'supportsImages']);
       if (item.models != null) list(item.models, (model) => only(model, ['id', 'name', 'contextWindow', 'maxOutputTokens']));
     });
+    if (contributes.pages != null) list(contributes.pages, (item) => {
+      only(item, ['id', 'title', 'body', 'html']);
+      if (item.body != null) node(item.body);
+      if (item.html != null) {
+        if (!record(item.html)) throw new Error('invalid manifest JSON');
+        only(item.html, ['source']);
+      }
+    });
+    if (contributes.navigation != null) list(contributes.navigation, (item) => only(item, ['id', 'title', 'page', 'location', 'order']));
   }
   if (record(data.window)) only(data.window, ['entry', 'title', 'width', 'height']);
   return data as unknown as Manifest;

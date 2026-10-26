@@ -29,6 +29,8 @@ go -C examples/plugins run ./package -output "$package"
 
 Use `-goos linux -goarch arm64`, for example, to build another target. Build and test each advertised target; do not leave platform manifest entries pointing to absent files. This example package builder handles backend-only examples. For a custom window, explicitly copy its HTML and local assets into your package and validate the finished package.
 
+The [pages example](<../../examples/plugins/pages/README.md>) is the opposite case: it declares no backend, so it has no build step. Its source directory can be inspected and installed as-is; the static packaging mode above still copies Skills-only packages.
+
 Check the packaged output, never the source tree. A manifest template declares its entry under `backend.default`, while the finished package keeps the compiled file and a `backend.platforms` entry; a source directory therefore always fails `check` with `declared entry is not a regular package file`. Unknown manifest fields are reported by name when the name is short printable ASCII. Run the package builder first and point `check` at its output directory or the archive made from it.
 
 ## Inspect, trust, install, invoke

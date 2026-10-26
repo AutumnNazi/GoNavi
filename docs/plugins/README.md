@@ -4,7 +4,7 @@
 
 > 当前默认官方来源为 `https://plugin.gonavi.org`。以下验收与部署叙述保留 2026-10-19 至 2026-10-21 的历史快照；当前多来源行为以新说明为准。
 
-**当前已实现插件运行／分发闭环、只读 SQL 数据源、显式加载的 Skills，以及原生 AI Provider 的文本／工具流式接入；Web 插件管理默认只读，需服务器显式开启；仍不是完整 DSH 功能对齐，也不代表已经上线官方市场。** 本页记录 2026-10-19 至 2026-10-21 的工作区交付范围与验收结果；“代码已实现”“自动化测试通过”“真实环境已验证”分开说明。
+**当前已实现插件运行／分发闭环、只读 SQL 数据源、显式加载的 Skills、原生 AI Provider 的文本／工具流式接入，以及 v1 插件页面：标题栏「插件」菜单、声明式／沙箱 HTML 页面与按权限分派的宿主能力桥；Web 插件管理默认只读，需服务器显式开启；仍不是完整 DSH 功能对齐，也不代表已经上线官方市场。** 本页记录 2026-10-19 至 2026-10-26 的工作区交付范围与验收结果；“代码已实现”“自动化测试通过”“真实环境已验证”分开说明。
 
 ## 从哪里开始
 
@@ -28,9 +28,10 @@ gonavi plugin --safe-mode disable publisher.name
 | 领域 | 本阶段实现 |
 |---|---|
 | 后端运行时 | 独立子进程、异步启动、心跳、请求取消、有界通信、持久化启停意图与故障隔离。禁用先撤销贡献与调用，再限时清理并终止进程树；generation 检查拒绝旧实例结果，不循环自动重启。 |
-| 插件 UI | 主窗口默认渲染有界声明式面板；声明 `ui.html-panel` 后可用不透明源沙箱 iframe 渲染有界自定义 HTML（无宿主桥接，CSP 拦截页面网络与外部资源）；需要完整桌面能力时仍走独立 Wails 进程与 WebView 配置目录。真实桌面渲染仍需平台验收。 |
+| 插件 UI | 主窗口默认渲染有界声明式面板；声明 `ui.html-panel` 后可用不透明源沙箱 iframe 渲染有界自定义 HTML（面板无宿主桥接，CSP 拦截页面网络与外部资源）；需要完整桌面能力时仍走独立 Wails 进程与 WebView 配置目录。真实桌面渲染仍需平台验收。 |
+| 插件页面与宿主能力 | 显式 `ui.pages` 后可声明最多 32 个页面与 32 条 `location:"tools"` 导航：声明式页面复用 `DeclarativePanel`，HTML 页面在既有 CSP 沙箱内获得 `window.gonavi` 页面桥。宿主能力逐项登记并按权限分派（`host.connections.read`、`host.metadata.read`、`host.query.read`），连接只按已保存 ID 解析，参数 ≤64 KiB、结果 ≤256 KiB、单次 30s。桥按每帧 token 校验（缺失／不符静默丢弃）、调用 30 次／10s、notify 10 次／10s；CSP 不阻止自我导航，二次 load 视为逃逸并撤销桥。Web 未允许管理时不显示可点击入口；页面标签不跨重启恢复。`query.read` 走扫描层行预算，且「只读 ≠ 无副作用」。不是通用绑定反射，也未开放页面自定义网络。见[页面契约](<pages.md>)。 |
 | 安装与管理 | 本地目录、ZIP、TGZ 和市场安装；静态检查不执行插件。内容摘要绑定信任确认，市场使用实际归档预览与一次性批准，安装后保留来源记录。已安装插件可用「替换」保留启用状态地换包（CLI `replace`、桌面确认框自动识别），失败时保留原包。 |
-| SDK 与示例 | 不依赖宿主 internal 包的独立 Go 模块、TypeScript 类型与协议 helper；真实 hello 插件、打包工具和崩溃／挂起／忽略取消／输出洪泛夹具。 |
+| SDK 与示例 | 不依赖宿主 internal 包的独立 Go 模块、TypeScript 类型与协议 helper；真实 hello 插件、可检查的 page／navigation 示例、打包工具和崩溃／挂起／忽略取消／输出洪泛夹具。 |
 | 数据源 | `data.sources` 声明接入真实连接、查询、元数据与取消路径，支持 mysql／postgres／sqlite 方言标签。默认协议 v1 只读；显式 `readOnly:false` 后协议 v2 支持单条写入与插件自管理事务。缺失、禁用或过期实例不能回退为内置驱动；批量执行与通用传输仍不支持。见[数据源指南](<data-sources.md>)。 |
 | Packaged Skills | 显式 `ai.skills` 权限、静态包或原生包内的声明文档、只读预览及 Agent 加载工具。正文与同次包摘要校验绑定，读取前后检查 generation；不自动注入系统提示，不授权其他工具，不执行脚本或链接。仅支持工具调用的自定义 Agent 提供方使用技能工具；内置小模型白名单不变。见[Skills 指南](<skills.md>)。 |
 | AI Provider | 显式 `ai.providers`、静态模型声明、独立 Go／TypeScript 流式 SDK、真实 HTTP/SSE 示例、设置入口及桌面／CLI Agent 冻结绑定。支持增量文本、推理、完整工具调用、usage 与有界图像输入；只投影选中的凭据，不回退提供方、不重放未知结果。v1 仍不含不透明上游会话状态。见[提供方指南](<ai-providers.md>)。 |
@@ -110,6 +111,24 @@ Provider 回归还修复了取消队列饱和、排队与真正执行超时混�
 
 本轮没有 commit、push 或生产操作。复跑方法见[本地开发验证](<development.md#local-verification>)和[市场服务验证](<../../deploy/plugin-market/README.md#verification>)。
 
+## 2026-10-26 插件页面工作流
+
+本轮只记录实际执行过的检查；真实 Wails 窗口渲染仍未验证。
+
+| 检查范围 | 结果 |
+|---|---|
+| 宿主清单与市场制品 | `go test ./internal/plugin ./internal/market -count=1` 全通过（含文档／权限双向契约） |
+| 宿主页面网关 | `go test ./internal/app -count=1` 全包 142.1s 通过（含 `PluginPage` 的只读语句校验、审计、行预算与集成用例） |
+| Go SDK | `cd sdk/go && go test ./...` 通过，含 `ValidatePages` 的合法／缺权限／重复／互斥／引用／越界用例 |
+| TypeScript SDK | `node frontend/node_modules/typescript/bin/tsc -p sdk/typescript/tsconfig.json` 干净；`node frontend/node_modules/vitest/vitest.mjs run --root sdk/typescript --config vitest.config.mjs` 34 文件／309 项通过 |
+| 示例 | `cd examples/plugins && go test ./...`；另用一次性 root 实跑 `gonavi plugin inspect` → `install` → `enable`，证明示例可检查、可目录安装（无 backend，无命令可 invoke） |
+| 前端 | `npx tsc --noEmit` 干净；插件页面／菜单／i18n 定向 Vitest 173 文件／1163 项通过；六语言 catalog.zip 已重新生成并通过 `go test ./shared/i18n` |
+| 文档 | `go test ./internal/plugin -run 'Docs|Link'` 通过；`sdk.md` 导出名清单与 SDK 源码一致 |
+
+审查加固（每帧 token、注入脚本自移除、30 次／10s 限流、自我导航二次 load 撤销、web 入口禁用、标签不跨重启恢复、`query.read` 扫描层行预算与只读副作用收紧）已由 task-6／task-7 实现；Lead 在修复后复跑了前端定向套件与 `internal/app` 全量并更新本表。真实 Wails 窗口与菜单点击仍未验证。
+
+未覆盖（本任务未复跑）：前端实现与其 Vitest 由 task-6 负责、真实 Wails 渲染与菜单点击、六语言文案人工走查、跨平台桌面验收。页面桥单元测试不等于桌面端渲染验证。
+
 ## 下一阶段清单
 
 - [x] PostgreSQL 16 契约：本机用 Docker 起一次性 `postgres:16` 跑通 `internal/market` 的 5 个 PG 集成用例（未触碰本机 PG18）。
@@ -124,6 +143,8 @@ Provider 回归还修复了取消队列饱和、排队与真正执行超时混�
 - [x] 接通调用方绑定的 `host.log` 和 `host.describe`：只返回当前进程身份或写有界诊断。它们不是通用宿主 API。
 - [x] 接通运行状态的一次性 `plugin.lifecycle` 通知。它不阻塞启用或禁用；停用仍走现有 shutdown，不额外等待回调。
 - [ ] 扩展不透明上游会话与动态模型发现；继续实现其余宿主能力。技能可以声明最多 4 个配套 `.md`。安装、市场和静态打包会校验并复制它们；桌面预览只显式读取清单中的一个文件。Agent 不加载、不注入，Web 管理通道默认只读，服务器显式开启后可读取。脚本与工具授权仍未实现。
+- [x] 接通 v1 插件页面：`pages`／`navigation` 清单校验、标题栏「插件」菜单、声明式与沙箱 HTML 页面、按权限分派的宿主能力桥，以及双语言 SDK 校验与可检查示例。页面桥不是通用绑定反射。
+- [ ] 继续扩展宿主能力目录（导出、AI、数据同步、驱动、设置、市场、JVM 等），每批单独评审权限、审计边界与结果上限；新能力必须复用现有只读／审计／超时路径，无法复用时返回 `unsupported` 并归入后续阶段。
 - [ ] 补 Git／npm 安装、插件组合包（bundles）、多实例和开发热重载；现有 SDK 不代表这些功能已提供。
 - [x] 让**市场更新**对已启用插件直接走替换：已安装插件的更新保留启用状态，不再要求先禁用。选择逻辑抽成 `installMarketPackage`，不再依赖难以复现的多版本市场夹具来验证。
 - [x] 实现经鉴权且显式启用的 Web 管理通道：默认只读，服务器设置 `GONAVI_WEB_PLUGIN_MANAGEMENT=1` 后放开安装、启停、替换、移除与技能文档读取；原生文件选择器与独立插件窗口仍仅桌面端可用。
@@ -133,6 +154,7 @@ Provider 回归还修复了取消队列饱和、排队与真正执行超时混�
 
 - [开发、打包、CLI 与故障夹具](<development.md>)
 - [Go／TypeScript SDK 与 UI 桥接](<sdk.md>)
+- [插件页面、菜单与宿主能力（v1 契约）](<pages.md>)
 - [JSON-RPC 协议与包摘要](<protocol.md>)
 - [数据源开发与实际示例](<data-sources.md>)
 - [Skills 声明、静态打包与显式加载](<skills.md>)

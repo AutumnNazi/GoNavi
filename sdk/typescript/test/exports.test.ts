@@ -22,6 +22,7 @@ const DOCUMENTED: Record<string, 'function' | 'number'> = {
   validateDataSourceCommand: 'function',
   validateAIProvider: 'function',
   validateExporter: 'function',
+  validatePages: 'function',
   parseManifest: 'function',
 };
 

@@ -48,7 +48,7 @@ Pass a process-lifetime context to `ServeStdio` and exit main when it returns. R
 
 Return `*plugin.Error` only for messages safe to expose to the host. Ordinary errors and recovered handler panics become a generic internal error; their private details are not copied onto the wire. Do not put secrets in public error data or stderr.
 
-The [manifest and UI types](<../../sdk/go/types.go>) match the v1 JSON names. `ParseManifest` rejects a manifest over 1 MiB, trailing JSON, and unknown fields, including fields inside a panel body or AI model. It names the offending field when that name is at most 64 bytes of printable ASCII, and omits any longer or non-ASCII name so a hostile manifest cannot echo payload text through a diagnostic. Types and `ParseManifest` do not replace host validation. Call `ValidateCommand` for every contributed command before packaging: the local ID matches the host pattern, the title is nonempty and at most 256 bytes, the description is at most 4096 bytes, and the effect is empty, `read`, `write`, or `unknown`. `WRITE`, `sideeffect`, and `Read` are rejected. This check does not let a data source use a write command. Call `ValidateSkillDocument` on each skill entry and companion before packaging. The file must be nonempty UTF-8 of at most 64 KiB and must not contain NUL. The check does not execute the document or grant tools. The same checks exist for every contribution: `ValidateDataSource`, `ValidateDataSourceCommand`, `ValidateAIProvider`, `ValidateExporter`, `ValidateSkillResources`, `ValidateSkillMetadata` and `ValidatePermissionNotes`. Run `plugin check` on the built package before distributing it.
+The [manifest and UI types](<../../sdk/go/types.go>) match the v1 JSON names. `ParseManifest` rejects a manifest over 1 MiB, trailing JSON, and unknown fields, including fields inside a panel body or AI model. It names the offending field when that name is at most 64 bytes of printable ASCII, and omits any longer or non-ASCII name so a hostile manifest cannot echo payload text through a diagnostic. Page and navigation declarations use [pages_manifest.go](<../../sdk/go/pages_manifest.go>); call `ValidatePages` before packaging. It mirrors the host rules: declaring `pages` or `navigation` requires `ui.pages`, ids stay unique per array, each page has exactly one of `body` or `html` (an HTML page also requires `ui.html-panel`), navigation must reference a declared page, `location` is `tools`, `order` is within -1000..1000, and pages are capped at 32 plus 32 navigation entries. The check renders nothing and grants no host capability. Types, `ParseManifest` and `ValidatePages` do not replace host validation. Call `ValidateCommand` for every contributed command before packaging: the local ID matches the host pattern, the title is nonempty and at most 256 bytes, the description is at most 4096 bytes, and the effect is empty, `read`, `write`, or `unknown`. `WRITE`, `sideeffect`, and `Read` are rejected. This check does not let a data source use a write command. Call `ValidateSkillDocument` on each skill entry and companion before packaging. The file must be nonempty UTF-8 of at most 64 KiB and must not contain NUL. The check does not execute the document or grant tools. The same checks exist for every contribution: `ValidateDataSource`, `ValidateDataSourceCommand`, `ValidateAIProvider`, `ValidateExporter`, `ValidateSkillResources`, `ValidateSkillMetadata` and `ValidatePermissionNotes`. Run `plugin check` on the built package before distributing it.
 
 ### Extension entry points
 
@@ -68,6 +68,7 @@ Each contribution type has one SDK entry point. Use it instead of writing the JS
 | Group | File | Types |
 |---|---|---|
 | Manifest, UI and wire | [types.go](<../../sdk/go/types.go>) | `Manifest`, `Contributions`, `UINode`, `InitializeParams`, `InvokeParams`, `SkillContent` |
+| Pages and navigation | [pages_manifest.go](<../../sdk/go/pages_manifest.go>) | `Page`, `PageHTML`, `Navigation` |
 | Data sources | [datasource_types.go](<../../sdk/go/datasource_types.go>) | `DataSourceConfig`, `DataSourceRequest`, `DataSourceQueryResult`, `DataSourceColumnDefinition`, `DataSourceColumnDefinitionWithTable`, `DataSourceIndexDefinition`, `DataSourceForeignKeyDefinition`, `DataSourceTriggerDefinition` |
 | AI provider declarations | [ai_provider_manifest.go](<../../sdk/go/ai_provider_manifest.go>) | `AIProvider`, `AIModel` |
 | AI provider streaming | [aiprovider_types.go](<../../sdk/go/aiprovider_types.go>) | `AIProviderConfig`, `AIProviderRegistration`, `AIProviderRequest`, `AIProviderMessage`, `AIProviderTool`, `AIProviderToolFunction`, `AIProviderToolCall`, `AIProviderToolCallFunction`, `AIProviderLimits`, `AIProviderStart`, `AIProviderDelta`, `AIProviderEvent`, `AIProviderEmit`, `AIProviderGenerate`, `AIProviderCompletion`, `AIProviderBatch`, `AIProviderUsage` |
@@ -80,6 +81,7 @@ Each contribution type has one SDK entry point. Use it instead of writing the JS
 | Group | Identifiers |
 |---|---|
 | Protocol | `APIVersion`, `DefaultMaxFrameBytes`, `AIProviderImageFrameBytes`, `DataSourceProtocolVersion`, `DataSourceWriteProtocolVersion` |
+| Pages | `PagesPermission`, `PageCustomHTMLPermission`, `PageLocationTools`, `ValidatePages` |
 | Data source errors | `ErrDataSourceRequest`, `ErrDataSourceLimit`, `ErrDataSourceResult`, `ErrDataSourceSession`, `ErrDataSourceUnsupported` |
 | Manifest shapes | `Backend`, `Requirement`, `Panel` |
 | Exporter payload | `ExporterChunkRows`, `EncodeExporterChunkRequest`, `ExporterChunkResult`, `ExporterMaxEnvelopeBytes` and the cell kinds `ExporterBoolean`, `ExporterNumber`, `ExporterString`, `ExporterJSON`, `ExporterNull`, `ExporterMissing`, `ExporterBinary` |
@@ -99,9 +101,10 @@ Runtime helpers:
 - transport: `FrameReader`, `DEFAULT_MAX_FRAME_BYTES`, `Protocol`, `ProtocolError`
 - data sources: `DataSourceDispatcher`, `DATA_SOURCE_PROTOCOL_VERSION`, `DATA_SOURCE_WRITE_PROTOCOL_VERSION`, `DataSourceExecResult`, `DataSourceTransactionID`
 - declaration checks: `validateCommand`, `validatePermissionNotes`, `validateSkillMetadata`, `validateSkillResources`, `validateSkillDocument`, `validateDataSource`, `validateDataSourceCommand`, `validateAIProvider`, `validateExporter`
+- pages: `validatePages`
 - manifest parsing: `parseManifest`
 
-`validateCommand`, `validateSkillDocument`, and `parseManifest` match the Go rules above. [test/exports.test.ts](<../../sdk/typescript/test/exports.test.ts>) keeps every documented name exported and mentioned here, so renaming one is a deliberate breaking change.
+`validateCommand`, `validateSkillDocument`, `validatePages`, and `parseManifest` match the Go rules above. [test/exports.test.ts](<../../sdk/typescript/test/exports.test.ts>) keeps every documented name exported and mentioned here, so renaming one is a deliberate breaking change.
 
 ```ts
 import { FrameReader, Protocol } from './compiled-sdk/index.js';
@@ -144,6 +147,14 @@ The snippet is a Node transport adapter; use your application's Node types when 
 The helper uses the same default frame, active-handler and output-queue limits as the Go SDK. `FrameReader` bounds incomplete UTF-8 frames and rejects malformed UTF-8 or an unfinished frame at EOF. `close` aborts active handlers; `flush` waits only for already queued transport writes.
 
 ## UI choices
+
+### Pages and navigation
+
+`contributes.pages` and `contributes.navigation` add full-window surfaces, not just an embedded panel. A page declares exactly one body: a declarative tree or `html: {source}`. Pages require `ui.pages`; an HTML page also requires `ui.html-panel`. Navigation entries attach a declared page to `location: "tools"` (the title-bar **Plugins** menu) and only reorder entries of the same plugin with `order` in -1000..1000. Limits are 32 pages and 32 navigation entries per manifest.
+
+The page itself gains no filesystem access and cannot make page-originated network requests. An HTML page receives the page bridge (`window.gonavi.call` / `window.gonavi.notify`) and can only call host capabilities whose permissions the package declared, for example `host.connections.read` or `host.metadata.read`. Every call is dispatched by one host binding with a 64 KiB argument limit, a 256 KiB result limit, eight concurrent calls and a 30-second deadline. Calls are rate-limited to 30 per 10 seconds and notifications to 10 per 10 seconds; the host injects a per-frame token into the runtime, so do not hand-craft bridge messages. A declarative page has no bridge; its buttons invoke declared plugin commands instead. See the [pages contract](<pages.md>) and the [inspectable example](<../../examples/plugins/pages/README.md>).
+
+The CSP blocks page-originated requests, subresources, forms and nested frames, but it does **not** stop the page from navigating itself. The host treats a second frame load as an escape, unmounts the frame and revokes the bridge, but data already received can still leave through that navigation: treat the package, and any `host.*` data you request, as trusted code. `host.query.read` is classified read-only, not side-effect free: v1 rejects common locking clauses and `nextval`/`setval`/`pg_terminate_backend`/`pg_read_file`, while other functions (for example `pg_advisory_lock` or a user-defined function) are not enumerated. The scan-layer row budget (maxRows+1, default maxRows 100, maximum 1000) stops materialization on supporting drivers; legacy drivers read first and are truncated by the gateway.
 
 ### Embedded panel
 
