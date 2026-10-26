@@ -74,4 +74,12 @@ describe('plugin provider identity and immutable config', () => {
     expect(() => buildPluginProviderPayload(values, config(), 'test', source)).toThrow();
     expect(buildPluginProviderPayload({ ...values, contextWindow: 4096 }, config(), 'test', source).model).toBe('gpt-test');
   });
+  it('accepts only bounded raster icon data URLs from the catalog', () => {
+    const icon = 'data:image/png;base64,iVBORw0KGgo=';
+    expect(decodePluginAIProviders({ items: [{ ...view, icon }] })[0].icon).toBe(icon);
+    for (const bad of ['data:image/svg+xml;base64,PHN2Zz4=', 'data:text/html;base64,PGgxPg==', 'javascript:alert(1)',
+      'data:image/png;base64,' + 'A'.repeat(128 * 1024)]) {
+      expect(() => decodePluginAIProviders({ items: [{ ...view, icon: bad }] })).toThrow();
+    }
+  });
 });

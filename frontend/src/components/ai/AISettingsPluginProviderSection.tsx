@@ -12,6 +12,7 @@ export default function AISettingsPluginProviderSection(props: AISettingsProvide
     key: item.type,
     label: item.name + ' · ' + item.pluginId,
     available: item.available,
+    iconSrc: item.icon,
     detail: item.reason,
   }));
   if (props.isEditing && plugin) return <AIPluginProviderEditor {...props} />;

@@ -3,6 +3,8 @@
 .gn-plugin-provider-catalog { flex: 0 0 auto; padding-top: 10px; border-top: 1px solid var(--gn-border-color, rgba(127,127,127,.22)); }
 .gn-plugin-provider-saved { max-height: 190px; overflow: auto; }
 .gn-plugin-provider-row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; overflow-wrap: anywhere; }
+.gn-plugin-provider-identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.gn-plugin-provider-identity .gonavi-ai-provider-logo { width: 32px; height: 32px; flex: 0 0 32px; }
 .gn-plugin-provider-editor { overflow: auto; height: 100%; min-width: 0; padding: 4px 14px 20px 0; }
 .gn-plugin-provider-editor > p, .gn-plugin-provider-editor > .ant-alert { margin: 12px 0; }
 .gn-plugin-provider-wrap { overflow-wrap: anywhere; }

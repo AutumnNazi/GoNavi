@@ -47,6 +47,13 @@ func (index *artifactIndex) validateManifest(ctx context.Context) (ValidatedPack
 			return ValidatedPackage{}, fmt.Errorf("invalid window title or dimensions")
 		}
 	}
+	for _, provider := range manifest.Contributes.AIProviders {
+		if provider.Icon != "" {
+			if err := index.reference(provider.Icon); err != nil {
+				return ValidatedPackage{}, fmt.Errorf("ai provider icon: %w", err)
+			}
+		}
+	}
 	if err := validateArtifactSchema(manifest.ConfigSchema); err != nil {
 		return ValidatedPackage{}, err
 	}

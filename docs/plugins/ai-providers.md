@@ -26,6 +26,7 @@ The [example manifest](<../../examples/plugins/ai-provider/gonavi.plugin.json>) 
         "contextWindow": 128000,
         "maxOutputTokens": 16384
       }],
+      "icon": "icons/provider.png",
       "supportsTools": true,
       "supportsImages": false
     }]
@@ -36,6 +37,12 @@ The [example manifest](<../../examples/plugins/ai-provider/gonavi.plugin.json>) 
 This excerpt omits the package identity and command input schema; use the complete example as a template. Its provider type is exactly `plugin:sdk.examples.aiprovider:http`. Do not trim, case-fold or rewrite that namespace to OpenAI, custom or CLI when it is malformed or unavailable.
 
 A package may declare up to **8 providers**, each with **1–32 static models**. Provider IDs are lowercase; model IDs are exact and case-sensitive. Model context limits are 1,024–262,144 tokens; output limits are 1–65,536 and cannot exceed context limits. Both capability flags are required. Set `supportsImages` to true only when the backend actually forwards images; the example keeps it false because its transport handles text only. The [contract](<ai-provider-contract.md>) defines complete identity, schema and inspection rules.
+
+### Provider icon
+
+`icon` is optional and names a package-relative raster image such as `icons/provider.png`. PNG, JPEG, WebP and GIF are accepted and must be at most 64 KiB. The file must exist in the package: `gonavi plugin check`, `gonavi plugin install --digest` and marketplace inspection reject a declared but missing icon. SVG is rejected; the host renders the icon in the main window and does not need an executable vector format.
+
+The host reads the bounded file without starting the plugin, verifies the image type from its bytes, and returns a data URL in the provider catalog. The AI settings provider list and saved provider rows then show the brand logo. Missing, oversized, linked or non-raster files are omitted and the UI falls back to the provider's first letter. Inline base64 icons in the manifest are not supported; ship the file in the package.
 
 Provider commands are reserved. Generic plugin invocation, ordinary Agent tools and plugin UI/window command menus cannot call them—even if the package also requests `ai.tools`. The host routes model operations through its private generation/digest-bound API. A model's tool-call suggestion does not execute a tool or bypass approvals.
 

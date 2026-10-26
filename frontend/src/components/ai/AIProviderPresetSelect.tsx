@@ -22,6 +22,7 @@ export interface PluginPresetOption {
   key: string;
   label: string;
   available: boolean;
+  iconSrc?: string;
   detail?: string;
 }
 
@@ -150,7 +151,7 @@ const AIProviderPresetSelect: React.FC<AIProviderPresetSelectProps> = ({
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => choosePluginPreset(preset)}
                 >
-                  <AIProviderLogo presetKey={preset.key} label={preset.label} dark={dark} />
+                  <AIProviderLogo presetKey={preset.key} label={preset.label} iconPath={preset.iconSrc} dark={dark} />
                   <span className="gonavi-ai-provider-plugin-name">{preset.label}</span>
                   {!preset.available && <span className="gonavi-ai-provider-plugin-unavailable">{pluginUnavailableLabel}</span>}
                 </button>

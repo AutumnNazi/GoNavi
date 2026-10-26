@@ -13,14 +13,27 @@ const maxAIProviderTypeBytes = len("plugin:") + 128 + 1 + 64
 
 var aiProviderIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,63}$`)
 var aiModelIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:/@+-]{0,127}$`)
+var aiProviderIconPattern = regexp.MustCompile(`(?i)\.(png|jpe?g|webp|gif)$`)
+
+const maxAIProviderIconPathBytes = 256
+const maxAIProviderIconBytes = 64 << 10
+
+// validAIProviderIcon accepts only a package-relative raster image path. SVG is rejected
+// because the host renders the icon through the main window; the file itself is read with
+// a byte limit and content sniffed before it becomes a data URL.
+func validAIProviderIcon(value string) bool {
+	return len(value) <= maxAIProviderIconPathBytes && aiProviderIconPattern.MatchString(value) && safePackagePath(value) == nil
+}
 
 // AIProvider declares a native, host-managed text/tool/image model transport with static models.
 // Both capability booleans must be explicit in JSON; supportsImages is an opt-in claim that the
-// plugin accepts bounded image content parts on its start request.
+// plugin accepts bounded image content parts on its start request. Icon is an optional
+// package-relative raster path; the host reads it as bounded metadata, not executable content.
 type AIProvider struct {
 	ID             string    `json:"id"`
 	Name           string    `json:"name"`
 	Command        string    `json:"command"`
+	Icon           string    `json:"icon,omitempty"`
 	Models         []AIModel `json:"models"`
 	SupportsTools  bool      `json:"supportsTools"`
 	SupportsImages bool      `json:"supportsImages"`
@@ -83,6 +96,9 @@ func validateAIProviders(manifest Manifest, commands map[string]bool) error {
 		}
 		if !validAIProviderText(declaration.Name) || !commands[declaration.Command] {
 			return fmt.Errorf("invalid ai provider name or undeclared command")
+		}
+		if declaration.Icon != "" && !validAIProviderIcon(declaration.Icon) {
+			return fmt.Errorf("invalid ai provider icon")
 		}
 		if err := validateAIModels(declaration.Models); err != nil {
 			return err

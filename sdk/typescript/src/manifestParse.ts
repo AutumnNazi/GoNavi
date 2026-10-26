@@ -58,7 +58,7 @@ export function parseManifest(data: unknown): Manifest {
     if (contributes.skills != null) list(contributes.skills, (item) => only(item, ['id', 'name', 'description', 'entry', 'resources']));
     if (contributes.exporters != null) list(contributes.exporters, (item) => only(item, ['id', 'name', 'command', 'extension', 'contentType', 'streaming']));
     if (contributes.aiProviders != null) list(contributes.aiProviders, (item) => {
-      only(item, ['id', 'name', 'command', 'models', 'supportsTools', 'supportsImages']);
+      only(item, ['id', 'name', 'command', 'icon', 'models', 'supportsTools', 'supportsImages']);
       if (item.models != null) list(item.models, (model) => only(model, ['id', 'name', 'contextWindow', 'maxOutputTokens']));
     });
     if (contributes.pages != null) list(contributes.pages, (item) => {

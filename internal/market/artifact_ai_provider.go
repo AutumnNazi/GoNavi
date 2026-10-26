@@ -15,8 +15,9 @@ const (
 )
 
 var (
-	artifactAIProviderIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,63}$`)
-	artifactAIModelIDPattern    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:/@+-]{0,127}$`)
+	artifactAIProviderIDPattern   = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,63}$`)
+	artifactAIModelIDPattern      = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:/@+-]{0,127}$`)
+	artifactAIProviderIconPattern = regexp.MustCompile(`(?i)\.(png|jpe?g|webp|gif)$`)
 )
 
 // Keep publication metadata independent of the host runtime and provider packages.
@@ -25,6 +26,7 @@ type artifactAIProvider struct {
 	ID             string            `json:"id"`
 	Name           string            `json:"name"`
 	Command        string            `json:"command"`
+	Icon           string            `json:"icon,omitempty"`
 	Models         []artifactAIModel `json:"models"`
 	SupportsTools  *bool             `json:"supportsTools"`
 	SupportsImages *bool             `json:"supportsImages"`
@@ -61,6 +63,9 @@ func validateArtifactAIProviders(manifest artifactManifest, commands map[string]
 		}
 		if !commands[provider.Command] {
 			return fmt.Errorf("ai provider command must name a declared command")
+		}
+		if provider.Icon != "" && (len(provider.Icon) > 256 || !artifactAIProviderIconPattern.MatchString(provider.Icon) || safeArtifactPath(provider.Icon) != nil) {
+			return fmt.Errorf("invalid ai provider icon")
 		}
 		if provider.SupportsTools == nil || provider.SupportsImages == nil {
 			return fmt.Errorf("ai provider capabilities require explicit supportsTools and supportsImages")

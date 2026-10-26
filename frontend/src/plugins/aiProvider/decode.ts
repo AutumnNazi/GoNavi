@@ -4,6 +4,8 @@ import { invalidPluginAICatalog, isPluginModelId, pluginAIText } from './validat
 import type { PluginAIModel, PluginAIProviderView } from './types';
 
 export const MAX_PLUGIN_AI_PROVIDERS = 4096;
+const MAX_PLUGIN_AI_ICON_LENGTH = 128 * 1024;
+const PLUGIN_AI_ICON = /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/;
 function decodeModels(value: unknown): readonly PluginAIModel[] {
   if (!Array.isArray(value) || value.length < 1 || value.length > 32) return invalidPluginAICatalog();
   const seen = new Set<string>();
@@ -30,11 +32,12 @@ export function decodePluginAIProviders(data: unknown): readonly PluginAIProvide
       || typeof value.available !== 'boolean' || typeof value.state !== 'string'
       || !['disabled', 'starting', 'running', 'stopping', 'faulted', 'blocked'].includes(value.state)
       || (value.available && (value.state !== 'running' || value.generation === 0))
-      || (value.reason !== undefined && !pluginAIText(value.reason, 256))) return invalidPluginAICatalog();
+      || (value.reason !== undefined && !pluginAIText(value.reason, 256))
+      || (value.icon !== undefined && (typeof value.icon !== 'string' || value.icon.length > MAX_PLUGIN_AI_ICON_LENGTH || !PLUGIN_AI_ICON.test(value.icon)))) return invalidPluginAICatalog();
     const count = (counts.get(identity.pluginId) ?? 0) + 1;
     if (seen.has(identity.type) || count > 8) return invalidPluginAICatalog();
     seen.add(identity.type); counts.set(identity.pluginId, count);
-    return Object.freeze({ ...identity, name: value.name, models: decodeModels(value.models), supportsTools: value.supportsTools,
+    return Object.freeze({ ...identity, name: value.name, icon: value.icon as string | undefined, models: decodeModels(value.models), supportsTools: value.supportsTools,
       supportsImages: value.supportsImages, version: value.version, digest: value.digest, generation: value.generation,
       available: value.available, state: value.state as PluginAIProviderView['state'], reason: value.reason as string | undefined });
   }));

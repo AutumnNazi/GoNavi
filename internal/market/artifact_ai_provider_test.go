@@ -112,6 +112,11 @@ func TestArtifactAIProvidersRejectInvalidProviderMetadata(t *testing.T) {
 		{name: "nul name", patch: map[string]any{"name": "secret\x00"}},
 		{name: "unknown command", patch: map[string]any{"command": "Missing"}},
 		{name: "case changed command", patch: map[string]any{"command": "generate"}},
+		{name: "svg icon", patch: map[string]any{"icon": "icons/provider.svg"}},
+		{name: "absolute icon", patch: map[string]any{"icon": "/icons/provider.png"}},
+		{name: "traversal icon", patch: map[string]any{"icon": "../provider.png"}},
+		{name: "backslash icon", patch: map[string]any{"icon": "icons\\provider.png"}},
+		{name: "long icon", patch: map[string]any{"icon": strings.Repeat("a", 253) + ".png"}},
 	}
 	for _, format := range []string{".zip", ".tgz"} {
 		for _, test := range cases {
@@ -127,6 +132,21 @@ func TestArtifactAIProvidersRejectInvalidProviderMetadata(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestArtifactAIProvidersRequireDeclaredIconFile(t *testing.T) {
+	manifest := artifactAIProviderManifest(t, func(_ map[string]any, p map[string]any, _ map[string]any) {
+		p["icon"] = "icons/provider.png"
+	})
+	withIcon := append(artifactTestEntries(manifest), artifactTestEntry{name: "icons/provider.png", body: []byte("png")})
+	filename := artifactTestWrite(t, ".zip", artifactTestZIP(t, withIcon))
+	if _, err := ValidatePackage(context.Background(), filename); err != nil {
+		t.Fatalf("declared icon file rejected: %v", err)
+	}
+	withoutIcon := artifactTestWrite(t, ".zip", artifactTestZIP(t, artifactTestEntries(manifest)))
+	if _, err := ValidatePackage(context.Background(), withoutIcon); err == nil {
+		t.Fatal("missing declared icon file accepted")
 	}
 }
 

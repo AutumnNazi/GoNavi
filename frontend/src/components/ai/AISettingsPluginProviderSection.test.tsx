@@ -64,6 +64,6 @@ describe('actual plugin provider wrapper and explicit correction UI', () => {
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
     const calls = state.builtin.mock.calls;
     const last = calls.length ? calls[calls.length - 1][0] as { pluginPresets?: unknown } : undefined;
-    expect(last?.pluginPresets).toEqual([{ key: provider.type, label: 'Native provider · example.ai', available: true, detail: undefined }]);
+    expect(last?.pluginPresets).toEqual([{ key: provider.type, label: 'Native provider · example.ai', available: true, iconSrc: undefined, detail: undefined }]);
   });
 });

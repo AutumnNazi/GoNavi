@@ -28,7 +28,7 @@ export interface SkillContent {
 export interface AIModel { id: string; name: string; contextWindow: number; maxOutputTokens: number }
 /** Requires ai.providers and an exact backend command; images are not supported in v1. */
 export interface AIProvider {
-  id: string; name: string; command: string; models: AIModel[];
+  id: string; name: string; command: string; icon?: string; models: AIModel[];
   supportsTools: boolean; supportsImages: false;
 }
 /** Requires data.export and a backend command; metadata grants no filesystem access. */

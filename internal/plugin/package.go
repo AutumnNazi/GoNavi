@@ -190,8 +190,10 @@ func (s *packageScan) directory(source string) error {
 }
 func (s *packageScan) validateEntries(m Manifest) error {
 	regular := make(map[string]bool, len(s.files))
+	sizes := make(map[string]int64, len(s.files))
 	for _, f := range s.files {
 		regular[f.name] = true
+		sizes[f.name] = f.size
 	}
 	check := func(name string) error {
 		if !regular[name] {
@@ -214,6 +216,16 @@ func (s *packageScan) validateEntries(m Manifest) error {
 	if m.Window != nil {
 		if err := check(m.Window.Entry); err != nil {
 			return err
+		}
+	}
+	for _, provider := range m.Contributes.AIProviders {
+		if provider.Icon != "" {
+			if err := check(provider.Icon); err != nil {
+				return err
+			}
+			if sizes[provider.Icon] > maxAIProviderIconBytes {
+				return fmt.Errorf("ai provider icon exceeds the 64 KiB limit")
+			}
 		}
 	}
 	return s.validateSkillEntries(m)

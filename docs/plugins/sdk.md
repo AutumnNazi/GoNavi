@@ -86,6 +86,10 @@ Each contribution type has one SDK entry point. Use it instead of writing the JS
 | Manifest shapes | `Backend`, `Requirement`, `Panel` |
 | Exporter payload | `ExporterChunkRows`, `EncodeExporterChunkRequest`, `ExporterChunkResult`, `ExporterMaxEnvelopeBytes` and the cell kinds `ExporterBoolean`, `ExporterNumber`, `ExporterString`, `ExporterJSON`, `ExporterNull`, `ExporterMissing`, `ExporterBinary` |
 
+### AI provider icons
+
+An AI provider may set `icon` to a package-relative `.png`, `.jpg`, `.jpeg`, `.webp` or `.gif` file at most 64 KiB. Include the file in the package; inspection rejects a declared but missing icon. The host reads it without starting the plugin and shows it in the AI settings provider list. SVG is not accepted, and inline base64 icons belong in the provider catalog only as the host-produced data URL, not in the manifest.
+
 ### AI provider images
 
 Declare `supportsImages` in both `contributes.aiProviders` and the runtime registration. Images then arrive only on user messages (`AIProviderMessage.Images` in Go, `images` in TypeScript) as bounded base64 data URLs. The host forwards `image/png`, `image/jpeg`, `image/webp` and `image/gif` only; it never fetches a remote URL and never accepts images on system, assistant or tool messages. Limits are four images per message, 4 MiB decoded per image, 24 MiB encoded per request and a 32 MiB request frame. A plugin that declares the capability must raise its own frame budget to `AIProviderImageFrameBytes` (Go `Options.MaxFrameBytes`) or `AI_PROVIDER_IMAGE_MAX_REQUEST_BYTES` (TypeScript `FrameReader`); the defaults remain one MiB for text-only plugins.

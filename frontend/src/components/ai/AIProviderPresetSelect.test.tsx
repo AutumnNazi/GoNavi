@@ -135,7 +135,7 @@ describe('AIProviderPresetSelect', () => {
       ariaLabel: '供应商',
       onChange,
       pluginPresets: [
-        { key: 'plugin:example.ai:chat', label: 'Native provider · example.ai', available: true },
+        { key: 'plugin:example.ai:chat', label: 'Native provider · example.ai', available: true, iconSrc: 'data:image/png;base64,iVBORw0KGgo=' },
         { key: 'plugin:example.ai:offline', label: 'Offline · example.ai', available: false },
       ],
       pluginLabel: '插件提供方',
@@ -145,6 +145,7 @@ describe('AIProviderPresetSelect', () => {
     expect(markup).toContain('插件提供方');
     expect(markup).toContain('data-plugin-provider="plugin:example.ai:chat"');
     expect(markup).toContain('data-plugin-provider="plugin:example.ai:offline"');
+    expect(markup).toContain('src="data:image/png;base64,iVBORw0KGgo="');
     expect(markup).toContain('不可用');
 
     const renderer = create(<AIProviderPresetSelect {...props} />);

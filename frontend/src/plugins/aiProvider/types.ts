@@ -5,6 +5,7 @@ export interface PluginAIProviderView {
   pluginId: string;
   id: string;
   name: string;
+  icon?: string;
   models: readonly PluginAIModel[];
   supportsTools: boolean;
   supportsImages: boolean;
