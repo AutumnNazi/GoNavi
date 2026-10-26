@@ -57,7 +57,7 @@ func startWebLogin(t *testing.T, f *httpFixture, returnTo string) (*httptest.Res
 	if len(state) != 43 || target.Query().Get("code_challenge") == "" {
 		t.Fatalf("start response lacks state or PKCE: %s", target)
 	}
-	stateCookie := responseCookie(t, start, "gonavi_market_web_state")
+	stateCookie := responseCookie(t, start, "gonavi_market_oauth")
 	if stateCookie == nil || stateCookie.Value != state {
 		t.Fatal("missing state cookie")
 	}
@@ -149,11 +149,37 @@ func TestWebLoginCallbackSessionCSRFAndLogout(t *testing.T) {
 	}
 }
 
+// GitHub redirects to the configured callback, which is shared with the desktop
+// device flow. The browser flow must complete there, not only on the internal
+// /auth/web/callback alias.
+func TestWebLoginCompletesThroughRegisteredGitHubCallback(t *testing.T) {
+	f := newHTTPFixture(t)
+	f.server.identity = identityFixture{}
+	start, state, stateCookie := startWebLogin(t, f, "/publish")
+	returnCookie := responseCookie(t, start, browserReturnCookie)
+	if returnCookie == nil {
+		t.Fatal("missing returnTo cookie")
+	}
+	callback := browserRequest(f, "GET", "/auth/github/callback?code=provider-code&state="+state, stateCookie, returnCookie)
+	assertStatus(t, callback, 303)
+	if location := callback.Header().Get("Location"); location != "/publish" {
+		t.Fatalf("location=%q", location)
+	}
+	session := responseCookie(t, callback, "gonavi_market_session")
+	if session == nil || len(session.Value) != 43 || !session.HttpOnly {
+		t.Fatalf("missing browser session: %+v", session)
+	}
+	body := decodeResponse[webSessionBody](t, browserRequest(f, "GET", "/auth/web/session", session))
+	if !body.Authenticated || body.Account.Login != "new-user" {
+		t.Fatalf("session=%+v", body)
+	}
+}
+
 func TestWebCallbackStateAndDenialFailures(t *testing.T) {
 	f := newHTTPFixture(t)
 	f.server.identity = identityFixture{}
 	wrongState := browserRequest(f, "GET", "/auth/web/callback?code=provider-code&state="+strings.Repeat("q", 43),
-		&http.Cookie{Name: "gonavi_market_web_state", Value: strings.Repeat("q", 43), Path: "/"})
+		&http.Cookie{Name: "gonavi_market_oauth", Value: strings.Repeat("q", 43), Path: "/"})
 	assertStatus(t, wrongState, 303)
 	if location := wrongState.Header().Get("Location"); location != "/login?error=invalid_oauth_state" {
 		t.Fatalf("location=%q", location)
@@ -210,7 +236,7 @@ func TestWebReturnToValidation(t *testing.T) {
 			f.server.identity = identityFixture{}
 			start := browserRequest(f, "GET", "/auth/web/start?returnTo="+url.QueryEscape(returnTo))
 			assertStatus(t, start, 303)
-			stateCookie := responseCookie(t, start, "gonavi_market_web_state")
+			stateCookie := responseCookie(t, start, "gonavi_market_oauth")
 			returnCookie := responseCookie(t, start, "gonavi_market_web_return")
 			if stateCookie == nil || returnCookie == nil {
 				t.Fatalf("missing flow cookies for %q", returnTo)

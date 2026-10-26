@@ -23,9 +23,9 @@ const (
 	browserSessionAge   = 86400
 	browserCookieSecure = "__Host-gonavi_market_session"
 	browserCookieLocal  = "gonavi_market_session"
-	browserStateCookie  = "gonavi_market_web_state"
+	browserStateCookie  = "gonavi_market_oauth"
 	browserReturnCookie = "gonavi_market_web_return"
-	browserCookiePath   = "/api/v1/auth/web"
+	browserCookiePath   = "/api/v1/auth/"
 	defaultReturnTo     = "/account"
 )
 

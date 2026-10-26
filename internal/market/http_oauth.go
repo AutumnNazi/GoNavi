@@ -65,17 +65,22 @@ func (s *Server) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	state := r.URL.Query().Get("state")
 	if !cookieMatches(r, "gonavi_market_oauth", state) {
-		writeAPIError(w, 400, "invalid_oauth_state")
+		s.failOAuth(w, r, 400, "invalid_oauth_state")
 		return
 	}
 	s.setAuthCookie(w, "gonavi_market_oauth", "", -1)
 	flow, err := s.repo.ConsumeFlow(r.Context(), secretHash(state), "oauth", s.now())
 	if err != nil {
-		writeAPIError(w, 400, "invalid_oauth_state")
+		s.failOAuth(w, r, 400, "invalid_oauth_state")
 		return
 	}
 	code := r.URL.Query().Get("code")
 	if code == "" || len(code) > 4096 {
+		if flow.UserCode == "" {
+			s.setBrowserFlowCookie(w, browserReturnCookie, "", -1)
+			redirectLogin(w, r, "oauth_denied")
+			return
+		}
 		if err := s.repo.DecideDevice(r.Context(), secretHash(flow.UserCode), "", false, s.now()); err != nil {
 			logger.Warnf("market OAuth denial could not update device grant")
 		}
@@ -86,15 +91,46 @@ func (s *Server) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	identity, err := s.identity.Exchange(ctx, code, flow.Verifier)
 	if err != nil {
-		writeAPIError(w, 502, "identity_provider_failed")
+		s.failOAuth(w, r, 502, "identity_provider_failed")
 		return
 	}
 	account, err := s.repo.UpsertIdentity(ctx, identity)
 	if err != nil {
+		if s.isBrowserOAuth(r) {
+			redirectLogin(w, r, "identity_provider_failed")
+			return
+		}
 		writeError(w, err)
 		return
 	}
+	if flow.UserCode == "" {
+		// Browser login shares the registered GitHub callback with the desktop
+		// device flow; an empty user code identifies the browser transaction.
+		returnTo := s.browserReturnTarget(r)
+		s.setBrowserFlowCookie(w, browserReturnCookie, "", -1)
+		if err = s.completeBrowserLogin(ctx, w, account); err != nil {
+			writeError(w, err)
+			return
+		}
+		http.Redirect(w, r, returnTo, http.StatusSeeOther)
+		return
+	}
 	s.offerConsent(w, r, account, flow.UserCode)
+}
+
+// isBrowserOAuth distinguishes the browser navigation flow from the desktop
+// device flow, which must keep JSON API errors.
+func (s *Server) isBrowserOAuth(r *http.Request) bool {
+	_, err := r.Cookie(browserReturnCookie)
+	return err == nil
+}
+
+func (s *Server) failOAuth(w http.ResponseWriter, r *http.Request, status int, code string) {
+	if s.isBrowserOAuth(r) {
+		redirectLogin(w, r, code)
+		return
+	}
+	writeAPIError(w, status, code)
 }
 
 func (s *Server) offerConsent(w http.ResponseWriter, r *http.Request, a Account, userCode string) {

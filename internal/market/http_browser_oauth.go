@@ -77,15 +77,24 @@ func (s *Server) webCallback(w http.ResponseWriter, r *http.Request) {
 		redirectLogin(w, r, "identity_provider_failed")
 		return
 	}
+	if err = s.completeBrowserLogin(ctx, w, account); err != nil {
+		writeError(w, err)
+		return
+	}
+	http.Redirect(w, r, returnTo, http.StatusSeeOther)
+}
+
+// completeBrowserLogin issues exactly one revocable browser session and sets
+// the HttpOnly cookie. Device OAuth and browser OAuth share the configured
+// GitHub callback, so both completion paths must use this helper.
+func (s *Server) completeBrowserLogin(ctx context.Context, w http.ResponseWriter, account Account) error {
 	token, err := newSecret(32)
 	if err != nil {
-		writeError(w, err)
-		return
+		return err
 	}
 	if err = s.repo.CreateSession(ctx, secretHash(token), account.ID, s.webSessionExpiry()); err != nil {
-		writeError(w, err)
-		return
+		return err
 	}
 	s.setSessionCookie(w, token, browserSessionAge)
-	http.Redirect(w, r, returnTo, http.StatusSeeOther)
+	return nil
 }
