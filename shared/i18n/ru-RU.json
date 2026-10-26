@@ -13189,7 +13189,7 @@
   "plugin.backend.error.plugin_busy": "Плагин всё ещё завершает предыдущую операцию. Повторите попытку позже.",
   "plugin.backend.error.spec_invalid": "Неизвестный удалённый источник. Используйте github:owner/repo или имя npm-пакета (например, @scope/pkg).",
   "plugin.backend.error.release_not_found": "В этом репозитории нет подходящего релиза с плагином (zip/tgz). Убедитесь, что пакет плагина опубликован.",
-  "plugin.backend.error.asset_ambiguous": "В релизе несколько кандидатов в пакеты плагина ({{assets}}). Опубликуйте один ассет gonavi-плагина, чтобы выбор был однозначным.",
+  "plugin.backend.error.asset_ambiguous": "В релизе несколько кандидатов в пакеты плагина. Опубликуйте один ассет gonavi-плагина, чтобы выбор был однозначным.",
   "plugin.backend.error.npm_not_found": "Такого пакета или версии нет в npm.",
   "plugin.backend.error.fetch_failed": "Не удалось скачать пакет плагина. Проверьте сеть и настройки прокси, затем повторите.",
   "plugin.backend.error.fetch_expired": "Срок удалённой проверки истёк. Проверьте пакет заново перед установкой.",

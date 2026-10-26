@@ -13189,7 +13189,7 @@
   "plugin.backend.error.plugin_busy": "插件仍在结束上一个操作，请稍后重试。",
   "plugin.backend.error.spec_invalid": "无法识别的远程来源。请使用 github:owner/repo 或 npm 包名（如 @scope/pkg）。",
   "plugin.backend.error.release_not_found": "该仓库没有可安装的插件 Release（zip/tgz）。请确认仓库已发布插件包。",
-  "plugin.backend.error.asset_ambiguous": "该 Release 有多个候选插件包（{{assets}}）。请在发布中固定单一的 gonavi 插件资产。",
+  "plugin.backend.error.asset_ambiguous": "该 Release 有多个候选插件包。请在发布中固定单一的 gonavi 插件资产。",
   "plugin.backend.error.npm_not_found": "npm 上没有找到该插件包或版本。",
   "plugin.backend.error.fetch_failed": "插件包下载失败。请检查网络与代理设置后重试。",
   "plugin.backend.error.fetch_expired": "远程检查已过期，请重新检查后再安装。",

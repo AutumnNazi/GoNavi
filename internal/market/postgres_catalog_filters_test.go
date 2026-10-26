@@ -12,15 +12,15 @@ import (
 func TestPostgresCombinedFiltersBeforePagination(t *testing.T) {
 	p := postgresFixture(t)
 	ctx := t.Context()
-	publisher := pgAccount(t, p, "filters-publisher", "publisher", "filters-publisher", true)
-	admin := pgAccount(t, p, "filters-admin", "admin", "", false)
+	publisher := pgAccount(t, p, "9101", "publisher", "filters-publisher", true)
+	admin := pgAccount(t, p, "9102", "admin", "", false)
 	for index := 0; index < 25; index++ {
-		s := pgSubmit(t, p, publisher, fmt.Sprintf("filter.tool-%02d", index), "1.0.0")
+		s := pgSubmit(t, p, publisher, fmt.Sprintf("filters-publisher.filter.tool-%02d", index), "1.0.0")
 		if _, err := p.Review(ctx, admin, s.ID, "approve", ""); err != nil {
 			t.Fatal(err)
 		}
 	}
-	example, err := p.Plugin(ctx, "filter.tool-00")
+	example, err := p.Plugin(ctx, "filters-publisher.filter.tool-00")
 	if err != nil {
 		t.Fatal(err)
 	}

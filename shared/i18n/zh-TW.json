@@ -13189,7 +13189,7 @@
   "plugin.backend.error.plugin_busy": "外掛仍在結束上一個操作，請稍後重試。",
   "plugin.backend.error.spec_invalid": "無法識別的遠端來源。請使用 github:owner/repo 或 npm 套件名稱（如 @scope/pkg）。",
   "plugin.backend.error.release_not_found": "在該儲存庫找不到可安裝的外掛 Release（zip/tgz）。請確認儲存庫已發布外掛套件。",
-  "plugin.backend.error.asset_ambiguous": "該 Release 有多個候選外掛套件（{{assets}}）。請在發布中固定單一的 gonavi 外掛資產。",
+  "plugin.backend.error.asset_ambiguous": "該 Release 有多個候選外掛套件。請在發布中固定單一的 gonavi 外掛資產。",
   "plugin.backend.error.npm_not_found": "npm 上找不到該外掛套件或版本。",
   "plugin.backend.error.fetch_failed": "外掛套件下載失敗。請檢查網路與代理設定後再試。",
   "plugin.backend.error.fetch_expired": "遠端檢查已過期，請重新檢查後再安裝。",
