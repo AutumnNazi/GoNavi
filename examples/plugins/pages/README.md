@@ -5,9 +5,9 @@ page contract: an entry in the title-bar **Plugins** menu, one declarative page,
 sandboxed HTML page that calls host capabilities through the page bridge.
 
 - Manifest: [gonavi.plugin.json](<gonavi.plugin.json>)
-- Contract: [plugin pages, menu and host capabilities](<../../../docs/plugins/pages.md>)
-- Permission reference: [permissions](<../../../docs/plugins/permissions.md>)
-- SDK: [Go and TypeScript SDKs](<../../../docs/plugins/sdk.md>)
+- Contract: [plugin pages, menu and host capabilities](https://plugin.gonavi.org/docs/pages)
+- Permission reference: [permissions](https://plugin.gonavi.org/docs/permissions)
+- SDK: [Go and TypeScript SDKs](https://plugin.gonavi.org/docs/sdk)
 
 ## What it declares
 
@@ -32,7 +32,7 @@ builds native backends, so it does not package this page-only example. Inspect a
 the directory itself; it has no executables to build.
 
 Inspect it without executing anything (a disposable plugin root, matching
-[development](<../../../docs/plugins/development.md>)):
+[development](https://plugin.gonavi.org/docs/development)):
 
 ```sh
 work=$(mktemp -d)

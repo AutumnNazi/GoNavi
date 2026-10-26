@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,10 +12,13 @@ import (
 
 var permissionLiteral = regexp.MustCompile(`"(ai\.(?:skills|providers|tools)|data\.(?:sources|export)|host\.(?:log|describe|connections\.read|metadata\.read|query\.read)|ui\.(?:html-panel|pages))"`)
 
-// permissions.md lists exactly the permissions the host enforces. Both directions matter: documenting
-// a permission nobody enforces misleads authors, and enforcing an undocumented one surprises them.
+// Public permissions are published at https://plugin.gonavi.org/docs/permissions.
+// A local checkout of the market repo enables the cross-repository lockstep check.
 func TestEnforcedPermissionsMatchTheReference(t *testing.T) {
-	doc, err := os.ReadFile(filepath.Join("..", "..", "docs", "plugins", "permissions.md"))
+	doc, err := os.ReadFile(filepath.Join("..", "..", "..", "GoNavi-Plugin-Market", "docs", "plugins", "permissions.md"))
+	if errors.Is(err, os.ErrNotExist) {
+		t.Skip("GoNavi-Plugin-Market checkout is not available beside GoNavi")
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

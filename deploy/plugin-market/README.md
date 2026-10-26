@@ -2,7 +2,7 @@
 
 This service runs independently of the GoNavi desktop. It stores accounts, review history, ratings and sessions in PostgreSQL. It inspects prebuilt packages without executing them. It contains no desktop RPC bridge or plugin process runner.
 
-See the [integration contract](../../docs/plugins/implementation-contract.md) for public DTOs and the [operator API guide](admin-api.md) for publishing and review commands.
+See the [published plugin integration contract](https://plugin.gonavi.org/docs/implementation-contract) for public DTOs and the [operator API guide](https://plugin.gonavi.org/docs/market-api) for publishing and review commands.
 
 ## Implemented boundaries
 

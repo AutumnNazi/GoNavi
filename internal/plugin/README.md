@@ -1,6 +1,6 @@
 # Local plugin runtime
 
-This package implements the version-one [integration contract](../../docs/plugins/implementation-contract.md). It runs explicitly trusted third-party code out of process. It is a reliability and capability-routing boundary, **not an OS security sandbox**: a plugin still has its user's operating-system privileges.
+This package implements the version-one [integration contract](https://plugin.gonavi.org/docs/implementation-contract). It runs explicitly trusted third-party code out of process. It is a reliability and capability-routing boundary, **not an OS security sandbox**: a plugin still has its user's operating-system privileges.
 
 ## Implemented behavior
 

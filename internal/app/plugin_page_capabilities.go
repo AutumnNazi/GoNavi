@@ -10,7 +10,7 @@ import (
 )
 
 // Capability method names are stable contract values: the front-end bridge and
-// docs/plugins/pages.md refer to them verbatim.
+// the published plugin pages contract refer to them verbatim.
 const (
 	pluginPageMethodAppInfo           = "app.info"
 	pluginPageMethodConnectionsList   = "connections.list"
