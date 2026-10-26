@@ -174,6 +174,9 @@ const MonacoEditor: React.FC<MonacoEditorProps> = ({
     return {
       ...options,
       editContext: false,
+      // Measure every glyph. A fallback font that is not truly monospace otherwise
+      // walks the caret further right on each character (issue #1574).
+      disableMonospaceOptimizations: options?.disableMonospaceOptimizations ?? true,
       fontFamily: options?.fontFamily ?? monoFontFamily ?? DEFAULT_MONO_FONT_FAMILY,
       fontSize: options?.fontSize ?? resolvedFontSize,
       lineHeight: options?.lineHeight ?? Math.max(18, Math.round(effectiveEditorFontSize * 1.62)),

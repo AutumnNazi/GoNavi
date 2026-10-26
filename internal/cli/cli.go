@@ -154,6 +154,8 @@ func Run(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer)
 		return emitOutput(stdout, stderr, map[string]string{"version": Version})
 	case "mcp":
 		return runMCP(ctx, commandArgs, stdout, stderr)
+	case "plugin":
+		return runPlugin(ctx, commandArgs, stdout, stderr)
 	case "agent":
 		return runAgent(agentLifecycleCtx, commandArgs, stdout, stderr)
 	case "list-connections", "connections":

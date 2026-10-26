@@ -183,6 +183,7 @@ func (a *App) dbQueryMultiWithParams(
 		}
 		a.recordQueryExecution(config, dbName, resolvedDBType, query, durationMilliseconds(queryExecutionDuration), 0, queryResultRowsReturned(result))
 	}()
+	defer a.localizeQueryResultNotices(&result)
 
 	dbInst, err := a.getConnectionForParams(ctx, runConfig, auditOptions.synchronousConnectionWait)
 	if err != nil {

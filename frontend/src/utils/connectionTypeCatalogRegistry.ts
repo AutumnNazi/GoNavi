@@ -13,6 +13,7 @@ const GROUP_LABEL_KEY_PREFIX = 'connection_modal.step1.group.';
 const REGISTRY_ONLY_GROUPS: Array<{ group: DataSourceCatalogGroup; label: string; after: string; builtin?: CatalogItem[] }> = [
   { group: 'search', label: 'Search engines', after: 'nosql', builtin: [{ key: 'elasticsearch', name: 'Elasticsearch' }] },
   { group: 'bigdata', label: 'Big data & cloud warehouses', after: 'timeseries' },
+  { group: 'task_scheduler', label: 'Task schedulers', after: 'config_center' },
 ];
 
 const groupKeyOf = (group: CatalogGroup): string => group.labelKey.slice(GROUP_LABEL_KEY_PREFIX.length);

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"GoNavi-Wails/internal/connection"
+	"GoNavi-Wails/shared/i18n"
 )
 
 func TestResolveKingbaseConnectDatabases_ExplicitDatabase(t *testing.T) {
@@ -168,5 +169,50 @@ func TestKingbaseDSN_UsesURIPathDatabaseWhenDatabaseIsEmpty(t *testing.T) {
 	dsn := (&KingbaseDB{}).getDSN(cfg)
 	if !strings.Contains(dsn, "dbname=analytics") {
 		t.Fatalf("URI path database should be used when config database is empty: %s", dsn)
+	}
+}
+
+func TestResolveKingbaseExplicitDatabase_ConnectionParamOverridesDatabase(t *testing.T) {
+	cfg := connection.ConnectionConfig{
+		Type:             "kingbase",
+		Database:         "from-config",
+		User:             "gonavi_kingbase",
+		ConnectionParams: "dbname=from-params",
+	}
+	if got := resolveKingbaseExplicitDatabase(cfg); got != "from-params" {
+		t.Fatalf("connection params must win, got %q", got)
+	}
+
+	cfg.ConnectionParams = ""
+	if got := resolveKingbaseExplicitDatabase(cfg); got != "from-config" {
+		t.Fatalf("config database expected, got %q", got)
+	}
+
+	cfg.Database = ""
+	if got := resolveKingbaseExplicitDatabase(cfg); got != "" {
+		t.Fatalf("empty config expected, got %q", got)
+	}
+}
+
+func TestKingbaseConnectFailureError_MaintenanceHint(t *testing.T) {
+	failures := []string{"SSL 数据库=test 验证失败: kb: database locale is incompatible with operating system"}
+
+	SetBackendLanguage(i18n.LanguageZhCN)
+	errZh := kingbaseConnectFailureError(failures, true)
+	if !strings.Contains(errZh.Error(), "连接建立后验证失败：") {
+		t.Fatalf("missing failure prefix: %q", errZh.Error())
+	}
+	if !strings.Contains(errZh.Error(), "维护库") || !strings.Contains(errZh.Error(), "数据库名") {
+		t.Fatalf("missing maintenance-database hint: %q", errZh.Error())
+	}
+
+	SetBackendLanguage(i18n.LanguageEnUS)
+	defer SetBackendLanguage(i18n.LanguageZhCN)
+	if err := kingbaseConnectFailureError(failures, true); !strings.Contains(err.Error(), "maintenance databases") {
+		t.Fatalf("missing English maintenance hint: %q", err.Error())
+	}
+
+	if err := kingbaseConnectFailureError(failures, false); strings.Contains(err.Error(), "维护库") || strings.Contains(err.Error(), "maintenance databases") {
+		t.Fatalf("hint must be absent when the database was explicit: %q", err.Error())
 	}
 }

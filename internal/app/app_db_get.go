@@ -141,6 +141,9 @@ func (a *App) getDatabaseWithContext(ctx context.Context, config connection.Conn
 }
 
 func (a *App) getDatabaseWithContextLane(ctx context.Context, config connection.ConnectionConfig, forcePing bool, cacheKeySuffix string) (db.Database, error) {
+	if isPluginDataSourceType(config.Type) {
+		return a.getPluginDataSource(ctx, config, forcePing, cacheKeySuffix)
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -173,6 +176,9 @@ func (a *App) getDatabaseSynchronouslyWithContext(ctx context.Context, config co
 }
 
 func (a *App) getDatabaseSynchronouslyWithContextLane(ctx context.Context, config connection.ConnectionConfig, forcePing bool, cacheKeySuffix string) (db.Database, error) {
+	if isPluginDataSourceType(config.Type) {
+		return a.getPluginDataSource(ctx, config, forcePing, cacheKeySuffix)
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -190,9 +196,15 @@ func (a *App) getDatabaseSynchronouslyWithContextLane(ctx context.Context, confi
 }
 
 func (a *App) openDatabaseIsolated(config connection.ConnectionConfig) (db.Database, error) {
+	if isPluginDataSourceType(config.Type) {
+		return a.openPluginDataSource(a.pluginDataSourceContext(), config)
+	}
 	effectiveConfig, err := a.resolveEffectiveConnectionConfig(config)
 	if err != nil {
 		return nil, err
+	}
+	if isPluginDataSourceType(effectiveConfig.Type) {
+		return a.openPluginDataSource(a.pluginDataSourceContext(), effectiveConfig)
 	}
 	runtimeDriverType := optionalDriverTypeForConnectionConfig(effectiveConfig)
 	a.mu.RLock()
@@ -235,6 +247,11 @@ func (a *App) openDatabaseIsolated(config connection.ConnectionConfig) (db.Datab
 }
 
 func (a *App) resolveEffectiveConnectionConfig(config connection.ConnectionConfig) (connection.ConnectionConfig, error) {
+	if isPluginDataSourceType(config.Type) {
+		if _, valid := pluginDataSourceDialect(config.Type); !valid {
+			return config, fmt.Errorf("invalid plugin data source type")
+		}
+	}
 	resolvedConfig, err := a.resolveConnectionSecrets(config)
 	if err != nil {
 		return config, wrapConnectError(config, err)
@@ -251,9 +268,15 @@ func (a *App) getDatabaseWithPing(config connection.ConnectionConfig, forcePing 
 }
 
 func (a *App) getDatabaseWithPingLane(config connection.ConnectionConfig, forcePing bool, cacheKeySuffix string) (db.Database, error) {
+	if isPluginDataSourceType(config.Type) {
+		return a.getPluginDataSource(a.pluginDataSourceContext(), config, forcePing, cacheKeySuffix)
+	}
 	effectiveConfig, err := a.resolveEffectiveConnectionConfig(config)
 	if err != nil {
 		return nil, err
+	}
+	if isPluginDataSourceType(effectiveConfig.Type) {
+		return a.getPluginDataSource(a.pluginDataSourceContext(), effectiveConfig, forcePing, cacheKeySuffix)
 	}
 	runtimeDriverType := optionalDriverTypeForConnectionConfig(effectiveConfig)
 	a.mu.RLock()
@@ -302,72 +325,8 @@ func (a *App) getDatabaseWithPingLane(config connection.ConnectionConfig, forceP
 		return nil, withLogHint{err: fmt.Errorf("%s", reason), logPath: logger.Path()}
 	}
 
-	a.mu.RLock()
-	entry, ok := a.dbCache[key]
-	a.mu.RUnlock()
-	if ok {
-		keepAlivePolicy := resolveConnectionKeepAlivePolicy(effectiveConfig)
-		if !keepAlivePolicy.matches(entry) {
-			if current, exists := a.applyCachedDatabaseKeepAlivePolicy(key, entry.inst, keepAlivePolicy, time.Now()); exists {
-				entry = current
-			}
-		}
-		if isFileDB {
-			logger.Infof("命中文件库连接缓存：类型=%s 缓存Key=%s", strings.TrimSpace(effectiveConfig.Type), shortKey)
-		}
-		needPing := forcePing
-		if !needPing {
-			lastPing := entry.lastPing
-			if lastPing.IsZero() || time.Since(lastPing) >= dbCachePingInterval {
-				needPing = true
-			}
-		}
-
-		if !needPing {
-			if isFileDB {
-				logger.Infof("复用文件库连接缓存（免 Ping）：类型=%s 缓存Key=%s", strings.TrimSpace(effectiveConfig.Type), shortKey)
-			}
-			if returnErr := a.databaseConnectionReturnError(key, entry.inst); returnErr != nil {
-				return nil, returnErr
-			}
-			return entry.inst, nil
-		}
-
-		if err := entry.inst.Ping(); err == nil {
-			// Update lastPing (best effort)
-			a.mu.Lock()
-			if cur, exists := a.dbCache[key]; exists && cur.inst == entry.inst {
-				cur.lastPing = time.Now()
-				a.dbCache[key] = cur
-			}
-			a.mu.Unlock()
-			if isFileDB {
-				logger.Infof("复用文件库连接缓存（Ping 成功）：类型=%s 缓存Key=%s", strings.TrimSpace(effectiveConfig.Type), shortKey)
-			}
-			if returnErr := a.databaseConnectionReturnError(key, entry.inst); returnErr != nil {
-				return nil, returnErr
-			}
-			return entry.inst, nil
-		} else {
-			logger.Error(err, "缓存连接不可用，准备重建：%s 缓存Key=%s", formatConnSummary(effectiveConfig), shortKey)
-		}
-
-		// Ping failed: remove cached instance (best effort)
-		var staleDatabase db.Database
-		a.mu.Lock()
-		if cur, exists := a.dbCache[key]; exists && cur.inst == entry.inst {
-			staleDatabase = cur.inst
-			delete(a.dbCache, key)
-		}
-		a.mu.Unlock()
-		if staleDatabase != nil {
-			if err := staleDatabase.Close(); err != nil {
-				logger.Error(err, "关闭失效缓存连接失败：缓存Key=%s", shortKey)
-			}
-		}
-		if isFileDB {
-			logger.Infof("文件库缓存连接已剔除，准备新建连接：类型=%s 缓存Key=%s", strings.TrimSpace(effectiveConfig.Type), shortKey)
-		}
+	if cached, found, cacheErr := a.cachedBuiltinDatabaseForLookup(effectiveConfig, key, forcePing, isFileDB); found {
+		return cached, cacheErr
 	}
 	if isFileDB {
 		logger.Infof("未命中文件库连接缓存，开始创建连接：类型=%s 缓存Key=%s", strings.TrimSpace(effectiveConfig.Type), shortKey)
@@ -400,4 +359,77 @@ func (a *App) getDatabaseWithPingLane(config connection.ConnectionConfig, forceP
 		return nil, returnErr
 	}
 	return result.inst, nil
+}
+
+// cachedBuiltinDatabaseForLookup keeps legacy cache reuse separate from plugin generation fencing.
+func (a *App) cachedBuiltinDatabaseForLookup(effectiveConfig connection.ConnectionConfig, key string, forcePing, isFileDB bool) (db.Database, bool, error) {
+	shortKey := shortenCacheKey(key)
+	a.mu.RLock()
+	entry, ok := a.dbCache[key]
+	a.mu.RUnlock()
+	if ok {
+		keepAlivePolicy := resolveConnectionKeepAlivePolicy(effectiveConfig)
+		if !keepAlivePolicy.matches(entry) {
+			if current, exists := a.applyCachedDatabaseKeepAlivePolicy(key, entry.inst, keepAlivePolicy, time.Now()); exists {
+				entry = current
+			}
+		}
+		if isFileDB {
+			logger.Infof("命中文件库连接缓存：类型=%s 缓存Key=%s", strings.TrimSpace(effectiveConfig.Type), shortKey)
+		}
+		needPing := forcePing
+		if !needPing {
+			lastPing := entry.lastPing
+			if lastPing.IsZero() || time.Since(lastPing) >= dbCachePingInterval {
+				needPing = true
+			}
+		}
+
+		if !needPing {
+			if isFileDB {
+				logger.Infof("复用文件库连接缓存（免 Ping）：类型=%s 缓存Key=%s", strings.TrimSpace(effectiveConfig.Type), shortKey)
+			}
+			if returnErr := a.databaseConnectionReturnError(key, entry.inst); returnErr != nil {
+				return nil, true, returnErr
+			}
+			return entry.inst, true, nil
+		}
+
+		if err := entry.inst.Ping(); err == nil {
+			// Update lastPing (best effort)
+			a.mu.Lock()
+			if cur, exists := a.dbCache[key]; exists && cur.inst == entry.inst {
+				cur.lastPing = time.Now()
+				a.dbCache[key] = cur
+			}
+			a.mu.Unlock()
+			if isFileDB {
+				logger.Infof("复用文件库连接缓存（Ping 成功）：类型=%s 缓存Key=%s", strings.TrimSpace(effectiveConfig.Type), shortKey)
+			}
+			if returnErr := a.databaseConnectionReturnError(key, entry.inst); returnErr != nil {
+				return nil, true, returnErr
+			}
+			return entry.inst, true, nil
+		} else {
+			logger.Error(err, "缓存连接不可用，准备重建：%s 缓存Key=%s", formatConnSummary(effectiveConfig), shortKey)
+		}
+
+		// Ping failed: remove cached instance (best effort)
+		var staleDatabase db.Database
+		a.mu.Lock()
+		if cur, exists := a.dbCache[key]; exists && cur.inst == entry.inst {
+			staleDatabase = cur.inst
+			delete(a.dbCache, key)
+		}
+		a.mu.Unlock()
+		if staleDatabase != nil {
+			if err := staleDatabase.Close(); err != nil {
+				logger.Error(err, "关闭失效缓存连接失败：缓存Key=%s", shortKey)
+			}
+		}
+		if isFileDB {
+			logger.Infof("文件库缓存连接已剔除，准备新建连接：类型=%s 缓存Key=%s", strings.TrimSpace(effectiveConfig.Type), shortKey)
+		}
+	}
+	return nil, false, nil
 }

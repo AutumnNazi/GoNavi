@@ -335,6 +335,31 @@ button.gn-message-subscription-item,
   font-size: 11px;
 }
 
+/* 详情头部右侧：时间 + 复制按钮同一行，省掉单独一行时间占位。 */
+.gn-message-detail-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 加载态占满正文区域：骨架屏高度与正文一致，避免加载完成时布局跳动。 */
+.gn-message-detail-load {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.gn-message-detail-load p {
+  margin: 0;
+  color: var(--gn-fg-4);
+  font-size: 11px;
+}
+
 .gn-message-detail pre {
   flex: 1 1 auto;
   min-height: 0;
@@ -355,12 +380,12 @@ button.gn-message-subscription-item,
 .gn-message-card {
   --gn-message-topic-color: var(--gn-accent);
   width: 100%;
-  min-height: 52px;
+  min-height: 36px;
   flex: 0 0 auto;
   position: relative;
   overflow: hidden;
   content-visibility: auto;
-  contain-intrinsic-size: auto 56px;
+  contain-intrinsic-size: auto 40px;
   border: 1px solid var(--gn-br-1);
   border-radius: var(--gn-message-card-radius);
   background: color-mix(in srgb, var(--gn-bg-panel) 96%, transparent);
@@ -388,14 +413,14 @@ button.gn-message-subscription-item,
 
 .gn-message-card.published::before { inset: 0 0 0 auto; }
 
+/* 单行卡片：方向 + 摘要 + topic/offset/大小 + 时间都在这一行，不再单独占一行 topic。 */
 .gn-message-card-head {
-  min-height: 34px;
+  min-height: 36px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 7px 10px 6px 13px;
-  border-bottom: 1px solid color-mix(in srgb, var(--gn-br-1) 72%, transparent);
+  padding: 6px 10px 6px 13px;
 }
 
 .gn-message-card-head > div {
@@ -430,8 +455,10 @@ button.gn-message-subscription-item,
 }
 
 .gn-message-card-topic {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
-  padding: 0 13px 7px;
+  padding: 0;
   color: var(--gn-fg-4);
   font-family: var(--gn-font-mono);
   font-size: 11px;

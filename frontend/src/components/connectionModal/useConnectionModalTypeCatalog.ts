@@ -1,3 +1,5 @@
+import { usePluginDataSources } from "../../plugins/dataSource/usePluginDataSources";
+import { isPluginDataSourceNamespace } from "../../plugins/dataSource/identity";
 import { isFileDatabaseType } from "../../utils/connectionTypeCapabilities";
 import { resolveConnectionConfigLayout } from "../../utils/connectionModalPresentation";
 import { getCurrentLanguage, t } from "../../i18n";
@@ -46,6 +48,8 @@ export const useConnectionModalTypeCatalog = ({
   savedConnections,
   recentConnectionTargets,
 }: UseConnectionModalTypeCatalogInput) => {
+  const pluginCatalog = usePluginDataSources(open);
+  const pluginType = isPluginDataSourceNamespace(dbType);
   const isFileDb = isFileDatabaseType(dbType);
   const isCustom = dbType === "custom";
   const isRedis = dbType === "redis";
@@ -57,8 +61,8 @@ export const useConnectionModalTypeCatalog = ({
       : "";
   const currentDriverType = resolveConnectionDriverType(dbType, customDriver);
   const hasCurrentDriverType =
-    currentDriverType !== "" && currentDriverType !== "custom";
-  const currentDriverSnapshot = driverStatusMap[currentDriverType];
+    !pluginType && currentDriverType !== "" && currentDriverType !== "custom";
+  const currentDriverSnapshot = pluginType ? undefined : driverStatusMap[currentDriverType];
   const currentDriverUnavailableReason =
     hasCurrentDriverType &&
     currentDriverSnapshot &&
@@ -85,7 +89,7 @@ export const useConnectionModalTypeCatalog = ({
   const language = i18n?.language ?? getCurrentLanguage();
   const translate = i18n?.t ?? t;
   // Track resolved language, not preference: system language may change independently.
-  const dbTypeGroups = useMemo(() => buildPickerTypeGroups(translate), [translate, language]);
+  const dbTypeGroups = useMemo(() => buildPickerTypeGroups(translate, pluginCatalog.items, [dbType, ...savedConnections.map((connection) => connection.config.type)]), [translate, language, pluginCatalog.items, savedConnections, dbType]);
   const localizedDbTypeGroups = useMemo(() => dbTypeGroups.slice(1), [dbTypeGroups]);
   const allDbTypeItems = dbTypeGroups[0].items;
 
@@ -134,7 +138,7 @@ export const useConnectionModalTypeCatalog = ({
     return () => window.removeEventListener("keydown", focusStudioSearch);
   }, [open, step]);
 
-  const dbTypes = getAllConnectionTypeCatalogItems();
+  const dbTypes = allDbTypeItems;
 
   const recentConnectionChips = useMemo(() => {
     // 按“最近实际使用”的连接（recentConnectionTargets，已按 openedAt 倒序）

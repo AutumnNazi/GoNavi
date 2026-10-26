@@ -102,10 +102,12 @@ func resolveDialConfigWithProxy(raw connection.ConnectionConfig) (connection.Con
 	}
 
 	normalizedType := normalizeDriverType(config.Type)
-	if normalizedType == "nacos" || normalizedType == "pulsar" {
+	if normalizedType == "nacos" || normalizedType == "pulsar" || normalizedType == "xxljob" {
 		// Nacos needs the original authority for its proxy-aware HTTP transport.
 		// Pulsar discovers brokers and cannot reuse one forwarded endpoint;
 		// preserve the setting so its driver rejects the unsupported route.
+		// XXL-JOB is likewise a single HTTP endpoint reached directly, and its
+		// transport resolves the SSH or proxy hop itself.
 		return config, nil
 	}
 	if normalizedType == "rocketmq" || normalizedType == "rocket-mq" || normalizedType == "rocket_mq" || normalizedType == "apache-rocketmq" || normalizedType == "apache_rocketmq" || normalizedType == "rmq" {

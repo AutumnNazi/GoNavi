@@ -87,6 +87,11 @@ func (a *App) DBReleaseConnection(config connection.ConnectionConfig) connection
 		logger.Infof("DBReleaseConnection 已释放 Redis 连接：%s 数量=%d", formatConnSummary(config), closed)
 		return connection.QueryResult{Success: true, Message: a.appText("db.backend.message.release_success", nil), Data: map[string]int{"closed": closed}}
 	}
+	if dbType == "xxljob" {
+		closed := a.releaseXxlJobClientsForConfig(config)
+		logger.Infof("DBReleaseConnection 已释放 XXL-JOB 会话：%s 数量=%d", formatXxlJobConnSummary(config), closed)
+		return connection.QueryResult{Success: true, Message: a.appText("db.backend.message.release_success", nil), Data: map[string]int{"closed": closed}}
+	}
 
 	effectiveConfig, err := a.resolveEffectiveConnectionConfig(config)
 	if err != nil {
@@ -94,6 +99,7 @@ func (a *App) DBReleaseConnection(config connection.ConnectionConfig) connection
 		return connection.QueryResult{Success: false, Message: err.Error()}
 	}
 	closed := a.releaseCachedDatabaseConnectionsForConfig(effectiveConfig)
+	a.clearConnectFailureCooldownsForConfig(effectiveConfig)
 
 	logger.Infof("DBReleaseConnection 已释放数据库连接：%s 数量=%d", formatConnSummary(effectiveConfig), closed)
 	return connection.QueryResult{Success: true, Message: a.appText("db.backend.message.release_success", nil), Data: map[string]int{"closed": closed}}

@@ -355,34 +355,6 @@ func isSQLKeywordByte(ch byte) bool {
 	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_'
 }
 
-func normalizeSQLClassifierDBType(dbType string) string {
-	normalized := strings.ToLower(strings.TrimSpace(dbType))
-	switch normalized {
-	case "postgresql":
-		return "postgres"
-	case "mssql", "sql_server", "sql-server":
-		return "sqlserver"
-	case "open_gauss", "open-gauss":
-		return "opengauss"
-	case "gauss_db", "gauss-db":
-		return "gaussdb"
-	case "kingbase8", "kingbasees", "kingbasev8":
-		return "kingbase"
-	case "milvusdb", "milvus-db":
-		return "milvus"
-	case "intersystems", "intersystemsiris", "inter-systems", "inter-systems-iris":
-		return "iris"
-	case "cache", "caché", "intersystems cache", "intersystems caché", "intersystems-cache", "intersystems-caché", "intersystemscache", "intersystemscaché", "inter-systems-cache", "inter-systems-caché", "intersystems-cache-database", "cache-db", "cachedb":
-		return "iris"
-	default:
-		// 描述表类型按借用方言分类（TiDB → mysql、OpenSearch → elasticsearch），与 resolveDDLDBType 一致。
-		if dialect, ok := registryDDLDialect(normalized); ok {
-			return dialect
-		}
-		return normalized
-	}
-}
-
 func isSQLServerDBType(dbType string) bool {
 	return normalizeSQLClassifierDBType(dbType) == "sqlserver"
 }

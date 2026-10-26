@@ -1,10 +1,12 @@
 import { t } from '../../i18n';
+import { isHiveConnectionType } from '../../utils/hiveConnection';
 import { isMySQLCompatibleType, isFileDatabaseType } from '../../utils/connectionTypeCapabilities';
 import { getConnectionTypeDefaultPort as getDefaultPortByType } from '../../utils/connectionTypeCatalog';
 import { getRegistryUriScheme, usesTrinoStyleConnection } from '../../utils/dataSourceRegistry/uriScheme';
 import type { OceanBaseProtocolChoice } from './connectionModalUri';
 
 export const getUriPlaceholder = (dbType: string) => {
+  if (isHiveConnectionType(dbType)) return "jdbc:hive2://127.0.0.1:10000/default;authMode=NONE";
   if (isMySQLCompatibleType(dbType)) {
     const defaultPort = getDefaultPortByType(dbType);
     const scheme =
@@ -63,6 +65,9 @@ export const getUriPlaceholder = (dbType: string) => {
   if (dbType === "pulsar") {
     return "pulsar://127.0.0.1:6650/public/default/orders.events?token=TOKEN";
   }
+  if (dbType === "xxljob") {
+    return "http://admin:123456@127.0.0.1:8080/xxl-job-admin";
+  }
   if (dbType === "nacos") {
     return "http://nacos:nacos@127.0.0.1:8848/nacos?namespaceId=dev";
   }
@@ -93,6 +98,7 @@ export const getConnectionParamsPlaceholder = (
   dbType: string,
   oceanBaseProtocol: OceanBaseProtocolChoice,
 ) => {
+  if (isHiveConnectionType(dbType)) return "session.hive.exec.dynamic.partition=true&fetchSize=1000&pollIntervalMs=200";
   if (dbType === "oceanbase") {
     return oceanBaseProtocol === "oracle"
       ? "PREFETCH_ROWS=5000"
@@ -152,6 +158,8 @@ export const getConnectionParamsPlaceholder = (
       return "token=TOKEN&startOffset=earliest";
     case "nacos":
       return "contextPath=/nacos";
+    case "xxljob":
+      return "contextPath=/xxl-job-admin";
     default:
       return "key=value&another=value";
   }

@@ -14,7 +14,7 @@ func TestWindowsShortcutRepairOnlyMigratesMissingMSIIconForCurrentTarget(t *test
 		t.Skip("powershell.exe is unavailable")
 	}
 
-	tempDir := t.TempDir()
+	tempDir := windowsCanonicalFixtureDirectory(t)
 	targetPath := filepath.Join(tempDir, "install", "GoNavi.exe")
 	foreignTargetPath := filepath.Join(tempDir, "foreign", "GoNavi.exe")
 	pinsDirectory := filepath.Join(tempDir, "pins")
@@ -403,7 +403,7 @@ func TestWindowsShortcutBrandIconFailsOnUnwritableShortcut(t *testing.T) {
 		t.Skip("powershell.exe is unavailable")
 	}
 
-	tempDir := t.TempDir()
+	tempDir := windowsCanonicalFixtureDirectory(t)
 	targetPath := filepath.Join(tempDir, "install", "GoNavi.exe")
 	// shortcutsDirectory stands in for a ProgramData Start Menu location: plain
 	// shortcuts that are not taskbar pins. taskbarDirectory stays separate so the
@@ -556,7 +556,7 @@ func TestWindowsShortcutRepairCreatesUserLevelAumidShortcutBesideMachineShortcut
 		t.Skip("powershell.exe is unavailable")
 	}
 
-	tempDir := t.TempDir()
+	tempDir := windowsCanonicalFixtureDirectory(t)
 	targetPath := filepath.Join(tempDir, "install", "GoNavi.exe")
 	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
 		t.Fatal(err)

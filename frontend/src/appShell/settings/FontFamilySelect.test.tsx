@@ -70,6 +70,16 @@ describe('FontFamilySelect with real Ant Design controls', () => {
     expect(onChange).toHaveBeenLastCalledWith(null);
   });
 
+  it('offers the font library entry at the bottom of the dropdown', () => {
+    const onBrowse = vi.fn();
+    renderPicker({ onBrowse, browseLabel: 'app.theme.font_family.gallery.browse' });
+    act(() => container.querySelector('.ant-select-selector')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
+    const footer = document.querySelector<HTMLElement>('.gonavi-font-picker-browse button')!;
+    expect(footer.textContent).toBe('app.theme.font_family.gallery.browse');
+    act(() => footer.click());
+    expect(onBrowse).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps dropdown rows compact and reserves samples for the selected-font preview', () => {
     renderPicker();
     act(() => container.querySelector('.ant-select-selector')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));

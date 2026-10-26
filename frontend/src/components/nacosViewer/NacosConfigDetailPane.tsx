@@ -14,6 +14,8 @@ import Editor from '../MonacoEditor';
 import type { NacosViewerStateApi } from './hooks/useNacosViewerState';
 import type { NacosViewerBatchActionsApi } from './hooks/useNacosViewerBatchActions';
 import type { NacosViewerConfigActionsApi } from './hooks/useNacosViewerConfigActions';
+import { useNacosJsonParser } from './hooks/useNacosJsonParser';
+import { NacosJsonParserModal } from './NacosJsonParserModal';
 
 export interface NacosConfigDetailPaneProps {
   detail: NacosViewerStateApi['detail'];
@@ -50,7 +52,10 @@ export const NacosConfigDetailPane = ({
   handlePublish, publishMode, handleDelete, remoteChanged, remoteChangedHint, handleReloadRemote,
   setRemoteChanged, loadingDetail, draftType, setDraftType, setDraftDirty, setPublishMode, betaIps,
   setBetaIps, handleLoadBetaContent, handleStopBeta, darkMode, draftContent, setDraftContent,
-}: NacosConfigDetailPaneProps) => (
+}: NacosConfigDetailPaneProps) => {
+  const jsonParser = useNacosJsonParser({ tr, readOnly });
+
+  return (
   <div
     className={'gn-v2-nacos-detail-pane'}
     style={
@@ -228,6 +233,7 @@ export const NacosConfigDetailPane = ({
               gonaviTypography="data"
               language={resolveEditorLanguage(draftType)}
               theme={darkMode ? 'transparent-dark' : 'transparent-light'}
+              onMount={jsonParser.handleEditorMount}
               value={draftContent}
               onChange={(value) => {
                 setDraftContent(value ?? '');
@@ -248,5 +254,8 @@ export const NacosConfigDetailPane = ({
         </>
       )}
     </div>
+
+    <NacosJsonParserModal parser={jsonParser} darkMode={darkMode} tr={tr} />
   </div>
-);
+  );
+};

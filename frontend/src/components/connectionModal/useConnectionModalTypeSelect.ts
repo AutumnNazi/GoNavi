@@ -1,3 +1,7 @@
+import { message } from "antd";
+import { isPluginDataSourceNamespace } from "../../plugins/dataSource/identity";
+import { pluginDataSourceUnavailableReason } from "../../plugins/dataSource/presentation";
+import { pluginDataSourceNewValues } from "./pluginDataSourceForm";
 import { normalizeDriverType } from "../../utils/connectionDriverType";
 import { isAgentConnectionType } from "../../utils/agentConnectionTypes";
 import { t } from "../../i18n";
@@ -51,6 +55,14 @@ export const useConnectionModalTypeSelect = ({
       setDbType(type);
       setStep(2);
       return;
+    }
+    if (isPluginDataSourceNamespace(type)) {
+      const reason = pluginDataSourceUnavailableReason(type);
+      setTypeSelectWarning(null);
+      if (reason) { void message.warning(reason); return; }
+      setDbType(type); form.setFieldsValue(pluginDataSourceNewValues(type));
+      setUseSSL(false); setUseSSH(false); setUseProxy(false); setUseHttpTunnel(false);
+      setMongoMembers([]); setActiveConfigSection("basic"); setStep(2); return;
     }
     const normalized = normalizeDriverType(type);
     const snapshot = driverStatusMap[normalized];

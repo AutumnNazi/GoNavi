@@ -291,11 +291,11 @@ describe('DriverManagerModal optional update tier (issue #1326)', () => {
     });
 
     const renderer = await mountModal();
-    await waitUntilContains(renderer, '驱动组件有更新（可选，不影响使用）');
+    await waitUntilContains(renderer, '驱动组件有更新（可选，建议重装）');
     const content = textContent(renderer.toJSON());
 
     // 黄底提示 + 黄色「需重装」徽章 + 单驱「重装驱动」入口，替代原蓝色「可更新」
-    expect(content).toContain('驱动组件有更新（可选，不影响使用）');
+    expect(content).toContain('驱动组件有更新（可选，建议重装）');
     expect(content).not.toContain('可更新');
     expect(content).toContain('不再提示此版本');
     expect(content).not.toContain('驱动组件有更新，建议重装以获得最新修复与兼容性改进');
@@ -325,7 +325,7 @@ describe('DriverManagerModal optional update tier (issue #1326)', () => {
     const content = textContent(renderer.toJSON());
 
     expect(content).toContain('驱动组件有更新，建议重装以获得最新修复与兼容性改进');
-    expect(content).not.toContain('驱动组件有更新（可选，不影响使用）');
+    expect(content).not.toContain('驱动组件有更新（可选，建议重装）');
     expect(findButton(renderer, '不再提示此版本')).toBeUndefined();
   });
 
@@ -350,7 +350,7 @@ describe('DriverManagerModal optional update tier (issue #1326)', () => {
       OPTIONAL_UPDATE_DISMISS_KEY,
       JSON.stringify(['src-expected']),
     );
-    expect(textContent(renderer.toJSON())).not.toContain('驱动组件有更新（可选，不影响使用）');
+    expect(textContent(renderer.toJSON())).not.toContain('驱动组件有更新（可选，建议重装）');
     expect(textContent(renderer.toJSON())).not.toContain('不再提示此版本');
     expect(textContent(renderer.toJSON())).toContain('纯 Go 驱动已启用，可直接连接');
 
@@ -374,7 +374,7 @@ describe('DriverManagerModal optional update tier (issue #1326)', () => {
 
     const renderer = await mountModal();
     expect(localStorageSpies.getItem).toHaveBeenCalledWith(OPTIONAL_UPDATE_DISMISS_KEY);
-    expect(textContent(renderer.toJSON())).not.toContain('驱动组件有更新（可选，不影响使用）');
+    expect(textContent(renderer.toJSON())).not.toContain('驱动组件有更新（可选，建议重装）');
     expect(findButton(renderer, '不再提示此版本')).toBeUndefined();
   });
 
@@ -387,7 +387,7 @@ describe('DriverManagerModal optional update tier (issue #1326)', () => {
     });
 
     const renderer = await mountModal();
-    await waitUntilContains(renderer, '驱动组件有更新（可选，不影响使用）');
+    await waitUntilContains(renderer, '驱动组件有更新（可选，建议重装）');
 
     expect(findNeedsUpdateChipCount(renderer)).toBe('1');
 
@@ -416,7 +416,7 @@ describe('DriverManagerModal optional update tier (issue #1326)', () => {
     });
 
     const renderer = await mountModal();
-    await waitUntilContains(renderer, '驱动组件有更新（可选，不影响使用）');
+    await waitUntilContains(renderer, '驱动组件有更新（可选，建议重装）');
 
     const batchButton = findButton(renderer, '重装需更新驱动');
     expect(batchButton).toBeDefined();

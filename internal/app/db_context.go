@@ -17,6 +17,11 @@ func normalizeRunConfig(config connection.ConnectionConfig, dbName string) conne
 	if name == "" {
 		return runConfig
 	}
+	if isPluginDataSourceType(config.Type) {
+		// A plugin's database field is explicit configuration, independent of its SQL dialect.
+		runConfig.Database = name
+		return runConfig
+	}
 
 	switch normalizeDriverType(config.Type) {
 	case "rocketmq", "rocket-mq", "rocket_mq", "apache-rocketmq", "apache_rocketmq", "rmq":
@@ -216,7 +221,7 @@ func normalizeSchemaAndTable(config connection.ConnectionConfig, dbName string, 
 
 func shouldPreserveQuotedTableSegment(dbType string) bool {
 	switch strings.ToLower(strings.TrimSpace(dbType)) {
-	case "mysql", "mariadb", "oceanbase", "diros", "starrocks", "sphinx", "tidb", "sqlite", "clickhouse", "tdengine":
+	case "mysql", "mariadb", "oceanbase", "diros", "starrocks", "sphinx", "tidb", "sqlite", "clickhouse", "tdengine", "hive":
 		return true
 	default:
 		return false

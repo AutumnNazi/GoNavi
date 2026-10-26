@@ -12,12 +12,18 @@ import {
   validateDataExportDialogValues,
 } from './dataExportOptions';
 import DataExportFormatFields from './DataExportFormatFields';
+import { useExporterChoice } from '../plugins/exporter/useChoice';
+import { ExporterSelectionNotice } from '../plugins/exporter/SelectionNotice';
+import { isPluginExporterNamespace } from '../plugins/exporter/identity';
+import { beginPluginExportOperation } from '../plugins/exporter/operation';
+import { PluginAPIError } from '../plugins/apiResult';
 
 export type DataExportColumnSelectProps = {
   availableColumns: string[];
   value: string[];
   disabled?: boolean;
   loading?: boolean;
+  preserveSelectionOrder?: boolean;
   onChange: (columns: string[]) => void;
 };
 
@@ -26,6 +32,7 @@ export const DataExportColumnSelect: React.FC<DataExportColumnSelectProps> = ({
   value,
   disabled = false,
   loading = false,
+  preserveSelectionOrder = false,
   onChange,
 }) => {
   const normalizedColumns = useMemo(
@@ -105,7 +112,7 @@ export const DataExportColumnSelect: React.FC<DataExportColumnSelectProps> = ({
         showSearch
         optionFilterProp="label"
         maxTagCount="responsive"
-        onChange={(columns) => onChange(resolveDataExportColumns(columns, normalizedColumns) || [])}
+        onChange={(columns) => onChange(preserveSelectionOrder ? columns : resolveDataExportColumns(columns, normalizedColumns) || [])}
       />
     </div>
   );
@@ -118,14 +125,27 @@ const DataExportDialogContent: React.FC<{
   allowInsertSql?: boolean;
   allowColumnCommentHeaders?: boolean;
   onChange: (values: DataExportDialogValues) => void;
-}> = ({ scopeOptions, availableColumns, initialValues, allowInsertSql = false, allowColumnCommentHeaders = false, onChange }) => {
+  allowPluginExporter?: boolean;
+  registerPluginGuard?: (guard: () => boolean) => void;
+  onPluginStreaming?: (streaming: boolean) => void;
+}> = ({ scopeOptions, availableColumns, initialValues, allowInsertSql = false, allowColumnCommentHeaders = false, onChange, allowPluginExporter = false, registerPluginGuard, onPluginStreaming }) => {
   const [values, setValues] = useState<DataExportDialogValues>(() => normalizeDataExportDialogValues(
     scopeOptions,
     initialValues,
     allowInsertSql,
     availableColumns,
   ));
-  const formatOptions = useMemo(() => resolveDataExportFormatOptions(allowInsertSql), [allowInsertSql]);
+  const choice = useExporterChoice(allowPluginExporter, values, setValues, registerPluginGuard);
+  const plugin = isPluginExporterNamespace(values.format);
+  useEffect(() => {
+    onPluginStreaming?.(allowPluginExporter && choice.catalog.items.find((item) => item.format === values.format)?.streaming === true);
+  }, [allowPluginExporter, choice.catalog.items, onPluginStreaming, values.format]);
+  const formatOptions = useMemo(() => {
+    const options: Array<{ value: DataExportFormat; label: string; disabled?: boolean }> = [...resolveDataExportFormatOptions(allowInsertSql)];
+    if (allowPluginExporter) options.push(...choice.catalog.items.map((item) => ({ value: item.format, label: item.name + ' · .' + item.extension + ' · ' + item.pluginId + (item.streaming ? ' · ' + t('plugin.exporter.streaming') : ''), disabled: !item.available })));
+    if (plugin && !options.some((item) => item.value === values.format)) options.push({ value: values.format, label: values.format + ' · ' + t('plugin.exporter.unavailable'), disabled: true });
+    return options;
+  }, [allowInsertSql, allowPluginExporter, choice.catalog.items, plugin, values.format]);
   useEffect(() => {
     onChange(values);
   }, [onChange, values]);
@@ -142,7 +162,8 @@ const DataExportDialogContent: React.FC<{
           <Select
             value={values.format}
             options={formatOptions}
-            onChange={(format) => setValues((prev) => ({ ...prev, format: format as DataExportFormat }))}
+            onChange={(format) => { if (!isPluginExporterNamespace(format)) choice.select(format); }}
+            onSelect={(format) => { if (isPluginExporterNamespace(format)) choice.select(format); }}
           />
         </Form.Item>
 
@@ -153,7 +174,7 @@ const DataExportDialogContent: React.FC<{
             options={scopeOptions.map((item) => ({
               value: item.value,
               label: item.label,
-              disabled: item.disabled,
+              disabled: item.disabled || (plugin && !['selected', 'page'].includes(String(item.value))),
             }))}
             onChange={(scope) => setValues((prev) => ({ ...prev, scope }))}
           />
@@ -174,19 +195,21 @@ const DataExportDialogContent: React.FC<{
             <DataExportColumnSelect
               availableColumns={availableColumns}
               value={values.columns || []}
+              preserveSelectionOrder={plugin}
               onChange={(columns) => setValues((prev) => ({
                 ...prev,
-                columns: resolveDataExportColumns(columns, availableColumns) || [],
+                columns: plugin ? columns : resolveDataExportColumns(columns, availableColumns) || [],
               }))}
             />
           </Form.Item>
         )}
 
-        <DataExportFormatFields
+        {allowPluginExporter && <ExporterSelectionNotice choice={choice} format={values.format} />}
+        {!plugin && <DataExportFormatFields
           values={values}
           onChange={(patch) => setValues((prev) => ({ ...prev, ...patch }))}
           allowColumnCommentHeaders={allowColumnCommentHeaders}
-        />
+        />}
       </Form>
     </div>
   );
@@ -207,6 +230,8 @@ export async function showDataExportDialog(
   return new Promise((resolve) => {
     let resolved = false;
     let latestValues = initialValues;
+    let pluginSelectionCurrent = () => false;
+    let pluginStreaming = false;
 
     const finish = (nextValue: DataExportDialogValues | null) => {
       if (resolved) return;
@@ -229,6 +254,9 @@ export async function showDataExportDialog(
           initialValues={initialValues}
           allowInsertSql={allowInsertSql}
           allowColumnCommentHeaders={options.allowColumnCommentHeaders}
+          allowPluginExporter={typeof options.preparePluginSnapshot === "function"}
+          registerPluginGuard={(guard) => { pluginSelectionCurrent = guard; }}
+          onPluginStreaming={(streaming) => { pluginStreaming = streaming; }}
           onChange={(values) => {
             latestValues = values;
           }}
@@ -240,12 +268,24 @@ export async function showDataExportDialog(
           options.scopeOptions,
           allowInsertSql,
           options.availableColumns,
+          typeof options.preparePluginSnapshot === "function",
         );
         if (errorMessage) {
           void message.error(errorMessage);
           throw new Error(errorMessage);
         }
-        finish(resolveDataExportFileOptions(latestValues));
+        try {
+          const resolved = resolveDataExportFileOptions(latestValues);
+          if (isPluginExporterNamespace(resolved.format)) {
+            if (!pluginSelectionCurrent() || !options.preparePluginSnapshot || !resolved.pluginExporter) throw new PluginAPIError('plugin.exporter.error.selection');
+            const snapshot = options.preparePluginSnapshot(resolved, pluginStreaming);
+            const operation = beginPluginExportOperation(resolved.format);
+            finish({ ...resolved, confirmedPluginExport: Object.freeze({ format: resolved.format, pin: resolved.pluginExporter, snapshot, operation }) });
+          } else finish(resolved);
+        } catch (error) {
+          const text = error instanceof PluginAPIError ? t(error.key) : t('plugin.exporter.error.snapshot');
+          void message.error(text); throw new Error(text);
+        }
       },
       onCancel: () => {
         finish(null);

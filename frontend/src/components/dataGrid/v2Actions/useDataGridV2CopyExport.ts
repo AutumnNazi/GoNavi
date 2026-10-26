@@ -1,4 +1,6 @@
 import { useCallback, useMemo } from 'react';
+import { isPluginExporterNamespace } from '../../../plugins/exporter/identity';
+import { exporterError } from '../../../plugins/exporter/validation';
 import { message } from 'antd';
 import { buildTabularClipboardPayloadFromTsv } from '../../dataGridClipboardPayload';
 import type { DataExportFileOptions } from '../../DataExportDialog';
@@ -79,7 +81,7 @@ export const useDataGridV2CopyExport = ({
 }: UseDataGridV2CopyExportInput) => {
   const buildCopySqlBatchText = useCallback((mode: 'insert' | 'update' | 'delete', record: any): string | null => {
       if (!supportsCopyInsert) {
-          void message.warning(translateDataGrid('data_grid.message.copy_sql_not_supported'));
+          void message.warning(translateDataGrid(dbType === 'hive' ? 'hive.capability.copySql' : 'data_grid.message.copy_sql_not_supported'));
           return null;
       }
       const records = getTargets(record);
@@ -286,7 +288,7 @@ export const useDataGridV2CopyExport = ({
       const normalizedType = String(dbType || '').trim().toLowerCase();
       const hasSortForBuffer = hasExplicitSort(sortInfo);
       const offset = (pagination.current - 1) * pagination.pageSize;
-      let sql = buildPaginatedSelectSQL(dbType, baseSql, orderBySQL, pagination.pageSize, offset);
+      let sql = buildPaginatedSelectSQL(dbType, baseSql, orderBySQL, pagination.pageSize, offset, displayOutputColumnNames);
       if (hasSortForBuffer && (normalizedType === 'mysql' || normalizedType === 'mariadb')) {
           sql = withSortBufferTuningSQL(normalizedType, sql, 32 * 1024 * 1024);
       }
@@ -334,6 +336,10 @@ export const useDataGridV2CopyExport = ({
   }, [isQueryResultExport, mergedDisplayData, pagination]);
 
   const exportQueryResultRows = useCallback(async (options: DataExportFileOptions, scope: Exclude<DataGridExportScope, 'filteredAll'>) => {
+      if (isPluginExporterNamespace(options.format) || options.pluginExporter !== undefined) {
+          if (!isQueryResultExport || !['selected', 'page'].includes(scope)) { options.confirmedPluginExport?.operation.release(); return exporterError('scope'); }
+          await exportData([], options); return;
+      }
       if (scope === 'selected') {
           const selectedKeySet = new Set(selectedRowKeys.map((key: any) => rowKeyStr(key)));
           const rows = mergedDisplayData.filter((row: any) => {
@@ -360,10 +366,11 @@ export const useDataGridV2CopyExport = ({
           return;
       }
       await exportData(mergedDisplayData, options);
-  }, [connectionId, exportByQuery, exportData, mergedDisplayData, pagination, queryResultCurrentPageRows, resultExportAllSql, resultSql, rowKeyStr, selectedRowKeys, tableName]);
+  }, [connectionId, exportByQuery, exportData, isQueryResultExport, mergedDisplayData, pagination, queryResultCurrentPageRows, resultExportAllSql, resultSql, rowKeyStr, selectedRowKeys, tableName]);
 
   // Context Menu Export
   const handleExportSelected = useCallback(async (options: DataExportFileOptions, record: any) => {
+      if (isPluginExporterNamespace(options.format) || options.pluginExporter !== undefined) { options.confirmedPluginExport?.operation.release(); return exporterError('scope'); }
       if (isQueryResultExport) {
           await exportData(getContextMenuTargetRows(record), options);
           return;

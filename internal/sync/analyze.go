@@ -1,12 +1,13 @@
 package sync
 
 import (
-	"GoNavi-Wails/internal/db"
-	"GoNavi-Wails/internal/logger"
 	"context"
 	"errors"
 	"fmt"
 	"strings"
+
+	"GoNavi-Wails/internal/db"
+	"GoNavi-Wails/internal/logger"
 )
 
 type TableDiffSummary struct {
@@ -194,7 +195,7 @@ func (s *SyncEngine) analyze(config SyncConfig) SyncAnalyzeResult {
 				HasSchema: syncSchema,
 			}
 
-			plan, cols, targetCols, err := buildSchemaMigrationPlan(config, tableName, sourceDB, targetDB)
+			plan, cols, targetCols, err := s.buildPreflightMigrationPlan(config, tableName, sourceDB, targetDB)
 			if err != nil {
 				recordCancellation(err)
 				summary.Message = err.Error()
@@ -294,7 +295,7 @@ func (s *SyncEngine) analyze(config SyncConfig) SyncAnalyzeResult {
 				return
 			}
 			if !counted {
-				sourceRows, _, err := querySyncDatabaseContext(s.context(), sourceDB, fmt.Sprintf("SELECT * FROM %s", quoteQualifiedIdentByType(sourceType, plan.SourceQueryTable)))
+				sourceRows, _, err := querySyncSourceTableSnapshotContext(s.context(), config, sourceDB, sourceType, plan.SourceQueryTable, cols)
 				if err != nil {
 					recordCancellation(err)
 					summary.Message = localizedSyncBackendDetailText("data_sync.backend.error.read_source_table_failed", err)
@@ -371,7 +372,7 @@ func (s *SyncEngine) analyze(config SyncConfig) SyncAnalyzeResult {
 				return
 			}
 
-			sourceRows, _, err := querySyncDatabaseContext(s.context(), sourceDB, fmt.Sprintf("SELECT * FROM %s", quoteQualifiedIdentByType(sourceType, plan.SourceQueryTable)))
+			sourceRows, _, err := querySyncSourceTableSnapshotContext(s.context(), config, sourceDB, sourceType, plan.SourceQueryTable, cols)
 			if err != nil {
 				recordCancellation(err)
 				summary.Message = localizedSyncBackendDetailText("data_sync.backend.error.read_source_table_failed", err)
@@ -386,7 +387,7 @@ func (s *SyncEngine) analyze(config SyncConfig) SyncAnalyzeResult {
 					return
 				}
 			}
-			targetRows, _, err := querySyncDatabaseContext(s.context(), targetDB, fmt.Sprintf("SELECT * FROM %s", quoteQualifiedIdentByType(targetType, plan.TargetQueryTable)))
+			targetRows, _, err := querySyncTableSnapshotContext(s.context(), targetDB, targetType, plan.TargetQueryTable, targetCols)
 			if err != nil {
 				recordCancellation(err)
 				summary.Message = localizedSyncBackendDetailText("data_sync.backend.error.read_target_table_failed", err)
@@ -394,7 +395,12 @@ func (s *SyncEngine) analyze(config SyncConfig) SyncAnalyzeResult {
 				return
 			}
 
-			inserts, updates, deletes, same := diffRowsByKeyColumns(comparisonPKCols, sourceRows, targetRows)
+			inserts, updates, deletes, same, err := diffSyncRowsByKeys(config, targetCols, comparisonPKCols, sourceRows, targetRows)
+			if err != nil {
+				summary.Message = err.Error()
+				result.Tables = append(result.Tables, summary)
+				return
+			}
 			summary.Inserts, summary.Updates, summary.Deletes, summary.Same = len(inserts), len(updates), len(deletes), same
 
 			summary.CanSync = true

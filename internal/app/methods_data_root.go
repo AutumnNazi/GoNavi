@@ -156,6 +156,12 @@ func (a *App) ApplyDataRootDirectory(directory string, migrate bool) connection.
 		}
 	}
 
+	resumePlugins, pluginErr := a.suspendPluginsForRootChange()
+	if pluginErr != nil {
+		return a.pluginFailure("root_busy")
+	}
+	defer resumePlugins()
+
 	// Both audit and data-sync task stores use SQLite WAL journaling. Stop the
 	// sync scheduler/runs first, then checkpoint and close both stores so root
 	// migration never copies a live WAL or starts the same scheduled run twice.

@@ -15,6 +15,7 @@ const RedisCommandEditor = React.lazy(() => import('./RedisCommandEditor'));
 const RedisMonitor = React.lazy(() => import('./RedisMonitor'));
 const NacosViewer = React.lazy(() => import('./NacosViewer'));
 const NacosServiceViewer = React.lazy(() => import('./NacosServiceViewer'));
+const XxlJobWorkbench = React.lazy(() => import('./xxljob/XxlJobWorkbench'));
 const TriggerViewer = React.lazy(() => import('./TriggerViewer'));
 const DefinitionViewer = React.lazy(() => import('./DefinitionViewer'));
 const TableOverview = React.lazy(() => import('./TableOverview'));
@@ -33,6 +34,7 @@ const SqlAnalysisWorkbench = React.lazy(() => import('./explain/SqlAnalysisWorkb
 const SqlAuditWorkbench = React.lazy(() => import('./audit/SqlAuditWorkbench'));
 const QueryHistoryWorkbench = React.lazy(() => import('./queryHistory/QueryHistoryWorkbench'));
 const DriverManagerWorkbench = React.lazy(() => import('./DriverManagerWorkbench'));
+const PluginManagerWorkbench = React.lazy(() => import('./pluginManager/PluginManagerWorkbench'));
 const CloudBackupSettings = React.lazy(() => import('./CloudBackupSettings'));
 const SettingsCenterWorkbench = React.lazy(() => import('./settings/SettingsCenterWorkbench'));
 const RequestDiagnosticsWorkbench = React.lazy(() => import('./requestDiagnostics/RequestDiagnosticsWorkbench'));
@@ -41,6 +43,7 @@ const UserManagementWorkbench = React.lazy(() => import('./userManagement/UserMa
 const MessageQueueWorkbench = React.lazy(() => import('./MessageQueueWorkbench'));
 const SessionWorkbench = React.lazy(() => import('./sessionWorkbench/SessionWorkbench'));
 const SessionAgentWorkbench = React.lazy(() => import('./sessionAgent/SessionAgentWorkbench'));
+const PluginPageHost = React.lazy(() => import('../pluginPages/PluginPageHost').then((module) => ({ default: module.PluginPageHost })));
 
 const QueryWorkbenchContent: React.FC<{ tab: TabData; isActive: boolean }> = React.memo(({
   tab,
@@ -187,10 +190,16 @@ export const WorkbenchTabContent: React.FC<WorkbenchTabContentProps> = React.mem
         onRequestClose={onRequestClose}
       />
     );
+  } else if (tab.type === 'plugin-manager') {
+    content = <PluginManagerWorkbench />;
   } else if (tab.type === 'cloud-backup') {
     content = <CloudBackupSettings />;
   } else if (tab.type === 'settings-center') {
     content = <SettingsCenterWorkbench tab={tab} isActive={isActive} />;
+  } else if (tab.type === 'plugin-page') {
+    content = tab.pluginPage
+      ? <PluginPageHost pluginID={tab.pluginPage.pluginID} pageID={tab.pluginPage.pageID} />
+      : null;
   } else if (tab.type === 'request-diagnostics') {
     content = <RequestDiagnosticsWorkbench tab={tab} isActive={isActive} />;
   } else if (tab.type === 'message-queue') {
@@ -199,6 +208,8 @@ export const WorkbenchTabContent: React.FC<WorkbenchTabContentProps> = React.mem
     content = <SessionWorkbench tab={tab} isActive={isActive} />;
   } else if (tab.type === 'agent-assets') {
     content = <SessionAgentWorkbench tab={tab} />;
+  } else if (tab.type === 'xxljob-groups' || tab.type === 'xxljob-jobs' || tab.type === 'xxljob-logs') {
+    content = <XxlJobWorkbench tab={tab} isActive={isActive} />;
   } else if (tab.type === 'jvm-overview') {
     content = <JVMOverview tab={tab} />;
   } else if (tab.type === 'jvm-resource') {

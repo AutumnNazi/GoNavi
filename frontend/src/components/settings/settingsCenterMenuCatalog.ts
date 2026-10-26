@@ -18,6 +18,7 @@ export type SettingsCenterNavigationTarget = {
     | 'compare'
     | 'sync'
     | 'drivers'
+    | 'plugins'
     | 'sql-audit'
     | 'request-diagnostics'
     | 'dml-snapshot';
@@ -90,6 +91,8 @@ export const SETTINGS_CENTER_MENU_CATALOG: ReadonlyArray<SettingsCenterMenuNode>
     target: { group: 'services', pane: 'ai', section: 'providers' },
   },
 
+  // 插件不进设置中心：入口在标题栏工具条，作为独立工作台 Tab 打开
+  // （SETTINGS_WORKBENCH_TAB_BUILDERS.plugins），目录（命令面板 / 搜索）里不挂插件节点。
   group('config', 'app.tools.group.config.title', 'app.tools.group.config.description'),
   pane('config', 'data-root', 'app.tools.entry.data_root'),
   {

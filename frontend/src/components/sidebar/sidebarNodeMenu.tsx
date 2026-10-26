@@ -27,6 +27,7 @@ import { buildNacosConfigGroupMenuItems } from './sidebarNodeMenuNacos';
 import { buildNacosEntryMenuItems } from './sidebarNodeMenuNacos';
 import { buildNacosNamespaceMenuItems } from './sidebarNodeMenuNacos';
 import { buildConnectionNodeMenuItems } from './sidebarNodeMenuConnection';
+import { buildXxlJobConnectionMenuItems } from './xxlJobNodeMenuItems';
 import { buildTagNodeMenuItems } from './sidebarNodeMenuObjectGroups';
 import { buildEventsGroupMenuItems } from './sidebarNodeMenuObjectGroups';
 import { buildRoutinesGroupMenuItems } from './sidebarNodeMenuObjectGroups';
@@ -52,6 +53,7 @@ export const buildSidebarNodeMenuItems = (
     const conn = node.dataRef as SavedConnection;
     const isRedis = conn?.config?.type === 'redis';
     const isNacos = conn?.config?.type === 'nacos';
+    const isXxlJob = conn?.config?.type === 'xxljob';
 
     if (node.type === 'object-group' && node.dataRef?.groupKey === 'schema') {
         return buildSchemaGroupMenuItems({ node, context });
@@ -83,6 +85,10 @@ export const buildSidebarNodeMenuItems = (
     // Connection Tag Menu — must be BEFORE the connection check
     if (node.type === 'tag') {
         return buildTagNodeMenuItems({ node, context });
+    }
+
+    if (node.type === 'connection' && isXxlJob) {
+        return buildXxlJobConnectionMenuItems(conn, node, context);
     }
 
     if (node.type === 'connection') {

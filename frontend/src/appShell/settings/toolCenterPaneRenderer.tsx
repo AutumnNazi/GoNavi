@@ -44,6 +44,8 @@ export const createToolCenterPaneRenderer = ({
       return null;
     }
 
+    // 插件管理不在此渲染：它作为独立工作台 Tab 打开（SETTINGS_WORKBENCH_TAB_BUILDERS.plugins）。
+
     if (activeSettingsCenterPane.key.startsWith('data-root')) {
       const dataDirectorySection = activeSettingsCenterPane.key === 'data-root-agent'
         ? 'agent'

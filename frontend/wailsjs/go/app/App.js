@@ -1286,6 +1286,150 @@ export function OpenSavedQueryDirectory() {
   return window['go']['app']['App']['OpenSavedQueryDirectory']();
 }
 
+export function PluginAIProviders() {
+  return window['go']['app']['App']['PluginAIProviders']();
+}
+
+export function PluginDataSources() {
+  return window['go']['app']['App']['PluginDataSources']();
+}
+
+export function PluginExporters() {
+  return window['go']['app']['App']['PluginExporters']();
+}
+
+export function PluginInspect(arg1) {
+  return window['go']['app']['App']['PluginInspect'](arg1);
+}
+
+export function PluginInstall(arg1, arg2, arg3) {
+  return window['go']['app']['App']['PluginInstall'](arg1, arg2, arg3);
+}
+
+export function PluginInvoke(arg1, arg2, arg3) {
+  return window['go']['app']['App']['PluginInvoke'](arg1, arg2, arg3);
+}
+
+export function PluginList() {
+  return window['go']['app']['App']['PluginList']();
+}
+
+export function PluginMarketCancelInspection(arg1) {
+  return window['go']['app']['App']['PluginMarketCancelInspection'](arg1);
+}
+
+export function PluginMarketCatalog(arg1, arg2, arg3) {
+  return window['go']['app']['App']['PluginMarketCatalog'](arg1, arg2, arg3);
+}
+
+export function PluginMarketConfigure(arg1) {
+  return window['go']['app']['App']['PluginMarketConfigure'](arg1);
+}
+
+export function PluginMarketDetail(arg1) {
+  return window['go']['app']['App']['PluginMarketDetail'](arg1);
+}
+
+export function PluginMarketInspect(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['PluginMarketInspect'](arg1, arg2, arg3, arg4);
+}
+
+export function PluginMarketInstall(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['App']['PluginMarketInstall'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function PluginMarketRatings(arg1) {
+  return window['go']['app']['App']['PluginMarketRatings'](arg1);
+}
+
+export function PluginMarketSaveSources(arg1) {
+  return window['go']['app']['App']['PluginMarketSaveSources'](arg1);
+}
+
+export function PluginMarketSettings() {
+  return window['go']['app']['App']['PluginMarketSettings']();
+}
+
+export function PluginMarketSourceCatalog(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['PluginMarketSourceCatalog'](arg1, arg2, arg3, arg4);
+}
+
+export function PluginMarketSourceDetail(arg1, arg2) {
+  return window['go']['app']['App']['PluginMarketSourceDetail'](arg1, arg2);
+}
+
+export function PluginMarketSourceRatings(arg1, arg2) {
+  return window['go']['app']['App']['PluginMarketSourceRatings'](arg1, arg2);
+}
+
+export function PluginMarketSourceSearch(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['App']['PluginMarketSourceSearch'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function PluginMarketSourceSettings(arg1) {
+  return window['go']['app']['App']['PluginMarketSourceSettings'](arg1);
+}
+
+export function PluginMarketSourceVersions(arg1, arg2) {
+  return window['go']['app']['App']['PluginMarketSourceVersions'](arg1, arg2);
+}
+
+export function PluginMarketSources() {
+  return window['go']['app']['App']['PluginMarketSources']();
+}
+
+export function PluginMarketVersions(arg1) {
+  return window['go']['app']['App']['PluginMarketVersions'](arg1);
+}
+
+export function PluginOpenWindow(arg1) {
+  return window['go']['app']['App']['PluginOpenWindow'](arg1);
+}
+
+export function PluginPageCall(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['PluginPageCall'](arg1, arg2, arg3, arg4);
+}
+
+export function PluginRemoteCancelInspection(arg1) {
+  return window['go']['app']['App']['PluginRemoteCancelInspection'](arg1);
+}
+
+export function PluginRemoteInspect(arg1) {
+  return window['go']['app']['App']['PluginRemoteInspect'](arg1);
+}
+
+export function PluginRemoteInstall(arg1, arg2, arg3) {
+  return window['go']['app']['App']['PluginRemoteInstall'](arg1, arg2, arg3);
+}
+
+export function PluginRemove(arg1, arg2) {
+  return window['go']['app']['App']['PluginRemove'](arg1, arg2);
+}
+
+export function PluginReplace(arg1, arg2, arg3) {
+  return window['go']['app']['App']['PluginReplace'](arg1, arg2, arg3);
+}
+
+export function PluginRuntimeInfo() {
+  return window['go']['app']['App']['PluginRuntimeInfo']();
+}
+
+export function PluginSetEnabled(arg1, arg2) {
+  return window['go']['app']['App']['PluginSetEnabled'](arg1, arg2);
+}
+
+export function PluginSkillRead(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['PluginSkillRead'](arg1, arg2, arg3, arg4);
+}
+
+export function PluginSkillResourceRead(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['App']['PluginSkillResourceRead'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function PluginSkills() {
+  return window['go']['app']['App']['PluginSkills']();
+}
+
 export function PreflightDatabaseSQLImport(arg1, arg2, arg3) {
   return window['go']['app']['App']['PreflightDatabaseSQLImport'](arg1, arg2, arg3);
 }
@@ -1622,6 +1766,14 @@ export function SelectLogDirectory(arg1) {
   return window['go']['app']['App']['SelectLogDirectory'](arg1);
 }
 
+export function SelectPluginPackageDirectory(arg1) {
+  return window['go']['app']['App']['SelectPluginPackageDirectory'](arg1);
+}
+
+export function SelectPluginPackageFile(arg1) {
+  return window['go']['app']['App']['SelectPluginPackageFile'](arg1);
+}
+
 export function SelectSQLDirectory(arg1) {
   return window['go']['app']['App']['SelectSQLDirectory'](arg1);
 }
@@ -1820,4 +1972,76 @@ export function VerifySQLAuditIntegrity() {
 
 export function WriteSQLFile(arg1, arg2) {
   return window['go']['app']['App']['WriteSQLFile'](arg1, arg2);
+}
+
+export function XxlJobConnect(arg1) {
+  return window['go']['app']['App']['XxlJobConnect'](arg1);
+}
+
+export function XxlJobDeleteJobGroups(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobDeleteJobGroups'](arg1, arg2);
+}
+
+export function XxlJobDeleteJobs(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobDeleteJobs'](arg1, arg2);
+}
+
+export function XxlJobDisconnect(arg1) {
+  return window['go']['app']['App']['XxlJobDisconnect'](arg1);
+}
+
+export function XxlJobListJobGroups(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobListJobGroups'](arg1, arg2);
+}
+
+export function XxlJobListJobs(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobListJobs'](arg1, arg2);
+}
+
+export function XxlJobListLogs(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobListLogs'](arg1, arg2);
+}
+
+export function XxlJobLoadJobGroup(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobLoadJobGroup'](arg1, arg2);
+}
+
+export function XxlJobLogDetail(arg1, arg2, arg3) {
+  return window['go']['app']['App']['XxlJobLogDetail'](arg1, arg2, arg3);
+}
+
+export function XxlJobLogKill(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobLogKill'](arg1, arg2);
+}
+
+export function XxlJobNextTriggerTimes(arg1, arg2, arg3) {
+  return window['go']['app']['App']['XxlJobNextTriggerTimes'](arg1, arg2, arg3);
+}
+
+export function XxlJobSaveGlueSource(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['XxlJobSaveGlueSource'](arg1, arg2, arg3, arg4);
+}
+
+export function XxlJobSaveJob(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobSaveJob'](arg1, arg2);
+}
+
+export function XxlJobSaveJobGroup(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobSaveJobGroup'](arg1, arg2);
+}
+
+export function XxlJobStartJobs(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobStartJobs'](arg1, arg2);
+}
+
+export function XxlJobStopJobs(arg1, arg2) {
+  return window['go']['app']['App']['XxlJobStopJobs'](arg1, arg2);
+}
+
+export function XxlJobTestConnection(arg1) {
+  return window['go']['app']['App']['XxlJobTestConnection'](arg1);
+}
+
+export function XxlJobTriggerJob(arg1, arg2, arg3) {
+  return window['go']['app']['App']['XxlJobTriggerJob'](arg1, arg2, arg3);
 }

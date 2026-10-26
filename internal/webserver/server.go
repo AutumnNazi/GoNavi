@@ -69,6 +69,9 @@ var desktopOnlyAppMethods = map[string]struct{}{
 	"SelectDriverPackageFile":        {},
 	"SelectDriverPackageZipFile":     {},
 	"SelectDriverPackageDirectory":   {},
+	// 插件包选择只对本机桌面窗口有意义；Web 会话通过宿主路径安装。
+	"SelectPluginPackageFile":      {},
+	"SelectPluginPackageDirectory": {},
 	// 导出走本机保存对话框，Web 运行时没有等价能力。
 	"ExportDriverPackage":          {},
 	"ExportDriverPackageSelection": {},

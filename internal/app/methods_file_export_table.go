@@ -36,6 +36,9 @@ func closeExportFile(f io.Closer) error {
 }
 
 func (a *App) ExportTableWithOptions(config connection.ConnectionConfig, dbName string, tableName string, options ExportFileOptions) (result connection.QueryResult) {
+	if isPluginExportRequest(options) {
+		return a.pluginExportFailure("unsupported_scope")
+	}
 	options = normalizeExportFileOptions("", options)
 	if err := a.validateExportEncoding(options); err != nil {
 		return connection.QueryResult{Success: false, Message: err.Error()}
@@ -106,7 +109,12 @@ func (a *App) ExportTableWithOptions(config connection.ConnectionConfig, dbName 
 	}
 
 	dbType := resolveDDLDBType(config)
-	query := buildExportTableSelectQuery(dbType, tableName, options.Columns)
+	queryTable := tableName
+	if dbType == "hive" {
+		schema, name := normalizeMetadataSchemaAndTable(runConfig, dbName, tableName)
+		queryTable = quoteTableIdentByType("hive", schema, name)
+	}
+	query := buildExportTableSelectQuery(dbType, queryTable, options.Columns)
 
 	f, atomicTarget, err := openCancelableExportTarget(webTarget, filename)
 	if err != nil {
@@ -149,6 +157,9 @@ func (a *App) ExportTablesSQLWithOptions(
 	includeData bool,
 	options ExportFileOptions,
 ) (result connection.QueryResult) {
+	if isPluginExportRequest(options) {
+		return a.pluginExportFailure("unsupported_scope")
+	}
 	if !includeSchema && !includeData {
 		return connection.QueryResult{Success: false, Message: a.appText("file.backend.error.invalid_export_mode", nil)}
 	}

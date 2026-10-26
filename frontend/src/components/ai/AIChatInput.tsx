@@ -17,7 +17,6 @@ import AIChatAttachmentStrip from './AIChatAttachmentStrip';
 import AIChatContextPreview from './AIChatContextPreview';
 import { noAutoCapInputProps } from '../../utils/inputAutoCap';
 import AIChatProviderModelSelect from './AIChatProviderModelSelect';
-import AIChatThinkingIntensitySelect from './AIChatThinkingIntensitySelect';
 import type { CLIModelCatalog } from '../../utils/aiProviderManagement';
 import type { CLIThinkingCapability } from './useAIChatRuntimeResources';
 import { buildAIChatReadinessSnapshot } from './aiChatReadiness';
@@ -304,7 +303,6 @@ export const AIChatInput: React.FC<AIChatInputProps> = ({
                     </div>
                 </div>
                 <div className="gn-v2-ai-model-bar">
-                    {/* 单行紧凑：连接 | 模型 | 思考 | 用量；模型固定宽，不撑满 */}
                     {activeConnName && (
                         <Tooltip title={connectionTooltipLabel}>
                             <div className="gn-v2-ai-context-chip">
@@ -327,11 +325,8 @@ export const AIChatInput: React.FC<AIChatInputProps> = ({
                         onManageProvider={onManageProvider}
                         onFetchModels={onFetchModels}
                         onFetchProviderModels={onFetchProviderModels}
-                    />
-                    <AIChatThinkingIntensitySelect
-                        activeProvider={activeProvider}
-                        value={thinkingIntensity}
-                        onChange={onThinkingIntensityChange}
+                        thinkingIntensity={thinkingIntensity}
+                        onThinkingIntensityChange={onThinkingIntensityChange}
                         cliCapability={cliCapability}
                         cliCatalog={cliCatalog}
                     />

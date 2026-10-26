@@ -158,8 +158,8 @@ func (c *optionalDriverAgentClient) call(req optionalAgentRequest, out interface
 	})
 }
 
-func markOptionalAgentApplyChangesTransportUnknown(req optionalAgentRequest, err error) error {
-	if err != nil && req.Method == optionalAgentMethodApplyChanges {
+func markOptionalAgentWriteTransportUnknown(req optionalAgentRequest, err error) error {
+	if err != nil && (req.Method == optionalAgentMethodApplyChanges || req.Method == optionalAgentMethodExec) {
 		return MarkWriteOutcomeUnknown(err)
 	}
 	return err
@@ -179,14 +179,14 @@ func (c *optionalDriverAgentClient) callLocked(requestID int64, req optionalAgen
 	payload = append(payload, '\n')
 	if len(payload) > OptionalDriverAgentMaxJSONLineBytes {
 		_ = c.forceTerminate(ErrOptionalDriverAgentJSONLineTooLarge)
-		return markOptionalAgentApplyChangesTransportUnknown(req, fmt.Errorf("发送 %s 驱动代理请求失败：%w", driverDisplayName(c.driver), ErrOptionalDriverAgentJSONLineTooLarge))
+		return markOptionalAgentWriteTransportUnknown(req, fmt.Errorf("发送 %s 驱动代理请求失败：%w", driverDisplayName(c.driver), ErrOptionalDriverAgentJSONLineTooLarge))
 	}
 	if err := c.writeRequestFrame(payload); err != nil {
 		stderrText := c.stderrText()
 		if stderrText == "" {
-			return markOptionalAgentApplyChangesTransportUnknown(req, fmt.Errorf("调用 %s 驱动代理失败：%w", driverDisplayName(c.driver), err))
+			return markOptionalAgentWriteTransportUnknown(req, fmt.Errorf("调用 %s 驱动代理失败：%w", driverDisplayName(c.driver), err))
 		}
-		return markOptionalAgentApplyChangesTransportUnknown(req, fmt.Errorf("调用 %s 驱动代理失败：%w（stderr: %s）", driverDisplayName(c.driver), err, stderrText))
+		return markOptionalAgentWriteTransportUnknown(req, fmt.Errorf("调用 %s 驱动代理失败：%w（stderr: %s）", driverDisplayName(c.driver), err, stderrText))
 	}
 
 	for {
@@ -197,20 +197,20 @@ func (c *optionalDriverAgentClient) callLocked(requestID int64, req optionalAgen
 			}
 			stderrText := c.stderrText()
 			if stderrText == "" {
-				return markOptionalAgentApplyChangesTransportUnknown(req, fmt.Errorf("读取 %s 驱动代理响应失败：%w", driverDisplayName(c.driver), err))
+				return markOptionalAgentWriteTransportUnknown(req, fmt.Errorf("读取 %s 驱动代理响应失败：%w", driverDisplayName(c.driver), err))
 			}
-			return markOptionalAgentApplyChangesTransportUnknown(req, fmt.Errorf("读取 %s 驱动代理响应失败：%w（stderr: %s）", driverDisplayName(c.driver), err, stderrText))
+			return markOptionalAgentWriteTransportUnknown(req, fmt.Errorf("读取 %s 驱动代理响应失败：%w（stderr: %s）", driverDisplayName(c.driver), err, stderrText))
 		}
 
 		var resp optionalAgentResponse
 		if err := json.Unmarshal(line, &resp); err != nil {
-			return markOptionalAgentApplyChangesTransportUnknown(req, fmt.Errorf("解析 %s 驱动代理响应失败：%w", driverDisplayName(c.driver), err))
+			return markOptionalAgentWriteTransportUnknown(req, fmt.Errorf("解析 %s 驱动代理响应失败：%w", driverDisplayName(c.driver), err))
 		}
 		if resp.ID != req.ID {
 			return c.rejectProtocolViolation(req, "响应 ID 不匹配：收到 %d，期望 %d", resp.ID, req.ID)
 		}
-		if resp.OutcomeUnknown && (resp.Success || req.Method != optionalAgentMethodApplyChanges) {
-			return c.rejectProtocolViolation(req, "outcomeUnknown 仅允许用于失败的 applyChanges 响应")
+		if resp.OutcomeUnknown && (resp.Success || (req.Method != optionalAgentMethodApplyChanges && req.Method != optionalAgentMethodExec)) {
+			return c.rejectProtocolViolation(req, "outcomeUnknown 仅允许用于失败的写请求响应")
 		}
 		if resp.SSHProgress != nil {
 			if !resp.Success || req.Method != optionalAgentMethodConnect || !req.StreamSSHProgress || req.sshProgressReporter == nil {
@@ -224,9 +224,11 @@ func (c *optionalDriverAgentClient) callLocked(requestID int64, req optionalAgen
 			if errText == "" {
 				errText = fmt.Sprintf("%s 驱动代理返回失败", driverDisplayName(c.driver))
 			}
-			if errText == ErrOptionalDriverAgentJSONLineTooLarge.Error() {
-				_ = c.forceTerminate(ErrOptionalDriverAgentJSONLineTooLarge)
-				return markOptionalAgentApplyChangesTransportUnknown(req, ErrOptionalDriverAgentJSONLineTooLarge)
+			// agent 已就该请求写出完整的失败帧，帧边界可信：只让这次请求失败，
+			// 不终止 transport，否则一条超大的结果行会让整个连接不可用。
+			// applyChanges 的写入可能已经生效，只是响应发不出来，结果标记为未知。
+			if isOptionalAgentOversizeFailure(errText) {
+				return markOptionalAgentWriteTransportUnknown(req, ErrOptionalDriverAgentJSONLineTooLarge)
 			}
 			if resp.SSHHostKeyTrust != nil {
 				return fmt.Errorf("%s: %w", errText, &sshbridge.HostKeyTrustRequiredError{Status: *resp.SSHHostKeyTrust})
@@ -267,7 +269,7 @@ func (c *optionalDriverAgentClient) callLocked(requestID int64, req optionalAgen
 func (c *optionalDriverAgentClient) rejectProtocolViolation(req optionalAgentRequest, format string, args ...interface{}) error {
 	violation := fmt.Errorf("%s 驱动代理协议错误：%s", driverDisplayName(c.driver), fmt.Sprintf(format, args...))
 	_ = c.forceTerminate(violation)
-	return markOptionalAgentApplyChangesTransportUnknown(req, violation)
+	return markOptionalAgentWriteTransportUnknown(req, violation)
 }
 
 func (c *optionalDriverAgentClient) callContext(ctx context.Context, req optionalAgentRequest, out interface{}, fields *[]string, messages *[]string, rowsAffected *int64) error {

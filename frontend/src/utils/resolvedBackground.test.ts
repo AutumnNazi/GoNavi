@@ -1,6 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { resolvedBackground } from './resolvedBackground';
 import { BUILTIN_BACKGROUNDS } from './builtinBackgrounds';
 import { galleryInstalled } from '../backgroundGallery/testFixtures';
@@ -26,8 +24,10 @@ describe('trusted background resolution', () => {
     expect(resolvedBackground({ builtinId: url, image: null })).toBeNull();
     expect(resolvedBackground({ image: { ...image, dataUrl: url } })).toBeNull();
   });
-  it('contains no static image imports or inline artwork in the legacy catalog', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/utils/builtinBackgrounds.ts'), 'utf8');
-    expect(source).not.toMatch(/import .*\.(webp|png|jpe?g)|data:image/);
+  it('keeps the legacy catalog free of bundled or inline artwork', () => {
+    // 目录只保留选择元数据：任何内联图片（data:）或打包图片引用都会出现在序列化结果里。
+    const serialized = JSON.stringify(BUILTIN_BACKGROUNDS);
+    expect(serialized).not.toContain('data:');
+    expect(serialized).not.toMatch(/\.(?:webp|png|jpe?g|gif|svg)\b/i);
   });
 });

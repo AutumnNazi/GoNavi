@@ -71,6 +71,9 @@ type DataSourceCapability struct {
 // declaration. It does not create a connection, so callers can gate an entry
 // point before asking a driver to perform work that is guaranteed to fail.
 func (a *App) DataSourceCapability(config connection.ConnectionConfig) DataSourceCapability {
+	if isPluginDataSourceType(config.Type) {
+		return a.pluginDataSourceCapability(config)
+	}
 	sourceType := strings.TrimSpace(config.Type)
 	customDriver := strings.EqualFold(sourceType, "custom")
 	if customDriver {
@@ -141,6 +144,9 @@ func dataSourceOperationCapabilityFromDB(capability db.DataSourceOperationCapabi
 }
 
 func (a *App) ensureDataSourceQueryCapability(config connection.ConnectionConfig) error {
+	if isPluginDataSourceType(config.Type) {
+		return a.ensurePluginDataSourceConnectable(config)
+	}
 	capability := a.DataSourceCapability(config)
 	if capability.Query.Supported {
 		return nil

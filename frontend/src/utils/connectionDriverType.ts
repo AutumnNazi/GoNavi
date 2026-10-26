@@ -1,4 +1,5 @@
 import type { SavedConnection } from "../types";
+import { isPluginDataSourceNamespace } from "../plugins/dataSource/identity";
 
 export type DriverStatusSnapshot = {
   type: string;
@@ -12,6 +13,7 @@ export type DriverStatusSnapshot = {
 };
 
 export const normalizeDriverType = (value: string): string => {
+  if (isPluginDataSourceNamespace(value)) return value;
   const normalized = String(value || "")
     .trim()
     .toLowerCase();

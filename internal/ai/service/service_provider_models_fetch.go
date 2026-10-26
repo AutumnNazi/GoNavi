@@ -14,6 +14,9 @@ import (
 )
 
 func resolveModelsURL(config ai.ProviderConfig) string {
+	if isPluginProviderConfig(config) {
+		return ""
+	}
 	config = normalizeProviderConfig(config)
 	providerType := normalizedProviderType(config)
 	baseURL := strings.TrimRight(strings.TrimSpace(config.BaseURL), "/")

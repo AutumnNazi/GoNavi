@@ -1,4 +1,5 @@
 import { getDataSourceDialectFamily, getDataSourceSpec, getDataSourceSpecByDialect } from './dataSourceRegistry';
+import { pluginDataSourceConfigType, parsePluginDataSourceType } from '../plugins/dataSource/identity';
 import { resolveOceanBaseProtocolForDialect } from './oceanBaseProtocol';
 import { splitQualifiedNameSegmentsDetailed, splitQualifiedNameSegments } from './qualifiedName';
 
@@ -58,6 +59,8 @@ export const resolveSqlDialect = (
   rawDriver = '',
   options?: { oceanBaseProtocol?: unknown },
 ): SqlDialect => {
+  const pluginType = pluginDataSourceConfigType({ type: rawType, driver: rawDriver });
+  if (pluginType) return parsePluginDataSourceType(pluginType)?.dialect ?? 'unknown';
   const normalized = normalizeRawDialect(rawType);
   const driver = normalizeRawDialect(rawDriver);
   const source = normalized === 'custom' ? driver : normalized;
@@ -273,7 +276,7 @@ export const appendTableAlias = (tableName: string, alias: string, dbType: strin
 };
 
 export const isBacktickIdentifierDialect = (dbType: string): boolean => (
-  isMysqlFamilyDialect(dbType) || ['clickhouse', 'tdengine', 'iotdb'].includes(resolveSqlDialect(dbType))
+  isMysqlFamilyDialect(dbType) || ['clickhouse', 'tdengine', 'iotdb', 'hive'].includes(resolveSqlDialect(dbType))
 );
 
 const stripIdentifierQuotes = (part: string, dbType = ''): string => {

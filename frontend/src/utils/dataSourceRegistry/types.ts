@@ -8,7 +8,8 @@ export type DataSourceCatalogGroup =
   | 'vector'
   | 'timeseries'
   | 'bigdata'
-  | 'config_center';
+  | 'config_center'
+  | 'task_scheduler';
 
 export type DataSourceAgentBuild = {
   // 代理驱动键：默认代理留空（等同类型名），独立构建档位必填（如 cassandra_legacy）。
@@ -96,7 +97,7 @@ export type DataSourceUISpec = {
   // 数据浏览未指定排序时不追加主键排序：引擎自身的顺序已稳定，且主键不能由服务端排序（Meilisearch、Typesense）。
   naturalOrder?: boolean;
   // 数据浏览分页语法：缺省 LIMIT n OFFSET m。
-  pagination?: 'limit-offset' | 'limit-range' | 'offset-limit' | 'limit-start' | 'skip-first' | 'rows-to' | 'offset-fetch';
+  pagination?: 'limit-offset' | 'limit-range' | 'offset-limit' | 'limit-start' | 'skip-first' | 'rows-to' | 'offset-fetch' | 'stream';
   // 图标：asset 指向官方 logo；缺省时使用 /db-icons/<type>.svg（可由 tools/generate-datasource-icons.py 生成字母徽标）。
   icon?: { color: string; text?: string; scale?: number; asset?: string };
 };
@@ -122,8 +123,10 @@ export type DataSourceSpec = {
   sqlFileImport?: boolean;
   // sync 声明能否作为数据同步 / 迁移的源与目标；未声明的类型不出现在同步的连接选择里。
   sync?: { source?: boolean; target?: boolean };
-  agent: DataSourceAgentBuild;
-  variants: DataSourceVariantSet;
+  // 无驱动类型（XXL-JOB 等专用工作台）既不构建代理也不选驱动档位，agent 与 variants 都留空，
+  // 读取一律走 getDataSourceVariantSet 的空集回落，不要在调用点直接展开这两项。
+  agent?: DataSourceAgentBuild;
+  variants?: DataSourceVariantSet;
   ui?: DataSourceUISpec;
 };
 

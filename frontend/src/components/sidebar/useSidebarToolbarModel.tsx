@@ -22,6 +22,8 @@ import {
   CloudUploadOutlined,
 } from '@ant-design/icons';
 import { buildTitlebarTrailingActions } from './titlebarTrailingActions';
+import { PLUGIN_MANAGER_WORKBENCH_TAB_ID } from '../../utils/pluginManagerTab';
+import { usePluginPagesTitlebarMenu } from './usePluginPagesTitlebarMenu';
 import { useSidebarCommandSearchCopy } from './useSidebarCommandSearchCopy';
 import type { SidebarSearchPanelProps } from './SidebarSearchPanel';
 import type { V2CommandSearchItem } from '../sidebarV2Utils';
@@ -186,6 +188,7 @@ export const useSidebarToolbarModel = ({
   }, [activeContext?.connectionId, activeContext?.dbName, activeTabId, openDataImportWorkbench, tabs]);
   const handleOpenMockDataWorkbench = useSidebarMockDataLauncher({ selectedNodesRef, tabs, activeTabId, connections, addTab });
 
+  const v2PluginPagesAction = usePluginPagesTitlebarMenu();
   const {
     openSlowQueryWorkbench,
     openSqlAuditWorkbench,
@@ -322,6 +325,7 @@ export const useSidebarToolbarModel = ({
         },
       ],
     },
+    v2PluginPagesAction,
     sessionWorkbenchAction,
     userManagementAction,
   ];
@@ -333,6 +337,7 @@ export const useSidebarToolbarModel = ({
     onCheckUpdate,
     hideAbout: hideTitlebarAboutAction,
     hideDrivers: hideTitlebarDriverAction,
+    pluginManagerTabActive: activeTabId === PLUGIN_MANAGER_WORKBENCH_TAB_ID,
   });
 
   const { getCommandSearchCopyOptions, handleCopyCommandSearchItem } = useSidebarCommandSearchCopy({ connections, connectionIds });

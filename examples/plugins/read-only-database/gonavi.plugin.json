@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": 1,
+  "id": "sdk.examples.readonly",
+  "name": "Read-only fixture database",
+  "version": "1.0.0",
+  "description": "Fixed in-memory people dataset with a documented SELECT subset, not a SQLite engine",
+  "author": "GoNavi examples",
+  "license": "Apache-2.0",
+  "permissions": [
+    "data.sources"
+  ],
+  "backend": {
+    "default": {
+      "executable": "bin/plugin",
+      "runtime": "native"
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "database",
+        "title": "Read fixture database",
+        "effect": "read",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "protocolVersion",
+            "operation",
+            "sessionId"
+          ],
+          "properties": {
+            "protocolVersion": {
+              "type": "integer",
+              "const": 1
+            },
+            "operation": {
+              "type": "string"
+            },
+            "sessionId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "config": {
+              "type": "object"
+            },
+            "database": {
+              "type": "string"
+            },
+            "table": {
+              "type": "string"
+            },
+            "query": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    ],
+    "dataSources": [
+      {
+        "id": "fixture",
+        "name": "Read-only fixture (SQL subset)",
+        "dialect": "sqlite",
+        "command": "database",
+        "readOnly": true
+      }
+    ]
+  }
+}

@@ -4,6 +4,7 @@ import "GoNavi-Wails/internal/connection"
 
 // SyncConfig defines the parameters for a synchronization task
 type SyncConfig struct {
+	hiveMicrosecondTarget bool
 	// characterLengthTarget is scoped to this plan; never serialized or shared across connections.
 	characterLengthTarget *characterLengthTarget
 	SourceConfig          connection.ConnectionConfig `json:"sourceConfig"`

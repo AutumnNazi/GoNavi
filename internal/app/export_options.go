@@ -3,6 +3,8 @@ package app
 import (
 	"errors"
 	"strings"
+
+	"GoNavi-Wails/internal/dataexport"
 )
 
 const (
@@ -11,21 +13,25 @@ const (
 )
 
 type ExportFileOptions struct {
-	Format                         string            `json:"format"`
-	CSVEncoding                    string            `json:"csvEncoding,omitempty"`
-	Columns                        []string          `json:"columns,omitempty"`
-	ColumnComments                 map[string]string `json:"columnComments,omitempty"`
-	XLSXMaxRowsPerSheet            int               `json:"xlsxMaxRowsPerSheet,omitempty"`
-	JobID                          string            `json:"jobId,omitempty"`
-	TotalRowsHint                  int64             `json:"totalRowsHint,omitempty"`
-	TotalRowsKnown                 bool              `json:"totalRowsKnown,omitempty"`
-	IncludeDropIfExists            bool              `json:"includeDropIfExists,omitempty"`
-	IncludeDatabaseContext         bool              `json:"includeDatabaseContext,omitempty"`
-	InsertSQLDialect               string            `json:"insertSQLDialect,omitempty"`
-	InsertSQLTargetTable           string            `json:"insertSQLTargetTable,omitempty"`
-	InsertSQLColumnTypes           map[string]string `json:"insertSQLColumnTypes,omitempty"`
-	InsertSQLTargetColumns         map[string]string `json:"insertSQLTargetColumns,omitempty"`
-	InsertSQLAllowEmptyTargetTable bool              `json:"insertSQLAllowEmptyTargetTable,omitempty"`
+	LosslessHive                   bool                              `json:"losslessHive,omitempty"`
+	PluginExporter                 *dataexport.PluginExportSelection `json:"pluginExporter,omitempty"`
+	Format                         string                            `json:"format"`
+	CSVEncoding                    string                            `json:"csvEncoding,omitempty"`
+	Columns                        []string                          `json:"columns,omitempty"`
+	ColumnComments                 map[string]string                 `json:"columnComments,omitempty"`
+	XLSXMaxRowsPerSheet            int                               `json:"xlsxMaxRowsPerSheet,omitempty"`
+	JobID                          string                            `json:"jobId,omitempty"`
+	TotalRowsHint                  int64                             `json:"totalRowsHint,omitempty"`
+	TotalRowsKnown                 bool                              `json:"totalRowsKnown,omitempty"`
+	IncludeDropIfExists            bool                              `json:"includeDropIfExists,omitempty"`
+	IncludeDatabaseContext         bool                              `json:"includeDatabaseContext,omitempty"`
+	InsertSQLDialect               string                            `json:"insertSQLDialect,omitempty"`
+	InsertSQLTargetTable           string                            `json:"insertSQLTargetTable,omitempty"`
+	InsertSQLColumnOrder           []string                          `json:"insertSQLColumnOrder,omitempty"`
+	InsertSQLPartitionColumns      []string                          `json:"insertSQLPartitionColumns,omitempty"`
+	InsertSQLColumnTypes           map[string]string                 `json:"insertSQLColumnTypes,omitempty"`
+	InsertSQLTargetColumns         map[string]string                 `json:"insertSQLTargetColumns,omitempty"`
+	InsertSQLAllowEmptyTargetTable bool                              `json:"insertSQLAllowEmptyTargetTable,omitempty"`
 }
 
 func normalizeExportFileOptions(format string, options ExportFileOptions) ExportFileOptions {
@@ -34,6 +40,8 @@ func normalizeExportFileOptions(format string, options ExportFileOptions) Export
 		resolvedFormat = explicitFormat
 	}
 	return ExportFileOptions{
+		LosslessHive:                   options.LosslessHive,
+		PluginExporter:                 options.PluginExporter,
 		Format:                         resolvedFormat,
 		CSVEncoding:                    options.CSVEncoding,
 		Columns:                        normalizeExportColumns(options.Columns),
@@ -46,6 +54,8 @@ func normalizeExportFileOptions(format string, options ExportFileOptions) Export
 		IncludeDatabaseContext:         options.IncludeDatabaseContext,
 		InsertSQLDialect:               normalizeInsertSQLDialect(options.InsertSQLDialect),
 		InsertSQLTargetTable:           strings.TrimSpace(options.InsertSQLTargetTable),
+		InsertSQLColumnOrder:           append([]string(nil), options.InsertSQLColumnOrder...),
+		InsertSQLPartitionColumns:      append([]string(nil), options.InsertSQLPartitionColumns...),
 		InsertSQLColumnTypes:           options.InsertSQLColumnTypes,
 		InsertSQLTargetColumns:         options.InsertSQLTargetColumns,
 		InsertSQLAllowEmptyTargetTable: options.InsertSQLAllowEmptyTargetTable,

@@ -101,7 +101,7 @@ export const enUSDriverMessages: Record<string, string> = {
   "driver.modal.card.status.needsUpdate":
     "The driver component has an update. Reinstall to get the latest fixes and compatibility improvements; the current version still works.",
   "driver.modal.card.status.optionalUpdate":
-    "Driver component update available (optional, no impact on usage).",
+    "Driver component update available (optional, reinstall recommended).",
   "driver.modal.card.status.installedRevision":
     "installed revision {revision}.",
   "driver.modal.card.status.expectedRevision":

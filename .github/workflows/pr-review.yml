@@ -1,4 +1,4 @@
-# 在 pull request 上回复评审。
+# Maintainer-only manual PR review; never auto-approves pull requests.
 #
 # 工作流文件和评审程序都来自 PR 的基线提交，只通过 GitHub API 读取 diff，
 # 不检出、不执行 PR 分支里的代码。
@@ -15,14 +15,7 @@
 name: PR Review
 
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review]
-  workflow_run:
-    # Backend Tests 结束后只刷新同一条评论里的 CI 门禁状态（-gate-only）。
-    # 不要用 event 里的 pull_requests 数组：push 触发时它会填陈旧或错误的
-    # PR 关联，PR 一律由程序按 head SHA 匹配开放 PR 列表。
-    workflows: ["Backend Tests"]
-    types: [completed]
+  # PR 评审只允许维护者手动触发，避免模型自动处理或审批 PR。
   workflow_dispatch:
     inputs:
       pr:

@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	kafka "github.com/segmentio/kafka-go"
 )
@@ -25,12 +24,24 @@ type kafkaParsedSQL struct {
 	GroupID string
 	Count   bool
 	Latest  bool
+	// Columns 是 SELECT 的列投影；为空表示全列。列表预览只取元数据列，
+	// payload 由详情查询按 partition+offset 单独拉取。
+	Columns []string
+	// Partition/MsgOffset 来自 WHERE partition = ? AND offset = ?，用于精确定位单条消息。
+	Partition *int
+	MsgOffset *int64
 }
 
 var (
-	kafkaSQLFromRE       = regexp.MustCompile(`(?i)\bFROM\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+))`)
-	kafkaSQLLimitRE      = regexp.MustCompile(`(?i)\bLIMIT\s+(\d+)`)
-	kafkaSQLOffsetRE     = regexp.MustCompile(`(?i)\bOFFSET\s+(\d+)`)
+	kafkaSQLFromRE   = regexp.MustCompile(`(?i)\bFROM\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+))`)
+	kafkaSQLLimitRE  = regexp.MustCompile(`(?i)\bLIMIT\s+(\d+)`)
+	kafkaSQLOffsetRE = regexp.MustCompile(`(?i)\bOFFSET\s+(\d+)`)
+	// 列投影与按 partition/offset 精确定位：列表只取元数据列，详情再按定位拉 payload。
+	kafkaSQLSelectColumnsRE  = regexp.MustCompile(`(?is)^\s*SELECT\s+(.+?)\s+FROM\s+`)
+	kafkaSQLWherePartitionRE = regexp.MustCompile(`(?i)\bWHERE\b[^;]*?\bpartition\s*=\s*(\d+)`)
+	kafkaSQLWhereOffsetRE    = regexp.MustCompile(`(?i)\bWHERE\b[^;]*?\boffset\s*=\s*(\d+)`)
+	// LATEST / EARLIEST 写在 topic 之后，覆盖连接上配置的起始位置（与 Pulsar 方言一致）。
+	kafkaSQLStartRE      = regexp.MustCompile(`(?i)\b(LATEST|EARLIEST)\b`)
 	kafkaShowTopicsRE    = regexp.MustCompile(`(?i)^\s*SHOW\s+TOPICS(?:\s+LIMIT\s+(\d+))?\s*$`)
 	kafkaShowGroupsRE    = regexp.MustCompile(`(?i)^\s*SHOW\s+CONSUMER\s+GROUPS\s*;?\s*$`)
 	kafkaDescribeGroupRE = regexp.MustCompile(`(?i)^\s*(?:DESCRIBE|SHOW)\s+CONSUMER\s+GROUP\s+(?:"([^"]+)"|` + "`" + `([^` + "`" + `]+)` + "`" + `|([a-zA-Z0-9_.\-]+))\s*$`)
@@ -62,43 +73,111 @@ func parseKafkaSQL(sqlText string, defaultLatest bool) (kafkaParsedSQL, bool) {
 			Topic:  firstNonEmpty(matches[1], matches[2], matches[3]),
 		}, true
 	}
-	if matches := kafkaConsumeTopicRE.FindStringSubmatch(text); len(matches) > 0 {
+	if loc := kafkaConsumeTopicRE.FindStringSubmatchIndex(text); loc != nil {
+		matches := kafkaSubmatches(text, loc)
+		// LIMIT / OFFSET / LATEST 只在 topic 之后匹配，避免误中 topic 名或列名。
+		tail := text[loc[1]:]
 		parsed := kafkaParsedSQL{
 			Action:  "consume",
 			GroupID: firstNonEmpty(matches[1], matches[2], matches[3]),
 			Topic:   firstNonEmpty(matches[4], matches[5], matches[6]),
 			Limit:   defaultKafkaPreviewLimit,
-			Latest:  defaultLatest,
+			Latest:  kafkaStartLatest(tail, defaultLatest),
 		}
-		if limitMatch := kafkaSQLLimitRE.FindStringSubmatch(text); len(limitMatch) > 1 {
-			parsed.Limit, _ = strconv.Atoi(limitMatch[1])
-		}
-		if offsetMatch := kafkaSQLOffsetRE.FindStringSubmatch(text); len(offsetMatch) > 1 {
-			parsed.Offset, _ = strconv.Atoi(offsetMatch[1])
-		}
+		applyKafkaLimitOffset(&parsed, tail)
 		return parsed, true
 	}
 	if !strings.HasPrefix(strings.ToLower(text), "select") {
 		return kafkaParsedSQL{}, false
 	}
-	matches := kafkaSQLFromRE.FindStringSubmatch(text)
-	if len(matches) == 0 {
+	loc := kafkaSQLFromRE.FindStringSubmatchIndex(text)
+	if loc == nil {
 		return kafkaParsedSQL{}, false
 	}
+	matches := kafkaSubmatches(text, loc)
+	tail := text[loc[1]:]
 	parsed := kafkaParsedSQL{
 		Action: "select",
 		Topic:  firstNonEmpty(matches[1], matches[2], matches[3]),
 		Limit:  defaultKafkaPreviewLimit,
-		Count:  strings.Contains(strings.ToLower(text), "count("),
-		Latest: defaultLatest,
+		Count:  strings.Contains(strings.ToLower(text[:loc[0]]), "count("),
+		Latest: kafkaStartLatest(tail, defaultLatest),
 	}
-	if limitMatch := kafkaSQLLimitRE.FindStringSubmatch(text); len(limitMatch) > 1 {
-		parsed.Limit, _ = strconv.Atoi(limitMatch[1])
+	applyKafkaLimitOffset(&parsed, tail)
+	if columnMatch := kafkaSQLSelectColumnsRE.FindStringSubmatch(text); len(columnMatch) > 1 {
+		parsed.Columns = parseKafkaColumnList(columnMatch[1])
 	}
-	if offsetMatch := kafkaSQLOffsetRE.FindStringSubmatch(text); len(offsetMatch) > 1 {
-		parsed.Offset, _ = strconv.Atoi(offsetMatch[1])
+	if partitionMatch := kafkaSQLWherePartitionRE.FindStringSubmatch(tail); len(partitionMatch) > 1 {
+		if partition, err := strconv.Atoi(partitionMatch[1]); err == nil {
+			parsed.Partition = &partition
+		}
+	}
+	if whereOffsetMatch := kafkaSQLWhereOffsetRE.FindStringSubmatch(tail); len(whereOffsetMatch) > 1 {
+		if messageOffset, err := strconv.ParseInt(whereOffsetMatch[1], 10, 64); err == nil {
+			parsed.MsgOffset = &messageOffset
+		}
 	}
 	return parsed, true
+}
+
+func kafkaSubmatches(text string, loc []int) []string {
+	matches := make([]string, len(loc)/2)
+	for i := range matches {
+		if start, end := loc[2*i], loc[2*i+1]; start >= 0 {
+			matches[i] = text[start:end]
+		}
+	}
+	return matches
+}
+
+func kafkaStartLatest(tail string, defaultLatest bool) bool {
+	if match := kafkaSQLStartRE.FindStringSubmatch(tail); len(match) > 1 {
+		return strings.EqualFold(match[1], "LATEST")
+	}
+	return defaultLatest
+}
+
+func applyKafkaLimitOffset(parsed *kafkaParsedSQL, tail string) {
+	if limitMatch := kafkaSQLLimitRE.FindStringSubmatch(tail); len(limitMatch) > 1 {
+		parsed.Limit, _ = strconv.Atoi(limitMatch[1])
+	}
+	if offsetMatch := kafkaSQLOffsetRE.FindStringSubmatch(tail); len(offsetMatch) > 1 {
+		parsed.Offset, _ = strconv.Atoi(offsetMatch[1])
+	}
+}
+
+// parseKafkaColumnList 解析 SELECT 的列投影；出现 `*` 或为空表示全列（返回 nil）。
+// 基础列名不区分大小写；value./key./headers. 之后的 JSON 路径保持原样，
+// 因为 JSON 字段名区分大小写。
+func parseKafkaColumnList(raw string) []string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	parts := strings.Split(trimmed, ",")
+	columns := make([]string, 0, len(parts))
+	for _, part := range parts {
+		name := strings.TrimSpace(strings.Trim(strings.TrimSpace(part), "\"`"))
+		if name == "*" {
+			return nil
+		}
+		if name == "" {
+			continue
+		}
+		columns = append(columns, normalizeKafkaColumnName(name))
+	}
+	if len(columns) == 0 {
+		return nil
+	}
+	return columns
+}
+
+func normalizeKafkaColumnName(name string) string {
+	base, path, hasPath := strings.Cut(name, ".")
+	if !hasPath {
+		return strings.ToLower(name)
+	}
+	return strings.ToLower(base) + "." + path
 }
 
 func kafkaConsumerGroupRows(groups []kafkaConsumerGroupInfo) []map[string]interface{} {
@@ -155,48 +234,6 @@ func kafkaDescribeRows(description kafkaTopicDescription) []map[string]interface
 		})
 	}
 	return rows
-}
-
-func kafkaMessageRows(records []kafkaMessageRecord) []map[string]interface{} {
-	rows := make([]map[string]interface{}, 0, len(records))
-	for _, record := range records {
-		row := map[string]interface{}{
-			"topic":           record.Message.Topic,
-			"partition":       record.Message.Partition,
-			"offset":          record.Message.Offset,
-			"timestamp":       record.Message.Time.Format(time.RFC3339Nano),
-			"high_water_mark": record.Message.HighWaterMark,
-			"key":             record.Key,
-			"value":           record.Value,
-			"headers":         record.Headers,
-			"key_size":        len(record.Message.Key),
-			"value_size":      len(record.Message.Value),
-		}
-		if valueMap, ok := record.Value.(map[string]interface{}); ok {
-			flattenKafkaMap("value", valueMap, row)
-		}
-		if keyMap, ok := record.Key.(map[string]interface{}); ok {
-			flattenKafkaMap("key", keyMap, row)
-		}
-		if len(record.Headers) > 0 {
-			flattenKafkaMap("headers", record.Headers, row)
-		}
-		rows = append(rows, row)
-	}
-	return rows
-}
-
-func flattenKafkaMap(prefix string, values map[string]interface{}, row map[string]interface{}) {
-	for key, value := range values {
-		if strings.TrimSpace(key) == "" {
-			continue
-		}
-		name := prefix + "." + key
-		row[name] = value
-		if nested, ok := value.(map[string]interface{}); ok {
-			flattenKafkaMap(name, nested, row)
-		}
-	}
 }
 
 func kafkaHeadersToMap(headers []kafka.Header) map[string]interface{} {

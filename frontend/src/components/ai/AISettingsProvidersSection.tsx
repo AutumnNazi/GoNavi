@@ -33,7 +33,7 @@ import type { ai } from '../../../wailsjs/go/models';
 import type { OverlayWorkbenchTheme } from '../../utils/overlayWorkbenchTheme';
 import AIProviderLogo from './AIProviderLogo';
 import { BuiltinAICard } from './BuiltinAICard';
-import AIProviderPresetSelect from './AIProviderPresetSelect';
+import AIProviderPresetSelect, { type PluginPresetOption } from './AIProviderPresetSelect';
 import AIProviderKeyValueRows from './AIProviderKeyValueRows';
 import AISettingsProviderTestResult from './AISettingsProviderTestResult';
 
@@ -91,7 +91,7 @@ interface MatchedProviderPreset {
   icon: React.ReactNode;
 }
 
-interface AISettingsProvidersSectionProps {
+export interface AISettingsProvidersSectionProps {
   providers: AIProviderConfig[];
   activeProviderId: string;
   pendingProviderId?: string;
@@ -103,6 +103,7 @@ interface AISettingsProvidersSectionProps {
   isEditing: boolean;
   form: FormInstance;
   providerPresets: AISettingsProviderPresetOption[];
+  pluginPresets?: PluginPresetOption[];
   watchedPresetKey?: string;
   watchedApiFormat?: string;
   loading: boolean;
@@ -152,6 +153,7 @@ const AISettingsProvidersSection: React.FC<AISettingsProvidersSectionProps> = ({
   isEditing,
   form,
   providerPresets,
+  pluginPresets = [],
   watchedPresetKey,
   watchedApiFormat,
   loading,
@@ -615,6 +617,9 @@ const AISettingsProvidersSection: React.FC<AISettingsProvidersSectionProps> = ({
         className="gonavi-ai-provider-add gonavi-ai-provider-add-preset-select"
         value={isEditing ? presetKeyFromForm : null}
         presets={providerPresets}
+        pluginPresets={isEditing ? [] : pluginPresets}
+        pluginLabel={copy('plugin.ai_provider.label')}
+        pluginUnavailableLabel={copy('plugin.ai_provider.unavailable')}
         canSelect={(preset) => {
           const full = providerPresets.find((item) => item.key === preset.key);
           return full ? canSelectPreset(full, editingProvider?.id) && (!hiddenKeys.has(full.key) || full.key === presetKeyFromForm) : false;

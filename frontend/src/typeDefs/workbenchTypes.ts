@@ -78,6 +78,9 @@ export interface TableExportHistoryEntry {
   message: string;
 }
 
+/** XXL-JOB 调度中心的三种工作台面板。 */
+export type XxlJobPanel = "groups" | "jobs" | "logs";
+
 export interface TabData {
   id: string;
   title: string;
@@ -91,6 +94,8 @@ export interface TabData {
   queryMode?: "standard" | "object-edit";
   returnToTabId?: string;
   filePath?: string;
+  /** Plugin page identity; the page host resolves the declaration and bridge from here. */
+  pluginPage?: { pluginID: string; pageID: string; title: string };
   initialTab?: string;
   initialViewMode?: "table" | "json" | "text" | "fields" | "ddl" | "er" | "sqlLog";
   initialViewModeRequestId?: string;
@@ -102,6 +107,7 @@ export interface TabData {
   nacosNamespaceId?: string; // Nacos namespace id (empty string means public)
   nacosNamespaceName?: string; // Nacos namespace display name
   nacosGroup?: string; // Nacos group filter for config or service workbenches
+  xxlJobPanel?: XxlJobPanel; // XXL-JOB 调度中心面板（执行器 / 任务 / 调度日志）
   triggerName?: string; // Trigger name for trigger tabs
   triggerTableName?: string; // Trigger target table for trigger tabs
   triggerRollbackSql?: string; // Original trigger definition used after a failed replacement

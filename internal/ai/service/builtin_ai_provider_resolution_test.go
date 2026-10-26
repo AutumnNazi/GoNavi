@@ -1,6 +1,7 @@
 package aiservice
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -102,7 +103,7 @@ func TestBuiltinAIPartialLegacyRecordResolvesForAgentSend(t *testing.T) {
 		t.Fatalf("active provider = %q", got)
 	}
 	input := runharness.AgentInputRequest{SessionID: "session-partial"}
-	if err := s.bindAgentProviderInput(&input); err != nil {
+	if err := s.bindAgentProviderInput(context.Background(), &input); err != nil {
 		t.Fatalf("bind agent provider: %v", err)
 	}
 	binding, ok := input.ProviderBindingForHost()

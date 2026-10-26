@@ -1,4 +1,5 @@
 import { ConnectionConfig, SavedConnection } from "../types";
+import { pluginDataSourcePersistenceOverrides } from "../plugins/dataSource/persistence";
 import { getDataSourceCapabilities } from "../utils/dataSourceCapabilities";
 import { normalizeConnectionEnvironmentType } from "../utils/connectionEnvironment";
 import {
@@ -298,6 +299,7 @@ const sanitizeConnectionConfig = (value: unknown): ConnectionConfig => {
       : "",
   };
 
+  Object.assign(safeConfig, pluginDataSourcePersistenceOverrides(raw));
   const resolvedProtection = resolveConnectionProtectionConfig(safeConfig);
   safeConfig.protection = resolvedProtection;
   safeConfig.readOnly = deriveLegacyConnectionReadOnlyFlag(resolvedProtection);

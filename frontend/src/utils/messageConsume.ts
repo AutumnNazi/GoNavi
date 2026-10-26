@@ -19,7 +19,7 @@ export type MessageConsumeDraft = {
   limit: number;
   /** MQTT only. The backend query grammar accepts QOS 0/1/2. */
   qos?: number;
-  /** Kafka only. RocketMQ consumer groups remain connection-level settings. */
+  /** Legacy Kafka drafts may still carry a group; previews ignore it and never join a group. */
   consumerGroup?: string;
 };
 
@@ -63,6 +63,10 @@ export type MessageConsumeCommand = {
 };
 
 export type MessageConsumeTranslate = (key: string, params?: I18nParams) => string;
+
+// 列表预览只请求元数据列：payload 可能有十几 MB，放进列表帧会让驱动代理的单帧超限，
+// 整条预览流会因此中断。完整内容由详情查询按 partition + offset 拉取。
+export const KAFKA_MESSAGE_METADATA_COLUMNS = 'timestamp, partition, offset, key, value_size';
 
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 1000;
@@ -225,6 +229,8 @@ export const resolveMessageConsumeProfile = (
   }
 
   if (type === 'kafka' || type === 'pulsar') {
+    // Kafka 预览按分区直读、不提交消费进度，不加入 consumer group：加入会触发 rebalance，
+    // 影响正在消费的业务。因此不展示消费者组输入，避免「填了不生效」。
     return {
       type,
       mode: 'pull-preview',
@@ -234,8 +240,8 @@ export const resolveMessageConsumeProfile = (
       destinationRequiredMessage: translate('message_consume.presentation.topic_required'),
       actionLabel: translate('message_consume.action.consume_preview'),
       alertMessage: translate(`message_consume.presentation.${type}.alert`),
-      showConsumerGroup: type === 'kafka',
-      consumerGroupEditable: type === 'kafka',
+      showConsumerGroup: false,
+      consumerGroupEditable: false,
       showQos: false,
       qosEditable: false,
       showFetchWait: false,
@@ -245,12 +251,6 @@ export const resolveMessageConsumeProfile = (
       showVhost: false,
       requeueAfterRead: false,
       effectiveSettings: {
-        consumerGroup: firstParam(params, [
-          'groupId',
-          'group_id',
-          'consumerGroup',
-          'consumer_group',
-        ]),
         startOffset: normalizeStartOffset(firstParam(params, [
           'startOffset',
           'start_offset',
@@ -371,15 +371,6 @@ export const createDefaultMessageConsumeDraft = (
   if (type === 'mqtt') {
     draft.qos = parseMQTTQoS(firstParam(params, ['qos']));
   }
-  if (type === 'kafka') {
-    const consumerGroup = firstParam(params, [
-      'groupId',
-      'group_id',
-      'consumerGroup',
-      'consumer_group',
-    ]);
-    if (consumerGroup) draft.consumerGroup = consumerGroup;
-  }
   return draft;
 };
 
@@ -400,7 +391,7 @@ const throwTranslated = (
 
 const assertSafeQuotedValue = (
   value: string,
-  field: 'destination' | 'consumer_group',
+  field: 'destination',
   translate: MessageConsumeTranslate,
 ): void => {
   if (/[\u0000-\u001f\u007f]/.test(value)) {
@@ -487,19 +478,6 @@ const resolveMQTTDraftQoS = (
   return value as 0 | 1 | 2;
 };
 
-const resolveKafkaConsumerGroupClause = (
-  rawGroup: unknown,
-  translate: MessageConsumeTranslate,
-): string => {
-  const group = String(rawGroup ?? '').trim();
-  if (!group) return '';
-  assertSafeQuotedValue(group, 'consumer_group', translate);
-  if (utf8ByteLength(group) > DEFAULT_NAME_MAX_UTF8_BYTES) {
-    throwTranslated(translate, 'message_consume.error.consumer_group_too_long');
-  }
-  return ` GROUP "${group}"`;
-};
-
 export const buildMessageConsumeCommand = (
   config: MessageConsumeConnectionLike,
   draft: MessageConsumeDraft,
@@ -523,8 +501,11 @@ export const buildMessageConsumeCommand = (
       break;
     }
     case 'kafka': {
-      const groupClause = resolveKafkaConsumerGroupClause(draft?.consumerGroup, translate);
-      commandText = `CONSUME${groupClause} FROM "${destination}" LIMIT ${limit};`;
+      // 列表只取元数据（时间 / partition / offset / key / 大小）：payload 可能有十几 MB，
+      // 放进列表帧会让驱动代理单帧超限、预览流中断；完整内容在点击消息时按需拉取。
+      // 起始位置写进命令：后端未配置时默认从最早读，与界面展示的「最新位置」不一致。
+      const start = profile.effectiveSettings.startOffset === 'latest' ? 'LATEST' : 'EARLIEST';
+      commandText = `SELECT ${KAFKA_MESSAGE_METADATA_COLUMNS} FROM "${destination}" ${start} LIMIT ${limit};`;
       break;
     }
     case 'rocketmq':

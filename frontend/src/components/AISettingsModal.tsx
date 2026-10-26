@@ -11,7 +11,8 @@ import AISettingsSidebar, { type AISettingsSectionKey } from './ai/AISettingsSid
 import AISettingsSafetySection from './ai/AISettingsSafetySection';
 import AISettingsContextSection from './ai/AISettingsContextSection';
 import AISettingsRunPolicySection from './ai/AISettingsRunPolicySection';
-import AISettingsProvidersSection from './ai/AISettingsProvidersSection';
+import AISettingsProvidersSection from './ai/AISettingsPluginProviderSection';
+import { AIPluginProviderScope } from '../plugins/aiProvider/context';
 import AISettingsInsightSection from './ai/AISettingsInsightSection';
 import AISettingsPromptsSection from './ai/AISettingsPromptsSection';
 import AISettingsSkillsSection from './ai/AISettingsSkillsSection';
@@ -44,7 +45,7 @@ export interface AISettingsContentProps {
     confirmationZIndex?: number;
 }
 
-export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, darkMode, overlayTheme, focusProviderId, hideSidebar = false, section, onSectionChange, providersView = 'workspace', onProvidersViewChange, onCloseHost, onBeforeExternalMCPUse, onLeaveGuardChange, confirmationZIndex = APP_STATIC_FEEDBACK_Z_INDEX_BASE }) => {
+const AISettingsContentInner: React.FC<AISettingsContentProps> = ({ active, darkMode, overlayTheme, focusProviderId, hideSidebar = false, section, onSectionChange, providersView = 'workspace', onProvidersViewChange, onCloseHost, onBeforeExternalMCPUse, onLeaveGuardChange, confirmationZIndex = APP_STATIC_FEEDBACK_Z_INDEX_BASE }) => {
     const {
       t, defaultMCPHTTPServerStatus, providers, activeProviderId, setActiveProviderId,
       pendingProviderId, setPendingProviderId, providersLoading, setProvidersLoading,
@@ -283,7 +284,7 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
                     />
                 ))}
                 {renderSectionPanel('skills', (
-                    <AISettingsSkillsSection
+                    <AISettingsSkillsSection active={active && activeSection === 'skills'}
                         skills={skills}
                         skillRequiredToolOptions={skillRequiredToolOptions}
                         overlayTheme={overlayTheme}
@@ -326,6 +327,10 @@ export const AISettingsContent: React.FC<AISettingsContentProps> = ({ active, da
         </div>
     );
 };
+
+export const AISettingsContent: React.FC<AISettingsContentProps> = (props) => (
+    <AIPluginProviderScope active={props.active}><AISettingsContentInner {...props} /></AIPluginProviderScope>
+);
 
 const AISettingsModal: React.FC<AISettingsModalProps> = ({ open, onClose, darkMode, overlayTheme, focusProviderId, onBeforeExternalMCPUse }) => {
     const { t } = useI18n();

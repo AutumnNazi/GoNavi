@@ -4,10 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
-	"time"
 
 	"GoNavi-Wails/internal/ai"
 	"GoNavi-Wails/internal/logger"
@@ -90,6 +87,11 @@ func (s *Service) AISaveProvider(config ai.ProviderConfig) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	var prepareErr error
+	config, prepareErr = s.preparePluginProviderSave(config)
+	if prepareErr != nil {
+		return prepareErr
+	}
 	config = normalizeProviderConfig(config)
 	if isBuiltinAIProviderConfig(config) {
 		// Built-in credentials live in the account store, never in a provider record.
@@ -134,40 +136,9 @@ func (s *Service) AISaveProvider(config ai.ProviderConfig) error {
 		}
 	}
 
-	meta, bundle := splitProviderSecrets(config)
-	preserveExistingSecrets := found && ((!localCLIAuth && !isLocalCLIAuthProvider(existing)) ||
-		(localCLIAuth && singletonCLIProviderIdentity(existing) == singletonCLIProviderIdentity(config)))
-	var runtimeConfig ai.ProviderConfig
-	switch {
-	case bundle.hasAny():
-		mergedBundle := bundle
-		if preserveExistingSecrets && existing.HasSecret {
-			_, existingBundle := splitProviderSecrets(existing)
-			mergedBundle = mergeProviderSecretBundles(existingBundle, bundle)
-		}
-		if found && strings.TrimSpace(meta.SecretRef) == "" {
-			meta.SecretRef = existing.SecretRef
-		}
-		storedMeta, err := s.persistProviderSecretBundle(meta, mergedBundle)
-		if err != nil {
-			return s.serviceErrorLocked("ai_service.backend.error.provider_secret_save_failed", nil, err)
-		}
-		runtimeConfig = mergeProviderSecrets(storedMeta, mergedBundle)
-	case preserveExistingSecrets && (config.HasSecret || existing.HasSecret):
-		meta.SecretRef = existing.SecretRef
-		meta.HasSecret = config.HasSecret || existing.HasSecret
-		meta, existingBundle := applyExistingRuntimeProviderSecrets(meta, existing)
-		if existingBundle.hasAny() {
-			runtimeConfig = mergeProviderSecrets(meta, existingBundle)
-		} else {
-			resolved, err := s.resolveProviderConfigSecretsLocked(meta)
-			if err != nil {
-				return s.serviceErrorLocked("ai_service.backend.error.provider_secret_saved_read_failed", nil, err)
-			}
-			runtimeConfig = resolved
-		}
-	default:
-		runtimeConfig = meta
+	runtimeConfig, err := s.resolveProviderSaveRuntimeLocked(config, existing, found, localCLIAuth)
+	if err != nil {
+		return err
 	}
 
 	if !runtimeConfig.HasSecret && found {
@@ -235,6 +206,9 @@ func (s *Service) AIDeleteProvider(id string) error {
 // AITestProvider 返回实际执行的检查范围。本机认证 CLI 不发送聊天消息；
 // 其他兼容路径可能发送最小探测请求，只有读到模型回复才标记 modelVerified。
 func (s *Service) AITestProvider(config ai.ProviderConfig) map[string]interface{} {
+	if isPluginProviderConfig(config) {
+		return s.testPluginProvider(config)
+	}
 	if isBuiltinAIProviderConfig(config) {
 		return s.testBuiltinAIProvider()
 	}
@@ -293,90 +267,7 @@ func (s *Service) AITestProvider(config ai.ProviderConfig) map[string]interface{
 	}
 
 	config = normalizeProviderConfig(config)
-	providerType := normalizedProviderType(config)
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	var err error
-	checkKind := "none"
-
-	switch providerType {
-	case "openai", "anthropic", "gemini", "cursor-agent":
-		checkKind = "endpoint"
-		req, reqErr := newProviderHealthCheckRequest(config)
-		if reqErr != nil {
-			err = s.localizeProviderHealthCheckRequestError(reqErr)
-			break
-		}
-		resp, reqErr := client.Do(req)
-		if reqErr != nil {
-			err = reqErr
-		} else {
-			defer resp.Body.Close()
-			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-				err = fmt.Errorf("%s", s.serviceText("ai_service.backend.error.provider_auth_failed", map[string]any{
-					"status": resp.StatusCode,
-					"body":   "",
-				}))
-			} else if providerType == "gemini" && resp.StatusCode == http.StatusBadRequest {
-				body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-				err = fmt.Errorf("%s", s.serviceText("ai_service.backend.error.provider_auth_failed", map[string]any{
-					"status": resp.StatusCode,
-					"body":   formatProviderHTTPBody(body),
-				}))
-			} else if resp.StatusCode >= 500 {
-				body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-				err = fmt.Errorf("%s", s.serviceText("ai_service.backend.error.provider_http_server_error", map[string]any{
-					"status": resp.StatusCode,
-					"body":   formatProviderHTTPBody(body),
-				}))
-			} else if resp.StatusCode >= 400 {
-				body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-				err = fmt.Errorf("%s", s.serviceText("ai_service.backend.error.provider_http_status_failed", map[string]any{
-					"status": resp.StatusCode,
-					"body":   formatProviderHTTPBody(body),
-				}))
-			}
-		}
-	case "claude-cli":
-		if isLocalCLIAuthProvider(config) {
-			checkKind = "local-auth"
-			err = claudeCLILocalAuthCheckFunc(config)
-		} else {
-			checkKind = "model-response"
-			testConfig := config
-			if strings.TrimSpace(testConfig.Model) == "" && isDashScopeCodingPlanProvider(testConfig) && len(dashScopeCodingPlanModels) > 0 {
-				testConfig.Model = dashScopeCodingPlanModels[0]
-			}
-			err = claudeCLIHealthCheckFunc(testConfig)
-		}
-	case "codex-cli":
-		checkKind = "local-auth"
-		if authErr := validateLocalCLIProviderAuthMode(config); authErr != nil {
-			err = authErr
-		} else {
-			err = codexCLIHealthCheckFunc(config)
-		}
-	case "codebuddy-cli":
-		checkKind = "model-response"
-		err = codebuddyCLIHealthCheckFunc(config)
-	case "grok-cli":
-		checkKind = "model-list"
-		if authErr := validateLocalCLIProviderAuthMode(config); authErr != nil {
-			err = authErr
-		} else {
-			err = grokCLIHealthCheckFunc(config)
-		}
-	case "cursor-cli":
-		checkKind = "local-auth"
-		if authErr := validateLocalCLIProviderAuthMode(config); authErr != nil {
-			err = authErr
-		} else {
-			err = cursorCLIHealthCheckFunc(config)
-		}
-	default:
-		err = s.serviceError("ai_service.backend.error.provider_test_unsupported", map[string]any{"protocol": providerType}, errors.New("unsupported protocol"))
-	}
-
+	checkKind, err := s.checkLegacyProviderHealth(config)
 	return s.providerTestResult(checkKind, err)
 }
 

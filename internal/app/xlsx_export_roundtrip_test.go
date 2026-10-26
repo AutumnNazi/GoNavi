@@ -152,9 +152,9 @@ func assertXLSXExportRecords(t *testing.T, path string, selected bool, maxRows i
 		{"-42", "0", "tail", "", "", "", ""},
 	}
 	if selected {
-		headers[0], headers[1], headers[2] = headers[2], headers[1], headers[0]
+		headers[0], headers[2] = headers[2], headers[0]
 		for _, row := range wantRows {
-			row[0], row[1], row[2] = row[2], row[1], row[0]
+			row[0], row[2] = row[2], row[0]
 		}
 	}
 	sheets := book.GetSheetList()

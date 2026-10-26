@@ -1,14 +1,21 @@
 package sync
 
 import (
-	"GoNavi-Wails/internal/connection"
-	"GoNavi-Wails/internal/db"
 	"context"
 	"fmt"
 	"strings"
+
+	"GoNavi-Wails/internal/connection"
+	"GoNavi-Wails/internal/db"
 )
 
 func (s *SyncEngine) tryApplySourceQueryInPages(config SyncConfig, res *SyncResult, tableName string, sourceDB db.Database, targetDB db.Database, ctx sourceQuerySyncContext, opts TableOptions, tableMode string, applyTableName string) (bool, pagedDiffCounts, error) {
+	if tableMode == "full_overwrite" && hiveTargetHasRequiredColumns(ctx.TargetCols) {
+		return false, pagedDiffCounts{}, nil
+	}
+	if resolveMigrationDBType(config.SourceConfig) == "hive" {
+		return s.tryApplyHiveQueryStream(config, res, tableName, sourceDB, targetDB, ctx, opts, tableMode, applyTableName)
+	}
 	if hasExplicitSyncMappings(config) {
 		return false, pagedDiffCounts{}, nil
 	}
@@ -72,8 +79,7 @@ func (s *SyncEngine) tryApplySourceQueryInPages(config SyncConfig, res *SyncResu
 	}
 
 	clearTarget := func() error {
-		clearSQL := buildClearTargetTableSQL(ctx.TargetType, ctx.TargetQueryTable)
-		if _, err := execSyncDatabaseContext(s.context(), targetDB, clearSQL); err != nil {
+		if err := clearSyncTargetContext(s.context(), targetDB, ctx.TargetType, ctx.TargetQueryTable); err != nil {
 			return fmt.Errorf("清空目标表失败: %w", err)
 		}
 		return nil
@@ -98,6 +104,11 @@ func (s *SyncEngine) tryApplySourceQueryInPages(config SyncConfig, res *SyncResu
 		return true, counts, fmt.Errorf("分页读取源查询失败(offset=%d): %w", 0, err)
 	}
 
+	if ctx.TargetType == "hive" {
+		if err := validateHiveInsertRows(ctx.TargetCols, firstRows); err != nil {
+			return true, counts, err
+		}
+	}
 	if tableMode == "full_overwrite" {
 		if err := clearTarget(); err != nil {
 			return true, counts, err

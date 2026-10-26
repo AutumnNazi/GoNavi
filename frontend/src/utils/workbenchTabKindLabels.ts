@@ -25,6 +25,7 @@ export const getWorkbenchTabKindLabel = (tab: TabData): string => {
   if (tab.type === 'dml-snapshot') return t('tab_manager.kind_badge.dml_snapshot');
   if (tab.type === 'user-management') return t('tab_manager.kind_badge.user_management');
   if (tab.type === 'driver-manager') return t('tab_manager.kind_badge.driver_manager');
+  if (tab.type === 'plugin-manager') return t('plugin.manager.title');
   if (tab.type === 'settings-center') return t('tab_manager.kind_badge.settings_center');
   if (tab.type === 'message-queue') return t('message_queue_workbench.tab_kind');
   if (tab.type.startsWith('redis')) return t('tab_manager.kind_badge.redis');
@@ -68,6 +69,7 @@ export const getWorkbenchTabKindTooltipLabel = (tab: TabData): string => {
   if (tab.type === 'dml-snapshot') return t('tab_manager.hover.kind.dml_snapshot');
   if (tab.type === 'user-management') return t('tab_manager.hover.kind.user_management');
   if (tab.type === 'driver-manager') return t('tab_manager.hover.kind.driver_manager');
+  if (tab.type === 'plugin-manager') return t('plugin.manager.title');
   if (tab.type === 'settings-center') return t('tab_manager.hover.kind.settings_center');
   if (tab.type === 'message-queue') return t('message_queue_workbench.tab_kind');
   if (tab.type === 'redis-keys') return t('tab_manager.hover.kind.redis_keys');
@@ -75,6 +77,9 @@ export const getWorkbenchTabKindTooltipLabel = (tab: TabData): string => {
   if (tab.type === 'redis-monitor') return t('tab_manager.hover.kind.redis_monitor');
   if (tab.type === 'nacos-config') return t('tab_manager.hover.kind.nacos_config');
   if (tab.type === 'nacos-services') return t('tab_manager.hover.kind.nacos_services');
+  if (tab.type === 'xxljob-groups') return t('tab_manager.hover.kind.xxljob_groups');
+  if (tab.type === 'xxljob-jobs') return t('tab_manager.hover.kind.xxljob_jobs');
+  if (tab.type === 'xxljob-logs') return t('tab_manager.hover.kind.xxljob_logs');
   if (tab.type === 'jvm-overview') return t('tab_manager.hover.kind.jvm_overview');
   if (tab.type === 'jvm-resource') return t('tab_manager.hover.kind.jvm_resource');
   if (tab.type === 'jvm-audit') return t('tab_manager.hover.kind.jvm_audit');

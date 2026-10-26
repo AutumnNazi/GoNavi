@@ -1,19 +1,26 @@
 package sync
 
 import (
-	"GoNavi-Wails/internal/connection"
-	"GoNavi-Wails/internal/db"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"GoNavi-Wails/internal/connection"
+	"GoNavi-Wails/internal/db"
 )
 
 const defaultSyncReadPageSize = defaultSyncApplyBatchSize
 
 func (s *SyncEngine) tryApplyDirectImportInPages(config SyncConfig, res *SyncResult, tableIndex, totalTables int, tableName string, sourceDB db.Database, targetDB db.Database, plan SchemaMigrationPlan, sourceCols, targetCols []connection.ColumnDefinition, opts TableOptions, sourceType, targetType, applyTableName string) (bool, int, error) {
+	if normalizeSyncMode(config.Mode) == "full_overwrite" && hiveTargetHasRequiredColumns(targetCols) {
+		return false, 0, nil
+	}
+	if sourceType == "hive" {
+		return s.tryApplyHiveTableStream(config, res, tableName, applyTableName, sourceDB, targetDB, plan, sourceCols, targetCols, opts, sourceType, targetType)
+	}
 	if hasExplicitSyncMappings(config) {
 		return false, 0, nil
 	}
@@ -66,11 +73,15 @@ func (s *SyncEngine) tryApplyDirectImportInPages(config SyncConfig, res *SyncRes
 		return true, 0, err
 	}
 
+	if targetType == "hive" {
+		if err := validateHiveInsertRows(targetCols, firstRows); err != nil {
+			return true, 0, err
+		}
+	}
 	if tableMode == "full_overwrite" && plan.TargetTableExists {
 		s.appendLog(config.JobID, res, "warn", fmt.Sprintf("  -> 全量覆盖模式：即将清空目标表 %s", tableName))
 		s.progress(config.JobID, tableIndex, totalTables, tableName, "清空目标表")
-		clearSQL := buildClearTargetTableSQL(targetType, plan.TargetQueryTable)
-		if _, err := execSyncDatabaseContext(s.context(), targetDB, clearSQL); err != nil {
+		if err := clearSyncTargetContext(s.context(), targetDB, targetType, plan.TargetQueryTable); err != nil {
 			return true, 0, fmt.Errorf("清空目标表失败: %w", err)
 		}
 	}
@@ -295,6 +306,11 @@ func buildPaginatedSelectSQLForSync(dbType, baseSQL, selectList, orderBySQL stri
 	orderBy := strings.TrimSpace(orderBySQL)
 
 	switch normalizeMigrationDBType(dbType) {
+	case "hive":
+		if safeOffset != 0 {
+			return ""
+		}
+		return strings.TrimSpace(fmt.Sprintf("%s %s LIMIT %d", base, orderBy, safeLimit))
 	case "sqlserver":
 		upperBound := safeOffset + safeLimit
 		if orderBy == "" {
@@ -308,7 +324,7 @@ func buildPaginatedSelectSQLForSync(dbType, baseSQL, selectList, orderBySQL stri
 
 func buildClearTargetTableSQL(targetType, targetQueryTable string) string {
 	quotedTable := quoteQualifiedIdentByType(targetType, targetQueryTable)
-	if normalizeMigrationDBType(targetType) == "mysql" {
+	if normalized := normalizeMigrationDBType(targetType); normalized == "mysql" || normalized == "hive" {
 		return fmt.Sprintf("TRUNCATE TABLE %s", quotedTable)
 	}
 	return fmt.Sprintf("DELETE FROM %s", quotedTable)
@@ -344,6 +360,11 @@ func isSamePhysicalSyncServer(config SyncConfig, sourceType, targetType string) 
 	source := config.SourceConfig
 	target := config.TargetConfig
 	if sourceID := strings.TrimSpace(source.ID); sourceID != "" && strings.EqualFold(sourceID, strings.TrimSpace(target.ID)) {
+		return true
+	}
+	// URI may carry the actual endpoint independently of Host/Database. An
+	// unknown URI endpoint must not be assumed distinct during live writes.
+	if strings.TrimSpace(source.URI) != "" || strings.TrimSpace(target.URI) != "" {
 		return true
 	}
 	sourceHost := strings.TrimSpace(source.Host)

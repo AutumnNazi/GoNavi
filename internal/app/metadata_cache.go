@@ -99,7 +99,11 @@ func metadataColumnCacheKind(schemaName, tableName string) string {
 // 有意不带元数据通道后缀：缓存键归属于连接配置，元数据通道与查询通道是同一个配置的
 // 两条物理连接，共用一份结构缓存才不会出现「同一张表两条通道各存一份、失效漏清一条」。
 func (a *App) buildMetadataCacheKey(config connection.ConnectionConfig, dbName, kind string) string {
-	return getCacheKey(config) + "\x00" + dbName + "\x00" + kind
+	key := getCacheKey(config) + "\x00" + dbName + "\x00" + kind
+	if isPluginDataSourceType(config.Type) {
+		return pluginMetadataUncachedPrefix + key
+	}
+	return key
 }
 
 // buildScopedMetadataCacheKey 隔离不同模式范围，并保留按连接和库失效全部目录缓存的前缀。
@@ -143,6 +147,9 @@ func (a *App) peekMetadataStore() *metadataCacheStore {
 }
 
 func (a *App) metadataCacheGet(key string) (interface{}, bool) {
+	if isPluginMetadataUncachedKey(key) {
+		return nil, false
+	}
 	store := a.peekMetadataStore()
 	if store == nil {
 		return nil, false
@@ -160,6 +167,9 @@ func (a *App) metadataCacheGet(key string) (interface{}, bool) {
 }
 
 func (a *App) metadataCacheSet(key string, value interface{}) {
+	if isPluginMetadataUncachedKey(key) {
+		return
+	}
 	store := a.metadataStore()
 	if store == nil {
 		return
@@ -190,6 +200,9 @@ func (a *App) metadataCacheDelete(key string) {
 //   - fetchFn 返回 error 时，value 仍会透传给调用方但不落缓存：Pulsar 这类驱动会
 //     「部分成功」（表列表与错误同时返回），调用方需要它渲染降级提示。
 func (a *App) metadataCacheFetch(key string, fetchFn func() (interface{}, error)) (interface{}, error) {
+	if isPluginMetadataUncachedKey(key) {
+		return fetchFn()
+	}
 	if value, ok := a.metadataCacheGet(key); ok {
 		return value, nil
 	}

@@ -1,5 +1,6 @@
 import type { AIProviderAuthMode, AIProviderConfig, AIProviderType } from '../types';
 import { rowsFromRecord } from './aiProviderKeyValue';
+import { isPluginAIProviderNamespace } from '../plugins/aiProvider/identity';
 
 type ProviderEditorStatus = 'idle' | 'success' | 'error';
 
@@ -73,7 +74,7 @@ export const buildEditProviderEditorSession = ({
   formValues: formValues || {
     ...provider,
     presetKey: provider.presetKey,
-    apiFormat: provider.apiFormat || 'openai',
+    apiFormat: isPluginAIProviderNamespace(provider.type) ? provider.apiFormat ?? '' : provider.apiFormat || 'openai',
     headerRows: rowsFromRecord(provider.headers),
     cliEnvRows: rowsFromRecord(provider.cliEnv),
     cliPath: provider.cliPath || '',

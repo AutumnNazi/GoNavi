@@ -274,7 +274,8 @@ type ConnectionConfig struct {
 	Password                 string                     `json:"password"`
 	SavePassword             bool                       `json:"savePassword,omitempty"` // Persist password in saved connection
 	Database                 string                     `json:"database"`
-	ReadOnly                 bool                       `json:"readOnly,omitempty"` // Legacy production guard compatibility flag. Prefer Protection for new logic.
+	ReadOnly                 bool                       `json:"readOnly,omitempty"`       // Legacy production guard compatibility flag. Prefer Protection for new logic.
+	PluginWritable           bool                       `json:"pluginWritable,omitempty"` // Host-verified hint that the selected plugin source declared readOnly false.
 	Protection               ConnectionProtectionConfig `json:"protection,omitempty"`
 	UseSSL                   bool                       `json:"useSSL,omitempty"`      // MySQL-like SSL/TLS switch
 	SSLMode                  string                     `json:"sslMode,omitempty"`     // preferred | required | skip-verify | disable

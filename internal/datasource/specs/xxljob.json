@@ -1,0 +1,42 @@
+{
+  "type": "xxljob",
+  "aliases": [
+    "xxl-job",
+    "xxl_job",
+    "xxl-job-admin"
+  ],
+  "displayName": "XXL-JOB",
+  "group": "task_scheduler",
+  "order": 10,
+  "defaultPort": 8080,
+  "protection": true,
+  "excelImport": false,
+  "ui": {
+    "defaultUser": "admin",
+    "uriSchemes": [
+      "xxl-job",
+      "xxljob",
+      "http",
+      "https"
+    ],
+    "ssl": true,
+    "sslCAPath": false,
+    "sslClientCert": false,
+    "usernameOptional": false,
+    "connectionParams": true,
+    "layout": "task_scheduler",
+    "networkSections": [
+      "ssl",
+      "ssh",
+      "proxy",
+      "httpTunnel"
+    ],
+    "hintKey": "connection_modal.step1.hint.xxljob",
+    "hint": "Task scheduling / XXL-JOB admin console",
+    "icon": {
+      "color": "#2F7DD1",
+      "text": "X",
+      "scale": 0.72
+    }
+  }
+}

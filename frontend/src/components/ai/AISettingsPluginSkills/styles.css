@@ -1,0 +1,17 @@
+.gonavi-packaged-skills { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--gn-border-color, rgba(127, 127, 127, .22)); min-width: 0; }
+.gonavi-packaged-skills-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.gonavi-packaged-skills-header h4 { display: inline; margin: 0 10px 0 0; font-size: var(--gn-settings-font-primary, 14px); }
+.gonavi-packaged-skills p { margin: 8px 0; line-height: 1.6; overflow-wrap: anywhere; }
+.gonavi-packaged-skill-muted { color: var(--gn-text-secondary, #808080); font-size: var(--gn-font-size-sm, 12px); }
+.gonavi-packaged-skills-list { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+.gonavi-packaged-skills-records { padding: 0; margin: 0; list-style: none; }
+.gonavi-packaged-skill-record { display: flex; flex-direction: column; gap: 8px; padding: 14px 0; border-bottom: 1px solid var(--gn-border-color, rgba(127, 127, 127, .18)); }
+.gonavi-packaged-skill-record p { margin: 0; }
+.gonavi-packaged-skill-heading, .gonavi-packaged-skill-provenance { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; }
+.gonavi-packaged-skill-provenance { font-size: var(--gn-font-size-sm, 12px); overflow-wrap: anywhere; }
+.gonavi-packaged-skill-preview { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.gonavi-packaged-skill-facts { display: grid; grid-template-columns: minmax(100px, max-content) minmax(0, 1fr); gap: 6px 14px; margin: 0; font-size: var(--gn-font-size-sm, 12px); }
+.gonavi-packaged-skill-facts dd { margin: 0; overflow-wrap: anywhere; }
+.gonavi-packaged-skill-facts dt { color: var(--gn-text-secondary, #808080); }
+.gonavi-packaged-skill-body { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 52vh; overflow: auto; padding: 14px; margin: 0; border: 1px solid var(--gn-border-color, rgba(127, 127, 127, .22)); border-radius: 4px; font-family: var(--gn-font-mono, monospace); font-size: var(--gn-font-size-sm, 12px); line-height: 1.65; tab-size: 4; unicode-bidi: plaintext; }
+@media (max-width: 600px) { .gonavi-packaged-skill-facts { grid-template-columns: 1fr; gap: 3px; } .gonavi-packaged-skill-facts dd { margin-bottom: 6px; } }

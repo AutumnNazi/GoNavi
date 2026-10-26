@@ -568,9 +568,9 @@ body[data-ui-version="v2"] .gn-v2-explorer-search .ant-input-suffix {
 }
 
 body[data-ui-version="v2"] .gn-v2-explorer-filter-slot {
-  height: calc(36px * var(--gn-v2-explorer-scale));
-  min-height: calc(36px * var(--gn-v2-explorer-scale));
-  flex: 0 0 calc(36px * var(--gn-v2-explorer-scale));
+  height: calc(44px * var(--gn-v2-explorer-scale));
+  min-height: calc(44px * var(--gn-v2-explorer-scale));
+  flex: 0 0 calc(44px * var(--gn-v2-explorer-scale));
   overflow: hidden;
 }
 
@@ -605,7 +605,7 @@ body[data-ui-version="v2"] .gn-v2-explorer-filter-tabs {
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
-  padding: 0 calc(10px * var(--gn-v2-explorer-scale)) calc(8px * var(--gn-v2-explorer-scale));
+  padding: calc(8px * var(--gn-v2-explorer-scale)) calc(10px * var(--gn-v2-explorer-scale));
   scrollbar-width: none;
 }
 

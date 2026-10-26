@@ -2,7 +2,7 @@ import type { JVMAIPlanContext, JVMDiagnosticPlanContext } from './workbenchType
 
 // --- AI Types ---
 
-export type AIProviderType = "openai" | "anthropic" | "gemini" | "custom";
+export type AIProviderType = "openai" | "anthropic" | "gemini" | "custom" | (string & {});
 export type AIProviderAuthMode = "api-key" | "bearer" | "local-cli";
 export type AISafetyLevel = "readonly" | "readwrite" | "full";
 export type AIContextLevel = "schema_only" | "with_samples" | "with_results";
@@ -77,6 +77,7 @@ export interface AIProviderConfig {
   contextWindow?: number;
   /** false: the model reads text only, so images are not sent to it (the desktop recognizes their text instead). */
   supportsImages?: boolean;
+  headerTimeoutSeconds?: number;
   cliPath?: string;
   cliEnv?: Record<string, string>;
   temperature: number;

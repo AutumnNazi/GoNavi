@@ -15,9 +15,11 @@ interface FontFamilySelectProps {
   loading: boolean;
   onChange: (value: string | null) => void;
   t: (key: string) => string;
+  browseLabel?: string;
+  onBrowse?: () => void;
 }
 
-export const FontFamilySelect = ({ kind, value, options, loading, onChange, t }: FontFamilySelectProps) => {
+export const FontFamilySelect = ({ kind, value, options, loading, onChange, t, browseLabel, onBrowse }: FontFamilySelectProps) => {
   const id = useId();
   const isMono = kind === 'mono';
   const defaultValue = isMono ? DEFAULT_MONO_FONT_FAMILY : DEFAULT_UI_FONT_FAMILY;
@@ -51,6 +53,14 @@ export const FontFamilySelect = ({ kind, value, options, loading, onChange, t }:
           filterOption={matchFontFamilyOption}
           onChange={(next) => onChange(next?.value === defaultValue ? null : sanitizeFontFamilyInput(next?.value))}
           popupMatchSelectWidth
+          popupRender={onBrowse ? (menu) => (
+            <>
+              {menu}
+              <div className="gonavi-font-picker-browse">
+                <Button type="link" size="small" onClick={onBrowse}>{browseLabel}</Button>
+              </div>
+            </>
+          ) : undefined}
           listHeight={288}
           optionRender={({ data }) => (
             <div className="gonavi-font-option">

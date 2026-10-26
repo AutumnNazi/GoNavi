@@ -10,6 +10,8 @@ import {requesttrace} from '../models';
 import {jvm} from '../models';
 import {db} from '../models';
 import {mockdata} from '../models';
+import {pluginmarket} from '../models';
+import {marketfilter} from '../models';
 import {redis} from '../models';
 import {resultdiff} from '../models';
 import {sessionagent} from '../models';
@@ -657,6 +659,78 @@ export function OpenSQLFile():Promise<connection.QueryResult>;
 
 export function OpenSavedQueryDirectory():Promise<connection.QueryResult>;
 
+export function PluginAIProviders():Promise<connection.QueryResult>;
+
+export function PluginDataSources():Promise<connection.QueryResult>;
+
+export function PluginExporters():Promise<connection.QueryResult>;
+
+export function PluginInspect(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginInstall(arg1:string,arg2:string,arg3:boolean):Promise<connection.QueryResult>;
+
+export function PluginInvoke(arg1:string,arg2:string,arg3:string):Promise<connection.QueryResult>;
+
+export function PluginList():Promise<connection.QueryResult>;
+
+export function PluginMarketCancelInspection(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginMarketCatalog(arg1:string,arg2:string,arg3:string):Promise<connection.QueryResult>;
+
+export function PluginMarketConfigure(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginMarketDetail(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginMarketInspect(arg1:string,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function PluginMarketInstall(arg1:string,arg2:string,arg3:string,arg4:boolean,arg5:string):Promise<connection.QueryResult>;
+
+export function PluginMarketRatings(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginMarketSaveSources(arg1:Array<pluginmarket.SourceConfig>):Promise<connection.QueryResult>;
+
+export function PluginMarketSettings():Promise<connection.QueryResult>;
+
+export function PluginMarketSourceCatalog(arg1:string,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function PluginMarketSourceDetail(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
+export function PluginMarketSourceRatings(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
+export function PluginMarketSourceSearch(arg1:string,arg2:string,arg3:string,arg4:string,arg5:marketfilter.Filters):Promise<connection.QueryResult>;
+
+export function PluginMarketSourceSettings(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginMarketSourceVersions(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
+export function PluginMarketSources():Promise<connection.QueryResult>;
+
+export function PluginMarketVersions(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginOpenWindow(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginPageCall(arg1:string,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function PluginRemoteCancelInspection(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginRemoteInspect(arg1:string):Promise<connection.QueryResult>;
+
+export function PluginRemoteInstall(arg1:string,arg2:boolean,arg3:string):Promise<connection.QueryResult>;
+
+export function PluginRemove(arg1:string,arg2:boolean):Promise<connection.QueryResult>;
+
+export function PluginReplace(arg1:string,arg2:string,arg3:boolean):Promise<connection.QueryResult>;
+
+export function PluginRuntimeInfo():Promise<connection.QueryResult>;
+
+export function PluginSetEnabled(arg1:string,arg2:boolean):Promise<connection.QueryResult>;
+
+export function PluginSkillRead(arg1:string,arg2:string,arg3:string,arg4:number):Promise<connection.QueryResult>;
+
+export function PluginSkillResourceRead(arg1:string,arg2:string,arg3:string,arg4:string,arg5:number):Promise<connection.QueryResult>;
+
+export function PluginSkills():Promise<connection.QueryResult>;
+
 export function PreflightDatabaseSQLImport(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
 export function PrepareWindowsBrandIconRestart(arg1:string):Promise<connection.QueryResult>;
@@ -825,6 +899,10 @@ export function SelectDriverPackageZipFile(arg1:string):Promise<connection.Query
 
 export function SelectLogDirectory(arg1:string):Promise<connection.QueryResult>;
 
+export function SelectPluginPackageDirectory(arg1:string):Promise<connection.QueryResult>;
+
+export function SelectPluginPackageFile(arg1:string):Promise<connection.QueryResult>;
+
 export function SelectSQLDirectory(arg1:string):Promise<connection.QueryResult>;
 
 export function SelectSQLFileForExecution():Promise<connection.QueryResult>;
@@ -924,3 +1002,39 @@ export function UserMgmtSyncConnectionPassword(arg1:string,arg2:string):Promise<
 export function VerifySQLAuditIntegrity():Promise<connection.QueryResult>;
 
 export function WriteSQLFile(arg1:string,arg2:string):Promise<connection.QueryResult>;
+
+export function XxlJobConnect(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
+
+export function XxlJobDeleteJobGroups(arg1:connection.ConnectionConfig,arg2:Array<number>):Promise<connection.QueryResult>;
+
+export function XxlJobDeleteJobs(arg1:connection.ConnectionConfig,arg2:Array<number>):Promise<connection.QueryResult>;
+
+export function XxlJobDisconnect(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
+
+export function XxlJobListJobGroups(arg1:connection.ConnectionConfig,arg2:app.XxlJobListQuery):Promise<connection.QueryResult>;
+
+export function XxlJobListJobs(arg1:connection.ConnectionConfig,arg2:app.XxlJobListQuery):Promise<connection.QueryResult>;
+
+export function XxlJobListLogs(arg1:connection.ConnectionConfig,arg2:app.XxlJobListQuery):Promise<connection.QueryResult>;
+
+export function XxlJobLoadJobGroup(arg1:connection.ConnectionConfig,arg2:number):Promise<connection.QueryResult>;
+
+export function XxlJobLogDetail(arg1:connection.ConnectionConfig,arg2:number,arg3:number):Promise<connection.QueryResult>;
+
+export function XxlJobLogKill(arg1:connection.ConnectionConfig,arg2:number):Promise<connection.QueryResult>;
+
+export function XxlJobNextTriggerTimes(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
+
+export function XxlJobSaveGlueSource(arg1:connection.ConnectionConfig,arg2:number,arg3:string,arg4:string):Promise<connection.QueryResult>;
+
+export function XxlJobSaveJob(arg1:connection.ConnectionConfig,arg2:app.XxlJobJobMutation):Promise<connection.QueryResult>;
+
+export function XxlJobSaveJobGroup(arg1:connection.ConnectionConfig,arg2:app.XxlJobGroupMutation):Promise<connection.QueryResult>;
+
+export function XxlJobStartJobs(arg1:connection.ConnectionConfig,arg2:Array<number>):Promise<connection.QueryResult>;
+
+export function XxlJobStopJobs(arg1:connection.ConnectionConfig,arg2:Array<number>):Promise<connection.QueryResult>;
+
+export function XxlJobTestConnection(arg1:connection.ConnectionConfig):Promise<connection.QueryResult>;
+
+export function XxlJobTriggerJob(arg1:connection.ConnectionConfig,arg2:number,arg3:string):Promise<connection.QueryResult>;

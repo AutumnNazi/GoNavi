@@ -111,6 +111,9 @@ func (s *Service) AIGetCLICapabilities() []ai.CLICapabilityView {
 // AIGetModelContextProfile 返回模型的默认上下文窗口与可选档位（token）。
 // 数值只在 Go 侧的规则表里维护，前端据此显示上限并决定是否出现档位切换。
 func (s *Service) AIGetModelContextProfile(config ai.ProviderConfig) ai.ModelContextProfile {
+	if isPluginProviderConfig(config) {
+		return s.pluginProviderContextProfile(config)
+	}
 	return ai.ResolveModelContextProfile(config.Model)
 }
 

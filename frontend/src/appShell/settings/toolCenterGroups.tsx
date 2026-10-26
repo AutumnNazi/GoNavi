@@ -18,6 +18,8 @@ export const buildToolCenterGroups = ({
   t, handleOpenToolCenterPane,
   securityUpdateEntryVisibility, securityUpdateHasLegacySensitiveItems, securityUpdateStatusMeta,
 }: BuildToolCenterGroupsInput) => {
+  // 插件不进设置中心导航树：入口在标题栏工具条（titlebarTrailingActions），
+  // 以独立工作台 Tab 打开（utils/pluginManagerTab）。
   const toolCenterGroups: SettingsCenterNavigationGroup[] = [
     {
       key: 'config',

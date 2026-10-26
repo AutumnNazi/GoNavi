@@ -35,6 +35,8 @@ func putBuiltinToken(t *testing.T, s *Service, access, refresh string, expires t
 func stubBuiltinGateway(t *testing.T, handler func(*http.Request) (int, string)) {
 	t.Helper()
 	previous := builtinAIHTTPDo
+	previousBackoff := builtinAIRefreshBackoff
+	builtinAIRefreshBackoff = func(int) time.Duration { return 0 }
 	builtinAIHTTPDo = func(req *http.Request) (*http.Response, error) {
 		status, body := handler(req)
 		if status == 0 {
@@ -42,7 +44,10 @@ func stubBuiltinGateway(t *testing.T, handler func(*http.Request) (int, string))
 		}
 		return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body))}, nil
 	}
-	t.Cleanup(func() { builtinAIHTTPDo = previous })
+	t.Cleanup(func() {
+		builtinAIHTTPDo = previous
+		builtinAIRefreshBackoff = previousBackoff
+	})
 }
 
 func TestEnsureBuiltinAIAccessTokenRefreshesOnceForConcurrentCallers(t *testing.T) {
@@ -329,5 +334,72 @@ func TestBuiltinAIContextProfileIsFixedAndPinnedForTheAgent(t *testing.T) {
 	}
 	if pinned.ThinkingIntensity != "" || pinned.Effort != "" {
 		t.Fatalf("the hosted model has no reasoning mode; no level may be sent: %+v", pinned)
+	}
+}
+
+// The Gateway rotates the refresh token as soon as it receives the request, so
+// a timeout can mean the answer was lost after a successful rotation. Retrying
+// with the token still held must recover instead of signing the person out.
+func TestRefreshRetriesWhenTheAnswerIsLost(t *testing.T) {
+	s := builtinTestService(t)
+	putBuiltinToken(t, s, "access-old", "refresh-old", time.Now().Add(-time.Minute))
+	var calls atomic.Int32
+	stubBuiltinGateway(t, func(req *http.Request) (int, string) {
+		if calls.Add(1) == 1 {
+			return 0, ""
+		}
+		return 200, `{"access_token":"access-new","refresh_token":"refresh-new","token_type":"Bearer","expires_in":3600}`
+	})
+	config, _ := loadBuiltinAIConfig()
+	bundle, err := s.ensureBuiltinAIAccessToken(config, false)
+	if err != nil {
+		t.Fatalf("a lost answer must be retried, not surfaced: %v", err)
+	}
+	if calls.Load() != 2 || bundle.APIKey != "access-new" || bundle.SensitiveHeaders[builtinAIRefreshTokenKey] != "refresh-new" {
+		t.Fatalf("calls=%d bundle=%+v", calls.Load(), bundle)
+	}
+	if strings.EqualFold(bundle.SensitiveHeaders[builtinAIRefreshPendingKey], "true") {
+		t.Fatal("a successful refresh must clear the pending mark")
+	}
+}
+
+// A refresh that keeps failing must not leave the client waiting for the access
+// token to expire: by then the Gateway's replay window is long gone. The bundle
+// is marked so the very next call retries the refresh.
+func TestLostRefreshMarksTheTokenForImmediateRetry(t *testing.T) {
+	s := builtinTestService(t)
+	// Not fresh (inside the 60 s skew) but still valid: the old access token
+	// keeps working while the refresh is retried.
+	putBuiltinToken(t, s, "access-old", "refresh-old", time.Now().Add(30*time.Second))
+	var fail atomic.Bool
+	fail.Store(true)
+	var calls atomic.Int32
+	stubBuiltinGateway(t, func(req *http.Request) (int, string) {
+		calls.Add(1)
+		if fail.Load() {
+			return 0, ""
+		}
+		return 200, `{"access_token":"access-new","refresh_token":"refresh-new","token_type":"Bearer","expires_in":3600}`
+	})
+	config, _ := loadBuiltinAIConfig()
+	bundle, err := s.ensureBuiltinAIAccessToken(config, false)
+	if err != nil {
+		t.Fatalf("a transient failure must keep the credentials: %v", err)
+	}
+	if bundle.APIKey != "access-old" || calls.Load() != int32(builtinAIRefreshAttempts) {
+		t.Fatalf("bundle=%+v calls=%d", bundle, calls.Load())
+	}
+	if !strings.EqualFold(bundle.SensitiveHeaders[builtinAIRefreshPendingKey], "true") {
+		t.Fatal("a failed refresh must mark the bundle as pending")
+	}
+	stored, ok, err := s.builtinAIToken()
+	if err != nil || !ok || !strings.EqualFold(stored.SensitiveHeaders[builtinAIRefreshPendingKey], "true") {
+		t.Fatalf("the pending mark was not persisted: %+v %v", stored, err)
+	}
+
+	fail.Store(false)
+	bundle, err = s.ensureBuiltinAIAccessToken(config, false)
+	if err != nil || bundle.APIKey != "access-new" {
+		t.Fatalf("the pending mark did not trigger a retry: %+v %v", bundle, err)
 	}
 }

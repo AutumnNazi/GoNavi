@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": 1,
+  "id": "sdk.examples.skills",
+  "name": "Read-only investigation Skills",
+  "version": "1.0.0",
+  "description": "Static reference workflow for explicitly requested read-only database investigation",
+  "author": "GoNavi examples",
+  "license": "Apache-2.0",
+  "permissions": [
+    "ai.skills"
+  ],
+  "contributes": {
+    "skills": [
+      {
+        "id": "read-only-investigation",
+        "name": "Read-only database investigation",
+        "description": "Guides bounded, evidence-based database triage without changing state. Use when investigating unexpected rows, failed reads, slow queries or metadata mismatches. Loading this reference does not authorize tools or SQL.",
+        "entry": "skills/read-only-investigation/SKILL.md",
+        "resources": ["skills/read-only-investigation/REFERENCE.md"]
+      }
+    ]
+  }
+}

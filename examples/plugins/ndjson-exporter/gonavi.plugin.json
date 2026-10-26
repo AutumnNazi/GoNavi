@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": 1,
+  "id": "sdk.examples.ndjson",
+  "name": "Typed NDJSON snapshot exporter",
+  "version": "1.0.0",
+  "description": "Renders explicitly selected materialized tagged cells without network or destination access",
+  "author": "GoNavi examples",
+  "license": "Apache-2.0",
+  "permissions": [
+    "data.export"
+  ],
+  "backend": {
+    "default": {
+      "executable": "bin/plugin",
+      "runtime": "native"
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "render",
+        "title": "Render typed NDJSON snapshot",
+        "effect": "read",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "protocolVersion",
+            "exporterId",
+            "columns",
+            "rows"
+          ],
+          "properties": {
+            "protocolVersion": {
+              "type": "integer",
+              "enum": [1, 2]
+            },
+            "exporterId": {
+              "type": "string",
+              "const": "ndjson"
+            },
+            "columns": {
+              "type": "array"
+            },
+            "rows": {
+              "type": "array"
+            },
+            "chunkIndex": {
+              "type": "integer"
+            },
+            "chunkCount": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    ],
+    "exporters": [
+      {
+        "id": "ndjson",
+        "name": "Typed NDJSON (lossless cell tags)",
+        "command": "render",
+        "extension": "ndjson",
+        "contentType": "application/x-ndjson",
+        "streaming": true
+      }
+    ]
+  }
+}

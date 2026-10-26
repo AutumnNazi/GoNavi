@@ -273,7 +273,9 @@ func providerHasRemovedEditorFields(config ai.ProviderConfig) bool {
 func clearRemovedProviderEditorFields(config ai.ProviderConfig) ai.ProviderConfig {
 	config.Models = nil
 	config.MaxTokens = 0
-	config.ContextWindow = ai.ResolveModelContextProfile(config.Model).NormalizeWindow(config.ContextWindow)
+	if !isPluginProviderConfig(config) {
+		config.ContextWindow = ai.ResolveModelContextProfile(config.Model).NormalizeWindow(config.ContextWindow)
+	}
 	return config
 }
 

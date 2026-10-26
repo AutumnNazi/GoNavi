@@ -193,6 +193,21 @@ describe('sidebarExplorerFilter / 过滤维度表', () => {
     expect(resolveExplorerFilterReset(null, 'all')).toBeNull();
   });
 
+  it('Navicat 布局隐藏关系型页签时，残留的关系型过滤值复位为 all', () => {
+    // 页签被布局隐藏后用户没有按钮可以清掉残留过滤值，树会被静默收窄，
+    // 所以 classic 下选的关系型维度在切换布局后必须复位。
+    expect(resolveExplorerFilterReset('relational', 'tables', null, { relationalTabsHidden: true })).toBe('all');
+    expect(resolveExplorerFilterReset('relational', 'views', null, { relationalTabsHidden: true })).toBe('all');
+    expect(resolveExplorerFilterReset('relational', 'all', null, { relationalTabsHidden: true })).toBeNull();
+
+    // Nacos 的双分支页签在 Navicat 布局下仍然显示，过滤值原样保留。
+    expect(resolveExplorerFilterReset('nacos', 'nacos-services', null, { relationalTabsHidden: true })).toBeNull();
+    expect(resolveExplorerFilterReset('nacos', 'nacos-configs', null, { relationalTabsHidden: true })).toBeNull();
+
+    // classic 布局不受影响：本族内的过滤值照旧保留。
+    expect(resolveExplorerFilterReset('relational', 'tables', null, { relationalTabsHidden: false })).toBeNull();
+  });
+
   it('按连接类型解析族：Nacos 优先于关系型能力', () => {
     expect(resolveExplorerFilterFamily({ config: { type: 'nacos' } })).toBe('nacos');
     expect(resolveExplorerFilterFamily({ config: { type: 'postgres' } })).toBe('relational');

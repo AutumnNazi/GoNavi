@@ -2,6 +2,7 @@ import React from 'react';
 import { Tooltip } from 'antd';
 
 import { t } from '../../i18n';
+import { useStore } from '../../store';
 import { isRedisConnection } from './redisSidebarOverview';
 import {
   resolveExplorerFilterFamily,
@@ -46,6 +47,8 @@ const V2_EXPLORER_FILTER_ICONS: Record<V2ExplorerFilter, React.ReactNode> = {
  * slot keeps its height even when it has no buttons to show. Three contents live
  * here — the relational object-kind tabs, a dedicated workbench's own tabs (Nacos
  * filters between its service and config explorers), or the Redis key summary.
+ * The Navicat layout drops the relational tabs entirely (the workbench toolbar
+ * already offers the object buttons), but keeps the Nacos tabs and Redis summary.
  *
  * Extracted out of Sidebar.tsx, which is far past the repo's size limit and must
  * shrink rather than grow (AGENTS.md §1.1).
@@ -57,6 +60,9 @@ const SidebarFilterSlot = React.memo(({
   activeFilter,
   onFilterChange,
 }: SidebarFilterSlotProps) => {
+  // Navicat 布局下关系型对象筛选页签与顶部工具栏的对象按钮重复，整排去掉；
+  // Nacos 的双分支页签与 Redis 概览没有工具栏等价物，照常保留。
+  const navicatLayout = useStore(state => state.appearance.uiLayoutMode === 'navicat');
   // Derived here rather than passed in, so the slot and the reset hook cannot
   // disagree about which family is active — a disagreement is what lets a stale
   // filter empty the tree.
@@ -68,6 +74,9 @@ const SidebarFilterSlot = React.memo(({
   const effectiveOptions = options.length > 0 ? options : V2_EXPLORER_FILTER_ORDER.relational;
 
   if (!hasRelationalFilterConnection && !isRedisConnection(activeConnection) && !family) {
+    return null;
+  }
+  if (navicatLayout && family !== 'nacos' && !isRedisConnection(activeConnection)) {
     return null;
   }
 

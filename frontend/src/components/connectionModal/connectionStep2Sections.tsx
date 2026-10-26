@@ -1,4 +1,7 @@
 import { t } from "../../i18n";
+import { isPluginDataSourceNamespace } from "../../plugins/dataSource/identity";
+import { PluginDataSourceFields } from "./PluginDataSourceFields";
+import { PluginDataSourceNetworkNotice } from "./PluginDataSourceNetworkNotice";
 import { CodeOutlined, FileTextOutlined, ApiOutlined } from "@ant-design/icons";
 import { Collapse, Form, Input, Alert, Tag } from "antd";
 import { getCustomConnectionDriverHelp } from "../../utils/driverImportGuidance";
@@ -8,6 +11,7 @@ import { ConnectionStep2JvmDetailCards } from "./ConnectionStep2JvmDetailCards";
 import { ConnectionStep2HostFields } from "./ConnectionStep2HostFields";
 import { ConnectionStep2AuthFields } from "./ConnectionStep2AuthFields";
 import { ConnectionModalDriverVariantField } from "./ConnectionModalDriverVariantField";
+import { HiveSettingsPanel } from "./HiveSettingsPanel";
 import { ConnectionModalRegistryParamFields } from "./ConnectionModalRegistryParamFields";
 import { ConnectionStep2ModeFields } from "./ConnectionStep2ModeFields";
 import { ConnectionStep2MongoRedisFields } from "./ConnectionStep2MongoRedisFields";
@@ -217,6 +221,13 @@ export const createConnectionStep2Sections = ({
   useProxy,
   useSSL,
 }: CreateConnectionStep2SectionsInput) => {
+  if (isPluginDataSourceNamespace(dbType)) return {
+    baseInfoSection: <PluginDataSourceFields type={dbType} form={form} identityRows={denseIdentityRows} hasStoredPassword={initialValues?.hasPrimaryPassword}
+      passwordVisibility={{ visible: primaryPasswordVisible, onVisibleChange: handlePrimaryPasswordVisibleChange }}
+      passwordControls={initialValues?.hasPrimaryPassword ? renderStoredSecretControls({ fieldName: "password", clearKey: "primaryPassword", hasStoredSecret: true, clearLabel: t("connection.modal.secret.clear_saved_password"), description: t("connection.modal.secret.saved_password") }) : null} />,
+    advancedSection: <ConnectionModalAdditionalParams placeholder="" />,
+    networkSecuritySection: <PluginDataSourceNetworkNotice form={form} />,
+  };
   const baseInfoSection = (
     <div className="gn-conn-dense" style={{ display: "grid", gap: 4 }}>
       {uriQuickBlock ? (
@@ -358,6 +369,7 @@ export const createConnectionStep2Sections = ({
               onChange={clearConnectionTestResultForChoice}
             />
 
+            <HiveSettingsPanel dbType={dbType} onChange={clearConnectionTestResultForChoice} />
             <ConnectionModalRegistryParamFields dbType={dbType} onChange={clearConnectionTestResultForChoice} />
 
             <ConnectionStep2AuthFields

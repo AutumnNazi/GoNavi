@@ -1,4 +1,5 @@
 import { useEffect, useCallback } from 'react';
+import { usePluginDataSourceDiscovery } from '../../plugins/dataSource/usePluginDataSources';
 import { message } from 'antd';
 import { SetWindowTranslucency } from '../../../wailsjs/go/app/App';
 import { Environment } from '../../../wailsjs/runtime';
@@ -71,6 +72,7 @@ export const useAppBootstrapEffects = ({
   replaceGlobalProxy, t, setSecurityUpdateRawPayload, setSecurityUpdateHasLegacySensitiveItems,
   setHasLoadedSecureConfig, setDownloadSource, downloadSource, setDownloadSourceSaving,
 }: UseAppBootstrapEffectsInput) => {
+  usePluginDataSourceDiscovery(isStoreHydrated);
   useEffect(() => {
     if (typeof window === 'undefined') {
       return;

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": 1,
+  "id": "fixture.crash",
+  "name": "Failure fixture: crash",
+  "version": "1.0.0",
+  "description": "Adversarial test fixture; use a disposable profile only",
+  "permissions": [],
+  "backend": {
+    "default": {
+      "executable": "bin/plugin",
+      "args": [
+        "--mode",
+        "crash"
+      ],
+      "runtime": "native"
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "id": "run",
+        "title": "Trigger test failure",
+        "effect": "unknown"
+      }
+    ],
+    "panels": []
+  }
+}

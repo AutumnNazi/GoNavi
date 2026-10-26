@@ -40,6 +40,7 @@ const RING_RADIUS = 15.9155; // a circumference of 100, so a dash length is a pe
 
 /** The context window as a small circle that fills as the conversation grows. */
 export const AIContextRing: React.FC<AIContextRingProps> = ({ breakdown, copy }) => {
+  if (breakdown.unavailable) return <span role="status" aria-label={copy('plugin.ai_provider.unavailable')}>{copy('plugin.ai_provider.unavailable')}</span>;
   const percent = Math.min(100, Math.max(0, breakdown.pressure * 100));
   const ariaLabel = copy('ai_chat.context_ring.aria', { percent: Math.round(percent) });
   const listed = breakdown.segments.filter((segment) => segment.size > 0 || ALWAYS_LISTED.has(segment.id));

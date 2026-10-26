@@ -1,3 +1,5 @@
+import { isPluginDataSourceNamespace } from "../../plugins/dataSource/identity";
+import { pluginDataSourceUnavailableReason } from "../../plugins/dataSource/presentation";
 import { summarizeConnectionTestFailureMessage } from "../../utils/connectionModalPresentation";
 import { t } from "../../i18n";
 import { Button, Space } from "antd";
@@ -78,8 +80,9 @@ export const useConnectionModalChrome = ({
           t("connection.status.failure"),
         )
       : "";
+    const pluginType = isPluginDataSourceNamespace(dbType);
     const operationBlocked =
-      !!currentDriverUnavailableReason ||
+      (pluginType && !!pluginDataSourceUnavailableReason(dbType)) || !!currentDriverUnavailableReason ||
       driverStatusChecking ||
       !!unsupportedJvmModeMessage;
     return (
@@ -175,7 +178,7 @@ export const useConnectionModalChrome = ({
             type="primary"
             className="gn-conn-studio-button"
             loading={saving}
-            disabled={operationBlocked || testingConnection}
+            disabled={(!pluginType && operationBlocked) || testingConnection}
             onClick={handleOk}
           >
             {t("common.action.save")}

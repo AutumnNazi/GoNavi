@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { pluginDataSourceInitialValues } from "./pluginDataSourceForm";
 import { INTERSYSTEMS_STORED_URI_FIELD, resolveConnectionDatabaseValue } from "./connectionModalNamespace";
 import { createEmptyConnectionSecretClearState } from "./connectionModalConfig";
 import { getConnectionTypeDefaultPort as getDefaultPortByType } from "../../utils/connectionTypeCatalog";
@@ -463,6 +464,7 @@ export const useConnectionModalFormSync = ({
             ? config.jvm?.jmx?.password || ""
             : "",
         });
+        form.setFieldsValue(pluginDataSourceInitialValues(config));
         setPrimaryPasswordVisible(false);
         setUseSSL(!!config.useSSL);
         setCustomIconType(initialValues.iconType);

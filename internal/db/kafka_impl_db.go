@@ -16,12 +16,15 @@ import (
 )
 
 type KafkaDB struct {
-	runtime      kafkaRuntime
-	forwarders   []*ssh.LocalForwarder
-	defaultTopic string
-	defaultGroup string
-	startLatest  bool
+	runtime       kafkaRuntime
+	forwarders    []*ssh.LocalForwarder
+	defaultTopic  string
+	defaultGroup  string
+	startLatest   bool
+	previewBudget int64
 }
+
+var _ QueryMessageExecer = (*KafkaDB)(nil)
 
 func (k *KafkaDB) Connect(config connection.ConnectionConfig) error {
 	_ = k.Close()
@@ -55,6 +58,7 @@ func (k *KafkaDB) Connect(config connection.ConnectionConfig) error {
 	k.defaultTopic = kafkaDefaultTopic(runConfig)
 	k.defaultGroup = kafkaDefaultGroupID(runConfig)
 	k.startLatest = kafkaDefaultStartLatest(runConfig)
+	k.previewBudget = kafkaPreviewByteBudget(runConfig)
 
 	if err := k.Ping(); err != nil {
 		_ = k.Close()
@@ -83,6 +87,7 @@ func (k *KafkaDB) Close() error {
 	k.defaultTopic = ""
 	k.defaultGroup = ""
 	k.startLatest = false
+	k.previewBudget = 0
 	return firstErr
 }
 
@@ -96,82 +101,65 @@ func (k *KafkaDB) Ping() error {
 }
 
 func (k *KafkaDB) Query(query string) ([]map[string]interface{}, []string, error) {
-	ctx, cancel := context.WithTimeout(metadataContextFor(k), defaultKafkaQueryTimeout)
-	defer cancel()
-	return k.QueryContext(ctx, query)
+	data, columns, _, err := k.QueryWithMessages(query)
+	return data, columns, err
 }
 
 func (k *KafkaDB) QueryContext(ctx context.Context, query string) ([]map[string]interface{}, []string, error) {
+	data, columns, _, err := k.QueryContextWithMessages(ctx, query)
+	return data, columns, err
+}
+
+// QueryWithMessages 与 Query 相同，额外返回提示信息（例如预览因字节预算被截断）。
+func (k *KafkaDB) QueryWithMessages(query string) ([]map[string]interface{}, []string, []string, error) {
+	ctx, cancel := context.WithTimeout(metadataContextFor(k), defaultKafkaQueryTimeout)
+	defer cancel()
+	return k.QueryContextWithMessages(ctx, query)
+}
+
+// QueryContextWithMessages 执行 Kafka 查询方言，提示信息随结果返回给调用方展示。
+func (k *KafkaDB) QueryContextWithMessages(ctx context.Context, query string) ([]map[string]interface{}, []string, []string, error) {
 	if k.runtime == nil {
-		return nil, nil, fmt.Errorf("连接未打开")
+		return nil, nil, nil, fmt.Errorf("连接未打开")
 	}
 	text := strings.TrimSpace(query)
 	if text == "" {
-		return nil, nil, fmt.Errorf("查询语句不能为空")
+		return nil, nil, nil, fmt.Errorf("查询语句不能为空")
 	}
 	parsed, ok := parseKafkaSQL(text, k.startLatest)
 	if !ok {
-		return nil, nil, fmt.Errorf("Kafka 查询仅支持 SHOW TOPICS、SHOW/DESCRIBE CONSUMER GROUP、DESCRIBE TOPIC、SELECT * FROM topic 与 CONSUME FROM topic")
+		return nil, nil, nil, fmt.Errorf("Kafka 查询仅支持 SHOW TOPICS、SHOW/DESCRIBE CONSUMER GROUP、DESCRIBE TOPIC、SELECT * FROM topic 与 CONSUME FROM topic")
 	}
 
 	switch parsed.Action {
 	case "show_topics":
 		topics, err := k.runtime.ListTopics(ctx, false)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		rows := kafkaTopicRows(topics)
 		if parsed.Limit > 0 && len(rows) > parsed.Limit {
 			rows = rows[:parsed.Limit]
 		}
-		return rows, collectColumns(rows), nil
+		return rows, collectColumns(rows), nil, nil
 	case "show_consumer_groups", "describe_consumer_group":
 		groups, err := k.runtime.InspectConsumerGroups(ctx, strings.TrimSpace(parsed.GroupID))
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		rows := kafkaConsumerGroupRows(groups)
-		return rows, collectColumns(rows), nil
+		return rows, collectColumns(rows), nil, nil
 	case "describe_topic":
 		description, err := k.runtime.DescribeTopic(ctx, kafkaResolveTopic(parsed.Topic, k.defaultTopic))
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		rows := kafkaDescribeRows(description)
-		return rows, collectColumns(rows), nil
+		return rows, collectColumns(rows), nil, nil
 	case "select", "consume":
-		topic := kafkaResolveTopic(parsed.Topic, k.defaultTopic)
-		if topic == "" {
-			return nil, nil, fmt.Errorf("Kafka topic 不能为空")
-		}
-		groupID := strings.TrimSpace(parsed.GroupID)
-		if parsed.Action == "consume" && groupID == "" {
-			groupID = k.defaultGroup
-		}
-		if parsed.Count {
-			description, err := k.runtime.DescribeTopic(ctx, topic)
-			if err != nil {
-				return nil, nil, err
-			}
-			return []map[string]interface{}{{
-				"topic": topic,
-				"total": kafkaTopicMessageCount(description),
-			}}, []string{"topic", "total"}, nil
-		}
-		records, err := k.runtime.FetchMessages(ctx, kafkaFetchRequest{
-			Topic:   topic,
-			Limit:   parsed.Limit,
-			Offset:  parsed.Offset,
-			GroupID: groupID,
-			Latest:  parsed.Latest,
-		})
-		if err != nil {
-			return nil, nil, err
-		}
-		rows := kafkaMessageRows(records)
-		return rows, collectColumns(rows), nil
+		return k.queryMessages(ctx, parsed)
 	default:
-		return nil, nil, fmt.Errorf("未实现的 Kafka 查询类型：%s", parsed.Action)
+		return nil, nil, nil, fmt.Errorf("未实现的 Kafka 查询类型：%s", parsed.Action)
 	}
 }
 
