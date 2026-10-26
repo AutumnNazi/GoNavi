@@ -5,23 +5,19 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
-
-	"GoNavi-Wails/internal/secretstore"
 )
 
 // Options supplies host-owned configuration; TrustedOfficialURL must never come from marketplace metadata.
 type Options struct {
 	Root               string
-	Secrets            secretstore.SecretStore
 	Client             *http.Client
 	HostVersion        string
 	TrustedOfficialURL string
 }
 
-// Settings contains no credentials. SourceID binds cached and installed data to one API base.
+// Settings describes the selected source. SourceID binds cached and installed data to one API base.
 type Settings struct {
 	BaseURL         string `json:"baseUrl"`
-	Authenticated   bool   `json:"authenticated"`
 	SourceID        string `json:"sourceId"`
 	TrustedOfficial bool   `json:"trustedOfficial"`
 }
@@ -76,18 +72,4 @@ type Rating struct {
 	Body      string    `json:"body"`
 	Version   string    `json:"version"`
 	UpdatedAt time.Time `json:"updatedAt"`
-}
-
-// DeviceAuthorization is a pending browser approval, never an authenticated session.
-type DeviceAuthorization struct {
-	VerificationURI string `json:"verificationUri"`
-	UserCode        string `json:"userCode"`
-	DeviceCode      string `json:"deviceCode"`
-	IntervalSeconds int    `json:"intervalSeconds"`
-	ExpiresIn       int    `json:"expiresIn"`
-}
-
-// LoginStatus deliberately excludes bearer and refresh tokens from host/UI responses.
-type LoginStatus struct {
-	Status string `json:"status"`
 }

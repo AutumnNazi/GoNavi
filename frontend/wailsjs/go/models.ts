@@ -1346,6 +1346,7 @@ export namespace app {
 	
 	
 	export class ExportFileOptions {
+	    losslessHive?: boolean;
 	    pluginExporter?: dataexport.PluginExportSelection;
 	    format: string;
 	    csvEncoding?: string;
@@ -1371,6 +1372,7 @@ export namespace app {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.losslessHive = source["losslessHive"];
 	        this.pluginExporter = this.convertValues(source["pluginExporter"], dataexport.PluginExportSelection);
 	        this.format = source["format"];
 	        this.csvEncoding = source["csvEncoding"];
@@ -1410,6 +1412,7 @@ export namespace app {
 		}
 	}
 	export class ImportFileOptions {
+	    losslessHive?: boolean;
 	    columnMappings?: Record<string, string>;
 	    jobId?: string;
 	    continueOnError?: boolean;
@@ -1430,6 +1433,7 @@ export namespace app {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.losslessHive = source["losslessHive"];
 	        this.columnMappings = source["columnMappings"];
 	        this.jobId = source["jobId"];
 	        this.continueOnError = source["continueOnError"];

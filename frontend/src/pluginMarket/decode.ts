@@ -1,7 +1,7 @@
 import { PluginAPIError, requireRecord } from '../plugins/apiResult';
 import { boundedJSON } from '../plugins/jsonBoundary';
 import { decodeManifest } from '../plugins/decode';
-import type { CatalogPage, DeviceLogin, LoginStatus, MarketPlugin, MarketRating, MarketSettings, MarketSubmission } from './types';
+import type { CatalogPage, MarketPlugin, MarketRating, MarketSettings } from './types';
 
 const invalid = (): never => { throw new PluginAPIError('plugin.error.invalid_response'); };
 export function safeHTTPURL(value: string): boolean {
@@ -47,27 +47,7 @@ export function decodeRatings(data: unknown): MarketRating[] {
 }
 export function decodeSettings(data: unknown): MarketSettings {
   const s = requireRecord(data);
-  if (typeof s.baseUrl !== 'string' || typeof s.authenticated !== 'boolean' || (s.trustedOfficial != null && typeof s.trustedOfficial !== 'boolean')) invalid();
+  if (typeof s.baseUrl !== 'string' || (s.trustedOfficial != null && typeof s.trustedOfficial !== 'boolean')) invalid();
   if (s.sourceId != null && typeof s.sourceId !== 'string') invalid();
   return s as unknown as MarketSettings;
-}
-export function decodeLogin(data: unknown): DeviceLogin {
-  boundedJSON(data, 16384);
-  const s = requireRecord(data);
-  if (typeof s.verificationUri !== 'string' || !safeHTTPURL(s.verificationUri) || typeof s.userCode !== 'string'
-    || typeof s.deviceCode !== 'string' || typeof s.intervalSeconds !== 'number' || !Number.isFinite(s.intervalSeconds)
-    || typeof s.expiresIn !== 'number' || s.expiresIn <= 0 || s.expiresIn > 3600) invalid();
-  return s as unknown as DeviceLogin;
-}
-export function decodeLoginStatus(data: unknown): LoginStatus {
-  const s = requireRecord(data);
-  if (!['pending', 'authorized', 'denied', 'expired'].includes(String(s.status))) return invalid();
-  return s.status as LoginStatus;
-}
-export function decodeSubmission(data: unknown): MarketSubmission {
-  const s = requireRecord(data);
-  if (['id', 'pluginId', 'version', 'state', 'publisherId'].some((key) => typeof s[key] !== 'string')) invalid();
-  if (s.reason != null && typeof s.reason !== 'string') invalid();
-  if (s.sha256 != null && !/^[a-f0-9]{64}$/i.test(String(s.sha256))) invalid();
-  return s as unknown as MarketSubmission;
 }

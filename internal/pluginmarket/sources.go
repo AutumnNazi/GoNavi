@@ -152,8 +152,6 @@ func (s *Service) applySourceStateLocked(next diskState) {
 	}
 	if next.BaseURL != s.state.BaseURL {
 		s.generation++
-		s.authGeneration++
-		clear(s.pending)
 	}
 	s.state = next
 	s.currentSource.Store(sourceID(next.BaseURL))
@@ -195,8 +193,8 @@ func (s *Service) ForSource(id string) (*Service, error) {
 	}
 	lease := &atomic.Bool{}
 	lease.Store(true)
-	scope := &Service{root: s.root, secrets: s.secrets, client: s.client, downloadClient: s.downloadClient, hostVersion: s.hostVersion, officialURL: s.officialURL,
-		state: diskState{Version: 1, BaseURL: base, Installs: make(map[string]installedSource)}, pending: make(map[string]pendingLogin), receipts: make(map[string]downloadReceipt), now: s.now, owner: s, lease: lease}
+	scope := &Service{root: s.root, client: s.client, downloadClient: s.downloadClient, hostVersion: s.hostVersion, officialURL: s.officialURL,
+		state: diskState{Version: 1, BaseURL: base, Installs: make(map[string]installedSource)}, receipts: make(map[string]downloadReceipt), now: s.now, owner: s, lease: lease}
 	scope.currentSource.Store(id)
 	s.scopes[id] = scope
 	return scope, nil

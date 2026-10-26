@@ -10,8 +10,8 @@ vi.mock('./useInstalledPluginVersions', () => ({ useInstalledPluginVersions: () 
 vi.mock('./MarketSearchFilters', () => ({ MarketSearchFilters: (props: Record<string, unknown>) => <div data-panel="filters" {...props} /> }));
 vi.mock('./MarketSourceSettings', () => ({ MarketSourceSettings: (props: Record<string, unknown>) => <div data-panel="settings" {...props} /> }));
 vi.mock('./MarketDetailDrawer', () => ({ MarketDetailDrawer: (props: Record<string, unknown>) => <div data-panel="detail" {...props} /> }));
-vi.mock('./MarketSourceGroup', () => ({ MarketSourceGroup: ({ onSelect, ...props }: { source: MarketSource; onSelect: (plugin: { id: string }, source: MarketSource, authenticated: boolean) => void }) =>
-  <button data-panel="group" {...props} onClick={() => onSelect({ id: 'test.same' }, props.source, false)} /> }));
+vi.mock('./MarketSourceGroup', () => ({ MarketSourceGroup: ({ onSelect, ...props }: { source: MarketSource; onSelect: (plugin: { id: string }, source: MarketSource) => void }) =>
+  <button data-panel="group" {...props} onClick={() => onSelect({ id: 'test.same' }, props.source)} /> }));
 vi.mock('antd', () => {
   const element = (name: string) => ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => React.createElement('div', { ...props, 'data-component': name }, children);
   return { Alert: element('alert'), Button: element('button'), Input: { Search: element('search') }, Select: element('select'), Space: element('space'), Spin: element('spin'),

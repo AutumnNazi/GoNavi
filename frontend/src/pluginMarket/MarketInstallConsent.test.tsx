@@ -3,8 +3,8 @@ import { act, create } from 'react-test-renderer';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MarketInspectionQuote, MarketInspectionRequest } from './types';
 const host = vi.hoisted(() => ({ PluginMarketSettings: vi.fn(), PluginMarketConfigure: vi.fn(), PluginMarketCatalog: vi.fn(),
-  PluginMarketDetail: vi.fn(), PluginMarketRatings: vi.fn(), PluginMarketRate: vi.fn(), PluginMarketDeleteRating: vi.fn(),
-  PluginMarketLogin: vi.fn(), PluginMarketPollLogin: vi.fn(), PluginMarketLogout: vi.fn(), PluginMarketInstall: vi.fn(),
+  PluginMarketDetail: vi.fn(), PluginMarketRatings: vi.fn(),
+  PluginMarketInstall: vi.fn(),
   PluginMarketInspect: vi.fn(), PluginMarketCancelInspection: vi.fn() }));
 vi.mock('../../wailsjs/go/app/App', () => host);
 vi.mock('../i18n/provider', () => ({ useI18n: () => ({ t: (key: string) => key, language: 'en-US' }) }));

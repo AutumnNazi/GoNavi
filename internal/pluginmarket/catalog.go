@@ -28,7 +28,7 @@ func (s *Service) fetchCatalogPage(ctx context.Context, values url.Values, filte
 
 func (s *Service) fetchCatalogPageFrom(ctx context.Context, source sourceSnapshot, values url.Values, filtered bool) (CatalogPage, error) {
 	var page CatalogPage
-	err := s.requestJSON(ctx, source, http.MethodGet, "/plugins", values, nil, &page, "")
+	err := s.requestJSON(ctx, source, http.MethodGet, "/plugins", values, nil, &page)
 	if err == nil && filtered && page.FilterVersion != 1 {
 		err = ErrFiltersUnsupported
 	}
@@ -80,7 +80,7 @@ func (s *Service) Detail(ctx context.Context, id string) (Item, error) {
 		return Item{}, err
 	}
 	var item Item
-	if err = s.requestJSON(ctx, source, http.MethodGet, "/plugins/"+id, nil, nil, &item, ""); err != nil {
+	if err = s.requestJSON(ctx, source, http.MethodGet, "/plugins/"+id, nil, nil, &item); err != nil {
 		return Item{}, err
 	}
 	if err = validateItem(&item, source); err != nil {
@@ -105,7 +105,7 @@ func (s *Service) Ratings(ctx context.Context, id string) ([]Rating, error) {
 		return nil, err
 	}
 	var ratings []Rating
-	if err = s.requestJSON(ctx, source, http.MethodGet, "/plugins/"+id+"/ratings", nil, nil, &ratings, ""); err != nil {
+	if err = s.requestJSON(ctx, source, http.MethodGet, "/plugins/"+id+"/ratings", nil, nil, &ratings); err != nil {
 		return nil, err
 	}
 	if ratings == nil || len(ratings) > 1000 {
@@ -120,56 +120,6 @@ func (s *Service) Ratings(ctx context.Context, id string) ([]Rating, error) {
 		return nil, err
 	}
 	return ratings, nil
-}
-
-// Rate creates or replaces the authenticated account's rating through the service's authorization policy.
-func (s *Service) Rate(ctx context.Context, id string, stars int, body, version string) (Rating, error) {
-	if !validID(id) || stars < 1 || stars > 5 || len(body) > 4000 || (version != "" && !validVersion(version)) {
-		return Rating{}, ErrInvalidRequest
-	}
-	source, err := s.snapshot()
-	if err != nil {
-		return Rating{}, err
-	}
-	token, err := s.authenticatedToken(source)
-	if err != nil {
-		return Rating{}, err
-	}
-	request := struct {
-		Stars   int    `json:"stars"`
-		Body    string `json:"body"`
-		Version string `json:"version"`
-	}{Stars: stars, Body: body, Version: version}
-	var rating Rating
-	if err = s.requestJSON(ctx, source, http.MethodPut, "/plugins/"+id+"/rating", nil, request, &rating, token); err != nil {
-		return Rating{}, err
-	}
-	if !validRating(rating, id) {
-		return Rating{}, ErrInvalidResponse
-	}
-	if err = s.checkSource(source); err != nil {
-		return Rating{}, err
-	}
-	return rating, nil
-}
-
-// DeleteRating deletes only the current authenticated account's rating.
-func (s *Service) DeleteRating(ctx context.Context, id string) error {
-	if !validID(id) {
-		return ErrInvalidRequest
-	}
-	source, err := s.snapshot()
-	if err != nil {
-		return err
-	}
-	token, err := s.authenticatedToken(source)
-	if err != nil {
-		return err
-	}
-	if err = s.requestJSON(ctx, source, http.MethodDelete, "/plugins/"+id+"/rating", nil, nil, nil, token); err != nil {
-		return err
-	}
-	return s.checkSource(source)
 }
 
 func validatePage(page *CatalogPage, source sourceSnapshot) error {

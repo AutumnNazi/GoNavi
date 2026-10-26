@@ -41,7 +41,7 @@ func (s *Service) Download(ctx context.Context, id, version, digest string) (str
 	var artifact Artifact
 	query := url.Values{"platform": {runtime.GOOS + "/" + runtime.GOARCH}}
 	route := "/plugins/" + id + "/versions/" + version + "/artifact"
-	if err = s.requestJSON(ctx, source, http.MethodGet, route, query, nil, &artifact, ""); err != nil {
+	if err = s.requestJSON(ctx, source, http.MethodGet, route, query, nil, &artifact); err != nil {
 		return "", noop, err
 	}
 	if err = validateArtifact(artifact, version); err != nil {

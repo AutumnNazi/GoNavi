@@ -25,7 +25,7 @@ func TestFilteredCatalogForwardsCanonicalConditionsAndRequiresAcknowledgement(t 
 		writeTestJSON(t, w, 200, page)
 	}))
 	defer server.Close()
-	s, _ := newTestService(t, server.URL, true)
+	s := newTestService(t, server.URL, true)
 	filters := marketfilter.Filters{Categories: []string{"skill", "ops"}, Platforms: []string{"windows/amd64", "darwin/arm64"}, Official: "official", Author: " GoNavi "}
 	page, err := s.CatalogFiltered(t.Context(), "test", "updated", "", filters)
 	if err != nil || len(page.Items) != 1 || page.FilterVersion != 1 {
@@ -51,7 +51,7 @@ func TestPrivateSourceIdentityCannotSpoofOfficialFilter(t *testing.T) {
 		writeTestJSON(t, w, 200, CatalogPage{FilterVersion: 1, Items: []Item{fixtureItem("test.private", true)}})
 	}))
 	defer server.Close()
-	s, _ := newTestService(t, server.URL, false)
+	s := newTestService(t, server.URL, false)
 	page, err := s.CatalogFiltered(t.Context(), "", "updated", "", marketfilter.Filters{Official: "official"})
 	if err != nil || len(page.Items) != 0 || calls.Load() != 0 {
 		t.Fatalf("private source promoted: %+v %v", page, err)

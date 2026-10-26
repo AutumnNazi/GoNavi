@@ -87,7 +87,7 @@ func TestSourcesClientsAreIsolatedAndRevokedAcrossABA(t *testing.T) {
 		writeTestJSON(t, w, 200, CatalogPage{Items: []Item{fixtureItem("test.same", true)}})
 	}))
 	defer b.Close()
-	s, _ := newTestService(t, a.URL, true)
+	s := newTestService(t, a.URL, true)
 	list := []SourceConfig{{BaseURL: a.URL, Enabled: true}, {BaseURL: b.URL, Enabled: true}}
 	if _, err := s.SaveSources(t.Context(), list); err != nil {
 		t.Fatal(err)
@@ -108,11 +108,6 @@ func TestSourcesClientsAreIsolatedAndRevokedAcrossABA(t *testing.T) {
 		if page.Items[0].Official != (client == first) {
 			t.Fatal("custom source spoofed official")
 		}
-	}
-	seedToken(t, first, "only-official")
-	settings, err := other.Settings()
-	if err != nil || settings.Authenticated {
-		t.Fatalf("credentials leaked: %+v %v", settings, err)
 	}
 	list[0].Enabled = false
 	if _, err = s.SaveSources(t.Context(), list); err != nil {
@@ -151,7 +146,7 @@ func TestSourcesClientsAreIsolatedAndRevokedAcrossABA(t *testing.T) {
 }
 
 func TestSourcesFailedPersistenceDoesNotChangeEnabledScopes(t *testing.T) {
-	s, _ := newTestService(t, "https://plugin.gonavi.org", true)
+	s := newTestService(t, "https://plugin.gonavi.org", true)
 	client, err := s.ForSource(sourceID(s.officialURL))
 	if err != nil {
 		t.Fatal(err)
@@ -177,7 +172,7 @@ func sourceTestDigest(value []byte) string {
 }
 
 func TestSourcesShareDownloadAdmissionAndProvenance(t *testing.T) {
-	s, _ := newTestService(t, "https://official.example", true)
+	s := newTestService(t, "https://official.example", true)
 	if _, err := s.SaveSources(t.Context(), []SourceConfig{{BaseURL: s.officialURL, Enabled: true}, {BaseURL: "https://private.example", Enabled: true}}); err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +203,7 @@ func TestSourcesShareDownloadAdmissionAndProvenance(t *testing.T) {
 }
 
 func TestSourcesRejectOversizedCanonicalURLWithoutPoisoningState(t *testing.T) {
-	s, _ := newTestService(t, "https://plugin.gonavi.org", true)
+	s := newTestService(t, "https://plugin.gonavi.org", true)
 	raw := "https://private.example/" + strings.Repeat(string(rune(0x4e00)), 300)
 	if _, err := s.SaveSources(t.Context(), []SourceConfig{{BaseURL: s.officialURL, Enabled: true}, {BaseURL: raw, Enabled: true}}); err == nil {
 		t.Fatal("accepted URL whose canonical encoding exceeds the limit")
@@ -222,7 +217,7 @@ func TestSourcesRejectOversizedCanonicalURLWithoutPoisoningState(t *testing.T) {
 }
 
 func TestSourcesRemovingEndpointPreservesInstallProvenance(t *testing.T) {
-	s, _ := newTestService(t, "https://plugin.gonavi.org", true)
+	s := newTestService(t, "https://plugin.gonavi.org", true)
 	private := "https://private.example"
 	configs := []SourceConfig{{BaseURL: s.officialURL, Enabled: true}, {BaseURL: private, Enabled: true}}
 	if _, err := s.SaveSources(t.Context(), configs); err != nil {
