@@ -108,6 +108,44 @@ type Report struct {
 	Reason   string `json:"reason"`
 }
 
+// PublisherPlugin is the owner-visible summary of one plugin regardless of state.
+type PublisherPlugin struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	LatestVersion    string `json:"latestVersion"`
+	LatestState      string `json:"latestState"`
+	PublishedVersion string `json:"publishedVersion"`
+	SourceURL        string `json:"sourceUrl"`
+}
+
+// PublisherPluginPage is one bounded owner-scoped plugin page.
+type PublisherPluginPage struct {
+	Items      []PublisherPlugin `json:"items"`
+	NextCursor string            `json:"nextCursor"`
+}
+
+// PublisherSubmissionPage is one bounded owner-scoped submission page.
+type PublisherSubmissionPage struct {
+	Items      []Submission `json:"items"`
+	NextCursor string       `json:"nextCursor"`
+}
+
+// PackageInspection is a stateless pre-flight report; it never reserves a version.
+type PackageInspection struct {
+	CanPublish     bool            `json:"canPublish"`
+	Reason         string          `json:"reason"`
+	PluginID       string          `json:"pluginId"`
+	Version        string          `json:"version"`
+	Name           string          `json:"name"`
+	Description    string          `json:"description"`
+	Category       string          `json:"category"`
+	SizeBytes      int64           `json:"sizeBytes"`
+	MinHostVersion string          `json:"minHostVersion"`
+	Platforms      []string        `json:"platforms"`
+	SHA256         string          `json:"sha256"`
+	Manifest       json.RawMessage `json:"manifest"`
+}
+
 // ErrNotFound means the resource is absent or not publicly visible.
 var ErrNotFound = errors.New("resource not found")
 

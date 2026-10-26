@@ -27,6 +27,9 @@ func validPluginID(id string) bool {
 func validVersion(version string) bool {
 	return len(version) <= 100 && semver.IsValid("v"+version) && strings.Count(strings.SplitN(strings.SplitN(version, "+", 2)[0], "-", 2)[0], ".") == 2
 }
+func validDigest(digest string) bool {
+	return digest == "" || digestPattern.MatchString(digest)
+}
 
 func validateCatalogQuery(q CatalogQuery) error {
 	if q.Limit < 1 || q.Limit > 100 || q.Offset < 0 || q.Offset > 10000 || !boundedText(q.Query, 200, false) {

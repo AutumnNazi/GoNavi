@@ -34,6 +34,16 @@ func (m *memoryRepo) RevokeSession(ctx context.Context, hash string) error {
 	return nil
 }
 
+func (m *memoryRepo) CreateSession(ctx context.Context, hash, accountID string, expiresAt time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if hash == "" || accountID == "" {
+		return ErrInvalid
+	}
+	m.sessions[hash] = testSession{accountID: accountID, expires: expiresAt}
+	return nil
+}
+
 func (m *memoryRepo) CreateDevice(ctx context.Context, d DeviceGrant) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

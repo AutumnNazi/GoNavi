@@ -129,6 +129,16 @@ func (p *Postgres) Session(ctx context.Context, hash string, now time.Time) (Acc
 	return a, err
 }
 
+// CreateSession issues one revocable session after the browser has proven an
+// identity. Only the token hash is stored, exactly like device sessions.
+func (p *Postgres) CreateSession(ctx context.Context, hash, accountID string, expiresAt time.Time) error {
+	if hash == "" || accountID == "" || expiresAt.IsZero() {
+		return ErrInvalid
+	}
+	_, err := p.db.ExecContext(ctx, "INSERT INTO market_sessions(token_hash,account_id,expires_at) VALUES($1,$2,$3)", hash, accountID, expiresAt)
+	return repositoryError(err)
+}
+
 // RevokeSession immediately invalidates a bearer token in every replica.
 func (p *Postgres) RevokeSession(ctx context.Context, hash string) error {
 	_, err := p.db.ExecContext(ctx, "DELETE FROM market_sessions WHERE token_hash=$1", hash)

@@ -34,6 +34,13 @@ type ReviewRepository interface {
 	HideRating(context.Context, Account, string, string, string) error
 }
 
+// PublisherRepository scopes the author workspace to plugins the caller owns.
+type PublisherRepository interface {
+	PublisherPlugins(context.Context, Account, PublisherQuery) (PublisherPluginPage, error)
+	PublisherSubmissions(context.Context, Account, PublisherQuery) (PublisherSubmissionPage, error)
+	ClearPluginSource(context.Context, Account, string) error
+}
+
 // DeviceGrant persists authorization without storing the device's secret code.
 type DeviceGrant struct {
 	CodeHash, UserCodeHash, State, AccountID string
@@ -50,6 +57,7 @@ type AuthFlow struct {
 type AuthRepository interface {
 	UpsertIdentity(context.Context, Identity) (Account, error)
 	Session(context.Context, string, time.Time) (Account, error)
+	CreateSession(context.Context, string, string, time.Time) error
 	RevokeSession(context.Context, string) error
 	CreateDevice(context.Context, DeviceGrant) error
 	PollDevice(context.Context, string, string, time.Time, time.Time) (string, error)
@@ -63,4 +71,12 @@ type Repository interface {
 	CatalogRepository
 	ReviewRepository
 	AuthRepository
+	PublisherRepository
+}
+
+// PublisherQuery is one bounded owner-scoped page with an optional plugin filter.
+type PublisherQuery struct {
+	PluginID string
+	Limit    int
+	Offset   int
 }

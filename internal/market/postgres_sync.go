@@ -40,6 +40,19 @@ func (p *Postgres) SetPluginSource(ctx context.Context, owner Account, pluginID,
 	if _, _, err := parseRepositoryURL(sourceURL); err != nil {
 		return err
 	}
+	return p.storePluginSource(ctx, owner, pluginID, sourceURL)
+}
+
+// ClearPluginSource turns auto-sync off by emptying the tracked repository.
+// Deletion is a distinct operation so SetPluginSource never accepts empty input.
+func (p *Postgres) ClearPluginSource(ctx context.Context, owner Account, pluginID string) error {
+	return p.storePluginSource(ctx, owner, pluginID, "")
+}
+
+func (p *Postgres) storePluginSource(ctx context.Context, owner Account, pluginID, sourceURL string) error {
+	if !validPluginID(pluginID) {
+		return ErrInvalid
+	}
 	result, err := p.db.ExecContext(ctx, "UPDATE market_plugins SET source_url=$3 WHERE id=$1 AND owner_id=$2", pluginID, owner.ID, sourceURL)
 	if err != nil {
 		return repositoryError(err)

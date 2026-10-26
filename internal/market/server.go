@@ -104,6 +104,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/auth/github", s.startOAuth)
 	mux.HandleFunc("GET /api/v1/auth/github/callback", s.oauthCallback)
 	mux.HandleFunc("POST /api/v1/auth/device/decision", s.decideDevice)
+	mux.HandleFunc("GET /api/v1/auth/web/start", s.webStart)
+	mux.HandleFunc("GET /api/v1/auth/web/callback", s.webCallback)
+	mux.HandleFunc("GET /api/v1/auth/web/session", s.webSession)
+	mux.HandleFunc("POST /api/v1/auth/web/logout", s.webLogout)
+	mux.HandleFunc("POST /api/v1/publisher/inspect", s.inspect)
+	mux.HandleFunc("GET /api/v1/publisher/plugins", s.publisherPlugins)
+	mux.HandleFunc("GET /api/v1/publisher/submissions", s.publisherSubmissions)
+	mux.HandleFunc("PUT /api/v1/publisher/plugins/{id}/source", pluginRoute(s.publisherSource))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { writeError(w, ErrNotFound) })
 	return s.protect(mux)
 }
@@ -233,18 +241,11 @@ func bearer(r *http.Request) string {
 	return value
 }
 
+// account resolves a bearer token first, then the browser session cookie, and
+// enforces CSRF for cookie-authenticated writes (see authorize).
 func (s *Server) account(w http.ResponseWriter, r *http.Request) (Account, bool) {
-	token := bearer(r)
-	if token == "" {
-		writeError(w, ErrUnauthorized)
-		return Account{}, false
-	}
-	a, err := s.repo.Session(r.Context(), secretHash(token), s.now())
-	if err != nil {
-		writeError(w, err)
-		return Account{}, false
-	}
-	return a, true
+	auth, ok := s.authorize(w, r)
+	return auth.account, ok
 }
 
 func (s *Server) admin(w http.ResponseWriter, r *http.Request) (Account, bool) {

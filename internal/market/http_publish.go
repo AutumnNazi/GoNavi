@@ -1,6 +1,8 @@
 package market
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"mime/multipart"
@@ -11,7 +13,7 @@ import (
 	"GoNavi-Wails/internal/logger"
 )
 
-type uploadedPackage struct{ Path, PluginID, Version, Source string }
+type uploadedPackage struct{ Path, PluginID, Version, Source, ExpectedDigest string }
 
 func removeUpload(path string) {
 	if path == "" {
@@ -41,7 +43,7 @@ func receiveUpload(w http.ResponseWriter, r *http.Request) (uploadedPackage, err
 		if errors.Is(partErr, io.EOF) {
 			break
 		}
-		if partErr != nil || count >= 4 {
+		if partErr != nil || count >= 5 {
 			return upload, ErrInvalid
 		}
 		name := part.FormName()
@@ -52,7 +54,7 @@ func receiveUpload(w http.ResponseWriter, r *http.Request) (uploadedPackage, err
 		seen[name] = true
 		if name == "package" {
 			upload.Path, err = saveUpload(part)
-		} else if name == "pluginId" || name == "version" || name == "source" {
+		} else if name == "pluginId" || name == "version" || name == "source" || name == "expectedDigest" {
 			var value []byte
 			value, err = io.ReadAll(io.LimitReader(part, 1025))
 			if len(value) > 1024 {
@@ -63,6 +65,8 @@ func receiveUpload(w http.ResponseWriter, r *http.Request) (uploadedPackage, err
 				upload.PluginID = string(value)
 			case "version":
 				upload.Version = string(value)
+			case "expectedDigest":
+				upload.ExpectedDigest = string(value)
 			default:
 				upload.Source = string(value)
 			}
@@ -82,8 +86,25 @@ func receiveUpload(w http.ResponseWriter, r *http.Request) (uploadedPackage, err
 			return upload, err
 		}
 	}
+	if !validDigest(upload.ExpectedDigest) {
+		return upload, ErrInvalid
+	}
 	success = true
 	return upload, nil
+}
+
+// fileSHA256 matches ValidatePackage's digest of the exact uploaded bytes.
+func fileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	digest := sha256.New()
+	if _, err = io.Copy(digest, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(digest.Sum(nil)), nil
 }
 
 func saveUpload(part *multipart.Part) (string, error) {
@@ -133,6 +154,18 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer removeUpload(upload.Path)
+	if upload.ExpectedDigest != "" {
+		actual, hashErr := fileSHA256(upload.Path)
+		if hashErr != nil {
+			writeError(w, hashErr)
+			return
+		}
+		if actual != upload.ExpectedDigest {
+			// The pre-flight bytes are gone; refuse before reserving a version.
+			writeAPIError(w, 409, "inspection_changed")
+			return
+		}
+	}
 	submission, err := s.repo.BeginSubmission(r.Context(), a, upload.PluginID, upload.Version)
 	if err != nil {
 		writeError(w, err)
