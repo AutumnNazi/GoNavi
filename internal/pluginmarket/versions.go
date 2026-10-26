@@ -34,7 +34,7 @@ func (s *Service) Versions(ctx context.Context, id string) (VersionPage, error) 
 		return VersionPage{}, err
 	}
 	var items []Item
-	err = s.requestJSON(ctx, source, http.MethodGet, "/plugins/"+id+"/versions", nil, nil, &items, "")
+	err = s.requestJSON(ctx, source, http.MethodGet, "/plugins/"+id+"/versions", nil, nil, &items)
 	if err != nil {
 		if errorCode(err) != "not_found" {
 			return VersionPage{}, err

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MarketPlugin } from './types';
 const state = vi.hoisted(() => ({ plugin: null as MarketPlugin | null, loading: false, error: '', compatible: true }));
 vi.mock('../i18n/provider', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
-vi.mock('./useMarketDetail', () => ({ useMarketDetail: () => ({ ...state, ratings: [], saving: false, load: vi.fn(), saveRating: vi.fn(), deleteRating: vi.fn() }) }));
+vi.mock('./useMarketDetail', () => ({ useMarketDetail: () => ({ ...state, ratings: [], load: vi.fn() }) }));
 vi.mock('./useMarketVersions', () => ({ useMarketVersions: () => { const selected = state.plugin ? { plugin: state.plugin, compatible: state.compatible, reason: state.compatible ? '' : 'host_version' } : undefined; return { versions: selected ? [selected] : [], selected, selectedVersion: state.plugin?.version, recommended: state.plugin?.version, loading: false, error: '', warning: '', choose: vi.fn(), reload: vi.fn() }; } }));
 vi.mock('./MarketInstallConsent', () => ({ MarketInstallConsent: (props: Record<string, unknown>) => <div data-panel="consent" {...props} /> }));
 vi.mock('./MarketRatingsPanel', () => ({ MarketRatingsPanel: (props: Record<string, unknown>) => <div data-panel="ratings" {...props} /> }));

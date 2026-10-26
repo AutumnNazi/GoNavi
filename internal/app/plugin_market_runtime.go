@@ -62,7 +62,7 @@ func (a *App) marketplace(ctx context.Context) (*pluginmarket.Service, context.C
 		state.initializing = ready
 		epoch := state.epoch
 		state.mu.Unlock()
-		service, err := pluginmarket.NewService(pluginmarket.Options{Root: root, Secrets: a.secretStore, HostVersion: CurrentVersion(), TrustedOfficialURL: pluginOfficialMarketURL, Client: &http.Client{Transport: backgroundGalleryProxyTransport{}}})
+		service, err := pluginmarket.NewService(pluginmarket.Options{Root: root, HostVersion: CurrentVersion(), TrustedOfficialURL: pluginOfficialMarketURL, Client: &http.Client{Transport: backgroundGalleryProxyTransport{}}})
 		state.mu.Lock()
 		if state.closing || state.epoch != epoch || root != filepath.Join(a.configDir, "plugin-market") {
 			err = context.Canceled

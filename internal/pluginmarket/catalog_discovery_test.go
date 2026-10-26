@@ -27,7 +27,7 @@ func TestCatalogDiscoversPublishedPluginsRequiringNewerHost(t *testing.T) {
 				writeTestJSON(t, w, http.StatusOK, CatalogPage{Items: items})
 			}))
 			defer server.Close()
-			service, _ := newTestService(t, server.URL, true)
+			service := newTestService(t, server.URL, true)
 			service.hostVersion = hostVersion
 			page, err := service.Catalog(t.Context(), "nginx", "updated", "")
 			if err != nil || len(page.Items) != 1 {

@@ -674,21 +674,11 @@ export function PluginMarketCatalog(arg1:string,arg2:string,arg3:string):Promise
 
 export function PluginMarketConfigure(arg1:string):Promise<connection.QueryResult>;
 
-export function PluginMarketDeleteRating(arg1:string):Promise<connection.QueryResult>;
-
 export function PluginMarketDetail(arg1:string):Promise<connection.QueryResult>;
 
 export function PluginMarketInspect(arg1:string,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
 
 export function PluginMarketInstall(arg1:string,arg2:string,arg3:string,arg4:boolean,arg5:string):Promise<connection.QueryResult>;
-
-export function PluginMarketLogin():Promise<connection.QueryResult>;
-
-export function PluginMarketLogout():Promise<connection.QueryResult>;
-
-export function PluginMarketPollLogin(arg1:string):Promise<connection.QueryResult>;
-
-export function PluginMarketRate(arg1:string,arg2:number,arg3:string,arg4:string):Promise<connection.QueryResult>;
 
 export function PluginMarketRatings(arg1:string):Promise<connection.QueryResult>;
 
@@ -698,17 +688,7 @@ export function PluginMarketSettings():Promise<connection.QueryResult>;
 
 export function PluginMarketSourceCatalog(arg1:string,arg2:string,arg3:string,arg4:string):Promise<connection.QueryResult>;
 
-export function PluginMarketSourceDeleteRating(arg1:string,arg2:string):Promise<connection.QueryResult>;
-
 export function PluginMarketSourceDetail(arg1:string,arg2:string):Promise<connection.QueryResult>;
-
-export function PluginMarketSourceLogin(arg1:string):Promise<connection.QueryResult>;
-
-export function PluginMarketSourceLogout(arg1:string):Promise<connection.QueryResult>;
-
-export function PluginMarketSourcePollLogin(arg1:string,arg2:string):Promise<connection.QueryResult>;
-
-export function PluginMarketSourceRate(arg1:string,arg2:string,arg3:number,arg4:string,arg5:string):Promise<connection.QueryResult>;
 
 export function PluginMarketSourceRatings(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
@@ -716,13 +696,9 @@ export function PluginMarketSourceSearch(arg1:string,arg2:string,arg3:string,arg
 
 export function PluginMarketSourceSettings(arg1:string):Promise<connection.QueryResult>;
 
-export function PluginMarketSourceSubmit(arg1:string,arg2:string,arg3:string):Promise<connection.QueryResult>;
-
 export function PluginMarketSourceVersions(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
 export function PluginMarketSources():Promise<connection.QueryResult>;
-
-export function PluginMarketSubmit(arg1:string,arg2:string):Promise<connection.QueryResult>;
 
 export function PluginMarketVersions(arg1:string):Promise<connection.QueryResult>;
 

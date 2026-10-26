@@ -8,8 +8,6 @@ import (
 
 func marketFailureCode(err error) string {
 	switch {
-	case errors.Is(err, pluginmarket.ErrUnauthenticated):
-		return "authentication_required"
 	case errors.Is(err, pluginmarket.ErrInvalidRequest), errors.Is(err, pluginmarket.ErrInvalidURL):
 		return "invalid_request"
 	case errors.Is(err, context.DeadlineExceeded):

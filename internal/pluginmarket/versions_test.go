@@ -13,7 +13,7 @@ func TestVersionsAreSourceBoundAndCompatibilityChecked(t *testing.T) {
 	items := []Item{{ID: "acme.example", Name: "Example", Version: "1.2.0", MinHostVersion: "1.0.0", Platforms: []string{"any"}}, {ID: "acme.example", Name: "Example", Version: "2.0.0", MinHostVersion: "9.0.0", Platforms: []string{"any"}}, {ID: "acme.example", Name: "Example", Version: "1.3.0-rc.1", Platforms: []string{"any"}}, {ID: "acme.example", Name: "Example", Version: "1.1.0", Platforms: []string{"other/cpu"}}}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { writeTestJSON(t, w, 200, items) }))
 	defer server.Close()
-	service, _ := newTestService(t, server.URL, true)
+	service := newTestService(t, server.URL, true)
 	page, err := service.Versions(context.Background(), "acme.example")
 	if err != nil {
 		t.Fatal(err)
@@ -47,7 +47,7 @@ func TestVersionHistoryFallbackIsExplicit(t *testing.T) {
 		writeTestJSON(t, w, 200, Item{ID: "acme.example", Name: "Example", Version: "1.0.0", Platforms: []string{"any"}})
 	}))
 	defer server.Close()
-	service, _ := newTestService(t, server.URL, true)
+	service := newTestService(t, server.URL, true)
 	page, err := service.Versions(context.Background(), "acme.example")
 	if err != nil || len(page.Versions) != 1 || page.Warning != "versions_unavailable" {
 		t.Fatalf("fallback=%+v err=%v", page, err)
@@ -64,7 +64,7 @@ func TestVersionsRejectForeignIdentityAndDuplicateVersions(t *testing.T) {
 			}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { writeTestJSON(t, w, 200, items) }))
 			defer server.Close()
-			service, _ := newTestService(t, server.URL, false)
+			service := newTestService(t, server.URL, false)
 			_, err := service.Versions(context.Background(), "acme.example")
 			if !errors.Is(err, ErrInvalidResponse) {
 				t.Fatalf("unsafe version response accepted: %v", err)
@@ -82,7 +82,7 @@ func TestVersionsTreatDevelopmentHostsAsCompatible(t *testing.T) {
 			}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { writeTestJSON(t, w, 200, items) }))
 			defer server.Close()
-			service, _ := newTestService(t, server.URL, true)
+			service := newTestService(t, server.URL, true)
 			service.hostVersion = host
 			page, err := service.Versions(context.Background(), "acme.example")
 			if err != nil {

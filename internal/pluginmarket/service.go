@@ -2,7 +2,6 @@ package pluginmarket
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -11,8 +10,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"GoNavi-Wails/internal/secretstore"
 )
 
 const (
@@ -23,25 +20,21 @@ const (
 	downloadTimeout       = 2 * time.Minute
 )
 
-// Service owns source-scoped credentials, cached public data and install provenance.
-// Network calls never hold mu and are fenced against source changes and logout.
+// Service owns cached public data and install provenance for anonymous browsing.
+// Network calls never hold mu and are fenced against source changes.
 type Service struct {
 	owner             *Service
 	lease             *atomic.Bool
 	scopes            map[string]*Service
 	mu                sync.Mutex
-	authMu            sync.Mutex
 	currentSource     atomic.Value
 	root              string
-	secrets           secretstore.SecretStore
 	client            *http.Client
 	downloadClient    *http.Client
 	hostVersion       string
 	officialURL       string
 	state             diskState
 	generation        uint64
-	authGeneration    uint64
-	pending           map[string]pendingLogin
 	receipts          map[string]downloadReceipt
 	totalReceipts     int
 	downloadsInFlight int
@@ -78,12 +71,9 @@ func NewService(o Options) (*Service, error) {
 	if state == nil {
 		state = &diskState{Version: 1, BaseURL: official, Installs: make(map[string]installedSource)}
 	}
-	if o.Secrets == nil {
-		o.Secrets = secretstore.NewUnavailableStore("marketplace secret store not configured")
-	}
-	service := &Service{root: root, secrets: o.Secrets, client: boundedClient(o.Client, apiTimeout),
+	service := &Service{root: root, client: boundedClient(o.Client, apiTimeout),
 		downloadClient: boundedClient(o.Client, downloadTimeout), hostVersion: o.HostVersion,
-		officialURL: official, state: *state, pending: make(map[string]pendingLogin),
+		officialURL: official, state: *state,
 		receipts: make(map[string]downloadReceipt), now: time.Now}
 	if err := service.initializeSources(); err != nil {
 		return nil, fmt.Errorf("initialize marketplace sources: %w", err)
@@ -126,34 +116,12 @@ func (s *Service) CurrentSourceID() (string, error) {
 	return id, nil
 }
 
-// Settings returns the selected source and whether its local session is unexpired.
-// This is not a network assertion that the server has not revoked the session. An unavailable keychain leaves browsing anonymous.
+// Settings returns the selected source. Desktop browsing stays anonymous: there is no
+// account session to report or refresh, so this never contacts a source or the keychain.
 func (s *Service) Settings() (Settings, error) {
 	s.mu.Lock()
-	result := s.settingsLocked()
-	source := s.snapshotLocked()
-	authGeneration := s.authGeneration
-	s.mu.Unlock()
-	if result.BaseURL == "" {
-		return result, nil
-	}
-	token, err := s.loadToken(result.SourceID)
-	s.mu.Lock()
 	defer s.mu.Unlock()
-	if sourceErr := s.checkSourceLocked(source); sourceErr != nil {
-		return s.settingsLocked(), sourceErr
-	}
-	if authGeneration != s.authGeneration {
-		return result, nil
-	}
-	if errors.Is(err, ErrUnauthenticated) || secretstore.IsUnavailable(err) {
-		return result, nil
-	}
-	if err != nil {
-		return result, err
-	}
-	result.Authenticated = token.AccessToken != ""
-	return result, nil
+	return s.settingsLocked(), nil
 }
 
 func (s *Service) settingsLocked() Settings {

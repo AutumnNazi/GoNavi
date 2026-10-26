@@ -1,11 +1,10 @@
 import {
   PluginMarketSources, PluginMarketSaveSources, PluginMarketSourceSettings, PluginMarketSourceCatalog,
-  PluginMarketSourceDetail, PluginMarketSourceRatings, PluginMarketSourceRate, PluginMarketSourceDeleteRating,
-  PluginMarketSourceLogin, PluginMarketSourcePollLogin, PluginMarketSourceLogout, PluginMarketSourceSubmit,
+  PluginMarketSourceDetail, PluginMarketSourceRatings,
 } from '../../wailsjs/go/app/App';
-import { PluginAPIError, pluginResult, ignoreResult, requireRecord } from '../plugins/apiResult';
+import { PluginAPIError, pluginResult, requireRecord } from '../plugins/apiResult';
 import { boundedJSON } from '../plugins/jsonBoundary';
-import { decodeSettings, decodeMarketPlugin, decodeRatings, decodeRating, decodeLogin, decodeLoginStatus, decodeSubmission, safeHTTPURL } from './decode';
+import { decodeSettings, decodeMarketPlugin, decodeRatings, safeHTTPURL } from './decode';
 import { marketAPI } from './api';
 import { marketCatalogResult } from './catalogResult';
 import type { MarketSource, MarketSourceConfig, MarketSort } from './types';
@@ -46,11 +45,5 @@ export function sourceMarketAPI(sourceId: string): typeof marketAPI {
     },
     detail: (id) => pluginResult(PluginMarketSourceDetail(sourceId, id), decodeMarketPlugin),
     ratings: (id) => pluginResult(PluginMarketSourceRatings(sourceId, id), decodeRatings),
-    rate: (id, stars, body, version) => pluginResult(PluginMarketSourceRate(sourceId, id, stars, body, version), decodeRating),
-    deleteRating: (id) => pluginResult(PluginMarketSourceDeleteRating(sourceId, id), ignoreResult),
-    login: () => pluginResult(PluginMarketSourceLogin(sourceId), decodeLogin),
-    pollLogin: (code) => pluginResult(PluginMarketSourcePollLogin(sourceId, code), decodeLoginStatus),
-    logout: () => pluginResult(PluginMarketSourceLogout(sourceId), ignoreResult),
-    submit: (path, repositoryURL = '') => pluginResult(PluginMarketSourceSubmit(sourceId, path, repositoryURL), decodeSubmission),
   };
 }
