@@ -13457,5 +13457,13 @@
   "plugin.market.category.other": "その他",
   "plugin.market.anonymous_usage": "公開プラグインはログインせずに閲覧・インストールできます",
   "plugin.market.ratings_on_website": "評価・レビュー・アカウント操作はマーケットサイトで行います。GoNavi は公開評価の表示のみを行います。",
-  "plugin.market.open_website": "マーケットサイトを開く"
+  "plugin.market.open_website": "マーケットサイトを開く",
+  "datasource.variant.hive.v3": "Hive 3.x：HiveServer2 V10 カラムナ結果プロトコル、LIMIT / OFFSET ページングと外部テーブルメタデータに対応",
+  "datasource.variant.hive.v4": "Hive 4.x 以降：HiveServer2 V11 カラムナ結果プロトコル、Iceberg / トランザクションテーブルと完全な DDL メタデータに対応",
+  "connection_modal.step1.hint.hive": "分散データウェアハウス / HiveServer2 Thrift",
+  "db.backend.error.hive_auth_failed": "HiveServer2 認証に失敗しました：{{detail}}",
+  "db.backend.error.hive_query_failed": "Hive クエリが失敗しました（SQLState {{sqlState}}、エラーコード {{code}}）：{{message}}",
+  "db.backend.error.hive_protocol_error": "HiveServer2 Thrift プロトコル応答を解析できませんでした（ポートが HiveServer2 バイナリ Thrift ポートか確認してください）：{{detail}}",
+  "db.backend.error.hive_ddl_empty": "Hive から「{{name}}」の CREATE 文が返されませんでした",
+  "db.backend.error.hive_row_edit_unsupported": "Hive テーブルはデータグリッドでの単一行の更新・削除に対応していません。SQL エディタで INSERT または ALTER TABLE DROP PARTITION を実行してください（行の追加のみ対応）"
 }

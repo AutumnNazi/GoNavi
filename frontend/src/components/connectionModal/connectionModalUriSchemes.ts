@@ -61,13 +61,31 @@ export const parseMultiHostUri = (uriText: string, expectedScheme: string) => {
     .map((item) => item.trim())
     .filter(Boolean);
 
+  const params = new URLSearchParams(queryText);
+  if (pathText.includes(";")) {
+    const [dbSegment, ...semiSegments] = pathText.split(";");
+    if (semiSegments.some((segment) => segment.includes("="))) {
+      pathText = dbSegment;
+      for (const segment of semiSegments) {
+        const eqIdx = segment.indexOf("=");
+        if (eqIdx > 0) {
+          const k = safeDecode(segment.slice(0, eqIdx).trim());
+          const v = safeDecode(segment.slice(eqIdx + 1).trim());
+          if (k) {
+            params.set(k, v);
+          }
+        }
+      }
+    }
+  }
+
   return {
     username,
     password,
     hosts,
     database: safeDecode(pathText),
     hasExplicitPath,
-    params: new URLSearchParams(queryText),
+    params,
   };
 };
 

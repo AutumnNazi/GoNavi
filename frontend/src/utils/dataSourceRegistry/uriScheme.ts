@@ -29,7 +29,11 @@ export const withRegistryUriScheme = (type: unknown, uri: string): string => {
 /** 连接串使用了描述表声明的哪个 scheme，供借用家族解析的分支（如 MySQL 多主机解析）追加识别。 */
 export const findRegistryUriScheme = (type: unknown, uri: unknown): string | undefined => {
   const text = normalize(uri);
-  return listRegistryUriSchemes(type).find((scheme) => text.startsWith(`${scheme}://`));
+  for (const scheme of listRegistryUriSchemes(type)) {
+    if (text.startsWith(`${scheme}://`)) return scheme;
+    if (text.startsWith(`jdbc:${scheme}://`)) return `jdbc:${scheme}`;
+  }
+  return undefined;
 };
 
 /** 使用 Trino 连接表单的类型（Trino 本身与 ui.layout 为 trino 的描述表类型，如 Presto）：默认库是 catalog.schema，

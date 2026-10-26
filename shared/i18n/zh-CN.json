@@ -13457,5 +13457,13 @@
   "plugin.market.category.other": "其他",
   "plugin.market.anonymous_usage": "公开插件无需登录即可浏览和安装",
   "plugin.market.ratings_on_website": "评分、评价和账号操作统一在市场网站处理，GoNavi 仅展示公开评分。",
-  "plugin.market.open_website": "打开市场网站"
+  "plugin.market.open_website": "打开市场网站",
+  "datasource.variant.hive.v3": "Hive 3.x：使用 HiveServer2 V10 列式结果集协议，支持 LIMIT / OFFSET 分页与外表元数据",
+  "datasource.variant.hive.v4": "Hive 4.x 及更新版本：使用 HiveServer2 V11 列式结果集协议，支持 Iceberg / 事务表与完整 DDL 元数据",
+  "connection_modal.step1.hint.hive": "分布式数仓 / HiveServer2 Thrift",
+  "db.backend.error.hive_auth_failed": "HiveServer2 认证失败：{{detail}}",
+  "db.backend.error.hive_query_failed": "Hive 查询执行失败（SQLState {{sqlState}}，错误码 {{code}}）：{{message}}",
+  "db.backend.error.hive_protocol_error": "HiveServer2 Thrift 协议响应无法解析（请确认端口为 HiveServer2 二进制 Thrift 端口）：{{detail}}",
+  "db.backend.error.hive_ddl_empty": "Hive 未返回对象「{{name}}」的建表语句",
+  "db.backend.error.hive_row_edit_unsupported": "Hive 表默认不支持按主键定位单行更新或删除，请在查询编辑器中执行 INSERT / ALTER TABLE DROP PARTITION（仅支持新增行导入）"
 }

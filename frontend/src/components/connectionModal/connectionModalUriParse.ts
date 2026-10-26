@@ -92,7 +92,7 @@ export const parseUriToValues = (
       parsed.params.get("topology") || "",
     ).toLowerCase();
     const tlsValue = String(
-      parsed.params.get("tls") || parsed.params.get("useSSL") || "",
+      parsed.params.get("tls") || parsed.params.get("useSSL") || parsed.params.get("ssl") || "",
     )
       .trim()
       .toLowerCase();
