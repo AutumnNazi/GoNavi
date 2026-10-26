@@ -81,6 +81,7 @@ type Submission struct {
 	PublisherID string    `json:"publisherId"`
 	Reason      string    `json:"reason,omitempty"`
 	SHA256      string    `json:"sha256,omitempty"`
+	Warning     string    `json:"warning,omitempty"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
@@ -157,6 +158,10 @@ var ErrConflict = errors.New("resource conflict")
 
 // ErrInvalid means a request or a state transition is invalid.
 var ErrInvalid = errors.New("invalid request")
+
+// ErrReleaseRequired means the repository is a known multi-plugin monorepo and
+// cannot safely infer which plugin release the author intended.
+var ErrReleaseRequired = errors.New("explicit release required")
 
 // ErrUnauthorized means the session is absent, expired or revoked.
 var ErrUnauthorized = errors.New("authentication required")

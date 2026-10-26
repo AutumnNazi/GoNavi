@@ -97,6 +97,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/auth/web/session", s.webSession)
 	mux.HandleFunc("POST /api/v1/auth/web/logout", s.webLogout)
 	mux.HandleFunc("POST /api/v1/publisher/inspect", s.inspect)
+	mux.HandleFunc("POST /api/v1/publisher/release/inspect", s.releaseInspection)
+	mux.HandleFunc("POST /api/v1/publisher/release/publish", s.publishRelease)
 	mux.HandleFunc("GET /api/v1/publisher/plugins", s.publisherPlugins)
 	mux.HandleFunc("GET /api/v1/publisher/submissions", s.publisherSubmissions)
 	mux.HandleFunc("PUT /api/v1/publisher/plugins/{id}/source", pluginRoute(s.publisherSource))
@@ -199,6 +201,8 @@ func writeError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrInvalid):
 		writeAPIError(w, 400, "invalid_request")
+	case errors.Is(err, ErrReleaseRequired):
+		writeAPIError(w, 400, "release_required")
 	case errors.Is(err, ErrUnauthorized):
 		writeAPIError(w, 401, "unauthorized")
 	case errors.Is(err, ErrForbidden):
