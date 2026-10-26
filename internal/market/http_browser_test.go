@@ -1,7 +1,9 @@
 package market
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -9,6 +11,21 @@ import (
 	"testing"
 	"time"
 )
+
+// identityFixture is the injected GitHub identity provider used by every login
+// test; the real provider performs network calls and is exercised separately.
+type identityFixture struct{ fail bool }
+
+func (i identityFixture) AuthorizeURL(state, challenge string) string {
+	return "https://github.example/authorize?" + url.Values{"state": {state}, "code_challenge": {challenge}}.Encode()
+}
+
+func (i identityFixture) Exchange(ctx context.Context, code, verifier string) (Identity, error) {
+	if i.fail || code != "provider-code" || len(verifier) != 43 {
+		return Identity{}, errors.New("identity exchange rejected")
+	}
+	return Identity{ID: "42", Login: "new-user"}, nil
+}
 
 // browserRequest sends one request with optional cookies, mimicking a browser
 // that carries HttpOnly flow cookies but no Authorization header.
@@ -100,7 +117,7 @@ func TestWebLoginCallbackSessionCSRFAndLogout(t *testing.T) {
 	if returnCookie == nil {
 		t.Fatal("missing returnTo cookie")
 	}
-	callback := browserRequest(f, "GET", "/auth/web/callback?code=provider-code&state="+state, stateCookie, returnCookie)
+	callback := browserRequest(f, "GET", "/auth/github/callback?code=provider-code&state="+state, stateCookie, returnCookie)
 	assertStatus(t, callback, 303)
 	if location := callback.Header().Get("Location"); location != "/publish" {
 		t.Fatalf("returnTo=%q", location)
@@ -149,48 +166,22 @@ func TestWebLoginCallbackSessionCSRFAndLogout(t *testing.T) {
 	}
 }
 
-// GitHub redirects to the configured callback, which is shared with the desktop
-// device flow. The browser flow must complete there, not only on the internal
-// /auth/web/callback alias.
-func TestWebLoginCompletesThroughRegisteredGitHubCallback(t *testing.T) {
-	f := newHTTPFixture(t)
-	f.server.identity = identityFixture{}
-	start, state, stateCookie := startWebLogin(t, f, "/publish")
-	returnCookie := responseCookie(t, start, browserReturnCookie)
-	if returnCookie == nil {
-		t.Fatal("missing returnTo cookie")
-	}
-	callback := browserRequest(f, "GET", "/auth/github/callback?code=provider-code&state="+state, stateCookie, returnCookie)
-	assertStatus(t, callback, 303)
-	if location := callback.Header().Get("Location"); location != "/publish" {
-		t.Fatalf("location=%q", location)
-	}
-	session := responseCookie(t, callback, "gonavi_market_session")
-	if session == nil || len(session.Value) != 43 || !session.HttpOnly {
-		t.Fatalf("missing browser session: %+v", session)
-	}
-	body := decodeResponse[webSessionBody](t, browserRequest(f, "GET", "/auth/web/session", session))
-	if !body.Authenticated || body.Account.Login != "new-user" {
-		t.Fatalf("session=%+v", body)
-	}
-}
-
 func TestWebCallbackStateAndDenialFailures(t *testing.T) {
 	f := newHTTPFixture(t)
 	f.server.identity = identityFixture{}
-	wrongState := browserRequest(f, "GET", "/auth/web/callback?code=provider-code&state="+strings.Repeat("q", 43),
+	wrongState := browserRequest(f, "GET", "/auth/github/callback?code=provider-code&state="+strings.Repeat("q", 43),
 		&http.Cookie{Name: "gonavi_market_oauth", Value: strings.Repeat("q", 43), Path: "/"})
 	assertStatus(t, wrongState, 303)
 	if location := wrongState.Header().Get("Location"); location != "/login?error=invalid_oauth_state" {
 		t.Fatalf("location=%q", location)
 	}
 	_, state, stateCookie := startWebLogin(t, f, "/publish")
-	denied := browserRequest(f, "GET", "/auth/web/callback?state="+state, stateCookie)
+	denied := browserRequest(f, "GET", "/auth/github/callback?state="+state, stateCookie)
 	assertStatus(t, denied, 303)
 	if location := denied.Header().Get("Location"); location != "/login?error=oauth_denied" {
 		t.Fatalf("location=%q", location)
 	}
-	replay := browserRequest(f, "GET", "/auth/web/callback?code=provider-code&state="+state, stateCookie)
+	replay := browserRequest(f, "GET", "/auth/github/callback?code=provider-code&state="+state, stateCookie)
 	assertStatus(t, replay, 303)
 	if location := replay.Header().Get("Location"); location != "/login?error=invalid_oauth_state" {
 		t.Fatalf("replay location=%q", location)
@@ -204,7 +195,7 @@ func TestWebCallbackProviderFailureAndUnavailable(t *testing.T) {
 	f := newHTTPFixture(t)
 	f.server.identity = identityFixture{fail: true}
 	_, state, stateCookie := startWebLogin(t, f, "/publish")
-	failed := browserRequest(f, "GET", "/auth/web/callback?code=provider-code&state="+state, stateCookie)
+	failed := browserRequest(f, "GET", "/auth/github/callback?code=provider-code&state="+state, stateCookie)
 	assertStatus(t, failed, 303)
 	if location := failed.Header().Get("Location"); location != "/login?error=identity_provider_failed" {
 		t.Fatalf("location=%q", location)
@@ -241,7 +232,7 @@ func TestWebReturnToValidation(t *testing.T) {
 			if stateCookie == nil || returnCookie == nil {
 				t.Fatalf("missing flow cookies for %q", returnTo)
 			}
-			callback := browserRequest(f, "GET", "/auth/web/callback?code=provider-code&state="+stateCookie.Value, stateCookie, returnCookie)
+			callback := browserRequest(f, "GET", "/auth/github/callback?code=provider-code&state="+stateCookie.Value, stateCookie, returnCookie)
 			assertStatus(t, callback, 303)
 			if location := callback.Header().Get("Location"); location != want {
 				t.Fatalf("returnTo=%q location=%q want=%q", returnTo, location, want)
@@ -278,4 +269,40 @@ func TestBrowserSessionCookieNamingFollowsPublicURL(t *testing.T) {
 	if name := secure.browserSessionCookie(); name != "__Host-gonavi_market_session" || !secure.secure {
 		t.Fatalf("secure name=%q", name)
 	}
+}
+
+func TestRemovedDeviceAndAliasRoutesAreGone(t *testing.T) {
+	f := newHTTPFixture(t)
+	for _, route := range []struct{ method, path string }{
+		{"POST", "/auth/device"},
+		{"POST", "/auth/device/token"},
+		{"POST", "/auth/device/decision"},
+		{"GET", "/auth/device"},
+		{"GET", "/auth/github"},
+		{"GET", "/auth/web/callback"},
+	} {
+		response := f.request(route.method, route.path, "", nil)
+		assertStatus(t, response, 404)
+		if failure := decodeResponse[APIError](t, response); failure.Code != "not_found" {
+			t.Fatalf("%s %s failure=%+v", route.method, route.path, failure)
+		}
+	}
+}
+
+func TestOperatorTokenSessionAndLogout(t *testing.T) {
+	f := newHTTPFixture(t)
+	token, err := newSecret(32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.repo.CreateSession(context.Background(), secretHash(token), "2", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	f.tokens["operator"] = token
+	account := decodeResponse[Account](t, f.request("GET", "/auth/session", "operator", nil))
+	if account.ID != "2" || account.Role != "admin" || account.Login != "reviewer" {
+		t.Fatalf("account=%+v", account)
+	}
+	assertStatus(t, f.request("POST", "/auth/logout", "operator", nil), 200)
+	assertStatus(t, f.request("GET", "/auth/session", "operator", nil), 401)
 }

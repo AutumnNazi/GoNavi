@@ -1,6 +1,6 @@
 # Publisher and administrator API
 
-All API paths below are relative to the configured service origin plus /api/v1. Successful responses are JSON except the browser consent pages and artifact bytes. Errors use {"code":"...","message":"..."}; message currently carries the stable machine code for client localization. No response contains database errors, OAuth secrets or connection strings.
+All API paths below are relative to the configured service origin plus /api/v1. Successful responses are JSON except OAuth redirects and artifact bytes. Errors use {"code":"...","message":"..."}; message currently carries the stable machine code for client localization. No response contains database errors, OAuth secrets or connection strings.
 
 ## Account bootstrap
 
@@ -13,22 +13,37 @@ A first login self-serves a publisher role and a `gh-<github-login>` namespace, 
 ./gonavi-market-server -grant-github-id VERIFIED_NUMERIC_ID -grant-role publisher -publisher verified -official
 ```
 
-The command records an audit event and exits. It can reserve an identity before its first login. It does not create a bearer token. Publishers own one namespace and may submit only IDs under that namespace (for example example.viewer). Once a publisher owns a plugin, the namespace cannot be silently reassigned. To revoke publisher/admin privileges, explicitly grant role user while preserving any existing publisher namespace (and omit -official). Existing sessions reload current privileges on every request, so the account loses privileged actions immediately while ownership and the author self-rating guard remain intact.
+The command records an audit event and exits. It can reserve an identity before its first login. A role grant does not create a token; issue an operator session separately when automation needs one. Publishers own one namespace and may submit only IDs under that namespace (for example example.viewer). Once a publisher owns a plugin, the namespace cannot be silently reassigned. To revoke publisher/admin privileges, explicitly grant role user while preserving any existing publisher namespace (and omit -official). Existing sessions reload current privileges on every request, so the account loses privileged actions immediately while ownership and the author self-rating guard remain intact.
 
 There is no first-user administrator rule, public role-grant endpoint or default administrator password.
 
-## Obtain a real token
+## Sessions
 
-1. POST /auth/device. Copy deviceCode privately; display userCode and open verificationUri.
-2. Enter that user code on the same-origin page. Complete GitHub authorization and explicitly approve the code shown by your own GoNavi installation.
-3. Poll POST /auth/device/token with {"deviceCode":"..."} no faster than intervalSeconds. Pending, denied and expired never include a token. Authorized includes accessToken and expiresIn.
-4. Send Authorization: Bearer ACCESS_TOKEN on authenticated API requests. GET /auth/session shows the current account. POST /auth/logout revokes the current session.
+The website is the only interactive account and write entry. A human signs in through GitHub:
 
-Device grants expire after ten minutes; access tokens expire after 24 hours. Early polls return HTTP 429 / slow_down with Retry-After: 5. Authorization is consumed once; replay returns expired. Refresh tokens and a browser account dashboard are not implemented. Tokens must not appear in URLs, shell history, logs or committed scripts. The curl examples below assume a short-lived local environment variable named TOKEN; production automation should inject it securely.
+1. GET /auth/web/start?returnTo=/publish sets short-lived HttpOnly state and returnTo cookies, records a single-use S256 PKCE oauth flow and redirects to GitHub.
+2. GitHub redirects to the one registered callback, GET /auth/github/callback. The server consumes the oauth flow, upserts the GitHub identity, stores a session hash and sets an HttpOnly SameSite=Lax session cookie (24 hours; __Host- prefixed on HTTPS) before redirecting to returnTo.
+3. GET /auth/web/session returns {"authenticated":false} for anonymous callers, otherwise the account plus the CSRF token. Cookie-authenticated POST/PUT/DELETE requests must send X-GoNavi-CSRF with that value.
+4. POST /auth/web/logout requires the same CSRF header, revokes the cookie session and clears the cookie.
+
+Operators and automation use an explicit bearer token instead of a browser. Run this with the operator database credential and the usual service environment:
+
+```sh
+./gonavi-market-server -issue-session GITHUB_NUMERIC_ID
+./gonavi-market-server -issue-session GITHUB_NUMERIC_ID -session-ttl 168h
+```
+
+The command resolves the existing account (grant its role first), stores only the SHA-256 hash in market_sessions and prints the 43-character token once to stdout. The default lifetime is 720h; accepted values are 1h to 8760h. It never prints or logs the database URL. Treat the printed value as a secret: it cannot be recovered, only revoked.
+
+- GET /auth/session with Authorization: Bearer TOKEN returns the current account and re-reads stored privileges on every request.
+- POST /auth/logout revokes the presented bearer session and returns {"revoked":true}; later calls return 401.
+- Role changes take effect immediately because sessions carry no cached privileges.
+
+The desktop client is an anonymous read-only consumer: it lists the catalog, downloads artifacts and reads ratings, but does not log in, publish or write ratings. There are no device codes, consent pages, refresh tokens or client-submitted write endpoints.
 
 ## Submit a prebuilt package
 
-The multipart request contains three required parts: pluginId, version and package. The optional source part registers a canonical public GitHub repository URL such as https://github.com/owner/repo for future Release updates. The ZIP/TGZ root must contain gonavi.plugin.json. Form metadata must match the validated manifest. The manifest cannot assign service privileges or an official badge.
+The multipart request contains three required parts: pluginId, version and package. The optional source part registers a canonical public GitHub repository URL such as https://github.com/owner/repo for future Release updates. The optional expectedDigest part pins the SHA-256 returned by a pre-flight inspection; when it no longer matches the uploaded bytes the request fails with 409 inspection_changed before any version is reserved. The ZIP/TGZ root must contain gonavi.plugin.json. Form metadata must match the validated manifest. The manifest cannot assign service privileges or an official badge.
 
 ```sh
 curl --fail-with-body -H "Authorization: Bearer $TOKEN"   -F 'pluginId=example.viewer' -F 'version=1.0.0' -F 'package=@viewer.zip'   "$BASE/api/v1/submissions"
@@ -41,7 +56,7 @@ Uploads are never executed. Validation checks structure, resource bounds, manife
 
 ## Automatic GitHub Release updates
 
-Register the repository once when publishing the first package, either in the client's optional source repository field or with multipart source:
+Register the repository once when publishing the first package, either in the website's optional source repository field or with multipart source:
 
 ```sh
 curl --fail-with-body -H "Authorization: Bearer $TOKEN" \
@@ -84,7 +99,7 @@ Approval/rejection requires pending_review; yank requires published. Repeated or
 ## Ratings and reports
 
 - GET /plugins/{id}/ratings lists visible ratings.
-- PUT /plugins/{id}/rating accepts {"stars":1..5,"body":"text","version":"1.0.0"}. Omit version to rate the newest published version. Body is limited to 4,000 UTF-8 bytes. The service derives userId from the bearer token and forbids author self-rating.
+- PUT /plugins/{id}/rating accepts {"stars":1..5,"body":"text","version":"1.0.0"}. Omit version to rate the newest published version. Body is limited to 4,000 UTF-8 bytes. The service derives userId from the authenticated session (website cookie or operator bearer token) and forbids author self-rating.
 - DELETE /plugins/{id}/rating deletes only the caller's rating.
 - POST /reports accepts {"pluginId":"example.viewer","reason":"..."}; reports are stored for operator triage. A report dashboard/list API is not yet supplied.
 - POST /admin/plugins/{id}/ratings/{userId}/hide accepts {"reason":"..."}. This administrator-only operation hides the rating and records an audit event atomically.

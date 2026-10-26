@@ -28,7 +28,6 @@ type memoryRepo struct {
 	mu        sync.Mutex
 	accounts  map[string]Account
 	sessions  map[string]testSession
-	devices   map[string]DeviceGrant
 	flows     map[string]AuthFlow
 	releases  map[string]testRelease
 	ratings   map[string]Rating
@@ -40,7 +39,7 @@ type memoryRepo struct {
 var _ Repository = (*memoryRepo)(nil)
 
 func newMemoryRepo() *memoryRepo {
-	return &memoryRepo{accounts: map[string]Account{}, sessions: map[string]testSession{}, devices: map[string]DeviceGrant{}, flows: map[string]AuthFlow{},
+	return &memoryRepo{accounts: map[string]Account{}, sessions: map[string]testSession{}, flows: map[string]AuthFlow{},
 		releases: map[string]testRelease{}, ratings: map[string]Rating{}, hidden: map[string]bool{}, downloads: map[string]int64{}}
 }
 

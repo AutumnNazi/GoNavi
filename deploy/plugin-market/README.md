@@ -10,7 +10,7 @@ See the [integration contract](../../docs/plugins/implementation-contract.md) fo
 - Trusted publisher records determine the official badge. Every catalog sort places official matches first. Rating order uses Bayesian smoothing with weight 10 and the global visible-rating mean (3 when empty); the displayed average remains the arithmetic mean.
 - Each account has one mutable rating per plugin. Authors cannot rate their own plugins. Upserts, deletes and moderation run transactionally; hidden ratings stay hidden after edits.
 - Publishing reserves a plugin/version, records draft → submitted → validating → pending_review, and waits for a different administrator to approve. Rejection and yank require reasons. Reusing any reserved version is rejected; publish corrections as a new version. A database trigger protects released metadata and bytes.
-- GitHub OAuth uses state, S256 PKCE, bounded upstream HTTP calls and explicit device consent. GitHub numeric IDs identify users. The browser login/consent pages use the shared six-language catalogs and negotiate Accept-Language. First signup grants only the user role. Device codes and bearer tokens are hashed in PostgreSQL; access tokens expire after 24 hours and logout revokes them across replicas.
+- GitHub OAuth is the only interactive login: state, S256 PKCE, bounded upstream HTTP calls and one registered callback (`/api/v1/auth/github/callback`) for both the login redirect and the code exchange. GitHub numeric IDs identify users, and a first login self-serves the publisher role plus a `gh-<login>` namespace. Website sessions and operator bearer tokens share `market_sessions`, which stores only SHA-256 hashes; website cookies are HttpOnly, SameSite=Lax and last 24 hours. The desktop client is an anonymous read-only consumer.
 - ZIP/TGZ input is limited to 64 MiB compressed, 256 MiB expanded, 4,096 entries and a 256 KiB manifest. Unsafe paths, links, special files, conflicting names, invalid manifests and missing entrypoints are rejected. At most two submissions validate concurrently per server.
 
 A reviewed package is still trusted third-party code, not proven safe code. Reviewers must inspect source, requested permissions, build provenance and supplied binaries.
@@ -46,7 +46,16 @@ go build -o gonavi-market-server ./cmd/gonavi-market-server
 ./gonavi-market-server
 ```
 
-The server does not apply migrations on startup. Missing tables fail requests rather than creating an in-memory substitute. If both GitHub settings are absent, public reads work but login returns HTTP 503 with code auth_unavailable. Partial OAuth configuration prevents startup.
+The server does not apply migrations on startup. Missing tables fail requests rather than creating an in-memory substitute. If both GitHub settings are absent, public reads work but website login redirects with the auth_unavailable error code. Partial OAuth configuration prevents startup.
+
+Interactive users sign in on the website through GET /api/v1/auth/web/start; GET /api/v1/auth/web/session reports the session and its CSRF token, and POST /api/v1/auth/web/logout revokes it. Operators and automation do not use a browser or a device code; issue a bearer session explicitly and print it once:
+
+```sh
+./gonavi-market-server -issue-session GITHUB_NUMERIC_ID
+./gonavi-market-server -issue-session GITHUB_NUMERIC_ID -session-ttl 168h
+```
+
+Grant the account's role first; the default lifetime is 720h and accepted values are 1h to 8760h. Only the SHA-256 hash is stored in `market_sessions`. Send the printed token as `Authorization: Bearer`; GET /api/v1/auth/session returns the account and POST /api/v1/auth/logout revokes it.
 
 ## Containers
 
@@ -76,13 +85,13 @@ This is a bounded single-object adapter, not a full S3 SDK: automatic credential
 2. Keep the artifact directory private. Only the service byte route checks publication state; do not expose the directory as static files. Keep released objects immutable and back up artifacts with the database.
 3. Separate operator and runtime database credentials. Runtime needs normal data mutations and USAGE on the audit/report ID sequences, but no schema changes, role grants or audit updates/deletes. Grant only id/login inserts and login updates on market_users; operator bootstrap alone changes role, publisher_id and official. Store credentials in a secret manager. Disable database bind-parameter logging for authentication queries; OAuth PKCE state is short-lived but still sensitive.
 4. Put distributed rate limits and upload quotas at the proxy. The built-in limit is 120 mutating/auth requests per minute per direct peer and a bounded 8,192-peer map. It deliberately ignores forwarded-IP headers; behind a proxy, peer-based limits are shared. Sixty-four requests and at most two combined artifact operations (validation/upload/download) run concurrently per instance. S3 verifies in-memory snapshots; the container uses a 384 MiB Go memory target inside its 512 MiB limit. Size memory and proxy quotas for your workload.
-5. Deploy replicas only with shared PostgreSQL and shared artifact storage. OAuth flows, device decisions and token consumption are transactional across replicas. Local filesystem storage requires a shared volume with atomic link/create semantics.
+5. Deploy replicas only with shared PostgreSQL and shared artifact storage. OAuth flows are single-use and transactional across replicas; operator tokens are ordinary hashed sessions revoked by the same delete path. Local filesystem storage requires a shared volume with atomic link/create semantics.
 6. Keep rejected and yanked versions for audit. Unreferenced stored artifacts can remain after a database failure. No automatic artifact garbage collector is supplied. Review orphan candidates before deleting them.
 7. A crash or cancellation during validation can leave a reserved version in draft/submitted/validating. Treat these as incomplete, never public. The initial implementation has no automatic job retry or stale-upload recovery command; preserve the audit record and submit a new version.
 
 Each version contains one immutable archive; multi-platform packages bundle their declared platform entrypoints. Separate replacement archives under the same version are not supported.
 
-The catalog uses bounded offset cursors (maximum offset 10,000), returns at most 100 entries and chooses the newest compatible published version. Concurrent publications can move page boundaries. Ratings and version lists return the newest 100 entries; review/audit lists return at most 200. A full marketplace website, token refresh, organization/team publishers, signing/provenance verification, malware scanning, arbitrary search facets and background cleanup workers are not shipped.
+The catalog uses bounded offset cursors (maximum offset 10,000), returns at most 100 entries and chooses the newest compatible published version. Concurrent publications can move page boundaries. Ratings and version lists return the newest 100 entries; review/audit lists return at most 200. The marketplace website is deployed separately; token refresh, organization/team publishers, signing/provenance verification, malware scanning, arbitrary search facets and background cleanup workers are not shipped.
 
 ## Verification
 

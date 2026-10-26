@@ -39,10 +39,10 @@ func (s *Server) webStart(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, s.identity.AuthorizeURL(state, base64.RawURLEncoding.EncodeToString(challenge[:])), http.StatusSeeOther)
 }
 
-// webCallback completes the login, issues one revocable session, and returns
-// the browser to the validated post-login path. Failures stay navigations so a
-// human sees the login page instead of raw JSON.
-func (s *Server) webCallback(w http.ResponseWriter, r *http.Request) {
+// oauthCallback completes the only registered GitHub callback. It serves the
+// website login flow exclusively: the short-lived state cookie proves the
+// request started here, and the flow row prevents replay across replicas.
+func (s *Server) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	state := r.URL.Query().Get("state")
 	if !browserCookieMatches(r, browserStateCookie, state) {
 		redirectLogin(w, r, "invalid_oauth_state")
@@ -85,8 +85,7 @@ func (s *Server) webCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 // completeBrowserLogin issues exactly one revocable browser session and sets
-// the HttpOnly cookie. Device OAuth and browser OAuth share the configured
-// GitHub callback, so both completion paths must use this helper.
+// the HttpOnly session cookie.
 func (s *Server) completeBrowserLogin(ctx context.Context, w http.ResponseWriter, account Account) error {
 	token, err := newSecret(32)
 	if err != nil {

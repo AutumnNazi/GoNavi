@@ -196,7 +196,7 @@ func TestPostgresReviewedCatalogAndRatingTransactions(t *testing.T) {
 	}
 }
 
-func TestPostgresDeviceSingleConsumptionAndExplicitRoles(t *testing.T) {
+func TestPostgresSessionsAndOAuthFlows(t *testing.T) {
 	p := postgresFixture(t)
 	ctx := context.Background()
 	a, err := p.UpsertIdentity(ctx, Identity{ID: "42", Login: "first"})
@@ -205,44 +205,30 @@ func TestPostgresDeviceSingleConsumptionAndExplicitRoles(t *testing.T) {
 		t.Fatalf("first signup=%+v err=%v", a, err)
 	}
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	d := DeviceGrant{CodeHash: secretHash("device"), UserCodeHash: secretHash("user-code"), ExpiresAt: now.Add(time.Minute), NextPollAt: now}
-	if err = p.CreateDevice(ctx, d); err != nil {
+	tokenHash := secretHash("operator-token")
+	if err = p.CreateSession(ctx, tokenHash, a.ID, now.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if err = p.DecideDevice(ctx, d.UserCodeHash, a.ID, true, now); err != nil {
+	account, err := p.Session(ctx, tokenHash, now)
+	if err != nil || account.ID != a.ID || account.Role != "publisher" {
+		t.Fatalf("issued session=%+v err=%v", account, err)
+	}
+	if err = p.RevokeSession(ctx, tokenHash); err != nil {
 		t.Fatal(err)
 	}
-	var wg sync.WaitGroup
-	results := make(chan string, 8)
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			state, pollErr := p.PollDevice(ctx, d.CodeHash, secretHash("session"), now, now.Add(time.Hour))
-			if pollErr != nil {
-				t.Error(pollErr)
-			}
-			results <- state
-		}()
-	}
-	wg.Wait()
-	close(results)
-	authorized := 0
-	for state := range results {
-		if state == "authorized" {
-			authorized++
-		}
-	}
-	if authorized != 1 {
-		t.Fatalf("issued %d sessions", authorized)
-	}
-	if _, err = p.Session(ctx, secretHash("session"), now); err != nil {
-		t.Fatal(err)
-	}
-	if err = p.RevokeSession(ctx, secretHash("session")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = p.Session(ctx, secretHash("session"), now); !errors.Is(err, ErrUnauthorized) {
+	if _, err = p.Session(ctx, tokenHash, now); !errors.Is(err, ErrUnauthorized) {
 		t.Fatal("revoked session accepted", err)
+	}
+	// OAuth flows keep the legacy user_code/account_id columns empty and are single-use.
+	flow := AuthFlow{Hash: secretHash("oauth-state"), Kind: "oauth", Verifier: "verifier", ExpiresAt: now.Add(10 * time.Minute)}
+	if err = p.CreateFlow(ctx, flow); err != nil {
+		t.Fatal(err)
+	}
+	consumed, err := p.ConsumeFlow(ctx, flow.Hash, "oauth", now)
+	if err != nil || consumed.Verifier != flow.Verifier {
+		t.Fatalf("consumed flow=%+v err=%v", consumed, err)
+	}
+	if _, err = p.ConsumeFlow(ctx, flow.Hash, "oauth", now); !errors.Is(err, ErrNotFound) {
+		t.Fatal("replayed oauth flow accepted", err)
 	}
 }

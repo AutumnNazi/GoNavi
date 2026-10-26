@@ -24,6 +24,8 @@ type commandOptions struct {
 	publishArchive                string
 	namespace, reviewer           string
 	syncOnce                      bool
+	issueSession                  string
+	sessionTTL                    time.Duration
 }
 
 func main() {
@@ -37,6 +39,8 @@ func main() {
 	flag.StringVar(&options.namespace, "official-namespace", "com.gonavi", "publisher namespace for -publish-official")
 	flag.StringVar(&options.reviewer, "official-reviewer", "", "admin github id that approves a -publish-official import")
 	flag.BoolVar(&options.syncOnce, "sync-once", false, "run one GitHub release sync pass, print outcomes, then exit")
+	flag.StringVar(&options.issueSession, "issue-session", "", "issue one operator bearer token for this immutable GitHub numeric ID, print it once, then exit")
+	flag.DurationVar(&options.sessionTTL, "session-ttl", defaultSessionTTL, "lifetime of an -issue-session token, between 1h and 8760h")
 	flag.Parse()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -77,6 +81,9 @@ func run(ctx context.Context, options commandOptions) error {
 	}
 	if options.publishArchive != "" {
 		return publishOfficial(ctx, db, options)
+	}
+	if options.issueSession != "" {
+		return issueOperatorSession(ctx, repository, options.issueSession, options.sessionTTL, time.Now, os.Stdout)
 	}
 	if options.syncOnce {
 		return syncOnceFromCLI(ctx, db, options)

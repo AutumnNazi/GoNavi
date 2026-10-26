@@ -87,7 +87,7 @@ func TestHTTPBoundedJSONAndRateLimit(t *testing.T) {
 	} {
 		assertStatus(t, f.request("PUT", "/plugins/acme.example/rating", "user", strings.NewReader(body)), 400)
 	}
-	request := httptest.NewRequest("POST", "http://localhost:8090/api/v1/auth/device", nil)
+	request := httptest.NewRequest("POST", "http://localhost:8090/api/v1/auth/logout", nil)
 	request.RemoteAddr = "127.0.0.2:4200"
 	for i := 0; i < 120; i++ {
 		f.server.allowWrite(request)

@@ -19,7 +19,6 @@ import (
 var pluginIDPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}[.][a-z][a-z0-9.-]{0,127}$`)
 var digestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var platformPattern = regexp.MustCompile(`^[a-z0-9]+/[a-z0-9]+$`)
-var userCodePattern = regexp.MustCompile(`^[A-F0-9]{5}-[A-F0-9]{5}$`)
 
 func validPluginID(id string) bool {
 	return pluginIDPattern.MatchString(id) && !strings.Contains(id, "..") && !strings.HasSuffix(id, ".")

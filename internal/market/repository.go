@@ -41,16 +41,11 @@ type PublisherRepository interface {
 	ClearPluginSource(context.Context, Account, string) error
 }
 
-// DeviceGrant persists authorization without storing the device's secret code.
-type DeviceGrant struct {
-	CodeHash, UserCodeHash, State, AccountID string
-	ExpiresAt, NextPollAt                    time.Time
-}
-
-// AuthFlow is a single-use, short-lived browser OAuth/consent transaction.
+// AuthFlow is a single-use, short-lived website GitHub OAuth transaction.
+// The legacy user_code/account_id columns remain in the schema unused.
 type AuthFlow struct {
-	Hash, Kind, Verifier, UserCode, AccountID string
-	ExpiresAt                                 time.Time
+	Hash, Kind, Verifier string
+	ExpiresAt            time.Time
 }
 
 // AuthRepository supports shared replica-safe authentication and revocation.
@@ -59,9 +54,6 @@ type AuthRepository interface {
 	Session(context.Context, string, time.Time) (Account, error)
 	CreateSession(context.Context, string, string, time.Time) error
 	RevokeSession(context.Context, string) error
-	CreateDevice(context.Context, DeviceGrant) error
-	PollDevice(context.Context, string, string, time.Time, time.Time) (string, error)
-	DecideDevice(context.Context, string, string, bool, time.Time) error
 	CreateFlow(context.Context, AuthFlow) error
 	ConsumeFlow(context.Context, string, string, time.Time) (AuthFlow, error)
 }

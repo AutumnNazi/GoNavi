@@ -44,50 +44,6 @@ func (m *memoryRepo) CreateSession(ctx context.Context, hash, accountID string, 
 	return nil
 }
 
-func (m *memoryRepo) CreateDevice(ctx context.Context, d DeviceGrant) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.devices[d.CodeHash] = d
-	return nil
-}
-
-func (m *memoryRepo) PollDevice(ctx context.Context, hash, sessionHash string, now, expires time.Time) (string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	d, ok := m.devices[hash]
-	if !ok || !d.ExpiresAt.After(now) || d.State == "consumed" {
-		return "expired", nil
-	}
-	if d.NextPollAt.After(now) {
-		return "slow_down", nil
-	}
-	d.NextPollAt = now.Add(5 * time.Second)
-	state := d.State
-	if d.State == "authorized" {
-		m.sessions[sessionHash] = testSession{accountID: d.AccountID, expires: expires}
-		d.State = "consumed"
-	}
-	m.devices[hash] = d
-	return state, nil
-}
-
-func (m *memoryRepo) DecideDevice(ctx context.Context, userHash, account string, approve bool, now time.Time) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for hash, d := range m.devices {
-		if d.UserCodeHash == userHash && d.State == "pending" && d.ExpiresAt.After(now) {
-			d.State = "denied"
-			if approve {
-				d.State = "authorized"
-			}
-			d.AccountID = account
-			m.devices[hash] = d
-			return nil
-		}
-	}
-	return ErrNotFound
-}
-
 func (m *memoryRepo) CreateFlow(ctx context.Context, f AuthFlow) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

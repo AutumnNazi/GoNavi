@@ -13,7 +13,6 @@ import (
 	"unicode"
 
 	"GoNavi-Wails/internal/logger"
-	"GoNavi-Wails/shared/i18n"
 )
 
 // ServerOptions wires explicit infrastructure; nil identity disables login, not authentication.
@@ -33,7 +32,6 @@ type Server struct {
 	artifacts     ArtifactStore
 	identity      IdentityProvider
 	releases      ReleaseFetcher
-	localizer     *i18n.Localizer
 	publicURL     string
 	secure        bool
 	now           func() time.Time
@@ -67,11 +65,7 @@ func NewServer(o ServerOptions) (*Server, error) {
 	if o.Clock == nil {
 		o.Clock = time.Now
 	}
-	localizer, err := i18n.NewLocalizer(i18n.LanguageEnUS)
-	if err != nil {
-		return nil, err
-	}
-	return &Server{repo: o.Repository, artifacts: o.Artifacts, identity: o.Identity, releases: o.Releases, localizer: localizer, publicURL: base, secure: secure, now: o.Clock,
+	return &Server{repo: o.Repository, artifacts: o.Artifacts, identity: o.Identity, releases: o.Releases, publicURL: base, secure: secure, now: o.Clock,
 		limits: make(map[string]requestLimit), slots: make(chan struct{}, 64), uploadSlots: make(chan struct{}, 2), artifactSlots: make(chan struct{}, 2)}, nil // Two artifact operations bound archive and object-store snapshots.
 }
 
@@ -96,16 +90,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/admin/audit", s.audit)
 	mux.HandleFunc("POST /api/v1/admin/plugins/{id}/ratings/{user}/hide", s.hideRating)
 	mux.HandleFunc("POST /api/v1/admin/sync", s.syncReleases)
-	mux.HandleFunc("POST /api/v1/auth/device", s.startDevice)
-	mux.HandleFunc("POST /api/v1/auth/device/token", s.pollDevice)
 	mux.HandleFunc("GET /api/v1/auth/session", s.session)
 	mux.HandleFunc("POST /api/v1/auth/logout", s.logout)
-	mux.HandleFunc("GET /api/v1/auth/device", s.devicePage)
-	mux.HandleFunc("GET /api/v1/auth/github", s.startOAuth)
 	mux.HandleFunc("GET /api/v1/auth/github/callback", s.oauthCallback)
-	mux.HandleFunc("POST /api/v1/auth/device/decision", s.decideDevice)
 	mux.HandleFunc("GET /api/v1/auth/web/start", s.webStart)
-	mux.HandleFunc("GET /api/v1/auth/web/callback", s.webCallback)
 	mux.HandleFunc("GET /api/v1/auth/web/session", s.webSession)
 	mux.HandleFunc("POST /api/v1/auth/web/logout", s.webLogout)
 	mux.HandleFunc("POST /api/v1/publisher/inspect", s.inspect)

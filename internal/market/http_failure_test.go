@@ -39,18 +39,3 @@ func TestSaturatedUploadPoolRejectsWithoutReadingPackage(t *testing.T) {
 		t.Fatal("upload pool ignored")
 	}
 }
-
-func TestOAuthProviderDenialReachesDevice(t *testing.T) {
-	f := newHTTPFixture(t)
-	f.server.identity = identityFixture{}
-	challenge := decodeResponse[DeviceAuthorization](t, f.request("POST", "/auth/device", "", nil))
-	start := authRequest(f, "GET", "/auth/github?user_code="+challenge.UserCode, "", nil)
-	cookie := start.Result().Cookies()[0]
-	callback := authRequest(f, "GET", "/auth/github/callback?error=access_denied&state="+cookie.Value, "", cookie)
-	assertStatus(t, callback, 401)
-	response := f.request("POST", "/auth/device/token", "", strings.NewReader(`{"deviceCode":"`+challenge.DeviceCode+`"}`))
-	token := decodeResponse[DeviceToken](t, response)
-	if token.Status != "denied" || token.AccessToken != "" {
-		t.Fatalf("status=%s", token.Status)
-	}
-}

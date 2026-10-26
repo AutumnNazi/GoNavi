@@ -2,7 +2,6 @@ package market
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"regexp"
@@ -129,8 +128,8 @@ func (p *Postgres) Session(ctx context.Context, hash string, now time.Time) (Acc
 	return a, err
 }
 
-// CreateSession issues one revocable session after the browser has proven an
-// identity. Only the token hash is stored, exactly like device sessions.
+// CreateSession issues one revocable session after a browser login or operator
+// issuance. Only the token hash is stored; the raw token never reaches the database.
 func (p *Postgres) CreateSession(ctx context.Context, hash, accountID string, expiresAt time.Time) error {
 	if hash == "" || accountID == "" || expiresAt.IsZero() {
 		return ErrInvalid
@@ -145,82 +144,20 @@ func (p *Postgres) RevokeSession(ctx context.Context, hash string) error {
 	return repositoryError(err)
 }
 
-// CreateDevice persists hashes only; expired grants are pruned in bounded batches.
-func (p *Postgres) CreateDevice(ctx context.Context, d DeviceGrant) error {
-	if _, err := p.db.ExecContext(ctx, "DELETE FROM market_sessions WHERE token_hash IN (SELECT token_hash FROM market_sessions WHERE expires_at<now() LIMIT 1000)"); err != nil {
-		return repositoryError(err)
-	}
-	_, err := p.db.ExecContext(ctx, "DELETE FROM market_devices WHERE code_hash IN (SELECT code_hash FROM market_devices WHERE expires_at<now() LIMIT 1000)")
-	if err != nil {
-		return repositoryError(err)
-	}
-	_, err = p.db.ExecContext(ctx, "INSERT INTO market_devices(code_hash,user_code_hash,state,expires_at,next_poll_at) VALUES($1,$2,'pending',$3,$4)", d.CodeHash, d.UserCodeHash, d.ExpiresAt, d.NextPollAt)
-	return repositoryError(err)
-}
-
-// PollDevice atomically consumes authorization and issues exactly one revocable session.
-func (p *Postgres) PollDevice(ctx context.Context, hash, sessionHash string, now, sessionExpires time.Time) (string, error) {
-	tx, err := p.db.BeginTx(ctx, nil)
-	if err != nil {
-		return "", repositoryError(err)
-	}
-	defer rollback(tx)
-	var d DeviceGrant
-	err = tx.QueryRowContext(ctx, "SELECT state,COALESCE(account_id,''),expires_at,next_poll_at FROM market_devices WHERE code_hash=$1 FOR UPDATE", hash).Scan(&d.State, &d.AccountID, &d.ExpiresAt, &d.NextPollAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "expired", nil
-	}
-	if err != nil {
-		return "", repositoryError(err)
-	}
-	if !d.ExpiresAt.After(now) || d.State == "consumed" {
-		return "expired", nil
-	}
-	if d.NextPollAt.After(now) {
-		return "slow_down", nil
-	}
-	if _, err = tx.ExecContext(ctx, "UPDATE market_devices SET next_poll_at=$2 WHERE code_hash=$1", hash, now.Add(5*time.Second)); err != nil {
-		return "", repositoryError(err)
-	}
-	if d.State == "authorized" {
-		if d.AccountID == "" {
-			return "", ErrUnauthorized
-		}
-		if _, err = tx.ExecContext(ctx, "INSERT INTO market_sessions(token_hash,account_id,expires_at) VALUES($1,$2,$3)", sessionHash, d.AccountID, sessionExpires); err != nil {
-			return "", repositoryError(err)
-		}
-		if _, err = tx.ExecContext(ctx, "UPDATE market_devices SET state='consumed' WHERE code_hash=$1", hash); err != nil {
-			return "", repositoryError(err)
-		}
-	}
-	if err = tx.Commit(); err != nil {
-		return "", repositoryError(err)
-	}
-	return d.State, nil
-}
-
-// DecideDevice accepts one explicit, authenticated browser decision before expiry.
-func (p *Postgres) DecideDevice(ctx context.Context, userHash, accountID string, approve bool, now time.Time) error {
-	state := "denied"
-	if approve {
-		state = "authorized"
-	}
-	return affected(p.db.ExecContext(ctx, "UPDATE market_devices SET state=$2,account_id=NULLIF($3,'') WHERE user_code_hash=$1 AND state='pending' AND expires_at>$4", userHash, state, accountID, now))
-}
-
-// CreateFlow stores short-lived PKCE and consent state for replica-safe callbacks.
+// CreateFlow stores short-lived website PKCE state for replica-safe callbacks.
+// Legacy user_code/account_id columns are still NOT NULL, so both are stored empty.
 func (p *Postgres) CreateFlow(ctx context.Context, f AuthFlow) error {
 	_, err := p.db.ExecContext(ctx, "DELETE FROM market_auth_flows WHERE hash IN (SELECT hash FROM market_auth_flows WHERE expires_at<now() LIMIT 1000)")
 	if err != nil {
 		return repositoryError(err)
 	}
-	_, err = p.db.ExecContext(ctx, "INSERT INTO market_auth_flows(hash,kind,verifier,user_code,account_id,expires_at) VALUES($1,$2,$3,$4,$5,$6)", f.Hash, f.Kind, f.Verifier, f.UserCode, f.AccountID, f.ExpiresAt)
+	_, err = p.db.ExecContext(ctx, "INSERT INTO market_auth_flows(hash,kind,verifier,user_code,account_id,expires_at) VALUES($1,$2,$3,'','',$4)", f.Hash, f.Kind, f.Verifier, f.ExpiresAt)
 	return repositoryError(err)
 }
 
 // ConsumeFlow prevents replay, including concurrent callbacks on separate replicas.
 func (p *Postgres) ConsumeFlow(ctx context.Context, hash, kind string, now time.Time) (AuthFlow, error) {
 	var f AuthFlow
-	err := p.db.QueryRowContext(ctx, `DELETE FROM market_auth_flows WHERE hash=$1 AND kind=$2 AND expires_at>$3 RETURNING hash,kind,verifier,user_code,account_id,expires_at`, hash, kind, now).Scan(&f.Hash, &f.Kind, &f.Verifier, &f.UserCode, &f.AccountID, &f.ExpiresAt)
+	err := p.db.QueryRowContext(ctx, `DELETE FROM market_auth_flows WHERE hash=$1 AND kind=$2 AND expires_at>$3 RETURNING hash,kind,verifier,expires_at`, hash, kind, now).Scan(&f.Hash, &f.Kind, &f.Verifier, &f.ExpiresAt)
 	return f, repositoryError(err)
 }
