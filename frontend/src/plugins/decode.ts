@@ -160,9 +160,12 @@ export function decodeManifest(data: unknown): PluginManifest {
         const entry = requireRecord(item);
         onlyKeys(entry, key === 'commands' ? ['id', 'title', 'description', 'inputSchema', 'effect'] : ['id', 'title', 'body', 'html']);
         if (key === 'panels') {
-          const hasBody = entry.body != null;
+          // Go 的 omitempty 不会省略零值结构体，HTML-only 面板可能仍带 body:{"type":""}。
+          const rawBody = entry.body;
+          const hasBody = rawBody != null && !(typeof rawBody === 'object' && !Array.isArray(rawBody) && (rawBody as Record<string, unknown>).type === '');
           const hasHTML = entry.html != null;
           if (hasBody === hasHTML) invalid();
+          if (!hasBody && rawBody != null) delete entry.body;
           if (hasBody) onlyUINode(requireRecord(entry.body));
           if (hasHTML) {
             if (!(m.permissions as string[]).includes('ui.html-panel')) invalid();

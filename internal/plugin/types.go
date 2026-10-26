@@ -72,7 +72,7 @@ type Command struct {
 type Panel struct {
 	ID    string     `json:"id"`
 	Title string     `json:"title"`
-	Body  UINode     `json:"body,omitempty"`
+	Body  UINode     `json:"body,omitzero"`
 	HTML  *HTMLPanel `json:"html,omitempty"`
 }
 
