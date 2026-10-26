@@ -64,7 +64,7 @@ gonavi plugin --safe-mode disable publisher.name
 | 平台敏感（Windows 半边） | 按 CI 同样用例本机复跑通过：pluginmarket 3.041s、nativewindow 20.861s、db／mcpserver／dataexport 的 `-run ^TestPlugin`、ai/service 与 ai/provider 指定用例、jvm 三项往返 25.445s（本机 Java 21） |
 | 编译 | `go build ./...` 干净 |
 | 新增契约测试 | SDK 导出与类型、JSON-RPC 方法表、权限双向、前端权限标签、插件文档链接、换行风格、失败码映射、安装/替换选择——均带反向验证 |
-| PostgreSQL 16 契约 | 用 Docker 起一次性 `postgres:16`（16.15，映射到本机 55432，未触碰本机 PG18 实例）。`internal/market` 的 5 个 PG 集成用例真实执行并通过（`TestPostgresReviewedCatalogAndRatingTransactions`、`TestPostgresDeviceSingleConsumptionAndExplicitRoles`、`TestPostgresSemverCompatibilityMatchesGo`、`TestPostgresPublicationRollsBackWhenAuditFails`、`TestPostgresTargetGuardRejectsEffectiveOverrides` 含 8 个子用例）；整组 `internal/plugin` + `internal/pluginmarket` + `internal/market` 97.672s／3.547s／38.831s |
+| PostgreSQL 16 契约 | 用 Docker 起一次性 `postgres:16`（16.15，映射到本机 55432，未触碰本机 PG18 实例）。`internal/market` 的 4 个 PG 集成用例真实执行并通过（`TestPostgresReviewedCatalogAndRatingTransactions`、`TestPostgresSemverCompatibilityMatchesGo`、`TestPostgresPublicationRollsBackWhenAuditFails`、`TestPostgresTargetGuardRejectsEffectiveOverrides` 含 8 个子用例）；整组 `internal/plugin` + `internal/pluginmarket` + `internal/market` 97.672s／3.547s／38.831s |
 
 仍未执行：`-race`（本机 `CGO_ENABLED=0` 且无 gcc／clang／cl，无法本地编译 race 检测器；CI 的 marketplace-contract 作业仍在 Linux 上跑 `-race`）、Linux／macOS 平台作业，以及真实 Wails 渲染与真实 GitHub／S3 联调。PostgreSQL 16 已不再属于未执行项。
 
