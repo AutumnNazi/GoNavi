@@ -56,4 +56,14 @@ describe('actual plugin provider wrapper and explicit correction UI', () => {
     expect(state.values).toMatchObject({ type, model: 'old-model', secretRef: 'private-ref', apiFormat: '' });
     const test = renderer.root.findAllByType('button').find((button) => button.children.includes('plugin.ai_provider.test'))!; expect(test.props.disabled).toBe(true);
   });
+  it('forwards installed plugin providers into the add-provider plugin group', async () => {
+    const props = { providers: [], editingProvider: null, isEditing: false, form, loading: false, testing: false, testStatus: 'idle', testResult: null,
+      primaryPasswordVisible: false, onPrimaryPasswordVisibleChange: vi.fn(), onCancelEdit: vi.fn(), onTestProvider: vi.fn(), onSaveProvider: vi.fn(),
+    } as unknown as AISettingsProvidersSectionProps;
+    await act(async () => { renderer = create(<AIPluginProviderScope active><AISettingsPluginProviderSection {...props} /></AIPluginProviderScope>); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    const calls = state.builtin.mock.calls;
+    const last = calls.length ? calls[calls.length - 1][0] as { pluginPresets?: unknown } : undefined;
+    expect(last?.pluginPresets).toEqual([{ key: provider.type, label: 'Native provider · example.ai', available: true, detail: undefined }]);
+  });
 });

@@ -2,6 +2,8 @@
 
 AI provider plugins connect an explicitly selected native backend to GoNavi chat, Agent runs and provider checks. Version 1 supports incremental text/reasoning, complete tool calls, usage and bounded image input. It does **not** support opaque upstream conversation state, automatic fallback or replay after an uncertain call.
 
+Third-party providers ship as regular marketplace plugins: users install and enable the package themselves, and the host does not need a built-in preset or a code change. After enablement the declared providers appear in the AI settings "add model provider" list under the **plugin providers** group; the saved-provider list below it keeps the explicit configure/manage path.
+
 The [HTTP/SSE example](<../../examples/plugins/ai-provider/main.go>) forwards requests to a configured upstream. It does not implement a model. Automated tests use local HTTP fixtures and independently compiled processes; they do not prove live model availability, quality, pricing or account access.
 
 ## Declare a provider and its models
@@ -49,7 +51,7 @@ gonavi plugin check $package
 
 The output path must not already exist. Use the existing inspect/trust/install/enable workflow; no new installation shortcut is provided. This is a native package: the Skills-only `-static` packager mode rejects it.
 
-Select the plugin provider in AI settings, choose one declared model and configure only its supported values: base URL, API key, model and allowed headers. This example requires an explicit base URL, normally ending in `/v1`, and appends `/chat/completions`. It has no default hosted endpoint and does not read API credentials or proxy configuration from the environment.
+After installing and enabling the package, pick the provider from the **plugin providers** group in the AI settings add-provider list (or from the configure dialog below it), choose one declared model and configure only its supported values: base URL, API key, model and allowed headers. This example requires an explicit base URL, normally ending in `/v1`, and appends `/chat/completions`. It has no default hosted endpoint and does not read API credentials or proxy configuration from the environment.
 
 Catalog discovery uses metadata only: no implicit `/models` request, generation, enablement or runtime startup. Missing/disabled plugins and invalid saved identities remain unavailable rather than becoming another provider. Existing saved model identity and secret references are preserved until the user explicitly corrects them.
 
