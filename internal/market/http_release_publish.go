@@ -163,7 +163,7 @@ func (s *Server) publishRelease(w http.ResponseWriter, r *http.Request) {
 	p := release.packageInfo
 	// An explicit monorepo Release is a one-off upload, not a safe repository
 	// root for the background latest-Release worker.
-	registerSource := release.source.Tag != "" && !strings.EqualFold(release.source.Owner+"/"+release.source.Repo, officialPluginMonorepo)
+	registerSource := !strings.EqualFold(release.source.Owner+"/"+release.source.Repo, officialPluginMonorepo)
 	if !s.acquireArtifactSlot(w) {
 		return
 	}
