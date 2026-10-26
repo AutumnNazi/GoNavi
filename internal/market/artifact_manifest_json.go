@@ -52,6 +52,8 @@ type artifactContributions struct {
 	Skills      []artifactSkill      `json:"skills,omitempty"`
 	AIProviders []artifactAIProvider `json:"aiProviders,omitempty"`
 	Exporters   []artifactExporter   `json:"exporters,omitempty"`
+	Pages       []artifactPage       `json:"pages,omitempty"`
+	Navigation  []artifactNavigation `json:"navigation,omitempty"`
 }
 
 type artifactCommand struct {
@@ -66,6 +68,27 @@ type artifactPanel struct {
 	ID    string         `json:"id"`
 	Title string         `json:"title"`
 	Body  artifactUINode `json:"body"`
+}
+
+type artifactPage struct {
+	ID    string             `json:"id"`
+	Title string             `json:"title"`
+	Body  *artifactUINode    `json:"body,omitempty"`
+	HTML  *artifactHTMLPanel `json:"html,omitempty"`
+}
+
+// artifactHTMLPanel is bounded custom markup. Pages accept it in v1; panels
+// still reject html, a pre-existing artifact gap outside this validator.
+type artifactHTMLPanel struct {
+	Source string `json:"source"`
+}
+
+type artifactNavigation struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Page     string `json:"page"`
+	Location string `json:"location"`
+	Order    int    `json:"order,omitempty"`
 }
 
 type artifactUINode struct {

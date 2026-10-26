@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-var permissionLiteral = regexp.MustCompile(`"(ai\.(?:skills|providers|tools)|data\.(?:sources|export)|host\.(?:log|describe)|ui\.html-panel)"`)
+var permissionLiteral = regexp.MustCompile(`"(ai\.(?:skills|providers|tools)|data\.(?:sources|export)|host\.(?:log|describe|connections\.read|metadata\.read|query\.read)|ui\.(?:html-panel|pages))"`)
 
 // permissions.md lists exactly the permissions the host enforces. Both directions matter: documenting
 // a permission nobody enforces misleads authors, and enforcing an undocumented one surprises them.

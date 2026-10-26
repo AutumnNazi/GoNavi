@@ -56,6 +56,8 @@ type Contributions struct {
 	Skills      []Skill      `json:"skills,omitempty"`
 	AIProviders []AIProvider `json:"aiProviders,omitempty"`
 	Exporters   []Exporter   `json:"exporters,omitempty"`
+	Pages       []Page       `json:"pages,omitempty"`
+	Navigation  []Navigation `json:"navigation,omitempty"`
 }
 
 // Command declares one backend invocation and its claimed effect.
@@ -81,6 +83,26 @@ type Panel struct {
 // renders it, without host filesystem, network, storage or bindings access.
 type HTMLPanel struct {
 	Source string `json:"source"`
+}
+
+// Page declares one host-rendered surface: a bounded declarative tree or a
+// sandboxed custom HTML document. Exactly one body is present. Body is a
+// pointer so an html page omits the key instead of echoing an empty tree.
+type Page struct {
+	ID    string     `json:"id"`
+	Title string     `json:"title"`
+	Body  *UINode    `json:"body,omitempty"`
+	HTML  *HTMLPanel `json:"html,omitempty"`
+}
+
+// Navigation attaches a declared page to a host location. Location stays an
+// enumeration, and order only reorders entries of the same plugin.
+type Navigation struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Page     string `json:"page"`
+	Location string `json:"location"`
+	Order    int    `json:"order,omitempty"`
 }
 
 // UINode is a declarative element; HTML, scripts, expressions and styles are unsupported.

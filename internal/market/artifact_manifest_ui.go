@@ -36,6 +36,9 @@ func validateArtifactContributions(manifest artifactManifest) error {
 			return err
 		}
 	}
+	if err := validateArtifactPages(manifest, commands); err != nil {
+		return err
+	}
 	if err := validateArtifactDataSources(manifest, commands); err != nil {
 		return err
 	}

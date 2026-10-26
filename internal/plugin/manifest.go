@@ -162,6 +162,9 @@ func ValidateManifest(m Manifest) error {
 			return err
 		}
 	}
+	if err := validatePages(m, permissions, commands); err != nil {
+		return err
+	}
 	if m.Window != nil {
 		if err := safePackagePath(m.Window.Entry); err != nil {
 			return fmt.Errorf("invalid window entry: %w", err)
