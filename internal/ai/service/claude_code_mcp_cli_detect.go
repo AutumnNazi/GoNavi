@@ -47,20 +47,24 @@ func localCLICommandCacheKey(commandName string) string {
 	)
 }
 
-func lookupLocalCLICommandCache(commandName string) (localCLICommandDetection, bool) {
+// 缓存键必须由调用方在探测开始前算好并贯穿读写：探测过程本身可能要跑 login shell，
+// 期间钩子（尤其是测试里的 mock，或后台预热的并发探测）随时可能被替换。
+// 若在写入时再算键，一次用旧钩子得到的「未找到」会被记到新钩子的键上，
+// 之后同键的探测直接命中假阴性，表现为外部客户端偶发「未安装」。
+func lookupLocalCLICommandCache(cacheKey string) (localCLICommandDetection, bool) {
 	localCLICommandDetectionMu.Lock()
 	defer localCLICommandDetectionMu.Unlock()
-	entry, ok := localCLICommandDetectionCache[localCLICommandCacheKey(commandName)]
+	entry, ok := localCLICommandDetectionCache[cacheKey]
 	if !ok || time.Now().After(entry.expiresAt) {
 		return localCLICommandDetection{}, false
 	}
 	return entry, true
 }
 
-func storeLocalCLICommandCache(commandName string, found bool, path string) {
+func storeLocalCLICommandCache(cacheKey string, found bool, path string) {
 	localCLICommandDetectionMu.Lock()
 	defer localCLICommandDetectionMu.Unlock()
-	localCLICommandDetectionCache[localCLICommandCacheKey(commandName)] = localCLICommandDetection{
+	localCLICommandDetectionCache[cacheKey] = localCLICommandDetection{
 		found:     found,
 		path:      path,
 		expiresAt: time.Now().Add(localCLICommandDetectionTTL),
@@ -79,11 +83,12 @@ func detectLocalCLICommand(commandName string) (bool, string) {
 	if commandName == "" {
 		return false, ""
 	}
-	if entry, ok := lookupLocalCLICommandCache(commandName); ok {
+	cacheKey := localCLICommandCacheKey(commandName)
+	if entry, ok := lookupLocalCLICommandCache(cacheKey); ok {
 		return entry.found, entry.path
 	}
 	found, path := detectLocalCLICommandUncached(commandName)
-	storeLocalCLICommandCache(commandName, found, path)
+	storeLocalCLICommandCache(cacheKey, found, path)
 	return found, path
 }
 

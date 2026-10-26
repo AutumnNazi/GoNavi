@@ -6,7 +6,10 @@ import type { MarketPlugin } from './types';
 export type CompatibilityReason = '' | 'host_version' | 'host_version_unknown' | 'platform' | 'invalid_version';
 export interface MarketVersionChoice { plugin: MarketPlugin; compatible: boolean; reason: CompatibilityReason }
 export interface MarketVersionPage { versions: MarketVersionChoice[]; warning?: 'versions_unavailable' }
-const reasons = new Set(['', 'host_version', 'host_version_unknown', 'platform', 'invalid_version']);
+const COMPATIBILITY_REASONS = ['host_version', 'host_version_unknown', 'platform', 'invalid_version'] as const;
+/** 动态拼接的 `plugin.market.versions.*` 会展开成这些字面量键，供全仓 i18n 扫描校验。 */
+export const PLUGIN_MARKET_VERSION_REASON_TEXT_KEYS: readonly string[] = COMPATIBILITY_REASONS.map((reason) => `plugin.market.versions.${reason}`);
+const reasons = new Set<string>(['', ...COMPATIBILITY_REASONS]);
 const invalid = (): never => { throw new PluginAPIError('plugin.error.invalid_response'); };
 export function decodeVersionPage(value: unknown): MarketVersionPage {
  boundedJSON(value, 2 << 20); const page = requireRecord(value);

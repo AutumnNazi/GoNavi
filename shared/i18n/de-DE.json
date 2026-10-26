@@ -13189,7 +13189,7 @@
   "plugin.backend.error.plugin_busy": "Das Plugin schließt noch den vorherigen Vorgang ab. Versuchen Sie es gleich erneut.",
   "plugin.backend.error.spec_invalid": "Unbekannte Remote-Quelle. Bitte github:owner/repo oder einen npm-Paketnamen (z. B. @scope/pkg) verwenden.",
   "plugin.backend.error.release_not_found": "In diesem Repository wurde keine installierbare Plugin-Version (zip/tgz) gefunden. Bitte prüfen, ob das Plugin-Paket veröffentlicht wurde.",
-  "plugin.backend.error.asset_ambiguous": "Dieses Release enthält mehrere Kandidaten ({{assets}}). Bitte genau ein gonavi-Plugin-Artefakt veröffentlichen.",
+  "plugin.backend.error.asset_ambiguous": "Dieses Release enthält mehrere Kandidaten. Bitte genau ein gonavi-Plugin-Artefakt veröffentlichen.",
   "plugin.backend.error.npm_not_found": "Dieses Plugin-Paket oder diese Version gibt es nicht auf npm.",
   "plugin.backend.error.fetch_failed": "Das Plugin-Paket konnte nicht geladen werden. Bitte Netz- und Proxyeinstellungen prüfen und erneut versuchen.",
   "plugin.backend.error.fetch_expired": "Die Remote-Prüfung ist abgelaufen. Bitte das Paket erneut prüfen, bevor es installiert wird.",

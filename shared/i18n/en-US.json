@@ -13189,7 +13189,7 @@
   "plugin.backend.error.plugin_busy": "The plugin is still finishing the previous operation. Try again shortly.",
   "plugin.backend.error.spec_invalid": "Unrecognized remote source. Use github:owner/repo or an npm package name (e.g. @scope/pkg).",
   "plugin.backend.error.release_not_found": "No installable plugin release (zip/tgz) was found on this repository. Make sure the plugin package is published.",
-  "plugin.backend.error.asset_ambiguous": "This release has several candidate plugin packages ({{assets}}). Publish a single gonavi plugin asset to make it unambiguous.",
+  "plugin.backend.error.asset_ambiguous": "This release has several candidate plugin packages. Publish a single gonavi plugin asset to make it unambiguous.",
   "plugin.backend.error.npm_not_found": "That plugin package or version does not exist on npm.",
   "plugin.backend.error.fetch_failed": "Downloading the plugin package failed. Check the network and proxy settings, then try again.",
   "plugin.backend.error.fetch_expired": "The remote inspection expired. Inspect the package again before installing.",

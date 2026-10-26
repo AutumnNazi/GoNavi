@@ -200,7 +200,8 @@ func TestPostgresDeviceSingleConsumptionAndExplicitRoles(t *testing.T) {
 	p := postgresFixture(t)
 	ctx := context.Background()
 	a, err := p.UpsertIdentity(ctx, Identity{ID: "42", Login: "first"})
-	if err != nil || a.Role != "user" || a.Official {
+	// 自助登录即分配 gh-<login> 发布命名空间与 publisher 角色（官方认证仍需 GrantRole）。
+	if err != nil || a.Role != "publisher" || a.PublisherID != "gh-first" || a.Official {
 		t.Fatalf("first signup=%+v err=%v", a, err)
 	}
 	now := time.Now().UTC().Truncate(time.Microsecond)

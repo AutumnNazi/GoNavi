@@ -308,7 +308,7 @@ func (a *App) pluginFetchFailure(err error) connection.QueryResult {
 		logger.Warnf("Plugin fetch asset ambiguous: %s", names)
 		return connection.QueryResult{
 			Success: false,
-			Message: a.appText("plugin.backend.error.asset_ambiguous", map[string]any{"assets": names}),
+			Message: a.appText("plugin.backend.error.asset_ambiguous", nil),
 			Data:    map[string]any{"code": "asset_ambiguous"},
 		}
 	default:
