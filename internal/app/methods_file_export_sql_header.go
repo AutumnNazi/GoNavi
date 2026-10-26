@@ -22,7 +22,7 @@ func quoteIdentByType(dbType string, ident string) string {
 	}
 
 	switch dbType {
-	case "mysql", "mariadb", "oceanbase", "diros", "starrocks", "sphinx", "tdengine", "clickhouse":
+	case "mysql", "mariadb", "oceanbase", "diros", "starrocks", "sphinx", "tdengine", "clickhouse", "greptimedb", "hive":
 		return "`" + strings.ReplaceAll(ident, "`", "``") + "`"
 	case "kingbase":
 		return db.QuoteKingbaseIdentifier(ident)

@@ -162,7 +162,7 @@ func registryUsesBooleanKeywords(dbType string) bool {
 		return false
 	}
 	switch spec.Type {
-	case "questdb", "greptimedb", "firebird":
+	case "questdb", "greptimedb", "firebird", "hive":
 		return true
 	default:
 		return false

@@ -145,7 +145,7 @@ func escapeSQLLiteral(value string) string {
 func dialectEscapesBackslashInStringLiteral(dbType string) bool {
 	switch strings.ToLower(strings.TrimSpace(dbType)) {
 	case "mysql", "mariadb", "tidb", "oceanbase", "diros", "doris", "starrocks",
-		"clickhouse", "tdengine", "taos", "greptimedb":
+		"clickhouse", "tdengine", "taos", "greptimedb", "hive":
 		return true
 	default:
 		return false

@@ -1,0 +1,94 @@
+{
+  "type": "hive",
+  "aliases": [
+    "apache-hive",
+    "hiveserver2",
+    "hs2"
+  ],
+  "displayName": "Apache Hive",
+  "group": "bigdata",
+  "order": 10,
+  "defaultPort": 10000,
+  "wire": "thrift",
+  "dialect": "hive",
+  "family": "mysql",
+  "objectKind": "table",
+  "protection": true,
+  "excelImport": true,
+  "sqlFileImport": true,
+  "versionQuery": "SELECT version() AS version",
+  "sync": {
+    "source": true,
+    "target": false,
+    "model": "relational"
+  },
+  "agent": {
+    "buildTag": "gonavi_hive_driver",
+    "version": "1.0.0",
+    "sourcePrefixes": [
+      "hive",
+      "registry"
+    ]
+  },
+  "variants": {
+    "auto": true,
+    "default": "auto",
+    "items": [
+      {
+        "id": "v3",
+        "label": "Hive 3.x",
+        "descriptionKey": "datasource.variant.hive.v3",
+        "minServer": "3.0",
+        "maxServer": "4.0"
+      },
+      {
+        "id": "v4",
+        "label": "Hive 4.x +",
+        "descriptionKey": "datasource.variant.hive.v4",
+        "minServer": "4.0"
+      }
+    ]
+  },
+  "ui": {
+    "defaultUser": "hive",
+    "usernameOptional": true,
+    "formatDdl": false,
+    "uriSchemes": [
+      "hive",
+      "hive2",
+      "hiveserver2"
+    ],
+    "hiddenObjectGroups": [
+      "routines",
+      "triggers",
+      "sequences",
+      "events",
+      "packages"
+    ],
+    "metadataQueries": {
+      "views": [
+        "SHOW VIEWS IN `{{database}}`",
+        "SHOW VIEWS"
+      ]
+    },
+    "objectStatements": {
+      "renameTable": "ALTER TABLE {old} RENAME TO {new}",
+      "dropTable": "DROP TABLE {table}",
+      "dropView": "DROP VIEW {view}",
+      "truncateTable": "TRUNCATE TABLE {table}",
+      "clearTable": "TRUNCATE TABLE {table}"
+    },
+    "quoting": "backtick",
+    "pagination": "limit-offset",
+    "ssl": true,
+    "sslCAPath": true,
+    "sslClientCert": true,
+    "connectionParams": true,
+    "hint": "Data warehouse / HiveServer2 Thrift",
+    "icon": {
+      "color": "#F5A623",
+      "text": "Hv",
+      "scale": 0.78
+    }
+  }
+}
