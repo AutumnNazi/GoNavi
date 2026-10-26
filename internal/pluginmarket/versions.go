@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"GoNavi-Wails/internal/buildversion"
 	"golang.org/x/mod/semver"
 )
 
@@ -80,6 +81,9 @@ func (s *Service) versionChoice(item Item) VersionChoice {
 		case !semver.IsValid(minimum):
 			result.Compatible = false
 			result.Reason = "invalid_version"
+		case buildversion.IsDevelopment(s.hostVersion):
+			// Development builds track the newest source, so a released minimum cannot
+			// lock them out. The manifest validator still rejects malformed minimums.
 		case !semver.IsValid(host):
 			result.Compatible = false
 			result.Reason = "host_version_unknown"

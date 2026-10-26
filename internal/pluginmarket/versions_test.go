@@ -72,3 +72,30 @@ func TestVersionsRejectForeignIdentityAndDuplicateVersions(t *testing.T) {
 		})
 	}
 }
+
+func TestVersionsTreatDevelopmentHostsAsCompatible(t *testing.T) {
+	for _, host := range []string{"dev-6748d9e", "0.0.1-test"} {
+		t.Run(host, func(t *testing.T) {
+			items := []Item{
+				{ID: "acme.example", Name: "Example", Version: "2.0.0", MinHostVersion: "9.9.9", Platforms: []string{"any"}},
+				{ID: "acme.example", Name: "Example", Version: "1.0.0", MinHostVersion: "9.9.9", Platforms: []string{"other/cpu"}},
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { writeTestJSON(t, w, 200, items) }))
+			defer server.Close()
+			service, _ := newTestService(t, server.URL, true)
+			service.hostVersion = host
+			page, err := service.Versions(context.Background(), "acme.example")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, choice := range page.Versions {
+				if choice.Plugin.Version == "2.0.0" && (!choice.Compatible || choice.Reason != "") {
+					t.Fatalf("dev host %q rejected a compatible version: %+v", host, choice)
+				}
+				if choice.Plugin.Version == "1.0.0" && (choice.Compatible || choice.Reason != "platform") {
+					t.Fatalf("dev host %q ignored the platform mismatch: %+v", host, choice)
+				}
+			}
+		})
+	}
+}

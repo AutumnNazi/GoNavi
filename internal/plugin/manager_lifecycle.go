@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"time"
+
+	"GoNavi-Wails/internal/buildversion"
 )
 
 func (m *Manager) prepareOwnerState(ctx context.Context) error {
@@ -60,7 +62,7 @@ func (m *Manager) reconcile(ctx context.Context) {
 			continue
 		}
 		reason := dependencyReason(r, state.Records)
-		if r.Manifest.MinHostVersion != "" && (!validVersion(m.opts.HostVersion) || !versionAtLeast(m.opts.HostVersion, r.Manifest.MinHostVersion)) {
+		if r.Manifest.MinHostVersion != "" && !buildversion.SatisfiesMinimum(m.opts.HostVersion, r.Manifest.MinHostVersion) {
 			reason = "plugin requires a newer compatible host version"
 		}
 		if reason != "" {
