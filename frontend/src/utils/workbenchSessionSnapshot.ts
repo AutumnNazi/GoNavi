@@ -41,6 +41,7 @@ const COMES_BACK_AFTER_RESTART: Record<WorkbenchTabType, boolean> = {
   'plugin-manager': true,
   'cloud-backup': true,
   'settings-center': true,
+  'plugin-page': false,
   'request-diagnostics': true,
   'message-queue': true,
   'redis-keys': true,

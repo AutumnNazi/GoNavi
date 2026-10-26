@@ -93,6 +93,8 @@ export interface TabData {
   queryMode?: "standard" | "object-edit";
   returnToTabId?: string;
   filePath?: string;
+  /** Plugin page identity; the page host resolves the declaration and bridge from here. */
+  pluginPage?: { pluginID: string; pageID: string; title: string };
   initialTab?: string;
   initialViewMode?: "table" | "json" | "text" | "fields" | "ddl" | "er" | "sqlLog";
   initialViewModeRequestId?: string;

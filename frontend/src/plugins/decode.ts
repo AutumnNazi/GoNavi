@@ -93,6 +93,66 @@ function validSkillPath(value: unknown, entry: boolean): value is string {
   const base = parts[parts.length - 1];
   return entry ? base === 'SKILL.md' : base.endsWith('.md') && base !== 'SKILL.md';
 }
+const PAGE_CONTRIBUTION_LIMIT = 32;
+const PAGE_NODE_LIMITS = { depth: 16, nodes: 512 } as const;
+function validLocalTitle(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '' && utf8Within(value, 256) && !value.includes('\u0000');
+}
+// Mirrors plugin.validateNode: the root is depth 0 and every page shares one cumulative
+// node budget for the whole manifest, exactly like panels.
+function chargePageNodeBudget(value: unknown, depth: number, budget: { nodes: number }): void {
+  budget.nodes += 1;
+  if (budget.nodes > PAGE_NODE_LIMITS.nodes || depth > PAGE_NODE_LIMITS.depth) invalid();
+  const node = requireRecord(value);
+  if (Array.isArray(node.children)) {
+    for (const child of node.children) chargePageNodeBudget(child, depth + 1, budget);
+  }
+}
+/** Contract threshold check for one page body, exported so tests pin the host budget. */
+export function validatePageNodeBudget(body: unknown): void {
+  chargePageNodeBudget(body, 0, { nodes: 0 });
+}
+function validatePageHTML(value: unknown, permissions: readonly string[]): void {
+  if (!permissions.includes('ui.html-panel')) invalid();
+  const html = requireRecord(value);
+  onlyKeys(html, ['source']);
+  if (typeof html.source !== 'string' || html.source.trim() === '' || !utf8Within(html.source, 256 << 10) || html.source.includes('\u0000')) invalid();
+}
+function validatePages(pages: unknown, permissions: readonly string[]): Set<string> {
+  if (!Array.isArray(pages) || pages.length > PAGE_CONTRIBUTION_LIMIT) invalid();
+  const seen = new Set<string>();
+  const budget = { nodes: 0 };
+  for (const item of pages) {
+    const page = requireRecord(item);
+    onlyKeys(page, ['id', 'title', 'body', 'html']);
+    const hasBody = page.body != null;
+    const hasHTML = page.html != null;
+    if (hasBody === hasHTML) invalid();
+    if (hasBody) {
+      const body = requireRecord(page.body);
+      onlyUINode(body);
+      chargePageNodeBudget(body, 0, budget);
+    }
+    if (hasHTML) validatePageHTML(page.html, permissions);
+    if (!validLocalID(page.id) || seen.has(page.id) || !validLocalTitle(page.title)) invalid();
+    seen.add(page.id as string);
+  }
+  return seen;
+}
+function validateNavigation(entries: unknown, pageIDs: ReadonlySet<string>): void {
+  if (!Array.isArray(entries) || entries.length > PAGE_CONTRIBUTION_LIMIT) invalid();
+  const seen = new Set<string>();
+  for (const item of entries) {
+    const entry = requireRecord(item);
+    onlyKeys(entry, ['id', 'title', 'page', 'location', 'order']);
+    const order = entry.order;
+    if (!validLocalID(entry.id) || seen.has(entry.id) || !validLocalTitle(entry.title)
+      || typeof entry.page !== 'string' || !pageIDs.has(entry.page)
+      || entry.location !== 'tools'
+      || (order != null && (typeof order !== 'number' || !Number.isInteger(order) || order < -1000 || order > 1000))) invalid();
+    seen.add(entry.id as string);
+  }
+}
 function validSkill(skill: Record<string, unknown>): boolean {
   const resources = skill.resources == null ? [] : skill.resources;
   if (typeof skill.id !== 'string' || !/^[a-z][a-z0-9_.-]{0,63}$/.test(skill.id)
@@ -107,7 +167,9 @@ function validSkill(skill: Record<string, unknown>): boolean {
   return true;
 }
 export function decodeManifest(data: unknown): PluginManifest {
-  boundedJSON(data, 128 * 1024, 64 * 1024);
+  // 64 leaves room for the manifest envelope plus a page/panel body that is itself
+  // allowed to nest 16 levels; bytes and value counts still cap the total.
+  boundedJSON(data, 128 * 1024, 64 * 1024, 64);
   const raw = requireRecord(data);
   const allowed = new Set(['schemaVersion', 'apiVersion', 'id', 'name', 'version', 'description', 'author', 'license', 'minHostVersion', 'permissions', 'permissionNotes', 'requires', 'backend', 'contributes', 'window', 'configSchema']);
   if (Object.keys(raw).some((key) => !allowed.has(key))) invalid();
@@ -149,7 +211,7 @@ export function decodeManifest(data: unknown): PluginManifest {
   }
   if (m.contributes != null) {
     const c = requireRecord(m.contributes);
-    onlyKeys(c, ['commands', 'panels', 'dataSources', 'skills', 'aiProviders', 'exporters']);
+    onlyKeys(c, ['commands', 'panels', 'dataSources', 'skills', 'aiProviders', 'exporters', 'pages', 'navigation']);
     const contributionLimits: Record<string, number> = { commands: 128, panels: 32 };
     for (const key of ['commands', 'panels']) {
       const entries = c[key];
@@ -221,6 +283,18 @@ export function decodeManifest(data: unknown): PluginManifest {
         onlyKeys(provider, ['id', 'name', 'command', 'models', 'supportsTools', 'supportsImages']);
         if (!validAIProvider(provider, commands)) invalid();
       }
+    }
+    if (c.pages != null || c.navigation != null) {
+      const permissions = m.permissions as string[];
+      const pages = c.pages ?? [];
+      const navigation = c.navigation ?? [];
+      // Empty arrays declare nothing, so they must not require the permission the
+      // host also only enforces for a non-empty declaration.
+      const declares = (Array.isArray(pages) && pages.length > 0)
+        || (Array.isArray(navigation) && navigation.length > 0);
+      if (declares && !permissions.includes('ui.pages')) invalid();
+      const pageIDs = validatePages(pages, permissions);
+      validateNavigation(navigation, pageIDs);
     }
     if (c.skills != null) {
       if (!Array.isArray(c.skills) || c.skills.length > 16 || !(m.permissions as string[]).includes('ai.skills')) return invalid();

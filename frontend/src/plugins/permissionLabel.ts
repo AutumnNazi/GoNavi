@@ -7,6 +7,10 @@ const knownPermissions: Record<string, string> = {
   'data.export': 'plugin.permission.data_export',
   'host.log': 'plugin.permission.host_log',
   'host.describe': 'plugin.permission.host_describe',
+  'ui.pages': 'plugin.permission.ui_pages',
+  'host.connections.read': 'plugin.permission.host_connections_read',
+  'host.metadata.read': 'plugin.permission.host_metadata_read',
+  'host.query.read': 'plugin.permission.host_query_read',
 };
 
 export function pluginPermissionText(permission: string, t: (key: string) => string, note?: string): string {

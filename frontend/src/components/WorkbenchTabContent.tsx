@@ -40,6 +40,7 @@ const DMLSnapshotWorkbench = React.lazy(() => import('./dmlSnapshot/DMLSnapshotW
 const UserManagementWorkbench = React.lazy(() => import('./userManagement/UserManagementWorkbench'));
 const MessageQueueWorkbench = React.lazy(() => import('./MessageQueueWorkbench'));
 const SessionWorkbench = React.lazy(() => import('./sessionWorkbench/SessionWorkbench'));
+const PluginPageHost = React.lazy(() => import('../pluginPages/PluginPageHost').then((module) => ({ default: module.PluginPageHost })));
 
 const QueryWorkbenchContent: React.FC<{ tab: TabData; isActive: boolean }> = React.memo(({
   tab,
@@ -192,6 +193,10 @@ export const WorkbenchTabContent: React.FC<WorkbenchTabContentProps> = React.mem
     content = <CloudBackupSettings />;
   } else if (tab.type === 'settings-center') {
     content = <SettingsCenterWorkbench tab={tab} isActive={isActive} />;
+  } else if (tab.type === 'plugin-page') {
+    content = tab.pluginPage
+      ? <PluginPageHost pluginID={tab.pluginPage.pluginID} pageID={tab.pluginPage.pageID} />
+      : null;
   } else if (tab.type === 'request-diagnostics') {
     content = <RequestDiagnosticsWorkbench tab={tab} isActive={isActive} />;
   } else if (tab.type === 'message-queue') {

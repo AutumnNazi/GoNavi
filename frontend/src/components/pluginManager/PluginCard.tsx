@@ -8,6 +8,7 @@ import { PluginDataSourceSummary } from './PluginDataSourceSummary';
 import { PluginAIProviderSummary } from './PluginAIProviderSummary';
 import { PluginExporterSummary } from './PluginExporterSummary';
 import { PluginSkillSummary } from './PluginSkillSummary';
+import { PluginPageList } from './PluginPageList';
 import { publicPluginCommands } from '../../plugins/dataSource/reservedCommands';
 import { pluginPermissionText } from '../../plugins/permissionLabel';
 
@@ -31,6 +32,8 @@ export function PluginCard({ plugin, manager, expanded, onToggle }: Props) {
     <PluginAIProviderSummary manifest={plugin.manifest} />
     <PluginExporterSummary manifest={plugin.manifest} />
     <PluginSkillSummary manifest={plugin.manifest} />
+    <PluginPageList plugin={plugin} active={active}
+      managementAllowed={manager.runtime.managementAllowed} webRuntime={webRuntime} />
     <PluginLifecycleControls plugin={plugin} allowed={manager.runtime.managementAllowed} safeMode={manager.runtime.safeMode}
       busy={Boolean(manager.busy[id])} onEnabled={(enabled) => void manager.setEnabled(id, enabled)} onRemove={() => void manager.remove(id, false)} />
     {plugin.lastError && <Alert showIcon type="error" message={t('plugin.card.last_error')} description={plugin.lastError} />}

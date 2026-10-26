@@ -16,6 +16,7 @@ export type WorkbenchTabType =
   | "driver-manager"
   | "plugin-manager"
   | "settings-center"
+  | "plugin-page"
   | "request-diagnostics"
   | "message-queue"
   | "redis-keys"

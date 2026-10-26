@@ -1426,6 +1426,10 @@ export function PluginOpenWindow(arg1) {
   return window['go']['app']['App']['PluginOpenWindow'](arg1);
 }
 
+export function PluginPageCall(arg1, arg2, arg3, arg4) {
+  return window['go']['app']['App']['PluginPageCall'](arg1, arg2, arg3, arg4);
+}
+
 export function PluginRemoteCancelInspection(arg1) {
   return window['go']['app']['App']['PluginRemoteCancelInspection'](arg1);
 }
