@@ -89,7 +89,7 @@ export const resolveQueryLocatorPlan = async ({
             return plan;
         }
 
-        const selectInfo = parseSimpleSelectInfo(statement);
+        const selectInfo = parseSimpleSelectInfo(statement, dbType);
         if (!selectInfo) {
             // 聚合、函数和表达式结果天然无法安全回写到单行，静默保持只读即可。
             return plan;
@@ -169,7 +169,7 @@ export const resolveQueryLocatorPlan = async ({
         }
         let executableStatement = statement;
         if (isOracleLikeDialect(dbType) && selectInfo.selectsAll) {
-            const rewritten = rewriteOracleDuplicateSelectColumns(executableStatement, tableColumnNames);
+            const rewritten = rewriteOracleDuplicateSelectColumns(executableStatement, tableColumnNames, dbType);
             if (rewritten) executableStatement = rewritten;
         }
         const primaryKeys = tableColumns
@@ -250,7 +250,7 @@ export const resolveQueryLocatorPlan = async ({
         ];
 
         if (executableAppendExpressions.length > 0 && isOracleLikeDialect(dbType) && selectInfo.selectsBareAll) {
-            const rewritten = rewriteOracleSelectAllWithExpressions(executableStatement, executableAppendExpressions);
+            const rewritten = rewriteOracleSelectAllWithExpressions(executableStatement, executableAppendExpressions, dbType);
             if (rewritten) {
                 plan.executedSql = rewritten;
                 return plan;
@@ -260,7 +260,7 @@ export const resolveQueryLocatorPlan = async ({
             return plan;
         }
 
-        plan.executedSql = appendQuerySelectExpressions(executableStatement, executableAppendExpressions);
+        plan.executedSql = appendQuerySelectExpressions(executableStatement, executableAppendExpressions, dbType);
         return plan;
     } catch {
         plan.editLocator = buildAllColumnsLocator([], { translate });
