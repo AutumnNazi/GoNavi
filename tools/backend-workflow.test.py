@@ -61,6 +61,12 @@ class BackendWorkflowTest(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/backend-tests.yml").read_text(encoding="utf-8")
         self.assertEqual(missing_webkit_tag(workflow), [], "Linux app/root tests must select webkit2_41")
 
+    def test_hive_protocol_suite_is_portable_and_not_hidden_by_lite_build(self):
+        workflow = (ROOT / ".github/workflows/backend-tests.yml").read_text(encoding="utf-8")
+        self.assertIn("go test -tags gonavi_hive_driver ./internal/db/ ./internal/hivesql/ ./cmd/optional-driver-agent/ -count=1", workflow)
+        self.assertIn("go test -tags gonavi_hive_driver ./internal/db/ ./internal/hivesql/ ./cmd/optional-driver-agent/ -run Hive", workflow)
+        self.assertIn("run: npm test -- src/utils/hive", workflow)
+
     def test_detects_driver_command_even_with_narrow_test_filter(self):
         workflow = "  full:\n    run: go test -tags gonavi_duckdb_driver ./internal/app/ -run DuckDB\n"
         self.assertEqual(len(missing_webkit_tag(workflow)), 1)

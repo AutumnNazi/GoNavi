@@ -4,6 +4,7 @@ import type {
   DataSyncTableDiffSummary,
 } from './model';
 import { getDataSourceSpec } from '../../utils/dataSourceRegistry';
+import { t } from '../../i18n';
 
 const PG_LIKE = new Set([
   'postgres',
@@ -92,6 +93,7 @@ export const buildCompareRepairSQL = (
   options: { dialect: string; schema?: string },
 ): string => {
   const dialect = options.dialect;
+  if (normalizeDialect(dialect) === 'hive') return '-- ' + t('hive.capability.schemaRepair');
   const schema = options.schema || '';
   const blocks: string[] = [
     '-- 由结构比对结果生成，请在目标库核对后再执行。',

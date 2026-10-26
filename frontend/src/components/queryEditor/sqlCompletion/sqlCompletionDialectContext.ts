@@ -15,6 +15,8 @@ import { applyQueryEditorCompletionFragmentCase } from '../QueryEditorAiAssist';
 import { isConnectionScopedQueryEditorMetadata } from '../queryEditorLazyTablesCache';
 import { peekDatabaseServerVersion } from '../queryEditorServerVersion';
 import type { TabData } from '../../../types';
+import { hiveFamily, readHiveParams } from '../../../utils/hiveConnection';
+import { resolveHiveFunctions, resolveHiveKeywords } from '../../../utils/hiveSqlDialect';
 
 export interface CreateSqlCompletionDialectContextInput {
     model: any;
@@ -42,7 +44,7 @@ export const createSqlCompletionDialectContext = ({ model, position, currentDbRe
     const oracleLoginOwner = isOracleLikeDialect(activeDialect)
         ? resolveOracleLikeDefaultSchemaName(activeConnection?.config)
         : '';
-    const shouldQuoteCompletionIdentifiers = isPostgresSchemaDialect(activeDialect);
+    const shouldQuoteCompletionIdentifiers = activeDialect === 'hive' || isPostgresSchemaDialect(activeDialect);
     const quoteCompletionPart = (ident: string) => {
         const raw = String(ident || '').trim();
         if (!raw) return raw;
@@ -69,13 +71,14 @@ export const createSqlCompletionDialectContext = ({ model, position, currentDbRe
             : ''
     );
     const activeConnectionHasScopedMetadata = isConnectionScopedQueryEditorMetadata(activeConnection);
-    const dialectKeywords = resolveSqlKeywords(activeDialect);
+    const engineFamily = hiveFamily(readHiveParams(activeConnection?.config?.connectionParams));
+    const dialectKeywords = activeDialect === 'hive' ? resolveHiveKeywords(engineFamily) : resolveSqlKeywords(activeDialect);
     // 版本感知补全（#1328）：已探测到的服务端版本喂给函数解析，
     // 低于函数最低版本的候选不出现在补全列表里。
     const activeServerVersion = peekDatabaseServerVersion(
         String(currentConnectionIdRef.current || '').trim(),
     );
-    const dialectFunctions = resolveSqlFunctions(activeDialect, activeServerVersion);
+    const dialectFunctions = activeDialect === 'hive' ? resolveHiveFunctions(engineFamily) : resolveSqlFunctions(activeDialect, activeServerVersion);
 
     const stripQuotes = stripCompletionIdentifierQuotes;
     const normalizeQualifiedName = normalizeCompletionQualifiedName;

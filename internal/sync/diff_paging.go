@@ -1,8 +1,6 @@
 package sync
 
 import (
-	"GoNavi-Wails/internal/connection"
-	"GoNavi-Wails/internal/db"
 	"context"
 	"fmt"
 	"reflect"
@@ -10,6 +8,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"GoNavi-Wails/internal/connection"
+	"GoNavi-Wails/internal/db"
+	"GoNavi-Wails/internal/hivesql"
 )
 
 type pagedDiffCounts struct {
@@ -619,6 +621,9 @@ func syncDialectEscapesBackslash(dbType string) bool {
 // 转义 JSON）在 MySQL/ClickHouse 等目标上会被解释成别的字符串，导致 IN 列表匹配不到，
 // 于是源端存在的行先被判为需要插入、随后又被判为需要删除并真的从目标删掉。
 func quoteSyncSQLString(dbType string, value string) string {
+	if normalizeMigrationDBType(dbType) == "hive" {
+		return hivesql.QuoteString(value)
+	}
 	if syncDialectEscapesBackslash(dbType) {
 		value = strings.ReplaceAll(value, `\`, `\\`)
 	}

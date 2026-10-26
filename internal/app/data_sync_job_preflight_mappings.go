@@ -83,6 +83,9 @@ func (a *App) preflightDataSyncMappingsWithProgress(ctx context.Context, definit
 				mu.Unlock()
 			}
 			issues := a.preflightDataSyncMappingContext(ctx, session, definition, source, target, mapping, columnCache)
+			if !hasPreflightBlocker(issues) {
+				issues = append(issues, a.preflightHiveSyncMapping(ctx, session, definition, source, target, mapping)...)
+			}
 			mu.Lock()
 			completed++
 			results[index] = issues

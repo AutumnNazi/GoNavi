@@ -1359,6 +1359,8 @@ export namespace app {
 	    includeDatabaseContext?: boolean;
 	    insertSQLDialect?: string;
 	    insertSQLTargetTable?: string;
+	    insertSQLColumnOrder?: string[];
+	    insertSQLPartitionColumns?: string[];
 	    insertSQLColumnTypes?: Record<string, string>;
 	    insertSQLTargetColumns?: Record<string, string>;
 	    insertSQLAllowEmptyTargetTable?: boolean;
@@ -1382,6 +1384,8 @@ export namespace app {
 	        this.includeDatabaseContext = source["includeDatabaseContext"];
 	        this.insertSQLDialect = source["insertSQLDialect"];
 	        this.insertSQLTargetTable = source["insertSQLTargetTable"];
+	        this.insertSQLColumnOrder = source["insertSQLColumnOrder"];
+	        this.insertSQLPartitionColumns = source["insertSQLPartitionColumns"];
 	        this.insertSQLColumnTypes = source["insertSQLColumnTypes"];
 	        this.insertSQLTargetColumns = source["insertSQLTargetColumns"];
 	        this.insertSQLAllowEmptyTargetTable = source["insertSQLAllowEmptyTargetTable"];
