@@ -13373,6 +13373,7 @@
   "plugin.permission.host_connections_credentials": "讀取外掛動作所選連線的憑證",
   "plugin.permission.host_metadata_read": "讀取已儲存連線的中繼資料",
   "plugin.permission.host_query_read": "在已儲存連線上執行唯讀查詢",
+  "plugin.permission.host_schema_write": "在儲存連線上執行經確認的 DDL",
   "plugin.permission.ui_pages": "在主視窗顯示外掛頁面",
   "xxljob.backend.error.cookie_jar_failed": "初始化 Cookie 工作階段失敗",
   "xxljob.backend.error.executor_forward_failed": "調度中心轉發執行器失敗：{{detail}}",

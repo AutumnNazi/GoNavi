@@ -13373,6 +13373,7 @@
   "plugin.permission.host_connections_credentials": "Read credentials for a connection selected by a plugin action",
   "plugin.permission.host_metadata_read": "Read saved connection metadata",
   "plugin.permission.host_query_read": "Run read-only queries on saved connections",
+  "plugin.permission.host_schema_write": "Apply explicitly confirmed DDL to saved connections",
   "plugin.permission.ui_pages": "Show plugin pages in the main window",
   "xxljob.backend.error.cookie_jar_failed": "Failed to initialize the cookie session",
   "xxljob.backend.error.executor_forward_failed": "The admin failed to reach the executor: {{detail}}",

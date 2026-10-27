@@ -13373,6 +13373,7 @@
   "plugin.permission.host_connections_credentials": "プラグイン操作で選択した接続の認証情報を読み取る",
   "plugin.permission.host_metadata_read": "保存済み接続のメタデータを読み取る",
   "plugin.permission.host_query_read": "保存済み接続で読み取り専用クエリを実行する",
+  "plugin.permission.host_schema_write": "確認済みの DDL を保存済み接続で実行する",
   "plugin.permission.ui_pages": "メインウィンドウにプラグインページを表示する",
   "xxljob.backend.error.cookie_jar_failed": "Cookie セッションの初期化に失敗しました",
   "xxljob.backend.error.executor_forward_failed": "管理コンソールから実行エージェントへ転送できませんでした: {{detail}}",

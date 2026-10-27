@@ -12,6 +12,7 @@ const knownPermissions: Record<string, string> = {
   'host.connections.credentials': 'plugin.permission.host_connections_credentials',
   'host.metadata.read': 'plugin.permission.host_metadata_read',
   'host.query.read': 'plugin.permission.host_query_read',
+  'host.schema.write': 'plugin.permission.host_schema_write',
 };
 
 export function pluginPermissionText(permission: string, t: (key: string) => string, note?: string): string {

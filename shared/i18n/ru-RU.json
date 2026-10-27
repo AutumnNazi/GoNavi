@@ -13373,6 +13373,7 @@
   "plugin.permission.host_connections_credentials": "Чтение учётных данных подключения, выбранного действием плагина",
   "plugin.permission.host_metadata_read": "Чтение метаданных сохранённых подключений",
   "plugin.permission.host_query_read": "Выполнение запросов только на чтение на сохранённых подключениях",
+  "plugin.permission.host_schema_write": "Выполнять подтверждённые DDL на сохранённых подключениях",
   "plugin.permission.ui_pages": "Показывать страницы плагинов в главном окне",
   "xxljob.backend.error.cookie_jar_failed": "Не удалось инициализировать сеанс cookie",
   "xxljob.backend.error.executor_forward_failed": "Панели управления не удалось связаться с исполнителем: {{detail}}",

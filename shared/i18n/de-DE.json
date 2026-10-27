@@ -13373,6 +13373,7 @@
   "plugin.permission.host_connections_credentials": "Anmeldedaten der über eine Plugin-Aktion ausgewählten Verbindung lesen",
   "plugin.permission.host_metadata_read": "Metadaten gespeicherter Verbindungen lesen",
   "plugin.permission.host_query_read": "Nur-Lese-Abfragen auf gespeicherten Verbindungen ausführen",
+  "plugin.permission.host_schema_write": "Bestätigte DDL auf gespeicherten Verbindungen ausführen",
   "plugin.permission.ui_pages": "Plugin-Seiten im Hauptfenster anzeigen",
   "xxljob.backend.error.cookie_jar_failed": "Cookie-Sitzung konnte nicht initialisiert werden",
   "xxljob.backend.error.executor_forward_failed": "Die Verwaltung konnte den Executor nicht erreichen: {{detail}}",

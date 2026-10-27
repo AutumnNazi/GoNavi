@@ -51,6 +51,8 @@ var (
 type App struct {
 	pluginMarket                  pluginMarketRuntimeState
 	plugins                       pluginRuntimeState
+	schemaWritePlans              schemaWritePlanStore
+	schemaConfirm                 func(context.Context, string) (bool, error)
 	ctx                           context.Context
 	webRuntime                    bool
 	headlessRuntime               bool

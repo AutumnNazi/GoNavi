@@ -13373,6 +13373,7 @@
   "plugin.permission.host_connections_credentials": "读取插件动作所选连接的凭据",
   "plugin.permission.host_metadata_read": "读取保存连接的元数据",
   "plugin.permission.host_query_read": "在保存连接上执行只读查询",
+  "plugin.permission.host_schema_write": "在保存连接上执行经确认的 DDL",
   "plugin.permission.ui_pages": "在主窗口显示插件页面",
   "xxljob.backend.error.cookie_jar_failed": "初始化 Cookie 会话失败",
   "xxljob.backend.error.executor_forward_failed": "调度中心转发执行器失败：{{detail}}",

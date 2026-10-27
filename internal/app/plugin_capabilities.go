@@ -288,6 +288,28 @@ func defaultPluginCapabilities() pluginCapabilities {
 		Handler:        pluginCapabilitySyncJobs,
 	})
 	add(pluginCapabilitySpec{
+		Name:           "schema.preview",
+		Permission:     plugin.SchemaWritePermission,
+		Description:    "Validate and stage up to 8 explicit DDL statements; never executes them.",
+		Channels:       shared,
+		Runtimes:       desktopWeb,
+		MaxArgsBytes:   128 << 10,
+		MaxResultBytes: 32 << 10,
+		Timeout:        10 * time.Second,
+		Handler:        pluginCapabilitySchemaPreview,
+	})
+	add(pluginCapabilitySpec{
+		Name:           "schema.apply",
+		Permission:     plugin.SchemaWritePermission,
+		Description:    "Execute a previewed DDL plan after a host-native confirmation dialog.",
+		Channels:       shared,
+		Runtimes:       desktopWeb,
+		MaxArgsBytes:   4 << 10,
+		MaxResultBytes: 64 << 10,
+		Timeout:        120 * time.Second,
+		Handler:        pluginCapabilitySchemaApply,
+	})
+	add(pluginCapabilitySpec{
 		Name:           "ai.providers",
 		Permission:     plugin.MetadataReadPermission,
 		Description:    "Configured AI provider metadata without secrets, headers or CLI environment.",

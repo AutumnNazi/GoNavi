@@ -13,6 +13,7 @@ const (
 	ConnectionsCredentialsPermission = "host.connections.credentials"
 	MetadataReadPermission           = "host.metadata.read"
 	QueryReadPermission              = "host.query.read"
+	SchemaWritePermission            = "host.schema.write"
 )
 
 // PageLocationTools is the only navigation location v1 accepts: the title-bar
