@@ -560,6 +560,24 @@ export namespace aiservice {
 
 export namespace app {
 	
+	export class AgentIntegration {
+	    kind: string;
+	    dataDir: string;
+	    displayName: string;
+	    addedAt: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AgentIntegration(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.dataDir = source["dataDir"];
+	        this.displayName = source["displayName"];
+	        this.addedAt = source["addedAt"];
+	    }
+	}
 	export class CloudBackupConnectionSummary {
 	    id: string;
 	    name: string;
@@ -5214,6 +5232,31 @@ export namespace runharness {
 		    }
 		    return a;
 		}
+	}
+
+}
+
+export namespace sessionagent {
+	
+	export class ContentRef {
+	    kind: string;
+	    offset?: number;
+	    len?: number;
+	    relPath?: string;
+	    pointer?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ContentRef(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.offset = source["offset"];
+	        this.len = source["len"];
+	        this.relPath = source["relPath"];
+	        this.pointer = source["pointer"];
+	    }
 	}
 
 }

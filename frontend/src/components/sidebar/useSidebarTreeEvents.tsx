@@ -18,6 +18,7 @@ import {
   resolveNacosServicesDoubleClickAction,
 } from '../sidebarV2Utils';
 import { t } from '../../i18n';
+import { buildAgentAssetsWorkbenchTab } from '../../utils/agentAssetsTab';
 import { GnFieldsIcon, GnIndexIcon, GnLinkIcon } from '../icons/gnIcons';
 import { renderSidebarObjectIcon } from './sidebarObjectIcons';
 import { useSidebarTreeLoaders } from './useSidebarTreeLoaders';
@@ -311,6 +312,10 @@ export const useSidebarTreeEvents = ({
           setActiveContext({ connectionId: dataRef.id, dbName: '' });
       }
 
+      if (type === 'agent-integration') {
+          addTab(buildAgentAssetsWorkbenchTab(dataRef));
+          return;
+      }
       if (type === 'folder-columns') openDesign(info.node, 'columns', false);
       else if (type === 'folder-indexes') openDesign(info.node, 'indexes', false);
       else if (type === 'folder-fks') openDesign(info.node, 'foreignKeys', false);

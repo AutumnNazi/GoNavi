@@ -86,6 +86,7 @@ export interface TabData {
   title: string;
   type: WorkbenchTabType;
   connectionId: string;
+  agentIntegrationId?: string; // 智能体集成 ID：agent-assets 页签定位唯一管理工作台
   dbName?: string;
   tableName?: string;
   query?: string;

@@ -160,7 +160,9 @@ func (s *packageScan) file(name string, size int64, r io.Reader) error {
 		}
 	}
 	if copyErr != nil {
-		return fmt.Errorf("read package file failed")
+		// 必须带上原始错误：ctx 取消时 copyErr 是 context.DeadlineExceeded，
+		// 丢掉它调用方就分不清「超时取消」和「磁盘读失败」。
+		return fmt.Errorf("read package file failed: %w", copyErr)
 	}
 	if n != size {
 		return fmt.Errorf("package file changed or has inconsistent size")
