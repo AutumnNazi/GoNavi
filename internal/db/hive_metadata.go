@@ -285,17 +285,20 @@ func (h *HiveDB) TableExists(dbName, tableName string) (bool, error) {
 	return false, nil
 }
 
-// GetIndexes rejects an unsupported generic index model instead of inventing metadata.
+// GetIndexes returns an empty list: Hive has no portable index metadata model.
+// An absent capability is not a failed metadata load, so the UI must not show
+// an error toast when opening the table designer's index tab.
 func (h *HiveDB) GetIndexes(string, string) ([]connection.IndexDefinition, error) {
-	return nil, fmt.Errorf("HiveServer2 has no portable index metadata capability")
+	return []connection.IndexDefinition{}, nil
 }
 
-// GetForeignKeys rejects relational foreign-key editing (Hive constraints are not enforced uniformly).
+// GetForeignKeys returns an empty list: Hive constraints are not enforced uniformly
+// and there is no portable foreign-key metadata model for the generic designer.
 func (h *HiveDB) GetForeignKeys(string, string) ([]connection.ForeignKeyDefinition, error) {
-	return nil, fmt.Errorf("HiveServer2 has no portable enforced foreign-key capability")
+	return []connection.ForeignKeyDefinition{}, nil
 }
 
-// GetTriggers rejects unsupported trigger metadata.
+// GetTriggers returns an empty list: Hive has no trigger metadata.
 func (h *HiveDB) GetTriggers(string, string) ([]connection.TriggerDefinition, error) {
-	return nil, fmt.Errorf("HiveServer2 does not support trigger metadata")
+	return []connection.TriggerDefinition{}, nil
 }

@@ -75,3 +75,19 @@ func TestImpalaPartitionsAndSparkStorageKinds(t *testing.T) {
 		}
 	}
 }
+
+func TestHiveUnsupportedRelationalMetadataIsEmptyNotError(t *testing.T) {
+	driver := &HiveDB{}
+	indexes, err := driver.GetIndexes("default", "customers")
+	if err != nil || len(indexes) != 0 {
+		t.Fatalf("indexes=%v error=%v", indexes, err)
+	}
+	foreignKeys, err := driver.GetForeignKeys("default", "customers")
+	if err != nil || len(foreignKeys) != 0 {
+		t.Fatalf("foreignKeys=%v error=%v", foreignKeys, err)
+	}
+	triggers, err := driver.GetTriggers("default", "customers")
+	if err != nil || len(triggers) != 0 {
+		t.Fatalf("triggers=%v error=%v", triggers, err)
+	}
+}

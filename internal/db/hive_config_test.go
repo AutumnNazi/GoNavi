@@ -79,3 +79,31 @@ func TestHiveConfigRejectsAmbiguousProtocolModes(t *testing.T) {
 		})
 	}
 }
+
+func TestHiveSessionConfigUsesOpenSessionKeysAndUnqualifiedColumns(t *testing.T) {
+	got, err := normalizeHiveConfig(connection.ConnectionConfig{ConnectionParams: "session.hive.exec.mode.local.auto=false&session.use:database=analytics&session.hiveconf:tez.queue.name=adhoc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"set:hiveconf:hive.exec.mode.local.auto":              "false",
+		"use:database":                                        "analytics",
+		"set:hiveconf:tez.queue.name":                         "adhoc",
+		"set:hiveconf:hive.resultset.use.unique.column.names": "false",
+	}
+	for key, value := range want {
+		if got.session[key] != value {
+			t.Fatalf("session[%q]=%q want %q", key, got.session[key], value)
+		}
+	}
+}
+
+func TestHiveSessionConfigAllowsUniqueColumnNamesOverride(t *testing.T) {
+	got, err := normalizeHiveConfig(connection.ConnectionConfig{ConnectionParams: "session.hive.resultset.use.unique.column.names=true"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.session["set:hiveconf:hive.resultset.use.unique.column.names"] != "true" {
+		t.Fatalf("explicit override lost: %+v", got.session)
+	}
+}

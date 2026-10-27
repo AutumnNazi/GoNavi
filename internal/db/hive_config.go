@@ -106,8 +106,17 @@ func normalizeHiveConfig(config connection.ConnectionConfig) (hiveConfig, error)
 	result.pollInterval = time.Duration(poll) * time.Millisecond
 	for key, values := range params {
 		if strings.HasPrefix(key, "session.") && len(values) > 0 {
-			result.session[key[len("session."):]] = values[len(values)-1]
+			raw := strings.TrimSpace(key[len("session."):])
+			if raw != "" {
+				result.session[hiveSessionConfigKey(raw)] = values[len(values)-1]
+			}
 		}
+	}
+	// HiveServer2 qualifies result columns with the table name by default (customers.id),
+	// but GoNavi matches result fields against unqualified column metadata (id). Keep the
+	// session default unqualified so result grids can show column types and comments.
+	if _, ok := result.session["set:hiveconf:hive.resultset.use.unique.column.names"]; !ok {
+		result.session["set:hiveconf:hive.resultset.use.unique.column.names"] = "false"
 	}
 	params.Del("auth")
 	params.Del("password")
@@ -234,6 +243,22 @@ func hiveMergeParams(target, values url.Values) {
 			}
 			target.Set(normalized, items[len(items)-1])
 		}
+	}
+}
+
+// hiveSessionConfigKey maps a GoNavi session.* override to the key shape
+// TOpenSessionReq.Configuration expects. HiveConf/HiveVar names need set: prefixes;
+// use:database and already-prefixed set: keys are kept as-is.
+func hiveSessionConfigKey(raw string) string {
+	key := strings.TrimSpace(raw)
+	lower := strings.ToLower(key)
+	switch {
+	case strings.HasPrefix(lower, "set:"), strings.HasPrefix(lower, "use:"):
+		return key
+	case strings.HasPrefix(lower, "hiveconf:"), strings.HasPrefix(lower, "hivevar:"):
+		return "set:" + key
+	default:
+		return "set:hiveconf:" + key
 	}
 }
 
