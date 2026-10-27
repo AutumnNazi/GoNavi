@@ -59,12 +59,44 @@ func TestImportDatabaseSQLSnapshotsEmptyCatalogBeforeExecution(t *testing.T) {
 		t.Fatalf("import did not execute the file: %#v", database.execQueries)
 	}
 	point := mustReadyRollbackPoint(t, app, "rollback-empty")
-	if !point.WholeDatabase || point.Database != "igap_pro" {
+	if point.WholeDatabase || point.Database != "igap_pro" {
 		t.Fatalf("point = %#v", point)
+	}
+	if len(point.Objects) != 1 || point.Objects[0].Name != "t_annual_adjust" || point.Objects[0].Existed {
+		t.Fatalf("CREATE-only rollback plan = %#v", point.Objects)
 	}
 	payload := readRollbackSnapshot(t, app, point.ID)
 	if string(payload) != taskRollbackEmptySnapshot {
 		t.Fatalf("snapshot = %q", payload)
+	}
+}
+
+func TestImportDatabaseSQLScopedSnapshotSkipsUnrelatedTables(t *testing.T) {
+	database := &rollbackCatalogDB{
+		fakeSQLFileBatchDB: &fakeSQLFileBatchDB{},
+		tables:             []string{"legacy_a", "legacy_b"},
+	}
+	app := installTaskRollbackApp(t, database)
+	filePath := filepath.Join(t.TempDir(), "create-only.sql")
+	content := "CREATE TABLE `new_table`(id INT);\n"
+	if err := os.WriteFile(filePath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result := app.ImportDatabaseSQL(connection.ConnectionConfig{Type: "mysql"}, "igap_pro", filePath, "rollback-scoped", false)
+	if !result.Success {
+		t.Fatalf("import failed: %#v", result)
+	}
+	point := mustReadyRollbackPoint(t, app, "rollback-scoped")
+	if point.WholeDatabase {
+		t.Fatalf("CREATE-only import still requested a whole database snapshot: %#v", point)
+	}
+	if len(point.Objects) != 1 || point.Objects[0].Name != "new_table" || point.Objects[0].Existed {
+		t.Fatalf("rollback objects = %#v", point.Objects)
+	}
+	payload := readRollbackSnapshot(t, app, point.ID)
+	if string(payload) != taskRollbackEmptySnapshot {
+		t.Fatalf("unrelated table data entered the snapshot: %q", payload)
 	}
 }
 
