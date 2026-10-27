@@ -25,6 +25,8 @@ type pluginWindowEntry struct {
 	token             string
 	profile           string
 	context           json.RawMessage
+	locale            string
+	theme             string
 	process           pluginProcess
 	life              context.Context
 	cancel            context.CancelFunc

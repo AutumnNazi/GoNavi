@@ -198,7 +198,9 @@ func (a *App) pluginInvokeContext(ctx context.Context, id, command, argumentsJSO
 }
 
 // PluginOpenWindow opens only the independent, scoped native plugin window.
-func (a *App) PluginOpenWindow(id string) connection.QueryResult {
+// locale and theme mirror the current main-application appearance so the
+// plugin window can follow them; empty values keep the plugin's own defaults.
+func (a *App) PluginOpenWindow(id, locale, theme string) connection.QueryResult {
 	if !a.pluginManagementAllowed() || a.headlessRuntime {
 		return a.pluginFailure("window_unavailable")
 	}
@@ -211,7 +213,7 @@ func (a *App) PluginOpenWindow(id string) connection.QueryResult {
 	if windows == nil {
 		return a.pluginFailure("window_unavailable")
 	}
-	value, err := windows.Open(a.pluginContext(), id, id, nil)
+	value, err := windows.Open(a.pluginContext(), id, id, nil, locale, theme)
 	if errors.Is(err, context.Canceled) {
 		return a.pluginFailure("window_unavailable")
 	}

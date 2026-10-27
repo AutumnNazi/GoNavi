@@ -21,8 +21,8 @@ type desktopPluginWindows struct {
 	controller *nativewindow.PluginController
 }
 
-func (w desktopPluginWindows) Open(ctx context.Context, pluginID, windowKey string, launchContext json.RawMessage) (any, error) {
-	return w.controller.Open(ctx, pluginID, windowKey, launchContext)
+func (w desktopPluginWindows) Open(ctx context.Context, pluginID, windowKey string, launchContext json.RawMessage, locale, theme string) (any, error) {
+	return w.controller.Open(ctx, pluginID, windowKey, launchContext, locale, theme)
 }
 func (w desktopPluginWindows) Revoke(id string)                { w.controller.Revoke(id) }
 func (w desktopPluginWindows) Close(ctx context.Context) error { return w.controller.Close(ctx) }

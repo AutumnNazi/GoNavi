@@ -14,7 +14,7 @@ func TestPluginRevokeFencesAnOpeningWindow(t *testing.T) {
 	runtime.beforeAsset = func() { close(entered); <-release }
 	// A one-result buffer lets the goroutine finish even if an assertion fails.
 	result := make(chan error, 1)
-	go func() { _, err := c.Open(context.Background(), "test.one", "test.one", nil); result <- err }()
+	go func() { _, err := c.Open(context.Background(), "test.one", "test.one", nil, "", ""); result <- err }()
 	<-entered
 	c.Revoke("test.one")
 	close(release)
@@ -107,7 +107,7 @@ func TestPluginWindowTeardownFencesReopen(t *testing.T) {
 	entry := openPluginTestWindow(t, c, "test.one")
 	entry.process.(*pluginProcessFake).exit()
 	awaitPluginDone(t, entered)
-	if _, err := c.Open(context.Background(), "test.one", "test.one", nil); err == nil {
+	if _, err := c.Open(context.Background(), "test.one", "test.one", nil, "", ""); err == nil {
 		t.Fatal("reopened generation before its previous teardown completed")
 	}
 	select {

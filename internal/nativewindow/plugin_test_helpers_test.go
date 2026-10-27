@@ -112,7 +112,7 @@ func newPluginTestController(t *testing.T) (*PluginController, *pluginRuntimeFak
 
 func openPluginTestWindow(t *testing.T, c *PluginController, id string) *pluginWindowEntry {
 	t.Helper()
-	_, err := c.Open(context.Background(), id, id, nil)
+	_, err := c.Open(context.Background(), id, id, nil, "zh-CN", "dark")
 	if err != nil {
 		t.Fatal(err)
 	}

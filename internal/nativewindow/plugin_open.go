@@ -16,7 +16,10 @@ import (
 
 // Open starts one child per running plugin generation. The native child boot is
 // asynchronous; a missing event-loop heartbeat causes bounded termination.
-func (c *PluginController) Open(ctx context.Context, id, windowKey string, launchContext json.RawMessage) (PluginWindowInfo, error) {
+// locale and theme mirror the host appearance; they are forwarded to the child
+// and injected into the entry HTML as window.gonaviHostPrefs. An already open
+// window keeps the prefs it was opened with (reopen to pick up changes).
+func (c *PluginController) Open(ctx context.Context, id, windowKey string, launchContext json.RawMessage, locale, theme string) (PluginWindowInfo, error) {
 	if err := ctx.Err(); err != nil {
 		return PluginWindowInfo{}, err
 	}
@@ -30,6 +33,7 @@ func (c *PluginController) Open(ctx context.Context, id, windowKey string, launc
 	if len(launchContext) > 0 && !json.Valid(launchContext) {
 		return PluginWindowInfo{}, errors.New("plugin launch context is invalid JSON")
 	}
+	locale, theme = sanitizeHostPref(locale), sanitizeHostPref(theme)
 	c.mu.Lock()
 	admission := c.admissionEpochs[id]
 	c.mu.Unlock()
@@ -66,7 +70,7 @@ func (c *PluginController) Open(ctx context.Context, id, windowKey string, launc
 		removePluginProfile(profile)
 		return PluginWindowInfo{}, err
 	}
-	entry, existing, err := c.register(status, windowID, windowKey, token, profile, admission, launchContext)
+	entry, existing, err := c.register(status, windowID, windowKey, token, profile, admission, launchContext, locale, theme)
 	if err != nil || existing.ID != "" {
 		removePluginProfile(profile)
 		return existing, err
@@ -90,7 +94,7 @@ func (c *PluginController) Open(ctx context.Context, id, windowKey string, launc
 	return info, nil
 }
 
-func (c *PluginController) register(status plugin.Status, windowID, windowKey, token, profile string, admission uint64, launchContext json.RawMessage) (*pluginWindowEntry, PluginWindowInfo, error) {
+func (c *PluginController) register(status plugin.Status, windowID, windowKey, token, profile string, admission uint64, launchContext json.RawMessage, locale, theme string) (*pluginWindowEntry, PluginWindowInfo, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed || c.life == nil || c.life.Err() != nil {
@@ -123,12 +127,28 @@ func (c *PluginController) register(status plugin.Status, windowID, windowKey, t
 	}
 	entry := &pluginWindowEntry{info: PluginWindowInfo{ID: windowID, PluginID: status.Manifest.ID, Generation: status.Generation}, key: windowKey,
 		stamp: pluginStatusStamp(status), title: title, entry: status.Manifest.Window.Entry, token: token, profile: profile, context: append(json.RawMessage(nil), launchContext...), life: life, cancel: cancel,
-		stop: make(chan struct{}), done: make(chan struct{}), opened: time.Now(), requests: make(map[string]context.CancelFunc), canceledRequests: make(map[string]time.Time)}
+		stop: make(chan struct{}), done: make(chan struct{}), opened: time.Now(), requests: make(map[string]context.CancelFunc), canceledRequests: make(map[string]time.Time),
+		locale: locale, theme: theme}
 	c.windows[windowKey] = entry
 	c.windowIDs[windowID] = entry
 	// Registration before spawn prevents Close racing a late WaitGroup.Add.
 	c.wg.Add(1)
 	return entry, PluginWindowInfo{}, nil
+}
+
+// sanitizeHostPref 只保留安全的语言/主题标记字符（防注入子进程环境与 HTML）。
+func sanitizeHostPref(value string) string {
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		}
+		if b.Len() >= 32 {
+			break
+		}
+	}
+	return b.String()
 }
 
 func (c *PluginController) runningStatus(id string, generation uint64) (plugin.Status, error) {

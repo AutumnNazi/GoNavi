@@ -22,7 +22,7 @@ export const pluginAPI = {
   setEnabled: (id: string, enabled: boolean) => pluginResult(PluginSetEnabled(id, enabled), decodeStatus),
   remove: (id: string, purge: boolean) => pluginResult(PluginRemove(id, purge), ignoreResult),
   invoke: (id: string, command: string, args: JSONValue) => pluginResult(PluginInvoke(id, command, JSON.stringify(boundedJSON(args))), (data) => boundedJSON(data ?? null)),
-  openWindow: (id: string) => pluginResult(PluginOpenWindow(id), ignoreResult),
+  openWindow: (id: string, locale: string, theme: string) => pluginResult(PluginOpenWindow(id, locale, theme), ignoreResult),
   runConnectionAction: (pluginID: string, actionID: string, connectionID: string, database: string, collection: string) => pluginResult(
     PluginRunConnectionAction(pluginID, actionID, connectionID, database, collection),
     (data) => data as JSONValue,
