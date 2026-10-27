@@ -11,7 +11,8 @@ describe('plugin-scoped browser bridge', () => {
     });
     const bridge = createPluginBridge(fetcher, () => 'call-1');
     expect(Object.isFrozen(bridge)).toBe(true);
-    expect(Object.keys(bridge)).toEqual(['ready', 'invoke', 'capability', 'close']);
+    // capability 与 pick 都是受控路由，不引入 App 反射。
+    expect(Object.keys(bridge)).toEqual(['ready', 'invoke', 'capability', 'pickFile', 'pickFolder', 'close']);
     expect(await bridge.ready).toEqual({ pluginId: 'test.one', generation: 2, title: 'Fixture' });
     expect(await bridge.invoke('echo', { a: 1 })).toEqual({ result: 42 });
     const call = fetcher.mock.calls[1];
@@ -44,6 +45,20 @@ describe('plugin-scoped browser bridge', () => {
     const bridge = createPluginBridge(fetcher, () => 'unused');
     await expect(bridge.capability('')).rejects.toThrow('invalid_method');
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes native pickers locally and maps cancel to null', async () => {
+    const fetcher = vi.fn<FetchBridge>().mockImplementation(async (url) => {
+      if (url === bridgePrefix + 'bootstrap') return identity();
+      if (url === bridgePrefix + 'pick-file') return new Response('{"path":"C:\\\\tmp\\\\a.zip"}');
+      if (url === bridgePrefix + 'pick-folder') return new Response('{"path":""}');
+      return new Response('{"result":42}');
+    });
+    const bridge = createPluginBridge(fetcher, () => 'call-1');
+    expect(await bridge.pickFile({ title: 'up' })).toBe('C:\\tmp\\a.zip');
+    const fileCall = fetcher.mock.calls.find(c => c[0] === bridgePrefix + 'pick-file');
+    expect(JSON.parse(String(fileCall?.[1]?.body))).toEqual({ title: 'up' });
+    expect(await bridge.pickFolder()).toBeNull();
   });
 
   it('sends explicit cancellation when a caller aborts', async () => {

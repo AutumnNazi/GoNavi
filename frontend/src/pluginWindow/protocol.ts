@@ -14,10 +14,18 @@ export interface PluginInvokeOptions {
   signal?: AbortSignal;
 }
 
+export interface PluginPickOptions {
+  title?: string;
+}
+
 export interface PluginWindowBridge {
   readonly ready: Promise<Readonly<PluginWindowIdentity>>;
   invoke(command: string, args?: unknown, options?: PluginInvokeOptions): Promise<unknown>;
   capability(method: string, args?: unknown, options?: PluginInvokeOptions): Promise<unknown>;
+  // 原生文件选择（返回本机绝对路径或 null=取消）。
+  pickFile(options?: PluginPickOptions): Promise<string | null>;
+  // 原生目录选择。
+  pickFolder(options?: PluginPickOptions): Promise<string | null>;
   close(): Promise<void>;
 }
 
