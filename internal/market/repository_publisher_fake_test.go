@@ -129,3 +129,41 @@ func (m *memoryRepo) PublisherSubmissions(ctx context.Context, a Account, q Publ
 	}
 	return page, nil
 }
+
+// DeletePlugin mirrors the production purge: every fixture row that belongs to
+// the plugin is removed and an audit event records the owner delete.
+func (m *memoryRepo) DeletePlugin(ctx context.Context, a Account, pluginID string) error {
+	if a.ID == "" {
+		return ErrUnauthorized
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	owner := ""
+	found := false
+	for _, v := range m.releases {
+		if v.submission.PluginID == pluginID {
+			owner, found = v.owner, true
+			break
+		}
+	}
+	if !found {
+		return ErrNotFound
+	}
+	if owner != a.ID && a.Role != "admin" {
+		return ErrForbidden
+	}
+	for id, v := range m.releases {
+		if v.submission.PluginID == pluginID {
+			delete(m.releases, id)
+		}
+	}
+	for key, rating := range m.ratings {
+		if rating.PluginID == pluginID {
+			delete(m.ratings, key)
+			delete(m.hidden, key)
+		}
+	}
+	delete(m.downloads, pluginID)
+	m.addAudit(a.ID, "plugin.delete", pluginID, "owner delete")
+	return nil
+}

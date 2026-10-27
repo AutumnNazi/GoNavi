@@ -232,3 +232,81 @@ func TestPostgresSessionsAndOAuthFlows(t *testing.T) {
 		t.Fatal("replayed oauth flow accepted", err)
 	}
 }
+
+func TestPostgresOwnerPluginDeletePurgesReleasedRows(t *testing.T) {
+	p := postgresFixture(t)
+	ctx := context.Background()
+	publisher := pgAccount(t, p, "1", "publisher", "acme", false)
+	admin := pgAccount(t, p, "2", "admin", "", false)
+	user := pgAccount(t, p, "3", "user", "", false)
+	other := pgAccount(t, p, "4", "publisher", "other", false)
+	approved := func(id, version string) {
+		s := pgSubmit(t, p, publisher, id, version)
+		if _, err := p.Review(ctx, admin, s.ID, "approve", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	approved("acme.example", "1.0.0")
+	approved("acme.retained", "1.0.0")
+	if _, err := p.PutRating(ctx, user, Rating{PluginID: "acme.example", Stars: 4, Body: "good"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Report(ctx, user, Report{PluginID: "acme.example", Reason: "spam"}); err != nil {
+		t.Fatal(err)
+	}
+	// Without the transaction-local purge setting, released versions stay undeletable.
+	if _, err := p.db.ExecContext(ctx, "DELETE FROM market_versions WHERE plugin_id=$1", "acme.example"); err == nil {
+		t.Fatal("release trigger allowed a delete without purge")
+	}
+	if err := p.DeletePlugin(ctx, other, "acme.example"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("non-owner delete err=%v", err)
+	}
+	if err := p.DeletePlugin(ctx, publisher, "acme.missing"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing plugin delete err=%v", err)
+	}
+	if err := p.DeletePlugin(ctx, publisher, "acme.example"); err != nil {
+		t.Fatal(err)
+	}
+	checks := map[string]string{
+		"SELECT count(*) FROM market_versions WHERE plugin_id=$1": "versions",
+		"SELECT count(*) FROM market_ratings WHERE plugin_id=$1":  "ratings",
+		"SELECT count(*) FROM market_reports WHERE plugin_id=$1":  "reports",
+		"SELECT count(*) FROM market_plugins WHERE id=$1":         "plugins",
+	}
+	for query, label := range checks {
+		var count int
+		if err := p.db.QueryRowContext(ctx, query, "acme.example").Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("%s rows survived the purge: %d", label, count)
+		}
+	}
+	var actor, action, subject, reason string
+	if err := p.db.QueryRowContext(ctx, "SELECT actor_id,action,subject,reason FROM market_audit WHERE action='plugin.delete' ORDER BY id DESC LIMIT 1").Scan(&actor, &action, &subject, &reason); err != nil {
+		t.Fatal(err)
+	}
+	if actor != publisher.ID || subject != "acme.example" || reason != "owner delete" {
+		t.Fatalf("audit=%s/%s/%s", actor, subject, reason)
+	}
+	if _, err := p.Plugin(ctx, "acme.example"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted plugin still public: %v", err)
+	}
+	// The released reservation is gone, so the same plugin/version can return.
+	if _, err := p.BeginSubmission(ctx, publisher, "acme.example", "1.0.0"); err != nil {
+		t.Fatal("purged identity not reusable:", err)
+	}
+	// SET LOCAL never leaks: the next direct delete is still blocked.
+	if _, err := p.db.ExecContext(ctx, "DELETE FROM market_versions WHERE plugin_id=$1", "acme.retained"); err == nil {
+		t.Fatal("purge setting leaked outside its transaction")
+	}
+	if err := p.DeletePlugin(ctx, admin, "acme.retained"); err != nil {
+		t.Fatal("admin override failed:", err)
+	}
+	if _, err := p.Plugin(ctx, "acme.retained"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("admin-deleted plugin still public: %v", err)
+	}
+	if err := p.db.QueryRowContext(ctx, "SELECT actor_id FROM market_audit WHERE action='plugin.delete' ORDER BY id DESC LIMIT 1").Scan(&actor); err != nil || actor != admin.ID {
+		t.Fatalf("admin audit actor=%s err=%v", actor, err)
+	}
+}

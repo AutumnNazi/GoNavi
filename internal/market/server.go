@@ -102,6 +102,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/publisher/plugins", s.publisherPlugins)
 	mux.HandleFunc("GET /api/v1/publisher/submissions", s.publisherSubmissions)
 	mux.HandleFunc("PUT /api/v1/publisher/plugins/{id}/source", pluginRoute(s.publisherSource))
+	mux.HandleFunc("DELETE /api/v1/publisher/plugins/{id}", pluginRoute(s.publisherDelete))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { writeError(w, ErrNotFound) })
 	return s.protect(mux)
 }

@@ -39,6 +39,7 @@ type PublisherRepository interface {
 	PublisherPlugins(context.Context, Account, PublisherQuery) (PublisherPluginPage, error)
 	PublisherSubmissions(context.Context, Account, PublisherQuery) (PublisherSubmissionPage, error)
 	ClearPluginSource(context.Context, Account, string) error
+	DeletePlugin(context.Context, Account, string) error
 }
 
 // AuthFlow is a single-use, short-lived website GitHub OAuth transaction.

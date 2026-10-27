@@ -204,3 +204,17 @@ func (s *Server) publisherSource(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"sourceUrl": body.SourceURL})
 }
+
+// publisherDelete removes one plugin owned by the caller; administrators may
+// delete any plugin. account() enforces session auth and cookie CSRF.
+func (s *Server) publisherDelete(w http.ResponseWriter, r *http.Request) {
+	a, ok := s.account(w, r)
+	if !ok {
+		return
+	}
+	if err := s.repo.DeletePlugin(r.Context(), a, r.PathValue("id")); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
+}

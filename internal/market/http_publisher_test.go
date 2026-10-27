@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func multipartArchiveRequest(t *testing.T, method, path string, fields map[string]string, archive []byte) *http.Request {
@@ -245,4 +246,87 @@ func TestSubmissionExpectedDigestGuardsUpload(t *testing.T) {
 	}
 	fields["expectedDigest"] = "NOT-A-DIGEST"
 	assertStatus(t, f.send(multipartArchiveRequest(t, "POST", "/submissions", fields, payload), "publisher"), 400)
+}
+
+// addPublisherAccount registers one extra publisher and its bearer session.
+func addPublisherAccount(t *testing.T, f *httpFixture, account Account, tokenKey, token string) {
+	t.Helper()
+	f.repo.mu.Lock()
+	f.repo.accounts[account.ID] = account
+	f.repo.sessions[secretHash(token)] = testSession{accountID: account.ID, expires: time.Now().Add(time.Hour)}
+	f.repo.mu.Unlock()
+	f.tokens[tokenKey] = token
+}
+
+func TestPublisherDeleteOwnerPurgesPlugin(t *testing.T) {
+	f := newHTTPFixture(t)
+	f.publish(t, "acme.example", "1.0.0", "")
+	assertStatus(t, f.request("PUT", "/plugins/acme.example/rating", "user", strings.NewReader(`{"stars":4,"body":"good"}`)), 200)
+	assertStatus(t, f.request("POST", "/reports", "user", strings.NewReader(`{"pluginId":"acme.example","reason":"spam"}`)), 201)
+	deleted := f.request("DELETE", "/publisher/plugins/acme.example", "publisher", nil)
+	assertStatus(t, deleted, 200)
+	if body := decodeResponse[map[string]bool](t, deleted); !body["deleted"] {
+		t.Fatalf("body=%+v", body)
+	}
+	for _, path := range []string{"/plugins/acme.example", "/plugins/acme.example/versions", "/plugins/acme.example/ratings"} {
+		assertStatus(t, f.request("GET", path, "", nil), 404)
+	}
+	plugins := decodeResponse[PublisherPluginPage](t, f.request("GET", "/publisher/plugins", "publisher", nil))
+	if len(plugins.Items) != 0 {
+		t.Fatalf("plugins=%+v", plugins)
+	}
+	submissions := decodeResponse[PublisherSubmissionPage](t, f.request("GET", "/publisher/submissions", "publisher", nil))
+	if len(submissions.Items) != 0 {
+		t.Fatalf("submissions=%+v", submissions)
+	}
+	f.repo.mu.Lock()
+	if _, ok := f.repo.ratings["3/acme.example"]; ok {
+		f.repo.mu.Unlock()
+		t.Fatal("rating rows survived the purge")
+	}
+	f.repo.mu.Unlock()
+	audits := decodeResponse[[]Audit](t, f.request("GET", "/admin/audit", "admin", nil))
+	audited := false
+	for _, audit := range audits {
+		if audit.Action == "plugin.delete" && audit.Subject == "acme.example" && audit.Reason == "owner delete" && audit.ActorID == "1" {
+			audited = true
+		}
+	}
+	if !audited {
+		t.Fatalf("missing plugin.delete audit: %+v", audits)
+	}
+	// A full purge releases the plugin/version reservation for a fresh upload.
+	assertStatus(t, f.upload(t, "acme.example", "1.0.0", "publisher", archiveFixture(t, "acme.example", "1.0.0", ""), nil), 201)
+}
+
+func TestPublisherDeleteAuthorizationMissingAndAdminOverride(t *testing.T) {
+	f := newHTTPFixture(t)
+	f.publish(t, "acme.example", "1.0.0", "")
+	addPublisherAccount(t, f, Account{ID: "9", Login: "other", Role: "publisher", PublisherID: "other"}, "other", strings.Repeat("o", 43))
+	forbidden := f.request("DELETE", "/publisher/plugins/acme.example", "other", nil)
+	assertStatus(t, forbidden, 403)
+	if failure := decodeResponse[APIError](t, forbidden); failure.Code != "forbidden" || strings.Contains(forbidden.Body.String(), "acme") {
+		t.Fatalf("non-owner response leaked detail: %+v", failure)
+	}
+	assertStatus(t, f.request("GET", "/plugins/acme.example", "", nil), 200)
+	assertStatus(t, f.request("DELETE", "/publisher/plugins/acme.example", "", nil), 401)
+	assertStatus(t, f.request("DELETE", "/publisher/plugins/acme.missing", "publisher", nil), 404)
+	assertStatus(t, f.request("DELETE", "/publisher/plugins/ACME.example", "publisher", nil), 404)
+	admin := f.request("DELETE", "/publisher/plugins/acme.example", "admin", nil)
+	assertStatus(t, admin, 200)
+	assertStatus(t, f.request("GET", "/plugins/acme.example", "", nil), 404)
+}
+
+func TestPublisherDeleteRequiresCSRFForCookieSessions(t *testing.T) {
+	f := newHTTPFixture(t)
+	f.publish(t, "acme.example", "1.0.0", "")
+	cookie, token := browserSessionFor(t, f, "1")
+	request := httptest.NewRequest("DELETE", "http://localhost:8090/api/v1/publisher/plugins/acme.example", nil)
+	request.AddCookie(cookie)
+	assertStatus(t, f.send(request, ""), 403)
+	request = httptest.NewRequest("DELETE", "http://localhost:8090/api/v1/publisher/plugins/acme.example", nil)
+	request.AddCookie(cookie)
+	request.Header.Set("X-GoNavi-CSRF", token)
+	assertStatus(t, f.send(request, ""), 200)
+	assertStatus(t, f.request("GET", "/plugins/acme.example", "", nil), 404)
 }
