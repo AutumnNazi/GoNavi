@@ -20,10 +20,11 @@ export function createPluginBridge(fetcher: FetchBridge, newID: () => string): P
   void ready.catch(() => undefined);
   let pending = 0;
 
-  const invoke = async (command: string, args: unknown = null, options: PluginInvokeOptions = {}) => {
-    if (typeof command !== 'string' || !command || command.length > 256) {
-      throw new PluginBridgeError('invalid_command');
-    }
+  const send = async (
+    route: 'invoke' | 'capability',
+    payload: Record<string, unknown>,
+    options: PluginInvokeOptions = {},
+  ) => {
     if (pending >= 8) throw new PluginBridgeError('too_many_requests');
     const id = newID();
     const controller = new AbortController();
@@ -38,7 +39,7 @@ export function createPluginBridge(fetcher: FetchBridge, newID: () => string): P
     const timeout = globalThis.setTimeout(cancel, 30_000);
     pending++;
     try {
-      const response = await post(fetcher, 'invoke', { id, command, arguments: args }, controller.signal);
+      const response = await post(fetcher, route, { id, ...payload }, controller.signal);
       return await readBridgeResponse(response);
     } finally {
       pending--;
@@ -47,9 +48,24 @@ export function createPluginBridge(fetcher: FetchBridge, newID: () => string): P
     }
   };
 
+  const invoke = async (command: string, args: unknown = null, options: PluginInvokeOptions = {}) => {
+    if (typeof command !== 'string' || !command || command.length > 256) {
+      throw new PluginBridgeError('invalid_command');
+    }
+    return send('invoke', { command, arguments: args }, options);
+  };
+
+  const capability = async (method: string, args: unknown = null, options: PluginInvokeOptions = {}) => {
+    if (typeof method !== 'string' || !method || method.length > 256) {
+      throw new PluginBridgeError('invalid_method');
+    }
+    return send('capability', { method, arguments: args }, options);
+  };
+
   return Object.freeze({
     ready,
     invoke,
+    capability,
     close: async () => {
       const response = await post(fetcher, 'close', {});
       if (!response.ok) throw new PluginBridgeError('close_failed');

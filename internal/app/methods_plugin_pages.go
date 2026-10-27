@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"GoNavi-Wails/internal/connection"
-	"GoNavi-Wails/internal/logger"
 	"GoNavi-Wails/internal/plugin"
 )
 
@@ -35,12 +34,21 @@ func (a *App) pluginPageCallContext(parent context.Context, id, pageID, method, 
 	if code != "" {
 		return a.pluginFailure("page_" + code)
 	}
-	value, code := dispatchPluginPageCall(
+	caller := pluginCapabilityCaller{
+		PluginID:    status.Manifest.ID,
+		Generation:  status.Generation,
+		PageID:      strings.TrimSpace(pageID),
+		Channel:     pluginCapabilityChannelPage,
+		Runtime:     a.pluginCapabilityRuntime(),
+		Locale:      a.pluginPageLocale(),
+		Permissions: status.Manifest.Permissions,
+	}
+	value, code := dispatchPluginCapability(
 		ctx,
-		defaultPluginPageCapabilities(),
+		defaultPluginCapabilities(),
 		a,
 		status,
-		strings.TrimSpace(pageID),
+		caller,
 		strings.TrimSpace(method),
 		pluginPageArgumentsRaw(argumentsJSON),
 	)
@@ -50,13 +58,14 @@ func (a *App) pluginPageCallContext(parent context.Context, id, pageID, method, 
 	if ctx.Err() != nil {
 		return a.pluginFailure("page_internal")
 	}
-	if code = pluginPageResultCode(value); code != "" {
-		if code == "internal" {
-			logger.Warnf("Plugin page result cannot be encoded")
-		}
-		return a.pluginFailure("page_" + code)
-	}
 	return connection.QueryResult{Success: true, Data: value}
+}
+
+func (a *App) pluginCapabilityRuntime() string {
+	if a != nil && a.webRuntime {
+		return "web"
+	}
+	return "desktop"
 }
 
 // pluginPageStatus enforces the lifecycle order: the package must exist, the

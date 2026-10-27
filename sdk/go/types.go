@@ -48,14 +48,32 @@ type Entry struct {
 // Contributions contains only supported declarative extension points.
 // Pages and Navigation are host-rendered surfaces that require the ui.pages permission.
 type Contributions struct {
-	Commands    []Command    `json:"commands,omitempty"`
-	Panels      []Panel      `json:"panels,omitempty"`
-	DataSources []DataSource `json:"dataSources,omitempty"`
-	Skills      []Skill      `json:"skills,omitempty"`
-	AIProviders []AIProvider `json:"aiProviders,omitempty"`
-	Exporters   []Exporter   `json:"exporters,omitempty"`
-	Pages       []Page       `json:"pages,omitempty"`
-	Navigation  []Navigation `json:"navigation,omitempty"`
+	Commands          []Command          `json:"commands,omitempty"`
+	Panels            []Panel            `json:"panels,omitempty"`
+	DataSources       []DataSource       `json:"dataSources,omitempty"`
+	Skills            []Skill            `json:"skills,omitempty"`
+	AIProviders       []AIProvider       `json:"aiProviders,omitempty"`
+	Exporters         []Exporter         `json:"exporters,omitempty"`
+	Pages             []Page             `json:"pages,omitempty"`
+	Navigation        []Navigation       `json:"navigation,omitempty"`
+	ConnectionActions []ConnectionAction `json:"connectionActions,omitempty"`
+}
+
+// ConnectionAction is a generic connection/database/collection context-menu
+// contribution. The host renders the target surface and owns the launch context.
+type ConnectionAction struct {
+	ID              string       `json:"id"`
+	Title           string       `json:"title"`
+	Description     string       `json:"description,omitempty"`
+	ConnectionTypes []string     `json:"connectionTypes"`
+	Scopes          []string     `json:"scopes,omitempty"`
+	Target          LaunchTarget `json:"target"`
+}
+
+// LaunchTarget selects the window or page opened for a contribution.
+type LaunchTarget struct {
+	Type string `json:"type"`
+	Page string `json:"page,omitempty"`
 }
 
 // Skill declares an immutable UTF-8 SKILL.md document loaded only on explicit use.

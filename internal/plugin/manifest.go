@@ -43,6 +43,7 @@ var pluginIDPattern = regexp.MustCompile(`^[a-z][a-z0-9-]*\.[a-z][a-z0-9.-]*$`)
 var localIDPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`)
 var permissionPattern = regexp.MustCompile(`^[a-z][a-z0-9._:-]{0,127}$`)
 var platformPattern = regexp.MustCompile(`^(windows|linux|darwin)/(amd64|arm64|386|arm)$`)
+var connectionTypePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._:-]{0,127}$`)
 
 // ParseManifest strictly decodes and validates a version-one declaration.
 func ParseManifest(data []byte) (Manifest, error) {
@@ -173,6 +174,9 @@ func ValidateManifest(m Manifest) error {
 			return fmt.Errorf("invalid window dimensions or title")
 		}
 	}
+	if err := validateConnectionActions(m, permissions); err != nil {
+		return err
+	}
 	return validateSchema(m.ConfigSchema)
 }
 func validPluginID(id string) bool {
@@ -247,6 +251,67 @@ func validateSchema(raw json.RawMessage) error {
 	var object map[string]any
 	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
 		return fmt.Errorf("schema must be an object")
+	}
+	return nil
+}
+
+func validateConnectionActions(m Manifest, permissions map[string]bool) error {
+	if len(m.Contributes.ConnectionActions) > 16 {
+		return fmt.Errorf("too many connection actions")
+	}
+	pages := make(map[string]bool, len(m.Contributes.Pages))
+	for _, page := range m.Contributes.Pages {
+		pages[page.ID] = true
+	}
+	seen := make(map[string]bool, len(m.Contributes.ConnectionActions))
+	for _, action := range m.Contributes.ConnectionActions {
+		if !localIDPattern.MatchString(action.ID) || seen[action.ID] || !validText(action.Title, 256) || len(action.Description) > 4096 {
+			return fmt.Errorf("invalid or duplicate connection action")
+		}
+		seen[action.ID] = true
+		if len(action.ConnectionTypes) == 0 || len(action.ConnectionTypes) > 32 {
+			return fmt.Errorf("connection action requires connection types")
+		}
+		types := make(map[string]bool, len(action.ConnectionTypes))
+		for _, value := range action.ConnectionTypes {
+			if !connectionTypePattern.MatchString(value) || types[value] {
+				return fmt.Errorf("invalid or duplicate connection action type")
+			}
+			types[value] = true
+		}
+		if len(action.Scopes) > 8 {
+			return fmt.Errorf("too many connection action scopes")
+		}
+		scopes := make(map[string]bool, len(action.Scopes))
+		for _, scope := range action.Scopes {
+			switch scope {
+			case "connection", "database", "collection":
+			default:
+				return fmt.Errorf("unsupported connection action scope")
+			}
+			if scopes[scope] {
+				return fmt.Errorf("duplicate connection action scope")
+			}
+			scopes[scope] = true
+		}
+		switch action.Target.Type {
+		case "window":
+			if m.Window == nil {
+				return fmt.Errorf("window connection action requires a window")
+			}
+			if action.Target.Page != "" {
+				return fmt.Errorf("window connection action cannot declare a page")
+			}
+		case "page":
+			if !permissions[PagesPermission] {
+				return fmt.Errorf("page connection action requires the %s permission", PagesPermission)
+			}
+			if !pages[action.Target.Page] {
+				return fmt.Errorf("connection action references an undeclared page")
+			}
+		default:
+			return fmt.Errorf("unsupported connection action target")
+		}
 	}
 	return nil
 }

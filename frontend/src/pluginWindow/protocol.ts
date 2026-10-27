@@ -7,6 +7,7 @@ export interface PluginWindowIdentity {
   pluginId: string;
   generation: number;
   title: string;
+  context?: unknown;
 }
 
 export interface PluginInvokeOptions {
@@ -16,6 +17,7 @@ export interface PluginInvokeOptions {
 export interface PluginWindowBridge {
   readonly ready: Promise<Readonly<PluginWindowIdentity>>;
   invoke(command: string, args?: unknown, options?: PluginInvokeOptions): Promise<unknown>;
+  capability(method: string, args?: unknown, options?: PluginInvokeOptions): Promise<unknown>;
   close(): Promise<void>;
 }
 
@@ -49,7 +51,13 @@ export function parseIdentity(value: unknown): Readonly<PluginWindowIdentity> {
       identity.generation <= 0 || typeof identity.title !== 'string' || identity.title.length > 1024) {
     throw new PluginBridgeError('invalid_identity');
   }
-  return Object.freeze({ pluginId: identity.pluginId, generation: identity.generation, title: identity.title });
+  const context = identity.context === undefined ? undefined : Object.freeze(identity.context);
+  return Object.freeze({
+    pluginId: identity.pluginId,
+    generation: identity.generation,
+    title: identity.title,
+    ...(context === undefined ? {} : { context }),
+  });
 }
 
 export async function readBridgeResponse(response: Response): Promise<unknown> {

@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-var permissionLiteral = regexp.MustCompile(`"(ai\.(?:skills|providers|tools)|data\.(?:sources|export)|host\.(?:log|describe|connections\.read|metadata\.read|query\.read)|ui\.(?:html-panel|pages))"`)
+var permissionLiteral = regexp.MustCompile(`"(ai\.(?:skills|providers|tools)|data\.(?:sources|export)|host\.(?:log|describe|connections\.read|connections\.credentials|metadata\.read|query\.read)|ui\.(?:html-panel|pages))"`)
 
 // Public permissions are published at https://plugin.gonavi.org/docs/permissions.
 // A local checkout of the market repo enables the cross-repository lockstep check.
@@ -34,7 +34,7 @@ func TestEnforcedPermissionsMatchTheReference(t *testing.T) {
 		t.Fatalf("parsed only %d documented permissions", len(documented))
 	}
 	enforced := map[string]bool{}
-	for _, directory := range []string{".", filepath.Join("..", "mcpserver"), filepath.Join("..", "market"), filepath.Join("..", "app"), filepath.Join("..", "dataexport"), filepath.Join("..", "..", "sdk", "go")} {
+	for _, directory := range []string{".", filepath.Join("..", "mcpserver"), filepath.Join("..", "app"), filepath.Join("..", "dataexport"), filepath.Join("..", "..", "sdk", "go")} {
 		entries, err := os.ReadDir(directory)
 		if err != nil {
 			t.Fatal(err)

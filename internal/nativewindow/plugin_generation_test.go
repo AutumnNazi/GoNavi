@@ -13,7 +13,7 @@ func TestPluginRevokeFencesAnOpeningWindow(t *testing.T) {
 	runtime.beforeAsset = func() { close(entered); <-release }
 	// A one-result buffer lets the goroutine finish even if an assertion fails.
 	result := make(chan error, 1)
-	go func() { _, err := c.Open(context.Background(), "test.one"); result <- err }()
+	go func() { _, err := c.Open(context.Background(), "test.one", "test.one", nil); result <- err }()
 	<-entered
 	c.Revoke("test.one")
 	close(release)

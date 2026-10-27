@@ -39,6 +39,9 @@ export interface PageHTML { source: string }
 export interface Page { id: string; title: string; body?: UINode; html?: PageHTML }
 /** Requires ui.pages; location is the tools menu and order only reorders entries of one plugin. */
 export interface Navigation { id: string; title: string; page: string; location: 'tools'; order?: number }
+export interface LaunchTarget { type: 'window' | 'page'; page?: string }
+/** Declared connection/database/collection menu entry; the host owns the launch context. */
+export interface ConnectionAction { id: string; title: string; description?: string; connectionTypes: string[]; scopes?: ('connection' | 'database' | 'collection')[]; target: LaunchTarget }
 export interface Manifest {
   schemaVersion: 1; apiVersion: 1; id: string; name: string; version: string;
   description?: string; author?: string; license?: string; minHostVersion?: string;
@@ -46,7 +49,7 @@ export interface Manifest {
   permissionNotes?: Record<string, string>;
   requires?: { id: string; minVersion?: string; optional?: boolean }[];
   backend?: { default?: Entry; platforms?: Record<string, Entry> };
-  contributes?: { commands?: Command[]; panels?: { id: string; title: string; body: UINode }[]; dataSources?: DataSource[]; skills?: Skill[]; aiProviders?: AIProvider[]; exporters?: Exporter[]; pages?: Page[]; navigation?: Navigation[] };
+  contributes?: { commands?: Command[]; panels?: { id: string; title: string; body: UINode }[]; dataSources?: DataSource[]; skills?: Skill[]; aiProviders?: AIProvider[]; exporters?: Exporter[]; pages?: Page[]; navigation?: Navigation[]; connectionActions?: ConnectionAction[] };
   window?: { entry: string; title?: string; width?: number; height?: number };
   configSchema?: JSONValue;
 }

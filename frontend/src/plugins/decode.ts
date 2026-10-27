@@ -211,7 +211,7 @@ export function decodeManifest(data: unknown): PluginManifest {
   }
   if (m.contributes != null) {
     const c = requireRecord(m.contributes);
-    onlyKeys(c, ['commands', 'panels', 'dataSources', 'skills', 'aiProviders', 'exporters', 'pages', 'navigation']);
+    onlyKeys(c, ['commands', 'panels', 'dataSources', 'skills', 'aiProviders', 'exporters', 'pages', 'navigation', 'connectionActions']);
     const contributionLimits: Record<string, number> = { commands: 128, panels: 32 };
     for (const key of ['commands', 'panels']) {
       const entries = c[key];
@@ -282,6 +282,48 @@ export function decodeManifest(data: unknown): PluginManifest {
         const provider = requireRecord(item);
         onlyKeys(provider, ['id', 'name', 'command', 'icon', 'models', 'supportsTools', 'supportsImages']);
         if (!validAIProvider(provider, commands)) invalid();
+      }
+    }
+    if (c.connectionActions != null) {
+      if (!Array.isArray(c.connectionActions) || c.connectionActions.length > 16) return invalid();
+      const pageIDs = new Set<string>();
+      for (const page of Array.isArray(c.pages) ? c.pages : []) {
+        const id = requireRecord(page).id;
+        if (typeof id === 'string') pageIDs.add(id);
+      }
+      const seenActions = new Set<string>();
+      const validType = (value: unknown) => typeof value === 'string' && /^[a-z0-9][a-z0-9._:-]{0,127}$/.test(value);
+      const validScope = (value: unknown) => value === 'connection' || value === 'database' || value === 'collection';
+      for (const item of c.connectionActions) {
+        const action = requireRecord(item);
+        onlyKeys(action, ['id', 'title', 'description', 'connectionTypes', 'scopes', 'target']);
+        if (!validLocalID(action.id) || seenActions.has(action.id as string)
+          || typeof action.title !== 'string' || action.title.trim() === '' || !utf8Within(action.title, 256) || action.title.includes('\u0000')) invalid();
+        seenActions.add(action.id as string);
+        if (action.description != null && (typeof action.description !== 'string' || !utf8Within(action.description, 4096))) invalid();
+        if (!Array.isArray(action.connectionTypes) || action.connectionTypes.length === 0 || action.connectionTypes.length > 32) invalid();
+        const types = new Set<string>();
+        for (const value of action.connectionTypes) {
+          if (!validType(value) || types.has(value)) invalid();
+          types.add(value);
+        }
+        if (action.scopes != null) {
+          if (!Array.isArray(action.scopes) || action.scopes.length > 8) invalid();
+          const scopes = new Set<string>();
+          for (const value of action.scopes) {
+            if (!validScope(value) || scopes.has(value)) invalid();
+            scopes.add(value);
+          }
+        }
+        const target = requireRecord(action.target);
+        onlyKeys(target, ['type', 'page']);
+        if (target.type === 'window') {
+          if (target.page != null || m.window == null) invalid();
+        } else if (target.type === 'page') {
+          if (typeof target.page !== 'string' || !(m.permissions as string[]).includes('ui.pages') || !pageIDs.has(target.page)) invalid();
+        } else {
+          invalid();
+        }
       }
     }
     if (c.pages != null || c.navigation != null) {

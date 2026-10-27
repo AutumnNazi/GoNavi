@@ -211,7 +211,7 @@ func (a *App) PluginOpenWindow(id string) connection.QueryResult {
 	if windows == nil {
 		return a.pluginFailure("window_unavailable")
 	}
-	value, err := windows.Open(a.pluginContext(), id)
+	value, err := windows.Open(a.pluginContext(), id, id, nil)
 	if errors.Is(err, context.Canceled) {
 		return a.pluginFailure("window_unavailable")
 	}

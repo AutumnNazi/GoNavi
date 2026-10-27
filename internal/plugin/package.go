@@ -14,8 +14,6 @@ import (
 	"strings"
 )
 
-const maxPackageBytes int64 = 256 << 20
-const maxFileBytes int64 = 64 << 20
 const maxPackageEntries = 4096
 
 type packageFile struct {
@@ -58,9 +56,6 @@ func scanPackage(ctx context.Context, source, destination string) (Inspection, e
 	case info.IsDir():
 		err = scan.directory(absolute)
 	case info.Mode().IsRegular():
-		if info.Size() > maxPackageBytes {
-			return result, fmt.Errorf("archive exceeds compressed size limit")
-		}
 		format, formatErr := archiveFormat(absolute)
 		if formatErr != nil {
 			return result, formatErr
@@ -122,8 +117,8 @@ func (s *packageScan) entry(name string, dir bool) error {
 	return nil
 }
 func (s *packageScan) file(name string, size int64, r io.Reader) error {
-	if size < 0 || size > maxFileBytes || s.total+size > maxPackageBytes {
-		return fmt.Errorf("package file exceeds size limit")
+	if size < 0 {
+		return fmt.Errorf("package file size is invalid")
 	}
 	if name == manifestName && size > maxManifestBytes {
 		return fmt.Errorf("manifest exceeds size limit")

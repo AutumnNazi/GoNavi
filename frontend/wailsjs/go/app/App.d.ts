@@ -721,6 +721,8 @@ export function PluginRemove(arg1:string,arg2:boolean):Promise<connection.QueryR
 
 export function PluginReplace(arg1:string,arg2:string,arg3:boolean):Promise<connection.QueryResult>;
 
+export function PluginRunConnectionAction(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string):Promise<connection.QueryResult>;
+
 export function PluginRuntimeInfo():Promise<connection.QueryResult>;
 
 export function PluginSetEnabled(arg1:string,arg2:boolean):Promise<connection.QueryResult>;

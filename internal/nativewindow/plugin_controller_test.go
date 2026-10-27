@@ -106,7 +106,7 @@ func TestPluginWindowOpenFailureAndShutdown(t *testing.T) {
 		profile = spec.directory
 		return nil, errors.New("fixture launch failure")
 	}
-	if _, err := c.Open(context.Background(), "test.one"); err == nil {
+	if _, err := c.Open(context.Background(), "test.one", "test.one", nil); err == nil {
 		t.Fatal("launch failure hidden")
 	}
 	if _, err := os.Stat(profile); !os.IsNotExist(err) {
@@ -121,7 +121,7 @@ func TestPluginWindowOpenFailureAndShutdown(t *testing.T) {
 	if err := c.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Open(context.Background(), "test.one"); err == nil {
+	if _, err := c.Open(context.Background(), "test.one", "test.one", nil); err == nil {
 		t.Fatal("closed controller reopened")
 	}
 }

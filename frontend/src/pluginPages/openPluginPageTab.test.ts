@@ -42,6 +42,26 @@ describe('plugin page tabs', () => {
     expect(useStore.getState().tabs).toHaveLength(2);
   });
 
+  it('keeps one tab per connection-action instance and carries a non-secret launch', () => {
+    const launch = {
+      kind: 'connectionAction' as const,
+      actionId: 'open-shell',
+      connectionId: 'mongo-local',
+      connectionName: 'Local Mongo',
+      connectionType: 'mongodb',
+      database: 'app',
+      readOnly: true,
+    };
+    const first = buildPluginPageTab({
+      pluginID: 'test.mongo', pageID: 'shell', title: 'MongoShell', instanceKey: 'open-shell:mongo-local:app:', launch,
+    });
+    expect(first.id).toBe('plugin-page:test.mongo:shell:open-shell:mongo-local:app:');
+    expect(first.connectionId).toBe('mongo-local');
+    expect(first.pluginPage?.launch).toEqual(launch);
+    openPluginPageTab({ pluginID: 'test.mongo', pageID: 'shell', title: 'MongoShell', instanceKey: 'open-shell:mongo-other::', launch });
+    expect(useStore.getState().tabs).toHaveLength(1);
+  });
+
   it('updates an open page tab when the navigation title changes', () => {
     openPluginPageTab({ pluginID: 'test.pages', pageID: 'overview', title: 'Overview' });
     openPluginPageTab({ pluginID: 'test.pages', pageID: 'overview', title: 'Overview 2' });

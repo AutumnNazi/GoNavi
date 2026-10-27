@@ -13,18 +13,20 @@ export function HTMLPluginPage({
   pageID,
   title,
   source,
+  launch,
 }: {
   pluginID: string;
   pageID: string;
   title: string;
   source: string;
+  launch?: unknown;
 }) {
   const { t } = useI18n();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [token] = useState(createPageToken);
   const [blocked, setBlocked] = useState(false);
   const loads = useRef(0);
-  const document = useMemo(() => sandboxedPageDocument(source, token), [source, token]);
+  const document = useMemo(() => sandboxedPageDocument(source, token, launch), [launch, source, token]);
   usePageBridge({
     frameRef,
     pluginID,

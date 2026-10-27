@@ -198,7 +198,7 @@ export const WorkbenchTabContent: React.FC<WorkbenchTabContentProps> = React.mem
     content = <SettingsCenterWorkbench tab={tab} isActive={isActive} />;
   } else if (tab.type === 'plugin-page') {
     content = tab.pluginPage
-      ? <PluginPageHost pluginID={tab.pluginPage.pluginID} pageID={tab.pluginPage.pageID} />
+      ? <PluginPageHost pluginID={tab.pluginPage.pluginID} pageID={tab.pluginPage.pageID} launch={tab.pluginPage.launch} />
       : null;
   } else if (tab.type === 'request-diagnostics') {
     content = <RequestDiagnosticsWorkbench tab={tab} isActive={isActive} />;

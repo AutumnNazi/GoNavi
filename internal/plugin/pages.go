@@ -9,9 +9,10 @@ const PagesPermission = "ui.pages"
 // Host capability permissions gate page calls through the page gateway. They
 // never grant page rendering on their own.
 const (
-	ConnectionsReadPermission = "host.connections.read"
-	MetadataReadPermission    = "host.metadata.read"
-	QueryReadPermission       = "host.query.read"
+	ConnectionsReadPermission        = "host.connections.read"
+	ConnectionsCredentialsPermission = "host.connections.credentials"
+	MetadataReadPermission           = "host.metadata.read"
+	QueryReadPermission              = "host.query.read"
 )
 
 // PageLocationTools is the only navigation location v1 accepts: the title-bar

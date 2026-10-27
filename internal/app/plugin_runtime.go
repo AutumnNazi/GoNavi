@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -15,7 +16,7 @@ import (
 
 // PluginWindowHost exposes only the independently supervised window lifecycle.
 type PluginWindowHost interface {
-	Open(context.Context, string) (any, error)
+	Open(ctx context.Context, pluginID, windowKey string, launchContext json.RawMessage) (any, error)
 	Revoke(string)
 	Close(context.Context) error
 }
@@ -94,7 +95,12 @@ func (a *App) pluginManager(ctx context.Context) (*plugin.Manager, error) {
 		lifetime, stop := context.WithCancel(a.ctx)
 		state.lifetime, state.cancel = lifetime, stop
 		state.mu.Unlock()
-		manager, err := plugin.NewManager(plugin.Options{Root: root, HostVersion: CurrentVersion(), Disabled: pluginEnvEnabled("GONAVI_DISABLE_PLUGINS")})
+		manager, err := plugin.NewManager(plugin.Options{
+			Root:           root,
+			HostVersion:    CurrentVersion(),
+			Disabled:       pluginEnvEnabled("GONAVI_DISABLE_PLUGINS"),
+			HostCapability: a.pluginHostCapability,
+		})
 		var windows PluginWindowHost
 		if err == nil {
 			if startErr := manager.Start(lifetime); startErr != nil {

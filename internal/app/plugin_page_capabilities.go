@@ -55,14 +55,20 @@ func defaultPluginPageCapabilities() pluginPageCapabilities {
 	}
 }
 
+// pluginCapabilityAPIVersion is the capability catalogue generation exposed by
+// app.info. It is independent from the package manifest apiVersion so older
+// packages keep working while hosts add capabilities.
+const pluginCapabilityAPIVersion = 2
+
 // pluginPageAppInfoResult is the app.info payload. It exposes identity only;
 // no host paths, configuration or connection details.
 type pluginPageAppInfoResult struct {
-	HostVersion   string `json:"hostVersion"`
-	PluginID      string `json:"pluginId"`
-	PluginVersion string `json:"pluginVersion"`
-	Locale        string `json:"locale"`
-	Runtime       string `json:"runtime"`
+	HostVersion         string `json:"hostVersion"`
+	PluginID            string `json:"pluginId"`
+	PluginVersion       string `json:"pluginVersion"`
+	Locale              string `json:"locale"`
+	Runtime             string `json:"runtime"`
+	CapabilitiesVersion int    `json:"capabilitiesVersion"`
 }
 
 func pluginPageAppInfo(_ context.Context, a *App, request pluginPageRequest) (any, string) {
@@ -75,11 +81,12 @@ func pluginPageAppInfo(_ context.Context, a *App, request pluginPageRequest) (an
 		runtimeName = "web"
 	}
 	return pluginPageAppInfoResult{
-		HostVersion:   CurrentVersion(),
-		PluginID:      request.status.Manifest.ID,
-		PluginVersion: request.status.Manifest.Version,
-		Locale:        a.pluginPageLocale(),
-		Runtime:       runtimeName,
+		HostVersion:         CurrentVersion(),
+		PluginID:            request.status.Manifest.ID,
+		PluginVersion:       request.status.Manifest.Version,
+		Locale:              a.pluginPageLocale(),
+		Runtime:             runtimeName,
+		CapabilitiesVersion: pluginCapabilityAPIVersion,
 	}, ""
 }
 

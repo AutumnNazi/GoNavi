@@ -115,7 +115,8 @@ func (p *rpcProcess) rejectHostRequest(message rpcEnvelope) error {
 	default:
 		return fmt.Errorf("invalid plugin request id")
 	}
-	// host.log and host.describe are caller-bound. Every other plugin method stays unsupported.
+	// host.log, host.describe and host.capability are caller-bound. Every other
+	// plugin method stays unsupported.
 	var result json.RawMessage
 	var callErr error
 	switch {
@@ -123,6 +124,8 @@ func (p *rpcProcess) rejectHostRequest(message rpcEnvelope) error {
 		result, callErr = p.hostLog(message.Params)
 	case message.Method == "host.describe" && p.hostDescribe != nil:
 		result, callErr = p.hostDescribe(message.Params)
+	case message.Method == "host.capability" && p.hostCapability != nil:
+		result, callErr = p.hostCapability(message.Params)
 	default:
 		frame, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": message.ID, "error": map[string]any{"code": -32601, "message": "host method is not supported"}})
 		if err != nil {

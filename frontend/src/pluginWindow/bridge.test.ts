@@ -11,7 +11,7 @@ describe('plugin-scoped browser bridge', () => {
     });
     const bridge = createPluginBridge(fetcher, () => 'call-1');
     expect(Object.isFrozen(bridge)).toBe(true);
-    expect(Object.keys(bridge)).toEqual(['ready', 'invoke', 'close']);
+    expect(Object.keys(bridge)).toEqual(['ready', 'invoke', 'capability', 'close']);
     expect(await bridge.ready).toEqual({ pluginId: 'test.one', generation: 2, title: 'Fixture' });
     expect(await bridge.invoke('echo', { a: 1 })).toEqual({ result: 42 });
     const call = fetcher.mock.calls[1];
@@ -19,6 +19,31 @@ describe('plugin-scoped browser bridge', () => {
     expect(JSON.parse(String(call[1]?.body))).toEqual({ id: 'call-1', command: 'echo', arguments: { a: 1 } });
     expect(call[1]?.credentials).toBe('omit');
     expect(JSON.stringify(call)).not.toContain('token');
+  });
+
+  it('routes host capabilities through the capability bridge', async () => {
+    const fetcher = vi.fn<FetchBridge>().mockImplementation(async (url) => {
+      return url === bridgePrefix + 'bootstrap'
+        ? identity()
+        : new Response(JSON.stringify({ ok: true, data: { tables: ['users'] } }));
+    });
+    const bridge = createPluginBridge(fetcher, () => 'cap-1');
+    await expect(bridge.capability('metadata.tables', { connectionId: 'conn-1', database: 'app' }))
+      .resolves.toEqual({ ok: true, data: { tables: ['users'] } });
+    const call = fetcher.mock.calls[1];
+    expect(call[0]).toBe(bridgePrefix + 'capability');
+    expect(JSON.parse(String(call[1]?.body))).toEqual({
+      id: 'cap-1',
+      method: 'metadata.tables',
+      arguments: { connectionId: 'conn-1', database: 'app' },
+    });
+  });
+
+  it('rejects an empty capability method before sending', async () => {
+    const fetcher = vi.fn<FetchBridge>().mockResolvedValue(identity());
+    const bridge = createPluginBridge(fetcher, () => 'unused');
+    await expect(bridge.capability('')).rejects.toThrow('invalid_method');
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
   it('sends explicit cancellation when a caller aborts', async () => {

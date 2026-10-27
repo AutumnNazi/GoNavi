@@ -18,8 +18,6 @@ const (
 	pluginTokenHeader       = "X-GoNavi-Plugin-Token"
 	pluginWindowHeader      = "X-GoNavi-Plugin-Window"
 	pluginMaxJSONBytes      = 1 << 20
-	pluginMaxAssetBytes     = 8 << 20
-	pluginMaxHTMLBytes      = 2 << 20
 	pluginMaxCalls          = 8
 	pluginMaxWindows        = 16
 	pluginHeartbeatInterval = time.Second
@@ -33,6 +31,10 @@ const (
 type PluginControllerOptions struct {
 	Assets     fs.FS
 	Executable string
+	// Capability dispatches one plugin-window capability through the host
+	// registry. The controller authenticates the window token and generation
+	// first; the callback re-checks the live plugin generation and permissions.
+	Capability func(ctx context.Context, pluginID string, generation uint64, method string, arguments json.RawMessage) (json.RawMessage, error)
 }
 
 // PluginWindowInfo identifies a host-owned child; it carries no bridge secret.
@@ -63,13 +65,20 @@ type pluginProcess interface {
 }
 
 type pluginBootstrap struct {
-	PluginID   string `json:"pluginId"`
-	Generation uint64 `json:"generation"`
-	Title      string `json:"title"`
+	PluginID   string          `json:"pluginId"`
+	Generation uint64          `json:"generation"`
+	Title      string          `json:"title"`
+	Context    json.RawMessage `json:"context,omitempty"`
 }
 
 type pluginInvokeRequest struct {
 	ID        string          `json:"id"`
 	Command   string          `json:"command"`
+	Arguments json.RawMessage `json:"arguments"`
+}
+
+type pluginCapabilityRequest struct {
+	ID        string          `json:"id"`
+	Method    string          `json:"method"`
 	Arguments json.RawMessage `json:"arguments"`
 }

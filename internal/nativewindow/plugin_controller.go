@@ -2,8 +2,10 @@ package nativewindow
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -16,11 +18,13 @@ import (
 
 type pluginWindowEntry struct {
 	info              PluginWindowInfo
+	key               string
 	stamp             pluginWindowStamp
 	title             string
 	entry             string
 	token             string
 	profile           string
+	context           json.RawMessage
 	process           pluginProcess
 	life              context.Context
 	cancel            context.CancelFunc
@@ -42,9 +46,12 @@ type pluginWindowEntry struct {
 type PluginController struct {
 	mu                 sync.Mutex
 	manager            pluginWindowRuntime
+	capability         func(ctx context.Context, pluginID string, generation uint64, method string, arguments json.RawMessage) (json.RawMessage, error)
+	assets             fs.FS
 	bundle             []byte
 	executable         string
 	windows            map[string]*pluginWindowEntry
+	windowIDs          map[string]*pluginWindowEntry
 	revokedGenerations map[string]pluginWindowStamp
 	knownGenerations   map[string]pluginWindowStamp
 	admissionEpochs    map[string]uint64
@@ -89,8 +96,8 @@ func newPluginController(manager pluginWindowRuntime, opts PluginControllerOptio
 			return nil, fmt.Errorf("resolve plugin window executable: %w", err)
 		}
 	}
-	return &PluginController{manager: manager, bundle: bundle, executable: executable,
-		windows: make(map[string]*pluginWindowEntry), revokedGenerations: make(map[string]pluginWindowStamp), knownGenerations: make(map[string]pluginWindowStamp), admissionEpochs: make(map[string]uint64), startProcess: startPluginProcess,
+	return &PluginController{manager: manager, capability: opts.Capability, assets: opts.Assets, bundle: bundle, executable: executable,
+		windows: make(map[string]*pluginWindowEntry), windowIDs: make(map[string]*pluginWindowEntry), revokedGenerations: make(map[string]pluginWindowStamp), knownGenerations: make(map[string]pluginWindowStamp), admissionEpochs: make(map[string]uint64), startProcess: startPluginProcess,
 		stopTimeout: pluginStopTimeout, heartbeatTimeout: pluginHeartbeatTimeout,
 		startupTimeout: pluginStartupTimeout, checkInterval: 250 * time.Millisecond}, nil
 }

@@ -22,7 +22,7 @@ import {
   SIDEBAR_LOCATE_SAVED_QUERIES_EVENT,
 } from '../../utils/sidebarLocate';
 import { useSidebarCommandSearchRunner } from './useSidebarCommandSearchRunner';
-import { MenuProps } from 'antd';
+import { MenuProps, message } from 'antd';
 import { buildSidebarNodeMenuItems } from './sidebarNodeMenu';
 import { buildAgentAssetsWorkbenchTab } from '../../utils/agentAssetsTab';
 import {
@@ -30,6 +30,12 @@ import {
   openAgentIntegrationEditor,
 } from './sidebarAgentIntegrationActions';
 import { getMetadataDialect, shouldHideSchemaPrefix } from './sidebarMetadataLoaders';
+import { t } from '../../i18n';
+import { pluginAPI } from '../../plugins/api';
+import { usePluginConnectionActions } from '../../plugins/usePluginConnectionActions';
+import { openPluginPageTab } from '../../pluginPages/openPluginPageTab';
+import type { PluginPageLaunch } from '../../pluginPages/launch';
+import type { PluginConnectionActionEntry } from '../../plugins/connectionActions';
 import { useSidebarTitleRender } from './useSidebarTitleRender';
 import type { SidebarObjectMenuActionsApi } from './useSidebarObjectMenuActions';
 import type { SidebarSearchStateApi } from './useSidebarSearchState';
@@ -227,6 +233,40 @@ export const useSidebarContextMenus = ({
   // empty the tree. The slot derives the same family from the same connection, so
   // the two cannot disagree. See the hook for the reasoning.
   useV2ExplorerFilterReset(activeConnection, v2ExplorerFilter, setV2ExplorerFilter);
+
+  const { actions: pluginConnectionActions } = usePluginConnectionActions();
+  const runPluginConnectionAction = useCallback(async (
+    entry: PluginConnectionActionEntry,
+    target: { connectionId: string; database?: string; collection?: string },
+  ) => {
+    try {
+      const result = await pluginAPI.runConnectionAction(
+        entry.pluginID,
+        entry.action.id,
+        target.connectionId,
+        target.database ?? '',
+        target.collection ?? '',
+      );
+      if (result && typeof result === 'object' && !Array.isArray(result) && result.kind === 'page') {
+        const pageID = typeof result.pageId === 'string' ? result.pageId : '';
+        if (!pageID) return;
+        const rawLaunch = result.launch;
+        const launch = rawLaunch && typeof rawLaunch === 'object' && !Array.isArray(rawLaunch) &&
+          (rawLaunch as Record<string, unknown>).kind === 'connectionAction'
+          ? rawLaunch as unknown as PluginPageLaunch
+          : undefined;
+        openPluginPageTab({
+          pluginID: entry.pluginID,
+          pageID,
+          title: typeof result.title === 'string' && result.title.trim() ? result.title : entry.action.title,
+          instanceKey: [entry.action.id, target.connectionId, target.database ?? '', target.collection ?? ''].join(':'),
+          launch,
+        });
+      }
+    } catch {
+      message.error(t('plugin.connection_actions.failed'));
+    }
+  }, []);
 
   const {
       contextMenu,
@@ -428,6 +468,8 @@ export const useSidebarContextMenus = ({
 
   const getNodeMenuItems = (node: any): MenuProps['items'] => buildSidebarNodeMenuItems(node, {
     addTab,
+    pluginConnectionActions,
+    runPluginConnectionAction,
     getMetadataDialect,
     shouldHideSchemaPrefix,
     openSchemaVisibilitySettings,

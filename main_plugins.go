@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -19,8 +20,8 @@ type desktopPluginWindows struct {
 	controller *nativewindow.PluginController
 }
 
-func (w desktopPluginWindows) Open(ctx context.Context, id string) (any, error) {
-	return w.controller.Open(ctx, id)
+func (w desktopPluginWindows) Open(ctx context.Context, pluginID, windowKey string, launchContext json.RawMessage) (any, error) {
+	return w.controller.Open(ctx, pluginID, windowKey, launchContext)
 }
 func (w desktopPluginWindows) Revoke(id string)                { w.controller.Revoke(id) }
 func (w desktopPluginWindows) Close(ctx context.Context) error { return w.controller.Close(ctx) }
@@ -31,7 +32,10 @@ func configureDesktopPlugins(application *app.App) {
 		if err != nil {
 			return nil, err
 		}
-		controller, err := nativewindow.NewPluginController(manager, nativewindow.PluginControllerOptions{Assets: runtimeAssets})
+		controller, err := nativewindow.NewPluginController(manager, nativewindow.PluginControllerOptions{
+			Assets:     runtimeAssets,
+			Capability: app.PluginWindowCapabilityHandler(application),
+		})
 		if err != nil {
 			return nil, err
 		}

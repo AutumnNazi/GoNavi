@@ -14,6 +14,7 @@ import type { MenuProps } from 'antd';
 import { buildSidebarCopyObjectNameMenuItem } from './sidebarCopyObjectNameMenu';
 import { supportsOracleObjectCompilation } from './oracleObjectCompilation';
 import { openEventManagement, supportsEventManagement } from './sidebarEventManagement';
+import { buildPluginConnectionActionMenuItems } from './pluginConnectionActionMenu';
 
 export interface BuildTableNodeMenuItemsInput {
   node: any;
@@ -31,6 +32,17 @@ export const buildTableNodeMenuItems = ({ node, context }: BuildTableNodeMenuIte
   const isStarRocks = getMetadataDialect(node.dataRef as SavedConnection) === 'starrocks';
   const supportsCopyTable = getDataSourceCapabilities(node.dataRef?.config).supportsCopyTable;
   const messagePublishTarget = resolveMessagePublishTarget(node);
+  const pluginActionItems = buildPluginConnectionActionMenuItems({
+    actions: context.pluginConnectionActions ?? [],
+    connectionType: node.dataRef?.config?.type ?? '',
+    scope: 'collection',
+    target: {
+      connectionId: String(node.dataRef?.id || ''),
+      database: String(node.dataRef?.dbName || ''),
+      collection: String(node.dataRef?.tableName || ''),
+    },
+    run: (entry, target) => context.runPluginConnectionAction?.(entry, target),
+  });
   return [
       {
           key: 'new-query',
@@ -57,6 +69,7 @@ export const buildTableNodeMenuItems = ({ node, context }: BuildTableNodeMenuIte
              })();
           }
       },
+      ...pluginActionItems,
       ...(messagePublishTarget ? [{
           key: 'publish-message',
           label: t('message_publish_modal.title'),
@@ -168,6 +181,17 @@ export const buildMessageObjectMenuItems = ({ node, context }: BuildMessageObjec
   } = context;
   const objectKind = String(node.dataRef?.messageObjectKind || '').trim().toLowerCase();
   const messagePublishTarget = resolveMessagePublishTarget(node);
+  const pluginActionItems = buildPluginConnectionActionMenuItems({
+    actions: context.pluginConnectionActions ?? [],
+    connectionType: node.dataRef?.config?.type ?? '',
+    scope: 'collection',
+    target: {
+      connectionId: String(node.dataRef?.id || ''),
+      database: String(node.dataRef?.dbName || ''),
+      collection: String(node.dataRef?.tableName || ''),
+    },
+    run: (entry, target) => context.runPluginConnectionAction?.(entry, target),
+  });
   return [
       ...(objectKind === 'exchange' ? [] : [{
           key: 'browse-messages',
@@ -181,6 +205,7 @@ export const buildMessageObjectMenuItems = ({ node, context }: BuildMessageObjec
           icon: <InboxOutlined />,
           onClick: () => openMessageQueueWorkbench(node, 'open'),
       },
+      ...pluginActionItems,
       ...(messagePublishTarget ? [{
           key: 'publish-message',
           label: t('message_publish_modal.title'),
@@ -217,6 +242,17 @@ export const buildMessageNamespaceMenuItems = ({ node, context }: BuildMessageNa
     getDatabaseNodeRef,
   } = context;
   const messagePublishTarget = resolveMessagePublishTarget(node);
+  const pluginActionItems = buildPluginConnectionActionMenuItems({
+    actions: context.pluginConnectionActions ?? [],
+    connectionType: node.dataRef?.config?.type ?? '',
+    scope: 'collection',
+    target: {
+      connectionId: String(node.dataRef?.id || ''),
+      database: String(node.dataRef?.dbName || ''),
+      collection: String(node.dataRef?.tableName || ''),
+    },
+    run: (entry, target) => context.runPluginConnectionAction?.(entry, target),
+  });
   return [
       ...(node.type === 'message-namespace' ? [{
           key: 'open-message-workbench',

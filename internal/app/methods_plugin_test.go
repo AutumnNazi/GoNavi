@@ -127,13 +127,25 @@ func TestPluginFailureDoesNotLeakUntrustedDetails(t *testing.T) {
 	}
 }
 
+type pluginTestWindowOpen struct {
+	pluginID  string
+	windowKey string
+	context   json.RawMessage
+}
+
 type pluginTestWindows struct {
 	mu      sync.Mutex
 	revoked []string
+	opened  []pluginTestWindowOpen
 	closed  bool
 }
 
-func (w *pluginTestWindows) Open(context.Context, string) (any, error) { return nil, nil }
+func (w *pluginTestWindows) Open(_ context.Context, pluginID, windowKey string, launchContext json.RawMessage) (any, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.opened = append(w.opened, pluginTestWindowOpen{pluginID: pluginID, windowKey: windowKey, context: append(json.RawMessage(nil), launchContext...)})
+	return map[string]any{"id": windowKey}, nil
+}
 func (w *pluginTestWindows) Revoke(id string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()

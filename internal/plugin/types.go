@@ -3,6 +3,7 @@
 package plugin
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"time"
@@ -50,14 +51,32 @@ type Entry struct {
 
 // Contributions are bounded declarations; backend extensions use declared commands.
 type Contributions struct {
-	Commands    []Command    `json:"commands,omitempty"`
-	Panels      []Panel      `json:"panels,omitempty"`
-	DataSources []DataSource `json:"dataSources,omitempty"`
-	Skills      []Skill      `json:"skills,omitempty"`
-	AIProviders []AIProvider `json:"aiProviders,omitempty"`
-	Exporters   []Exporter   `json:"exporters,omitempty"`
-	Pages       []Page       `json:"pages,omitempty"`
-	Navigation  []Navigation `json:"navigation,omitempty"`
+	Commands          []Command          `json:"commands,omitempty"`
+	Panels            []Panel            `json:"panels,omitempty"`
+	DataSources       []DataSource       `json:"dataSources,omitempty"`
+	Skills            []Skill            `json:"skills,omitempty"`
+	AIProviders       []AIProvider       `json:"aiProviders,omitempty"`
+	Exporters         []Exporter         `json:"exporters,omitempty"`
+	Pages             []Page             `json:"pages,omitempty"`
+	Navigation        []Navigation       `json:"navigation,omitempty"`
+	ConnectionActions []ConnectionAction `json:"connectionActions,omitempty"`
+}
+
+// ConnectionAction is a generic host surface entry rendered in connection, database
+// or collection context menus. The host owns the click target and launch context.
+type ConnectionAction struct {
+	ID              string       `json:"id"`
+	Title           string       `json:"title"`
+	Description     string       `json:"description,omitempty"`
+	ConnectionTypes []string     `json:"connectionTypes"`
+	Scopes          []string     `json:"scopes,omitempty"`
+	Target          LaunchTarget `json:"target"`
+}
+
+// LaunchTarget selects the host surface opened for one contribution.
+type LaunchTarget struct {
+	Type string `json:"type"`
+	Page string `json:"page,omitempty"`
 }
 
 // Command declares one backend invocation and its claimed effect.
@@ -184,6 +203,10 @@ type Options struct {
 	InvocationTimeout        time.Duration
 	ReconcileInterval        time.Duration
 	MaxConcurrentInvocations int
+	// HostCapability forwards a caller-bound host capability request to the
+	// embedding application. A nil callback disables host.capability without
+	// affecting host.log or host.describe.
+	HostCapability func(ctx context.Context, pluginID string, generation uint64, params json.RawMessage) (json.RawMessage, error)
 }
 
 // ErrLocked means another runtime owner or a busy state writer holds the OS lock.

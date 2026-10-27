@@ -1410,6 +1410,10 @@ export function PluginReplace(arg1, arg2, arg3) {
   return window['go']['app']['App']['PluginReplace'](arg1, arg2, arg3);
 }
 
+export function PluginRunConnectionAction(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['app']['App']['PluginRunConnectionAction'](arg1, arg2, arg3, arg4, arg5);
+}
+
 export function PluginRuntimeInfo() {
   return window['go']['app']['App']['PluginRuntimeInfo']();
 }

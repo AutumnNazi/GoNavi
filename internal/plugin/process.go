@@ -58,23 +58,24 @@ func (p rpcCallPolicy) settleUnsent() {
 }
 
 type rpcProcess struct {
-	cmd           *exec.Cmd
-	tree          *processTree
-	stdin         io.WriteCloser
-	stdout        io.ReadCloser
-	stderr        io.ReadCloser
-	mu            sync.Mutex
-	next          uint64
-	pending       map[uint64]rpcPending
-	terminal      error
-	failed        chan struct{}
-	done          chan struct{}
-	outgoing      chan []byte
-	workers       sync.WaitGroup
-	hostLog       func(json.RawMessage) (json.RawMessage, error)
-	hostDescribe  func(json.RawMessage) (json.RawMessage, error)
-	hostLogWindow time.Time
-	hostLogCount  int
+	cmd            *exec.Cmd
+	tree           *processTree
+	stdin          io.WriteCloser
+	stdout         io.ReadCloser
+	stderr         io.ReadCloser
+	mu             sync.Mutex
+	next           uint64
+	pending        map[uint64]rpcPending
+	terminal       error
+	failed         chan struct{}
+	done           chan struct{}
+	outgoing       chan []byte
+	workers        sync.WaitGroup
+	hostLog        func(json.RawMessage) (json.RawMessage, error)
+	hostDescribe   func(json.RawMessage) (json.RawMessage, error)
+	hostCapability func(json.RawMessage) (json.RawMessage, error)
+	hostLogWindow  time.Time
+	hostLogCount   int
 }
 
 func launchProcess(m Manifest, packageRoot, dataRoot string) (*rpcProcess, error) {
