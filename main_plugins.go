@@ -12,6 +12,7 @@ import (
 
 	"GoNavi-Wails/internal/app"
 	"GoNavi-Wails/internal/cli"
+	"GoNavi-Wails/internal/logger"
 	"GoNavi-Wails/internal/nativewindow"
 	"GoNavi-Wails/internal/plugin"
 )
@@ -35,6 +36,13 @@ func configureDesktopPlugins(application *app.App) {
 		controller, err := nativewindow.NewPluginController(manager, nativewindow.PluginControllerOptions{
 			Assets:     runtimeAssets,
 			Capability: app.PluginWindowCapabilityHandler(application),
+			// 清理旧窗口所属 generation 的连接，避免重开窗口后
+			// 留下无法在 UI 中管理的后台会话。
+			OnWindowClosed: func(ctx context.Context, info nativewindow.PluginWindowInfo) {
+				if _, invokeErr := manager.InvokeGeneration(ctx, info.PluginID, info.Generation, "session.teardown", nil); invokeErr != nil {
+					logger.Warnf("plugin window closed teardown failed: %s generation %d", info.PluginID, info.Generation)
+				}
+			},
 		})
 		if err != nil {
 			return nil, err

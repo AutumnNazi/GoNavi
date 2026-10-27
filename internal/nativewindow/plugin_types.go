@@ -24,6 +24,7 @@ const (
 	pluginHeartbeatTimeout  = 3 * time.Second
 	pluginStartupTimeout    = 10 * time.Second
 	pluginStopTimeout       = 2 * time.Second
+	pluginTeardownTimeout   = 10 * time.Second
 )
 
 // PluginControllerOptions supplies only the standalone bridge bundle, not the
@@ -35,6 +36,9 @@ type PluginControllerOptions struct {
 	// registry. The controller authenticates the window token and generation
 	// first; the callback re-checks the live plugin generation and permissions.
 	Capability func(ctx context.Context, pluginID string, generation uint64, method string, arguments json.RawMessage) (json.RawMessage, error)
+	// OnWindowClosed 在 supervisor 内清理窗口所属 generation 的后端状态。
+	// 回调期间保留重开屏障；必须响应 ctx 的生命周期取消与清理超时。
+	OnWindowClosed func(ctx context.Context, info PluginWindowInfo)
 }
 
 // PluginWindowInfo identifies a host-owned child; it carries no bridge secret.
