@@ -20,6 +20,9 @@ CREATE VIEW `+"`active_users`"+` AS SELECT * FROM `+"`users`"+`;
 	if plan.WholeDatabase {
 		t.Fatalf("CREATE-only file requested a whole database snapshot: %+v", plan)
 	}
+	if !plan.AdditiveOnly {
+		t.Fatalf("CREATE-only file was not marked additive: %+v", plan)
+	}
 	want := []string{"users", "orders", "active_users"}
 	if !reflect.DeepEqual(plan.Tables, want) {
 		t.Fatalf("tables = %#v, want %#v", plan.Tables, want)
@@ -38,6 +41,9 @@ ALTER TABLE orders ADD COLUMN note VARCHAR(20);
 	}
 	if plan.WholeDatabase {
 		t.Fatalf("known DML requested a whole database snapshot: %+v", plan)
+	}
+	if plan.AdditiveOnly {
+		t.Fatalf("DML file was incorrectly marked additive: %+v", plan)
 	}
 	want := []string{"users", "orders"}
 	if !reflect.DeepEqual(plan.Tables, want) {
@@ -59,6 +65,9 @@ func TestPlanSQLImportRollbackFallsBackForUnknownStatements(t *testing.T) {
 		}
 		if !plan.WholeDatabase {
 			t.Fatalf("%q did not fall back to a whole database snapshot: %+v", sql, plan)
+		}
+		if plan.AdditiveOnly {
+			t.Fatalf("%q was incorrectly marked additive: %+v", sql, plan)
 		}
 	}
 }

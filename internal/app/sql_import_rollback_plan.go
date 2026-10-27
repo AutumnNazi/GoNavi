@@ -13,6 +13,7 @@ import (
 type sqlImportRollbackPlan struct {
 	Tables        []string
 	WholeDatabase bool
+	AdditiveOnly  bool
 }
 
 var errSQLImportRollbackPlanWholeDatabase = errors.New("SQL import rollback plan requires a whole database snapshot")
@@ -27,7 +28,7 @@ func planSQLImportRollbackFile(filePath, dbType string, maxStatementBytes int64)
 }
 
 func planSQLImportRollbackReader(reader io.Reader, dbType string, maxStatementBytes int64) (sqlImportRollbackPlan, error) {
-	plan := sqlImportRollbackPlan{}
+	plan := sqlImportRollbackPlan{AdditiveOnly: true}
 	normalizedType := normalizeExplainLexicalDBType(dbType)
 	_, err := StreamSQLFileWithOptions(reader, SQLStreamOptions{
 		DBType:            normalizedType,
@@ -36,6 +37,7 @@ func planSQLImportRollbackReader(reader io.Reader, dbType string, maxStatementBy
 		if err := addSQLImportRollbackStatement(&plan, statement, normalizedType); err != nil {
 			if errors.Is(err, errSQLImportRollbackPlanWholeDatabase) {
 				plan.WholeDatabase = true
+				plan.AdditiveOnly = false
 			}
 			return err
 		}
@@ -56,6 +58,7 @@ func addSQLImportRollbackStatement(plan *sqlImportRollbackPlan, statement, dbTyp
 	case "create":
 		return addSQLImportCreateRollbackPlan(plan, statement, position, dbType)
 	case "insert", "replace":
+		plan.AdditiveOnly = false
 		position = skipSQLImportModifiers(statement, position, "low_priority", "delayed", "high_priority", "ignore")
 		next, end := nextSQLKeyword(statement, position)
 		if next != "into" {
@@ -63,12 +66,14 @@ func addSQLImportRollbackStatement(plan *sqlImportRollbackPlan, statement, dbTyp
 		}
 		return addSQLImportRollbackTable(plan, statement, end, dbType)
 	case "update":
+		plan.AdditiveOnly = false
 		position = skipSQLImportModifiers(statement, position, "low_priority", "ignore")
 		if hasSQLImportTopLevelJoin(statement) {
 			return errSQLImportRollbackPlanWholeDatabase
 		}
 		return addSQLImportRollbackTable(plan, statement, position, dbType)
 	case "delete":
+		plan.AdditiveOnly = false
 		next, end := nextSQLKeyword(statement, position)
 		if next != "from" {
 			return errSQLImportRollbackPlanWholeDatabase
@@ -78,6 +83,7 @@ func addSQLImportRollbackStatement(plan *sqlImportRollbackPlan, statement, dbTyp
 		next, end := nextSQLKeyword(statement, position)
 		switch next {
 		case "table", "view":
+			plan.AdditiveOnly = false
 			return addSQLImportRollbackTable(plan, statement, end, dbType)
 		case "database", "schema":
 			return errSQLImportRollbackPlanWholeDatabase
@@ -88,6 +94,7 @@ func addSQLImportRollbackStatement(plan *sqlImportRollbackPlan, statement, dbTyp
 		next, end := nextSQLKeyword(statement, position)
 		switch next {
 		case "table", "view":
+			plan.AdditiveOnly = false
 			return addSQLImportRollbackTableList(plan, statement, end, dbType)
 		case "database", "schema":
 			return errSQLImportRollbackPlanWholeDatabase
@@ -95,12 +102,14 @@ func addSQLImportRollbackStatement(plan *sqlImportRollbackPlan, statement, dbTyp
 			return nil
 		}
 	case "truncate":
+		plan.AdditiveOnly = false
 		next, end := nextSQLKeyword(statement, position)
 		if next == "table" {
 			return addSQLImportRollbackTable(plan, statement, end, dbType)
 		}
 		return addSQLImportRollbackTable(plan, statement, position, dbType)
 	case "load":
+		plan.AdditiveOnly = false
 		position = skipSQLImportThroughKeyword(statement, position, "into")
 		if position < 0 {
 			return errSQLImportRollbackPlanWholeDatabase

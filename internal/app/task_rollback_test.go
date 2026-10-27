@@ -41,7 +41,7 @@ func installTaskRollbackApp(t *testing.T, database db.Database) *App {
 	return app
 }
 
-func TestImportDatabaseSQLSnapshotsEmptyCatalogBeforeExecution(t *testing.T) {
+func TestImportDatabaseSQLSkipsSnapshotForCreateOnly(t *testing.T) {
 	database := &fakeSQLFileBatchDB{}
 	app := installTaskRollbackApp(t, database)
 	filePath := filepath.Join(t.TempDir(), "igap.sql")
@@ -58,16 +58,12 @@ func TestImportDatabaseSQLSnapshotsEmptyCatalogBeforeExecution(t *testing.T) {
 	if !strings.Contains(joined, "CREATE TABLE `t_annual_adjust`(id INT)") {
 		t.Fatalf("import did not execute the file: %#v", database.execQueries)
 	}
-	point := mustReadyRollbackPoint(t, app, "rollback-empty")
-	if point.WholeDatabase || point.Database != "igap_pro" {
-		t.Fatalf("point = %#v", point)
+	store, err := app.taskRollbackStore()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(point.Objects) != 1 || point.Objects[0].Name != "t_annual_adjust" || point.Objects[0].Existed {
-		t.Fatalf("CREATE-only rollback plan = %#v", point.Objects)
-	}
-	payload := readRollbackSnapshot(t, app, point.ID)
-	if string(payload) != taskRollbackEmptySnapshot {
-		t.Fatalf("snapshot = %q", payload)
+	if _, err := store.ReadyByTask("rollback-empty"); !errors.Is(err, taskrollback.ErrNotFound) {
+		t.Fatalf("CREATE-only import should not create a rollback snapshot: %v", err)
 	}
 }
 
@@ -77,8 +73,8 @@ func TestImportDatabaseSQLScopedSnapshotSkipsUnrelatedTables(t *testing.T) {
 		tables:             []string{"legacy_a", "legacy_b"},
 	}
 	app := installTaskRollbackApp(t, database)
-	filePath := filepath.Join(t.TempDir(), "create-only.sql")
-	content := "CREATE TABLE `new_table`(id INT);\n"
+	filePath := filepath.Join(t.TempDir(), "alter.sql")
+	content := "ALTER TABLE `legacy_a` ADD COLUMN note VARCHAR(20);\n"
 	if err := os.WriteFile(filePath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -89,14 +85,10 @@ func TestImportDatabaseSQLScopedSnapshotSkipsUnrelatedTables(t *testing.T) {
 	}
 	point := mustReadyRollbackPoint(t, app, "rollback-scoped")
 	if point.WholeDatabase {
-		t.Fatalf("CREATE-only import still requested a whole database snapshot: %#v", point)
+		t.Fatalf("ALTER import still requested a whole database snapshot: %#v", point)
 	}
-	if len(point.Objects) != 1 || point.Objects[0].Name != "new_table" || point.Objects[0].Existed {
+	if len(point.Objects) != 1 || point.Objects[0].Name != "legacy_a" {
 		t.Fatalf("rollback objects = %#v", point.Objects)
-	}
-	payload := readRollbackSnapshot(t, app, point.ID)
-	if string(payload) != taskRollbackEmptySnapshot {
-		t.Fatalf("unrelated table data entered the snapshot: %q", payload)
 	}
 }
 
@@ -107,7 +99,7 @@ func TestImportDatabaseSQLRefusesToStartWhenSnapshotCannotBeSaved(t *testing.T) 
 		return errors.New("disk full")
 	}
 	filePath := filepath.Join(t.TempDir(), "igap.sql")
-	if err := os.WriteFile(filePath, []byte("CREATE TABLE demo(id INT);\n"), 0o600); err != nil {
+	if err := os.WriteFile(filePath, []byte("ALTER TABLE `legacy_a` ADD COLUMN note INT;\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
