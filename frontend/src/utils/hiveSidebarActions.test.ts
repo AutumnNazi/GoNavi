@@ -24,7 +24,7 @@ describe('Hive sidebar native object actions', () => {
   });
 
   it('offers clear/truncate only as backend-preflight actions for Hive and its registered aliases', () => {
-    for (const type of ['hive', 'hive2', 'hiveserver2', 'apache-hive']) {
+    for (const type of ['hive', 'hive2', 'hiveserver2', 'hs2', 'apache-hive']) {
       expect(supportsTableTruncateAction(type)).toBe(true);
       expect(supportsTableClearAction(type)).toBe(true);
     }

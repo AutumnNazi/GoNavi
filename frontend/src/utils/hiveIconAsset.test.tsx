@@ -25,7 +25,7 @@ describe('bundled Hive registry icon', () => {
 
   it('shares the local asset across canonical Hive and all registered aliases', () => {
     const source = getDbIconAssetSrc('hive');
-    for (const type of ['hive', 'hive2', 'hiveserver2', 'apache-hive']) {
+    for (const type of ['hive', 'hive2', 'hiveserver2', 'hs2', 'apache-hive']) {
       expect(getRegistryIconConfig(type)?.src).toBe(source);
       expect(getDbIconAssetSrc(type)).toBe(source);
       const markup = renderToStaticMarkup(<>{getDbIcon(type, undefined, 32)}</>);

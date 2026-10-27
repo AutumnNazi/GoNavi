@@ -71,7 +71,7 @@ describe('Hive lossless preview and execution import options', () => {
   });
 
   it('recognizes Hive aliases and custom Hive drivers without changing legacy defaults', () => {
-    for (const type of ['hive', 'hive2', 'hiveserver2', 'apache-hive']) expect(buildImportParserOptions(undefined, false, { type }).losslessHive).toBe(true);
+    for (const type of ['hive', 'hive2', 'hiveserver2', 'hs2', 'apache-hive']) expect(buildImportParserOptions(undefined, false, { type }).losslessHive).toBe(true);
     expect(buildImportParserOptions(undefined, false, { type: 'custom', driver: 'hive' }).losslessHive).toBe(true);
     for (const type of ['mysql', 'postgres', 'unknown']) expect(buildImportParserOptions(undefined, false, { type })).toEqual(buildImportParserOptions(undefined, false));
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getDataSourceSpec, getDataSourceVariantSet, registryAllowsImport } from './dataSourceRegistry';
+import { canonicalizeDataSourceType, getDataSourceSpec, getDataSourceVariantSet, registryAllowsImport } from './dataSourceRegistry';
 import { getDataSourceCapabilities } from './dataSourceCapabilities';
 import { CONNECTION_TYPE_GROUPS, getConnectionTypeDefaultPort } from './connectionTypeCatalog';
 import { isMySQLCompatibleType, supportsConnectionParamsForType, supportsSSLForType } from './connectionTypeCapabilities';
@@ -27,6 +27,7 @@ describe('Hive dynamic data source registration', () => {
     expect(registryAllowsImport('hive', 'sqlFile')).toBe(true);
     expect(CONNECTION_TYPE_GROUPS.find(group => group.labelKey.endsWith('.bigdata'))?.items.map(item => item.key)).toContain('hive');
     expect(getConnectionTypeDefaultPort('hive')).toBe(10000);
+    expect(canonicalizeDataSourceType('hs2')).toBe('hive');
     expect(supportsConnectionParamsForType('hive')).toBe(true);
     expect(supportsSSLForType('hive')).toBe(true);
     expect(decodeSavedConnectionViews([{ id: 'hive', name: 'Hive', config }])[0]).toMatchObject({ readable: true, writable: true });
@@ -36,7 +37,7 @@ describe('Hive dynamic data source registration', () => {
   it('does not borrow MySQL/PostgreSQL capabilities or pretend ACID tables provide client transactions', () => {
     expect(resolveSqlDialect('hive')).toBe('hive');
     expect(isMySQLCompatibleType('hive')).toBe(false);
-    for (const type of ['hive2', 'hiveserver2', 'apache-hive']) expect(getDataSourceCapabilities({ ...config, type }).transaction.supported).toBe(false);
+    for (const type of ['hive2', 'hiveserver2', 'hs2', 'apache-hive']) expect(getDataSourceCapabilities({ ...config, type }).transaction.supported).toBe(false);
     const caps = getDataSourceCapabilities(config);
     expect(caps.transaction.supported).toBe(false);
     expect(caps.schema.supported).toBe(false);

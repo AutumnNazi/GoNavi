@@ -3,6 +3,7 @@
   "aliases": [
     "hive2",
     "hiveserver2",
+    "hs2",
     "apache-hive"
   ],
   "displayName": "Apache Hive / HiveServer2",
