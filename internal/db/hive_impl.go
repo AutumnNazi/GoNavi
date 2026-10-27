@@ -38,6 +38,8 @@ var (
 	_ Database                         = (*HiveDB)(nil)
 	_ QueryContexter                   = (*HiveDB)(nil)
 	_ ExecContexter                    = (*HiveDB)(nil)
+	_ QueryArgsContexter               = (*HiveDB)(nil)
+	_ ExecArgsContexter                = (*HiveDB)(nil)
 	_ ColumnDefinitionContexter        = (*HiveDB)(nil)
 	_ StreamQueryExecer                = (*HiveDB)(nil)
 	_ BatchApplierContext              = (*HiveDB)(nil)

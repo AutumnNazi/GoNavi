@@ -201,8 +201,14 @@ func hiveDescribeColumns(rows []map[string]interface{}, fields []string) ([]conn
 		name := strings.TrimSpace(hiveRowText(row, fields[0]))
 		typeName := strings.TrimSpace(hiveRowText(row, fields[1]))
 		if strings.HasPrefix(name, "#") {
-			if strings.Contains(strings.ToLower(name), "partition information") {
+			lower := strings.ToLower(name)
+			switch {
+			case strings.Contains(lower, "partition information"):
 				partition = true
+			case strings.Contains(lower, "col_name"):
+				// Header row inside the partition block; keep the current section.
+			default:
+				partition = false
 			}
 			continue
 		}
@@ -225,6 +231,9 @@ func hiveDescribeColumns(rows []map[string]interface{}, fields []string) ([]conn
 		comment := ""
 		if len(fields) > 2 {
 			comment = hiveRowText(row, fields[2])
+		}
+		if strings.EqualFold(comment, "from deserializer") || strings.EqualFold(comment, "null") {
+			comment = ""
 		}
 		indexes[name] = len(columns)
 		columns = append(columns, connection.ColumnDefinition{Name: name, Type: typeName, Nullable: "YES", Extra: extra, Comment: comment})

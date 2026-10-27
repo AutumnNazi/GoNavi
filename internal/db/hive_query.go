@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"GoNavi-Wails/internal/connection"
@@ -15,6 +16,12 @@ import (
 import hs "github.com/beltran/gohive/hiveserver"
 
 var errHiveBudgetStop = errors.New("Hive result budget exhausted")
+
+// normalizeHiveStatement trims a trailing statement terminator. HiveServer2
+// ExecuteStatement accepts one statement and rejects a trailing semicolon.
+func normalizeHiveStatement(query string) string {
+	return strings.TrimRight(strings.TrimSpace(query), "; \t\r\n")
+}
 
 func (s *hiveSession) Query(query string) ([]map[string]interface{}, []string, error) {
 	return s.QueryContext(context.Background(), query)
@@ -50,10 +57,11 @@ func (s *hiveSession) execute(ctx context.Context, query string, consumer QueryS
 	if err := ctx.Err(); err != nil {
 		return -1, err
 	}
-	if query == "" || len(query) > 16<<20 {
+	statement := normalizeHiveStatement(query)
+	if statement == "" || len(statement) > 16<<20 {
 		return -1, fmt.Errorf("Hive SQL statement is empty or exceeds 16 MiB")
 	}
-	request := &hs.TExecuteStatementReq{SessionHandle: s.handle, Statement: query, RunAsync: true}
+	request := &hs.TExecuteStatementReq{SessionHandle: s.handle, Statement: statement, RunAsync: true}
 	if deadline, ok := ctx.Deadline(); ok {
 		remaining := time.Until(deadline)
 		request.QueryTimeout = int64((remaining + time.Second - 1) / time.Second)
@@ -95,8 +103,8 @@ func (s *hiveSession) execute(ctx context.Context, query string, consumer QueryS
 		hasResults = *status.HasResultSet
 	}
 	if !hasResults || consumer == nil {
-		if hivesql.ChangesDatabase(query) {
-			if selected, known := hivesql.SelectedDatabase(query); known {
+		if hivesql.ChangesDatabase(statement) {
+			if selected, known := hivesql.SelectedDatabase(statement); known {
 				s.database = selected
 			} else {
 				s.database = ""
@@ -104,7 +112,7 @@ func (s *hiveSession) execute(ctx context.Context, query string, consumer QueryS
 		}
 		return affected, nil
 	}
-	if err = s.fetchOperation(ctx, operation, consumer, query); errors.Is(err, errHiveBudgetStop) {
+	if err = s.fetchOperation(ctx, operation, consumer, statement); errors.Is(err, errHiveBudgetStop) {
 		return affected, nil
 	}
 	return affected, err

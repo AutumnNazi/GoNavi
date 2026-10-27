@@ -91,3 +91,28 @@ func TestHiveUnsupportedRelationalMetadataIsEmptyNotError(t *testing.T) {
 		t.Fatalf("triggers=%v error=%v", triggers, err)
 	}
 }
+
+func TestHiveDescribeColumnsStripsSyntheticCommentsAndEndsPartitionBlock(t *testing.T) {
+	rows := []map[string]interface{}{
+		{"col_name": "id", "data_type": "bigint", "comment": "from deserializer"},
+		{"col_name": "name", "data_type": "string", "comment": "NULL"},
+		{"col_name": "dt", "data_type": "string", "comment": "day"},
+		{"col_name": "# Partition Information", "data_type": nil, "comment": nil},
+		{"col_name": "dt", "data_type": "string", "comment": "day"},
+		{"col_name": "# Detailed Table Information", "data_type": nil, "comment": nil},
+		{"col_name": "extra", "data_type": "string", "comment": "real"},
+	}
+	columns, err := hiveDescribeColumns(rows, []string{"col_name", "data_type", "comment"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(columns) != 4 {
+		t.Fatalf("columns=%+v", columns)
+	}
+	if columns[0].Comment != "" || columns[1].Comment != "" || columns[3].Comment != "real" {
+		t.Fatalf("synthetic comments leaked: %+v", columns)
+	}
+	if columns[2].Extra != "partition" || columns[3].Extra != "" {
+		t.Fatalf("partition block leaked past detail section: %+v", columns)
+	}
+}
