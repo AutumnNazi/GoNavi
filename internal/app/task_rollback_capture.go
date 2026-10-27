@@ -141,19 +141,14 @@ func (a *App) captureTaskRollback(ctx context.Context, req taskRollbackCapture) 
 	return nil
 }
 
-func (a *App) captureSQLFileRollbackPoint(ctx context.Context, job *managedImportJob, config connection.ConnectionConfig, jobID string, policy sqlFileExecutionPolicy, filePath string) error {
+func (a *App) captureSQLFileRollbackPoint(ctx context.Context, job *managedImportJob, config connection.ConnectionConfig, jobID string, policy sqlFileExecutionPolicy, plan sqlImportRollbackPlan) error {
 	if policy.SkipRollbackSnapshot || strings.TrimSpace(policy.PinDatabase) == "" {
 		return nil
-	}
-	plan, planErr := planSQLImportRollbackFile(filePath, resolveDDLDBType(config), DefaultSQLImportMaxStatementBytes)
-	if planErr != nil {
-		logger.Warnf("SQL 导入回滚面分析失败，回退整库快照：%s", planErr.Error())
-		plan = sqlImportRollbackPlan{WholeDatabase: true}
 	}
 	if plan.AdditiveOnly && !plan.WholeDatabase {
 		// 纯 CREATE 脚本只新增对象，不会修改任何已有数据；没有可回滚的数据面，
 		// 直接跳过快照查询/导出，把导入延迟压到连接 + DDL 本身。
-		logger.Infof("SQL 导入仅新增对象，跳过回滚快照：objects=%d file=%s", len(plan.Tables), filePath)
+		logger.Infof("SQL 导入仅新增对象，跳过回滚快照：objects=%d", len(plan.Tables))
 		return nil
 	}
 	a.noteRollbackSnapshotStage(job)
