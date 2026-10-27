@@ -11,6 +11,7 @@ import {
 } from '../QueryEditorHelpers';
 import { isPostgresSchemaDialect } from '../../../utils/connectionDriverType';
 import { quoteIdentPart, quoteQualifiedIdent } from '../../../utils/sql';
+import { splitQualifiedNameSegments } from '../../../utils/qualifiedName';
 import { applyQueryEditorCompletionFragmentCase } from '../QueryEditorAiAssist';
 import { isConnectionScopedQueryEditorMetadata } from '../queryEditorLazyTablesCache';
 import { peekDatabaseServerVersion } from '../queryEditorServerVersion';
@@ -45,18 +46,26 @@ export const createSqlCompletionDialectContext = ({ model, position, currentDbRe
         ? resolveOracleLikeDefaultSchemaName(activeConnection?.config)
         : '';
     const shouldQuoteCompletionIdentifiers = activeDialect === 'hive' || isPostgresSchemaDialect(activeDialect);
+    const needsCompletionIdentifierQuotes = (ident: string): boolean => (
+        shouldQuoteCompletionIdentifiers
+        || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(ident)
+        || dialectKeywords.some((keyword) => keyword.toLowerCase() === ident.toLowerCase())
+    );
     const quoteCompletionPart = (ident: string) => {
         const raw = String(ident || '').trim();
         if (!raw) return raw;
-        return shouldQuoteCompletionIdentifiers ? quoteIdentPart(activeDialect, raw) : raw;
+        return needsCompletionIdentifierQuotes(raw) ? quoteIdentPart(activeDialect, raw) : raw;
     };
     const quoteCompletionPath = (ident: string) => {
         const raw = String(ident || '').trim();
         if (!raw) return raw;
-        return shouldQuoteCompletionIdentifiers ? quoteQualifiedIdent(activeDialect, raw) : raw;
+        if (shouldQuoteCompletionIdentifiers) return quoteQualifiedIdent(activeDialect, raw);
+        return splitQualifiedNameSegments(raw, activeDialect).map(quoteCompletionPart).join('.');
     };
     const applyCompletionFragmentCase = (ident: string, fragment: string) => (
+        // 需要引用的名字必须保留元数据大小写，否则引号会使大小写转换后的名字失效。
         shouldQuoteCompletionIdentifiers
+            || splitQualifiedNameSegments(ident, activeDialect).some(needsCompletionIdentifierQuotes)
             ? ident
             : applyQueryEditorCompletionFragmentCase(ident, fragment)
     );
