@@ -1,9 +1,12 @@
 package nativewindow
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -32,6 +35,8 @@ type pluginChildOptions struct {
 	title     string
 	width     int
 	height    int
+	locale    string
+	theme     string
 }
 
 func parsePluginChildOptions(args []string) (pluginChildOptions, error) {
@@ -40,7 +45,8 @@ func parsePluginChildOptions(args []string) (pluginChildOptions, error) {
 	}
 	value := func(name string) string { return os.Getenv(pluginEnvPrefix + name) }
 	cfg := pluginChildOptions{endpoint: value("ENDPOINT"), token: value("TOKEN"), id: value("ID"),
-		profile: value("PROFILE"), title: value("TITLE")}
+		profile: value("PROFILE"), title: value("TITLE"),
+		locale: sanitizeHostPref(value("LOCALE")), theme: sanitizeHostPref(value("THEME"))}
 	var err error
 	cfg.parentPID, err = strconv.Atoi(value("PARENT_PID"))
 	if err != nil || cfg.parentPID <= 1 {
@@ -130,6 +136,12 @@ func newPluginChildProxy(cfg pluginChildOptions, transport http.RoundTripper) ht
 		request.Header.Set(pluginTokenHeader, cfg.token)
 		request.Header.Set(pluginWindowHeader, cfg.id)
 	}
+	// 把宿主语言/主题注入插件 entry HTML：插件窗口读 window.gonaviHostPrefs
+	// 跟随主程序外观。仅当宿主确实下发了值时注入，且只改 HTML 响应。
+	if cfg.locale != "" || cfg.theme != "" {
+		prefs := injectHostPrefs{locale: cfg.locale, theme: cfg.theme}
+		proxy.ModifyResponse = prefs.modifyHTML
+	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, _ error) {
 		pluginHTTPError(w, http.StatusBadGateway, "host_unavailable")
 	}
@@ -141,4 +153,55 @@ func newPluginChildProxy(cfg pluginChildOptions, transport http.RoundTripper) ht
 		}
 		proxy.ServeHTTP(w, r)
 	})
+}
+
+// injectHostPrefs 在 HTML 响应的 <head> 后插入一段只读全局变量。
+type injectHostPrefs struct {
+	locale string
+	theme  string
+}
+
+func (p injectHostPrefs) modifyHTML(resp *http.Response) error {
+	if resp.StatusCode != http.StatusOK || resp.Body == nil {
+		return nil
+	}
+	ct := resp.Header.Get("Content-Type")
+	if !strings.Contains(ct, "text/html") {
+		return nil
+	}
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		return err
+	}
+	prefsJSON, err := json.Marshal(map[string]string{"locale": p.locale, "theme": p.theme})
+	if err != nil {
+		return err
+	}
+	snippet := []byte("<script>window.gonaviHostPrefs=" + string(prefsJSON) + ";</script>")
+	injected, ok := injectAfterHead(body, snippet)
+	if !ok {
+		injected = append(snippet, body...)
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(injected))
+	resp.ContentLength = int64(len(injected))
+	// body 已变长，只删 Content-Length；不手工设 Transfer-Encoding——
+	// Wails 的 WebView 响应路径不会按 chunked 编码重写 body，显式设置
+	// 会让客户端按 chunked 帧解析非 chunked 内容而拒载入口 HTML。
+	resp.Header.Del("Content-Length")
+	return nil
+}
+
+// injectAfterHead 复用资产注入的 tokenizer 与原始字节偏移；无 head 时
+// 在首个内容标签前插入，偏移为零则由调用方前置注入。
+func injectAfterHead(body, snippet []byte) ([]byte, bool) {
+	at := pluginRuntimeOffset(body)
+	if at == 0 {
+		return nil, false
+	}
+	out := make([]byte, 0, len(body)+len(snippet))
+	out = append(out, body[:at]...)
+	out = append(out, snippet...)
+	out = append(out, body[at:]...)
+	return out, true
 }

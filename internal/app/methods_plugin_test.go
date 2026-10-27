@@ -99,7 +99,7 @@ func TestPluginWebManagementFailsClosedBeforeFilesystemAccess(t *testing.T) {
 		"disable": func() connection.QueryResult { return a.PluginSetEnabled("test.panel", false) },
 		"remove":  func() connection.QueryResult { return a.PluginRemove("test.panel", true) },
 		"invoke":  func() connection.QueryResult { return a.PluginInvoke("test.panel", "run", "{}") },
-		"window":  func() connection.QueryResult { return a.PluginOpenWindow("test.panel") },
+		"window":  func() connection.QueryResult { return a.PluginOpenWindow("test.panel", "", "") },
 	}
 	for name, call := range calls {
 		t.Run(name, func(t *testing.T) {
@@ -140,7 +140,7 @@ type pluginTestWindows struct {
 	closed  bool
 }
 
-func (w *pluginTestWindows) Open(_ context.Context, pluginID, windowKey string, launchContext json.RawMessage) (any, error) {
+func (w *pluginTestWindows) Open(_ context.Context, pluginID, windowKey string, launchContext json.RawMessage, _, _ string) (any, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.opened = append(w.opened, pluginTestWindowOpen{pluginID: pluginID, windowKey: windowKey, context: append(json.RawMessage(nil), launchContext...)})

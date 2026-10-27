@@ -106,7 +106,7 @@ func TestPluginWindowOpenFailureAndShutdown(t *testing.T) {
 		profile = spec.directory
 		return nil, errors.New("fixture launch failure")
 	}
-	if _, err := c.Open(context.Background(), "test.one", "test.one", nil); err == nil {
+	if _, err := c.Open(context.Background(), "test.one", "test.one", nil, "zh-CN", "dark"); err == nil {
 		t.Fatal("launch failure hidden")
 	}
 	if _, err := os.Stat(profile); !os.IsNotExist(err) {
@@ -121,7 +121,7 @@ func TestPluginWindowOpenFailureAndShutdown(t *testing.T) {
 	if err := c.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Open(context.Background(), "test.one", "test.one", nil); err == nil {
+	if _, err := c.Open(context.Background(), "test.one", "test.one", nil, "zh-CN", "dark"); err == nil {
 		t.Fatal("closed controller reopened")
 	}
 }
@@ -212,14 +212,14 @@ func TestPluginWindowLaunchFailureTeardownIsTracked(t *testing.T) {
 	// One result permits the opening goroutine to exit after a failed assertion.
 	opened := make(chan error, 1)
 	go func() {
-		_, err := c.Open(context.Background(), "test.one", "test.one", nil)
+		_, err := c.Open(context.Background(), "test.one", "test.one", nil, "", "")
 		opened <- err
 	}()
 	awaitPluginDone(t, entered)
 	if info.PluginID != "test.one" || info.Generation != 1 || info.PID != 0 {
 		t.Fatalf("failed launch lost its registered identity: %+v", info)
 	}
-	if _, err := c.Open(context.Background(), "test.one", "test.one", nil); err == nil {
+	if _, err := c.Open(context.Background(), "test.one", "test.one", nil, "", ""); err == nil {
 		t.Fatal("failed launch permitted reopen before cleanup")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)

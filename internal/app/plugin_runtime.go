@@ -15,8 +15,10 @@ import (
 )
 
 // PluginWindowHost exposes only the independently supervised window lifecycle.
+// Open carries the host locale and theme ("light"/"dark") so plugin windows
+// can follow the main application appearance.
 type PluginWindowHost interface {
-	Open(ctx context.Context, pluginID, windowKey string, launchContext json.RawMessage) (any, error)
+	Open(ctx context.Context, pluginID, windowKey string, launchContext json.RawMessage, locale, theme string) (any, error)
 	Revoke(string)
 	Close(context.Context) error
 }

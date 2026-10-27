@@ -117,7 +117,8 @@ func (a *App) PluginRunConnectionAction(pluginID, actionID, connectionID, databa
 		return a.pluginFailure("window_unavailable")
 	}
 	windowKey := fmt.Sprintf("%s:%s:%s:%s:%s:%s", status.Manifest.ID, action.ID, scope, view.ID, database, collection)
-	value, err := windows.Open(a.pluginContext(), status.Manifest.ID, windowKey, contextJSON)
+	// 连接动作由后端自行发起，调用方没有携带宿主外观；留空让子进程沿用插件自身默认值。
+	value, err := windows.Open(a.pluginContext(), status.Manifest.ID, windowKey, contextJSON, "", "")
 	if err == context.Canceled {
 		return a.pluginFailure("window_unavailable")
 	}
