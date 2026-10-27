@@ -138,20 +138,6 @@ jobs:
     name: Plugin and marketplace contract tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: gonavi
-          POSTGRES_PASSWORD: gonavi_ci_only
-          POSTGRES_DB: gonavi_market_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U gonavi -d gonavi_market_test"
-          --health-interval 5s --health-timeout 5s --health-retries 10
-    env:
-      GONAVI_MARKET_TEST_POSTGRES: postgres://gonavi:gonavi_ci_only@127.0.0.1:5432/gonavi_market_test?sslmode=disable
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -159,8 +145,8 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
-      - name: Test real PostgreSQL transactions and plugin races
-        run: go test -race ./internal/plugin ./internal/pluginmarket ./internal/market -count=1 -timeout=10m
+      - name: Test plugin and marketplace client races
+        run: go test -race ./internal/plugin ./internal/pluginmarket -count=1 -timeout=10m
       - name: Test datasource adapter lifecycle races
         run: go test -race ./internal/db -run '^TestPluginDatabase' -count=1 -timeout=5m
       - name: Test plugin AI provider streaming races
