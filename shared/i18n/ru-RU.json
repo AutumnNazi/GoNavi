@@ -13676,5 +13676,6 @@
   "plugin.market.web.result_security": "Ваши учётные данные не отображаются на этой странице.",
   "plugin.market.anonymous_usage": "Просматривайте и устанавливайте публичные плагины без входа",
   "plugin.market.ratings_on_website": "Оценки, отзывы и учётная запись управляются на сайте каталога. GoNavi только показывает публичные оценки.",
-  "plugin.market.open_website": "Открыть сайт каталога"
+  "plugin.market.open_website": "Открыть сайт каталога",
+  "data_grid.toolbar.read_only": "Сетка только для чтения"
 }
