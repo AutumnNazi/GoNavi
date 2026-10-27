@@ -122,7 +122,7 @@ func (a *App) fetchAndInspectRemotePackage(ctx context.Context, spec pluginfetch
 	}
 	cleanup := func() { _ = os.RemoveAll(dir) }
 	path := filepath.Join(dir, download.Name)
-	hash, err := downloadFileWithHashPreferredForAppContext(ctx, a, download.URL, path, nil)
+	hash, err := downloadPluginAsset(ctx, download.URL, path)
 	if err != nil {
 		cleanup()
 		if ctxErr := ctx.Err(); ctxErr != nil {

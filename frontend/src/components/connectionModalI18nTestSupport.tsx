@@ -384,6 +384,7 @@ export const mockModule6 = () => {
     </div>
   );
   Form.useForm = () => [formApi];
+  Form.useFormInstance = () => formApi;
   Form.useWatch = (name: string) => {
     if (mockFormValues[name] !== undefined) {
       return mockFormValues[name];

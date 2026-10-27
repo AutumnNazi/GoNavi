@@ -1,6 +1,7 @@
 import React, { type ReactNode } from 'react';
 import { Alert, Button, Empty, Input, Space, Spin, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import type { TablePaginationConfig } from 'antd';
 
 export interface GonaviPanelProps {
   title?: ReactNode;
@@ -92,6 +93,7 @@ export interface GonaviDataTableProps<Row extends object> {
   height?: number;
   loading?: boolean;
   emptyText?: ReactNode;
+  pagination?: TablePaginationConfig | false;
 }
 
 /**
@@ -106,6 +108,7 @@ export function GonaviDataTable<Row extends object>({
   height = 360,
   loading,
   emptyText,
+  pagination = false,
 }: GonaviDataTableProps<Row>) {
   return (
     <Table<Row>
@@ -116,7 +119,7 @@ export function GonaviDataTable<Row extends object>({
       dataSource={rows}
       rowKey={rowKey as never}
       loading={loading}
-      pagination={false}
+      pagination={pagination}
       scroll={{ x: 'max-content', y: height }}
       locale={{ emptyText: emptyText ?? <GonaviEmptyState /> }}
     />

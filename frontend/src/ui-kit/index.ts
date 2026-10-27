@@ -3,6 +3,7 @@ import './styles.css';
 export * from './theme';
 export * from './components';
 export * from './data';
+export * from './pagedTable';
 export * from './layout';
 export * from './hooks';
 export * from './capabilityClient';
