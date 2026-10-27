@@ -66,6 +66,7 @@ type PluginController struct {
 	heartbeatTimeout   time.Duration
 	startupTimeout     time.Duration
 	checkInterval      time.Duration
+	onWindowClosed     func(context.Context, PluginWindowInfo)
 }
 
 // NewPluginController validates the standalone frontend before enabling windows.
@@ -99,7 +100,8 @@ func newPluginController(manager pluginWindowRuntime, opts PluginControllerOptio
 	return &PluginController{manager: manager, capability: opts.Capability, assets: opts.Assets, bundle: bundle, executable: executable,
 		windows: make(map[string]*pluginWindowEntry), windowIDs: make(map[string]*pluginWindowEntry), revokedGenerations: make(map[string]pluginWindowStamp), knownGenerations: make(map[string]pluginWindowStamp), admissionEpochs: make(map[string]uint64), startProcess: startPluginProcess,
 		stopTimeout: pluginStopTimeout, heartbeatTimeout: pluginHeartbeatTimeout,
-		startupTimeout: pluginStartupTimeout, checkInterval: 250 * time.Millisecond}, nil
+		startupTimeout: pluginStartupTimeout, checkInterval: 250 * time.Millisecond,
+		onWindowClosed: opts.OnWindowClosed}, nil
 }
 
 // Start attaches the controller to the host lifecycle and creates a dedicated

@@ -218,11 +218,20 @@ func (c *PluginController) supervise(entry *pluginWindowEntry, process pluginPro
 func (c *PluginController) finish(entry *pluginWindowEntry) {
 	c.mu.Lock()
 	c.revokeLocked(entry)
+	onClosed, info, life := c.onWindowClosed, entry.info, c.life
+	c.mu.Unlock()
+	removePluginProfile(entry.profile)
+	// 保留 closing entry，直到旧会话清理完成；回调由现有 supervisor 跟踪。
+	if onClosed != nil {
+		ctx, cancel := context.WithTimeout(life, pluginTeardownTimeout)
+		onClosed(ctx, info)
+		cancel()
+	}
+	c.mu.Lock()
 	delete(c.windows, entry.key)
 	delete(c.windowIDs, entry.info.ID)
 	close(entry.done)
 	c.mu.Unlock()
-	removePluginProfile(entry.profile)
 }
 
 func removePluginProfile(profile string) {
