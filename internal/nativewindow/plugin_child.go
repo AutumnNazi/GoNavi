@@ -2,6 +2,7 @@ package nativewindow
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -98,11 +100,17 @@ func RunPluginChild(parentCtx context.Context, args []string) error {
 	defer func() { cancel(); watchWG.Wait() }()
 	transport := &http.Transport{Proxy: nil, MaxConnsPerHost: 16, MaxIdleConnsPerHost: 4, ResponseHeaderTimeout: 32 * time.Second}
 	defer transport.CloseIdleConnections()
+	// wails 启动上下文在 OnStartup 异步到达；文件选择器路由在就绪前返回 503。
+	var wailsCtxPtr atomic.Pointer[context.Context]
+	handler := &pickPathHandler{next: newPluginChildProxy(cfg, transport), wailsCtx: &wailsCtxPtr,
+		openFile: wailsRuntime.OpenFileDialog, openFolder: wailsRuntime.OpenDirectoryDialog}
 	app := &options.App{Title: cfg.title, Width: cfg.width, Height: cfg.height, MinWidth: 320, MinHeight: 240,
-		AssetServer: &assetserver.Options{Handler: newPluginChildProxy(cfg, transport)},
+		AssetServer: &assetserver.Options{Handler: handler},
 		DragAndDrop: &options.DragAndDrop{DisableWebViewDrop: true},
 		// No App, no detached bridge, and no Go methods are bound to this WebView.
 		Bind: []interface{}{}, OnStartup: func(wailsCtx context.Context) {
+			started := wailsCtx
+			wailsCtxPtr.Store(&started)
 			watchWG.Add(1)
 			go func() {
 				defer watchWG.Done()
@@ -113,6 +121,72 @@ func RunPluginChild(parentCtx context.Context, args []string) error {
 		return err
 	}
 	return wails.Run(app)
+}
+
+// pickPathHandler 在子进程本地处理原生文件/目录选择（/bridge/pick-file
+// 与 /bridge/pick-folder），其余请求原样转发给插件资产代理。选择器
+// 返回的本机绝对路径让插件 UI 能发起真实路径的传输——这是 WebView
+// 文件 input 拿不到的能力。
+type pickPathHandler struct {
+	next       http.Handler
+	wailsCtx   *atomic.Pointer[context.Context]
+	openFile   func(context.Context, wailsRuntime.OpenDialogOptions) (string, error)
+	openFolder func(context.Context, wailsRuntime.OpenDialogOptions) (string, error)
+	pickerMu   sync.Mutex
+}
+
+func (h *pickPathHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	folder := false
+	switch r.URL.Path {
+	case pluginBridgePrefix + "pick-file":
+	case pluginBridgePrefix + "pick-folder":
+		folder = true
+	default:
+		h.next.ServeHTTP(w, r)
+		return
+	}
+	if r.Method != http.MethodPost {
+		pluginHTTPError(w, http.StatusMethodNotAllowed, "method_not_allowed")
+		return
+	}
+	wailsCtx := h.wailsCtx.Load()
+	if wailsCtx == nil || *wailsCtx == nil {
+		pluginHTTPError(w, http.StatusServiceUnavailable, "window_not_ready")
+		return
+	}
+	// Linux 文件和目录选择共用无请求 ID 的结果通道，必须覆盖读取到 dialog 完成。
+	if !h.pickerMu.TryLock() {
+		pluginHTTPError(w, http.StatusConflict, "picker_busy")
+		return
+	}
+	defer h.pickerMu.Unlock()
+	var req *struct {
+		Title string `json:"title"`
+	}
+	// 与前端 boundedJSON 共用 1 MiB 契约；所有解析失败都先于原生调用。
+	if err := decodePluginJSON(w, r, &req, pluginMaxJSONBytes); err != nil || req == nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			pluginHTTPError(w, http.StatusRequestEntityTooLarge, "payload_too_large")
+		} else {
+			pluginHTTPError(w, http.StatusBadRequest, "invalid_picker_request")
+		}
+		return
+	}
+	opts := wailsRuntime.OpenDialogOptions{Title: req.Title}
+	var path string
+	var err error
+	if folder {
+		path, err = h.openFolder(*wailsCtx, opts)
+	} else {
+		path, err = h.openFile(*wailsCtx, opts)
+	}
+	if err != nil {
+		pluginHTTPError(w, http.StatusInternalServerError, "dialog_failed")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"path": path})
 }
 
 func newPluginChildProxy(cfg pluginChildOptions, transport http.RoundTripper) http.Handler {

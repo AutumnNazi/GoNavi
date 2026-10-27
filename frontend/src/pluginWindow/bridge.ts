@@ -1,6 +1,6 @@
 import {
   boundedJSON, bridgePrefix, parseIdentity, PluginBridgeError, readBridgeResponse,
-  type PluginInvokeOptions, type PluginWindowBridge,
+  type PluginInvokeOptions, type PluginPickOptions, type PluginWindowBridge,
 } from './protocol';
 
 export type FetchBridge = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -62,10 +62,20 @@ export function createPluginBridge(fetcher: FetchBridge, newID: () => string): P
     return send('capability', { method, arguments: args }, options);
   };
 
+  const pick = async (route: 'pick-file' | 'pick-folder', options: PluginPickOptions = {}) => {
+    const response = await post(fetcher, route, { title: options.title ?? '' });
+    const value = await readBridgeResponse(response);
+    if (typeof value !== 'object' || value === null) throw new PluginBridgeError('invalid_response');
+    const path = (value as Record<string, unknown>).path;
+    return typeof path === 'string' && path !== '' ? path : null;
+  };
+
   return Object.freeze({
     ready,
     invoke,
     capability,
+    pickFile: (options?: PluginPickOptions) => pick('pick-file', options),
+    pickFolder: (options?: PluginPickOptions) => pick('pick-folder', options),
     close: async () => {
       const response = await post(fetcher, 'close', {});
       if (!response.ok) throw new PluginBridgeError('close_failed');
