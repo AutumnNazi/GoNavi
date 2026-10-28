@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PluginStatus } from '../../plugins/types';
 vi.mock('antd', () => {
   const element = (name: string) => (props: React.HTMLAttributes<HTMLElement>) => React.createElement('div', { ...props, 'data-component': name });
-  return { Alert: element('alert'), Button: element('button'), Tag: element('tag'), Typography: { Title: element('title'), Paragraph: element('paragraph') } };
+  return { Alert: element('alert'), Button: element('button'), Drawer: element('drawer'), Tag: element('tag'), Typography: { Title: element('title'), Paragraph: element('paragraph') } };
 });
 vi.mock('../../i18n/provider', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('./PluginLifecycleControls', () => ({ PluginLifecycleControls: () => React.createElement('div', { 'data-component': 'lifecycle' }) }));
@@ -31,7 +31,13 @@ describe('plugin card failure detail', () => {
     expect(collapsed.root.findAllByProps({ className: 'plugin-card-details' })).toHaveLength(0);
     expect(collapsed.root.findAllByProps({ className: 'plugin-permissions' })).toHaveLength(0);
     collapsed.unmount();
-    const expanded = create(<PluginCard plugin={described} manager={manager} expanded onToggle={vi.fn()} />);
+    const onToggle = vi.fn();
+    const expanded = create(<PluginCard plugin={described} manager={manager} expanded onToggle={onToggle} />);
+    const drawer = expanded.root.findByProps({ 'data-component': 'drawer' });
+    expect(drawer.props.open).toBe(true);
+    expect(drawer.props.title).toBe('Hello');
+    drawer.props.onClose();
+    expect(onToggle).toHaveBeenCalledOnce();
     expect(expanded.root.findAllByProps({ className: 'plugin-card-details' })).toHaveLength(1);
     expect(expanded.root.findAllByProps({ className: 'plugin-permissions' })).toHaveLength(1);
     expanded.unmount();

@@ -32,6 +32,13 @@ describe('plugin library layout', () => {
     expect(renderer!.root.findByProps({ className: 'plugin-installed-layout' })).toBeTruthy();
     expect(elements('empty')[0].props.image).toBe('simple');
   });
+  it('places installed plugins in a dedicated card grid, not the library stack', async () => {
+    state.manager.plugins = [{ manifest: { id: 'test.card' } }] as PluginManagerState['plugins'];
+    await mount();
+    const grid = renderer!.root.findByProps({ className: 'plugin-installed-grid' });
+    expect(grid.findAllByType('article')).toHaveLength(1);
+    expect(grid.parent?.props.className).toBe('plugin-library plugin-stack');
+  });
   it('opens the market directly from the empty library', async () => {
     await mount();
     const browse = elements('button').find((button) => button.props.children === 'plugin.market.title')!;

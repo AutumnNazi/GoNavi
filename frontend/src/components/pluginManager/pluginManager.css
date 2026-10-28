@@ -48,6 +48,22 @@ body[data-ui-version="v2"] .plugin-manager-tabs > .ant-tabs-nav .ant-tabs-tab::a
 .plugin-manager-tabs > .ant-tabs-nav .ant-tabs-tab-active .ant-tabs-tab-btn { color: var(--gn-accent); }
 .plugin-installed-layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; align-items: start; gap: 24px; }
 .plugin-library { min-width: 0; }
+.plugin-installed-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(0, min(100%, 340px))); align-items: start; justify-content: start; gap: 16px; }
+.plugin-installed-grid:empty { display: none; }
+.plugin-installed-card { padding: 20px; gap: 16px; border-radius: 10px; }
+.plugin-installed-card .plugin-card-header { align-items: flex-start; gap: 8px; }
+.plugin-installed-card .plugin-card-header > div { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.plugin-installed-card .plugin-card-header > .ant-btn { flex-shrink: 0; }
+.plugin-installed-card .plugin-card-header .ant-typography { font-size: 16px; overflow-wrap: anywhere; }
+.plugin-installed-card .plugin-identity { font-size: 11px; }
+.plugin-installed-card .plugin-installed-version { margin: 0; }
+.plugin-installed-card .plugin-lifecycle { flex-direction: column; align-items: stretch; gap: 14px; padding: 14px 0 0; border-bottom: 0; }
+.plugin-installed-card .plugin-state-rail { justify-content: space-between; gap: 10px; }
+.plugin-installed-card .plugin-lifecycle > .ant-space { justify-content: flex-end; }
+.plugin-installed-details .plugin-card-details { border: 0; padding: 0; }
+.plugin-installed-details .ant-typography { margin: 0; }
+.plugin-installed-details .ant-drawer-body { min-width: 0; overflow-x: hidden; }
+@container plugin-manager (max-width: 480px) { .plugin-installed-card { padding: 16px; } }
 .plugin-library-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 36px; padding-bottom: 12px; border-bottom: 1px solid var(--gn-br-1); }
 .plugin-library-heading { display: flex; align-items: center; gap: 8px; }
 .plugin-library-heading > .ant-typography { font-size: 15px; }

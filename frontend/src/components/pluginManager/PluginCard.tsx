@@ -1,4 +1,4 @@
-import { Alert, Button, Tag, Typography } from 'antd';
+import { Alert, Button, Drawer, Tag, Typography } from 'antd';
 import { useI18n } from '../../i18n/provider';
 import type { PluginStatus } from '../../plugins/types';
 import type { PluginManagerState } from '../../plugins/usePluginManager';
@@ -19,20 +19,23 @@ export function PluginCard({ plugin, manager, expanded, onToggle }: Props) {
   const active = plugin.state === 'running' && plugin.desiredEnabled && !manager.revoked.has(id);
   const webRuntime = manager.runtime.webRuntime === true;
   const permissions = plugin.manifest.permissions ?? [];
-  return <article className="plugin-card">
+  return <article className="plugin-card plugin-installed-card">
     <header className="plugin-card-header">
       <div>
         <Typography.Title level={5}>{plugin.manifest.name}</Typography.Title>
-        <code className="plugin-identity">{id} · {plugin.manifest.version}</code>
+        <code className="plugin-identity">{id}</code>
+        <Tag className="plugin-installed-version">{plugin.manifest.version}</Tag>
       </div>
-      <Button type="link" size="small" aria-expanded={expanded} onClick={onToggle}>
-        {t(expanded ? 'plugin.action.close_panel' : 'plugin.action.open_panel')}
+      <Button type="link" size="small" aria-haspopup="dialog" aria-expanded={expanded} onClick={onToggle}>
+        {t('plugin.market.details')}
       </Button>
     </header>
     {plugin.lastError && <Alert showIcon type="error" message={t('plugin.card.last_error')} description={plugin.lastError} />}
     <PluginLifecycleControls plugin={plugin} allowed={manager.runtime.managementAllowed} safeMode={manager.runtime.safeMode}
       busy={Boolean(manager.busy[id])} onEnabled={(enabled) => void manager.setEnabled(id, enabled)} onRemove={() => void manager.remove(id, false)} />
-    {expanded && <div className="plugin-card-details">
+    {expanded && <Drawer open title={plugin.manifest.name} width="min(720px, 100vw)" onClose={onToggle}
+      rootClassName="plugin-installed-details" destroyOnClose>
+      <div className="plugin-card-details">
       {plugin.manifest.description && <Typography.Paragraph type="secondary">{plugin.manifest.description}</Typography.Paragraph>}
       {permissions.length > 0 && <div className="plugin-permissions">{permissions.map((permission) => <Tag key={permission}>{pluginPermissionText(permission, t, plugin.manifest.permissionNotes?.[permission])}</Tag>)}</div>}
       <PluginDataSourceSummary manifest={plugin.manifest} />
@@ -41,6 +44,7 @@ export function PluginCard({ plugin, manager, expanded, onToggle }: Props) {
       <PluginSkillSummary manifest={plugin.manifest} />
       <PluginPageList plugin={plugin} active={active} managementAllowed={manager.runtime.managementAllowed} webRuntime={webRuntime} />
       {active && publicPluginCommands(plugin.manifest).length > 0 && <PluginCommandsPanel key={id + ':' + plugin.generation} plugin={plugin} allowed={manager.runtime.managementAllowed} webRuntime={webRuntime} />}
-    </div>}
+      </div>
+    </Drawer>}
   </article>;
 }

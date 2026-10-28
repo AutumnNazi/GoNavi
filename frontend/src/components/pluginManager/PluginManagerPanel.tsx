@@ -30,8 +30,10 @@ export function PluginManagerPanel() {
             <Button type="primary" onClick={() => setActiveTab('market')}>{t('plugin.market.title')}</Button>
           </Empty>
         </div> : null}
-      {manager.plugins.slice((currentPage - 1) * 10, currentPage * 10).map((plugin) => <PluginCard key={plugin.manifest.id} plugin={plugin} manager={manager}
-        expanded={expandedId === plugin.manifest.id} onToggle={() => setExpandedId(expandedId === plugin.manifest.id ? null : plugin.manifest.id)} />)}
+      <div className="plugin-installed-grid">
+        {manager.plugins.slice((currentPage - 1) * 10, currentPage * 10).map((plugin) => <PluginCard key={plugin.manifest.id} plugin={plugin} manager={manager}
+          expanded={expandedId === plugin.manifest.id} onToggle={() => setExpandedId(expandedId === plugin.manifest.id ? null : plugin.manifest.id)} />)}
+      </div>
       {manager.plugins.length > 10 && <Pagination current={currentPage} pageSize={10} total={manager.plugins.length} onChange={setPage} showSizeChanger={false} />}
     </section>
     <LocalInstallPanel allowed={manager.runtime.managementAllowed} onInstalled={() => { void manager.refresh(); notifyPluginLifecycle(); }}
