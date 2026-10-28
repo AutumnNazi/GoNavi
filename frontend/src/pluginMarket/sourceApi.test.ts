@@ -39,5 +39,14 @@ describe('explicit registered source adapter', () => {
     expect(() => decodeSources([{ ...source, sourceId: 'bad' }])).toThrow();
     expect(() => decodeSources([{ ...source, enabled: 'yes' }])).toThrow();
   });
+  it('accepts the largest source list the host contract allows', () => {
+    const baseUrl = 'https://example.test/' + 'a'.repeat(2048 - 'https://example.test/'.length);
+    const rows = Array.from({ length: 32 }, (_, index) => ({ ...source, baseUrl, sourceId: index.toString(16).padStart(64, '0') }));
+    expect(decodeSources(rows)).toHaveLength(32);
+  });
+  it('still rejects a source row above the default string budget', () => {
+    expect(() => decodeSources([{ ...source, baseUrl: 'https://example.test/' + 'a'.repeat(9000) }]))
+      .toThrow(/plugin\.ui\.invalid_data/);
+  });
 
 });

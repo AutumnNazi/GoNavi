@@ -23,11 +23,13 @@ const tokenOf = (srcDoc: string): string => {
 };
 let renderer: ReactTestRenderer | undefined;
 
-const renderPage = () => {
-  renderer = create(
-    <HTMLPluginPage pluginID="test.pages" pageID="overview" title="Overview" source="<h1>Hi</h1>" />,
-  );
-  return renderer;
+const renderPage = async () => {
+  await act(async () => {
+    renderer = create(
+      <HTMLPluginPage pluginID="test.pages" pageID="overview" title="Overview" source="<h1>Hi</h1>" />,
+    );
+  });
+  return renderer!;
 };
 
 afterEach(() => {
@@ -36,19 +38,19 @@ afterEach(() => {
 });
 
 describe('HTMLPluginPage', () => {
-  it('binds every frame to its own token inside the injected runtime', () => {
-    const source = renderPage().root.findByType('iframe').props.srcDoc as string;
+  it('binds every frame to its own token inside the injected runtime', async () => {
+    const source = (await renderPage()).root.findByType('iframe').props.srcDoc as string;
     expect(source).toContain('<h1>Hi</h1>');
     expect(source).toContain('window.gonavi');
     const firstToken = tokenOf(source);
     act(() => renderer?.unmount());
     renderer = undefined;
-    const secondSource = renderPage().root.findByType('iframe').props.srcDoc as string;
+    const secondSource = (await renderPage()).root.findByType('iframe').props.srcDoc as string;
     expect(tokenOf(secondSource)).not.toBe(firstToken);
   });
 
-  it('keeps the first srcdoc load and closes the frame on any later load', () => {
-    const view = renderPage();
+  it('keeps the first srcdoc load and closes the frame on any later load', async () => {
+    const view = await renderPage();
     act(() => {
       view.root.findByType('iframe').props.onLoad();
     });

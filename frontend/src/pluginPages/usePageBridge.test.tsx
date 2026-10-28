@@ -62,6 +62,24 @@ describe('usePageBridge', () => {
     expect(api.pageCall).not.toHaveBeenCalled();
   });
 
+  it.each(['disable', 'unmount', 'token'])('drops pending responses after %s without crossing frame identity', async mode => {
+    const frame = addFrame(); const post = vi.spyOn(frame.contentWindow!, 'postMessage');
+    let resolve!: (value: { ok: boolean }) => void;
+    api.pageCall.mockReturnValueOnce(new Promise<{ ok: boolean }>(yes => { resolve = yes; }));
+    act(() => { renderer = create(<Harness frame={frame} />); });
+    window.dispatchEvent(new MessageEvent('message', { data: message, source: frame.contentWindow }));
+    await act(async () => undefined);
+    expect(api.pageCall).toHaveBeenCalledTimes(1);
+    if (mode === 'unmount') { act(() => renderer!.unmount()); renderer = undefined; }
+    else act(() => renderer!.update(<Harness frame={frame} enabled={mode !== 'disable'} token={mode === 'token' ? 'new-token' : TOKEN} />));
+    post.mockClear();
+    await act(async () => { resolve({ ok: true }); });
+    expect(post).not.toHaveBeenCalled();
+    window.dispatchEvent(new MessageEvent('message', { data: message, source: frame.contentWindow }));
+    await act(async () => undefined);
+    expect(api.pageCall).toHaveBeenCalledTimes(1);
+    post.mockRestore();
+  });
   it('stops listening once the page is not available anymore', async () => {
     const frame = addFrame();
     act(() => {

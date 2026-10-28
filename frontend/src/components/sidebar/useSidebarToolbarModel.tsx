@@ -2,6 +2,7 @@ import { t } from '../../i18n';
 import React, { useCallback } from 'react';
 import { useSidebarWorkbenchLaunchers } from './useSidebarWorkbenchLaunchers';
 import { useSidebarMockDataLauncher } from './useSidebarMockDataLauncher';
+import { usePluginWindowTools } from './usePluginWindowTools';
 import type { TitleBarQuickAction } from '../TitleBarQuickActions';
 import { TitlebarConnectionToolsIcon, TitlebarGraphIcon, TitlebarSqlToolIcon } from '../titlebar/gonaviTitlebarIcons';
 import {
@@ -197,6 +198,7 @@ export const useSidebarToolbarModel = ({
     activeTab, activeTabHasConnection, activeConnection, addTab,
   });
 
+  const pluginWindowTools = usePluginWindowTools();
   const v2TitlebarQuickActions: TitleBarQuickAction[] = [
     {
       key: 'connection-tools',
@@ -321,6 +323,7 @@ export const useSidebarToolbarModel = ({
           icon: <CodeOutlined aria-hidden="true" />,
           onClick: () => onOpenSettingsNavigation?.({ group: 'workspace', pane: 'snippet-settings' }),
         },
+        ...pluginWindowTools,
       ],
     },
     sessionWorkbenchAction,

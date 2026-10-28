@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { sandboxedPageDocument } from './pageDocument';
+import { pluginHostPreferences } from './hostPreferences';
 
 const TOKEN = 'a1b2c3d4e5f60718';
 
@@ -35,6 +36,15 @@ describe('plugin page document', () => {
     expect(document).toContain('event.source !== parent');
   });
 
+  it.each(['zh-CN', 'zh-TW', 'en-US', 'ja-JP', 'de-DE', 'ru-RU'])('initializes only JSON-safe non-sensitive preferences for %s', (locale) => {
+    const document = sandboxedPageDocument('<script>window.readPrefs = window.gonaviHostPrefs</script>', TOKEN, undefined, pluginHostPreferences(locale, 'dark'));
+    const match = /window.gonaviHostPrefs = (\{[^;]+\});/.exec(document)!;
+    expect(JSON.parse(match[1])).toEqual({ locale, theme: 'dark' });
+    expect(document.indexOf(match[0])).toBeLessThan(document.indexOf('window.readPrefs'));
+    const unsafe = sandboxedPageDocument('<h1>Hi</h1>', TOKEN, undefined, pluginHostPreferences('</script><script>bad', 'secret'));
+    expect(unsafe).not.toContain('<script>bad');
+    expect(unsafe).toContain('window.gonaviHostPrefs = {"locale":"en-US","theme":"light"};');
+  });
   it('passes the page source through unchanged', () => {
     const source = '<section data-page="dashboard">ready</section>';
     expect(sandboxedPageDocument(source, TOKEN)).toContain(source);

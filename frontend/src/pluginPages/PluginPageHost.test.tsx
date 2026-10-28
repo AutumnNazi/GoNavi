@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import React from 'react';
-import { create } from 'react-test-renderer';
+import { act, create } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const targetState = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
@@ -58,7 +58,7 @@ describe('PluginPageHost', () => {
     expect(alert.props['data-description']).toBe('host down');
   });
 
-  it('renders a declared html page in the sandbox with the bridge runtime', () => {
+  it('renders a declared html page in the sandbox with the bridge runtime', async () => {
     targetState.value = {
       loading: false,
       error: '',
@@ -66,8 +66,8 @@ describe('PluginPageHost', () => {
       status,
       page: { id: 'dashboard', title: 'Dashboard', html: { source: '<h1>Hi</h1>' } },
     };
-    renderer = create(<PluginPageHost pluginID="test.pages" pageID="dashboard" />);
-    const frame = renderer.root.findByType('iframe');
+    await act(async () => { renderer = create(<PluginPageHost pluginID="test.pages" pageID="dashboard" />); });
+    const frame = renderer!.root.findByType('iframe');
     expect(frame.props.sandbox).toBe('allow-scripts');
     expect(frame.props.title).toBe('Dashboard');
     expect(frame.props.srcDoc).toContain('<h1>Hi</h1>');
