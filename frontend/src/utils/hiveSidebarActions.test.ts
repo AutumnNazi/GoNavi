@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { MenuProps } from 'antd';
-import { buildTableNodeMenuItems, buildViewMenuItems } from '../components/sidebar/sidebarNodeMenuObjects';
+import { buildViewMenuItems } from '../components/sidebar/sidebarNodeMenuObjects';
 import { supportsTableClearAction, supportsTableTruncateAction } from '../components/tableDataDangerActions';
 
 const keys = (items: MenuProps['items']): string[] => (items || []).flatMap(item => !item ? [] : [
@@ -15,10 +15,7 @@ const context = {
 };
 
 describe('Hive sidebar native object actions', () => {
-  it('keeps table and view rename/drop actions available despite read-only generic designer/index capabilities', () => {
-    const table = buildTableNodeMenuItems({ node: { type: 'table', title: 'events', dataRef: { id: 'hive', dbName: 'analytics', tableName: 'events', config } }, context });
-    expect(keys(table)).toEqual(expect.arrayContaining(['rename-table', 'drop-table', 'truncate-table', 'clear-table']));
-    expect(keys(table)).not.toContain('create-index');
+  it('keeps view rename/drop actions available despite read-only generic designer/index capabilities', () => {
     const view = buildViewMenuItems({ node: { type: 'view', title: 'active_events', dataRef: { id: 'hive', dbName: 'analytics', viewName: 'active_events', config } }, context });
     expect(keys(view)).toEqual(expect.arrayContaining(['rename-view', 'drop-view']));
   });

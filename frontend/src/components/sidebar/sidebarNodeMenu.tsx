@@ -9,7 +9,6 @@ import { buildExternalSqlRootMenuItems } from './sidebarNodeMenuExternalSql';
 import { buildSavedQueryMenuItems } from './sidebarNodeMenuSavedQueries';
 import { buildSavedQueryManualGroupMenuItems } from './sidebarNodeMenuSavedQueries';
 import { buildAllSavedQueriesMenuItems } from './sidebarNodeMenuSavedQueries';
-import { buildTableNodeMenuItems } from './sidebarNodeMenuObjects';
 import { buildMessageObjectMenuItems } from './sidebarNodeMenuObjects';
 import { buildMessageNamespaceMenuItems } from './sidebarNodeMenuObjects';
 import { buildDbEventMenuItems } from './sidebarNodeMenuObjects';
@@ -125,8 +124,6 @@ export const buildSidebarNodeMenuItems = (
         return buildMessageNamespaceMenuItems({ node, context });
     } else if (node.type === 'message-object') {
         return buildMessageObjectMenuItems({ node, context });
-    } else if (node.type === 'table') {
-        return buildTableNodeMenuItems({ node, context });
     }
 
     if (node.type === 'all-saved-queries') {
