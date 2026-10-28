@@ -1,7 +1,7 @@
 import { PluginMarketVersions, PluginMarketSourceVersions } from '../../wailsjs/go/app/App';
 import { PluginAPIError, pluginResult, requireRecord } from '../plugins/apiResult';
 import { boundedJSON } from '../plugins/jsonBoundary';
-import { decodeMarketPlugin } from './decode';
+import { decodeMarketPlugin, MARKET_VERSION_PAGE_JSON_LIMITS } from './decode';
 import type { MarketPlugin } from './types';
 export type CompatibilityReason = '' | 'host_version' | 'host_version_unknown' | 'platform' | 'invalid_version';
 export interface MarketVersionChoice { plugin: MarketPlugin; compatible: boolean; reason: CompatibilityReason }
@@ -12,7 +12,7 @@ export const PLUGIN_MARKET_VERSION_REASON_TEXT_KEYS: readonly string[] = COMPATI
 const reasons = new Set<string>(['', ...COMPATIBILITY_REASONS]);
 const invalid = (): never => { throw new PluginAPIError('plugin.error.invalid_response'); };
 export function decodeVersionPage(value: unknown): MarketVersionPage {
- boundedJSON(value, 2 << 20); const page = requireRecord(value);
+ boundedJSON(value, MARKET_VERSION_PAGE_JSON_LIMITS.bytes, MARKET_VERSION_PAGE_JSON_LIMITS.text, MARKET_VERSION_PAGE_JSON_LIMITS.depth, MARKET_VERSION_PAGE_JSON_LIMITS.values); const page = requireRecord(value);
  if (!Array.isArray(page.versions) || !page.versions.length || page.versions.length > 100 || (page.warning !== undefined && page.warning !== 'versions_unavailable')) return invalid();
  const versions = page.versions.map((entry): MarketVersionChoice => {
   const row = requireRecord(entry); const reason = row.reason ?? '';

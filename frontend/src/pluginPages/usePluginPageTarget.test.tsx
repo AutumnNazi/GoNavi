@@ -8,6 +8,9 @@ vi.mock('../../wailsjs/go/app/App', () => host);
 
 import type { PluginNavigation, PluginPage, PluginStatus } from '../plugins/types';
 import { usePluginPageTarget, type PluginPageTarget } from './usePluginPageTarget';
+import { invalidatePluginContributions } from '../plugins/invalidation';
+import { PLUGIN_LIFECYCLE_EVENT } from '../plugins/events';
+import { t } from '../i18n';
 
 const status = (
   over: Partial<PluginStatus> = {},
@@ -62,6 +65,86 @@ afterEach(() => {
 });
 
 describe('usePluginPageTarget', () => {
+  it('revokes immediately and rejects old and late generations until a new generation arrives', async () => {
+    host.PluginList.mockResolvedValue({ success: true, data: [status()] });
+    await render();
+    let resolve!: (value: unknown) => void;
+    host.PluginList.mockReturnValueOnce(new Promise(yes => { resolve = yes; }));
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    act(() => invalidatePluginContributions({ pluginId: 'test.pages', reason: 'disabled' }));
+    expect(captured.value?.available).toBe(false);
+    await act(async () => { window.dispatchEvent(new Event(PLUGIN_LIFECYCLE_EVENT)); });
+    expect(captured.value?.available).toBe(false);
+    await act(async () => { resolve({ success: true, data: [status()] }); });
+    expect(captured.value?.available).toBe(false);
+    host.PluginList.mockResolvedValue({ success: true, data: [status({ generation: 2 })] });
+    await act(async () => { window.dispatchEvent(new Event(PLUGIN_LIFECYCLE_EVENT)); });
+    expect(captured.value?.available).toBe(true);
+    expect(captured.value?.status?.generation).toBe(2);
+  });
+  it('bounds a hung discovery, ignores its late result and retries on focus', async () => {
+    let resolve!: (value: unknown) => void;
+    host.PluginList.mockReturnValueOnce(new Promise(yes => { resolve = yes; }));
+    host.PluginList.mockResolvedValue({ success: true, data: [status()] });
+    await render();
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(captured.value?.loading).toBe(false);
+    expect(captured.value?.available).toBe(false);
+    expect(captured.value?.error).toBe(t('plugin.backend.error.timeout'));
+    await act(async () => { resolve({ success: true, data: [status()] }); });
+    expect(captured.value?.available).toBe(false);
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    expect(captured.value?.available).toBe(true);
+    expect(captured.value?.error).toBe('');
+  });
+  it('drops older focus responses, target changes and unmount results', async () => {
+    let resolve!: (value: unknown) => void;
+    host.PluginList.mockReturnValueOnce(new Promise(yes => { resolve = yes; }));
+    host.PluginList.mockResolvedValue({ success: true, data: [status({ generation: 2 })] });
+    await render();
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    await act(async () => { resolve({ success: true, data: [status()] }); });
+    expect(captured.value?.status?.generation).toBe(2);
+    let obsolete!: (value: unknown) => void;
+    host.PluginList.mockReturnValueOnce(new Promise(yes => { obsolete = yes; }));
+    act(() => { window.dispatchEvent(new Event('focus')); });
+    await act(async () => { renderer!.update(<Harness pluginID="other.pages" pageID="overview" />); });
+    await act(async () => { obsolete({ success: true, data: [status()] }); });
+    expect(captured.value?.available).toBe(false);
+    let late!: (value: unknown) => void;
+    host.PluginList.mockReturnValueOnce(new Promise(yes => { late = yes; }));
+    act(() => { window.dispatchEvent(new Event('focus')); }); unmount();
+    const snapshot = captured.value; const calls = host.PluginList.mock.calls.length;
+    await act(async () => { late({ success: true, data: [status()] }); window.dispatchEvent(new Event(PLUGIN_LIFECYCLE_EVENT)); });
+    expect(captured.value).toBe(snapshot); expect(host.PluginList).toHaveBeenCalledTimes(calls);
+  });
+  it.each(['removed', 'root'] as const)('invalidates %s immediately even while the document is hidden', async reason => {
+    host.PluginList.mockResolvedValue({ success: true, data: [status()] });
+    await render();
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    try {
+      act(() => invalidatePluginContributions({ pluginId: 'test.pages', reason }));
+      expect(captured.value?.available).toBe(false); expect(captured.value?.loading).toBe(false);
+      await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+      expect(captured.value?.available).toBe(false);
+    } finally { delete (document as { visibilityState?: DocumentVisibilityState }).visibilityState; }
+  });
+  it('keeps the revoked pin across repeated invalidations so a genuinely new generation remains usable', async () => {
+    host.PluginList.mockResolvedValue({ success: true, data: [status()] });
+    await render();
+    act(() => invalidatePluginContributions({ pluginId: 'test.pages', reason: 'disabled' }));
+    act(() => invalidatePluginContributions({ pluginId: 'test.pages', reason: 'removed' }));
+    host.PluginList.mockResolvedValue({ success: true, data: [status({ generation: 2 })] });
+    await act(async () => { window.dispatchEvent(new Event(PLUGIN_LIFECYCLE_EVENT)); });
+    expect(captured.value?.available).toBe(true); expect(captured.value?.status?.generation).toBe(2);
+  });
+  it('does not keep the previous plugin frame available while resolving a different plugin target', async () => {
+    host.PluginList.mockResolvedValue({ success: true, data: [status()] });
+    await render();
+    host.PluginList.mockReturnValueOnce(new Promise(() => undefined));
+    act(() => { renderer!.update(<Harness pluginID="other.pages" pageID="overview" />); });
+    expect(captured.value?.available).toBe(false);
+  });
   it('resolves a declared page of a running plugin', async () => {
     host.PluginList.mockResolvedValue({ success: true, data: [status()] });
     const target = await render();

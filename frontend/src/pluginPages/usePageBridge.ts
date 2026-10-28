@@ -4,6 +4,7 @@ import { useI18n } from '../i18n/provider';
 import { pluginErrorText } from '../plugins/apiResult';
 import { pageCall } from './api';
 import { createPageBridge } from './pageBridgeCore';
+import { serializeHostPreferences, type PluginHostPreferences } from './hostPreferences';
 
 export interface UsePageBridgeOptions {
   frameRef: RefObject<HTMLIFrameElement | null>;
@@ -11,6 +12,8 @@ export interface UsePageBridgeOptions {
   pageID: string;
   token: string;
   enabled: boolean;
+  preferences?: PluginHostPreferences;
+  loaded?: boolean;
   onNotify?: (message: string, type?: string) => void;
 }
 
@@ -25,6 +28,8 @@ export function usePageBridge({
   pageID,
   token,
   enabled,
+  preferences,
+  loaded,
   onNotify,
 }: UsePageBridgeOptions): void {
   const { t } = useI18n();
@@ -32,6 +37,12 @@ export function usePageBridge({
   translate.current = t;
   const notify = useRef(onNotify);
   notify.current = onNotify;
+  const preferencesJSON = preferences ? serializeHostPreferences(preferences) : undefined;
+  useEffect(() => {
+    if (enabled && loaded && preferencesJSON) frameRef.current?.contentWindow?.postMessage({
+      type: 'gonavi:host-preferences', token, preferences: JSON.parse(preferencesJSON),
+    }, '*');
+  }, [enabled, loaded, preferencesJSON, frameRef, token]);
   useEffect(() => {
     if (!enabled) return undefined;
     let disposed = false;

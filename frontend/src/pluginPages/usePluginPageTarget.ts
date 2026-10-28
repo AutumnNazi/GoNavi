@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { pluginAPI } from '../plugins/api';
-import { pluginErrorText } from '../plugins/apiResult';
+import { PluginAPIError, pluginErrorText } from '../plugins/apiResult';
 import type { PluginPage, PluginStatus } from '../plugins/types';
+import { PLUGIN_LIFECYCLE_EVENT } from '../plugins/events';
+import { subscribePluginContributionInvalidation } from '../plugins/invalidation';
 
 const REFRESH_INTERVAL_MS = 3000;
+const REQUEST_TIMEOUT_MS = 10000;
 
 export interface PluginPageTarget {
   loading: boolean;
@@ -27,25 +30,52 @@ export function usePluginPageTarget(pluginID: string, pageID: string): PluginPag
   const [status, setStatus] = useState<PluginStatus | undefined>(undefined);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const alive = useRef(true);
+  const current = useRef({ alive: false, epoch: 0, status: undefined as PluginStatus | undefined, revoked: undefined as string | null | undefined });
+  const cancel = useRef<() => void>();
   const refresh = useCallback(async () => {
+    const ticket = ++current.current.epoch;
+    cancel.current?.();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      cancel.current = () => reject(new PluginAPIError('plugin.backend.error.timeout'));
+      timer = setTimeout(cancel.current, REQUEST_TIMEOUT_MS);
+    });
     try {
-      const plugins = await pluginAPI.list();
-      if (!alive.current) return;
-      setStatus(plugins.find((plugin) => plugin.manifest.id === pluginID));
+      const plugins = await Promise.race([pluginAPI.list(), deadline]);
+      if (!current.current.alive || ticket !== current.current.epoch) return;
+      let next = plugins.find((plugin) => plugin.manifest.id === pluginID);
+      if (next && current.current.revoked !== undefined) {
+        const pin = `${next.digest}:${next.generation}`;
+        if (current.current.revoked === null) current.current.revoked = pin;
+        if (current.current.revoked === pin) next = undefined;
+        else current.current.revoked = undefined;
+      }
+      current.current.status = next;
+      setStatus(next);
       setError('');
     } catch (cause) {
-      if (alive.current) setError(pluginErrorText(cause));
+      if (current.current.alive && ticket === current.current.epoch) {
+        current.current.status = undefined; setStatus(undefined); setError(pluginErrorText(cause));
+      }
     } finally {
-      if (alive.current) setLoading(false);
+      clearTimeout(timer);
+      if (ticket === current.current.epoch) cancel.current = undefined;
+      if (current.current.alive && ticket === current.current.epoch) setLoading(false);
     }
   }, [pluginID]);
   useEffect(() => {
-    alive.current = true;
+    current.current.alive = true;
+    const unsubscribe = subscribePluginContributionInvalidation((event) => {
+      if (event.reason !== 'root' && event.pluginId !== pluginID) return;
+      current.current.epoch++; cancel.current?.(); cancel.current = undefined;
+      const old = current.current.status;
+      current.current.revoked = old ? `${old.digest}:${old.generation}` : current.current.revoked ?? null;
+      current.current.status = undefined; setStatus(undefined); setError(''); setLoading(false);
+    });
     void refresh();
     let timer: ReturnType<typeof setInterval> | undefined;
     const start = () => {
-      if (timer === undefined) timer = setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
+      if (timer === undefined) timer = setInterval(() => { if (!cancel.current) void refresh(); }, REFRESH_INTERVAL_MS);
     };
     const stop = () => {
       if (timer === undefined) return;
@@ -65,15 +95,19 @@ export function usePluginPageTarget(pluginID: string, pageID: string): PluginPag
     };
     if (!documentHidden()) start();
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibilityChange);
+    const onLifecycle = () => { void refresh(); };
     window.addEventListener('focus', onFocus);
+    window.addEventListener(PLUGIN_LIFECYCLE_EVENT, onLifecycle);
     return () => {
-      alive.current = false;
+      current.current.alive = false; current.current.epoch++; cancel.current?.(); cancel.current = undefined; unsubscribe();
       stop();
       if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener(PLUGIN_LIFECYCLE_EVENT, onLifecycle);
     };
   }, [refresh]);
-  const page = status?.manifest.contributes?.pages?.find((candidate) => candidate.id === pageID);
-  const running = status?.state === 'running' && status.desiredEnabled === true;
-  return { loading, error, status, page, available: Boolean(page) && running };
+  const resolvedStatus = status?.manifest.id === pluginID ? status : undefined;
+  const page = resolvedStatus?.manifest.contributes?.pages?.find((candidate) => candidate.id === pageID);
+  const running = resolvedStatus?.state === 'running' && resolvedStatus.desiredEnabled === true;
+  return { loading, error, status: resolvedStatus, page, available: Boolean(page) && running };
 }

@@ -166,10 +166,15 @@ function validSkill(skill: Record<string, unknown>): boolean {
   }
   return true;
 }
+// Manifests opt in to the host's own envelope instead of the generic defaults: one manifest file is
+// capped at 1 MiB (internal/plugin/manifest.go:40) and one inline panel or page HTML document at
+// 256 KiB (internal/plugin/manifest_ui.go:16), while a page or panel body may nest 16 levels below
+// the manifest, so 64 leaves room for the manifest plus that body.
+// Every JSON value needs at least one byte, so matching the value budget to bytes keeps it
+// from becoming a tighter gate than the manifest contract. Token and final byte checks still apply.
+export const MANIFEST_JSON_LIMITS = { bytes: 1 << 20, text: 256 << 10, depth: 64, values: 1 << 20 } as const;
 export function decodeManifest(data: unknown): PluginManifest {
-  // 64 leaves room for the manifest envelope plus a page/panel body that is itself
-  // allowed to nest 16 levels; bytes and value counts still cap the total.
-  boundedJSON(data, 128 * 1024, 64 * 1024, 64);
+  boundedJSON(data, MANIFEST_JSON_LIMITS.bytes, MANIFEST_JSON_LIMITS.text, MANIFEST_JSON_LIMITS.depth, MANIFEST_JSON_LIMITS.values);
   const raw = requireRecord(data);
   const allowed = new Set(['schemaVersion', 'apiVersion', 'id', 'name', 'version', 'description', 'author', 'license', 'minHostVersion', 'permissions', 'permissionNotes', 'requires', 'backend', 'contributes', 'window', 'configSchema']);
   if (Object.keys(raw).some((key) => !allowed.has(key))) invalid();
