@@ -21,6 +21,9 @@ const (
 	schemaWritePlanMax      = 16
 	schemaWriteStatements   = 8
 	schemaWriteStatementMax = 32 << 10
+	// 确认框必须把语句摆到用户面前：只报数量等于让用户为看不见的 DROP/ALTER 签字。
+	schemaWriteConfirmStatementRunes = 200
+	schemaWriteConfirmMessageMax     = 1200
 )
 
 type schemaWritePlan struct {
@@ -105,8 +108,12 @@ type pluginCapabilitySchemaStatementResult struct {
 }
 
 type pluginCapabilitySchemaApplyResult struct {
-	Applied    int                                     `json:"applied"`
-	Failed     int                                     `json:"failed"`
+	Applied int `json:"applied"`
+	Failed  int `json:"failed"`
+	// Pending 是确认之后被主机拒绝执行的语句数：失权可能发生在部分语句已经落库之后，
+	// 调用方必须知道这批 DDL 只跑了一部分，不能当整批失败去重试。
+	Pending    int                                     `json:"pending"`
+	Stopped    string                                  `json:"stopped,omitempty"`
 	Statements []pluginCapabilitySchemaStatementResult `json:"statements"`
 }
 
@@ -242,6 +249,38 @@ func (a *App) schemaWriteExecutionConfig(ctx context.Context, request pluginCapa
 	return config, ""
 }
 
+// schemaWriteConfirmationMessage renders the statements the user is about to
+// approve. The native dialog is the last human checkpoint before irreversible
+// DDL, so the payload lists the SQL itself, bounded by rune-safe truncation.
+func schemaWriteConfirmationMessage(plan schemaWritePlan) string {
+	header := fmt.Sprintf("%d DDL statement(s) will run on %s", len(plan.statements), plan.database)
+	if strings.TrimSpace(plan.database) == "" {
+		header = fmt.Sprintf("%d DDL statement(s) will run on the saved connection", len(plan.statements))
+	}
+	var builder strings.Builder
+	builder.WriteString(header)
+	for index, statement := range plan.statements {
+		line := fmt.Sprintf("\n%d. %s", index+1, schemaWriteConfirmationStatement(statement))
+		if builder.Len()+len(line) > schemaWriteConfirmMessageMax {
+			builder.WriteString("\n…")
+			break
+		}
+		builder.WriteString(line)
+	}
+	return builder.String()
+}
+
+// schemaWriteConfirmationStatement collapses whitespace to one line and cuts by
+// rune so a multi-byte identifier is never split in half.
+func schemaWriteConfirmationStatement(statement string) string {
+	compact := strings.Join(strings.Fields(statement), " ")
+	runes := []rune(compact)
+	if len(runes) <= schemaWriteConfirmStatementRunes {
+		return compact
+	}
+	return string(runes[:schemaWriteConfirmStatementRunes]) + "…"
+}
+
 func pluginCapabilitySchemaApply(ctx context.Context, a *App, request pluginCapabilityRequest) (any, string) {
 	var arguments pluginCapabilitySchemaApplyArguments
 	if !decodePluginPageArguments(request.Arguments, &arguments) {
@@ -261,10 +300,7 @@ func pluginCapabilitySchemaApply(ctx context.Context, a *App, request pluginCapa
 	if ctx == nil || a.ctx == nil || a.headlessRuntime || a.webRuntime {
 		return nil, "confirmation_unavailable"
 	}
-	message := fmt.Sprintf("%d DDL statement(s) will run on %s", len(plan.statements), plan.database)
-	if strings.TrimSpace(plan.database) == "" {
-		message = fmt.Sprintf("%d DDL statement(s) will run on the saved connection", len(plan.statements))
-	}
+	message := schemaWriteConfirmationMessage(plan)
 	confirmed := false
 	if a.schemaConfirm != nil {
 		var err error
@@ -300,7 +336,15 @@ func pluginCapabilitySchemaApply(ctx context.Context, a *App, request pluginCapa
 		}
 		config, code := a.schemaWriteExecutionConfig(ctx, request, plan.connectionID)
 		if code != "" {
-			return nil, code
+			// 一条都没执行：保持「整批拒绝」的原有契约，调用方拿到明确错误码。
+			if result.Applied == 0 && result.Failed == 0 {
+				return nil, code
+			}
+			// 已经有语句落库：把已执行的结果连同中断原因一起回传，
+			// 否则调用方以为整批都没跑，重试会把不可逆 DDL 再执行一遍。
+			result.Stopped = code
+			result.Pending = len(plan.statements) - (result.Applied + result.Failed)
+			return result, ""
 		}
 		queryResult := a.dbQueryMulti(config, plan.database, statement, "", dbQueryMultiAuditOptions{
 			auditAll:         true,
