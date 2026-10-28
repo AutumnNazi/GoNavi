@@ -21,6 +21,8 @@ import { t } from '../../i18n';
 import { DBQuery } from '../../../wailsjs/go/app/App';
 import { getCaseInsensitiveRawValue, getCaseInsensitiveValue, getMetadataDialect, splitQualifiedName, escapeSQLLiteral, parseSidebarTableRowCount } from './sidebarMetadataLoaders';
 import { getDataSourceCapabilities } from '../../utils/dataSourceCapabilities';
+import { filterPluginConnectionActions, type PluginConnectionActionEntry } from '../../plugins/connectionActions';
+import type { PluginConnectionActionTarget } from './pluginConnectionActionMenu';
 import { registryAllowsImport } from '../../utils/dataSourceRegistry';
 import { isConnectionDataEditRestricted } from '../../utils/connectionReadOnly';
 import { resolveConnectionHostSummary } from '../../utils/tabDisplay';
@@ -114,6 +116,8 @@ type SidebarV2ContextMenuOptions = {
   openSchemaVisibilitySettings: (node: any) => void;
   supportsConnectionVisibility: (connection: SavedConnection) => boolean;
   resolveMessagePublishTarget: (node: any) => unknown;
+  pluginConnectionActions?: PluginConnectionActionEntry[];
+  runPluginConnectionAction?: (entry: PluginConnectionActionEntry, target: PluginConnectionActionTarget) => void;
   addSqlLog: (log: any) => void;
   handleV2TableContextMenuAction: (node: any, action: V2TableContextMenuActionKey) => void;
   handleV2TableGroupContextMenuAction: (node: any, action: V2TableGroupContextMenuActionKey) => void;
@@ -264,6 +268,8 @@ export const useSidebarV2ContextMenu = ({
   openSchemaVisibilitySettings,
   supportsConnectionVisibility,
   resolveMessagePublishTarget,
+  pluginConnectionActions,
+  runPluginConnectionAction,
   addSqlLog,
   handleV2TableContextMenuAction,
   handleV2TableGroupContextMenuAction,
@@ -361,6 +367,19 @@ export const useSidebarV2ContextMenu = ({
           node.dataRef?.config?.driver,
       ) && !isConnectionDataEditRestricted(node.dataRef?.config);
       const supportsMessagePublish = Boolean(resolveMessagePublishTarget(node));
+      const pluginActions = filterPluginConnectionActions(pluginConnectionActions ?? [], String(node.dataRef?.config?.type || ''), 'collection')
+          .map((entry) => ({
+            key: `plugin-connection-action:${entry.pluginID}:${entry.action.id}`,
+            title: entry.action.title,
+            onSelect: () => {
+              setContextMenu(null);
+              runPluginConnectionAction?.(entry, {
+                connectionId: String(node.dataRef?.id || ''),
+                database: String(node.dataRef?.dbName || ''),
+                collection: String(node.dataRef?.tableName || ''),
+              });
+            },
+          }));
       const isPinned = isSidebarTablePinned(
           pinnedSidebarTables,
           String(node?.dataRef?.id || ''),
@@ -408,6 +427,21 @@ export const useSidebarV2ContextMenu = ({
       );
   };
 
+  const buildPluginActions = (node: any, scope: 'connection' | 'database' | 'collection') =>
+      filterPluginConnectionActions(pluginConnectionActions ?? [], String(node.dataRef?.config?.type || ''), scope)
+          .map((entry) => ({
+              key: `plugin-connection-action:${entry.pluginID}:${entry.action.id}`,
+              title: entry.action.title,
+              onSelect: () => {
+                  setContextMenu(null);
+                  runPluginConnectionAction?.(entry, {
+                      connectionId: String(node.dataRef?.id || node.key || ''),
+                      database: scope === 'connection' ? undefined : String(node.dataRef?.dbName || node.title || ''),
+                      collection: scope === 'collection' ? String(node.dataRef?.tableName || '') : undefined,
+                  });
+              },
+          }));
+
   const renderV2DatabaseContextMenu = (node: any) => {
       const dialect = getMetadataDialect(node.dataRef as SavedConnection);
       const capabilities = getDataSourceCapabilities((node.dataRef as SavedConnection)?.config);
@@ -430,6 +464,7 @@ export const useSidebarV2ContextMenu = ({
               supportsBatchWorkbench={capabilities.supportsSqlQueryExport}
               supportsRunSqlFile={registryAllowsImport((node.dataRef as SavedConnection)?.config?.type, 'sqlFile')}
               isPinned={isPinned}
+              pluginActions={buildPluginActions(node, 'database')}
               onAction={(action) => {
                   setContextMenu(null);
                   if (action === 'schema-visibility') {
@@ -510,6 +545,7 @@ export const useSidebarV2ContextMenu = ({
                   name: tag.name,
                   selected: tag.id === currentTagId,
               }))}
+              pluginActions={buildPluginActions(node, 'connection')}
               onAction={(action) => {
                   setContextMenu(null);
                   handleV2ConnectionContextMenuAction(node, action);

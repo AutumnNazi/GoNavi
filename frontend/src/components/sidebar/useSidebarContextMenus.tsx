@@ -298,6 +298,8 @@ export const useSidebarContextMenus = ({
       openSchemaVisibilitySettings,
       supportsConnectionVisibility,
       resolveMessagePublishTarget,
+      pluginConnectionActions,
+      runPluginConnectionAction,
       addSqlLog,
       handleV2TableContextMenuAction,
       handleV2TableGroupContextMenuAction,
