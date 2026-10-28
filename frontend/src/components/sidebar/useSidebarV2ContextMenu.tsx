@@ -367,19 +367,6 @@ export const useSidebarV2ContextMenu = ({
           node.dataRef?.config?.driver,
       ) && !isConnectionDataEditRestricted(node.dataRef?.config);
       const supportsMessagePublish = Boolean(resolveMessagePublishTarget(node));
-      const pluginActions = filterPluginConnectionActions(pluginConnectionActions ?? [], String(node.dataRef?.config?.type || ''), 'collection')
-          .map((entry) => ({
-            key: `plugin-connection-action:${entry.pluginID}:${entry.action.id}`,
-            title: entry.action.title,
-            onSelect: () => {
-              setContextMenu(null);
-              runPluginConnectionAction?.(entry, {
-                connectionId: String(node.dataRef?.id || ''),
-                database: String(node.dataRef?.dbName || ''),
-                collection: String(node.dataRef?.tableName || ''),
-              });
-            },
-          }));
       const isPinned = isSidebarTablePinned(
           pinnedSidebarTables,
           String(node?.dataRef?.id || ''),
@@ -401,6 +388,7 @@ export const useSidebarV2ContextMenu = ({
               supportsBatchTables={dataSourceCapabilities.supportsSqlQueryExport}
               supportsSqlExport={dataSourceCapabilities.supportsSqlQueryExport}
               supportsMockData={dataSourceCapabilities.supportsMockData}
+              pluginActions={buildPluginActions(node, 'collection')}
               onAction={(action) => {
                   setContextMenu(null);
                   handleV2TableContextMenuAction(node, action);
