@@ -48,6 +48,7 @@ export const resolveQueryLocatorPlan = async ({
     currentDb,
     config,
     forceReadOnly,
+    schemaName,
     allowOracleRowID = true,
 }: {
     statement: string;
