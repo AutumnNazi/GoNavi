@@ -25,7 +25,7 @@ export interface CatalogPage { filterVersion?: number; items: MarketPlugin[]; ne
 export interface MarketRating { userId: string; pluginId: string; stars: number; body: string; version: string; updatedAt: string }
 export interface MarketSettings { baseUrl: string; sourceId?: string; trustedOfficial?: boolean }
 export type MarketSort = 'updated' | 'rating' | 'downloads';
-export interface MarketInspectionRequest { id: string; version: string; artifactDigest: string; sourceId: string }
+export interface MarketInspectionRequest { id: string; version: string; artifactDigest: string; sourceId: string; sizeBytes?: number }
 export interface MarketInspectionQuote {
   inspection: PluginInspection;
   sourceId: string;

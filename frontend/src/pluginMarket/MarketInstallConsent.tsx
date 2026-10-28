@@ -23,6 +23,7 @@ export function MarketInstallConsent({ request, source, allowed, onClose, onInst
     <div className="plugin-stack">
       {inspection.loading && <Spin />}
       <Typography.Paragraph>{t('plugin.market.inspect_description')}</Typography.Paragraph>
+      {request.sizeBytes ? <Typography.Text type="secondary">{t('plugin.label.bytes', { count: request.sizeBytes.toLocaleString() })}</Typography.Text> : null}
       {inspection.error && <Alert showIcon type="error" message={inspection.error} />}
     </div>
   </Modal>;

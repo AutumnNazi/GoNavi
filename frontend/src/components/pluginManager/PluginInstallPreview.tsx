@@ -25,7 +25,8 @@ export function PluginInstallPreview({ inspection, onCancel, onInstall, allowed,
   const manifest = inspection.manifest;
   return <Modal open title={t('plugin.install.preview')} onCancel={onCancel}
     onOk={() => void install()} okText={t(replace ? 'plugin.install.replace_confirm' : 'plugin.install.confirm')} cancelText={t(busy ? 'plugin.install.close_pending' : 'common.cancel')}
-    confirmLoading={busy} okButtonProps={{ disabled: !trusted || !allowed }} maskClosable={!busy} width={680}>
+    confirmLoading={busy} okButtonProps={{ disabled: !trusted || !allowed }} maskClosable={!busy} width={680}
+    styles={{ body: { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' } }}>
     <div className="plugin-stack">
       <Alert showIcon type="warning" message={t('plugin.install.warning')} description={t(replace ? 'plugin.install.replace_hint' : 'plugin.install.disabled_hint')} />
       {details}

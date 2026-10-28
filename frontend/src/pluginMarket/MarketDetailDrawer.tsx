@@ -27,7 +27,7 @@ export function MarketDetailDrawer({ id, source, allowed, trustedOfficial, sourc
   const canPreview = Boolean(versions.selected?.compatible && !versions.loading && !versions.error && plugin && artifact && artifact.version === plugin.version && plugin.id === id
     && sourceId && /^[a-f0-9]{64}$/.test(sourceId) && plugin.sourceId === sourceId);
   useEffect(() => { setRequest(null); setDowngradeOpen(false); }, [id, sourceId, plugin?.version, artifact?.sha256, installedVersion]);
-  const beginPreview = () => { if (canPreview && plugin && artifact && sourceId) { setInstallError(''); setRequest({ id, version: plugin.version, artifactDigest: artifact.sha256, sourceId }); } };
+  const beginPreview = () => { if (canPreview && plugin && artifact && sourceId) { setInstallError(''); setRequest({ id, version: plugin.version, artifactDigest: artifact.sha256, sourceId, sizeBytes: artifact.sizeBytes }); } };
   const footer = plugin ? <div className="market-detail-actions">
     <Typography.Text type="secondary">{t('plugin.market.detail_install_hint')}</Typography.Text>
     <Button type="primary" icon={<SafetyCertificateOutlined aria-hidden />} disabled={!allowed || !canPreview || detail.loading || Boolean(request)} onClick={() => {

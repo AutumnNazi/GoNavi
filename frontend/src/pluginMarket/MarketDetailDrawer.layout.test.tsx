@@ -37,7 +37,7 @@ describe('market detail visual structure', () => {
   });
   it('opens only a source-bound permission inspection, not direct installation', async () => {
     await mount(); await act(async () => { elements('button').find((node) => node.props.children === 'plugin.market.preview_install')!.props.onClick(); });
-    expect(renderer!.root.findByProps({ 'data-panel': 'consent' }).props.request).toEqual({ id: plugin.id, version: plugin.version, artifactDigest: plugin.artifact!.sha256, sourceId });
+    expect(renderer!.root.findByProps({ 'data-panel': 'consent' }).props.request).toEqual({ id: plugin.id, version: plugin.version, artifactDigest: plugin.artifact!.sha256, sourceId, sizeBytes: plugin.artifact!.sizeBytes });
   });
   it.each(['readonly', 'missing artifact', 'foreign source'])('preserves the %s install restriction', async (mode) => {
     if (mode === 'missing artifact') state.plugin!.artifact = undefined;
