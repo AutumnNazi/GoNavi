@@ -22,10 +22,15 @@ describe.skipIf(!existsSync(referencePath))('permission labels', () => {
   });
   it('has an English string for every label it renders', () => {
     for (const permission of permissions) {
-      const key = pluginPermissionText(permission, (name) => name).split(' (')[0];
+      const key = pluginPermissionText(permission, (name) => name).split(' — ')[0].split(' (')[0];
       expect(english[key], key).toBeTruthy();
     }
   });
+  it('uses the localized description for known permissions', () => {
+    expect(pluginPermissionText('host.log', (key) => key.endsWith('.description') ? '诊断说明' : '日志权限'))
+      .toBe('日志权限 — 诊断说明 (host.log)');
+  });
+
   it('falls back to the raw identifier for an unknown permission', () => {
     expect(pluginPermissionText('data.writes', (key) => key)).toBe('data.writes');
   });

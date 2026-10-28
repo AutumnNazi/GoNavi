@@ -16,10 +16,16 @@ const knownPermissions: Record<string, string> = {
 };
 
 export function pluginPermissionText(permission: string, t: (key: string) => string, note?: string): string {
-  const custom = cleanPermissionNote(note);
-  if (custom) return custom + ' (' + permission + ')';
   const key = knownPermissions[permission];
-  return key ? t(key) + ' (' + permission + ')' : permission;
+  if (key) {
+    const label = t(key);
+    const descriptionKey = key + '.description';
+    const description = t(descriptionKey);
+    const localized = description && description !== descriptionKey ? label + ' — ' + description : label;
+    return localized + ' (' + permission + ')';
+  }
+  const custom = cleanPermissionNote(note);
+  return custom ? custom + ' (' + permission + ')' : permission;
 }
 
 function cleanPermissionNote(note?: string): string {
