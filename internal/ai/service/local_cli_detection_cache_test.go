@@ -3,6 +3,7 @@ package aiservice
 import (
 	"context"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -27,7 +28,8 @@ func TestDetectLocalCLICommandUsesCache(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		found, path := detectLocalCLICommand("codex")
-		if !found || path != "/usr/local/bin/codex" {
+		// 探测结果会过 filepath.Clean，Windows 上是反斜杠，期望值同样归一化。
+		if want := filepath.Clean("/usr/local/bin/codex"); !found || path != want {
 			t.Fatalf("第 %d 次探测结果不符：found=%v path=%q", i+1, found, path)
 		}
 	}
@@ -133,7 +135,7 @@ func TestDetectLocalCLICommandKeepsKeyCapturedAtProbeStart(t *testing.T) {
 		t.Fatal("探测在旧钩子下未命中，却报告已检测到")
 	}
 
-	if detected, path := detectLocalCLICommand("zcode"); !detected || path != "/stub/zcode" {
+	if detected, path := detectLocalCLICommand("zcode"); !detected || path != filepath.Clean("/stub/zcode") {
 		t.Fatalf("旧探测结果污染了新钩子键：found=%v path=%q", detected, path)
 	}
 }
