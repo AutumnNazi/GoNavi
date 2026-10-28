@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { pluginAPI } from './api';
+import { notifyPluginLifecycle } from './events';
 import { refreshPluginDataSources, revokePluginDataSourceAvailability } from './dataSource/discovery';
 import { invalidatePackagedSkillPreviews } from './skills/invalidation';
 import { invalidatePluginAIProviders } from './aiProvider/invalidation';
@@ -53,6 +54,7 @@ export function usePluginManager() {
     try {
       const status = await pluginAPI.setEnabled(id, enabled);
       if (alive.current && actions.current[id] === action) setPlugins((items) => items.map((p) => p.manifest.id === id ? status : p));
+      notifyPluginLifecycle();
     } catch (cause) { if (alive.current && actions.current[id] === action) setActionError(pluginErrorText(cause)); }
     finally {
       void refreshPluginDataSources();
@@ -70,6 +72,7 @@ export function usePluginManager() {
     setRevoked((current) => new Set(current).add(id));
     try {
       await pluginAPI.remove(id, purge);
+      notifyPluginLifecycle();
       if (alive.current) setPlugins((items) => items.filter((p) => p.manifest.id !== id));
     } catch (cause) { if (alive.current) setActionError(pluginErrorText(cause)); }
     finally {

@@ -35,6 +35,11 @@ describe('market detail visual structure', () => {
     expect(platforms.every((tag) => tag.props.className === 'market-detail-platform-badge')).toBe(true);
     expect(renderer!.root.findByProps({ className: 'market-detail-source' }).props.children).toBe('https://market.test');
   });
+  it('disables the install action when the selected version is already installed', async () => {
+    await mount(true, true, plugin.version);
+    const button = elements('button').find((node) => node.props.children === 'plugin.market.versions.installed')!;
+    expect(button.props.disabled).toBe(true);
+  });
   it('opens only a source-bound permission inspection, not direct installation', async () => {
     await mount(); await act(async () => { elements('button').find((node) => node.props.children === 'plugin.market.preview_install')!.props.onClick(); });
     expect(renderer!.root.findByProps({ 'data-panel': 'consent' }).props.request).toEqual({ id: plugin.id, version: plugin.version, artifactDigest: plugin.artifact!.sha256, sourceId, sizeBytes: plugin.artifact!.sizeBytes });

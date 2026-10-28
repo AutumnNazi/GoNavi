@@ -50,6 +50,9 @@ func (a *App) pluginMarketInstallContext(parent context.Context, id, version, di
 		if current != approval.previousDigest {
 			return nil, errors.New("installation changed after inspection")
 		}
+		if marketInstallAlreadyCurrent(manager, id, version) {
+			return nil, errors.New("plugin already installed at this version")
+		}
 		request := plugin.InstallRequest{Path: approval.path, Digest: approval.contentDigest, Trusted: true}
 		status, err := installMarketPackage(ctx, manager, request, current != "")
 		if err != nil {
@@ -60,6 +63,18 @@ func (a *App) pluginMarketInstallContext(parent context.Context, id, version, di
 		}
 		return status, nil
 	})
+}
+
+// marketInstallAlreadyCurrent rejects re-installing the exact version that is
+// already present; updates must use a different version and therefore a new
+// inspection approval.
+func marketInstallAlreadyCurrent(manager interface{ List() []plugin.Status }, id, version string) bool {
+	for _, status := range manager.List() {
+		if status.Manifest.ID == id && status.Manifest.Version == version {
+			return true
+		}
+	}
+	return false
 }
 
 // pluginInstaller is the part of the manager this path needs. Keeping it narrow lets the

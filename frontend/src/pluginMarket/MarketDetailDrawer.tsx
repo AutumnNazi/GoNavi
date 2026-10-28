@@ -26,13 +26,15 @@ export function MarketDetailDrawer({ id, source, allowed, trustedOfficial, sourc
   const artifact = plugin?.artifact;
   const canPreview = Boolean(versions.selected?.compatible && !versions.loading && !versions.error && plugin && artifact && artifact.version === plugin.version && plugin.id === id
     && sourceId && /^[a-f0-9]{64}$/.test(sourceId) && plugin.sourceId === sourceId);
+  const sameVersionInstalled = Boolean(plugin && installedVersion === plugin.version);
   useEffect(() => { setRequest(null); setDowngradeOpen(false); }, [id, sourceId, plugin?.version, artifact?.sha256, installedVersion]);
   const beginPreview = () => { if (canPreview && plugin && artifact && sourceId) { setInstallError(''); setRequest({ id, version: plugin.version, artifactDigest: artifact.sha256, sourceId, sizeBytes: artifact.sizeBytes }); } };
   const footer = plugin ? <div className="market-detail-actions">
     <Typography.Text type="secondary">{t('plugin.market.detail_install_hint')}</Typography.Text>
-    <Button type="primary" icon={<SafetyCertificateOutlined aria-hidden />} disabled={!allowed || !canPreview || detail.loading || Boolean(request)} onClick={() => {
+    <Button type="primary" icon={<SafetyCertificateOutlined aria-hidden />} disabled={!allowed || !canPreview || sameVersionInstalled || detail.loading || Boolean(request)} onClick={() => {
+      if (sameVersionInstalled) return;
       if (isMarketDowngrade(plugin.version, installedVersion)) setDowngradeOpen(true); else beginPreview();
-    }}>{t('plugin.market.preview_install')}</Button>
+    }}>{sameVersionInstalled ? t('plugin.market.versions.installed') : t('plugin.market.preview_install')}</Button>
   </div> : null;
   return <Drawer open rootClassName="plugin-market-detail" width="min(720px, 100vw)" title={t('plugin.market.detail_title')} footer={footer} onClose={onClose}>
     <div className="market-detail-content">

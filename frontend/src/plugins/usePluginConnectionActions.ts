@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { pluginAPI } from './api';
 import { collectPluginConnectionActions, type PluginConnectionActionEntry } from './connectionActions';
+import { PLUGIN_LIFECYCLE_EVENT } from './events';
 
 /**
  * Prefetches host connection actions once per sidebar lifetime. Plugin enable/disable
@@ -28,10 +29,13 @@ export function usePluginConnectionActions() {
     alive.current = true;
     void reload();
     const onFocus = () => { void reload(); };
+    const onLifecycle = () => { void reload(); };
     window.addEventListener('focus', onFocus);
+    window.addEventListener(PLUGIN_LIFECYCLE_EVENT, onLifecycle);
     return () => {
       alive.current = false;
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener(PLUGIN_LIFECYCLE_EVENT, onLifecycle);
     };
   }, [reload]);
 
