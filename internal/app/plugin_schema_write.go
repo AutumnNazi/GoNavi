@@ -13,6 +13,7 @@ import (
 
 	"GoNavi-Wails/internal/ai"
 	"GoNavi-Wails/internal/connection"
+	"GoNavi-Wails/internal/plugin"
 )
 
 const (
@@ -212,6 +213,35 @@ func pluginCapabilitySchemaPreview(_ context.Context, a *App, request pluginCapa
 	}, ""
 }
 
+// schemaWriteExecutionConfig rechecks authority after the dialog and before each
+// statement: confirmation must not extend a revoked generation or connection policy.
+func (a *App) schemaWriteExecutionConfig(ctx context.Context, request pluginCapabilityRequest, connectionID string) (connection.ConnectionConfig, string) {
+	if ctx.Err() != nil {
+		return connection.ConnectionConfig{}, "internal"
+	}
+	if request.Caller.Generation == 0 {
+		return connection.ConnectionConfig{}, "not_running"
+	}
+	status, code := a.pluginCapabilityStatus(ctx, request.Caller.PluginID, request.Caller.Generation)
+	if code != "" {
+		return connection.ConnectionConfig{}, code
+	}
+	if !pluginCapabilityPermissionGranted(status.Manifest.Permissions, plugin.SchemaWritePermission) {
+		return connection.ConnectionConfig{}, "permission_denied"
+	}
+	config, code := a.pluginPageConnectionConfig(connectionID)
+	if code != "" {
+		return connection.ConnectionConfig{}, code
+	}
+	if !schemaWriteConfigAllowed(config) {
+		return connection.ConnectionConfig{}, "read_only"
+	}
+	if ctx.Err() != nil {
+		return connection.ConnectionConfig{}, "internal"
+	}
+	return config, ""
+}
+
 func pluginCapabilitySchemaApply(ctx context.Context, a *App, request pluginCapabilityRequest) (any, string) {
 	var arguments pluginCapabilitySchemaApplyArguments
 	if !decodePluginPageArguments(request.Arguments, &arguments) {
@@ -256,17 +286,28 @@ func pluginCapabilitySchemaApply(ctx context.Context, a *App, request pluginCapa
 		}
 		confirmed = true
 	}
+	if ctx.Err() != nil {
+		return nil, "internal"
+	}
 	if !confirmed {
 		return nil, "confirmation_denied"
 	}
 	result := pluginCapabilitySchemaApplyResult{}
 	budget := normalizeQueryResultBudgetOptions(QueryResultBudgetOptions{})
 	for _, statement := range plan.statements {
+		if ctx.Err() != nil {
+			return nil, "internal"
+		}
+		config, code := a.schemaWriteExecutionConfig(ctx, request, plan.connectionID)
+		if code != "" {
+			return nil, code
+		}
 		queryResult := a.dbQueryMulti(config, plan.database, statement, "", dbQueryMultiAuditOptions{
-			auditAll:     true,
-			auditWrites:  true,
-			source:       "plugin_schema_write",
-			ResultBudget: &budget,
+			auditAll:         true,
+			auditWrites:      true,
+			source:           "plugin_schema_write",
+			ResultBudget:     &budget,
+			executionContext: ctx,
 		})
 		item := pluginCapabilitySchemaStatementResult{Statement: statement, Success: queryResult.Success, Message: queryResult.Message}
 		result.Statements = append(result.Statements, item)
