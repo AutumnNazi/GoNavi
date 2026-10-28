@@ -207,6 +207,14 @@ type Options struct {
 	// embedding application. A nil callback disables host.capability without
 	// affecting host.log or host.describe.
 	HostCapability func(ctx context.Context, pluginID string, generation uint64, params json.RawMessage) (json.RawMessage, error)
+	// ProxyEnvironment reports extra proxy variables ("NAME=value") for every
+	// backend process this manager launches. The embedding host returns its
+	// configured proxy while the global proxy is enabled and nil otherwise, so a
+	// disabled proxy leaves the child on the host environment. It is evaluated at
+	// each launch, so a later change applies to plugins started afterwards. Only
+	// proxy variable names are accepted, so the callback cannot widen what a
+	// plugin process reads.
+	ProxyEnvironment func() []string
 }
 
 // ErrLocked means another runtime owner or a busy state writer holds the OS lock.

@@ -98,10 +98,11 @@ func (a *App) pluginManager(ctx context.Context) (*plugin.Manager, error) {
 		state.lifetime, state.cancel = lifetime, stop
 		state.mu.Unlock()
 		manager, err := plugin.NewManager(plugin.Options{
-			Root:           root,
-			HostVersion:    CurrentVersion(),
-			Disabled:       pluginEnvEnabled("GONAVI_DISABLE_PLUGINS"),
-			HostCapability: a.pluginHostCapability,
+			Root:             root,
+			HostVersion:      CurrentVersion(),
+			Disabled:         pluginEnvEnabled("GONAVI_DISABLE_PLUGINS"),
+			HostCapability:   a.pluginHostCapability,
+			ProxyEnvironment: pluginProxyEnvironment,
 		})
 		var windows PluginWindowHost
 		if err == nil {
