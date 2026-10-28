@@ -122,7 +122,7 @@ func TestPluginPageQueryReadUsesAuditedReadOnlyPath(t *testing.T) {
 		},
 		fieldMap: map[string][]string{"SELECT id FROM users": {"id"}},
 	}
-	newDatabaseFunc = func(string) (db.Database, error) { return database, nil }
+	newDatabaseFunc = func(string) (db.Database, error) { return &pluginPageReadOnlyDatabase{database}, nil }
 
 	a := newPluginPageTestApp(t)
 	id := installAndEnablePluginPage(t, a, "test.pages.query", pluginPageFullPermissions()...)

@@ -265,6 +265,9 @@ func handleRequestWithContext(requestCtx context.Context, runtimeState *agentRun
 		return fail(resp, "connection not open")
 	}
 
+	if method == agentMethodQueryReadOnly {
+		return handleReadOnlyQueryRequest(requestCtx, runtimeState, req, resp)
+	}
 	if session, ok, err := runtimeState.session(req.SessionID); err != nil {
 		return fail(resp, err.Error())
 	} else if ok {
@@ -668,7 +671,7 @@ func handleStreamRequest(requestCtx context.Context, runtimeState *agentRuntime,
 	}
 
 	streamWriter := newAgentStreamResponseWriter(writer, req.ID)
- streamSink:=hiveAgentStreamSink(streamWriter)
+	streamSink := hiveAgentStreamSink(streamWriter)
 	if session, ok, err := runtimeState.session(req.SessionID); err != nil {
 		return writer.write(fail(resp, err.Error()))
 	} else if ok {
