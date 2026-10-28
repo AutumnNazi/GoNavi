@@ -3,7 +3,8 @@ import { act, create } from 'react-test-renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const api = vi.hoisted(() => ({ list: vi.fn() }));
 vi.mock('./api', () => ({ pluginAPI: api }));
-import { usePluginConnectionActions, type PluginConnectionActionEntry } from './usePluginConnectionActions';
+import { usePluginConnectionActions } from './usePluginConnectionActions';
+import type { PluginConnectionActionEntry } from './connectionActions';
 import { PLUGIN_LIFECYCLE_EVENT } from './events';
 
 const listeners = new Map<string, Set<() => void>>();
