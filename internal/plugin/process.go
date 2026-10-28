@@ -78,7 +78,7 @@ type rpcProcess struct {
 	hostLogCount   int
 }
 
-func launchProcess(m Manifest, packageRoot, dataRoot string) (*rpcProcess, error) {
+func launchProcess(m Manifest, packageRoot, dataRoot string, proxyEnvironment func() []string) (*rpcProcess, error) {
 	entry, err := selectEntry(m)
 	if err != nil {
 		return nil, err
@@ -99,7 +99,7 @@ func launchProcess(m Manifest, packageRoot, dataRoot string) (*rpcProcess, error
 	}
 	cmd := exec.Command(executable, args...)
 	cmd.Dir = dataRoot
-	cmd.Env = processEnvironment(packageRoot, dataRoot)
+	cmd.Env = processEnvironment(packageRoot, dataRoot, proxyEnvironment)
 	p := &rpcProcess{cmd: cmd, pending: make(map[uint64]rpcPending), failed: make(chan struct{}), done: make(chan struct{}), outgoing: make(chan []byte, 64)} // Queue bounded to one frame per pending request.
 	if p.stdin, err = cmd.StdinPipe(); err != nil {
 		return nil, err
@@ -154,14 +154,50 @@ func findInterpreter(names []string) (string, error) {
 	}
 	return "", fmt.Errorf("required plugin interpreter is not installed")
 }
-func processEnvironment(packageRoot, dataRoot string) []string {
-	// Only runtime essentials are inherited: no app credentials, RPC tokens, or Node/Python injection variables.
-	allowed := map[string]bool{"PATH": true, "SYSTEMROOT": true, "WINDIR": true, "TEMP": true, "TMP": true, "TMPDIR": true, "LANG": true, "LC_ALL": true}
-	env := make([]string, 0, len(allowed)+3)
+
+// pluginEnvironmentAllowed lists the host process variables a plugin backend
+// inherits. Application credentials, RPC tokens and interpreter injection
+// variables stay excluded. Matching is case-insensitive because Windows variable
+// names are.
+var pluginEnvironmentAllowed = map[string]bool{
+	"PATH": true, "SYSTEMROOT": true, "WINDIR": true,
+	"TEMP": true, "TMP": true, "TMPDIR": true,
+	"LANG": true, "LC_ALL": true,
+	"HTTP_PROXY": true, "HTTPS_PROXY": true, "ALL_PROXY": true, "NO_PROXY": true,
+}
+
+// pluginProxyEnvironmentAllowed bounds what the embedding host may inject, so an
+// injected entry can never replace PATH, a credential or any other host variable.
+var pluginProxyEnvironmentAllowed = map[string]bool{
+	"HTTP_PROXY": true, "HTTPS_PROXY": true, "ALL_PROXY": true, "NO_PROXY": true,
+}
+
+// processEnvironment merges the host environment with the proxy entries the
+// embedding host injects for this launch. Injected entries win and duplicates
+// collapse into one entry: POSIX getenv answers with the first match, so a plain
+// append would keep the inherited value instead of the configured proxy.
+func processEnvironment(packageRoot, dataRoot string, proxyEnvironment func() []string) []string {
+	env := make([]string, 0, len(pluginEnvironmentAllowed)+len(pluginProxyEnvironmentAllowed)+3)
+	position := make(map[string]int, len(pluginEnvironmentAllowed)+len(pluginProxyEnvironmentAllowed)+3)
+	appendEntry := func(value string, allowed map[string]bool) {
+		key, content, ok := strings.Cut(value, "=")
+		if !ok || key == "" || content == "" || !allowed[strings.ToUpper(key)] {
+			return
+		}
+		upper := strings.ToUpper(key)
+		if previous, exists := position[upper]; exists {
+			env[previous] = value
+			return
+		}
+		position[upper] = len(env)
+		env = append(env, value)
+	}
 	for _, value := range os.Environ() {
-		key, _, ok := strings.Cut(value, "=")
-		if ok && allowed[strings.ToUpper(key)] {
-			env = append(env, value)
+		appendEntry(value, pluginEnvironmentAllowed)
+	}
+	if proxyEnvironment != nil {
+		for _, value := range proxyEnvironment() {
+			appendEntry(value, pluginProxyEnvironmentAllowed)
 		}
 	}
 	return append(env, "GONAVI_PLUGIN_PACKAGE="+packageRoot, "GONAVI_PLUGIN_DATA="+dataRoot, "PYTHONNOUSERSITE=1")

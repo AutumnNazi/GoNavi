@@ -174,7 +174,7 @@ func (m *Manager) activate(inst *instance) error {
 		if err = privateDirectory(dataRoot); err != nil {
 			return err
 		}
-		process, launchErr := launchProcess(r.Manifest, root, dataRoot)
+		process, launchErr := launchProcess(r.Manifest, root, dataRoot, m.opts.ProxyEnvironment)
 		if launchErr != nil {
 			return launchErr
 		}
