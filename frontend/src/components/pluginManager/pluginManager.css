@@ -5,7 +5,8 @@
 .plugin-toolbar, .plugin-card-header, .plugin-ui-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .plugin-ui-row { justify-content: flex-start; flex-wrap: wrap; }
 .plugin-toolbar > .ant-input, .plugin-toolbar > .ant-input-affix-wrapper { flex: 1; min-width: 100px; }
-.plugin-card { border: 1px solid var(--gn-br-2); border-radius: 8px; background: var(--gn-bg-panel); padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.plugin-card { border: 1px solid var(--gn-br-2); border-radius: 8px; background: var(--gn-bg-panel); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.plugin-card-details { display: flex; flex-direction: column; gap: 12px; padding-top: 10px; border-top: 1px solid var(--gn-br-1); }
 .plugin-card .ant-typography { margin: 0; }
 .plugin-identity, .plugin-break, .plugin-result { font-family: var(--gn-font-mono); overflow-wrap: anywhere; }
 .plugin-identity { color: var(--gn-fg-3); font-size: 12px; }

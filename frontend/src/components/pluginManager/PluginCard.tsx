@@ -18,26 +18,29 @@ export function PluginCard({ plugin, manager, expanded, onToggle }: Props) {
   const id = plugin.manifest.id;
   const active = plugin.state === 'running' && plugin.desiredEnabled && !manager.revoked.has(id);
   const webRuntime = manager.runtime.webRuntime === true;
-  // The isolated window needs a desktop process; the browser session only exposes
-  // commands and declarative panels.
-  const hasInterface = Boolean((plugin.manifest.window && !webRuntime) || publicPluginCommands(plugin.manifest).length || plugin.manifest.contributes?.panels?.length);
+  const permissions = plugin.manifest.permissions ?? [];
   return <article className="plugin-card">
-    <header className="plugin-card-header"><div>
-      <Typography.Title level={5}>{plugin.manifest.name}</Typography.Title>
-      <code className="plugin-identity">{id} · {plugin.manifest.version}</code>
-    </div></header>
-    {plugin.manifest.description && <Typography.Paragraph type="secondary">{plugin.manifest.description}</Typography.Paragraph>}
-    {plugin.manifest.permissions.length > 0 && <div className="plugin-permissions">{plugin.manifest.permissions.map((permission) => <Tag key={permission}>{pluginPermissionText(permission, t, plugin.manifest.permissionNotes?.[permission])}</Tag>)}</div>}
-    <PluginDataSourceSummary manifest={plugin.manifest} />
-    <PluginAIProviderSummary manifest={plugin.manifest} />
-    <PluginExporterSummary manifest={plugin.manifest} />
-    <PluginSkillSummary manifest={plugin.manifest} />
-    <PluginPageList plugin={plugin} active={active}
-      managementAllowed={manager.runtime.managementAllowed} webRuntime={webRuntime} />
+    <header className="plugin-card-header">
+      <div>
+        <Typography.Title level={5}>{plugin.manifest.name}</Typography.Title>
+        <code className="plugin-identity">{id} · {plugin.manifest.version}</code>
+      </div>
+      <Button type="link" size="small" aria-expanded={expanded} onClick={onToggle}>
+        {t(expanded ? 'plugin.action.close_panel' : 'plugin.action.open_panel')}
+      </Button>
+    </header>
+    {plugin.lastError && <Alert showIcon type="error" message={t('plugin.card.last_error')} description={plugin.lastError} />}
     <PluginLifecycleControls plugin={plugin} allowed={manager.runtime.managementAllowed} safeMode={manager.runtime.safeMode}
       busy={Boolean(manager.busy[id])} onEnabled={(enabled) => void manager.setEnabled(id, enabled)} onRemove={() => void manager.remove(id, false)} />
-    {plugin.lastError && <Alert showIcon type="error" message={t('plugin.card.last_error')} description={plugin.lastError} />}
-    {active && hasInterface && <Button onClick={onToggle} aria-expanded={expanded}>{t(expanded ? 'plugin.action.close_panel' : 'plugin.action.open_panel')}</Button>}
-    {active && expanded && <PluginCommandsPanel key={id + ':' + plugin.generation} plugin={plugin} allowed={manager.runtime.managementAllowed} webRuntime={webRuntime} />}
+    {expanded && <div className="plugin-card-details">
+      {plugin.manifest.description && <Typography.Paragraph type="secondary">{plugin.manifest.description}</Typography.Paragraph>}
+      {permissions.length > 0 && <div className="plugin-permissions">{permissions.map((permission) => <Tag key={permission}>{pluginPermissionText(permission, t, plugin.manifest.permissionNotes?.[permission])}</Tag>)}</div>}
+      <PluginDataSourceSummary manifest={plugin.manifest} />
+      <PluginAIProviderSummary manifest={plugin.manifest} />
+      <PluginExporterSummary manifest={plugin.manifest} />
+      <PluginSkillSummary manifest={plugin.manifest} />
+      <PluginPageList plugin={plugin} active={active} managementAllowed={manager.runtime.managementAllowed} webRuntime={webRuntime} />
+      {active && publicPluginCommands(plugin.manifest).length > 0 && <PluginCommandsPanel key={id + ':' + plugin.generation} plugin={plugin} allowed={manager.runtime.managementAllowed} webRuntime={webRuntime} />}
+    </div>}
   </article>;
 }

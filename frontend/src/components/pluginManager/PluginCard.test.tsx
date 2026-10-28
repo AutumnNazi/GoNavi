@@ -25,6 +25,17 @@ describe('plugin card failure detail', () => {
     expect(alert.props.description).toBe('backend exited with status 3');
     view.unmount();
   });
+  it('keeps installed details collapsed until requested', () => {
+    const described = { ...plugin, manifest: { ...plugin.manifest, description: 'details', permissions: ['host.log'] } };
+    const collapsed = create(<PluginCard plugin={described} manager={manager} expanded={false} onToggle={vi.fn()} />);
+    expect(collapsed.root.findAllByProps({ className: 'plugin-card-details' })).toHaveLength(0);
+    expect(collapsed.root.findAllByProps({ className: 'plugin-permissions' })).toHaveLength(0);
+    collapsed.unmount();
+    const expanded = create(<PluginCard plugin={described} manager={manager} expanded onToggle={vi.fn()} />);
+    expect(expanded.root.findAllByProps({ className: 'plugin-card-details' })).toHaveLength(1);
+    expect(expanded.root.findAllByProps({ className: 'plugin-permissions' })).toHaveLength(1);
+    expanded.unmount();
+  });
   it('renders no error alert when the plugin is healthy', () => {
     const view = create(<PluginCard plugin={{ ...plugin, lastError: '', state: 'running' }} manager={manager} expanded={false} onToggle={vi.fn()} />);
     expect(view.root.findAllByProps({ 'data-component': 'alert' })).toHaveLength(0);
