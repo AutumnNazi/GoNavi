@@ -26,6 +26,17 @@ func defaultPluginCapabilities() pluginCapabilities {
 	}
 
 	add(pluginCapabilitySpec{
+		Name:           "plugin.invoke",
+		Permission:     plugin.PagesPermission,
+		Description:    "Invoke a command declared by the calling plugin; the page never receives credentials.",
+		Channels:       shared,
+		Runtimes:       desktopWeb,
+		MaxArgsBytes:   1 << 20,
+		MaxResultBytes: dataResult,
+		Timeout:        dataTimeout,
+		Handler:        pluginCapabilityInvoke,
+	})
+	add(pluginCapabilitySpec{
 		Name:           "app.info",
 		Description:    "Plugin and host identity for the calling page.",
 		Channels:       shared,
