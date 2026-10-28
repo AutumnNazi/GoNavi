@@ -98,13 +98,15 @@ window.gonavi.notify('Loaded', 'info');
   supports it and the connection is forced read-only), and multi-host connections may have
   an empty `host`/`port`.
 - `host.query.read` is not declared here. A package that adds it can run one read-only
-  statement with `maxRows` 1..1000 (default 100): the host binds a scan-layer budget of
-  `maxRows+1`, so supporting drivers stop reading at the limit and `truncated` becomes true;
-  legacy drivers read first and are truncated by the gateway. Result bytes stay capped at
-  256 KiB. Read-only is not side-effect free: common locking clauses and
-  `nextval`/`setval`/`pg_terminate_backend`/`pg_read_file` are rejected, but other
-  functions are not enumerated, and a legacy driver may keep running after the 30-second
-  bridge deadline (context-aware drivers are interrupted).
+  statement with `maxRows` 1..1000 (default 100). The host requires a driver-provided,
+  database-enforced read-only transaction; SQL classification alone is not sufficient.
+  PostgreSQL-family and MySQL drivers use a dedicated read-only execution path. Driver
+  agents must support `query_read_only`; older agents and unsupported drivers fail closed
+  instead of falling back to ordinary queries. Keep the driver agent updated with the host.
+  The host binds a scan-layer budget of `maxRows+1` and caps serialized results at 256 KiB.
+  Cancellation covers execution and scanning; the transaction is rolled back even after a
+  successful read. Common locking clauses and high-risk functions are still rejected, but
+  a read-only transaction does not guarantee that every server function is side-effect free.
 
 ## Why these permissions
 
