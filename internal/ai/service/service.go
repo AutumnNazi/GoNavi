@@ -198,7 +198,7 @@ func NewServiceWithSecretStore(store secretstore.SecretStore) *Service {
 		store = secretstore.NewUnavailableStore("secret store unavailable")
 	}
 	// 外部客户端探测放在后台预热，避免这 1s 量级的代价落在设置页打开的同步路径上。
-	go prewarmLocalCLICommandCache()
+	startLocalCLICachePrewarm()
 	return &Service{
 		providers:    make([]ai.ProviderConfig, 0),
 		safetyLevel:  ai.PermissionReadOnly,
