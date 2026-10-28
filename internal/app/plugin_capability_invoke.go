@@ -94,7 +94,7 @@ func pluginCapabilityInvoke(ctx context.Context, a *App, request pluginCapabilit
 	if err != nil {
 		return nil, "runtime_unavailable"
 	}
-	value, err := manager.Invoke(ctx, request.Caller.PluginID, commandID, rawArguments)
+	value, err := manager.InvokeGeneration(ctx, request.Caller.PluginID, request.Caller.Generation, commandID, rawArguments)
 	if err != nil {
 		return nil, "internal"
 	}
