@@ -57,6 +57,7 @@ export const resolveQueryLocatorPlan = async ({
     config: any;
     forceReadOnly: boolean;
     allowOracleRowID?: boolean;
+    schemaName?: string;
 }): Promise<QueryStatementPlan> => {
     const plan: QueryStatementPlan = {
         originalSql: originalStatement || statement,
@@ -68,7 +69,7 @@ export const resolveQueryLocatorPlan = async ({
     }
     const defaultSchema = isOracleLikeDialect(dbType)
         ? resolveOracleLikeExecutionSchemaName(config, currentDb)
-        : '';
+        : String(schemaName || '').trim();
     // 即使只读也要解析 tableRef：结果页列类型/注释依赖 metadataDbName + tableName
     try {
         const previewTableRef = extractQueryResultTableRef(statement, dbType, currentDb, defaultSchema);

@@ -301,7 +301,12 @@ export const extractQueryResultTableRef = (
   const metadataTableName = parts[parts.length - 1] || '';
   if (!metadataTableName) return undefined;
 
-  const owner = parts.length >= 2 ? parts[parts.length - 2] : '';
+  const explicitOwner = parts.length >= 2 ? parts[parts.length - 2] : '';
+  // 未写 schema 时不能把数据库名当成 schema，否则列类型和注释会查空。
+  const postgresDefaultSchema = !explicitOwner && isPostgresLikeDialect(dialect)
+    ? normalizeCurrentDbName(defaultSchema, dialect)
+    : '';
+  const owner = explicitOwner || postgresDefaultSchema;
   const defaultOracleSchema = isOracleLikeDialect(dialect)
     ? normalizeCurrentDbName(defaultSchema, dialect)
     : '';

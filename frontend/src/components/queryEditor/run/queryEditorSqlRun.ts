@@ -285,6 +285,7 @@ export const runQueryEditorSqlStatements = async ({
                 config: executionConfig,
                 forceReadOnly: forceReadOnlyResult,
                 allowOracleRowID: allowOracleRowIDByStatement[index],
+                schemaName: executionSchemaName,
             });
             if (!isCurrentRun()) return;
             statementPlans.push(statementPlan);
