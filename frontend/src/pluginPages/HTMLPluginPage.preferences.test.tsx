@@ -41,7 +41,7 @@ it('injects initial preferences before page scripts and updates the same iframe 
   expect(container.querySelector('iframe')).toBe(frame);
   expect(frame.srcdoc).toBe(srcDoc);
   expect(page.window.document.querySelector('#log')).toBe(input); expect(input.value).toBe('keep log input');
-  const valid = post.mock.calls.at(-1)![0] as Record<string, unknown>;
+  const valid = post.mock.calls[post.mock.calls.length - 1]![0] as Record<string, unknown>;
   const count = page.window.preferenceEvents;
   page.window.dispatchEvent(new page.window.MessageEvent('message', { data: { ...valid, token: 'wrong' }, source: page.window.parent }));
   page.window.dispatchEvent(new page.window.MessageEvent('message', { data: valid, source: null }));
