@@ -13695,5 +13695,11 @@
   "plugin.market.anonymous_usage": "公開外掛無須登入即可瀏覽與安裝",
   "plugin.market.ratings_on_website": "評分、評價和帳號操作統一在市集網站處理，GoNavi 僅顯示公開評分。",
   "plugin.market.open_website": "開啟市集網站",
-  "data_grid.toolbar.read_only": "網格唯讀"
+  "data_grid.toolbar.read_only": "網格唯讀",
+  "plugin.update.available": "有新版本{{version}}",
+  "plugin.update.action": "更新至{{version}}",
+  "plugin.update.source": "來源{{source}}",
+  "plugin.update.check": "檢查更新",
+  "plugin.update.check_failed": "部分外掛更新檢查失敗，請重試",
+  "plugin.update.up_to_date": "已檢查，未發現可用更新"
 }

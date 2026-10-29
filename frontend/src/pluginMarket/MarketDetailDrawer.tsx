@@ -14,13 +14,13 @@ import { MarketInstallConsent } from './MarketInstallConsent';
 import type { MarketInspectionRequest } from './types';
 import './marketDetail.css';
 
-interface Props { installedVersion?: string; scoped?: boolean; id: string; source: string; allowed: boolean; trustedOfficial: boolean; sourceId?: string; onClose: () => void; onInstalled: () => void }
-export function MarketDetailDrawer({ id, source, allowed, trustedOfficial, sourceId, scoped = false, installedVersion, onClose, onInstalled }: Props) {
+interface Props { installedVersion?: string; initialVersion?: string; scoped?: boolean; id: string; source: string; allowed: boolean; trustedOfficial: boolean; sourceId?: string; onClose: () => void; onInstalled: () => void }
+export function MarketDetailDrawer({ id, source, allowed, trustedOfficial, sourceId, scoped = false, installedVersion, initialVersion, onClose, onInstalled }: Props) {
   const { t } = useI18n();
   const detail = useMarketDetail(id, sourceId, scoped);
   const [request, setRequest] = useState<MarketInspectionRequest | null>(null);
   const [installError, setInstallError] = useState('');
-  const versions = useMarketVersions(id, sourceId, scoped, Boolean(detail.plugin));
+  const versions = useMarketVersions(id, sourceId, scoped, Boolean(detail.plugin), initialVersion);
   const [downgradeOpen, setDowngradeOpen] = useState(false);
   const plugin = versions.selected?.plugin ?? detail.plugin;
   const artifact = plugin?.artifact;
@@ -34,7 +34,7 @@ export function MarketDetailDrawer({ id, source, allowed, trustedOfficial, sourc
     <Button type="primary" icon={<SafetyCertificateOutlined aria-hidden />} disabled={!allowed || !canPreview || sameVersionInstalled || detail.loading || Boolean(request)} onClick={() => {
       if (sameVersionInstalled) return;
       if (isMarketDowngrade(plugin.version, installedVersion)) setDowngradeOpen(true); else beginPreview();
-    }}>{sameVersionInstalled ? t('plugin.market.versions.installed') : t('plugin.market.preview_install')}</Button>
+    }}>{sameVersionInstalled ? t('plugin.market.versions.installed') : installedVersion && !isMarketDowngrade(plugin.version, installedVersion) ? t('plugin.update.action', { version: plugin.version }) : t('plugin.market.preview_install')}</Button>
   </div> : null;
   return <Drawer open rootClassName="plugin-market-detail" width="min(720px, 100vw)" title={t('plugin.market.detail_title')} footer={footer} onClose={onClose}>
     <div className="market-detail-content">
@@ -50,7 +50,7 @@ export function MarketDetailDrawer({ id, source, allowed, trustedOfficial, sourc
         <MarketRatingsPanel ratings={detail.ratings} websiteURL={marketPluginWebsiteURL(source, id)} />
       </>}
       {downgradeOpen && plugin && installedVersion && <MarketDowngradeConfirm from={installedVersion} to={plugin.version} onCancel={() => setDowngradeOpen(false)} onConfirm={() => { setDowngradeOpen(false); beginPreview(); }} />}
-      {request && <MarketInstallConsent request={request} source={source} allowed={allowed} onClose={() => setRequest(null)}
+      {request && <MarketInstallConsent request={request} source={source} allowed={allowed} replace={Boolean(installedVersion)} onClose={() => setRequest(null)}
         onInstalled={onInstalled} onInstallError={setInstallError} />}
     </div>
   </Drawer>;

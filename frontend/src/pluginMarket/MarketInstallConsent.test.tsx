@@ -36,6 +36,25 @@ describe('inspection consent presentation', () => {
     expect(host.PluginMarketCancelInspection).toHaveBeenCalledWith('internal-token');
     expect(host.PluginMarketInstall).not.toHaveBeenCalled();
   });
+  it('requires explicit trust for replacing an installed plugin with an inspected update', async () => {
+    host.PluginMarketInspect.mockResolvedValue({ success: true, data: quote });
+    host.PluginMarketCancelInspection.mockResolvedValue({ success: true });
+    host.PluginMarketInstall.mockResolvedValue({ success: true, data: { manifest: quote.inspection.manifest, digest: quote.inspection.digest, state: 'disabled', desiredEnabled: false, generation: 2, installedAt: '' } });
+    const onInstalled = vi.fn();
+    await act(async () => { renderer = create(<MarketInstallConsent request={request} source="https://market.test" allowed replace onClose={vi.fn()} onInstalled={onInstalled} onInstallError={vi.fn()} />); });
+    expect(host.PluginMarketInspect).toHaveBeenCalledWith(request.id, request.version, request.artifactDigest, request.sourceId);
+    let modal = renderer!.root.findByProps({ 'data-component': 'modal' });
+    expect(modal.props.okText).toBe('plugin.install.replace_confirm');
+    expect(modal.props.okButtonProps.disabled).toBe(true);
+    await act(async () => { modal.props.onOk(); });
+    expect(host.PluginMarketInstall).not.toHaveBeenCalled();
+    act(() => renderer!.root.findByProps({ 'data-component': 'checkbox' }).props.onChange({ target: { checked: true } }));
+    modal = renderer!.root.findByProps({ 'data-component': 'modal' });
+    expect(modal.props.okButtonProps.disabled).toBe(false);
+    await act(async () => { modal.props.onOk(); });
+    expect(host.PluginMarketInstall).toHaveBeenCalledWith(request.id, request.version, request.artifactDigest, true, quote.approvalToken);
+    expect(onInstalled).toHaveBeenCalledOnce();
+  });
   it('resets explicit trust when a replacement quote arrives, even for identical package bytes', async () => {
     const next = { ...request, sourceId: 'd'.repeat(64) };
     host.PluginMarketInspect.mockResolvedValueOnce({ success: true, data: quote })

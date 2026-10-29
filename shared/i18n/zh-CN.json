@@ -13695,5 +13695,11 @@
   "plugin.market.anonymous_usage": "公开插件无需登录即可浏览和安装",
   "plugin.market.ratings_on_website": "评分、评价和账号操作统一在市场网站处理，GoNavi 仅展示公开评分。",
   "plugin.market.open_website": "打开市场网站",
-  "data_grid.toolbar.read_only": "网格只读"
+  "data_grid.toolbar.read_only": "网格只读",
+  "plugin.update.available": "有新版本{{version}}",
+  "plugin.update.action": "更新到{{version}}",
+  "plugin.update.source": "来源{{source}}",
+  "plugin.update.check": "检查更新",
+  "plugin.update.check_failed": "部分插件更新检查失败，请重试",
+  "plugin.update.up_to_date": "已检查，未发现可用更新"
 }

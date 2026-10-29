@@ -44,6 +44,15 @@ describe('market detail visual structure', () => {
     await mount(); await act(async () => { elements('button').find((node) => node.props.children === 'plugin.market.preview_install')!.props.onClick(); });
     expect(renderer!.root.findByProps({ 'data-panel': 'consent' }).props.request).toEqual({ id: plugin.id, version: plugin.version, artifactDigest: plugin.artifact!.sha256, sourceId, sizeBytes: plugin.artifact!.sizeBytes });
   });
+  it('labels an upgrade and passes replacement consent without direct installation', async () => {
+    await mount(true, true, '0.9.0');
+    const update = elements('button').find((node) => node.props.children === 'plugin.update.action')!;
+    expect(update.props.disabled).toBe(false);
+    await act(async () => { update.props.onClick(); });
+    const consent = renderer!.root.findByProps({ 'data-panel': 'consent' });
+    expect(consent.props.replace).toBe(true);
+    expect(consent.props.request).toEqual({ id: plugin.id, version: plugin.version, artifactDigest: plugin.artifact!.sha256, sourceId, sizeBytes: plugin.artifact!.sizeBytes });
+  });
   it.each(['readonly', 'missing artifact', 'foreign source'])('preserves the %s install restriction', async (mode) => {
     if (mode === 'missing artifact') state.plugin!.artifact = undefined;
     if (mode === 'foreign source') state.plugin!.sourceId = 'c'.repeat(64);

@@ -13695,5 +13695,11 @@
   "plugin.market.anonymous_usage": "Öffentliche Plugins ohne Anmeldung durchsuchen und installieren",
   "plugin.market.ratings_on_website": "Bewertungen und Kontoverwaltung erfolgen auf der Marktplatz-Website. GoNavi zeigt öffentliche Bewertungen nur an.",
   "plugin.market.open_website": "Marktplatz-Website öffnen",
-  "data_grid.toolbar.read_only": "Raster schreibgeschützt"
+  "data_grid.toolbar.read_only": "Raster schreibgeschützt",
+  "plugin.update.available": "Neue Version {{version}} verfügbar",
+  "plugin.update.action": "Auf {{version}} aktualisieren",
+  "plugin.update.source": "Quelle: {{source}}",
+  "plugin.update.check": "Nach Updates suchen",
+  "plugin.update.check_failed": "Die Update-Prüfung für einige Plugins ist fehlgeschlagen. Bitte erneut versuchen.",
+  "plugin.update.up_to_date": "Geprüft. Keine Updates verfügbar."
 }

@@ -13695,5 +13695,11 @@
   "plugin.market.anonymous_usage": "Browse and install public plugins without signing in",
   "plugin.market.ratings_on_website": "Ratings, reviews and account actions are managed on the market website. GoNavi only displays public ratings.",
   "plugin.market.open_website": "Open market website",
-  "data_grid.toolbar.read_only": "Grid read-only"
+  "data_grid.toolbar.read_only": "Grid read-only",
+  "plugin.update.available": "New version {{version}} available",
+  "plugin.update.action": "Update to {{version}}",
+  "plugin.update.source": "Source: {{source}}",
+  "plugin.update.check": "Check for updates",
+  "plugin.update.check_failed": "Update checks failed for some plugins. Try again.",
+  "plugin.update.up_to_date": "Checked. No updates are available."
 }

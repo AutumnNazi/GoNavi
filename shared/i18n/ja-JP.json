@@ -13695,5 +13695,11 @@
   "plugin.market.anonymous_usage": "公開プラグインはログインせずに閲覧・インストールできます",
   "plugin.market.ratings_on_website": "評価・レビュー・アカウント操作はマーケットサイトで行います。GoNavi は公開評価の表示のみを行います。",
   "plugin.market.open_website": "マーケットサイトを開く",
-  "data_grid.toolbar.read_only": "グリッドは読み取り専用"
+  "data_grid.toolbar.read_only": "グリッドは読み取り専用",
+  "plugin.update.available": "新しいバージョン{{version}}があります",
+  "plugin.update.action": "{{version}}に更新",
+  "plugin.update.source": "提供元：{{source}}",
+  "plugin.update.check": "更新を確認",
+  "plugin.update.check_failed": "一部のプラグインの更新確認に失敗しました。再試行してください",
+  "plugin.update.up_to_date": "確認済みです。利用可能な更新はありません"
 }

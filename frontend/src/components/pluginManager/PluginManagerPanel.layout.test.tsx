@@ -5,6 +5,7 @@ import type { PluginManagerState } from '../../plugins/usePluginManager';
 const state = vi.hoisted(() => ({ manager: {} as PluginManagerState }));
 vi.mock('../../i18n/provider', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('../../plugins/usePluginManager', () => ({ usePluginManager: () => state.manager }));
+vi.mock('../../pluginMarket/useInstalledPluginUpdates', () => ({ useInstalledPluginUpdates: () => ({ updates: new Map(), sources: [], loading: false, checked: false, failed: false, reload: vi.fn() }) }));
 vi.mock('../../pluginMarket/PluginMarketPanel', () => ({ PluginMarketPanel: () => <div data-panel="market" /> }));
 vi.mock('./LocalInstallPanel', () => ({ LocalInstallPanel: ({ allowed }: { allowed: boolean }) => <div data-panel="local" data-allowed={allowed} /> }));
 vi.mock('./PluginCard', () => ({ PluginCard: ({ plugin }: { plugin: { manifest: { id: string } } }) => <article data-plugin-id={plugin.manifest.id} /> }));

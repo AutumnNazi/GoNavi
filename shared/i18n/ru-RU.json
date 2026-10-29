@@ -13695,5 +13695,11 @@
   "plugin.market.anonymous_usage": "Просматривайте и устанавливайте публичные плагины без входа",
   "plugin.market.ratings_on_website": "Оценки, отзывы и учётная запись управляются на сайте каталога. GoNavi только показывает публичные оценки.",
   "plugin.market.open_website": "Открыть сайт каталога",
-  "data_grid.toolbar.read_only": "Сетка только для чтения"
+  "data_grid.toolbar.read_only": "Сетка только для чтения",
+  "plugin.update.available": "Доступна новая версия {{version}}",
+  "plugin.update.action": "Обновить до {{version}}",
+  "plugin.update.source": "Источник: {{source}}",
+  "plugin.update.check": "Проверить обновления",
+  "plugin.update.check_failed": "Не удалось проверить обновления для некоторых плагинов. Повторите попытку.",
+  "plugin.update.up_to_date": "Проверено. Доступных обновлений нет."
 }

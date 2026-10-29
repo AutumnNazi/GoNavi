@@ -10,11 +10,12 @@ interface Props {
   request: MarketInspectionRequest;
   source: string;
   allowed: boolean;
+  replace?: boolean;
   onClose: () => void;
   onInstalled: () => void;
   onInstallError: (message: string) => void;
 }
-export function MarketInstallConsent({ request, source, allowed, onClose, onInstalled, onInstallError }: Props) {
+export function MarketInstallConsent({ request, source, allowed, replace, onClose, onInstalled, onInstallError }: Props) {
   const { t } = useI18n();
   const inspection = useMarketInspection(request, allowed);
   const close = () => { inspection.cancel(); onClose(); };
@@ -27,7 +28,7 @@ export function MarketInstallConsent({ request, source, allowed, onClose, onInst
       {inspection.error && <Alert showIcon type="error" message={inspection.error} />}
     </div>
   </Modal>;
-  return <PluginInstallPreview key={inspection.quoteRevision} inspection={inspection.quote.inspection} allowed={inspection.canInstall} onCancel={close}
+  return <PluginInstallPreview key={inspection.quoteRevision} inspection={inspection.quote.inspection} allowed={inspection.canInstall} replace={replace} onCancel={close}
     digestLabel={t('plugin.market.content_digest')}
     details={<MarketInspectionProof quote={inspection.quote} source={source} error={inspection.error} consumed={inspection.consumed} installing={inspection.installing} />}
     onInstall={async () => {
