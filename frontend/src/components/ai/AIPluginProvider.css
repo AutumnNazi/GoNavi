@@ -10,3 +10,46 @@
 .gn-plugin-provider-wrap { overflow-wrap: anywhere; }
 .gn-plugin-provider-select { width: 100%; margin: 12px 0; }
 @media (max-width: 640px) { .gn-plugin-provider-row { flex-direction: column; } }
+/* Account block: frameless on purpose. Separation comes from rhythm and hairlines,
+   never from nested cards, grey blocks or full-width buttons. */
+.gn-account { display: flex; flex-direction: column; gap: 14px; margin: 14px 0 22px; }
+.gn-account-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.gn-account-title { flex: 0 0 auto; font-size: 12px; font-weight: 600; opacity: .5; }
+.gn-account-email { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; opacity: .82; }
+.gn-account-actions { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+.gn-account-actions .ant-btn { height: 24px; padding-inline: 7px; font-size: 12px; opacity: .6; }
+.gn-account-actions .ant-btn:hover { opacity: 1; }
+.gn-account-actions .gn-account-danger:hover { color: var(--ant-color-error, #ff4d4f); }
+.gn-account-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; padding: 13px 0; border-top: 1px solid var(--gn-border-color, rgba(127,127,127,.2)); border-bottom: 1px solid var(--gn-border-color, rgba(127,127,127,.2)); }
+.gn-account-stat { min-width: 0; padding: 0 18px; border-left: 1px solid var(--gn-border-color, rgba(127,127,127,.16)); }
+.gn-account-stat:first-child { padding-left: 2px; border-left: none; }
+.gn-account-stat-label { margin: 0 0 5px; font-size: 12px; opacity: .5; }
+.gn-account-stat-value { margin: 0; font-size: 24px; font-weight: 600; line-height: 1.05; letter-spacing: -.01em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.gn-account-empty { display: flex; align-items: center; gap: 12px; padding: 2px 0; }
+.gn-account-avatar { display: grid; place-items: center; width: 30px; height: 30px; flex: 0 0 30px; border-radius: 50%; font-size: 13px; font-weight: 600; color: #1677ff; background: rgba(22,119,255,.12); }
+.gn-account-empty-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.gn-account-empty-title { font-size: 13px; line-height: 1.45; opacity: .78; }
+.gn-account-empty-note { font-size: 12px; color: var(--ant-color-warning, #faad14); }
+.gn-account-error { margin: 0; font-size: 12px; color: var(--ant-color-error, #ff4d4f); }
+.gn-account-keys { display: flex; flex-direction: column; min-width: 0; }
+.gn-account-keys-head { display: flex; align-items: baseline; gap: 6px; margin-bottom: 2px; }
+.gn-account-keys-title { font-size: 12px; font-weight: 600; opacity: .5; }
+.gn-account-keys-count { font-size: 12px; opacity: .35; font-variant-numeric: tabular-nums; }
+.gn-account-keys-empty { margin: 0; padding: 6px 0; font-size: 12px; opacity: .5; }
+.gn-account-keys-error { font-size: 12px; color: var(--ant-color-error, #ff4d4f); }
+.gn-account-key-list { list-style: none; margin: 0; padding: 0; }
+.gn-account-key { padding: 9px 0; border-bottom: 1px solid rgba(127,127,127,.12); }
+.gn-account-key:last-child { border-bottom: none; padding-bottom: 2px; }
+.gn-account-key-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.gn-account-key-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
+.gn-account-key-actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; opacity: .45; transition: opacity .12s ease; }
+.gn-account-key:hover .gn-account-key-actions, .gn-account-key:focus-within .gn-account-key-actions { opacity: 1; }
+.gn-account-key-actions .ant-btn { height: 22px; padding-inline: 6px; font-size: 12px; }
+.gn-account-key-line { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-top: 4px; font-size: 12px; }
+.gn-account-key-value { padding: 1px 6px; border-radius: 5px; font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: rgba(127,127,127,.11); border: none; }
+.gn-account-key-sep { opacity: .22; }
+.gn-account-key-group { color: #1677ff; }
+.gn-account-key-inactive { color: var(--ant-color-error, #ff4d4f); }
+.gn-account-key-fact { opacity: .58; font-variant-numeric: tabular-nums; }
+.gn-account-key-failed { color: var(--ant-color-error, #ff4d4f); }
+@media (max-width: 720px) { .gn-account-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 12px; } .gn-account-stat:nth-child(3) { padding-left: 2px; border-left: none; } }

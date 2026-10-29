@@ -5,6 +5,7 @@ import { clearedPluginProviderSettings, hasForeignPluginProviderSettings } from 
 import { useOptionalI18n } from '../../i18n/provider';
 import { t as translate } from '../../i18n';
 import AIProviderKeyValueRows from './AIProviderKeyValueRows';
+import AIPluginProviderAccount from './AIPluginProviderAccount';
 import AISettingsProviderTestResult from './AISettingsProviderTestResult';
 
 export function AIPluginProviderEditor(props: AISettingsProvidersSectionProps) {
@@ -21,6 +22,7 @@ export function AIPluginProviderEditor(props: AISettingsProvidersSectionProps) {
     <div><Tag>{t('plugin.ai_provider.label')}</Tag><Typography.Text strong>{source?.name || editingProvider?.name || type}</Typography.Text></div>
     <Typography.Text code className="gn-plugin-provider-wrap">{type}</Typography.Text>
     <p>{t('plugin.ai_provider.catalog_hint')}</p>
+    <AIPluginProviderAccount pluginId={source?.pluginId} />
     {!source?.available && <Alert type="warning" showIcon message={t('plugin.ai_provider.error.unavailable')} />}
     {unsupported && <Alert type="error" showIcon message={t('plugin.ai_provider.error.unsupported_settings')} />}
     <Form form={form} layout="vertical" onValuesChange={props.onValuesChange}>

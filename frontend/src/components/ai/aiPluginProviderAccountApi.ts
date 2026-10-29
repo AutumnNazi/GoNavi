@@ -1,0 +1,163 @@
+import { PluginInvoke } from '../../../wailsjs/go/app/App';
+
+export type AccountState = 'ready' | 'signed_out';
+
+export interface AccountStatus {
+  state: AccountState;
+  reason: string;
+  email: string;
+  userId: string;
+  balance?: number;
+  frozenBalance?: number;
+  totalRecharged?: number;
+  concurrency?: number;
+  status: string;
+  expiresAt: string;
+}
+
+export interface AccountKeyItem {
+  id: string;
+  name: string;
+  key: string;
+  status: string;
+  groupName: string;
+  rateMultiplier?: number;
+  quota?: number;
+  quotaUsed?: number;
+  lastUsedAt: string;
+}
+
+export interface AccountPoll {
+  state: 'pending' | 'ready';
+}
+
+// Unsupported means the plugin does not expose this account command at all.
+export type AccountOutcome<T> =
+  | { kind: 'unsupported' }
+  | { kind: 'error'; message: string }
+  | { kind: 'ok'; data: T };
+
+type RawRecord = Record<string, unknown>;
+
+const asRecord = (value: unknown): RawRecord | null =>
+  value !== null && typeof value === 'object' ? (value as RawRecord) : null;
+
+// The host copies the plugin payload into QueryResult.Data, which may arrive
+// as a parsed object or as raw JSON text depending on the plugin transport.
+const readEnvelope = (value: unknown): RawRecord | null => {
+  if (typeof value === 'string') {
+    try {
+      return asRecord(JSON.parse(value));
+    } catch {
+      return null;
+    }
+  }
+  return asRecord(value);
+};
+
+const asText = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+const asNumber = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+
+const parseErrorText = (envelope: RawRecord | null, message: unknown): string => {
+  const error = asRecord(envelope?.error);
+  return asText(error?.message) || asText(message);
+};
+
+export const parseAccountStatus = (raw: unknown): AccountStatus | null => {
+  const data = asRecord(raw);
+  if (!data) return null;
+  const state = data.state === 'ready' ? 'ready' : data.state === 'signed_out' ? 'signed_out' : null;
+  if (!state) return null;
+  return {
+    state,
+    reason: asText(data.reason),
+    email: asText(data.email),
+    userId: asText(data.userId),
+    balance: asNumber(data.balance),
+    frozenBalance: asNumber(data.frozenBalance),
+    totalRecharged: asNumber(data.totalRecharged),
+    concurrency: asNumber(data.concurrency),
+    status: asText(data.status),
+    expiresAt: asText(data.expiresAt),
+  };
+};
+
+export const parseAccountPoll = (raw: unknown): AccountPoll | null => {
+  const data = asRecord(raw);
+  if (!data) return null;
+  const state = data.state === 'ready' ? 'ready' : data.state === 'pending' ? 'pending' : null;
+  return state ? { state } : null;
+};
+
+export const parseAccountStarted = (raw: unknown): { started: boolean } | null => {
+  const data = asRecord(raw);
+  return data ? { started: data.started === true } : null;
+};
+
+const parseKeyItem = (raw: unknown): AccountKeyItem | null => {
+  const item = asRecord(raw);
+  if (!item) return null;
+  return {
+    id: asText(item.id),
+    name: asText(item.name),
+    key: asText(item.key),
+    status: asText(item.status),
+    groupName: asText(item.groupName),
+    rateMultiplier: asNumber(item.rateMultiplier),
+    quota: asNumber(item.quota),
+    quotaUsed: asNumber(item.quotaUsed),
+    lastUsedAt: asText(item.lastUsedAt),
+  };
+};
+
+export const parseAccountKeys = (raw: unknown): AccountKeyItem[] | null => {
+  const data = asRecord(raw);
+  const items = data?.items;
+  if (!Array.isArray(items)) return null;
+  return items.map(parseKeyItem).filter((item): item is AccountKeyItem => item !== null);
+};
+
+export async function invokeAccountCommand<T>(
+  pluginId: string,
+  command: string,
+  parse: (raw: unknown) => T | null,
+): Promise<AccountOutcome<T>> {
+  let result: unknown;
+  try {
+    result = await PluginInvoke(pluginId, command, '{}');
+  } catch {
+    return { kind: 'error', message: '' };
+  }
+  const query = asRecord(result);
+  if (!query || query.success !== true) return { kind: 'unsupported' };
+  const envelope = readEnvelope(query.data);
+  if (!envelope || envelope.ok !== true) {
+    return { kind: 'error', message: parseErrorText(envelope, query.message) };
+  }
+  const data = parse(envelope.data);
+  return data === null ? { kind: 'error', message: '' } : { kind: 'ok', data };
+}
+
+// Trim trailing zeros so 63.6900001 renders as 63.69 and 100 as 100.
+export const formatAccountAmount = (value: number | undefined): string => {
+  if (value === undefined) return '-';
+  const fixed = Math.round(value * 100) / 100;
+  return String(fixed);
+};
+
+export const maskAccountKey = (key: string): string => {
+  const trimmed = key.trim();
+  if (trimmed.length <= 8) return '****';
+  const prefix = trimmed.startsWith('sk-') ? 'sk-' : trimmed.slice(0, 3);
+  return `${prefix}****${trimmed.slice(-4)}`;
+};
+
+export const formatAccountTime = (value: string): string => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
