@@ -10,6 +10,7 @@ import { useStore } from '../../store';
 import { isWebRuntime } from '../../utils/browserFileTransfer';
 import { TitlebarPluginIcon } from '../titlebar/gonaviTitlebarIcons';
 import type { TitleBarQuickAction } from '../TitleBarQuickActions';
+import { usePluginWindowPreferences } from './usePluginWindowPreferences';
 
 const REQUEST_TIMEOUT_MS = 10000;
 const STARTUP_INTERVAL_MS = 1000;
@@ -97,7 +98,7 @@ function useWindowToolCatalog(web: boolean) {
   return { plugins, error, refresh, isCurrent, hasInstalledTools: current.current.installedTools.size > 0 };
 }
 
-function useWindowToolOpen(catalog: ReturnType<typeof useWindowToolCatalog>, language: string) {
+function useWindowToolOpen(catalog: ReturnType<typeof useWindowToolCatalog>, language: string, synchronize: () => Promise<void>) {
   const pending = useRef(new Map<string, { pin: string; cancel: () => void }>());
   const [busy, setBusy] = useState(new Set<string>());
   const [failure, setFailure] = useState<{ plugin: PluginStatus; text: string }>();
@@ -123,7 +124,10 @@ function useWindowToolOpen(catalog: ReturnType<typeof useWindowToolCatalog>, lan
       openPluginPageTab({ pluginID: id, pageID: page.id, title: page.title });
       return;
     }
-    const request = boundedRequest(pluginAPI.openWindow(id, language, useStore.getState().theme));
+    const request = boundedRequest(synchronize().then(() => {
+      if (!catalog.isCurrent(plugin) || pending.current.get(id) !== operation) throw new PluginAPIError('plugin.backend.error.window_unavailable');
+      return pluginAPI.openWindow(id, language, useStore.getState().theme);
+    }));
     const operation = { pin: identity(plugin), cancel: request.cancel };
     pending.current.set(id, operation); setBusy(new Set(pending.current.keys()));
     try { await request.promise; }
@@ -142,9 +146,12 @@ export function usePluginWindowTools(): TitleBarQuickAction[] {
   const { language, t } = useI18n();
   const web = isWebRuntime();
   const catalog = useWindowToolCatalog(web);
-  const invocation = useWindowToolOpen(catalog, language);
+  const synchronize = usePluginWindowPreferences(language, !web && catalog.plugins.some(plugin => !toolPage(plugin)));
+  const invocation = useWindowToolOpen(catalog, language, synchronize);
   const icon = <TitlebarPluginIcon size="100%" />;
+  // 入口位置不取决于页面或窗口；点击时再按插件声明选择打开目标。
   const tools: TitleBarQuickAction[] = catalog.plugins.map((plugin) => ({
+    afterAI: true,
     key: 'plugin-window-' + plugin.manifest.id, label: plugin.manifest.name, icon,
     disabled: invocation.busy.has(plugin.manifest.id), onClick: () => { void invocation.open(plugin); },
   }));

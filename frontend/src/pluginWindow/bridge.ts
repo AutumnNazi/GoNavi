@@ -3,6 +3,8 @@ import {
   type PluginInvokeOptions, type PluginPickOptions, type PluginWindowBridge,
 } from './protocol';
 
+import { createPreferenceReceiver } from './preferences';
+
 export type FetchBridge = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 function post(fetcher: FetchBridge, route: string, value: unknown, signal?: AbortSignal) {
@@ -12,10 +14,10 @@ function post(fetcher: FetchBridge, route: string, value: unknown, signal?: Abor
   });
 }
 
-export function createPluginBridge(fetcher: FetchBridge, newID: () => string): PluginWindowBridge {
+export function createPluginBridge(fetcher: FetchBridge, newID: () => string, receive = typeof window === 'undefined' ? (_value: unknown) => {} : createPreferenceReceiver(), onClose = () => {}): PluginWindowBridge {
   const ready = fetcher(bridgePrefix + 'bootstrap', {
     credentials: 'omit', cache: 'no-store', redirect: 'error',
-  }).then(readBridgeResponse).then(parseIdentity);
+  }).then(readBridgeResponse).then(value => { const identity = parseIdentity(value); receive(value); return identity; });
   // Plugin scripts may subscribe later; avoid an unhandled startup rejection.
   void ready.catch(() => undefined);
   let pending = 0;
@@ -79,6 +81,7 @@ export function createPluginBridge(fetcher: FetchBridge, newID: () => string): P
     close: async () => {
       const response = await post(fetcher, 'close', {});
       if (!response.ok) throw new PluginBridgeError('close_failed');
+      onClose();
     },
   });
 }

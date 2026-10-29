@@ -735,6 +735,8 @@ export function PluginSkillResourceRead(arg1:string,arg2:string,arg3:string,arg4
 
 export function PluginSkills():Promise<connection.QueryResult>;
 
+export function PluginUpdateWindowPreferences(arg1:string):Promise<connection.QueryResult>;
+
 export function PreflightDatabaseSQLImport(arg1:connection.ConnectionConfig,arg2:string,arg3:string):Promise<connection.QueryResult>;
 
 export function PrepareWindowsBrandIconRestart(arg1:string):Promise<connection.QueryResult>;

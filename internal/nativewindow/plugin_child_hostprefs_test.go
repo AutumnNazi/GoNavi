@@ -126,7 +126,7 @@ func TestModifyHTMLKeepsBodyLengthConsistent(t *testing.T) {
 		if resp.Header.Get("Content-Length") != "" || resp.Header.Get("Transfer-Encoding") != "" || len(resp.TransferEncoding) != 0 {
 			t.Fatalf("unexpected framing metadata: header=%v transfer=%v", resp.Header, resp.TransferEncoding)
 		}
-		if strings.HasPrefix(body, "<body>") && !strings.HasPrefix(string(data), "<script>window.gonaviHostPrefs=") {
+		if strings.HasPrefix(body, "<body>") && !strings.HasPrefix(string(data), "<script>if(!window.gonaviHostPrefs)window.gonaviHostPrefs=") {
 			t.Fatalf("missing head fallback: %q", data)
 		}
 	}

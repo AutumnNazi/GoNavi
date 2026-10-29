@@ -17,7 +17,7 @@ func TestPluginAssetsUseManagerResolverAndInjectStandaloneRuntime(t *testing.T) 
 		t.Fatal(response.Body.String())
 	}
 	html := response.Body.String()
-	if !strings.Contains(html, pluginBridgePrefix+"runtime.js") || strings.Contains(html, "window.go") || strings.Contains(html, entry.token) {
+	if !strings.Contains(html, pluginBridgePrefix+"runtime.js") || strings.Contains(html, "window.go.") || strings.Contains(html, entry.token) {
 		t.Fatal("unsafe runtime injection")
 	}
 	if !strings.Contains(response.Header().Get("Content-Security-Policy"), "connect-src 'self'") {

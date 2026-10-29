@@ -251,7 +251,7 @@ func (p injectHostPrefs) modifyHTML(resp *http.Response) error {
 	if err != nil {
 		return err
 	}
-	snippet := []byte("<script>window.gonaviHostPrefs=" + string(prefsJSON) + ";</script>")
+	snippet := []byte("<script>if(!window.gonaviHostPrefs)window.gonaviHostPrefs=" + string(prefsJSON) + ";</script>")
 	injected, ok := injectAfterHead(body, snippet)
 	if !ok {
 		injected = append(snippet, body...)

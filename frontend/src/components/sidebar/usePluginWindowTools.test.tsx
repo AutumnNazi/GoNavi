@@ -11,6 +11,8 @@ import { PLUGIN_LIFECYCLE_EVENT } from '../../plugins/events';
 import { invalidatePluginContributions } from '../../plugins/invalidation';
 import { useSidebarToolbarModel, type UseSidebarToolbarModelInput } from './useSidebarToolbarModel';
 import { PluginPageHost } from '../../pluginPages/PluginPageHost';
+import TitleBarQuickActionsHost from '../TitleBarQuickActionsHost';
+import TitleBarActionRow from '../titlebar/TitleBarActionRow';
 
 function deferred<T>() {
   let resolve!: (value: T) => void; let reject!: (error: unknown) => void;
@@ -18,7 +20,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-const api = vi.hoisted(() => ({ list: vi.fn(), runtimeInfo: vi.fn(), openWindow: vi.fn() }));
+const api = vi.hoisted(() => ({ list: vi.fn(), runtimeInfo: vi.fn(), openWindow: vi.fn(), updateWindowPreferences: vi.fn() }));
 const pageAPI = vi.hoisted(() => ({ pageCall: vi.fn(async () => null) }));
 vi.mock('../../pluginPages/api', () => pageAPI);
 vi.mock('../../plugins/api', () => ({ pluginAPI: api }));
@@ -46,12 +48,217 @@ beforeEach(() => {
   api.list.mockResolvedValue([plugin()]);
   api.runtimeInfo.mockResolvedValue({ safeMode: false, managementAllowed: true, webRuntime: false });
   api.openWindow.mockResolvedValue(undefined);
+  api.updateWindowPreferences.mockResolvedValue(undefined);
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
 });
 afterEach(() => { act(() => root.unmount()); container.remove(); Reflect.deleteProperty(window, '__GONAVI_WEB_RUNTIME__'); vi.useRealTimers(); vi.resetAllMocks(); });
 
 describe('window plugin toolbar', () => {
-  it('opens a declared page inside SQL tools and focuses the same store tab without a database', async () => {
+  it.each(['success', 'failure'])('retries a hung preference update through the real open entry and ignores late %s', async (late) => {
+    vi.useFakeTimers();
+    useStore.setState({ theme: 'light' });
+    document.body.style.setProperty('--gn-bg-panel-2', '#112233');
+    const hung = deferred<void>();
+    api.updateWindowPreferences.mockReturnValueOnce(hung.promise);
+    await mount();
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Log2SQL"]')!.click(); });
+    expect(api.updateWindowPreferences).toHaveBeenCalledTimes(1);
+    expect(api.openWindow).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(actions.some(item => item.key === 'plugin-window-failure')).toBe(true);
+    expect(actions[0].disabled).toBe(false);
+    document.body.style.setProperty('--gn-bg-panel-2', '#445566');
+    await act(async () => { actions.find(item => item.key === 'plugin-window-retry')!.onClick?.(); });
+    expect(api.updateWindowPreferences).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(api.updateWindowPreferences.mock.calls[1][0])).toMatchObject({ palette: { bg: 'rgb(68, 85, 102)' } });
+    expect(api.openWindow).toHaveBeenCalledTimes(1);
+    expect(actions).toHaveLength(1);
+    await act(async () => { late === 'success' ? hung.resolve() : hung.reject(new Error('plugin.backend.error.invalid_request')); });
+    expect(api.openWindow).toHaveBeenCalledTimes(1);
+    expect(actions).toHaveLength(1);
+    expect(actions[0].disabled).toBe(false);
+    document.body.style.removeProperty('--gn-bg-panel-2');
+  });
+  it('keeps queued snapshots ordered and deduplicated with the latest rapid change winning', async () => {
+    vi.useFakeTimers(); await mount(); api.updateWindowPreferences.mockClear();
+    const first = deferred<void>();
+    api.updateWindowPreferences.mockReturnValueOnce(first.promise);
+    document.body.style.setProperty('--gn-bg-panel-2', '#112233');
+    await act(async () => { actions[0].onClick?.(); });
+    document.body.style.setProperty('--gn-bg-panel-2', '#445566');
+    await act(async () => { await vi.advanceTimersByTimeAsync(20); });
+    document.body.style.setProperty('--gn-bg-panel-2', '#778899');
+    await act(async () => { await vi.advanceTimersByTimeAsync(20); });
+    expect(api.updateWindowPreferences).toHaveBeenCalledTimes(1);
+    await act(async () => { first.resolve(); });
+    expect(api.updateWindowPreferences).toHaveBeenCalledTimes(3);
+    const sent = api.updateWindowPreferences.mock.calls.map(([raw]) => JSON.parse(raw));
+    expect(sent.map(item => item.palette.bg)).toEqual(['rgb(17, 34, 51)', 'rgb(68, 85, 102)', 'rgb(119, 136, 153)']);
+    expect(sent[0].requestRevision).toBeLessThan(sent[1].requestRevision);
+    expect(sent[1].requestRevision).toBeLessThan(sent[2].requestRevision);
+    await act(async () => { actions[0].onClick?.(); });
+    expect(api.updateWindowPreferences).toHaveBeenCalledTimes(3);
+    document.body.style.removeProperty('--gn-bg-panel-2');
+  });
+  it.each(['unmount', 'disable'])('discards queued preferences on %s and keeps remount revisions increasing', async (mode) => {
+    vi.useFakeTimers(); await mount(true); api.updateWindowPreferences.mockClear();
+    const first = deferred<void>();
+    api.updateWindowPreferences.mockReturnValueOnce(first.promise);
+    document.body.style.setProperty('--gn-bg-panel-2', '#112233');
+    await act(async () => { actions[0].onClick?.(); });
+    const oldRevision = JSON.parse(api.updateWindowPreferences.mock.calls[0][0]).requestRevision;
+    document.body.style.setProperty('--gn-bg-panel-2', '#445566');
+    await act(async () => { await vi.advanceTimersByTimeAsync(20); });
+    if (mode === 'unmount') {
+      act(() => root.unmount()); root = createRoot(container);
+    } else {
+      act(() => invalidatePluginContributions({ pluginId: 'example.tool', reason: 'disabled' }));
+    }
+    await act(async () => { first.resolve(); await vi.advanceTimersByTimeAsync(10000); });
+    expect(api.updateWindowPreferences).toHaveBeenCalledTimes(1);
+    expect(api.openWindow).not.toHaveBeenCalled();
+    document.body.style.setProperty('--gn-bg-panel-2', '#778899');
+    if (mode === 'unmount') await mount(true);
+    else {
+      api.list.mockResolvedValue([plugin('example.tool', { generation: 2 })]);
+      await act(async () => window.dispatchEvent(new Event(PLUGIN_LIFECYCLE_EVENT)));
+    }
+    await act(async () => { actions[0].onClick?.(); });
+    const newest = JSON.parse(api.updateWindowPreferences.mock.calls.at(-1)![0]);
+    expect(newest.requestRevision).toBeGreaterThan(oldRevision);
+    expect(newest.palette.bg).toBe('rgb(119, 136, 153)');
+    expect(api.openWindow).toHaveBeenCalledTimes(1);
+    expect(actions).toHaveLength(1);
+    document.body.style.removeProperty('--gn-bg-panel-2');
+  });
+  it('continues a stored revision across remount even when the wall clock moves backwards', async () => {
+    const key = 'gonavi:plugin-window-preference-revision';
+    const previous = Number(localStorage.getItem(key));
+    localStorage.setItem(key, String(previous + 10000));
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1);
+    try {
+      await mount(true);
+      const first = JSON.parse(api.updateWindowPreferences.mock.calls.at(-1)![0]).requestRevision;
+      expect(first).toBeGreaterThan(previous + 10000);
+      act(() => root.unmount()); root = createRoot(container);
+      await mount(true);
+      const second = JSON.parse(api.updateWindowPreferences.mock.calls.at(-1)![0]).requestRevision;
+      expect(second).toBeGreaterThan(first);
+      expect(Number(localStorage.getItem(key))).toBe(second);
+    } finally { clock.mockRestore(); }
+  });
+  it.each(['invalid', 'unavailable'])('shows a preference storage %s error rather than sending an unsafe revision', async (mode) => {
+    await mount(); api.updateWindowPreferences.mockClear();
+    const key = 'gonavi:plugin-window-preference-revision';
+    const previous = localStorage.getItem(key);
+    if (mode === 'invalid') localStorage.setItem(key, 'not-a-number');
+    const spy = mode === 'unavailable' ? vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('storage unavailable'); }) : undefined;
+    document.body.style.setProperty('--gn-bg-panel-2', '#112233');
+    await act(async () => { actions[0].onClick?.(); });
+    expect(api.updateWindowPreferences).not.toHaveBeenCalled();
+    expect(api.openWindow).not.toHaveBeenCalled();
+    expect(actions.some(item => item.key === 'plugin-window-failure')).toBe(true);
+    spy?.mockRestore();
+    if (previous === null) localStorage.removeItem(key); else localStorage.setItem(key, previous);
+    await act(async () => { actions.find(item => item.key === 'plugin-window-retry')!.onClick?.(); });
+    expect(api.updateWindowPreferences).toHaveBeenCalledTimes(1);
+    expect(api.openWindow).toHaveBeenCalledTimes(1);
+    document.body.style.removeProperty('--gn-bg-panel-2');
+  });
+  it('sends current resolved colors before opening and updates light-to-light presets', async () => {
+    useStore.setState({ theme: 'light' });
+    document.body.style.setProperty('--gn-bg-panel-2', '#112233');
+    await mount();
+    api.updateWindowPreferences.mockClear();
+    document.body.style.setProperty('--gn-bg-panel-2', '#445566');
+    const updating = deferred<void>();
+    api.updateWindowPreferences.mockReturnValueOnce(updating.promise);
+    await act(async () => { actions[0].onClick?.(); });
+    expect(api.updateWindowPreferences).toHaveBeenCalled();
+    expect(JSON.parse(api.updateWindowPreferences.mock.calls[0][0])).toMatchObject({ theme: 'light', palette: { bg: 'rgb(68, 85, 102)' } });
+    expect(api.openWindow).not.toHaveBeenCalled();
+    await act(async () => { updating.resolve(); });
+    expect(api.openWindow).toHaveBeenCalledTimes(1);
+    api.updateWindowPreferences.mockClear();
+    document.body.style.setProperty('--gn-bg-panel-2', '#778899');
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
+    expect(JSON.parse(api.updateWindowPreferences.mock.calls.at(-1)![0])).toMatchObject({ theme: 'light', palette: { bg: 'rgb(119, 136, 153)' } });
+    expect(api.openWindow).toHaveBeenCalledTimes(1);
+    document.body.style.removeProperty('--gn-bg-panel-2');
+  });
+  it('keeps page and window plugins as independent actions after AI and out of SQL tools', async () => {
+    const pageTool = plugin();
+    pageTool.manifest.contributes = { pages: [{ id: 'workbench', title: 'Log2SQL', html: { source: '<textarea></textarea>' } }] };
+    const ssh = plugin('autumnnazi.ssh');
+    ssh.manifest.name = 'GoNavi SSH';
+    api.list.mockResolvedValue([pageTool, ssh, plugin('another.window')]);
+    useStore.setState({ tabs: [], activeTabId: '', theme: 'light' });
+    useStore.getState().setAppearance({ titlebarActionsPlacement: 'toolbar' });
+    let toolbar: ReturnType<typeof useSidebarToolbarModel>;
+    function WindowToolbar() {
+      const placement = useStore(state => state.appearance.titlebarActionsPlacement);
+      toolbar = useSidebarToolbarModel({
+        treeRef: { current: null }, selectedNodesRef: { current: [] }, appearance: {}, tabs: [], connections: [],
+        activeTabId: '', activeTabHasConnection: false, connectionIds: [], commandSearchFlatItems: [],
+        commandSearchDestinations: { tabs: [], savedQueries: [], settings: [] },
+      } as unknown as UseSidebarToolbarModelInput);
+      return <>
+        <TitleBarQuickActionsHost label="Tools" actions={toolbar.v2TitlebarQuickActions} />
+        <TitleBarActionRow placement={placement} messageQueuePrimary={false} aiActive={false}
+          onNewQuery={() => undefined} onNewConnection={() => undefined} onManageConnectionGroups={() => undefined} onToggleAI={() => undefined} />
+      </>;
+    }
+    await act(async () => root.render(<I18nProvider preference="zh-CN" onPreferenceChange={() => undefined}><WindowToolbar /></I18nProvider>));
+    const sql = toolbar!.v2TitlebarQuickActions.find(item => item.key === 'sql-tools')!;
+    expect(sql.menu?.some(item => item.label === 'Log2SQL')).toBe(false);
+    expect(sql.menu?.some(item => item.label === 'GoNavi SSH' || item.label === 'another.window')).toBe(false);
+    expect(toolbar!.v2TitlebarQuickActions.some(item => item.label === 'Log2SQL')).toBe(true);
+    expect(container.querySelector('button[aria-label="Log2SQL"]')).not.toBeNull();
+    const button = container.querySelector<HTMLButtonElement>('button[aria-label="GoNavi SSH"]');
+    expect(button).not.toBeNull();
+    expect(container.querySelector('button[aria-label="another.window"]')).not.toBeNull();
+    expect(toolbar!.v2TitlebarQuickActions.find(item => item.label === 'GoNavi SSH')?.menu).toBeUndefined();
+    expect(toolbar!.v2TitlebarQuickActions.find(item => item.label === 'GoNavi SSH')?.afterAI).toBe(true);
+    expect(toolbar!.v2TitlebarQuickActions.find(item => item.label === 'Log2SQL')?.afterAI).toBe(true);
+    expect(toolbar!.v2TitlebarQuickActions.find(item => item.label === 'another.window')?.afterAI).toBe(true);
+    const assertPluginGroup = (labels: string[]) => {
+      const ai = container.querySelector('[data-gonavi-ai-toolbar-action="true"]')!;
+      const slot = container.querySelector('#gonavi-titlebar-after-ai-actions')!;
+      const separators = slot.querySelectorAll('[role="separator"]');
+      expect(separators).toHaveLength(labels.length ? 1 : 0);
+      expect(slot.querySelectorAll('button')).toHaveLength(labels.length);
+      if (labels.length) expect(ai.compareDocumentPosition(separators[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      for (const label of labels) {
+        const buttons = container.querySelectorAll('button[aria-label="' + label + '"]');
+        expect(buttons).toHaveLength(1);
+        expect(slot.contains(buttons[0])).toBe(true);
+        expect(separators[0].compareDocumentPosition(buttons[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      }
+    };
+    assertPluginGroup(['Log2SQL', 'GoNavi SSH', 'another.window']);
+    const opening = deferred<void>();
+    api.openWindow.mockReturnValueOnce(opening.promise);
+    await act(async () => { button!.click(); button!.click(); });
+    expect(api.openWindow).toHaveBeenCalledTimes(1);
+    expect(api.openWindow).toHaveBeenCalledWith('autumnnazi.ssh', 'zh-CN', 'light');
+    expect(button!.disabled).toBe(true);
+    await act(async () => opening.resolve());
+    await act(async () => { button!.click(); });
+    expect(api.openWindow).toHaveBeenCalledTimes(2);
+    expect(useStore.getState().tabs).toHaveLength(0);
+    act(() => invalidatePluginContributions({ pluginId: 'autumnnazi.ssh', reason: 'disabled' }));
+    expect(container.querySelector('button[aria-label="GoNavi SSH"]')).toBeNull();
+    expect(toolbar!.v2TitlebarQuickActions.find(item => item.key === 'sql-tools')!.menu?.some(item => item.label === 'Log2SQL')).toBe(false);
+    expect(container.querySelector('button[aria-label="Log2SQL"]')).not.toBeNull();
+    assertPluginGroup(['Log2SQL', 'another.window']);
+    await act(async () => useStore.getState().setAppearance({ titlebarActionsPlacement: 'titlebar' }));
+    assertPluginGroup(['Log2SQL', 'another.window']);
+    await act(async () => useStore.getState().setAppearance({ titlebarActionsPlacement: 'toolbar' }));
+    assertPluginGroup(['Log2SQL', 'another.window']);
+    act(() => invalidatePluginContributions({ reason: 'root' }));
+    assertPluginGroup([]);
+  });
+  it('opens a declared page from an independent button and focuses the same store tab without a database', async () => {
     const tool = plugin();
     tool.manifest.contributes = { pages: [{ id: 'workbench', title: 'Log2SQL', html: { source: '<textarea></textarea>' } }] };
     api.list.mockResolvedValue([tool]);
@@ -70,16 +277,14 @@ describe('window plugin toolbar', () => {
     }
     await act(async () => root.render(<I18nProvider preference="zh-CN" onPreferenceChange={() => undefined}><SqlToolbar /></I18nProvider>));
     const sql = toolbar!.v2TitlebarQuickActions.find(item => item.key === 'sql-tools')!;
-    const entry = sql.menu?.find(item => item.label === 'Log2SQL');
+    const entry = toolbar!.v2TitlebarQuickActions.find(item => item.label === 'Log2SQL');
+    expect(sql.menu?.some(item => item.label === 'Log2SQL')).toBe(false);
     expect(entry).toBeDefined();
     expect(entry?.disabled).toBe(false);
     expect(entry?.menu).toBeUndefined();
-    expect(toolbar!.v2TitlebarQuickActions.some(item => item.label === 'Log2SQL')).toBe(false);
-    expect(container.querySelector('button[aria-label="Log2SQL"]')).toBeNull();
-    await act(async () => { container.querySelector<HTMLButtonElement>('[data-titlebar-quick-menu="sql-tools"]')!.click(); });
-    const menuEntry = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(item => item.textContent === 'Log2SQL');
-    expect(menuEntry).toBeDefined();
-    await act(async () => { menuEntry!.click(); });
+    expect(entry?.afterAI).toBe(true);
+    expect(container.querySelector('button[aria-label="Log2SQL"]')).not.toBeNull();
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Log2SQL"]')!.click(); });
     expect(api.openWindow).not.toHaveBeenCalled();
     const tab = useStore.getState().tabs[0];
     expect(tab).toMatchObject({ id: 'plugin-page:example.tool:workbench', type: 'plugin-page', connectionId: '' });
@@ -147,7 +352,7 @@ describe('window plugin toolbar', () => {
     expect(actions).toHaveLength(0);
     expect(container.querySelector('button')).toBeNull();
   });
-  it('returns multiple tools as direct SQL menu entries without a second plugin menu', async () => {
+  it('returns multiple plugins as independent actions without a plugin menu', async () => {
     api.list.mockResolvedValue([plugin(), plugin('example.other')]);
     await mount();
     expect(actions.map(item => item.label)).toEqual(['Log2SQL', 'example.other']);
@@ -266,7 +471,7 @@ describe('window plugin toolbar', () => {
   it('deduplicates busy opens and shows an opening failure with recovery', async () => {
     const opened = deferred<void>(); api.openWindow.mockReturnValueOnce(opened.promise); await mount();
     const click = actions[0].onClick!;
-    act(() => { click(); click(); });
+    await act(async () => { click(); click(); });
     expect(api.openWindow).toHaveBeenCalledTimes(1); expect(actions[0].disabled).toBe(true);
     await act(async () => { opened.reject(new Error('plugin.backend.error.window_unavailable')); });
     expect(actions[0].disabled).toBe(false);
@@ -276,7 +481,7 @@ describe('window plugin toolbar', () => {
   });
   it('does not show a late open error after replacement or disable', async () => {
     const opened = deferred<void>(); api.openWindow.mockReturnValueOnce(opened.promise); await mount();
-    act(() => actions[0].onClick?.());
+    await act(async () => { actions[0].onClick?.(); });
     api.list.mockResolvedValue([plugin('new')]);
     await act(async () => window.dispatchEvent(new Event(PLUGIN_LIFECYCLE_EVENT)));
     await act(async () => { opened.reject(new Error('plugin.backend.error.window_unavailable')); });

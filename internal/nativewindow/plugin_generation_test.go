@@ -75,13 +75,13 @@ func TestPluginUserCloseAllowsExplicitReopen(t *testing.T) {
 func TestPluginReloadCanRestartDocumentHeartbeatSequence(t *testing.T) {
 	c, _ := newPluginTestController(t)
 	entry := openPluginTestWindow(t, c, "test.one")
-	if response := servePluginTest(c, entry, http.MethodPost, pluginBridgePrefix+"heartbeat", `{"sequence":100}`); response.Code != 204 {
+	if response := servePluginTest(c, entry, http.MethodPost, pluginBridgePrefix+"heartbeat", `{"sequence":100}`); response.Code != 200 {
 		t.Fatal(response.Body.String())
 	}
 	if response := servePluginTest(c, entry, http.MethodGet, pluginBridgePrefix+"bootstrap", ""); response.Code != 200 {
 		t.Fatal(response.Body.String())
 	}
-	if response := servePluginTest(c, entry, http.MethodPost, pluginBridgePrefix+"heartbeat", `{"sequence":1}`); response.Code != 204 {
+	if response := servePluginTest(c, entry, http.MethodPost, pluginBridgePrefix+"heartbeat", `{"sequence":1}`); response.Code != 200 {
 		t.Fatal("reload heartbeat rejected")
 	}
 }
