@@ -20,6 +20,7 @@ const options: Parameters<typeof useSidebarV2ContextMenu>[0] = {
   resolveMessagePublishTarget: () => undefined, pluginConnectionActions: [entry], runPluginConnectionAction: run,
   addSqlLog: vi.fn(), handleV2TableContextMenuAction: vi.fn(), handleV2TableGroupContextMenuAction: vi.fn(),
   handleV2DatabaseContextMenuAction: vi.fn(), handleV2ConnectionContextMenuAction: vi.fn(), handleV2ConnectionGroupContextMenuAction: vi.fn(),
+  selectedNodesRef: { current: [] }, handleV2MultiTableContextMenuAction: vi.fn(),
 };
 let menu: ReturnType<typeof useSidebarV2ContextMenu>;
 let renderer: ReturnType<typeof create> | undefined;

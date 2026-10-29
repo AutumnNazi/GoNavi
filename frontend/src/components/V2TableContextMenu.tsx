@@ -56,6 +56,7 @@ export {
   type V2TableContextMenuStats,
 } from './v2ContextMenu/v2TableContextMenuMeta';
 export { V2TableContextMenuView, type V2TableContextMenuActionKey } from './v2ContextMenu/V2TableContextMenuView';
+export { V2MultiTableContextMenuView, type V2MultiTableContextMenuActionKey } from './v2ContextMenu/V2MultiTableContextMenuView';
 
 export type V2TableGroupContextMenuActionKey =
   | 'new-table'
