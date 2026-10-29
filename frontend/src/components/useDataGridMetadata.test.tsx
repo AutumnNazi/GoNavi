@@ -162,4 +162,21 @@ describe('useDataGridMetadata execution context', () => {
     expect(backendApp.DBGetColumns).not.toHaveBeenCalled();
     expect(backendApp.DBGetIndexes).not.toHaveBeenCalled();
   });
+
+  it('keeps backfilled metadata when the statement cannot be pinned to a single table', async () => {
+    const snapshots: ReturnType<typeof useDataGridMetadata>[] = [];
+    // 复杂 SQL（JOIN/GROUP BY）定位不到单表，metadata 由执行计划按列名回填后经 initialColumnMetaMap 传入
+    const columns = { name: { type: 'character varying(50)', comment: '客户姓名' } };
+    const MultiTableQuery = () => {
+      snapshots.push(useDataGridMetadata({
+        connections: [], connectionId: 'conn-1', dbName: 'app', tableName: '',
+        exportScope: 'queryResult', visibleColumnNames: ['name'], loading: false,
+        initialColumnMetaMap: columns,
+      }));
+      return null;
+    };
+    await act(async () => { renderer = create(<MultiTableQuery />); });
+    expect(snapshots[0].columnMetaMap).toBe(columns);
+    expect(backendApp.DBGetColumns).not.toHaveBeenCalled();
+  });
 });

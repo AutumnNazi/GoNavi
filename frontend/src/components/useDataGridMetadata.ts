@@ -350,13 +350,19 @@ export const useDataGridMetadata = (ctx: UseDataGridMetadataContext) => {
 
   const allTableColumnNames = useMemo(() => {
     const metaColumns = Object.keys(resolvedColumnMetaMap);
+    if (exportScope !== 'table') {
+      // 查询结果页：元数据可能来自按列名回填的多张源表，只能暴露结果集里真实出现的列，
+      // 否则快捷过滤/复制语句会提示并使用结果集中不存在的列。
+      if (metaColumns.length === 0) return [];
+      const metaColumnKeys = new Set(metaColumns.map((name) => String(name || '').toLowerCase()));
+      return visibleColumnNames.filter((columnName: string) => (
+        columnName !== GONAVI_ROW_KEY && metaColumnKeys.has(String(columnName || '').toLowerCase())
+      ));
+    }
     if (metaColumns.length > 0) {
       return metaColumns;
     }
-    if (exportScope === 'table') {
-      return visibleColumnNames.filter((columnName: string) => columnName !== GONAVI_ROW_KEY);
-    }
-    return [];
+    return visibleColumnNames.filter((columnName: string) => columnName !== GONAVI_ROW_KEY);
   }, [resolvedColumnMetaMap, exportScope, visibleColumnNames]);
 
   return {
