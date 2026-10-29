@@ -9407,7 +9407,7 @@
   "plugin.ai_provider.latency": "задержка {{ms}}мс",
   "plugin.ai_provider.model": "Объявленная модель",
   "plugin.ai_provider.model_count": "{{count}} моделей",
-  "plugin.ai_provider.model_limits": "Объявленный контекст: {{context}} · максимальный вывод: {{output}}",
+  "plugin.ai_provider.model_limits": "Контекстное окно: {{context}} · максимальный вывод: {{output}}",
   "plugin.ai_provider.name": "Название конфигурации",
   "plugin.ai_provider.no_images": "Этот провайдер не объявляет ввод изображений; управление рассуждением и транспорт CLI по-прежнему не поддерживаются.",
   "plugin.ai_provider.offline": "Офлайн",
@@ -13773,5 +13773,10 @@
   "plugin.ai_provider.models_none": "Снять выбор",
   "plugin.ai_provider.models_filter": "Фильтр моделей…",
   "plugin.ai_provider.models_save": "Сохранить модели",
-  "plugin.ai_provider.context_placeholder": "напр. 1M / 500K / 1000000"
+  "plugin.ai_provider.context_placeholder": "напр. 1M / 500K / 1000000",
+  "ai_service.backend.error.model_catalog_unavailable": "Каталог models.dev недоступен: {{detail}}",
+  "plugin.ai_provider.models_add": "Добавить ID модели",
+  "plugin.ai_provider.models_add_placeholder": "напр. claude-fable-5-1",
+  "plugin.ai_provider.models_source": "Названия и размер контекста берутся из models.dev; для неизвестных моделей показывается исходный ID.",
+  "plugin.ai_provider.models_catalog_unavailable": "Каталог models.dev сейчас недоступен; показываются исходные ID моделей."
 }

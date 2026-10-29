@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -26,6 +27,18 @@ func validPackageIcon(value string) bool {
 	return len(value) <= maxPackageIconPathBytes && packageIconPattern.MatchString(value) && safePackagePath(value) == nil
 }
 
+// validAIProviderBaseURL accepts only an absolute http(s) endpoint without userinfo or fragment.
+func validAIProviderBaseURL(raw string) bool {
+	if len(raw) > 2048 || strings.TrimSpace(raw) != raw {
+		return false
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" || parsed.RawQuery != "" {
+		return false
+	}
+	return parsed.Scheme == "http" || parsed.Scheme == "https"
+}
+
 // AIProvider declares a native, host-managed text/tool/image model transport with static models.
 // Both capability booleans must be explicit in JSON; supportsImages is an opt-in claim that the
 // plugin accepts bounded image content parts on its start request. Icon is an optional
@@ -35,6 +48,9 @@ type AIProvider struct {
 	Name           string    `json:"name"`
 	Command        string    `json:"command"`
 	Icon           string    `json:"icon,omitempty"`
+	// DefaultBaseURL prefills the provider form when the user has not typed an endpoint.
+	// It is a presentation default: the plugin still owns its fallback when the field is empty.
+	DefaultBaseURL string    `json:"defaultBaseUrl,omitempty"`
 	Models         []AIModel `json:"models"`
 	SupportsTools  bool      `json:"supportsTools"`
 	SupportsImages bool      `json:"supportsImages"`

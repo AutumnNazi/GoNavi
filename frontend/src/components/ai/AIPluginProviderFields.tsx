@@ -2,6 +2,7 @@ import { Button, Form, Input } from 'antd';
 import type { PluginAIModel } from '../../plugins/aiProvider/types';
 import type { AccountKeyItem } from './aiPluginProviderAccountApi';
 import AIPluginProviderKeyPicker from './AIPluginProviderKeyPicker';
+import { modelCatalogWindowFor, type ModelCatalogEntry } from '../../utils/modelsDevCatalog';
 
 type CopyText = (key: string, params?: Record<string, string | number>) => string;
 
@@ -14,13 +15,17 @@ interface AIPluginProviderFieldsProps {
   onReplaceKey: () => void;
   onPickedKey?: () => void;
   keyChoices?: AccountKeyItem[];
+  /** models.dev 公共目录索引：网关别名在这里可能写着比清单更大的窗口。 */
+  catalog?: Map<string, ModelCatalogEntry>;
 }
 
 export default function AIPluginProviderFields({
-  t, model, hasSavedKey, savedKeyHint, replacingKey, onReplaceKey, onPickedKey, keyChoices,
+  t, model, hasSavedKey, savedKeyHint, replacingKey, onReplaceKey, onPickedKey, keyChoices, catalog,
 }: AIPluginProviderFieldsProps) {
   const showSavedKey = hasSavedKey && !replacingKey;
   const choices = (keyChoices ?? []).filter((item) => item.key);
+  // 与芯片徽标同一口径：目录认得就用目录窗口，否则用插件声明的那个。
+  const contextWindow = model ? modelCatalogWindowFor(catalog, model.id) || model.contextWindow : 0;
   return (
     <div className="gn-field-grid">
       <div className="gn-field is-wide">
@@ -57,7 +62,7 @@ export default function AIPluginProviderFields({
 
       {model && (
         <p className="gn-field-note is-wide">
-          {t('plugin.ai_provider.model_limits', { context: model.contextWindow, output: model.maxOutputTokens })}
+          {t('plugin.ai_provider.model_limits', { context: contextWindow, output: model.maxOutputTokens })}
         </p>
       )}
     </div>

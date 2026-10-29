@@ -10,7 +10,7 @@ import (
 
 // UnmarshalJSON rejects omitted capability flags and ambiguous declaration keys atomically.
 func (provider *AIProvider) UnmarshalJSON(data []byte) error {
-	if err := validateAIObject(data, []string{"id", "name", "command", "models", "supportsTools", "supportsImages"}, []string{"icon"}); err != nil {
+	if err := validateAIObject(data, []string{"id", "name", "command", "models", "supportsTools", "supportsImages"}, []string{"icon", "defaultBaseUrl"}); err != nil {
 		return err
 	}
 	type wireProvider AIProvider

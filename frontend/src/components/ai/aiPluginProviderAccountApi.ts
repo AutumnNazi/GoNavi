@@ -147,16 +147,29 @@ export const parseAccountGroups = (raw: unknown): AccountGroupItem[] | null => {
 
 export const parseCreatedAccountKey = (raw: unknown): AccountKeyItem | null => parseKeyItem(raw);
 
-export const parseScanAccountModels = (raw: unknown): string[] | null => {
+// 网关扫描到的一个模型：id 必需；name / contextWindow 是网关自己给的元数据，
+// 网关没给时留空，由 models.dev 公共目录补齐。
+export interface ScannedModelItem {
+  id: string;
+  name: string;
+  contextWindow: number;
+}
+
+export const parseScanAccountModels = (raw: unknown): ScannedModelItem[] | null => {
   const data = asRecord(raw);
   const items = data?.items;
   if (!Array.isArray(items)) return null;
-  const ids: string[] = [];
+  const scanned: ScannedModelItem[] = [];
+  const seen = new Set<string>();
   for (const item of items) {
-    const id = asText(asRecord(item)?.id);
-    if (id && !ids.includes(id)) ids.push(id);
+    const row = asRecord(item);
+    const id = asText(row?.id);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const context = asNumber(row?.contextWindow) ?? 0;
+    scanned.push({ id, name: asText(row?.name), contextWindow: context > 0 ? context : 0 });
   }
-  return ids;
+  return scanned;
 };
 
 export const parseAccountKeyID = (raw: unknown): string | null => {

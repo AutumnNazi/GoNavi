@@ -285,7 +285,7 @@ export function decodeManifest(data: unknown): PluginManifest {
       }
       for (const item of c.aiProviders) {
         const provider = requireRecord(item);
-        onlyKeys(provider, ['id', 'name', 'command', 'icon', 'models', 'supportsTools', 'supportsImages']);
+        onlyKeys(provider, ['id', 'name', 'command', 'icon', 'defaultBaseUrl', 'models', 'supportsTools', 'supportsImages']);
         if (!validAIProvider(provider, commands)) invalid();
       }
     }

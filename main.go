@@ -172,6 +172,8 @@ func main() {
 	// OnStartup in a goroutine, so the AI panel can read the provider list before
 	// InitializeLifecycle has run and would otherwise be told nothing is configured.
 	aiservice.PreloadConfig(aiService)
+	// models.dev 公共目录在后台预热：设置页第一次打开模型区时不必等网络。
+	aiservice.WarmModelCatalog(aiService)
 	agentTools, agentToolsErr := newDesktopAgentToolCatalog(application, aiService)
 	if agentToolsErr != nil {
 		logger.Warnf("初始化 AI Agent 工具目录失败：%v", agentToolsErr)

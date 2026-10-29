@@ -9,6 +9,8 @@ type AIProvider struct {
 	Name           string    `json:"name"`
 	Command        string    `json:"command"`
 	Icon           string    `json:"icon,omitempty"`
+	// DefaultBaseURL is a presentation default the host may prefill into the provider form.
+	DefaultBaseURL string    `json:"defaultBaseUrl,omitempty"`
 	Models         []AIModel `json:"models"`
 	SupportsTools  bool      `json:"supportsTools"`
 	SupportsImages bool      `json:"supportsImages"`

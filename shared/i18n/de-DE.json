@@ -9407,7 +9407,7 @@
   "plugin.ai_provider.latency": "Latenz {{ms}}ms",
   "plugin.ai_provider.model": "Deklariertes Modell",
   "plugin.ai_provider.model_count": "{{count}} Modelle",
-  "plugin.ai_provider.model_limits": "Deklarierter Kontext: {{context}} · maximale Ausgabe: {{output}}",
+  "plugin.ai_provider.model_limits": "Kontextfenster: {{context}} · maximale Ausgabe: {{output}}",
   "plugin.ai_provider.name": "Konfigurationsname",
   "plugin.ai_provider.no_images": "Dieser Provider deklariert keine Bildeingabe; Denksteuerung und CLI-Transport bleiben nicht unterstützt.",
   "plugin.ai_provider.offline": "Offline",
@@ -13773,5 +13773,10 @@
   "plugin.ai_provider.models_none": "Auswahl aufheben",
   "plugin.ai_provider.models_filter": "Modelle filtern…",
   "plugin.ai_provider.models_save": "Modelle speichern",
-  "plugin.ai_provider.context_placeholder": "z. B. 1M / 500K / 1000000"
+  "plugin.ai_provider.context_placeholder": "z. B. 1M / 500K / 1000000",
+  "ai_service.backend.error.model_catalog_unavailable": "Der models.dev-Katalog ist nicht verfügbar: {{detail}}",
+  "plugin.ai_provider.models_add": "Modell-ID hinzufügen",
+  "plugin.ai_provider.models_add_placeholder": "z. B. claude-fable-5-1",
+  "plugin.ai_provider.models_source": "Namen und Kontextfenster stammen von models.dev; unbekannte Modelle behalten ihre rohe ID.",
+  "plugin.ai_provider.models_catalog_unavailable": "Der models.dev-Katalog ist derzeit nicht verfügbar; es werden rohe Modell-IDs angezeigt."
 }

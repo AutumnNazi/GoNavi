@@ -33,11 +33,14 @@ export function decodePluginAIProviders(data: unknown): readonly PluginAIProvide
       || !['disabled', 'starting', 'running', 'stopping', 'faulted', 'blocked'].includes(value.state)
       || (value.available && (value.state !== 'running' || value.generation === 0))
       || (value.reason !== undefined && !pluginAIText(value.reason, 256))
-      || (value.icon !== undefined && (typeof value.icon !== 'string' || value.icon.length > MAX_PLUGIN_AI_ICON_LENGTH || !PLUGIN_AI_ICON.test(value.icon)))) return invalidPluginAICatalog();
+      || (value.icon !== undefined && (typeof value.icon !== 'string' || value.icon.length > MAX_PLUGIN_AI_ICON_LENGTH || !PLUGIN_AI_ICON.test(value.icon)))
+      || (value.defaultBaseUrl !== undefined
+        && (typeof value.defaultBaseUrl !== 'string' || value.defaultBaseUrl.length > 2048 || !/^https?:\/\/[^\s]+$/.test(value.defaultBaseUrl)))) return invalidPluginAICatalog();
     const count = (counts.get(identity.pluginId) ?? 0) + 1;
     if (seen.has(identity.type) || count > 8) return invalidPluginAICatalog();
     seen.add(identity.type); counts.set(identity.pluginId, count);
-    return Object.freeze({ ...identity, name: value.name, icon: value.icon as string | undefined, models: decodeModels(value.models), supportsTools: value.supportsTools,
+    return Object.freeze({ ...identity, name: value.name, icon: value.icon as string | undefined,
+      defaultBaseUrl: value.defaultBaseUrl as string | undefined, models: decodeModels(value.models), supportsTools: value.supportsTools,
       supportsImages: value.supportsImages, version: value.version, digest: value.digest, generation: value.generation,
       available: value.available, state: value.state as PluginAIProviderView['state'], reason: value.reason as string | undefined });
   }));

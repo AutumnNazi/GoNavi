@@ -9407,7 +9407,7 @@
   "plugin.ai_provider.latency": "{{ms}}ms latency",
   "plugin.ai_provider.model": "Declared model",
   "plugin.ai_provider.model_count": "{{count}} models",
-  "plugin.ai_provider.model_limits": "Declared context: {{context}} · maximum output: {{output}}",
+  "plugin.ai_provider.model_limits": "Context window: {{context}} · maximum output: {{output}}",
   "plugin.ai_provider.name": "Configuration name",
   "plugin.ai_provider.no_images": "This provider does not declare image input; thinking controls and CLI transport remain unsupported.",
   "plugin.ai_provider.offline": "Offline",
@@ -13773,5 +13773,10 @@
   "plugin.ai_provider.models_none": "Clear",
   "plugin.ai_provider.models_filter": "Filter models…",
   "plugin.ai_provider.models_save": "Save models",
-  "plugin.ai_provider.context_placeholder": "e.g. 1M / 500K / 1000000"
+  "plugin.ai_provider.context_placeholder": "e.g. 1M / 500K / 1000000",
+  "ai_service.backend.error.model_catalog_unavailable": "The models.dev catalog is unavailable: {{detail}}",
+  "plugin.ai_provider.models_add": "Add model ID",
+  "plugin.ai_provider.models_add_placeholder": "e.g. claude-fable-5-1",
+  "plugin.ai_provider.models_source": "Names and context windows come from models.dev; models the catalog does not know keep their raw ID.",
+  "plugin.ai_provider.models_catalog_unavailable": "The models.dev catalog is unavailable right now; raw model IDs are shown."
 }

@@ -35,6 +35,8 @@ type Service struct {
 	secretStore        secretstore.SecretStore
 	configChanged      func()
 	localizer          *i18n.Localizer
+	// modelCatalog 是 models.dev 公共目录的懒加载状态，见 service_model_catalog.go。
+	modelCatalog modelCatalogHolder
 	// configLoadMu serializes the persisted-config read and guards configLoadedDir,
 	// so a binding call that arrives while startup is still loading never reads a
 	// half-applied snapshot and never loads the file twice.

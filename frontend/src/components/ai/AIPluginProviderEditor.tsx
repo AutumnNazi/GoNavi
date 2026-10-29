@@ -16,6 +16,7 @@ import { usePluginProviderHealth } from './usePluginProviderHealth';
 import { normalizeProviderModels } from '../../utils/aiProviderManagement';
 import AIPluginProviderModelScan from './AIPluginProviderModelScan';
 import AIPluginProviderContextPicker from './AIPluginProviderContextPicker';
+import { useModelsDevCatalog } from './useModelsDevCatalog';
 
 // The provider form reads top-down as three ruled blocks: account, model access, advanced.
 // Identity and the raw plugin:<id>:<provider> type live in the header only, never as body text.
@@ -31,6 +32,12 @@ export function AIPluginProviderEditor(props: AISettingsProvidersSectionProps) {
   const model = source?.models.find((item) => item.id === modelId);
   const unsupported = hasForeignPluginProviderSettings({ ...editingProvider, ...form.getFieldsValue(true), ...values }, source?.supportsImages === true);
   const customModels = normalizeProviderModels(values?.customModels);
+  // 模型区展示统一走 models.dev 公共目录：插件声明的模型与已选模型一起去补名称与窗口。
+  const modelsDev = useModelsDevCatalog([
+    ...(source?.models.map((item) => item.id) ?? []),
+    ...customModels,
+    modelId,
+  ]);
   const applyModels = (ids: string[]) => {
     // The bubble list is the only model picker now, so the active model follows
     // it: keep the current one when still selected, otherwise take the first.
@@ -115,6 +122,7 @@ export function AIPluginProviderEditor(props: AISettingsProvidersSectionProps) {
         <AIPluginProviderFields
           t={t}
           model={model}
+          catalog={modelsDev.index}
           hasSavedKey={hasSavedKey}
           savedKeyHint={hintSource.length >= 8 ? hintSource.slice(-4) : ''}
           replacingKey={replacingKey}
@@ -127,11 +135,14 @@ export function AIPluginProviderEditor(props: AISettingsProvidersSectionProps) {
           pluginId={source?.pluginId}
           t={t}
           selected={customModels}
+          declared={source?.models}
+          catalog={modelsDev.index}
           onChange={applyModels}
           onSave={editingProvider?.id ? props.onSaveProvider : undefined}
           saving={props.loading}
         />
         <AIPluginProviderContextPicker
+          catalog={modelsDev.index}
           modelIds={customModels.length > 0 ? customModels : [modelId]}
           value={typeof values?.contextWindow === 'number' ? values.contextWindow : 0}
           onChange={(next) => {

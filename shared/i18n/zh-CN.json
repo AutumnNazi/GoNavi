@@ -9407,7 +9407,7 @@
   "plugin.ai_provider.latency": "延迟 {{ms}}ms",
   "plugin.ai_provider.model": "声明的模型",
   "plugin.ai_provider.model_count": "{{count}} 个模型",
-  "plugin.ai_provider.model_limits": "声明上下文：{{context}} · 最大输出：{{output}}",
+  "plugin.ai_provider.model_limits": "上下文窗口：{{context}} · 最大输出：{{output}}",
   "plugin.ai_provider.name": "配置名称",
   "plugin.ai_provider.no_images": "本 Provider 未声明图像输入；思考强度控制与 CLI 传输仍不支持。",
   "plugin.ai_provider.offline": "离线",
@@ -13773,5 +13773,10 @@
   "plugin.ai_provider.models_none": "全不选",
   "plugin.ai_provider.models_filter": "筛选模型…",
   "plugin.ai_provider.models_save": "保存模型",
-  "plugin.ai_provider.context_placeholder": "如 1M / 500K / 1000000"
+  "plugin.ai_provider.context_placeholder": "如 1M / 500K / 1000000",
+  "ai_service.backend.error.model_catalog_unavailable": "models.dev 公共目录不可用：{{detail}}",
+  "plugin.ai_provider.models_add": "添加模型 ID",
+  "plugin.ai_provider.models_add_placeholder": "如 claude-fable-5-1",
+  "plugin.ai_provider.models_source": "名称与上下文窗口来自 models.dev；目录里没有的模型显示原始 ID。",
+  "plugin.ai_provider.models_catalog_unavailable": "models.dev 目录暂不可用，先显示原始模型 ID。"
 }

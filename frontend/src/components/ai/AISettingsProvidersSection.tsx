@@ -13,6 +13,7 @@ import { applyKeyOrder, applyPresetOrder, movePresetWithinGroup } from './provid
 import { AIProviderSortableGroup, AIProviderSortableItem } from './AIProviderSortable';
 import { passThroughHintTooltip } from '../common/tooltipTiming';
 import { useAIProviderLayout, workspaceClassName } from './useAIProviderLayout';
+import { useProviderModelCatalogLabels } from '../aiSettings/hooks/useProviderModelCatalogLabels';
 import './AISettingsProvidersSection.css';
 import { getProviderEndpointType, getProviderEndpointTypes, type ProviderEndpointType } from '../../utils/aiProviderEndpoints';
 import { t as catalogTranslate } from '../../i18n/catalog';
@@ -452,7 +453,7 @@ const AISettingsProvidersSection: React.FC<AISettingsProvidersSectionProps> = ({
   };
   React.useEffect(() => () => { upstreamRequestRef.current += 1; }, []);
   const removedModelSet = new Set<string>(watchedRemovedModels);
-  const modelOptions = buildProviderModelOptions(
+  const modelOptions = useProviderModelCatalogLabels(buildProviderModelOptions(
     modelCatalog?.models,
     upstreamModels,
     [watchedModel, watchedInlineCompletionModel, activeCLICapability?.defaultModel,
@@ -460,7 +461,7 @@ const AISettingsProvidersSection: React.FC<AISettingsProvidersSectionProps> = ({
     usesLocalCLI ? [] : activePresetConnection?.models,
     watchedCustomModels,
     watchedDisabledModels,
-  ).filter((option) => !removedModelSet.has(option.value));
+  ).filter((option) => !removedModelSet.has(option.value)));
   const disabledModels = new Set<string>(watchedDisabledModels);
   const enabledModelOptions = modelOptions.filter((option) => !disabledModels.has(option.value));
   const activeCatalogModel = String(watchedModel || modelCatalog?.defaultModel || '').trim();

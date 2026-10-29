@@ -9407,7 +9407,7 @@
   "plugin.ai_provider.latency": "遅延 {{ms}}ms",
   "plugin.ai_provider.model": "宣言されたモデル",
   "plugin.ai_provider.model_count": "{{count}} モデル",
-  "plugin.ai_provider.model_limits": "宣言コンテキスト: {{context}}・最大出力: {{output}}",
+  "plugin.ai_provider.model_limits": "コンテキストウィンドウ: {{context}}・最大出力: {{output}}",
   "plugin.ai_provider.name": "設定名",
   "plugin.ai_provider.no_images": "このプロバイダーは画像入力を宣言していません。思考設定と CLI 接続は引き続き未対応です。",
   "plugin.ai_provider.offline": "オフライン",
@@ -13773,5 +13773,10 @@
   "plugin.ai_provider.models_none": "選択解除",
   "plugin.ai_provider.models_filter": "モデルを絞り込む…",
   "plugin.ai_provider.models_save": "モデルを保存",
-  "plugin.ai_provider.context_placeholder": "例 1M / 500K / 1000000"
+  "plugin.ai_provider.context_placeholder": "例 1M / 500K / 1000000",
+  "ai_service.backend.error.model_catalog_unavailable": "models.dev の共通カタログを利用できません：{{detail}}",
+  "plugin.ai_provider.models_add": "モデル ID を追加",
+  "plugin.ai_provider.models_add_placeholder": "例: claude-fable-5-1",
+  "plugin.ai_provider.models_source": "名称とコンテキストウィンドウは models.dev から取得します。カタログに無いモデルは元の ID を表示します。",
+  "plugin.ai_provider.models_catalog_unavailable": "models.dev のカタログが一時的に利用できないため、元のモデル ID を表示します。"
 }

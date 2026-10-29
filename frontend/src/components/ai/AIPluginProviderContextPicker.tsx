@@ -1,32 +1,39 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useOptionalI18n } from '../../i18n/provider';
 import { t as translate } from '../../i18n';
-import { useModelDevContexts } from '../../plugins/aiProvider/useModelDevContexts';
-import { contextTiersFor, formatContextWindow, parseContextWindow, snapContextWindow } from '../../plugins/aiProvider/modelDevContexts';
+import {
+  contextTierOptions,
+  formatContextTier,
+  parseContextTier,
+  snapContextTier,
+  type ModelCatalogEntry,
+} from '../../utils/modelsDevCatalog';
 
-// Context window as tier bubbles instead of a free number: models.dev decides the
-// tiers a selected model can reach, and a typed 1M / 1000000 lands on the same tier.
+// Context window as tier bubbles instead of a free number: the models.dev catalog
+// (plus whatever the plugin declares) decides the tiers a selected model can
+// reach, and a typed 1M / 1000000 lands on the same tier.
 export default function AIPluginProviderContextPicker({
-  modelIds, value, onChange,
+  modelIds, value, onChange, catalog,
 }: {
   modelIds: string[];
   value?: number;
   onChange: (value: number) => void;
+  /** models.dev 公共目录索引；未提供时退回常用档位。 */
+  catalog?: Map<string, ModelCatalogEntry>;
 }) {
   const t = useOptionalI18n()?.t ?? translate;
-  const contexts = useModelDevContexts();
-  const tiers = useMemo(() => contextTiersFor(contexts, modelIds), [contexts, modelIds]);
-  const current = snapContextWindow(value ?? 0);
-  const [draft, setDraft] = useState(formatContextWindow(value));
-  useEffect(() => { setDraft(formatContextWindow(value)); }, [value]);
+  const tiers = useMemo(() => contextTierOptions(catalog, modelIds), [catalog, modelIds]);
+  const current = snapContextTier(value ?? 0);
+  const [draft, setDraft] = useState(formatContextTier(value));
+  useEffect(() => { setDraft(formatContextTier(value)); }, [value]);
 
   const commit = () => {
-    const parsed = parseContextWindow(draft);
+    const parsed = parseContextTier(draft);
     if (parsed === null) {
-      setDraft(formatContextWindow(value));
+      setDraft(formatContextTier(value));
       return;
     }
-    setDraft(formatContextWindow(parsed));
+    setDraft(formatContextTier(parsed));
     onChange(parsed);
   };
 
@@ -42,7 +49,7 @@ export default function AIPluginProviderContextPicker({
             aria-pressed={current === tier}
             onClick={() => onChange(tier)}
           >
-            {formatContextWindow(tier)}
+            {formatContextTier(tier)}
           </button>
         ))}
         <input

@@ -26,6 +26,7 @@ type PluginProviderView struct {
 	ID             string           `json:"id"`
 	Name           string           `json:"name"`
 	Icon           string           `json:"icon,omitempty"`
+	DefaultBaseURL string           `json:"defaultBaseUrl,omitempty"`
 	Models         []plugin.AIModel `json:"models"`
 	SupportsTools  bool             `json:"supportsTools"`
 	SupportsImages bool             `json:"supportsImages"`
@@ -90,7 +91,7 @@ func (f *PluginFactory) Catalog(ctx context.Context) ([]PluginProviderView, erro
 			if typ == "" {
 				continue
 			}
-			result = append(result, PluginProviderView{Type: typ, PluginID: status.Manifest.ID, ID: decl.ID, Name: decl.Name,
+			result = append(result, PluginProviderView{Type: typ, PluginID: status.Manifest.ID, ID: decl.ID, Name: decl.Name, DefaultBaseURL: decl.DefaultBaseURL,
 				Icon: pluginProviderIcon(ctx, manager, status.Manifest.ID, decl.Icon), Models: append([]plugin.AIModel{}, decl.Models...),
 				SupportsTools: decl.SupportsTools, SupportsImages: decl.SupportsImages, Version: status.Manifest.Version,
 				Digest: status.Digest, Generation: status.Generation, Available: reason == "", State: status.State, Reason: reason})

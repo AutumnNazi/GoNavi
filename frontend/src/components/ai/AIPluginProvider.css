@@ -187,11 +187,14 @@
 .gn-model-scan-search { display: flex; align-items: center; height: 32px; padding: 0 12px; border: 1px solid var(--gn-200); border-radius: 8px; background: #fff; }
 .gn-model-scan-search input { flex: 1; min-width: 0; height: 30px; border: none; outline: none; background: transparent; font-size: 12px; color: var(--gn-800); }
 .gn-model-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.gn-model-chip { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; font-size: 12px; color: var(--gn-600); background: #fff; border: 1px solid var(--gn-200); border-radius: 999px; cursor: pointer; }
+.gn-model-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 260px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; height: 28px; padding: 0 10px; font-size: 12px; color: var(--gn-600); background: #fff; border: 1px solid var(--gn-200); border-radius: 999px; cursor: pointer; }
 .gn-model-chip:hover { border-color: var(--gn-300); }
 .gn-model-chip.is-on { color: var(--gn-primary); background: #eff6ff; border-color: #bfdbfe; }
 .gn-model-chip-check { font-size: 10px; line-height: 1; }
 .gn-model-scan-message { margin: 0; font-size: 12px; color: #dc2626; }
+.gn-model-scan-input { width: 220px; height: 28px; padding: 0 10px; font-size: 12px; font-family: var(--gn-mono); color: var(--gn-800); background: #fff; border: 1px solid var(--gn-200); border-radius: 999px; outline: none; }
+.gn-model-scan-input:focus { border-color: var(--gn-primary); }
+.gn-model-scan-source { margin: 0; font-size: 11px; color: var(--gn-400); }
 .gn-model-scan-save { height: 28px; padding: 0 14px; font-size: 12px; font-weight: 500; color: #fff; background: var(--gn-900); border: 1px solid var(--gn-900); border-radius: 999px; cursor: pointer; }
 .gn-model-scan-save:disabled { opacity: .4; cursor: not-allowed; }
 .gn-context-picker { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }

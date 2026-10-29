@@ -6,6 +6,8 @@ export interface PluginAIProviderView {
   id: string;
   name: string;
   icon?: string;
+  /** Gateway the plugin ships with; the editor prefills it when baseUrl is empty. */
+  defaultBaseUrl?: string;
   models: readonly PluginAIModel[];
   supportsTools: boolean;
   supportsImages: boolean;

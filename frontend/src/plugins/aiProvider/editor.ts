@@ -41,7 +41,8 @@ export function buildPluginProviderPayload(values: Record<string, unknown>, edit
   if (purpose === 'test') {
     const model = source?.models.find((item) => item.id === result.model);
     if (!source?.available || source.type !== type || !model) throw new PluginAPIError('plugin.ai_provider.error.unavailable');
-    if (result.contextWindow && result.contextWindow > model.contextWindow) throw new PluginAPIError('plugin.ai_provider.error.context');
+    // 声明的窗口是默认值不是上限：网关别名在 models.dev 公共目录里可能写着更大的窗口，
+    // 用户按目录改成 1M 是明确选择，取值范围由 validatePluginProviderConfig 兜底。
   }
   return result;
 }
