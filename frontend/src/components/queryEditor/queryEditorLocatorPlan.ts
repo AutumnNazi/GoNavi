@@ -4,6 +4,10 @@ import { buildRpcConnectionConfig } from '../../utils/connectionRpcConfig';
 import { isOracleLikeDialect } from '../../utils/sqlDialect';
 import { extractQueryResultTableRef } from '../../utils/queryResultTable';
 import {
+    resolveQueryResultBackfillDefaultSchema,
+    resolveQueryResultColumnMetaByCandidateTables,
+} from './queryEditorColumnMetaBackfill';
+import {
     buildAllColumnsLocator,
     type EditRowLocator,
     ORACLE_ROWID_LOCATOR_COLUMN,
@@ -50,6 +54,7 @@ export const resolveQueryLocatorPlan = async ({
     forceReadOnly,
     schemaName,
     allowOracleRowID = true,
+    deferColumnMetaBackfill = false,
 }: {
     statement: string;
     originalStatement?: string;
@@ -59,6 +64,7 @@ export const resolveQueryLocatorPlan = async ({
     forceReadOnly: boolean;
     allowOracleRowID?: boolean;
     schemaName?: string;
+    deferColumnMetaBackfill?: boolean;
 }): Promise<QueryStatementPlan> => {
     const plan: QueryStatementPlan = {
         originalSql: originalStatement || statement,
@@ -68,9 +74,12 @@ export const resolveQueryLocatorPlan = async ({
     if (resolveSqlEditorOperationKeyword(statement, dbType) !== 'select') {
         return plan;
     }
-    const defaultSchema = isOracleLikeDialect(dbType)
-        ? resolveOracleLikeExecutionSchemaName(config, currentDb)
-        : String(schemaName || '').trim();
+    const defaultSchema = resolveQueryResultBackfillDefaultSchema({
+        dbType,
+        currentDb,
+        schemaName,
+        config,
+    });
     // 即使只读也要解析 tableRef：结果页列类型/注释依赖 metadataDbName + tableName
     try {
         const previewTableRef = extractQueryResultTableRef(statement, dbType, currentDb, defaultSchema);
@@ -79,6 +88,25 @@ export const resolveQueryLocatorPlan = async ({
         }
     } catch {
         // ignore parse errors; keep bare plan
+    }
+    if (!plan.tableRef && !deferColumnMetaBackfill) {
+        // 复杂 SQL（JOIN/GROUP BY/派生表/逗号多表）定位不到单表，但源表仍可知：
+        // 按列名把类型和注释回填到结果列上，匹配不到的列自然不显示类型行。
+        // 只服务显示，不设置 tableRef，因此不会解锁可写回定位。
+        try {
+            const fallbackColumnMetaMap = await resolveQueryResultColumnMetaByCandidateTables({
+                statement,
+                dbType,
+                currentDb,
+                defaultSchema,
+                config,
+            });
+            if (fallbackColumnMetaMap) {
+                plan.columnMetaMap = fallbackColumnMetaMap;
+            }
+        } catch {
+            // 回填失败只影响表头的类型/注释，不影响执行本身
+        }
     }
     if (forceReadOnly) return plan;
 
