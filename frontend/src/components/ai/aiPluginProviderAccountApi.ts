@@ -20,11 +20,18 @@ export interface AccountKeyItem {
   name: string;
   key: string;
   status: string;
+  groupId?: string;
   groupName: string;
   rateMultiplier?: number;
   quota?: number;
   quotaUsed?: number;
   lastUsedAt: string;
+}
+
+export interface AccountGroupItem {
+  id: string;
+  name: string;
+  rateMultiplier?: number;
 }
 
 export interface AccountPoll {
@@ -96,14 +103,18 @@ export const parseAccountStarted = (raw: unknown): { started: boolean } | null =
   return data ? { started: data.started === true } : null;
 };
 
+const asID = (value: unknown): string =>
+  asText(value) || (typeof value === 'number' && Number.isFinite(value) ? String(value) : '');
+
 const parseKeyItem = (raw: unknown): AccountKeyItem | null => {
   const item = asRecord(raw);
   if (!item) return null;
   return {
-    id: asText(item.id),
+    id: asID(item.id),
     name: asText(item.name),
     key: asText(item.key),
     status: asText(item.status),
+    groupId: asID(item.groupId),
     groupName: asText(item.groupName),
     rateMultiplier: asNumber(item.rateMultiplier),
     quota: asNumber(item.quota),
@@ -119,14 +130,49 @@ export const parseAccountKeys = (raw: unknown): AccountKeyItem[] | null => {
   return items.map(parseKeyItem).filter((item): item is AccountKeyItem => item !== null);
 };
 
+export const parseAccountGroups = (raw: unknown): AccountGroupItem[] | null => {
+  const data = asRecord(raw);
+  const items = data?.items;
+  if (!Array.isArray(items)) return null;
+  const parsed: AccountGroupItem[] = [];
+  for (const item of items) {
+    const row = asRecord(item);
+    if (!row) continue;
+    const id = asID(row.id);
+    if (!id) continue;
+    parsed.push({ id, name: asText(row.name), rateMultiplier: asNumber(row.rateMultiplier) });
+  }
+  return parsed;
+};
+
+export const parseCreatedAccountKey = (raw: unknown): AccountKeyItem | null => parseKeyItem(raw);
+
+export const parseScanAccountModels = (raw: unknown): string[] | null => {
+  const data = asRecord(raw);
+  const items = data?.items;
+  if (!Array.isArray(items)) return null;
+  const ids: string[] = [];
+  for (const item of items) {
+    const id = asText(asRecord(item)?.id);
+    if (id && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+};
+
+export const parseAccountKeyID = (raw: unknown): string | null => {
+  const id = asID(asRecord(raw)?.id);
+  return id || null;
+};
+
 export async function invokeAccountCommand<T>(
   pluginId: string,
   command: string,
   parse: (raw: unknown) => T | null,
+  payload: Record<string, unknown> = {},
 ): Promise<AccountOutcome<T>> {
   let result: unknown;
   try {
-    result = await PluginInvoke(pluginId, command, '{}');
+    result = await PluginInvoke(pluginId, command, JSON.stringify(payload));
   } catch {
     return { kind: 'error', message: '' };
   }
@@ -154,10 +200,26 @@ export const maskAccountKey = (key: string): string => {
   return `${prefix}****${trimmed.slice(-4)}`;
 };
 
+export const accountGroupTone = (name: string): number => {
+  let sum = 0;
+  for (let i = 0; i < name.length; i += 1) sum += name.charCodeAt(i);
+  return sum % 4;
+};
+
+export const accountGroupLabel = (
+  name: string,
+  rate: number | undefined,
+  t: (key: string, params?: Record<string, string | number>) => string,
+): string => {
+  if (!name) return '';
+  if (rate === undefined) return name;
+  return t('plugin.ai_provider.account.group_multiplier', { group: name, rate });
+};
+
 export const formatAccountTime = (value: string): string => {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   const pad = (part: number) => String(part).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };

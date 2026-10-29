@@ -16,6 +16,7 @@ export const EMPTY_STATUS: AccountStatus = {
 
 export interface AccountStatusState {
   visible: boolean;
+  pending: boolean;
   status: AccountStatus | null;
   error: string;
   reset: () => void;
@@ -33,11 +34,13 @@ interface AccountStatusOptions {
 
 export function useAccountStatus({ isMounted, onReady }: AccountStatusOptions): AccountStatusState {
   const [visible, setVisible] = useState(false);
+  const [pending, setPending] = useState(true);
   const [status, setStatus] = useState<AccountStatus | null>(null);
   const [error, setError] = useState('');
 
   const reset = useCallback(() => {
     setVisible(false);
+    setPending(true);
     setStatus(null);
     setError('');
   }, []);
@@ -51,11 +54,13 @@ export function useAccountStatus({ isMounted, onReady }: AccountStatusOptions): 
     if (!isMounted()) return null;
     if (outcome.kind !== 'ok') {
       setVisible(false);
+      setPending(false);
       setStatus(null);
       setError('');
       return null;
     }
     setVisible(true);
+    setPending(false);
     setStatus(outcome.data);
     setError('');
     if (outcome.data.state === 'ready') onReady?.(pluginId);
@@ -75,5 +80,5 @@ export function useAccountStatus({ isMounted, onReady }: AccountStatusOptions): 
     return outcome.data;
   }, [isMounted]);
 
-  return { visible, status, error, reset, setError, markSignedOut, probe, loadStatus };
+  return { visible, pending, status, error, reset, setError, markSignedOut, probe, loadStatus };
 }

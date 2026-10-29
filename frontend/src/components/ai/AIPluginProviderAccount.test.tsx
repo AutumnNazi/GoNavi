@@ -53,7 +53,7 @@ let clipboard: { writeText: ReturnType<typeof vi.fn> };
 
 const commands = () => host.PluginInvoke.mock.calls.map((call) => String(call[1]));
 const buttonByText = (label: string) => [...container.querySelectorAll('button')]
-  .find((item) => (item.textContent ?? '').includes(label));
+  .find((item) => (item.textContent ?? '').includes(label) || item.getAttribute('aria-label') === label);
 const click = async (label: string) => {
   const button = buttonByText(label);
   if (!button) throw new Error(`button not found: ${label}`);
@@ -106,10 +106,10 @@ const renderAccount = () => renderWith(PLUGIN_ID);
 
 // Every command is answered from one map so each test states its scenario once.
 const routeHost = (handlers: Record<string, unknown | (() => unknown)>) => {
-  host.PluginInvoke.mockImplementation(async (_id: string, command: string) => {
+  host.PluginInvoke.mockImplementation(async (_id: string, command: string, args?: string) => {
     const handler = handlers[command];
     if (handler === undefined) return { success: false, message: '', data: null };
-    return typeof handler === 'function' ? (handler as () => unknown)() : handler;
+    return typeof handler === 'function' ? (handler as (payload?: string) => unknown)(args) : handler;
   });
 };
 
@@ -188,19 +188,39 @@ describe('AIPluginProviderAccount', () => {
     expect(container.textContent).toContain('sk-****abcd');
     expect(container.textContent).not.toContain('sk-1234567890abcd');
     expect(container.textContent).toContain('vip ×1.5');
-    expect(container.textContent).toContain('12 / 100');
+    expect(container.textContent).toContain('88 left');
     expect(container.textContent).toContain('Unlimited');
     expect(container.textContent).toContain('Never');
+    expect(container.textContent).toContain('Signed in as');
+    expect(container.textContent).toContain('(2)');
 
     await click('Show');
     expect(container.textContent).toContain('sk-1234567890abcd');
+    expect(container.textContent).toContain('sk-zzzzzzzzzzzz9999');
+    await click('Hide');
+    expect(container.textContent).toContain('sk-****abcd');
+    expect(container.textContent).not.toContain('sk-1234567890abcd');
 
     await act(async () => {
-      const copyButtons = [...container.querySelectorAll('button')].filter((item) => item.textContent === 'Copy');
+      const copyButtons = [...container.querySelectorAll('button')].filter((item) => item.getAttribute('aria-label') === 'Copy');
       if (copyButtons.length === 0) throw new Error('copy button not found');
       copyButtons[0].click();
     });
     expect(clipboard.writeText).toHaveBeenCalledWith('sk-1234567890abcd');
+  });
+
+  it('applies a listed key through the use action', async () => {
+    const onUseKey = vi.fn();
+    routeHost({ 'account.status': readyStatus, 'account.keys': keyItems });
+    await act(async () => {
+      root.render(
+        <I18nProvider preference="en-US" onPreferenceChange={() => undefined}>
+          <AIPluginProviderAccount pluginId={PLUGIN_ID} onUseKey={onUseKey} />
+        </I18nProvider>,
+      );
+    });
+    await click('Use');
+    expect(onUseKey).toHaveBeenCalledWith('sk-1234567890abcd');
   });
 
   it('returns to the signed out state after logging out', async () => {
@@ -214,6 +234,129 @@ describe('AIPluginProviderAccount', () => {
     expect(container.textContent).toContain('Sign in with browser');
     expect(container.textContent).not.toContain('user@example.com');
     expect(container.textContent).not.toContain('Available balance');
+  });
+
+  it('creates a key with the chosen name and group', async () => {
+    let payload = '';
+    routeHost({
+      'account.status': readyStatus,
+      'account.keys': keyItems,
+      'account.groups': wrap({ state: 'ready', items: [{ id: 34, name: 'vip', rateMultiplier: 1.5 }] }),
+      'account.createKey': (args?: string) => {
+        payload = String(args ?? '');
+        return wrap({
+          id: 3, name: 'GoNavi', key: 'sk-newkeyvalue', status: 'active',
+          groupName: 'vip', quota: 0, quotaUsed: 0, lastUsedAt: '',
+        });
+      },
+    });
+    await renderAccount();
+    expect(commands()).toContain('account.groups');
+    await click('New key');
+    const input = container.querySelector('.gn-account-key-input') as HTMLInputElement;
+    await act(async () => {
+      (container.querySelector('.gn-account-key-select-btn') as HTMLButtonElement).click();
+    });
+    const option = [...container.querySelectorAll('.gn-account-group-option')]
+      .find((item) => (item.textContent ?? '').includes('vip ×1.5'));
+    expect(option?.querySelector('.gn-account-key-group')).toBeTruthy();
+    await act(async () => {
+      const descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+      descriptor?.set?.call(input, 'GoNavi');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      option?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await click('Create');
+    expect(JSON.parse(payload)).toEqual({ name: 'GoNavi', groupId: 34 });
+    expect(commands()).toContain('account.createKey');
+  });
+
+  it('updates a listed key name and group', async () => {
+    let payload = '';
+    routeHost({
+      'account.status': readyStatus,
+      'account.keys': wrap({
+        state: 'ready',
+        items: [{
+          id: 12, name: 'default', key: 'sk-1234567890abcd', status: 'active',
+          groupId: 34, groupName: 'vip', rateMultiplier: 1.5, quota: 0, quotaUsed: 0, lastUsedAt: '',
+        }],
+      }),
+      'account.groups': wrap({ state: 'ready', items: [{ id: 34, name: 'vip', rateMultiplier: 1.5 }] }),
+      'account.updateKey': (args?: string) => {
+        payload = String(args ?? '');
+        return wrap({
+          id: 12, name: 'renamed', key: 'sk-1234567890abcd', status: 'active',
+          groupId: 34, groupName: 'vip', quota: 0, quotaUsed: 0, lastUsedAt: '',
+        });
+      },
+    });
+    await renderAccount();
+    await click('Edit');
+    const input = container.querySelector('.gn-account-key-input') as HTMLInputElement;
+    await act(async () => {
+      const descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+      descriptor?.set?.call(input, 'renamed');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await click('Save');
+    expect(JSON.parse(payload)).toEqual({ id: 12, name: 'renamed', groupId: 34 });
+    expect(commands()).toContain('account.updateKey');
+  });
+
+  it('deletes a listed key after confirmation', async () => {
+    let payload = '';
+    routeHost({
+      'account.status': readyStatus,
+      'account.keys': wrap({
+        state: 'ready',
+        items: [{
+          id: 12, name: 'default', key: 'sk-1234567890abcd', status: 'active',
+          groupName: 'vip', quota: 0, quotaUsed: 0, lastUsedAt: '',
+        }],
+      }),
+      'account.deleteKey': (args?: string) => {
+        payload = String(args ?? '');
+        return wrap({ id: 12 });
+      },
+    });
+    await renderAccount();
+    await click('Delete');
+    expect(commands()).not.toContain('account.deleteKey');
+    await click('Confirm delete');
+    expect(JSON.parse(payload)).toEqual({ id: 12 });
+    expect(commands()).toContain('account.deleteKey');
+  });
+
+  it('searches keys by name and pages five at a time', async () => {
+    const many = wrap({
+      state: 'ready',
+      items: Array.from({ length: 7 }, (_, index) => ({
+        id: `k${index}`,
+        name: index === 6 ? 'needle-key' : `key-${index}`,
+        key: `sk-${index}xxx${index}yyy${index}zzz${index}`,
+        status: 'active',
+        groupName: '',
+        quota: 0,
+        quotaUsed: 0,
+        lastUsedAt: '',
+      })),
+    });
+    routeHost({ 'account.status': readyStatus, 'account.keys': many });
+    await renderAccount();
+    expect(container.querySelectorAll('.gn-account-key')).toHaveLength(5);
+    expect(container.textContent).toContain('1–5 / 7');
+    await click('Next page');
+    expect(container.querySelectorAll('.gn-account-key')).toHaveLength(2);
+    const input = container.querySelector('.gn-account-keys-search input') as HTMLInputElement;
+    await act(async () => {
+      const descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+      descriptor?.set?.call(input, 'needle');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(container.querySelectorAll('.gn-account-key')).toHaveLength(1);
+    expect(container.textContent).toContain('needle-key');
+    expect(container.querySelector('.gn-account-keys-pager')).toBeNull();
   });
 
   it('keeps the balance area when the keys command fails', async () => {

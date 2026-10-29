@@ -9,8 +9,12 @@ export type { AccountKeysView };
 
 export interface PluginProviderAccountController {
   visible: boolean;
+  pending: boolean;
   status: AccountStatus | null;
   keys: AccountKeysView;
+  groups: ReturnType<typeof useAccountKeys>['groups'];
+  creating: boolean;
+  mutating: boolean;
   signedOut: boolean;
   polling: boolean;
   busy: boolean;
@@ -20,6 +24,10 @@ export interface PluginProviderAccountController {
   onLogin: () => void;
   onRefresh: () => void;
   onLogout: () => void;
+  onOpenCreate: () => void;
+  onCreateKey: (name: string, groupId?: number) => Promise<{ ok: boolean; message: string }>;
+  onUpdateKey: (id: string, name: string, groupId?: number) => Promise<{ ok: boolean; message: string }>;
+  onDeleteKey: (id: string) => Promise<{ ok: boolean; message: string }>;
 }
 
 export function usePluginProviderAccount(pluginId: string | undefined): PluginProviderAccountController {
@@ -37,9 +45,12 @@ export function usePluginProviderAccount(pluginId: string | undefined): PluginPr
     };
   }, []);
 
-  const { keys, loadKeys, resetKeys } = useAccountKeys(isMounted);
-  const onKeysReady = useCallback((id: string) => { void loadKeys(id); }, [loadKeys]);
-  const { visible, status, error, reset, setError, markSignedOut, probe, loadStatus } =
+  const { keys, groups, creating, mutating, loadKeys, loadGroups, createKey, updateKey, deleteKey, resetKeys } = useAccountKeys(isMounted);
+  const onKeysReady = useCallback((id: string) => {
+    void loadKeys(id);
+    void loadGroups(id);
+  }, [loadKeys, loadGroups]);
+  const { visible, pending, status, error, reset, setError, markSignedOut, probe, loadStatus } =
     useAccountStatus({ isMounted, onReady: onKeysReady });
   const resetAll = useCallback(() => {
     reset();
@@ -52,8 +63,11 @@ export function usePluginProviderAccount(pluginId: string | undefined): PluginPr
     setTimedOut(false);
     if (!pluginId) return;
     const next = await loadStatus(pluginId);
-    if (next?.state === 'ready') await loadKeys(pluginId);
-  }, [pluginId, loadStatus, loadKeys]);
+    if (next?.state === 'ready') {
+      await loadKeys(pluginId);
+      await loadGroups(pluginId);
+    }
+  }, [pluginId, loadStatus, loadKeys, loadGroups]);
 
   const onPollTimeout = useCallback(() => {
     setPolling(false);
@@ -81,10 +95,13 @@ export function usePluginProviderAccount(pluginId: string | undefined): PluginPr
     void (async () => {
       setRefreshing(true);
       const next = await loadStatus(pluginId);
-      if (next?.state === 'ready') await loadKeys(pluginId);
+      if (next?.state === 'ready') {
+        await loadKeys(pluginId);
+        await loadGroups(pluginId);
+      }
       if (mounted.current) setRefreshing(false);
     })();
-  }, [pluginId, refreshing, loadStatus, loadKeys]);
+  }, [pluginId, refreshing, loadStatus, loadKeys, loadGroups]);
 
   const onLogout = useCallback(() => {
     if (!pluginId || busy) return;
@@ -105,10 +122,33 @@ export function usePluginProviderAccount(pluginId: string | undefined): PluginPr
     })();
   }, [pluginId, busy, markSignedOut, resetKeys, setError]);
 
+  const onOpenCreate = useCallback(() => {
+    if (pluginId) void loadGroups(pluginId);
+  }, [pluginId, loadGroups]);
+
+  const onCreateKey = useCallback(async (name: string, groupId?: number) => {
+    if (!pluginId) return { ok: false, message: '' };
+    return createKey(pluginId, name, groupId);
+  }, [pluginId, createKey]);
+
+  const onUpdateKey = useCallback(async (id: string, name: string, groupId?: number) => {
+    if (!pluginId) return { ok: false, message: '' };
+    return updateKey(pluginId, id, name, groupId);
+  }, [pluginId, updateKey]);
+
+  const onDeleteKey = useCallback(async (id: string) => {
+    if (!pluginId) return { ok: false, message: '' };
+    return deleteKey(pluginId, id);
+  }, [pluginId, deleteKey]);
+
   return {
     visible,
+    pending,
     status,
     keys,
+    groups,
+    creating,
+    mutating,
     signedOut: status?.state !== 'ready',
     polling,
     busy,
@@ -118,5 +158,9 @@ export function usePluginProviderAccount(pluginId: string | undefined): PluginPr
     onLogin,
     onRefresh,
     onLogout,
+    onOpenCreate,
+    onCreateKey,
+    onUpdateKey,
+    onDeleteKey,
   };
 }
