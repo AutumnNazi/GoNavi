@@ -45,6 +45,7 @@ export interface PluginManifest {
   description?: string;
   author?: string;
   license?: string;
+  icon?: string;
   minHostVersion?: string;
   permissions: string[];
   permissionNotes?: Record<string, string>;

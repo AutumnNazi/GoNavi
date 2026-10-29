@@ -13,16 +13,17 @@ const maxAIProviderTypeBytes = len("plugin:") + 128 + 1 + 64
 
 var aiProviderIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,63}$`)
 var aiModelIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:/@+-]{0,127}$`)
-var aiProviderIconPattern = regexp.MustCompile(`(?i)\.(png|jpe?g|webp|gif)$`)
+var packageIconPattern = regexp.MustCompile(`(?i)\.(png|jpe?g|webp|gif)$`)
 
-const maxAIProviderIconPathBytes = 256
-const maxAIProviderIconBytes = 64 << 10
+const maxPackageIconPathBytes = 256
+const maxPackageIconBytes = 64 << 10
 
-// validAIProviderIcon accepts only a package-relative raster image path. SVG is rejected
+// validPackageIcon accepts only a package-relative raster image path. SVG is rejected
 // because the host renders the icon through the main window; the file itself is read with
-// a byte limit and content sniffed before it becomes a data URL.
-func validAIProviderIcon(value string) bool {
-	return len(value) <= maxAIProviderIconPathBytes && aiProviderIconPattern.MatchString(value) && safePackagePath(value) == nil
+// a byte limit and content sniffed before it becomes a data URL. Both manifest icons and
+// declared AI provider icons share this rule.
+func validPackageIcon(value string) bool {
+	return len(value) <= maxPackageIconPathBytes && packageIconPattern.MatchString(value) && safePackagePath(value) == nil
 }
 
 // AIProvider declares a native, host-managed text/tool/image model transport with static models.
@@ -97,7 +98,7 @@ func validateAIProviders(manifest Manifest, commands map[string]bool) error {
 		if !validAIProviderText(declaration.Name) || !commands[declaration.Command] {
 			return fmt.Errorf("invalid ai provider name or undeclared command")
 		}
-		if declaration.Icon != "" && !validAIProviderIcon(declaration.Icon) {
+		if declaration.Icon != "" && !validPackageIcon(declaration.Icon) {
 			return fmt.Errorf("invalid ai provider icon")
 		}
 		if err := validateAIModels(declaration.Models); err != nil {

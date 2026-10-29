@@ -2,8 +2,6 @@ package provider
 
 import (
 	"context"
-	"encoding/base64"
-	"net/http"
 	"sort"
 
 	"GoNavi-Wails/internal/plugin"
@@ -115,20 +113,9 @@ func pluginProviderIcon(ctx context.Context, manager *plugin.Manager, pluginID, 
 	return providerIconDataURL(data)
 }
 
-// providerIconDataURL accepts only sniffable raster images. SVG is deliberately omitted:
-// the icon is rendered in the main window, so an executable vector document is not needed.
-func providerIconDataURL(data []byte) string {
-	if len(data) == 0 {
-		return ""
-	}
-	mime := http.DetectContentType(data)
-	switch mime {
-	case "image/png", "image/jpeg", "image/webp", "image/gif":
-		return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data)
-	default:
-		return ""
-	}
-}
+// providerIconDataURL reuses the host raster rule so plugin logos and provider icons cannot
+// drift apart: sniff the content, refuse anything that is not a bounded raster image.
+func providerIconDataURL(data []byte) string { return plugin.RasterIconDataURL(data) }
 
 func pluginProviderPermission(m plugin.Manifest) bool {
 	if m.Backend == nil {

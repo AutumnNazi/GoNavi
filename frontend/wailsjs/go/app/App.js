@@ -1298,6 +1298,10 @@ export function PluginExporters() {
   return window['go']['app']['App']['PluginExporters']();
 }
 
+export function PluginIcon(arg1) {
+  return window['go']['app']['App']['PluginIcon'](arg1);
+}
+
 export function PluginInspect(arg1) {
   return window['go']['app']['App']['PluginInspect'](arg1);
 }

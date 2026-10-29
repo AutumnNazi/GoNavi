@@ -665,6 +665,8 @@ export function PluginDataSources():Promise<connection.QueryResult>;
 
 export function PluginExporters():Promise<connection.QueryResult>;
 
+export function PluginIcon(arg1:string):Promise<string>;
+
 export function PluginInspect(arg1:string):Promise<connection.QueryResult>;
 
 export function PluginInstall(arg1:string,arg2:string,arg3:boolean):Promise<connection.QueryResult>;

@@ -3,6 +3,7 @@ import { useI18n } from '../../i18n/provider';
 import type { PluginStatus } from '../../plugins/types';
 import type { PluginManagerState } from '../../plugins/usePluginManager';
 import { PluginLifecycleControls } from './PluginLifecycleControls';
+import { PluginLogo } from './PluginLogo';
 import { PluginCommandsPanel } from './PluginCommandsPanel';
 import { PluginDataSourceSummary } from './PluginDataSourceSummary';
 import { PluginAIProviderSummary } from './PluginAIProviderSummary';
@@ -29,12 +30,15 @@ export function PluginCard({ plugin, manager, expanded, onToggle, update, onUpda
   const permissions = plugin.manifest.permissions ?? [];
   return <article className="plugin-card plugin-installed-card">
     <header className="plugin-card-header">
-      <div>
-        <Typography.Title level={5}>{plugin.manifest.name}</Typography.Title>
-        <code className="plugin-identity">{id}</code>
-        <div className="plugin-installed-version-row">
-          <Tag className="plugin-installed-version">{plugin.manifest.version}</Tag>
-          {update && <Tag className="plugin-update-available">{t('plugin.update.available', { version: update.version })}</Tag>}
+      <div className="plugin-installed-heading">
+        <PluginLogo pluginId={id} name={plugin.manifest.name} version={plugin.manifest.version} />
+        <div className="plugin-installed-heading-text">
+          <Typography.Title level={5}>{plugin.manifest.name}</Typography.Title>
+          <code className="plugin-identity">{id}</code>
+          <div className="plugin-installed-version-row">
+            <Tag className="plugin-installed-version">{plugin.manifest.version}</Tag>
+            {update && <Tag className="plugin-update-available">{t('plugin.update.available', { version: update.version })}</Tag>}
+          </div>
         </div>
       </div>
       <Button type="link" size="small" aria-haspopup="dialog" aria-expanded={expanded} onClick={onToggle}>

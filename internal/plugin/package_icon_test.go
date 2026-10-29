@@ -32,7 +32,7 @@ func TestAIProviderIconMustBePackagedFile(t *testing.T) {
 	if _, err = InspectPackage(context.Background(), dir); err != nil {
 		t.Fatalf("packaged icon rejected: %v", err)
 	}
-	if err = os.WriteFile(icon, make([]byte, maxAIProviderIconBytes+1), 0o600); err != nil {
+	if err = os.WriteFile(icon, make([]byte, maxPackageIconBytes+1), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = InspectPackage(context.Background(), dir); err == nil {

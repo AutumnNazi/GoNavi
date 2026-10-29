@@ -19,6 +19,7 @@ type Manifest struct {
 	Description     string            `json:"description,omitempty"`
 	Author          string            `json:"author,omitempty"`
 	License         string            `json:"license,omitempty"`
+	Icon            string            `json:"icon,omitempty"`
 	MinHostVersion  string            `json:"minHostVersion,omitempty"`
 	Permissions     []string          `json:"permissions"`
 	PermissionNotes map[string]string `json:"permissionNotes,omitempty"`

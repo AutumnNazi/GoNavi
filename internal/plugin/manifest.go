@@ -82,6 +82,9 @@ func ValidateManifest(m Manifest) error {
 	if m.MinHostVersion != "" && !validVersion(m.MinHostVersion) {
 		return fmt.Errorf("invalid minimum host version")
 	}
+	if m.Icon != "" && !validPackageIcon(m.Icon) {
+		return fmt.Errorf("invalid plugin icon path")
+	}
 	if len(m.Permissions) > 64 || len(m.Requires) > 64 {
 		return fmt.Errorf("too many permissions or dependencies")
 	}

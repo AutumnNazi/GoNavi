@@ -215,12 +215,20 @@ func (s *packageScan) validateEntries(m Manifest) error {
 			return err
 		}
 	}
+	if m.Icon != "" {
+		if err := check(m.Icon); err != nil {
+			return err
+		}
+		if sizes[m.Icon] > maxPackageIconBytes {
+			return fmt.Errorf("plugin icon exceeds the 64 KiB limit")
+		}
+	}
 	for _, provider := range m.Contributes.AIProviders {
 		if provider.Icon != "" {
 			if err := check(provider.Icon); err != nil {
 				return err
 			}
-			if sizes[provider.Icon] > maxAIProviderIconBytes {
+			if sizes[provider.Icon] > maxPackageIconBytes {
 				return fmt.Errorf("ai provider icon exceeds the 64 KiB limit")
 			}
 		}
