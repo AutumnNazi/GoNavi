@@ -26,6 +26,13 @@ import { MenuProps, message } from 'antd';
 import { buildSidebarNodeMenuItems } from './sidebarNodeMenu';
 import { buildAgentAssetsWorkbenchTab } from '../../utils/agentAssetsTab';
 import {
+  copySidebarMultiTableNames,
+  runSidebarMultiTableDrop,
+  runSidebarMultiTableTruncate,
+} from './sidebarMultiTableActions';
+import { useSidebarTableDragSelect } from './useSidebarTableDragSelect';
+import type { V2MultiTableContextMenuActionKey } from '../V2TableContextMenu';
+import {
   confirmRemoveAgentIntegration,
   openAgentIntegrationEditor,
 } from './sidebarAgentIntegrationActions';
@@ -87,6 +94,7 @@ export interface UseSidebarContextMenusInput {
   mergeExpandedTreeKeys: SidebarTreeDataApi['mergeExpandedTreeKeys'];
   setSidebarSelectedKeys: SidebarSearchStateApi['setSidebarSelectedKeys'];
   selectedNodesRef: SidebarSearchStateApi['selectedNodesRef'];
+  treeContainerRef: SidebarTreeViewStateApi['treeContainerRef'];
   scrollSidebarTreeToKey: SidebarTreeDataApi['scrollSidebarTreeToKey'];
   activeContext: SidebarStoreStateApi['activeContext'];
   activeTab: SidebarStoreStateApi['activeTab'];
@@ -201,6 +209,7 @@ export const useSidebarContextMenus = ({
   resolveMessagePublishTarget, openSchemaVisibilitySettings, supportsConnectionVisibility,
   addSqlLog, refreshV2TableContextMenuStatsRef, sidebarTableMetadataFields, sidebarTreeDropPreview,
   treeDataRef, setSearchValue, mergeExpandedTreeKeys, setSidebarSelectedKeys, selectedNodesRef,
+  treeContainerRef,
   scrollSidebarTreeToKey, activeContext, activeTab, addTab, clearStaleHostStateOnSelection,
   closeV2CommandSearch, commandSearchFlatItems, connectionIds, queryCapableConnectionIds,
   findTreeNodeByKeyRef, locateObjectInSidebar, loadDatabases, onDoubleClick,
@@ -267,6 +276,39 @@ export const useSidebarContextMenus = ({
       message.error(t('plugin.connection_actions.failed'));
     }
   }, []);
+  // 表节点拖选 / Shift 范围选择：在树容器捕获阶段自处理，不改树的单选与双击链路。
+  useSidebarTableDragSelect({
+      treeContainerRef,
+      setSidebarSelectedKeys,
+      selectedNodesRef,
+      findTreeNodeByKeyRef,
+      treeDataRef,
+  });
+
+  // 多表右键菜单动作：批量能力走批量模块；逐表语义（打开数据）与批量工作台
+  // 入口转发给单表 action 处理器。
+  const multiTableDangerDeps = { buildRuntimeConfig, loadTables, getDatabaseNodeRef };
+  const handleV2MultiTableContextMenuAction = (nodes: any[], action: V2MultiTableContextMenuActionKey) => {
+      switch (action) {
+          case 'open-data':
+              nodes.forEach((node) => handleV2TableContextMenuAction(node, 'open-data'));
+              return;
+          case 'batch-tables':
+              if (nodes[0]) handleV2TableContextMenuAction(nodes[0], 'batch-tables');
+              return;
+          case 'copy-table-name':
+              void copySidebarMultiTableNames(nodes);
+              return;
+          case 'truncate-table':
+              void runSidebarMultiTableTruncate(multiTableDangerDeps, nodes);
+              return;
+          case 'drop-table':
+              void runSidebarMultiTableDrop(multiTableDangerDeps, nodes);
+              return;
+          default:
+              return;
+      }
+  };
 
   const {
       contextMenu,
@@ -286,6 +328,8 @@ export const useSidebarContextMenus = ({
       tableSortPreference,
       pinnedSidebarTables,
       pinnedSidebarDatabases,
+      selectedNodesRef,
+      handleV2MultiTableContextMenuAction,
       getConnectionNodeForAction,
       buildRuntimeConfig,
       extractObjectName,
