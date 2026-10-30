@@ -227,6 +227,10 @@ var ErrDisabled = errors.New("plugin is not enabled and running")
 // ErrNotFound means an installed package or declared command does not exist.
 var ErrNotFound = errors.New("plugin or command not found")
 
+// ErrEnabled rejects removal while the record still wants to run: the caller must stop the
+// plugin first so no live process keeps executing a package that is being deleted.
+var ErrEnabled = errors.New("plugin is still enabled; disable it before removal")
+
 // ErrBusy means the bounded invocation budget is exhausted.
 var ErrBusy = errors.New("plugin invocation capacity exhausted")
 

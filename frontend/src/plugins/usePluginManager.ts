@@ -4,7 +4,7 @@ import { notifyPluginLifecycle } from './events';
 import { refreshPluginDataSources, revokePluginDataSourceAvailability } from './dataSource/discovery';
 import { invalidatePackagedSkillPreviews } from './skills/invalidation';
 import { invalidatePluginAIProviders } from './aiProvider/invalidation';
-import { pluginErrorText } from './apiResult';
+import { PluginAPIError, pluginErrorText } from './apiResult';
 import { usePluginRevocation } from './usePluginRevocation';
 import type { PluginStatus, PluginRuntimeInfo } from './types';
 
@@ -67,6 +67,19 @@ export function usePluginManager() {
       if (alive.current && actions.current[id] === action) { delete intents.current[id]; setBusy((current) => ({ ...current, [id]: false })); void refresh(); }
     }
   }, [refresh, revoke]);
+  // 后端要求先停用再删除；进程收尾期间 ActiveGeneration 仍占着包，插件会以 busy 拒绝，
+  // 这里做一次有界重试，让用户点一次「移除」就能完成。
+  const removePluginPackage = useCallback(async (id: string, purge: boolean) => {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await pluginAPI.remove(id, purge);
+      } catch (cause) {
+        const busy = cause instanceof PluginAPIError && cause.key === 'plugin.backend.error.plugin_busy';
+        if (!busy || attempt >= 5) throw cause;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+    }
+  }, []);
   const remove = useCallback(async (id: string, purge: boolean) => {
     const wasRevoked = isRevoked(id);
     revokePluginDataSourceAvailability(id); invalidatePackagedSkillPreviews(id); invalidatePluginAIProviders({ pluginId: id, reason: 'removed' });
@@ -78,7 +91,9 @@ export function usePluginManager() {
     setActionError('');
     revoke(id, true);
     try {
-      await pluginAPI.remove(id, purge);
+      // 停用是删除的前置条件，替用户完成；已停用的插件再次停用是幂等的。
+      await pluginAPI.setEnabled(id, false).catch(() => undefined);
+      await removePluginPackage(id, purge);
       notifyPluginLifecycle();
       if (alive.current && actions.current[id] === action) setPlugins((items) => items.filter((p) => p.manifest.id !== id));
     } catch (cause) {
@@ -94,7 +109,7 @@ export function usePluginManager() {
         void refresh();
       }
     }
-  }, [refresh, isRevoked, revoke]);
+  }, [refresh, isRevoked, revoke, removePluginPackage]);
   return { plugins, runtime, loading, error: actionError || error, busy, revoked, refresh, setEnabled, remove };
 }
 export type PluginManagerState = ReturnType<typeof usePluginManager>;

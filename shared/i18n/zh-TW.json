@@ -9459,6 +9459,7 @@
   "plugin.backend.error.page_result_too_large": "結果過大，無法在外掛頁面中顯示。",
   "plugin.backend.error.page_unknown_method": "外掛頁面請求了無法使用的宿主方法。",
   "plugin.backend.error.page_unsupported": "此宿主能力尚未開放。",
+  "plugin.backend.error.plugin_enabled": "此外掛仍在啟用中，請先停用後再移除。",
   "plugin.backend.error.plugin_busy": "外掛仍在結束上一個操作，請稍後重試。",
   "plugin.backend.error.plugin_disabled": "外掛未啟用，請先啟用。",
   "plugin.backend.error.rate_limited": "市集忙碌或請求受限，請稍後重試。",

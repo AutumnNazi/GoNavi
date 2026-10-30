@@ -9459,6 +9459,7 @@
   "plugin.backend.error.page_result_too_large": "Результат слишком велик для страницы плагина.",
   "plugin.backend.error.page_unknown_method": "Страница плагина запросила недоступный метод хоста.",
   "plugin.backend.error.page_unsupported": "Эта возможность хоста пока недоступна.",
+  "plugin.backend.error.plugin_enabled": "Плагин всё ещё включён. Отключите его перед удалением.",
   "plugin.backend.error.plugin_busy": "Плагин всё ещё завершает предыдущую операцию. Повторите попытку позже.",
   "plugin.backend.error.plugin_disabled": "Плагин не включён. Сначала включите его.",
   "plugin.backend.error.rate_limited": "Каталог занят или ограничивает запросы. Повторите позже.",

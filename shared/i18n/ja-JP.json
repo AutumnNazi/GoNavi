@@ -9459,6 +9459,7 @@
   "plugin.backend.error.page_result_too_large": "結果が大きすぎるためプラグインページに表示できません。",
   "plugin.backend.error.page_unknown_method": "プラグインページが未対応のホストメソッドを要求しました。",
   "plugin.backend.error.page_unsupported": "このホスト機能はまだ利用できません。",
+  "plugin.backend.error.plugin_enabled": "このプラグインは有効なままです。無効化してから削除してください。",
   "plugin.backend.error.plugin_busy": "プラグインは前の処理を終えている途中です。しばらくしてから再試行してください。",
   "plugin.backend.error.plugin_disabled": "プラグインが有効になっていません。先に有効化してください。",
   "plugin.backend.error.rate_limited": "マーケットが混雑中または要求数制限中です。後で再試行してください。",

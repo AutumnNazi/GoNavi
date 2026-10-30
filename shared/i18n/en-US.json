@@ -9459,6 +9459,7 @@
   "plugin.backend.error.page_result_too_large": "The result is too large for the plugin page.",
   "plugin.backend.error.page_unknown_method": "The plugin page requested a host method that is not available.",
   "plugin.backend.error.page_unsupported": "This host capability is not available yet.",
+  "plugin.backend.error.plugin_enabled": "This plugin is still enabled. Disable it before removing.",
   "plugin.backend.error.plugin_busy": "The plugin is still finishing the previous operation. Try again shortly.",
   "plugin.backend.error.plugin_disabled": "The plugin is not enabled. Enable it first.",
   "plugin.backend.error.rate_limited": "The marketplace is busy or rate-limited. Try again later.",

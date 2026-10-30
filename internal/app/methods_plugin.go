@@ -36,6 +36,9 @@ func (a *App) pluginResult(value any, err error) connection.QueryResult {
 		if errors.Is(err, plugin.ErrNotFound) {
 			return a.pluginFailure("not_found")
 		}
+		if errors.Is(err, plugin.ErrEnabled) {
+			return a.pluginFailure("plugin_enabled")
+		}
 		// A stale or mistyped package path is an OS condition, not a plugin lifecycle state:
 		// reporting it as operation_failed told the user to "check the plugin status" instead
 		// of the path that does not exist.

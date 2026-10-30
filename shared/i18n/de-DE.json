@@ -9459,6 +9459,7 @@
   "plugin.backend.error.page_result_too_large": "Das Ergebnis ist zu groß für die Plugin-Seite.",
   "plugin.backend.error.page_unknown_method": "Die Plugin-Seite hat eine nicht verfügbare Host-Methode angefordert.",
   "plugin.backend.error.page_unsupported": "Diese Host-Funktion ist noch nicht verfügbar.",
+  "plugin.backend.error.plugin_enabled": "Dieses Plugin ist noch aktiviert. Deaktivieren Sie es, bevor Sie es entfernen.",
   "plugin.backend.error.plugin_busy": "Das Plugin schließt noch den vorherigen Vorgang ab. Versuchen Sie es gleich erneut.",
   "plugin.backend.error.plugin_disabled": "Das Plugin ist nicht aktiviert. Aktivieren Sie es zuerst.",
   "plugin.backend.error.rate_limited": "Der Marktplatz ist ausgelastet oder begrenzt Anfragen. Später erneut versuchen.",
