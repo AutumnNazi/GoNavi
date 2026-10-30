@@ -15,6 +15,7 @@ func defaultPluginCapabilities() pluginCapabilities {
 	page := pluginCapabilityChannelPage
 	shared := page | pluginCapabilityChannelWindow | pluginCapabilityChannelBackend
 	desktopWeb := pluginCapabilityRuntimeDesktop | pluginCapabilityRuntimeWeb
+	desktop := pluginCapabilityRuntimeDesktop
 	dataTimeout := 30 * time.Second
 	textResult := 16 << 10
 	dataResult := 256 << 10
@@ -626,6 +627,17 @@ func defaultPluginCapabilities() pluginCapabilities {
 		MaxResultBytes: 1 << 10,
 		Timeout:        5 * time.Second,
 		Handler:        adaptPluginPageCapability(pluginPageNotify),
+	})
+	add(pluginCapabilitySpec{
+		Name:           "system.open-external",
+		Permission:     plugin.OpenExternalPermission,
+		Description:    "Open one http(s) link in the user's default browser; never navigates a host WebView.",
+		Channels:       page | pluginCapabilityChannelWindow,
+		Runtimes:       desktop,
+		MaxArgsBytes:   4 << 10,
+		MaxResultBytes: 1 << 10,
+		Timeout:        5 * time.Second,
+		Handler:        pluginCapabilityOpenExternal,
 	})
 	return capabilities
 }

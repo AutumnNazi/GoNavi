@@ -8,6 +8,7 @@ const knownPermissions: Record<string, string> = {
   'host.log': 'plugin.permission.host_log',
   'host.describe': 'plugin.permission.host_describe',
   'ui.pages': 'plugin.permission.ui_pages',
+  'system.open-external': 'plugin.permission.system_open_external',
   'host.connections.read': 'plugin.permission.host_connections_read',
   'host.connections.credentials': 'plugin.permission.host_connections_credentials',
   'host.metadata.read': 'plugin.permission.host_metadata_read',
