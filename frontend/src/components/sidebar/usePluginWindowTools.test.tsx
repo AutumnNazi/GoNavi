@@ -9,6 +9,10 @@ import { usePluginWindowTools } from './usePluginWindowTools';
 import TitleBarQuickActions from '../TitleBarQuickActions';
 
 const api = vi.hoisted(() => ({ list: vi.fn(), runtimeInfo: vi.fn(), openWindow: vi.fn(), updateWindowPreferences: vi.fn() }));
+const iconHost = vi.hoisted(() => ({ PluginIcon: vi.fn() }));
+vi.mock('../../../wailsjs/go/app/App', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()), PluginIcon: iconHost.PluginIcon,
+}));
 const pageAPI = vi.hoisted(() => ({ pageCall: vi.fn(async () => null) }));
 vi.mock('../../pluginPages/api', () => pageAPI);
 vi.mock('../../plugins/api', () => ({ pluginAPI: api }));
@@ -40,6 +44,7 @@ async function mount() {
 
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  iconHost.PluginIcon.mockReset(); iconHost.PluginIcon.mockResolvedValue('');
   api.list.mockResolvedValue([plugin()]);
   api.runtimeInfo.mockResolvedValue({ safeMode: false, managementAllowed: true, webRuntime: false });
   api.openWindow.mockResolvedValue(undefined);
@@ -49,6 +54,33 @@ beforeEach(() => {
 afterEach(() => { act(() => root.unmount()); container.remove(); Reflect.deleteProperty(window, '__GONAVI_WEB_RUNTIME__'); vi.resetAllMocks(); });
 
 describe('title bar plugin entries', () => {
+  it('renders a separate installed plugin logo for each explicitly declared toolbar entry', async () => {
+    const first = plugin('icons.page'); first.manifest.name = 'Page Icon'; first.manifest.icon = 'icons/page.png';
+    const second = plugin('icons.window'); second.manifest.name = 'Window Icon'; second.manifest.icon = 'icons/window.png';
+    second.manifest.window = { entry: 'index.html' };
+    api.list.mockResolvedValue([first, second]);
+    const sources: Record<string, string> = { 'icons.page': 'data:image/png;base64,AAAA', 'icons.window': 'data:image/png;base64,BBBB' };
+    iconHost.PluginIcon.mockImplementation(async (id: string) => sources[id] ?? '');
+    await mount();
+    for (const item of [first, second]) {
+      const image = container.querySelector<HTMLImageElement>(`button[aria-label="${item.manifest.name}"] img`);
+      expect(image?.getAttribute('src')).toBe(sources[item.manifest.id]);
+      expect(iconHost.PluginIcon).toHaveBeenCalledWith(item.manifest.id);
+    }
+    expect(actions).toHaveLength(2);
+    expect(api.openWindow).not.toHaveBeenCalled();
+  });
+  it.each(['missing', 'unreadable'])('keeps the default icon when an explicitly declared entry logo is %s', async (mode) => {
+    const item = plugin(`icons.${mode}`); item.manifest.name = 'Icon Fallback';
+    api.list.mockResolvedValue([item]);
+    if (mode === 'unreadable') iconHost.PluginIcon.mockRejectedValue(new Error('icon unavailable'));
+    await mount();
+    const button = container.querySelector<HTMLButtonElement>('button[aria-label="Icon Fallback"]');
+    expect(button).not.toBeNull();
+    expect(button?.querySelector('img')).toBeNull();
+    expect(button?.querySelector('svg')).not.toBeNull();
+    expect(iconHost.PluginIcon).toHaveBeenCalledWith(item.manifest.id);
+  });
   it('lists a page the plugin explicitly attaches to the tools location', async () => {
     await mount();
     expect(actions).toHaveLength(1);

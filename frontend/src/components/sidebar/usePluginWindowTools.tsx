@@ -9,6 +9,7 @@ import { useI18n } from '../../i18n/provider';
 import { useStore } from '../../store';
 import { isWebRuntime } from '../../utils/browserFileTransfer';
 import { TitlebarPluginIcon } from '../titlebar/gonaviTitlebarIcons';
+import { PluginLogo } from '../pluginManager/PluginLogo';
 import type { TitleBarQuickAction } from '../TitleBarQuickActions';
 import { usePluginWindowPreferences } from './usePluginWindowPreferences';
 
@@ -163,7 +164,9 @@ export function usePluginWindowTools(): TitleBarQuickAction[] {
   // 入口位置不取决于页面或窗口；点击时再按插件声明选择打开目标。
   const tools: TitleBarQuickAction[] = catalog.plugins.map((plugin) => ({
     afterAI: true,
-    key: 'plugin-window-' + plugin.manifest.id, label: plugin.manifest.name, icon,
+    key: 'plugin-window-' + plugin.manifest.id, label: plugin.manifest.name,
+    icon: <PluginLogo pluginId={plugin.manifest.id} name={plugin.manifest.name}
+      version={plugin.manifest.version} variant="toolbar" fallback={icon} />,
     disabled: invocation.busy.has(plugin.manifest.id), onClick: () => { void invocation.open(plugin); },
   }));
   const actions: TitleBarQuickAction[] = tools;
