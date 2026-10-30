@@ -8,6 +8,8 @@ import {
 } from '../../compareRepairSql';
 import { createSyncTaskFromCompare } from '../../dataSyncCompareTaskFactory';
 import { setDataSyncHandoff } from '../../../../utils/dataSyncHandoff';
+import { useCompareHtmlExport } from '../../useCompareHtmlExport';
+import type { CompareHtmlExportOutcome } from '../../dataSyncRunHistoryTypes';
 import type { DataSyncWorkbenchTaskLifecycleApi } from './useDataSyncWorkbenchTaskLifecycle';
 import type { DataSyncWorkbenchStateApi } from './useDataSyncWorkbenchState';
 import type { DataSyncWorkbenchShellProps } from '../../DataSyncWorkbenchShell';
@@ -42,6 +44,7 @@ export const useDataSyncWorkbenchDiffActions = ({
   operationBusy, operationError, workbenchFamily, onOpenQueryTab, compareResult, onAskAi,
   onOpenSyncWorkbench, gatewayRef, setOperationError,
 }: UseDataSyncWorkbenchDiffActionsInput) => {
+  const { exportHtml } = useCompareHtmlExport(t);
   const runActionTitle = actionEnabled
     ? t('workbench.start')
     : !selectedTask
@@ -158,6 +161,23 @@ export const useDataSyncWorkbenchDiffActions = ({
       }),
     );
   };
+  const handleExportCompareHtml = async (): Promise<CompareHtmlExportOutcome> => {
+    if (!selectedTask || !compareResult) return { kind: 'cancelled' };
+    // 报告里的两端标识优先用连接名，退化为 ID 时不至于出现空白表头。
+    const outcome = await exportHtml({
+      result: compareResult,
+      compareMode: compareResult.content || selectedTask.compareMode,
+      meta: {
+        taskName: selectedTask.name || t('task_kind.compare'),
+        sourceLabel: selectedTask.source.connectionName || selectedTask.source.connectionId,
+        targetLabel: selectedTask.target.connectionName || selectedTask.target.connectionId,
+      },
+      save: (fileName, content) =>
+        gatewayRef.current!.exportTextFile(fileName, content, 'html'),
+    });
+    if (outcome.kind === 'failed') setOperationError(outcome.error);
+    return outcome;
+  };
   const handleSyncDiffs = async () => {
     if (!selectedTask || selectedTask.kind !== 'compare') return;
     const tables = (compareResult?.tables || [])
@@ -194,7 +214,7 @@ export const useDataSyncWorkbenchDiffActions = ({
     runActionTitle, saveApprovalReady, nextStage, previousStage, relevantBlockerStage,
     relevantBlocker, blockerInEarlierStage, preflightNeedsRefresh, compareStartEnabled, actionHint,
     actionHintTone, serviceUnavailableError, workbenchChrome, handleGenerateRepairSql,
-    handleAskAiAboutDiffs, handleSyncDiffs,
+    handleAskAiAboutDiffs, handleSyncDiffs, handleExportCompareHtml,
   };
 };
 

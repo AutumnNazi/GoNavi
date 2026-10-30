@@ -105,6 +105,8 @@ func (s *SyncEngine) compareSchemaTable(
 			summary.SchemaDiffCount = 1
 		}
 		summary.Message = localizedSyncBackendText("data_sync.plan.target_missing_compare", map[string]any{"count": len(summary.MissingColumns)})
+		// 目标整表不存在时索引差异没有意义：索引会随建表一起生成。
+		summary.DiffStats = buildTableDiffStats(summary.ColumnDiffs, nil, true)
 		return summary
 	}
 
@@ -116,10 +118,20 @@ func (s *SyncEngine) compareSchemaTable(
 		resolveMigrationDBType(config.SourceConfig),
 		resolveMigrationDBType(config.TargetConfig),
 	)
+	summary.AttributeDiffs = diffColumnAttributes(cols, targetCols)
+	summary.IndexDiffs = compareTableIndexes(
+		sourceDB,
+		targetDB,
+		plan.SourceSchema,
+		plan.SourceTable,
+		plan.TargetSchema,
+		plan.TargetTable,
+	)
 	summary.SchemaDiffCount = len(plan.PreDataSQL) + len(plan.PostDataSQL)
 	if len(summary.ColumnDiffs) > summary.SchemaDiffCount {
 		summary.SchemaDiffCount = len(summary.ColumnDiffs)
 	}
+	summary.DiffStats = buildTableDiffStats(summary.ColumnDiffs, summary.IndexDiffs, false)
 	switch {
 	case len(summary.ColumnDiffs) > 0:
 		// 结构差异以列级明细为准：plan 没有 ALTER 可生成时 PlannedAction 会说

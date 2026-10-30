@@ -39,6 +39,15 @@ export interface DataSyncWorkbenchGateway {
   selectBackupDirectory(
     currentDirectory: string,
   ): Promise<string | null>;
+  /**
+   * Writes caller-rendered text to disk (desktop save dialog) or the download
+   * channel (web). Returns the saved path, or null when the user cancels.
+   */
+  exportTextFile(
+    defaultName: string,
+    content: string,
+    format: 'html' | 'md' | 'txt' | 'json' | 'csv',
+  ): Promise<string | null>;
   listDatabases(
     connectionId: string,
     options?: WebRPCRequestOptions,
@@ -295,6 +304,10 @@ export const createStaticDataSyncWorkbenchGateway = (
     // The browser/static backend has no host filesystem, so the picker is
     // reported as cancelled and the manual input stays the only way in.
     async selectBackupDirectory() {
+      return null;
+    },
+    // 静态/浏览器后端没有宿主机文件系统，导出按取消处理。
+    async exportTextFile() {
       return null;
     },
     async listDatabases(connectionId) {

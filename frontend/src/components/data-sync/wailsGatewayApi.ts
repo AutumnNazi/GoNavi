@@ -7,6 +7,11 @@ type QueryResultPromise = Promise<WailsQueryResultLike>;
 export interface WailsDataSyncApi {
   GetSavedConnections(): Promise<unknown>;
   SelectBackupDirectory(currentDirectory: string): QueryResultPromise;
+  ExportTextFile(
+    defaultName: string,
+    content: string,
+    format: string,
+  ): QueryResultPromise;
   DataSyncDatabaseList(connectionId: string): QueryResultPromise;
   DataSyncObjectList(
     connectionId: string,

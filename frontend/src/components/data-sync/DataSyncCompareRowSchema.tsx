@@ -1,4 +1,5 @@
 import { DataSyncCompareRowColumns } from './DataSyncCompareRowColumns';
+import { DataSyncCompareRowIndexes } from './DataSyncCompareRowIndexes';
 import { describeCompareRow } from './dataSyncCompareRowModel';
 import type { DataSyncCompareMode, DataSyncTableDiffSummary } from './model';
 import type { DataSyncWorkbenchTranslate } from './text';
@@ -52,6 +53,8 @@ export function DataSyncCompareRowSchema({ summary, compareMode, t }: Props) {
           </div>
         )
       ))}
-
+    {showSchema && !targetTableMissing ? (
+      <DataSyncCompareRowIndexes diffs={summary.indexDiffs || []} t={t} />
+    ) : null}
   </>;
 }
