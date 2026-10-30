@@ -9423,6 +9423,7 @@
   "plugin.ai_provider.section_model_hint": "このワークスペースの推論ノードと生成制約を設定します。",
   "plugin.ai_provider.temperature": "温度",
   "plugin.ai_provider.test": "モデル応答をテスト",
+  "plugin.ai_provider.test_model_unavailable": "現在の API キーでは {{model}} を利用できません。利用可能: {{models}}",
   "plugin.ai_provider.tools_supported": "ツール呼び出し対応を宣言",
   "plugin.ai_provider.tools_unavailable": "ツール呼び出し非対応",
   "plugin.ai_provider.unavailable": "利用不可",

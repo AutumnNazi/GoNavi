@@ -9423,6 +9423,7 @@
   "plugin.ai_provider.section_model_hint": "Узел вывода и ограничения генерации для этого рабочего пространства.",
   "plugin.ai_provider.temperature": "Температура",
   "plugin.ai_provider.test": "Проверить ответ модели",
+  "plugin.ai_provider.test_model_unavailable": "Текущий ключ API не имеет доступа к {{model}}. Доступно: {{models}}",
   "plugin.ai_provider.tools_supported": "Вызовы инструментов объявлены",
   "plugin.ai_provider.tools_unavailable": "Вызовы инструментов недоступны",
   "plugin.ai_provider.unavailable": "Недоступно",

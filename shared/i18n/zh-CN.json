@@ -9423,6 +9423,7 @@
   "plugin.ai_provider.section_model_hint": "配置当前工作区挂载的推理节点与生成约束。",
   "plugin.ai_provider.temperature": "温度",
   "plugin.ai_provider.test": "测试模型响应",
+  "plugin.ai_provider.test_model_unavailable": "当前密钥下没有模型 {{model}}，可用：{{models}}",
   "plugin.ai_provider.tools_supported": "已声明支持工具调用",
   "plugin.ai_provider.tools_unavailable": "工具调用不可用",
   "plugin.ai_provider.unavailable": "不可用",

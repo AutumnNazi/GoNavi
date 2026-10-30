@@ -9423,6 +9423,7 @@
   "plugin.ai_provider.section_model_hint": "Configure the inference endpoint and generation constraints for this workspace.",
   "plugin.ai_provider.temperature": "Temperature",
   "plugin.ai_provider.test": "Test model response",
+  "plugin.ai_provider.test_model_unavailable": "The selected API key cannot access {{model}}. Available: {{models}}",
   "plugin.ai_provider.tools_supported": "Tool calls declared",
   "plugin.ai_provider.tools_unavailable": "Tool calls unavailable",
   "plugin.ai_provider.unavailable": "Unavailable",

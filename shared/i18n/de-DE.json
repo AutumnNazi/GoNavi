@@ -9423,6 +9423,7 @@
   "plugin.ai_provider.section_model_hint": "Inferenz-Endpunkt und Generierungsgrenzen für diesen Arbeitsbereich.",
   "plugin.ai_provider.temperature": "Temperatur",
   "plugin.ai_provider.test": "Modellantwort testen",
+  "plugin.ai_provider.test_model_unavailable": "Der aktuelle API-Schlüssel kann nicht auf {{model}} zugreifen. Verfügbar: {{models}}",
   "plugin.ai_provider.tools_supported": "Tool-Aufrufe deklariert",
   "plugin.ai_provider.tools_unavailable": "Tool-Aufrufe nicht verfügbar",
   "plugin.ai_provider.unavailable": "Nicht verfügbar",

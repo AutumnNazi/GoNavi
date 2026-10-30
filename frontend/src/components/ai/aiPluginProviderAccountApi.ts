@@ -153,6 +153,8 @@ export interface ScannedModelItem {
   id: string;
   name: string;
   contextWindow: number;
+  /** 网关按密钥分组返回：同一模型可能只被部分密钥收录。 */
+  keyIds: string[];
 }
 
 export const parseScanAccountModels = (raw: unknown): ScannedModelItem[] | null => {
@@ -167,7 +169,8 @@ export const parseScanAccountModels = (raw: unknown): ScannedModelItem[] | null 
     if (!id || seen.has(id)) continue;
     seen.add(id);
     const context = asNumber(row?.contextWindow) ?? 0;
-    scanned.push({ id, name: asText(row?.name), contextWindow: context > 0 ? context : 0 });
+    const keyIds = Array.isArray(row?.keyIds) ? row.keyIds.map((value) => asID(value)).filter(Boolean) : [];
+    scanned.push({ id, name: asText(row?.name), contextWindow: context > 0 ? context : 0, keyIds });
   }
   return scanned;
 };

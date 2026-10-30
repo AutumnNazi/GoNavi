@@ -27,16 +27,18 @@ interface AIPluginProviderModelScanProps {
   /** Saves the provider right here so the model list never needs the footer. */
   onSave?: () => void;
   saving?: boolean;
+  /** 回传扫描结果给编辑器：测试前要按当前密钥过滤可用模型。 */
+  onScanned?: (items: ScannedModelItem[]) => void;
 }
 
 // One row per model, toggled by click: the union of every key's model list,
 // because each key group reaches a different set on the gateway. Each row shows
 // the catalog name and context tier so a gateway alias stays readable.
 export default function AIPluginProviderModelScan({
-  pluginId, t, selected, declared = [], catalog, onChange, onSave, saving,
+  pluginId, t, selected, declared = [], catalog, onChange, onSave, saving, onScanned,
 }: AIPluginProviderModelScanProps) {
   const [scanning, setScanning] = useState(false);
-  const [scanned, setScanned] = useState<ScannedModelItem[]>(() => selected.map((id) => ({ id, name: '', contextWindow: 0 })));
+  const [scanned, setScanned] = useState<ScannedModelItem[]>(() => selected.map((id) => ({ id, name: '', contextWindow: 0, keyIds: [] })));
   const [query, setQuery] = useState('');
   const [draft, setDraft] = useState('');
   const [message, setMessage] = useState('');
@@ -81,6 +83,7 @@ export default function AIPluginProviderModelScan({
       merged.push({ ...item });
     }
     setScanned(merged);
+    onScanned?.(merged);
     if (outcome.data.length === 0) setMessage(t('plugin.ai_provider.models_scan_empty'));
     // Everything reachable is selected on the first scan; the user trims it down.
     else onChange(merged.map((item) => item.id));
@@ -94,7 +97,7 @@ export default function AIPluginProviderModelScan({
   const addDraft = () => {
     const id = draft.trim();
     if (!id) return;
-    setScanned((current) => (current.some((item) => item.id === id) ? current : [...current, { id, name: '', contextWindow: 0 }]));
+    setScanned((current) => (current.some((item) => item.id === id) ? current : [...current, { id, name: '', contextWindow: 0, keyIds: [] }]));
     if (!chosen.has(id)) onChange([...selected, id]);
     setDraft('');
   };

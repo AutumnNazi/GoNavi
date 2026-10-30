@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Form, Input, Space } from 'antd';
 import type { AISettingsProvidersSectionProps } from './AISettingsProvidersSection';
 import { usePluginProviderCatalog } from '../../plugins/aiProvider/context';
@@ -17,6 +17,8 @@ import { normalizeProviderModels } from '../../utils/aiProviderManagement';
 import AIPluginProviderModelScan from './AIPluginProviderModelScan';
 import AIPluginProviderContextPicker from './AIPluginProviderContextPicker';
 import { useModelsDevCatalog } from './useModelsDevCatalog';
+import { modelsForKey, previewModelList, resolveProviderKeyId } from './pluginProviderKeyScope';
+import type { ScannedModelItem } from './aiPluginProviderAccountApi';
 
 // The provider form reads top-down as three ruled blocks: account, model access, advanced.
 // Identity and the raw plugin:<id>:<provider> type live in the header only, never as body text.
@@ -24,6 +26,10 @@ export function AIPluginProviderEditor(props: AISettingsProvidersSectionProps) {
   const t = useOptionalI18n()?.t ?? translate; const catalog = usePluginProviderCatalog(); const { form, editingProvider } = props;
   const values = Form.useWatch([], { form, preserve: true }) as Record<string, unknown> | undefined;
   const [replacingKey, setReplacingKey] = useState(false);
+  // 网关按密钥分组暴露模型：扫描结果留在这里，测试前用它判断当前密钥能否访问所选模型。
+  const [scannedModels, setScannedModels] = useState<ScannedModelItem[]>([]);
+  const [testBlocked, setTestBlocked] = useState('');
+  const handleScanned = useCallback((items: ScannedModelItem[]) => setScannedModels(items), []);
   const type = editingProvider?.type || String(values?.type || props.watchedPresetKey || '');
   const source = catalog?.find(type);
   const account = usePluginProviderAccount(source?.pluginId);
@@ -51,6 +57,7 @@ export function AIPluginProviderEditor(props: AISettingsProvidersSectionProps) {
   const storedKey = String(editingProvider?.apiKey ?? '').trim();
   const hasSavedKey = Boolean(formKey || storedKey || editingProvider?.hasSecret || editingProvider?.secretRef);
   const hintSource = formKey || storedKey;
+  const savedKeyHint = hintSource.length >= 8 ? hintSource.slice(-4) : '';
   const applyKey = (key: string) => {
     form.setFieldsValue({ apiKey: key });
     setReplacingKey(false);
@@ -80,6 +87,18 @@ export function AIPluginProviderEditor(props: AISettingsProvidersSectionProps) {
     }
     action?.();
   };
+  // 测试只用当前密钥真正能访问到的模型：选的模型不在该密钥列表里就直接说明可用哪些，
+  // 而不是把网关的拒绝伪装成一次连接失败。
+  const runTest = runClean(() => {
+    const keyId = resolveProviderKeyId(account.keys.items, formKey, savedKeyHint);
+    const available = modelsForKey(scannedModels, keyId);
+    if (keyId && available.length > 0 && !available.includes(modelId)) {
+      setTestBlocked(t('plugin.ai_provider.test_model_unavailable', { model: modelId, models: previewModelList(available) }));
+      return;
+    }
+    setTestBlocked('');
+    props.onTestProvider?.();
+  });
 
   return <div className="gn-plugin-provider-editor">
     <header className="gn-provider-head">
@@ -108,6 +127,7 @@ export function AIPluginProviderEditor(props: AISettingsProvidersSectionProps) {
 
     {!source?.available && <Alert type="warning" showIcon message={t('plugin.ai_provider.error.unavailable')} />}
     {unsupported && <Alert type="error" showIcon message={t('plugin.ai_provider.error.unsupported_settings')} />}
+    {testBlocked && <Alert type="warning" showIcon message={testBlocked} />}
 
     <Form form={form} layout="vertical" onValuesChange={props.onValuesChange}>
       <Form.Item name="id" hidden><Input /></Form.Item>
@@ -124,7 +144,7 @@ export function AIPluginProviderEditor(props: AISettingsProvidersSectionProps) {
           model={model}
           catalog={modelsDev.index}
           hasSavedKey={hasSavedKey}
-          savedKeyHint={hintSource.length >= 8 ? hintSource.slice(-4) : ''}
+          savedKeyHint={savedKeyHint}
           replacingKey={replacingKey}
           onReplaceKey={() => setReplacingKey(true)}
           onPickedKey={() => setReplacingKey(false)}
@@ -140,6 +160,7 @@ export function AIPluginProviderEditor(props: AISettingsProvidersSectionProps) {
           onChange={applyModels}
           onSave={editingProvider?.id ? props.onSaveProvider : undefined}
           saving={props.loading}
+          onScanned={handleScanned}
         />
         <AIPluginProviderContextPicker
           catalog={modelsDev.index}
@@ -163,7 +184,7 @@ export function AIPluginProviderEditor(props: AISettingsProvidersSectionProps) {
       <span className="gn-footer-hint">{t('plugin.ai_provider.keychain_hint')}</span>
       <Space wrap>
         <Button onClick={props.onCancelEdit}>{t('common.cancel')}</Button>
-        <Button onClick={runClean(props.onTestProvider)} loading={props.testing} disabled={!source?.available || !model || props.loading}>{t('plugin.ai_provider.test')}</Button>
+        <Button onClick={runTest} loading={props.testing} disabled={!source?.available || !model || props.loading}>{t('plugin.ai_provider.test')}</Button>
         <Button type="primary" onClick={runClean(props.onSaveProvider)} loading={props.loading} disabled={props.testing}>{t('common.save')}</Button>
         {editingProvider?.id && props.onSaveProviderAsCopy && <Button onClick={runClean(props.onSaveProviderAsCopy)} disabled={props.loading || props.testing}>{t('plugin.ai_provider.save_copy')}</Button>}
       </Space>
