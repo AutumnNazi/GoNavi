@@ -25,16 +25,24 @@ type TableDiffSummary struct {
 	// ColumnDiffs carries every column-level structural difference, in both
 	// directions and including type/nullability drift. MissingColumns stays for
 	// backward compatibility but only covers source columns absent downstream.
-	ColumnDiffs        []ColumnStructureDiff `json:"columnDiffs,omitempty"`
-	Message            string                `json:"message,omitempty"`
-	HasSchema          bool                  `json:"hasSchema,omitempty"`
-	TargetTableExists  bool                  `json:"targetTableExists,omitempty"`
-	PlannedAction      string                `json:"plannedAction,omitempty"`
-	Warnings           []string              `json:"warnings,omitempty"`
-	UnsupportedObjects []string              `json:"unsupportedObjects,omitempty"`
-	UnmigratedIndexes  []UnmigratedIndex     `json:"unmigratedIndexes,omitempty"`
-	IndexesToCreate    int                   `json:"indexesToCreate,omitempty"`
-	IndexesSkipped     int                   `json:"indexesSkipped,omitempty"`
+	ColumnDiffs []ColumnStructureDiff `json:"columnDiffs,omitempty"`
+	// IndexDiffs carries index-level structural differences. It stays empty
+	// when either endpoint's index metadata could not be read, because a read
+	// failure is indistinguishable from "no indexes" and would otherwise
+	// report every source index as missing downstream.
+	IndexDiffs []IndexStructureDiff `json:"indexDiffs,omitempty"`
+	// DiffStats pre-aggregates the per-dimension counts the compare dashboard
+	// needs, so the UI never re-derives them from two differently-shaped lists.
+	DiffStats          *TableDiffStats   `json:"diffStats,omitempty"`
+	Message            string            `json:"message,omitempty"`
+	HasSchema          bool              `json:"hasSchema,omitempty"`
+	TargetTableExists  bool              `json:"targetTableExists,omitempty"`
+	PlannedAction      string            `json:"plannedAction,omitempty"`
+	Warnings           []string          `json:"warnings,omitempty"`
+	UnsupportedObjects []string          `json:"unsupportedObjects,omitempty"`
+	UnmigratedIndexes  []UnmigratedIndex `json:"unmigratedIndexes,omitempty"`
+	IndexesToCreate    int               `json:"indexesToCreate,omitempty"`
+	IndexesSkipped     int               `json:"indexesSkipped,omitempty"`
 }
 
 type SyncAnalyzeResult struct {
@@ -237,6 +245,23 @@ func (s *SyncEngine) analyze(config SyncConfig) SyncAnalyzeResult {
 				if len(summary.ColumnDiffs) > summary.SchemaDiffCount {
 					summary.SchemaDiffCount = len(summary.ColumnDiffs)
 				}
+				if config.CompareOnly {
+					// 索引差异只在只读对比里采集：写任务的结构计划会自行生成建索引
+					// 语句，额外的索引比对既慢又没有展示位。
+					summary.IndexDiffs = compareTableIndexes(
+						sourceDB,
+						targetDB,
+						plan.SourceSchema,
+						plan.SourceTable,
+						plan.TargetSchema,
+						plan.TargetTable,
+					)
+				}
+				summary.DiffStats = buildTableDiffStats(
+					summary.ColumnDiffs,
+					summary.IndexDiffs,
+					false,
+				)
 			}
 
 			// 对比是只读任务：目标缺表本身就是它最该报告的差异。把源列全部标成
@@ -251,6 +276,8 @@ func (s *SyncEngine) analyze(config SyncConfig) SyncAnalyzeResult {
 					summary.SchemaDiffCount = 1
 				}
 				summary.Message = localizedSyncBackendText("data_sync.plan.target_missing_compare", map[string]any{"count": len(summary.MissingColumns)})
+				// 目标整表不存在时索引差异没有意义：索引会随建表一起生成。
+				summary.DiffStats = buildTableDiffStats(summary.ColumnDiffs, nil, true)
 				result.Tables = append(result.Tables, summary)
 				return
 			}
@@ -463,7 +490,7 @@ func firstNonEmpty(values ...string) string {
 // summarizeColumnStructureDiffs renders a per-kind tally so the compare row
 // states what actually diverged instead of only counting missing columns.
 func summarizeColumnStructureDiffs(diffs []ColumnStructureDiff) string {
-	counts := make(map[string]int, 4)
+	counts := make(map[string]int, 5)
 	for _, diff := range diffs {
 		counts[diff.Kind]++
 	}
@@ -479,6 +506,9 @@ func summarizeColumnStructureDiffs(diffs []ColumnStructureDiff) string {
 	}
 	if n := counts["nullable"]; n > 0 {
 		parts = append(parts, fmt.Sprintf("%d 个字段可空性不同", n))
+	}
+	if n := counts["renamed"]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d 个字段疑似重命名", n))
 	}
 	if len(parts) == 0 {
 		return ""

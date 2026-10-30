@@ -160,7 +160,7 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
     runActionTitle, saveApprovalReady, nextStage, previousStage, relevantBlockerStage,
     relevantBlocker, blockerInEarlierStage, preflightNeedsRefresh, compareStartEnabled, actionHint,
     actionHintTone, serviceUnavailableError, workbenchChrome, handleGenerateRepairSql,
-    handleAskAiAboutDiffs, handleSyncDiffs,
+    handleAskAiAboutDiffs, handleSyncDiffs, handleExportCompareHtml,
   } = useDataSyncWorkbenchDiffActions({
     actionEnabled, t, selectedTask, dirtyTaskIds, selectedPreflight, preflightStale,
     currentPreflightRequiresApproval, capability, selectedApproval, activeStage, saving,
@@ -376,6 +376,11 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
           }
           onSyncDiffs={
             workbenchFamily === 'compare' ? () => void handleSyncDiffs() : undefined
+          }
+          onExportCompareHtml={
+            workbenchFamily === 'compare' && compareResult
+              ? handleExportCompareHtml
+              : undefined
           }
         />
       ) : null}

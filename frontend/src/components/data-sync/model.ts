@@ -420,6 +420,39 @@ export type DataSyncColumnStructureDiff = {
   target?: string;
 };
 
+/**
+ * One index-level structural difference. Absent when either endpoint's index
+ * metadata could not be read — "read failed" and "no indexes" are
+ * indistinguishable, and reporting every source index as missing would be
+ * worse than reporting nothing.
+ */
+export type DataSyncIndexStructureDiff = {
+  name: string;
+  kind: 'missing_in_target' | 'extra_in_target' | 'changed';
+  source?: string;
+  target?: string;
+  columns?: string[];
+  unique?: boolean;
+  indexType?: string;
+};
+
+/** Per-dimension diff counts the compare dashboard renders directly. */
+export type DataSyncCompareDiffStats = {
+  columns: {
+    missingInTarget: number;
+    extraInTarget: number;
+    typeChanged: number;
+    nullableChanged: number;
+  };
+  indexes: {
+    missingInTarget: number;
+    extraInTarget: number;
+    changed: number;
+  };
+  /** Set when the whole target table is missing, so rows read as one diff. */
+  targetTableMissing?: boolean;
+};
+
 /** One table's row in a read-only compare result (data or schema). */
 export type DataSyncTableDiffSummary = {
   table: string;
@@ -438,6 +471,10 @@ export type DataSyncTableDiffSummary = {
    * type/nullability drift. Populated whenever the target table exists.
    */
   columnDiffs?: DataSyncColumnStructureDiff[];
+  /** Index-level differences; empty whenever index metadata could not be read. */
+  indexDiffs?: DataSyncIndexStructureDiff[];
+  /** Pre-aggregated counts for the compare dashboard. */
+  diffStats?: DataSyncCompareDiffStats;
   /** True when the backend compared schema (schema/both content), not just data. */
   hasSchema?: boolean;
   message?: string;

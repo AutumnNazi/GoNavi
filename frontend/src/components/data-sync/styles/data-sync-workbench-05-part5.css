@@ -544,6 +544,397 @@
   color: var(--gn-fg-4, #6b7280);
 }
 
+/* 对比结果仪表盘：hero 总数 + KPI + 分布 + 风险色带。数据色只用于条形
+   与色带，文字一律前景色，保持克制。 */
+
+.gn-data-sync-compare-summary {
+  display: grid;
+  gap: 18px;
+  margin: 0 0 20px;
+}
+
+.gn-data-sync-compare-hero {
+  padding: 28px 30px;
+  border: 1px solid var(--gn-br-2, rgba(15, 23, 42, 0.12));
+  border-radius: 14px;
+  background: var(--gn-bg-panel, #fff);
+}
+
+.gn-data-sync-compare-hero__label {
+  margin: 0 0 4px;
+  color: var(--gn-fg-3, #4b5563);
+  font-size: 12.5px;
+}
+
+.gn-data-sync-compare-hero__value {
+  display: block;
+  color: var(--gn-fg-1, #0c1322);
+  font-size: 56px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+
+.gn-data-sync-compare-hero__note {
+  margin: 10px 0 0;
+  max-width: 760px;
+  color: var(--gn-fg-3, #4b5563);
+  font-size: 13px;
+}
+
+.gn-data-sync-compare-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0 0;
+}
+
+.gn-data-sync-compare-kpis > div {
+  min-width: 0;
+  padding: 15px 16px;
+  border: 1px solid var(--gn-br-2, rgba(15, 23, 42, 0.12));
+  border-radius: 12px;
+  background: var(--gn-bg-panel, #fff);
+}
+
+.gn-data-sync-compare-kpis dt {
+  overflow: hidden;
+  margin: 0 0 6px;
+  color: var(--gn-fg-3, #4b5563);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gn-data-sync-compare-kpis dd {
+  display: block;
+  margin: 0;
+}
+
+.gn-data-sync-compare-kpis dd strong {
+  display: block;
+  color: var(--gn-fg-1, #0c1322);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+.gn-data-sync-compare-kpis dd small {
+  display: block;
+  margin-top: 4px;
+  color: var(--gn-fg-5, #9ca3af);
+  font-size: 11.5px;
+}
+
+.gn-data-sync-compare-dashboard {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 24px;
+}
+
+.gn-data-sync-compare-dashboard > :only-child,
+.gn-data-sync-compare-risk {
+  grid-column: 1 / -1;
+}
+
+.gn-data-sync-compare-bars h3,
+.gn-data-sync-compare-risk h3 {
+  margin: 0 0 10px;
+  color: var(--gn-fg-3, #4b5563);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.gn-data-sync-compare-bars__empty {
+  margin: 0;
+  color: var(--gn-fg-5, #9ca3af);
+  font-size: 12px;
+}
+
+.gn-data-sync-compare-bars ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gn-data-sync-compare-bars li {
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr) 86px;
+  align-items: center;
+  gap: 12px;
+}
+
+.gn-data-sync-compare-bars__label {
+  overflow: hidden;
+  color: var(--gn-fg-3, #4b5563);
+  font-size: 12.5px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gn-data-sync-compare-bars__track {
+  height: 9px;
+  border-radius: 0;
+  background: var(--gn-bg-hover, rgba(15, 23, 42, 0.045));
+  overflow: hidden;
+}
+
+.gn-data-sync-compare-bars__fill {
+  display: block;
+  min-width: 2px;
+  height: 100%;
+  border-radius: 0 4px 4px 0;
+  background: color-mix(in srgb, var(--gn-accent, #15803d) 70%, transparent);
+}
+
+/* 构成图：一个维度一行，行内按增删改堆叠，2px 间隙分隔，不画边框。 */
+.gn-data-sync-compare-bars--composition .gn-data-sync-compare-bars__track,
+.gn-data-sync-compare-bars__stack {
+  display: flex;
+  height: 12px;
+  gap: 2px;
+  border-radius: 0;
+  background: var(--gn-bg-hover, rgba(15, 23, 42, 0.045));
+  overflow: hidden;
+}
+
+.gn-data-sync-compare-bars__stack {
+  min-width: 0;
+  padding: 0;
+}
+
+.gn-data-sync-compare-bars__stack .gn-data-sync-compare-bars__fill {
+  flex: 0 0 auto;
+}
+
+.gn-data-sync-compare-bars__value {
+  color: var(--gn-fg-5, #9ca3af);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.gn-data-sync-compare-bars li[data-tone='danger'] .gn-data-sync-compare-bars__fill,
+.gn-data-sync-compare-bars__fill[data-tone='danger'],
+.gn-data-sync-compare-risk__legend [data-tone='danger'] .gn-data-sync-compare-risk__dot {
+  background: color-mix(in srgb, var(--gn-danger, #dc2626) 58%, transparent);
+}
+
+.gn-data-sync-compare-bars li[data-tone='warn'] .gn-data-sync-compare-bars__fill,
+.gn-data-sync-compare-bars__fill[data-tone='warn'],
+.gn-data-sync-compare-risk__legend [data-tone='warn'] .gn-data-sync-compare-risk__dot {
+  background: color-mix(in srgb, var(--gn-warn, #d97706) 58%, transparent);
+}
+
+.gn-data-sync-compare-bars li[data-tone='ok'] .gn-data-sync-compare-bars__fill,
+.gn-data-sync-compare-bars__fill[data-tone='ok'],
+.gn-data-sync-compare-risk__legend [data-tone='ok'] .gn-data-sync-compare-risk__dot {
+  background: color-mix(in srgb, var(--gn-accent, #15803d) 58%, transparent);
+}
+
+.gn-data-sync-compare-bars__fill[data-tone='muted'] {
+  background: color-mix(in srgb, var(--gn-fg-5, #9ca3af) 58%, transparent);
+}
+
+/* 色带是整屏唯一的大面积色块，压到 40% 混白，避免抢走 KPI 的注意力。 */
+.gn-data-sync-compare-risk__band [data-tone='danger'] {
+  background: color-mix(in srgb, var(--gn-danger, #dc2626) 42%, var(--gn-bg-panel, #fff));
+}
+
+.gn-data-sync-compare-risk__band [data-tone='warn'] {
+  background: color-mix(in srgb, var(--gn-warn, #d97706) 42%, var(--gn-bg-panel, #fff));
+}
+
+.gn-data-sync-compare-risk__band [data-tone='ok'] {
+  background: color-mix(in srgb, var(--gn-accent, #15803d) 42%, var(--gn-bg-panel, #fff));
+}
+
+.gn-data-sync-compare-risk__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.gn-data-sync-compare-risk__head span {
+  color: var(--gn-fg-5, #9ca3af);
+  font-size: 11px;
+}
+
+.gn-data-sync-compare-risk__band {
+  display: flex;
+  gap: 2px;
+  height: 26px;
+  margin: 6px 0 16px;
+  border-radius: 4px;
+  background: var(--gn-bg-hover, rgba(15, 23, 42, 0.045));
+  overflow: hidden;
+}
+
+/* 段内直接显示条数，色带自身成为读数而不是纯装饰。 */
+.gn-data-sync-compare-risk__band > span {
+  display: flex;
+  min-width: 2px;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  color: var(--gn-bg-panel, #fff);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+/* 黄色段必须用深色字：白字在 #d97706 上对比度不足。 */
+.gn-data-sync-compare-risk__band > span[data-tone='warn'] {
+  color: var(--gn-fg-1, #0c1322);
+}
+
+.gn-data-sync-compare-risk__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gn-data-sync-compare-risk__legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--gn-fg-4, #6b7280);
+  font-size: 11px;
+}
+
+.gn-data-sync-compare-risk__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.gn-data-sync-compare-risk__legend strong {
+  color: var(--gn-fg-2, #1f2937);
+  font-variant-numeric: tabular-nums;
+}
+
+.gn-data-sync-compare-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin: 0 0 12px;
+  padding: 0 0 12px;
+  border-bottom: 0.5px solid var(--gn-br-1, rgba(15, 23, 42, 0.08));
+}
+
+.gn-data-sync-compare-filters__tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--gn-bg-hover, rgba(15, 23, 42, 0.045));
+}
+
+.gn-data-sync-compare-filters__tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--gn-fg-4, #6b7280);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.gn-data-sync-compare-filters__tabs button small {
+  color: var(--gn-fg-5, #9ca3af);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.gn-data-sync-compare-filters__tabs button[data-active='true'] {
+  background: var(--gn-bg-panel, #fff);
+  color: var(--gn-fg-1, #0c1322);
+  box-shadow: 0 0 0 0.5px var(--gn-br-2, rgba(15, 23, 42, 0.12));
+}
+
+.gn-data-sync-compare-filters__chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* 风险 chip：选中态黑底白字反转。注意选择器只认 [data-risk]，
+   分组类按钮不能共用，否则点击会把非风险值塞进风险集合。 */
+.gn-data-sync-compare-chip {
+  padding: 5px 13px;
+  border: 1px solid var(--gn-br-2, rgba(15, 23, 42, 0.12));
+  border-radius: 20px;
+  background: var(--gn-bg-panel, #fff);
+  color: var(--gn-fg-3, #4b5563);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.gn-data-sync-compare-chip[aria-pressed='true'] {
+  border-color: var(--gn-fg-1, #0c1322);
+  background: var(--gn-fg-1, #0c1322);
+  color: var(--gn-bg-panel, #fff);
+}
+
+.gn-data-sync-compare-row__index-diffs li[data-kind='changed'] .gn-data-sync-compare-row__diff-kind {
+  color: var(--gn-column-type-index, #6d28d9);
+}
+
+.gn-data-sync-compare-row__index-diffs code {
+  color: var(--gn-column-type-index, #6d28d9);
+  background: color-mix(in srgb, var(--gn-column-type-index, #6d28d9) 10%, transparent);
+}
+
+.gn-data-sync-compare-filters__search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.gn-data-sync-compare-filters__search .gn-data-sync-control {
+  width: 200px;
+  min-height: 30px;
+  padding-block: 2px;
+}
+
+.gn-data-sync-compare-filters__count {
+  color: var(--gn-fg-5, #9ca3af);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.gn-data-sync-compare-empty-filter {
+  margin: 0;
+  padding: 14px 0;
+  color: var(--gn-fg-4, #6b7280);
+  font-size: 12px;
+}
+
+.gn-data-sync-compare-panel .gn-data-sync-inline-note[data-tone='ok'] {
+  margin: 0 0 12px;
+  color: var(--gn-accent, #15803d);
+}
+
+.gn-data-sync-compare-panel .gn-data-sync-inline-note[data-tone='error'] {
+  margin: 0 0 12px;
+  color: var(--gn-danger, #dc2626);
+  overflow-wrap: anywhere;
+}
+
 .gn-data-sync-checkpoint-panel {
   margin-top: 24px;
   padding-top: 18px;

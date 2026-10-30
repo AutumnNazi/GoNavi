@@ -36,4 +36,12 @@ export type DataSyncRunHistoryProps = {
   onGenerateRepairSql?: () => void;
   onAskAiAboutDiffs?: () => void;
   onSyncDiffs?: () => void;
+  /** Renders the compare result as a standalone HTML report and saves it. */
+  onExportCompareHtml?: () => Promise<CompareHtmlExportOutcome>;
 };
+
+export type CompareHtmlExportOutcome =
+  /** The user cancelled the save dialog; no message is shown. */
+  | { kind: 'cancelled' }
+  | { kind: 'saved'; path: string }
+  | { kind: 'failed'; error: string };
