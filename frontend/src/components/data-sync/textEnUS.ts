@@ -224,6 +224,7 @@ export const enUS: Record<DataSyncWorkbenchTextKey, string> = {
   'mapping.target_hint.missing': 'This table is not on the target; switch it to auto-create under Edit exceptions to create it during sync',
   'mapping.target_hint.pending': 'Checking whether this table already exists on the target',
   'mapping.target_hint.missing_requires_existing': 'This table is not on the target, and this task only writes to existing tables; create it on the target first',
+  'editor.compare_scope_note': 'The compare covers every table in the source database. Start it to list missing tables and column differences, then generate repair SQL.',
   'mapping.target_hint.missing_compare': 'This table is not on the target; compare marks the whole table as missing. Use Generate repair SQL to create it',
   'mapping.key_placeholder': 'Leave empty to auto-match by source primary key',
   'mapping.key_detected': 'Detected from source metadata; edit if needed',

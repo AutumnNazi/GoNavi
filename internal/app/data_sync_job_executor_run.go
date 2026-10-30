@@ -38,11 +38,10 @@ func (executor appDataSyncJobExecutor) Execute(ctx context.Context, request sync
 	if err := executor.app.ensureDataSyncTargetDatabase(ctx, definition, target); err != nil {
 		return syncjob.ExecutionOutcome{}, err
 	}
-	enabledMappings := make([]syncjob.TableMapping, 0, len(definition.Mappings))
-	for _, mapping := range definition.Mappings {
-		if mapping.Enabled {
-			enabledMappings = append(enabledMappings, mapping)
-		}
+	enabledMappings := enabledDataSyncTableMappings(definition)
+	// 只读对比：不写目标、不建表、不留回滚快照，全部表合并成一次分析。
+	if definition.Kind == syncjob.JobKindCompare {
+		return executor.executeCompareJob(ctx, request, definition, source, target, reporter)
 	}
 	if err := executor.app.captureDataSyncRollback(ctx, request, target, enabledMappings); err != nil {
 		return syncjob.ExecutionOutcome{}, err

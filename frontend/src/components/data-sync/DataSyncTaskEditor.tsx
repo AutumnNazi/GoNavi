@@ -569,6 +569,7 @@ export const DataSyncTaskEditor: React.FC<{
           t={t}
           onPatch={onPatch}
           onContinue={() => onStageChange('mappings')}
+          showContinue={task.kind !== 'compare'}
         />
       ) : null}
       {activeStage === 'mappings' ? (

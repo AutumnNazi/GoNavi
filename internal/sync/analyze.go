@@ -173,7 +173,12 @@ func (s *SyncEngine) analyze(config SyncConfig) SyncAnalyzeResult {
 		return true
 	}
 
+	// 只读结构对比走并发扫描：每表只有元数据往返，串行在千表规模上不可用。
+	compareSchemaScan := config.CompareOnly && !syncData
 	for i, tableName := range config.Tables {
+		if compareSchemaScan {
+			break
+		}
 		if err := s.contextError(); err != nil {
 			recordCancellation(err)
 			break
@@ -428,6 +433,10 @@ func (s *SyncEngine) analyze(config SyncConfig) SyncAnalyzeResult {
 		if cancelled {
 			break
 		}
+	}
+
+	if compareSchemaScan {
+		result.Tables = append(result.Tables, s.scanCompareSchemaTables(config, sourceDB, targetDB, totalTables)...)
 	}
 
 	if cancelled || recordCancellation(nil) {
