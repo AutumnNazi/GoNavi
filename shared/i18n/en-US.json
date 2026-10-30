@@ -9445,6 +9445,7 @@
   "plugin.backend.error.invalid_request": "The plugin request is invalid.",
   "plugin.backend.error.invalid_response": "The marketplace returned an invalid response.",
   "plugin.backend.error.management_denied": "Plugin management is not allowed in this session.",
+  "plugin.backend.error.path_not_found": "That plugin package path does not exist. Check the file or folder is still there.",
   "plugin.backend.error.market_unavailable": "The marketplace is unavailable. Check the source and network connection.",
   "plugin.backend.error.not_found": "The plugin is not installed.",
   "plugin.backend.error.npm_not_found": "That plugin package or version does not exist on npm.",

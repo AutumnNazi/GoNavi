@@ -9445,6 +9445,7 @@
   "plugin.backend.error.invalid_request": "插件请求无效。",
   "plugin.backend.error.invalid_response": "市场返回了无效响应。",
   "plugin.backend.error.management_denied": "此会话不允许管理插件。",
+  "plugin.backend.error.path_not_found": "找不到该插件包路径，请确认文件或目录仍然存在。",
   "plugin.backend.error.market_unavailable": "插件市场不可用。请检查来源和网络连接。",
   "plugin.backend.error.not_found": "该插件未安装。",
   "plugin.backend.error.npm_not_found": "npm 上没有找到该插件包或版本。",

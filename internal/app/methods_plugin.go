@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"strings"
 
 	"GoNavi-Wails/internal/connection"
@@ -34,6 +35,12 @@ func (a *App) pluginResult(value any, err error) connection.QueryResult {
 		}
 		if errors.Is(err, plugin.ErrNotFound) {
 			return a.pluginFailure("not_found")
+		}
+		// A stale or mistyped package path is an OS condition, not a plugin lifecycle state:
+		// reporting it as operation_failed told the user to "check the plugin status" instead
+		// of the path that does not exist.
+		if errors.Is(err, fs.ErrNotExist) {
+			return a.pluginFailure("path_not_found")
 		}
 		if errors.Is(err, plugin.ErrBusy) {
 			return a.pluginFailure("plugin_busy")
@@ -78,7 +85,7 @@ func (a *App) pluginInspectContext(ctx context.Context, path string) connection.
 	if err != nil {
 		return a.pluginFailure("runtime_unavailable")
 	}
-	value, err := manager.Inspect(ctx, path)
+	value, err := manager.Inspect(ctx, expandPluginPackagePath(path))
 	return a.pluginResult(value, err)
 }
 
@@ -97,7 +104,7 @@ func (a *App) pluginInstallContext(ctx context.Context, path, digest string, tru
 	}
 	a.plugins.mutationMu.Lock()
 	defer a.plugins.mutationMu.Unlock()
-	value, err := manager.Install(ctx, plugin.InstallRequest{Path: path, Digest: digest, Trusted: trusted})
+	value, err := manager.Install(ctx, plugin.InstallRequest{Path: expandPluginPackagePath(path), Digest: digest, Trusted: trusted})
 	if err == nil {
 		a.forgetPluginMarketSource(ctx, value.Manifest.ID)
 	}
@@ -119,7 +126,7 @@ func (a *App) pluginReplaceContext(ctx context.Context, path, digest string, tru
 	}
 	a.plugins.mutationMu.Lock()
 	defer a.plugins.mutationMu.Unlock()
-	value, err := manager.ReplacePackage(ctx, plugin.InstallRequest{Path: path, Digest: digest, Trusted: trusted})
+	value, err := manager.ReplacePackage(ctx, plugin.InstallRequest{Path: expandPluginPackagePath(path), Digest: digest, Trusted: trusted})
 	if err == nil {
 		a.forgetPluginMarketSource(ctx, value.Manifest.ID)
 	}

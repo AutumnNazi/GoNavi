@@ -5,8 +5,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -49,6 +51,12 @@ func scanPackage(ctx context.Context, source, destination string) (Inspection, e
 	}
 	info, err := os.Lstat(absolute)
 	if err != nil {
+		// The caller needs to tell "path is gone" apart from a broken package, but the error
+		// must never echo the path: a package source can be private user data. Only the
+		// path-free sentinel is wrapped, other causes keep the opaque message.
+		if errors.Is(err, fs.ErrNotExist) {
+			return result, fmt.Errorf("stat package failed: %w", fs.ErrNotExist)
+		}
 		return result, fmt.Errorf("stat package failed")
 	}
 	scan := &packageScan{ctx: ctx, destination: destination, seen: make(map[string]bool)}

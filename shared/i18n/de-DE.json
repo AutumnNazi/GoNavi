@@ -9445,6 +9445,7 @@
   "plugin.backend.error.invalid_request": "Die Plugin-Anfrage ist ungültig.",
   "plugin.backend.error.invalid_response": "Der Marktplatz hat eine ungültige Antwort geliefert.",
   "plugin.backend.error.management_denied": "Plugin-Verwaltung ist in dieser Sitzung nicht erlaubt.",
+  "plugin.backend.error.path_not_found": "Dieser Paketpfad existiert nicht. Prüfen Sie, ob Datei oder Ordner noch vorhanden sind.",
   "plugin.backend.error.market_unavailable": "Der Marktplatz ist nicht verfügbar. Quelle und Netzwerkverbindung prüfen.",
   "plugin.backend.error.not_found": "Das Plugin ist nicht installiert.",
   "plugin.backend.error.npm_not_found": "Dieses Plugin-Paket oder diese Version gibt es nicht auf npm.",

@@ -9445,6 +9445,7 @@
   "plugin.backend.error.invalid_request": "プラグインへの要求が無効です。",
   "plugin.backend.error.invalid_response": "マーケットから無効な応答が返されました。",
   "plugin.backend.error.management_denied": "このセッションではプラグイン管理は許可されていません。",
+  "plugin.backend.error.path_not_found": "そのプラグインパッケージのパスが見つかりません。ファイルまたはフォルダーが存在するか確認してください。",
   "plugin.backend.error.market_unavailable": "マーケットを利用できません。接続先とネットワークを確認してください。",
   "plugin.backend.error.not_found": "そのプラグインはインストールされていません。",
   "plugin.backend.error.npm_not_found": "npm にそのプラグインパッケージまたはバージョンが見つかりません。",

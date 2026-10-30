@@ -9445,6 +9445,7 @@
   "plugin.backend.error.invalid_request": "Некорректный запрос плагина.",
   "plugin.backend.error.invalid_response": "Каталог вернул некорректный ответ.",
   "plugin.backend.error.management_denied": "Управление плагинами в этом сеансе запрещено.",
+  "plugin.backend.error.path_not_found": "Указанный путь к пакету плагина не найден. Проверьте, что файл или каталог существует.",
   "plugin.backend.error.market_unavailable": "Каталог недоступен. Проверьте источник и сетевое соединение.",
   "plugin.backend.error.not_found": "Плагин не установлен.",
   "plugin.backend.error.npm_not_found": "Такого пакета или версии нет в npm.",

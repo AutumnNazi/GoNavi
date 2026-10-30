@@ -9445,6 +9445,7 @@
   "plugin.backend.error.invalid_request": "外掛請求無效。",
   "plugin.backend.error.invalid_response": "市集傳回了無效回應。",
   "plugin.backend.error.management_denied": "此工作階段不允許管理外掛。",
+  "plugin.backend.error.path_not_found": "找不到此外掛套件路徑，請確認檔案或目錄仍然存在。",
   "plugin.backend.error.market_unavailable": "外掛市集無法使用。請檢查來源和網路連線。",
   "plugin.backend.error.not_found": "該外掛未安裝。",
   "plugin.backend.error.npm_not_found": "npm 上找不到該外掛套件或版本。",
