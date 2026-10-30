@@ -260,7 +260,9 @@ func (s *SyncEngine) analyze(config SyncConfig) SyncAnalyzeResult {
 				result.Tables = append(result.Tables, summary)
 				return
 			}
-			if plan.TargetTableExists && syncContentAllowsSchemaChanges(config.Content) {
+			// 只读对比不存在「能不能自动修复」的问题：类型/可空性漂移本身就是它要报告的
+			// 差异，不能沿用写任务那句「只支持补齐缺失字段」把整表判成无法比较。
+			if plan.TargetTableExists && syncContentAllowsSchemaChanges(config.Content) && !config.CompareOnly {
 				unsupportedDiffs := unsupportedExistingTargetSchemaDiffs(summary.ColumnDiffs)
 				if len(unsupportedDiffs) > 0 {
 					summary.Message = "存在当前不支持自动修复的结构差异（" + summarizeColumnStructureDiffs(unsupportedDiffs) + "）；当前仅支持补齐目标缺失字段"

@@ -89,7 +89,6 @@ func (s *SyncEngine) compareSchemaTable(
 	summary.SourceObject = plan.SourceQueryTable
 	summary.TargetObject = plan.TargetQueryTable
 	summary.PlannedAction = plan.PlannedAction
-	summary.Warnings = append(summary.Warnings, plan.Warnings...)
 	summary.UnsupportedObjects = append(summary.UnsupportedObjects, plan.UnsupportedObjects...)
 	summary.UnmigratedIndexes = append(summary.UnmigratedIndexes, plan.UnmigratedIndexes...)
 	summary.IndexesToCreate = plan.IndexesToCreate
@@ -97,6 +96,8 @@ func (s *SyncEngine) compareSchemaTable(
 	summary.CanSync = true
 
 	if !plan.TargetTableExists {
+		// 只读对比不写目标：「要求目标表已存在」「不会自动建表」这类写任务提示一律不继承，
+		// 否则用户会以为这里需要先去目标库建表。
 		summary.MissingColumns, summary.ColumnDiffs = compareMissingTargetColumns(cols)
 		summary.SchemaDiffCount = len(summary.ColumnDiffs)
 		if summary.SchemaDiffCount == 0 {
@@ -107,6 +108,7 @@ func (s *SyncEngine) compareSchemaTable(
 		return summary
 	}
 
+	summary.Warnings = append(summary.Warnings, plan.Warnings...)
 	summary.MissingColumns = diffMissingColumnNames(cols, targetCols)
 	summary.ColumnDiffs = diffColumnStructures(
 		cols,
