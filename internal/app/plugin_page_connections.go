@@ -78,5 +78,7 @@ func (a *App) pluginPageConnectionConfig(connectionID string) (connection.Connec
 	if err != nil {
 		return connection.ConnectionConfig{}, "internal"
 	}
-	return resolved, ""
+	// SSH (and later proxy transports) belong to the host; the plugin receives a
+	// direct local endpoint instead of unsupported transport fields.
+	return a.pluginConnectionConfigForPlugin(resolved)
 }

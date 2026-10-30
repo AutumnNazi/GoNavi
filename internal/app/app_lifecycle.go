@@ -208,6 +208,7 @@ func (a *App) Shutdown() {
 	a.rollbackPendingSQLTransactionsOnShutdown()
 	a.closeSQLAuditStore()
 	a.closeCachedDatabasesForShutdown()
+	releasePluginTunnels()
 	proxytunnel.CloseAllForwarders()
 	// Close all Redis connections
 	CloseAllRedisClients()
