@@ -9,7 +9,9 @@ import (
 )
 
 // maxPackageFileReadBytes bounds host-side metadata reads such as provider icons.
-const maxPackageFileReadBytes = 256 << 10
+// It must stay at or above maxPackageIconBytes, otherwise a declared logo that passed
+// inspection could never be read back and would silently degrade to a monogram.
+const maxPackageFileReadBytes = 8 << 20
 
 // ReadPackageFile reads one bounded regular file from an installed immutable package.
 // It never starts, enables or invokes the plugin, so host-rendered metadata can be shown

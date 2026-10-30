@@ -228,7 +228,7 @@ func (s *packageScan) validateEntries(m Manifest) error {
 			return err
 		}
 		if sizes[m.Icon] > maxPackageIconBytes {
-			return fmt.Errorf("plugin icon exceeds the 64 KiB limit")
+			return fmt.Errorf("plugin icon exceeds the %d byte limit", maxPackageIconBytes)
 		}
 	}
 	for _, provider := range m.Contributes.AIProviders {
@@ -237,7 +237,7 @@ func (s *packageScan) validateEntries(m Manifest) error {
 				return err
 			}
 			if sizes[provider.Icon] > maxPackageIconBytes {
-				return fmt.Errorf("ai provider icon exceeds the 64 KiB limit")
+				return fmt.Errorf("ai provider icon exceeds the %d byte limit", maxPackageIconBytes)
 			}
 		}
 	}

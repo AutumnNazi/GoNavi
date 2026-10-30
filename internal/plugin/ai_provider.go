@@ -17,7 +17,11 @@ var aiModelIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:/@+-]{0,127}
 var packageIconPattern = regexp.MustCompile(`(?i)\.(png|jpe?g|webp|gif)$`)
 
 const maxPackageIconPathBytes = 256
-const maxPackageIconBytes = 64 << 10
+
+// maxPackageIconBytes bounds one declared logo before the host turns it into a data URL.
+// Raster logos are shown at card and list sizes, so a high-resolution brand image is
+// legitimate; the read still happens without starting the plugin and stays bounded.
+const maxPackageIconBytes = 5 << 20
 
 // validPackageIcon accepts only a package-relative raster image path. SVG is rejected
 // because the host renders the icon through the main window; the file itself is read with

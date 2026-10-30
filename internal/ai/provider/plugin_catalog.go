@@ -9,7 +9,8 @@ import (
 
 // maxPluginProviderIconBytes bounds one package-relative provider icon before it becomes
 // a data URL in the metadata catalog. SVG and other non-raster files are rejected by sniffing.
-const maxPluginProviderIconBytes = 64 << 10
+// It matches the manifest icon limit so one declaration never passes one reader and fails another.
+const maxPluginProviderIconBytes = 5 << 20
 
 // PluginProviderSnapshot is a metadata-only host policy snapshot.
 type PluginProviderSnapshot struct {
