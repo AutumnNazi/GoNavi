@@ -6,6 +6,9 @@ import "encoding/json"
 const APIVersion = 1
 
 // Manifest describes an immutable plugin package; the host validates it.
+// Icon optionally names the installed-plugin logo: a package-relative raster path
+// the host reads without starting the plugin. A plugin without one falls back to
+// its first AI provider icon.
 type Manifest struct {
 	SchemaVersion   int               `json:"schemaVersion"`
 	APIVersion      int               `json:"apiVersion"`
@@ -15,6 +18,7 @@ type Manifest struct {
 	Description     string            `json:"description,omitempty"`
 	Author          string            `json:"author,omitempty"`
 	License         string            `json:"license,omitempty"`
+	Icon            string            `json:"icon,omitempty"`
 	MinHostVersion  string            `json:"minHostVersion,omitempty"`
 	Permissions     []string          `json:"permissions"`
 	PermissionNotes map[string]string `json:"permissionNotes,omitempty"`

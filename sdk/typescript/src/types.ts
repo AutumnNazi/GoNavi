@@ -44,7 +44,10 @@ export interface LaunchTarget { type: 'window' | 'page'; page?: string }
 export interface ConnectionAction { id: string; title: string; description?: string; connectionTypes: string[]; scopes?: ('connection' | 'database' | 'collection')[]; target: LaunchTarget }
 export interface Manifest {
   schemaVersion: 1; apiVersion: 1; id: string; name: string; version: string;
-  description?: string; author?: string; license?: string; minHostVersion?: string;
+  description?: string; author?: string; license?: string;
+  /** Optional installed-plugin logo: a package-relative raster path; falls back to the first AI provider icon. */
+  icon?: string;
+  minHostVersion?: string;
   permissions: string[];
   permissionNotes?: Record<string, string>;
   requires?: { id: string; minVersion?: string; optional?: boolean }[];
