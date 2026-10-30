@@ -17,6 +17,9 @@
 .plugin-local-install { padding: 16px; background: var(--gn-bg-panel-2); border: 1px dashed var(--gn-br-3); border-radius: 8px; }
 .plugin-permissions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .plugin-embedded-panel { padding-top: 8px; }
+/* 独立窗口是次要动作：靠右的小按钮，不随 .plugin-stack 拉成整行。 */
+.plugin-window-action { display: flex; justify-content: flex-end; }
+.plugin-window-action .ant-btn { display: inline-flex; align-items: center; gap: 6px; padding-inline: 12px; }
 .plugin-page-list { display: flex; flex-direction: column; gap: 6px; }
 .plugin-page-list ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .plugin-page-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
