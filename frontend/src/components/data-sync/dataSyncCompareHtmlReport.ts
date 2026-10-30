@@ -9,19 +9,24 @@ import type {
   CompareKpi,
   CompareSummary,
 } from './dataSyncCompareSummaryModel';
+import {
+  groupByTable,
+  projectCompareDetailRows,
+  splitByDetailGroup,
+  type CompareDetailRow,
+} from './dataSyncCompareDetailModel';
 import type {
-  DataSyncColumnStructureDiff,
   DataSyncCompareMode,
   DataSyncCompareResult,
-  DataSyncIndexStructureDiff,
-  DataSyncTableDiffSummary,
 } from './model';
 import type { DataSyncWorkbenchTranslate } from './text';
 
 export type CompareReportMeta = {
   taskName: string;
+  /** 连接名 + 库名，缺一不可：只写连接名分不清比的是哪个库。 */
   sourceLabel: string;
   targetLabel: string;
+  /** 已按用户时区格式化好的本地时间。 */
   generatedAt: string;
 };
 
@@ -81,23 +86,44 @@ h2{margin:0 0 10px;color:#4b5563;font-size:12px;font-weight:600;}
 .gn-legend li{display:inline-flex;align-items:center;gap:6px;color:#6b7280;font-size:11px;}
 .dot{width:7px;height:7px;border-radius:50%;display:inline-block;}
 .gn-legend strong{color:#1f2937;font-variant-numeric:tabular-nums;}
-table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;
-  border:0.5px solid rgba(15,23,42,.08);}
+table{width:100%;table-layout:fixed;border-collapse:collapse;background:#fff;border-radius:10px;
+  overflow:hidden;border:0.5px solid rgba(15,23,42,.08);}
 th,td{padding:9px 12px;text-align:left;border-bottom:0.5px solid rgba(15,23,42,.08);
-  font-size:12px;vertical-align:top;}
+  font-size:12px;vertical-align:top;overflow-wrap:anywhere;}
 th{color:#6b7280;font-weight:600;background:#fafaf8;}
 tr:last-child td{border-bottom:0;}
 td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
 td code{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace;font-size:11px;}
-.tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600;}
+/* nowrap 是必需的：列被压窄时「相同」「有差异」会逐字折行，徽章变成竖排。 */
+.tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600;
+  white-space:nowrap;}
 .tag[data-status="diff"]{color:#b45309;background:rgba(217,119,6,.14);}
 .tag[data-status="same"]{color:#15803d;background:rgba(22,163,74,.12);}
 .tag[data-status="unknown"]{color:#6b7280;background:rgba(15,23,42,.08);}
 .diffs{margin:0;padding:0;list-style:none;display:grid;gap:3px;}
 .diffs li{display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
-.diffs .kind{color:#9ca3af;font-size:11px;}
+.diffs .kind{color:#9ca3af;font-size:11px;white-space:nowrap;}
 .diffs code{padding:1px 6px;border-radius:4px;background:rgba(15,23,42,.04);}
 .muted{color:#6b7280;font-size:12px;}
+td.mono{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace;font-size:11px;}
+/* 三类行底色：整表淡灰、索引淡紫、字段无底色。 */
+tr.table-row td{background:rgba(12,19,34,.03);border-top:1px solid rgba(15,23,42,.12);
+  border-bottom:1px solid rgba(15,23,42,.12);}
+tr.table-row td:nth-child(4){font-weight:600;}
+tr.idx-row td{background:rgba(109,40,217,.06);}
+tr.group-head td{padding:14px 12px 6px;font-size:11px;font-weight:600;color:#4b5563;
+  background:#fff;border-bottom:1px solid rgba(15,23,42,.12);}
+.kind-tag{display:inline-block;padding:1px 8px;border-radius:5px;font-size:11px;
+  white-space:nowrap;border:1px solid rgba(15,23,42,.12);color:#4b5563;}
+.kind-tag[data-kind='table_removed']{color:#dc2626;background:rgba(220,38,38,.12);font-weight:600;}
+.kind-tag[data-kind='column_added'],.kind-tag[data-kind='index_added']{color:#166534;background:rgba(21,128,61,.10);}
+.kind-tag[data-kind='column_removed'],.kind-tag[data-kind='index_removed']{color:#dc2626;background:rgba(220,38,38,.10);}
+.kind-tag[data-kind='column_changed'],.kind-tag[data-kind='index_changed']{color:#0369a1;background:rgba(3,105,161,.09);}
+.kind-tag[data-kind='column_renamed'],.kind-tag[data-kind='index_renamed']{color:#b45309;background:rgba(217,119,6,.16);}
+.kind-tag[data-kind^='index_']{border-color:rgba(109,40,217,.28);}
+.t-high .dot{background:#dc2626;}
+.t-mid .dot{background:#d97706;}
+.t-low .dot{background:#15803d;}
 @media (max-width:820px){
   body{padding:24px 16px 48px;}
   .gn-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}
@@ -163,111 +189,106 @@ const renderRiskBand = (summary: CompareSummary, t: DataSyncWorkbenchTranslate):
     + `<ul class="gn-legend">${legend}</ul></div>`;
 };
 
-const renderDiffList = (
-  diffs: DataSyncColumnStructureDiff[],
-  t: DataSyncWorkbenchTranslate,
-): string => {
-  if (diffs.length === 0) return '<span class="muted">—</span>';
-  const items = diffs.map((diff) => {
-    const before = diff.source ? `<code>${escapeHtml(diff.source)}</code>` : '';
-    const after = diff.target ? `<code>${escapeHtml(diff.target)}</code>` : '';
-    const arrow = diff.kind === 'type' || diff.kind === 'nullable'
-      ? `${before || '<code>—</code>'} → ${after || '<code>—</code>'}`
-      : `${before}${after}`;
-    return `<li><span class="kind">${escapeHtml(t(`compare.diff_kind.${diff.kind}`))}</span>`
-      + `<code>${escapeHtml(diff.column)}</code>${arrow}</li>`;
-  });
-  return `<ul class="diffs">${items.join('')}</ul>`;
-};
-
 const RISK_CLASS: Record<string, string> = {
   blocking: 't-high',
   attention: 't-mid',
   compatible: 't-low',
 };
 
-const renderRiskTag = (
-  summary: DataSyncTableDiffSummary,
+const riskLabel = (
+  risk: NonNullable<CompareDetailRow['risk']>,
   t: DataSyncWorkbenchTranslate,
-): string => {
-  const level = tableRiskLevel(summary);
-  if (!level) return '<span class="muted">—</span>';
-  const label = level === 'blocking'
-    ? t('compare.risk.filter_high')
-    : level === 'attention'
-      ? t('compare.risk.filter_mid')
-      : t('compare.risk.filter_low');
-  return `<span class="tag ${RISK_CLASS[level]}"><span class="dot"></span>${escapeHtml(label)}</span>`;
+): string => (risk === 'blocking'
+  ? t('compare.risk.filter_high')
+  : risk === 'attention'
+    ? t('compare.risk.filter_mid')
+    : t('compare.risk.filter_low'));
+
+// 明细行颜色按维度区分：整表淡灰、索引淡紫、字段无底色。
+const rowClass = (row: CompareDetailRow): string => {
+  if (row.dimension === 'table') return 'table-row';
+  if (row.dimension === 'index') return 'idx-row';
+  return '';
 };
 
-const renderIndexList = (
-  diffs: DataSyncIndexStructureDiff[],
+const cell = (value: string, className = ''): string =>
+  `<td${className ? ` class="${className}"` : ''} title="${escapeHtml(value)}">${escapeHtml(value)}</td>`;
+
+const renderDetailRow = (
+  row: CompareDetailRow,
+  tableCount: number,
   t: DataSyncWorkbenchTranslate,
 ): string => {
-  if (diffs.length === 0) return '';
-  const items = diffs.map((diff) => {
-    const detail = diff.kind === 'changed'
-      ? `<code>${escapeHtml(diff.source || '—')}</code> → <code>${escapeHtml(diff.target || '—')}</code>`
-      : `<code>${escapeHtml(diff.source || diff.target || '—')}</code>`;
-    return `<li><span class="kind idx">${escapeHtml(t(`compare.index_kind.${diff.kind}`))}</span>`
-      + `<code>${escapeHtml(diff.name)}</code>${detail}</li>`;
-  });
-  return `<ul class="diffs diffs-idx" data-index-diffs="true">${items.join('')}</ul>`;
+  const kindLabel = t(row.kind);
+  return `<tr class="${rowClass(row)}" data-kind-group="${row.groupKey}">`
+    + cell(row.table, 'mono')
+    + cell(String(tableCount), 'num')
+    + `<td title="${escapeHtml(kindLabel)}"><span class="kind-tag" data-kind="${row.groupKey}">${escapeHtml(kindLabel)}</span></td>`
+    + cell(row.subject, 'mono')
+    + cell(row.targetSide, 'mono')
+    + cell(row.sourceSide, 'mono')
+    + (row.risk
+      ? `<td><span class="tag ${RISK_CLASS[row.risk]}"><span class="dot"></span>${escapeHtml(riskLabel(row.risk, t))}</span></td>`
+      : '<td class="muted">—</td>')
+    + '</tr>';
 };
 
-const renderTableRows = (
-  tables: DataSyncTableDiffSummary[],
-  mode: DataSyncCompareMode | undefined,
-  showData: boolean,
-  showSchema: boolean,
+/**
+ * 按类型分组渲染明细：每组前插一行分组标题。
+ *
+ * 与界面共用 dataSyncCompareDetailModel 的投影与排序，报告和面板才会给出
+ * 同一份行序与分组，避免两处各算一套。
+ */
+const renderDetailRows = (
+  rows: CompareDetailRow[],
+  groupByKind: boolean,
   t: DataSyncWorkbenchTranslate,
-): string => tables.map((summary) => {
-  const row = describeCompareRow(summary, mode);
-  const statusLabel = row.status === 'unknown'
-    ? t('compare.status_blocked')
-    : row.status === 'diff'
-      ? t('compare.status_diff')
-      : t('compare.status_same');
-  const dataCells = showData
-    ? `<td class="num">${summary.inserts.toLocaleString()}</td>`
-      + `<td class="num">${summary.updates.toLocaleString()}</td>`
-      + `<td class="num">${summary.deletes.toLocaleString()}</td>`
-    : '';
-  const diffCell = showSchema
-    ? `<td>${row.status === 'same'
-      ? (summary.schemaDiffCount ? `<span class="num">${summary.schemaDiffCount.toLocaleString()}</span>` : '<span class="muted">—</span>')
-      : `${renderDiffList(row.columnDiffs, t)}${renderIndexList(summary.indexDiffs || [], t)}`}</td>`
-    : '';
-  const notes = [row.message, ...row.warnings].filter(Boolean)
-    .map((note) => escapeHtml(note)).join('<br>');
-  return `<tr data-status="${row.status}">`
-    + `<td><span class="tag" data-status="${row.status}">${escapeHtml(statusLabel)}</span></td>`
-    + `<td><code>${escapeHtml(summary.table)}</code>`
-    + `${summary.sourceObject || summary.targetObject
-      ? `<div class="muted">${escapeHtml(summary.sourceObject || '—')} → ${escapeHtml(summary.targetObject || '—')}</div>` : ''}</td>`
-    + dataCells + diffCell
-    + `<td>${renderRiskTag(summary, t)}</td>`
-    + `<td>${notes || '<span class="muted">—</span>'}</td></tr>`;
-}).join('');
+): string => {
+  const tableCounts = new Map<string, number>();
+  rows.forEach((row) => tableCounts.set(row.table, (tableCounts.get(row.table) ?? 0) + 1));
+  const count = (row: CompareDetailRow) => tableCounts.get(row.table) ?? 1;
+  if (!groupByKind) return rows.map((row) => renderDetailRow(row, count(row), t)).join('');
+  return splitByDetailGroup(rows).map((group) => (
+    `<tr class="group-head" data-group-head="${group.key}"><td colspan="7">`
+    + `${escapeHtml(t('compare.detail.group_count', { name: t(group.labelKey), count: group.rows.length }))}`
+    + '</td></tr>'
+    + group.rows.map((row) => renderDetailRow(row, count(row), t)).join('')
+  )).join('');
+};
 
+/**
+ * 渲染自包含的对比结果 HTML 报告。纯字符串拼接、无 DOM 依赖，便于单测；
+ * 所有来自库表元数据的文本都经过转义，报告可直接在浏览器打开。
+ */
 /**
  * 渲染自包含的对比结果 HTML 报告。纯字符串拼接、无 DOM 依赖，便于单测；
  * 所有来自库表元数据的文本都经过转义，报告可直接在浏览器打开。
  */
 export const buildCompareHtmlReport = (
   result: DataSyncCompareResult,
-  options: { compareMode?: DataSyncCompareMode; meta: CompareReportMeta; t: DataSyncWorkbenchTranslate },
+  options: {
+    compareMode?: DataSyncCompareMode;
+    /** 报告是否按变更类型分组；默认按表。 */
+    groupByKind?: boolean;
+    meta: CompareReportMeta;
+    t: DataSyncWorkbenchTranslate;
+  },
 ): string => {
   const { meta, t } = options;
   const summary = buildCompareSummary(result, options.compareMode);
   const mode = result.content || options.compareMode;
   const kpis = summary.kpis.map((kpi) => renderKpi(kpi, summary.total, t)).join('');
-  const dataHeaders = summary.showData
-    ? `<th>${escapeHtml(t('compare.inserts'))}</th>`
-      + `<th>${escapeHtml(t('compare.updates'))}</th>`
-      + `<th>${escapeHtml(t('compare.deletes'))}</th>`
-    : '';
-  const schemaHeader = summary.showSchema ? `<th>${escapeHtml(t('compare.schema_diff'))}</th>` : '';
+  // 报告与面板共用同一份投影：按表排序、每条变更一行。
+  const detailRows = groupByTable(projectCompareDetailRows(result, options.compareMode));
+  const tableCols = [
+    '<col style="width:24%">',
+    '<col style="width:4%">',
+    '<col style="width:8%">',
+    '<col style="width:20%">',
+    '<col style="width:15%">',
+    '<col style="width:15%">',
+    '<col style="width:6%">',
+  ].join('');
 
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
@@ -293,18 +314,39 @@ ${renderBars(summary.diffKindBars, t('compare.summary.no_diff_kinds'), t)}</div>
 ${summary.showSchema ? renderRiskBand(summary, t) : ''}
 </div>
 <h2 style="margin-top:24px">${escapeHtml(t('compare.report.detail'))}</h2>
-<table><thead><tr><th>${escapeHtml(t('compare.report.status'))}</th><th>${escapeHtml(t('compare.table'))}</th>
-${dataHeaders}${schemaHeader}<th>${escapeHtml(t('compare.report.notes'))}</th></tr></thead>
-<tbody>${renderTableRows(result.tables, mode, summary.showData, summary.showSchema, t)}</tbody></table>
+<table><colgroup>${tableCols}</colgroup><thead><tr>
+<th>${escapeHtml(t('compare.detail.column_table'))}</th>
+<th style="text-align:right">${escapeHtml(t('compare.detail.column_count'))}</th>
+<th>${escapeHtml(t('compare.detail.column_kind'))}</th>
+<th>${escapeHtml(t('compare.detail.column_subject'))}</th>
+<th>${escapeHtml(t('compare.detail.column_target'))}</th>
+<th>${escapeHtml(t('compare.detail.column_source'))}</th>
+<th>${escapeHtml(t('compare.report.risk'))}</th>
+</tr></thead>
+<tbody>${renderDetailRows(detailRows, options.groupByKind === true, t)}</tbody></table>
 </div></body></html>`;
+};
+
+/**
+ * 把时间格式化成 yyyy-MM-dd HH:mm:ss，按用户本地时区。
+ *
+ * 报告是给人看的，ISO 串既不好读也不带时区语义；用本地时间 + 秒级精度
+ * 才和用户看到的运行记录对得上。
+ */
+export const formatReportTime = (date: Date): string => {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} `
+    + `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 };
 
 /** 报告的默认文件名，不含扩展名；由导出绑定补 .html。 */
 export const buildCompareReportFileName = (
   taskName: string,
-  generatedAt: string,
+  generatedAt: Date | string,
 ): string => {
   const safeTask = (taskName.trim() || 'compare').replace(/[\\/:*?"<>|]/g, '_');
-  const stamp = generatedAt.replace(/[:T]/g, '-').replace(/\..*$/, '');
+  const stamp = typeof generatedAt === 'string'
+    ? generatedAt.replace(/[:T]/g, '-').replace(/\..*$/, '')
+    : formatReportTime(generatedAt).replace(/[: ]/g, '-');
   return `${safeTask}-compare-${stamp}`;
 };

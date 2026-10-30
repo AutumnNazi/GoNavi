@@ -38,6 +38,8 @@ export type DataSyncRunHistoryProps = {
   onSyncDiffs?: () => void;
   /** Renders the compare result as a standalone HTML report and saves it. */
   onExportCompareHtml?: () => Promise<CompareHtmlExportOutcome>;
+  /** Opens an already-exported report with the OS default program. */
+  onOpenExportedFile?: (path: string) => Promise<boolean>;
 };
 
 export type CompareHtmlExportOutcome =

@@ -19,8 +19,9 @@ const compareResult: DataSyncCompareResult = {
     deletes: 0,
     same: 0,
     hasSchema: true,
-    schemaDiffCount: 0,
-    columnDiffs: [],
+    schemaDiffCount: 1,
+    targetTableExists: true,
+    columnDiffs: [{ column: 'code', kind: 'missing_in_target', source: 'text' }],
   }],
 };
 
@@ -55,7 +56,8 @@ describe('useCompareHtmlExport', () => {
     const [fileName, content] = save.mock.calls[0]! as unknown as [string, string];
     expect(fileName).toMatch(/^Orders-compare-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}$/);
     expect(content).toContain('<!doctype html>');
-    expect(content).toContain('<code>orders</code>');
+    expect(content).toContain('orders');
+    expect(content).toContain('data-kind-group=');
     expect(hook.current.exporting).toBe(false);
   });
 

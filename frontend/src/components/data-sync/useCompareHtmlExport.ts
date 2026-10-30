@@ -1,6 +1,10 @@
 import { useCallback, useState } from 'react';
 
-import { buildCompareHtmlReport, buildCompareReportFileName } from './dataSyncCompareHtmlReport';
+import {
+  buildCompareHtmlReport,
+  buildCompareReportFileName,
+  formatReportTime,
+} from './dataSyncCompareHtmlReport';
 import type { CompareHtmlExportOutcome } from './dataSyncRunHistoryTypes';
 import type { DataSyncCompareMode, DataSyncCompareResult } from './model';
 import type { DataSyncWorkbenchTranslate } from './text';
@@ -24,13 +28,15 @@ export const useCompareHtmlExport = (t: DataSyncWorkbenchTranslate) => {
     async (request: CompareHtmlExportRequest): Promise<CompareHtmlExportOutcome> => {
       setExporting(true);
       try {
-        const generatedAt = new Date().toISOString();
+        const now = new Date();
+        // 文件名用本地时间，和报告里显示的时间保持一致。
+        const generatedAt = formatReportTime(now);
         const html = buildCompareHtmlReport(request.result, {
           compareMode: request.compareMode,
           meta: { ...request.meta, generatedAt },
           t,
         });
-        const fileName = buildCompareReportFileName(request.meta.taskName, generatedAt);
+        const fileName = buildCompareReportFileName(request.meta.taskName, now);
         const saved = await request.save(fileName, html);
         return saved ? { kind: 'saved', path: saved } : { kind: 'cancelled' };
       } catch (cause) {

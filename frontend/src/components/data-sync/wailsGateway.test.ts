@@ -53,6 +53,7 @@ const apiFixture = (
 ): WailsDataSyncApi => ({
   SelectBackupDirectory: vi.fn(async () => success('')),
   ExportTextFile: vi.fn(async () => success({ path: '/tmp/report.html' })),
+  OpenExportedTextFile: vi.fn(async () => success({ path: '/tmp/report.html' })),
   GetSavedConnections: vi.fn(async () => [
     {
       id: 'source-id',

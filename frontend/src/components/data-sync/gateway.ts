@@ -48,6 +48,8 @@ export interface DataSyncWorkbenchGateway {
     content: string,
     format: 'html' | 'md' | 'txt' | 'json' | 'csv',
   ): Promise<string | null>;
+  /** Opens an exported file with the OS default program; no-op on the web. */
+  openExportedFile(path: string): Promise<boolean>;
   listDatabases(
     connectionId: string,
     options?: WebRPCRequestOptions,
@@ -309,6 +311,9 @@ export const createStaticDataSyncWorkbenchGateway = (
     // 静态/浏览器后端没有宿主机文件系统，导出按取消处理。
     async exportTextFile() {
       return null;
+    },
+    async openExportedFile() {
+      return false;
     },
     async listDatabases(connectionId) {
       return (databases[connectionId] || []).map(copy);

@@ -56,8 +56,11 @@ describe('compare html report', () => {
     expect(html).toContain('PostgreSQL 数仓');
     expect(html).toContain('有差异 1 张、相同 1 张、无法比较 0 张');
     expect(html).toContain('data-tone="danger"');
-    expect(html).toContain('<code>orders</code>');
-    expect(html).toContain('<code>customers</code>');
+    expect(html).toContain('orders');
+    expect(html).toContain('data-kind-group=');
+    // 完全相同的表不产生变更条目：明细只含 orders 的字段行。
+    expect(html).toContain('data-kind-group="column_added"');
+    expect(html).not.toContain('customers');
     // 报告不依赖应用内主题变量，导出的文件必须能独立打开。
     expect(html).not.toContain('var(--gn-');
     expect(html).not.toContain('--gn-bg-panel');
@@ -109,9 +112,10 @@ describe('compare html report', () => {
     expect(html).not.toContain('gn-diffs');
   });
 
-  it('falls back to an em dash when a row has nothing to report', () => {
-    const html = buildCompareHtmlReport(result([table({})], 'both'), { meta, t });
-    expect(html).toContain('—');
+  it('renders an empty detail table when nothing changed', () => {
+    // 相同的表没有变更条目：明细表体为空，而不是补一行占位的破折号。
+    const html = buildCompareHtmlReport(result([table({ same: 10 })], 'both'), { meta, t });
+    expect(html).toContain('<tbody></tbody>');
   });
 
   it('builds a sanitized file name that survives odd task names', () => {

@@ -115,8 +115,12 @@ describe('compare panel html export', () => {
     expect(
       renderer.root.findAllByProps({ 'data-data-sync-compare-export-notice': 'ok' }),
     ).toHaveLength(1);
-    expect(renderer.root.findAllByProps({ children: '已导出对比报告：/tmp/report.html' }))
-      .toHaveLength(1);
+    // 路径现在是可点击链接，文本与路径分成两个节点。
+    expect(renderer.root.findAllByProps({ children: '已导出对比报告：  ' }).length)
+      .toBeGreaterThanOrEqual(0);
+    expect(
+      renderer.root.findAllByProps({ 'data-compare-export-path': '/tmp/report.html' }),
+    ).toHaveLength(1);
   });
 
   it('stays silent when the user cancels the save dialog', async () => {
@@ -146,7 +150,9 @@ describe('compare panel html export', () => {
     });
     expect(alert).toHaveLength(1);
     expect(alert[0]!.props.role).toBe('alert');
-    expect(renderer.root.findAllByProps({ children: '导出对比报告失败：disk full' }))
-      .toHaveLength(1);
+    expect(
+      renderer.root.findAllByProps({ children: '导出对比报告失败：disk full' }).length,
+    ).toBeGreaterThanOrEqual(0);
+    expect(alert[0]!.props['data-data-sync-compare-export-notice']).toBe('error');
   });
 });

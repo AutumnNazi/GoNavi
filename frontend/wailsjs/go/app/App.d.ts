@@ -655,6 +655,8 @@ export function OpenDownloadedUpdateDirectory():Promise<connection.QueryResult>;
 
 export function OpenDriverDownloadDirectory(arg1:string):Promise<connection.QueryResult>;
 
+export function OpenExportedTextFile(arg1:string):Promise<connection.QueryResult>;
+
 export function OpenLogDirectory():Promise<connection.QueryResult>;
 
 export function OpenSQLFile():Promise<connection.QueryResult>;
