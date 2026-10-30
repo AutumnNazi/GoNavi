@@ -164,6 +164,9 @@ func (p *rpcProcess) readDiagnostics() {
 	for {
 		n, err := p.stderr.Read(buffer)
 		total += n
+		if n > 0 {
+			p.keepStderr(buffer[:n])
+		}
 		if total > 1<<20 {
 			p.fail(fmt.Errorf("plugin diagnostic output budget exceeded"))
 			return

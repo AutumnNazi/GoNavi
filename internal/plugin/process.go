@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"GoNavi-Wails/internal/logger"
 )
 
 const maxRPCBytes = 1 << 20
@@ -76,7 +78,13 @@ type rpcProcess struct {
 	hostCapability func(json.RawMessage) (json.RawMessage, error)
 	hostLogWindow  time.Time
 	hostLogCount   int
+	stderrTail     []byte
+	stopping       bool
 }
+
+// pluginStderrTailBytes bounds the diagnostic tail kept for a post-mortem. The stream itself is
+// drained and discarded otherwise, so without this a fault carries no plugin-side evidence.
+const pluginStderrTailBytes = 2048
 
 func launchProcess(m Manifest, packageRoot, dataRoot string, proxyEnvironment func() []string) (*rpcProcess, error) {
 	entry, err := selectEntry(m)
@@ -204,6 +212,16 @@ func processEnvironment(packageRoot, dataRoot string, proxyEnvironment func() []
 }
 func (p *rpcProcess) fail(err error) { p.failPending(err, 0) }
 
+// keepStderr retains the newest diagnostic bytes so a later fault can report them.
+func (p *rpcProcess) keepStderr(chunk []byte) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.stderrTail = append(p.stderrTail, chunk...)
+	if len(p.stderrTail) > pluginStderrTailBytes {
+		p.stderrTail = append(p.stderrTail[:0], p.stderrTail[len(p.stderrTail)-pluginStderrTailBytes:]...)
+	}
+}
+
 func (p *rpcProcess) failPending(err error, expectedID uint64) {
 	p.mu.Lock()
 	if p.terminal != nil {
@@ -218,12 +236,19 @@ func (p *rpcProcess) failPending(err error, expectedID uint64) {
 	}
 	p.terminal = err
 	close(p.failed)
+	tail := ""
+	if !p.stopping {
+		tail = strings.TrimSpace(string(p.stderrTail))
+	}
 	pending := make([]rpcPending, 0, len(p.pending))
 	for id, call := range p.pending {
 		pending = append(pending, call)
 		delete(p.pending, id)
 	}
 	p.mu.Unlock()
+	if tail != "" {
+		logger.Warnf("plugin diagnostics before failure (%v): %s", err, tail)
+	}
 	// Settlement callbacks never run under the transport lock.
 	for _, call := range pending {
 		call.settle()
@@ -320,6 +345,9 @@ func (p *rpcProcess) removePending(id uint64) {
 func (p *rpcProcess) stop(grace time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), grace)
 	defer cancel()
+	p.mu.Lock()
+	p.stopping = true
+	p.mu.Unlock()
 	if p.failure() == nil {
 		p.call(ctx, "plugin.shutdown", struct{}{})
 	}
