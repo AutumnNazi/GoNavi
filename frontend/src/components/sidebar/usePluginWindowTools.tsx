@@ -16,9 +16,20 @@ const REQUEST_TIMEOUT_MS = 10000;
 const STARTUP_INTERVAL_MS = 1000;
 const STARTUP_WINDOW_MS = 15000;
 const identity = (plugin: PluginStatus) => `${plugin.digest}:${plugin.generation}`;
-const toolPage = (plugin: PluginStatus) => plugin.manifest.contributes?.pages?.find(
-  (page) => page.id.trim() && (page.html?.source || page.body !== undefined),
-);
+// 顶栏只放插件自己声明的入口：contributes.navigation（location 仅允许 tools）指向的页面。
+// 过去按 pages / window 推断，装完插件就会凭空多出一个按钮；那些入口继续留在插件管理里打开。
+const toolPage = (plugin: PluginStatus) => {
+  const contributes = plugin.manifest.contributes;
+  const entries = (contributes?.navigation ?? [])
+    .filter((entry) => entry.location === 'tools')
+    .sort((left, right) => (left.order ?? 0) - (right.order ?? 0));
+  for (const entry of entries) {
+    const page = contributes?.pages?.find((candidate) =>
+      candidate.id === entry.page && candidate.id.trim() && (candidate.html?.source || candidate.body !== undefined));
+    if (page) return page;
+  }
+  return undefined;
+};
 
 function boundedRequest<T>(request: Promise<T>): { promise: Promise<T>; cancel: () => void } {
   let cancel = () => {};
@@ -50,7 +61,7 @@ function useWindowToolCatalog(web: boolean) {
       const [items, runtime] = await request.promise;
       if (!current.current.alive || ticket !== current.current.epoch) return;
       const allowed = !runtime.safeMode && runtime.managementAllowed;
-      const canOpen = (plugin: PluginStatus) => toolPage(plugin) || (!web && !runtime.webRuntime && plugin.manifest.window);
+      const canOpen = (plugin: PluginStatus) => Boolean(toolPage(plugin));
       const available = allowed ? items.filter((plugin) => {
         const pin = identity(plugin); const id = plugin.manifest.id;
         if (current.current.revoked.has(id)) {
