@@ -176,6 +176,11 @@ func (a *App) preflightDataSyncMappingContext(ctx context.Context, session *meta
 		}
 	}
 	if !targetExists {
+		// 对比是只读任务，目标缺表正是它要发现的差异，不能当阻塞项挡在预检。
+		if definition.Kind == syncjob.JobKindCompare {
+			issues = append(issues, preflightIssue("target_table_missing_compare", DataSyncJobPreflightInfo, "mappings", "target table does not exist; compare reports it as a missing table", mappingID))
+			return issues
+		}
 		if !dataSyncJobMappingCanCreateTarget(definition, mapping, syncengine.ResolveMigrationCapability(source.Config, target.Config)) {
 			issues = append(issues, preflightIssue("target_table_missing", DataSyncJobPreflightBlocker, "mappings", "target table does not exist and this mapping cannot auto-create it", mappingID))
 		} else if err := ensureConnectionAllowsStructureEdit(target.Config, "connection.backend.action.data_sync_structure"); err != nil {

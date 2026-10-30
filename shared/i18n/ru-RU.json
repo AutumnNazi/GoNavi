@@ -6532,6 +6532,7 @@
   "data_sync.plan.target_missing_auto_create": "Целевая таблица отсутствует; она будет автоматически создана перед импортом",
   "data_sync.plan.target_missing_auto_create_all": "Целевая таблица отсутствует; при выполнении она будет автоматически создана, затем будут импортированы все исходные данные",
   "data_sync.plan.target_missing_cannot_sync": "Целевая таблица отсутствует; синхронизацию выполнить нельзя",
+  "data_sync.plan.target_missing_compare": "Целевой таблицы нет; сравнение пометит всю таблицу как отсутствующую ({{count}} столбцов). Создать её можно через «Сгенерировать SQL исправления».",
   "data_sync.plan.target_missing_manual_create": "Целевая таблица отсутствует; сначала создайте ее вручную",
   "data_sync.plan.target_missing_preview_unavailable": "Целевая таблица отсутствует. Предпросмотр различий недоступен.",
   "data_sync.plan.tdengine_target_missing_timestamp_auto_create_unavailable": "В исходной таблице не найден столбец времени, который можно сопоставить с первым столбцом TDengine; автоматическое создание таблицы невозможно",

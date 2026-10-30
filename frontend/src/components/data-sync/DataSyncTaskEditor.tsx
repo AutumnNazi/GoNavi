@@ -3,6 +3,7 @@ import { isWebRPCAbortError } from '../../utils/webRpc';
 import { DataSyncFieldMappingEditor } from './DataSyncFieldMappingEditor';
 import { DataSyncMappingTable } from './DataSyncMappingTable';
 import { dataSyncMappingKey } from './dataSyncMappingKey';
+import { repairCompareTargetObjects } from './dataSyncCompareTargets';
 import { DataSyncRouteBar } from './DataSyncRouteBar';
 import type { DataSyncWorkbenchGateway } from './gateway';
 import {
@@ -163,6 +164,15 @@ export const DataSyncTaskEditor: React.FC<{
       onPatch({ mappings: repairedMappings });
     }
   }, [repairedMappings, task.mappings, onPatch]);
+
+  // 对比只读任务：目标缺表就该继续跑，存量草稿里空的目标名按源对象同名补齐，
+  // 否则校验会报「填写目标对象名称」、对比被静默拦住。
+  const repairedCompareMappings = repairCompareTargetObjects(task.kind, task.mappings);
+  useEffect(() => {
+    if (repairedCompareMappings !== task.mappings) {
+      onPatch({ mappings: repairedCompareMappings });
+    }
+  }, [repairedCompareMappings, task.mappings, onPatch]);
 
   useEffect(() => {
     const navigation = stageNavRef.current;

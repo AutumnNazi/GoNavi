@@ -6532,6 +6532,7 @@
   "data_sync.plan.target_missing_auto_create": "Zieltabelle fehlt; sie wird automatisch erstellt und danach importiert",
   "data_sync.plan.target_missing_auto_create_all": "Zieltabelle fehlt; beim Ausführen wird sie automatisch erstellt und alle Quelldaten werden importiert",
   "data_sync.plan.target_missing_cannot_sync": "Zieltabelle fehlt; Synchronisierung kann nicht ausgeführt werden",
+  "data_sync.plan.target_missing_compare": "Die Zieltabelle fehlt; der Vergleich meldet die ganze Tabelle als fehlend ({{count}} Spalten). Über „Reparatur-SQL erzeugen“ lässt sie sich anlegen.",
   "data_sync.plan.target_missing_manual_create": "Zieltabelle fehlt; bitte zuerst manuell erstellen",
   "data_sync.plan.target_missing_preview_unavailable": "Die Zieltabelle fehlt. Differenzvorschau ist nicht verfügbar.",
   "data_sync.plan.tdengine_target_missing_timestamp_auto_create_unavailable": "In der Quelltabelle wurde keine Zeitspalte erkannt, die der ersten TDengine-Spalte zugeordnet werden kann; automatische Tabellenerstellung ist nicht möglich",

@@ -149,7 +149,8 @@ export const validateDataSyncTask = (
       }
     }
     const targetObject = normalize(mapping.targetObject);
-    if (!targetObject && task.kind !== 'backup') {
+    // 对比只读：目标缺表正是要比出来的差异，空目标名按同名比对，不能挡住执行。
+    if (!targetObject && task.kind !== 'backup' && task.kind !== 'compare') {
       issues.push(
         issue('target_object_required', 'blocker', 'mappings', mapping.id),
       );

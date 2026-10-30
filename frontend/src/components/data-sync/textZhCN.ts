@@ -223,6 +223,7 @@ export const zhCN = {
   'mapping.target_hint.missing': '目标库里没有这张表；在「编辑例外」里改为自动创建即可同步时建出来',
   'mapping.target_hint.pending': '正在查看目标库里有没有这张表',
   'mapping.target_hint.missing_requires_existing': '目标库里没有这张表，而这类任务只写入已有的表，请先在目标端建好',
+  'mapping.target_hint.missing_compare': '目标库里没有这张表；对比会把整表标为缺表，可用「生成修复 SQL」生成建表语句',
   'mapping.key_placeholder': '留空 = 自动按源表主键匹配',
   'mapping.key_detected': '已从源端元数据自动识别，可按需修改',
   'mapping.key_when_needed': '写入已有目标的新增或更新必须有源端物理主键；首次自动建表无需主键。持续增量同步仍需配置稳定键。',

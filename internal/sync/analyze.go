@@ -234,6 +234,22 @@ func (s *SyncEngine) analyze(config SyncConfig) SyncAnalyzeResult {
 				}
 			}
 
+			// 对比是只读任务：目标缺表本身就是它最该报告的差异。把源列全部标成
+			// missing_in_target 后返回，前端据此渲染「整表缺表」并生成 CREATE TABLE；
+			// 这里不能落到下面的 cannot_sync 早退，否则对比会被整表判成无法执行。
+			if !plan.TargetTableExists && config.CompareOnly {
+				summary.CanSync = true
+				summary.MissingColumns, summary.ColumnDiffs = compareMissingTargetColumns(cols)
+				summary.SchemaDiffCount = len(summary.ColumnDiffs)
+				if summary.SchemaDiffCount == 0 {
+					// 源列读不到（受限账号/同义词）时也要标成差异，否则整表会被当成一致。
+					summary.SchemaDiffCount = 1
+				}
+				summary.Message = localizedSyncBackendText("data_sync.plan.target_missing_compare", map[string]any{"count": len(summary.MissingColumns)})
+				result.Tables = append(result.Tables, summary)
+				return
+			}
+
 			if !plan.TargetTableExists && !plan.AutoCreate {
 				summary.Message = firstNonEmpty(plan.PlannedAction, localizedSyncBackendText("data_sync.plan.target_missing_cannot_sync", nil))
 				result.Tables = append(result.Tables, summary)

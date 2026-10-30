@@ -6532,6 +6532,7 @@
   "data_sync.plan.target_missing_auto_create": "目标表不存在，将自动建表后导入",
   "data_sync.plan.target_missing_auto_create_all": "目标表不存在，执行时将自动建表并导入全部源数据",
   "data_sync.plan.target_missing_cannot_sync": "目标表不存在，无法执行同步",
+  "data_sync.plan.target_missing_compare": "目标库没有这张表；对比结果会把整表标记为缺表（{{count}} 列），可用「生成修复 SQL」生成建表语句。",
   "data_sync.plan.target_missing_manual_create": "目标表不存在，需先手工创建",
   "data_sync.plan.target_missing_preview_unavailable": "目标表不存在，差异预览不可用。",
   "data_sync.plan.tdengine_target_missing_timestamp_auto_create_unavailable": "源表未识别到可映射为 TDengine 首列的时间列，无法自动建表",

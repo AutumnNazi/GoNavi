@@ -644,7 +644,7 @@ export const clearDataSyncTargetModeExplicitMarks = (
 const normalizeMetadataName = (value: string): string =>
   value.trim().toLowerCase();
 
-const metadataObjectBaseName = (value: string): string => {
+export const metadataObjectBaseName = (value: string): string => {
   const parts = value.trim().split('.');
   return (parts[parts.length - 1] || '')
     .trim()

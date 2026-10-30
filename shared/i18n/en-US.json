@@ -6532,6 +6532,7 @@
   "data_sync.plan.target_missing_auto_create": "Target table is missing. It will be created automatically before import.",
   "data_sync.plan.target_missing_auto_create_all": "Target table is missing. It will be created automatically at execution and all source data will be imported.",
   "data_sync.plan.target_missing_cannot_sync": "Target table is missing. Sync cannot run.",
+  "data_sync.plan.target_missing_compare": "The target does not have this table; compare reports the whole table as missing ({{count}} columns). Use Generate repair SQL to create it.",
   "data_sync.plan.target_missing_manual_create": "Target table is missing. Create it manually first.",
   "data_sync.plan.target_missing_preview_unavailable": "The target table is missing. Difference preview is unavailable.",
   "data_sync.plan.tdengine_target_missing_timestamp_auto_create_unavailable": "No source time column can be mapped to the first TDengine column, so automatic table creation cannot run",

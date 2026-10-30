@@ -6532,6 +6532,7 @@
   "data_sync.plan.target_missing_auto_create": "ターゲットテーブルが存在しないため、自動作成後にインポートします",
   "data_sync.plan.target_missing_auto_create_all": "ターゲットテーブルが存在しないため、実行時に自動作成してすべてのソースデータをインポートします",
   "data_sync.plan.target_missing_cannot_sync": "ターゲットテーブルが存在しないため、同期を実行できません",
+  "data_sync.plan.target_missing_compare": "ターゲットにこのテーブルがありません。比較ではテーブル全体が不足として扱われ（{{count}} 列）、「修復 SQL を生成」で作成できます。",
   "data_sync.plan.target_missing_manual_create": "ターゲットテーブルが存在しないため、先に手動で作成してください",
   "data_sync.plan.target_missing_preview_unavailable": "ターゲットテーブルがありません。差分プレビューは利用できません。",
   "data_sync.plan.tdengine_target_missing_timestamp_auto_create_unavailable": "ソーステーブルで TDengine の先頭列にマッピングできる時刻列を識別できないため、自動テーブル作成はできません",

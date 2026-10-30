@@ -516,6 +516,10 @@ func buildDataSyncJobEngineConfig(definition syncjob.JobDefinition, runID string
 			config.AutoAddColumns = definition.AutoAddColumnsEnabled()
 		}
 	}
+	if definition.Kind == syncjob.JobKindCompare {
+		// 只读对比：目标缺表要按整表差异返回，不能沿用写任务的缺表早退。
+		config.CompareOnly = true
+	}
 	return config, nil
 }
 
