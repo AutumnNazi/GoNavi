@@ -9468,6 +9468,7 @@
   "plugin.backend.error.runtime_unavailable": "Die Plugin-Laufzeit ist nicht verfügbar.",
   "plugin.backend.error.server_busy": "Der Marktplatz ist ausgelastet oder begrenzt Anfragen. Später erneut versuchen.",
   "plugin.backend.error.source_changed": "Die Marktplatzquelle wurde geändert. Für die neue Quelle aktualisieren.",
+  "plugin.backend.error.source_mismatch": "Dieses Plugin wurde nicht aus der aktuellen Marktplatzquelle installiert und kann daher nicht online aktualisiert werden. Ersetzen Sie es durch ein lokales Paket oder entfernen Sie es und installieren Sie es erneut aus dem Marktplatz.",
   "plugin.backend.error.spec_invalid": "Unbekannte Remote-Quelle. Bitte github:owner/repo oder einen npm-Paketnamen (z. B. @scope/pkg) verwenden.",
   "plugin.backend.error.timeout": "Zeitüberschreitung bei der Marktplatzanfrage. Erneut versuchen.",
   "plugin.backend.error.window_unavailable": "Das isolierte Plugin-Fenster ist nicht verfügbar.",

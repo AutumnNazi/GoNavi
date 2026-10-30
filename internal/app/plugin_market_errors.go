@@ -14,6 +14,11 @@ func marketFailureCode(err error) string {
 		return "timeout"
 	case errors.Is(err, pluginmarket.ErrSourceChanged):
 		return "source_changed"
+	// A package installed outside the marketplace has no provenance record, so the update
+	// guard rejects it. Reporting that as market_unavailable blamed the network for a local
+	// state mismatch and hid the only actionable instruction.
+	case errors.Is(err, pluginmarket.ErrSourceMismatch):
+		return "source_mismatch"
 	case errors.Is(err, pluginmarket.ErrInvalidResponse):
 		return "invalid_response"
 	case errors.Is(err, pluginmarket.ErrResponseTooLarge):

@@ -9468,6 +9468,7 @@
   "plugin.backend.error.runtime_unavailable": "The plugin runtime is unavailable.",
   "plugin.backend.error.server_busy": "The marketplace is busy or rate-limited. Try again later.",
   "plugin.backend.error.source_changed": "The marketplace source changed. Refresh to use the new source.",
+  "plugin.backend.error.source_mismatch": "This plugin was not installed from the current marketplace source, so it cannot update online. Replace it with a local package, or remove it and reinstall from the marketplace.",
   "plugin.backend.error.spec_invalid": "Unrecognized remote source. Use github:owner/repo or an npm package name (e.g. @scope/pkg).",
   "plugin.backend.error.timeout": "The marketplace request timed out. Try again.",
   "plugin.backend.error.window_unavailable": "The isolated plugin window is unavailable.",

@@ -9468,6 +9468,7 @@
   "plugin.backend.error.runtime_unavailable": "Среда выполнения плагинов недоступна.",
   "plugin.backend.error.server_busy": "Каталог занят или ограничивает запросы. Повторите позже.",
   "plugin.backend.error.source_changed": "Источник каталога изменён. Обновите данные из нового источника.",
+  "plugin.backend.error.source_mismatch": "Этот плагин установлен не из текущего источника каталога, поэтому обновить его онлайн нельзя. Замените его локальным пакетом или удалите и установите заново из каталога.",
   "plugin.backend.error.spec_invalid": "Неизвестный удалённый источник. Используйте github:owner/repo или имя npm-пакета (например, @scope/pkg).",
   "plugin.backend.error.timeout": "Время ожидания каталога истекло. Повторите попытку.",
   "plugin.backend.error.window_unavailable": "Отдельное окно плагина недоступно.",

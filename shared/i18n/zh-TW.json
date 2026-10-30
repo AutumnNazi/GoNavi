@@ -9468,6 +9468,7 @@
   "plugin.backend.error.runtime_unavailable": "外掛執行環境無法使用。",
   "plugin.backend.error.server_busy": "市集忙碌或請求受限，請稍後重試。",
   "plugin.backend.error.source_changed": "市集來源已變更。請重新整理以使用新來源。",
+  "plugin.backend.error.source_mismatch": "此外掛不是從目前市集來源安裝的，無法線上更新。請改用本機安裝包替換，或先移除再從市集重新安裝。",
   "plugin.backend.error.spec_invalid": "無法識別的遠端來源。請使用 github:owner/repo 或 npm 套件名稱（如 @scope/pkg）。",
   "plugin.backend.error.timeout": "市集請求逾時，請重試。",
   "plugin.backend.error.window_unavailable": "外掛獨立視窗無法使用。",
