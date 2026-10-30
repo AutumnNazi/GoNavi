@@ -61,7 +61,7 @@ func TestPluginWindowProcessHealthRequiresDocumentHeartbeat(t *testing.T) {
 			entry := openPluginTestWindow(t, c, "test.one")
 			if mode == "stalled" {
 				response := servePluginTest(c, entry, http.MethodPost, pluginBridgePrefix+"heartbeat", `{"sequence":1}`)
-				if response.Code != http.StatusNoContent {
+				if response.Code != http.StatusOK {
 					t.Fatal(response.Body.String())
 				}
 				replay := servePluginTest(c, entry, http.MethodPost, pluginBridgePrefix+"heartbeat", `{"sequence":1}`)

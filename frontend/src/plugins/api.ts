@@ -2,7 +2,7 @@ import {
   PluginList, PluginInspect, PluginInstall, PluginReplace, PluginSetEnabled, PluginRemove,
   PluginInvoke, PluginOpenWindow, PluginRuntimeInfo,
   PluginRemoteInspect, PluginRemoteInstall, PluginRemoteCancelInspection,
-  PluginRunConnectionAction,
+  PluginRunConnectionAction, PluginUpdateWindowPreferences,
 } from '../../wailsjs/go/app/App';
 import { pluginResult, ignoreResult } from './apiResult';
 import { decodeStatuses, decodeStatus, decodeInspection, decodeRuntime, decodeRemoteInspection } from './decode';
@@ -22,6 +22,7 @@ export const pluginAPI = {
   setEnabled: (id: string, enabled: boolean) => pluginResult(PluginSetEnabled(id, enabled), decodeStatus),
   remove: (id: string, purge: boolean) => pluginResult(PluginRemove(id, purge), ignoreResult),
   invoke: (id: string, command: string, args: JSONValue) => pluginResult(PluginInvoke(id, command, JSON.stringify(boundedJSON(args))), (data) => boundedJSON(data ?? null)),
+  updateWindowPreferences: (json: string) => pluginResult(PluginUpdateWindowPreferences(json), ignoreResult),
   openWindow: (id: string, locale: string, theme: string) => pluginResult(PluginOpenWindow(id, locale, theme), ignoreResult),
   runConnectionAction: (pluginID: string, actionID: string, connectionID: string, database: string, collection: string) => pluginResult(
     PluginRunConnectionAction(pluginID, actionID, connectionID, database, collection),

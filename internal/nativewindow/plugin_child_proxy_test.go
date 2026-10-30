@@ -89,7 +89,7 @@ func TestPluginChildProxyServesPackageFixture(t *testing.T) {
 		t.Fatalf("entry html status %d body %q", rec.Code, rec.Body.String())
 	}
 	body, _ := io.ReadAll(rec.Body)
-	if !strings.HasPrefix(string(body), before+"<script>window.gonaviHostPrefs=") {
+	if !strings.HasPrefix(string(body), before+"<script>if(!window.gonaviHostPrefs)window.gonaviHostPrefs=") {
 		t.Fatalf("entry html injection at wrong byte position: %q", body)
 	}
 	if rec.Header().Get("Transfer-Encoding") != "" {

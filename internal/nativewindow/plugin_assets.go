@@ -2,6 +2,7 @@ package nativewindow
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
@@ -78,7 +79,15 @@ func (c *PluginController) serveAsset(w http.ResponseWriter, r *http.Request, en
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Security-Policy", pluginContentSecurityPolicy())
 	if strings.HasPrefix(contentType, "text/html") {
-		writeInjectedPluginHTML(w, file)
+		c.mu.Lock()
+		preferences, revision := c.preferencesLocked(entry)
+		c.mu.Unlock()
+		payload, err := json.Marshal(pluginBootstrap{PluginID: entry.info.PluginID, Generation: entry.info.Generation, Title: entry.title, Preferences: preferences, PreferencesRevision: revision})
+		if err != nil {
+			pluginHTTPError(w, http.StatusInternalServerError, "invalid_preferences")
+			return
+		}
+		writeInjectedPluginHTML(w, file, payload)
 		return
 	}
 	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
@@ -101,13 +110,13 @@ func readPluginBytes(reader io.Reader, limit int64) ([]byte, error) {
 // writeInjectedPluginHTML streams the page with the bridge runtime injected
 // before any plugin script. It reads only a bounded prefix to find <head>, then
 // copies the rest from disk; there is no fixed MB ceiling on the page.
-func writeInjectedPluginHTML(w io.Writer, file *os.File) {
+func writeInjectedPluginHTML(w io.Writer, file *os.File, bootstrap []byte) {
 	prefix, _ := io.ReadAll(io.LimitReader(file, 64<<10))
 	offset := pluginRuntimeOffset(prefix)
 	if offset < 0 || offset > len(prefix) {
 		offset = 0
 	}
-	script := []byte(`<script src="` + pluginBridgePrefix + `runtime.js"></script>`)
+	script := []byte(`<script>window.__gonaviPluginBootstrap=` + string(bootstrap) + `;window.gonaviHostPrefs=window.__gonaviPluginBootstrap.preferences;</script><script src="` + pluginBridgePrefix + `runtime.js"></script>`)
 	_, _ = w.Write(prefix[:offset])
 	_, _ = w.Write(script)
 	_, _ = w.Write(prefix[offset:])

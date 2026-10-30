@@ -48,8 +48,9 @@ func (c *PluginController) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		// A document reload starts a fresh JavaScript sequence, not a new process.
 		c.mu.Lock()
 		entry.heartbeatSequence = 0
+		preferences, revision := c.preferencesLocked(entry)
 		c.mu.Unlock()
-		writePluginJSON(w, pluginBootstrap{PluginID: entry.info.PluginID, Generation: entry.info.Generation, Title: entry.title, Context: entry.context})
+		writePluginJSON(w, pluginBootstrap{PluginID: entry.info.PluginID, Generation: entry.info.Generation, Title: entry.title, Context: entry.context, Preferences: preferences, PreferencesRevision: revision})
 	case pluginBridgePrefix + "runtime.js":
 		if !pluginMethod(w, r, http.MethodGet) {
 			return
@@ -115,12 +116,13 @@ func (c *PluginController) serveHeartbeat(w http.ResponseWriter, r *http.Request
 		entry.heartbeat = time.Now()
 		entry.heartbeatSequence = heartbeat.Sequence
 	}
+	preferences, revision := c.preferencesLocked(entry)
 	c.mu.Unlock()
 	if !accepted {
 		pluginHTTPError(w, http.StatusConflict, "stale_heartbeat")
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writePluginJSON(w, pluginBootstrap{PluginID: entry.info.PluginID, Generation: entry.info.Generation, Title: entry.title, Preferences: preferences, PreferencesRevision: revision})
 }
 
 func pluginMethod(w http.ResponseWriter, r *http.Request, method string) bool {

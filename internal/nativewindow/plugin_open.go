@@ -18,7 +18,7 @@ import (
 // asynchronous; a missing event-loop heartbeat causes bounded termination.
 // locale and theme mirror the host appearance; they are forwarded to the child
 // and injected into the entry HTML as window.gonaviHostPrefs. An already open
-// window keeps the prefs it was opened with (reopen to pick up changes).
+// window receives newer safe snapshots through its event-loop heartbeat.
 func (c *PluginController) Open(ctx context.Context, id, windowKey string, launchContext json.RawMessage, locale, theme string) (PluginWindowInfo, error) {
 	if err := ctx.Err(); err != nil {
 		return PluginWindowInfo{}, err

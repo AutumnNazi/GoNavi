@@ -323,9 +323,9 @@ export const useSidebarToolbarModel = ({
           icon: <CodeOutlined aria-hidden="true" />,
           onClick: () => onOpenSettingsNavigation?.({ group: 'workspace', pane: 'snippet-settings' }),
         },
-        ...pluginWindowTools,
       ],
     },
+    ...pluginWindowTools,
     sessionWorkbenchAction,
     userManagementAction,
   ];

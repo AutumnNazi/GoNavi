@@ -69,10 +69,12 @@ type pluginProcess interface {
 }
 
 type pluginBootstrap struct {
-	PluginID   string          `json:"pluginId"`
-	Generation uint64          `json:"generation"`
-	Title      string          `json:"title"`
-	Context    json.RawMessage `json:"context,omitempty"`
+	PluginID            string          `json:"pluginId"`
+	Generation          uint64          `json:"generation"`
+	Title               string          `json:"title"`
+	Context             json.RawMessage `json:"context,omitempty"`
+	Preferences         json.RawMessage `json:"preferences,omitempty"`
+	PreferencesRevision uint64          `json:"preferencesRevision,omitempty"`
 }
 
 type pluginInvokeRequest struct {

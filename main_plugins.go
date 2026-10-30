@@ -24,6 +24,9 @@ type desktopPluginWindows struct {
 func (w desktopPluginWindows) Open(ctx context.Context, pluginID, windowKey string, launchContext json.RawMessage, locale, theme string) (any, error) {
 	return w.controller.Open(ctx, pluginID, windowKey, launchContext, locale, theme)
 }
+func (w desktopPluginWindows) UpdatePreferences(raw json.RawMessage) error {
+	return w.controller.UpdatePreferences(raw)
+}
 func (w desktopPluginWindows) Revoke(id string)                { w.controller.Revoke(id) }
 func (w desktopPluginWindows) Close(ctx context.Context) error { return w.controller.Close(ctx) }
 

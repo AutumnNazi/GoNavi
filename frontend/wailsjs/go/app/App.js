@@ -1438,6 +1438,10 @@ export function PluginSkills() {
   return window['go']['app']['App']['PluginSkills']();
 }
 
+export function PluginUpdateWindowPreferences(arg1) {
+  return window['go']['app']['App']['PluginUpdateWindowPreferences'](arg1);
+}
+
 export function PreflightDatabaseSQLImport(arg1, arg2, arg3) {
   return window['go']['app']['App']['PreflightDatabaseSQLImport'](arg1, arg2, arg3);
 }

@@ -14,6 +14,8 @@ export interface TitleBarQuickAction {
   onClick?: () => void;
   disabled?: boolean;
   priority?: 'primary' | 'secondary';
+  // 插件工具入口放在 AI 按钮之后，其他工具保持原有位置。
+  afterAI?: boolean;
   /**
    * 是否处于激活态。
    *

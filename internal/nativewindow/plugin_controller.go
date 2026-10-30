@@ -46,29 +46,32 @@ type pluginWindowEntry struct {
 // PluginController owns plugin UI processes separately from the trusted App
 // detached-window manager. Never bind this controller to an untrusted WebView.
 type PluginController struct {
-	mu                 sync.Mutex
-	manager            pluginWindowRuntime
-	capability         func(ctx context.Context, pluginID string, generation uint64, method string, arguments json.RawMessage) (json.RawMessage, error)
-	assets             fs.FS
-	bundle             []byte
-	executable         string
-	windows            map[string]*pluginWindowEntry
-	windowIDs          map[string]*pluginWindowEntry
-	revokedGenerations map[string]pluginWindowStamp
-	knownGenerations   map[string]pluginWindowStamp
-	admissionEpochs    map[string]uint64
-	server             *http.Server
-	endpoint           string
-	life               context.Context
-	cancel             context.CancelFunc
-	closed             bool
-	wg                 sync.WaitGroup
-	startProcess       func(pluginProcessSpec) (pluginProcess, error)
-	stopTimeout        time.Duration
-	heartbeatTimeout   time.Duration
-	startupTimeout     time.Duration
-	checkInterval      time.Duration
-	onWindowClosed     func(context.Context, PluginWindowInfo)
+	mu                        sync.Mutex
+	manager                   pluginWindowRuntime
+	capability                func(ctx context.Context, pluginID string, generation uint64, method string, arguments json.RawMessage) (json.RawMessage, error)
+	assets                    fs.FS
+	bundle                    []byte
+	executable                string
+	windows                   map[string]*pluginWindowEntry
+	windowIDs                 map[string]*pluginWindowEntry
+	revokedGenerations        map[string]pluginWindowStamp
+	knownGenerations          map[string]pluginWindowStamp
+	admissionEpochs           map[string]uint64
+	server                    *http.Server
+	endpoint                  string
+	life                      context.Context
+	cancel                    context.CancelFunc
+	closed                    bool
+	wg                        sync.WaitGroup
+	startProcess              func(pluginProcessSpec) (pluginProcess, error)
+	stopTimeout               time.Duration
+	heartbeatTimeout          time.Duration
+	startupTimeout            time.Duration
+	checkInterval             time.Duration
+	onWindowClosed            func(context.Context, PluginWindowInfo)
+	preferences               json.RawMessage
+	preferencesRevision       uint64
+	preferenceRequestRevision uint64
 }
 
 // NewPluginController validates the standalone frontend before enabling windows.
