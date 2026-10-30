@@ -37,6 +37,14 @@ func (a *App) preflightDataSyncMappingsWithProgress(ctx context.Context, definit
 		}
 	}
 	// 分母先落定：会话可能建不起来，但「共几张」与连接无关。
+	// 对比是只读的整库行为：映射级校验（逐表读两端列）在千表规模上会串成几分钟，
+	// 而这些差异在运行期本来就会逐表报告。所以对比只保留两端的连通性与能力检查。
+	if definition.Kind == syncjob.JobKindCompare {
+		if progress != nil {
+			progress.Total = 0
+		}
+		return nil
+	}
 	if progress != nil {
 		progress.Total = len(enabled)
 	}

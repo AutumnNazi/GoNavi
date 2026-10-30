@@ -56,8 +56,9 @@ export const DataSyncTaskEditor: React.FC<{
   onPatch,
 }) => {
   const stages = dataSyncTaskStages(task.kind);
-  const sourceObjects = useDataSyncObjects(gateway, task.source);
-  const targetObjects = useDataSyncObjects(gateway, task.target);
+  const loadObjects = task.kind !== 'compare';
+  const sourceObjects = useDataSyncObjects(gateway, task.source, loadObjects);
+  const targetObjects = useDataSyncObjects(gateway, task.target, loadObjects);
   const navigationIssues =
     preflight && !preflightStale ? preflight.issues : validateDataSyncTask(task);
   const currentTaskRef = useRef(task);
