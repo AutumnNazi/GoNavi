@@ -9774,6 +9774,8 @@
   "plugin.permission.host_query_read.description": "保存済み接続で読み取り専用クエリを実行する",
   "plugin.permission.host_schema_write": "確認済みの DDL を保存済み接続で実行する",
   "plugin.permission.host_schema_write.description": "明示的に確認された DDL をプレビューして適用する",
+  "plugin.permission.system_open_external": "リンクをシステムのブラウザーで開く",
+  "plugin.permission.system_open_external.description": "http(s) リンクを 1 件だけ既定のブラウザーに渡す",
   "plugin.permission.ui_html_panel": "サンドボックス HTML パネル",
   "plugin.permission.ui_html_panel.description": "サンドボックスパネルでプラグイン HTML を描画する",
   "plugin.permission.ui_pages": "メインウィンドウにプラグインページを表示する",

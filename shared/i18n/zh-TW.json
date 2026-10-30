@@ -9774,6 +9774,8 @@
   "plugin.permission.host_query_read.description": "在儲存連線上執行唯讀查詢",
   "plugin.permission.host_schema_write": "在儲存連線上執行經確認的 DDL",
   "plugin.permission.host_schema_write.description": "預覽並執行經明確確認的 DDL",
+  "plugin.permission.system_open_external": "在系統瀏覽器中開啟連結",
+  "plugin.permission.system_open_external.description": "把單一 http(s) 連結交給系統預設瀏覽器開啟",
   "plugin.permission.ui_html_panel": "沙箱 HTML 面板",
   "plugin.permission.ui_html_panel.description": "在沙箱面板中渲染外掛 HTML",
   "plugin.permission.ui_pages": "在主視窗顯示外掛頁面",

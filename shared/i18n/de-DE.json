@@ -9774,6 +9774,8 @@
   "plugin.permission.host_query_read.description": "Schreibgeschützte Abfragen auf gespeicherten Verbindungen ausführen",
   "plugin.permission.host_schema_write": "Bestätigte DDL auf gespeicherten Verbindungen ausführen",
   "plugin.permission.host_schema_write.description": "Explizit bestätigte DDL prüfen und anwenden",
+  "plugin.permission.system_open_external": "Links im Systembrowser öffnen",
+  "plugin.permission.system_open_external.description": "Einen http(s)-Link an den Standardbrowser übergeben",
   "plugin.permission.ui_html_panel": "Sandbox-HTML-Panel",
   "plugin.permission.ui_html_panel.description": "Plugin-HTML in einem sandboxed Panel rendern",
   "plugin.permission.ui_pages": "Plugin-Seiten im Hauptfenster anzeigen",

@@ -16,6 +16,12 @@ const (
 	SchemaWritePermission            = "host.schema.write"
 )
 
+// OpenExternalPermission lets a page or a plugin window hand one http(s) link
+// to the system browser. It grants no in-app navigation and no file, mail or
+// custom-scheme handler. The identifier stays lowercase because manifest
+// permissions must match ^[a-z][a-z0-9._:-]{0,127}$.
+const OpenExternalPermission = "system.open-external"
+
 // PageLocationTools is the only navigation location v1 accepts: the title-bar
 // plugin menu. Unknown values stay rejected so a typo cannot silently render
 // nothing.

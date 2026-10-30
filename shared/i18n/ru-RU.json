@@ -9774,6 +9774,8 @@
   "plugin.permission.host_query_read.description": "Выполнять запросы только для чтения на сохранённых подключениях",
   "plugin.permission.host_schema_write": "Выполнять подтверждённые DDL на сохранённых подключениях",
   "plugin.permission.host_schema_write.description": "Предварительно просматривать и применять явно подтверждённый DDL",
+  "plugin.permission.system_open_external": "Открывать ссылки в системном браузере",
+  "plugin.permission.system_open_external.description": "Передавать одну ссылку http(s) браузеру по умолчанию",
   "plugin.permission.ui_html_panel": "HTML-панель в песочнице",
   "plugin.permission.ui_html_panel.description": "Отображать HTML плагина в изолированной панели",
   "plugin.permission.ui_pages": "Показывать страницы плагинов в главном окне",
