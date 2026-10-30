@@ -10,6 +10,7 @@ import type {
   DataSyncScheduleSummary,
   DataSyncTaskDefinition,
   DataSyncCdcSourceStatus,
+  DataSyncColumnAttributeDiff,
   DataSyncCompareDiffStats,
   DataSyncIndexStructureDiff,
 } from './model';
@@ -29,6 +30,7 @@ import {
   optionalMetadataNumber,
 } from './wailsDtoPrimitives';
 import {
+  ATTRIBUTE_DIFF_KINDS,
   COLUMN_STRUCTURE_DIFF_KINDS,
   COMPARE_MODES,
   INDEX_STRUCTURE_DIFF_KINDS,
@@ -212,6 +214,28 @@ const decodeIndexDiffs = (
     .filter((diff): diff is NonNullable<typeof diff> => diff !== null);
 };
 
+const decodeAttributeDiffs = (
+  value: unknown,
+  path: string,
+): DataSyncColumnAttributeDiff[] | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  return value
+    .map((entry, diffIndex) => {
+      const diffPath = `${path}[${diffIndex}]`;
+      const diff = record(entry, diffPath);
+      const rawKind = optionalString(diff.kind, `${diffPath}.kind`);
+      const kind = ATTRIBUTE_DIFF_KINDS.find((candidate) => candidate === rawKind);
+      if (!kind) return null;
+      return {
+        column: string(diff.column, `${diffPath}.column`),
+        kind,
+        source: optionalString(diff.source, `${diffPath}.source`) || undefined,
+        target: optionalString(diff.target, `${diffPath}.target`) || undefined,
+      };
+    })
+    .filter((diff): diff is NonNullable<typeof diff> => diff !== null);
+};
+
 const decodeDiffStats = (
   value: unknown,
   path: string,
@@ -226,11 +250,17 @@ const decodeDiffStats = (
       extraInTarget: number(columns.extraInTarget ?? 0, `${path}.columns.extraInTarget`),
       typeChanged: number(columns.typeChanged ?? 0, `${path}.columns.typeChanged`),
       nullableChanged: number(columns.nullableChanged ?? 0, `${path}.columns.nullableChanged`),
+      renamed: number(columns.renamed ?? 0, `${path}.columns.renamed`),
+      capacityDegraded: number(
+        columns.capacityDegraded ?? 0,
+        `${path}.columns.capacityDegraded`,
+      ),
     },
     indexes: {
       missingInTarget: number(indexes.missingInTarget ?? 0, `${path}.indexes.missingInTarget`),
       extraInTarget: number(indexes.extraInTarget ?? 0, `${path}.indexes.extraInTarget`),
       changed: number(indexes.changed ?? 0, `${path}.indexes.changed`),
+      renamed: number(indexes.renamed ?? 0, `${path}.indexes.renamed`),
     },
     targetTableMissing: stats.targetTableMissing === true ? true : undefined,
   };
@@ -302,6 +332,10 @@ export const decodeCompareResult = (
                 )
             : undefined,
           indexDiffs: decodeIndexDiffs(summary.indexDiffs, `${path}.tables[${index}].indexDiffs`),
+          attributeDiffs: decodeAttributeDiffs(
+            summary.attributeDiffs,
+            `${path}.tables[${index}].attributeDiffs`,
+          ),
           diffStats: decodeDiffStats(summary.diffStats, `${path}.tables[${index}].diffStats`),
           hasSchema: summary.hasSchema === undefined
             ? undefined

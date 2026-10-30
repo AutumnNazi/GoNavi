@@ -81,6 +81,8 @@ const DIFF_KINDS: DataSyncColumnStructureDiff['kind'][] = [
   'extra_in_target',
   'type',
   'nullable',
+  'renamed',
+  'capacity_degraded',
 ];
 
 const DIFF_KIND_RISK: Record<DataSyncColumnStructureDiff['kind'], CompareRiskBucket> = {
@@ -88,6 +90,10 @@ const DIFF_KIND_RISK: Record<DataSyncColumnStructureDiff['kind'], CompareRiskBuc
   type: 'blocking',
   nullable: 'attention',
   extra_in_target: 'compatible',
+  // 重命名是推断结果：可能是改名，也可能是一删一增，按需关注处理。
+  renamed: 'attention',
+  // TEXT 族内部降级不会让建表失败，只是存量数据可能被截断。
+  capacity_degraded: 'compatible',
 };
 
 // 索引风险口径与列不同：多出的索引不影响同步，定义变更会让后续写入走错索引，
@@ -96,6 +102,7 @@ const INDEX_DIFF_RISK: Record<DataSyncIndexStructureDiff['kind'], CompareRiskBuc
   missing_in_target: 'blocking',
   changed: 'blocking',
   extra_in_target: 'compatible',
+  renamed: 'attention',
 };
 
 const DIFF_KIND_TONES: Record<DataSyncColumnStructureDiff['kind'], CompareTone> = {
@@ -103,6 +110,8 @@ const DIFF_KIND_TONES: Record<DataSyncColumnStructureDiff['kind'], CompareTone> 
   type: 'danger',
   nullable: 'warn',
   extra_in_target: 'ok',
+  renamed: 'warn',
+  capacity_degraded: 'warn',
 };
 
 const emptyRisk = (): CompareRisk => ({ blocking: 0, attention: 0, compatible: 0 });
@@ -162,12 +171,15 @@ const COLUMN_DIFF_DIRECTION: Record<DataSyncColumnStructureDiff['kind'], Compare
   extra_in_target: 'removed',
   type: 'changed',
   nullable: 'changed',
+  renamed: 'changed',
+  capacity_degraded: 'changed',
 };
 
 const INDEX_DIFF_DIRECTION: Record<DataSyncIndexStructureDiff['kind'], CompareDiffDirection> = {
   missing_in_target: 'added',
   extra_in_target: 'removed',
   changed: 'changed',
+  renamed: 'changed',
 };
 
 type AggregateOptions = {

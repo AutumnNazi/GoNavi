@@ -2,13 +2,19 @@ import { DataSyncCompareBars } from './DataSyncCompareBars';
 import { DataSyncCompareComposition } from './DataSyncCompareComposition';
 import { DataSyncCompareKpis } from './DataSyncCompareKpis';
 import { DataSyncCompareRiskBand } from './DataSyncCompareRiskBand';
+import { DataSyncCompareTextShrink } from './DataSyncCompareTextShrink';
 import type { CompareSummary } from './dataSyncCompareSummaryModel';
+import type { DataSyncCompareResult } from './model';
 import type { DataSyncWorkbenchTranslate } from './text';
 
-type Props = { summary: CompareSummary; t: DataSyncWorkbenchTranslate };
+type Props = {
+  summary: CompareSummary;
+  result: DataSyncCompareResult | null;
+  t: DataSyncWorkbenchTranslate;
+};
 
 // 对比结果仪表盘顶部：Hero 总数 + KPI + 构成/分布 + 风险色带。
-export function DataSyncCompareSummary({ summary, t }: Props) {
+export function DataSyncCompareSummary({ summary, result, t }: Props) {
   if (summary.total === 0) return null;
   return (
     <section className="gn-data-sync-compare-summary" data-data-sync-compare-summary="true">
@@ -51,6 +57,9 @@ export function DataSyncCompareSummary({ summary, t }: Props) {
             hasIndexDiffs={summary.hasIndexDiffs}
             t={t}
           />
+        ) : null}
+        {summary.showSchema ? (
+          <DataSyncCompareTextShrink result={result} t={t} />
         ) : null}
         {summary.showSchema ? (
           <DataSyncCompareRiskBand risk={summary.risk} t={t} />

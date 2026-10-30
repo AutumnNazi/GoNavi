@@ -7,15 +7,19 @@ import { compareFilterCounts } from './dataSyncCompareSummaryModel';
 import type { DataSyncWorkbenchTextKey } from './text';
 import type { DataSyncWorkbenchTranslate } from './text';
 
+export type CompareGroupBy = 'table' | 'kind';
+
 type Props = {
   summary: CompareSummary;
   filter: CompareTableFilter;
   query: string;
   riskFilter: CompareRiskBucket[];
   visibleCount: number;
+  groupBy: CompareGroupBy;
   onFilterChange: (filter: CompareTableFilter) => void;
   onQueryChange: (query: string) => void;
   onRiskFilterChange: (risk: CompareRiskBucket[]) => void;
+  onGroupByChange: (groupBy: CompareGroupBy) => void;
   t: DataSyncWorkbenchTranslate;
 };
 
@@ -41,9 +45,11 @@ export function DataSyncCompareFilters({
   query,
   riskFilter,
   visibleCount,
+  groupBy,
   onFilterChange,
   onQueryChange,
   onRiskFilterChange,
+  onGroupByChange,
   t,
 }: Props) {
   const counts = compareFilterCounts(summary);
@@ -83,6 +89,23 @@ export function DataSyncCompareFilters({
             onClick={() => toggleRisk(chip.key)}
           >
             {t(chip.labelKey)}
+          </button>
+        ))}
+      </div>
+      <div className="gn-data-sync-compare-filters__chips" data-compare-group-by="true">
+        <span className="gn-data-sync-compare-filters__sep">
+          {t('compare.detail.group')}
+        </span>
+        {(['table', 'kind'] as CompareGroupBy[]).map((key) => (
+          <button
+            key={key}
+            type="button"
+            className="gn-data-sync-compare-chip"
+            data-group-by={key}
+            aria-pressed={groupBy === key}
+            onClick={() => onGroupByChange(key)}
+          >
+            {t(key === 'table' ? 'compare.report.group_by_table' : 'compare.report.group_by_kind')}
           </button>
         ))}
       </div>

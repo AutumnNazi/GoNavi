@@ -31,6 +31,9 @@ type TableDiffSummary struct {
 	// failure is indistinguishable from "no indexes" and would otherwise
 	// report every source index as missing downstream.
 	IndexDiffs []IndexStructureDiff `json:"indexDiffs,omitempty"`
+	// AttributeDiffs carries default/comment drift: it cannot block a sync but
+	// silently changes what lands in the target, so it gets its own section.
+	AttributeDiffs []ColumnAttributeDiff `json:"attributeDiffs,omitempty"`
 	// DiffStats pre-aggregates the per-dimension counts the compare dashboard
 	// needs, so the UI never re-derives them from two differently-shaped lists.
 	DiffStats          *TableDiffStats   `json:"diffStats,omitempty"`
@@ -246,6 +249,7 @@ func (s *SyncEngine) analyze(config SyncConfig) SyncAnalyzeResult {
 					summary.SchemaDiffCount = len(summary.ColumnDiffs)
 				}
 				if config.CompareOnly {
+					summary.AttributeDiffs = diffColumnAttributes(cols, targetCols)
 					// 索引差异只在只读对比里采集：写任务的结构计划会自行生成建索引
 					// 语句，额外的索引比对既慢又没有展示位。
 					summary.IndexDiffs = compareTableIndexes(

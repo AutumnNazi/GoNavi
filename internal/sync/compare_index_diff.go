@@ -46,6 +46,8 @@ type TableColumnDiffStats struct {
 	TypeChanged     int `json:"typeChanged"`
 	NullableChanged int `json:"nullableChanged"`
 	Renamed         int `json:"renamed"`
+	// CapacityDegraded 是同一容量族内部缩小（如 longtext → mediumtext）。
+	CapacityDegraded int `json:"capacityDegraded"`
 }
 
 type TableIndexDiffStats struct {
@@ -311,6 +313,8 @@ func buildTableDiffStats(
 			stats.Columns.NullableChanged++
 		case ColumnDiffRenamed:
 			stats.Columns.Renamed++
+		case ColumnDiffCapacityDegraded:
+			stats.Columns.CapacityDegraded++
 		}
 	}
 	for _, diff := range indexDiffs {

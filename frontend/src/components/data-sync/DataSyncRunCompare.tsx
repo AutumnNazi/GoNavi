@@ -1,13 +1,23 @@
 import { useMemo, useState } from 'react';
 import { tableHasCompareDiff } from './compareRepairSql';
-import { DataSyncCompareFilters } from './DataSyncCompareFilters';
-import { DataSyncCompareRow } from './DataSyncCompareRow';
+import { DataSyncCompareAppendixTable } from './DataSyncCompareAppendixTable';
+import { DataSyncCompareDetailTable } from './DataSyncCompareDetailTable';
+import { DataSyncCompareFilters, type CompareGroupBy } from './DataSyncCompareFilters';
 import { DataSyncCompareSummary } from './DataSyncCompareSummary';
 import { RunEventTimeline } from './DataSyncRunEventTimeline';
+import {
+  filterDetailRows,
+  filterDetailRowsByRisk,
+  groupByKind,
+  groupByTable,
+  projectCompareDetailRows,
+  splitByDetailGroup,
+} from './dataSyncCompareDetailModel';
 import type {
   CompareRiskBucket,
   CompareTableFilter,
 } from './dataSyncCompareSummaryModel';
+import type { DataSyncCompareResult } from './model';
 import {
   buildCompareSummary,
   filterCompareTables,
@@ -27,6 +37,7 @@ export function DataSyncRunCompare(props: DataSyncRunHistoryProps) {
   const [filter, setFilter] = useState<CompareTableFilter>('all');
   const [query, setQuery] = useState('');
   const [riskFilter, setRiskFilter] = useState<CompareRiskBucket[]>([]);
+  const [groupBy, setGroupBy] = useState<CompareGroupBy>('table');
   // 导出结果就地反馈：成功给出落盘路径，取消保持静默。
   const [exportNotice, setExportNotice] = useState<ExportNotice>(null);
   const runExport = async (action: () => Promise<CompareHtmlExportOutcome>) => {
@@ -48,17 +59,33 @@ export function DataSyncRunCompare(props: DataSyncRunHistoryProps) {
     () => buildCompareSummary(compareResult, compareMode),
     [compareResult, compareMode],
   );
+  // 明细改走「每条变更一行」的投影：只有摊平后才有变更类型列与按类型分组。
+  // 标签页仍按表状态筛，先在表级过滤，再投影，避免把整表状态拆散。
   const visibleTables = useMemo(
     () => filterCompareTables(
       compareResult?.tables || [],
       effectiveMode,
       filter,
-      query,
-      riskFilter,
+      '',
+      [],
       t,
     ),
-    [compareResult, effectiveMode, filter, query, riskFilter, t],
+    [compareResult, effectiveMode, filter, t],
   );
+  const detailRows = useMemo(() => {
+    const projected = projectCompareDetailRows(
+      { ...(compareResult as DataSyncCompareResult), tables: visibleTables },
+      effectiveMode,
+    );
+    const searched = filterDetailRows(projected, query, t);
+    const risked = filterDetailRowsByRisk(searched, riskFilter);
+    return groupBy === 'kind' ? groupByKind(risked) : groupByTable(risked);
+  }, [compareResult, visibleTables, effectiveMode, query, riskFilter, groupBy, t]);
+  const detailGroups = useMemo(
+    () => (groupBy === 'kind' ? splitByDetailGroup(detailRows) : null),
+    [detailRows, groupBy],
+  );
+  const detailCount = detailRows.length;
   return <>
     {(!isCompareWorkbench && compareResult) || compareDetailOpen ? (
       <section className="gn-data-sync-compare-panel" data-data-sync-compare="true">
@@ -137,27 +164,34 @@ export function DataSyncRunCompare(props: DataSyncRunHistoryProps) {
           <p>{compareResult.message || t('compare.empty')}</p>
         ) : (
           <>
-            <DataSyncCompareSummary summary={summary} t={t} />
+            <DataSyncCompareSummary summary={summary} result={compareResult} t={t} />
             <DataSyncCompareFilters
               summary={summary}
               filter={filter}
               query={query}
               riskFilter={riskFilter}
-              visibleCount={visibleTables.length}
+              visibleCount={detailCount}
+              groupBy={groupBy}
               onFilterChange={setFilter}
               onQueryChange={setQuery}
               onRiskFilterChange={setRiskFilter}
+              onGroupByChange={setGroupBy}
               t={t}
             />
-            {visibleTables.length === 0 ? (
+            {detailRows.length === 0 ? (
               <p className="gn-data-sync-compare-empty-filter" data-data-sync-compare-empty-filter="true">
                 {t('compare.filters.empty')}
               </p>
             ) : (
-              <ul className="gn-data-sync-compare-list">
-                {visibleTables.map((row) => <DataSyncCompareRow key={row.table}
-                  summary={row} compareMode={effectiveMode} t={t} />)}
-              </ul>
+              <>
+                <DataSyncCompareDetailTable
+                  rows={detailRows}
+                  groups={groupBy === 'kind' ? detailGroups : null}
+                  groupBy={groupBy}
+                  t={t}
+                />
+                <DataSyncCompareAppendixTable result={compareResult} t={t} />
+              </>
             )}
           </>
         )}

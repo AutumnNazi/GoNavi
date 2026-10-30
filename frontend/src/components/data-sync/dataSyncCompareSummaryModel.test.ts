@@ -138,6 +138,8 @@ describe('compare summary aggregation', () => {
       ['extra_in_target', 1],
       ['type', 1],
       ['nullable', 1],
+      ['renamed', 0],
+      ['capacity_degraded', 0],
     ]);
     expect(summary.risk).toEqual({ blocking: 2, attention: 1, compatible: 1 });
   });

@@ -41,7 +41,11 @@ const diffOnly = result(
 
 const render = (tables: DataSyncCompareResult) =>
   TestRenderer.create(
-    <DataSyncCompareSummary summary={buildCompareSummary(tables, tables.content)} t={t} />,
+    <DataSyncCompareSummary
+      summary={buildCompareSummary(tables, tables.content)}
+      result={tables}
+      t={t}
+    />,
   );
 
 describe('compare summary dashboard', () => {
@@ -151,9 +155,11 @@ describe('compare summary filters', () => {
         query="ord"
         riskFilter={[]}
         visibleCount={1}
+        groupBy="table"
         onFilterChange={(next) => changes.push(`filter:${next}`)}
         onQueryChange={(next) => changes.push(`query:${next}`)}
         onRiskFilterChange={(next) => changes.push(`risk:${next.join(',')}`)}
+        onGroupByChange={(next) => changes.push(`group:${next}`)}
         t={t}
       />,
     );

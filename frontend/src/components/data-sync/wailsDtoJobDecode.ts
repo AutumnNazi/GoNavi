@@ -1,6 +1,7 @@
 import {
   type DataSyncTableMapping,
   type DataSyncCompareMode,
+  type DataSyncColumnAttributeDiff,
   type DataSyncColumnStructureDiff,
   type DataSyncIndexStructureDiff,
   type DataSyncTaskLifecycle,
@@ -143,11 +144,18 @@ export const COLUMN_STRUCTURE_DIFF_KINDS = [
   'extra_in_target',
   'type',
   'nullable',
+  'renamed',
+  'capacity_degraded',
 ] as const satisfies readonly DataSyncColumnStructureDiff['kind'][];
+export const ATTRIBUTE_DIFF_KINDS = [
+  'default',
+  'comment',
+] as const satisfies readonly DataSyncColumnAttributeDiff['kind'][];
 export const INDEX_STRUCTURE_DIFF_KINDS = [
   'missing_in_target',
   'extra_in_target',
   'changed',
+  'renamed',
 ] as const satisfies readonly DataSyncIndexStructureDiff['kind'][];
 const LIFECYCLES: readonly DataSyncTaskLifecycle[] = [
   'draft',

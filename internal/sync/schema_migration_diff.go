@@ -117,9 +117,15 @@ func diffColumnStructures(sourceCols, targetCols []connection.ColumnDefinition, 
 		sourceTypeText := normalizeComparableColumnType(sourceType, sourceCol.Type)
 		targetTypeText := normalizeComparableColumnType(targetType, targetCol.Type)
 		if !strings.EqualFold(sourceTypeText, targetTypeText) {
+			// 同族容量缩小单独成一种差异：它不会让建表失败，但存量数据超长
+			// 会被截断，风险等级与「类型不同」不同，不能混在一起。
+			kind := ColumnDiffType
+			if isWithinFamilyCapacityShrink(sourceTypeText, targetTypeText) {
+				kind = ColumnDiffCapacityDegraded
+			}
 			diffs = append(diffs, ColumnStructureDiff{
 				Column: sourceCol.Name,
-				Kind:   "type",
+				Kind:   kind,
 				Source: sourceTypeText,
 				Target: targetTypeText,
 			})

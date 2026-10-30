@@ -70,14 +70,21 @@ func TestDiffIndexStructuresReportsEachDirection(t *testing.T) {
 	}
 }
 
-// 同定义换名字（跨引擎的默认索引命名差异）不算结构差异，否则每次跨库对比
-// 都会把整库索引报成「一删一增」。
-func TestDiffIndexStructuresTreatsRenamedIdenticalIndexAsEqual(t *testing.T) {
+// 同定义换名字（跨引擎的默认索引命名差异很常见）必须报成 renamed，
+// 而不是「一删一增」——后者会让整库索引全变成差异。
+func TestDiffIndexStructuresReportsRenamedIdenticalIndex(t *testing.T) {
 	source := indexRows("idx_orders_code", 1, "BTREE", "code")
 	target := indexRows("IDX_ORDERS_CODE_ALT", 1, "BTREE", "code")
 
-	if diffs := diffIndexStructures(source, target); len(diffs) != 0 {
-		t.Fatalf("同定义不同名不应报差异: %#v", diffs)
+	diffs := diffIndexStructures(source, target)
+	if len(diffs) != 1 {
+		t.Fatalf("同定义不同名应报一条 renamed, got=%d %#v", len(diffs), diffs)
+	}
+	if diffs[0].Kind != IndexDiffRenamed {
+		t.Fatalf("kind 应为 renamed: %#v", diffs[0])
+	}
+	if diffs[0].Source != "idx_orders_code" || diffs[0].Target != "IDX_ORDERS_CODE_ALT" {
+		t.Fatalf("renamed 必须给出两端名字: %#v", diffs[0])
 	}
 }
 

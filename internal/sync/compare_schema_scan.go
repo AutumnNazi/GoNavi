@@ -118,6 +118,7 @@ func (s *SyncEngine) compareSchemaTable(
 		resolveMigrationDBType(config.SourceConfig),
 		resolveMigrationDBType(config.TargetConfig),
 	)
+	summary.AttributeDiffs = diffColumnAttributes(cols, targetCols)
 	summary.IndexDiffs = compareTableIndexes(
 		sourceDB,
 		targetDB,
