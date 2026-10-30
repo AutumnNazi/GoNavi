@@ -382,6 +382,11 @@ export const DataSyncWorkbenchShell: React.FC<DataSyncWorkbenchShellProps> = ({
               ? handleExportCompareHtml
               : undefined
           }
+          onOpenExportedFile={
+            workbenchFamily === 'compare'
+              ? (path) => gatewayRef.current!.openExportedFile(path)
+              : undefined
+          }
         />
       ) : null}
       {activeView === 'schedules' ? (

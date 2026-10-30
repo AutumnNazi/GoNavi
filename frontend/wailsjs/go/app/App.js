@@ -1278,6 +1278,10 @@ export function OpenDriverDownloadDirectory(arg1) {
   return window['go']['app']['App']['OpenDriverDownloadDirectory'](arg1);
 }
 
+export function OpenExportedTextFile(arg1) {
+  return window['go']['app']['App']['OpenExportedTextFile'](arg1);
+}
+
 export function OpenLogDirectory() {
   return window['go']['app']['App']['OpenLogDirectory']();
 }

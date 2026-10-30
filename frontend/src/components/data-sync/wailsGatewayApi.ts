@@ -12,6 +12,7 @@ export interface WailsDataSyncApi {
     content: string,
     format: string,
   ): QueryResultPromise;
+  OpenExportedTextFile(filePath: string): QueryResultPromise;
   DataSyncDatabaseList(connectionId: string): QueryResultPromise;
   DataSyncObjectList(
     connectionId: string,

@@ -3,7 +3,10 @@ package app
 import (
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
+	stdRuntime "runtime"
 	"strings"
 	"time"
 
@@ -99,5 +102,52 @@ func (a *App) ExportTextFile(defaultName string, content string, format string) 
 			"fileName": filepath.Base(fileName),
 		}}
 	}
+	return connection.QueryResult{Success: true, Data: map[string]string{"path": target}}
+}
+
+// OpenExportedTextFile 用系统默认程序打开刚导出的文本文件。
+//
+// 只在导出成功后由 UI 主动调用；桌面端用系统 opener，Web 端没有「本地文件」
+// 的概念，直接返回不可用而不是假装成功。
+func (a *App) OpenExportedTextFile(filePath string) connection.QueryResult {
+	if a == nil {
+		return connection.QueryResult{Success: false, Message: "application is unavailable"}
+	}
+	if a.webRuntime {
+		return connection.QueryResult{Success: false, Message: "desktop file open is unavailable in web runtime"}
+	}
+	target := strings.TrimSpace(filePath)
+	if target == "" {
+		return connection.QueryResult{Success: false, Message: "file path is required"}
+	}
+	if abs, err := filepath.Abs(target); err == nil {
+		target = abs
+	}
+	info, err := os.Stat(target)
+	if err != nil || !info.Mode().IsRegular() {
+		return connection.QueryResult{Success: false, Message: "exported file is no longer available"}
+	}
+	// 只允许打开本次导出写入的内容类型，避免这个绑定变成任意程序启动器。
+	switch strings.ToLower(filepath.Ext(target)) {
+	case ".html", ".htm", ".md", ".txt", ".json", ".csv":
+	default:
+		return connection.QueryResult{Success: false, Message: "unsupported file type for open"}
+	}
+
+	var cmd *exec.Cmd
+	switch stdRuntime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", target)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", target)
+	case "linux":
+		cmd = exec.Command("xdg-open", target)
+	default:
+		return connection.QueryResult{Success: false, Message: "opening files is unsupported on this platform"}
+	}
+	if err := cmd.Start(); err != nil {
+		return connection.QueryResult{Success: false, Message: err.Error()}
+	}
+	go func() { _ = cmd.Wait() }()
 	return connection.QueryResult{Success: true, Data: map[string]string{"path": target}}
 }

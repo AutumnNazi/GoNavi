@@ -8,6 +8,7 @@ import {
 } from '../../compareRepairSql';
 import { createSyncTaskFromCompare } from '../../dataSyncCompareTaskFactory';
 import { setDataSyncHandoff } from '../../../../utils/dataSyncHandoff';
+import type { DataSyncEndpointRef } from '../../model';
 import { useCompareHtmlExport } from '../../useCompareHtmlExport';
 import type { CompareHtmlExportOutcome } from '../../dataSyncRunHistoryTypes';
 import type { DataSyncWorkbenchTaskLifecycleApi } from './useDataSyncWorkbenchTaskLifecycle';
@@ -37,6 +38,13 @@ export interface UseDataSyncWorkbenchDiffActionsInput {
   gatewayRef: DataSyncWorkbenchStateApi['gatewayRef'];
   setOperationError: DataSyncWorkbenchStateApi['setOperationError'];
 }
+
+// 连接名 + 库（+ schema）拼成报告头里的端点标识。
+const endpointLabel = (endpoint: DataSyncEndpointRef): string => {
+  const connection = endpoint.connectionName || endpoint.connectionId;
+  const database = [endpoint.database, endpoint.schema].filter(Boolean).join('.');
+  return database ? `${connection} · ${database}` : connection;
+};
 
 export const useDataSyncWorkbenchDiffActions = ({
   actionEnabled, t, selectedTask, dirtyTaskIds, selectedPreflight, preflightStale,
@@ -169,11 +177,19 @@ export const useDataSyncWorkbenchDiffActions = ({
       compareMode: compareResult.content || selectedTask.compareMode,
       meta: {
         taskName: selectedTask.name || t('task_kind.compare'),
-        sourceLabel: selectedTask.source.connectionName || selectedTask.source.connectionId,
-        targetLabel: selectedTask.target.connectionName || selectedTask.target.connectionId,
+        // 只写连接名分不清比的是哪个库：同一条连接上可能有多个库。
+        sourceLabel: endpointLabel(selectedTask.source),
+        targetLabel: endpointLabel(selectedTask.target),
       },
-      save: (fileName, content) =>
-        gatewayRef.current!.exportTextFile(fileName, content, 'html'),
+      save: async (fileName, content) => {
+        const saved = await gatewayRef.current!.exportTextFile(fileName, content, 'html');
+        // 导出后直接打开：用户按下按钮的意图就是看报告，不该再让他自己
+        // 去文件管理器里找。打开失败不影响导出结果本身。
+        if (saved) {
+          void gatewayRef.current?.openExportedFile(saved).catch(() => undefined);
+        }
+        return saved;
+      },
     });
     if (outcome.kind === 'failed') setOperationError(outcome.error);
     return outcome;

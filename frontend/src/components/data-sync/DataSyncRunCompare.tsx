@@ -27,10 +27,10 @@ import type {
   DataSyncRunHistoryProps,
 } from './dataSyncRunHistoryTypes';
 
-type ExportNotice = { tone: 'ok' | 'error'; text: string } | null;
+type ExportNotice = { tone: 'ok' | 'error'; text: string; path?: string } | null;
 
 export function DataSyncRunCompare(props: DataSyncRunHistoryProps) {
-  const { selectedRunId, runEvents, compareResult, compareMode, t, onGenerateRepairSql, onAskAiAboutDiffs, onSyncDiffs, onExportCompareHtml } = props;
+  const { selectedRunId, runEvents, compareResult, compareMode, t, onGenerateRepairSql, onAskAiAboutDiffs, onSyncDiffs, onExportCompareHtml, onOpenExportedFile } = props;
   const isCompareWorkbench = props.family === 'compare';
   const compareDetailOpen = isCompareWorkbench && Boolean(selectedRunId);
   // 筛选只影响明细列表；KPI 与分布始终按完整结果统计，避免筛选后指标跳变。
@@ -38,14 +38,30 @@ export function DataSyncRunCompare(props: DataSyncRunHistoryProps) {
   const [query, setQuery] = useState('');
   const [riskFilter, setRiskFilter] = useState<CompareRiskBucket[]>([]);
   const [groupBy, setGroupBy] = useState<CompareGroupBy>('table');
+  const [detailTab, setDetailTab] = useState<'main' | 'appendix'>('main');
   // 导出结果就地反馈：成功给出落盘路径，取消保持静默。
   const [exportNotice, setExportNotice] = useState<ExportNotice>(null);
+  const onExportPathClick = (path: string) => {
+    if (!onOpenExportedFile || !path) return;
+    void onOpenExportedFile(path).then((opened) => {
+      // 打开失败时退回导出提示，让用户知道系统没能打开这个文件。
+      if (!opened) {
+        setExportNotice((current) => current && {
+          ...current,
+          tone: 'error',
+          text: t('compare.export.open_failed'),
+        });
+      }
+    });
+  };
   const runExport = async (action: () => Promise<CompareHtmlExportOutcome>) => {
     const outcome = await action();
     if (outcome.kind === 'saved') {
       setExportNotice({
         tone: 'ok',
-        text: t('compare.export.success', { path: outcome.path }),
+        // 路径单独成链接：文本里不再重复拼一次，避免出现两份路径。
+        text: t('compare.export.success_short'),
+        path: outcome.path,
       });
     } else if (outcome.kind === 'failed') {
       setExportNotice({
@@ -86,6 +102,10 @@ export function DataSyncRunCompare(props: DataSyncRunHistoryProps) {
     [detailRows, groupBy],
   );
   const detailCount = detailRows.length;
+  // 附表只有存在默认值/注释差异时才作为可切换页签出现。
+  const hasAppendix = (compareResult?.tables || []).some(
+    (row) => (row.attributeDiffs || []).length > 0,
+  );
   return <>
     {(!isCompareWorkbench && compareResult) || compareDetailOpen ? (
       <section className="gn-data-sync-compare-panel" data-data-sync-compare="true">
@@ -146,6 +166,20 @@ export function DataSyncRunCompare(props: DataSyncRunHistoryProps) {
             role={exportNotice.tone === 'error' ? 'alert' : 'status'}
           >
             {exportNotice.text}
+            {exportNotice.path ? (
+              <>
+                {' '}
+                <button
+                  type="button"
+                  className="gn-data-sync-link-button gn-data-sync-compare-export-path"
+                  data-compare-export-path={exportNotice.path}
+                  title={exportNotice.path}
+                  onClick={() => onExportPathClick(exportNotice.path!)}
+                >
+                  {exportNotice.path}
+                </button>
+              </>
+            ) : null}
           </p>
         ) : null}
         {isCompareWorkbench ? (
@@ -178,20 +212,38 @@ export function DataSyncRunCompare(props: DataSyncRunHistoryProps) {
               onGroupByChange={setGroupBy}
               t={t}
             />
-            {detailRows.length === 0 ? (
+            {hasAppendix ? (
+              <div className="gn-data-sync-compare-detail-tabs" role="tablist">
+                {(['main', 'appendix'] as const).map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    role="tab"
+                    className="gn-data-sync-compare-detail-tab"
+                    data-detail-tab={key}
+                    aria-selected={detailTab === key}
+                    onClick={() => setDetailTab(key)}
+                  >
+                    {t(key === 'main'
+                      ? 'compare.appendix.tab_main'
+                      : 'compare.appendix.tab_appendix')}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {detailTab === 'appendix' && hasAppendix ? (
+              <DataSyncCompareAppendixTable result={compareResult} t={t} />
+            ) : detailRows.length === 0 ? (
               <p className="gn-data-sync-compare-empty-filter" data-data-sync-compare-empty-filter="true">
                 {t('compare.filters.empty')}
               </p>
             ) : (
-              <>
-                <DataSyncCompareDetailTable
-                  rows={detailRows}
-                  groups={groupBy === 'kind' ? detailGroups : null}
-                  groupBy={groupBy}
-                  t={t}
-                />
-                <DataSyncCompareAppendixTable result={compareResult} t={t} />
-              </>
+              <DataSyncCompareDetailTable
+                rows={detailRows}
+                groups={groupBy === 'kind' ? detailGroups : null}
+                groupBy={groupBy}
+                t={t}
+              />
             )}
           </>
         )}
