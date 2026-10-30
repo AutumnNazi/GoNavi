@@ -135,19 +135,35 @@ const fetchCandidateColumns = async (
   ref: QueryResultSourceTable['ref'],
   cacheKey: string,
 ): Promise<ColumnDefinition[]> => {
+  const request = DBGetColumns(
+    buildRpcConnectionConfig(config) as unknown as RpcConnectionConfig,
+    ref.metadataDbName,
+    ref.metadataTableName,
+  );
   const res = await withSoftTimeout(
-    DBGetColumns(
-      buildRpcConnectionConfig(config) as unknown as RpcConnectionConfig,
-      ref.metadataDbName,
-      ref.metadataTableName,
-    ),
+    request,
     () => ({ success: false, message: 'Timed out while loading columns', data: [] }),
     COLUMN_META_BACKFILL_TIMEOUT_MS,
   );
-  const columns = res?.success && Array.isArray(res.data) && res.data.length > 0
+  const succeeded = res?.success === true;
+  const columns = succeeded && Array.isArray(res.data) && res.data.length > 0
     ? res.data as ColumnDefinition[]
     : null;
-  writeBackfillCache(cacheKey, columns);
+  // 只有成功的结果才进缓存：软超时（冷启动首次连元数据通道常超过 1s）或请求失败时写负缓存，
+  // 会把该表整段负 TTL 都锁成「无类型/注释」，表现就是同一条 SQL 时而有时而没有。
+  // 成功但空结果仍按负缓存去重，那是表确实不存在（CTE 名、临时对象）。
+  if (succeeded) {
+    writeBackfillCache(cacheKey, columns);
+  } else {
+    // 软超时只是不再阻塞表头渲染，请求本身还在飞：等它回来补写缓存，下一次查询直接命中。
+    void request
+      .then((late) => {
+        if (late?.success && Array.isArray(late.data) && late.data.length > 0) {
+          writeBackfillCache(cacheKey, late.data as ColumnDefinition[]);
+        }
+      })
+      .catch(() => undefined);
+  }
   return columns || [];
 };
 
